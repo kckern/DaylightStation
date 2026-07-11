@@ -30,6 +30,7 @@ import {
 import { PianoChrome } from '../modules/Piano/PianoKiosk/PianoChrome.jsx';
 import { PianoBreadcrumbProvider } from '../modules/Piano/PianoKiosk/PianoBreadcrumbContext.jsx';
 import { PianoSoundProvider } from '../modules/Piano/PianoKiosk/PianoSoundContext.jsx';
+import { PianoPresetProvider } from '../modules/Piano/PianoKiosk/usePianoPreset.js';
 import { PianoMenu } from '../modules/Piano/PianoKiosk/PianoMenu.jsx';
 import { PianoPicker } from '../modules/Piano/PianoKiosk/PianoPicker.jsx';
 import { useRenderWatchdog } from '../modules/Piano/PianoKiosk/useRenderWatchdog.js';
@@ -42,6 +43,7 @@ import { Lessons } from '../modules/Piano/PianoKiosk/modes/Lessons/Lessons.jsx';
 import { Studio } from '../modules/Piano/PianoKiosk/modes/Studio/Studio.jsx';
 import { Producer } from '../modules/Piano/PianoKiosk/modes/Producer/Producer.jsx';
 import { Singalong } from '../modules/Piano/PianoKiosk/modes/Singalong/Singalong.jsx';
+import { Playalong } from '../modules/Piano/PianoKiosk/modes/Playalong/Playalong.jsx';
 import { Composer } from '../modules/Piano/PianoKiosk/modes/Composer/Composer.jsx';
 import PianoTest from '../modules/Piano/PianoKiosk/modes/Test/PianoTest.jsx';
 import KeepAliveVideo from '../modules/Piano/PianoKiosk/KeepAliveVideo.jsx';
@@ -245,6 +247,7 @@ function PianoShell() {
 
   return (
     <PianoSoundProvider>
+      <PianoPresetProvider>
       <PianoBreadcrumbProvider>
         <div className="piano-app">
           <WhoIsPlayingPrompt
@@ -258,7 +261,7 @@ function PianoShell() {
           <Routes>
             <Route index element={<PianoMenu />} />
             <Route path="videos/*" element={<Videos />} />
-            <Route path="playalong/*" element={<Videos source={config.playalong} />} />
+            <Route path="playalong/*" element={<Playalong />} />
             <Route path="singalong/*" element={<Singalong />} />
             <Route path="music/*" element={<Music />} />
             <Route path="sheetmusic/*" element={<SheetMusic />} />
@@ -272,6 +275,7 @@ function PianoShell() {
           </Routes>
         </div>
       </PianoBreadcrumbProvider>
+      </PianoPresetProvider>
     </PianoSoundProvider>
   );
 }

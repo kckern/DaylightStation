@@ -39,7 +39,7 @@ const VOL_STEP = 0.1;
  * `engagementTimeoutSeconds` are accepted for that contract but unused — karaoke
  * has no sequential lock or engagement gate.
  */
-export default function SingalongPlayer({ lecture, source, onBack }) {
+export default function SingalongPlayer({ lecture, source, onBack, startFresh = false }) {
   const playerRef = useRef(null);
   const ctrl = usePlayerController(playerRef);
   const { el: mediaEl, timedOut } = useResolvedMediaEl(playerRef);
@@ -57,7 +57,11 @@ export default function SingalongPlayer({ lecture, source, onBack }) {
 
   const contentId = lectureContentId(lecture);
   const title = lecture?.label || lecture?.title || '';
-  const resumeSeconds = lecture?.userPlayhead != null ? lecture.userPlayhead : deriveResumeSeconds(lecture);
+  // startFresh (karaoke & play-along): a song/backing track has no resume concept —
+  // always start at 0. Otherwise resume from the saved playhead like a lecture.
+  const resumeSeconds = startFresh
+    ? 0
+    : (lecture?.userPlayhead != null ? lecture.userPlayhead : deriveResumeSeconds(lecture));
   const { currentUser } = usePianoUser();
   const engagedRef = useRef(true); // karaoke: opening the song counts as engaged
 
@@ -73,10 +77,12 @@ export default function SingalongPlayer({ lecture, source, onBack }) {
   const playerEl = useMemo(() => (
     <PlayerBoundary onBack={onBack}>
       <Suspense fallback={<SkeletonStage />}>
-        <Player ref={playerRef} play={{ contentId, shader: 'focused' }} clear={onBack} />
+        {/* seconds:0 forces the Player to start at the beginning (no Plex-viewOffset
+            resume) for karaoke/play-along; omitted otherwise so lectures resume. */}
+        <Player ref={playerRef} play={startFresh ? { contentId, shader: 'focused', seconds: 0 } : { contentId, shader: 'focused' }} clear={onBack} />
       </Suspense>
     </PlayerBoundary>
-  ), [contentId, onBack]);
+  ), [contentId, onBack, startFresh]);
 
   // Fullscreen (mirrors PianoVideoPlayer): entered from the chrome button; a bare
   // tap in fullscreen just toggles pause here (no play-along overlay to summon).

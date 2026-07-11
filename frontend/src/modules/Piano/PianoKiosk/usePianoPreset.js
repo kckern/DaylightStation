@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { createContext, createElement, useContext, useState, useEffect, useCallback, useRef } from 'react';
 import { DaylightAPI } from '../../../lib/api.mjs';
 import getLogger from '../../../lib/logging/Logger.js';
 import { usePianoUser } from './PianoUserContext.jsx';
@@ -18,18 +18,33 @@ function voiceKey(bundle) {
   return `${v.pc}:${v.bank || 0}`;
 }
 
+const PianoPresetContext = createContext(null);
+
 /**
  * Per-user sound preset (opaque blob behind /users/:userId/preset): a default
- * bundle re-applied on login, plus a list of saved favorite bundles.
+ * bundle re-applied when that player is selected, plus a list of saved favorite
+ * bundles. Provided ABOVE the whole shell (not inside the Sound Panel) so that
+ * switching players applies the new player's default instrument/tone/volume and
+ * swaps their favorites even when the panel is closed.
  *
  * GET on user change; auto-applies `preset.default` (if any) through
  * usePianoSoundBundle().applyBundle. Graceful degrade: no default means the
- * current sound is left alone — this hook never resets the piano to silence
- * just because a user has no saved preset yet.
- *
- * @returns {{ preset: object, saveDefault: (bundle)=>Promise<void>, addFavorite: (bundle)=>Promise<void> }}
+ * current sound is left alone — never resets the piano to silence just because a
+ * player has no saved preset yet.
  */
+export function PianoPresetProvider({ children }) {
+  const value = usePianoPresetState();
+  return createElement(PianoPresetContext.Provider, { value }, children);
+}
+
+/** Read the shared per-user preset surface. */
 export function usePianoPreset() {
+  const ctx = useContext(PianoPresetContext);
+  if (!ctx) throw new Error('usePianoPreset must be used within a PianoPresetProvider');
+  return ctx;
+}
+
+function usePianoPresetState() {
   const { currentUser } = usePianoUser();
   const { applyBundle } = usePianoSoundBundle();
   const [preset, setPreset] = useState({});
@@ -41,7 +56,11 @@ export function usePianoPreset() {
   applyBundleRef.current = applyBundle;
 
   useEffect(() => {
-    if (!currentUser) { setPreset({}); return undefined; }
+    // Clear the previous player's preset IMMEDIATELY on switch — favorites/default
+    // are per-user, so one player's saved sounds must never linger under another's
+    // name while the new user's preset loads (or if they have none at all).
+    setPreset({});
+    if (!currentUser) return undefined;
     let cancelled = false;
     DaylightAPI(`api/v1/piano/users/${currentUser}/preset`)
       .then((r) => {
