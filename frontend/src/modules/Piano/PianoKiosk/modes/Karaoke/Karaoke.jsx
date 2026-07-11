@@ -7,7 +7,8 @@ import { usePianoCoursePlayable } from '../Videos/usePianoCoursePlayable.js';
 import { lectureContentId } from '../Videos/lectureMeta.js';
 import SingalongPlayer from '../Singalong/SingalongPlayer.jsx';
 import { SkeletonGrid } from '../../Skeleton.jsx';
-import { parseSongs, categoriesOf, filterSongs } from './karaokeBrowse.js';
+import { parseSongs, categoriesOf, filterSongs, categoryHue, songArt } from './karaokeBrowse.js';
+import { MaterialGlyph } from '../../producer/MaterialGlyph.jsx';
 
 const idOf = (raw) => String(raw || '').replace(/^plex:/, '');
 
@@ -48,18 +49,22 @@ function KaraokeBrowseRoute({ playable }) {
   return <KaraokeBrowser playable={playable} onSelect={onSelect} />;
 }
 
-/** The browse UI: search box + category chips + a grid of title/artist cards. */
+/** The browse UI: search box + color-coded category chips + a recognition-art grid. */
 function KaraokeBrowser({ playable, onSelect }) {
-  usePianoBreadcrumb(useMemo(() => [{ label: 'Karaoke' }], []));
+  // Single breadcrumb crumb — the chrome already shows the mode name, so a
+  // second "Karaoke" here would render the "Karaoke › Karaoke" doubling the
+  // audit flagged. Empty label = no crumb from this screen.
+  usePianoBreadcrumb(useMemo(() => [], []));
   const { items, parents } = playable;
   const [query, setQuery] = useState('');
   const [category, setCategory] = useState('All');
+  const [sort, setSort] = useState('song'); // 'song' | 'artist'
 
   const songs = useMemo(() => parseSongs(items), [items]);
   const categories = useMemo(() => categoriesOf(parents), [parents]);
   const filtered = useMemo(
-    () => filterSongs(songs, { query, category }),
-    [songs, query, category],
+    () => filterSongs(songs, { query, category, sort }),
+    [songs, query, category, sort],
   );
   // Search results and "All" mix categories together, so each card needs its
   // own category label; a single selected category is self-evident from the tab.
@@ -75,13 +80,33 @@ function KaraokeBrowser({ playable, onSelect }) {
 
   return (
     <section className="piano-mode piano-karaoke">
-      <input
-        type="search"
-        className="piano-karaoke__search"
-        placeholder="Search songs or artists…"
-        value={query}
-        onChange={(e) => setQuery(e.target.value)}
-      />
+      <div className="piano-karaoke__toolbar">
+        <input
+          type="search"
+          className="piano-karaoke__search"
+          placeholder="Search songs or artists…"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+        />
+        <div className="piano-karaoke__sort" role="group" aria-label="Sort by">
+          <button
+            type="button"
+            className={`piano-karaoke__sort-btn${sort === 'song' ? ' is-on' : ''}`}
+            aria-pressed={sort === 'song'}
+            onClick={() => setSort('song')}
+          >
+            Song
+          </button>
+          <button
+            type="button"
+            className={`piano-karaoke__sort-btn${sort === 'artist' ? ' is-on' : ''}`}
+            aria-pressed={sort === 'artist'}
+            onClick={() => setSort('artist')}
+          >
+            Artist
+          </button>
+        </div>
+      </div>
 
       <div className="piano-karaoke__tabs" role="tablist">
         <button
@@ -93,35 +118,61 @@ function KaraokeBrowser({ playable, onSelect }) {
         >
           All
         </button>
-        {categories.map((c) => (
-          <button
-            type="button"
-            role="tab"
-            key={c}
-            aria-selected={category === c}
-            className={`piano-karaoke__tab${category === c ? ' is-active' : ''}`}
-            onClick={() => setCategory(c)}
-          >
-            {c}
-          </button>
-        ))}
+        {categories.map((c) => {
+          const active = category === c;
+          const hue = categoryHue(c);
+          // The dot always shows the category's own hue (color-coding); an active
+          // tab fills with that hue so selection is obvious AND stays category-keyed.
+          const style = active
+            ? { background: `hsl(${hue} 46% 32%)`, borderColor: `hsl(${hue} 52% 46%)`, color: '#fff' }
+            : undefined;
+          return (
+            <button
+              type="button"
+              role="tab"
+              key={c}
+              aria-selected={active}
+              className={`piano-karaoke__tab${active ? ' is-active' : ''}`}
+              style={style}
+              onClick={() => setCategory(c)}
+            >
+              <span className="piano-karaoke__tab-dot" style={{ background: `hsl(${hue} 60% 55%)` }} />
+              {c}
+            </button>
+          );
+        })}
       </div>
 
       {filtered.length === 0 ? (
         <p className="piano-karaoke__empty">No songs found.</p>
       ) : (
         <ul className="piano-karaoke__grid">
-          {filtered.map((s) => (
-            <li key={s.id}>
-              <button type="button" className="piano-karaoke__card" onClick={() => onSelect(s)}>
-                <span className="piano-karaoke__card-song">{s.song}</span>
-                {s.artist && <span className="piano-karaoke__card-artist">{s.artist}</span>}
-                {showCategory && s.category && (
-                  <span className="piano-karaoke__card-category">{s.category}</span>
-                )}
-              </button>
-            </li>
-          ))}
+          {filtered.map((s) => {
+            const art = songArt(s);
+            return (
+              <li key={s.id}>
+                <button type="button" className="piano-karaoke__card" onClick={() => onSelect(s)}>
+                  <span className="piano-karaoke__art" style={{ background: art.background }} aria-hidden="true">
+                    <MaterialGlyph seed={art.seed} size={44} className="piano-karaoke__glyph" />
+                    <span className="piano-karaoke__play">▶</span>
+                  </span>
+                  <span className="piano-karaoke__card-body">
+                    <span className="piano-karaoke__card-song">{s.song}</span>
+                    {s.artist && <span className="piano-karaoke__card-artist">{s.artist}</span>}
+                    {showCategory && s.category && (
+                      <span className="piano-karaoke__card-category">
+                        <span
+                          className="piano-karaoke__card-cat-dot"
+                          style={{ background: `hsl(${categoryHue(s.category)} 60% 55%)` }}
+                        />
+                        {s.category}
+                      </span>
+                    )}
+                  </span>
+                </button>
+              </li>
+            );
+          })}
         </ul>
       )}
     </section>
