@@ -1,6 +1,6 @@
 // PianoVideoChrome.test.jsx
 import { describe, it, expect, vi } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, within } from '@testing-library/react';
 import PianoVideoChrome from './PianoVideoChrome.jsx';
 
 const mix = vi.hoisted(() => ({
@@ -75,21 +75,21 @@ describe('PianoVideoChrome', () => {
   });
 });
 
-describe('PianoVideoChrome — mix flyout', () => {
-  it('does not show mix controls until the mix button is tapped', () => {
+describe('PianoVideoChrome — volume modal', () => {
+  it('does not show the volume modal until the volume button is tapped', () => {
     render(<PianoVideoChrome {...baseProps} />);
-    expect(screen.queryByLabelText('Piano volume down')).toBeNull();
+    expect(screen.queryByRole('dialog', { name: 'Volume' })).toBeNull();
   });
-  it('shows mix controls after tapping the mix toggle button', () => {
+  it('shows the volume modal after tapping the volume button', () => {
     render(<PianoVideoChrome {...baseProps} />);
-    fireEvent.click(screen.getByLabelText('Toggle mix controls'));
-    expect(screen.getByLabelText('Piano volume down')).toBeInTheDocument();
+    fireEvent.click(screen.getByLabelText('Volume'));
+    expect(screen.getByRole('dialog', { name: 'Volume' })).toBeInTheDocument();
   });
-  it('hides mix controls after tapping the mix toggle button twice', () => {
+  it('closes the volume modal from its own close button', () => {
     render(<PianoVideoChrome {...baseProps} />);
-    fireEvent.click(screen.getByLabelText('Toggle mix controls'));
-    fireEvent.click(screen.getByLabelText('Toggle mix controls'));
-    expect(screen.queryByLabelText('Piano volume down')).toBeNull();
+    fireEvent.click(screen.getByLabelText('Volume'));
+    fireEvent.click(screen.getByLabelText('Close volume'));
+    expect(screen.queryByRole('dialog', { name: 'Volume' })).toBeNull();
   });
 });
 
@@ -133,24 +133,22 @@ describe('sequential mode restrictions', () => {
   });
 });
 
-describe('PianoVideoChrome — mix balance', () => {
-  const openMix = () => fireEvent.click(screen.getByLabelText('Toggle mix controls'));
+describe('PianoVideoChrome — volume modal drives the mix context', () => {
+  const openVolume = () => fireEvent.click(screen.getByLabelText('Volume'));
 
-  it('drives the piano level down/up from the mix context', () => {
+  it('drives the MIDI (piano) level from a stepper tap', () => {
     mix.setPianoLevel.mockReset();
     render(<PianoVideoChrome {...baseProps} />);
-    openMix();
-    fireEvent.click(screen.getByLabelText('Piano volume down'));
-    fireEvent.click(screen.getByLabelText('Piano volume up'));
-    expect(mix.setPianoLevel).toHaveBeenCalledTimes(2);
+    openVolume();
+    fireEvent.click(within(screen.getByRole('group', { name: 'MIDI Volume' })).getByRole('button', { name: 'High' }));
+    expect(mix.setPianoLevel).toHaveBeenCalledTimes(1);
   });
-  it('drives the media level down/up from the mix context', () => {
+  it('drives the media level from a stepper tap', () => {
     mix.setMediaLevel.mockReset();
     render(<PianoVideoChrome {...baseProps} />);
-    openMix();
-    fireEvent.click(screen.getByLabelText('Media volume down'));
-    fireEvent.click(screen.getByLabelText('Media volume up'));
-    expect(mix.setMediaLevel).toHaveBeenCalledTimes(2);
+    openVolume();
+    fireEvent.click(within(screen.getByRole('group', { name: 'Media Volume' })).getByRole('button', { name: 'Low' }));
+    expect(mix.setMediaLevel).toHaveBeenCalledTimes(1);
   });
 });
 
