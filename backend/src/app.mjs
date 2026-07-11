@@ -720,6 +720,13 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     aggregator: lifelogServices.lifelogAggregator,
     notificationService: notificationStack.notificationService,
     userService,
+    // Household roster for the /life user switcher. getHouseholdUsers may return
+    // plain usernames or richer { username } objects — normalize to usernames.
+    listHouseholdUsers: () => (
+      (configService.getHouseholdUsers(configService.getDefaultHouseholdId()) || [])
+        .map((u) => (typeof u === 'string' ? u : (u?.username || u?.userId || u?.name)))
+        .filter(Boolean)
+    ),
     defaultUsername: configService.getHeadOfHousehold() || 'default',
     timezone: configService.getHouseholdTimezone(),
     clock: null,

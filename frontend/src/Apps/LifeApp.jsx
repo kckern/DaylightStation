@@ -1,5 +1,5 @@
 import React, { useMemo, useEffect } from 'react';
-import { MantineProvider, AppShell, NavLink, Title, Group, Text } from '@mantine/core';
+import { MantineProvider, AppShell, NavLink, Title, Group, Text, Select } from '@mantine/core';
 import { Routes, Route, Navigate, useNavigate, useLocation, useParams } from 'react-router-dom';
 import { IconDashboard, IconTimeline, IconTarget, IconHeart, IconBrain, IconDiamond, IconShield, IconCalendarEvent, IconMessageCircle } from '@tabler/icons-react';
 import '@mantine/core/styles.css';
@@ -54,7 +54,7 @@ const LifeApp = () => {
   const logger = useMemo(() => getChildLogger({ app: 'life' }), []);
   const navigate = useNavigate();
   const location = useLocation();
-  const { user: lifeUser } = useLifeUser();
+  const { user: lifeUser, users: lifeUsers, setUsername } = useLifeUser();
 
   // Enable session file logging — writes to media/logs/life/<timestamp>.jsonl
   useEffect(() => {
@@ -82,8 +82,20 @@ const LifeApp = () => {
         padding="md"
       >
         <AppShell.Header>
-          <Group h="100%" px="md">
+          <Group h="100%" px="md" justify="space-between">
             <Title order={4}>Life</Title>
+            {/* User switcher — only meaningful in a multi-member household. */}
+            {lifeUsers.length > 1 && (
+              <Select
+                size="xs"
+                w={150}
+                aria-label="Switch household member"
+                allowDeselect={false}
+                data={lifeUsers.map((u) => ({ value: u.username, label: u.displayName }))}
+                value={lifeUser?.username || null}
+                onChange={(val) => { if (val) setUsername(val); }}
+              />
+            )}
           </Group>
         </AppShell.Header>
 

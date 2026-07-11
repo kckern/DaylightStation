@@ -26,6 +26,7 @@ import createLifeRouter from '#api/v1/routers/life.mjs';
  * @param {Object} deps.aggregator - LifelogAggregator instance
  * @param {Object} [deps.notificationService] - Notification service for ceremony reminders
  * @param {Object} [deps.userService] - UserService for username validation/profiles
+ * @param {Function} [deps.listHouseholdUsers] - Returns household usernames for the switcher
  * @param {string} [deps.defaultUsername] - Username used when requests omit one
  * @param {string} [deps.timezone] - IANA household timezone for cadence math (defaults to UTC)
  * @param {Object} [deps.clock] - Injectable clock
@@ -33,7 +34,7 @@ import createLifeRouter from '#api/v1/routers/life.mjs';
  * @returns {Object} { router, container, ceremonyScheduler, services }
  */
 export function bootstrapLifeplan(deps) {
-  const { dataPath, aggregator, notificationService, userService, defaultUsername, timezone, clock, logger } = deps;
+  const { dataPath, aggregator, notificationService, userService, listHouseholdUsers, defaultUsername, timezone, clock, logger } = deps;
 
   // Validate the household timezone at the composition seam (the domain has no
   // logger; CadenceService itself falls back to UTC on an invalid zone).
@@ -113,6 +114,7 @@ export function bootstrapLifeplan(deps) {
     driftService,
     aggregator,
     userService,
+    listHouseholdUsers,
     defaultUsername,
   };
 

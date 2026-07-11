@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import getLogger from '../../../lib/logging/Logger.js';
+import { useLifeUsername } from './useLifeUser.js';
 
 let _logger;
 function logger() {
@@ -48,7 +49,10 @@ export function useCeremony(type, username) {
   const [submitting, setSubmitting] = useState(false);
   const [completed, setCompleted] = useState(false);
 
-  const qs = username ? `?username=${username}` : '';
+  // Follow the selected household user (explicit arg wins over context).
+  const ctxUsername = useLifeUsername();
+  const user = username || ctxUsername;
+  const qs = user ? `?username=${encodeURIComponent(user)}` : '';
 
   const fetchContent = useCallback(async () => {
     setLoading(true);
