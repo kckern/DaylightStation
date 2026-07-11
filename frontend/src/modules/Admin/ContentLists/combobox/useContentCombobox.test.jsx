@@ -319,6 +319,42 @@ describe('useContentCombobox', () => {
     expect(result.current.state.results.map((r) => r.id)).toEqual(['plex:5']);
   });
 
+  it('F13: a bare source prefix ("singalong:") dispatches an empty search, not a literal', async () => {
+    vi.useFakeTimers();
+    const { result } = setup({});
+
+    act(() => { result.current.handleInput('singalong:'); });
+    await act(async () => { vi.advanceTimersByTime(350); });
+
+    const searchCalls = fetchMock.mock.calls.filter(([u]) => u.startsWith('/api/v1/content/query/search'));
+    // The literal "singalong:" must never reach the backend search.
+    expect(searchCalls.every(([u]) => !u.includes(encodeURIComponent('singalong:')))).toBe(true);
+    // An empty query short-circuits before any backend search fetch.
+    expect(searchCalls).toHaveLength(0);
+  });
+
+  it('F13 regression: a scoped "source:term" query still searches for the literal', async () => {
+    vi.useFakeTimers();
+    const { result } = setup({});
+
+    act(() => { result.current.handleInput('singalong:nearer'); });
+    await act(async () => { vi.advanceTimersByTime(350); });
+
+    expect(fetchMock.mock.calls.at(-1)[0])
+      .toBe(`/api/v1/content/query/search?text=${encodeURIComponent('singalong:nearer')}&take=20`);
+  });
+
+  it('F13 regression: plain no-colon text still searches normally', async () => {
+    vi.useFakeTimers();
+    const { result } = setup({});
+
+    act(() => { result.current.handleInput('nearer'); });
+    await act(async () => { vi.advanceTimersByTime(350); });
+
+    expect(fetchMock.mock.calls.at(-1)[0])
+      .toBe('/api/v1/content/query/search?text=nearer&take=20');
+  });
+
   it('SSE path streams results into state.results', async () => {
     vi.stubGlobal('EventSource', MockEventSource);
     vi.useFakeTimers();
