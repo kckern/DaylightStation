@@ -1,4 +1,5 @@
 import { renderHook, waitFor, act } from '@testing-library/react';
+import { createElement } from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 const calls = [];
@@ -23,7 +24,9 @@ vi.mock('./usePianoSoundBundle.js', () => ({
   usePianoSoundBundle: () => ({ applyBundle, currentBundle: {} }),
 }));
 
-import { usePianoPreset } from './usePianoPreset.js';
+import { usePianoPreset, PianoPresetProvider } from './usePianoPreset.js';
+
+const wrapper = ({ children }) => createElement(PianoPresetProvider, null, children);
 
 beforeEach(() => {
   calls.length = 0;
@@ -38,7 +41,7 @@ const bundleB = { voice: { pc: 4, bank: 0 }, reverb: { type: 2, level: 40, on: t
 describe('usePianoPreset', () => {
   it('loads the per-user preset on mount and on user change', async () => {
     store = { default: bundleA };
-    const { result, rerender } = renderHook(() => usePianoPreset());
+    const { result, rerender } = renderHook(() => usePianoPreset(), { wrapper });
     await waitFor(() => expect(result.current.preset.default).toEqual(bundleA));
     expect(calls[0]).toEqual({ path: 'api/v1/piano/users/user_1/preset', data: {}, method: 'GET' });
 
@@ -51,19 +54,19 @@ describe('usePianoPreset', () => {
 
   it('auto-applies preset.default via usePianoSoundBundle().applyBundle', async () => {
     store = { default: bundleA };
-    renderHook(() => usePianoPreset());
+    renderHook(() => usePianoPreset(), { wrapper });
     await waitFor(() => expect(applyBundle).toHaveBeenCalledWith(bundleA));
   });
 
   it('does NOT apply/reset the sound when there is no default (graceful degrade)', async () => {
     store = { favorites: [bundleB] };
-    const { result } = renderHook(() => usePianoPreset());
+    const { result } = renderHook(() => usePianoPreset(), { wrapper });
     await waitFor(() => expect(result.current.preset.favorites).toEqual([bundleB]));
     expect(applyBundle).not.toHaveBeenCalled();
   });
 
   it('saveDefault PUTs { default: bundle }', async () => {
-    const { result } = renderHook(() => usePianoPreset());
+    const { result } = renderHook(() => usePianoPreset(), { wrapper });
     await waitFor(() => expect(calls.length).toBeGreaterThan(0));
     await act(async () => { await result.current.saveDefault(bundleA); });
     expect(result.current.preset.default).toEqual(bundleA);
@@ -74,7 +77,7 @@ describe('usePianoPreset', () => {
 
   it('addFavorite PUTs { favorites: [...existing, bundle] }', async () => {
     store = { favorites: [bundleA] };
-    const { result } = renderHook(() => usePianoPreset());
+    const { result } = renderHook(() => usePianoPreset(), { wrapper });
     await waitFor(() => expect(result.current.preset.favorites).toEqual([bundleA]));
     await act(async () => { await result.current.addFavorite(bundleB); });
     expect(result.current.preset.favorites).toEqual([bundleA, bundleB]);
@@ -87,7 +90,7 @@ describe('usePianoPreset', () => {
     const staleA = { voice: { pc: 0, bank: 0 }, reverb: null, chorus: null, volume: 0.2 };
     const freshA = { voice: { pc: 0, bank: 0 }, reverb: { type: 1, level: 20, on: true }, chorus: null, volume: 0.9 };
     store = { favorites: [staleA, bundleB] };
-    const { result } = renderHook(() => usePianoPreset());
+    const { result } = renderHook(() => usePianoPreset(), { wrapper });
     await waitFor(() => expect(result.current.preset.favorites).toEqual([staleA, bundleB]));
     await act(async () => { await result.current.addFavorite(freshA); });
     // The old pc:0/bank:0 entry is dropped in favor of the new one; order preserved (bundleB, then new).
@@ -98,7 +101,7 @@ describe('usePianoPreset', () => {
 
   it('does not fetch when there is no current user', () => {
     mockUser = null;
-    const { result } = renderHook(() => usePianoPreset());
+    const { result } = renderHook(() => usePianoPreset(), { wrapper });
     expect(result.current.preset).toEqual({});
     expect(calls.length).toBe(0);
     expect(applyBundle).not.toHaveBeenCalled();

@@ -17,7 +17,7 @@ export const PIANO_CONFIG_DEFAULTS = {
   instruments: [], // rendered-voice definitions (sfizz/dexed/…); [] = onboard-only
   videos: { plexCollection: null },
   // Playalong menu — a video collection (backing tracks) reusing the Courses flow.
-  playalong: { plexCollection: null },
+  playalong: { plexCollection: null, plexShow: null },
   // Singalong menu — a karaoke video collection; reuses the Courses grid/detail
   // flow but plays through the karaoke-chrome SingalongPlayer (no keyboard/staff).
   singalong: { plexCollection: null },

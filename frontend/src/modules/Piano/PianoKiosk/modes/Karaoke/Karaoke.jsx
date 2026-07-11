@@ -22,15 +22,18 @@ const idOf = (raw) => String(raw || '').replace(/^plex:/, '');
  *   :songId    → the player (looks the song back up from the shared /playable
  *                fetch so a cold deep-link still resolves)
  */
-export function Karaoke() {
+export function Karaoke({ showId: showIdProp, startFresh = true }) {
   const { config } = usePianoKioskConfig();
-  const showId = idOf(config.karaoke?.plexShow);
+  // Reusable song browser: defaults to the Karaoke show, but Play-along points it
+  // at the Backing Tracks show (same seasons-as-tabs + song-list UX). `startFresh`
+  // (true for karaoke & play-along) makes every pick start at 0 — no resume.
+  const showId = idOf(showIdProp ?? config.karaoke?.plexShow);
   const playable = usePianoCoursePlayable(showId);
 
   return (
     <Routes>
       <Route index element={<KaraokeBrowseRoute playable={playable} />} />
-      <Route path=":songId" element={<KaraokePlayerRoute playable={playable} />} />
+      <Route path=":songId" element={<KaraokePlayerRoute playable={playable} startFresh={startFresh} />} />
     </Routes>
   );
 }
@@ -131,7 +134,7 @@ function KaraokeBrowser({ playable, onSelect }) {
  * hands it straight to SingalongPlayer — karaoke has no play-along keyboard/
  * staff chrome, so there's nothing else to wire up.
  */
-function KaraokePlayerRoute({ playable }) {
+function KaraokePlayerRoute({ playable, startFresh }) {
   const { songId } = useParams();
   const navigate = useNavigate();
   const { items, info } = playable;
@@ -158,7 +161,7 @@ function KaraokePlayerRoute({ playable }) {
       </div>
     );
   }
-  return <SingalongPlayer lecture={lecture} source={source} onBack={goBack} />;
+  return <SingalongPlayer lecture={lecture} source={source} onBack={goBack} startFresh={startFresh} />;
 }
 
 export default Karaoke;

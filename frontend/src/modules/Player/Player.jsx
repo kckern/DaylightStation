@@ -304,10 +304,19 @@ const Player = forwardRef(function Player(props, ref) {
   // A surgical review seek (?goto/?cue) suppresses the saved resume position (Plex
   // viewOffset in meta.seconds) so the review target is authoritative — otherwise the
   // resilience layer reasserts resume after VideoPlayer re-mints at the target.
+  // An explicit `seconds` on the ROOT play prop is authoritative and overrides the
+  // Plex-viewOffset resume that arrives later in resolvedMeta.seconds — so a caller
+  // (e.g. karaoke / play-along) can pass `play={{ seconds: 0 }}` to ALWAYS start
+  // fresh. Falls back to effectiveMeta.seconds (normal resume) when the play prop
+  // carries no explicit start, so lecture resume is unchanged.
+  const rootPlayObj = (play && typeof play === 'object' && !Array.isArray(play)) ? play : null;
+  const explicitStartSource = (rootPlayObj && Object.prototype.hasOwnProperty.call(rootPlayObj, 'seconds'))
+    ? rootPlayObj
+    : effectiveMeta;
   const explicitStartProvided = !REVIEW_ACTIVE
-    && effectiveMeta && Object.prototype.hasOwnProperty.call(effectiveMeta, 'seconds');
+    && explicitStartSource && Object.prototype.hasOwnProperty.call(explicitStartSource, 'seconds');
   const explicitStartSeconds = explicitStartProvided
-    ? Math.max(0, Number(effectiveMeta.seconds) || 0)
+    ? Math.max(0, Number(explicitStartSource.seconds) || 0)
     : null;
 
   const {
