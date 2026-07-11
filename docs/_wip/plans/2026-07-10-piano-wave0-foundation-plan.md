@@ -435,11 +435,11 @@ git commit -m "docs(piano): Wave 0 foundation implemented; #3/#4 + F1/F3/F4/F5 s
 
 ## Definition of done
 
-- [ ] `--sp-*` scale exists and is used by the tile grid + mode padding (F5).
-- [ ] One consolidated `.piano-app` touch-reset; `user-select` killed globally with a text-field escape hatch (F1).
-- [ ] `balancedColumns` helper unit-tested; menu + games set `--tile-cols`; Games no longer clumps; home still 5×2 (F3 / #3).
-- [ ] `Skeleton` + `SkeletonPoster` primitive, reduced-motion aware, unit-tested (F4).
-- [ ] Course wall renders poster skeletons while loading (F4 proof).
-- [ ] Full PianoKiosk vitest suite green; `vite build` clean.
-- [ ] Visual checks listed as pending-server (not claimed verified).
+- [x] `--sp-*` scale exists and is used by the tile grid + mode padding (F5). — `f4bd6bd03`
+- [x] One consolidated `.piano-app` touch-reset; `user-select` killed globally with a text-field escape hatch (F1). — `3046c570d` + `0c0620ffd` (tap-`:focus` follow-up)
+- [x] `balancedColumns` helper unit-tested; menu + games set `--tile-cols`; Games no longer clumps; home still 5×2 (F3 / #3). — `69a90718b` + `1c170fa03`
+- [x] `Skeleton` + `SkeletonPoster` primitive, reduced-motion aware, unit-tested (F4). — `3127c4e68`
+- [x] Course wall renders poster skeletons while loading (F4 proof). — `fe010948a`
+- [x] Full PianoKiosk vitest suite green (1296); `vite build` clean.
+- [ ] **Visual checks pending-server** (NOT claimed verified): Games' 4 tiles centered with no empty column; home still 5×2; course-wall poster skeletons; no stray tap-focus rings; Settings inputs still selectable.
 - [ ] Wave 0b (bespoke skeleton rollout + inline "Loading…" de-bypass) noted as follow-on.
