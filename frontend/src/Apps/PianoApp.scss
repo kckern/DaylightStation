@@ -101,11 +101,20 @@
   // Kiosk-fixity: kill pull-to-refresh and double-tap/pinch zoom at the source.
   overscroll-behavior: none;
   touch-action: manipulation;
-  // Touch UI: kill the full-area tap-highlight flash (WebKit/Blink paints the
-  // accent over the whole element on tap — separate from :focus outlines).
+  // Kiosk base-reset (touch-only surface): no text selection, no callout, no
+  // tap-highlight flash, no focus rings. Consolidated here (was scattered).
   -webkit-tap-highlight-color: transparent;
+  -webkit-touch-callout: none;
+  user-select: none;
+  -webkit-user-select: none;
   * { -webkit-tap-highlight-color: transparent; }
+  :focus-visible { outline: none; }
 }
+
+// Real text fields must remain selectable/editable despite the kiosk reset.
+.piano-app input,
+.piano-app textarea,
+.piano-app [contenteditable] { user-select: text; -webkit-user-select: text; }
 
 .piano-chrome {
   flex: 0 0 auto;
@@ -1749,14 +1758,6 @@
 /* Caption sizing for poster/music cover grids (smaller than the default 1rem base rule). */
 .piano-video-grid--posters .piano-video-grid__title,
 .piano-music-grid .piano-video-grid__title { font-size: 0.9rem; padding: 0 0.15rem; }
-
-/* Touch kiosk: suppress focus rings entirely — they render as ugly teal boxes
-   when tiles/buttons are tapped. No keyboard-navigation use case here. */
-.piano-app :focus,
-.piano-app :focus-visible {
-  outline: none !important;
-  box-shadow: none !important;
-}
 
 /* ---- Settings sheet (consolidated voice / MIDI hardware / MIDI monitor) ---- */
 .piano-settings {
