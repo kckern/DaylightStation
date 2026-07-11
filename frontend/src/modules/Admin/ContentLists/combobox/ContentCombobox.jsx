@@ -419,6 +419,7 @@ export function ContentCombobox({
       <Combobox.Option
         key={item.id}
         value={item.id}
+        data-testid={`combobox-option-${item.id}`}
         data-value={item.id}
         data-highlighted={isHighlighted ? 'true' : 'false'}
         data-current={isCurrent ? 'true' : 'false'}
@@ -444,6 +445,18 @@ export function ContentCombobox({
             </Stack>
           </Group>
           <Group gap="xs" wrap="nowrap">
+            {isCurrent && (
+              <Badge
+                size="xs"
+                variant="light"
+                color="teal"
+                data-testid="combobox-current-badge"
+                title="This is your current selection"
+                style={{ flexShrink: 0 }}
+              >
+                Current
+              </Badge>
+            )}
             <Badge size="xs" variant="light" color="gray" data-testid="combobox-source-badge">{(source ?? '?').toUpperCase()}</Badge>
             {item.matchReason === 'id-lookup' && (
               <Badge

@@ -158,6 +158,33 @@ describe('ContentCombobox (hook wiring)', () => {
     expect(badges[0].closest('[data-value]')).toHaveAttribute('data-value', 'plex:1989');
   });
 
+  it('marks the committed row with data-current and a salient Current badge (F1b)', () => {
+    currentHook = makeHook({
+      state: {
+        ...initialState('plex:123'),
+        value: 'plex:123',
+        mode: Modes.SEARCH,
+        search: 'plex',
+        results: [
+          { id: 'plex:123', title: 'Committed Item', source: 'plex' },
+          { id: 'plex:2', title: 'Other Item', source: 'plex' },
+        ],
+      },
+    });
+    renderCombobox({ value: 'plex:123' });
+
+    const row = screen.getByTestId('combobox-option-plex:123');
+    expect(row).toHaveAttribute('data-current', 'true');
+
+    const badge = screen.getByTestId('combobox-current-badge');
+    expect(badge).toHaveTextContent('Current');
+    expect(row).toContainElement(badge);
+
+    // The non-committed row must NOT carry the Current marker.
+    const otherRow = screen.getByTestId('combobox-option-plex:2');
+    expect(otherRow).toHaveAttribute('data-current', 'false');
+  });
+
   it('Escape closes via handleClose with reason escape', () => {
     currentHook = makeHook({
       state: { ...initialState(''), mode: Modes.SEARCH, search: 'abc' },
