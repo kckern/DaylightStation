@@ -277,6 +277,76 @@ describe('ContentCombobox (hook wiring)', () => {
     expect(screen.queryByTestId('combobox-scope-chip')).toBeNull();
   });
 
+  it('F7: with selectContainers, a container row renders the interactive browse-into chevron; clicking it drills', () => {
+    currentHook = makeHook({
+      state: {
+        ...initialState(''),
+        mode: Modes.SEARCH,
+        search: 'jazz',
+        results: [
+          { id: 'plex:playlist:99', title: 'Jazz Playlist', source: 'plex', type: 'playlist' },
+          { id: 'plex:leaf:1', title: 'A Song', source: 'plex' },
+        ],
+      },
+    });
+    renderCombobox({ selectContainers: true });
+
+    // The interactive drill affordance exists only for the container row.
+    const chevron = screen.getByTestId('browse-into-plex:playlist:99');
+    expect(screen.queryByTestId('browse-into-plex:leaf:1')).toBeNull();
+
+    fireEvent.click(chevron);
+    expect(currentHook.drill).toHaveBeenCalledTimes(1);
+    expect(currentHook.drill).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'plex:playlist:99' })
+    );
+    expect(currentHook.select).not.toHaveBeenCalled();
+  });
+
+  it('F7: with selectContainers, Enter on a user-navigated container SELECTS it as the value (not drill)', () => {
+    currentHook = makeHook({
+      state: {
+        ...initialState(''),
+        mode: Modes.SEARCH,
+        search: 'jazz',
+        results: [
+          { id: 'plex:playlist:99', title: 'Jazz Playlist', source: 'plex', type: 'playlist' },
+        ],
+        highlight: { idx: 0, userNavigated: true },
+      },
+    });
+    renderCombobox({ selectContainers: true });
+
+    fireEvent.keyDown(screen.getByRole('textbox'), { key: 'Enter' });
+    expect(currentHook.select).toHaveBeenCalledTimes(1);
+    expect(currentHook.select).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'plex:playlist:99' })
+    );
+    expect(currentHook.drill).not.toHaveBeenCalled();
+  });
+
+  it('F7: WITHOUT selectContainers, Enter on the same container DRILLS instead (proves the prop flips behavior)', () => {
+    currentHook = makeHook({
+      state: {
+        ...initialState(''),
+        mode: Modes.SEARCH,
+        search: 'jazz',
+        results: [
+          { id: 'plex:playlist:99', title: 'Jazz Playlist', source: 'plex', type: 'playlist' },
+        ],
+        highlight: { idx: 0, userNavigated: true },
+      },
+    });
+    renderCombobox(); // no selectContainers
+
+    fireEvent.keyDown(screen.getByRole('textbox'), { key: 'Enter' });
+    expect(currentHook.drill).toHaveBeenCalledTimes(1);
+    expect(currentHook.drill).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'plex:playlist:99' })
+    );
+    expect(currentHook.select).not.toHaveBeenCalled();
+  });
+
   it('Escape closes via handleClose with reason escape', () => {
     currentHook = makeHook({
       state: { ...initialState(''), mode: Modes.SEARCH, search: 'abc' },
