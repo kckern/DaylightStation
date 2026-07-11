@@ -11,7 +11,7 @@ import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'r
 import { useDebouncedCallback } from '@mantine/hooks';
 import { useStreamingSearch } from '../../../../hooks/useStreamingSearch';
 import { getChildLogger } from '../../../../lib/logging/singleton.js';
-import { isContentIdLike } from '../contentSearchLogic.js';
+import { isContentIdLike, parseSourcePrefix } from '../contentSearchLogic.js';
 import { getCacheEntry, setCacheEntry } from '../siblingsCache.js';
 import { reducer, initialState, closeDecision, Modes, RENDER_CAP } from './comboboxMachine.js';
 
@@ -223,6 +223,19 @@ export function useContentCombobox({ value, onChange, searchParams = '', appResu
     dispatch({ type: 'INPUT', text });
     debouncedSearch(text);
   }, [debouncedSearch]);
+
+  // F14: while searching, a `source:term` query scopes the backend search to
+  // that one source. Surface the scope so the UI can show a removable chip.
+  // Only meaningful while editing/searching (search != null).
+  const activeScope = state.search != null
+    ? (parseSourcePrefix(state.search)?.source ?? null)
+    : null;
+  // Drop the source prefix, rewriting the box to the bare term and re-running
+  // the now-unscoped search.
+  const clearScope = useCallback(() => {
+    const parsed = parseSourcePrefix(stateRef.current.search);
+    if (parsed) handleInput(parsed.term);
+  }, [handleInput]);
 
   // Dispatch RESULTS whenever stream/batch results change, merging
   // app-registry matches ahead of content results when enabled.
@@ -533,6 +546,8 @@ export function useContentCombobox({ value, onChange, searchParams = '', appResu
     dispatch,
     // input/search
     handleInput,
+    activeScope,
+    clearScope,
     // browse
     openWithSiblings,
     drill,

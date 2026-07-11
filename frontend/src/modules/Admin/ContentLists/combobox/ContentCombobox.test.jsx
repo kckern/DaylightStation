@@ -246,6 +246,37 @@ describe('ContentCombobox (hook wiring)', () => {
     expect(hint).toHaveTextContent('Showing first 50 — refine your search');
   });
 
+  it('F14: renders a removable source-scope chip in search mode; clicking clear calls clearScope', () => {
+    const clearScope = vi.fn();
+    currentHook = makeHook({
+      state: {
+        ...initialState(''),
+        mode: Modes.SEARCH,
+        search: 'singalong:nearer',
+        results: [{ id: 'singalong:hymn/100', title: 'Nearer', source: 'singalong' }],
+      },
+      activeScope: 'singalong',
+      clearScope,
+    });
+    renderCombobox();
+
+    const chip = screen.getByTestId('combobox-scope-chip');
+    expect(chip).toHaveTextContent('Searching within singalong');
+
+    fireEvent.click(screen.getByTestId('combobox-scope-clear'));
+    expect(clearScope).toHaveBeenCalledTimes(1);
+  });
+
+  it('F14: no scope chip when activeScope is null', () => {
+    currentHook = makeHook({
+      state: { ...initialState(''), mode: Modes.SEARCH, search: 'nearer' },
+      activeScope: null,
+    });
+    renderCombobox();
+
+    expect(screen.queryByTestId('combobox-scope-chip')).toBeNull();
+  });
+
   it('Escape closes via handleClose with reason escape', () => {
     currentHook = makeHook({
       state: { ...initialState(''), mode: Modes.SEARCH, search: 'abc' },

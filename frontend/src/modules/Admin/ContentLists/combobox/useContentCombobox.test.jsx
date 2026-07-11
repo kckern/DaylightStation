@@ -488,6 +488,27 @@ describe('useContentCombobox', () => {
     expect(result.current.state.browse.items[result.current.state.highlight.idx].id).toBe('plex:11');
   });
 
+  it('F14: activeScope reflects a source prefix in the search text; clearScope rewrites to the bare term', () => {
+    const { result } = setup({});
+
+    act(() => { result.current.handleInput('singalong:nearer'); });
+    expect(result.current.state.search).toBe('singalong:nearer');
+    expect(result.current.activeScope).toBe('singalong');
+
+    act(() => { result.current.clearScope(); });
+    expect(result.current.state.search).toBe('nearer'); // scoped prefix stripped
+    expect(result.current.activeScope).toBeNull();
+  });
+
+  it('F14: activeScope is null when there is no prefix and while not searching', () => {
+    const { result } = setup({ value: 'plex:10' });
+    expect(result.current.state.search).toBeNull();
+    expect(result.current.activeScope).toBeNull(); // DISPLAY mode, not searching
+
+    act(() => { result.current.handleInput('nearer'); });
+    expect(result.current.activeScope).toBeNull(); // no source prefix
+  });
+
   it('goUp at siblings root dismisses to DISPLAY keeping the committed value, not a raw-id search (F8)', async () => {
     fetchMock.mockImplementation((url) => (
       url.startsWith('/api/v1/siblings/plex/10') ? jsonResponse(SIBLINGS_RESPONSE) : jsonResponse({ items: [] })
