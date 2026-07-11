@@ -1,8 +1,7 @@
 // PianoVideoChrome.jsx
 import { useRef, useState } from 'react';
 import Icon from '../../icons/Icon.jsx';
-import { usePianoMix } from '../../PianoMixContext.jsx';
-import MixControls from '../../MixControls.jsx';
+import VolumeModal from '../../VolumeModal.jsx';
 
 const fmt = (s) => {
   let v = Number.isFinite(s) && s > 0 ? Math.floor(s) : 0;
@@ -19,8 +18,7 @@ export default function PianoVideoChrome({
   gateOpen = false,
 }) {
   const barRef = useRef(null);
-  const [mixOpen, setMixOpen] = useState(false);
-  const { pianoLevel, mediaLevel, setPianoLevel, setMediaLevel } = usePianoMix();
+  const [volumeOpen, setVolumeOpen] = useState(false);
   const dur = duration > 0 ? duration : 0;
   const pct = dur ? Math.min(100, (currentTime / dur) * 100) : 0;
   const markPos = (v) => (dur && Number.isFinite(v) ? `${Math.min(100, (v / dur) * 100)}%` : null);
@@ -64,22 +62,10 @@ export default function PianoVideoChrome({
           <button type="button" className={`piano-video-chrome__btn${loopActive ? ' is-on' : ''}`} onClick={onToggleLoop} disabled={gateOpen || !bothMarks} aria-label="Toggle A-B loop"><Icon name="repeat" /></button>
           <button type="button" className="piano-video-chrome__btn" onClick={onClearLoop} disabled={gateOpen || !hasLoop} aria-label="Clear loop"><Icon name="clear-loop" /></button>
         </div>
-        <div className="piano-video-chrome__mix-wrap">
-          <button type="button" className={`piano-video-chrome__btn${mixOpen ? ' is-on' : ''}`} onClick={() => setMixOpen((v) => !v)} disabled={gateOpen} aria-label="Toggle mix controls"><Icon name="volume-up" /></button>
-          {mixOpen && (
-            <div className="piano-video-chrome__mix-flyout">
-              <MixControls
-                pianoLevel={pianoLevel}
-                mediaLevel={mediaLevel}
-                onPiano={(d) => setPianoLevel(pianoLevel + d)}
-                onMedia={(d) => setMediaLevel(mediaLevel + d)}
-                btnClass="piano-video-chrome__btn"
-              />
-            </div>
-          )}
-        </div>
+        <button type="button" className={`piano-video-chrome__btn${volumeOpen ? ' is-on' : ''}`} onClick={() => setVolumeOpen(true)} disabled={gateOpen} aria-label="Volume"><Icon name="volume-up" /></button>
         <button type="button" className="piano-video-chrome__btn piano-video-chrome__btn--fullscreen" onClick={onToggleFullscreen} disabled={gateOpen} aria-label="Toggle fullscreen"><Icon name="fullscreen" /></button>
       </div>
+      <VolumeModal open={volumeOpen} onClose={() => setVolumeOpen(false)} />
     </div>
   );
 }
