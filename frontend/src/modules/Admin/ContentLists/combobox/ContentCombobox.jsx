@@ -550,6 +550,18 @@ export function ContentCombobox({
       )}
 
       <Combobox.Dropdown>
+        {/* Orientation header (BROWSE mode): the committed value isn't among the
+            rendered siblings, so nothing is highlighted — surface it here. */}
+        {isBrowse && value && !items.some((it) => normalizeValue(it.id) === normalizedValue) && (
+          <Box p="xs" data-testid="combobox-current-anchor" style={{ borderBottom: '1px solid var(--mantine-color-dark-4)' }}>
+            <Group gap="xs" wrap="nowrap">
+              <Text size="xs" c="dimmed" style={{ flexShrink: 0 }}>Current:</Text>
+              <Text size="xs" fw={600} truncate>{resolvedTitle || value}</Text>
+              <Text size="xs" c="dimmed" style={{ flexShrink: 0 }}>— not in this list</Text>
+            </Group>
+          </Box>
+        )}
+
         {/* Breadcrumb navigation (BROWSE mode) */}
         {isBrowse && breadcrumbs.length > 0 && (
           <Box p="xs" style={{ borderBottom: '1px solid var(--mantine-color-dark-4)' }}>

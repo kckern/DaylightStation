@@ -273,9 +273,10 @@ export function useContentCombobox({ value, onChange, searchParams = '', appResu
     const foundIndex = (data.referenceIndex != null && data.referenceIndex >= 0)
       ? data.referenceIndex
       : items.findIndex((i) => i.id === normalizedVal);
-    // When the committed value isn't in the loaded window, highlight the first
-    // sibling (ListsItemRow parity) rather than nothing.
-    const referenceIndex = foundIndex >= 0 ? foundIndex : (items.length > 0 ? 0 : -1);
+    // Genuine-miss path: when the committed value isn't in the loaded window,
+    // highlight nothing (idx -1) rather than a phantom row 0. The absence is
+    // surfaced instead by the orientation header in ContentCombobox.
+    const referenceIndex = foundIndex >= 0 ? foundIndex : -1;
     paginationOwnerRef.current = data.pagination ? contentId : null;
     dispatch({
       type: 'BROWSE_LOADED',
