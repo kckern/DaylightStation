@@ -27,15 +27,15 @@ screenshot to confirm).
 | 8 | Poster grids | **OUTDATED→SMALL** | forced 6→3+3 rebalance + ~12 cap (centering already done) | S / optional |
 | 5 | Settings menu | **OUTDATED→SMALL** | subsystem restart (5b); instrument picker extraction (→#12) | S |
 | 11 | Studio recording | **OUTDATED→SMALL** | explicit arm step + review→save/discard (recorder + list already exist) | M |
-| F1 | Touch-reset base styles | **REAL (partial)** | consolidate scattered rules; kill `user-select` globally | S |
-| F3 | Balanced/count-aware grid | **REAL** | tile grid is fixed 5-col; make it count-aware (also fixes #3) | M |
-| F4 | Skeleton loaders | **REAL (partial)** | `PianoEmpty` is bare text; shape it + route ~8 inline bypasses | M |
-| F5 | Spacing scale | **REAL** | no `--sp-*` tokens; spacing is magic rems | S |
+| F1 | Touch-reset base styles | **✅ DONE** (Wave 0) | consolidated base-reset; `user-select` killed globally + text-field escape hatch | — |
+| F3 | Balanced/count-aware grid | **✅ DONE** (Wave 0) | `balancedColumns` helper + `--tile-cols`; menu/games centered | — |
+| F4 | Skeleton loaders | **◑ PRIMITIVE DONE** (Wave 0) | `Skeleton`/`SkeletonPoster` shipped + course-wall proof; per-surface rollout → Wave 0b | M (0b) |
+| F5 | Spacing scale | **✅ DONE** (Wave 0) | `--sp-*` scale added + adopted in tile grid/mode padding | — |
 | 1 | Connect / first-load gate | **REAL** | remove dead Connect btn, promote Continue, add Reboot, BT icon, tile layout | M |
-| 3 | Games submenu | **REAL (small)** | count-aware grid (= F3); 4 games clump left in a 5-col grid | S |
+| 3 | Games submenu | **✅ DONE** (Wave 0) | fixed by the count-aware grid (F3); 4 tiles now centered | — |
 | 6 | Who's-playing turn-off | **✅ DONE** (`d22cf7596`) | shared `usePianoScreenOff`; chip switcher now always shows it | — |
 | 12 | Instrument picker | **REAL** | own UX/lifecycle + icons; today a text grid in Settings | M |
-| 4 | Loaders everywhere | **REAL (= F4)** | see F4 | M |
+| 4 | Loaders everywhere | **◑ IN PROGRESS** | skeleton primitive + course wall done (Wave 0); ~8 inline `"Loading…"` bypasses → Wave 0b | M (0b) |
 | 7 | Header home button | **UNVERIFIED (minor)** | looks acceptable in shots; only if it bugs us | S |
 | 9 | Staff cutoff / centering | **UNVERIFIED** | `overflow:hidden` present; needs a populated staff to confirm | M |
 | 10 | Course video spacing / chord panel | **UNVERIFIED (partial)** | CHORD panel looks tacked-on; video spacing needs a course shot | S–M |

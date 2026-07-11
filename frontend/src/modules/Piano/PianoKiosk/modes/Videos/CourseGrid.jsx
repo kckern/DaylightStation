@@ -2,6 +2,7 @@
 import { useState, useMemo, useEffect, useCallback } from 'react';
 import usePianoList from '../../usePianoList.js';
 import PianoEmpty from '../../PianoEmpty.jsx';
+import { SkeletonPoster } from '../../Skeleton.jsx';
 import CourseTile from './CourseTile.jsx';
 
 const ratingKeyOf = (c) => (c ? String(c).replace(/^plex:/, '') : null);
@@ -132,7 +133,7 @@ export default function CourseGrid({ groups = [], onSelect }) {
 
       <div className="piano-course-tabpanel" role={multi ? 'tabpanel' : undefined}>
         {noGroups && <PianoEmpty message="No video library has been set up yet." />}
-        {loading && <PianoEmpty loading />}
+        {loading && <SkeletonPoster count={8} />}
         {empty && <PianoEmpty message="No videos found." />}
         {courses && courses.length > 0 && (
           <ul className="piano-video-grid piano-video-grid--posters">

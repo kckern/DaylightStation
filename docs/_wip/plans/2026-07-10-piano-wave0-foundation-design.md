@@ -1,7 +1,9 @@
 # Piano Kiosk — Wave 0 Foundation (Design)
 
 **Date:** 2026-07-10
-**Status:** Design validated, ready for an implementation plan.
+**Status:** **Implemented** (Wave 0) on `feat/piano-wave0-foundation`. F5/F1/F3 + skeleton
+primitive + course-wall proof shipped; #3 fixed. **Wave 0b pending** (per-surface skeleton
+rollout + inline `"Loading…"` de-bypass).
 **Parent:** `docs/_wip/audits/2026-07-10-piano-kiosk-redesign-laundry-list-audit.md` (triage +
 sequencing). This is the first build cycle from that backlog.
 
