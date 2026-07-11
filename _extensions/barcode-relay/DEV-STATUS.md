@@ -1,8 +1,24 @@
 # barcode-relay — dev status (WIP, NOT working yet)
 
 **Date:** 2026-07-11 (overnight session)
-**State:** ESP reliably **finds + bonds + holds** the Zebra DS2278 over SSI-BLE, but the
-gun does **not transmit decode data** to the ESP yet. Protocol handshake unsolved.
+**State:** Pivoted from SSI-BLE (proprietary dead end) to **HID-BLE**. The ESP now runs a
+**BLE HID-host** firmware (compiles + flashed) that reads standard keyboard reports and
+assembles the barcode. **Remaining gap = physical only:** switch the gun to HID-BLE mode +
+pull the trigger; then verify/debug the (untested) HID decode path.
+
+### RESUME for the HID-BLE path (current firmware) ← DO THIS
+1. Scan the **"HID Bluetooth Low Energy (Discoverable)"** host barcode on the gun
+   (`.../c-param-desc-hid-bluetooth-low-energy-discoverable.html` — the page KC first linked).
+2. `blueutil --unpair <gun-mac>` if macOS grabs it; start `udp_listen.py`.
+3. Pull the trigger → watch UDP log for `found ... hidSvc=1 → bonded OK → subscribed N HID report char(s)`.
+4. Scan a barcode → expect `>>> SCAN "<value>"`. If chars are wrong/missing, tune the HID
+   report offset / usage table in `firmware/src/main.cpp` (`onReport`, `hidChar`).
+5. Once decode works, add the WS relay (marked `TODO` in `emitBarcode`) → backend `barcode` pipeline.
+
+Fill real WiFi creds in `main.cpp` before flashing (committed with placeholders).
+
+---
+### (Historical) SSI-BLE attempt — ABANDONED, kept for reference
 
 ## Goal
 M5Stack ATOM Lite (ESP32-PICO-D4) BLE-bridges a **Zebra DS2278** in **SSI Bluetooth
