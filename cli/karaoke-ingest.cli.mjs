@@ -76,16 +76,31 @@ async function cmdDiscover(args) {
   const seedIds = rows.filter((r) => r.videoId).map((r) => r.videoId);
   const limit = args.limit ? Number(args.limit) : seedIds.length;
   const collected = [];
+  const MB = 64 * 1024 * 1024;
   for (const id of seedIds.slice(0, limit)) {
-    const channelUrl = `https://www.youtube.com/watch?v=${id}`;
-    // Pull the uploader's recent uploads flat-list.
-    const { stdout } = await exec('yt-dlp', [
-      '--js-runtimes', 'node', '-J', '--flat-playlist', '--no-warnings',
-      '--playlist-end', '40', `https://www.youtube.com/watch?v=${id}`,
-    ], { maxBuffer: 64 * 1024 * 1024 }).catch(() => ({ stdout: '{}' }));
+    // 1) Resolve the seed video's channel (uploads) URL — NOT its own watch URL.
+    let channelUrl = null;
+    try {
+      const { stdout } = await exec('yt-dlp', [
+        '--js-runtimes', 'node', '-J', '--no-warnings', '--no-playlist',
+        `https://www.youtube.com/watch?v=${id}`,
+      ], { maxBuffer: MB });
+      const meta = JSON.parse(stdout);
+      channelUrl = meta.channel_url || meta.uploader_url
+        || (meta.channel_id ? `https://www.youtube.com/channel/${meta.channel_id}` : null);
+    } catch { /* unresolved seed — skip */ }
+    if (!channelUrl) continue;
+    // 2) Flat-list that channel's recent uploads and keep karaoke siblings.
+    const uploadsUrl = /\/videos\/?$/.test(channelUrl) ? channelUrl : `${channelUrl}/videos`;
     let info = {};
-    try { info = JSON.parse(stdout); } catch { info = {}; }
-    const entries = Array.isArray(info.entries) ? info.entries : [info].filter((e) => e && e.id);
+    try {
+      const { stdout } = await exec('yt-dlp', [
+        '--js-runtimes', 'node', '-J', '--flat-playlist', '--no-warnings',
+        '--playlist-end', '40', uploadsUrl,
+      ], { maxBuffer: MB });
+      info = JSON.parse(stdout);
+    } catch { continue; }
+    const entries = Array.isArray(info.entries) ? info.entries : [];
     const kept = filterKaraokeSiblings(entries, existingIds, { karaokeTerms: cfg.KARAOKE_TERMS, rejectTerms: cfg.REJECT_TERMS });
     collected.push(...toCandidateRows(kept, id));
     kept.forEach((k) => existingIds.add(k.id));
