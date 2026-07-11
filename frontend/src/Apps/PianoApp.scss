@@ -404,6 +404,16 @@
     box-shadow: 0 12px 40px rgba(0, 0, 0, 0.45);
   }
 
+  // Piano glyph crowning the card (sizes to its own font-size via .piano-icon 1em).
+  &__mark {
+    display: block;
+    font-size: 3.5rem;
+    line-height: 1;
+    margin-bottom: 0.5rem;
+    color: var(--piano-fg);
+    opacity: 0.9;
+  }
+
   &__title {
     margin: 0;
     font-size: 2.25rem;

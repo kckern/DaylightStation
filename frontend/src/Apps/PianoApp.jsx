@@ -112,6 +112,7 @@ export function ConnectGate({ children }) {
   return (
     <div className="piano-connect-gate">
       <div className="piano-connect-gate__card">
+        <div className="piano-connect-gate__mark"><Icon name="piano-mark" /></div>
         <h1 className="piano-connect-gate__title">Piano</h1>
         {/* Status line doubles as the transient screen-off failure surface. */}
         <p className="piano-connect-gate__status" role="status" aria-live="polite">{screenError || message}</p>
@@ -125,7 +126,7 @@ export function ConnectGate({ children }) {
               className="piano-connect-gate__btn piano-connect-gate__btn--ghost"
               onClick={() => launchAndroidTarget(config.bluetooth)}
             >
-              <Icon name="connection" /> Bluetooth settings
+              <Icon name="bluetooth-active" /> Bluetooth settings
             </button>
           )}
           <button
@@ -133,7 +134,7 @@ export function ConnectGate({ children }) {
             className="piano-connect-gate__btn piano-connect-gate__btn--ghost"
             onClick={() => setDismissed(true)}
           >
-            Continue without piano
+            <Icon name="media-playlist-consecutive" /> Continue without piano
           </button>
         </div>
 
@@ -147,7 +148,7 @@ export function ConnectGate({ children }) {
             aria-live="polite"
             onClick={triggerScreenOff}
           >
-            {screenArmed ? 'Tap again to confirm' : 'Turn off screen'}
+            <Icon name="system-shutdown" /> {screenArmed ? 'Tap again to confirm' : 'Turn off screen'}
           </button>
           {deviceId && (
             <button
@@ -156,7 +157,7 @@ export function ConnectGate({ children }) {
               aria-live="polite"
               onClick={triggerReboot}
             >
-              <Icon name="repeat" /> {rebootArmed ? 'Tap again to reboot' : 'Reboot device'}
+              <Icon name="system-reboot" /> {rebootArmed ? 'Tap again to reboot' : 'Reboot device'}
             </button>
           )}
         </div>
