@@ -59,4 +59,50 @@ describe('runIngest', () => {
     expect(calls.downloads).toHaveLength(0);
     expect(calls.saved).toBeNull();
   });
+
+  it('honors force to re-download an already-downloaded row', async () => {
+    const { deps, calls } = fakeDeps();
+    const rows = [pendingRow({ status: 'downloaded', episode: 1, videoId: 'old' })];
+    const summary = await runIngest({ rows, config: baseCfg, deps, options: { force: true } });
+    expect(summary.downloaded).toBe(1);
+    expect(calls.downloads).toHaveLength(1);
+    expect(calls.saved[0].videoId).toBe('vid1');
+  });
+
+  it('skips a pending row whose output file already exists (no force)', async () => {
+    const { deps, calls } = fakeDeps({ fileExists: async () => true });
+    const summary = await runIngest({ rows: [pendingRow()], config: baseCfg, deps, options: {} });
+    expect(summary.skipped).toBe(1);
+    expect(calls.downloads).toHaveLength(0);
+    expect(calls.saved[0].status).toBe('downloaded');
+  });
+
+  it('processes only the requested season', async () => {
+    const { deps, calls } = fakeDeps();
+    const rows = [pendingRow({ season: 1 }), pendingRow({ season: 2 })];
+    const summary = await runIngest({ rows, config: baseCfg, deps, options: { season: 2 } });
+    expect(summary.downloaded).toBe(1);
+    expect(calls.downloads[0].outPath).toContain('S02E01');
+  });
+
+  it('caps attempted rows with limit (bounds search volume)', async () => {
+    let searches = 0;
+    const { deps } = fakeDeps({
+      search: async () => { searches++; return [{ id: 'vid1', title: 'Viva la Vida Karaoke', channel: 'Sing King', viewCount: 100, duration: 240 }]; },
+    });
+    const rows = [pendingRow(), pendingRow(), pendingRow()];
+    const summary = await runIngest({ rows, config: baseCfg, deps, options: { limit: 2 } });
+    expect(summary.downloaded).toBe(2);
+    expect(searches).toBe(2);
+  });
+
+  it('uses a pinned URL without searching', async () => {
+    let searched = false;
+    const { deps, calls } = fakeDeps({ search: async () => { searched = true; return []; } });
+    const rows = [pendingRow({ searchHint: 'https://www.youtube.com/watch?v=PINNED12345' })];
+    const summary = await runIngest({ rows, config: baseCfg, deps, options: {} });
+    expect(searched).toBe(false);
+    expect(summary.downloaded).toBe(1);
+    expect(calls.saved[0].videoId).toBe('PINNED12345');
+  });
 });
