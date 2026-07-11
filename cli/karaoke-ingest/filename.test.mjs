@@ -15,7 +15,7 @@ describe('buildEpisodeFilename', () => {
 });
 
 describe('assignEpisodes', () => {
-  it('numbers sequentially within each season in list order, preserving existing numbers', () => {
+  it('numbers new episodes above each season\'s existing max, preserving explicit numbers', () => {
     const rows = [
       { season: 1, episode: null, artist: 'A', song: 'a', searchHint: '', status: 'pending', videoId: '' },
       { season: 2, episode: null, artist: 'B', song: 'b', searchHint: '', status: 'pending', videoId: '' },
@@ -23,6 +23,17 @@ describe('assignEpisodes', () => {
       { season: 1, episode: null, artist: 'D', song: 'd', searchHint: '', status: 'pending', videoId: '' },
     ];
     const out = assignEpisodes(rows);
-    expect(out.map((r) => [r.season, r.episode])).toEqual([[1, 1], [2, 1], [1, 5], [1, 6]]);
+    expect(out.map((r) => [r.season, r.episode])).toEqual([[1, 6], [2, 1], [1, 5], [1, 7]]);
+  });
+
+  it('never assigns a duplicate episode within a season, even when nulls precede a low explicit number', () => {
+    const rows = [
+      { season: 1, episode: null, artist: 'A', song: 'a', searchHint: '', status: 'pending', videoId: '' },
+      { season: 1, episode: null, artist: 'B', song: 'b', searchHint: '', status: 'pending', videoId: '' },
+      { season: 1, episode: 1,    artist: 'C', song: 'c', searchHint: '', status: 'downloaded', videoId: 'x' },
+    ];
+    const eps = assignEpisodes(rows).map((r) => r.episode);
+    expect(new Set(eps).size).toBe(eps.length);
+    expect(eps).toEqual([2, 3, 1]);
   });
 });
