@@ -67,7 +67,19 @@ export function useLifePlan(username) {
     }
   }, [qs, fetchPlan]);
 
-  return { plan, isEmpty, loading, error, refetch: fetchPlan, updateSection };
+  // Author a new value (backend assigns the next rank). Throws on failure so
+  // the caller (modal) can surface the error inline; refetches on success.
+  const createValue = useCallback(async ({ name, description } = {}) => {
+    const value = await api(`/values${qs}`, {
+      method: 'POST',
+      body: JSON.stringify({ name, description }),
+    });
+    await fetchPlan();
+    logger().info('value-created', { valueId: value?.id });
+    return value;
+  }, [qs, fetchPlan]);
+
+  return { plan, isEmpty, loading, error, refetch: fetchPlan, updateSection, createValue };
 }
 
 /**
@@ -111,7 +123,20 @@ export function useGoals(username, state) {
     return result;
   }, [username, fetchGoals]);
 
-  return { goals, loading, error, refetch: fetchGoals, transitionGoal };
+  // Author a new goal. Throws on failure so the caller can surface the error
+  // inline; refetches the goal list on success and returns the created goal.
+  const createGoal = useCallback(async ({ name, why, milestone } = {}) => {
+    const userQs = username ? `?username=${username}` : '';
+    const goal = await api(`/goals${userQs}`, {
+      method: 'POST',
+      body: JSON.stringify({ name, why, milestone }),
+    });
+    await fetchGoals();
+    logger().info('goal-created', { goalId: goal?.id });
+    return goal;
+  }, [username, fetchGoals]);
+
+  return { goals, loading, error, refetch: fetchGoals, transitionGoal, createGoal };
 }
 
 /**
@@ -177,7 +202,19 @@ export function useBeliefs(username) {
     return result;
   }, [qs, fetchBeliefs]);
 
-  return { beliefs, loading, error, refetch: fetchBeliefs, addEvidence };
+  // Author a new belief. Throws on failure so the caller can surface the error
+  // inline; refetches on success and returns the created belief.
+  const createBelief = useCallback(async ({ if_hypothesis, then_outcome } = {}) => {
+    const belief = await api(`/beliefs${qs}`, {
+      method: 'POST',
+      body: JSON.stringify({ if_hypothesis, then_outcome }),
+    });
+    await fetchBeliefs();
+    logger().info('belief-created', { beliefId: belief?.id });
+    return belief;
+  }, [qs, fetchBeliefs]);
+
+  return { beliefs, loading, error, refetch: fetchBeliefs, addEvidence, createBelief };
 }
 
 /**
