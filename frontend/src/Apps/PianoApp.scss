@@ -1849,10 +1849,12 @@
 }
 
 .piano-voicecard {
-  width: 100%; display: flex; flex-direction: column; gap: 0.2rem; text-align: left;
+  width: 100%; display: grid; grid-template-columns: auto 1fr; align-items: center;
+  column-gap: 0.6rem; row-gap: 0.1rem; text-align: left;
   background: var(--piano-surface-2); border: 1px solid var(--piano-border);
   border-radius: var(--r-md); color: inherit; padding: 0.6rem 0.75rem; cursor: pointer;
   &.is-active { border-color: var(--piano-accent); background: var(--piano-surface); }
+  &__icon { grid-row: 1 / span 2; font-size: 1.7rem; line-height: 1; }
   &__tag { font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--piano-muted); }
   &__name { font-weight: 700; }
 }

@@ -6,6 +6,7 @@ import { usePianoKioskConfig } from './PianoConfig.jsx';
 import { useScreenControl, screenOffFailureMessage } from './useScreenControl.js';
 import { useArmedAction } from './useArmedAction.js';
 import { launchAndroidTarget } from '../../../lib/fkb.js';
+import { instrumentEmoji } from './instrumentIcon.js';
 import PianoMidiMonitor from './PianoMidiMonitor.jsx';
 import PianoKeyboardPanel from './PianoKeyboardPanel.jsx';
 import FeedbackOverlay from '@/modules/Feedback/FeedbackOverlay.jsx';
@@ -106,6 +107,7 @@ export default function PianoSettingsSheet({ open, onClose }) {
               return (
                 <li key={s.id}>
                   <button type="button" className={`piano-voicecard${on ? ' is-active' : ''}`} aria-pressed={on} onClick={() => select(s.id)}>
+                    <span className="piano-voicecard__icon" aria-hidden="true">{instrumentEmoji(s.name)}</span>
                     <span className="piano-voicecard__tag">{s.kind === 'onboard' ? 'Onboard' : engineTag(s.inst?.engine)}</span>
                     <span className="piano-voicecard__name">{s.name}</span>
                   </button>
