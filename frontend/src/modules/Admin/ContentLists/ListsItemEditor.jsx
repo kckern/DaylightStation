@@ -120,6 +120,7 @@ function SimpleMode({ formData, onChange, errors, sections }) {
           value={formData.input}
           onChange={(val) => onChange('input', val)}
           placeholder="Search content or type source:id"
+          selectContainers
         />
         <Text size="xs" c="dimmed" mt={4}>
           Search or type directly: plex:123, media:path, youtube:xyz
