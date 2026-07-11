@@ -47,8 +47,11 @@ function dedupeKey(intent) {
  * render time — the worst case is a non-clickable toast (resilience rider B4).
  *
  * Relative paths (starting with `/`) navigate in-app via react-router and are
- * inherently safe; absolute http(s) urls are validated with `new URL(...)`
- * inside a try/catch before we hand them to window.location.
+ * inherently safe; absolute urls are validated with `new URL(...)` inside a
+ * try/catch AND restricted to the http(s) schemes before we hand them to
+ * window.location — `javascript:`, `mailto:`, `data:` etc. parse fine via
+ * `new URL` but must never reach `window.location.assign` (XSS vector), so any
+ * non-http(s) scheme falls back to a plain, non-clickable toast.
  */
 function resolveAction(intent, navigate) {
   const rawUrl = intent?.actions?.[0]?.data?.url;
@@ -56,10 +59,17 @@ function resolveAction(intent, navigate) {
 
   const isRelative = rawUrl.startsWith('/');
   if (!isRelative) {
-    // Validate absolute urls up front; bail to a plain toast if unparseable.
+    // Validate absolute urls up front; bail to a plain toast if unparseable
+    // or if the scheme isn't http(s).
     try {
-      // eslint-disable-next-line no-new
-      new URL(rawUrl);
+      const parsed = new URL(rawUrl);
+      if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+        logger().warn('notification.action.blocked_scheme', {
+          url: rawUrl,
+          protocol: parsed.protocol,
+        });
+        return null;
+      }
     } catch (err) {
       logger().warn('notification.action.invalid_url', { url: rawUrl, error: err.message });
       return null;
