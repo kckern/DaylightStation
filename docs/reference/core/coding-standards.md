@@ -625,3 +625,23 @@ The `ItemId` value object (in `2_domains/content`) parses compound `source:local
 | Magic numbers | `timeout: 5000` | `timeout: DEFAULT_TIMEOUT_MS` |
 | Commented-out code | `// old implementation...` | Delete it (git has history) |
 | TODO without context | `// TODO: fix this` | `// TODO(username): description + issue link` |
+
+---
+
+## Admin Save Models (2026-07-10, audit C2)
+
+Admin editing surfaces fall into two interaction models. Pick by intent; do not mix within one surface.
+
+| Model | Use for | Mechanism |
+|-------|---------|-----------|
+| **Curation** (frequent small edits, low stakes) | ContentLists rows, Art crop/tag, PlaybackHub controls | Autosave per action + toast on failure + Undo for destructive ops. No Save button. |
+| **Configuration** (deliberate, review-before-commit) | Config file editors, per-app config forms, Household member/device editors | Stage edits → explicit Save/Revert via the shared `SaveBar` + `useUnsavedGuard(dirty)`. Never hand-roll the save bar. |
+
+### Rules
+
+- **Configuration surfaces MUST use `shared/SaveBar` + `shared/useUnsavedGuard`.** The guard wires `beforeunload` and AdminNav's ConfirmModal interception so staged edits are never silently discarded on nav-away. `ConfigFormWrapper` already includes both; editors with bespoke data flows call them directly (see `Household/MemberEditor.jsx`).
+- **Curation surfaces MUST surface mutation failures.** Optimistic local updates that fail silently leave the UI lying. Wrap writes so a rejection shows a `notifyFailure`/`runWithFeedback` toast and re-syncs state (refetch). See `ContentLists/ListsFolder.jsx`'s `mutate()` helper.
+- **One confirmation model.** Destructive config actions use `shared/ConfirmModal`. Destructive curation actions prefer an Undo toast (`shared/feedback.js` `showUndoToast`) over a modal gate. Never `window.confirm`.
+- **Shared formatters live in `Admin/utils/formatters.js`.** Do not re-implement `formatSize`/`formatDuration`/`cronToHuman`/`capitalize` locally — import them. Extend the shared version (with a test) if a caller needs more.
+
+See `docs/_wip/audits/2026-07-09-admin-ux-user-journey-and-combobox-audit.md` (C1–C5) for the findings this codifies.

@@ -11,6 +11,7 @@ import { YamlLifeplanMetricsStore } from '#adapters/persistence/yaml/YamlLifepla
 import { YamlCeremonyRecordStore } from '#adapters/persistence/yaml/YamlCeremonyRecordStore.mjs';
 import { CeremonyService } from '#apps/lifeplan/services/CeremonyService.mjs';
 import { FeedbackService } from '#apps/lifeplan/services/FeedbackService.mjs';
+import { PlanAuthoringService } from '#apps/lifeplan/services/PlanAuthoringService.mjs';
 import { RetroService } from '#apps/lifeplan/services/RetroService.mjs';
 import { DriftService } from '#apps/lifeplan/services/DriftService.mjs';
 import { AlignmentService } from '#apps/lifeplan/services/AlignmentService.mjs';
@@ -25,13 +26,25 @@ import createLifeRouter from '#api/v1/routers/life.mjs';
  * @param {Object} deps.aggregator - LifelogAggregator instance
  * @param {Object} [deps.notificationService] - Notification service for ceremony reminders
  * @param {Object} [deps.userService] - UserService for username validation/profiles
+ * @param {Function} [deps.listHouseholdUsers] - Returns household usernames for the switcher
  * @param {string} [deps.defaultUsername] - Username used when requests omit one
+ * @param {string} [deps.timezone] - IANA household timezone for cadence math (defaults to UTC)
  * @param {Object} [deps.clock] - Injectable clock
  * @param {Object} [deps.logger] - Logger instance
  * @returns {Object} { router, container, ceremonyScheduler, services }
  */
 export function bootstrapLifeplan(deps) {
-  const { dataPath, aggregator, notificationService, userService, defaultUsername, clock, logger } = deps;
+  const { dataPath, aggregator, notificationService, userService, listHouseholdUsers, defaultUsername, timezone, clock, logger } = deps;
+
+  // Validate the household timezone at the composition seam (the domain has no
+  // logger; CadenceService itself falls back to UTC on an invalid zone).
+  if (timezone) {
+    try {
+      new Intl.DateTimeFormat('en-CA', { timeZone: timezone });
+    } catch {
+      logger?.warn('cadence.invalid_timezone', { timezone, fallback: 'UTC' });
+    }
+  }
 
   // Persistence stores (constructed here at the composition root; the
   // container receives instances per Decision D1)
@@ -39,6 +52,7 @@ export function bootstrapLifeplan(deps) {
     lifePlanStore: new YamlLifePlanStore({ basePath: dataPath }),
     metricsStore: new YamlLifeplanMetricsStore({ basePath: dataPath }),
     ceremonyRecordStore: new YamlCeremonyRecordStore({ basePath: dataPath }),
+    timezone,
   });
 
   // Application services
@@ -46,10 +60,17 @@ export function bootstrapLifeplan(deps) {
     lifePlanStore: container.getLifePlanStore(),
   });
 
+  // Single write path for plan genesis + authoring (REST now, coach tools in C2)
+  const planAuthoringService = new PlanAuthoringService({
+    lifePlanStore: container.getLifePlanStore(),
+  });
+
   const driftService = new DriftService({
     lifePlanStore: container.getLifePlanStore(),
     metricsStore: container.getMetricsStore(),
     aggregator,
+    cadenceService: container.getCadenceService(),
+    clock,
   });
 
   const ceremonyService = new CeremonyService({
@@ -68,6 +89,7 @@ export function bootstrapLifeplan(deps) {
     lifePlanStore: container.getLifePlanStore(),
     metricsStore: container.getMetricsStore(),
     cadenceService: container.getCadenceService(),
+    ceremonyRecordStore: container.getCeremonyRecordStore(),
   });
 
   // Ceremony scheduler
@@ -76,6 +98,7 @@ export function bootstrapLifeplan(deps) {
     lifePlanStore: container.getLifePlanStore(),
     ceremonyRecordStore: container.getCeremonyRecordStore(),
     cadenceService: container.getCadenceService(),
+    timezone,
     clock,
     logger,
   });
@@ -85,11 +108,13 @@ export function bootstrapLifeplan(deps) {
     ...container.getRouterConfig(),
     ceremonyService,
     feedbackService,
+    planAuthoringService,
     retroService,
     alignmentService,
     driftService,
     aggregator,
     userService,
+    listHouseholdUsers,
     defaultUsername,
   };
 
@@ -106,6 +131,7 @@ export function bootstrapLifeplan(deps) {
     services: {
       ceremonyService,
       feedbackService,
+      planAuthoringService,
       retroService,
       driftService,
       alignmentService,

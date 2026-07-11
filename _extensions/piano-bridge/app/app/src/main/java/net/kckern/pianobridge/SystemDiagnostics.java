@@ -101,9 +101,11 @@ public final class SystemDiagnostics {
         JSONObject o = new JSONObject();
         BleMidiConnector ble = service.getBleConnector();
         A2dpConnector spk = service.getA2dpConnector();
+        AudioRouteGuard guard = service.getAudioGuard();
         o.put("engine", service.isEngineRunning() ? "running" : "stopped");
         o.put("ble", ble != null ? ble.status() : JSONObject.NULL);
         o.put("speaker", spk != null ? spk.status() : JSONObject.NULL);
+        o.put("guard", guard != null ? guard.status() : JSONObject.NULL);
         o.put("uptimeMs", SystemClock.elapsedRealtime());
         return o;
     }

@@ -1033,3 +1033,88 @@ git commit -m "docs(piano-bridge): correct dumpsys/startForeground/settings-writ
 - **Restoring the speaker volume.** No code path raises the built-in speaker index. Adding one would defeat the guard. If the tablet ever legitimately needs speaker audio, do it manually and knowingly.
 - **`A2dpConnector` reconnect hardening.** Its `connect()` has never demonstrably worked. Task 9 Step 6 is the first real test. If it proves unreliable against a bonded device, that is a separate fix with its own plan — but the guard's correctness does not depend on it.
 - **Frontend surfacing.** `routeOk`/`reason` are exposed over HTTP but not shown in the kiosk UI. Worth doing once the guard has run for a week, so the UI reflects real failure modes rather than guessed ones.
+
+---
+
+## Verification results (measured on hardware, 2026-07-09)
+
+Shipped as APK versionCode **18** / versionName `1.10-audio-guard`, deployed to the
+live SM-T590 and exercised end to end. All figures below are from hardware, not a
+simulator.
+
+### Bootstrap trace (the one-time exposure window)
+
+From the `Diag` ring (monotonic ms since boot) during `POST /audio-guard/bootstrap`:
+
+```
+77584336  A2DP disconnect(64:49:A5:8B:9B:75) -> true
+77584970  clamped built-in speaker STREAM_MUSIC to 0 (reason=no_a2dp_output)   +634 ms
+77584970  route GATED reason=no_a2dp_output
+77585032  A2DP "speaker disconnected — reconnecting (#1)"                      +696 ms
+77586889  connect(64:49:A5:8B:9B:75) -> true
+77587636  speaker connected
+77588102  route OK reason=ok
+```
+
+- **`AudioDeviceCallback` fired ~634 ms after the disconnect and LED the A2DP
+  broadcast by ~62 ms** — it is the fast trigger. This bounds the one-time exposure
+  window only, not steady-state latency.
+- Full outage (disconnect → route OK again): **~3.8 s**.
+- The bootstrap endpoint's own `reconcile()` ran ~1.9 s after the clamp and did
+  **not** re-clamp (`clamps` stayed 1) — the policy's idempotent `speakerIndex > 0`
+  guard, exercised on real hardware.
+
+### Clamp landed on the right device
+
+- Per-device indices after the clamp: `volume_music_speaker=0`,
+  `volume_music_bt_a2dp=15`, `volume_music_headset=8`. Only the speaker was zeroed.
+- `dumpsys audio` after: `2 (speaker): 0\0`, `80 (bt_a2dp): 15\150`,
+  `Devices: bt_a2dp`.
+- Zero `UnsatisfiedLinkError` — both `nativeSetOutputGate` and
+  `nativeIsStreamRunning` bind at runtime.
+
+### Reconnect: `A2dpConnector.connect()` works against a BONDED device
+
+The historical `reconnects: 5153` were **all** failures against an UNBONDED MAC
+(`bondState: none`), which the code reported in `lastError` ("speaker not bonded")
+where nothing surfaced it. Against the bonded speaker, `connect()` succeeded.
+**Recommendation:** surface `lastError` in `pbctl diag` so the next investigator
+sees why a reconnect failed instead of re-deriving it.
+
+### Reboot survival: INFERRED, NOT VERIFIED
+
+The clamped value lives in the `Settings.System` DB — the store `AudioService`
+reads at boot — and was still `0` half an hour after the clamp, but the tablet did
+NOT reboot during this session (`uptimeMs` ≈ 21.7 h, same PID throughout). Treat
+reboot survival as **inferred, not verified**. One-line check after the next reboot:
+
+```bash
+curl -s "http://<tablet>:8770/getsetting?ns=system&key=volume_music_speaker"   # want 0
+```
+
+### Fail-closed policy held under an unanticipated config
+
+During the deploy the on-device config override was clobbered down to a single key
+(see below), leaving `speakerMac` empty. With no `speakerMac` the guard correctly
+**refused to clamp** (an A2DP output device was present → `speakerIsRoute` false):
+gated, but no wrongful volume write. The fail-closed policy held under a config it
+never anticipated.
+
+### Deployment findings
+
+- **Deploy is a PULL.** `GET|POST /update?url=<apk-url>` makes the bridge fetch the
+  APK over HTTP, so it must be served on the LAN — there is no upload endpoint.
+  `versionCode` must strictly increase (now 18).
+- **Install needs one physical tap** (FKB is not device owner). The `/update`
+  endpoint blocks past a 25 s curl timeout while waiting on the confirm dialog — a
+  client timeout does **NOT** mean the install failed.
+- **ADB over WiFi was unavailable.** Port 5555 was refused after a reboot,
+  `setprop service.adb.tcp.port` is denied to `untrusted_app`, and although
+  `adb_enabled=1` it was USB-only. Plan for the `/update` (pull) path.
+- **The service does not auto-start after a replace-install** (fresh-install stopped
+  state). Relaunch ADB-free with `node cli/fkb.cli.mjs launch net.kckern.pianobridge`.
+- **OPEN BUG — config clobber.** The replace-install clobbered the on-device config
+  override at `/data/user/0/net.kckern.pianobridge/files/piano-devices.yml` down to a
+  single key (`fkbWakeSuppressUntilEpochMs`), losing `speakerMac`, `targetMac`,
+  `targetName`, `blocklistMacs`, ports, and timeouts. **Back up `GET /config` before
+  every install** and restore with `POST /config` (YAML body). Worth a separate fix.

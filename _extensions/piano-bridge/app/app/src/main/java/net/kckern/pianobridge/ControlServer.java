@@ -115,7 +115,9 @@ public class ControlServer extends NanoWSD {
                             .put("POST /kiosk/beat            (page heartbeat ingest: {fps,visibility,url})")
                             .put("GET /crashlog               (durable death/crash + reboot-cap record)")
                             .put("GET|POST /update?url=<apk-url>  (ADB-free self-update; one-tap confirm)")
-                            .put("GET /speaker · POST /speaker  (A2DP speaker status / force reconnect)")
+                            .put("GET /speaker · POST /speaker  (A2DP speaker status+guard / force reconnect)")
+                            .put("POST /audio-guard/bootstrap   (spend the one-time clamp window: drop→clamp→reconnect)")
+                            .put("POST /audio-guard/override?ms=60000  (reopen SYNTH gate only, time-boxed; never unclamps)")
                             // ADB-replacement diagnostics (untrusted_app sandbox; no other-process CPU):
                             .put("GET|POST /exec?cmd=…[&timeout=10000]  (sh -c as app uid)")
                             .put("GET /cpu?ms=600             (OWN per-thread CPU, in-process)")
@@ -169,7 +171,36 @@ public class ControlServer extends NanoWSD {
                     A2dpConnector spk = service.getA2dpConnector();
                     if (spk == null) return json(err("no_a2dp"));
                     if (method == NanoHTTPD.Method.POST) { spk.connectNow(); return json(ok().put("action", "speaker_connect")); }
-                    return json(ok().put("speaker", spk.status()));
+                    JSONObject o = ok().put("speaker", spk.status());
+                    AudioRouteGuard g = service.getAudioGuard();
+                    o.put("guard", g != null ? g.status() : JSONObject.NULL);
+                    return json(o);
+                }
+                case "/audio-guard/bootstrap": {
+                    // Spend the one-time exposure window on purpose: drop A2DP, let the
+                    // reconciler clamp the speaker index to 0, then reconnect. After this
+                    // the speaker is silent permanently (AudioService persists the index).
+                    A2dpConnector spk = service.getA2dpConnector();
+                    AudioRouteGuard g = service.getAudioGuard();
+                    if (spk == null || g == null) return json(err("not_ready"));
+                    spk.disconnectNow();
+                    Thread.sleep(2500);   // let the route actually fall back to the speaker
+                    g.reconcile();        // clamp lands here
+                    JSONObject after = g.status();
+                    spk.connectNow();
+                    return json(ok().put("action", "bootstrap").put("guard", after));
+                }
+                case "/audio-guard/override": {
+                    AudioRouteGuard g = service.getAudioGuard();
+                    if (g == null) return json(err("not_ready"));
+                    String ms = session.getParms().get("ms");
+                    long dur;
+                    try { dur = (ms == null) ? 60000L : Long.parseLong(ms); }
+                    catch (NumberFormatException nfe) { return json(err("bad_ms")); }
+                    dur = Math.min(600000L, Math.max(0L, dur));
+                    g.setOverrideUntil(System.currentTimeMillis() + dur);
+                    g.reconcile();
+                    return json(ok().put("overrideMs", dur).put("guard", g.status()));
                 }
                 case "/connect":
                     if (ble == null) return json(err("no_connector"));

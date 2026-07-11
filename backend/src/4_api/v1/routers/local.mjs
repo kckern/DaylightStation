@@ -20,6 +20,7 @@ import crypto from 'crypto';
 import { spawn } from 'child_process';
 import { asyncHandler, errorHandlerMiddleware } from '#system/http/middleware/index.mjs';
 import { dirExists, fileExists } from '#system/utils/FileIO.mjs';
+import { splatPath } from '#api/utils/wildcard.mjs';
 
 const MIME_TYPES = {
   '.mp3': 'audio/mpeg',
@@ -80,12 +81,14 @@ export function createLocalRouter(config) {
    * GET /local/browse/*
    * Browse folder contents
    */
-  router.get('/browse/*', asyncHandler(async (req, res) => {
+  router.get('/browse{/*splat}', asyncHandler(async (req, res) => {
     if (!localMediaAdapter) {
       return res.status(503).json({ error: 'Local media adapter not configured' });
     }
 
-    const relativePath = decodeURIComponent(req.params[0] || '');
+    // Params arrive pre-decoded (Express 4 did too — the old decodeURIComponent
+    // here was double-decoding). See splatPath docstring.
+    const relativePath = splatPath(req);
     const items = await localMediaAdapter.getList(relativePath);
 
     res.json({
@@ -98,8 +101,10 @@ export function createLocalRouter(config) {
    * GET /local/stream/*
    * Stream media file with range request support
    */
-  router.get('/stream/*', asyncHandler(async (req, res) => {
-    const relativePath = decodeURIComponent(req.params[0] || '');
+  router.get('/stream{/*splat}', asyncHandler(async (req, res) => {
+    // Params arrive pre-decoded (the old decodeURIComponent was double-decoding);
+    // see splatPath docstring.
+    const relativePath = splatPath(req);
     if (!relativePath) {
       return res.status(400).json({ error: 'No path specified' });
     }
@@ -166,8 +171,10 @@ export function createLocalRouter(config) {
    * GET /local/thumbnail/*
    * Get thumbnail for media file (on-demand generation)
    */
-  router.get('/thumbnail/*', asyncHandler(async (req, res) => {
-    const relativePath = decodeURIComponent(req.params[0] || '');
+  router.get('/thumbnail{/*splat}', asyncHandler(async (req, res) => {
+    // Params arrive pre-decoded (the old decodeURIComponent was double-decoding);
+    // see splatPath docstring.
+    const relativePath = splatPath(req);
     if (!relativePath) {
       return res.status(400).json({ error: 'No path specified' });
     }

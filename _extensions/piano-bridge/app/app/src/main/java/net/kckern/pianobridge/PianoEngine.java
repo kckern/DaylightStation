@@ -98,6 +98,21 @@ public final class PianoEngine {
         Log.i(TAG, "PianoEngine.panic");
     }
 
+    /**
+     * Open/close the fail-closed output gate. Closed = VoiceHost renders silence
+     * regardless of engine state. Cheap and idempotent; called by the reconciler.
+     */
+    public synchronized void setOutputGate(boolean open) {
+        if (handle == 0L) return;
+        nativeSetOutputGate(handle, open);
+    }
+
+    /** @return true iff the native Oboe output stream is open and started. */
+    public synchronized boolean isStreamRunning() {
+        if (handle == 0L) return false;
+        return nativeIsStreamRunning(handle);
+    }
+
     /** Free native resources. The instance must not be used afterward. */
     public synchronized void release() {
         if (handle == 0L) return;
@@ -130,6 +145,8 @@ public final class PianoEngine {
     private static native void nativeNoteOn(long handle, int note, int velocity);
     private static native void nativeNoteOff(long handle, int note);
     private static native void nativePanic(long handle);
+    private static native void nativeSetOutputGate(long handle, boolean open);
+    private static native boolean nativeIsStreamRunning(long handle);
     private static native void nativeRelease(long handle);
     private static native float nativeCpuLoad(long handle);
     private static native int nativeXruns(long handle);

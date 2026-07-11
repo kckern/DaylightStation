@@ -714,16 +714,17 @@ export class WakeAndLoadService {
     if (!this.#eventBus || typeof this.#eventBus.subscribe !== 'function') return;
 
     // Extract a content identifier for watchdog matching.
-    // Preference order: prewarmContentId (set by Task 2 when Plex prewarm
-    // resolves a named queue to an actual content id) > explicit contentId
-    // > shared CONTENT_ID_KEYS resolution (queue, play, play-next, hymn, …)
-    // > list. resolveContentId keeps this in lockstep with the WS-envelope
-    // delivery paths, so play-next dispatches are watched too (2026-07-07 bug).
+    // Preference order: prewarmContentId (set when Plex prewarm resolves a
+    // named queue to a concrete content id) > explicit contentId > shared
+    // CONTENT_ID_KEYS resolution (queue, play, play-next, hymn, …).
+    // resolveContentId keeps this in lockstep with the WS-envelope delivery
+    // paths, so play-next dispatches are watched too (2026-07-07 bug).
+    // Menu/list opens resolve to null and correctly do not arm — a browse
+    // action never emits playback.log, so arming would false-timeout.
     const expectedContentId =
       contentQuery.prewarmContentId
       || contentQuery.contentId
-      || resolveContentId(contentQuery)?.contentId
-      || contentQuery.list;
+      || resolveContentId(contentQuery)?.contentId;
     if (!expectedContentId) return;
 
     let resolved = false;

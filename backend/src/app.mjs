@@ -271,7 +271,8 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   });
 
   if (!configExists) {
-    app.get('*', (req, res, next) => {
+    // Express 5: '/{*splat}' (optional named wildcard) replaces the bare '*' catch-all
+    app.get('/{*splat}', (req, res, next) => {
       if (req.path.startsWith('/ws/')) return next();
       res.status(500).json({ error: 'Application not configured. Ensure system.yml exists.' });
     });
@@ -695,9 +696,14 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   // The default telegram adapter is constructed later in createMessagingServices,
   // so it's late-bound here and assigned after that call.
   const notificationTelegram = { adapter: null };
+  // Absolute base URL for Telegram inline deep-link buttons (e.g. the ceremony
+  // "Begin" action). No dedicated ConfigService getter exists, so read it from the
+  // system app config; an unset value ⇒ text-only nudges (no button).
+  const notificationPublicBaseUrl = configService.getAppConfig('system')?.public_url ?? null;
   const notificationStack = bootstrapNotifications({
     eventBus,
     telegramAdapter: () => notificationTelegram.adapter,
+    publicBaseUrl: notificationPublicBaseUrl,
     resolveChatId: (username) =>
       userService.getProfile(username)?.identities?.telegram?.user_id
         ?? configService.resolvePlatformId('telegram', username),
@@ -715,7 +721,15 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     aggregator: lifelogServices.lifelogAggregator,
     notificationService: notificationStack.notificationService,
     userService,
+    // Household roster for the /life user switcher. getHouseholdUsers may return
+    // plain usernames or richer { username } objects — normalize to usernames.
+    listHouseholdUsers: () => (
+      (configService.getHouseholdUsers(configService.getDefaultHouseholdId()) || [])
+        .map((u) => (typeof u === 'string' ? u : (u?.username || u?.userId || u?.name)))
+        .filter(Boolean)
+    ),
     defaultUsername: configService.getHeadOfHousehold() || 'default',
+    timezone: configService.getHouseholdTimezone(),
     clock: null,
     logger: rootLogger.child({ module: 'lifeplan' }),
   });
@@ -1669,7 +1683,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     logger: rootLogger.child({ module: 'gratitude-api' })
   });
 
-  // Printer router — thermal printer control, multi-printer via :location? URL segment
+  // Printer router — thermal printer control, multi-printer via optional {/:location} URL segment
   v1Routers.printer = createPrinterRouter({
     printerRegistry: hardwareAdapters.printerRegistry,
     logger: rootLogger.child({ module: 'printer-api' })
@@ -2400,14 +2414,32 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     notificationService: notificationStack.notificationService,
   });
 
-  // Lifeplan ceremony reminders — daily check for due ceremonies across all
-  // users with a life plan. Dedupe is per period via ceremony records, so a
-  // completed ceremony is never re-notified.
+  // Lifeplan ceremony reminders — hourly check for due ceremonies across all
+  // users with a life plan. CeremonyScheduler gates each ceremony to its
+  // household-local delivery hour (plan.ceremonies[type].at or per-type
+  // default), so each nudge fires at most once per day. Dedupe is per period
+  // via ceremony records, so a completed ceremony is never re-notified.
   if (agentsServices.scheduler) {
-    agentsServices.scheduler.registerTask('lifeplan:ceremony-check', '0 7 * * *', async () => {
+    agentsServices.scheduler.registerTask('lifeplan:ceremony-check', '0 * * * *', async () => {
       const lifePlanStore = lifeplanResult.container.getLifePlanStore();
       for (const username of lifePlanStore.listUsernames()) {
         await lifeplanResult.ceremonyScheduler.checkAndNotify(username);
+      }
+    });
+  }
+
+  // Nightly drift/allocation snapshot per user with a plan — the dashboard's
+  // drift gauge and the weekly retro read these snapshots. Also flushes any
+  // stale pre-fix snapshots that carried a false 'reconsidering' status.
+  if (agentsServices.scheduler) {
+    agentsServices.scheduler.registerTask('lifeplan:drift-refresh', '0 2 * * *', async () => {
+      const lifePlanStore = lifeplanResult.container.getLifePlanStore();
+      for (const username of lifePlanStore.listUsernames()) {
+        try {
+          await lifeplanResult.services.driftService.computeAndSave(username);
+        } catch (err) {
+          rootLogger.warn('lifeplan.drift.refresh_failed', { username, error: err.message });
+        }
       }
     });
   }

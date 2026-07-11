@@ -43,6 +43,8 @@
 
 # Phase 0 — Stop the bleeding (inline twin + standalone hotfixes)
 
+> **DONE (2026-07-10)** — Tasks 1–7 landed on `feat/admin-ux-remediation` (0bdba03db … da2dadaed). See the audit's "Resolution status (2026-07-10)" section for the finding→commit map.
+
 ## Task 1: Shared id-like predicate in `contentSearchLogic.js`
 
 **Files:**
@@ -293,6 +295,8 @@ if (data.referenceIndex != null && data.referenceIndex >= 0) {
 ---
 
 # Phase 1 — Unify the twins (one component, one behavior)
+
+> **DONE (2026-07-10)** — Tasks 8–15 landed on `feat/admin-ux-remediation` (aaf04942f … 45b8b7195): machine + hook + unified component, all six call sites adopted, both twins deleted, ListsItemRow.jsx split to 612 lines, Phase 1 gate green (combobox suites 00–10/12/18 minus slot machine; Admin vitest 267 passed; gate-vitest no new failures; build clean; UI surfaces screenshot-verified). See the audit's "Resolution status (2026-07-10)" section.
 
 Design decisions (locked by the audit — do not relitigate during execution):
 - **Contract:** `<ContentCombobox value onChange(id, item?) placeholder selectContainers searchParams renderValue resolveContentInfo appResults />`. `renderValue` (optional) renders the committed-value display (ListsItemRow passes its card components); default is the standalone's TextInput + resolved-title line. `appResults` (bool) merges app-registry matches (only ListsItemRow surfaces want this).

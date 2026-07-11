@@ -155,6 +155,34 @@ export class ComboboxTestHarness {
             continue;
           }
 
+          // Transient upstream media-service failures (remote Plex API
+          // failing under burst load, immich proxy timeouts). These are
+          // environment flakes of the machine running the tests — NOT
+          // combobox/backend defects — and would otherwise fail every test
+          // that happens to overlap one. UI behavior is still fully asserted;
+          // all other backend errors remain fatal. Keep this list tight.
+          const isUpstreamMediaFlake =
+            /"event"\s*:\s*"(plex\.search\.exception|plex\.searchPlaylists\.exception|proxy\.timeout)"/.test(line)
+            || /Media API request failed/.test(line);
+          if (isUpstreamMediaFlake) {
+            this.backendWarnings.push(line);
+            continue;
+          }
+
+          // Ambient household-infra noise: this dev backend also polls
+          // devices (FullyKiosk tablets, the playback-hub at :8080) and
+          // serves canvas art to other clients. Their connection errors and
+          // 404s land in the same dev.log during test windows and are
+          // unrelated to the flow under test.
+          const isAmbientInfraNoise =
+            /"event"\s*:\s*"fullykiosk\./.test(line)
+            || (/"event"\s*:\s*"http\.error"/.test(line) && /:8080\/api\//.test(line))
+            || (/"errorType"\s*:\s*"NotFoundError"/.test(line) && /canvas\.mjs/.test(line));
+          if (isAmbientInfraNoise) {
+            this.backendWarnings.push(line);
+            continue;
+          }
+
           // Check for actual ERROR level logs, not just "error" in text
           // JSON format: "level":"error" or traditional: [ERROR] or ERROR:
           const isActualError =
@@ -290,11 +318,22 @@ export const ComboboxLocators = {
   // Dropdown appears when combobox opens - use data attribute from Mantine
   dropdown: (page) => page.locator('[data-combobox-dropdown], .mantine-Combobox-dropdown'),
 
-  // Options within the dropdown
-  options: (page) => page.locator('[data-combobox-option], .mantine-Combobox-option'),
+  // Content options within the dropdown. Excludes the freeform
+  // "Use as raw value" row — it is a Combobox.Option in the DOM but not a
+  // content result (the unified combobox renders it while a search is still
+  // streaming, so counting it as a result corrupts waits and counts).
+  options: (page) => page.locator(
+    '[data-combobox-option]:not([data-testid="freeform-commit-option"]), '
+    + '.mantine-Combobox-option:not([data-testid="freeform-commit-option"])'
+  ),
 
-  // Back button in breadcrumb area
-  backButton: (page) => page.getByRole('button').filter({ has: page.locator('svg') }).first(),
+  // Back button in breadcrumb area, scoped to the dropdown. The old
+  // "first svg button on the page" locator matched the input's clear button
+  // whenever a value was committed, misreading closed-with-value as drilled-in.
+  backButton: (page) =>
+    page
+      .locator('[data-combobox-dropdown], .mantine-Combobox-dropdown')
+      .getByRole('button', { name: 'Back' }),
 
   // Breadcrumb area containing the path
   breadcrumbs: (page) => page.locator('[data-combobox-dropdown] >> text=/').first(),
@@ -308,7 +347,9 @@ export const ComboboxLocators = {
   // Option details - use more generic selectors
   optionTitle: (option) => option.locator('span, div').filter({ hasText: /.+/ }).first(),
   optionParent: (option) => option.locator('[data-dimmed], .mantine-Text').filter({ hasText: /.+/ }).last(),
-  optionBadge: (option) => option.locator('.mantine-Badge-root, [class*="Badge"]').first(),
+  // The SOURCE badge specifically. The old "first badge" locator matched the
+  // childCount badge on container rows (known fragile locator, June issue).
+  optionBadge: (option) => option.locator('[data-testid="combobox-source-badge"]'),
   optionChevron: (option) => option.locator('svg').last(),
   // Use first() to avoid strict mode violations when Avatar has nested placeholder
   optionAvatar: (option) => option.locator('.mantine-Avatar-root').first(),
@@ -318,6 +359,30 @@ export const ComboboxLocators = {
  * Standard actions for ContentSearchCombobox
  */
 export const ComboboxActions = {
+  /**
+   * Navigate to the harness page and wait for the combobox input to render.
+   * Under rapid successive test page-loads the dev stack (Vite + backend)
+   * intermittently serves a page whose JS never boots (blank page, ~90s
+   * stall, then recovery). Reload-and-retry keeps that infra hiccup from
+   * failing behavior tests; a genuinely broken page still fails after the
+   * retries are exhausted.
+   */
+  async gotoReady(page, url, { tries = 3, readyTimeout = 15000 } = {}) {
+    let lastErr;
+    for (let attempt = 1; attempt <= tries; attempt++) {
+      if (attempt === 1) await page.goto(url);
+      else await page.reload();
+      try {
+        await ComboboxLocators.input(page).waitFor({ state: 'visible', timeout: readyTimeout });
+        return;
+      } catch (err) {
+        lastErr = err;
+        console.warn(`[gotoReady] combobox input not rendered (attempt ${attempt}/${tries})`);
+      }
+    }
+    throw lastErr;
+  },
+
   /**
    * Open dropdown by clicking input
    */
@@ -376,8 +441,12 @@ export const ComboboxActions = {
       const dd = document.querySelector('[data-combobox-dropdown], .mantine-Combobox-dropdown');
       if (!dd) return false;
 
-      // Check if we have results (options)
-      const hasOptions = dd.querySelector('[data-combobox-option], .mantine-Combobox-option');
+      // Check if we have results (options). The freeform "Use as raw value"
+      // row renders while the stream is still in flight — do not count it.
+      const hasOptions = dd.querySelector(
+        '[data-combobox-option]:not([data-testid="freeform-commit-option"]), '
+        + '.mantine-Combobox-option:not([data-testid="freeform-commit-option"])'
+      );
       if (hasOptions) return true;
 
       // Check if we have empty state (no results or type to search)
@@ -387,7 +456,11 @@ export const ComboboxActions = {
       }
 
       return false;
-    }, { timeout });
+      // NOTE: waitForFunction(fn, ARG, options) — passing { timeout } as the
+      // second argument made it the page-function arg and left the wait
+      // UNBOUNDED (runs until the global test timeout when a stream never
+      // completes on a congested backend).
+    }, undefined, { timeout });
 
     // Small buffer for React state to settle
     await page.waitForTimeout(100);
@@ -407,7 +480,7 @@ export const ComboboxActions = {
       const hasPending = dd.querySelector('.pending-sources, [data-pending-sources]');
 
       return !isSearching && !hasPending;
-    }, { timeout });
+    }, undefined, { timeout }); // third arg — see waitForStreamComplete note
 
     await page.waitForTimeout(100);
   },

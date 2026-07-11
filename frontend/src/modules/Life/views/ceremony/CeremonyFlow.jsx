@@ -1,6 +1,7 @@
 import { useMemo, useEffect } from 'react';
-import { Stack, Paper, Title, Text, Group, Button, Stepper, Loader } from '@mantine/core';
-import { IconCheck, IconArrowRight, IconArrowLeft } from '@tabler/icons-react';
+import { Stack, Paper, Title, Text, Group, Button, Stepper, Loader, Alert, Anchor } from '@mantine/core';
+import { useNavigate } from 'react-router-dom';
+import { IconCheck, IconArrowRight, IconArrowLeft, IconAlertCircle } from '@tabler/icons-react';
 import { useCeremony } from '../../hooks/useCeremony.js';
 import { UnitIntention } from './UnitIntention.jsx';
 import { UnitCapture } from './UnitCapture.jsx';
@@ -26,10 +27,12 @@ const CEREMONY_COMPONENTS = {
 
 export function CeremonyFlow({ type, username, onComplete }) {
   const logger = useMemo(() => getLogger().child({ component: 'ceremony-flow' }), []);
+  const navigate = useNavigate();
   const ceremony = useCeremony(type, username);
-  const { content, loading, error, step, nextStep, prevStep, submit, submitting, completed } = ceremony;
+  const { content, loading, error, submitError, step, nextStep, prevStep, submit, submitting, completed } = ceremony;
 
   const steps = CEREMONY_STEPS[type] || ['Step 1', 'Step 2', 'Confirm'];
+  const implemented = type in CEREMONY_COMPONENTS;
   const CeremonyComponent = CEREMONY_COMPONENTS[type];
 
   useEffect(() => {
@@ -49,8 +52,26 @@ export function CeremonyFlow({ type, username, onComplete }) {
 
   if (loading) return <Loader size="sm" />;
   if (error) {
-    logger.warn('life.ceremony.error', { type, error });
-    return <Text c="red">{error}</Text>;
+    logger.warn('life.ceremony.error', { type, status: error.status, code: error.code, message: error.message });
+    if (error.code === 'NO_PLAN') {
+      return (
+        <Paper p="xl" withBorder>
+          <Stack align="center" gap="md">
+            <Title order={4}>You don't have a life plan yet</Title>
+            <Text c="dimmed">Ceremonies work against your plan — create one first.</Text>
+            <Button onClick={() => navigate('/life/coach')}>Talk to your coach</Button>
+            <Anchor size="sm" c="dimmed" onClick={() => navigate('/life/plan')}>
+              See the plan page
+            </Anchor>
+          </Stack>
+        </Paper>
+      );
+    }
+    return (
+      <Alert color="red" title="Ceremony unavailable" icon={<IconAlertCircle size={16} />}>
+        {error.message || 'Something went wrong loading this ceremony.'}
+      </Alert>
+    );
   }
 
   if (completed) {
@@ -91,9 +112,19 @@ export function CeremonyFlow({ type, username, onComplete }) {
             setResponse={ceremony.setResponse}
           />
         ) : (
-          <Text c="dimmed">Ceremony type not yet implemented</Text>
+          <Text c="dimmed">
+            This ceremony is coming soon — completing it is disabled so it stays on your schedule.
+          </Text>
         )}
       </Paper>
+
+      {/* Submit failures stay inline so the form (and the user's typed
+          responses) remain mounted and Complete can simply be retried. */}
+      {submitError && (
+        <Alert color="red" title="Couldn't save your responses — try again." icon={<IconAlertCircle size={16} />}>
+          {submitError.message}
+        </Alert>
+      )}
 
       <Group justify="space-between">
         <Button
@@ -106,13 +137,18 @@ export function CeremonyFlow({ type, username, onComplete }) {
         </Button>
 
         {isLastStep ? (
-          <Button
-            leftSection={<IconCheck size={16} />}
-            onClick={submit}
-            loading={submitting}
-          >
-            Complete
-          </Button>
+          // Unimplemented ceremony types must not be completable: posting empty
+          // responses would record the ceremony and clear its nudge for the
+          // whole period (audit A-4.2).
+          implemented && (
+            <Button
+              leftSection={<IconCheck size={16} />}
+              onClick={submit}
+              loading={submitting}
+            >
+              Complete
+            </Button>
+          )
         ) : (
           <Button
             rightSection={<IconArrowRight size={16} />}

@@ -424,7 +424,9 @@ export class ContentQueryService {
       if (typeof adapter.getItem === 'function') {
         const item = await withTimeout(adapter.getItem(id), this.#adapterTimeoutMs, `${source} id-lookup`);
         if (item) {
-          return { ...item, _idMatch: true };
+          // matchReason is a public field (survives to the API response) so UIs
+          // can label ID-pinned results; _idMatch is internal and stripped later.
+          return { ...item, _idMatch: true, matchReason: 'id-lookup' };
         }
       }
 
@@ -439,7 +441,8 @@ export class ContentQueryService {
             title: metadata.title,
             thumbnail: metadata.thumbnail,
             metadata,
-            _idMatch: true
+            _idMatch: true,
+            matchReason: 'id-lookup'
           };
         }
       }

@@ -16,13 +16,23 @@ import {
 } from '@dnd-kit/sortable';
 import { useAdminLists } from '../../../hooks/admin/useAdminLists.js';
 import { getChildLogger } from '../../../lib/logging/singleton.js';
-import ListsItemRow, { EmptyItemRow, fetchContentMetadata } from './ListsItemRow.jsx';
+import { runWithFeedback, showUndoToast } from '../shared/feedback.js';
+import ConfirmModal from '../shared/ConfirmModal.jsx';
+import ListsItemRow from './ListsItemRow.jsx';
+import { EmptyItemRow } from './EmptyItemRow.jsx';
+import { fetchContentMetadata } from './ContentDisplays.jsx';
 import { swapContentPayloads } from './listConstants.js';
 
 let _log;
 function dndLog() {
   if (!_log) _log = getChildLogger({ app: 'admin', sessionLog: true }).child({ component: 'ListsDnd' });
   return _log;
+}
+
+let _mutLog;
+function mutationLog() {
+  if (!_mutLog) _mutLog = getChildLogger({ app: 'admin', sessionLog: true }).child({ component: 'ListsMutations' });
+  return _mutLog;
 }
 import SectionHeader from './SectionHeader.jsx';
 import ListsItemEditor from './ListsItemEditor.jsx';
@@ -75,6 +85,26 @@ function ListsFolder() {
   const [searchQuery, setSearchQuery] = useState('');
   const [editorOpen, setEditorOpen] = useState(false);
   const [editingItem, setEditingItem] = useState(null);
+  const [deleteListOpen, setDeleteListOpen] = useState(false);
+  const [deletingList, setDeletingList] = useState(false);
+
+  // Run a list mutation with user-visible failure feedback + state recovery
+  // (audit C3). Success is silent (no toast per keystroke). On failure the
+  // hook has already thrown before its own re-sync refetch, so `recover`
+  // re-fetches the list to discard any stale optimistic local update.
+  const mutate = useCallback((eventName, failureTitle, fn, { recover = false } = {}) =>
+    runWithFeedback(fn, {
+      logger: mutationLog(),
+      eventName,
+      failureTitle,
+      logContext: { type, list: listName },
+    }).then((res) => {
+      if (!res.ok && recover) {
+        fetchList(type, listName).catch(() => {});
+      }
+      return res;
+    }),
+  [type, listName, fetchList]);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [sectionSettingsOpen, setSectionSettingsOpen] = useState(null);
   const [collapsedSections, setCollapsedSections] = useState(new Set());
@@ -197,13 +227,13 @@ function ListsFolder() {
         return next;
       });
 
-      try {
-        await swapItems(srcSi, srcIdx, dstSi, dstIdx);
-      } catch (err) {
-        dndLog().error('content.swap.failed', { srcSi, srcIdx, dstSi, dstIdx, error: err.message });
-      } finally {
-        swapInProgressRef.current = false;
-      }
+      await mutate(
+        'lists.swap',
+        'Could not swap content — reloading the list',
+        () => swapItems(srcSi, srcIdx, dstSi, dstIdx),
+        { recover: true }
+      );
+      swapInProgressRef.current = false;
 
       // Flash both rows
       requestAnimationFrame(() => {
@@ -235,7 +265,8 @@ function ListsFolder() {
       dndLog().info('row.reorder', { section: activeSi, from: activeIdx, to: overIdx });
       const sectionItems = sections[activeSi]?.items || [];
       const reordered = arrayMove(sectionItems, activeIdx, overIdx);
-      await reorderItems(activeSi, reordered);
+      await mutate('lists.reorder', 'Could not reorder rows — reloading the list',
+        () => reorderItems(activeSi, reordered), { recover: true });
     }
   };
 
@@ -259,7 +290,7 @@ function ListsFolder() {
   const handleAddItem = async (itemData, sectionIndex = 0) => {
     if (itemData && itemData.input) {
       // Inline add from EmptyItemRow — directly add to list
-      await addItem(sectionIndex, itemData);
+      await mutate('lists.add', 'Could not add item', () => addItem(sectionIndex, itemData));
       return;
     }
     // No data — open editor modal
@@ -273,26 +304,31 @@ function ListsFolder() {
   };
 
   const handleSaveItem = async (itemData) => {
-    if (editingItem) {
-      const oldSection = editingItem.sectionIndex ?? 0;
-      const newSection = itemData.sectionIndex ?? oldSection;
-      const { sectionIndex, ...cleanData } = itemData;
+    const res = await mutate('lists.save_item', 'Could not save item', async () => {
+      if (editingItem) {
+        const oldSection = editingItem.sectionIndex ?? 0;
+        const newSection = itemData.sectionIndex ?? oldSection;
+        const { sectionIndex, ...cleanData } = itemData;
 
-      if (newSection !== oldSection) {
-        await moveItem(
-          { section: oldSection, index: editingItem.itemIndex },
-          { section: newSection, index: 0 }
-        );
-        await updateItem(newSection, 0, cleanData);
+        if (newSection !== oldSection) {
+          await moveItem(
+            { section: oldSection, index: editingItem.itemIndex },
+            { section: newSection, index: 0 }
+          );
+          await updateItem(newSection, 0, cleanData);
+        } else {
+          await updateItem(oldSection, editingItem.itemIndex, cleanData);
+        }
       } else {
-        await updateItem(oldSection, editingItem.itemIndex, cleanData);
+        const { sectionIndex, ...cleanData } = itemData;
+        await addItem(sectionIndex ?? 0, cleanData);
       }
-    } else {
-      const { sectionIndex, ...cleanData } = itemData;
-      await addItem(sectionIndex ?? 0, cleanData);
+    });
+    // Keep the editor open on failure so the user can retry without losing input
+    if (res.ok) {
+      setEditorOpen(false);
+      setEditingItem(null);
     }
-    setEditorOpen(false);
-    setEditingItem(null);
   };
 
   const handleMoveSection = async (fromIndex, direction) => {
@@ -300,15 +336,45 @@ function ListsFolder() {
     const toIndex = fromIndex + direction;
     if (toIndex < 0 || toIndex >= sections.length) return;
     [newOrder[fromIndex], newOrder[toIndex]] = [newOrder[toIndex], newOrder[fromIndex]];
-    await reorderSections(newOrder);
+    await mutate('lists.reorder_sections', 'Could not reorder sections — reloading the list',
+      () => reorderSections(newOrder), { recover: true });
   };
 
   const handleDeleteList = async () => {
-    const typeLabel = TYPE_LABELS[type] || type;
-    if (window.confirm(`Delete ${typeLabel.toLowerCase()} "${listName}"? This cannot be undone.`)) {
-      await deleteList(type, listName);
+    setDeletingList(true);
+    const res = await mutate('lists.delete_list', 'Could not delete list', () => deleteList(type, listName));
+    setDeletingList(false);
+    if (res.ok) {
+      setDeleteListOpen(false);
       navigate(`/admin/content/lists/${type}`);
     }
+  };
+
+  // Row delete: remove immediately, offer Undo (audit C4). Captures the item's
+  // full payload + position so Undo can re-insert it where it was.
+  const handleDeleteItem = async (sectionIndex, itemIndex) => {
+    const removed = sections[sectionIndex]?.items?.[itemIndex];
+    const preCount = sections[sectionIndex]?.items?.length ?? 0;
+    const res = await mutate('lists.delete_item', 'Could not delete item', () => deleteItem(sectionIndex, itemIndex));
+    if (!res.ok || !removed) return;
+    const { sectionIndex: _si, itemIndex: _ii, sectionTitle: _st, index: _idx, ...payload } = removed;
+    showUndoToast({
+      id: `undo-delete-${removed.uid || `${sectionIndex}-${itemIndex}`}`,
+      title: 'Item deleted',
+      message: `Removed “${removed.label || removed.title || removed.input}”`,
+      onUndo: () => mutate('lists.delete_undo', 'Could not restore item', async () => {
+        // addItem appends to the section end; after re-add the section holds
+        // `preCount` items again, so the restored item sits at index preCount-1.
+        await addItem(sectionIndex, payload);
+        const landedIndex = preCount - 1;
+        if (itemIndex < landedIndex) {
+          await moveItem(
+            { section: sectionIndex, index: landedIndex },
+            { section: sectionIndex, index: itemIndex }
+          );
+        }
+      }),
+    });
   };
 
   // Set of image paths currently assigned to items in this list
@@ -337,7 +403,7 @@ function ListsFolder() {
   const listTitle = listName.replace(/-/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
   const typeLabel = TYPE_LABELS[type] || type;
   const handleInlineUpdate = async (sectionIndex, itemIndex, updates) => {
-    await updateItem(sectionIndex, itemIndex, updates);
+    await mutate('lists.update', 'Could not save change', () => updateItem(sectionIndex, itemIndex, updates));
   };
 
   const handleDuplicateItem = async (sectionIndex, item) => {
@@ -348,36 +414,38 @@ function ListsFolder() {
     delete newItem.sectionIndex;
     delete newItem.itemIndex;
     delete newItem.sectionTitle;
-    await addItem(sectionIndex, newItem);
+    await mutate('lists.duplicate', 'Could not duplicate item', () => addItem(sectionIndex, newItem));
   };
 
   const handleMoveItem = async (sectionIndex, itemIndex, action, targetSection) => {
     const sectionItems = sections[sectionIndex]?.items || [];
-    if (action === 'top') {
-      const reordered = [...sectionItems];
-      const [item] = reordered.splice(itemIndex, 1);
-      reordered.unshift(item);
-      await reorderItems(sectionIndex, reordered);
-    } else if (action === 'bottom') {
-      const reordered = [...sectionItems];
-      const [item] = reordered.splice(itemIndex, 1);
-      reordered.push(item);
-      await reorderItems(sectionIndex, reordered);
-    } else if (action === 'section') {
-      const targetItems = sections[targetSection]?.items || [];
-      await moveItem(
-        { section: sectionIndex, index: itemIndex },
-        { section: targetSection, index: targetItems.length }
-      );
-    } else if (action === 'new-section') {
-      const newSectionIndex = sections.length;
-      await addSection({ title: `Section ${newSectionIndex + 1}` });
-      // After adding, move the item to the newly created section (last index)
-      await moveItem(
-        { section: sectionIndex, index: itemIndex },
-        { section: newSectionIndex, index: 0 }
-      );
-    }
+    await mutate('lists.move_item', 'Could not move item — reloading the list', async () => {
+      if (action === 'top') {
+        const reordered = [...sectionItems];
+        const [item] = reordered.splice(itemIndex, 1);
+        reordered.unshift(item);
+        await reorderItems(sectionIndex, reordered);
+      } else if (action === 'bottom') {
+        const reordered = [...sectionItems];
+        const [item] = reordered.splice(itemIndex, 1);
+        reordered.push(item);
+        await reorderItems(sectionIndex, reordered);
+      } else if (action === 'section') {
+        const targetItems = sections[targetSection]?.items || [];
+        await moveItem(
+          { section: sectionIndex, index: itemIndex },
+          { section: targetSection, index: targetItems.length }
+        );
+      } else if (action === 'new-section') {
+        const newSectionIndex = sections.length;
+        await addSection({ title: `Section ${newSectionIndex + 1}` });
+        // After adding, move the item to the newly created section (last index)
+        await moveItem(
+          { section: sectionIndex, index: itemIndex },
+          { section: newSectionIndex, index: 0 }
+        );
+      }
+    }, { recover: true });
   };
 
   const renderItems = (itemsToRender, sectionIndex) => (
@@ -391,8 +459,8 @@ function ListsFolder() {
             key={item.uid || `${sectionIndex}-${idx}`}
             item={{ ...item, index: idx }}
             onUpdate={(updates) => handleInlineUpdate(sectionIndex, idx, updates)}
-            onDelete={() => deleteItem(sectionIndex, idx)}
-            onToggleActive={() => toggleItemActive(sectionIndex, idx)}
+            onDelete={() => handleDeleteItem(sectionIndex, idx)}
+            onToggleActive={() => mutate('lists.toggle_active', 'Could not toggle item', () => toggleItemActive(sectionIndex, idx))}
             onDuplicate={() => handleDuplicateItem(sectionIndex, item)}
             isWatchlist={type === 'watchlists'}
             onEdit={() => { setEditingItem({ ...item, sectionIndex, itemIndex: idx }); setEditorOpen(true); }}
@@ -445,7 +513,7 @@ function ListsFolder() {
               <Menu.Item
                 color="red"
                 leftSection={<IconTrash size={16} />}
-                onClick={handleDeleteList}
+                onClick={() => setDeleteListOpen(true)}
               >
                 Delete {typeLabel}
               </Menu.Item>
@@ -579,6 +647,17 @@ function ListsFolder() {
           setSectionSettingsOpen(null);
         }}
         loading={loading}
+      />
+
+      <ConfirmModal
+        opened={deleteListOpen}
+        onClose={() => setDeleteListOpen(false)}
+        onConfirm={handleDeleteList}
+        title={`Delete ${typeLabel}`}
+        message={`Delete ${typeLabel.toLowerCase()} "${listTitle}"? This cannot be undone.`}
+        impact={flatItems.length > 0 ? `${flatItems.length} item${flatItems.length === 1 ? '' : 's'} will be removed.` : undefined}
+        confirmLabel={`Delete ${typeLabel}`}
+        loading={deletingList}
       />
       </Stack>
     </ListsContext.Provider>

@@ -100,7 +100,9 @@ export class AlignmentService {
       }
     }
 
-    // 4. Drift correction
+    // 4. Drift correction. Deliberately an allowlist: 'insufficient_data'
+    // snapshots (values that map to <2 lifelog categories) must NOT raise a
+    // drift alert — treat them like a missing snapshot (audit A-3.2c).
     if (snapshot.status === 'drifting' || snapshot.status === 'reconsidering') {
       items.push({
         type: 'drift_alert',

@@ -29,6 +29,9 @@ const DEFAULT_PREFERENCES = {
  * @param {Object|Function} [deps.telegramAdapter] - TelegramAdapter instance or
  *   thunk (constructed later in startup)
  * @param {Function} [deps.resolveChatId] - username -> telegram chat id
+ * @param {string} [deps.publicBaseUrl] - Absolute base URL for turning an intent
+ *   action's relative deep-link into a tappable Telegram inline button. When unset,
+ *   ceremony nudges are text-only (no "Begin" button).
  * @param {Object} [deps.haGateway] - Home Assistant gateway (callService)
  * @param {Function} [deps.resolveNotifyService] - username -> HA notify service
  * @param {Object} [deps.preferences] - Category->urgency->channels overrides
@@ -37,14 +40,14 @@ const DEFAULT_PREFERENCES = {
  */
 export function bootstrapNotifications(deps = {}) {
   const {
-    eventBus, telegramAdapter, resolveChatId,
+    eventBus, telegramAdapter, resolveChatId, publicBaseUrl,
     haGateway, resolveNotifyService,
     preferences, logger,
   } = deps;
 
   const adapters = [
     new AppNotificationAdapter({ eventBus }),
-    new TelegramNotificationAdapter({ telegramAdapter, resolveChatId, logger }),
+    new TelegramNotificationAdapter({ telegramAdapter, resolveChatId, publicBaseUrl, logger }),
     new PushNotificationAdapter({ haGateway, resolveNotifyService, logger }),
   ];
 
