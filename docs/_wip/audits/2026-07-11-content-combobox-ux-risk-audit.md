@@ -191,15 +191,22 @@ The problem is **discoverability and reversibility**: nothing in the UI tells th
 
 ## 7. Prioritized recommendations
 
-| Pri | Finding | Action | Cost |
+| Pri | Finding | Action | Status (2026-07-11, branch `feat/combobox-ux-overhaul`) |
 |---|---|---|---|
-| **P0** | F1 | Anchor browse-open on the reference item (server-side page containing the id), or render a persistent "Current: … (not in this page)" header chip; stop highlighting sibling #0 as the selection | S (chip) / M (anchor) |
-| **P0** | F4 | Move `before`-pagination scroll-restore into a `useLayoutEffect` / double-rAF so it reads a committed DOM | S |
-| **P1** | F11 | Make freeform auto-resolve confirmable or visibly pending; don't silently swap a committed value | M |
-| **P1** | F6 | Cap the *rendered* option count on the uncapped SSE path (reuse the existing "showing first N" affordance) and/or virtualize | M |
-| **P1** | F14 | Surface & make removable the implicit `source:` search scope (header chip) | S |
-| **P2** | F7 | Enable `selectContainers` (dual affordance already built) on menu/watchlist surfaces | S |
-| **P2** | F8 | Back-at-root should close to DISPLAY, not re-search the raw id | S |
-| **P3** | F12, F13 | Align client/server prefix regex; trim trailing-colon queries to empty search | S |
+| **P0** | F1 | **Mechanism corrected** (see below): backend already centers the window, so the fix is orientation + salience, not anchoring. Persistent "Current: … — not in this list" header + `idx:-1` no-phantom-highlight fallback. | ✅ Resolved — `d18d4a5fa` (F1) + `a854b0347` (F1b salient Current badge/marker) |
+| **P0** | F4 | Move `before`-pagination scroll-restore to a post-commit write (double-rAF) via a pure `computeScrollRestore` helper. | ✅ Resolved — `230e8d702` (live jump-repro confirmation deferred to a dev-env pass) |
+| **P1** | F11 | Auto-resolve made **undoable** (`showUndoToast` with restore) rather than a silent swap. | ✅ Resolved — `82159c301` |
+| **P1** | F6 | Cap the machine `results` at `RENDER_CAP=50` (after dedupe, preserving the index↔DOM invariant) + transport-agnostic "showing first N" hint. | ✅ Resolved — `161e9c0b9` |
+| **P1** | F14 | Removable "Searching within {source}" scope chip; `clearScope()` rewrites to the bare term. Shared `parseSourcePrefix` SSOT helper. | ✅ Resolved — `ffd36f192` |
+| **P2** | F7 | `selectContainers` enabled on the three ContentLists picker surfaces (dual affordance: chevron drills, row/Enter selects). | ✅ Resolved — `280ec0a35` |
+| **P2** | F8 | Back-at-siblings-root dismisses to DISPLAY (keeps value), no raw-id re-search. | ✅ Resolved — `dac84c5c1` |
+| **P3** | F13 | Bare `source:` (empty term) routes an empty search, not a literal-string search. | ✅ Resolved — `c0891d3b3` |
+| **P3** | F12 | Align client/server source-prefix regex. | ⏸️ **Deferred (deliberate).** Widening the backend to `[\w-]+` would regress real queries — e.g. `spider-man: no way home` would parse as source `spider-man`, term `no way home`, scoping the search to a nonexistent source. Today `\w+` correctly stops at the hyphen (full-text). No hyphenated source exists, so the client(`[\w-]+`, commit-detection)/server(`\w+`, search-parsing) divergence is theoretical and harmless. Revisit only if a hyphenated source id is ever introduced. |
 
-**What not to touch:** the state machine's highlight model, dedupe, commit-on-close policy, pagination-owner guard, and browse-token invalidation (F3, F9, F15, F16) are correct and hard-won. Every recommendation above is presentation/affordance layered on top of that machine — none requires reopening the reducer.
+### Correction to §1 / F1 (mechanism)
+The original F1 write-up hypothesized the committed value falls *outside* the loaded siblings window. **Refuted:** `SiblingsService.#applyWindow` (`:158-205`) centers a 21-item window on the reference and returns a correct `referenceIndex` whenever the id is in the adapter list (singalong ids `singalong:hymn/N` match the committed value). The genuine gaps were (a) marker *salience* (fixed by F1b's Current badge) and (b) the rare `refIdx === -1` true-miss path (fixed by F1's orientation header + `idx:-1` fallback). Full derivation: `docs/_wip/bugs/2026-07-11-combobox-orientation-and-scroll-diagnosis.md`. Incidental: `SiblingsService.mjs:162`'s second `findIndex` clause is a dead no-op (`replace(/^[^:]+:/, m => m)` → identity) — separate low-priority cleanup, not part of this overhaul.
+
+**What was NOT touched (correct as-is):** the state machine's highlight model, dedupe, commit-on-close policy, pagination-owner guard, and browse-token invalidation (F3, F9, F15, F16). Every fix above is presentation/affordance (plus one hook-fallback line and one reducer cap) layered on the existing machine — the reducer's transition set was not reopened.
+
+### Verification status
+All fixes carry unit/component tests (Vitest): **95 passing** across `frontend/src/modules/Admin/ContentLists/` (machine, hook, component, scroll-helper, content-logic). **Live/visual verification** (F1 orientation header on-screen, F4 jump-repro under CPU throttle, the scope chip and Current badge appearance, plus the existing combobox Playwright regression suites) is **pending a working dev environment** — deferred because the shared checkout is in use by a parallel piano agent with its backend down.
