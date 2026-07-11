@@ -42,6 +42,19 @@ export default function createLifeRouter(config) {
     });
   });
 
+  // GET /users — household roster for the client-side user switcher.
+  // No username param, so the identity middleware resolves the default user
+  // (always valid) and lets this through.
+  router.get('/users', (req, res) => {
+    const usernames = config.listHouseholdUsers?.() || [];
+    res.json({
+      users: usernames.map((u) => ({
+        username: u,
+        displayName: config.userService?.getProfile?.(u)?.display_name || u,
+      })),
+    });
+  });
+
   router.use('/plan', createPlanRouter(config));
   router.use('/now', createNowRouter(config));
   router.use('/log', createLogRouter({ ...config, usernameResolver: users }));

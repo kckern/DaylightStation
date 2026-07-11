@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import getLogger from '../../../lib/logging/Logger.js';
+import { useLifeUsername } from './useLifeUser.js';
 
 let _logger;
 function logger() {
@@ -29,7 +30,9 @@ export function useLifePlan(username) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
-  const qs = username ? `?username=${username}` : '';
+  const ctxUsername = useLifeUsername();
+  const user = username || ctxUsername;
+  const qs = user ? `?username=${encodeURIComponent(user)}` : '';
 
   const fetchPlan = useCallback(async () => {
     setLoading(true);
@@ -90,13 +93,16 @@ export function useGoals(username, state) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
+  const ctxUsername = useLifeUsername();
+  const user = username || ctxUsername;
+
   const qs = useMemo(() => {
     const params = new URLSearchParams();
-    if (username) params.set('username', username);
+    if (user) params.set('username', user);
     if (state) params.set('state', state);
     const s = params.toString();
     return s ? `?${s}` : '';
-  }, [username, state]);
+  }, [user, state]);
 
   const fetchGoals = useCallback(async () => {
     setLoading(true);
@@ -114,19 +120,19 @@ export function useGoals(username, state) {
   useEffect(() => { fetchGoals(); }, [fetchGoals]);
 
   const transitionGoal = useCallback(async (goalId, newState, reason) => {
-    const userQs = username ? `?username=${username}` : '';
+    const userQs = user ? `?username=${encodeURIComponent(user)}` : '';
     const result = await api(`/goals/${goalId}/transition${userQs}`, {
       method: 'POST',
       body: JSON.stringify({ state: newState, reason }),
     });
     await fetchGoals();
     return result;
-  }, [username, fetchGoals]);
+  }, [user, fetchGoals]);
 
   // Author a new goal. Throws on failure so the caller can surface the error
   // inline; refetches the goal list on success and returns the created goal.
   const createGoal = useCallback(async ({ name, why, milestone } = {}) => {
-    const userQs = username ? `?username=${username}` : '';
+    const userQs = user ? `?username=${encodeURIComponent(user)}` : '';
     const goal = await api(`/goals${userQs}`, {
       method: 'POST',
       body: JSON.stringify({ name, why, milestone }),
@@ -134,7 +140,7 @@ export function useGoals(username, state) {
     await fetchGoals();
     logger().info('goal-created', { goalId: goal?.id });
     return goal;
-  }, [username, fetchGoals]);
+  }, [user, fetchGoals]);
 
   return { goals, loading, error, refetch: fetchGoals, transitionGoal, createGoal };
 }
@@ -147,7 +153,9 @@ export function useGoalDetail(goalId, username) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
-  const qs = username ? `?username=${username}` : '';
+  const ctxUsername = useLifeUsername();
+  const user = username || ctxUsername;
+  const qs = user ? `?username=${encodeURIComponent(user)}` : '';
 
   const fetchGoal = useCallback(async () => {
     if (!goalId) return;
@@ -176,7 +184,9 @@ export function useBeliefs(username) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
-  const qs = username ? `?username=${username}` : '';
+  const ctxUsername = useLifeUsername();
+  const user = username || ctxUsername;
+  const qs = user ? `?username=${encodeURIComponent(user)}` : '';
 
   const fetchBeliefs = useCallback(async () => {
     setLoading(true);
@@ -226,7 +236,9 @@ export function useCeremonyConfig(username) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
-  const qs = username ? `?username=${username}` : '';
+  const ctxUsername = useLifeUsername();
+  const user = username || ctxUsername;
+  const qs = user ? `?username=${encodeURIComponent(user)}` : '';
 
   const fetchCadence = useCallback(async () => {
     setLoading(true);

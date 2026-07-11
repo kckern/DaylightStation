@@ -75,6 +75,54 @@ describe('life router user identity', () => {
   });
 });
 
+describe('life router household roster (GET /users)', () => {
+  let app;
+
+  beforeAll(() => {
+    app = express();
+
+    const userService = {
+      getProfile: (username) => {
+        if (username === 'test-user') return { username: 'test-user', display_name: 'Test User' };
+        if (username === 'test-user-2') return { username: 'test-user-2' }; // no display name
+        return null;
+      },
+    };
+
+    app.use('/api/v1/life', createLifeRouter({
+      ...baseConfig,
+      userService,
+      listHouseholdUsers: () => ['test-user', 'test-user-2'],
+      defaultUsername: 'test-user',
+    }));
+  });
+
+  it('lists household members with display names, falling back to username', async () => {
+    const res = await request(app).get('/api/v1/life/users');
+
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({
+      users: [
+        { username: 'test-user', displayName: 'Test User' },
+        { username: 'test-user-2', displayName: 'test-user-2' }, // no display_name → falls back
+      ],
+    });
+  });
+
+  it('returns an empty roster when no listHouseholdUsers is configured', async () => {
+    const bare = express();
+    bare.use('/api/v1/life', createLifeRouter({
+      ...baseConfig,
+      userService: { getProfile: () => ({ username: 'default' }) },
+      defaultUsername: 'default',
+    }));
+
+    const res = await request(bare).get('/api/v1/life/users');
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ users: [] });
+  });
+});
+
 describe('life router without a userService (back-compat)', () => {
   it('accepts any username and defaults to "default"', async () => {
     const app = express();
