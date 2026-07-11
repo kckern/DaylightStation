@@ -13,7 +13,7 @@ import { useStreamingSearch } from '../../../../hooks/useStreamingSearch';
 import { getChildLogger } from '../../../../lib/logging/singleton.js';
 import { isContentIdLike } from '../contentSearchLogic.js';
 import { getCacheEntry, setCacheEntry } from '../siblingsCache.js';
-import { reducer, initialState, closeDecision, Modes } from './comboboxMachine.js';
+import { reducer, initialState, closeDecision, Modes, RENDER_CAP } from './comboboxMachine.js';
 
 const SEARCH_STREAM_ENDPOINT = '/api/v1/content/query/search/stream';
 const SEARCH_BATCH_ENDPOINT = '/api/v1/content/query/search';
@@ -177,6 +177,11 @@ export function useContentCombobox({ value, onChange, searchParams = '', appResu
 
   const [batchResults, setBatchResults] = useState([]);
   const [batchLoading, setBatchLoading] = useState(false);
+  // Pre-cap count of the results last dispatched to the machine (which caps at
+  // RENDER_CAP). Lets the UI surface a "showing first N" hint on ANY transport
+  // — the SSE stream is uncapped and can blow past the cap, unlike the batch
+  // fallback which the server already limits to BATCH_TAKE.
+  const [rawResultCount, setRawResultCount] = useState(0);
   const queryRef = useRef(''); // last dispatched search text (for app-result merge)
 
   // S5 fix: `searchParams` MUST be in the deps — the standalone version
@@ -224,7 +229,11 @@ export function useContentCombobox({ value, onChange, searchParams = '', appResu
   const rawResults = supportsSSE() ? streamResults : batchResults;
   useEffect(() => {
     let cancelled = false;
-    const finish = (items) => { if (!cancelled) dispatch({ type: 'RESULTS', items }); };
+    const finish = (items) => {
+      if (cancelled) return;
+      setRawResultCount(items.length); // pre-cap length (machine slices to RENDER_CAP)
+      dispatch({ type: 'RESULTS', items });
+    };
     const query = queryRef.current;
     if (!appResults || !query || query.length < 2) {
       finish(rawResults);
@@ -537,10 +546,14 @@ export function useContentCombobox({ value, onChange, searchParams = '', appResu
     isSearching: streamSearching || batchLoading,
     pendingSources,
     sourceErrors,
-    // Only the batch fallback caps results; flag when it hit the cap so the UI
-    // can offer a "refine your search" affordance (audit S6). The SSE stream is
-    // uncapped, so it never truncates.
-    truncatedAt: (!supportsSSE() && batchResults.length >= BATCH_TAKE) ? BATCH_TAKE : null,
+    // Flag truncation so the UI can offer a "refine your search" affordance
+    // (audit S6 / F6). Two independent caps can bite: the machine caps every
+    // transport's results at RENDER_CAP (the SSE stream is otherwise uncapped
+    // and can stream hundreds), and the batch fallback the server limits to
+    // BATCH_TAKE. Report whichever the raw (pre-cap) count crossed.
+    truncatedAt: rawResultCount > RENDER_CAP
+      ? RENDER_CAP
+      : (!supportsSSE() && batchResults.length >= BATCH_TAKE) ? BATCH_TAKE : null,
   };
 }
 

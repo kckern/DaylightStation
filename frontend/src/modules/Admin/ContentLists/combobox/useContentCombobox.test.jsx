@@ -340,6 +340,41 @@ describe('useContentCombobox', () => {
     expect(fetchMock.mock.calls.filter(([u]) => u.startsWith('/api/v1/content/query/search'))).toHaveLength(0);
   });
 
+  it('F6: SSE path caps results at 50 and reports truncatedAt when raw count exceeds the cap', () => {
+    vi.stubGlobal('EventSource', MockEventSource);
+    vi.useFakeTimers();
+    const { result } = setup({});
+
+    act(() => { result.current.handleInput('broad'); });
+    act(() => { vi.advanceTimersByTime(350); });
+
+    // Stream 51 unique results — one past the render cap.
+    const items = Array.from({ length: 51 }, (_, i) => ({ id: `plex:${i}`, title: `Item ${i}` }));
+    act(() => {
+      MockEventSource.instances[0].simulateMessage({ event: 'results', source: 'plex', items, pending: [] });
+    });
+
+    expect(result.current.state.results).toHaveLength(50); // capped in the machine
+    expect(result.current.truncatedAt).toBe(50);           // surfaced on the SSE path
+  });
+
+  it('F6: SSE path below the cap does not report truncation', () => {
+    vi.stubGlobal('EventSource', MockEventSource);
+    vi.useFakeTimers();
+    const { result } = setup({});
+
+    act(() => { result.current.handleInput('narrow'); });
+    act(() => { vi.advanceTimersByTime(350); });
+
+    const items = Array.from({ length: 10 }, (_, i) => ({ id: `plex:${i}`, title: `Item ${i}` }));
+    act(() => {
+      MockEventSource.instances[0].simulateMessage({ event: 'results', source: 'plex', items, pending: [] });
+    });
+
+    expect(result.current.state.results).toHaveLength(10);
+    expect(result.current.truncatedAt).toBeNull();
+  });
+
   it('appResults=true merges app registry matches ahead of content results', async () => {
     // Real timers + waitFor: the merge path crosses a debounce timer, a fetch,
     // AND a dynamic import() — fake timers cannot deterministically flush the

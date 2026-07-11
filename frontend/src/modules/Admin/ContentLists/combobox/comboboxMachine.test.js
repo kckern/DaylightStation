@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { reducer, initialState, Modes, closeDecision } from './comboboxMachine.js';
+import { reducer, initialState, Modes, closeDecision, RENDER_CAP } from './comboboxMachine.js';
 
 const open = (s) => reducer(s, { type: 'OPEN' });
 const type_ = (s, text) => reducer(s, { type: 'INPUT', text });
@@ -51,6 +51,27 @@ describe('comboboxMachine', () => {
     });
     expect(s.results.map((r) => r.id)).toEqual(['files:a', 'files:b', 'plex:1']);
     expect(s.results[0].title).toBe('first'); // first occurrence wins
+  });
+
+  it('F6: RESULTS caps the machine results array at RENDER_CAP (after dedupe)', () => {
+    let s = type_(open(initialState('')), 'broad');
+    const items = Array.from({ length: 200 }, (_, i) => ({ id: `plex:${i}`, title: `Item ${i}` }));
+    s = reducer(s, { type: 'RESULTS', items });
+    expect(RENDER_CAP).toBe(50);
+    expect(s.results).toHaveLength(50);
+    expect(s.results[0].id).toBe('plex:0');
+    expect(s.results[49].id).toBe('plex:49');
+  });
+
+  it('F6: ARROW-down from the last capped row (49) wraps to 0 with itemCount === RENDER_CAP', () => {
+    let s = type_(open(initialState('')), 'broad');
+    const items = Array.from({ length: 200 }, (_, i) => ({ id: `plex:${i}` }));
+    s = reducer(s, { type: 'RESULTS', items });
+    s = reducer(s, { type: 'HIGHLIGHT', idx: 49, userNavigated: true });
+    s = reducer(s, { type: 'ARROW', dir: 1, itemCount: s.results.length }); // 49 → wrap 0
+    expect(s.results.length).toBe(50);
+    expect(s.highlight.idx).toBe(0);
+    expect(s.highlight.userNavigated).toBe(true);
   });
 
   it('Mar-01 invariant: Enter selects only when userNavigated', () => {

@@ -233,6 +233,19 @@ describe('ContentCombobox (hook wiring)', () => {
     expect(screen.queryByTestId('combobox-current-anchor')).toBeNull();
   });
 
+  it('F6: renders the results-truncated hint when the hook reports truncatedAt (transport-agnostic)', () => {
+    const results = Array.from({ length: 50 }, (_, i) => ({ id: `plex:${i}`, title: `Item ${i}`, source: 'plex' }));
+    currentHook = makeHook({
+      state: { ...initialState(''), mode: Modes.SEARCH, search: 'broad', results },
+      isSearching: false,
+      truncatedAt: 50,
+    });
+    renderCombobox();
+
+    const hint = screen.getByTestId('results-truncated');
+    expect(hint).toHaveTextContent('Showing first 50 — refine your search');
+  });
+
   it('Escape closes via handleClose with reason escape', () => {
     currentHook = makeHook({
       state: { ...initialState(''), mode: Modes.SEARCH, search: 'abc' },
