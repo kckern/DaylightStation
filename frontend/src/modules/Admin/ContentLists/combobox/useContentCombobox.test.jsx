@@ -25,7 +25,7 @@ vi.mock('../../../../lib/appRegistry.js', () => ({
 // `import()` resolves instantly (keeps the app-results test deterministic).
 import '../../../../lib/appRegistry.js';
 
-import { useContentCombobox, titleCache } from './useContentCombobox.js';
+import { useContentCombobox, titleCache, Modes } from './useContentCombobox.js';
 
 class MockEventSource {
   constructor(url) {
@@ -428,18 +428,22 @@ describe('useContentCombobox', () => {
     expect(result.current.state.browse.items[result.current.state.highlight.idx].id).toBe('plex:11');
   });
 
-  it('goUp at root exits browse back to SEARCH via INPUT with the current search text', async () => {
+  it('goUp at siblings root dismisses to DISPLAY keeping the committed value, not a raw-id search (F8)', async () => {
     fetchMock.mockImplementation((url) => (
       url.startsWith('/api/v1/siblings/plex/10') ? jsonResponse(SIBLINGS_RESPONSE) : jsonResponse({ items: [] })
     ));
     const { result } = setup({ value: 'plex:10' });
     await openBrowse(result);
     expect(result.current.state.mode).toBe('browse');
+    // OPEN seeded search with the committed id; goUp at root must NOT keyword-search it.
+    expect(result.current.state.search).toBe('plex:10');
+    expect(result.current.state.browse.breadcrumbs).toHaveLength(1);
 
     await act(async () => { await result.current.goUp(); });
 
-    expect(result.current.state.mode).toBe('search');
-    expect(result.current.state.search).toBe('plex:10'); // OPEN seeded the search with the value
+    expect(result.current.state.mode).toBe(Modes.DISPLAY);
+    expect(result.current.state.search).toBeNull(); // DISPLAY resets search — no INPUT of the raw id
+    expect(result.current.state.value).toBe('plex:10'); // committed value preserved
     expect(result.current.state.browse.items).toEqual([]);
     expect(result.current.state.browse.pagination).toBeNull();
   });

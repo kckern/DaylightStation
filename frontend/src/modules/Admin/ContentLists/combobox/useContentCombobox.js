@@ -375,10 +375,14 @@ export function useContentCombobox({ value, onChange, searchParams = '', appResu
     const { breadcrumbs } = stateRef.current.browse;
     log.info('go_back.start', { breadcrumbDepth: breadcrumbs.length });
     if (breadcrumbs.length <= 1) {
-      // At root — exit browse back to SEARCH with the current search text.
-      log.info('go_back.to_search_results', { reason: 'at_root_or_single_crumb' });
+      // At the siblings root — dismiss to DISPLAY keeping the committed value.
+      // OPEN seeded `search` with the committed id, so an INPUT here would turn
+      // Back into a keyword search of the raw id string (F8). CLOSE resets to
+      // initialState(value): DISPLAY mode, search=null, value preserved.
+      log.info('go_back.dismiss_from_root', { reason: 'at_root_or_single_crumb' });
       invalidateBrowseLoads(); // a late browse response must not yank us back
-      dispatch({ type: 'INPUT', text: stateRef.current.search ?? '' });
+      dispatch({ type: 'CLOSE' });
+      cancelPendingSearch(); // clear any debounced search timer/results
       return;
     }
     const nextBreadcrumbs = breadcrumbs.slice(0, -1);
@@ -409,7 +413,7 @@ export function useContentCombobox({ value, onChange, searchParams = '', appResu
       log.error('go_back.error', { parentId: parent.id, error: err.message });
       if (browseTokenRef.current === token) dispatch({ type: 'BROWSE_LOADING', loading: false });
     }
-  }, [log]);
+  }, [cancelPendingSearch, log]);
 
   // ── 5. Pagination (in-flight guarded; the machine owns items/window math) ──
   // Returns true only when a PAGINATED event was actually dispatched, so the
