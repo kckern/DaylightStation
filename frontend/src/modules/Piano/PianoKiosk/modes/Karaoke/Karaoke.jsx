@@ -188,8 +188,10 @@ function KaraokeBrowser({ playable, onSelect }) {
 function KaraokePlayerRoute({ playable, startFresh }) {
   const { songId } = useParams();
   const navigate = useNavigate();
-  const { items, info } = playable;
-  const source = info?.title || '';
+  const { items } = playable;
+  // No `source` crumb: it would be the Plex show title ("Karaoke"), which duplicates
+  // the chrome's mode crumb (also "Karaoke") → the "Karaoke › Karaoke › song" doubling.
+  // The mode crumb already links back to the browser, so the song title alone is enough.
   const goBack = useCallback(() => navigate('..', { relative: 'path' }), [navigate]);
 
   const lecture = useMemo(
@@ -212,7 +214,7 @@ function KaraokePlayerRoute({ playable, startFresh }) {
       </div>
     );
   }
-  return <SingalongPlayer lecture={lecture} source={source} onBack={goBack} startFresh={startFresh} />;
+  return <SingalongPlayer lecture={lecture} onBack={goBack} startFresh={startFresh} />;
 }
 
 export default Karaoke;
