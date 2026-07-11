@@ -25,7 +25,7 @@ vi.mock('../../../../lib/appRegistry.js', () => ({
 // `import()` resolves instantly (keeps the app-results test deterministic).
 import '../../../../lib/appRegistry.js';
 
-import { useContentCombobox, titleCache } from './useContentCombobox.js';
+import { useContentCombobox, titleCache, Modes } from './useContentCombobox.js';
 
 class MockEventSource {
   constructor(url) {
@@ -180,6 +180,31 @@ describe('useContentCombobox', () => {
     expect(result.current.state.browse.breadcrumbs).toHaveLength(2);
   });
 
+  it('committed value absent from the window highlights nothing (idx -1), not row 0 (F1)', async () => {
+    fetchMock.mockImplementation((url) => {
+      if (url.startsWith('/api/v1/siblings/plex/999')) {
+        return jsonResponse({
+          // The committed id (plex:999) is NOT among the returned siblings.
+          items: [
+            { id: 'plex:9', title: 'Ep 9', source: 'plex', type: 'episode' },
+            { id: 'plex:10', title: 'Ep 10', source: 'plex', type: 'episode' },
+          ],
+          parent: { id: 'plex:100', title: 'Season 1', source: 'plex' },
+          pagination: null,
+          referenceIndex: -1, // genuine miss: server could not center on the value
+        });
+      }
+      return jsonResponse({ items: [] });
+    });
+    const { result } = setup({ value: 'plex:999' });
+
+    await openBrowse(result);
+
+    expect(result.current.state.mode).toBe('browse');
+    expect(result.current.state.browse.items.map((i) => i.id)).toEqual(['plex:9', 'plex:10']);
+    expect(result.current.state.highlight.idx).toBe(-1); // no phantom row-0 highlight
+  });
+
   it('openWithSiblings uses a loaded cache entry without fetching /siblings', async () => {
     setCacheEntry('plex:10', {
       status: 'loaded',
@@ -294,6 +319,42 @@ describe('useContentCombobox', () => {
     expect(result.current.state.results.map((r) => r.id)).toEqual(['plex:5']);
   });
 
+  it('F13: a bare source prefix ("singalong:") dispatches an empty search, not a literal', async () => {
+    vi.useFakeTimers();
+    const { result } = setup({});
+
+    act(() => { result.current.handleInput('singalong:'); });
+    await act(async () => { vi.advanceTimersByTime(350); });
+
+    const searchCalls = fetchMock.mock.calls.filter(([u]) => u.startsWith('/api/v1/content/query/search'));
+    // The literal "singalong:" must never reach the backend search.
+    expect(searchCalls.every(([u]) => !u.includes(encodeURIComponent('singalong:')))).toBe(true);
+    // An empty query short-circuits before any backend search fetch.
+    expect(searchCalls).toHaveLength(0);
+  });
+
+  it('F13 regression: a scoped "source:term" query still searches for the literal', async () => {
+    vi.useFakeTimers();
+    const { result } = setup({});
+
+    act(() => { result.current.handleInput('singalong:nearer'); });
+    await act(async () => { vi.advanceTimersByTime(350); });
+
+    expect(fetchMock.mock.calls.at(-1)[0])
+      .toBe(`/api/v1/content/query/search?text=${encodeURIComponent('singalong:nearer')}&take=20`);
+  });
+
+  it('F13 regression: plain no-colon text still searches normally', async () => {
+    vi.useFakeTimers();
+    const { result } = setup({});
+
+    act(() => { result.current.handleInput('nearer'); });
+    await act(async () => { vi.advanceTimersByTime(350); });
+
+    expect(fetchMock.mock.calls.at(-1)[0])
+      .toBe('/api/v1/content/query/search?text=nearer&take=20');
+  });
+
   it('SSE path streams results into state.results', async () => {
     vi.stubGlobal('EventSource', MockEventSource);
     vi.useFakeTimers();
@@ -313,6 +374,41 @@ describe('useContentCombobox', () => {
     expect(result.current.state.results.map((r) => r.id)).toEqual(['plex:5']);
     // No batch fetch on the SSE path
     expect(fetchMock.mock.calls.filter(([u]) => u.startsWith('/api/v1/content/query/search'))).toHaveLength(0);
+  });
+
+  it('F6: SSE path caps results at 50 and reports truncatedAt when raw count exceeds the cap', () => {
+    vi.stubGlobal('EventSource', MockEventSource);
+    vi.useFakeTimers();
+    const { result } = setup({});
+
+    act(() => { result.current.handleInput('broad'); });
+    act(() => { vi.advanceTimersByTime(350); });
+
+    // Stream 51 unique results — one past the render cap.
+    const items = Array.from({ length: 51 }, (_, i) => ({ id: `plex:${i}`, title: `Item ${i}` }));
+    act(() => {
+      MockEventSource.instances[0].simulateMessage({ event: 'results', source: 'plex', items, pending: [] });
+    });
+
+    expect(result.current.state.results).toHaveLength(50); // capped in the machine
+    expect(result.current.truncatedAt).toBe(50);           // surfaced on the SSE path
+  });
+
+  it('F6: SSE path below the cap does not report truncation', () => {
+    vi.stubGlobal('EventSource', MockEventSource);
+    vi.useFakeTimers();
+    const { result } = setup({});
+
+    act(() => { result.current.handleInput('narrow'); });
+    act(() => { vi.advanceTimersByTime(350); });
+
+    const items = Array.from({ length: 10 }, (_, i) => ({ id: `plex:${i}`, title: `Item ${i}` }));
+    act(() => {
+      MockEventSource.instances[0].simulateMessage({ event: 'results', source: 'plex', items, pending: [] });
+    });
+
+    expect(result.current.state.results).toHaveLength(10);
+    expect(result.current.truncatedAt).toBeNull();
   });
 
   it('appResults=true merges app registry matches ahead of content results', async () => {
@@ -428,18 +524,43 @@ describe('useContentCombobox', () => {
     expect(result.current.state.browse.items[result.current.state.highlight.idx].id).toBe('plex:11');
   });
 
-  it('goUp at root exits browse back to SEARCH via INPUT with the current search text', async () => {
+  it('F14: activeScope reflects a source prefix in the search text; clearScope rewrites to the bare term', () => {
+    const { result } = setup({});
+
+    act(() => { result.current.handleInput('singalong:nearer'); });
+    expect(result.current.state.search).toBe('singalong:nearer');
+    expect(result.current.activeScope).toBe('singalong');
+
+    act(() => { result.current.clearScope(); });
+    expect(result.current.state.search).toBe('nearer'); // scoped prefix stripped
+    expect(result.current.activeScope).toBeNull();
+  });
+
+  it('F14: activeScope is null when there is no prefix and while not searching', () => {
+    const { result } = setup({ value: 'plex:10' });
+    expect(result.current.state.search).toBeNull();
+    expect(result.current.activeScope).toBeNull(); // DISPLAY mode, not searching
+
+    act(() => { result.current.handleInput('nearer'); });
+    expect(result.current.activeScope).toBeNull(); // no source prefix
+  });
+
+  it('goUp at siblings root dismisses to DISPLAY keeping the committed value, not a raw-id search (F8)', async () => {
     fetchMock.mockImplementation((url) => (
       url.startsWith('/api/v1/siblings/plex/10') ? jsonResponse(SIBLINGS_RESPONSE) : jsonResponse({ items: [] })
     ));
     const { result } = setup({ value: 'plex:10' });
     await openBrowse(result);
     expect(result.current.state.mode).toBe('browse');
+    // OPEN seeded search with the committed id; goUp at root must NOT keyword-search it.
+    expect(result.current.state.search).toBe('plex:10');
+    expect(result.current.state.browse.breadcrumbs).toHaveLength(1);
 
     await act(async () => { await result.current.goUp(); });
 
-    expect(result.current.state.mode).toBe('search');
-    expect(result.current.state.search).toBe('plex:10'); // OPEN seeded the search with the value
+    expect(result.current.state.mode).toBe(Modes.DISPLAY);
+    expect(result.current.state.search).toBeNull(); // DISPLAY resets search — no INPUT of the raw id
+    expect(result.current.state.value).toBe('plex:10'); // committed value preserved
     expect(result.current.state.browse.items).toEqual([]);
     expect(result.current.state.browse.pagination).toBeNull();
   });

@@ -79,10 +79,13 @@
     }
   }
 
-  // Current item (originally selected) - subtle gray, NO blue
+  // Current item (originally selected) - calm "you are here" marker, NO blue.
+  // A subtle background tint plus a teal accent bar make it legible without
+  // being mistaken for the blue keyboard `.highlighted` state.
   &.current:not(.highlighted):not([data-highlighted='true']) {
     background: var(--ds-bg-elevated) !important;
-    border-left: 3px solid var(--ds-text-muted);
+    border-left: 3px solid var(--mantine-color-teal-5);
+    box-shadow: inset 0 0 0 1px var(--mantine-color-teal-9);
   }
 
   // Wrap-around flash — draws eye to new position after pac-man wrap

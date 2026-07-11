@@ -12,8 +12,10 @@ vi.mock('../../../../lib/logging/singleton.js', () => {
 });
 
 const notifySuccess = vi.fn();
+const showUndoToast = vi.fn();
 vi.mock('../../shared/feedback.js', () => ({
   notifySuccess: (...args) => notifySuccess(...args),
+  showUndoToast: (...args) => showUndoToast(...args),
 }));
 
 import { useAutoResolve } from './useAutoResolve.js';
@@ -41,6 +43,7 @@ function setup(initialProps = {}) {
 describe('useAutoResolve', () => {
   beforeEach(() => {
     notifySuccess.mockClear();
+    showUndoToast.mockClear();
     fetchMock = vi.fn(() => jsonResponse({ items: [] }));
     vi.stubGlobal('fetch', fetchMock);
   });
@@ -92,9 +95,32 @@ describe('useAutoResolve', () => {
 
     await waitFor(() => expect(onChange).toHaveBeenCalledTimes(1));
     expect(onChange).toHaveBeenCalledWith('plex:123', HIT);
-    expect(notifySuccess).toHaveBeenCalledTimes(1);
+    expect(showUndoToast).toHaveBeenCalledTimes(1);
     expect(fetchMetadata).toHaveBeenCalledWith('plex:123');
     await waitFor(() => expect(setContentInfo).toHaveBeenCalledWith('plex:123', info));
+  });
+
+  it('auto-resolve is undoable: undo restores the original freeform text', async () => {
+    const onChange = vi.fn();
+    fetchMock.mockImplementation(() => jsonResponse({ items: [HIT] }));
+
+    const { result } = setup({ value: 'blue danube', onChange });
+
+    await act(async () => { result.current.maybeResolve('blue danube'); });
+
+    // Happy path still fires with the resolved id + item.
+    await waitFor(() => expect(onChange).toHaveBeenCalledWith('plex:123', HIT));
+
+    // Success path shows an undo toast (not a plain success toast).
+    await waitFor(() => expect(showUndoToast).toHaveBeenCalledTimes(1));
+    expect(notifySuccess).not.toHaveBeenCalled();
+
+    const arg = showUndoToast.mock.calls[0][0];
+    expect(typeof arg.onUndo).toBe('function');
+
+    // Invoking onUndo restores the ORIGINAL freeform text, not the resolved id.
+    act(() => { arg.onUndo(); });
+    expect(onChange).toHaveBeenLastCalledWith('blue danube');
   });
 
   it('onChange does NOT fire when the value changed under the in-flight resolve', async () => {
@@ -118,7 +144,7 @@ describe('useAutoResolve', () => {
 
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
     expect(onChange).not.toHaveBeenCalled();
-    expect(notifySuccess).not.toHaveBeenCalled();
+    expect(showUndoToast).not.toHaveBeenCalled();
   });
 
   it('aborts the fetch after the 15s timeout', () => {
@@ -187,6 +213,6 @@ describe('useAutoResolve', () => {
 
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
     expect(onChange).not.toHaveBeenCalled();
-    expect(notifySuccess).not.toHaveBeenCalled();
+    expect(showUndoToast).not.toHaveBeenCalled();
   });
 });

@@ -16,3 +16,12 @@ export function isContentIdLike(text) {
 export function shouldAutoAdd(input) {
   return isContentIdLike(input);
 }
+
+// Parse a `source:term` query. Mirrors the backend ContentQueryService prefix
+// grammar (source may contain hyphens; term must be non-empty). Returns null
+// when there is no prefixed, non-empty term.
+export function parseSourcePrefix(text) {
+  if (typeof text !== 'string') return null;
+  const m = text.match(/^([\w-]+):(.+)$/);
+  return m ? { source: m[1].toLowerCase(), term: m[2] } : null;
+}

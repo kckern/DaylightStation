@@ -7,7 +7,7 @@
 // event names (`search.auto_resolve.*`) are unchanged.
 import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { getChildLogger } from '../../../../lib/logging/singleton.js';
-import { notifySuccess } from '../../shared/feedback.js';
+import { showUndoToast } from '../../shared/feedback.js';
 
 const AUTO_RESOLVE_TIMEOUT_MS = 15000;
 // Same gate the twin used: text that already looks like `source:id`
@@ -97,7 +97,15 @@ export function useAutoResolve({ value, onChange, setContentInfo, fetchMetadata 
             durationMs: Date.now() - entry.startedAt,
           });
           onChangeRef.current?.(resolved, items[0]);
-          notifySuccess({ title: 'Auto-resolved', message: `Resolved “${freeformText}” → ${items[0].title}` });
+          showUndoToast({
+            id: `auto-resolve-${resolved}`,
+            title: 'Auto-resolved',
+            message: `“${freeformText}” → ${items[0].title}`,
+            onUndo: () => {
+              log.info('search.auto_resolve.undone', { restoredTo: freeformText, from: resolved });
+              onChangeRef.current?.(freeformText);
+            },
+          });
           // Eagerly populate the content cache so the row doesn't stay in
           // its loading state.
           const fetchMeta = fetchMetadataRef.current;

@@ -26,7 +26,7 @@ import {
   IconMusic, IconVideo, IconPhoto, IconFile, IconList, IconPencil, IconX,
 } from '@tabler/icons-react';
 import { getChildLogger } from '../../../../lib/logging/singleton.js';
-import { shouldRunScrollToHighlighted } from '../comboboxScroll.js';
+import { shouldRunScrollToHighlighted, computeScrollRestore } from '../comboboxScroll.js';
 import { useContentCombobox } from './useContentCombobox.js';
 import { Modes } from './comboboxMachine.js';
 import './ContentCombobox.scss';
@@ -109,7 +109,7 @@ export function ContentCombobox({
   const log = useMemo(() => getChildLogger({ component: 'ContentCombobox', app: 'admin', sessionLog: true }), []);
   const {
     state, dispatch,
-    handleInput,
+    handleInput, activeScope, clearScope,
     openWithSiblings, drill, goUp, paginate,
     handleClose, select,
     resolvedTitle, isSearching, pendingSources, sourceErrors, truncatedAt,
@@ -263,13 +263,26 @@ export function ContentCombobox({
     paginationScrollGuardRef.current = true;
     const viewport = viewportRef.current;
     const prevScrollHeight = direction === 'before' ? (viewport?.scrollHeight || 0) : 0;
+    const prevScrollTop = direction === 'before' ? (viewport?.scrollTop || 0) : 0;
     try {
       const dispatched = await paginate(direction);
       if (!dispatched) paginationScrollGuardRef.current = false;
       if (dispatched && direction === 'before' && viewport) {
-        // Maintain scroll position after prepending
+        // Maintain scroll position after prepending. overflowAnchor:none disables
+        // native scroll-anchoring, so this manual restore is the only safeguard.
+        // Double-rAF (mirroring the cooldown below) defers the write until AFTER
+        // React commits the prepended rows + browser layout — a single rAF can
+        // fire while scrollHeight is still stale, under-compensating and yanking
+        // the viewport upward.
         requestAnimationFrame(() => {
-          viewport.scrollTop += viewport.scrollHeight - prevScrollHeight;
+          requestAnimationFrame(() => {
+            if (!viewport) return;
+            viewport.scrollTop = computeScrollRestore({
+              prevScrollHeight,
+              newScrollHeight: viewport.scrollHeight,
+              prevScrollTop,
+            });
+          });
         });
       }
     } finally {
@@ -419,6 +432,7 @@ export function ContentCombobox({
       <Combobox.Option
         key={item.id}
         value={item.id}
+        data-testid={`combobox-option-${item.id}`}
         data-value={item.id}
         data-highlighted={isHighlighted ? 'true' : 'false'}
         data-current={isCurrent ? 'true' : 'false'}
@@ -444,6 +458,18 @@ export function ContentCombobox({
             </Stack>
           </Group>
           <Group gap="xs" wrap="nowrap">
+            {isCurrent && (
+              <Badge
+                size="xs"
+                variant="light"
+                color="teal"
+                data-testid="combobox-current-badge"
+                title="This is your current selection"
+                style={{ flexShrink: 0 }}
+              >
+                Current
+              </Badge>
+            )}
             <Badge size="xs" variant="light" color="gray" data-testid="combobox-source-badge">{(source ?? '?').toUpperCase()}</Badge>
             {item.matchReason === 'id-lookup' && (
               <Badge
@@ -537,6 +563,18 @@ export function ContentCombobox({
       )}
 
       <Combobox.Dropdown>
+        {/* Orientation header (BROWSE mode): the committed value isn't among the
+            rendered siblings, so nothing is highlighted — surface it here. */}
+        {isBrowse && value && !items.some((it) => normalizeValue(it.id) === normalizedValue) && (
+          <Box p="xs" data-testid="combobox-current-anchor" style={{ borderBottom: '1px solid var(--mantine-color-dark-4)' }}>
+            <Group gap="xs" wrap="nowrap">
+              <Text size="xs" c="dimmed" style={{ flexShrink: 0 }}>Current:</Text>
+              <Text size="xs" fw={600} truncate>{resolvedTitle || value}</Text>
+              <Text size="xs" c="dimmed" style={{ flexShrink: 0 }}>— not in this list</Text>
+            </Group>
+          </Box>
+        )}
+
         {/* Breadcrumb navigation (BROWSE mode) */}
         {isBrowse && breadcrumbs.length > 0 && (
           <Box p="xs" style={{ borderBottom: '1px solid var(--mantine-color-dark-4)' }}>
@@ -554,6 +592,25 @@ export function ContentCombobox({
                 {breadcrumbs.map((b) => b.title).join(' / ')}
               </Text>
             </Group>
+          </Box>
+        )}
+
+        {/* Source-scope chip (SEARCH mode): a `source:term` query filters the
+            search to one source — surface it, and let the user undo it (F14). */}
+        {activeScope && !isBrowse && (
+          <Box p="xs" data-testid="combobox-scope-chip" style={{ borderBottom: '1px solid var(--mantine-color-dark-4)' }}>
+            <Badge
+              size="sm" variant="light"
+              rightSection={
+                <ActionIcon size="xs" variant="transparent" aria-label="Clear source scope"
+                  data-testid="combobox-scope-clear"
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={(e) => { e.stopPropagation(); clearScope(); }}>
+                  <IconX size={12} />
+                </ActionIcon>
+              }>
+              Searching within {activeScope}
+            </Badge>
           </Box>
         )}
 
