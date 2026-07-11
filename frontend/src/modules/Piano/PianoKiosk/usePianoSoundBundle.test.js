@@ -7,6 +7,11 @@ vi.mock('./PianoSoundContext.jsx', () => ({
     selectVoice, setEffect,
     deviceVoice: { pc: 4, bank: 0, name: 'EP' },
     effects: { reverb: { type: 2, level: 40, on: true }, chorus: { type: 1, level: 10, on: true } },
+    device: {
+      voiceGroups: [
+        { group: 'Piano', voices: [{ no: 17, name: 'Upright', pc: 16, bank: 0 }] },
+      ],
+    },
   }),
 }));
 // Real export is `pianoLevel`, not `level` (see PianoMixContext.jsx).
@@ -22,7 +27,7 @@ describe('usePianoSoundBundle', () => {
       voice: { pc: 16, bank: 0 }, reverb: { type: 3, level: 72, on: true },
       chorus: { type: 0, level: 0, on: false }, volume: 100,
     });
-    expect(selectVoice).toHaveBeenCalledWith({ pc: 16, bank: 0 });
+    expect(selectVoice).toHaveBeenCalledWith({ no: 17, name: 'Upright', pc: 16, bank: 0 });
     expect(setEffect).toHaveBeenNthCalledWith(1, 'reverb', { type: 3, level: 72, on: true });
     expect(setEffect).toHaveBeenNthCalledWith(2, 'chorus', { type: 0, level: 0, on: false });
     expect(setPianoLevel).toHaveBeenCalledWith(100);
