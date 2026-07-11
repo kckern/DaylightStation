@@ -9,11 +9,15 @@ describe('balancedColumns', () => {
   it('keeps the 10-item home menu at 5×2 (unchanged)', () => {
     expect(balancedColumns(10)).toBe(5);
   });
-  it('splits into the fewest-empty rectangle past `max`', () => {
+  it('fills the fewest rows then widens, past `max`', () => {
     expect(balancedColumns(6)).toBe(3);   // 3+3
     expect(balancedColumns(7)).toBe(4);   // 4+3
     expect(balancedColumns(8)).toBe(4);   // 4×2
-    expect(balancedColumns(9)).toBe(3);   // 3×3
+    expect(balancedColumns(9)).toBe(5);   // 5+4 (2 rows beats a 3×3 square above the fold)
+  });
+  it('stays wide-and-short for large counts (never a narrow tall grid)', () => {
+    expect(balancedColumns(13)).toBe(5);  // 5+5+3, not 2×7
+    expect(balancedColumns(22)).toBe(5);  // 5×4+2, not 2×11
   });
   it('handles degenerate counts', () => {
     expect(balancedColumns(0)).toBe(1);
