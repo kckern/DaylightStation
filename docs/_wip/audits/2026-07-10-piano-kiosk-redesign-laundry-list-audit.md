@@ -33,7 +33,7 @@ screenshot to confirm).
 | F5 | Spacing scale | **REAL** | no `--sp-*` tokens; spacing is magic rems | S |
 | 1 | Connect / first-load gate | **REAL** | remove dead Connect btn, promote Continue, add Reboot, BT icon, tile layout | M |
 | 3 | Games submenu | **REAL (small)** | count-aware grid (= F3); 4 games clump left in a 5-col grid | S |
-| 6 | Who's-playing turn-off | **REAL (bug)** | button gated on `onScreenOff`; chip caller omits it → intermittent | S |
+| 6 | Who's-playing turn-off | **✅ DONE** (`d22cf7596`) | shared `usePianoScreenOff`; chip switcher now always shows it | — |
 | 12 | Instrument picker | **REAL** | own UX/lifecycle + icons; today a text grid in Settings | M |
 | 4 | Loaders everywhere | **REAL (= F4)** | see F4 | M |
 | 7 | Header home button | **UNVERIFIED (minor)** | looks acceptable in shots; only if it bugs us | S |
@@ -60,10 +60,10 @@ High-leverage, small, unblocks the rest.
   PianoPicker) through it. **This closes #4.**
 
 ### Wave 1 — Surgical fixes *(each ~½ day, standalone)*
-- **#6 — Who's-playing turn-off (bug).** `WhoIsPlayingPrompt` renders the control only when a
-  caller passes `onScreenOff`; the chrome-chip switcher (`PianoUserChip`) omits it, so the
-  manual switch never shows it. **Decided: it should always show.** Fix = have the chip caller
-  pass `onScreenOff` too (both entry points get the control).
+- **✅ #6 — Who's-playing turn-off (bug).** DONE (`d22cf7596`). Extracted a shared
+  `usePianoScreenOff` hook (backlight off + MIDI-wake cooldown + suppress-wake + drop-to-guest)
+  so both entry points behave identically, and wired the chrome-chip switcher to it so the
+  control is always shown.
 - **#5b — Subsystem restart.** Today's "Reload app" reloads the whole page; add a control that
   restarts just the MIDI + sound + feedback subsystem.
 - **#7 — Header home button** (only if it still reads as too small in situ).
