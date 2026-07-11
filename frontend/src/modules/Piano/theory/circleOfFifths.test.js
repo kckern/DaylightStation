@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { CIRCLE_ORDER, circlePositions, activeSlots, keyArc } from './circleOfFifths.js';
+import { CIRCLE_ORDER, circlePositions, activeSlots, keyArc, diatonicSlots, slotOfPitchClass } from './circleOfFifths.js';
 
 describe('CIRCLE_ORDER', () => {
   it('has 12 entries in fifths order starting at C', () => {
@@ -69,5 +69,55 @@ describe('keyArc', () => {
 
   it('returns empty for an unknown key', () => {
     expect(keyArc('H').size).toBe(0);
+  });
+});
+
+describe('diatonicSlots', () => {
+  const roman = (m, label) => m.get(CIRCLE_ORDER.findIndex((s) => s.label === label))?.roman;
+  const quality = (m, label) => m.get(CIRCLE_ORDER.findIndex((s) => s.label === label))?.quality;
+
+  it('maps C major to its seven diatonic degrees with qualities', () => {
+    const m = diatonicSlots('C');
+    expect(m.size).toBe(7);
+    // IV·I·V major, ii·vi·iii minor, vii° diminished.
+    expect(roman(m, 'F')).toBe('IV');   expect(quality(m, 'F')).toBe('major');
+    expect(roman(m, 'C')).toBe('I');    expect(quality(m, 'C')).toBe('major');
+    expect(roman(m, 'G')).toBe('V');    expect(quality(m, 'G')).toBe('major');
+    expect(roman(m, 'D')).toBe('ii');   expect(quality(m, 'D')).toBe('minor');
+    expect(roman(m, 'A')).toBe('vi');   expect(quality(m, 'A')).toBe('minor');
+    expect(roman(m, 'E')).toBe('iii');  expect(quality(m, 'E')).toBe('minor');
+    expect(roman(m, 'B')).toBe('vii°'); expect(quality(m, 'B')).toBe('diminished');
+  });
+
+  it('rotates correctly for a sharp key (G major → F# is vii°)', () => {
+    const m = diatonicSlots('G');
+    expect(roman(m, 'G')).toBe('I');
+    expect(roman(m, 'C')).toBe('IV');
+    expect(roman(m, 'D')).toBe('V');
+    expect(roman(m, 'F#')).toBe('vii°');
+    expect(quality(m, 'F#')).toBe('diminished');
+  });
+
+  it('occupies seven contiguous slots (the diatonic window)', () => {
+    const m = diatonicSlots('C');
+    const idxs = [...m.keys()].sort((a, b) => a - b);
+    expect(idxs.length).toBe(7);
+  });
+
+  it('returns an empty map for an unknown key', () => {
+    expect(diatonicSlots('H').size).toBe(0);
+  });
+});
+
+describe('slotOfPitchClass', () => {
+  it('finds the slot whose key root is that pitch class', () => {
+    expect(CIRCLE_ORDER[slotOfPitchClass(0)].label).toBe('C');
+    expect(CIRCLE_ORDER[slotOfPitchClass(7)].label).toBe('G');
+    expect(CIRCLE_ORDER[slotOfPitchClass(6)].label).toBe('F#');
+  });
+  it('normalises out-of-range and rejects nullish', () => {
+    expect(CIRCLE_ORDER[slotOfPitchClass(12)].label).toBe('C'); // 12 → 0
+    expect(slotOfPitchClass(null)).toBe(-1);
+    expect(slotOfPitchClass(NaN)).toBe(-1);
   });
 });
