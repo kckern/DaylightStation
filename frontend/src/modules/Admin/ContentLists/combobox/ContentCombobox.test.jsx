@@ -185,6 +185,54 @@ describe('ContentCombobox (hook wiring)', () => {
     expect(otherRow).toHaveAttribute('data-current', 'false');
   });
 
+  it('BROWSE mode shows the orientation anchor when the committed value is not in the window (F1)', () => {
+    currentHook = makeHook({
+      state: {
+        ...initialState('singalong:hymn/1008'),
+        value: 'singalong:hymn/1008',
+        mode: Modes.BROWSE,
+        browse: {
+          items: [
+            { id: 'singalong:hymn/1', title: 'The Morning Breaks', source: 'singalong' },
+            { id: 'singalong:hymn/2', title: 'The Spirit of God', source: 'singalong' },
+          ],
+          breadcrumbs: [],
+          pagination: null,
+          loading: false,
+        },
+      },
+      resolvedTitle: 'Nearer, My God, to Thee',
+    });
+    renderCombobox({ value: 'singalong:hymn/1008' });
+
+    const anchor = screen.getByTestId('combobox-current-anchor');
+    expect(anchor).toHaveTextContent('Nearer, My God, to Thee');
+    expect(anchor).toHaveTextContent('not in this list');
+  });
+
+  it('BROWSE mode hides the orientation anchor when the committed value IS in the window (F1)', () => {
+    currentHook = makeHook({
+      state: {
+        ...initialState('singalong:hymn/2'),
+        value: 'singalong:hymn/2',
+        mode: Modes.BROWSE,
+        browse: {
+          items: [
+            { id: 'singalong:hymn/1', title: 'The Morning Breaks', source: 'singalong' },
+            { id: 'singalong:hymn/2', title: 'The Spirit of God', source: 'singalong' },
+          ],
+          breadcrumbs: [],
+          pagination: null,
+          loading: false,
+        },
+      },
+      resolvedTitle: 'The Spirit of God',
+    });
+    renderCombobox({ value: 'singalong:hymn/2' });
+
+    expect(screen.queryByTestId('combobox-current-anchor')).toBeNull();
+  });
+
   it('Escape closes via handleClose with reason escape', () => {
     currentHook = makeHook({
       state: { ...initialState(''), mode: Modes.SEARCH, search: 'abc' },

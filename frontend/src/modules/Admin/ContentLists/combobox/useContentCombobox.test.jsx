@@ -180,6 +180,31 @@ describe('useContentCombobox', () => {
     expect(result.current.state.browse.breadcrumbs).toHaveLength(2);
   });
 
+  it('committed value absent from the window highlights nothing (idx -1), not row 0 (F1)', async () => {
+    fetchMock.mockImplementation((url) => {
+      if (url.startsWith('/api/v1/siblings/plex/999')) {
+        return jsonResponse({
+          // The committed id (plex:999) is NOT among the returned siblings.
+          items: [
+            { id: 'plex:9', title: 'Ep 9', source: 'plex', type: 'episode' },
+            { id: 'plex:10', title: 'Ep 10', source: 'plex', type: 'episode' },
+          ],
+          parent: { id: 'plex:100', title: 'Season 1', source: 'plex' },
+          pagination: null,
+          referenceIndex: -1, // genuine miss: server could not center on the value
+        });
+      }
+      return jsonResponse({ items: [] });
+    });
+    const { result } = setup({ value: 'plex:999' });
+
+    await openBrowse(result);
+
+    expect(result.current.state.mode).toBe('browse');
+    expect(result.current.state.browse.items.map((i) => i.id)).toEqual(['plex:9', 'plex:10']);
+    expect(result.current.state.highlight.idx).toBe(-1); // no phantom row-0 highlight
+  });
+
   it('openWithSiblings uses a loaded cache entry without fetching /siblings', async () => {
     setCacheEntry('plex:10', {
       status: 'loaded',
