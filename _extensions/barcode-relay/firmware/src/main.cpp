@@ -17,6 +17,8 @@
 #include <Arduino.h>
 #include <WiFi.h>
 #include <WiFiUdp.h>
+#include <WebSocketsClient.h>
+#include <ArduinoJson.h>
 #include <NimBLEDevice.h>
 #include <FastLED.h>
 
@@ -28,6 +30,12 @@ static void setLed(const CRGB& c){ led[0]=c; FastLED.show(); }
 static const char* WIFI_SSID = "YOUR_SSID";
 static const char* WIFI_PASS = "YOUR_WIFI_PASS";
 static WiFiUDP udp; static IPAddress g_bcast; static const uint16_t LOG_PORT=9999;
+
+// WS relay to the DaylightStation event bus (backend re-broadcasts `barcode-relay`).
+static const char* WS_HOST = "daylightlocal.kckern.net";
+static const uint16_t WS_PORT = 3111;
+static const char* WS_PATH = "/ws";
+static WebSocketsClient webSocket; static bool wsConnected=false;
 static void logf(const char* fmt, ...){
   char buf[300]; va_list ap; va_start(ap,fmt); vsnprintf(buf,sizeof(buf),fmt,ap); va_end(ap);
   Serial.println(buf);
@@ -70,10 +78,20 @@ static char hidChar(uint8_t usage, bool shift){
 static String g_barcode;
 static uint8_t g_lastKeys[6]={0};
 
+static void wsEvent(WStype_t type, uint8_t*, size_t){
+  if(type==WStype_CONNECTED){ wsConnected=true; logf("[ws] connected"); }
+  else if(type==WStype_DISCONNECTED){ wsConnected=false; logf("[ws] disconnected"); }
+}
+
 static void emitBarcode(){
   if(g_barcode.length()==0) return;
-  logf(">>> SCAN  \"%s\"  (len %d)", g_barcode.c_str(), g_barcode.length());
-  // TODO relay: WS client to DaylightStation event bus (source 'barcode-relay', code=g_barcode)
+  logf(">>> SCAN  \"%s\"  (len %d)  ws=%d", g_barcode.c_str(), g_barcode.length(), wsConnected);
+  if(wsConnected){
+    JsonDocument doc;
+    doc["source"]="barcode-relay"; doc["type"]="scan"; doc["device"]="barcode-relay";
+    doc["code"]=g_barcode; doc["ts"]=(uint32_t)millis();
+    String out; serializeJson(doc,out); webSocket.sendTXT(out);
+  }
   g_barcode="";
   setLed(CRGB::Green); delay(80); setLed(CRGB(0,0,20));
 }
@@ -153,11 +171,16 @@ void setup(){
   if(WiFi.status()==WL_CONNECTED){ g_bcast=WiFi.localIP(); g_bcast[3]=255; logf("[wifi] %s -> UDP log :9999", WiFi.localIP().toString().c_str()); }
   else Serial.println("[wifi] FAILED (serial-only)");
 
+  webSocket.begin(WS_HOST, WS_PORT, WS_PATH);
+  webSocket.onEvent(wsEvent);
+  webSocket.setReconnectInterval(5000);
+
   logf("[ble] scanning for DS2278 in HID-BLE mode — pull the trigger to wake it...");
   startScan();
 }
 
 void loop(){
+  webSocket.loop();
   if(g_doConnect){ g_doConnect=false; if(!connectAndSub()){ delay(500); startScan(); } else setLed(CRGB(0,0,20)); }
   if(!g_hid && !g_doConnect && !NimBLEDevice::getScan()->isScanning()) startScan();
   static uint32_t last=0;

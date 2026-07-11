@@ -145,6 +145,7 @@ import { FitnessProgressClassifier } from '#domains/fitness/services/FitnessProg
 import { initUnlockService } from '#apps/fitness/unlockService.mjs';
 import { initManageService } from '#apps/fitness/manageService.mjs';
 import { createFoodScaleRelay } from '#apps/hardware/foodScaleRelay.mjs';
+import { createBarcodeRelay } from '#apps/hardware/barcodeRelay.mjs';
 import { createFingerprintProfileWriter } from '#apps/fitness/fingerprintProfileWriter.mjs';
 import { YamlUserProfileDatastore } from '#adapters/persistence/yaml/YamlUserProfileDatastore.mjs';
 import { YamlEmergencyLockDatastore } from '#adapters/persistence/yaml/YamlEmergencyLockDatastore.mjs';
@@ -476,6 +477,14 @@ export async function createApp({ server, logger, configPaths, configExists, ena
       || configService.reloadHouseholdAppConfig?.(householdId, 'scales')
       || {},
     logger: rootLogger.child({ module: 'food-scale-relay' }),
+  });
+
+  // Barcode relay — ingests the ESP32 BLE-scanner bridge's scans (source:
+  // 'barcode-relay') and broadcasts on the `barcode-relay` topic. See
+  // _extensions/barcode-relay. (Feeding BarcodeScanService is a follow-up.)
+  createBarcodeRelay({
+    eventBus,
+    logger: rootLogger.child({ module: 'barcode-relay' }),
   });
 
   // Fingerprint unlock service — binds the unlock broker to the live bus so
