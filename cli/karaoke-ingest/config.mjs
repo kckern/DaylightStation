@@ -49,6 +49,8 @@ export const MIN_DURATION_S = 90;    // 1.5 min
 export const MAX_DURATION_S = 480;   // 8 min
 export const SCORE_FLOOR = 0;        // any candidate passing hard filters is acceptable
 
-// yt-dlp format sort (prefer h264/aac mp4 ≤1080p) + merge container.
-export const FORMAT_SORT = 'res:1080,vcodec:h264,acodec:aac,ext:mp4';
+// yt-dlp format selection: HARD-CAP height at 720p (never pull 1080p), then
+// among the ≤720 renditions prefer h264/aac/mp4 at the highest available res.
+export const FORMAT_FILTER = 'bv*[height<=720]+ba/b[height<=720]/b[height<=720]/b';
+export const FORMAT_SORT = 'res:720,vcodec:h264,acodec:aac,ext:mp4';
 export const MERGE_FORMAT = 'mp4';

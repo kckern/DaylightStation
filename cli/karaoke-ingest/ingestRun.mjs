@@ -46,7 +46,7 @@ export async function runIngest({ rows, config, deps, options = {} }) {
 
     try {
       const tmpPath = `${finalPath}.tmp.mp4`;
-      await download({ url: videoUrl, outPath: tmpPath, formatSort: config.formatSort, mergeFormat: config.mergeFormat });
+      await download({ url: videoUrl, outPath: tmpPath, formatSort: config.formatSort, mergeFormat: config.mergeFormat, formatFilter: config.formatFilter });
       const title = `${row.song} (${row.artist})`;
       const comment = `Karaoke • ${chosenChannel} • ${chosenTitle} • Category: ${config.seasonName(row.season)}`;
       await embed({ inPath: tmpPath, outPath: finalPath, title, comment });
