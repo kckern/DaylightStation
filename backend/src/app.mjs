@@ -472,6 +472,9 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   createFoodScaleRelay({
     eventBus,
     dataDir,
+    config: configService.getHouseholdAppConfig(householdId, 'scales')
+      || configService.reloadHouseholdAppConfig?.(householdId, 'scales')
+      || {},
     logger: rootLogger.child({ module: 'food-scale-relay' }),
   });
 

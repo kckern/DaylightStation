@@ -39,7 +39,7 @@ BLE scale ──BLE notify(FFB2)──▶ ATOM Lite (firmware) ──WS──▶
                                      │ button (GPIO39)          │ broadcast('food-scale')
                                      └──────────────────────────┘   ├─▶ apps / displays (live)
                                                                      └─▶ persistence subscriber
-                                                                          → history/hardware/food-scale/
+                                                                          → history/nutrition/<id>/ (configurable)
 ```
 
 ## Phase 0 — BLE discovery results (verified on this Mac via `bleak`)
@@ -199,9 +199,9 @@ does nothing but validate → `broadcast('food-scale', …)`; confirm during imp
 
 The relay/ingest is deliberately dumb: it **streams live events onto the bus and
 persists nothing**. Persistence is a **separate backend concern** — a subscriber
-to the `food-scale` topic decides *what* and *how* to store under
-`data/household/history/hardware/`. This keeps the high-rate live stream
-ephemeral (on the bus) while durable storage records only what's meaningful.
+to the scale's topic decides *what* and *how* to store under the configured root
+(`data/household/history/nutrition/` by default). This keeps the high-rate live
+stream ephemeral (on the bus) while durable storage records only what's meaningful.
 
 **Recommended policy (backend's call, not the firmware's):**
 
@@ -210,21 +210,23 @@ ephemeral (on the bus) while durable storage records only what's meaningful.
   holds ≥ ~1 s at a non-zero weight), append one record. This is the "you weighed
   something" event a nutrition log actually wants.
 - **Persist button events** verbatim (short/long press).
-- **Layout** (mirrors the fitness date-partition convention
-  `history/fitness/{date}/{id}.yml`):
+- **Layout** — config-driven root (`scales.yml` → `persistence.dir`, default
+  `household/history/nutrition`), then `<id>/<YYYY-MM-DD>.yml` (append-only day log):
   ```
-  history/hardware/food-scale/{scale-id}/{YYYY-MM-DD}.yml   # append-only day log
+  {persistence.dir}/{scale-id}/{YYYY-MM-DD}.yml
+  # default: household/history/nutrition/kitchen-food-scale/2026-07-11.yml
   ```
   ```yaml
-  # history/hardware/food-scale/kitchen/2026-07-10.yml
-  - ts: 2026-07-10T14:03:21Z
+  - ts: 2026-07-11T14:03:21Z
     grams: 240
     unit: g
     kind: settled
-  - ts: 2026-07-10T14:03:40Z
+  - ts: 2026-07-11T14:03:40Z
     event: button
     press: short
   ```
+- **Broadcast topic** is per-scale configurable too (`scales.<id>.topic`, default
+  `food-scale`); the persistence subscriber listens on every configured topic.
 - Implement via a `food-scale` subscriber in the composition root writing through
   the existing datastore/`io` layer (append semantics; beware the
   `DataService.ensureExtension` dotted-filename gotcha — keep ids dot-free or add

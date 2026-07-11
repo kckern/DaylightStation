@@ -12,7 +12,7 @@ SSOT (`data/household/config/scales.yml`). Nothing is hardcoded.
 BLE scale ──BLE notify(FFB2)──▶ ATOM Lite ──WS /ws──▶ backend event bus
                                    │ button GPIO39      │ broadcast('food-scale')
                                    └────────────────────┘   ├─▶ apps (live)
-                                                             └─▶ history/hardware/food-scale/
+                                                             └─▶ history/nutrition/<scale-id>/
 ```
 
 ## Scale protocol (verified)

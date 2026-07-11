@@ -5,15 +5,19 @@
 //   1) INGEST  (client → bus): the ESP32 food-scale-relay (see
 //      _extensions/food-scale-relay) connects to the WS event bus as a device
 //      client and streams decoded weight/button events. We re-broadcast them on
-//      the `food-scale` topic so any app/display can subscribe live.
+//      the scale's configured topic (default `food-scale`) so any app/display
+//      can subscribe live.
 //
 //   2) PERSIST (bus → disk): a subscriber records only MEANINGFUL events —
 //      settled weight measurements and button presses — to
-//      data/household/history/hardware/food-scale/{id}/{YYYY-MM-DD}.yml. The
-//      raw ~4 Hz stream stays ephemeral on the bus; we never persist it.
+//      {dataDir}/{persistence.dir}/{id}/{YYYY-MM-DD}.yml
+//      (default dir: household/history/nutrition). The raw ~4 Hz stream stays
+//      ephemeral on the bus; we never persist it.
 //
-// The two concerns are decoupled: persistence policy (sampling, format,
-// retention) can change without touching the relay firmware or the ingest path.
+// Config-driven: the persistence root and per-scale broadcast topics come from
+// the household SSOT (config/scales.yml), passed in as `config`. The two
+// concerns are decoupled: persistence policy can change without touching the
+// relay firmware or the ingest path.
 //
 // Design: docs/plans/2026-07-10-food-scale-relay-design.md
 import { promises as fs } from 'fs';
@@ -21,27 +25,35 @@ import path from 'path';
 import yaml from 'js-yaml';
 
 const RELAY_SOURCE = 'food-scale-relay';
-const TOPIC = 'food-scale';
+const DEFAULT_TOPIC = 'food-scale';
+const DEFAULT_DIR = 'household/history/nutrition'; // relative to dataDir
 
 /**
  * @param {object}   deps
  * @param {object}   deps.eventBus  IEventBus (WebSocketEventBus)
  * @param {string}   deps.dataDir   resolved data dir (configService.getDataDir())
+ * @param {object}   [deps.config]  parsed config/scales.yml — { persistence:{dir}, scales:{<id>:{topic}} }
  * @param {object}   [deps.logger]  structured logger
  * @returns {{ dispose: () => void }}
  */
-export function createFoodScaleRelay({ eventBus, dataDir, logger = console }) {
+export function createFoodScaleRelay({ eventBus, dataDir, config = {}, logger = console }) {
   if (!eventBus?.onClientMessage || !eventBus?.subscribe) {
     throw new Error('createFoodScaleRelay: eventBus with onClientMessage + subscribe required');
   }
 
-  const historyDir = path.join(dataDir, 'household', 'history', 'hardware', 'food-scale');
+  const scaleDefs = config?.scales || {};
+  const persistDir = (config?.persistence?.dir || DEFAULT_DIR).replace(/^\/+/, '');
+  const historyRoot = path.join(dataDir, ...persistDir.split('/'));
+  const topicForId = (id) => scaleDefs[id]?.topic || DEFAULT_TOPIC;
+  // Every distinct topic we must persist from (default + any per-scale overrides).
+  const topics = new Set([DEFAULT_TOPIC, ...Object.values(scaleDefs).map((s) => s?.topic).filter(Boolean)]);
 
   // ---- 1) INGEST: relay device client → bus ------------------------------
   eventBus.onClientMessage((clientId, message) => {
     if (!message || message.source !== RELAY_SOURCE) return;
     const id = typeof message.id === 'string' && message.id ? message.id : 'unknown';
     const ts = new Date().toISOString();
+    const topic = topicForId(id);
 
     if (message.type === 'scale') {
       const grams = Number(message.grams);
@@ -49,7 +61,7 @@ export function createFoodScaleRelay({ eventBus, dataDir, logger = console }) {
         logger.warn?.('food_scale.ingest.bad_weight', { clientId, id });
         return;
       }
-      eventBus.broadcast(TOPIC, {
+      eventBus.broadcast(topic, {
         id,
         grams,
         stable: Boolean(message.stable),
@@ -61,7 +73,7 @@ export function createFoodScaleRelay({ eventBus, dataDir, logger = console }) {
     }
 
     if (message.type === 'button') {
-      eventBus.broadcast(TOPIC, {
+      eventBus.broadcast(topic, {
         id,
         event: 'button',
         press: message.press === 'long' ? 'long' : 'short',
@@ -82,11 +94,11 @@ export function createFoodScaleRelay({ eventBus, dataDir, logger = console }) {
   let writeChain = Promise.resolve();
   const enqueueAppend = (id, record) => {
     writeChain = writeChain
-      .then(() => appendRecord(historyDir, id, record, logger))
+      .then(() => appendRecord(historyRoot, id, record, logger))
       .catch((err) => logger.warn?.('food_scale.persist.failed', { id, error: err.message }));
   };
 
-  const unsubscribe = eventBus.subscribe(TOPIC, (payload) => {
+  const onPayload = (payload) => {
     if (!payload || typeof payload !== 'object') return;
     const id = payload.id || 'unknown';
 
@@ -107,16 +119,18 @@ export function createFoodScaleRelay({ eventBus, dataDir, logger = console }) {
     }
 
     enqueueAppend(id, record);
-  });
+  };
 
-  logger.info?.('food_scale.relay.ready', { historyDir });
-  return { dispose: () => { try { unsubscribe?.(); } catch { /* noop */ } } };
+  const unsubs = [...topics].map((topic) => eventBus.subscribe(topic, onPayload));
+
+  logger.info?.('food_scale.relay.ready', { historyRoot, topics: [...topics] });
+  return { dispose: () => { for (const u of unsubs) { try { u?.(); } catch { /* noop */ } } } };
 }
 
 /** Append one record to the scale's append-only day log (read-modify-write). */
-async function appendRecord(historyDir, id, record, logger) {
+async function appendRecord(historyRoot, id, record, logger) {
   const day = new Date().toISOString().slice(0, 10); // YYYY-MM-DD (UTC)
-  const dir = path.join(historyDir, id);
+  const dir = path.join(historyRoot, id);
   const file = path.join(dir, `${day}.yml`);
   await fs.mkdir(dir, { recursive: true });
 
