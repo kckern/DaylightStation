@@ -43,11 +43,20 @@ export class CeremonyService {
           rules: this.#getAllRules(plan),
         };
 
-      case 'unit_capture':
+      case 'unit_capture': {
+        // Echo the morning's intentions back at evening capture (audit A-2.4).
+        // unit_intention completion records carry the unit periodId, which is
+        // exactly base.periodId here (unit_capture also maps to 'unit').
+        // Legacy records may use snake_case period_id — accept both.
+        const todayIntentions = this.#ceremonyRecordStore
+          .getRecords(username, 'unit_intention')
+          .filter(r => (r.periodId || r.period_id) === base.periodId);
         return {
           ...base,
           activeGoals: (plan.getActiveGoals?.() || []),
+          morningIntention: todayIntentions[todayIntentions.length - 1] || null,
         };
+      }
 
       case 'cycle_retro':
         return {

@@ -7,6 +7,13 @@ const CEREMONY_CADENCE_MAP = {
   cycle_retro: 'cycle', phase_review: 'phase',
   season_alignment: 'season', era_vision: 'era',
 };
+// Ceremony type → CadenceService timing string (mirrors CEREMONY_TIMING in
+// 3_applications/lifeplan/services/CeremonyScheduler.mjs)
+const CEREMONY_TIMING_MAP = {
+  unit_intention: 'start_of_unit', unit_capture: 'end_of_unit',
+  cycle_retro: 'end_of_cycle', phase_review: 'end_of_phase',
+  season_alignment: 'end_of_season', era_vision: 'end_of_era',
+};
 
 export class CeremonyToolFactory extends ToolFactory {
   static domain = 'ceremony';
@@ -65,7 +72,8 @@ export class CeremonyToolFactory extends ToolFactory {
           const plan = lifePlanStore.load(username);
           if (!plan) return { ceremonies: [], error: 'No plan found' };
 
-          const position = cadenceService.resolve(plan.cadence || {}, new Date());
+          const now = new Date();
+          const position = cadenceService.resolve(plan.cadence || {}, now);
           const ceremonies = [];
 
           for (const type of CEREMONY_TYPES) {
@@ -74,7 +82,7 @@ export class CeremonyToolFactory extends ToolFactory {
 
             const level = CEREMONY_CADENCE_MAP[type];
             const periodId = position?.[level]?.periodId;
-            const isDue = cadenceService.isCeremonyDue(type, position);
+            const isDue = cadenceService.isCeremonyDue(CEREMONY_TIMING_MAP[type], plan.cadence || {}, now, null);
             const isCompleted = periodId ? ceremonyRecordStore.hasRecord(username, type, periodId) : false;
 
             ceremonies.push({

@@ -193,6 +193,9 @@ export default function createPlanRouter(config) {
   router.get('/ceremony/:type', async (req, res, next) => {
     try {
       if (!ceremonyService) return res.status(501).json({ error: 'Ceremony service not configured' });
+      if (!lifePlanStore.load(getUsername(req))) {
+        return res.status(404).json({ error: 'No life plan exists for this user yet', code: 'NO_PLAN' });
+      }
       const content = ceremonyService.getCeremonyContent(req.params.type, getUsername(req));
       if (!content) return res.status(400).json({ error: `Unknown ceremony type: ${req.params.type}` });
       res.json(content);
@@ -203,6 +206,9 @@ export default function createPlanRouter(config) {
   router.post('/ceremony/:type/complete', async (req, res, next) => {
     try {
       if (!ceremonyService) return res.status(501).json({ error: 'Ceremony service not configured' });
+      if (!lifePlanStore.load(getUsername(req))) {
+        return res.status(404).json({ error: 'No life plan exists for this user yet', code: 'NO_PLAN' });
+      }
       const ok = ceremonyService.completeCeremony(req.params.type, getUsername(req), req.body);
       if (!ok) return res.status(400).json({ error: `Unknown ceremony type: ${req.params.type}` });
       logger.info('life.ceremony.completed', { username: getUsername(req), type: req.params.type });

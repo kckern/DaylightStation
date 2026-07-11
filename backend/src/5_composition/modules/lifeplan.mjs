@@ -26,13 +26,25 @@ import createLifeRouter from '#api/v1/routers/life.mjs';
  * @param {Object} deps.aggregator - LifelogAggregator instance
  * @param {Object} [deps.notificationService] - Notification service for ceremony reminders
  * @param {Object} [deps.userService] - UserService for username validation/profiles
+ * @param {Function} [deps.listHouseholdUsers] - Returns household usernames for the switcher
  * @param {string} [deps.defaultUsername] - Username used when requests omit one
+ * @param {string} [deps.timezone] - IANA household timezone for cadence math (defaults to UTC)
  * @param {Object} [deps.clock] - Injectable clock
  * @param {Object} [deps.logger] - Logger instance
  * @returns {Object} { router, container, ceremonyScheduler, services }
  */
 export function bootstrapLifeplan(deps) {
-  const { dataPath, aggregator, notificationService, userService, defaultUsername, clock, logger } = deps;
+  const { dataPath, aggregator, notificationService, userService, listHouseholdUsers, defaultUsername, timezone, clock, logger } = deps;
+
+  // Validate the household timezone at the composition seam (the domain has no
+  // logger; CadenceService itself falls back to UTC on an invalid zone).
+  if (timezone) {
+    try {
+      new Intl.DateTimeFormat('en-CA', { timeZone: timezone });
+    } catch {
+      logger?.warn('cadence.invalid_timezone', { timezone, fallback: 'UTC' });
+    }
+  }
 
   // Persistence stores (constructed here at the composition root; the
   // container receives instances per Decision D1)
@@ -40,6 +52,7 @@ export function bootstrapLifeplan(deps) {
     lifePlanStore: new YamlLifePlanStore({ basePath: dataPath }),
     metricsStore: new YamlLifeplanMetricsStore({ basePath: dataPath }),
     ceremonyRecordStore: new YamlCeremonyRecordStore({ basePath: dataPath }),
+    timezone,
   });
 
   // Application services
@@ -56,6 +69,8 @@ export function bootstrapLifeplan(deps) {
     lifePlanStore: container.getLifePlanStore(),
     metricsStore: container.getMetricsStore(),
     aggregator,
+    cadenceService: container.getCadenceService(),
+    clock,
   });
 
   const ceremonyService = new CeremonyService({
@@ -74,6 +89,7 @@ export function bootstrapLifeplan(deps) {
     lifePlanStore: container.getLifePlanStore(),
     metricsStore: container.getMetricsStore(),
     cadenceService: container.getCadenceService(),
+    ceremonyRecordStore: container.getCeremonyRecordStore(),
   });
 
   // Ceremony scheduler
@@ -82,6 +98,7 @@ export function bootstrapLifeplan(deps) {
     lifePlanStore: container.getLifePlanStore(),
     ceremonyRecordStore: container.getCeremonyRecordStore(),
     cadenceService: container.getCadenceService(),
+    timezone,
     clock,
     logger,
   });
@@ -97,6 +114,7 @@ export function bootstrapLifeplan(deps) {
     driftService,
     aggregator,
     userService,
+    listHouseholdUsers,
     defaultUsername,
   };
 

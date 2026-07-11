@@ -8,9 +8,10 @@ describe('LifeplanGuide Guardrails', () => {
     expect(systemPrompt).toContain('medical advice');
   });
 
-  it('system prompt enforces propose-then-confirm pattern', () => {
+  it('system prompt enforces confirm-before-write pattern', () => {
     expect(systemPrompt).toContain('propose_*');
-    expect(systemPrompt).toContain('NEVER modify the plan directly');
+    // Direct create tools may write, but only after explicit conversational confirmation.
+    expect(systemPrompt).toContain("never write to the plan without the user's explicit confirmation");
   });
 
   it('system prompt includes trust levels', () => {
