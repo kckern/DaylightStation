@@ -25,6 +25,9 @@ export const PIANO_CONFIG_DEFAULTS = {
   // single Plex show whose seasons are genre categories; plays through the same
   // karaoke-chrome SingalongPlayer as Singalong, but with no course grid/detail.
   karaoke: { plexShow: null },
+  // Shortlist menu — curated voice bundles a household wants quick access to,
+  // distinct from per-user saved favorites (preset.yml favorites).
+  shortlist: { voices: [] },
   music: { collection: null, playlists: [] },
   sheetmusic: { collection: null },
   // Technique-drill collection slug → media/docs/piano-lessons/{collection}/.
@@ -114,6 +117,7 @@ export function resolvePianoConfig(raw, pianoId) {
     playalong: { ...PIANO_CONFIG_DEFAULTS.playalong, ...(shared.playalong || {}), ...(p.playalong || {}) },
     singalong: { ...PIANO_CONFIG_DEFAULTS.singalong, ...(shared.singalong || {}), ...(p.singalong || {}) },
     karaoke: { ...PIANO_CONFIG_DEFAULTS.karaoke, ...(shared.karaoke || {}), ...(p.karaoke || {}) },
+    shortlist: { ...PIANO_CONFIG_DEFAULTS.shortlist, ...(shared.shortlist || {}), ...(p.shortlist || {}) },
     music: {
       collection: p.music?.collection ?? shared.music?.collection ?? null,
       playlists: p.music?.playlists ?? shared.music?.playlists ?? [],

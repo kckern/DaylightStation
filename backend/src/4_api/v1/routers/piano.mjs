@@ -31,6 +31,10 @@ import { asyncHandler, errorHandlerMiddleware } from '#system/http/middleware/in
  *   GET    /users/:userId/preferences       → { ...prefs }
  *   PUT    /users/:userId/preferences        → { ...prefs }  (body merged)
  *
+ *   Sound preset (default voice/effects/volume + saved favorites) — opaque per-user blob:
+ *   GET    /users/:userId/preset             → { default?, favorites? }
+ *   PUT    /users/:userId/preset             → { default?, favorites? }  (body merged)
+ *
  *   Lesson progress / history:
  *   GET    /users/:userId/progress           → { collections: { [collection]: { [drillId]: {...} } } }
  *   PUT    /users/:userId/progress/:collection/:drillId → record an attempt (body merged)
@@ -228,6 +232,21 @@ export function createPianoRouter({ pianoContainer, logger = console }) {
     if (current === null) return res.status(400).json({ error: 'Invalid user' });
     const merged = { ...current, ...(req.body && typeof req.body === 'object' ? req.body : {}) };
     ds.savePreferences(req.params.userId, merged);
+    res.json(merged);
+  }));
+
+  // ── Sound preset (per-user opaque blob: { default, favorites }) ────────────
+  router.get('/users/:userId/preset', (req, res) => {
+    const preset = ds.getPreset(req.params.userId);
+    if (preset === null) return res.status(400).json({ error: 'Invalid user' });
+    res.json(preset);
+  });
+
+  router.put('/users/:userId/preset', asyncHandler((req, res) => {
+    const current = ds.getPreset(req.params.userId);
+    if (current === null) return res.status(400).json({ error: 'Invalid user' });
+    const merged = { ...current, ...(req.body && typeof req.body === 'object' ? req.body : {}) };
+    ds.savePreset(req.params.userId, merged);
     res.json(merged);
   }));
 

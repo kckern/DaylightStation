@@ -156,6 +156,20 @@ export class YamlPianoStudioDatastore {
     return true;
   }
 
+  // ── Sound preset (per-user opaque blob: { default, favorites }) ─────────────
+  getPreset(userId) {
+    const dir = this.#userPianoDir(userId);
+    if (!dir) return null;
+    return loadYaml(path.join(dir, 'preset')) || {};
+  }
+
+  savePreset(userId, data) {
+    const dir = this.#userPianoDir(userId);
+    if (!dir) return false;
+    saveYaml(path.join(dir, 'preset'), data);
+    return true;
+  }
+
   // ── Lesson progress / history (per-user) ─────────────────────────────────────
   getProgress(userId) {
     const dir = this.#userPianoDir(userId);
