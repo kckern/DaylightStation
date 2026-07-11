@@ -7,11 +7,11 @@ const YTDLP = 'yt-dlp';
 const FFMPEG = 'ffmpeg';
 const MAX_BUFFER = 64 * 1024 * 1024;
 
-export function buildDownloadArgv({ url, outPath, formatSort, mergeFormat }) {
-  return [
-    '--js-runtimes', 'node', '--no-warnings', '--no-playlist',
-    '-S', formatSort, '--merge-output-format', mergeFormat, '-o', outPath, url,
-  ];
+export function buildDownloadArgv({ url, outPath, formatSort, mergeFormat, formatFilter }) {
+  const argv = ['--js-runtimes', 'node', '--no-warnings', '--no-playlist'];
+  if (formatFilter) argv.push('-f', formatFilter);
+  argv.push('-S', formatSort, '--merge-output-format', mergeFormat, '-o', outPath, url);
+  return argv;
 }
 
 export function buildEmbedArgv({ inPath, outPath, title, comment }) {
@@ -39,8 +39,8 @@ export async function search(query, { searchCount, exec = defaultExec } = {}) {
   return entries.filter((e) => e && e.id).map(mapEntry);
 }
 
-export async function download({ url, outPath, formatSort, mergeFormat, exec = defaultExec }) {
-  await exec(YTDLP, buildDownloadArgv({ url, outPath, formatSort, mergeFormat }), { maxBuffer: MAX_BUFFER });
+export async function download({ url, outPath, formatSort, mergeFormat, formatFilter, exec = defaultExec }) {
+  await exec(YTDLP, buildDownloadArgv({ url, outPath, formatSort, mergeFormat, formatFilter }), { maxBuffer: MAX_BUFFER });
 }
 
 export async function embed({ inPath, outPath, title, comment, exec = defaultExec }) {

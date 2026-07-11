@@ -36,7 +36,7 @@ async function fileExists(p) {
 function ingestConfig() {
   return {
     mediaDir: cfg.MEDIA_DIR, showName: cfg.SHOW_NAME, formatSort: cfg.FORMAT_SORT, mergeFormat: cfg.MERGE_FORMAT,
-    searchCount: cfg.SEARCH_COUNT, karaokeTerms: cfg.KARAOKE_TERMS, rejectTerms: cfg.REJECT_TERMS,
+    searchCount: cfg.SEARCH_COUNT, formatFilter: cfg.FORMAT_FILTER, karaokeTerms: cfg.KARAOKE_TERMS, rejectTerms: cfg.REJECT_TERMS,
     channelWeights: cfg.CHANNEL_WEIGHTS, minDurationS: cfg.MIN_DURATION_S, maxDurationS: cfg.MAX_DURATION_S,
     scoreFloor: cfg.SCORE_FLOOR, seasonName: cfg.seasonName,
   };
