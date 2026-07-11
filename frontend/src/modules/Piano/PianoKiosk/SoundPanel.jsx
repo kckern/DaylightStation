@@ -10,6 +10,64 @@ import Icon from './icons/Icon.jsx';
 const MAX_FAVORITES_SHOWN = 5;
 const clamp01 = (v) => Math.max(0, Math.min(1, v));
 
+// Tone is set in five discrete steps, not a slider — easier to hit on a touch
+// kiosk and every choice is a named, repeatable amount. "Off" genuinely
+// disables the effect (on:false, level 0); Low…Max ramp the send and force on.
+const FX_STEPS = [
+  { label: 'Off', level: 0, on: false },
+  { label: 'Low', level: 32, on: true },
+  { label: 'Med', level: 64, on: true },
+  { label: 'High', level: 96, on: true },
+  { label: 'Max', level: 127, on: true },
+];
+const VOL_STEPS = [
+  { label: 'Off', value: 0 },
+  { label: 'Low', value: 0.25 },
+  { label: 'Med', value: 0.5 },
+  { label: 'High', value: 0.75 },
+  { label: 'Max', value: 1 },
+];
+// Which step is lit for a given current value — the nearest one by amount.
+const nearestStep = (steps, key, val) => {
+  let best = 0;
+  let bestDist = Infinity;
+  steps.forEach((s, i) => {
+    const d = Math.abs(s[key] - val);
+    if (d < bestDist) { bestDist = d; best = i; }
+  });
+  return best;
+};
+
+/**
+ * One tone control: an icon + name (+ optional type select) header over a
+ * five-button Off/Low/Med/High/Max stepper. Full-bleed so every row's edges
+ * line up. `activeIndex` lights the current step; `onPick` gets (step, index).
+ */
+function ToneStepper({ icon, name, steps, activeIndex, onPick, typeSelect }) {
+  return (
+    <div className="piano-sound-panel__tonecard">
+      <div className="piano-sound-panel__tonehead">
+        <Icon name={icon} className="piano-sound-panel__toneicon" />
+        <span className="piano-sound-panel__tonename">{name}</span>
+        {typeSelect}
+      </div>
+      <div className="piano-sound-panel__steps" role="group" aria-label={name}>
+        {steps.map((s, i) => (
+          <button
+            key={s.label}
+            type="button"
+            className={`piano-sound-panel__step${i === activeIndex ? ' is-on' : ''}${i === 0 ? ' is-off' : ''}`}
+            aria-pressed={i === activeIndex}
+            onClick={() => onPick(s, i)}
+          >
+            {s.label}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 /**
  * Player Sound Panel — the ONLY sound surface a family member sees (tap the
  * chrome sound chip). Three regions: the voice funnel (favorites → house
@@ -150,54 +208,54 @@ export default function SoundPanel({ open, onClose }) {
         {/* ── Tone: reverb / chorus / volume — every change re-asserts the full bundle ── */}
         <section className="piano-sound-panel__section">
           <h3 className="piano-sound-panel__eyebrow">Tone</h3>
-          <div className="piano-sound-panel__fx">
+          <div className="piano-sound-panel__tone">
             {reverbCfg && currentBundle?.reverb && (
-              <div className="piano-sound-panel__fxrow">
-                <span className="piano-sound-panel__fxname">{reverbCfg.label}</span>
-                <select
-                  className="piano-sound-panel__fxtype"
-                  value={currentBundle.reverb.type}
-                  onChange={(e) => updateReverb({ type: Number(e.target.value) })}
-                  aria-label={`${reverbCfg.label} type`}
-                >
-                  {reverbCfg.types.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
-                </select>
-                <input
-                  type="range" min={0} max={127} step={1} value={currentBundle.reverb.level}
-                  onChange={(e) => updateReverb({ level: Number(e.target.value) })}
-                  aria-label={`${reverbCfg.label} depth`}
-                />
-                <span className="piano-sound-panel__fxval">{Math.round((currentBundle.reverb.level / 127) * 100)}%</span>
-              </div>
+              <ToneStepper
+                icon="reverb"
+                name={reverbCfg.label}
+                steps={FX_STEPS}
+                activeIndex={currentBundle.reverb.on ? nearestStep(FX_STEPS, 'level', currentBundle.reverb.level) : 0}
+                onPick={(s) => updateReverb({ level: s.level, on: s.on })}
+                typeSelect={(
+                  <span className="piano-sound-panel__tonetype">
+                    <select
+                      value={currentBundle.reverb.type}
+                      onChange={(e) => updateReverb({ type: Number(e.target.value) })}
+                      aria-label={`${reverbCfg.label} type`}
+                    >
+                      {reverbCfg.types.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
+                    </select>
+                  </span>
+                )}
+              />
             )}
             {chorusCfg && currentBundle?.chorus && (
-              <div className="piano-sound-panel__fxrow">
-                <span className="piano-sound-panel__fxname">{chorusCfg.label}</span>
-                <select
-                  className="piano-sound-panel__fxtype"
-                  value={currentBundle.chorus.type}
-                  onChange={(e) => updateChorus({ type: Number(e.target.value) })}
-                  aria-label={`${chorusCfg.label} type`}
-                >
-                  {chorusCfg.types.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
-                </select>
-                <input
-                  type="range" min={0} max={127} step={1} value={currentBundle.chorus.level}
-                  onChange={(e) => updateChorus({ level: Number(e.target.value) })}
-                  aria-label={`${chorusCfg.label} depth`}
-                />
-                <span className="piano-sound-panel__fxval">{Math.round((currentBundle.chorus.level / 127) * 100)}%</span>
-              </div>
-            )}
-            <div className="piano-sound-panel__fxrow">
-              <span className="piano-sound-panel__fxname">Volume</span>
-              <input
-                type="range" min={0} max={1} step={0.05} value={currentBundle?.volume ?? 1}
-                onChange={(e) => updateVolume(Number(e.target.value))}
-                aria-label="Volume"
+              <ToneStepper
+                icon="chorus"
+                name={chorusCfg.label}
+                steps={FX_STEPS}
+                activeIndex={currentBundle.chorus.on ? nearestStep(FX_STEPS, 'level', currentBundle.chorus.level) : 0}
+                onPick={(s) => updateChorus({ level: s.level, on: s.on })}
+                typeSelect={(
+                  <span className="piano-sound-panel__tonetype">
+                    <select
+                      value={currentBundle.chorus.type}
+                      onChange={(e) => updateChorus({ type: Number(e.target.value) })}
+                      aria-label={`${chorusCfg.label} type`}
+                    >
+                      {chorusCfg.types.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
+                    </select>
+                  </span>
+                )}
               />
-              <span className="piano-sound-panel__fxval">{Math.round((currentBundle?.volume ?? 1) * 100)}%</span>
-            </div>
+            )}
+            <ToneStepper
+              icon="volume"
+              name="Volume"
+              steps={VOL_STEPS}
+              activeIndex={nearestStep(VOL_STEPS, 'value', currentBundle?.volume ?? 1)}
+              onPick={(s) => updateVolume(s.value)}
+            />
           </div>
         </section>
 

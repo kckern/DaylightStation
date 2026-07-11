@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, within } from '@testing-library/react';
 
 const applyBundle = vi.fn();
 const saveDefault = vi.fn();
@@ -105,17 +105,24 @@ describe('SoundPanel', () => {
     expect(applyBundle).toHaveBeenCalledWith({ ...currentBundle, voice: { pc: 42, bank: 0, name: 'Cello' } });
   });
 
-  it('re-asserts the full bundle when a tone control changes (reverb depth)', () => {
+  it('re-asserts the full bundle when a tone step is picked (reverb Max)', () => {
     render(<SoundPanel open onClose={vi.fn()} />);
-    fireEvent.change(screen.getByLabelText(/Reverb depth/i), { target: { value: '80' } });
-    expect(applyBundle).toHaveBeenCalledWith({ ...currentBundle, reverb: { ...currentBundle.reverb, level: 80 } });
+    const reverb = within(screen.getByRole('group', { name: 'Reverb' }));
+    fireEvent.click(reverb.getByRole('button', { name: 'Max' }));
+    expect(applyBundle).toHaveBeenCalledWith({ ...currentBundle, reverb: { ...currentBundle.reverb, level: 127, on: true } });
   });
 
-  it('volume control operates on the 0-1 scale, not 0-127', () => {
+  it('Off disables the effect (on:false, level 0), not just a quiet level', () => {
     render(<SoundPanel open onClose={vi.fn()} />);
-    const slider = screen.getByLabelText(/Volume/i);
-    expect(slider.max).toBe('1');
-    fireEvent.change(slider, { target: { value: '0.5' } });
+    const reverb = within(screen.getByRole('group', { name: 'Reverb' }));
+    fireEvent.click(reverb.getByRole('button', { name: 'Off' }));
+    expect(applyBundle).toHaveBeenCalledWith({ ...currentBundle, reverb: { ...currentBundle.reverb, level: 0, on: false } });
+  });
+
+  it('volume steps operate on the 0-1 scale, not 0-127', () => {
+    render(<SoundPanel open onClose={vi.fn()} />);
+    const volume = within(screen.getByRole('group', { name: 'Volume' }));
+    fireEvent.click(volume.getByRole('button', { name: 'Med' }));
     expect(applyBundle).toHaveBeenCalledWith({ ...currentBundle, volume: 0.5 });
   });
 

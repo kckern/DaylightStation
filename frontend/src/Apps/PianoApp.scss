@@ -1935,13 +1935,16 @@
     h2 { font-size: var(--t-title); font-weight: 700; margin: 0; }
   }
   &__close {
-    background: none; border: none; color: var(--piano-muted); cursor: pointer;
-    font-size: 1.4rem; padding: 0.25rem 0.5rem; line-height: 1;
+    display: flex; align-items: center; justify-content: center;
+    width: 2rem; height: 2rem; border-radius: var(--r-pill);
+    background: var(--piano-surface-2); border: 1px solid var(--piano-border);
+    color: var(--piano-muted); cursor: pointer; font-size: 1rem; line-height: 1;
+    &:active { background: var(--piano-border); }
   }
 
   &__section { flex: 0 0 auto; display: flex; flex-direction: column; gap: 0.6rem; padding: 0.5rem 0; }
   &__eyebrow {
-    font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.06em;
+    font-size: 0.72rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.12em;
     color: var(--piano-muted); margin: 0;
   }
 
@@ -1982,17 +1985,43 @@
     &.is-active { border-color: var(--piano-accent); background: var(--piano-surface); font-weight: 700; }
   }
 
-  // Tone — reverb/chorus (type + level) and volume; every change re-fires applyBundle.
-  &__fx { display: flex; flex-direction: column; gap: 0.6rem; }
-  &__fxrow { display: flex; align-items: center; gap: 0.5rem; }
-  &__fxname { flex: 0 0 4rem; color: var(--piano-muted); }
-  &__fxtype {
-    flex: 0 0 auto; background: var(--piano-surface-2); color: var(--piano-fg);
-    border: 1px solid var(--piano-border); border-radius: var(--r-sm);
-    padding: 0.3rem 0.5rem; font: inherit; cursor: pointer;
+  // Tone — reverb/chorus/volume as five-step Off/Low/Med/High/Max steppers
+  // (no sliders). Each row: an icon + name (+ optional type pill) over a
+  // full-width, equal-column button group so every edge lines up.
+  &__tone { display: flex; flex-direction: column; gap: 0.85rem; }
+  &__tonecard { display: flex; flex-direction: column; gap: 0.5rem; }
+  &__tonehead { display: flex; align-items: center; gap: 0.55rem; min-height: 1.9rem; }
+  &__toneicon { font-size: 1.2rem; color: var(--piano-accent-text); line-height: 1; }
+  &__tonename { font-weight: 700; font-size: 1.05rem; }
+
+  // Type (reverb/chorus preset) — a right-aligned pill select; custom caret so
+  // it reads as one of ours, not a raw OS dropdown.
+  &__tonetype { margin-left: auto; position: relative; display: inline-flex; }
+  &__tonetype select {
+    appearance: none; -webkit-appearance: none;
+    background: var(--piano-surface-2); color: var(--piano-fg);
+    border: 1px solid var(--piano-border); border-radius: var(--r-pill);
+    padding: 0.4rem 2rem 0.4rem 0.9rem; font: inherit; font-weight: 700; font-size: 0.9rem; cursor: pointer;
   }
-  &__fxrow input[type="range"] { flex: 1 1 auto; min-height: 44px; accent-color: var(--piano-accent); }
-  &__fxval { flex: 0 0 2.6rem; text-align: right; font-variant-numeric: tabular-nums; color: var(--piano-muted); }
+  &__tonetype::after {
+    content: ""; position: absolute; right: 0.9rem; top: 50%;
+    width: 0.5rem; height: 0.5rem; border-right: 2px solid var(--piano-muted); border-bottom: 2px solid var(--piano-muted);
+    transform: translateY(-70%) rotate(45deg); pointer-events: none;
+  }
+
+  &__steps { display: grid; grid-template-columns: repeat(5, 1fr); gap: 0.3rem; }
+  &__step {
+    min-height: 46px; display: flex; align-items: center; justify-content: center;
+    background: var(--piano-surface-2); color: var(--piano-muted);
+    border: 1px solid var(--piano-border); border-radius: var(--r-sm);
+    font: inherit; font-weight: 700; font-size: 0.9rem; text-transform: uppercase; letter-spacing: 0.04em;
+    cursor: pointer; transition: background 0.12s, color 0.12s, border-color 0.12s;
+    &:active { transform: translateY(1px); }
+    // Lit step — accent fill. Off is lit differently (below): quiet, not green,
+    // because "no effect" shouldn't wear the same badge as an active amount.
+    &.is-on { background: var(--piano-accent); color: var(--piano-accent-ink); border-color: var(--piano-accent); }
+    &.is-on.is-off { background: var(--piano-surface); color: var(--piano-fg); border-color: var(--piano-muted); }
+  }
 
   // Save — snapshot the current bundle onto the active user.
   &__foot {
