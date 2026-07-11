@@ -108,6 +108,11 @@
   user-select: none;
   -webkit-user-select: none;
   * { -webkit-tap-highlight-color: transparent; }
+  // Kill stray UA focus rings on tap (touch fires :focus, not :focus-visible),
+  // matching the prior !important reset — but WITHOUT !important, so intentional
+  // element-specific :focus-visible accents later in this file (e.g.
+  // .piano-course-tab) still win for keyboard focus.
+  :focus { outline: none; box-shadow: none; }
   :focus-visible { outline: none; }
 }
 
