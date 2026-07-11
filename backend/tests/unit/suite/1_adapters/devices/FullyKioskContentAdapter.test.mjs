@@ -35,6 +35,36 @@ describe('FullyKioskContentAdapter', () => {
     };
   }
 
+  describe('reboot', () => {
+    it('uses ADB when an adbAdapter is configured', async () => {
+      const httpClient = createMockHttpClient();
+      const mockAdb = { reboot: vi.fn(async () => ({ ok: true })) };
+      const adapter = new FullyKioskContentAdapter(defaultConfig, { httpClient, logger: mockLogger, adbAdapter: mockAdb });
+      const res = await adapter.reboot();
+      expect(mockAdb.reboot).toHaveBeenCalledTimes(1);
+      expect(res.ok).toBe(true);
+    });
+
+    it('falls back to Fully REST rebootDevice when no ADB adapter is configured', async () => {
+      const httpClient = createMockHttpClient({ rebootDevice: { status: 200, data: '{"status":"OK"}' } });
+      const adapter = new FullyKioskContentAdapter(defaultConfig, { httpClient, logger: mockLogger });
+      const res = await adapter.reboot();
+      const rebootCall = httpClient.get.mock.calls.map((c) => c[0]).find((u) => u.includes('cmd=rebootDevice'));
+      expect(rebootCall).toBeTruthy();
+      expect(res.ok).toBe(true);
+    });
+
+    it('treats a dropped connection as success (the device rebooting IS the drop)', async () => {
+      const httpClient = {
+        get: vi.fn(async () => { const e = new Error('timeout of 10000ms exceeded'); e.code = 'ECONNABORTED'; throw e; }),
+      };
+      const adapter = new FullyKioskContentAdapter(defaultConfig, { httpClient, logger: mockLogger });
+      const res = await adapter.reboot();
+      expect(res.ok).toBe(true);
+      expect(res.hint).toMatch(/reboot/i);
+    });
+  });
+
   describe('prepareForContent', () => {
     it('should send setBooleanSetting for three FKB services after screenOn', async () => {
       const callOrder = [];

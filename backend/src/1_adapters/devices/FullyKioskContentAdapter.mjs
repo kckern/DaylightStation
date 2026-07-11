@@ -232,22 +232,39 @@ export class FullyKioskContentAdapter {
   }
 
   /**
-   * Reboot the device via ADB
+   * Reboot the device. Prefer ADB when configured (works across a wedged WebView),
+   * otherwise fall back to Fully's REST `rebootDevice` command — some kiosks (e.g.
+   * the piano tablet) have no ADB-over-WiFi set up, but FKB rebootDevice works.
+   *
+   * The kiosk tears down its HTTP server as it reboots, so the REST request almost
+   * always DROPS mid-flight (timeout / ECONNRESET). That dropped connection means
+   * the reboot fired — not that it failed; only a clean HTTP error (command
+   * refused) is a real failure.
    * @returns {Promise<Object>}
    */
   async reboot() {
-    if (!this.#adbAdapter) {
-      return { ok: false, error: 'No ADB adapter configured' };
+    if (this.#adbAdapter) {
+      this.#logger.info?.('fullykiosk.reboot', { host: this.#host, via: 'adb' });
+      const result = await this.#adbAdapter.reboot();
+      return {
+        ok: result.ok,
+        error: result.error,
+        hint: result.ok ? 'Device is rebooting. Allow ~60s before reconnecting.' : undefined
+      };
     }
 
-    this.#logger.info?.('fullykiosk.reboot', { host: this.#host });
-    const result = await this.#adbAdapter.reboot();
-
-    return {
-      ok: result.ok,
-      error: result.error,
-      hint: result.ok ? 'Device is rebooting. Allow ~60s before reconnecting.' : undefined
-    };
+    this.#logger.info?.('fullykiosk.reboot', { host: this.#host, via: 'fkb' });
+    const result = await this.#sendCommand('rebootDevice');
+    if (result.ok) {
+      return { ok: true, data: result.data, hint: 'Device is rebooting. Allow ~60s before reconnecting.' };
+    }
+    // A dropped connection is the EXPECTED signal that the reboot fired.
+    const dropped = /timeout|ECONNRESET|ECONNREFUSED|ECONNABORTED|socket hang up|network|aborted/i.test(result.error || '');
+    if (dropped) {
+      this.#logger.info?.('fullykiosk.reboot.dropped-as-expected', { host: this.#host, error: result.error });
+      return { ok: true, hint: 'Reboot sent (device dropped the connection as it reboots). Allow ~60s.' };
+    }
+    return { ok: false, error: result.error || 'rebootDevice failed' };
   }
 
   /**
