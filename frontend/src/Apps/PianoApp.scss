@@ -1486,6 +1486,92 @@
   &__btn--play { min-width: 4.5rem; font-size: 1.2rem; background: var(--piano-accent); color: var(--piano-accent-ink); border-color: var(--piano-accent); }
 }
 
+/* ---- Karaoke mode: a searchable song browser (title + artist, no thumbnails).
+   Simpler than Courses on purpose: search box, a horizontal row of category
+   chips, and a touch-friendly grid of big text-only cards. ---- */
+.piano-karaoke {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-4);
+
+  &__search {
+    flex: 0 0 auto;
+    width: 100%;
+    padding: var(--sp-3) var(--sp-4);
+    border-radius: var(--r-md);
+    border: 1px solid var(--piano-border);
+    background: var(--piano-surface-2);
+    color: var(--piano-fg);
+    font: inherit;
+    font-size: var(--t-h);
+
+    &::placeholder { color: var(--piano-muted); }
+    &:focus-visible { outline: 3px solid var(--piano-accent); outline-offset: -3px; }
+  }
+
+  &__tabs {
+    flex: 0 0 auto;
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--sp-2);
+  }
+
+  &__tab {
+    background: var(--piano-surface);
+    border: 1px solid var(--piano-border);
+    color: var(--piano-muted);
+    font: inherit;
+    font-weight: 700;
+    cursor: pointer;
+    padding: var(--sp-2) var(--sp-4);
+    border-radius: var(--r-pill);
+    min-height: 2.75rem;
+
+    &.is-active { background: var(--piano-accent); color: var(--piano-accent-ink); border-color: var(--piano-accent); }
+    &:focus-visible { outline: 3px solid var(--piano-accent); outline-offset: 2px; }
+  }
+
+  &__empty { color: var(--piano-muted); font-style: italic; }
+
+  &__grid {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr));
+    gap: var(--sp-4);
+  }
+
+  &__card {
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--sp-1);
+    background: var(--piano-surface);
+    border: 1px solid var(--piano-border);
+    border-radius: var(--r-lg);
+    color: inherit;
+    text-align: left;
+    cursor: pointer;
+    padding: var(--sp-4) var(--sp-5);
+    min-height: 6.5rem;
+
+    &:hover, &:focus-visible { border-color: var(--piano-accent); }
+    &:focus-visible { outline: 3px solid var(--piano-accent); outline-offset: 2px; }
+  }
+
+  &__card-song { font-size: var(--t-title); font-weight: 700; line-height: 1.2; }
+  &__card-artist { font-size: var(--t-body); color: var(--piano-muted); }
+  &__card-category {
+    margin-top: var(--sp-1);
+    font-size: var(--t-cap);
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--piano-accent-text);
+  }
+}
+
 /* ---- Music mode: album grid (square covers with visible caption below) ---- */
 .piano-music-grid {
   grid-template-columns: repeat(auto-fill, minmax(9rem, 1fr));

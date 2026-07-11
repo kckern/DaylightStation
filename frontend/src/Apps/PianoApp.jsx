@@ -42,6 +42,7 @@ import { Lessons } from '../modules/Piano/PianoKiosk/modes/Lessons/Lessons.jsx';
 import { Studio } from '../modules/Piano/PianoKiosk/modes/Studio/Studio.jsx';
 import { Producer } from '../modules/Piano/PianoKiosk/modes/Producer/Producer.jsx';
 import { Singalong } from '../modules/Piano/PianoKiosk/modes/Singalong/Singalong.jsx';
+import { Karaoke } from '../modules/Piano/PianoKiosk/modes/Karaoke/Karaoke.jsx';
 import { Composer } from '../modules/Piano/PianoKiosk/modes/Composer/Composer.jsx';
 import PianoTest from '../modules/Piano/PianoKiosk/modes/Test/PianoTest.jsx';
 import KeepAliveVideo from '../modules/Piano/PianoKiosk/KeepAliveVideo.jsx';
@@ -238,7 +239,7 @@ function PianoShell() {
     }
   }, playing);
 
-  const MODE_LABELS = { videos: 'Courses', playalong: 'Playalong', singalong: 'Singalong', music: 'Music', sheetmusic: 'Sheet Music', games: 'Games', lessons: 'Training', studio: 'Studio', composer: 'Composer', producer: 'Producer' };
+  const MODE_LABELS = { videos: 'Courses', playalong: 'Playalong', singalong: 'Singalong', karaoke: 'Karaoke', music: 'Music', sheetmusic: 'Sheet Music', games: 'Games', lessons: 'Training', studio: 'Studio', composer: 'Composer', producer: 'Producer' };
   const modeKey = Object.keys(MODE_LABELS).find((k) => location.pathname.includes(`/${k}`));
   const modeLabel = modeKey ? MODE_LABELS[modeKey] : '';
 
@@ -259,6 +260,7 @@ function PianoShell() {
             <Route path="videos/*" element={<Videos />} />
             <Route path="playalong/*" element={<Videos source={config.playalong} />} />
             <Route path="singalong/*" element={<Singalong />} />
+            <Route path="karaoke/*" element={<Karaoke />} />
             <Route path="music/*" element={<Music />} />
             <Route path="sheetmusic/*" element={<SheetMusic />} />
             <Route path="games/*" element={<Games />} />

@@ -7,13 +7,17 @@ import PianoTile from './PianoTile.jsx';
 import LiveKeyboard from './LiveKeyboard.jsx';
 import { balancedColumns } from './tileGridLayout.js';
 
-// Order maps to the 5-column grid, row by row (top row → bottom row):
-//   Courses    Music      Sheet Music  Studio  Composer
-//   Playalong  Singalong  Training     Games   Producer
-// Training sits directly under Sheet Music; Music follows Courses; Composer
-// follows Studio. Producer is present but `disabled` (greyed, non-clickable) —
-// it stays reachable only via the `producer/*` route (see PianoApp.jsx), not the
-// touch UI, until it ships. Composer is a placeholder shell for a future tool.
+// Order maps to the 4-column grid, row by row (top row → bottom row):
+//   Courses    Music      Sheet Music  Studio
+//   Composer   Playalong  Singalong    Karaoke
+//   Training   Games      Producer
+// Training sits directly under Playalong; Music follows Courses; Composer
+// follows Studio. Karaoke sits next to Singalong (same mic icon, both are
+// karaoke-chrome playback — Karaoke is the searchable song browser, Singalong
+// the poster-grid collection). Producer is present but `disabled` (greyed,
+// non-clickable) — it stays reachable only via the `producer/*` route (see
+// PianoApp.jsx), not the touch UI, until it ships. Composer is a placeholder
+// shell for a future tool.
 export const PIANO_MODES = [
   { id: 'videos', label: 'Courses', blurb: 'Watch lessons & lectures', icon: 'video' },
   { id: 'music', label: 'Music', blurb: 'Albums & playlists', icon: 'music' },
@@ -22,6 +26,7 @@ export const PIANO_MODES = [
   { id: 'composer', label: 'Composer', blurb: 'Write & arrange music', icon: 'quill' },
   { id: 'playalong', label: 'Playalong', blurb: 'Backing tracks to play over', icon: 'playalong' },
   { id: 'singalong', label: 'Singalong', blurb: 'Karaoke — sing along', icon: 'singalong' },
+  { id: 'karaoke', label: 'Karaoke', blurb: 'Grab the mic — sing along', icon: 'singalong' },
   { id: 'lessons', label: 'Training', blurb: 'Technique drills', icon: 'metronome' },
   { id: 'games', label: 'Games', blurb: 'Play note-driven games', icon: 'game' },
   { id: 'producer', label: 'Producer', blurb: 'Coming soon', icon: 'producer', disabled: true },
@@ -36,7 +41,7 @@ export function PianoMenu() {
   const { pressNote, releaseNote } = usePianoMidi();
   const kb = config?.keyboard || { startNote: 21, endNote: 108 };
   const logger = useMemo(() => getLogger().child({ component: 'piano-menu' }), []);
-  const cols = balancedColumns(PIANO_MODES.length); // 10 → 5 (home layout unchanged)
+  const cols = balancedColumns(PIANO_MODES.length); // 11 → 4
 
   const open = (id) => {
     logger.info('piano.mode-enter', { mode: id, pianoId });
