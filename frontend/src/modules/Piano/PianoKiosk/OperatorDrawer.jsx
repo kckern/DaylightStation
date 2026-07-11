@@ -6,6 +6,7 @@ import { usePianoKioskConfig } from './PianoConfig.jsx';
 import { useScreenControl, screenOffFailureMessage } from './useScreenControl.js';
 import { useArmedAction } from './useArmedAction.js';
 import { launchAndroidTarget } from '../../../lib/fkb.js';
+import { DaylightAPI } from '../../../lib/api.mjs';
 import PianoMidiMonitor from './PianoMidiMonitor.jsx';
 import FeedbackOverlay from '@/modules/Feedback/FeedbackOverlay.jsx';
 import Icon from './icons/Icon.jsx';
@@ -31,7 +32,7 @@ const HW_STATE = {
  */
 export default function OperatorDrawer({ open, onClose }) {
   const logger = useMemo(() => getLogger().child({ component: 'piano-operator-drawer' }), []);
-  const { connected, inputName, status, connect } = usePianoMidi();
+  const { connected, inputName, status, connect, outputConnected, outputName, resetLink, sendNote, sendNoteOff } = usePianoMidi();
   const { currentBundle, applyBundle } = usePianoSoundBundle();
   const { config, pianoId } = usePianoKioskConfig();
   const { turnOffScreen } = useScreenControl();
@@ -66,6 +67,28 @@ export default function OperatorDrawer({ open, onClose }) {
     applyBundle(currentBundle);
   }, [connect, applyBundle, currentBundle, logger]);
 
+  // Reboot the whole tablet (2-tap armed — the most disruptive recovery, ~2-3min
+  // down). Backend does it over ADB. Only offered when we know the device id.
+  const deviceId = config?.screensaver?.deviceId || null;
+  const { armed: rebootArmed, trigger: triggerReboot } = useArmedAction(() => {
+    if (!deviceId) return;
+    logger.info('piano.operator.reboot', { deviceId });
+    DaylightAPI(`api/v1/device/${deviceId}/reboot`, {}, 'POST').catch(() => {});
+  }, { armMs: 3000 });
+
+  // Validate the OUT link audibly: play middle C for ~0.5s. If the piano sounds,
+  // the tablet→piano MIDI OUT is live; silence means the link is down.
+  const testTone = useCallback(() => {
+    logger.info('piano.operator.midi-test', { outputConnected });
+    sendNote(60, 100);
+    setTimeout(() => sendNoteOff(60), 500);
+  }, [sendNote, sendNoteOff, outputConnected, logger]);
+
+  const resetMidiLink = useCallback(() => {
+    logger.info('piano.operator.reset-link', { outputConnected });
+    resetLink();
+  }, [resetLink, outputConnected, logger]);
+
   useEffect(() => { if (open) logger.info('piano.operator.open', {}); }, [open, logger]);
 
   if (!open) return null;
@@ -99,6 +122,19 @@ export default function OperatorDrawer({ open, onClose }) {
                 Bluetooth settings
               </button>
             )}
+          </div>
+          {/* MIDI OUT link — the tablet→piano direction. On BLE the output can
+              enumerate late / drop while the input stays up, so it's shown and
+              recoverable separately: red here = on-screen changes won't reach the
+              piano. Reset re-scans the link; Test tone validates it audibly. */}
+          <div className="piano-operator-drawer__hw piano-operator-drawer__midiout">
+            <span className={`piano-operator-drawer__hwdot ${outputConnected ? 'is-on' : 'is-off'}`} aria-hidden />
+            <span className="piano-operator-drawer__hwlabel">MIDI out</span>
+            <span className="piano-operator-drawer__hwname">
+              {outputConnected ? (outputName || 'linked') : 'not linked — changes won’t reach the piano'}
+            </span>
+            <button type="button" className="piano-operator-drawer__connect piano-operator-drawer__connect--ghost" onClick={resetMidiLink}>Reset link</button>
+            <button type="button" className="piano-operator-drawer__connect piano-operator-drawer__connect--ghost" onClick={testTone}>Test tone</button>
           </div>
         </section>
 
@@ -140,6 +176,16 @@ export default function OperatorDrawer({ open, onClose }) {
           >
             Reload app
           </button>
+          {deviceId && (
+            <button
+              type="button"
+              className={`piano-operator-drawer__reload${rebootArmed ? ' is-armed' : ''}`}
+              aria-live="polite"
+              onClick={triggerReboot}
+            >
+              <Icon name="system-reboot" /> {rebootArmed ? 'Tap again to reboot device' : 'Reboot device'}
+            </button>
+          )}
         </section>
 
         {/* ── Feedback (audit T6 — off the player surface) ── */}

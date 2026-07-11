@@ -41,4 +41,33 @@ describe('useWebMidiBLE onstatechange', () => {
 
     expect(input.binds).toBe(1); // still bound exactly once — no churn
   });
+
+  it('binds a LATE-enumerating output on a later statechange (BLE output races the input)', async () => {
+    const { access, input } = mockAccess();
+    const { result } = renderHook(() => useWebMidiBLE({}));
+
+    await act(async () => { await result.current.connect(); });
+    expect(result.current.outputConnected).toBe(false); // no output present at connect time
+
+    // The OUT port enumerates a beat later; a statechange fires for the still-present
+    // input (the input is idempotent, but the output must still attach — the bug).
+    access.outputs.set('o', { id: 'o', name: 'Piano', send() {} });
+    await act(async () => { access.onstatechange?.({ port: input }); });
+
+    expect(result.current.outputConnected).toBe(true);
+    expect(result.current.outputName).toBe('Piano');
+  });
+
+  it('resetLink re-scans and re-binds the input + output', async () => {
+    const { access } = mockAccess();
+    access.outputs.set('o', { id: 'o', name: 'Piano', send() {} });
+    const { result } = renderHook(() => useWebMidiBLE({}));
+
+    await act(async () => { await result.current.connect(); });
+    expect(result.current.outputConnected).toBe(true);
+
+    await act(async () => { await result.current.resetLink(); });
+    expect(result.current.connected).toBe(true);
+    expect(result.current.outputConnected).toBe(true);
+  });
 });

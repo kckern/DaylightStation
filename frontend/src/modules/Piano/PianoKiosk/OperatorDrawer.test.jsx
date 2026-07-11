@@ -3,8 +3,14 @@ import { render, screen, fireEvent, act } from '@testing-library/react';
 
 const turnOffScreen = vi.fn();
 const connect = vi.hoisted(() => vi.fn(() => Promise.resolve()));
+const resetLink = vi.hoisted(() => vi.fn(() => Promise.resolve()));
+const sendNote = vi.hoisted(() => vi.fn());
+const sendNoteOff = vi.hoisted(() => vi.fn());
 const applyBundle = vi.hoisted(() => vi.fn());
 const launchAndroidTarget = vi.hoisted(() => vi.fn());
+const daylightAPI = vi.hoisted(() => vi.fn(() => Promise.resolve({})));
+// Mutable MIDI surface so a test can flip the OUT-link state before rendering.
+const midi = vi.hoisted(() => ({ connected: false, inputName: null, status: 'no-input', outputConnected: false, outputName: null }));
 
 const currentBundle = {
   voice: { pc: 0, bank: 0, name: 'Acoustic Grand' },
@@ -14,14 +20,15 @@ const currentBundle = {
 };
 
 vi.mock('./PianoMidiContext.jsx', () => ({
-  usePianoMidi: () => ({ connected: false, inputName: null, status: 'no-input', connect }),
+  usePianoMidi: () => ({ ...midi, connect, resetLink, sendNote, sendNoteOff }),
 }));
 vi.mock('./usePianoSoundBundle.js', () => ({
   usePianoSoundBundle: () => ({ currentBundle, applyBundle }),
 }));
 vi.mock('./PianoConfig.jsx', () => ({
-  usePianoKioskConfig: () => ({ config: { bluetooth: 'com.example/.BtSettings' }, pianoId: 'default' }),
+  usePianoKioskConfig: () => ({ config: { bluetooth: 'com.example/.BtSettings', screensaver: { deviceId: 'yellow-room-tablet' } }, pianoId: 'default' }),
 }));
+vi.mock('../../../lib/api.mjs', () => ({ DaylightAPI: daylightAPI }));
 vi.mock('./useScreenControl.js', () => ({
   useScreenControl: () => ({ turnOffScreen }),
   screenOffFailureMessage: (res) => (res?.lever === 'none' ? 'No screen control available' : "Couldn't reach the screen"),
@@ -38,8 +45,12 @@ import OperatorDrawer from './OperatorDrawer.jsx';
 beforeEach(() => {
   turnOffScreen.mockReset();
   connect.mockClear();
+  resetLink.mockClear();
+  sendNote.mockClear();
+  sendNoteOff.mockClear();
   applyBundle.mockClear();
   launchAndroidTarget.mockClear();
+  Object.assign(midi, { connected: false, inputName: null, status: 'no-input', outputConnected: false, outputName: null });
   vi.useFakeTimers();
 });
 afterEach(() => { vi.runOnlyPendingTimers(); vi.useRealTimers(); });
@@ -136,5 +147,33 @@ describe('OperatorDrawer', () => {
     render(<OperatorDrawer open onClose={onClose} />);
     fireEvent.click(screen.getByRole('button', { name: /Close operator drawer/i }));
     expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it('shows the MIDI OUT link as not-linked, and Reset link / Test tone call through', () => {
+    midi.outputConnected = false; midi.outputName = null;
+    render(<OperatorDrawer open onClose={vi.fn()} />);
+    expect(screen.getByText(/won.t reach the piano/i)).toBeTruthy();
+    fireEvent.click(screen.getByText('Reset link'));
+    expect(resetLink).toHaveBeenCalledTimes(1);
+    fireEvent.click(screen.getByText('Test tone'));
+    expect(sendNote).toHaveBeenCalledWith(60, 100);
+    act(() => { vi.advanceTimersByTime(500); });
+    expect(sendNoteOff).toHaveBeenCalledWith(60);
+  });
+
+  it('shows the bound output name when the MIDI OUT link is up', () => {
+    midi.outputConnected = true; midi.outputName = 'Jamcorder';
+    render(<OperatorDrawer open onClose={vi.fn()} />);
+    expect(screen.getByText('Jamcorder')).toBeTruthy();
+  });
+
+  it('reboots the device with a 2-tap arm/confirm (POSTs the device reboot)', () => {
+    daylightAPI.mockClear();
+    render(<OperatorDrawer open onClose={vi.fn()} />);
+    const btn = screen.getByText('Reboot device');
+    fireEvent.click(btn); // first tap arms
+    expect(daylightAPI).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByText('Tap again to reboot device')); // second tap fires
+    expect(daylightAPI).toHaveBeenCalledWith('api/v1/device/yellow-room-tablet/reboot', {}, 'POST');
   });
 });
