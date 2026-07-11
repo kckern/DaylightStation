@@ -1,7 +1,7 @@
 # ContentCombobox — Query-to-ID Resolution Design
 
 **Date:** 2026-07-11
-**Status:** Design (validated with KC via brainstorming)
+**Status:** ✅ Implemented (2026-07-11) — `decideCommit` `4b237521a`, hook `commit()` `c8eaa0bb5`, component switchover `8684c94e7`. 122 combobox unit/component tests green. Live/visual pass deferred (shared dev env in use by the parallel piano agent).
 **Follows:** `2026-07-11-content-combobox-ux-risk-audit.md` (F11/F12/F14 context), the combobox UX overhaul (merged `1aa5120db`).
 **Prompted by:** typing `singalong:bread of life` commits the literal query as a dead content id instead of resolving it.
 
@@ -99,3 +99,10 @@ Live/visual verification deferred (shared dev env in use by the parallel piano a
 
 ## Rollout
 Branch `feat/combobox-query-resolution` (isolated worktree) → TDD via subagents → merge to `main` (integrate any parallel work, **pause before push** per standing policy).
+
+## Verification (as-built)
+Coverage is layered, each layer tested with **real logic**:
+- **`decideCommit`** (pure) — 18 tests across every rule/branch incl. the Mar-01 negative and id-lookup-container (`comboboxMachine.test.js`).
+- **Hook `commit(reason)`** — `renderHook` drives real state → real `decideCommit` → real `select`/`onChange`: single-leaf select, settled-empty→literal+warn toast, blur→revert, id-lookup priority, `searchSettled` timing (`useContentCombobox.test.jsx`).
+- **Component routing** — Enter/Escape/Tab/outside call `commit(reason)`; `{action:'open'}` keeps the dropdown open; freeform row stays explicit-raw (`ContentCombobox.test.jsx`, hook mocked).
+- **Known seam:** no single test renders the *real component + real hook* end-to-end (the component test mocks the hook at module scope). The DOM-event→hook-call bridge is thin and mock-covered; the full path is the target of the **deferred live/visual pass** (drive the 8-row edge table on `/admin/content/lists/menus`).
