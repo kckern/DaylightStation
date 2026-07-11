@@ -3,8 +3,10 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 // Mutable playback state so each test can toggle videoActive.
 const playback = vi.hoisted(() => ({ playing: false, videoActive: false }));
+const screenOff = vi.hoisted(() => vi.fn(() => Promise.resolve()));
 
 vi.mock('./PianoPlaybackContext.jsx', () => ({ usePianoPlayback: () => playback }));
+vi.mock('./usePianoScreenOff.js', () => ({ usePianoScreenOff: () => screenOff }));
 vi.mock('./PianoAvatar.jsx', () => ({ default: () => null }));
 vi.mock('@/modules/Fitness/player/overlays/LockIcon.jsx', () => ({ default: () => <span data-testid="lock-icon" /> }));
 
@@ -30,6 +32,7 @@ describe('PianoUserChip', () => {
   beforeEach(() => {
     playback.videoActive = false;
     setCurrentUser.mockClear();
+    screenOff.mockClear();
   });
 
   it('opens the roster picker and switches user when no video is active', () => {
@@ -55,6 +58,21 @@ describe('PianoUserChip', () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  // Regression (#6): the chip switcher must ALSO offer "Turn off screen" — it was
+  // previously only rendered by the idle-gap re-prompt, so the manual switch never
+  // exposed it. Two-tap arm/confirm, then it runs the shared screen-off action.
+  it('offers the turn-off-screen control and fires it on confirm', () => {
+    renderChip();
+    fireEvent.click(screen.getByLabelText('Switch player'));
+    const off = screen.getByText('Turn off screen');
+    expect(off).toBeTruthy();
+    fireEvent.click(off);
+    expect(screen.getByText('Tap again to confirm')).toBeTruthy();
+    expect(screenOff).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByText('Tap again to confirm'));
+    expect(screenOff).toHaveBeenCalledTimes(1);
   });
 
   it('locks switching while a video lecture is open', () => {

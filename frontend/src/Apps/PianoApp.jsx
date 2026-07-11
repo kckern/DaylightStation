@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Routes, Route, useNavigate, useLocation, useParams } from 'react-router-dom';
 import useDocumentTitle from '../hooks/useDocumentTitle.js';
 import getLogger from '../lib/logging/Logger.js';
@@ -19,9 +19,8 @@ import {
   PianoWakeLockProvider,
   usePianoScreensaver,
   PianoScreenControlProvider,
-  useScreenOffCooldown,
 } from '../modules/Piano/PianoKiosk/usePianoScreensaver.jsx';
-import { DaylightAPI } from '../lib/api.mjs';
+import { usePianoScreenOff } from '../modules/Piano/PianoKiosk/usePianoScreenOff.js';
 import {
   PianoPlaybackProvider,
   usePianoPlayback,
@@ -178,25 +177,17 @@ function PianoShell() {
   const { playing, videoActive } = usePianoPlayback();
   const { users, currentUser, setCurrentUser } = usePianoUser();
   const [whoOpen, setWhoOpen] = useState(false);
-  const { turnOffScreen } = useScreenControl();
-  const beginScreenOffCooldown = useScreenOffCooldown();
 
   // Who's-Playing "Turn off screen": for someone who just wants to play in peace.
-  // Turn the backlight off, then suppress MIDI-wake across all three paths — the
-  // in-browser screensaver (local), and the backend midi-wake + on-device APK
-  // (via the suppress-wake endpoint) — so a played note won't re-light it until
-  // they've been idle offCooldownMinutes. Treated as a dismiss-to-guest.
-  const handleScreenOff = useMemo(() => async () => {
-    const minutes = config.screensaver?.offCooldownMinutes ?? 30;
-    await turnOffScreen();
-    beginScreenOffCooldown();
-    const deviceId = config.screensaver?.deviceId;
-    if (deviceId) {
-      DaylightAPI(`api/v1/device/${deviceId}/screen/suppress-wake`, { minutes }, 'POST').catch(() => {});
-    }
-    setCurrentUser('guest');
+  // The shared screen-off action (usePianoScreenOff) turns the backlight off,
+  // suppresses MIDI-wake for the cooldown window, and drops to guest; here we
+  // also close the prompt. The chrome chip's manual switcher runs the very same
+  // action, so both entry points behave identically.
+  const screenOff = usePianoScreenOff();
+  const handleScreenOff = useCallback(async () => {
+    await screenOff();
     setWhoOpen(false);
-  }, [config.screensaver, turnOffScreen, beginScreenOffCooldown, setCurrentUser]);
+  }, [screenOff]);
 
   // Re-prompt "who's playing?" after an idle gap so the next player is credited.
   // Suppressed while a video lecture is open: the open player is already earning
