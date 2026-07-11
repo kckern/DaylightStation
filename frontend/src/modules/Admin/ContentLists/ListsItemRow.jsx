@@ -550,6 +550,7 @@ function ListsItemRow({ item, onUpdate, onDelete, onToggleActive, onDuplicate, i
             value={item.input}
             onChange={handleRowInputChange}
             appResults
+            selectContainers
             renderValue={({ onStartEdit }) => (
               <ContentValueCard
                 value={item.input}

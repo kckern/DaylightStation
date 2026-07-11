@@ -7,6 +7,17 @@ import { isContentIdLike } from '../contentSearchLogic.js';
 
 export const Modes = { DISPLAY: 'display', SEARCH: 'search', BROWSE: 'browse' };
 
+// Hard cap on rendered search results. The SSE transport is intentionally
+// uncapped, so a broad keyword can stream hundreds of hits — each rendered row
+// mounts an Avatar + text + badges, causing mount/layout jank, and a huge list
+// makes ARROW pac-man wrap span the whole set. The cap lives HERE (on the
+// machine's results array) rather than at render time because the highlight is
+// index-owned: DOM option order must equal `results` order and the highlight
+// index domain is [0, results.length). Capping only at render would let the
+// index point past the rendered rows. Applied AFTER dedupeById so the invariant
+// holds on the same array the component maps over.
+export const RENDER_CAP = 50;
+
 const emptyBrowse = () => ({ items: [], breadcrumbs: [], pagination: null, loading: false });
 
 // Search transports can emit the same content id twice (e.g. the files
@@ -49,7 +60,9 @@ export function reducer(state, event) {
     case 'INPUT':
       return { ...state, mode: Modes.SEARCH, search: event.text, browse: emptyBrowse(), highlight: { idx: -1, userNavigated: false } };
     case 'RESULTS':
-      return { ...state, results: dedupeById(event.items) };
+      // Cap AFTER dedupe so results.length <= RENDER_CAP — keeps highlight math,
+      // ARROW wrap, and rendered rows all consistent (see RENDER_CAP note).
+      return { ...state, results: dedupeById(event.items).slice(0, RENDER_CAP) };
     case 'BROWSE_LOADING':
       // A browse fetch (siblings/drill/up) is in flight. Cleared by whichever
       // *_LOADED event lands, by INPUT (browse reset), by CLOSE, or explicitly

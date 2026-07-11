@@ -11,9 +11,9 @@ import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'r
 import { useDebouncedCallback } from '@mantine/hooks';
 import { useStreamingSearch } from '../../../../hooks/useStreamingSearch';
 import { getChildLogger } from '../../../../lib/logging/singleton.js';
-import { isContentIdLike } from '../contentSearchLogic.js';
+import { isContentIdLike, parseSourcePrefix } from '../contentSearchLogic.js';
 import { getCacheEntry, setCacheEntry } from '../siblingsCache.js';
-import { reducer, initialState, closeDecision, Modes } from './comboboxMachine.js';
+import { reducer, initialState, closeDecision, Modes, RENDER_CAP } from './comboboxMachine.js';
 
 const SEARCH_STREAM_ENDPOINT = '/api/v1/content/query/search/stream';
 const SEARCH_BATCH_ENDPOINT = '/api/v1/content/query/search';
@@ -46,6 +46,11 @@ function splitContentId(contentId) {
 }
 
 const normalizeValue = (v) => v?.replace(/:\s+/g, ':');
+
+// F13: `word:` / `word-word:` followed by only optional whitespace — a source
+// prefix whose term is empty. Distinct from parseSourcePrefix (which returns
+// null both here AND for plain no-colon text), so we detect it explicitly.
+const isBareSourcePrefix = (t) => typeof t === 'string' && /^[\w-]+:\s*$/.test(t);
 
 // Process-lifetime cache of contentId -> human title so the resolved-title
 // line renders instantly for items we've already seen. Exported for tests.
@@ -177,6 +182,11 @@ export function useContentCombobox({ value, onChange, searchParams = '', appResu
 
   const [batchResults, setBatchResults] = useState([]);
   const [batchLoading, setBatchLoading] = useState(false);
+  // Pre-cap count of the results last dispatched to the machine (which caps at
+  // RENDER_CAP). Lets the UI surface a "showing first N" hint on ANY transport
+  // — the SSE stream is uncapped and can blow past the cap, unlike the batch
+  // fallback which the server already limits to BATCH_TAKE.
+  const [rawResultCount, setRawResultCount] = useState(0);
   const queryRef = useRef(''); // last dispatched search text (for app-result merge)
 
   // S5 fix: `searchParams` MUST be in the deps — the standalone version
@@ -207,10 +217,15 @@ export function useContentCombobox({ value, onChange, searchParams = '', appResu
 
   const debouncedSearch = useDebouncedCallback((text) => {
     const mode = supportsSSE() ? 'sse' : 'batch';
-    log.info('search.dispatch', { text, mode });
-    queryRef.current = text;
-    if (supportsSSE()) streamSearch(text);
-    else doBatchSearch(text);
+    // F13: a bare source prefix ("singalong:") has an empty term. Sending the
+    // literal to the backend triggers a full-text search for the string
+    // "singalong:" across all sources (junk). Route it as an empty query —
+    // same as clearing the box. Scoped "source:term" is left untouched.
+    const q = isBareSourcePrefix(text) ? '' : text;
+    log.info('search.dispatch', { text: q, mode });
+    queryRef.current = q;
+    if (supportsSSE()) streamSearch(q);
+    else doBatchSearch(q);
   }, SEARCH_DEBOUNCE_MS);
 
   const handleInput = useCallback((text) => {
@@ -219,12 +234,29 @@ export function useContentCombobox({ value, onChange, searchParams = '', appResu
     debouncedSearch(text);
   }, [debouncedSearch]);
 
+  // F14: while searching, a `source:term` query scopes the backend search to
+  // that one source. Surface the scope so the UI can show a removable chip.
+  // Only meaningful while editing/searching (search != null).
+  const activeScope = state.search != null
+    ? (parseSourcePrefix(state.search)?.source ?? null)
+    : null;
+  // Drop the source prefix, rewriting the box to the bare term and re-running
+  // the now-unscoped search.
+  const clearScope = useCallback(() => {
+    const parsed = parseSourcePrefix(stateRef.current.search);
+    if (parsed) handleInput(parsed.term);
+  }, [handleInput]);
+
   // Dispatch RESULTS whenever stream/batch results change, merging
   // app-registry matches ahead of content results when enabled.
   const rawResults = supportsSSE() ? streamResults : batchResults;
   useEffect(() => {
     let cancelled = false;
-    const finish = (items) => { if (!cancelled) dispatch({ type: 'RESULTS', items }); };
+    const finish = (items) => {
+      if (cancelled) return;
+      setRawResultCount(items.length); // pre-cap length (machine slices to RENDER_CAP)
+      dispatch({ type: 'RESULTS', items });
+    };
     const query = queryRef.current;
     if (!appResults || !query || query.length < 2) {
       finish(rawResults);
@@ -273,9 +305,10 @@ export function useContentCombobox({ value, onChange, searchParams = '', appResu
     const foundIndex = (data.referenceIndex != null && data.referenceIndex >= 0)
       ? data.referenceIndex
       : items.findIndex((i) => i.id === normalizedVal);
-    // When the committed value isn't in the loaded window, highlight the first
-    // sibling (ListsItemRow parity) rather than nothing.
-    const referenceIndex = foundIndex >= 0 ? foundIndex : (items.length > 0 ? 0 : -1);
+    // Genuine-miss path: when the committed value isn't in the loaded window,
+    // highlight nothing (idx -1) rather than a phantom row 0. The absence is
+    // surfaced instead by the orientation header in ContentCombobox.
+    const referenceIndex = foundIndex >= 0 ? foundIndex : -1;
     paginationOwnerRef.current = data.pagination ? contentId : null;
     dispatch({
       type: 'BROWSE_LOADED',
@@ -375,10 +408,14 @@ export function useContentCombobox({ value, onChange, searchParams = '', appResu
     const { breadcrumbs } = stateRef.current.browse;
     log.info('go_back.start', { breadcrumbDepth: breadcrumbs.length });
     if (breadcrumbs.length <= 1) {
-      // At root — exit browse back to SEARCH with the current search text.
-      log.info('go_back.to_search_results', { reason: 'at_root_or_single_crumb' });
+      // At the siblings root — dismiss to DISPLAY keeping the committed value.
+      // OPEN seeded `search` with the committed id, so an INPUT here would turn
+      // Back into a keyword search of the raw id string (F8). CLOSE resets to
+      // initialState(value): DISPLAY mode, search=null, value preserved.
+      log.info('go_back.dismiss_from_root', { reason: 'at_root_or_single_crumb' });
       invalidateBrowseLoads(); // a late browse response must not yank us back
-      dispatch({ type: 'INPUT', text: stateRef.current.search ?? '' });
+      dispatch({ type: 'CLOSE' });
+      cancelPendingSearch(); // clear any debounced search timer/results
       return;
     }
     const nextBreadcrumbs = breadcrumbs.slice(0, -1);
@@ -409,7 +446,7 @@ export function useContentCombobox({ value, onChange, searchParams = '', appResu
       log.error('go_back.error', { parentId: parent.id, error: err.message });
       if (browseTokenRef.current === token) dispatch({ type: 'BROWSE_LOADING', loading: false });
     }
-  }, [log]);
+  }, [cancelPendingSearch, log]);
 
   // ── 5. Pagination (in-flight guarded; the machine owns items/window math) ──
   // Returns true only when a PAGINATED event was actually dispatched, so the
@@ -519,6 +556,8 @@ export function useContentCombobox({ value, onChange, searchParams = '', appResu
     dispatch,
     // input/search
     handleInput,
+    activeScope,
+    clearScope,
     // browse
     openWithSiblings,
     drill,
@@ -532,10 +571,14 @@ export function useContentCombobox({ value, onChange, searchParams = '', appResu
     isSearching: streamSearching || batchLoading,
     pendingSources,
     sourceErrors,
-    // Only the batch fallback caps results; flag when it hit the cap so the UI
-    // can offer a "refine your search" affordance (audit S6). The SSE stream is
-    // uncapped, so it never truncates.
-    truncatedAt: (!supportsSSE() && batchResults.length >= BATCH_TAKE) ? BATCH_TAKE : null,
+    // Flag truncation so the UI can offer a "refine your search" affordance
+    // (audit S6 / F6). Two independent caps can bite: the machine caps every
+    // transport's results at RENDER_CAP (the SSE stream is otherwise uncapped
+    // and can stream hundreds), and the batch fallback the server limits to
+    // BATCH_TAKE. Report whichever the raw (pre-cap) count crossed.
+    truncatedAt: rawResultCount > RENDER_CAP
+      ? RENDER_CAP
+      : (!supportsSSE() && batchResults.length >= BATCH_TAKE) ? BATCH_TAKE : null,
   };
 }
 

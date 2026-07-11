@@ -151,6 +151,7 @@ export function EmptyItemRow({ onAdd, nextIndex, isWatchlist }) {
             value={input}
             onChange={handleComboboxChange}
             appResults
+            selectContainers
             renderValue={({ onStartEdit }) => (
               <ContentValueCard
                 value={input}

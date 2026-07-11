@@ -158,6 +158,195 @@ describe('ContentCombobox (hook wiring)', () => {
     expect(badges[0].closest('[data-value]')).toHaveAttribute('data-value', 'plex:1989');
   });
 
+  it('marks the committed row with data-current and a salient Current badge (F1b)', () => {
+    currentHook = makeHook({
+      state: {
+        ...initialState('plex:123'),
+        value: 'plex:123',
+        mode: Modes.SEARCH,
+        search: 'plex',
+        results: [
+          { id: 'plex:123', title: 'Committed Item', source: 'plex' },
+          { id: 'plex:2', title: 'Other Item', source: 'plex' },
+        ],
+      },
+    });
+    renderCombobox({ value: 'plex:123' });
+
+    const row = screen.getByTestId('combobox-option-plex:123');
+    expect(row).toHaveAttribute('data-current', 'true');
+
+    const badge = screen.getByTestId('combobox-current-badge');
+    expect(badge).toHaveTextContent('Current');
+    expect(row).toContainElement(badge);
+
+    // The non-committed row must NOT carry the Current marker.
+    const otherRow = screen.getByTestId('combobox-option-plex:2');
+    expect(otherRow).toHaveAttribute('data-current', 'false');
+  });
+
+  it('BROWSE mode shows the orientation anchor when the committed value is not in the window (F1)', () => {
+    currentHook = makeHook({
+      state: {
+        ...initialState('singalong:hymn/1008'),
+        value: 'singalong:hymn/1008',
+        mode: Modes.BROWSE,
+        browse: {
+          items: [
+            { id: 'singalong:hymn/1', title: 'The Morning Breaks', source: 'singalong' },
+            { id: 'singalong:hymn/2', title: 'The Spirit of God', source: 'singalong' },
+          ],
+          breadcrumbs: [],
+          pagination: null,
+          loading: false,
+        },
+      },
+      resolvedTitle: 'Nearer, My God, to Thee',
+    });
+    renderCombobox({ value: 'singalong:hymn/1008' });
+
+    const anchor = screen.getByTestId('combobox-current-anchor');
+    expect(anchor).toHaveTextContent('Nearer, My God, to Thee');
+    expect(anchor).toHaveTextContent('not in this list');
+  });
+
+  it('BROWSE mode hides the orientation anchor when the committed value IS in the window (F1)', () => {
+    currentHook = makeHook({
+      state: {
+        ...initialState('singalong:hymn/2'),
+        value: 'singalong:hymn/2',
+        mode: Modes.BROWSE,
+        browse: {
+          items: [
+            { id: 'singalong:hymn/1', title: 'The Morning Breaks', source: 'singalong' },
+            { id: 'singalong:hymn/2', title: 'The Spirit of God', source: 'singalong' },
+          ],
+          breadcrumbs: [],
+          pagination: null,
+          loading: false,
+        },
+      },
+      resolvedTitle: 'The Spirit of God',
+    });
+    renderCombobox({ value: 'singalong:hymn/2' });
+
+    expect(screen.queryByTestId('combobox-current-anchor')).toBeNull();
+  });
+
+  it('F6: renders the results-truncated hint when the hook reports truncatedAt (transport-agnostic)', () => {
+    const results = Array.from({ length: 50 }, (_, i) => ({ id: `plex:${i}`, title: `Item ${i}`, source: 'plex' }));
+    currentHook = makeHook({
+      state: { ...initialState(''), mode: Modes.SEARCH, search: 'broad', results },
+      isSearching: false,
+      truncatedAt: 50,
+    });
+    renderCombobox();
+
+    const hint = screen.getByTestId('results-truncated');
+    expect(hint).toHaveTextContent('Showing first 50 — refine your search');
+  });
+
+  it('F14: renders a removable source-scope chip in search mode; clicking clear calls clearScope', () => {
+    const clearScope = vi.fn();
+    currentHook = makeHook({
+      state: {
+        ...initialState(''),
+        mode: Modes.SEARCH,
+        search: 'singalong:nearer',
+        results: [{ id: 'singalong:hymn/100', title: 'Nearer', source: 'singalong' }],
+      },
+      activeScope: 'singalong',
+      clearScope,
+    });
+    renderCombobox();
+
+    const chip = screen.getByTestId('combobox-scope-chip');
+    expect(chip).toHaveTextContent('Searching within singalong');
+
+    fireEvent.click(screen.getByTestId('combobox-scope-clear'));
+    expect(clearScope).toHaveBeenCalledTimes(1);
+  });
+
+  it('F14: no scope chip when activeScope is null', () => {
+    currentHook = makeHook({
+      state: { ...initialState(''), mode: Modes.SEARCH, search: 'nearer' },
+      activeScope: null,
+    });
+    renderCombobox();
+
+    expect(screen.queryByTestId('combobox-scope-chip')).toBeNull();
+  });
+
+  it('F7: with selectContainers, a container row renders the interactive browse-into chevron; clicking it drills', () => {
+    currentHook = makeHook({
+      state: {
+        ...initialState(''),
+        mode: Modes.SEARCH,
+        search: 'jazz',
+        results: [
+          { id: 'plex:playlist:99', title: 'Jazz Playlist', source: 'plex', type: 'playlist' },
+          { id: 'plex:leaf:1', title: 'A Song', source: 'plex' },
+        ],
+      },
+    });
+    renderCombobox({ selectContainers: true });
+
+    // The interactive drill affordance exists only for the container row.
+    const chevron = screen.getByTestId('browse-into-plex:playlist:99');
+    expect(screen.queryByTestId('browse-into-plex:leaf:1')).toBeNull();
+
+    fireEvent.click(chevron);
+    expect(currentHook.drill).toHaveBeenCalledTimes(1);
+    expect(currentHook.drill).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'plex:playlist:99' })
+    );
+    expect(currentHook.select).not.toHaveBeenCalled();
+  });
+
+  it('F7: with selectContainers, Enter on a user-navigated container SELECTS it as the value (not drill)', () => {
+    currentHook = makeHook({
+      state: {
+        ...initialState(''),
+        mode: Modes.SEARCH,
+        search: 'jazz',
+        results: [
+          { id: 'plex:playlist:99', title: 'Jazz Playlist', source: 'plex', type: 'playlist' },
+        ],
+        highlight: { idx: 0, userNavigated: true },
+      },
+    });
+    renderCombobox({ selectContainers: true });
+
+    fireEvent.keyDown(screen.getByRole('textbox'), { key: 'Enter' });
+    expect(currentHook.select).toHaveBeenCalledTimes(1);
+    expect(currentHook.select).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'plex:playlist:99' })
+    );
+    expect(currentHook.drill).not.toHaveBeenCalled();
+  });
+
+  it('F7: WITHOUT selectContainers, Enter on the same container DRILLS instead (proves the prop flips behavior)', () => {
+    currentHook = makeHook({
+      state: {
+        ...initialState(''),
+        mode: Modes.SEARCH,
+        search: 'jazz',
+        results: [
+          { id: 'plex:playlist:99', title: 'Jazz Playlist', source: 'plex', type: 'playlist' },
+        ],
+        highlight: { idx: 0, userNavigated: true },
+      },
+    });
+    renderCombobox(); // no selectContainers
+
+    fireEvent.keyDown(screen.getByRole('textbox'), { key: 'Enter' });
+    expect(currentHook.drill).toHaveBeenCalledTimes(1);
+    expect(currentHook.drill).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'plex:playlist:99' })
+    );
+    expect(currentHook.select).not.toHaveBeenCalled();
+  });
+
   it('Escape closes via handleClose with reason escape', () => {
     currentHook = makeHook({
       state: { ...initialState(''), mode: Modes.SEARCH, search: 'abc' },
