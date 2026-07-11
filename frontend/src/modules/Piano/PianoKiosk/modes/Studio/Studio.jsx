@@ -8,6 +8,7 @@ import { useStudioRecorder } from './useStudioRecorder.js';
 import StudioPlay from './StudioPlay.jsx';
 import StudioRecordings from './StudioRecordings.jsx';
 import StudioPlayback from './StudioPlayback.jsx';
+import StudioReviewPrompt from './StudioReviewPrompt.jsx';
 
 /**
  * Studio mode — a freeform play surface with two tabs:
@@ -27,6 +28,8 @@ export function Studio() {
   const { recording, start, stop } = useStudioRecorder(subscribe);
   const [takes, setTakes] = useState([]);
   const [confirmId, setConfirmId] = useState(null);
+  // A stopped take awaiting the user's keep/discard decision (review lifecycle).
+  const [pendingTake, setPendingTake] = useState(null);
   const studioBase = currentUser ? `api/v1/piano/users/${currentUser}/studio` : null;
 
   // Count-up timer while recording (drives the Record button's MM:SS readout).
@@ -66,17 +69,30 @@ export function Studio() {
     }
   }, [studioBase, logger, loadTakes]);
 
-  // Single Record toggle: stop auto-saves whatever was captured (if anything).
-  const onRecordToggle = useCallback(async () => {
+  // Record toggle: stop holds the take for review (keep/discard) instead of
+  // auto-saving, so a fumbled take isn't silently kept. An empty take is dropped.
+  const onRecordToggle = useCallback(() => {
     if (recording) {
       const take = stop();
       logger.info('studio.record-stop', { events: take.events.length, durMs: take.durationMs });
-      if (take.events.length > 0) await saveTake(take);
+      if (take.events.length > 0) setPendingTake(take);
     } else {
       logger.info('studio.record-start', {});
       start();
     }
-  }, [recording, start, stop, saveTake, logger]);
+  }, [recording, start, stop, logger]);
+
+  // Review decisions on the pending take.
+  const onSavePending = useCallback(async () => {
+    const take = pendingTake;
+    setPendingTake(null);
+    if (take) await saveTake(take);
+  }, [pendingTake, saveTake]);
+
+  const onDiscardPending = useCallback(() => {
+    logger.info('studio.record-discard', { events: pendingTake?.events.length ?? 0 });
+    setPendingTake(null);
+  }, [pendingTake, logger]);
 
   const onToggleFavorite = useCallback(async (id, favorite) => {
     try {
@@ -137,6 +153,8 @@ export function Studio() {
         />
         <Route path="recordings/:id" element={<StudioPlayback />} />
       </Routes>
+
+      <StudioReviewPrompt take={pendingTake} onSave={onSavePending} onDiscard={onDiscardPending} />
     </section>
   );
 }

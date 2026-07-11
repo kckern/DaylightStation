@@ -2651,3 +2651,23 @@
 @media (prefers-reduced-motion: reduce) {
   .piano-skeleton.is-shimmer { animation: none; background: var(--piano-surface-2); }
 }
+
+// ── Studio recording review (keep/discard a stopped take) ────────────────────
+.piano-studio-review {
+  position: fixed; inset: 0; z-index: 60; display: flex; align-items: center; justify-content: center;
+  &__scrim { position: absolute; inset: 0; background: rgba(0, 0, 0, 0.55); }
+  &__card {
+    position: relative; width: min(22rem, 90vw); background: var(--piano-surface);
+    border: 1px solid var(--piano-border); border-radius: var(--r-lg);
+    padding: var(--sp-6) var(--sp-5); text-align: center; box-shadow: 0 12px 40px rgba(0, 0, 0, 0.45);
+  }
+  &__title { margin: 0 0 var(--sp-2); font-size: var(--t-title); font-weight: 700; }
+  &__meta { margin: 0 0 var(--sp-5); color: var(--piano-muted); font-variant-numeric: tabular-nums; }
+  &__actions { display: flex; gap: var(--sp-3); }
+  &__discard, &__save {
+    flex: 1 1 0; min-height: 48px; border-radius: var(--r-pill); font: inherit; font-weight: 700;
+    font-size: 1.05rem; cursor: pointer;
+  }
+  &__discard { background: var(--piano-surface-2); color: var(--piano-fg); border: 1px solid var(--piano-border); }
+  &__save { background: var(--piano-accent); color: var(--piano-accent-ink); border: none; }
+}
