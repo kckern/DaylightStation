@@ -16,23 +16,13 @@ export function buildEpisodeFilename({ show, season, episode, song, artist }) {
 
 export function assignEpisodes(rows) {
   const maxBySeason = {};
-  const nextBySeason = {};
-
+  for (const r of rows) {
+    if (r.episode) maxBySeason[r.season] = Math.max(maxBySeason[r.season] || 0, r.episode);
+  }
   return rows.map((r) => {
-    if (r.episode) {
-      maxBySeason[r.season] = Math.max(maxBySeason[r.season] || 0, r.episode);
-      return r;
-    }
-
-    // This is a null, assign a number
-    if (maxBySeason[r.season] !== undefined) {
-      // We've already seen an explicit episode in this season
-      maxBySeason[r.season]++;
-      return { ...r, episode: maxBySeason[r.season] };
-    } else {
-      // No explicit episodes seen yet in this season
-      if (!nextBySeason[r.season]) nextBySeason[r.season] = 1;
-      return { ...r, episode: nextBySeason[r.season]++ };
-    }
+    if (r.episode) return r;
+    const next = (maxBySeason[r.season] || 0) + 1;
+    maxBySeason[r.season] = next;
+    return { ...r, episode: next };
   });
 }
