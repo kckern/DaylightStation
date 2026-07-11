@@ -102,9 +102,9 @@ export function ContentCombobox({
     state, dispatch,
     handleInput, activeScope, clearScope,
     openWithSiblings, drill, goUp, paginate,
-    handleClose, select,
+    handleClose, select, commit,
     resolvedTitle, isSearching, pendingSources, sourceErrors, truncatedAt,
-  } = useContentCombobox({ value, onChange, searchParams, appResults });
+  } = useContentCombobox({ value, onChange, searchParams, appResults, selectContainers });
 
   const mode = state.mode;
   const isBrowse = mode === Modes.BROWSE;
@@ -136,7 +136,7 @@ export function ContentCombobox({
       // Mantine-initiated close (outside pointerdown). When WE initiated the
       // close (Escape/Tab/select/freeform), the machine is already back in
       // DISPLAY and commit semantics were handled — do nothing.
-      if (modeRef.current !== Modes.DISPLAY) handleClose('outside');
+      if (modeRef.current !== Modes.DISPLAY) commit('outside');
     },
   });
 
@@ -167,12 +167,13 @@ export function ContentCombobox({
     });
   }, [value, openWithSiblings, renderValue, log]);
 
-  // ── Freeform commit (component-owned commit path) ──
-  // The hook's handleClose only commits content-id-like text; the freeform row
-  // and Enter must commit the RAW string unconditionally (2026-03-01 invariant),
-  // so we call onChange directly and then close via the hook with reason
-  // 'select' — closeDecision('select') is a no-op commit, so no double-fire.
-  const commitFreeform = useCallback(() => {
+  // ── Explicit raw commit (freeform-row path only) ──
+  // The user explicitly chose the "Use … as raw value" row, so we save the RAW
+  // string unconditionally — NO resolution, no warn toast. This deliberately
+  // bypasses commit('enter')/decideCommit. We call onChange directly and close
+  // via the hook with reason 'select' — closeDecision('select') is a no-op
+  // commit, so there is no double-fire.
+  const commitExplicitRaw = useCallback(() => {
     const text = search;
     if (!text) return;
     log.info('freeform.commit_via_option', { freeformValue: text, prevValue: value });
@@ -183,7 +184,7 @@ export function ContentCombobox({
   // ── Option submit (mouse path; keyboard is fully component-owned) ──
   const handleOptionSubmit = (val) => {
     if (val === '__freeform__') {
-      commitFreeform();
+      commitExplicitRaw();
       return;
     }
     const item = items.find((r) => r.id === val);
@@ -219,29 +220,16 @@ export function ContentCombobox({
     }
     if (e.key === 'Enter') {
       e.preventDefault();
-      // Mar-01 invariant: NEVER select an auto-highlighted row — only rows the
-      // user navigated to. Otherwise typed text wins.
-      const item = state.highlight.userNavigated ? items[highlightIdx] : null;
-      if (item) {
-        log.debug('key.enter.select', { contentId: item.id, isContainer: isContainer(item) });
-        if (isContainer(item) && !selectContainers) drill(item);
-        else select(item);
-      } else if (search && search !== value && search.length >= 2) {
-        // Same >= 2 gate as the freeform row (S9): sub-2-char text never
-        // commits (id-like text is always >= 4 chars, so Mar-01 is unaffected).
-        commitFreeform();
-      } else {
-        handleClose('dismiss'); // nothing to commit — dismiss, keep value
-      }
+      commit('enter');   // decideCommit owns pick/render/literal/open; may keep the dropdown open
       return;
     }
     if (e.key === 'Escape') {
       e.preventDefault();
-      handleClose('escape');
+      commit('escape');
       return;
     }
     if (e.key === 'Tab') {
-      handleClose('tab'); // no preventDefault — focus moves naturally
+      commit('tab'); // no preventDefault — focus moves naturally
     }
   };
 
@@ -518,9 +506,9 @@ export function ContentCombobox({
           }}
           onFocus={() => startEditing()}
           onBlur={() => {
-            // Commit/revert policy lives in handleClose (commit-on-close).
-            // Outside clicks and Tab are handled before blur; this covers
-            // programmatic focus loss.
+            // Closing the dropdown routes through onDropdownClose → commit('outside')
+            // (revert of typed-but-unpicked text). Escape/Tab are handled before
+            // blur; this also covers programmatic focus loss.
             combobox.closeDropdown();
           }}
           onKeyDown={handleKeyDown}
