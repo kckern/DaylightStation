@@ -5,6 +5,7 @@ import { toMusicTracks, formatTime } from './musicTracks.js';
 import { usePianoBreadcrumb } from '../../PianoBreadcrumbContext.jsx';
 import Icon from '../../icons/Icon.jsx';
 import PianoEmpty from '../../PianoEmpty.jsx';
+import { SkeletonList } from '../../Skeleton.jsx';
 
 const idOf = (raw) => String(raw || '').replace(/^plex:/, '');
 
@@ -47,7 +48,7 @@ export default function AlbumDetail({ album, onPlay }) {
       <div className="piano-album-detail__body">
         {cover && <img className="piano-album-detail__cover" src={cover} alt={album?.title || ''} />}
         <div className="piano-album-detail__tracks">
-          {tracks === null && <PianoEmpty loading />}
+          {tracks === null && <SkeletonList rows={8} />}
           {tracks?.length === 0 && <PianoEmpty message={error || 'No tracks found.'} />}
           {tracks?.length > 0 && (
             <>

@@ -7,6 +7,7 @@ import AlbumGrid from './AlbumGrid.jsx';
 import AlbumDetail from './AlbumDetail.jsx';
 import MusicPlayer from './MusicPlayer.jsx';
 import { toMusicTracks } from './musicTracks.js';
+import { SkeletonList } from '../../Skeleton.jsx';
 
 const idOf = (raw) => String(raw || '').replace(/^plex:/, '');
 
@@ -84,7 +85,7 @@ function MusicPlayerRoute() {
   const startIndex = Math.max(0, parseInt(sp.get('track') || '0', 10) || 0);
   const shuffle = sp.get('shuffle') === '1';
 
-  if (tracks === null) return <div className="piano-mode__placeholder">Loading…</div>;
+  if (tracks === null) return <section className="piano-mode piano-mode--music"><SkeletonList rows={8} /></section>;
   if (!tracks.length) {
     return (
       <div className="piano-mode__placeholder">

@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import getLogger from '../../../lib/logging/Logger.js';
 import { usePianoRoster } from './PianoConfig.jsx';
 import PianoTile from './PianoTile.jsx';
+import { SkeletonGrid } from './Skeleton.jsx';
 
 /**
  * PianoPicker — household has multiple piano kiosks; pick which one this is.
@@ -14,7 +15,7 @@ export function PianoPicker() {
   const navigate = useNavigate();
   const logger = useMemo(() => getLogger().child({ component: 'piano-picker' }), []);
 
-  if (loading) return <div className="piano-connect-gate"><p>Loading…</p></div>;
+  if (loading) return <main className="piano-menu"><SkeletonGrid count={3} aspect="square" /></main>;
 
   const open = (id) => {
     logger.info('piano.select-instrument', { pianoId: id });
