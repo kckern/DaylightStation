@@ -13,6 +13,6 @@ describe('CourseGrid loading state', () => {
   it('renders poster skeletons while the wall is loading', () => {
     const groups = [{ label: 'Lessons', collections: ['plex:1'] }];
     const { container } = render(<CourseGrid groups={groups} onSelect={() => {}} />);
-    expect(container.querySelectorAll('.piano-skeleton--poster').length).toBeGreaterThan(0);
+    expect(container.querySelectorAll('.piano-skeleton--poster').length).toBe(8);
   });
 });
