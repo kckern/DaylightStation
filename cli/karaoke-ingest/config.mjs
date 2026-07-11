@@ -17,6 +17,7 @@ export const SEASONS = [
   { number: 7, name: 'Anthems of Hope',             seedCategories: ['resilience anthem'] },
   { number: 8, name: 'Sing-Along Crowd-Pleasers',   seedCategories: ['pub / tavern essential', 'pub'] },
   { number: 9, name: 'Pop Throwbacks',              seedCategories: [] },
+  { number: 10, name: 'TV Themes',                  seedCategories: [] },
 ];
 
 export function seasonName(n) {
