@@ -273,6 +273,44 @@
   }
 }
 
+// MIDI OUT link feedback banner (PianoLinkBanner). Full-width strip under the
+// header so a dropped link — and its recovery — can't be missed while the player
+// is changing instrument/tone/volume. Amber = down (changes held), green = back.
+.piano-linkbanner {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: var(--sp-2) var(--sp-4);
+  font-weight: 700;
+  border-bottom: 1px solid var(--piano-border);
+
+  &__icon { font-size: 1.1rem; flex: 0 0 auto; }
+  &__text { flex: 1 1 auto; }
+
+  &--down {
+    background: color-mix(in srgb, var(--piano-warn) 22%, var(--piano-bg));
+    color: var(--piano-warn);
+  }
+  &--ok {
+    background: color-mix(in srgb, var(--piano-accent) 20%, var(--piano-bg));
+    color: var(--piano-accent-text);
+  }
+
+  &__reset {
+    flex: 0 0 auto;
+    background: var(--piano-warn);
+    color: #241a05;
+    border: none;
+    font: inherit;
+    font-weight: 700;
+    cursor: pointer;
+    padding: 0.35rem 0.9rem;
+    border-radius: var(--r-pill);
+    min-height: 2.25rem;
+    &:focus-visible { outline: 3px solid var(--piano-fg); outline-offset: 2px; }
+  }
+}
+
 // Shared icon+label tile primitive — used by the home menu and the games picker.
 .piano-tile {
   width: 100%;

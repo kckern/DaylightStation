@@ -1,4 +1,4 @@
-import { createContext, useContext, useMemo, useState, useCallback } from 'react';
+import { createContext, useContext, useMemo, useState, useCallback, useEffect, useRef } from 'react';
 import getLogger from '../../../lib/logging/Logger.js';
 import { usePianoMidi } from './PianoMidiContext.jsx';
 import { usePianoKioskConfig } from './PianoConfig.jsx';
@@ -29,7 +29,7 @@ const FALLBACK = {
 
 export function PianoSoundProvider({ children }) {
   const { config, pianoId } = usePianoKioskConfig();
-  const { sendVoice, sendControlChange, sendLocalControl } = usePianoMidi();
+  const { sendVoice, sendControlChange, sendLocalControl, outputConnected } = usePianoMidi();
   const logger = useMemo(() => getLogger().child({ component: 'piano-sound' }), []);
 
   const device = useMemo(() => getDeviceProfile(config.device), [config.device]);
@@ -81,6 +81,19 @@ export function PianoSoundProvider({ children }) {
     }
     logger.info('piano.sound.resync', { pianoId, deviceVoice: deviceVoice?.no ?? null });
   }, [device, deviceVoice, effects, sendLocalControl, sendVoice, sendControlChange, pianoId, logger]);
+
+  // Auto-recover on a MIDI OUT link rising edge (false→true): a BLE flap makes
+  // the hardware forget our voice/effects, and any instrument/tone change made
+  // while the link was down never sent (the send no-oped, but deviceVoice/effects
+  // state kept it). Re-assert on reconnect so the piano matches the screen with
+  // no user action — the "rock solid" link the operator drawer promises. The
+  // statechange debounce in useWebMidiBLE makes this a single clean edge, not a
+  // storm. (Volume/CC7 is re-asserted in parallel by PianoMixContext.)
+  const prevOutRef = useRef(false);
+  useEffect(() => {
+    if (outputConnected && !prevOutRef.current && device) resync();
+    prevOutRef.current = outputConnected;
+  }, [outputConnected, device, resync]);
 
   const activeName = device ? (deviceVoice?.name || 'Keyboard') : 'Onboard';
 

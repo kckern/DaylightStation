@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 
-const midi = vi.hoisted(() => ({ connected: false, sendControlChange: vi.fn() }));
+const midi = vi.hoisted(() => ({ outputConnected: false, sendControlChange: vi.fn() }));
 vi.mock('./PianoMidiContext.jsx', () => ({ usePianoMidi: () => midi }));
 vi.mock('../../../lib/logging/Logger.js', () => ({
   default: () => ({ child: () => ({ info: vi.fn(), debug: vi.fn(), warn: vi.fn(), error: vi.fn() }) }),
@@ -25,7 +25,7 @@ const renderMix = () => render(<PianoMixProvider><Harness /></PianoMixProvider>)
 beforeEach(() => {
   localStorage.clear();
   midi.sendControlChange.mockReset();
-  midi.connected = false;
+  midi.outputConnected = false;
 });
 
 describe('PianoMixContext', () => {
@@ -59,8 +59,8 @@ describe('PianoMixContext', () => {
     expect(screen.getByTestId('media').textContent).toBe('0.2');
   });
 
-  it('re-asserts CC7 when MIDI is connected on mount', () => {
-    midi.connected = true;
+  it('re-asserts CC7 when the MIDI OUT link is connected on mount', () => {
+    midi.outputConnected = true; // keyed on the OUT link (the port that flaps), not input status
     localStorage.setItem('piano.mix.pianoLevel', '0.6');
     renderMix();
     expect(midi.sendControlChange).toHaveBeenCalledWith(7, 76); // round(0.6*127)=76
