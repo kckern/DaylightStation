@@ -13,7 +13,8 @@ import { useStreamingSearch } from '../../../../hooks/useStreamingSearch';
 import { getChildLogger } from '../../../../lib/logging/singleton.js';
 import { isContentIdLike, parseSourcePrefix } from '../contentSearchLogic.js';
 import { getCacheEntry, setCacheEntry } from '../siblingsCache.js';
-import { reducer, initialState, closeDecision, Modes, RENDER_CAP } from './comboboxMachine.js';
+import { reducer, initialState, closeDecision, decideCommit, isContainer, Modes, RENDER_CAP } from './comboboxMachine.js';
+import { notifyWarning } from '../../shared/feedback.js';
 
 const SEARCH_STREAM_ENDPOINT = '/api/v1/content/query/search/stream';
 const SEARCH_BATCH_ENDPOINT = '/api/v1/content/query/search';
@@ -134,7 +135,7 @@ async function fetchSiblingsData(contentId) {
  * @param {string} [args.searchParams] - extra query params for search endpoints
  * @param {boolean} [args.appResults] - merge app-registry matches ahead of content results
  */
-export function useContentCombobox({ value, onChange, searchParams = '', appResults = false }) {
+export function useContentCombobox({ value, onChange, searchParams = '', appResults = false, selectContainers = false }) {
   const log = useMemo(() => getChildLogger({ component: 'useContentCombobox', app: 'admin', sessionLog: true }), []);
   const [state, dispatch] = useReducer(reducer, value ?? '', initialState);
 
@@ -523,6 +524,53 @@ export function useContentCombobox({ value, onChange, searchParams = '', appResu
     handleClose('select'); // closeDecision('select') → no double-commit
   }, [handleClose, log]);
 
+  // ── Commit executor: run the pure decision and perform its side effect ──
+  // `searchSettled` distinguishes "still loading/debouncing" from "settled, no
+  // match" for the Enter path. True only once the transport has finished for
+  // the CURRENT editing text: queryRef.current is set inside debouncedSearch,
+  // so right after handleInput it is stale → searchSettled stays false until the
+  // debounce fires AND the transport returns (streamSearching/batchLoading clear).
+  const searchSettled = !streamSearching && !batchLoading
+    && queryRef.current === (state.search ?? '')
+    && (state.search ?? '').trim().length >= 2;
+  // Mirror into a ref so `commit` reads the latest value without re-creating on
+  // every settle transition (avoids a stale-closure read in event handlers).
+  const searchSettledRef = useRef(searchSettled);
+  searchSettledRef.current = searchSettled;
+
+  const commit = useCallback((reason) => {
+    const s = stateRef.current;
+    const decision = decideCommit({
+      reason, search: s.search, value: s.value, results: s.results,
+      highlightIdx: s.highlight.idx, userNavigated: s.highlight.userNavigated,
+      selectContainers, searchSettled: searchSettledRef.current, isContainer,
+    });
+    switch (decision.action) {
+      case 'select': select(decision.item); break;   // existing helper: onChange(id,item)+close
+      case 'drill':  drill(decision.item); break;     // stays OPEN, do not close
+      case 'open':   break;                           // keep dropdown open, commit nothing
+      case 'literal':
+        log.info('commit.literal_fallback', { value: decision.value, prevValue: s.value });
+        onChangeRef.current?.(decision.value);
+        notifyWarning({
+          title: 'Saved as raw id',
+          message: `Couldn't resolve “${decision.value}” — saved as raw id`,
+        });
+        invalidateBrowseLoads(); dispatch({ type: 'CLOSE' }); cancelPendingSearch();
+        break;
+      case 'revert':
+      case 'dismiss':
+        log.info(`commit.${decision.action}`, { discarded: s.search, kept: s.value, reason });
+        invalidateBrowseLoads(); dispatch({ type: 'CLOSE' }); cancelPendingSearch();
+        break;
+      case 'none':
+      default:
+        dispatch({ type: 'CLOSE' }); cancelPendingSearch();
+        break;
+    }
+    return decision;
+  }, [selectContainers, select, drill, cancelPendingSearch, log]);
+
   // ── 6. Title resolution for the committed value ──
   const [resolvedTitle, setResolvedTitle] = useState(() => (
     isContentIdLike(value) && titleCache.has(value) ? titleCache.get(value) : null
@@ -566,7 +614,9 @@ export function useContentCombobox({ value, onChange, searchParams = '', appResu
     // lifecycle
     handleClose,
     select,
+    commit,
     // meta
+    searchSettled,
     resolvedTitle,
     isSearching: streamSearching || batchLoading,
     pendingSources,

@@ -53,6 +53,17 @@ export function closeDecision({ search, value }, reason) {
   return { action: 'revert' };
 }
 
+// Item-shape tolerance: hook-normalized browse items ({type, itemCount, parent})
+// AND raw search API items ({metadata: {...}}) both flow through here. Moved
+// here from ContentCombobox.jsx so the machine, hook, and component share one
+// container predicate (decideCommit injects it; keep the logic unchanged).
+export function isContainer(item) {
+  return item.itemType === 'container'
+    || item.isContainer
+    || ['show', 'album', 'artist', 'watchlist', 'channel', 'series', 'conference', 'playlist', 'container']
+      .includes(item.type || item.metadata?.type);
+}
+
 /**
  * Decide what a close gesture commits. Pure: no React/fetch.
  * @param {object} a
