@@ -1,4 +1,8 @@
-import { Stack, Paper, Title, Text, Group, Badge, SimpleGrid } from '@mantine/core';
+import { useState } from 'react';
+import {
+  Stack, Paper, Title, Text, Group, Badge, SimpleGrid,
+  Button, Modal, TextInput, Textarea, Alert,
+} from '@mantine/core';
 import { useGoals } from '../../hooks/useLifePlan.js';
 import { GoalProgressBar } from '../../widgets/GoalProgressBar.jsx';
 
@@ -41,26 +45,105 @@ function GoalCard({ goal, onClick }) {
 }
 
 export function GoalsView({ username, onGoalClick }) {
-  const { goals, loading } = useGoals(username);
+  const { goals, loading, createGoal } = useGoals(username);
+
+  const [opened, setOpened] = useState(false);
+  const [name, setName] = useState('');
+  const [why, setWhy] = useState('');
+  const [milestone, setMilestone] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const [formError, setFormError] = useState(null);
+
+  const resetForm = () => {
+    setName('');
+    setWhy('');
+    setMilestone('');
+    setFormError(null);
+  };
+
+  const closeModal = () => {
+    setOpened(false);
+    resetForm();
+  };
+
+  const handleSubmit = async () => {
+    if (!name.trim() || submitting) return;
+    setSubmitting(true);
+    setFormError(null);
+    try {
+      await createGoal({ name: name.trim(), why: why.trim() || undefined, milestone: milestone.trim() || undefined });
+      closeModal();
+    } catch (err) {
+      setFormError(err.message);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const addModal = (
+    <Modal opened={opened} onClose={closeModal} title="Add goal">
+      <Stack gap="sm">
+        {formError && (
+          <Alert color="red" title="Couldn't create the goal">{formError}</Alert>
+        )}
+        <TextInput
+          label="Goal"
+          placeholder="What do you want to achieve?"
+          required
+          value={name}
+          onChange={(e) => setName(e.currentTarget.value)}
+        />
+        <Textarea
+          label="Why does this matter?"
+          placeholder="The purpose behind it"
+          autosize
+          minRows={2}
+          value={why}
+          onChange={(e) => setWhy(e.currentTarget.value)}
+        />
+        <TextInput
+          label="First milestone"
+          placeholder="A concrete first step"
+          value={milestone}
+          onChange={(e) => setMilestone(e.currentTarget.value)}
+        />
+        <Group justify="flex-end">
+          <Button variant="subtle" onClick={closeModal}>Cancel</Button>
+          <Button onClick={handleSubmit} loading={submitting} disabled={!name.trim()}>
+            Create goal
+          </Button>
+        </Group>
+      </Stack>
+    </Modal>
+  );
 
   if (loading) return null;
 
   if (goals.length === 0) {
     return (
       <Stack gap="md">
-        <Title order={4}>Goals</Title>
+        <Group justify="space-between">
+          <Title order={4}>Goals</Title>
+        </Group>
         <Paper p="lg" withBorder radius="md">
-          <Text c="dimmed">
-            No goals yet — add one below, or let your coach walk you through it.
-          </Text>
+          <Stack gap="sm" align="flex-start">
+            <Text c="dimmed">
+              No goals yet — add one below, or let your coach walk you through it.
+            </Text>
+            <Button onClick={() => setOpened(true)}>Add goal</Button>
+          </Stack>
         </Paper>
+        {addModal}
       </Stack>
     );
   }
 
   return (
     <Stack gap="md">
-      <Title order={4}>Goals</Title>
+      <Group justify="space-between">
+        <Title order={4}>Goals</Title>
+        <Button onClick={() => setOpened(true)}>Add goal</Button>
+      </Group>
 
       <SimpleGrid cols={{ base: 1, sm: 2, md: 3 }} spacing="md">
         {STATE_GROUPS.map(group => {
@@ -80,6 +163,8 @@ export function GoalsView({ username, onGoalClick }) {
           );
         })}
       </SimpleGrid>
+
+      {addModal}
     </Stack>
   );
 }

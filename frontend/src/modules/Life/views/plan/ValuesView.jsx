@@ -1,5 +1,8 @@
 import { useState, useCallback } from 'react';
-import { Stack, Paper, Title, Text, Group, Badge, ActionIcon } from '@mantine/core';
+import {
+  Stack, Paper, Title, Text, Group, Badge, ActionIcon,
+  Button, Modal, TextInput, Alert,
+} from '@mantine/core';
 import { IconArrowUp, IconArrowDown } from '@tabler/icons-react';
 import { useLifePlan } from '../../hooks/useLifePlan.js';
 
@@ -11,11 +14,34 @@ function alignmentColor(state) {
 }
 
 export function ValuesView({ username }) {
-  const { plan, loading, updateSection } = useLifePlan(username);
-
-  if (loading) return null;
+  const { plan, loading, updateSection, createValue } = useLifePlan(username);
 
   const values = plan?.values || [];
+
+  const [opened, setOpened] = useState(false);
+  const [name, setName] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const [formError, setFormError] = useState(null);
+
+  const closeModal = () => {
+    setOpened(false);
+    setName('');
+    setFormError(null);
+  };
+
+  const handleSubmit = async () => {
+    if (!name.trim() || submitting) return;
+    setSubmitting(true);
+    setFormError(null);
+    try {
+      await createValue({ name: name.trim() });
+      closeModal();
+    } catch (err) {
+      setFormError(err.message);
+    } finally {
+      setSubmitting(false);
+    }
+  };
 
   const moveValue = useCallback(async (index, direction) => {
     const newValues = [...values];
@@ -32,12 +58,17 @@ export function ValuesView({ username }) {
     await updateSection('values', updated);
   }, [values, updateSection]);
 
+  if (loading) return null;
+
   return (
     <Stack gap="md">
-      <Title order={4}>Values</Title>
+      <Group justify="space-between">
+        <Title order={4}>Values</Title>
+        <Button onClick={() => setOpened(true)}>Add value</Button>
+      </Group>
 
       {values.length === 0 && (
-        <Text size="sm" c="dimmed">No values defined yet.</Text>
+        <Text size="sm" c="dimmed">No values defined yet — add one to rank what matters most.</Text>
       )}
 
       <Stack gap="sm">
@@ -105,6 +136,27 @@ export function ValuesView({ username }) {
           </Paper>
         ))}
       </Stack>
+
+      <Modal opened={opened} onClose={closeModal} title="Add value">
+        <Stack gap="sm">
+          {formError && (
+            <Alert color="red" title="Couldn't create the value">{formError}</Alert>
+          )}
+          <TextInput
+            label="Value"
+            placeholder="What principle guides you?"
+            required
+            value={name}
+            onChange={(e) => setName(e.currentTarget.value)}
+          />
+          <Group justify="flex-end">
+            <Button variant="subtle" onClick={closeModal}>Cancel</Button>
+            <Button onClick={handleSubmit} loading={submitting} disabled={!name.trim()}>
+              Create value
+            </Button>
+          </Group>
+        </Stack>
+      </Modal>
     </Stack>
   );
 }
