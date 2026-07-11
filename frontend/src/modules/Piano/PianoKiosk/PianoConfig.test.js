@@ -87,6 +87,18 @@ describe('resolvePianoConfig', () => {
     expect(resolvePianoConfig({}, 'default').karaoke.plexShow).toBeNull();
   });
 
+  it('resolves shortlist voices (shared default, per-piano override)', () => {
+    const raw = {
+      shortlist: { voices: [{ pc: 0, bank: 0 }] },
+      pianos: { upstairs: { shortlist: { voices: [{ pc: 4, bank: 0 }] } } },
+    };
+    expect(resolvePianoConfig(raw, 'default').shortlist.voices).toEqual([{ pc: 0, bank: 0 }]);
+    expect(resolvePianoConfig(raw, 'upstairs').shortlist.voices).toEqual([{ pc: 4, bank: 0 }]);
+  });
+  it('defaults shortlist to an empty voice list when unconfigured', () => {
+    expect(resolvePianoConfig({}, 'default').shortlist.voices).toEqual([]);
+  });
+
   it('resolves screensaver config (per-piano deviceId over shared defaults)', () => {
     const raw = {
       screensaver: { timeoutMinutes: 30, quietHours: { start: '22:00', end: '06:00' } },
