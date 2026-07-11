@@ -10,14 +10,14 @@ import { getDeviceProfile } from './devices/suzukiMdg400.js';
  * config names a `device`, its full grouped voice list + reverb/chorus
  * effects are driven over MIDI OUT (Program Change / Bank Select / CC).
  *
- * The chrome status chip reads `activeName`; the Settings sheet's Keyboard
- * panel edits voice + effects via `selectVoice`/`setEffect`.
+ * The chrome status chip reads `activeName`; `usePianoSoundBundle` composes
+ * voice + effects + volume into the full Bundle that the Player Sound Panel
+ * and Operator Drawer both drive via `selectVoice`/`setEffect`.
  *
  * The rendered-voice bridge (a native APK, out-of-process engine) has been
  * retired. `sources`/`active`/`activeId`/`select`/`gainDb`/`reverbMix`/
- * `setGain`/`setReverb`/`hasInstruments`/`bridgeLink` remain as inert stubs
- * only until the last consumer (PianoSettingsSheet's rendered-voice section)
- * is rewritten in a later task.
+ * `setGain`/`setReverb`/`hasInstruments`/`bridgeLink` remain as inert stubs —
+ * deferred (design §11), not currently rendered anywhere.
  */
 const SoundContext = createContext(null);
 

@@ -237,6 +237,21 @@
     background: var(--piano-danger);
   }
   &__chip--on &__dot { background: var(--piano-accent); }
+
+  // Inline reconnect affordance (audit T2) — only rendered while disconnected,
+  // right where the "no sound" pain is felt, next to the chip that shows it.
+  &__reconnect {
+    flex: 0 0 auto;
+    background: var(--piano-danger);
+    color: var(--piano-fg-on-danger, #fff);
+    border: none;
+    border-radius: var(--r-pill);
+    padding: 0.35rem 0.9rem;
+    font: inherit;
+    font-weight: 700;
+    cursor: pointer;
+    &:active { opacity: 0.85; }
+  }
 }
 
 // Shared icon+label tile primitive — used by the home menu and the games picker.
@@ -1849,164 +1864,6 @@
 /* Caption sizing for poster/music cover grids (smaller than the default 1rem base rule). */
 .piano-video-grid--posters .piano-video-grid__title,
 .piano-music-grid .piano-video-grid__title { font-size: 0.9rem; padding: 0 0.15rem; }
-
-/* ---- Settings sheet (consolidated voice / MIDI hardware / MIDI monitor) ---- */
-.piano-settings {
-  position: fixed; inset: 0; z-index: 50; display: flex; justify-content: flex-end;
-
-  &__scrim { position: absolute; inset: 0; background: rgba(0, 0, 0, 0.5); }
-
-  &__sheet {
-    position: relative; width: min(30rem, 92vw); height: 100%;
-    background: var(--piano-surface); border-left: 1px solid var(--piano-border);
-    display: flex; flex-direction: column; gap: 0.5rem; padding: 1rem 1.25rem;
-    overflow-y: auto; box-shadow: -1.5rem 0 3rem rgba(0, 0, 0, 0.4);
-  }
-
-  &__head {
-    flex: 0 0 auto; display: flex; align-items: center; justify-content: space-between;
-    h2 { font-size: var(--t-title); font-weight: 700; margin: 0; }
-  }
-  &__close {
-    background: none; border: none; color: var(--piano-muted); cursor: pointer;
-    font-size: 1.4rem; padding: 0.25rem 0.5rem; line-height: 1;
-  }
-
-  /* Tabs: Sound | MIDI */
-  &__tabs {
-    flex: 0 0 auto; display: flex; gap: 0.25rem; margin: 0.25rem 0 0.5rem;
-    border-bottom: 1px solid var(--piano-border);
-  }
-  &__tab {
-    background: none; border: none; color: var(--piano-muted); cursor: pointer;
-    font: inherit; font-weight: 700; padding: 0.5rem 1rem;
-    border-bottom: 2px solid transparent; margin-bottom: -1px;
-    &:hover { color: var(--piano-fg); }
-    &.is-active { color: var(--piano-fg); border-bottom-color: var(--piano-accent); }
-    &:focus-visible { outline: 3px solid var(--piano-accent); outline-offset: -3px; }
-  }
-
-  &__section { flex: 0 0 auto; display: flex; flex-direction: column; gap: 0.6rem; padding: 0.5rem 0; }
-  &__section--grow { flex: 1 1 auto; min-height: 0; }
-  &__eyebrow {
-    display: flex; align-items: center; gap: 0.6rem;
-    font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.06em;
-    color: var(--piano-muted); margin: 0;
-  }
-  &__link {
-    font-size: 0.7rem; text-transform: none; letter-spacing: 0; padding: 0.1rem 0.5rem;
-    border-radius: var(--r-pill); background: var(--piano-surface-2); color: var(--piano-muted);
-    &--connected { color: var(--piano-accent-text); }
-  }
-
-  &__voices { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem; }
-  &__knobs { display: flex; flex-direction: column; gap: 0.5rem; margin-top: 0.25rem; }
-
-  &__hw { display: flex; align-items: center; gap: 0.6rem; }
-  &__hwdot {
-    width: 0.7rem; height: 0.7rem; border-radius: 50%; background: var(--piano-muted);
-    &.is-on { background: var(--piano-accent); }
-    &.is-warn { background: var(--piano-warn); }
-    &.is-off { background: var(--piano-danger); }
-  }
-  &__hwlabel { font-weight: 700; }
-  &__hwname { color: var(--piano-muted); flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
-  &__connect {
-    background: var(--piano-accent); color: var(--piano-accent-ink); border: none;
-    border-radius: var(--r-pill); padding: 0.35rem 1rem; font: inherit; font-weight: 700; cursor: pointer;
-    &--ghost { background: var(--piano-surface-2); color: var(--piano-fg); border: 1px solid var(--piano-border); }
-  }
-
-  // Display — manual screen-off (burn-in kill switch), 2-tap confirm.
-  &__screen-off {
-    width: 100%; min-height: 48px; display: inline-flex; align-items: center; justify-content: center;
-    background: var(--piano-surface-2); color: var(--piano-fg); border: 1px solid var(--piano-border);
-    border-radius: var(--r-md); padding: 0.6rem 1rem; font: inherit; cursor: pointer;
-    &:active { background: var(--piano-border); }
-    // Armed (awaiting confirm) — signal it's live with the warn colour.
-    &.is-armed { border-color: var(--piano-warn); color: var(--piano-warn); font-weight: 700; }
-  }
-  &__screen-error { margin: 0.5rem 0 0; color: var(--piano-warn); font-size: 0.9rem; }
-
-  &__foot {
-    flex: 0 0 auto; padding-top: 0.5rem; border-top: 1px solid var(--piano-border);
-    display: flex; flex-direction: column; gap: var(--sp-2);
-  }
-  // Shared footer button shape (restart = primary recovery, reload = heavier).
-  &__restart, &__reload {
-    width: 100%; display: inline-flex; align-items: center; justify-content: center; gap: 0.5rem;
-    background: var(--piano-surface-2); color: var(--piano-fg); border: 1px solid var(--piano-border);
-    border-radius: var(--r-md); padding: 0.6rem 1rem; font: inherit; cursor: pointer;
-    &:active { background: var(--piano-border); }
-  }
-  // The lighter-touch recovery: give it the accent border so it reads as the
-  // first thing to try before a full app reload.
-  &__restart { border-color: var(--piano-accent); color: var(--piano-accent-text); font-weight: 700; }
-}
-
-.piano-voicecard {
-  width: 100%; display: grid; grid-template-columns: auto 1fr; align-items: center;
-  column-gap: 0.6rem; row-gap: 0.1rem; text-align: left;
-  background: var(--piano-surface-2); border: 1px solid var(--piano-border);
-  border-radius: var(--r-md); color: inherit; padding: 0.6rem 0.75rem; cursor: pointer;
-  &.is-active { border-color: var(--piano-accent); background: var(--piano-surface); }
-  &__icon { grid-row: 1 / span 2; font-size: 1.7rem; line-height: 1; }
-  &__tag { font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--piano-muted); }
-  &__name { font-weight: 700; }
-}
-
-.piano-knob {
-  display: flex; align-items: center; gap: 0.75rem; font-size: 0.95rem;
-  &__name { width: 4rem; color: var(--piano-muted); }
-  input[type="range"] { flex: 1 1 auto; accent-color: var(--piano-accent); }
-  &__val { width: 4rem; text-align: right; font-variant-numeric: tabular-nums; color: var(--piano-muted); }
-}
-
-/* ---- Keyboard panel (device voice picker + reverb/chorus over MIDI) ---- */
-.piano-kbd {
-  display: flex; flex-direction: column; gap: 0.6rem;
-
-  &__voicebar { display: flex; align-items: center; gap: 0.6rem; }
-  &__family {
-    flex: 0 0 auto; background: var(--piano-surface-2); color: var(--piano-fg);
-    border: 1px solid var(--piano-border); border-radius: var(--r-pill);
-    padding: 0.35rem 0.75rem; font: inherit; cursor: pointer;
-  }
-  &__active {
-    flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-    color: var(--piano-accent-text); font-weight: 700;
-  }
-
-  &__voices {
-    list-style: none; margin: 0; padding: 0; display: grid;
-    grid-template-columns: 1fr 1fr; gap: 0.4rem;
-    max-height: 16rem; overflow-y: auto;
-  }
-  &__voice {
-    width: 100%; text-align: left; background: var(--piano-surface-2); color: inherit;
-    border: 1px solid var(--piano-border); border-radius: var(--r-sm);
-    padding: 0.45rem 0.6rem; font: inherit; cursor: pointer;
-    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-    &.is-active { border-color: var(--piano-accent); background: var(--piano-surface); font-weight: 700; }
-  }
-
-  &__fx { display: flex; flex-direction: column; gap: 0.5rem; margin-top: 0.25rem; }
-  &__fxrow { display: flex; align-items: center; gap: 0.5rem; }
-  &__fxtoggle {
-    flex: 0 0 5rem; background: var(--piano-surface-2); color: var(--piano-muted);
-    border: 1px solid var(--piano-border); border-radius: var(--r-pill);
-    padding: 0.35rem 0.6rem; font: inherit; cursor: pointer;
-    &.is-on { border-color: var(--piano-accent); color: var(--piano-accent-text); font-weight: 700; }
-  }
-  &__fxtype {
-    flex: 0 0 auto; background: var(--piano-surface-2); color: var(--piano-fg);
-    border: 1px solid var(--piano-border); border-radius: var(--r-sm);
-    padding: 0.3rem 0.5rem; font: inherit; cursor: pointer;
-    &:disabled { opacity: 0.4; }
-  }
-  &__fxrow input[type="range"] { flex: 1 1 auto; accent-color: var(--piano-accent); &:disabled { opacity: 0.4; } }
-  &__fxval { flex: 0 0 2.6rem; text-align: right; font-variant-numeric: tabular-nums; color: var(--piano-muted); }
-}
 
 /* ---- MIDI monitor ---- */
 .piano-midimon {
