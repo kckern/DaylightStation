@@ -1,9 +1,24 @@
-import { Stack, Text, Textarea, Group, Badge } from '@mantine/core';
+import { Stack, Text, Textarea, Group, Badge, Paper } from '@mantine/core';
 
 export function UnitCapture({ step, content, responses, setResponse }) {
   if (step === 0) {
+    // Completion records may nest the POST body ({responses: {...}}) inside the
+    // record's own responses field — normalize both shapes defensively.
+    const morning = content?.morningIntention?.responses?.responses
+      || content?.morningIntention?.responses
+      || {};
+
     return (
       <Stack gap="md">
+        {content?.morningIntention && (
+          <Paper p="sm" radius="md" withBorder>
+            <Group gap="xs" justify="space-between" mb={4}>
+              <Text size="xs" fw={600} c="dimmed">This morning you said</Text>
+              {morning.energy && <Badge size="xs" variant="light">{morning.energy}</Badge>}
+            </Group>
+            <Text size="sm">{morning.intentions || 'No intentions recorded'}</Text>
+          </Paper>
+        )}
         <Text size="sm" fw={500}>Review: How did this unit go?</Text>
         <Text size="xs" c="dimmed">
           Think about your active goals and whether you followed your rules.

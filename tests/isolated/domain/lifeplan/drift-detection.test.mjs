@@ -172,15 +172,16 @@ describe('ValueDriftCalculator', () => {
       expect(result.status).toBe('reconsidering');
     });
 
-    it('handles empty allocation', () => {
+    it('handles empty allocation as insufficient_data (A-3.2c)', () => {
       const result = calc.calculateDrift({}, values);
-      expect(result.status).toBe('reconsidering');
-      expect(result.correlation).toBe(0);
+      expect(result.status).toBe('insufficient_data');
+      expect(result.correlation).toBeNull();
     });
 
-    it('handles empty values', () => {
+    it('handles empty values as insufficient_data (A-3.2c)', () => {
       const result = calc.calculateDrift({ health: 0.5 }, []);
-      expect(result.status).toBe('reconsidering');
+      expect(result.status).toBe('insufficient_data');
+      expect(result.correlation).toBeNull();
     });
   });
 });

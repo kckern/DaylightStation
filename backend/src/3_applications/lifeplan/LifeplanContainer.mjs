@@ -21,17 +21,20 @@ export class LifeplanContainer {
   #lifePlanStore;
   #metricsStore;
   #ceremonyRecordStore;
+  #timezone;
 
   /**
    * @param {Object} options
    * @param {Object} options.lifePlanStore - ILifePlanStore instance
    * @param {Object} options.metricsStore - Metrics store instance
    * @param {Object} options.ceremonyRecordStore - Ceremony record store instance
+   * @param {string} [options.timezone] - IANA household timezone for cadence math (defaults to UTC)
    */
   constructor(options = {}) {
     this.#lifePlanStore = options.lifePlanStore || null;
     this.#metricsStore = options.metricsStore || null;
     this.#ceremonyRecordStore = options.ceremonyRecordStore || null;
+    this.#timezone = options.timezone || null;
   }
 
   getGoalStateService() {
@@ -64,7 +67,7 @@ export class LifeplanContainer {
 
   getCadenceService() {
     if (!this.#cadenceService) {
-      this.#cadenceService = new CadenceService();
+      this.#cadenceService = new CadenceService({ timezone: this.#timezone });
     }
     return this.#cadenceService;
   }

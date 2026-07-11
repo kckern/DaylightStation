@@ -76,6 +76,29 @@ describe('CeremonyService', () => {
     expect(content.ruleEffectiveness).toBeDefined();
   });
 
+  it('unit_capture content includes the same-period unit_intention responses', () => {
+    mockCeremonyRecordStore.getRecords.mockReturnValue([
+      { type: 'unit_intention', periodId: '2025-U165', responses: { intentions: 'intervals at 6', energy: 'high' } },
+    ]);
+
+    const content = service.getCeremonyContent('unit_capture', 'testuser');
+
+    expect(mockCeremonyRecordStore.getRecords).toHaveBeenCalledWith('testuser', 'unit_intention');
+    expect(content.morningIntention.responses.intentions).toBe('intervals at 6');
+    expect(content.morningIntention.responses.energy).toBe('high');
+  });
+
+  it('unit_capture morningIntention is null when only other-period intention records exist', () => {
+    mockCeremonyRecordStore.getRecords.mockReturnValue([
+      { type: 'unit_intention', periodId: '2025-U164', responses: { intentions: 'yesterday plan' } },
+      { type: 'unit_intention', period_id: '2025-U100', responses: { intentions: 'old snake_case record' } },
+    ]);
+
+    const content = service.getCeremonyContent('unit_capture', 'testuser');
+
+    expect(content.morningIntention).toBeNull();
+  });
+
   it('completeCeremony records and saves', () => {
     service.completeCeremony('unit_intention', 'testuser', {
       intentions: ['Focus on running', 'Practice piano'],
@@ -95,6 +118,7 @@ describe('CeremonyService', () => {
 
 describe('CeremonyScheduler', () => {
   let scheduler;
+  let deps;
   let mockNotificationService;
   let mockLifePlanStore;
   let mockCeremonyRecordStore;
@@ -133,13 +157,18 @@ describe('CeremonyScheduler', () => {
       isCeremonyDue: vi.fn().mockReturnValue(true),
     };
 
-    scheduler = new CeremonyScheduler({
+    deps = {
       notificationService: mockNotificationService,
       lifePlanStore: mockLifePlanStore,
       ceremonyRecordStore: mockCeremonyRecordStore,
       cadenceService: mockCadenceService,
-      clock: frozenClock('2025-06-15T08:00:00Z'),
-    });
+      timezone: 'UTC',
+      // 07:00 = unit_intention's default delivery hour, so day-level tests
+      // exercise the full pipeline through the hour gate.
+      clock: frozenClock('2025-06-15T07:00:00Z'),
+    };
+
+    scheduler = new CeremonyScheduler(deps);
   });
 
   it('sends notification when ceremony is due', async () => {
@@ -162,7 +191,11 @@ describe('CeremonyScheduler', () => {
   });
 
   it('passes real timing strings to isCeremonyDue', async () => {
+    // Hour gating means unit_intention (07) and cycle_retro (17) reach
+    // isCeremonyDue in different runs — check both hours.
     await scheduler.checkAndNotify('testuser');
+    const at17 = new CeremonyScheduler({ ...deps, clock: frozenClock('2025-06-15T17:00:00Z') });
+    await at17.checkAndNotify('testuser');
 
     const timings = mockCadenceService.isCeremonyDue.mock.calls.map(c => c[0]);
     expect(timings).toContain('start_of_unit');
@@ -195,10 +228,12 @@ describe('CeremonyScheduler', () => {
   it('defaults UI-complete ceremonies to enabled when plan has no ceremonies config', async () => {
     mockLifePlanStore.load.mockReturnValue({ cadence: {} });
 
-    const sent = await scheduler.checkAndNotify('testuser');
+    // Run at each type's delivery hour: intention 07, retro 17.
+    const sent7 = await scheduler.checkAndNotify('testuser');
+    const at17 = new CeremonyScheduler({ ...deps, clock: frozenClock('2025-06-15T17:00:00Z') });
+    const sent17 = await at17.checkAndNotify('testuser');
 
-    // unit_intention, unit_capture (both unit period), cycle_retro — all due per mock
-    const types = sent.map(s => s.type);
+    const types = [...sent7, ...sent17].map(s => s.type);
     expect(types).toContain('unit_intention');
     expect(types).toContain('cycle_retro');
     // season_alignment / era_vision have no UI — never default-enabled
@@ -211,6 +246,77 @@ describe('CeremonyScheduler', () => {
 
     await scheduler.checkAndNotify('testuser');
 
+    // The hour gate passed (07:00 = unit_intention hour) so cadence was
+    // actually consulted — the skip is cadence-driven, not hour-driven.
+    expect(mockCadenceService.isCeremonyDue).toHaveBeenCalled();
     expect(mockNotificationService.send).not.toHaveBeenCalled();
+  });
+
+  it('gates each ceremony to its delivery hour (default: intention 07, capture 20)', async () => {
+    mockLifePlanStore.load.mockReturnValue({
+      ceremonies: {
+        ...ALL_DEFAULT_TYPES_DISABLED,
+        unit_intention: { enabled: true },
+        unit_capture: { enabled: true },
+      },
+      cadence: {},
+    });
+
+    const at7am = new CeremonyScheduler({ ...deps, timezone: 'UTC', clock: { now: () => new Date('2025-06-15T07:30:00Z') } });
+    const sent7 = await at7am.checkAndNotify('test-user');
+    expect(sent7.map(s => s.type)).toContain('unit_intention');
+    expect(sent7.map(s => s.type)).not.toContain('unit_capture');
+
+    const at8pm = new CeremonyScheduler({ ...deps, timezone: 'UTC', clock: { now: () => new Date('2025-06-15T20:10:00Z') } });
+    const sent20 = await at8pm.checkAndNotify('test-user');
+    expect(sent20.map(s => s.type)).toContain('unit_capture');
+    expect(sent20.map(s => s.type)).not.toContain('unit_intention');
+  });
+
+  it('honors plan.ceremonies.<type>.at override', async () => {
+    mockLifePlanStore.load.mockReturnValue({ ceremonies: { unit_intention: { enabled: true, at: '09:00' } }, cadence: {} });
+    const at9 = new CeremonyScheduler({ ...deps, timezone: 'UTC', clock: { now: () => new Date('2025-06-15T09:05:00Z') } });
+    expect((await at9.checkAndNotify('test-user')).map(s => s.type)).toContain('unit_intention');
+
+    // The override replaces the default hour — 07:00 no longer fires.
+    const at7 = new CeremonyScheduler({ ...deps, timezone: 'UTC', clock: { now: () => new Date('2025-06-15T07:05:00Z') } });
+    expect((await at7.checkAndNotify('test-user')).map(s => s.type)).not.toContain('unit_intention');
+  });
+
+  it('falls back to the type default hour when at is out of range (25:00)', async () => {
+    mockLifePlanStore.load.mockReturnValue({ ceremonies: { unit_intention: { enabled: true, at: '25:00' } }, cadence: {} });
+
+    // 25 is not a valid hour — the default (07) must still fire...
+    const at7 = new CeremonyScheduler({ ...deps, timezone: 'UTC', clock: { now: () => new Date('2025-06-15T07:05:00Z') } });
+    expect((await at7.checkAndNotify('test-user')).map(s => s.type)).toContain('unit_intention');
+
+    // ...and hour 25 never matches (no permanently dead ceremony, no stray fire at 1am either).
+    const at1 = new CeremonyScheduler({ ...deps, timezone: 'UTC', clock: { now: () => new Date('2025-06-15T01:05:00Z') } });
+    expect((await at1.checkAndNotify('test-user')).map(s => s.type)).not.toContain('unit_intention');
+  });
+
+  it('honors at: 00:00 (midnight) as local hour 0', async () => {
+    mockLifePlanStore.load.mockReturnValue({ ceremonies: { unit_intention: { enabled: true, at: '00:00' } }, cadence: {} });
+
+    const midnight = new CeremonyScheduler({ ...deps, timezone: 'UTC', clock: { now: () => new Date('2025-06-15T00:10:00Z') } });
+    expect((await midnight.checkAndNotify('test-user')).map(s => s.type)).toContain('unit_intention');
+
+    const at7 = new CeremonyScheduler({ ...deps, timezone: 'UTC', clock: { now: () => new Date('2025-06-15T07:10:00Z') } });
+    expect((await at7.checkAndNotify('test-user')).map(s => s.type)).not.toContain('unit_intention');
+  });
+
+  it('gates by household-local hour, not UTC', async () => {
+    // 14:00Z = 07:00 PDT — unit_intention's delivery hour in LA
+    const laMorning = new CeremonyScheduler({ ...deps, timezone: 'America/Los_Angeles', clock: { now: () => new Date('2025-06-15T14:00:00Z') } });
+    expect((await laMorning.checkAndNotify('test-user')).map(s => s.type)).toContain('unit_intention');
+
+    // 07:00Z = midnight PDT — would fire under UTC gating, must not in LA
+    const laMidnight = new CeremonyScheduler({ ...deps, timezone: 'America/Los_Angeles', clock: { now: () => new Date('2025-06-15T07:00:00Z') } });
+    expect((await laMidnight.checkAndNotify('test-user')).map(s => s.type)).not.toContain('unit_intention');
+  });
+
+  it('falls back to UTC on invalid timezone', async () => {
+    const bad = new CeremonyScheduler({ ...deps, timezone: 'Not/A_Zone', clock: { now: () => new Date('2025-06-15T07:00:00Z') } });
+    expect((await bad.checkAndNotify('test-user')).map(s => s.type)).toContain('unit_intention');
   });
 });

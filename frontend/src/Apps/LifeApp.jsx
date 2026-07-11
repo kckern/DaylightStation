@@ -1,8 +1,10 @@
 import React, { useMemo, useEffect } from 'react';
-import { MantineProvider, AppShell, NavLink, Title, Group, Text } from '@mantine/core';
+import { MantineProvider, AppShell, NavLink, Title, Group, Text, Select } from '@mantine/core';
+import { Notifications } from '@mantine/notifications';
 import { Routes, Route, Navigate, useNavigate, useLocation, useParams } from 'react-router-dom';
 import { IconDashboard, IconTimeline, IconTarget, IconHeart, IconBrain, IconDiamond, IconShield, IconCalendarEvent, IconMessageCircle } from '@tabler/icons-react';
 import '@mantine/core/styles.css';
+import '@mantine/notifications/styles.css';
 import { configure } from '../lib/logging/Logger.js';
 import { getChildLogger } from '../lib/logging/singleton.js';
 import useDocumentTitle from '../hooks/useDocumentTitle.js';
@@ -20,6 +22,7 @@ import { CeremonyConfig } from '../modules/Life/views/plan/CeremonyConfig.jsx';
 import { CeremonyFlow } from '../modules/Life/views/ceremony/CeremonyFlow.jsx';
 import CoachChat from '../modules/Life/views/coach/CoachChat.jsx';
 import { LifeUserContext, useLifeUser } from '../modules/Life/hooks/useLifeUser.js';
+import { useAppNotifications } from '../modules/Life/hooks/useAppNotifications.js';
 
 const PlaceholderView = ({ title }) => (
   <div style={{ padding: '2rem' }}>
@@ -54,7 +57,12 @@ const LifeApp = () => {
   const logger = useMemo(() => getChildLogger({ app: 'life' }), []);
   const navigate = useNavigate();
   const location = useLocation();
-  const { user: lifeUser } = useLifeUser();
+  const { user: lifeUser, users: lifeUsers, setUsername } = useLifeUser();
+
+  // Render the in-app fallback channel for the notification service. Most
+  // household members have no Telegram/HA push, so this WS toast is the only
+  // channel they can receive; intents addressed to another member are dropped.
+  useAppNotifications({ username: lifeUser?.username || null, navigate });
 
   // Enable session file logging — writes to media/logs/life/<timestamp>.jsonl
   useEffect(() => {
@@ -75,6 +83,7 @@ const LifeApp = () => {
 
   return (
     <MantineProvider>
+      <Notifications position="top-right" autoClose={8000} />
       <LifeUserContext.Provider value={lifeUser}>
       <AppShell
         header={{ height: 48 }}
@@ -82,8 +91,20 @@ const LifeApp = () => {
         padding="md"
       >
         <AppShell.Header>
-          <Group h="100%" px="md">
+          <Group h="100%" px="md" justify="space-between">
             <Title order={4}>Life</Title>
+            {/* User switcher — only meaningful in a multi-member household. */}
+            {lifeUsers.length > 1 && (
+              <Select
+                size="xs"
+                w={150}
+                aria-label="Switch household member"
+                allowDeselect={false}
+                data={lifeUsers.map((u) => ({ value: u.username, label: u.displayName }))}
+                value={lifeUser?.username || null}
+                onChange={(val) => { if (val) setUsername(val); }}
+              />
+            )}
           </Group>
         </AppShell.Header>
 

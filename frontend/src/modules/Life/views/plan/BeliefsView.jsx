@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Stack, Paper, Title, Text, Group, Badge, Progress, Button, TextInput, Select, Modal } from '@mantine/core';
+import { Stack, Paper, Title, Text, Group, Badge, Progress, Button, TextInput, Select, Modal, Alert } from '@mantine/core';
 import { IconFlask } from '@tabler/icons-react';
 import { useBeliefs } from '../../hooks/useLifePlan.js';
 
@@ -38,10 +38,16 @@ function EvidenceTimeline({ history = [] }) {
 }
 
 export function BeliefsView({ username }) {
-  const { beliefs, loading, addEvidence } = useBeliefs(username);
+  const { beliefs, loading, addEvidence, createBelief } = useBeliefs(username);
   const [addingTo, setAddingTo] = useState(null);
   const [evidenceType, setEvidenceType] = useState('confirmation');
   const [evidenceNote, setEvidenceNote] = useState('');
+
+  const [creating, setCreating] = useState(false);
+  const [ifHypothesis, setIfHypothesis] = useState('');
+  const [thenOutcome, setThenOutcome] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const [createError, setCreateError] = useState(null);
 
   if (loading) return null;
 
@@ -56,12 +62,36 @@ export function BeliefsView({ username }) {
     setEvidenceNote('');
   };
 
+  const closeCreate = () => {
+    setCreating(false);
+    setIfHypothesis('');
+    setThenOutcome('');
+    setCreateError(null);
+  };
+
+  const handleCreate = async () => {
+    if (!ifHypothesis.trim() || !thenOutcome.trim() || submitting) return;
+    setSubmitting(true);
+    setCreateError(null);
+    try {
+      await createBelief({ if_hypothesis: ifHypothesis.trim(), then_outcome: thenOutcome.trim() });
+      closeCreate();
+    } catch (err) {
+      setCreateError(err.message);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
   return (
     <Stack gap="md">
-      <Title order={4}>Beliefs</Title>
+      <Group justify="space-between">
+        <Title order={4}>Beliefs</Title>
+        <Button onClick={() => setCreating(true)}>Add belief</Button>
+      </Group>
 
       {beliefs.length === 0 && (
-        <Text size="sm" c="dimmed">No beliefs defined yet.</Text>
+        <Text size="sm" c="dimmed">No beliefs defined yet — add a hypothesis to start testing it.</Text>
       )}
 
       <Stack gap="sm">
@@ -118,6 +148,38 @@ export function BeliefsView({ username }) {
           );
         })}
       </Stack>
+
+      <Modal opened={creating} onClose={closeCreate} title="Add belief">
+        <Stack gap="sm">
+          {createError && (
+            <Alert color="red" title="Couldn't create the belief">{createError}</Alert>
+          )}
+          <TextInput
+            label="If I…"
+            placeholder="practice piano every morning"
+            required
+            value={ifHypothesis}
+            onChange={(e) => setIfHypothesis(e.currentTarget.value)}
+          />
+          <TextInput
+            label="…then"
+            placeholder="I'll be recital-ready by spring"
+            required
+            value={thenOutcome}
+            onChange={(e) => setThenOutcome(e.currentTarget.value)}
+          />
+          <Group justify="flex-end">
+            <Button variant="subtle" onClick={closeCreate}>Cancel</Button>
+            <Button
+              onClick={handleCreate}
+              loading={submitting}
+              disabled={!ifHypothesis.trim() || !thenOutcome.trim()}
+            >
+              Create belief
+            </Button>
+          </Group>
+        </Stack>
+      </Modal>
 
       <Modal opened={!!addingTo} onClose={() => setAddingTo(null)} title="Add Evidence">
         <Stack gap="sm">
