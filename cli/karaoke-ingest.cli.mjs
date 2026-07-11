@@ -46,7 +46,12 @@ function ingestDeps() {
   return {
     search: (q, o) => search(q, o),
     download: (a) => download(a),
-    embed: (a) => embed(a),
+    // Remux/tag into the final .mp4, then drop the .tmp.mp4 download so Plex
+    // never scans a half-named sibling (on failure too, via finally).
+    embed: async (a) => {
+      try { await embed(a); }
+      finally { await fs.rm(a.inPath, { force: true }).catch(() => {}); }
+    },
     fileExists,
     saveRows: async (rows) => { await fs.writeFile(cfg.SETLIST_PATH, serializeSetlist(rows)); },
     log: (m) => console.log(m),
