@@ -15,8 +15,9 @@ vi.mock('../../../../lib/logging/singleton.js', () => {
 });
 
 let currentHook;
+let hookArgs; // captures the args the component threads into the hook (e.g. selectContainers)
 vi.mock('./useContentCombobox.js', () => ({
-  useContentCombobox: () => currentHook,
+  useContentCombobox: (args) => { hookArgs = args; return currentHook; },
 }));
 
 import { ContentCombobox } from './ContentCombobox.jsx';
@@ -32,6 +33,8 @@ function makeHook({ state = {}, ...api } = {}) {
     paginate: vi.fn(),
     handleClose: vi.fn(),
     select: vi.fn(),
+    commit: vi.fn(),
+    searchSettled: false,
     resolvedTitle: null,
     isSearching: false,
     pendingSources: [],
@@ -114,7 +117,12 @@ describe('ContentCombobox (hook wiring)', () => {
     expect(currentHook.dispatch).toHaveBeenCalledWith({ type: 'ARROW', dir: 1, itemCount: 2 });
   });
 
-  it('Enter never selects an auto-highlighted row (Mar-01 gate): dismisses instead', () => {
+  // Re-pointed for R3: the component no longer owns the pick/dismiss decision on
+  // Enter. It unconditionally routes to commit('enter'); the Mar-01 gate (never
+  // select an auto-highlighted row) now lives in decideCommit (covered by R1/R2).
+  // What this test still pins at the COMPONENT layer: Enter does NOT itself call
+  // select/drill/handleClose — it delegates entirely to commit.
+  it('Enter routes through commit(\'enter\') and performs no component-side pick/dismiss (Mar-01 gate now in decideCommit)', () => {
     currentHook = makeHook({
       state: {
         ...initialState('plex:123'),
@@ -131,9 +139,11 @@ describe('ContentCombobox (hook wiring)', () => {
     renderCombobox({ value: 'plex:123' });
 
     fireEvent.keyDown(screen.getByRole('textbox'), { key: 'Enter' });
+    expect(currentHook.commit).toHaveBeenCalledWith('enter');
+    // The component must not short-circuit any pick/dismiss itself.
     expect(currentHook.select).not.toHaveBeenCalled();
     expect(currentHook.drill).not.toHaveBeenCalled();
-    expect(currentHook.handleClose).toHaveBeenCalledWith('dismiss');
+    expect(currentHook.handleClose).not.toHaveBeenCalled();
   });
 
   it('ID-lookup tagged results show the ID badge; untagged results do not (audit B2)', () => {
@@ -303,7 +313,12 @@ describe('ContentCombobox (hook wiring)', () => {
     expect(currentHook.select).not.toHaveBeenCalled();
   });
 
-  it('F7: with selectContainers, Enter on a user-navigated container SELECTS it as the value (not drill)', () => {
+  // Re-pointed for R3: the select-vs-drill-on-Enter decision for containers moved
+  // out of the component into decideCommit (which reads selectContainers). At the
+  // COMPONENT layer we now pin (a) that the prop is threaded INTO the hook, and
+  // (b) that Enter routes through commit('enter'). The behavior flip itself is
+  // covered by the R1/R2 decideCommit + hook tests.
+  it('F7: with selectContainers, the prop is threaded into the hook and Enter routes through commit(\'enter\')', () => {
     currentHook = makeHook({
       state: {
         ...initialState(''),
@@ -316,16 +331,16 @@ describe('ContentCombobox (hook wiring)', () => {
       },
     });
     renderCombobox({ selectContainers: true });
+    expect(hookArgs.selectContainers).toBe(true);
 
     fireEvent.keyDown(screen.getByRole('textbox'), { key: 'Enter' });
-    expect(currentHook.select).toHaveBeenCalledTimes(1);
-    expect(currentHook.select).toHaveBeenCalledWith(
-      expect.objectContaining({ id: 'plex:playlist:99' })
-    );
+    expect(currentHook.commit).toHaveBeenCalledWith('enter');
+    // Component performs no direct pick — decideCommit owns select-vs-drill.
+    expect(currentHook.select).not.toHaveBeenCalled();
     expect(currentHook.drill).not.toHaveBeenCalled();
   });
 
-  it('F7: WITHOUT selectContainers, Enter on the same container DRILLS instead (proves the prop flips behavior)', () => {
+  it('F7: WITHOUT selectContainers, the hook receives selectContainers:false and Enter still routes through commit(\'enter\')', () => {
     currentHook = makeHook({
       state: {
         ...initialState(''),
@@ -337,23 +352,82 @@ describe('ContentCombobox (hook wiring)', () => {
         highlight: { idx: 0, userNavigated: true },
       },
     });
-    renderCombobox(); // no selectContainers
+    renderCombobox(); // no selectContainers → default false
+    expect(hookArgs.selectContainers).toBe(false);
 
     fireEvent.keyDown(screen.getByRole('textbox'), { key: 'Enter' });
-    expect(currentHook.drill).toHaveBeenCalledTimes(1);
-    expect(currentHook.drill).toHaveBeenCalledWith(
-      expect.objectContaining({ id: 'plex:playlist:99' })
-    );
+    expect(currentHook.commit).toHaveBeenCalledWith('enter');
+    expect(currentHook.drill).not.toHaveBeenCalled();
     expect(currentHook.select).not.toHaveBeenCalled();
   });
 
-  it('Escape closes via handleClose with reason escape', () => {
+  it('Enter keeps the dropdown open when commit returns {action:\'open\'} (ambiguous — do not close)', () => {
+    currentHook = makeHook({
+      state: {
+        ...initialState(''),
+        mode: Modes.SEARCH,
+        search: 'jazz',
+        results: [
+          { id: 'plex:1', title: 'Result 1', source: 'plex' },
+          { id: 'plex:2', title: 'Result 2', source: 'plex' },
+        ],
+      },
+      commit: vi.fn(() => ({ action: 'open' })),
+    });
+    renderCombobox();
+
+    fireEvent.keyDown(screen.getByRole('textbox'), { key: 'Enter' });
+    expect(currentHook.commit).toHaveBeenCalledWith('enter');
+    // The Enter handler never closes on its own — commit owns close semantics,
+    // and 'open' closes nothing. The option rows must still be rendered.
+    expect(currentHook.handleClose).not.toHaveBeenCalled();
+    expect(screen.getByTestId('combobox-option-plex:1')).toBeInTheDocument();
+  });
+
+  it('Escape routes through commit(\'escape\')', () => {
     currentHook = makeHook({
       state: { ...initialState(''), mode: Modes.SEARCH, search: 'abc' },
     });
     renderCombobox();
 
     fireEvent.keyDown(screen.getByRole('textbox'), { key: 'Escape' });
-    expect(currentHook.handleClose).toHaveBeenCalledWith('escape');
+    expect(currentHook.commit).toHaveBeenCalledWith('escape');
+  });
+
+  it('Tab routes through commit(\'tab\')', () => {
+    currentHook = makeHook({
+      state: { ...initialState(''), mode: Modes.SEARCH, search: 'abc' },
+    });
+    renderCombobox();
+
+    fireEvent.keyDown(screen.getByRole('textbox'), { key: 'Tab' });
+    expect(currentHook.commit).toHaveBeenCalledWith('tab');
+  });
+
+  it('Blur (outside close) routes through commit(\'outside\') — no junk-commit of typed text', () => {
+    currentHook = makeHook({
+      state: { ...initialState(''), mode: Modes.SEARCH, search: 'unpicked typed query' },
+    });
+    renderCombobox();
+
+    // onBlur closes the Mantine dropdown → onDropdownClose fires while the
+    // machine is still editing (mode !== DISPLAY) → commit('outside') → revert.
+    fireEvent.blur(screen.getByRole('textbox'));
+    expect(currentHook.commit).toHaveBeenCalledWith('outside');
+  });
+
+  it('Freeform row commits the raw text via its own explicit path (onChange + handleClose), NOT via commit(\'enter\')', () => {
+    const onChange = vi.fn();
+    currentHook = makeHook({
+      state: { ...initialState(''), mode: Modes.SEARCH, search: 'my raw text' },
+    });
+    renderCombobox({ onChange });
+
+    fireEvent.click(screen.getByTestId('freeform-commit-option'));
+    expect(onChange).toHaveBeenCalledWith('my raw text');
+    expect(currentHook.handleClose).toHaveBeenCalledWith('select');
+    // Explicit "save as raw" must NOT go through the resolving commit path
+    // (no warn toast, no resolution).
+    expect(currentHook.commit).not.toHaveBeenCalled();
   });
 });
