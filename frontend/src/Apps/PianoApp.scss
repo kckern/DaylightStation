@@ -169,15 +169,18 @@
     overflow: hidden;
   }
 
+  // Home/logo tap target: near-fills the header height with minimal padding so
+  // it's a big, obvious tap back to the menu (#7). The header's own 0.5rem
+  // vertical padding is the ~margin around it.
   &__home {
     flex: 0 0 auto;
-    font-size: 1.5rem;
-    line-height: 1;
+    font-size: 2.5rem;
+    line-height: 0;
     background: none;
     border: none;
     color: inherit;
     cursor: pointer;
-    padding: 0.25rem 0.5rem;
+    padding: 0 var(--sp-1);
     display: inline-flex;
     align-items: center;
   }
@@ -1843,13 +1846,20 @@
   }
   &__screen-error { margin: 0.5rem 0 0; color: var(--piano-warn); font-size: 0.9rem; }
 
-  &__foot { flex: 0 0 auto; padding-top: 0.5rem; border-top: 1px solid var(--piano-border); }
-  &__reload {
+  &__foot {
+    flex: 0 0 auto; padding-top: 0.5rem; border-top: 1px solid var(--piano-border);
+    display: flex; flex-direction: column; gap: var(--sp-2);
+  }
+  // Shared footer button shape (restart = primary recovery, reload = heavier).
+  &__restart, &__reload {
     width: 100%; display: inline-flex; align-items: center; justify-content: center; gap: 0.5rem;
     background: var(--piano-surface-2); color: var(--piano-fg); border: 1px solid var(--piano-border);
     border-radius: var(--r-md); padding: 0.6rem 1rem; font: inherit; cursor: pointer;
     &:active { background: var(--piano-border); }
   }
+  // The lighter-touch recovery: give it the accent border so it reads as the
+  // first thing to try before a full app reload.
+  &__restart { border-color: var(--piano-accent); color: var(--piano-accent-text); font-weight: 700; }
 }
 
 .piano-voicecard {

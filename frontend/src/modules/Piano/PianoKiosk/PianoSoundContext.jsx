@@ -22,7 +22,7 @@ const SoundContext = createContext(null);
 
 const FALLBACK = {
   sources: [], active: null, activeId: null, activeName: 'Onboard', select: () => {},
-  gainDb: 0, reverbMix: 0, setGain: () => {}, setReverb: () => {}, hasInstruments: false, bridgeLink: null,
+  gainDb: 0, reverbMix: 0, setGain: () => {}, setReverb: () => {}, resync: () => {}, hasInstruments: false, bridgeLink: null,
   device: null, deviceVoice: null, selectVoice: () => {}, effects: null, setEffect: () => {},
 };
 
@@ -104,16 +104,47 @@ export function PianoSoundProvider({ children }) {
   const setGain = useCallback((v) => { setGainDb(v); bridge.setParam('gain_db', v); }, [bridge]);
   const setReverb = useCallback((v) => { setReverbMix(v); bridge.setParam('reverb.mix', v); }, [bridge]);
 
+  // Re-assert the current sound state onto the hardware / voice-bridge. Used by
+  // the Settings "Restart audio & MIDI" control (paired with a MIDI reconnect) to
+  // recover the audio subsystem without a full page reload: re-load the active
+  // preset (or re-send the onboard voice) and re-push the effect state.
+  const resync = useCallback(() => {
+    const cur = activeId ? sources.find((s) => s.id === activeId) || null : null;
+    if (cur?.kind === 'instrument') {
+      bridge.loadPreset(resolveInstrumentSpec(cur.inst));
+      sendLocalControl(false);
+    } else if (device && deviceVoice) {
+      bridge.stop();
+      sendLocalControl(true);
+      sendVoice(deviceVoice.pc, deviceVoice.bank || 0);
+    } else if (cur) {
+      bridge.stop();
+      sendLocalControl(true);
+      if (cur.program != null) sendProgramChange(cur.program);
+    }
+    if (device && effects) {
+      ['reverb', 'chorus'].forEach((name) => {
+        const fx = device.effects?.[name];
+        const eff = effects[name];
+        if (fx && eff) {
+          sendControlChange(fx.typeCC, eff.type);
+          sendControlChange(fx.levelCC, eff.on ? eff.level : 0);
+        }
+      });
+    }
+    logger.info('piano.sound.resync', { pianoId, activeId, deviceVoice: deviceVoice?.no ?? null });
+  }, [activeId, sources, device, deviceVoice, effects, bridge, sendLocalControl, sendVoice, sendProgramChange, sendControlChange, pianoId, logger]);
+
   const activeName = active?.kind === 'instrument'
     ? active.name
     : (device ? (deviceVoice?.name || 'Keyboard') : (active?.name || 'Onboard'));
 
   const value = useMemo(() => ({
     sources, active, activeId, activeName, select,
-    gainDb, reverbMix, setGain, setReverb,
+    gainDb, reverbMix, setGain, setReverb, resync,
     hasInstruments: instruments.length > 0, bridgeLink: bridge.status?.link ?? null,
     device, deviceVoice, selectVoice, effects, setEffect,
-  }), [sources, active, activeId, activeName, select, gainDb, reverbMix, setGain, setReverb, instruments.length, bridge.status?.link, device, deviceVoice, selectVoice, effects, setEffect]);
+  }), [sources, active, activeId, activeName, select, gainDb, reverbMix, setGain, setReverb, resync, instruments.length, bridge.status?.link, device, deviceVoice, selectVoice, effects, setEffect]);
 
   return <SoundContext.Provider value={value}>{children}</SoundContext.Provider>;
 }
