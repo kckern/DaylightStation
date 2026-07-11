@@ -5,6 +5,7 @@ import { usePianoKioskConfig } from './PianoConfig.jsx';
 import { usePianoMidi } from './PianoMidiContext.jsx';
 import PianoTile from './PianoTile.jsx';
 import LiveKeyboard from './LiveKeyboard.jsx';
+import { balancedColumns } from './tileGridLayout.js';
 
 // Order maps to the 5-column grid, row by row (top row → bottom row):
 //   Courses    Music      Sheet Music  Studio  Composer
@@ -35,6 +36,7 @@ export function PianoMenu() {
   const { pressNote, releaseNote } = usePianoMidi();
   const kb = config?.keyboard || { startNote: 21, endNote: 108 };
   const logger = useMemo(() => getLogger().child({ component: 'piano-menu' }), []);
+  const cols = balancedColumns(PIANO_MODES.length); // 10 → 5 (home layout unchanged)
 
   const open = (id) => {
     logger.info('piano.mode-enter', { mode: id, pianoId });
@@ -44,7 +46,7 @@ export function PianoMenu() {
   return (
     <main className="piano-home">
       <div className="piano-home__body">
-        <ul className="piano-menu__tiles">
+        <ul className="piano-menu__tiles" style={{ '--tile-cols': cols }}>
           {PIANO_MODES.map((m) => (
             <li key={m.id}>
               <PianoTile
