@@ -144,6 +144,7 @@ import { FitnessConfigService } from '#apps/fitness/FitnessConfigService.mjs';
 import { FitnessProgressClassifier } from '#domains/fitness/services/FitnessProgressClassifier.mjs';
 import { initUnlockService } from '#apps/fitness/unlockService.mjs';
 import { initManageService } from '#apps/fitness/manageService.mjs';
+import { createFoodScaleRelay } from '#apps/hardware/foodScaleRelay.mjs';
 import { createFingerprintProfileWriter } from '#apps/fitness/fingerprintProfileWriter.mjs';
 import { YamlUserProfileDatastore } from '#adapters/persistence/yaml/YamlUserProfileDatastore.mjs';
 import { YamlEmergencyLockDatastore } from '#adapters/persistence/yaml/YamlEmergencyLockDatastore.mjs';
@@ -462,6 +463,16 @@ export async function createApp({ server, logger, configPaths, configExists, ena
       eventBus.broadcast(message.topic, message);
       rootLogger.debug?.('eventbus.bt.relay', { clientId, topic: message.topic });
     }
+  });
+
+  // Food-scale relay — ingests the ESP32 BLE-scale bridge's weight/button
+  // stream (source: 'food-scale-relay') and re-broadcasts on the `food-scale`
+  // topic; a decoupled subscriber persists settled measurements + button
+  // presses to history/hardware/food-scale/. See _extensions/food-scale-relay.
+  createFoodScaleRelay({
+    eventBus,
+    dataDir,
+    logger: rootLogger.child({ module: 'food-scale-relay' }),
   });
 
   // Fingerprint unlock service — binds the unlock broker to the live bus so
