@@ -1,142 +1,112 @@
-# Piano Kiosk — Redesign Laundry List
+# Piano Kiosk — Redesign Laundry List (Triaged)
 
 **Date:** 2026-07-10
-**Status:** Captured, not yet designed. Parked for a later brainstorming/design pass.
-**Source:** Verbal walkthrough of everything that feels wrong across the piano kiosk.
+**Status:** **Triaged** against the deployed tree (post-pull, HEAD `5a2a9ad6e`). Sequenced
+into waves, foundation-first. Ready to start Wave 0 as a spec → plan cycle.
+**Source:** Verbal walkthrough of everything that feels wrong across the piano kiosk,
+then a code + screenshot audit of what still holds.
 
-This is a **kiosk-wide redesign** backlog. It is deliberately broad — "the tip of the
-iceberg." Roughly half the items share **one root cause** (no shared kiosk design system:
-no touch-reset, no standard tile/grid primitive, no skeleton primitive, no spacing scale).
-The other half are **feature-level redesigns** of specific surfaces.
+This is a **kiosk-wide redesign** backlog. The original capture was deliberately broad —
+"the tip of the iceberg." A triage pass (code reads + rendered screenshots of the connect
+gate, main menu, games, courses, settings, and studio) found that **the 48 commits since the
+list was written already resolved or shrank about half the items.** What remains is a small
+foundation residue plus a handful of real per-surface redesigns.
 
-Recommended sequencing when we pick this up: **(A) a design-system foundation pass**
-(touch-reset + tile/grid/skeleton/spacing primitives), then **(B) per-surface redesigns**
-that build on it, each as its own spec → plan cycle.
-
----
-
-## Surface-by-surface
-
-### 1. Connect / first-load gate
-**Code:** `frontend/src/Apps/PianoConnectGate.*`, `frontend/src/modules/Piano/PianoKiosk/PianoEmpty.jsx`
-
-- **Not touch-safe.** Tapping produces stray blue rectangles / focus outlines /
-  text-selection highlights. The kiosk is touch-only — no mouse, no text selection, no
-  focus rings. Kill all of that (ideally globally, not per-component).
-- **The modal is weak — full redesign.**
-  - The green **Connect** button does nothing (a successful connection auto-advances), so
-    it is dead weight → remove it.
-  - **Bluetooth Settings** is genuinely useful → keep it, give it an icon.
-  - "Continue without a keyboard/piano" is currently just text → promote to a real button.
-  - **Turn off** → also a real button.
-  - Add a **Reboot device** button (the reboot API already exists / is already used).
-  - Rethink as ~3 clear tiles / primary buttons instead of one button + loose text.
-
-### 2. Main menu tiles
-**Code:** `frontend/src/modules/Piano/PianoKiosk/PianoMenu.jsx`, `PianoTile.jsx`
-
-- Currently smashed together: no outer margin, uneven heights when labels wrap.
-- Rebuild as a proper balanced flexbox: consistent gutters, **equal tile heights
-  regardless of word-wrap**, balanced layout. Rethink the layout/design system here from
-  scratch (this becomes the reusable tile primitive).
-
-### 3. Games submenu
-**Code:** `frontend/src/modules/Piano/PianoKiosk/modes/Games/Games.jsx`
-
-- Same disease as the main menu: needs to be **vertically + horizontally centered**, with
-  **fixed tile heights** regardless of wrap. Should consume the same tile primitive as #2.
-
-### 4. Loaders everywhere
-**Code:** many (audit needed)
-
-- Many screens show a bare **"Loading…" text**. Find every occurrence and replace with
-  **meaningful skeleton loaders** that match the shape of the content being loaded.
-  Establish a skeleton primitive as part of the foundation pass.
-
-### 5. Settings menu (Sound / MIDI / Feedback)
-**Code:** `frontend/src/modules/Piano/PianoKiosk/PianoSettingsSheet.jsx`
-
-- Feels thrown-together; the three tabs don't cohere. Rethink and redesign the whole thing.
-- Add a **power / restart control** that can restart the whole subsystem (MIDI + sound +
-  feedback) in one action.
-- Instrument selection lives here today but deserves its own UX (see #12).
-
-### 6. "Who's playing?" modal
-**Code:** `frontend/src/modules/Piano/PianoKiosk/WhoIsPlayingPrompt.jsx`, `useWhoIsPlaying.js`, `whoIsPlaying.js`
-
-- Inconsistent: **sometimes shows the "turn off screen" button, sometimes doesn't.** It
-  should *always* show it. Find why there are effectively two versions (parameterization?)
-  and unify so the control is always present.
-
-### 7. Header home button
-**Code:** `frontend/src/modules/Piano/PianoKiosk/PianoChrome.jsx` (home SVG in the header)
-
-- The home/logo SVG is **too small with too much padding** → hard to tap.
-- Make it **nearly fill the header height** (leave ~5px margin) so it's an easy, obvious
-  tap target back to home. It doesn't need to be 100% of the height, but far bigger than
-  now with far less surrounding padding.
-
-### 8. Poster grids (Courses, Play-along, Sing-along)
-**Code:** `frontend/src/modules/Piano/PianoKiosk/modes/Videos/CourseGrid.jsx`, `CourseCards.jsx`, `CourseTile.jsx`; `modes/Singalong/*`; play-along surfaces
-
-- When a row doesn't naturally wrap, **balance it**. If everything *could* fit on one line
-  but that wastes vertical space, **force multiple rows** and center them:
-  - 6 items → 3 + 3, centered on both axes.
-  - 5 items → staggered / horizontally centered.
-- Cap against "above the fold" (~12 items) before forcing multi-row.
-- Distribute so the items fill the available space nicely rather than clumping left.
-
-### 9. Staff / notation rendering (Studio + video sidebar)
-**Code:** `frontend/src/modules/Piano/components/ActionStaff.*`, `CurrentChordStaff.*`; sidebar staff usage in `modes/Videos/PianoContextRail.jsx`
-
-- The **staff is still getting cut off** → needs better margins.
-- Notes render **flush-left** → they should be **horizontally centered** within the staff.
-
-### 10. Course video screen
-**Code:** `frontend/src/modules/Piano/PianoKiosk/modes/Videos/PianoVideoPlayer.jsx`, `PianoVideoChrome.jsx`, `PianoContextRail.jsx`; `components/ChordNamePanel.jsx`
-
-- Spacing around the video is still off.
-- The **chord speller (`ChordNamePanel`)** is mispositioned in the Studio context.
-
-### 11. Studio record button + recording lifecycle
-**Code:** `frontend/src/modules/Piano/PianoKiosk/modes/Studio/Studio.jsx`, `StudioRecordings.jsx`, `useStudioRecorder.js`, `studioRecording.js`
-
-- The **Record** button is just dropped in with **no real recording lifecycle** (arm →
-  record → stop → review → save/discard). Redesign the recording experience end-to-end.
-
-### 12. Instrument picker
-**Code:** currently inside Settings (`PianoSettingsSheet.jsx`); instrument model in `instrumentSpec.js`, `VoicePicker` (producer)
-
-- Picking a new instrument should be its own **dedicated UX / lifecycle**, not a settings
-  sub-list.
-- Add **instrument icons** — emoji placeholders are acceptable for now.
+Verdict legend: **DONE** (close it) · **OUTDATED→SMALL** (original framing stale; only a
+small real residue left) · **REAL** (still needs doing) · **UNVERIFIED** (needs a populated
+screenshot to confirm).
 
 ---
 
-## Cross-cutting themes (the "foundation" pass)
+## Triage summary
 
-These recur across most of the surfaces above and should be solved once, centrally:
-
-1. **Touch-reset / kiosk base styles** — no focus rings, no text selection, no tap
-   highlight, no accidental scroll/drag affordances. (#1, and everywhere.)
-2. **Tile primitive** — equal-height, balanced, consistently-gutter'd tiles used by the
-   main menu, games menu, connect gate. (#1, #2, #3.)
-3. **Balanced grid primitive** — row/column balancing + centering + above-the-fold cap for
-   poster grids. (#8.)
-4. **Skeleton loader primitive** — content-shaped skeletons replacing "Loading…" text.
-   (#4.)
-5. **Spacing scale** — a real spacing/margin system so "smashed together" and "cut off"
-   stop happening. (#2, #9, #10.)
-
-## Feature-level redesigns (each its own spec)
-
-- Connect-gate modal (#1) — buttons + reboot + bluetooth.
-- Settings menu overhaul + subsystem restart (#5).
-- Who's-playing "turn off screen" unification (#6).
-- Studio recording lifecycle (#11).
-- Instrument picker UX + icons (#12).
+| # | Surface | Verdict | Real residue | Effort |
+|---|---------|---------|--------------|--------|
+| F2 | Tile primitive | **DONE** | — | — |
+| 2 | Main menu tiles | **DONE** | — | — |
+| 8 | Poster grids | **OUTDATED→SMALL** | forced 6→3+3 rebalance + ~12 cap (centering already done) | S / optional |
+| 5 | Settings menu | **OUTDATED→SMALL** | subsystem restart (5b); instrument picker extraction (→#12) | S |
+| 11 | Studio recording | **OUTDATED→SMALL** | explicit arm step + review→save/discard (recorder + list already exist) | M |
+| F1 | Touch-reset base styles | **REAL (partial)** | consolidate scattered rules; kill `user-select` globally | S |
+| F3 | Balanced/count-aware grid | **REAL** | tile grid is fixed 5-col; make it count-aware (also fixes #3) | M |
+| F4 | Skeleton loaders | **REAL (partial)** | `PianoEmpty` is bare text; shape it + route ~8 inline bypasses | M |
+| F5 | Spacing scale | **REAL** | no `--sp-*` tokens; spacing is magic rems | S |
+| 1 | Connect / first-load gate | **REAL** | remove dead Connect btn, promote Continue, add Reboot, BT icon, tile layout | M |
+| 3 | Games submenu | **REAL (small)** | count-aware grid (= F3); 4 games clump left in a 5-col grid | S |
+| 6 | Who's-playing turn-off | **REAL (bug)** | button gated on `onScreenOff`; chip caller omits it → intermittent | S |
+| 12 | Instrument picker | **REAL** | own UX/lifecycle + icons; today a text grid in Settings | M |
+| 4 | Loaders everywhere | **REAL (= F4)** | see F4 | M |
+| 7 | Header home button | **UNVERIFIED (minor)** | looks acceptable in shots; only if it bugs us | S |
+| 9 | Staff cutoff / centering | **UNVERIFIED** | `overflow:hidden` present; needs a populated staff to confirm | M |
+| 10 | Course video spacing / chord panel | **UNVERIFIED (partial)** | CHORD panel looks tacked-on; video spacing needs a course shot | S–M |
 
 ---
 
-*Not yet triaged for priority. Next step when resumed: brainstorming pass to decompose into
-ordered specs, foundation first.*
+## Sequencing (decided 2026-07-10: foundation-first)
+
+### Wave 0 — Foundation residue *(one spec → plan → build cycle)*
+High-leverage, small, unblocks the rest.
+- **F5 — Spacing scale.** Add `--sp-*` tokens to `:root` in `PianoApp.scss` alongside the
+  existing color/type/radius scales; start adopting where "smashed together / cut off" bites.
+- **F1 — Touch-reset consolidation.** Fold the scattered `touch-action` /
+  `-webkit-tap-highlight-color` / `focus-visible` rules into one documented kiosk base-reset;
+  kill `user-select` globally (today it's only on specific draggables).
+- **F3 — Count-aware tile grid.** The menu tile grid is hardcoded `repeat(5, …)` (built for
+  the 10-item home menu), so any other count clumps left with empty trailing columns. Make the
+  grid adapt column count to item count (and center). **This closes #3 (Games) for free.**
+- **F4 — Skeleton loaders.** Turn `PianoEmpty` (`PianoKiosk/PianoEmpty.jsx`) from bare text
+  into a content-shaped skeleton, and route the ~8 inline `piano-mode__placeholder` "Loading…"
+  bypasses (Music, Videos, Games, Lessons, StudioPlayback, Singalong, PianoVideoPlayer,
+  PianoPicker) through it. **This closes #4.**
+
+### Wave 1 — Surgical fixes *(each ~½ day, standalone)*
+- **#6 — Who's-playing turn-off (bug).** `WhoIsPlayingPrompt` renders the control only when a
+  caller passes `onScreenOff`; the chrome-chip switcher (`PianoUserChip`) omits it, so the
+  manual switch never shows it. **Decided: it should always show.** Fix = have the chip caller
+  pass `onScreenOff` too (both entry points get the control).
+- **#5b — Subsystem restart.** Today's "Reload app" reloads the whole page; add a control that
+  restarts just the MIDI + sound + feedback subsystem.
+- **#7 — Header home button** (only if it still reads as too small in situ).
+
+### Wave 2 — Feature redesigns *(each its own spec)*
+- **#1 — Connect gate.** Remove the dead green "Connect piano" button, promote "Continue
+  without piano" to a real button, add a Reboot device button, give Bluetooth an icon, rethink
+  as ~3 clear tiles. Verify touch-safety (stray outlines/selection) during.
+- **#12 — Instrument picker.** Extract from Settings into its own UX/lifecycle; add icons
+  (emoji placeholders OK). Removes the instrument grid from #5.
+- **#11 — Studio recording lifecycle.** The recorder, count-up, auto-save, and Recordings tab
+  (playback/favorite/delete) already exist — add the missing **arm** step and a **review →
+  save/discard** decision instead of the current auto-save-on-stop.
+- **#10 / #9 — Course video + staff.** **Parked** (blocked on a populated screenshot — dev
+  server was down at triage time). Re-audit once a course video / rendered staff is visible,
+  then fix the chord-panel positioning, video spacing, staff cutoff (`overflow:hidden`), and
+  note centering.
+
+### Closed / downgraded
+- **#2 Main menu** and **F2 Tile primitive** — DONE. `PianoTile` (`PianoApp.scss:217`,
+  `aspect-ratio: 3/2`) gives equal heights even when labels wrap (verified: "Playalong"
+  wraps two lines, tile stays level), with consistent gutters and outer margin.
+- **#8 Poster grids** — downgraded. `.piano-video-grid--posters`
+  (`PianoApp.scss:1038`) already centers both axes (`justify-content: center`,
+  `align-content: safe center`, tabpanel `justify-content: safe center`). Only the explicit
+  "force 6→3+3, cap ~12" rebalance is optional residue.
+- **#5 / #11** — downgraded from "redesign the whole thing" to the small residue noted above.
+
+---
+
+## Cross-cutting themes (foundation — current state)
+
+Where each originally-listed foundation theme actually stands today:
+
+1. **Touch-reset / kiosk base styles** — PARTIAL. Rules exist but scattered (F1, Wave 0).
+2. **Tile primitive** — DONE (`PianoTile`, reused by home + games).
+3. **Balanced grid primitive** — SPLIT: poster grids centered (#8 done); menu tile grid not
+   count-aware (F3, Wave 0 — fixes #3).
+4. **Skeleton loader primitive** — PARTIAL: shared `PianoEmpty` gives consistency but is
+   text-based; needs shaping + de-bypassing (F4, Wave 0).
+5. **Spacing scale** — MISSING (F5, Wave 0).
+
+---
+
+*Next step: brainstorm Wave 0 into a single design spec (spacing tokens + touch-reset +
+count-aware grid + skeleton), then `writing-plans` → implement.*
