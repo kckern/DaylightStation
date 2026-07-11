@@ -1,0 +1,32 @@
+# Example schema for the scantron-relay SSOT. The REAL file lives in household
+# data (private, Dropbox-synced), NOT in this repo:
+#   data/household/config/scantrons.yml
+#
+# A registry: each key under `scanners:` is one physical OMR reader + its relay
+# ATOM. Add more keys and flash one ATOM per key with the matching id.
+# Regenerate + reflash after editing:
+#   node firmware/tools/flash.mjs <dataDir>/household/config/scantrons.yml <id>
+
+provisioning:
+  wifi_ssid: "YOUR_SSID"
+  wifi_password: "YOUR_WIFI_PASSWORD"
+
+backend:
+  host: "daylightlocal.kckern.net"   # DaylightStation backend (event-bus host)
+  port: 3111                         # event-bus WS port
+  ws_path: /ws
+
+scanners:
+  study-scantron:
+    label: "Study OMR 1200"
+    device:
+      board: m5-atom-lite            # ESP32-PICO-D4; button GPIO39, RGB GPIO27
+    serial:
+      # ⚠️ ALL UNVERIFIED until sniffed on the real OMR 1200. Start in sniff mode,
+      # watch the `raw` bus messages while feeding sheets, then lock these in.
+      baud: 9600                     # GUESS — try 1200 / 2400 / 9600
+      framing: "8N1"                 # GUESS — vintage OMR gear is often 7E1
+      rx_pin: 22                     # ATOM base UART RX <- VERIFY vs M5 ATOMIC RS232 base pinout
+      tx_pin: 19                     # ATOM base UART TX <- VERIFY (unused if scanner is send-only)
+    sniff_mode: true                 # forward raw hex to the bus (protocol discovery)
+    topic: scantron
