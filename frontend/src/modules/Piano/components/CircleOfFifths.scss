@@ -26,12 +26,34 @@
       pointer-events: none;
     }
 
-    &.in-key .cof-bubble { stroke: var(--piano-accent, #2ec46f); }
+    // Diatonic slots tinted by chord quality (the "chord ring" idea) — soft
+    // fills so the bubbles still read on white, borders carry the hue.
+    &.in-key.q-major .cof-bubble { fill: #fbeeeb; stroke: #d98a7e; }
+    &.in-key.q-minor .cof-bubble { fill: #ecf1fb; stroke: #7e9dd9; }
+    &.in-key.q-diminished .cof-bubble { fill: #eaf7ec; stroke: #5cb36e; }
 
+    // Sounding note — the accent wins over the quality tint.
     &.is-active .cof-bubble {
       fill: var(--piano-accent, #2ec46f);
       stroke: var(--piano-accent, #2ec46f);
     }
     &.is-active .cof-label { fill: var(--piano-accent-ink, #07210f); }
+
+    // The identified chord's ROOT — a heavy dark ring marks "this is the chord
+    // you're playing", on top of whatever fill (accent or tint).
+    &.is-root .cof-bubble { stroke: #2b2b2b; stroke-width: 3; }
   }
+
+  // Inner degree ring — roman numerals for the diatonic scale degrees.
+  .cof-degree {
+    fill: #8a857b;
+    font-size: 0.62rem;
+    font-weight: 700;
+    pointer-events: none;
+    transition: fill 120ms ease;
+    &.is-active { fill: var(--piano-accent-text, #1c9c54); }
+  }
+
+  // ▲ Tonic marker.
+  .cof-tonic { fill: #2b2b2b; }
 }

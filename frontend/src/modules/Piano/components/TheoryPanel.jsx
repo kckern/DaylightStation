@@ -2,6 +2,7 @@ import { useMemo } from 'react';
 import { CurrentChordStaff } from './CurrentChordStaff.jsx';
 import { CircleOfFifths } from './CircleOfFifths.jsx';
 import { ChordNamePanel } from './ChordNamePanel.jsx';
+import { identifyChord } from '../theory/chordNaming.js';
 import { detectKey } from '../../MusicNotation/model/keySignature.js';
 import './TheoryPanel.scss';
 
@@ -27,12 +28,14 @@ export function TheoryPanel({ activeNotes, layout = 'row' }) {
   const midiNotes = useMemo(() => [...activeNotes.keys()], [activeNotes]);
   const pitchClasses = useMemo(() => midiNotes.map((n) => n % 12), [midiNotes]);
   const detectedKey = useMemo(() => detectKey(pitchClasses, 'C'), [pitchClasses]);
+  // The identified chord's root pitch class → the circle emphasises that degree.
+  const rootPc = useMemo(() => identifyChord(midiNotes).root, [midiNotes]);
 
   return (
     <div className={`theory-panel theory-panel--${layout}`}>
       <div className="theory-panel__circle">
         <div className="theory-panel__circle-box">
-          <CircleOfFifths pitchClasses={pitchClasses} detectedKey={detectedKey} />
+          <CircleOfFifths pitchClasses={pitchClasses} detectedKey={detectedKey} rootPc={rootPc} />
         </div>
       </div>
       <div className="theory-panel__staff">

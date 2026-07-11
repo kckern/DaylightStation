@@ -48,4 +48,43 @@ export function keyArc(keyName) {
   return new Set([left, idx, right]);
 }
 
-export default { CIRCLE_ORDER, circlePositions, activeSlots, keyArc };
+// The seven diatonic scale degrees of a major key, in fifths order relative to
+// the tonic slot: IV·I·V are major, ii·vi·iii minor, vii° diminished. Together
+// they occupy seven ADJACENT circle positions (offsets -1..+5), which is why the
+// diatonic "window" is a contiguous arc.
+const DIATONIC = [
+  { offset: -1, roman: 'IV', quality: 'major' },
+  { offset: 0, roman: 'I', quality: 'major' },
+  { offset: 1, roman: 'V', quality: 'major' },
+  { offset: 2, roman: 'ii', quality: 'minor' },
+  { offset: 3, roman: 'vi', quality: 'minor' },
+  { offset: 4, roman: 'iii', quality: 'minor' },
+  { offset: 5, roman: 'vii°', quality: 'diminished' },
+];
+
+/** Slot index (0-11) whose key root is pitch class `pc`, or -1 if none. */
+export function slotOfPitchClass(pc) {
+  if (pc == null || Number.isNaN(pc)) return -1;
+  const p = ((Math.trunc(pc) % 12) + 12) % 12;
+  return CIRCLE_ORDER.findIndex((s) => s.pitchClass === p);
+}
+
+/**
+ * The seven diatonic slots of a major key: slotIndex → { roman, quality }.
+ * Empty map for an unknown key. Drives the degree ring + chord-quality colouring.
+ * @param {string} keyName e.g. 'C', 'G', 'Bb'
+ * @returns {Map<number, {roman:string, quality:'major'|'minor'|'diminished'}>}
+ */
+export function diatonicSlots(keyName) {
+  const idx = ORDER_LABELS.indexOf(keyName);
+  const m = new Map();
+  if (idx < 0) return m;
+  const n = ORDER_LABELS.length;
+  for (const d of DIATONIC) {
+    const slot = (((idx + d.offset) % n) + n) % n;
+    m.set(slot, { roman: d.roman, quality: d.quality });
+  }
+  return m;
+}
+
+export default { CIRCLE_ORDER, circlePositions, activeSlots, keyArc, diatonicSlots, slotOfPitchClass };
