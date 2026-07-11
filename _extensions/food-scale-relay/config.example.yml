@@ -1,0 +1,41 @@
+# Example schema for the food-scale-relay SSOT. The REAL file lives in household
+# data (private, Dropbox-synced), NOT in this repo:
+#   data/household/config/scales.yml
+#
+# A registry: each key under `scales:` is one physical scale + its relay ESP. Add
+# more keys (bathroom-scale, coffee-scale, …) and flash one ATOM per key with the
+# matching id. The firmware build reads provisioning/backend/scales.<id>.ble; the
+# backend accepts any relay client by `source`. Regenerate + reflash after editing:
+#   node firmware/tools/flash.mjs <dataDir>/household/config/scales.yml <id>
+
+provisioning:
+  wifi_ssid: "YOUR_SSID"
+  wifi_password: "YOUR_WIFI_PASSWORD"
+
+backend:
+  host: "daylightlocal.kckern.net"   # DaylightStation backend (event-bus host)
+  port: 3111                         # event-bus WS port
+  ws_path: /ws
+
+scales:
+  kitchen-food-scale:
+    label: "Kitchen food scale"
+    device:
+      board: m5-atom-lite            # ESP32-PICO-D4; button GPIO39, RGB GPIO27
+      mac: "14:08:08:53:94:84"       # relay hardware MAC (informational)
+    ble:
+      match_name: "SENSSUN FOOD"     # scan target (KitchenIQ 50797 OEM name)
+      service_uuid: "0000ffb0-0000-1000-8000-00805f9b34fb"
+      notify_char:  "0000ffb2-0000-1000-8000-00805f9b34fb"
+      decode:                        # verified against the physical scale
+        weight_offset: 2             # uint16 big-endian weight
+        endian: big
+        divisor: 1                   # raw -> grams
+        stable_byte: 6
+        stable_value: 0xAA           # settled (0xA0 = changing)
+        unit_byte: 8
+        units: { 0x00: g, 0x02: ml }
+    emit:
+      min_delta_g: 1
+      heartbeat_hz: 0.5
+    topic: food-scale

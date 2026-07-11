@@ -1,0 +1,5 @@
+# Generated firmware config (Wi-Fi creds + instance values) — never commit.
+include/config.h
+
+# PlatformIO build artifacts
+.pio/
