@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { reducer, initialState, Modes, closeDecision, RENDER_CAP } from './comboboxMachine.js';
+import { reducer, initialState, Modes, closeDecision, RENDER_CAP, decideCommit } from './comboboxMachine.js';
 
 const open = (s) => reducer(s, { type: 'OPEN' });
 const type_ = (s, text) => reducer(s, { type: 'INPUT', text });
@@ -243,5 +243,114 @@ describe('comboboxMachine', () => {
   it('unknown event types are ignored', () => {
     const s = open(initialState('plex:1'));
     expect(reducer(s, { type: 'BOGUS' })).toBe(s);
+  });
+});
+
+describe('decideCommit', () => {
+  const isContainer = (i) => i.type === 'show' || i.itemType === 'container';
+  // Base args with a changed query and no pick. Override per test.
+  const base = (over = {}) => ({
+    reason: 'enter',
+    search: 'query',
+    value: 'plex:1',
+    results: [],
+    highlightIdx: -1,
+    userNavigated: false,
+    selectContainers: false,
+    searchSettled: true,
+    isContainer,
+    ...over,
+  });
+
+  it('explicit pick of a leaf → select that item (any reason)', () => {
+    const leaf = { id: 'plex:5', type: 'episode' };
+    const out = decideCommit(base({ reason: 'blur', results: [{ id: 'plex:4' }, leaf], highlightIdx: 1, userNavigated: true }));
+    expect(out).toEqual({ action: 'select', item: leaf });
+  });
+
+  it('explicit pick of a container with selectContainers:false → drill', () => {
+    const show = { id: 'plex:99', type: 'show' };
+    const out = decideCommit(base({ results: [show], highlightIdx: 0, userNavigated: true, selectContainers: false }));
+    expect(out).toEqual({ action: 'drill', item: show });
+  });
+
+  it('explicit pick of a container with selectContainers:true → select', () => {
+    const show = { id: 'plex:99', type: 'show' };
+    const out = decideCommit(base({ results: [show], highlightIdx: 0, userNavigated: true, selectContainers: true }));
+    expect(out).toEqual({ action: 'select', item: show });
+  });
+
+  it('highlightIdx set but userNavigated false is NOT a pick (Mar-01 invariant)', () => {
+    // Falls through to Enter-no-pick logic; single leaf → select.
+    const leaf = { id: 'plex:7', type: 'episode' };
+    const out = decideCommit(base({ results: [leaf], highlightIdx: 0, userNavigated: false }));
+    expect(out).toEqual({ action: 'select', item: leaf });
+  });
+
+  it('search === value → none', () => {
+    expect(decideCommit(base({ search: 'plex:1', value: 'plex:1' }))).toEqual({ action: 'none' });
+  });
+
+  it('search === null (not editing) → none', () => {
+    expect(decideCommit(base({ search: null }))).toEqual({ action: 'none' });
+  });
+
+  it("reason 'blur' with changed query, no pick → revert", () => {
+    expect(decideCommit(base({ reason: 'blur' }))).toEqual({ action: 'revert' });
+  });
+
+  it("reason 'outside' with changed query, no pick → revert", () => {
+    expect(decideCommit(base({ reason: 'outside' }))).toEqual({ action: 'revert' });
+  });
+
+  it("reason 'escape' with changed query, no pick → revert", () => {
+    expect(decideCommit(base({ reason: 'escape' }))).toEqual({ action: 'revert' });
+  });
+
+  it("reason 'tab' with changed query, no pick → revert", () => {
+    expect(decideCommit(base({ reason: 'tab' }))).toEqual({ action: 'revert' });
+  });
+
+  it('Enter with <2 non-space chars → dismiss', () => {
+    expect(decideCommit(base({ search: 'a' }))).toEqual({ action: 'dismiss' });
+    expect(decideCommit(base({ search: ' b ' }))).toEqual({ action: 'dismiss' });
+  });
+
+  it('Enter, empty results, not settled → open', () => {
+    expect(decideCommit(base({ search: 'bluey', results: [], searchSettled: false }))).toEqual({ action: 'open' });
+  });
+
+  it('Enter, empty results, settled → literal with raw query', () => {
+    expect(decideCommit(base({ search: 'bluey', results: [], searchSettled: true }))).toEqual({ action: 'literal', value: 'bluey' });
+  });
+
+  it('Enter, single leaf result → select that item', () => {
+    const leaf = { id: 'plex:12', type: 'episode' };
+    expect(decideCommit(base({ search: 'beet', results: [leaf] }))).toEqual({ action: 'select', item: leaf });
+  });
+
+  it('Enter, single container result → open (human chooses lineage level)', () => {
+    const show = { id: 'plex:99', type: 'show' };
+    expect(decideCommit(base({ search: 'bluey', results: [show] }))).toEqual({ action: 'open' });
+  });
+
+  it('Enter, two+ results → open', () => {
+    expect(decideCommit(base({ search: 'office', results: [{ id: 'plex:1', type: 'episode' }, { id: 'plex:2', type: 'episode' }] }))).toEqual({ action: 'open' });
+  });
+
+  it('Enter, id-lookup leaf among other rows → select the id-lookup item (order-independent)', () => {
+    const idLeaf = { id: 'plex:642197', type: 'movie', matchReason: 'id-lookup' };
+    const results = [
+      { id: 'plex:1', type: 'episode', matchReason: 'keyword' },
+      idLeaf,
+      { id: 'plex:2', type: 'episode', matchReason: 'keyword' },
+    ];
+    expect(decideCommit(base({ search: 'plex:642197', results }))).toEqual({ action: 'select', item: idLeaf });
+  });
+
+  it('Enter, id-lookup match that is a container → NOT auto-selected as id-lookup leaf', () => {
+    const idShow = { id: 'plex:500', type: 'show', matchReason: 'id-lookup' };
+    // Only row, and a container → falls through to open.
+    expect(decideCommit(base({ search: 'plex:500', results: [idShow] }))).toEqual({ action: 'open' });
   });
 });

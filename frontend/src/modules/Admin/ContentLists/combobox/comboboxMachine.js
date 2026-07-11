@@ -53,6 +53,41 @@ export function closeDecision({ search, value }, reason) {
   return { action: 'revert' };
 }
 
+/**
+ * Decide what a close gesture commits. Pure: no React/fetch.
+ * @param {object} a
+ * @param {'enter'|'blur'|'outside'|'tab'|'escape'} a.reason
+ * @param {string|null} a.search   current editing text (null = not editing)
+ * @param {string} a.value         committed value
+ * @param {Array}  a.results       current search results (machine order)
+ * @param {number} a.highlightIdx
+ * @param {boolean} a.userNavigated
+ * @param {boolean} a.selectContainers
+ * @param {boolean} a.searchSettled  true iff a search for the current text has completed (not loading)
+ * @param {(item:object)=>boolean} a.isContainer  injected predicate
+ * @returns {{action:'select'|'drill'|'open'|'literal'|'revert'|'dismiss'|'none', item?:object, value?:string}}
+ */
+export function decideCommit({ reason, search, value, results, highlightIdx, userNavigated, selectContainers, searchSettled, isContainer }) {
+  // 1. Explicit pick — any reason. Mar-01 invariant: ONLY user-navigated rows count as a pick.
+  if (userNavigated && highlightIdx >= 0 && results[highlightIdx]) {
+    const item = results[highlightIdx];
+    return (isContainer(item) && !selectContainers) ? { action: 'drill', item } : { action: 'select', item };
+  }
+  if (search === null || search === value) return { action: 'none' };
+  // 2. Non-Enter closes never auto-render or literal-commit an unpicked query (no junk-on-blur).
+  if (reason !== 'enter') return { action: 'revert' };
+  // 3. Enter, no explicit pick:
+  if (search.trim().length < 2) return { action: 'dismiss' };
+  if (results.length === 0) {
+    return searchSettled ? { action: 'literal', value: search } : { action: 'open' };
+  }
+  // 4. Unambiguous leaf renders; containers / multiple stay open for the human to choose the level.
+  const idLookupLeaf = results.find((r) => r.matchReason === 'id-lookup' && !isContainer(r));
+  if (idLookupLeaf) return { action: 'select', item: idLookupLeaf };
+  if (results.length === 1 && !isContainer(results[0])) return { action: 'select', item: results[0] };
+  return { action: 'open' };
+}
+
 export function reducer(state, event) {
   switch (event.type) {
     case 'OPEN':
