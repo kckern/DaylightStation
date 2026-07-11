@@ -26,7 +26,7 @@ import {
   IconMusic, IconVideo, IconPhoto, IconFile, IconList, IconPencil, IconX,
 } from '@tabler/icons-react';
 import { getChildLogger } from '../../../../lib/logging/singleton.js';
-import { shouldRunScrollToHighlighted } from '../comboboxScroll.js';
+import { shouldRunScrollToHighlighted, computeScrollRestore } from '../comboboxScroll.js';
 import { useContentCombobox } from './useContentCombobox.js';
 import { Modes } from './comboboxMachine.js';
 import './ContentCombobox.scss';
@@ -263,13 +263,26 @@ export function ContentCombobox({
     paginationScrollGuardRef.current = true;
     const viewport = viewportRef.current;
     const prevScrollHeight = direction === 'before' ? (viewport?.scrollHeight || 0) : 0;
+    const prevScrollTop = direction === 'before' ? (viewport?.scrollTop || 0) : 0;
     try {
       const dispatched = await paginate(direction);
       if (!dispatched) paginationScrollGuardRef.current = false;
       if (dispatched && direction === 'before' && viewport) {
-        // Maintain scroll position after prepending
+        // Maintain scroll position after prepending. overflowAnchor:none disables
+        // native scroll-anchoring, so this manual restore is the only safeguard.
+        // Double-rAF (mirroring the cooldown below) defers the write until AFTER
+        // React commits the prepended rows + browser layout — a single rAF can
+        // fire while scrollHeight is still stale, under-compensating and yanking
+        // the viewport upward.
         requestAnimationFrame(() => {
-          viewport.scrollTop += viewport.scrollHeight - prevScrollHeight;
+          requestAnimationFrame(() => {
+            if (!viewport) return;
+            viewport.scrollTop = computeScrollRestore({
+              prevScrollHeight,
+              newScrollHeight: viewport.scrollHeight,
+              prevScrollTop,
+            });
+          });
         });
       }
     } finally {

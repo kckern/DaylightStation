@@ -18,3 +18,17 @@ export function shouldRunScrollToHighlighted({ highlightedIdx, prevIdx, paginati
   if (highlightedIdx === prevIdx) return { run: false, reason: 'no-change' };
   return { run: true, reason: 'navigation' };
 }
+
+/**
+ * Target scrollTop that keeps the same content anchored after items are
+ * prepended (viewport height grows by newScrollHeight - prevScrollHeight).
+ *
+ * @param {object} args
+ * @param {number} args.prevScrollHeight - viewport.scrollHeight before prepend
+ * @param {number} args.newScrollHeight - viewport.scrollHeight after prepend+layout
+ * @param {number} args.prevScrollTop - viewport.scrollTop before prepend
+ * @returns {number} the scrollTop to write so the anchored row stays put
+ */
+export function computeScrollRestore({ prevScrollHeight, newScrollHeight, prevScrollTop }) {
+  return prevScrollTop + (newScrollHeight - prevScrollHeight);
+}
