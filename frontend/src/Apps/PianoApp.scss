@@ -252,6 +252,25 @@
     cursor: pointer;
     &:active { opacity: 0.85; }
   }
+
+  // Visible settings/device entry (gear) — always present so operators AND
+  // players can reach reboot/restart/Bluetooth/screen-off without a long-press.
+  &__gear {
+    flex: 0 0 auto;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.6rem;
+    line-height: 0;
+    width: 2.6rem;
+    height: 2.6rem;
+    background: var(--piano-surface-2);
+    color: inherit;
+    border: 1px solid var(--piano-border);
+    border-radius: var(--r-pill);
+    cursor: pointer;
+    &:active { opacity: 0.85; }
+  }
 }
 
 // Shared icon+label tile primitive — used by the home menu and the games picker.

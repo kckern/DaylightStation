@@ -91,6 +91,17 @@ export function PianoChrome({ modeLabel, modeKey }) {
             Reconnect
           </button>
         )}
+        {/* Visible entry to the settings/device console (reboot, restart, Bluetooth,
+            screen-off, …) — so it's discoverable, not only via the chip long-press. */}
+        <button
+          type="button"
+          className="piano-chrome__gear"
+          aria-label="Settings"
+          title="Settings"
+          onClick={() => setOperatorOpen(true)}
+        >
+          <Icon name="settings" />
+        </button>
       </div>
 
       <SoundPanel open={soundOpen} onClose={() => setSoundOpen(false)} />

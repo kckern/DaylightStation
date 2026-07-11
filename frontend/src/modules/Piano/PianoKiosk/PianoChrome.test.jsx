@@ -55,6 +55,13 @@ describe('PianoChrome', () => {
     expect(screen.getByText('OPERATOR-DRAWER-OPEN')).toBeTruthy();
   });
 
+  it('opens the Operator Drawer from the visible Settings gear (no long-press needed)', () => {
+    renderChrome();
+    expect(screen.queryByText('OPERATOR-DRAWER-OPEN')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: /Settings/i }));
+    expect(screen.getByText('OPERATOR-DRAWER-OPEN')).toBeTruthy();
+  });
+
   it('hides the inline Reconnect affordance when connected', () => {
     midi.connected = true;
     midi.status = 'connected';

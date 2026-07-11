@@ -89,6 +89,11 @@ function flushOut(out, bytes) {
 export function useWebMidiBLE({ preferredInputName } = {}) {
   const [status, setStatus] = useState('idle'); // idle | requesting | connected | no-input | unsupported | denied
   const [inputName, setInputName] = useState(null);
+  // MIDI OUT link health. On BLE the output port often enumerates a beat AFTER
+  // the input, so this is tracked separately and re-checked on every statechange
+  // + by a watchdog — a null output means on-screen sound changes can't reach the
+  // piano. Reactive (state) so the UI can show/reset a broken link.
+  const [outputName, setOutputName] = useState(null);
 
   // Live-note state (activeNotes/noteHistory/sustainPedal/isPlaying) lives in an
   // external store, NOT React state, so a note event re-renders only
@@ -178,6 +183,20 @@ export function useWebMidiBLE({ preferredInputName } = {}) {
     );
   }, [preferredInputName]);
 
+  // Bind (or re-bind) the MIDI OUT port from the current access. Idempotent and
+  // cheap, so it can run on every statechange — this is what makes a late/flapping
+  // output reliably attach instead of only when it happened to be present at the
+  // instant the input first bound. Returns the bound output (or null).
+  const bindOutput = useCallback((access) => {
+    const out = (access && [...access.outputs.values()][0]) || null;
+    if (out !== outputRef.current) {
+      outputRef.current = out;
+      setOutputName(out ? (out.name || out.id) : null);
+      logger().info('midi.output-bound', { hasOutput: !!out, name: out ? (out.name || out.id) : null });
+    }
+    return out;
+  }, []);
+
   const bindInput = useCallback((access) => {
     const input = pickInput(access);
     if (!input) {
@@ -187,10 +206,13 @@ export function useWebMidiBLE({ preferredInputName } = {}) {
       logger().warn('midi.no-input', {});
       return;
     }
-    // Idempotent: a chattery BLE link fires repeated statechange events for the
-    // same, still-present port. Re-binding each one storms re-renders on the
-    // tablet, so bail when already bound to this exact input with this handler.
+    // Idempotent for the INPUT: a chattery BLE link fires repeated statechange
+    // events for the same, still-present port; re-binding each one storms
+    // re-renders. But the OUTPUT may have enumerated late (BLE races the input),
+    // so ALWAYS re-check the output before bailing — else a late output never
+    // attaches and every send is a silent no-op ("MIDI OUT flaky").
     if (inputRef.current === input && input.onmidimessage === handleRawMidi) {
+      bindOutput(access);
       return;
     }
     if (inputRef.current && inputRef.current !== input) {
@@ -198,12 +220,12 @@ export function useWebMidiBLE({ preferredInputName } = {}) {
     }
     input.onmidimessage = handleRawMidi;
     inputRef.current = input;
-    outputRef.current = [...access.outputs.values()][0] || null;
+    bindOutput(access);
     setInputName(input.name || input.id);
     setStatus('connected');
     try { localStorage?.setItem(STORAGE_KEY, input.id); } catch { /* ignore */ }
     logger().info('midi.input-bound', { name: input.name, hasOutput: !!outputRef.current });
-  }, [pickInput, handleRawMidi]);
+  }, [pickInput, handleRawMidi, bindOutput]);
 
   const connect = useCallback(async () => {
     if (typeof navigator === 'undefined' || !navigator.requestMIDIAccess) {
@@ -228,6 +250,30 @@ export function useWebMidiBLE({ preferredInputName } = {}) {
       logger().error('midi.denied', { error: err?.message });
     }
   }, [bindInput]);
+
+  // Manual recover: drop the current bindings and re-request MIDI access from
+  // scratch, so a broken/half link (e.g. input bound but output missing) is
+  // fully re-scanned. Clearing the refs first defeats bindInput's idempotency
+  // short-circuit so the input + output both re-attach.
+  const resetLink = useCallback(async () => {
+    logger().info('midi.reset-link', { hadOutput: !!outputRef.current });
+    if (inputRef.current) { try { inputRef.current.onmidimessage = null; } catch { /* ignore */ } }
+    inputRef.current = null;
+    outputRef.current = null;
+    setOutputName(null);
+    await connect();
+  }, [connect]);
+
+  // Output watchdog / auto-recover: while connected, if the OUT port is missing
+  // (BLE enumerated it late, or it dropped), re-scan the live access for it every
+  // 2s so a flapping output re-attaches on its own — no user action needed.
+  useEffect(() => {
+    if (status !== 'connected') return undefined;
+    const t = setInterval(() => {
+      if (!outputRef.current && accessRef.current) bindOutput(accessRef.current);
+    }, 2000);
+    return () => clearInterval(t);
+  }, [status, bindOutput]);
 
   // ── Outbound (timbre + studio playback) ──────────────────────────────
   const sendProgramChange = useCallback((program, channel = 0) => {
@@ -386,6 +432,11 @@ export function useWebMidiBLE({ preferredInputName } = {}) {
     status,
     inputName,
     connected: status === 'connected',
+    // MIDI OUT link health + manual recover. `outputConnected` false means
+    // on-screen sound changes can't reach the piano; `resetLink()` re-scans.
+    outputName,
+    outputConnected: outputName != null,
+    resetLink,
     // Live-note store (activeNotes/noteHistory/sustainPedal/isPlaying). Read via
     // usePianoMidiNotes() so only note-reading leaves re-render per note; this
     // surface stays identity-stable across note traffic (2026-07-06 audit R1).
@@ -405,7 +456,7 @@ export function useWebMidiBLE({ preferredInputName } = {}) {
     subscribeRaw,
     pressNote,
     releaseNote,
-  }), [status, inputName, connect, sendProgramChange, sendVoice, sendLocalControl, sendControlChange, sendPanic, sendNote, sendNoteOff, sendNoteAt, sendNoteOffAt, scheduleNotes, subscribe, subscribeRaw, pressNote, releaseNote]);
+  }), [status, inputName, outputName, resetLink, connect, sendProgramChange, sendVoice, sendLocalControl, sendControlChange, sendPanic, sendNote, sendNoteOff, sendNoteAt, sendNoteOffAt, scheduleNotes, subscribe, subscribeRaw, pressNote, releaseNote]);
 }
 
 export default useWebMidiBLE;
