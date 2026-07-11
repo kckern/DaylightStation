@@ -169,15 +169,18 @@
     overflow: hidden;
   }
 
+  // Home/logo tap target: near-fills the header height with minimal padding so
+  // it's a big, obvious tap back to the menu (#7). The header's own 0.5rem
+  // vertical padding is the ~margin around it.
   &__home {
     flex: 0 0 auto;
-    font-size: 1.5rem;
-    line-height: 1;
+    font-size: 2.5rem;
+    line-height: 0;
     background: none;
     border: none;
     color: inherit;
     cursor: pointer;
-    padding: 0.25rem 0.5rem;
+    padding: 0 var(--sp-1);
     display: inline-flex;
     align-items: center;
   }
@@ -431,14 +434,9 @@
     border: none;
     font-weight: 700;
     cursor: pointer;
+    display: inline-flex; align-items: center; justify-content: center; gap: 0.5rem;
 
-    // Primary — the accent fill (Connect piano).
-    &--primary {
-      background: var(--piano-accent);
-      color: var(--piano-accent-ink);
-    }
-
-    // Secondary (e.g. Bluetooth settings) — outline, not the accent fill.
+    // Secondary (Bluetooth settings, Continue without piano) — outline tiles.
     &--ghost {
       background: var(--piano-surface-2);
       color: var(--piano-fg);
@@ -447,31 +445,21 @@
     }
   }
 
-  // Tertiary — muted link (Continue without piano).
-  &__skip {
-    min-height: 48px;
-    background: none;
-    border: none;
-    color: var(--piano-muted);
-    font-size: 1rem;
-    text-decoration: underline;
-    cursor: pointer;
-
-    &:active { color: var(--piano-fg); }
-  }
-
-  // Device action — visually separated below a divider (not a connect action).
+  // Device actions — visually separated below a divider (not connect actions).
+  // Two side-by-side buttons (turn-off / reboot) that wrap on a narrow card.
   &__device {
     margin-top: 1.25rem;
     padding-top: 1rem;
     border-top: 1px solid var(--piano-border);
     display: flex;
-    justify-content: center;
+    flex-wrap: wrap;
+    gap: var(--sp-3);
   }
 
-  &__screen-off {
+  &__devbtn {
+    flex: 1 1 8rem;
     min-height: 48px;
-    padding: 0.5rem 1.25rem;
+    padding: 0.5rem 1rem;
     border-radius: var(--r-pill);
     background: transparent;
     border: 1px solid var(--piano-border);
@@ -479,6 +467,7 @@
     font-family: inherit;
     font-size: 0.95rem;
     cursor: pointer;
+    display: inline-flex; align-items: center; justify-content: center; gap: 0.4rem;
 
     &:active { background: var(--piano-surface-2); color: var(--piano-fg); }
 
@@ -1843,20 +1832,29 @@
   }
   &__screen-error { margin: 0.5rem 0 0; color: var(--piano-warn); font-size: 0.9rem; }
 
-  &__foot { flex: 0 0 auto; padding-top: 0.5rem; border-top: 1px solid var(--piano-border); }
-  &__reload {
+  &__foot {
+    flex: 0 0 auto; padding-top: 0.5rem; border-top: 1px solid var(--piano-border);
+    display: flex; flex-direction: column; gap: var(--sp-2);
+  }
+  // Shared footer button shape (restart = primary recovery, reload = heavier).
+  &__restart, &__reload {
     width: 100%; display: inline-flex; align-items: center; justify-content: center; gap: 0.5rem;
     background: var(--piano-surface-2); color: var(--piano-fg); border: 1px solid var(--piano-border);
     border-radius: var(--r-md); padding: 0.6rem 1rem; font: inherit; cursor: pointer;
     &:active { background: var(--piano-border); }
   }
+  // The lighter-touch recovery: give it the accent border so it reads as the
+  // first thing to try before a full app reload.
+  &__restart { border-color: var(--piano-accent); color: var(--piano-accent-text); font-weight: 700; }
 }
 
 .piano-voicecard {
-  width: 100%; display: flex; flex-direction: column; gap: 0.2rem; text-align: left;
+  width: 100%; display: grid; grid-template-columns: auto 1fr; align-items: center;
+  column-gap: 0.6rem; row-gap: 0.1rem; text-align: left;
   background: var(--piano-surface-2); border: 1px solid var(--piano-border);
   border-radius: var(--r-md); color: inherit; padding: 0.6rem 0.75rem; cursor: pointer;
   &.is-active { border-color: var(--piano-accent); background: var(--piano-surface); }
+  &__icon { grid-row: 1 / span 2; font-size: 1.7rem; line-height: 1; }
   &__tag { font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--piano-muted); }
   &__name { font-weight: 700; }
 }
@@ -2611,6 +2609,9 @@
 }
 
 // ── Skeleton loaders ─────────────────────────────────────────────────────────
+// (Own keyframe name `piano-skeleton-sweep` — the older `piano-skeleton-shimmer`
+// above at the CourseDetail episode skeleton is tuned to a 200% sweep; don't
+// collide with it.)
 .piano-skeleton {
   background: var(--piano-surface-2);
   border-radius: var(--r-sm);
@@ -2618,19 +2619,55 @@
   &.is-shimmer {
     background: linear-gradient(90deg, var(--piano-surface) 25%, var(--piano-surface-2) 37%, var(--piano-surface) 63%);
     background-size: 400% 100%;
-    animation: piano-skeleton-shimmer 1.4s ease infinite;
+    animation: piano-skeleton-sweep 1.4s ease infinite;
   }
 }
 .piano-skeleton--poster { aspect-ratio: 2 / 3; border-radius: var(--r-sm); }
+.piano-skeleton--square { aspect-ratio: 1 / 1; border-radius: var(--r-sm); }
+.piano-skeleton--stage {
+  width: 100%; min-height: 12rem; flex: 1 1 auto; border-radius: var(--r-md);
+}
 .piano-skeleton-grid {
   list-style: none; margin: 0; padding: 0;
   display: flex; flex-wrap: wrap; gap: var(--sp-4); justify-content: center;
   li { flex: 0 0 12.75rem; width: 12.75rem; }
 }
-@keyframes piano-skeleton-shimmer {
+// Row list (tracks / lectures / drills): a leading thumb + two text lines.
+.piano-skeleton-list {
+  list-style: none; margin: 0; padding: 0;
+  display: flex; flex-direction: column; gap: var(--sp-3);
+}
+.piano-skeleton-row {
+  display: flex; align-items: center; gap: var(--sp-3);
+  &__thumb { flex: 0 0 auto; width: 3rem; height: 3rem; border-radius: var(--r-sm); }
+  &__lines { flex: 1 1 auto; display: flex; flex-direction: column; gap: var(--sp-2); }
+  &__line { height: 0.9rem; border-radius: var(--r-sm); }
+  &__line--short { width: 55%; }
+}
+@keyframes piano-skeleton-sweep {
   from { background-position: 100% 0; }
   to   { background-position: -100% 0; }
 }
 @media (prefers-reduced-motion: reduce) {
   .piano-skeleton.is-shimmer { animation: none; background: var(--piano-surface-2); }
+}
+
+// ── Studio recording review (keep/discard a stopped take) ────────────────────
+.piano-studio-review {
+  position: fixed; inset: 0; z-index: 60; display: flex; align-items: center; justify-content: center;
+  &__scrim { position: absolute; inset: 0; background: rgba(0, 0, 0, 0.55); }
+  &__card {
+    position: relative; width: min(22rem, 90vw); background: var(--piano-surface);
+    border: 1px solid var(--piano-border); border-radius: var(--r-lg);
+    padding: var(--sp-6) var(--sp-5); text-align: center; box-shadow: 0 12px 40px rgba(0, 0, 0, 0.45);
+  }
+  &__title { margin: 0 0 var(--sp-2); font-size: var(--t-title); font-weight: 700; }
+  &__meta { margin: 0 0 var(--sp-5); color: var(--piano-muted); font-variant-numeric: tabular-nums; }
+  &__actions { display: flex; gap: var(--sp-3); }
+  &__discard, &__save {
+    flex: 1 1 0; min-height: 48px; border-radius: var(--r-pill); font: inherit; font-weight: 700;
+    font-size: 1.05rem; cursor: pointer;
+  }
+  &__discard { background: var(--piano-surface-2); color: var(--piano-fg); border: 1px solid var(--piano-border); }
+  &__save { background: var(--piano-accent); color: var(--piano-accent-ink); border: none; }
 }

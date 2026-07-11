@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
 import { usePianoSound } from './PianoSoundContext.jsx';
+import { instrumentEmoji } from './instrumentIcon.js';
 
 /**
  * Keyboard panel (Settings → Keyboard) — drives the onboard hardware over MIDI:
@@ -24,7 +25,7 @@ export default function PianoKeyboardPanel() {
     <div className="piano-kbd">
       <div className="piano-kbd__voicebar">
         <select className="piano-kbd__family" value={family} onChange={(e) => setFamily(e.target.value)} aria-label="Voice family">
-          {groups.map((g) => <option key={g.group} value={g.group}>{g.group}</option>)}
+          {groups.map((g) => <option key={g.group} value={g.group}>{instrumentEmoji(g.group)} {g.group}</option>)}
         </select>
         <span className="piano-kbd__active">{deviceVoice ? `${String(deviceVoice.no).padStart(3, '0')} ${deviceVoice.name}` : ''}</span>
       </div>
@@ -38,7 +39,7 @@ export default function PianoKeyboardPanel() {
               aria-pressed={v.no === deviceVoice?.no}
               onClick={() => selectVoice(v)}
             >
-              {v.name}
+              <span aria-hidden="true">{instrumentEmoji(v.name)}</span> {v.name}
             </button>
           </li>
         ))}

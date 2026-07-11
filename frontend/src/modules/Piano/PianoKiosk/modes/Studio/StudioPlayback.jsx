@@ -12,6 +12,7 @@ import { usePianoUser } from '../../PianoUserContext.jsx';
 import { usePianoBreadcrumb } from '../../PianoBreadcrumbContext.jsx';
 import { useStudioPlayback } from './useStudioPlayback.js';
 import Icon from '../../icons/Icon.jsx';
+import { SkeletonStage } from '../../Skeleton.jsx';
 
 const SPEEDS = [0.5, 1, 1.5];
 function mmss(ms) {
@@ -160,7 +161,7 @@ export default function StudioPlayback() {
 
   const exit = useCallback(() => { pb.stop(); navigate('..', { relative: 'path' }); }, [pb, navigate]);
 
-  if (take === undefined) return <div className="piano-mode piano-mode--studio piano-playback"><p className="piano-mode__placeholder">Loading…</p></div>;
+  if (take === undefined) return <div className="piano-mode piano-mode--studio piano-playback"><SkeletonStage /></div>;
   if (take === null) return <div className="piano-mode piano-mode--studio piano-playback"><p className="piano-mode__placeholder">This take could not be loaded.</p></div>;
 
   return (

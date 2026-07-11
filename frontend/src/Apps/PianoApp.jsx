@@ -3,6 +3,8 @@ import { Routes, Route, useNavigate, useLocation, useParams } from 'react-router
 import useDocumentTitle from '../hooks/useDocumentTitle.js';
 import getLogger from '../lib/logging/Logger.js';
 import { launchAndroidTarget } from '../lib/fkb.js';
+import { DaylightAPI } from '../lib/api.mjs';
+import Icon from '../modules/Piano/PianoKiosk/icons/Icon.jsx';
 import {
   PianoConfigProvider,
   ActivePianoProvider,
@@ -73,6 +75,23 @@ export function ConnectGate({ children }) {
     setScreenError(res?.ok === false ? screenOffFailureMessage(res) : null);
   }, { armMs: 3000 });
 
+  // Reboot the tablet (2-tap arm — a reboot is disruptive and this gate is the
+  // one surface with no piano to un-brick from). Backend does it over ADB.
+  const deviceId = config.screensaver?.deviceId;
+  const { armed: rebootArmed, trigger: triggerReboot } = useArmedAction(() => {
+    if (!deviceId) return;
+    DaylightAPI(`api/v1/device/${deviceId}/reboot`, {}, 'POST').catch(() => {});
+  }, { armMs: 3000 });
+
+  // Auto-retry the connect while no piano is found: once it's paired over
+  // Bluetooth the gate advances on its own, so there's no manual "Connect"
+  // button (a successful connect auto-advances — the button was dead weight).
+  useEffect(() => {
+    if (status !== 'no-input') return undefined;
+    const t = setInterval(() => connect(), 5000);
+    return () => clearInterval(t);
+  }, [status, connect]);
+
   // Auto-clear the transient failure note.
   useEffect(() => {
     if (!screenError) return undefined;
@@ -97,43 +116,49 @@ export function ConnectGate({ children }) {
         {/* Status line doubles as the transient screen-off failure surface. */}
         <p className="piano-connect-gate__status" role="status" aria-live="polite">{screenError || message}</p>
 
+        {/* Primary choices as clear buttons (no dead "Connect" button — a good
+            connection auto-advances; a missing piano auto-retries above). */}
         <div className="piano-connect-gate__actions">
-          {status !== 'unsupported' && (
-            <button type="button" className="piano-connect-gate__btn piano-connect-gate__btn--primary" onClick={connect}>
-              Connect piano
-            </button>
-          )}
           {config?.bluetooth && (
             <button
               type="button"
               className="piano-connect-gate__btn piano-connect-gate__btn--ghost"
               onClick={() => launchAndroidTarget(config.bluetooth)}
             >
-              Open Bluetooth settings
+              <Icon name="connection" /> Bluetooth settings
             </button>
           )}
           <button
             type="button"
-            className="piano-connect-gate__skip"
+            className="piano-connect-gate__btn piano-connect-gate__btn--ghost"
             onClick={() => setDismissed(true)}
           >
             Continue without piano
           </button>
         </div>
 
-        {/* Device action — burn-in kill switch. This gate can sit lit for a long
-            time waiting on a pairing, so offer a manual screen-off. Separated by
-            a divider because it is a device action, not a connect action. 2-tap
-            arm/confirm guards against an unrecoverable stray-tap blackout. */}
+        {/* Device actions — separated below a divider (not connect actions). Both
+            are 2-tap arm/confirm: on a touch kiosk a stray tap must not blank or
+            reboot the screen. Reboot only when we know the device id. */}
         <div className="piano-connect-gate__device">
           <button
             type="button"
-            className={`piano-connect-gate__screen-off${screenArmed ? ' is-armed' : ''}`}
+            className={`piano-connect-gate__devbtn${screenArmed ? ' is-armed' : ''}`}
             aria-live="polite"
             onClick={triggerScreenOff}
           >
             {screenArmed ? 'Tap again to confirm' : 'Turn off screen'}
           </button>
+          {deviceId && (
+            <button
+              type="button"
+              className={`piano-connect-gate__devbtn${rebootArmed ? ' is-armed' : ''}`}
+              aria-live="polite"
+              onClick={triggerReboot}
+            >
+              <Icon name="repeat" /> {rebootArmed ? 'Tap again to reboot' : 'Reboot device'}
+            </button>
+          )}
         </div>
       </div>
     </div>

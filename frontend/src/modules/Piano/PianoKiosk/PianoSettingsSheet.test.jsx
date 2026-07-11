@@ -2,14 +2,16 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, act } from '@testing-library/react';
 
 const turnOffScreen = vi.fn();
+const connect = vi.hoisted(() => vi.fn(() => Promise.resolve()));
+const resync = vi.hoisted(() => vi.fn());
 
 vi.mock('./PianoMidiContext.jsx', () => ({
-  usePianoMidi: () => ({ connected: false, inputName: null, status: 'no-input', connect: vi.fn() }),
+  usePianoMidi: () => ({ connected: false, inputName: null, status: 'no-input', connect }),
 }));
 vi.mock('./PianoSoundContext.jsx', () => ({
   usePianoSound: () => ({
     sources: [], activeId: null, active: null, select: vi.fn(),
-    gainDb: 0, reverbMix: 0, setGain: vi.fn(), setReverb: vi.fn(),
+    gainDb: 0, reverbMix: 0, setGain: vi.fn(), setReverb: vi.fn(), resync,
     hasInstruments: false, bridgeLink: null, device: null,
   }),
 }));
@@ -33,8 +35,26 @@ function openMidiTab() {
   fireEvent.click(screen.getByRole('tab', { name: 'MIDI' }));
 }
 
-beforeEach(() => { turnOffScreen.mockReset(); vi.useFakeTimers(); });
+beforeEach(() => { turnOffScreen.mockReset(); connect.mockClear(); resync.mockClear(); vi.useFakeTimers(); });
 afterEach(() => { vi.runOnlyPendingTimers(); vi.useRealTimers(); });
+
+describe('PianoSettingsSheet — restart audio subsystem', () => {
+  it('reconnects MIDI and resyncs sound in one action (#5b)', async () => {
+    render(<PianoSettingsSheet open onClose={vi.fn()} />);
+    fireEvent.click(screen.getByRole('button', { name: /Restart audio/i }));
+    await act(async () => {}); // flush the awaited connect() before resync()
+    expect(connect).toHaveBeenCalledTimes(1);
+    expect(resync).toHaveBeenCalledTimes(1);
+  });
+
+  it('still resyncs sound even if the MIDI reconnect rejects', async () => {
+    connect.mockRejectedValueOnce(new Error('no BLE'));
+    render(<PianoSettingsSheet open onClose={vi.fn()} />);
+    fireEvent.click(screen.getByRole('button', { name: /Restart audio/i }));
+    await act(async () => {});
+    expect(resync).toHaveBeenCalledTimes(1);
+  });
+});
 
 describe('PianoSettingsSheet — screen-off action', () => {
   it('shows a turn-off-screen action under the MIDI tab', () => {

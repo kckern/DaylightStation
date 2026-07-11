@@ -15,6 +15,7 @@ import { useKeepScreenAwake } from '../../usePianoScreensaver.jsx';
 import { usePianoUser } from '../../PianoUserContext.jsx';
 import useReloadGuard from '../../useReloadGuard.js';
 import Icon from '../../icons/Icon.jsx';
+import { SkeletonStage } from '../../Skeleton.jsx';
 
 // Player is heavy — code-split it so the menu/other modes don't pay for it.
 const Player = lazy(() => import('../../../../Player/Player.jsx'));
@@ -71,7 +72,7 @@ export default function SingalongPlayer({ lecture, source, onBack }) {
   // Memoize the heavy Player element so timeupdate ticks don't recreate (remount) it.
   const playerEl = useMemo(() => (
     <PlayerBoundary onBack={onBack}>
-      <Suspense fallback={<div className="piano-mode__placeholder">Loading…</div>}>
+      <Suspense fallback={<SkeletonStage />}>
         <Player ref={playerRef} play={{ contentId, shader: 'focused' }} clear={onBack} />
       </Suspense>
     </PlayerBoundary>

@@ -7,6 +7,7 @@ import { usePianoKioskConfig } from '../../PianoConfig.jsx';
 import LiveKeyboard from '../../LiveKeyboard.jsx';
 import { AbcRenderer, generateMelodyAbc, expandDrill, handMidiSequence } from '../../../../MusicNotation/index.js';
 import { computeTargetScrollLeft } from './lessonScroll.js';
+import { SkeletonStage } from '../../Skeleton.jsx';
 
 /** Render a drill's tempo object as text, whatever shape it takes. */
 function tempoText(tempo) {
@@ -189,7 +190,7 @@ export default function LessonDrill({ collection, drillId }) {
     });
   }, [rhSeq, subscribe, flashWrong]);
 
-  if (drill === undefined) return <div className="piano-mode piano-mode--lessons"><p className="piano-mode__placeholder">Loading…</p></div>;
+  if (drill === undefined) return <div className="piano-mode piano-mode--lessons"><SkeletonStage /></div>;
   if (drill === null) return <div className="piano-mode piano-mode--lessons"><p className="piano-mode__placeholder">This drill could not be loaded.</p></div>;
 
   const done = rhSeq.length > 0 && step >= rhSeq.length;

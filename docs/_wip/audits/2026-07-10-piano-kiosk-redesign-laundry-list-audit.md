@@ -1,8 +1,14 @@
 # Piano Kiosk — Redesign Laundry List (Triaged)
 
 **Date:** 2026-07-10
-**Status:** **Triaged** against the deployed tree (post-pull, HEAD `5a2a9ad6e`). Sequenced
-into waves, foundation-first. Ready to start Wave 0 as a spec → plan cycle.
+**Status:** **Implemented.** Waves 0/0b/1/2 built on `feat/piano-backlog-completion`.
+Everything code-completable is DONE, unit-tested (Piano suite green), and `vite build` clean.
+Two items (**#9 staff, #10 course-video/chord-panel**) are **VISUAL-BLOCKED** — the dev server
+is down, and they're visual-diagnosis fixes I won't guess at blind (risk of regressing the very
+surfaces in question). A batch of **visual confirmations is pending** an on-device pass (Games
+centering, home 5×2, connect-gate layout, skeletons, bigger home button, instrument icons, no
+stray tap-focus rings, Settings inputs selectable) — automated checks pass, but these were never
+eyeballed because the server was down this session.
 **Source:** Verbal walkthrough of everything that feels wrong across the piano kiosk,
 then a code + screenshot audit of what still holds.
 
@@ -26,19 +32,20 @@ screenshot to confirm).
 | 2 | Main menu tiles | **DONE** | — | — |
 | 8 | Poster grids | **OUTDATED→SMALL** | forced 6→3+3 rebalance + ~12 cap (centering already done) | S / optional |
 | 5 | Settings menu | **OUTDATED→SMALL** | subsystem restart (5b); instrument picker extraction (→#12) | S |
-| 11 | Studio recording | **OUTDATED→SMALL** | explicit arm step + review→save/discard (recorder + list already exist) | M |
+| 11 | Studio recording | **✅ DONE** (`c325b0f30`) | `StudioReviewPrompt` keep/discard replaces auto-save-on-stop | — |
 | F1 | Touch-reset base styles | **✅ DONE** (Wave 0) | consolidated base-reset; `user-select` killed globally + text-field escape hatch | — |
 | F3 | Balanced/count-aware grid | **✅ DONE** (Wave 0) | `balancedColumns` helper + `--tile-cols`; menu/games centered | — |
-| F4 | Skeleton loaders | **◑ PRIMITIVE DONE** (Wave 0) | `Skeleton`/`SkeletonPoster` shipped + course-wall proof; per-surface rollout → Wave 0b | M (0b) |
+| F4 | Skeleton loaders | **✅ DONE** (Wave 0+0b) | primitive (Grid/List/Stage) + course-wall proof + ~15 surfaces routed | — |
 | F5 | Spacing scale | **✅ DONE** (Wave 0) | `--sp-*` scale added + adopted in tile grid/mode padding | — |
-| 1 | Connect / first-load gate | **REAL** | remove dead Connect btn, promote Continue, add Reboot, BT icon, tile layout | M |
+| 1 | Connect / first-load gate | **✅ DONE** (`0d2538a2e`) | dead Connect btn removed + auto-retry; Reboot btn; BT/Continue real buttons w/ icons | — |
 | 3 | Games submenu | **✅ DONE** (Wave 0) | fixed by the count-aware grid (F3); 4 tiles now centered | — |
 | 6 | Who's-playing turn-off | **✅ DONE** (`d22cf7596`) | shared `usePianoScreenOff`; chip switcher now always shows it | — |
-| 12 | Instrument picker | **REAL** | own UX/lifecycle + icons; today a text grid in Settings | M |
-| 4 | Loaders everywhere | **◑ IN PROGRESS** | skeleton primitive + course wall done (Wave 0); ~8 inline `"Loading…"` bypasses → Wave 0b | M (0b) |
-| 7 | Header home button | **UNVERIFIED (minor)** | looks acceptable in shots; only if it bugs us | S |
-| 9 | Staff cutoff / centering | **UNVERIFIED** | `overflow:hidden` present; needs a populated staff to confirm | M |
-| 10 | Course video spacing / chord panel | **UNVERIFIED (partial)** | CHORD panel looks tacked-on; video spacing needs a course shot | S–M |
+| 12 | Instrument picker | **◑ ICONS DONE** (`1f15c7732`) | `instrumentEmoji` glyphs on voice cards + keyboard voices/families; standalone route deferred | M (route) |
+| 4 | Loaders everywhere | **✅ DONE** (Wave 0b) | ~15 loading surfaces routed to shaped skeletons; error/empty kept as text | — |
+| 5b | Settings subsystem restart | **✅ DONE** (`183b47b66`) | `resync()` + "Restart audio & MIDI" (reconnect MIDI + re-assert voice/fx) | — |
+| 7 | Header home button | **✅ DONE** (`183b47b66`) | font 1.5→2.5rem, padding trimmed — near-fills header (visual confirm pending) | — |
+| 9 | Staff cutoff / centering | **⛔ VISUAL-BLOCKED** | dev server down — can't verify. Culprits: `.current-chord-staff-wrapper`/`.action-staff` `overflow:hidden` (cutoff); ChordStaffRenderer note x-position (flush-left). Needs a populated-staff screenshot before a safe fix. | M |
+| 10 | Course video spacing / chord panel | **⛔ VISUAL-BLOCKED** | dev server down. CHORD panel positioning in `StudioTopPane`/`TheoryPanel`; video spacing in `PianoVideoPlayer`/`PianoVideoChrome`. Needs course-video + Studio screenshots. | S–M |
 
 ---
 

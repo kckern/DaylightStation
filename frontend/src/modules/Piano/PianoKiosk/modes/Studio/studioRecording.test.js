@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { toTakeEvent, takeDuration, closeOpenNotes } from './studioRecording.js';
+import { toTakeEvent, takeDuration, noteOnCount, closeOpenNotes } from './studioRecording.js';
 
 describe('toTakeEvent', () => {
   it('rebases absolute time to a relative offset', () => {
@@ -20,6 +20,18 @@ describe('takeDuration', () => {
   });
   it('is 0 for an empty take', () => {
     expect(takeDuration([])).toBe(0);
+  });
+});
+
+describe('noteOnCount', () => {
+  it('counts only note_on events', () => {
+    expect(noteOnCount([
+      { type: 'note_on', note: 60 }, { type: 'note_off', note: 60 },
+      { type: 'note_on', note: 64 }, { type: 'note_off', note: 64 },
+    ])).toBe(2);
+  });
+  it('is 0 for an empty take', () => {
+    expect(noteOnCount([])).toBe(0);
   });
 });
 

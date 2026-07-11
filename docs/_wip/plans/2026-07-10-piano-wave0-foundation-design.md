@@ -1,9 +1,10 @@
 # Piano Kiosk — Wave 0 Foundation (Design)
 
 **Date:** 2026-07-10
-**Status:** **Implemented** (Wave 0) on `feat/piano-wave0-foundation`. F5/F1/F3 + skeleton
-primitive + course-wall proof shipped; #3 fixed. **Wave 0b pending** (per-surface skeleton
-rollout + inline `"Loading…"` de-bypass).
+**Status:** **Implemented + Wave 0b done.** Wave 0 (F5/F1/F3 + skeleton primitive + course-wall
+proof; #3 fixed) merged to main. Wave 0b (per-surface skeleton rollout — ~15 loading surfaces
+routed to `SkeletonGrid`/`SkeletonList`/`SkeletonStage`, error/empty kept as text) on
+`feat/piano-backlog-completion`.
 **Parent:** `docs/_wip/audits/2026-07-10-piano-kiosk-redesign-laundry-list-audit.md` (triage +
 sequencing). This is the first build cycle from that backlog.
 
