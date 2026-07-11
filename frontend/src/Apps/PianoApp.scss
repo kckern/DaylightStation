@@ -2611,6 +2611,9 @@
 }
 
 // ── Skeleton loaders ─────────────────────────────────────────────────────────
+// (Own keyframe name `piano-skeleton-sweep` — the older `piano-skeleton-shimmer`
+// above at the CourseDetail episode skeleton is tuned to a 200% sweep; don't
+// collide with it.)
 .piano-skeleton {
   background: var(--piano-surface-2);
   border-radius: var(--r-sm);
@@ -2618,16 +2621,32 @@
   &.is-shimmer {
     background: linear-gradient(90deg, var(--piano-surface) 25%, var(--piano-surface-2) 37%, var(--piano-surface) 63%);
     background-size: 400% 100%;
-    animation: piano-skeleton-shimmer 1.4s ease infinite;
+    animation: piano-skeleton-sweep 1.4s ease infinite;
   }
 }
 .piano-skeleton--poster { aspect-ratio: 2 / 3; border-radius: var(--r-sm); }
+.piano-skeleton--square { aspect-ratio: 1 / 1; border-radius: var(--r-sm); }
+.piano-skeleton--stage {
+  width: 100%; min-height: 12rem; flex: 1 1 auto; border-radius: var(--r-md);
+}
 .piano-skeleton-grid {
   list-style: none; margin: 0; padding: 0;
   display: flex; flex-wrap: wrap; gap: var(--sp-4); justify-content: center;
   li { flex: 0 0 12.75rem; width: 12.75rem; }
 }
-@keyframes piano-skeleton-shimmer {
+// Row list (tracks / lectures / drills): a leading thumb + two text lines.
+.piano-skeleton-list {
+  list-style: none; margin: 0; padding: 0;
+  display: flex; flex-direction: column; gap: var(--sp-3);
+}
+.piano-skeleton-row {
+  display: flex; align-items: center; gap: var(--sp-3);
+  &__thumb { flex: 0 0 auto; width: 3rem; height: 3rem; border-radius: var(--r-sm); }
+  &__lines { flex: 1 1 auto; display: flex; flex-direction: column; gap: var(--sp-2); }
+  &__line { height: 0.9rem; border-radius: var(--r-sm); }
+  &__line--short { width: 55%; }
+}
+@keyframes piano-skeleton-sweep {
   from { background-position: 100% 0; }
   to   { background-position: -100% 0; }
 }
