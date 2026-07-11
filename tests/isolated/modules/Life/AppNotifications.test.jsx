@@ -142,6 +142,31 @@ describe('useAppNotifications', () => {
     expect(screen.queryByTestId('notification-action')).toBeNull();
   });
 
+  it('falls back to a non-clickable toast when the action url is a non-http(s) scheme', async () => {
+    const assignSpy = vi.fn();
+    const originalAssign = window.location.assign;
+    // happy-dom exposes location.assign; stub it so we can prove it is never called.
+    window.location.assign = assignSpy;
+    try {
+      renderHarness('test-user');
+      emit(frame({
+        title: 'XSS attempt',
+        body: 'still shows',
+        actions: [{ label: 'Open', action: 'navigate', data: { url: 'javascript:alert(1)' } }],
+      }));
+
+      await waitFor(() => {
+        expect(screen.getByText('XSS attempt')).toBeInTheDocument();
+      });
+      // Body still rendered, but the dangerous scheme produced no clickable element.
+      expect(screen.getByText('still shows')).toBeInTheDocument();
+      expect(screen.queryByTestId('notification-action')).toBeNull();
+      expect(assignSpy).not.toHaveBeenCalled();
+    } finally {
+      window.location.assign = originalAssign;
+    }
+  });
+
   it('does not render the same intent twice when the socket redelivers', async () => {
     renderHarness('test-user');
     const f = frame({ title: 'Dedupe me', createdAt: '2026-07-10T12:00:00Z', metadata: { id: 'evt-1' } });
