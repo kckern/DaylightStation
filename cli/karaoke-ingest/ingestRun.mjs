@@ -20,6 +20,7 @@ export async function runIngest({ rows, config, deps, options = {} }) {
     });
     const finalPath = path.join(config.mediaDir, filename);
     if (!options.force && (await fileExists(finalPath))) { row.status = 'downloaded'; summary.skipped++; continue; }
+    processed++;
 
     // Choose the video.
     let videoId, videoUrl, chosenTitle, chosenChannel;
@@ -40,7 +41,6 @@ export async function runIngest({ rows, config, deps, options = {} }) {
       chosenTitle = best.title; chosenChannel = best.channel;
     }
 
-    processed++;
     summary.planned.push({ row, filename, videoId, chosenTitle, chosenChannel });
     if (options.dryRun) { log(`PLAN ${filename}  <=  ${chosenTitle} [${chosenChannel}] (${videoId})`); continue; }
 
