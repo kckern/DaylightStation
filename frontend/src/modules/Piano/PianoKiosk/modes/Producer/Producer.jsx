@@ -59,6 +59,7 @@ import { usePianoKioskConfig } from '../../PianoConfig.jsx';
 import { PianoKeyboard } from '../../../components/PianoKeyboard.jsx';
 import { useKeepScreenAwake } from '../../usePianoScreensaver.jsx';
 import PianoEmpty from '../../PianoEmpty.jsx';
+import { SkeletonList } from '../../Skeleton.jsx';
 import { useLoopLibrary } from '../../useLoopLibrary.js';
 import { roleOf } from '@shared-music/layerMatch.mjs';
 import { detectKey } from '../../../../MusicNotation/index.js';
@@ -939,7 +940,7 @@ export function Producer() {
 
   return (
     <section className="piano-mode piano-producer-mode">
-      {lib.loading && <PianoEmpty loading />}
+      {lib.loading && <SkeletonList rows={6} />}
       {lib.error && <PianoEmpty message={`Couldn't load the loop library: ${lib.error}`} />}
 
       {lib.loops && !surfaceOpen && (

@@ -1,6 +1,7 @@
 import { useMemo } from 'react';
 import usePianoList from '../../usePianoList.js';
 import PianoEmpty from '../../PianoEmpty.jsx';
+import { SkeletonGrid } from '../../Skeleton.jsx';
 
 const idOf = (item) => item.id || (item.file ? String(item.file).replace(/\.ya?ml$/, '') : String(item.number ?? ''));
 
@@ -34,7 +35,7 @@ export default function LessonGrid({ collection, onSelect }) {
 
   return (
     <section className="piano-mode piano-mode--lessons lesson-collection">
-      {loading && <PianoEmpty loading />}
+      {loading && <SkeletonGrid count={8} aspect="square" />}
       {empty && <PianoEmpty message={error || (collection ? 'No drills found.' : 'No lesson collection has been set up yet.')} />}
       {!loading && !empty && (
         <>

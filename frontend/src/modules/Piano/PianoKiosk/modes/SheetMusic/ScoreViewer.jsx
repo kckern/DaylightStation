@@ -2,6 +2,7 @@ import { useMemo, useState, useEffect } from 'react';
 import getLogger from '../../../../../lib/logging/Logger.js';
 import { DaylightAPI } from '../../../../../lib/api.mjs';
 import { usePianoBreadcrumb } from '../../PianoBreadcrumbContext.jsx';
+import { SkeletonStage } from '../../Skeleton.jsx';
 
 const idOf = (raw) => String(raw || '').replace(/^plex:/, '');
 
@@ -40,7 +41,7 @@ export default function ScoreViewer({ score }) {
   return (
     <div className="piano-score-viewer">
       <div className="piano-score-viewer__pages">
-        {pages === null && <p className="piano-mode__placeholder">Loading…</p>}
+        {pages === null && <SkeletonStage />}
         {pages?.length === 0 && <p className="piano-mode__placeholder">This score has no viewable pages.</p>}
         {pages?.map((src, i) => (
           <img key={i} className="piano-score-viewer__page" src={src} alt={`${score?.title || 'Score'} — page ${i + 1}`} />

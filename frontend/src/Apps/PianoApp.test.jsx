@@ -33,7 +33,7 @@ describe('PianoApp', () => {
   it('reveals the mode menu after continuing without a piano', async () => {
     renderApp('/piano');
     fireEvent.click(await screen.findByText(/Continue without piano/i));
-    for (const label of ['Courses', 'Games', 'Lessons', 'Studio']) {
+    for (const label of ['Courses', 'Games', 'Training', 'Studio']) {
       expect(screen.getByText(label)).toBeTruthy();
     }
   });
@@ -41,9 +41,9 @@ describe('PianoApp', () => {
   it('routes directly to a mode (Studio) and mounts it — no /default/ segment', async () => {
     renderApp('/piano/studio');
     fireEvent.click(await screen.findByText(/Continue without piano/i));
-    // Mode headings live in the chrome bar now; assert a Studio-specific element
-    // (the "Saved takes" section) to confirm the mode mounted.
-    expect(screen.getByRole('heading', { name: 'Saved takes' })).toBeTruthy();
+    // Routing lands on the Studio Play tab; assert its Record button (a
+    // Studio-Play-specific control) to confirm the mode mounted.
+    expect(await screen.findByRole('button', { name: /Start recording/i })).toBeTruthy();
   });
 
   it('serves the only piano directly at /piano (no redirect into /piano/default)', async () => {

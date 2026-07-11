@@ -4,6 +4,7 @@ import getLogger from '../../../../../lib/logging/Logger.js';
 import { DaylightAPIText } from '../../../../../lib/api.mjs';
 import { usePianoKioskConfig } from '../../PianoConfig.jsx';
 import PianoEmpty from '../../PianoEmpty.jsx';
+import { SkeletonStage } from '../../Skeleton.jsx';
 import ScoreGrid from './ScoreGrid.jsx';
 import ScoreViewer from './ScoreViewer.jsx';
 import ScorePlayer from './ScorePlayer.jsx';
@@ -111,7 +112,7 @@ function NotationScore({ contentId }) {
     return () => { cancelled = true; };
   }, [localId, logger]);
 
-  if (xml === null) return <PianoEmpty loading />;
+  if (xml === null) return <SkeletonStage />;
   if (xml === '') return <PianoEmpty message="Could not load this score." />;
   return <ScorePlayer score={{ id: contentId, musicXml: xml, fetchMs: fetchMsRef.current }} />;
 }

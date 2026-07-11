@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import usePianoList from '../../usePianoList.js';
 import PianoEmpty from '../../PianoEmpty.jsx';
+import { SkeletonPoster } from '../../Skeleton.jsx';
 import { prefetchOsmd } from '../../../../MusicNotation/renderers/osmdRender.js';
 
 /** Prettify a filename-derived title: "fur-elise-super-easy" → "Fur Elise Super Easy". */
@@ -30,7 +31,7 @@ export default function ScoreGrid({ listPath, onSelect }) {
 
   return (
     <section className="piano-mode piano-mode--sheetmusic">
-      {loading && <PianoEmpty loading />}
+      {loading && <SkeletonPoster count={8} />}
       {!loading && all.length === 0 && (
         <PianoEmpty message={error || (listPath ? 'No scores found.' : 'No sheet music has been set up yet.')} />
       )}

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import getLogger from '../../../lib/logging/Logger.js';
 import { usePianoMidi } from './PianoMidiContext.jsx';
 import { usePianoSound } from './PianoSoundContext.jsx';
@@ -6,6 +6,7 @@ import { usePianoKioskConfig } from './PianoConfig.jsx';
 import { useScreenControl, screenOffFailureMessage } from './useScreenControl.js';
 import { useArmedAction } from './useArmedAction.js';
 import { launchAndroidTarget } from '../../../lib/fkb.js';
+import { instrumentEmoji } from './instrumentIcon.js';
 import PianoMidiMonitor from './PianoMidiMonitor.jsx';
 import PianoKeyboardPanel from './PianoKeyboardPanel.jsx';
 import FeedbackOverlay from '@/modules/Feedback/FeedbackOverlay.jsx';
@@ -31,7 +32,7 @@ const HW_STATE = {
 export default function PianoSettingsSheet({ open, onClose }) {
   const logger = useMemo(() => getLogger().child({ component: 'piano-settings' }), []);
   const { connected, inputName, status, connect } = usePianoMidi();
-  const { sources, activeId, active, select, gainDb, reverbMix, setGain, setReverb, hasInstruments, bridgeLink, device } = usePianoSound();
+  const { sources, activeId, active, select, gainDb, reverbMix, setGain, setReverb, hasInstruments, bridgeLink, device, resync } = usePianoSound();
   const { config, pianoId } = usePianoKioskConfig();
   const { turnOffScreen } = useScreenControl();
   const bluetooth = config?.bluetooth || null;
@@ -55,6 +56,15 @@ export default function PianoSettingsSheet({ open, onClose }) {
     const t = setTimeout(() => setScreenError(null), 4000);
     return () => clearTimeout(t);
   }, [screenError]);
+
+  // Restart the audio subsystem in one action: reconnect MIDI, then re-assert the
+  // current voice + effects onto the hardware/voice-bridge. Recovers a wedged
+  // piano (silent notes, dropped BLE) without the heavier full-app reload below.
+  const restartAudio = useCallback(async () => {
+    logger.info('piano.settings.restart-audio', {});
+    try { await connect(); } catch (err) { logger.warn('piano.settings.restart-audio.midi-failed', { error: err?.message }); }
+    resync();
+  }, [connect, resync, logger]);
 
   useEffect(() => { if (open) logger.info('piano.settings.open', {}); }, [open, logger]);
 
@@ -97,6 +107,7 @@ export default function PianoSettingsSheet({ open, onClose }) {
               return (
                 <li key={s.id}>
                   <button type="button" className={`piano-voicecard${on ? ' is-active' : ''}`} aria-pressed={on} onClick={() => select(s.id)}>
+                    <span className="piano-voicecard__icon" aria-hidden="true">{instrumentEmoji(s.name)}</span>
                     <span className="piano-voicecard__tag">{s.kind === 'onboard' ? 'Onboard' : engineTag(s.inst?.engine)}</span>
                     <span className="piano-voicecard__name">{s.name}</span>
                   </button>
@@ -193,6 +204,13 @@ export default function PianoSettingsSheet({ open, onClose }) {
 
         {/* ── App ── */}
         <footer className="piano-settings__foot">
+          <button
+            type="button"
+            className="piano-settings__restart"
+            onClick={restartAudio}
+          >
+            <Icon name="repeat" /> Restart audio &amp; MIDI
+          </button>
           <button
             type="button"
             className="piano-settings__reload"

@@ -3,6 +3,7 @@ import getLogger from '../../../../../lib/logging/Logger.js';
 import { DaylightAPI } from '../../../../../lib/api.mjs';
 import usePianoList from '../../usePianoList.js';
 import PianoEmpty from '../../PianoEmpty.jsx';
+import { SkeletonGrid } from '../../Skeleton.jsx';
 import CoverFlow from './CoverFlow.jsx';
 import { shuffleOrder } from '../../../../../lib/Player/playlist.js';
 
@@ -77,7 +78,7 @@ export default function AlbumGrid({ music, onSelect }) {
 
   return (
     <section className={`piano-mode piano-mode--music piano-music-flow piano-music-flow--${view}`}>
-      {loading && <PianoEmpty loading />}
+      {loading && <SkeletonGrid count={8} aspect="square" />}
       {!loading && items.length === 0 && <PianoEmpty message={error || (noConfig ? 'No music has been set up yet.' : 'No music found.')} />}
       {!loading && items.length > 0 && (
         <>

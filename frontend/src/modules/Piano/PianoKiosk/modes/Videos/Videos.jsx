@@ -12,6 +12,7 @@ import { usePianoPlayback } from '../../PianoPlaybackContext.jsx';
 import { lectureContentId } from './lectureMeta.js';
 import { isSubcourseShow } from './subcourses.js';
 import SubcourseNavigator from './SubcourseNavigator.jsx';
+import { SkeletonStage } from '../../Skeleton.jsx';
 
 const idOf = (raw) => String(raw || '').replace(/^plex:/, '');
 
@@ -135,7 +136,7 @@ function LecturePlayerRoute({ PlayerComponent = PianoVideoPlayer }) {
   const { playing } = usePianoPlayback();
   useKeepScreenAwake('video', playing);
 
-  if (lectures === null) return <div className="piano-mode__placeholder">Loading…</div>;
+  if (lectures === null) return <section className="piano-mode piano-mode--videos"><SkeletonStage /></section>;
   if (!lecture) {
     return (
       <div className="piano-mode__placeholder">

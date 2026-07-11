@@ -7,6 +7,7 @@ import { usePianoKioskConfig } from '../../PianoConfig.jsx';
 import { usePianoBreadcrumb } from '../../PianoBreadcrumbContext.jsx';
 import PianoTile from '../../PianoTile.jsx';
 import { balancedColumns } from '../../tileGridLayout.js';
+import { SkeletonStage } from '../../Skeleton.jsx';
 
 // Friendly labels for the registry ids.
 const GAME_LABELS = {
@@ -109,7 +110,7 @@ function GameHost() {
 
   return (
     <div className="piano-game-fullscreen">
-      <Suspense fallback={<div className="piano-mode__placeholder">Loading…</div>}>
+      <Suspense fallback={<SkeletonStage />}>
         <entry.LazyComponent
           activeNotes={activeNotes}
           noteHistory={noteHistory}
