@@ -47,6 +47,11 @@ function splitContentId(contentId) {
 
 const normalizeValue = (v) => v?.replace(/:\s+/g, ':');
 
+// F13: `word:` / `word-word:` followed by only optional whitespace — a source
+// prefix whose term is empty. Distinct from parseSourcePrefix (which returns
+// null both here AND for plain no-colon text), so we detect it explicitly.
+const isBareSourcePrefix = (t) => typeof t === 'string' && /^[\w-]+:\s*$/.test(t);
+
 // Process-lifetime cache of contentId -> human title so the resolved-title
 // line renders instantly for items we've already seen. Exported for tests.
 export const titleCache = new Map();
@@ -212,10 +217,15 @@ export function useContentCombobox({ value, onChange, searchParams = '', appResu
 
   const debouncedSearch = useDebouncedCallback((text) => {
     const mode = supportsSSE() ? 'sse' : 'batch';
-    log.info('search.dispatch', { text, mode });
-    queryRef.current = text;
-    if (supportsSSE()) streamSearch(text);
-    else doBatchSearch(text);
+    // F13: a bare source prefix ("singalong:") has an empty term. Sending the
+    // literal to the backend triggers a full-text search for the string
+    // "singalong:" across all sources (junk). Route it as an empty query —
+    // same as clearing the box. Scoped "source:term" is left untouched.
+    const q = isBareSourcePrefix(text) ? '' : text;
+    log.info('search.dispatch', { text: q, mode });
+    queryRef.current = q;
+    if (supportsSSE()) streamSearch(q);
+    else doBatchSearch(q);
   }, SEARCH_DEBOUNCE_MS);
 
   const handleInput = useCallback((text) => {
