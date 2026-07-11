@@ -109,7 +109,7 @@ export function ContentCombobox({
   const log = useMemo(() => getChildLogger({ component: 'ContentCombobox', app: 'admin', sessionLog: true }), []);
   const {
     state, dispatch,
-    handleInput,
+    handleInput, activeScope, clearScope,
     openWithSiblings, drill, goUp, paginate,
     handleClose, select,
     resolvedTitle, isSearching, pendingSources, sourceErrors, truncatedAt,
@@ -592,6 +592,25 @@ export function ContentCombobox({
                 {breadcrumbs.map((b) => b.title).join(' / ')}
               </Text>
             </Group>
+          </Box>
+        )}
+
+        {/* Source-scope chip (SEARCH mode): a `source:term` query filters the
+            search to one source — surface it, and let the user undo it (F14). */}
+        {activeScope && !isBrowse && (
+          <Box p="xs" data-testid="combobox-scope-chip" style={{ borderBottom: '1px solid var(--mantine-color-dark-4)' }}>
+            <Badge
+              size="sm" variant="light"
+              rightSection={
+                <ActionIcon size="xs" variant="transparent" aria-label="Clear source scope"
+                  data-testid="combobox-scope-clear"
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={(e) => { e.stopPropagation(); clearScope(); }}>
+                  <IconX size={12} />
+                </ActionIcon>
+              }>
+              Searching within {activeScope}
+            </Badge>
           </Box>
         )}
 
