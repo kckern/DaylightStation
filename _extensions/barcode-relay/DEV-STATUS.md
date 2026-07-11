@@ -1,10 +1,13 @@
 # barcode-relay — dev status (WIP, NOT working yet)
 
 **Date:** 2026-07-11 (overnight session)
-**State:** Pivoted from SSI-BLE (proprietary dead end) to **HID-BLE**. The ESP now runs a
-**BLE HID-host** firmware (compiles + flashed) that reads standard keyboard reports and
-assembles the barcode. **Remaining gap = physical only:** switch the gun to HID-BLE mode +
-pull the trigger; then verify/debug the (untested) HID decode path.
+**State:** Pivoted from SSI-BLE (proprietary dead end) to **HID-BLE**. The ESP runs a **BLE
+HID-host** firmware (compiles + flashed) that reads keyboard reports, assembles the barcode,
+and relays it over **WebSocket** to the backend. The **relay half is DEMONSTRATED end-to-end**
+(real WS client → WebSocketEventBus → `barcodeRelay` ingest → `barcode-relay` broadcast, passing
+integration test). **The ONLY unverified link is the physical BLE HID capture** — needs the gun
+switched to HID-BLE mode + a trigger pull (a barcode scan I cannot perform), then a decode/keymap
+verification pass.
 
 ### RESUME for the HID-BLE path (current firmware) ← DO THIS
 1. Scan the **"HID Bluetooth Low Energy (Discoverable)"** host barcode on the gun
