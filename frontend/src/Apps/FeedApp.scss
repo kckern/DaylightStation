@@ -61,3 +61,16 @@
   color: #888;
   font-size: 1.2rem;
 }
+
+// Respect the user's reduced-motion preference across the whole Feed app:
+// skeleton shimmers, slide/opacity dismiss animations, sheet transitions,
+// and scroll-behavior are all neutralized. (F-14, F-24)
+@media (prefers-reduced-motion: reduce) {
+  .feed-app,
+  .feed-app * {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}
