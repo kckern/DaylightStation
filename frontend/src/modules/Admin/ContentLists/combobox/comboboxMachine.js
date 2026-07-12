@@ -89,6 +89,27 @@ export function decideCommit({ reason, search, value, results, highlightIdx, use
   if (reason !== 'enter') return { action: 'revert' };
   // 3. Enter, no explicit pick:
   if (search.trim().length < 2) return { action: 'dismiss' };
+  const q = search.trim();
+  // 3a. An EXACT id match among results is a richer pick than a raw literal:
+  // a leaf selects (carries title/metadata); a container falls through to the
+  // level-choice logic below (stays open so the human picks the lineage level).
+  const exactLeaf = results.find((r) => r.id === q && !isContainer(r));
+  if (exactLeaf) return { action: 'select', item: exactLeaf };
+  const exactContainer = results.some((r) => r.id === q && isContainer(r));
+  // 3b. "Never deny manual entry": a content-id-like string the user typed (a
+  // specific id / path / param, e.g. files:clips/x.mp4 or app:foo/param) commits
+  // as the literal RAW value on Enter — even when partial-match results exist and
+  // even before the search settles. Without this the single-partial-result branch
+  // below would silently pick the WRONG neighbor (typing mirror.mp4 selecting
+  // mothers-day), or a not-yet-settled query (e.g. after drilling in browse mode)
+  // would fall through to 'open' and Enter would feel dead — both read as "my
+  // manual entry was denied." NOT gated on searchSettled on purpose: an exact leaf
+  // already present still wins via 3a, and the hook back-fills the title from the
+  // info API after commit, so committing the raw id loses nothing. Skipped only
+  // for an exact container match, which stays open for lineage-level choice (3a).
+  if (!exactContainer && isContentIdLike(q)) {
+    return { action: 'literal', value: search };
+  }
   if (results.length === 0) {
     return searchSettled ? { action: 'literal', value: search } : { action: 'open' };
   }

@@ -4,6 +4,17 @@
 // scoped to .content-combobox-option so the legacy selectors keep working
 // until both legacy implementations are removed.
 
+// ── Portaled dropdown base color ──
+// Mantine renders Combobox.Dropdown in a portal at document.body, OUTSIDE the
+// admin `.admin` scope that sets `color: var(--ds-text-primary)`. Mantine v7
+// <Text> inherits color, so uncolored header text (the "Current: <value>"
+// orientation row, the last breadcrumb crumb) inherited the body's dark default
+// and rendered dark-on-dark. Pin a bright base here; explicit `c="dimmed"` and
+// the highlight `color: white` rules still override where intended.
+.content-combobox-dropdown {
+  color: var(--ds-text-primary);
+}
+
 // ── Pending-sources strip (ported from ContentSearchCombobox.scss) ──
 
 .pending-sources {
