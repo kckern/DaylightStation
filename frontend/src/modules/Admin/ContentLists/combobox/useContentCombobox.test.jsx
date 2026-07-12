@@ -509,6 +509,101 @@ describe('useContentCombobox', () => {
     expect(infoCalls()).toBe(1); // cache hit — no second /info fetch
   });
 
+  it('applyBrowseData builds the FULL sanitized ancestor trail when the siblings response carries ancestors', async () => {
+    const RESPONSE_WITH_ANCESTORS = {
+      items: [
+        { id: 'plex:642196', title: 'Ep 32', source: 'plex', type: 'episode' },
+        { id: 'plex:642197', title: 'Elijah the Prophet', source: 'plex', type: 'episode' },
+      ],
+      parent: { id: 'plex:700', title: 'Season 8', source: 'plex' },
+      pagination: null,
+      referenceIndex: 1,
+      ancestors: [
+        // Includes a junk library placeholder AND a duplicate that sanitize must remove.
+        { id: 'library:2', title: 'Library', source: 'plex', localId: '2', type: 'library' },
+        { id: 'plex:900', title: 'The Old Testament', source: 'plex', localId: '900', type: 'collection' },
+        { id: 'plex:800', title: 'The Prophets', source: 'plex', localId: '800', type: 'show' },
+        { id: 'plex:800', title: 'The Prophets DUPE', source: 'plex', localId: '800', type: 'show' },
+        { id: 'plex:700', title: 'Season 8', source: 'plex', localId: '700', type: 'season' },
+      ],
+    };
+    fetchMock.mockImplementation((url) => (
+      url.startsWith('/api/v1/siblings/plex/642197') ? jsonResponse(RESPONSE_WITH_ANCESTORS) : jsonResponse({ items: [] })
+    ));
+    const { result } = setup({ value: 'plex:642197' });
+
+    await openBrowse(result);
+
+    expect(result.current.state.mode).toBe('browse');
+    // Junk library + duplicate removed; full chain root-first with usable localId/source.
+    expect(result.current.state.browse.breadcrumbs).toEqual([
+      expect.objectContaining({ id: 'plex:900', title: 'The Old Testament', source: 'plex', localId: '900' }),
+      expect.objectContaining({ id: 'plex:800', title: 'The Prophets', source: 'plex', localId: '800' }),
+      expect.objectContaining({ id: 'plex:700', title: 'Season 8', source: 'plex', localId: '700' }),
+    ]);
+    expect(result.current.state.highlight.idx).toBe(1); // referenceIndex unchanged
+  });
+
+  it('applyBrowseData falls back to the single parent crumb when the response has NO ancestors (no regression)', async () => {
+    fetchMock.mockImplementation((url) => (
+      url.startsWith('/api/v1/siblings/plex/10') ? jsonResponse(SIBLINGS_RESPONSE) : jsonResponse({ items: [] })
+    ));
+    const { result } = setup({ value: 'plex:10' });
+
+    await openBrowse(result);
+
+    expect(result.current.state.browse.breadcrumbs).toEqual([
+      expect.objectContaining({ id: 'plex:100', title: 'Season 1', source: 'plex', localId: '100' }),
+    ]);
+  });
+
+  it('opening deep with a full ancestor trail lets goUp climb one level per press, dismissing only at the cap', async () => {
+    const DEEP_RESPONSE = {
+      items: [{ id: 'plex:642197', title: 'Elijah the Prophet', source: 'plex', type: 'episode' }],
+      parent: { id: 'plex:700', title: 'Season 8', source: 'plex' },
+      pagination: null,
+      referenceIndex: 0,
+      ancestors: [
+        { id: 'plex:900', title: 'The Old Testament', source: 'plex', localId: '900', type: 'collection' },
+        { id: 'plex:800', title: 'The Prophets', source: 'plex', localId: '800', type: 'show' },
+        { id: 'plex:700', title: 'Season 8', source: 'plex', localId: '700', type: 'season' },
+      ],
+    };
+    fetchMock.mockImplementation((url) => {
+      if (url.startsWith('/api/v1/siblings/plex/642197')) return jsonResponse(DEEP_RESPONSE);
+      // Listing the show → its seasons (Season 8 among them).
+      if (url.startsWith('/api/v1/list/plex/800')) return jsonResponse({ items: [
+        { id: 'plex:600', title: 'Season 7', source: 'plex', itemType: 'container' },
+        { id: 'plex:700', title: 'Season 8', source: 'plex', itemType: 'container' },
+      ] });
+      // Listing the collection → its shows (The Prophets among them).
+      if (url.startsWith('/api/v1/list/plex/900')) return jsonResponse({ items: [
+        { id: 'plex:800', title: 'The Prophets', source: 'plex', itemType: 'container' },
+        { id: 'plex:850', title: 'The Kings', source: 'plex', itemType: 'container' },
+      ] });
+      return jsonResponse({ items: [] });
+    });
+    const { result } = setup({ value: 'plex:642197' });
+    await openBrowse(result);
+    expect(result.current.state.browse.breadcrumbs.map((b) => b.id)).toEqual(['plex:900', 'plex:800', 'plex:700']);
+
+    // ← climbs to the show, listing seasons with Season 8 highlighted.
+    await act(async () => { await result.current.goUp(); });
+    expect(result.current.state.mode).toBe('browse');
+    expect(result.current.state.browse.breadcrumbs.map((b) => b.id)).toEqual(['plex:900', 'plex:800']);
+    expect(result.current.state.browse.items[result.current.state.highlight.idx].id).toBe('plex:700');
+
+    // ← climbs to the collection, listing shows with The Prophets highlighted.
+    await act(async () => { await result.current.goUp(); });
+    expect(result.current.state.browse.breadcrumbs.map((b) => b.id)).toEqual(['plex:900']);
+    expect(result.current.state.browse.items[result.current.state.highlight.idx].id).toBe('plex:800');
+
+    // ← at the cap (single crumb) dismisses to DISPLAY, preserving the committed value.
+    await act(async () => { await result.current.goUp(); });
+    expect(result.current.state.mode).toBe(Modes.DISPLAY);
+    expect(result.current.state.value).toBe('plex:642197');
+  });
+
   it('goUp refetches the parent level and pops the breadcrumb (WENT_UP)', async () => {
     fetchMock.mockImplementation((url) => {
       if (url.startsWith('/api/v1/siblings/plex/10')) return jsonResponse(SIBLINGS_RESPONSE);
