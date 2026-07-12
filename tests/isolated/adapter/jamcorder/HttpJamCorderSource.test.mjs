@@ -14,13 +14,15 @@ const TREE = {
   '/JAMC/other': [],
 };
 
+// The composition root injects `axios` into harvesters: `.post(url, body, config)`
+// and `.get(url, config)`, returning `{ status, data }`, throwing on non-2xx.
 function fakeHttp() {
   return {
-    requestRaw: vi.fn(async (_method, _url, { body }) => {
+    post: vi.fn(async (_url, body, _config) => {
       const files = TREE[body.filepath] ?? [];
-      return { ok: true, status: 200, data: { dir: body.filepath + '/', files } };
+      return { status: 200, data: { dir: body.filepath + '/', files } };
     }),
-    downloadBuffer: vi.fn(async (url) => Buffer.from('MID:' + url)),
+    get: vi.fn(async (url, _config) => ({ status: 200, data: Buffer.from('MID:' + url) })),
   };
 }
 const silent = { info() {}, warn() {}, error() {}, debug() {} };
@@ -35,17 +37,17 @@ describe('HttpJamCorderSource', () => {
     ]);
   });
 
-  it('downloads via the /sdcard URL and returns the buffer', async () => {
+  it('downloads via the /sdcard URL (arraybuffer) and returns the buffer', async () => {
     const http = fakeHttp();
     const src = new HttpJamCorderSource({ httpClient: http, host: '10.0.0.244', logger: silent });
     const buf = await src.download({ listPath: '/JAMC/2026/s1/A.mid', downloadPath: '/sdcard/JAMC/2026/s1/A.mid' });
-    expect(http.downloadBuffer).toHaveBeenCalledWith('http://10.0.0.244/sdcard/JAMC/2026/s1/A.mid');
+    expect(http.get).toHaveBeenCalledWith('http://10.0.0.244/sdcard/JAMC/2026/s1/A.mid', { responseType: 'arraybuffer' });
     expect(buf.toString()).toBe('MID:http://10.0.0.244/sdcard/JAMC/2026/s1/A.mid');
   });
 
-  it('throws when a directory listing is not ok (surfaced to the use case)', async () => {
+  it('propagates a listing failure (axios throws on non-2xx/offline) to the use case', async () => {
     const http = fakeHttp();
-    http.requestRaw = vi.fn(async () => ({ ok: false, status: 500, data: null }));
+    http.post = vi.fn(async () => { throw new Error('Request failed with status code 500'); });
     const src = new HttpJamCorderSource({ httpClient: http, host: '10.0.0.244', logger: silent });
     await expect(src.listRecordings()).rejects.toThrow();
   });
