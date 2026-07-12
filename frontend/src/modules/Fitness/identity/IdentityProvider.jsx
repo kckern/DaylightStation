@@ -230,6 +230,7 @@ export function IdentityProvider({ children }) {
     commit: emergency.commit,
     abort: emergency.abort,
     release: emergency.release,
+    dismissCeremony: emergency.dismissCeremony,
     // Unlock sub-API.
     registerUnlock,
     registerIdentify,
@@ -240,7 +241,7 @@ export function IdentityProvider({ children }) {
     unlockedUser,
   }), [
     emergency.phase, emergency.lockedUntil, emergency.lockedBy,
-    emergency.commit, emergency.abort, emergency.release,
+    emergency.commit, emergency.abort, emergency.release, emergency.dismissCeremony,
     registerUnlock, registerIdentify, registerAdmin, clearUnlock, activeLock, unlockState, unlockedUser,
   ]);
 

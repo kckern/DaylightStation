@@ -750,12 +750,6 @@ const FitnessApp = () => {
     return !!getModuleManifest(activeModule.id)?.fullscreen;
   }, [currentView, activeModule]);
 
-  // Powerdown audio for the emergency-lockdown ceremony (config-driven).
-  const emergencyAudioPath = useMemo(() => {
-    const root = fitnessConfiguration?.fitness || fitnessConfiguration || {};
-    return root?.emergency?.audio || 'apps/fitness/ux/powerdown.mp3';
-  }, [fitnessConfiguration]);
-
   // Reactive day-of-week — updates itself at local midnight WITHOUT a reload, so
   // day-gated nav items re-evaluate live on a long-running kiosk session.
   const dayOfWeek = useDayOfWeek();
@@ -1358,7 +1352,7 @@ const FitnessApp = () => {
               userId={primaryUserId}
             />
           )}
-          <EmergencyLockdownOverlay audioPath={emergencyAudioPath} />
+          <EmergencyLockdownOverlay />
           <MenuMusicController
             isActive={menuMusicActive}
             trackChangeKey={menuMusicTrackKey}

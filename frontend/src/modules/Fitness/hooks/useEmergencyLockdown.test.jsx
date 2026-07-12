@@ -73,6 +73,31 @@ describe('useEmergencyLockdown', () => {
     expect(result.current.phase).toBe('triggering');
   });
 
+  it('dismissCeremony() returns triggering → normal locally without any HTTP call', async () => {
+    // Fail-safe default: the ceremony is local-only frontend state (nothing is
+    // committed server-side until commit()), so dismissing it must NOT hit the
+    // server — an accidental trigger self-heals with a bare local transition.
+    DaylightAPI.mockResolvedValue({ locked: false });
+    const { result } = renderHook(() => useEmergencyLockdown());
+    await waitFor(() => expect(DaylightAPI).toHaveBeenCalledTimes(1)); // mount GET
+    act(() => { result.current.triggerCeremony(); });
+    expect(result.current.phase).toBe('triggering');
+
+    DaylightAPI.mockClear();
+    act(() => { result.current.dismissCeremony(); });
+    expect(result.current.phase).toBe('normal');
+    expect(DaylightAPI).not.toHaveBeenCalled();
+  });
+
+  it('dismissCeremony() is a no-op from the locked phase (only cancels a pending ceremony)', async () => {
+    const future = Math.floor(Date.now() / 1000) + 1800;
+    DaylightAPI.mockResolvedValue({ locked: true, lockedUntil: future, lockedBy: 'test-user' });
+    const { result } = renderHook(() => useEmergencyLockdown());
+    await waitFor(() => expect(result.current.phase).toBe('locked'));
+    act(() => { result.current.dismissCeremony(); });
+    expect(result.current.phase).toBe('locked');
+  });
+
   it('a fitness.emergency.ceremony broadcast starts the ceremony (normal → triggering)', async () => {
     DaylightAPI.mockResolvedValue({ locked: false });
     const { result } = renderHook(() => useEmergencyLockdown());

@@ -104,20 +104,46 @@
   animation: emergency-blink 1s steps(2, start) infinite;
 }
 
-// Thin progress bar bound to audio currentTime/duration.
-.emergency-progress {
-  width: clamp(220px, 40vw, 540px);
-  height: 6px;
-  border-radius: 999px;
-  background: rgba(255, 26, 26, 0.18);
+// Press-and-hold confirm target. A red fill sweeps across while held; completing
+// the sweep (HOLD_MS) commits the shutdown. Releasing early snaps the fill back
+// and the ceremony resumes its idle auto-cancel — nothing is committed.
+.emergency-confirm {
+  position: relative;
   overflow: hidden;
+  width: clamp(240px, 42vw, 560px);
+  height: clamp(56px, 9vh, 88px);
+  font-family: inherit;
+  border-radius: 999px;
+  background: rgba(255, 26, 26, 0.12);
+  border: 2px solid rgba(255, 26, 26, 0.7);
+  box-shadow: 0 0 24px rgba(255, 26, 26, 0.35);
+  cursor: pointer;
+  touch-action: none; // let pointer hold drive it, not scroll
 }
 
-.emergency-progress__fill {
-  height: 100%;
+.emergency-confirm__fill {
+  position: absolute;
+  inset: 0;
+  width: 0;
   background: #ff1a1a;
-  box-shadow: 0 0 12px #ff1a1a;
-  transition: width 0.1s linear;
+  box-shadow: 0 0 20px #ff1a1a;
+  transition: width 0s linear; // duration set inline from HOLD_MS
+}
+
+// Sweep the fill while held; releasing removes the class and it snaps back.
+.emergency-confirm--holding .emergency-confirm__fill {
+  width: 100%;
+}
+
+.emergency-confirm__label {
+  position: relative;
+  z-index: 1;
+  font-size: clamp(1rem, 2.6vw, 1.6rem);
+  font-weight: 700;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: #fff;
+  text-shadow: 0 0 10px rgba(0, 0, 0, 0.6);
 }
 
 // Low-contrast cancel affordance, bottom area.
