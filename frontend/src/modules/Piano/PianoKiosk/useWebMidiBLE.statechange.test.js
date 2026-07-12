@@ -42,6 +42,34 @@ describe('useWebMidiBLE onstatechange', () => {
     expect(input.binds).toBe(1); // still bound exactly once — no churn
   });
 
+  it('re-arms the input after a reconnect statechange burst (re-establishes native delivery)', async () => {
+    vi.useFakeTimers();
+    try {
+      const { access, input } = mockAccess();
+      const { result } = renderHook(() => useWebMidiBLE({}));
+
+      await act(async () => { await result.current.connect(); });
+      expect(input.binds).toBe(1); // bound once on connect
+
+      // A BLE reconnect: the SAME input object persists in access.inputs and
+      // Chromium leaves onmidimessage pointing at our handler, yet native message
+      // delivery was severed by the flap. A storm of statechange events fires.
+      // The debounced rebind MUST force-re-arm the input (not skip it via the
+      // same-object idempotency short-circuit) so notes flow again — otherwise the
+      // input wedges "connected but silent" while the output keeps recovering.
+      await act(async () => {
+        access.onstatechange?.({ port: input });
+        access.onstatechange?.({ port: input });
+        access.onstatechange?.({ port: input });
+      });
+      await act(async () => { await vi.advanceTimersByTimeAsync(250); });
+
+      expect(input.binds).toBe(2); // re-armed exactly once after the burst settled
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('binds a LATE-enumerating output after the debounced statechange burst settles', async () => {
     vi.useFakeTimers();
     try {

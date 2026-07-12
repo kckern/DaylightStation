@@ -200,7 +200,20 @@ export function useWebMidiBLE({ preferredInputName } = {}) {
     return out;
   }, []);
 
-  const bindInput = useCallback((access) => {
+  // Re-arm an input port: clear then re-assign our handler and re-open the port
+  // so a flapped BLE-MIDI input re-subscribes at the NATIVE layer. The null→set
+  // gap is synchronous (JS is single-threaded between these lines) so it can't
+  // drop an inbound message. open() can reject on a mid-flap port — swallow it;
+  // the next statechange / watchdog retries.
+  const armInput = useCallback((input) => {
+    try { input.onmidimessage = null; } catch { /* ignore */ }
+    input.onmidimessage = handleRawMidi;
+    try { const p = input.open?.(); if (p && p.catch) p.catch(() => {}); } catch { /* ignore */ }
+  }, [handleRawMidi]);
+
+  // Bind the input. `force` (a statechange-driven rebind) re-arms the input even
+  // when it's the same object — see the guard below.
+  const bindInput = useCallback((access, { force = false } = {}) => {
     const input = pickInput(access);
     if (!input) {
       inputRef.current = null;
@@ -209,26 +222,31 @@ export function useWebMidiBLE({ preferredInputName } = {}) {
       logger().warn('midi.no-input', {});
       return;
     }
-    // Idempotent for the INPUT: a chattery BLE link fires repeated statechange
-    // events for the same, still-present port; re-binding each one storms
-    // re-renders. But the OUTPUT may have enumerated late (BLE races the input),
-    // so ALWAYS re-check the output before bailing — else a late output never
-    // attaches and every send is a silent no-op ("MIDI OUT flaky").
-    if (inputRef.current === input && input.onmidimessage === handleRawMidi) {
+    // Fast idempotent path for REDUNDANT (non-statechange) calls: same input, our
+    // handler still attached → only re-check the output and bail, so a duplicate
+    // initial bind can't churn. NOT taken on a statechange-driven rebind (force):
+    // a BLE reconnect can sever Chromium's native MIDI delivery while LEAVING
+    // onmidimessage set, so the handler merely *looking* bound is no proof the
+    // port still delivers. On force we re-arm below — the input's analogue of the
+    // OUTPUT watchdog/rebind. Without it the input wedges "connected but silent"
+    // after a flap while the output keeps auto-recovering (the 2026-07-12 input
+    // regression: OUT hardening added recovery to the OUT half of this branch but
+    // left the IN half short-circuiting).
+    if (!force && inputRef.current === input && input.onmidimessage === handleRawMidi) {
       bindOutput(access);
       return;
     }
     if (inputRef.current && inputRef.current !== input) {
       inputRef.current.onmidimessage = null;
     }
-    input.onmidimessage = handleRawMidi;
+    armInput(input);
     inputRef.current = input;
     bindOutput(access);
     setInputName(input.name || input.id);
     setStatus('connected');
     try { localStorage?.setItem(STORAGE_KEY, input.id); } catch { /* ignore */ }
-    logger().info('midi.input-bound', { name: input.name, hasOutput: !!outputRef.current });
-  }, [pickInput, handleRawMidi, bindOutput]);
+    logger().info('midi.input-bound', { name: input.name, forced: force, hasOutput: !!outputRef.current });
+  }, [pickInput, armInput, bindOutput]);
 
   const connect = useCallback(async () => {
     if (typeof navigator === 'undefined' || !navigator.requestMIDIAccess) {
@@ -253,7 +271,9 @@ export function useWebMidiBLE({ preferredInputName } = {}) {
         if (rebindTimerRef.current) clearTimeout(rebindTimerRef.current);
         rebindTimerRef.current = setTimeout(() => {
           rebindTimerRef.current = null;
-          bindInput(access);
+          // force: a statechange means the port (re)connected — re-arm the input's
+          // native subscription, don't trust the surviving onmidimessage property.
+          bindInput(access, { force: true });
         }, 200);
       };
       bindInput(access); // initial bind is synchronous — fast first connect
@@ -289,9 +309,17 @@ export function useWebMidiBLE({ preferredInputName } = {}) {
     if (status !== 'connected') return undefined;
     const t = setInterval(() => {
       if (!outputRef.current && accessRef.current) bindOutput(accessRef.current);
+      // Input insurance: some BLE stacks null onmidimessage on a flap. If our
+      // handler fell off the bound input, re-arm it so input never stays silently
+      // dead between statechange events (the OUTPUT already self-heals here).
+      const inp = inputRef.current;
+      if (inp && inp.onmidimessage !== handleRawMidi) {
+        armInput(inp);
+        logger().info('midi.input-rearmed-watchdog', { name: inp.name });
+      }
     }, 2000);
     return () => clearInterval(t);
-  }, [status, bindOutput]);
+  }, [status, bindOutput, armInput, handleRawMidi]);
 
   // ── Outbound (timbre + studio playback) ──────────────────────────────
   const sendProgramChange = useCallback((program, channel = 0) => {
