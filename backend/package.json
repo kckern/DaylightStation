@@ -52,6 +52,7 @@
     "html-entities": "^2.4.0",
     "http-proxy-middleware": "^2.0.6",
     "image-size": "^2.0.2",
+    "isomorphic-dompurify": "^2.30.0",
     "jimp": "^1.6.0",
     "js-yaml": "^4.1.0",
     "moment-timezone": "^0.6.0",
