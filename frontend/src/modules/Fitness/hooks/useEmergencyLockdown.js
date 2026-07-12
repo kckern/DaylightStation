@@ -49,7 +49,8 @@ function readUrlSeam() {
  *   commit: () => Promise<{locked:boolean}>,
  *   abort: () => Promise<{confirmed:boolean}>,
  *   release: () => Promise<{released:boolean}>,
- *   triggerCeremony: () => void
+ *   triggerCeremony: () => void,
+ *   dismissCeremony: () => void
  * }}
  */
 export function useEmergencyLockdown() {
@@ -87,6 +88,22 @@ export function useEmergencyLockdown() {
       if (prev === PHASE_NORMAL) {
         logger().info('emergency.triggering', { source: 'triggerCeremony' });
         return PHASE_TRIGGERING;
+      }
+      return prev;
+    });
+  }, []);
+
+  // Fail-safe cancel of a pending ceremony. TRIGGERING is local-only frontend
+  // state — nothing is committed server-side until commit() — so backing out is a
+  // bare local transition with no HTTP call. This is what the ceremony's idle
+  // window-elapse and its Cancel affordance use, so an accidental trigger that is
+  // never deliberately confirmed self-heals to normal. Guarded to TRIGGERING so a
+  // stray call can't tear down an already-committed lockdown.
+  const dismissCeremony = useCallback(() => {
+    setPhase((prev) => {
+      if (prev === PHASE_TRIGGERING) {
+        logger().info('emergency.ceremony_dismissed', {});
+        return PHASE_NORMAL;
       }
       return prev;
     });
@@ -237,7 +254,7 @@ export function useEmergencyLockdown() {
     }
   }, [enterNormal]);
 
-  return { phase, lockedUntil, lockedBy, commit, abort, release, triggerCeremony };
+  return { phase, lockedUntil, lockedBy, commit, abort, release, triggerCeremony, dismissCeremony };
 }
 
 export default useEmergencyLockdown;
