@@ -81,7 +81,10 @@ export class SiblingsService {
       parent: result.parent || null,
       items: normalized,
       referenceIndex: windowed.referenceIndex,
-      pagination: windowed.pagination
+      pagination: windowed.pagination,
+      // Pass the adapter's root-first breadcrumb chain through when present.
+      // Adapters return well-formed crumbs; omit entirely when absent.
+      ...(Array.isArray(result.ancestors) && result.ancestors.length && { ancestors: result.ancestors })
     };
   }
 

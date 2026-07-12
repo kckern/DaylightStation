@@ -41,11 +41,23 @@
  */
 
 /**
+ * @typedef {Object} Crumb
+ * @property {string} id - Compound ID of the ancestor (e.g., "plex:12345")
+ * @property {string} title - Ancestor title
+ * @property {string|null} source - Source identifier
+ * @property {string} localId - Local ID within the source
+ * @property {string|null} type - Ancestor type (collection, library, show, season, ...)
+ */
+
+/**
  * @typedef {Object} SiblingsResult
  * @property {SiblingParent|null} parent - Parent container info
  * @property {SiblingItem[]} items - Sibling items
  * @property {number} [referenceIndex] - Index of reference item within the window
  * @property {PaginationInfo} [pagination] - Pagination metadata
+ * @property {Crumb[]} [ancestors] - Root-first ancestor chain for breadcrumb navigation,
+ *   from the cap level (show's smallest collection, else library) down to the immediate
+ *   parent. Omitted entirely by adapters that cannot build a chain.
  */
 
 /**

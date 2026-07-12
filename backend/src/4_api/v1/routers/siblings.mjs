@@ -61,7 +61,8 @@ export function createSiblingsRouter(config) {
       parent: result.parent,
       items: result.items,
       ...(result.referenceIndex != null && { referenceIndex: result.referenceIndex }),
-      ...(result.pagination && { pagination: result.pagination })
+      ...(result.pagination && { pagination: result.pagination }),
+      ...(result.ancestors && { ancestors: result.ancestors })
     });
   });
 
