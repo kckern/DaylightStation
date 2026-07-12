@@ -354,7 +354,7 @@ describe('TriggerDispatchService.handleTrigger — unknown NFC branch', () => {
     broadcast = vi.fn();
     logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() };
     tagWriter = {
-      upsertNfcPlaceholder: vi.fn().mockResolvedValue({ created: true }),
+      recordObserved: vi.fn().mockResolvedValue({ created: true }),
       setNfcNote: vi.fn(),
     };
     now = 1714137138000; // arbitrary fixed ms
@@ -399,7 +399,7 @@ describe('TriggerDispatchService.handleTrigger — unknown NFC branch', () => {
     expect(result.ok).toBe(false);
     expect(result.code).toBe('TRIGGER_NOT_REGISTERED');
 
-    expect(tagWriter.upsertNfcPlaceholder).toHaveBeenCalledWith(
+    expect(tagWriter.recordObserved).toHaveBeenCalledWith(
       '04_a1_b2_c3',
       expect.stringMatching(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/),
     );
@@ -429,12 +429,12 @@ describe('TriggerDispatchService.handleTrigger — unknown NFC branch', () => {
   it('state 0 — no notify call when notify_unknown is unset', async () => {
     const service = makeService(makeRegistry({ notify_unknown: null }));
     await service.handleTrigger('livingroom', 'nfc', '04_a1_b2_c3');
-    expect(tagWriter.upsertNfcPlaceholder).toHaveBeenCalled();
+    expect(tagWriter.recordObserved).toHaveBeenCalled();
     expect(haGateway.callService).not.toHaveBeenCalled();
   });
 
   it('state 1 — re-scan with placeholder but no note: notifies, no new write', async () => {
-    tagWriter.upsertNfcPlaceholder.mockResolvedValue({ created: false });
+    tagWriter.recordObserved.mockResolvedValue({ created: false });
     const registry = makeRegistry({
       tags: { '04_a1_b2_c3': { global: { scanned_at: '2026-04-26 10:00:00' }, overrides: {} } },
     });
@@ -442,7 +442,7 @@ describe('TriggerDispatchService.handleTrigger — unknown NFC branch', () => {
     await service.handleTrigger('livingroom', 'nfc', '04_a1_b2_c3');
 
     // upsert is called but no-ops (returns { created: false })
-    expect(tagWriter.upsertNfcPlaceholder).toHaveBeenCalled();
+    expect(tagWriter.recordObserved).toHaveBeenCalled();
     expect(haGateway.callService).toHaveBeenCalledTimes(1);
   });
 
@@ -456,7 +456,7 @@ describe('TriggerDispatchService.handleTrigger — unknown NFC branch', () => {
     const service = makeService(registry);
     await service.handleTrigger('livingroom', 'nfc', '04_a1_b2_c3');
 
-    expect(tagWriter.upsertNfcPlaceholder).not.toHaveBeenCalled();
+    expect(tagWriter.recordObserved).not.toHaveBeenCalled();
     expect(haGateway.callService).not.toHaveBeenCalled();
     // Broadcast still fires for observer dashboards:
     expect(broadcast).toHaveBeenCalled();
@@ -468,11 +468,11 @@ describe('TriggerDispatchService.handleTrigger — unknown NFC branch', () => {
     now += 1500; // 1.5 s later
     await service.handleTrigger('livingroom', 'nfc', '04_a1_b2_c3');
     expect(haGateway.callService).toHaveBeenCalledTimes(1);
-    expect(tagWriter.upsertNfcPlaceholder).toHaveBeenCalledTimes(1);
+    expect(tagWriter.recordObserved).toHaveBeenCalledTimes(1);
   });
 
   it('debounce window expiry allows a second notify', async () => {
-    tagWriter.upsertNfcPlaceholder
+    tagWriter.recordObserved
       .mockResolvedValueOnce({ created: true })
       .mockResolvedValueOnce({ created: false });
     const service = makeService(makeRegistry());
@@ -506,7 +506,7 @@ describe('TriggerDispatchService.handleTrigger — unknown NFC branch', () => {
     };
     const service = makeService(config);
     await service.handleTrigger('livingroom', 'state', 'on');
-    expect(tagWriter.upsertNfcPlaceholder).not.toHaveBeenCalled();
+    expect(tagWriter.recordObserved).not.toHaveBeenCalled();
     expect(haGateway.callService).not.toHaveBeenCalled();
   });
 });
