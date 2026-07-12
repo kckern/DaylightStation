@@ -668,3 +668,49 @@ describe('TriggerDispatchService (unified core)', () => {
     expect(viaEvent.action).toBe('queue');
   });
 });
+
+// --- appended: authorize + deps ---
+describe('TriggerDispatchService authorize', () => {
+  function make(registry, wake) {
+    const wakeAndLoadService = { execute: wake || (async () => ({ ok: true })) };
+    return new TriggerDispatchService({
+      config: registry,
+      contentIdResolver: { resolve: () => true },
+      wakeAndLoadService,
+      haGateway: { callService: async () => 'ok' },
+      deviceService: { get: () => ({ loadContent: async () => 'ok', clearContent: async () => 'ok' }) },
+      broadcast: () => {},
+      logger: { info() {}, warn() {}, error() {}, debug() {} },
+      clock: () => 1000,
+    });
+  }
+  const registry = { nfc: { locations: { livingroom: { target: 'livingroom-tv', action: 'queue' } }, tags: { 'aa': { global: { plex: '456598' }, overrides: {} } } }, state: { locations: {} } };
+
+  it('approves when the source has no strategies (nfc/state unchanged)', async () => {
+    const calls = [];
+    const svc = make(registry, async (...a) => { calls.push(a); return { ok: true }; });
+    const res = await svc.handleTrigger('livingroom', 'nfc', 'aa', {});
+    expect(res.ok).toBe(true);
+    expect(res.action).toBe('queue');
+    expect(calls.length).toBe(1);
+  });
+
+  it('accepts contentDispatcher/screenBroadcast/commandResolver deps without changing nfc behavior', async () => {
+    const wakeAndLoadService = { execute: async () => ({ ok: true }) };
+    const svc = new TriggerDispatchService({
+      config: registry,
+      contentIdResolver: { resolve: () => true },
+      wakeAndLoadService,
+      haGateway: { callService: async () => 'ok' },
+      deviceService: { get: () => ({ loadContent: async () => 'ok', clearContent: async () => 'ok' }) },
+      contentDispatcher: { dispatch: async () => ({ ok: true }) },
+      screenBroadcast: () => {},
+      commandResolver: { resolve: () => null },
+      broadcast: () => {},
+      logger: { info() {}, warn() {}, error() {}, debug() {} },
+      clock: () => 1000,
+    });
+    const res = await svc.handleTrigger('livingroom', 'nfc', 'aa', {});
+    expect(res.ok).toBe(true);
+  });
+});
