@@ -39,6 +39,12 @@ export const Response = {
     if (!HA_OPS.has(op)) throw new ValidationError(`Response.ha op must be scene|service (got ${op})`, { code: 'RESPONSE_HA_OP' });
     return Object.freeze({ kind: 'ha', op, scene, service, entity, data });
   },
+
+  /** @param {{ref:string, params?:Object}} a */
+  script({ ref, params } = {}) {
+    if (!ref) throw new ValidationError('Response.script ref required', { code: 'RESPONSE_SCRIPT_REF' });
+    return Object.freeze({ kind: 'script', ref, params });
+  },
 };
 
 export default Response;

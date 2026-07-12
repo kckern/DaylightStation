@@ -73,6 +73,14 @@ export const responseHandlers = {
     }
     return deps.screenBroadcast?.(response.target, payload);
   },
+
+  script: async (response, deps) => {
+    if (!deps.endpointGateway?.call) {
+      deps.logger?.warn?.('trigger.script.no_gateway', { ref: response.ref });
+      return;
+    }
+    return deps.endpointGateway.call(response.ref, response.params);
+  },
 };
 
 export async function dispatchResponse(response, deps) {
