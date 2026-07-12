@@ -118,7 +118,8 @@ export default function Scroll() {
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [hasMore, setHasMore] = useState(true);
-  const [focusSource, setFocusSource] = useState(null);
+  // focusSource is read into the ?focus= param; no UI currently sets it (F-29).
+  const [focusSource] = useState(null);
   const observerRef = useRef(null);
   const sentinelRef = useRef(null);
   const containerRef = useRef(null);

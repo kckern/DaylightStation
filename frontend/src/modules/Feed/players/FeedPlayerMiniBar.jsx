@@ -11,7 +11,9 @@ function formatTime(s) {
 }
 
 export default function FeedPlayerMiniBar({ item, playback, onOpen, onClose }) {
-  const { volume, muted, speed, cycleSpeed, setVolume, toggleMute, pausedMedia, resumePaused } = useFeedPlayer();
+  // All hooks must run before any early return (rules-of-hooks).
+  const { speed, cycleSpeed, pausedMedia, resumePaused } = useFeedPlayer();
+  const touchRef = useRef({ startY: 0 });
 
   if (!item) return null;
 
@@ -21,8 +23,6 @@ export default function FeedPlayerMiniBar({ item, playback, onOpen, onClose }) {
   const thumb = item.image
     ? (item.image.startsWith('/api/') ? item.image : proxyImage(item.image))
     : null;
-
-  const touchRef = useRef({ startY: 0 });
   const handleBarTouchStart = (e) => { touchRef.current.startY = e.touches[0].clientY; };
   const handleBarTouchEnd = (e) => {
     const dy = e.changedTouches[0].clientY - touchRef.current.startY;
