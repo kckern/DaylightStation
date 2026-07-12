@@ -101,7 +101,7 @@ export function ContentCombobox({
   const {
     state, dispatch,
     handleInput, activeScope, clearScope,
-    openWithSiblings, drill, goUp, paginate,
+    openWithSiblings, drill, goUp, goToCrumb, paginate,
     handleClose, select, commit,
     resolvedTitle, isSearching, pendingSources, sourceErrors, truncatedAt,
   } = useContentCombobox({ value, onChange, searchParams, appResults, selectContainers });
@@ -587,9 +587,43 @@ export function ContentCombobox({
               >
                 <IconArrowLeft size={14} />
               </ActionIcon>
-              <Text size="xs" c="dimmed" truncate>
-                {breadcrumbs.map((b) => b.title).join(' / ')}
-              </Text>
+              {/* Clickable trail: every non-last crumb jumps to that level via
+                  goToCrumb; the last crumb is the current level (emphasized, not
+                  a button). Same blur-guard as the back/clear buttons — a
+                  mousedown must not blur the input and close the dropdown before
+                  the click fires. */}
+              <Group gap={2} wrap="nowrap" style={{ minWidth: 0, overflow: 'hidden' }}>
+                {breadcrumbs.map((b, idx) => {
+                  const isLast = idx === breadcrumbs.length - 1;
+                  return (
+                    <Group key={b.id ?? idx} gap={2} wrap="nowrap" style={{ minWidth: 0 }}>
+                      {idx > 0 && (
+                        <Text size="xs" c="dimmed" style={{ flexShrink: 0 }}>›</Text>
+                      )}
+                      {isLast ? (
+                        <Text size="xs" fw={600} truncate data-testid={`combobox-crumb-${idx}`}>
+                          {b.title}
+                        </Text>
+                      ) : (
+                        <Text
+                          component="button"
+                          type="button"
+                          size="xs"
+                          c="dimmed"
+                          truncate
+                          data-testid={`combobox-crumb-${idx}`}
+                          aria-label={`Go to ${b.title}`}
+                          className="combobox-crumb-button"
+                          onMouseDown={(e) => e.preventDefault()}
+                          onClick={(e) => { e.stopPropagation(); goToCrumb(idx); }}
+                        >
+                          {b.title}
+                        </Text>
+                      )}
+                    </Group>
+                  );
+                })}
+              </Group>
             </Group>
           </Box>
         )}
