@@ -1,8 +1,8 @@
 import { describe, it, expect } from 'vitest';
-import { estimateMidiDurationSeconds } from '#domains/pianoaudio/midiDuration.mjs';
+import { analyzeMidi, isLikelyJunkMidi, estimateMidiDurationSeconds } from '#domains/pianoaudio/midiDuration.mjs';
 
 // Build a minimal format-0 SMF: division=480 PPQ, one track with a set-tempo
-// (500000 us/qn = 120 BPM) and a note that ends at absolute tick 960 (= 2 quarter
+// (500000 us/qn = 120 BPM), one note that ends at absolute tick 960 (= 2 quarter
 // notes = 1.0s at 120 BPM), then end-of-track.
 function tinyMidi() {
   const header = [
@@ -22,24 +22,52 @@ function tinyMidi() {
   return Buffer.from([...header, ...trackHeader, ...track]);
 }
 
-describe('estimateMidiDurationSeconds', () => {
-  it('estimates duration from ticks + tempo (960 ticks @ 480 PPQ, 120 BPM = 1.0s)', () => {
-    expect(estimateMidiDurationSeconds(tinyMidi())).toBeCloseTo(1.0, 3);
+describe('analyzeMidi', () => {
+  it('estimates duration + counts notes (960 ticks @ 480 PPQ, 120 BPM = 1.0s, 1 note)', () => {
+    const { durationSeconds, noteCount } = analyzeMidi(tinyMidi());
+    expect(durationSeconds).toBeCloseTo(1.0, 3);
+    expect(noteCount).toBe(1);
   });
 
   it('halves the duration when the tempo doubles to 240 BPM (250000 us/qn)', () => {
     const buf = tinyMidi();
-    // rewrite the set-tempo payload bytes (offset: 14-byte header + 8-byte MTrk + [00 FF 51 03] = +4)
+    // rewrite the set-tempo payload (offset: 14-byte header + 8-byte MTrk + [00 FF 51 03] = +4)
     const tempoAt = 14 + 8 + 4;
     buf[tempoAt] = 0x03; buf[tempoAt + 1] = 0xd0; buf[tempoAt + 2] = 0x90; // 250000 us
-    expect(estimateMidiDurationSeconds(buf)).toBeCloseTo(0.5, 3);
+    expect(analyzeMidi(buf).durationSeconds).toBeCloseTo(0.5, 3);
+  });
+
+  it('estimateMidiDurationSeconds returns just the duration', () => {
+    expect(estimateMidiDurationSeconds(tinyMidi())).toBeCloseTo(1.0, 3);
   });
 
   it('throws on a non-MIDI buffer', () => {
-    expect(() => estimateMidiDurationSeconds(Buffer.from('not a midi file at all'))).toThrow();
+    expect(() => analyzeMidi(Buffer.from('not a midi file at all'))).toThrow();
   });
 
   it('throws on a too-short buffer', () => {
-    expect(() => estimateMidiDurationSeconds(Buffer.from([0x4d, 0x54]))).toThrow();
+    expect(() => analyzeMidi(Buffer.from([0x4d, 0x54]))).toThrow();
+  });
+});
+
+describe('isLikelyJunkMidi', () => {
+  const opts = { minSeconds: 1800, minNotes: 200 };
+
+  it('flags a note-less file as junk regardless of length', () => {
+    expect(isLikelyJunkMidi({ durationSeconds: 5, noteCount: 0 }, opts)).toBe(true);
+    expect(isLikelyJunkMidi({ durationSeconds: 9999, noteCount: 0 }, opts)).toBe(true);
+  });
+
+  it('flags a long AND sparse file as junk (stuck note / idle recording)', () => {
+    expect(isLikelyJunkMidi({ durationSeconds: 5814, noteCount: 3 }, opts)).toBe(true);
+  });
+
+  it('does NOT flag a long but dense file (real multi-hour session)', () => {
+    expect(isLikelyJunkMidi({ durationSeconds: 14138, noteCount: 147350 }, opts)).toBe(false);
+    expect(isLikelyJunkMidi({ durationSeconds: 5814, noteCount: 18895 }, opts)).toBe(false);
+  });
+
+  it('does NOT flag a short sparse file (brief real take)', () => {
+    expect(isLikelyJunkMidi({ durationSeconds: 45, noteCount: 12 }, opts)).toBe(false);
   });
 });

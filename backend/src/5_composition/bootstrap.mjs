@@ -3505,10 +3505,12 @@ export function createHarvesterServices(config) {
     const sourceDir = configService.getHouseholdPath('history/piano');
     const destDir = `${configService.getMediaDir()}/audio/piano`;
     const soundfontPath = '/usr/share/soundfonts/TimGM6mb.sf2'; // Alpine soundfont-timgm; confirm path post-build
-    // Guardrail: skip pathological over-long renders (stuck note / idle recording).
+    // Junk guardrail: skip note-less / long-AND-sparse (stuck note / idle) files;
+    // real long practice sessions (dense with notes) still render.
     const pianoAudioCfg = configService?.getHouseholdAppConfig?.(null, 'pianoaudio') || {};
-    const maxRenderSeconds = pianoAudioCfg.maxRenderSeconds ?? 3600; // 60 min
-    const library = new FsMidiLibrary({ sourceDir, destDir, logger, maxRenderSeconds });
+    const junkMinSeconds = pianoAudioCfg.junkMinSeconds ?? 1800; // 30 min
+    const junkMinNotes = pianoAudioCfg.junkMinNotes ?? 200;
+    const library = new FsMidiLibrary({ sourceDir, destDir, logger, junkMinSeconds, junkMinNotes });
     const converter = new FluidSynthMp3Converter({ soundfontPath, scratchDir: '/tmp/pianoaudio', logger });
     const convertUseCase = new ConvertPendingPianoMidi({ library, converter, logger });
     return new PianoMp3Harvester({ convertUseCase, logger });

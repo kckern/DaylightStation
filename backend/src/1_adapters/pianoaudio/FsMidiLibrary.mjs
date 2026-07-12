@@ -3,11 +3,13 @@
  * to media/audio/piano/<same rel>.mp3, returning only those whose mp3 is still
  * missing, newest-first. Owns all filesystem access.
  *
- * Guardrail: a MIDI whose rendered duration exceeds `maxRenderSeconds` (default
- * 20 min) is skipped — a stuck note or an idle device recording can span hours,
- * rendering a multi-GB scratch WAV that eats disk and stalls the run. Duration is
- * read cheaply from the SMF header/events via an injectable seam (default
- * `@tonejs/midi`), long before any expensive fluidsynth render.
+ * Junk guardrail: a MIDI with NO notes, or one that is both long and note-sparse
+ * (a genuinely stuck note / idle recording), is skipped — it would render a
+ * multi-GB scratch WAV of silence or a single held tone. A merely LONG file
+ * (real multi-hour practice session, tens of thousands of notes) is NOT junk and
+ * IS rendered. Note count + duration are read cheaply from the SMF via an
+ * injectable seam (default the pure `analyzeMidi`), long before any fluidsynth
+ * render.
  *
  * Layer: ADAPTER (1_adapters/pianoaudio).
  * @module adapters/pianoaudio/FsMidiLibrary
@@ -16,25 +18,27 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { IMidiLibrary } from '#apps/pianoaudio/ports/IMidiLibrary.mjs';
 import { mp3RelForMidiRel } from '#domains/pianoaudio/pianoAudioPaths.mjs';
-import { estimateMidiDurationSeconds } from '#domains/pianoaudio/midiDuration.mjs';
+import { analyzeMidi, isLikelyJunkMidi } from '#domains/pianoaudio/midiDuration.mjs';
 import { fileExists } from '#system/utils/FileIO.mjs';
 
-const DEFAULT_MAX_RENDER_SECONDS = 3600; // 60 min — a longer single take is almost certainly an idle/stuck recorder
+const DEFAULT_JUNK_MIN_SECONDS = 1800; // 30 min — the "long" half of the long-AND-sparse junk test
+const DEFAULT_JUNK_MIN_NOTES = 200;    // the "sparse" half
 
-/** Read a .mid file and estimate its rendered duration in seconds (throws on unparseable input). */
-export function readMidiDurationSeconds(absPath) {
-  return estimateMidiDurationSeconds(fs.readFileSync(absPath));
+/** Read a .mid file and return its {durationSeconds, noteCount} (throws on unparseable input). */
+export function readMidiStats(absPath) {
+  return analyzeMidi(fs.readFileSync(absPath));
 }
 
 export class FsMidiLibrary extends IMidiLibrary {
-  #sourceDir; #destDir; #logger; #maxRenderSeconds; #midiDurationSeconds;
+  #sourceDir; #destDir; #logger; #junkMinSeconds; #junkMinNotes; #midiStats;
 
   constructor({
     sourceDir,
     destDir,
     logger = console,
-    maxRenderSeconds = DEFAULT_MAX_RENDER_SECONDS,
-    midiDurationSeconds = readMidiDurationSeconds,
+    junkMinSeconds = DEFAULT_JUNK_MIN_SECONDS,
+    junkMinNotes = DEFAULT_JUNK_MIN_NOTES,
+    midiStats = readMidiStats,
   }) {
     super();
     if (!sourceDir) throw new Error('FsMidiLibrary requires sourceDir');
@@ -42,8 +46,9 @@ export class FsMidiLibrary extends IMidiLibrary {
     this.#sourceDir = sourceDir;
     this.#destDir = destDir;
     this.#logger = logger;
-    this.#maxRenderSeconds = maxRenderSeconds;
-    this.#midiDurationSeconds = midiDurationSeconds;
+    this.#junkMinSeconds = junkMinSeconds;
+    this.#junkMinNotes = junkMinNotes;
+    this.#midiStats = midiStats;
   }
 
   async listPending() {
@@ -54,20 +59,20 @@ export class FsMidiLibrary extends IMidiLibrary {
       const mp3Path = path.join(this.#destDir, mp3RelForMidiRel(rel));
       if (fileExists(mp3Path)) continue; // already rendered
 
-      // Guardrail: drop pathological over-long renders (stuck note / idle recording).
-      let seconds = null;
+      // Junk guardrail: drop note-less / long-AND-sparse (stuck note / idle) files.
+      let stats = null;
       try {
-        seconds = this.#midiDurationSeconds(m.abs);
+        stats = this.#midiStats(m.abs);
       } catch (err) {
         // Unparseable → don't silently drop a possibly-valid file; let the
         // converter attempt it (its per-file timeout is the backstop).
-        this.#logger.warn?.('pianoaudio.duration.unparsed', { midiPath: m.abs, error: err.message });
+        this.#logger.warn?.('pianoaudio.stats.unparsed', { midiPath: m.abs, error: err.message });
       }
-      if (seconds != null && seconds > this.#maxRenderSeconds) {
-        this.#logger.warn?.('pianoaudio.skip.too_long', {
+      if (stats && isLikelyJunkMidi(stats, { minSeconds: this.#junkMinSeconds, minNotes: this.#junkMinNotes })) {
+        this.#logger.warn?.('pianoaudio.skip.junk', {
           midiPath: m.abs,
-          seconds: Math.round(seconds),
-          capSeconds: this.#maxRenderSeconds,
+          seconds: Math.round(stats.durationSeconds),
+          notes: stats.noteCount,
         });
         continue;
       }
