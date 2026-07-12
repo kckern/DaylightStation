@@ -16,7 +16,14 @@ vi.mock('@/modules/Fitness/hooks/useEmergencyLockdown.js', () => ({
 let wsHandler = null;
 vi.mock('@/services/WebSocketService.js', () => ({
   __esModule: true,
-  wsService: { subscribe: (_topics, cb) => { wsHandler = cb; return () => { wsHandler = null; }; } },
+  // subscribe wires the identity handler; send/connect are no-ops so the logging
+  // framework's buffered WS transport (which imports this same module) doesn't
+  // throw a "WS batch send failed" warning when its queue flushes.
+  wsService: {
+    subscribe: (_topics, cb) => { wsHandler = cb; return () => { wsHandler = null; }; },
+    send: () => {},
+    connect: () => {},
+  },
 }));
 vi.mock('@/context/FitnessContext.jsx', () => ({
   __esModule: true,
@@ -114,11 +121,27 @@ test('admin scan within the unlock cooldown does NOT open the emergency ceremony
   expect(emergency.triggerCeremony).not.toHaveBeenCalled();
 });
 
-test('a cold admin scan (no recent unlock activity) still opens the ceremony', () => {
+test('the unlock-cooldown boundary suppresses just before UNLOCK_COOLDOWN_MS and opens just after', () => {
   vi.useFakeTimers();
   try {
-    render(<IdentityProvider><Probe onReady={() => {}} /></IdentityProvider>);
-    vi.advanceTimersByTime(UNLOCK_COOLDOWN_MS + 1000);
+    // Move the clock via setSystemTime (not advanceTimersByTime) so we exercise the
+    // Date.now()-based boundary without firing unrelated pending timers (e.g. the
+    // logger's batch-flush) that would pollute the output.
+    vi.setSystemTime(0);
+    let api;
+    render(<IdentityProvider><Probe onReady={(x) => { api = x; }} /></IdentityProvider>);
+    // Stamp unlock activity at t0 (both calls stamp lastUnlockActivityRef to now).
+    act(() => { api.registerAdmin('emulator'); });
+    act(() => { api.clearUnlock(); });
+
+    // Just BEFORE the boundary → still leftover unlock context → suppressed.
+    vi.setSystemTime(UNLOCK_COOLDOWN_MS - 1);
+    emit({ matched: true, userId: 'kc', finger: 'right-thumb', authz: { admin: true, locks: ['emergency'] } });
+    expect(emergency.triggerCeremony).not.toHaveBeenCalled();
+
+    // Branch (2) does not restamp, so the stamp is still at t0. Cross the boundary
+    // (elapsed since t0 now exceeds UNLOCK_COOLDOWN_MS) → the scan opens the ceremony.
+    vi.setSystemTime(UNLOCK_COOLDOWN_MS + 1);
     emit({ matched: true, userId: 'kc', finger: 'right-thumb', authz: { admin: true, locks: ['emergency'] } });
     expect(emergency.triggerCeremony).toHaveBeenCalledTimes(1);
   } finally {
