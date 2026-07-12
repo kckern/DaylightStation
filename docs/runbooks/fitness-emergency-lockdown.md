@@ -2,13 +2,25 @@
 
 **What it is:** A parent/admin can shut down the garage gym by pressing their
 fingerprint on the garage reader **in any normal context** in the Fitness app
-(no unlock modal open). It plays a dramatic "DEFCON" powerdown sequence, then
-fires the `garage_deactivate` Home Assistant script (TV, speaker, fan, LEDs,
-heater off) and locks the screen for a configured duration. State persists
-server-side and survives reboot. It is reversible by an admin fingerprint.
+(no unlock modal open). It opens a **fail-safe "HOLD TO SHUT DOWN" confirm
+ceremony**; on a deliberate 3s hold it fires the `garage_deactivate` Home
+Assistant script (TV, speaker, fan, LEDs, heater off) and locks the screen for a
+configured duration. State persists server-side and survives reboot. It is
+reversible by an admin fingerprint.
 
 Design: `docs/_wip/plans/2026-06-17-fitness-emergency-lockdown-design.md`.
 Plan: `docs/_wip/plans/2026-06-17-fitness-emergency-lockdown-plan.md`.
+
+> **2026-07-11 — fail-safe redesign.** The admin-press ceremony no longer
+> auto-commits when a timer elapses. It now requires a deliberate **3s
+> press-and-hold** to lock; doing nothing (or releasing early, or the 10s idle
+> window elapsing) **cancels back to normal with no lock**. Two guards
+> (`UNLOCK_COOLDOWN_MS` = 4s, `CEREMONY_DEBOUNCE_MS` = 400ms) also stop a routine
+> game-unlock scan from spuriously opening the ceremony. This fixed an incident
+> where a legit arcade game-unlock scan was read as an emergency shutdown and
+> auto-committed a 30-min lock + `garage_deactivate`. The **scanner-abuse
+> auto-trip below is unchanged** — it still server-commits regardless of the
+> browser ceremony. Plan: `docs/_wip/plans/2026-07-11-fitness-emergency-lockdown-failsafe.md`.
 
 ---
 
@@ -42,16 +54,40 @@ admin re-scan to release. The lock records `lockedBy: abuse-protection`.
 state, never a 409), so a late or duplicate browser commit can never bounce the
 kiosk out of LOCKED.
 
-## The sequence
+## The sequence (fail-safe, 2026-07-11)
 
-1. **DEFCON screen** — black/red glowing power glyph, "SYSTEM LOCKDOWN
-   INITIATED", the powerdown cue plays, a progress bar tracks it.
-2. **Cancel window (mistake undo)** — while the audio plays, a **Cancel** button
-   is shown. Tap it → it changes to "SCAN TO CONFIRM CANCEL" → press an admin
-   fingerprint again to confirm. Confirmed → returns to normal, **nothing is shut
-   down**. (Two scans total to abort: trigger, then cancel-confirm.)
-3. **Commit** — if the audio finishes without a confirmed cancel, the backend
-   fires `garage_deactivate` and the screen enters the **LOCKED** state.
+1. **Confirm ceremony** — black/red glowing power glyph, **"HOLD TO SHUT DOWN"**,
+   a press-and-hold target, and a Cancel button. Nothing is shut down yet — this
+   is local frontend state only.
+2. **Commit (deliberate hold)** — press-and-hold the confirm target for **3s**
+   (`HOLD_MS`). Only then does the frontend `POST /emergency/commit`; the backend
+   fires `garage_deactivate` and the screen enters **LOCKED**.
+3. **Cancel (the default)** — do nothing and the **10s idle window**
+   (`CEREMONY_WINDOW_MS`) elapses → returns to normal, no lock. Releasing the hold
+   early, or tapping **Cancel**, also returns to normal immediately. An accidental
+   trigger self-heals.
+
+An **admin fingerprint scanned during the ceremony** routes to `abort()` (returns
+to normal, and disarms the abuse server-commit if one was armed). Note the plain
+**Cancel** button clears only the local ceremony — for an abuse auto-trip it does
+**not** disarm the server-commit; use an admin scan to abort that.
+
+### Guards against a spurious ceremony from a game-unlock scan
+
+An admin game-unlock scan (`registerAdmin('emulator')`) that lands at the wrong
+moment used to open the ceremony over the game. Two guards in
+`IdentityProvider.jsx` prevent it:
+
+- **Cooldown** (`UNLOCK_COOLDOWN_MS` = 4000ms): an admin scan within 4s of an
+  unlock/identify modal being active is leftover unlock context → ceremony not
+  opened (`emergency-ceremony-suppressed`). Covers the scan-just-**after**-a-modal race.
+- **Open debounce** (`CEREMONY_DEBOUNCE_MS` = 400ms): the ceremony open is delayed
+  400ms; if a `registerUnlock` lands in that window the scan was an unlock and the
+  open is cancelled (`emergency-ceremony-cancelled`). If an unlock registers
+  **after** the ceremony already opened, `registerUnlock` dismisses it
+  (`emergency-ceremony-dismissed`). Covers the scan-just-**before**-a-modal race.
+
+A genuinely cold, deliberate admin scan still opens the hold-to-confirm ceremony.
 
 ## The LOCKED state
 
@@ -152,9 +188,16 @@ the frontend; module `fitness-emergency` on the backend).
 `release_denied` / `release_requested`, `locked` / `lock_extended`, `expired` /
 `expiry_check_failed`, `normal` (with `reason`).
 
-**Frontend — overlay:** `triggering`, `audio_playing` / `audio_blocked` /
-`audio_threw`, `ceremony_end` (reason), `cancel_armed` / `cancel_scan` /
-`cancel_denied`, `hold_start` / `hold_cancel` / `release_hold`.
+**Frontend — overlay (confirm ceremony, 2026-07-11):** `triggering`,
+`confirm_hold_start` / `confirm_committed` / `confirm_hold_cancel`,
+`ceremony_dismissed` (reason: `window-elapsed` | `cancel-button`). The old
+auto-commit/`ceremony_end` and audio (`audio_playing`/`audio_blocked`) events are
+gone — the ceremony no longer auto-plays powerdown audio or auto-commits.
+LockedScreen (unchanged): `hold_start` / `hold_cancel` / `release_hold`.
+
+**Frontend — scan router (`IdentityProvider`):** `emergency-ceremony-armed`,
+`emergency-ceremony-suppressed` (cooldown), `emergency-ceremony-cancelled`
+(debounce), `emergency-ceremony-dismissed` (late unlock), `emergency-ceremony-start`.
 
 Every return-to-`normal` carries a `reason` (`ws-released`, `expiry`,
 `expiry-check-failed`, `commit-failed`, `cancel-confirmed`, `release-confirmed`),
@@ -165,10 +208,20 @@ so a state transition can always be traced to its cause.
 - **Nothing happens on an admin press while idle.** Confirm the garage bridge is
   connected (the detector logs `emergency.armed` repeatedly when arming). Confirm
   the admin has enrolled fingerprints and is listed in `locks.emergency`.
-- **DEFCON screen shows but no audio (kiosk).** The garage Firefox gates audible
-  autoplay until a user gesture (see `CLAUDE.local.md`). The ceremony still
-  commits via a fallback timer even when audio is blocked. To get audio, set
-  `media.autoplay.default = 0` in the garage Firefox profile.
+- **Ceremony appeared over a game and I didn't mean to shut down.** Harmless
+  post-2026-07-11: do nothing (or tap Cancel) — it auto-cancels in 10s and nothing
+  locks. If it keeps appearing on game-unlock scans, check the cooldown/debounce
+  guards in `IdentityProvider.jsx` (`emergency-ceremony-suppressed` /
+  `-cancelled` should be logging). The powerdown audio was removed with the
+  fail-safe redesign, so "no audio" is expected, not a fault.
+- **Clearing a stuck lock.** The live lock file is `emergency_lock.yml` **inside
+  the prod container** (`.../data/household/history/fitness/`), NOT the host
+  Dropbox mount — deleting the host path is a no-op. Check truth with
+  `curl -s https://daylightlocal.kckern.net/api/v1/fitness/emergency`. Release via
+  an admin fingerprint (3s hold on the LOCKED screen → `/emergency/release`, which
+  deletes the file AND broadcasts `fitness.emergency.released`); the admin
+  `/admin/ws/broadcast` shim can't send that topic. Release does not re-run
+  `garage_deactivate` — reactivate garage devices separately if needed.
 - **Press-and-hold to release does nothing / reader feels dead while LOCKED.**
   The detector stands down during a lockdown, so the reader is only armed for the
   ~15s window the 3s hold opens. Press your admin finger *after* "Scanning…"
