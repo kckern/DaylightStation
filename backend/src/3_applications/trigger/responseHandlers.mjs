@@ -64,6 +64,15 @@ export const responseHandlers = {
     if (response.entity) data.entity_id = response.entity;
     return deps.haGateway.callService(domain, service, data);
   },
+
+  transport: async (response, deps) => {
+    const payload = deps.commandResolver?.(response.command, response.arg);
+    if (!payload) {
+      deps.logger?.warn?.('trigger.transport.unknown', { command: response.command, target: response.target });
+      return;
+    }
+    return deps.screenBroadcast?.(response.target, payload);
+  },
 };
 
 export async function dispatchResponse(response, deps) {
