@@ -14,8 +14,9 @@
  * slice self-contained and avoids cross-modality coupling.
  *
  * Layer: APPLICATION (3_applications/trigger). Coordinates auth/debounce
- * (its own concerns) with domain ResolverRegistry and actionHandlers + WS
- * broadcast.
+ * (its own concerns) with domain ResolverRegistry, then normalizes the
+ * resolved intent to a Response (mapIntentToResponse) and dispatches it via
+ * the responseHandlers registry (dispatchResponse) + WS broadcast.
  *
  * @module applications/trigger/TriggerDispatchService
  */
