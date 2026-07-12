@@ -15,7 +15,7 @@
 - **Source base:** `configService.getHouseholdPath('history/piano')` (absolute). **Dest base:** `` `${configService.getMediaDir()}/audio/piano` `` (absolute). Mirror is exact: relative subdirs preserved, `.mid`→`.mp3`.
 - **Per-file pipeline (exact argv, in order):**
   1. `fluidsynth` `['-ni', '-F', <wavPath>, '-r', '44100', <soundfontPath>, <midiPath>]`
-  2. `ffmpeg` `['-i', <wavPath>, '-af', 'loudnorm=I=-16:TP=-1.5:LRA=11', '-codec:a', 'libmp3lame', '-qscale:a', '2', <mp3Path>.tmp, '-y']`
+  2. `ffmpeg` `['-i', <wavPath>, '-af', 'loudnorm=I=-16:TP=-1.5:LRA=11', '-codec:a', 'libmp3lame', '-qscale:a', '2', '-f', 'mp3', <mp3Path>.tmp, '-y']`
   3. rename `<mp3Path>.tmp` → `<mp3Path>` (atomic)
   4. delete the scratch WAV
 - **Dedup / resumability:** skip any file whose final `.mp3` already exists. **Order:** newest-first (by MIDI mtime).
@@ -642,7 +642,7 @@ export class FluidSynthMp3Converter extends IMidiConverter {
       );
       await this.#execFile(
         'ffmpeg',
-        ['-i', wavPath, '-af', LOUDNORM, '-codec:a', 'libmp3lame', '-qscale:a', '2', tmpMp3, '-y'],
+        ['-i', wavPath, '-af', LOUDNORM, '-codec:a', 'libmp3lame', '-qscale:a', '2', '-f', 'mp3', tmpMp3, '-y'],
         { timeout: this.#timeoutFor(wavPath) },
       );
       fs.renameSync(tmpMp3, mp3Path);

@@ -50,7 +50,9 @@ export class FluidSynthMp3Converter extends IMidiConverter {
       );
       await this.#execFile(
         'ffmpeg',
-        ['-i', wavPath, '-af', LOUDNORM, '-codec:a', 'libmp3lame', '-qscale:a', '2', tmpMp3, '-y'],
+        // -f mp3 is REQUIRED: the output path ends in `.tmp` (for atomic rename),
+        // so ffmpeg cannot infer the muxer from the extension and must be told.
+        ['-i', wavPath, '-af', LOUDNORM, '-codec:a', 'libmp3lame', '-qscale:a', '2', '-f', 'mp3', tmpMp3, '-y'],
         { timeout: this.#timeoutFor(wavPath) },
       );
       fs.renameSync(tmpMp3, mp3Path);
