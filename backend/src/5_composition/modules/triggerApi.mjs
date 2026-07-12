@@ -2,6 +2,7 @@
 // Composition wiring for Trigger API router(s). Extracted from bootstrap.mjs (Task P2.7-E).
 
 import { YamlTriggerConfigRepository } from '#adapters/trigger/YamlTriggerConfigRepository.mjs';
+import { YamlObservedStateStore } from '#adapters/persistence/yaml/YamlObservedStateStore.mjs';
 import { createTriggerRouter } from '#api/v1/routers/trigger.mjs';
 import { TriggerDispatchService } from '#apps/trigger/TriggerDispatchService.mjs';
 import { broadcastEvent, createDeviceServices, createWakeAndLoadService } from '../bootstrap.mjs';
@@ -43,7 +44,9 @@ export function createTriggerApiRouter(config) {
     logger = console,
   } = config;
 
-  const triggerConfigRepository = new YamlTriggerConfigRepository({ saveFile });
+  const observedStore = new YamlObservedStateStore({ loadFile, saveFile });
+  observedStore.load();
+  const triggerConfigRepository = new YamlTriggerConfigRepository({ saveFile, observedStore });
   let triggerConfig;
   try {
     triggerConfig = triggerConfigRepository.loadRegistry({ loadFile });
