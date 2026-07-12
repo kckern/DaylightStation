@@ -2638,20 +2638,20 @@
   color: var(--piano-stage-muted, #9a958a); font-variant-numeric: tabular-nums;
 }
 
-// Size popover & info popover — anchored above the bar, elevated.
-.piano-score-size-wrap, .piano-score-info-wrap { position: relative; }
-.piano-score-size-modal, .piano-score-info-popover {
+// Tempo / size popovers & info popover — anchored above the bar, elevated.
+.piano-score-size-wrap, .piano-score-tempo-wrap, .piano-score-info-wrap { position: relative; }
+.piano-score-size-modal, .piano-score-tempo-modal, .piano-score-info-popover {
   position: absolute; bottom: calc(100% + 0.5rem); right: 0; z-index: 20;
   background: var(--piano-surface, #1f1f26); border: 1px solid var(--piano-border, #34343f);
   border-radius: var(--r-md, 12px); box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5);
   color: var(--piano-stage-fg, #f3efe6);
 }
-.piano-score-size-modal {
-  display: flex; align-items: center; gap: 0.6rem; padding: 0.75rem 0.9rem; min-width: 16rem;
-  input[type="range"] { flex: 1 1 auto; accent-color: var(--piano-accent, #2ec46f); }
+.piano-score-size-modal, .piano-score-tempo-modal {
+  display: flex; align-items: center; padding: 0.6rem 0.7rem;
 }
-.piano-score-size-preview { min-width: 3rem; text-align: right; font-variant-numeric: tabular-nums; color: var(--piano-stage-muted, #9a958a); }
-.piano-score-size-apply { flex: 0 0 auto; background: var(--piano-accent, #2ec46f); border-color: var(--piano-accent, #2ec46f); color: var(--piano-accent-ink, #07210f); }
+// Discrete segmented stepper (tempo & size) — the kiosk touch language, no slider.
+.piano-score-steps { display: flex; align-items: center; gap: 0.3rem; flex-wrap: nowrap; }
+.piano-score-step { min-width: 3.2rem; padding: 0.5rem 0.6rem; font-variant-numeric: tabular-nums; }
 .piano-score-info-popover {
   padding: 0.75rem 1rem; min-width: 14rem; max-width: 22rem;
   dl { margin: 0; display: grid; grid-template-columns: auto 1fr; gap: 0.25rem 0.75rem; }

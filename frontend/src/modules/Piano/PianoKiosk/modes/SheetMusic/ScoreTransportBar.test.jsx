@@ -67,16 +67,15 @@ describe('ScoreTransportBar', () => {
     expect(screen.getByText(/\/\s*40/)).toBeInTheDocument();
   });
 
-  it('listen mode: tempo button opens a modal whose slider commits via onTempo on release', () => {
+  it('listen mode: tempo button opens a segmented stepper that commits via onTempo on tap', () => {
     const onTempo = vi.fn();
     render(<ScoreTransportBar {...base} mode="listen" tempoMult={1} onTempo={onTempo} />);
-    // Not present outside Listen.
-    const tempoBtn = screen.getByRole('button', { name: /tempo/i });
+    const tempoBtn = screen.getByRole('button', { name: /^tempo/i });
     expect(tempoBtn).toHaveTextContent(/100%/);
     fireEvent.click(tempoBtn);
-    const slider = screen.getByRole('slider', { name: /tempo/i });
-    fireEvent.change(slider, { target: { value: '1.5' } });
-    fireEvent.mouseUp(slider); // commit on release
+    // No slider / no typed value — discrete percent steps commit on tap.
+    expect(screen.queryByRole('slider')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: '150%' }));
     expect(onTempo).toHaveBeenCalledWith(1.5);
   });
 
@@ -166,16 +165,14 @@ describe('ScoreTransportBar', () => {
     expect(screen.queryByRole('button', { name: /scoring/i })).toBeNull();
   });
 
-  it('size is a single button that opens a modal (no inline +/-), and commits scale on release', () => {
+  it('size is a single button that opens a segmented stepper (no slider) and commits scale on tap', () => {
     render(<ScoreTransportBar {...base} />);
-    const sizeBtn = screen.getByRole('button', { name: /size/i });
-    expect(screen.queryByRole('button', { name: /^A[−-]$/ })).toBeNull();
-    expect(screen.queryByRole('button', { name: /^A\+$/ })).toBeNull();
+    const sizeBtn = screen.getByRole('button', { name: /^size/i });
     fireEvent.click(sizeBtn);
-    const slider = screen.getByRole('slider', { name: /size/i });
-    fireEvent.change(slider, { target: { value: '1.3' } });
-    fireEvent.mouseUp(slider); // commit on release
-    expect(base.onScale).toHaveBeenCalledWith(1.3);
+    // No slider / no typed value — discrete percent steps commit on tap.
+    expect(screen.queryByRole('slider')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: '125%' }));
+    expect(base.onScale).toHaveBeenCalledWith(1.25);
   });
 
   it('memoization: advancing step re-renders only the position readout, not the expensive body', () => {
