@@ -89,6 +89,14 @@ function loopBodyFromLayer(layer, author) {
   return body;
 }
 
+/** Default name for a saved song. The kiosk has no text input, so every save
+ * is stamped with the local date + time, e.g. "Song 2026-07-12 14:30". */
+function defaultSongTitle() {
+  const d = new Date();
+  const p = (n) => String(n).padStart(2, '0');
+  return `Song ${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+
 /** Rebuild an in-memory take source from a persisted loop record — the inverse
  * of loopBodyFromLayer, so a rewritten `{kind:'loop',loopId}` ref restores to a
  * playable embedded-note take on load. */
@@ -243,7 +251,10 @@ export function useProducerStore() {
       const [rewritten] = await persistTakes([layer], loopIdByTakeId);
       carriedLayers[id] = rewritten;
     }
-    const meta = { ...draft.meta, ...(title ? { title } : {}) };
+    // No text input in the kiosk — every save gets a default timestamped name
+    // (e.g. "Song 2026-07-12 14:30") unless the draft already carries a title.
+    const finalTitle = title || draft.meta?.title || defaultSongTitle();
+    const meta = { ...draft.meta, title: finalTitle };
     const body = {
       author: authorRef.current,
       sections,
