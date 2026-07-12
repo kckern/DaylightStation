@@ -28,6 +28,9 @@ import { broadcastEvent, createDeviceServices, createWakeAndLoadService } from '
  * @param {Object} config.contentIdResolver - From content services (used by resolveIntent)
  * @param {Function} config.broadcast - WebSocket broadcast function (broadcastEvent)
  * @param {Function} config.loadFile - Helper that loads YAML files relative to household dir
+ * @param {Object} [config.contentDispatcher] - ContentDispatcher instance (optimistic content posture; shared with barcode ingress)
+ * @param {Function} [config.screenBroadcast] - Screen-targeted broadcast helper (targetScreen, payload) used by contentDispatcher-driven flows
+ * @param {Function} [config.commandResolver] - Resolves a raw scan/value string to a known command (e.g. resolveCommand)
  * @param {Object} [config.logger] - Logger instance
  * @returns {{ triggerDispatchService: TriggerDispatchService, router: import('express').Router }}
  */
@@ -41,6 +44,9 @@ export function createTriggerApiRouter(config) {
     broadcast,
     loadFile,
     saveFile,
+    contentDispatcher = null,
+    screenBroadcast = null,
+    commandResolver = null,
     logger = console,
   } = config;
 
@@ -62,6 +68,9 @@ export function createTriggerApiRouter(config) {
     haGateway,
     deviceService: deviceServices.deviceService,
     tagWriter: triggerConfigRepository,
+    contentDispatcher,
+    screenBroadcast,
+    commandResolver,
     broadcast,
     logger,
   });

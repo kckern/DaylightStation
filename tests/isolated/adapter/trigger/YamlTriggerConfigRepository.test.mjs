@@ -33,6 +33,7 @@ describe('YamlTriggerConfigRepository', () => {
     expect(repo.loadRegistry({ loadFile })).toEqual({
       nfc: { locations: {}, tags: {} },
       state: { locations: {} },
+      barcode: { locations: {} },
       responses: {},
       endpoints: {},
     });
