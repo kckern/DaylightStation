@@ -632,3 +632,39 @@ describe('TriggerDispatchService.setNote', () => {
     expect(result.code).toBe('NOTE_WRITE_FAILED');
   });
 });
+
+// --- appended: unified-core wiring ---
+import { TriggerEvent } from '#domains/trigger/TriggerEvent.mjs';
+
+describe('TriggerDispatchService (unified core)', () => {
+  function make(registry, wake) {
+    const wakeAndLoadService = { execute: wake || (async () => ({ ok: true })) };
+    return new TriggerDispatchService({
+      config: registry,
+      contentIdResolver: { resolve: () => true },
+      wakeAndLoadService,
+      haGateway: { callService: async () => 'ok' },
+      deviceService: { get: () => ({ loadContent: async () => 'ok', clearContent: async () => 'ok' }) },
+      broadcast: () => {},
+      logger: { info() {}, warn() {}, error() {}, debug() {} },
+      clock: () => 1000,
+    });
+  }
+  const registry = { nfc: { locations: { livingroom: { target: 'livingroom-tv', action: 'queue' } }, tags: { 'aa': { global: { plex: '456598' }, overrides: {} } } }, state: { locations: {} } };
+
+  it('dispatches an nfc content trigger via wakeAndLoad', async () => {
+    const calls = [];
+    const svc = make(registry, async (...a) => { calls.push(a); return { ok: true }; });
+    const res = await svc.handleTrigger('livingroom', 'nfc', 'aa', {});
+    expect(res.ok).toBe(true);
+    expect(calls[0][0]).toBe('livingroom-tv');
+    expect(calls[0][1]).toMatchObject({ queue: 'plex:456598' });
+  });
+
+  it('handleEvent(TriggerEvent) matches handleTrigger', async () => {
+    const svc = make(registry);
+    const viaEvent = await svc.handleEvent(TriggerEvent.create({ source: 'nfc', location: 'livingroom', value: 'aa' }), {});
+    expect(viaEvent.ok).toBe(true);
+    expect(viaEvent.action).toBe('queue');
+  });
+});

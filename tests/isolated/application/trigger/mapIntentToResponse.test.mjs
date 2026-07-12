@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { mapIntentToResponse } from '#apps/trigger/mapIntentToResponse.mjs';
+import { mapIntentToResponse, UnknownActionError } from '#apps/trigger/mapIntentToResponse.mjs';
 
 describe('mapIntentToResponse', () => {
   it('maps queue/play/play-next to content with expression', () => {
@@ -29,6 +29,6 @@ describe('mapIntentToResponse', () => {
 
   it('returns null for null intent and throws for unknown action', () => {
     expect(mapIntentToResponse(null)).toBeNull();
-    expect(() => mapIntentToResponse({ action: 'nope', target: 't' })).toThrow();
+    expect(() => mapIntentToResponse({ action: 'nope', target: 't' })).toThrow(UnknownActionError);
   });
 });

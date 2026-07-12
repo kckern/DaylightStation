@@ -10,6 +10,14 @@ import { Response } from '#domains/trigger/Response.mjs';
 
 const CONTENT_ACTIONS = new Set(['queue', 'play', 'play-next']);
 
+export class UnknownActionError extends Error {
+  constructor(action) {
+    super(`mapIntentToResponse: unknown action "${action}"`);
+    this.name = 'UnknownActionError';
+    this.action = action;
+  }
+}
+
 /**
  * @param {Object|null} intent  resolver output { action, target, params, content?, scene?, service?, entity?, data?, end?, endLocation? }
  * @param {Object} [opts]
@@ -43,7 +51,7 @@ export function mapIntentToResponse(intent, { posture = 'authoritative' } = {}) 
   if (action === 'ha-service') {
     return Response.ha({ op: 'service', service: intent.service, entity: intent.entity, data: intent.data });
   }
-  throw new Error(`mapIntentToResponse: unknown action "${action}"`);
+  throw new UnknownActionError(action);
 }
 
 export default mapIntentToResponse;
