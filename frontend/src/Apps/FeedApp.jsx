@@ -17,25 +17,27 @@ import './FeedApp.scss';
 
 const log = getLogger().child({ app: 'feed', module: 'feed-app', sessionLog: true });
 
-// PWA: inject feed-scoped manifest and register service worker
+// The root app already ships /manifest.json + /sw.js. The feed-specific
+// manifest and worker provided NO offline behavior (empty fetch handler) and a
+// second manifest + overlapping worker scope only created ambiguous, hard-to-
+// reason-about behavior. Rather than ship installability theater, we stop
+// registering them and actively unregister any previously-installed feed
+// worker so it can't keep controlling its scope after deploy. (F-19)
 function useFeedPWA() {
   useEffect(() => {
-    let link = document.querySelector('link[rel="manifest"][data-feed-pwa]');
-    if (!link) {
-      link = document.createElement('link');
-      link.rel = 'manifest';
-      link.href = '/feed-manifest.json';
-      link.setAttribute('data-feed-pwa', '');
-      document.head.appendChild(link);
+    document.querySelectorAll('link[rel="manifest"][data-feed-pwa]').forEach(el => el.remove());
+    if ('serviceWorker' in navigator && navigator.serviceWorker.getRegistrations) {
+      navigator.serviceWorker.getRegistrations()
+        .then(regs => {
+          for (const reg of regs) {
+            const script = reg.active?.scriptURL || '';
+            if (script.includes('/feed-sw.js') || (reg.scope || '').endsWith('/feed')) {
+              reg.unregister();
+            }
+          }
+        })
+        .catch(() => { /* best-effort cleanup */ });
     }
-
-    if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.register('/feed-sw.js', { scope: '/feed' });
-    }
-
-    return () => {
-      if (link.parentNode) link.parentNode.removeChild(link);
-    };
   }, []);
 }
 
@@ -48,7 +50,12 @@ function FeedLayout() {
   useFeedPWA();
 
   useEffect(() => {
-    configureLogger({ level: 'debug', context: { app: 'feed', sessionLog: true } });
+    // Only crank the whole-app logger to debug when explicitly requested via
+    // ?debug=1 or window.DAYLIGHT_LOG_LEVEL; otherwise keep info-level so
+    // ordinary sessions don't flood the transport with per-frame diagnostics. (F-18)
+    const debugMode = new URLSearchParams(window.location.search).get('debug') === '1'
+      || (typeof window !== 'undefined' && window.DAYLIGHT_LOG_LEVEL === 'debug');
+    configureLogger({ level: debugMode ? 'debug' : 'info', context: { app: 'feed', sessionLog: true } });
     log.info('feed-session.start', {
       userAgent: navigator.userAgent,
       viewport: { width: window.innerWidth, height: window.innerHeight },
@@ -99,25 +106,25 @@ function FeedLayout() {
 
   return (
     <div className="feed-app">
-      {!isScroll && (
-        <nav className="feed-tabs">
-          <NavLink to="/feed/reader" className={({ isActive }) => isActive ? 'active' : ''}>
-            Reader
+      {/* Persistent nav on every mode so Reader/Headlines stay discoverable
+          from Scroll; compact modifier keeps it unobtrusive while scrolling. (F-12) */}
+      <nav className={isScroll ? 'feed-tabs feed-tabs--compact' : 'feed-tabs'}>
+        <NavLink to="/feed/reader" className={({ isActive }) => isActive ? 'active' : ''}>
+          Reader
+        </NavLink>
+        {headlinePages.map(page => (
+          <NavLink
+            key={page.id}
+            to={`/feed/headlines/${page.id}`}
+            className={({ isActive }) => isActive ? 'active' : ''}
+          >
+            {page.label}
           </NavLink>
-          {headlinePages.map(page => (
-            <NavLink
-              key={page.id}
-              to={`/feed/headlines/${page.id}`}
-              className={({ isActive }) => isActive ? 'active' : ''}
-            >
-              {page.label}
-            </NavLink>
-          ))}
-          <NavLink to="/feed/scroll" className={({ isActive }) => isActive ? 'active' : ''}>
-            Scroll
-          </NavLink>
-        </nav>
-      )}
+        ))}
+        <NavLink to="/feed/scroll" className={({ isActive }) => isActive ? 'active' : ''}>
+          Scroll
+        </NavLink>
+      </nav>
       <div className="feed-content">
         <Outlet />
       </div>

@@ -69,6 +69,11 @@ Firmware logs over **WiFi UDP broadcast :9999** (serial is flaky). Watch with a 
 :9999. `[hid] h=<handle> len=8 <hex>` shows raw reports; `[barcode] <code>` shows a completed
 decode; heartbeats show `ws=` / `ble=` state.
 
+There is also an on-demand **HTTP health endpoint on :80** — `GET /status` (or `/`) returns a JSON
+snapshot (up_s, wifi/ws/ble state + RSSI, scan_count, and `last_scan` code/when). See
+[`README.md`](./README.md#health-endpoint--ping-it-from-anywhere-on-the-lan). Ping it:
+`curl http://<device-ip>/status`.
+
 ## Relationship to food-scale-relay
 `_extensions/barcode-relay` and `_extensions/food-scale-relay` are **independent PlatformIO
 projects → independent firmware images → independent ESP32 devices.** No shared binary, no

@@ -256,6 +256,8 @@ export default function DetailView({ item, sections, ogImage, ogDescription, loa
               title={item.title}
               className="detail-iframe"
               sandbox="allow-scripts allow-same-origin allow-popups"
+              loading="lazy"
+              referrerPolicy="no-referrer"
               onLoad={() => feedLog.detail('iframe loaded', { id: item.id, src: iframeSrc })}
             />
           </div>
@@ -362,6 +364,9 @@ function YouTubeHero({ item, heroImage, sections, onPlay: _onPlay }) {
         title={item.title}
         allow="autoplay; encrypted-media; picture-in-picture"
         allowFullScreen
+        loading="lazy"
+        referrerPolicy="strict-origin-when-cross-origin"
+        sandbox="allow-scripts allow-same-origin allow-popups allow-presentation"
         style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', border: 'none' }}
       />
     </div>
