@@ -219,6 +219,9 @@ function ReaderYouTubePlayer({ article }) {
           title={article.title}
           allow="autoplay; encrypted-media; picture-in-picture"
           allowFullScreen
+          loading="lazy"
+          referrerPolicy="strict-origin-when-cross-origin"
+          sandbox="allow-scripts allow-same-origin allow-popups allow-presentation"
           className="youtube-embed"
         />
       </div>

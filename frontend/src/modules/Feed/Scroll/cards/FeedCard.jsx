@@ -609,6 +609,9 @@ function CardYouTubePlayer({ item }) {
       title={item.title}
       allow="autoplay; encrypted-media"
       allowFullScreen
+      loading="lazy"
+      referrerPolicy="strict-origin-when-cross-origin"
+      sandbox="allow-scripts allow-same-origin allow-popups allow-presentation"
       style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', border: 'none' }}
     />
   );
