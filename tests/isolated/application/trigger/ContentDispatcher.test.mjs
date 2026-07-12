@@ -37,4 +37,24 @@ describe('ContentDispatcher.optimistic', () => {
     expect(onContentApproved).toHaveBeenCalledWith('t');
     expect(calls).toContain('broadcast');
   });
+
+  it('does NOT await the fallback — optimistic resolves even if loadFallback never settles', async () => {
+    const loadFallback = vi.fn(() => new Promise(() => {})); // never resolves
+    const waitForAck = vi.fn().mockRejectedValue(new Error('timeout'));
+    const cd = new ContentDispatcher({ screenBroadcast: vi.fn(), waitForAck, loadFallback });
+    // If optimistic awaited the fallback, this would hang forever.
+    await cd.optimistic('t', { queue: 'x' }, {});
+    expect(loadFallback).toHaveBeenCalledWith('t', { queue: 'x' });
+  });
+
+  it('swallows a fallback rejection without throwing (fire-and-forget)', async () => {
+    const loadFallback = vi.fn().mockRejectedValue(new Error('boom'));
+    const waitForAck = vi.fn().mockRejectedValue(new Error('timeout'));
+    const logger = { info: vi.fn(), warn: vi.fn() };
+    const cd = new ContentDispatcher({ screenBroadcast: vi.fn(), waitForAck, loadFallback, logger });
+    await expect(cd.optimistic('t', { queue: 'x' }, {})).resolves.toBeUndefined();
+    // Let the background catch run before asserting the warn log.
+    await new Promise((r) => setImmediate(r));
+    expect(logger.warn).toHaveBeenCalledWith('trigger.content.fallback_failed', expect.objectContaining({ target: 't', error: 'boom' }));
+  });
 });
