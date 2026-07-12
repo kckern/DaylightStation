@@ -68,6 +68,17 @@ export class IFeedSourceAdapter {
   }
 
   /**
+   * Whether this adapter actually persists read-state via markRead().
+   * The base class supplies a no-op markRead, so `typeof adapter.markRead ===
+   * 'function'` is always true and cannot be used for capability detection.
+   * Subclasses that genuinely mark items read MUST override this to return true.
+   * @returns {boolean}
+   */
+  get supportsMarkRead() {
+    return false;
+  }
+
+  /**
    * Mark items as read/consumed. No-op by default.
    * @param {string[]} feedItemIds - Prefixed item IDs (e.g. "freshrss:12345")
    * @param {string} username

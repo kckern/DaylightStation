@@ -81,12 +81,10 @@ export class HeadlineFeedAdapter extends IFeedSourceAdapter {
       items.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
     }
 
-    // Shuffle source keys for fairness
-    const sourceKeys = [...bySource.keys()];
-    for (let i = sourceKeys.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1));
-      [sourceKeys[i], sourceKeys[j]] = [sourceKeys[j], sourceKeys[i]];
-    }
+    // Stable source ordering (F-27): a per-fetch random shuffle made the
+    // offset-based pagination below skip/duplicate items across page requests.
+    // Sort keys deterministically so the same offset returns the same slice.
+    const sourceKeys = [...bySource.keys()].sort();
 
     // Round-robin: pick 1 item per source per round
     const distributed = [];

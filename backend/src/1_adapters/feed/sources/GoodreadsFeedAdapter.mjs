@@ -11,6 +11,20 @@ import imageSize from 'image-size';
 import { IFeedSourceAdapter, CONTENT_TYPES } from '#apps/feed/ports/IFeedSourceAdapter.mjs';
 import { HttpClient } from '#system/services/HttpClient.mjs';
 
+/**
+ * Deterministic FNV-1a 32-bit hash of a string, base36-encoded.
+ * Used to derive stable IDs from a book's own content when no bookId exists —
+ * same content yields the same id across fetches (F-22).
+ */
+function fnv1a(str) {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < str.length; i++) {
+    h ^= str.charCodeAt(i);
+    h = Math.imul(h, 0x01000193);
+  }
+  return (h >>> 0).toString(36);
+}
+
 export class GoodreadsFeedAdapter extends IFeedSourceAdapter {
   #userDataService;
   #logger;
@@ -48,9 +62,11 @@ export class GoodreadsFeedAdapter extends IFeedSourceAdapter {
       const selected = shuffled.slice(0, limit);
 
       const items = await Promise.all(selected.map(async book => {
+        // Deterministic: derive from readAt when known; otherwise leave null
+        // rather than stamping Date.now() on every fetch (F-22).
         const ts = book.readAt
           ? new Date(book.readAt).toISOString()
-          : new Date().toISOString();
+          : null;
 
         const imageUrl = book.coverImage?.replace(/\.(_S[XY]\d+)+_\./, '.') || null;
         const dims = imageUrl ? await this.#getImageDimensions(imageUrl) : {};
@@ -59,7 +75,7 @@ export class GoodreadsFeedAdapter extends IFeedSourceAdapter {
           : null;
 
         return {
-          id: `goodreads:${book.bookId || book.title}`,
+          id: `goodreads:${book.bookId || fnv1a([book.title, book.author].map(v => v ?? '').join('|'))}`,
           tier: query.tier || 'scrapbook',
           source: 'goodreads',
           title: book.title || 'Unknown Book',
