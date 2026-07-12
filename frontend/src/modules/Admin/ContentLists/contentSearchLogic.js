@@ -25,3 +25,19 @@ export function parseSourcePrefix(text) {
   const m = text.match(/^([\w-]+):(.+)$/);
   return m ? { source: m[1].toLowerCase(), term: m[2] } : null;
 }
+
+// Is a `source:term` query a DIRECT content-id entry rather than a keyword
+// search WITHIN that source? Typing `plex:455704` is obviously entering an id,
+// not "searching within plex" — so the source-scope chip must not appear.
+// Signals (any one): a numeric term (plex/hymn rating keys), a path term
+// (files:clips/x.mp4, app:foo/param, canvas:a/b.jpg), or the backend already
+// returned a result whose id exactly equals the whole query (an app/registry or
+// id-lookup hit). Keyword searches (plex:bluey) satisfy none → still scope+chip.
+export function isDirectSourceIdQuery(text, results = []) {
+  const parsed = parseSourcePrefix(text);
+  if (!parsed) return false;
+  const term = parsed.term.trim();
+  if (/^\d+$/.test(term)) return true;
+  if (term.includes('/')) return true;
+  return Array.isArray(results) && results.some((r) => r?.id === text);
+}
