@@ -331,13 +331,19 @@ import {
   FitnessSyncerHarvester,
   YamlAuthDatastore,
   createInfinityHarvesters,
-  JamCorderHarvester
+  JamCorderHarvester,
+  PianoMp3Harvester
 } from '#adapters/harvester/index.mjs';
 
 // JamCorder adapters + use case (MIDI recorder harvest)
 import { HttpJamCorderSource } from '#adapters/jamcorder/HttpJamCorderSource.mjs';
 import { FsJamCorderArchive } from '#adapters/jamcorder/FsJamCorderArchive.mjs';
 import { HarvestJamCorderRecordings } from '#apps/jamcorder/HarvestJamCorderRecordings.mjs';
+
+// Piano MIDI→MP3 adapters + use case (daily render of history/piano into media/audio/piano)
+import { FsMidiLibrary } from '#adapters/pianoaudio/FsMidiLibrary.mjs';
+import { FluidSynthMp3Converter } from '#adapters/pianoaudio/FluidSynthMp3Converter.mjs';
+import { ConvertPendingPianoMidi } from '#apps/pianoaudio/ConvertPendingPianoMidi.mjs';
 
 // RSS Parser for Goodreads/Letterboxd harvesters
 import RSSParser from 'rss-parser';
@@ -3493,6 +3499,17 @@ export function createHarvesterServices(config) {
       return new JamCorderHarvester({ harvestUseCase, logger });
     });
   }
+
+  // Piano MIDI→MP3 — daily render of every history/piano .mid into media/audio/piano.
+  registerHarvester('piano-mp3', () => {
+    const sourceDir = configService.getHouseholdPath('history/piano');
+    const destDir = `${configService.getMediaDir()}/audio/piano`;
+    const soundfontPath = '/usr/share/soundfonts/TimGM6mb.sf2'; // Alpine soundfont-timgm (confirmed at build)
+    const library = new FsMidiLibrary({ sourceDir, destDir, logger });
+    const converter = new FluidSynthMp3Converter({ soundfontPath, scratchDir: '/tmp/pianoaudio', logger });
+    const convertUseCase = new ConvertPendingPianoMidi({ library, converter, logger });
+    return new PianoMp3Harvester({ convertUseCase, logger });
+  });
 
   // Create job executor for scheduler integration
   const jobExecutor = new HarvesterJobExecutor({
