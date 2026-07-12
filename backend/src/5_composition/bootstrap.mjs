@@ -3510,9 +3510,10 @@ export function createHarvesterServices(config) {
     const pianoAudioCfg = configService?.getHouseholdAppConfig?.(null, 'pianoaudio') || {};
     const junkMinSeconds = pianoAudioCfg.junkMinSeconds ?? 1800; // 30 min
     const junkMinNotes = pianoAudioCfg.junkMinNotes ?? 200;
+    const concurrency = pianoAudioCfg.concurrency ?? 8; // parallel renders (host has 16 cores)
     const library = new FsMidiLibrary({ sourceDir, destDir, logger, junkMinSeconds, junkMinNotes });
     const converter = new FluidSynthMp3Converter({ soundfontPath, scratchDir: '/tmp/pianoaudio', logger });
-    const convertUseCase = new ConvertPendingPianoMidi({ library, converter, logger });
+    const convertUseCase = new ConvertPendingPianoMidi({ library, converter, logger, concurrency });
     return new PianoMp3Harvester({ convertUseCase, logger });
   });
 
