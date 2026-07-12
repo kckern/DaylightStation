@@ -16,6 +16,11 @@ const logger = () => (_logger ??= getLogger().child({ component: 'identity-manag
 
 const IDENTITY_TOPIC = 'fitness.identity.detected';
 
+// A scan that lands within this window of an unlock/identify modal being active
+// is leftover unlock context (e.g. a game-unlock admin fingerprint arriving a beat
+// after its modal closed), NOT the emergency gesture — don't open the ceremony.
+export const UNLOCK_COOLDOWN_MS = 4000;
+
 // Ported from useUnlock.js (retired in a later task). Both sound path and volume
 // are config-driven (fitness.yml → unlock.{sound,volume}); these are fallbacks.
 const DEFAULT_UNLOCK_SOUND = 'apps/fitness/ux/unlock.mp3';
@@ -44,6 +49,9 @@ export function IdentityProvider({ children }) {
 
   // Refs read inside the (stable) WS handler to avoid stale closures.
   const activeLockRef = useRef(null);
+  // Timestamp of the most recent unlock/identify modal activity. A scan within
+  // UNLOCK_COOLDOWN_MS of this is leftover unlock context, not the emergency gesture.
+  const lastUnlockActivityRef = useRef(0);
   // identifyOnly: resolve on ANY recognized finger (no per-lock authz check).
   // Used by surfaces that only need to KNOW who scanned — e.g. the emulator
   // save-game identity prompt — rather than gate on a permission.
@@ -101,6 +109,7 @@ export function IdentityProvider({ children }) {
 
     // (1) A modal is open: only the active lock's authorization matters.
     if (lock) {
+      lastUnlockActivityRef.current = Date.now();
       const recognized = msg.matched === true;
       const authorized = recognized
         && (identifyOnlyRef.current
@@ -157,6 +166,10 @@ export function IdentityProvider({ children }) {
     if (!msg.matched || !msg.authz?.admin) return;
     const phase = emergencyRef.current?.phase;
     if (phase === PHASE_NORMAL) {
+      if (Date.now() - lastUnlockActivityRef.current < UNLOCK_COOLDOWN_MS) {
+        logger().info('emergency-ceremony-suppressed', { userId: msg.userId ?? null, reason: 'unlock-cooldown' });
+        return;
+      }
       logger().info('emergency-ceremony-start', { userId: msg.userId ?? null });
       emergencyRef.current?.triggerCeremony?.();
     } else if (phase === PHASE_TRIGGERING) {
@@ -184,6 +197,7 @@ export function IdentityProvider({ children }) {
     // async success chime can play later.
     primeCueAudio('unlock-request');
     activeLockRef.current = lock;
+    lastUnlockActivityRef.current = Date.now();
     identifyOnlyRef.current = !!identifyOnly;
     adminOnlyRef.current = !!adminOnly;
     pendingGrantRef.current = null; // fresh attempt — no decided grant yet
@@ -209,6 +223,7 @@ export function IdentityProvider({ children }) {
   );
 
   const clearUnlock = useCallback(() => {
+    lastUnlockActivityRef.current = Date.now();
     activeLockRef.current = null;
     identifyOnlyRef.current = false;
     adminOnlyRef.current = false;
