@@ -14,6 +14,7 @@
 
 import { extract } from '@extractus/article-extractor';
 import { HttpClient } from '#system/services/HttpClient.mjs';
+import { assertPublicHttpUrl, safeFetch } from './feedUrlGuard.mjs';
 
 const ICON_TTL = 5 * 60 * 1000; // 5 minutes
 const MAX_ICON_CACHE = 200;
@@ -65,7 +66,12 @@ export class WebContentAdapter {
     try {
       const start = Date.now();
       const iconUrl = await this.#resolveIconUrl(url);
-      const iconRes = await this.#httpClient.requestRaw('GET', iconUrl, { responseType: 'buffer' });
+      const iconRes = await safeFetch(iconUrl, {
+        responseType: 'buffer',
+        timeoutMs: 5000,
+        maxBytes: 2 * 1024 * 1024,
+        headers: { 'User-Agent': USER_AGENT },
+      });
       if (!iconRes.ok) return null;
 
       const buffer = iconRes.data;
@@ -192,10 +198,11 @@ export class WebContentAdapter {
   async proxyImage(url) {
     try {
       const start = Date.now();
-      const res = await this.#httpClient.requestRaw('GET', url, {
-        headers: { 'User-Agent': USER_AGENT },
+      const res = await safeFetch(url, {
         responseType: 'buffer',
-        timeout: READABLE_TIMEOUT,
+        timeoutMs: READABLE_TIMEOUT,
+        maxBytes: 10 * 1024 * 1024,
+        headers: { 'User-Agent': USER_AGENT },
       });
       if (!res.ok) {
         this.#logger.debug?.('webcontent.image.fallback', { url, status: res.status, durationMs: Date.now() - start });
@@ -231,9 +238,17 @@ export class WebContentAdapter {
   async extractReadableContent(url) {
     const start = Date.now();
 
-    // Try article-extractor library first (better quality extraction)
+    // SSRF guard: reject non-public targets up front. Throws out of the
+    // function; the router catches and returns 502.
+    await assertPublicHttpUrl(url);
+
+    // Try article-extractor library first (better quality extraction).
+    // The extractor does its own fetch, so bound it with an explicit timeout.
     try {
-      const article = await extract(url);
+      const article = await Promise.race([
+        extract(url),
+        new Promise((_, rej) => setTimeout(() => rej(new Error('extract timeout')), READABLE_TIMEOUT)),
+      ]);
       if (article?.content) {
         const cleaned = this.#cleanExtractedHtml(article.content, article.title);
         const textOnly = cleaned.replace(/<[^>]*>/g, '').trim();
@@ -256,10 +271,11 @@ export class WebContentAdapter {
     }
 
     // Fallback: manual fetch + regex parser
-    const pageRes = await this.#httpClient.requestRaw('GET', url, {
-      headers: { 'User-Agent': USER_AGENT, 'Accept': 'text/html' },
+    const pageRes = await safeFetch(url, {
       responseType: 'text',
-      timeout: READABLE_TIMEOUT,
+      timeoutMs: READABLE_TIMEOUT,
+      maxBytes: 3 * 1024 * 1024,
+      headers: { 'User-Agent': USER_AGENT, 'Accept': 'text/html' },
     });
 
     if (!pageRes.ok) {
