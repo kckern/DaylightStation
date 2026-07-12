@@ -16,10 +16,10 @@ Verified live: scan → `[barcode] living-room:plex:594036+shuffle` on the ESP �
 DS2278 (HID-BLE keyboard)  --BLE HID/HOGP-->  ESP32 ATOM Lite  --WiFi WS-->  backend event bus
                                               (BLE central + WS client)      topic: barcode-relay
 ```
-No host computer in the path. The scanner also stays plugged into its USB cradle for **charging**;
-that USB keyboard interface still feeds the **separate, pre-existing `barcode-scanner`→MQTT service
-on homeserver** (which the docker container depends on) — the two data paths coexist, so **do not
-unplug the cradle** expecting to "force BLE"; BLE works while cabled.
+No host computer in the path. **BLE is now the sole path** — the old USB→MQTT service
+(`_extensions/barcode-scanner`, DS2208 evdev→MQTT) has been RETIRED and the backend no longer
+consumes that topic. The cradle is therefore **charging-only** now (BLE works whether cradled or
+not); keep it docked to keep the DS2278 charged, or provide another charge method.
 
 ## One-time scanner setup (physical)
 Scan the **"HID Bluetooth Low Energy (Discoverable)"** host barcode from the DS2278 Product
@@ -49,11 +49,17 @@ That MAC is the `TARGET_MAC` in `firmware/src/main.cpp`.
 4. Scanning is host-gated in USB **SNAPI** mode; irrelevant once in HID-BLE.
 
 ## Flashing
-Fill real WiFi creds in `main.cpp` before flashing (committed with placeholders `YOUR_SSID` /
-`YOUR_WIFI_PASS`). Then:
+Config is CONFIG-DRIVEN from the household SSOT (mirrors eink-panel) — do NOT hand-edit
+`main.cpp`. Generate the gitignored `include/config.h` from the SSOT first, then flash:
 ```
-cd firmware && ~/.platformio/penv/bin/pio run -t upload --upload-port /dev/cu.usbserial-XXXX
+cd firmware
+node tools/gen-config.mjs <data>/household/config/barcode-relay.yml   # -> include/config.h
+~/.platformio/penv/bin/pio run -t upload --upload-port /dev/cu.usbserial-XXXX
 ```
+`barcode-relay.yml` (private data volume) holds `provisioning.wifi_*`, `backend.host`
+(the stable HOSTNAME `daylightlocal.kckern.net`, never an IP) `+ port + ws_path`, and the
+`scanner.mac/name`. `config.example.h` documents the shape. Changing the endpoint/creds
+is a SSOT edit + regen + reflash — no source change.
 `upload_speed=115200` (FTDI link marginal), `huge_app.csv` partitions, `espressif32@6.5.0`
 (NimBLE 1.4.x needs Arduino core 2.x). Free the port first if held:
 `kill $(lsof -t /dev/cu.usbserial-*)`.
