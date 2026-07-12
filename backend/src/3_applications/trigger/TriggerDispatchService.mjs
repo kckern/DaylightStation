@@ -26,6 +26,8 @@ import { ResolverRegistry, UnknownModalityError } from '#domains/trigger/service
 import { dispatchResponse, UnknownResponseKindError } from './responseHandlers.mjs';
 import { mapIntentToResponse, UnknownActionError } from './mapIntentToResponse.mjs';
 import { authenticate } from './guards/authenticate.mjs';
+import { authorize } from './guards/authorize.mjs';
+import { gatekeeperStrategies } from './guards/gatekeeperStrategies.mjs';
 import { createDebounce } from './guards/debounce.mjs';
 import { TriggerEvent } from '#domains/trigger/TriggerEvent.mjs';
 
@@ -60,6 +62,9 @@ export class TriggerDispatchService {
     haGateway,
     deviceService,
     tagWriter = null,           // NEW
+    contentDispatcher = null,
+    screenBroadcast = null,
+    commandResolver = null,
     broadcast,
     logger = console,
     debounceWindowMs = 30000,
@@ -67,7 +72,7 @@ export class TriggerDispatchService {
   }) {
     this.#config = config || {};
     this.#contentIdResolver = contentIdResolver;
-    this.#deps = { wakeAndLoadService, haGateway, deviceService };
+    this.#deps = { wakeAndLoadService, haGateway, deviceService, contentDispatcher, screenBroadcast, commandResolver };
     this.#tagWriter = tagWriter;
     this.#broadcast = broadcast || (() => {});
     this.#logger = logger;
@@ -155,6 +160,19 @@ export class TriggerDispatchService {
       // window (which won't see the success-side set until we finish) are
       // properly debounced.
       this.#debounce.set(debounceKey, startedAt);
+    }
+
+    // Authorize stage — strategies are resolved from the source's `authorize`
+    // policy (gatekeeperStrategies). NFC/state locations carry no such policy,
+    // so this resolves to [] and authorize() approves unconditionally: a
+    // pass-through that doesn't change existing modality behavior.
+    if (!options.dryRun) {
+      const decision = await authorize({ strategies: gatekeeperStrategies(locationConfig), context: { location, modality, value: normalizedValue } });
+      if (!decision.approved) {
+        this.#debounce.delete(debounceKey);
+        this.#logger.info?.('trigger.denied', { location, modality, value: normalizedValue, reason: decision.reason, dispatchId });
+        return { ok: false, code: 'AUTHORIZE_DENIED', error: decision.reason || 'Denied', location, modality, value: normalizedValue, dispatchId };
+      }
     }
 
     let intent;
