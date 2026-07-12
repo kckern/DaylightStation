@@ -9,6 +9,8 @@
  * @module adapters/feed
  */
 
+import { sanitizeFeedHtml } from './htmlSanitizer.mjs';
+
 const GREADER_BASE = '/api/greader.php/reader/api/0';
 
 export class FreshRSSFeedAdapter {
@@ -99,7 +101,7 @@ export class FreshRSSFeedAdapter {
     const items = (data.items || []).map(item => ({
       id: item.id,
       title: item.title,
-      content: item.summary?.content || '',
+      content: sanitizeFeedHtml(item.summary?.content || ''),
       link: item.canonical?.[0]?.href || item.alternate?.[0]?.href || '',
       published: item.published ? new Date(item.published * 1000) : null,
       author: item.author || null,
@@ -110,6 +112,13 @@ export class FreshRSSFeedAdapter {
 
     return { items, continuation: data.continuation || null };
   }
+
+  /**
+   * Whether this adapter actually persists read-state. Always true here —
+   * markRead calls the FreshRSS GReader edit-tag endpoint.
+   * @returns {boolean}
+   */
+  get supportsMarkRead() { return true; }
 
   /**
    * Mark items as read

@@ -45,6 +45,7 @@
     "crypto-js": "^4.2.0",
     "dash-video-element": "^0.3.1",
     "dayjs": "^1.11.11",
+    "dompurify": "^3.4.12",
     "embla-carousel-react": "^8.1.6",
     "highcharts": "^11.4.6",
     "highcharts-more": "^0.1.7",

@@ -26,7 +26,7 @@ import { ValidationError } from '#domains/core/errors/ValidationError.mjs';
 const RESERVED_KEYS = new Set([
   'action', 'target', 'content',
   'scene', 'service', 'entity', 'data',
-  'end', 'end_location',
+  'end', 'end_location', 'endpoint',
 ]);
 
 // Tag bookkeeping written by YamlTriggerConfigRepository on first scan.
@@ -122,6 +122,7 @@ export class NfcResolver {
     if (merged.service !== undefined) intent.service = merged.service;
     if (merged.entity !== undefined) intent.entity = merged.entity;
     if (merged.data !== undefined) intent.data = merged.data;
+    if (merged.endpoint !== undefined) intent.endpoint = merged.endpoint;
     // 'nothing' explicitly disables the configured behavior; treat as absent.
     if (end && end !== 'nothing') {
       intent.end = end;
@@ -134,7 +135,8 @@ export class NfcResolver {
     const hasDispatchable = intent.content !== undefined
       || intent.scene !== undefined
       || intent.service !== undefined
-      || intent.entity !== undefined;
+      || intent.entity !== undefined
+      || intent.endpoint !== undefined;
     if (!hasDispatchable) return null;
 
     return intent;

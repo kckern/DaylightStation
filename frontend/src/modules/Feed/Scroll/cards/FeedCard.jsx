@@ -113,6 +113,8 @@ function HeroImage({ src, thumbnail, feedItemId, title }) {
         src={imgSrc}
         alt=""
         className="feed-card-image"
+        loading="lazy"
+        decoding="async"
         style={{
           width: '100%',
           height: '100%',
@@ -278,7 +280,7 @@ function heroAspectRatio(item) {
 }
 
 
-export default function FeedCard({ item, colors = {}, onDismiss, onPlay }) {
+export default function FeedCard({ item, onDismiss, onPlay }) {
   const tier = item.tier || 'wire';
   const sourceName = item.meta?.sourceName || item.meta?.feedTitle || item.source || '';
   const age = formatAge(item.timestamp);
@@ -607,6 +609,9 @@ function CardYouTubePlayer({ item }) {
       title={item.title}
       allow="autoplay; encrypted-media"
       allowFullScreen
+      loading="lazy"
+      referrerPolicy="strict-origin-when-cross-origin"
+      sandbox="allow-scripts allow-same-origin allow-popups allow-presentation"
       style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', border: 'none' }}
     />
   );

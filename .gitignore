@@ -108,3 +108,4 @@ dev.log*
 
 # PII-scrub tooling (contains the real->alias map; local only, never commit)
 .pii-scrub/
+!scripts/migrate-trigger-config.mjs

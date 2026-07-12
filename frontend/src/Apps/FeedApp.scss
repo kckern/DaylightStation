@@ -1,5 +1,6 @@
 .feed-app {
   height: 100vh;
+  height: 100dvh; // dynamic viewport unit avoids mobile chrome/keyboard clipping (F-24)
   display: flex;
   flex-direction: column;
   background: #444;
@@ -32,6 +33,18 @@
   }
 }
 
+// Compact persistent switcher shown while scrolling — keeps Reader/Headlines
+// reachable without dominating the immersive scroll view. (F-12)
+.feed-tabs--compact {
+  padding: 0 0.5rem;
+  background: rgba(26, 27, 30, 0.92);
+
+  a {
+    padding: 0.4rem 0.9rem;
+    font-size: 0.78rem;
+  }
+}
+
 .feed-content {
   flex: 1;
   overflow-y: auto;
@@ -47,4 +60,17 @@
   height: 50vh;
   color: #888;
   font-size: 1.2rem;
+}
+
+// Respect the user's reduced-motion preference across the whole Feed app:
+// skeleton shimmers, slide/opacity dismiss animations, sheet transitions,
+// and scroll-behavior are all neutralized. (F-14, F-24)
+@media (prefers-reduced-motion: reduce) {
+  .feed-app,
+  .feed-app * {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
 }

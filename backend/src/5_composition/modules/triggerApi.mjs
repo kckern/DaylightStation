@@ -2,6 +2,8 @@
 // Composition wiring for Trigger API router(s). Extracted from bootstrap.mjs (Task P2.7-E).
 
 import { YamlTriggerConfigRepository } from '#adapters/trigger/YamlTriggerConfigRepository.mjs';
+import { YamlObservedStateStore } from '#adapters/persistence/yaml/YamlObservedStateStore.mjs';
+import { HttpEndpointGateway } from '#adapters/trigger/HttpEndpointGateway.mjs';
 import { createTriggerRouter } from '#api/v1/routers/trigger.mjs';
 import { TriggerDispatchService } from '#apps/trigger/TriggerDispatchService.mjs';
 import { broadcastEvent, createDeviceServices, createWakeAndLoadService } from '../bootstrap.mjs';
@@ -27,6 +29,9 @@ import { broadcastEvent, createDeviceServices, createWakeAndLoadService } from '
  * @param {Object} config.contentIdResolver - From content services (used by resolveIntent)
  * @param {Function} config.broadcast - WebSocket broadcast function (broadcastEvent)
  * @param {Function} config.loadFile - Helper that loads YAML files relative to household dir
+ * @param {Object} [config.contentDispatcher] - ContentDispatcher instance (optimistic content posture; shared with barcode ingress)
+ * @param {Function} [config.screenBroadcast] - Screen-targeted broadcast helper (targetScreen, payload) used by contentDispatcher-driven flows
+ * @param {Function} [config.commandResolver] - Resolves a raw scan/value string to a known command (e.g. resolveCommand)
  * @param {Object} [config.logger] - Logger instance
  * @returns {{ triggerDispatchService: TriggerDispatchService, router: import('express').Router }}
  */
@@ -40,17 +45,24 @@ export function createTriggerApiRouter(config) {
     broadcast,
     loadFile,
     saveFile,
+    contentDispatcher = null,
+    screenBroadcast = null,
+    commandResolver = null,
     logger = console,
   } = config;
 
-  const triggerConfigRepository = new YamlTriggerConfigRepository({ saveFile });
+  const observedStore = new YamlObservedStateStore({ loadFile, saveFile });
+  observedStore.load();
+  const triggerConfigRepository = new YamlTriggerConfigRepository({ saveFile, observedStore });
   let triggerConfig;
   try {
     triggerConfig = triggerConfigRepository.loadRegistry({ loadFile });
   } catch (err) {
     logger.warn?.('trigger.config.parse.failed', { error: err.message });
-    triggerConfig = { nfc: { locations: {}, tags: {} }, state: { locations: {} } };
+    triggerConfig = { nfc: { locations: {}, tags: {} }, state: { locations: {} }, responses: {}, endpoints: {} };
   }
+
+  const endpointGateway = new HttpEndpointGateway({ endpoints: triggerConfig.endpoints || {}, logger });
 
   const triggerDispatchService = new TriggerDispatchService({
     config: triggerConfig,
@@ -59,6 +71,10 @@ export function createTriggerApiRouter(config) {
     haGateway,
     deviceService: deviceServices.deviceService,
     tagWriter: triggerConfigRepository,
+    contentDispatcher,
+    screenBroadcast,
+    commandResolver,
+    endpointGateway,
     broadcast,
     logger,
   });
