@@ -156,7 +156,7 @@ describe('LibraryBrowser — consonance guardrail', () => {
   });
 });
 
-describe('LibraryBrowser — facets, search, stubs, cap', () => {
+describe('LibraryBrowser — facets, stubs, cap', () => {
   it('kind facet filters (Grooves shows only grooves; All restores)', async () => {
     renderBrowser();
     await screen.findByRole('button', { name: 'Basic Rock' });
@@ -278,17 +278,15 @@ describe('LibraryBrowser — facets, search, stubs, cap', () => {
     expect(cardTitles()).toEqual(['Swing Brush']);
   });
 
-  it('search filters the already-built set (title/slug match)', async () => {
-    renderBrowser();
-    await screen.findByRole('button', { name: 'Basic Rock' });
-    fireEvent.change(screen.getByPlaceholderText(/search loops/i), { target: { value: 'nameless' } });
-    expect(cardTitles()).toEqual(['nameless-tune']);
-  });
-
   it('no results → friendly empty state; clear-filters chip restores everything', async () => {
+    // No search box (kiosk has no text input) — an empty state is reached by an
+    // impossible facet combo: genre "rock" (only the chord-progression Dim Wall)
+    // intersected with kind "Grooves" leaves nothing.
     renderBrowser();
     await screen.findByRole('button', { name: 'Basic Rock' });
-    fireEvent.change(screen.getByPlaceholderText(/search loops/i), { target: { value: 'zzz-nothing' } });
+    const genreGroup = screen.getByRole('group', { name: 'genre' });
+    fireEvent.click(within(genreGroup).getByRole('button', { name: 'rock' }));
+    fireEvent.click(within(screen.getByRole('group', { name: 'kind' })).getByRole('button', { name: 'Grooves' }));
     expect(screen.getByText(/no loops match/i)).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Clear filters' }));
     expect(cardTitles().length).toBe(ALL.length);
@@ -343,7 +341,9 @@ describe('LibraryBrowser — facets, search, stubs, cap', () => {
     expect(onPickPrefab).toHaveBeenCalledWith(expect.objectContaining({ id: 'pop-1-5-6-4' }));
   });
 
-  it("'Prefabs' facet filters by search text", async () => {
+  it("'Prefabs' facet shows all curated stacks (no search box to filter them)", async () => {
+    // The kiosk has no text input, so prefabs are never text-filtered — every
+    // curated stack stays visible under the Prefabs facet.
     renderBrowser({
       prefabs: {
         stacks: [
@@ -354,8 +354,8 @@ describe('LibraryBrowser — facets, search, stubs, cap', () => {
       onPickPrefab: vi.fn(),
     });
     fireEvent.click(await screen.findByRole('button', { name: 'Prefabs' }));
-    fireEvent.change(screen.getByPlaceholderText(/Search loops/i), { target: { value: 'lo-fi' } });
-    expect(screen.queryByText('Pop I–V–vi–IV')).toBeNull();
+    expect(screen.queryByPlaceholderText(/search/i)).toBeNull();
+    expect(screen.getByText('Pop I–V–vi–IV')).toBeInTheDocument();
     expect(screen.getByText('Lo-fi groove bed')).toBeInTheDocument();
   });
 

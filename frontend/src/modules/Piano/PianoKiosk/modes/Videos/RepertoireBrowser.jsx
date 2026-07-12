@@ -41,14 +41,14 @@ export default function RepertoireBrowser({ season, onPlay }) {
   const items = season?.lessons || [];
   const facets = useMemo(() => collectFacets(items), [items]);
   const [selected, setSelected] = useState({ style: null, skill: null, instructor: null });
-  const [query, setQuery] = useState('');
   // view: null | {song} | {song, treatment} | {challenge}
   const [view, setView] = useState(null);
 
   const toggle = (dim, val) => setSelected((s) => ({ ...s, [dim]: s[dim] === val ? null : val }));
 
   const catalog = useMemo(() => partitionSongs(filterByFacets(items, selected)), [items, selected]);
-  const q = query.trim().toLowerCase();
+  // No text input in the kiosk — browsing is facet-only, so no query filter.
+  const q = '';
   const songs = useMemo(
     () => (q ? catalog.songs.filter((s) => s.title.toLowerCase().includes(q)) : catalog.songs),
     [catalog, q],
@@ -112,8 +112,6 @@ export default function RepertoireBrowser({ season, onPlay }) {
 
   return (
     <div className="psc-repertoire">
-      <input type="search" className="psc-repertoire__search" placeholder="Search songs…"
-        value={query} onChange={(e) => setQuery(e.target.value)} />
       <ChipRow label="Style" options={facets.styles} value={selected.style} onToggle={(v) => toggle('style', v)} />
       <ChipRow label="Difficulty" options={facets.skills} value={selected.skill} onToggle={(v) => toggle('skill', v)} />
       <ChipRow label="Teacher" options={facets.instructors} value={selected.instructor} onToggle={(v) => toggle('instructor', v)} />
