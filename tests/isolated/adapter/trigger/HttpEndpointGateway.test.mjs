@@ -26,4 +26,22 @@ describe('HttpEndpointGateway', () => {
     expect(opts.method).toBe('GET');
     expect(opts.body).toBeUndefined();
   });
+  it('returns null and logs trigger.script.failed on fetch rejection', async () => {
+    const fetchFn = vi.fn().mockRejectedValue(new Error('The operation timed out'));
+    const logger = { warn: vi.fn(), info: vi.fn() };
+    const gw = new HttpEndpointGateway({ endpoints, fetchFn, logger });
+    const r = await gw.call('bedtime', { a: 1 });
+    expect(r).toBeNull();
+    expect(logger.warn).toHaveBeenCalledWith('trigger.script.failed', expect.objectContaining({ ref: 'bedtime', error: 'The operation timed out' }));
+  });
+  it('returns null (does not throw) when method is non-string', async () => {
+    const fetchFn = vi.fn();
+    const logger = { warn: vi.fn(), info: vi.fn() };
+    const badEndpoints = { bad: { method: 123, url: 'http://x' } };
+    const gw = new HttpEndpointGateway({ endpoints: badEndpoints, fetchFn, logger });
+    const r = await gw.call('bad', {});
+    expect(r).toBeNull();
+    expect(logger.warn).toHaveBeenCalledWith('trigger.script.failed', expect.objectContaining({ ref: 'bad' }));
+    expect(fetchFn).not.toHaveBeenCalled();
+  });
 });
