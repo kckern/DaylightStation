@@ -197,12 +197,12 @@ import { YtDlpAdapter } from '#adapters/media/YtDlpAdapter.mjs';
 // Content composition use case
 import { ComposePresentationUseCase } from './3_applications/content/usecases/ComposePresentationUseCase.mjs';
 
-// Barcode scanner pipeline
-import { BarcodeGatekeeper } from '#domains/barcode/BarcodeGatekeeper.mjs';
-import { autoApprove } from '#domains/barcode/strategies/AutoApproveStrategy.mjs';
-import { BarcodeScanService } from './3_applications/barcode/BarcodeScanService.mjs';
-import { BarcodePayload } from '#domains/barcode/BarcodePayload.mjs';
-import { KNOWN_COMMANDS, resolveCommand } from '#domains/barcode/BarcodeCommandMap.mjs';
+// Barcode scanner pipeline — ingress now routes through the unified trigger
+// pipeline (TriggerDispatchService); BarcodeScanService is retired from the
+// boot path here (kept in-tree for Plan 4 to delete) and no longer constructed.
+import { resolveCommand } from '#domains/barcode/BarcodeCommandMap.mjs';
+import { ContentDispatcher } from '#apps/trigger/ContentDispatcher.mjs';
+import { TriggerEvent } from '#domains/trigger/TriggerEvent.mjs';
 
 // Weekly Review domain
 import { WeeklyReviewImmichAdapter } from './1_adapters/weekly-review/WeeklyReviewImmichAdapter.mjs';
@@ -481,9 +481,10 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   });
 
   // Barcode relay (ESP32 BLE-scanner bridge, source: 'barcode-relay') is wired
-  // later, once the BarcodeScanService pipeline exists, so BLE scans flow through
-  // the same gatekeeper → queue/play/open → TV-wake path the retired USB scanner
-  // used. See the "Barcode scan pipeline" block below. (_extensions/barcode-relay)
+  // later, once the trigger pipeline's triggerDispatchService exists, so BLE
+  // scans flow through the same queue/play/open → TV-wake path the retired USB
+  // scanner used. See the "Barcode ingress" block + the relay wiring next to
+  // createTriggerApiRouter() below. (_extensions/barcode-relay)
 
   // Fingerprint unlock service — binds the unlock broker to the live bus so
   // `fitness.unlock.request` broadcasts reach the garage client and inbound
@@ -1574,11 +1575,18 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     }
   }
 
-  // Barcode scan pipeline (gatekeeper → queue/play/open → TV-wake). Formerly fed
-  // by the USB scanner over MQTT (retired); now fed by the ESP32 BLE barcode-relay
-  // via the WS event bus. Built unconditionally so a BLE scan always has a
-  // pipeline — it no longer depends on MQTT being enabled.
-  let barcodeScanServiceRef = null;
+  // Barcode ingress (gatekeeper → queue/play/open → TV-wake) now routes through
+  // the unified trigger pipeline (TriggerDispatchService, wired below once it
+  // exists) rather than the retired BarcodeScanService. This block still owns
+  // every barcode-modality derivation (scanner device map, screen→display
+  // scripts, screen→device map) and builds the ContentDispatcher those
+  // derivations feed; the BLE relay itself is wired further down, after
+  // createTriggerApiRouter() hands back a live triggerDispatchService.
+  let barcodeContentDispatcher = null;
+  let barcodeScreenBroadcast = null;
+  let barcodeLogger = null;
+  let barcodeKnownScanners = [];
+  let barcodePersistDir = null;
   {
     const barcodeConfig = configService.getHouseholdAppConfig(householdId, 'barcode') || {};
     const barcodeDevicesConfig = configService.getHouseholdDevices(householdId) || {};
@@ -1589,9 +1597,6 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     for (const [id, device] of Object.entries(barcodeDevices)) {
       if (device.type === 'barcode-scanner') scannerDeviceConfig[id] = device;
     }
-
-    // Gatekeeper with auto-approve (strategies from config in future).
-    const gatekeeper = new BarcodeGatekeeper([autoApprove]);
 
     // Screen topic → display on_script map, for TV wake on approved content.
     const haGateway = householdAdapters?.has?.('home_automation') ? householdAdapters.get('home_automation') : null;
@@ -1607,17 +1612,36 @@ export async function createApp({ server, logger, configPaths, configExists, ena
       }
     }
 
-    const barcodeLogger = rootLogger.child({ module: 'barcode' });
-    const barcodeScanService = new BarcodeScanService({
-      gatekeeper,
-      deviceConfig: scannerDeviceConfig,
-      broadcastEvent: (topic, payload) => broadcastEvent({ topic, ...payload }) || 0,
-      pipelineConfig: {
-        default_action: barcodeConfig.default_action || 'queue',
-        actions: barcodeConfig.actions || ['queue', 'play', 'open'],
-      },
-      commandResolver: resolveCommand,
+    // Screen → deviceId map (was built later, near wakeAndLoadService, for
+    // BarcodeScanService.setLoadFallback; now built here so ContentDispatcher's
+    // loadFallback can close over it directly). Reuses the same device config
+    // source (getHouseholdDevices) the scanner map above reads from.
+    const screenToDevice = {};
+    for (const [id, device] of Object.entries(barcodeDevices)) {
+      const screenPath = device.screen_path; // e.g. "/screen/living-room"
+      if (screenPath) {
+        const screenName = screenPath.replace(/^\/screen\//, '');
+        screenToDevice[screenName] = id;
+      }
+    }
+
+    barcodeLogger = rootLogger.child({ module: 'barcode' });
+
+    barcodeScreenBroadcast = (targetScreen, payload) => broadcastEvent({ topic: targetScreen, ...payload, source: 'barcode', targetScreen });
+
+    // NOTE: `wakeAndLoadService` is declared later in this same function
+    // (createApp) via createWakeAndLoadService(); this closure only reads it
+    // when invoked (on an ack-timeout fallback), by which point it is
+    // assigned. Mirrors the deferred-binding pattern the old
+    // BarcodeScanService.setLoadFallback() wiring used.
+    barcodeContentDispatcher = new ContentDispatcher({
+      screenBroadcast: barcodeScreenBroadcast,
       waitForAck: (predicate, timeoutMs) => eventBus.waitForMessage(predicate, timeoutMs),
+      loadFallback: async (targetScreen, query) => {
+        const deviceId = screenToDevice[targetScreen];
+        if (!deviceId) return;
+        return wakeAndLoadService.execute(deviceId, query);
+      },
       onContentApproved: async (targetScreen) => {
         const scripts = screenDisplayScripts[targetScreen];
         if (!scripts || !haGateway) return;
@@ -1633,30 +1657,12 @@ export async function createApp({ server, logger, configPaths, configExists, ena
       logger: barcodeLogger,
     });
 
-    barcodeScanServiceRef = barcodeScanService;
+    barcodeKnownScanners = Object.keys(scannerDeviceConfig);
+    barcodePersistDir = barcodeConfig.persistence?.dir;
 
-    // Feed the pipeline from the BLE barcode-relay: parse the raw scan into a
-    // BarcodePayload (the SAME parser the retired MQTT adapter used) and dispatch
-    // it — so a BLE scan behaves exactly like the old USB scan.
-    const barcodeKnownActions = barcodeConfig.actions || ['queue', 'play', 'open'];
-    createBarcodeRelay({
-      eventBus,
-      dataDir,                       // enables per-device day-log persistence under household/history/barcode
-      persistDir: barcodeConfig.persistence?.dir,
-      logger: rootLogger.child({ module: 'barcode-relay' }),
-      onScan: (relay) => {
-        const parsed = BarcodePayload.parse(
-          { barcode: relay.code, device: relay.device, timestamp: relay.ts },
-          barcodeKnownActions,
-          KNOWN_COMMANDS,
-        );
-        if (parsed) barcodeScanService.handle(parsed);
-      },
-    });
-
-    rootLogger.info('barcode.pipeline.ready', {
-      source: 'ble-relay',
-      scanners: Object.keys(scannerDeviceConfig),
+    rootLogger.info('barcode.dispatcher.ready', {
+      scanners: barcodeKnownScanners,
+      actions: barcodeConfig.actions || ['queue', 'play', 'open'],
     });
   }
 
@@ -1664,7 +1670,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     printers: printerRegistry.list(),
     tts: hardwareAdapters.ttsAdapter?.isConfigured() || false,
     mqtt: hardwareAdapters.mqttAdapter?.isConfigured() || false,
-    barcode: !!barcodeScanServiceRef // BLE-relay-fed pipeline (USB/MQTT ingest retired)
+    barcode: !!barcodeContentDispatcher // unified-trigger-pipeline-fed (USB/MQTT ingest retired)
   });
 
   // Gratitude domain router - gratitude card canvas renderer
@@ -2133,24 +2139,6 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     logger: rootLogger.child({ module: 'wake-and-load' })
   });
 
-  // Wire barcode → load fallback (TV off case)
-  if (barcodeScanServiceRef) {
-    // Build screen → deviceId map from devices config
-    const screenToDevice = {};
-    for (const [id, device] of Object.entries((devicesConfig.devices || {}))) {
-      const screenPath = device.screen_path; // e.g. "/screen/living-room"
-      if (screenPath) {
-        const screenName = screenPath.replace(/^\/screen\//, '');
-        screenToDevice[screenName] = id;
-      }
-    }
-    barcodeScanServiceRef.setLoadFallback(async (targetScreen, query) => {
-      const deviceId = screenToDevice[targetScreen];
-      if (!deviceId) return;
-      return wakeAndLoadService.execute(deviceId, query);
-    });
-  }
-
   // Shared dispatch-level idempotency cache for multi-step HTTP dispatches
   // (e.g. POST /api/v1/device/:id/load?mode=adopt).
   const { dispatchIdempotencyService } = createDispatchIdempotencyService({
@@ -2167,8 +2155,9 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     logger: rootLogger.child({ module: 'device-api' })
   });
 
-  // Trigger dispatch (NFC modality source: apps/nfc/config.yml)
-  const { router: triggerRouter } = createTriggerApiRouter({
+  // Trigger dispatch (NFC modality source: apps/nfc/config.yml; barcode modality
+  // shares this same dispatch core — see the barcode-relay wiring just below).
+  const { router: triggerRouter, triggerDispatchService } = createTriggerApiRouter({
     deviceServices,
     wakeAndLoadService,
     haGateway: homeAutomationAdapters.haGateway,
@@ -2177,9 +2166,42 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     broadcast: broadcastEvent,
     loadFile,
     saveFile,
+    contentDispatcher: barcodeContentDispatcher,
+    screenBroadcast: barcodeScreenBroadcast,
+    commandResolver: resolveCommand,
     logger: rootLogger.child({ module: 'trigger' }),
   });
   v1Routers.trigger = triggerRouter;
+
+  // Feed the barcode BLE relay into the now-live trigger pipeline. Wired here
+  // (rather than in the earlier "Barcode ingress" block) because it needs
+  // triggerDispatchService, which createTriggerApiRouter() just returned.
+  // Persistence (per-device day-log under household/history/barcode) and the
+  // relay's own device/gatekeeper config are untouched by the trigger-pipeline
+  // migration — only the dispatch target changed (BarcodeScanService.handle →
+  // triggerDispatchService.handleEvent).
+  createBarcodeRelay({
+    eventBus,
+    dataDir,
+    persistDir: barcodePersistDir,
+    logger: rootLogger.child({ module: 'barcode-relay' }),
+    onScan: (relay) => {
+      const event = TriggerEvent.create({
+        source: 'barcode',
+        location: relay.device,
+        value: relay.code,
+        meta: { device: relay.device, timestamp: relay.ts, transport: 'ws' },
+      });
+      triggerDispatchService.handleEvent(event).catch((err) => {
+        barcodeLogger?.warn?.('barcode.dispatch.failed', { error: err.message });
+      });
+    },
+  });
+
+  rootLogger.info('barcode.pipeline.ready', {
+    source: 'ble-relay',
+    scanners: barcodeKnownScanners,
+  });
 
   // Camera feeds
   const { createCameraServices } = await import('#composition/bootstrap.mjs');
