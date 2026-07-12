@@ -303,7 +303,7 @@ export class TriggerDispatchService {
         await this.#tagWriter.recordObserved(uid, this.#formatScannedAt(this.#clock()));
         this.#logger.debug?.('trigger.observed_recorded', { location, uid });
       } catch (err) {
-        this.#logger.error?.('trigger.placeholder.failed', { location, uid, error: err.message });
+        this.#logger.error?.('trigger.observed_recorded.failed', { location, uid, error: err.message });
       }
     }
 

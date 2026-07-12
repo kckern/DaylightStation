@@ -14,7 +14,12 @@ export class YamlObservedStateStore {
   }
 
   load() {
-    const raw = this.#loadFile?.(this.#path);
+    let raw;
+    try {
+      raw = this.#loadFile?.(this.#path);
+    } catch {
+      raw = null;
+    }
     this.#cache = (raw && typeof raw === 'object' && !Array.isArray(raw)) ? raw : {};
     return this.#cache;
   }

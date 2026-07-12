@@ -52,7 +52,7 @@ export function createTriggerApiRouter(config) {
     triggerConfig = triggerConfigRepository.loadRegistry({ loadFile });
   } catch (err) {
     logger.warn?.('trigger.config.parse.failed', { error: err.message });
-    triggerConfig = { nfc: { locations: {}, tags: {} }, state: { locations: {} } };
+    triggerConfig = { nfc: { locations: {}, tags: {} }, state: { locations: {} }, responses: {}, endpoints: {} };
   }
 
   const triggerDispatchService = new TriggerDispatchService({
