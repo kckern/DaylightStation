@@ -6,7 +6,9 @@
 // Strip leading emoji / symbol characters from body text
 function stripLeadingEmoji(text) {
   if (!text) return text;
-  return text.replace(/^[\p{Emoji_Presentation}\p{Extended_Pictographic}\u200d\ufe0f\s]+/u, '');
+  // ZWJ (\u200d) and VS16 (\ufe0f) are kept as alternation, not in the class,
+  // to avoid misleading-character-class (they combine with adjacent glyphs).
+  return text.replace(/^(?:[\p{Emoji_Presentation}\p{Extended_Pictographic}\s]|\u200d|\ufe0f)+/u, '');
 }
 
 export function YouTubeScrollBody({ item }) {

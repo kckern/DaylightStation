@@ -130,7 +130,7 @@ export class FeedAssemblyService {
     // Source filter: bypass tier assembly
     if (sources && sources.length > 0) {
       let filtered = freshPool
-        .filter(item => sources.includes(item.source))
+        .filter(item => sources.includes(item.source) && !item._seen)
         .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
       if (this.#spacingEnforcer) {
         filtered = this.#spacingEnforcer.enforce(filtered, scrollConfig);
@@ -173,17 +173,7 @@ export class FeedAssemblyService {
       }
     }
 
-    // Cycling pass: last resort — duplicate existing items to fill the batch.
-    // Only cycles when the pool is truly exhausted (not the first batch, and
-    // no more sources can provide fresh items).
-    if (batch.length < effectiveLimit && batch.length > 0 && batchNumber > 1) {
-      const originals = [...batch];
-      let dupIndex = 1;
-      while (batch.length < effectiveLimit) {
-        const source = originals[batch.length % originals.length];
-        batch.push({ ...source, id: `${source.id}:dup${dupIndex++}` });
-      }
-    }
+    // A short batch is valid — do not synthesize duplicate items to fill it (F-05).
 
     // Guardrail: probe dimensions for any items with images but no dims
     await FeedAssemblyService.#probeMissingDimensions(batch);
@@ -314,6 +304,9 @@ export class FeedAssemblyService {
       default:
         filtered = freshPool;
     }
+
+    // Exclude already-seen items so filtered pagination doesn't repeat them (F-05).
+    filtered = filtered.filter(item => !item._seen);
 
     filtered.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
     if (this.#spacingEnforcer) {

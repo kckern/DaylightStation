@@ -354,7 +354,7 @@ describe('TriggerDispatchService.handleTrigger — unknown NFC branch', () => {
     broadcast = vi.fn();
     logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() };
     tagWriter = {
-      upsertNfcPlaceholder: vi.fn().mockResolvedValue({ created: true }),
+      recordObserved: vi.fn().mockResolvedValue({ created: true }),
       setNfcNote: vi.fn(),
     };
     now = 1714137138000; // arbitrary fixed ms
@@ -399,7 +399,7 @@ describe('TriggerDispatchService.handleTrigger — unknown NFC branch', () => {
     expect(result.ok).toBe(false);
     expect(result.code).toBe('TRIGGER_NOT_REGISTERED');
 
-    expect(tagWriter.upsertNfcPlaceholder).toHaveBeenCalledWith(
+    expect(tagWriter.recordObserved).toHaveBeenCalledWith(
       '04_a1_b2_c3',
       expect.stringMatching(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/),
     );
@@ -429,12 +429,12 @@ describe('TriggerDispatchService.handleTrigger — unknown NFC branch', () => {
   it('state 0 — no notify call when notify_unknown is unset', async () => {
     const service = makeService(makeRegistry({ notify_unknown: null }));
     await service.handleTrigger('livingroom', 'nfc', '04_a1_b2_c3');
-    expect(tagWriter.upsertNfcPlaceholder).toHaveBeenCalled();
+    expect(tagWriter.recordObserved).toHaveBeenCalled();
     expect(haGateway.callService).not.toHaveBeenCalled();
   });
 
   it('state 1 — re-scan with placeholder but no note: notifies, no new write', async () => {
-    tagWriter.upsertNfcPlaceholder.mockResolvedValue({ created: false });
+    tagWriter.recordObserved.mockResolvedValue({ created: false });
     const registry = makeRegistry({
       tags: { '04_a1_b2_c3': { global: { scanned_at: '2026-04-26 10:00:00' }, overrides: {} } },
     });
@@ -442,7 +442,7 @@ describe('TriggerDispatchService.handleTrigger — unknown NFC branch', () => {
     await service.handleTrigger('livingroom', 'nfc', '04_a1_b2_c3');
 
     // upsert is called but no-ops (returns { created: false })
-    expect(tagWriter.upsertNfcPlaceholder).toHaveBeenCalled();
+    expect(tagWriter.recordObserved).toHaveBeenCalled();
     expect(haGateway.callService).toHaveBeenCalledTimes(1);
   });
 
@@ -456,7 +456,7 @@ describe('TriggerDispatchService.handleTrigger — unknown NFC branch', () => {
     const service = makeService(registry);
     await service.handleTrigger('livingroom', 'nfc', '04_a1_b2_c3');
 
-    expect(tagWriter.upsertNfcPlaceholder).not.toHaveBeenCalled();
+    expect(tagWriter.recordObserved).not.toHaveBeenCalled();
     expect(haGateway.callService).not.toHaveBeenCalled();
     // Broadcast still fires for observer dashboards:
     expect(broadcast).toHaveBeenCalled();
@@ -468,11 +468,11 @@ describe('TriggerDispatchService.handleTrigger — unknown NFC branch', () => {
     now += 1500; // 1.5 s later
     await service.handleTrigger('livingroom', 'nfc', '04_a1_b2_c3');
     expect(haGateway.callService).toHaveBeenCalledTimes(1);
-    expect(tagWriter.upsertNfcPlaceholder).toHaveBeenCalledTimes(1);
+    expect(tagWriter.recordObserved).toHaveBeenCalledTimes(1);
   });
 
   it('debounce window expiry allows a second notify', async () => {
-    tagWriter.upsertNfcPlaceholder
+    tagWriter.recordObserved
       .mockResolvedValueOnce({ created: true })
       .mockResolvedValueOnce({ created: false });
     const service = makeService(makeRegistry());
@@ -506,7 +506,7 @@ describe('TriggerDispatchService.handleTrigger — unknown NFC branch', () => {
     };
     const service = makeService(config);
     await service.handleTrigger('livingroom', 'state', 'on');
-    expect(tagWriter.upsertNfcPlaceholder).not.toHaveBeenCalled();
+    expect(tagWriter.recordObserved).not.toHaveBeenCalled();
     expect(haGateway.callService).not.toHaveBeenCalled();
   });
 });
@@ -630,5 +630,141 @@ describe('TriggerDispatchService.setNote', () => {
     const result = await service.setNote('livingroom', 'nfc', '04', 'x');
     expect(result.ok).toBe(false);
     expect(result.code).toBe('NOTE_WRITE_FAILED');
+  });
+});
+
+// --- appended: unified-core wiring ---
+import { TriggerEvent } from '#domains/trigger/TriggerEvent.mjs';
+
+describe('TriggerDispatchService (unified core)', () => {
+  function make(registry, wake) {
+    const wakeAndLoadService = { execute: wake || (async () => ({ ok: true })) };
+    return new TriggerDispatchService({
+      config: registry,
+      contentIdResolver: { resolve: () => true },
+      wakeAndLoadService,
+      haGateway: { callService: async () => 'ok' },
+      deviceService: { get: () => ({ loadContent: async () => 'ok', clearContent: async () => 'ok' }) },
+      broadcast: () => {},
+      logger: { info() {}, warn() {}, error() {}, debug() {} },
+      clock: () => 1000,
+    });
+  }
+  const registry = { nfc: { locations: { livingroom: { target: 'livingroom-tv', action: 'queue' } }, tags: { 'aa': { global: { plex: '456598' }, overrides: {} } } }, state: { locations: {} } };
+
+  it('dispatches an nfc content trigger via wakeAndLoad', async () => {
+    const calls = [];
+    const svc = make(registry, async (...a) => { calls.push(a); return { ok: true }; });
+    const res = await svc.handleTrigger('livingroom', 'nfc', 'aa', {});
+    expect(res.ok).toBe(true);
+    expect(calls[0][0]).toBe('livingroom-tv');
+    expect(calls[0][1]).toMatchObject({ queue: 'plex:456598' });
+  });
+
+  it('handleEvent(TriggerEvent) matches handleTrigger', async () => {
+    const svc = make(registry);
+    const viaEvent = await svc.handleEvent(TriggerEvent.create({ source: 'nfc', location: 'livingroom', value: 'aa' }), {});
+    expect(viaEvent.ok).toBe(true);
+    expect(viaEvent.action).toBe('queue');
+  });
+});
+
+// --- appended: authorize + deps ---
+describe('TriggerDispatchService authorize', () => {
+  function make(registry, wake) {
+    const wakeAndLoadService = { execute: wake || (async () => ({ ok: true })) };
+    return new TriggerDispatchService({
+      config: registry,
+      contentIdResolver: { resolve: () => true },
+      wakeAndLoadService,
+      haGateway: { callService: async () => 'ok' },
+      deviceService: { get: () => ({ loadContent: async () => 'ok', clearContent: async () => 'ok' }) },
+      broadcast: () => {},
+      logger: { info() {}, warn() {}, error() {}, debug() {} },
+      clock: () => 1000,
+    });
+  }
+  const registry = { nfc: { locations: { livingroom: { target: 'livingroom-tv', action: 'queue' } }, tags: { 'aa': { global: { plex: '456598' }, overrides: {} } } }, state: { locations: {} } };
+
+  it('approves when the source has no strategies (nfc/state unchanged)', async () => {
+    const calls = [];
+    const svc = make(registry, async (...a) => { calls.push(a); return { ok: true }; });
+    const res = await svc.handleTrigger('livingroom', 'nfc', 'aa', {});
+    expect(res.ok).toBe(true);
+    expect(res.action).toBe('queue');
+    expect(calls.length).toBe(1);
+  });
+
+  it('accepts contentDispatcher/screenBroadcast/commandResolver deps without changing nfc behavior', async () => {
+    const wakeAndLoadService = { execute: async () => ({ ok: true }) };
+    const svc = new TriggerDispatchService({
+      config: registry,
+      contentIdResolver: { resolve: () => true },
+      wakeAndLoadService,
+      haGateway: { callService: async () => 'ok' },
+      deviceService: { get: () => ({ loadContent: async () => 'ok', clearContent: async () => 'ok' }) },
+      contentDispatcher: { dispatch: async () => ({ ok: true }) },
+      screenBroadcast: () => {},
+      commandResolver: { resolve: () => null },
+      broadcast: () => {},
+      logger: { info() {}, warn() {}, error() {}, debug() {} },
+      clock: () => 1000,
+    });
+    const res = await svc.handleTrigger('livingroom', 'nfc', 'aa', {});
+    expect(res.ok).toBe(true);
+  });
+});
+
+// Regression: barcode resolves to a FROZEN Response (not a mutable intent).
+// The dispatch core must normalize resolver output without mutating it — an
+// earlier bug did `intent.dispatchId = ...` and threw "object is not extensible"
+// on the frozen barcode Response, breaking every barcode scan end-to-end.
+describe('TriggerDispatchService — barcode (frozen Response) through handleEvent', () => {
+  const barcodeRegistry = {
+    nfc: { locations: {}, tags: {} },
+    state: { locations: {} },
+    barcode: { locations: { ds2278: { target: 'living-room', default_action: 'queue', actions: ['queue', 'play', 'open'] } } },
+  };
+  function makeBarcode(extraDeps = {}) {
+    return new TriggerDispatchService({
+      config: barcodeRegistry,
+      contentIdResolver: { resolve: () => true },
+      wakeAndLoadService: { execute: async () => ({ ok: true }) },
+      haGateway: { callService: async () => 'ok' },
+      deviceService: { get: () => ({ loadContent: async () => 'ok', clearContent: async () => 'ok' }) },
+      broadcast: () => {},
+      logger: { info() {}, warn() {}, error() {}, debug() {} },
+      clock: () => 1000,
+      ...extraDeps,
+    });
+  }
+
+  it('dispatches a barcode content scan via the optimistic content dispatcher (no throw)', async () => {
+    const optimistic = vi.fn().mockResolvedValue(undefined);
+    const svc = makeBarcode({ contentDispatcher: { optimistic } });
+    const res = await svc.handleTrigger('ds2278', 'barcode', 'plex:595104', {});
+    expect(res.ok).toBe(true);
+    expect(optimistic).toHaveBeenCalledTimes(1);
+    expect(optimistic.mock.calls[0][0]).toBe('living-room');
+    expect(optimistic.mock.calls[0][1]).toMatchObject({ queue: 'plex:595104' });
+  });
+
+  it('dispatches a barcode command scan via screenBroadcast as a transport (no throw)', async () => {
+    const screenBroadcast = vi.fn();
+    const commandResolver = (cmd) => (cmd === 'pause' ? { playback: 'pause' } : null);
+    const svc = makeBarcode({ screenBroadcast, commandResolver });
+    const res = await svc.handleTrigger('ds2278', 'barcode', 'pause', {});
+    expect(res.ok).toBe(true);
+    expect(screenBroadcast).toHaveBeenCalledWith('living-room', { playback: 'pause' });
+  });
+
+  it('dryRun on a barcode content scan returns a Response without dispatching', async () => {
+    const optimistic = vi.fn();
+    const svc = makeBarcode({ contentDispatcher: { optimistic } });
+    const res = await svc.handleTrigger('ds2278', 'barcode', 'plex:1', { dryRun: true });
+    expect(res.ok).toBe(true);
+    expect(res.dryRun).toBe(true);
+    expect(res.response.kind).toBe('content');
+    expect(optimistic).not.toHaveBeenCalled();
   });
 });

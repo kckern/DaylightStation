@@ -13,16 +13,23 @@ import { feedLog } from './feedLog.js';
 import getLogger from '../../../lib/logging/Logger.js';
 import './Scroll.scss';
 
-/** Base64url-encode an item ID for use in the URL path. */
+/** Base64url-encode an item ID for use in the URL path (UTF-8 safe). */
 function encodeFeedItemId(id) {
-  return btoa(id).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+  const bytes = new TextEncoder().encode(String(id));
+  let bin = '';
+  for (const b of bytes) bin += String.fromCharCode(b);
+  return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 }
 
-/** Decode a base64url slug back to the original item ID. */
+/** Decode a base64url slug back to the original item ID (UTF-8 safe). */
 function decodeFeedItemId(slug) {
   let s = slug.replace(/-/g, '+').replace(/_/g, '/');
   while (s.length % 4) s += '=';
-  try { return atob(s); } catch { return null; }
+  try {
+    const bin = atob(s);
+    const bytes = Uint8Array.from(bin, (c) => c.charCodeAt(0));
+    return new TextDecoder().decode(bytes);
+  } catch { return null; }
 }
 
 function ScrollCard({ item, colors, onDismiss, onPlay, onClick, style, itemRef, viewportObserver }) {
@@ -68,8 +75,8 @@ function ScrollCard({ item, colors, onDismiss, onPlay, onClick, style, itemRef, 
     const elapsed = Date.now() - touchRef.current.time;
     touchRef.current = null;
 
-    if (dx < -100 && elapsed < 600) {
-      // Threshold met — dismiss
+    if (dx < -100 && elapsed < 600 && onDismiss) {
+      // Threshold met — dismiss (only when this card supports dismissal)
       feedLog.dismiss('swipe dismiss', { id: item.id, dx, elapsed });
       onDismiss(item, wrapperRef.current);
     } else if (wrapperRef.current) {
@@ -99,8 +106,23 @@ function ScrollCard({ item, colors, onDismiss, onPlay, onClick, style, itemRef, 
       onTouchMove={handleTouchMove}
       onTouchEnd={handleTouchEnd}
     >
-      <div onClick={onClick}>
-        {renderFeedCard(item, colors, { onDismiss: (cardItem) => onDismiss(cardItem, wrapperRef.current), onPlay })}
+      {/* Keyboard-accessible open affordance: role/tabindex + Enter/Space. (F-14) */}
+      <div
+        onClick={onClick}
+        role="button"
+        tabIndex={0}
+        aria-label={item.title ? `Open: ${item.title}` : 'Open item'}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onClick?.(e); }
+        }}
+      >
+        {renderFeedCard(item, colors, {
+          // Only wire a dismiss handler through when this card actually
+          // supports dismissal — otherwise the button/callback is omitted
+          // (prevents calling an undefined onDismiss). (F-08)
+          onDismiss: onDismiss ? (cardItem) => onDismiss(cardItem, wrapperRef.current) : undefined,
+          onPlay,
+        })}
       </div>
     </div>
   );
@@ -118,7 +140,9 @@ export default function Scroll() {
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [hasMore, setHasMore] = useState(true);
-  const [focusSource, setFocusSource] = useState(null);
+  const [error, setError] = useState(null);
+  // focusSource is read into the ?focus= param; no UI currently sets it (F-29).
+  const [focusSource] = useState(null);
   const observerRef = useRef(null);
   const sentinelRef = useRef(null);
   const containerRef = useRef(null);
@@ -172,6 +196,7 @@ export default function Scroll() {
   const fetchItems = useCallback(async (append = false) => {
     if (append) setLoadingMore(true);
     else setLoading(true);
+    setError(null);
 
     try {
       const cur = itemsRef.current;
@@ -181,6 +206,7 @@ export default function Scroll() {
       if (focusSource) params.set('focus', focusSource);
       const filterParam = searchParams.get('filter');
       if (filterParam) params.set('filter', filterParam);
+      if (searchParams.get('debug') === '1') params.set('debug', '1');
 
       feedLog.scroll(append ? 'fetchMore' : 'fetchInitial', { cursor, focus: focusSource, filter: filterParam, currentCount: cur.length });
 
@@ -220,15 +246,26 @@ export default function Scroll() {
         setHasMore(result.hasMore);
       }
     } catch (err) {
-      console.error('Failed to fetch scroll items:', err);
       feedLog.scroll('fetchError', err.message);
+      // Surface an error state and stop the infinite sentinel from retrying
+      // an outage in a tight loop. (F-11)
+      setError(err.message || 'Failed to load feed');
+      setHasMore(false);
     } finally {
       setLoading(false);
       setLoadingMore(false);
     }
   }, [focusSource, searchParams]);
 
-  useEffect(() => { fetchItems(); }, []);
+  // Initial load + reset/refetch whenever the ?filter= identity changes. (F-11)
+  const filterParam = searchParams.get('filter');
+  useEffect(() => {
+    setItems([]);
+    setHasMore(true);
+    setError(null);
+    fetchItems(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filterParam]);
 
   // Infinite scroll via IntersectionObserver
   useEffect(() => {
@@ -327,11 +364,17 @@ export default function Scroll() {
 
   // Fetch detail when URL slug changes (route-driven)
   const prevSlugRef = useRef(null);
+  // Monotonic generation guard: a slower, older detail request must not
+  // overwrite the sections of a newer selection. (F-11)
+  const detailGenRef = useRef(0);
   useEffect(() => {
     if (!urlSlug || urlSlug === prevSlugRef.current) return;
     prevSlugRef.current = urlSlug;
 
     if (!fullId) return;
+
+    const gen = ++detailGenRef.current;
+    const isCurrent = () => gen === detailGenRef.current;
 
     // Auto-dismiss: mark item as read when detail opens (wire tier only)
     const matchedItem = items.find(i => i.id === fullId);
@@ -350,21 +393,30 @@ export default function Scroll() {
       const params = new URLSearchParams();
       if (item.contentType === 'youtube') params.set('quality', '480p');
       if (item.link) params.set('link', item.link);
-      if (item.meta) params.set('meta', JSON.stringify(item.meta));
+      if (item.meta) {
+        // Keep large/private bodies out of the URL, access logs, and error
+        // traces. The server resolves these fields by item id server-side. (F-09)
+        const OMIT_FROM_URL = new Set(['fullConversation', 'conversation', 'body', 'html', 'content']);
+        const safeMeta = Object.fromEntries(
+          Object.entries(item.meta).filter(([k]) => !OMIT_FROM_URL.has(k))
+        );
+        params.set('meta', JSON.stringify(safeMeta));
+      }
 
       const detailStart = performance.now();
       DaylightAPI(`/api/v1/feed/detail/${encodeURIComponent(item.id)}?${params}`)
         .then(result => {
+          if (!isCurrent()) return; // a newer selection superseded this request
           feedLog.timing('detail-sections', { durationMs: Math.round(performance.now() - detailStart), id: fullId, sectionCount: result.sections?.length || 0 });
           feedLog.detail('loaded', { id: fullId, sections: result.sections?.length || 0 });
           setDetailData(result);
         })
         .catch(err => {
-          console.error('Detail fetch failed:', err);
+          if (!isCurrent()) return;
           feedLog.detail('fetchError', { id: fullId, error: err.message });
           setDetailData(null);
         })
-        .finally(() => setDetailLoading(false));
+        .finally(() => { if (isCurrent()) setDetailLoading(false); });
     } else {
       // Cold load / deep link — fetch item + detail from server cache
       feedLog.detail('open (deep link)', { slug: urlSlug, fullId });
@@ -376,6 +428,7 @@ export default function Scroll() {
       const detailStart = performance.now();
       DaylightAPI(`/api/v1/feed/scroll/item/${urlSlug}`)
         .then(result => {
+          if (!isCurrent()) return; // superseded by a newer selection
           feedLog.timing('deeplink-fetch', { durationMs: Math.round(performance.now() - detailStart), slug: urlSlug, hasItem: !!result.item, sectionCount: result.sections?.length || 0 });
           feedLog.detail('deep link loaded', { hasItem: !!result.item, sections: result.sections?.length || 0 });
           if (result.item) setDeepLinkedItem(result.item);
@@ -386,12 +439,12 @@ export default function Scroll() {
           });
         })
         .catch(err => {
-          console.error('Deep-link fetch failed:', err);
+          if (!isCurrent()) return;
           feedLog.detail('deep link error — redirecting to list', { slug: urlSlug, error: err.message });
           // Item not in server cache — redirect to scroll list
           navigate('/feed/scroll', { replace: true });
         })
-        .finally(() => setDetailLoading(false));
+        .finally(() => { if (isCurrent()) setDetailLoading(false); });
     }
   }, [urlSlug, items, fullId, navigate, queueDismiss]);
 
@@ -488,12 +541,17 @@ export default function Scroll() {
     queueDismiss(item.id);
 
     if (wrapperEl) {
+      // Disable interaction immediately so the exiting card is never a
+      // stale pointer target during its animation. (F-08)
+      wrapperEl.style.pointerEvents = 'none';
       if (isDesktop) {
-        // Desktop: fade out and leave empty space
+        // Desktop: fade out, then remove so masonry reflows (no empty hole).
         wrapperEl.animate(
           [{ opacity: 1 }, { opacity: 0 }],
           { duration: 250, easing: 'ease-in', fill: 'forwards' }
-        );
+        ).onfinish = () => {
+          setItems(prev => prev.filter(i => i.id !== item.id));
+        };
       } else {
         // Mobile: slide left + collapse
         const slideAnim = wrapperEl.animate(
@@ -570,7 +628,18 @@ export default function Scroll() {
             </button>
           </div>
         )}
-        {!hasMore && items.length === 0 && (
+        {error && (
+          <div className="scroll-error" role="alert">
+            <span>Couldn’t load the feed.</span>
+            <button
+              className="scroll-load-more"
+              onClick={() => { setError(null); setHasMore(true); fetchItems(items.length > 0); }}
+            >
+              Retry
+            </button>
+          </div>
+        )}
+        {!error && !hasMore && items.length === 0 && (
           <div className="scroll-empty">Nothing in your feed yet</div>
         )}
       </div>
@@ -606,7 +675,9 @@ export default function Scroll() {
           onNavigateToItem={handleGalleryNav}
         />
       )}
-      <FeedAssemblyOverlay batches={assemblyBatches} onFilterChange={handleAssemblyFilter} />
+      {searchParams.get('debug') === '1' && (
+        <FeedAssemblyOverlay batches={assemblyBatches} onFilterChange={handleAssemblyFilter} />
+      )}
     </div>
   );
 }

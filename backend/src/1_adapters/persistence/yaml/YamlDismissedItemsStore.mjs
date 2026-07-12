@@ -61,14 +61,17 @@ export class YamlDismissedItemsStore extends IDismissedItemsStore {
   /**
    * Add item IDs to the dismissed set.
    * @param {string[]} feedItemIds
+   * @returns {number} Count of IDs newly added (not already present)
    */
   add(feedItemIds) {
-    if (!feedItemIds.length) return;
+    if (!feedItemIds.length) return 0;
 
     const raw = this.#dataService.household.read(DISMISSED_PATH) || {};
     const now = Math.floor(Date.now() / 1000);
 
+    let added = 0;
     for (const id of feedItemIds) {
+      if (!Object.prototype.hasOwnProperty.call(raw, id)) added++;
       raw[id] = now;
     }
 
@@ -79,7 +82,8 @@ export class YamlDismissedItemsStore extends IDismissedItemsStore {
       for (const id of feedItemIds) this.#cache.add(id);
     }
 
-    this.#logger.debug?.('feed.dismissed.added', { count: feedItemIds.length });
+    this.#logger.debug?.('feed.dismissed.added', { count: feedItemIds.length, added });
+    return added;
   }
 
   /**
