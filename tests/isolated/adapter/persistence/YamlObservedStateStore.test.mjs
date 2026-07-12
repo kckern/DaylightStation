@@ -36,4 +36,15 @@ describe('YamlObservedStateStore', () => {
     expect(store.has('bb')).toBe(true);
     expect(store.has('zz')).toBe(false);
   });
+
+  it('load() falls back to empty map if loadFile throws', () => {
+    const io = {
+      loadFile: () => { throw new Error('YAML parse error'); },
+      saveFile: () => {},
+    };
+    const store = new YamlObservedStateStore(io);
+    const cache = store.load();
+    expect(cache).toEqual({});
+    expect(store.has('anything')).toBe(false);
+  });
 });
