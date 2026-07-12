@@ -330,8 +330,14 @@ import {
   WithingsHarvester,
   FitnessSyncerHarvester,
   YamlAuthDatastore,
-  createInfinityHarvesters
+  createInfinityHarvesters,
+  JamCorderHarvester
 } from '#adapters/harvester/index.mjs';
+
+// JamCorder adapters + use case (MIDI recorder harvest)
+import { HttpJamCorderSource } from '#adapters/jamcorder/HttpJamCorderSource.mjs';
+import { FsJamCorderArchive } from '#adapters/jamcorder/FsJamCorderArchive.mjs';
+import { HarvestJamCorderRecordings } from '#apps/jamcorder/HarvestJamCorderRecordings.mjs';
 
 // RSS Parser for Goodreads/Letterboxd harvesters
 import RSSParser from 'rss-parser';
@@ -3474,6 +3480,18 @@ export function createHarvesterServices(config) {
     } catch (error) {
       logger.warn?.('harvester.bootstrap.infinity.skipped', { reason: error.message });
     }
+  }
+
+  // JamCorder — daily MIDI harvest from the networked piano recorder.
+  if (httpClient) {
+    registerHarvester('jamcorder', () => {
+      const jamcorderCfg = configService?.getHouseholdAppConfig?.(null, 'jamcorder') || {};
+      const host = jamcorderCfg.host || '10.0.0.244';
+      const source = new HttpJamCorderSource({ httpClient, host, logger });
+      const archive = new FsJamCorderArchive({ configService, logger });
+      const harvestUseCase = new HarvestJamCorderRecordings({ source, archive, logger });
+      return new JamCorderHarvester({ harvestUseCase, logger });
+    });
   }
 
   // Create job executor for scheduler integration
