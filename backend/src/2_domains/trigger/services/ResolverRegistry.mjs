@@ -21,6 +21,7 @@
 
 import { NfcResolver } from './NfcResolver.mjs';
 import { StateResolver } from './StateResolver.mjs';
+import { BarcodeResolver } from './BarcodeResolver.mjs';
 
 export class UnknownModalityError extends Error {
   constructor(modality) {
@@ -33,6 +34,7 @@ export class UnknownModalityError extends Error {
 export const resolvers = {
   nfc: NfcResolver,
   state: StateResolver,
+  barcode: BarcodeResolver,
 };
 
 /**

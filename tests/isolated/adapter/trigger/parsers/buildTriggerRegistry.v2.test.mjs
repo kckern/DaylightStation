@@ -22,6 +22,6 @@ describe('buildTriggerRegistry v2', () => {
 
   it('tolerates all blobs absent', () => {
     const reg = buildTriggerRegistry({});
-    expect(reg).toEqual({ nfc: { locations: {}, tags: {} }, state: { locations: {} }, responses: {}, endpoints: {} });
+    expect(reg).toEqual({ nfc: { locations: {}, tags: {} }, state: { locations: {} }, barcode: { locations: {} }, responses: {}, endpoints: {} });
   });
 });

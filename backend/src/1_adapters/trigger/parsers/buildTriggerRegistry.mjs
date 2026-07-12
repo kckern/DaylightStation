@@ -14,12 +14,13 @@ import { parseNfcTags } from './nfcTagsParser.mjs';
 import { parseNamedMap } from './namedMapParser.mjs';
 
 export function buildTriggerRegistry(blobs = {}) {
-  const { nfc, state } = parseSources(blobs.sources);
+  const { nfc, state, barcode } = parseSources(blobs.sources);
   const knownNfcReaders = new Set(Object.keys(nfc.locations));
   const tags = parseNfcTags(blobs.bindingsNfc, knownNfcReaders);
   return {
     nfc: { locations: nfc.locations, tags },
     state: { locations: state.locations },
+    barcode: { locations: barcode.locations },
     responses: parseNamedMap(blobs.responses, 'responses'),
     endpoints: parseNamedMap(blobs.endpoints, 'endpoints'),
   };
