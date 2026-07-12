@@ -77,9 +77,19 @@ export default function SingalongPlayer({ lecture, source, onBack, startFresh = 
   const playerEl = useMemo(() => (
     <PlayerBoundary onBack={onBack}>
       <Suspense fallback={<SkeletonStage />}>
-        {/* seconds:0 forces the Player to start at the beginning (no Plex-viewOffset
-            resume) for karaoke/play-along; omitted otherwise so lectures resume. */}
-        <Player ref={playerRef} play={startFresh ? { contentId, shader: 'focused', seconds: 0 } : { contentId, shader: 'focused' }} clear={onBack} />
+        {/* Karaoke/play-along NEVER resume — always start from the top. `resume:false`
+            tells the backend to return NO resume_position (api.js → ?resume=false), so
+            there's nothing for the Player's recovery-seek to fall back to (that chain
+            treats an explicit seconds:0 as falsy and would otherwise re-grab the Plex
+            viewOffset). `seconds:0` stays as belt-and-suspenders. Lectures (startFresh
+            false) omit both, so their resume is unchanged. */}
+        <Player
+          ref={playerRef}
+          play={startFresh
+            ? { contentId, shader: 'focused', seconds: 0, resume: false }
+            : { contentId, shader: 'focused' }}
+          clear={onBack}
+        />
       </Suspense>
     </PlayerBoundary>
   ), [contentId, onBack, startFresh]);

@@ -201,6 +201,7 @@ import { ComposePresentationUseCase } from './3_applications/content/usecases/Co
 import { BarcodeGatekeeper } from '#domains/barcode/BarcodeGatekeeper.mjs';
 import { autoApprove } from '#domains/barcode/strategies/AutoApproveStrategy.mjs';
 import { BarcodeScanService } from './3_applications/barcode/BarcodeScanService.mjs';
+import { BarcodePayload } from '#domains/barcode/BarcodePayload.mjs';
 import { KNOWN_COMMANDS, resolveCommand } from '#domains/barcode/BarcodeCommandMap.mjs';
 
 // Weekly Review domain
@@ -479,13 +480,10 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     logger: rootLogger.child({ module: 'food-scale-relay' }),
   });
 
-  // Barcode relay — ingests the ESP32 BLE-scanner bridge's scans (source:
-  // 'barcode-relay') and broadcasts on the `barcode-relay` topic. See
-  // _extensions/barcode-relay. (Feeding BarcodeScanService is a follow-up.)
-  createBarcodeRelay({
-    eventBus,
-    logger: rootLogger.child({ module: 'barcode-relay' }),
-  });
+  // Barcode relay (ESP32 BLE-scanner bridge, source: 'barcode-relay') is wired
+  // later, once the BarcodeScanService pipeline exists, so BLE scans flow through
+  // the same gatekeeper → queue/play/open → TV-wake path the retired USB scanner
+  // used. See the "Barcode scan pipeline" block below. (_extensions/barcode-relay)
 
   // Fingerprint unlock service — binds the unlock broker to the live bus so
   // `fitness.unlock.request` broadcasts reach the garage client and inbound
@@ -1532,13 +1530,9 @@ export async function createApp({ server, logger, configPaths, configExists, ena
       model: 'tts-1',
       defaultVoice: 'alloy'
     },
-    barcode: {
-      host: mqtt.host,
-      port: mqtt.port || 1883,
-      topic: (configService.getHouseholdAppConfig(householdId, 'barcode') || {}).topic || 'daylight/scanner/barcode',
-      knownActions: (configService.getHouseholdAppConfig(householdId, 'barcode') || {}).actions || ['queue', 'play', 'open'],
-      knownCommands: KNOWN_COMMANDS,
-    },
+    // NOTE: the USB-scanner-over-MQTT barcode ingest is retired. The barcode scan
+    // pipeline is now fed by the BLE barcode-relay (see the "Barcode scan pipeline"
+    // block later in this file), so no MQTT barcode adapter config is passed here.
     onMqttMessage: (payload) => {
       // Broadcast MQTT sensor messages to WebSocket clients
       broadcastEvent({ topic: 'sensor', ...payload });
@@ -1580,28 +1574,29 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     }
   }
 
-  // Initialize barcode scanner MQTT adapter
+  // Barcode scan pipeline (gatekeeper → queue/play/open → TV-wake). Formerly fed
+  // by the USB scanner over MQTT (retired); now fed by the ESP32 BLE barcode-relay
+  // via the WS event bus. Built unconditionally so a BLE scan always has a
+  // pipeline — it no longer depends on MQTT being enabled.
   let barcodeScanServiceRef = null;
-  if (enableMqtt && hardwareAdapters.barcodeAdapter?.isConfigured()) {
+  {
     const barcodeConfig = configService.getHouseholdAppConfig(householdId, 'barcode') || {};
-    const devicesConfig = configService.getHouseholdDevices(householdId) || {};
+    const barcodeDevicesConfig = configService.getHouseholdDevices(householdId) || {};
 
-    // Build scanner device map (filter to barcode-scanner type)
+    // Scanner device map (barcode-scanner type — now the BLE relay device).
     const scannerDeviceConfig = {};
-    const devices = devicesConfig.devices || {};
-    for (const [id, device] of Object.entries(devices)) {
-      if (device.type === 'barcode-scanner') {
-        scannerDeviceConfig[id] = device;
-      }
+    const barcodeDevices = barcodeDevicesConfig.devices || {};
+    for (const [id, device] of Object.entries(barcodeDevices)) {
+      if (device.type === 'barcode-scanner') scannerDeviceConfig[id] = device;
     }
 
-    // Create gatekeeper with auto-approve (strategies from config in future)
+    // Gatekeeper with auto-approve (strategies from config in future).
     const gatekeeper = new BarcodeGatekeeper([autoApprove]);
 
-    // Build screen topic → display on_script map for TV wake
+    // Screen topic → display on_script map, for TV wake on approved content.
     const haGateway = householdAdapters?.has?.('home_automation') ? householdAdapters.get('home_automation') : null;
     const screenDisplayScripts = {};
-    for (const [, device] of Object.entries(devices)) {
+    for (const [, device] of Object.entries(barcodeDevices)) {
       const topic = device.content_control?.topic;
       const displays = device.device_control?.displays;
       if (topic && displays) {
@@ -1612,7 +1607,6 @@ export async function createApp({ server, logger, configPaths, configExists, ena
       }
     }
 
-    // Create scan service
     const barcodeLogger = rootLogger.child({ module: 'barcode' });
     const barcodeScanService = new BarcodeScanService({
       gatekeeper,
@@ -1641,24 +1635,34 @@ export async function createApp({ server, logger, configPaths, configExists, ena
 
     barcodeScanServiceRef = barcodeScanService;
 
-    // Wire adapter callback
-    hardwareAdapters.barcodeAdapter.setScanCallback((payload) => {
-      barcodeScanService.handle(payload);
+    // Feed the pipeline from the BLE barcode-relay: parse the raw scan into a
+    // BarcodePayload (the SAME parser the retired MQTT adapter used) and dispatch
+    // it — so a BLE scan behaves exactly like the old USB scan.
+    const barcodeKnownActions = barcodeConfig.actions || ['queue', 'play', 'open'];
+    createBarcodeRelay({
+      eventBus,
+      logger: rootLogger.child({ module: 'barcode-relay' }),
+      onScan: (relay) => {
+        const parsed = BarcodePayload.parse(
+          { barcode: relay.code, device: relay.device, timestamp: relay.ts },
+          barcodeKnownActions,
+          KNOWN_COMMANDS,
+        );
+        if (parsed) barcodeScanService.handle(parsed);
+      },
     });
 
-    if (hardwareAdapters.barcodeAdapter.init()) {
-      rootLogger.info('barcode.mqtt.initialized', {
-        topic: hardwareAdapters.barcodeAdapter.getStatus().topic,
-        scanners: Object.keys(scannerDeviceConfig),
-      });
-    }
+    rootLogger.info('barcode.pipeline.ready', {
+      source: 'ble-relay',
+      scanners: Object.keys(scannerDeviceConfig),
+    });
   }
 
   rootLogger.info('hardware.initialized', {
     printers: printerRegistry.list(),
     tts: hardwareAdapters.ttsAdapter?.isConfigured() || false,
     mqtt: hardwareAdapters.mqttAdapter?.isConfigured() || false,
-    barcode: hardwareAdapters.barcodeAdapter?.isConfigured() || false
+    barcode: !!barcodeScanServiceRef // BLE-relay-fed pipeline (USB/MQTT ingest retired)
   });
 
   // Gratitude domain router - gratitude card canvas renderer
