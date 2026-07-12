@@ -38,6 +38,7 @@ export class FreshRSSSourceAdapter extends IFeedSourceAdapter {
 
   get sourceType() { return 'freshrss'; }
   get provides() { return [CONTENT_TYPES.FEEDS]; }
+  get supportsMarkRead() { return true; }
 
   #getReaderConfig() {
     if (!this.#configService) {

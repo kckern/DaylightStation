@@ -114,6 +114,13 @@ export class FreshRSSFeedAdapter {
   }
 
   /**
+   * Whether this adapter actually persists read-state. Always true here —
+   * markRead calls the FreshRSS GReader edit-tag endpoint.
+   * @returns {boolean}
+   */
+  get supportsMarkRead() { return true; }
+
+  /**
    * Mark items as read
    * @param {string[]} feedItemIds - GReader item IDs
    * @param {string} username

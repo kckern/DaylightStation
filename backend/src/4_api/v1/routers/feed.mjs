@@ -26,14 +26,27 @@ import { asyncHandler } from '#system/http/middleware/index.mjs';
 export function createFeedRouter(config) {
   const { freshRSSAdapter, headlineService, feedAssemblyService, feedContentService, dismissedItemsStore, sourceAdapters = [], contentPluginRegistry = null, configService, logger = console } = config;
 
-  // Build adapter lookup map by sourceType for dismiss routing
+  // Build adapter lookup map by sourceType for dismiss routing.
+  // Only register adapters that genuinely persist read-state — the base class
+  // supplies a no-op markRead, so `typeof adapter.markRead === 'function'` is
+  // always true and would route dismisses into a silent no-op (F-07).
   const adapterMap = new Map();
   for (const adapter of sourceAdapters) {
-    if (adapter.sourceType && typeof adapter.markRead === 'function') {
+    if (adapter.sourceType && adapter.supportsMarkRead === true) {
       adapterMap.set(adapter.sourceType, adapter);
     }
   }
   const router = express.Router();
+
+  // Clamp a query-param integer into [min, max]; returns `def` when absent/invalid.
+  const toBoundedInt = (val, { min, max, def }) => {
+    const n = Number(val);
+    if (!Number.isFinite(n)) return def;
+    return Math.min(max, Math.max(min, Math.trunc(n)));
+  };
+
+  // Validate a feed-item id: must be a non-empty string of bounded length.
+  const isValidItemId = (id) => typeof id === 'string' && id.length > 0 && id.length <= 512;
 
   // Resolve the request-scoped principal. Prefer the authenticated subject
   // (JWT `sub` is the username, see auth.mjs) so Feed reads/mutations act as
@@ -66,7 +79,7 @@ export function createFeedRouter(config) {
     }
     const username = getUsername(req);
     const { items, continuation: nextContinuation } = await freshRSSAdapter.getItems(feed, username, {
-      count: count ? Number(count) : undefined,
+      count: count === undefined ? undefined : toBoundedInt(count, { min: 1, max: 500, def: 50 }),
       continuation,
       excludeRead: excludeRead === 'true',
     });
@@ -75,6 +88,12 @@ export function createFeedRouter(config) {
 
   router.post('/reader/items/mark', asyncHandler(async (req, res) => {
     const { itemIds: feedItemIds, action } = req.body;
+    if (!Array.isArray(feedItemIds) || feedItemIds.length === 0 || feedItemIds.length > 200) {
+      return res.status(400).json({ error: 'itemIds must be a non-empty array (max 200)' });
+    }
+    if (!feedItemIds.every(isValidItemId)) {
+      return res.status(400).json({ error: 'itemIds must be strings of at most 512 chars' });
+    }
     const username = getUsername(req);
 
     if (action === 'read') {
@@ -96,15 +115,16 @@ export function createFeedRouter(config) {
 
     // Filtered mode:  fetch directly from feed stream(s), count-based, full backlog
     // Unfiltered mode: fetch from reading-list, day-based primer
+    const boundedCount = count === undefined ? undefined : toBoundedInt(count, { min: 1, max: 500, def: 50 });
     let streamId;
     let fetchCount;
     if (isFiltered && feedIds.length === 1) {
       // Single feed — fetch directly from that feed's stream
       streamId = feedIds[0];
-      fetchCount = count ? Number(count) : 50;
+      fetchCount = boundedCount ?? 50;
     } else {
       streamId = 'user/-/state/com.google/reading-list';
-      fetchCount = count ? Number(count) : (isFiltered ? 200 : 200);
+      fetchCount = boundedCount ?? 200;
     }
 
     const [{ items, continuation: freshCont }, allFeeds] = await Promise.all([
@@ -159,7 +179,7 @@ export function createFeedRouter(config) {
       // recent calendar days, not the first N days in FreshRSS crawl order.
       result.sort((a, b) => new Date(b.published || 0) - new Date(a.published || 0));
 
-      const targetDays = daysParam ? Number(daysParam) : 3;
+      const targetDays = daysParam === undefined ? 3 : toBoundedInt(daysParam, { min: 1, max: 30, def: 3 });
       const dayKey = (d) => d ? `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}` : 'unknown';
       const distinctDays = new Set();
       const trimmed = [];
@@ -251,9 +271,10 @@ export function createFeedRouter(config) {
     const start = Date.now();
     const username = getUsername(req);
     const { cursor, limit, focus, source, nocache, filter } = req.query;
+    const parsedLimit = limit === undefined ? undefined : toBoundedInt(limit, { min: 1, max: 100, def: 15 });
 
     const result = await feedAssemblyService.getNextBatch(username, {
-      limit: limit ? Number(limit) : undefined,
+      limit: parsedLimit,
       cursor,
       focus: focus || null,
       sources: source ? source.split(',').map(s => s.trim()) : null,
@@ -268,7 +289,10 @@ export function createFeedRouter(config) {
       hasMore: result.hasMore,
     });
 
-    res.json(result);
+    // Strip internal tier-allocation internals from the HTTP response unless
+    // explicitly requested via ?debug=1 (F-25). Still logged server-side above.
+    const { feed_assembly, ...rest } = result;
+    res.json(req.query.debug === '1' ? result : rest);
   }));
 
   // Single-item lookup (deep-link resolution — returns item + detail)
@@ -303,9 +327,17 @@ export function createFeedRouter(config) {
 
   // Dismiss / mark-read items (removes from future scroll batches)
   router.post('/scroll/dismiss', asyncHandler(async (req, res) => {
-    const { itemIds: feedItemIds } = req.body;
-    if (!Array.isArray(feedItemIds) || feedItemIds.length === 0) {
+    const { itemIds: rawItemIds } = req.body;
+    if (!Array.isArray(rawItemIds) || rawItemIds.length === 0) {
       return res.status(400).json({ error: 'itemIds array required' });
+    }
+    if (rawItemIds.length > 200) {
+      return res.status(400).json({ error: 'itemIds exceeds max length of 200' });
+    }
+    // Drop non-string / overly long ids before processing (F-21)
+    const feedItemIds = rawItemIds.filter(isValidItemId);
+    if (feedItemIds.length === 0) {
+      return res.status(400).json({ error: 'no valid itemIds provided' });
     }
 
     const username = getUsername(req);
@@ -327,24 +359,41 @@ export function createFeedRouter(config) {
       otherIds.push(id);
     }
 
-    const promises = [];
+    // Track truthful outcomes: count what actually persisted, collect failures.
+    let dismissed = 0;
+    const failed = [];
 
+    const promises = [];
     for (const [sourceType, ids] of bySource) {
       const adapter = adapterMap.get(sourceType);
       promises.push(
-        adapter.markRead(ids, username).catch(err => {
-          logger.warn?.('feed.dismiss.adapter.error', { sourceType, error: err.message, count: ids.length });
-        })
+        adapter.markRead(ids, username)
+          .then(() => { dismissed += ids.length; })
+          .catch(err => {
+            logger.warn?.('feed.dismiss.adapter.error', { sourceType, error: err.message, count: ids.length });
+            failed.push(...ids);
+          })
       );
     }
-
-    if (otherIds.length > 0 && dismissedItemsStore) {
-      dismissedItemsStore.add(otherIds);
-    }
-
     await Promise.all(promises);
 
-    res.json({ dismissed: feedItemIds.length });
+    // Non-adapter ids always persist to the YAML dismiss store.
+    if (otherIds.length > 0 && dismissedItemsStore) {
+      dismissedItemsStore.add(otherIds);
+      dismissed += otherIds.length;
+    } else if (otherIds.length > 0) {
+      // No store available — these could not be persisted.
+      failed.push(...otherIds);
+    }
+
+    const body = { dismissed, failed };
+    if (failed.length > 0 && dismissed === 0) {
+      return res.status(502).json(body);
+    }
+    if (failed.length > 0) {
+      return res.status(207).json(body);
+    }
+    res.json(body);
   }));
 
   // =========================================================================
@@ -354,7 +403,7 @@ export function createFeedRouter(config) {
   router.get('/detail/:feedItemId', asyncHandler(async (req, res) => {
     const start = Date.now();
     const { feedItemId } = req.params;
-    if (!feedItemId) return res.status(400).json({ error: 'feedItemId required' });
+    if (!isValidItemId(feedItemId)) return res.status(400).json({ error: 'feedItemId required' });
 
     const username = getUsername(req);
     let meta = {};
@@ -452,7 +501,7 @@ export function createFeedRouter(config) {
 
   router.use((err, req, res, next) => {
     logger.error?.('feed.router.error', { error: err.message, url: req.url });
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Internal error' });
   });
 
   return router;
