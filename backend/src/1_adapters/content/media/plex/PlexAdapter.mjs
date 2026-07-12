@@ -2208,10 +2208,11 @@ export class PlexAdapter {
 
     let parent = null;
     let listId = null;
+    let parentItem = null;
 
     if (parentKey) {
       // Has a direct parent (episode→season, track→album, season→show)
-      const parentItem = await this.getItem(String(parentKey));
+      parentItem = await this.getItem(String(parentKey));
       parent = parentItem ? {
         id: parentItem.id || `plex:${parentKey}`,
         title: parentItem.title || 'Parent',
@@ -2248,14 +2249,109 @@ export class PlexAdapter {
       }
     }
 
+    // Build the root-first ancestor chain for breadcrumb navigation, capped at
+    // the show's smallest collection (else library). Reuses the already-fetched
+    // immediate parent to avoid a redundant getItem.
+    const ancestors = await this._buildAncestorChain(item, localId, {
+      libraryId,
+      libraryTitle,
+      parentKey,
+      parentItem
+    });
+
     if (!listId) {
-      return { parent, items: [] };
+      return { parent, items: [], ...(ancestors.length && { ancestors }) };
     }
 
     const listItems = await this.getList(listId);
     const items = Array.isArray(listItems) ? listItems : (listItems?.children || []);
 
-    return { parent, items };
+    return { parent, items, ...(ancestors.length && { ancestors }) };
+  }
+
+  /**
+   * Build the root-first ancestor chain (breadcrumb crumbs) for an item, capped
+   * at the show's smallest containing collection (else the library). Never climbs
+   * above that cap. Missing links are skipped (no ghost crumbs).
+   *
+   * Chain shapes: episode → [collection?, show, season]; season → [collection?, show];
+   * top-level show/movie → [collection-or-library?].
+   *
+   * @param {Object} item - The resolved item (from getItem)
+   * @param {string} localId - Item's Plex rating key
+   * @param {Object} ctx - { libraryId, libraryTitle, parentKey, parentItem }
+   * @returns {Promise<Array<{id:string,title:string,source:string,localId:string,type:string|null}>>}
+   * @private
+   */
+  async _buildAncestorChain(item, localId, ctx = {}) {
+    const { libraryId = null, libraryTitle = null, parentKey = null, parentItem = null } = ctx;
+    const meta = item.metadata || {};
+    const grandparentKey = meta.grandparentRatingKey || meta.grandparentId || null;
+
+    // Mid-chain rating keys below the cap (root-first), and the "show" whose
+    // siblings define the cap level.
+    let midKeys;
+    let showKey;
+    if (grandparentKey && parentKey) {
+      midKeys = [grandparentKey, parentKey]; // [show, season]
+      showKey = grandparentKey;
+    } else if (parentKey) {
+      midKeys = [parentKey]; // [show] (for a season)
+      showKey = parentKey;
+    } else {
+      midKeys = []; // top-level item is itself the show
+      showKey = localId;
+    }
+
+    const crumbs = [];
+
+    // Cap crumb: show's smallest collection, else the library.
+    if (libraryId) {
+      const collection = await this._findSmallestCollection(String(showKey), libraryId);
+      if (collection && collection.title) {
+        crumbs.push({
+          id: `plex:${collection.ratingKey}`,
+          title: collection.title,
+          source: 'plex',
+          localId: String(collection.ratingKey),
+          type: 'collection'
+        });
+      } else if (libraryTitle) {
+        crumbs.push({
+          id: `library:${libraryId}`,
+          title: libraryTitle,
+          source: 'plex',
+          localId: String(libraryId),
+          type: 'library'
+        });
+      }
+    }
+
+    // Mid crumbs (show, season, ...) fetched via getItem, reusing the immediate parent.
+    for (const key of midKeys) {
+      const fetched = (parentItem && String(key) === String(parentKey))
+        ? parentItem
+        : await this.getItem(String(key));
+      if (fetched && fetched.title) {
+        crumbs.push({
+          id: fetched.id || `plex:${key}`,
+          title: fetched.title,
+          source: 'plex',
+          localId: String(key),
+          type: fetched.metadata?.type || null
+        });
+      }
+    }
+
+    // Hygiene: drop ghost crumbs (missing id/title) and dedupe by id, preserving order.
+    const seen = new Set();
+    const clean = [];
+    for (const c of crumbs) {
+      if (!c || !c.id || !c.title || seen.has(c.id)) continue;
+      seen.add(c.id);
+      clean.push(c);
+    }
+    return clean;
   }
 }
 
