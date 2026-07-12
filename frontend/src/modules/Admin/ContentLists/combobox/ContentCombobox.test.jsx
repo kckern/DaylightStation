@@ -30,6 +30,7 @@ function makeHook({ state = {}, ...api } = {}) {
     openWithSiblings: vi.fn(),
     drill: vi.fn(),
     goUp: vi.fn(),
+    goToCrumb: vi.fn(),
     paginate: vi.fn(),
     handleClose: vi.fn(),
     select: vi.fn(),
@@ -241,6 +242,69 @@ describe('ContentCombobox (hook wiring)', () => {
     renderCombobox({ value: 'singalong:hymn/2' });
 
     expect(screen.queryByTestId('combobox-current-anchor')).toBeNull();
+  });
+
+  it('renders each ancestor crumb; clicking a non-last crumb calls goToCrumb, the last crumb is not a button', () => {
+    const goToCrumb = vi.fn();
+    currentHook = makeHook({
+      state: {
+        ...initialState('plex:642197'),
+        value: 'plex:642197',
+        mode: Modes.BROWSE,
+        browse: {
+          items: [{ id: 'plex:642197', title: 'Elijah the Prophet', source: 'plex' }],
+          breadcrumbs: [
+            { id: 'plex:900', title: 'The Old Testament', source: 'plex', localId: '900' },
+            { id: 'plex:800', title: 'The Prophets', source: 'plex', localId: '800' },
+            { id: 'plex:700', title: 'Season 8', source: 'plex', localId: '700' },
+          ],
+          pagination: null,
+          loading: false,
+        },
+      },
+      goToCrumb,
+    });
+    renderCombobox({ value: 'plex:642197' });
+
+    // Every crumb renders with its title.
+    expect(screen.getByTestId('combobox-crumb-0')).toHaveTextContent('The Old Testament');
+    expect(screen.getByTestId('combobox-crumb-1')).toHaveTextContent('The Prophets');
+    const last = screen.getByTestId('combobox-crumb-2');
+    expect(last).toHaveTextContent('Season 8');
+
+    // Non-last crumbs are buttons and route to goToCrumb by index.
+    fireEvent.click(screen.getByTestId('combobox-crumb-0'));
+    expect(goToCrumb).toHaveBeenCalledWith(0);
+    fireEvent.click(screen.getByTestId('combobox-crumb-1'));
+    expect(goToCrumb).toHaveBeenCalledWith(1);
+
+    // The last crumb is the current level — not a button, and never navigates.
+    expect(last.tagName).not.toBe('BUTTON');
+    fireEvent.click(last);
+    expect(goToCrumb).toHaveBeenCalledTimes(2); // unchanged by the last-crumb click
+  });
+
+  it('the back arrow still calls goUp (climb one level)', () => {
+    currentHook = makeHook({
+      state: {
+        ...initialState('plex:700'),
+        value: 'plex:700',
+        mode: Modes.BROWSE,
+        browse: {
+          items: [{ id: 'plex:1', title: 'Ep 1', source: 'plex' }],
+          breadcrumbs: [
+            { id: 'plex:800', title: 'The Prophets', source: 'plex', localId: '800' },
+            { id: 'plex:700', title: 'Season 8', source: 'plex', localId: '700' },
+          ],
+          pagination: null,
+          loading: false,
+        },
+      },
+    });
+    renderCombobox({ value: 'plex:700' });
+
+    fireEvent.click(screen.getByLabelText('Back'));
+    expect(currentHook.goUp).toHaveBeenCalledTimes(1);
   });
 
   it('F6: renders the results-truncated hint when the hook reports truncatedAt (transport-agnostic)', () => {
