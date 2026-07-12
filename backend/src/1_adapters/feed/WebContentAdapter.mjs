@@ -15,6 +15,7 @@
 import { extract } from '@extractus/article-extractor';
 import { HttpClient } from '#system/services/HttpClient.mjs';
 import { assertPublicHttpUrl, safeFetch } from './feedUrlGuard.mjs';
+import { sanitizeFeedHtml } from './htmlSanitizer.mjs';
 
 const ICON_TTL = 5 * 60 * 1000; // 5 minutes
 const MAX_ICON_CACHE = 200;
@@ -309,13 +310,11 @@ export class WebContentAdapter {
 
     html = html.replace(/<(\/?)\s*h1[\s>]/gi, '<$1h2>');
     html = html.replace(/<(br|hr)\s*\/?>/gi, '<$1>');
-    html = html.replace(/<(\/?\w+)\s+[^>]*>/gi, '<$1>');
 
-    const ALLOWED_TAG = /^(?:p|br|h[2-4]|b|strong|em|i|u|ul|ol|li|blockquote|hr)$/i;
-    html = html.replace(/<(\/?)([\w]+)>/gi, (full, _slash, tag) =>
-      ALLOWED_TAG.test(tag) ? full : ''
-    );
-
+    // Decode HTML entities FIRST, so any encoded markup (e.g. &lt;script&gt;)
+    // becomes real tags and is then caught by the attribute-strip, tag
+    // allowlist, and the final DOMPurify gate below — rather than being
+    // reconstructed into live markup after filtering.
     html = html
       .replace(/&nbsp;/g, ' ')
       .replace(/&amp;/g, '&')
@@ -324,13 +323,21 @@ export class WebContentAdapter {
       .replace(/&quot;/g, '"')
       .replace(/&#39;/g, "'");
 
+    html = html.replace(/<(\/?\w+)\s+[^>]*>/gi, '<$1>');
+
+    const ALLOWED_TAG = /^(?:p|br|h[2-4]|b|strong|em|i|u|ul|ol|li|blockquote|hr)$/i;
+    html = html.replace(/<(\/?)([\w]+)>/gi, (full, _slash, tag) =>
+      ALLOWED_TAG.test(tag) ? full : ''
+    );
+
     html = html
       .replace(/<p>\s*<\/p>/gi, '')
       .replace(/(<br>){3,}/gi, '<br><br>')
       .replace(/\s*\n\s*/g, ' ')
       .trim();
 
-    return html;
+    // Authoritative final gate: DOMPurify with the strict feed allowlist.
+    return sanitizeFeedHtml(html);
   }
 
   /**
@@ -370,6 +377,18 @@ export class WebContentAdapter {
     // Normalize self-closing void elements
     bodyHtml = bodyHtml.replace(/<(br|hr)\s*\/?>/gi, '<$1>');
 
+    // Decode HTML entities FIRST, so any encoded markup (e.g. &lt;script&gt;)
+    // becomes real tags and is then caught by the attribute-strip, tag
+    // allowlist, and the final DOMPurify gate below — rather than being
+    // reconstructed into live markup after filtering.
+    bodyHtml = bodyHtml
+      .replace(/&nbsp;/g, ' ')
+      .replace(/&amp;/g, '&')
+      .replace(/&lt;/g, '<')
+      .replace(/&gt;/g, '>')
+      .replace(/&quot;/g, '"')
+      .replace(/&#39;/g, "'");
+
     // Strip all attributes from remaining tags
     bodyHtml = bodyHtml.replace(/<(\/?\w+)\s+[^>]*>/gi, '<$1>');
 
@@ -379,21 +398,16 @@ export class WebContentAdapter {
       ALLOWED_TAG.test(tag) ? full : ''
     );
 
-    // Decode HTML entities
-    bodyHtml = bodyHtml
-      .replace(/&nbsp;/g, ' ')
-      .replace(/&amp;/g, '&')
-      .replace(/&lt;/g, '<')
-      .replace(/&gt;/g, '>')
-      .replace(/&quot;/g, '"')
-      .replace(/&#39;/g, "'");
-
     // Clean up whitespace
     bodyHtml = bodyHtml
       .replace(/<p>\s*<\/p>/gi, '')
       .replace(/(<br>){3,}/gi, '<br><br>')
       .replace(/\s*\n\s*/g, ' ')
       .trim();
+
+    // Authoritative final gate: DOMPurify with the strict feed allowlist.
+    // Applied before truncation/word-count so downstream only sees safe HTML.
+    bodyHtml = sanitizeFeedHtml(bodyHtml);
 
     // Word count from text-only version
     const textOnly = bodyHtml.replace(/<[^>]*>/g, '').trim();

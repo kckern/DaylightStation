@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
+import DOMPurify from 'dompurify';
 import { colorFromLabel } from '../Scroll/cards/utils.js';
 import FeedPlayer from '../players/FeedPlayer.jsx';
 import { useFeedPlayer } from '../players/FeedPlayerContext.jsx';
@@ -114,7 +115,7 @@ export default function ArticleRow({ article, onMarkRead }) {
               <div
                 ref={contentRef}
                 className={`article-content ${fullHeight ? 'full' : ''} ${overflows && !fullHeight ? 'capped' : ''}`}
-                dangerouslySetInnerHTML={{ __html: article.content }}
+                dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(article.content || '') }}
               />
               {overflows && !fullHeight && (
                 <button className="article-readmore" onClick={(e) => { e.stopPropagation(); setFullHeight(true); }}>
