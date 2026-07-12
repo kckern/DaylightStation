@@ -2,7 +2,8 @@
 
 > A daily harvester that enumerates, downloads, renames, and archives MIDI
 > recordings from a JamCorder device (a networked piano "jam recorder") into
-> `household/history/jamcorder/`. Date: 2026-07-12.
+> `household/history/piano/jamcorder/` (household-generic, non-user-scoped —
+> alongside the per-user `history/piano/{userId}/` dirs). Date: 2026-07-12.
 
 ## Problem
 
@@ -41,7 +42,7 @@ schedule.
 
 | Item | Decision |
 |---|---|
-| **Archive layout** | `household/history/jamcorder/YYYY/YYYY-MM/YYYY-MM-DD HH.MM.SS.mid` |
+| **Archive layout** | `household/history/piano/jamcorder/YYYY/YYYY-MM/YYYY-MM-DD HH.MM.SS.mid` (household-generic, non-user-scoped) |
 | **Time source** | Each file's embedded `unixtime` + `localOffset` (per-recording local time, DST-correct) |
 | **Scope** | Recursive — all sessions across all years and `other/` |
 | **Dedup** | By device path (pre-download); skip already-archived recordings |
@@ -74,7 +75,7 @@ adapter, per `docs/reference/core/layers-of-abstraction/`.
   HttpJamCorderSource.mjs                     extends IJamCorderSource; injected HttpClient; recursive POST list;
                                               GET /sdcard/… → downloadBuffer
   FsJamCorderArchive.mjs                      extends IJamCorderArchive; FileIO.writeBinary +
-                                              configService.getHouseholdPath('history/jamcorder'); YAML index
+                                              configService.getHouseholdPath('history/piano/jamcorder'); YAML index
 
 1_adapters/harvester/other/JamCorderHarvester.mjs   extends IHarvester (serviceId 'jamcorder', category OTHER);
                                               harvest() delegates to HarvestJamCorderRecordings
@@ -102,7 +103,7 @@ their ports (Decision D7) and receive resolved config (`host`, `HttpClient`,
 
 ## Dedup
 
-- YAML index `household/history/jamcorder/_index.yml`, mapping device `listPath →
+- YAML index `household/history/piano/jamcorder/_index.yml`, mapping device `listPath →
   archive relPath`, keyed by the stable device path (session UUID + filename),
   checked **before** download so already-archived files are never re-fetched.
 - Secondary idempotency: `save` skips the write when the target already exists.
