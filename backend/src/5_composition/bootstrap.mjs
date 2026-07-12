@@ -3507,7 +3507,7 @@ export function createHarvesterServices(config) {
     const soundfontPath = '/usr/share/soundfonts/TimGM6mb.sf2'; // Alpine soundfont-timgm; confirm path post-build
     // Guardrail: skip pathological over-long renders (stuck note / idle recording).
     const pianoAudioCfg = configService?.getHouseholdAppConfig?.(null, 'pianoaudio') || {};
-    const maxRenderSeconds = pianoAudioCfg.maxRenderSeconds ?? 1200; // 20 min
+    const maxRenderSeconds = pianoAudioCfg.maxRenderSeconds ?? 3600; // 60 min
     const library = new FsMidiLibrary({ sourceDir, destDir, logger, maxRenderSeconds });
     const converter = new FluidSynthMp3Converter({ soundfontPath, scratchDir: '/tmp/pianoaudio', logger });
     const convertUseCase = new ConvertPendingPianoMidi({ library, converter, logger });
