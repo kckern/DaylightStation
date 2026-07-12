@@ -169,7 +169,6 @@ import { createTriggerRouter } from '#api/v1/routers/trigger.mjs';
 // Note: ThermalPrinterAdapter/Registry are constructed directly in app.mjs; bootstrap no longer imports them.
 import { OpenAITTSAdapter } from '#adapters/hardware/tts/OpenAITTSAdapter.mjs';
 import { MQTTSensorAdapter } from '#adapters/hardware/mqtt-sensor/MQTTSensorAdapter.mjs';
-import { MQTTBarcodeAdapter } from '#adapters/hardware/mqtt-barcode/MQTTBarcodeAdapter.mjs';
 import { MQTTSelectorAdapter } from '#adapters/hardware/mqtt-selector/MQTTSelectorAdapter.mjs';
 import { KNOWN_COMMANDS } from '#domains/barcode/BarcodeCommandMap.mjs';
 
@@ -1790,23 +1789,12 @@ export function createHardwareAdapters(config) {
     );
   }
 
-  // MQTT barcode adapter (optional)
-  let barcodeAdapter = null;
-  if (config.barcode?.host && config.barcode?.topic) {
-    barcodeAdapter = new MQTTBarcodeAdapter(
-      {
-        host: config.barcode.host,
-        port: config.barcode.port,
-        topic: config.barcode.topic,
-      },
-      {
-        knownActions: config.barcode.knownActions || [],
-        knownCommands: config.barcode.knownCommands || [],
-        onScan: config.onBarcodeScan,
-        logger,
-      }
-    );
-  }
+  // Barcode ingest is no longer wired here. The USB-scanner-over-MQTT path is
+  // retired; the barcode scan pipeline is fed by the BLE barcode-relay in app.mjs.
+  // MQTTBarcodeAdapter is kept in the tree (dormant) as a generic MQTT→barcode
+  // ingress should an MQTT scanner ever return. barcodeAdapter stays null so
+  // existing `hardwareAdapters.barcodeAdapter?.…` optional access is a safe no-op.
+  const barcodeAdapter = null;
 
   // MQTT selector adapter (optional) - rider-selector buttons
   let selectorAdapter = null;
