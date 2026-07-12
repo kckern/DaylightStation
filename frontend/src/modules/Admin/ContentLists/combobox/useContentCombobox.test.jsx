@@ -604,6 +604,58 @@ describe('useContentCombobox', () => {
     expect(result.current.state.value).toBe('plex:642197');
   });
 
+  it('goToCrumb lists the clicked crumb\'s children, truncates the trail there, and highlights the child came from', async () => {
+    const DEEP_RESPONSE = {
+      items: [{ id: 'plex:642197', title: 'Elijah the Prophet', source: 'plex', type: 'episode' }],
+      parent: { id: 'plex:700', title: 'Season 8', source: 'plex' },
+      pagination: null,
+      referenceIndex: 0,
+      ancestors: [
+        { id: 'plex:900', title: 'The Old Testament', source: 'plex', localId: '900', type: 'collection' },
+        { id: 'plex:800', title: 'The Prophets', source: 'plex', localId: '800', type: 'show' },
+        { id: 'plex:700', title: 'Season 8', source: 'plex', localId: '700', type: 'season' },
+      ],
+    };
+    fetchMock.mockImplementation((url) => {
+      if (url.startsWith('/api/v1/siblings/plex/642197')) return jsonResponse(DEEP_RESPONSE);
+      if (url.startsWith('/api/v1/list/plex/900')) return jsonResponse({ items: [
+        { id: 'plex:850', title: 'The Kings', source: 'plex', itemType: 'container' },
+        { id: 'plex:800', title: 'The Prophets', source: 'plex', itemType: 'container' },
+      ] });
+      return jsonResponse({ items: [] });
+    });
+    const { result } = setup({ value: 'plex:642197' });
+    await openBrowse(result);
+    expect(result.current.state.browse.breadcrumbs.map((b) => b.id)).toEqual(['plex:900', 'plex:800', 'plex:700']);
+
+    // Click the ROOT collection crumb (index 0) — jumps two levels at once.
+    await act(async () => { await result.current.goToCrumb(0); });
+
+    expect(result.current.state.mode).toBe('browse');
+    expect(result.current.state.browse.breadcrumbs.map((b) => b.id)).toEqual(['plex:900']);
+    expect(result.current.state.browse.items.map((i) => i.id)).toEqual(['plex:850', 'plex:800']);
+    // Highlights the child we came from (the show, at index 1).
+    expect(result.current.state.browse.items[result.current.state.highlight.idx].id).toBe('plex:800');
+    // The listed level was fetched via /list of the clicked crumb's localId.
+    expect(fetchMock.mock.calls.some(([u]) => u.startsWith('/api/v1/list/plex/900'))).toBe(true);
+  });
+
+  it('goToCrumb on the LAST (current) crumb is a no-op — no fetch, trail unchanged', async () => {
+    fetchMock.mockImplementation((url) => (
+      url.startsWith('/api/v1/siblings/plex/10') ? jsonResponse(SIBLINGS_RESPONSE) : jsonResponse({ items: [] })
+    ));
+    const { result } = setup({ value: 'plex:10' });
+    await openBrowse(result);
+    expect(result.current.state.browse.breadcrumbs).toHaveLength(1);
+    const listCallsBefore = fetchMock.mock.calls.filter(([u]) => u.startsWith('/api/v1/list/')).length;
+
+    await act(async () => { await result.current.goToCrumb(0); }); // index 0 is also the last crumb
+
+    const listCallsAfter = fetchMock.mock.calls.filter(([u]) => u.startsWith('/api/v1/list/')).length;
+    expect(listCallsAfter - listCallsBefore).toBe(0); // clicking the current level fetches nothing
+    expect(result.current.state.browse.breadcrumbs).toHaveLength(1);
+  });
+
   it('goUp refetches the parent level and pops the breadcrumb (WENT_UP)', async () => {
     fetchMock.mockImplementation((url) => {
       if (url.startsWith('/api/v1/siblings/plex/10')) return jsonResponse(SIBLINGS_RESPONSE);

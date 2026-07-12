@@ -190,6 +190,31 @@ describe('comboboxMachine', () => {
     expect(s.highlight.userNavigated).toBe(false);
   });
 
+  it('WENT_UP expresses an ARBITRARY breadcrumb truncation (crumb-jump), not just a single pop', () => {
+    // Trail: collection > show > season, currently listing season's episodes.
+    let s = open(initialState('plex:642197'));
+    s = reducer(s, {
+      type: 'BROWSE_LOADED',
+      items: [{ id: 'plex:ep1' }],
+      breadcrumbs: [{ id: 'plex:900' }, { id: 'plex:800' }, { id: 'plex:700' }],
+      pagination: null,
+    });
+    // Clicking the collection crumb (index 0) jumps straight there: breadcrumbs
+    // truncated to [collection], highlighting the show it came from.
+    s = reducer(s, {
+      type: 'WENT_UP',
+      items: [{ id: 'plex:800' }, { id: 'plex:850' }],
+      breadcrumbs: [{ id: 'plex:900' }],
+      pagination: null,
+      referenceIndex: 0,
+    });
+    expect(s.mode).toBe(Modes.BROWSE);
+    expect(s.browse.breadcrumbs.map((b) => b.id)).toEqual(['plex:900']);
+    expect(s.browse.items.map((i) => i.id)).toEqual(['plex:800', 'plex:850']);
+    expect(s.highlight.idx).toBe(0);
+    expect(s.highlight.userNavigated).toBe(false);
+  });
+
   it('WENT_UP defaults referenceIndex to 0', () => {
     let s = open(initialState('plex:1'));
     s = reducer(s, { type: 'DRILL_LOADED', crumb: { id: 'p' }, items: [{ id: 'c' }], pagination: null });
