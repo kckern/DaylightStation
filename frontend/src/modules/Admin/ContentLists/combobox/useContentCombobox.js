@@ -14,6 +14,7 @@ import { getChildLogger } from '../../../../lib/logging/singleton.js';
 import { isContentIdLike, parseSourcePrefix } from '../contentSearchLogic.js';
 import { getCacheEntry, setCacheEntry } from '../siblingsCache.js';
 import { reducer, initialState, closeDecision, decideCommit, isContainer, Modes, RENDER_CAP } from './comboboxMachine.js';
+import { sanitizeBreadcrumbs } from '../breadcrumbs.js';
 import { notifyWarning } from '../../shared/feedback.js';
 
 const SEARCH_STREAM_ENDPOINT = '/api/v1/content/query/search/stream';
@@ -95,6 +96,20 @@ function parentToCrumb(parent, fallbackSource) {
   };
 }
 
+// Map a siblings-API ancestor Crumb ({id,title,source,localId,type}) to the
+// hook's crumb shape used by goUp/goToCrumb (source + localId drive the /list
+// fetch). Ancestors already carry localId/type, so preserve them rather than
+// re-deriving; fall back to id-splitting only if localId is absent.
+function ancestorToCrumb(crumb, fallbackSource) {
+  return {
+    id: crumb.id,
+    title: crumb.title,
+    source: crumb.source || fallbackSource,
+    localId: crumb.localId ?? crumb.id?.split(':').slice(1).join(':'),
+    type: crumb.type ?? null,
+  };
+}
+
 /**
  * Fetch siblings of a content id and shape the result for the shared
  * siblingsCache ({browseItems, currentParent, pagination, referenceIndex}).
@@ -122,6 +137,9 @@ async function fetchSiblingsData(contentId) {
       : null,
     pagination: data.pagination || null,
     referenceIndex: data.referenceIndex ?? -1,
+    // Root-first ancestor chain for the breadcrumb trail (optional; adapters
+    // that can't build one omit it → the single-parent crumb fallback applies).
+    ancestors: Array.isArray(data.ancestors) ? data.ancestors : null,
   };
 }
 
@@ -299,9 +317,15 @@ export function useContentCombobox({ value, onChange, searchParams = '', appResu
   const applyBrowseData = useCallback((contentId, data) => {
     if (!data) return;
     const items = (data.browseItems || []).map(ensureId);
-    const breadcrumbs = data.currentParent
-      ? [parentToCrumb(data.currentParent, splitContentId(contentId)?.source)]
-      : [];
+    const fallbackSource = splitContentId(contentId)?.source;
+    // Prefer the full root-first ancestor chain (climbable + clickable trail);
+    // sanitize drops any ghost/dupe/junk crumbs. Fall back to the single parent
+    // crumb when the response carries no ancestors (no regression).
+    const breadcrumbs = (Array.isArray(data.ancestors) && data.ancestors.length > 0)
+      ? sanitizeBreadcrumbs(data.ancestors.map((c) => ancestorToCrumb(c, fallbackSource)))
+      : data.currentParent
+        ? [parentToCrumb(data.currentParent, fallbackSource)]
+        : [];
     const normalizedVal = normalizeValue(contentId);
     const foundIndex = (data.referenceIndex != null && data.referenceIndex >= 0)
       ? data.referenceIndex
