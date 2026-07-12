@@ -19,15 +19,14 @@
 #include <NimBLEDevice.h>
 
 // ---------- config ----------
-static const char* WIFI_SSID = "YOUR_SSID";
-static const char* WIFI_PASS = "YOUR_WIFI_PASS";
-static const char* WS_HOST   = "10.0.0.68";
-static const uint16_t WS_PORT = 8791;
-static const char* WS_PATH   = "/ws";
-
-// The DS2278 scanner's BLE identity (from `bluetoothctl` discovery).
-static const char* TARGET_MAC  = "c8:1c:fe:fd:ce:90";
-static const char* TARGET_NAME = "DS2278";
+// All instance config (Wi-Fi creds, backend WS host/port/path, scanner BLE
+// identity) is CONFIG-DRIVEN from the household SSOT, NOT hardcoded here — see
+// tools/gen-config.mjs, which generates include/config.h (gitignored) from
+// data/household/config/barcode-relay.yml. `config.h` uses the stable hostname
+// (daylightlocal.kckern.net), never a raw IP. Run gen-config before building;
+// config.example.h documents the shape.
+#include "config.h"    // GENERATED, gitignored — defines WIFI_SSID / WIFI_PASSWORD /
+                        // WS_HOST / WS_PORT / WS_PATH / SCANNER_MAC / SCANNER_NAME
 
 #define LED_PIN 27
 static CRGB led[1];
@@ -124,9 +123,9 @@ static NimBLEAdvertisedDevice* g_target=nullptr;
 
 class ScanCB : public NimBLEAdvertisedDeviceCallbacks {
   void onResult(NimBLEAdvertisedDevice* d) override {
-    bool match = d->getAddress().toString() == TARGET_MAC;
+    bool match = d->getAddress().toString() == SCANNER_MAC;
     if(!match && d->haveServiceUUID() && d->isAdvertisingService(NimBLEUUID((uint16_t)0x1812))) match=true;
-    if(!match && d->haveName() && String(d->getName().c_str()).indexOf(TARGET_NAME) >= 0) match=true;
+    if(!match && d->haveName() && String(d->getName().c_str()).indexOf(SCANNER_NAME) >= 0) match=true;
     if(match){
       logf("[ble] found %s rssi=%d", d->getAddress().toString().c_str(), d->getRSSI());
       NimBLEDevice::getScan()->stop();
@@ -194,7 +193,7 @@ static void startScan(){
   s->setActiveScan(true);
   s->setInterval(45); s->setWindow(45);
   s->start(0, nullptr, false);
-  logf("[ble] scanning for %s / %s ...", TARGET_MAC, TARGET_NAME);
+  logf("[ble] scanning for %s / %s ...", SCANNER_MAC, SCANNER_NAME);
 }
 
 void setup(){
@@ -211,7 +210,7 @@ void setup(){
   NimBLEDevice::setSecurityAuth(true, false, true); // bond, no MITM, SC
   NimBLEDevice::setSecurityIOCap(BLE_HS_IO_NO_INPUT_OUTPUT); // Just Works
 
-  WiFi.mode(WIFI_STA); WiFi.begin(WIFI_SSID,WIFI_PASS);
+  WiFi.mode(WIFI_STA); WiFi.begin(WIFI_SSID,WIFI_PASSWORD);
   uint32_t t0=millis(); while(WiFi.status()!=WL_CONNECTED && millis()-t0<15000){ delay(300); Serial.print("."); }
   if(WiFi.status()==WL_CONNECTED){ g_bcast=WiFi.localIP(); g_bcast[3]=255; logf("[wifi] %s -> ws %s:%u, udp log :9999", WiFi.localIP().toString().c_str(), WS_HOST, WS_PORT); }
   ws.begin(WS_HOST, WS_PORT, WS_PATH); ws.onEvent(wsEvent); ws.setReconnectInterval(4000);
