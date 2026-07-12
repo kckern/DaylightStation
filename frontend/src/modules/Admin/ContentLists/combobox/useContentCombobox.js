@@ -620,7 +620,7 @@ export function useContentCombobox({ value, onChange, searchParams = '', appResu
         onChangeRef.current?.(decision.value);
         notifyWarning({
           title: 'Saved as raw id',
-          message: `Couldn't resolve “${decision.value}” — saved as raw id`,
+          message: `Saved “${decision.value}” as a raw content id`,
         });
         invalidateBrowseLoads(); dispatch({ type: 'CLOSE' }); cancelPendingSearch();
         break;
