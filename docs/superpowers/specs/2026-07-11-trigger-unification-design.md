@@ -38,7 +38,8 @@ input, other hardware), so the abstraction must generalize beyond scanning.
 | **Response scope** | Build the full union now: `content`, `transport`, `device`, `ha`, plus the net-new `script`/endpoint handler. Registry stays open. |
 | **Content posture** | The `content` handler supports both `authoritative` and `optimistic` postures, defaulted per source (`nfc → authoritative`, `barcode → optimistic`), overridable per location/target. |
 | **Script safety** | `script` responses reference *named* endpoints declared in config, not inline URLs — keeps secrets out of tag data and URLs out of `3_applications`. |
-| **Rollout** | Strangler-fig: build the core additively, fold in barcode, retire the old barcode pipeline after parity is verified, then add `script`. |
+| **Config model** | ECA-organized (sources / responses / bindings), not modality-organized. Hand-authored config and machine-written discovery state are split into separate files with separate writers (spec/status). Targets derive from existing registries. See [Configuration & Externalization](#configuration--externalization). |
+| **Rollout** | Strangler-fig: build the core additively, fold in barcode, retire the old barcode pipeline after parity is verified, then add `script`. Config restructure (incl. NFC state/config split) lands with the core. |
 
 ## Architecture
 
@@ -198,11 +199,13 @@ location/target in config. Both become available to any source.
 
 ### Script / endpoint handler (net-new)
 
-Config declares *named* endpoints; a Response references one by name:
+`endpoints.yml` declares *named* endpoints (see [Configuration &
+Externalization](#configuration--externalization)); a Response references one by
+name:
 
 ```yaml
-endpoints:
-  bedtime_routine: { method: POST, url: "http://localhost:3111/api/v1/…", headers: {…} }
+# endpoints.yml
+bedtime_routine: { method: POST, url: "http://localhost:3111/api/v1/…", headers: {…} }
 ```
 
 ```js
@@ -271,6 +274,145 @@ like a QR code. All three converge on the identical `Response`.
   orthogonal outbox/retry layer around dispatch, not hub-specific — and is left
   as an explicit future extension.
 
+## Configuration & Externalization
+
+The pipeline is an **Event–Condition–Action (ECA) rules engine**, so its config is
+organized around the ECA nouns — *sources* (events), *responses* (actions), and
+*bindings* (the event→action rules) — **not** around modality. Modality is an
+*attribute of a source*, not a top-level folder; that keeps the layout from
+re-entrenching the silos this migration dissolves, and makes "add SMS/keyboard/
+MQTT" a new entry rather than a new folder.
+
+### Layout
+
+```
+data/household/config/triggers/          ← hand-authored (peer to lists/, the existing dir-of-files precedent)
+  sources.yml       # every event origin, ANY modality — one vocabulary
+  responses.yml     # named reusable action library — many sources → one response
+  endpoints.yml     # named script/endpoint targets (method+url+headers) — referenced by `script` responses
+  bindings/
+    nfc.yml         # uid → response (curated intent) — ONLY for lookup modalities
+
+data/household/history/triggers/         ← machine-written (spec/status split)
+  nfc.observed.yml  # uid → { first_seen, last_seen, count } — discovery log
+```
+
+Targets are **derived at boot** from the existing registries (`devices.yml`
+screens/TVs, `playback-hub.yml` slots, `screens/*.yml`) — never restated here.
+
+### The config ↔ state split (spec/status)
+
+The current NFC pipeline writes `scanned_at` placeholders into
+`config/triggers/nfc/tags.yml` — mixing a machine's discovery log into a human's
+curated file. This is exactly the write-race the Kubernetes **spec/status**
+separation exists to prevent (users edit spec, controllers write status, separate
+writers), and it already violates this repo's own codified convention
+(`UserDataService.createHouseholdDirectory`: `config/` = hand-authored,
+`history/`/`state/` = machine-written).
+
+**Fix:** split the tag file in two, with separate writers.
+
+- **Curated intent** (`config/triggers/bindings/nfc.yml`): `uid → response`,
+  human-assigned `note`. Hand-authored; the only writes are deliberate
+  human/admin actions (naming a tag).
+- **Observed state** (`history/triggers/nfc.observed.yml`): first/last-seen,
+  scan counts, unnamed-tag capture. Machine-written by the dispatch core.
+
+Unknown-tag flow becomes: unknown scan → write **state** to `history/` + notify →
+human names it → that writes a **binding** to `config/`. No writer ever touches
+the other's file.
+
+### Sources
+
+One flat file keyed by source id, mirroring `devices.yml`. A source declares its
+`modality`, its guard config (the named stages), and cascading `defaults`; it may
+reference a `devices.yml` id for hardware specifics rather than restating them.
+
+```yaml
+# sources.yml
+livingroom-reader:
+  modality: nfc
+  guards:
+    authenticate: { type: token, secret: nfc_livingroom }   # named secret, not a literal
+    debounce:     { windowMs: 30000 }
+  defaults:       { target: livingroom-tv, action: play-next, end: tv-off }
+  notify_unknown: mobile_app_kc_phone
+
+garage-scanner:
+  modality: barcode
+  device:   ds2278                    # ref to devices.yml — no hardware duplication
+  guards:
+    authorize:    { policy: auto-approve }
+  defaults:       { target: living-room }
+```
+
+### Responses (named action library)
+
+Named, addressable responses — the mechanism that lets many sources fire one
+effect (HA `script:` model). A binding or a self-describing code may **inline** a
+response or **reference** a named one; naming is optional and for reuse.
+
+```yaml
+# responses.yml
+play-bedtime-red:
+  kind: playback-hub
+  target: red
+  expression: plex:675465
+  options: { shuffle: true }
+bedtime-routine:
+  kind: script
+  ref: bedtime_routine                # named endpoint, resolved by endpointGateway
+```
+
+A response `name` is also its **audit/log key** (Drools "name everything")
+— aligning with the unified log vocabulary (`trigger.event.*`).
+
+### Bindings (lookup modalities only)
+
+```yaml
+# bindings/nfc.yml
+04_2f_71_72_cc_2a_81:
+  note: Pinnochii
+  response: { kind: content, expression: plex:620699 }   # inline
+04_bc_c3_72_cc_2a_81:
+  note: "3 pigs"
+  response: play-bedtime-red                              # by name
+```
+
+Self-describing modalities (barcode/QR) have **no** bindings file — the code
+carries the response; the source's `defaults` fill any omissions.
+
+### Precedence & merge
+
+Cascading config, most-specific wins, resolved by **deep-merge**; **arrays
+replace** (documented gotcha). This is what `NfcResolver` already does and what
+`artmode.yml` (frames/defaults/presets) already models:
+
+```
+source.defaults  <  binding fields  <  per-location override
+```
+
+### Secrets
+
+Guard credentials (NFC location tokens) are **named references**, not literals
+(12-Factor open-source test; HA `!secret`), resolved from the existing secret
+store at boot — consistent with `integrations.yml` keeping auth out of feature
+config.
+
+### Reserved (built later, slots left)
+
+- **Conditions** — ECA's middle term (`condition:` on a binding, e.g. "only if TV
+  off"). Guard stages cover today's needs; general conditions are a future slot.
+- **Priority / salience** — only needed once bindings can *pattern-match* (more
+  than one rule matches an event). Exact-id lookup is deterministic today.
+
+### Admin-editability
+
+`bindings/nfc.yml` (frequently edited — naming tags) is exposed to the admin
+config API and must stay round-trippable through `js-yaml` (comments lost on
+write, per `AppsConfigService`). `sources.yml` and `responses.yml` are
+infrastructure — hand-edited, kept out of the lossy generic editor.
+
 ## Absorbed / retired code
 
 | Existing | Fate |
@@ -288,22 +430,32 @@ like a QR code. All three converge on the identical `Response`.
    (generalize `actionHandlers` → content/device/ha handlers) and guard-stage
    interfaces. Rewire `TriggerDispatchService` to `resolve → Response →
    dispatchResponse`. NFC/state behavior unchanged; existing trigger tests green.
-2. **Fold in barcode** — add `BarcodeResolver`, the `transport` handler, and the
+2. **Config restructure** — introduce the ECA layout (`sources.yml` /
+   `responses.yml` / `endpoints.yml` / `bindings/`) and split NFC config from
+   observed state (`history/triggers/nfc.observed.yml`). A one-time migration
+   script transforms today's `triggers/nfc/{locations,tags}.yml` +
+   `triggers/state/locations.yml` + `barcode.yml` into the new layout. Repoint
+   the dispatch core's write path (placeholders → `history/`, not `config/`).
+3. **Fold in barcode** — add `BarcodeResolver`, the `transport` handler, and the
    barcode ingress adapter (retarget `barcodeRelay.mjs`). Gatekeeper → `authorize`
    stage; add barcode `debounce`. Route barcode through the unified core.
-3. **Retire** `2_domains/barcode` + `BarcodeScanService` once parity is verified.
-4. **New capability** — add `script` handler + `endpointGateway` port + named-endpoint config.
-5. **Unify** logging vocabulary (`trigger.event.ingested → resolved → dispatched`,
+4. **Retire** `2_domains/barcode` + `BarcodeScanService` once parity is verified.
+5. **New capability** — add `script` handler + `endpointGateway` port + named-endpoint config.
+6. **Unify** logging vocabulary (`trigger.event.ingested → resolved → dispatched`,
    carrying `source`) and the WS event shape, replacing the split `trigger.fired`
    / `barcode.*` / `barcode_relay.*` namespaces.
 
 ## Backward compatibility
 
+Runtime *interfaces* are preserved; the config *format* is intentionally migrated
+(big-bang, by a one-time script — see Rollout step 2):
+
 - HTTP `GET /trigger/:location/:type/:value` unchanged (already generic).
 - Barcode relay firmware + WS message shape unchanged.
-- NFC location/tag YAML unchanged.
-- Barcode scanner/command config migrates into the trigger registry shape
-  (barcode locations/scanners become trigger locations with `source: barcode`).
+- **Config format changes** (this is deliberate, not a break): NFC/state/barcode
+  config is transformed into the ECA layout, and NFC observed state moves out of
+  `config/` into `history/`. The migration is one-time and scripted; no dual-read
+  compatibility shim is kept (big-bang was chosen explicitly).
 
 ## Testing
 
@@ -314,6 +466,9 @@ TDD per step. Units tested in isolation:
 - Each resolver (`nfc`/`state`/`barcode`) → correct `Response` or `null`.
 - Each response handler; dispatch routing by `kind`.
 - Both content postures (authoritative, optimistic + ack timeout → fallback).
+- The config migration script: today's `nfc/{locations,tags}.yml` +
+  `state/locations.yml` + `barcode.yml` → the ECA layout, with observed state
+  (`scanned_at`, unnamed tags) landing in `history/`, curated intent in `config/`.
 
 **Parity tests:** a golden set of representative NFC scans and barcode scans must
 produce equivalent effects (same target, same query/command, same broadcast)
@@ -325,7 +480,10 @@ through the unified core before the old barcode pipeline is deleted. Existing
 - Merging the two resolution models (opaque-UID lookup vs self-describing parse)
   into one resolver — they stay separate; only outputs converge.
 - Merging authentication with authorization — they are distinct named stages.
-- Changing barcode relay firmware, NFC config format, or the public HTTP route.
+- Changing barcode relay firmware or the public HTTP route. (The NFC *config
+  format* IS changing — that is in scope; see Configuration & Externalization.)
+- A dual-read / backward-compat shim for the old config format — big-bang
+  migration was chosen; a one-time script transforms it instead.
 - Building future ingress sources (SMS/keyboard/MQTT) now — only leaving the
   ingress-adapter slot for them.
 - **Reliable delivery / deferred dispatch** (an outbox that persists a `Response`
