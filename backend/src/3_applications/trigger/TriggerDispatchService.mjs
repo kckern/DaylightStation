@@ -300,8 +300,8 @@ export class TriggerDispatchService {
 
     if (this.#tagWriter) {
       try {
-        await this.#tagWriter.upsertNfcPlaceholder(uid, this.#formatScannedAt(this.#clock()));
-        this.#logger.debug?.('trigger.placeholder_created', { location, uid });
+        await this.#tagWriter.recordObserved(uid, this.#formatScannedAt(this.#clock()));
+        this.#logger.debug?.('trigger.observed_recorded', { location, uid });
       } catch (err) {
         this.#logger.error?.('trigger.placeholder.failed', { location, uid, error: err.message });
       }
