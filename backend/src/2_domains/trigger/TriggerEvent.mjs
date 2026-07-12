@@ -23,7 +23,11 @@ export class TriggerEvent {
    * @param {Object} args
    * @param {string} args.source   modality / source id (e.g. 'nfc', 'barcode')
    * @param {string} args.location origin id (reader/scanner/endpoint)
-   * @param {string} args.value    raw payload; normalized to a lowercased string
+   * @param {string} args.value    raw payload; preserved as-is (case-sensitive
+   *                               content ids like barcodes must not be
+   *                               lowercased here — each resolver normalizes
+   *                               as it needs, e.g. NfcResolver lowercases
+   *                               internally for case-insensitive UID matching)
    * @param {Object} [args.meta]   transport-specific extras (device, timestamp, token, transport)
    * @returns {TriggerEvent}
    * @throws {ValidationError} if source or location is missing
@@ -31,7 +35,7 @@ export class TriggerEvent {
   static create({ source, location, value, meta } = {}) {
     if (!source) throw new ValidationError('TriggerEvent.source required', { code: 'TRIGGER_EVENT_SOURCE' });
     if (!location) throw new ValidationError('TriggerEvent.location required', { code: 'TRIGGER_EVENT_LOCATION' });
-    return new TriggerEvent({ source, location, value: String(value ?? '').toLowerCase(), meta });
+    return new TriggerEvent({ source, location, value: String(value ?? ''), meta });
   }
 
   get source() { return this.#source; }
