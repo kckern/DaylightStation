@@ -31,4 +31,9 @@ describe('mapIntentToResponse', () => {
     expect(mapIntentToResponse(null)).toBeNull();
     expect(() => mapIntentToResponse({ action: 'nope', target: 't' })).toThrow(UnknownActionError);
   });
+
+  it('maps script action to a script Response', () => {
+    expect(mapIntentToResponse({ action: 'script', endpoint: 'bedtime', params: { a: 1 } }))
+      .toEqual({ kind: 'script', ref: 'bedtime', params: { a: 1 } });
+  });
 });

@@ -51,6 +51,9 @@ export function mapIntentToResponse(intent, { posture = 'authoritative' } = {}) 
   if (action === 'ha-service') {
     return Response.ha({ op: 'service', service: intent.service, entity: intent.entity, data: intent.data });
   }
+  if (action === 'script') {
+    return Response.script({ ref: intent.endpoint, params: intent.params });
+  }
   throw new UnknownActionError(action);
 }
 
