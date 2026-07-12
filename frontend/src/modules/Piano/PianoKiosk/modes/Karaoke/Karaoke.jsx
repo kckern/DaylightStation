@@ -16,10 +16,10 @@ const idOf = (raw) => String(raw || '').replace(/^plex:/, '');
  * Karaoke — a purpose-built SONG browser for a single Plex karaoke show (its
  * seasons are genre categories, e.g. "Crooners & Standards", "Piano Men"). Much
  * simpler than the Courses/Videos flow: no sequence/locks, no progress bars, no
- * thumbnails — just search + category tabs over a flat, alphabetized song grid.
+ * thumbnails — just category tabs over a flat, alphabetized song grid.
  * Picking a song plays it through the existing karaoke chrome (SingalongPlayer).
  *
- *   index      → the browser (search + tabs + card grid)
+ *   index      → the browser (tabs + card grid)
  *   :songId    → the player (looks the song back up from the shared /playable
  *                fetch so a cold deep-link still resolves)
  */
@@ -49,26 +49,25 @@ function KaraokeBrowseRoute({ playable }) {
   return <KaraokeBrowser playable={playable} onSelect={onSelect} />;
 }
 
-/** The browse UI: search box + color-coded category chips + a recognition-art grid. */
+/** The browse UI: color-coded category chips + a recognition-art grid. */
 function KaraokeBrowser({ playable, onSelect }) {
   // Single breadcrumb crumb — the chrome already shows the mode name, so a
   // second "Karaoke" here would render the "Karaoke › Karaoke" doubling the
   // audit flagged. Empty label = no crumb from this screen.
   usePianoBreadcrumb(useMemo(() => [], []));
   const { items, parents } = playable;
-  const [query, setQuery] = useState('');
   const [category, setCategory] = useState('All');
   const [sort, setSort] = useState('song'); // 'song' | 'artist'
 
   const songs = useMemo(() => parseSongs(items), [items]);
   const categories = useMemo(() => categoriesOf(parents), [parents]);
   const filtered = useMemo(
-    () => filterSongs(songs, { query, category, sort }),
-    [songs, query, category, sort],
+    () => filterSongs(songs, { query: '', category, sort }),
+    [songs, category, sort],
   );
-  // Search results and "All" mix categories together, so each card needs its
-  // own category label; a single selected category is self-evident from the tab.
-  const showCategory = !!query.trim() || category === 'All';
+  // "All" mixes categories together, so each card needs its own category label;
+  // a single selected category is self-evident from the tab.
+  const showCategory = category === 'All';
 
   if (items === null) {
     return (
@@ -81,13 +80,6 @@ function KaraokeBrowser({ playable, onSelect }) {
   return (
     <section className="piano-mode piano-karaoke">
       <div className="piano-karaoke__toolbar">
-        <input
-          type="search"
-          className="piano-karaoke__search"
-          placeholder="Search songs or artists…"
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-        />
         <div className="piano-karaoke__sort" role="group" aria-label="Sort by">
           <button
             type="button"

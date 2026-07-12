@@ -221,19 +221,16 @@ describe('section action sheet', () => {
     expect(screen.getAllByRole('button', { name: 'repeats down' }).pop()).toBeDisabled();
   });
 
-  it('bars steppers dispatch SET_SECTION_LENGTH; rename commits on Enter and blur', () => {
+  it('bars steppers dispatch SET_SECTION_LENGTH; the section name is static text, not an input', () => {
     const { dispatch } = renderView(filledDraft());
     open();
     fireEvent.click(screen.getByRole('button', { name: 'bars up' }));
     expect(dispatch).toHaveBeenCalledWith({ type: ActionTypes.SET_SECTION_LENGTH, sectionId: 'sec-1', lengthBars: 3 });
 
-    const input = screen.getByLabelText('section name');
-    fireEvent.change(input, { target: { value: 'Bridge' } });
-    fireEvent.keyDown(input, { key: 'Enter' });
-    expect(dispatch).toHaveBeenCalledWith({ type: ActionTypes.RENAME_SECTION, sectionId: 'sec-1', name: 'Bridge' });
-    fireEvent.change(input, { target: { value: 'Hook' } });
-    fireEvent.blur(input);
-    expect(dispatch).toHaveBeenCalledWith({ type: ActionTypes.RENAME_SECTION, sectionId: 'sec-1', name: 'Hook' });
+    // No text input in the kiosk — the section keeps its default name, shown read-only.
+    expect(screen.queryByLabelText('section name')).toBeNull();
+    expect(screen.queryByRole('textbox')).toBeNull();
+    expect(dispatch).not.toHaveBeenCalledWith(expect.objectContaining({ type: ActionTypes.RENAME_SECTION }));
   });
 
   it('Clone dispatches CLONE_SECTION + ADD_ENTRY for the predicted id, right after this slot', () => {
@@ -280,13 +277,14 @@ describe('section action sheet', () => {
 // ── scene launch (playback) ──────────────────────────────────────────────────
 
 describe('persistence wiring (Task 8.2)', () => {
-  it('footer Save enabled when onSaveSong is provided; passes the inline title', () => {
+  it('footer Save enabled when onSaveSong is provided; saves with no typed title (default name)', () => {
     const onSaveSong = vi.fn();
-    const { getByRole } = renderView(filledDraft(), { onSaveSong });
-    const input = getByRole('textbox', { name: 'song title' });
-    fireEvent.change(input, { target: { value: '  My Tune  ' } });
+    const { getByRole, queryByRole } = renderView(filledDraft(), { onSaveSong });
+    // No text input in the kiosk — no title field; Save fires with no argument
+    // so the store stamps a default timestamped name.
+    expect(queryByRole('textbox')).toBeNull();
     fireEvent.click(getByRole('button', { name: 'Save song' }));
-    expect(onSaveSong).toHaveBeenCalledWith('My Tune'); // trimmed
+    expect(onSaveSong).toHaveBeenCalledWith();
   });
 
   it('keeps the disabled "coming soon" stub when onSaveSong is absent', () => {
