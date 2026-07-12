@@ -4,12 +4,15 @@
  * Layer: ADAPTER (1_adapters/trigger).
  * @module adapters/trigger/HttpEndpointGateway
  */
+const DEFAULT_TIMEOUT_MS = 10000;
+
 export class HttpEndpointGateway {
-  #endpoints; #fetch; #logger;
-  constructor({ endpoints = {}, fetchFn = fetch, logger = console } = {}) {
+  #endpoints; #fetch; #logger; #timeoutMs;
+  constructor({ endpoints = {}, fetchFn = fetch, logger = console, timeoutMs = DEFAULT_TIMEOUT_MS } = {}) {
     this.#endpoints = endpoints;
     this.#fetch = fetchFn;
     this.#logger = logger;
+    this.#timeoutMs = timeoutMs;
   }
   async call(ref, params) {
     const ep = this.#endpoints[ref];
@@ -17,10 +20,10 @@ export class HttpEndpointGateway {
       this.#logger.warn?.('trigger.script.unknown_endpoint', { ref });
       return null;
     }
-    const method = (ep.method || 'POST').toUpperCase();
-    const opts = { method, headers: ep.headers || {} };
-    if (method !== 'GET' && method !== 'HEAD') opts.body = JSON.stringify(params ?? {});
     try {
+      const method = (ep.method || 'POST').toUpperCase();
+      const opts = { method, headers: ep.headers || {}, signal: AbortSignal.timeout(this.#timeoutMs) };
+      if (method !== 'GET' && method !== 'HEAD') opts.body = JSON.stringify(params ?? {});
       const res = await this.#fetch(ep.url, opts);
       this.#logger.info?.('trigger.script.called', { ref, method, ok: res?.ok !== false });
       return res;
