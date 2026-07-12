@@ -473,6 +473,48 @@ export function useContentCombobox({ value, onChange, searchParams = '', appResu
     }
   }, [cancelPendingSearch, log]);
 
+  // Jump directly to an ancestor crumb: list its children, truncate the trail
+  // to 0..index inclusive, and highlight the child we came from. Follows goUp's
+  // token-guard / paginationOwner pattern exactly, and reuses the WENT_UP
+  // transition (it already sets items + breadcrumbs + referenceIndex — an
+  // arbitrary truncation, not just a single pop).
+  const goToCrumb = useCallback(async (index) => {
+    const { breadcrumbs } = stateRef.current.browse;
+    // Out of range, or clicking the LAST (current) crumb → nothing to do.
+    if (index < 0 || index >= breadcrumbs.length - 1) {
+      log.debug('go_to_crumb.skip', { index, depth: breadcrumbs.length });
+      return;
+    }
+    const target = breadcrumbs[index];
+    const childCrumb = breadcrumbs[index + 1]; // the crumb below — the child we came from
+    const nextBreadcrumbs = breadcrumbs.slice(0, index + 1);
+    const token = ++browseTokenRef.current; // invalidate overlapping browse responses
+    paginationOwnerRef.current = null; // the jumped-to level owns its pagination
+    log.info('go_to_crumb.start', {
+      index, targetId: target.id, targetTitle: target.title, newDepth: nextBreadcrumbs.length,
+    });
+    dispatch({ type: 'BROWSE_LOADING' });
+    try {
+      const response = await fetch(`/api/v1/list/${target.source}/${encodeURIComponent(target.localId)}`);
+      if (!response.ok) throw new Error(`Browse failed: ${response.status}`);
+      const data = await response.json();
+      const items = (data.items || []).map(ensureId);
+      const referenceIndex = childCrumb ? items.findIndex((i) => i.id === childCrumb.id) : -1;
+      log.info('go_to_crumb.done', { index, targetId: target.id, itemCount: items.length });
+      if (browseTokenRef.current !== token) return;
+      dispatch({
+        type: 'WENT_UP',
+        items,
+        breadcrumbs: nextBreadcrumbs,
+        pagination: data.pagination ?? null, // the jumped-to level owns its pagination
+        referenceIndex: referenceIndex >= 0 ? referenceIndex : 0,
+      });
+    } catch (err) {
+      log.error('go_to_crumb.error', { index, targetId: target.id, error: err.message });
+      if (browseTokenRef.current === token) dispatch({ type: 'BROWSE_LOADING', loading: false });
+    }
+  }, [log]);
+
   // ── 5. Pagination (in-flight guarded; the machine owns items/window math) ──
   // Returns true only when a PAGINATED event was actually dispatched, so the
   // component can arm/disarm its scroll-suppression guard accurately.
@@ -634,6 +676,7 @@ export function useContentCombobox({ value, onChange, searchParams = '', appResu
     openWithSiblings,
     drill,
     goUp,
+    goToCrumb,
     paginate,
     // lifecycle
     handleClose,
