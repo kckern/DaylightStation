@@ -6,7 +6,9 @@
  * New:  config/triggers/sources.yml, bindings/nfc.yml, responses.yml, endpoints.yml
  *       history/triggers/nfc.observed.yml
  */
-export function migrateTriggerConfig({ nfcLocations = {}, nfcTags = {}, stateLocations = {} } = {}) {
+export function migrateTriggerConfig({
+  nfcLocations = {}, nfcTags = {}, stateLocations = {}, barcodeConfig = {}, scannerDevices = {},
+} = {}) {
   const sources = {};
   for (const [loc, cfg] of Object.entries(nfcLocations)) {
     sources[loc] = { modality: 'nfc', ...cfg };
@@ -14,6 +16,16 @@ export function migrateTriggerConfig({ nfcLocations = {}, nfcTags = {}, stateLoc
   for (const [loc, cfg] of Object.entries(stateLocations)) {
     const key = sources[loc] ? `${loc}-state` : loc;
     sources[key] = { modality: 'state', location: loc, ...cfg };
+  }
+  for (const [id, device] of Object.entries(scannerDevices)) {
+    if (device?.type !== 'barcode-scanner') continue;
+    sources[id] = {
+      modality: 'barcode',
+      location: id,
+      target: device.target_screen,
+      default_action: barcodeConfig.default_action || 'queue',
+      actions: barcodeConfig.actions || ['queue', 'play', 'open'],
+    };
   }
 
   const bindingsNfc = {};
@@ -51,6 +63,8 @@ if (import.meta.url === `file://${process.argv[1]}`) {
     nfcLocations: rd('household/config/triggers/nfc/locations.yml'),
     nfcTags: rd('household/config/triggers/nfc/tags.yml'),
     stateLocations: rd('household/config/triggers/state/locations.yml'),
+    barcodeConfig: rd('household/config/barcode.yml'),
+    scannerDevices: rd('household/config/devices.yml')?.devices,
   });
   wr('household/config/triggers/sources.yml', out.sources);
   wr('household/config/triggers/bindings/nfc.yml', out.bindingsNfc);
