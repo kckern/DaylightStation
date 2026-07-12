@@ -212,6 +212,65 @@ endpoints:
 `endpointGateway` is an injected port (internal HTTP or external webhook-out), so
 no URL is hard-coded in `3_applications` and no secret lands in tag config.
 
+### Illustrative extension — playback-hub as a response target
+
+This is **not core scope** — it is a worked example of *what the open registry
+buys us*, included to validate the abstraction against a concrete future use case:
+"a scan plays a specific track on a specific playback-hub audio slot."
+
+The backend already has a clean playback-hub bounded context —
+`3_applications/playback-hub/ports/IPlaybackHubGateway.mjs`,
+`HttpPlaybackHubAdapter`, the `SendHubCommand` use case, and a `PlayCommand`
+value object. So this use case needs **no new hub integration** and **no core
+change** — only a new response kind + handler that injects the existing gateway:
+
+```js
+{ kind:'playback-hub', target:'red', expression: ContentExpression /* plex:595102 */, posture?, volume?, duration? }
+  → responseHandlers['playback-hub'](r, { playbackHubGateway })
+      → sendHubCommand.execute(PlayCommand.create({ action:'play', target:r.target, contentId, shuffle, … }))
+```
+
+**Why its own kind (not `content`):** `content` is screen-centric — its `target`
+is a screen/device in `deviceService` and its postures are screen-ack /
+wake-and-load. Playback-hub outputs to audio *slots by color* — a different
+target space — so it warrants a dedicated kind.
+
+**Encoding — self-describing vs registry, per modality.** The widened grammar
+lets the *target token* select the kind: a target registered as a hub slot →
+`playback-hub`; one registered as a screen → `content`. Same grammar, resolver
+looks up the target's type.
+
+```
+red:plex:595102+shuffle+besteffort
+│    │          │        └─ posture hint  → Response.posture = 'best-effort'
+│    │          └─ option        → expression.options.shuffle = true
+│    └─ source:id (contentId)    → ContentExpression 'plex:595102'
+└─ target 'red'  (known hub slot) → kind = 'playback-hub', target = 'red'
+```
+
+| | Self-describing (barcode/QR, NFC-NDEF) | Registry lookup (NFC-by-UID) |
+|---|---|---|
+| Intent lives | On the code | In `tags.yml` |
+| Make one | Generate + print, zero config | Write UID → config entry |
+| Change it | Reprint the code | Edit config, keep the tag |
+| Best for | Disposable/printed, generate-and-go | Reusable physical tags |
+
+Both are supported because resolution is per-modality: barcode/QR parse the
+self-describing string; NFC-by-UID looks the expression up in `tags.yml`;
+NFC-NDEF (if the reader forwards the NDEF payload rather than the UID) parses it
+like a QR code. All three converge on the identical `Response`.
+
+**Deferral — "play when it comes online."** Two distinct offline cases:
+
+- **Device offline, hub up:** handled natively by the hub — `/api/play` arms the
+  slot (`armed.json`) and playback starts when the BT device connects. The scan
+  just fires the arm; the deferral lives in the hub, which is the right place.
+  Supported with no new trigger machinery.
+- **Hub itself unreachable:** *not* supported by this design (see non-goals).
+  Holding a `Response` until an endpoint is reachable is reliable delivery — an
+  orthogonal outbox/retry layer around dispatch, not hub-specific — and is left
+  as an explicit future extension.
+
 ## Absorbed / retired code
 
 | Existing | Fate |
@@ -269,3 +328,8 @@ through the unified core before the old barcode pipeline is deleted. Existing
 - Changing barcode relay firmware, NFC config format, or the public HTTP route.
 - Building future ingress sources (SMS/keyboard/MQTT) now — only leaving the
   ingress-adapter slot for them.
+- **Reliable delivery / deferred dispatch** (an outbox that persists a `Response`
+  and retries until an offline endpoint — e.g. an unreachable playback-hub — comes
+  back). This is an orthogonal layer wrapped around dispatch, not baked into any
+  handler; left as an explicit future extension. Device-level deferral that a
+  downstream system already provides (e.g. the hub's arm-on-connect) is used as-is.
