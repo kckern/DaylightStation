@@ -72,7 +72,7 @@ export class TriggerDispatchService {
   }) {
     this.#config = config || {};
     this.#contentIdResolver = contentIdResolver;
-    this.#deps = { wakeAndLoadService, haGateway, deviceService, contentDispatcher, screenBroadcast, commandResolver };
+    this.#deps = { wakeAndLoadService, haGateway, deviceService, contentDispatcher, screenBroadcast, commandResolver, logger };
     this.#tagWriter = tagWriter;
     this.#broadcast = broadcast || (() => {});
     this.#logger = logger;
@@ -180,7 +180,7 @@ export class TriggerDispatchService {
       intent = ResolverRegistry.resolve({
         modality,
         location,
-        value: normalizedValue,
+        value,
         registry: this.#config,
         contentIdResolver: this.#contentIdResolver,
       });

@@ -30,4 +30,10 @@ describe('BarcodeResolver', () => {
     expect(BarcodeResolver.resolve({ location: 'nope', value: 'plex:1', registry })).toBeNull();
     expect(BarcodeResolver.resolve({ location: 'ds2278', value: '', registry })).toBeNull();
   });
+
+  it('preserves case in the content id (barcode content ids are case-sensitive)', () => {
+    const r = BarcodeResolver.resolve({ location: 'ds2278', value: 'youtube:dQw4w9WgXcQ', registry });
+    expect(r.kind).toBe('content');
+    expect(r.expression.contentId).toBe('youtube:dQw4w9WgXcQ');
+  });
 });
