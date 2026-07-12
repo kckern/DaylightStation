@@ -70,7 +70,7 @@ site and injects resolved paths (source/dest dirs, soundfont path, scratch dir).
 
 1. `fluidsynth -ni -F <scratch>/<uniq>.wav -r 44100 <soundfontPath> <midiPath>`
    (`-n` no MIDI in, `-i` no shell, `-F` render-to-file, `-r` 44.1kHz).
-2. `ffmpeg -i <scratch>/<uniq>.wav -af loudnorm=I=-16:TP=-1.5:LRA=11 -codec:a libmp3lame -qscale:a 2 <mp3Path>.tmp -y`
+2. `ffmpeg -i <scratch>/<uniq>.wav -af loudnorm=I=-16:TP=-1.5:LRA=11 -codec:a libmp3lame -qscale:a 2 -f mp3 <mp3Path>.tmp -y`
 3. Rename `<mp3Path>.tmp` → `<mp3Path>` (atomic; crash never leaves a partial final mp3).
 4. Delete the scratch WAV.
 

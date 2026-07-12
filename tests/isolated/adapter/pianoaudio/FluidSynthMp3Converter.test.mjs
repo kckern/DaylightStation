@@ -58,6 +58,7 @@ describe('FluidSynthMp3Converter.convert', () => {
       '-af', 'loudnorm=I=-16:TP=-1.5:LRA=11',
       '-codec:a', 'libmp3lame',
       '-qscale:a', '2',
+      '-f', 'mp3',
       `${mp3Path}.tmp`, '-y',
     ]);
 
