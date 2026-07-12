@@ -1648,9 +1648,9 @@ export async function createApp({ server, logger, configPaths, configExists, ena
         for (const scriptId of scripts) {
           try {
             await haGateway.callService('script', 'turn_on', { entity_id: scriptId });
-            barcodeLogger.info?.('barcode.display.on', { targetScreen, scriptId });
+            barcodeLogger.info?.('trigger.ingress.barcode.display.on', { targetScreen, scriptId });
           } catch (err) {
-            barcodeLogger.warn?.('barcode.display.onFailed', { targetScreen, scriptId, error: err.message });
+            barcodeLogger.warn?.('trigger.ingress.barcode.display.failed', { targetScreen, scriptId, error: err.message });
           }
         }
       },
@@ -2193,7 +2193,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
         meta: { device: relay.device, timestamp: relay.ts, transport: 'ws' },
       });
       triggerDispatchService.handleEvent(event).catch((err) => {
-        barcodeLogger?.warn?.('barcode.dispatch.failed', { error: err.message });
+        barcodeLogger?.warn?.('trigger.ingress.barcode.dispatch.failed', { error: err.message });
       });
     },
   });
