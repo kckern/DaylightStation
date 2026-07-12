@@ -19,7 +19,7 @@ import { mp3RelForMidiRel } from '#domains/pianoaudio/pianoAudioPaths.mjs';
 import { estimateMidiDurationSeconds } from '#domains/pianoaudio/midiDuration.mjs';
 import { fileExists } from '#system/utils/FileIO.mjs';
 
-const DEFAULT_MAX_RENDER_SECONDS = 1200; // 20 min — no legit piano take is longer
+const DEFAULT_MAX_RENDER_SECONDS = 3600; // 60 min — a longer single take is almost certainly an idle/stuck recorder
 
 /** Read a .mid file and estimate its rendered duration in seconds (throws on unparseable input). */
 export function readMidiDurationSeconds(absPath) {
