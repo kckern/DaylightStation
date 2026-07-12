@@ -26,7 +26,7 @@ import {
   IconMusic, IconVideo, IconPhoto, IconFile, IconList, IconPencil, IconX,
 } from '@tabler/icons-react';
 import { getChildLogger } from '../../../../lib/logging/singleton.js';
-import { shouldRunScrollToHighlighted, computeScrollRestore } from '../comboboxScroll.js';
+import { shouldRunScrollToHighlighted, computeScrollRestore, shouldPositionLevel } from '../comboboxScroll.js';
 import { useContentCombobox } from './useContentCombobox.js';
 import { Modes, isContainer } from './comboboxMachine.js';
 import './ContentCombobox.scss';
@@ -284,27 +284,47 @@ export function ContentCombobox({
     if (pagination.hasBefore && y < 50) runPaginate('before');
   };
 
-  // ── Initial browse positioning: when a browse level loads, place the
-  // reference item ~1.5 rows from the top (twin behavior). Keyed on the
-  // breadcrumb path so pagination (same level) never re-positions.
+  // ── Initial browse positioning: the FIRST render where a browse level
+  // presents its reference row (highlight idx >= 0) with items rendered,
+  // place that row ~1.5 rows from the top. Positions ONCE per level
+  // (positionedLevelRef) so pagination load-more and user arrow-nav never
+  // yank the viewport back. Retries across a few frames because on the
+  // dropdown-open sequence the ScrollArea viewport / target option node may
+  // not be laid out on the first frame (that timing gap could leave the list
+  // pinned at scrollTop 0, hiding the selected item).
   const levelKey = isBrowse ? `b:${breadcrumbs.map((b) => b.id).join('>')}` : null;
+  const positionedLevelRef = useRef(null);
   useEffect(() => {
-    if (levelKey == null) return;
-    // Single scroll writer per level: reset prevIdx so the navigation effect
-    // hits its 'initial-render' guard on cross-level transitions — otherwise
-    // both writers race and a drill can misread as a pac-man wrap (bogus
-    // wrap-flash + jump).
-    prevIdxRef.current = -1;
-    const idx = state.highlight.idx;
-    if (idx < 0) return;
-    requestAnimationFrame(() => {
-      const viewport = viewportRef.current;
-      if (!viewport) return;
-      const option = viewport.querySelectorAll(`.${OPTION_CLASS}`)[idx];
-      if (!option) return;
-      viewport.scrollTop = Math.max(0, optionTopIn(viewport, option) - option.offsetHeight * 1.5);
+    if (levelKey == null) { positionedLevelRef.current = null; return undefined; }
+
+    const decision = shouldPositionLevel({
+      levelKey,
+      positionedLevel: positionedLevelRef.current,
+      highlightIdx,
+      itemsLength: items.length,
     });
-  }, [levelKey]); // eslint-disable-line react-hooks/exhaustive-deps -- fires once per browse level
+    if (!decision.run) return undefined;
+
+    // Reset the navigation writer's prev-index so it hits its 'initial-render'
+    // guard and defers to us for this level's first placement (prevents a
+    // cross-level drill misreading as a pac-man wrap: bogus wrap-flash + jump).
+    prevIdxRef.current = -1;
+
+    let rafId;
+    let tries = 0;
+    const attempt = () => {
+      const viewport = viewportRef.current;
+      const option = viewport?.querySelectorAll(`.${OPTION_CLASS}`)[highlightIdx];
+      if (viewport && option && option.offsetHeight > 0) {
+        viewport.scrollTop = Math.max(0, optionTopIn(viewport, option) - option.offsetHeight * 1.5);
+        positionedLevelRef.current = levelKey;
+        return;
+      }
+      if (tries++ < 6) rafId = requestAnimationFrame(attempt);
+    };
+    rafId = requestAnimationFrame(attempt);
+    return () => { if (rafId) cancelAnimationFrame(rafId); };
+  }, [levelKey, highlightIdx, items.length]); // eslint-disable-line react-hooks/exhaustive-deps -- once per level via positionedLevelRef
 
   // ── Scroll-to-highlighted: ONE writer. Eased snap on navigation, instant
   // jump + wrap-flash on pac-man wrap, skip entirely during pagination. ──

@@ -32,3 +32,25 @@ export function shouldRunScrollToHighlighted({ highlightedIdx, prevIdx, paginati
 export function computeScrollRestore({ prevScrollHeight, newScrollHeight, prevScrollTop }) {
   return prevScrollTop + (newScrollHeight - prevScrollHeight);
 }
+
+/**
+ * Decide whether the browse-level positioner should place the reference row.
+ * Runs ONCE per browse level: the first render where the level presents a
+ * reference highlight (idx >= 0) with items rendered. Re-entry for the same
+ * level (pagination load-more, user arrow navigation) is suppressed so the
+ * viewport is never yanked back to the reference.
+ *
+ * @param {object} a
+ * @param {string|null} a.levelKey        - current browse level key (null when not browsing)
+ * @param {string|null} a.positionedLevel - level key already positioned (from a ref)
+ * @param {number} a.highlightIdx         - reference highlight index (-1 = none)
+ * @param {number} a.itemsLength          - rendered browse item count
+ * @returns {{ run: boolean, reason: string }}
+ */
+export function shouldPositionLevel({ levelKey, positionedLevel, highlightIdx, itemsLength }) {
+  if (levelKey == null) return { run: false, reason: 'not-browsing' };
+  if (positionedLevel === levelKey) return { run: false, reason: 'already-positioned' };
+  if (highlightIdx < 0) return { run: false, reason: 'no-reference' };
+  if (itemsLength <= 0) return { run: false, reason: 'no-items' };
+  return { run: true, reason: 'position' };
+}
