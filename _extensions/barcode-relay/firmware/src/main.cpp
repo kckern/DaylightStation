@@ -1,196 +1,251 @@
-// barcode-relay — M5Stack ATOM Lite as a BLE HID HOST for a Zebra DS2278 in
-// HID-Bluetooth-Low-Energy mode (standard HID-over-GATT / HOGP).
+// barcode-relay — M5Stack ATOM Lite as a BLE HID *central* for a Zebra DS2278.
 //
-// WHY HID not SSI: Zebra's "SSI Bluetooth Low Energy" is their proprietary RSM /
-// CoreScanner attribute protocol (only reachable via Zebra's closed SDK) — not
-// replicable on an ESP (see DEV-STATUS.md). HID-BLE is the STANDARD keyboard
-// profile: the gun emits USB-HID keyboard input reports, one per scanned char,
-// terminated by Enter. We bond, subscribe to the HID Report chars, decode the
-// reports to ASCII, assemble the barcode, and relay it.
+// The DS2278 is set to "HID Bluetooth Low Energy (Discoverable)" (PRG p.6-6), so
+// it advertises as a standard BLE HID keyboard (service 0x1812, appearance 0x03C1).
+// This firmware connects to it directly by MAC, bonds (LE Secure Connections /
+// Just Works), subscribes to its HID input-report notifications, decodes the
+// keystrokes into a barcode string (Enter-terminated), and relays each barcode
+// over WiFi to the DaylightStation event bus as
+//   {source:'barcode-relay', type:'scan', device:'ds2278', code, ts}
 //
-// Gun setup: scan the "HID Bluetooth Low Energy (Discoverable)" host barcode.
-// Logs + scans stream over WiFi UDP :9999 (serial link is flaky — see DEV-STATUS).
-//
-// STATUS: written but NOT yet tested end-to-end (needs the gun in HID-BLE mode).
-// Compile-verified only.
+// Fill WiFi creds locally before flashing (committed with placeholders).
 
 #include <Arduino.h>
 #include <WiFi.h>
 #include <WiFiUdp.h>
 #include <WebSocketsClient.h>
 #include <ArduinoJson.h>
-#include <NimBLEDevice.h>
 #include <FastLED.h>
+#include <NimBLEDevice.h>
+
+// ---------- config ----------
+static const char* WIFI_SSID = "YOUR_SSID";
+static const char* WIFI_PASS = "YOUR_WIFI_PASS";
+static const char* WS_HOST   = "10.0.0.68";
+static const uint16_t WS_PORT = 8791;
+static const char* WS_PATH   = "/ws";
+
+// The DS2278 scanner's BLE identity (from `bluetoothctl` discovery).
+static const char* TARGET_MAC  = "c8:1c:fe:fd:ce:90";
+static const char* TARGET_NAME = "DS2278";
 
 #define LED_PIN 27
 static CRGB led[1];
 static void setLed(const CRGB& c){ led[0]=c; FastLED.show(); }
 
-// DIAGNOSTIC creds — fill in locally, do NOT commit real values.
-static const char* WIFI_SSID = "YOUR_SSID";
-static const char* WIFI_PASS = "YOUR_WIFI_PASS";
+// ---------- net ----------
 static WiFiUDP udp; static IPAddress g_bcast; static const uint16_t LOG_PORT=9999;
+static WebSocketsClient ws; static volatile bool wsConnected=false;
 
-// WS relay to the DaylightStation event bus (backend re-broadcasts `barcode-relay`).
-static const char* WS_HOST = "daylightlocal.kckern.net";
-static const uint16_t WS_PORT = 3111;
-static const char* WS_PATH = "/ws";
-static WebSocketsClient webSocket; static bool wsConnected=false;
 static void logf(const char* fmt, ...){
-  char buf[300]; va_list ap; va_start(ap,fmt); vsnprintf(buf,sizeof(buf),fmt,ap); va_end(ap);
-  Serial.println(buf);
-  if(WiFi.status()==WL_CONNECTED){
-    udp.beginPacket(g_bcast,LOG_PORT); udp.write((const uint8_t*)buf,strlen(buf)); udp.write((const uint8_t*)"\n",1); udp.endPacket();
-    udp.beginPacket(IPAddress(255,255,255,255),LOG_PORT); udp.write((const uint8_t*)buf,strlen(buf)); udp.write((const uint8_t*)"\n",1); udp.endPacket();
-  }
+  char b[240]; va_list ap; va_start(ap,fmt); vsnprintf(b,sizeof(b),fmt,ap); va_end(ap);
+  Serial.println(b);
+  if(WiFi.status()==WL_CONNECTED){ udp.beginPacket(g_bcast,LOG_PORT); udp.write((const uint8_t*)b,strlen(b)); udp.write((const uint8_t*)"\n",1); udp.endPacket(); }
 }
 
-// Standard BLE HID service + input report characteristic.
-static NimBLEUUID SVC_HID((uint16_t)0x1812);
-static NimBLEUUID CHR_REPORT((uint16_t)0x2A4D);   // HID Report (input reports notify here)
+// completed barcodes handed from the BLE task to loop() for WS send
+static QueueHandle_t g_bcQueue;
+// raw HID reports handed from the BLE task to loop() for logging/decoding
+struct RawRep { uint16_t handle; uint8_t len; uint8_t d[40]; };
+static QueueHandle_t g_rawQueue;
 
-static NimBLEAdvertisedDevice* g_adv=nullptr;
-static volatile bool g_doConnect=false;
-static NimBLEClient* g_client=nullptr;
-static NimBLERemoteService* g_hid=nullptr;
+static void wsEvent(WStype_t t, uint8_t*, size_t){
+  if(t==WStype_CONNECTED){ wsConnected=true; logf("[ws] connected"); }
+  else if(t==WStype_DISCONNECTED){ wsConnected=false; logf("[ws] disconnected"); }
+}
 
-// --- HID US-keyboard usage -> ASCII (barcode chars: digits, A-Z, common symbols) ---
-static char hidChar(uint8_t usage, bool shift){
-  if(usage>=0x04 && usage<=0x1d){ char c='a'+(usage-0x04); return shift? (c-32):c; }         // a-z / A-Z
-  if(usage>=0x1e && usage<=0x26){ const char* n="123456789"; const char* s="!@#$%^&*("; return shift? s[usage-0x1e]:n[usage-0x1e]; }
-  switch(usage){
-    case 0x27: return shift?')':'0';
-    case 0x2d: return shift?'_':'-';
-    case 0x2e: return shift?'+':'=';
+// ---------- HID keycode -> ASCII (US layout) ----------
+static char hidToChar(uint8_t k, bool shift){
+  if(k>=0x04 && k<=0x1d){ char c='a'+(k-0x04); return shift ? (char)(c-32) : c; } // a-z
+  if(k>=0x1e && k<=0x26){ const char* n="123456789"; const char* s="!@#$%^&*("; return shift ? s[k-0x1e] : n[k-0x1e]; }
+  if(k==0x27) return shift ? ')' : '0';
+  switch(k){
     case 0x2c: return ' ';
-    case 0x2f: return shift?'{':'[';
-    case 0x30: return shift?'}':']';
-    case 0x33: return shift?':':';';
-    case 0x34: return shift?'"':'\'';
-    case 0x36: return shift?'<':',';
-    case 0x37: return shift?'>':'.';
-    case 0x38: return shift?'?':'/';
-    case 0x31: return shift?'|':'\\';
+    case 0x2d: return shift ? '_' : '-';
+    case 0x2e: return shift ? '+' : '=';
+    case 0x2f: return shift ? '{' : '[';
+    case 0x30: return shift ? '}' : ']';
+    case 0x31: return shift ? '|' : '\\';
+    case 0x33: return shift ? ':' : ';';
+    case 0x34: return shift ? '"' : '\'';
+    case 0x35: return shift ? '~' : '`';
+    case 0x36: return shift ? '<' : ',';
+    case 0x37: return shift ? '>' : '.';
+    case 0x38: return shift ? '?' : '/';
+    case 0x28: case 0x58: return '\n'; // Enter / keypad Enter
     default: return 0;
   }
 }
 
-static String g_barcode;
-static uint8_t g_lastKeys[6]={0};
+// ---------- barcode assembly from HID reports ----------
+static String g_code;
+static uint8_t g_prev[6] = {0};
+static uint32_t g_lastKeyMs = 0;          // when the last character arrived
+static const uint32_t CODE_GAP_MS = 150;  // flush after this idle gap (no terminator over BLE HID)
 
-static void wsEvent(WStype_t type, uint8_t*, size_t){
-  if(type==WStype_CONNECTED){ wsConnected=true; logf("[ws] connected"); }
-  else if(type==WStype_DISCONNECTED){ wsConnected=false; logf("[ws] disconnected"); }
-}
-
-static void emitBarcode(){
-  if(g_barcode.length()==0) return;
-  logf(">>> SCAN  \"%s\"  (len %d)  ws=%d", g_barcode.c_str(), g_barcode.length(), wsConnected);
-  if(wsConnected){
-    JsonDocument doc;
-    doc["source"]="barcode-relay"; doc["type"]="scan"; doc["device"]="barcode-relay";
-    doc["code"]=g_barcode; doc["ts"]=(uint32_t)millis();
-    String out; serializeJson(doc,out); webSocket.sendTXT(out);
+static void flushCode(){
+  if(g_code.length()){
+    char buf[128]; strncpy(buf, g_code.c_str(), sizeof(buf)-1); buf[sizeof(buf)-1]=0;
+    xQueueSend(g_bcQueue, buf, 0);
+    g_code = "";
   }
-  g_barcode="";
-  setLed(CRGB::Green); delay(80); setLed(CRGB(0,0,20));
 }
 
-// HID input report: [modifiers][reserved][k1..k6] (boot-keyboard layout; report-protocol
-// may prefix a report-id — we scan for keycodes in the tail either way).
-static void onReport(NimBLERemoteCharacteristic* chr, uint8_t* d, size_t len, bool){
-  if(len<3) return;
-  // Heuristic: find the modifier byte + key array. Boot report = 8 bytes from offset 0;
-  // a report-id byte may shift it by 1. Try offset 0, then offset 1.
-  int off = (len>=8)?0: (len>=3?0:0);
-  uint8_t mod = d[off];
-  bool shift = mod & 0x22;                        // L/R shift
-  const uint8_t* keys = d+off+2;
-  int nkeys = (int)len-(off+2);
-  for(int i=0;i<nkeys && i<6;i++){
-    uint8_t u=keys[i];
-    if(u==0) continue;
-    // only process keys not held from the previous report (avoid repeats)
-    bool held=false; for(int j=0;j<6;j++) if(g_lastKeys[j]==u) held=true;
-    if(held) continue;
-    if(u==0x28){ emitBarcode(); }                 // Enter -> end of barcode
-    else { char c=hidChar(u,shift); if(c) g_barcode+=c; }
+// HID boot keyboard input report: [modifiers, reserved, k0..k5]
+static void onHidReport(const uint8_t* data, size_t len){
+  if(len < 3) return;
+  uint8_t mods = data[0];
+  bool shift = (mods & 0x22) != 0; // L/R shift
+  const uint8_t* keys = data + 2;
+  size_t nk = len - 2; if(nk > 6) nk = 6;
+  // register keys present now that were not in the previous report (new key-downs)
+  for(size_t i=0;i<nk;i++){
+    uint8_t k = keys[i];
+    if(k==0 || k==1) continue;
+    bool wasDown=false;
+    for(size_t j=0;j<6;j++){ if(g_prev[j]==k){ wasDown=true; break; } }
+    if(wasDown) continue;
+    char c = hidToChar(k, shift);
+    if(c=='\n') flushCode();
+    else if(c){ g_code += c; g_lastKeyMs = millis(); }
   }
-  for(int i=0;i<6;i++) g_lastKeys[i]= (i<nkeys)?keys[i]:0;
+  for(size_t j=0;j<6;j++) g_prev[j] = (j<nk)? keys[j] : 0;
 }
+
+static void notifyCB(NimBLERemoteCharacteristic* ch, uint8_t* data, size_t len, bool){
+  RawRep r; r.handle = ch->getHandle(); r.len = len>40?40:len; memcpy(r.d, data, r.len);
+  xQueueSend(g_rawQueue, &r, 0);
+}
+
+// ---------- BLE central ----------
+static volatile bool g_doConnect=false;
+static volatile bool g_connected=false;
+static NimBLEAdvertisedDevice* g_target=nullptr;
 
 class ScanCB : public NimBLEAdvertisedDeviceCallbacks {
-  void onResult(NimBLEAdvertisedDevice* dev) override {
-    uint16_t appr = dev->haveAppearance() ? dev->getAppearance() : 0;
-    bool hid  = dev->isAdvertisingService(SVC_HID);
-    bool name = dev->haveName() && dev->getName().rfind("DS2278",0)==0;
-    bool kbd  = (appr==0x03C1 || appr==0x03C0);   // HID keyboard / generic HID appearance
-    bool tgt  = dev->getAddress().toString()=="e8:c8:a4:69:e5:af";  // candidate gun (random static addr)
-    // Log nearby devices so I can identify how the gun advertises in HID mode.
-    if(dev->getRSSI() > -72)
-      logf("[scan] %s rssi=%d name='%s' appr=0x%04x hidSvc=%d", dev->getAddress().toString().c_str(),
-           dev->getRSSI(), dev->haveName()?dev->getName().c_str():"-", appr, hid);
-    if(hid || name || kbd || tgt){
-      logf("[ble] MATCH %s (%s) hid=%d kbd=%d", dev->haveName()?dev->getName().c_str():"?", dev->getAddress().toString().c_str(), hid, kbd);
-      NimBLEDevice::getScan()->stop(); g_adv=new NimBLEAdvertisedDevice(*dev); g_doConnect=true;
+  void onResult(NimBLEAdvertisedDevice* d) override {
+    bool match = d->getAddress().toString() == TARGET_MAC;
+    if(!match && d->haveServiceUUID() && d->isAdvertisingService(NimBLEUUID((uint16_t)0x1812))) match=true;
+    if(!match && d->haveName() && String(d->getName().c_str()).indexOf(TARGET_NAME) >= 0) match=true;
+    if(match){
+      logf("[ble] found %s rssi=%d", d->getAddress().toString().c_str(), d->getRSSI());
+      NimBLEDevice::getScan()->stop();
+      g_target = new NimBLEAdvertisedDevice(*d);
+      g_doConnect = true;
     }
   }
 };
-class ClientCB : public NimBLEClientCallbacks {
-  void onDisconnect(NimBLEClient*) override { logf("[ble] DISCONNECTED"); g_hid=nullptr; setLed(CRGB(20,0,0)); }
-  bool onConnParamsUpdateRequest(NimBLEClient*, const ble_gap_upd_params*) override { return true; }
-};
-static ClientCB g_ccb;
 
-static bool connectAndSub(){
-  if(g_client) NimBLEDevice::deleteClient(g_client);
-  g_client=NimBLEDevice::createClient(); g_client->setClientCallbacks(&g_ccb,false);
-  if(!g_client->connect(g_adv)){ logf("[ble] connect failed"); return false; }
-  logf("[ble] connected MTU=%u; bonding...", g_client->getMTU());
-  logf(g_client->secureConnection()?"[ble] bonded OK":"[ble] secureConnection FALSE");
-  g_hid=g_client->getService(SVC_HID);
-  if(!g_hid){ logf("[ble] HID service 0x1812 missing — is the gun in HID-BLE mode?"); return false; }
-  int subbed=0;
-  auto chars = g_hid->getCharacteristics(true);
-  for(auto* c: *chars){
-    if(c->getUUID()==CHR_REPORT && c->canNotify()){
-      if(c->subscribe(true,onReport)) subbed++;
+class ClientCB : public NimBLEClientCallbacks {
+  void onConnect(NimBLEClient*) override { logf("[ble] connected"); }
+  void onDisconnect(NimBLEClient*) override {
+    g_connected=false; logf("[ble] disconnected"); setLed(CRGB(20,10,0));
+  }
+};
+static ClientCB g_clientCB;
+
+static bool connectTarget(){
+  NimBLEClient* c = NimBLEDevice::getClientListSize() ? NimBLEDevice::getDisconnectedClient() : nullptr;
+  if(!c) c = NimBLEDevice::createClient();
+  c->setClientCallbacks(&g_clientCB, false);
+  c->setConnectionParams(12,12,0,150);
+  c->setConnectTimeout(10);
+  if(!c->connect(g_target)){ logf("[ble] connect failed"); return false; }
+  if(!c->secureConnection()){ logf("[ble] secureConnection(bond) failed"); c->disconnect(); return false; }
+  logf("[ble] bonded; discovering HID service 0x1812");
+  NimBLERemoteService* hid = c->getService(NimBLEUUID((uint16_t)0x1812));
+  if(!hid){ logf("[ble] no HID service"); c->disconnect(); return false; }
+
+  // HID Information (0x2A4A)
+  NimBLERemoteCharacteristic* hinfo = hid->getCharacteristic(NimBLEUUID((uint16_t)0x2A4A));
+  if(hinfo){ std::string v=hinfo->readValue(); logf("[ble] HID info len=%u", (unsigned)v.size()); }
+  // Report Map (0x2A4B) — some devices won't stream until the host reads it
+  NimBLERemoteCharacteristic* rmap = hid->getCharacteristic(NimBLEUUID((uint16_t)0x2A4B));
+  if(rmap){ std::string v=rmap->readValue(); logf("[ble] read ReportMap len=%u", (unsigned)v.size()); }
+  // Protocol Mode (0x2A4E): force Report Protocol (1) so the Report char streams
+  NimBLERemoteCharacteristic* pmode = hid->getCharacteristic(NimBLEUUID((uint16_t)0x2A4E));
+  if(pmode){
+    uint8_t before = pmode->canRead()? (uint8_t)pmode->readValue<uint8_t>() : 255;
+    uint8_t one=1; pmode->writeValue(&one,1,false);
+    logf("[ble] ProtocolMode was=%u -> set Report(1)", before);
+  } else logf("[ble] no ProtocolMode char");
+
+  int subs=0;
+  for(auto ch : *hid->getCharacteristics(true)){
+    // subscribe to every notifiable Report (0x2A4D) + boot keyboard input (0x2A22)
+    bool isReport = ch->getUUID() == NimBLEUUID((uint16_t)0x2A4D);
+    bool isBootKbd = ch->getUUID() == NimBLEUUID((uint16_t)0x2A22);
+    if((isReport||isBootKbd) && ch->canNotify()){
+      int rid=-1, rtype=-1;
+      NimBLERemoteDescriptor* rr = ch->getDescriptor(NimBLEUUID((uint16_t)0x2908));
+      if(rr){ std::string v=rr->readValue(); if(v.size()>=2){ rid=(uint8_t)v[0]; rtype=(uint8_t)v[1]; } }
+      if(ch->subscribe(true, notifyCB)){ subs++; logf("[ble] sub %s reportId=%d type=%d", ch->getUUID().toString().c_str(), rid, rtype); }
     }
   }
-  logf("[ble] subscribed to %d HID report char(s) — SCAN A BARCODE", subbed);
-  return subbed>0;
+  if(subs==0){ logf("[ble] no notifiable HID report chars"); c->disconnect(); return false; }
+  g_connected=true; setLed(CRGB::Green);
+  logf("[ble] READY — %d report streams; scan a barcode", subs);
+  return true;
 }
-static void startScan(){ auto* s=NimBLEDevice::getScan(); s->setAdvertisedDeviceCallbacks(new ScanCB(),false);
-  s->setActiveScan(true); s->setInterval(45); s->setWindow(15); s->start(0,nullptr,false); }
+
+static void startScan(){
+  NimBLEScan* s = NimBLEDevice::getScan();
+  s->setAdvertisedDeviceCallbacks(new ScanCB(), false);
+  s->setActiveScan(true);
+  s->setInterval(45); s->setWindow(45);
+  s->start(0, nullptr, false);
+  logf("[ble] scanning for %s / %s ...", TARGET_MAC, TARGET_NAME);
+}
 
 void setup(){
-  Serial.begin(115200); delay(200);
-  Serial.println("\n[barcode-relay HID-host] boot");
-  FastLED.addLeds<SK6812,LED_PIN,GRB>(led,1); FastLED.setBrightness(60); setLed(CRGB(20,0,20));
+  Serial.begin(115200); delay(150);
+  Serial.println("\n[barcode-relay BLE-HID central] boot");
+  FastLED.addLeds<SK6812,LED_PIN,GRB>(led,1); FastLED.setBrightness(60); setLed(CRGB(20,0,0));
 
-  NimBLEDevice::init("");
+  g_bcQueue = xQueueCreate(8, 128);
+  g_rawQueue = xQueueCreate(32, sizeof(RawRep));
+
+  // BLE first (coex), then WiFi
+  NimBLEDevice::init("barcode-relay");
   NimBLEDevice::setPower(ESP_PWR_LVL_P9);
-  NimBLEDevice::setSecurityAuth(true,false,true);              // bond, no MITM, LE Secure Connections
-  NimBLEDevice::setSecurityIOCap(BLE_HS_IO_NO_INPUT_OUTPUT);   // Just Works
+  NimBLEDevice::setSecurityAuth(true, false, true); // bond, no MITM, SC
+  NimBLEDevice::setSecurityIOCap(BLE_HS_IO_NO_INPUT_OUTPUT); // Just Works
 
   WiFi.mode(WIFI_STA); WiFi.begin(WIFI_SSID,WIFI_PASS);
   uint32_t t0=millis(); while(WiFi.status()!=WL_CONNECTED && millis()-t0<15000){ delay(300); Serial.print("."); }
-  if(WiFi.status()==WL_CONNECTED){ g_bcast=WiFi.localIP(); g_bcast[3]=255; logf("[wifi] %s -> UDP log :9999", WiFi.localIP().toString().c_str()); }
-  else Serial.println("[wifi] FAILED (serial-only)");
+  if(WiFi.status()==WL_CONNECTED){ g_bcast=WiFi.localIP(); g_bcast[3]=255; logf("[wifi] %s -> ws %s:%u, udp log :9999", WiFi.localIP().toString().c_str(), WS_HOST, WS_PORT); }
+  ws.begin(WS_HOST, WS_PORT, WS_PATH); ws.onEvent(wsEvent); ws.setReconnectInterval(4000);
 
-  webSocket.begin(WS_HOST, WS_PORT, WS_PATH);
-  webSocket.onEvent(wsEvent);
-  webSocket.setReconnectInterval(5000);
-
-  logf("[ble] scanning for DS2278 in HID-BLE mode — pull the trigger to wake it...");
   startScan();
 }
 
+static void relay(const char* code){
+  logf("[barcode] %s (ws=%d)", code, wsConnected);
+  if(wsConnected){
+    JsonDocument d; d["source"]="barcode-relay"; d["type"]="scan"; d["device"]="ds2278"; d["code"]=code; d["ts"]=(uint32_t)millis();
+    String out; serializeJson(d,out); ws.sendTXT(out);
+    setLed(CRGB::Blue); delay(60); setLed(g_connected?CRGB::Green:CRGB(20,10,0));
+  }
+}
+
 void loop(){
-  webSocket.loop();
-  if(g_doConnect){ g_doConnect=false; if(!connectAndSub()){ delay(500); startScan(); } else setLed(CRGB(0,0,20)); }
-  if(!g_hid && !g_doConnect && !NimBLEDevice::getScan()->isScanning()) startScan();
-  static uint32_t last=0;
-  if(g_hid && millis()-last>5000){ last=millis(); logf("[hb] HID connected — scan a barcode"); }
-  delay(10);
+  ws.loop();
+
+  if(g_doConnect){ g_doConnect=false; if(!connectTarget()){ delay(800); startScan(); } }
+
+  RawRep r;
+  while(xQueueReceive(g_rawQueue, &r, 0) == pdTRUE){
+    char hex[96]; int o=0;
+    for(int i=0;i<r.len && o<90;i++) o+=snprintf(hex+o,sizeof(hex)-o,"%02x ",r.d[i]);
+    logf("[hid] h=%u len=%u %s", r.handle, r.len, hex);
+    onHidReport(r.d, r.len);
+  }
+
+  // no terminator over BLE HID: flush the barcode once input goes idle
+  if(g_code.length() && (millis()-g_lastKeyMs) > CODE_GAP_MS) flushCode();
+
+  char buf[128];
+  while(xQueueReceive(g_bcQueue, buf, 0) == pdTRUE) relay(buf);
+
+  static uint32_t hb=0; if(millis()-hb>5000){ hb=millis(); logf("[hb] up %us ws=%d ble=%d", millis()/1000, wsConnected, g_connected); }
 }
