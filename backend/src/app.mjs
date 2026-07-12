@@ -1641,6 +1641,8 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     const barcodeKnownActions = barcodeConfig.actions || ['queue', 'play', 'open'];
     createBarcodeRelay({
       eventBus,
+      dataDir,                       // enables per-device day-log persistence under household/history/barcode
+      persistDir: barcodeConfig.persistence?.dir,
       logger: rootLogger.child({ module: 'barcode-relay' }),
       onScan: (relay) => {
         const parsed = BarcodePayload.parse(

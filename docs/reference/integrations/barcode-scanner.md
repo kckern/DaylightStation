@@ -1,5 +1,9 @@
 # Barcode Scanner (USB HID → MQTT)
 
+> ⚠️ **Superseded (2026-07-11).** The USB HID → MQTT ingest (`scanner.py` + Mosquitto) was
+> retired (commit `f9418c018`). Scans now arrive via a BLE relay into the event bus — see
+> [Barcode Scanning](../barcode-scanning/README.md). Kept for historical reference.
+
 Captures input from a USB barcode/QR scanner, suppresses keyboard passthrough, and publishes scans to MQTT. The scanner appears as a standard HID keyboard to the OS — without this bridge, every scan would type into whatever window has focus.
 
 **Depends on:** Mosquitto MQTT broker (`mosquitto:1883`)
