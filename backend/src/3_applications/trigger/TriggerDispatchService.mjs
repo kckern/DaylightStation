@@ -206,25 +206,39 @@ export class TriggerDispatchService {
       return { ok: false, code: 'TRIGGER_NOT_REGISTERED', error: `Trigger not registered: ${normalizedValue}`, location, modality, value: normalizedValue, dispatchId };
     }
 
-    intent.dispatchId = dispatchId;
-    const summary = { location, modality, value: normalizedValue, action: intent.action, target: intent.target, dispatchId };
+    // Normalize resolver output to a Response. NFC/state resolvers return an
+    // intent ({action,...}); the barcode resolver returns a (frozen) Response
+    // directly. Never mutate the resolver output — build a new object below.
+    let response;
+    try {
+      response = intent.kind ? intent : mapIntentToResponse(intent);
+    } catch (err) {
+      const code = err instanceof UnknownActionError ? 'UNKNOWN_ACTION' : 'INVALID_INTENT';
+      this.#logger.error?.('trigger.fired', { ...baseLog, error: err.message, code });
+      this.#emit(location, modality, { ...baseLog, ok: false, error: err.message });
+      return { ok: false, code, error: err.message, location, modality, value: normalizedValue, dispatchId };
+    }
+
+    // Derive a human-readable action + target for logging across every kind.
+    const logAction = response.expression?.action ?? response.op ?? response.command ?? response.action ?? response.kind;
+    const target = response.target ?? null;
+    const summary = { location, modality, value: normalizedValue, action: logAction, target, dispatchId };
 
     if (options.dryRun) {
-      this.#logger.info?.('trigger.fired', { ...baseLog, action: intent.action, target: intent.target, dryRun: true });
+      this.#logger.info?.('trigger.fired', { ...baseLog, action: logAction, target, dryRun: true });
       this.#emit(location, modality, { ...summary, dryRun: true });
-      return { ok: true, dryRun: true, ...summary, intent };
+      return { ok: true, dryRun: true, ...summary, response };
     }
 
     // Suppress the Zombie Wake Guard (or any per-target guard) for the duration
     // of the wake-and-load cycle. Fire-and-forget — don't block dispatch on it.
-    this.#suppressGuardForTarget(intent.target, dispatchId);
+    this.#suppressGuardForTarget(target, dispatchId);
 
     try {
-      const response = { ...mapIntentToResponse(intent), dispatchId };
-      const dispatchResult = await dispatchResponse(response, this.#deps);
+      const dispatchResult = await dispatchResponse({ ...response, dispatchId }, this.#deps);
       const elapsedMs = this.#clock() - startedAt;
       this.#debounce.set(debounceKey, this.#clock());
-      this.#logger.info?.('trigger.fired', { ...baseLog, action: intent.action, target: intent.target, ok: true, elapsedMs });
+      this.#logger.info?.('trigger.fired', { ...baseLog, action: logAction, target, ok: true, elapsedMs });
       this.#emit(location, modality, { ...summary, ok: true });
       return { ok: true, ...summary, dispatch: dispatchResult, elapsedMs };
     } catch (err) {
@@ -233,7 +247,7 @@ export class TriggerDispatchService {
       // able to retry without waiting out the window.
       this.#debounce.delete(debounceKey);
       const code = (err instanceof UnknownResponseKindError || err instanceof UnknownActionError) ? 'UNKNOWN_ACTION' : 'DISPATCH_FAILED';
-      this.#logger.error?.('trigger.fired', { ...baseLog, action: intent.action, target: intent.target, ok: false, error: err.message, code, elapsedMs });
+      this.#logger.error?.('trigger.fired', { ...baseLog, action: logAction, target, ok: false, error: err.message, code, elapsedMs });
       this.#emit(location, modality, { ...summary, ok: false, error: err.message });
       return { ok: false, code, error: err.message, ...summary, elapsedMs };
     }

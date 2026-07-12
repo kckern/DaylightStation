@@ -714,3 +714,57 @@ describe('TriggerDispatchService authorize', () => {
     expect(res.ok).toBe(true);
   });
 });
+
+// Regression: barcode resolves to a FROZEN Response (not a mutable intent).
+// The dispatch core must normalize resolver output without mutating it — an
+// earlier bug did `intent.dispatchId = ...` and threw "object is not extensible"
+// on the frozen barcode Response, breaking every barcode scan end-to-end.
+describe('TriggerDispatchService — barcode (frozen Response) through handleEvent', () => {
+  const barcodeRegistry = {
+    nfc: { locations: {}, tags: {} },
+    state: { locations: {} },
+    barcode: { locations: { ds2278: { target: 'living-room', default_action: 'queue', actions: ['queue', 'play', 'open'] } } },
+  };
+  function makeBarcode(extraDeps = {}) {
+    return new TriggerDispatchService({
+      config: barcodeRegistry,
+      contentIdResolver: { resolve: () => true },
+      wakeAndLoadService: { execute: async () => ({ ok: true }) },
+      haGateway: { callService: async () => 'ok' },
+      deviceService: { get: () => ({ loadContent: async () => 'ok', clearContent: async () => 'ok' }) },
+      broadcast: () => {},
+      logger: { info() {}, warn() {}, error() {}, debug() {} },
+      clock: () => 1000,
+      ...extraDeps,
+    });
+  }
+
+  it('dispatches a barcode content scan via the optimistic content dispatcher (no throw)', async () => {
+    const optimistic = vi.fn().mockResolvedValue(undefined);
+    const svc = makeBarcode({ contentDispatcher: { optimistic } });
+    const res = await svc.handleTrigger('ds2278', 'barcode', 'plex:595104', {});
+    expect(res.ok).toBe(true);
+    expect(optimistic).toHaveBeenCalledTimes(1);
+    expect(optimistic.mock.calls[0][0]).toBe('living-room');
+    expect(optimistic.mock.calls[0][1]).toMatchObject({ queue: 'plex:595104' });
+  });
+
+  it('dispatches a barcode command scan via screenBroadcast as a transport (no throw)', async () => {
+    const screenBroadcast = vi.fn();
+    const commandResolver = (cmd) => (cmd === 'pause' ? { playback: 'pause' } : null);
+    const svc = makeBarcode({ screenBroadcast, commandResolver });
+    const res = await svc.handleTrigger('ds2278', 'barcode', 'pause', {});
+    expect(res.ok).toBe(true);
+    expect(screenBroadcast).toHaveBeenCalledWith('living-room', { playback: 'pause' });
+  });
+
+  it('dryRun on a barcode content scan returns a Response without dispatching', async () => {
+    const optimistic = vi.fn();
+    const svc = makeBarcode({ contentDispatcher: { optimistic } });
+    const res = await svc.handleTrigger('ds2278', 'barcode', 'plex:1', { dryRun: true });
+    expect(res.ok).toBe(true);
+    expect(res.dryRun).toBe(true);
+    expect(res.response.kind).toBe('content');
+    expect(optimistic).not.toHaveBeenCalled();
+  });
+});
