@@ -278,7 +278,7 @@ function heroAspectRatio(item) {
 }
 
 
-export default function FeedCard({ item, colors = {}, onDismiss, onPlay }) {
+export default function FeedCard({ item, onDismiss, onPlay }) {
   const tier = item.tier || 'wire';
   const sourceName = item.meta?.sourceName || item.meta?.feedTitle || item.source || '';
   const age = formatAge(item.timestamp);

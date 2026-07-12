@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect } from 'react';
 import getLogger from '../../../../lib/logging/Logger.js';
 
 // Lazy init to pick up sessionLog context
@@ -14,18 +14,21 @@ function log() { return getLogger().child({ component: 'feed-perf' }); }
  * @param {number} [snapshotIntervalMs=5000] - How often to emit a summary snapshot
  */
 export function usePerfMonitor(active, snapshotIntervalMs = 5000) {
-  const statsRef = useRef(null);
-
   useEffect(() => {
     if (!active) return;
 
     // ── FPS + jank tracking via rAF ──
     let rafId;
     let lastFrameTime = performance.now();
-    let frameCount = 0;
     let droppedFrames = 0;
     let worstFrameMs = 0;
     let frameTimes = [];
+
+    // ── Scroll smoothness tracking (correlated inside the single tick) ──
+    let scrollFrames = 0;
+    let scrollJanks = 0;
+    let isScrolling = false;
+    let scrollTimer;
 
     const JANK_THRESHOLD_MS = 50; // >50ms = dropped frame (< 20fps)
     const LONG_FRAME_MS = 100;    // >100ms = log individual jank event
@@ -33,11 +36,13 @@ export function usePerfMonitor(active, snapshotIntervalMs = 5000) {
     function tick(now) {
       const delta = now - lastFrameTime;
       lastFrameTime = now;
-      frameCount++;
       frameTimes.push(delta);
 
       if (delta > worstFrameMs) worstFrameMs = delta;
-      if (delta > JANK_THRESHOLD_MS) droppedFrames++;
+      if (delta > JANK_THRESHOLD_MS) {
+        droppedFrames++;
+        if (isScrolling) scrollJanks++;
+      }
 
       if (delta > LONG_FRAME_MS) {
         // Don't querySelectorAll here — it's expensive and would worsen jank.
@@ -65,12 +70,7 @@ export function usePerfMonitor(active, snapshotIntervalMs = 5000) {
       } catch { /* longtask not supported */ }
     }
 
-    // ── Scroll smoothness tracking ──
-    let scrollFrames = 0;
-    let scrollJanks = 0;
-    let isScrolling = false;
-    let scrollTimer;
-
+    // ── Scroll session tracking ──
     function onScroll() {
       if (!isScrolling) {
         isScrolling = true;
@@ -90,18 +90,6 @@ export function usePerfMonitor(active, snapshotIntervalMs = 5000) {
         isScrolling = false;
       }, 150);
     }
-
-    // Track scroll-during-jank correlation
-    const origTick = tick;
-    tick = function scrollAwareTick(now) {
-      const delta = now - lastFrameTime;
-      if (isScrolling && delta > JANK_THRESHOLD_MS) scrollJanks++;
-      return origTick(now);
-    };
-    // Restart rAF with scroll-aware tick
-    cancelAnimationFrame(rafId);
-    lastFrameTime = performance.now();
-    rafId = requestAnimationFrame(tick);
 
     const scrollEl = document.querySelector('.feed-content') || window;
     scrollEl.addEventListener('scroll', onScroll, { passive: true });
@@ -138,7 +126,6 @@ export function usePerfMonitor(active, snapshotIntervalMs = 5000) {
       log().info('perf.snapshot', snapshot);
 
       // Reset accumulators
-      frameCount = 0;
       droppedFrames = 0;
       worstFrameMs = 0;
       frameTimes = [];
