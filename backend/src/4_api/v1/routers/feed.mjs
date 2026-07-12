@@ -35,8 +35,12 @@ export function createFeedRouter(config) {
   }
   const router = express.Router();
 
-  const getUsername = () => {
-    return configService?.getHeadOfHousehold?.() || 'default';
+  // Resolve the request-scoped principal. Prefer the authenticated subject
+  // (JWT `sub` is the username, see auth.mjs) so Feed reads/mutations act as
+  // the actual caller — not always the head of household. Falls back to the
+  // head only for unauthenticated LAN requests (explicit household-trust policy).
+  const getUsername = (req) => {
+    return req?.user?.sub || configService?.getHeadOfHousehold?.() || 'default';
   };
 
   // =========================================================================
@@ -44,13 +48,13 @@ export function createFeedRouter(config) {
   // =========================================================================
 
   router.get('/reader/categories', asyncHandler(async (req, res) => {
-    const username = getUsername();
+    const username = getUsername(req);
     const categories = await freshRSSAdapter.getCategories(username);
     res.json(categories);
   }));
 
   router.get('/reader/feeds', asyncHandler(async (req, res) => {
-    const username = getUsername();
+    const username = getUsername(req);
     const feeds = await freshRSSAdapter.getFeeds(username);
     res.json(feeds);
   }));
@@ -60,7 +64,7 @@ export function createFeedRouter(config) {
     if (!feed) {
       return res.status(400).json({ error: 'feed parameter required' });
     }
-    const username = getUsername();
+    const username = getUsername(req);
     const { items, continuation: nextContinuation } = await freshRSSAdapter.getItems(feed, username, {
       count: count ? Number(count) : undefined,
       continuation,
@@ -71,7 +75,7 @@ export function createFeedRouter(config) {
 
   router.post('/reader/items/mark', asyncHandler(async (req, res) => {
     const { itemIds: feedItemIds, action } = req.body;
-    const username = getUsername();
+    const username = getUsername(req);
 
     if (action === 'read') {
       await freshRSSAdapter.markRead(feedItemIds, username);
@@ -86,7 +90,7 @@ export function createFeedRouter(config) {
 
   router.get('/reader/stream', asyncHandler(async (req, res) => {
     const { days: daysParam, count, continuation, excludeRead, feeds } = req.query;
-    const username = getUsername();
+    const username = getUsername(req);
     const isFiltered = !!feeds;
     const feedIds = isFiltered ? feeds.split(',') : [];
 
@@ -194,13 +198,13 @@ export function createFeedRouter(config) {
 
   // Page list — returns [{id, label}] for all configured headline pages
   router.get('/headlines/pages', asyncHandler(async (req, res) => {
-    const username = getUsername();
+    const username = getUsername(req);
     res.json(headlineService.getPageList(username));
   }));
 
   // Harvest all pages (or one page via ?page=ID)
   router.post('/headlines/harvest', asyncHandler(async (req, res) => {
-    const username = getUsername();
+    const username = getUsername(req);
     const pageId = req.query.page || undefined;
     const result = await headlineService.harvestAll(username, pageId);
     res.json(result);
@@ -208,14 +212,14 @@ export function createFeedRouter(config) {
 
   // Harvest a single source by ID
   router.post('/headlines/harvest/:source', asyncHandler(async (req, res) => {
-    const username = getUsername();
+    const username = getUsername(req);
     const result = await headlineService.harvestSource(req.params.source, username);
     res.json(result);
   }));
 
   // Get headlines for a page — ?page=ID (defaults to first page)
   router.get('/headlines', asyncHandler(async (req, res) => {
-    const username = getUsername();
+    const username = getUsername(req);
     const pages = headlineService.getPageList(username);
     const pageId = req.query.page || pages[0]?.id;
 
@@ -229,7 +233,7 @@ export function createFeedRouter(config) {
   // Get headlines for a single source
   router.get('/headlines/:source', asyncHandler(async (req, res) => {
     const { source } = req.params;
-    const username = getUsername();
+    const username = getUsername(req);
     const result = await headlineService.getSourceHeadlines(source, username);
 
     if (!result) {
@@ -245,7 +249,7 @@ export function createFeedRouter(config) {
 
   router.get('/scroll', asyncHandler(async (req, res) => {
     const start = Date.now();
-    const username = getUsername();
+    const username = getUsername(req);
     const { cursor, limit, focus, source, nocache, filter } = req.query;
 
     const result = await feedAssemblyService.getNextBatch(username, {
@@ -284,7 +288,7 @@ export function createFeedRouter(config) {
       return res.status(400).json({ error: 'Invalid slug' });
     }
 
-    const username = getUsername();
+    const username = getUsername(req);
     const result = await feedAssemblyService.getItemWithDetail(feedItemId, username);
     logger.info?.('feed.deeplink.served', {
       durationMs: Date.now() - start,
@@ -304,7 +308,7 @@ export function createFeedRouter(config) {
       return res.status(400).json({ error: 'itemIds array required' });
     }
 
-    const username = getUsername();
+    const username = getUsername(req);
 
     // Partition by source type: route to adapter.markRead() or YAML dismiss store
     const bySource = new Map(); // sourceType → [prefixedIds]
@@ -352,7 +356,7 @@ export function createFeedRouter(config) {
     const { feedItemId } = req.params;
     if (!feedItemId) return res.status(400).json({ error: 'feedItemId required' });
 
-    const username = getUsername();
+    const username = getUsername(req);
     let meta = {};
     if (req.query.meta) {
       try { meta = JSON.parse(req.query.meta); } catch { /* ignore */ }
