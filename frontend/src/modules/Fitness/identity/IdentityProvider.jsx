@@ -24,7 +24,10 @@ export const UNLOCK_COOLDOWN_MS = 4000;
 // An admin scan can arrive a beat BEFORE its unlock modal registers (finger
 // already down as the user taps a game). Delay opening the emergency ceremony
 // this long; if a registerUnlock lands in the window, the scan was an unlock,
-// not an emergency.
+// not an emergency. The value is a heuristic — a scan typically precedes its
+// tap-handler by well under this — and the >window case (a slow tap after the
+// ceremony already opened) is handled by the registerUnlock dismiss below, so a
+// late unlock still backs the ceremony out.
 export const CEREMONY_DEBOUNCE_MS = 400;
 
 // Ported from useUnlock.js (retired in a later task). Both sound path and volume
@@ -230,6 +233,12 @@ export function IdentityProvider({ children }) {
       clearTimeout(pendingCeremonyTimerRef.current);
       pendingCeremonyTimerRef.current = null;
       logger().info('emergency-ceremony-cancelled', { reason: 'unlock-registered' });
+    }
+    // A modal is opening. If a ceremony already went up (scan landed >debounce before
+    // this tap's handler ran), the scan was for THIS unlock — back the ceremony out.
+    if (emergencyRef.current?.phase === PHASE_TRIGGERING) {
+      logger().info('emergency-ceremony-dismissed', { reason: 'unlock-registered' });
+      emergencyRef.current?.dismissCeremony?.();
     }
     identifyOnlyRef.current = !!identifyOnly;
     adminOnlyRef.current = !!adminOnly;

@@ -178,6 +178,37 @@ test('the debounce cancels the ceremony when an unlock modal opens within the wi
   }
 });
 
+test('a fast unlock that opens and closes within the debounce still cancels the ceremony', () => {
+  // Isolates the registerUnlock clearTimeout path: the modal opens AND closes before
+  // the debounce fires, so activeLockRef is null again by fire time — only the
+  // clearTimeout in registerUnlock keeps the ceremony from opening.
+  vi.useFakeTimers();
+  try {
+    let api;
+    render(<IdentityProvider><Probe onReady={(x) => { api = x; }} /></IdentityProvider>);
+    emit({ matched: true, userId: 'kc', finger: 'right-thumb', authz: { admin: true, locks: ['emergency'] } });
+    expect(emergency.triggerCeremony).not.toHaveBeenCalled();
+    act(() => { vi.advanceTimersByTime(100); });
+    act(() => { api.registerAdmin('emulator'); }); // opens modal → clears armed timer
+    act(() => { vi.advanceTimersByTime(100); });
+    act(() => { api.clearUnlock(); });              // modal closes → activeLockRef null again
+    act(() => { vi.advanceTimersByTime(CEREMONY_DEBOUNCE_MS); });
+    expect(emergency.triggerCeremony).not.toHaveBeenCalled();
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+test('registering an unlock dismisses an already-open ceremony (slow-unlock race)', () => {
+  // Slow tap: the scan landed >debounce before this handler ran, so the ceremony is
+  // already up (PHASE_TRIGGERING). Registering the unlock must back it out.
+  emergency.phase = 'triggering';
+  let api;
+  render(<IdentityProvider><Probe onReady={(x) => { api = x; }} /></IdentityProvider>);
+  act(() => { api.registerAdmin('emulator'); });
+  expect(emergency.dismissCeremony).toHaveBeenCalledTimes(1);
+});
+
 test('the debounce opens the ceremony when no unlock arrives within the window', () => {
   vi.useFakeTimers();
   try {
