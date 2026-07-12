@@ -4,14 +4,16 @@ import { buildTriggerRegistry } from '#adapters/trigger/parsers/buildTriggerRegi
 describe('buildTriggerRegistry', () => {
   it('returns empty registry when no blobs supplied', () => {
     const result = buildTriggerRegistry({});
-    expect(result).toEqual({ nfc: { locations: {}, tags: {} }, state: { locations: {} } });
+    expect(result).toEqual({ nfc: { locations: {}, tags: {} }, state: { locations: {} }, responses: {}, endpoints: {} });
   });
 
   it('builds a complete registry from all three blobs', () => {
     const result = buildTriggerRegistry({
-      nfcLocations: { livingroom: { target: 'livingroom-tv', action: 'play-next' } },
-      nfcTags: { '83_8e_68_06': { plex: 620707 } },
-      stateLocations: { livingroom: { target: 'livingroom-tv', states: { off: { action: 'clear' } } } },
+      sources: {
+        livingroom: { modality: 'nfc', target: 'livingroom-tv', action: 'play-next' },
+        'livingroom-state': { modality: 'state', location: 'livingroom', target: 'livingroom-tv', states: { off: { action: 'clear' } } },
+      },
+      bindingsNfc: { '83_8e_68_06': { plex: 620707 } },
     });
     expect(result.nfc.locations.livingroom.target).toBe('livingroom-tv');
     expect(result.nfc.tags['83_8e_68_06'].global).toEqual({ plex: 620707 });
@@ -22,8 +24,10 @@ describe('buildTriggerRegistry', () => {
     // This test catches the cross-reference: tags need to know which keys are
     // valid reader IDs for the override-block disambiguation.
     expect(() => buildTriggerRegistry({
-      nfcLocations: { livingroom: { target: 'tv' } },
-      nfcTags: {
+      sources: {
+        livingroom: { modality: 'nfc', target: 'tv' },
+      },
+      bindingsNfc: {
         'aa_bb': {
           plex: 1,
           livingrm: { shader: 'x' },  // typo
@@ -34,8 +38,10 @@ describe('buildTriggerRegistry', () => {
 
   it('parses tags successfully when the override key matches a registered reader', () => {
     const result = buildTriggerRegistry({
-      nfcLocations: { livingroom: { target: 'tv' } },
-      nfcTags: {
+      sources: {
+        livingroom: { modality: 'nfc', target: 'tv' },
+      },
+      bindingsNfc: {
         'aa_bb': {
           plex: 1,
           livingroom: { shader: 'blackout' },
@@ -49,7 +55,7 @@ describe('buildTriggerRegistry', () => {
     // Edge case: a tag exists but no readers are configured. Tag without
     // overrides is fine; tag with any object-valued field would throw.
     const result = buildTriggerRegistry({
-      nfcTags: { 'aa_bb': { plex: 1 } },
+      bindingsNfc: { 'aa_bb': { plex: 1 } },
     });
     expect(result.nfc.tags['aa_bb'].global).toEqual({ plex: 1 });
   });
