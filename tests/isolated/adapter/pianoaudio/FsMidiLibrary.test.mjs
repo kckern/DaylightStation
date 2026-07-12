@@ -32,8 +32,8 @@ describe('FsMidiLibrary.listPending', () => {
     // a non-midi → ignored
     writeFile(path.join(sourceDir, 'kckern/2026-01-02/notes.txt'), 'x');
 
-    // inject a fixed short duration so these fixtures aren't parsed as real SMF
-    const lib = new FsMidiLibrary({ sourceDir, destDir, logger: silent, midiDurationSeconds: () => 60 });
+    // inject fixed short/dense stats so these fixtures aren't parsed as real SMF
+    const lib = new FsMidiLibrary({ sourceDir, destDir, logger: silent, midiStats: () => ({ durationSeconds: 60, noteCount: 100 }) });
     const pending = await lib.listPending();
 
     expect(pending).toEqual([
@@ -53,33 +53,38 @@ describe('FsMidiLibrary.listPending', () => {
     expect(await lib.listPending()).toEqual([]);
   });
 
-  it('skips a midi whose render duration exceeds maxRenderSeconds', async () => {
+  it('skips junk (long-and-sparse stuck note; note-less) but keeps a real long dense session', async () => {
     writeFile(path.join(sourceDir, 'ok/short.mid'), 'MID', 2_000_000);
-    writeFile(path.join(sourceDir, 'junk/monster.mid'), 'MID', 3_000_000);
-    // fake durations by path: monster is a 94-min stuck-note recording, short is 2 min
-    const durations = {
-      [path.join(sourceDir, 'ok/short.mid')]: 120,
-      [path.join(sourceDir, 'junk/monster.mid')]: 5670,
+    writeFile(path.join(sourceDir, 'ok/long-session.mid'), 'MID', 6_000_000); // long but dense → real
+    writeFile(path.join(sourceDir, 'junk/stuck.mid'), 'MID', 3_000_000);       // long + sparse → junk
+    writeFile(path.join(sourceDir, 'junk/empty.mid'), 'MID', 4_000_000);       // no notes → junk
+    const stats = {
+      [path.join(sourceDir, 'ok/short.mid')]: { durationSeconds: 120, noteCount: 300 },
+      [path.join(sourceDir, 'ok/long-session.mid')]: { durationSeconds: 9888, noteCount: 20211 },
+      [path.join(sourceDir, 'junk/stuck.mid')]: { durationSeconds: 5670, noteCount: 3 },
+      [path.join(sourceDir, 'junk/empty.mid')]: { durationSeconds: 30, noteCount: 0 },
     };
     const lib = new FsMidiLibrary({
       sourceDir, destDir, logger: silent,
-      maxRenderSeconds: 1200,
-      midiDurationSeconds: (p) => durations[p],
+      junkMinSeconds: 1800, junkMinNotes: 200,
+      midiStats: (p) => stats[p],
     });
 
     const pending = await lib.listPending();
 
+    // newest-first by mtime: long-session (6M) then short (2M); junk excluded
     expect(pending).toEqual([
+      { midiPath: path.join(sourceDir, 'ok/long-session.mid'), mp3Path: path.join(destDir, 'ok/long-session.mp3') },
       { midiPath: path.join(sourceDir, 'ok/short.mid'), mp3Path: path.join(destDir, 'ok/short.mp3') },
     ]);
   });
 
-  it('includes a midi whose duration cannot be parsed (converter timeout is the backstop)', async () => {
+  it('includes a midi whose stats cannot be parsed (converter timeout is the backstop)', async () => {
     writeFile(path.join(sourceDir, 'weird/unparseable.mid'), 'NOTMIDI', 4_000_000);
     const lib = new FsMidiLibrary({
       sourceDir, destDir, logger: silent,
-      maxRenderSeconds: 1200,
-      midiDurationSeconds: () => { throw new Error('bad SMF'); },
+      junkMinSeconds: 1800, junkMinNotes: 200,
+      midiStats: () => { throw new Error('bad SMF'); },
     });
 
     const pending = await lib.listPending();

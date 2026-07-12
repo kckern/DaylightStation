@@ -33,7 +33,7 @@ image; `fluidsynth` + `soundfont-timgm` are added (`apk add`, authorized).
 | **Synth** | `fluidsynth` + `soundfont-timgm` (TimGM6mb.sf2) |
 | **Pipeline** | fluidsynth → scratch WAV → ffmpeg loudnorm → `.mp3.tmp` → rename final; delete WAV |
 | **Dedup** | Skip if the final mirror `.mp3` already exists (resumable) |
-| **Junk guardrail** | Skip any `.mid` whose estimated render duration exceeds `maxRenderSeconds` (default 60 min) — a stuck note / idle device recording can span 90+ min, rendering a multi-GB scratch WAV. Duration read cheaply from the SMF (pure parser, no render) before fluidsynth. Configurable via `pianoaudio.maxRenderSeconds`. |
+| **Junk guardrail** | Skip a `.mid` only if it has NO notes, or is both long AND note-sparse (`durationSeconds > junkMinSeconds` (default 1800) AND `noteCount < junkMinNotes` (default 200)) — the signature of a genuinely stuck note / idle recording. A merely LONG file (real multi-hour practice session, tens of thousands of notes) is NOT junk and IS rendered. Duration + note count read cheaply from the SMF (pure `analyzeMidi`, no render) before fluidsynth. Configurable via `pianoaudio.junkMinSeconds` / `pianoaudio.junkMinNotes`. |
 | **Order** | Newest-first |
 | **Cadence** | Daily (`30 4 * * *`), after the 4am JamCorder harvest |
 | **Backfill** | First run(s) drain the ~1169 backlog; drained in the deploy phase via repeated manual triggers |
