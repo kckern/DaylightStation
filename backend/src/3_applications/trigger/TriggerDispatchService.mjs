@@ -22,7 +22,11 @@
 
 import { randomUUID } from 'node:crypto';
 import { ResolverRegistry, UnknownModalityError } from '#domains/trigger/services/ResolverRegistry.mjs';
-import { dispatchAction, UnknownActionError } from './actionHandlers.mjs';
+import { dispatchResponse, UnknownResponseKindError } from './responseHandlers.mjs';
+import { mapIntentToResponse, UnknownActionError } from './mapIntentToResponse.mjs';
+import { authenticate } from './guards/authenticate.mjs';
+import { createDebounce } from './guards/debounce.mjs';
+import { TriggerEvent } from '#domains/trigger/TriggerEvent.mjs';
 
 export class TriggerDispatchService {
   #config;
@@ -31,7 +35,7 @@ export class TriggerDispatchService {
   #tagWriter;
   #broadcast;
   #logger;
-  #recentDispatches;   // Map<key, timestampMs>
+  #debounce;
   #debounceWindowMs;
   #clock;
 
@@ -66,18 +70,9 @@ export class TriggerDispatchService {
     this.#tagWriter = tagWriter;
     this.#broadcast = broadcast || (() => {});
     this.#logger = logger;
-    this.#recentDispatches = new Map();
     this.#debounceWindowMs = debounceWindowMs;
+    this.#debounce = createDebounce({ windowMs: this.#debounceWindowMs });
     this.#clock = clock;
-  }
-
-  // Map cleanup avoids unbounded growth: every check prunes anything older
-  // than the window. With a small number of triggers per location and a
-  // 3 s window this is effectively O(N_active_keys) per call.
-  #pruneDispatches(now) {
-    for (const [key, ts] of this.#recentDispatches) {
-      if (now - ts > this.#debounceWindowMs) this.#recentDispatches.delete(key);
-    }
   }
 
   #lookupAuthToken(modality, location) {
@@ -109,7 +104,10 @@ export class TriggerDispatchService {
     }, durationMs);
   }
 
-  async handleTrigger(location, modality, value, options = {}) {
+  async handleEvent(event, options = {}) {
+    const location = event.location;
+    const modality = event.source;
+    const value = event.value;
     const startedAt = this.#clock();
     const dispatchId = randomUUID();
     const normalizedValue = String(value || '').toLowerCase();
@@ -129,8 +127,8 @@ export class TriggerDispatchService {
       return { ok: false, code: 'LOCATION_NOT_FOUND', error: `Unknown location: ${location}`, location, modality, value: normalizedValue, dispatchId };
     }
 
-    const authToken = this.#lookupAuthToken(modality, location);
-    if (authToken && authToken !== options.token) {
+    const auth = authenticate({ expectedToken: this.#lookupAuthToken(modality, location), providedToken: options.token });
+    if (!auth.ok) {
       this.#logger.warn?.('trigger.fired', { location, modality, value: normalizedValue, error: 'auth-failed' });
       return { ok: false, code: 'AUTH_FAILED', error: 'Authentication failed', location, modality, value: normalizedValue, dispatchId };
     }
@@ -147,17 +145,15 @@ export class TriggerDispatchService {
     // it so the user can retry immediately. dryRun bypasses entirely.
     const debounceKey = `${location}:${modality}:${normalizedValue}`;
     if (!options.dryRun) {
-      this.#pruneDispatches(startedAt);
-      const lastTs = this.#recentDispatches.get(debounceKey);
-      if (lastTs != null && startedAt - lastTs < this.#debounceWindowMs) {
-        const sinceMs = startedAt - lastTs;
+      const { debounced, sinceMs } = this.#debounce.check(debounceKey, startedAt);
+      if (debounced) {
         this.#logger.info?.('trigger.debounced', { location, modality, value: normalizedValue, sinceMs, windowMs: this.#debounceWindowMs, dispatchId });
         return { ok: true, debounced: true, location, modality, value: normalizedValue, dispatchId, sinceMs };
       }
       // Lock the key now so concurrent retries during the 25-s wake-and-load
       // window (which won't see the success-side set until we finish) are
       // properly debounced.
-      this.#recentDispatches.set(debounceKey, startedAt);
+      this.#debounce.set(debounceKey, startedAt);
     }
 
     let intent;
@@ -186,7 +182,7 @@ export class TriggerDispatchService {
       this.#emit(location, modality, baseLog);
       // Extend debounce to the unknown branch so HA's 2-3 duplicate fires
       // per physical tap collapse to a single placeholder write + notify.
-      this.#recentDispatches.set(debounceKey, this.#clock());
+      this.#debounce.set(debounceKey, this.#clock());
       return { ok: false, code: 'TRIGGER_NOT_REGISTERED', error: `Trigger not registered: ${normalizedValue}`, location, modality, value: normalizedValue, dispatchId };
     }
 
@@ -204,9 +200,10 @@ export class TriggerDispatchService {
     this.#suppressGuardForTarget(intent.target, dispatchId);
 
     try {
-      const dispatchResult = await dispatchAction(intent, this.#deps);
+      const response = { ...mapIntentToResponse(intent), dispatchId };
+      const dispatchResult = await dispatchResponse(response, this.#deps);
       const elapsedMs = this.#clock() - startedAt;
-      this.#recentDispatches.set(debounceKey, this.#clock());
+      this.#debounce.set(debounceKey, this.#clock());
       this.#logger.info?.('trigger.fired', { ...baseLog, action: intent.action, target: intent.target, ok: true, elapsedMs });
       this.#emit(location, modality, { ...summary, ok: true });
       return { ok: true, ...summary, dispatch: dispatchResult, elapsedMs };
@@ -214,12 +211,16 @@ export class TriggerDispatchService {
       const elapsedMs = this.#clock() - startedAt;
       // On failure, ensure no debounce entry persists — user should be
       // able to retry without waiting out the window.
-      this.#recentDispatches.delete(debounceKey);
-      const code = err instanceof UnknownActionError ? 'UNKNOWN_ACTION' : 'DISPATCH_FAILED';
+      this.#debounce.delete(debounceKey);
+      const code = (err instanceof UnknownResponseKindError || err instanceof UnknownActionError) ? 'UNKNOWN_ACTION' : 'DISPATCH_FAILED';
       this.#logger.error?.('trigger.fired', { ...baseLog, action: intent.action, target: intent.target, ok: false, error: err.message, code, elapsedMs });
       this.#emit(location, modality, { ...summary, ok: false, error: err.message });
       return { ok: false, code, error: err.message, ...summary, elapsedMs };
     }
+  }
+
+  async handleTrigger(location, modality, value, options = {}) {
+    return this.handleEvent(TriggerEvent.create({ source: modality, location, value }), options);
   }
 
   #emit(location, modality, payload, type = 'trigger.fired') {
