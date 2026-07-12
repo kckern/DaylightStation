@@ -3504,7 +3504,7 @@ export function createHarvesterServices(config) {
   registerHarvester('piano-mp3', () => {
     const sourceDir = configService.getHouseholdPath('history/piano');
     const destDir = `${configService.getMediaDir()}/audio/piano`;
-    const soundfontPath = '/usr/share/soundfonts/TimGM6mb.sf2'; // Alpine soundfont-timgm (confirmed at build)
+    const soundfontPath = '/usr/share/soundfonts/TimGM6mb.sf2'; // Alpine soundfont-timgm; confirm path post-build
     const library = new FsMidiLibrary({ sourceDir, destDir, logger });
     const converter = new FluidSynthMp3Converter({ soundfontPath, scratchDir: '/tmp/pianoaudio', logger });
     const convertUseCase = new ConvertPendingPianoMidi({ library, converter, logger });

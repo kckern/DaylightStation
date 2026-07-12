@@ -888,7 +888,7 @@ git commit -m "feat(pianoaudio): wire piano-mp3 harvester + add fluidsynth/sound
    ```
    Append it to `data/system/config/jobs.yml`. (`Job` reads `timeout` from the entry, default 300000ms; executor-routed jobs omit `module`.)
 4. **Build + deploy:** `sudo docker build …` then `sudo docker stop/rm daylight-station` + `sudo deploy-daylight`.
-5. **Backfill:** trigger `POST /api/v1/scheduling/run/piano-mp3` repeatedly until the run reports `count: 0` (nothing left pending), draining the ~1169-file backlog. Runs are resumable (skip-if-mp3-exists), so repeated triggers converge.
+5. **Backfill:** trigger `POST /api/v1/scheduling/run/piano-mp3` repeatedly until the run reports `count: 0` (nothing left pending), draining the ~1169-file backlog. Runs are resumable (skip-if-mp3-exists) and **serialized** — a timed-out run keeps draining in the background, so a re-trigger fired while it is still running returns `status: 'skipped', reason: 'already-running'` (not an error): that means "a drain is already in progress," so just wait and re-poll. Watch the logs (`pianoaudio.harvest.done {converted}`) to see progress; keep re-triggering after each `skipped`/completion until a run returns `count: 0`.
 6. **Verify:** mp3 count under `media/audio/piano/` matches the missing set drained; spot-check one rendered mp3 has audio (`ffprobe` shows an mp3 stream with non-zero duration).
 
 ---

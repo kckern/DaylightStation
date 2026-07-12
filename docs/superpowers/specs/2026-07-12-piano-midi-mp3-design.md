@@ -80,12 +80,18 @@ midi size, ffmpeg ≈ by wav size), min 60s, max 600s — mirroring the recorder
 
 ## Backfill, timeout & resumability
 
-Dedup-by-final-mp3-exists makes each run **resumable**. The scheduler kills a run
-at its `timeout` (1,200,000 ms / 20 min → a few hundred files/run); already-done
-files are skipped next run, so the backlog drains across runs and daily
-incremental runs finish fast. Crash-safety: `.mp3.tmp`→rename means a killed
-conversion never leaves a partial final mp3; the run also sweeps orphaned
-scratch WAV/`.mp3.tmp` files at start. Files are converted **newest-first**.
+Dedup-by-final-mp3-exists makes each run **resumable**. The scheduler's `timeout`
+(1,200,000 ms / 20 min → a few hundred files/run) is a non-cancelling race, so a
+timed-out run keeps draining in the background; already-done files are skipped, so
+the backlog drains and daily incremental runs finish fast. The use case is
+**serialized** (an in-flight guard): a concurrent trigger while a drain is already
+running returns `{count:0, status:'skipped', reason:'already-running'}` instead of
+converting the same files a second time — this prevents two runs from racing on the
+same output. Crash-safety: the scratch WAV name is per-conversion unique, and the
+final mp3 is written to a stable `<mp3>.mp3.tmp` then atomically renamed, so a
+killed conversion never leaves a partial final mp3; a SIGKILL-orphaned `.mp3.tmp`
+keeps its stable name and is harmlessly overwritten (`ffmpeg -y`) the next time that
+file is processed. Files are converted **newest-first**.
 
 **Deploy-phase backfill:** after deploy, trigger
 `POST /api/v1/scheduling/run/piano-mp3` repeatedly until it reports `pending: 0`,
