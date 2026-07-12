@@ -13,10 +13,12 @@
 #include <Arduino.h>
 #include <WiFi.h>
 #include <WiFiUdp.h>
+#include <WebServer.h>
 #include <WebSocketsClient.h>
 #include <ArduinoJson.h>
 #include <FastLED.h>
 #include <NimBLEDevice.h>
+#include <time.h>
 
 // ---------- config ----------
 // All instance config (Wi-Fi creds, backend WS host/port/path, scanner BLE
@@ -35,6 +37,14 @@ static void setLed(const CRGB& c){ led[0]=c; FastLED.show(); }
 // ---------- net ----------
 static WiFiUDP udp; static IPAddress g_bcast; static const uint16_t LOG_PORT=9999;
 static WebSocketsClient ws; static volatile bool wsConnected=false;
+static WebServer http(80);   // ad-hoc health endpoint: GET / or /status -> JSON
+
+// ---------- status (for the /status endpoint) ----------
+static volatile int g_streams=0;           // # of subscribed HID report streams
+static char g_lastCode[128]={0};           // most recent barcode ("" = none yet)
+static uint32_t g_lastScanMs=0;            // millis() of last scan (0 = never)
+static time_t g_lastScanEpoch=0;           // wall-clock of last scan (0 = unknown)
+static uint32_t g_scanCount=0;             // scans since boot
 
 static void logf(const char* fmt, ...){
   char b[240]; va_list ap; va_start(ap,fmt); vsnprintf(b,sizeof(b),fmt,ap); va_end(ap);
@@ -120,6 +130,7 @@ static void notifyCB(NimBLERemoteCharacteristic* ch, uint8_t* data, size_t len, 
 static volatile bool g_doConnect=false;
 static volatile bool g_connected=false;
 static NimBLEAdvertisedDevice* g_target=nullptr;
+static NimBLEClient* g_client=nullptr;   // live handle for on-demand RSSI
 
 class ScanCB : public NimBLEAdvertisedDeviceCallbacks {
   void onResult(NimBLEAdvertisedDevice* d) override {
@@ -138,7 +149,7 @@ class ScanCB : public NimBLEAdvertisedDeviceCallbacks {
 class ClientCB : public NimBLEClientCallbacks {
   void onConnect(NimBLEClient*) override { logf("[ble] connected"); }
   void onDisconnect(NimBLEClient*) override {
-    g_connected=false; logf("[ble] disconnected"); setLed(CRGB(20,10,0));
+    g_connected=false; g_client=nullptr; g_streams=0; logf("[ble] disconnected"); setLed(CRGB(20,10,0));
   }
 };
 static ClientCB g_clientCB;
@@ -182,7 +193,7 @@ static bool connectTarget(){
     }
   }
   if(subs==0){ logf("[ble] no notifiable HID report chars"); c->disconnect(); return false; }
-  g_connected=true; setLed(CRGB::Green);
+  g_client=c; g_streams=subs; g_connected=true; setLed(CRGB::Green);
   logf("[ble] READY — %d report streams; scan a barcode", subs);
   return true;
 }
@@ -194,6 +205,50 @@ static void startScan(){
   s->setInterval(45); s->setWindow(45);
   s->start(0, nullptr, false);
   logf("[ble] scanning for %s / %s ...", SCANNER_MAC, SCANNER_NAME);
+}
+
+// ---------- /status HTTP endpoint ----------
+static bool clockSynced(){ return time(nullptr) > 1600000000; } // NTP has landed if epoch is post-2020
+static String isoUTC(time_t t){ struct tm tm; gmtime_r(&t,&tm); char b[25]; strftime(b,sizeof(b),"%Y-%m-%dT%H:%M:%SZ",&tm); return String(b); }
+
+// GET / or /status -> a JSON snapshot answering: are you up? listening (ws+ble)?
+// what/when was the last scan? Ping from anywhere on the LAN:
+//   curl http://<device-ip>/status   (or just open it in a browser)
+static void handleStatus(){
+  JsonDocument d;
+  d["device"]  = "barcode-relay";
+  d["up_s"]    = (uint32_t)(millis()/1000);
+  if(clockSynced()) d["now"] = isoUTC(time(nullptr));
+
+  JsonObject w = d["wifi"].to<JsonObject>();
+  w["connected"] = WiFi.status()==WL_CONNECTED;
+  w["ip"]        = WiFi.localIP().toString();
+  w["rssi"]      = (int)WiFi.RSSI();
+
+  JsonObject s = d["ws"].to<JsonObject>();       // the DaylightStation event bus
+  s["connected"] = (bool)wsConnected;
+  s["host"]      = WS_HOST;
+  s["port"]      = WS_PORT;
+
+  JsonObject b = d["ble"].to<JsonObject>();       // the DS2278 scanner link
+  b["connected"] = (bool)g_connected;
+  b["scanner"]   = SCANNER_MAC;
+  b["streams"]   = g_streams;
+  if(g_connected && g_client) b["rssi"] = g_client->getRssi();
+
+  d["scan_count"] = g_scanCount;
+  if(g_lastScanMs){
+    JsonObject ls = d["last_scan"].to<JsonObject>();
+    ls["code"]   = g_lastCode;
+    ls["ago_s"]  = (uint32_t)((millis()-g_lastScanMs)/1000);
+    if(g_lastScanEpoch>1600000000) ls["at"] = isoUTC(g_lastScanEpoch);
+  } else {
+    d["last_scan"] = nullptr;                      // never scanned since boot
+  }
+
+  String out; serializeJsonPretty(d,out);
+  http.sendHeader("Access-Control-Allow-Origin","*");
+  http.send(200,"application/json",out);
 }
 
 void setup(){
@@ -212,14 +267,27 @@ void setup(){
 
   WiFi.mode(WIFI_STA); WiFi.begin(WIFI_SSID,WIFI_PASSWORD);
   uint32_t t0=millis(); while(WiFi.status()!=WL_CONNECTED && millis()-t0<15000){ delay(300); Serial.print("."); }
-  if(WiFi.status()==WL_CONNECTED){ g_bcast=WiFi.localIP(); g_bcast[3]=255; logf("[wifi] %s -> ws %s:%u, udp log :9999", WiFi.localIP().toString().c_str(), WS_HOST, WS_PORT); }
+  if(WiFi.status()==WL_CONNECTED){
+    g_bcast=WiFi.localIP(); g_bcast[3]=255;
+    configTime(0, 0, "pool.ntp.org", "time.google.com"); // UTC, for last_scan timestamps
+    logf("[wifi] %s -> ws %s:%u, http :80/status, udp log :9999", WiFi.localIP().toString().c_str(), WS_HOST, WS_PORT);
+  }
   ws.begin(WS_HOST, WS_PORT, WS_PATH); ws.onEvent(wsEvent); ws.setReconnectInterval(4000);
+
+  // ad-hoc health endpoint — pingable from anywhere on the LAN
+  http.on("/", handleStatus);
+  http.on("/status", handleStatus);
+  http.onNotFound([](){ http.send(404,"text/plain","barcode-relay: GET /status\n"); });
+  http.begin();
 
   startScan();
 }
 
 static void relay(const char* code){
   logf("[barcode] %s (ws=%d)", code, wsConnected);
+  // record for /status regardless of ws state (so the endpoint reflects the real last read)
+  strncpy(g_lastCode, code, sizeof(g_lastCode)-1); g_lastCode[sizeof(g_lastCode)-1]=0;
+  g_lastScanMs = millis(); g_lastScanEpoch = clockSynced()? time(nullptr) : 0; g_scanCount++;
   if(wsConnected){
     JsonDocument d; d["source"]="barcode-relay"; d["type"]="scan"; d["device"]="ds2278"; d["code"]=code; d["ts"]=(uint32_t)millis();
     String out; serializeJson(d,out); ws.sendTXT(out);
@@ -229,6 +297,7 @@ static void relay(const char* code){
 
 void loop(){
   ws.loop();
+  http.handleClient();
 
   if(g_doConnect){ g_doConnect=false; if(!connectTarget()){ delay(800); startScan(); } }
 

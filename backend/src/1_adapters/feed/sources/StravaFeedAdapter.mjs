@@ -9,6 +9,20 @@
 
 import { IFeedSourceAdapter, CONTENT_TYPES } from '#apps/feed/ports/IFeedSourceAdapter.mjs';
 
+/**
+ * Deterministic FNV-1a 32-bit hash of a string, base36-encoded.
+ * Used to derive stable IDs from an item's own content when no source id
+ * exists — same content yields the same id across fetches (F-22).
+ */
+function fnv1a(str) {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < str.length; i++) {
+    h ^= str.charCodeAt(i);
+    h = Math.imul(h, 0x01000193);
+  }
+  return (h >>> 0).toString(36);
+}
+
 export class StravaFeedAdapter extends IFeedSourceAdapter {
   #userDataService;
   #logger;
@@ -44,7 +58,11 @@ export class StravaFeedAdapter extends IFeedSourceAdapter {
       }
 
       return activities.slice(0, 5).map(activity => ({
-        id: `strava:${activity.id || activity._date || Math.random()}`,
+        // Stable id: prefer the real Strava activity id, then the date, else a
+        // deterministic hash of the activity's own identity fields (F-22).
+        id: `strava:${activity.id || activity._date || fnv1a([
+          activity.start_date, activity.name, activity.title, activity.type, activity.minutes,
+        ].map(v => v ?? '').join('|'))}`,
         tier: query.tier || 'compass',
         source: 'fitness',
         title: activity.title || activity.type || 'Activity',
