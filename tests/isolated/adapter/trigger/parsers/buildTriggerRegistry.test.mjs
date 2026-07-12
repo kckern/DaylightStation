@@ -4,7 +4,7 @@ import { buildTriggerRegistry } from '#adapters/trigger/parsers/buildTriggerRegi
 describe('buildTriggerRegistry', () => {
   it('returns empty registry when no blobs supplied', () => {
     const result = buildTriggerRegistry({});
-    expect(result).toEqual({ nfc: { locations: {}, tags: {} }, state: { locations: {} }, responses: {}, endpoints: {} });
+    expect(result).toEqual({ nfc: { locations: {}, tags: {} }, state: { locations: {} }, barcode: { locations: {} }, responses: {}, endpoints: {} });
   });
 
   it('builds a complete registry from all three blobs', () => {

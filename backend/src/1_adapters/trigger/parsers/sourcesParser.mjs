@@ -29,12 +29,13 @@ function toLegacyEntry(entry) {
 }
 
 export function parseSources(raw) {
-  if (!raw) return { nfc: { locations: {} }, state: { locations: {} } };
+  if (!raw) return { nfc: { locations: {} }, state: { locations: {} }, barcode: { locations: {} } };
   if (!isPlainObject(raw)) {
     throw new ValidationError('sources.yml root must be an object', { code: 'INVALID_CONFIG_ROOT' });
   }
   const nfcRaw = {};
   const stateRaw = {};
+  const barcodeRaw = {};
   for (const [sourceId, entry] of Object.entries(raw)) {
     if (!isPlainObject(entry)) {
       throw new ValidationError(`source "${sourceId}" must be an object`, { code: 'INVALID_SOURCE', field: sourceId });
@@ -42,6 +43,14 @@ export function parseSources(raw) {
     const location = entry.location || sourceId;
     if (entry.modality === 'nfc') nfcRaw[location] = toLegacyEntry(entry);
     else if (entry.modality === 'state') stateRaw[location] = toLegacyEntry(entry);
+    else if (entry.modality === 'barcode') {
+      const legacy = toLegacyEntry(entry);
+      barcodeRaw[location] = {
+        target: legacy.target,
+        default_action: legacy.default_action || legacy.action || 'queue',
+        actions: legacy.actions || ['queue', 'play', 'open'],
+      };
+    }
     else throw new ValidationError(`source "${sourceId}" has unknown modality "${entry.modality}"`, { code: 'UNKNOWN_MODALITY', field: sourceId });
   }
   // parseNfcLocations strips unknown keys into `defaults`; debounce_ms lands there
@@ -53,7 +62,7 @@ export function parseSources(raw) {
       delete nfcLocations[loc].defaults.debounce_ms;
     }
   }
-  return { nfc: { locations: nfcLocations }, state: { locations: parseStateLocations(stateRaw) } };
+  return { nfc: { locations: nfcLocations }, state: { locations: parseStateLocations(stateRaw) }, barcode: { locations: barcodeRaw } };
 }
 
 export default parseSources;
