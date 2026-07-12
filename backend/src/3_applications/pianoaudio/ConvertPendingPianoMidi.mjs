@@ -7,7 +7,7 @@
  * @module applications/pianoaudio/ConvertPendingPianoMidi
  */
 export class ConvertPendingPianoMidi {
-  #library; #converter; #logger;
+  #library; #converter; #logger; #running = false;
 
   constructor({ library, converter, logger = console }) {
     if (!library) throw new Error('ConvertPendingPianoMidi requires library');
@@ -17,29 +17,38 @@ export class ConvertPendingPianoMidi {
     this.#logger = logger;
   }
 
-  /** @returns {Promise<{count:number, status:'success'|'error', reason?:string}>} */
+  /** @returns {Promise<{count:number, status:'success'|'skipped'|'error', reason?:string}>} */
   async execute() {
-    let pending;
+    if (this.#running) {
+      this.#logger.warn?.('pianoaudio.skip.already_running', {});
+      return { count: 0, status: 'skipped', reason: 'already-running' };
+    }
+    this.#running = true;
     try {
-      pending = await this.#library.listPending();
-    } catch (err) {
-      this.#logger.warn?.('pianoaudio.list.failed', { error: err.message });
-      return { count: 0, status: 'error', reason: err.message };
-    }
-
-    let converted = 0;
-    for (const ref of pending) {
+      let pending;
       try {
-        await this.#converter.convert(ref.midiPath, ref.mp3Path);
-        converted += 1;
-        this.#logger.info?.('pianoaudio.converted', { midiPath: ref.midiPath, mp3Path: ref.mp3Path });
+        pending = await this.#library.listPending();
       } catch (err) {
-        this.#logger.warn?.('pianoaudio.convert.failed', { midiPath: ref.midiPath, error: err.message });
+        this.#logger.warn?.('pianoaudio.list.failed', { error: err.message });
+        return { count: 0, status: 'error', reason: err.message };
       }
-    }
 
-    this.#logger.info?.('pianoaudio.harvest.done', { pending: pending.length, converted });
-    return { count: converted, status: 'success' };
+      let converted = 0;
+      for (const ref of pending) {
+        try {
+          await this.#converter.convert(ref.midiPath, ref.mp3Path);
+          converted += 1;
+          this.#logger.info?.('pianoaudio.converted', { midiPath: ref.midiPath, mp3Path: ref.mp3Path });
+        } catch (err) {
+          this.#logger.warn?.('pianoaudio.convert.failed', { midiPath: ref.midiPath, error: err.message });
+        }
+      }
+
+      this.#logger.info?.('pianoaudio.harvest.done', { pending: pending.length, converted });
+      return { count: converted, status: 'success' };
+    } finally {
+      this.#running = false;
+    }
   }
 }
 

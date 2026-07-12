@@ -61,4 +61,21 @@ describe('ConvertPendingPianoMidi', () => {
     expect(result).toEqual({ count: 0, status: 'error', reason: 'EACCES' });
     expect(converter.convert).not.toHaveBeenCalled();
   });
+
+  it('skips a concurrent run while one is already in flight', async () => {
+    let release;
+    const gate = new Promise((r) => { release = r; });
+    const pending = [{ midiPath: '/src/a.mid', mp3Path: '/dst/a.mp3' }];
+    const converter = { convert: vi.fn(async () => { await gate; }) };
+    const uc = new ConvertPendingPianoMidi({ library: fakeLibrary(pending), converter, logger: silent });
+
+    const first = uc.execute();               // starts, blocks inside convert()
+    const second = await uc.execute();        // #running already true → immediate skip
+
+    expect(second).toEqual({ count: 0, status: 'skipped', reason: 'already-running' });
+    expect(converter.convert).toHaveBeenCalledTimes(1); // second did not convert
+
+    release();
+    expect(await first).toEqual({ count: 1, status: 'success' });
+  });
 });
