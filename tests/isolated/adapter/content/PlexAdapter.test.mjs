@@ -837,3 +837,133 @@ describe('getContainerInfo - rating and parent linkage', () => {
     expect(info.parentTitle).toBeNull();
   });
 });
+
+describe('resolveSiblings - ancestor chain (breadcrumb)', () => {
+  const makeAdapter = () => new PlexAdapter(
+    { host: 'http://localhost:32400', token: 'test-token' },
+    { httpClient: createMockHttpClient() }
+  );
+
+  // Episode metadata as produced by getItem's video path:
+  // parentId = season key, grandparentId = show key (no *RatingKey fields).
+  const episodeItem = {
+    id: 'plex:642197',
+    source: 'plex',
+    title: 'Elijah the Prophet',
+    metadata: {
+      type: 'episode',
+      parentId: '700',        // season
+      grandparentId: '800',   // show
+      librarySectionID: '2',
+      librarySectionTitle: 'TV Shows'
+    }
+  };
+  const seasonItem = { id: 'plex:700', source: 'plex', title: 'Season 8', metadata: { type: 'season' } };
+  const showItem = { id: 'plex:800', source: 'plex', title: 'The Prophets', metadata: { type: 'show' } };
+
+  const noGhostCrumbs = (ancestors) => {
+    expect(Array.isArray(ancestors)).toBe(true);
+    for (const c of ancestors) {
+      expect(c.id).toBeTruthy();
+      expect(c.title).toBeTruthy();
+    }
+  };
+
+  test('episode WITH collection → [collection, show, season] root-first', async () => {
+    const adapter = makeAdapter();
+    adapter.getItem = vi.fn().mockImplementation(async (id) => {
+      const key = String(id).replace(/^plex:/, '');
+      if (key === '642197') return episodeItem;
+      if (key === '700') return seasonItem;
+      if (key === '800') return showItem;
+      return null;
+    });
+    adapter._findSmallestCollection = vi.fn().mockResolvedValue({
+      ratingKey: '900', title: 'The Old Testament', childCount: 5
+    });
+    adapter.getList = vi.fn().mockResolvedValue([]);
+
+    const result = await adapter.resolveSiblings('plex:642197');
+
+    expect(result.parent).toBeTruthy();
+    noGhostCrumbs(result.ancestors);
+    expect(result.ancestors).toEqual([
+      { id: 'plex:900', title: 'The Old Testament', source: 'plex', localId: '900', type: 'collection' },
+      { id: 'plex:800', title: 'The Prophets', source: 'plex', localId: '800', type: 'show' },
+      { id: 'plex:700', title: 'Season 8', source: 'plex', localId: '700', type: 'season' }
+    ]);
+    // Cap enforced: show's smallest collection is looked up, not the item's.
+    expect(adapter._findSmallestCollection).toHaveBeenCalledWith('800', '2');
+  });
+
+  test('episode WITHOUT collection → [library, show, season], capped at library', async () => {
+    const adapter = makeAdapter();
+    adapter.getItem = vi.fn().mockImplementation(async (id) => {
+      const key = String(id).replace(/^plex:/, '');
+      if (key === '642197') return episodeItem;
+      if (key === '700') return seasonItem;
+      if (key === '800') return showItem;
+      return null;
+    });
+    adapter._findSmallestCollection = vi.fn().mockResolvedValue(null);
+    adapter.getList = vi.fn().mockResolvedValue([]);
+
+    const result = await adapter.resolveSiblings('plex:642197');
+
+    noGhostCrumbs(result.ancestors);
+    expect(result.ancestors).toEqual([
+      { id: 'library:2', title: 'TV Shows', source: 'plex', localId: '2', type: 'library' },
+      { id: 'plex:800', title: 'The Prophets', source: 'plex', localId: '800', type: 'show' },
+      { id: 'plex:700', title: 'Season 8', source: 'plex', localId: '700', type: 'season' }
+    ]);
+    // Never climbs above the cap: exactly 3 crumbs, top is the library.
+    expect(result.ancestors).toHaveLength(3);
+    expect(result.ancestors[0].type).toBe('library');
+  });
+
+  test('season → [collection, show], capped at collection', async () => {
+    const adapter = makeAdapter();
+    const seasonWithParent = {
+      id: 'plex:700', source: 'plex', title: 'Season 8',
+      metadata: { type: 'season', parentRatingKey: '800', librarySectionID: '2', librarySectionTitle: 'TV Shows' }
+    };
+    adapter.getItem = vi.fn().mockImplementation(async (id) => {
+      const key = String(id).replace(/^plex:/, '');
+      if (key === '700') return seasonWithParent;
+      if (key === '800') return showItem;
+      return null;
+    });
+    adapter._findSmallestCollection = vi.fn().mockResolvedValue({
+      ratingKey: '900', title: 'The Old Testament', childCount: 5
+    });
+    adapter.getList = vi.fn().mockResolvedValue([]);
+
+    const result = await adapter.resolveSiblings('plex:700');
+
+    noGhostCrumbs(result.ancestors);
+    expect(result.ancestors).toEqual([
+      { id: 'plex:900', title: 'The Old Testament', source: 'plex', localId: '900', type: 'collection' },
+      { id: 'plex:800', title: 'The Prophets', source: 'plex', localId: '800', type: 'show' }
+    ]);
+    expect(adapter._findSmallestCollection).toHaveBeenCalledWith('800', '2');
+  });
+
+  test('drops ghost crumbs when an ancestor cannot be fetched (no null id/title)', async () => {
+    const adapter = makeAdapter();
+    adapter.getItem = vi.fn().mockImplementation(async (id) => {
+      const key = String(id).replace(/^plex:/, '');
+      if (key === '642197') return episodeItem;
+      if (key === '700') return seasonItem;
+      if (key === '800') return null; // show fetch fails → skip, don't emit ghost
+      return null;
+    });
+    adapter._findSmallestCollection = vi.fn().mockResolvedValue(null);
+    adapter.getList = vi.fn().mockResolvedValue([]);
+
+    const result = await adapter.resolveSiblings('plex:642197');
+
+    noGhostCrumbs(result.ancestors);
+    // show crumb dropped; library cap + season remain
+    expect(result.ancestors.map(c => c.type)).toEqual(['library', 'season']);
+  });
+});
