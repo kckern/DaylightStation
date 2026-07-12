@@ -1,11 +1,11 @@
 import React from 'react';
 import { render, act, waitFor } from '@testing-library/react';
 import { vi, test, expect, beforeEach } from 'vitest';
-import { IdentityProvider, useIdentity } from './IdentityProvider';
+import { IdentityProvider, useIdentity, UNLOCK_COOLDOWN_MS } from './IdentityProvider';
 
 const emergency = {
   phase: 'normal', lockedUntil: null, lockedBy: null,
-  commit: vi.fn(), abort: vi.fn(), release: vi.fn(), triggerCeremony: vi.fn(),
+  commit: vi.fn(), abort: vi.fn(), release: vi.fn(), triggerCeremony: vi.fn(), dismissCeremony: vi.fn(),
 };
 vi.mock('@/modules/Fitness/hooks/useEmergencyLockdown.js', () => ({
   __esModule: true,
@@ -103,6 +103,27 @@ test('no modal + non-emergency scan → ignored', () => {
   render(<IdentityProvider><Probe onReady={() => {}} /></IdentityProvider>);
   emit({ matched: true, userId: 'guest', authz: { admin: false, locks: ['dance_party'] } });
   expect(emergency.triggerCeremony).not.toHaveBeenCalled();
+});
+
+test('admin scan within the unlock cooldown does NOT open the emergency ceremony', () => {
+  let api;
+  render(<IdentityProvider><Probe onReady={(x) => { api = x; }} /></IdentityProvider>);
+  act(() => { api.registerAdmin('emulator'); });
+  act(() => { api.clearUnlock(); });
+  emit({ matched: true, userId: 'kc', finger: 'right-thumb', authz: { admin: true, locks: ['emergency'] } });
+  expect(emergency.triggerCeremony).not.toHaveBeenCalled();
+});
+
+test('a cold admin scan (no recent unlock activity) still opens the ceremony', () => {
+  vi.useFakeTimers();
+  try {
+    render(<IdentityProvider><Probe onReady={() => {}} /></IdentityProvider>);
+    vi.advanceTimersByTime(UNLOCK_COOLDOWN_MS + 1000);
+    emit({ matched: true, userId: 'kc', finger: 'right-thumb', authz: { admin: true, locks: ['emergency'] } });
+    expect(emergency.triggerCeremony).toHaveBeenCalledTimes(1);
+  } finally {
+    vi.useRealTimers();
+  }
 });
 
 test('registerAdmin resolves only for an admin finger', async () => {
