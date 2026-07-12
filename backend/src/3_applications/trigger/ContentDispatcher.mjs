@@ -33,11 +33,14 @@ export class ContentDispatcher {
         this.#logger.info?.('trigger.content.ack', { target });
       } catch {
         this.#logger.info?.('trigger.content.ack_timeout', { target, timeoutMs: ACK_TIMEOUT_MS });
-        await this.#tryFallback(target, query);
+        // Fire-and-forget: wake-and-load takes 60-80s; do NOT block the trigger
+        // ingress on it (parity with BarcodeScanService.#handleContent).
+        this.#tryFallback(target, query);
       }
     } else {
       this.#logger.info?.('trigger.content.no_ack_channel', { target });
-      await this.#tryFallback(target, query);
+      // Fire-and-forget (see above).
+      this.#tryFallback(target, query);
     }
   }
 
