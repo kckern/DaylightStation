@@ -106,7 +106,16 @@ function ScrollCard({ item, colors, onDismiss, onPlay, onClick, style, itemRef, 
       onTouchMove={handleTouchMove}
       onTouchEnd={handleTouchEnd}
     >
-      <div onClick={onClick}>
+      {/* Keyboard-accessible open affordance: role/tabindex + Enter/Space. (F-14) */}
+      <div
+        onClick={onClick}
+        role="button"
+        tabIndex={0}
+        aria-label={item.title ? `Open: ${item.title}` : 'Open item'}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onClick?.(e); }
+        }}
+      >
         {renderFeedCard(item, colors, {
           // Only wire a dismiss handler through when this card actually
           // supports dismissal — otherwise the button/callback is omitted
