@@ -1,5 +1,9 @@
 # Barcode Processing Pipeline
 
+> ⚠️ **Superseded ingest (2026-07-11).** The USB scanner → MQTT front-end described here was
+> retired (commit `f9418c018`); scans now enter via the BLE relay + event bus. The current
+> path is documented in [Barcode Scanning](../barcode-scanning/README.md).
+
 How barcodes flow from physical scan to action. Covers the full path from USB scanner through MQTT to the backend's UPC lookup, nutrition classification, and food logging.
 
 **Depends on:** [Barcode Scanner](barcode-scanner.md) (USB HID capture), Mosquitto MQTT broker, Telegram bot (for interactive portion selection)

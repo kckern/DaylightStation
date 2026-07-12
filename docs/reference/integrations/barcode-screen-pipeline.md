@@ -1,5 +1,9 @@
 # Barcode → Screen Pipeline
 
+> ⚠️ **Superseded ingest (2026-07-11).** The MQTT front-end (`MQTTBarcodeAdapter`) was retired
+> (commit `f9418c018`). `BarcodeScanService`/`BarcodeGatekeeper` still apply, but scans now enter
+> via the BLE relay + event bus — see [Barcode Scanning](../barcode-scanning/README.md).
+
 How scanned barcodes flow from MQTT into the screen-framework to trigger media playback, control commands, and display changes.
 
 **Depends on:** [Barcode Scanner](barcode-scanner.md) (USB HID capture → MQTT), Mosquitto MQTT broker, screen-framework WebSocket commands
