@@ -3,6 +3,7 @@
 
 import { YamlTriggerConfigRepository } from '#adapters/trigger/YamlTriggerConfigRepository.mjs';
 import { YamlObservedStateStore } from '#adapters/persistence/yaml/YamlObservedStateStore.mjs';
+import { HttpEndpointGateway } from '#adapters/trigger/HttpEndpointGateway.mjs';
 import { createTriggerRouter } from '#api/v1/routers/trigger.mjs';
 import { TriggerDispatchService } from '#apps/trigger/TriggerDispatchService.mjs';
 import { broadcastEvent, createDeviceServices, createWakeAndLoadService } from '../bootstrap.mjs';
@@ -61,6 +62,8 @@ export function createTriggerApiRouter(config) {
     triggerConfig = { nfc: { locations: {}, tags: {} }, state: { locations: {} }, responses: {}, endpoints: {} };
   }
 
+  const endpointGateway = new HttpEndpointGateway({ endpoints: triggerConfig.endpoints || {}, logger });
+
   const triggerDispatchService = new TriggerDispatchService({
     config: triggerConfig,
     contentIdResolver,
@@ -71,6 +74,7 @@ export function createTriggerApiRouter(config) {
     contentDispatcher,
     screenBroadcast,
     commandResolver,
+    endpointGateway,
     broadcast,
     logger,
   });

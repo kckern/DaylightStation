@@ -65,6 +65,7 @@ export class TriggerDispatchService {
     contentDispatcher = null,
     screenBroadcast = null,
     commandResolver = null,
+    endpointGateway = null,
     broadcast,
     logger = console,
     debounceWindowMs = 30000,
@@ -72,7 +73,7 @@ export class TriggerDispatchService {
   }) {
     this.#config = config || {};
     this.#contentIdResolver = contentIdResolver;
-    this.#deps = { wakeAndLoadService, haGateway, deviceService, contentDispatcher, screenBroadcast, commandResolver, logger };
+    this.#deps = { wakeAndLoadService, haGateway, deviceService, contentDispatcher, screenBroadcast, commandResolver, endpointGateway, logger };
     this.#tagWriter = tagWriter;
     this.#broadcast = broadcast || (() => {});
     this.#logger = logger;
