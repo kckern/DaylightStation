@@ -1,7 +1,7 @@
 import React from 'react';
 import { render, act, waitFor } from '@testing-library/react';
 import { vi, test, expect, beforeEach } from 'vitest';
-import { IdentityProvider, useIdentity, UNLOCK_COOLDOWN_MS } from './IdentityProvider';
+import { IdentityProvider, useIdentity, UNLOCK_COOLDOWN_MS, CEREMONY_DEBOUNCE_MS } from './IdentityProvider';
 
 const emergency = {
   phase: 'normal', lockedUntil: null, lockedBy: null,
@@ -45,9 +45,16 @@ function Probe({ onReady }) { const id = useIdentity(); onReady(id); return <div
 beforeEach(() => { emergency.phase = 'normal'; chime.autoDone = true; vi.clearAllMocks(); });
 
 test('no modal + emergency-authorized → starts ceremony', () => {
-  render(<IdentityProvider><Probe onReady={() => {}} /></IdentityProvider>);
-  emit({ matched: true, userId: 'kc', finger: 'right-index', authz: { admin: true, locks: ['emergency'] } });
-  expect(emergency.triggerCeremony).toHaveBeenCalledTimes(1);
+  vi.useFakeTimers();
+  try {
+    render(<IdentityProvider><Probe onReady={() => {}} /></IdentityProvider>);
+    emit({ matched: true, userId: 'kc', finger: 'right-index', authz: { admin: true, locks: ['emergency'] } });
+    // The open is debounced — it fires only after CEREMONY_DEBOUNCE_MS with no unlock.
+    act(() => { vi.advanceTimersByTime(CEREMONY_DEBOUNCE_MS); });
+    expect(emergency.triggerCeremony).toHaveBeenCalledTimes(1);
+  } finally {
+    vi.useRealTimers();
+  }
 });
 test('triggering + emergency-authorized → abort', () => {
   emergency.phase = 'triggering';
@@ -140,9 +147,44 @@ test('the unlock-cooldown boundary suppresses just before UNLOCK_COOLDOWN_MS and
     expect(emergency.triggerCeremony).not.toHaveBeenCalled();
 
     // Branch (2) does not restamp, so the stamp is still at t0. Cross the boundary
-    // (elapsed since t0 now exceeds UNLOCK_COOLDOWN_MS) → the scan opens the ceremony.
+    // (elapsed since t0 now exceeds UNLOCK_COOLDOWN_MS) → the scan ARMS the ceremony,
+    // which then opens after the debounce elapses with no unlock.
     vi.setSystemTime(UNLOCK_COOLDOWN_MS + 1);
     emit({ matched: true, userId: 'kc', finger: 'right-thumb', authz: { admin: true, locks: ['emergency'] } });
+    act(() => { vi.advanceTimersByTime(CEREMONY_DEBOUNCE_MS); });
+    expect(emergency.triggerCeremony).toHaveBeenCalledTimes(1);
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+test('the debounce cancels the ceremony when an unlock modal opens within the window', () => {
+  vi.useFakeTimers();
+  try {
+    let api;
+    render(<IdentityProvider><Probe onReady={(x) => { api = x; }} /></IdentityProvider>);
+    // A cold admin emergency scan arrives (finger already down as the user taps a
+    // game) → arms the debounced ceremony open, but does NOT open yet.
+    emit({ matched: true, userId: 'kc', finger: 'right-thumb', authz: { admin: true, locks: ['emergency'] } });
+    expect(emergency.triggerCeremony).not.toHaveBeenCalled();
+    // Before the debounce elapses, the game's unlock modal registers → the scan was
+    // an unlock, not an emergency. This must cancel the armed ceremony.
+    act(() => { vi.advanceTimersByTime(CEREMONY_DEBOUNCE_MS - 100); });
+    act(() => { api.registerAdmin('emulator'); });
+    act(() => { vi.advanceTimersByTime(CEREMONY_DEBOUNCE_MS); });
+    expect(emergency.triggerCeremony).not.toHaveBeenCalled();
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+test('the debounce opens the ceremony when no unlock arrives within the window', () => {
+  vi.useFakeTimers();
+  try {
+    render(<IdentityProvider><Probe onReady={() => {}} /></IdentityProvider>);
+    emit({ matched: true, userId: 'kc', finger: 'right-thumb', authz: { admin: true, locks: ['emergency'] } });
+    expect(emergency.triggerCeremony).not.toHaveBeenCalled();
+    act(() => { vi.advanceTimersByTime(CEREMONY_DEBOUNCE_MS); });
     expect(emergency.triggerCeremony).toHaveBeenCalledTimes(1);
   } finally {
     vi.useRealTimers();
