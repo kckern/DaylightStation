@@ -1,27 +1,59 @@
 /**
  * HttpJamCorderSource — talks to the JamCorder device over HTTP.
- *   list:     POST http://<host>/api/files/list/detailed  {filepath}
- *   download: GET  http://<host>/sdcard/<listPath>
- * Layer: ADAPTER (1_adapters/jamcorder). Uses the injected HTTP client — the
- * composition root injects `axios` into harvesters (auto-JSON + auto-gzip;
- * throws on non-2xx / network error, surfaced to the use case).
+ *   list:     POST http://<host>/api/files/list/detailed  {filepath}  (injected axios)
+ *   download: GET  http://<host>/sdcard/<listPath>                    (node:http, insecure parser)
+ *
+ * The LIST goes through the injected HTTP client (the composition root injects
+ * `axios` into harvesters — auto-JSON + auto-gzip; throws on non-2xx/network,
+ * surfaced to the use case). The DOWNLOAD cannot: the device serves `.mid` files
+ * with BOTH `Content-Length` and `Transfer-Encoding` headers (non-compliant), so
+ * Node's strict HTTP parser (and axios/undici) rejects the response. We fetch the
+ * bytes with node:http + `insecureHTTPParser: true` — a device-compat concern the
+ * adapter legitimately owns. Injectable (`binaryGet`) so it stays unit-testable.
+ *
+ * Layer: ADAPTER (1_adapters/jamcorder).
  * @module adapters/jamcorder/HttpJamCorderSource
  */
+import http from 'node:http';
 import { IJamCorderSource } from '#apps/jamcorder/ports/IJamCorderSource.mjs';
 
 const ROOT = '/JAMC';
 const MAX_DEPTH = 5; // JAMC → year → session → file is 3; cap generously
+const DOWNLOAD_TIMEOUT_MS = 30000;
+
+/**
+ * GET binary bytes tolerating the device's non-compliant response headers.
+ * @param {string} url @param {{timeoutMs?:number}} [opts] @returns {Promise<Buffer>}
+ */
+export function httpGetBufferInsecure(url, { timeoutMs = DOWNLOAD_TIMEOUT_MS } = {}) {
+  return new Promise((resolve, reject) => {
+    const req = http.get(url, { insecureHTTPParser: true }, (res) => {
+      if (res.statusCode < 200 || res.statusCode >= 300) {
+        res.resume();
+        reject(new Error(`JamCorder download failed: HTTP ${res.statusCode}`));
+        return;
+      }
+      const chunks = [];
+      res.on('data', (c) => chunks.push(c));
+      res.on('end', () => resolve(Buffer.concat(chunks)));
+      res.on('error', reject);
+    });
+    req.on('error', reject);
+    req.setTimeout(timeoutMs, () => req.destroy(new Error('JamCorder download timeout')));
+  });
+}
 
 export class HttpJamCorderSource extends IJamCorderSource {
-  #httpClient; #host; #logger;
+  #httpClient; #host; #logger; #binaryGet;
 
-  constructor({ httpClient, host, logger = console }) {
+  constructor({ httpClient, host, logger = console, binaryGet = httpGetBufferInsecure }) {
     super();
     if (!httpClient) throw new Error('HttpJamCorderSource requires httpClient');
     if (!host) throw new Error('HttpJamCorderSource requires host');
     this.#httpClient = httpClient;
     this.#host = host;
     this.#logger = logger;
+    this.#binaryGet = binaryGet;
   }
 
   async listRecordings() {
@@ -31,8 +63,7 @@ export class HttpJamCorderSource extends IJamCorderSource {
   }
 
   async download(ref) {
-    const resp = await this.#httpClient.get(`http://${this.#host}${ref.downloadPath}`, { responseType: 'arraybuffer' });
-    return Buffer.from(resp.data);
+    return this.#binaryGet(`http://${this.#host}${ref.downloadPath}`);
   }
 
   async #walk(dirPath, depth, out) {

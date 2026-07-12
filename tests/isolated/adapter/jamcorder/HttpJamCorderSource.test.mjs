@@ -37,11 +37,11 @@ describe('HttpJamCorderSource', () => {
     ]);
   });
 
-  it('downloads via the /sdcard URL (arraybuffer) and returns the buffer', async () => {
-    const http = fakeHttp();
-    const src = new HttpJamCorderSource({ httpClient: http, host: '10.0.0.244', logger: silent });
+  it('downloads via the /sdcard URL using the injected binaryGet (insecure-parser seam)', async () => {
+    const binaryGet = vi.fn(async (url) => Buffer.from('MID:' + url));
+    const src = new HttpJamCorderSource({ httpClient: fakeHttp(), host: '10.0.0.244', logger: silent, binaryGet });
     const buf = await src.download({ listPath: '/JAMC/2026/s1/A.mid', downloadPath: '/sdcard/JAMC/2026/s1/A.mid' });
-    expect(http.get).toHaveBeenCalledWith('http://10.0.0.244/sdcard/JAMC/2026/s1/A.mid', { responseType: 'arraybuffer' });
+    expect(binaryGet).toHaveBeenCalledWith('http://10.0.0.244/sdcard/JAMC/2026/s1/A.mid');
     expect(buf.toString()).toBe('MID:http://10.0.0.244/sdcard/JAMC/2026/s1/A.mid');
   });
 
