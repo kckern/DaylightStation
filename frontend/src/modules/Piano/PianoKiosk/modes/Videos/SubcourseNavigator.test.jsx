@@ -81,6 +81,8 @@ describe('SubcourseNavigator (lane routing)', () => {
   it('selecting the repertoire season renders RepertoireBrowser, not course cards', () => {
     render(<SubcourseNavigator course={{ id: '676490' }} playable={withLanes} onPlay={vi.fn()} />);
     fireEvent.click(screen.getByTitle('Song Book'));
-    expect(screen.getByPlaceholderText('Search songs…')).toBeTruthy();
+    // RepertoireBrowser is facet-only (no search box) — its always-present song
+    // count is the stable tell that it rendered in place of the course cards.
+    expect(document.querySelector('.psc-repertoire__count')).toBeTruthy();
   });
 });

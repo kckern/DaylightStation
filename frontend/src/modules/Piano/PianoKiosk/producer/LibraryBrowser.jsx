@@ -309,7 +309,8 @@ export function LibraryBrowser({
   const [genre, setGenre] = useState(null);
   const [feel, setFeel] = useState(null);
   const [quality, setQuality] = useState('best');
-  const [text, setText] = useState('');
+  // No text input in the kiosk — the library filters by facet only, never text.
+  const text = '';
   const [genresExpanded, setGenresExpanded] = useState(false);
   const [gateLifted, setGateLifted] = useState(false);
 
@@ -432,7 +433,7 @@ export function LibraryBrowser({
   }, [logger, gateLifted]);
 
   const clearFilters = useCallback(() => {
-    setKind(null); setGenre(null); setFeel(null); setText(''); setQuality('best');
+    setKind(null); setGenre(null); setFeel(null); setQuality('best');
   }, []);
 
   // 'Prefabs' cards: curated STACKS only (songs live in the SongPicker —
@@ -464,12 +465,6 @@ export function LibraryBrowser({
   return (
     <div className="piano-producer-mode__overlay" role="dialog" aria-label="loop library">
       <div className="piano-producer-mode__overlay-top">
-        <input
-          className="piano-producer-mode__search"
-          placeholder="Search loops (title, tags, artist…)"
-          value={text}
-          onChange={(e) => setText(e.target.value)}
-        />
         <button type="button" className="piano-producer-mode__overlay-close" aria-label="close library" onClick={onClose}>
           ✕
         </button>

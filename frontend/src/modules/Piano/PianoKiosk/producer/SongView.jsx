@@ -43,7 +43,7 @@ import getLogger from '../../../../lib/logging/Logger.js';
 import { MaterialGlyph, seedFor } from './MaterialGlyph.jsx';
 import { STRUCTURE_TEMPLATES } from './structureTemplates.js';
 import {
-  setRepeats, moveEntry, removeEntry, setSectionLength, renameSection,
+  setRepeats, moveEntry, removeEntry, setSectionLength,
   deleteSection, cloneSection, addEntry, addSection, sectionGlyphSeeds,
 } from './draftReducer.js';
 import './SongView.scss';
@@ -114,8 +114,8 @@ function nextSectionIdOf(sections) {
  * @param {number} [props.activeBlockIndex] - from the transport's onBlock (−1 idle)
  * @param {number|null} [props.pendingBlockIndex] - queued jump target block
  * @param {(blockIndex:number, mode:'repeat'|'bar') => void} [props.onQueueJump]
- * @param {(title:string) => void} [props.onSaveSong] - crystallize + persist (Task 8.2);
- *   absent → the footer keeps the disabled "coming soon" stub
+ * @param {() => void} [props.onSaveSong] - crystallize + persist (Task 8.2) under a
+ *   default timestamped name; absent → the footer keeps the disabled "coming soon" stub
  * @param {() => void} [props.onOpenSongPicker] - open the saved-song picker
  * @param {(sectionId:string) => void} [props.onKeepSection] - keep a section to the Crate
  */
@@ -136,7 +136,6 @@ export function SongView({
   onKeepSection,
 }) {
   const [openIdx, setOpenIdx] = useState(null); // arrangement entry whose sheet is open
-  const [saveTitle, setSaveTitle] = useState(''); // inline title for Save (optional)
   const [deleteArmed, setDeleteArmed] = useState(false);
   const disarmTimerRef = useRef(null);
   const holdRef = useRef({ timer: null, fired: false });
@@ -283,11 +282,6 @@ export function SongView({
     dispatch(setSectionLength(section.id, lengthBars));
   };
 
-  const commitRename = (section, value) => {
-    logger().info('piano.producer.section-rename', { sectionId: section.id, name: value });
-    dispatch(renameSection(section.id, value));
-  };
-
   const openEntry = openIdx != null ? arrangement[openIdx] : null;
   const openSection = openEntry ? sectionsById.get(openEntry.sectionId) : null;
   const openFilled = openSection ? openSection.stack.length > 0 : false;
@@ -387,19 +381,7 @@ export function SongView({
 
       {openSection && openFilled && (
         <div className="piano-song-view__sheet" role="dialog" aria-label={`${openSection.name} actions`}>
-          <input
-            key={`${openSection.id}:${openSection.name}`}
-            className="piano-song-view__rename"
-            aria-label="section name"
-            defaultValue={openSection.name}
-            onBlur={(e) => commitRename(openSection, e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') {
-                commitRename(openSection, e.target.value);
-                e.target.blur();
-              }
-            }}
-          />
+          <span className="piano-song-view__rename">{openSection.name}</span>
           <button
             type="button"
             onClick={() => { onOpenSection(openSection.id); setOpenIdx(null); }}
@@ -463,17 +445,10 @@ export function SongView({
       <div className="piano-song-view__footer">
         {onSaveSong ? (
           <>
-            <input
-              className="piano-song-view__save-title"
-              aria-label="song title"
-              placeholder="Title (optional)"
-              value={saveTitle}
-              onChange={(e) => setSaveTitle(e.target.value)}
-            />
             <button
               type="button"
               className="piano-song-view__save"
-              onClick={() => { onSaveSong(saveTitle.trim()); setSaveTitle(''); }}
+              onClick={() => onSaveSong()}
             >Save song</button>
             {onOpenSongPicker && (
               <button type="button" className="piano-song-view__load" onClick={onOpenSongPicker}>

@@ -58,15 +58,6 @@ describe('RepertoireBrowser (song-first)', () => {
     expect(screen.getByText('1 song')).toBeInTheDocument(); // challenge not counted as a song
   });
 
-  it('search narrows the song catalog', () => {
-    render(<RepertoireBrowser season={season([
-      ep(1, 'Misty', 'tutorial'), ep(2, 'Autumn Leaves', 'tutorial'),
-    ])} onPlay={() => {}} />);
-    fireEvent.change(screen.getByPlaceholderText(/search/i), { target: { value: 'mist' } });
-    expect(screen.getByText('Misty')).toBeInTheDocument();
-    expect(screen.queryByText('Autumn Leaves')).toBeNull();
-  });
-
   it('facet chips filter the catalog', () => {
     render(<RepertoireBrowser season={season([
       ep(1, 'Misty', 'tutorial'),

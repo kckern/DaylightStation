@@ -135,20 +135,18 @@ describe('ScorePlayer — Learn mode chord tolerance (audit B2)', () => {
 
 describe('ScorePlayer — stale-layout overlay guard (Task 9)', () => {
   it('hides the cursor while the reported layout scale is stale, shows it once it matches', async () => {
-    // The renderer reports a layout whose scale (1.3) does NOT match the player's
+    // The renderer reports a layout whose scale (1.25) does NOT match the player's
     // current scale (1) — a pre-zoom (deferred-extraction) layout. Overlays must
     // stay hidden until onLayout catches up.
-    h.layoutExtras = { scale: 1.3 };
+    h.layoutExtras = { scale: 1.25 };
     renderPlayer();
     await act(async () => {});
     expect(document.querySelector('.piano-score-cursor')).toBeNull(); // stale → hidden
 
-    // Move the Size slider to 1.3 → the mock re-fires onLayout with scale 1.3,
-    // which now MATCHES the player's scale → layout is fresh → cursor appears.
-    fireEvent.click(screen.getByRole('button', { name: /size/i }));
-    const slider = screen.getByRole('slider', { name: /size/i });
-    fireEvent.change(slider, { target: { value: '1.3' } });
-    fireEvent.mouseUp(slider);
+    // Tap the Size stepper's 125% step → the mock re-fires onLayout with scale
+    // 1.25, which now MATCHES the player's scale → layout is fresh → cursor appears.
+    fireEvent.click(screen.getByRole('button', { name: /^size/i }));
+    fireEvent.click(screen.getByRole('button', { name: '125%' }));
     await act(async () => {});
     expect(document.querySelector('.piano-score-cursor')).not.toBeNull(); // fresh → shown
   });
@@ -314,10 +312,8 @@ describe('ScorePlayer — Listen mode', () => {
     screen.getByText('Listen').click();
     await act(async () => {});
     // Half speed (0.5×) → each step takes 2000ms.
-    fireEvent.click(screen.getByRole('button', { name: /tempo/i }));
-    const slider = screen.getByRole('slider', { name: /tempo/i });
-    fireEvent.change(slider, { target: { value: '0.5' } });
-    fireEvent.mouseUp(slider);
+    fireEvent.click(screen.getByRole('button', { name: /^tempo/i }));
+    fireEvent.click(screen.getByRole('button', { name: '50%' }));
     await act(async () => {});
     screen.getByText('▶').click();
     await act(async () => {});
@@ -352,11 +348,9 @@ describe('ScorePlayer — Listen mode', () => {
     screen.getByText('RH: Play').click(); // RH → You
     await act(async () => {});
     expect(screen.getByText('RH: You')).toBeTruthy();
-    // Zoom via the Size slider → re-engrave (fresh layout.notes identity).
-    fireEvent.click(screen.getByRole('button', { name: /size/i }));
-    const slider = screen.getByRole('slider', { name: /size/i });
-    fireEvent.change(slider, { target: { value: '1.3' } });
-    fireEvent.mouseUp(slider);
+    // Zoom via the Size stepper → re-engrave (fresh layout.notes identity).
+    fireEvent.click(screen.getByRole('button', { name: /^size/i }));
+    fireEvent.click(screen.getByRole('button', { name: '125%' }));
     await act(async () => {});
     expect(screen.getByText('RH: You')).toBeTruthy(); // role preserved, not reset to Play
   });
