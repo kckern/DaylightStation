@@ -16,6 +16,20 @@ const logger = () => (_logger ??= getLogger().child({ component: 'identity-manag
 
 const IDENTITY_TOPIC = 'fitness.identity.detected';
 
+// A scan that lands within this window of an unlock/identify modal being active
+// is leftover unlock context (e.g. a game-unlock admin fingerprint arriving a beat
+// after its modal closed), NOT the emergency gesture — don't open the ceremony.
+export const UNLOCK_COOLDOWN_MS = 4000;
+
+// An admin scan can arrive a beat BEFORE its unlock modal registers (finger
+// already down as the user taps a game). Delay opening the emergency ceremony
+// this long; if a registerUnlock lands in the window, the scan was an unlock,
+// not an emergency. The value is a heuristic — a scan typically precedes its
+// tap-handler by well under this — and the >window case (a slow tap after the
+// ceremony already opened) is handled by the registerUnlock dismiss below, so a
+// late unlock still backs the ceremony out.
+export const CEREMONY_DEBOUNCE_MS = 400;
+
 // Ported from useUnlock.js (retired in a later task). Both sound path and volume
 // are config-driven (fitness.yml → unlock.{sound,volume}); these are fallbacks.
 const DEFAULT_UNLOCK_SOUND = 'apps/fitness/ux/unlock.mp3';
@@ -44,6 +58,12 @@ export function IdentityProvider({ children }) {
 
   // Refs read inside the (stable) WS handler to avoid stale closures.
   const activeLockRef = useRef(null);
+  // Timestamp of the most recent unlock/identify modal activity. A scan within
+  // UNLOCK_COOLDOWN_MS of this is leftover unlock context, not the emergency gesture.
+  const lastUnlockActivityRef = useRef(0);
+  // Armed-but-not-yet-fired ceremony open (debounced by CEREMONY_DEBOUNCE_MS so an
+  // imminent unlock can cancel it). Null when nothing is armed.
+  const pendingCeremonyTimerRef = useRef(null);
   // identifyOnly: resolve on ANY recognized finger (no per-lock authz check).
   // Used by surfaces that only need to KNOW who scanned — e.g. the emulator
   // save-game identity prompt — rather than gate on a permission.
@@ -101,6 +121,7 @@ export function IdentityProvider({ children }) {
 
     // (1) A modal is open: only the active lock's authorization matters.
     if (lock) {
+      lastUnlockActivityRef.current = Date.now();
       const recognized = msg.matched === true;
       const authorized = recognized
         && (identifyOnlyRef.current
@@ -157,8 +178,24 @@ export function IdentityProvider({ children }) {
     if (!msg.matched || !msg.authz?.admin) return;
     const phase = emergencyRef.current?.phase;
     if (phase === PHASE_NORMAL) {
-      logger().info('emergency-ceremony-start', { userId: msg.userId ?? null });
-      emergencyRef.current?.triggerCeremony?.();
+      if (Date.now() - lastUnlockActivityRef.current < UNLOCK_COOLDOWN_MS) {
+        logger().info('emergency-ceremony-suppressed', { userId: msg.userId ?? null, reason: 'unlock-cooldown' });
+        return;
+      }
+      if (pendingCeremonyTimerRef.current) return; // already armed; don't stack
+      const armedUserId = msg.userId ?? null;
+      logger().info('emergency-ceremony-armed', { userId: armedUserId, debounceMs: CEREMONY_DEBOUNCE_MS });
+      pendingCeremonyTimerRef.current = setTimeout(() => {
+        pendingCeremonyTimerRef.current = null;
+        // A modal opened during the debounce → the scan was an unlock, not an emergency.
+        if (activeLockRef.current) {
+          logger().info('emergency-ceremony-cancelled', { userId: armedUserId, reason: 'unlock-opened' });
+          return;
+        }
+        if (emergencyRef.current?.phase !== PHASE_NORMAL) return;
+        logger().info('emergency-ceremony-start', { userId: armedUserId });
+        emergencyRef.current?.triggerCeremony?.();
+      }, CEREMONY_DEBOUNCE_MS);
     } else if (phase === PHASE_TRIGGERING) {
       logger().info('emergency-ceremony-abort', { userId: msg.userId ?? null });
       emergencyRef.current?.abort?.();
@@ -179,11 +216,30 @@ export function IdentityProvider({ children }) {
     return () => { if (typeof unsub === 'function') unsub(); };
   }, [handleIdentity]);
 
+  // Clear any armed ceremony timer on unmount to avoid leaks/act warnings.
+  useEffect(() => () => {
+    if (pendingCeremonyTimerRef.current) clearTimeout(pendingCeremonyTimerRef.current);
+  }, []);
+
   const registerUnlock = useCallback((lock, { identifyOnly = false, adminOnly = false } = {}) => {
     // Called from a user gesture in consumers — prime the cue element now so the
     // async success chime can play later.
     primeCueAudio('unlock-request');
     activeLockRef.current = lock;
+    lastUnlockActivityRef.current = Date.now();
+    // A modal is opening → the earlier admin scan was for this unlock, not an
+    // emergency. Cancel any armed (debounced) ceremony open.
+    if (pendingCeremonyTimerRef.current) {
+      clearTimeout(pendingCeremonyTimerRef.current);
+      pendingCeremonyTimerRef.current = null;
+      logger().info('emergency-ceremony-cancelled', { reason: 'unlock-registered' });
+    }
+    // A modal is opening. If a ceremony already went up (scan landed >debounce before
+    // this tap's handler ran), the scan was for THIS unlock — back the ceremony out.
+    if (emergencyRef.current?.phase === PHASE_TRIGGERING) {
+      logger().info('emergency-ceremony-dismissed', { reason: 'unlock-registered' });
+      emergencyRef.current?.dismissCeremony?.();
+    }
     identifyOnlyRef.current = !!identifyOnly;
     adminOnlyRef.current = !!adminOnly;
     pendingGrantRef.current = null; // fresh attempt — no decided grant yet
@@ -209,6 +265,7 @@ export function IdentityProvider({ children }) {
   );
 
   const clearUnlock = useCallback(() => {
+    lastUnlockActivityRef.current = Date.now();
     activeLockRef.current = null;
     identifyOnlyRef.current = false;
     adminOnlyRef.current = false;
