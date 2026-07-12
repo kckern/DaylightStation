@@ -378,4 +378,37 @@ describe('decideCommit', () => {
     // Only row, and a container → falls through to open.
     expect(decideCommit(base({ search: 'plex:500', results: [idShow] }))).toEqual({ action: 'open' });
   });
+
+  // "Never deny manual entry": a content-id-like string the user typed (a
+  // specific id / path / param) commits as the literal raw value on Enter even
+  // when partial-match search results exist — the raw entry must never be denied.
+  it('Enter, id-like query with a path suffix, partial results present → literal raw', () => {
+    // e.g. files:clips/mirror.mp4 while the "Clips" folder rows are on screen —
+    // none exactly matches the typed path, so the raw string commits.
+    const partial = [{ id: 'files:clips/mothers-day', type: 'audio', matchReason: 'keyword' }];
+    expect(decideCommit(base({ search: 'files:clips/mirror.mp4', results: partial })))
+      .toEqual({ action: 'literal', value: 'files:clips/mirror.mp4' });
+  });
+
+  it('Enter, app id with an unexpected param, partial results present → literal raw', () => {
+    // e.g. app:family-selector/mom while family-selector (no param) is a result.
+    const partial = [{ id: 'app:family-selector', type: 'app', matchReason: 'keyword' }];
+    expect(decideCommit(base({ search: 'app:family-selector/mom', results: partial })))
+      .toEqual({ action: 'literal', value: 'app:family-selector/mom' });
+  });
+
+  it('Enter, id-like query that EXACTLY matches a leaf result → select (richer pick), not literal', () => {
+    const leaf = { id: 'plex:642197', type: 'movie' };
+    expect(decideCommit(base({ search: 'plex:642197', results: [leaf] })))
+      .toEqual({ action: 'select', item: leaf });
+  });
+
+  it('Enter, id-like query still loading (not settled) → still commits literal (never deny)', () => {
+    // Not gated on settle: Enter on an explicit id/path must never feel dead
+    // (e.g. after drilling in browse mode the current text was never searched).
+    // An exact leaf already in results still wins via 3a; the title back-fills.
+    const partial = [{ id: 'files:clips/mothers-day', type: 'audio' }];
+    const out = decideCommit(base({ search: 'files:clips/mirror.mp4', results: partial, searchSettled: false }));
+    expect(out).toEqual({ action: 'literal', value: 'files:clips/mirror.mp4' });
+  });
 });

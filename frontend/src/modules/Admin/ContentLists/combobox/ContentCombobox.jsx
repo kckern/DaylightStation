@@ -561,7 +561,12 @@ export function ContentCombobox({
         <Text size="xs" c="dimmed" mt={2} truncate data-testid="combobox-resolved-title">{resolvedTitle}</Text>
       )}
 
-      <Combobox.Dropdown>
+      {/* className flows to the PORTALED dropdown element. Mantine v7 <Text>
+          inherits color, and the portal renders at document.body — outside the
+          admin `.admin` color scope — so uncolored header/crumb Text would
+          inherit the body default (dark) and read dark-on-dark. Pin a bright
+          base color here; dimmed/white-on-highlight states still override. */}
+      <Combobox.Dropdown className="content-combobox-dropdown">
         {/* Orientation header (BROWSE mode): the committed value isn't among the
             rendered siblings, so nothing is highlighted — surface it here. */}
         {isBrowse && value && !items.some((it) => normalizeValue(it.id) === normalizedValue) && (
