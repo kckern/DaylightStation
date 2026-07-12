@@ -1,2 +1,0 @@
-evdev>=1.7.0
-paho-mqtt>=2.0.0
