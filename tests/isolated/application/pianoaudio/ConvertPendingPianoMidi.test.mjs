@@ -8,6 +8,28 @@ function fakeLibrary(pending) {
 }
 
 describe('ConvertPendingPianoMidi', () => {
+  it('converts all pending with bounded concurrency (runs overlap, count correct)', async () => {
+    const pending = Array.from({ length: 5 }, (_, i) => ({ midiPath: `/src/${i}.mid`, mp3Path: `/dst/${i}.mp3` }));
+    let inFlight = 0;
+    let maxInFlight = 0;
+    const converter = {
+      convert: vi.fn(async () => {
+        inFlight += 1;
+        maxInFlight = Math.max(maxInFlight, inFlight);
+        await new Promise((r) => setTimeout(r, 5));
+        inFlight -= 1;
+      }),
+    };
+    const uc = new ConvertPendingPianoMidi({ library: fakeLibrary(pending), converter, logger: silent, concurrency: 3 });
+
+    const result = await uc.execute();
+
+    expect(converter.convert).toHaveBeenCalledTimes(5);
+    expect(result).toEqual({ count: 5, status: 'success' });
+    expect(maxInFlight).toBeGreaterThan(1); // genuinely parallel
+    expect(maxInFlight).toBeLessThanOrEqual(3); // but bounded by concurrency
+  });
+
   it('converts every pending ref and counts successes', async () => {
     const pending = [
       { midiPath: '/src/a.mid', mp3Path: '/dst/a.mp3' },
