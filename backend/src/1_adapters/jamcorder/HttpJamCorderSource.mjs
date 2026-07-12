@@ -2,7 +2,9 @@
  * HttpJamCorderSource — talks to the JamCorder device over HTTP.
  *   list:     POST http://<host>/api/files/list/detailed  {filepath}
  *   download: GET  http://<host>/sdcard/<listPath>
- * Layer: ADAPTER (1_adapters/jamcorder). Injected HttpClient.
+ * Layer: ADAPTER (1_adapters/jamcorder). Uses the injected HTTP client — the
+ * composition root injects `axios` into harvesters (auto-JSON + auto-gzip;
+ * throws on non-2xx / network error, surfaced to the use case).
  * @module adapters/jamcorder/HttpJamCorderSource
  */
 import { IJamCorderSource } from '#apps/jamcorder/ports/IJamCorderSource.mjs';
@@ -29,7 +31,8 @@ export class HttpJamCorderSource extends IJamCorderSource {
   }
 
   async download(ref) {
-    return this.#httpClient.downloadBuffer(`http://${this.#host}${ref.downloadPath}`);
+    const resp = await this.#httpClient.get(`http://${this.#host}${ref.downloadPath}`, { responseType: 'arraybuffer' });
+    return Buffer.from(resp.data);
   }
 
   async #walk(dirPath, depth, out) {
@@ -48,15 +51,19 @@ export class HttpJamCorderSource extends IJamCorderSource {
   }
 
   async #listDir(filepath) {
-    const resp = await this.#httpClient.requestRaw(
-      'POST',
+    // axios: throws on non-2xx / network error (surfaced to the use case as an
+    // error harvest); auto-parses JSON and auto-decompresses the gzipped body.
+    const resp = await this.#httpClient.post(
       `http://${this.#host}/api/files/list/detailed`,
-      { body: { filepath }, responseType: 'json' },
+      { filepath },
+      { responseType: 'json' },
     );
-    if (!resp || !resp.ok) {
-      throw new Error(`JamCorder list failed for ${filepath}: HTTP ${resp?.status}`);
+    const files = resp?.data?.files;
+    if (!Array.isArray(files)) {
+      this.#logger.warn?.('jamcorder.list.unexpected', { filepath, status: resp?.status });
+      return [];
     }
-    return Array.isArray(resp.data?.files) ? resp.data.files : [];
+    return files;
   }
 }
 
