@@ -9,7 +9,7 @@ function fakeLibrary(pending) {
 
 describe('ConvertPendingPianoMidi', () => {
   it('converts all pending with bounded concurrency (runs overlap, count correct)', async () => {
-    const pending = Array.from({ length: 5 }, (_, i) => ({ midiPath: `/src/${i}.mid`, mp3Path: `/dst/${i}.mp3` }));
+    const pending = Array.from({ length: 5 }, (_, i) => ({ midiPath: `/src/${i}.mid`, outputPath: `/dst/${i}.mp3` }));
     let inFlight = 0;
     let maxInFlight = 0;
     const converter = {
@@ -32,8 +32,8 @@ describe('ConvertPendingPianoMidi', () => {
 
   it('converts every pending ref and counts successes', async () => {
     const pending = [
-      { midiPath: '/src/a.mid', mp3Path: '/dst/a.mp3' },
-      { midiPath: '/src/b.mid', mp3Path: '/dst/b.mp3' },
+      { midiPath: '/src/a.mid', outputPath: '/dst/a.mp3' },
+      { midiPath: '/src/b.mid', outputPath: '/dst/b.mp3' },
     ];
     const converter = { convert: vi.fn(async () => {}) };
     const uc = new ConvertPendingPianoMidi({ library: fakeLibrary(pending), converter, logger: silent });
@@ -48,9 +48,9 @@ describe('ConvertPendingPianoMidi', () => {
 
   it('skips a per-file failure without aborting the run', async () => {
     const pending = [
-      { midiPath: '/src/a.mid', mp3Path: '/dst/a.mp3' },
-      { midiPath: '/src/b.mid', mp3Path: '/dst/b.mp3' },
-      { midiPath: '/src/c.mid', mp3Path: '/dst/c.mp3' },
+      { midiPath: '/src/a.mid', outputPath: '/dst/a.mp3' },
+      { midiPath: '/src/b.mid', outputPath: '/dst/b.mp3' },
+      { midiPath: '/src/c.mid', outputPath: '/dst/c.mp3' },
     ];
     const converter = {
       convert: vi.fn(async (midiPath) => {
@@ -87,7 +87,7 @@ describe('ConvertPendingPianoMidi', () => {
   it('skips a concurrent run while one is already in flight', async () => {
     let release;
     const gate = new Promise((r) => { release = r; });
-    const pending = [{ midiPath: '/src/a.mid', mp3Path: '/dst/a.mp3' }];
+    const pending = [{ midiPath: '/src/a.mid', outputPath: '/dst/a.mp3' }];
     const converter = { convert: vi.fn(async () => { await gate; }) };
     const uc = new ConvertPendingPianoMidi({ library: fakeLibrary(pending), converter, logger: silent });
 

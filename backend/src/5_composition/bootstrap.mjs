@@ -332,7 +332,8 @@ import {
   YamlAuthDatastore,
   createInfinityHarvesters,
   JamCorderHarvester,
-  PianoMp3Harvester
+  PianoMp3Harvester,
+  PianoImageHarvester
 } from '#adapters/harvester/index.mjs';
 
 // JamCorder adapters + use case (MIDI recorder harvest)
@@ -343,7 +344,9 @@ import { HarvestJamCorderRecordings } from '#apps/jamcorder/HarvestJamCorderReco
 // Piano MIDI→MP3 adapters + use case (daily render of history/piano into media/audio/piano)
 import { FsMidiLibrary } from '#adapters/pianoaudio/FsMidiLibrary.mjs';
 import { FluidSynthMp3Converter } from '#adapters/pianoaudio/FluidSynthMp3Converter.mjs';
+import { MidiPngConverter } from '#adapters/pianoaudio/MidiPngConverter.mjs';
 import { ConvertPendingPianoMidi } from '#apps/pianoaudio/ConvertPendingPianoMidi.mjs';
+import { renderPianoRollPng } from '#rendering/pianoaudio/pianoRollImage.mjs';
 
 // RSS Parser for Goodreads/Letterboxd harvesters
 import RSSParser from 'rss-parser';
@@ -3515,6 +3518,21 @@ export function createHarvesterServices(config) {
     const converter = new FluidSynthMp3Converter({ soundfontPath, scratchDir: '/tmp/pianoaudio', logger });
     const convertUseCase = new ConvertPendingPianoMidi({ library, converter, logger, concurrency });
     return new PianoMp3Harvester({ convertUseCase, logger });
+  });
+
+  // Piano-roll PNG — render a wrapped piano-roll image beside every .mid (same
+  // junk guard; reuses the shared pending/convert use case with a png output).
+  registerHarvester('piano-png', () => {
+    const sourceDir = configService.getHouseholdPath('history/piano');
+    const destDir = `${configService.getMediaDir()}/audio/piano`;
+    const pianoAudioCfg = configService?.getHouseholdAppConfig?.(null, 'pianoaudio') || {};
+    const junkMinSeconds = pianoAudioCfg.junkMinSeconds ?? 1800;
+    const junkMinNotes = pianoAudioCfg.junkMinNotes ?? 200;
+    const concurrency = pianoAudioCfg.pngConcurrency ?? 12; // canvas-only → cheap, more parallelism
+    const library = new FsMidiLibrary({ sourceDir, destDir, outputExt: 'png', logger, junkMinSeconds, junkMinNotes });
+    const converter = new MidiPngConverter({ renderPng: renderPianoRollPng, logger });
+    const renderUseCase = new ConvertPendingPianoMidi({ library, converter, logger, concurrency });
+    return new PianoImageHarvester({ renderUseCase, logger });
   });
 
   // Create job executor for scheduler integration

@@ -39,11 +39,11 @@ describe('FsMidiLibrary.listPending', () => {
     expect(pending).toEqual([
       {
         midiPath: path.join(sourceDir, 'jamcorder/2026/2026-01/s.mid'),
-        mp3Path: path.join(destDir, 'jamcorder/2026/2026-01/s.mp3'),
+        outputPath: path.join(destDir, 'jamcorder/2026/2026-01/s.mp3'),
       },
       {
         midiPath: path.join(sourceDir, 'kckern/2026-01-02/take1.mid'),
-        mp3Path: path.join(destDir, 'kckern/2026-01-02/take1.mp3'),
+        outputPath: path.join(destDir, 'kckern/2026-01-02/take1.mp3'),
       },
     ]);
   });
@@ -74,8 +74,8 @@ describe('FsMidiLibrary.listPending', () => {
 
     // newest-first by mtime: long-session (6M) then short (2M); junk excluded
     expect(pending).toEqual([
-      { midiPath: path.join(sourceDir, 'ok/long-session.mid'), mp3Path: path.join(destDir, 'ok/long-session.mp3') },
-      { midiPath: path.join(sourceDir, 'ok/short.mid'), mp3Path: path.join(destDir, 'ok/short.mp3') },
+      { midiPath: path.join(sourceDir, 'ok/long-session.mid'), outputPath: path.join(destDir, 'ok/long-session.mp3') },
+      { midiPath: path.join(sourceDir, 'ok/short.mid'), outputPath: path.join(destDir, 'ok/short.mp3') },
     ]);
   });
 
@@ -90,7 +90,7 @@ describe('FsMidiLibrary.listPending', () => {
     const pending = await lib.listPending();
 
     expect(pending).toEqual([
-      { midiPath: path.join(sourceDir, 'weird/unparseable.mid'), mp3Path: path.join(destDir, 'weird/unparseable.mp3') },
+      { midiPath: path.join(sourceDir, 'weird/unparseable.mid'), outputPath: path.join(destDir, 'weird/unparseable.mp3') },
     ]);
   });
 });

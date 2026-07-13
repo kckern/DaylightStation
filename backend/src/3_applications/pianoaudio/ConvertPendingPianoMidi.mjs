@@ -46,9 +46,9 @@ export class ConvertPendingPianoMidi {
           if (i >= pending.length) return;
           const ref = pending[i];
           try {
-            await this.#converter.convert(ref.midiPath, ref.mp3Path);
+            await this.#converter.convert(ref.midiPath, ref.outputPath);
             converted += 1;
-            this.#logger.info?.('pianoaudio.converted', { midiPath: ref.midiPath, mp3Path: ref.mp3Path });
+            this.#logger.info?.('pianoaudio.converted', { midiPath: ref.midiPath, outputPath: ref.outputPath });
           } catch (err) {
             this.#logger.warn?.('pianoaudio.convert.failed', { midiPath: ref.midiPath, error: err.message });
           }
