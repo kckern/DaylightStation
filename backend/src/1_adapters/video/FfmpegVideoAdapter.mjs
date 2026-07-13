@@ -17,6 +17,24 @@ export function metadataArgs(metadata) {
 }
 
 /**
+ * Build the ffmpeg args for `encodeSequence`. Extracted (like `metadataArgs`) so
+ * the exact flag set — preset, faststart placement, default CRF — is unit
+ * testable without spawning a real ffmpeg process.
+ */
+export function buildEncodeArgs({ framesDir, pattern, fps, outputPath, crf = 26, preset = 'medium', metadata = null }) {
+  return [
+    '-y',
+    '-framerate', String(fps),
+    '-i', path.join(framesDir, pattern),
+    '-c:v', 'libx264', '-preset', preset, '-pix_fmt', 'yuv420p', '-crf', String(crf),
+    '-movflags', '+faststart',
+    '-an',
+    ...metadataArgs(metadata),
+    outputPath
+  ];
+}
+
+/**
  * ffmpeg-backed implementation of IVideoEncoder. Stitches a frame sequence into
  * a silent MP4. (Player frames are captured client-side in realtime, so no
  * source-frame extraction is needed here.) Assumes `ffmpeg` is on $PATH.
@@ -31,20 +49,12 @@ export class FfmpegVideoAdapter extends IVideoEncoder {
     this.#timeoutMs = timeoutMs;
   }
 
-  /** @param {{framesDir:string, pattern:string, fps:number, outputPath:string, crf?:number, metadata?:Record<string,string>}} params */
-  async encodeSequence({ framesDir, pattern, fps, outputPath, crf = 20, metadata = null } = {}) {
+  /** @param {{framesDir:string, pattern:string, fps:number, outputPath:string, crf?:number, preset?:string, metadata?:Record<string,string>}} params */
+  async encodeSequence({ framesDir, pattern, fps, outputPath, crf = 26, preset = 'medium', metadata = null } = {}) {
     if (!framesDir || !pattern || !outputPath) {
       throw new InfrastructureError('encodeSequence missing args', { code: 'MISSING_ARGS' });
     }
-    await this.#run([
-      '-y',
-      '-framerate', String(fps),
-      '-i', path.join(framesDir, pattern),
-      '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-crf', String(crf),
-      '-an',
-      ...metadataArgs(metadata),
-      outputPath
-    ], { capture: false });
+    await this.#run(buildEncodeArgs({ framesDir, pattern, fps, outputPath, crf, preset, metadata }), { capture: false });
     return { outputPath };
   }
 

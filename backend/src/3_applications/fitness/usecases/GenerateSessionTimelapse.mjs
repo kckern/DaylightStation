@@ -7,6 +7,12 @@ import { buildSlug, buildPlexMeta, participantSlug, durationMinutes } from '#dom
 // Re-exported for callers/tests that imported these from the use case.
 export { buildSlug, participantSlug, durationMinutes };
 
+// A 'processing' status left behind by a container restart / crash mid-render
+// never gets an endTime and would otherwise stick forever (idempotency guard
+// below would skip it on every future trigger). Anything older than this is
+// treated as abandoned and re-rendered rather than skipped.
+const STALE_PROCESSING_MS = 30 * 60 * 1000;
+
 /**
  * Use case: render a session's silent time-lapse recap.
  *
@@ -49,7 +55,17 @@ export class GenerateSessionTimelapse {
     // (the manual re-gen endpoint passes force:true). `failed`/`skipped` are NOT
     // skipped — their frames survive, so an automatic retry is safe and wanted.
     const priorStatus = session.timelapse?.status || null;
-    if (!force && (priorStatus === 'ready' || priorStatus === 'processing')) {
+    if (!force && priorStatus === 'processing') {
+      const startedAt = session.timelapse?.startedAt ?? null;
+      const ageMs = startedAt != null ? Date.now() - startedAt : Infinity;
+      if (ageMs < STALE_PROCESSING_MS) {
+        logger.info?.('fitness.timelapse.already', { sessionId, status: priorStatus });
+        return { status: 'already', priorStatus };
+      }
+      // Abandoned in-flight render (e.g. container restart mid-encode) — fall
+      // through and re-render instead of leaving the session stuck forever.
+      logger.warn?.('fitness.timelapse.stale_reprocess', { sessionId, ageMs });
+    } else if (!force && priorStatus === 'ready') {
       logger.info?.('fitness.timelapse.already', { sessionId, status: priorStatus });
       return { status: 'already', priorStatus };
     }
@@ -150,7 +166,12 @@ export class GenerateSessionTimelapse {
       fileIO.mkdirSync(outDir, { recursive: true });
       const outputPath = path.join(outDir, `${slug}.mp4`);
       const encodeStart = Date.now();
-      await videoEncoder.encodeSequence({ framesDir: tmpDir, pattern: 'frame_%05d.jpg', fps, outputPath, crf: config.crf ?? 20, metadata: plexMeta.tags });
+      await videoEncoder.encodeSequence({
+        framesDir: tmpDir, pattern: 'frame_%05d.jpg', fps, outputPath,
+        crf: config.crf ?? 26,
+        ...(config.preset ? { preset: config.preset } : {}),
+        metadata: plexMeta.tags
+      });
       const encodeMs = Date.now() - encodeStart;
 
       stage = 'persist';

@@ -133,7 +133,7 @@ export const TIMELAPSE_DEFAULTS = {
   output_fps: 10,
   capture_interval_ms: 1000,
   resolution: [1920, 1080],
-  crf: 20,
+  crf: 26,
   pip: { enabled: true, size: [480, 270] },
   title_bar: true,
   stat_strip: true,

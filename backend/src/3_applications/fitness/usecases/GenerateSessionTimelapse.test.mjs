@@ -164,15 +164,39 @@ test('already-ready session is skipped (idempotent) — no re-render that would 
   assert.equal(f.saved.length, 0); // status untouched
 });
 
-test('processing session is skipped unless forced', async () => {
+test('fresh processing session (< 30min old) is skipped unless forced', async () => {
   const sessionData = baseSession();
   sessionData.finalized = true;
-  sessionData.timelapse = { status: 'processing', startedAt: 1 };
+  sessionData.timelapse = { status: 'processing', startedAt: Date.now() - 60_000 }; // 1 min ago
   const f = fakes({ sessionData });
+  let encoded = false; f.videoEncoder.encodeSequence = async () => { encoded = true; return {}; };
   const uc = new GenerateSessionTimelapse(f);
   const res = await uc.execute({ sessionId: '20260612180809', householdId: 'h' });
   assert.equal(res.status, 'already');
   assert.equal(res.priorStatus, 'processing');
+  assert.equal(encoded, false);
+});
+
+test('stale processing session (> 30min old, e.g. interrupted by a restart) is re-rendered, not skipped', async () => {
+  const sessionData = baseSession();
+  sessionData.finalized = true;
+  sessionData.timelapse = { status: 'processing', startedAt: Date.now() - (31 * 60 * 1000) }; // 31 min ago
+  const f = fakes({ sessionData });
+  const uc = new GenerateSessionTimelapse(f);
+  const res = await uc.execute({ sessionId: '20260612180809', householdId: 'h' });
+  assert.equal(res.status, 'ready');
+  assert.ok(f.calls.cleaned);
+});
+
+test('processing session with no startedAt is treated as stale and re-rendered', async () => {
+  const sessionData = baseSession();
+  sessionData.finalized = true;
+  sessionData.timelapse = { status: 'processing' }; // no startedAt at all
+  const f = fakes({ sessionData });
+  const uc = new GenerateSessionTimelapse(f);
+  const res = await uc.execute({ sessionId: '20260612180809', householdId: 'h' });
+  assert.equal(res.status, 'ready');
+  assert.ok(f.calls.cleaned);
 });
 
 test('force:true overrides the idempotency guard and re-renders', async () => {
