@@ -8,6 +8,7 @@ const h = vi.hoisted(() => ({
   midi: {
     status: 'connected', // Web MIDI OUTPUT/INPUT status (source of truth only in fallback)
     outputConnected: true,
+    connect: vi.fn(),
     feedNote: vi.fn(),
     notes: { subscribe: vi.fn(), getSnapshot: vi.fn(() => ({})) },
   },
@@ -48,6 +49,7 @@ beforeEach(() => {
   h.bridgeUnavailable = false;
   h.useWebMidiBLEArgs = null;
   h.usePianoBridgeNotesArgs = null;
+  h.midi.connect.mockClear();
 });
 
 describe('PianoMidiProvider wiring', () => {
@@ -101,5 +103,23 @@ describe('PianoMidiProvider wiring', () => {
   it('still exposes Web MIDI output health (outputConnected) from midi', () => {
     render(<PianoMidiProvider><Probe /></PianoMidiProvider>);
     expect(screen.getByTestId('outputConnected').textContent).toBe('true');
+  });
+
+  it('auto-fires Web MIDI connect() when its OWN status is idle, even though the bridge status is connected', () => {
+    // On the kiosk the bridge makes the outer status 'connected' immediately, so
+    // PianoApp's idle→connect never runs. The context must initialize Web MIDI
+    // itself off midi.status so the OUTPUT port (voice/note OUT) actually binds.
+    h.midi.status = 'idle';
+    h.bridgeLink = 'connected';
+    render(<PianoMidiProvider><Probe /></PianoMidiProvider>);
+    expect(h.midi.connect).toHaveBeenCalledTimes(1);
+    // Outer status still reflects the bridge (note-IN is up) even while Web MIDI inits.
+    expect(screen.getByTestId('status').textContent).toBe('connected');
+  });
+
+  it('does NOT re-fire connect() once Web MIDI is already connected', () => {
+    h.midi.status = 'connected';
+    render(<PianoMidiProvider><Probe /></PianoMidiProvider>);
+    expect(h.midi.connect).not.toHaveBeenCalled();
   });
 });
