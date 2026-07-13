@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useMemo, useRef, useSyncExternalStore } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useSyncExternalStore } from 'react';
 import { useWebMidiBLE } from './useWebMidiBLE.js';
 import { usePianoBridgeNotes } from './usePianoBridgeNotes.js';
 
@@ -34,6 +34,18 @@ export function PianoMidiProvider({ children, preferredInputName }) {
   const acquireInput = bridge.unavailable; // Web MIDI INPUT only when NO bridge
   const midi = useWebMidiBLE({ preferredInputName, acquireInput });
   feedRef.current = midi.feedNote;
+
+  // Initialize Web MIDI on mount, keyed on Web MIDI's OWN status (not the
+  // bridge-derived status below). On the kiosk the bridge makes the outer
+  // `status` 'connected' immediately, so PianoApp's idle→connect trigger never
+  // fires — leaving the MIDI OUTPUT port (voice/note OUT) unbound. Driving
+  // connect() off midi.status here guarantees OUTPUT always initializes,
+  // independent of the note-IN path.
+  const rawConnect = midi.connect;
+  const rawStatus = midi.status;
+  useEffect(() => {
+    if (rawStatus === 'idle') rawConnect();
+  }, [rawStatus, rawConnect]);
 
   const bridgeConnected = bridge.link === 'connected';
   // Gate opens on the bridge note link (kiosk) OR, in fallback, on Web MIDI's
