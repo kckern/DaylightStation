@@ -267,7 +267,7 @@ export default function FitnessSessionDetailWidget({ sessionId }) {
     };
   }, [sessionData]);
 
-  const { videoRef: recapVideoRef } = useSettledRecapPlay({ enabled: !!header?.hasRecap });
+  const { videoRef: recapVideoRef } = useSettledRecapPlay({ enabled: !!header?.hasRecap, srcKey: header?.recapUrl });
   const [recapOpen, setRecapOpen] = useState(false);
 
   if (loading) {
@@ -399,6 +399,7 @@ export default function FitnessSessionDetailWidget({ sessionId }) {
             {header?.hasRecap ? (
               <>
                 <video
+                  key={header.recapUrl}
                   ref={recapVideoRef}
                   className="session-detail__thumb-video"
                   src={header.recapUrl}
