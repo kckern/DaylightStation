@@ -253,6 +253,20 @@ export function useWebMidiBLE({ preferredInputName, acquireInput = true } = {}) 
     logger().info('midi.input-bound', { name: input.name, forced: force, hasOutput: !!outputRef.current });
   }, [pickInput, armInput, bindOutput]);
 
+  // Bridge mode only: open the MIDI INPUT port WITHOUT arming a note handler, so
+  // Chrome attaches to the BLE-MIDI device (which is what makes OUTPUT writes
+  // actually traverse the link) while the bridge WS remains the note source. We
+  // deliberately null onmidimessage — any inbound notes are ignored here to avoid
+  // double-counting the bridge's broadcast. Idempotent: re-holding the same port
+  // is harmless. open() can reject on a mid-flap port — swallow it.
+  const holdInputForOutput = useCallback((access) => {
+    const input = pickInput(access);
+    if (!input) return;
+    try { input.onmidimessage = null; } catch { /* ignore */ }
+    try { const p = input.open?.(); if (p && p.catch) p.catch(() => {}); } catch { /* ignore */ }
+    inputRef.current = input;
+  }, [pickInput]);
+
   const connect = useCallback(async () => {
     if (typeof navigator === 'undefined' || !navigator.requestMIDIAccess) {
       setStatus('unsupported');
@@ -276,7 +290,7 @@ export function useWebMidiBLE({ preferredInputName, acquireInput = true } = {}) 
         if (rebindTimerRef.current) clearTimeout(rebindTimerRef.current);
         rebindTimerRef.current = setTimeout(() => {
           rebindTimerRef.current = null;
-          if (!acquireInput) { bindOutput(access); return; }
+          if (!acquireInput) { bindOutput(access); holdInputForOutput(access); return; }
           // force: a statechange means the port (re)connected — re-arm the input's
           // native subscription, don't trust the surviving onmidimessage property.
           bindInput(access, { force: true });
@@ -285,17 +299,25 @@ export function useWebMidiBLE({ preferredInputName, acquireInput = true } = {}) 
       if (acquireInput) {
         bindInput(access); // initial bind is synchronous — fast first connect
       } else {
-        // Bridge mode: MIDI OUTPUT only — never arm a Web MIDI input (the
-        // native piano-bridge APK owns the BLE-MIDI input connection).
+        // Bridge mode: notes come from the piano-bridge APK over WebSocket, so we
+        // do NOT listen to the Web MIDI input. BUT we still OPEN it: on this
+        // Android/BLE-MIDI stack, opening the OUTPUT port alone does not attach
+        // Chrome to the device's write path — verified on-device, the JamCorder's
+        // ble.in counter stayed 0 so voice/note OUT never reached the piano.
+        // Opening the input port (no handler) attaches the device so OUTPUT
+        // actually traverses BLE, while the bridge stays the reliable note-IN path.
         bindOutput(access);
+        holdInputForOutput(access);
         setStatus('connected');
-        logger().info('midi.output-only-bound', { hasOutput: !!outputRef.current });
+        logger().info('midi.output+holdinput-bound', {
+          hasOutput: !!outputRef.current, heldInput: !!inputRef.current,
+        });
       }
     } catch (err) {
       setStatus('denied');
       logger().error('midi.denied', { error: err?.message });
     }
-  }, [bindInput, bindOutput, acquireInput]);
+  }, [bindInput, bindOutput, acquireInput, holdInputForOutput]);
 
   // Manual recover: drop the current bindings and re-request MIDI access from
   // scratch, so a broken/half link (e.g. input bound but output missing) is
@@ -316,34 +338,35 @@ export function useWebMidiBLE({ preferredInputName, acquireInput = true } = {}) 
     if (rebindTimerRef.current) { clearTimeout(rebindTimerRef.current); rebindTimerRef.current = null; }
   }, []);
 
-  // Adaptive fallback: acquireInput can flip false→true AFTER connect() already
-  // ran output-only (a non-kiosk client where the bridge is deemed absent ~1s
-  // in). When it goes true and MIDI access is already granted but the input
-  // isn't armed, arm it now so Web MIDI becomes the note-in path. No-op when
-  // acquireInput is false (bridge owns note-in) or the input is already armed.
+  // Adaptive input management, keyed on acquireInput + status:
+  //  - acquireInput TRUE (non-kiosk / bridge-absent): ARM the Web MIDI input so
+  //    notes flow over Web MIDI (the note-in path). Handles the false→true flip
+  //    when a non-kiosk client's bridge is deemed absent ~1s after connect.
+  //  - acquireInput FALSE (kiosk, bridge present): HOLD the input port OPEN with
+  //    no handler. This is NOT for notes (the bridge WS supplies those) — it's
+  //    what attaches Chrome to the BLE device so MIDI OUTPUT actually delivers.
+  //    Re-hold if the port dropped.
   useEffect(() => {
+    if (!accessRef.current) return;
     if (!acquireInput) {
-      // Bridge became available after we (transiently) armed a Web MIDI input
-      // during a boot-race fallback. RELEASE it — null the handler AND close the
-      // port — so the single-connection BLE-MIDI link is freed for the native
-      // APK to hold. Without this, a browser that won the boot race keeps BLE
-      // forever and the bridge broadcasts nothing (silent "connected" kiosk).
+      // Ensure the input is held open (no handler) for OUTPUT delivery.
       const inp = inputRef.current;
-      if (inp) {
+      if (!inp) { holdInputForOutput(accessRef.current); return; }
+      // Flipped true→false (bridge appeared after a Web-MIDI fallback): stop
+      // LISTENING so the bridge is the sole note source, but KEEP the port open
+      // so OUTPUT keeps delivering. Do NOT close it.
+      if (inp.onmidimessage) {
         try { inp.onmidimessage = null; } catch { /* ignore */ }
-        try { const p = inp.close?.(); if (p && p.catch) p.catch(() => {}); } catch { /* ignore */ }
-        inputRef.current = null;
         setInputName(null);
-        logger().info('midi.input-released-for-bridge', { name: inp.name });
+        logger().info('midi.input-unlistened-hold', { name: inp.name });
       }
       return;
     }
-    if (!accessRef.current) return;
     const inp = inputRef.current;
     if (!inp || inp.onmidimessage !== handleRawMidi) {
       bindInput(accessRef.current);
     }
-  }, [acquireInput, status, bindInput, handleRawMidi]);
+  }, [acquireInput, status, bindInput, handleRawMidi, holdInputForOutput]);
 
   // Output watchdog / auto-recover: while connected, if the OUT port is missing
   // (BLE enumerated it late, or it dropped), re-scan the live access for it every
@@ -352,12 +375,16 @@ export function useWebMidiBLE({ preferredInputName, acquireInput = true } = {}) 
     if (status !== 'connected') return undefined;
     const t = setInterval(() => {
       if (!outputRef.current && accessRef.current) bindOutput(accessRef.current);
+      // Bridge mode (acquireInput:false): we don't LISTEN to the input, but we do
+      // keep it HELD OPEN so MIDI OUTPUT keeps delivering over BLE. Re-hold if the
+      // port dropped (a flap can null inputRef).
+      if (!acquireInput) {
+        if (!inputRef.current && accessRef.current) holdInputForOutput(accessRef.current);
+        return;
+      }
       // Input insurance: some BLE stacks null onmidimessage on a flap. If our
       // handler fell off the bound input, re-arm it so input never stays silently
       // dead between statechange events (the OUTPUT already self-heals here).
-      // Skipped entirely in bridge mode (acquireInput:false) — we never arm an
-      // input there, so there's nothing to re-arm.
-      if (!acquireInput) return;
       const inp = inputRef.current;
       if (inp && inp.onmidimessage !== handleRawMidi) {
         armInput(inp);
@@ -365,7 +392,7 @@ export function useWebMidiBLE({ preferredInputName, acquireInput = true } = {}) 
       }
     }, 2000);
     return () => clearInterval(t);
-  }, [status, bindOutput, armInput, handleRawMidi, acquireInput]);
+  }, [status, bindOutput, armInput, handleRawMidi, acquireInput, holdInputForOutput]);
 
   // ── Outbound (timbre + studio playback) ──────────────────────────────
   const sendProgramChange = useCallback((program, channel = 0) => {
