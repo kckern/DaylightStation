@@ -17,7 +17,7 @@ test('timelapse defaults applied when block is absent', () => {
   assert.equal(timelapse.speedup, 10);
   assert.equal(timelapse.output_fps, 10);
   assert.equal(timelapse.capture_interval_ms, 1000);
-  assert.equal(timelapse.crf, 20);
+  assert.equal(timelapse.crf, 26);
   assert.deepEqual(timelapse.resolution, [1920, 1080]);
   assert.equal(timelapse.pip.enabled, true);
   assert.equal(timelapse.archive_frames, false);
