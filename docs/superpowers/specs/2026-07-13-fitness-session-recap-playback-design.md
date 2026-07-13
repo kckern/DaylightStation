@@ -34,9 +34,18 @@ The recaps are **silent** (H.264, `-an`), so muted autoplay is unproblematic.
 
 ## Key constraints discovered
 
-- **Aspect mismatch.** Recap is **16:9 landscape**; the detail poster slot is a
-  **portrait** (~2:3) Plex show poster. The recap cannot reuse the poster slot —
-  it needs its own 16:9 element.
+- **A 16:9 slot already exists in the detail header** — `session-detail__thumb`
+  (`.scss:50`, `aspect-ratio: 16/9`), rendered in the header's right column
+  (jsx:387) holding the episode still (`thumbUrl`), with a proven bottom-gradient
+  caption treatment (`__thumb-desc`, `.scss:161`) and four variants (still /
+  strava-stats / summary-panel / placeholder). The recap is 16:9 — it drops into
+  this slot with **no cropping** and no new layout. *(An earlier draft of this spec
+  wrongly claimed no 16:9 slot existed and proposed a header-background "hero" with
+  `object-fit: cover`; that was scrapped after design review — see the
+  "Design-review resolution" section.)*
+- **The portrait poster stays a poster.** The header's left column
+  (`session-detail__poster`, portrait ~2:3) is unrelated to the recap and is left
+  untouched.
 - **List summary lacks `timelapse`.** The lightweight per-session summary the list
   consumes (`YamlSessionDatastore.findByDate`, the `sessions.push({…})` object)
   does **not** carry `timelapse`. The list can't know which sessions have a recap
@@ -71,81 +80,113 @@ the list only needs the boolean for the badge.
 *(Only `hasVideo` is added to keep the summary/shard small; the detail view reads
 the full `timelapse` object from its own per-session fetch.)*
 
-### 2. List — SVG "has recap" badge (`FitnessSessionsWidget`)
+### 2. List — recap chip on the poster corner (`FitnessSessionsWidget`)
 
-On each session row where `s.hasVideo`, render a small SVG badge (a film /
-play-triangle glyph, matching the existing inline `CoinIcon` / `StravaIcon`
-pattern in the same file — a self-contained `<svg>` component, ~12px, positioned
-with the other row status icons). No video/gif decode in the list — badge only.
+On each session row where `s.hasVideo`, overlay a **filled play-triangle chip on
+the corner of the `session-poster`** element (~24–28px, solid pill background like
+the coin/duration badges so it reads at 2–4 m TV distance). The poster always
+renders in some variant (Plex art / episode still / route map / activity /
+placeholder), so the chip has a stable, always-present home.
 
-Rows without `hasVideo` render unchanged. Badge is purely informational; clicking
-the row still selects the session as today.
+Do **not** nest the badge in `session-row__participants` — that row is
+participant-gated (jsx:229), so strava/solo sessions would silently lose the
+badge. A ~12px glyph among the participant icons is also sub-legible at TV
+distance. No video/gif decode in the list — static chip only. Clicking the row
+still selects the session as today.
 
-### 3. Detail — recap playback (`FitnessSessionDetailWidget`)
+### 3. Detail — recap in the existing 16:9 thumb slot (`FitnessSessionDetailWidget`)
 
-Source: `sessionData.timelapse` (already fetched). Gate all UI on
-`timelapse?.status === 'ready' && timelapse?.videoPath`. Video URL:
+Source: `sessionData.timelapse` (already fetched). Gate on
+`timelapse?.status === 'ready' && timelapse?.videoPath`. URL:
 `DaylightMediaPath(timelapse.videoPath)`.
 
-**Phase 1 — ambient header hero.** When the selected session has a ready recap,
-render a muted, autoplaying, looping `<video>` as the header-band background
-(`object-fit: cover`), with the portrait poster shrunk to a small chip and the
-title/stats overlaid on a scrim. Honors the "ambient, no-tap" preference. Falls
-back to the existing portrait poster when no recap.
+**Swap the thumb-slot content, keep the slot.** When the session has a ready
+recap, the `session-detail__thumb` slot (already 16:9, already in the header)
+renders the recap `<video>` instead of the static episode still — **no crop**
+(`object-fit: cover` on a 16:9 source in a 16:9 box shows the whole frame,
+corners and all). Reuse the slot's existing bottom-gradient caption
+(`__thumb-desc`) and its four-variant fallback: **recap when ready → episode still
+when no recap → placeholder otherwise** (the latter two are today's behavior,
+unchanged). The portrait poster column is untouched.
+
+Use the existing episode still as the video's **poster frame** so the slot looks
+identical to today until it plays — no black flash, no still-frame sidecar needed:
 
 ```jsx
 <video
-  className="session-detail__recap-hero"
+  className="session-detail__thumb-video"
   src={DaylightMediaPath(timelapse.videoPath)}
-  muted autoPlay loop playsInline
+  poster={header.thumbUrl || undefined}
+  muted loop playsInline
   preload="metadata"
 />
 ```
 
-**Phase 2 — tap-to-expand overlay (independently shippable).** The cover-cropped
-hero clips the top/bottom of the 16:9 frame (the recap composites PiP + avatars
-near the edges). Tapping the hero opens the **uncropped full 16:9 recap** in an
-overlay (muted/autoplay/loop, `object-fit: contain`, Esc / tap-out to close),
-following the app's existing overlay patterns (`VoiceMemoOverlay`,
-`EmergencyLockdownOverlay`).
+**In-slot motion (honors the "ambient" preference, strobe-safe).** Play the loop
+only **after the selection settles ~400 ms** (so scrubbing down the list doesn't
+strobe restarting loops), and pause it when the slot scrolls off-screen. Under
+`prefers-reduced-motion: reduce`, do not play — hold the poster still. This gives
+ambient motion when the user lingers on a session, without an involuntary
+attention magnet fighting the HR chart they opened the session to read.
 
-**Processing / absent state.** `status: 'processing'` → keep the poster, optional
-subtle "Recap rendering…" hint. `skipped | failed | absent` → poster only, no
-hint. Because the detail already re-fetches the session (`fetchSession`), a recap
-that finishes while the detail is open will appear on the next refetch.
+**Corner ▶/expand chip → full-frame overlay (the real "watch").** The thumb is
+small; watching happens in an overlay. A visible ▶/expand chip in the slot corner
+(a real, telegraphed touch affordance — not an invisible "tap the background")
+opens the recap full-screen in an overlay: `object-fit: contain`, muted / autoplay
+/ loop, Esc / tap-out to close, following `VoiceMemoOverlay` /
+`EmergencyLockdownOverlay`. One clear watch affordance, one full-fidelity player.
+
+**Processing / absent state.** `status: 'processing'` → keep the episode still,
+optional subtle "Recap rendering…" hint. `skipped | failed | absent` → still/
+placeholder only, no hint. The detail already re-fetches (`fetchSession`), so a
+recap that finishes while the detail is open appears on the next refetch.
 
 ### Lifecycle / performance
 
-- Exactly **one** `<video>` mounts at a time (detail shows a single selected
-  session); it unmounts on navigate-away. No N-autoplay concern.
-- `preload="metadata"` avoids fetching the whole file until play.
-- The garage display is jank-sensitive; a single silent H.264 element decoded by
-  the browser is cheap and far lighter than the rejected GIF path.
+- Exactly **one** in-slot `<video>` mounts at a time (single selected session);
+  the overlay adds at most one more, only while open. It unmounts on close /
+  navigate-away.
+- Settle-gate + off-screen pause + `preload="metadata"` keep the jank-prone garage
+  display safe: no decode during list scrubbing, no full fetch until play.
+- A single silent H.264 element is far lighter than the rejected GIF path.
 
-## Open decision (confirm on review)
+## Design-review resolution
 
-**Layout choice for the detail recap.** Spec assumes **ambient hero + tap-to-expand
-overlay** (recommended: honors the ambient auto-loop preference and resolves the
-aspect-crop via the full-frame overlay). Alternatives if preferred:
-- **Overlay only** — poster keeps portrait slot + ▶ badge, tap opens full 16:9
-  overlay. Least layout disruption; costs one tap; no ambient loop.
-- **Hero only** — ambient cover-crop hero, no overlay. Simplest; but clips frame
-  edges permanently.
+An adversarial design review (frontend-design) rejected the earlier
+**header-background hero** premise, and it was right:
+- It was built on a false constraint — the 16:9 `session-detail__thumb` slot
+  already exists, so no new landscape home was needed.
+- `object-fit: cover` in a short header band clipped the recap's corner-composited
+  content (PiP, avatars, overlays).
+- A moving video behind the header's deliberately low-contrast meta text
+  (`0.5/0.4/0.25` opacity) fought the text and swung legibility every frame.
+- Autoplay-on-select strobed while scrubbing the list; no reduced-motion path.
+- "Tap the ambient background to expand" is an invisible affordance on a
+  touchscreen; the cropped hero + full overlay were two renderings of one clip.
+
+This spec adopts the review's **thumb-swap + expand** model above: one code branch,
+no crop, no text-vs-motion fight, settle-gated + reduced-motion-aware motion, and a
+telegraphed tap target.
 
 ## Out of scope
 
 - Changing recap generation, resolution, or storage.
 - Recap playback anywhere other than the Fitness home list + detail.
-- A poster-still/thumbnail sidecar (list already uses Plex show artwork as row bg).
+- A poster-still/thumbnail sidecar (the episode still already serves as the
+  `<video poster>`).
 
 ## Testing
 
 - **Backend:** unit-test the `hasVideo` derivation in the `findByDate` summary
   (ready → true; processing/failed/skipped/absent → false) and that a shard built
   under v2 is treated as stale after the `INDEX_VERSION` bump.
-- **Frontend:** the list badge renders iff `hasVideo`; the detail hero mounts a
-  `<video>` iff `status==='ready'` and falls back to the poster otherwise; the
-  overlay opens/closes.
-- **Manual (garage):** select a real recent session with a recap; confirm the hero
-  loops silently, tap opens the full frame, and a processing session shows the
-  poster. Reload the garage kiosk after deploy per CLAUDE.local.md.
+- **Frontend:** the list poster-corner chip renders iff `hasVideo` (including on
+  strava/solo rows with no participants); the detail thumb slot mounts the recap
+  `<video>` iff `status==='ready'` and falls back to the episode still / placeholder
+  otherwise; the in-slot loop is settle-gated and suppressed under
+  `prefers-reduced-motion`; the corner chip opens/closes the full-frame overlay.
+- **Manual (garage):** select a real recent session with a recap; confirm the
+  thumb shows the recap (whole frame, corners intact) and loops silently after the
+  settle delay, scrubbing the list doesn't strobe, the corner chip opens the full
+  frame, and a processing session shows the still. Reload the garage kiosk after
+  deploy per CLAUDE.local.md.
