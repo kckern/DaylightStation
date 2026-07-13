@@ -23,9 +23,7 @@ export class SelectScaleContainer {
 
   #getMessaging(responseContext, conversationId) {
     if (responseContext) {
-      return {
-        updateMessage: (msgId, updates) => responseContext.updateMessage(conversationId, msgId, updates),
-      };
+      return responseContext;
     }
     return {
       updateMessage: (msgId, updates) => this.#messagingGateway.updateMessage(conversationId, msgId, updates),
@@ -66,6 +64,8 @@ export class SelectScaleContainer {
           containerId2 = c.id;
           containerGrams = c.grams;
         }
+      } else {
+        this.#logger.warn?.('selectContainer.unknownContainer', { logUuid, containerId });
       }
     }
 
