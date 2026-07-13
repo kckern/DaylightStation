@@ -32,14 +32,14 @@ function mockAccess() {
 }
 
 describe('useWebMidiBLE acquireInput:false (bridge mode)', () => {
-  it('holds the input OPEN (for OUTPUT delivery) without arming it, and binds the output', async () => {
+  it('binds OUTPUT only and never opens the input (no second BLE claimant on the APK device)', async () => {
     const { input } = mockAccess();
     const { result } = renderHook(() => useWebMidiBLE({ acquireInput: false }));
 
     await act(async () => { await result.current.connect(); });
 
     expect(input.armed).toBe(false); // we do NOT listen — bridge WS supplies notes
-    expect(input.opened).toBe(true); // but the port IS opened → OUTPUT can traverse BLE
+    expect(input.opened).toBe(false); // and we do NOT open it — that flapped the APK's link
     expect(result.current.outputConnected).toBe(true);
     expect(result.current.status).toBe('connected');
     expect(result.current.connected).toBe(true);
@@ -82,7 +82,7 @@ describe('useWebMidiBLE acquireInput:false (bridge mode)', () => {
     expect(result.current.status).toBe('connected');
   });
 
-  it('stops LISTENING but keeps the input OPEN when acquireInput flips true→false (bridge appeared)', async () => {
+  it('RELEASES the Web MIDI input when acquireInput flips true→false (bridge appeared)', async () => {
     const { input } = mockAccess();
     const { result, rerender } = renderHook(
       ({ acquireInput }) => useWebMidiBLE({ acquireInput }),
@@ -94,12 +94,12 @@ describe('useWebMidiBLE acquireInput:false (bridge mode)', () => {
     expect(input.armed).toBe(true);
     expect(input.onmidimessage).toBeTruthy();
 
-    // The bridge then appears → acquireInput flips false. We stop listening (the
-    // bridge is now the note source) but MUST keep the port OPEN so MIDI OUTPUT
-    // keeps delivering over BLE — closing it would kill voice/note OUT.
+    // The bridge then appears → acquireInput flips false. We stop listening AND
+    // close the port, so the browser is no longer a second claimant on the APK's
+    // BLE device (holding it open flapped the link). Notes come from the bridge WS.
     await act(async () => { rerender({ acquireInput: false }); });
 
-    expect(input.onmidimessage).toBeNull(); // no longer listening (no double notes)
-    expect(input.closed).toBe(false); // still held open → OUTPUT keeps working
+    expect(input.onmidimessage).toBeNull(); // no longer listening
+    expect(input.closed).toBe(true); // released → not contending on jam-7e6
   });
 });
