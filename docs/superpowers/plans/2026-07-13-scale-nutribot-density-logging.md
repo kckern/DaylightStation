@@ -486,7 +486,7 @@ describe('SelectScaleContainer', () => {
     });
     expect(res.net).toBe(140); // 480 − 340
     expect(savedLog.items[0].grams).toBe(140);
-    const update = messaging.updateMessage.mock.calls[0][2];
+    const update = messaging.updateMessage.mock.calls[0][1]; // responseContext.updateMessage(messageId, updates) — 2-arg
     expect(update.text).toContain('140 g');
     const sd = update.choices.flat().map((b) => JSON.parse(b.callback_data)).filter((d) => d.cmd === 'sd');
     expect(sd).toHaveLength(9);
@@ -519,7 +519,7 @@ describe('SelectScaleContainer', () => {
     expect(res.shown).toBe(true);
     // no subtraction / no save happened
     expect(foodLogStore.save).not.toHaveBeenCalled();
-    const update = messaging.updateMessage.mock.calls[0][2];
+    const update = messaging.updateMessage.mock.calls[0][1]; // responseContext.updateMessage(messageId, updates) — 2-arg
     const containerBtns = update.choices.flat().map((b) => JSON.parse(b.callback_data)).filter((d) => d.cmd === 'st');
     expect(containerBtns.some((d) => d.c === 'none')).toBe(true);
     expect(containerBtns.some((d) => d.c === 'dinner-plate')).toBe(true);
@@ -699,7 +699,7 @@ describe('SelectScaleDensity', () => {
     expect(savedLog.items[0].calories).toBe(336);
     expect(savedLog.items[0].label).toBe('Everyday');
     expect(stateStore.clear).toHaveBeenCalledWith('telegram:b1_c2');
-    const cmds = messaging.updateMessage.mock.calls[0][2].choices.flat().map((b) => JSON.parse(b.callback_data).cmd);
+    const cmds = messaging.updateMessage.mock.calls[0][1].choices.flat().map((b) => JSON.parse(b.callback_data).cmd);
     expect(cmds).toEqual(['a', 'r', 'x']);
   });
 });
