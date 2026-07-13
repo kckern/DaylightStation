@@ -139,6 +139,11 @@ portionBoost). Instead a **dedicated `LogScaleFoodFromText` use case** does the 
 - No portion guessing, no portionBoost. The AI outputs a continuous kcal/g, so the text
   path is **not** bucketed to the 9 levels — the levels only shape the *tap* option.
 - Updates the pending item, clears `activeFlow`, renders ✅ Accept / ✏️ Revise / 🗑️ Discard.
+- **Message target:** because this path runs on a *text* message, the inbound `messageId` is
+  the **user's** message (a bot cannot edit it). So it edits the **bot's prompt**
+  (`metadata.messageId`, persisted by `LogFoodFromScale` and preserved through the container
+  step) and deletes the user's message — the same convention as the revision text path
+  (`ProcessRevisionInput`). Falls back to a new message if the bot prompt id is missing.
 
 Router `handleText` gains a branch alongside the existing `revision` branch: when
 `activeFlow === 'scale_describe'` and `flowState.pendingLogUuid` is set, route to
