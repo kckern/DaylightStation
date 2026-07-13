@@ -64,6 +64,23 @@ export class NutribotInputRouter extends BaseInputRouter {
           });
           return { ok: true, result };
         }
+
+        if (state?.activeFlow === 'scale_describe' && pendingLogUuid) {
+          this.logger.info?.('nutribot.handleText.scaleDescribeRouted', {
+            conversationId: event.conversationId,
+            pendingLogUuid,
+          });
+          const useCase = this.container.getLogScaleFoodFromText();
+          const result = await useCase.execute({
+            userId: this.#resolveUserId(event),
+            conversationId: event.conversationId,
+            logUuid: pendingLogUuid,
+            text: event.payload.text,
+            messageId: event.messageId,
+            responseContext,
+          });
+          return { ok: true, result };
+        }
       } catch (e) {
         this.logger.warn?.('nutribot.handleText.stateCheck.error', {
           conversationId: event.conversationId,
@@ -184,6 +201,30 @@ export class NutribotInputRouter extends BaseInputRouter {
           conversationId: event.conversationId,
           logUuid: decoded.id,
           portionFactor: decoded.f,
+          messageId: event.messageId,
+          responseContext,
+        });
+      }
+      case 'st': {
+        // Scale tare — decoded.c absent = show the container picker; present = subtract it
+        const useCase = this.container.getSelectScaleContainer();
+        return await useCase.execute({
+          userId: this.#resolveUserId(event),
+          conversationId: event.conversationId,
+          logUuid: decoded.id,
+          containerId: decoded.c,
+          messageId: event.messageId,
+          responseContext,
+        });
+      }
+      case 'sd': {
+        // Scale density — resolve calories from tapped level
+        const useCase = this.container.getSelectScaleDensity();
+        return await useCase.execute({
+          userId: this.#resolveUserId(event),
+          conversationId: event.conversationId,
+          logUuid: decoded.id,
+          level: decoded.l,
           messageId: event.messageId,
           responseContext,
         });
