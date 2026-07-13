@@ -17,7 +17,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { IMidiLibrary } from '#apps/pianoaudio/ports/IMidiLibrary.mjs';
-import { mp3RelForMidiRel } from '#domains/pianoaudio/pianoAudioPaths.mjs';
+import { mirrorRelForMidiRel } from '#domains/pianoaudio/pianoAudioPaths.mjs';
 import { analyzeMidi, isLikelyJunkMidi } from '#domains/pianoaudio/midiDuration.mjs';
 import { fileExists } from '#system/utils/FileIO.mjs';
 
@@ -30,11 +30,12 @@ export function readMidiStats(absPath) {
 }
 
 export class FsMidiLibrary extends IMidiLibrary {
-  #sourceDir; #destDir; #logger; #junkMinSeconds; #junkMinNotes; #midiStats;
+  #sourceDir; #destDir; #outputExt; #logger; #junkMinSeconds; #junkMinNotes; #midiStats;
 
   constructor({
     sourceDir,
     destDir,
+    outputExt = 'mp3',
     logger = console,
     junkMinSeconds = DEFAULT_JUNK_MIN_SECONDS,
     junkMinNotes = DEFAULT_JUNK_MIN_NOTES,
@@ -45,6 +46,7 @@ export class FsMidiLibrary extends IMidiLibrary {
     if (!destDir) throw new Error('FsMidiLibrary requires destDir');
     this.#sourceDir = sourceDir;
     this.#destDir = destDir;
+    this.#outputExt = outputExt;
     this.#logger = logger;
     this.#junkMinSeconds = junkMinSeconds;
     this.#junkMinNotes = junkMinNotes;
@@ -56,8 +58,8 @@ export class FsMidiLibrary extends IMidiLibrary {
     const pending = [];
     for (const m of midis) {
       const rel = path.relative(this.#sourceDir, m.abs);
-      const mp3Path = path.join(this.#destDir, mp3RelForMidiRel(rel));
-      if (fileExists(mp3Path)) continue; // already rendered
+      const outputPath = path.join(this.#destDir, mirrorRelForMidiRel(rel, this.#outputExt));
+      if (fileExists(outputPath)) continue; // already rendered
 
       // Junk guardrail: drop note-less / long-AND-sparse (stuck note / idle) files.
       let stats = null;
@@ -77,10 +79,10 @@ export class FsMidiLibrary extends IMidiLibrary {
         continue;
       }
 
-      pending.push({ midiPath: m.abs, mp3Path, mtimeMs: m.mtimeMs });
+      pending.push({ midiPath: m.abs, outputPath, mtimeMs: m.mtimeMs });
     }
     pending.sort((a, b) => b.mtimeMs - a.mtimeMs); // newest-first
-    return pending.map(({ midiPath, mp3Path }) => ({ midiPath, mp3Path }));
+    return pending.map(({ midiPath, outputPath }) => ({ midiPath, outputPath }));
   }
 
   /** @returns {Array<{abs:string, mtimeMs:number}>} */
