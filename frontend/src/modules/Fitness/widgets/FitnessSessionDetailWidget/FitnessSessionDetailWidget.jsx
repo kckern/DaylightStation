@@ -8,6 +8,7 @@ import { useFitnessContext } from '@/context/FitnessContext.jsx';
 import FitnessTimeline from './FitnessTimeline.jsx';
 import MarkerGutter from './MarkerGutter.jsx';
 import GroupSummaryPanel from './GroupSummaryPanel.jsx';
+import RecapOverlay from './RecapOverlay.jsx';
 import SportIcon from '../_shared/SportIcon.jsx';
 import RouteMap from './RouteMap.jsx';
 import './FitnessSessionDetailWidget.scss';
@@ -543,6 +544,10 @@ export default function FitnessSessionDetailWidget({ sessionId }) {
       <div className="session-detail__timeline">
         <FitnessTimeline sessionData={sessionData} maxAvatarSize={posterWidth} />
       </div>
+
+      {recapOpen && header?.recapUrl && (
+        <RecapOverlay src={header.recapUrl} onClose={() => setRecapOpen(false)} />
+      )}
     </div>
   );
 }
