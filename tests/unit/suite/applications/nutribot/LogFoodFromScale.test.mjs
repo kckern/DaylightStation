@@ -56,12 +56,54 @@ describe('LogFoodFromScale', () => {
     expect(saved[saved.length - 1].toJSON().metadata.messageId).toBe('900');
   });
 
-  it('posts the container keyboard for a heavy reading (above threshold)', async () => {
+  it('posts the density keyboard for a heavy reading (density-first, container is a button)', async () => {
     const res = await useCase.execute({ userId: 'kckern', conversationId: 'telegram:b1_c2', grams: 480, unit: 'g', scaleId: 'kitchen' });
-    expect(res.stage).toBe('container');
+    expect(res.stage).toBe('density');
+    const text = messaging.sendMessage.mock.calls[0][1];
+    expect(text).toBe('⚖️ 480 g');
     const choices = messaging.sendMessage.mock.calls[0][2].choices;
-    expect(JSON.parse(choices[0][0].callback_data)).toMatchObject({ cmd: 'st', c: 'none' });
-    // container stage does NOT arm scale_describe yet
-    expect(stateStore.set).not.toHaveBeenCalled();
+    const sd = choices.flat().map((b) => JSON.parse(b.callback_data)).filter((d) => d.cmd === 'sd');
+    expect(sd).toHaveLength(9);
+    const st = choices.flat().map((b) => JSON.parse(b.callback_data)).find((d) => d.cmd === 'st');
+    expect(st).toMatchObject({ cmd: 'st' });
+    expect(st.c).toBeUndefined();
+    expect(stateStore.set).toHaveBeenCalledWith('telegram:b1_c2', expect.objectContaining({ activeFlow: 'scale_describe' }));
+  });
+
+  it('create path returns the sent messageId and is density-first', async () => {
+    messaging.sendMessage = jest.fn().mockResolvedValue({ messageId: 555 });
+    const res = await useCase.execute({ userId: 'kckern', conversationId: 'c', grams: 340, unit: 'g', scaleId: 'kitchen' });
+    expect(res).toMatchObject({ success: true, stage: 'density', messageId: '555' });
+    expect(messaging.sendMessage).toHaveBeenCalledWith('c', '⚖️ 340 g', expect.objectContaining({ inline: true }));
+  });
+
+  it('edit mode updates an untouched pending scale log in place (no new send)', async () => {
+    const existing = {
+      id: 'log1', status: 'pending',
+      items: [{ label: 'Unknown', grams: 210, calories: 0, unit: 'g' }],
+      metadata: { source: 'scale', grossGrams: 210, containerId: null, densityLevel: null, messageId: '900' },
+      with(patch) { return { ...this, ...patch, with: this.with }; },
+    };
+    foodLogStore.findByUuid = jest.fn().mockResolvedValue(existing);
+    messaging.sendMessage = jest.fn();
+    messaging.updateMessage = jest.fn().mockResolvedValue(true);
+    const res = await useCase.execute({ userId: 'kckern', conversationId: 'c', grams: 340, unit: 'g', scaleId: 'kitchen', existingLogUuid: 'log1', messageId: '900' });
+    expect(res).toMatchObject({ success: true, logUuid: 'log1', edited: true });
+    expect(messaging.sendMessage).not.toHaveBeenCalled();
+    expect(messaging.updateMessage).toHaveBeenCalledWith('c', '900', expect.objectContaining({ text: '⚖️ 340 g', inline: true }));
+  });
+
+  it('edit mode falls through to create when the log was already touched', async () => {
+    const touched = {
+      id: 'log1', status: 'pending',
+      items: [{ label: 'Unknown', grams: 210, calories: 0, unit: 'g' }],
+      metadata: { source: 'scale', grossGrams: 210, containerId: null, densityLevel: 5, messageId: '900' },
+      with(patch) { return { ...this, ...patch, with: this.with }; },
+    };
+    foodLogStore.findByUuid = jest.fn().mockResolvedValue(touched);
+    messaging.sendMessage = jest.fn().mockResolvedValue({ messageId: 777 });
+    const res = await useCase.execute({ userId: 'kckern', conversationId: 'c', grams: 340, existingLogUuid: 'log1', messageId: '900' });
+    expect(res).toMatchObject({ success: true, edited: undefined });
+    expect(messaging.sendMessage).toHaveBeenCalled();
   });
 });
