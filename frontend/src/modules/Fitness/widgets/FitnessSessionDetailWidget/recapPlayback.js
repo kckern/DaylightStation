@@ -13,10 +13,10 @@ export function shouldPlayRecap({ enabled, prefersReducedMotion }) {
  * Gate in-slot recap playback: play only after the selection settles (so tapping
  * down the session list doesn't strobe restarting loops) and never under
  * prefers-reduced-motion. Attach the returned ref to the <video>.
- * @param {{ enabled: boolean, delayMs?: number }} opts
+ * @param {{ enabled: boolean, srcKey?: string, delayMs?: number }} opts
  * @returns {{ videoRef: import('react').RefObject<HTMLVideoElement>, playing: boolean }}
  */
-export function useSettledRecapPlay({ enabled, delayMs = 400 }) {
+export function useSettledRecapPlay({ enabled, srcKey = null, delayMs = 400 }) {
   const videoRef = useRef(null);
   const [playing, setPlaying] = useState(false);
 
@@ -27,7 +27,7 @@ export function useSettledRecapPlay({ enabled, delayMs = 400 }) {
     if (!shouldPlayRecap({ enabled, prefersReducedMotion })) return undefined;
     const t = setTimeout(() => setPlaying(true), delayMs);
     return () => clearTimeout(t);
-  }, [enabled, delayMs]);
+  }, [enabled, srcKey, delayMs]);
 
   useEffect(() => {
     const el = videoRef.current;
