@@ -310,6 +310,13 @@ describe('LogFoodFromScale', () => {
     expect(sd).toHaveLength(9);
     // scale_describe state set at density stage
     expect(stateStore.set).toHaveBeenCalledWith('telegram:b1_c2', expect.objectContaining({ activeFlow: 'scale_describe' }));
+    // created log item + metadata shape (saved objects are NutriLog instances)
+    const created = saved[0].toJSON();
+    expect(created.items[0]).toMatchObject({ label: 'Unknown', grams: 90, calories: 0, amount: 1, color: 'yellow' });
+    expect(created.metadata).toMatchObject({ source: 'scale', scaleId: 'kitchen', grossGrams: 90 });
+    // messageId persisted after send (second save)
+    expect(foodLogStore.save.mock.calls.length).toBeGreaterThanOrEqual(2);
+    expect(saved[saved.length - 1].toJSON().metadata.messageId).toBe('900');
   });
 
   it('posts the container keyboard for a heavy reading (above threshold)', async () => {
