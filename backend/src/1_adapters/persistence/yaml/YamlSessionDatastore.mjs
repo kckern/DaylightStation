@@ -35,7 +35,7 @@ import { selectPrimaryMedia } from '#domains/fitness/services/selectPrimaryMedia
 const INDEX_DIR_NAME = '_index';
 // Bump when the cached summary shape changes — a mismatch is treated as empty
 // (rebuilt on demand), so old shards never serve stale-shaped data.
-const INDEX_VERSION = 2; // v2: list participants now carry zoneMinutes
+const INDEX_VERSION = 3; // v3: list summary carries hasVideo (recap badge)
 
 /**
  * Derive session date from sessionId
@@ -491,6 +491,7 @@ export class YamlSessionDatastore extends ISessionDatastore {
         strava,
         voiceMemos,
         stravaNotes,
+        hasVideo: deriveHasVideo(data),
       });
     }
 
@@ -695,6 +696,17 @@ export function synthesizeRosterFromParticipants(participants) {
       };
     })
     .filter(Boolean);
+}
+
+/**
+ * True iff a persisted session doc has a finished, playable timelapse recap.
+ * Powers the lightweight `hasVideo` flag on the list summary so the Fitness home
+ * can badge recap-bearing sessions without loading each full session file.
+ * @param {object|null|undefined} data - parsed session YAML doc
+ * @returns {boolean}
+ */
+export function deriveHasVideo(data) {
+  return data?.timelapse?.status === 'ready' && !!data?.timelapse?.videoPath;
 }
 
 export default YamlSessionDatastore;

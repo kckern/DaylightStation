@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { synthesizeRosterFromParticipants } from './YamlSessionDatastore.mjs';
+import { synthesizeRosterFromParticipants, deriveHasVideo } from './YamlSessionDatastore.mjs';
 import { TimelapseFrameMapper } from '#domains/fitness/services/TimelapseFrameMapper.mjs';
 
 // Regression: the v2 `participants` map must synthesize roster entries that carry
@@ -45,4 +45,23 @@ test('synthesized roster drives correct per-participant names AND distinct HR (n
   assert.deepEqual(p.map(x => x.displayName), ['User_1', 'User_2']);   // not "Unknown"
   assert.equal(p[0].hr, 150);
   assert.equal(p[1].hr, 120);                                          // distinct, not collapsed onto 150
+});
+
+test('deriveHasVideo: true only when timelapse is ready with a videoPath', () => {
+  assert.equal(
+    deriveHasVideo({ timelapse: { status: 'ready', videoPath: 'media/video/fitness/x.mp4' } }),
+    true
+  );
+});
+
+test('deriveHasVideo: false for processing/failed/skipped or missing videoPath', () => {
+  assert.equal(deriveHasVideo({ timelapse: { status: 'processing' } }), false);
+  assert.equal(deriveHasVideo({ timelapse: { status: 'failed', error: 'x' } }), false);
+  assert.equal(deriveHasVideo({ timelapse: { status: 'skipped', reason: 'x' } }), false);
+  assert.equal(deriveHasVideo({ timelapse: { status: 'ready' } }), false); // no videoPath
+});
+
+test('deriveHasVideo: false when no timelapse block at all', () => {
+  assert.equal(deriveHasVideo({}), false);
+  assert.equal(deriveHasVideo(null), false);
 });
