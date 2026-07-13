@@ -131,10 +131,17 @@ with wake locks.
 The danger is not "two transports" per se — it is **two clients claiming one BLE device**,
 plus **independent, asymmetric failure**.
 
-### 5.1 Dual claimants on one BLE device → contention (biggest)
-The APK and the browser both open `jam-7e6` through the one radio. Under reload/load this
-churns the link — observed `reconnects` climbing into the thousands during heavy reload
-cycles. A bad churn can drop **either** direction. The coupling is invisible until it flaps.
+### 5.1 Dual claimants on one BLE device → contention (biggest, but latent here)
+The APK and the browser both open `jam-7e6` through the one radio (the APK reads; the
+browser opens the input via `holdInputForOutput` so OUTPUT attaches — §4.5). This *is* a
+dual-claimant setup and the coupling is invisible until it flaps. **In practice on this
+hardware the MIDI link has stayed stable** — `ble.reconnects` held at ~13 with
+`connectedSeconds` in the thousands across heavy testing. (Do **not** confuse this with the
+bridge status's `speaker.reconnects`, which runs into the thousands — that is the dormant
+synth's **Bluetooth audio speaker** retrying, entirely unrelated to MIDI. An early
+mis-read of that counter as "MIDI flapping" is what wrongly motivated a temporary revert of
+`holdInputForOutput`.) So the contention risk is real and latent, not yet observed biting
+the MIDI link — but it remains the reason the single-owner endgame (§7) is the right target.
 
 ### 5.2 Silent, asymmetric failure (the one that bit us)
 IN and OUT are separate state machines with no shared health, so you can sit in a
