@@ -9,6 +9,14 @@ import { createNoteStore } from './noteStore.js';
 
 const STORAGE_KEY = 'piano-kiosk-midi-input-id';
 
+// A Web MIDI port is live only when its BLE `state` is not 'disconnected'. A flap
+// leaves ports truthy-but-dead (state:'disconnected' yet still enumerated), so
+// truthiness is not liveness. `undefined` state → treated as connected, so old
+// stacks and test mocks that omit `state` behave as before.
+export function isPortConnected(port) {
+  return !!port && port.state !== 'disconnected';
+}
+
 // Dev keyboard mapping: number row keys → MIDI notes (C4–G5), localhost only.
 const DEV_KEY_MAP = {
   '1': 60, '2': 62, '3': 64, '4': 65, '5': 67,
@@ -99,6 +107,10 @@ export function useWebMidiBLE({ preferredInputName, acquireInput = true } = {}) 
   // + by a watchdog — a null output means on-screen sound changes can't reach the
   // piano. Reactive (state) so the UI can show/reset a broken link.
   const [outputName, setOutputName] = useState(null);
+  // Real OUT liveness (see bindOutput): true only when the bound output port's
+  // BLE state is actually connected, NOT merely present. Drives the unified MIDI
+  // health signal so a silently-dead output surfaces instead of reading healthy.
+  const [outputConnected, setOutputConnected] = useState(false);
 
   // Live-note state (activeNotes/noteHistory/sustainPedal/isPlaying) lives in an
   // external store, NOT React state, so a note event re-renders only
@@ -195,13 +207,25 @@ export function useWebMidiBLE({ preferredInputName, acquireInput = true } = {}) 
   // cheap, so it can run on every statechange — this is what makes a late/flapping
   // output reliably attach instead of only when it happened to be present at the
   // instant the input first bound. Returns the bound output (or null).
+  // Health is judged by the port's REAL `state`, not object truthiness: a BLE flap
+  // leaves a stale port in access.outputs with state:'disconnected' (truthy but
+  // dead). Keeping that port silently swallows OUTPUT — the exact "connected but
+  // nothing reaches the piano" failure. So we PREFER a connected output and track
+  // `outputConnected` from real state. This state-based judgement is scoped to
+  // OUTPUT only — the analogous INPUT change was reverted (a68f14028) for breaking
+  // note-in binding; output liveness by state is safe.
   const bindOutput = useCallback((access) => {
-    const out = (access && [...access.outputs.values()][0]) || null;
+    const outs = access ? [...access.outputs.values()] : [];
+    const out = outs.find(isPortConnected) || outs[0] || null;
     if (out !== outputRef.current) {
       outputRef.current = out;
       setOutputName(out ? (out.name || out.id) : null);
-      logger().info('midi.output-bound', { hasOutput: !!out, name: out ? (out.name || out.id) : null });
+      logger().info('midi.output-bound', {
+        hasOutput: !!out, name: out ? (out.name || out.id) : null, state: out?.state,
+      });
     }
+    const live = isPortConnected(out);
+    setOutputConnected((prev) => (prev === live ? prev : live));
     return out;
   }, []);
 
@@ -374,7 +398,9 @@ export function useWebMidiBLE({ preferredInputName, acquireInput = true } = {}) 
   useEffect(() => {
     if (status !== 'connected') return undefined;
     const t = setInterval(() => {
-      if (!outputRef.current && accessRef.current) bindOutput(accessRef.current);
+      // Re-bind when the output is missing OR present-but-disconnected (a stale
+      // flapped port), so a silently-dead output self-heals instead of swallowing sends.
+      if (!isPortConnected(outputRef.current) && accessRef.current) bindOutput(accessRef.current);
       // Bridge mode (acquireInput:false): we don't LISTEN to the input, but we do
       // keep it HELD OPEN so MIDI OUTPUT keeps delivering over BLE. Re-hold if the
       // port dropped (a flap can null inputRef).
@@ -564,7 +590,7 @@ export function useWebMidiBLE({ preferredInputName, acquireInput = true } = {}) 
     // MIDI OUT link health + manual recover. `outputConnected` false means
     // on-screen sound changes can't reach the piano; `resetLink()` re-scans.
     outputName,
-    outputConnected: outputName != null,
+    outputConnected,
     resetLink,
     // Live-note store (activeNotes/noteHistory/sustainPedal/isPlaying). Read via
     // usePianoMidiNotes() so only note-reading leaves re-render per note; this
@@ -586,7 +612,7 @@ export function useWebMidiBLE({ preferredInputName, acquireInput = true } = {}) 
     pressNote,
     releaseNote,
     feedNote,
-  }), [status, inputName, outputName, resetLink, connect, sendProgramChange, sendVoice, sendLocalControl, sendControlChange, sendPanic, sendNote, sendNoteOff, sendNoteAt, sendNoteOffAt, scheduleNotes, subscribe, subscribeRaw, pressNote, releaseNote, feedNote]);
+  }), [status, inputName, outputName, outputConnected, resetLink, connect, sendProgramChange, sendVoice, sendLocalControl, sendControlChange, sendPanic, sendNote, sendNoteOff, sendNoteAt, sendNoteOffAt, scheduleNotes, subscribe, subscribeRaw, pressNote, releaseNote, feedNote]);
 }
 
 export default useWebMidiBLE;

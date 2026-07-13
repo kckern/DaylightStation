@@ -55,13 +55,29 @@ export function PianoMidiProvider({ children, preferredInputName }) {
     : bridge.unavailable ? midi.status // fallback: reflect Web MIDI (no-input/requesting/connected)
       : 'requesting'; // bridge-first, still trying
 
+  // Unified MIDI health — ONE signal covering BOTH directions. IN and OUT travel
+  // different transports (bridge WS vs Web MIDI output on jam-7e6) and fail
+  // independently, so without this a consumer can read "connected" while OUT is
+  // silently dead (the failure this whole surface is meant to make visible).
+  //   in:  'bridge' | 'webmidi' | 'down'  — which note-in path is live
+  //   out: 'up' | 'down'                  — real output-port liveness
+  const inHealth = bridgeConnected ? 'bridge'
+    : (bridge.unavailable && midi.status === 'connected') ? 'webmidi' : 'down';
+  const outHealth = midi.outputConnected ? 'up' : 'down';
+  const midiHealth = useMemo(() => ({
+    in: inHealth,
+    out: outHealth,
+    healthy: inHealth !== 'down' && outHealth === 'up',
+  }), [inHealth, outHealth]);
+
   const value = useMemo(() => ({
     ...midi,
     bridgeLink: bridge.link,
     bridgeUnavailable: bridge.unavailable,
     connected,
     status,
-  }), [midi, bridge.link, bridge.unavailable, connected, status]);
+    midiHealth,
+  }), [midi, bridge.link, bridge.unavailable, connected, status, midiHealth]);
   return <PianoMidiContext.Provider value={value}>{children}</PianoMidiContext.Provider>;
 }
 

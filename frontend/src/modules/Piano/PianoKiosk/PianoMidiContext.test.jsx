@@ -39,12 +39,16 @@ function Probe() {
       <span data-testid="bridgeLink">{ctx.bridgeLink}</span>
       <span data-testid="bridgeUnavailable">{String(ctx.bridgeUnavailable)}</span>
       <span data-testid="outputConnected">{String(ctx.outputConnected)}</span>
+      <span data-testid="health-in">{ctx.midiHealth.in}</span>
+      <span data-testid="health-out">{ctx.midiHealth.out}</span>
+      <span data-testid="health-healthy">{String(ctx.midiHealth.healthy)}</span>
     </div>
   );
 }
 
 beforeEach(() => {
   h.midi.status = 'connected';
+  h.midi.outputConnected = true;
   h.bridgeLink = 'idle';
   h.bridgeUnavailable = false;
   h.useWebMidiBLEArgs = null;
@@ -121,5 +125,41 @@ describe('PianoMidiProvider wiring', () => {
     h.midi.status = 'connected';
     render(<PianoMidiProvider><Probe /></PianoMidiProvider>);
     expect(h.midi.connect).not.toHaveBeenCalled();
+  });
+
+  it('midiHealth reports IN=bridge, OUT=up, healthy when both directions are live', () => {
+    h.bridgeLink = 'connected';
+    h.midi.outputConnected = true;
+    render(<PianoMidiProvider><Probe /></PianoMidiProvider>);
+    expect(screen.getByTestId('health-in').textContent).toBe('bridge');
+    expect(screen.getByTestId('health-out').textContent).toBe('up');
+    expect(screen.getByTestId('health-healthy').textContent).toBe('true');
+  });
+
+  it('midiHealth surfaces a silently-dead OUT even while IN (bridge) is up — NOT healthy', () => {
+    h.bridgeLink = 'connected'; // keys light up
+    h.midi.outputConnected = false; // but output is dead
+    render(<PianoMidiProvider><Probe /></PianoMidiProvider>);
+    expect(screen.getByTestId('health-in').textContent).toBe('bridge');
+    expect(screen.getByTestId('health-out').textContent).toBe('down');
+    expect(screen.getByTestId('health-healthy').textContent).toBe('false'); // the asymmetric-failure catch
+  });
+
+  it('midiHealth reports IN=webmidi in the non-kiosk fallback', () => {
+    h.bridgeUnavailable = true;
+    h.bridgeLink = 'reconnecting';
+    h.midi.status = 'connected';
+    h.midi.outputConnected = true;
+    render(<PianoMidiProvider><Probe /></PianoMidiProvider>);
+    expect(screen.getByTestId('health-in').textContent).toBe('webmidi');
+    expect(screen.getByTestId('health-healthy').textContent).toBe('true');
+  });
+
+  it('midiHealth IN=down when neither the bridge nor Web MIDI is connected', () => {
+    h.bridgeLink = 'reconnecting';
+    h.bridgeUnavailable = false; // bridge still trying, not yet fallback
+    render(<PianoMidiProvider><Probe /></PianoMidiProvider>);
+    expect(screen.getByTestId('health-in').textContent).toBe('down');
+    expect(screen.getByTestId('health-healthy').textContent).toBe('false');
   });
 });
