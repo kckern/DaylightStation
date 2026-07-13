@@ -10,10 +10,12 @@ function mockAccess() {
     id: 'i',
     name: 'Piano',
     armed: false,
+    closed: false,
     _h: null,
     get onmidimessage() { return this._h; },
     set onmidimessage(v) { if (v) this.armed = true; this._h = v; },
     open: async () => {},
+    close: async () => { input.closed = true; },
   };
   const output = { id: 'o', name: 'Piano', send: () => {} };
   const access = {
@@ -73,5 +75,25 @@ describe('useWebMidiBLE acquireInput:false (bridge mode)', () => {
 
     expect(input.armed).toBe(true); // Web MIDI input now armed (fallback)
     expect(result.current.status).toBe('connected');
+  });
+
+  it('releases (closes + unhandlers) the Web MIDI input when acquireInput flips true→false (bridge appeared mid boot-race)', async () => {
+    const { input } = mockAccess();
+    const { result, rerender } = renderHook(
+      ({ acquireInput }) => useWebMidiBLE({ acquireInput }),
+      { initialProps: { acquireInput: true } },
+    );
+
+    // Boot-race: browser fell back and armed the Web MIDI input.
+    await act(async () => { await result.current.connect(); });
+    expect(input.armed).toBe(true);
+    expect(input.onmidimessage).toBeTruthy();
+
+    // The bridge's WS then connects → unavailable flips false → acquireInput false.
+    // The browser MUST release the input so the native APK can hold the single BLE link.
+    await act(async () => { rerender({ acquireInput: false }); });
+
+    expect(input.onmidimessage).toBeNull(); // handler cleared
+    expect(input.closed).toBe(true); // port closed → BLE freed for the APK
   });
 });

@@ -6,6 +6,16 @@ const logger = () => (_logger ||= getLogger().child({ component: 'piano-bridge-n
 
 const DEFAULT_URL = 'ws://localhost:8770';
 
+// Grace before a never-connected socket is declared `unavailable`. On a kiosk
+// tablet reboot the native piano-bridge APK's WS server can take a few seconds
+// to come up AFTER the WebView (and this hook) load. Falling back to Web MIDI
+// during that window is the boot-race hazard: if the browser grabs the Web MIDI
+// input first, it wins the single-connection BLE race and starves the APK, so
+// the bridge broadcasts no notes. Holding output-only for this window lets the
+// APK reliably win BLE. A genuine non-kiosk client (no bridge at all) waits this
+// once, then falls back — imperceptible behind the "connecting" gate.
+const UNAVAILABLE_GRACE_MS = 8000;
+
 /**
  * usePianoBridgeNotes — consumes note.on/note.off frames broadcast by the
  * native piano-bridge APK (the BLE-MIDI reader) over a local WebSocket. The
@@ -32,6 +42,10 @@ export function usePianoBridgeNotes({ url = DEFAULT_URL, enabled = true, onNote 
   // any open. Both drive `unavailable` (state so it's reactive for consumers).
   const [everConnected, setEverConnected] = useState(false);
   const [failCount, setFailCount] = useState(0);
+  // graceExpired: the UNAVAILABLE_GRACE_MS window has elapsed. Gates `unavailable`
+  // so an early burst of connect failures (APK WS server still starting after a
+  // tablet reboot) can't prematurely flip the client into Web-MIDI fallback.
+  const [graceExpired, setGraceExpired] = useState(false);
   const wsRef = useRef(null);
   const retryRef = useRef(0);
   const everConnectedRef = useRef(false);
@@ -101,7 +115,15 @@ export function usePianoBridgeNotes({ url = DEFAULT_URL, enabled = true, onNote 
     };
   }, [url, enabled]);
 
-  const unavailable = !everConnected && failCount >= 2;
+  // Arm the grace timer once per enabled mount. If the socket connects within
+  // the window, everConnected short-circuits `unavailable` regardless.
+  useEffect(() => {
+    if (!enabled) return undefined;
+    const t = setTimeout(() => setGraceExpired(true), UNAVAILABLE_GRACE_MS);
+    return () => clearTimeout(t);
+  }, [enabled]);
+
+  const unavailable = !everConnected && failCount >= 2 && graceExpired;
   return useMemo(() => ({ link, unavailable }), [link, unavailable]);
 }
 

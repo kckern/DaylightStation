@@ -322,7 +322,23 @@ export function useWebMidiBLE({ preferredInputName, acquireInput = true } = {}) 
   // isn't armed, arm it now so Web MIDI becomes the note-in path. No-op when
   // acquireInput is false (bridge owns note-in) or the input is already armed.
   useEffect(() => {
-    if (!acquireInput || !accessRef.current) return;
+    if (!acquireInput) {
+      // Bridge became available after we (transiently) armed a Web MIDI input
+      // during a boot-race fallback. RELEASE it — null the handler AND close the
+      // port — so the single-connection BLE-MIDI link is freed for the native
+      // APK to hold. Without this, a browser that won the boot race keeps BLE
+      // forever and the bridge broadcasts nothing (silent "connected" kiosk).
+      const inp = inputRef.current;
+      if (inp) {
+        try { inp.onmidimessage = null; } catch { /* ignore */ }
+        try { const p = inp.close?.(); if (p && p.catch) p.catch(() => {}); } catch { /* ignore */ }
+        inputRef.current = null;
+        setInputName(null);
+        logger().info('midi.input-released-for-bridge', { name: inp.name });
+      }
+      return;
+    }
+    if (!accessRef.current) return;
     const inp = inputRef.current;
     if (!inp || inp.onmidimessage !== handleRawMidi) {
       bindInput(accessRef.current);

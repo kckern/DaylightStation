@@ -75,7 +75,7 @@ describe('usePianoBridgeNotes', () => {
     expect(result.current.link).toBe('connected');
   });
 
-  it('marks the bridge unavailable after two closes with no successful open (no-bridge client)', async () => {
+  it('marks the bridge unavailable after two closes with no open, once the grace window elapses (no-bridge client)', async () => {
     vi.useFakeTimers();
     try {
       const { result } = renderHook(() => usePianoBridgeNotes());
@@ -89,7 +89,38 @@ describe('usePianoBridgeNotes', () => {
       expect(instances.length).toBe(2);
 
       await act(async () => { instances[1].onclose?.({ code: 1006 }); }); // fail 2, still never opened
+      // Two failures alone are NOT enough — the startup grace must also elapse,
+      // so an APK WS server that is merely slow to boot isn't misread as absent.
+      expect(result.current.unavailable).toBe(false);
+
+      await act(async () => { await vi.advanceTimersByTimeAsync(8000); }); // grace expires
       expect(result.current.unavailable).toBe(true); // no bridge → fall back to Web MIDI
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('holds output-only through the grace window despite an early failure burst (boot-race guard)', async () => {
+    vi.useFakeTimers();
+    try {
+      const { result } = renderHook(() => usePianoBridgeNotes());
+
+      // Simulate the APK WS server still starting: a burst of quick failures.
+      await act(async () => { instances[0].onclose?.({ code: 1006 }); });
+      await act(async () => { await vi.advanceTimersByTimeAsync(300); });
+      await act(async () => { instances[instances.length - 1].onclose?.({ code: 1006 }); });
+      await act(async () => { await vi.advanceTimersByTimeAsync(600); });
+      await act(async () => { instances[instances.length - 1].onclose?.({ code: 1006 }); });
+
+      // Well within the grace window: still NOT unavailable, so the kiosk stays
+      // output-only and lets the APK win the single-connection BLE race.
+      expect(result.current.unavailable).toBe(false);
+
+      // The bridge finally comes up before grace expiry → permanently available.
+      await act(async () => { await vi.advanceTimersByTimeAsync(300); });
+      await act(async () => { instances[instances.length - 1].onopen?.(); });
+      await act(async () => { await vi.advanceTimersByTimeAsync(8000); });
+      expect(result.current.unavailable).toBe(false);
     } finally {
       vi.useRealTimers();
     }
