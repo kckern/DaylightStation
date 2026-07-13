@@ -9,14 +9,6 @@ import { createNoteStore } from './noteStore.js';
 
 const STORAGE_KEY = 'piano-kiosk-midi-input-id';
 
-// A BLE-MIDI port stays in access.inputs/outputs after a flap with state
-// 'disconnected' (truthy but dead), and delivery can die while onmidimessage is
-// still set. Health must be judged by the port's `state`, NOT object truthiness
-// or handler-property identity. `undefined` state (older stacks / test mocks) is
-// treated as connected for backward compatibility — only an explicit
-// 'disconnected' counts as dead.
-const isConnected = (port) => !!port && port.state !== 'disconnected';
-
 // Dev keyboard mapping: number row keys → MIDI notes (C4–G5), localhost only.
 const DEV_KEY_MAP = {
   '1': 60, '2': 62, '3': 64, '4': 65, '5': 67,
@@ -102,9 +94,6 @@ export function useWebMidiBLE({ preferredInputName } = {}) {
   // + by a watchdog — a null output means on-screen sound changes can't reach the
   // piano. Reactive (state) so the UI can show/reset a broken link.
   const [outputName, setOutputName] = useState(null);
-  // Output link HEALTH, tracked by port.state (not name!=null). A BLE flap leaves
-  // the port object present with state 'disconnected', so truthiness lies.
-  const [outputHealthy, setOutputHealthy] = useState(false);
 
   // Live-note state (activeNotes/noteHistory/sustainPedal/isPlaying) lives in an
   // external store, NOT React state, so a note event re-renders only
@@ -116,10 +105,6 @@ export function useWebMidiBLE({ preferredInputName } = {}) {
   const accessRef = useRef(null);
   const inputRef = useRef(null);
   const outputRef = useRef(null);
-  // Mirror the reactive output name/health so syncOutput (called every 2s by the
-  // watchdog) only calls setState when a value actually changed — no churn.
-  const outputNameRef = useRef(null);
-  const outputHealthyRef = useRef(false);
   // Coalesces the BLE statechange STORM (a reconnect fires ~14 statechange events
   // in one second as the port renegotiates) into a single rebind — see connect().
   const rebindTimerRef = useRef(null);
@@ -190,40 +175,27 @@ export function useWebMidiBLE({ preferredInputName } = {}) {
   }, [applyNoteOn, applyNoteOff, emitRaw]);
 
   const pickInput = useCallback((access) => {
-    const all = [...access.inputs.values()];
-    // Prefer CONNECTED inputs so a stale disconnected port left in the map (same
-    // id/name) is never bound over the live one. Fall back to all only if the
-    // stack reports no state (undefined) so mocks/older stacks still work.
-    const connected = all.filter(isConnected);
-    const pool = connected.length ? connected : all;
-    if (pool.length === 0) return null;
+    const inputs = [...access.inputs.values()];
+    if (inputs.length === 0) return null;
     const savedId = (typeof localStorage !== 'undefined' && localStorage.getItem(STORAGE_KEY)) || null;
     return (
-      pool.find((i) => i.id === savedId) ||
+      inputs.find((i) => i.id === savedId) ||
       (preferredInputName &&
-        pool.find((i) => (i.name || '').toLowerCase().includes(preferredInputName.toLowerCase()))) ||
-      pool[0]
+        inputs.find((i) => (i.name || '').toLowerCase().includes(preferredInputName.toLowerCase()))) ||
+      inputs[0]
     );
   }, [preferredInputName]);
 
-  // Sync the MIDI OUT port + its reactive health from the current access. Picks a
-  // CONNECTED output (never a stale disconnected one), and tracks health by
-  // port.state — so `outputConnected` reflects the real link, not mere presence.
-  // Idempotent and cheap (only setState on change) so it runs on every statechange
-  // AND every watchdog tick, which is what makes a late/flapping output reliably
-  // attach and a dropped one reliably show as broken. Returns the bound output.
-  const syncOutput = useCallback((access) => {
-    const all = access ? [...access.outputs.values()] : [];
-    const connected = all.filter(isConnected);
-    const out = (connected.length ? connected : all)[0] || null;
-    const healthy = isConnected(out);
-    outputRef.current = out;
-    const name = out ? (out.name || out.id) : null;
-    if (name !== outputNameRef.current) { outputNameRef.current = name; setOutputName(name); }
-    if (healthy !== outputHealthyRef.current) {
-      outputHealthyRef.current = healthy;
-      setOutputHealthy(healthy);
-      logger().info('midi.output-bound', { hasOutput: !!out, healthy, name });
+  // Bind (or re-bind) the MIDI OUT port from the current access. Idempotent and
+  // cheap, so it can run on every statechange — this is what makes a late/flapping
+  // output reliably attach instead of only when it happened to be present at the
+  // instant the input first bound. Returns the bound output (or null).
+  const bindOutput = useCallback((access) => {
+    const out = (access && [...access.outputs.values()][0]) || null;
+    if (out !== outputRef.current) {
+      outputRef.current = out;
+      setOutputName(out ? (out.name || out.id) : null);
+      logger().info('midi.output-bound', { hasOutput: !!out, name: out ? (out.name || out.id) : null });
     }
     return out;
   }, []);
@@ -242,14 +214,8 @@ export function useWebMidiBLE({ preferredInputName } = {}) {
   // Bind the input. `force` (a statechange-driven rebind) re-arms the input even
   // when it's the same object — see the guard below.
   const bindInput = useCallback((access, { force = false } = {}) => {
-    // Output is bound INDEPENDENTLY of the input and FIRST — a present output must
-    // attach even when the input is missing/late (the old code returned on
-    // no-input before ever touching the output → "neither works").
-    syncOutput(access);
-
     const input = pickInput(access);
     if (!input) {
-      if (inputRef.current) { try { inputRef.current.onmidimessage = null; } catch { /* ignore */ } }
       inputRef.current = null;
       setInputName(null);
       setStatus('no-input');
@@ -257,24 +223,30 @@ export function useWebMidiBLE({ preferredInputName } = {}) {
       return;
     }
     // Fast idempotent path for REDUNDANT (non-statechange) calls: same input, our
-    // handler still attached, AND the port still reports connected → nothing to do
-    // (output already synced above). NOT taken on a statechange-driven rebind
-    // (force), nor when the port flapped disconnected: a BLE reconnect can sever
-    // Chromium's native delivery while LEAVING onmidimessage set, so the handler
-    // merely *looking* bound is no proof the port still delivers.
-    if (!force && inputRef.current === input && input.onmidimessage === handleRawMidi && isConnected(input)) {
+    // handler still attached → only re-check the output and bail, so a duplicate
+    // initial bind can't churn. NOT taken on a statechange-driven rebind (force):
+    // a BLE reconnect can sever Chromium's native MIDI delivery while LEAVING
+    // onmidimessage set, so the handler merely *looking* bound is no proof the
+    // port still delivers. On force we re-arm below — the input's analogue of the
+    // OUTPUT watchdog/rebind. Without it the input wedges "connected but silent"
+    // after a flap while the output keeps auto-recovering (the 2026-07-12 input
+    // regression: OUT hardening added recovery to the OUT half of this branch but
+    // left the IN half short-circuiting).
+    if (!force && inputRef.current === input && input.onmidimessage === handleRawMidi) {
+      bindOutput(access);
       return;
     }
     if (inputRef.current && inputRef.current !== input) {
-      try { inputRef.current.onmidimessage = null; } catch { /* ignore */ }
+      inputRef.current.onmidimessage = null;
     }
     armInput(input);
     inputRef.current = input;
+    bindOutput(access);
     setInputName(input.name || input.id);
     setStatus('connected');
     try { localStorage?.setItem(STORAGE_KEY, input.id); } catch { /* ignore */ }
     logger().info('midi.input-bound', { name: input.name, forced: force, hasOutput: !!outputRef.current });
-  }, [pickInput, armInput, syncOutput, handleRawMidi]);
+  }, [pickInput, armInput, bindOutput]);
 
   const connect = useCallback(async () => {
     if (typeof navigator === 'undefined' || !navigator.requestMIDIAccess) {
@@ -321,10 +293,7 @@ export function useWebMidiBLE({ preferredInputName } = {}) {
     if (inputRef.current) { try { inputRef.current.onmidimessage = null; } catch { /* ignore */ } }
     inputRef.current = null;
     outputRef.current = null;
-    outputNameRef.current = null;
-    outputHealthyRef.current = false;
     setOutputName(null);
-    setOutputHealthy(false);
     await connect();
   }, [connect]);
 
@@ -333,32 +302,24 @@ export function useWebMidiBLE({ preferredInputName } = {}) {
     if (rebindTimerRef.current) { clearTimeout(rebindTimerRef.current); rebindTimerRef.current = null; }
   }, []);
 
-  // Watchdog / auto-recover. Runs whenever we hold MIDI access — NOT gated on
-  // status==='connected', because the failure this recovers from (input missing or
-  // flapped) is exactly what puts status in 'no-input'; gating there froze all
-  // recovery. Every 2s it re-syncs BOTH halves from the live access, independently:
-  //   • output: syncOutput re-picks a connected port + refreshes health (a dropped
-  //     output shows broken; a late/reconnected one re-attaches).
-  //   • input: if none is bound or the bound port isn't connected, re-bind (force)
-  //     from access; else if our handler fell off, re-arm. This heals the input's
-  //     own analogue of the output flap, so it never wedges "connected but silent".
+  // Output watchdog / auto-recover: while connected, if the OUT port is missing
+  // (BLE enumerated it late, or it dropped), re-scan the live access for it every
+  // 2s so a flapping output re-attaches on its own — no user action needed.
   useEffect(() => {
+    if (status !== 'connected') return undefined;
     const t = setInterval(() => {
-      const access = accessRef.current;
-      if (!access) return;
-      syncOutput(access);
+      if (!outputRef.current && accessRef.current) bindOutput(accessRef.current);
+      // Input insurance: some BLE stacks null onmidimessage on a flap. If our
+      // handler fell off the bound input, re-arm it so input never stays silently
+      // dead between statechange events (the OUTPUT already self-heals here).
       const inp = inputRef.current;
-      if (!inp || !isConnected(inp)) {
-        bindInput(access, { force: true });
-        return;
-      }
-      if (inp.onmidimessage !== handleRawMidi) {
+      if (inp && inp.onmidimessage !== handleRawMidi) {
         armInput(inp);
         logger().info('midi.input-rearmed-watchdog', { name: inp.name });
       }
     }, 2000);
     return () => clearInterval(t);
-  }, [syncOutput, bindInput, armInput, handleRawMidi]);
+  }, [status, bindOutput, armInput, handleRawMidi]);
 
   // ── Outbound (timbre + studio playback) ──────────────────────────────
   const sendProgramChange = useCallback((program, channel = 0) => {
@@ -520,7 +481,7 @@ export function useWebMidiBLE({ preferredInputName } = {}) {
     // MIDI OUT link health + manual recover. `outputConnected` false means
     // on-screen sound changes can't reach the piano; `resetLink()` re-scans.
     outputName,
-    outputConnected: outputHealthy,
+    outputConnected: outputName != null,
     resetLink,
     // Live-note store (activeNotes/noteHistory/sustainPedal/isPlaying). Read via
     // usePianoMidiNotes() so only note-reading leaves re-render per note; this
@@ -541,7 +502,7 @@ export function useWebMidiBLE({ preferredInputName } = {}) {
     subscribeRaw,
     pressNote,
     releaseNote,
-  }), [status, inputName, outputName, outputHealthy, resetLink, connect, sendProgramChange, sendVoice, sendLocalControl, sendControlChange, sendPanic, sendNote, sendNoteOff, sendNoteAt, sendNoteOffAt, scheduleNotes, subscribe, subscribeRaw, pressNote, releaseNote]);
+  }), [status, inputName, outputName, resetLink, connect, sendProgramChange, sendVoice, sendLocalControl, sendControlChange, sendPanic, sendNote, sendNoteOff, sendNoteAt, sendNoteOffAt, scheduleNotes, subscribe, subscribeRaw, pressNote, releaseNote]);
 }
 
 export default useWebMidiBLE;
