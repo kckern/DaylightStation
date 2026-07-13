@@ -145,6 +145,7 @@ import { FitnessProgressClassifier } from '#domains/fitness/services/FitnessProg
 import { initUnlockService } from '#apps/fitness/unlockService.mjs';
 import { initManageService } from '#apps/fitness/manageService.mjs';
 import { createFoodScaleRelay } from '#apps/hardware/foodScaleRelay.mjs';
+import { createScaleNutribotBridge } from '#apps/hardware/ScaleNutribotBridge.mjs';
 import { createBarcodeRelay } from '#apps/hardware/barcodeRelay.mjs';
 import { createFingerprintProfileWriter } from '#apps/fitness/fingerprintProfileWriter.mjs';
 import { YamlUserProfileDatastore } from '#adapters/persistence/yaml/YamlUserProfileDatastore.mjs';
@@ -2336,10 +2337,35 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     reconciliationReader: healthServices.reconciliationReader,
     healthStore: healthServices.healthStore,
     catalogService: healthServices.catalogService,
+    scaleRawConfig: configService.getHouseholdAppConfig(householdId, 'scales'),
     // Lazy proxy: agentOrchestrator is created later in createAgentsServices
     agentOrchestrator: { runAssignment: (...args) => v1Routers.agents?.orchestrator?.runAssignment(...args) },
     logger: rootLogger.child({ module: 'nutribot' })
   });
+
+  // Scale → Nutribot: settled kitchen-scale weights become density-logged food entries,
+  // posted to the household head. Target chat resolved from head identity.
+  try {
+    const scaleHeadUser = configService.getHeadOfHousehold();
+    const scaleHeadPlatformId = scaleHeadUser
+      ? userIdentityService.resolvePlatformId('telegram', scaleHeadUser)
+      : null;
+    const scaleBotId = systemBots.nutribot?.telegram?.bot_id || '';
+    if (scaleHeadPlatformId && scaleBotId) {
+      createScaleNutribotBridge({
+        eventBus,
+        nutribotContainer: nutribotServices.nutribotContainer,
+        userId: scaleHeadUser,
+        conversationId: `telegram:b${scaleBotId}_c${scaleHeadPlatformId}`,
+        scaleConfig: nutribotServices.scaleConfig,
+        logger: rootLogger.child({ module: 'scale-nutribot-bridge' }),
+      });
+    } else {
+      rootLogger.warn?.('scaleNutribot.bridge.skipped', { hasPlatformId: !!scaleHeadPlatformId, hasBotId: !!scaleBotId });
+    }
+  } catch (e) {
+    rootLogger.warn?.('scaleNutribot.bridge.wireFailed', { error: e.message });
+  }
 
   const nutribotApiResult = createNutribotApiRouter({
     nutribotServices,

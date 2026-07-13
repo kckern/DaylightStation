@@ -230,6 +230,7 @@ import { createJournalistRouter } from '#api/v1/routers/journalist.mjs';
 // Nutribot application imports
 import { NutribotContainer } from '#apps/nutribot/NutribotContainer.mjs';
 import { NutriBotConfig } from '#apps/nutribot/config/NutriBotConfig.mjs';
+import { normalizeScaleNutribotConfig } from '#apps/nutribot/lib/scaleNutribotConfig.mjs';
 import { dataService } from '#system/config/index.mjs';
 import { toFolderName } from '#system/config/configLoader.mjs';
 import { YamlNutriListDatastore } from '#adapters/persistence/yaml/YamlNutriListDatastore.mjs';
@@ -2117,6 +2118,7 @@ export async function createNutribotServices(config) {
     healthStore = null,
     catalogService = null,
     agentOrchestrator = null,
+    scaleRawConfig = {},
     logger = console
   } = config;
 
@@ -2173,6 +2175,8 @@ export async function createNutribotServices(config) {
   //
   // agentOrchestrator may be provided as a lazy proxy if the orchestrator is
   // created after the container (e.g. in app.mjs initialization order).
+  const scaleConfig = normalizeScaleNutribotConfig(scaleRawConfig);
+
   const nutribotContainer = new NutribotContainer(nutribotConfig, {
     messagingGateway: telegramAdapter,
     aiGateway,
@@ -2187,6 +2191,7 @@ export async function createNutribotServices(config) {
     reconciliationReader,
     healthStore,
     catalogService,
+    scaleConfig,
     agentOrchestrator,
     logger
   });
@@ -2194,7 +2199,8 @@ export async function createNutribotServices(config) {
   return {
     foodLogStore,
     nutriListStore,
-    nutribotContainer
+    nutribotContainer,
+    scaleConfig
   };
 }
 
