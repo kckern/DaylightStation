@@ -113,6 +113,13 @@ all-notes-off panic, and scheduled playback for replaying a recorded take back t
 instrument. On a development machine with no hardware attached, number-row keys stand in
 for MIDI notes so the UI can be exercised without a piano.
 
+> **The real transport is more involved than "Web MIDI both ways."** On the kiosk, MIDI
+> **IN** is read natively by the piano-bridge APK and relayed to the browser over WebSocket
+> (bridge-first, with a Web-MIDI fallback for non-kiosk clients), while MIDI **OUT** is a
+> direct browser Web MIDI write — two different transports over one shared BLE device. For
+> the full topology, the reasoning behind every choice, the compromises, the resilience
+> risks, and the debugging playbook, see **[midi-architecture.md](./midi-architecture.md)**.
+
 ---
 
 ## The sound path
@@ -228,7 +235,8 @@ logging, so a backend outage degrades gracefully rather than breaking the surfac
 | App root + routing | `frontend/src/Apps/PianoApp.jsx` |
 | Home menu, chrome, tiles | `frontend/src/modules/Piano/PianoKiosk/Piano{Menu,Chrome,Tile}.jsx` |
 | Configuration | `frontend/src/modules/Piano/PianoKiosk/PianoConfig.jsx` · `data/household/config/piano.yml` |
-| MIDI pipeline | `frontend/src/modules/Piano/PianoKiosk/{useWebMidiBLE,PianoMidiContext,midiDecode}.js[x]` · `noteHistory.js` |
+| MIDI pipeline | `frontend/src/modules/Piano/PianoKiosk/{useWebMidiBLE,PianoMidiContext,usePianoBridgeNotes,midiDecode}.js[x]` · `noteHistory.js` |
+| MIDI architecture, compromises & risks | [midi-architecture.md](./midi-architecture.md) |
 | Sound + device profiles | `frontend/src/modules/Piano/PianoKiosk/{PianoSoundContext,usePianoVoiceBridge,instrumentSpec}.js[x]` · `devices/` |
 | Modes | `frontend/src/modules/Piano/PianoKiosk/modes/{Videos,Music,SheetMusic,Studio,Producer,Games,Lessons,Composers}/` |
 | Games | `frontend/src/modules/Piano/gameRegistry.js` · `frontend/src/modules/Piano/Piano*Game*/` |
