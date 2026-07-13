@@ -70,7 +70,11 @@ export function buildDensityKeyboard(cfg, encodeCallback, logUuid) {
     text: `${l.emoji} ${l.label}`,
     callback_data: encodeCallback('sd', { id: logUuid, l: l.level }),
   }));
-  return chunk(buttons, 5); // row of 5 + remainder
+  // Always offer a container (tare) affordance, even when the reading was below
+  // the prompt threshold (e.g. a light item on a paper towel or small plate).
+  // 'st' with no `c` = "show the container picker" (SelectScaleContainer show mode).
+  const containerRow = [{ text: '📦 On a container?', callback_data: encodeCallback('st', { id: logUuid }) }];
+  return [...chunk(buttons, 5), containerRow]; // rows of 5 + container affordance
 }
 
 export function buildContainerKeyboard(cfg, encodeCallback, logUuid) {

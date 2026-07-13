@@ -37,13 +37,18 @@ describe('scaleNutribotConfig', () => {
     expect(densityForLevel(cfg, 99)).toBeNull();
   });
 
-  it('buildDensityKeyboard encodes sd callbacks with level', () => {
+  it('buildDensityKeyboard encodes sd callbacks with level + a container affordance', () => {
     const cfg = normalizeScaleNutribotConfig({});
     const enc = (cmd, data) => JSON.stringify({ cmd, ...data });
     const kb = buildDensityKeyboard(cfg, enc, 'log123');
-    const flat = kb.flat();
-    expect(flat).toHaveLength(9);
-    expect(JSON.parse(flat[0].callback_data)).toMatchObject({ cmd: 'sd', id: 'log123', l: 1 });
+    const decoded = kb.flat().map((b) => JSON.parse(b.callback_data));
+    const sd = decoded.filter((d) => d.cmd === 'sd');
+    expect(sd).toHaveLength(9);
+    expect(sd[0]).toMatchObject({ cmd: 'sd', id: 'log123', l: 1 });
+    // container affordance: 'st' with no container id = show the picker
+    const affordance = decoded.find((d) => d.cmd === 'st');
+    expect(affordance).toMatchObject({ cmd: 'st', id: 'log123' });
+    expect(affordance.c).toBeUndefined();
   });
 
   it('buildContainerKeyboard puts None first and encodes st callbacks', () => {
