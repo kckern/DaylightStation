@@ -20,7 +20,11 @@ export class LogScaleFoodFromText {
 
   #getMessaging(responseContext, conversationId) {
     if (responseContext) return responseContext;
-    return { updateMessage: (msgId, updates) => this.#messagingGateway.updateMessage(conversationId, msgId, updates) };
+    return {
+      sendMessage: (text, options) => this.#messagingGateway.sendMessage(conversationId, text, options),
+      updateMessage: (msgId, updates) => this.#messagingGateway.updateMessage(conversationId, msgId, updates),
+      deleteMessage: (msgId) => this.#messagingGateway.deleteMessage(conversationId, msgId),
+    };
   }
 
   #buildPrompt(grams, text) {
@@ -89,9 +93,18 @@ export class LogScaleFoodFromText {
 
     const t = `⚖️ ${grams} g · ${est.label}\n🔥 ~${calories} kcal · P${updatedItem.protein} C${updatedItem.carbs} F${updatedItem.fat}`;
     const choices = buildConfirmButtons(this.#encodeCallback, logUuid);
+    const botMessageId = nutriLog.metadata?.messageId;
+
     if (messageId) {
-      try { await messaging.updateMessage(messageId, { text: t, choices, inline: true }); }
+      try { await messaging.deleteMessage(messageId); } catch { /* ignore */ }
+    }
+
+    if (botMessageId) {
+      try { await messaging.updateMessage(botMessageId, { text: t, choices, inline: true }); }
       catch (e) { this.#logger.warn?.('logScaleText.updateFailed', { error: e.message }); }
+    } else {
+      try { await messaging.sendMessage(t, { choices, inline: true }); }
+      catch (e) { this.#logger.warn?.('logScaleText.sendFailed', { error: e.message }); }
     }
 
     this.#logger.info?.('logScaleText.done', { logUuid, grams, density: est.density, calories });
