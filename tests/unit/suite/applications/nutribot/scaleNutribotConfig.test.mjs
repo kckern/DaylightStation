@@ -5,6 +5,8 @@ import {
   buildDensityKeyboard,
   buildContainerKeyboard,
   buildConfirmButtons,
+  densityPromptText,
+  densityHelpText,
 } from '#apps/nutribot/lib/scaleNutribotConfig.mjs';
 
 describe('scaleNutribotConfig', () => {
@@ -65,5 +67,53 @@ describe('scaleNutribotConfig', () => {
     const rows = buildConfirmButtons(enc, 'log123');
     const cmds = rows.flat().map((b) => JSON.parse(b.callback_data).cmd);
     expect(cmds).toEqual(['a', 'r', 'x']);
+  });
+
+  it('normalizes editDeltaG and per-level hint with defaults', () => {
+    const cfg = normalizeScaleNutribotConfig({});
+    expect(cfg.editDeltaG).toBe(3);
+    expect(cfg.densityLevels[0]).toMatchObject({ level: 1, hint: expect.any(String) });
+    expect(cfg.densityLevels[0].hint.length).toBeGreaterThan(0);
+
+    const overridden = normalizeScaleNutribotConfig({ nutribot: { edit_delta_g: 10 } });
+    expect(overridden.editDeltaG).toBe(10);
+  });
+
+  it('buildDensityKeyboard lays out a 3x3 grid + a control row', () => {
+    const cfg = normalizeScaleNutribotConfig({});
+    const enc = (cmd, data) => JSON.stringify({ cmd, ...data });
+    const kb = buildDensityKeyboard(cfg, enc, 'log123');
+    // 3 density rows of 3, then 1 control row
+    expect(kb).toHaveLength(4);
+    expect(kb[0]).toHaveLength(3);
+    expect(kb[1]).toHaveLength(3);
+    expect(kb[2]).toHaveLength(3);
+    expect(kb[3]).toHaveLength(3);
+    // density button text = "<level> <emoji>"
+    expect(kb[0][0].text).toBe('1 🥬');
+    // control row callbacks: container (st), help (sh h:1), cancel (x)
+    const ctrl = kb[3].map((b) => JSON.parse(b.callback_data));
+    expect(ctrl[0]).toMatchObject({ cmd: 'st', id: 'log123' });
+    expect(ctrl[1]).toMatchObject({ cmd: 'sh', id: 'log123', h: 1 });
+    expect(ctrl[2]).toMatchObject({ cmd: 'x', id: 'log123' });
+  });
+
+  it('buildDensityKeyboard swaps Help for Back when showingHelp', () => {
+    const cfg = normalizeScaleNutribotConfig({});
+    const enc = (cmd, data) => JSON.stringify({ cmd, ...data });
+    const kb = buildDensityKeyboard(cfg, enc, 'log123', { showingHelp: true });
+    const help = JSON.parse(kb[3][1].callback_data);
+    expect(kb[3][1].text).toBe('⬅️ Back');
+    expect(help).toMatchObject({ cmd: 'sh', id: 'log123', h: 0 });
+  });
+
+  it('densityPromptText is slim; densityHelpText lists all levels', () => {
+    const cfg = normalizeScaleNutribotConfig({});
+    expect(densityPromptText(340)).toBe('⚖️ 340 g');
+    const help = densityHelpText(cfg, 340);
+    expect(help).toContain('340 g');
+    expect(help).toContain('Watery');
+    expect(help).toContain('Pure fat');
+    expect(help.split('\n').filter((l) => /kcal\/g/.test(l))).toHaveLength(9);
   });
 });
