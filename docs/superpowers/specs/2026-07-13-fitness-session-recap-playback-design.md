@@ -174,6 +174,35 @@ telegraphed tap target.
 - Recap playback anywhere other than the Fitness home list + detail.
 - A poster-still/thumbnail sidecar (the episode still already serves as the
   `<video poster>`).
+- **Merged multi-session groups (singleton-only for now).** Recaps surface only
+  for singleton sessions. Merged same-day groups (e.g. cycle-game race blocks
+  combined into one session) do **not** show a chip or play in detail:
+  `groupSessions.mjs` builds a merged group from `base = {}` (no `hasVideo`) and
+  `SessionGroupingService.getGroupDetail` returns no `timelapse`. This degrades
+  gracefully and never misleads (no chip ⇄ no recap). See Follow-up.
+
+## Follow-up (ticketed, not in this change)
+
+**Group-recap = a stitched merge of the segment videos (chosen direction).** When a
+group merges N sessions that each have a recap, the group should present **one recap
+that is the segment recaps concatenated in order** — not a first-segment shortcut.
+Deferred because it needs its own build (a new render step + trigger), but the
+direction is decided:
+- Render: concatenate the segments' `media/video/fitness/<slug>.mp4` files (all
+  already 1920×1080 / silent H.264, so an ffmpeg concat — likely stream-copy, or a
+  re-encode if timebases differ — is clean) into a single group recap MP4. Reuse
+  `FfmpegVideoAdapter` / `GenerateSessionTimelapse` infrastructure; write the merged
+  file once per group and cache it (re-stitch only when a member segment changes).
+- Trigger: when the group is formed / its last segment's recap becomes ready (a
+  group-level analogue to the per-session end + `RecapSweep` paths).
+- List: set `hasVideo` on merged groups in
+  `backend/src/2_domains/fitness/services/groupSessions.mjs` (parallel to how
+  `media` already picks `segments[0]`), true once the stitched recap exists.
+- Detail: have `SessionGroupingService.getGroupDetail` surface the stitched group
+  recap's `timelapse`/`videoPath` so the existing thumb-swap + overlay play it
+  unchanged.
+- Edge: if only some segments have recaps, decide whether to stitch the available
+  ones or wait for all (default: stitch what's ready, restitch as more arrive).
 
 ## Testing
 
