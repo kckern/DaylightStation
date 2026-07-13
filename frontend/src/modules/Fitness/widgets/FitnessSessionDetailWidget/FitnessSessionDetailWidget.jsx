@@ -8,7 +8,6 @@ import { useFitnessContext } from '@/context/FitnessContext.jsx';
 import FitnessTimeline from './FitnessTimeline.jsx';
 import MarkerGutter from './MarkerGutter.jsx';
 import GroupSummaryPanel from './GroupSummaryPanel.jsx';
-import RecapOverlay from './RecapOverlay.jsx';
 import SportIcon from '../_shared/SportIcon.jsx';
 import RouteMap from './RouteMap.jsx';
 import './FitnessSessionDetailWidget.scss';
@@ -269,7 +268,14 @@ export default function FitnessSessionDetailWidget({ sessionId }) {
   }, [sessionData]);
 
   const { videoRef: recapVideoRef } = useSettledRecapPlay({ enabled: !!header?.hasRecap, srcKey: header?.recapUrl });
-  const [recapOpen, setRecapOpen] = useState(false);
+
+  const toggleRecapFullscreen = useCallback(() => {
+    const el = recapVideoRef.current;
+    if (!el) return;
+    const fsEl = document.fullscreenElement || document.webkitFullscreenElement;
+    if (fsEl) { (document.exitFullscreen || document.webkitExitFullscreen)?.call(document); }
+    else { (el.requestFullscreen || el.webkitRequestFullscreen || el.webkitEnterFullscreen)?.call(el); }
+  }, [recapVideoRef]);
 
   if (loading) {
     return (
@@ -398,25 +404,19 @@ export default function FitnessSessionDetailWidget({ sessionId }) {
         {(header?.thumbUrl || header?.hasRecap) ? (
           <div className="session-detail__thumb">
             {header?.hasRecap ? (
-              <>
-                <video
-                  key={header.recapUrl}
-                  ref={recapVideoRef}
-                  className="session-detail__thumb-video"
-                  src={header.recapUrl}
-                  poster={header.thumbUrl || undefined}
-                  muted
-                  loop
-                  playsInline
-                  preload="metadata"
-                />
-                <button
-                  className="session-detail__recap-expand"
-                  onPointerDown={(e) => { e.preventDefault(); setRecapOpen(true); }}
-                  title="Watch recap"
-                  aria-label="Watch session recap"
-                >{'▶'}</button>
-              </>
+              <video
+                key={header.recapUrl}
+                ref={recapVideoRef}
+                className="session-detail__thumb-video"
+                src={header.recapUrl}
+                poster={header.thumbUrl || undefined}
+                muted
+                loop
+                playsInline
+                preload="metadata"
+                onPointerDown={toggleRecapFullscreen}
+                style={{ cursor: 'pointer' }}
+              />
             ) : (
               <img
                 src={header.thumbUrl}
@@ -544,10 +544,6 @@ export default function FitnessSessionDetailWidget({ sessionId }) {
       <div className="session-detail__timeline">
         <FitnessTimeline sessionData={sessionData} maxAvatarSize={posterWidth} />
       </div>
-
-      {recapOpen && header?.recapUrl && (
-        <RecapOverlay src={header.recapUrl} onClose={() => setRecapOpen(false)} />
-      )}
     </div>
   );
 }
