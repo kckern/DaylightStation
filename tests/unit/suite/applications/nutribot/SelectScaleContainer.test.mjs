@@ -34,7 +34,7 @@ describe('SelectScaleContainer', () => {
     });
     expect(res.net).toBe(140); // 480 − 340
     expect(savedLog.items[0].grams).toBe(140);
-    const update = messaging.updateMessage.mock.calls[0][2];
+    const update = messaging.updateMessage.mock.calls[0][1];
     expect(update.text).toContain('140 g');
     const sd = update.choices.flat().map((b) => JSON.parse(b.callback_data)).filter((d) => d.cmd === 'sd');
     expect(sd).toHaveLength(9);
@@ -67,7 +67,7 @@ describe('SelectScaleContainer', () => {
     expect(res.shown).toBe(true);
     // no subtraction / no save happened
     expect(foodLogStore.save).not.toHaveBeenCalled();
-    const update = messaging.updateMessage.mock.calls[0][2];
+    const update = messaging.updateMessage.mock.calls[0][1];
     const containerBtns = update.choices.flat().map((b) => JSON.parse(b.callback_data)).filter((d) => d.cmd === 'st');
     expect(containerBtns.some((d) => d.c === 'none')).toBe(true);
     expect(containerBtns.some((d) => d.c === 'dinner-plate')).toBe(true);
