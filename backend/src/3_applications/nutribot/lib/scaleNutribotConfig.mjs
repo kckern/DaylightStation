@@ -16,15 +16,15 @@ export const DEFAULT_CONTAINERS = {
 };
 
 export const DEFAULT_DENSITY_LEVELS = [
-  { level: 1, label: 'Watery', emoji: '🥬', kcal_per_g: 0.2 },
-  { level: 2, label: 'Light', emoji: '🥗', kcal_per_g: 0.6 },
-  { level: 3, label: 'Lean', emoji: '🍲', kcal_per_g: 1.0 },
-  { level: 4, label: 'Everyday', emoji: '🍛', kcal_per_g: 1.4 },
-  { level: 5, label: 'Hearty', emoji: '🍝', kcal_per_g: 1.9 },
-  { level: 6, label: 'Filling', emoji: '🍕', kcal_per_g: 2.6 },
-  { level: 7, label: 'Rich', emoji: '🧀', kcal_per_g: 3.8 },
-  { level: 8, label: 'Very rich', emoji: '🥜', kcal_per_g: 6.0 },
-  { level: 9, label: 'Pure fat', emoji: '🫒', kcal_per_g: 8.5 },
+  { level: 1, label: 'Watery', emoji: '🥬', kcal_per_g: 0.2, hint: 'broth, greens' },
+  { level: 2, label: 'Light', emoji: '🥗', kcal_per_g: 0.6, hint: 'salad, fruit' },
+  { level: 3, label: 'Lean', emoji: '🍲', kcal_per_g: 1.0, hint: 'soup, lean meat' },
+  { level: 4, label: 'Everyday', emoji: '🍛', kcal_per_g: 1.4, hint: 'rice + veg + protein' },
+  { level: 5, label: 'Hearty', emoji: '🍝', kcal_per_g: 1.9, hint: 'pasta, casserole' },
+  { level: 6, label: 'Filling', emoji: '🍕', kcal_per_g: 2.6, hint: 'pizza, fried' },
+  { level: 7, label: 'Rich', emoji: '🧀', kcal_per_g: 3.8, hint: 'cheese, creamy' },
+  { level: 8, label: 'Very rich', emoji: '🥜', kcal_per_g: 6.0, hint: 'nuts, nut butter' },
+  { level: 9, label: 'Pure fat', emoji: '🫒', kcal_per_g: 8.5, hint: 'oil, butter' },
 ];
 
 const num = (v, fallback) => (Number.isFinite(Number(v)) ? Number(v) : fallback);
@@ -41,11 +41,12 @@ export function normalizeScaleNutribotConfig(raw = {}) {
   const densityLevels = Array.isArray(nb.density_levels) && nb.density_levels.length
     ? nb.density_levels
         .filter((l) => l && Number.isFinite(Number(l.level)) && Number.isFinite(Number(l.kcal_per_g)))
-        .map((l) => ({ level: Number(l.level), label: l.label || `L${l.level}`, emoji: l.emoji || '🍽', kcal_per_g: Number(l.kcal_per_g) }))
+        .map((l) => ({ level: Number(l.level), label: l.label || `L${l.level}`, emoji: l.emoji || '🍽', kcal_per_g: Number(l.kcal_per_g), hint: l.hint || '' }))
     : DEFAULT_DENSITY_LEVELS;
 
   return {
     minGrams: num(nb.min_grams, DEFAULT_MIN_GRAMS),
+    editDeltaG: num(nb.edit_delta_g, 3),
     containers: {
       thresholdG: num(nb.containers?.threshold_g, DEFAULT_CONTAINERS.thresholdG),
       items,
@@ -65,16 +66,21 @@ function chunk(arr, size) {
   return rows;
 }
 
-export function buildDensityKeyboard(cfg, encodeCallback, logUuid) {
+export function buildDensityKeyboard(cfg, encodeCallback, logUuid, opts = {}) {
+  const showingHelp = opts.showingHelp === true;
   const buttons = cfg.densityLevels.map((l) => ({
-    text: `${l.emoji} ${l.label}`,
+    text: `${l.level} ${l.emoji}`,
     callback_data: encodeCallback('sd', { id: logUuid, l: l.level }),
   }));
-  // Always offer a container (tare) affordance, even when the reading was below
-  // the prompt threshold (e.g. a light item on a paper towel or small plate).
-  // 'st' with no `c` = "show the container picker" (SelectScaleContainer show mode).
-  const containerRow = [{ text: '📦 On a container?', callback_data: encodeCallback('st', { id: logUuid }) }];
-  return [...chunk(buttons, 5), containerRow]; // rows of 5 + container affordance
+  const helpBtn = showingHelp
+    ? { text: '⬅️ Back', callback_data: encodeCallback('sh', { id: logUuid, h: 0 }) }
+    : { text: '❓ Help', callback_data: encodeCallback('sh', { id: logUuid, h: 1 }) };
+  const controlRow = [
+    { text: '📦 Container', callback_data: encodeCallback('st', { id: logUuid }) },
+    helpBtn,
+    { text: '❌ Cancel', callback_data: encodeCallback('x', { id: logUuid }) },
+  ];
+  return [...chunk(buttons, 3), controlRow]; // 3x3 grid + control row
 }
 
 export function buildContainerKeyboard(cfg, encodeCallback, logUuid) {
@@ -95,7 +101,14 @@ export function buildConfirmButtons(encodeCallback, logUuid) {
 }
 
 export function densityPromptText(grams) {
-  return `⚖️ ${grams} g — what is it?\n\nTap a density level, or just describe it and I'll estimate.`;
+  return `⚖️ ${grams} g`;
+}
+
+export function densityHelpText(cfg, grams) {
+  const lines = cfg.densityLevels.map(
+    (l) => `${l.level} ${l.emoji} ${l.label} · ${l.kcal_per_g} kcal/g${l.hint ? `  (${l.hint})` : ''}`,
+  );
+  return `⚖️ ${grams} g — tap a level or describe it\n\n${lines.join('\n')}`;
 }
 
 export function containerPromptText(grams) {
