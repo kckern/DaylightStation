@@ -7,6 +7,7 @@ import { DashboardCard } from '../_shared/DashboardCard.jsx';
 import { useFitnessScreen } from '@/modules/Fitness/FitnessScreenProvider.jsx';
 import SportIcon, { formatSportType } from '../_shared/SportIcon.jsx';
 import MiniRouteMap from './MiniRouteMap.jsx';
+import RecapChip from './RecapChip.jsx';
 import './FitnessSessionsWidget.scss';
 import { formatFitnessDate } from '@/modules/Fitness/lib/dateFormatter.js';
 import { resolveSessionTitle, resolveSessionActivity } from './sessionDisplay.js';
@@ -171,6 +172,8 @@ function SessionsCard({ sessions, loading, onSessionClick, selectedSessionId }) 
                         />
                       </div>
                     )}
+
+                    {s.hasVideo && <RecapChip />}
 
                     <div className="session-row__info">
                       <div className="session-row__title-line">
