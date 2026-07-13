@@ -30,6 +30,10 @@ import {
   ConfirmAllPending,
   ShowDateSelection,
 } from './usecases/index.mjs';
+import { LogFoodFromScale } from './usecases/LogFoodFromScale.mjs';
+import { SelectScaleContainer } from './usecases/SelectScaleContainer.mjs';
+import { SelectScaleDensity } from './usecases/SelectScaleDensity.mjs';
+import { LogScaleFoodFromText } from './usecases/LogScaleFoodFromText.mjs';
 
 /**
  * NutriBot Container
@@ -58,6 +62,7 @@ export class NutribotContainer {
   #reconciliationReader;
   #healthStore;
   #catalogService;
+  #scaleConfig;
 
   // Use Cases (lazy-loaded)
   #logFoodFromImage;
@@ -83,6 +88,10 @@ export class NutribotContainer {
   #handleHelpCommand;
   #handleReviewCommand;
   #confirmAllPending;
+  #logFoodFromScale;
+  #selectScaleContainer;
+  #selectScaleDensity;
+  #logScaleFoodFromText;
 
   /**
    * @param {Object} config - NutriBot configuration
@@ -119,6 +128,7 @@ export class NutribotContainer {
     this.#agentOrchestrator = options.agentOrchestrator || null;
     this.#healthStore = options.healthStore || null;
     this.#catalogService = options.catalogService || null;
+    this.#scaleConfig = options.scaleConfig || null;
   }
 
   // ==================== Config Getter ====================
@@ -250,6 +260,61 @@ export class NutribotContainer {
       });
     }
     return this.#logFoodFromUPC;
+  }
+
+  // ==================== Scale (food-scale relay) Use Cases ====================
+
+  getLogFoodFromScale() {
+    if (!this.#logFoodFromScale) {
+      this.#logFoodFromScale = new LogFoodFromScale({
+        messagingGateway: this.getMessagingGateway(),
+        foodLogStore: this.#foodLogStore,
+        conversationStateStore: this.#conversationStateStore,
+        scaleConfig: this.#scaleConfig,
+        config: this.#config,
+        logger: this.#logger,
+      });
+    }
+    return this.#logFoodFromScale;
+  }
+
+  getSelectScaleContainer() {
+    if (!this.#selectScaleContainer) {
+      this.#selectScaleContainer = new SelectScaleContainer({
+        messagingGateway: this.getMessagingGateway(),
+        foodLogStore: this.#foodLogStore,
+        conversationStateStore: this.#conversationStateStore,
+        scaleConfig: this.#scaleConfig,
+        logger: this.#logger,
+      });
+    }
+    return this.#selectScaleContainer;
+  }
+
+  getSelectScaleDensity() {
+    if (!this.#selectScaleDensity) {
+      this.#selectScaleDensity = new SelectScaleDensity({
+        messagingGateway: this.getMessagingGateway(),
+        foodLogStore: this.#foodLogStore,
+        conversationStateStore: this.#conversationStateStore,
+        scaleConfig: this.#scaleConfig,
+        logger: this.#logger,
+      });
+    }
+    return this.#selectScaleDensity;
+  }
+
+  getLogScaleFoodFromText() {
+    if (!this.#logScaleFoodFromText) {
+      this.#logScaleFoodFromText = new LogScaleFoodFromText({
+        messagingGateway: this.getMessagingGateway(),
+        aiGateway: this.getAIGateway(),
+        foodLogStore: this.#foodLogStore,
+        conversationStateStore: this.#conversationStateStore,
+        logger: this.#logger,
+      });
+    }
+    return this.#logScaleFoodFromText;
   }
 
   getRetryImageDetection() {
