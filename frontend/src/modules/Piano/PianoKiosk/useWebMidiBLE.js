@@ -84,9 +84,14 @@ function flushOut(out, bytes) {
  * itself is an OS concern; the browser only sees already-paired ports, so the
  * shell shows a connect-gate when status !== 'connected'.
  *
- * @param {{ preferredInputName?: string }} [opts]
+ * @param {{ preferredInputName?: string, acquireInput?: boolean }} [opts]
+ *   acquireInput (default true): when false, the hook binds MIDI OUTPUT only
+ *   and never arms a Web MIDI input. Used when a native bridge (the
+ *   piano-bridge APK) is the sole BLE-MIDI reader — a second Web MIDI input
+ *   subscription fights it for the single BLE connection. Notes then arrive
+ *   via feedNote() (see usePianoBridgeNotes) instead of handleRawMidi.
  */
-export function useWebMidiBLE({ preferredInputName } = {}) {
+export function useWebMidiBLE({ preferredInputName, acquireInput = true } = {}) {
   const [status, setStatus] = useState('idle'); // idle | requesting | connected | no-input | unsupported | denied
   const [inputName, setInputName] = useState(null);
   // MIDI OUT link health. On BLE the output port often enumerates a beat AFTER
@@ -271,17 +276,26 @@ export function useWebMidiBLE({ preferredInputName } = {}) {
         if (rebindTimerRef.current) clearTimeout(rebindTimerRef.current);
         rebindTimerRef.current = setTimeout(() => {
           rebindTimerRef.current = null;
+          if (!acquireInput) { bindOutput(access); return; }
           // force: a statechange means the port (re)connected — re-arm the input's
           // native subscription, don't trust the surviving onmidimessage property.
           bindInput(access, { force: true });
         }, 200);
       };
-      bindInput(access); // initial bind is synchronous — fast first connect
+      if (acquireInput) {
+        bindInput(access); // initial bind is synchronous — fast first connect
+      } else {
+        // Bridge mode: MIDI OUTPUT only — never arm a Web MIDI input (the
+        // native piano-bridge APK owns the BLE-MIDI input connection).
+        bindOutput(access);
+        setStatus('connected');
+        logger().info('midi.output-only-bound', { hasOutput: !!outputRef.current });
+      }
     } catch (err) {
       setStatus('denied');
       logger().error('midi.denied', { error: err?.message });
     }
-  }, [bindInput]);
+  }, [bindInput, bindOutput, acquireInput]);
 
   // Manual recover: drop the current bindings and re-request MIDI access from
   // scratch, so a broken/half link (e.g. input bound but output missing) is
@@ -302,6 +316,19 @@ export function useWebMidiBLE({ preferredInputName } = {}) {
     if (rebindTimerRef.current) { clearTimeout(rebindTimerRef.current); rebindTimerRef.current = null; }
   }, []);
 
+  // Adaptive fallback: acquireInput can flip false→true AFTER connect() already
+  // ran output-only (a non-kiosk client where the bridge is deemed absent ~1s
+  // in). When it goes true and MIDI access is already granted but the input
+  // isn't armed, arm it now so Web MIDI becomes the note-in path. No-op when
+  // acquireInput is false (bridge owns note-in) or the input is already armed.
+  useEffect(() => {
+    if (!acquireInput || !accessRef.current) return;
+    const inp = inputRef.current;
+    if (!inp || inp.onmidimessage !== handleRawMidi) {
+      bindInput(accessRef.current);
+    }
+  }, [acquireInput, status, bindInput, handleRawMidi]);
+
   // Output watchdog / auto-recover: while connected, if the OUT port is missing
   // (BLE enumerated it late, or it dropped), re-scan the live access for it every
   // 2s so a flapping output re-attaches on its own — no user action needed.
@@ -312,6 +339,9 @@ export function useWebMidiBLE({ preferredInputName } = {}) {
       // Input insurance: some BLE stacks null onmidimessage on a flap. If our
       // handler fell off the bound input, re-arm it so input never stays silently
       // dead between statechange events (the OUTPUT already self-heals here).
+      // Skipped entirely in bridge mode (acquireInput:false) — we never arm an
+      // input there, so there's nothing to re-arm.
+      if (!acquireInput) return;
       const inp = inputRef.current;
       if (inp && inp.onmidimessage !== handleRawMidi) {
         armInput(inp);
@@ -319,7 +349,7 @@ export function useWebMidiBLE({ preferredInputName } = {}) {
       }
     }, 2000);
     return () => clearInterval(t);
-  }, [status, bindOutput, armInput, handleRawMidi]);
+  }, [status, bindOutput, armInput, handleRawMidi, acquireInput]);
 
   // ── Outbound (timbre + studio playback) ──────────────────────────────
   const sendProgramChange = useCallback((program, channel = 0) => {
@@ -440,6 +470,16 @@ export function useWebMidiBLE({ preferredInputName } = {}) {
     return true;
   }, []);
 
+  // Store-only note feed for an external note source (the piano-bridge WS in
+  // acquireInput:false mode — see usePianoBridgeNotes). Updates the SAME note
+  // store as hardware MIDI input so every consumer (keyboard, waterfall,
+  // monitor) sees it identically, but never echoes to the MIDI output (a
+  // bridge-fed note is inbound only, not something we're relaying out).
+  const feedNote = useCallback((type, note, velocity) => {
+    if (type === 'note_on') applyNoteOn(note, velocity);
+    else if (type === 'note_off') applyNoteOff(note);
+  }, [applyNoteOn, applyNoteOff]);
+
   // Periodic cleanup of stale active notes / trim history (lost note-offs).
   useEffect(() => {
     const interval = setInterval(() => {
@@ -502,7 +542,8 @@ export function useWebMidiBLE({ preferredInputName } = {}) {
     subscribeRaw,
     pressNote,
     releaseNote,
-  }), [status, inputName, outputName, resetLink, connect, sendProgramChange, sendVoice, sendLocalControl, sendControlChange, sendPanic, sendNote, sendNoteOff, sendNoteAt, sendNoteOffAt, scheduleNotes, subscribe, subscribeRaw, pressNote, releaseNote]);
+    feedNote,
+  }), [status, inputName, outputName, resetLink, connect, sendProgramChange, sendVoice, sendLocalControl, sendControlChange, sendPanic, sendNote, sendNoteOff, sendNoteAt, sendNoteOffAt, scheduleNotes, subscribe, subscribeRaw, pressNote, releaseNote, feedNote]);
 }
 
 export default useWebMidiBLE;
