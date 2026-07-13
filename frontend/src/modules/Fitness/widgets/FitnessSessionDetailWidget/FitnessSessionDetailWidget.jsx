@@ -269,12 +269,30 @@ export default function FitnessSessionDetailWidget({ sessionId }) {
 
   const { videoRef: recapVideoRef } = useSettledRecapPlay({ enabled: !!header?.hasRecap, srcKey: header?.recapUrl });
 
-  const toggleRecapFullscreen = useCallback(() => {
+  // Fullscreen recap gets native player chrome (seek bar / play-pause) so it's
+  // scrubbable; the small in-slot thumb stays chrome-free. Tap the thumb to ENTER
+  // fullscreen; once fullscreen the native controls (incl. their own exit button)
+  // and Esc handle everything — a tap-to-exit here would fight the seek bar.
+  const [recapFullscreen, setRecapFullscreen] = useState(false);
+  useEffect(() => {
+    const onFsChange = () => {
+      const fsEl = document.fullscreenElement || document.webkitFullscreenElement;
+      setRecapFullscreen(!!fsEl && fsEl === recapVideoRef.current);
+    };
+    document.addEventListener('fullscreenchange', onFsChange);
+    document.addEventListener('webkitfullscreenchange', onFsChange);
+    return () => {
+      document.removeEventListener('fullscreenchange', onFsChange);
+      document.removeEventListener('webkitfullscreenchange', onFsChange);
+    };
+  }, [recapVideoRef]);
+
+  const enterRecapFullscreen = useCallback(() => {
     const el = recapVideoRef.current;
     if (!el) return;
     const fsEl = document.fullscreenElement || document.webkitFullscreenElement;
-    if (fsEl) { (document.exitFullscreen || document.webkitExitFullscreen)?.call(document); }
-    else { (el.requestFullscreen || el.webkitRequestFullscreen || el.webkitEnterFullscreen)?.call(el); }
+    if (fsEl) return; // already fullscreen — let native controls / Esc drive
+    (el.requestFullscreen || el.webkitRequestFullscreen || el.webkitEnterFullscreen)?.call(el);
   }, [recapVideoRef]);
 
   if (loading) {
@@ -414,8 +432,10 @@ export default function FitnessSessionDetailWidget({ sessionId }) {
                 loop
                 playsInline
                 preload="metadata"
-                onPointerDown={toggleRecapFullscreen}
-                style={{ cursor: 'pointer' }}
+                controls={recapFullscreen}
+                controlsList="nodownload"
+                onPointerDown={recapFullscreen ? undefined : enterRecapFullscreen}
+                style={{ cursor: recapFullscreen ? 'default' : 'pointer' }}
               />
             ) : (
               <img
