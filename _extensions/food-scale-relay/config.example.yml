@@ -45,3 +45,29 @@ scales:
       min_delta_g: 1
       heartbeat_hz: 0.5
     topic: food-scale
+
+# ---------------------------------------------------------------------------
+# Nutribot integration: settled readings become density-logged food entries.
+# Consumed by ScaleNutribotBridge / LogFoodFromScale. All keys optional — the
+# backend supplies these same defaults (see
+# backend/src/3_applications/nutribot/lib/scaleNutribotConfig.mjs). The target
+# chat is NOT configured here; it is the household head (household.yml `head`).
+nutribot:
+  min_grams: 5              # ignore settled readings below this (noise / near-zero)
+  containers:
+    threshold_g: 150        # only offer container (tare) subtraction above this gross weight
+    items:
+      - { id: dinner-plate, label: "Dinner plate", emoji: "🍽", grams: 340 }
+      - { id: dinner-bowl,  label: "Dinner bowl",  emoji: "🥣", grams: 250 }
+      - { id: small-bowl,   label: "Small bowl",   emoji: "🍚", grams: 180 }
+      - { id: mug,          label: "Mug",          emoji: "☕", grams: 350 }
+  density_levels:           # ordinal + non-linear; kcal_per_g is the source of truth
+    - { level: 1, label: "Watery",    emoji: "🥬", kcal_per_g: 0.2 }
+    - { level: 2, label: "Light",     emoji: "🥗", kcal_per_g: 0.6 }
+    - { level: 3, label: "Lean",      emoji: "🍲", kcal_per_g: 1.0 }
+    - { level: 4, label: "Everyday",  emoji: "🍛", kcal_per_g: 1.4 }
+    - { level: 5, label: "Hearty",    emoji: "🍝", kcal_per_g: 1.9 }
+    - { level: 6, label: "Filling",   emoji: "🍕", kcal_per_g: 2.6 }
+    - { level: 7, label: "Rich",      emoji: "🧀", kcal_per_g: 3.8 }
+    - { level: 8, label: "Very rich", emoji: "🥜", kcal_per_g: 6.0 }
+    - { level: 9, label: "Pure fat",  emoji: "🫒", kcal_per_g: 8.5 }
