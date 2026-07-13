@@ -38,6 +38,22 @@ describe('LogFoodFromScale', () => {
     expect(sd).toHaveLength(9);
     // scale_describe state set at density stage
     expect(stateStore.set).toHaveBeenCalledWith('telegram:b1_c2', expect.objectContaining({ activeFlow: 'scale_describe' }));
+
+    // Assert initial log item shape and metadata
+    expect(saved[0].toJSON().items[0]).toMatchObject({
+      label: 'Unknown',
+      grams: 90,
+      calories: 0,
+      amount: 1,
+      color: 'yellow',
+    });
+    expect(saved[0].toJSON().metadata).toMatchObject({
+      source: 'scale',
+    });
+
+    // Assert messageId is persisted after send (saved twice: initial create, then with messageId)
+    expect(saved.length).toBeGreaterThanOrEqual(1);
+    expect(saved[saved.length - 1].toJSON().metadata.messageId).toBe('900');
   });
 
   it('posts the container keyboard for a heavy reading (above threshold)', async () => {
