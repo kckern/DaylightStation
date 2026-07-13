@@ -14,6 +14,8 @@ import './FitnessSessionDetailWidget.scss';
 import { formatFitnessDate } from '@/modules/Fitness/lib/dateFormatter.js';
 import { getActivityDisplay, primaryActivity } from '@/modules/Fitness/lib/activities/fitnessActivityRegistry.jsx';
 import { mediaDisplayUrl, resolveSessionStartMs } from './sessionDetailUtils.js';
+import { deriveRecap } from './recapVideo.js';
+import { useSettledRecapPlay } from './recapPlayback.js';
 
 const CoinIcon = ({ size = 12 }) => (
   <svg width={size} height={size} viewBox="0 0 16 16" fill="none" style={{ flexShrink: 0 }}>
@@ -233,6 +235,8 @@ export default function FitnessSessionDetailWidget({ sessionId }) {
     // episode title is absent.
     const title = pm?.title || pm?.showTitle || pm?.grandparentTitle || stravaBlock?.name || (actDisplay ? actDisplay.label(act.count) : 'Workout');
 
+    const recap = deriveRecap(sessionData.timelapse);
+
     return {
       title,
       activityPoster: actDisplay?.Poster || null,
@@ -241,6 +245,9 @@ export default function FitnessSessionDetailWidget({ sessionId }) {
       grandparentId: pm?.grandparentId || null,
       posterUrl: pm?.grandparentId ? mediaDisplayUrl(pm.grandparentId) : null,
       thumbUrl: pm?.contentId ? mediaDisplayUrl(pm.contentId) : null,
+      recapUrl: recap.url,
+      hasRecap: recap.ready,
+      recapProcessing: recap.processing,
       description: pm?.description || null,
       date: dateStr ? formatDate(dateStr) : '',
       time: startMs ? formatTime(startMs, sessionData.timezone) : null,
@@ -259,6 +266,9 @@ export default function FitnessSessionDetailWidget({ sessionId }) {
       stravaHasMap: !!(stravaBlock?.map?.polyline),
     };
   }, [sessionData]);
+
+  const { videoRef: recapVideoRef } = useSettledRecapPlay({ enabled: !!header?.hasRecap });
+  const [recapOpen, setRecapOpen] = useState(false);
 
   if (loading) {
     return (
@@ -384,13 +394,37 @@ export default function FitnessSessionDetailWidget({ sessionId }) {
           </div>
         </div>
 
-        {header?.thumbUrl ? (
+        {(header?.thumbUrl || header?.hasRecap) ? (
           <div className="session-detail__thumb">
-            <img
-              src={header.thumbUrl}
-              alt=""
-              onError={(e) => { e.target.style.display = 'none'; }}
-            />
+            {header?.hasRecap ? (
+              <>
+                <video
+                  ref={recapVideoRef}
+                  className="session-detail__thumb-video"
+                  src={header.recapUrl}
+                  poster={header.thumbUrl || undefined}
+                  muted
+                  loop
+                  playsInline
+                  preload="metadata"
+                />
+                <button
+                  className="session-detail__recap-expand"
+                  onPointerDown={(e) => { e.preventDefault(); setRecapOpen(true); }}
+                  title="Watch recap"
+                  aria-label="Watch session recap"
+                >{'▶'}</button>
+              </>
+            ) : (
+              <img
+                src={header.thumbUrl}
+                alt=""
+                onError={(e) => { e.target.style.display = 'none'; }}
+              />
+            )}
+            {header?.recapProcessing && !header?.hasRecap && (
+              <div className="session-detail__recap-processing">Recap rendering…</div>
+            )}
             <button
               className="session-detail__close"
               onClick={() => restore('right-area')}
