@@ -97,13 +97,18 @@ describe('scaleNutribotConfig', () => {
     expect(densityForLevel(cfg, 99)).toBeNull();
   });
 
-  it('buildDensityKeyboard encodes sd callbacks with level', () => {
+  it('buildDensityKeyboard encodes sd callbacks with level + a container affordance', () => {
     const cfg = normalizeScaleNutribotConfig({});
     const enc = (cmd, data) => JSON.stringify({ cmd, ...data });
     const kb = buildDensityKeyboard(cfg, enc, 'log123');
-    const flat = kb.flat();
-    expect(flat).toHaveLength(9);
-    expect(JSON.parse(flat[0].callback_data)).toMatchObject({ cmd: 'sd', id: 'log123', l: 1 });
+    const decoded = kb.flat().map((b) => JSON.parse(b.callback_data));
+    const sd = decoded.filter((d) => d.cmd === 'sd');
+    expect(sd).toHaveLength(9);
+    expect(sd[0]).toMatchObject({ cmd: 'sd', id: 'log123', l: 1 });
+    // container affordance: 'st' with no container id = show the picker
+    const affordance = decoded.find((d) => d.cmd === 'st');
+    expect(affordance).toMatchObject({ cmd: 'st', id: 'log123' });
+    expect(affordance.c).toBeUndefined();
   });
 
   it('buildContainerKeyboard puts None first and encodes st callbacks', () => {
@@ -205,7 +210,11 @@ export function buildDensityKeyboard(cfg, encodeCallback, logUuid) {
     text: `${l.emoji} ${l.label}`,
     callback_data: encodeCallback('sd', { id: logUuid, l: l.level }),
   }));
-  return chunk(buttons, 5); // row of 5 + remainder
+  // Always offer a container (tare) affordance, even when the reading was below
+  // the prompt threshold (e.g. a light item on a paper towel or small plate).
+  // 'st' with no `c` = "show the container picker" (SelectScaleContainer show mode).
+  const containerRow = [{ text: '📦 On a container?', callback_data: encodeCallback('st', { id: logUuid }) }];
+  return [...chunk(buttons, 5), containerRow]; // rows of 5 + container affordance
 }
 
 export function buildContainerKeyboard(cfg, encodeCallback, logUuid) {
@@ -295,8 +304,10 @@ describe('LogFoodFromScale', () => {
     expect(foodLogStore.save).toHaveBeenCalled();
     const text = messaging.sendMessage.mock.calls[0][1];
     expect(text).toContain('90 g');
-    // density keyboard present
-    expect(messaging.sendMessage.mock.calls[0][2].choices.flat().length).toBe(9);
+    // density keyboard present (9 density levels + a container affordance)
+    const sd = messaging.sendMessage.mock.calls[0][2].choices.flat()
+      .map((b) => JSON.parse(b.callback_data)).filter((d) => d.cmd === 'sd');
+    expect(sd).toHaveLength(9);
     // scale_describe state set at density stage
     expect(stateStore.set).toHaveBeenCalledWith('telegram:b1_c2', expect.objectContaining({ activeFlow: 'scale_describe' }));
   });
@@ -426,7 +437,7 @@ git commit -m "feat(nutribot): LogFoodFromScale use case (pending entry + contai
 
 **Interfaces:**
 - Consumes: `scaleNutribotConfig.mjs` (Task 1).
-- Produces: `new SelectScaleContainer({ messagingGateway, foodLogStore, conversationStateStore, scaleConfig, logger })` with `execute({ userId, conversationId, logUuid, containerId, messageId, responseContext }) → { success, net }`. Subtracts the container weight from the pending item's grams (`net = max(1, gross − containerGrams)`; keeps gross and warns if the container ≥ gross), then edits the message into the density prompt + density keyboard and arms `scale_describe` state.
+- Produces: `new SelectScaleContainer({ messagingGateway, foodLogStore, conversationStateStore, scaleConfig, logger })` with `execute({ userId, conversationId, logUuid, containerId, messageId, responseContext }) → { success, net } | { success, shown:true }`. **Show mode** (`containerId` absent — the density keyboard's "📦 On a container?" affordance): posts the container picker against gross grams, no subtraction. **Apply mode** (`containerId` an id or `'none'`): subtracts the container weight from the pending item's grams (`net = max(1, gross − containerGrams)`, computed from `metadata.grossGrams` so re-taring is idempotent; keeps gross and warns if the container ≥ gross), then edits the message into the density prompt + density keyboard and arms `scale_describe` state.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -470,7 +481,8 @@ describe('SelectScaleContainer', () => {
     expect(savedLog.items[0].grams).toBe(140);
     const update = messaging.updateMessage.mock.calls[0][2];
     expect(update.text).toContain('140 g');
-    expect(update.choices.flat().length).toBe(9);
+    const sd = update.choices.flat().map((b) => JSON.parse(b.callback_data)).filter((d) => d.cmd === 'sd');
+    expect(sd).toHaveLength(9);
     expect(stateStore.set).toHaveBeenCalledWith('telegram:b1_c2', expect.objectContaining({ activeFlow: 'scale_describe' }));
   });
 
@@ -491,6 +503,20 @@ describe('SelectScaleContainer', () => {
     });
     expect(res.net).toBe(200); // kept gross
   });
+
+  it('show mode (no containerId) posts the container picker without subtracting', async () => {
+    const res = await useCase.execute({
+      userId: 'kckern', conversationId: 'telegram:b1_c2', logUuid: 'log1',
+      containerId: undefined, messageId: '900', responseContext: messaging,
+    });
+    expect(res.shown).toBe(true);
+    // no subtraction / no save happened
+    expect(foodLogStore.save).not.toHaveBeenCalled();
+    const update = messaging.updateMessage.mock.calls[0][2];
+    const containerBtns = update.choices.flat().map((b) => JSON.parse(b.callback_data)).filter((d) => d.cmd === 'st');
+    expect(containerBtns.some((d) => d.c === 'none')).toBe(true);
+    expect(containerBtns.some((d) => d.c === 'dinner-plate')).toBe(true);
+  });
 });
 ```
 
@@ -508,7 +534,10 @@ Expected: FAIL — module not found.
 // reading, then advance to the density stage (edit the message into the density
 // keyboard + arm the describe path).
 
-import { buildDensityKeyboard, densityPromptText } from '../lib/scaleNutribotConfig.mjs';
+import {
+  buildDensityKeyboard, densityPromptText,
+  buildContainerKeyboard, containerPromptText,
+} from '../lib/scaleNutribotConfig.mjs';
 
 export class SelectScaleContainer {
   #messagingGateway; #foodLogStore; #conversationStateStore; #scaleConfig; #logger; #encodeCallback;
@@ -540,6 +569,17 @@ export class SelectScaleContainer {
 
     const item0 = typeof nutriLog.items[0].toJSON === 'function' ? nutriLog.items[0].toJSON() : { ...nutriLog.items[0] };
     const gross = Math.round(Number(nutriLog.metadata?.grossGrams ?? item0.grams));
+
+    // Show mode: the density keyboard's "📦 On a container?" button routes here with
+    // no containerId. Post the container picker (against gross) without subtracting.
+    if (containerId === undefined || containerId === null || containerId === '') {
+      const choices = buildContainerKeyboard(this.#scaleConfig, this.#encodeCallback, logUuid);
+      if (messageId) {
+        try { await messaging.updateMessage(messageId, { text: containerPromptText(gross), choices, inline: true }); }
+        catch (e) { this.#logger.warn?.('selectContainer.showFailed', { error: e.message }); }
+      }
+      return { success: true, shown: true };
+    }
 
     let net = gross;
     let containerId2 = null, containerGrams = 0;
@@ -1153,7 +1193,7 @@ In `handleCallback`'s `switch (action)` block, add these cases before `default:`
 
 ```javascript
       case 'st': {
-        // Scale tare — subtract a known container weight
+        // Scale tare — decoded.c absent = show the container picker; present = subtract it
         const useCase = this.container.getSelectScaleContainer();
         return await useCase.execute({
           userId: this.#resolveUserId(event),

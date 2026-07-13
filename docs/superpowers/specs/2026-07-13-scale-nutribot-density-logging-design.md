@@ -104,6 +104,10 @@ user picks the container it sits in and its known weight is subtracted.
 - Container keyboard: `🚫 None` (own row) + one button per container (rows of 3), labelled
   `{emoji} {label} −{grams}`. Callback action `'st'`, payload `{ id: logUuid, c: containerId }`
   (`c: 'none'` for the None button).
+- **Always-available affordance:** the density keyboard also carries a `📦 On a container?`
+  button (callback `'st'` with **no** `c`) so a light item that never tripped
+  `threshold_g` (e.g. a paper towel or small plate) can still be tared. `SelectScaleContainer`
+  treats a missing `c` as **show mode** — it posts the container picker without subtracting.
 - `case 'st'` in the router → `SelectScaleContainer`:
   `net = max(1, grossGrams − containerGrams)` (guard: if the container weighs ≥ the gross
   reading, keep gross and log a warning); updates the pending item's `grams` to `net` and
@@ -227,8 +231,10 @@ unchanged.
 - **Trigger:** any settled reading above `min_grams`. Button events ignored.
 - **Target:** household head only (`configService.getHeadOfHousehold()`). Multi-user picker
   deferred.
-- **Tare:** manual container selection from a configured list; offered only above
-  `containers.threshold_g`. No auto-detection by weight.
+- **Tare:** manual container selection from a configured list; auto-prompted above
+  `containers.threshold_g` (config-driven, default 150), but ALSO reachable any time via
+  the density keyboard's `📦 On a container?` affordance. Re-taring recomputes from gross
+  (idempotent). No auto-detection by weight.
 - **Macros:** Path A stores calories only (macros null/estimated); Path B stores AI macros.
   A level-based macro split (fatty levels → more fat) is a future enhancement.
 - **No settle de-dup:** intermediate weigh-ins create discardable pending entries.
