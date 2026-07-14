@@ -135,6 +135,37 @@ describe('ScorePlayer — Learn mode (full-hand, simulated MIDI input)', () => {
   });
 });
 
+describe('ScorePlayer — practice range persistence (J3)', () => {
+  it('carries the focus range across Learn↔Polish but clears it leaving for Listen', () => {
+    h.layoutExtras = {
+      steps: [
+        { onsetQuarter: 0, measure: 0, notes: [{ midi: 64, staff: 0, x: 100, top: 10, bottom: 200, width: 8 }] },
+        { onsetQuarter: 1, measure: 1, notes: [{ midi: 62, staff: 0, x: 160, top: 10, bottom: 200, width: 8 }] },
+      ],
+      measures: [
+        { index: 0, number: 1, firstStep: 0, lastStep: 0 },
+        { index: 1, number: 2, firstStep: 1, lastStep: 1 },
+      ],
+    };
+    renderPlayer();
+    enterLearn();
+    // Pick a section (measures 1–2) → focus set, readout shows the section label.
+    act(() => { screen.getByText('Learn').click(); });
+    // Drive a section pick via the exposed section chip (harness gives sections through parsed; use the loop path instead).
+    // Simplest: tap two measures to arm a custom loop.
+    act(() => { screen.getByRole('button', { name: /loop range/i }).click(); }); // arm
+    act(() => { document.querySelector('.piano-score-player__scroll').click(); }); // first tap → measure 0
+    act(() => { document.querySelector('.piano-score-player__scroll').click(); }); // second tap → measure 0 (same point) → range set
+    expect(document.querySelector('.piano-score-focus-readout')).not.toBeNull();
+    // Switch to Polish — range must persist.
+    act(() => { screen.getByText('Polish').click(); });
+    expect(document.querySelector('.piano-score-focus-readout')).not.toBeNull();
+    // Switch to Listen — range is released.
+    act(() => { screen.getByText('Listen').click(); });
+    expect(document.querySelector('.piano-score-focus-readout')).toBeNull();
+  });
+});
+
 describe('ScorePlayer — Learn mode chord tolerance (audit B2)', () => {
   it('does not flash wrong for accompaniment notes that belong to the current onset', () => {
     renderPlayer();

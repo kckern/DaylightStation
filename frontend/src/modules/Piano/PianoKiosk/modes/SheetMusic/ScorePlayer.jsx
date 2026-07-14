@@ -628,9 +628,13 @@ export default function ScorePlayer({ score: scoreMeta }) {
     transport.stop();
     silenceScheduled();
     setStruck(() => new Set());
-    // Focus is a Learn + Polish practice affordance — release it on any mode change
-    // so the range never bleeds into Listen/Perform (and starts clean on re-entry).
-    setFocus(null); setLoopArm(false); loopInRef.current = null;
+    // Focus is a Learn + Polish practice affordance. It CARRIES across the
+    // Learn↔Polish handoff — the whole point of the ladder ("drill slowly, then
+    // test at tempo"; audit J3) — but is released when leaving that pair for
+    // Listen/Perform so it never bleeds in. Loop-arming always resets.
+    const PRACTICE_PAIR = ['learn', 'polish'];
+    if (!(PRACTICE_PAIR.includes(mode) && PRACTICE_PAIR.includes(id))) setFocus(null);
+    setLoopArm(false); loopInRef.current = null;
     // Leaving Polish: drop the run summary + grades (they belong to that run).
     setSummaryOpen(false); setGrades({});
     setKeyboardVisible(id !== 'perform');
