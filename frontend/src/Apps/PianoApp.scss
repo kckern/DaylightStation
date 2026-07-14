@@ -2629,6 +2629,45 @@
 .piano-score-parts { display: flex; align-items: center; gap: 0.3rem; flex-wrap: wrap; }
 
 // Shared button chrome for the bar (reset / run / keyboard / flow / size / info).
+// Practice scope popover (audit J5) — replaces section chips / Loop / Clear / readout.
+.piano-score-practice-wrap { position: relative; display: inline-block; }
+.piano-score-practice-menu {
+  position: absolute; bottom: calc(100% + 0.4rem); left: 0; z-index: 21;
+  display: flex; flex-direction: column; gap: 0.25rem; min-width: 12rem;
+  padding: 0.4rem; background: var(--piano-surface, #1f1f26);
+  border: 1px solid var(--piano-border, #34343f); border-radius: var(--r-md, 12px);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5);
+  .piano-score-practice-opt { justify-content: flex-start; text-align: left; }
+}
+// Shared backdrop that closes any open popover on an outside tap (audit M4).
+.piano-score-popover-backdrop {
+  position: fixed; inset: 0; z-index: 20; appearance: none; border: 0;
+  background: transparent; cursor: default; padding: 0;
+}
+
+// On-score guidance banner during guided measure selection (audit J5/M3).
+.piano-score-select-banner {
+  position: absolute; top: 0.6rem; left: 50%; transform: translateX(-50%); z-index: 22;
+  display: flex; align-items: center; gap: 0.8rem;
+  padding: 0.5rem 0.9rem; border-radius: var(--r-md, 12px);
+  background: rgba(46, 196, 111, 0.92); color: #07120a; font-weight: 700;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+  .piano-score-select-cancel { background: rgba(0, 0, 0, 0.18); border-color: rgba(0, 0, 0, 0.25); color: #07120a; }
+}
+
+// Focus-range brackets + tint on the score (audit J5/M3).
+.piano-score-range-tint {
+  position: absolute; z-index: 3; pointer-events: none;
+  background: color-mix(in srgb, var(--piano-accent, #2ec46f) 12%, transparent);
+  border-radius: 4px;
+}
+.piano-score-range-bracket {
+  position: absolute; z-index: 4; pointer-events: none; width: 3px;
+  background: var(--piano-accent, #2ec46f); border-radius: 2px;
+  box-shadow: 0 0 6px rgba(46, 196, 111, 0.5);
+  &--pending { background: #f0d270; box-shadow: 0 0 6px rgba(240, 210, 112, 0.6); }
+}
+
 // Hands / My-part segmented control (grand-staff fast path, audit J4).
 .piano-score-hands {
   display: inline-flex; align-items: center; gap: 0.3rem;

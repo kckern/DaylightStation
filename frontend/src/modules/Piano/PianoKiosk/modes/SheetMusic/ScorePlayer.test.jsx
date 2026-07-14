@@ -171,20 +171,19 @@ describe('ScorePlayer — practice range persistence (J3)', () => {
     };
     renderPlayer();
     enterLearn();
-    // Pick a section (measures 1–2) → focus set, readout shows the section label.
-    act(() => { screen.getByText('Learn').click(); });
-    // Drive a section pick via the exposed section chip (harness gives sections through parsed; use the loop path instead).
-    // Simplest: tap two measures to arm a custom loop.
-    act(() => { screen.getByRole('button', { name: /loop range/i }).click(); }); // arm
+    // Guided selection: Practice → Select measures… → two taps set a custom range.
+    act(() => { fireEvent.click(screen.getByRole('button', { name: /practice:/i })); });
+    act(() => { fireEvent.click(screen.getByRole('button', { name: /select measures/i })); });
     act(() => { document.querySelector('.piano-score-player__scroll').click(); }); // first tap → measure 0
-    act(() => { document.querySelector('.piano-score-player__scroll').click(); }); // second tap → measure 0 (same point) → range set
-    expect(document.querySelector('.piano-score-focus-readout')).not.toBeNull();
+    act(() => { document.querySelector('.piano-score-player__scroll').click(); }); // second tap → range set
+    // The Practice trigger now shows a measure-span scope (not "Whole piece").
+    expect(screen.getByRole('button', { name: /practice: m1/i })).toBeInTheDocument();
     // Switch to Polish — range must persist.
     act(() => { screen.getByText('Polish').click(); });
-    expect(document.querySelector('.piano-score-focus-readout')).not.toBeNull();
-    // Switch to Listen — range is released.
+    expect(screen.getByRole('button', { name: /practice: m1/i })).toBeInTheDocument();
+    // Switch to Listen — the Practice control is gone (range released).
     act(() => { screen.getByText('Listen').click(); });
-    expect(document.querySelector('.piano-score-focus-readout')).toBeNull();
+    expect(screen.queryByRole('button', { name: /practice:/i })).toBeNull();
   });
 });
 

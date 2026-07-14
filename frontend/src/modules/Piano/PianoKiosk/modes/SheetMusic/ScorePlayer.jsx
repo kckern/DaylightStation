@@ -31,6 +31,8 @@ import MeasureGradeLayer from './MeasureGradeLayer.jsx';
 import RunSummary from './RunSummary.jsx';
 import CountInOverlay from './CountInOverlay.jsx';
 import LearnComplete from './LearnComplete.jsx';
+import FocusRangeLayer from './FocusRangeLayer.jsx';
+import SelectBanner from './SelectBanner.jsx';
 
 const KEY_NAMES = { '-7': 'Cb', '-6': 'Gb', '-5': 'Db', '-4': 'Ab', '-3': 'Eb', '-2': 'Bb', '-1': 'F', 0: 'C', 1: 'G', 2: 'D', 3: 'A', 4: 'E', 5: 'B', 6: 'F#', 7: 'C#' };
 
@@ -106,8 +108,9 @@ export default function ScorePlayer({ score: scoreMeta }) {
     const f = restored.focus;
     return f && f.kind && Number.isInteger(f.inMeasure) && Number.isInteger(f.outMeasure) ? f : null;
   });
-  const [loopArm, setLoopArm] = useState(false); // custom tap-range state machine armed
-  const loopInRef = useRef(null); // pending in-measure index while arming (first tap)
+  // Guided measure-selection state machine (Practice → Select measures…):
+  //   null | { stage: 'first' } | { stage: 'last', inMeasure } (audit J5/M3)
+  const [selecting, setSelecting] = useState(null);
   const [clickOn, setClickOn] = useState(true); // Polish metronome — on by default during runs
   const [flow, setFlow] = useState('wrapped');
   const [perfPage, setPerfPage] = useState({ page: 1, pages: 1 }); // Perform page indicator (1-based)
@@ -595,19 +598,19 @@ export default function ScorePlayer({ score: scoreMeta }) {
     const r = rdr.getBoundingClientRect();
     const i = nearestEvent(events, e.clientX - r.left, e.clientY - r.top);
     if (i < 0) return;
-    // Custom-loop arming (Learn): the first tap sets the pending in-measure, the
-    // second sets the out-measure → a { inMeasure, outMeasure } range (ordered
-    // low→high). Arming taps set the bracket instead of seeking.
-    if (loopArm && mode === 'learn') {
+    // Guided measure selection (Learn/Polish): first tap sets the pending in-measure
+    // (a bracket appears + the banner asks for the last), the second sets the
+    // out-measure → an ordered { inMeasure, outMeasure } custom range. Selection taps
+    // set the range instead of seeking (audit J5/M3).
+    if (selecting) {
       const mi = measureIndexOfStep(i);
-      if (loopInRef.current == null) {
-        loopInRef.current = mi;
+      if (selecting.stage === 'first') {
+        setSelecting({ stage: 'last', inMeasure: mi });
         logger.info('score.focus.arm', { inMeasure: mi });
       } else {
-        const inMeasure = Math.min(loopInRef.current, mi);
-        const outMeasure = Math.max(loopInRef.current, mi);
-        loopInRef.current = null;
-        setLoopArm(false);
+        const inMeasure = Math.min(selecting.inMeasure, mi);
+        const outMeasure = Math.max(selecting.inMeasure, mi);
+        setSelecting(null);
         setFocus({ kind: 'custom', inMeasure, outMeasure });
       }
       return;
@@ -628,7 +631,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
     // Transport timeline is tempo-scaled (playTimeline uses factor 1/tempoMult);
     // seek positions come from the unscaled stepTimeline, so scale to match.
     transport.seek((stepTimeline[target]?.t ?? 0) / tempoMult);
-  }, [mode, flow, events, transport, stepTimeline, silenceScheduled, tempoMult, loopArm, range, measureIndexOfStep, logger, countIn]);
+  }, [mode, flow, events, transport, stepTimeline, silenceScheduled, tempoMult, selecting, range, measureIndexOfStep, logger, countIn]);
 
   // Single unmount teardown: immediate silence + one delayed panic (see the
   // silenceScheduled note above). One effect → order-independent by construction.
@@ -649,21 +652,27 @@ export default function ScorePlayer({ score: scoreMeta }) {
   const onPickSection = useCallback((section) => {
     const r = layout.measures ? sectionToRange(section, layout.measures) : null;
     if (!r) return;
-    setLoopArm(false); loopInRef.current = null;
+    setSelecting(null);
     setFocus({ kind: 'section', label: section.label, ...r });
   }, [layout.measures]);
 
-  // Toggle the custom-range tap state machine. Re-arming clears any pending first tap.
-  const onArmLoop = useCallback(() => {
-    loopInRef.current = null;
-    setLoopArm((v) => !v);
-  }, []);
+  // Begin the guided two-tap measure selection (from Practice → Select measures…).
+  const onStartSelect = useCallback(() => {
+    setSelecting({ stage: 'first' });
+    logger.info('score.focus.select-start', {});
+  }, [logger]);
+  const onCancelSelect = useCallback(() => setSelecting(null), []);
 
   const onClearFocus = useCallback(() => {
-    setLoopArm(false); loopInRef.current = null;
+    setSelecting(null);
     setFocus(null);
     logger.info('score.focus.clear', {});
   }, [logger]);
+  // Scope label for the Practice control: a section's label, a 1-based measure span,
+  // or "Whole piece" (indices are 0-based internally).
+  const scopeLabel = focus
+    ? (focus.label || `m${focus.inMeasure + 1}–m${focus.outMeasure + 1}`)
+    : 'Whole piece';
 
   // ── Bar handlers ──────────────────────────────────────────────────────────────
   const onMode = useCallback((id) => {
@@ -681,7 +690,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
     // Listen/Perform so it never bleeds in. Loop-arming always resets.
     const PRACTICE_PAIR = ['learn', 'polish'];
     if (!(PRACTICE_PAIR.includes(mode) && PRACTICE_PAIR.includes(id))) setFocus(null);
-    setLoopArm(false); loopInRef.current = null;
+    setSelecting(null);
     // Leaving Polish: drop the run summary + grades (they belong to that run).
     setSummaryOpen(false); setGrades({});
     setKeyboardVisible(id !== 'perform');
@@ -831,6 +840,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
   // here. Fires once per document (re-engraves from zoom/flow don't re-log).
   const openTsRef = useRef(performance.now());
   const readySentRef = useRef(false);
+  const firstDocRef = useRef(true); // first musicXml effect = mount; don't wipe restored focus
   // A new score opens in its written key (mirror the other per-score resets).
   useEffect(() => {
     openTsRef.current = performance.now(); readySentRef.current = false; setTranspose(0);
@@ -838,7 +848,11 @@ export default function ScorePlayer({ score: scoreMeta }) {
     // all subsequent events (load / follow / polish / focus / mode / transpose) land in it.
     startSession(scoreMeta.id);
     // A new document resets the practice range (measure indices don't carry over).
-    setFocus(null); setLoopArm(false); loopInRef.current = null;
+    // EXCEPT the very first mount, whose focus may have been restored from storage
+    // (Task 2.5) — guard so restore isn't immediately wiped.
+    if (!firstDocRef.current) { setFocus(null); }
+    firstDocRef.current = false;
+    setSelecting(null);
   }, [scoreMeta.musicXml]); // eslint-disable-line react-hooks/exhaustive-deps
   const onReady = useCallback(() => {
     if (readySentRef.current) return;
@@ -877,12 +891,14 @@ export default function ScorePlayer({ score: scoreMeta }) {
     ? expectedMidisAtStep(steps[step], activeParts)
     : struck;
 
-  // Per-step cursor boxes (same offset-space as the cursor) → measure-grade geometry.
-  // Events are parallel to steps by index; MeasureGradeLayer reads x/top/bottom.
+  // Per-step cursor boxes (same offset-space as the cursor). Shared geometry for
+  // BOTH the measure-grade wash (Polish) and the focus-range brackets (Learn/Polish),
+  // so it's computed whenever either could draw.
   const showGrades = mode === 'polish' && scoringOn;
+  const showFocusLayer = mode === 'learn' || mode === 'polish';
   const stepBoxes = useMemo(
-    () => (showGrades ? events.map((e) => ({ x: e.x, top: e.top, bottom: e.bottom })) : []),
-    [showGrades, events],
+    () => ((showGrades || showFocusLayer) ? events.map((e) => ({ x: e.x, top: e.top, bottom: e.bottom })) : []),
+    [showGrades, showFocusLayer, events],
   );
 
   return (
@@ -908,6 +924,14 @@ export default function ScorePlayer({ score: scoreMeta }) {
               grades={grades}
             />
           )}
+          {showFocusLayer && layoutFresh && ((!selecting && focus) || selecting?.stage === 'last') && (
+            <FocusRangeLayer
+              measures={layout.measures}
+              stepBoxes={stepBoxes}
+              range={!selecting && focus ? { inMeasure: focus.inMeasure, outMeasure: focus.outMeasure } : null}
+              pending={selecting?.stage === 'last' ? selecting.inMeasure : null}
+            />
+          )}
           {mode !== 'perform' && layoutFresh && (
             <NoteHighlightLayer
               step={steps[step]}
@@ -918,6 +942,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
           )}
         </MusicXmlRenderer>
         <CountInOverlay active={countIn.active} beat={countIn.beat} />
+        <SelectBanner stage={selecting?.stage} onCancel={onCancelSelect} />
       </div>
 
       {keyboardVisible && (
@@ -962,9 +987,9 @@ export default function ScorePlayer({ score: scoreMeta }) {
         onHandsChange={onHandsChange}
         sections={sections}
         focus={focus}
-        loopArm={loopArm}
+        scopeLabel={scopeLabel}
         onPickSection={onPickSection}
-        onArmLoop={onArmLoop}
+        onStartSelect={onStartSelect}
         onClearFocus={onClearFocus}
         keyboardVisible={keyboardVisible}
         onToggleKeyboard={onToggleKeyboard}
