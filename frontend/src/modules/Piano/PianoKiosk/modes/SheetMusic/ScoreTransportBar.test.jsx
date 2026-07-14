@@ -98,6 +98,19 @@ describe('ScoreTransportBar', () => {
     expect(onTempo).toHaveBeenCalledWith(1.5);
   });
 
+  it('polish mode: tempo stepper is present and commits via onTempo; no key/play-along', () => {
+    const onTempo = vi.fn();
+    render(<ScoreTransportBar {...base} mode="polish" tempoMult={1} onTempo={onTempo} />);
+    const tempoBtn = screen.getByRole('button', { name: /^tempo/i });
+    expect(tempoBtn).toHaveTextContent(/100%/);
+    fireEvent.click(tempoBtn);
+    fireEvent.click(screen.getByRole('button', { name: '75%' }));
+    expect(onTempo).toHaveBeenCalledWith(0.75);
+    // Listen-only extras stay absent in Polish.
+    expect(screen.queryByRole('button', { name: /transpose up/i })).toBeNull();
+    expect(screen.queryByRole('button', { name: /play along/i })).toBeNull();
+  });
+
   it('listen mode: play-along toggle fires onTogglePlayAlong and reflects aria-pressed', () => {
     const onTogglePlayAlong = vi.fn();
     const { rerender } = render(
@@ -118,13 +131,13 @@ describe('ScoreTransportBar', () => {
     expect(onTranspose).toHaveBeenCalledWith(2);
   });
 
-  it('tempo + play-along are Listen-only (absent in Learn/Polish/Perform)', () => {
+  it('tempo is in Listen+Polish; play-along stays Listen-only', () => {
     const { rerender } = render(<ScoreTransportBar {...base} mode="learn" />);
-    expect(screen.queryByRole('button', { name: /tempo/i })).toBeNull();
+    expect(screen.queryByRole('button', { name: /tempo/i })).toBeNull(); // Learn is self-paced
     expect(screen.queryByRole('button', { name: /play along/i })).toBeNull();
     rerender(<ScoreTransportBar {...base} mode="polish" />);
-    expect(screen.queryByRole('button', { name: /tempo/i })).toBeNull();
-    expect(screen.queryByRole('button', { name: /play along/i })).toBeNull();
+    expect(screen.getByRole('button', { name: /tempo/i })).toBeInTheDocument(); // Polish practices below tempo (J1)
+    expect(screen.queryByRole('button', { name: /play along/i })).toBeNull(); // play-along still Listen-only
   });
 
   it('learn mode: renders a section chip per section and fires onPickSection with it', () => {
