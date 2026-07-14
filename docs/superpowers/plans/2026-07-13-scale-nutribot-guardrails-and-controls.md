@@ -847,3 +847,577 @@ Expected: `logScale.posted` once per item, `logScale.edited` on weight changes, 
 **Placeholder scan:** No TBD/TODO; every code step shows full code; every test step shows real assertions. ✓
 
 **Type consistency:** `existingLogUuid`/`messageId` inputs and `{ success, logUuid, messageId, stage, edited }` return shape match between Task 2 (producer) and Task 3 (consumer). `buildDensityKeyboard(cfg, enc, id, { showingHelp })` signature identical across Tasks 1, 2, 4. `showHelp` boolean flows router (Task 5) → use case (Task 4). `sh {id,h}` / `x {id}` / `st {id}` / `sd {id,l}` callback shapes consistent across Tasks 1 and 5. ✓
+
+---
+
+# Addendum tasks (2026-07-14): idle-baseline gating + auto-expire
+
+See the spec addendum for rationale. The scale rests at a variable 400–520 g on the shelf
+and never returns to ~0, so the absolute near-empty re-arm from Task 3 is superseded by a
+relative-baseline state machine plus auto-expire. Reported weight stays **gross** (the
+baseline is a gate only, never subtracted).
+
+### Task 7: `LogFoodFromScale` edit-on-touched → no-op
+
+**Files:**
+- Modify: `backend/src/3_applications/nutribot/usecases/LogFoodFromScale.mjs`
+- Test: `tests/unit/suite/applications/nutribot/LogFoodFromScale.test.mjs`
+
+**Interfaces:**
+- Produces: edit mode on a touched/missing/non-pending log now returns
+  `{ success:true, logUuid, edited:false, touched:true }` and posts **nothing** (no create,
+  no send). Create mode and untouched-edit mode are unchanged.
+
+- [ ] **Step 1: Update the failing test**
+
+In `LogFoodFromScale.test.mjs`, replace the `'edit mode falls through to create when the log was already touched'` test body with a no-op assertion:
+
+```js
+  it('edit mode no-ops (posts nothing) when the log was already touched', async () => {
+    const touched = {
+      id: 'log1', status: 'pending',
+      items: [{ label: 'Unknown', grams: 210, calories: 0, unit: 'g' }],
+      metadata: { source: 'scale', grossGrams: 210, containerId: null, densityLevel: 5, messageId: '900' },
+      with(patch) { return { ...this, ...patch, with: this.with }; },
+    };
+    foodLogStore.findByUuid = jest.fn().mockResolvedValue(touched);
+    messaging.sendMessage = jest.fn();
+    messaging.updateMessage = jest.fn();
+    const res = await useCase.execute({ userId: 'kckern', conversationId: 'c', grams: 340, existingLogUuid: 'log1', messageId: '900' });
+    expect(res).toMatchObject({ success: true, edited: false, touched: true });
+    expect(messaging.sendMessage).not.toHaveBeenCalled();
+    expect(messaging.updateMessage).not.toHaveBeenCalled();
+  });
+```
+
+- [ ] **Step 2: Run test to verify it fails**
+
+Run: `node tests/unit/harness.mjs --pattern=LogFoodFromScale`
+Expected: FAIL — current code creates a fresh prompt (calls sendMessage) on a touched log.
+
+- [ ] **Step 3: Change the fall-through to a no-op**
+
+In `LogFoodFromScale.mjs`, in the `if (existingLogUuid && messageId) { … }` block, replace the trailing comment `// not untouched → fall through and create a fresh prompt` (which currently lets control fall out of the block) with an explicit no-op return, so the block becomes:
+
+```js
+    if (existingLogUuid && messageId) {
+      const existing = await this.#foodLogStore.findByUuid(existingLogUuid, userId);
+      if (this.#isUntouched(existing)) {
+        const item0 = typeof existing.items[0].toJSON === 'function' ? existing.items[0].toJSON() : { ...existing.items[0] };
+        const updated = existing.with({
+          items: [{ ...item0, grams: gross }],
+          metadata: { ...existing.metadata, grossGrams: gross },
+        }, new Date());
+        await this.#foodLogStore.save(updated);
+        const choices = buildDensityKeyboard(cfg, this.#encodeCallback, existingLogUuid);
+        try {
+          await this.#messagingGateway.updateMessage(conversationId, messageId, { text: densityPromptText(gross), choices, inline: true });
+        } catch (e) {
+          this.#logger.warn?.('logScale.editFailed', { error: e.message });
+        }
+        this.#logger.info?.('logScale.edited', { conversationId, logUuid: existingLogUuid, gross });
+        return { success: true, logUuid: existingLogUuid, messageId: String(messageId), stage: 'density', edited: true };
+      }
+      // Touched / missing / non-pending: the user owns it now. The bridge's committed
+      // flag handles the still-loaded food; posting a fresh prompt would duplicate. No-op.
+      return { success: true, logUuid: existingLogUuid, edited: false, touched: true };
+    }
+```
+
+- [ ] **Step 4: Run tests to verify they pass**
+
+Run: `node tests/unit/harness.mjs --pattern=LogFoodFromScale`
+Expected: PASS (the other create/edit tests are unaffected).
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add backend/src/3_applications/nutribot/usecases/LogFoodFromScale.mjs tests/unit/suite/applications/nutribot/LogFoodFromScale.test.mjs
+git commit -m "feat(nutribot): edit-on-touched scale log is a no-op (bridge owns committed prompts)"
+```
+
+---
+
+### Task 8: `ExpireScaleLog` use case + container registration
+
+**Files:**
+- Create: `backend/src/3_applications/nutribot/usecases/ExpireScaleLog.mjs`
+- Modify: `backend/src/3_applications/nutribot/NutribotContainer.mjs`
+- Test: `tests/unit/suite/applications/nutribot/ExpireScaleLog.test.mjs`
+
+**Interfaces:**
+- Consumes: `foodLogStore.findByUuid`, `.updateStatus`; `messagingGateway.deleteMessage`; `conversationStateStore.get?`/`.clear`.
+- Produces: `ExpireScaleLog.execute({ userId, conversationId, logUuid, messageId })` → if the log is still *untouched* (`status==='pending'` AND `metadata.source==='scale'` AND `containerId==null` AND `densityLevel==null`): reject it, delete the message, clear the describe state if it points at this log; returns `{ success:true, expired:true }`. Otherwise returns `{ success:true, expired:false }` and touches nothing. Container getter `getExpireScaleLog()`.
+
+- [ ] **Step 1: Write the failing test**
+
+Create `tests/unit/suite/applications/nutribot/ExpireScaleLog.test.mjs`:
+
+```js
+import { describe, it, expect, jest, beforeEach } from '@jest/globals';
+import { ExpireScaleLog } from '#apps/nutribot/usecases/ExpireScaleLog.mjs';
+
+const logger = { debug() {}, info() {}, warn() {}, error() {} };
+const scaleLog = (over = {}) => ({
+  id: 'log1', status: 'pending',
+  items: [{ grams: 480 }],
+  metadata: { source: 'scale', containerId: null, densityLevel: null, ...over },
+});
+
+describe('ExpireScaleLog', () => {
+  let foodLogStore, messagingGateway, stateStore, uc;
+  beforeEach(() => {
+    foodLogStore = { findByUuid: jest.fn().mockResolvedValue(scaleLog()), updateStatus: jest.fn().mockResolvedValue({}) };
+    messagingGateway = { deleteMessage: jest.fn().mockResolvedValue({}) };
+    stateStore = { get: jest.fn().mockResolvedValue({ flowState: { pendingLogUuid: 'log1' } }), clear: jest.fn().mockResolvedValue({}) };
+    uc = new ExpireScaleLog({ messagingGateway, foodLogStore, conversationStateStore: stateStore, logger });
+  });
+
+  it('expires an untouched pending scale log: rejects + deletes + clears its describe state', async () => {
+    const res = await uc.execute({ userId: 'kckern', conversationId: 'c', logUuid: 'log1', messageId: '900' });
+    expect(res).toMatchObject({ success: true, expired: true });
+    expect(foodLogStore.updateStatus).toHaveBeenCalledWith('kckern', 'log1', 'rejected');
+    expect(messagingGateway.deleteMessage).toHaveBeenCalledWith('c', '900');
+    expect(stateStore.clear).toHaveBeenCalledWith('c');
+  });
+
+  it('does nothing when the log was already touched (density chosen)', async () => {
+    foodLogStore.findByUuid = jest.fn().mockResolvedValue(scaleLog({ densityLevel: 5 }));
+    const res = await uc.execute({ userId: 'kckern', conversationId: 'c', logUuid: 'log1', messageId: '900' });
+    expect(res).toMatchObject({ success: true, expired: false });
+    expect(foodLogStore.updateStatus).not.toHaveBeenCalled();
+    expect(messagingGateway.deleteMessage).not.toHaveBeenCalled();
+  });
+
+  it('does not clear describe state that points at a different log', async () => {
+    stateStore.get = jest.fn().mockResolvedValue({ flowState: { pendingLogUuid: 'other' } });
+    await uc.execute({ userId: 'kckern', conversationId: 'c', logUuid: 'log1', messageId: '900' });
+    expect(stateStore.clear).not.toHaveBeenCalled();
+  });
+});
+```
+
+- [ ] **Step 2: Run test to verify it fails**
+
+Run: `node tests/unit/harness.mjs --pattern=ExpireScaleLog`
+Expected: FAIL — module does not exist.
+
+- [ ] **Step 3: Create `ExpireScaleLog.mjs`**
+
+```js
+//
+// Auto-expire an unanswered scale prompt. The bridge arms a timer per prompt; on fire it
+// calls this. If the log is still untouched (the user never engaged), we reject it and
+// delete the message — a phantom (e.g. the scale's shelf/idle load) nobody logged. If the
+// user has engaged (picked a container/density), we leave it entirely alone.
+
+export class ExpireScaleLog {
+  #messagingGateway; #foodLogStore; #conversationStateStore; #logger;
+
+  constructor(deps) {
+    if (!deps.messagingGateway) throw new Error('messagingGateway is required');
+    this.#messagingGateway = deps.messagingGateway;
+    this.#foodLogStore = deps.foodLogStore;
+    this.#conversationStateStore = deps.conversationStateStore;
+    this.#logger = deps.logger || console;
+  }
+
+  #isUntouched(log) {
+    return !!log
+      && log.status === 'pending'
+      && log.metadata?.source === 'scale'
+      && log.metadata?.containerId == null
+      && log.metadata?.densityLevel == null;
+  }
+
+  async execute(input) {
+    const { userId, conversationId, logUuid, messageId } = input;
+    const log = await this.#foodLogStore.findByUuid(logUuid, userId);
+    if (!this.#isUntouched(log)) return { success: true, expired: false };
+
+    await this.#foodLogStore.updateStatus(userId, logUuid, 'rejected');
+
+    if (this.#conversationStateStore) {
+      try {
+        const st = await this.#conversationStateStore.get?.(conversationId);
+        if (st?.flowState?.pendingLogUuid === logUuid) await this.#conversationStateStore.clear(conversationId);
+      } catch (e) { this.#logger.debug?.('scaleExpire.clearFailed', { error: e.message }); }
+    }
+
+    if (messageId) {
+      try { await this.#messagingGateway.deleteMessage(conversationId, messageId); } catch (e) { this.#logger.debug?.('scaleExpire.deleteFailed', { error: e.message }); }
+    }
+
+    this.#logger.info?.('scaleExpire.done', { conversationId, logUuid });
+    return { success: true, expired: true };
+  }
+}
+
+export default ExpireScaleLog;
+```
+
+- [ ] **Step 4: Register in `NutribotContainer.mjs`**
+
+Add the import next to the other scale-use-case imports:
+
+```js
+import { ExpireScaleLog } from './usecases/ExpireScaleLog.mjs';
+```
+
+Add a private field next to `#showScaleDensityHelp;`:
+
+```js
+  #expireScaleLog;
+```
+
+Add the getter after `getShowScaleDensityHelp()`:
+
+```js
+  getExpireScaleLog() {
+    if (!this.#expireScaleLog) {
+      this.#expireScaleLog = new ExpireScaleLog({
+        messagingGateway: this.getMessagingGateway(),
+        foodLogStore: this.#foodLogStore,
+        conversationStateStore: this.#conversationStateStore,
+        logger: this.#logger,
+      });
+    }
+    return this.#expireScaleLog;
+  }
+```
+
+- [ ] **Step 5: Run test to verify it passes**
+
+Run: `node tests/unit/harness.mjs --pattern=ExpireScaleLog`
+Expected: PASS.
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add backend/src/3_applications/nutribot/usecases/ExpireScaleLog.mjs backend/src/3_applications/nutribot/NutribotContainer.mjs tests/unit/suite/applications/nutribot/ExpireScaleLog.test.mjs
+git commit -m "feat(nutribot): ExpireScaleLog auto-rejects untouched scale prompts"
+```
+
+---
+
+### Task 9: Bridge rewrite — idle-baseline gating + auto-expire (supersedes Task 3)
+
+**Files:**
+- Modify: `backend/src/3_applications/nutribot/lib/scaleNutribotConfig.mjs` (config knobs)
+- Modify: `backend/src/3_applications/hardware/ScaleNutribotBridge.mjs`
+- Test: `tests/unit/suite/applications/nutribot/scaleNutribotConfig.test.mjs`
+- Test: `tests/unit/suite/applications/hardware/ScaleNutribotBridge.test.mjs`
+
+**Interfaces:**
+- Consumes: `getLogFoodFromScale().execute(...)` (gross grams; returns `{success,logUuid,messageId,edited?,touched?}`); `getExpireScaleLog().execute(...)` (Task 8, returns `{expired}`).
+- Produces: `normalizeScaleNutribotConfig` output also carries `baselineToleranceG` (default 6), `placementDeltaG` (default 10), `expireMs` (default 180000 = `expire_minutes`×60000). `createScaleNutribotBridge` accepts injectable `setTimeoutFn`/`clearTimeoutFn` (default the globals) for deterministic tests.
+
+- [ ] **Step 1: Add the config knobs (TDD)**
+
+Append to `scaleNutribotConfig.test.mjs` inside the describe:
+
+```js
+  it('normalizes baseline/placement/expire knobs with defaults', () => {
+    const cfg = normalizeScaleNutribotConfig({});
+    expect(cfg.baselineToleranceG).toBe(6);
+    expect(cfg.placementDeltaG).toBe(10);
+    expect(cfg.expireMs).toBe(180000);
+    const o = normalizeScaleNutribotConfig({ nutribot: { baseline_tolerance_g: 8, placement_delta_g: 15, expire_minutes: 5 } });
+    expect(o).toMatchObject({ baselineToleranceG: 8, placementDeltaG: 15, expireMs: 300000 });
+  });
+```
+
+Run `node tests/unit/harness.mjs --pattern=scaleNutribotConfig` → FAIL (undefined knobs). Then in `normalizeScaleNutribotConfig`'s `return { … }`, add the three fields (alongside `editDeltaG`):
+
+```js
+    baselineToleranceG: num(nb.baseline_tolerance_g, 6),
+    placementDeltaG: num(nb.placement_delta_g, 10),
+    expireMs: num(nb.expire_minutes, 3) * 60000,
+```
+
+Run again → PASS.
+
+- [ ] **Step 2: Replace the bridge test file**
+
+Replace the entire contents of `tests/unit/suite/applications/hardware/ScaleNutribotBridge.test.mjs` with:
+
+```js
+import { describe, it, expect, jest, beforeEach } from '@jest/globals';
+import { createScaleNutribotBridge } from '#apps/hardware/ScaleNutribotBridge.mjs';
+import { normalizeScaleNutribotConfig } from '#apps/nutribot/lib/scaleNutribotConfig.mjs';
+
+const logger = { debug() {}, info() {}, warn() {}, error() {} };
+const flush = () => new Promise((r) => setTimeout(r, 0));
+
+function makeBus() {
+  const handlers = {};
+  return {
+    subscribe: (topic, cb) => { (handlers[topic] ||= []).push(cb); return () => {}; },
+    emit: (topic, payload) => (handlers[topic] || []).forEach((cb) => cb(payload)),
+  };
+}
+
+function makeTimers() {
+  let pending = [];
+  return {
+    setTimeoutFn: (fn) => { const t = { fn, cleared: false, unref() { return this; } }; pending.push(t); return t; },
+    clearTimeoutFn: (t) => { if (t) t.cleared = true; },
+    fireAll: async () => { const due = pending.filter((t) => !t.cleared); pending = []; for (const t of due) await t.fn(); },
+  };
+}
+
+describe('ScaleNutribotBridge (idle-baseline)', () => {
+  let bus, execute, expire, container, timers, expired;
+  const emit = (grams, stable = true) => bus.emit('food-scale', { id: 'kitchen', grams, stable, unit: 'g' });
+
+  beforeEach(() => {
+    bus = makeBus();
+    execute = jest.fn().mockResolvedValue({ success: true, logUuid: 'l1', messageId: 'm1' });
+    expired = true;
+    expire = jest.fn(async () => ({ success: true, expired }));
+    container = { getLogFoodFromScale: () => ({ execute }), getExpireScaleLog: () => ({ execute: expire }) };
+    timers = makeTimers();
+    createScaleNutribotBridge({
+      eventBus: bus, nutribotContainer: container,
+      userId: 'kckern', conversationId: 'telegram:b1_c2',
+      scaleConfig: normalizeScaleNutribotConfig({}), logger,
+      setTimeoutFn: timers.setTimeoutFn, clearTimeoutFn: timers.clearTimeoutFn,
+    });
+  });
+
+  it('learns the initial resting weight silently (no prompt)', async () => {
+    emit(480); await flush();
+    expect(execute).not.toHaveBeenCalled();
+  });
+
+  it('suppresses a re-settle within tolerance of the baseline (shelf jostle)', async () => {
+    emit(480); await flush();      // baseline
+    emit(477); await flush();      // -3, within tol(6)
+    emit(481); await flush();      // +1
+    expect(execute).not.toHaveBeenCalled();
+  });
+
+  it('prompts (gross) when the weight rises >= placementDelta above baseline', async () => {
+    emit(480); await flush();      // baseline
+    emit(680); await flush();      // +200 → placement
+    expect(execute).toHaveBeenCalledTimes(1);
+    expect(execute.mock.calls[0][0]).toMatchObject({ grams: 680, scaleId: 'kitchen' });
+    expect(execute.mock.calls[0][0].existingLogUuid).toBeUndefined();
+  });
+
+  it('ignores a rise smaller than placementDelta', async () => {
+    emit(480); await flush();
+    emit(487); await flush();      // +7 < placementDelta(10)
+    expect(execute).not.toHaveBeenCalled();
+  });
+
+  it('edits in place while loaded when the weight changes >= editDelta', async () => {
+    emit(480); await flush();
+    emit(680); await flush();      // placement
+    emit(740); await flush();      // +60 while loaded → edit
+    expect(execute).toHaveBeenCalledTimes(2);
+    expect(execute.mock.calls[1][0]).toMatchObject({ grams: 740, existingLogUuid: 'l1', messageId: 'm1' });
+  });
+
+  it('re-arms after the food is removed (returns to baseline), then a new placement creates fresh', async () => {
+    emit(480); await flush();
+    emit(680); await flush();      // placement
+    emit(482); await flush();      // back near baseline → removed
+    emit(690); await flush();      // new placement
+    expect(execute).toHaveBeenCalledTimes(2);
+    expect(execute.mock.calls[1][0].existingLogUuid).toBeUndefined();
+  });
+
+  it('adopts a lower resting weight (tare to ~0), then a small placement prompts', async () => {
+    emit(480); await flush();      // baseline
+    emit(0); await flush();        // tared → baseline adopts 0
+    emit(30); await flush();       // +30 above 0 → placement
+    expect(execute).toHaveBeenCalledTimes(1);
+    expect(execute.mock.calls[0][0]).toMatchObject({ grams: 30 });
+  });
+
+  it('ignores wobble (unstable frames)', async () => {
+    emit(480); await flush();
+    emit(680, false); await flush();
+    expect(execute).not.toHaveBeenCalled();
+  });
+
+  it('auto-expires an untouched prompt and adopts its weight as the new baseline', async () => {
+    emit(30); await flush();       // baseline 30 (e.g. scale on counter)
+    emit(480); await flush();      // moved onto shelf → looks like placement
+    expect(execute).toHaveBeenCalledTimes(1);
+    expired = true;
+    await timers.fireAll();        // expire timer fires → untouched → rejected
+    expect(expire).toHaveBeenCalledTimes(1);
+    emit(481); await flush();      // shelf re-settle: now within tol of adopted baseline(480)
+    expect(execute).toHaveBeenCalledTimes(1); // no new prompt
+  });
+
+  it('commits (keeps, stops prompting) when the user engaged before expiry', async () => {
+    emit(480); await flush();
+    emit(680); await flush();      // placement
+    expired = false;               // user tapped density → ExpireScaleLog reports not-expired
+    await timers.fireAll();        // expire fires → committed
+    emit(750); await flush();      // more food while committed → no edit, no new prompt
+    expect(execute).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not double-create when two placement frames arrive before the first resolves', async () => {
+    emit(480); await flush();
+    emit(680); emit(680);          // synchronous, before flush
+    await flush();
+    expect(execute).toHaveBeenCalledTimes(1);
+  });
+});
+```
+
+- [ ] **Step 3: Run tests to verify they fail**
+
+Run: `node tests/unit/harness.mjs --pattern=ScaleNutribotBridge`
+Expected: FAIL — the current bridge uses absolute min-grams arming, no baseline, no expire, no injectable timers.
+
+- [ ] **Step 4: Rewrite `ScaleNutribotBridge.mjs`**
+
+Replace the file body (keep the top header comment; update it to describe the baseline model) with:
+
+```js
+const DEFAULT_TOPICS = ['food-scale'];
+
+export function createScaleNutribotBridge({
+  eventBus, nutribotContainer, userId, conversationId, scaleConfig, topics,
+  logger = console, setTimeoutFn = setTimeout, clearTimeoutFn = clearTimeout,
+}) {
+  if (!eventBus?.subscribe) throw new Error('createScaleNutribotBridge: eventBus with subscribe required');
+  if (!nutribotContainer?.getLogFoodFromScale) throw new Error('createScaleNutribotBridge: nutribotContainer required');
+
+  const baselineTolG = scaleConfig?.baselineToleranceG ?? 6;
+  const placementDeltaG = scaleConfig?.placementDeltaG ?? 10;
+  const editDeltaG = scaleConfig?.editDeltaG ?? 3;
+  const expireMs = scaleConfig?.expireMs ?? 180000;
+
+  const scales = new Map();   // id -> { baseline:number|null, active:{logUuid,messageId,lastGrams,committed,timer}|null }
+  const inflight = new Set();
+
+  const stateFor = (id) => {
+    let s = scales.get(id);
+    if (!s) { s = { baseline: null, active: null }; scales.set(id, s); }
+    return s;
+  };
+
+  const dispatch = (grams, extra) =>
+    nutribotContainer.getLogFoodFromScale().execute({ userId, conversationId, grams, unit: 'g', ...extra });
+
+  const clearActive = (s) => {
+    if (s.active?.timer) clearTimeoutFn(s.active.timer);
+    s.active = null;
+  };
+
+  const onExpire = async (id, s) => {
+    const cur = s.active;
+    if (!cur) return;
+    try {
+      const res = await nutribotContainer.getExpireScaleLog?.().execute({
+        userId, conversationId, logUuid: cur.logUuid, messageId: cur.messageId,
+      });
+      if (s.active !== cur) return; // state moved on while awaiting
+      if (res?.expired) {
+        s.baseline = cur.lastGrams;   // phantom's weight becomes the new resting load
+        clearActive(s);
+        logger.info?.('scaleNutribot.expired', { id, grams: cur.lastGrams });
+      } else {
+        cur.committed = true;         // user engaged — stop editing/expiring, keep for removal
+        if (cur.timer) clearTimeoutFn(cur.timer);
+        cur.timer = null;
+      }
+    } catch (err) {
+      logger.warn?.('scaleNutribot.expire.failed', { id, error: err.message });
+    }
+  };
+
+  const armExpire = (id, s) => {
+    if (!s.active) return;
+    if (s.active.timer) clearTimeoutFn(s.active.timer);
+    const t = setTimeoutFn(() => { void onExpire(id, s); }, expireMs);
+    if (t && typeof t.unref === 'function') t.unref();
+    s.active.timer = t;
+  };
+
+  const onPayload = async (payload) => {
+    if (!payload || typeof payload !== 'object') return;
+    const id = payload.id || 'unknown';
+    const grams = Math.round(Number(payload.grams));
+    if (!Number.isFinite(grams)) return;
+    if (payload.stable !== true) return; // only act on stable readings (ignore wobble)
+
+    const s = stateFor(id);
+    if (s.baseline === null) { s.baseline = grams; return; } // learn resting weight silently
+
+    const rise = grams - s.baseline;
+    const atRest = Math.abs(rise) <= baselineTolG;
+
+    if (s.active) {
+      if (atRest) { s.baseline = grams; clearActive(s); return; } // food removed → re-arm
+      if (s.active.committed) return;                              // user owns it; wait for removal
+      if (Math.abs(grams - s.active.lastGrams) >= editDeltaG) {
+        if (inflight.has(id)) return;
+        inflight.add(id);
+        try {
+          const res = await dispatch(grams, { scaleId: id, existingLogUuid: s.active.logUuid, messageId: s.active.messageId });
+          if (s.active) {
+            if (res?.success && res.messageId) s.active.messageId = res.messageId;
+            s.active.lastGrams = grams;
+            armExpire(id, s);
+          }
+        } catch (err) { logger.warn?.('scaleNutribot.dispatch.failed', { id, error: err.message }); }
+        finally { inflight.delete(id); }
+      }
+      return;
+    }
+
+    // No active prompt.
+    if (atRest || rise < 0) { s.baseline = grams; return; } // at/below rest → track baseline (tare / lighter surface)
+    if (rise < placementDeltaG) return;                     // small unexplained bump → ignore
+
+    if (inflight.has(id)) return; // deliberate placement
+    inflight.add(id);
+    try {
+      const res = await dispatch(grams, { scaleId: id });
+      if (res?.success && res.logUuid) {
+        s.active = { logUuid: res.logUuid, messageId: res.messageId || null, lastGrams: grams, committed: false, timer: null };
+        armExpire(id, s);
+      }
+    } catch (err) { logger.warn?.('scaleNutribot.dispatch.failed', { id, error: err.message }); }
+    finally { inflight.delete(id); }
+  };
+
+  const unsubs = (topics && topics.length ? topics : DEFAULT_TOPICS).map((t) => eventBus.subscribe(t, onPayload));
+  logger.info?.('scaleNutribot.bridge.ready', { conversationId, userId, baselineTolG, placementDeltaG, editDeltaG, expireMs, topics: topics || DEFAULT_TOPICS });
+
+  return { dispose: () => { for (const s of scales.values()) clearActive(s); for (const u of unsubs) { try { u?.(); } catch { /* noop */ } } } };
+}
+
+export default createScaleNutribotBridge;
+```
+
+- [ ] **Step 5: Run tests to verify they pass**
+
+Run: `node tests/unit/harness.mjs --pattern=ScaleNutribotBridge`
+Then: `node tests/unit/harness.mjs --pattern=scaleNutribotConfig`
+Expected: PASS (all bridge idle-baseline cases + config knobs).
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add backend/src/3_applications/hardware/ScaleNutribotBridge.mjs backend/src/3_applications/nutribot/lib/scaleNutribotConfig.mjs tests/unit/suite/applications/hardware/ScaleNutribotBridge.test.mjs tests/unit/suite/applications/nutribot/scaleNutribotConfig.test.mjs
+git commit -m "feat(nutribot): scale bridge idle-baseline gating + auto-expire (gross)"
+```
+
+## Self-Review (addendum)
+
+- Baseline gate (prompt only on rise ≥ placementDelta) → Task 9 Step 4, frame logic case 5. ✓
+- Suppress shelf re-settles (atRest) → Task 9, cases 4/atRest branches. ✓
+- Gross reporting (no baseline subtraction) → dispatch passes raw `grams`; ✓
+- Auto-expire untouched + adopt baseline → Task 8 (ExpireScaleLog) + Task 9 onExpire. ✓
+- Committed (no clobber after user engages) → Task 9 onExpire not-expired branch + active.committed guard + Task 7 edit-on-touched no-op. ✓
+- Config knobs `placement_delta_g`/`baseline_tolerance_g`/`expire_minutes`/`edit_delta_g` → Task 9 Step 1. ✓
+- Type consistency: `{expired}` (Task 8) consumed in Task 9 onExpire; `{edited,touched}` (Task 7) consumed in Task 9 edit branch (uses messageId only). `setTimeoutFn/clearTimeoutFn` injection consistent across bridge + tests. ✓
