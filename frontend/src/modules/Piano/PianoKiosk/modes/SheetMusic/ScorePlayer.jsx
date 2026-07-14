@@ -785,9 +785,11 @@ export default function ScorePlayer({ score: scoreMeta }) {
       // (toggleRun is the only resume entry point; reset()/onDone stop the
       // transport first, so their pending panic is harmless.)
       clearTimeout(flushTimerRef.current);
-      // Polish counts the user in before the graded run so the beat is audible
-      // before it's judged (audit J1); onGo starts the transport. Other modes play now.
-      if (mode === 'polish') {
+      // Count the user in when they're expected to PLAY: Polish always (the beat is
+      // graded — audit J1), and Listen when they've claimed a part (audit J7). onGo
+      // starts the transport. Pure playback (Listen, no part) plays immediately.
+      const countUserIn = mode === 'polish' || (mode === 'listen' && myStaves.size > 0);
+      if (countUserIn) {
         countIn.start(countInPlan({ beats: parsed?.timeSig?.beats, bpm: tempoMap[0]?.bpm, tempoMult }));
         logger.info('score.countin.start', { mode, beats: parsed?.timeSig?.beats, bpm: tempoMap[0]?.bpm, tempoMult });
       } else {
@@ -798,7 +800,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
     }
     // NOTE: reads the live cursor via `stepRef.current` (mirrors `step`), NOT the
     // `step` closure — so `step` is deliberately OUT of the dep array.
-  }, [countIn, transport, mode, silenceScheduled, flushPlaybackNow, logger, stepTimeline, tempoMap, tempoMult, parsed]);
+  }, [countIn, transport, mode, myStaves, silenceScheduled, flushPlaybackNow, logger, stepTimeline, tempoMap, tempoMult, parsed]);
 
   // Changing the Listen role map mid-flight invalidates the note timeline — pause,
   // flush, and silence so a stale schedule doesn't drone. Shared by the chip

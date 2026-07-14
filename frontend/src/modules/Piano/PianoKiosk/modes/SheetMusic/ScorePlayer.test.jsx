@@ -392,6 +392,22 @@ describe('ScorePlayer — Listen mode', () => {
     expect(h.sendNoteAt).not.toHaveBeenCalledWith(64, expect.any(Number), expect.any(Number)); // RH (yours) NOT performed
   });
 
+  it('Listen counts the user in only when they play a part (J7)', async () => {
+    h.layoutExtras = { tempoEntries: [{ onsetQuarter: 0, bpm: 60 }] };
+    renderPlayer();
+    screen.getByText('Listen').click();
+    await act(async () => {});
+    // My part = None → Play starts immediately (no count-in overlay).
+    screen.getByText('▶').click();
+    await act(async () => {});
+    expect(document.querySelector('.piano-score-countin')).toBeNull();
+    // Reset, claim a part, play again → count-in now runs.
+    act(() => { fireEvent.click(screen.getByRole('radio', { name: 'RH' })); });
+    // (a fresh Play after the timeline change)
+    if (screen.queryByText('▶')) { screen.getByText('▶').click(); await act(async () => {}); }
+    expect(document.querySelector('.piano-score-countin')).not.toBeNull();
+  });
+
   it('sends scheduled notes with timestamps (audio plane), not pressNote', async () => {
     h.layoutExtras = {
       tempoEntries: [{ onsetQuarter: 0, bpm: 60 }],
