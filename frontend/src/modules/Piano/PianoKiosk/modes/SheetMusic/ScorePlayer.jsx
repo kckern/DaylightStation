@@ -85,9 +85,14 @@ export default function ScorePlayer({ score: scoreMeta }) {
 
   usePianoBreadcrumb(useMemo(() => [{ label: meta.title }], [meta.title]));
 
+  // Resolved sheetmusic config (defaults filled). Hoisted above the mode state so
+  // the initial mode can come from `defaultMode` — the ladder starts at Listen.
+  const smCfg = useMemo(() => resolveSheetMusicConfig(config?.sheetmusic), [config]);
+  const VALID_MODES = ['listen', 'learn', 'polish', 'perform'];
+
   const [layout, setLayout] = useState({ events: [], notes: [], steps: [], measures: [], tempoEntries: [], width: 0, height: 0, flow: null, scale: null });
   const [step, setStep] = useState(0);
-  const [mode, setMode] = useState('learn');
+  const [mode, setMode] = useState(() => (VALID_MODES.includes(smCfg.defaultMode) ? smCfg.defaultMode : 'learn'));
   const [focus, setFocus] = useState(null); // Learn practice range: { kind, label?, inMeasure, outMeasure } (measure INDICES) | null = whole piece
   const [loopArm, setLoopArm] = useState(false); // custom tap-range state machine armed
   const loopInRef = useRef(null); // pending in-measure index while arming (first tap)
@@ -322,7 +327,6 @@ export default function ScorePlayer({ score: scoreMeta }) {
   // The cursor advances on the silent step timeline (no note_on for your parts);
   // MIDI hits are graded per measure. Timing drift is proxied by "ms after this
   // step's beat began" (stepStartRef) — a coarse but honest at-tempo lateness read.
-  const smCfg = useMemo(() => resolveSheetMusicConfig(config?.sheetmusic), [config]);
   const resolvedScoringCfg = smCfg.scoring;
   const currentMeasure = layout.steps?.[step]?.measure ?? 0;
   // stepStartRef is stamped in the transport's onEvent (musical due time), not
