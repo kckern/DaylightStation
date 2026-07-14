@@ -2629,6 +2629,15 @@
 .piano-score-parts { display: flex; align-items: center; gap: 0.3rem; flex-wrap: wrap; }
 
 // Shared button chrome for the bar (reset / run / keyboard / flow / size / info).
+// Retry action on a load-failure placeholder (audit M6).
+.piano-empty__action {
+  margin-top: 0.8rem; appearance: none; cursor: pointer;
+  padding: 0.5rem 1rem; border-radius: var(--r-md, 12px);
+  border: 1px solid var(--piano-accent, #2ec46f); color: var(--piano-accent, #2ec46f);
+  background: color-mix(in srgb, var(--piano-accent, #2ec46f) 12%, transparent);
+  font: inherit; font-weight: 600;
+}
+
 // View menu (audit J5/M4) — consolidates layout/size/keyboard/about behind ⋯.
 .piano-score-view-wrap { position: relative; display: inline-block; }
 .piano-score-view-menu {

@@ -92,11 +92,13 @@ function ScoreViewerRoute() {
 function NotationScore({ contentId }) {
   const logger = useMemo(() => getLogger().child({ component: 'piano-sheetmusic' }), []);
   const [xml, setXml] = useState(null); // null = loading, '' = failed
+  const [retryKey, setRetryKey] = useState(0);
   const fetchMsRef = useRef(0); // raw-XML fetch time → ScorePlayer's score.load telemetry
   const localId = useMemo(() => contentId.replace(/^[a-z]+:/i, ''), [contentId]);
 
   useEffect(() => {
     let cancelled = false;
+    setXml(null);
     (async () => {
       try {
         logger.info('piano.score-open', { id: localId, kind: 'notation' });
@@ -110,10 +112,10 @@ function NotationScore({ contentId }) {
       }
     })();
     return () => { cancelled = true; };
-  }, [localId, logger]);
+  }, [localId, logger, retryKey]);
 
   if (xml === null) return <SkeletonStage />;
-  if (xml === '') return <PianoEmpty message="Could not load this score." />;
+  if (xml === '') return <PianoEmpty message="Could not load this score." actionLabel="Try again" onAction={() => setRetryKey((k) => k + 1)} />;
   return <ScorePlayer score={{ id: contentId, musicXml: xml, fetchMs: fetchMsRef.current }} />;
 }
 
