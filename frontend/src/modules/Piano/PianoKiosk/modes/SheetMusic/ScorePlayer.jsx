@@ -22,6 +22,7 @@ import useScoreTelemetry from './useScoreTelemetry.js';
 import useScoreEvaluator from './useScoreEvaluator.js';
 import { resolveSheetMusicConfig } from './sheetMusicConfig.js';
 import { tallyGrades } from './gradeTally.js';
+import { worstSpan } from './worstSpan.js';
 import { isRisingEdge } from './pedalEdge.js';
 import ScoreTransportBar from './ScoreTransportBar.jsx';
 import NoteHighlightLayer from './NoteHighlightLayer.jsx';
@@ -675,6 +676,20 @@ export default function ScorePlayer({ score: scoreMeta }) {
   const onReplaySummary = useCallback(() => { reset(); }, [reset]);
   const onCloseSummary = useCallback(() => setSummaryOpen(false), []);
 
+  // Run summary "Drill worst section": set the practice range to the heaviest
+  // trouble span and drop into Learn to work it slowly (audit J6). Switch mode
+  // FIRST (learn↔polish keeps focus per J3), then set the range so it survives.
+  const onDrillWorst = useCallback(() => {
+    const span = worstSpan(gradesRef.current);
+    if (!span) return;
+    setSummaryOpen(false);
+    onMode('learn');
+    setFocus({ kind: 'custom', ...span });
+    logger.info('score.drill.worst', span);
+  }, [onMode, logger]);
+  // The Drill button only makes sense when there's a trouble span to drill.
+  const drillable = useMemo(() => worstSpan(grades) != null, [grades]);
+
   // Stable toggles for the transport bar. Passing fresh inline arrows here would
   // defeat React.memo on the bar's expensive body (parts/chips/popovers), so the
   // whole bar would reconcile on every cursor-step advance. Functional updaters →
@@ -884,6 +899,8 @@ export default function ScorePlayer({ score: scoreMeta }) {
           measures={layout.measures}
           onClose={onCloseSummary}
           onReplay={onReplaySummary}
+          drillable={drillable}
+          onDrill={onDrillWorst}
         />
       )}
     </div>

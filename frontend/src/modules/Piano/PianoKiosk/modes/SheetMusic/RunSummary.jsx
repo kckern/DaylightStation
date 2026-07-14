@@ -16,7 +16,7 @@ const OVERALL_LABEL = { green: 'Nicely done', yellow: 'Getting there', red: 'Kee
  * @param {Function} p.onClose
  * @param {Function} p.onReplay
  */
-export default function RunSummary({ open, grades = {}, measures = [], onClose, onReplay }) {
+export default function RunSummary({ open, grades = {}, measures = [], onClose, onReplay, drillable = false, onDrill }) {
   if (!open) return null;
 
   const counts = tallyGrades(grades);
@@ -47,6 +47,9 @@ export default function RunSummary({ open, grades = {}, measures = [], onClose, 
       </div>
 
       <div className="piano-score-run-actions">
+        {drillable && (
+          <button type="button" className="piano-score-btn piano-score-run-drill" onClick={onDrill}>Drill worst section</button>
+        )}
         <button type="button" className="piano-score-btn piano-score-run-replay" onClick={onReplay}>Replay</button>
         <button type="button" className="piano-score-btn piano-score-run-close" onClick={onClose}>Close</button>
       </div>
