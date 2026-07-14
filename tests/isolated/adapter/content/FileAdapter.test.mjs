@@ -76,6 +76,28 @@ describe('FileAdapter', () => {
     expect(() => new FileAdapter({ mediaBasePath: '' })).toThrow('FileAdapter requires mediaBasePath');
   });
 
+  describe('image sidecar posters (sheet music)', () => {
+    test('getItem uses a same-basename .jpg sidecar as a notation file thumbnail', async () => {
+      const item = await adapter.getItem('docs/sheet-music/song.musicxml');
+      expect(item).not.toBeNull();
+      expect(item.mediaType).toBe('notation');
+      expect(item.thumbnail).toBe(
+        `/api/v1/proxy/media/stream/${encodeURIComponent('docs/sheet-music/song.jpg')}`,
+      );
+    });
+
+    test('getList hides the sidecar image but keeps standalone images and the notation tile', async () => {
+      const list = await adapter.getList('docs/sheet-music');
+      const ids = list.map((i) => i.id);
+      expect(ids).toContain('files:docs/sheet-music/song.musicxml'); // notation tile present
+      expect(ids).not.toContain('files:docs/sheet-music/song.jpg');  // sidecar hidden
+      expect(ids).toContain('files:docs/sheet-music/gallery.jpg');   // standalone image still listed
+      // The notation tile carries the sidecar poster.
+      const notation = list.find((i) => i.id === 'files:docs/sheet-music/song.musicxml');
+      expect(notation.thumbnail).toContain('song.jpg');
+    });
+  });
+
   describe('ID3 tag parsing', () => {
     test('should include artist from audio file metadata', async () => {
       const adapter = new FileAdapter({

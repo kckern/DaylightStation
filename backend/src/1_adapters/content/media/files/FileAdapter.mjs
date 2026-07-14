@@ -47,6 +47,9 @@ const IMAGE_EXTS = ['.jpg', '.jpeg', '.png', '.gif', '.svg', '.webp'];
 // non-playable mediaType so the frontend picks the right viewer.
 const NOTATION_EXTS = ['.musicxml', '.mxl'];
 const DOC_EXTS = ['.pdf'];
+// Image extensions honored as a same-basename sidecar poster for a notation/document
+// file (e.g. fur-elise.jpg next to fur-elise.musicxml). Order = preference.
+const SIDECAR_IMAGE_EXTS = ['.jpg', '.jpeg', '.png', '.webp'];
 
 const VALID_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
 const MAX_COVER_SIZE = 10 * 1024 * 1024; // 10MB
@@ -385,6 +388,25 @@ export class FileAdapter {
   }
 
   /**
+   * Find a same-basename image sidecar for a notation/document file and return its
+   * localId (relative to mediaBasePath), or null. `fullPath` is the notation file's
+   * resolved path; `localId` is its clean id — the sidecar shares the basename.
+   * @param {string} fullPath
+   * @param {string} localId
+   * @returns {string|null}
+   * @private
+   */
+  _sidecarImageLocalId(fullPath, localId) {
+    const dir = path.dirname(fullPath);
+    const base = path.basename(fullPath, path.extname(fullPath));
+    const localDir = localId.includes('/') ? localId.slice(0, localId.lastIndexOf('/') + 1) : '';
+    for (const imgExt of SIDECAR_IMAGE_EXTS) {
+      if (fileExists(path.join(dir, base + imgExt))) return `${localDir}${base}${imgExt}`;
+    }
+    return null;
+  }
+
+  /**
    * @param {string} id - Compound ID like "media:path/to/file.mp3"
    * @returns {Promise<PlayableItem|ListableItem|null>}
    */
@@ -523,11 +545,20 @@ export class FileAdapter {
       const relativeMediaPath = path.relative(this.mediaBasePath, resolved.path);
       // Video → ffmpeg frame thumbnail; audio → embedded cover art; notation/
       // document/unknown have no inherent thumbnail (the frontend labels them).
-      const thumbnail = mediaType === 'video'
+      let thumbnail = mediaType === 'video'
         ? `/api/v1/local/thumbnail/${encodeURIComponent(relativeMediaPath)}`
         : mediaType === 'audio'
           ? `/api/v1/local-content/cover/${encodeURIComponent(localId)}`
           : null;
+
+      // Notation / document files have no inherent thumbnail — honor a same-basename
+      // image sidecar (e.g. fur-elise.jpg next to fur-elise.musicxml) as the poster.
+      if (!thumbnail && (mediaType === 'notation' || mediaType === 'document')) {
+        const sidecarLocalId = this._sidecarImageLocalId(resolved.path, localId);
+        if (sidecarLocalId) {
+          thumbnail = `/api/v1/proxy/media/stream/${encodeURIComponent(sidecarLocalId)}`;
+        }
+      }
 
       // Use ID3 title if available, otherwise filename
       const title = audioMetadata.title || path.basename(localId, ext);
@@ -598,8 +629,25 @@ export class FileAdapter {
       const entries = listEntries(resolved.path);
       const items = [];
 
+      // Basenames of notation/document files in this directory — a same-basename
+      // image is treated as that file's sidecar poster, not a standalone tile.
+      const sidecarOwners = new Set();
+      for (const entry of entries) {
+        const ext = path.extname(entry).toLowerCase();
+        if (NOTATION_EXTS.includes(ext) || DOC_EXTS.includes(ext)) {
+          sidecarOwners.add(path.basename(entry, path.extname(entry)));
+        }
+      }
+
       for (const entry of entries) {
         if (entry.startsWith('.')) continue;
+
+        const entryExt = path.extname(entry).toLowerCase();
+        // Skip an image that is a sidecar poster for a sibling notation/document file
+        // (it surfaces as that file's thumbnail, not as its own tile).
+        if (SIDECAR_IMAGE_EXTS.includes(entryExt) && sidecarOwners.has(path.basename(entry, path.extname(entry)))) {
+          continue;
+        }
 
         const entryPath = path.join(resolved.path, entry);
         try {
