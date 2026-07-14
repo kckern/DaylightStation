@@ -202,6 +202,7 @@ describe('ScorePlayer — Polish mode (transport-driven)', () => {
     await act(async () => {});
     screen.getByText('▶').click();
     await act(async () => {});
+    act(() => vi.advanceTimersByTime(4100)); // through the 4-beat @60 count-in (4000ms) → transport starts
 
     act(() => vi.advanceTimersByTime(1050)); // 1st quarter @60 = 1000ms
     expect(screen.getByText('2 / 4')).toBeTruthy();
@@ -209,6 +210,38 @@ describe('ScorePlayer — Polish mode (transport-driven)', () => {
     expect(screen.getByText('3 / 4')).toBeTruthy();
     act(() => vi.advanceTimersByTime(550)); // 3rd quarter @120 = 500ms
     expect(screen.getByText('4 / 4')).toBeTruthy();
+  });
+
+  it('Play starts a count-in before the transport moves, then advances (J1)', async () => {
+    h.layoutExtras = { tempoEntries: [{ onsetQuarter: 0, bpm: 60 }] }; // count-in 4 beats @60 = 4000ms
+    renderPlayer();
+    screen.getByText('Polish').click();
+    await act(async () => {});
+    screen.getByText('▶').click();
+    await act(async () => {});
+    expect(document.querySelector('.piano-score-countin')).not.toBeNull(); // counting in
+    expect(screen.getByText('1 / 4')).toBeTruthy();
+    act(() => vi.advanceTimersByTime(3000)); // still within the 4000ms count-in
+    expect(screen.getByText('1 / 4')).toBeTruthy(); // transport not started yet
+    act(() => vi.advanceTimersByTime(1100)); // past 4000ms → count-in done → play
+    expect(document.querySelector('.piano-score-countin')).toBeNull();
+    act(() => vi.advanceTimersByTime(1050)); // first quarter @60 = 1000ms
+    expect(screen.getByText('2 / 4')).toBeTruthy();
+  });
+
+  it('tapping during the count-in cancels it (transport never starts) (J1)', async () => {
+    h.layoutExtras = { tempoEntries: [{ onsetQuarter: 0, bpm: 60 }] };
+    renderPlayer();
+    screen.getByText('Polish').click();
+    await act(async () => {});
+    screen.getByText('▶').click();
+    await act(async () => {});
+    expect(document.querySelector('.piano-score-countin')).not.toBeNull();
+    act(() => { document.querySelector('.piano-score-player__scroll').click(); }); // tap = abort
+    await act(async () => {});
+    expect(document.querySelector('.piano-score-countin')).toBeNull();
+    act(() => vi.advanceTimersByTime(6000));
+    expect(screen.getByText('1 / 4')).toBeTruthy(); // never advanced
   });
 });
 
