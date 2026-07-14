@@ -33,6 +33,7 @@ import {
 import { LogFoodFromScale } from './usecases/LogFoodFromScale.mjs';
 import { SelectScaleContainer } from './usecases/SelectScaleContainer.mjs';
 import { SelectScaleDensity } from './usecases/SelectScaleDensity.mjs';
+import { ShowScaleDensityHelp } from './usecases/ShowScaleDensityHelp.mjs';
 import { LogScaleFoodFromText } from './usecases/LogScaleFoodFromText.mjs';
 
 /**
@@ -91,6 +92,7 @@ export class NutribotContainer {
   #logFoodFromScale;
   #selectScaleContainer;
   #selectScaleDensity;
+  #showScaleDensityHelp;
   #logScaleFoodFromText;
 
   /**
@@ -302,6 +304,18 @@ export class NutribotContainer {
       });
     }
     return this.#selectScaleDensity;
+  }
+
+  getShowScaleDensityHelp() {
+    if (!this.#showScaleDensityHelp) {
+      this.#showScaleDensityHelp = new ShowScaleDensityHelp({
+        messagingGateway: this.getMessagingGateway(),
+        foodLogStore: this.#foodLogStore,
+        scaleConfig: this.#scaleConfig,
+        logger: this.#logger,
+      });
+    }
+    return this.#showScaleDensityHelp;
   }
 
   getLogScaleFoodFromText() {
