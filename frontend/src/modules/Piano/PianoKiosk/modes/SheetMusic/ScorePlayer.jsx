@@ -11,7 +11,7 @@ import useReloadGuard from '../../useReloadGuard.js';
 import { buildTempoMap, buildStepTimeline, scaleTimeline } from '../../../../MusicNotation/scoreTimeline.js';
 import { useScoreTransport } from './useScoreTransport.js';
 import { tweenScrollTo, cancelScrollTween } from './scrollTween.js';
-import { partsOf, cyclePart, buildPlayTimeline, youMidisAt, allPlayRoles } from './playParts.js';
+import { partsOf, cyclePart, buildPlayTimeline, youMidisAt } from './playParts.js';
 import { staffLabels, defaultActiveParts, expectedMidisAtStep } from './activeParts.js';
 import { rangeSteps, clampStepToRange, sectionToRange } from './focusRange.js';
 import useFollowTracker from './useFollowTracker.js';
@@ -47,7 +47,7 @@ function nearestEvent(events, x, y) {
  *            noteheads light up (bouncing ball). It does NOT perform through
  *            the piano — it only lights the notes you should be playing.
  *  Listen  — the kiosk performs 'play' parts through the piano; 'you' parts are
- *            highlighted (never sent); 'mute' parts are silent.
+ *            highlighted (never sent) so the user plays them along with the kiosk.
  *  Perform — no awareness; config-defined pedals + tap-to-scroll turn the page.
  *
  * Chrome lives in a pinned bottom {@link ScoreTransportBar}; the top bar shows the
@@ -175,16 +175,16 @@ export default function ScorePlayer({ score: scoreMeta }) {
     });
   }, [staffSig]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Listen is a jukebox: the kiosk performs EVERY part (allPlayRoles), tempo-scaled
-  // by the user's multiplier (faster tempo → shorter durations → factor 1/tempoMult).
-  // Other modes keep their silent step timeline. Polish is scaled too so its tempo
-  // control (later task) tracks the same knob without further plumbing.
-  const listenRoles = useMemo(() => allPlayRoles(parts), [parts]);
+  // Listen performs the parts the user did NOT claim as their own: a staff set to
+  // 'you' is engraved + highlighted but never sent to the piano (the user plays it);
+  // 'play' staves are performed. Tempo-scaled by the user's multiplier (faster tempo
+  // → shorter durations → factor 1/tempoMult). Other modes keep their silent step
+  // timeline. Polish is scaled too so its tempo control tracks the same knob.
   const playTimeline = useMemo(
     () => (mode === 'listen'
-      ? scaleTimeline(buildPlayTimeline(events, layout.notes, tempoMap, listenRoles), 1 / tempoMult)
+      ? scaleTimeline(buildPlayTimeline(events, layout.notes, tempoMap, roles), 1 / tempoMult)
       : scaleTimeline(stepTimeline, 1 / tempoMult)),
-    [mode, events, layout.notes, tempoMap, listenRoles, stepTimeline, tempoMult],
+    [mode, events, layout.notes, tempoMap, roles, stepTimeline, tempoMult],
   );
 
   const soundingRef = useRef(new Set());

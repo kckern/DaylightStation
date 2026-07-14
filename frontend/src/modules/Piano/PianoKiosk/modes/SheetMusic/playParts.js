@@ -1,7 +1,7 @@
 // playParts — Play-mode part model. A "part" is a staff of the engraved score;
-// each part has a role: 'play' (kiosk performs it through the piano),
-// 'mute' (silent), or 'you' (the user's part — engraved + highlighted, never
-// sent to MIDI out). Both-play = pure playback; melody-'you' = hybrid practice.
+// each part has a role: 'play' (kiosk performs it through the piano) or 'you'
+// (the user's part — engraved + highlighted, never sent to MIDI out). Both-play =
+// pure playback; melody-'you' = hybrid practice (the user plays along).
 
 import { buildStepTimeline, buildNoteTimeline } from '../../../../MusicNotation/scoreTimeline.js';
 
@@ -11,7 +11,9 @@ export function partsOf(notes) {
   return staves.map((staff) => ({ staff, role: 'play' }));
 }
 
-const CYCLE = { play: 'you', you: 'mute', mute: 'play' };
+// Two states only: the kiosk plays it ('play') or you do ('you'). Muting every
+// staff is just Learn; a dedicated 'mute' role was dropped as redundant (A4).
+const CYCLE = { play: 'you', you: 'play' };
 export function cyclePart(role) { return CYCLE[role] || 'play'; }
 
 /**
@@ -36,9 +38,4 @@ export function youMidisAt(notes, roles, onsetQuarter) {
   return set.size ? set : null;
 }
 
-/** Every staff set to the `play` role — the full-performance role map for Listen. */
-export function allPlayRoles(parts) {
-  return Object.fromEntries((parts || []).map((p) => [p.staff, 'play']));
-}
-
-export default { partsOf, cyclePart, buildPlayTimeline, youMidisAt, allPlayRoles };
+export default { partsOf, cyclePart, buildPlayTimeline, youMidisAt };
