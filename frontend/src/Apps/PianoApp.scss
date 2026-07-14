@@ -2458,9 +2458,20 @@
 .musicxml-renderer__svg svg { display: block; }
 .musicxml-renderer--placeholder { color: #6a6256; padding: 2rem; text-align: center; }
 .musicxml-renderer__busy {
-  position: absolute; inset: 0; z-index: 6;
+  position: absolute; inset: 0; z-index: 6; min-height: 16rem;
   display: flex; align-items: center; justify-content: center;
   color: #6a6256; font-weight: 600; background: rgba(252, 250, 244, 0.7);
+}
+// Engrave-phase staff skeleton (audit H0): stacked 5-line staff systems that
+// shimmer while OSMD engraves. Reuses .piano-skeleton .is-shimmer sweep on each
+// line; prefers-reduced-motion is handled by that shared rule.
+.staff-skeleton {
+  width: min(90%, 60rem); display: flex; flex-direction: column; gap: 2.2rem;
+  &__system { display: flex; flex-direction: column; gap: 0.7rem; }
+  &__line { height: 2px; width: 100%; border-radius: 1px; opacity: 0.55; }
+  // Barline-ish caps: fade the outer lines slightly so it reads as a stave, not a table.
+  &__system &__line:first-child,
+  &__system &__line:last-child { opacity: 0.4; }
 }
 // Task 11: determinate geometry-extraction progress — a thin bar pinned to the
 // top of the renderer. Width driven by the inline --p fraction (0..1); the
