@@ -154,6 +154,7 @@ import { initUnlockService } from '#apps/fitness/unlockService.mjs';
 import { initManageService } from '#apps/fitness/manageService.mjs';
 import { createFoodScaleRelay } from '#apps/hardware/foodScaleRelay.mjs';
 import { createOmrRelay } from '#apps/hardware/omrRelay.mjs';
+import { createAutomotiveRelay } from '#apps/hardware/automotiveRelay.mjs';
 import { createScaleNutribotBridge } from '#apps/hardware/ScaleNutribotBridge.mjs';
 import { CompositionStore } from '#apps/nutribot/CompositionStore.mjs';
 import { ApplyScanToComposition } from '#apps/nutribot/usecases/ApplyScanToComposition.mjs';
@@ -637,6 +638,19 @@ export async function createApp({ server, logger, configPaths, configExists, ena
       || {},
     timezone: configService.getHouseholdTimezone?.(householdId),
     logger: rootLogger.child({ module: 'omr-relay' }),
+  });
+
+  // Automotive relay — ingests the in-car Freematics device's trip/snapshot
+  // stream (source: 'obd-relay') whenever the car is on home WiFi and
+  // re-broadcasts on the `automotive` topic; a decoupled persister writes
+  // trips + snapshots to history/automotive/. See _extensions/obd-relay.
+  createAutomotiveRelay({
+    eventBus,
+    dataDir,
+    config: configService.getHouseholdAppConfig(householdId, 'vehicles')
+      || configService.reloadHouseholdAppConfig?.(householdId, 'vehicles')
+      || {},
+    logger: rootLogger.child({ module: 'obd-relay' }),
   });
 
   // Content barcode input (now produced by the shared food-scale/content-barcode
