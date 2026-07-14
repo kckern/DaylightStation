@@ -23,6 +23,7 @@ import useScoreEvaluator from './useScoreEvaluator.js';
 import { resolveSheetMusicConfig } from './sheetMusicConfig.js';
 import { tallyGrades } from './gradeTally.js';
 import { worstSpan } from './worstSpan.js';
+import { loadScoreSettings, saveScoreSettings } from './scoreSettings.js';
 import { isRisingEdge } from './pedalEdge.js';
 import ScoreTransportBar from './ScoreTransportBar.jsx';
 import NoteHighlightLayer from './NoteHighlightLayer.jsx';
@@ -91,11 +92,20 @@ export default function ScorePlayer({ score: scoreMeta }) {
   // the initial mode can come from `defaultMode` — the ladder starts at Listen.
   const smCfg = useMemo(() => resolveSheetMusicConfig(config?.sheetmusic), [config]);
   const VALID_MODES = ['listen', 'learn', 'polish', 'perform'];
+  // Per-score practice settings restored device-locally (mode/tempo/range/hands),
+  // so a walk-up user finds the piece the way they left it (Task 2.5).
+  const restored = useMemo(() => loadScoreSettings(scoreMeta.id), [scoreMeta.id]);
 
   const [layout, setLayout] = useState({ events: [], notes: [], steps: [], measures: [], tempoEntries: [], width: 0, height: 0, flow: null, scale: null });
   const [step, setStep] = useState(0);
-  const [mode, setMode] = useState(() => (VALID_MODES.includes(smCfg.defaultMode) ? smCfg.defaultMode : 'learn'));
-  const [focus, setFocus] = useState(null); // Learn practice range: { kind, label?, inMeasure, outMeasure } (measure INDICES) | null = whole piece
+  const [mode, setMode] = useState(() => {
+    const m = restored.mode;
+    return VALID_MODES.includes(m) ? m : (VALID_MODES.includes(smCfg.defaultMode) ? smCfg.defaultMode : 'learn');
+  });
+  const [focus, setFocus] = useState(() => { // Learn/Polish practice range (measure INDICES) | null = whole piece
+    const f = restored.focus;
+    return f && f.kind && Number.isInteger(f.inMeasure) && Number.isInteger(f.outMeasure) ? f : null;
+  });
   const [loopArm, setLoopArm] = useState(false); // custom tap-range state machine armed
   const loopInRef = useRef(null); // pending in-measure index while arming (first tap)
   const [clickOn, setClickOn] = useState(true); // Polish metronome — on by default during runs
@@ -103,7 +113,10 @@ export default function ScorePlayer({ score: scoreMeta }) {
   const [perfPage, setPerfPage] = useState({ page: 1, pages: 1 }); // Perform page indicator (1-based)
   const [scale, setScale] = useState(1);
   const [transpose, setTranspose] = useState(0); // Listen key transpose (semitones)
-  const [tempoMult, setTempoMult] = useState(1); // Listen tempo: 1 = written, 1.5 = 50% faster, 0.5 = half
+  const [tempoMult, setTempoMult] = useState(() => { // Listen/Polish tempo: 1 = written, 0.5 = half
+    const t = Number(restored.tempoMult);
+    return Number.isFinite(t) && t >= 0.25 && t <= 2 ? t : 1;
+  });
   const [playAlong, setPlayAlong] = useState(false); // Listen: light up your correctly-struck notes (non-gating)
   const [wrong, setWrong] = useState(false);
   const [struck, setStruck] = useState(() => new Set());
@@ -177,7 +190,11 @@ export default function ScorePlayer({ score: scoreMeta }) {
   );
 
   const [roles, setRoles] = useState({});
-  const [activeParts, setActiveParts] = useState({});
+  // Restored active-part picks (which staves you play in Learn/Polish); the effect
+  // below preserves any staff present in `prev`, so seeding it restores the choice.
+  const [activeParts, setActiveParts] = useState(() => (
+    restored.activeParts && typeof restored.activeParts === 'object' ? restored.activeParts : {}
+  ));
   useEffect(() => {
     setRoles((prev) => Object.fromEntries(parts.map((p) => [p.staff, prev[p.staff] || 'play'])));
     setActiveParts((prev) => {
@@ -324,6 +341,20 @@ export default function ScorePlayer({ score: scoreMeta }) {
 
   useReloadGuard(running);
   useEffect(() => { setGlobalPlaying(running); return () => setGlobalPlaying(false); }, [running, setGlobalPlaying]);
+
+  // Persist practice settings per score (device-local) whenever they change, so the
+  // piece reopens the way it was left (Task 2.5). Writes are tiny; cost is trivial.
+  useEffect(() => {
+    saveScoreSettings(scoreMeta.id, { mode, tempoMult, focus, activeParts });
+  }, [scoreMeta.id, mode, tempoMult, focus, activeParts]);
+
+  // A restored range references measure indices; drop it if the engraved score has
+  // fewer measures than it expects (the file may have changed since it was saved).
+  useEffect(() => {
+    const n = layout.measures?.length;
+    if (!focus || !n) return;
+    if (focus.inMeasure > n - 1 || focus.outMeasure > n - 1) setFocus(null);
+  }, [layout.measures]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Polish scoring (at-tempo, per-measure grade) ──────────────────────────────
   // The cursor advances on the silent step timeline (no note_on for your parts);
