@@ -21,6 +21,7 @@ import { countInPlan } from './countIn.js';
 import useScoreTelemetry from './useScoreTelemetry.js';
 import useScoreEvaluator from './useScoreEvaluator.js';
 import { resolveSheetMusicConfig } from './sheetMusicConfig.js';
+import { tallyGrades } from './gradeTally.js';
 import { isRisingEdge } from './pedalEdge.js';
 import ScoreTransportBar from './ScoreTransportBar.jsx';
 import NoteHighlightLayer from './NoteHighlightLayer.jsx';
@@ -273,7 +274,14 @@ export default function ScorePlayer({ score: scoreMeta }) {
     // there — mark a run pending here too, so the unmount-flush guard still emits
     // a Polish run's stats when the view is left mid-run.
     onFire: (ev, driftMs, gapMs) => { pendingPlaybackRef.current = true; recordFire(ev, driftMs, gapMs, tempoMap[0]?.bpm); },
-    onDone: () => { if (mode === 'listen') silenceScheduled(); flushPlaybackNow(); logger.info('score.transport.done', { mode, steps: events.length }); },
+    onDone: () => {
+      if (mode === 'listen') silenceScheduled();
+      flushPlaybackNow();
+      // A Polish run that plays to the end must grade its final measure and show
+      // the summary — the reward for finishing, not only for giving up (audit H1).
+      if (mode === 'polish' && scoringOn) { finalizeRef.current?.(); openRunSummaryRef.current?.(); }
+      logger.info('score.transport.done', { mode, steps: events.length });
+    },
   });
   const transportRef = useRef(null); transportRef.current = transport; // read latest transport inside the tick closure
 
@@ -334,24 +342,22 @@ export default function ScorePlayer({ score: scoreMeta }) {
     setGrades((prev) => ({ ...prev, [g.measure]: g }));
     logMeasureGrade({ measure: g.measure, grade: g.grade, noteScore: g.noteScore, timingScore: g.timingScore });
   }, [logMeasureGrade]);
+  // Open the run summary + log the aggregate, using the shared tally (so the log
+  // and the panel headline can't drift). Used by BOTH the silent-stop and the
+  // completion path.
+  const openRunSummary = useCallback(() => {
+    setSummaryOpen(true);
+    const t = tallyGrades(gradesRef.current);
+    logRunSummary({ greens: t.green, yellows: t.yellow, reds: t.red, overall: t.overall });
+  }, [logRunSummary]);
   const onSilentStop = useCallback(() => {
     transport.pause();
-    setSummaryOpen(true);
     logger.info('score.polish.silent-stop', {});
-    // Run summary opens → log the aggregate (same tallying rule as RunSummary:
-    // greens win ties, then reds over yellows for the overall read).
-    const counts = { green: 0, yellow: 0, red: 0 };
-    for (const g of Object.values(gradesRef.current)) {
-      if (g?.grade && counts[g.grade] != null) counts[g.grade] += 1;
-    }
-    const overall = counts.green >= counts.yellow && counts.green >= counts.red
-      ? 'green'
-      : counts.red >= counts.yellow ? 'red' : 'yellow';
-    logRunSummary({ greens: counts.green, yellows: counts.yellow, reds: counts.red, overall });
-  }, [transport, logger, logRunSummary]);
+    openRunSummary();
+  }, [transport, logger, openRunSummary]);
 
-  useScoreEvaluator({
-    enabled: mode === 'polish' && scoringOn && running, // only while actually playing
+  const evaluator = useScoreEvaluator({
+    enabled: mode === 'polish' && scoringOn && transport.playing, // grade only during real playback
     cfg: resolvedScoringCfg,
     subscribe,
     currentMeasure,
@@ -360,6 +366,10 @@ export default function ScorePlayer({ score: scoreMeta }) {
     onMeasureGrade,
     onSilentStop,
   });
+  // onDone (below, in the transport) fires before this component re-renders, and
+  // the transport is defined above the evaluator — read finalize through a ref.
+  const finalizeRef = useRef(null); finalizeRef.current = evaluator.finalize;
+  const openRunSummaryRef = useRef(openRunSummary); openRunSummaryRef.current = openRunSummary;
 
   // Clear grades + summary when the score document changes or scoring is turned off.
   useEffect(() => { setGrades({}); setSummaryOpen(false); }, [scoreMeta.musicXml]);

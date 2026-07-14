@@ -243,6 +243,21 @@ describe('ScorePlayer — Polish mode (transport-driven)', () => {
     act(() => vi.advanceTimersByTime(6000));
     expect(screen.getByText('1 / 4')).toBeTruthy(); // never advanced
   });
+
+  it('opens the RunSummary when a Polish run completes, grading the final measure (H1)', async () => {
+    h.layoutExtras = { tempoEntries: [{ onsetQuarter: 0, bpm: 120 }] }; // fast so the run ends quickly
+    renderPlayer();
+    screen.getByText('Polish').click();
+    await act(async () => {});
+    screen.getByText('▶').click();
+    await act(async () => {});
+    act(() => vi.advanceTimersByTime(2100)); // through the 4-beat @120 count-in (2000ms)
+    // Play the 4 onsets' expected notes so the final measure isn't silent, and run to the end.
+    act(() => { [64, 52, 40, 62, 60, 62].forEach((n) => h.noteCb?.({ type: 'note_on', note: n, velocity: 80 })); });
+    act(() => vi.advanceTimersByTime(4000)); // past all onsets → onDone
+    // Summary panel appears on completion (not only on silent-stop).
+    expect(document.querySelector('.piano-score-run-summary')).not.toBeNull();
+  });
 });
 
 describe('ScorePlayer — Listen mode', () => {

@@ -53,4 +53,28 @@ describe('useScoreEvaluator', () => {
     rerender({ m: 3 });          // measure 2 silent (1)
     expect(onSilentStop).not.toHaveBeenCalled();
   });
+
+  it('finalize() grades the current (final) measure once — end-of-piece completion (H1)', () => {
+    const { subscribe, emit } = makeSubscribe();
+    const onMeasureGrade = vi.fn();
+    const { result } = renderHook(() => useScoreEvaluator(opts({ subscribe, currentMeasure: 2, onMeasureGrade, onSilentStop: vi.fn() })));
+    act(() => emit(67));         // play measure 2's note; cursor never leaves it
+    act(() => result.current.finalize());
+    expect(onMeasureGrade).toHaveBeenCalledTimes(1);
+    expect(onMeasureGrade.mock.calls[0][0]).toMatchObject({ measure: 2, grade: 'green' });
+    act(() => result.current.finalize()); // idempotent
+    expect(onMeasureGrade).toHaveBeenCalledTimes(1);
+  });
+
+  it('finalize() is a no-op when disabled', () => {
+    const { subscribe } = makeSubscribe();
+    const onMeasureGrade = vi.fn();
+    const { result } = renderHook(() => useScoreEvaluator({
+      enabled: false, cfg, subscribe, currentMeasure: 2,
+      expectedForMeasure: (m) => EXPECTED[m] || [], driftForNote: () => 0,
+      onMeasureGrade, onSilentStop: vi.fn(),
+    }));
+    act(() => result.current.finalize());
+    expect(onMeasureGrade).not.toHaveBeenCalled();
+  });
 });
