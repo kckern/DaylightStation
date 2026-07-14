@@ -160,8 +160,9 @@ const ScoreViewControls = memo(function ScoreViewControls({
   const isPerform = mode === 'perform';
   const hasParts = !isPerform;
   const hasViewControls = !isPerform;
-  // The metronome-click toggle lives in Listen and Learn (Polish/Perform omit it).
-  const hasClick = mode === 'listen' || mode === 'learn';
+  // The metronome-click toggle lives in Polish only — the only mode with an
+  // audible, graded beat. Learn is self-paced; Listen's own performance is the beat.
+  const hasClick = mode === 'polish';
   // Tempo control + play-along light-up are Listen-only (jukebox performance).
   const hasListenExtras = mode === 'listen';
   // Focus range (section chips + custom loop) is a Learn + Polish practice affordance.

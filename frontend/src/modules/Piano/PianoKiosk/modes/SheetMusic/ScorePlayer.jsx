@@ -90,7 +90,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
   const [focus, setFocus] = useState(null); // Learn practice range: { kind, label?, inMeasure, outMeasure } (measure INDICES) | null = whole piece
   const [loopArm, setLoopArm] = useState(false); // custom tap-range state machine armed
   const loopInRef = useRef(null); // pending in-measure index while arming (first tap)
-  const [clickOn, setClickOn] = useState(false); // metronome-click toggle (separate from mode; scheduler wired later)
+  const [clickOn, setClickOn] = useState(true); // Polish metronome — on by default during runs
   const [flow, setFlow] = useState('wrapped');
   const [perfPage, setPerfPage] = useState({ page: 1, pages: 1 }); // Perform page indicator (1-based)
   const [scale, setScale] = useState(1);
@@ -292,14 +292,12 @@ export default function ScorePlayer({ score: scoreMeta }) {
   // abort it (via onScoreClick) and the bar shows ⏸ rather than a dead ▶.
   const running = transport.playing || countIn.active;
 
-  // Metronome click (reference-only). Ticks in Learn at the piece's opening tempo
-  // and in Listen at the user-scaled tempo. It only plays a blip — it NEVER gates
-  // or advances the follow tracker/cursor (those are driven independently). Perform
-  // and Polish get no click from this toggle.
-  const clickBpm = (tempoMap[0]?.bpm || 90) * (mode === 'listen' ? tempoMult : 1);
+  // Metronome click — Polish only, and only while the transport is actually
+  // running (the count-in supplies its own blips). Ticks at the run tempo. It NEVER
+  // gates or advances the cursor; it's a reference beat the graded run plays against.
   useMetronomeClick({
-    enabled: clickOn && (mode === 'learn' || mode === 'listen'),
-    bpm: clickBpm,
+    enabled: clickOn && mode === 'polish' && transport.playing,
+    bpm: (tempoMap[0]?.bpm || 90) * tempoMult,
   });
 
   const flashWrong = useCallback(() => {
