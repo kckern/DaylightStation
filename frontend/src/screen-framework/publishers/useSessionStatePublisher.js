@@ -18,10 +18,10 @@ const HEARTBEAT_INTERVAL_MS = 5000;
  * Publishes `buildDeviceStateBroadcast(...)` messages on three triggers:
  *   - `reason: 'initial'`   — once on mount (if a snapshot is available)
  *   - `reason: 'change'`    — debounced 500ms after each `onChange` fires
- *   - `reason: 'heartbeat'` — every 5s while the player is NOT idle
- *
- * The heartbeat timer is toggled by `onStateTransition(state)`: any non-idle
- * state starts it, `idle` stops it.
+ *   - `reason: 'heartbeat'` — every 5s while mounted, idle included: an
+ *     always-on kiosk must always report; "Not reporting"/offline is reserved
+ *     for devices that are truly off. State transitions restart the timer so
+ *     the cadence stays predictable.
  *
  * @param {object}   opts
  * @param {string}   opts.deviceId     - Required; hook is a no-op when falsy.
@@ -85,13 +85,19 @@ export function useSessionStatePublisher({ deviceId, getSnapshot, subscribe } = 
       }, CHANGE_DEBOUNCE_MS);
     };
 
-    const handleStateTransition = (state) => {
-      if (state === 'idle') {
-        clearHeartbeat();
-        return;
-      }
-      // Restart heartbeat on any non-idle state transition so the interval is
+    const handleStateTransition = () => {
+      // Restart heartbeat on any state transition so the interval is
       // predictable regardless of how many times we transition.
+      startHeartbeat();
+    };
+
+    const startHeartbeat = () => {
+      // An always-on kiosk must ALWAYS report — "Not reporting" in the fleet
+      // is reserved for devices that are truly off/asleep. Idle screens
+      // heartbeat too (they used to go silent and age to offline within 15s,
+      // reading as "Off"/"Not reporting" while visibly on). The idle beat is
+      // one tiny WS message every 5s; it also re-seeds freshly-connected
+      // /media tabs and survives backend restarts (queued sends replay).
       clearHeartbeat();
       heartbeatTimer = setInterval(() => {
         publish('heartbeat');
@@ -110,8 +116,10 @@ export function useSessionStatePublisher({ deviceId, getSnapshot, subscribe } = 
       }
     }
 
-    // Initial publish (sync so tests can observe it before advancing timers).
+    // Initial publish (sync so tests can observe it before advancing timers),
+    // then the always-on heartbeat — idle included (see startHeartbeat).
     publish('initial');
+    startHeartbeat();
 
     logger().info('mounted', { deviceId });
 

@@ -861,7 +861,7 @@ export class FileAdapter {
    * @returns {Promise<Array>}
    * @private
    */
-  async _searchDirectory(dirPath, searchText, mediaType, limit, depth, prefix, excludePaths = []) {
+  async _searchDirectory(dirPath, searchText, mediaType, limit, depth, prefix, excludePaths = [], budget = { ops: 0 }) {
     // Limit depth to prevent runaway recursion
     if (depth > 5 || limit <= 0) return [];
 
@@ -869,6 +869,16 @@ export class FileAdapter {
     const entries = listEntries(dirPath);
 
     for (const entry of entries) {
+      // The walk is built on SYNC fs calls (listEntries/getStats): a full
+      // media-tree scan is thousands of syscalls back-to-back, which BLOCKS
+      // the event loop for seconds (1.77s measured live) — every concurrent
+      // adapter's HTTP response sits unprocessed and "times out" through no
+      // fault of its own (2026-07-14: plex+immich both hit their budgets and
+      // "bluey" claimed no results). Yield every 25 entries so the loop
+      // breathes; total work is unchanged.
+      if (++budget.ops % 25 === 0) {
+        await new Promise((resolve) => setImmediate(resolve));
+      }
       if (results.length >= limit) break;
       if (entry.startsWith('.') || entry.startsWith('_')) continue;
 
@@ -894,10 +904,11 @@ export class FileAdapter {
           if (item) results.push(item);
         }
 
-        // Recurse into subdirectories
+        // Recurse into subdirectories (budget shared so the yield cadence
+        // holds across the whole walk, not per-directory)
         if (results.length < limit) {
           const subResults = await this._searchDirectory(
-            entryPath, searchText, mediaType, limit - results.length, depth + 1, prefix, excludePaths
+            entryPath, searchText, mediaType, limit - results.length, depth + 1, prefix, excludePaths, budget
           );
           results.push(...subResults);
         }

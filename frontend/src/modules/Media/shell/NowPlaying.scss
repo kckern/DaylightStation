@@ -1,0 +1,348 @@
+// frontend/src/modules/Media/shell/NowPlaying.scss
+// Player chrome for the local Now Playing surface + mini player additions.
+// Mirrors the Cast.scss convention: fresh np-* class names (the legacy
+// .seek-bar/.transport-bar rules in MediaShell.scss go inert instead of
+// fighting these), plain elements styled with Mantine CSS variables from the
+// dark amber mediaTheme. 44px minimum touch targets throughout.
+
+$np-amber-ink: #1a1300;
+
+@mixin np-focus-ring {
+  &:focus-visible {
+    outline: 2px solid var(--mantine-color-amber-5);
+    outline-offset: 2px;
+  }
+}
+
+// ---- View scaffold ---------------------------------------------------------
+.now-playing-view {
+  display: flex;
+  flex-direction: column;
+  gap: var(--mantine-spacing-md);
+
+  .now-playing-title {
+    margin: 0;
+    font-size: clamp(20px, 4vw, 28px);
+    line-height: 1.2;
+    font-weight: 700;
+    color: var(--mantine-color-dark-0);
+    overflow-wrap: anywhere;
+  }
+
+  .np-state {
+    font-size: 13px;
+    color: var(--mantine-color-dark-1);
+  }
+
+  .np-back-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    min-height: 44px;
+    padding: 0 12px;
+    background: none;
+    border: none;
+    border-radius: var(--mantine-radius-sm);
+    color: var(--mantine-color-dark-1);
+    font: inherit;
+    font-size: 14px;
+    cursor: pointer;
+
+    &:hover { background: var(--mantine-color-dark-5); color: var(--mantine-color-dark-0); }
+    @include np-focus-ring;
+  }
+}
+
+.np-handoff-label {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--mantine-color-dark-0);
+  margin-bottom: var(--mantine-spacing-xs);
+}
+
+// ---- Artwork + metadata block ------------------------------------------------
+.np-meta {
+  display: flex;
+  align-items: center;
+  gap: var(--mantine-spacing-md);
+  padding: var(--mantine-spacing-sm) var(--mantine-spacing-md);
+  background: var(--mantine-color-dark-6);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  border-radius: var(--mantine-radius-md);
+
+  .np-art,
+  .np-art-placeholder {
+    width: 96px;
+    height: 96px;
+    flex-shrink: 0;
+    border-radius: var(--mantine-radius-sm);
+    background: var(--mantine-color-dark-8);
+  }
+
+  .np-art { object-fit: cover; }
+
+  .np-art-placeholder {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--mantine-color-dark-3);
+  }
+
+  .np-meta-lines {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+  }
+
+  .np-meta-title {
+    font-weight: 700;
+    font-size: 16px;
+    color: var(--mantine-color-dark-0);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  // The show/album this item came from (container expansion context line).
+  .np-meta-context {
+    font-size: 14px;
+    color: var(--mantine-color-amber-4);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .np-meta-sub {
+    font-size: 12px;
+    color: var(--mantine-color-dark-1);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+
+    .np-meta-dot { color: var(--mantine-color-dark-3); }
+  }
+}
+
+// ---- Seek bar ------------------------------------------------------------------
+.np-seekbar {
+  display: flex;
+  align-items: center;
+  gap: var(--mantine-spacing-sm);
+
+  .np-seek-time {
+    min-width: 48px;
+    text-align: center;
+    font-size: 12px;
+    color: var(--mantine-color-dark-1);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .np-seek-track {
+    position: relative;
+    flex: 1;
+    // Slim visual rail, 44px hit area.
+    height: 44px;
+    display: flex;
+    align-items: center;
+    cursor: pointer;
+    touch-action: none;
+    border-radius: var(--mantine-radius-sm);
+    @include np-focus-ring;
+
+    &[aria-disabled='true'] { cursor: default; }
+
+    .np-seek-rail {
+      position: absolute;
+      left: 0;
+      right: 0;
+      height: 6px;
+      border-radius: 999px;
+      background: var(--mantine-color-dark-4);
+    }
+
+    .np-seek-fill {
+      position: absolute;
+      left: 0;
+      height: 6px;
+      border-radius: 999px;
+      background: var(--mantine-color-amber-5);
+      pointer-events: none;
+    }
+
+    .np-seek-thumb {
+      position: absolute;
+      width: 14px;
+      height: 14px;
+      border-radius: 50%;
+      background: var(--mantine-color-amber-5);
+      transform: translateX(-50%);
+      pointer-events: none;
+      box-shadow: 0 1px 4px rgba(0, 0, 0, 0.6);
+    }
+
+    &:hover .np-seek-thumb { background: var(--mantine-color-amber-4); }
+  }
+}
+
+.np-live-badge {
+  display: inline-block;
+  padding: 2px 10px;
+  border-radius: 999px;
+  background: rgba(224, 49, 49, 0.15);
+  border: 1px solid rgba(224, 49, 49, 0.4);
+  color: var(--mantine-color-red-4);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+}
+
+// ---- Transport -------------------------------------------------------------------
+.np-transport {
+  display: flex;
+  flex-direction: column;
+  gap: var(--mantine-spacing-sm);
+
+  .np-transport-main {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--mantine-spacing-sm);
+  }
+
+  .np-transport-secondary {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--mantine-spacing-sm);
+    flex-wrap: wrap;
+  }
+}
+
+// Round icon button — the shared control chrome for transport + mini player.
+.np-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  flex-shrink: 0;
+  background: var(--mantine-color-dark-5);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 50%;
+  color: var(--mantine-color-dark-0);
+  cursor: pointer;
+  transition: background 120ms ease, color 120ms ease;
+
+  &:hover:not(:disabled) { background: var(--mantine-color-dark-4); }
+  &:active:not(:disabled) { transform: scale(0.96); }
+  @include np-focus-ring;
+
+  &:disabled {
+    color: var(--mantine-color-dark-3);
+    background: var(--mantine-color-dark-6);
+    cursor: default;
+  }
+
+  // Big play/pause.
+  &--primary {
+    width: 64px;
+    height: 64px;
+    background: var(--mantine-color-amber-5);
+    border-color: transparent;
+    color: $np-amber-ink;
+
+    &:hover:not(:disabled) { background: var(--mantine-color-amber-4); }
+  }
+
+  // Toggles (shuffle / repeat) light up amber when engaged.
+  &--on {
+    color: var(--mantine-color-amber-5);
+    border-color: var(--mantine-color-amber-5);
+  }
+}
+
+// Playback speed — a text chip that cycles.
+.np-rate-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 56px;
+  min-height: 44px;
+  padding: 0 12px;
+  background: var(--mantine-color-dark-5);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 999px;
+  color: var(--mantine-color-dark-0);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+
+  &:hover { background: var(--mantine-color-dark-4); }
+  @include np-focus-ring;
+
+  &--engaged {
+    color: var(--mantine-color-amber-5);
+    border-color: var(--mantine-color-amber-5);
+  }
+}
+
+.np-volume-group {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--mantine-spacing-xs);
+  color: var(--mantine-color-dark-1);
+
+  .np-volume {
+    width: min(200px, 40vw);
+    height: 44px; // full-height hit area; accent-color comes from MediaShell.scss
+    margin: 0;
+    cursor: pointer;
+    @include np-focus-ring;
+  }
+}
+
+// ---- Mini player additions ----------------------------------------------------
+// Supplements the base .mini-player rules in MediaShell.scss (not edited).
+.mini-player {
+  position: relative;
+
+  // The title is now a plain <button> (was Mantine UnstyledButton); strip the
+  // native chrome so the MediaShell.scss .mini-player-title rules read as
+  // designed.
+  .mini-player-title {
+    background: none;
+    border: none;
+    padding: 0;
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+    min-height: 44px;
+  }
+
+  .mini-player-progress {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 3px;
+    background: var(--mantine-color-dark-4);
+    pointer-events: none;
+
+    .mini-player-progress-fill {
+      height: 100%;
+      background: var(--mantine-color-amber-5);
+      transition: width 400ms linear;
+    }
+  }
+
+  .mini-player-controls .np-icon-btn {
+    width: 40px;
+    height: 40px;
+
+    &--primary { width: 44px; height: 44px; }
+  }
+}

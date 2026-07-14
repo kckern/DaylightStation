@@ -13,6 +13,7 @@ import { SearchIdleState } from './SearchIdleState.jsx';
 import { SearchEmptyState } from './SearchEmptyState.jsx';
 import { SearchErrorState } from './SearchErrorState.jsx';
 import { deriveSearchState, SEARCH_STATE } from './searchStates.js';
+import { sourceLabelList } from './sourceLabels.js';
 import { parseContentId } from './contentIdParser.js';
 import { useDismissable } from '../../../hooks/useDismissable.js';
 import { useSessionController } from '../controller/useSessionController.js';
@@ -113,13 +114,26 @@ export function SearchBar() {
           {state.kind === SEARCH_STATE.RESULTS && (
             <SearchResults results={state.results} pending={pending} onAction={close} />
           )}
-          {state.kind === SEARCH_STATE.EMPTY && <SearchEmptyState query={state.query} />}
+          {state.kind === SEARCH_STATE.EMPTY && (
+            <SearchEmptyState query={state.query} sourceErrors={sourceErrors} onRetry={retry} />
+          )}
           {state.kind === SEARCH_STATE.ERROR && (
             <SearchErrorState error={state.error} onRetry={retry} />
           )}
           {sourceErrors?.length > 0 && (
             <div data-testid="search-source-errors" className="search-source-errors">
-              <span>⚠ Some libraries didn&rsquo;t respond</span>
+              <span>
+                ⚠ {sourceLabelList(sourceErrors.map((e) => e.source)).join(', ')}{' '}
+                didn&rsquo;t respond
+              </span>
+              <button
+                type="button"
+                data-testid="search-source-errors-retry"
+                className="search-source-errors-retry"
+                onClick={retry}
+              >
+                Try again
+              </button>
             </div>
           )}
         </div>

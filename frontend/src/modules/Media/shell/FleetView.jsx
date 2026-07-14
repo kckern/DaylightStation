@@ -3,12 +3,13 @@
 // source — status can't lie), current item, progress, stale/offline badges.
 // Peek opens the remote control; Take Over appears only when a session is
 // actually active (portability phase wires the action).
-import React from 'react';
+import React, { useCallback, useState } from 'react';
 import { Title, Text, Badge, Button, Progress, Group, Skeleton, Alert, Stack } from '@mantine/core';
 import { notifications } from '@mantine/notifications';
-import { IconDeviceRemote, IconAlertCircle } from '@tabler/icons-react';
+import { IconDeviceRemote, IconAlertCircle, IconPlayerPlay } from '@tabler/icons-react';
 import { useFleetContext } from '../fleet/FleetProvider.jsx';
 import { useDevice } from '../fleet/useDevice.js';
+import { FleetPlayPicker } from '../fleet/FleetPlayPicker.jsx';
 import { deviceName, deviceIcon, deviceLocation } from '../fleet/deviceDisplay.js';
 import { useNav } from './NavProvider.jsx';
 import { useTakeOver } from '../peek/useTakeOver.js';
@@ -27,6 +28,9 @@ function FleetCard({ deviceId }) {
   const { device, entry } = useDevice(deviceId);
   const { push } = useNav();
   const takeOver = useTakeOver();
+  // Inline "play something on this device" panel (FleetPlayPicker).
+  const [playOpen, setPlayOpen] = useState(false);
+  const closePlay = useCallback(() => setPlayOpen(false), []);
   const offline = !!entry?.offline;
   const snap = entry?.snapshot;
   const devState = snap?.state ?? 'unknown';
@@ -86,6 +90,20 @@ function FleetCard({ deviceId }) {
         >
           Remote
         </Button>
+        {/* data-play-toggle lets the panel's outside-tap dismissal ignore
+            this button, so a second tap toggles closed instead of
+            dismiss-then-reopen. */}
+        <Button
+          data-testid={`fleet-play-${deviceId}`}
+          data-play-toggle={deviceId}
+          size="compact-sm"
+          variant="default"
+          leftSection={<IconPlayerPlay size={16} />}
+          aria-expanded={playOpen}
+          onClick={() => setPlayOpen((v) => !v)}
+        >
+          Play…
+        </Button>
         {isActive && (
           <Button
             data-testid={`fleet-takeover-${deviceId}`}
@@ -107,6 +125,7 @@ function FleetCard({ deviceId }) {
           </Button>
         )}
       </Group>
+      {playOpen && <FleetPlayPicker deviceId={deviceId} onClose={closePlay} />}
     </li>
   );
 }

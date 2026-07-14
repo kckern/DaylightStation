@@ -98,6 +98,14 @@ export function createApiRouters(config) {
     aliasResolver,
     adapterTimeoutMs: 3000,
     sourceTimeoutsMs: {
+      // Plex is THE primary library AND its requests serialize app-wide
+      // (memory: plex-requests-serialize) — a search racing browse-thumbnail
+      // fetches queues behind them and blows a 3s cap even though the search
+      // itself is fast. A timed-out plex reads as "No results" for exactly
+      // the content people actually search for (2026-07-14: "bluey" found
+      // nothing because plex hit the 3s budget mid-browse). Progressive
+      // streaming means a generous budget costs nothing when plex is fast.
+      plex: 10000,
       abs: 6000,
       singalong: 8000,
       readalong: 6000,

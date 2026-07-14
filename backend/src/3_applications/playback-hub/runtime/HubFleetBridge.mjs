@@ -254,10 +254,11 @@ export class HubFleetBridge {
       reason = 'initial';
     } else if (prev.fingerprint !== fingerprint) {
       reason = 'change';
-    } else if (
-      snapshot.state !== 'idle'
-      && nowMs - prev.lastPublishedAt >= this.#heartbeatMs
-    ) {
+    } else if (nowMs - prev.lastPublishedAt >= this.#heartbeatMs) {
+      // Idle lanes heartbeat too: the hub is always-on ambient hardware and
+      // must always report — "Not reporting"/offline in the fleet is reserved
+      // for gear that is truly dark. (The hub's own status feed going silent
+      // still ages lanes out via DeviceLivenessService, which is correct.)
       reason = 'heartbeat';
     }
 
