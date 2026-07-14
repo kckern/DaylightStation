@@ -353,10 +353,17 @@ export class WebSocketEventBus {
 
       if (kind === 'screen') {
         // Prefer direct delivery to the identified connection (Task 4.1).
-        // Until connection identity is tracked, fall back to topic subscribers.
+        // Until connection identity is tracked, fall back to topic
+        // subscribers — INCLUDING wildcard: screens subscribe via predicate
+        // filters, which the frontend WebSocketService syncs to the server
+        // as '*', never as the exact `screen:<id>` topic. Excluding wildcard
+        // made every SessionControlService command (transport/pause/stop)
+        // structurally undeliverable — 5s DEVICE_REFUSED on all remote
+        // control. Screens drop envelopes whose targetDevice isn't theirs
+        // (useScreenCommands guardrails), so wildcard delivery is safe.
         for (const [, { ws, meta }] of this.#clients) {
           if (ws.readyState !== ws.OPEN) continue;
-          if (meta.subscriptions.has(topic)) {
+          if (meta.subscriptions.has(topic) || meta.subscriptions.has('*')) {
             ws.send(msg);
             sentCount++;
           }
