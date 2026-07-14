@@ -327,6 +327,58 @@ export function createListRouter(config) {
   }));
 
   /**
+   * GET /api/list/
+   * Top-level catalog. The Browse nav tab pushes an empty path; instead of a
+   * 404 we return the household's configured browse categories (media app
+   * config), falling back to the registered content sources.
+   */
+  router.get('/', asyncHandler(async (req, res) => {
+    const appConfig = configService?.getHouseholdAppConfig?.(null, 'media') || {};
+    const browse = Array.isArray(appConfig.browse) ? appConfig.browse : [];
+
+    let items;
+    if (browse.length > 0) {
+      items = browse
+        .filter(entry => entry?.source)
+        .map(entry => {
+          const localId = entry.mediaType || '';
+          const contentId = `${entry.source}:${localId}`;
+          return {
+            id: contentId,
+            title: entry.label || entry.source,
+            label: entry.label || entry.source,
+            itemType: 'container',
+            ...(entry.icon ? { icon: entry.icon } : {}),
+            list: { contentId, [entry.source]: localId }
+          };
+        });
+    } else {
+      // No browse config — surface the registered sources themselves
+      const sources = registry?.adapters ? [...registry.adapters.keys()] : [];
+      items = sources.map(source => ({
+        id: `${source}:`,
+        title: source,
+        label: source,
+        itemType: 'container',
+        list: { contentId: `${source}:`, [source]: '' }
+      }));
+    }
+
+    logger.info?.('list.root_catalog', { itemCount: items.length, fromBrowseConfig: browse.length > 0 });
+
+    res.json({
+      assetId: '',
+      source: '',
+      path: '',
+      title: 'Browse',
+      label: 'Browse',
+      info: null,
+      parents: null,
+      items
+    });
+  }));
+
+  /**
    * GET /api/list/:source/(path)
    */
   router.get('/:source{/*splat}', asyncHandler(async (req, res) => {
@@ -352,6 +404,42 @@ export function createListRouter(config) {
       let resolvedViaPrefix = resolvedSource !== source;
 
       if (!adapter) {
+        // Category fallback: "readable" (or "gallery", etc.) is a registry
+        // category, not a source. Aggregate the root listing of every source
+        // registered under that category (e.g. readable → abs + komga).
+        // Items keep their compound ids, so drill-down routes to the
+        // concrete source.
+        const categoryAdapters = !localId ? (registry?.getByCategory?.(source) ?? []) : [];
+        if (categoryAdapters.length > 0) {
+          const lists = await Promise.all(categoryAdapters.map(async (categoryAdapter) => {
+            try {
+              const result = await categoryAdapter.getList(`${categoryAdapter.source}:`);
+              if (Array.isArray(result)) return result;
+              return result?.items || result?.children || [];
+            } catch (err) {
+              logger.warn?.('list.category_source_failed', { category: source, source: categoryAdapter.source, error: err.message });
+              return [];
+            }
+          }));
+          const items = lists.flat();
+          logger.info?.('list.category_fallback', {
+            category: source,
+            sources: categoryAdapters.map(a => a.source),
+            itemCount: items.length
+          });
+          return res.json({
+            [source]: '',
+            assetId: '',
+            source,
+            path: '',
+            title: source,
+            label: source,
+            info: null,
+            parents: null,
+            items: items.map(toListItem)
+          });
+        }
+
         logger.warn?.('list.unknown_source', { source, localId });
         return res.status(404).json({ error: `Unknown source: ${source}` });
       }
@@ -379,11 +467,16 @@ export function createListRouter(config) {
         // Get container contents
         const result = await adapter.getList(compoundId);
 
-        // Handle different response shapes
+        // Handle different response shapes. Adapters variously return a bare
+        // array, { children }, or { items } (e.g. SingalongAdapter's root
+        // collection list) — dropping the { items } shape made Browse Hymns
+        // render "Nothing here yet" over real collections.
         if (Array.isArray(result)) {
           items = result;
-        } else if (result?.children) {
+        } else if (Array.isArray(result?.children)) {
           items = result.children;
+        } else if (Array.isArray(result?.items)) {
+          items = result.items;
         } else {
           items = [];
         }

@@ -107,7 +107,7 @@ export function SearchBar() {
           )}
           {state.kind === SEARCH_STATE.SEARCHING && (
             <div data-testid="search-loading" className="search-state search-state--loading">
-              Searching{pending.length > 0 ? ` (${pending.join(', ')})` : ''}…
+              Searching…
             </div>
           )}
           {state.kind === SEARCH_STATE.RESULTS && (
@@ -119,7 +119,7 @@ export function SearchBar() {
           )}
           {sourceErrors?.length > 0 && (
             <div data-testid="search-source-errors" className="search-source-errors">
-              {sourceErrors.map((e) => <span key={e.source}>⚠ {e.source} unavailable</span>)}
+              <span>⚠ Some libraries didn&rsquo;t respond</span>
             </div>
           )}
         </div>

@@ -11,6 +11,7 @@ import { TransportBar } from './TransportBar.jsx';
 import { SeekBar } from './SeekBar.jsx';
 import { QueuePanel } from './QueuePanel.jsx';
 import { DispatchTargetPicker } from '../cast/DispatchTargetPicker.jsx';
+import { playbackStateLabel } from './stateCopy.js';
 
 export function NowPlayingView() {
   const { snapshot, portability } = useSessionController('local');
@@ -30,7 +31,9 @@ export function NowPlayingView() {
         >
           ← Back
         </Button>
-        <Text size="sm" c="dimmed" data-testid="np-state">{snapshot?.state}</Text>
+        <Text size="sm" c="dimmed" data-testid="np-state" data-state={snapshot?.state ?? ''}>
+          {playbackStateLabel(snapshot?.state)}
+        </Text>
       </div>
 
       <Title
@@ -55,10 +58,10 @@ export function NowPlayingView() {
 
       {item && (
         <div className="handoff-section" data-testid="handoff-section">
-          <Text size="sm" fw={600} mb="xs">Hand off to device</Text>
+          <Text size="sm" fw={600} mb="xs">Send to another device</Text>
           <DispatchTargetPicker
-            source={{ getSnapshot: () => portability.snapshotForHandoff?.() }}
-            submitLabel="Hand off"
+            source={{ getSnapshot: () => portability.snapshotForHandoff?.(), title: item.title ?? null }}
+            verb="Hand off"
             autoFocus={false}
           />
         </div>

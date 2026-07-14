@@ -310,13 +310,22 @@ export class WakeAndLoadService {
     // --- Step 5: Pre-warm transcode (best-effort) ---
     // Skipped entirely on adopt path — the snapshot already describes the
     // intended media; no queue resolution or transcode needed.
+    // Runs for BOTH queue= and play= dispatches: prewarm resolves containers
+    // (show/album → concrete first playable) through the same queue
+    // resolution the screens use, which (a) warms the transcode before the
+    // device asks for it and (b) gives the playback watchdog a concrete
+    // child contentId — a play=<container> dispatch previously armed the
+    // watchdog with the container id, which can never match the flat episode
+    // key the device reports, causing false `playback: timeout` (2026-07-14
+    // Bluey dispatch).
     let prewarmResult = null;
-    if (!isAdopt && this.#prewarmService && contentQuery.queue) {
+    const prewarmRef = contentQuery.queue || contentQuery.play;
+    if (!isAdopt && this.#prewarmService && prewarmRef) {
       this.#emitProgress(topic, dispatchId, 'prewarm', 'running');
-      this.#logger.info?.('wake-and-load.prewarm.start', { deviceId, dispatchId, queue: contentQuery.queue });
+      this.#logger.info?.('wake-and-load.prewarm.start', { deviceId, dispatchId, contentRef: prewarmRef });
 
       try {
-        prewarmResult = await this.#prewarmService.prewarm(contentQuery.queue, {
+        prewarmResult = await this.#prewarmService.prewarm(prewarmRef, {
           shuffle: contentQuery.shuffle === '1' || contentQuery.shuffle === 'true'
         });
         if (prewarmResult?.status === 'ok') {
@@ -380,7 +389,7 @@ export class WakeAndLoadService {
     } else {
       const reason = isAdopt
         ? 'adopt-mode'
-        : (contentQuery.queue ? 'no service' : 'no queue');
+        : (prewarmRef ? 'no service' : 'no content ref');
       result.steps.prewarm = { skipped: true, reason };
     }
 
@@ -713,19 +722,23 @@ export class WakeAndLoadService {
   #armPlaybackWatchdog({ deviceId, dispatchId, topic, contentQuery, timeoutMs = 90_000 }) {
     if (!this.#eventBus || typeof this.#eventBus.subscribe !== 'function') return;
 
-    // Extract a content identifier for watchdog matching.
-    // Preference order: prewarmContentId (set when Plex prewarm resolves a
-    // named queue to a concrete content id) > explicit contentId > shared
-    // CONTENT_ID_KEYS resolution (queue, play, play-next, hymn, …).
-    // resolveContentId keeps this in lockstep with the WS-envelope delivery
-    // paths, so play-next dispatches are watched too (2026-07-07 bug).
+    // Extract content identifiers for watchdog matching. We accept a match
+    // against ANY of: prewarmContentId (concrete first playable resolved by
+    // prewarm — for container dispatches this is the only id the device will
+    // actually report, since Plex child keys are flat and never prefix-match
+    // their container), explicit contentId, and the shared CONTENT_ID_KEYS
+    // resolution (queue, play, play-next, hymn, …). resolveContentId keeps
+    // this in lockstep with the WS-envelope delivery paths, so play-next
+    // dispatches are watched too (2026-07-07 bug).
     // Menu/list opens resolve to null and correctly do not arm — a browse
     // action never emits playback.log, so arming would false-timeout.
-    const expectedContentId =
-      contentQuery.prewarmContentId
-      || contentQuery.contentId
-      || resolveContentId(contentQuery)?.contentId;
-    if (!expectedContentId) return;
+    const expectedContentIds = [...new Set([
+      contentQuery.prewarmContentId,
+      contentQuery.contentId,
+      resolveContentId(contentQuery)?.contentId,
+    ].filter(Boolean))];
+    if (!expectedContentIds.length) return;
+    const expectedContentId = expectedContentIds[0]; // primary, for logging
 
     let resolved = false;
     let timer = null;
@@ -742,17 +755,24 @@ export class WakeAndLoadService {
       const incoming = payload?.contentId;
       if (!incoming) return;
       // Match if the incoming contentId equals, or is a hierarchical
-      // descendant/ancestor of the expected id. Using `:` as a boundary
-      // prevents false positives with numeric Plex IDs (e.g. `plex:1` vs
-      // `plex:12`), while preserving matches like `plex:1` vs `plex:1:episode`.
-      const matches =
-        incoming === expectedContentId ||
-        incoming.startsWith(`${expectedContentId}:`) ||
-        expectedContentId.startsWith(`${incoming}:`);
+      // descendant/ancestor of, ANY expected candidate. Using `:` as a
+      // boundary prevents false positives with numeric Plex IDs (e.g.
+      // `plex:1` vs `plex:12`), while preserving matches like `plex:1` vs
+      // `plex:1:episode`.
+      const matches = expectedContentIds.some((expected) =>
+        incoming === expected ||
+        incoming.startsWith(`${expected}:`) ||
+        expected.startsWith(`${incoming}:`));
       if (matches) {
         cleanup();
         this.#logger.info?.('wake-and-load.playback.confirmed', {
           deviceId, dispatchId, contentId: incoming
+        });
+        // Positive confirmation for the sender's UI ("▶ Playing on …") —
+        // without this broadcast the tray can only ever show "sent" or the
+        // negative timeout.
+        this.#emitProgress(topic, dispatchId, 'playback', 'confirmed', {
+          contentId: incoming
         });
       }
     });

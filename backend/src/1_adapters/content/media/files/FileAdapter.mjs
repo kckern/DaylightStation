@@ -16,6 +16,13 @@ import {
 
 const MEDIA_PREFIXES = ['', 'audio', 'video', 'img'];
 
+// Paths (relative to mediaBasePath, trailing slash = directory subtree)
+// excluded from search by default. Fitness recordings are private household
+// footage — they must not surface in general/family search results. They stay
+// reachable via direct browse/getList and via an explicit source-scoped
+// search override (`files.includeExcluded=true`).
+const DEFAULT_SEARCH_EXCLUDED_PATHS = ['video/fitness/'];
+
 const MIME_TYPES = {
   '.mp3': 'audio/mpeg',
   '.m4a': 'audio/mp4',
@@ -82,6 +89,10 @@ export class FileAdapter {
     this.dataPath = config.dataPath || null;
     this.householdId = config.householdId || null;
     this.cacheBasePath = config.cacheBasePath || null;
+    // Search exclusion list (config-driven, defaults to private fitness footage)
+    this.searchExcludePaths = Array.isArray(config.searchExcludePaths)
+      ? config.searchExcludePaths
+      : DEFAULT_SEARCH_EXCLUDED_PATHS;
 
     // Cache for roots config
     this._rootsCache = null;
@@ -776,13 +787,24 @@ export class FileAdapter {
    * @param {string} query.text - Search text (min 2 chars)
    * @param {string} [query.mediaType] - Filter by media type (audio, video, image)
    * @param {number} [query.take=50] - Max results
+   * @param {boolean|string} [query.includeExcluded] - Include paths on the
+   *   search exclusion list (private footage). Also accepted as the
+   *   adapter-scoped key `files.includeExcluded` for explicit source=files
+   *   queries.
    * @returns {Promise<{items: Array, total: number}>}
    */
-  async search({ text, mediaType, take = 50 }) {
+  async search(query = {}) {
+    const { text, mediaType, take = 50 } = query;
     if (!text || text.length < 2) return { items: [], total: 0 };
+
+    const rawIncludeExcluded = query['files.includeExcluded'] ?? query.includeExcluded;
+    const includeExcluded = rawIncludeExcluded === true ||
+      ['true', '1', 'yes'].includes(String(rawIncludeExcluded).toLowerCase());
+    const excludePaths = includeExcluded ? [] : this.searchExcludePaths;
 
     const searchLower = text.toLowerCase();
     const results = [];
+    const seenIds = new Set();
 
     // Search through media prefix directories
     for (const prefix of MEDIA_PREFIXES) {
@@ -794,11 +816,37 @@ export class FileAdapter {
 
       if (!dirExists(searchPath)) continue;
 
-      const found = await this._searchDirectory(searchPath, searchLower, mediaType, take - results.length, 0, prefix);
-      results.push(...found);
+      const found = await this._searchDirectory(searchPath, searchLower, mediaType, take - results.length, 0, prefix, excludePaths);
+      // Dedupe by id: the '' prefix scan covers the whole media root, so
+      // without this, files under audio/video/img would be emitted twice
+      // (once by '' and once by their own prefix scan).
+      for (const item of found) {
+        if (item?.id && seenIds.has(item.id)) continue;
+        if (item?.id) seenIds.add(item.id);
+        results.push(item);
+      }
     }
 
     return { items: results, total: results.length };
+  }
+
+  /**
+   * Check whether a media-root-relative path is excluded from search.
+   * Exclusion entries ending in '/' match the whole subtree.
+   * @param {string} relativePath - Path relative to mediaBasePath
+   * @param {boolean} isDirectory
+   * @param {string[]} excludePaths
+   * @returns {boolean}
+   * @private
+   */
+  _isSearchExcluded(relativePath, isDirectory, excludePaths) {
+    if (!excludePaths || excludePaths.length === 0) return false;
+    const normalized = relativePath.split(path.sep).join('/');
+    const candidate = isDirectory ? `${normalized}/` : normalized;
+    return excludePaths.some(exclude => {
+      const prefix = exclude.endsWith('/') ? exclude : `${exclude}/`;
+      return candidate === exclude || candidate.startsWith(prefix);
+    });
   }
 
   /**
@@ -809,10 +857,11 @@ export class FileAdapter {
    * @param {number} limit - Max results
    * @param {number} depth - Current recursion depth
    * @param {string} prefix - Media prefix being searched
+   * @param {string[]} [excludePaths] - Media-root-relative paths to skip
    * @returns {Promise<Array>}
    * @private
    */
-  async _searchDirectory(dirPath, searchText, mediaType, limit, depth, prefix) {
+  async _searchDirectory(dirPath, searchText, mediaType, limit, depth, prefix, excludePaths = []) {
     // Limit depth to prevent runaway recursion
     if (depth > 5 || limit <= 0) return [];
 
@@ -823,6 +872,10 @@ export class FileAdapter {
       if (results.length >= limit) break;
       if (entry.startsWith('.') || entry.startsWith('_')) continue;
 
+      // When scanning the root ('' prefix), skip the dedicated prefix dirs —
+      // they get their own scan pass (avoids duplicate results).
+      if (prefix === '' && depth === 0 && MEDIA_PREFIXES.includes(entry)) continue;
+
       const entryPath = path.join(dirPath, entry);
       const stats = getStats(entryPath);
       if (!stats) continue;
@@ -830,6 +883,9 @@ export class FileAdapter {
       // Build localId relative to mediaBasePath
       const relativePath = path.relative(this.mediaBasePath, entryPath);
       const entryLower = entry.toLowerCase();
+
+      // Skip excluded paths (private footage, e.g. video/fitness/**)
+      if (this._isSearchExcluded(relativePath, stats.isDirectory(), excludePaths)) continue;
 
       if (stats.isDirectory()) {
         // Check if directory name matches
@@ -841,7 +897,7 @@ export class FileAdapter {
         // Recurse into subdirectories
         if (results.length < limit) {
           const subResults = await this._searchDirectory(
-            entryPath, searchText, mediaType, limit - results.length, depth + 1, prefix
+            entryPath, searchText, mediaType, limit - results.length, depth + 1, prefix, excludePaths
           );
           results.push(...subResults);
         }

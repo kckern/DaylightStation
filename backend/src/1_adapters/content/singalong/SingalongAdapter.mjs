@@ -222,10 +222,15 @@ export class SingalongAdapter {
 
   /**
    * List collections or items in a collection
-   * @param {string} localId - Empty for collections, or collection name for items
+   * @param {string} localId - Empty for collections, or collection name for items.
+   *   Accepts compound IDs too (routers pass "singalong:" / "singalong:hymn").
    * @returns {Promise<Object>}
    */
   async getList(localId) {
+    // Strip source prefix if present (list router passes compound IDs, so a
+    // root browse arrives as "singalong:" — without stripping it we'd look
+    // for a collection literally named "singalong:" and return nothing)
+    localId = (localId || '').replace(/^singalong:/, '');
     if (!localId) {
       // List all collections
       const collections = listDirs(this.dataPath);

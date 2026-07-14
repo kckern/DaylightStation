@@ -362,11 +362,26 @@ export class PlexAdapter {
       // Extract adapter-specific filter params
       const libraryNameFilter = query['plex.libraryName'];
 
+      // Section-type aliases: browse entrypoints like plex:audio / plex:video
+      // resolve to the library sections of matching type. Plex section types:
+      // artist (music), movie, show, photo.
+      const SECTION_TYPE_ALIASES = {
+        audio: ['artist'],
+        music: ['artist'],
+        video: ['movie', 'show'],
+        photo: ['photo']
+      };
+
       // Determine the correct path based on item type
       let path;
+      let sectionTypeFilter = null;
       if (!localId) {
         // Empty - list all library sections
         path = '/library/sections';
+      } else if (SECTION_TYPE_ALIASES[localId]) {
+        // Alias - list library sections of the matching type
+        path = '/library/sections';
+        sectionTypeFilter = SECTION_TYPE_ALIASES[localId];
       } else if (/^\d+$/.test(localId)) {
         // Numeric ID - need to check type first
         const metaData = await this.client.getMetadata(localId);
@@ -393,6 +408,18 @@ export class PlexAdapter {
       const data = await this.client.getContainer(path);
       const container = data.MediaContainer;
       if (!container) return [];
+
+      // Library sections need dedicated mapping: their Directory entries have
+      // no ratingKey (the generic converters would emit id "plex:undefined")
+      // and their drill-down path is /library/sections/{key}/all, not
+      // /library/metadata/{key}/children.
+      if (path === '/library/sections') {
+        let sections = container.Directory || [];
+        if (sectionTypeFilter) {
+          sections = sections.filter(section => sectionTypeFilter.includes(section.type));
+        }
+        return sections.map(section => this._toLibrarySectionItem(section));
+      }
 
       let items = container.Metadata || container.Directory || [];
 
@@ -555,6 +582,38 @@ export class PlexAdapter {
     if (item.type === 'episode') return mergeEpisode(index, { season: item.parentIndex, episode: item.index });
     if (item.type === 'season') return mergeSeason(index, item.index);
     return null;
+  }
+
+  /**
+   * Convert a /library/sections Directory entry to a ListableItem.
+   * Sections have no ratingKey — their identity is the section key, and the
+   * browsable container lives at /library/sections/{key}/all (a numeric
+   * localId would be misinterpreted as a metadata ratingKey by getList()).
+   * @param {Object} section - Plex library section Directory entry
+   * @returns {ListableItem}
+   * @private
+   */
+  _toLibrarySectionItem(section) {
+    const localId = `library/sections/${section.key}/all`;
+    const thumbPath = section.composite || section.thumb || section.art;
+    return new ListableItem({
+      id: `plex:${localId}`,
+      source: 'plex',
+      localId,
+      title: section.title || `[Library ${section.key}]`,
+      itemType: 'container',
+      childCount: 0,
+      thumbnail: thumbPath ? `${this.proxyPath}${thumbPath}` : null,
+      metadata: {
+        // Section type (movie | show | artist | photo) — same field UIs
+        // already read for icons/grouping.
+        type: section.type,
+        category: ContentCategory.CONTAINER,
+        sectionId: section.key,
+        librarySectionTitle: section.title || null,
+        sourceType: 'librarySection'
+      }
+    });
   }
 
   /**
@@ -1778,15 +1837,20 @@ export class PlexAdapter {
       // ── Tier 1 (fast): hubSearch + playlists, top-level types, no hydration ──
       if (tier === 1) {
         // Default surface is drill-down containers (artist/album/show/movie/
-        // collection); dashboard UIs render those. Callers that need the
-        // adapter to also surface leaves (track/episode) — e.g. when a user
-        // searches by song name — pass `tier1AllowedTypes` to override.
-        const TIER1_DEFAULT_TYPES = ['show', 'movie', 'artist', 'album', 'collection'];
+        // collection) plus music tracks — searching by song name must return
+        // the song itself, not just its album. Callers that need a different
+        // surface (e.g. episodes too, or containers only) pass
+        // `tier1AllowedTypes` to override.
+        const TIER1_DEFAULT_TYPES = ['show', 'movie', 'artist', 'album', 'collection', 'track'];
         const topLevelTypes = Array.isArray(query.tier1AllowedTypes) && query.tier1AllowedTypes.length > 0
           ? query.tier1AllowedTypes
           : TIER1_DEFAULT_TYPES;
         const filtered = items.filter(item => topLevelTypes.includes(item.type));
-        const converted = filtered.map(item => this._hubResultToListableItem(item));
+        const converted = filtered.map(item => (
+          item.type === 'track'
+            ? this._hubResultToTrackItem(item)
+            : this._hubResultToListableItem(item)
+        ));
 
         // Playlists first — they're curated content the user actively wants
         const combined = [...playlists, ...converted];
@@ -1885,6 +1949,43 @@ export class PlexAdapter {
         year: item.year || null,
         librarySectionTitle: item.librarySectionTitle || null,
         childCount: item.leafCount || item.childCount || 0
+      }
+    });
+  }
+
+  /**
+   * Convert a hubSearch track result to a PlayableItem without hydration.
+   * Carries album/artist/library context in metadata so UIs can disambiguate
+   * music tracks from audiobook tracks (librarySectionTitle) and label the
+   * result ("Hey Jude — The Beatles, Hey Jude").
+   * PlexClient.hubSearch flattens parentTitle → parent (album) and
+   * grandparentTitle → grandparent (artist).
+   * @param {Object} item - Raw hubSearch result of type 'track'
+   * @returns {PlayableItem}
+   * @private
+   */
+  _hubResultToTrackItem(item) {
+    const thumbPath = item.thumb || item.parentThumb || item.grandparentThumb;
+    return new PlayableItem({
+      id: `plex:${item.ratingKey}`,
+      source: 'plex',
+      localId: String(item.ratingKey),
+      title: item.title || '[Untitled]',
+      mediaType: 'audio',
+      mediaUrl: `/api/v1/proxy/plex/stream/${item.ratingKey}`,
+      resumable: false,
+      thumbnail: thumbPath ? `${this.proxyPath}${thumbPath}` : null,
+      metadata: {
+        type: 'track',
+        category: this.#mapTypeToCategory('track'),
+        year: item.year || null,
+        librarySectionTitle: item.librarySectionTitle || null,
+        // Album / artist context (canonical music fields + relative hierarchy)
+        album: item.parent || null,
+        parentTitle: item.parent || null,
+        artist: item.grandparent || null,
+        albumArtist: item.grandparent || null,
+        grandparentTitle: item.grandparent || null
       }
     });
   }

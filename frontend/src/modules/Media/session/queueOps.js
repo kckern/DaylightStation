@@ -31,7 +31,14 @@ function toQueueItem(input, { priority = 'queue' } = {}) {
     thumbnail: input.thumbnail ?? null,
     addedAt: new Date().toISOString(),
     priority,
+    // Container-expanded children carry their show/album title for display;
+    // only present when set, so plain items keep their exact shape.
+    ...(input.containerTitle != null ? { containerTitle: input.containerTitle } : {}),
   };
+}
+
+function toQueueItems(inputs, opts) {
+  return (Array.isArray(inputs) ? inputs : [inputs]).map((i) => toQueueItem(i, opts));
 }
 
 function countUpNext(items) {
@@ -81,16 +88,26 @@ export function upNextBandLength(items, index) {
  * Play Now (§4.4 play-now): the new item REPLACES the current item in place.
  * clearRest=true additionally drops everything else.
  */
-export function playNow(snapshot, input, { clearRest = false } = {}) {
-  const newItem = toQueueItem(input);
+export function playNow(snapshot, input, opts) {
+  return playNowMany(snapshot, [input], opts);
+}
+
+/**
+ * Batch Play Now (container expansion): the FIRST item replaces the current
+ * item in place and becomes current; the rest follow it immediately, in
+ * order. With one input this is exactly `playNow`.
+ */
+export function playNowMany(snapshot, inputs, { clearRest = false } = {}) {
+  const newItems = toQueueItems(inputs);
+  if (newItems.length === 0) return snapshot;
   if (clearRest) {
-    return withQueue(snapshot, [newItem], newItem.queueItemId);
+    return withQueue(snapshot, newItems, newItems[0].queueItemId);
   }
   const { items, currentIndex } = snapshot.queue;
   const next = [...items];
-  if (currentIndex >= 0) next.splice(currentIndex, 1, newItem);
-  else next.unshift(newItem);
-  return withQueue(snapshot, next, newItem.queueItemId);
+  if (currentIndex >= 0) next.splice(currentIndex, 1, ...newItems);
+  else next.unshift(...newItems);
+  return withQueue(snapshot, next, newItems[0].queueItemId);
 }
 
 /**
@@ -99,10 +116,19 @@ export function playNow(snapshot, input, { clearRest = false } = {}) {
  * upNext priority so advancement honors it.
  */
 export function playNext(snapshot, input) {
-  const newItem = toQueueItem(input, { priority: 'upNext' });
+  return playNextMany(snapshot, [input]);
+}
+
+/**
+ * Batch Play Next (container expansion): the whole batch lands at the FRONT
+ * of the Up Next band, preserving the batch's internal order.
+ */
+export function playNextMany(snapshot, inputs) {
+  const newItems = toQueueItems(inputs, { priority: 'upNext' });
+  if (newItems.length === 0) return snapshot;
   const { items, currentIndex } = snapshot.queue;
   const next = [...items];
-  next.splice(currentIndex >= 0 ? currentIndex + 1 : 0, 0, newItem);
+  next.splice(currentIndex >= 0 ? currentIndex + 1 : 0, 0, ...newItems);
   return withQueue(snapshot, next, currentIdOf(snapshot));
 }
 
@@ -111,22 +137,37 @@ export function playNext(snapshot, input) {
  * + any existing band members, before the regular queue).
  */
 export function addUpNext(snapshot, input) {
-  const newItem = toQueueItem(input, { priority: 'upNext' });
+  return addUpNextMany(snapshot, [input]);
+}
+
+/**
+ * Batch Add to Up Next (container expansion): the whole batch appends to the
+ * END of the band, preserving the batch's internal order.
+ */
+export function addUpNextMany(snapshot, inputs) {
+  const newItems = toQueueItems(inputs, { priority: 'upNext' });
+  if (newItems.length === 0) return snapshot;
   const { items, currentIndex } = snapshot.queue;
   const next = [...items];
   const insertAt = currentIndex >= 0
     ? currentIndex + 1 + upNextBandLength(items, currentIndex)
     : upNextBandLength(items, -1); // no current: band starts at 0
-  next.splice(insertAt, 0, newItem);
+  next.splice(insertAt, 0, ...newItems);
   return withQueue(snapshot, next, currentIdOf(snapshot));
 }
 
 /** Add to Queue: append to the end. First-into-empty becomes current. */
 export function add(snapshot, input) {
-  const newItem = toQueueItem(input);
-  const items = [...snapshot.queue.items, newItem];
+  return addMany(snapshot, [input]);
+}
+
+/** Batch Add to Queue: append in order. First-into-empty becomes current. */
+export function addMany(snapshot, inputs) {
+  const newItems = toQueueItems(inputs);
+  if (newItems.length === 0) return snapshot;
+  const items = [...snapshot.queue.items, ...newItems];
   const currentId = currentIdOf(snapshot)
-    ?? (snapshot.queue.items.length === 0 ? newItem.queueItemId : null);
+    ?? (snapshot.queue.items.length === 0 ? newItems[0].queueItemId : null);
   return withQueue(snapshot, items, currentId);
 }
 

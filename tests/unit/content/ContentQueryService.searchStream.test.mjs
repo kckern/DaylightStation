@@ -125,6 +125,98 @@ describe('ContentQueryService.searchStream', () => {
     expect(events.some(e => e.event === 'source_error' && /timeout/.test(e.error))).toBe(true);
   });
 
+  it('annotates streamed items with a relevance score and sorts each batch by score', async () => {
+    const adapter = {
+      source: 'plex',
+      search: jest.fn().mockResolvedValue({
+        items: [
+          // "contains" match (+5) — should sort AFTER the exact match
+          { id: 'plex:2', title: 'A Hard Day\'s Night (Hey Jude session)', metadata: {} },
+          // exact title match (+20) — should sort first
+          { id: 'plex:1', title: 'Hey Jude', metadata: {} },
+        ]
+      }),
+      getSearchCapabilities: () => ({ canonical: ['text'], specific: [] }),
+      getQueryMappings: () => ({}),
+    };
+    const registry = { resolveSource: () => [adapter], get: () => adapter };
+    const svc = new ContentQueryService({ registry });
+
+    const events = [];
+    for await (const e of svc.searchStream({ text: 'hey jude' })) events.push(e);
+
+    const batch = events.find(e => e.event === 'results');
+    expect(batch).toBeDefined();
+    // Every item carries a numeric score (additive field)
+    for (const item of batch.items) {
+      expect(typeof item.score).toBe('number');
+    }
+    // Exact title match outranks the contains match
+    expect(batch.items[0].id).toBe('plex:1');
+    expect(batch.items[0].score).toBeGreaterThan(batch.items[1].score);
+    // Event shape is otherwise unchanged
+    expect(batch.source).toBe('plex');
+    expect(Array.isArray(batch.pending)).toBe(true);
+  });
+
+  it('dedupes items with the same id from the same adapter within the stream', async () => {
+    const adapter = {
+      source: 'files',
+      search: jest.fn().mockResolvedValue({
+        items: [
+          { id: 'files:audio/test.mp3', title: 'test' },
+          { id: 'files:audio/test.mp3', title: 'test' }, // duplicate itemId (overlapping prefix scans)
+          { id: 'files:video/test.mp4', title: 'test' },
+        ]
+      }),
+      getSearchCapabilities: () => ({ canonical: ['text'], specific: [] }),
+      getQueryMappings: () => ({}),
+    };
+    const registry = { resolveSource: () => [adapter], get: () => adapter };
+    const svc = new ContentQueryService({ registry });
+
+    const events = [];
+    for await (const e of svc.searchStream({ text: 'test' })) events.push(e);
+
+    const batch = events.find(e => e.event === 'results');
+    const ids = batch.items.map(i => i.id);
+    expect(ids).toHaveLength(2);
+    expect(new Set(ids).size).toBe(2);
+  });
+
+  it('honours per-source timeout overrides over the default', async () => {
+    const makeAdapter = (source, delayMs) => ({
+      source,
+      search: () => new Promise(resolve =>
+        setTimeout(() => resolve({ items: [{ id: `${source}:1`, title: 'Slow Result' }] }), delayMs)
+      ),
+      getSearchCapabilities: () => ({ canonical: ['text'], specific: [] }),
+      getQueryMappings: () => ({}),
+    });
+    // Both adapters take 100ms. Default budget is 50ms, but 'abs' gets 500ms.
+    const abs = makeAdapter('abs', 100);
+    const plex = makeAdapter('plex', 100);
+    const registry = {
+      resolveSource: () => [abs, plex],
+      get: (s) => [abs, plex].find(a => a.source === s),
+    };
+    const svc = new ContentQueryService({
+      registry,
+      adapterTimeoutMs: 50,
+      sourceTimeoutsMs: { abs: 500 },
+    });
+
+    const events = [];
+    for await (const e of svc.searchStream({ text: 'aa' })) events.push(e);
+
+    // plex times out under the 50ms default…
+    expect(events.some(e => e.event === 'source_error' && e.source === 'plex' && /timeout/.test(e.error))).toBe(true);
+    // …but abs completes within its raised budget
+    const absBatch = events.find(e => e.event === 'results' && e.source === 'abs');
+    expect(absBatch).toBeDefined();
+    expect(absBatch.items).toHaveLength(1);
+  });
+
   it('batch search() times out a hung ID lookup instead of hanging the response', async () => {
     const hungLookup = {
       source: 'plex',

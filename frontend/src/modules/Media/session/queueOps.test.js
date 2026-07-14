@@ -163,3 +163,60 @@ describe('add', () => {
     expect(second.queue.currentIndex).toBe(0);
   });
 });
+
+// Batch variants (container expansion): a batch of one must equal the single
+// op; larger batches preserve internal order at the same insertion point.
+describe('batch ops (playNowMany / playNextMany / addUpNextMany / addMany)', () => {
+  const batch = ['x', 'y', 'z'].map((n) => ({ contentId: `c:${n}`, title: n.toUpperCase() }));
+
+  it('playNowMany: first replaces current in place, rest follow immediately', () => {
+    const next = q.playNowMany(seed('a', 'b*', 'c'), batch);
+    expect(next.queue.items.map((i) => i.contentId))
+      .toEqual(['c:a', 'c:x', 'c:y', 'c:z', 'c:c']);
+    expect(next.queue.currentIndex).toBe(1);
+    expect(next.currentItem.contentId).toBe('c:x');
+  });
+
+  it('playNowMany clearRest: queue becomes exactly the batch, first current', () => {
+    const next = q.playNowMany(seed('a', 'b*', 'c'), batch, { clearRest: true });
+    expect(next.queue.items.map((i) => i.contentId)).toEqual(['c:x', 'c:y', 'c:z']);
+    expect(next.queue.currentIndex).toBe(0);
+  });
+
+  it('playNextMany: whole batch lands at the FRONT of the band, in order', () => {
+    const next = q.playNextMany(seed('a*', ['u1', 'upNext'], 'b'), batch);
+    expect(next.queue.items.map((i) => i.contentId))
+      .toEqual(['c:a', 'c:x', 'c:y', 'c:z', 'c:u1', 'c:b']);
+    expect(next.queue.items[1].priority).toBe('upNext');
+    expect(next.queue.items[3].priority).toBe('upNext');
+    expect(currentId(next)).toBe('a');
+  });
+
+  it('addUpNextMany: whole batch appends to the END of the band, in order', () => {
+    const next = q.addUpNextMany(seed('a*', ['u1', 'upNext'], 'b'), batch);
+    expect(next.queue.items.map((i) => i.contentId))
+      .toEqual(['c:a', 'c:u1', 'c:x', 'c:y', 'c:z', 'c:b']);
+  });
+
+  it('addMany: appends in order; first-into-empty becomes current', () => {
+    const next = q.addMany(seed(), batch);
+    expect(next.queue.items.map((i) => i.contentId)).toEqual(['c:x', 'c:y', 'c:z']);
+    expect(next.queue.currentIndex).toBe(0);
+    const more = q.addMany(next, [{ contentId: 'c:w' }]);
+    expect(more.queue.currentIndex).toBe(0); // current unchanged
+  });
+
+  it('empty batch is a no-op for all four', () => {
+    const snap = seed('a*', 'b');
+    for (const fn of [q.playNowMany, q.playNextMany, q.addUpNextMany, q.addMany]) {
+      expect(fn(snap, [])).toBe(snap);
+    }
+  });
+
+  it('containerTitle is preserved onto queue items when present, absent otherwise', () => {
+    const withTitle = q.addMany(seed(), [{ contentId: 'c:x', containerTitle: 'The Album' }]);
+    expect(withTitle.queue.items[0].containerTitle).toBe('The Album');
+    const without = q.addMany(seed(), [{ contentId: 'c:y' }]);
+    expect('containerTitle' in without.queue.items[0]).toBe(false);
+  });
+});

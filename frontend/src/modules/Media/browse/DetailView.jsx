@@ -60,7 +60,7 @@ export function DetailView({ contentId }) {
                 onClick={() => queue.add(input)}>
           Add to Queue
         </Button>
-        <CastButton contentId={contentId} />
+        <CastButton contentId={contentId} title={info.title ?? null} />
       </Group>
     </Stack>
   );

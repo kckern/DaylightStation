@@ -47,7 +47,11 @@ export function HomeView() {
             variant="light"
             icon={<IconAlertCircle size={18} />}
           >
-            {error.message}
+            Couldn't load your library. Check the connection and try again.
+            <details className="error-detail">
+              <summary>Technical details</summary>
+              {error.message}
+            </details>
           </Alert>
         )}
         {!error && !browse && (
@@ -57,7 +61,7 @@ export function HomeView() {
         )}
         {!error && browse && browse.length === 0 && (
           <Text c="dimmed" data-testid="home-empty">
-            No catalog categories configured. Add `browse` entries to the media app config.
+            Nothing to browse yet.
           </Text>
         )}
         {!error && browse && browse.length > 0 && (

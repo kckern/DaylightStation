@@ -57,6 +57,7 @@ import singalongManifest from '#adapters/content/singalong/manifest.mjs';
 import readalongManifest from '#adapters/content/readalong/manifest.mjs';
 import appRegistryManifest from '#adapters/content/app-registry/manifest.mjs';
 import komgaManifest from '#adapters/content/readable/komga/manifest.mjs';
+import absManifest from '#adapters/content/readable/audiobookshelf/manifest.mjs';
 import queryManifest from '#adapters/content/query/manifest.mjs';
 import freshvideoManifest from '#adapters/content/freshvideo/manifest.mjs';
 import streamManifest from '#adapters/content/stream/manifest.mjs';
@@ -546,7 +547,9 @@ export function createContentRegistry(config, deps = {}) {
         dataPath: config.dataPath || null,
         householdId: config.householdId || null,
         cacheBasePath: config.cacheBasePath || (config.dataPath ? path.join(config.dataPath, 'system/cache') : null),
-        configService: deps.configService || null
+        configService: deps.configService || null,
+        // Optional override of the default search exclusions (video/fitness/)
+        searchExcludePaths: config.mediaSearchExcludePaths || undefined
       }),
       { category: mediaManifest.capability, provider: mediaManifest.provider }
     );
@@ -698,11 +701,16 @@ export function createContentRegistry(config, deps = {}) {
   }
 
   // Register Audiobookshelf adapter if configured
+  // (manifest metadata makes it resolvable via the 'readable' category and
+  // 'abs' provider, alongside Komga)
   if (config.audiobookshelf?.host && config.audiobookshelf?.token && httpClient) {
-    registry.register(new AudiobookshelfAdapter({
-      host: config.audiobookshelf.host,
-      token: config.audiobookshelf.token
-    }, { httpClient }));
+    registry.register(
+      new AudiobookshelfAdapter({
+        host: config.audiobookshelf.host,
+        token: config.audiobookshelf.token
+      }, { httpClient }),
+      { category: absManifest.capability, provider: absManifest.provider }
+    );
   }
 
   // Register Komga adapter for comic/manga reading if configured

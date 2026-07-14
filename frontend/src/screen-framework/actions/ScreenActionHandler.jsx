@@ -5,7 +5,8 @@ import { useHasMenuNavigationContext, useMenuNavigationContext } from '../../con
 import { usePip } from '../pip/PipManager.jsx';
 import { DaylightAPI } from '../../lib/api.mjs';
 import MenuStack from '../../modules/Menu/MenuStack.jsx';
-import Player from '../../modules/Player/Player.jsx';
+import { ScreenPlayer as Player } from '../publishers/ScreenPlayer.jsx';
+import { usePlayerSessionBinding } from '../publishers/usePlayerSessionBinding.js';
 import AppContainer from '../../modules/AppContainer/AppContainer.jsx';
 import { getApp } from '../../lib/appRegistry.js';
 import { getWidgetRegistry } from '../widgets/registry.js';
@@ -97,6 +98,12 @@ export function ScreenActionHandler({ actions = {}, inputType = null }) {
   // --- Menu ---
   const currentMenuRef = useRef(null);
 
+  // Nav-stack Player session bridge: MenuStack overlays mount the legacy
+  // Player for menu selections (type:player). Forward a ref so the mounted
+  // player registers with the playerSessionRegistry (fleet device-state).
+  const navPlayerRef = useRef(null);
+  usePlayerSessionBinding(() => navPlayerRef.current);
+
   const handleMenuOpen = useCallback((payload) => {
     // Check if menuId matches a registered app (e.g., "videocall/livingroom-tv")
     const menuId = payload.menuId;
@@ -123,7 +130,7 @@ export function ScreenActionHandler({ actions = {}, inputType = null }) {
     }
     currentMenuRef.current = menuId;
     const menuTimeout = actions?.menu?.timeout ?? 0;
-    showOverlay(MenuStack, { rootMenu: menuId, MENU_TIMEOUT: menuTimeout }, { priority: 'high' });
+    showOverlay(MenuStack, { rootMenu: menuId, MENU_TIMEOUT: menuTimeout, playerRef: navPlayerRef }, { priority: 'high' });
   }, [showOverlay, dismissOverlay, actions]);
 
   // --- Media play/queue ---
@@ -209,7 +216,7 @@ export function ScreenActionHandler({ actions = {}, inputType = null }) {
       } else if (action === 'media:play') {
         showOverlay(Player, { play: secPayload.contentId, clear: () => dismissOverlay() });
       } else if (action === 'menu:open') {
-        showOverlay(MenuStack, { rootMenu: secPayload.menuId });
+        showOverlay(MenuStack, { rootMenu: secPayload.menuId, playerRef: navPlayerRef });
       }
       return;
     }

@@ -49,11 +49,15 @@ export function BrowseView({ path, label, modifiers, take = 50 }) {
       )}
       {error && (
         <Alert data-testid="browse-view-error" color="red" variant="light" icon={<IconAlertCircle size={18} />}>
-          {error.message}
+          Couldn't load this section. Check the connection and try again.
+          <details className="error-detail">
+            <summary>Technical details</summary>
+            {error.message}
+          </details>
         </Alert>
       )}
       {!loading && !error && items.length === 0 && (
-        <Text c="dimmed" data-testid="browse-empty">Nothing here yet.</Text>
+        <Text c="dimmed" data-testid="browse-empty" className="browse-empty">Nothing here yet.</Text>
       )}
 
       {!loading && !error && (

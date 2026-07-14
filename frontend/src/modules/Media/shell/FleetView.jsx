@@ -9,9 +9,11 @@ import { notifications } from '@mantine/notifications';
 import { IconDeviceRemote, IconAlertCircle } from '@tabler/icons-react';
 import { useFleetContext } from '../fleet/FleetProvider.jsx';
 import { useDevice } from '../fleet/useDevice.js';
+import { deviceName, deviceIcon, deviceLocation } from '../fleet/deviceDisplay.js';
 import { useNav } from './NavProvider.jsx';
 import { useTakeOver } from '../peek/useTakeOver.js';
 import { stateColor } from '../theme/mediaTheme.js';
+import { deviceStateLabel } from './stateCopy.js';
 
 const ACTIVE_STATES = new Set(['playing', 'paused', 'buffering', 'stalled']);
 
@@ -31,6 +33,7 @@ function FleetCard({ deviceId }) {
   const item = snap?.currentItem;
   const duration = item?.duration ?? 0;
   const isActive = !offline && ACTIVE_STATES.has(devState);
+  const location = deviceLocation(device);
 
   return (
     <li data-testid={`fleet-card-${deviceId}`} className="fleet-card">
@@ -40,11 +43,15 @@ function FleetCard({ deviceId }) {
           style={{ backgroundColor: stateColor(devState, { offline }), borderColor: offline ? 'currentColor' : 'transparent' }}
           aria-hidden
         />
-        <span className="fleet-card-name">{device?.name ?? deviceId}</span>
-        <span className="fleet-card-state" data-testid={`fleet-state-${deviceId}`}>
-          {offline ? `offline (last: ${devState})` : devState}
+        <span className="fleet-card-icon" aria-hidden>{deviceIcon(device)}</span>
+        <span className="fleet-card-titles">
+          <span className="fleet-card-name">{deviceName(device, deviceId)}</span>
+          {location && <span className="fleet-card-location">{location}</span>}
         </span>
-        {entry?.isStale && <Badge size="xs" color="yellow" variant="light" className="fleet-card-stale">stale</Badge>}
+        <span className="fleet-card-state" data-testid={`fleet-state-${deviceId}`}>
+          {deviceStateLabel(devState, { offline })}
+        </span>
+        {entry?.isStale && <Badge size="xs" color="yellow" variant="light" className="fleet-card-stale">Out of date</Badge>}
       </div>
       <div className="fleet-card-item">
         {item ? (
@@ -62,7 +69,11 @@ function FleetCard({ deviceId }) {
             </div>
           </>
         ) : (
-          <Text size="sm" c="dimmed">—</Text>
+          <Text size="sm" c="dimmed" className="fleet-card-hint">
+            {devState === 'unknown' && !offline
+              ? "This device hasn't reported yet"
+              : 'Nothing playing right now'}
+          </Text>
         )}
       </div>
       <Group gap="xs" className="fleet-card-actions">
@@ -86,13 +97,13 @@ function FleetCard({ deviceId }) {
                 // C7.4: the user MUST be informed when a take-over fails.
                 notifications.show({
                   color: 'red',
-                  title: 'Take Over failed',
-                  message: result?.error ?? 'Device did not release its session.',
+                  title: "Couldn't move playback here",
+                  message: result?.error ?? "The other device didn't let go. Try again.",
                 });
               }
             }}
           >
-            Take Over
+            Play here
           </Button>
         )}
       </Group>
@@ -113,12 +124,16 @@ export function FleetView() {
   if (error) {
     return (
       <Alert data-testid="fleet-error" color="red" variant="light" icon={<IconAlertCircle size={18} />}>
-        {error.message}
+        Couldn't load your devices. Check the connection and try again.
+        <details className="error-detail">
+          <summary>Technical details</summary>
+          {error.message}
+        </details>
       </Alert>
     );
   }
   if (!devices.length) {
-    return <Text data-testid="fleet-empty" c="dimmed">No playback devices configured.</Text>;
+    return <Text data-testid="fleet-empty" c="dimmed">No devices set up yet.</Text>;
   }
 
   return (
