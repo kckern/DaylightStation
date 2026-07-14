@@ -67,6 +67,18 @@ describe('ScoreTransportBar', () => {
     expect(screen.getByText(/\/\s*40/)).toBeInTheDocument();
   });
 
+  it('disables Play with a Preparing label until geometry is ready (H0)', () => {
+    render(<ScoreTransportBar {...base} mode="polish" ready={false} total={0} />);
+    const play = screen.getByRole('button', { name: /preparing/i });
+    expect(play).toBeDisabled();
+  });
+
+  it('enables Play once ready', () => {
+    render(<ScoreTransportBar {...base} mode="polish" ready total={10} />);
+    const play = screen.getByRole('button', { name: /^play$|^▶$/i });
+    expect(play).toBeEnabled();
+  });
+
   it('listen mode: tempo button opens a segmented stepper that commits via onTempo on tap', () => {
     const onTempo = vi.fn();
     render(<ScoreTransportBar {...base} mode="listen" tempoMult={1} onTempo={onTempo} />);

@@ -798,6 +798,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
         running={running}
         onToggleRun={toggleRun}
         onReset={reset}
+        ready={events.length > 0 && layoutFresh}
         step={step}
         total={events.length}
         page={perfPage.page}

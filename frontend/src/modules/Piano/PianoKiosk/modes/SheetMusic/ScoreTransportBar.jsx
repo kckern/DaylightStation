@@ -76,9 +76,12 @@ const ScoreModeTabs = memo(function ScoreModeTabs({ mode, onMode }) {
  * so they render only when `hasTransport`. Memoized so a step advance can't
  * reconcile them (they depend on mode/running, not step).
  */
-const ScoreTransportButtons = memo(function ScoreTransportButtons({ mode, running, onToggleRun, onReset }) {
+const ScoreTransportButtons = memo(function ScoreTransportButtons({ mode, running, onToggleRun, onReset, ready = true }) {
   const hasTransport = mode === 'polish' || mode === 'listen';
   if (!hasTransport) return null;
+  // Until geometry extraction publishes a timeline the transport is inert; show a
+  // disabled "Preparing…" so the bar doesn't look live while it can't play (audit H0).
+  const runLabel = !ready ? 'Preparing' : running ? 'Pause' : 'Play';
   return (
     <>
       <button
@@ -91,12 +94,13 @@ const ScoreTransportButtons = memo(function ScoreTransportButtons({ mode, runnin
       </button>
       <button
         type="button"
-        className="piano-score-btn piano-score-run"
-        aria-label={running ? 'Pause' : 'Play'}
+        className={`piano-score-btn piano-score-run${!ready ? ' is-preparing' : ''}`}
+        aria-label={runLabel}
         aria-pressed={running}
+        disabled={!ready}
         onClick={onToggleRun}
       >
-        {running ? '❚❚' : '▶'}
+        {!ready ? '…' : running ? '❚❚' : '▶'}
       </button>
     </>
   );
@@ -463,6 +467,7 @@ export default function ScoreTransportBar({
   running,
   onToggleRun,
   onReset,
+  ready,
   step,
   total,
   page = 1,
@@ -519,6 +524,7 @@ export default function ScoreTransportBar({
           running={running}
           onToggleRun={onToggleRun}
           onReset={onReset}
+          ready={ready}
         />
         {hasPosition && <span className="piano-score-position tabular-nums">{position}</span>}
         {isPerform && (
