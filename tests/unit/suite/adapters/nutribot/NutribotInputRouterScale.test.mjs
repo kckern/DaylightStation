@@ -7,6 +7,7 @@ function makeContainer(spies) {
     getConversationStateStore: () => spies.stateStore,
     getSelectScaleContainer: () => ({ execute: spies.container }),
     getSelectScaleDensity: () => ({ execute: spies.density }),
+    getShowScaleDensityHelp: () => ({ execute: spies.help }),
     getLogScaleFoodFromText: () => ({ execute: spies.describe }),
     getLogFoodFromText: () => ({ execute: spies.logText }),
     getProcessRevisionInput: () => ({ execute: spies.revision }),
@@ -20,6 +21,7 @@ describe('NutribotInputRouter scale routing', () => {
       stateStore: { get: jest.fn().mockResolvedValue(null) },
       container: jest.fn().mockResolvedValue({ ok: true }),
       density: jest.fn().mockResolvedValue({ ok: true }),
+      help: jest.fn().mockResolvedValue({ ok: true }),
       describe: jest.fn().mockResolvedValue({ ok: true }),
       logText: jest.fn().mockResolvedValue({ ok: true }),
       revision: jest.fn().mockResolvedValue({ ok: true }),
@@ -46,5 +48,15 @@ describe('NutribotInputRouter scale routing', () => {
     await router.handleText(evt({ payload: { text: 'leftover lasagna' } }), {});
     expect(spies.describe).toHaveBeenCalledWith(expect.objectContaining({ logUuid: 'log1', text: 'leftover lasagna' }));
     expect(spies.logText).not.toHaveBeenCalled();
+  });
+
+  it("routes 'sh' (h:1) to ShowScaleDensityHelp with showHelp true", async () => {
+    await router.handleCallback(evt({ payload: { callbackData: JSON.stringify({ cmd: 'sh', id: 'log1', h: 1 }) } }), {});
+    expect(spies.help).toHaveBeenCalledWith(expect.objectContaining({ logUuid: 'log1', showHelp: true }));
+  });
+
+  it("routes 'sh' (h:0) to ShowScaleDensityHelp with showHelp false", async () => {
+    await router.handleCallback(evt({ payload: { callbackData: JSON.stringify({ cmd: 'sh', id: 'log1', h: 0 }) } }), {});
+    expect(spies.help).toHaveBeenCalledWith(expect.objectContaining({ logUuid: 'log1', showHelp: false }));
   });
 });
