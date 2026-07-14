@@ -229,6 +229,18 @@ export class NutribotInputRouter extends BaseInputRouter {
           responseContext,
         });
       }
+      case 'sh': {
+        // Scale help — toggle the density legend in place (h:1 show, h:0 back)
+        const useCase = this.container.getShowScaleDensityHelp();
+        return await useCase.execute({
+          userId: this.#resolveUserId(event),
+          conversationId: event.conversationId,
+          logUuid: decoded.id,
+          showHelp: decoded.h === 1 || decoded.h === '1',
+          messageId: event.messageId,
+          responseContext,
+        });
+      }
       case 'ra': {
         // Report Adjust - start adjustment flow
         const useCase = this.container.getStartAdjustmentFlow();
