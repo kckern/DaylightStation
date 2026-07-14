@@ -234,7 +234,7 @@ describe('HubFleetBridge', () => {
     expect(bus.broadcasts).toHaveLength(2);
   });
 
-  it('heartbeats paused lanes (active session) but not idle lanes', () => {
+  it('heartbeats ALL lanes — idle included (always-on gear must always report)', () => {
     bridge.start();
     bus.emitStatus([pausedLane('yellow'), idleLane('white')]);
     expect(bus.broadcasts).toHaveLength(2);
@@ -242,10 +242,16 @@ describe('HubFleetBridge', () => {
     clock.advance(12000);
     bus.emitStatus([pausedLane('yellow'), idleLane('white')]);
 
+    // Both lanes re-beat: an idle speaker aging to offline reads as
+    // "Not reporting"/"Off" in the fleet, which is reserved for gear that
+    // is truly dark. The hub's status feed going silent still ages lanes
+    // out via DeviceLivenessService.
     const later = bus.broadcasts.slice(2);
-    expect(later).toHaveLength(1);
-    expect(later[0].topic).toBe('device-state:speaker-yellow');
-    expect(later[0].payload.reason).toBe('heartbeat');
+    expect(later).toHaveLength(2);
+    expect(later.map((b) => b.topic).sort()).toEqual([
+      'device-state:speaker-white', 'device-state:speaker-yellow',
+    ]);
+    for (const b of later) expect(b.payload.reason).toBe('heartbeat');
   });
 
   it('tolerates malformed snapshots and lane entries without throwing', () => {

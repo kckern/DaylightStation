@@ -1,0 +1,119 @@
+// frontend/src/modules/Media/fleet/Fleet.scss
+// Fleet-owned styles, co-located like cast/Cast.scss and search/Search.scss.
+// Covers the inline "Play on this device" picker that expands inside a fleet
+// card; the card layout itself stays in shell/MediaShell.scss. The busy line
+// and spinner echo the cast picker's warning / search's still-searching
+// visuals so the flows read as one family. Palette: the app's dark amber
+// Mantine theme (theme/mediaTheme.js).
+
+.fleet-play-panel {
+  margin-top: var(--mantine-spacing-xs);
+  padding: var(--mantine-spacing-xs);
+  background: var(--mantine-color-dark-6);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: var(--mantine-radius-md);
+}
+
+.fleet-play-input {
+  width: 100%;
+  min-height: 44px;
+  padding: 0 12px;
+  font: inherit;
+  font-size: 14px;
+  color: var(--mantine-color-dark-0);
+  background: var(--mantine-color-dark-5);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: var(--mantine-radius-sm);
+
+  &::placeholder { color: var(--mantine-color-dark-2); }
+  &:focus-visible {
+    outline: 2px solid var(--mantine-color-amber-5);
+    outline-offset: 1px;
+  }
+}
+
+// Quiet inline heads-up when the device is mid-something — informative,
+// not modal (mirrors .cast-picker-warning).
+.fleet-play-busy {
+  margin-top: 6px;
+  padding: 6px 10px;
+  border-radius: var(--mantine-radius-sm);
+  background: rgba(229, 160, 13, 0.12);
+  border: 1px solid rgba(229, 160, 13, 0.35);
+  color: var(--mantine-color-amber-3);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.fleet-play-hint {
+  margin-top: 6px;
+  padding: 6px 4px;
+  color: var(--mantine-color-dark-2);
+  font-size: 13px;
+}
+
+.fleet-play-results {
+  list-style: none;
+  margin: 6px 0 0;
+  padding: 0;
+  max-height: 280px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+// Rows are real buttons: full-width, 44px+ target, visible focus ring.
+.fleet-play-result {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 44px;
+  padding: 6px 8px;
+  text-align: left;
+  background: none;
+  border: 1px solid transparent;
+  border-radius: var(--mantine-radius-sm);
+  color: var(--mantine-color-dark-0);
+  font: inherit;
+  cursor: pointer;
+  transition: background 120ms ease;
+
+  &:hover { background: var(--mantine-color-dark-5); }
+  &:focus-visible {
+    outline: 2px solid var(--mantine-color-amber-5);
+    outline-offset: -2px;
+  }
+}
+
+.fleet-play-thumb {
+  width: 40px;
+  height: 40px;
+  object-fit: cover;
+  border-radius: var(--mantine-radius-sm);
+  background: var(--mantine-color-dark-5);
+  flex-shrink: 0;
+}
+
+.fleet-play-result-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.fleet-play-result-title {
+  font-size: 14px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.fleet-play-result-subtitle {
+  font-size: 12px;
+  color: var(--mantine-color-dark-2);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}

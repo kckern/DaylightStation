@@ -1,6 +1,12 @@
 // frontend/src/modules/Media/shell/stateCopy.test.js
 import { describe, it, expect } from 'vitest';
-import { playbackStateLabel, deviceStateLabel, remoteStatusLine } from './stateCopy.js';
+import {
+  playbackStateLabel,
+  deviceStateLabel,
+  remoteStatusLine,
+  queuePositionLabel,
+  playbackRateLabel,
+} from './stateCopy.js';
 
 describe('playbackStateLabel', () => {
   it('humanizes engine states', () => {
@@ -53,5 +59,36 @@ describe('remoteStatusLine', () => {
 
   it('falls back to the bare title when state is unknown but an item exists', () => {
     expect(remoteStatusLine('unknown', 'Frozen')).toBe('Frozen');
+  });
+});
+
+describe('queuePositionLabel', () => {
+  it('formats a 1-based position', () => {
+    expect(queuePositionLabel(1, 3)).toBe('2 of 3');
+    expect(queuePositionLabel(0, 2)).toBe('1 of 2');
+  });
+
+  it('returns null when there is nothing meaningful to say', () => {
+    expect(queuePositionLabel(0, 1)).toBeNull(); // single item
+    expect(queuePositionLabel(-1, 5)).toBeNull(); // no current item
+    expect(queuePositionLabel(2, 2)).toBeNull(); // out of range
+    expect(queuePositionLabel(null, 3)).toBeNull();
+    expect(queuePositionLabel(0.5, 3)).toBeNull();
+  });
+});
+
+describe('playbackRateLabel', () => {
+  it('formats speeds compactly', () => {
+    expect(playbackRateLabel(1)).toBe('1×');
+    expect(playbackRateLabel(1.25)).toBe('1.25×');
+    expect(playbackRateLabel(1.5)).toBe('1.5×');
+    expect(playbackRateLabel(2)).toBe('2×');
+    expect(playbackRateLabel(0.75)).toBe('0.75×');
+  });
+
+  it('never shows NaN or nonsense', () => {
+    expect(playbackRateLabel(NaN)).toBe('1×');
+    expect(playbackRateLabel(0)).toBe('1×');
+    expect(playbackRateLabel(undefined)).toBe('1×');
   });
 });

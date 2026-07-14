@@ -151,7 +151,7 @@ describe('useSessionStatePublisher', () => {
     expect(wsService.send.mock.calls[1][0].reason).toBe('heartbeat');
   });
 
-  it('stops heartbeat on idle transition', () => {
+  it('keeps heartbeating while idle — always-on kiosks must always report', () => {
     const source = makeSource(makeSnapshot({ state: 'playing' }));
     renderHook(() => useSessionStatePublisher({
       deviceId: 'tv-1',
@@ -164,11 +164,15 @@ describe('useSessionStatePublisher', () => {
     act(() => { vi.advanceTimersByTime(5000); });
     expect(wsService.send).toHaveBeenCalledTimes(1); // one heartbeat
 
+    // Going idle must NOT silence the device — an idle-but-on kiosk aging
+    // out reads as "Not reporting"/"Off" in the fleet, which is reserved for
+    // devices that are truly dark.
     act(() => source.fireState('idle'));
     wsService.send.mockClear();
 
     act(() => { vi.advanceTimersByTime(20000); });
-    expect(wsService.send).not.toHaveBeenCalled();
+    expect(wsService.send.mock.calls.length).toBeGreaterThanOrEqual(3); // ~every 5s
+    expect(wsService.send.mock.calls[0][0].reason).toBe('heartbeat');
   });
 
   it('unmount cancels debounce and heartbeat and unsubscribes', () => {

@@ -144,6 +144,18 @@ export class DeviceLivenessService {
     return !!entry && entry.online === true;
   }
 
+  /**
+   * All device ids with a cached snapshot. Used by the event bus to replay
+   * every known device-state to a wildcard ('*') subscriber — /media clients
+   * subscribe via predicate filters that sync as '*', so per-topic replay
+   * alone never reaches them and a fresh tab would show "Not reporting"
+   * until the next live broadcast.
+   * @returns {string[]}
+   */
+  knownDeviceIds() {
+    return [...this.#entries.keys()];
+  }
+
   // ---------------------------------------------------------------------------
   // Private
   // ---------------------------------------------------------------------------

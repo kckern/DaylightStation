@@ -502,6 +502,15 @@ export class WebSocketEventBus {
     for (const topic of topicList) {
       this.#maybeReplayDeviceState(client, topic);
     }
+
+    // Wildcard subscribers (every /media tab — predicate filters sync as
+    // '*') get ALL cached device-states replayed, or a fresh tab shows
+    // "Not reporting" for every idle device until its next heartbeat.
+    if (topicList.includes('*') && this.#livenessService?.knownDeviceIds) {
+      for (const deviceId of this.#livenessService.knownDeviceIds()) {
+        this.#maybeReplayDeviceState(client, `device-state:${deviceId}`);
+      }
+    }
   }
 
   /**

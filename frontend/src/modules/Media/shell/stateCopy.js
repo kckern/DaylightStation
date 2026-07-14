@@ -53,4 +53,26 @@ export function remoteStatusLine(state, title) {
   }
 }
 
-export default { playbackStateLabel, deviceStateLabel, remoteStatusLine };
+/** Queue position line ("3 of 12"). Null when there is no meaningful position
+ *  to report (empty queue, single item, or no current item). */
+export function queuePositionLabel(index, count) {
+  if (!Number.isInteger(index) || !Number.isInteger(count)) return null;
+  if (index < 0 || count < 2 || index >= count) return null;
+  return `${index + 1} of ${count}`;
+}
+
+/** Playback speed chip copy ("1×", "1.25×"). Falls back to "1×" for
+ *  anything unusable so the control never shows NaN. */
+export function playbackRateLabel(rate) {
+  const r = Number(rate);
+  if (!Number.isFinite(r) || r <= 0) return '1×';
+  return `${parseFloat(r.toFixed(2))}×`;
+}
+
+export default {
+  playbackStateLabel,
+  deviceStateLabel,
+  remoteStatusLine,
+  queuePositionLabel,
+  playbackRateLabel,
+};

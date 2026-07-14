@@ -1521,12 +1521,20 @@ export class LocalContentAdapter {
       const fs = await import('fs');
 
       // Helper to search a conference folder
+      // Every talk is a SYNC YAML load+parse — hundreds back-to-back block
+      // the event loop for seconds, starving every concurrent adapter's HTTP
+      // response into a false timeout (2026-07-14 "bluey" no-results). Yield
+      // every 20 files so the loop breathes; total work unchanged.
+      let scanned = 0;
       const searchFolder = async (folderId, folderPath) => {
         if (results.length >= limit) return;
 
         const talkFiles = listYamlFiles(folderPath);
         for (const talkId of talkFiles) {
           if (results.length >= limit) break;
+          if (++scanned % 20 === 0) {
+            await new Promise((resolve) => setImmediate(resolve));
+          }
 
           const talkPath = `${folderId}/${talkId}`;
           const metadata = loadContainedYaml(basePath, talkPath);
@@ -1606,8 +1614,14 @@ export class LocalContentAdapter {
     try {
       const files = listYamlFiles(basePath);
 
+      let scanned = 0;
       for (const file of files) {
         if (results.length >= limit) break;
+        // Sync YAML loads block the event loop — yield periodically (see
+        // _searchTalks).
+        if (++scanned % 20 === 0) {
+          await new Promise((resolve) => setImmediate(resolve));
+        }
 
         // Extract number from filename
         const match = file.match(/^0*(\d+)/);
@@ -1660,6 +1674,7 @@ export class LocalContentAdapter {
         .filter(e => e.isDirectory())
         .map(e => e.name);
 
+      let scanned = 0;
       for (const collection of collections) {
         if (results.length >= limit) break;
 
@@ -1668,6 +1683,11 @@ export class LocalContentAdapter {
 
         for (const file of files) {
           if (results.length >= limit) break;
+          // Sync YAML loads block the event loop — yield periodically (see
+          // _searchTalks).
+          if (++scanned % 20 === 0) {
+            await new Promise((resolve) => setImmediate(resolve));
+          }
 
           const localId = `${collection}/${file}`;
           const metadata = loadContainedYaml(basePath, localId);
