@@ -714,15 +714,31 @@ export default function ScorePlayer({ score: scoreMeta }) {
     setTempoMult(Number.isFinite(n) ? Math.min(2, Math.max(0.25, n)) : 1);
   }, []);
 
+  // A zoom / flow / transpose change re-engraves, and while the transport is running
+  // the geometry extraction is DEFERRED (holdExtraction) — so the sheet would repaint
+  // in the new key/size while the audio kept playing the stale one and the cursor
+  // vanished (audit H2). Pause + flush first so sound and sheet never diverge.
+  const pauseForViewChange = useCallback(() => {
+    if (!transportRef.current?.playing) return;
+    transport.pause();
+    silenceScheduled();
+    flushPlaybackNow();
+    logger.info('score.viewchange.pause', {});
+  }, [transport, silenceScheduled, flushPlaybackNow, logger]);
+
   // Listen key transpose: clamp to ±7 semitones (one fifth either way). The renderer
   // re-engraves in the new key and re-extracts pitches, so both the notation and the
   // performed/highlighted notes move together.
   const onTranspose = useCallback((v) => {
+    pauseForViewChange();
     const n = Math.round(Number(v));
     const clamped = Number.isFinite(n) ? Math.min(7, Math.max(-7, n)) : 0;
     setTranspose(clamped);
     logTranspose({ semitones: clamped });
-  }, [logTranspose]);
+  }, [logTranspose, pauseForViewChange]);
+
+  // Zoom (Size) — pause a running transport before the re-engrave (H2).
+  const onScaleStep = useCallback((v) => { pauseForViewChange(); setScale(v); }, [pauseForViewChange]);
 
   const reset = useCallback(() => {
     countIn.cancel();       // reset aborts a pending count-in
@@ -764,7 +780,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
   // defeat React.memo on the bar's expensive body (parts/chips/popovers), so the
   // whole bar would reconcile on every cursor-step advance. Functional updaters →
   // empty deps → stable identity → the memoized body bails per step.
-  const onToggleFlow = useCallback(() => setFlow((f) => (f === 'wrapped' ? 'horizontal' : 'wrapped')), []);
+  const onToggleFlow = useCallback(() => { pauseForViewChange(); setFlow((f) => (f === 'wrapped' ? 'horizontal' : 'wrapped')); }, [pauseForViewChange]);
   const onToggleKeyboard = useCallback(() => {
     kbOverrideRef.current[mode] = !keyboardVisible; // remember the explicit choice for THIS mode
     setKbTick((t) => t + 1);
@@ -985,7 +1001,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
         flow={flow}
         onToggleFlow={onToggleFlow}
         scale={scale}
-        onScale={setScale}
+        onScale={onScaleStep}
         tempoMult={tempoMult}
         onTempo={onTempo}
         transpose={transpose}
