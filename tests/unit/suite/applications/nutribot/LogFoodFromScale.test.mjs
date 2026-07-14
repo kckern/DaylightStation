@@ -93,7 +93,7 @@ describe('LogFoodFromScale', () => {
     expect(messaging.updateMessage).toHaveBeenCalledWith('c', '900', expect.objectContaining({ text: '⚖️ 340 g', inline: true }));
   });
 
-  it('edit mode falls through to create when the log was already touched', async () => {
+  it('edit mode no-ops (posts nothing) when the log was already touched', async () => {
     const touched = {
       id: 'log1', status: 'pending',
       items: [{ label: 'Unknown', grams: 210, calories: 0, unit: 'g' }],
@@ -101,9 +101,11 @@ describe('LogFoodFromScale', () => {
       with(patch) { return { ...this, ...patch, with: this.with }; },
     };
     foodLogStore.findByUuid = jest.fn().mockResolvedValue(touched);
-    messaging.sendMessage = jest.fn().mockResolvedValue({ messageId: 777 });
+    messaging.sendMessage = jest.fn();
+    messaging.updateMessage = jest.fn();
     const res = await useCase.execute({ userId: 'kckern', conversationId: 'c', grams: 340, existingLogUuid: 'log1', messageId: '900' });
-    expect(res).toMatchObject({ success: true, edited: undefined });
-    expect(messaging.sendMessage).toHaveBeenCalled();
+    expect(res).toMatchObject({ success: true, edited: false, touched: true });
+    expect(messaging.sendMessage).not.toHaveBeenCalled();
+    expect(messaging.updateMessage).not.toHaveBeenCalled();
   });
 });
