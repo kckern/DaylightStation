@@ -246,6 +246,26 @@ describe('ScorePlayer — Listen mode', () => {
     expect(h.sendPanic).toHaveBeenCalled(); // no droning chord
   });
 
+  it('does NOT perform staves the user marked as their own — roles route audio (H5)', async () => {
+    h.layoutExtras = {
+      tempoEntries: [{ onsetQuarter: 0, bpm: 60 }],
+      notes: [
+        { midi: 64, staff: 0, onsetQuarter: 0, durationQuarters: 1 }, // RH
+        { midi: 40, staff: 1, onsetQuarter: 0, durationQuarters: 4 }, // LH
+      ],
+    };
+    renderPlayer();
+    screen.getByText('Listen').click();
+    await act(async () => {});
+    screen.getByText('RH: Play').click(); // RH (staff 0) → You: the user plays it, kiosk must NOT
+    await act(async () => {});
+    screen.getByText('▶').click();
+    await act(async () => {});
+    act(() => vi.advanceTimersByTime(100));
+    expect(h.sendNoteAt).toHaveBeenCalledWith(40, expect.any(Number), expect.any(Number)); // LH still performed
+    expect(h.sendNoteAt).not.toHaveBeenCalledWith(64, expect.any(Number), expect.any(Number)); // RH (yours) NOT performed
+  });
+
   it('sends scheduled notes with timestamps (audio plane), not pressNote', async () => {
     h.layoutExtras = {
       tempoEntries: [{ onsetQuarter: 0, bpm: 60 }],
