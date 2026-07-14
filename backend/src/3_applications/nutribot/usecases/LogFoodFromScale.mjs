@@ -6,7 +6,8 @@
 //
 // Create-or-edit: when the bridge passes existingLogUuid + messageId and that log is an
 // untouched pending scale log, we edit the grams in place instead of posting a new
-// message. Anything else (touched / gone / non-pending) creates a fresh prompt.
+// message. If it's already touched/gone/non-pending, we no-op (the bridge's committed
+// flag owns that case) — posting a fresh prompt would duplicate.
 
 import { NutriLog } from '#domains/nutrition/entities/NutriLog.mjs';
 import { buildDensityKeyboard, densityPromptText } from '../lib/scaleNutribotConfig.mjs';
