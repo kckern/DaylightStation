@@ -387,7 +387,8 @@ describe('ScorePlayer — Listen mode', () => {
     await act(async () => {});
     screen.getByText('▶').click();
     await act(async () => {});
-    act(() => vi.advanceTimersByTime(100));
+    act(() => vi.advanceTimersByTime(4100)); // My part is set → count-in (4 beats @60) runs first
+    act(() => vi.advanceTimersByTime(100));  // then the kiosk performs
     expect(h.sendNoteAt).toHaveBeenCalledWith(40, expect.any(Number), expect.any(Number)); // LH still performed
     expect(h.sendNoteAt).not.toHaveBeenCalledWith(64, expect.any(Number), expect.any(Number)); // RH (yours) NOT performed
   });
@@ -514,6 +515,25 @@ describe('ScorePlayer — Listen mode', () => {
     fireEvent.click(screen.getByRole('button', { name: '125%' }));
     await act(async () => {});
     expect(screen.getByRole('radio', { name: 'RH' })).toHaveAttribute('aria-checked', 'true'); // preserved
+  });
+
+  it('a mid-run view change (transpose) pauses playback so sheet & sound cannot diverge (H2)', async () => {
+    h.layoutExtras = {
+      tempoEntries: [{ onsetQuarter: 0, bpm: 60 }],
+      notes: [{ midi: 40, staff: 1, onsetQuarter: 0, durationQuarters: 8 }],
+    };
+    renderPlayer();
+    screen.getByText('Listen').click();
+    await act(async () => {});
+    screen.getByText('▶').click(); // My part = None → plays immediately
+    await act(async () => {});
+    act(() => vi.advanceTimersByTime(100));
+    expect(screen.getByText('❚❚')).toBeTruthy(); // playing
+    h.sendPanic.mockClear();
+    act(() => { fireEvent.click(screen.getByRole('button', { name: /transpose up/i })); });
+    await act(async () => {});
+    expect(h.sendPanic).toHaveBeenCalled(); // silenced on the view change
+    expect(screen.getByText('▶')).toBeTruthy(); // paused
   });
 
   it('silences sounding notes on tap-seek in Play mode (no stuck note)', async () => {
