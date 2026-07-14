@@ -17,7 +17,7 @@ vi.mock('./ScorePlayer.jsx', () => ({
 
 import { ActivePianoProvider } from '../../PianoConfig.jsx';
 import { __clearPianoListCache } from '../../usePianoList.js';
-import { SheetMusic, collectionListPath } from './SheetMusic.jsx';
+import { SheetMusic, collectionListPath, isNotationId } from './SheetMusic.jsx';
 
 // SheetMusic renders its own <Routes>, so mount it under a "sheetmusic/*" route
 // inside a MemoryRouter — mirroring how PianoShell mounts it (path="sheetmusic/*").
@@ -47,6 +47,19 @@ describe('collectionListPath', () => {
   });
   it('returns null when no collection is configured', () => {
     expect(collectionListPath(null)).toBe(null);
+  });
+});
+
+describe('isNotationId (H4)', () => {
+  it('treats .musicxml as engraved notation', () => {
+    expect(isNotationId('files:docs/x.musicxml')).toBe(true);
+    expect(isNotationId('x.MUSICXML')).toBe(true);
+  });
+  it('does NOT route .mxl to the notation player (zip container, unsupported)', () => {
+    expect(isNotationId('files:docs/x.mxl')).toBe(false);
+  });
+  it('non-notation ids are false', () => {
+    expect(isNotationId('plex:12345')).toBe(false);
   });
 });
 

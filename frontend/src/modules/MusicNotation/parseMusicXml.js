@@ -96,7 +96,7 @@ export function parseMusicXml(xml) {
       if (attr) {
         divisions = num(attr, 'divisions', divisions);
         score.divisions = divisions;
-        if (attr.querySelector('key fifths')) score.key = { fifths: num(attr, 'key fifths', 0) };
+        if (attr.querySelector('key fifths')) score.key = { fifths: num(attr, 'key fifths', 0), mode: text(attr, 'key mode', null) };
         if (attr.querySelector('time')) {
           score.timeSig = { beats: num(attr, 'time beats', 4), beatType: num(attr, 'time beat-type', 4) };
           measureQuarters = (score.timeSig.beats * 4) / score.timeSig.beatType;
