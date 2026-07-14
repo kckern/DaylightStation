@@ -211,7 +211,7 @@ describe('ScorePlayer — stale-layout overlay guard (Task 9)', () => {
 
     // Tap the Size stepper's 125% step → the mock re-fires onLayout with scale
     // 1.25, which now MATCHES the player's scale → layout is fresh → cursor appears.
-    fireEvent.click(screen.getByRole('button', { name: /^size/i }));
+    fireEvent.click(screen.getByRole('button', { name: /view options/i }));
     fireEvent.click(screen.getByRole('button', { name: '125%' }));
     await act(async () => {});
     expect(document.querySelector('.piano-score-cursor')).not.toBeNull(); // fresh → shown
@@ -483,7 +483,7 @@ describe('ScorePlayer — Listen mode', () => {
     await act(async () => {});
     expect(screen.getByRole('radio', { name: 'RH' })).toHaveAttribute('aria-checked', 'true');
     // Zoom via the Size stepper → re-engrave (fresh layout.notes identity).
-    fireEvent.click(screen.getByRole('button', { name: /^size/i }));
+    fireEvent.click(screen.getByRole('button', { name: /view options/i }));
     fireEvent.click(screen.getByRole('button', { name: '125%' }));
     await act(async () => {});
     expect(screen.getByRole('radio', { name: 'RH' })).toHaveAttribute('aria-checked', 'true'); // preserved

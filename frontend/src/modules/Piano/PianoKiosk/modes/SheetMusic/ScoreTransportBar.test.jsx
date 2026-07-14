@@ -204,14 +204,23 @@ describe('ScoreTransportBar', () => {
     expect(screen.queryByRole('button', { name: /scoring/i })).toBeNull();
   });
 
-  it('size is a single button that opens a segmented stepper (no slider) and commits scale on tap', () => {
+  it('View menu (⋯) holds size as a segmented stepper (no slider), commits scale on tap', () => {
     render(<ScoreTransportBar {...base} />);
-    const sizeBtn = screen.getByRole('button', { name: /^size/i });
-    fireEvent.click(sizeBtn);
+    fireEvent.click(screen.getByRole('button', { name: /view options/i }));
+    expect(screen.getByRole('dialog', { name: /view/i })).toBeInTheDocument();
     // No slider / no typed value — discrete percent steps commit on tap.
     expect(screen.queryByRole('slider')).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: '125%' }));
     expect(base.onScale).toHaveBeenCalledWith(1.25);
+  });
+
+  it('single-open popovers: opening the View menu closes Tempo (M4)', () => {
+    render(<ScoreTransportBar {...base} mode="listen" tempoMult={1} onTempo={vi.fn()} />);
+    fireEvent.click(screen.getByRole('button', { name: /^tempo/i }));
+    expect(screen.getByRole('dialog', { name: /tempo/i })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /view options/i }));
+    expect(screen.queryByRole('dialog', { name: /tempo/i })).toBeNull(); // tempo closed
+    expect(screen.getByRole('dialog', { name: /view/i })).toBeInTheDocument();
   });
 
   it('memoization: advancing step re-renders only the position readout, not the expensive body', () => {
