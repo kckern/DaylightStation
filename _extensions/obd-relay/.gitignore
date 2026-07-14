@@ -1,0 +1,3 @@
+# Root .gitignore ignores *.yml globally; re-include the committed example schema
+# (placeholder values only — the real vehicles.yml lives in household data).
+!config.example.yml

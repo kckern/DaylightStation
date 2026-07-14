@@ -1,0 +1,41 @@
+# Example schema for the obd-relay SSOT. The REAL file lives in household data
+# (private, Dropbox-synced), NOT in this repo:
+#   data/household/config/vehicles.yml
+#
+# A registry: each key under `vehicles:` is one car + its in-port Freematics
+# device. Add more keys (second-car, truck, …) and flash one device per key with
+# the matching id. The firmware build reads provisioning/backend/vehicles.<id>;
+# the backend accepts any relay client by `source`. Regenerate + reflash after
+# editing:
+#   node firmware/tools/flash.mjs <dataDir>/household/config/vehicles.yml <id>
+
+provisioning:
+  wifi_ssid: "YOUR_SSID"
+  wifi_password: "YOUR_WIFI_PASSWORD"
+
+backend:
+  host: "daylightlocal.kckern.net"   # DaylightStation backend (event-bus host)
+  port: 3111                         # event-bus WS port
+  ws_path: /ws
+
+# Backend persistence root (relative to data dir). Snapshots/events append to
+# <dir>/<vehicle-id>/<YYYY-MM-DD>.yml; reassembled trips write
+# <dir>/<vehicle-id>/trips/<trip-id>.yml. Omit for the default below.
+persistence:
+  dir: household/history/automotive
+  snapshot_min_s: 60                 # persist at most one live snapshot per minute
+
+vehicles:
+  family-car:
+    label: "Family car"
+    device:
+      board: freematics-oneplus-b    # ESP32 (16MB) + u-blox M9 GNSS + SIM7670 LTE + OBD co-processor
+      mac: ""                        # device WiFi MAC (fill in on arrival; informational)
+    sampling:
+      hz: 1                          # trip sample rate while driving
+      gps: true                      # include GNSS fix in samples (Model B has it onboard)
+      dtc_per_trip: true             # read trouble codes once per ignition cycle
+    emit:
+      snapshot_s: 15                 # live snapshot cadence while on home WiFi
+      trip_chunk_samples: 300        # max samples per `trip` WS message (chunked above this)
+    topic: automotive

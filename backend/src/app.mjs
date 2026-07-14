@@ -145,6 +145,7 @@ import { FitnessProgressClassifier } from '#domains/fitness/services/FitnessProg
 import { initUnlockService } from '#apps/fitness/unlockService.mjs';
 import { initManageService } from '#apps/fitness/manageService.mjs';
 import { createFoodScaleRelay } from '#apps/hardware/foodScaleRelay.mjs';
+import { createAutomotiveRelay } from '#apps/hardware/automotiveRelay.mjs';
 import { createScaleNutribotBridge } from '#apps/hardware/ScaleNutribotBridge.mjs';
 import { createBarcodeRelay } from '#apps/hardware/barcodeRelay.mjs';
 import { createFingerprintProfileWriter } from '#apps/fitness/fingerprintProfileWriter.mjs';
@@ -479,6 +480,19 @@ export async function createApp({ server, logger, configPaths, configExists, ena
       || configService.reloadHouseholdAppConfig?.(householdId, 'scales')
       || {},
     logger: rootLogger.child({ module: 'food-scale-relay' }),
+  });
+
+  // Automotive relay — ingests the in-car Freematics device's trip/snapshot
+  // stream (source: 'obd-relay') whenever the car is on home WiFi and
+  // re-broadcasts on the `automotive` topic; a decoupled persister writes
+  // trips + snapshots to history/automotive/. See _extensions/obd-relay.
+  createAutomotiveRelay({
+    eventBus,
+    dataDir,
+    config: configService.getHouseholdAppConfig(householdId, 'vehicles')
+      || configService.reloadHouseholdAppConfig?.(householdId, 'vehicles')
+      || {},
+    logger: rootLogger.child({ module: 'obd-relay' }),
   });
 
   // Barcode relay (ESP32 BLE-scanner bridge, source: 'barcode-relay') is wired
