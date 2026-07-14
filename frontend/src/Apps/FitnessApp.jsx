@@ -1610,15 +1610,32 @@ const FitnessApp = () => {
 // must be explicit — a laptop opening /fitness must not impersonate the
 // garage display. The binding reads the FitnessPlayer's registered Player
 // ref via context; when no player is mounted the published state is idle.
+// Device identity is captured at MODULE LOAD and persisted: the router
+// immediately rewrites the URL to /fitness/home, dropping ?device=…, and
+// every subsequent same-tab reload starts from the rewritten URL — reading
+// location.search at mount time therefore silently loses the identity
+// (2026-07-14: garage display connected but never published). localStorage
+// re-asserts it across reloads; the kiosk launch URL re-asserts it across
+// browser restarts.
+const FLEET_DEVICE_KEY = 'fitness.fleetDeviceId';
+const FLEET_DEVICE_ID = (() => {
+  try {
+    const fromUrl = new URLSearchParams(window.location.search).get('device');
+    if (fromUrl) {
+      localStorage.setItem(FLEET_DEVICE_KEY, fromUrl);
+      return fromUrl;
+    }
+    return localStorage.getItem(FLEET_DEVICE_KEY);
+  } catch {
+    return null;
+  }
+})();
+
 const FitnessFleetPublisher = () => {
   const fitnessCtx = useFitnessContext();
-  const deviceId = useMemo(
-    () => new URLSearchParams(window.location.search).get('device'),
-    []
-  );
   const playerRefObj = fitnessCtx?.videoPlayerRef ?? null;
   usePlayerSessionBinding(() => playerRefObj?.current ?? null);
-  return <DeviceStatePublisher deviceId={deviceId} />;
+  return <DeviceStatePublisher deviceId={FLEET_DEVICE_ID} />;
 };
 
 const GlobalOverlays = () => {
