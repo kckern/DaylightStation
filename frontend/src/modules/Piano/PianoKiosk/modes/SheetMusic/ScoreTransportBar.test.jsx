@@ -154,45 +154,38 @@ describe('ScoreTransportBar', () => {
     expect(screen.queryByRole('button', { name: /play along/i })).toBeNull(); // play-along still Listen-only
   });
 
-  it('learn mode: renders a section chip per section and fires onPickSection with it', () => {
+  it('learn mode: Practice popover lists sections and fires onPickSection', () => {
     const onPickSection = vi.fn();
     const sections = [{ label: 'A', startMeasure: 1, endMeasure: 4 }];
-    render(<ScoreTransportBar {...base} mode="learn" sections={sections} onPickSection={onPickSection} />);
+    render(<ScoreTransportBar {...base} mode="learn" sections={sections} onPickSection={onPickSection} scopeLabel="Whole piece" />);
+    fireEvent.click(screen.getByRole('button', { name: /practice:/i })); // open popover
     fireEvent.click(screen.getByRole('button', { name: /^A$/ }));
     expect(onPickSection).toHaveBeenCalledWith(sections[0]);
   });
 
-  it('learn mode: Loop toggle reflects loopArm; Clear appears only with an active range', () => {
-    const onArmLoop = vi.fn();
+  it('learn mode: Practice popover offers Select measures… and Whole piece', () => {
+    const onStartSelect = vi.fn();
     const onClearFocus = vi.fn();
-    const { rerender } = render(
-      <ScoreTransportBar {...base} mode="learn" loopArm={false} onArmLoop={onArmLoop} onClearFocus={onClearFocus} />,
-    );
-    const loop = screen.getByRole('button', { name: /loop range/i });
-    expect(loop).toHaveAttribute('aria-pressed', 'false');
-    fireEvent.click(loop);
-    expect(onArmLoop).toHaveBeenCalled();
-    expect(screen.queryByRole('button', { name: /clear range/i })).toBeNull(); // no range yet
-
-    rerender(
-      <ScoreTransportBar {...base} mode="learn" loopArm
-        focus={{ kind: 'custom', inMeasure: 2, outMeasure: 5 }} onClearFocus={onClearFocus} />,
-    );
-    expect(screen.getByRole('button', { name: /loop range/i })).toHaveAttribute('aria-pressed', 'true');
-    expect(screen.getByText('m3–m6')).toBeInTheDocument(); // 1-based readout
-    fireEvent.click(screen.getByRole('button', { name: /clear range/i }));
+    render(<ScoreTransportBar {...base} mode="learn" scopeLabel="m3–m6" onStartSelect={onStartSelect} onClearFocus={onClearFocus} />);
+    // The scope label surfaces the active range on the trigger.
+    expect(screen.getByRole('button', { name: /practice: m3–m6/i })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /practice:/i }));
+    fireEvent.click(screen.getByRole('button', { name: /select measures/i }));
+    expect(onStartSelect).toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: /practice:/i }));
+    fireEvent.click(screen.getByRole('button', { name: 'Whole piece' }));
     expect(onClearFocus).toHaveBeenCalled();
   });
 
-  it('focus cluster is Learn + Polish (absent in Listen/Perform)', () => {
+  it('Practice control is Learn + Polish (absent in Listen/Perform)', () => {
     for (const mode of ['listen', 'perform']) {
-      const { unmount } = render(<ScoreTransportBar {...base} mode={mode} sections={[{ label: 'A', startMeasure: 1, endMeasure: 4 }]} />);
-      expect(screen.queryByRole('button', { name: /loop range/i })).toBeNull();
+      const { unmount } = render(<ScoreTransportBar {...base} mode={mode} scopeLabel="Whole piece" />);
+      expect(screen.queryByRole('button', { name: /practice:/i })).toBeNull();
       unmount();
     }
     for (const mode of ['learn', 'polish']) {
-      const { unmount } = render(<ScoreTransportBar {...base} mode={mode} sections={[{ label: 'A', startMeasure: 1, endMeasure: 4 }]} />);
-      expect(screen.getByRole('button', { name: /loop range/i })).toBeInTheDocument();
+      const { unmount } = render(<ScoreTransportBar {...base} mode={mode} scopeLabel="Whole piece" />);
+      expect(screen.getByRole('button', { name: /practice:/i })).toBeInTheDocument();
       unmount();
     }
   });

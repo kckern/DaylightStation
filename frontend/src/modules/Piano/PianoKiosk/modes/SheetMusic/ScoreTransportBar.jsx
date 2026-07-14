@@ -1,5 +1,6 @@
 import React, { useState, memo } from 'react';
 import HandsControl from './HandsControl.jsx';
+import PracticeScope from './PracticeScope.jsx';
 
 // Tab order: Listen · Learn · Polish · Perform.
 const MODES = [
@@ -141,10 +142,9 @@ const ScoreViewControls = memo(function ScoreViewControls({
   handsValue = 'both',
   onHandsChange,
   sections = [],
-  focus = null,
-  loopArm = false,
+  scopeLabel = 'Whole piece',
   onPickSection,
-  onArmLoop,
+  onStartSelect,
   onClearFocus,
   keyboardVisible,
   onToggleKeyboard,
@@ -176,11 +176,6 @@ const ScoreViewControls = memo(function ScoreViewControls({
   const hasFocus = mode === 'learn' || mode === 'polish';
   // Scoring on/off is a Polish-only toggle (grades measures red/yellow/green).
   const hasScoring = mode === 'polish';
-  // Readout of the active range: a section shows its label; a custom loop shows a
-  // 1-based measure span (indices are 0-based internally).
-  const focusLabel = focus
-    ? (focus.label || `m${focus.inMeasure + 1}–m${focus.outMeasure + 1}`)
-    : null;
 
   const openSize = () => setSizeOpen((v) => !v);
   const openTempo = () => setTempoOpen((v) => !v);
@@ -224,40 +219,13 @@ const ScoreViewControls = memo(function ScoreViewControls({
       )}
 
       {hasFocus && (
-        <div className="piano-score-focus" role="group" aria-label="Practice range">
-          {sections.length > 0 && sections.map((s) => (
-            <button
-              key={s.label}
-              type="button"
-              className="piano-score-btn piano-score-section-chip"
-              onClick={() => onPickSection?.(s)}
-            >
-              {s.label}
-            </button>
-          ))}
-          <button
-            type="button"
-            className={`piano-score-btn piano-score-loop${loopArm ? ' is-on' : ''}`}
-            aria-label="Loop range"
-            aria-pressed={loopArm}
-            onClick={onArmLoop}
-          >
-            {'Loop'}
-          </button>
-          {focus && (
-            <button
-              type="button"
-              className="piano-score-btn piano-score-focus-clear"
-              aria-label="Clear range"
-              onClick={onClearFocus}
-            >
-              {'Clear'}
-            </button>
-          )}
-          {focusLabel && (
-            <span className="piano-score-focus-readout tabular-nums">{focusLabel}</span>
-          )}
-        </div>
+        <PracticeScope
+          scopeLabel={scopeLabel}
+          sections={sections}
+          onPickSection={onPickSection}
+          onStartSelect={onStartSelect}
+          onClearFocus={onClearFocus}
+        />
       )}
 
       {hasClick && (
@@ -504,10 +472,9 @@ export default function ScoreTransportBar({
   handsValue,
   onHandsChange,
   sections,
-  focus,
-  loopArm,
+  scopeLabel,
   onPickSection,
-  onArmLoop,
+  onStartSelect,
   onClearFocus,
   keyboardVisible,
   onToggleKeyboard,
@@ -566,10 +533,9 @@ export default function ScoreTransportBar({
         handsValue={handsValue}
         onHandsChange={onHandsChange}
         sections={sections}
-        focus={focus}
-        loopArm={loopArm}
+        scopeLabel={scopeLabel}
         onPickSection={onPickSection}
-        onArmLoop={onArmLoop}
+        onStartSelect={onStartSelect}
         onClearFocus={onClearFocus}
         keyboardVisible={keyboardVisible}
         onToggleKeyboard={onToggleKeyboard}
