@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { extractLayoutSliced } from './osmdRender.js';
+import { extractLayoutSliced, extractEvents } from './osmdRender.js';
 
 // Minimal stub of an already-engraved OSMD instance that drives
 // extractLayoutSliced's cursor walk without a real DOM/SVG. `cursor.next()`
@@ -92,5 +92,37 @@ describe('extractLayoutSliced — time-budget slicing', () => {
       onProgress: () => { aborted = true; }, // flip after the first slice reports
     });
     expect(res).toBe(null);
+  });
+});
+
+// A cursor element whose fallback-box props match the null-cursor path (all 0),
+// so the only thing under test is `style.visibility`.
+function fakeCursorEl() {
+  return { style: {}, offsetLeft: 0, offsetWidth: 0, offsetTop: 0, offsetHeight: 0, offsetParent: null };
+}
+
+describe('cursor visibility during extraction (audit H0)', () => {
+  it('keeps the visible cursor hidden from the user during the sliced walk, restores after', async () => {
+    const osmd = stubOsmd({ steps: 20 });
+    const el = fakeCursorEl();
+    osmd.cursor.cursorElement = el;
+    let seenDuringWalk;
+    const origNext = osmd.cursor.next;
+    osmd.cursor.next = () => { seenDuringWalk = el.style.visibility; origNext(); };
+    await extractLayoutSliced(osmd, { yieldFn: (cb) => cb() });
+    expect(seenDuringWalk).toBe('hidden'); // user never sees the sweep
+    expect(el.style.visibility).toBe('');   // restored for real playback use
+  });
+
+  it('extractEvents hides the cursor during its synchronous walk, restores after', () => {
+    const osmd = stubOsmd({ steps: 20 });
+    const el = fakeCursorEl();
+    osmd.cursor.cursorElement = el;
+    let seenDuringWalk;
+    const origNext = osmd.cursor.next;
+    osmd.cursor.next = () => { seenDuringWalk = el.style.visibility; origNext(); };
+    extractEvents(osmd);
+    expect(seenDuringWalk).toBe('hidden');
+    expect(el.style.visibility).toBe('');
   });
 });
