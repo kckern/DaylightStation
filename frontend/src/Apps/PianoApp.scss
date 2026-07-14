@@ -2548,6 +2548,20 @@
   &--red    { background: rgba(255, 82, 82, 0.18); }
 }
 
+// Learn completion card — same centered-panel language as the run summary.
+.piano-score-learn-complete {
+  position: absolute; left: 50%; top: 42%; transform: translate(-50%, -50%);
+  z-index: 30; min-width: 260px; max-width: min(90vw, 420px);
+  display: flex; flex-direction: column; align-items: center; gap: 1.1rem;
+  padding: 1.6rem 1.8rem;
+  background: var(--piano-surface, #1f1f26); border: 1px solid var(--piano-border, #34343f);
+  border-radius: var(--r-lg, 16px); box-shadow: 0 18px 48px rgba(0, 0, 0, 0.6);
+  color: var(--piano-stage-fg, #f3efe6);
+  &__headline { font-weight: 700; font-size: 1.2rem; text-align: center; }
+  &__actions { display: flex; gap: 0.6rem; }
+}
+.piano-score-learn-polish { background: rgba(232, 163, 61, 0.22); border-color: #e8a33d; color: #ffdca6; }
+
 // Run summary — centered overlay panel opened after N silent measures.
 .piano-score-run-summary {
   position: absolute; left: 50%; top: 42%; transform: translate(-50%, -50%);
