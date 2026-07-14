@@ -120,11 +120,13 @@ export default function ScorePlayer({ score: scoreMeta }) {
     const t = Number(restored.tempoMult);
     return Number.isFinite(t) && t >= 0.25 && t <= 2 ? t : 1;
   });
-  const [playAlong, setPlayAlong] = useState(false); // Listen: light up your correctly-struck notes (non-gating)
   const [wrong, setWrong] = useState(false);
   const [struck, setStruck] = useState(() => new Set());
-  const [keyboardVisible, setKeyboardVisible] = useState(true); // default mode is learn → shown
-  const [scoringOn, setScoringOn] = useState(true); // Polish: grade measures red/yellow/green
+  // Keyboard visibility is AUTO per mode (Learn/Polish shown; Perform hidden; Listen
+  // shown only when the user plays a part), with a remembered per-mode manual
+  // override (audit M2). kbTick just forces a re-render when the override changes.
+  const kbOverrideRef = useRef({}); // mode → explicit user choice (true/false)
+  const [kbTick, setKbTick] = useState(0);
   const [grades, setGrades] = useState({}); // measure INDEX → grade result (Polish scoring)
   const gradesRef = useRef(grades); gradesRef.current = grades; // latest grades for the run-summary log (onSilentStop closure)
   const [summaryOpen, setSummaryOpen] = useState(false); // Polish run summary panel
@@ -201,6 +203,14 @@ export default function ScorePlayer({ score: scoreMeta }) {
     () => Object.fromEntries(parts.map((p) => [p.staff, myStaves.has(p.staff) ? 'you' : 'play'])),
     [parts, myStaves],
   );
+
+  // Keyboard: auto per mode, with a remembered per-mode manual override (M2). Listen
+  // auto = shown only when the user plays a part (My part ≠ None). kbTick forces a
+  // read of the override ref after a toggle.
+  const AUTO_KB = { learn: true, polish: true, perform: false };
+  const autoKb = mode === 'listen' ? myStaves.size > 0 : (AUTO_KB[mode] ?? true);
+  const keyboardVisible = kbOverrideRef.current[mode] ?? autoKb; // eslint-disable-line no-unused-expressions
+  void kbTick; // keyboardVisible re-reads the override ref whenever kbTick bumps
   // Restored active-part picks (which staves you play in Learn/Polish); the effect
   // below preserves any staff present in `prev`, so seeding it restores the choice.
   const [activeParts, setActiveParts] = useState(() => (
@@ -313,7 +323,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
       flushPlaybackNow();
       // A Polish run that plays to the end must grade its final measure and show
       // the summary — the reward for finishing, not only for giving up (audit H1).
-      if (mode === 'polish' && scoringOn) { finalizeRef.current?.(); openRunSummaryRef.current?.(); }
+      if (mode === 'polish') { finalizeRef.current?.(); openRunSummaryRef.current?.(); }
       logger.info('score.transport.done', { mode, steps: events.length });
     },
   });
@@ -404,7 +414,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
   }, [transport, logger, openRunSummary]);
 
   const evaluator = useScoreEvaluator({
-    enabled: mode === 'polish' && scoringOn && transport.playing, // grade only during real playback
+    enabled: mode === 'polish' && transport.playing, // grade only during real playback
     cfg: resolvedScoringCfg,
     subscribe,
     currentMeasure,
@@ -420,7 +430,6 @@ export default function ScorePlayer({ score: scoreMeta }) {
 
   // Clear grades + summary when the score document changes or scoring is turned off.
   useEffect(() => { setGrades({}); setSummaryOpen(false); setLearnDone(false); }, [scoreMeta.musicXml]);
-  useEffect(() => { if (!scoringOn) { setGrades({}); setSummaryOpen(false); } }, [scoringOn]);
 
   // ── Learn mode: full-hand tracker (all active-staff notes → advance) ──────────
   const lastAdvanceRef = useRef(0);
@@ -472,9 +481,10 @@ export default function ScorePlayer({ score: scoreMeta }) {
   // transport's per-step `struck` reset already clears these additions each step.
   const stepsRef = useRef(steps); stepsRef.current = steps;
   const activePartsRef = useRef(activeParts); activePartsRef.current = activeParts;
+  // Always on in Listen (no toggle — audit J5): a correct strike lights green. Never
+  // advances or blocks; the transport clock alone drives the cursor.
   useEffect(() => {
-    if (!(mode === 'listen' && playAlong) || !subscribe) return undefined;
-    logger.debug('score.listen.playalong', { on: true });
+    if (mode !== 'listen' || !subscribe) return undefined;
     return subscribe((evt) => {
       if (!evt || evt.type !== 'note_on' || !evt.velocity) return;
       const expected = expectedMidisAtStep(stepsRef.current?.[stepRef.current], activePartsRef.current || {});
@@ -482,7 +492,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
         setStruck((prev) => { const n = new Set(prev); n.add(evt.note); return n; });
       }
     });
-  }, [mode, playAlong, subscribe, logger]);
+  }, [mode, subscribe]);
 
   // Flush follow-timing stats when leaving Learn (and on unmount if still in it).
   const flushFollowNow = useCallback(() => {
@@ -693,8 +703,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
     setSelecting(null);
     // Leaving Polish: drop the run summary + grades (they belong to that run).
     setSummaryOpen(false); setGrades({});
-    setKeyboardVisible(id !== 'perform');
-    setMode(id);
+    setMode(id); // keyboard visibility follows the new mode automatically (M2)
     logMode({ mode: id });
   }, [mode, flushPlaybackNow, flushFollowNow, transport, silenceScheduled, logMode, countIn]);
 
@@ -756,10 +765,11 @@ export default function ScorePlayer({ score: scoreMeta }) {
   // whole bar would reconcile on every cursor-step advance. Functional updaters →
   // empty deps → stable identity → the memoized body bails per step.
   const onToggleFlow = useCallback(() => setFlow((f) => (f === 'wrapped' ? 'horizontal' : 'wrapped')), []);
-  const onTogglePlayAlong = useCallback(() => setPlayAlong((v) => !v), []);
-  const onToggleKeyboard = useCallback(() => setKeyboardVisible((v) => !v), []);
+  const onToggleKeyboard = useCallback(() => {
+    kbOverrideRef.current[mode] = !keyboardVisible; // remember the explicit choice for THIS mode
+    setKbTick((t) => t + 1);
+  }, [mode, keyboardVisible]);
   const onToggleClick = useCallback(() => setClickOn((v) => !v), []);
-  const onToggleScoring = useCallback(() => setScoringOn((v) => !v), []);
 
   const toggleRun = useCallback(() => {
     // A second tap during the count-in aborts it (never reaches the transport).
@@ -894,7 +904,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
   // Per-step cursor boxes (same offset-space as the cursor). Shared geometry for
   // BOTH the measure-grade wash (Polish) and the focus-range brackets (Learn/Polish),
   // so it's computed whenever either could draw.
-  const showGrades = mode === 'polish' && scoringOn;
+  const showGrades = mode === 'polish';
   const showFocusLayer = mode === 'learn' || mode === 'polish';
   const stepBoxes = useMemo(
     () => ((showGrades || showFocusLayer) ? events.map((e) => ({ x: e.x, top: e.top, bottom: e.bottom })) : []),
@@ -963,8 +973,11 @@ export default function ScorePlayer({ score: scoreMeta }) {
         onToggleRun={toggleRun}
         onReset={reset}
         ready={events.length > 0 && layoutFresh}
+        canRestart={running || step > 0 || Object.keys(grades).length > 0}
         step={step}
         total={events.length}
+        measure={(layout.steps?.[step]?.measure ?? 0) + 1}
+        measureTotal={layout.measures?.length ?? 0}
         page={perfPage.page}
         pages={perfPage.pages}
         flow={flow}
@@ -975,8 +988,6 @@ export default function ScorePlayer({ score: scoreMeta }) {
         onTempo={onTempo}
         transpose={transpose}
         onTranspose={onTranspose}
-        playAlong={playAlong}
-        onTogglePlayAlong={onTogglePlayAlong}
         parts={barParts}
         activeParts={activeParts}
         roles={roles}
@@ -995,12 +1006,10 @@ export default function ScorePlayer({ score: scoreMeta }) {
         onToggleKeyboard={onToggleKeyboard}
         clickOn={clickOn}
         onToggleClick={onToggleClick}
-        scoringOn={scoringOn}
-        onToggleScoring={onToggleScoring}
         meta={meta}
       />
 
-      {mode === 'polish' && scoringOn && (
+      {mode === 'polish' && (
         <RunSummary
           open={summaryOpen}
           grades={grades}

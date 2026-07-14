@@ -125,17 +125,9 @@ describe('ScoreTransportBar', () => {
     expect(screen.queryByRole('button', { name: /play along/i })).toBeNull();
   });
 
-  it('listen mode: play-along toggle fires onTogglePlayAlong and reflects aria-pressed', () => {
-    const onTogglePlayAlong = vi.fn();
-    const { rerender } = render(
-      <ScoreTransportBar {...base} mode="listen" playAlong={false} onTogglePlayAlong={onTogglePlayAlong} />,
-    );
-    const toggle = screen.getByRole('button', { name: /play along/i });
-    expect(toggle).toHaveAttribute('aria-pressed', 'false');
-    fireEvent.click(toggle);
-    expect(onTogglePlayAlong).toHaveBeenCalled();
-    rerender(<ScoreTransportBar {...base} mode="listen" playAlong onTogglePlayAlong={onTogglePlayAlong} />);
-    expect(screen.getByRole('button', { name: /play along/i })).toHaveAttribute('aria-pressed', 'true');
+  it('has no Play-along toggle — Listen light-up is always on (J5)', () => {
+    render(<ScoreTransportBar {...base} mode="listen" />);
+    expect(screen.queryByRole('button', { name: /play along/i })).toBeNull();
   });
 
   it('listen mode: key + button transposes up by one semitone via onTranspose', () => {
@@ -190,18 +182,21 @@ describe('ScoreTransportBar', () => {
     }
   });
 
-  it('polish mode: scoring toggle fires onToggleScoring and reflects aria-pressed', () => {
-    const onToggleScoring = vi.fn();
-    const { rerender } = render(<ScoreTransportBar {...base} mode="polish" scoringOn onToggleScoring={onToggleScoring} />);
-    const toggle = screen.getByRole('button', { name: /scoring/i });
-    expect(toggle).toHaveAttribute('aria-pressed', 'true');
-    fireEvent.click(toggle);
-    expect(onToggleScoring).toHaveBeenCalled();
-    rerender(<ScoreTransportBar {...base} mode="polish" scoringOn={false} onToggleScoring={onToggleScoring} />);
-    expect(screen.getByRole('button', { name: /scoring/i })).toHaveAttribute('aria-pressed', 'false');
-    // Scoring toggle is Polish-only.
-    rerender(<ScoreTransportBar {...base} mode="learn" />);
+  it('has no Scoring toggle — Polish always grades (J5)', () => {
+    render(<ScoreTransportBar {...base} mode="polish" />);
     expect(screen.queryByRole('button', { name: /scoring/i })).toBeNull();
+  });
+
+  it('shows a measure readout (m X / Y) when a measure count is provided (L2)', () => {
+    render(<ScoreTransportBar {...base} mode="learn" measure={3} measureTotal={24} />);
+    expect(screen.getByText('m 3 / 24')).toBeInTheDocument();
+  });
+
+  it('Restart button appears only when there is a run to restart (Polish)', () => {
+    const { rerender } = render(<ScoreTransportBar {...base} mode="polish" canRestart={false} />);
+    expect(screen.queryByRole('button', { name: /restart/i })).toBeNull();
+    rerender(<ScoreTransportBar {...base} mode="polish" canRestart />);
+    expect(screen.getByRole('button', { name: /restart/i })).toBeInTheDocument();
   });
 
   it('View menu (⋯) holds size as a segmented stepper (no slider), commits scale on tap', () => {

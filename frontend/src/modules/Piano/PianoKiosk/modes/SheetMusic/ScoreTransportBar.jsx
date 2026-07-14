@@ -73,7 +73,7 @@ const ScoreModeTabs = memo(function ScoreModeTabs({ mode, onMode }) {
  * so they render only when `hasTransport`. Memoized so a step advance can't
  * reconcile them (they depend on mode/running, not step).
  */
-const ScoreTransportButtons = memo(function ScoreTransportButtons({ mode, running, onToggleRun, onReset, ready = true }) {
+const ScoreTransportButtons = memo(function ScoreTransportButtons({ mode, running, onToggleRun, onReset, ready = true, canRestart = false }) {
   const hasTransport = mode === 'polish' || mode === 'listen';
   if (!hasTransport) return null;
   // Until geometry extraction publishes a timeline the transport is inert; show a
@@ -81,14 +81,16 @@ const ScoreTransportButtons = memo(function ScoreTransportButtons({ mode, runnin
   const runLabel = !ready ? 'Preparing' : running ? 'Pause' : 'Play';
   return (
     <>
-      <button
-        type="button"
-        className="piano-score-btn piano-score-reset"
-        aria-label="Reset"
-        onClick={onReset}
-      >
-        {'⟲'}
-      </button>
+      {canRestart && (
+        <button
+          type="button"
+          className="piano-score-btn piano-score-reset"
+          aria-label="Restart"
+          onClick={onReset}
+        >
+          {'↺ Restart'}
+        </button>
+      )}
       <button
         type="button"
         className={`piano-score-btn piano-score-run${!ready ? ' is-preparing' : ''}`}
@@ -126,8 +128,6 @@ const ScoreViewControls = memo(function ScoreViewControls({
   onTempo,
   transpose = 0,
   onTranspose,
-  playAlong = false,
-  onTogglePlayAlong,
   parts = [],
   activeParts = {},
   roles = {},
@@ -145,8 +145,6 @@ const ScoreViewControls = memo(function ScoreViewControls({
   onToggleKeyboard,
   clickOn = false,
   onToggleClick,
-  scoringOn = true,
-  onToggleScoring,
   meta = {},
   onBodyRender,
 }) {
@@ -172,8 +170,6 @@ const ScoreViewControls = memo(function ScoreViewControls({
   const hasListenExtras = mode === 'listen';
   // Focus range (section chips + custom loop) is a Learn + Polish practice affordance.
   const hasFocus = mode === 'learn' || mode === 'polish';
-  // Scoring on/off is a Polish-only toggle (grades measures red/yellow/green).
-  const hasScoring = mode === 'polish';
 
   const renderPartChip = (part) => {
     const { staff, label } = part;
@@ -232,30 +228,6 @@ const ScoreViewControls = memo(function ScoreViewControls({
           onClick={onToggleClick}
         >
           {'♩'}
-        </button>
-      )}
-
-      {hasScoring && (
-        <button
-          type="button"
-          className={`piano-score-btn piano-score-scoring${scoringOn ? ' is-on' : ''}`}
-          aria-label="Scoring"
-          aria-pressed={scoringOn}
-          onClick={onToggleScoring}
-        >
-          {'Scoring'}
-        </button>
-      )}
-
-      {hasListenExtras && (
-        <button
-          type="button"
-          className={`piano-score-btn piano-score-playalong${playAlong ? ' is-on' : ''}`}
-          aria-label="Play along"
-          aria-pressed={playAlong}
-          onClick={onTogglePlayAlong}
-        >
-          {'Play-along'}
         </button>
       )}
 
@@ -377,8 +349,11 @@ export default function ScoreTransportBar({
   onToggleRun,
   onReset,
   ready,
+  canRestart,
   step,
   total,
+  measure,
+  measureTotal,
   page = 1,
   pages = 1,
   flow,
@@ -394,8 +369,6 @@ export default function ScoreTransportBar({
   onTempo,
   transpose,
   onTranspose,
-  playAlong,
-  onTogglePlayAlong,
   parts,
   activeParts,
   roles,
@@ -413,12 +386,14 @@ export default function ScoreTransportBar({
   onToggleKeyboard,
   clickOn,
   onToggleClick,
-  scoringOn,
-  onToggleScoring,
   meta,
   onBodyRender,
 }) {
-  const position = `${Math.min(step + 1, total)} / ${total}`;
+  // Musicians think in measures, not note-steps (audit L2): show "m 3 / 24" when a
+  // measure count is available, falling back to the step readout otherwise.
+  const position = measureTotal > 0
+    ? `m ${Math.min(measure ?? 1, measureTotal)} / ${measureTotal}`
+    : `${Math.min(step + 1, total)} / ${total}`;
 
   const isPerform = mode === 'perform';
   // The position readout and page indicator exist in every mode but Perform.
@@ -437,6 +412,7 @@ export default function ScoreTransportBar({
           onToggleRun={onToggleRun}
           onReset={onReset}
           ready={ready}
+          canRestart={canRestart}
         />
         {hasPosition && <span className="piano-score-position tabular-nums">{position}</span>}
         {isPerform && (
@@ -455,8 +431,6 @@ export default function ScoreTransportBar({
         onTempo={onTempo}
         transpose={transpose}
         onTranspose={onTranspose}
-        playAlong={playAlong}
-        onTogglePlayAlong={onTogglePlayAlong}
         parts={parts}
         activeParts={activeParts}
         roles={roles}
@@ -474,8 +448,6 @@ export default function ScoreTransportBar({
         onToggleKeyboard={onToggleKeyboard}
         clickOn={clickOn}
         onToggleClick={onToggleClick}
-        scoringOn={scoringOn}
-        onToggleScoring={onToggleScoring}
         meta={meta}
         onBodyRender={onBodyRender}
       />

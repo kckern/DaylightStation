@@ -99,6 +99,18 @@ describe('ScorePlayer — default mode', () => {
   });
 });
 
+describe('ScorePlayer — keyboard visibility policy (M2)', () => {
+  it('Listen hides the keyboard until the user plays a part; Learn shows it', async () => {
+    renderPlayer(); // opens in Listen, My part = None
+    await act(async () => {});
+    expect(document.querySelector('.piano-score-player__keys')).toBeNull(); // hidden (no part)
+    act(() => { fireEvent.click(screen.getByRole('radio', { name: 'RH' })); }); // My part = RH
+    expect(document.querySelector('.piano-score-player__keys')).not.toBeNull(); // now shown
+    act(() => { screen.getByText('Learn').click(); }); // Learn auto-shows the keyboard
+    expect(document.querySelector('.piano-score-player__keys')).not.toBeNull();
+  });
+});
+
 describe('ScorePlayer — per-score persistence (Task 2.5)', () => {
   beforeEach(() => { try { window.localStorage.clear(); } catch { /* no storage */ } });
   const score = { id: 'files:persist.musicxml', title: 'P', musicXml: '<score/>' };
@@ -457,13 +469,12 @@ describe('ScorePlayer — Listen mode', () => {
     expect(screen.getByText('2 / 4')).toBeTruthy();
   });
 
-  it('play-along lights a correctly-struck note without advancing (non-gating)', async () => {
+  it('Listen light-up is always on: a correct strike lights without advancing (non-gating)', async () => {
     renderPlayer();
     screen.getByText('Listen').click();
     await act(async () => {});
-    fireEvent.click(screen.getByRole('button', { name: /play along/i }));
-    await act(async () => {});
-    // Struck the top note of the current (first) onset — lights, never advances.
+    // No toggle — light-up is unconditional in Listen (J5). Struck the top note of
+    // the current (first) onset → lights, never advances.
     play(64);
     expect(screen.getByText('1 / 4')).toBeTruthy(); // cursor unchanged (non-gating)
     // A note NOT expected here does nothing (no advance, no throw).
