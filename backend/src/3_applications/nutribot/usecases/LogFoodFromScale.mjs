@@ -62,7 +62,9 @@ export class LogFoodFromScale {
         this.#logger.info?.('logScale.edited', { conversationId, logUuid: existingLogUuid, gross });
         return { success: true, logUuid: existingLogUuid, messageId: String(messageId), stage: 'density', edited: true };
       }
-      // not untouched → fall through and create a fresh prompt
+      // Touched / missing / non-pending: the user owns it now. The bridge's committed
+      // flag handles the still-loaded food; posting a fresh prompt would duplicate. No-op.
+      return { success: true, logUuid: existingLogUuid, edited: false, touched: true };
     }
 
     const timezone = this.#config?.getUserTimezone?.(userId) || 'America/Los_Angeles';
