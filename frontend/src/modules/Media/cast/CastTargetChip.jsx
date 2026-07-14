@@ -8,6 +8,7 @@ import { IconCast } from '@tabler/icons-react';
 import { useDismissLayer } from '../shell/DismissStackProvider.jsx';
 import { useCastTarget } from './useCastTarget.js';
 import { useFleetContext } from '../fleet/FleetProvider.jsx';
+import { deviceName } from '../fleet/deviceDisplay.js';
 
 export function CastTargetChip() {
   const [open, setOpen] = useState(false);
@@ -35,7 +36,7 @@ export function CastTargetChip() {
       </Popover.Target>
       <Popover.Dropdown data-testid="cast-popover" className="cast-popover">
         <div className="cast-popover-section">
-          <Text size="xs" c="dimmed" tt="uppercase" fw={600} mb={4}>Mode</Text>
+          <Text size="xs" c="dimmed" tt="uppercase" fw={600} mb={4}>When casting</Text>
           <label className="cast-popover-row">
             <input
               type="radio"
@@ -44,7 +45,7 @@ export function CastTargetChip() {
               onChange={() => setMode('transfer')}
               data-testid="cast-mode-transfer"
             />
-            <span>Transfer (stop local)</span>
+            <span>Move playback to the device</span>
           </label>
           <label className="cast-popover-row">
             <input
@@ -54,7 +55,7 @@ export function CastTargetChip() {
               onChange={() => setMode('fork')}
               data-testid="cast-mode-fork"
             />
-            <span>Fork (keep local)</span>
+            <span>Keep playing here too</span>
           </label>
         </div>
         <div className="cast-popover-section">
@@ -68,7 +69,7 @@ export function CastTargetChip() {
                 onChange={() => toggleTarget(d.id)}
                 data-testid={`cast-target-checkbox-${d.id}`}
               />
-              <span>{d.name ?? d.id}</span>
+              <span>{deviceName(d)}</span>
             </label>
           ))}
         </div>

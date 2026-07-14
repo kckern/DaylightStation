@@ -16,12 +16,13 @@ import {
 } from '@tabler/icons-react';
 import { useSessionController } from '../controller/useSessionController.js';
 import { usePeek } from '../peek/PeekProvider.jsx';
-import { useFleetContext } from '../fleet/FleetProvider.jsx';
 import { useDevice } from '../fleet/useDevice.js';
+import { deviceName, deviceIcon, deviceLocation } from '../fleet/deviceDisplay.js';
 import { useStatusOverlay } from '../../../hooks/useStatusOverlay';
 import { useNav } from './NavProvider.jsx';
 import { QueuePanel } from './QueuePanel.jsx';
 import { SeekBar } from './SeekBar.jsx';
+import { remoteStatusLine } from './stateCopy.js';
 
 export function PeekPanel({ deviceId }) {
   const { enterPeek, exitPeek } = usePeek();
@@ -32,9 +33,7 @@ export function PeekPanel({ deviceId }) {
 
   const ctl = useSessionController({ deviceId });
   const realSnap = ctl.snapshot;
-  const { devices } = useFleetContext();
-  const { entry } = useDevice(deviceId);
-  const deviceName = devices?.find((d) => d.id === deviceId)?.name ?? deviceId;
+  const { device, entry } = useDevice(deviceId);
   const { pop } = useNav();
   const [volumeScrub, setVolumeScrub] = useState(null);
 
@@ -47,8 +46,9 @@ export function PeekPanel({ deviceId }) {
   const { statusView, predict, pending } = useStatusOverlay(realMap);
   const snap = statusView.get(deviceId);
 
-  const stateLabel = snap?.state ?? 'unknown';
-  const itemLabel = snap?.currentItem?.title ?? snap?.currentItem?.contentId ?? 'nothing';
+  const itemTitle = snap?.currentItem?.title ?? snap?.currentItem?.contentId ?? null;
+  const statusLine = remoteStatusLine(snap?.state, itemTitle);
+  const location = deviceLocation(device);
   const volume = volumeScrub ?? snap?.config?.volume ?? 50;
   const pendingFields = snap?._pending;
   const statePending = pendingFields?.has('state');
@@ -64,22 +64,24 @@ export function PeekPanel({ deviceId }) {
     <Stack data-testid="peek-panel" className="peek-panel" gap="md">
       <Group justify="space-between">
         <Button data-testid="peek-back" variant="subtle" color="gray" onClick={() => pop()}>
-          ← Fleet
+          ← Devices
         </Button>
-        {entry?.isStale && <Badge color="yellow" variant="light">stale</Badge>}
-        {entry?.offline && <Badge color="gray" variant="light">offline</Badge>}
+        {entry?.isStale && <Badge color="yellow" variant="light">Out of date</Badge>}
+        {entry?.offline && <Badge color="gray" variant="light">Offline</Badge>}
       </Group>
 
-      <Title order={1}>Remote: {deviceName}</Title>
+      <Title order={1} className="peek-title">
+        <span aria-hidden>{deviceIcon(device)}</span> {deviceName(device, deviceId)}
+      </Title>
+      {location && <Text size="sm" c="dimmed" className="peek-location">{location}</Text>}
 
-      <Group gap="lg">
-        <Text size="sm" c="dimmed" data-pending={statePending ? 'true' : undefined}>
-          state: <Text span fw={600} c="bright">{stateLabel}</Text>
-        </Text>
-        <Text size="sm" c="dimmed" data-pending={currentItemPending ? 'true' : undefined}>
-          item: <Text span fw={600} c="bright">{itemLabel}</Text>
-        </Text>
-      </Group>
+      <Text
+        size="sm"
+        className="peek-status"
+        data-pending={statePending || currentItemPending ? 'true' : undefined}
+      >
+        {statusLine}
+      </Text>
 
       <Group className="peek-transport" gap="sm">
         <Button data-testid="peek-play" leftSection={<IconPlayerPlayFilled size={16} />}

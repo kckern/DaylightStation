@@ -8,6 +8,7 @@ import { createSessionStore } from './sessionStore.js';
 import { createPositionChannel } from './positionChannel.js';
 import * as qOps from './queueOps.js';
 import { pickNextQueueItem } from './advancement.js';
+import { isContainerInput, expandContainerInput } from './containerExpansion.js';
 import mediaLog from '../logging/mediaLog.js';
 
 function defaultUuid() {
@@ -33,6 +34,7 @@ export function createLocalSessionController({
   randomUuid = defaultUuid,
   nowFn = () => new Date(),
   clearPersisted = () => {},
+  fetchImpl = undefined, // container expansion; defaults to globalThis.fetch
 } = {}) {
   const initial = persistedSnapshot ?? createIdleSessionSnapshot({
     sessionId: randomUuid(),
@@ -110,6 +112,67 @@ export function createLocalSessionController({
     store.dispatch({ type: 'SET_CONFIG', patch });
   };
 
+  // ---- Queue enqueue paths -------------------------------------------------
+  // Each applier takes a BATCH of queue inputs (a single item is a batch of
+  // one) so container expansion and the plain single-item path share the
+  // exact same store mutations.
+  const enqueueAppliers = {
+    playNow: (inputs, opts, context) => {
+      const next = qOps.playNowMany(snap(), inputs, opts);
+      logQueueMutation('playNow', next, context);
+      store.replace(next);
+      loadCurrent(next);
+    },
+    playNext: (inputs, _opts, context) => {
+      const wasEmpty = snap().queue.items.length === 0;
+      const next = qOps.playNextMany(snap(), inputs);
+      logQueueMutation('playNext', next, context);
+      store.replace(next);
+      // Play Next into an empty queue starts it (parity with add).
+      if (wasEmpty && next.queue.items.length > 0) moveCurrentTo(next.queue.items[0]);
+    },
+    addUpNext: (inputs, _opts, context) => {
+      const next = qOps.addUpNextMany(snap(), inputs);
+      logQueueMutation('addUpNext', next, context);
+      store.replace(next);
+    },
+    add: (inputs, _opts, context) => {
+      const wasEmpty = snap().queue.items.length === 0;
+      const next = qOps.addMany(snap(), inputs);
+      logQueueMutation('add', next, context);
+      store.replace(next);
+      if (wasEmpty && next.queue.currentIndex === 0) loadCurrent(next);
+    },
+  };
+
+  // Container inputs (album/show/playlist/… — marked by itemType/type/
+  // childCount) expand ASYNCHRONOUSLY into their playable children before
+  // enqueueing, so "Play album" queues the whole album instead of one track.
+  // Non-container inputs take the applier synchronously — exact previous
+  // behavior. Expansion failure or zero children degrades to the single-item
+  // path: the tap always enqueues SOMETHING.
+  const enqueue = (op, input, opts) => {
+    const apply = enqueueAppliers[op];
+    const context = { contentId: input?.contentId };
+    if (!isContainerInput(input)) {
+      apply([input], opts, context);
+      return;
+    }
+    expandContainerInput(input, { fetchImpl })
+      .then((children) => {
+        if (children && children.length > 0) {
+          apply(children, opts, {
+            ...context,
+            expandedFrom: input.contentId,
+            expandedCount: children.length,
+          });
+        } else {
+          apply([input], opts, context);
+        }
+      })
+      .catch(() => apply([input], opts, context));
+  };
+
   const controller = {
     kind: 'local',
     id: clientId,
@@ -170,32 +233,10 @@ export function createLocalSessionController({
     },
 
     queue: {
-      playNow: (input, opts) => {
-        const next = qOps.playNow(snap(), input, opts);
-        logQueueMutation('playNow', next, { contentId: input?.contentId });
-        store.replace(next);
-        loadCurrent(next);
-      },
-      playNext: (input) => {
-        const wasEmpty = snap().queue.items.length === 0;
-        const next = qOps.playNext(snap(), input);
-        logQueueMutation('playNext', next, { contentId: input?.contentId });
-        store.replace(next);
-        // Play Next into an empty queue starts it (parity with add).
-        if (wasEmpty && next.queue.items.length === 1) moveCurrentTo(next.queue.items[0]);
-      },
-      addUpNext: (input) => {
-        const next = qOps.addUpNext(snap(), input);
-        logQueueMutation('addUpNext', next, { contentId: input?.contentId });
-        store.replace(next);
-      },
-      add: (input) => {
-        const wasEmpty = snap().queue.items.length === 0;
-        const next = qOps.add(snap(), input);
-        logQueueMutation('add', next, { contentId: input?.contentId });
-        store.replace(next);
-        if (wasEmpty && next.queue.currentIndex === 0) loadCurrent(next);
-      },
+      playNow: (input, opts) => enqueue('playNow', input, opts),
+      playNext: (input) => enqueue('playNext', input),
+      addUpNext: (input) => enqueue('addUpNext', input),
+      add: (input) => enqueue('add', input),
       remove: (queueItemId) => {
         const wasCurrent = snap().queue.items[snap().queue.currentIndex]?.queueItemId === queueItemId;
         const next = qOps.remove(snap(), queueItemId);

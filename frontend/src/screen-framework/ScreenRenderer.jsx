@@ -19,6 +19,9 @@ import { useScreenCommands } from './commands/useScreenCommands.js';
 import { ScreenSessionPublishers } from './ScreenSessionPublishers.jsx';
 import { ScreenScreensaver } from './ScreenScreensaver.jsx';
 import { ScreenPresencePublisher } from './publishers/ScreenPresencePublisher.jsx';
+import { SessionSourceProvider } from './publishers/SessionSourceContext.jsx';
+import { createRegistrySessionSource } from './publishers/registrySessionSource.js';
+import { getPlayerSessionRegistry } from './publishers/playerSessionRegistry.js';
 import { ScreenSceneProvider } from './providers/ScreenSceneContext.jsx';
 import { ScreenAmbientProvider } from './ambient/ScreenAmbientContext.jsx';
 import { MenuNavigationProvider, useMenuNavigationContext } from '../context/MenuNavigationContext.jsx';
@@ -301,6 +304,27 @@ export function ScreenRenderer({ screenId: propScreenId }) {
     };
   }, [config]);
 
+  // Registry-backed session source: bridges whatever Player is currently
+  // registered (overlay or nav stack) to <SessionStatePublisher> via
+  // SessionSourceContext. Idle snapshot when nothing is registered. Only
+  // built when the screen has a device identity to publish as.
+  const sessionDeviceId = config?.websocket?.guardrails?.device || null;
+  const sessionSource = useMemo(() => {
+    if (!sessionDeviceId) return null;
+    try {
+      return createRegistrySessionSource({
+        registry: getPlayerSessionRegistry(),
+        ownerId: sessionDeviceId,
+      });
+    } catch (err) {
+      getLogger().child({ component: 'ScreenRenderer', screenId }).warn(
+        'session-source-create-failed',
+        { error: String(err?.message ?? err) },
+      );
+      return null;
+    }
+  }, [sessionDeviceId, screenId]);
+
   // Convert theme to --screen-* CSS custom properties
   const themeStyle = useMemo(() => {
     if (!config?.theme) return {};
@@ -370,6 +394,7 @@ export function ScreenRenderer({ screenId: propScreenId }) {
             <MenuNavigationProvider>
               <ScreenSceneProvider>
               <ScreenOverlayProvider>
+                <SessionSourceProvider source={sessionSource}>
                 <PipManager config={config.pip}>
                   <ScreenAutoplay routes={config.routes} />
                   <ScreenActionHandler actions={config.actions} inputType={config.input?.type} />
@@ -382,6 +407,7 @@ export function ScreenRenderer({ screenId: propScreenId }) {
                     {suppressLayout ? <ActionLoadingShell /> : <PanelRenderer />}
                   </ScreenProvider>
                 </PipManager>
+                </SessionSourceProvider>
               </ScreenOverlayProvider>
               </ScreenSceneProvider>
             </MenuNavigationProvider>

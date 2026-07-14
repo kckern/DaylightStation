@@ -38,6 +38,27 @@ describe('useDevices', () => {
     expect(result.current.devices.map((d) => d.id)).toEqual(['livingroom-tv']);
   });
 
+  it('includes fleet: true devices even without content_control (speakers)', async () => {
+    apiMock.mockResolvedValueOnce({
+      devices: {
+        'livingroom-tv': { type: 'shield-tv', content_control: { provider: 'x' } },
+        'speaker-red': { type: 'speaker', fleet: true, name: 'Red musiCozy' },
+        'speaker-white': { type: 'speaker', fleet: true },
+        'piano': { type: 'midi-keyboard' },
+        'not-fleet': { type: 'speaker', fleet: false },
+        'truthy-but-not-true': { type: 'speaker', fleet: 'yes' },
+      },
+    });
+    const { result } = renderHook(() => useDevices());
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    expect(result.current.devices.map((d) => d.id)).toEqual([
+      'livingroom-tv', 'speaker-red', 'speaker-white',
+    ]);
+    expect(result.current.devices[1]).toMatchObject({
+      id: 'speaker-red', type: 'speaker', name: 'Red musiCozy', fleet: true,
+    });
+  });
+
   it('each device entry exposes {id, type, name, ...config}', async () => {
     apiMock.mockResolvedValueOnce({
       devices: { 'lr': { type: 'shield-tv', name: 'Living Room', content_control: { x: 1 } } },

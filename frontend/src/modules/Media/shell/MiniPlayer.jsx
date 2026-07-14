@@ -31,9 +31,15 @@ export function MiniPlayer() {
   const isPlaying = PLAYING_STATES.has(snapshot.state);
   const queueCount = snapshot.queue?.items?.length ?? 0;
   const queuePos = snapshot.queue?.currentIndex ?? -1;
+  // Now Playing has no nav tab; the mini player IS its affordance, so it
+  // lights up while that view is open (see PrimaryNav HIGHLIGHT note).
+  const isNowPlayingOpen = view === 'nowPlaying';
 
   return (
-    <div data-testid="media-mini-player" className="mini-player">
+    <div
+      data-testid="media-mini-player"
+      className={`mini-player ${isNowPlayingOpen ? 'mini-player--active' : ''}`}
+    >
       {item.thumbnail && (
         <img className="mini-player-thumb" src={item.thumbnail} alt="" loading="lazy" />
       )}

@@ -50,7 +50,7 @@ export function DispatchProvider({ children }) {
     });
   }, []);
 
-  const dispatchToTarget = useCallback(async ({ targetIds, play, queue, mode, shader, volume, shuffle, snapshot }, { bypassDedupe = false } = {}) => {
+  const dispatchToTarget = useCallback(async ({ targetIds, play, queue, mode, shader, volume, shuffle, snapshot, title }, { bypassDedupe = false } = {}) => {
     if (!Array.isArray(targetIds) || targetIds.length === 0) return [];
 
     const key = buildDedupKey({ targetIds, play, queue, mode, snapshot });
@@ -68,13 +68,16 @@ export function DispatchProvider({ children }) {
 
     const isAdopt = !!snapshot;
     const contentId = play ?? queue ?? (isAdopt ? (snapshot?.currentItem?.contentId ?? 'adopt-snapshot') : null);
+    // Human content title for the tray (additive — callers that don't pass
+    // one degrade to no title, never to a raw content id in the UI).
+    const contentTitle = title ?? snapshot?.currentItem?.title ?? null;
     const dispatchIds = [];
-    lastAttemptRef.current = { targetIds, play, queue, mode, shader, volume, shuffle, snapshot };
+    lastAttemptRef.current = { targetIds, play, queue, mode, shader, volume, shuffle, snapshot, title };
 
     for (const deviceId of targetIds) {
       const dispatchId = uuid();
       dispatchIds.push(dispatchId);
-      dispatch({ type: 'INITIATED', dispatchId, deviceId, contentId, mode: mode ?? 'transfer' });
+      dispatch({ type: 'INITIATED', dispatchId, deviceId, contentId, title: contentTitle, mode: mode ?? 'transfer' });
       mediaLog.dispatchInitiated({ dispatchId, deviceId, contentId, mode });
 
       const httpPromise = isAdopt

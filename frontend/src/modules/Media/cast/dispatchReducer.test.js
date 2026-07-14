@@ -68,4 +68,52 @@ describe('dispatchReducer', () => {
     });
     expect(s).toBe(initialDispatchState);
   });
+
+  it('INITIATED carries the human content title (null when absent)', () => {
+    let state = reduceDispatch(initialDispatchState, {
+      type: 'INITIATED', dispatchId: 'd1', deviceId: 'lr', contentId: 'plex:1', title: 'Bluey', mode: 'transfer',
+    });
+    expect(state.byId.get('d1').title).toBe('Bluey');
+    state = reduceDispatch(state, {
+      type: 'INITIATED', dispatchId: 'd2', deviceId: 'lr', contentId: 'plex:2', mode: 'transfer',
+    });
+    expect(state.byId.get('d2').title).toBeNull();
+  });
+
+  it('a late playback STEP after SUCCEEDED records the resolution (the watchdog can reach the UI)', () => {
+    let state = reduceDispatch(initialDispatchState, {
+      type: 'INITIATED', dispatchId: 'd1', deviceId: 'lr', contentId: 'plex:59493', mode: 'transfer',
+    });
+    state = reduceDispatch(state, { type: 'SUCCEEDED', dispatchId: 'd1', totalElapsedMs: 18087 });
+    expect(state.byId.get('d1').playback).toBeNull();
+
+    // 90s later, the backend watchdog resolves — the entry must still exist
+    // and record the outcome.
+    state = reduceDispatch(state, {
+      type: 'STEP', dispatchId: 'd1', step: 'playback', status: 'confirmed', elapsedMs: 90000,
+    });
+    expect(state.byId.get('d1').status).toBe('success');
+    expect(state.byId.get('d1').playback).toBe('confirmed');
+  });
+
+  it('playback timeout resolution is recorded as timeout', () => {
+    let state = reduceDispatch(initialDispatchState, {
+      type: 'INITIATED', dispatchId: 'd1', deviceId: 'lr', contentId: 'plex:59493', mode: 'transfer',
+    });
+    state = reduceDispatch(state, { type: 'SUCCEEDED', dispatchId: 'd1', totalElapsedMs: 100 });
+    state = reduceDispatch(state, {
+      type: 'STEP', dispatchId: 'd1', step: 'playback', status: 'timeout', elapsedMs: 90000,
+    });
+    expect(state.byId.get('d1').playback).toBe('timeout');
+  });
+
+  it('non-playback steps never set a playback resolution', () => {
+    let state = reduceDispatch(initialDispatchState, {
+      type: 'INITIATED', dispatchId: 'd1', deviceId: 'lr', contentId: 'plex:1', mode: 'transfer',
+    });
+    state = reduceDispatch(state, {
+      type: 'STEP', dispatchId: 'd1', step: 'power', status: 'done', elapsedMs: 5,
+    });
+    expect(state.byId.get('d1').playback).toBeNull();
+  });
 });

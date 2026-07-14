@@ -9,9 +9,9 @@ import { createPortal } from 'react-dom';
 import { DispatchTargetPicker } from './DispatchTargetPicker.jsx';
 import { useDismissable } from '../../../hooks/useDismissable.js';
 
-const PICKER_WIDTH = 260; // mirrors .dispatch-target-picker min-width
+const PICKER_WIDTH = 280; // mirrors .cast-picker min-width (Cast.scss)
 
-export function CastButton({ contentId, queue, onAction }) {
+export function CastButton({ contentId, queue, title, onAction }) {
   const [open, setOpen] = useState(false);
   const [coords, setCoords] = useState(null);
   const buttonRef = useRef(null);
@@ -21,7 +21,9 @@ export function CastButton({ contentId, queue, onAction }) {
   useDismissable(popoverRef, { open, onDismiss: close });
 
   const id = contentId ?? queue;
-  const source = contentId ? { play: contentId } : { queue };
+  // `title` (optional, additive) is the human content name the progress
+  // tray shows instead of the raw content id.
+  const source = contentId ? { play: contentId, title } : { queue, title };
 
   // Fixed position from the trigger's rect each open, clamped to viewport.
   useEffect(() => {

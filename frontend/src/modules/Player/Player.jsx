@@ -274,6 +274,18 @@ const Player = forwardRef(function Player(props, ref) {
   const effectiveMeta = resolvedMeta || singlePlayerProps || null;
   const plexId = queue?.plex || play?.plex || effectiveMeta?.plex || effectiveMeta?.assetId || null;
 
+  // Live now-playing mirror for external session bridges (screen-framework
+  // fleet state). Ref-only render mirror (same pattern as
+  // sessionPlaybackRateRef): read via the imperative handle's getNowPlaying,
+  // never from a closure, so it stays fresh without dep churn.
+  const nowPlayingRef = useRef(null);
+  nowPlayingRef.current = {
+    item: effectiveMeta,
+    isQueue,
+    queuePosition: Number.isInteger(queuePosition) ? queuePosition : null,
+    queueLength: isQueue ? (playQueue?.length ?? 0) : (effectiveMeta ? 1 : 0),
+  };
+
   const mediaIdentity = useMemo(
     () => resolveMediaIdentity(effectiveMeta) || resolveMediaIdentity(singlePlayerProps) || resolveMediaIdentity(play) || resolveMediaIdentity(queue),
     [effectiveMeta, singlePlayerProps, play, queue]
@@ -918,6 +930,9 @@ const Player = forwardRef(function Player(props, ref) {
     getVolume: () => sessionVolume,
     getPlaybackRate: () => sessionPlaybackRate,
     getMediaElement: _getMediaElFallback,
+    // Read-only now-playing metadata (current item meta + queue coordinates)
+    // for external session bridges. Reads a render-mirrored ref — always fresh.
+    getNowPlaying: () => nowPlayingRef.current,
     getMediaController: () => controllerRef.current,
     getMediaResilienceController: () => resilienceControllerRef.current,
     getMediaResilienceState: () => resilienceControllerRef.current?.getState?.() || null,

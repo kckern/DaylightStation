@@ -22,9 +22,12 @@ export function RecentsRow() {
 
   if (recents.length === 0) {
     return (
-      <Text c="dimmed" size="sm" data-testid="home-recents-empty">
-        Recently played items will appear here.
-      </Text>
+      <section className="recents-row recents-row--empty">
+        <Title order={2} mb="sm">Recent</Title>
+        <Text c="dimmed" size="sm" data-testid="home-recents-empty" className="recents-empty-hint">
+          Things you play will show up here.
+        </Text>
+      </section>
     );
   }
 

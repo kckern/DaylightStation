@@ -4,12 +4,54 @@
 // layout vars live on .media-app (MediaApp.scss).
 @use '../../../styles/breakpoints' as *;
 
+// Ink color for text sitting ON the amber accent (buttons, chips). One token,
+// not four hardcoded hexes.
+$amber-ink: #1a1300;
+
+// One focus treatment for every interactive element in the shell (matches
+// Cast.scss's convention: 2px amber outline, offset 2).
+@mixin media-focus-ring {
+  &:focus-visible {
+    outline: 2px solid var(--mantine-color-amber-5);
+    outline-offset: 2px;
+  }
+}
+
 .media-shell {
   display: flex;
   flex-direction: column;
   height: 100dvh;
   background: var(--mantine-color-dark-7);
   color: var(--mantine-color-dark-0);
+
+  // Consistent keyboard-focus ring on every interactive element, including
+  // Mantine components (their default ring is replaced by the amber token).
+  :is(button, a, select, input, [role='button'], [tabindex='0']):focus-visible {
+    outline: 2px solid var(--mantine-color-amber-5);
+    outline-offset: 2px;
+  }
+
+  // Native form controls that remain (search scope select, any stray
+  // checkbox/radio) pick up the accent instead of browser blue.
+  input[type='checkbox'],
+  input[type='radio'],
+  select,
+  input[type='range'] {
+    accent-color: var(--mantine-color-amber-5);
+  }
+}
+
+// Collapsed technical detail inside friendly error alerts.
+.error-detail {
+  margin-top: var(--mantine-spacing-xs);
+  font-size: 12px;
+  color: var(--mantine-color-dark-1);
+
+  summary {
+    cursor: pointer;
+    color: var(--mantine-color-dark-1);
+    @include media-focus-ring;
+  }
 }
 
 // ---- Dock (top bar) -------------------------------------------------------
@@ -56,6 +98,17 @@
   }
 }
 
+// Bound content width on very wide viewports: lists become unreadable ribbons
+// past ~900px. (Now Playing and Detail carry their own tighter caps.)
+.home-view,
+.browse-view,
+.fleet-view,
+.peek-panel {
+  max-width: 900px;
+  margin: 0 auto;
+  width: 100%;
+}
+
 // ---- Primary nav: rail (tablet+) / tab bar (mobile) ------------------------
 .media-nav-item {
   display: flex;
@@ -68,9 +121,10 @@
   padding: 6px 8px;
   border-radius: var(--mantine-radius-sm);
   color: var(--mantine-color-dark-1);
-  font-size: 11px;
+  font-size: 12px;
+  transition: background 120ms ease, color 120ms ease;
 
-  &:hover { background: var(--mantine-color-dark-5); }
+  &:hover { background: var(--mantine-color-dark-5); color: var(--mantine-color-dark-0); }
 
   &--active {
     color: var(--mantine-color-amber-5);
@@ -135,6 +189,7 @@
   border-radius: var(--mantine-radius-md);
   color: var(--mantine-color-dark-0);
   font-weight: 600;
+  transition: background 120ms ease;
 
   &:hover { background: var(--mantine-color-dark-4); }
   &:active { transform: scale(0.99); }
@@ -153,6 +208,14 @@
 
   &--idle { justify-content: center; min-height: 36px; }
 
+  // Now Playing has no nav tab; the mini player is its "you are here" light.
+  &--active {
+    border-top-color: var(--mantine-color-amber-5);
+    background: var(--mantine-color-dark-5);
+
+    .mini-player-title { color: var(--mantine-color-amber-5); }
+  }
+
   .mini-player-thumb {
     width: 44px;
     height: 44px;
@@ -169,6 +232,9 @@
     gap: var(--mantine-spacing-xs);
     color: var(--mantine-color-dark-0);
     font-weight: 600;
+    transition: color 120ms ease;
+
+    &:hover .mini-player-title-text { color: var(--mantine-color-amber-5); }
 
     .mini-player-title-text {
       overflow: hidden;
@@ -178,7 +244,7 @@
 
     .mini-queue-count {
       flex-shrink: 0;
-      font-size: 11px;
+      font-size: 12px;
       font-weight: 600;
       color: var(--mantine-color-amber-5);
       background: var(--mantine-color-dark-5);
@@ -287,7 +353,7 @@
 
       &:disabled { cursor: default; }
 
-      .queue-item-index { color: var(--mantine-color-dark-2); font-size: 12px; }
+      .queue-item-index { color: var(--mantine-color-dark-1); font-size: 12px; }
     }
   }
 
@@ -330,6 +396,7 @@
     display: flex;
     flex-direction: column;
     gap: 4px;
+    border-radius: var(--mantine-radius-md);
 
     .recent-tile-thumb {
       width: 112px;
@@ -337,6 +404,8 @@
       object-fit: cover;
       border-radius: var(--mantine-radius-md);
       background: var(--mantine-color-dark-5);
+      border: 1px solid transparent;
+      transition: border-color 120ms ease;
 
       &--blank { border: 1px dashed var(--mantine-color-dark-4); }
     }
@@ -347,6 +416,12 @@
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
+      transition: color 120ms ease;
+    }
+
+    &:hover {
+      .recent-tile-thumb { border-color: var(--mantine-color-amber-5); }
+      .recent-tile-title { color: var(--mantine-color-dark-0); }
     }
   }
 }
@@ -421,7 +496,7 @@
 .search-deeplink-btn,
 .search-retry-btn {
   background: var(--mantine-color-amber-5);
-  color: #1a1300;
+  color: $amber-ink;
   border: none;
   border-radius: var(--mantine-radius-sm);
   padding: 8px 14px;
@@ -493,7 +568,7 @@
     }
 
     .media-result-subtitle {
-      color: var(--mantine-color-dark-2);
+      color: var(--mantine-color-dark-1);
       font-size: 12px;
       overflow: hidden;
       text-overflow: ellipsis;
@@ -543,20 +618,21 @@
   min-height: 34px;
   cursor: pointer;
   white-space: nowrap;
+  transition: background 120ms ease;
 
   &:hover { background: var(--mantine-color-dark-4); }
 
   &--primary {
     background: var(--mantine-color-amber-5);
     border-color: transparent;
-    color: #1a1300;
+    color: $amber-ink;
     font-weight: 600;
     &:hover { background: var(--mantine-color-amber-4); }
   }
 
   &.action-flash {
     background: var(--mantine-color-amber-5);
-    color: #1a1300;
+    color: $amber-ink;
     transition: background 120ms ease;
   }
 }
@@ -576,8 +652,16 @@
     cursor: pointer;
     font-size: 14px;
     padding: 8px 4px;
+    border-radius: var(--mantine-radius-sm);
+    transition: color 120ms ease;
 
-    &--current { color: var(--mantine-color-dark-1); cursor: default; }
+    &:hover { color: var(--mantine-color-amber-4); text-decoration: underline; }
+
+    &--current {
+      color: var(--mantine-color-dark-1);
+      cursor: default;
+      &:hover { color: var(--mantine-color-dark-1); text-decoration: none; }
+    }
   }
 
   .browse-crumb-sep { color: var(--mantine-color-dark-3); }
@@ -651,11 +735,14 @@
 .fleet-card {
   display: flex;
   flex-direction: column;
-  gap: var(--mantine-spacing-xs);
+  gap: var(--mantine-spacing-sm);
   padding: var(--mantine-spacing-md);
   background: var(--mantine-color-dark-5);
   border: 1px solid rgba(255, 255, 255, 0.05);
   border-radius: var(--mantine-radius-md);
+  transition: border-color 120ms ease;
+
+  &:hover { border-color: rgba(255, 255, 255, 0.12); }
 
   .fleet-card-head {
     display: flex;
@@ -670,15 +757,47 @@
       flex-shrink: 0;
     }
 
-    .fleet-card-name { font-weight: 600; }
-    .fleet-card-state { color: var(--mantine-color-dark-2); font-size: 12px; margin-left: auto; }
+    .fleet-card-icon {
+      font-size: 20px;
+      line-height: 1;
+      flex-shrink: 0;
+    }
+
+    .fleet-card-titles {
+      display: flex;
+      flex-direction: column;
+      min-width: 0;
+
+      .fleet-card-name {
+        font-weight: 600;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .fleet-card-location {
+        font-size: 12px;
+        color: var(--mantine-color-dark-1);
+      }
+    }
+
+    .fleet-card-state {
+      color: var(--mantine-color-dark-1);
+      font-size: 12px;
+      margin-left: auto;
+      text-align: right;
+      flex-shrink: 0;
+    }
   }
 
   .fleet-card-item {
     display: flex;
     align-items: center;
     gap: var(--mantine-spacing-sm);
-    min-height: 48px;
+    min-height: 52px;
+    padding: var(--mantine-spacing-xs);
+    background: var(--mantine-color-dark-6);
+    border-radius: var(--mantine-radius-sm);
 
     .fleet-card-thumb {
       width: 44px;
@@ -689,7 +808,24 @@
     }
 
     .fleet-card-item-meta { flex: 1; min-width: 0; }
+
+    .fleet-card-hint { padding: 0 var(--mantine-spacing-xs); }
   }
+}
+
+// ---- Peek (remote control) -------------------------------------------------
+.peek-panel {
+  // Location and status hug the device title instead of floating a full
+  // Stack gap away.
+  .peek-location { margin-top: calc(-1 * var(--mantine-spacing-sm)); }
+
+  .peek-status {
+    color: var(--mantine-color-dark-0);
+    font-weight: 600;
+  }
+
+  // Optimistic-overlay feedback: anything awaiting device confirmation dims.
+  [data-pending='true'] { opacity: 0.6; }
 }
 
 // ---- Cast picker + popover (NOTE: .dispatch-target-picker and the cast
@@ -708,10 +844,10 @@
   .picker-section { margin-bottom: var(--mantine-spacing-sm); }
 
   .picker-section-label {
-    font-size: 11px;
+    font-size: 12px;
     text-transform: uppercase;
     letter-spacing: 0.05em;
-    color: var(--mantine-color-dark-2);
+    color: var(--mantine-color-dark-1);
     margin-bottom: 4px;
     font-weight: 600;
   }
@@ -739,7 +875,7 @@
     width: 100%;
     min-height: 40px;
     background: var(--mantine-color-amber-5);
-    color: #1a1300;
+    color: $amber-ink;
     border: none;
     border-radius: var(--mantine-radius-sm);
     font-weight: 600;
@@ -765,6 +901,24 @@
     min-height: 36px;
     cursor: pointer;
     font-size: 14px;
+
+    &:hover { color: var(--mantine-color-amber-5); }
+  }
+}
+
+// Portaled surfaces render into document.body (outside .media-shell), so the
+// native-control accent and focus ring are re-declared here.
+.cast-popover,
+.dispatch-target-picker {
+  input[type='checkbox'],
+  input[type='radio'] {
+    accent-color: var(--mantine-color-amber-5);
+    width: 16px;
+    height: 16px;
+  }
+
+  :is(button, input, [role='button'], [role='radio']) {
+    @include media-focus-ring;
   }
 }
 

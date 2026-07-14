@@ -4,6 +4,7 @@ import { DaylightAPI } from '../../lib/api.mjs';
 import { MenuStack } from '../../modules/Menu/MenuStack.jsx';
 import { MenuSkeleton } from '../../modules/Menu/MenuSkeleton.jsx';
 import { getChildLogger } from '../../lib/logging/singleton.js';
+import { usePlayerSessionBinding } from '../publishers/usePlayerSessionBinding.js';
 
 /**
  * MenuWidget — screen-framework widget that wraps MenuStack.
@@ -21,6 +22,10 @@ function MenuWidget({ source }) {
   const [list, setList] = useState(null);
   const logger = useMemo(() => getChildLogger({ widget: 'menu' }), []);
   const playerRef = useRef(null);
+
+  // A menu selection mounts the legacy Player on the nav stack with this ref;
+  // bind it into the playerSessionRegistry for fleet device-state publishing.
+  usePlayerSessionBinding(() => playerRef.current);
 
   useEffect(() => {
     const fetchData = async () => {

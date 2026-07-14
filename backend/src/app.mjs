@@ -69,6 +69,7 @@ import {
 
 import { bootstrapLifeplan } from '#composition/modules/lifeplan.mjs';
 import { bootstrapNotifications } from '#composition/modules/notifications.mjs';
+import { createHubFleetBridge } from '#composition/modules/hubFleetBridge.mjs';
 import { createApiRouters } from '#composition/modules/contentApi.mjs';
 import { createFitnessApiRouter } from '#composition/modules/fitnessApi.mjs';
 import { createFinanceApiRouter } from '#composition/modules/financeApi.mjs';
@@ -115,6 +116,7 @@ import { ThermalPrinterAdapter, ThermalPrinterRegistry } from '#adapters/hardwar
 
 // Command-handler liveness (Task 8: gates WS-first warm-switch in WakeAndLoadService)
 import { CommandHandlerLivenessService } from '#apps/devices/services/CommandHandlerLivenessService.mjs';
+import { SessionControlService } from '#apps/devices/services/SessionControlService.mjs';
 
 // HTTP middleware
 import { createDevProxy, errorHandlerMiddleware } from './0_system/http/middleware/index.mjs';
@@ -409,9 +411,27 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   // DeviceLivenessService — caches last-known device-state snapshots and
   // synthesizes `offline` broadcasts when heartbeats stop. Also wires
   // itself into the event bus so new subscribers get a replayed snapshot.
-  createDeviceLivenessService({
+  const { livenessService: deviceLivenessService } = createDeviceLivenessService({
     eventBus,
     logger: rootLogger.child({ module: 'device-liveness' })
+  });
+
+  // HubFleetBridge — translates playback-hub:status lane snapshots into
+  // device-state:speaker-<lane> broadcasts so Bluetooth speaker lanes appear
+  // live in the /media Devices (fleet) view. After liveness so the cache is
+  // already subscribed to device-state:*.
+  createHubFleetBridge({
+    eventBus,
+    logger: rootLogger.child({ module: 'hub-fleet-bridge' })
+  });
+
+  // SessionControlService — HTTP→WS command bridge for remote transport /
+  // queue / config control of screen devices (Fleet "Remote" in /media).
+  // Without this every /device/:id/session/* endpoint 501s.
+  const sessionControlService = new SessionControlService({
+    eventBus,
+    livenessService: deviceLivenessService,
+    logger: rootLogger.child({ module: 'session-control' })
   });
 
   // Register message handlers for incoming client messages
@@ -2136,6 +2156,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     broadcast: broadcastEvent,
     eventBus,
     prewarmService,
+    sessionControlService,
     commandHandlerLivenessService,
     logger: rootLogger.child({ module: 'wake-and-load' })
   });
@@ -2149,6 +2170,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   v1Routers.device = createDeviceApiRouter({
     deviceServices,
     wakeAndLoadService,
+    sessionControlService,
     dispatchIdempotencyService,
     configService,
     loadFile,

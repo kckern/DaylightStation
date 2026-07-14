@@ -867,7 +867,13 @@ export function createDeviceRouter(config) {
       });
     }
 
-    const result = await wakeAndLoadService.execute(deviceId, query);
+    // dispatchId is a wake-progress correlator, not a content param: it must
+    // travel in execute()'s options arg or the service mints its own and
+    // every homeline step broadcast carries a foreign id the caller's UI
+    // can't associate with its dispatch row (2026-07-14 Bluey cast: the
+    // sender's progress tray showed nothing for the whole 18s wake).
+    const { dispatchId, ...contentQuery } = query;
+    const result = await wakeAndLoadService.execute(deviceId, contentQuery, { dispatchId });
 
     let status = 200;
     let extra = null;

@@ -10,9 +10,11 @@ import { useNav } from './NavProvider.jsx';
 const ITEMS = [
   { view: 'home', label: 'Home', Icon: IconHome },
   { view: 'browse', label: 'Browse', Icon: IconLayoutGrid, params: { path: '' } },
-  { view: 'fleet', label: 'Fleet', Icon: IconDevices },
+  { view: 'fleet', label: 'Devices', Icon: IconDevices },
 ];
 
+// nowPlaying deliberately highlights no nav tab: its visible anchor is the
+// mini player, which lights up (mini-player--active) while the view is open.
 const HIGHLIGHT = { detail: 'browse', peek: 'fleet', nowPlaying: null };
 
 function navItems(view, push, idPrefix) {

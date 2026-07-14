@@ -84,8 +84,27 @@ export function createApiRouters(config) {
   // Create ContentQueryAliasResolver for semantic query prefixes (music:, photos:, etc.)
   const aliasResolver = new ContentQueryAliasResolver({ registry, configService, prefixAliases });
 
-  // Create ContentQueryService for unified query interface
-  const contentQueryService = new ContentQueryService({ registry, mediaProgressMemory, prefixAliases, logger, aliasResolver });
+  // Create ContentQueryService for unified query interface.
+  // Per-adapter search budget: 3s default keeps streamed search snappy; the
+  // local YAML/file-scan sources measured slower on this host (2026-07 live
+  // samples — abs ~3.3-4.9s, singalong ~4.2-7.2s, readalong ~0.9-5.2s,
+  // local-content ~0.7-4.0s, files ~1.6-3.9s) get explicit higher budgets so
+  // their legitimate results aren't cut off.
+  const contentQueryService = new ContentQueryService({
+    registry,
+    mediaProgressMemory,
+    prefixAliases,
+    logger,
+    aliasResolver,
+    adapterTimeoutMs: 3000,
+    sourceTimeoutsMs: {
+      abs: 6000,
+      singalong: 8000,
+      readalong: 6000,
+      'local-content': 6000,
+      files: 5000,
+    },
+  });
 
   // Create SiblingsService for sibling resolution
   const siblingsService = new SiblingsService({ registry, logger });

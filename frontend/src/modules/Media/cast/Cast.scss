@@ -1,0 +1,340 @@
+// frontend/src/modules/Media/cast/Cast.scss
+// Styles for the cast flow: tap-a-device picker, busy warning, plain-
+// language mode choice, and the honest progress tray. Selectors are
+// deliberately unscoped (like the legacy cast styles in MediaShell.scss)
+// because the picker portals into document.body. Class names are all
+// cast-* — they do NOT reuse the legacy .dispatch-* names, so the old
+// MediaShell.scss cast block goes inert instead of fighting these rules.
+// Palette: the app's dark amber Mantine theme (theme/mediaTheme.js).
+
+// ---- Picker ---------------------------------------------------------------
+.cast-picker {
+  min-width: 280px;
+  max-width: 340px;
+  background: var(--mantine-color-dark-6);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: var(--mantine-radius-md);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5);
+  padding: var(--mantine-spacing-sm);
+  color: var(--mantine-color-dark-0);
+  font-size: 14px;
+}
+
+.cast-picker-label {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--mantine-color-dark-2);
+  margin-bottom: 6px;
+  font-weight: 600;
+}
+
+.cast-picker-empty {
+  color: var(--mantine-color-dark-2);
+  padding: 6px;
+}
+
+.cast-picker-devices {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: var(--mantine-spacing-xs);
+}
+
+// A tile is a real button that reads as one: full-width, 44px+ target,
+// hover lift, amber ring when selected.
+.cast-tile {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 52px;
+  padding: 8px 10px;
+  text-align: left;
+  background: var(--mantine-color-dark-5);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: var(--mantine-radius-md);
+  color: var(--mantine-color-dark-0);
+  font: inherit;
+  cursor: pointer;
+  transition: background 120ms ease, border-color 120ms ease;
+
+  &:hover { background: var(--mantine-color-dark-4); }
+  &:focus-visible {
+    outline: 2px solid var(--mantine-color-amber-5);
+    outline-offset: 2px;
+  }
+
+  &--selected,
+  &--selected:hover {
+    background: var(--mantine-color-dark-4);
+    border-color: var(--mantine-color-amber-5);
+  }
+}
+
+.cast-tile-icon {
+  font-size: 22px;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.cast-tile-main {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+  flex: 1;
+}
+
+.cast-tile-name {
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.cast-tile-location {
+  font-size: 12px;
+  color: var(--mantine-color-dark-2);
+}
+
+.cast-tile-status {
+  font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+
+  &--active { color: var(--mantine-color-amber-4); }
+  &--idle { color: var(--mantine-color-dark-2); }
+  &--off { color: var(--mantine-color-dark-3); }
+}
+
+.cast-tile-check {
+  color: var(--mantine-color-amber-5);
+  font-weight: 700;
+  width: 16px;
+  flex-shrink: 0;
+  text-align: center;
+}
+
+// Subtle opt-in to multi-select — secondary by design.
+.cast-picker-multi {
+  display: block;
+  background: none;
+  border: none;
+  color: var(--mantine-color-dark-2);
+  font-size: 12px;
+  padding: 6px 4px;
+  min-height: 32px;
+  cursor: pointer;
+  border-radius: var(--mantine-radius-sm);
+
+  &:hover { color: var(--mantine-color-dark-0); }
+  &:focus-visible {
+    outline: 2px solid var(--mantine-color-amber-5);
+    outline-offset: 1px;
+  }
+  &[aria-pressed='true'] { color: var(--mantine-color-amber-4); }
+}
+
+// Inline busy warning — informative, not modal.
+.cast-picker-warning {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 6px 0;
+  padding: 8px 10px;
+  border-radius: var(--mantine-radius-sm);
+  background: rgba(229, 160, 13, 0.12);
+  border: 1px solid rgba(229, 160, 13, 0.35);
+  color: var(--mantine-color-amber-3);
+  font-size: 13px;
+  line-height: 1.35;
+}
+
+// Plain-language mode choice (only rendered when local playback exists).
+.cast-picker-mode {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: var(--mantine-spacing-xs) 0;
+}
+
+.cast-picker-mode-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 0 10px;
+  text-align: left;
+  background: none;
+  border: 1px solid transparent;
+  border-radius: var(--mantine-radius-sm);
+  color: var(--mantine-color-dark-1);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+
+  &::before {
+    content: '';
+    width: 14px;
+    height: 14px;
+    flex-shrink: 0;
+    border-radius: 50%;
+    border: 2px solid var(--mantine-color-dark-2);
+  }
+
+  &:hover { background: var(--mantine-color-dark-5); }
+  &:focus-visible {
+    outline: 2px solid var(--mantine-color-amber-5);
+    outline-offset: 1px;
+  }
+
+  &--on {
+    color: var(--mantine-color-dark-0);
+
+    &::before {
+      border-color: var(--mantine-color-amber-5);
+      background: radial-gradient(circle, var(--mantine-color-amber-5) 45%, transparent 50%);
+    }
+  }
+}
+
+.cast-picker-cta {
+  width: 100%;
+  min-height: 44px;
+  background: var(--mantine-color-amber-5);
+  color: #1a1300;
+  border: none;
+  border-radius: var(--mantine-radius-sm);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+
+  &:hover { background: var(--mantine-color-amber-4); }
+  &:focus-visible {
+    outline: 2px solid var(--mantine-color-amber-3);
+    outline-offset: 2px;
+  }
+  &:disabled {
+    background: var(--mantine-color-dark-4);
+    color: var(--mantine-color-dark-2);
+    cursor: default;
+  }
+}
+
+// Inside Now Playing the picker is inline, not floating.
+.handoff-section .cast-picker {
+  box-shadow: none;
+  background: var(--mantine-color-dark-5);
+  max-width: none;
+
+  .cast-tile { background: var(--mantine-color-dark-6); }
+  .cast-tile:hover,
+  .cast-tile--selected { background: var(--mantine-color-dark-4); }
+}
+
+// ---- Progress tray ----------------------------------------------------------
+.cast-tray {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 4px var(--mantine-spacing-sm);
+  background: var(--mantine-color-dark-6);
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  flex-shrink: 0;
+  font-size: 13px;
+}
+
+.cast-tray-row {
+  display: flex;
+  align-items: center;
+  gap: var(--mantine-spacing-xs);
+  min-height: 44px;
+  padding: 4px 2px;
+
+  &--unconfirmed .cast-tray-primary { color: var(--mantine-color-amber-3); }
+  &--failed .cast-tray-primary { color: var(--mantine-color-red-4); }
+  &--confirmed .cast-tray-primary { color: var(--mantine-color-green-4); }
+}
+
+.cast-tray-text {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+  flex: 1;
+}
+
+.cast-tray-primary {
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cast-tray-secondary {
+  color: var(--mantine-color-dark-2);
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cast-tray-icon--ok { color: var(--mantine-color-green-5); flex-shrink: 0; }
+.cast-tray-icon--warn { color: var(--mantine-color-amber-4); flex-shrink: 0; }
+.cast-tray-icon--fail { color: var(--mantine-color-red-5); flex-shrink: 0; }
+
+.cast-tray-spinner {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  border: 2px solid var(--mantine-color-dark-3);
+  border-top-color: var(--mantine-color-amber-5);
+  animation: cast-tray-spin 0.8s linear infinite;
+}
+
+@keyframes cast-tray-spin {
+  to { transform: rotate(360deg); }
+}
+
+.cast-tray-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 36px;
+  background: var(--mantine-color-dark-4);
+  border: none;
+  border-radius: var(--mantine-radius-sm);
+  color: var(--mantine-color-dark-0);
+  font: inherit;
+  font-size: 13px;
+  padding: 6px 10px;
+  cursor: pointer;
+
+  &:hover { background: var(--mantine-color-dark-3); }
+  &:focus-visible {
+    outline: 2px solid var(--mantine-color-amber-5);
+    outline-offset: 1px;
+  }
+}
+
+.cast-tray-dismiss {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  min-height: 32px;
+  background: none;
+  border: none;
+  border-radius: var(--mantine-radius-sm);
+  color: var(--mantine-color-dark-2);
+  cursor: pointer;
+
+  &:hover { color: var(--mantine-color-dark-0); background: var(--mantine-color-dark-5); }
+  &:focus-visible {
+    outline: 2px solid var(--mantine-color-amber-5);
+    outline-offset: 1px;
+  }
+}

@@ -4,7 +4,7 @@ import { DaylightAPI } from '../../../lib/api.mjs';
 function filterPlaybackSurfaces(rawDevices) {
   if (!rawDevices || typeof rawDevices !== 'object') return [];
   return Object.entries(rawDevices)
-    .filter(([, cfg]) => cfg && cfg.content_control)
+    .filter(([, cfg]) => cfg && (cfg.content_control || cfg.fleet === true))
     .map(([id, cfg]) => ({ id, ...cfg }));
 }
 

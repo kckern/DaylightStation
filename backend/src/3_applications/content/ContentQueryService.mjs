@@ -27,6 +27,7 @@ export class ContentQueryService {
   #logger;
   #aliasResolver;
   #adapterTimeoutMs;
+  #sourceTimeoutsMs;
 
   /**
    * @param {Object} deps
@@ -35,14 +36,29 @@ export class ContentQueryService {
   * @param {Object<string, string>} [deps.prefixAliases] - Map of prefix aliases to canonical format (e.g., { hymn: 'singalong:hymn' })
    * @param {Object} [deps.logger] - Logger instance for performance and debug logging
    * @param {import('./services/ContentQueryAliasResolver.mjs').ContentQueryAliasResolver} [deps.aliasResolver] - Optional alias resolver for prefix-based queries
+   * @param {number} [deps.adapterTimeoutMs=3000] - Default per-adapter search timeout
+   * @param {Object<string, number>} [deps.sourceTimeoutsMs] - Per-source timeout overrides (e.g., { abs: 6000 })
    */
-  constructor({ registry, mediaProgressMemory = null, prefixAliases = {}, logger = console, aliasResolver = null, adapterTimeoutMs = 8000 }) {
+  constructor({ registry, mediaProgressMemory = null, prefixAliases = {}, logger = console, aliasResolver = null, adapterTimeoutMs = 3000, sourceTimeoutsMs = {} }) {
     this.#registry = registry;
     this.#mediaProgressMemory = mediaProgressMemory;
     this.#prefixAliases = prefixAliases;
     this.#logger = logger;
     this.#aliasResolver = aliasResolver;
     this.#adapterTimeoutMs = adapterTimeoutMs;
+    this.#sourceTimeoutsMs = sourceTimeoutsMs || {};
+  }
+
+  /**
+   * Resolve the search timeout budget for a source.
+   * Per-source overrides (slow local-scan sources like abs/singalong) win over
+   * the default.
+   * @param {string} source
+   * @returns {number} timeout in ms
+   */
+  #timeoutFor(source) {
+    const override = this.#sourceTimeoutsMs[source];
+    return typeof override === 'number' ? override : this.#adapterTimeoutMs;
   }
 
   /**
@@ -139,7 +155,7 @@ export class ContentQueryService {
             }
 
             const translated = this.#translateQuery(adapter, query);
-            const result = await withTimeout(adapter.search(translated), this.#adapterTimeoutMs, adapter.source);
+            const result = await withTimeout(adapter.search(translated), this.#timeoutFor(adapter.source), adapter.source);
             const ms = Math.round(performance.now() - adapterStart);
             perf.adapters[adapter.source] = {
               ms,
@@ -253,6 +269,12 @@ export class ContentQueryService {
 
     const pending = new Set(adapters.map(a => a.source));
 
+    // Track emitted item ids so the same item is never streamed twice
+    // (e.g. the files adapter surfaced duplicate itemIds from overlapping
+    // media-prefix scans). Keyed per-source so distinct sources that happen
+    // to share an id are not conflated.
+    const emittedIds = new Set();
+
     // Yield initial pending state
     yield { event: 'pending', sources: [...pending], intent: resolvedIntent };
 
@@ -264,7 +286,7 @@ export class ContentQueryService {
 
       try {
         const translated = this.#translateQuery(adapter, query);
-        const result = await withTimeout(adapter.search(translated), this.#adapterTimeoutMs, adapter.source);
+        const result = await withTimeout(adapter.search(translated), this.#timeoutFor(adapter.source), adapter.source);
         return { adapter, result, error: null };
       } catch (error) {
         warnings.push({ source: adapter.source, error: error.message });
@@ -307,10 +329,28 @@ export class ContentQueryService {
       // Apply caller-declared media-type filters (see search() for shape).
       items = applyMediaTypeFilters(items, query);
 
+      // Dedupe within the stream: drop items whose id was already emitted
+      // by this adapter (cheap Set lookup; ids are stable compound ids).
+      items = items.filter(item => {
+        const key = `${adapter.source}|${item?.id}`;
+        if (emittedIds.has(key)) return false;
+        emittedIds.add(key);
+        return true;
+      });
+
       // Skip if all items filtered out
       if (items.length === 0) {
         continue;
       }
+
+      // Annotate each item with its relevance score (same scoring the
+      // non-streaming search() uses via RelevanceScoringService) so the
+      // frontend can merge-sort batches as they arrive. Additive field —
+      // the event shape is otherwise unchanged. Items within a batch are
+      // pre-sorted by score for consumers that render batches as-is.
+      items = items
+        .map(item => ({ ...item, score: RelevanceScoringService.score(item, query.text) }))
+        .sort((a, b) => b.score - a.score);
 
       yield {
         event: 'results',
@@ -422,7 +462,7 @@ export class ContentQueryService {
 
       // Try getItem if available
       if (typeof adapter.getItem === 'function') {
-        const item = await withTimeout(adapter.getItem(id), this.#adapterTimeoutMs, `${source} id-lookup`);
+        const item = await withTimeout(adapter.getItem(id), this.#timeoutFor(source), `${source} id-lookup`);
         if (item) {
           // matchReason is a public field (survives to the API response) so UIs
           // can label ID-pinned results; _idMatch is internal and stripped later.
@@ -432,7 +472,7 @@ export class ContentQueryService {
 
       // Fallback: try to get item info via other means
       if (typeof adapter.getMetadata === 'function') {
-        const metadata = await withTimeout(adapter.getMetadata(id), this.#adapterTimeoutMs, `${source} id-lookup`);
+        const metadata = await withTimeout(adapter.getMetadata(id), this.#timeoutFor(source), `${source} id-lookup`);
         if (metadata) {
           return {
             id: `${source}:${id}`,

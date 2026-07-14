@@ -299,3 +299,81 @@ describe('LocalSessionController — portability', () => {
     expect(snap.position).toBe(14.2);
   });
 });
+
+// "Play album plays one track and stops" regression suite: container queue
+// inputs expand into their playable children via the list router before
+// enqueueing (containerExpansion.js); leaves keep the exact sync behavior.
+describe('LocalSessionController — container expansion', () => {
+  const albumInput = { contentId: 'plex:900', title: 'The Album', itemType: 'container', format: null };
+  const albumChildren = [1, 2, 3].map((n) => ({
+    id: `plex:${n}`, title: `Track ${n}`, itemType: 'leaf', type: 'track',
+    play: { contentId: `plex:${n}` }, duration: 100 + n, thumbnail: null,
+  }));
+  const okFetch = () => vi.fn(async () => ({ ok: true, json: async () => ({ items: albumChildren }) }));
+
+  it('playNow on a container plays the first child and queues the rest in order', async () => {
+    const fetchImpl = okFetch();
+    const c = makeController({ fetchImpl });
+    c.queue.playNow(albumInput, { clearRest: true });
+    await vi.waitFor(() => expect(c.getSnapshot().queue.items).toHaveLength(3));
+    const snap = c.getSnapshot();
+    expect(snap.queue.items.map((i) => i.contentId)).toEqual(['plex:1', 'plex:2', 'plex:3']);
+    expect(snap.queue.currentIndex).toBe(0);
+    expect(snap.currentItem?.contentId).toBe('plex:1'); // first child loaded…
+    expect(snap.state).toBe('loading'); // …and playing immediately
+    expect(snap.queue.items[1].containerTitle).toBe('The Album');
+    expect(fetchImpl).toHaveBeenCalledWith('/api/v1/list/plex/900');
+  });
+
+  it('playNext on a container inserts the whole batch at the front of the band, in order', async () => {
+    const fetchImpl = okFetch();
+    const c = makeController({ fetchImpl });
+    c.queue.add({ contentId: 'now', format: 'video' }); // becomes current
+    c.queue.add({ contentId: 'later', format: 'video' });
+    c.queue.playNext(albumInput);
+    await vi.waitFor(() => expect(c.getSnapshot().queue.items).toHaveLength(5));
+    const snap = c.getSnapshot();
+    expect(snap.queue.items.map((i) => i.contentId))
+      .toEqual(['now', 'plex:1', 'plex:2', 'plex:3', 'later']);
+    expect(snap.queue.items[1].priority).toBe('upNext');
+    expect(snap.queue.items[3].priority).toBe('upNext');
+    expect(snap.currentItem?.contentId).toBe('now'); // current untouched
+  });
+
+  it('non-container inputs enqueue synchronously and never touch the network', () => {
+    const fetchImpl = vi.fn();
+    const c = makeController({ fetchImpl });
+    c.queue.playNow({ contentId: 'plex:7', title: 'A Track', format: 'audio' }, { clearRest: true });
+    // assert IMMEDIATELY — the leaf path must stay synchronous
+    expect(c.getSnapshot().currentItem?.contentId).toBe('plex:7');
+    expect(c.getSnapshot().queue.items).toHaveLength(1);
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  it('expansion failure degrades to the current single-item behavior (no dead tap)', async () => {
+    const fetchImpl = vi.fn(async () => { throw new Error('network down'); });
+    const c = makeController({ fetchImpl });
+    c.queue.playNow(albumInput, { clearRest: true });
+    await vi.waitFor(() => expect(c.getSnapshot().queue.items).toHaveLength(1));
+    expect(c.getSnapshot().currentItem?.contentId).toBe('plex:900');
+    expect(c.getSnapshot().state).toBe('loading');
+  });
+
+  it('zero children also degrades to single-item', async () => {
+    const fetchImpl = vi.fn(async () => ({ ok: true, json: async () => ({ items: [] }) }));
+    const c = makeController({ fetchImpl });
+    c.queue.addUpNext(albumInput);
+    await vi.waitFor(() => expect(c.getSnapshot().queue.items).toHaveLength(1));
+    expect(c.getSnapshot().queue.items[0].contentId).toBe('plex:900');
+  });
+
+  it('add on a container into an empty queue appends all children and loads the first', async () => {
+    const fetchImpl = okFetch();
+    const c = makeController({ fetchImpl });
+    c.queue.add(albumInput);
+    await vi.waitFor(() => expect(c.getSnapshot().queue.items).toHaveLength(3));
+    const snap = c.getSnapshot();
+    expect(snap.queue.currentIndex).toBe(0);
+    expect(snap.currentItem?.contentId).toBe('plex:1');
+  });
+});

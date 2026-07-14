@@ -1,0 +1,37 @@
+// frontend/src/modules/Media/search/Search.scss
+// Search-owned styles (co-located with the search components). Base overlay
+// and row layout live in shell/MediaShell.scss; rules here cover what the
+// search experience adds on top: the inline "still searching" row and the
+// non-interactive result title.
+
+// Subtle straggler indicator at the bottom of the result list while slower
+// sources are still streaming in.
+.search-still-searching {
+  display: flex;
+  align-items: center;
+  gap: var(--mantine-spacing-xs);
+  padding: 8px var(--mantine-spacing-sm);
+  color: var(--mantine-color-dark-2);
+  font-size: 12px;
+
+  .search-still-searching-spinner {
+    width: 12px;
+    height: 12px;
+    flex-shrink: 0;
+    border: 2px solid var(--mantine-color-dark-4);
+    border-top-color: var(--mantine-color-amber-5);
+    border-radius: 50%;
+    animation: search-still-searching-spin 0.8s linear infinite;
+  }
+}
+
+@keyframes search-still-searching-spin {
+  to { transform: rotate(360deg); }
+}
+
+// The title is informational now (the debug peek is gone) — no pointer/hover
+// affordance. Element selector outranks MediaShell's class-only nesting.
+.result-row .media-result-text span.media-result-title {
+  cursor: default;
+  &:hover { color: var(--mantine-color-dark-0); }
+}

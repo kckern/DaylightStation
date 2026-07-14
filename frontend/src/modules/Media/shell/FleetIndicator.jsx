@@ -19,7 +19,7 @@ export function FleetIndicator() {
       aria-current={view === 'fleet' ? 'page' : undefined}
       onClick={() => push('fleet', {})}
     >
-      Fleet {active}/{total}
+      Devices {active}/{total}
     </Button>
   );
 }
