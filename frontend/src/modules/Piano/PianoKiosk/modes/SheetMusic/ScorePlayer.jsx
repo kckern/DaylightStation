@@ -25,6 +25,7 @@ import { tallyGrades } from './gradeTally.js';
 import { worstSpan } from './worstSpan.js';
 import { loadScoreSettings, saveScoreSettings } from './scoreSettings.js';
 import { isRisingEdge } from './pedalEdge.js';
+import { keyLabel } from './keyLabel.js';
 import ScoreTransportBar from './ScoreTransportBar.jsx';
 import NoteHighlightLayer from './NoteHighlightLayer.jsx';
 import MeasureGradeLayer from './MeasureGradeLayer.jsx';
@@ -33,8 +34,6 @@ import CountInOverlay from './CountInOverlay.jsx';
 import LearnComplete from './LearnComplete.jsx';
 import FocusRangeLayer from './FocusRangeLayer.jsx';
 import SelectBanner from './SelectBanner.jsx';
-
-const KEY_NAMES = { '-7': 'Cb', '-6': 'Gb', '-5': 'Db', '-4': 'Ab', '-3': 'Eb', '-2': 'Bb', '-1': 'F', 0: 'C', 1: 'G', 2: 'D', 3: 'A', 4: 'E', 5: 'B', 6: 'F#', 7: 'C#' };
 
 /** Nearest melody event to a click at renderer-local (x, y). */
 function nearestEvent(events, x, y) {
@@ -83,7 +82,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
     title: scoreMeta.title || parsed?.title || 'Score',
     composer: parsed?.composer || null,
     tempo,
-    key: KEY_NAMES[parsed?.key?.fifths ?? 0] ? `${KEY_NAMES[parsed.key.fifths]} major` : null,
+    key: keyLabel(parsed?.key?.fifths ?? 0, parsed?.key?.mode),
     time: parsed ? `${parsed.timeSig.beats}/${parsed.timeSig.beatType}` : null,
     measures: parsed?.parts?.[0]?.measures?.length || 0,
   }), [scoreMeta.title, parsed, tempo]);
