@@ -194,3 +194,103 @@ Unit tests mirror the existing suite:
 
 Standard: build → confirm no active fitness session / video playing → `sudo
 deploy-daylight`. No garage kiosk reload needed (Telegram-only, no frontend bundle).
+
+---
+
+# Addendum (2026-07-14): idle-baseline gating + auto-expire
+
+## Problem (found in live testing)
+
+The scale never returns to zero. Its "empty" state on the shelf is a **variable
+400–520 g** resting load (history: 481, 477, 480, 485, 475, 474, 520 — and not a single
+near-zero settled reading in the entire log). So:
+
+- The absolute near-empty re-arm (`grams < minGrams`) from the first-round design never
+  fires for this hardware — the scale goes shelf-480 → food-680 → shelf-480, never < 5 g.
+- Every time the scale is set back on the shelf it re-settles at its resting load, and each
+  jostle produces a fresh phantom prompt (the `481 → 477` pair, the recurring ~480s).
+- Magnitude can't classify it: the resting load is variable, and the `unit` field is just
+  the scale's display mode (g/ml), not a phantom marker.
+
+## Decisions (user, 2026-07-14)
+
+- **Detection:** relative baseline + auto-expire.
+- **Reported weight:** **gross** (raw reading). The baseline is a *gate only* — it is never
+  subtracted from the logged number. In the normal tared workflow (tare → ~0 → add food)
+  gross already equals the true food weight; the baseline just suppresses shelf phantoms.
+
+## Design
+
+Replace the bridge's absolute-threshold arming with a per-scale **idle-baseline state
+machine**, and add an **auto-expire** timer for unanswered prompts.
+
+### Config knobs (`nutribot` block of `scales.yml`, with defaults)
+
+| Key | Default | Meaning |
+|-----|---------|---------|
+| `placement_delta_g` | 10 | A stable reading must rise ≥ this above the baseline to count as a deliberate placement (prompt). |
+| `baseline_tolerance_g` | 6 | Within ±this of the baseline = "at rest" (silent; adopt as baseline). |
+| `expire_minutes` | 3 | An untouched prompt older than this auto-deletes; its weight becomes the new baseline. |
+| `edit_delta_g` | 3 | (existing) Min change to edit a live prompt's grams in place. |
+
+`min_grams` is retired from the arming path (kept only as the `LogFoodFromScale` gross > 0
+sanity guard).
+
+### Per-scale state
+
+`{ baseline: number|null, active: { logUuid, messageId, lastGrams, committed, timer } | null }`
+
+### Frame logic (stable readings only; `grams = round(payload.grams)`)
+
+1. `payload.stable !== true` → ignore (wobble).
+2. `baseline === null` → `baseline = grams`; return (learn initial resting weight silently).
+3. `rise = grams - baseline`; `atRest = |rise| <= baseline_tolerance_g`.
+4. **If `active`:**
+   - `atRest` → food removed → `baseline = grams`; clear active (cancel timer); return.
+   - `active.committed` → user owns it; wait for removal; return.
+   - `|grams - active.lastGrams| >= edit_delta_g` → edit in place (GROSS grams) via
+     `LogFoodFromScale` edit mode; update `active.lastGrams`; re-arm expire timer.
+   - else no-op.
+5. **If no `active`:**
+   - `atRest || rise < 0` → `baseline = grams`; return (tracks tare-to-0 / lighter surface).
+   - `rise < placement_delta_g` → return (small unexplained bump; no prompt, no baseline change).
+   - else → **placement**: create prompt (GROSS grams) via `LogFoodFromScale`; set
+     `active`; start expire timer.
+
+### Auto-expire timer (per active prompt)
+
+On fire, call **`ExpireScaleLog`** (loads the log, checks it is still *untouched* —
+`status==='pending'` AND `metadata.source==='scale'` AND no `containerId` AND no
+`densityLevel`):
+
+- **expired (was untouched)** → it deleted the message + set status `rejected`; the bridge
+  adopts `baseline = active.lastGrams` (the scale's new resting load) and clears `active`.
+  This self-corrects the one case the gate can't catch: moving the scale onto a *heavier*
+  shelf reads as a placement once, then the phantom expires and its weight becomes baseline,
+  so it never prompts there again.
+- **not expired (user engaged)** → the bridge sets `active.committed = true`, cancels the
+  timer, and keeps `active` for removal detection (so it never re-prompts the food still
+  sitting on the scale, and never clobbers the user's chosen density).
+
+### `LogFoodFromScale` edit-mode change
+
+Edit mode on a **touched / missing / non-pending** log now **no-ops**
+(`{ success:true, edited:false, touched:true }`) instead of creating a fresh prompt — the
+bridge's `committed` flag owns that case now, so a fresh duplicate is never posted. Create
+mode (no `existingLogUuid`) is unchanged.
+
+### Timer hygiene
+
+Timers are `unref()`'d (never hold the process open) and cleared on `dispose()`. The
+callback captures the active ref and verifies it is still current before acting (guards the
+edit/remove race). Tests inject a fake timer (`setTimeoutFn`/`clearTimeoutFn`) to drive
+expiry deterministically.
+
+## Known edges (accepted)
+
+- **Gross on an un-tared shelf:** food on the 480 shelf logs as gross 680; fix via the
+  Container button. Accepted per the gross decision.
+- **Small items below `placement_delta_g`:** a <10 g addition on a tared scale won't prompt;
+  tune `placement_delta_g` down if needed.
+- **Process restart drops in-flight expire timers:** a prompt created just before a restart
+  won't auto-expire; harmless (it just lingers until acted on or manually cancelled).
