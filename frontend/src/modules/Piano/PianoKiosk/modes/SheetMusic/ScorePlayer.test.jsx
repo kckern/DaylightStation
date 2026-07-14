@@ -99,6 +99,20 @@ describe('ScorePlayer — default mode', () => {
   });
 });
 
+describe('ScorePlayer — per-score persistence (Task 2.5)', () => {
+  beforeEach(() => { try { window.localStorage.clear(); } catch { /* no storage */ } });
+  const score = { id: 'files:persist.musicxml', title: 'P', musicXml: '<score/>' };
+  const renderScore = () => render(<MemoryRouter><ScorePlayer score={score} /></MemoryRouter>);
+
+  it('restores the last-used mode for a given score id', () => {
+    const { unmount } = renderScore();
+    act(() => { screen.getByText('Learn').click(); }); // change away from the default (Listen)
+    unmount();
+    renderScore();
+    expect(screen.getByRole('tab', { name: /learn/i })).toHaveAttribute('aria-selected', 'true');
+  });
+});
+
 describe('ScorePlayer — Learn mode (full-hand, simulated MIDI input)', () => {
 
   it('advances only when every active-staff note of the step is struck', () => {
