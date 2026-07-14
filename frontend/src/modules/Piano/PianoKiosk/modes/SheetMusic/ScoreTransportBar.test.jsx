@@ -24,17 +24,24 @@ describe('ScoreTransportBar', () => {
     expect(base.onMode).toHaveBeenCalledWith('polish');
   });
 
-  it('exposes a metronome-click toggle in Learn/Listen (aria-pressed reflects clickOn)', () => {
+  it('exposes a metronome-click toggle in Polish only (aria-pressed reflects clickOn)', () => {
     const onToggleClick = vi.fn();
     const { rerender } = render(
-      <ScoreTransportBar {...base} clickOn={false} onToggleClick={onToggleClick} />,
+      <ScoreTransportBar {...base} mode="polish" clickOn={false} onToggleClick={onToggleClick} />,
     );
     const click = screen.getByRole('button', { name: /metronome click/i });
     expect(click).toHaveAttribute('aria-pressed', 'false');
     fireEvent.click(click);
     expect(onToggleClick).toHaveBeenCalled();
-    rerender(<ScoreTransportBar {...base} clickOn onToggleClick={onToggleClick} />);
+    rerender(<ScoreTransportBar {...base} mode="polish" clickOn onToggleClick={onToggleClick} />);
     expect(screen.getByRole('button', { name: /metronome click/i })).toHaveAttribute('aria-pressed', 'true');
+  });
+
+  it('has no metronome-click toggle in Learn or Listen (the beat lives in Polish)', () => {
+    const { rerender } = render(<ScoreTransportBar {...base} mode="learn" clickOn onToggleClick={vi.fn()} />);
+    expect(screen.queryByRole('button', { name: /metronome click/i })).toBeNull();
+    rerender(<ScoreTransportBar {...base} mode="listen" clickOn onToggleClick={vi.fn()} />);
+    expect(screen.queryByRole('button', { name: /metronome click/i })).toBeNull();
   });
 
   it('is mode-aware: Perform shows no parts/transport/view controls, Polish shows run + parts', () => {
@@ -47,7 +54,7 @@ describe('ScoreTransportBar', () => {
     rerender(<ScoreTransportBar {...base} mode="polish" />);
     expect(screen.getByRole('button', { name: /^▶$|play/i })).toBeInTheDocument(); // transport present
     expect(screen.getByRole('button', { name: /LH/ })).toBeInTheDocument(); // parts present
-    expect(screen.queryByRole('button', { name: /metronome click/i })).toBeNull(); // no click in Polish
+    expect(screen.getByRole('button', { name: /metronome click/i })).toBeInTheDocument(); // click lives in Polish (J1)
   });
 
   it('shows one part chip per staff and cycles it', () => {
