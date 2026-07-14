@@ -1,6 +1,7 @@
 import React, { useState, memo } from 'react';
 import HandsControl from './HandsControl.jsx';
 import PracticeScope from './PracticeScope.jsx';
+import ViewMenu from './ViewMenu.jsx';
 
 // Tab order: Listen · Learn · Polish · Perform.
 const MODES = [
@@ -26,13 +27,7 @@ const TEMPO_STEPS = [
   { label: '125%', value: 1.25 },
   { label: '150%', value: 1.5 },
 ];
-const SIZE_STEPS = [
-  { label: '75%', value: 0.75 },
-  { label: '100%', value: 1 },
-  { label: '125%', value: 1.25 },
-  { label: '150%', value: 1.5 },
-  { label: '200%', value: 2 },
-];
+// (Size steps moved into ViewMenu, which now owns the size control.)
 // Which step is lit for a current value — the nearest one by amount.
 const nearestStep = (steps, val) => {
   let best = 0;
@@ -157,9 +152,12 @@ const ScoreViewControls = memo(function ScoreViewControls({
 }) {
   if (onBodyRender) onBodyRender();
 
-  const [sizeOpen, setSizeOpen] = useState(false);
-  const [infoOpen, setInfoOpen] = useState(false);
-  const [tempoOpen, setTempoOpen] = useState(false);
+  // Single-open popover discipline (audit M4): tempo and the ⋯ view menu share one
+  // state, so opening one closes the other, and a shared backdrop dismisses on an
+  // outside tap. 'tempo' | 'view' | null.
+  const [openPopover, setOpenPopover] = useState(null);
+  const toggle = (name) => setOpenPopover((cur) => (cur === name ? null : name));
+  const closePopover = () => setOpenPopover(null);
 
   // Per-mode cluster gating (all derived from `mode`, so identical across steps).
   const isPerform = mode === 'perform';
@@ -176,9 +174,6 @@ const ScoreViewControls = memo(function ScoreViewControls({
   const hasFocus = mode === 'learn' || mode === 'polish';
   // Scoring on/off is a Polish-only toggle (grades measures red/yellow/green).
   const hasScoring = mode === 'polish';
-
-  const openSize = () => setSizeOpen((v) => !v);
-  const openTempo = () => setTempoOpen((v) => !v);
 
   const renderPartChip = (part) => {
     const { staff, label } = part;
@@ -295,12 +290,12 @@ const ScoreViewControls = memo(function ScoreViewControls({
             type="button"
             className="piano-score-btn piano-score-tempo"
             aria-label="Tempo"
-            aria-expanded={tempoOpen}
-            onClick={openTempo}
+            aria-expanded={openPopover === 'tempo'}
+            onClick={() => toggle('tempo')}
           >
             {`Tempo ${Math.round(tempoMult * 100)}%`}
           </button>
-          {tempoOpen && (
+          {openPopover === 'tempo' && (
             <div className="piano-score-tempo-modal" role="dialog" aria-label="Tempo">
               <div className="piano-score-steps" role="group" aria-label="Tempo">
                 {TEMPO_STEPS.map((s, i) => (
@@ -321,95 +316,33 @@ const ScoreViewControls = memo(function ScoreViewControls({
       )}
 
       {hasViewControls && (
-        <button
-          type="button"
-          className={`piano-score-btn piano-score-keyboard${keyboardVisible ? ' is-on' : ''}`}
-          aria-label="Keyboard"
-          aria-pressed={keyboardVisible}
-          onClick={onToggleKeyboard}
-        >
-          {'⌨'}
-        </button>
-      )}
-
-      {hasViewControls && (
-        <button
-          type="button"
-          className="piano-score-btn piano-score-flow"
-          aria-label="Flow"
-          onClick={onToggleFlow}
-        >
-          {flow === 'wrapped' ? '≡' : '→'}
-        </button>
-      )}
-
-      {hasViewControls && (
-        <div className="piano-score-size-wrap">
+        <div className="piano-score-view-wrap">
           <button
             type="button"
-            className="piano-score-btn piano-score-size"
-            aria-label="Size"
-            aria-expanded={sizeOpen}
-            onClick={openSize}
+            className="piano-score-btn piano-score-viewmenu"
+            aria-label="View options"
+            aria-expanded={openPopover === 'view'}
+            onClick={() => toggle('view')}
           >
-            {`Size ${Math.round(scale * 100)}%`}
+            {'⋯'}
           </button>
-          {sizeOpen && (
-            <div className="piano-score-size-modal" role="dialog" aria-label="Size">
-              <div className="piano-score-steps" role="group" aria-label="Size">
-                {SIZE_STEPS.map((s, i) => (
-                  <button
-                    key={s.label}
-                    type="button"
-                    className={`piano-score-btn piano-score-step${i === nearestStep(SIZE_STEPS, scale) ? ' is-on' : ''}`}
-                    aria-pressed={i === nearestStep(SIZE_STEPS, scale)}
-                    onClick={() => onScale(s.value)}
-                  >
-                    {s.label}
-                  </button>
-                ))}
-              </div>
-            </div>
+          {openPopover === 'view' && (
+            <ViewMenu
+              flow={flow}
+              onToggleFlow={onToggleFlow}
+              scale={scale}
+              onScale={onScale}
+              keyboardVisible={keyboardVisible}
+              onToggleKeyboard={onToggleKeyboard}
+              meta={meta}
+            />
           )}
         </div>
       )}
 
-      {hasViewControls && (
-        <div className="piano-score-info-wrap">
-          <button
-            type="button"
-            className="piano-score-btn piano-score-info"
-            aria-label="Info"
-            aria-expanded={infoOpen}
-            onClick={() => setInfoOpen((v) => !v)}
-          >
-            {'ⓘ'}
-          </button>
-          {infoOpen && (
-            <div className="piano-score-info-popover" role="dialog" aria-label="Info">
-              <dl>
-                {meta.title != null && (
-                  <><dt>Title</dt><dd>{meta.title}</dd></>
-                )}
-                {meta.composer != null && (
-                  <><dt>Composer</dt><dd>{meta.composer}</dd></>
-                )}
-                {meta.key != null && (
-                  <><dt>Key</dt><dd>{meta.key}</dd></>
-                )}
-                {meta.time != null && (
-                  <><dt>Time</dt><dd>{meta.time}</dd></>
-                )}
-                {meta.tempo != null && (
-                  <><dt>Tempo</dt><dd>{meta.tempo}</dd></>
-                )}
-                {meta.measures != null && (
-                  <><dt>Measures</dt><dd>{meta.measures}</dd></>
-                )}
-              </dl>
-            </div>
-          )}
-        </div>
+      {/* Shared backdrop: an outside tap dismisses whichever popover is open (M4). */}
+      {openPopover && (
+        <button type="button" className="piano-score-popover-backdrop" aria-label="Close" onClick={closePopover} />
       )}
     </div>
   );

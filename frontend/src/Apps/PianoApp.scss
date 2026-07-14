@@ -2629,6 +2629,25 @@
 .piano-score-parts { display: flex; align-items: center; gap: 0.3rem; flex-wrap: wrap; }
 
 // Shared button chrome for the bar (reset / run / keyboard / flow / size / info).
+// View menu (audit J5/M4) — consolidates layout/size/keyboard/about behind ⋯.
+.piano-score-view-wrap { position: relative; display: inline-block; }
+.piano-score-view-menu {
+  position: absolute; bottom: calc(100% + 0.4rem); right: 0; z-index: 21;
+  display: flex; flex-direction: column; gap: 0.5rem; min-width: 15rem;
+  padding: 0.6rem; background: var(--piano-surface, #1f1f26);
+  border: 1px solid var(--piano-border, #34343f); border-radius: var(--r-md, 12px);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5);
+}
+.piano-score-view-row {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 0.3rem;
+  &__label { font-size: 0.78rem; opacity: 0.7; width: 100%; }
+}
+.piano-score-view-about {
+  margin: 0.2rem 0 0; display: grid; grid-template-columns: auto 1fr; gap: 0.15rem 0.6rem;
+  font-size: 0.82rem;
+  dt { opacity: 0.6; } dd { margin: 0; }
+}
+
 // Practice scope popover (audit J5) — replaces section chips / Loop / Clear / readout.
 .piano-score-practice-wrap { position: relative; display: inline-block; }
 .piano-score-practice-menu {
