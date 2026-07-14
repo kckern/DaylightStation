@@ -133,6 +133,14 @@ describe('ScorePlayer — Learn mode (full-hand, simulated MIDI input)', () => {
     for (const n of [64, 52, 40, 62, 60, 62, 64, 64, 64]) play(n);
     expect(screen.getByText('4 / 4')).toBeTruthy();
   });
+
+  it('shows the Learn completion card once the final step is satisfied (M5)', () => {
+    renderPlayer();
+    enterLearn();
+    expect(document.querySelector('.piano-score-learn-complete')).toBeNull();
+    for (const n of [64, 52, 40, 62, 60, 62]) play(n); // satisfy all four onsets incl. the last
+    expect(document.querySelector('.piano-score-learn-complete')).not.toBeNull();
+  });
 });
 
 describe('ScorePlayer — practice range persistence (J3)', () => {

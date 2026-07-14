@@ -39,4 +39,25 @@ describe('useFollowTracker', () => {
     act(() => emit(61));
     expect(onWrong).toHaveBeenCalled();
   });
+
+  it('fires onComplete (not onStep) when the LAST step is satisfied, no range (M5)', () => {
+    const { subscribe, emit } = makeSubscribe();
+    const onStep = vi.fn();
+    const onComplete = vi.fn();
+    // step index 1 is the last of STEPS (length 2). Satisfying it should complete.
+    renderHook(() => useFollowTracker({ enabled: true, steps: STEPS, activeParts: { 0: true, 1: true }, step: 1, subscribe, onStep, onHit: vi.fn(), onWrong: vi.fn(), onComplete }));
+    act(() => emit(64)); // the only active note of the last step
+    expect(onComplete).toHaveBeenCalledTimes(1);
+    expect(onStep).not.toHaveBeenCalled();
+  });
+
+  it('with a range, the last step wraps (no onComplete)', () => {
+    const { subscribe, emit } = makeSubscribe();
+    const onComplete = vi.fn();
+    const onStep = vi.fn();
+    renderHook(() => useFollowTracker({ enabled: true, steps: STEPS, activeParts: { 0: true, 1: true }, step: 1, subscribe, onStep, onHit: vi.fn(), onWrong: vi.fn(), onComplete, range: [0, 1] }));
+    act(() => emit(64));
+    expect(onComplete).not.toHaveBeenCalled();
+    expect(onStep).toHaveBeenCalledWith(0); // wrapped to range start
+  });
 });

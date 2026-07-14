@@ -29,6 +29,7 @@ import NoteHighlightLayer from './NoteHighlightLayer.jsx';
 import MeasureGradeLayer from './MeasureGradeLayer.jsx';
 import RunSummary from './RunSummary.jsx';
 import CountInOverlay from './CountInOverlay.jsx';
+import LearnComplete from './LearnComplete.jsx';
 
 const KEY_NAMES = { '-7': 'Cb', '-6': 'Gb', '-5': 'Db', '-4': 'Ab', '-3': 'Eb', '-2': 'Bb', '-1': 'F', 0: 'C', 1: 'G', 2: 'D', 3: 'A', 4: 'E', 5: 'B', 6: 'F#', 7: 'C#' };
 
@@ -377,7 +378,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
   const openRunSummaryRef = useRef(openRunSummary); openRunSummaryRef.current = openRunSummary;
 
   // Clear grades + summary when the score document changes or scoring is turned off.
-  useEffect(() => { setGrades({}); setSummaryOpen(false); }, [scoreMeta.musicXml]);
+  useEffect(() => { setGrades({}); setSummaryOpen(false); setLearnDone(false); }, [scoreMeta.musicXml]);
   useEffect(() => { if (!scoringOn) { setGrades({}); setSummaryOpen(false); } }, [scoringOn]);
 
   // ── Learn mode: full-hand tracker (all active-staff notes → advance) ──────────
@@ -405,6 +406,10 @@ export default function ScorePlayer({ score: scoreMeta }) {
   const [revealKeys, setRevealKeys] = useState(false);
   useEffect(() => { setRevealKeys(false); }, [step]);
   const onFollowWrong = useCallback(() => { flashWrong(); setRevealKeys(true); followWrongsRef.current += 1; }, [flashWrong]);
+  // End of piece in Learn: show the completion card (audit M5). Follow-timing stats
+  // still flush when the user leaves Learn / on unmount, so no flush is needed here.
+  const [learnDone, setLearnDone] = useState(false);
+  const onFollowComplete = useCallback(() => { setLearnDone(true); logger.info('score.learn.complete', {}); }, [logger]);
   useFollowTracker({
     enabled: mode === 'learn',
     steps,
@@ -414,6 +419,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
     onStep: onFollowStep,
     onHit: onFollowHit,
     onWrong: onFollowWrong,
+    onComplete: onFollowComplete,
     range, // wrap advancement within the practice range (null → linear)
   });
 
@@ -539,6 +545,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
     if (!el) return;
     // A tap during the count-in aborts it (a change of mind before the run starts).
     if (countIn.active) { countIn.cancel(); logger.info('score.countin.cancel', { via: 'tap' }); return; }
+    setLearnDone(false); // any tap-to-seek re-opens practice — close the completion card
     if (mode === 'perform') {
       const r = el.getBoundingClientRect();
       const dy = e.clientY - (r.top + el.clientHeight / 2);
@@ -624,6 +631,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
   const onMode = useCallback((id) => {
     if (id === mode) return;
     countIn.cancel();            // a mode change aborts a pending count-in
+    setLearnDone(false);         // the Learn completion card belongs to Learn only
     flushPlaybackNow();          // leaving a Polish/Listen run
     if (mode === 'learn') flushFollowNow();
     transport.stop();
@@ -662,6 +670,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
 
   const reset = useCallback(() => {
     countIn.cancel();       // reset aborts a pending count-in
+    setLearnDone(false);    // fresh pass — close the completion card
     transport.stop();
     if (mode === 'listen') silenceScheduled();
     flushPlaybackNow();
@@ -675,6 +684,11 @@ export default function ScorePlayer({ score: scoreMeta }) {
   // Run summary Replay: reset the run (clears grades + closes the panel).
   const onReplaySummary = useCallback(() => { reset(); }, [reset]);
   const onCloseSummary = useCallback(() => setSummaryOpen(false), []);
+
+  // Learn completion card actions: another pass (reset, stay in Learn) or move up
+  // the ladder to Polish (any practice range carries via J3).
+  const onLearnReplay = useCallback(() => { setLearnDone(false); setStep(0); setStruck(() => new Set()); scrollRef.current?.scrollTo({ top: 0, left: 0 }); }, []);
+  const onLearnPolish = useCallback(() => { setLearnDone(false); onMode('polish'); }, [onMode]);
 
   // Run summary "Drill worst section": set the practice range to the heaviest
   // trouble span and drop into Learn to work it slowly (audit J6). Switch mode
@@ -902,6 +916,10 @@ export default function ScorePlayer({ score: scoreMeta }) {
           drillable={drillable}
           onDrill={onDrillWorst}
         />
+      )}
+
+      {mode === 'learn' && (
+        <LearnComplete open={learnDone} onReplay={onLearnReplay} onPolish={onLearnPolish} />
       )}
     </div>
   );
