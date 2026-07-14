@@ -1,4 +1,7 @@
 import React, { useState, memo } from 'react';
+import HandsControl from './HandsControl.jsx';
+import PracticeScope from './PracticeScope.jsx';
+import ViewMenu from './ViewMenu.jsx';
 
 // Tab order: Listen · Learn · Polish · Perform.
 const MODES = [
@@ -24,13 +27,7 @@ const TEMPO_STEPS = [
   { label: '125%', value: 1.25 },
   { label: '150%', value: 1.5 },
 ];
-const SIZE_STEPS = [
-  { label: '75%', value: 0.75 },
-  { label: '100%', value: 1 },
-  { label: '125%', value: 1.25 },
-  { label: '150%', value: 1.5 },
-  { label: '200%', value: 2 },
-];
+// (Size steps moved into ViewMenu, which now owns the size control.)
 // Which step is lit for a current value — the nearest one by amount.
 const nearestStep = (steps, val) => {
   let best = 0;
@@ -76,27 +73,33 @@ const ScoreModeTabs = memo(function ScoreModeTabs({ mode, onMode }) {
  * so they render only when `hasTransport`. Memoized so a step advance can't
  * reconcile them (they depend on mode/running, not step).
  */
-const ScoreTransportButtons = memo(function ScoreTransportButtons({ mode, running, onToggleRun, onReset }) {
+const ScoreTransportButtons = memo(function ScoreTransportButtons({ mode, running, onToggleRun, onReset, ready = true, canRestart = false }) {
   const hasTransport = mode === 'polish' || mode === 'listen';
   if (!hasTransport) return null;
+  // Until geometry extraction publishes a timeline the transport is inert; show a
+  // disabled "Preparing…" so the bar doesn't look live while it can't play (audit H0).
+  const runLabel = !ready ? 'Preparing' : running ? 'Pause' : 'Play';
   return (
     <>
+      {canRestart && (
+        <button
+          type="button"
+          className="piano-score-btn piano-score-reset"
+          aria-label="Restart"
+          onClick={onReset}
+        >
+          {'↺ Restart'}
+        </button>
+      )}
       <button
         type="button"
-        className="piano-score-btn piano-score-reset"
-        aria-label="Reset"
-        onClick={onReset}
-      >
-        {'⟲'}
-      </button>
-      <button
-        type="button"
-        className="piano-score-btn piano-score-run"
-        aria-label={running ? 'Pause' : 'Play'}
+        className={`piano-score-btn piano-score-run${!ready ? ' is-preparing' : ''}`}
+        aria-label={runLabel}
         aria-pressed={running}
+        disabled={!ready}
         onClick={onToggleRun}
       >
-        {running ? '❚❚' : '▶'}
+        {!ready ? '…' : running ? '❚❚' : '▶'}
       </button>
     </>
   );
@@ -125,53 +128,48 @@ const ScoreViewControls = memo(function ScoreViewControls({
   onTempo,
   transpose = 0,
   onTranspose,
-  playAlong = false,
-  onTogglePlayAlong,
   parts = [],
   activeParts = {},
   roles = {},
   onCyclePart,
+  grandStaff = false,
+  handsVariant = 'hands',
+  handsValue = 'both',
+  onHandsChange,
   sections = [],
-  focus = null,
-  loopArm = false,
+  scopeLabel = 'Whole piece',
   onPickSection,
-  onArmLoop,
+  onStartSelect,
   onClearFocus,
   keyboardVisible,
   onToggleKeyboard,
   clickOn = false,
   onToggleClick,
-  scoringOn = true,
-  onToggleScoring,
   meta = {},
   onBodyRender,
 }) {
   if (onBodyRender) onBodyRender();
 
-  const [sizeOpen, setSizeOpen] = useState(false);
-  const [infoOpen, setInfoOpen] = useState(false);
-  const [tempoOpen, setTempoOpen] = useState(false);
+  // Single-open popover discipline (audit M4): tempo and the ⋯ view menu share one
+  // state, so opening one closes the other, and a shared backdrop dismisses on an
+  // outside tap. 'tempo' | 'view' | null.
+  const [openPopover, setOpenPopover] = useState(null);
+  const toggle = (name) => setOpenPopover((cur) => (cur === name ? null : name));
+  const closePopover = () => setOpenPopover(null);
 
   // Per-mode cluster gating (all derived from `mode`, so identical across steps).
   const isPerform = mode === 'perform';
   const hasParts = !isPerform;
   const hasViewControls = !isPerform;
-  // The metronome-click toggle lives in Listen and Learn (Polish/Perform omit it).
-  const hasClick = mode === 'listen' || mode === 'learn';
-  // Tempo control + play-along light-up are Listen-only (jukebox performance).
+  // The metronome-click toggle lives in Polish only — the only mode with an
+  // audible, graded beat. Learn is self-paced; Listen's own performance is the beat.
+  const hasClick = mode === 'polish';
+  // Tempo control is a practice knob in BOTH Listen and Polish (Polish practices
+  // below tempo; audit J1). Key transpose + play-along stay Listen-only.
+  const hasTempo = mode === 'listen' || mode === 'polish';
   const hasListenExtras = mode === 'listen';
   // Focus range (section chips + custom loop) is a Learn + Polish practice affordance.
   const hasFocus = mode === 'learn' || mode === 'polish';
-  // Scoring on/off is a Polish-only toggle (grades measures red/yellow/green).
-  const hasScoring = mode === 'polish';
-  // Readout of the active range: a section shows its label; a custom loop shows a
-  // 1-based measure span (indices are 0-based internally).
-  const focusLabel = focus
-    ? (focus.label || `m${focus.inMeasure + 1}–m${focus.outMeasure + 1}`)
-    : null;
-
-  const openSize = () => setSizeOpen((v) => !v);
-  const openTempo = () => setTempoOpen((v) => !v);
 
   const renderPartChip = (part) => {
     const { staff, label } = part;
@@ -206,46 +204,19 @@ const ScoreViewControls = memo(function ScoreViewControls({
   return (
     <div className="piano-score-view">
       {hasParts && (
-        <div className="piano-score-parts">
-          {parts.map(renderPartChip)}
-        </div>
+        grandStaff
+          ? <HandsControl variant={handsVariant} value={handsValue} onChange={onHandsChange} />
+          : <div className="piano-score-parts">{parts.map(renderPartChip)}</div>
       )}
 
       {hasFocus && (
-        <div className="piano-score-focus" role="group" aria-label="Practice range">
-          {sections.length > 0 && sections.map((s) => (
-            <button
-              key={s.label}
-              type="button"
-              className="piano-score-btn piano-score-section-chip"
-              onClick={() => onPickSection?.(s)}
-            >
-              {s.label}
-            </button>
-          ))}
-          <button
-            type="button"
-            className={`piano-score-btn piano-score-loop${loopArm ? ' is-on' : ''}`}
-            aria-label="Loop range"
-            aria-pressed={loopArm}
-            onClick={onArmLoop}
-          >
-            {'Loop'}
-          </button>
-          {focus && (
-            <button
-              type="button"
-              className="piano-score-btn piano-score-focus-clear"
-              aria-label="Clear range"
-              onClick={onClearFocus}
-            >
-              {'Clear'}
-            </button>
-          )}
-          {focusLabel && (
-            <span className="piano-score-focus-readout tabular-nums">{focusLabel}</span>
-          )}
-        </div>
+        <PracticeScope
+          scopeLabel={scopeLabel}
+          sections={sections}
+          onPickSection={onPickSection}
+          onStartSelect={onStartSelect}
+          onClearFocus={onClearFocus}
+        />
       )}
 
       {hasClick && (
@@ -257,30 +228,6 @@ const ScoreViewControls = memo(function ScoreViewControls({
           onClick={onToggleClick}
         >
           {'♩'}
-        </button>
-      )}
-
-      {hasScoring && (
-        <button
-          type="button"
-          className={`piano-score-btn piano-score-scoring${scoringOn ? ' is-on' : ''}`}
-          aria-label="Scoring"
-          aria-pressed={scoringOn}
-          onClick={onToggleScoring}
-        >
-          {'Scoring'}
-        </button>
-      )}
-
-      {hasListenExtras && (
-        <button
-          type="button"
-          className={`piano-score-btn piano-score-playalong${playAlong ? ' is-on' : ''}`}
-          aria-label="Play along"
-          aria-pressed={playAlong}
-          onClick={onTogglePlayAlong}
-        >
-          {'Play-along'}
         </button>
       )}
 
@@ -309,18 +256,18 @@ const ScoreViewControls = memo(function ScoreViewControls({
         </div>
       )}
 
-      {hasListenExtras && (
+      {hasTempo && (
         <div className="piano-score-tempo-wrap">
           <button
             type="button"
             className="piano-score-btn piano-score-tempo"
             aria-label="Tempo"
-            aria-expanded={tempoOpen}
-            onClick={openTempo}
+            aria-expanded={openPopover === 'tempo'}
+            onClick={() => toggle('tempo')}
           >
             {`Tempo ${Math.round(tempoMult * 100)}%`}
           </button>
-          {tempoOpen && (
+          {openPopover === 'tempo' && (
             <div className="piano-score-tempo-modal" role="dialog" aria-label="Tempo">
               <div className="piano-score-steps" role="group" aria-label="Tempo">
                 {TEMPO_STEPS.map((s, i) => (
@@ -341,95 +288,33 @@ const ScoreViewControls = memo(function ScoreViewControls({
       )}
 
       {hasViewControls && (
-        <button
-          type="button"
-          className={`piano-score-btn piano-score-keyboard${keyboardVisible ? ' is-on' : ''}`}
-          aria-label="Keyboard"
-          aria-pressed={keyboardVisible}
-          onClick={onToggleKeyboard}
-        >
-          {'⌨'}
-        </button>
-      )}
-
-      {hasViewControls && (
-        <button
-          type="button"
-          className="piano-score-btn piano-score-flow"
-          aria-label="Flow"
-          onClick={onToggleFlow}
-        >
-          {flow === 'wrapped' ? '≡' : '→'}
-        </button>
-      )}
-
-      {hasViewControls && (
-        <div className="piano-score-size-wrap">
+        <div className="piano-score-view-wrap">
           <button
             type="button"
-            className="piano-score-btn piano-score-size"
-            aria-label="Size"
-            aria-expanded={sizeOpen}
-            onClick={openSize}
+            className="piano-score-btn piano-score-viewmenu"
+            aria-label="View options"
+            aria-expanded={openPopover === 'view'}
+            onClick={() => toggle('view')}
           >
-            {`Size ${Math.round(scale * 100)}%`}
+            {'⋯'}
           </button>
-          {sizeOpen && (
-            <div className="piano-score-size-modal" role="dialog" aria-label="Size">
-              <div className="piano-score-steps" role="group" aria-label="Size">
-                {SIZE_STEPS.map((s, i) => (
-                  <button
-                    key={s.label}
-                    type="button"
-                    className={`piano-score-btn piano-score-step${i === nearestStep(SIZE_STEPS, scale) ? ' is-on' : ''}`}
-                    aria-pressed={i === nearestStep(SIZE_STEPS, scale)}
-                    onClick={() => onScale(s.value)}
-                  >
-                    {s.label}
-                  </button>
-                ))}
-              </div>
-            </div>
+          {openPopover === 'view' && (
+            <ViewMenu
+              flow={flow}
+              onToggleFlow={onToggleFlow}
+              scale={scale}
+              onScale={onScale}
+              keyboardVisible={keyboardVisible}
+              onToggleKeyboard={onToggleKeyboard}
+              meta={meta}
+            />
           )}
         </div>
       )}
 
-      {hasViewControls && (
-        <div className="piano-score-info-wrap">
-          <button
-            type="button"
-            className="piano-score-btn piano-score-info"
-            aria-label="Info"
-            aria-expanded={infoOpen}
-            onClick={() => setInfoOpen((v) => !v)}
-          >
-            {'ⓘ'}
-          </button>
-          {infoOpen && (
-            <div className="piano-score-info-popover" role="dialog" aria-label="Info">
-              <dl>
-                {meta.title != null && (
-                  <><dt>Title</dt><dd>{meta.title}</dd></>
-                )}
-                {meta.composer != null && (
-                  <><dt>Composer</dt><dd>{meta.composer}</dd></>
-                )}
-                {meta.key != null && (
-                  <><dt>Key</dt><dd>{meta.key}</dd></>
-                )}
-                {meta.time != null && (
-                  <><dt>Time</dt><dd>{meta.time}</dd></>
-                )}
-                {meta.tempo != null && (
-                  <><dt>Tempo</dt><dd>{meta.tempo}</dd></>
-                )}
-                {meta.measures != null && (
-                  <><dt>Measures</dt><dd>{meta.measures}</dd></>
-                )}
-              </dl>
-            </div>
-          )}
-        </div>
+      {/* Shared backdrop: an outside tap dismisses whichever popover is open (M4). */}
+      {openPopover && (
+        <button type="button" className="piano-score-popover-backdrop" aria-label="Close" onClick={closePopover} />
       )}
     </div>
   );
@@ -463,8 +348,12 @@ export default function ScoreTransportBar({
   running,
   onToggleRun,
   onReset,
+  ready,
+  canRestart,
   step,
   total,
+  measure,
+  measureTotal,
   page = 1,
   pages = 1,
   flow,
@@ -480,28 +369,31 @@ export default function ScoreTransportBar({
   onTempo,
   transpose,
   onTranspose,
-  playAlong,
-  onTogglePlayAlong,
   parts,
   activeParts,
   roles,
   onCyclePart,
+  grandStaff,
+  handsVariant,
+  handsValue,
+  onHandsChange,
   sections,
-  focus,
-  loopArm,
+  scopeLabel,
   onPickSection,
-  onArmLoop,
+  onStartSelect,
   onClearFocus,
   keyboardVisible,
   onToggleKeyboard,
   clickOn,
   onToggleClick,
-  scoringOn,
-  onToggleScoring,
   meta,
   onBodyRender,
 }) {
-  const position = `${Math.min(step + 1, total)} / ${total}`;
+  // Musicians think in measures, not note-steps (audit L2): show "m 3 / 24" when a
+  // measure count is available, falling back to the step readout otherwise.
+  const position = measureTotal > 0
+    ? `m ${Math.min(measure ?? 1, measureTotal)} / ${measureTotal}`
+    : `${Math.min(step + 1, total)} / ${total}`;
 
   const isPerform = mode === 'perform';
   // The position readout and page indicator exist in every mode but Perform.
@@ -519,6 +411,8 @@ export default function ScoreTransportBar({
           running={running}
           onToggleRun={onToggleRun}
           onReset={onReset}
+          ready={ready}
+          canRestart={canRestart}
         />
         {hasPosition && <span className="piano-score-position tabular-nums">{position}</span>}
         {isPerform && (
@@ -537,24 +431,23 @@ export default function ScoreTransportBar({
         onTempo={onTempo}
         transpose={transpose}
         onTranspose={onTranspose}
-        playAlong={playAlong}
-        onTogglePlayAlong={onTogglePlayAlong}
         parts={parts}
         activeParts={activeParts}
         roles={roles}
         onCyclePart={onCyclePart}
+        grandStaff={grandStaff}
+        handsVariant={handsVariant}
+        handsValue={handsValue}
+        onHandsChange={onHandsChange}
         sections={sections}
-        focus={focus}
-        loopArm={loopArm}
+        scopeLabel={scopeLabel}
         onPickSection={onPickSection}
-        onArmLoop={onArmLoop}
+        onStartSelect={onStartSelect}
         onClearFocus={onClearFocus}
         keyboardVisible={keyboardVisible}
         onToggleKeyboard={onToggleKeyboard}
         clickOn={clickOn}
         onToggleClick={onToggleClick}
-        scoringOn={scoringOn}
-        onToggleScoring={onToggleScoring}
         meta={meta}
         onBodyRender={onBodyRender}
       />

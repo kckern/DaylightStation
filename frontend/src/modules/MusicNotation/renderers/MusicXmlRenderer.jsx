@@ -1,6 +1,7 @@
 import { useRef, useEffect, useState } from 'react';
 import getLogger from '../../../lib/logging/Logger.js';
 import { osmdEngrave, osmdRepaint, extractLayoutSliced, scheduleYield } from './osmdRender.js';
+import StaffSkeleton from './StaffSkeleton.jsx';
 
 let _logger;
 function logger() {
@@ -178,7 +179,10 @@ export function MusicXmlRenderer({ musicXml, width, flow = 'wrapped', scale = 1,
       {showPlaceholder && <p>{musicXml ? 'Could not read this score.' : 'No score provided.'}</p>}
       {/* Host stays mounted even on failure so a new document can render into it. */}
       <div ref={hostRef} className="musicxml-renderer__svg" style={showPlaceholder ? { display: 'none' } : undefined} />
-      {!showPlaceholder && rendering && dims.width > 0 && <div className="musicxml-renderer__busy">Engraving…</div>}
+      {/* Engrave phase — nothing painted yet. Show a staff skeleton (not a bare
+          label) so the wait reads as sheet music loading (audit H0). No dims gate:
+          it must show BEFORE first paint. */}
+      {!showPlaceholder && rendering && <div className="musicxml-renderer__busy"><StaffSkeleton /></div>}
       {/* Determinate extraction progress; the painted sheet stays visible beneath it. Styling is Task 11. */}
       {!showPlaceholder && extracting && (
         <div className="musicxml-renderer__progress" style={{ '--p': progress }} aria-hidden="true" />

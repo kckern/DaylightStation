@@ -24,17 +24,24 @@ describe('ScoreTransportBar', () => {
     expect(base.onMode).toHaveBeenCalledWith('polish');
   });
 
-  it('exposes a metronome-click toggle in Learn/Listen (aria-pressed reflects clickOn)', () => {
+  it('exposes a metronome-click toggle in Polish only (aria-pressed reflects clickOn)', () => {
     const onToggleClick = vi.fn();
     const { rerender } = render(
-      <ScoreTransportBar {...base} clickOn={false} onToggleClick={onToggleClick} />,
+      <ScoreTransportBar {...base} mode="polish" clickOn={false} onToggleClick={onToggleClick} />,
     );
     const click = screen.getByRole('button', { name: /metronome click/i });
     expect(click).toHaveAttribute('aria-pressed', 'false');
     fireEvent.click(click);
     expect(onToggleClick).toHaveBeenCalled();
-    rerender(<ScoreTransportBar {...base} clickOn onToggleClick={onToggleClick} />);
+    rerender(<ScoreTransportBar {...base} mode="polish" clickOn onToggleClick={onToggleClick} />);
     expect(screen.getByRole('button', { name: /metronome click/i })).toHaveAttribute('aria-pressed', 'true');
+  });
+
+  it('has no metronome-click toggle in Learn or Listen (the beat lives in Polish)', () => {
+    const { rerender } = render(<ScoreTransportBar {...base} mode="learn" clickOn onToggleClick={vi.fn()} />);
+    expect(screen.queryByRole('button', { name: /metronome click/i })).toBeNull();
+    rerender(<ScoreTransportBar {...base} mode="listen" clickOn onToggleClick={vi.fn()} />);
+    expect(screen.queryByRole('button', { name: /metronome click/i })).toBeNull();
   });
 
   it('is mode-aware: Perform shows no parts/transport/view controls, Polish shows run + parts', () => {
@@ -47,13 +54,27 @@ describe('ScoreTransportBar', () => {
     rerender(<ScoreTransportBar {...base} mode="polish" />);
     expect(screen.getByRole('button', { name: /^▶$|play/i })).toBeInTheDocument(); // transport present
     expect(screen.getByRole('button', { name: /LH/ })).toBeInTheDocument(); // parts present
-    expect(screen.queryByRole('button', { name: /metronome click/i })).toBeNull(); // no click in Polish
+    expect(screen.getByRole('button', { name: /metronome click/i })).toBeInTheDocument(); // click lives in Polish (J1)
   });
 
-  it('shows one part chip per staff and cycles it', () => {
-    render(<ScoreTransportBar {...base} />);
+  it('shows one part chip per staff and cycles it (>2-staff fallback)', () => {
+    render(<ScoreTransportBar {...base} parts={[{ staff: 0, label: 'RH' }, { staff: 1, label: 'LH' }, { staff: 2, label: 'P3' }]} />);
     fireEvent.click(screen.getByRole('button', { name: /LH/ }));
     expect(base.onCyclePart).toHaveBeenCalledWith(1);
+  });
+
+  it('grand-staff (2 staves) shows the Hands segmented control, not chips (J4)', () => {
+    const onHandsChange = vi.fn();
+    render(<ScoreTransportBar {...base} mode="learn" grandStaff handsVariant="hands" handsValue="both" onHandsChange={onHandsChange} />);
+    expect(screen.getByRole('group', { name: /hands/i })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('radio', { name: 'LH' }));
+    expect(onHandsChange).toHaveBeenCalledWith('lh');
+  });
+
+  it('grand-staff Listen shows the My-part control', () => {
+    render(<ScoreTransportBar {...base} mode="listen" grandStaff handsVariant="mypart" handsValue="none" onHandsChange={vi.fn()} />);
+    expect(screen.getByRole('group', { name: /my part/i })).toBeInTheDocument();
+    expect(screen.getByRole('radio', { name: 'None' })).toHaveAttribute('aria-checked', 'true');
   });
 
   it('perform mode: shows the page indicator (page / pages)', () => {
@@ -65,6 +86,18 @@ describe('ScoreTransportBar', () => {
   it('shows position readout total', () => {
     render(<ScoreTransportBar {...base} />);
     expect(screen.getByText(/\/\s*40/)).toBeInTheDocument();
+  });
+
+  it('disables Play with a Preparing label until geometry is ready (H0)', () => {
+    render(<ScoreTransportBar {...base} mode="polish" ready={false} total={0} />);
+    const play = screen.getByRole('button', { name: /preparing/i });
+    expect(play).toBeDisabled();
+  });
+
+  it('enables Play once ready', () => {
+    render(<ScoreTransportBar {...base} mode="polish" ready total={10} />);
+    const play = screen.getByRole('button', { name: /^play$|^▶$/i });
+    expect(play).toBeEnabled();
   });
 
   it('listen mode: tempo button opens a segmented stepper that commits via onTempo on tap', () => {
@@ -79,17 +112,22 @@ describe('ScoreTransportBar', () => {
     expect(onTempo).toHaveBeenCalledWith(1.5);
   });
 
-  it('listen mode: play-along toggle fires onTogglePlayAlong and reflects aria-pressed', () => {
-    const onTogglePlayAlong = vi.fn();
-    const { rerender } = render(
-      <ScoreTransportBar {...base} mode="listen" playAlong={false} onTogglePlayAlong={onTogglePlayAlong} />,
-    );
-    const toggle = screen.getByRole('button', { name: /play along/i });
-    expect(toggle).toHaveAttribute('aria-pressed', 'false');
-    fireEvent.click(toggle);
-    expect(onTogglePlayAlong).toHaveBeenCalled();
-    rerender(<ScoreTransportBar {...base} mode="listen" playAlong onTogglePlayAlong={onTogglePlayAlong} />);
-    expect(screen.getByRole('button', { name: /play along/i })).toHaveAttribute('aria-pressed', 'true');
+  it('polish mode: tempo stepper is present and commits via onTempo; no key/play-along', () => {
+    const onTempo = vi.fn();
+    render(<ScoreTransportBar {...base} mode="polish" tempoMult={1} onTempo={onTempo} />);
+    const tempoBtn = screen.getByRole('button', { name: /^tempo/i });
+    expect(tempoBtn).toHaveTextContent(/100%/);
+    fireEvent.click(tempoBtn);
+    fireEvent.click(screen.getByRole('button', { name: '75%' }));
+    expect(onTempo).toHaveBeenCalledWith(0.75);
+    // Listen-only extras stay absent in Polish.
+    expect(screen.queryByRole('button', { name: /transpose up/i })).toBeNull();
+    expect(screen.queryByRole('button', { name: /play along/i })).toBeNull();
+  });
+
+  it('has no Play-along toggle — Listen light-up is always on (J5)', () => {
+    render(<ScoreTransportBar {...base} mode="listen" />);
+    expect(screen.queryByRole('button', { name: /play along/i })).toBeNull();
   });
 
   it('listen mode: key + button transposes up by one semitone via onTranspose', () => {
@@ -99,80 +137,85 @@ describe('ScoreTransportBar', () => {
     expect(onTranspose).toHaveBeenCalledWith(2);
   });
 
-  it('tempo + play-along are Listen-only (absent in Learn/Polish/Perform)', () => {
+  it('tempo is in Listen+Polish; play-along stays Listen-only', () => {
     const { rerender } = render(<ScoreTransportBar {...base} mode="learn" />);
-    expect(screen.queryByRole('button', { name: /tempo/i })).toBeNull();
+    expect(screen.queryByRole('button', { name: /tempo/i })).toBeNull(); // Learn is self-paced
     expect(screen.queryByRole('button', { name: /play along/i })).toBeNull();
     rerender(<ScoreTransportBar {...base} mode="polish" />);
-    expect(screen.queryByRole('button', { name: /tempo/i })).toBeNull();
-    expect(screen.queryByRole('button', { name: /play along/i })).toBeNull();
+    expect(screen.getByRole('button', { name: /tempo/i })).toBeInTheDocument(); // Polish practices below tempo (J1)
+    expect(screen.queryByRole('button', { name: /play along/i })).toBeNull(); // play-along still Listen-only
   });
 
-  it('learn mode: renders a section chip per section and fires onPickSection with it', () => {
+  it('learn mode: Practice popover lists sections and fires onPickSection', () => {
     const onPickSection = vi.fn();
     const sections = [{ label: 'A', startMeasure: 1, endMeasure: 4 }];
-    render(<ScoreTransportBar {...base} mode="learn" sections={sections} onPickSection={onPickSection} />);
+    render(<ScoreTransportBar {...base} mode="learn" sections={sections} onPickSection={onPickSection} scopeLabel="Whole piece" />);
+    fireEvent.click(screen.getByRole('button', { name: /practice:/i })); // open popover
     fireEvent.click(screen.getByRole('button', { name: /^A$/ }));
     expect(onPickSection).toHaveBeenCalledWith(sections[0]);
   });
 
-  it('learn mode: Loop toggle reflects loopArm; Clear appears only with an active range', () => {
-    const onArmLoop = vi.fn();
+  it('learn mode: Practice popover offers Select measures… and Whole piece', () => {
+    const onStartSelect = vi.fn();
     const onClearFocus = vi.fn();
-    const { rerender } = render(
-      <ScoreTransportBar {...base} mode="learn" loopArm={false} onArmLoop={onArmLoop} onClearFocus={onClearFocus} />,
-    );
-    const loop = screen.getByRole('button', { name: /loop range/i });
-    expect(loop).toHaveAttribute('aria-pressed', 'false');
-    fireEvent.click(loop);
-    expect(onArmLoop).toHaveBeenCalled();
-    expect(screen.queryByRole('button', { name: /clear range/i })).toBeNull(); // no range yet
-
-    rerender(
-      <ScoreTransportBar {...base} mode="learn" loopArm
-        focus={{ kind: 'custom', inMeasure: 2, outMeasure: 5 }} onClearFocus={onClearFocus} />,
-    );
-    expect(screen.getByRole('button', { name: /loop range/i })).toHaveAttribute('aria-pressed', 'true');
-    expect(screen.getByText('m3–m6')).toBeInTheDocument(); // 1-based readout
-    fireEvent.click(screen.getByRole('button', { name: /clear range/i }));
+    render(<ScoreTransportBar {...base} mode="learn" scopeLabel="m3–m6" onStartSelect={onStartSelect} onClearFocus={onClearFocus} />);
+    // The scope label surfaces the active range on the trigger.
+    expect(screen.getByRole('button', { name: /practice: m3–m6/i })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /practice:/i }));
+    fireEvent.click(screen.getByRole('button', { name: /select measures/i }));
+    expect(onStartSelect).toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: /practice:/i }));
+    fireEvent.click(screen.getByRole('button', { name: 'Whole piece' }));
     expect(onClearFocus).toHaveBeenCalled();
   });
 
-  it('focus cluster is Learn + Polish (absent in Listen/Perform)', () => {
+  it('Practice control is Learn + Polish (absent in Listen/Perform)', () => {
     for (const mode of ['listen', 'perform']) {
-      const { unmount } = render(<ScoreTransportBar {...base} mode={mode} sections={[{ label: 'A', startMeasure: 1, endMeasure: 4 }]} />);
-      expect(screen.queryByRole('button', { name: /loop range/i })).toBeNull();
+      const { unmount } = render(<ScoreTransportBar {...base} mode={mode} scopeLabel="Whole piece" />);
+      expect(screen.queryByRole('button', { name: /practice:/i })).toBeNull();
       unmount();
     }
     for (const mode of ['learn', 'polish']) {
-      const { unmount } = render(<ScoreTransportBar {...base} mode={mode} sections={[{ label: 'A', startMeasure: 1, endMeasure: 4 }]} />);
-      expect(screen.getByRole('button', { name: /loop range/i })).toBeInTheDocument();
+      const { unmount } = render(<ScoreTransportBar {...base} mode={mode} scopeLabel="Whole piece" />);
+      expect(screen.getByRole('button', { name: /practice:/i })).toBeInTheDocument();
       unmount();
     }
   });
 
-  it('polish mode: scoring toggle fires onToggleScoring and reflects aria-pressed', () => {
-    const onToggleScoring = vi.fn();
-    const { rerender } = render(<ScoreTransportBar {...base} mode="polish" scoringOn onToggleScoring={onToggleScoring} />);
-    const toggle = screen.getByRole('button', { name: /scoring/i });
-    expect(toggle).toHaveAttribute('aria-pressed', 'true');
-    fireEvent.click(toggle);
-    expect(onToggleScoring).toHaveBeenCalled();
-    rerender(<ScoreTransportBar {...base} mode="polish" scoringOn={false} onToggleScoring={onToggleScoring} />);
-    expect(screen.getByRole('button', { name: /scoring/i })).toHaveAttribute('aria-pressed', 'false');
-    // Scoring toggle is Polish-only.
-    rerender(<ScoreTransportBar {...base} mode="learn" />);
+  it('has no Scoring toggle — Polish always grades (J5)', () => {
+    render(<ScoreTransportBar {...base} mode="polish" />);
     expect(screen.queryByRole('button', { name: /scoring/i })).toBeNull();
   });
 
-  it('size is a single button that opens a segmented stepper (no slider) and commits scale on tap', () => {
+  it('shows a measure readout (m X / Y) when a measure count is provided (L2)', () => {
+    render(<ScoreTransportBar {...base} mode="learn" measure={3} measureTotal={24} />);
+    expect(screen.getByText('m 3 / 24')).toBeInTheDocument();
+  });
+
+  it('Restart button appears only when there is a run to restart (Polish)', () => {
+    const { rerender } = render(<ScoreTransportBar {...base} mode="polish" canRestart={false} />);
+    expect(screen.queryByRole('button', { name: /restart/i })).toBeNull();
+    rerender(<ScoreTransportBar {...base} mode="polish" canRestart />);
+    expect(screen.getByRole('button', { name: /restart/i })).toBeInTheDocument();
+  });
+
+  it('View menu (⋯) holds size as a segmented stepper (no slider), commits scale on tap', () => {
     render(<ScoreTransportBar {...base} />);
-    const sizeBtn = screen.getByRole('button', { name: /^size/i });
-    fireEvent.click(sizeBtn);
+    fireEvent.click(screen.getByRole('button', { name: /view options/i }));
+    expect(screen.getByRole('dialog', { name: /view/i })).toBeInTheDocument();
     // No slider / no typed value — discrete percent steps commit on tap.
     expect(screen.queryByRole('slider')).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: '125%' }));
     expect(base.onScale).toHaveBeenCalledWith(1.25);
+  });
+
+  it('single-open popovers: opening the View menu closes Tempo (M4)', () => {
+    render(<ScoreTransportBar {...base} mode="listen" tempoMult={1} onTempo={vi.fn()} />);
+    fireEvent.click(screen.getByRole('button', { name: /^tempo/i }));
+    expect(screen.getByRole('dialog', { name: /tempo/i })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /view options/i }));
+    expect(screen.queryByRole('dialog', { name: /tempo/i })).toBeNull(); // tempo closed
+    expect(screen.getByRole('dialog', { name: /view/i })).toBeInTheDocument();
   });
 
   it('memoization: advancing step re-renders only the position readout, not the expensive body', () => {
