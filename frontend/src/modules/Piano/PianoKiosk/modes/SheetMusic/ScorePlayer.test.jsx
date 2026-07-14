@@ -88,10 +88,22 @@ beforeEach(() => {
   h.sendNoteAt.mockClear(); h.sendNoteOffAt.mockClear();
 });
 
+// Scores now open in Listen (default). The Learn tests select Learn first.
+const enterLearn = () => act(() => { screen.getByText('Learn').click(); });
+
+describe('ScorePlayer — default mode', () => {
+  it('opens in Listen (defaultMode), not Learn (J2)', () => {
+    renderPlayer();
+    expect(screen.getByRole('tab', { name: /listen/i })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByRole('tab', { name: /learn/i })).toHaveAttribute('aria-selected', 'false');
+  });
+});
+
 describe('ScorePlayer — Learn mode (full-hand, simulated MIDI input)', () => {
 
   it('advances only when every active-staff note of the step is struck', () => {
     renderPlayer();
+    enterLearn();
 
     // Layout reported 4 onsets; cursor starts at the first.
     expect(screen.getByText('1 / 4')).toBeTruthy();
@@ -117,6 +129,7 @@ describe('ScorePlayer — Learn mode (full-hand, simulated MIDI input)', () => {
 
   it('does not advance past the end on extra notes', () => {
     renderPlayer();
+    enterLearn();
     for (const n of [64, 52, 40, 62, 60, 62, 64, 64, 64]) play(n);
     expect(screen.getByText('4 / 4')).toBeTruthy();
   });
@@ -125,6 +138,7 @@ describe('ScorePlayer — Learn mode (full-hand, simulated MIDI input)', () => {
 describe('ScorePlayer — Learn mode chord tolerance (audit B2)', () => {
   it('does not flash wrong for accompaniment notes that belong to the current onset', () => {
     renderPlayer();
+    enterLearn();
     play(52); // LH note of the current onset — a correct hit, no advance, NO flash
     expect(document.querySelector('.piano-score-cursor.is-wrong')).toBeNull();
     expect(screen.getByText('1 / 4')).toBeTruthy();

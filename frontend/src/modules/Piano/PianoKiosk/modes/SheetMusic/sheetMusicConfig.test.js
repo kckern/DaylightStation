@@ -4,7 +4,7 @@ import { resolveSheetMusicConfig } from './sheetMusicConfig.js';
 describe('resolveSheetMusicConfig', () => {
   it('applies defaults when unset', () => {
     expect(resolveSheetMusicConfig(undefined)).toEqual({
-      defaultMode: 'learn',
+      defaultMode: 'listen',
       perform: { advancePedalCC: 67, backPedalCC: 66 },
       scoring: { silentMeasuresToStop: 4, timingToleranceMs: 80, thresholds: { green: 0.9, yellow: 0.6 } },
     });
@@ -16,7 +16,7 @@ describe('resolveSheetMusicConfig', () => {
     expect(c.scoring.silentMeasuresToStop).toBe(4);
   });
   it('ignores null/garbage and returns full defaults', () => {
-    expect(resolveSheetMusicConfig(null).defaultMode).toBe('learn');
+    expect(resolveSheetMusicConfig(null).defaultMode).toBe('listen');
     expect(resolveSheetMusicConfig('nope').perform.backPedalCC).toBe(66);
   });
 });
