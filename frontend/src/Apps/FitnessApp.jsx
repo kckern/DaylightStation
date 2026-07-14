@@ -18,6 +18,8 @@ import { sortNavItems, filterNavItemsByDay, isNavItemActive } from '../modules/F
 import useDayOfWeek from '../hooks/useDayOfWeek.js';
 import VoiceMemoOverlay from '../modules/Fitness/player/overlays/VoiceMemoOverlay.jsx';
 import FitnessToast from '../modules/Fitness/player/overlays/FitnessToast.jsx';
+import { DeviceStatePublisher } from '../screen-framework/publishers/DeviceStatePublisher.jsx';
+import { usePlayerSessionBinding } from '../screen-framework/publishers/usePlayerSessionBinding.js';
 import EmergencyLockdownOverlay from '../modules/Fitness/player/overlays/EmergencyLockdownOverlay.jsx';
 import { IdentityProvider } from '../modules/Fitness/identity/IdentityProvider';
 import { useFitnessContext } from '../context/FitnessContext.jsx';
@@ -1345,6 +1347,7 @@ const FitnessApp = () => {
         >
           <IdentityProvider>
           <GlobalOverlays />
+          <FitnessFleetPublisher />
           {feedbackOpen && (
             <FitnessFeedback
               onClose={() => setFeedbackOpen(false)}
@@ -1599,6 +1602,23 @@ const FitnessApp = () => {
     </VolumeProvider>
     </MantineProvider>
   );
+};
+
+// Fleet visibility: when the kiosk URL carries ?device=<id> (garage display:
+// ?device=garage-tv, set in start-browser-kiosk.sh), publish live
+// device-state so the /media Devices view shows what's playing here. The id
+// must be explicit — a laptop opening /fitness must not impersonate the
+// garage display. The binding reads the FitnessPlayer's registered Player
+// ref via context; when no player is mounted the published state is idle.
+const FitnessFleetPublisher = () => {
+  const fitnessCtx = useFitnessContext();
+  const deviceId = useMemo(
+    () => new URLSearchParams(window.location.search).get('device'),
+    []
+  );
+  const playerRefObj = fitnessCtx?.videoPlayerRef ?? null;
+  usePlayerSessionBinding(() => playerRefObj?.current ?? null);
+  return <DeviceStatePublisher deviceId={deviceId} />;
 };
 
 const GlobalOverlays = () => {

@@ -13,6 +13,7 @@ import PianoVideoChrome from './PianoVideoChrome.jsx';
 import useResolvedMediaEl from './useResolvedMediaEl.js';
 import FullscreenTransportOverlay from './FullscreenTransportOverlay.jsx';
 import { videoTapAction, TAP_SKIP_SECONDS } from './videoTapAction.js';
+import { usePlayerSessionBinding } from '../../../../../screen-framework/publishers/usePlayerSessionBinding.js';
 import Icon from '../../icons/Icon.jsx';
 import usePauseMediaOnUnmount from './usePauseMediaOnUnmount.js';
 import useABLoop from './useABLoop.js';
@@ -35,6 +36,9 @@ export default function PianoVideoPlayer({ lecture, source, onBack, isSequential
   const playerRef = useRef(null);
   const ctrl = usePlayerController(playerRef);
   const { el: mediaEl, timedOut } = useResolvedMediaEl(playerRef);
+  // Fleet visibility: register this player so the tablet's DeviceStatePublisher
+  // reports live playing/paused state to the /media Devices view.
+  usePlayerSessionBinding(() => playerRef.current);
   usePauseMediaOnUnmount(mediaEl);
   // Belt-and-suspenders: also pause the live element/controller at unmount, in
   // case the engine swapped elements within the poll window before we left.

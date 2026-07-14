@@ -16,6 +16,7 @@ import { usePianoUser } from '../../PianoUserContext.jsx';
 import useReloadGuard from '../../useReloadGuard.js';
 import Icon from '../../icons/Icon.jsx';
 import { SkeletonStage } from '../../Skeleton.jsx';
+import { usePlayerSessionBinding } from '../../../../../screen-framework/publishers/usePlayerSessionBinding.js';
 
 // Player is heavy — code-split it so the menu/other modes don't pay for it.
 const Player = lazy(() => import('../../../../Player/Player.jsx'));
@@ -43,6 +44,9 @@ export default function SingalongPlayer({ lecture, source, onBack, startFresh = 
   const playerRef = useRef(null);
   const ctrl = usePlayerController(playerRef);
   const { el: mediaEl, timedOut } = useResolvedMediaEl(playerRef);
+  // Fleet visibility: register this player so the tablet's DeviceStatePublisher
+  // reports live playing/paused state to the /media Devices view.
+  usePlayerSessionBinding(() => playerRef.current);
   usePauseMediaOnUnmount(mediaEl);
   const ctrlPause = ctrl.pause;
   useEffect(() => () => {

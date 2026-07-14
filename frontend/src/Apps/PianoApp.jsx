@@ -28,6 +28,7 @@ import {
   usePianoPlayback,
 } from '../modules/Piano/PianoKiosk/PianoPlaybackContext.jsx';
 import { PianoChrome } from '../modules/Piano/PianoKiosk/PianoChrome.jsx';
+import { DeviceStatePublisher } from '../screen-framework/publishers/DeviceStatePublisher.jsx';
 import { PianoBreadcrumbProvider } from '../modules/Piano/PianoKiosk/PianoBreadcrumbContext.jsx';
 import { PianoSoundProvider } from '../modules/Piano/PianoKiosk/PianoSoundContext.jsx';
 import { PianoPresetProvider } from '../modules/Piano/PianoKiosk/usePianoPreset.js';
@@ -176,6 +177,19 @@ export function ConnectGate({ children }) {
  * sleep. Shares the wake-lock context with the modes below, so a playing video
  * still keeps the screen awake. Renders nothing.
  */
+/**
+ * Fleet visibility: publish this tablet's live device-state (idle / playing
+ * video / karaoke) so the /media Devices view shows it. Identity comes from
+ * the served config's screensaver.deviceId (yellow-room-tablet) — explicit,
+ * never inferred, so a laptop opening /piano can't impersonate the tablet.
+ * Mounted above <ConnectGate>, like ScreensaverDriver, so an idle tablet
+ * still reports. Player mounts register via usePlayerSessionBinding.
+ */
+function PianoFleetPublisher() {
+  const { config } = usePianoKioskConfig();
+  return <DeviceStatePublisher deviceId={config.screensaver?.deviceId ?? null} />;
+}
+
 function ScreensaverDriver() {
   const { config } = usePianoKioskConfig();
   const { activeNotes, noteHistory } = usePianoMidiNotes();
@@ -310,6 +324,7 @@ function ActivePiano({ pianoId: pianoIdProp, basePath: basePathProp }) {
           <PianoScreenControlProvider>
             <PianoPlaybackProvider>
               <ScreensaverDriver />
+              <PianoFleetPublisher />
               <ConnectGate>
                 <PianoMixProvider>
                   <PianoShell />
