@@ -47,6 +47,9 @@ export function normalizeScaleNutribotConfig(raw = {}) {
   return {
     minGrams: num(nb.min_grams, DEFAULT_MIN_GRAMS),
     editDeltaG: num(nb.edit_delta_g, 3),
+    baselineToleranceG: num(nb.baseline_tolerance_g, 6),
+    placementDeltaG: num(nb.placement_delta_g, 10),
+    expireMs: num(nb.expire_minutes, 3) * 60000,
     containers: {
       thresholdG: num(nb.containers?.threshold_g, DEFAULT_CONTAINERS.thresholdG),
       items,
