@@ -2629,6 +2629,13 @@
 .piano-score-parts { display: flex; align-items: center; gap: 0.3rem; flex-wrap: wrap; }
 
 // Shared button chrome for the bar (reset / run / keyboard / flow / size / info).
+// Hands / My-part segmented control (grand-staff fast path, audit J4).
+.piano-score-hands {
+  display: inline-flex; align-items: center; gap: 0.3rem;
+  &__label { font-size: 0.8rem; opacity: 0.7; margin-right: 0.15rem; }
+  &__opt { min-width: 2.6rem; }
+}
+
 .piano-score-btn {
   appearance: none; border: 1px solid rgba(255, 255, 255, 0.18);
   background: rgba(255, 255, 255, 0.06); color: var(--piano-stage-fg, #f3efe6);

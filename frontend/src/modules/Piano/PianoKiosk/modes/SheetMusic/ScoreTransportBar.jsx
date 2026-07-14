@@ -1,4 +1,5 @@
 import React, { useState, memo } from 'react';
+import HandsControl from './HandsControl.jsx';
 
 // Tab order: Listen · Learn · Polish · Perform.
 const MODES = [
@@ -135,6 +136,10 @@ const ScoreViewControls = memo(function ScoreViewControls({
   activeParts = {},
   roles = {},
   onCyclePart,
+  grandStaff = false,
+  handsVariant = 'hands',
+  handsValue = 'both',
+  onHandsChange,
   sections = [],
   focus = null,
   loopArm = false,
@@ -213,9 +218,9 @@ const ScoreViewControls = memo(function ScoreViewControls({
   return (
     <div className="piano-score-view">
       {hasParts && (
-        <div className="piano-score-parts">
-          {parts.map(renderPartChip)}
-        </div>
+        grandStaff
+          ? <HandsControl variant={handsVariant} value={handsValue} onChange={onHandsChange} />
+          : <div className="piano-score-parts">{parts.map(renderPartChip)}</div>
       )}
 
       {hasFocus && (
@@ -494,6 +499,10 @@ export default function ScoreTransportBar({
   activeParts,
   roles,
   onCyclePart,
+  grandStaff,
+  handsVariant,
+  handsValue,
+  onHandsChange,
   sections,
   focus,
   loopArm,
@@ -552,6 +561,10 @@ export default function ScoreTransportBar({
         activeParts={activeParts}
         roles={roles}
         onCyclePart={onCyclePart}
+        grandStaff={grandStaff}
+        handsVariant={handsVariant}
+        handsValue={handsValue}
+        onHandsChange={onHandsChange}
         sections={sections}
         focus={focus}
         loopArm={loopArm}
