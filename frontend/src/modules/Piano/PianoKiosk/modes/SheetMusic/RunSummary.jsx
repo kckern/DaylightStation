@@ -1,4 +1,5 @@
 import React from 'react';
+import { tallyGrades } from './gradeTally.js';
 
 const OVERALL_LABEL = { green: 'Nicely done', yellow: 'Getting there', red: 'Keep at it' };
 
@@ -15,17 +16,11 @@ const OVERALL_LABEL = { green: 'Nicely done', yellow: 'Getting there', red: 'Kee
  * @param {Function} p.onClose
  * @param {Function} p.onReplay
  */
-export default function RunSummary({ open, grades = {}, measures = [], onClose, onReplay }) {
+export default function RunSummary({ open, grades = {}, measures = [], onClose, onReplay, drillable = false, onDrill }) {
   if (!open) return null;
 
-  const counts = { green: 0, yellow: 0, red: 0 };
-  for (const g of Object.values(grades)) {
-    if (g?.grade && counts[g.grade] != null) counts[g.grade] += 1;
-  }
-  // Overall: greens win ties, then reds over yellows (a harsher read).
-  const overall = counts.green >= counts.yellow && counts.green >= counts.red
-    ? 'green'
-    : counts.red >= counts.yellow ? 'red' : 'yellow';
+  const counts = tallyGrades(grades);
+  const overall = counts.overall;
 
   return (
     <div className="piano-score-run-summary" role="dialog" aria-label="Run summary">
@@ -52,6 +47,9 @@ export default function RunSummary({ open, grades = {}, measures = [], onClose, 
       </div>
 
       <div className="piano-score-run-actions">
+        {drillable && (
+          <button type="button" className="piano-score-btn piano-score-run-drill" onClick={onDrill}>Drill worst section</button>
+        )}
         <button type="button" className="piano-score-btn piano-score-run-replay" onClick={onReplay}>Replay</button>
         <button type="button" className="piano-score-btn piano-score-run-close" onClick={onClose}>Close</button>
       </div>

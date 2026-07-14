@@ -277,8 +277,10 @@ export function extractEvents(osmd) {
   const cursor = osmd.cursor;
   if (!cursor) return { events: [], notes: [], tempoEntries: [], steps: [], measures: [] };
   const walk = makeCursorWalk(osmd);
+  const cursorEl = cursor.cursorElement;
   try {
     cursor.show(); // geometry only updates while the cursor is visible
+    if (cursorEl?.style) cursorEl.style.visibility = 'hidden'; // OSMD needs show() for geometry; the user doesn't need the sweep (audit H0)
     cursor.reset();
     let guard = 0;
     while (!cursor.Iterator.EndReached && guard++ < 50000) {
@@ -286,6 +288,7 @@ export function extractEvents(osmd) {
       cursor.next();
     }
   } finally {
+    if (cursorEl?.style) cursorEl.style.visibility = '';
     try { cursor.reset(); cursor.hide(); } catch { /* already hidden */ }
   }
   return walk.finalize();
@@ -346,9 +349,11 @@ export async function extractLayoutSliced(osmd, opts = {}) {
 
   let done = 0;
   let sliceStart = performance.now();
+  const cursorEl = cursor.cursorElement;
   try {
     if (shouldAbort()) return null;
     cursor.show(); // geometry only updates while the cursor is visible
+    if (cursorEl?.style) cursorEl.style.visibility = 'hidden'; // OSMD needs show() for geometry; the user doesn't need the sweep (audit H0)
     cursor.reset();
     let guard = 0;
     while (!cursor.Iterator.EndReached && guard++ < 50000) {
@@ -363,6 +368,7 @@ export async function extractLayoutSliced(osmd, opts = {}) {
       }
     }
   } finally {
+    if (cursorEl?.style) cursorEl.style.visibility = '';
     try { cursor.reset(); cursor.hide(); } catch { /* already hidden */ }
   }
   onProgress?.(1);

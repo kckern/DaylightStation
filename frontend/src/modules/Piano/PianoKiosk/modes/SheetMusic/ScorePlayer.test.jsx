@@ -88,10 +88,48 @@ beforeEach(() => {
   h.sendNoteAt.mockClear(); h.sendNoteOffAt.mockClear();
 });
 
+// Scores now open in Listen (default). The Learn tests select Learn first.
+const enterLearn = () => act(() => { screen.getByText('Learn').click(); });
+
+describe('ScorePlayer — default mode', () => {
+  it('opens in Listen (defaultMode), not Learn (J2)', () => {
+    renderPlayer();
+    expect(screen.getByRole('tab', { name: /listen/i })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByRole('tab', { name: /learn/i })).toHaveAttribute('aria-selected', 'false');
+  });
+});
+
+describe('ScorePlayer — keyboard visibility policy (M2)', () => {
+  it('Listen hides the keyboard until the user plays a part; Learn shows it', async () => {
+    renderPlayer(); // opens in Listen, My part = None
+    await act(async () => {});
+    expect(document.querySelector('.piano-score-player__keys')).toBeNull(); // hidden (no part)
+    act(() => { fireEvent.click(screen.getByRole('radio', { name: 'RH' })); }); // My part = RH
+    expect(document.querySelector('.piano-score-player__keys')).not.toBeNull(); // now shown
+    act(() => { screen.getByText('Learn').click(); }); // Learn auto-shows the keyboard
+    expect(document.querySelector('.piano-score-player__keys')).not.toBeNull();
+  });
+});
+
+describe('ScorePlayer — per-score persistence (Task 2.5)', () => {
+  beforeEach(() => { try { window.localStorage.clear(); } catch { /* no storage */ } });
+  const score = { id: 'files:persist.musicxml', title: 'P', musicXml: '<score/>' };
+  const renderScore = () => render(<MemoryRouter><ScorePlayer score={score} /></MemoryRouter>);
+
+  it('restores the last-used mode for a given score id', () => {
+    const { unmount } = renderScore();
+    act(() => { screen.getByText('Learn').click(); }); // change away from the default (Listen)
+    unmount();
+    renderScore();
+    expect(screen.getByRole('tab', { name: /learn/i })).toHaveAttribute('aria-selected', 'true');
+  });
+});
+
 describe('ScorePlayer — Learn mode (full-hand, simulated MIDI input)', () => {
 
   it('advances only when every active-staff note of the step is struck', () => {
     renderPlayer();
+    enterLearn();
 
     // Layout reported 4 onsets; cursor starts at the first.
     expect(screen.getByText('1 / 4')).toBeTruthy();
@@ -117,14 +155,54 @@ describe('ScorePlayer — Learn mode (full-hand, simulated MIDI input)', () => {
 
   it('does not advance past the end on extra notes', () => {
     renderPlayer();
+    enterLearn();
     for (const n of [64, 52, 40, 62, 60, 62, 64, 64, 64]) play(n);
     expect(screen.getByText('4 / 4')).toBeTruthy();
+  });
+
+  it('shows the Learn completion card once the final step is satisfied (M5)', () => {
+    renderPlayer();
+    enterLearn();
+    expect(document.querySelector('.piano-score-learn-complete')).toBeNull();
+    for (const n of [64, 52, 40, 62, 60, 62]) play(n); // satisfy all four onsets incl. the last
+    expect(document.querySelector('.piano-score-learn-complete')).not.toBeNull();
+  });
+});
+
+describe('ScorePlayer — practice range persistence (J3)', () => {
+  it('carries the focus range across Learn↔Polish but clears it leaving for Listen', () => {
+    h.layoutExtras = {
+      steps: [
+        { onsetQuarter: 0, measure: 0, notes: [{ midi: 64, staff: 0, x: 100, top: 10, bottom: 200, width: 8 }] },
+        { onsetQuarter: 1, measure: 1, notes: [{ midi: 62, staff: 0, x: 160, top: 10, bottom: 200, width: 8 }] },
+      ],
+      measures: [
+        { index: 0, number: 1, firstStep: 0, lastStep: 0 },
+        { index: 1, number: 2, firstStep: 1, lastStep: 1 },
+      ],
+    };
+    renderPlayer();
+    enterLearn();
+    // Guided selection: Practice → Select measures… → two taps set a custom range.
+    act(() => { fireEvent.click(screen.getByRole('button', { name: /practice:/i })); });
+    act(() => { fireEvent.click(screen.getByRole('button', { name: /select measures/i })); });
+    act(() => { document.querySelector('.piano-score-player__scroll').click(); }); // first tap → measure 0
+    act(() => { document.querySelector('.piano-score-player__scroll').click(); }); // second tap → range set
+    // The Practice trigger now shows a measure-span scope (not "Whole piece").
+    expect(screen.getByRole('button', { name: /practice: m1/i })).toBeInTheDocument();
+    // Switch to Polish — range must persist.
+    act(() => { screen.getByText('Polish').click(); });
+    expect(screen.getByRole('button', { name: /practice: m1/i })).toBeInTheDocument();
+    // Switch to Listen — the Practice control is gone (range released).
+    act(() => { screen.getByText('Listen').click(); });
+    expect(screen.queryByRole('button', { name: /practice:/i })).toBeNull();
   });
 });
 
 describe('ScorePlayer — Learn mode chord tolerance (audit B2)', () => {
   it('does not flash wrong for accompaniment notes that belong to the current onset', () => {
     renderPlayer();
+    enterLearn();
     play(52); // LH note of the current onset — a correct hit, no advance, NO flash
     expect(document.querySelector('.piano-score-cursor.is-wrong')).toBeNull();
     expect(screen.getByText('1 / 4')).toBeTruthy();
@@ -145,7 +223,7 @@ describe('ScorePlayer — stale-layout overlay guard (Task 9)', () => {
 
     // Tap the Size stepper's 125% step → the mock re-fires onLayout with scale
     // 1.25, which now MATCHES the player's scale → layout is fresh → cursor appears.
-    fireEvent.click(screen.getByRole('button', { name: /^size/i }));
+    fireEvent.click(screen.getByRole('button', { name: /view options/i }));
     fireEvent.click(screen.getByRole('button', { name: '125%' }));
     await act(async () => {});
     expect(document.querySelector('.piano-score-cursor')).not.toBeNull(); // fresh → shown
@@ -202,6 +280,7 @@ describe('ScorePlayer — Polish mode (transport-driven)', () => {
     await act(async () => {});
     screen.getByText('▶').click();
     await act(async () => {});
+    act(() => vi.advanceTimersByTime(4100)); // through the 4-beat @60 count-in (4000ms) → transport starts
 
     act(() => vi.advanceTimersByTime(1050)); // 1st quarter @60 = 1000ms
     expect(screen.getByText('2 / 4')).toBeTruthy();
@@ -209,6 +288,53 @@ describe('ScorePlayer — Polish mode (transport-driven)', () => {
     expect(screen.getByText('3 / 4')).toBeTruthy();
     act(() => vi.advanceTimersByTime(550)); // 3rd quarter @120 = 500ms
     expect(screen.getByText('4 / 4')).toBeTruthy();
+  });
+
+  it('Play starts a count-in before the transport moves, then advances (J1)', async () => {
+    h.layoutExtras = { tempoEntries: [{ onsetQuarter: 0, bpm: 60 }] }; // count-in 4 beats @60 = 4000ms
+    renderPlayer();
+    screen.getByText('Polish').click();
+    await act(async () => {});
+    screen.getByText('▶').click();
+    await act(async () => {});
+    expect(document.querySelector('.piano-score-countin')).not.toBeNull(); // counting in
+    expect(screen.getByText('1 / 4')).toBeTruthy();
+    act(() => vi.advanceTimersByTime(3000)); // still within the 4000ms count-in
+    expect(screen.getByText('1 / 4')).toBeTruthy(); // transport not started yet
+    act(() => vi.advanceTimersByTime(1100)); // past 4000ms → count-in done → play
+    expect(document.querySelector('.piano-score-countin')).toBeNull();
+    act(() => vi.advanceTimersByTime(1050)); // first quarter @60 = 1000ms
+    expect(screen.getByText('2 / 4')).toBeTruthy();
+  });
+
+  it('tapping during the count-in cancels it (transport never starts) (J1)', async () => {
+    h.layoutExtras = { tempoEntries: [{ onsetQuarter: 0, bpm: 60 }] };
+    renderPlayer();
+    screen.getByText('Polish').click();
+    await act(async () => {});
+    screen.getByText('▶').click();
+    await act(async () => {});
+    expect(document.querySelector('.piano-score-countin')).not.toBeNull();
+    act(() => { document.querySelector('.piano-score-player__scroll').click(); }); // tap = abort
+    await act(async () => {});
+    expect(document.querySelector('.piano-score-countin')).toBeNull();
+    act(() => vi.advanceTimersByTime(6000));
+    expect(screen.getByText('1 / 4')).toBeTruthy(); // never advanced
+  });
+
+  it('opens the RunSummary when a Polish run completes, grading the final measure (H1)', async () => {
+    h.layoutExtras = { tempoEntries: [{ onsetQuarter: 0, bpm: 120 }] }; // fast so the run ends quickly
+    renderPlayer();
+    screen.getByText('Polish').click();
+    await act(async () => {});
+    screen.getByText('▶').click();
+    await act(async () => {});
+    act(() => vi.advanceTimersByTime(2100)); // through the 4-beat @120 count-in (2000ms)
+    // Play the 4 onsets' expected notes so the final measure isn't silent, and run to the end.
+    act(() => { [64, 52, 40, 62, 60, 62].forEach((n) => h.noteCb?.({ type: 'note_on', note: n, velocity: 80 })); });
+    act(() => vi.advanceTimersByTime(4000)); // past all onsets → onDone
+    // Summary panel appears on completion (not only on silent-stop).
+    expect(document.querySelector('.piano-score-run-summary')).not.toBeNull();
   });
 });
 
@@ -244,6 +370,43 @@ describe('ScorePlayer — Listen mode', () => {
     screen.getByText('❚❚').click(); // pause mid-note
     await act(async () => {});
     expect(h.sendPanic).toHaveBeenCalled(); // no droning chord
+  });
+
+  it('does NOT perform staves the user marked as their own — roles route audio (H5)', async () => {
+    h.layoutExtras = {
+      tempoEntries: [{ onsetQuarter: 0, bpm: 60 }],
+      notes: [
+        { midi: 64, staff: 0, onsetQuarter: 0, durationQuarters: 1 }, // RH
+        { midi: 40, staff: 1, onsetQuarter: 0, durationQuarters: 4 }, // LH
+      ],
+    };
+    renderPlayer();
+    screen.getByText('Listen').click();
+    await act(async () => {});
+    fireEvent.click(screen.getByRole('radio', { name: 'RH' })); // My part = RH: the user plays staff 0, kiosk must NOT
+    await act(async () => {});
+    screen.getByText('▶').click();
+    await act(async () => {});
+    act(() => vi.advanceTimersByTime(4100)); // My part is set → count-in (4 beats @60) runs first
+    act(() => vi.advanceTimersByTime(100));  // then the kiosk performs
+    expect(h.sendNoteAt).toHaveBeenCalledWith(40, expect.any(Number), expect.any(Number)); // LH still performed
+    expect(h.sendNoteAt).not.toHaveBeenCalledWith(64, expect.any(Number), expect.any(Number)); // RH (yours) NOT performed
+  });
+
+  it('Listen counts the user in only when they play a part (J7)', async () => {
+    h.layoutExtras = { tempoEntries: [{ onsetQuarter: 0, bpm: 60 }] };
+    renderPlayer();
+    screen.getByText('Listen').click();
+    await act(async () => {});
+    // My part = None → Play starts immediately (no count-in overlay).
+    screen.getByText('▶').click();
+    await act(async () => {});
+    expect(document.querySelector('.piano-score-countin')).toBeNull();
+    // Reset, claim a part, play again → count-in now runs.
+    act(() => { fireEvent.click(screen.getByRole('radio', { name: 'RH' })); });
+    // (a fresh Play after the timeline change)
+    if (screen.queryByText('▶')) { screen.getByText('▶').click(); await act(async () => {}); }
+    expect(document.querySelector('.piano-score-countin')).not.toBeNull();
   });
 
   it('sends scheduled notes with timestamps (audio plane), not pressNote', async () => {
@@ -323,13 +486,12 @@ describe('ScorePlayer — Listen mode', () => {
     expect(screen.getByText('2 / 4')).toBeTruthy();
   });
 
-  it('play-along lights a correctly-struck note without advancing (non-gating)', async () => {
+  it('Listen light-up is always on: a correct strike lights without advancing (non-gating)', async () => {
     renderPlayer();
     screen.getByText('Listen').click();
     await act(async () => {});
-    fireEvent.click(screen.getByRole('button', { name: /play along/i }));
-    await act(async () => {});
-    // Struck the top note of the current (first) onset — lights, never advances.
+    // No toggle — light-up is unconditional in Listen (J5). Struck the top note of
+    // the current (first) onset → lights, never advances.
     play(64);
     expect(screen.getByText('1 / 4')).toBeTruthy(); // cursor unchanged (non-gating)
     // A note NOT expected here does nothing (no advance, no throw).
@@ -337,7 +499,7 @@ describe('ScorePlayer — Listen mode', () => {
     expect(screen.getByText('1 / 4')).toBeTruthy();
   });
 
-  it('keeps part roles across a re-engrave (zoom must not wipe You/Mute)', async () => {
+  it('keeps My-part selection across a re-engrave (zoom must not wipe it)', async () => {
     h.layoutExtras = { notes: [
       { midi: 64, staff: 0, onsetQuarter: 0, durationQuarters: 1 },
       { midi: 40, staff: 1, onsetQuarter: 0, durationQuarters: 4 },
@@ -345,14 +507,33 @@ describe('ScorePlayer — Listen mode', () => {
     renderPlayer();
     screen.getByText('Listen').click();
     await act(async () => {});
-    screen.getByText('RH: Play').click(); // RH → You
+    fireEvent.click(screen.getByRole('radio', { name: 'RH' })); // My part = RH
     await act(async () => {});
-    expect(screen.getByText('RH: You')).toBeTruthy();
+    expect(screen.getByRole('radio', { name: 'RH' })).toHaveAttribute('aria-checked', 'true');
     // Zoom via the Size stepper → re-engrave (fresh layout.notes identity).
-    fireEvent.click(screen.getByRole('button', { name: /^size/i }));
+    fireEvent.click(screen.getByRole('button', { name: /view options/i }));
     fireEvent.click(screen.getByRole('button', { name: '125%' }));
     await act(async () => {});
-    expect(screen.getByText('RH: You')).toBeTruthy(); // role preserved, not reset to Play
+    expect(screen.getByRole('radio', { name: 'RH' })).toHaveAttribute('aria-checked', 'true'); // preserved
+  });
+
+  it('a mid-run view change (transpose) pauses playback so sheet & sound cannot diverge (H2)', async () => {
+    h.layoutExtras = {
+      tempoEntries: [{ onsetQuarter: 0, bpm: 60 }],
+      notes: [{ midi: 40, staff: 1, onsetQuarter: 0, durationQuarters: 8 }],
+    };
+    renderPlayer();
+    screen.getByText('Listen').click();
+    await act(async () => {});
+    screen.getByText('▶').click(); // My part = None → plays immediately
+    await act(async () => {});
+    act(() => vi.advanceTimersByTime(100));
+    expect(screen.getByText('❚❚')).toBeTruthy(); // playing
+    h.sendPanic.mockClear();
+    act(() => { fireEvent.click(screen.getByRole('button', { name: /transpose up/i })); });
+    await act(async () => {});
+    expect(h.sendPanic).toHaveBeenCalled(); // silenced on the view change
+    expect(screen.getByText('▶')).toBeTruthy(); // paused
   });
 
   it('silences sounding notes on tap-seek in Play mode (no stuck note)', async () => {

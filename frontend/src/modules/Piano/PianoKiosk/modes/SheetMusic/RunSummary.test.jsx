@@ -29,4 +29,18 @@ describe('RunSummary', () => {
     fireEvent.click(screen.getByRole('button', { name: /close/i }));
     expect(onClose).toHaveBeenCalled();
   });
+
+  it('shows Drill worst section only when drillable, and fires onDrill (J6)', () => {
+    const onDrill = vi.fn();
+    const { rerender } = render(
+      <RunSummary open grades={grades} measures={measures} onClose={() => {}} onReplay={() => {}} drillable onDrill={onDrill} />,
+    );
+    fireEvent.click(screen.getByRole('button', { name: /drill worst section/i }));
+    expect(onDrill).toHaveBeenCalled();
+    // Not drillable (all green) → no button.
+    rerender(
+      <RunSummary open grades={{ 0: { grade: 'green' } }} measures={measures} onClose={() => {}} onReplay={() => {}} drillable={false} onDrill={onDrill} />,
+    );
+    expect(screen.queryByRole('button', { name: /drill worst section/i })).toBeNull();
+  });
 });

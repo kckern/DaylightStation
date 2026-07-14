@@ -11,21 +11,29 @@ import useReloadGuard from '../../useReloadGuard.js';
 import { buildTempoMap, buildStepTimeline, scaleTimeline } from '../../../../MusicNotation/scoreTimeline.js';
 import { useScoreTransport } from './useScoreTransport.js';
 import { tweenScrollTo, cancelScrollTween } from './scrollTween.js';
-import { partsOf, cyclePart, buildPlayTimeline, youMidisAt, allPlayRoles } from './playParts.js';
+import { partsOf, cyclePart, buildPlayTimeline, youMidisAt } from './playParts.js';
 import { staffLabels, defaultActiveParts, expectedMidisAtStep } from './activeParts.js';
 import { rangeSteps, clampStepToRange, sectionToRange } from './focusRange.js';
 import useFollowTracker from './useFollowTracker.js';
 import useMetronomeClick from './useMetronomeClick.js';
+import useCountIn from './useCountIn.js';
+import { countInPlan } from './countIn.js';
 import useScoreTelemetry from './useScoreTelemetry.js';
 import useScoreEvaluator from './useScoreEvaluator.js';
 import { resolveSheetMusicConfig } from './sheetMusicConfig.js';
+import { tallyGrades } from './gradeTally.js';
+import { worstSpan } from './worstSpan.js';
+import { loadScoreSettings, saveScoreSettings } from './scoreSettings.js';
 import { isRisingEdge } from './pedalEdge.js';
+import { keyLabel } from './keyLabel.js';
 import ScoreTransportBar from './ScoreTransportBar.jsx';
 import NoteHighlightLayer from './NoteHighlightLayer.jsx';
 import MeasureGradeLayer from './MeasureGradeLayer.jsx';
 import RunSummary from './RunSummary.jsx';
-
-const KEY_NAMES = { '-7': 'Cb', '-6': 'Gb', '-5': 'Db', '-4': 'Ab', '-3': 'Eb', '-2': 'Bb', '-1': 'F', 0: 'C', 1: 'G', 2: 'D', 3: 'A', 4: 'E', 5: 'B', 6: 'F#', 7: 'C#' };
+import CountInOverlay from './CountInOverlay.jsx';
+import LearnComplete from './LearnComplete.jsx';
+import FocusRangeLayer from './FocusRangeLayer.jsx';
+import SelectBanner from './SelectBanner.jsx';
 
 /** Nearest melody event to a click at renderer-local (x, y). */
 function nearestEvent(events, x, y) {
@@ -47,7 +55,7 @@ function nearestEvent(events, x, y) {
  *            noteheads light up (bouncing ball). It does NOT perform through
  *            the piano — it only lights the notes you should be playing.
  *  Listen  — the kiosk performs 'play' parts through the piano; 'you' parts are
- *            highlighted (never sent); 'mute' parts are silent.
+ *            highlighted (never sent) so the user plays them along with the kiosk.
  *  Perform — no awareness; config-defined pedals + tap-to-scroll turn the page.
  *
  * Chrome lives in a pinned bottom {@link ScoreTransportBar}; the top bar shows the
@@ -74,30 +82,50 @@ export default function ScorePlayer({ score: scoreMeta }) {
     title: scoreMeta.title || parsed?.title || 'Score',
     composer: parsed?.composer || null,
     tempo,
-    key: KEY_NAMES[parsed?.key?.fifths ?? 0] ? `${KEY_NAMES[parsed.key.fifths]} major` : null,
+    key: keyLabel(parsed?.key?.fifths ?? 0, parsed?.key?.mode),
     time: parsed ? `${parsed.timeSig.beats}/${parsed.timeSig.beatType}` : null,
     measures: parsed?.parts?.[0]?.measures?.length || 0,
   }), [scoreMeta.title, parsed, tempo]);
 
   usePianoBreadcrumb(useMemo(() => [{ label: meta.title }], [meta.title]));
 
+  // Resolved sheetmusic config (defaults filled). Hoisted above the mode state so
+  // the initial mode can come from `defaultMode` — the ladder starts at Listen.
+  const smCfg = useMemo(() => resolveSheetMusicConfig(config?.sheetmusic), [config]);
+  const VALID_MODES = ['listen', 'learn', 'polish', 'perform'];
+  // Per-score practice settings restored device-locally (mode/tempo/range/hands),
+  // so a walk-up user finds the piece the way they left it (Task 2.5).
+  const restored = useMemo(() => loadScoreSettings(scoreMeta.id), [scoreMeta.id]);
+
   const [layout, setLayout] = useState({ events: [], notes: [], steps: [], measures: [], tempoEntries: [], width: 0, height: 0, flow: null, scale: null });
   const [step, setStep] = useState(0);
-  const [mode, setMode] = useState('learn');
-  const [focus, setFocus] = useState(null); // Learn practice range: { kind, label?, inMeasure, outMeasure } (measure INDICES) | null = whole piece
-  const [loopArm, setLoopArm] = useState(false); // custom tap-range state machine armed
-  const loopInRef = useRef(null); // pending in-measure index while arming (first tap)
-  const [clickOn, setClickOn] = useState(false); // metronome-click toggle (separate from mode; scheduler wired later)
+  const [mode, setMode] = useState(() => {
+    const m = restored.mode;
+    return VALID_MODES.includes(m) ? m : (VALID_MODES.includes(smCfg.defaultMode) ? smCfg.defaultMode : 'learn');
+  });
+  const [focus, setFocus] = useState(() => { // Learn/Polish practice range (measure INDICES) | null = whole piece
+    const f = restored.focus;
+    return f && f.kind && Number.isInteger(f.inMeasure) && Number.isInteger(f.outMeasure) ? f : null;
+  });
+  // Guided measure-selection state machine (Practice → Select measures…):
+  //   null | { stage: 'first' } | { stage: 'last', inMeasure } (audit J5/M3)
+  const [selecting, setSelecting] = useState(null);
+  const [clickOn, setClickOn] = useState(true); // Polish metronome — on by default during runs
   const [flow, setFlow] = useState('wrapped');
   const [perfPage, setPerfPage] = useState({ page: 1, pages: 1 }); // Perform page indicator (1-based)
   const [scale, setScale] = useState(1);
   const [transpose, setTranspose] = useState(0); // Listen key transpose (semitones)
-  const [tempoMult, setTempoMult] = useState(1); // Listen tempo: 1 = written, 1.5 = 50% faster, 0.5 = half
-  const [playAlong, setPlayAlong] = useState(false); // Listen: light up your correctly-struck notes (non-gating)
+  const [tempoMult, setTempoMult] = useState(() => { // Listen/Polish tempo: 1 = written, 0.5 = half
+    const t = Number(restored.tempoMult);
+    return Number.isFinite(t) && t >= 0.25 && t <= 2 ? t : 1;
+  });
   const [wrong, setWrong] = useState(false);
   const [struck, setStruck] = useState(() => new Set());
-  const [keyboardVisible, setKeyboardVisible] = useState(true); // default mode is learn → shown
-  const [scoringOn, setScoringOn] = useState(true); // Polish: grade measures red/yellow/green
+  // Keyboard visibility is AUTO per mode (Learn/Polish shown; Perform hidden; Listen
+  // shown only when the user plays a part), with a remembered per-mode manual
+  // override (audit M2). kbTick just forces a re-render when the override changes.
+  const kbOverrideRef = useRef({}); // mode → explicit user choice (true/false)
+  const [kbTick, setKbTick] = useState(0);
   const [grades, setGrades] = useState({}); // measure INDEX → grade result (Polish scoring)
   const gradesRef = useRef(grades); gradesRef.current = grades; // latest grades for the run-summary log (onSilentStop closure)
   const [summaryOpen, setSummaryOpen] = useState(false); // Polish run summary panel
@@ -165,26 +193,45 @@ export default function ScorePlayer({ score: scoreMeta }) {
     [parts, staffSig], // eslint-disable-line react-hooks/exhaustive-deps
   );
 
-  const [roles, setRoles] = useState({});
-  const [activeParts, setActiveParts] = useState({});
+  // Listen "my part": the staves the user plays along with; the kiosk performs the
+  // rest. This is the single source for Listen roles (audit J4) — `roles` is derived
+  // (staff ∈ myStaves → 'you', else 'play'), replacing the old free-standing roles
+  // state. Restored per score.
+  const [myStaves, setMyStaves] = useState(() => new Set(Array.isArray(restored.myStaves) ? restored.myStaves : []));
+  const roles = useMemo(
+    () => Object.fromEntries(parts.map((p) => [p.staff, myStaves.has(p.staff) ? 'you' : 'play'])),
+    [parts, myStaves],
+  );
+
+  // Keyboard: auto per mode, with a remembered per-mode manual override (M2). Listen
+  // auto = shown only when the user plays a part (My part ≠ None). kbTick forces a
+  // read of the override ref after a toggle.
+  const AUTO_KB = { learn: true, polish: true, perform: false };
+  const autoKb = mode === 'listen' ? myStaves.size > 0 : (AUTO_KB[mode] ?? true);
+  const keyboardVisible = kbOverrideRef.current[mode] ?? autoKb; // eslint-disable-line no-unused-expressions
+  void kbTick; // keyboardVisible re-reads the override ref whenever kbTick bumps
+  // Restored active-part picks (which staves you play in Learn/Polish); the effect
+  // below preserves any staff present in `prev`, so seeding it restores the choice.
+  const [activeParts, setActiveParts] = useState(() => (
+    restored.activeParts && typeof restored.activeParts === 'object' ? restored.activeParts : {}
+  ));
   useEffect(() => {
-    setRoles((prev) => Object.fromEntries(parts.map((p) => [p.staff, prev[p.staff] || 'play'])));
     setActiveParts((prev) => {
       const dflt = defaultActiveParts(layout.notes);
       return Object.fromEntries(parts.map((p) => [p.staff, p.staff in prev ? prev[p.staff] : (dflt[p.staff] ?? true)]));
     });
   }, [staffSig]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Listen is a jukebox: the kiosk performs EVERY part (allPlayRoles), tempo-scaled
-  // by the user's multiplier (faster tempo → shorter durations → factor 1/tempoMult).
-  // Other modes keep their silent step timeline. Polish is scaled too so its tempo
-  // control (later task) tracks the same knob without further plumbing.
-  const listenRoles = useMemo(() => allPlayRoles(parts), [parts]);
+  // Listen performs the parts the user did NOT claim as their own: a staff set to
+  // 'you' is engraved + highlighted but never sent to the piano (the user plays it);
+  // 'play' staves are performed. Tempo-scaled by the user's multiplier (faster tempo
+  // → shorter durations → factor 1/tempoMult). Other modes keep their silent step
+  // timeline. Polish is scaled too so its tempo control tracks the same knob.
   const playTimeline = useMemo(
     () => (mode === 'listen'
-      ? scaleTimeline(buildPlayTimeline(events, layout.notes, tempoMap, listenRoles), 1 / tempoMult)
+      ? scaleTimeline(buildPlayTimeline(events, layout.notes, tempoMap, roles), 1 / tempoMult)
       : scaleTimeline(stepTimeline, 1 / tempoMult)),
-    [mode, events, layout.notes, tempoMap, listenRoles, stepTimeline, tempoMult],
+    [mode, events, layout.notes, tempoMap, roles, stepTimeline, tempoMult],
   );
 
   const soundingRef = useRef(new Set());
@@ -270,19 +317,38 @@ export default function ScorePlayer({ score: scoreMeta }) {
     // there — mark a run pending here too, so the unmount-flush guard still emits
     // a Polish run's stats when the view is left mid-run.
     onFire: (ev, driftMs, gapMs) => { pendingPlaybackRef.current = true; recordFire(ev, driftMs, gapMs, tempoMap[0]?.bpm); },
-    onDone: () => { if (mode === 'listen') silenceScheduled(); flushPlaybackNow(); logger.info('score.transport.done', { mode, steps: events.length }); },
+    onDone: () => {
+      if (mode === 'listen') silenceScheduled();
+      flushPlaybackNow();
+      // A Polish run that plays to the end must grade its final measure and show
+      // the summary — the reward for finishing, not only for giving up (audit H1).
+      if (mode === 'polish') { finalizeRef.current?.(); openRunSummaryRef.current?.(); }
+      logger.info('score.transport.done', { mode, steps: events.length });
+    },
   });
-  const running = transport.playing;
   const transportRef = useRef(null); transportRef.current = transport; // read latest transport inside the tick closure
 
-  // Metronome click (reference-only). Ticks in Learn at the piece's opening tempo
-  // and in Listen at the user-scaled tempo. It only plays a blip — it NEVER gates
-  // or advances the follow tracker/cursor (those are driven independently). Perform
-  // and Polish get no click from this toggle.
-  const clickBpm = (tempoMap[0]?.bpm || 90) * (mode === 'listen' ? tempoMult : 1);
+  // Count-in: one measure of click before a run where the user is expected to play
+  // (Polish always; Listen when they've claimed a part — wired in a later task). It
+  // must be audible BEFORE the transport is graded (audit J1). onGo seeks to the
+  // current cursor and starts playback; a tap on the score cancels it.
+  const countIn = useCountIn({
+    onGo: () => {
+      transportRef.current?.seek((stepTimeline[stepRef.current]?.t ?? 0) / tempoMult);
+      transportRef.current?.play();
+      logger.info('score.countin.go', { step: stepRef.current, mode });
+    },
+  });
+  // The run button reads "playing" during the count-in too, so a second tap can
+  // abort it (via onScoreClick) and the bar shows ⏸ rather than a dead ▶.
+  const running = transport.playing || countIn.active;
+
+  // Metronome click — Polish only, and only while the transport is actually
+  // running (the count-in supplies its own blips). Ticks at the run tempo. It NEVER
+  // gates or advances the cursor; it's a reference beat the graded run plays against.
   useMetronomeClick({
-    enabled: clickOn && (mode === 'learn' || mode === 'listen'),
-    bpm: clickBpm,
+    enabled: clickOn && mode === 'polish' && transport.playing,
+    bpm: (tempoMap[0]?.bpm || 90) * tempoMult,
   });
 
   const flashWrong = useCallback(() => {
@@ -295,11 +361,24 @@ export default function ScorePlayer({ score: scoreMeta }) {
   useReloadGuard(running);
   useEffect(() => { setGlobalPlaying(running); return () => setGlobalPlaying(false); }, [running, setGlobalPlaying]);
 
+  // Persist practice settings per score (device-local) whenever they change, so the
+  // piece reopens the way it was left (Task 2.5). Writes are tiny; cost is trivial.
+  useEffect(() => {
+    saveScoreSettings(scoreMeta.id, { mode, tempoMult, focus, activeParts, myStaves: [...myStaves] });
+  }, [scoreMeta.id, mode, tempoMult, focus, activeParts, myStaves]);
+
+  // A restored range references measure indices; drop it if the engraved score has
+  // fewer measures than it expects (the file may have changed since it was saved).
+  useEffect(() => {
+    const n = layout.measures?.length;
+    if (!focus || !n) return;
+    if (focus.inMeasure > n - 1 || focus.outMeasure > n - 1) setFocus(null);
+  }, [layout.measures]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // ── Polish scoring (at-tempo, per-measure grade) ──────────────────────────────
   // The cursor advances on the silent step timeline (no note_on for your parts);
   // MIDI hits are graded per measure. Timing drift is proxied by "ms after this
   // step's beat began" (stepStartRef) — a coarse but honest at-tempo lateness read.
-  const smCfg = useMemo(() => resolveSheetMusicConfig(config?.sheetmusic), [config]);
   const resolvedScoringCfg = smCfg.scoring;
   const currentMeasure = layout.steps?.[step]?.measure ?? 0;
   // stepStartRef is stamped in the transport's onEvent (musical due time), not
@@ -319,24 +398,22 @@ export default function ScorePlayer({ score: scoreMeta }) {
     setGrades((prev) => ({ ...prev, [g.measure]: g }));
     logMeasureGrade({ measure: g.measure, grade: g.grade, noteScore: g.noteScore, timingScore: g.timingScore });
   }, [logMeasureGrade]);
+  // Open the run summary + log the aggregate, using the shared tally (so the log
+  // and the panel headline can't drift). Used by BOTH the silent-stop and the
+  // completion path.
+  const openRunSummary = useCallback(() => {
+    setSummaryOpen(true);
+    const t = tallyGrades(gradesRef.current);
+    logRunSummary({ greens: t.green, yellows: t.yellow, reds: t.red, overall: t.overall });
+  }, [logRunSummary]);
   const onSilentStop = useCallback(() => {
     transport.pause();
-    setSummaryOpen(true);
     logger.info('score.polish.silent-stop', {});
-    // Run summary opens → log the aggregate (same tallying rule as RunSummary:
-    // greens win ties, then reds over yellows for the overall read).
-    const counts = { green: 0, yellow: 0, red: 0 };
-    for (const g of Object.values(gradesRef.current)) {
-      if (g?.grade && counts[g.grade] != null) counts[g.grade] += 1;
-    }
-    const overall = counts.green >= counts.yellow && counts.green >= counts.red
-      ? 'green'
-      : counts.red >= counts.yellow ? 'red' : 'yellow';
-    logRunSummary({ greens: counts.green, yellows: counts.yellow, reds: counts.red, overall });
-  }, [transport, logger, logRunSummary]);
+    openRunSummary();
+  }, [transport, logger, openRunSummary]);
 
-  useScoreEvaluator({
-    enabled: mode === 'polish' && scoringOn && running, // only while actually playing
+  const evaluator = useScoreEvaluator({
+    enabled: mode === 'polish' && transport.playing, // grade only during real playback
     cfg: resolvedScoringCfg,
     subscribe,
     currentMeasure,
@@ -345,10 +422,13 @@ export default function ScorePlayer({ score: scoreMeta }) {
     onMeasureGrade,
     onSilentStop,
   });
+  // onDone (below, in the transport) fires before this component re-renders, and
+  // the transport is defined above the evaluator — read finalize through a ref.
+  const finalizeRef = useRef(null); finalizeRef.current = evaluator.finalize;
+  const openRunSummaryRef = useRef(openRunSummary); openRunSummaryRef.current = openRunSummary;
 
   // Clear grades + summary when the score document changes or scoring is turned off.
-  useEffect(() => { setGrades({}); setSummaryOpen(false); }, [scoreMeta.musicXml]);
-  useEffect(() => { if (!scoringOn) { setGrades({}); setSummaryOpen(false); } }, [scoringOn]);
+  useEffect(() => { setGrades({}); setSummaryOpen(false); setLearnDone(false); }, [scoreMeta.musicXml]);
 
   // ── Learn mode: full-hand tracker (all active-staff notes → advance) ──────────
   const lastAdvanceRef = useRef(0);
@@ -375,6 +455,10 @@ export default function ScorePlayer({ score: scoreMeta }) {
   const [revealKeys, setRevealKeys] = useState(false);
   useEffect(() => { setRevealKeys(false); }, [step]);
   const onFollowWrong = useCallback(() => { flashWrong(); setRevealKeys(true); followWrongsRef.current += 1; }, [flashWrong]);
+  // End of piece in Learn: show the completion card (audit M5). Follow-timing stats
+  // still flush when the user leaves Learn / on unmount, so no flush is needed here.
+  const [learnDone, setLearnDone] = useState(false);
+  const onFollowComplete = useCallback(() => { setLearnDone(true); logger.info('score.learn.complete', {}); }, [logger]);
   useFollowTracker({
     enabled: mode === 'learn',
     steps,
@@ -384,6 +468,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
     onStep: onFollowStep,
     onHit: onFollowHit,
     onWrong: onFollowWrong,
+    onComplete: onFollowComplete,
     range, // wrap advancement within the practice range (null → linear)
   });
 
@@ -395,9 +480,10 @@ export default function ScorePlayer({ score: scoreMeta }) {
   // transport's per-step `struck` reset already clears these additions each step.
   const stepsRef = useRef(steps); stepsRef.current = steps;
   const activePartsRef = useRef(activeParts); activePartsRef.current = activeParts;
+  // Always on in Listen (no toggle — audit J5): a correct strike lights green. Never
+  // advances or blocks; the transport clock alone drives the cursor.
   useEffect(() => {
-    if (!(mode === 'listen' && playAlong) || !subscribe) return undefined;
-    logger.debug('score.listen.playalong', { on: true });
+    if (mode !== 'listen' || !subscribe) return undefined;
     return subscribe((evt) => {
       if (!evt || evt.type !== 'note_on' || !evt.velocity) return;
       const expected = expectedMidisAtStep(stepsRef.current?.[stepRef.current], activePartsRef.current || {});
@@ -405,7 +491,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
         setStruck((prev) => { const n = new Set(prev); n.add(evt.note); return n; });
       }
     });
-  }, [mode, playAlong, subscribe, logger]);
+  }, [mode, subscribe]);
 
   // Flush follow-timing stats when leaving Learn (and on unmount if still in it).
   const flushFollowNow = useCallback(() => {
@@ -507,6 +593,9 @@ export default function ScorePlayer({ score: scoreMeta }) {
     const el = scrollRef.current;
     const rdr = el?.querySelector('.musicxml-renderer');
     if (!el) return;
+    // A tap during the count-in aborts it (a change of mind before the run starts).
+    if (countIn.active) { countIn.cancel(); logger.info('score.countin.cancel', { via: 'tap' }); return; }
+    setLearnDone(false); // any tap-to-seek re-opens practice — close the completion card
     if (mode === 'perform') {
       const r = el.getBoundingClientRect();
       const dy = e.clientY - (r.top + el.clientHeight / 2);
@@ -518,19 +607,19 @@ export default function ScorePlayer({ score: scoreMeta }) {
     const r = rdr.getBoundingClientRect();
     const i = nearestEvent(events, e.clientX - r.left, e.clientY - r.top);
     if (i < 0) return;
-    // Custom-loop arming (Learn): the first tap sets the pending in-measure, the
-    // second sets the out-measure → a { inMeasure, outMeasure } range (ordered
-    // low→high). Arming taps set the bracket instead of seeking.
-    if (loopArm && mode === 'learn') {
+    // Guided measure selection (Learn/Polish): first tap sets the pending in-measure
+    // (a bracket appears + the banner asks for the last), the second sets the
+    // out-measure → an ordered { inMeasure, outMeasure } custom range. Selection taps
+    // set the range instead of seeking (audit J5/M3).
+    if (selecting) {
       const mi = measureIndexOfStep(i);
-      if (loopInRef.current == null) {
-        loopInRef.current = mi;
+      if (selecting.stage === 'first') {
+        setSelecting({ stage: 'last', inMeasure: mi });
         logger.info('score.focus.arm', { inMeasure: mi });
       } else {
-        const inMeasure = Math.min(loopInRef.current, mi);
-        const outMeasure = Math.max(loopInRef.current, mi);
-        loopInRef.current = null;
-        setLoopArm(false);
+        const inMeasure = Math.min(selecting.inMeasure, mi);
+        const outMeasure = Math.max(selecting.inMeasure, mi);
+        setSelecting(null);
         setFocus({ kind: 'custom', inMeasure, outMeasure });
       }
       return;
@@ -551,7 +640,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
     // Transport timeline is tempo-scaled (playTimeline uses factor 1/tempoMult);
     // seek positions come from the unscaled stepTimeline, so scale to match.
     transport.seek((stepTimeline[target]?.t ?? 0) / tempoMult);
-  }, [mode, flow, events, transport, stepTimeline, silenceScheduled, tempoMult, loopArm, range, measureIndexOfStep, logger]);
+  }, [mode, flow, events, transport, stepTimeline, silenceScheduled, tempoMult, selecting, range, measureIndexOfStep, logger, countIn]);
 
   // Single unmount teardown: immediate silence + one delayed panic (see the
   // silenceScheduled note above). One effect → order-independent by construction.
@@ -572,39 +661,50 @@ export default function ScorePlayer({ score: scoreMeta }) {
   const onPickSection = useCallback((section) => {
     const r = layout.measures ? sectionToRange(section, layout.measures) : null;
     if (!r) return;
-    setLoopArm(false); loopInRef.current = null;
+    setSelecting(null);
     setFocus({ kind: 'section', label: section.label, ...r });
   }, [layout.measures]);
 
-  // Toggle the custom-range tap state machine. Re-arming clears any pending first tap.
-  const onArmLoop = useCallback(() => {
-    loopInRef.current = null;
-    setLoopArm((v) => !v);
-  }, []);
+  // Begin the guided two-tap measure selection (from Practice → Select measures…).
+  const onStartSelect = useCallback(() => {
+    setSelecting({ stage: 'first' });
+    logger.info('score.focus.select-start', {});
+  }, [logger]);
+  const onCancelSelect = useCallback(() => setSelecting(null), []);
 
   const onClearFocus = useCallback(() => {
-    setLoopArm(false); loopInRef.current = null;
+    setSelecting(null);
     setFocus(null);
     logger.info('score.focus.clear', {});
   }, [logger]);
+  // Scope label for the Practice control: a section's label, a 1-based measure span,
+  // or "Whole piece" (indices are 0-based internally).
+  const scopeLabel = focus
+    ? (focus.label || `m${focus.inMeasure + 1}–m${focus.outMeasure + 1}`)
+    : 'Whole piece';
 
   // ── Bar handlers ──────────────────────────────────────────────────────────────
   const onMode = useCallback((id) => {
     if (id === mode) return;
+    countIn.cancel();            // a mode change aborts a pending count-in
+    setLearnDone(false);         // the Learn completion card belongs to Learn only
     flushPlaybackNow();          // leaving a Polish/Listen run
     if (mode === 'learn') flushFollowNow();
     transport.stop();
     silenceScheduled();
     setStruck(() => new Set());
-    // Focus is a Learn + Polish practice affordance — release it on any mode change
-    // so the range never bleeds into Listen/Perform (and starts clean on re-entry).
-    setFocus(null); setLoopArm(false); loopInRef.current = null;
+    // Focus is a Learn + Polish practice affordance. It CARRIES across the
+    // Learn↔Polish handoff — the whole point of the ladder ("drill slowly, then
+    // test at tempo"; audit J3) — but is released when leaving that pair for
+    // Listen/Perform so it never bleeds in. Loop-arming always resets.
+    const PRACTICE_PAIR = ['learn', 'polish'];
+    if (!(PRACTICE_PAIR.includes(mode) && PRACTICE_PAIR.includes(id))) setFocus(null);
+    setSelecting(null);
     // Leaving Polish: drop the run summary + grades (they belong to that run).
     setSummaryOpen(false); setGrades({});
-    setKeyboardVisible(id !== 'perform');
-    setMode(id);
+    setMode(id); // keyboard visibility follows the new mode automatically (M2)
     logMode({ mode: id });
-  }, [mode, flushPlaybackNow, flushFollowNow, transport, silenceScheduled, logMode]);
+  }, [mode, flushPlaybackNow, flushFollowNow, transport, silenceScheduled, logMode, countIn]);
 
   // Listen tempo: clamp to a sane playable range (0.25×–2×). Timeline rescales via
   // the playTimeline memo; the transport reads the new timings on its next tick.
@@ -613,17 +713,35 @@ export default function ScorePlayer({ score: scoreMeta }) {
     setTempoMult(Number.isFinite(n) ? Math.min(2, Math.max(0.25, n)) : 1);
   }, []);
 
+  // A zoom / flow / transpose change re-engraves, and while the transport is running
+  // the geometry extraction is DEFERRED (holdExtraction) — so the sheet would repaint
+  // in the new key/size while the audio kept playing the stale one and the cursor
+  // vanished (audit H2). Pause + flush first so sound and sheet never diverge.
+  const pauseForViewChange = useCallback(() => {
+    if (!transportRef.current?.playing) return;
+    transport.pause();
+    silenceScheduled();
+    flushPlaybackNow();
+    logger.info('score.viewchange.pause', {});
+  }, [transport, silenceScheduled, flushPlaybackNow, logger]);
+
   // Listen key transpose: clamp to ±7 semitones (one fifth either way). The renderer
   // re-engraves in the new key and re-extracts pitches, so both the notation and the
   // performed/highlighted notes move together.
   const onTranspose = useCallback((v) => {
+    pauseForViewChange();
     const n = Math.round(Number(v));
     const clamped = Number.isFinite(n) ? Math.min(7, Math.max(-7, n)) : 0;
     setTranspose(clamped);
     logTranspose({ semitones: clamped });
-  }, [logTranspose]);
+  }, [logTranspose, pauseForViewChange]);
+
+  // Zoom (Size) — pause a running transport before the re-engrave (H2).
+  const onScaleStep = useCallback((v) => { pauseForViewChange(); setScale(v); }, [pauseForViewChange]);
 
   const reset = useCallback(() => {
+    countIn.cancel();       // reset aborts a pending count-in
+    setLearnDone(false);    // fresh pass — close the completion card
     transport.stop();
     if (mode === 'listen') silenceScheduled();
     flushPlaybackNow();
@@ -632,24 +750,46 @@ export default function ScorePlayer({ score: scoreMeta }) {
     setGrades({});          // a fresh run clears the previous grades…
     setSummaryOpen(false);  // …and closes any open summary
     scrollRef.current?.scrollTo({ top: 0, left: 0 });
-  }, [transport, mode, silenceScheduled, flushPlaybackNow]);
+  }, [transport, mode, silenceScheduled, flushPlaybackNow, countIn]);
 
   // Run summary Replay: reset the run (clears grades + closes the panel).
   const onReplaySummary = useCallback(() => { reset(); }, [reset]);
   const onCloseSummary = useCallback(() => setSummaryOpen(false), []);
 
+  // Learn completion card actions: another pass (reset, stay in Learn) or move up
+  // the ladder to Polish (any practice range carries via J3).
+  const onLearnReplay = useCallback(() => { setLearnDone(false); setStep(0); setStruck(() => new Set()); scrollRef.current?.scrollTo({ top: 0, left: 0 }); }, []);
+  const onLearnPolish = useCallback(() => { setLearnDone(false); onMode('polish'); }, [onMode]);
+
+  // Run summary "Drill worst section": set the practice range to the heaviest
+  // trouble span and drop into Learn to work it slowly (audit J6). Switch mode
+  // FIRST (learn↔polish keeps focus per J3), then set the range so it survives.
+  const onDrillWorst = useCallback(() => {
+    const span = worstSpan(gradesRef.current);
+    if (!span) return;
+    setSummaryOpen(false);
+    onMode('learn');
+    setFocus({ kind: 'custom', ...span });
+    logger.info('score.drill.worst', span);
+  }, [onMode, logger]);
+  // The Drill button only makes sense when there's a trouble span to drill.
+  const drillable = useMemo(() => worstSpan(grades) != null, [grades]);
+
   // Stable toggles for the transport bar. Passing fresh inline arrows here would
   // defeat React.memo on the bar's expensive body (parts/chips/popovers), so the
   // whole bar would reconcile on every cursor-step advance. Functional updaters →
   // empty deps → stable identity → the memoized body bails per step.
-  const onToggleFlow = useCallback(() => setFlow((f) => (f === 'wrapped' ? 'horizontal' : 'wrapped')), []);
-  const onTogglePlayAlong = useCallback(() => setPlayAlong((v) => !v), []);
-  const onToggleKeyboard = useCallback(() => setKeyboardVisible((v) => !v), []);
+  const onToggleFlow = useCallback(() => { pauseForViewChange(); setFlow((f) => (f === 'wrapped' ? 'horizontal' : 'wrapped')); }, [pauseForViewChange]);
+  const onToggleKeyboard = useCallback(() => {
+    kbOverrideRef.current[mode] = !keyboardVisible; // remember the explicit choice for THIS mode
+    setKbTick((t) => t + 1);
+  }, [mode, keyboardVisible]);
   const onToggleClick = useCallback(() => setClickOn((v) => !v), []);
-  const onToggleScoring = useCallback(() => setScoringOn((v) => !v), []);
 
   const toggleRun = useCallback(() => {
-    if (running) {
+    // A second tap during the count-in aborts it (never reaches the transport).
+    if (countIn.active) { countIn.cancel(); logger.info('score.countin.cancel', { via: 'toggle' }); return; }
+    if (transport.playing) {
       transport.pause();
       if (mode === 'listen') silenceScheduled();
       flushPlaybackNow();
@@ -660,24 +800,37 @@ export default function ScorePlayer({ score: scoreMeta }) {
       // (toggleRun is the only resume entry point; reset()/onDone stop the
       // transport first, so their pending panic is harmless.)
       clearTimeout(flushTimerRef.current);
-      transport.seek((stepTimeline[stepRef.current]?.t ?? 0) / tempoMult);
-      transport.play();
-      logger.info('score.transport.play', { step: stepRef.current, mode, bpm: tempoMap[0]?.bpm, tempoMult });
+      // Count the user in when they're expected to PLAY: Polish always (the beat is
+      // graded — audit J1), and Listen when they've claimed a part (audit J7). onGo
+      // starts the transport. Pure playback (Listen, no part) plays immediately.
+      const countUserIn = mode === 'polish' || (mode === 'listen' && myStaves.size > 0);
+      if (countUserIn) {
+        countIn.start(countInPlan({ beats: parsed?.timeSig?.beats, bpm: tempoMap[0]?.bpm, tempoMult }));
+        logger.info('score.countin.start', { mode, beats: parsed?.timeSig?.beats, bpm: tempoMap[0]?.bpm, tempoMult });
+      } else {
+        transport.seek((stepTimeline[stepRef.current]?.t ?? 0) / tempoMult);
+        transport.play();
+        logger.info('score.transport.play', { step: stepRef.current, mode, bpm: tempoMap[0]?.bpm, tempoMult });
+      }
     }
     // NOTE: reads the live cursor via `stepRef.current` (mirrors `step`), NOT the
-    // `step` closure — so `step` is deliberately OUT of the dep array. That keeps
-    // `toggleRun` referentially stable across cursor-step advances, letting the
-    // memoized ScoreTransportButtons bail per step during playback.
-  }, [running, transport, mode, silenceScheduled, flushPlaybackNow, logger, stepTimeline, tempoMap, tempoMult]);
+    // `step` closure — so `step` is deliberately OUT of the dep array.
+  }, [countIn, transport, mode, myStaves, silenceScheduled, flushPlaybackNow, logger, stepTimeline, tempoMap, tempoMult, parsed]);
+
+  // Changing the Listen role map mid-flight invalidates the note timeline — pause,
+  // flush, and silence so a stale schedule doesn't drone. Shared by the chip
+  // fallback and the My-part control.
+  const disruptListenPlayback = useCallback(() => {
+    if (transportRef.current?.playing) { transport.pause(); flushPlaybackNow(); }
+    silenceScheduled();
+  }, [transport, flushPlaybackNow, silenceScheduled]);
 
   const onCyclePart = useCallback((staff) => {
     if (mode === 'listen') {
-      const role = roles[staff] || 'play';
-      const next = cyclePart(role);
-      setRoles((r) => ({ ...r, [staff]: next }));
-      if (running) { transport.pause(); flushPlaybackNow(); }
-      silenceScheduled(); // role change invalidates the note timeline mid-flight
-      logger.info('score.listen.part', { staff, role: next });
+      // Toggle this staff's membership in "my part" (you ↔ kiosk). >2-staff chip path.
+      setMyStaves((prev) => { const n = new Set(prev); if (n.has(staff)) n.delete(staff); else n.add(staff); return n; });
+      disruptListenPlayback();
+      logger.info('score.listen.part', { staff, mine: !myStaves.has(staff) });
     } else {
       // Learn needs ≥1 active staff or the all-notes rule can never be satisfied
       // (the cursor would deadlock). Refuse to turn off the last active staff.
@@ -686,13 +839,35 @@ export default function ScorePlayer({ score: scoreMeta }) {
       setActiveParts((a) => ({ ...a, [staff]: !a[staff] }));
       logger.info('score.active-part', { staff, on: !activeParts[staff] });
     }
-  }, [mode, roles, running, transport, flushPlaybackNow, silenceScheduled, logger, activeParts, parts]);
+  }, [mode, myStaves, disruptListenPlayback, logger, activeParts, parts]);
+
+  // Grand-staff (2 staves) fast path: a single segmented control instead of chips.
+  // Learn/Polish → "Hands"; Listen → "My part". Value + handler map to activeParts
+  // / myStaves. Staff 0 = RH, 1 = LH (activeParts.js convention).
+  const grandStaff = parts.length === 2;
+  const handsVariant = mode === 'listen' ? 'mypart' : 'hands';
+  const handsValue = mode === 'listen'
+    ? (myStaves.has(0) && myStaves.has(1) ? 'both' : myStaves.has(0) ? 'rh' : myStaves.has(1) ? 'lh' : 'none')
+    : (activeParts[0] && activeParts[1] ? 'both' : activeParts[0] ? 'rh' : 'lh');
+  const onHandsChange = useCallback((v) => {
+    if (mode === 'listen') {
+      const next = v === 'none' ? new Set() : v === 'rh' ? new Set([0]) : v === 'lh' ? new Set([1]) : new Set([0, 1]);
+      setMyStaves(next);
+      disruptListenPlayback();
+      logger.info('score.listen.mypart', { value: v });
+    } else {
+      // Both/RH/LH → which staves you practice. Always ≥1 active (never deadlocks).
+      setActiveParts({ 0: v !== 'lh', 1: v !== 'rh' });
+      logger.info('score.hands', { value: v });
+    }
+  }, [mode, disruptListenPlayback, logger]);
 
   // ── Load timing (best-effort) ───────────────────────────────────────────────
   // Measured: fetch ms (from SheetMusic.jsx via score.fetchMs) + open→ready total
   // here. Fires once per document (re-engraves from zoom/flow don't re-log).
   const openTsRef = useRef(performance.now());
   const readySentRef = useRef(false);
+  const firstDocRef = useRef(true); // first musicXml effect = mount; don't wipe restored focus
   // A new score opens in its written key (mirror the other per-score resets).
   useEffect(() => {
     openTsRef.current = performance.now(); readySentRef.current = false; setTranspose(0);
@@ -700,7 +875,11 @@ export default function ScorePlayer({ score: scoreMeta }) {
     // all subsequent events (load / follow / polish / focus / mode / transpose) land in it.
     startSession(scoreMeta.id);
     // A new document resets the practice range (measure indices don't carry over).
-    setFocus(null); setLoopArm(false); loopInRef.current = null;
+    // EXCEPT the very first mount, whose focus may have been restored from storage
+    // (Task 2.5) — guard so restore isn't immediately wiped.
+    if (!firstDocRef.current) { setFocus(null); }
+    firstDocRef.current = false;
+    setSelecting(null);
   }, [scoreMeta.musicXml]); // eslint-disable-line react-hooks/exhaustive-deps
   const onReady = useCallback(() => {
     if (readySentRef.current) return;
@@ -739,12 +918,14 @@ export default function ScorePlayer({ score: scoreMeta }) {
     ? expectedMidisAtStep(steps[step], activeParts)
     : struck;
 
-  // Per-step cursor boxes (same offset-space as the cursor) → measure-grade geometry.
-  // Events are parallel to steps by index; MeasureGradeLayer reads x/top/bottom.
-  const showGrades = mode === 'polish' && scoringOn;
+  // Per-step cursor boxes (same offset-space as the cursor). Shared geometry for
+  // BOTH the measure-grade wash (Polish) and the focus-range brackets (Learn/Polish),
+  // so it's computed whenever either could draw.
+  const showGrades = mode === 'polish';
+  const showFocusLayer = mode === 'learn' || mode === 'polish';
   const stepBoxes = useMemo(
-    () => (showGrades ? events.map((e) => ({ x: e.x, top: e.top, bottom: e.bottom })) : []),
-    [showGrades, events],
+    () => ((showGrades || showFocusLayer) ? events.map((e) => ({ x: e.x, top: e.top, bottom: e.bottom })) : []),
+    [showGrades, showFocusLayer, events],
   );
 
   return (
@@ -770,6 +951,14 @@ export default function ScorePlayer({ score: scoreMeta }) {
               grades={grades}
             />
           )}
+          {showFocusLayer && layoutFresh && ((!selecting && focus) || selecting?.stage === 'last') && (
+            <FocusRangeLayer
+              measures={layout.measures}
+              stepBoxes={stepBoxes}
+              range={!selecting && focus ? { inMeasure: focus.inMeasure, outMeasure: focus.outMeasure } : null}
+              pending={selecting?.stage === 'last' ? selecting.inMeasure : null}
+            />
+          )}
           {mode !== 'perform' && layoutFresh && (
             <NoteHighlightLayer
               step={steps[step]}
@@ -779,6 +968,8 @@ export default function ScorePlayer({ score: scoreMeta }) {
             />
           )}
         </MusicXmlRenderer>
+        <CountInOverlay active={countIn.active} beat={countIn.beat} />
+        <SelectBanner stage={selecting?.stage} onCancel={onCancelSelect} />
       </div>
 
       {keyboardVisible && (
@@ -798,47 +989,57 @@ export default function ScorePlayer({ score: scoreMeta }) {
         running={running}
         onToggleRun={toggleRun}
         onReset={reset}
+        ready={events.length > 0 && layoutFresh}
+        canRestart={running || step > 0 || Object.keys(grades).length > 0}
         step={step}
         total={events.length}
+        measure={(layout.steps?.[step]?.measure ?? 0) + 1}
+        measureTotal={layout.measures?.length ?? 0}
         page={perfPage.page}
         pages={perfPage.pages}
         flow={flow}
         onToggleFlow={onToggleFlow}
         scale={scale}
-        onScale={setScale}
+        onScale={onScaleStep}
         tempoMult={tempoMult}
         onTempo={onTempo}
         transpose={transpose}
         onTranspose={onTranspose}
-        playAlong={playAlong}
-        onTogglePlayAlong={onTogglePlayAlong}
         parts={barParts}
         activeParts={activeParts}
         roles={roles}
         onCyclePart={onCyclePart}
+        grandStaff={grandStaff}
+        handsVariant={handsVariant}
+        handsValue={handsValue}
+        onHandsChange={onHandsChange}
         sections={sections}
         focus={focus}
-        loopArm={loopArm}
+        scopeLabel={scopeLabel}
         onPickSection={onPickSection}
-        onArmLoop={onArmLoop}
+        onStartSelect={onStartSelect}
         onClearFocus={onClearFocus}
         keyboardVisible={keyboardVisible}
         onToggleKeyboard={onToggleKeyboard}
         clickOn={clickOn}
         onToggleClick={onToggleClick}
-        scoringOn={scoringOn}
-        onToggleScoring={onToggleScoring}
         meta={meta}
       />
 
-      {mode === 'polish' && scoringOn && (
+      {mode === 'polish' && (
         <RunSummary
           open={summaryOpen}
           grades={grades}
           measures={layout.measures}
           onClose={onCloseSummary}
           onReplay={onReplaySummary}
+          drillable={drillable}
+          onDrill={onDrillWorst}
         />
+      )}
+
+      {mode === 'learn' && (
+        <LearnComplete open={learnDone} onReplay={onLearnReplay} onPolish={onLearnPolish} />
       )}
     </div>
   );

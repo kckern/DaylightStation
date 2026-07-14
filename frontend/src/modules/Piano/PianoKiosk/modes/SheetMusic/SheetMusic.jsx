@@ -28,7 +28,16 @@ import ScorePlayer from './ScorePlayer.jsx';
  * The score source comes from piano config `sheetmusic.collection`.
  */
 
-const NOTATION_RE = /\.(musicxml|mxl)$/i;
+// Only .musicxml opens in the engraved player. .mxl is a ZIP container and the
+// parse pipeline reads raw text — there is no unzip yet — so routing it here would
+// dead-end on a parse failure. Exclude it until unzip lands (audit H4).
+// TODO(mxl): support .mxl by reading META-INF/container.xml → rootfile before parse.
+const NOTATION_RE = /\.musicxml$/i;
+
+/** True when a content id should open in the engraved (MusicXML) player. */
+export function isNotationId(id) {
+  return NOTATION_RE.test(String(id || ''));
+}
 
 /**
  * Map a configured collection ref to a generic list path. Supports source-prefixed
@@ -80,7 +89,7 @@ function ScoreViewerRoute() {
   const params = useParams();
   const contentId = params['*'] || '';
   const imageScore = useMemo(() => ({ id: contentId }), [contentId]);
-  if (NOTATION_RE.test(contentId)) return <NotationScore contentId={contentId} />;
+  if (isNotationId(contentId)) return <NotationScore contentId={contentId} />;
   return <ScoreViewer score={imageScore} />;
 }
 
@@ -92,11 +101,13 @@ function ScoreViewerRoute() {
 function NotationScore({ contentId }) {
   const logger = useMemo(() => getLogger().child({ component: 'piano-sheetmusic' }), []);
   const [xml, setXml] = useState(null); // null = loading, '' = failed
+  const [retryKey, setRetryKey] = useState(0);
   const fetchMsRef = useRef(0); // raw-XML fetch time → ScorePlayer's score.load telemetry
   const localId = useMemo(() => contentId.replace(/^[a-z]+:/i, ''), [contentId]);
 
   useEffect(() => {
     let cancelled = false;
+    setXml(null);
     (async () => {
       try {
         logger.info('piano.score-open', { id: localId, kind: 'notation' });
@@ -110,10 +121,10 @@ function NotationScore({ contentId }) {
       }
     })();
     return () => { cancelled = true; };
-  }, [localId, logger]);
+  }, [localId, logger, retryKey]);
 
   if (xml === null) return <SkeletonStage />;
-  if (xml === '') return <PianoEmpty message="Could not load this score." />;
+  if (xml === '') return <PianoEmpty message="Could not load this score." actionLabel="Try again" onAction={() => setRetryKey((k) => k + 1)} />;
   return <ScorePlayer score={{ id: contentId, musicXml: xml, fetchMs: fetchMsRef.current }} />;
 }
 

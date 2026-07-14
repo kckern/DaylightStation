@@ -4,7 +4,7 @@
  * nested `perform` and `scoring.thresholds` groups; ignores non-object input.
  */
 export const SHEET_MUSIC_DEFAULTS = {
-  defaultMode: 'learn',
+  defaultMode: 'listen', // the ladder starts by hearing the piece (audit J2)
   perform: { advancePedalCC: 67, backPedalCC: 66 },
   scoring: { silentMeasuresToStop: 4, timingToleranceMs: 80, thresholds: { green: 0.9, yellow: 0.6 } },
 };

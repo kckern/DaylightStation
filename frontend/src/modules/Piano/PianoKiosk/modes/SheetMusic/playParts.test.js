@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { partsOf, cyclePart, buildPlayTimeline, youMidisAt, allPlayRoles } from './playParts.js';
+import { partsOf, cyclePart, buildPlayTimeline, youMidisAt } from './playParts.js';
 
 const NOTES = [
   { midi: 76, staff: 0, onsetQuarter: 0, durationQuarters: 1 },
@@ -16,10 +16,13 @@ describe('partsOf', () => {
 });
 
 describe('cyclePart', () => {
-  it('cycles play → you → mute → play', () => {
+  it('cycles play ↔ you (two states; mute dropped)', () => {
     expect(cyclePart('play')).toBe('you');
-    expect(cyclePart('you')).toBe('mute');
+    expect(cyclePart('you')).toBe('play');
+  });
+  it('unknown role falls back to play', () => {
     expect(cyclePart('mute')).toBe('play');
+    expect(cyclePart(undefined)).toBe('play');
   });
 });
 
@@ -38,9 +41,3 @@ describe('youMidisAt', () => {
   });
 });
 
-describe('allPlayRoles', () => {
-  it('sets every staff to play', () => {
-    expect(allPlayRoles([{ staff: 0 }, { staff: 1 }])).toEqual({ 0: 'play', 1: 'play' });
-  });
-  it('handles empty', () => { expect(allPlayRoles([])).toEqual({}); });
-});

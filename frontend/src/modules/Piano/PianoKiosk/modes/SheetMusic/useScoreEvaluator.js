@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useCallback } from 'react';
 import { gradeMeasure } from './scoreEvaluator.js';
 
 /**
@@ -34,13 +34,17 @@ export function useScoreEvaluator({
   onMeasureGrade,
   onSilentStop,
 }) {
+  const enabledRef = useRef(enabled);
   const cfgRef = useRef(cfg);
+  const currentMeasureRef = useRef(currentMeasure);
   const expectedForMeasureRef = useRef(expectedForMeasure);
   const driftForNoteRef = useRef(driftForNote);
   const onMeasureGradeRef = useRef(onMeasureGrade);
   const onSilentStopRef = useRef(onSilentStop);
 
+  enabledRef.current = enabled;
   cfgRef.current = cfg;
+  currentMeasureRef.current = currentMeasure;
   expectedForMeasureRef.current = expectedForMeasure;
   driftForNoteRef.current = driftForNote;
   onMeasureGradeRef.current = onMeasureGrade;
@@ -50,6 +54,21 @@ export function useScoreEvaluator({
   const prevMeasureRef = useRef(null);
   const silentRunRef = useRef(0);
   const stoppedRef = useRef(false);
+  const finalizedRef = useRef(false);
+
+  // Grade the CURRENT measure once at end-of-piece: the advance-driven grader only
+  // fires when currentMeasure changes, so the last measure the cursor never leaves
+  // would otherwise never be graded (audit H1). Idempotent; no-op when disabled.
+  const finalize = useCallback(() => {
+    if (!enabledRef.current || finalizedRef.current) return;
+    finalizedRef.current = true;
+    const m = currentMeasureRef.current;
+    const expected = expectedForMeasureRef.current?.(m) || [];
+    if (expected.length === 0 && hitsRef.current.length === 0) return; // nothing to grade
+    const g = gradeMeasure({ expected, hits: hitsRef.current }, cfgRef.current || {});
+    onMeasureGradeRef.current?.({ measure: m, ...g });
+    hitsRef.current = [];
+  }, []);
 
   // Buffer MIDI hits for the current measure. Subscribe once per enabled/subscribe.
   useEffect(() => {
@@ -99,6 +118,7 @@ export function useScoreEvaluator({
     prevMeasureRef.current = null;
     silentRunRef.current = 0;
     stoppedRef.current = false;
+    finalizedRef.current = false; // a fresh run may finalize again
     return undefined;
   }, [enabled]);
 
@@ -107,7 +127,10 @@ export function useScoreEvaluator({
     prevMeasureRef.current = null;
     silentRunRef.current = 0;
     stoppedRef.current = false;
+    finalizedRef.current = false;
   }, []);
+
+  return { finalize };
 }
 
 export default useScoreEvaluator;
