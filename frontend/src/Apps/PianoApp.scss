@@ -2485,6 +2485,27 @@
   transition: width 120ms linear; pointer-events: none;
 }
 
+// Count-in overlay (audit J1): a big centered beat number flashed over the score
+// while the metronome counts the player in before a run. Fixed + pointer-events:
+// none so a tap falls through to the scroll container, which aborts the count-in.
+.piano-score-countin {
+  position: fixed; inset: 0; z-index: 40; pointer-events: none;
+  display: flex; align-items: center; justify-content: center;
+  &__beat {
+    font-size: clamp(6rem, 22vmin, 16rem); font-weight: 800; line-height: 1;
+    color: var(--piano-accent, #2ec46f);
+    text-shadow: 0 0 2.5rem rgba(0, 0, 0, 0.55), 0 0 1rem rgba(46, 196, 111, 0.6);
+    animation: piano-score-countin-pop 0.5s ease-out;
+  }
+}
+@keyframes piano-score-countin-pop {
+  from { transform: scale(1.35); opacity: 0.25; }
+  to   { transform: scale(1); opacity: 1; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .piano-score-countin__beat { animation: none; }
+}
+
 .piano-score-cursor {
   position: absolute; left: 0; top: 0; // positioned via transform (compositor path); width set inline (scales with zoom)
   background: color-mix(in srgb, var(--cursor-color, #2ec46f) 26%, transparent);

@@ -16,6 +16,8 @@ import { staffLabels, defaultActiveParts, expectedMidisAtStep } from './activePa
 import { rangeSteps, clampStepToRange, sectionToRange } from './focusRange.js';
 import useFollowTracker from './useFollowTracker.js';
 import useMetronomeClick from './useMetronomeClick.js';
+import useCountIn from './useCountIn.js';
+import { countInPlan } from './countIn.js';
 import useScoreTelemetry from './useScoreTelemetry.js';
 import useScoreEvaluator from './useScoreEvaluator.js';
 import { resolveSheetMusicConfig } from './sheetMusicConfig.js';
@@ -24,6 +26,7 @@ import ScoreTransportBar from './ScoreTransportBar.jsx';
 import NoteHighlightLayer from './NoteHighlightLayer.jsx';
 import MeasureGradeLayer from './MeasureGradeLayer.jsx';
 import RunSummary from './RunSummary.jsx';
+import CountInOverlay from './CountInOverlay.jsx';
 
 const KEY_NAMES = { '-7': 'Cb', '-6': 'Gb', '-5': 'Db', '-4': 'Ab', '-3': 'Eb', '-2': 'Bb', '-1': 'F', 0: 'C', 1: 'G', 2: 'D', 3: 'A', 4: 'E', 5: 'B', 6: 'F#', 7: 'C#' };
 
@@ -272,8 +275,22 @@ export default function ScorePlayer({ score: scoreMeta }) {
     onFire: (ev, driftMs, gapMs) => { pendingPlaybackRef.current = true; recordFire(ev, driftMs, gapMs, tempoMap[0]?.bpm); },
     onDone: () => { if (mode === 'listen') silenceScheduled(); flushPlaybackNow(); logger.info('score.transport.done', { mode, steps: events.length }); },
   });
-  const running = transport.playing;
   const transportRef = useRef(null); transportRef.current = transport; // read latest transport inside the tick closure
+
+  // Count-in: one measure of click before a run where the user is expected to play
+  // (Polish always; Listen when they've claimed a part — wired in a later task). It
+  // must be audible BEFORE the transport is graded (audit J1). onGo seeks to the
+  // current cursor and starts playback; a tap on the score cancels it.
+  const countIn = useCountIn({
+    onGo: () => {
+      transportRef.current?.seek((stepTimeline[stepRef.current]?.t ?? 0) / tempoMult);
+      transportRef.current?.play();
+      logger.info('score.countin.go', { step: stepRef.current, mode });
+    },
+  });
+  // The run button reads "playing" during the count-in too, so a second tap can
+  // abort it (via onScoreClick) and the bar shows ⏸ rather than a dead ▶.
+  const running = transport.playing || countIn.active;
 
   // Metronome click (reference-only). Ticks in Learn at the piece's opening tempo
   // and in Listen at the user-scaled tempo. It only plays a blip — it NEVER gates
@@ -507,6 +524,8 @@ export default function ScorePlayer({ score: scoreMeta }) {
     const el = scrollRef.current;
     const rdr = el?.querySelector('.musicxml-renderer');
     if (!el) return;
+    // A tap during the count-in aborts it (a change of mind before the run starts).
+    if (countIn.active) { countIn.cancel(); logger.info('score.countin.cancel', { via: 'tap' }); return; }
     if (mode === 'perform') {
       const r = el.getBoundingClientRect();
       const dy = e.clientY - (r.top + el.clientHeight / 2);
@@ -551,7 +570,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
     // Transport timeline is tempo-scaled (playTimeline uses factor 1/tempoMult);
     // seek positions come from the unscaled stepTimeline, so scale to match.
     transport.seek((stepTimeline[target]?.t ?? 0) / tempoMult);
-  }, [mode, flow, events, transport, stepTimeline, silenceScheduled, tempoMult, loopArm, range, measureIndexOfStep, logger]);
+  }, [mode, flow, events, transport, stepTimeline, silenceScheduled, tempoMult, loopArm, range, measureIndexOfStep, logger, countIn]);
 
   // Single unmount teardown: immediate silence + one delayed panic (see the
   // silenceScheduled note above). One effect → order-independent by construction.
@@ -591,6 +610,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
   // ── Bar handlers ──────────────────────────────────────────────────────────────
   const onMode = useCallback((id) => {
     if (id === mode) return;
+    countIn.cancel();            // a mode change aborts a pending count-in
     flushPlaybackNow();          // leaving a Polish/Listen run
     if (mode === 'learn') flushFollowNow();
     transport.stop();
@@ -604,7 +624,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
     setKeyboardVisible(id !== 'perform');
     setMode(id);
     logMode({ mode: id });
-  }, [mode, flushPlaybackNow, flushFollowNow, transport, silenceScheduled, logMode]);
+  }, [mode, flushPlaybackNow, flushFollowNow, transport, silenceScheduled, logMode, countIn]);
 
   // Listen tempo: clamp to a sane playable range (0.25×–2×). Timeline rescales via
   // the playTimeline memo; the transport reads the new timings on its next tick.
@@ -624,6 +644,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
   }, [logTranspose]);
 
   const reset = useCallback(() => {
+    countIn.cancel();       // reset aborts a pending count-in
     transport.stop();
     if (mode === 'listen') silenceScheduled();
     flushPlaybackNow();
@@ -632,7 +653,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
     setGrades({});          // a fresh run clears the previous grades…
     setSummaryOpen(false);  // …and closes any open summary
     scrollRef.current?.scrollTo({ top: 0, left: 0 });
-  }, [transport, mode, silenceScheduled, flushPlaybackNow]);
+  }, [transport, mode, silenceScheduled, flushPlaybackNow, countIn]);
 
   // Run summary Replay: reset the run (clears grades + closes the panel).
   const onReplaySummary = useCallback(() => { reset(); }, [reset]);
@@ -649,7 +670,9 @@ export default function ScorePlayer({ score: scoreMeta }) {
   const onToggleScoring = useCallback(() => setScoringOn((v) => !v), []);
 
   const toggleRun = useCallback(() => {
-    if (running) {
+    // A second tap during the count-in aborts it (never reaches the transport).
+    if (countIn.active) { countIn.cancel(); logger.info('score.countin.cancel', { via: 'toggle' }); return; }
+    if (transport.playing) {
       transport.pause();
       if (mode === 'listen') silenceScheduled();
       flushPlaybackNow();
@@ -660,15 +683,20 @@ export default function ScorePlayer({ score: scoreMeta }) {
       // (toggleRun is the only resume entry point; reset()/onDone stop the
       // transport first, so their pending panic is harmless.)
       clearTimeout(flushTimerRef.current);
-      transport.seek((stepTimeline[stepRef.current]?.t ?? 0) / tempoMult);
-      transport.play();
-      logger.info('score.transport.play', { step: stepRef.current, mode, bpm: tempoMap[0]?.bpm, tempoMult });
+      // Polish counts the user in before the graded run so the beat is audible
+      // before it's judged (audit J1); onGo starts the transport. Other modes play now.
+      if (mode === 'polish') {
+        countIn.start(countInPlan({ beats: parsed?.timeSig?.beats, bpm: tempoMap[0]?.bpm, tempoMult }));
+        logger.info('score.countin.start', { mode, beats: parsed?.timeSig?.beats, bpm: tempoMap[0]?.bpm, tempoMult });
+      } else {
+        transport.seek((stepTimeline[stepRef.current]?.t ?? 0) / tempoMult);
+        transport.play();
+        logger.info('score.transport.play', { step: stepRef.current, mode, bpm: tempoMap[0]?.bpm, tempoMult });
+      }
     }
     // NOTE: reads the live cursor via `stepRef.current` (mirrors `step`), NOT the
-    // `step` closure — so `step` is deliberately OUT of the dep array. That keeps
-    // `toggleRun` referentially stable across cursor-step advances, letting the
-    // memoized ScoreTransportButtons bail per step during playback.
-  }, [running, transport, mode, silenceScheduled, flushPlaybackNow, logger, stepTimeline, tempoMap, tempoMult]);
+    // `step` closure — so `step` is deliberately OUT of the dep array.
+  }, [countIn, transport, mode, silenceScheduled, flushPlaybackNow, logger, stepTimeline, tempoMap, tempoMult, parsed]);
 
   const onCyclePart = useCallback((staff) => {
     if (mode === 'listen') {
@@ -779,6 +807,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
             />
           )}
         </MusicXmlRenderer>
+        <CountInOverlay active={countIn.active} beat={countIn.beat} />
       </div>
 
       {keyboardVisible && (
