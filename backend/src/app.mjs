@@ -467,6 +467,32 @@ export async function createApp({ server, logger, configPaths, configExists, ena
       return;
     }
 
+    // Screen session-state publishes (SessionStatePublisher sends the bare
+    // 'device-state' topic per buildDeviceStateBroadcast). Normalize to the
+    // per-device topic so DeviceLivenessService and /media fleet subscribers
+    // receive it — without this relay a screen's state never leaves the
+    // socket and the fleet shows "unknown" forever.
+    if (message.topic === 'device-state' && typeof message.deviceId === 'string' && message.deviceId) {
+      eventBus.broadcast(`device-state:${message.deviceId}`, {
+        deviceId: message.deviceId,
+        snapshot: message.snapshot ?? null,
+        reason: message.reason ?? 'change',
+        ts: message.ts,
+      });
+      return;
+    }
+
+    // Screen command acks (buildCommandAck sends the bare 'device-ack'
+    // topic). Republish on the per-device topic SessionControlService
+    // awaits — without this every WS command "times out" and dispatch
+    // steamrolls through the slow FKB-URL fallback. (Returning here is safe:
+    // CommandHandlerLivenessService reads acks via its own onClientMessage
+    // dispatcher, which runs independently of this handler.)
+    if (message.topic === 'device-ack' && typeof message.deviceId === 'string' && message.deviceId) {
+      eventBus.broadcast(`device-ack:${message.deviceId}`, message);
+      return;
+    }
+
     // Frontend logging messages - ingest to backend log system
     if (message.source === 'playback-logger' || message.topic === 'logging') {
       const clientMeta = eventBus.getClientMeta(clientId);
