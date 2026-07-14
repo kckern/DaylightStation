@@ -189,14 +189,21 @@ export default function ScorePlayer({ score: scoreMeta }) {
     [parts, staffSig], // eslint-disable-line react-hooks/exhaustive-deps
   );
 
-  const [roles, setRoles] = useState({});
+  // Listen "my part": the staves the user plays along with; the kiosk performs the
+  // rest. This is the single source for Listen roles (audit J4) — `roles` is derived
+  // (staff ∈ myStaves → 'you', else 'play'), replacing the old free-standing roles
+  // state. Restored per score.
+  const [myStaves, setMyStaves] = useState(() => new Set(Array.isArray(restored.myStaves) ? restored.myStaves : []));
+  const roles = useMemo(
+    () => Object.fromEntries(parts.map((p) => [p.staff, myStaves.has(p.staff) ? 'you' : 'play'])),
+    [parts, myStaves],
+  );
   // Restored active-part picks (which staves you play in Learn/Polish); the effect
   // below preserves any staff present in `prev`, so seeding it restores the choice.
   const [activeParts, setActiveParts] = useState(() => (
     restored.activeParts && typeof restored.activeParts === 'object' ? restored.activeParts : {}
   ));
   useEffect(() => {
-    setRoles((prev) => Object.fromEntries(parts.map((p) => [p.staff, prev[p.staff] || 'play'])));
     setActiveParts((prev) => {
       const dflt = defaultActiveParts(layout.notes);
       return Object.fromEntries(parts.map((p) => [p.staff, p.staff in prev ? prev[p.staff] : (dflt[p.staff] ?? true)]));
@@ -345,8 +352,8 @@ export default function ScorePlayer({ score: scoreMeta }) {
   // Persist practice settings per score (device-local) whenever they change, so the
   // piece reopens the way it was left (Task 2.5). Writes are tiny; cost is trivial.
   useEffect(() => {
-    saveScoreSettings(scoreMeta.id, { mode, tempoMult, focus, activeParts });
-  }, [scoreMeta.id, mode, tempoMult, focus, activeParts]);
+    saveScoreSettings(scoreMeta.id, { mode, tempoMult, focus, activeParts, myStaves: [...myStaves] });
+  }, [scoreMeta.id, mode, tempoMult, focus, activeParts, myStaves]);
 
   // A restored range references measure indices; drop it if the engraved score has
   // fewer measures than it expects (the file may have changed since it was saved).
@@ -774,14 +781,20 @@ export default function ScorePlayer({ score: scoreMeta }) {
     // `step` closure — so `step` is deliberately OUT of the dep array.
   }, [countIn, transport, mode, silenceScheduled, flushPlaybackNow, logger, stepTimeline, tempoMap, tempoMult, parsed]);
 
+  // Changing the Listen role map mid-flight invalidates the note timeline — pause,
+  // flush, and silence so a stale schedule doesn't drone. Shared by the chip
+  // fallback and the My-part control.
+  const disruptListenPlayback = useCallback(() => {
+    if (transportRef.current?.playing) { transport.pause(); flushPlaybackNow(); }
+    silenceScheduled();
+  }, [transport, flushPlaybackNow, silenceScheduled]);
+
   const onCyclePart = useCallback((staff) => {
     if (mode === 'listen') {
-      const role = roles[staff] || 'play';
-      const next = cyclePart(role);
-      setRoles((r) => ({ ...r, [staff]: next }));
-      if (running) { transport.pause(); flushPlaybackNow(); }
-      silenceScheduled(); // role change invalidates the note timeline mid-flight
-      logger.info('score.listen.part', { staff, role: next });
+      // Toggle this staff's membership in "my part" (you ↔ kiosk). >2-staff chip path.
+      setMyStaves((prev) => { const n = new Set(prev); if (n.has(staff)) n.delete(staff); else n.add(staff); return n; });
+      disruptListenPlayback();
+      logger.info('score.listen.part', { staff, mine: !myStaves.has(staff) });
     } else {
       // Learn needs ≥1 active staff or the all-notes rule can never be satisfied
       // (the cursor would deadlock). Refuse to turn off the last active staff.
@@ -790,7 +803,28 @@ export default function ScorePlayer({ score: scoreMeta }) {
       setActiveParts((a) => ({ ...a, [staff]: !a[staff] }));
       logger.info('score.active-part', { staff, on: !activeParts[staff] });
     }
-  }, [mode, roles, running, transport, flushPlaybackNow, silenceScheduled, logger, activeParts, parts]);
+  }, [mode, myStaves, disruptListenPlayback, logger, activeParts, parts]);
+
+  // Grand-staff (2 staves) fast path: a single segmented control instead of chips.
+  // Learn/Polish → "Hands"; Listen → "My part". Value + handler map to activeParts
+  // / myStaves. Staff 0 = RH, 1 = LH (activeParts.js convention).
+  const grandStaff = parts.length === 2;
+  const handsVariant = mode === 'listen' ? 'mypart' : 'hands';
+  const handsValue = mode === 'listen'
+    ? (myStaves.has(0) && myStaves.has(1) ? 'both' : myStaves.has(0) ? 'rh' : myStaves.has(1) ? 'lh' : 'none')
+    : (activeParts[0] && activeParts[1] ? 'both' : activeParts[0] ? 'rh' : 'lh');
+  const onHandsChange = useCallback((v) => {
+    if (mode === 'listen') {
+      const next = v === 'none' ? new Set() : v === 'rh' ? new Set([0]) : v === 'lh' ? new Set([1]) : new Set([0, 1]);
+      setMyStaves(next);
+      disruptListenPlayback();
+      logger.info('score.listen.mypart', { value: v });
+    } else {
+      // Both/RH/LH → which staves you practice. Always ≥1 active (never deadlocks).
+      setActiveParts({ 0: v !== 'lh', 1: v !== 'rh' });
+      logger.info('score.hands', { value: v });
+    }
+  }, [mode, disruptListenPlayback, logger]);
 
   // ── Load timing (best-effort) ───────────────────────────────────────────────
   // Measured: fetch ms (from SheetMusic.jsx via score.fetchMs) + open→ready total
@@ -922,6 +956,10 @@ export default function ScorePlayer({ score: scoreMeta }) {
         activeParts={activeParts}
         roles={roles}
         onCyclePart={onCyclePart}
+        grandStaff={grandStaff}
+        handsVariant={handsVariant}
+        handsValue={handsValue}
+        onHandsChange={onHandsChange}
         sections={sections}
         focus={focus}
         loopArm={loopArm}

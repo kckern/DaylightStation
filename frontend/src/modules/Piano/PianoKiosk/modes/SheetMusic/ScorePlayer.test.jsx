@@ -372,7 +372,7 @@ describe('ScorePlayer — Listen mode', () => {
     renderPlayer();
     screen.getByText('Listen').click();
     await act(async () => {});
-    screen.getByText('RH: Play').click(); // RH (staff 0) → You: the user plays it, kiosk must NOT
+    fireEvent.click(screen.getByRole('radio', { name: 'RH' })); // My part = RH: the user plays staff 0, kiosk must NOT
     await act(async () => {});
     screen.getByText('▶').click();
     await act(async () => {});
@@ -472,7 +472,7 @@ describe('ScorePlayer — Listen mode', () => {
     expect(screen.getByText('1 / 4')).toBeTruthy();
   });
 
-  it('keeps part roles across a re-engrave (zoom must not wipe You/Mute)', async () => {
+  it('keeps My-part selection across a re-engrave (zoom must not wipe it)', async () => {
     h.layoutExtras = { notes: [
       { midi: 64, staff: 0, onsetQuarter: 0, durationQuarters: 1 },
       { midi: 40, staff: 1, onsetQuarter: 0, durationQuarters: 4 },
@@ -480,14 +480,14 @@ describe('ScorePlayer — Listen mode', () => {
     renderPlayer();
     screen.getByText('Listen').click();
     await act(async () => {});
-    screen.getByText('RH: Play').click(); // RH → You
+    fireEvent.click(screen.getByRole('radio', { name: 'RH' })); // My part = RH
     await act(async () => {});
-    expect(screen.getByText('RH: You')).toBeTruthy();
+    expect(screen.getByRole('radio', { name: 'RH' })).toHaveAttribute('aria-checked', 'true');
     // Zoom via the Size stepper → re-engrave (fresh layout.notes identity).
     fireEvent.click(screen.getByRole('button', { name: /^size/i }));
     fireEvent.click(screen.getByRole('button', { name: '125%' }));
     await act(async () => {});
-    expect(screen.getByText('RH: You')).toBeTruthy(); // role preserved, not reset to Play
+    expect(screen.getByRole('radio', { name: 'RH' })).toHaveAttribute('aria-checked', 'true'); // preserved
   });
 
   it('silences sounding notes on tap-seek in Play mode (no stuck note)', async () => {

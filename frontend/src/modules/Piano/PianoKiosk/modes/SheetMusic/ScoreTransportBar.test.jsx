@@ -57,10 +57,24 @@ describe('ScoreTransportBar', () => {
     expect(screen.getByRole('button', { name: /metronome click/i })).toBeInTheDocument(); // click lives in Polish (J1)
   });
 
-  it('shows one part chip per staff and cycles it', () => {
-    render(<ScoreTransportBar {...base} />);
+  it('shows one part chip per staff and cycles it (>2-staff fallback)', () => {
+    render(<ScoreTransportBar {...base} parts={[{ staff: 0, label: 'RH' }, { staff: 1, label: 'LH' }, { staff: 2, label: 'P3' }]} />);
     fireEvent.click(screen.getByRole('button', { name: /LH/ }));
     expect(base.onCyclePart).toHaveBeenCalledWith(1);
+  });
+
+  it('grand-staff (2 staves) shows the Hands segmented control, not chips (J4)', () => {
+    const onHandsChange = vi.fn();
+    render(<ScoreTransportBar {...base} mode="learn" grandStaff handsVariant="hands" handsValue="both" onHandsChange={onHandsChange} />);
+    expect(screen.getByRole('group', { name: /hands/i })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('radio', { name: 'LH' }));
+    expect(onHandsChange).toHaveBeenCalledWith('lh');
+  });
+
+  it('grand-staff Listen shows the My-part control', () => {
+    render(<ScoreTransportBar {...base} mode="listen" grandStaff handsVariant="mypart" handsValue="none" onHandsChange={vi.fn()} />);
+    expect(screen.getByRole('group', { name: /my part/i })).toBeInTheDocument();
+    expect(screen.getByRole('radio', { name: 'None' })).toHaveAttribute('aria-checked', 'true');
   });
 
   it('perform mode: shows the page indicator (page / pages)', () => {
