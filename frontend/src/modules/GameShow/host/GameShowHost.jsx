@@ -8,6 +8,7 @@ import { useWebSocketSubscription } from '@/hooks/useWebSocket.js';
 import { fetchSession, fetchSet, sendCommand } from '../shell/session/sessionClient.js';
 import { clampWager } from '../shell/components/WagerPanel.jsx';
 import { hostButtons } from './hostView.js';
+import MemberAvatar from '../shell/components/MemberAvatar.jsx';
 import './GameShowHost.scss';
 import '../styles/fonts.js';
 
@@ -60,6 +61,13 @@ export default function GameShowHost() {
         {teams.map((t) => (
           <span key={t.id} className="gsh__score" style={{ '--team-color': t.color || '#888' }}>
             <b>{t.name}</b> {(scores[t.id] ?? 0).toLocaleString()}
+            {t.members?.length > 0 && (
+              <span className="gsh__scoreavatars">
+                {t.members.map((m) => (
+                  <MemberAvatar key={m.id} member={m} teamColor={t.color || '#888'} size={20} />
+                ))}
+              </span>
+            )}
           </span>
         ))}
       </header>

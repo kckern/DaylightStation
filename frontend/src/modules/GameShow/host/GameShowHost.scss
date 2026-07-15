@@ -38,6 +38,7 @@
       font-size: 0.8rem;
     }
   }
+  &__scoreavatars { display: flex; gap: 0.2rem; margin-top: 0.3rem; }
 
   &__phase {
     text-transform: uppercase;
