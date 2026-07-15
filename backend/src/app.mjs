@@ -228,6 +228,7 @@ import { createFeedbackRouter } from './4_api/v1/routers/feedback.mjs';
 import { createGameshowRouter } from './4_api/v1/routers/gameshow.mjs';
 import { GameShowService } from './3_applications/gameshow/GameShowService.mjs';
 import { GameShowSessionStore } from './3_applications/gameshow/GameShowSessionStore.mjs';
+import { buzzersToSelectors, makeBuzzerSelectHandler } from './3_applications/gameshow/buzzerSelectors.mjs';
 import { createContentFilterRouter } from './4_api/v1/routers/contentFilter.mjs';
 import { FeedbackService } from './3_applications/common/feedback/FeedbackService.mjs';
 import { createArtAdapter } from './1_adapters/content/art/ArtAdapter.mjs';
@@ -1588,6 +1589,10 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     hardwareLogger.warn('thermalPrinter.noneConfigured');
   }
 
+  // Gameshow buzzers ride the same MQTT selector adapter as fitness rider
+  // selectors; this handler fans gameshow-tagged selections out as buzz events.
+  const handleGameshowBuzz = makeBuzzerSelectHandler(broadcastEvent);
+
   const hardwareAdapters = createHardwareAdapters({
     mqtt: {
       host: mqtt.host || '',
@@ -1606,8 +1611,15 @@ export async function createApp({ server, logger, configPaths, configExists, ena
       // Broadcast MQTT sensor messages to WebSocket clients
       broadcastEvent({ topic: 'sensor', ...payload });
     },
-    selectors: (configService.getHouseholdAppConfig(householdId, 'fitness') || {}).selectors || [],
+    selectors: [
+      ...((configService.getHouseholdAppConfig(householdId, 'fitness') || {}).selectors || []),
+      ...buzzersToSelectors((configService.getHouseholdAppConfig(householdId, 'gameshow') || {}).buzzers),
+    ],
     onSelectorSelect: (selection) => {
+      if (selection?.equipmentId === 'gameshow') {
+        handleGameshowBuzz(selection);
+        return;
+      }
       // selection: { selectorId, equipmentId, userId, action }
       broadcastEvent({ topic: 'rider_select', ...selection });
     },
