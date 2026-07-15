@@ -1,4 +1,4 @@
-// frontend/src/modules/Admin/ContentLists/siblingsCache.js
+// frontend/src/modules/Content/lib/siblingsCache.js
 
 /**
  * Module-level cache for preloaded siblings data.

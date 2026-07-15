@@ -6,7 +6,7 @@ import { render, screen, fireEvent } from '@testing-library/react';
 import { MantineProvider } from '@mantine/core';
 import { initialState, Modes } from './comboboxMachine.js';
 
-vi.mock('../../../../lib/logging/singleton.js', () => {
+vi.mock('../../../lib/logging/singleton.js', () => {
   const logger = {
     debug: () => {}, info: () => {}, warn: () => {}, error: () => {},
     sampled: () => {}, child: () => logger,

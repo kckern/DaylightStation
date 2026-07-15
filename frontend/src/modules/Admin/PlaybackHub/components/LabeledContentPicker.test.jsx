@@ -6,7 +6,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { MantineProvider } from '@mantine/core';
-import { clearCache } from '../../ContentLists/siblingsCache.js';
+import { clearCache } from '../../../Content/lib/siblingsCache.js';
 
 vi.mock('../../../../lib/logging/singleton.js', () => {
   const logger = {
@@ -16,9 +16,9 @@ vi.mock('../../../../lib/logging/singleton.js', () => {
   return { getChildLogger: () => logger, getDaylightLogger: () => logger, default: () => logger };
 });
 
-import { titleCache } from '../../ContentLists/combobox/useContentCombobox.js';
+import { titleCache } from '../../../Content/combobox/useContentCombobox.js';
 import { LabeledContentPicker } from './LabeledContentPicker.jsx';
-import ContentCombobox from '../../ContentLists/combobox/ContentCombobox.jsx';
+import ContentCombobox from '../../../Content/combobox/ContentCombobox.jsx';
 
 const SIBLINGS_RESPONSE = {
   items: [

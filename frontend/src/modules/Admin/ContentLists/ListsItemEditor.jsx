@@ -15,7 +15,7 @@ import {
 } from '@mantine/core';
 import { IconSettings, IconSettingsAutomation, IconPhoto } from '@tabler/icons-react';
 import EditorCategories from './EditorCategories.jsx';
-import ContentCombobox from './combobox/ContentCombobox.jsx';
+import ContentCombobox from '../../Content/combobox/ContentCombobox.jsx';
 import ImagePickerModal from './ImagePickerModal.jsx';
 import { DaylightMediaPath } from '../../../lib/api.mjs';
 import { ACTION_OPTIONS, KNOWN_ITEM_FIELDS, ITEM_DEFAULTS } from './listConstants.js';

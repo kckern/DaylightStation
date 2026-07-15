@@ -2,9 +2,9 @@
 // fetch and EventSource are fully stubbed; no test touches the network.
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { renderHook, act, waitFor } from '@testing-library/react';
-import { clearCache, getCacheEntry, setCacheEntry } from '../siblingsCache.js';
+import { clearCache, getCacheEntry, setCacheEntry } from '../lib/siblingsCache.js';
 
-vi.mock('../../../../lib/logging/singleton.js', () => {
+vi.mock('../../../lib/logging/singleton.js', () => {
   const logger = {
     debug: () => {}, info: () => {}, warn: () => {}, error: () => {},
     sampled: () => {}, child: () => logger,
@@ -12,11 +12,11 @@ vi.mock('../../../../lib/logging/singleton.js', () => {
   return { getChildLogger: () => logger, getDaylightLogger: () => logger, default: () => logger };
 });
 
-vi.mock('../../shared/feedback.js', () => ({
+vi.mock('./notify.js', () => ({
   notifyWarning: vi.fn(),
 }));
 
-vi.mock('../../../../lib/appRegistry.js', () => ({
+vi.mock('../../../lib/appRegistry.js', () => ({
   APP_REGISTRY: { webcam: { label: 'Webcam', icon: 'webcam-icon.svg', param: null } },
   searchApps: (query) => (
     'webcam'.includes(String(query).toLowerCase())
@@ -27,10 +27,10 @@ vi.mock('../../../../lib/appRegistry.js', () => ({
 
 // Warm the module cache for the mocked appRegistry so the hook's dynamic
 // `import()` resolves instantly (keeps the app-results test deterministic).
-import '../../../../lib/appRegistry.js';
+import '../../../lib/appRegistry.js';
 
 import { useContentCombobox, titleCache, Modes } from './useContentCombobox.js';
-import { notifyWarning } from '../../shared/feedback.js';
+import { notifyWarning } from './notify.js';
 
 class MockEventSource {
   constructor(url) {
