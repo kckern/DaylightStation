@@ -11,6 +11,7 @@ import MenuWidget from './MenuWidget.jsx';
 import ArtMode from './ArtMode.jsx';
 import WeeklyReview from '../../modules/WeeklyReview/WeeklyReview.jsx';
 import CameraOverlay from '../../modules/CameraFeed/CameraOverlay.jsx';
+import GameShow from '../../modules/GameShow/GameShow.jsx';
 
 export function registerBuiltinWidgets() {
   const registry = getWidgetRegistry();
@@ -26,5 +27,6 @@ export function registerBuiltinWidgets() {
   registry.register('art', ArtMode);
   registry.register('weekly-review', WeeklyReview);
   registry.register('camera', CameraOverlay);
+  registry.register('gameshow', GameShow);
   return registry;
 }
