@@ -225,6 +225,9 @@ import { createPianoRouter } from './4_api/v1/routers/piano.mjs';
 import { PianoContainer } from './3_applications/piano/PianoContainer.mjs';
 import { YamlPianoStudioDatastore } from './1_adapters/piano/YamlPianoStudioDatastore.mjs';
 import { createFeedbackRouter } from './4_api/v1/routers/feedback.mjs';
+import { createGameshowRouter } from './4_api/v1/routers/gameshow.mjs';
+import { GameShowService } from './3_applications/gameshow/GameShowService.mjs';
+import { GameShowSessionStore } from './3_applications/gameshow/GameShowSessionStore.mjs';
 import { createContentFilterRouter } from './4_api/v1/routers/contentFilter.mjs';
 import { FeedbackService } from './3_applications/common/feedback/FeedbackService.mjs';
 import { createArtAdapter } from './1_adapters/content/art/ArtAdapter.mjs';
@@ -1431,6 +1434,24 @@ export async function createApp({ server, logger, configPaths, configExists, ena
       logger: rootLogger.child({ module: 'feedback' }),
     }),
     logger: rootLogger.child({ module: 'feedback-api' }),
+  });
+
+  // Game Show shell (teams/buzzers/scoreboard) + Jeopardy. Config from
+  // gameshow.yml, content from data/content/games/, sessions checkpointed to
+  // data/household/state/gameshow/sessions/, media served from media/apps/.
+  v1Routers.gameshow = createGameshowRouter({
+    gameShowService: new GameShowService({
+      configService,
+      userService,
+      logger: rootLogger.child({ module: 'gameshow' }),
+    }),
+    sessionStore: new GameShowSessionStore({
+      sessionsDir: configService.getHouseholdPath('state/gameshow/sessions'),
+      logger: rootLogger.child({ module: 'gameshow' }),
+    }),
+    broadcastEvent,
+    mediaAppsDir: join(mediaBasePath, 'apps'),
+    logger: rootLogger.child({ module: 'gameshow-api' }),
   });
 
   // Content-filter cascade (EDL + profile + override) for the Player's
