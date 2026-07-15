@@ -1,7 +1,7 @@
 // Editable team roster. Teams always carry sequential ids/slots
 // (team_1/slot_1 …) so buzzer configs can address them stably.
 
-const COLORS = ['#e6b325', '#3273dc', '#2fbf71', '#e05263', '#9b5de5', '#f28c28'];
+import { TEAM_COLORS as COLORS } from './teamColors.js';
 
 function reslot(teams) {
   return teams.map((t, i) => ({ ...t, id: `team_${i + 1}`, slot: `slot_${i + 1}` }));
