@@ -32,6 +32,9 @@ export function Studio() {
   // take-playback route (recordings/<id>): playback synthesizes notes that feed the
   // recorder, so an on-screen Record there would re-record the take. The list route
   // (/recordings, no trailing id segment) still shows it.
+  // NOTE: this matches ANY single segment under recordings/. If a future non-:id
+  // child route is added (e.g. recordings/new), tighten this so it doesn't also
+  // hide the button there.
   const onPlaybackRoute = /\/recordings\/[^/]+\/?$/.test(pathname);
   const [takes, setTakes] = useState([]);
   const [confirmId, setConfirmId] = useState(null);

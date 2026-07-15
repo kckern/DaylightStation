@@ -716,7 +716,10 @@
     flex: 0 0 auto;
     display: flex;
     gap: 0.5rem;
-    padding: 0.75rem 1.5rem 0;
+    // padding-bottom owns the pill's clearance above the underline, so the pill
+    // doesn't need a bottom margin (which would make it the tallest flex item in
+    // this align-items:stretch row and grow/shift the whole tab bar).
+    padding: 0.75rem 1.5rem 0.4rem;
     border-bottom: 1px solid var(--piano-border);
   }
 
