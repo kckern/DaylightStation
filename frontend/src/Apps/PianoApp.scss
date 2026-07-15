@@ -739,14 +739,47 @@
     }
   }
 
-  // Pulsing dot on the Recordings tab while a take is capturing.
-  &__rec-dot {
-    width: 0.6rem;
-    height: 0.6rem;
+  // Record button — pinned to the right end of the tab row (out of the staff
+  // card). A normal flow child of the tab bar: pushed right with margin-left:auto
+  // and centered so it clears the bottom underline the active tab merges into.
+  // Idle = grey "● Record" pill; recording = red pill + pulsing white dot + timer
+  // + stop glyph.
+  &__record {
+    margin-left: auto;
+    align-self: center;
+    margin-bottom: 0.4rem; // clearance above the tab-bar underline
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.5rem 1.1rem;
+    border-radius: var(--r-pill);
+    border: 1px solid var(--piano-border);
+    background: var(--piano-surface-2);
+    color: var(--piano-fg);
+    font: inherit;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    cursor: pointer;
+
+    &.is-recording {
+      background: var(--piano-danger);
+      border-color: var(--piano-danger);
+      color: #fff;
+    }
+  }
+
+  &__record-dot {
+    width: 0.7rem;
+    height: 0.7rem;
     border-radius: 50%;
     background: var(--piano-danger);
-    animation: piano-studio-rec-pulse 1s ease-in-out infinite;
+    .is-recording & {
+      background: #fff;
+      animation: piano-studio-rec-pulse 1s ease-in-out infinite;
+    }
   }
+
+  &__record-label { min-width: 3.5ch; text-align: center; }
 
   &__head {
     display: flex;
@@ -851,55 +884,11 @@
 
 // Play tab: staff (auto) → waterfall (grows) → keyboard (pinned at foot).
 .piano-studio-play {
-  position: relative; // anchors the floating Record button
   flex: 1 1 auto;
   min-height: 0;
   display: flex;
   flex-direction: column;
 
-  // Single Record button — floats top-right over the staff. Idle = "● Record";
-  // recording = blinking red dot + count-up timer + stop glyph.
-  &__record {
-    position: absolute;
-    top: 0.75rem;
-    right: 1.5rem;
-    z-index: 5;
-    display: inline-flex;
-    align-items: center;
-    gap: 0.5rem;
-    padding: 0.5rem 1.1rem;
-    border-radius: var(--r-pill);
-    border: 1px solid var(--piano-border);
-    background: var(--piano-surface-2);
-    color: var(--piano-fg);
-    font: inherit;
-    font-weight: 700;
-    font-variant-numeric: tabular-nums;
-    cursor: pointer;
-
-    &.is-recording {
-      background: var(--piano-danger);
-      border-color: var(--piano-danger);
-      color: #fff;
-    }
-  }
-
-  &__record-dot {
-    width: 0.7rem;
-    height: 0.7rem;
-    border-radius: 50%;
-    background: var(--piano-danger);
-    .is-recording & {
-      background: #fff;
-      animation: piano-studio-rec-pulse 1s ease-in-out infinite;
-    }
-  }
-
-  &__record-label { min-width: 3.5ch; text-align: center; }
-
-  // Top-pane layout toggle — floats top-left, opposite the Record button. A single
-  // discrete tap target (no slider) that flips staff ↔ theory triptych and persists
-  // the choice as a per-user preference.
   // Note-waterfall is a glow-on-dark visualization — stays dark on the light page.
   &__waterfall {
     flex: 1 1 auto;
