@@ -140,6 +140,63 @@ prod container's served `frontend/dist/`). **Post-update the service is stopped*
 in-place update kills the process) — relaunch it ADB-free with
 `node cli/fkb.cli.mjs launch net.kckern.pianobridge`.
 
+### 🚀 The no-fumble deploy checklist (copy-paste, verified 2026-07-15)
+
+Every wasted-time trap is a step here. Do them **in order**. `PB=10.0.0.245:8770`.
+
+```bash
+cd _extensions/piano-bridge/app
+
+# 1. BUMP the version (self-update rejects versionCode ≤ installed). Edit app/build.gradle:
+#      versionCode 19  →  20 ;  versionName "1.11-config-merge" → "1.12-..."
+
+# 2. BUILD
+export JAVA_HOME=/opt/homebrew/opt/openjdk@11/libexec/openjdk.jdk/Contents/Home
+./gradlew :app:assembleDebug          # → app/build/outputs/apk/debug/app-debug.apk
+
+# 3. SERVE it on the LAN (the tablet PULLs it; there is no upload endpoint).
+IP=$(ipconfig getifaddr en0)          # your Mac's LAN IP, e.g. 10.0.0.68
+( cd app/build/outputs/apk/debug && python3 -m http.server 8799 --bind 0.0.0.0 ) &
+# verify the TABLET can reach it (not just your Mac):
+PB_HOST=$PB node ../pbctl.mjs exec "curl -sI http://$IP:8799/app-debug.apk | head -1"   # want 200
+
+# 4. ⚠️ MAKE THE CONFIRM TAPPABLE — the two traps that eat your walk:
+#    (a) FKB kiosk mode AUTO-DISMISSES the install dialog (logs
+#        'INSTALL_FAILED_ABORTED: User rejected permissions'). Turn it OFF.
+#    (b) A screen-OFF tablet shows the dialog to nobody. Force it ON + keep it lit,
+#        and blank the SPA so its own screensaver can't screenOff mid-install.
+node ../../../cli/fkb.cli.mjs set kioskMode false
+node ../../../cli/fkb.cli.mjs screen on
+node ../../../cli/fkb.cli.mjs set keepScreenOn true
+node ../../../cli/fkb.cli.mjs url about:blank        # stop the SPA screensaver (MIDI link is unaffected — it's the APK)
+
+# 5. TRIGGER the install
+PB_HOST=$PB node ../pbctl.mjs update "http://$IP:8799/app-debug.apk"
+
+# 6. ✅ VERIFY the dialog is REALLY up BEFORE you walk over. FKB's screenshot CANNOT
+#    see system dialogs, so trust the system window log, not a screenshot:
+PB_HOST=$PB node ../pbctl.mjs logcat 400 | grep -i "Gaining focus.*PackageInstaller"
+node ../../../cli/fkb.cli.mjs info screenOn     # must say: screenOn: true
+#    → only when you see BOTH (focus on PackageInstallerActivity + screenOn true) go tap **Update/Install**.
+
+# 7. AFTER the tap: the service does NOT auto-restart, and the confirm race can leave it
+#    stopped. Relaunch it (repeat until pbctl status answers):
+node ../../../cli/fkb.cli.mjs launch net.kckern.pianobridge
+PB_HOST=$PB node ../pbctl.mjs status            # want state=CONNECTED on the new build
+
+# 8. RESTORE the kiosk
+node ../../../cli/fkb.cli.mjs url https://daylightlocal.kckern.net/piano
+node ../../../cli/fkb.cli.mjs set kioskMode true
+pkill -f "http.server 8799"                     # stop the temp server
+```
+
+**Config note:** a replace-install used to wipe the on-device override — as of
+versionCode 19 (`1.11-config-merge`) `POST /config` **merges** and the baked
+`assets/piano-devices.yml` is the floor, so `targetMac` survives. Still fine to
+re-push the full config in step 7 (`pbctl config push piano-devices.yml`) as a belt.
+**Verify the merge fix live:** `curl -X POST $PB/config -d 'fkbWakeSuppressUntilEpochMs: 1'`
+then `pbctl config` — `targetMac` must still be there.
+
 ### Deploying the audio-guard build (gotchas, verified 2026-07-09)
 
 The audio guard shipped as versionCode **18** / `1.10-audio-guard`. What the deploy
@@ -156,13 +213,15 @@ actually required:
   `adb_enabled=1`, it was USB-only. Plan for the `/update` (pull) path, not ADB.
 - **The service does not auto-start after a replace-install** (fresh-install stopped
   state). Relaunch ADB-free: `node cli/fkb.cli.mjs launch net.kckern.pianobridge`.
-- **⚠️ Config-clobber bug (open item — fix separately).** After the replace-install,
-  the on-device config override at
-  `/data/user/0/net.kckern.pianobridge/files/piano-devices.yml` was **clobbered down
-  to a single key** (`fkbWakeSuppressUntilEpochMs`), losing `speakerMac`, `targetMac`,
-  `targetName`, `blocklistMacs`, ports, and timeouts. **Back up `GET /config` before
-  every install** and restore afterward with `POST /config` (YAML body). This is a
-  real bug worth its own fix.
+- **✅ Config-clobber bug — FIXED in versionCode 19 (`1.11-config-merge`, 2026-07-15).**
+  Root cause was NOT the install: `DeviceConfig.writeOverride` did a *truncating* write,
+  so any partial `POST /config` replaced the whole override. The backend's MIDI-wake
+  relay (`PianoMidiWakeService`) POSTs a lone `fkbWakeSuppressUntilEpochMs`, which
+  therefore erased `targetMac` and stranded the BLE-MIDI link ("no piano found") every
+  time it fired. Fix is three layers: `writeOverride` now **merges** (partial POSTs are
+  safe for any caller); `BleMidiConnector` no longer terminal-`FAILED`s on an empty MAC
+  (falls back to a name scan for `targetName` + always retries); and the backend does
+  read-merge-write + fails safe. See `reference_piano_bridge_config_clobber_root_cause`.
 - **Reassuring:** with `speakerMac` empty after the clobber, the guard correctly
   refused to clamp (an A2DP output was present → `speakerIsRoute` false) — it gated
   but never wrote a wrongful volume. The fail-closed policy held under a config it

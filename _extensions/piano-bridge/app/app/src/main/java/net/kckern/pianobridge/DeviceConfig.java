@@ -59,7 +59,11 @@ public class DeviceConfig {
         return cfg;
     }
 
-    private void parseInto(InputStream in) throws IOException {
+    private void parseInto(InputStream in) throws IOException { parseFlat(in, values); }
+
+    /** Parse the flat `key: value` subset into {@code out} (later keys win). Shared
+     *  by config load AND the merging writeOverride so both use one parser. */
+    static void parseFlat(InputStream in, Map<String, String> out) throws IOException {
         BufferedReader r = new BufferedReader(new InputStreamReader(in, StandardCharsets.UTF_8));
         String line;
         while ((line = r.readLine()) != null) {
@@ -77,7 +81,7 @@ public class DeviceConfig {
                     || (val.startsWith("'") && val.endsWith("'")))) {
                 val = val.substring(1, val.length() - 1);
             }
-            values.put(key, val);
+            out.put(key, val);
         }
     }
 
@@ -85,12 +89,53 @@ public class DeviceConfig {
         return new File(ctx.getFilesDir(), OVERRIDE_NAME);
     }
 
-    /** Persist a raw YAML override (from pbctl POST /config). */
-    public static void writeOverride(Context ctx, String yaml) throws IOException {
+    /**
+     * Persist a YAML override from POST /config — MERGING onto the existing override
+     * rather than replacing it. A truncating write is what took the piano offline
+     * (2026-07-15): the backend's MIDI-wake relay POSTs a lone
+     * {@code fkbWakeSuppressUntilEpochMs}, and the old replace-semantics erased
+     * {@code targetMac}, leaving the BLE-MIDI connector with nothing to dial. With a
+     * merge, any partial POST only adds/updates its own keys; every sibling key
+     * survives. Baked defaults remain the floor via {@link #load} for keys present in
+     * neither the override nor the POST.
+     */
+    public static synchronized void writeOverride(Context ctx, String yaml) throws IOException {
         File f = overrideFile(ctx);
-        try (FileOutputStream out = new FileOutputStream(f)) {
-            out.write(yaml.getBytes(StandardCharsets.UTF_8));
+        String existing = "";
+        if (f.exists()) {
+            try (InputStream in = new java.io.FileInputStream(f)) {
+                LinkedHashMap<String, String> cur = new LinkedHashMap<>();
+                parseFlat(in, cur);
+                existing = toYaml(cur);
+            } catch (IOException e) {
+                Log.w(TAG, "writeOverride: could not read existing override, merging onto empty", e);
+            }
         }
+        String merged = mergeOverride(existing, yaml);
+        try (FileOutputStream out = new FileOutputStream(f)) {
+            out.write(merged.getBytes(StandardCharsets.UTF_8));
+        }
+    }
+
+    /**
+     * Pure merge (JVM-testable, no Android deps): overlay {@code incoming} flat-YAML
+     * keys onto {@code existing}, incoming winning, and return the full merged
+     * flat-YAML. This is the guarantee that a partial POST /config can never drop a
+     * sibling key like {@code targetMac}.
+     */
+    static String mergeOverride(String existing, String incoming) throws IOException {
+        LinkedHashMap<String, String> merged = new LinkedHashMap<>();
+        parseFlat(new java.io.ByteArrayInputStream(existing.getBytes(StandardCharsets.UTF_8)), merged);
+        parseFlat(new java.io.ByteArrayInputStream(incoming.getBytes(StandardCharsets.UTF_8)), merged);
+        return toYaml(merged);
+    }
+
+    private static String toYaml(Map<String, String> m) {
+        StringBuilder sb = new StringBuilder();
+        for (Map.Entry<String, String> e : m.entrySet()) {
+            sb.append(e.getKey()).append(": ").append(e.getValue()).append('\n');
+        }
+        return sb.toString();
     }
 
     // --- typed accessors -------------------------------------------------
