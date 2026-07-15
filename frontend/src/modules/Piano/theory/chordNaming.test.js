@@ -197,6 +197,38 @@ describe('identifyChord — broadened vocabulary (v2)', () => {
   });
 });
 
+describe('identifyChord — added-fourth & lydian chords (v3)', () => {
+  it('C add4 (major triad + perfect 4th) is add4, not a "major" with an extra note', () => {
+    const r = identifyChord([C4, E4, F4, G4]); // 0,4,5,7
+    expect(r.quality).toBe('add4');
+    expect(r.displayName).toBe('C add4');
+  });
+
+  it('C minor add4', () => {
+    const r = identifyChord([C4, Eb4, F4, G4]); // 0,3,5,7
+    expect(r.quality).toBe('minorAdd4');
+    expect(r.displayName).toBe('C minor add4');
+  });
+
+  it('C add ♯11 (major triad + ♯11 — the lydian color)', () => {
+    const r = identifyChord([C4, E4, Gb4, G4]); // 0,4,6,7
+    expect(r.quality).toBe('addSharp11');
+    expect(r.displayName).toBe('C add ♯11');
+  });
+
+  it('C major 7 ♯11 (lydian) names the whole stack', () => {
+    const r = identifyChord([C4, E4, Gb4, G4, B4]); // 0,4,6,7,11
+    expect(r.quality).toBe('major7sharp11');
+    expect(r.displayName).toBe('C major 7 ♯11');
+  });
+
+  it('C 7 ♭5', () => {
+    const r = identifyChord([C4, E4, Gb4, Bb4]); // 0,4,6,10
+    expect(r.quality).toBe('dominant7b5');
+    expect(r.displayName).toBe('C 7 ♭5');
+  });
+});
+
 describe('identifyChord — the bass disambiguates an ambiguous set (v2)', () => {
   it('C-D-G with C in the bass is C sus2', () => {
     expect(identifyChord([C4, D4, G4]).displayName).toBe('C sus2');
