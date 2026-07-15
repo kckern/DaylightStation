@@ -1,0 +1,33 @@
+.jp-board {
+  display: grid;
+  grid-template-columns: repeat(var(--cats), 1fr);
+  gap: 0.5rem;
+  padding: 1.5rem;
+  flex: 1;
+
+  &__cat {
+    background: #0a1bb0;
+    display: flex; align-items: center; justify-content: center; text-align: center;
+    font-weight: 800; font-size: 1.4rem; text-transform: uppercase; padding: 0.75rem;
+    border-radius: 0.25rem; text-shadow: 0.1rem 0.1rem 0 #000;
+  }
+  &__tile {
+    background: #0a1bb0; border-radius: 0.25rem;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 2.4rem; font-weight: 800; color: #ffd54a; text-shadow: 0.12rem 0.12rem 0 #000;
+    min-height: 5.5rem;
+    &.is-used { background: rgba(10, 27, 176, 0.25); }
+    &.is-cursor { outline: 0.3rem solid #fff; z-index: 1; }
+  }
+}
+.jp-clue {
+  height: 100%; display: flex; flex-direction: column; align-items: center; padding: 1rem;
+  &__banner { display: flex; gap: 1.5rem; align-items: center; font-size: 2rem; font-weight: 800; }
+  &__dd { color: #ffd54a; letter-spacing: 0.15em; animation: gs-pulse 1.2s infinite; }
+  &__value { color: #ffd54a; }
+  &__locked {
+    font-size: 2rem; font-weight: 800; padding: 0.75rem 2rem; border-radius: 0.75rem;
+    background: var(--team-color); animation: gs-pulse 0.9s infinite;
+  }
+  &__media-error { opacity: 0.6; font-style: italic; }
+}
