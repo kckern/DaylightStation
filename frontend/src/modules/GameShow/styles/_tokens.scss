@@ -1,0 +1,78 @@
+// GameShow design system. Every color, face, and type size in the module
+// lives here as a custom property scoped to the two module roots
+// (.gameshow = TV shell, .gsh = mobile host companion) so nothing leaks
+// app-wide. No other GameShow stylesheet may declare a hex literal.
+.gameshow,
+.gsh {
+  // stage
+  --gs-stage: #070b1e;
+  --gs-stage-glow: #101a56;
+  --gs-well: #04061a;
+  --gs-surface: rgba(255, 255, 255, 0.08);
+  --gs-surface-border: rgba(255, 255, 255, 0.14);
+
+  // board
+  --gs-tile-hi: #1b2fb0;
+  --gs-tile-lo: #111d75;
+  --gs-tile-used: #0a1030;
+
+  // ink
+  --gs-paper: #f3efe2;
+  --gs-paper-dim: rgba(243, 239, 226, 0.72);
+  --gs-ink: #10131f;
+
+  // accents
+  --gs-brass: #e8b54a;
+  --gs-brass-bright: #f6d482;
+  --gs-danger: #e05263;
+  --gs-negative: #efa9b3;
+
+  // type
+  --gs-font-display: 'Anton', 'Arial Narrow', sans-serif;
+  --gs-font-serif: 'Bitter', georgia, serif;
+  --gs-font-ui: system-ui, sans-serif;
+  --gs-fs-display: 4.25rem;
+  --gs-fs-feature: 2.75rem;
+  --gs-fs-heading: 2rem;
+  --gs-fs-label: 1.35rem;
+  --gs-fs-caption: 1.1rem;
+  --gs-shadow-text: 0 2px 0 rgba(0, 0, 0, 0.4);
+}
+
+@keyframes gs-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 var(--team-color, var(--gs-brass)); }
+  50% { box-shadow: 0 0 1.2rem 0.2rem var(--team-color, var(--gs-brass)); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .gameshow *,
+  .gsh * {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+  }
+}
+
+@mixin gs-button {
+  font-family: var(--gs-font-ui);
+  font-size: var(--gs-fs-label);
+  font-weight: 600;
+  color: var(--gs-paper);
+  background: var(--gs-surface);
+  border: 1px solid var(--gs-surface-border);
+  border-radius: 0.5rem;
+  padding: 0.7rem 1.75rem;
+  cursor: pointer;
+
+  &:focus { outline: 3px solid var(--gs-brass-bright); outline-offset: 2px; }
+  &:disabled { opacity: 0.4; cursor: default; }
+}
+
+@mixin gs-button-primary {
+  @include gs-button;
+  background: linear-gradient(180deg, var(--gs-brass-bright), var(--gs-brass));
+  border-color: transparent;
+  color: var(--gs-ink);
+  font-weight: 700;
+
+  &:focus { outline: 3px solid var(--gs-paper); }
+}
