@@ -55,8 +55,9 @@ describe('isNotationId (H4)', () => {
     expect(isNotationId('files:docs/x.musicxml')).toBe(true);
     expect(isNotationId('x.MUSICXML')).toBe(true);
   });
-  it('does NOT route .mxl to the notation player (zip container, unsupported)', () => {
-    expect(isNotationId('files:docs/x.mxl')).toBe(false);
+  it('routes .mxl to the notation player (backend decompresses the zip container)', () => {
+    expect(isNotationId('files:docs/x.mxl')).toBe(true);
+    expect(isNotationId('x.MXL')).toBe(true);
   });
   it('non-notation ids are false', () => {
     expect(isNotationId('plex:12345')).toBe(false);
@@ -116,6 +117,18 @@ describe('SheetMusic mode', () => {
       '/sheetmusic/view/files:docs/sheet-music/fur-elise-super-easy.musicxml'
     );
     expect(await screen.findByTestId('score-player')).toHaveTextContent('player:<score-partwise/>');
+  });
+
+  it('opens a .mxl deep-link in the engraved player (backend serves decompressed XML)', async () => {
+    apiText.mockResolvedValue('<score-partwise/>');
+    renderSheet(
+      { collection: 'files:docs/sheet-music' },
+      '/sheetmusic/view/files:docs/sheet-music/the-adventures-of-tintin-theme.mxl'
+    );
+    expect(await screen.findByTestId('score-player')).toHaveTextContent('player:<score-partwise/>');
+    expect(apiText).toHaveBeenCalledWith(
+      'api/v1/proxy/media/stream/docs%2Fsheet-music%2Fthe-adventures-of-tintin-theme.mxl'
+    );
   });
 
   it('falls back to the page-image viewer for a non-notation (Plex) score', async () => {
