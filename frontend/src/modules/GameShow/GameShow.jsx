@@ -11,6 +11,7 @@ import TitleCard from './shell/components/TitleCard.jsx';
 import Results from './games/Jeopardy/Results.jsx';
 import { GAME_REGISTRY } from './games/registry.js';
 import './GameShow.scss';
+import './styles/fonts.js';
 
 // Corner QR the host scans to open the mobile companion for this session.
 // Uses the existing /api/v1/qrcode SVG endpoint — no client QR library.
