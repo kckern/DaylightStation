@@ -85,8 +85,8 @@
     // padding gives the circle room and keeps tall chords / ledger lines off the
     // edges.
     .header-center {
-      width: 100%;
-      height: 100%;
+      flex: 1;             // fill the header's main axis minus horizontal margins
+      align-self: stretch; // fill the cross axis MINUS vertical margins (real inset)
       display: flex;
       justify-content: center;
       align-items: stretch;

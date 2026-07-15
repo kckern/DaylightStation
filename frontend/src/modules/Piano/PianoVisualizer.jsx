@@ -2,7 +2,7 @@ import { useEffect, useMemo, Suspense } from 'react';
 import { configure as configureLogger } from '../../lib/logging/Logger.js';
 import { PianoKeyboard } from './components/PianoKeyboard';
 import { NoteWaterfall } from './components/NoteWaterfall';
-import { TheoryPanel } from './components/TheoryPanel.jsx';
+import { TheoryPanel } from './components/TheoryPanel';
 import { useMidiSubscription } from './useMidiSubscription';
 import { computeKeyboardRange } from './noteUtils.js';
 import './PianoVisualizer.scss';
