@@ -12,6 +12,20 @@ import Results from './games/Jeopardy/Results.jsx';
 import { GAME_REGISTRY } from './games/registry.js';
 import './GameShow.scss';
 
+// Corner QR the host scans to open the mobile companion for this session.
+// Uses the existing /api/v1/qrcode SVG endpoint — no client QR library.
+function HostQr({ sessionId }) {
+  if (!sessionId) return null;
+  const hostUrl = `${window.location.origin}/gameshow/host/${sessionId}`;
+  const src = `/api/v1/qrcode?data=${encodeURIComponent(hostUrl)}&size=180`;
+  return (
+    <div className="gameshow__hostqr" title={hostUrl}>
+      <img src={src} alt="Scan to open host controller" width={110} height={110} />
+      <span>Host controller</span>
+    </div>
+  );
+}
+
 function BuzzerBind({ teams, onDone }) {
   const [bound, setBound] = useState({});
   const { arbiter, startBind, bindingTeamId } = useBuzzers({ teams, onLock: () => {} });
@@ -97,15 +111,18 @@ export default function GameShow({ dismiss }) {
       )}
 
       {flow.phase === 'playing' && Game && (
-        <Game
-          setId={flow.setId}
-          teams={flow.teams}
-          sessionId={flow.sessionId}
-          resumeState={flow.resumeSession?.state || null}
-          buzzerBindings={flow.buzzerBindings}
-          config={flow.config}
-          onFinished={onFinished}
-        />
+        <>
+          <Game
+            setId={flow.setId}
+            teams={flow.teams}
+            sessionId={flow.sessionId}
+            resumeState={flow.resumeSession?.state || null}
+            buzzerBindings={flow.buzzerBindings}
+            config={flow.config}
+            onFinished={onFinished}
+          />
+          <HostQr sessionId={flow.sessionId} />
+        </>
       )}
 
       {flow.phase === 'results' && (

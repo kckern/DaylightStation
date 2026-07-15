@@ -30,6 +30,7 @@ function makeApp() {
       sessions.set(s.id, s);
       return s;
     }),
+    get: vi.fn((id) => sessions.get(id) || null),
     getActive: vi.fn(() => [...sessions.values()].find((s) => s.status === 'active') || null),
     checkpoint: vi.fn((id, state) => {
       const s = sessions.get(id);
@@ -88,6 +89,15 @@ describe('gameshow router', () => {
     expect(fin.body.status).toBe('complete');
     const after = await request(ctx.app).get('/gameshow/sessions/active');
     expect(after.body.session).toBe(null);
+  });
+
+  it('GET /sessions/:id returns the session or 404', async () => {
+    await request(ctx.app).post('/gameshow/sessions').send({ game: 'jeopardy', setId: 's1', teams: [] });
+    const found = await request(ctx.app).get('/gameshow/sessions/gs_1');
+    expect(found.status).toBe(200);
+    expect(found.body.setId).toBe('s1');
+    const missing = await request(ctx.app).get('/gameshow/sessions/gs_404');
+    expect(missing.status).toBe(404);
   });
 
   it('POST /sessions requires game+setId', async () => {

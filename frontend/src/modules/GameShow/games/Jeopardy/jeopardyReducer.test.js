@@ -174,6 +174,16 @@ describe('round + final progression', () => {
     expect(restored.active.clue.clue).toBe('a1');
   });
 
+  it('SELECT_AT jumps to a specific tile and opens it (phone tile picker)', () => {
+    let s = toBoard();
+    s = jeopardyReducer(s, { type: 'SELECT_AT', cat: 1, row: 0 }); // CatB $100
+    expect(s.phase).toBe('clue');
+    expect(s.active.clue.clue).toBe('b1');
+    // out-of-range / used tiles are ignored
+    let s2 = toBoard();
+    expect(jeopardyReducer(s2, { type: 'SELECT_AT', cat: 5, row: 5 })).toBe(s2);
+  });
+
   it('INIT_SET seeds the set and optionally resumes', () => {
     let s = initJeopardy({ rounds: [], final: null }, TEAM_IDS);
     s = jeopardyReducer(s, { type: 'INIT_SET', set: makeSet(), resume: null });

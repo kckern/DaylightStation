@@ -110,6 +110,16 @@ export function jeopardyReducer(state, action) {
       return { ...state, phase: 'clue', active, answeringTeamId, revealed: false, attempted: [] };
     }
 
+    case 'SELECT_AT': {
+      // Atomic "pick this exact tile" — used by the mobile host companion's
+      // tile grid (a d-pad is poor UX on a phone). Jumps the cursor, then
+      // runs the normal selection logic.
+      if (state.phase !== 'board') return state;
+      const { cat, row } = action;
+      if (!clueAt(state, cat, row) || isUsed(state, cat, row)) return state;
+      return jeopardyReducer({ ...state, cursor: { cat, row } }, { type: 'SELECT_TILE' });
+    }
+
     case 'SET_WAGER':
       if (state.phase !== 'wager') return state;
       return { ...state, phase: 'clue', wager: action.amount, revealed: false };
