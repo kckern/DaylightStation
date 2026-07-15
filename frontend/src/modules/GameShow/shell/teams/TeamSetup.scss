@@ -1,25 +1,71 @@
+@use '../../styles/tokens' as gs;
+
 .gs-teamsetup {
-  display: flex; flex-direction: column; gap: 1.5rem; padding: 2rem; height: 100%;
-  &__presets { display: flex; gap: 0.75rem; justify-content: center; }
-  &__teams { display: flex; gap: 1.25rem; justify-content: center; flex: 1; }
+  height: 100%;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+  padding: 1.5rem;
+
+  &__presets {
+    display: flex;
+    gap: 0.75rem;
+    justify-content: center;
+    flex-wrap: wrap;
+  }
+  &__teams {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    gap: 1rem;
+    justify-content: center;
+    overflow: hidden;
+  }
   &__team {
-    min-width: 16rem; padding: 1rem; border-radius: 0.75rem;
-    border-top: 0.4rem solid var(--team-color); background: rgba(0, 0, 0, 0.4);
-    display: flex; flex-direction: column; gap: 0.5rem;
+    flex: 0 1 16rem; // shrinkable — 4+ teams compress instead of overflowing the frame
+    min-width: 0;
+    padding: 1rem;
+    border-radius: 0.75rem;
+    border-top: 0.4rem solid var(--team-color);
+    background: rgba(0, 0, 0, 0.4);
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    overflow-y: auto;
   }
-  &__teamname { font-size: 1.4rem; font-weight: 700; }
-  &__add, &__confirm {
-    font-size: 1.2rem; padding: 0.75rem 1.5rem; border-radius: 0.5rem;
-    background: rgba(255, 255, 255, 0.12); color: #fff; border: none; cursor: pointer;
-    &:focus { outline: 3px solid #ffd54a; }
+  &__teamname {
+    font-family: var(--gs-font-display);
+    font-size: var(--gs-fs-label);
+    letter-spacing: 0.04em;
   }
-  &__confirm { align-self: center; background: #ffd54a; color: #111; font-weight: 700; }
+  &__add { @include gs.gs-button; }
+  &__confirm {
+    @include gs.gs-button-primary;
+    align-self: center;
+  }
 }
+
 .gs-chip {
-  padding: 0.4rem 0.9rem; border-radius: 999px; border: none; cursor: pointer;
-  background: rgba(255, 255, 255, 0.15); color: #fff; font-size: 1rem;
-  &:focus { outline: 3px solid #ffd54a; }
-  &.is-active { background: #ffd54a; color: #111; }
-  &--pool { opacity: 0.65; }
-  &--danger { background: rgba(224, 82, 99, 0.4); }
+  font-family: var(--gs-font-ui);
+  font-size: 1rem;
+  padding: 0.4rem 0.9rem;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  background: var(--gs-surface);
+  color: var(--gs-paper);
+  cursor: pointer;
+
+  &:focus { outline: 3px solid var(--gs-brass-bright); }
+  &.is-active {
+    background: var(--gs-brass);
+    color: var(--gs-ink);
+    font-weight: 700;
+  }
+  &--pool {
+    background: transparent;
+    border-color: var(--gs-surface-border);
+    color: var(--gs-paper-dim);
+  }
+  &--danger { background: rgba(224, 82, 99, 0.35); }
 }

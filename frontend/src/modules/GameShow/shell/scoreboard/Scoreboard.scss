@@ -1,23 +1,37 @@
+@use '../../styles/tokens' as gs;
+
 .gs-scoreboard {
+  flex: 0 0 auto;
   display: flex;
   gap: 1rem;
   justify-content: center;
-  padding: 0.75rem 1rem;
+  padding: 0.6rem 1rem;
 
   &__team {
-    min-width: 12rem;
-    padding: 0.5rem 1.25rem;
+    min-width: 11rem;
+    padding: 0.4rem 1.25rem;
     border-radius: 0.5rem;
-    border-top: 0.35rem solid var(--team-color);
+    border-top: 0.3rem solid var(--team-color);
     background: rgba(0, 0, 0, 0.45);
     text-align: center;
-    &.is-active { outline: 2px solid #fff; }
+
+    &.is-active { outline: 2px solid var(--gs-brass-bright); }
     &.is-locked { animation: gs-pulse 0.9s ease-in-out infinite; }
   }
-  &__name { display: block; font-size: 1.1rem; opacity: 0.85; }
-  &__score { display: block; font-size: 2rem; font-weight: 700; &.is-negative { color: #ff6b6b; } }
-}
-@keyframes gs-pulse {
-  0%, 100% { box-shadow: 0 0 0 0 var(--team-color); }
-  50% { box-shadow: 0 0 1.2rem 0.2rem var(--team-color); }
+  &__name {
+    display: block;
+    font-family: var(--gs-font-ui);
+    font-size: 1rem;
+    color: var(--gs-paper-dim);
+  }
+  &__score {
+    display: block;
+    font-family: var(--gs-font-display);
+    font-size: var(--gs-fs-heading);
+    letter-spacing: 0.03em;
+    color: var(--gs-paper);
+    text-shadow: var(--gs-shadow-text);
+
+    &.is-negative { color: var(--gs-negative); } // distinct from danger red (audit §3.5)
+  }
 }
