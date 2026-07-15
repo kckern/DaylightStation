@@ -4,6 +4,24 @@
   background: #060ce9; // classic board blue backdrop
   color: #fff;
   display: flex;
-  align-items: center;
-  justify-content: center;
+  flex-direction: column;
+
+  &__error { color: #ff6b6b; font-size: 1.4rem; }
+  &__ws-warn { position: absolute; top: 0.75rem; right: 0.75rem; opacity: 0.6; font-size: 1.2rem; }
+  &__resume, &__sets, &__bind {
+    flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1rem;
+    button {
+      font-size: 1.3rem; padding: 0.75rem 2rem; border-radius: 0.5rem; border: none; cursor: pointer;
+      background: rgba(255, 255, 255, 0.12); color: #fff;
+      &:focus { outline: 3px solid #ffd54a; }
+      &:disabled { opacity: 0.4; cursor: default; }
+      &.is-binding { animation: gs-pulse 0.9s infinite; }
+    }
+  }
+}
+
+.jeopardy {
+  width: 100%; height: 100%; display: flex; flex-direction: column;
+  button { font-size: 1.2rem; padding: 0.6rem 1.5rem; border-radius: 0.5rem; border: none; cursor: pointer;
+    background: #ffd54a; color: #111; font-weight: 700; &:focus { outline: 3px solid #fff; } }
 }
