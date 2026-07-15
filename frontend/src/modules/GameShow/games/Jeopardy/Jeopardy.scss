@@ -1,23 +1,59 @@
+@use '../../styles/tokens' as gs;
+
 .jp-board {
-  display: grid;
-  grid-template-columns: repeat(var(--cats), 1fr);
-  gap: 0.5rem;
-  padding: 1.5rem;
   flex: 1;
+  min-height: 0; // let the grid track the flex slot instead of its content
+  display: grid;
+  grid-template-columns: repeat(var(--cats), minmax(0, 1fr));
+  // Header row + one fr row per clue row: any board size (3-row sample or
+  // 6-row classic) divides the same fixed 960x540 frame. --rows comes from
+  // Board.jsx inline style.
+  grid-template-rows: minmax(2.4rem, auto) repeat(var(--rows), minmax(0, 1fr));
+  gap: 0.4rem;
+  padding: 1rem;
+  background: var(--gs-well);
+  container-type: size;
 
   &__cat {
-    background: #0a1bb0;
-    display: flex; align-items: center; justify-content: center; text-align: center;
-    font-weight: 800; font-size: 1.4rem; text-transform: uppercase; padding: 0.75rem;
-    border-radius: 0.25rem; text-shadow: 0.1rem 0.1rem 0 #000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    overflow: hidden;
+    padding: 0.25rem 0.5rem;
+    font-family: var(--gs-font-display);
+    font-size: 1.1rem; // fallback: no container-query support
+    font-size: clamp(0.9rem, 3.4cqh, 1.3rem);
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--gs-paper);
   }
+
   &__tile {
-    background: #0a1bb0; border-radius: 0.25rem;
-    display: flex; align-items: center; justify-content: center;
-    font-size: 2.4rem; font-weight: 800; color: #ffd54a; text-shadow: 0.12rem 0.12rem 0 #000;
-    min-height: 5.5rem;
-    &.is-used { background: rgba(10, 27, 176, 0.25); }
-    &.is-cursor { outline: 0.3rem solid #fff; z-index: 1; }
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 0;
+    overflow: hidden;
+    background: linear-gradient(180deg, var(--gs-tile-hi) 0%, var(--gs-tile-lo) 100%);
+    border-radius: 0.3rem;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.14), inset 0 -2px 6px rgba(0, 0, 0, 0.35);
+    font-family: var(--gs-font-display);
+    font-size: 1.6rem; // fallback: no container-query support
+    font-size: min(2.4rem, calc(34cqh / var(--rows))); // row-aware: big on 3-row boards, fits 6-row
+    letter-spacing: 0.03em;
+    color: var(--gs-brass);
+    text-shadow: var(--gs-shadow-text);
+
+    &.is-used {
+      background: var(--gs-tile-used);
+      box-shadow: none;
+    }
+    &.is-cursor {
+      outline: 0.25rem solid var(--gs-brass-bright);
+      outline-offset: -0.25rem; // inside the tile so edge tiles don't clip against the frame
+      z-index: 1;
+    }
   }
 }
 .jp-clue {
