@@ -1,0 +1,22 @@
+id: valid-set
+title: "Fixture Night"
+description: "Test fixture"
+rounds:
+  - name: Jeopardy
+    mode: hosted
+    multiplier: 1
+    categories:
+      - name: "Numbers"
+        clues:
+          - value: 100
+            clue: "2+2"
+            answer: "What is 4?"
+          - value: 200
+            clue: "Name that tune"
+            answer: "What is Ode to Joy?"
+            media: { type: audio, src: "games/jeopardy/fixture/ode.mp3" }
+            daily_double: true
+final:
+  category: "Finale"
+  clue: "The last clue"
+  answer: "What is the end?"
