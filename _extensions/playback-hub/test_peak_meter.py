@@ -4,23 +4,28 @@ unittest suite for peak_meter.py.
 Runs against a fake `popen_factory` so no real `pw-cat` process is ever
 spawned. Real `pw-cat` integration is exercised only on the hub host.
 """
-import io
+import os
 import struct
+import tempfile
 import unittest
+import wave
 from unittest import mock
 
 import peak_meter
 
 
-def _f32_bytes(samples):
-    """Pack a list of floats into raw f32 little-endian bytes (pw-cat format)."""
-    return b"".join(struct.pack("<f", s) for s in samples)
+def _write_wav(path, samples_s16, rate=44100):
+    """Write a mono s16 WAV of the given int samples (what pw-cat produces)."""
+    with wave.open(path, "wb") as w:
+        w.setnchannels(1)
+        w.setsampwidth(2)
+        w.setframerate(rate)
+        w.writeframes(b"".join(struct.pack("<h", s) for s in samples_s16))
 
 
 class _FakeProc:
-    """Minimal stand-in for subprocess.Popen — exposes stdout, terminate, wait."""
-    def __init__(self, payload_bytes, returncode=0):
-        self.stdout = io.BytesIO(payload_bytes)
+    """Minimal stand-in for subprocess.Popen — terminate/wait/poll only."""
+    def __init__(self, returncode=0):
         self.returncode = returncode
         self.terminated = False
 
@@ -35,52 +40,45 @@ class _FakeProc:
 
 
 class SamplePeakDbfsTests(unittest.TestCase):
-    def test_full_scale_sample_returns_zero_dbfs(self):
-        # Single full-scale (+1.0) sample → peak = 1.0 → 20*log10(1.0) = 0 dB
-        payload = _f32_bytes([1.0])
-        proc = _FakeProc(payload)
-        result = peak_meter.sample_peak_dbfs(
+    """sample_peak_dbfs with an injected wav_peak_reader (no real pw-cat/WAV)."""
+
+    def _sample(self, reader):
+        proc = _FakeProc()
+        return peak_meter.sample_peak_dbfs(
             "bluez_output.AA_BB.1",
             duration_sec=0.01,
             popen_factory=lambda *_a, **_kw: proc,
-            now_factory=iter([0.0, 0.02]).__next__,
-        )
+            sleep_factory=lambda _s: None,
+            wav_peak_reader=reader,
+        ), proc
+
+    def test_full_scale_returns_zero_dbfs(self):
+        result, proc = self._sample(lambda _p: 1.0)  # 20*log10(1.0) = 0 dB
         self.assertAlmostEqual(result, 0.0, places=3)
         self.assertTrue(proc.terminated)
 
     def test_half_amplitude_returns_minus_six_dbfs(self):
-        proc = _FakeProc(_f32_bytes([0.5, -0.25, 0.1]))
-        result = peak_meter.sample_peak_dbfs(
-            "bluez_output.AA_BB.1",
-            duration_sec=0.01,
-            popen_factory=lambda *_a, **_kw: proc,
-            now_factory=iter([0.0, 0.02]).__next__,
-        )
-        # Peak |amp| = 0.5  →  20 * log10(0.5) ≈ -6.0206 dB
+        result, _ = self._sample(lambda _p: 0.5)  # 20*log10(0.5) ≈ -6.0206 dB
         self.assertAlmostEqual(result, -6.0206, places=3)
+
+    def test_no_samples_returns_none(self):
+        result, _ = self._sample(lambda _p: None)
+        self.assertIsNone(result)
+
+    def test_silent_below_floor_clamps_to_floor(self):
+        result, _ = self._sample(lambda _p: 0.00001)  # ≈ -100 dBFS → -90
+        self.assertAlmostEqual(result, -90.0, places=3)
 
 
 class SamplePeakDbfsEdgeCasesTests(unittest.TestCase):
-    def test_no_samples_returns_none(self):
-        proc = _FakeProc(b"")
-        result = peak_meter.sample_peak_dbfs(
-            "bluez_output.AA_BB.1",
-            duration_sec=0.01,
-            popen_factory=lambda *_a, **_kw: proc,
-            now_factory=iter([0.0, 0.02]).__next__,
-        )
-        self.assertIsNone(result)
-
     def test_empty_sink_name_returns_none_without_spawning(self):
         called = {"n": 0}
         def factory(*_a, **_kw):
             called["n"] += 1
-            return _FakeProc(b"")
+            return _FakeProc()
         result = peak_meter.sample_peak_dbfs(
-            "",
-            duration_sec=0.01,
-            popen_factory=factory,
-            now_factory=iter([0.0, 0.02]).__next__,
+            "", duration_sec=0.01, popen_factory=factory,
+            sleep_factory=lambda _s: None,
         )
         self.assertIsNone(result)
         self.assertEqual(called["n"], 0)
@@ -89,23 +87,53 @@ class SamplePeakDbfsEdgeCasesTests(unittest.TestCase):
         def factory(*_a, **_kw):
             raise FileNotFoundError("pw-cat not on PATH")
         result = peak_meter.sample_peak_dbfs(
-            "bluez_output.AA_BB.1",
-            duration_sec=0.01,
-            popen_factory=factory,
-            now_factory=iter([0.0, 0.02]).__next__,
+            "bluez_output.AA_BB.1", duration_sec=0.01, popen_factory=factory,
+            sleep_factory=lambda _s: None,
         )
         self.assertIsNone(result)
 
-    def test_silent_samples_below_floor_return_floor_value(self):
-        # 0.00001 ≈ -100 dBFS → clamped to -90.
-        proc = _FakeProc(_f32_bytes([0.00001, -0.00001]))
-        result = peak_meter.sample_peak_dbfs(
-            "bluez_output.AA_BB.1",
-            duration_sec=0.01,
-            popen_factory=lambda *_a, **_kw: proc,
-            now_factory=iter([0.0, 0.02]).__next__,
-        )
-        self.assertAlmostEqual(result, -90.0, places=3)
+
+class WavPeakAmplitudeTests(unittest.TestCase):
+    """The pure WAV parser — the real integration surface (pw-cat writes WAV)."""
+
+    def _peak_of(self, samples):
+        fd, path = tempfile.mkstemp(suffix=".wav")
+        os.close(fd)
+        try:
+            _write_wav(path, samples)
+            return peak_meter._wav_peak_amplitude(path)
+        finally:
+            os.unlink(path)
+
+    def test_full_scale_s16(self):
+        # -32768 is full negative scale → |peak|/32768 == 1.0
+        self.assertAlmostEqual(self._peak_of([0, -32768, 100]), 1.0, places=4)
+
+    def test_half_scale_s16(self):
+        self.assertAlmostEqual(self._peak_of([0, 16384, -8192]), 0.5, places=4)
+
+    def test_empty_frames_returns_none(self):
+        self.assertIsNone(self._peak_of([]))
+
+    def test_missing_file_returns_none(self):
+        self.assertIsNone(peak_meter._wav_peak_amplitude("/nonexistent/x.wav"))
+
+    def test_real_roundtrip_through_sample_peak_dbfs(self):
+        # End-to-end with a real temp WAV: half-scale → ≈ -6 dBFS.
+        fd, path = tempfile.mkstemp(suffix=".wav")
+        os.close(fd)
+        _write_wav(path, [16384, -16384, 0])
+        try:
+            result = peak_meter.sample_peak_dbfs(
+                "bluez_output.AA_BB.1",
+                duration_sec=0.0,
+                popen_factory=lambda *_a, **_kw: _FakeProc(),
+                sleep_factory=lambda _s: None,
+                wav_peak_reader=lambda _p: peak_meter._wav_peak_amplitude(path),
+            )
+            self.assertAlmostEqual(result, -6.0206, places=3)
+        finally:
+            os.unlink(path)
 
 
 class VerifyRouteTests(unittest.TestCase):

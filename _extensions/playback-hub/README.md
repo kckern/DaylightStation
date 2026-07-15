@@ -1,7 +1,7 @@
 # playback-hub — Bluetooth Auto-Play for headsets + BT speakers
 
 **Status:** Running on `kckern-playback-hub` (Ubuntu mini-PC, 10.0.0.109)
-**Last reviewed:** 2026-05-28
+**Last reviewed:** 2026-07-14
 
 ---
 
@@ -195,6 +195,44 @@ This replaces an earlier `mpv-mpris` D-Bus approach which was unreliable across 
 
 ## Audio flow troubleshooting
 
+### #1 cause of "connects but plays nothing": WirePlumber's BlueZ monitor is seat-gated OFF
+
+**Symptom:** headset shows `bt_connected: true` in `/api/status` but `playing: false`,
+no mpv process, and `events.jsonl` shows only the priming loop (`cache.repair` /
+`playlist.primed`) with **no `mpv.start`**. `busctl … Device1 Connect` fails with
+`br-connection-profile-unavailable`; `bluetoothd` logs `a2dp-sink profile connect
+failed: Protocol not available`. `mpv --audio-device=help` lists **no `bluez_output`
+sink**. This is what broke playback for 8 silent days after the 2026-07-06 reboot.
+
+**Root cause:** WirePlumber 0.4's `scripts/monitors/bluez.lua` only starts the BlueZ
+monitor when the user's **logind seat state is `active`** (property
+`["with-logind"] = true` in `bluetooth.lua.d/50-bluez-config.lua`). The hub runs as
+the **lingering, seatless** `kckern` user (`loginctl show-user kckern` → `State=lingering`,
+`Sessions=` empty), so the monitor logs `Seat state changed: lingering` and **never
+registers an A2DP MediaEndpoint** → BlueZ has no sink to offer → `start_playback`'s
+`resolve_audio_device()` never finds `bluez_output.<MAC>.1` and bails *before* spawning
+mpv. If a `gdm` greeter session is up it grabs seat0 and *its* wireplumber makes the
+sinks — in gdm's graph, invisible to the kckern-run hub.
+
+**Fix (applied 2026-07-14, durable):**
+```bash
+# 1. Disable the seat gate. System file (immediate); a .bak is kept.
+sudo sed -i 's/\["with-logind"\] = true/["with-logind"] = false/' \
+  /usr/share/wireplumber/bluetooth.lua.d/50-bluez-config.lua
+# 2. Package-update-proof backstop, owned by kckern. MUST be prefixed 51- (after
+#    50-bluez-config sets the table, BEFORE 90-enable-all reads it — a 99- prefix
+#    loads too late and does nothing).
+cat > ~kckern/.config/wireplumber/bluetooth.lua.d/51-disable-logind-gate.lua <<'EOF'
+bluez_monitor.properties["with-logind"] = false
+EOF
+# 3. No display manager on a headless audio box — stop gdm grabbing the seat.
+sudo systemctl disable --now gdm
+# 4. Reload and reconnect.
+sudo -u kckern XDG_RUNTIME_DIR=/run/user/1000 systemctl --user restart wireplumber
+busctl --system call org.bluez /org/bluez/hciN/dev_<MAC_UNDER> org.bluez.Device1 Connect
+```
+Verify the sink exists: `sudo -u kckern XDG_RUNTIME_DIR=/run/user/1000 mpv --audio-device=help | grep bluez`.
+
 ### Critical: don't add `--audio-fallback-to-null=yes` or `PIPEWIRE_PROPS=node.dont-reconnect`
 
 This combination silently silences mpv. On any transient pipewire sink hiccup (which happens normally during BT transport setup), mpv falls back to the null AO and stays silent forever. Status will keep reporting `playing=1` and time-pos will advance because mpv is decoding into the void. The TX bytes on the BT controller will still climb at ~47 KB/s but the actual SBC payload is silence.
@@ -211,14 +249,19 @@ Fix (2026-05-28, no flags, no IPC mute): the BT-disconnect path calls `end_sessi
 
 Sending `ao-mute=true` via mpv IPC just before killing mpv can race the *new* mpv's socket on reconnect. The new mpv comes up already muted with no log indication. If you ever bring back any disconnect-time IPC, make sure the OLD socket is gone *before* the new mpv is spawned.
 
-### `/api/verify` peak-meter is a false-negative
+### `/api/verify` peak-meter — FIXED 2026-07-14 (was a silent false-negative)
 
-`peak_meter.py` calls `pw-cat --record ... --raw` to sample the sink monitor port. The `--raw` flag doesn't exist in `pw-cat` on this pipewire version (1.0.5), so it errors out immediately and the endpoint always returns `audio_flowing: false`. The real signal is: HCI TX bytes climbing at ~40–50 KB/s on the device's controller = SBC audio leaving the chip.
+`peak_meter.py` used to call `pw-cat --record … --raw`. The `--raw` flag doesn't exist
+in `pw-cat` on this PipeWire (1.0.x), so it errored out immediately and `/api/verify`
+**always** returned `audio_flowing: false` — a blind sensor that helped the seat-gate
+outage above go unnoticed. It now records a short WAV to a temp file (`--format=s16`, no
+`--raw`) and parses it with the stdlib `wave` module (see `_wav_peak_amplitude`, unit-
+tested in `test_peak_meter.py`). `curl localhost:8080/api/verify/<color>` now returns a
+real `peak_dbfs` and a trustworthy `audio_flowing`.
 
-Better verification (until peak_meter is fixed):
+Manual equivalent (ground truth):
 ```bash
-# Sample monitor port WITHOUT --raw (writes wav, then peak-check)
-timeout 3 pw-cat --record --target bluez_output.<MAC_UNDER>.1:monitor_FL /tmp/mon.wav 2>&1
+timeout 3 pw-cat --record --target bluez_output.<MAC_UNDER>.1:monitor_FL /tmp/mon.wav
 python3 -c "
 import wave, struct
 with wave.open('/tmp/mon.wav') as w:
@@ -226,6 +269,19 @@ with wave.open('/tmp/mon.wav') as w:
     s = struct.unpack('<'+'h'*(len(f)//2), f)
     print(f'peak={max(abs(x) for x in s) if s else 0}')"
 ```
+
+### Guardrail: silent-slot alert (so this never decays unnoticed again)
+
+The outage was invisible for 8 days because nothing *actively* checked for it: a slot
+with no mpv emits no heartbeat, and `bt.reconnect_fail` never fires while BT *is*
+connected. The `mpv_watchdog` now runs a **silent-slot detector**: any slot that is
+BT-connected and should be playing (armed, or a private device in an active schedule
+window) but has **no live mpv** for more than `SILENT_SLOT_ALERT_SEC` (300 s) emits a
+`playback.silent_slot` event and dispatches a `slot_silent` **warning alert** (once per
+outage streak; cleared the instant mpv is alive). Route it to a phone push by setting
+`alerts.on_slot_silent: notify` in `devices.yml` (defaults to `log`). This catches the
+seat-gate failure mode — and any future "connected but start_playback keeps bailing" —
+within minutes instead of days.
 
 ### What to check when a slot is silent
 
@@ -256,14 +312,28 @@ pipewire wireplumber pipewire-pulse bluez
 
 ## Deployment
 
-Source of truth is this repo (`_extensions/playback-hub/`). Deploy via rsync to `user_1@10.0.0.109:/home/kckern/playback-hub/`. There is no systemd unit at present — the daemon is started by hand:
+Source of truth is this repo (`_extensions/playback-hub/`). Deploy via `scp`/rsync to
+`kckern@10.0.0.109:/home/kckern/playback-hub/`, then restart the affected service.
+
+Both processes run as **`systemd --user` units** (owned by `kckern`, `enabled`, auto-start
+on boot via linger — `loginctl enable-linger kckern`):
+
+| Unit | Role | Restart after changing |
+|------|------|------------------------|
+| `playback-hub.service` | the `playback-hub.sh monitor` daemon | `playback-hub.sh` |
+| `playback-hub-web.service` | `web.py` REST API on :8080 | `web.py`, `peak_meter.py` |
 
 ```bash
-ssh user_1@kckern-playback-hub \
-  'cd /home/kckern/playback-hub && nohup setsid bash playback-hub.sh monitor > /home/kckern/hub.log 2>&1 < /dev/null & disown'
+# deploy + reload (run the systemctl as kckern with the user bus)
+scp peak_meter.py playback-hub.sh web.py kckern@10.0.0.109:/home/kckern/playback-hub/
+ssh kckern-playback-hub 'sudo -u kckern XDG_RUNTIME_DIR=/run/user/1000 \
+  systemctl --user restart playback-hub-web.service playback-hub.service'
 ```
 
-`web.py` is also started manually (port 8080). TODO: add user-mode systemd units for both.
+The monitor is restart-safe: on start it re-enumerates devices and resumes any already-
+connected slot. **This box must NOT run a display manager** — `gdm` is disabled because a
+graphical seat session steals the BlueZ media role from the hub (see the seat-gate section
+above). Don't re-enable it.
 
 ---
 
