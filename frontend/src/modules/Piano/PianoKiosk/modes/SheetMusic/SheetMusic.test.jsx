@@ -12,7 +12,9 @@ vi.mock('../../../../../lib/api.mjs', () => ({
 // Stub the engraver so the notation path doesn't pull in VexFlow/MIDI here — we
 // only assert the right view mounts and the raw XML reaches it.
 vi.mock('./ScorePlayer.jsx', () => ({
-  default: ({ score }) => <div data-testid="score-player">player:{score?.musicXml}</div>,
+  default: ({ score }) => (
+    <div data-testid="score-player" data-splash={score?.splashImage || ''}>player:{score?.musicXml}</div>
+  ),
 }));
 
 import { ActivePianoProvider } from '../../PianoConfig.jsx';
@@ -132,7 +134,7 @@ describe('SheetMusic mode', () => {
     );
   });
 
-  it('shows the sidecar image (not the engraver) for a score that has one', async () => {
+  it('engraves a score that has a sidecar image, passing the scan through as a splash', async () => {
     // info resolves the same-basename .jpg scan as the score's image.
     api.mockImplementation((path) => {
       if (path === 'api/v1/info/files/docs/sheet-music/the-adventures-of-tintin-theme.mxl') {
@@ -146,12 +148,17 @@ describe('SheetMusic mode', () => {
       { collection: 'files:docs/sheet-music' },
       '/sheetmusic/view/files:docs/sheet-music/the-adventures-of-tintin-theme.mxl'
     );
-    // The curated scan renders as a page image; the engraved player is NOT mounted.
-    const img = await screen.findByAltText('The Adventures of Tintin — page 1');
-    expect(img.getAttribute('src')).toBe('/api/v1/proxy/media/stream/tintin.jpg');
-    expect(screen.queryByTestId('score-player')).toBeNull();
-    // The raw-XML stream is never fetched — no engraving happened.
-    expect(apiText).not.toHaveBeenCalled();
+    // The score still ENGRAVES (interactive player mounts) — the scan is NOT a
+    // replacement, it's handed through as the loading splash.
+    const player = await screen.findByTestId('score-player');
+    expect(player).toHaveTextContent('player:<score-partwise/>');
+    await waitFor(() =>
+      expect(screen.getByTestId('score-player').getAttribute('data-splash'))
+        .toBe('/api/v1/proxy/media/stream/tintin.jpg')
+    );
+    expect(apiText).toHaveBeenCalledWith(
+      'api/v1/proxy/media/stream/docs%2Fsheet-music%2Fthe-adventures-of-tintin-theme.mxl'
+    );
   });
 
   it('falls back to the page-image viewer for a non-notation (Plex) score', async () => {

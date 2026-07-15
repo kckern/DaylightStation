@@ -111,18 +111,14 @@ function ScoreGridRoute({ collectionRef }) {
 }
 
 /**
- * Score viewer route. The splat holds the full content id. A curated sidecar image
- * (a same-basename .jpg scan) wins — it opens in the page-image ScoreViewer. Failing
- * that, a MusicXML id (.musicxml/.mxl) opens the interactive engraved ScorePlayer;
- * anything else (e.g. a Plex page-image score) opens the page-image ScoreViewer.
+ * Score viewer route. The splat holds the full content id. A MusicXML id
+ * (.musicxml/.mxl) opens the interactive engraved ScorePlayer; anything else (e.g. a
+ * Plex page-image score) opens the page-image ScoreViewer.
  */
 function ScoreViewerRoute() {
   const params = useParams();
   const contentId = params['*'] || '';
-  const { loading, image, title } = useScoreImage(contentId);
-  const imageScore = useMemo(() => ({ id: contentId, image, title }), [contentId, image, title]);
-  if (loading) return <SkeletonStage />;
-  if (image) return <ScoreViewer score={imageScore} />;
+  const imageScore = useMemo(() => ({ id: contentId }), [contentId]);
   if (isNotationId(contentId)) return <NotationScore contentId={contentId} />;
   return <ScoreViewer score={imageScore} />;
 }
@@ -131,6 +127,10 @@ function ScoreViewerRoute() {
  * Fetches a MusicXML file's raw contents from the media stream endpoint, then
  * hands it to ScorePlayer to engrave. ScorePlayer derives title/composer/tempo
  * from the embedded XML, so no extra metadata is needed here.
+ *
+ * A same-basename image sidecar (a curated scan, resolved via `useScoreImage`) is
+ * passed through as a splash — shown right-sized while the raw XML fetches and while
+ * ScorePlayer engraves, so the user sees the score's artwork instead of a blank stage.
  */
 function NotationScore({ contentId }) {
   const logger = useMemo(() => getLogger().child({ component: 'piano-sheetmusic' }), []);
@@ -138,6 +138,7 @@ function NotationScore({ contentId }) {
   const [retryKey, setRetryKey] = useState(0);
   const fetchMsRef = useRef(0); // raw-XML fetch time → ScorePlayer's score.load telemetry
   const localId = useMemo(() => contentId.replace(/^[a-z]+:/i, ''), [contentId]);
+  const { image: splashImage } = useScoreImage(contentId);
 
   useEffect(() => {
     let cancelled = false;
@@ -157,9 +158,23 @@ function NotationScore({ contentId }) {
     return () => { cancelled = true; };
   }, [localId, logger, retryKey]);
 
-  if (xml === null) return <SkeletonStage />;
+  if (xml === null) return <ScoreSplash image={splashImage} />;
   if (xml === '') return <PianoEmpty message="Could not load this score." actionLabel="Try again" onAction={() => setRetryKey((k) => k + 1)} />;
-  return <ScorePlayer score={{ id: contentId, musicXml: xml, fetchMs: fetchMsRef.current }} />;
+  return <ScorePlayer score={{ id: contentId, musicXml: xml, fetchMs: fetchMsRef.current, splashImage }} />;
+}
+
+/**
+ * Loading splash for a score: its right-sized sidecar scan (object-fit: contain, so it
+ * never overflows/scrolls) if one exists, else the neutral skeleton. Used while the raw
+ * XML fetches and, inside ScorePlayer, while the engraving renders.
+ */
+export function ScoreSplash({ image }) {
+  if (!image) return <SkeletonStage />;
+  return (
+    <div className="piano-score-splash">
+      <img className="piano-score-splash__img" src={image} alt="" decoding="async" />
+    </div>
+  );
 }
 
 export default SheetMusic;
