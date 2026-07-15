@@ -119,16 +119,39 @@ describe('SheetMusic mode', () => {
     expect(await screen.findByTestId('score-player')).toHaveTextContent('player:<score-partwise/>');
   });
 
-  it('opens a .mxl deep-link in the engraved player (backend serves decompressed XML)', async () => {
+  it('opens a .mxl deep-link in the engraved player when it has NO sidecar image', async () => {
+    api.mockResolvedValue({}); // info resolves with no image → engrave
     apiText.mockResolvedValue('<score-partwise/>');
+    renderSheet(
+      { collection: 'files:docs/sheet-music' },
+      '/sheetmusic/view/files:docs/sheet-music/on-smokey-before-i-gomxl.mxl'
+    );
+    expect(await screen.findByTestId('score-player')).toHaveTextContent('player:<score-partwise/>');
+    expect(apiText).toHaveBeenCalledWith(
+      'api/v1/proxy/media/stream/docs%2Fsheet-music%2Fon-smokey-before-i-gomxl.mxl'
+    );
+  });
+
+  it('shows the sidecar image (not the engraver) for a score that has one', async () => {
+    // info resolves the same-basename .jpg scan as the score's image.
+    api.mockImplementation((path) => {
+      if (path === 'api/v1/info/files/docs/sheet-music/the-adventures-of-tintin-theme.mxl') {
+        return Promise.resolve({ title: 'The Adventures of Tintin', image: '/api/v1/proxy/media/stream/tintin.jpg' });
+      }
+      return Promise.resolve({});
+    });
+    apiText.mockResolvedValue('<score-partwise/>');
+
     renderSheet(
       { collection: 'files:docs/sheet-music' },
       '/sheetmusic/view/files:docs/sheet-music/the-adventures-of-tintin-theme.mxl'
     );
-    expect(await screen.findByTestId('score-player')).toHaveTextContent('player:<score-partwise/>');
-    expect(apiText).toHaveBeenCalledWith(
-      'api/v1/proxy/media/stream/docs%2Fsheet-music%2Fthe-adventures-of-tintin-theme.mxl'
-    );
+    // The curated scan renders as a page image; the engraved player is NOT mounted.
+    const img = await screen.findByAltText('The Adventures of Tintin — page 1');
+    expect(img.getAttribute('src')).toBe('/api/v1/proxy/media/stream/tintin.jpg');
+    expect(screen.queryByTestId('score-player')).toBeNull();
+    // The raw-XML stream is never fetched — no engraving happened.
+    expect(apiText).not.toHaveBeenCalled();
   });
 
   it('falls back to the page-image viewer for a non-notation (Plex) score', async () => {
