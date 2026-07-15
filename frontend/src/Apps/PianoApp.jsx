@@ -23,6 +23,7 @@ import {
   PianoScreenControlProvider,
 } from '../modules/Piano/PianoKiosk/usePianoScreensaver.jsx';
 import { usePianoScreenOff } from '../modules/Piano/PianoKiosk/usePianoScreenOff.js';
+import { KIOSK_DEVICE_ID } from '../modules/Piano/PianoKiosk/kioskDeviceIdentity.js';
 import {
   PianoPlaybackProvider,
   usePianoPlayback,
@@ -197,8 +198,17 @@ function ScreensaverDriver() {
   // activeNotes churn), so without this hold a long performance would blank the
   // screen mid-piece. keepAlive holds it awake, same gate useInactivityReturn uses.
   const { playing } = usePianoPlayback();
+  // Only the tablet itself may drive its own backlight. The served config's
+  // deviceId is shared by every client that loads this piano, so a second client
+  // (a laptop dev tab) would otherwise run its OWN idle clock and sleep the
+  // tablet mid-lesson — its wake-lock / `playing` / MIDI-wake state is local and
+  // blind to what the tablet is doing (2026-07-15). Gate on self-identity: this
+  // client drives the screen only when its `?device=` identity matches the
+  // configured target; otherwise pass a falsy deviceId, which makes the hook inert.
+  const configDeviceId = config.screensaver?.deviceId;
+  const isThisDevice = !!configDeviceId && KIOSK_DEVICE_ID === configDeviceId;
   usePianoScreensaver({
-    deviceId: config.screensaver?.deviceId,
+    deviceId: isThisDevice ? configDeviceId : null,
     activeNotes,
     noteHistory,
     timeoutMinutes: config.screensaver?.timeoutMinutes,
