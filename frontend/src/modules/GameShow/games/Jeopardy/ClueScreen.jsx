@@ -5,6 +5,7 @@ import ControlLegend from '../../shell/components/ControlLegend.jsx';
 import TimerRing from '../../shell/timers/TimerRing.jsx';
 import { useCountdown } from '../../shell/timers/useCountdown.js';
 import { onColor } from '../../shell/teams/teamColors.js';
+import MemberAvatar from '../../shell/components/MemberAvatar.jsx';
 import './Jeopardy.scss';
 
 /**
@@ -41,6 +42,13 @@ export function ClueScreen({ state, timerSeconds = 12, onTimeout, lockedTeam = n
       <RevealPanel prompt={active.clue.clue} revealed={revealed} answer={active.clue.answer} />
       {lockedTeam && (
         <div className="jp-clue__locked" style={{ '--team-color': lockedTeam.color, '--team-on': onColor(lockedTeam.color) }}>
+          {lockedTeam.members?.length > 0 && (
+            <span className="jp-clue__lockedavatars">
+              {lockedTeam.members.map((m) => (
+                <MemberAvatar key={m.id} member={m} teamColor={lockedTeam.color} size={30} />
+              ))}
+            </span>
+          )}
           {lockedTeam.name} buzzed in!
         </div>
       )}

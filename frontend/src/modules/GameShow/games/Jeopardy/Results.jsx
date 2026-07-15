@@ -1,5 +1,6 @@
 import React from 'react';
 import TitleCard from '../../shell/components/TitleCard.jsx';
+import MemberAvatar from '../../shell/components/MemberAvatar.jsx';
 import './Jeopardy.scss';
 
 export function Results({ teams, scores, onPlayAgain, onExit }) {
@@ -11,6 +12,13 @@ export function Results({ teams, scores, onPlayAgain, onExit }) {
       <ol className="jp-results__list">
         {ranked.map((t) => (
           <li key={t.id} style={{ '--team-color': t.color }}>
+            {t.members?.length > 0 && (
+              <span className="jp-results__avatars">
+                {t.members.map((m) => (
+                  <MemberAvatar key={m.id} member={m} teamColor={t.color} size={26} />
+                ))}
+              </span>
+            )}
             {t.name}: {(scores[t.id] ?? 0).toLocaleString()}
           </li>
         ))}
