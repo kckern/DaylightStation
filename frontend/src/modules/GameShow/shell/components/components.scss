@@ -1,16 +1,54 @@
+@use '../../styles/tokens' as gs;
+
 .gs-titlecard {
   height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center;
   h1 { font-size: 5rem; text-transform: uppercase; letter-spacing: 0.08em; text-shadow: 0.15rem 0.15rem 0 #000; }
   p { font-size: 1.6rem; opacity: 0.8; }
 }
 .gs-reveal {
-  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2rem; height: 100%; padding: 3rem; text-align: center;
-  &__prompt { font-size: 3.2rem; font-weight: 600; text-shadow: 0.12rem 0.12rem 0 #000; }
-  &__answer { font-size: 2.2rem; color: #ffd54a; border-top: 2px solid rgba(255,255,255,0.3); padding-top: 1.5rem; }
+  flex: 1 1 auto;
+  min-height: 0; // share the clue column with banner/media/legend instead of claiming 100%
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1.5rem;
+  padding: 0 2rem;
+  text-align: center;
+
+  &__prompt {
+    font-family: var(--gs-font-serif);
+    font-weight: 500;
+    line-height: 1.3;
+    color: var(--gs-paper);
+    text-wrap: balance;
+
+    &--lg { font-size: var(--gs-fs-feature); }
+    &--md { font-size: 2.2rem; }
+    &--sm { font-size: 1.8rem; }
+  }
+
+  &__answer {
+    font-family: var(--gs-font-serif);
+    font-weight: 700;
+    font-size: var(--gs-fs-heading);
+    color: var(--gs-brass);
+    border-top: 2px solid var(--gs-surface-border);
+    padding-top: 1.25rem;
+  }
 }
+
 .gs-media {
-  &--image { max-width: 70%; max-height: 50vh; border-radius: 0.5rem; }
-  &--video { max-width: 70%; max-height: 50vh; }
+  &--image,
+  &--video {
+    max-width: 70%;
+    max-height: 45%; // % of the definite-height clue column — NEVER vh (frame contract)
+    min-height: 0;
+    flex: 0 1 auto;
+    border-radius: 0.4rem;
+    object-fit: contain;
+  }
 }
 .gs-wager {
   display: flex; flex-direction: column; gap: 1.25rem; align-items: center; justify-content: center; height: 100%;

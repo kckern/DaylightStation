@@ -57,15 +57,47 @@
   }
 }
 .jp-clue {
-  height: 100%; display: flex; flex-direction: column; align-items: center; padding: 1rem;
-  &__banner { display: flex; gap: 1.5rem; align-items: center; font-size: 2rem; font-weight: 800; }
-  &__dd { color: #ffd54a; letter-spacing: 0.15em; animation: gs-pulse 1.2s infinite; }
-  &__value { color: #ffd54a; }
-  &__locked {
-    font-size: 2rem; font-weight: 800; padding: 0.75rem 2rem; border-radius: 0.75rem;
-    background: var(--team-color); animation: gs-pulse 0.9s infinite;
+  height: 100%;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 1rem 2rem;
+
+  &__banner {
+    flex: 0 0 auto;
+    display: flex;
+    gap: 1.5rem;
+    align-items: center;
+    font-family: var(--gs-font-display);
+    font-size: var(--gs-fs-heading);
+    letter-spacing: 0.04em;
   }
-  &__media-error { opacity: 0.6; font-style: italic; }
+  &__dd {
+    color: var(--gs-brass-bright);
+    letter-spacing: 0.18em;
+    animation: gs-pulse 1.2s infinite;
+  }
+  &__value {
+    color: var(--gs-brass);
+    text-shadow: var(--gs-shadow-text);
+  }
+  &__locked {
+    flex: 0 0 auto;
+    font-family: var(--gs-font-display);
+    font-size: var(--gs-fs-heading);
+    letter-spacing: 0.03em;
+    padding: 0.6rem 2rem;
+    border-radius: 0.75rem;
+    background: var(--team-color);
+    color: var(--team-on, var(--gs-paper)); // computed contrast from Task 3
+    animation: gs-pulse 0.9s infinite;
+  }
+  &__media-error {
+    color: var(--gs-paper-dim);
+    font-style: italic;
+  }
 }
 .jp-final {
   height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1.5rem;
