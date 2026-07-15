@@ -94,6 +94,7 @@
     color: var(--team-on, var(--gs-paper)); // computed contrast from Task 3
     animation: gs-pulse 0.9s infinite;
   }
+  &__lockedavatars { display: inline-flex; gap: 0.3rem; margin-right: 0.6rem; vertical-align: middle; }
   &__media-error {
     color: var(--gs-paper-dim);
     font-style: italic;
@@ -146,6 +147,7 @@
       padding-left: 0.75rem;
     }
   }
+  &__avatars { display: inline-flex; gap: 0.3rem; margin-right: 0.5rem; vertical-align: middle; }
   &__actions {
     display: flex;
     gap: 1rem;
