@@ -67,5 +67,5 @@
     border-color: var(--gs-surface-border);
     color: var(--gs-paper-dim);
   }
-  &--danger { background: rgba(224, 82, 99, 0.35); }
+  &--danger { background: var(--gs-danger-soft); }
 }
