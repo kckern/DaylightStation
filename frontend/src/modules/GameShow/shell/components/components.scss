@@ -1,0 +1,28 @@
+.gs-titlecard {
+  height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center;
+  h1 { font-size: 5rem; text-transform: uppercase; letter-spacing: 0.08em; text-shadow: 0.15rem 0.15rem 0 #000; }
+  p { font-size: 1.6rem; opacity: 0.8; }
+}
+.gs-reveal {
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2rem; height: 100%; padding: 3rem; text-align: center;
+  &__prompt { font-size: 3.2rem; font-weight: 600; text-shadow: 0.12rem 0.12rem 0 #000; }
+  &__answer { font-size: 2.2rem; color: #ffd54a; border-top: 2px solid rgba(255,255,255,0.3); padding-top: 1.5rem; }
+}
+.gs-media {
+  &--image { max-width: 70%; max-height: 50vh; border-radius: 0.5rem; }
+  &--video { max-width: 70%; max-height: 50vh; }
+}
+.gs-wager {
+  display: flex; flex-direction: column; gap: 1.25rem; align-items: center; justify-content: center; height: 100%;
+  &__team { font-size: 2rem; font-weight: 700; }
+  &__row { display: flex; gap: 1.5rem; align-items: center;
+    button { font-size: 1.5rem; padding: 0.5rem 1.25rem; border-radius: 0.5rem; border: none; cursor: pointer;
+      background: rgba(255,255,255,0.15); color: #fff; &:focus { outline: 3px solid #ffd54a; } } }
+  &__amount { font-size: 3rem; font-weight: 800; min-width: 10rem; text-align: center; }
+  &__confirm { font-size: 1.3rem; padding: 0.75rem 2rem; border-radius: 0.5rem; border: none; cursor: pointer;
+    background: #ffd54a; color: #111; font-weight: 700; &:focus { outline: 3px solid #fff; } }
+}
+.gs-legend {
+  display: flex; gap: 1.5rem; justify-content: center; padding: 0.5rem; font-size: 1rem; opacity: 0.7;
+  kbd { background: rgba(255,255,255,0.15); border-radius: 0.25rem; padding: 0.1rem 0.5rem; margin-right: 0.3rem; }
+}
