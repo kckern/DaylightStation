@@ -46,7 +46,9 @@ function BuzzerBind({ teams, onDone }) {
   );
 }
 
-export default function GameShow({ dismiss }) {
+export default function GameShow({ dismiss, clear }) {
+  // Mounted as a screen widget (gets `dismiss`) or via /app/:appId (gets `clear`).
+  const exit = dismiss || clear || (() => {});
   const [flow, dispatchFlow] = useReducer(flowReducer, initialFlowState);
   const [finalScores, setFinalScores] = useState({});
   // Spec §9: WS disconnect badge — buzzer modes degrade to keyboard/inject.
@@ -128,7 +130,7 @@ export default function GameShow({ dismiss }) {
       {flow.phase === 'results' && (
         <Results teams={flow.teams} scores={finalScores}
           onPlayAgain={() => dispatchFlow({ type: 'PLAY_AGAIN' })}
-          onExit={() => dismiss?.()} />
+          onExit={exit} />
       )}
     </div>
   );
