@@ -54,11 +54,20 @@ export function PeekPanel({ deviceId }) {
   const statePending = pendingFields?.has('state');
   const currentItemPending = pendingFields?.has('currentItem');
 
-  const handlePlay = () => { predict(deviceId, { state: 'playing' }); ctl.transport.play?.(); };
-  const handlePause = () => { predict(deviceId, { state: 'paused' }); ctl.transport.pause?.(); };
-  const handleStop = () => { predict(deviceId, { state: 'stopped' }); ctl.transport.stop?.(); };
-  const handleNext = () => { pending(deviceId, ['currentItem']); ctl.transport.skipNext?.(); };
-  const handlePrev = () => { pending(deviceId, ['currentItem']); ctl.transport.skipPrev?.(); };
+  // The transport promise resolves on the device-ack; it rejects on ack
+  // timeout (e.g. a device that applied the command but whose ack broadcast
+  // didn't round-trip). Correctness never depends on it — the optimistic
+  // overlay plus the authoritative device-state broadcast already drive the
+  // UI — so swallow the rejection rather than leak an unhandled rejection to
+  // the console. A no-op catch keeps the belt-and-suspenders ack without the
+  // noise.
+  const fire = (thunk) => { try { Promise.resolve(thunk()).catch(() => {}); } catch { /* sync throw */ } };
+
+  const handlePlay = () => { predict(deviceId, { state: 'playing' }); fire(() => ctl.transport.play?.()); };
+  const handlePause = () => { predict(deviceId, { state: 'paused' }); fire(() => ctl.transport.pause?.()); };
+  const handleStop = () => { predict(deviceId, { state: 'stopped' }); fire(() => ctl.transport.stop?.()); };
+  const handleNext = () => { pending(deviceId, ['currentItem']); fire(() => ctl.transport.skipNext?.()); };
+  const handlePrev = () => { pending(deviceId, ['currentItem']); fire(() => ctl.transport.skipPrev?.()); };
 
   return (
     <Stack data-testid="peek-panel" className="peek-panel" gap="md">
@@ -124,7 +133,7 @@ export function PeekPanel({ deviceId }) {
           aria-label="Volume"
           style={{ width: 'min(240px, 60%)' }}
           onChange={setVolumeScrub}
-          onChangeEnd={(v) => { ctl.config.setVolume?.(v); setVolumeScrub(null); }}
+          onChangeEnd={(v) => { fire(() => ctl.config.setVolume?.(v)); setVolumeScrub(null); }}
         />
         <Text size="sm" c="dimmed">{volume}</Text>
       </Group>

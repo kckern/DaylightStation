@@ -74,7 +74,10 @@ export function SeekBar({ target }) {
     draggingRef.current = false;
     const secs = secondsFromPointer(e) ?? scrub;
     setScrub(null);
-    if (secs != null) transport.seekAbs?.(secs);
+    // Remote seekAbs resolves on device-ack and can reject on ack timeout;
+    // correctness comes from device-state, so never leak an unhandled
+    // rejection. (Local seekAbs returns undefined — Promise.resolve is safe.)
+    if (secs != null) Promise.resolve(transport.seekAbs?.(secs)).catch(() => {});
   };
 
   const onPointerCancel = () => {
@@ -91,7 +94,7 @@ export function SeekBar({ target }) {
     else if (e.key === 'End') next = duration;
     if (next == null) return;
     e.preventDefault();
-    transport.seekAbs?.(next);
+    Promise.resolve(transport.seekAbs?.(next)).catch(() => {});
   };
 
   return (

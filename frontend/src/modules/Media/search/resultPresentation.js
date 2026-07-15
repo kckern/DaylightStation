@@ -103,6 +103,16 @@ export function resultSubtitle(row) {
   }
   if (typeLabel) parts.push(typeLabel);
 
+  // For a music track, the artist/album is what actually distinguishes two
+  // rows with the same title ("Hey Jude" the single vs the album cut). Show
+  // it right after the type so identical titles are never ambiguous.
+  if (type === 'track') {
+    const artist = row?.metadata?.artist ?? row?.metadata?.grandparentTitle;
+    const album = row?.metadata?.album ?? row?.metadata?.parentTitle;
+    const context = [artist, album].filter(Boolean).join(' — ');
+    if (context) parts.push(context);
+  }
+
   const childCount = row?.childCount ?? row?.metadata?.childCount;
   const noun = CHILD_NOUNS[type];
   if (typeof childCount === 'number' && childCount > 0 && noun) {

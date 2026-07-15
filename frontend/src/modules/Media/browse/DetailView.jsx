@@ -25,7 +25,11 @@ export function DetailView({ contentId }) {
   if (error) {
     return (
       <Alert data-testid="detail-error" color="red" variant="light" icon={<IconAlertCircle size={18} />}>
-        {error.message}
+        Couldn&rsquo;t load this item. Check the connection and try again.
+        <details className="error-detail">
+          <summary>Technical details</summary>
+          {error.message}
+        </details>
       </Alert>
     );
   }

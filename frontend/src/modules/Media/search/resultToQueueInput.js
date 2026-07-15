@@ -20,6 +20,14 @@ export function resultToQueueInput(row) {
   const containerType = row.type ?? row.metadata?.type;
   if (containerType != null) input.type = containerType;
   if (typeof row.childCount === 'number') input.childCount = row.childCount;
+  // Carry artist/album so Now Playing can show "<artist> — <album>" for a
+  // directly-played track (containerExpansion already sets containerTitle
+  // for tracks reached via an album; a track played straight from search had
+  // no context line before).
+  const artist = row.metadata?.artist ?? row.metadata?.grandparentTitle;
+  const album = row.metadata?.album ?? row.metadata?.parentTitle;
+  if (artist) input.artist = artist;
+  if (album) input.album = album;
   return input;
 }
 

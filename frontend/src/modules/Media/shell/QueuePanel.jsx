@@ -8,6 +8,7 @@ import { IconX, IconArrowsShuffle, IconRepeat, IconRepeatOnce, IconClearAll, Ico
 import { useSessionController } from '../controller/useSessionController.js';
 
 const REPEAT_NEXT = { off: 'all', all: 'one', one: 'off' };
+const REPEAT_LABEL = { off: 'Repeat off', all: 'Repeat all', one: 'Repeat one' };
 
 export function QueuePanel({ target = 'local' }) {
   const { snapshot, queue, config } = useSessionController(target);
@@ -49,7 +50,7 @@ export function QueuePanel({ target = 'local' }) {
           leftSection={repeat === 'one' ? <IconRepeatOnce size={16} /> : <IconRepeat size={16} />}
           onClick={() => config.setRepeat?.(REPEAT_NEXT[repeat])}
         >
-          Repeat: {repeat}
+          {REPEAT_LABEL[repeat] ?? 'Repeat off'}
         </Button>
         <Button
           data-testid="queue-clear"
