@@ -4,6 +4,7 @@ import MediaCluePlayer from '../../shell/components/MediaCluePlayer.jsx';
 import ControlLegend from '../../shell/components/ControlLegend.jsx';
 import TimerRing from '../../shell/timers/TimerRing.jsx';
 import { useCountdown } from '../../shell/timers/useCountdown.js';
+import { onColor } from '../../shell/teams/teamColors.js';
 import './Jeopardy.scss';
 
 /**
@@ -39,7 +40,7 @@ export function ClueScreen({ state, timerSeconds = 12, onTimeout, lockedTeam = n
       {mediaError && <div className="jp-clue__media-error">{mediaError}</div>}
       <RevealPanel prompt={active.clue.clue} revealed={revealed} answer={active.clue.answer} />
       {lockedTeam && (
-        <div className="jp-clue__locked" style={{ '--team-color': lockedTeam.color }}>
+        <div className="jp-clue__locked" style={{ '--team-color': lockedTeam.color, '--team-on': onColor(lockedTeam.color) }}>
           {lockedTeam.name} buzzed in!
         </div>
       )}
