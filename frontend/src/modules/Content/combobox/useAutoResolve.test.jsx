@@ -3,7 +3,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { renderHook, act, waitFor } from '@testing-library/react';
 
-vi.mock('../../../../lib/logging/singleton.js', () => {
+vi.mock('../../../lib/logging/singleton.js', () => {
   const logger = {
     debug: () => {}, info: () => {}, warn: () => {}, error: () => {},
     sampled: () => {}, child: () => logger,
@@ -13,7 +13,7 @@ vi.mock('../../../../lib/logging/singleton.js', () => {
 
 const notifySuccess = vi.fn();
 const showUndoToast = vi.fn();
-vi.mock('../../shared/feedback.js', () => ({
+vi.mock('./notify.js', () => ({
   notifySuccess: (...args) => notifySuccess(...args),
   showUndoToast: (...args) => showUndoToast(...args),
 }));

@@ -41,6 +41,12 @@ describe('parseModifiers', () => {
       expect(result.localId).toBe('folder');
     });
 
+    it('parses expand modifier (browse opt-out of container tile-wrapping)', () => {
+      const result = parseModifiers('603856/expand');
+      expect(result.modifiers).toEqual({ expand: true });
+      expect(result.localId).toBe('603856');
+    });
+
     it('parses multiple slash-separated modifiers', () => {
       const result = parseModifiers('folder/shuffle/playable');
       expect(result.modifiers).toEqual({ shuffle: true, playable: true });

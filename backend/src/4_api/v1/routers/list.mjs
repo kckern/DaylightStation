@@ -534,7 +534,7 @@ export function createListRouter(config) {
       // instead of the playlist's individual tracks. This makes playlists appear
       // as show cards in FitnessMenu. resolvePlayables() (used by FitnessShow)
       // calls the adapter directly and is NOT affected by this HTTP-layer change.
-      if (info?.type === 'playlist') {
+      if (!modifiers.expand && info?.type === 'playlist') {
         const playlistItem = {
           id: `${source}:${localId}`,
           localId: String(localId),
@@ -561,7 +561,9 @@ export function createListRouter(config) {
       // its own tile in FitnessMenu alongside collection shows and playlists.
       // resolvePlayables() (used by FitnessShow) calls the adapter directly
       // and is NOT affected by this HTTP-layer change.
-      if (info?.type === 'season') {
+      // The `expand` modifier opts OUT of this wrapping so browse/selector
+      // drill receives the real episodes (a user can then pick one).
+      if (!modifiers.expand && info?.type === 'season') {
         // info.rating is already the best-available rating per PlexAdapter
         // convention (lines 509 and 623): item.userRating ?? item.rating
         // ?? item.audienceRating. We pass it through as-is so season tiles

@@ -25,8 +25,8 @@ import {
   IconSearch, IconChevronRight, IconArrowLeft, IconFolder,
   IconMusic, IconVideo, IconPhoto, IconFile, IconList, IconPencil, IconX,
 } from '@tabler/icons-react';
-import { getChildLogger } from '../../../../lib/logging/singleton.js';
-import { shouldRunScrollToHighlighted, computeScrollRestore, shouldPositionLevel } from '../comboboxScroll.js';
+import { getChildLogger } from '../../../lib/logging/singleton.js';
+import { shouldRunScrollToHighlighted, computeScrollRestore, shouldPositionLevel } from './comboboxScroll.js';
 import { useContentCombobox } from './useContentCombobox.js';
 import { Modes, isContainer } from './comboboxMachine.js';
 import './ContentCombobox.scss';

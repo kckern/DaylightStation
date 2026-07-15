@@ -2,7 +2,7 @@
 // The app's constant: search (always one keystroke away), fleet indicator,
 // cast target chip, settings. The mini player is the bottom bar (MediaShell).
 import React, { useState, useCallback } from 'react';
-import { SearchBar } from '../search/SearchBar.jsx';
+import { MediaContentSearch } from '../search/MediaContentSearch.jsx';
 import { FleetIndicator } from './FleetIndicator.jsx';
 import { SettingsMenu } from './SettingsMenu.jsx';
 import { ConfirmDialog } from './ConfirmDialog.jsx';
@@ -20,7 +20,7 @@ export function Dock() {
 
   return (
     <header className="media-dock" data-testid="media-dock">
-      <SearchBar />
+      <MediaContentSearch />
       <div className="media-dock-cluster">
         <FleetIndicator />
         <CastTargetChip />
