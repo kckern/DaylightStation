@@ -44,6 +44,7 @@ export class PianoMidiWakeService {
   #waking;       // in-flight guard so a burst can't stack setScreen calls
   #screenOverride; // shared ScreenOverrideService; note-ons are muted while its window is 'off'
   #fetchImpl;    // injectable fetch for the APK /config relay (tests)
+  #lastRelay;    // in-flight APK config relay promise (test seam)
 
   /**
    * @param {Object} opts
@@ -105,24 +106,49 @@ export class PianoMidiWakeService {
     this.#logger.info?.('piano-midi-wake.suppressed', {
       deviceId: this.#deviceId, until: deadlineMs,
     });
-    // ws://host:port → http://host:port/config (POST a flat key: value YAML line,
-    // which the APK's /config endpoint hot-reloads and rebuilds ScreenWaker from).
+    // Relay the deadline to the APK's on-device ScreenWaker. CRITICAL: the APK's
+    // POST /config *REPLACES* the whole override file (DeviceConfig.writeOverride
+    // truncates), so posting a lone `fkbWakeSuppressUntilEpochMs` erases targetMac
+    // and strands the piano with no BLE-MIDI link — the exact outage of 2026-07-15.
+    // Read-merge-write instead (mirrors pbctl config set): GET the live config,
+    // merge our one key, POST the full set back. If the config can't be read, do
+    // NOT write — a blind partial POST is the clobber, so failing safe (skipping
+    // the on-device relay) keeps the MIDI link alive.
+    this.#lastRelay = this.#relaySuppressToApk(deadlineMs);
+  }
+
+  /** @private Read-merge-write the wake deadline into the APK's on-device config. */
+  async #relaySuppressToApk(deadlineMs) {
     const httpBase = this.#bridgeUrl.replace(/^ws(s?):\/\//i, 'http$1://').replace(/\/+$/, '');
     const url = `${httpBase}/config`;
     try {
-      Promise.resolve(this.#fetchImpl(url, {
+      const res = await this.#fetchImpl(url, { method: 'GET' });
+      let values = null;
+      if (res?.ok) {
+        try { const body = await res.json(); values = body?.values ?? null; } catch { values = null; }
+      }
+      if (!values || typeof values !== 'object') {
+        this.#logger.warn?.('piano-midi-wake.suppress-relay-skipped', {
+          deviceId: this.#deviceId, reason: 'config-unreadable',
+        });
+        return;
+      }
+      const merged = { ...values, fkbWakeSuppressUntilEpochMs: String(deadlineMs) };
+      const yaml = Object.entries(merged).map(([k, v]) => `${k}: ${v}`).join('\n') + '\n';
+      await this.#fetchImpl(url, {
         method: 'POST',
         headers: { 'Content-Type': 'text/plain' },
-        body: `fkbWakeSuppressUntilEpochMs: ${deadlineMs}\n`,
-      })).catch((err) => this.#logger.warn?.('piano-midi-wake.suppress-relay-failed', {
-        deviceId: this.#deviceId, error: String(err?.message ?? err),
-      }));
+        body: yaml,
+      });
     } catch (err) {
       this.#logger.warn?.('piano-midi-wake.suppress-relay-failed', {
         deviceId: this.#deviceId, error: String(err?.message ?? err),
       });
     }
   }
+
+  /** Test seam: await the in-flight APK config relay. */
+  _relayDone() { return this.#lastRelay ?? Promise.resolve(); }
 
   /** Test seam: exercise the note-on handler without a live WS. */
   _handleNoteOnForTest() { this.#onNoteOn(); }

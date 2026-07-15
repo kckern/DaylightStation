@@ -160,7 +160,19 @@ public class BleMidiConnector {
 
         final String targetMac = cfg.targetMac();
         if (targetMac.isEmpty()) {
-            setState(State.FAILED, "no targetMac in config");
+            // No MAC — config was lost or corrupted (the 2026-07-15 outage). NEVER
+            // give up: fall back to a NAME scan for targetName (which always has a
+            // baked default, "jam-7e6"), and keep retrying so the link self-heals
+            // the instant the target reappears or config is restored. A terminal
+            // FAILED here is exactly the "drops the connection and gives up" bug.
+            final String targetName = cfg.targetName();
+            if (!targetName.isEmpty()) {
+                Diag.log(TAG, "no targetMac — falling back to name scan for '" + targetName + "'");
+                startNameScan(targetName);
+            } else {
+                setState(State.FAILED, "no targetMac or targetName in config");
+                scheduleRetry();
+            }
             return;
         }
 
@@ -226,6 +238,50 @@ public class BleMidiConnector {
             if (state == State.SCANNING) {
                 stopScan();
                 setState(State.FAILED, "target not found in scan window");
+                scheduleRetry();
+            }
+        }, cfg.scanTimeoutMs());
+    }
+
+    /**
+     * Unfiltered scan that connects the first non-blocklisted device whose NAME
+     * matches {@code targetName}. This is the fallback when {@code targetMac} is
+     * missing (config loss/corruption) — the Jamcorder advertises as "jam-7e6", so
+     * we can still find and open it with no MAC on file. Learns the MAC on connect.
+     */
+    private void startNameScan(final String targetName) {
+        if (!running || scanner == null) { scheduleRetry(); return; }
+        stopScan();
+        setState(State.SCANNING, "name-scan:" + targetName);
+        ScanSettings settings = new ScanSettings.Builder()
+                .setScanMode(ScanSettings.SCAN_MODE_LOW_LATENCY).build();
+        activeScan = new ScanCallback() {
+            @Override public void onScanResult(int type, ScanResult result) {
+                BluetoothDevice dev = result.getDevice();
+                if (dev == null) return;
+                String mac = norm(dev.getAddress());
+                if (cfg.blocklistMacs().contains(mac)) return;
+                String name = dev.getName();
+                if (name == null || !name.equalsIgnoreCase(targetName)) return;
+                stopScan();
+                openTarget(dev, /*scanOnFail=*/false);
+            }
+            @Override public void onScanFailed(int errorCode) {
+                setState(State.FAILED, "name-scan failed (" + errorCode + ")");
+                scheduleRetry();
+            }
+        };
+        try {
+            scanner.startScan(Collections.<ScanFilter>emptyList(), settings, activeScan);
+        } catch (SecurityException e) {
+            setState(State.FAILED, "scan permission denied (grant Location)");
+            scheduleRetry();
+            return;
+        }
+        handler.postDelayed(() -> {
+            if (state == State.SCANNING) {
+                stopScan();
+                setState(State.FAILED, "target name not found in scan window");
                 scheduleRetry();
             }
         }, cfg.scanTimeoutMs());
