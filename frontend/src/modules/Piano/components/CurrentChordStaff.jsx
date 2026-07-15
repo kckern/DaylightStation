@@ -1,32 +1,40 @@
 import { useEffect, useRef, useState } from 'react';
-import { detectKey } from '../../MusicNotation/model/keySignature.js';
 import { ChordStaffRenderer } from '../../MusicNotation/renderers/ChordStaffRenderer.jsx';
+import { useDetectedKey } from './useDetectedKey.js';
 import './CurrentChordStaff.scss';
 
 // Music-theory model (key signatures, key detection, hand split) lives in the
 // shared MusicNotation framework. CurrentChordStaff keeps the live-input concerns
-// — note decay, peak-chord tracking, rolling key detection — and delegates
-// rendering to ChordStaffRenderer (a compact, self-centering VexFlow grand staff).
+// — note decay, peak-chord tracking — and delegates key detection to the shared
+// useDetectedKey hook and rendering to ChordStaffRenderer (a compact,
+// self-centering VexFlow grand staff).
 
 const NOTE_DECAY_MS = 500; // Keep notes visible for 500ms after release
-const KEY_BUFFER_MAX_AGE = 10000; // 10 seconds
-const KEY_BUFFER_MAX_NOTES = 30; // Keep last 30 notes
 
 /**
  * Live chord display using the shared abcjs renderer.
  * Shows currently pressed notes on a grand staff. Notes persist for 500ms after
  * release unless new notes arrive; the full peak chord persists during decay.
- * Automatically detects the key signature from recent notes.
+ *
+ * Key signature: when a `detectedKey` prop is supplied (TheoryPanel passes the
+ * shared key so the circle + staff agree), it wins. Otherwise the component
+ * falls back to its own rolling detection via useDetectedKey — preserving the
+ * standalone behavior.
+ *
+ * @param {Map} activeNotes - live MIDI surface (Map<midi, data>)
+ * @param {string} [detectedKey] - externally-owned key; overrides internal detection
  */
-export function CurrentChordStaff({ activeNotes }) {
+export function CurrentChordStaff({ activeNotes, detectedKey }) {
   const [displayNotes, setDisplayNotes] = useState(new Map());
-  const [detectedKey, setDetectedKey] = useState('C');
   const decayTimerRef = useRef(null);
   const lastActiveNotesRef = useRef(new Map());
   const peakChordRef = useRef(new Map()); // Track the peak chord (most notes held together)
-  const noteBufferRef = useRef([]); // Rolling buffer of { pitchClass, timestamp }
 
-  // Track changes in active notes and manage decay
+  // Always run the hook (Rules of Hooks); the prop takes precedence when present.
+  const internalKey = useDetectedKey(activeNotes);
+  const keySig = detectedKey ?? internalKey;
+
+  // Track changes in active notes and manage note decay + peak chord.
   useEffect(() => {
     const currentKeys = new Set(activeNotes.keys());
     const lastKeys = new Set(lastActiveNotesRef.current.keys());
@@ -41,20 +49,6 @@ export function CurrentChordStaff({ activeNotes }) {
       }
       peakChordRef.current = new Map(activeNotes);
       setDisplayNotes(new Map(activeNotes));
-
-      const now = Date.now();
-      const newNotes = [...currentKeys].filter(key => !lastKeys.has(key));
-      newNotes.forEach(note => {
-        noteBufferRef.current.push({ pitchClass: note % 12, timestamp: now });
-      });
-
-      noteBufferRef.current = noteBufferRef.current
-        .filter(n => now - n.timestamp < KEY_BUFFER_MAX_AGE)
-        .slice(-KEY_BUFFER_MAX_NOTES);
-
-      const pitchClasses = noteBufferRef.current.map(n => n.pitchClass);
-      const newKey = detectKey(pitchClasses, detectedKey);
-      if (newKey !== detectedKey) setDetectedKey(newKey);
     } else if (currentKeys.size > 0) {
       // Notes still active but no new notes - update peak chord if current is larger
       if (currentKeys.size >= peakChordRef.current.size) {
@@ -75,11 +69,11 @@ export function CurrentChordStaff({ activeNotes }) {
     return () => {
       if (decayTimerRef.current) clearTimeout(decayTimerRef.current);
     };
-  }, [activeNotes, detectedKey]);
+  }, [activeNotes]);
 
   return (
     <div className="current-chord-staff-wrapper">
-      <ChordStaffRenderer notes={displayNotes} keySignature={detectedKey} className="chord-staff current-chord-staff" />
+      <ChordStaffRenderer notes={displayNotes} keySignature={keySig} className="chord-staff current-chord-staff" />
     </div>
   );
 }
