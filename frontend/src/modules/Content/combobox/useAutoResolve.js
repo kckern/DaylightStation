@@ -6,8 +6,8 @@
 // content-info cache. Port, not a redesign: timeout, staleness guard, and log
 // event names (`search.auto_resolve.*`) are unchanged.
 import { useCallback, useEffect, useMemo, useRef } from 'react';
-import { getChildLogger } from '../../../../lib/logging/singleton.js';
-import { showUndoToast } from '../../shared/feedback.js';
+import { getChildLogger } from '../../../lib/logging/singleton.js';
+import { showUndoToast } from './notify.js';
 
 const AUTO_RESOLVE_TIMEOUT_MS = 15000;
 // Same gate the twin used: text that already looks like `source:id`

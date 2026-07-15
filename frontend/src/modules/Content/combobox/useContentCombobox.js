@@ -9,13 +9,13 @@
 //        reaches the batch fallback URL (the standalone had a stale closure).
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import { useDebouncedCallback } from '@mantine/hooks';
-import { useStreamingSearch } from '../../../../hooks/useStreamingSearch';
-import { getChildLogger } from '../../../../lib/logging/singleton.js';
-import { isContentIdLike, parseSourcePrefix, isDirectSourceIdQuery } from '../contentSearchLogic.js';
-import { getCacheEntry, setCacheEntry } from '../siblingsCache.js';
+import { useStreamingSearch } from '../../../hooks/useStreamingSearch';
+import { getChildLogger } from '../../../lib/logging/singleton.js';
+import { isContentIdLike, parseSourcePrefix, isDirectSourceIdQuery } from '../lib/contentSearchLogic.js';
+import { getCacheEntry, setCacheEntry } from '../lib/siblingsCache.js';
 import { reducer, initialState, closeDecision, decideCommit, isContainer, Modes, RENDER_CAP } from './comboboxMachine.js';
-import { sanitizeBreadcrumbs } from '../breadcrumbs.js';
-import { notifyWarning } from '../../shared/feedback.js';
+import { sanitizeBreadcrumbs } from '../lib/breadcrumbs.js';
+import { notifyWarning } from './notify.js';
 
 const SEARCH_STREAM_ENDPOINT = '/api/v1/content/query/search/stream';
 const SEARCH_BATCH_ENDPOINT = '/api/v1/content/query/search';
@@ -285,7 +285,7 @@ export function useContentCombobox({ value, onChange, searchParams = '', appResu
     }
     (async () => {
       try {
-        const { searchApps, APP_REGISTRY } = await import('../../../../lib/appRegistry.js');
+        const { searchApps, APP_REGISTRY } = await import('../../../lib/appRegistry.js');
         const appMatches = searchApps(query).map((app) => ({
           id: `app:${app.id}`,
           title: app.label,
@@ -413,7 +413,7 @@ export function useContentCombobox({ value, onChange, searchParams = '', appResu
     });
     dispatch({ type: 'BROWSE_LOADING' });
     try {
-      const response = await fetch(`/api/v1/list/${source}/${encodeURIComponent(localId)}`);
+      const response = await fetch(`/api/v1/list/${source}/${encodeURIComponent(localId)}/expand`);
       if (!response.ok) throw new Error(`Browse failed: ${response.status}`);
       const data = await response.json();
       const crumb = { id: item.id, title: item.title, source, localId };
@@ -455,7 +455,7 @@ export function useContentCombobox({ value, onChange, searchParams = '', appResu
     });
     dispatch({ type: 'BROWSE_LOADING' });
     try {
-      const response = await fetch(`/api/v1/list/${parent.source}/${encodeURIComponent(parent.localId)}`);
+      const response = await fetch(`/api/v1/list/${parent.source}/${encodeURIComponent(parent.localId)}/expand`);
       if (!response.ok) throw new Error(`Browse failed: ${response.status}`);
       const data = await response.json();
       const items = (data.items || []).map(ensureId);
@@ -497,7 +497,7 @@ export function useContentCombobox({ value, onChange, searchParams = '', appResu
     });
     dispatch({ type: 'BROWSE_LOADING' });
     try {
-      const response = await fetch(`/api/v1/list/${target.source}/${encodeURIComponent(target.localId)}`);
+      const response = await fetch(`/api/v1/list/${target.source}/${encodeURIComponent(target.localId)}/expand`);
       if (!response.ok) throw new Error(`Browse failed: ${response.status}`);
       const data = await response.json();
       const items = (data.items || []).map(ensureId);

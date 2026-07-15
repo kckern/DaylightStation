@@ -8,7 +8,7 @@
 // ScheduledFiresSection, SchedulesSection) and their test mocks keyed on this
 // path don't churn. PlaybackHub summary rows still resolve titles through
 // hooks/useContentTitle.js + utils/titleCache.js, which remain in use.
-import ContentCombobox from '../../ContentLists/combobox/ContentCombobox.jsx';
+import ContentCombobox from '../../../Content/combobox/ContentCombobox.jsx';
 
 export const LabeledContentPicker = ContentCombobox;
 export default ContentCombobox;
