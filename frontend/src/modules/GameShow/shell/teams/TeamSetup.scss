@@ -47,6 +47,9 @@
 }
 
 .gs-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
   font-family: var(--gs-font-ui);
   font-size: 1rem;
   padding: 0.4rem 0.9rem;
