@@ -1,9 +1,28 @@
 @use '../../styles/tokens' as gs;
 
 .gs-titlecard {
-  height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center;
-  h1 { font-size: 5rem; text-transform: uppercase; letter-spacing: 0.08em; text-shadow: 0.15rem 0.15rem 0 #000; }
-  p { font-size: 1.6rem; opacity: 0.8; }
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+
+  h1 {
+    margin: 0;
+    font-family: var(--gs-font-display);
+    font-size: var(--gs-fs-display);
+    line-height: 1.05;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--gs-paper);
+    text-shadow: var(--gs-shadow-text);
+  }
+  p {
+    margin: 0;
+    font-family: var(--gs-font-serif);
+    font-size: var(--gs-fs-label);
+    color: var(--gs-paper-dim);
+  }
 }
 .gs-reveal {
   flex: 1 1 auto;
@@ -51,16 +70,52 @@
   }
 }
 .gs-wager {
-  display: flex; flex-direction: column; gap: 1.25rem; align-items: center; justify-content: center; height: 100%;
-  &__team { font-size: 2rem; font-weight: 700; }
-  &__row { display: flex; gap: 1.5rem; align-items: center;
-    button { font-size: 1.5rem; padding: 0.5rem 1.25rem; border-radius: 0.5rem; border: none; cursor: pointer;
-      background: rgba(255,255,255,0.15); color: #fff; &:focus { outline: 3px solid #ffd54a; } } }
-  &__amount { font-size: 3rem; font-weight: 800; min-width: 10rem; text-align: center; }
-  &__confirm { font-size: 1.3rem; padding: 0.75rem 2rem; border-radius: 0.5rem; border: none; cursor: pointer;
-    background: #ffd54a; color: #111; font-weight: 700; &:focus { outline: 3px solid #fff; } }
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+  align-items: center;
+  justify-content: center;
+
+  &__team {
+    font-family: var(--gs-font-serif);
+    font-weight: 700;
+    font-size: var(--gs-fs-heading);
+  }
+  &__row {
+    display: flex;
+    gap: 1.5rem;
+    align-items: center;
+
+    button { @include gs.gs-button; }
+  }
+  &__amount {
+    font-family: var(--gs-font-display);
+    font-size: 3rem;
+    letter-spacing: 0.03em;
+    min-width: 10rem;
+    text-align: center;
+    color: var(--gs-brass);
+    text-shadow: var(--gs-shadow-text);
+  }
+  &__confirm { @include gs.gs-button-primary; }
 }
 .gs-legend {
-  display: flex; gap: 1.5rem; justify-content: center; padding: 0.5rem; font-size: 1rem; opacity: 0.7;
-  kbd { background: rgba(255,255,255,0.15); border-radius: 0.25rem; padding: 0.1rem 0.5rem; margin-right: 0.3rem; }
+  flex: 0 0 auto;
+  display: flex;
+  gap: 1.5rem;
+  justify-content: center;
+  padding: 0.6rem;
+  font-family: var(--gs-font-ui);
+  font-size: var(--gs-fs-caption); // was 1rem @ 0.7 opacity — below the 10-foot floor
+  color: var(--gs-paper-dim);
+
+  kbd {
+    background: var(--gs-surface);
+    border: 1px solid var(--gs-surface-border);
+    border-radius: 0.25rem;
+    padding: 0.1rem 0.5rem;
+    margin-right: 0.3rem;
+    color: var(--gs-paper);
+  }
 }

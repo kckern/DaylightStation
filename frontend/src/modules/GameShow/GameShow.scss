@@ -3,33 +3,69 @@
 .gameshow {
   width: 100%;
   height: 100%;
-  background: #060ce9; // classic board blue backdrop
-  color: #fff;
+  position: relative; // own the absolutely-positioned chrome (QR card, WS badge)
+  background: radial-gradient(ellipse at 50% 30%, var(--gs-stage-glow) 0%, var(--gs-stage) 70%);
+  color: var(--gs-paper);
+  font-family: var(--gs-font-ui);
   display: flex;
   flex-direction: column;
 
-  &__error { color: #ff6b6b; font-size: 1.4rem; }
-  &__ws-warn { position: absolute; top: 0.75rem; right: 0.75rem; opacity: 0.6; font-size: 1.2rem; }
-  &__hostqr {
-    position: absolute; bottom: 0.75rem; right: 0.75rem; text-align: center;
-    background: rgba(255,255,255,0.9); border-radius: 0.4rem; padding: 0.3rem; opacity: 0.85;
-    img { display: block; }
-    span { display: block; color: #111; font-size: 0.6rem; font-weight: 700; }
+  // direct-mounted title cards (loading / set-loading) fill the stage
+  > .gs-titlecard { flex: 1; }
+
+  &__error {
+    color: var(--gs-danger);
+    font-family: var(--gs-font-serif);
+    font-size: var(--gs-fs-label);
+    padding: 1rem;
+    text-align: center;
   }
-  &__resume, &__sets, &__bind {
-    flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1rem;
+  &__ws-warn {
+    position: absolute;
+    top: 0.75rem;
+    right: 0.75rem;
+    opacity: 0.6;
+    font-size: 1.2rem;
+  }
+  &__hostqr {
+    position: absolute;
+    bottom: 0.75rem;
+    right: 0.75rem;
+    text-align: center;
+    background: var(--gs-paper);
+    border-radius: 0.4rem;
+    padding: 0.3rem;
+    opacity: 0.85;
+
+    img { display: block; }
+    span {
+      display: block;
+      color: var(--gs-ink);
+      font-size: 0.75rem;
+      font-weight: 700;
+    }
+  }
+  &__resume,
+  &__sets,
+  &__bind {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 1rem;
+
     button {
-      font-size: 1.3rem; padding: 0.75rem 2rem; border-radius: 0.5rem; border: none; cursor: pointer;
-      background: rgba(255, 255, 255, 0.12); color: #fff;
-      &:focus { outline: 3px solid #ffd54a; }
-      &:disabled { opacity: 0.4; cursor: default; }
+      @include gs.gs-button;
       &.is-binding { animation: gs-pulse 0.9s infinite; }
     }
   }
 }
 
 .jeopardy {
-  width: 100%; height: 100%; display: flex; flex-direction: column;
-  button { font-size: 1.2rem; padding: 0.6rem 1.5rem; border-radius: 0.5rem; border: none; cursor: pointer;
-    background: #ffd54a; color: #111; font-weight: 700; &:focus { outline: 3px solid #fff; } }
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
 }
