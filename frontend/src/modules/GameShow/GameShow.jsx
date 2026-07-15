@@ -39,7 +39,7 @@ function BuzzerBind({ teams, onDone }) {
         <button key={team.id} type="button"
           className={bindingTeamId === team.id ? 'is-binding' : ''}
           onClick={() => { startBind(team.id); setBound((b) => ({ ...b, [team.id]: true })); }}>
-          {team.name}: {bindingTeamId === team.id ? 'press your buzzer…' : (bound[team.id] ? 'bound ✓' : `default ${team.slot}`)}
+          {team.name}: {bindingTeamId === team.id ? 'Press your buzzer…' : (bound[team.id] ? 'Bound ✓' : `Buzzer ${team.slot?.replace('slot_', '') || '?'}`)}
         </button>
       ))}
       <button type="button" autoFocus onClick={() => onDone(arbiter.bindings())}>Start game</button>
