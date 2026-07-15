@@ -122,6 +122,7 @@ export function createApiRouter(config) {
     '/camera': 'camera',
     '/piano': 'piano',
     '/feedback': 'feedback',
+    '/gameshow': 'gameshow',
     '/content-filter': 'content-filter'
   };
 
