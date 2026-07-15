@@ -108,6 +108,29 @@ describe('LocalSessionController — queue ops', () => {
     expect(c.getSnapshot().currentItem?.contentId).toBe('a');
   });
 
+  it('artist/album/containerTitle survive LOAD_ITEM onto the live currentItem', () => {
+    // Regression guard for the third field whitelist (itemFromQueueEntry):
+    // display context put on the queue entry must reach the store's
+    // currentItem, not be stripped one dispatch after load. Round-2 bug had
+    // this data die here even after queueOps was fixed.
+    const c = makeController();
+    c.queue.playNow(
+      { contentId: 'plex:1', format: 'audio', title: 'Hey Jude', artist: 'The Beatles', album: 'Past Masters' },
+      { clearRest: true },
+    );
+    const ci = c.getSnapshot().currentItem;
+    expect(ci?.artist).toBe('The Beatles');
+    expect(ci?.album).toBe('Past Masters');
+  });
+
+  it('a non-music item gains no artist/album keys on currentItem', () => {
+    const c = makeController();
+    c.queue.playNow({ contentId: 'plex:9', format: 'video', title: 'A Show' }, { clearRest: true });
+    const ci = c.getSnapshot().currentItem;
+    expect('artist' in ci).toBe(false);
+    expect('album' in ci).toBe(false);
+  });
+
   it('queue.clear empties the queue', () => {
     const c = makeController();
     c.queue.add({ contentId: 'a', format: 'video' });

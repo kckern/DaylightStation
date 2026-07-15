@@ -25,6 +25,14 @@ function itemFromQueueEntry(entry) {
     title: entry.title,
     duration: entry.duration,
     thumbnail: entry.thumbnail,
+    // Display context must survive the LOAD_ITEM round-trip, or currentItem
+    // loses the show/album and artist/album that queueOps put on the entry.
+    // NowPlayingView reads the entry first today, but pinning the invariant
+    // here keeps a future refactor that reads currentItem from silently
+    // dropping the context line (the round-2 whitelist bug, third copy).
+    ...(entry.containerTitle != null ? { containerTitle: entry.containerTitle } : {}),
+    ...(entry.artist != null ? { artist: entry.artist } : {}),
+    ...(entry.album != null ? { album: entry.album } : {}),
   };
 }
 
