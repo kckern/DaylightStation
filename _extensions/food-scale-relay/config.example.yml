@@ -20,8 +20,15 @@ backend:
 # Backend persistence root (relative to data dir). The backend reads this and
 # writes settled measurements + button events to <dir>/<scale-id>/<date>.yml.
 # Omit to use the default (household/history/nutrition).
+#
+# A button press force-captures the live weight at that instant (settled or not).
+# A settled weight is recorded once and not repeated until it changes by at least
+# dedupDeltaG or the pan is emptied (<= emptyThresholdG) — this keeps the scale
+# resting on its side on the shelf from re-logging the same weight forever.
 persistence:
   dir: household/history/nutrition
+  emptyThresholdG: 2   # at/below this the pan counts as empty → next placement is a fresh session
+  dedupDeltaG: 2       # min change from the last recorded value to log a new settled reading
 
 scales:
   kitchen-food-scale:

@@ -8,11 +8,15 @@
 //      the scale's configured topic (default `food-scale`) so any app/display
 //      can subscribe live.
 //
-//   2) PERSIST (bus → disk): a subscriber records only MEANINGFUL events —
-//      settled weight measurements and button presses — to
+//   2) PERSIST (bus → disk): a subscriber records only MEANINGFUL events to
 //      {dataDir}/{persistence.dir}/{id}/{YYYY-MM-DD}.yml
-//      (default dir: household/history/nutrition). The raw ~4 Hz stream stays
-//      ephemeral on the bus; we never persist it.
+//      (default dir: household/history/nutrition). Two kinds of records:
+//        - settled measurements: a stable, non-empty weight, recorded once and
+//          not repeated until the value changes or the pan is emptied (so the
+//          scale resting on its side on the shelf isn't logged over and over).
+//        - button presses: force-capture the live weight at that instant
+//          (settled or not) — pressing the button IS the "log this now" gesture.
+//      The raw ~4 Hz stream stays ephemeral on the bus; we never persist it.
 //
 // Config-driven: the persistence root and per-scale broadcast topics come from
 // the household SSOT (config/scales.yml), passed in as `config`. The two
@@ -28,6 +32,17 @@ const RELAY_SOURCE = 'food-scale-relay';
 const DEFAULT_TOPIC = 'food-scale';
 const DEFAULT_DIR = 'household/history/nutrition'; // relative to dataDir
 
+// Persistence policy tuning (overridable via config.persistence).
+// - emptyThresholdG: at/below this the pan is considered empty → a fresh
+//   measurement session may begin (re-arms dedup so an identical next weight
+//   still records).
+// - dedupDeltaG: a settled reading is only recorded if it differs from the last
+//   RECORDED value by at least this much. Kills the shelf-rest spam: the scale
+//   stored on its side holds a steady load and, on every BLE reconnect blip,
+//   used to re-record that same weight forever.
+const DEFAULT_EMPTY_THRESHOLD_G = 2;
+const DEFAULT_DEDUP_DELTA_G = 2;
+
 /**
  * @param {object}   deps
  * @param {object}   deps.eventBus  IEventBus (WebSocketEventBus)
@@ -42,6 +57,8 @@ export function createFoodScaleRelay({ eventBus, dataDir, config = {}, logger = 
   }
 
   const scaleDefs = config?.scales || {};
+  const emptyThresholdG = Number(config?.persistence?.emptyThresholdG ?? DEFAULT_EMPTY_THRESHOLD_G);
+  const dedupDeltaG = Number(config?.persistence?.dedupDeltaG ?? DEFAULT_DEDUP_DELTA_G);
   const persistDir = (config?.persistence?.dir || DEFAULT_DIR).replace(/^\/+/, '');
   const historyRoot = path.join(dataDir, ...persistDir.split('/'));
   const topicForId = (id) => scaleDefs[id]?.topic || DEFAULT_TOPIC;
@@ -83,10 +100,16 @@ export function createFoodScaleRelay({ eventBus, dataDir, config = {}, logger = 
     }
   });
 
-  // ---- 2) PERSIST: bus → disk (settled measurements + buttons only) -------
-  // Per-scale latch so a held-steady reading is recorded ONCE per settle cycle,
-  // not on every heartbeat frame. Re-arms when the scale goes changing or to 0.
-  const latched = new Map(); // id -> boolean
+  // ---- 2) PERSIST: bus → disk (settled measurements + buttons) ------------
+  // Per-scale state:
+  //  - lastReading:      most recent decoded frame (settled OR not) — lets a
+  //                      button press capture the weight at that exact moment.
+  //  - lastRecordedGrams:the value of the last SETTLED reading we wrote. A held
+  //                      value (shelf rest) is recorded once and never again
+  //                      until it changes or the pan is emptied — reconnect
+  //                      blips no longer re-record it.
+  const lastReading = new Map();       // id -> { grams, unit, stable }
+  const lastRecordedGrams = new Map(); // id -> number
 
   // Serialize all appends through one promise chain: appendRecord is a
   // read-modify-write, so concurrent calls (e.g. a button right after a settle)
@@ -102,23 +125,32 @@ export function createFoodScaleRelay({ eventBus, dataDir, config = {}, logger = 
     if (!payload || typeof payload !== 'object') return;
     const id = payload.id || 'unknown';
 
-    let record = null;
+    // Button press → force-capture the live weight at this instant, settled or
+    // not. Pressing the button IS the "log this now" gesture.
     if (payload.event === 'button') {
-      record = { ts: payload.ts, event: 'button', press: payload.press };
-    } else {
-      const grams = Number(payload.grams);
-      const settled = payload.stable && Number.isFinite(grams) && grams > 0;
-      if (settled) {
-        if (latched.get(id)) return;         // already recorded this settle
-        latched.set(id, true);
-        record = { ts: payload.ts, grams, unit: payload.unit || 'g', kind: 'settled' };
-      } else {
-        latched.set(id, false);              // re-arm on change / zero
-        return;
-      }
+      const record = { ts: payload.ts, event: 'button', press: payload.press };
+      const live = lastReading.get(id);
+      if (live) { record.grams = live.grams; record.unit = live.unit; record.stable = live.stable; }
+      enqueueAppend(id, record);
+      return;
     }
 
-    enqueueAppend(id, record);
+    const grams = Number(payload.grams);
+    if (!Number.isFinite(grams)) return;
+    const unit = payload.unit || 'g';
+    const stable = Boolean(payload.stable);
+    lastReading.set(id, { grams, unit, stable });
+
+    if (grams <= emptyThresholdG) {
+      lastRecordedGrams.delete(id);          // pan emptied → next placement is a fresh session
+      return;
+    }
+    if (!stable) return;                     // wobble / reconnect blip → don't record, don't re-arm
+
+    const prev = lastRecordedGrams.get(id);
+    if (prev != null && Math.abs(grams - prev) < dedupDeltaG) return; // same held value → skip
+    lastRecordedGrams.set(id, grams);
+    enqueueAppend(id, { ts: payload.ts, grams, unit, kind: 'settled' });
   };
 
   const unsubs = [...topics].map((topic) => eventBus.subscribe(topic, onPayload));

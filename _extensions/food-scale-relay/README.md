@@ -3,7 +3,8 @@
 An **M5Stack ATOM Lite** (ESP32-PICO-D4) BLE-bridges a **KitchenIQ 50797**
 (SENSSUN FOOD) kitchen scale and streams decoded weight + button events over
 **WebSocket** to the DaylightStation backend event bus (`/ws`). The backend
-re-broadcasts the `food-scale` topic and persists settled measurements.
+re-broadcasts the `food-scale` topic and persists settled measurements +
+button-captured weights.
 
 No host daemon — this is **firmware only**, config-driven from the household
 SSOT (`data/household/config/scales.yml`). Nothing is hardcoded.
@@ -31,8 +32,15 @@ checksum = `sum(b2..b8) & 0xFF`. Full write-up:
 ```
 
 Backend dispatch (`backend/src/3_applications/hardware/foodScaleRelay.mjs`, wired
-in `app.mjs`) rebroadcasts these on `food-scale` and persists settled readings +
-button presses.
+in `app.mjs`) rebroadcasts these on `food-scale` and persists two record kinds:
+
+- **settled readings** — a stable, non-empty weight, logged once and not repeated
+  until it changes (`dedupDeltaG`) or the pan is emptied (`emptyThresholdG`). This
+  stops the scale resting on its side on the shelf from re-logging the same load
+  on every BLE reconnect.
+- **button presses** — force-capture the live weight at that instant, settled or
+  not. Pressing the button is the explicit "log this now" gesture, so the record
+  carries `grams`/`unit`/`stable` from the moment of the press.
 
 ## Build & flash
 
