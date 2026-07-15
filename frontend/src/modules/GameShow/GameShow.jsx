@@ -1,8 +1,8 @@
 // Shell root. Minimal skeleton for now — phases render placeholder text.
 // Task 17 assembles the real per-phase screens.
 import React, { useReducer, useEffect } from 'react';
-import { DaylightAPI } from '@/lib/api.mjs';
 import { flowReducer, initialFlowState } from './shell/flow/flowReducer.js';
+import { fetchBoot } from './shell/session/sessionClient.js';
 import './GameShow.scss';
 
 export default function GameShow() {
@@ -12,13 +12,9 @@ export default function GameShow() {
     let cancelled = false;
     (async () => {
       try {
-        const [config, setsRes, activeRes] = await Promise.all([
-          DaylightAPI('api/v1/gameshow/config'),
-          DaylightAPI('api/v1/gameshow/games/jeopardy/sets'),
-          DaylightAPI('api/v1/gameshow/sessions/active'),
-        ]);
+        const { config, sets, activeSession } = await fetchBoot();
         if (cancelled) return;
-        dispatchFlow({ type: 'BOOT_LOADED', config, sets: setsRes.sets, activeSession: activeRes.session });
+        dispatchFlow({ type: 'BOOT_LOADED', config, sets, activeSession });
       } catch (err) {
         if (!cancelled) dispatchFlow({ type: 'BOOT_FAILED', error: err.message });
       }
