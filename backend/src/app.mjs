@@ -518,6 +518,15 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     }
   });
 
+  // Game Show state mirror (TV ⇒ mobile host companion). The TV that owns game
+  // state publishes its snapshot on every transition; relay it to `gameshow`
+  // subscribers so the phone host view renders the live phase. Whitelist only.
+  eventBus.onClientMessage((clientId, message) => {
+    if (message?.source === 'gameshow-state' && message.topic === 'gameshow' && message.kind === 'state') {
+      eventBus.broadcast('gameshow', message);
+    }
+  });
+
   // Food-scale relay — ingests the ESP32 BLE-scale bridge's weight/button
   // stream (source: 'food-scale-relay') and re-broadcasts on the `food-scale`
   // topic; a decoupled subscriber persists settled measurements + button

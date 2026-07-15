@@ -110,6 +110,17 @@ describe('gameshow router', () => {
     expect(bad.status).toBe(400);
   });
 
+  it('POST /sessions/:id/command relays a host command over WS', async () => {
+    const res = await request(ctx.app).post('/gameshow/sessions/gs_1/command')
+      .send({ command: { type: 'JUDGE', correct: true } });
+    expect(res.status).toBe(202);
+    expect(ctx.broadcastEvent).toHaveBeenCalledWith(expect.objectContaining({
+      topic: 'gameshow', kind: 'command', sessionId: 'gs_1', command: { type: 'JUDGE', correct: true },
+    }));
+    const bad = await request(ctx.app).post('/gameshow/sessions/gs_1/command').send({ command: {} });
+    expect(bad.status).toBe(400);
+  });
+
   it('GET /media/* serves files from mediaAppsDir and blocks traversal', async () => {
     const ok = await request(ctx.app).get('/gameshow/media/gameshow/classic/correct.mp3');
     expect(ok.status).toBe(200);

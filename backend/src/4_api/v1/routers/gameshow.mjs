@@ -13,6 +13,7 @@ import { splatPath } from '#api/utils/wildcard.mjs';
  *   GET  /sessions/active           → { session } (null when none)
  *   POST /sessions/:id/checkpoint   → persist frontend snapshot ({ state })
  *   POST /sessions/:id/finish       → mark complete
+ *   POST /sessions/:id/command      → host companion → TV command relay (WS)
  *   POST /buzz                      → debug buzz inject → WS broadcast (202)
  *   GET  /media/*splat              → sound packs + clue media from media/apps/
  */
@@ -76,6 +77,15 @@ export function createGameshowRouter({ gameShowService, sessionStore, broadcastE
     const { slot, buzzerId, action } = req.body || {};
     if (!slot) return res.status(400).json({ error: 'slot required' });
     broadcastEvent({ topic: 'gameshow', kind: 'buzz', buzzerId: buzzerId || 'debug', action: action || 'inject', slot, ts: Date.now() });
+    res.status(202).json({ ok: true });
+  });
+
+  // Mobile host companion → TV: relay a game command over WS. The TV (which
+  // owns game state) consumes { kind:'command', sessionId } and dispatches it.
+  router.post('/sessions/:id/command', (req, res) => {
+    const { command } = req.body || {};
+    if (!command || typeof command.type !== 'string') return res.status(400).json({ error: 'command.type required' });
+    broadcastEvent({ topic: 'gameshow', kind: 'command', sessionId: req.params.id, command, ts: Date.now() });
     res.status(202).json({ ok: true });
   });
 
