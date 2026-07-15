@@ -2,7 +2,9 @@ import { describe, it, expect } from 'vitest';
 import { midiToVexKey, renderChordStaff, computeChordStaffLayout } from './chordStaff.js';
 
 describe('computeChordStaffLayout', () => {
-  const LOGICAL_H = 192; // TOP_ROOM + STAFF_GAP + BASS_STAFF_H + BOTTOM_ROOM
+  const LOGICAL_H = 210; // TOP_ROOM(52) + STAFF_GAP(66) + BASS_STAFF_H(40) + BOTTOM_ROOM(52)
+  const MAX_STAVE_ASPECT = 1.7;
+  const MAX_STAVE_W = Math.round(LOGICAL_H * MAX_STAVE_ASPECT) - 16; // round(357) - PAD*2 = 341
 
   it('falls back to content-sized stave when no aspect given', () => {
     const { staveW, logicalW, logicalH } = computeChordStaffLayout(0, null);
@@ -11,10 +13,12 @@ describe('computeChordStaffLayout', () => {
     expect(logicalH).toBe(LOGICAL_H);
   });
 
-  it('widens the stave to fill a wide box', () => {
-    const aspect = 550 / 500;
-    const { logicalW, logicalH } = computeChordStaffLayout(0, aspect);
-    expect(logicalW / logicalH).toBeCloseTo(aspect, 1);
+  it('widens the stave to track a moderate wide box (under the cap)', () => {
+    const aspect = 550 / 500; // 1.1, below MAX_STAVE_ASPECT so it tracks the aspect
+    const { staveW, logicalW, logicalH } = computeChordStaffLayout(0, aspect);
+    // target = round(210*1.1) - 16 = 231 - 16 = 215 (< maxStaveW 341, so uncapped)
+    expect(staveW).toBe(215);
+    expect(logicalW / logicalH).toBeCloseTo(aspect, 1); // 231/210 ≈ 1.1
   });
 
   it('never goes below the content minimum (tall/narrow boxes)', () => {
@@ -22,12 +26,20 @@ describe('computeChordStaffLayout', () => {
     expect(staveW).toBe(44 + 4 * 10 + 40);
   });
 
-  it('fills ultra-wide boxes with no cap (staff lines span the full width)', () => {
+  it('caps ultra-wide boxes at MAX_STAVE_ASPECT (staff centers, not edge-to-edge)', () => {
     const aspect = 10;
-    const { logicalW, logicalH } = computeChordStaffLayout(0, aspect);
-    // No upper clamp: the stave fills however wide the slot is, so the viewBox
-    // aspect tracks the box aspect (→ no side gutters).
-    expect(logicalW / logicalH).toBeCloseTo(aspect, 1);
+    const { staveW, logicalW, logicalH } = computeChordStaffLayout(0, aspect);
+    // Upper clamp: staveW pins to maxStaveW so the viewBox aspect stops at the cap
+    // (→ narrower than the pane, and `meet` centers it with side air).
+    expect(staveW).toBe(MAX_STAVE_W); // 341
+    expect(logicalW).toBe(MAX_STAVE_W + 16); // 357
+    expect(logicalW / logicalH).toBeCloseTo(MAX_STAVE_ASPECT, 1); // 357/210 ≈ 1.70
+  });
+
+  it('caps at maxStaveW regardless of accidental count', () => {
+    // Even with accidentals bumping minStaveW, a very wide box still pins to the cap.
+    const { staveW } = computeChordStaffLayout(4, 20);
+    expect(staveW).toBe(MAX_STAVE_W); // 341, well above minStaveW (44+40+40=124)
   });
 
   it('tolerates garbage aspect values', () => {
@@ -90,6 +102,15 @@ describe('renderChordStaff — VexFlow grand staff', () => {
     // light card (no reliance on currentColor inheriting a near-white theme fg).
     expect(svg.innerHTML).toContain('1a1a1a');
     expect(svg.querySelectorAll('path').length).toBeGreaterThan(3); // brace + staff + notes
+  });
+
+  it('renders a HIGH treble chord without error (auto_stem stems down)', () => {
+    // High noteheads sit above the staff; auto_stem points the stem DOWN toward the
+    // staff so the chord stays within TOP_ROOM instead of clipping.
+    const host = mount(new Map([[83, {}], [86, {}], [89, {}]]));
+    const svg = host.querySelector('svg');
+    expect(svg).toBeTruthy();
+    expect(svg.querySelectorAll('path').length).toBeGreaterThan(3);
   });
 
   it('is fluid: a viewBox + preserveAspectRatio lets the browser fit & center it', () => {
