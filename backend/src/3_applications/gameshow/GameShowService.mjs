@@ -28,7 +28,7 @@ export class GameShowService {
     const id = profile.username || username;
     return {
       id,
-      name: profile.display_name || id,
+      name: profile.group_label || profile.display_name || id,
       avatar: `/api/v1/static/users/${id}`,
     };
   }

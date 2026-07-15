@@ -27,7 +27,11 @@ function makeService({ cfg = HOUSEHOLD_CFG, dataDir } = {}) {
     getDataDir: () => dataDir,
   };
   const userService = {
-    getProfile: (u) => (u === 'ghost_user' ? null : { username: u, display_name: u.toUpperCase() }),
+    getProfile: (u) => {
+      if (u === 'ghost_user') return null;
+      if (u === 'kckern') return { username: u, display_name: 'KC Kern', group_label: 'Dad' };
+      return { username: u, display_name: u.toUpperCase() };
+    },
   };
   return new GameShowService({ configService, userService, logger: NOOP });
 }
@@ -46,6 +50,9 @@ describe('GameShowService', () => {
     const cfg = makeService({ dataDir }).getConfig();
     expect(cfg.team_presets[0].teams[0].members[0]).toEqual(
       { id: 'felix', name: 'FELIX', avatar: '/api/v1/static/users/felix' });
+    // contextual label (group_label) wins over display_name
+    expect(cfg.team_presets[0].teams[1].members[0]).toEqual(
+      { id: 'kckern', name: 'Dad', avatar: '/api/v1/static/users/kckern' });
     // unknown user passes through, no avatar
     expect(cfg.team_presets[0].teams[1].members[1]).toEqual(
       { id: 'ghost_user', name: 'ghost_user', avatar: null });
