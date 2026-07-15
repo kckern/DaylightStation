@@ -28,11 +28,11 @@ import ScorePlayer from './ScorePlayer.jsx';
  * The score source comes from piano config `sheetmusic.collection`.
  */
 
-// Only .musicxml opens in the engraved player. .mxl is a ZIP container and the
-// parse pipeline reads raw text — there is no unzip yet — so routing it here would
-// dead-end on a parse failure. Exclude it until unzip lands (audit H4).
-// TODO(mxl): support .mxl by reading META-INF/container.xml → rootfile before parse.
-const NOTATION_RE = /\.musicxml$/i;
+// Both .musicxml and .mxl open in the engraved player. .mxl is a ZIP container,
+// but the backend media/stream endpoint decompresses it on the fly (reads
+// META-INF/container.xml → rootfile via extractMusicXmlFromMxl) and returns plain
+// MusicXML text, so the engrave pipeline receives raw XML either way (audit H4).
+const NOTATION_RE = /\.(musicxml|mxl)$/i;
 
 /** True when a content id should open in the engraved (MusicXML) player. */
 export function isNotationId(id) {
