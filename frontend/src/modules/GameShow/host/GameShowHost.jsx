@@ -9,6 +9,7 @@ import { fetchSession, fetchSet, sendCommand } from '../shell/session/sessionCli
 import { clampWager } from '../shell/components/WagerPanel.jsx';
 import { hostButtons } from './hostView.js';
 import './GameShowHost.scss';
+import '../styles/fonts.js';
 
 function Btn({ label, tone = 'plain', onClick }) {
   return <button type="button" className={`gsh-btn gsh-btn--${tone}`} onClick={onClick}>{label}</button>;
