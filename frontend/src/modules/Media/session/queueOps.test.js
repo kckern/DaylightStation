@@ -6,6 +6,7 @@
 import { describe, it, expect } from 'vitest';
 import { createIdleSessionSnapshot } from '@shared-contracts/media/shapes.mjs';
 import * as q from './queueOps.js';
+import { resultToQueueInput } from '../search/resultToQueueInput.js';
 
 function seed(...specs) {
   // spec: 'a' (queue priority), ['u1','upNext'], current marked 'b*'.
@@ -218,5 +219,30 @@ describe('batch ops (playNowMany / playNextMany / addUpNextMany / addMany)', () 
     expect(withTitle.queue.items[0].containerTitle).toBe('The Album');
     const without = q.addMany(seed(), [{ contentId: 'c:y' }]);
     expect('containerTitle' in without.queue.items[0]).toBe(false);
+  });
+
+  it('artist/album from a real search result survive playNow onto the queue item AND currentItem', () => {
+    // The full production path: a music track played straight from search
+    // (no container). Regression guard for the whitelist that used to strip
+    // these before Now Playing could show "<artist> — <album>".
+    const input = resultToQueueInput({
+      id: 'plex:1',
+      title: 'Hey Jude',
+      mediaType: 'audio',
+      metadata: { type: 'track', artist: 'The Beatles', album: 'Past Masters' },
+    });
+    const snap = q.playNowMany(createIdleSessionSnapshot({ sessionId: 's1', ownerId: 'c1' }), [input]);
+    expect(snap.queue.items[0].artist).toBe('The Beatles');
+    expect(snap.queue.items[0].album).toBe('Past Masters');
+    // currentItem (what NowPlayingView reads) must carry it too.
+    expect(snap.currentItem.artist).toBe('The Beatles');
+    expect(snap.currentItem.album).toBe('Past Masters');
+  });
+
+  it('a non-music item never gains artist/album keys', () => {
+    const input = resultToQueueInput({ id: 'plex:9', title: 'A Show', metadata: { type: 'show' } });
+    const snap = q.addMany(seed(), [input]);
+    expect('artist' in snap.queue.items[snap.queue.items.length - 1]).toBe(false);
+    expect('album' in snap.queue.items[snap.queue.items.length - 1]).toBe(false);
   });
 });

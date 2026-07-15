@@ -34,6 +34,11 @@ function toQueueItem(input, { priority = 'queue' } = {}) {
     // Container-expanded children carry their show/album title for display;
     // only present when set, so plain items keep their exact shape.
     ...(input.containerTitle != null ? { containerTitle: input.containerTitle } : {}),
+    // A track played straight from search carries its artist/album so Now
+    // Playing can show "<artist> — <album>". Whitelisted like the fields
+    // above — omitted when absent so non-music items are unchanged.
+    ...(input.artist != null ? { artist: input.artist } : {}),
+    ...(input.album != null ? { album: input.album } : {}),
   };
 }
 
@@ -57,6 +62,9 @@ function itemFields(entry) {
     title: entry.title,
     duration: entry.duration,
     thumbnail: entry.thumbnail,
+    ...(entry.containerTitle != null ? { containerTitle: entry.containerTitle } : {}),
+    ...(entry.artist != null ? { artist: entry.artist } : {}),
+    ...(entry.album != null ? { album: entry.album } : {}),
   };
 }
 
