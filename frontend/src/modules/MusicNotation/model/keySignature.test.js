@@ -38,10 +38,17 @@ describe('detectKey', () => {
   });
 
   it('holds the settled key when a rival only marginally edges it (hysteresis)', () => {
-    // C-major triad heavy with a light G lean: G scores only ~1% above C,
-    // well inside the relative hysteresis margin, so C must hold.
+    // C-major triad heavy with a light G lean: G scores only ~1.8% above C,
+    // well inside the 5% relative hysteresis margin, so C must hold.
     const pcs = [0, 4, 7, 0, 4, 7, 2, 11, 9, 6, 7];
     expect(detectKey(pcs, 'C')).toBe('C');
+  });
+
+  it('adopts the detected key when currentKey is not a known major key', () => {
+    // A stale/minor/enharmonic currentKey ('Cb') has no profile score, so the
+    // margin must be skipped rather than making the guard always-true.
+    const gMajor = [7, 11, 2, 7, 11, 2, 9, 6, 4, 7];
+    expect(detectKey(gMajor, 'Cb')).toBe('G');
   });
 
   it('returns a sane key for clear C-major material with no currentKey arg', () => {
