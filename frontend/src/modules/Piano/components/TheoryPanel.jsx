@@ -3,7 +3,7 @@ import { CurrentChordStaff } from './CurrentChordStaff.jsx';
 import { CircleOfFifths } from './CircleOfFifths.jsx';
 import { ChordNamePanel } from './ChordNamePanel.jsx';
 import { identifyChord } from '../theory/chordNaming.js';
-import { detectKey } from '../../MusicNotation/model/keySignature.js';
+import { useDetectedKey } from './useDetectedKey.js';
 import './TheoryPanel.scss';
 
 /**
@@ -17,9 +17,10 @@ import './TheoryPanel.scss';
  * The circle and chord plaque size fluidly off their slots (CSS scales the
  * circle's 220px viewBox to fill an aspect-locked square); the middle staff
  * flexes to fill the remaining space. As with the originals, the circle takes a
- * light, momentary key read for its soft key-region ring while the staff keeps
- * its own rolling detection. CurrentChordStaff (not ChordStaffRenderer) is used
- * so note-decay/peak/rolling-key behavior is preserved.
+ * shared rolling key read (useDetectedKey) that drives BOTH its soft key-region
+ * ring AND the staff's key signature, so the two always agree and follow the key
+ * being played. CurrentChordStaff (not ChordStaffRenderer) is used so
+ * note-decay/peak behavior is preserved.
  *
  * @param {Map} activeNotes - live MIDI surface (Map<midi, data>); only keys matter for theory
  * @param {'row'|'column'} [layout='row'] - orientation of the three slots
@@ -27,7 +28,8 @@ import './TheoryPanel.scss';
 export function TheoryPanel({ activeNotes, layout = 'row' }) {
   const midiNotes = useMemo(() => [...activeNotes.keys()], [activeNotes]);
   const pitchClasses = useMemo(() => midiNotes.map((n) => n % 12), [midiNotes]);
-  const detectedKey = useMemo(() => detectKey(pitchClasses, 'C'), [pitchClasses]);
+  // One shared rolling key, fed to BOTH the circle and the staff so they agree.
+  const detectedKey = useDetectedKey(activeNotes);
   // The identified chord's root pitch class → the circle emphasises that degree.
   const rootPc = useMemo(() => identifyChord(midiNotes).root, [midiNotes]);
 
@@ -39,7 +41,7 @@ export function TheoryPanel({ activeNotes, layout = 'row' }) {
         </div>
       </div>
       <div className="theory-panel__staff">
-        <CurrentChordStaff activeNotes={activeNotes} />
+        <CurrentChordStaff activeNotes={activeNotes} detectedKey={detectedKey} />
       </div>
       <div className="theory-panel__chord">
         <ChordNamePanel midiNotes={midiNotes} />

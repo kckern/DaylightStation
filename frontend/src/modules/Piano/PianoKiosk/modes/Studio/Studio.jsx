@@ -1,5 +1,5 @@
 import { useMemo, useState, useEffect, useCallback, useRef } from 'react';
-import { Routes, Route, NavLink } from 'react-router-dom';
+import { Routes, Route, NavLink, useLocation } from 'react-router-dom';
 import getLogger from '../../../../../lib/logging/Logger.js';
 import { DaylightAPI } from '../../../../../lib/api.mjs';
 import { usePianoMidi, usePianoMidiNotes } from '../../PianoMidiContext.jsx';
@@ -9,6 +9,7 @@ import StudioPlay from './StudioPlay.jsx';
 import StudioRecordings from './StudioRecordings.jsx';
 import StudioPlayback from './StudioPlayback.jsx';
 import StudioReviewPrompt from './StudioReviewPrompt.jsx';
+import RecordButton from './RecordButton.jsx';
 
 /**
  * Studio mode — a freeform play surface with two tabs:
@@ -26,6 +27,15 @@ export function Studio() {
   const { isPlaying } = usePianoMidiNotes();
   const { currentUser } = usePianoUser();
   const { recording, start, stop } = useStudioRecorder(subscribe);
+  const { pathname } = useLocation();
+  // The Record button lives in the tab bar, but must stay hidden on the individual
+  // take-playback route (recordings/<id>): playback synthesizes notes that feed the
+  // recorder, so an on-screen Record there would re-record the take. The list route
+  // (/recordings, no trailing id segment) still shows it.
+  // NOTE: this matches ANY single segment under recordings/. If a future non-:id
+  // child route is added (e.g. recordings/new), tighten this so it doesn't also
+  // hide the button there.
+  const onPlaybackRoute = /\/recordings\/[^/]+\/?$/.test(pathname);
   const [takes, setTakes] = useState([]);
   const [confirmId, setConfirmId] = useState(null);
   // A stopped take awaiting the user's keep/discard decision (review lifecycle).
@@ -122,21 +132,14 @@ export function Studio() {
         </NavLink>
         <NavLink to="recordings" className={({ isActive }) => `piano-studio__tab${isActive ? ' is-active' : ''}`}>
           Recordings
-          {recording && <span className="piano-studio__rec-dot" aria-label="recording" />}
         </NavLink>
+        {!onPlaybackRoute && (
+          <RecordButton recording={recording} elapsedMs={elapsedMs} onToggle={onRecordToggle} />
+        )}
       </nav>
 
       <Routes>
-        <Route
-          index
-          element={(
-            <StudioPlay
-              recording={recording}
-              elapsedMs={elapsedMs}
-              onRecordToggle={onRecordToggle}
-            />
-          )}
-        />
+        <Route index element={<StudioPlay />} />
         <Route
           path="recordings"
           element={(

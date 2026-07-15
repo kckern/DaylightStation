@@ -2,7 +2,9 @@ import { describe, it, expect } from 'vitest';
 import { midiToVexKey, renderChordStaff, computeChordStaffLayout } from './chordStaff.js';
 
 describe('computeChordStaffLayout', () => {
-  const LOGICAL_H = 192; // TOP_ROOM + STAFF_GAP + BASS_STAFF_H + BOTTOM_ROOM
+  const LOGICAL_H = 208; // TOP_ROOM(58) + STAFF_GAP(66) + BASS_STAFF_H(40) + BOTTOM_ROOM(44)
+  const MAX_STAVE_ASPECT = 1.7;
+  const MAX_STAVE_W = Math.round(LOGICAL_H * MAX_STAVE_ASPECT) - 16; // round(353.6)=354 - PAD*2 = 338
 
   it('falls back to content-sized stave when no aspect given', () => {
     const { staveW, logicalW, logicalH } = computeChordStaffLayout(0, null);
@@ -11,10 +13,12 @@ describe('computeChordStaffLayout', () => {
     expect(logicalH).toBe(LOGICAL_H);
   });
 
-  it('widens the stave to fill a wide box', () => {
-    const aspect = 550 / 500;
-    const { logicalW, logicalH } = computeChordStaffLayout(0, aspect);
-    expect(logicalW / logicalH).toBeCloseTo(aspect, 1);
+  it('widens the stave to track a moderate wide box (under the cap)', () => {
+    const aspect = 550 / 500; // 1.1, below MAX_STAVE_ASPECT so it tracks the aspect
+    const { staveW, logicalW, logicalH } = computeChordStaffLayout(0, aspect);
+    // target = round(208*1.1) - 16 = 229 - 16 = 213 (< maxStaveW 338, so uncapped)
+    expect(staveW).toBe(213);
+    expect(logicalW / logicalH).toBeCloseTo(aspect, 1); // 229/208 ≈ 1.101
   });
 
   it('never goes below the content minimum (tall/narrow boxes)', () => {
@@ -22,12 +26,20 @@ describe('computeChordStaffLayout', () => {
     expect(staveW).toBe(44 + 4 * 10 + 40);
   });
 
-  it('fills ultra-wide boxes with no cap (staff lines span the full width)', () => {
+  it('caps ultra-wide boxes at MAX_STAVE_ASPECT (staff centers, not edge-to-edge)', () => {
     const aspect = 10;
-    const { logicalW, logicalH } = computeChordStaffLayout(0, aspect);
-    // No upper clamp: the stave fills however wide the slot is, so the viewBox
-    // aspect tracks the box aspect (→ no side gutters).
-    expect(logicalW / logicalH).toBeCloseTo(aspect, 1);
+    const { staveW, logicalW, logicalH } = computeChordStaffLayout(0, aspect);
+    // Upper clamp: staveW pins to maxStaveW so the viewBox aspect stops at the cap
+    // (→ narrower than the pane, and `meet` centers it with side air).
+    expect(staveW).toBe(MAX_STAVE_W); // 338
+    expect(logicalW).toBe(MAX_STAVE_W + 16); // 354
+    expect(logicalW / logicalH).toBeCloseTo(MAX_STAVE_ASPECT, 1); // 354/208 ≈ 1.702
+  });
+
+  it('caps at maxStaveW regardless of accidental count', () => {
+    // Even with accidentals bumping minStaveW, a very wide box still pins to the cap.
+    const { staveW } = computeChordStaffLayout(4, 20);
+    expect(staveW).toBe(MAX_STAVE_W); // 338, well above minStaveW (44+40+40=124)
   });
 
   it('tolerates garbage aspect values', () => {
@@ -90,6 +102,25 @@ describe('renderChordStaff — VexFlow grand staff', () => {
     // light card (no reliance on currentColor inheriting a near-white theme fg).
     expect(svg.innerHTML).toContain('1a1a1a');
     expect(svg.querySelectorAll('path').length).toBeGreaterThan(3); // brace + staff + notes
+  });
+
+  it('keeps a HIGH treble chord inside the viewBox (auto_stem, no top clip)', () => {
+    // High noteheads sit above the staff; auto_stem points the stem DOWN toward the
+    // staff so the chord stays within TOP_ROOM instead of clipping. The viewBox height
+    // is the fixed logicalH (208), and nothing should render at a wildly negative y
+    // above the frame.
+    const host = mount(new Map([[83, {}], [86, {}], [89, {}]]));
+    const svg = host.querySelector('svg');
+    expect(svg).toBeTruthy();
+    expect(svg.querySelectorAll('path').length).toBeGreaterThan(3);
+    // viewBox is "0 0 <logicalW> 208" — the height is the headroom-inclusive logicalH.
+    const vb = svg.getAttribute('viewBox').split(' ').map(Number);
+    expect(vb[3]).toBe(208);
+    // No drawn element escapes far above the top of the frame (would signal a top clip).
+    for (const el of svg.querySelectorAll('[y]')) {
+      const y = Number(el.getAttribute('y'));
+      if (Number.isFinite(y)) expect(y).toBeGreaterThan(-10);
+    }
   });
 
   it('is fluid: a viewBox + preserveAspectRatio lets the browser fit & center it', () => {

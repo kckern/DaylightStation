@@ -2,7 +2,7 @@ import { useEffect, useMemo, Suspense } from 'react';
 import { configure as configureLogger } from '../../lib/logging/Logger.js';
 import { PianoKeyboard } from './components/PianoKeyboard';
 import { NoteWaterfall } from './components/NoteWaterfall';
-import { CurrentChordStaff } from './components/CurrentChordStaff';
+import { TheoryPanel } from './components/TheoryPanel';
 import { useMidiSubscription } from './useMidiSubscription';
 import { computeKeyboardRange } from './noteUtils.js';
 import './PianoVisualizer.scss';
@@ -103,7 +103,7 @@ export function PianoVisualizer({ onClose, onSessionEnd, initialGame = null }) {
           )}
         </div>
         <div className="header-center">
-          <CurrentChordStaff activeNotes={activeNotes} />
+          <TheoryPanel activeNotes={activeNotes} layout="row" />
         </div>
       </div>
 
