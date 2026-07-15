@@ -15,24 +15,28 @@
     justify-content: center;
     align-items: center;
     color: #333;
-    height: 35%;
+    height: 38%;
     flex-shrink: 0;
-    padding: 0 1rem;
+    padding: 0;
 
+    // Session timer / note count / pedal / inactivity bar — small unobtrusive
+    // corner overlay. Pinned top-RIGHT so it floats over the theory band's blank
+    // corner instead of colliding with the circle of fifths (which sits on the
+    // LEFT of the row layout).
     .header-left {
       position: absolute;
-      top: 1rem;
-      left: 1rem;
+      top: 1.25rem;
+      right: 1.75rem;
       display: flex;
       flex-direction: column;
-      align-items: flex-start;
+      align-items: flex-end;
       gap: 0.5rem;
       z-index: 10;
 
       .session-timer {
         display: flex;
         flex-direction: column;
-        align-items: flex-start;
+        align-items: flex-end;
         gap: 0.1rem;
 
         .timer-value {
@@ -74,12 +78,25 @@
       }
     }
 
+    // White "paper" card, mirroring Studio's top pane, so the circle / staff /
+    // chord sit on a clean light surface (the beige body behind dark staff ink
+    // reads muddy). The band has a definite height (38% of the visualizer), so
+    // TheoryPanel's absolutely-positioned staff SVG has a box to fill; the
+    // padding gives the circle room and keeps tall chords / ledger lines off the
+    // edges.
     .header-center {
-      width: 100%;
-      height: 100%;
+      flex: 1;             // fill the header's main axis minus horizontal margins
+      align-self: stretch; // fill the cross axis MINUS vertical margins (real inset)
       display: flex;
       justify-content: center;
-      align-items: center;
+      align-items: stretch;
+      margin: 0.75rem 1rem;
+      padding: 1rem 1.25rem;
+      background: #fff;
+      border: 1px solid rgba(0, 0, 0, 0.12);
+      border-radius: 12px;
+      box-sizing: border-box;
+      overflow: hidden;
     }
   }
 

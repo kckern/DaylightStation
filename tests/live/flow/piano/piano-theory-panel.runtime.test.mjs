@@ -57,8 +57,9 @@ test.describe('Piano Theory Panel bounding boxes', () => {
     await page.goto('/piano/studio');
     await page.waitForLoadState('networkidle');
 
-    // Headless has no Web MIDI, so the connect gate shows — dismiss it.
-    const skip = page.locator('.piano-connect-gate__skip');
+    // Headless has no Web MIDI, so the connect gate shows — dismiss it via the
+    // "Continue without piano" button (sets `dismissed` → renders the shell).
+    const skip = page.getByRole('button', { name: /continue without piano/i });
     if (await skip.count()) {
       await skip.click();
     }

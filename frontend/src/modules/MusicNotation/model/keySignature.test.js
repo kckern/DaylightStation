@@ -10,20 +10,50 @@ describe('KEY_SIGNATURES', () => {
 });
 
 describe('detectKey', () => {
-  it('returns current key when too few notes', () => {
-    expect(detectKey([0, 2], 'G')).toBe('G');
+  it('returns current key when too few notes (<5)', () => {
+    expect(detectKey([0, 4, 7], 'F')).toBe('F');
   });
-  it('returns current key when too few unique pitches', () => {
+
+  it('returns current key when too few unique pitches (<3)', () => {
     expect(detectKey([0, 0, 0, 0, 0, 0], 'F')).toBe('F');
   });
-  it('detects G major when F# weighs against C (clears hysteresis)', () => {
-    // Repeated F# (6) drags C major's score down enough for G to win by >0.2.
-    const pcs = [6, 6, 6, 7, 9, 11, 2];
+
+  it('resolves a G-major run to G from C (tonic/dominant + F#)', () => {
+    // G B D … A F# E G — emphasizes G tonic, D dominant, F# leading tone.
+    const pcs = [7, 11, 2, 7, 11, 2, 9, 6, 4, 7];
     expect(detectKey(pcs, 'C')).toBe('G');
   });
-  it('stays put without a 20% improvement (hysteresis)', () => {
-    // Plain C-major run: C should not flip to anything else.
-    const pcs = [0, 2, 4, 5, 7, 9, 11, 0];
+
+  it('resolves an F-major run to F from C (tonic/dominant + Bb)', () => {
+    // F A C … Bb C F — emphasizes F tonic, C dominant, includes Bb.
+    const pcs = [5, 9, 0, 5, 9, 0, 10, 5, 7, 5];
+    expect(detectKey(pcs, 'C')).toBe('F');
+  });
+
+  it('resolves a D-major arpeggio to D from C', () => {
+    // D F# A … E C# D — D tonic, A dominant, C# leading tone.
+    const pcs = [2, 6, 9, 2, 6, 9, 4, 1, 11, 2];
+    expect(detectKey(pcs, 'D')).toBe('D');
+    expect(detectKey(pcs, 'C')).toBe('D');
+  });
+
+  it('holds the settled key when a rival only marginally edges it (hysteresis)', () => {
+    // C-major triad heavy with a light G lean: G scores only ~1.8% above C,
+    // well inside the 5% relative hysteresis margin, so C must hold.
+    const pcs = [0, 4, 7, 0, 4, 7, 2, 11, 9, 6, 7];
     expect(detectKey(pcs, 'C')).toBe('C');
+  });
+
+  it('adopts the detected key when currentKey is not a known major key', () => {
+    // A stale/minor/enharmonic currentKey ('Cb') has no profile score, so the
+    // margin must be skipped rather than making the guard always-true.
+    const gMajor = [7, 11, 2, 7, 11, 2, 9, 6, 4, 7];
+    expect(detectKey(gMajor, 'Cb')).toBe('G');
+  });
+
+  it('returns a sane key for clear C-major material with no currentKey arg', () => {
+    // Guards the Producer.jsx one-shot: detectKey(notes.map(n => n.midi % 12)).
+    const pcs = [0, 2, 4, 5, 7, 9, 11, 0, 4, 7];
+    expect(detectKey(pcs)).toBe('C');
   });
 });
