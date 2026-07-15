@@ -41,6 +41,39 @@ describe('useDetectedKey', () => {
     expect(result.current).toBe('G');
   });
 
+  it('treats release-then-repress of the same pitch class as a new-note edge', () => {
+    // Guards the correctness property that lastKeysRef is updated BEFORE the
+    // no-new-notes early return: a release clears the "last keys", so re-pressing
+    // the SAME MIDI that was held just before the release still counts as new and
+    // advances the buffer.
+    //
+    // Setup: four notes ending on MIDI 67 (pc 7) leave the buffer at length 4 —
+    // one short of detectKey's 5-note minimum — so the key is still 'C'. After a
+    // release, re-pressing 67 must push a 5th pitch class and let detection fire
+    // (→ 'G'). If the ref update moved below the early return, the release would
+    // NOT clear 67 from lastKeys, the re-press would be swallowed, the buffer
+    // would stay at 4, and the key would stay stuck on 'C'.
+    const { result, rerender } = renderHook(
+      ({ notes }) => useDetectedKey(notes),
+      { initialProps: { notes: new Map() } },
+    );
+
+    // Four new notes, last one MIDI 67 (pc 7). Buffer pitch classes [11,2,7,7].
+    [71, 62, 79, 67].forEach((midi) => {
+      act(() => rerender({ notes: new Map([[midi, {}]]) }));
+    });
+    expect(result.current).toBe('C'); // only 4 buffered notes < 5
+
+    // Release everything — key unchanged, and lastKeys is cleared.
+    act(() => rerender({ notes: new Map() }));
+    expect(result.current).toBe('C');
+
+    // Re-press the SAME MIDI (67) held right before the release. This must count
+    // as a new note → 5th buffer entry → detection fires and tracks the run.
+    act(() => rerender({ notes: new Map([[67, {}]]) }));
+    expect(result.current).toBe('G');
+  });
+
   it('does not change the key when notes are released', () => {
     const { result, rerender } = renderHook(
       ({ notes }) => useDetectedKey(notes),
