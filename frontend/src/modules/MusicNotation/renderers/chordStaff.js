@@ -162,9 +162,27 @@ export function renderChordStaff(host, { notes, keySignature = 'C', aspect } = {
   // Make the SVG fluid: a viewBox lets the browser scale the engraving to fit its
   // container and center it (xMidYMid meet), preserving aspect ratio. Replaces the
   // fixed px width/height VexFlow stamps on — so it never overflows or clips.
+  //
+  // The viewBox TIGHTLY BOUNDS the actually-drawn ink (measured post-render) instead
+  // of the fixed logical canvas. The fixed TOP_ROOM/BOTTOM_ROOM only ever guaranteed
+  // the canvas was big enough to draw into; they left large empty margins baked into
+  // the viewBox, so under `meet` the staff rendered small and lopsided — the bass
+  // side (low notes + 8vb markers) spilled past the bottom while the top sat empty.
+  // Fitting to the real content bbox (plus small SYMMETRIC padding) centers the
+  // engraving vertically, grows it to fill the box, and can never clip a note, stem,
+  // ledger line, or ottava marker — whatever was drawn is inside the viewBox.
   const svg = host.querySelector('svg');
   if (svg) {
-    svg.setAttribute('viewBox', `0 0 ${logicalW} ${logicalH}`);
+    let vb = { x: 0, y: 0, w: logicalW, h: logicalH };
+    try {
+      const bb = svg.getBBox();
+      if (bb && bb.width > 0 && bb.height > 0) {
+        const PAD_X = 8;  // horizontal air (brace can sit a few px left of x=0)
+        const PAD_Y = 10; // vertical air so stems/markers never kiss the edge
+        vb = { x: bb.x - PAD_X, y: bb.y - PAD_Y, w: bb.width + PAD_X * 2, h: bb.height + PAD_Y * 2 };
+      }
+    } catch { /* getBBox unavailable (detached node) → fall back to fixed canvas */ }
+    svg.setAttribute('viewBox', `${vb.x} ${vb.y} ${vb.w} ${vb.h}`);
     svg.setAttribute('preserveAspectRatio', 'xMidYMid meet');
     svg.setAttribute('width', '100%');
     svg.setAttribute('height', '100%');

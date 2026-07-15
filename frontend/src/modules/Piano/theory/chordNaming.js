@@ -33,6 +33,11 @@ const TEMPLATES = [
   { quality: 'dominant9',    intervals: [0, 2, 4, 7, 10], label: '9' },
   { quality: 'minor9',       intervals: [0, 2, 3, 7, 10], label: 'minor 9' },
   { quality: 'six9',         intervals: [0, 2, 4, 7, 9],  label: '6/9' },
+  // ── lydian (♯11 / ♯4) ────────────────────────────────────────────────────────
+  // The ♯11 is lydian's characteristic tone; these are the chords that carry that
+  // "lydian" color. (A mode is a scale, not a chord — see the note below the table.)
+  { quality: 'major7sharp11', intervals: [0, 4, 6, 7, 11], label: 'major 7 ♯11' },
+  { quality: 'addSharp11',    intervals: [0, 4, 6, 7],     label: 'add ♯11' },
   // ── sevenths ────────────────────────────────────────────────────────────────
   { quality: 'major7',       intervals: [0, 4, 7, 11],    label: 'major 7' },
   { quality: 'dominant7',    intervals: [0, 4, 7, 10],    label: '7' },
@@ -41,6 +46,7 @@ const TEMPLATES = [
   { quality: 'minor7b5',     intervals: [0, 3, 6, 10],    label: 'minor 7 ♭5' },
   { quality: 'diminished7',  intervals: [0, 3, 6, 9],     label: 'diminished 7' },
   { quality: 'augmented7',   intervals: [0, 4, 8, 10],    label: '7 ♯5' },
+  { quality: 'dominant7b5',  intervals: [0, 4, 6, 10],    label: '7 ♭5' },
   { quality: 'dominant7sus4', intervals: [0, 5, 7, 10],   label: '7 sus4' },
   // ── sixths ────────────────────────────────────────────────────────────────
   { quality: 'sixth',        intervals: [0, 4, 7, 9],     label: '6' },
@@ -48,6 +54,8 @@ const TEMPLATES = [
   // ── added tone ──────────────────────────────────────────────────────────────
   { quality: 'add9',         intervals: [0, 2, 4, 7],     label: 'add9' },
   { quality: 'minorAdd9',    intervals: [0, 2, 3, 7],     label: 'minor add9' },
+  { quality: 'add4',         intervals: [0, 4, 5, 7],     label: 'add4' },
+  { quality: 'minorAdd4',    intervals: [0, 3, 5, 7],     label: 'minor add4' },
   // ── triads ────────────────────────────────────────────────────────────────
   { quality: 'major',        intervals: [0, 4, 7],        label: 'major' },
   { quality: 'minor',        intervals: [0, 3, 7],        label: 'minor' },
@@ -58,6 +66,13 @@ const TEMPLATES = [
   // ── dyad ────────────────────────────────────────────────────────────────────
   { quality: 'power',        intervals: [0, 7],           label: '5' },
 ].map((t) => ({ ...t, set: new Set(t.intervals) }));
+
+// NOTE ON MODES: this identifies CHORDS (a set of simultaneous pitch classes), not
+// MODES (a scale + tonic — e.g. "C lydian"). A mode can't be read from one chord:
+// "is this lydian?" depends on the melodic/harmonic context over time, not the four
+// notes held now. What we CAN name is the chord that carries a mode's flavor — the
+// ♯11 chords above give the lydian color. True mode detection would be a separate
+// feature (rolling scale inference), akin to useDetectedKey but for mode.
 
 /**
  * Position of `bassPc` within the chord's stacked tones (root + intervals),

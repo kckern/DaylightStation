@@ -24,7 +24,10 @@
   &--row {
     flex-direction: row;
     align-items: stretch;
+    justify-content: space-around; // even air around all three slots…
     gap: 1.25rem;
+    padding: 0 1.75rem;            // …plus real padding off the card's left/right edges.
+    box-sizing: border-box;
     // Fixed-basis sides ("no rug pull" when the chord name changes width).
     .theory-panel__circle, .theory-panel__chord { flex: 0 0 clamp(11rem, 16vw, 15rem); }
   }
