@@ -1,6 +1,7 @@
 import Icon from '../../icons/Icon.jsx';
 
-/** ms → M:SS for the recording read-out. */
+/** ms → M:SS for the recording read-out. Does not roll over to H:MM:SS past
+ *  60 min — fine for short studio takes. */
 function mmss(ms) {
   const total = Math.floor(ms / 1000);
   const m = Math.floor(total / 60);
@@ -13,7 +14,7 @@ function mmss(ms) {
  * card). Idle → dot + "Record". Recording → red pill with a pulsing white dot, a
  * count-up MM:SS timer, and a stop glyph. Tap toggles capture.
  */
-export default function RecordButton({ recording, elapsedMs, onToggle }) {
+export default function RecordButton({ recording, elapsedMs = 0, onToggle }) {
   return (
     <button
       type="button"
