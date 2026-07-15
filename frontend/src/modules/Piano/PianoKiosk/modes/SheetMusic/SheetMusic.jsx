@@ -1,7 +1,7 @@
 import { useMemo, useState, useEffect, useRef } from 'react';
 import { Routes, Route, useNavigate, useParams } from 'react-router-dom';
 import getLogger from '../../../../../lib/logging/Logger.js';
-import { DaylightAPIText } from '../../../../../lib/api.mjs';
+import { DaylightAPIText, DaylightAPI } from '../../../../../lib/api.mjs';
 import { usePianoKioskConfig } from '../../PianoConfig.jsx';
 import PianoEmpty from '../../PianoEmpty.jsx';
 import { SkeletonStage } from '../../Skeleton.jsx';
@@ -52,6 +52,36 @@ export function collectionListPath(ref) {
   return `api/v1/list/${source}/${id}`;
 }
 
+/** Split a content id into { source, localId }. Bare ids default to plex (legacy). */
+export function splitSourceId(id) {
+  const s = String(id || '').trim();
+  const i = s.indexOf(':');
+  if (i <= 0) return { source: 'plex', localId: s };
+  return { source: s.slice(0, i), localId: s.slice(i + 1) };
+}
+
+/**
+ * Resolve a score's sidecar/cover image up front (via its `info`), so the viewer can
+ * prefer a curated scan — a same-basename image like fur-elise.jpg next to the score —
+ * over engraving. A failed/absent info degrades to no image (→ engrave / plex path).
+ * Returns { loading, image, title }.
+ */
+export function useScoreImage(contentId) {
+  const [state, setState] = useState({ loading: true, image: null, title: null });
+  useEffect(() => {
+    let cancelled = false;
+    setState({ loading: true, image: null, title: null });
+    const { source, localId } = splitSourceId(contentId);
+    (async () => {
+      const info = await Promise.resolve(DaylightAPI(`api/v1/info/${source}/${localId}`)).catch(() => null);
+      if (cancelled) return;
+      setState({ loading: false, image: info?.image || info?.thumbnail || null, title: info?.title || null });
+    })();
+    return () => { cancelled = true; };
+  }, [contentId]);
+  return state;
+}
+
 export function SheetMusic() {
   const { config } = usePianoKioskConfig();
   const ref = config.sheetmusic?.collection;
@@ -81,14 +111,18 @@ function ScoreGridRoute({ collectionRef }) {
 }
 
 /**
- * Score viewer route. The splat holds the full content id. A MusicXML id opens
- * the interactive engraved ScorePlayer (its raw XML is fetched here); anything
- * else (e.g. a Plex page-image score) opens the page-image ScoreViewer.
+ * Score viewer route. The splat holds the full content id. A curated sidecar image
+ * (a same-basename .jpg scan) wins — it opens in the page-image ScoreViewer. Failing
+ * that, a MusicXML id (.musicxml/.mxl) opens the interactive engraved ScorePlayer;
+ * anything else (e.g. a Plex page-image score) opens the page-image ScoreViewer.
  */
 function ScoreViewerRoute() {
   const params = useParams();
   const contentId = params['*'] || '';
-  const imageScore = useMemo(() => ({ id: contentId }), [contentId]);
+  const { loading, image, title } = useScoreImage(contentId);
+  const imageScore = useMemo(() => ({ id: contentId, image, title }), [contentId, image, title]);
+  if (loading) return <SkeletonStage />;
+  if (image) return <ScoreViewer score={imageScore} />;
   if (isNotationId(contentId)) return <NotationScore contentId={contentId} />;
   return <ScoreViewer score={imageScore} />;
 }
