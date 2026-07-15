@@ -1,60 +1,170 @@
+@use '../styles/tokens' as gs;
+
 .gsh {
-  min-height: 100vh;
-  background: #060ce9;
-  color: #fff;
+  min-height: 100vh; // real phone page — vh is correct here, unlike the TV frame
+  background: var(--gs-stage);
+  color: var(--gs-paper);
   padding: 1rem;
   display: flex;
   flex-direction: column;
   gap: 1rem;
-  font-family: system-ui, sans-serif;
+  font-family: var(--gs-font-ui);
   -webkit-tap-highlight-color: transparent;
 
-  &--loading, &--error { align-items: center; justify-content: center; font-size: 1.2rem; }
-  &--error { color: #ff6b6b; }
+  &--loading,
+  &--error {
+    align-items: center;
+    justify-content: center;
+    font-size: 1.2rem;
+  }
+  &--error { color: var(--gs-danger); }
 
   &__scores {
-    display: flex; flex-wrap: wrap; gap: 0.5rem;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
   }
   &__score {
-    flex: 1 1 40%; padding: 0.4rem 0.75rem; border-radius: 0.4rem;
-    background: rgba(0,0,0,0.4); border-left: 0.3rem solid var(--team-color);
-    font-size: 0.95rem; b { display: block; opacity: 0.85; font-size: 0.8rem; }
+    flex: 1 1 40%;
+    padding: 0.4rem 0.75rem;
+    border-radius: 0.4rem;
+    background: rgba(0, 0, 0, 0.4);
+    border-left: 0.3rem solid var(--team-color);
+    font-size: 0.95rem;
+
+    b {
+      display: block;
+      color: var(--gs-paper-dim);
+      font-size: 0.8rem;
+    }
   }
 
-  &__phase { text-transform: uppercase; letter-spacing: 0.1em; opacity: 0.7; font-size: 0.85rem; }
+  &__phase {
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--gs-paper-dim);
+    font-size: 0.85rem;
+  }
 
   &__board {
-    display: grid; grid-template-columns: repeat(var(--cats), 1fr); gap: 0.35rem;
+    display: grid;
+    grid-template-columns: repeat(var(--cats), 1fr);
+    gap: 0.35rem;
   }
-  &__col { display: flex; flex-direction: column; gap: 0.35rem; }
-  &__cat { font-size: 0.7rem; text-align: center; font-weight: 700; text-transform: uppercase; min-height: 2.4rem; display: flex; align-items: center; justify-content: center; }
+  &__col {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+  }
+  &__cat {
+    min-height: 2.4rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+    text-align: center;
+    text-transform: uppercase;
+    font-family: var(--gs-font-display);
+    font-size: 0.7rem;
+    letter-spacing: 0.03em;
+  }
   &__tile {
-    background: #0a1bb0; color: #ffd54a; border: none; border-radius: 0.3rem;
-    font-size: 1.1rem; font-weight: 800; padding: 0.9rem 0; cursor: pointer;
-    &.is-used { background: rgba(10,27,176,0.25); color: transparent; }
+    background: linear-gradient(180deg, var(--gs-tile-hi), var(--gs-tile-lo));
+    color: var(--gs-brass);
+    border: none;
+    border-radius: 0.3rem;
+    font-family: var(--gs-font-display);
+    font-size: 1.05rem;
+    letter-spacing: 0.03em;
+    padding: 0.9rem 0;
+    cursor: pointer;
+
+    &.is-used {
+      background: var(--gs-tile-used);
+      color: transparent;
+    }
   }
 
-  &__clue { display: flex; flex-direction: column; gap: 0.75rem; }
-  &__cluetext { font-size: 1.3rem; font-weight: 600; }
-  &__answer { color: #ffd54a; font-size: 1.1rem; }
+  &__clue {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+  }
+  &__cluetext {
+    font-family: var(--gs-font-serif);
+    font-weight: 500;
+    font-size: 1.3rem;
+  }
+  &__answer {
+    color: var(--gs-brass);
+    font-size: 1.1rem;
+  }
 
-  &__row { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; }
+  &__row {
+    display: flex;
+    gap: 0.5rem;
+    align-items: center;
+    flex-wrap: wrap;
+  }
 
-  &__wager { display: flex; flex-direction: column; gap: 0.75rem; align-items: center; }
-  &__wagerlabel { font-size: 1.1rem; font-weight: 700; }
-  &__wageramt { font-size: 1.8rem; font-weight: 800; min-width: 6rem; text-align: center; }
+  &__wager {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    align-items: center;
+  }
+  &__wagerlabel {
+    font-size: 1.1rem;
+    font-weight: 700;
+  }
+  &__wageramt {
+    font-family: var(--gs-font-display);
+    font-size: 1.8rem;
+    letter-spacing: 0.03em;
+    color: var(--gs-brass);
+    min-width: 6rem;
+    text-align: center;
+  }
 
-  &__finaljudge { display: flex; flex-direction: column; gap: 0.75rem; }
-  &__done { font-size: 1.5rem; text-align: center; }
+  &__finaljudge {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+  }
+  &__done {
+    font-size: 1.5rem;
+    text-align: center;
+  }
 
-  &__actions { margin-top: auto; display: flex; flex-direction: column; gap: 0.6rem; position: sticky; bottom: 0.5rem; }
+  &__actions {
+    margin-top: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 0.6rem;
+    position: sticky;
+    bottom: 0.5rem;
+  }
 }
 
 .gsh-btn {
-  border: none; border-radius: 0.5rem; padding: 1rem; font-size: 1.1rem; font-weight: 700;
-  cursor: pointer; color: #fff; background: rgba(255,255,255,0.15);
-  &--primary { background: #2fbf71; }
-  &--danger { background: #e05263; }
-  &--team { background: #3273dc; flex: 1; }
+  border: none;
+  border-radius: 0.5rem;
+  padding: 1rem;
+  font-size: 1.1rem;
+  font-weight: 700;
+  cursor: pointer;
+  color: var(--gs-paper);
+  background: var(--gs-surface);
+
+  &--primary {
+    background: linear-gradient(180deg, var(--gs-brass-bright), var(--gs-brass));
+    color: var(--gs-ink);
+  }
+  &--danger { background: var(--gs-danger); }
+  &--team {
+    background: var(--gs-tile-hi);
+    flex: 1;
+  }
+
   &:active { transform: scale(0.97); }
 }
