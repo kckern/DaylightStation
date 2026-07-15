@@ -1,0 +1,25 @@
+.gs-teamsetup {
+  display: flex; flex-direction: column; gap: 1.5rem; padding: 2rem; height: 100%;
+  &__presets { display: flex; gap: 0.75rem; justify-content: center; }
+  &__teams { display: flex; gap: 1.25rem; justify-content: center; flex: 1; }
+  &__team {
+    min-width: 16rem; padding: 1rem; border-radius: 0.75rem;
+    border-top: 0.4rem solid var(--team-color); background: rgba(0, 0, 0, 0.4);
+    display: flex; flex-direction: column; gap: 0.5rem;
+  }
+  &__teamname { font-size: 1.4rem; font-weight: 700; }
+  &__add, &__confirm {
+    font-size: 1.2rem; padding: 0.75rem 1.5rem; border-radius: 0.5rem;
+    background: rgba(255, 255, 255, 0.12); color: #fff; border: none; cursor: pointer;
+    &:focus { outline: 3px solid #ffd54a; }
+  }
+  &__confirm { align-self: center; background: #ffd54a; color: #111; font-weight: 700; }
+}
+.gs-chip {
+  padding: 0.4rem 0.9rem; border-radius: 999px; border: none; cursor: pointer;
+  background: rgba(255, 255, 255, 0.15); color: #fff; font-size: 1rem;
+  &:focus { outline: 3px solid #ffd54a; }
+  &.is-active { background: #ffd54a; color: #111; }
+  &--pool { opacity: 0.65; }
+  &--danger { background: rgba(224, 82, 99, 0.4); }
+}
