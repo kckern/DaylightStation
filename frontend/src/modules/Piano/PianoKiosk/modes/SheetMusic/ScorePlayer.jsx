@@ -868,9 +868,12 @@ export default function ScorePlayer({ score: scoreMeta }) {
   const openTsRef = useRef(performance.now());
   const readySentRef = useRef(false);
   const firstDocRef = useRef(true); // first musicXml effect = mount; don't wipe restored focus
+  // Splash: the sidecar scan covers the stage until the engraving is ready (onReady),
+  // so the user sees the score's artwork instead of a blank paper during the ~1-2s engrave.
+  const [engraveReady, setEngraveReady] = useState(false);
   // A new score opens in its written key (mirror the other per-score resets).
   useEffect(() => {
-    openTsRef.current = performance.now(); readySentRef.current = false; setTranspose(0);
+    openTsRef.current = performance.now(); readySentRef.current = false; setEngraveReady(false); setTranspose(0);
     // Open a fresh per-run session log for this document (bounds the JSONL file);
     // all subsequent events (load / follow / polish / focus / mode / transpose) land in it.
     startSession(scoreMeta.id);
@@ -882,6 +885,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
     setSelecting(null);
   }, [scoreMeta.musicXml]); // eslint-disable-line react-hooks/exhaustive-deps
   const onReady = useCallback(() => {
+    setEngraveReady(true); // lift the splash — the sheet is engraved
     if (readySentRef.current) return;
     readySentRef.current = true;
     logLoad({
@@ -930,6 +934,11 @@ export default function ScorePlayer({ score: scoreMeta }) {
 
   return (
     <div className="piano-score-player">
+      {scoreMeta.splashImage && !engraveReady && (
+        <div className="piano-score-splash piano-score-splash--overlay" aria-hidden="true">
+          <img className="piano-score-splash__img" src={scoreMeta.splashImage} alt="" decoding="async" />
+        </div>
+      )}
       <div className={`piano-score-player__scroll piano-score-player__scroll--${flow}`} ref={scrollRef} onClick={onScoreClick}>
         <MusicXmlRenderer score={parsed} musicXml={scoreMeta.musicXml} flow={flow} scale={scale} transpose={transpose} onLayout={onLayout} onReady={onReady} holdExtraction={running}>
           {mode !== 'perform' && current && layoutFresh && (
