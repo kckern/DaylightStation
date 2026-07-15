@@ -1,11 +1,12 @@
 // chordStaff — engrave the live "current chord" as a grand staff via VexFlow
-// (SVG backend). The stave is drawn to FILL its host box width (its logical width
-// tracks the measured box aspect, so the viewBox aspect equals the box aspect and
-// the staff lines span edge-to-edge with no side gutters). The width is fixed by
-// the box, NOT by the chord — so it never jumps as you play, always leaves room
-// for the clef + key signature + notes, and content that would overrun it is
-// trimmed by the host's overflow:hidden. Clef → key signature → chord flow from
-// the left, as in normal notation.
+// (SVG backend). The stave takes a NATURAL width that tracks the box aspect but is
+// CAPPED (see MAX_STAVE_ASPECT) so it never stretches edge-to-edge across a wide
+// pane. When the cap bites, the viewBox is narrower than the pane, and the SVG's
+// preserveAspectRatio="xMidYMid meet" centers the whole compact staff with air on
+// both sides — centering is done by the viewBox under `meet`, NOT by shifting the
+// note. Width is a function of the BOX (clamped), NOT the chord, so it never jumps
+// as you play and always leaves room for clef + key signature + notes. Clef → key
+// signature → chord flow from the left, as in normal notation.
 //
 // Spelling is key-signature aware: each MIDI note is given its true letter+alter,
 // then VexFlow's Accidental.applyAccidentals draws only the accidentals the key
@@ -17,28 +18,37 @@ import { KEY_SIGNATURES } from '../model/keySignature.js';
 import { splitByHand, getOttavaInfo } from '../model/handSplit.js';
 
 const PAD = 8;          // horizontal margin (left/right) inside the viewBox
-const TOP_ROOM = 14;    // room above the treble staff (clef overshoot + high ledger notes)
-const BOTTOM_ROOM = 72; // room below the bass staff for LOW ledger notes (don't clip them)
+// Real vertical headroom so tall chords never clip. The worst UNSHIFTED extreme the
+// ottava logic permits is ~9 diatonic steps × 5 logical units ≈ 45 + a notehead ≈ 52;
+// with auto_stem the stem points TOWARD the staff, so it no longer adds to the
+// overhang on the far side. logicalH = 52 + 66 + 40 + 52 = 210 (≈ the old 192, so the
+// net scale change under `meet` is negligible).
+const TOP_ROOM = 52;    // room above the treble staff for HIGH ledger notes (don't clip them)
+const BOTTOM_ROOM = 52; // room below the bass staff for LOW ledger notes (don't clip them)
 const STAFF_GAP = 66;   // treble top line → bass top line (one grand-staff system)
 const BASS_STAFF_H = 40;
 const INK = '#1a1a1a';
 const MIN_NOTE_AREA = 40;
 
+const MAX_STAVE_ASPECT = 1.7; // cap the stave's natural width at ~1.7:1 (w/h)
+
 /**
  * Stave/viewBox geometry for a given key-sig accidental count and host box aspect
- * (w/h). The stave is sized to FILL the box: its width tracks the box aspect so
- * the viewBox aspect equals the box aspect (staff lines span the full width, no
- * gutters). Floored at the content minimum so a narrow slot still fits the clef +
- * key signature + a note; deliberately NO upper cap — the stave fills however wide
- * the slot is, and overrun content is trimmed by the host's overflow. Width is a
- * function of the BOX, not the chord, so it stays fixed as notes change.
+ * (w/h). The stave takes a NATURAL width that tracks the box aspect, floored at the
+ * content minimum (so a narrow slot still fits clef + key signature + a note) and
+ * CAPPED at MAX_STAVE_ASPECT so it never stretches edge-to-edge across a wide pane.
+ * When the cap bites, the viewBox is narrower than the pane and the SVG's `meet`
+ * fit centers the whole staff with air on both sides. Width is a function of the
+ * BOX (clamped), not the chord, so it stays fixed as notes change.
  */
 export function computeChordStaffLayout(accCount, aspect) {
   const logicalH = TOP_ROOM + STAFF_GAP + BASS_STAFF_H + BOTTOM_ROOM;
   const minStaveW = 44 + accCount * 10 + MIN_NOTE_AREA;
+  const maxStaveW = Math.round(logicalH * MAX_STAVE_ASPECT) - PAD * 2;
   const valid = Number.isFinite(aspect) && aspect > 0;
-  const target = valid ? Math.round(logicalH * aspect) - PAD * 2 : minStaveW;
-  const staveW = Math.max(minStaveW, target);
+  const staveW = valid
+    ? Math.max(minStaveW, Math.min(Math.round(logicalH * aspect) - PAD * 2, maxStaveW))
+    : minStaveW;
   return { staveW, logicalW: staveW + PAD * 2, logicalH };
 }
 
@@ -63,7 +73,10 @@ export function midiToVexKey(midi, keySig = 'C') {
 
 function chordNote(midis, clef, keySig) {
   if (!midis.length) return null;
-  return new StaveNote({ keys: midis.map((m) => midiToVexKey(m, keySig)), duration: 'q', clef });
+  // auto_stem: high chords stem DOWN and low chords stem UP (stems point toward the
+  // staff), so the stem no longer adds to a tall chord's overhang and the noteheads
+  // stay within TOP_ROOM/BOTTOM_ROOM instead of clipping.
+  return new StaveNote({ keys: midis.map((m) => midiToVexKey(m, keySig)), duration: 'q', clef, auto_stem: true });
 }
 
 /**
@@ -88,10 +101,11 @@ export function renderChordStaff(host, { notes, keySignature = 'C', aspect } = {
   const ks = KEY_SIGNATURES[keySignature] ? keySignature : 'C';
   const accCount = KEY_SIGNATURES[ks].sharps.length + KEY_SIGNATURES[ks].flats.length;
 
-  // Stave geometry: WIDTH FILLS the host box (tracks its aspect ratio) so the staff
-  // lines span edge-to-edge with no dead gutters, floored at the content minimum for
-  // narrow slots. Extra top/bottom room keeps low-register ledger notes in frame and
-  // lets the taller viewBox scale the engraving under `meet`.
+  // Stave geometry: WIDTH tracks the host box aspect but is CAPPED (MAX_STAVE_ASPECT)
+  // so a wide pane doesn't stretch the staff edge-to-edge — the capped viewBox is
+  // narrower than the pane and `meet` centers it with air on both sides. Floored at
+  // the content minimum for narrow slots. TOP_ROOM/BOTTOM_ROOM give real headroom so
+  // high and low ledger notes stay in frame instead of clipping.
   const { staveW, logicalW, logicalH } = computeChordStaffLayout(accCount, aspect);
 
   // Render at LOGICAL units (no container-width math, no scale cap). The SVG is
@@ -123,11 +137,12 @@ export function renderChordStaff(host, { notes, keySignature = 'C', aspect } = {
     if (bassOtt.marker && bNote) bNote.addModifier(new Annotation(bassOtt.marker).setVerticalJustification(Annotation.VerticalJustify.BOTTOM));
   } catch { /* marker is decorative */ }
 
-  // Content flows from the LEFT (clef → key signature → chord); the stave lines run
-  // full width to the right. The formatter parks a single chord just after the key
-  // signature, which is exactly what we want now — a small fixed inset gives it a
-  // little air so it isn't jammed against the accidentals. (No centering: on a wide
-  // fill-the-width stave, centering would strand the chord alone in the middle.)
+  // Content flows from the LEFT (clef → key signature → chord). The formatter parks a
+  // single chord just after the key signature; a small fixed inset gives it a little
+  // air so it isn't jammed against the accidentals. We do NOT center by shifting the
+  // note — treble and bass are formatted independently, so a per-note shift would
+  // stagger the two hands. Whole-staff centering is done by the capped viewBox under
+  // `meet` (see computeChordStaffLayout), which keeps the two hands aligned.
   const noteAreaW = Math.max(20, staveW - (treble.getNoteStartX() - treble.getX()) - 14);
   const NOTE_INSET = 10; // logical units of air after the key signature
   const drawVoice = (note, stave) => {
