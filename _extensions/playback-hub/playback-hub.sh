@@ -38,6 +38,7 @@ ORPHAN_SINK_TICKS=2            # consecutive watchdog ticks a slot's sink must b
 ORPHAN_REAP_COOLDOWN=20        # after an orphan-sink reap, suppress the watchdog's (blocking) respawn for this many seconds while the sink is still gone — avoids a 12s resolve_audio_device stall + log spam every tick during a sustained A2DP outage
 HEARTBEAT_INTERVAL=180         # seconds between playback.heartbeat liveness samples per live slot. track.start only fires on track CHANGE (and is suppressed on resume-to-same-track), so it can't answer "is audio actually flowing right now". The heartbeat is the positive liveness signal: {plex_id,pos,paused,sink_live} sampled while mpv is alive + BT-connected.
 RECONNECT_LOG_EVERY=30         # during a reconnect outage, after the FIRST miss only emit bt.reconnect_fail on escalation ticks + every Nth miss. The old per-tick emit was ~95% of events.jsonl (3.4k–7.3k lines/week/slot) and rotated genuinely-useful events out of the 5MB ledger. Onset + escalation + a coarse heartbeat preserve the signal.
+SILENT_SLOT_ALERT_SEC=300      # GUARDRAIL: seconds a slot may be BT-connected + should-be-playing (armed or in an active schedule window) but have NO live mpv before we dispatch a `slot_silent` alert. Catches the 2026-07-06 failure mode where start_playback bailed EVERY tick (WirePlumber bluez monitor seat-gated off → no A2DP sink → resolve_audio_device fails before spawning mpv), leaving slots "connected but silent" with no mpv.start and no heartbeat — invisible for 8 days. Cleared the instant mpv is alive; alert fires once per outage streak.
 
 # Central cache manager — sourced for both direct-exec and source (tests).
 # Defined here, before refresh_config_cache, and NOT inside the dispatch guard.
@@ -2307,6 +2308,40 @@ emit_heartbeat() {
 # acts on BT connect/disconnect events. This loop closes that gap so a
 # dead mpv on a connected headset is restarted within seconds, not
 # minutes.
+# GUARDRAIL — silent-slot detector. A slot that is BT-connected and SHOULD be
+# playing (armed, or a private device inside an active schedule window) but has
+# no live mpv is a silent failure: start_playback keeps bailing (e.g. no A2DP
+# sink), so mpv never comes up and nothing else — not heartbeat (needs a socket),
+# not bt.reconnect_fail (BT IS connected) — surfaces it. This is exactly how the
+# 2026-07-06 WirePlumber seat-gate outage stayed invisible for 8 days.
+#
+# note_silent_slot: called from the watchdog whenever a should-play slot is
+# connected but mpv is dead. Stamps .silent_since on the first miss; once the
+# gap exceeds SILENT_SLOT_ALERT_SEC it dispatches a `slot_silent` alert ONCE per
+# streak (.silent_alerted flag). clear_silent_slot: called when mpv is alive,
+# resetting both so the next outage re-alerts. Best-effort; never breaks the
+# watchdog (set -e safe — no bare failing command as the last statement).
+clear_silent_slot() {
+    local dir; dir="$(slot_dir "$1")"
+    rm -f "$dir/.silent_since" "$dir/.silent_alerted" 2>/dev/null || true
+}
+note_silent_slot() {
+    local slot="$1" tag="$2" dir; dir="$(slot_dir "$slot")"
+    local since now age
+    since="$(cat "$dir/.silent_since" 2>/dev/null || echo 0)"
+    [[ "$since" =~ ^[0-9]+$ ]] || since=0
+    now=$(date +%s)
+    if (( since == 0 )); then printf '%s' "$now" > "$dir/.silent_since"; return 0; fi
+    age=$(( now - since ))
+    if (( age >= SILENT_SLOT_ALERT_SEC )) && [[ ! -f "$dir/.silent_alerted" ]]; then
+        logev "$tag" playback.silent_slot slot="$slot" silent_sec="$age"
+        dispatch_alert warning slot_silent \
+            "$tag is BT-connected and scheduled to play but has produced no mpv for ~$((age/60)) min — likely no A2DP sink (WirePlumber bluez monitor down? see README seat-gate)"
+        : > "$dir/.silent_alerted"
+    fi
+    return 0
+}
+
 mpv_watchdog() {
     while true; do
         sleep "$WATCHDOG_INTERVAL"
@@ -2389,6 +2424,9 @@ mpv_watchdog() {
                     mpv_check_stall "$slot" "$tag" "$dir/mpv-socket" || true
                     # Positive liveness sample (self-throttled to HEARTBEAT_INTERVAL).
                     emit_heartbeat "$slot" "$tag" "$dir/mpv-socket" || true
+                    # GUARDRAIL: mpv is alive → this slot is healthy, reset the
+                    # silent-slot timer/alert so a future outage re-alerts.
+                    clear_silent_slot "$slot"
                     continue
                 fi
                 rm -f "$dir/mpv.pid" "$dir/mpv-socket"
@@ -2415,6 +2453,10 @@ mpv_watchdog() {
                 log "$tag" "watchdog: BT connected but link unstable — deferring respawn"
                 continue
             fi
+            # GUARDRAIL: connected + should-play + mpv dead. Track how long this
+            # slot has been silent; alert if start_playback keeps failing to
+            # bring mpv up (the 2026-07-06 no-A2DP-sink failure mode).
+            note_silent_slot "$slot" "$tag"
             log "$tag" "watchdog: BT connected but mpv missing/dead — respawning (queue=$eff_queue)"
             start_playback "$slot" "$tag" "$mac" "$eff_queue" "$shuffle" "$resume_queue" "$resume_track" || true
         done
