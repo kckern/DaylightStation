@@ -3,6 +3,7 @@
 // traversal works without a custom focus engine.
 import React, { useReducer, useMemo } from 'react';
 import { teamSetupReducer, initTeamSetup } from './teamSetupReducer.js';
+import MemberAvatar from '../components/MemberAvatar.jsx';
 import './TeamSetup.scss';
 
 export function TeamSetup({ config, onConfirm }) {
@@ -40,12 +41,14 @@ export function TeamSetup({ config, onConfirm }) {
             {team.members.map((m) => (
               <button key={m.id} type="button" className="gs-chip gs-chip--member"
                 onClick={() => dispatch({ type: 'REMOVE_MEMBER', teamId: team.id, memberId: m.id })}>
+                <MemberAvatar member={m} teamColor={team.color} size={26} />
                 {m.name} ×
               </button>
             ))}
             {pool.map((m) => (
               <button key={`add-${m.id}`} type="button" className="gs-chip gs-chip--pool"
                 onClick={() => dispatch({ type: 'ASSIGN_MEMBER', teamId: team.id, member: m })}>
+                <MemberAvatar member={m} teamColor={team.color} size={22} />
                 + {m.name}
               </button>
             ))}
