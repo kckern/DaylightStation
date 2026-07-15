@@ -125,6 +125,26 @@ describe('list router season-as-show', () => {
     expect(tile.thumbnail).toBe('/proxy/plex/library/metadata/603856/thumb/1');
   });
 
+  test('expand modifier returns the season episodes, not the tile', async () => {
+    // Browse/selector drill needs the real episodes so a user can pick one.
+    // The `expand` modifier opts OUT of the FitnessMenu tile-wrapping.
+    mockAdapter.getList.mockResolvedValue([
+      { id: 'plex:1001', title: 'Day 1', mediaUrl: '/stream/1001', itemType: 'leaf', metadata: { type: 'episode' } },
+      { id: 'plex:1002', title: 'Day 2', mediaUrl: '/stream/1002', itemType: 'leaf', metadata: { type: 'episode' } }
+    ]);
+    mockAdapter.getItem.mockResolvedValue({ id: 'plex:603856', title: 'LIIFT MORE Super Block' });
+    mockAdapter.getContainerInfo.mockResolvedValue({
+      key: '603856', title: 'LIIFT MORE Super Block', type: 'season', childCount: 22
+    });
+
+    const res = await request(app).get('/api/v1/list/plex/603856/expand');
+
+    expect(res.status).toBe(200);
+    expect(res.body.items).toHaveLength(2);
+    expect(res.body.items[0].id).toBe('plex:1001');
+    expect(res.body.items[1].id).toBe('plex:1002');
+  });
+
   test('absent rating falls through to null without crashing', async () => {
     mockAdapter.getList.mockResolvedValue([]);
     mockAdapter.getItem.mockResolvedValue({ id: 'plex:603856', title: 'Unrated Season' });

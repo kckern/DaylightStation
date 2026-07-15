@@ -27,7 +27,7 @@ import {
 } from '@tabler/icons-react';
 import ConfigFormWrapper from '../shared/ConfigFormWrapper.jsx';
 import CrudTable from '../shared/CrudTable.jsx';
-import ContentCombobox from '../ContentLists/combobox/ContentCombobox.jsx';
+import ContentCombobox from '../../Content/combobox/ContentCombobox.jsx';
 
 /**
  * Deep-clone data and set a nested property by dot-path.

@@ -3,7 +3,7 @@
 // across browse levels, blur-vs-close commit races, auto-highlight Enter
 // selection) is an illegal transition here. Keep this file free of React,
 // fetch, and timers — the hook owns side effects.
-import { isContentIdLike } from '../contentSearchLogic.js';
+import { isContentIdLike } from '../lib/contentSearchLogic.js';
 
 export const Modes = { DISPLAY: 'display', SEARCH: 'search', BROWSE: 'browse' };
 

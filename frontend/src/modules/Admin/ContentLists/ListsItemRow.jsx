@@ -13,11 +13,11 @@ import { useDraggable, useDroppable } from '@dnd-kit/core';
 import { CSS } from '@dnd-kit/utilities';
 import ConfigIndicators from './ConfigIndicators.jsx';
 import ProgressDisplay from './ProgressDisplay.jsx';
-import { getCacheEntry, setCacheEntry } from './siblingsCache.js';
+import { getCacheEntry, setCacheEntry } from '../../Content/lib/siblingsCache.js';
 import { useListsContext } from './ListsContext.js';
-import { isContentIdLike } from './contentSearchLogic.js';
-import ContentCombobox from './combobox/ContentCombobox.jsx';
-import { useAutoResolve } from './combobox/useAutoResolve.js';
+import { isContentIdLike } from '../../Content/lib/contentSearchLogic.js';
+import ContentCombobox from '../../Content/combobox/ContentCombobox.jsx';
+import { useAutoResolve } from '../../Content/combobox/useAutoResolve.js';
 import { ShimmerAvatar } from './ShimmerAvatar.jsx';
 import {
   ContentValueCard, contentInfoFromPick, fetchContentMetadata, normalizeListSource,
