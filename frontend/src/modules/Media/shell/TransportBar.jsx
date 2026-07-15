@@ -27,6 +27,7 @@ import './NowPlaying.scss';
 
 const PLAYING_STATES = new Set(['playing', 'buffering']);
 const REPEAT_NEXT = { off: 'all', all: 'one', one: 'off' };
+const REPEAT_LABEL = { off: 'Repeat off', all: 'Repeat all', one: 'Repeat one' };
 const SKIP_STEP_S = 10;
 // 1× → 1.25× → 1.5× → 2× → 0.75× → 1×
 const RATE_CYCLE = [1, 1.25, 1.5, 2, 0.75];
@@ -165,7 +166,7 @@ export function TransportBar({ target, mediaEl = null }) {
           type="button"
           data-testid="np-repeat"
           className={`np-icon-btn ${repeat !== 'off' ? 'np-icon-btn--on' : ''}`}
-          aria-label={`Repeat: ${repeat}`}
+          aria-label={REPEAT_LABEL[repeat] ?? 'Repeat off'}
           onClick={() => config.setRepeat?.(REPEAT_NEXT[repeat])}
         >
           {repeat === 'one' ? <IconRepeatOnce size={20} /> : <IconRepeat size={20} />}
