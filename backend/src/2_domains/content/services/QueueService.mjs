@@ -1,6 +1,7 @@
 // backend/src/2_domains/content/services/QueueService.mjs
 import { PlayableItem } from '../capabilities/Playable.mjs';
 import { DefaultMediaProgressClassifier } from './DefaultMediaProgressClassifier.mjs';
+import { orderWatchedByRecency } from '../utils/recencyOrder.mjs';
 
 /**
  * Day-of-week presets mapping strings to ISO weekday numbers.
@@ -491,9 +492,23 @@ export class QueueService {
       enriched, progressMap, this.classifier
     );
 
+    // De-prioritize recently-played items within the watched pool by lastPlayed.
+    // Once a collection is fully watched (e.g. every Bluey episode), the pool is
+    // ALL watched — without this the queue restarts at the same early episodes
+    // (non-shuffle) or replays just-seen episodes (shuffle). Mirrors ArtMode's
+    // recency window. Unwatched items are untouched and still play first.
+    const recencyMap = new Map();
+    for (const [contentId, progress] of progressMap) {
+      recencyMap.set(contentId, progress.lastPlayed);
+    }
+    const watchedOrdered = orderWatchedByRecency(watched, recencyMap, {
+      shuffle,
+      shuffleFn: QueueService.shuffleArray
+    });
+
     return [
       ...(shuffle ? QueueService.shuffleArray([...unwatched]) : unwatched),
-      ...(shuffle ? QueueService.shuffleArray([...watched]) : watched)
+      ...watchedOrdered
     ];
   }
 
