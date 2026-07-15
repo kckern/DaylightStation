@@ -2,9 +2,9 @@ import { describe, it, expect } from 'vitest';
 import { midiToVexKey, renderChordStaff, computeChordStaffLayout } from './chordStaff.js';
 
 describe('computeChordStaffLayout', () => {
-  const LOGICAL_H = 210; // TOP_ROOM(52) + STAFF_GAP(66) + BASS_STAFF_H(40) + BOTTOM_ROOM(52)
+  const LOGICAL_H = 208; // TOP_ROOM(58) + STAFF_GAP(66) + BASS_STAFF_H(40) + BOTTOM_ROOM(44)
   const MAX_STAVE_ASPECT = 1.7;
-  const MAX_STAVE_W = Math.round(LOGICAL_H * MAX_STAVE_ASPECT) - 16; // round(357) - PAD*2 = 341
+  const MAX_STAVE_W = Math.round(LOGICAL_H * MAX_STAVE_ASPECT) - 16; // round(353.6)=354 - PAD*2 = 338
 
   it('falls back to content-sized stave when no aspect given', () => {
     const { staveW, logicalW, logicalH } = computeChordStaffLayout(0, null);
@@ -16,9 +16,9 @@ describe('computeChordStaffLayout', () => {
   it('widens the stave to track a moderate wide box (under the cap)', () => {
     const aspect = 550 / 500; // 1.1, below MAX_STAVE_ASPECT so it tracks the aspect
     const { staveW, logicalW, logicalH } = computeChordStaffLayout(0, aspect);
-    // target = round(210*1.1) - 16 = 231 - 16 = 215 (< maxStaveW 341, so uncapped)
-    expect(staveW).toBe(215);
-    expect(logicalW / logicalH).toBeCloseTo(aspect, 1); // 231/210 ≈ 1.1
+    // target = round(208*1.1) - 16 = 229 - 16 = 213 (< maxStaveW 338, so uncapped)
+    expect(staveW).toBe(213);
+    expect(logicalW / logicalH).toBeCloseTo(aspect, 1); // 229/208 ≈ 1.101
   });
 
   it('never goes below the content minimum (tall/narrow boxes)', () => {
@@ -31,15 +31,15 @@ describe('computeChordStaffLayout', () => {
     const { staveW, logicalW, logicalH } = computeChordStaffLayout(0, aspect);
     // Upper clamp: staveW pins to maxStaveW so the viewBox aspect stops at the cap
     // (→ narrower than the pane, and `meet` centers it with side air).
-    expect(staveW).toBe(MAX_STAVE_W); // 341
-    expect(logicalW).toBe(MAX_STAVE_W + 16); // 357
-    expect(logicalW / logicalH).toBeCloseTo(MAX_STAVE_ASPECT, 1); // 357/210 ≈ 1.70
+    expect(staveW).toBe(MAX_STAVE_W); // 338
+    expect(logicalW).toBe(MAX_STAVE_W + 16); // 354
+    expect(logicalW / logicalH).toBeCloseTo(MAX_STAVE_ASPECT, 1); // 354/208 ≈ 1.702
   });
 
   it('caps at maxStaveW regardless of accidental count', () => {
     // Even with accidentals bumping minStaveW, a very wide box still pins to the cap.
     const { staveW } = computeChordStaffLayout(4, 20);
-    expect(staveW).toBe(MAX_STAVE_W); // 341, well above minStaveW (44+40+40=124)
+    expect(staveW).toBe(MAX_STAVE_W); // 338, well above minStaveW (44+40+40=124)
   });
 
   it('tolerates garbage aspect values', () => {
@@ -104,13 +104,23 @@ describe('renderChordStaff — VexFlow grand staff', () => {
     expect(svg.querySelectorAll('path').length).toBeGreaterThan(3); // brace + staff + notes
   });
 
-  it('renders a HIGH treble chord without error (auto_stem stems down)', () => {
+  it('keeps a HIGH treble chord inside the viewBox (auto_stem, no top clip)', () => {
     // High noteheads sit above the staff; auto_stem points the stem DOWN toward the
-    // staff so the chord stays within TOP_ROOM instead of clipping.
+    // staff so the chord stays within TOP_ROOM instead of clipping. The viewBox height
+    // is the fixed logicalH (208), and nothing should render at a wildly negative y
+    // above the frame.
     const host = mount(new Map([[83, {}], [86, {}], [89, {}]]));
     const svg = host.querySelector('svg');
     expect(svg).toBeTruthy();
     expect(svg.querySelectorAll('path').length).toBeGreaterThan(3);
+    // viewBox is "0 0 <logicalW> 208" — the height is the headroom-inclusive logicalH.
+    const vb = svg.getAttribute('viewBox').split(' ').map(Number);
+    expect(vb[3]).toBe(208);
+    // No drawn element escapes far above the top of the frame (would signal a top clip).
+    for (const el of svg.querySelectorAll('[y]')) {
+      const y = Number(el.getAttribute('y'));
+      if (Number.isFinite(y)) expect(y).toBeGreaterThan(-10);
+    }
   });
 
   it('is fluid: a viewBox + preserveAspectRatio lets the browser fit & center it', () => {

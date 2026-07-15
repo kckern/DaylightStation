@@ -18,13 +18,16 @@ import { KEY_SIGNATURES } from '../model/keySignature.js';
 import { splitByHand, getOttavaInfo } from '../model/handSplit.js';
 
 const PAD = 8;          // horizontal margin (left/right) inside the viewBox
-// Real vertical headroom so tall chords never clip. The worst UNSHIFTED extreme the
-// ottava logic permits is ~9 diatonic steps × 5 logical units ≈ 45 + a notehead ≈ 52;
-// with auto_stem the stem points TOWARD the staff, so it no longer adds to the
-// overhang on the far side. logicalH = 52 + 66 + 40 + 52 = 210 (≈ the old 192, so the
-// net scale change under `meet` is negligible).
-const TOP_ROOM = 52;    // room above the treble staff for HIGH ledger notes (don't clip them)
-const BOTTOM_ROOM = 52; // room below the bass staff for LOW ledger notes (don't clip them)
+// Real vertical headroom so tall chords never clip. The two sides are ASYMMETRIC
+// because the ottava thresholds are: the treble shifts only above 93, so the worst
+// UNSHIFTED treble note is A6 (93) ≈ 50px above the top line → TOP_ROOM 58 gives ~8px
+// of real margin. The bass shifts below 40, so the worst UNSHIFTED bass note is E2
+// (40) ≈ 18px below the bottom line → BOTTOM_ROOM 44 is ample (and comfortably above
+// the minimum). auto_stem points the stem TOWARD the staff, so it doesn't add to the
+// overhang on the far side. logicalH = 58 + 66 + 40 + 44 = 208 (vs. the old 192, ≈ +8%
+// taller → slightly smaller engraving under `meet`, the cost of real top headroom).
+const TOP_ROOM = 58;    // room above the treble staff for HIGH ledger notes (worst unshifted A6 ≈ 50px)
+const BOTTOM_ROOM = 44; // room below the bass staff for LOW ledger notes (worst unshifted E2 ≈ 18px)
 const STAFF_GAP = 66;   // treble top line → bass top line (one grand-staff system)
 const BASS_STAFF_H = 40;
 const INK = '#1a1a1a';
