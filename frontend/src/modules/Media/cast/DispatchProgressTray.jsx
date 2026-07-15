@@ -18,9 +18,9 @@ import './Cast.scss';
 // Confirmed playback lingers long enough to be seen, then clears.
 export const CONFIRMED_LINGER_MS = 8_000;
 // "Sent" rows without a playback resolution eventually clear on their own:
-// the backend watchdog gives up at 90s, so anything past that means the
-// confirmation will never arrive (today it never does — confirmation is
-// only a backend log line). Generous, not 3 seconds.
+// the backend watchdog resolves within ~90s (a 'confirmed' or 'timeout'
+// broadcast), so a row still unresolved past that will never get one.
+// Generous, not 3 seconds.
 export const SENT_RESOLUTION_TIMEOUT_MS = 100_000;
 
 /** Which lifecycle phase a dispatch entry is in, for rendering. */

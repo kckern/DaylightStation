@@ -12,6 +12,12 @@ import {
 } from '#system/utils/FileIO.mjs';
 import { PlayableItem } from '#domains/content/capabilities/Playable.mjs';
 
+// Friendly display titles for the on-disk collection folder keys.
+const SINGALONG_COLLECTION_TITLES = {
+  hymn: 'Hymns',
+  primary: 'Primary Songs',
+};
+
 /**
  * Adapter for participatory sing-along content (hymns, primary songs).
  * Uses the 'singalong:' prefix for compound IDs.
@@ -242,7 +248,10 @@ export class SingalongAdapter {
         items: collections.map(name => ({
           id: `singalong:${name}`,
           source: 'singalong',
-          title: name,
+          // Folder keys are lowercase ("hymn", "primary") — present them as
+          // pluralized Title Case ("Hymns", "Primary Songs" via the map).
+          title: SINGALONG_COLLECTION_TITLES[name]
+            ?? (name.charAt(0).toUpperCase() + name.slice(1)),
           thumbnail: this._collectionThumbnail(name),
           itemType: 'container'
         }))

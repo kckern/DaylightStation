@@ -10,9 +10,9 @@ export const initialDispatchState = Object.freeze({ byId: new Map() });
 
 /**
  * Normalize the trailing playback-watchdog status into a resolution.
- * Backend today emits only 'timeout' (confirmation is just a log line);
- * accept 'confirmed'/'done'/'ok' too so a future confirmation broadcast
- * lights up without a frontend change. Unknown statuses resolve nothing.
+ * Backend emits 'confirmed' when playback.log matches the dispatched content
+ * (WakeAndLoadService) and 'timeout' when it never does; 'done'/'ok' are
+ * accepted as confirmation aliases. Unknown statuses resolve nothing.
  * @returns {'confirmed'|'timeout'|null}
  */
 export function normalizePlaybackStatus(status) {

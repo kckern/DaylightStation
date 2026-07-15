@@ -53,7 +53,12 @@ export function NowPlayingView() {
   const queueItems = snapshot?.queue?.items ?? [];
   const currentIndex = snapshot?.queue?.currentIndex ?? -1;
   const currentEntry = currentIndex >= 0 ? queueItems[currentIndex] : null;
-  const containerTitle = currentEntry?.containerTitle ?? null;
+  // Context line: the show/album the item expanded from (containerTitle), or
+  // for a track played straight from search, its "<artist> — <album>".
+  const trackContext = [currentEntry?.artist ?? item?.artist, currentEntry?.album ?? item?.album]
+    .filter(Boolean)
+    .join(' — ');
+  const containerTitle = currentEntry?.containerTitle ?? (trackContext || null);
   const positionLabel = queuePositionLabel(currentIndex, queueItems.length);
   // Never surface a raw content id as a metadata line.
   const metaTitle = typeof item?.title === 'string' && item.title !== item.contentId
