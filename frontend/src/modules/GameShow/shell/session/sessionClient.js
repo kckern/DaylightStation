@@ -23,6 +23,19 @@ export function finishSession(id) {
   return DaylightAPI(`api/v1/gameshow/sessions/${id}/finish`, {}, 'POST');
 }
 
+// --- host companion helpers ---
+export function fetchSession(id) {
+  return DaylightAPI(`api/v1/gameshow/sessions/${id}`);
+}
+
+export function fetchSet(game, setId) {
+  return DaylightAPI(`api/v1/gameshow/games/${game}/sets/${setId}`);
+}
+
+export function sendCommand(sessionId, command) {
+  return DaylightAPI(`api/v1/gameshow/sessions/${sessionId}/command`, { command }, 'POST');
+}
+
 export function makeCheckpointer({ debounceMs = 800, maxRetries = 3 } = {}) {
   let pending = null;        // { sessionId, state }
   let timer = null;

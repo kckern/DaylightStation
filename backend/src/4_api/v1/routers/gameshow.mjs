@@ -61,6 +61,14 @@ export function createGameshowRouter({ gameShowService, sessionStore, broadcastE
     res.json({ session: sessionStore.getActive() });
   });
 
+  // Fetch one session (host companion resolves setId + teams from its URL).
+  // Registered after /sessions/active so 'active' isn't captured as an :id.
+  router.get('/sessions/:id', (req, res) => {
+    const session = sessionStore.get(req.params.id);
+    if (!session) return res.status(404).json({ error: 'session not found' });
+    res.json(session);
+  });
+
   router.post('/sessions/:id/checkpoint', (req, res) => {
     const session = sessionStore.checkpoint(req.params.id, (req.body || {}).state ?? null);
     if (!session) return res.status(404).json({ error: 'session not found' });

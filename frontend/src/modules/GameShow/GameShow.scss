@@ -8,6 +8,12 @@
 
   &__error { color: #ff6b6b; font-size: 1.4rem; }
   &__ws-warn { position: absolute; top: 0.75rem; right: 0.75rem; opacity: 0.6; font-size: 1.2rem; }
+  &__hostqr {
+    position: absolute; bottom: 0.75rem; right: 0.75rem; text-align: center;
+    background: rgba(255,255,255,0.9); border-radius: 0.4rem; padding: 0.3rem; opacity: 0.85;
+    img { display: block; }
+    span { display: block; color: #111; font-size: 0.6rem; font-weight: 700; }
+  }
   &__resume, &__sets, &__bind {
     flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1rem;
     button {

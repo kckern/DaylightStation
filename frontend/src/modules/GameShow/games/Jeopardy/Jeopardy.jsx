@@ -84,7 +84,7 @@ export default function Jeopardy({ setId, teams, sessionId, resumeState = null, 
         dispatchGame(action);
         break;
       }
-      case 'SELECT_TILE': audio.play('reveal'); dispatchGame(action); break;
+      case 'SELECT_TILE': case 'SELECT_AT': audio.play('reveal'); dispatchGame(action); break;
       case 'START_ROUND': audio.play('board-fill'); dispatchGame(action); break;
       case 'TIMEOUT': audio.play('wrong'); dispatchGame(action); break;
       default: dispatchGame(action);
