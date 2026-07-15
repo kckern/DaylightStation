@@ -30,9 +30,34 @@ export const NATURAL_NOTES = ['C', 'D', 'E', 'F', 'G', 'A', 'B'];
 // Pitch class → natural note index (C C#→C D D#→D E F F#→F G G#→G A A#→A B).
 export const PITCH_TO_NATURAL = [0, 0, 1, 1, 2, 3, 3, 4, 4, 5, 5, 6];
 
+// Tonic pitch class (0-11) for each major key name.
+// Derived from the key name so scoring can weight scale degrees relative to
+// the tonic (F# and Gb are enharmonic → both tonic pc 6; they score equally).
+const KEY_TONIC = {
+  'C': 0, 'G': 7, 'D': 2, 'A': 9, 'E': 4, 'B': 11, 'F#': 6,
+  'F': 5, 'Bb': 10, 'Eb': 3, 'Ab': 8, 'Db': 1, 'Gb': 6
+};
+
+// Krumhansl–Kessler major key-profile weights, indexed by scale degree
+// (offset from the tonic): index 0 = tonic, 7 = dominant, 11 = leading tone.
+// Higher weight = tonally more central, so tonic/dominant emphasis lets
+// one-accidental keys (G, F) out-score C instead of collapsing to it.
+const MAJOR_PROFILE = [6.35, 2.23, 3.48, 2.33, 4.38, 4.09, 2.52, 5.19, 2.39, 3.66, 2.29, 2.88];
+
+// Relative hysteresis margin: a rival key must beat the current key's own
+// profile score by this fraction before we switch, so passing notes and
+// near-ties don't flicker the displayed key.
+const HYSTERESIS = 0.05;
+
 /**
  * Detect the most likely major key from a buffer of recent pitch classes.
- * Uses hysteresis (20% threshold) so the key doesn't flicker.
+ *
+ * Scores every major key with the Krumhansl–Kessler major profile: for a key
+ * with tonic pitch class `t`, score = Σ counts[pc] * MAJOR_PROFILE[(pc - t) mod 12].
+ * This weights tonic/dominant/leading-tone emphasis rather than mere scale
+ * membership, so keys that share most of C major's tones (e.g. G, F) can still
+ * win. A relative hysteresis margin keeps the current key unless a rival's
+ * score beats the current key's score by HYSTERESIS, preventing flicker.
  *
  * @param {number[]} pitchClasses
  * @param {string} [currentKey]
@@ -51,26 +76,21 @@ export const detectKey = (pitchClasses, currentKey = 'C') => {
   let bestScore = 0;
   let currentScore = 0;
 
-  for (const [keyName, keyData] of Object.entries(KEY_SIGNATURES)) {
-    const scaleSet = new Set(keyData.scale);
+  for (const keyName of Object.keys(KEY_SIGNATURES)) {
+    const tonic = KEY_TONIC[keyName];
     let score = 0;
-    let total = 0;
-
     for (let pc = 0; pc < 12; pc++) {
-      if (counts[pc] > 0) {
-        total += counts[pc];
-        if (scaleSet.has(pc)) score += counts[pc];
-      }
+      if (counts[pc] > 0) score += counts[pc] * MAJOR_PROFILE[(pc - tonic + 12) % 12];
     }
 
-    const percentage = total > 0 ? score / total : 0;
-    if (keyName === currentKey) currentScore = percentage;
-    if (percentage > bestScore) {
-      bestScore = percentage;
+    if (keyName === currentKey) currentScore = score;
+    if (score > bestScore) {
+      bestScore = score;
       bestKey = keyName;
     }
   }
 
-  if (bestKey !== currentKey && bestScore > currentScore + 0.2) return bestKey;
+  // Switch only if the winner beats the current key's own score by the margin.
+  if (bestKey !== currentKey && bestScore > currentScore * (1 + HYSTERESIS)) return bestKey;
   return currentKey;
 };
