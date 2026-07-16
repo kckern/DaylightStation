@@ -1654,6 +1654,21 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef, nogovern = false,
     setPlayerMode(m => m === 'fullscreen' ? (lastNonFullscreenRef.current || 'normal') : 'fullscreen');
   }, []);
 
+  // Horizontal mirror for follow-along videos (e.g. martial arts) so the on-screen
+  // instructor's left/right matches the viewer's. Toggled by the top-corner hotspots
+  // (see mainContent) — those carry role="button" so shouldBlockFullscreenToggle
+  // suppresses the fullscreen toggle and the hotspot flips the picture instead.
+  // Flips ONLY the wrapped <Player> (scaleX(-1)); the vitals/chart/scrim overlays
+  // are siblings and stay upright. Persists across episodes within the session.
+  const [videoMirrored, setVideoMirrored] = useState(false);
+  const toggleVideoMirror = useCallback((event) => {
+    if (event && typeof event.button === 'number' && event.button !== 0) return;
+    setVideoMirrored((m) => {
+      logFitnessEvent('video-mirror-toggle', { source: 'corner-hotspot', mirrored: !m });
+      return !m;
+    });
+  }, [logFitnessEvent]);
+
   const shouldBlockFullscreenToggle = useCallback((eventTarget) => {
     if (typeof Element === 'undefined') {
       return false;
@@ -1821,20 +1836,22 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef, nogovern = false,
         governanceStateOverride={effectiveGovernanceState}
       />
       {hasActiveItem ? (
-        <Player
-          key={playerKey}
-          play={playObject}
-          maxVideoBitrate={FITNESS_MAX_VIDEO_BITRATE}
-          onResilienceState={handleResilienceState}
-          keyboardOverrides={keyboardOverrides}
-          clear={handleClose}
-          advance={handleNext}
-          playerType="fitness-video"
-          onProgress={handlePlayerProgress}
-          onController={handlePlayerControllerUpdate}
-          onMediaRef={() => {/* media element captured internally by Player; use playerRef API */}}
-          ref={playerRef}
-        />
+        <div className={`fitness-video-mirror-wrap${videoMirrored ? ' fitness-video-mirror-wrap--mirrored' : ''}`}>
+          <Player
+            key={playerKey}
+            play={playObject}
+            maxVideoBitrate={FITNESS_MAX_VIDEO_BITRATE}
+            onResilienceState={handleResilienceState}
+            keyboardOverrides={keyboardOverrides}
+            clear={handleClose}
+            advance={handleNext}
+            playerType="fitness-video"
+            onProgress={handlePlayerProgress}
+            onController={handlePlayerControllerUpdate}
+            onMediaRef={() => {/* media element captured internally by Player; use playerRef API */}}
+            ref={playerRef}
+          />
+        </div>
       ) : null}
       {showChart && govStatus !== 'locked' && govStatus !== 'pending' && (
         <div className="fitness-chart-overlay">
@@ -1924,6 +1941,20 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef, nogovern = false,
       <div className="fitness-player-video-host">
         {hasActiveItem ? videoContent : null}
       </div>
+      {hasActiveItem && !showChart && ['left', 'right'].map((side) => (
+        <div
+          key={side}
+          className={`fitness-mirror-hotspot fitness-mirror-hotspot--${side}${videoMirrored ? ' is-active' : ''}`}
+          role="button"
+          tabIndex={-1}
+          aria-label="Flip video horizontally (mirror)"
+          aria-pressed={videoMirrored}
+          title={videoMirrored ? 'Un-mirror video' : 'Mirror video (flip left–right)'}
+          onPointerDown={toggleVideoMirror}
+        >
+          <span className="fitness-mirror-hotspot__icon" aria-hidden="true">⇄</span>
+        </div>
+      ))}
       {govStatus === 'warning' && (
         <GovernanceWarningScrim
           deadline={effectiveGovernanceState?.deadline}
