@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, within } from '@testing-library/react';
 import LoopControl from './LoopControl.jsx';
 
 describe('LoopControl', () => {
@@ -25,5 +25,12 @@ describe('LoopControl', () => {
     fireEvent.click(screen.getByRole('button', { name: /loop a/i }));
     fireEvent.click(screen.getByRole('button', { name: 'A' }));
     expect(onPick).toHaveBeenCalledWith({ label: 'A' });
+  });
+
+  it('inactive: the open menu has no Clear loop option', () => {
+    render(<LoopControl active={false} scopeLabel="" sections={[{ label: 'A' }]} onPickSection={() => {}} onStartSelect={() => {}} onClearFocus={() => {}} />);
+    fireEvent.click(screen.getByRole('button', { name: /^loop/i }));
+    const menu = screen.getByRole('dialog', { name: /loop range/i });
+    expect(within(menu).queryByRole('button', { name: /clear loop/i })).toBeNull();
   });
 });

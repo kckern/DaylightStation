@@ -2671,7 +2671,7 @@
 }
 
 // Loop control popover (audit L1/L2) — first-class labeled loop with one-tap clear.
-.piano-score-loop-wrap { position: relative; display: inline-block; }
+.piano-score-loop-wrap { position: relative; display: inline-flex; align-items: center; gap: 0.3rem; }
 .piano-score-loop-menu {
   position: absolute; bottom: calc(100% + 0.4rem); left: 0; z-index: 21;
   display: flex; flex-direction: column; gap: 0.25rem; min-width: 12rem;
@@ -2760,17 +2760,6 @@
   &.is-role-play { background: rgba(255, 255, 255, 0.16); border-color: rgba(255, 255, 255, 0.4); color: var(--piano-stage-fg, #f3efe6); }
   &.is-role-you  { background: #e8a33d; border-color: #e8a33d; color: #1d1405; }
   &.is-role-mute { opacity: 0.45; }
-}
-
-// Learn focus range — section chips + custom loop toggle + range readout. Reuses
-// the shared .piano-score-btn chrome; the armed Loop lights the neutral green
-// Learn accent, the readout picks up the muted position colour.
-.piano-score-focus { display: flex; align-items: center; gap: 0.3rem; flex-wrap: wrap; }
-.piano-score-section-chip { font-size: 0.9rem; padding: 0.4rem 0.7rem; border-radius: var(--r-pill, 999px); }
-.piano-score-loop.is-on { background: rgba(46, 196, 111, 0.2); border-color: #2ec46f; color: #b8f2cf; }
-.piano-score-focus-readout {
-  min-width: 2.5rem; text-align: center; font-weight: 600; font-size: 0.9rem;
-  color: var(--piano-stage-muted, #9a958a); font-variant-numeric: tabular-nums;
 }
 
 // Tempo / size popovers & info popover — anchored above the bar, elevated.
