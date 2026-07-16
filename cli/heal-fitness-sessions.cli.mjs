@@ -412,6 +412,16 @@ export async function heal(date, sessionId, { apply = false, baseDir } = {}) {
   const participants = { ...(obj.participants || {}) };
   for (const id of plan.removedOccupants) delete participants[id];
 
+  // Also drop the removed occupants' records from the `entities` array.
+  // Otherwise an entity-backed ghost (one that had an entity but whose series
+  // were folded away) is re-discovered by a later scan/sweep from its lingering
+  // entity, so healing would not be idempotent (the sweep would keep flagging
+  // the session even though its participants/summary are already clean).
+  const removedSet = new Set(plan.removedOccupants);
+  const entities = Array.isArray(obj.entities)
+    ? obj.entities.filter((e) => !removedSet.has(e?.profileId))
+    : obj.entities;
+
   const events = Array.isArray(obj.timeline?.events) ? obj.timeline.events : [];
 
   const summary = buildSummary({
@@ -425,6 +435,7 @@ export async function heal(date, sessionId, { apply = false, baseDir } = {}) {
   const out = {
     ...obj,
     participants,
+    entities,
     timeline: {
       ...obj.timeline,
       series: encodeSeries(decoded)
