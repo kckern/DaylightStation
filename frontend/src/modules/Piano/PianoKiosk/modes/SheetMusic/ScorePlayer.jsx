@@ -100,6 +100,9 @@ export default function ScorePlayer({ score: scoreMeta }) {
   //   null | { stage: 'first' } | { stage: 'last', inMeasure } (audit J5/M3)
   const [selecting, setSelecting] = useState(null);
   const [clickOn, setClickOn] = useState(() => restored.clickOn !== false); // Polish metronome — on unless turned off
+  // Learn free-running metronome — explicit opt-in per session, NEVER persisted:
+  // a walk-up user must not inherit a ticking room (audit M2).
+  const [learnClick, setLearnClick] = useState(false);
   const [flow, setFlow] = useState('wrapped');
   const [perfPage, setPerfPage] = useState({ page: 1, pages: 1 }); // Perform page indicator (1-based)
   const [scale, setScale] = useState(1);
@@ -332,12 +335,18 @@ export default function ScorePlayer({ score: scoreMeta }) {
   // abort it (via onScoreClick) and the bar shows ⏸ rather than a dead ▶.
   const running = transport.playing || countIn.active;
 
-  // Metronome click — Polish only, and only while the transport is actually
-  // running (the count-in supplies its own blips). Ticks at the run tempo. It NEVER
-  // gates or advances the cursor; it's a reference beat the graded run plays against.
+  // Metronome click (audit M1/M2/M4). Two modes, one bar button:
+  //  Polish — `clickOn` (persisted) ARMS a reference beat that sounds only while
+  //           the transport actually runs (the count-in supplies its own blips).
+  //  Learn  — `learnClick` (session-local) IS the metronome: toggling ON starts a
+  //           free-running practice beat immediately. Leaving Learn silences it
+  //           (enabled goes false → the hook's cleanup stops the scheduler).
+  // It NEVER gates or advances the cursor. Ticks at the practice tempo.
+  const clickActive = mode === 'learn' ? learnClick : clickOn;
+  const clickBpm = Math.round((tempoMap[0]?.bpm || 90) * tempoMult);
   useMetronomeClick({
-    enabled: clickOn && mode === 'polish' && transport.playing,
-    bpm: (tempoMap[0]?.bpm || 90) * tempoMult,
+    enabled: (mode === 'polish' && clickOn && transport.playing) || (mode === 'learn' && learnClick),
+    bpm: clickBpm,
   });
 
   const flashWrong = useCallback(() => {
@@ -779,7 +788,10 @@ export default function ScorePlayer({ score: scoreMeta }) {
     kbOverrideRef.current[mode] = !keyboardVisible; // remember the explicit choice for THIS mode
     setKbTick((t) => t + 1);
   }, [mode, keyboardVisible]);
-  const onToggleClick = useCallback(() => setClickOn((v) => !v), []);
+  const onToggleClick = useCallback(() => {
+    if (mode === 'learn') setLearnClick((v) => !v); // free-run, session-local
+    else setClickOn((v) => !v); // Polish arm state, persisted
+  }, [mode]);
 
   const toggleRun = useCallback(() => {
     // A second tap during the count-in aborts it (never reaches the transport).
@@ -1025,7 +1037,8 @@ export default function ScorePlayer({ score: scoreMeta }) {
         onClearFocus={onClearFocus}
         keyboardVisible={keyboardVisible}
         onToggleKeyboard={onToggleKeyboard}
-        clickOn={clickOn}
+        clickOn={clickActive}
+        bpm={clickBpm}
         onToggleClick={onToggleClick}
         meta={meta}
       />
