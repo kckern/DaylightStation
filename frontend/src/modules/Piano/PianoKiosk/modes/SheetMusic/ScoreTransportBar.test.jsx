@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, within } from '@testing-library/react';
 import ScoreTransportBar from './ScoreTransportBar.jsx';
 
 const base = {
@@ -150,38 +150,40 @@ describe('ScoreTransportBar', () => {
     expect(screen.queryByRole('button', { name: /tempo/i })).toBeNull(); // Perform is chrome-free
   });
 
-  it('learn mode: Practice popover lists sections and fires onPickSection', () => {
+  it('learn mode: Loop popover lists sections and fires onPickSection', () => {
     const onPickSection = vi.fn();
     const sections = [{ label: 'A', startMeasure: 1, endMeasure: 4 }];
-    render(<ScoreTransportBar {...base} mode="learn" sections={sections} onPickSection={onPickSection} scopeLabel="Whole piece" />);
-    fireEvent.click(screen.getByRole('button', { name: /practice:/i })); // open popover
+    render(<ScoreTransportBar {...base} mode="learn" sections={sections} onPickSection={onPickSection} />);
+    fireEvent.click(screen.getByRole('button', { name: /^loop/i })); // open popover
     fireEvent.click(screen.getByRole('button', { name: /^A$/ }));
     expect(onPickSection).toHaveBeenCalledWith(sections[0]);
   });
 
-  it('learn mode: Practice popover offers Select measures… and Whole piece', () => {
+  it('learn mode: Loop popover offers Select measures… and Clear loop when active', () => {
     const onStartSelect = vi.fn();
     const onClearFocus = vi.fn();
-    render(<ScoreTransportBar {...base} mode="learn" scopeLabel="m3–m6" onStartSelect={onStartSelect} onClearFocus={onClearFocus} />);
-    // The scope label surfaces the active range on the trigger.
-    expect(screen.getByRole('button', { name: /practice: m3–m6/i })).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: /practice:/i }));
+    render(<ScoreTransportBar {...base} mode="learn" loopActive scopeLabel="m3–m6" onStartSelect={onStartSelect} onClearFocus={onClearFocus} />);
+    // The active range surfaces on the trigger.
+    expect(screen.getByRole('button', { name: /loop m3–m6/i })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /loop m3–m6/i }));
     fireEvent.click(screen.getByRole('button', { name: /select measures/i }));
     expect(onStartSelect).toHaveBeenCalled();
-    fireEvent.click(screen.getByRole('button', { name: /practice:/i }));
-    fireEvent.click(screen.getByRole('button', { name: 'Whole piece' }));
+    fireEvent.click(screen.getByRole('button', { name: /loop m3–m6/i }));
+    // Scope to the popover — the standalone one-tap clear also matches /clear loop/i.
+    const menu = screen.getByRole('dialog', { name: /loop range/i });
+    fireEvent.click(within(menu).getByRole('button', { name: /clear loop/i }));
     expect(onClearFocus).toHaveBeenCalled();
   });
 
-  it('Practice control is Learn + Polish (absent in Listen/Perform)', () => {
+  it('Loop control is Learn + Polish (absent in Listen/Perform)', () => {
     for (const mode of ['listen', 'perform']) {
-      const { unmount } = render(<ScoreTransportBar {...base} mode={mode} scopeLabel="Whole piece" />);
-      expect(screen.queryByRole('button', { name: /practice:/i })).toBeNull();
+      const { unmount } = render(<ScoreTransportBar {...base} mode={mode} />);
+      expect(screen.queryByRole('button', { name: /^loop/i })).toBeNull();
       unmount();
     }
     for (const mode of ['learn', 'polish']) {
-      const { unmount } = render(<ScoreTransportBar {...base} mode={mode} scopeLabel="Whole piece" />);
-      expect(screen.getByRole('button', { name: /practice:/i })).toBeInTheDocument();
+      const { unmount } = render(<ScoreTransportBar {...base} mode={mode} />);
+      expect(screen.getByRole('button', { name: /^loop/i })).toBeInTheDocument();
       unmount();
     }
   });

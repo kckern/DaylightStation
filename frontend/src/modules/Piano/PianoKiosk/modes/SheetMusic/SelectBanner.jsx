@@ -2,7 +2,7 @@ import React from 'react';
 
 /**
  * SelectBanner — the on-score guidance shown during the guided measure-selection
- * flow (Practice → Select measures…). Tells the user exactly what to tap next and
+ * flow (Loop → Select measures…). Tells the user exactly what to tap next and
  * offers Cancel, so the two-tap flow is never a mystery (audit J5/M3).
  *
  * @param {object} p
@@ -12,7 +12,7 @@ import React from 'react';
 export default function SelectBanner({ stage, onCancel }) {
   if (!stage) return null;
   const text = stage === 'first'
-    ? 'Tap the FIRST measure of your practice range'
+    ? 'Tap the FIRST measure of your loop'
     : 'Now tap the LAST measure';
   return (
     <div className="piano-score-select-banner" role="status" aria-live="polite">
