@@ -1043,6 +1043,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
         onToggleKeyboard={onToggleKeyboard}
         clickActive={clickActive}
         bpm={Math.round(clickBpmExact)}
+        baseBpm={Math.round(tempoMap[0]?.bpm || 90)}
         onToggleClick={onToggleClick}
         meta={meta}
       />

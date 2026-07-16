@@ -147,6 +147,7 @@ const ScoreViewControls = memo(function ScoreViewControls({
   clickActive = false, // mode-dependent: Learn = free-run state, Polish = persisted arm state
   onToggleClick,
   bpm = 90,
+  baseBpm = 90, // the piece's written tempo (unscaled) — each tempo step shows the BPM it produces (M4)
   meta = {},
   onBodyRender,
 }) {
@@ -285,6 +286,7 @@ const ScoreViewControls = memo(function ScoreViewControls({
                     onClick={() => onTempo?.(s.value)}
                   >
                     {s.label}
+                    <span className="piano-score-step__bpm tabular-nums"><QuarterNoteIcon /> {Math.round(baseBpm * s.value)}</span>
                   </button>
                 ))}
               </div>
@@ -393,6 +395,7 @@ export default function ScoreTransportBar({
   clickActive,
   onToggleClick,
   bpm,
+  baseBpm,
   meta,
   onBodyRender,
 }) {
@@ -456,6 +459,7 @@ export default function ScoreTransportBar({
         clickActive={clickActive}
         onToggleClick={onToggleClick}
         bpm={bpm}
+        baseBpm={baseBpm}
         meta={meta}
         onBodyRender={onBodyRender}
       />
