@@ -417,7 +417,9 @@ export function applyEffortAbsorb(segments, cfg) {
     const seg = segments[i];
     if (seg.absorbed || seg.honored || seg.inSessionTransferred) continue;
     if (!isInsignificantEffort(seg.effort, cfg)) continue;
-    const next = segments.slice(i + 1).find(s => !s.inSessionTransferred && s.occupantId !== seg.occupantId);
+    // Defensive: never target an already-absorbed segment (its data lives
+    // elsewhere now) — skip s.absorbed as well as s.inSessionTransferred.
+    const next = segments.slice(i + 1).find(s => !s.inSessionTransferred && !s.absorbed && s.occupantId !== seg.occupantId);
     if (next) {
       transfers.push({ fromOccupantId: seg.occupantId, toOccupantId: next.occupantId, reason: 'insignificant-forward' });
       seg.absorbed = true; seg.absorbedInto = next.occupantId; continue;
@@ -462,18 +464,64 @@ export function applyKnownUserDeviceMerge(perDevice, knownUserAliases = {}) {
 }
 
 /**
+ * Rule 1 (Decision §5) — late-tag Pikachu merge.
+ *
+ * A synthetic (Pikachu) occupant immediately followed on the SAME device by a
+ * real configured user is merged FORWARD into that user, regardless of
+ * duration or effort. Late tagging means "I'm telling you now who this was" →
+ * merge. This replaces the identity half of the old `applyAbsorbRules` Rule 1
+ * on the effort/series path.
+ *
+ * Runs AFTER `applyEffortAbsorb` so an INSIGNIFICANT Pikachu is already folded
+ * (marked `absorbed`) and skipped here; this pass exists to catch a
+ * SIGNIFICANT / high-effort Pikachu that effort-absorb legitimately keeps but
+ * whose late tag says it was actually the following configured user.
+ *
+ * "Immediately followed" = the next non-transferred, non-absorbed segment on
+ * the same device. Honored (cycling turn-taking) Pikachu segments are left
+ * alone so we don't dissolve a shared-device rotation.
+ *
+ * @param {Map<string, Array<Object>>} perDevice
+ * @returns {Array<{ fromOccupantId: string, toOccupantId: string, reason: 'late-pikachu-tag' }>}
+ */
+export function applyLateTagPikachuMerge(perDevice) {
+  const merges = [];
+  if (!perDevice || typeof perDevice.values !== 'function') return merges;
+  for (const segments of perDevice.values()) {
+    if (!Array.isArray(segments)) continue;
+    for (let i = 0; i < segments.length; i++) {
+      const seg = segments[i];
+      if (seg.absorbed || seg.honored || seg.inSessionTransferred) continue;
+      if (!isPikachuId(seg.occupantId)) continue;
+      const next = segments.slice(i + 1)
+        .find(s => !s.inSessionTransferred && !s.absorbed);
+      if (!next || !isKnownUserId(next.occupantId)) continue;
+      merges.push({
+        fromOccupantId: seg.occupantId,
+        toOccupantId: next.occupantId,
+        reason: 'late-pikachu-tag'
+      });
+      seg.absorbed = true;
+      seg.absorbedInto = next.occupantId;
+    }
+  }
+  return merges;
+}
+
+/**
  * High-level entry point — runs the full backfill pass.
  *
- * When `series` is supplied, runs BOTH the duration/identity-based rules
- * (Rule 1 late-tag Pikachu, OI-1 backward, OI-3 forward — same
- * `applyAbsorbRules` used by the legacy path) AND the effort-based absorb
- * pass (near-zero coins/active-zone-time/HR-samples ghosts, regardless of
- * duration), plus cross-device known-user merging. These two rule sets test
- * different signals (identity/duration vs. measured effort) and are
- * complementary, not exclusive — a segment already absorbed by one is
- * skipped by the other via the shared `seg.absorbed` guard. When `series` is
- * omitted, falls back to the legacy duration-only path (existing callers
- * unaffected).
+ * When `series` is supplied, EFFORT REPLACES DURATION as the absorb gate:
+ * only the effort-based pass (`applyEffortAbsorb` — near-zero
+ * coins/active-zone-time/HR-samples ghosts, regardless of duration) folds
+ * segments; the legacy `applyAbsorbRules` (OI-1 backward / OI-3 forward,
+ * duration-driven) is deliberately NOT run on this path because it absorbs
+ * brief-but-REAL bursts and can produce reciprocal transfers that lose real
+ * data. Late-tag Pikachu identity (Decision §5) is preserved as a dedicated
+ * MERGE via `applyLateTagPikachuMerge`, alongside cross-device known-user
+ * merging. This mirrors the backend `SessionIdentityHealer` (effort-only).
+ * When `series` is omitted, falls back to the legacy duration-only path
+ * (`applyAbsorbRules`) — existing callers unaffected.
  *
  * @param {Object} input
  * @param {Array<Object>} input.entities         - sessionData.entities
@@ -509,17 +557,24 @@ export function runSessionBackfill({ entities, series, thresholdMs, sessionEndTi
   const allTransfers = [];
   for (const segments of perDevice.values()) {
     detectCyclingSegments(segments, thresholdMs); // OI-2 still protects real turn-taking
-    // Identity/duration rules first (late-tag Pikachu forward, OI-1 backward,
-    // OI-3 forward sub-threshold) — same rules the legacy no-series path
-    // uses. Then the effort-based pass catches ghosts these rules don't
-    // (e.g. a segment that runs LONGER than the threshold but registers
-    // near-zero coins/HR/active-zone effort). The shared `seg.absorbed`
-    // guard means whichever rule matches first "wins" — there is no
-    // double-transfer risk.
-    allTransfers.push(...applyAbsorbRules(segments, thresholdMs));
+    // Effort REPLACES duration as the absorb gate on the series path. We do
+    // NOT call applyAbsorbRules here: the legacy duration rules (OI-1 backward,
+    // OI-3 forward) absorb a segment purely because it is SHORT, which (a)
+    // violates the spec ("a brief-but-REAL burst must not be absorbed") and
+    // (b) can pair with the effort pass to emit RECIPROCAL transfers
+    // ({real→ghost} backward + {ghost→real} forward) that land BOTH occupants
+    // in removedOccupants and LOSE the real burst's data. Effort-only mirrors
+    // the backend SessionIdentityHealer, which returns the correct result.
+    // Only INSIGNIFICANT (near-zero coins/HR/active-zone) segments fold.
     allTransfers.push(...applyEffortAbsorb(segments, cfg));
   }
-  const merges = applyKnownUserDeviceMerge(perDevice, knownUserAliases);
+  // Rule 1 (Decision §5): a Pikachu immediately followed on the same device by
+  // a real configured user is merged forward regardless of duration/effort —
+  // removing applyAbsorbRules above dropped this, so it is reinstated here as a
+  // dedicated MERGE. Runs after effort absorb so an insignificant Pikachu is
+  // already folded; this catches a significant/high-effort late-tagged Pikachu.
+  const pikachuMerges = applyLateTagPikachuMerge(perDevice);
+  const merges = [...pikachuMerges, ...applyKnownUserDeviceMerge(perDevice, knownUserAliases)];
   const mergedFromIds = merges.map(m => m.fromOccupantId);
   const keptOccupants = collectKeptOccupants(perDevice);
   for (const id of mergedFromIds) keptOccupants.delete(id);

@@ -127,14 +127,23 @@ describe('PersistenceManager — cycling/turn-taking detection (W1.B / OI-2)', (
     expect(participantIds).toContain('bob');
   });
 
-  it('OI-1 — final sub-threshold segment is backfilled BACKWARD into the prior honored occupant', async () => {
+  it('effort model — brief-but-real short segments are KEPT (was: OI-1/OI-3 duration absorb)', async () => {
     // test-user-a 3m → test-user-b 30m → Guest 2m, threshold = 5m.
-    //   - test-user-a segment is sub-T but has a successor (test-user-b).
-    //     Per OI-3, test-user-a absorbs forward into test-user-b.
-    //   - test-user-b segment is over threshold → honored.
-    //   - Guest segment is sub-T AND final → per OI-1, backfills backward
-    //     into test-user-b (the prior honored).
-    // Final saved participants: just test-user-b.
+    //
+    // ORIGINAL (duration model) expectation: test-user-a (sub-T, forward) and
+    // #guest123 (sub-T final, backward) both absorbed into test-user-b → only
+    // test-user-b survived. That depended on `applyAbsorbRules`.
+    //
+    // NEW (Task 10, effort-replaces-duration) expectation: `runSessionBackfill`
+    // no longer runs `applyAbsorbRules` on the series path; only INSIGNIFICANT
+    // effort folds. Here every segment has REAL effort:
+    //   - test-user-a: 36 HR samples (3 min) → significant → KEPT.
+    //   - test-user-b: 30 min → KEPT.
+    //   - #guest123: 24 HR samples (2 min) → significant, and it's the FINAL
+    //     segment with no known successor to merge into → KEPT.
+    // A 2-min guest burst with real HR is exactly the "brief-but-real" data we
+    // must NOT silently attribute to test-user-b. All three survive. This
+    // matches the backend SessionIdentityHealer (effort-only).
     const t0 = 1_700_000_000_000;
     const T = 5 * 60 * 1000;
     const sessionStart = t0;
@@ -219,11 +228,11 @@ describe('PersistenceManager — cycling/turn-taking detection (W1.B / OI-2)', (
     expect(capturedPayload).toBeTruthy();
     const participantIds = Object.keys(capturedPayload.participants || {});
 
-    // test-user-b is the only honored occupant. test-user-a (sub-T, absorbed
-    // forward into test-user-b) and #guest123 (sub-T final, backfilled
-    // backward into test-user-b) are both removed.
+    // Effort model: all three occupants have real effort and are KEPT.
+    // test-user-a (36 HR samples) and #guest123 (24 HR samples, final, no
+    // known successor) are brief-but-real → not absorbed.
     expect(participantIds).toContain('test-user-b');
-    expect(participantIds).not.toContain('test-user-a');
-    expect(participantIds).not.toContain('#guest123');
+    expect(participantIds).toContain('test-user-a');
+    expect(participantIds).toContain('#guest123');
   });
 });
