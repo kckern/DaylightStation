@@ -175,16 +175,14 @@ describe('ScoreTransportBar', () => {
     expect(onClearFocus).toHaveBeenCalled();
   });
 
-  it('Loop control is Learn + Polish (absent in Listen/Perform)', () => {
-    for (const mode of ['listen', 'perform']) {
-      const { unmount } = render(<ScoreTransportBar {...base} mode={mode} />);
-      expect(screen.queryByRole('button', { name: /^loop/i })).toBeNull();
-      unmount();
-    }
-    for (const mode of ['learn', 'polish']) {
-      const { unmount } = render(<ScoreTransportBar {...base} mode={mode} />);
+  it('Loop control is Listen + Learn + Polish (absent only in Perform) (L6)', () => {
+    const { unmount } = render(<ScoreTransportBar {...base} mode="perform" />);
+    expect(screen.queryByRole('button', { name: /^loop/i })).toBeNull();
+    unmount();
+    for (const mode of ['listen', 'learn', 'polish']) {
+      const { unmount: u } = render(<ScoreTransportBar {...base} mode={mode} />);
       expect(screen.getByRole('button', { name: /^loop/i })).toBeInTheDocument();
-      unmount();
+      u();
     }
   });
 
