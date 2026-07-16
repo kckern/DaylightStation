@@ -1,25 +1,32 @@
 /**
- * W1.C / OI-3 — symmetric application of the backfill rule across all
- * transition types.
+ * W1.C / OI-3 → EFFORT-REPLACES-DURATION update.
  *
- * The OI-3 directive states that the continuous-usage threshold absorbs
- * sub-T segments forward regardless of WHO occupies the segment — guest,
- * primary household member, family, friend. The W1.B backfill pass is
- * implemented occupant-agnostically (`runSessionBackfill` makes no
- * `isGuest` / `isPrimary` distinction; it only looks at segment durations
- * and successors). This test guards that invariant.
+ * ORIGINAL intent (duration model): the continuous-usage threshold absorbs
+ * sub-T segments forward regardless of WHO occupies the segment. Under the
+ * old model the 30s test-user-a segment (sub-threshold by duration) was
+ * absorbed forward into test-user-b, leaving only test-user-b.
+ *
+ * NEW intent (effort model — Task 10): effort REPLACES duration as the absorb
+ * gate on the series path. `runSessionBackfill` no longer calls
+ * `applyAbsorbRules`; only `applyEffortAbsorb` folds segments, and only when
+ * effort is INSIGNIFICANT (near-zero coins / active-zone / HR samples). The
+ * 30s test-user-a segment carries 6 real HR samples (> the 3-sample
+ * significance floor) → it is a "brief-but-REAL burst" and is now KEPT, not
+ * absorbed. This is the deliberate improvement the task calls out: a short but
+ * genuine effort segment must not lose its identity to its neighbor. It also
+ * matches the backend SessionIdentityHealer (effort-only).
+ *
+ * The occupant-agnostic invariant still holds: `runSessionBackfill` makes no
+ * `isGuest` / `isPrimary` distinction. This test now guards that a
+ * brief-but-real Mapped→Mapped segment is KEPT (was: absorbed).
  *
  * Scenario (Mapped → Mapped, no guest involved):
  *   - Device 99999 starts mapped to test-user-a.
- *   - 30 seconds of HR data is recorded on test-user-a.
- *   - Device is reassigned to test-user-b (a fellow household member —
- *     the kind of swap a user-to-user hand-off would produce).
+ *   - 30 seconds of HR data (6 samples) is recorded on test-user-a.
+ *   - Device is reassigned to test-user-b (a fellow household member).
  *   - 10 minutes of HR data is recorded on test-user-b.
  *
- * Per OI-3, the 30s test-user-a segment is sub-threshold (T = 5 min) and
- * MUST be absorbed forward into test-user-b. If a regression introduced an
- * "only for guest occupants" gate (e.g. `if (previousOccupant.isGuest)` or
- * `if (previousProfileId.startsWith('#'))`), this test fails.
+ * Expectation (effort model): BOTH test-user-a and test-user-b survive.
  *
  * Driver shape mirrors `PersistenceManager.lateTagMerge.test.js` and
  * `PersistenceManager.cyclingDetection.test.js` — crafted `sessionData`
@@ -68,7 +75,7 @@ describe('PersistenceManager — symmetric threshold application (W1.C / OI-3)',
     pm.setUsageThresholdMs(5 * 60 * 1000); // 5 minutes
   });
 
-  it('absorbs a sub-T Mapped→Mapped segment forward (no guest involved)', async () => {
+  it('KEEPS a brief-but-real Mapped→Mapped segment (effort replaces duration)', async () => {
     // Layout (T = 5 min):
     //   t0         .. t0+30s    test-user-a on device 99999, 6 HR ticks
     //   t0+30s     .. t0+10m30s test-user-b on device 99999, 120 HR ticks
@@ -158,27 +165,23 @@ describe('PersistenceManager — symmetric threshold application (W1.C / OI-3)',
     expect(apiCallCount).toBe(1);
     expect(capturedPayload).toBeTruthy();
 
-    // Symmetric OI-3 behavior: test-user-a's 30s segment is sub-T and is
-    // absorbed forward into test-user-b. Only test-user-b survives.
+    // Effort model (Task 10): test-user-a's 30s segment carries 6 real HR
+    // samples (> the 3-sample significance floor) → brief-but-REAL → KEPT.
+    // BOTH occupants survive; neither is absorbed.
     const participantIds = Object.keys(capturedPayload.participants || {});
     expect(participantIds).toContain('test-user-b');
-    expect(participantIds).not.toContain('test-user-a');
+    expect(participantIds).toContain('test-user-a');
 
-    // The backfill_applied event should record exactly one transfer
-    // (test-user-a → test-user-b). If a regression added a guest gate,
-    // this transfer would be absent and the test-user-a participant
-    // would survive.
+    // No absorb happens: test-user-a must NOT be removed. Because there is no
+    // transfer/merge/removal, the persist_backfill_applied event does not fire
+    // at all — but if it ever did, test-user-a must not appear in
+    // removedOccupants and there must be no test-user-a → test-user-b transfer.
     const backfillEvent = logEvents.find(e => e.eventName === 'persist_backfill_applied');
-    expect(backfillEvent).toBeTruthy();
-    const transfers = backfillEvent.data?.transfers || [];
-    const aToBTransfer = transfers.find(
+    const removed = backfillEvent?.data?.removedOccupants || [];
+    expect(removed).not.toContain('test-user-a');
+    const transfers = backfillEvent?.data?.transfers || [];
+    expect(transfers.some(
       t => t.fromOccupantId === 'test-user-a' && t.toOccupantId === 'test-user-b'
-    );
-    expect(aToBTransfer).toBeTruthy();
-    // The transfer must be recorded with `removedOccupants` including the
-    // sub-T occupant, confirming the backfill pass removed them rather than
-    // leaving them as a stale participant.
-    const removed = backfillEvent.data?.removedOccupants || [];
-    expect(removed).toContain('test-user-a');
+    )).toBe(false);
   });
 });
