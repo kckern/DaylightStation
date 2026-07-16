@@ -24,8 +24,13 @@ import android.os.IBinder;
 import android.os.Looper;
 import android.util.Log;
 
+import org.json.JSONObject;
+
 import java.io.File;
 import java.io.IOException;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
 
 /**
  * PianoBridgeService — the core. Hosts the native synth (PianoEngine), reads the
@@ -59,6 +64,23 @@ public class PianoBridgeService extends Service {
     private MidiDevice openMidiDevice;
     private MidiOutputPort openMidiPort;
     private MidiReceiver midiReceiver;
+
+    // MIDI-IN health (the note-read path: device output port → PianoMidiReceiver →
+    // WS fan-out). Surfaced in /diagnostics so a dead input path is VISIBLE instead
+    // of masquerading as a healthy BLE link — this bug was otherwise only findable in
+    // a crash snapshot. These three are already maintained by the retry logic below;
+    // exposing them is free. See connectPort / attemptOpenPort.
+    private volatile boolean midiPortOpen = false;
+    private volatile String midiPortLastError = null;
+    private volatile int midiPortAttempts = 0;
+    // Retries openOutputPort off the callback thread (the Android-10 BLE-MIDI
+    // port-registration race — see attemptOpenPort). Lazily created; shut down in onDestroy.
+    private ScheduledExecutorService midiPortExec;
+    // openOutputPort can NPE right after the device opens because the MidiDeviceServer
+    // hasn't registered the port yet. Retry a few times ~700ms apart (the port appears
+    // within a second or two); if it still fails, force a full device re-open.
+    private static final int MIDI_PORT_MAX_ATTEMPTS = 8;
+    private static final long MIDI_PORT_RETRY_MS = 700L;
 
     private DeviceConfig config;
     private BleMidiConnector bleConnector;
@@ -156,6 +178,7 @@ public class PianoBridgeService extends Service {
         if (audioGuardThread != null) { audioGuardThread.quitSafely(); audioGuardThread = null; audioGuardHandler = null; }
         if (screenWaker != null) { screenWaker.shutdown(); screenWaker = null; }
         touchPulser = null;
+        if (midiPortExec != null) { midiPortExec.shutdownNow(); midiPortExec = null; }
         closeMidi();
         if (controlServer != null) {
             controlServer.stop();
@@ -371,18 +394,83 @@ public class PianoBridgeService extends Service {
 
     public KioskWatchdog getKioskWatchdog() { return kioskWatchdog; }
 
-    /** Wire a freshly opened MidiDevice's output port 0 to the MIDI receiver. */
+    /**
+     * Wire a freshly opened MidiDevice's output port 0 to the MIDI receiver — the
+     * note-IN path. Delegates to the retrying opener because on the SM-T590 (Android
+     * 10) BLE-MIDI stack, openOutputPort() called straight from onMidiDeviceOpened
+     * frequently throws inside the framework (NPE: MidiDeviceInfo.isPrivate() on a
+     * null ref) — the MidiDeviceServer hasn't registered the device's port info yet.
+     * Before 2026-07-15 that throw was uncaught: it killed the callback thread, left
+     * the BLE link marked CONNECTED with NO read port, and never retried → MIDI OUT
+     * kept working (that's the kiosk's own Web MIDI) while MIDI IN was silently dead.
+     */
     private synchronized void connectPort(MidiDevice device) {
         closeMidi(); // tear down any previous port first
         openMidiDevice = device;
-        openMidiPort = device.openOutputPort(0);
-        if (openMidiPort == null) {
-            Log.e(TAG, "Failed to open MIDI output port 0");
+        midiPortAttempts = 0;
+        attemptOpenPort(device, 1);
+    }
+
+    /**
+     * One attempt to open output port 0 and attach the receiver, guarded so a
+     * framework throw can never kill the thread. On failure it reschedules itself
+     * (~700ms backoff) up to MIDI_PORT_MAX_ATTEMPTS — the port registers within a
+     * second or two. If every attempt fails, force a full device re-open via the
+     * connector (a fresh openBluetoothDevice resets the race), so the note-IN path
+     * can never wedge permanently. Guarded by identity: a newer connect (or a
+     * closeMidi) that supersedes `device` abandons this retry chain.
+     */
+    private synchronized void attemptOpenPort(MidiDevice device, int attempt) {
+        if (device != openMidiDevice) return; // superseded by a newer connect/close
+        midiPortAttempts = attempt;
+        MidiOutputPort port = null;
+        try {
+            port = device.openOutputPort(0);
+        } catch (Throwable t) {
+            midiPortLastError = t.getClass().getSimpleName() + ": " + t.getMessage();
+            Log.w(TAG, "openOutputPort attempt " + attempt + " threw", t);
+        }
+        if (port != null) {
+            openMidiPort = port;
+            midiReceiver = new PianoMidiReceiver();
+            openMidiPort.connect(midiReceiver);
+            midiPortOpen = true;
+            midiPortLastError = null;
+            Log.i(TAG, "MIDI output port connected (attempt " + attempt + ")");
+            CrashLog.note("MIDI", "note-IN port connected (attempt " + attempt + ")");
             return;
         }
-        midiReceiver = new PianoMidiReceiver();
-        openMidiPort.connect(midiReceiver);
-        Log.i(TAG, "MIDI output port connected");
+        if (attempt >= MIDI_PORT_MAX_ATTEMPTS) {
+            Log.e(TAG, "MIDI output port failed after " + attempt + " attempts — forcing device re-open");
+            CrashLog.note("MIDI", "note-IN port FAILED after " + attempt
+                    + " attempts (" + midiPortLastError + ") — forcing reconnect");
+            if (bleConnector != null) bleConnector.connectNow(); // full reopen resets the port race
+            return;
+        }
+        scheduleOpenPortRetry(device, attempt + 1);
+    }
+
+    private void scheduleOpenPortRetry(final MidiDevice device, final int nextAttempt) {
+        if (midiPortExec == null || midiPortExec.isShutdown()) {
+            midiPortExec = Executors.newSingleThreadScheduledExecutor(r -> {
+                Thread t = new Thread(r, "PianoBridge-midiport"); t.setDaemon(true); return t;
+            });
+        }
+        midiPortExec.schedule(() -> {
+            try { attemptOpenPort(device, nextAttempt); }
+            catch (Throwable t) { Log.e(TAG, "port-open retry crashed", t); }
+        }, MIDI_PORT_RETRY_MS, TimeUnit.MILLISECONDS);
+    }
+
+    /** MIDI-IN health for /diagnostics: is the read port open, and are notes flowing? */
+    public JSONObject midiInStatus() {
+        JSONObject o = new JSONObject();
+        try {
+            o.put("portOpen", midiPortOpen);
+            o.put("attempts", midiPortAttempts);
+            o.put("lastError", midiPortLastError == null ? JSONObject.NULL : midiPortLastError);
+        } catch (Exception ignored) { }
+        return o;
     }
 
     // --- accessors / control used by ControlServer ---
@@ -407,6 +495,7 @@ public class PianoBridgeService extends Service {
     }
 
     private synchronized void closeMidi() {
+        midiPortOpen = false;
         try {
             if (openMidiPort != null) {
                 if (midiReceiver != null) openMidiPort.disconnect(midiReceiver);

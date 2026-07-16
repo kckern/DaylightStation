@@ -133,6 +133,18 @@ public final class KioskWatchdog {
         return lowMsAccum >= (long) sustainSec * 1000 ? Verdict.DECAYED : Verdict.BUILDING;
     }
 
+    /**
+     * Pure gate (JVM-testable) for whether a recovery trigger may escalate past L1
+     * (the invisible touch-burst) into the DISRUPTIVE rungs — L2 reload, L3
+     * restartApp, L4 reboot — all of which remount the SPA and drop Web MIDI + the
+     * bridge WS. Only DEAD qualifies: a dead page has stopped heartbeating, so its
+     * JS loop is genuinely gone / the WebView is latched, which soft rungs can clear.
+     * A DECAYED page is merely throttled but still alive and beating; remounting it
+     * does not raise fps (proven on-device) and only manifests as a dropped piano
+     * connection — the 2026-07-15 outage. Kept here so the policy is one obvious line.
+     */
+    static boolean escalatesPastL1(Verdict trigger) { return trigger == Verdict.DEAD; }
+
     private void tick(long periodMs) {
         DeviceConfig c = cfg;
         long now = SystemClock.elapsedRealtime();
@@ -154,6 +166,10 @@ public final class KioskWatchdog {
             lastVerdict = v;
         }
 
+        // Both a stalled (DECAYED) and a dead (DEAD) page enter the ladder, but they
+        // get DIFFERENT treatment there (see runLadder): DECAYED gets only the
+        // invisible touch-burst, DEAD gets the full disruptive ladder. Escalating a
+        // DECAYED page past L1 is the 2026-07-15 outage — see escalatesPastL1.
         boolean actionable = (v == Verdict.DEAD || v == Verdict.DECAYED);
         if (actionable && c.watchdogRecoverEnabled() && now >= cooldownUntilRt
                 && recovering.compareAndSet(false, true)) {
@@ -192,6 +208,20 @@ public final class KioskWatchdog {
         TouchPulser.burst(c, 6);
         sleep(3000);
         if (recovered(t1, c)) { finish("recovered@L1-touch"); return; }
+
+        // A DECAYED page is SLOW but ALIVE — it is still heartbeating, just at the
+        // SM-T590's aged-WebView rAF-throttle floor (~6-8fps), which the 2026-07-15
+        // screenshot proved is a fully rendered, usable kiosk with MIDI connected.
+        // Reload/restartApp provably do NOT raise fps on this hardware (the reason the
+        // in-page useRenderWatchdog set SELF_HEAL_RESTART=false), so escalating past L1
+        // just remounts the SPA every cooldown forever — tearing down Web MIDI + the
+        // bridge WS and reading to the user as "the piano disconnected AGAIN." So the
+        // disruptive rungs (reload/restart/reboot) are reserved for DEAD (beat-silence
+        // = the JS loop is actually dead / WebView latched, which soft rungs CAN clear).
+        if (!escalatesPastL1(trigger)) {
+            finish("L1 only — DECAYED (slow but alive, still beating); disruptive rungs reserved for DEAD");
+            return;
+        }
 
         if (!disruptiveOk) {
             finish("L1 only — " + (quiet ? "quiet window" : "screen off")

@@ -103,6 +103,7 @@ public final class SystemDiagnostics {
         A2dpConnector spk = service.getA2dpConnector();
         AudioRouteGuard guard = service.getAudioGuard();
         o.put("engine", service.isEngineRunning() ? "running" : "stopped");
+        o.put("midiIn", service.midiInStatus()); // note-read path health (portOpen/attempts/lastError)
         o.put("ble", ble != null ? ble.status() : JSONObject.NULL);
         o.put("speaker", spk != null ? spk.status() : JSONObject.NULL);
         o.put("guard", guard != null ? guard.status() : JSONObject.NULL);
