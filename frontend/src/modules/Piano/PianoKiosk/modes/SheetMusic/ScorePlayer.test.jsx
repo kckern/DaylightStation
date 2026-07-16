@@ -84,8 +84,17 @@ const renderPlayer = () =>
 
 beforeEach(() => {
   h.noteCb = null; h.rawCb = null; h.layoutExtras = {};
-  h.pressNote.mockClear(); h.releaseNote.mockClear(); h.sendPanic.mockClear();
+  h.pressNote.mockClear(); h.releaseNote.mockClear();
   h.sendNoteAt.mockClear(); h.sendNoteOffAt.mockClear();
+  // sendPanic gets a FRESH fn per test, not just mockClear: every ScorePlayer
+  // unmount arms a delayed-panic setTimeout (~lookahead+60ms — intended production
+  // behavior; see silenceScheduled). In this file's real-timer tests that timer
+  // lives on the REAL clock and outlives its test, so under CPU load it can land
+  // mid-way through a LATER fake-timer test and break
+  // `expect(h.sendPanic).not.toHaveBeenCalled()`. The stale instance captured the
+  // previous test's fn at render time, so re-binding scopes each test's
+  // assertions to panics sent by ITS OWN component instance.
+  h.sendPanic = vi.fn();
 });
 
 // Scores now open in Listen (default). The Learn tests select Learn first.
