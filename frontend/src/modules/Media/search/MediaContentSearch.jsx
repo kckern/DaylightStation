@@ -61,6 +61,7 @@ export function MediaContentSearch() {
             selectContainers={false}
             searchParams={currentScope?.params ?? ''}
             appResults
+            allowFreeform={false}
           />
         </div>
       </div>

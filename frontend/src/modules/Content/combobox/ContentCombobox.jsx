@@ -96,6 +96,7 @@ export function ContentCombobox({
   searchParams = '',
   appResults = false,
   renderValue = null,
+  allowFreeform = true,
 }) {
   const log = useMemo(() => getChildLogger({ component: 'ContentCombobox', app: 'admin', sessionLog: true }), []);
   const {
@@ -508,7 +509,7 @@ export function ContentCombobox({
   }
 
   const displayValue = search !== null ? search : (value || '');
-  const showFreeform = !!search && search !== value && !isBrowse && search.length >= 2;
+  const showFreeform = allowFreeform && !!search && search !== value && !isBrowse && search.length >= 2;
 
   return (
     <Combobox store={combobox} onOptionSubmit={handleOptionSubmit}>
@@ -706,7 +707,9 @@ export function ContentCombobox({
                   ? 'No items in this container'
                   : (!search || search.length < 2)
                     ? 'Type to search...'
-                    : 'No results — select “Use as raw value” or press Enter'}
+                    : (allowFreeform
+                        ? 'No results — select “Use as raw value” or press Enter'
+                        : 'No results')}
               </Combobox.Empty>
             ) : (
               items.map(renderOption)
