@@ -422,7 +422,7 @@ export function applyEffortAbsorb(segments, cfg) {
       transfers.push({ fromOccupantId: seg.occupantId, toOccupantId: next.occupantId, reason: 'insignificant-forward' });
       seg.absorbed = true; seg.absorbedInto = next.occupantId; continue;
     }
-    const prior = segments.slice(0, i).reverse().find(s => !s.absorbed && s.occupantId !== seg.occupantId);
+    const prior = segments.slice(0, i).reverse().find(s => !s.absorbed && !s.inSessionTransferred && s.occupantId !== seg.occupantId);
     if (prior) {
       transfers.push({ fromOccupantId: seg.occupantId, toOccupantId: prior.occupantId, reason: 'insignificant-backward' });
       seg.absorbed = true; seg.absorbedInto = prior.occupantId;
@@ -505,12 +505,15 @@ export function runSessionBackfill({ entities, series, thresholdMs, sessionEndTi
     allTransfers.push(...applyEffortAbsorb(segments, cfg));
   }
   const merges = applyKnownUserDeviceMerge(perDevice, knownUserAliases);
+  const mergedFromIds = merges.map(m => m.fromOccupantId);
+  const keptOccupants = collectKeptOccupants(perDevice);
+  for (const id of mergedFromIds) keptOccupants.delete(id);
   return {
     perDevice,
     transfers: dedupeTransfers(allTransfers),
     merges,
-    keptOccupants: collectKeptOccupants(perDevice),
-    removedOccupants: new Set([...collectFullyAbsorbedOccupants(perDevice), ...merges.map(m => m.fromOccupantId)])
+    keptOccupants,
+    removedOccupants: new Set([...collectFullyAbsorbedOccupants(perDevice), ...mergedFromIds])
   };
 }
 
