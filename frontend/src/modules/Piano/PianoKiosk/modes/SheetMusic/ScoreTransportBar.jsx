@@ -144,7 +144,7 @@ const ScoreViewControls = memo(function ScoreViewControls({
   onClearFocus,
   keyboardVisible,
   onToggleKeyboard,
-  clickOn = false,
+  clickActive = false, // mode-dependent: Learn = free-run state, Polish = persisted arm state
   onToggleClick,
   bpm = 90,
   meta = {},
@@ -227,9 +227,9 @@ const ScoreViewControls = memo(function ScoreViewControls({
       {hasClick && (
         <button
           type="button"
-          className={`piano-score-btn piano-score-click${clickOn ? ' is-on' : ''}`}
+          className={`piano-score-btn piano-score-click${clickActive ? ' is-on' : ''}`}
           aria-label="Metronome"
-          aria-pressed={clickOn}
+          aria-pressed={clickActive}
           onClick={onToggleClick}
         >
           <QuarterNoteIcon />
@@ -390,7 +390,7 @@ export default function ScoreTransportBar({
   onClearFocus,
   keyboardVisible,
   onToggleKeyboard,
-  clickOn,
+  clickActive,
   onToggleClick,
   bpm,
   meta,
@@ -453,7 +453,7 @@ export default function ScoreTransportBar({
         onClearFocus={onClearFocus}
         keyboardVisible={keyboardVisible}
         onToggleKeyboard={onToggleKeyboard}
-        clickOn={clickOn}
+        clickActive={clickActive}
         onToggleClick={onToggleClick}
         bpm={bpm}
         meta={meta}

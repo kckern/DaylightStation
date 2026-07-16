@@ -659,4 +659,19 @@ describe('ScorePlayer — metronome in Learn (M1/M2/M4)', () => {
     act(() => { fireEvent.click(screen.getByRole('button', { name: /metronome/i })); });
     expect(h.clickSched.start).toHaveBeenCalledWith(50); // 100 × 0.5
   });
+
+  it('retunes a running Learn click live with the EXACT bpm (no display rounding)', () => {
+    h.layoutExtras = { tempoEntries: [{ onsetQuarter: 0, bpm: 63 }] }; // 63 × 0.5 = 31.5 — rounding would corrupt it
+    renderPlayer();
+    enterLearn();
+    act(() => { fireEvent.click(screen.getByRole('button', { name: /metronome/i })); }); // ON first
+    expect(h.clickSched.start).toHaveBeenCalledWith(63);
+    act(() => { fireEvent.click(screen.getByRole('button', { name: /^tempo/i })); });
+    act(() => { fireEvent.click(screen.getByRole('button', { name: '50%' })); }); // change tempo while ticking
+    // The hook must receive the exact product — rounding belongs to the bar's
+    // readout only, or the click drifts against the tempo-scaled timelines
+    // (playTimeline scales by exact 1/tempoMult): 32 vs 31.5 = a beat per ~64.
+    expect(h.clickSched.setBpm).toHaveBeenCalledWith(31.5);
+    expect(screen.getByRole('button', { name: /metronome/i })).toHaveTextContent('32'); // readout IS rounded
+  });
 });

@@ -24,10 +24,10 @@ describe('ScoreTransportBar', () => {
     expect(base.onMode).toHaveBeenCalledWith('polish');
   });
 
-  it('exposes a labeled BPM metronome toggle in Polish (aria-pressed reflects clickOn)', () => {
+  it('exposes a labeled BPM metronome toggle in Polish (aria-pressed reflects clickActive)', () => {
     const onToggleClick = vi.fn();
     const { rerender } = render(
-      <ScoreTransportBar {...base} mode="polish" clickOn={false} bpm={72} onToggleClick={onToggleClick} />,
+      <ScoreTransportBar {...base} mode="polish" clickActive={false} bpm={72} onToggleClick={onToggleClick} />,
     );
     const click = screen.getByRole('button', { name: /metronome/i });
     expect(click).toHaveAttribute('aria-pressed', 'false');
@@ -35,14 +35,14 @@ describe('ScoreTransportBar', () => {
     expect(click.querySelector('svg')).not.toBeNull(); // QuarterNoteIcon
     fireEvent.click(click);
     expect(onToggleClick).toHaveBeenCalled();
-    rerender(<ScoreTransportBar {...base} mode="polish" clickOn bpm={72} onToggleClick={onToggleClick} />);
+    rerender(<ScoreTransportBar {...base} mode="polish" clickActive bpm={72} onToggleClick={onToggleClick} />);
     expect(screen.getByRole('button', { name: /metronome/i })).toHaveAttribute('aria-pressed', 'true');
   });
 
   it('metronome lives in Learn AND Polish, not Listen (M1/M2)', () => {
-    const { rerender } = render(<ScoreTransportBar {...base} mode="learn" clickOn onToggleClick={vi.fn()} />);
+    const { rerender } = render(<ScoreTransportBar {...base} mode="learn" clickActive onToggleClick={vi.fn()} />);
     expect(screen.getByRole('button', { name: /metronome/i })).toBeInTheDocument();
-    rerender(<ScoreTransportBar {...base} mode="listen" clickOn onToggleClick={vi.fn()} />);
+    rerender(<ScoreTransportBar {...base} mode="listen" clickActive onToggleClick={vi.fn()} />);
     expect(screen.queryByRole('button', { name: /metronome/i })).toBeNull();
   });
 
