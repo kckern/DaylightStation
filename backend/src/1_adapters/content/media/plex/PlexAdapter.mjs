@@ -1841,6 +1841,9 @@ export class PlexAdapter {
         // the song itself, not just its album. Callers that need a different
         // surface (e.g. episodes too, or containers only) pass
         // `tier1AllowedTypes` to override.
+        // NOTE: `episode` surfaces episodes for EVERY tier-1 caller (admin content
+        // search, Media search, etc.), not just Media — an exact-title episode was
+        // previously unfindable because it was filtered out here (RC1, 2026-07-16).
         const TIER1_DEFAULT_TYPES = ['show', 'movie', 'artist', 'album', 'collection', 'track', 'episode'];
         const topLevelTypes = Array.isArray(query.tier1AllowedTypes) && query.tier1AllowedTypes.length > 0
           ? query.tier1AllowedTypes
