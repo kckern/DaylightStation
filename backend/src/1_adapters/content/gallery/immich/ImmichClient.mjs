@@ -311,6 +311,9 @@ export class ImmichClient {
    * @returns {number|null}
    */
   parseDuration(durationStr) {
+    // Falsy (null/undefined/empty/numeric 0) and the string zero sentinel both
+    // mean "no duration" → null. Numeric 0 intentionally maps to null too, for
+    // consistency with the '0:00:00.00000' sentinel (a zero-length/absent duration).
     if (!durationStr || durationStr === '0:00:00.00000') return null;
     // Immich has returned duration as a raw number (seconds) in some API
     // versions — accept it directly instead of crashing on .split().
