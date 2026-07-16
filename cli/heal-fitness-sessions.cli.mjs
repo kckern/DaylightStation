@@ -25,28 +25,25 @@ import yaml from 'js-yaml';
 
 import { decodeSeries, encodeSeries } from '#domains/fitness/services/TimelineService.mjs';
 import { planHeal } from '#domains/fitness/services/SessionIdentityHealer.mjs';
-import { buildSummary } from './lib/fitnessSessionSummary.mjs';
+import { buildSummary, isCumulativeSeriesKey, getLastNonNull } from './lib/fitnessSessionSummary.mjs';
 
 // ---------------------------------------------------------------------------
 // Cell-level series merge
 // ---------------------------------------------------------------------------
 
-// Cumulative counters (running totals within a session) — when both the
-// "from" and "to" occupant have a non-null value at the same tick, keep the
-// larger one rather than overwriting (a real, still-worn strap's running
-// total should never be clobbered by a ghost occupant's smaller one).
-const CUMULATIVE_KEY_RE = /:(coins|beats)$/;
-
-function isCumulativeKey(key) {
-  return CUMULATIVE_KEY_RE.test(key);
-}
-
 /**
  * Merge one (fromVal, toVal) cell pair for the given (fully-qualified,
- * e.g. `grannie:coins`) destination key.
- *   - If only one side has a value, take it (union of non-null cells).
- *   - If both sides have a value: cumulative keys keep the max; everything
- *     else (hr/zone point samples) prefers the "to" (kept occupant)'s value.
+ * e.g. `grannie:coins`) destination key, using the "max" cumulative
+ * strategy: when both sides have a value, cumulative keys (`isCumulativeSeriesKey`
+ * — `:coins`/`:beats`) keep the max; everything else (hr/zone point samples)
+ * prefers the "to" (kept occupant)'s value. If only one side has a value,
+ * take it (union of non-null cells).
+ *
+ * This is the correct rule for **transfers** (ghost-occupant absorption): the
+ * "from" occupant is insignificant (coins <= 1), so its cumulative total can
+ * never legitimately exceed — let alone need to be added to — the real
+ * occupant's running total. It is NOT correct for **merges** (known-user
+ * device-swap folds) — see `foldOccupantSeries`'s `cumulativeStrategy` param.
  *
  * @param {string} toKey - destination series key, e.g. 'grannie:coins'
  * @param {number|string|null} fromVal
@@ -56,7 +53,43 @@ function isCumulativeKey(key) {
 export function mergeCell(toKey, fromVal, toVal) {
   if (toVal == null) return fromVal == null ? null : fromVal;
   if (fromVal == null) return toVal;
-  return isCumulativeKey(toKey) ? Math.max(fromVal, toVal) : toVal;
+  return isCumulativeSeriesKey(toKey) ? Math.max(fromVal, toVal) : toVal;
+}
+
+/**
+ * Additive cumulative fold: the "from" occupant's series ends (a device
+ * swap, strap handoff, etc.) and the "to" occupant's series continues the
+ * SAME real person's running total from that point on. Naively taking
+ * Math.max(from[i], to[i]) (as `mergeCell` does for transfers) silently
+ * drops every coin/beat "to" earned after the swap once "to"'s own total
+ * exceeds "from"'s frozen terminal value in absolute terms but has NOT yet
+ * caught up to from+to combined — e.g. from freezes at 500, to independently
+ * reaches 294, Math.max gives 500 (should be 794).
+ *
+ * Rule: carry `fromLast` (from's own final non-null value — its total truly
+ * earned) forward into every tick where "to" has a value (folding "to"'s
+ * post-swap total on top of it); where only "from" has a value, keep it
+ * as-is (pre-swap ticks); where neither has a value, null.
+ *
+ * @param {Array} fromArr
+ * @param {Array} toArr
+ * @param {number} len
+ * @returns {Array}
+ */
+function addCumulativeCells(fromArr, toArr, len) {
+  const fromLast = getLastNonNull(fromArr);
+  const merged = new Array(len);
+  for (let i = 0; i < len; i++) {
+    const toVal = toArr[i];
+    if (toVal != null) {
+      merged[i] = fromLast + toVal;
+    } else if (fromArr[i] != null) {
+      merged[i] = fromArr[i];
+    } else {
+      merged[i] = null;
+    }
+  }
+  return merged;
 }
 
 /**
@@ -66,8 +99,21 @@ export function mergeCell(toKey, fromVal, toVal) {
  * @param {Object} decoded - decodeSeries() output (mutated)
  * @param {string} fromId
  * @param {string} toId
+ * @param {Object} [opts]
+ * @param {'max'|'add'} [opts.cumulativeStrategy='max'] - how to fold
+ *   CUMULATIVE keys (`:coins`/`:beats`) when both sides have a value at the
+ *   same tick:
+ *     - 'max' (ghost-absorption / `plan.transfers`): the "from" occupant is
+ *       insignificant — keep whichever side is larger. Safe because a ghost's
+ *       total is never large enough to matter.
+ *     - 'add' (known-user device-swap / `plan.merges`): the "from" occupant
+ *       is a REAL person whose recording continues under "to" after a device
+ *       swap — the two partial totals must be SUMMED, not maxed, or real
+ *       coins earned after the swap are lost (see `addCumulativeCells`).
+ *   Non-cumulative keys (`:hr`/`:zone`) always use the non-null-union /
+ *   prefer-"to" rule (`mergeCell`) regardless of strategy.
  */
-export function foldOccupantSeries(decoded, fromId, toId) {
+export function foldOccupantSeries(decoded, fromId, toId, { cumulativeStrategy = 'max' } = {}) {
   const prefix = `${fromId}:`;
   const fromKeys = Object.keys(decoded).filter((k) => k.startsWith(prefix));
   for (const fromKey of fromKeys) {
@@ -76,10 +122,17 @@ export function foldOccupantSeries(decoded, fromId, toId) {
     const fromArr = decoded[fromKey] || [];
     const toArr = decoded[toKey] || [];
     const len = Math.max(fromArr.length, toArr.length);
-    const merged = new Array(len);
-    for (let i = 0; i < len; i++) {
-      merged[i] = mergeCell(toKey, fromArr[i], toArr[i]);
+
+    let merged;
+    if (cumulativeStrategy === 'add' && isCumulativeSeriesKey(toKey)) {
+      merged = addCumulativeCells(fromArr, toArr, len);
+    } else {
+      merged = new Array(len);
+      for (let i = 0; i < len; i++) {
+        merged[i] = mergeCell(toKey, fromArr[i], toArr[i]);
+      }
     }
+
     decoded[toKey] = merged;
     delete decoded[fromKey];
   }
@@ -167,14 +220,24 @@ export async function heal(date, sessionId, { apply = false, baseDir } = {}) {
   // Apply: fold transfers then merges (order matters — a chain like
   // soren -> elizabeth -> grannie must land soren's data on elizabeth
   // BEFORE elizabeth's (now-combined) series folds into grannie).
+  //
+  // Transfers (ghost absorption) and merges (known-user device-swap) use
+  // DIFFERENT cumulative-fold strategies: a ghost's coins/beats total is
+  // insignificant by construction, so 'max' can never clobber the real
+  // occupant's total; a device-swap merge's "from" occupant is a REAL
+  // person's other segment, so cumulative keys must be SUMMED ('add') or
+  // real post-swap coins are lost. See `foldOccupantSeries`.
   // -------------------------------------------------------------------
   const intervalSeconds = Number.isFinite(obj.timeline?.interval_seconds)
     ? obj.timeline.interval_seconds
     : 5;
   const decoded = decodeSeries(obj.timeline?.series || {});
 
-  for (const { from, to } of [...plan.transfers, ...plan.merges]) {
-    foldOccupantSeries(decoded, from, to);
+  for (const { from, to } of plan.transfers) {
+    foldOccupantSeries(decoded, from, to, { cumulativeStrategy: 'max' });
+  }
+  for (const { from, to } of plan.merges) {
+    foldOccupantSeries(decoded, from, to, { cumulativeStrategy: 'add' });
   }
 
   // Defensive: drop any stray removed-occupant series keys the fold loop

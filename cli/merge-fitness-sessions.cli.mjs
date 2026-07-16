@@ -35,11 +35,9 @@ import {
   mergeTimelines
 } from '#domains/fitness/services/TimelineService.mjs';
 import {
-  computeHrStats,
-  computeZoneTime,
-  findSeries,
   getLastNonNull,
-  buildSummary
+  buildSummary,
+  isCumulativeSeriesKey
 } from './lib/fitnessSessionSummary.mjs';
 
 // ---------------------------------------------------------------------------
@@ -133,12 +131,6 @@ function parseWallClockInTz(wallClock, tz) {
  * by offsetting each non-null entry by the running cumulative total carried
  * over from previous sessions.
  */
-function isCumulativeSeriesKey(key) {
-  return /:coins(_total)?$/.test(key)
-    || /:beats$/.test(key)
-    || key === 'global:coins';
-}
-
 function rebaseCumulativeSeries(series, offset) {
   if (!offset) return series;
   const out = {};

@@ -13,6 +13,29 @@
 export const ZONE_MAP = { c: 'cool', a: 'active', w: 'warm', h: 'hot', fire: 'fire' };
 
 /**
+ * Cumulative series count up monotonically (coins/beats running totals) and
+ * reset to 0 whenever the counter restarts (a new session, or — within a
+ * single session — a new occupant id after a device swap). Both
+ * `merge-fitness-sessions.cli.mjs` (cross-session rebase via
+ * `cumulativeOffsets`/`rebaseCumulativeSeries`) and
+ * `heal-fitness-sessions.cli.mjs` (device-swap identity-merge fold via
+ * `foldOccupantSeries`) need to detect these keys so a split counter gets
+ * recombined additively instead of naively deduped/maxed.
+ *
+ * Matches both the flat on-disk compact form used by heal
+ * (`<id>:coins`, `<id>:beats`) and the `_total`/`global:` forms seen during
+ * cross-session merges.
+ *
+ * @param {string} key
+ * @returns {boolean}
+ */
+export function isCumulativeSeriesKey(key) {
+  return /:coins(_total)?$/.test(key)
+    || /:beats$/.test(key)
+    || key === 'global:coins';
+}
+
+/**
  * Last non-null value in an array, or 0 if none. Used for cumulative series
  * (e.g. coins) where the terminal value is the running total.
  *
@@ -161,6 +184,7 @@ export function buildSummary({ participants, series, events, treasureBox, interv
 
 export default {
   ZONE_MAP,
+  isCumulativeSeriesKey,
   getLastNonNull,
   computeHrStats,
   computeZoneTime,
