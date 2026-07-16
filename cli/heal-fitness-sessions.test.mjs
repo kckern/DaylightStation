@@ -5,7 +5,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import yaml from 'js-yaml';
 
-import { heal, mergeCell, foldOccupantSeries, resolveSessionPath, isValidDate, isValidSessionId } from './heal-fitness-sessions.cli.mjs';
+import { heal, mergeCell, foldOccupantSeries, resolveSessionPath, isValidDate, isValidSessionId, sweep, parseSinceArg, cutoffDateString } from './heal-fitness-sessions.cli.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const FIXTURE = path.join(
@@ -205,5 +205,159 @@ describe('heal() — merges path (known-user device swap) folds coins ADDITIVELY
     // The whole point of this test: 500 (Math.max of 500 and 294) would be
     // WRONG — the real combined total is 500 + 294 = 794.
     expect(rewritten.summary.participants.alice.coins).toBe(794);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// --sweep
+// ---------------------------------------------------------------------------
+
+const CLEAN_SESSION_ID = '20260627200000';
+
+function buildCleanSessionObj(sessionId, date) {
+  return {
+    version: 3,
+    sessionId,
+    session: {
+      id: sessionId,
+      date,
+      start: `${date} 20:00:00.000`,
+      end: `${date} 20:00:20.000`,
+      duration_seconds: 20
+    },
+    timezone: 'UTC',
+    participants: {
+      grannie: { display_name: 'Grannie', is_primary: true }
+    },
+    timeline: {
+      series: {
+        'grannie:hr': [100, 101, 102, 103],
+        'grannie:zone': ['a', 'a', 'a', 'a'],
+        'grannie:coins': [0, 1, 2, 3]
+      },
+      interval_seconds: 5,
+      tick_count: 4,
+      encoding: 'plain'
+    },
+    treasureBox: { totalCoins: 3, buckets: {} },
+    entities: [
+      { entityId: 'e-grannie', profileId: 'grannie', deviceId: 'deviceX', startTime: 0, endTime: 20000, status: 'active' }
+    ]
+  };
+}
+
+describe('parseSinceArg / cutoffDateString', () => {
+  it('parses "Nd" values into a day count', () => {
+    expect(parseSinceArg('30d')).toBe(30);
+    expect(parseSinceArg('400d')).toBe(400);
+  });
+
+  it('rejects malformed values', () => {
+    expect(() => parseSinceArg('30')).toThrow();
+    expect(() => parseSinceArg('30days')).toThrow();
+    expect(() => parseSinceArg('abc')).toThrow();
+  });
+
+  it('computes a YYYY-MM-DD cutoff N days before now', () => {
+    expect(cutoffDateString(new Date('2026-06-28T00:00:00Z'), 1)).toBe('2026-06-27');
+    expect(cutoffDateString(new Date('2026-06-28T00:00:00Z'), 400)).toBe('2025-05-24');
+  });
+});
+
+describe('sweep() — golden + clean sessions in the same date dir', () => {
+  let sweepBaseDir;
+  let goldenFile;
+  let cleanFile;
+
+  beforeEach(async () => {
+    sweepBaseDir = await mkdtemp(path.join(tmpdir(), 'heal-fitness-sweep-'));
+    const dir = path.join(sweepBaseDir, 'data', 'household', 'history', 'fitness', DATE);
+    await mkdir(dir, { recursive: true });
+
+    goldenFile = path.join(dir, `${SESSION_ID}.yml`);
+    await copyFile(FIXTURE, goldenFile);
+
+    cleanFile = path.join(dir, `${CLEAN_SESSION_ID}.yml`);
+    await writeFile(
+      cleanFile,
+      yaml.dump(buildCleanSessionObj(CLEAN_SESSION_ID, DATE), { lineWidth: -1, noRefs: true }),
+      'utf8'
+    );
+  });
+
+  afterEach(async () => {
+    if (sweepBaseDir) await rm(sweepBaseDir, { recursive: true, force: true });
+  });
+
+  it('dry-run reports exactly the golden session and leaves both files byte-identical', async () => {
+    const goldenBefore = await readFile(goldenFile, 'utf8');
+    const cleanBefore = await readFile(cleanFile, 'utf8');
+
+    const { candidates, applied } = await sweep({ baseDir: sweepBaseDir, apply: false });
+
+    expect(candidates).toHaveLength(1);
+    expect(candidates[0].date).toBe(DATE);
+    expect(candidates[0].sessionId).toBe(SESSION_ID);
+    expect([...candidates[0].removed].sort()).toEqual(['elizabeth', 'soren']);
+    expect(applied).toEqual([]);
+
+    const goldenAfter = await readFile(goldenFile, 'utf8');
+    const cleanAfter = await readFile(cleanFile, 'utf8');
+    expect(goldenAfter).toBe(goldenBefore);
+    expect(cleanAfter).toBe(cleanBefore);
+  });
+
+  it('--apply heals only the golden session, leaving the clean session untouched', async () => {
+    const cleanBefore = await readFile(cleanFile, 'utf8');
+
+    const { candidates, applied } = await sweep({ baseDir: sweepBaseDir, apply: true });
+
+    expect(candidates).toHaveLength(1);
+    expect(candidates[0].sessionId).toBe(SESSION_ID);
+    expect(applied).toEqual([{ date: DATE, sessionId: SESSION_ID, changed: true }]);
+
+    const goldenAfter = yaml.load(await readFile(goldenFile, 'utf8'));
+    expect(Object.keys(goldenAfter.participants).sort()).toEqual(['grannie']);
+
+    const cleanAfter = await readFile(cleanFile, 'utf8');
+    expect(cleanAfter).toBe(cleanBefore);
+  });
+});
+
+describe('sweep() — --since filtering excludes out-of-window date dirs', () => {
+  const OLD_DATE = '2025-01-01';
+  const OLD_SESSION_ID = '20250101120000';
+
+  let sweepBaseDir;
+
+  beforeEach(async () => {
+    sweepBaseDir = await mkdtemp(path.join(tmpdir(), 'heal-fitness-sweep-since-'));
+
+    const inWindowDir = path.join(sweepBaseDir, 'data', 'household', 'history', 'fitness', DATE);
+    await mkdir(inWindowDir, { recursive: true });
+    await copyFile(FIXTURE, path.join(inWindowDir, `${SESSION_ID}.yml`));
+
+    const outOfWindowDir = path.join(sweepBaseDir, 'data', 'household', 'history', 'fitness', OLD_DATE);
+    await mkdir(outOfWindowDir, { recursive: true });
+    await copyFile(FIXTURE, path.join(outOfWindowDir, `${OLD_SESSION_ID}.yml`));
+  });
+
+  afterEach(async () => {
+    if (sweepBaseDir) await rm(sweepBaseDir, { recursive: true, force: true });
+  });
+
+  it('excludes the out-of-window session but includes the in-window one', async () => {
+    const now = new Date('2026-06-28T00:00:00Z'); // 1 day after DATE, ~1.5yr after OLD_DATE
+    const { candidates } = await sweep({ baseDir: sweepBaseDir, apply: false, sinceDays: 5, now });
+
+    expect(candidates.some((c) => c.date === OLD_DATE)).toBe(false);
+    expect(candidates.some((c) => c.date === DATE && c.sessionId === SESSION_ID)).toBe(true);
+  });
+
+  it('without --since, both in-window and out-of-window sessions are reported', async () => {
+    const { candidates } = await sweep({ baseDir: sweepBaseDir, apply: false });
+
+    expect(candidates.some((c) => c.date === OLD_DATE)).toBe(true);
+    expect(candidates.some((c) => c.date === DATE)).toBe(true);
   });
 });
