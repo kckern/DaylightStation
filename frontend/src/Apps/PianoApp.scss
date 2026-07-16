@@ -2670,15 +2670,15 @@
   dt { opacity: 0.6; } dd { margin: 0; }
 }
 
-// Practice scope popover (audit J5) — replaces section chips / Loop / Clear / readout.
-.piano-score-practice-wrap { position: relative; display: inline-block; }
-.piano-score-practice-menu {
+// Loop control popover (audit L1/L2) — first-class labeled loop with one-tap clear.
+.piano-score-loop-wrap { position: relative; display: inline-block; }
+.piano-score-loop-menu {
   position: absolute; bottom: calc(100% + 0.4rem); left: 0; z-index: 21;
   display: flex; flex-direction: column; gap: 0.25rem; min-width: 12rem;
   padding: 0.4rem; background: var(--piano-surface, #1f1f26);
   border: 1px solid var(--piano-border, #34343f); border-radius: var(--r-md, 12px);
   box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5);
-  .piano-score-practice-opt { justify-content: flex-start; text-align: left; }
+  .piano-score-loop-opt { justify-content: flex-start; text-align: left; }
 }
 // Shared backdrop that closes any open popover on an outside tap (audit M4).
 .piano-score-popover-backdrop {

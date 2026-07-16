@@ -1,6 +1,6 @@
 import React, { useState, memo } from 'react';
 import HandsControl from './HandsControl.jsx';
-import PracticeScope from './PracticeScope.jsx';
+import LoopControl from './LoopControl.jsx';
 import ViewMenu from './ViewMenu.jsx';
 import { QuarterNoteIcon } from './icons.jsx';
 
@@ -138,7 +138,8 @@ const ScoreViewControls = memo(function ScoreViewControls({
   handsValue = 'both',
   onHandsChange,
   sections = [],
-  scopeLabel = 'Whole piece',
+  loopActive = false,
+  scopeLabel = '',
   onPickSection,
   onStartSelect,
   onClearFocus,
@@ -216,7 +217,8 @@ const ScoreViewControls = memo(function ScoreViewControls({
       )}
 
       {hasFocus && (
-        <PracticeScope
+        <LoopControl
+          active={loopActive}
           scopeLabel={scopeLabel}
           sections={sections}
           onPickSection={onPickSection}
@@ -386,6 +388,7 @@ export default function ScoreTransportBar({
   handsValue,
   onHandsChange,
   sections,
+  loopActive,
   scopeLabel,
   onPickSection,
   onStartSelect,
@@ -450,6 +453,7 @@ export default function ScoreTransportBar({
         handsValue={handsValue}
         onHandsChange={onHandsChange}
         sections={sections}
+        loopActive={loopActive}
         scopeLabel={scopeLabel}
         onPickSection={onPickSection}
         onStartSelect={onStartSelect}

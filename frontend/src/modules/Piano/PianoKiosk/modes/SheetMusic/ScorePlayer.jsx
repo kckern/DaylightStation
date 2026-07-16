@@ -682,11 +682,11 @@ export default function ScorePlayer({ score: scoreMeta }) {
     setFocus(null);
     logger.info('score.focus.clear', {});
   }, [logger]);
-  // Scope label for the Practice control: a section's label, a 1-based measure span,
-  // or "Whole piece" (indices are 0-based internally).
+  // Scope label for the Loop control: a section's label or a 1-based measure span
+  // (indices are 0-based internally); empty when no loop is active.
   const scopeLabel = focus
     ? (focus.label || `m${focus.inMeasure + 1}–m${focus.outMeasure + 1}`)
-    : 'Whole piece';
+    : '';
 
   // ── Bar handlers ──────────────────────────────────────────────────────────────
   const onMode = useCallback((id) => {
@@ -1035,6 +1035,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
         onHandsChange={onHandsChange}
         sections={sections}
         focus={focus}
+        loopActive={!!focus}
         scopeLabel={scopeLabel}
         onPickSection={onPickSection}
         onStartSelect={onStartSelect}

@@ -212,21 +212,21 @@ describe('ScorePlayer — practice range persistence (J3)', () => {
     };
     renderPlayer();
     enterLearn();
-    // Guided selection: Practice → Select measures… → two taps set a custom range.
-    act(() => { fireEvent.click(screen.getByRole('button', { name: /practice:/i })); });
+    // Guided selection: Loop → Select measures… → two taps set a custom range.
+    act(() => { fireEvent.click(screen.getByRole('button', { name: /^loop/i })); });
     act(() => { fireEvent.click(screen.getByRole('button', { name: /select measures/i })); });
     // Selection taps must land near a note (L3 threshold) — tap ON the first note.
     const scroll = document.querySelector('.piano-score-player__scroll');
     act(() => { fireEvent.click(scroll, { clientX: 100, clientY: 100 }); }); // first tap → measure 0
     act(() => { fireEvent.click(scroll, { clientX: 100, clientY: 100 }); }); // second tap → range set
-    // The Practice trigger now shows a measure-span scope (not "Whole piece").
-    expect(screen.getByRole('button', { name: /practice: m1/i })).toBeInTheDocument();
+    // The Loop trigger now shows a measure-span scope.
+    expect(screen.getByRole('button', { name: /loop m1/i })).toBeInTheDocument();
     // Switch to Polish — range must persist.
     act(() => { screen.getByText('Polish').click(); });
-    expect(screen.getByRole('button', { name: /practice: m1/i })).toBeInTheDocument();
-    // Switch to Listen — the Practice control is gone (range released).
+    expect(screen.getByRole('button', { name: /loop m1/i })).toBeInTheDocument();
+    // Switch to Listen — the Loop control is gone (range released).
     act(() => { screen.getByText('Listen').click(); });
-    expect(screen.queryByRole('button', { name: /practice:/i })).toBeNull();
+    expect(screen.queryByRole('button', { name: /^loop/i })).toBeNull();
   });
 });
 
@@ -599,7 +599,7 @@ describe('ScorePlayer — Restart honors the loop in-point (L5)', () => {
     renderPlayer();
     act(() => { screen.getByText('Polish').click(); });
     // Set a loop on measure 2 only (two selection taps at x=160 → step 1 → measure index 1).
-    act(() => { fireEvent.click(screen.getByRole('button', { name: /practice:/i })); });
+    act(() => { fireEvent.click(screen.getByRole('button', { name: /^loop/i })); });
     act(() => { fireEvent.click(screen.getByRole('button', { name: /select measures/i })); });
     const scroll = document.querySelector('.piano-score-player__scroll');
     act(() => { fireEvent.click(scroll, { clientX: 160, clientY: 100 }); });
@@ -624,7 +624,7 @@ describe('ScorePlayer — selection tap threshold (L3)', () => {
     };
     renderPlayer();
     act(() => { screen.getByText('Learn').click(); });
-    act(() => { fireEvent.click(screen.getByRole('button', { name: /practice:/i })); });
+    act(() => { fireEvent.click(screen.getByRole('button', { name: /^loop/i })); });
     act(() => { fireEvent.click(screen.getByRole('button', { name: /select measures/i })); });
     const scroll = document.querySelector('.piano-score-player__scroll');
     // A tap 800px right of the last note (margin) must NOT arm an in-point.
