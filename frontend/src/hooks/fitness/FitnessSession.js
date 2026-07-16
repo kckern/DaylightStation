@@ -803,6 +803,29 @@ export class FitnessSession {
   }
 
   /**
+   * Close a session entity that has been superseded by a device reassignment
+   * (guest switch). Stamps `endTime`/`status` unconditionally, independent of
+   * whether the reassignment also triggers an entity-to-entity data transfer,
+   * so no entity is left `status: active, endTime: null` after its device
+   * moves to a new occupant. Idempotent — calling this on an already-closed
+   * entity is a harmless no-op (see SessionEntity#end's active-status guard).
+   *
+   * @see /docs/design/guest-switch-session-transition.md
+   * @param {string} entityId
+   * @param {Object} [options]
+   * @param {number} [options.endTime] - Close timestamp (defaults to now)
+   * @param {'transferred'|'superseded'|'dropped'|'ended'} [options.status='superseded']
+   */
+  closeEntity(entityId, { endTime, status = 'superseded' } = {}) {
+    if (!entityId) return;
+    this.endSessionEntity(entityId, {
+      status,
+      timestamp: Number.isFinite(endTime) ? endTime : Date.now(),
+      reason: 'reassigned'
+    });
+  }
+
+  /**
    * Phase 4: Transfer session data from one entity to another.
    * Used during grace period transfers when a brief session is merged into successor.
    * 
