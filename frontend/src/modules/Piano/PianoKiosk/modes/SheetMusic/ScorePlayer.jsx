@@ -13,7 +13,7 @@ import { useScoreTransport } from './useScoreTransport.js';
 import { tweenScrollTo, cancelScrollTween } from './scrollTween.js';
 import { partsOf, cyclePart, buildPlayTimeline, youMidisAt } from './playParts.js';
 import { staffLabels, defaultActiveParts, expectedMidisAtStep } from './activeParts.js';
-import { rangeSteps, clampStepToRange, sectionToRange } from './focusRange.js';
+import { rangeSteps, clampStepToRange, sectionToRange, homeStep } from './focusRange.js';
 import useFollowTracker from './useFollowTracker.js';
 import useMetronomeClick from './useMetronomeClick.js';
 import useCountIn from './useCountIn.js';
@@ -745,11 +745,14 @@ export default function ScorePlayer({ score: scoreMeta }) {
     transport.stop();
     if (mode === 'listen') silenceScheduled();
     flushPlaybackNow();
-    setStep(0);
+    const home = homeStep(rangeRef.current); // loop in-point when a loop is active (audit L5)
+    setStep(home);
     setStruck(() => new Set());
     setGrades({});          // a fresh run clears the previous grades…
     setSummaryOpen(false);  // …and closes any open summary
-    scrollRef.current?.scrollTo({ top: 0, left: 0 });
+    // The auto-follow effect scrolls to the new step; only a true top-of-piece
+    // reset should force-scroll to the origin.
+    if (home === 0) scrollRef.current?.scrollTo({ top: 0, left: 0 });
   }, [transport, mode, silenceScheduled, flushPlaybackNow, countIn]);
 
   // Run summary Replay: reset the run (clears grades + closes the panel).

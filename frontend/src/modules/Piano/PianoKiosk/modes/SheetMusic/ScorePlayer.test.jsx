@@ -552,3 +552,29 @@ describe('ScorePlayer — Listen mode', () => {
     expect(h.sendPanic).toHaveBeenCalled(); // flushed, won't drone
   });
 });
+
+describe('ScorePlayer — Restart honors the loop in-point (L5)', () => {
+  it('Restart returns to the loop in-point, not measure 1', () => {
+    h.layoutExtras = {
+      steps: [
+        { onsetQuarter: 0, measure: 0, notes: [{ midi: 64, staff: 0, x: 100, top: 10, bottom: 200, width: 8 }] },
+        { onsetQuarter: 1, measure: 1, notes: [{ midi: 62, staff: 0, x: 160, top: 10, bottom: 200, width: 8 }] },
+      ],
+      measures: [
+        { index: 0, number: 1, firstStep: 0, lastStep: 0 },
+        { index: 1, number: 2, firstStep: 1, lastStep: 1 },
+      ],
+    };
+    renderPlayer();
+    act(() => { screen.getByText('Polish').click(); });
+    // Set a loop on measure 2 only (two selection taps at x=160 → step 1 → measure index 1).
+    act(() => { fireEvent.click(screen.getByRole('button', { name: /practice:/i })); });
+    act(() => { fireEvent.click(screen.getByRole('button', { name: /select measures/i })); });
+    const scroll = document.querySelector('.piano-score-player__scroll');
+    act(() => { fireEvent.click(scroll, { clientX: 160, clientY: 100 }); });
+    act(() => { fireEvent.click(scroll, { clientX: 160, clientY: 100 }); });
+    expect(screen.getByText('m 2 / 2')).toBeTruthy(); // focus jump put the cursor at the in-point
+    act(() => { fireEvent.click(screen.getByRole('button', { name: /restart/i })); });
+    expect(screen.getByText('m 2 / 2')).toBeTruthy(); // NOT m 1 / 2
+  });
+});

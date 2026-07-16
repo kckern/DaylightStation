@@ -34,4 +34,9 @@ export function sectionToRange(section, measures) {
   return { inMeasure, outMeasure };
 }
 
-export default { rangeSteps, clampStepToRange, nextStepInRange, sectionToRange };
+/** Where Restart/reset should land: the loop in-point when a range is active, else 0. */
+export function homeStep(range) {
+  return range ? range[0] : 0;
+}
+
+export default { rangeSteps, clampStepToRange, nextStepInRange, sectionToRange, homeStep };

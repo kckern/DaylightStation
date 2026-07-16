@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { rangeSteps, clampStepToRange, nextStepInRange, sectionToRange } from './focusRange.js';
+import { rangeSteps, clampStepToRange, nextStepInRange, sectionToRange, homeStep } from './focusRange.js';
 
 const MEAS = [
   { index: 0, firstStep: 0, lastStep: 1 },
@@ -23,5 +23,14 @@ describe('focusRange', () => {
   it('sectionToRange maps a section (measure numbers) to measure indices', () => {
     expect(sectionToRange({ startMeasure: 3, endMeasure: 4 }, [{ number: 3, index: 1 }, { number: 4, index: 2 }]))
       .toEqual({ inMeasure: 1, outMeasure: 2 });
+  });
+});
+
+describe('homeStep', () => {
+  it('returns the range in-point when a loop is active', () => {
+    expect(homeStep([4, 9])).toBe(4);
+  });
+  it('returns 0 with no loop', () => {
+    expect(homeStep(null)).toBe(0);
   });
 });
