@@ -312,6 +312,12 @@ export class ImmichClient {
    */
   parseDuration(durationStr) {
     if (!durationStr || durationStr === '0:00:00.00000') return null;
+    // Immich has returned duration as a raw number (seconds) in some API
+    // versions — accept it directly instead of crashing on .split().
+    if (typeof durationStr === 'number') {
+      return Number.isFinite(durationStr) ? Math.round(durationStr) : null;
+    }
+    if (typeof durationStr !== 'string') return null;
     const parts = durationStr.split(':');
     if (parts.length !== 3) return null;
     const [h, m, rest] = parts;
