@@ -321,3 +321,31 @@ export function runSessionBackfill({ entities, thresholdMs, sessionEndTime } = {
     removedOccupants: collectFullyAbsorbedOccupants(perDevice)
   };
 }
+
+export const DEFAULT_INSIGNIFICANT_USAGE = { maxCoins: 1, maxActiveZoneSeconds: 5, maxHrSamples: 3 };
+
+const ACTIVE_ZONE_VALUES = new Set(['active', 'warm', 'hot', 'a', 'w', 'h']);
+
+export function computeOccupantEffort(series, occupantId, { intervalSeconds = 5 } = {}) {
+  const s = series && typeof series === 'object' ? series : {};
+  const hr = Array.isArray(s[`user:${occupantId}:heart_rate`]) ? s[`user:${occupantId}:heart_rate`] : [];
+  const zone = Array.isArray(s[`user:${occupantId}:zone_id`]) ? s[`user:${occupantId}:zone_id`] : [];
+  const coinsArr = Array.isArray(s[`user:${occupantId}:coins_total`]) ? s[`user:${occupantId}:coins_total`] : [];
+
+  const hrSampleCount = hr.filter((v) => Number.isFinite(v) && v > 0).length;
+  const activeTicks = zone.filter((z) => ACTIVE_ZONE_VALUES.has(z)).length;
+  const activeWarmZoneSeconds = activeTicks * (Number.isFinite(intervalSeconds) ? intervalSeconds : 5);
+
+  let coins = 0;
+  for (let i = coinsArr.length - 1; i >= 0; i--) {
+    if (coinsArr[i] != null) { coins = coinsArr[i]; break; }
+  }
+  return { coins, activeWarmZoneSeconds, hrSampleCount };
+}
+
+export function isInsignificantEffort(effort, cfg = DEFAULT_INSIGNIFICANT_USAGE) {
+  if (!effort) return true;
+  return effort.coins <= cfg.maxCoins
+    && effort.activeWarmZoneSeconds <= cfg.maxActiveZoneSeconds
+    && effort.hrSampleCount < cfg.maxHrSamples;
+}
