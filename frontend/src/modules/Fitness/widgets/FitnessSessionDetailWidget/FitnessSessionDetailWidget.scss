@@ -79,6 +79,7 @@
     top: 4px;
     right: 4px;
     z-index: 2;
+    transform: translateZ(0); // own compositor layer → stays above the playing recap <video>
     width: 36px;
     height: 36px;
     border: none;
@@ -104,6 +105,7 @@
     bottom: 4px;
     right: 4px;
     z-index: 2;
+    transform: translateZ(0); // own compositor layer → stays above the playing recap <video>
     width: 24px;
     height: 24px;
     border: none;
@@ -140,6 +142,7 @@
     bottom: 4px;
     right: 32px;          // left of the delete button
     z-index: 2;
+    transform: translateZ(0); // own compositor layer → stays above the playing recap <video>
     width: 26px;
     height: 26px;
     border: none;
@@ -174,6 +177,7 @@
     color: #fff;
     cursor: pointer;
     z-index: 1;
+    transform: translateZ(0); // own compositor layer → stays above the playing recap <video>
 
     &:active {
       opacity: 0.8;
@@ -185,6 +189,8 @@
     bottom: 0;
     left: 0;
     right: 0;
+    z-index: 1;
+    transform: translateZ(0); // own compositor layer → stays above the playing recap <video>
     padding: 24px 8px 6px;
     background: linear-gradient(
       rgba(0, 0, 0, 0) 0%,

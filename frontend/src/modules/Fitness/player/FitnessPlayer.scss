@@ -441,6 +441,53 @@ dash-video {
       pointer-events: none;
     }
 
+    /* Follow-along mirror: flip ONLY the wrapped Player; the vitals/chart/scrim
+       overlays are siblings and stay upright. One wrapper element = exactly one
+       flip — flipping the nested .player/dash-video/video selector instead would
+       double-flip and cancel out. Instant (no transform transition) to avoid the
+       full-frame squish through scaleX(0) mid-workout. */
+    .fitness-video-mirror-wrap {
+      position: absolute;
+      inset: 0;
+      &--mirrored { transform: scaleX(-1); }
+    }
+
+    /* Top-corner tap zones that flip the video instead of toggling fullscreen.
+       role="button" on the element makes shouldBlockFullscreenToggle skip the
+       container/root fullscreen capture handlers, so only the flip fires. */
+    .fitness-mirror-hotspot {
+      position: absolute;
+      top: 0;
+      width: 25%;
+      height: 30%;
+      z-index: 40;
+      display: flex;
+      align-items: flex-start;
+      pointer-events: auto;
+      cursor: pointer;
+      background: transparent;
+      border: 0;
+      touch-action: manipulation;
+      -webkit-tap-highlight-color: transparent;
+
+      &--left { left: 0; justify-content: flex-start; }
+      &--right { right: 0; justify-content: flex-end; }
+
+      &__icon {
+        margin: 12px;
+        font-size: 24px;
+        line-height: 1;
+        color: #fff;
+        opacity: 0.16;
+        text-shadow: 0 1px 3px rgba(0, 0, 0, 0.6);
+        transform: translateZ(0);
+        transition: opacity 0.15s ease, color 0.15s ease;
+      }
+
+      &:active &__icon { opacity: 0.5; }
+      &.is-active &__icon { opacity: 0.92; color: #4aa3ff; }
+    }
+
     .fitness-video-shell {
       position: relative;
       width: 100%;
