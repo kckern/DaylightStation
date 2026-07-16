@@ -18,6 +18,7 @@ const h = vi.hoisted(() => ({
   sendNoteAt: vi.fn(),
   sendNoteOffAt: vi.fn(),
   sendPanic: vi.fn(),
+  clickSched: { start: vi.fn(), stop: vi.fn(), setBpm: vi.fn() },
 }));
 
 // Derive per-onset full-staff steps from the melody events: the first pitch of
@@ -48,6 +49,9 @@ vi.mock('../../PianoPlaybackContext.jsx', () => ({ usePianoPlayback: () => ({ se
 vi.mock('../../PianoConfig.jsx', () => ({ usePianoKioskConfig: () => ({ config: { keyboard: { startNote: 21, endNote: 108 } } }) }));
 vi.mock('../../PianoBreadcrumbContext.jsx', () => ({ usePianoBreadcrumb: () => {} }));
 vi.mock('../../useReloadGuard.js', () => ({ default: () => {} }));
+// Spyable click scheduler: useMetronomeClick creates one per enable, so hand it
+// the shared holder object and assert on start/stop/setBpm.
+vi.mock('./clickScheduler.js', () => ({ createClickScheduler: () => h.clickSched }));
 
 // Stub the engraver: report a known layout (melody events + derived per-onset
 // steps), render the cursor / light-up children.
@@ -95,6 +99,10 @@ beforeEach(() => {
   // previous test's fn at render time, so re-binding scopes each test's
   // assertions to panics sent by ITS OWN component instance.
   h.sendPanic = vi.fn();
+  // Same re-binding treatment for the click scheduler: the hook's cleanup calls
+  // stop() on unmount, which for a stale shared instance would leak a stop()
+  // from a PREVIOUS test's component into this test's assertions.
+  h.clickSched = { start: vi.fn(), stop: vi.fn(), setBpm: vi.fn() };
 });
 
 // Scores now open in Listen (default). The Learn tests select Learn first.
@@ -625,5 +633,30 @@ describe('ScorePlayer — selection tap threshold (L3)', () => {
     // A tap on a real note proceeds normally.
     act(() => { fireEvent.click(scroll, { clientX: 100, clientY: 100 }); });
     expect(screen.getByText(/now tap the last/i)).toBeInTheDocument();
+  });
+});
+
+describe('ScorePlayer — metronome in Learn (M1/M2/M4)', () => {
+  it('shows a labeled BPM toggle in Learn; toggling starts/stops the click immediately', () => {
+    renderPlayer();
+    enterLearn();
+    const btn = screen.getByRole('button', { name: /metronome/i });
+    expect(btn).toHaveTextContent('100'); // parseMusicXml default tempo 100 × 100% (note icon is SVG)
+    expect(btn.querySelector('svg')).not.toBeNull(); // QuarterNoteIcon
+    expect(btn).toHaveAttribute('aria-pressed', 'false'); // Learn defaults OFF
+    expect(h.clickSched.start).not.toHaveBeenCalled();
+    act(() => { fireEvent.click(btn); });
+    expect(h.clickSched.start).toHaveBeenCalledWith(100); // free-running click starts NOW
+    act(() => { fireEvent.click(btn); });
+    expect(h.clickSched.stop).toHaveBeenCalled();
+  });
+
+  it('Learn metronome follows the tempo control', () => {
+    renderPlayer();
+    enterLearn();
+    act(() => { fireEvent.click(screen.getByRole('button', { name: /^tempo/i })); });
+    act(() => { fireEvent.click(screen.getByRole('button', { name: '50%' })); }); // exact — /50%/ also hits "150%"
+    act(() => { fireEvent.click(screen.getByRole('button', { name: /metronome/i })); });
+    expect(h.clickSched.start).toHaveBeenCalledWith(50); // 100 × 0.5
   });
 });

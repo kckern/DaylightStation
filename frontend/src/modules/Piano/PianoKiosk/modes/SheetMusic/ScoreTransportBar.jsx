@@ -2,6 +2,7 @@ import React, { useState, memo } from 'react';
 import HandsControl from './HandsControl.jsx';
 import PracticeScope from './PracticeScope.jsx';
 import ViewMenu from './ViewMenu.jsx';
+import { QuarterNoteIcon } from './icons.jsx';
 
 // Tab order: Listen · Learn · Polish · Perform.
 const MODES = [
@@ -145,6 +146,7 @@ const ScoreViewControls = memo(function ScoreViewControls({
   onToggleKeyboard,
   clickOn = false,
   onToggleClick,
+  bpm = 90,
   meta = {},
   onBodyRender,
 }) {
@@ -161,12 +163,15 @@ const ScoreViewControls = memo(function ScoreViewControls({
   const isPerform = mode === 'perform';
   const hasParts = !isPerform;
   const hasViewControls = !isPerform;
-  // The metronome-click toggle lives in Polish only — the only mode with an
-  // audible, graded beat. Learn is self-paced; Listen's own performance is the beat.
-  const hasClick = mode === 'polish';
-  // Tempo control is a practice knob in BOTH Listen and Polish (Polish practices
-  // below tempo; audit J1). Key transpose + play-along stay Listen-only.
-  const hasTempo = mode === 'listen' || mode === 'polish';
+  // The metronome button lives in Learn AND Polish (audit M1/M2). In Polish it
+  // ARMS the run click (beat sounds while the graded run plays); in Learn it IS
+  // the metronome (a free-running practice beat starts the moment it's toggled).
+  // Listen's own performance is the beat; Perform is chrome-free.
+  const hasClick = mode === 'polish' || mode === 'learn';
+  // Tempo is a practice knob everywhere but Perform (audit J1/M4): Listen slows
+  // the demo, Polish runs below tempo, Learn drives the free-running metronome.
+  // Key transpose + play-along stay Listen-only.
+  const hasTempo = mode !== 'perform';
   const hasListenExtras = mode === 'listen';
   // Focus range (section chips + custom loop) is a Learn + Polish practice affordance.
   const hasFocus = mode === 'learn' || mode === 'polish';
@@ -223,11 +228,12 @@ const ScoreViewControls = memo(function ScoreViewControls({
         <button
           type="button"
           className={`piano-score-btn piano-score-click${clickOn ? ' is-on' : ''}`}
-          aria-label="Metronome click"
+          aria-label="Metronome"
           aria-pressed={clickOn}
           onClick={onToggleClick}
         >
-          {'♩'}
+          <QuarterNoteIcon />
+          <span className="tabular-nums">{bpm}</span>
         </button>
       )}
 
@@ -328,9 +334,9 @@ const ScoreViewControls = memo(function ScoreViewControls({
  * breadcrumb-only).
  *
  * Mode-aware clusters:
- *  Listen  — playback (reset/run/position), part roles, tempo, play-along, size/keyboard/info, click toggle.
- *  Learn   — parts + click toggle + position (transport is a no-op — Learn waits).
- *  Polish  — parts + run/reset + position.
+ *  Listen  — playback (reset/run/position), part roles, key, tempo, view menu.
+ *  Learn   — parts + focus + metronome (free-running) + tempo + position (transport is a no-op — Learn waits).
+ *  Polish  — parts + focus + metronome (arms the run click) + tempo + run/reset + position.
  *  Perform — a {page} / {pages} indicator only (no parts / no transport / no view controls).
  *
  * Perf structure (Task 10): this component is a THIN SHELL. It threads props and
@@ -386,6 +392,7 @@ export default function ScoreTransportBar({
   onToggleKeyboard,
   clickOn,
   onToggleClick,
+  bpm,
   meta,
   onBodyRender,
 }) {
@@ -448,6 +455,7 @@ export default function ScoreTransportBar({
         onToggleKeyboard={onToggleKeyboard}
         clickOn={clickOn}
         onToggleClick={onToggleClick}
+        bpm={bpm}
         meta={meta}
         onBodyRender={onBodyRender}
       />
