@@ -174,6 +174,16 @@ export class GuestAssignmentService {
           type: previousEntityId ? 'entity-to-entity' : 'user-to-entity'
         });
         
+        // Close-on-reassign (fitness identity reconciliation, Task 5): stamp
+        // the prior entity now, unconditionally — don't rely solely on the
+        // entity-to-entity transfer below (which may not fire, e.g. if the
+        // successor entity fails to be created). Without this, a superseded
+        // entity can be left `status: active, endTime: null` and later get
+        // measured as spanning the whole session (the "elizabeth" bug).
+        if (previousEntityId && session.closeEntity) {
+          session.closeEntity(previousEntityId, { endTime: now, status: 'transferred' });
+        }
+
         if (previousEntityId) {
           transferredFromEntity = previousEntityId;
         } else {
@@ -203,13 +213,14 @@ export class GuestAssignmentService {
           thresholdMs: this.thresholdMs
         });
 
-        // End the previous entity as dropped (exceeded usage threshold)
-        if (previousEntityId && session.endSessionEntity) {
-          session.endSessionEntity(previousEntityId, {
-            status: 'dropped',
-            timestamp: now,
-            reason: 'guest_replaced'
-          });
+        // Close-on-reassign (fitness identity reconciliation, Task 5): the
+        // previous segment exceeded the continuous-usage threshold, so it is
+        // honored as its own distinct participant — but its entity must still
+        // be closed (endTime + non-active status) now that the device has
+        // moved on, or the segment builder measures it as spanning the whole
+        // session (the "elizabeth" bug).
+        if (previousEntityId && session.closeEntity) {
+          session.closeEntity(previousEntityId, { endTime: now, status: 'superseded' });
         }
       }
     }
