@@ -278,50 +278,6 @@ export function collectFullyAbsorbedOccupants(perDevice) {
   return removed;
 }
 
-/**
- * High-level entry point — runs the full backfill pass.
- *
- * @param {Object} input
- * @param {Array<Object>} input.entities         - sessionData.entities
- * @param {number} input.thresholdMs             - GuestAssignmentService.thresholdMs
- * @param {number} [input.sessionEndTime]        - fallback for open segments
- * @returns {{
- *   perDevice: Map<string, Array<Object>>,
- *   transfers: Array<{ fromOccupantId, toOccupantId, reason }>,
- *   keptOccupants: Set<string>,
- *   removedOccupants: Set<string>
- * }}
- */
-export function runSessionBackfill({ entities, thresholdMs, sessionEndTime } = {}) {
-  const perDevice = buildSegmentsPerDevice(entities, sessionEndTime);
-  const allTransfers = [];
-
-  for (const segments of perDevice.values()) {
-    // Pass 1: cycling detection (OI-2).
-    detectCyclingSegments(segments, thresholdMs);
-    // Pass 2: absorb sub-T per the rules.
-    const transfers = applyAbsorbRules(segments, thresholdMs);
-    allTransfers.push(...transfers);
-  }
-
-  // Dedup transfers: if A→B appears twice (e.g. across devices) only run once.
-  const seen = new Set();
-  const dedupTransfers = [];
-  for (const t of allTransfers) {
-    const key = `${t.fromOccupantId}>${t.toOccupantId}`;
-    if (seen.has(key)) continue;
-    seen.add(key);
-    dedupTransfers.push(t);
-  }
-
-  return {
-    perDevice,
-    transfers: dedupTransfers,
-    keptOccupants: collectKeptOccupants(perDevice),
-    removedOccupants: collectFullyAbsorbedOccupants(perDevice)
-  };
-}
-
 export const DEFAULT_INSIGNIFICANT_USAGE = { maxCoins: 1, maxActiveZoneSeconds: 5, maxHrSamples: 3 };
 
 const ACTIVE_ZONE_VALUES = new Set(['active', 'warm', 'hot', 'a', 'w', 'h']);
@@ -444,4 +400,122 @@ export function buildOccupancySegments({ entities, series, sessionEndTime, inter
     perDevice.get(deviceId).unshift(seg); // series-only ghost precedes the honored occupant
   }
   return perDevice;
+}
+
+/**
+ * Effort-based absorb: an insignificant, non-honored segment folds forward into
+ * its device successor; if none, backward into the prior substantial occupant.
+ *
+ * @param {Array<Object>} segments
+ * @param {Object} cfg  - DEFAULT_INSIGNIFICANT_USAGE-shaped config
+ * @returns {Array<{ fromOccupantId, toOccupantId, reason }>}
+ */
+export function applyEffortAbsorb(segments, cfg) {
+  const transfers = [];
+  if (!Array.isArray(segments)) return transfers;
+  for (let i = 0; i < segments.length; i++) {
+    const seg = segments[i];
+    if (seg.absorbed || seg.honored || seg.inSessionTransferred) continue;
+    if (!isInsignificantEffort(seg.effort, cfg)) continue;
+    const next = segments.slice(i + 1).find(s => !s.inSessionTransferred && s.occupantId !== seg.occupantId);
+    if (next) {
+      transfers.push({ fromOccupantId: seg.occupantId, toOccupantId: next.occupantId, reason: 'insignificant-forward' });
+      seg.absorbed = true; seg.absorbedInto = next.occupantId; continue;
+    }
+    const prior = segments.slice(0, i).reverse().find(s => !s.absorbed && s.occupantId !== seg.occupantId);
+    if (prior) {
+      transfers.push({ fromOccupantId: seg.occupantId, toOccupantId: prior.occupantId, reason: 'insignificant-backward' });
+      seg.absorbed = true; seg.absorbedInto = prior.occupantId;
+    }
+  }
+  return transfers;
+}
+
+/**
+ * Cross-device merge for a single known user recorded under alias ids.
+ *
+ * @param {Map<string, Array<Object>>} perDevice
+ * @param {Object} [knownUserAliases]  - map of rawId -> canonicalId
+ * @returns {Array<{ fromOccupantId, toOccupantId, reason: 'known-user-device-swap' }>}
+ */
+export function applyKnownUserDeviceMerge(perDevice, knownUserAliases = {}) {
+  const merges = [];
+  const canonical = (id) => knownUserAliases[id] || id;
+  // Group surviving (non-absorbed) segments by canonical known-user id → set of raw ids/devices.
+  const rawByCanonical = new Map();
+  for (const segs of perDevice.values()) {
+    for (const seg of segs) {
+      if (seg.absorbed || seg.inSessionTransferred) continue;
+      if (!isKnownUserId(seg.occupantId)) continue;
+      const c = canonical(seg.occupantId);
+      if (!rawByCanonical.has(c)) rawByCanonical.set(c, new Set());
+      rawByCanonical.get(c).add(seg.occupantId);
+    }
+  }
+  for (const [c, rawIds] of rawByCanonical.entries()) {
+    for (const raw of rawIds) {
+      if (raw === c) continue;
+      merges.push({ fromOccupantId: raw, toOccupantId: c, reason: 'known-user-device-swap' });
+    }
+  }
+  return merges;
+}
+
+/**
+ * High-level entry point — runs the full backfill pass.
+ *
+ * When `series` is supplied, uses the effort-based absorb pass plus
+ * cross-device known-user merging. When `series` is omitted, falls back to
+ * the legacy duration-only path (existing callers unaffected).
+ *
+ * @param {Object} input
+ * @param {Array<Object>} input.entities         - sessionData.entities
+ * @param {Object} [input.series]                - timeseries data (user:<id>:heart_rate keys); triggers effort-based path
+ * @param {number} input.thresholdMs             - GuestAssignmentService.thresholdMs (legacy path)
+ * @param {number} [input.sessionEndTime]        - fallback for open segments
+ * @param {Object} [input.insignificantUsage]    - DEFAULT_INSIGNIFICANT_USAGE-shaped config override
+ * @param {number} [input.intervalSeconds=5]     - sample interval for effort computation
+ * @param {Object} [input.knownUserAliases]      - map of rawId -> canonicalId for cross-device merge
+ * @returns {{
+ *   perDevice: Map<string, Array<Object>>,
+ *   transfers: Array<{ fromOccupantId, toOccupantId, reason }>,
+ *   merges: Array<{ fromOccupantId, toOccupantId, reason: 'known-user-device-swap' }>,
+ *   keptOccupants: Set<string>,
+ *   removedOccupants: Set<string>
+ * }}
+ */
+export function runSessionBackfill({ entities, series, thresholdMs, sessionEndTime, insignificantUsage, intervalSeconds = 5, knownUserAliases = {} } = {}) {
+  // Legacy duration-only path preserved when no series is supplied.
+  if (!series) {
+    const perDevice = buildSegmentsPerDevice(entities, sessionEndTime);
+    const allTransfers = [];
+    for (const segments of perDevice.values()) {
+      detectCyclingSegments(segments, thresholdMs);
+      allTransfers.push(...applyAbsorbRules(segments, thresholdMs));
+    }
+    const t = dedupeTransfers(allTransfers);
+    return { perDevice, transfers: t, merges: [], keptOccupants: collectKeptOccupants(perDevice), removedOccupants: collectFullyAbsorbedOccupants(perDevice) };
+  }
+
+  const cfg = insignificantUsage || DEFAULT_INSIGNIFICANT_USAGE;
+  const perDevice = buildOccupancySegments({ entities, series, sessionEndTime, intervalSeconds });
+  const allTransfers = [];
+  for (const segments of perDevice.values()) {
+    detectCyclingSegments(segments, thresholdMs); // OI-2 still protects real turn-taking
+    allTransfers.push(...applyEffortAbsorb(segments, cfg));
+  }
+  const merges = applyKnownUserDeviceMerge(perDevice, knownUserAliases);
+  return {
+    perDevice,
+    transfers: dedupeTransfers(allTransfers),
+    merges,
+    keptOccupants: collectKeptOccupants(perDevice),
+    removedOccupants: new Set([...collectFullyAbsorbedOccupants(perDevice), ...merges.map(m => m.fromOccupantId)])
+  };
+}
+
+function dedupeTransfers(list) {
+  const seen = new Set(); const out = [];
+  for (const t of list) { const k = `${t.fromOccupantId}>${t.toOccupantId}`; if (seen.has(k)) continue; seen.add(k); out.push(t); }
+  return out;
 }
