@@ -610,6 +610,34 @@ describe('ScorePlayer — Restart honors the loop in-point (L5)', () => {
   });
 });
 
+describe('ScorePlayer — loop endpoint nudging (L2)', () => {
+  it('nudging "Loop end later" from the menu grows the loop by one measure', () => {
+    h.layoutExtras = {
+      steps: [
+        { onsetQuarter: 0, measure: 0, notes: [{ midi: 64, staff: 0, x: 100, top: 10, bottom: 200, width: 8 }] },
+        { onsetQuarter: 1, measure: 1, notes: [{ midi: 62, staff: 0, x: 160, top: 10, bottom: 200, width: 8 }] },
+      ],
+      measures: [
+        { index: 0, number: 1, firstStep: 0, lastStep: 0 },
+        { index: 1, number: 2, firstStep: 1, lastStep: 1 },
+      ],
+    };
+    renderPlayer();
+    act(() => { screen.getByText('Learn').click(); });
+    // Set a loop of m1–m1 (two selection taps on the first note).
+    act(() => { fireEvent.click(screen.getByRole('button', { name: /^loop/i })); });
+    act(() => { fireEvent.click(screen.getByRole('button', { name: /select measures/i })); });
+    const scroll = document.querySelector('.piano-score-player__scroll');
+    act(() => { fireEvent.click(scroll, { clientX: 100, clientY: 100 }); });
+    act(() => { fireEvent.click(scroll, { clientX: 100, clientY: 100 }); });
+    expect(screen.getByRole('button', { name: /loop m1–m1/i })).toBeInTheDocument();
+    // Open the Loop menu and nudge the end later.
+    act(() => { fireEvent.click(screen.getByRole('button', { name: /loop m1–m1/i })); });
+    act(() => { fireEvent.click(screen.getByRole('button', { name: /loop end later/i })); });
+    expect(screen.getByRole('button', { name: /loop m1–m2/i })).toBeInTheDocument();
+  });
+});
+
 describe('ScorePlayer — selection tap threshold (L3)', () => {
   it('ignores a margin tap during loop selection instead of committing a far measure', () => {
     h.layoutExtras = {

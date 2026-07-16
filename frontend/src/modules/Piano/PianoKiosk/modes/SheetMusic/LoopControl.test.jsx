@@ -27,6 +27,15 @@ describe('LoopControl', () => {
     expect(onPick).toHaveBeenCalledWith({ label: 'A' });
   });
 
+  it('active menu offers endpoint nudging that does not close the menu (L2)', () => {
+    const onNudge = vi.fn();
+    render(<LoopControl active scopeLabel="m9–m16" sections={[]} onNudge={onNudge} onStartSelect={() => {}} onClearFocus={() => {}} />);
+    fireEvent.click(screen.getByRole('button', { name: /loop m9/i }));
+    fireEvent.click(screen.getByRole('button', { name: /start earlier/i }));
+    expect(onNudge).toHaveBeenCalledWith('in', -1);
+    expect(screen.getByRole('button', { name: /end later/i })).toBeInTheDocument(); // menu still open
+  });
+
   it('inactive: the open menu has no Clear loop option', () => {
     render(<LoopControl active={false} scopeLabel="" sections={[{ label: 'A' }]} onPickSection={() => {}} onStartSelect={() => {}} onClearFocus={() => {}} />);
     fireEvent.click(screen.getByRole('button', { name: /^loop/i }));

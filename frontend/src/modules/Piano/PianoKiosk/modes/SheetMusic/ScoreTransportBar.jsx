@@ -143,6 +143,7 @@ const ScoreViewControls = memo(function ScoreViewControls({
   onPickSection,
   onStartSelect,
   onClearFocus,
+  onNudge,
   keyboardVisible,
   onToggleKeyboard,
   clickActive = false, // mode-dependent: Learn = free-run state, Polish = persisted arm state
@@ -224,6 +225,7 @@ const ScoreViewControls = memo(function ScoreViewControls({
           onPickSection={onPickSection}
           onStartSelect={onStartSelect}
           onClearFocus={onClearFocus}
+          onNudge={onNudge}
         />
       )}
 
@@ -393,6 +395,7 @@ export default function ScoreTransportBar({
   onPickSection,
   onStartSelect,
   onClearFocus,
+  onNudge,
   keyboardVisible,
   onToggleKeyboard,
   clickActive,
@@ -458,6 +461,7 @@ export default function ScoreTransportBar({
         onPickSection={onPickSection}
         onStartSelect={onStartSelect}
         onClearFocus={onClearFocus}
+        onNudge={onNudge}
         keyboardVisible={keyboardVisible}
         onToggleKeyboard={onToggleKeyboard}
         clickActive={clickActive}
