@@ -105,7 +105,7 @@ export function ContentCombobox({
     openWithSiblings, drill, goUp, goToCrumb, paginate,
     handleClose, select, commit,
     resolvedTitle, isSearching, pendingSources, sourceErrors, truncatedAt,
-  } = useContentCombobox({ value, onChange, searchParams, appResults, selectContainers });
+  } = useContentCombobox({ value, onChange, searchParams, appResults, selectContainers, allowFreeform });
 
   const mode = state.mode;
   const isBrowse = mode === Modes.BROWSE;

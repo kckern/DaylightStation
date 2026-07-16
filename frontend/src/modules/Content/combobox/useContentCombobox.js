@@ -153,7 +153,7 @@ async function fetchSiblingsData(contentId) {
  * @param {string} [args.searchParams] - extra query params for search endpoints
  * @param {boolean} [args.appResults] - merge app-registry matches ahead of content results
  */
-export function useContentCombobox({ value, onChange, searchParams = '', appResults = false, selectContainers = false }) {
+export function useContentCombobox({ value, onChange, searchParams = '', appResults = false, selectContainers = false, allowFreeform = true }) {
   const log = useMemo(() => getChildLogger({ component: 'useContentCombobox', app: 'admin', sessionLog: true }), []);
   const [state, dispatch] = useReducer(reducer, value ?? '', initialState);
 
@@ -573,7 +573,7 @@ export function useContentCombobox({ value, onChange, searchParams = '', appResu
   // ── Lifecycle: close-commit policy + selection ──
   const handleClose = useCallback((reason) => {
     const current = stateRef.current;
-    const decision = closeDecision(current, reason);
+    const decision = closeDecision({ search: current.search, value: current.value, allowFreeform }, reason);
     if (decision.action === 'commit') {
       log.info('freeform.commit_on_close', { freeformValue: decision.value, prevValue: current.value, reason });
       onChangeRef.current?.(decision.value);
@@ -583,7 +583,7 @@ export function useContentCombobox({ value, onChange, searchParams = '', appResu
     invalidateBrowseLoads();
     dispatch({ type: 'CLOSE', reason });
     cancelPendingSearch();
-  }, [cancelPendingSearch, log]);
+  }, [cancelPendingSearch, log, allowFreeform]);
 
   const select = useCallback((item) => {
     log.info('item_select', { contentId: item.id, title: item.title, prevValue: stateRef.current.value });
@@ -612,6 +612,7 @@ export function useContentCombobox({ value, onChange, searchParams = '', appResu
       reason, search: s.search, value: s.value, results: s.results,
       highlightIdx: s.highlight.idx, userNavigated: s.highlight.userNavigated,
       selectContainers, searchSettled: searchSettledRef.current, isContainer,
+      allowFreeform,
     });
     switch (decision.action) {
       case 'select': select(decision.item); break;   // existing helper: onChange(id,item)+close
@@ -637,7 +638,7 @@ export function useContentCombobox({ value, onChange, searchParams = '', appResu
         break;
     }
     return decision;
-  }, [selectContainers, select, drill, cancelPendingSearch, log]);
+  }, [selectContainers, select, drill, cancelPendingSearch, log, allowFreeform]);
 
   // ── 6. Title resolution for the committed value ──
   const [resolvedTitle, setResolvedTitle] = useState(() => (
