@@ -343,10 +343,14 @@ export default function ScorePlayer({ score: scoreMeta }) {
   //           (enabled goes false → the hook's cleanup stops the scheduler).
   // It NEVER gates or advances the cursor. Ticks at the practice tempo.
   const clickActive = mode === 'learn' ? learnClick : clickOn;
-  const clickBpm = Math.round((tempoMap[0]?.bpm || 90) * tempoMult);
+  // The hook gets the EXACT product — the Polish transport runs at exactly
+  // bpm × tempoMult (playTimeline scales by 1/tempoMult), so rounding here would
+  // drift the click against the graded run (63 × 0.5 → 32 vs 31.5 = a full beat
+  // every ~64). Round only the bar's readout.
+  const clickBpmExact = (tempoMap[0]?.bpm || 90) * tempoMult;
   useMetronomeClick({
     enabled: (mode === 'polish' && clickOn && transport.playing) || (mode === 'learn' && learnClick),
-    bpm: clickBpm,
+    bpm: clickBpmExact,
   });
 
   const flashWrong = useCallback(() => {
@@ -1037,8 +1041,8 @@ export default function ScorePlayer({ score: scoreMeta }) {
         onClearFocus={onClearFocus}
         keyboardVisible={keyboardVisible}
         onToggleKeyboard={onToggleKeyboard}
-        clickOn={clickActive}
-        bpm={clickBpm}
+        clickActive={clickActive}
+        bpm={Math.round(clickBpmExact)}
         onToggleClick={onToggleClick}
         meta={meta}
       />
