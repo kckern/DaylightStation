@@ -123,6 +123,18 @@ describe('ScorePlayer — per-score persistence (Task 2.5)', () => {
     renderScore();
     expect(screen.getByRole('tab', { name: /learn/i })).toHaveAttribute('aria-selected', 'true');
   });
+
+  it('restores the metronome arm state for a given score id (M3)', () => {
+    const { unmount } = renderScore();
+    act(() => { screen.getByText('Polish').click(); });
+    const click = screen.getByRole('button', { name: /metronome/i });
+    expect(click).toHaveAttribute('aria-pressed', 'true'); // default ON
+    act(() => { fireEvent.click(click); }); // turn it off
+    unmount();
+    renderScore();
+    act(() => { screen.getByText('Polish').click(); });
+    expect(screen.getByRole('button', { name: /metronome/i })).toHaveAttribute('aria-pressed', 'false');
+  });
 });
 
 describe('ScorePlayer — Learn mode (full-hand, simulated MIDI input)', () => {

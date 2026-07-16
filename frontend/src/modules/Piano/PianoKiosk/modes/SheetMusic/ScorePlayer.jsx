@@ -99,7 +99,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
   // Guided measure-selection state machine (Practice → Select measures…):
   //   null | { stage: 'first' } | { stage: 'last', inMeasure } (audit J5/M3)
   const [selecting, setSelecting] = useState(null);
-  const [clickOn, setClickOn] = useState(true); // Polish metronome — on by default during runs
+  const [clickOn, setClickOn] = useState(() => restored.clickOn !== false); // Polish metronome — on unless turned off
   const [flow, setFlow] = useState('wrapped');
   const [perfPage, setPerfPage] = useState({ page: 1, pages: 1 }); // Perform page indicator (1-based)
   const [scale, setScale] = useState(1);
@@ -353,8 +353,8 @@ export default function ScorePlayer({ score: scoreMeta }) {
   // Persist practice settings per score (device-local) whenever they change, so the
   // piece reopens the way it was left (Task 2.5). Writes are tiny; cost is trivial.
   useEffect(() => {
-    saveScoreSettings(scoreMeta.id, { mode, tempoMult, focus, activeParts, myStaves: [...myStaves] });
-  }, [scoreMeta.id, mode, tempoMult, focus, activeParts, myStaves]);
+    saveScoreSettings(scoreMeta.id, { mode, tempoMult, focus, activeParts, myStaves: [...myStaves], clickOn });
+  }, [scoreMeta.id, mode, tempoMult, focus, activeParts, myStaves, clickOn]);
 
   // A restored range references measure indices; drop it if the engraved score has
   // fewer measures than it expects (the file may have changed since it was saved).
