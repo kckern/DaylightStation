@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 /**
- * Retroactive single-session identity heal.
+ * Retroactive single-session identity heal, plus a `--sweep` mode that scans
+ * every stored session for ones that need healing.
  *
  * Applies the backend's `SessionIdentityHealer.planHeal` plan to an
  * on-disk saved fitness session YAML: folds "ghost" occupants (near-zero
@@ -14,9 +15,20 @@
  *
  * Usage:
  *   node cli/heal-fitness-sessions.cli.mjs <date> <sessionId> [--apply]
+ *   node cli/heal-fitness-sessions.cli.mjs --sweep [--since Nd] [--apply]
  *
- * Example:
+ * Examples:
  *   node cli/heal-fitness-sessions.cli.mjs 2026-06-27 20260627195941 --apply
+ *   node cli/heal-fitness-sessions.cli.mjs --sweep --since 30d
+ *   node cli/heal-fitness-sessions.cli.mjs --sweep --apply
+ *
+ * `--sweep` iterates every `history/fitness/<date>/*.yml` under the (test-
+ * injectable) data base dir, plans a heal for each, and reports the ones
+ * with `needsHeal === true`. Dry-run (no `--apply`) writes NOTHING — it only
+ * reads and reports. `--since Nd` restricts the scan to date directories
+ * within the last N days of a reference "now" (injectable via the `now`
+ * param, or the `HEAL_SWEEP_NOW` env var when run from the CLI — never a
+ * bare `Date.now()` call that a test can't control).
  */
 
 import fs from 'fs/promises';
@@ -170,6 +182,153 @@ export function isValidSessionId(id) {
 }
 
 // ---------------------------------------------------------------------------
+// Sweep — scan all stored sessions for ones that need healing
+// ---------------------------------------------------------------------------
+
+/**
+ * Resolve the `history/fitness` root directory (parent of the per-date
+ * dirs), honoring the same `baseDir` override convention as
+ * `resolveSessionPath`.
+ *
+ * @param {string} [baseDir]
+ * @returns {string}
+ */
+export function historyRoot(baseDir) {
+  const resolvedBaseDir = baseDir || process.env.DAYLIGHT_BASE_PATH || process.cwd();
+  return path.join(resolvedBaseDir, 'data', 'household', 'history', 'fitness');
+}
+
+/**
+ * List the `YYYY-MM-DD` date directories under the history root, sorted
+ * ascending. Returns `[]` if the root doesn't exist (nothing swept yet).
+ *
+ * @param {string} [baseDir]
+ * @returns {Promise<string[]>}
+ */
+export async function listDateDirs(baseDir) {
+  const root = historyRoot(baseDir);
+  let entries;
+  try {
+    entries = await fs.readdir(root, { withFileTypes: true });
+  } catch {
+    return [];
+  }
+  return entries
+    .filter((e) => e.isDirectory() && isValidDate(e.name))
+    .map((e) => e.name)
+    .sort();
+}
+
+/**
+ * Parse a `--since` CLI value of the form `"Nd"` (N days) into a plain
+ * number of days.
+ *
+ * @param {string} value
+ * @returns {number}
+ */
+export function parseSinceArg(value) {
+  const m = /^(\d+)d$/.exec(String(value));
+  if (!m) {
+    throw new Error(`--since value must look like "Nd" (e.g. "30d"), got: ${value}`);
+  }
+  return Number(m[1]);
+}
+
+/**
+ * Compute the `YYYY-MM-DD` cutoff date string for a `--since Nd` window
+ * relative to `now`. Date directory names sort lexically the same as
+ * chronologically, so callers can filter with a plain string comparison
+ * (`dateDir >= cutoff`).
+ *
+ * @param {Date} now
+ * @param {number} sinceDays
+ * @returns {string}
+ */
+export function cutoffDateString(now, sinceDays) {
+  const cutoffMs = now.getTime() - sinceDays * 24 * 60 * 60 * 1000;
+  return new Date(cutoffMs).toISOString().slice(0, 10);
+}
+
+/**
+ * Scan every stored session under `history/fitness/<date>/*.yml`, plan a
+ * heal for each, and collect the ones that need healing. Read-only unless
+ * `apply` is set, in which case each candidate is healed via `heal()`
+ * (which does its own load/plan/apply — the sweep doesn't re-derive the
+ * write from its own scan pass).
+ *
+ * @param {Object} [opts]
+ * @param {string} [opts.baseDir] - override the data-dir root (for tests)
+ * @param {number} [opts.sinceDays] - restrict to date dirs within N days of `now`
+ * @param {boolean} [opts.apply=false] - heal each candidate; dry-run (no writes) otherwise
+ * @param {Date} [opts.now=new Date()] - reference "now" for `--since` filtering (test-injectable)
+ * @returns {Promise<{
+ *   candidates: Array<{date:string, sessionId:string, removed:string[], merges:Array}>,
+ *   applied: Array<{date:string, sessionId:string, changed:boolean}>
+ * }>}
+ */
+export async function sweep({ baseDir, sinceDays, apply = false, now = new Date() } = {}) {
+  const root = historyRoot(baseDir);
+  let dateDirs = await listDateDirs(baseDir);
+
+  if (Number.isFinite(sinceDays)) {
+    const cutoff = cutoffDateString(now, sinceDays);
+    dateDirs = dateDirs.filter((d) => d >= cutoff);
+  }
+
+  const candidates = [];
+  for (const date of dateDirs) {
+    const dir = path.join(root, date);
+    let files;
+    try {
+      files = await fs.readdir(dir);
+    } catch {
+      continue;
+    }
+
+    for (const fileName of files) {
+      if (!fileName.endsWith('.yml')) continue;
+      const sessionId = fileName.slice(0, -'.yml'.length);
+      if (!isValidSessionId(sessionId)) continue;
+
+      let raw;
+      try {
+        raw = await fs.readFile(path.join(dir, fileName), 'utf8');
+      } catch {
+        continue;
+      }
+
+      let obj;
+      try {
+        obj = yaml.load(raw);
+      } catch {
+        continue;
+      }
+      if (!obj || typeof obj !== 'object') continue;
+
+      const plan = planHeal(obj);
+      if (plan.needsHeal) {
+        candidates.push({
+          date,
+          sessionId,
+          removed: plan.removedOccupants,
+          merges: plan.merges
+        });
+      }
+    }
+  }
+
+  const applied = [];
+  if (apply) {
+    for (const c of candidates) {
+      const result = await heal(c.date, c.sessionId, { apply: true, baseDir });
+      applied.push({ date: c.date, sessionId: c.sessionId, changed: result.changed });
+    }
+  }
+
+  return { candidates, applied };
+}
+
+// ---------------------------------------------------------------------------
 // heal()
 // ---------------------------------------------------------------------------
 
@@ -283,13 +442,62 @@ export async function heal(date, sessionId, { apply = false, baseDir } = {}) {
 // CLI
 // ---------------------------------------------------------------------------
 
+async function runSweep(args) {
+  const apply = args.includes('--apply');
+  const sinceIdx = args.indexOf('--since');
+
+  let sinceDays;
+  if (sinceIdx !== -1) {
+    try {
+      sinceDays = parseSinceArg(args[sinceIdx + 1]);
+    } catch (e) {
+      console.error(`ERROR: ${e.message}`);
+      process.exit(1);
+    }
+  }
+
+  const now = process.env.HEAL_SWEEP_NOW ? new Date(process.env.HEAL_SWEEP_NOW) : new Date();
+
+  const { candidates, applied } = await sweep({ sinceDays, apply, now });
+
+  console.log('=== Heal sweep ===');
+  if (Number.isFinite(sinceDays)) console.log(`Window: last ${sinceDays}d (as of ${now.toISOString()})`);
+  console.log('');
+  console.log('date        sessionId       removed              merges');
+  for (const c of candidates) {
+    const removedStr = c.removed.join(',') || '(none)';
+    const mergesStr = c.merges.map((m) => `${m.from}->${m.to}`).join(',') || '(none)';
+    console.log(`${c.date}  ${c.sessionId}  ${removedStr.padEnd(20)}  ${mergesStr}`);
+  }
+  console.log('');
+  console.log(`${candidates.length} session(s) need healing`);
+
+  if (!candidates.length) {
+    // nothing to report either way
+  } else if (apply) {
+    const changedCount = applied.filter((a) => a.changed).length;
+    console.log(`APPLIED — healed ${changedCount} of ${applied.length} candidate session(s).`);
+  } else {
+    console.log('DRY RUN — no changes written. Pass --apply to heal these sessions.');
+  }
+
+  process.exit(0);
+}
+
 async function main() {
   const args = process.argv.slice(2);
+
+  if (args.includes('--sweep')) {
+    await runSweep(args);
+    return;
+  }
+
   const apply = args.includes('--apply');
   const positional = args.filter((a) => !a.startsWith('--'));
 
   if (positional.length !== 2) {
     console.error('Usage: node cli/heal-fitness-sessions.cli.mjs <date> <sessionId> [--apply]');
+    console.error('       node cli/heal-fitness-sessions.cli.mjs --sweep [--since Nd] [--apply]');
     process.exit(1);
   }
   const [date, sessionId] = positional;
