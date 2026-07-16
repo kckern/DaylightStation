@@ -20,6 +20,11 @@ const formatWatchedDate = (dateString) => {
     const yesterday = moment().subtract(1, 'days');
     if (parsed.isSame(today, 'day')) return 'Today';
     if (parsed.isSame(yesterday, 'day')) return 'Yesterday';
+    // For episodes viewed over 12 months ago, include the YYYY year so the
+    // year is disambiguated (the default short format omits it).
+    if (parsed.isBefore(moment().subtract(12, 'months'))) {
+      return formatFitnessDate(parsed.toDate(), { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' });
+    }
     return formatFitnessDate(parsed.toDate());
   } catch (e) {
     return '';
