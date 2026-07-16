@@ -20,6 +20,7 @@ describe('ImmichClient.parseDuration', () => {
     expect(c.parseDuration('')).toBeNull();
     expect(c.parseDuration(null)).toBeNull();
     expect(c.parseDuration(undefined)).toBeNull();
+    expect(c.parseDuration(0)).toBeNull(); // numeric zero == no duration, matches the '0:00:00.00000' sentinel
   });
 
   it('does NOT throw on a non-string duration (the RC2 crash)', () => {
