@@ -2787,6 +2787,8 @@
 // Discrete segmented stepper (tempo & size) — the kiosk touch language, no slider.
 .piano-score-steps { display: flex; align-items: center; gap: 0.3rem; flex-wrap: nowrap; }
 .piano-score-step { min-width: 3.2rem; padding: 0.5rem 0.6rem; font-variant-numeric: tabular-nums; }
+// Resulting-BPM suffix on each tempo step (M4): "75%  ♩ 68".
+.piano-score-step__bpm { display: inline-flex; align-items: center; gap: 0.15rem; opacity: 0.75; font-size: 0.85em; }
 .piano-score-info-popover {
   padding: 0.75rem 1rem; min-width: 14rem; max-width: 22rem;
   dl { margin: 0; display: grid; grid-template-columns: auto 1fr; gap: 0.25rem 0.75rem; }

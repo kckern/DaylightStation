@@ -110,7 +110,7 @@ describe('ScoreTransportBar', () => {
     fireEvent.click(tempoBtn);
     // No slider / no typed value — discrete percent steps commit on tap.
     expect(screen.queryByRole('slider')).toBeNull();
-    fireEvent.click(screen.getByRole('button', { name: '150%' }));
+    fireEvent.click(screen.getByRole('button', { name: /^150%/ }));
     expect(onTempo).toHaveBeenCalledWith(1.5);
   });
 
@@ -120,7 +120,7 @@ describe('ScoreTransportBar', () => {
     const tempoBtn = screen.getByRole('button', { name: /^tempo/i });
     expect(tempoBtn).toHaveTextContent(/100%/);
     fireEvent.click(tempoBtn);
-    fireEvent.click(screen.getByRole('button', { name: '75%' }));
+    fireEvent.click(screen.getByRole('button', { name: /^75%/ }));
     expect(onTempo).toHaveBeenCalledWith(0.75);
     // Listen-only extras stay absent in Polish.
     expect(screen.queryByRole('button', { name: /transpose up/i })).toBeNull();

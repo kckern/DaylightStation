@@ -507,7 +507,7 @@ describe('ScorePlayer — Listen mode', () => {
     await act(async () => {});
     // Half speed (0.5×) → each step takes 2000ms.
     fireEvent.click(screen.getByRole('button', { name: /^tempo/i }));
-    fireEvent.click(screen.getByRole('button', { name: '50%' }));
+    fireEvent.click(screen.getByRole('button', { name: /^50%/ }));
     await act(async () => {});
     screen.getByText('▶').click();
     await act(async () => {});
@@ -655,7 +655,7 @@ describe('ScorePlayer — metronome in Learn (M1/M2/M4)', () => {
     renderPlayer();
     enterLearn();
     act(() => { fireEvent.click(screen.getByRole('button', { name: /^tempo/i })); });
-    act(() => { fireEvent.click(screen.getByRole('button', { name: '50%' })); }); // exact — /50%/ also hits "150%"
+    act(() => { fireEvent.click(screen.getByRole('button', { name: /^50%/ })); }); // anchored — /50%/ also hits "150%"
     act(() => { fireEvent.click(screen.getByRole('button', { name: /metronome/i })); });
     expect(h.clickSched.start).toHaveBeenCalledWith(50); // 100 × 0.5
   });
@@ -667,11 +667,19 @@ describe('ScorePlayer — metronome in Learn (M1/M2/M4)', () => {
     act(() => { fireEvent.click(screen.getByRole('button', { name: /metronome/i })); }); // ON first
     expect(h.clickSched.start).toHaveBeenCalledWith(63);
     act(() => { fireEvent.click(screen.getByRole('button', { name: /^tempo/i })); });
-    act(() => { fireEvent.click(screen.getByRole('button', { name: '50%' })); }); // change tempo while ticking
+    act(() => { fireEvent.click(screen.getByRole('button', { name: /^50%/ })); }); // change tempo while ticking
     // The hook must receive the exact product — rounding belongs to the bar's
     // readout only, or the click drifts against the tempo-scaled timelines
     // (playTimeline scales by exact 1/tempoMult): 32 vs 31.5 = a beat per ~64.
     expect(h.clickSched.setBpm).toHaveBeenCalledWith(31.5);
     expect(screen.getByRole('button', { name: /metronome/i })).toHaveTextContent('32'); // readout IS rounded
+  });
+
+  it('tempo steps show the resulting BPM (M4)', () => {
+    renderPlayer(); // Listen
+    act(() => { fireEvent.click(screen.getByRole('button', { name: /^tempo/i })); });
+    // Each percent step also shows the BPM it produces (base 100 from the fixture).
+    expect(screen.getByRole('button', { name: /^50%.*50/ })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^100%.*100/ })).toBeInTheDocument();
   });
 });
