@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { computeOccupantEffort, isInsignificantEffort, DEFAULT_INSIGNIFICANT_USAGE } from './sessionBackfill.js';
+import { computeOccupantEffort, isInsignificantEffort, DEFAULT_INSIGNIFICANT_USAGE, isKnownUserId, buildOccupancySegments } from './sessionBackfill.js';
 
 const series = (o) => o;
 
@@ -29,5 +29,31 @@ describe('isInsignificantEffort', () => {
     expect(isInsignificantEffort({ coins: 5, activeWarmZoneSeconds: 0, hrSampleCount: 2 }, cfg)).toBe(false);
     expect(isInsignificantEffort({ coins: 0, activeWarmZoneSeconds: 30, hrSampleCount: 2 }, cfg)).toBe(false);
     expect(isInsignificantEffort({ coins: 0, activeWarmZoneSeconds: 0, hrSampleCount: 50 }, cfg)).toBe(false);
+  });
+});
+
+describe('isKnownUserId', () => {
+  it('rejects synthetic guest ids, accepts configured ids', () => {
+    expect(isKnownUserId('grannie')).toBe(true);
+    expect(isKnownUserId('guest-123')).toBe(false);
+    expect(isKnownUserId('#90006')).toBe(false);
+    expect(isKnownUserId('guest_29413')).toBe(false);
+  });
+});
+
+describe('buildOccupancySegments', () => {
+  it('adds a synthetic segment for a series-only occupant (no entity)', () => {
+    const entities = [
+      { entityId: 'e1', profileId: 'grannie', deviceId: '29413', startTime: 400, endTime: null, status: 'active' }
+    ];
+    const series = {
+      'user:soren:heart_rate': [116, 116, null],
+      'user:grannie:heart_rate': [null, null, 80]
+    };
+    const per = buildOccupancySegments({ entities, series, sessionEndTime: 1000, intervalSeconds: 5 });
+    const segs = per.get('29413');
+    const ids = segs.map((s) => s.occupantId).sort();
+    expect(ids).toEqual(['grannie', 'soren']);
+    expect(segs.every((s) => s.effort)).toBe(true);
   });
 });
