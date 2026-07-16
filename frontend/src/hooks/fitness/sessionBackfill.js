@@ -349,3 +349,99 @@ export function isInsignificantEffort(effort, cfg = DEFAULT_INSIGNIFICANT_USAGE)
     && effort.activeWarmZoneSeconds <= cfg.maxActiveZoneSeconds
     && effort.hrSampleCount < cfg.maxHrSamples;
 }
+
+/**
+ * Predicate: is this a known configured user (not a synthetic guest)?
+ *
+ * Returns false for:
+ *   - `guest-*` (Pikachu unidentified form)
+ *   - `#*` (legacy Pikachu form)
+ *   - `guest_*` (device-keyed explicit generic Guest)
+ *
+ * Returns true for configured user IDs.
+ *
+ * @param {string} id
+ * @returns {boolean}
+ */
+export function isKnownUserId(id) {
+  if (typeof id !== 'string' || !id) return false;
+  if (isPikachuId(id)) return false;      // guest-* / #*
+  if (id.startsWith('guest_')) return false; // device-keyed generic guest
+  return true;
+}
+
+/**
+ * Build occupancy segments with effort, including series-only occupants.
+ *
+ * This function extends buildSegmentsPerDevice by:
+ *   1. Computing effort (coins, activeWarmZoneSeconds, hrSampleCount) for every segment
+ *   2. Creating synthetic segments for occupants who appear in the series
+ *      (user:<id>:heart_rate key) but have no entity (no actual session device record).
+ *
+ * Series-only occupants are attributed to a device via successor-fallback:
+ *   - If exactly one device exists, use it.
+ *   - Otherwise, use the device whose first entity has the earliest startTime.
+ *   - If no devices exist, the occupant is skipped.
+ *
+ * Series-only segments carry:
+ *   - entityId: null
+ *   - occupantId, occupantName (both set to the user ID)
+ *   - deviceId (via successor-fallback)
+ *   - startTime: -1, endTime: -1, durationMs: 0
+ *   - status: 'series-only'
+ *   - inSessionTransferred, honored, absorbed, absorbedInto: false/null
+ *   - effort: computed from the series
+ *
+ * Series-only segments are prepended to the device's segment list (ghost precedes the honored).
+ *
+ * @param {Object} input
+ * @param {Array<Object>} input.entities
+ * @param {Object} input.series         - timeseries data (user:<id>:heart_rate keys)
+ * @param {number} input.sessionEndTime
+ * @param {number} [input.intervalSeconds=5]
+ * @returns {Map<string, Array<Object>>}  deviceId -> segments (with effort, including series-only)
+ */
+export function buildOccupancySegments({ entities, series, sessionEndTime, intervalSeconds = 5 } = {}) {
+  const perDevice = buildSegmentsPerDevice(entities, sessionEndTime);
+
+  // Attach effort to every entity-backed segment.
+  for (const segs of perDevice.values()) {
+    for (const seg of segs) {
+      seg.effort = computeOccupantEffort(series, seg.occupantId, { intervalSeconds });
+    }
+  }
+
+  // Series-only occupants: appear as user:<id>:heart_rate but have no entity.
+  const s = series && typeof series === 'object' ? series : {};
+  const entityOccupants = new Set();
+  for (const segs of perDevice.values()) for (const seg of segs) entityOccupants.add(seg.occupantId);
+
+  const seriesOccupants = new Set();
+  for (const key of Object.keys(s)) {
+    const m = /^user:(.+):heart_rate$/.exec(key);
+    if (m) seriesOccupants.add(m[1]);
+  }
+
+  const deviceIds = [...perDevice.keys()];
+  for (const occ of seriesOccupants) {
+    if (entityOccupants.has(occ)) continue;
+    // Successor-fallback: if exactly one device, use it; else the earliest-start device.
+    const deviceId = deviceIds.length === 1
+      ? deviceIds[0]
+      : (deviceIds.length ? deviceIds.slice().sort((a, b) => {
+          const sa = perDevice.get(a)[0]?.startTime ?? Infinity;
+          const sb = perDevice.get(b)[0]?.startTime ?? Infinity;
+          return sa - sb;
+        })[0] : null);
+    if (!deviceId) continue;
+    const effort = computeOccupantEffort(s, occ, { intervalSeconds });
+    const seg = {
+      entityId: null, occupantId: occ, occupantName: occ, deviceId,
+      startTime: -1, endTime: -1, durationMs: 0,
+      status: 'series-only', inSessionTransferred: false,
+      honored: false, absorbed: false, absorbedInto: null, effort
+    };
+    perDevice.get(deviceId).unshift(seg); // series-only ghost precedes the honored occupant
+  }
+  return perDevice;
+}
