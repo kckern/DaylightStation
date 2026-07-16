@@ -58,8 +58,11 @@ so the same person on two devices is never unified.
   across ≥2 devices in one session is unified into one participant.
 - **B — Effort-based absorption:** an accidental assignment with no significant
   usage is folded into the real occupant, regardless of wall-clock duration.
-- **Retroactive repair:** because raw device series are intact, stored sessions
-  (starting with `20260627195941`) can be losslessly re-reconciled.
+- **Retroactive repair + sweep:** because raw device series are intact, stored
+  sessions can be losslessly re-reconciled. A **sweep** scans all historical
+  sessions, reports which ones need healing (ghost participants or mergeable
+  known-user device swaps), and heals them (dry-run / apply). First target:
+  `20260627195941`.
 
 ## Non-goals
 
@@ -152,12 +155,26 @@ turn-taking is never merged.
 - The live roster drops the prior ghost immediately, so the on-screen
   participant list matches the reconciled save.
 
-### Component 3 — Retroactive repair (follow-on)
+### Component 3 — Retroactive heal + sweep (in scope)
 
-A one-off maintenance entry point (CLI or script) that loads a stored session
-YAML, runs the pure reconciliation pass, and rewrites `participants` /
-`summary`. Supports **dry-run** (report the plan) and **apply**. First target:
-`20260627195941`; then scan for other sessions with ghost participants.
+A backend CLI (`cli/heal-fitness-sessions.cli.mjs`, following
+`merge-fitness-sessions.cli.mjs`) with a pure backend healer
+(`SessionIdentityHealer.mjs`) that mirrors the frontend rules against the
+**on-disk** representation (RLE `<name>:<metric>` series, decoded via
+`TimelineService`). Modes:
+
+- **Single heal:** `heal <date> <sessionId> [--apply]` — dry-run reports the
+  plan; `--apply` rewrites `participants` / `summary` and re-encodes series.
+- **Sweep:** `--sweep [--since Nd] [--apply]` — scans all historical session
+  YAML, reports every session needing healing (ghost participants or mergeable
+  known-user device swaps), and heals them with `--apply`.
+
+**Frontend/backend parity:** the live path (frontend `sessionBackfill.js`) and
+the healer (backend `SessionIdentityHealer.mjs`) are parallel implementations
+of the same rules — a deliberate choice matching the existing frontend/backend
+split (cf. `merge-fitness-sessions.cli.mjs` reimplementing summary logic).
+Behavioral parity is guaranteed by a **shared golden fixture** (the
+`20260627195941` session) asserted on both sides.
 
 ---
 
@@ -209,5 +226,6 @@ suites), each a fixture → expected participant set:
    (your "no significant usage" framing). Duration is no longer the criterion.
 2. **"Known user" = a configured household profile** (non-synthetic id). Merge
    (Rule M) applies only to these; guests are never cross-device merged.
-3. **Retroactive repair is a follow-on** deliverable, not part of the core
-   in-session + reconciliation change.
+3. **Retroactive heal + sweep are in scope** as a backend CLI, delivered
+   alongside the frontend live fix (parallel implementations, shared golden
+   fixture).
