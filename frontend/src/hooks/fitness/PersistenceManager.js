@@ -621,6 +621,35 @@ export class PersistenceManager {
   }
 
   /**
+   * W1.C — Set the effort-insignificance config used by the session-end
+   * backfill pass to decide whether a sub-effort occupant is a "ghost"
+   * (near-zero coins/active-zone-time/HR-samples) that should be folded
+   * into a neighboring segment regardless of its duration.
+   *
+   * Sourced upstream from fitness.yml -> governance.insignificant_usage.
+   * When absent/undefined, runSessionBackfill falls back to its own
+   * DEFAULT_INSIGNIFICANT_USAGE default.
+   *
+   * @param {Object} cfg  - { maxCoins, maxActiveZoneSeconds, maxHrSamples }-shaped
+   */
+  setInsignificantUsageConfig(cfg) {
+    if (cfg && typeof cfg === 'object') this._insignificantUsage = cfg;
+  }
+
+  /**
+   * W1.C — Set the known-user alias map used by the session-end backfill
+   * pass to merge a single real user's data recorded under multiple raw
+   * occupant ids (e.g. device-swap aliases) back into one canonical id.
+   *
+   * Sourced upstream from fitness.yml -> known_user_aliases.
+   *
+   * @param {Object} map  - rawId -> canonicalId
+   */
+  setKnownUserAliases(map) {
+    if (map && typeof map === 'object') this._knownUserAliases = map;
+  }
+
+  /**
    * Record that a save succeeded for a given session.
    * @param {string} sessionId
    */
@@ -1241,9 +1270,27 @@ export class PersistenceManager {
       ? sessionData.endTime
       : Date.now();
 
+    // W1.C — Task 4: feed the raw timeline series + effort/alias config into
+    // the backfill pass so it takes the effort-based path (near-zero
+    // coins/active-zone-time/HR-samples ghosts, plus cross-device known-user
+    // merges) instead of the legacy duration-only path. See sessionBackfill.js
+    // runSessionBackfill doc comment for the branch this selects.
+    const series = sessionData.timeline?.series;
+    const intervalSeconds = Number.isFinite(sessionData.timeline?.interval_seconds)
+      ? sessionData.timeline.interval_seconds
+      : 5;
+
     let result;
     try {
-      result = runSessionBackfill({ entities, thresholdMs, sessionEndTime });
+      result = runSessionBackfill({
+        entities,
+        series,
+        thresholdMs,
+        sessionEndTime,
+        insignificantUsage: this._insignificantUsage,
+        intervalSeconds,
+        knownUserAliases: this._knownUserAliases || {}
+      });
     } catch (err) {
       getLogger().warn('fitness.persistence.backfill_failed', {
         error: err?.message,
@@ -1252,29 +1299,32 @@ export class PersistenceManager {
       return { removedOccupants: new Set(), transfers: [], perDevice: new Map() };
     }
 
-    // Apply timeline-series transfers in-place. Shares the key-rewrite shape
-    // with FitnessTimeline.transferUserSeries (`user:<id>:<metric>` →
-    // `user:<newId>:<metric>`, with source nulled out so it doesn't appear on
-    // charts), but the merge semantics differ — see _mergeUserSeriesInPlace
-    // for the destination-wins cell-by-cell behavior used at save time.
-    const series = sessionData.timeline?.series;
-    if (series && typeof series === 'object' && result.transfers.length > 0) {
-      for (const { fromOccupantId, toOccupantId } of result.transfers) {
+    // Apply timeline-series transfers AND cross-device known-user merges
+    // in-place, through the same destination-wins cell-by-cell merge. Shares
+    // the key-rewrite shape with FitnessTimeline.transferUserSeries
+    // (`user:<id>:<metric>` → `user:<newId>:<metric>`, with source nulled out
+    // so it doesn't appear on charts) — see _mergeUserSeriesInPlace for the
+    // merge semantics used at save time.
+    const appliedMerges = [...result.transfers, ...(result.merges || [])];
+    if (series && typeof series === 'object' && appliedMerges.length > 0) {
+      for (const { fromOccupantId, toOccupantId } of appliedMerges) {
         this._mergeUserSeriesInPlace(series, fromOccupantId, toOccupantId);
       }
     }
 
-    if (result.transfers.length > 0 || result.removedOccupants.size > 0) {
+    if (appliedMerges.length > 0 || result.removedOccupants.size > 0) {
       this._log('persist_backfill_applied', {
         sessionId: sessionData.sessionId,
         thresholdMs,
         transfers: result.transfers,
+        merges: result.merges || [],
         removedOccupants: [...result.removedOccupants]
       });
       getLogger().info('fitness.persistence.backfill_applied', {
         sessionId: sessionData.sessionId,
         thresholdMs,
         transferCount: result.transfers.length,
+        mergeCount: (result.merges || []).length,
         removedCount: result.removedOccupants.size
       });
     }

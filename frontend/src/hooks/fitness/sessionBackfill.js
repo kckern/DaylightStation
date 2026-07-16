@@ -464,9 +464,16 @@ export function applyKnownUserDeviceMerge(perDevice, knownUserAliases = {}) {
 /**
  * High-level entry point — runs the full backfill pass.
  *
- * When `series` is supplied, uses the effort-based absorb pass plus
- * cross-device known-user merging. When `series` is omitted, falls back to
- * the legacy duration-only path (existing callers unaffected).
+ * When `series` is supplied, runs BOTH the duration/identity-based rules
+ * (Rule 1 late-tag Pikachu, OI-1 backward, OI-3 forward — same
+ * `applyAbsorbRules` used by the legacy path) AND the effort-based absorb
+ * pass (near-zero coins/active-zone-time/HR-samples ghosts, regardless of
+ * duration), plus cross-device known-user merging. These two rule sets test
+ * different signals (identity/duration vs. measured effort) and are
+ * complementary, not exclusive — a segment already absorbed by one is
+ * skipped by the other via the shared `seg.absorbed` guard. When `series` is
+ * omitted, falls back to the legacy duration-only path (existing callers
+ * unaffected).
  *
  * @param {Object} input
  * @param {Array<Object>} input.entities         - sessionData.entities
@@ -502,6 +509,14 @@ export function runSessionBackfill({ entities, series, thresholdMs, sessionEndTi
   const allTransfers = [];
   for (const segments of perDevice.values()) {
     detectCyclingSegments(segments, thresholdMs); // OI-2 still protects real turn-taking
+    // Identity/duration rules first (late-tag Pikachu forward, OI-1 backward,
+    // OI-3 forward sub-threshold) — same rules the legacy no-series path
+    // uses. Then the effort-based pass catches ghosts these rules don't
+    // (e.g. a segment that runs LONGER than the threshold but registers
+    // near-zero coins/HR/active-zone effort). The shared `seg.absorbed`
+    // guard means whichever rule matches first "wins" — there is no
+    // double-transfer risk.
+    allTransfers.push(...applyAbsorbRules(segments, thresholdMs));
     allTransfers.push(...applyEffortAbsorb(segments, cfg));
   }
   const merges = applyKnownUserDeviceMerge(perDevice, knownUserAliases);
