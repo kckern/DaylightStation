@@ -278,17 +278,26 @@ export class ContentQueryService {
     // Yield initial pending state
     yield { event: 'pending', sources: [...pending], intent: resolvedIntent };
 
+    // Per-source elapsed ms, whether the adapter resolved or failed. Skipped
+    // adapters (never called, see #canHandle above) get no entry. Surfaced
+    // on the completion log below so stragglers (RC3) are diagnosable from
+    // prod logs instead of only the aggregate totalMs.
+    const sourceTimings = {};
+
     // Create promises for all adapters
     const adapterPromises = adapters.map(async (adapter) => {
       if (!this.#canHandle(adapter, query)) {
         return { adapter, result: null, skipped: true };
       }
 
+      const startedAt = performance.now();
       try {
         const translated = this.#translateQuery(adapter, query);
         const result = await withTimeout(adapter.search(translated), this.#timeoutFor(adapter.source), adapter.source);
+        sourceTimings[adapter.source] = Math.round(performance.now() - startedAt);
         return { adapter, result, error: null };
       } catch (error) {
+        sourceTimings[adapter.source] = Math.round(performance.now() - startedAt);
         warnings.push({ source: adapter.source, error: error.message });
         return { adapter, result: null, error };
       }
@@ -367,6 +376,7 @@ export class ContentQueryService {
       query: { text: query.text, source: query.source },
       totalMs,
       adapterCount: adapters.length,
+      sourceTimings,
       ...(resolvedIntent && { intent: resolvedIntent })
     };
     this.#logger.info?.('content-query.searchStream.complete', logData) ?? this.#logger.info?.(logData);
