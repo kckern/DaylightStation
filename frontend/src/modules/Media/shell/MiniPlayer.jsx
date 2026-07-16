@@ -26,6 +26,8 @@ export function MiniPlayer() {
   const item = snapshot?.currentItem;
 
   const dockRef = useRef(null);
+  // `format` is the canonical signal (set by resultToQueueInput/formatForChild);
+  // `mediaType` is a defensive fallback for items that carry only the raw type.
   const isVideo = item?.format === 'video' || item?.mediaType === 'video';
   const showVideoDock = isVideo && view !== 'nowPlaying';
   usePlayerHost(dockRef, 1, showVideoDock);
