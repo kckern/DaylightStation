@@ -2680,6 +2680,11 @@
   box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5);
   .piano-score-loop-opt { justify-content: flex-start; text-align: left; }
 }
+// ±1-measure Start/End nudge row inside the loop menu (audit L2).
+.piano-score-loop-nudge {
+  display: flex; align-items: center; gap: 0.3rem;
+  &__label { font-size: 0.8rem; opacity: 0.7; }
+}
 // Shared backdrop that closes any open popover on an outside tap (audit M4).
 .piano-score-popover-backdrop {
   position: fixed; inset: 0; z-index: 20; appearance: none; border: 0;

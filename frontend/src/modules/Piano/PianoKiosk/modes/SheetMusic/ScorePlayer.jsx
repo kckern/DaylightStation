@@ -13,7 +13,7 @@ import { useScoreTransport } from './useScoreTransport.js';
 import { tweenScrollTo, cancelScrollTween } from './scrollTween.js';
 import { partsOf, cyclePart, buildPlayTimeline, youMidisAt } from './playParts.js';
 import { staffLabels, defaultActiveParts, expectedMidisAtStep } from './activeParts.js';
-import { rangeSteps, clampStepToRange, sectionToRange, homeStep } from './focusRange.js';
+import { rangeSteps, clampStepToRange, sectionToRange, homeStep, nudgeRange } from './focusRange.js';
 import useFollowTracker from './useFollowTracker.js';
 import useMetronomeClick from './useMetronomeClick.js';
 import useCountIn from './useCountIn.js';
@@ -682,6 +682,14 @@ export default function ScorePlayer({ score: scoreMeta }) {
     setFocus(null);
     logger.info('score.focus.clear', {});
   }, [logger]);
+  // Nudge one loop endpoint by ±1 measure (audit L2). Pure clamped math in
+  // nudgeRange; a real change flows through the focus effect above, which jumps
+  // the cursor to the (possibly new) in-point and logs — desired: the loop
+  // re-seeks its start when an endpoint moves. A clamped no-op returns the same
+  // object, so setFocus bails without re-rendering.
+  const onNudge = useCallback((edge, delta) => {
+    setFocus((f) => nudgeRange(f, edge, delta, layout.measures?.length || 0));
+  }, [layout.measures]);
   // Scope label for the Loop control: a section's label or a 1-based measure span
   // (indices are 0-based internally); empty when no loop is active.
   const scopeLabel = focus
@@ -1040,6 +1048,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
         onPickSection={onPickSection}
         onStartSelect={onStartSelect}
         onClearFocus={onClearFocus}
+        onNudge={onNudge}
         keyboardVisible={keyboardVisible}
         onToggleKeyboard={onToggleKeyboard}
         clickActive={clickActive}
