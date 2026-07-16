@@ -122,6 +122,20 @@ describe('heal() — golden fixture 20260627195941', () => {
     // grannie's coins are preserved (the terminal/cumulative value, 966 —
     // grannie's own trace dominates user_5/user_9's negligible contributions).
     expect(rewritten.summary.participants.grannie.coins).toBe(966);
+
+    // The removed occupants' entity records are stripped too (an entity-backed
+    // ghost like user_9 must not linger, or a re-scan would re-flag it).
+    const entityProfiles = (rewritten.entities || []).map((e) => e.profileId);
+    expect(entityProfiles).not.toContain('user_9');
+    expect(entityProfiles).not.toContain('user_5');
+  });
+
+  it('is idempotent — healing the healed output reports needsHeal:false', async () => {
+    await heal(DATE, SESSION_ID, { apply: true, baseDir });
+    // A second pass over the already-healed file must find nothing to do.
+    const second = await heal(DATE, SESSION_ID, { apply: false, baseDir });
+    expect(second.plan.needsHeal).toBe(false);
+    expect([...second.plan.removedOccupants]).toEqual([]);
   });
 });
 
