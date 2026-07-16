@@ -23,11 +23,12 @@ function makeSnapshot({
   repeat = 'off',
   duration = 120,
   title = 'Track One',
+  format = undefined,
 } = {}) {
   return {
     state: playerState,
     position: 0,
-    currentItem: { contentId: 'plex:1', title, duration, thumbnail: '/thumb.jpg' },
+    currentItem: { contentId: 'plex:1', title, duration, thumbnail: '/thumb.jpg', format },
     queue: {
       items: Array.from({ length: count }, (_, i) => ({
         queueItemId: `q${i}`, contentId: `plex:${i}`, title: `T${i}`, priority: 'queue',
@@ -100,5 +101,38 @@ describe('MiniPlayer', () => {
     render(<MiniPlayer />);
     fireEvent.click(screen.getByTestId('mini-stop'));
     expect(transport.stop).toHaveBeenCalledTimes(1);
+  });
+
+  it('docks the live video (not the thumbnail) for video while browsing', () => {
+    state.snapshot = makeSnapshot({ format: 'video' });
+    nav.view = 'home';
+    render(<MiniPlayer />);
+    expect(screen.getByTestId('mini-player-video-dock')).toBeInTheDocument();
+    expect(document.querySelector('.mini-player-thumb')).toBeNull();
+  });
+
+  it('clicking the docked video promotes to Now Playing', () => {
+    state.snapshot = makeSnapshot({ format: 'video' });
+    nav.view = 'home';
+    render(<MiniPlayer />);
+    fireEvent.click(screen.getByTestId('mini-player-video-dock'));
+    expect(push).toHaveBeenCalledWith('nowPlaying', {});
+  });
+
+  it('shows the thumbnail (no video dock) for audio, and for video while on Now Playing', () => {
+    // audio → thumbnail
+    state.snapshot = makeSnapshot(); // no format
+    nav.view = 'home';
+    const { unmount } = render(<MiniPlayer />);
+    expect(screen.queryByTestId('mini-player-video-dock')).toBeNull();
+    expect(document.querySelector('.mini-player-thumb')).not.toBeNull();
+    unmount();
+
+    // video but on Now Playing → thumbnail (video is in the big pane)
+    state.snapshot = makeSnapshot({ format: 'video' });
+    nav.view = 'nowPlaying';
+    render(<MiniPlayer />);
+    expect(screen.queryByTestId('mini-player-video-dock')).toBeNull();
+    expect(document.querySelector('.mini-player-thumb')).not.toBeNull();
   });
 });
