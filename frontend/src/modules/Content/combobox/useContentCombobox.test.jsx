@@ -786,6 +786,37 @@ describe('useContentCombobox', () => {
     expect(result.current.state.mode).toBe(Modes.DISPLAY);
   });
 
+  it("commit('enter') settled with empty results and allowFreeform:false DISMISSES: no onChange, no toast (RC4)", async () => {
+    vi.useFakeTimers();
+    const onChange = vi.fn();
+    // Default fetchMock returns items:[] — a settled, empty search.
+    const { result } = setup({ onChange, allowFreeform: false });
+
+    act(() => { result.current.handleInput('Think! How Intelligent Are Animals?'); });
+    await act(async () => { vi.advanceTimersByTime(350); });
+    expect(result.current.searchSettled).toBe(true);
+    expect(result.current.state.results).toEqual([]);
+
+    let decision;
+    act(() => { decision = result.current.commit('enter'); });
+
+    expect(decision.action).toBe('dismiss');
+    expect(onChange).toHaveBeenCalledTimes(0);   // raw text NEVER dispatched (no /play 404)
+    expect(notifyWarning).toHaveBeenCalledTimes(0);
+    expect(result.current.state.mode).toBe(Modes.DISPLAY);
+  });
+
+  it("handleClose('outside') with id-like text and allowFreeform:false REVERTS: no onChange (RC4)", () => {
+    const onChange = vi.fn();
+    const { result } = setup({ onChange, allowFreeform: false });
+
+    act(() => { result.current.handleInput('plex:999'); });
+    act(() => { result.current.handleClose('outside'); });
+
+    expect(onChange).toHaveBeenCalledTimes(0);
+    expect(result.current.state.mode).toBe(Modes.DISPLAY);
+  });
+
   it("commit('blur') with a changed, unpicked query reverts: no onChange, value preserved, DISPLAY", () => {
     const onChange = vi.fn();
     const { result } = setup({ value: 'plex:10', onChange });

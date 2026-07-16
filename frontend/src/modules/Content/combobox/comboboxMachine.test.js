@@ -411,4 +411,49 @@ describe('decideCommit', () => {
     const out = decideCommit(base({ search: 'files:clips/mirror.mp4', results: partial, searchSettled: false }));
     expect(out).toEqual({ action: 'literal', value: 'files:clips/mirror.mp4' });
   });
+
+  // RC4: allowFreeform gates the raw-literal fallback. In dispatch-to-play
+  // contexts (Media search) the raw typed text must never commit — Enter/blur
+  // on an unmatched query dispatched raw English text to /play → 404. Only the
+  // literal-from-typed-text branches are suppressed; every SELECT path (an
+  // actual resolved result the user picks) still works.
+  describe('allowFreeform gating (RC4)', () => {
+    it('Enter, empty settled results, allowFreeform:false → dismiss (not literal)', () => {
+      const search = 'Think! How Intelligent Are Animals?';
+      expect(decideCommit(base({ search, value: '', results: [], searchSettled: true, allowFreeform: false })))
+        .toEqual({ action: 'dismiss' });
+      // Contrast: default (allowFreeform omitted → true) still commits the raw literal.
+      expect(decideCommit(base({ search, value: '', results: [], searchSettled: true })))
+        .toEqual({ action: 'literal', value: search });
+    });
+
+    it('Enter, id-like typed query, partial results, allowFreeform:false → dismiss (not literal)', () => {
+      const partial = [{ id: 'files:clips/mothers-day', type: 'audio', matchReason: 'keyword' }];
+      expect(decideCommit(base({ search: 'files:clips/mirror.mp4', results: partial, allowFreeform: false })))
+        .toEqual({ action: 'dismiss' });
+      // Contrast: default → literal raw.
+      expect(decideCommit(base({ search: 'files:clips/mirror.mp4', results: partial })))
+        .toEqual({ action: 'literal', value: 'files:clips/mirror.mp4' });
+    });
+
+    it('a legitimate SELECT path is unaffected by allowFreeform:false (userNavigated pick)', () => {
+      const leaf = { id: 'plex:5', type: 'episode' };
+      const out = decideCommit(base({ results: [{ id: 'plex:4' }, leaf], highlightIdx: 1, userNavigated: true, allowFreeform: false }));
+      expect(out).toEqual({ action: 'select', item: leaf });
+    });
+
+    it('a legitimate SELECT path is unaffected by allowFreeform:false (exact-leaf id match)', () => {
+      const leaf = { id: 'plex:642197', type: 'movie' };
+      expect(decideCommit(base({ search: 'plex:642197', results: [leaf], allowFreeform: false })))
+        .toEqual({ action: 'select', item: leaf });
+    });
+
+    it('closeDecision: id-like search on blur with allowFreeform:false → revert (not commit)', () => {
+      expect(closeDecision({ search: 'plex:9', value: 'plex:1', allowFreeform: false }, 'outside'))
+        .toEqual({ action: 'revert' });
+      // Contrast: default (allowFreeform omitted → true) still commits.
+      expect(closeDecision({ search: 'plex:9', value: 'plex:1' }, 'outside'))
+        .toEqual({ action: 'commit', value: 'plex:9' });
+    });
+  });
 });

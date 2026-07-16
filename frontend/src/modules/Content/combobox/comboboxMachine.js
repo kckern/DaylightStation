@@ -46,10 +46,12 @@ export const initialState = (value = '') => ({
 });
 
 // Commit policy on dropdown close. reason: 'escape'|'outside'|'select'|'tab'
-export function closeDecision({ search, value }, reason) {
+export function closeDecision({ search, value, allowFreeform = true }, reason) {
   if (reason === 'escape' || reason === 'select') return { action: reason === 'select' ? 'none' : 'revert' };
   if (search === null || search === value) return { action: 'none' };
-  if (search && isContentIdLike(search)) return { action: 'commit', value: search };
+  // RC4: dispatch-to-play contexts (allowFreeform:false) must never commit raw
+  // typed text on blur/tab — even an id-like string. Revert instead.
+  if (allowFreeform && search && isContentIdLike(search)) return { action: 'commit', value: search };
   return { action: 'revert' };
 }
 
@@ -78,7 +80,7 @@ export function isContainer(item) {
  * @param {(item:object)=>boolean} a.isContainer  injected predicate
  * @returns {{action:'select'|'drill'|'open'|'literal'|'revert'|'dismiss'|'none', item?:object, value?:string}}
  */
-export function decideCommit({ reason, search, value, results, highlightIdx, userNavigated, selectContainers, searchSettled, isContainer }) {
+export function decideCommit({ reason, search, value, results, highlightIdx, userNavigated, selectContainers, searchSettled, isContainer, allowFreeform = true }) {
   // 1. Explicit pick — any reason. Mar-01 invariant: ONLY user-navigated rows count as a pick.
   if (userNavigated && highlightIdx >= 0 && results[highlightIdx]) {
     const item = results[highlightIdx];
@@ -108,10 +110,13 @@ export function decideCommit({ reason, search, value, results, highlightIdx, use
   // info API after commit, so committing the raw id loses nothing. Skipped only
   // for an exact container match, which stays open for lineage-level choice (3a).
   if (!exactContainer && isContentIdLike(q)) {
-    return { action: 'literal', value: search };
+    // RC4: suppress the raw-literal fallback in dispatch-to-play contexts —
+    // only an actual resolved result (a SELECT above) may commit there.
+    return allowFreeform ? { action: 'literal', value: search } : { action: 'dismiss' };
   }
   if (results.length === 0) {
-    return searchSettled ? { action: 'literal', value: search } : { action: 'open' };
+    if (searchSettled) return allowFreeform ? { action: 'literal', value: search } : { action: 'dismiss' };
+    return { action: 'open' };
   }
   // 4. Unambiguous leaf renders; containers / multiple stay open for the human to choose the level.
   const idLookupLeaf = results.find((r) => r.matchReason === 'id-lookup' && !isContainer(r));
