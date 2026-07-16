@@ -34,6 +34,13 @@ import {
   encodeSeries,
   mergeTimelines
 } from '#domains/fitness/services/TimelineService.mjs';
+import {
+  computeHrStats,
+  computeZoneTime,
+  findSeries,
+  getLastNonNull,
+  buildSummary
+} from './lib/fitnessSessionSummary.mjs';
 
 // ---------------------------------------------------------------------------
 // Args
@@ -62,8 +69,6 @@ for (const id of sessionIds) {
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
-
-const ZONE_MAP = { c: 'cool', a: 'active', w: 'warm', h: 'hot', fire: 'fire' };
 
 /**
  * Format a unix-ms timestamp in the given IANA timezone as
@@ -119,39 +124,6 @@ function parseWallClockInTz(wallClock, tz) {
   const seenAsUtc = Date.UTC(seenY, seenM - 1, seenD, seenh, seenmn, seens, millis);
   const offset = seenAsUtc - guess; // tz offset in ms (positive east of UTC: no — see math)
   return guess - offset;
-}
-
-function getLastNonNull(arr) {
-  for (let i = (arr || []).length - 1; i >= 0; i--) {
-    if (arr[i] != null) return arr[i];
-  }
-  return 0;
-}
-
-function computeHrStats(hrSeries) {
-  const valid = (hrSeries || []).filter(v => Number.isFinite(v) && v > 0);
-  if (valid.length === 0) return { min: 0, max: 0, avg: 0 };
-  return {
-    min: Math.min(...valid),
-    max: Math.max(...valid),
-    avg: Math.round(valid.reduce((a, b) => a + b, 0) / valid.length)
-  };
-}
-
-function computeZoneTime(zoneSeries, intervalSeconds) {
-  const counts = {};
-  (zoneSeries || []).forEach(z => {
-    if (z == null) return;
-    const name = ZONE_MAP[z] || z;
-    counts[name] = (counts[name] || 0) + intervalSeconds;
-  });
-  return counts;
-}
-
-function findSeries(series, slug, v2Suffix, compactSuffix) {
-  return series[`user:${slug}:${v2Suffix}`]
-    || series[`${slug}:${compactSuffix}`]
-    || [];
 }
 
 /**
@@ -326,78 +298,6 @@ for (const s of sessions) {
 // ---------------------------------------------------------------------------
 // Recompute summary
 // ---------------------------------------------------------------------------
-
-function buildSummary({ participants, series, events, treasureBox, intervalSeconds }) {
-  const participantsSummary = {};
-  for (const slug of Object.keys(participants || {})) {
-    const hrSeries = findSeries(series, slug, 'heart_rate', 'hr');
-    const zoneSeries = findSeries(series, slug, 'zone_id', 'zone');
-    const coinsSeries = findSeries(series, slug, 'coins_total', 'coins');
-
-    const hrStats = computeHrStats(hrSeries);
-    const zoneTimeSeconds = computeZoneTime(zoneSeries, intervalSeconds);
-    const zoneMinutes = {};
-    for (const [zone, secs] of Object.entries(zoneTimeSeconds)) {
-      zoneMinutes[zone] = Math.round((secs / 60) * 100) / 100;
-    }
-
-    participantsSummary[slug] = {
-      coins: getLastNonNull(coinsSeries),
-      hr_avg: hrStats.avg,
-      hr_max: hrStats.max,
-      hr_min: hrStats.min,
-      zone_minutes: zoneMinutes
-    };
-  }
-
-  // Media — dedupe by contentId, keep first occurrence by timestamp.
-  const mediaEvents = (events || []).filter(e => e.type === 'media');
-  const seenContentIds = new Set();
-  const media = [];
-  for (const e of mediaEvents) {
-    const d = e.data || {};
-    const contentId = d.contentId;
-    if (contentId && seenContentIds.has(contentId)) continue;
-    if (contentId) seenContentIds.add(contentId);
-    const durationMs = (d.end != null && d.start != null) ? d.end - d.start : 0;
-    const isTrack = d.contentType === 'track' || !!d.artist;
-    const item = {
-      contentId: d.contentId,
-      title: d.title,
-      mediaType: isTrack ? 'audio' : 'video',
-      ...(d.artist ? { artist: d.artist } : {}),
-      showTitle: d.grandparentTitle,
-      seasonTitle: d.parentTitle,
-      grandparentId: d.grandparentId,
-      parentId: d.parentId,
-      durationMs,
-      ...(d.description ? { description: d.description } : {}),
-      ...(Array.isArray(d.labels) && d.labels.length ? { labels: d.labels } : {})
-    };
-    media.push(item);
-  }
-  if (media.length > 0) media[0].primary = true;
-
-  const challengeEvents = (events || []).filter(e => e.type === 'challenge');
-  const succeeded = challengeEvents.filter(e => e.data?.result === 'success').length;
-  const failed = challengeEvents.length - succeeded;
-
-  const voiceMemos = (events || [])
-    .filter(e => e.type === 'voice_memo')
-    .map(e => ({
-      transcript: e.data?.transcript || e.data?.transcriptPreview || null,
-      durationSeconds: e.data?.durationSeconds ?? e.data?.duration_seconds ?? null,
-      timestamp: e.timestamp
-    }));
-
-  return {
-    participants: participantsSummary,
-    media,
-    coins: { total: treasureBox?.totalCoins ?? 0, buckets: treasureBox?.buckets ?? {} },
-    challenges: { total: challengeEvents.length, succeeded, failed },
-    voiceMemos
-  };
-}
 
 const summary = buildSummary({
   participants: mergedParticipants,
