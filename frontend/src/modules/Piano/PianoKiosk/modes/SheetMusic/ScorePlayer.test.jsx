@@ -198,8 +198,8 @@ describe('ScorePlayer — Learn mode (full-hand, simulated MIDI input)', () => {
   });
 });
 
-describe('ScorePlayer — practice range persistence (J3)', () => {
-  it('carries the focus range across Learn↔Polish but clears it leaving for Listen', () => {
+describe('ScorePlayer — practice range persistence (J3/L6)', () => {
+  it('carries the focus range across Learn↔Polish↔Listen; only Perform releases it', () => {
     h.layoutExtras = {
       steps: [
         { onsetQuarter: 0, measure: 0, notes: [{ midi: 64, staff: 0, x: 100, top: 10, bottom: 200, width: 8 }] },
@@ -224,9 +224,13 @@ describe('ScorePlayer — practice range persistence (J3)', () => {
     // Switch to Polish — range must persist.
     act(() => { screen.getByText('Polish').click(); });
     expect(screen.getByRole('button', { name: /loop m1/i })).toBeInTheDocument();
-    // Switch to Listen — the Loop control is gone (range released).
+    // Switch to Listen — the loop now FOLLOWS (audit L6).
     act(() => { screen.getByText('Listen').click(); });
-    expect(screen.queryByRole('button', { name: /^loop/i })).toBeNull();
+    expect(screen.getByRole('button', { name: /loop m1/i })).toBeInTheDocument();
+    // Perform releases it.
+    act(() => { screen.getByText('Perform').click(); });
+    act(() => { screen.getByText('Listen').click(); });
+    expect(screen.getByRole('button', { name: /^loop$/i })).toBeInTheDocument(); // back to inactive trigger
   });
 });
 
@@ -366,6 +370,40 @@ describe('ScorePlayer — Polish mode (transport-driven)', () => {
     act(() => vi.advanceTimersByTime(4000)); // past all onsets → onDone
     // Summary panel appears on completion (not only on silent-stop).
     expect(document.querySelector('.piano-score-run-summary')).not.toBeNull();
+  });
+
+  it('a Polish loop on the final measure wraps at onDone instead of finishing (L6)', async () => {
+    h.layoutExtras = {
+      tempoEntries: [{ onsetQuarter: 0, bpm: 60 }],
+      // Single-step final measure: the loop's in-point IS the last timeline event
+      // (zero-span) — the nastiest wrap case; it must dwell + wrap, never finish.
+      events: [
+        { midi: 64, midis: [64], onsetQuarter: 0, x: 100, top: 10, bottom: 200, system: 0 },
+        { midi: 62, midis: [62], onsetQuarter: 1, x: 160, top: 10, bottom: 200, system: 0 },
+      ],
+      steps: [
+        { onsetQuarter: 0, measure: 0, notes: [{ midi: 64, staff: 0, x: 100, top: 10, bottom: 200, width: 8 }] },
+        { onsetQuarter: 1, measure: 1, notes: [{ midi: 62, staff: 0, x: 160, top: 10, bottom: 200, width: 8 }] },
+      ],
+      measures: [
+        { index: 0, number: 1, firstStep: 0, lastStep: 0 },
+        { index: 1, number: 2, firstStep: 1, lastStep: 1 },
+      ],
+    };
+    renderPlayer();
+    screen.getByText('Polish').click();
+    await act(async () => {});
+    act(() => { fireEvent.click(screen.getByRole('button', { name: /^loop/i })); });
+    act(() => { fireEvent.click(screen.getByRole('button', { name: /select measures/i })); });
+    const scroll = document.querySelector('.piano-score-player__scroll');
+    act(() => { fireEvent.click(scroll, { clientX: 160, clientY: 100 }); });
+    act(() => { fireEvent.click(scroll, { clientX: 160, clientY: 100 }); });
+    screen.getByText('▶').click();
+    await act(async () => {});
+    act(() => vi.advanceTimersByTime(4100)); // through the 4-beat @60 count-in → run starts at the in-point
+    act(() => vi.advanceTimersByTime(3500)); // several loop periods past the piece end
+    expect(document.querySelector('.piano-score-run-summary')).toBeNull(); // wrapped, never finalized
+    expect(screen.getByText('m 2 / 2')).toBeTruthy(); // still parked on the looped measure
   });
 });
 
@@ -581,6 +619,45 @@ describe('ScorePlayer — Listen mode', () => {
     h.sendPanic.mockClear();
     act(() => { document.querySelector('.piano-score-player__scroll').click(); }); // tap to seek
     expect(h.sendPanic).toHaveBeenCalled(); // flushed, won't drone
+  });
+
+  it('Listen plays only the loop and wraps at the out-point with a silence flush (L6)', async () => {
+    h.layoutExtras = {
+      tempoEntries: [{ onsetQuarter: 0, bpm: 60 }],
+      // Two onsets only, matching the steps below — the loop (m2) contains the
+      // FINAL step, so the wrap must come from the onDone path, not onEvent.
+      events: [
+        { midi: 64, midis: [64], onsetQuarter: 0, x: 100, top: 10, bottom: 200, system: 0 },
+        { midi: 62, midis: [62], onsetQuarter: 1, x: 160, top: 10, bottom: 200, system: 0 },
+      ],
+      steps: [
+        { onsetQuarter: 0, measure: 0, notes: [{ midi: 64, staff: 0, x: 100, top: 10, bottom: 200, width: 8 }] },
+        { onsetQuarter: 1, measure: 1, notes: [{ midi: 62, staff: 0, x: 160, top: 10, bottom: 200, width: 8 }] },
+      ],
+      measures: [
+        { index: 0, number: 1, firstStep: 0, lastStep: 0 },
+        { index: 1, number: 2, firstStep: 1, lastStep: 1 },
+      ],
+    };
+    renderPlayer();
+    screen.getByText('Listen').click();
+    await act(async () => {});
+    // Loop measure 2 only (tail measure — exercises the onDone wrap path).
+    act(() => { fireEvent.click(screen.getByRole('button', { name: /^loop/i })); });
+    act(() => { fireEvent.click(screen.getByRole('button', { name: /select measures/i })); });
+    const scroll = document.querySelector('.piano-score-player__scroll');
+    act(() => { fireEvent.click(scroll, { clientX: 160, clientY: 100 }); });
+    act(() => { fireEvent.click(scroll, { clientX: 160, clientY: 100 }); });
+    expect(screen.getByText('m 2 / 2')).toBeTruthy();
+    screen.getByText('▶').click(); // My part = None → plays immediately
+    await act(async () => {});
+    act(() => vi.advanceTimersByTime(1100)); // past the final step @60bpm → would normally finish
+    expect(screen.getByText('❚❚')).toBeTruthy(); // still playing — wrapped, not done
+    expect(screen.getByText('m 2 / 2')).toBeTruthy(); // back at the loop in-point
+    // The wrap arms the silence flush; its delayed panic (lookahead+60ms) kills
+    // any in-flight tail sends so nothing drones across the loop boundary.
+    act(() => vi.advanceTimersByTime(500));
+    expect(h.sendPanic).toHaveBeenCalled();
   });
 });
 

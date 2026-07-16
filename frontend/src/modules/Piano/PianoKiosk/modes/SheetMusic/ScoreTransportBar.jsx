@@ -176,8 +176,9 @@ const ScoreViewControls = memo(function ScoreViewControls({
   // Key transpose + play-along stay Listen-only.
   const hasTempo = mode !== 'perform';
   const hasListenExtras = mode === 'listen';
-  // Focus range (section chips + custom loop) is a Learn + Polish practice affordance.
-  const hasFocus = mode === 'learn' || mode === 'polish';
+  // Focus range (section chips + custom loop) is a Listen + Learn + Polish
+  // affordance (audit L6) — only Perform (music-stand mode) drops it.
+  const hasFocus = mode !== 'perform';
 
   const renderPartChip = (part) => {
     const { staff, label } = part;
