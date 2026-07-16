@@ -587,10 +587,18 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
     if (Number.isFinite(thresholdMs)) {
       session?._persistenceManager?.setUsageThresholdMs?.(thresholdMs);
     }
+    // W1.C: mirror the effort-insignificance config (fitness.yml ->
+    // governance.insignificant_usage) and known-user device-swap aliases
+    // (fitness.yml -> known_user_aliases) into PersistenceManager so the
+    // save-time backfill pass takes the effort-based reconciliation path.
+    // Both are optional — undefined is handled gracefully by the setters
+    // and by runSessionBackfill's own DEFAULT_INSIGNIFICANT_USAGE fallback.
+    session?._persistenceManager?.setInsignificantUsageConfig?.(governanceConfig?.insignificant_usage);
+    session?._persistenceManager?.setKnownUserAliases?.(fitnessRoot?.known_user_aliases);
     return () => {
       session?.userManager?.setAssignmentLedger?.(null);
     };
-  }, [session, governanceConfig?.usage_threshold_seconds]);
+  }, [session, governanceConfig?.usage_threshold_seconds, governanceConfig?.insignificant_usage, fitnessRoot?.known_user_aliases]);
 
   useEffect(() => {
     if (!session) return;
