@@ -2726,6 +2726,7 @@
   &[disabled] { opacity: 0.4; cursor: default; }
   // Toggle-on state (keyboard) — neutral blue accent (Metronome/Manual palette).
   &.is-on { background: rgba(108, 204, 255, 0.18); border-color: #6cf; color: #cdefff; }
+  svg { display: block; }
 }
 .piano-score-run[aria-pressed="true"] { background: #2ec46f; border-color: #2ec46f; color: #07120a; }
 .piano-score-position {
