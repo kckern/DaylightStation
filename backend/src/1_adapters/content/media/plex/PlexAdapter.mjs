@@ -1841,16 +1841,16 @@ export class PlexAdapter {
         // the song itself, not just its album. Callers that need a different
         // surface (e.g. episodes too, or containers only) pass
         // `tier1AllowedTypes` to override.
-        const TIER1_DEFAULT_TYPES = ['show', 'movie', 'artist', 'album', 'collection', 'track'];
+        const TIER1_DEFAULT_TYPES = ['show', 'movie', 'artist', 'album', 'collection', 'track', 'episode'];
         const topLevelTypes = Array.isArray(query.tier1AllowedTypes) && query.tier1AllowedTypes.length > 0
           ? query.tier1AllowedTypes
           : TIER1_DEFAULT_TYPES;
         const filtered = items.filter(item => topLevelTypes.includes(item.type));
-        const converted = filtered.map(item => (
-          item.type === 'track'
-            ? this._hubResultToTrackItem(item)
-            : this._hubResultToListableItem(item)
-        ));
+        const converted = filtered.map(item => {
+          if (item.type === 'track') return this._hubResultToTrackItem(item);
+          if (item.type === 'episode') return this._hubResultToEpisodeItem(item);
+          return this._hubResultToListableItem(item);
+        });
 
         // Playlists first — they're curated content the user actively wants
         const combined = [...playlists, ...converted];
@@ -1987,6 +1987,38 @@ export class PlexAdapter {
         albumArtist: item.grandparent || null,
         grandparentTitle: item.grandparent || null
       }
+    });
+  }
+
+  /**
+   * Convert a hubSearch episode result to a PlayableItem without hydration.
+   * Mirrors _hubResultToTrackItem: keeps tier 1 fast (no getItem call) while
+   * carrying show/season context so the UI can disambiguate the episode.
+   * PlexClient.hubSearch flattens parentTitle → parent (season) and
+   * grandparentTitle → grandparent (show).
+   * @param {Object} item - Raw hubSearch result of type 'episode'
+   * @returns {PlayableItem}
+   * @private
+   */
+  _hubResultToEpisodeItem(item) {
+    const thumbPath = item.thumb || item.grandparentThumb || item.parentThumb;
+    return new PlayableItem({
+      id: `plex:${item.ratingKey}`,
+      source: 'plex',
+      localId: String(item.ratingKey),
+      title: item.title || '[Untitled]',
+      mediaType: 'video',
+      mediaUrl: `/api/v1/proxy/plex/stream/${item.ratingKey}`,
+      resumable: true,
+      thumbnail: thumbPath ? `${this.proxyPath}${thumbPath}` : null,
+      metadata: {
+        type: 'episode',
+        category: this.#mapTypeToCategory('episode'),
+        year: item.year || null,
+        librarySectionTitle: item.librarySectionTitle || null,
+        parentTitle: item.parent || null,
+        grandparentTitle: item.grandparent || null,
+      },
     });
   }
 
