@@ -34,18 +34,7 @@ import CountInOverlay from './CountInOverlay.jsx';
 import LearnComplete from './LearnComplete.jsx';
 import FocusRangeLayer from './FocusRangeLayer.jsx';
 import SelectBanner from './SelectBanner.jsx';
-
-/** Nearest melody event to a click at renderer-local (x, y). */
-function nearestEvent(events, x, y) {
-  let best = -1, bestD = Infinity;
-  for (let i = 0; i < events.length; i++) {
-    const e = events[i];
-    const midY = (e.top + e.bottom) / 2;
-    const d = Math.hypot(x - e.x, (y - midY) * 0.45); // weight y less — x dominates within a system
-    if (d < bestD) { bestD = d; best = i; }
-  }
-  return best;
-}
+import { nearestEvent, SELECT_MAX_DIST } from './nearestEvent.js';
 
 /**
  * ScorePlayer — interactive engraved score. Four modes:
@@ -605,14 +594,15 @@ export default function ScorePlayer({ score: scoreMeta }) {
     }
     if (!rdr || !events.length) return;
     const r = rdr.getBoundingClientRect();
-    const i = nearestEvent(events, e.clientX - r.left, e.clientY - r.top);
-    if (i < 0) return;
-    // Guided measure selection (Learn/Polish): first tap sets the pending in-measure
+    // Guided loop selection (Learn/Polish): first tap sets the pending in-measure
     // (a bracket appears + the banner asks for the last), the second sets the
     // out-measure → an ordered { inMeasure, outMeasure } custom range. Selection taps
-    // set the range instead of seeking (audit J5/M3).
+    // set the range instead of seeking (audit J5/M3), and require the tap to be
+    // NEAR a note (audit L3) — a margin tap is ignored, not committed.
     if (selecting) {
-      const mi = measureIndexOfStep(i);
+      const si = nearestEvent(events, e.clientX - r.left, e.clientY - r.top, SELECT_MAX_DIST * scale);
+      if (si < 0) return; // too far from any note — ignore
+      const mi = measureIndexOfStep(si);
       if (selecting.stage === 'first') {
         setSelecting({ stage: 'last', inMeasure: mi });
         logger.info('score.focus.arm', { inMeasure: mi });
@@ -624,6 +614,8 @@ export default function ScorePlayer({ score: scoreMeta }) {
       }
       return;
     }
+    const i = nearestEvent(events, e.clientX - r.left, e.clientY - r.top);
+    if (i < 0) return;
     // Normal seek. When a practice range is active, clamp the target into it.
     const target = range ? clampStepToRange(i, range) : i;
     setStep(target);
@@ -640,7 +632,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
     // Transport timeline is tempo-scaled (playTimeline uses factor 1/tempoMult);
     // seek positions come from the unscaled stepTimeline, so scale to match.
     transport.seek((stepTimeline[target]?.t ?? 0) / tempoMult);
-  }, [mode, flow, events, transport, stepTimeline, silenceScheduled, tempoMult, selecting, range, measureIndexOfStep, logger, countIn]);
+  }, [mode, flow, events, transport, stepTimeline, silenceScheduled, tempoMult, selecting, range, measureIndexOfStep, logger, countIn, scale]);
 
   // Single unmount teardown: immediate silence + one delayed panic (see the
   // silenceScheduled note above). One effect → order-independent by construction.
