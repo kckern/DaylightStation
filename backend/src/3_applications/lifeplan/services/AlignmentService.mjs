@@ -87,18 +87,10 @@ export class AlignmentService {
       }
     }
 
-    // 3. Anti-goals with approaching proximity
-    for (const ag of plan.anti_goals || []) {
-      if (ag.proximity === 'approaching' || ag.proximity === 'imminent') {
-        items.push({
-          type: 'anti_goal_warning',
-          title: `Warning: "${ag.nightmare}"`,
-          reason: `Proximity: ${ag.proximity}`,
-          urgency: ag.proximity === 'imminent' ? 'critical' : 'high',
-          related_value: null,
-        });
-      }
-    }
+    // anti_goal_warning intentionally suppressed: AntiGoal.proximity is a static,
+    // never-computed field (default 'distant'); firing off it latches a critical
+    // alarm with no clearing path. Re-enable once NightmareProximityService computes
+    // proximity on a schedule. See 2026-07-17 UX audit §4.
 
     // 4. Drift correction. Deliberately an allowlist: 'insufficient_data'
     // snapshots (values that map to <2 lifelog categories) must NOT raise a
