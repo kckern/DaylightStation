@@ -120,10 +120,16 @@ export function parseMusicXml(xml) {
       // Walk children in document order, tracking a time cursor (in divisions).
       let cursor = 0; // divisions from measure start
       let lastOnset = 0;
+      let pendingDynamics = null; // a <direction> dynamics binds to the NEXT note in document order
       for (const child of measureEl.children) {
         const tag = child.tagName;
         if (tag === 'backup') { cursor -= num(child, 'duration', 0); continue; }
         if (tag === 'forward') { cursor += num(child, 'duration', 0); continue; }
+        if (tag === 'direction') {
+          const dyn = child.querySelector('direction-type dynamics *');
+          if (dyn) pendingDynamics = dyn.tagName;
+          continue;
+        }
         if (tag !== 'note') continue;
 
         const isChord = !!child.querySelector('chord');
@@ -152,6 +158,38 @@ export function parseMusicXml(xml) {
           note.pitch = pitch;
           note.midi = pitchToMidi(pitch);
         }
+
+        // Tuplets — <time-modification> gives actual/normal counts; 3-in-2 is a triplet.
+        const timeMod = child.querySelector(':scope > time-modification');
+        if (timeMod) {
+          const actual = num(timeMod, 'actual-notes', 0);
+          const normal = num(timeMod, 'normal-notes', 0);
+          // NOTE: any tuplet is read, but serializeMusicXml only reproduces 3-in-2 triplets (note.triplet). Non-triplet tuplets won't round-trip yet.
+          note.tuplet = { actual, normal };
+          note.triplet = actual === 3 && normal === 2;
+        }
+
+        // Ties — <tie> sound elements (direct children; NOT <tied> in notations).
+        // Both a stop and a start present → a note tied on both sides.
+        const tieTypes = [...child.querySelectorAll(':scope > tie')].map((t) => t.getAttribute('type'));
+        if (tieTypes.length) {
+          const hasStart = tieTypes.includes('start');
+          const hasStop = tieTypes.includes('stop');
+          const tie = hasStart && hasStop ? 'both' : (hasStart ? 'start' : (hasStop ? 'stop' : null));
+          if (tie) note.tie = tie; // only attach when a real tie was read (no enumerable tie:undefined)
+        }
+
+        // Articulations — child tag names of <notations><articulations>.
+        const arts = [...child.querySelectorAll('notations articulations > *')].map((a) => a.tagName);
+        if (arts.length) note.articulations = arts;
+
+        // Lyric — first syllable text.
+        const lyric = text(child, 'lyric text', null);
+        if (lyric != null) note.lyric = lyric;
+
+        // Dynamics — a preceding <direction> binds to this note (first non-chord note after it).
+        if (pendingDynamics && !isChord) { note.dynamics = pendingDynamics; pendingDynamics = null; }
+
         measure.notes.push(note);
         part.notes.push(note);
         lastOnset = onsetDiv;
