@@ -33,9 +33,12 @@ function noteXml(note) {
   const body = note.rest ? `<rest/>` : pitchXml(note.pitch);
   const dots = '<dot/>'.repeat(note.dots || 0);
   const { tie } = tieMarks(note.tie);
+  const timeMod = note.triplet
+    ? '<time-modification><actual-notes>3</actual-notes><normal-notes>2</normal-notes></time-modification>' : '';
   return `<note>${note.chord ? '<chord/>' : ''}${body}`
     + `<duration>${dur}</duration>${tie}`
     + `<type>${note.type}</type>${dots}`
+    + timeMod
     + notationsXml(note)
     + `</note>`;
 }

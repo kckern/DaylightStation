@@ -66,3 +66,10 @@ describe('serializeMusicXml — ties', () => {
     expect(xml).toContain('<tie type="stop"/><tie type="start"/>');
   });
 });
+
+describe('serializeMusicXml — triplets', () => {
+  it('emits time-modification 3-in-2 for an 8th triplet', () => {
+    const xml = serializeMusicXml(scoreWith([makeNote({ step: 'C', octave: 4 }, { type: 'eighth', triplet: true })]));
+    expect(xml).toContain('<time-modification><actual-notes>3</actual-notes><normal-notes>2</normal-notes></time-modification>');
+  });
+});
