@@ -18,6 +18,7 @@ const h = vi.hoisted(() => ({
   sendNoteAt: vi.fn(),
   sendNoteOffAt: vi.fn(),
   sendPanic: vi.fn(),
+  clickSched: { start: vi.fn(), stop: vi.fn(), setBpm: vi.fn() },
 }));
 
 // Derive per-onset full-staff steps from the melody events: the first pitch of
@@ -48,6 +49,9 @@ vi.mock('../../PianoPlaybackContext.jsx', () => ({ usePianoPlayback: () => ({ se
 vi.mock('../../PianoConfig.jsx', () => ({ usePianoKioskConfig: () => ({ config: { keyboard: { startNote: 21, endNote: 108 } } }) }));
 vi.mock('../../PianoBreadcrumbContext.jsx', () => ({ usePianoBreadcrumb: () => {} }));
 vi.mock('../../useReloadGuard.js', () => ({ default: () => {} }));
+// Spyable click scheduler: useMetronomeClick creates one per enable, so hand it
+// the shared holder object and assert on start/stop/setBpm.
+vi.mock('./clickScheduler.js', () => ({ createClickScheduler: () => h.clickSched }));
 
 // Stub the engraver: report a known layout (melody events + derived per-onset
 // steps), render the cursor / light-up children.
@@ -84,8 +88,21 @@ const renderPlayer = () =>
 
 beforeEach(() => {
   h.noteCb = null; h.rawCb = null; h.layoutExtras = {};
-  h.pressNote.mockClear(); h.releaseNote.mockClear(); h.sendPanic.mockClear();
+  h.pressNote.mockClear(); h.releaseNote.mockClear();
   h.sendNoteAt.mockClear(); h.sendNoteOffAt.mockClear();
+  // sendPanic gets a FRESH fn per test, not just mockClear: every ScorePlayer
+  // unmount arms a delayed-panic setTimeout (~lookahead+60ms — intended production
+  // behavior; see silenceScheduled). In this file's real-timer tests that timer
+  // lives on the REAL clock and outlives its test, so under CPU load it can land
+  // mid-way through a LATER fake-timer test and break
+  // `expect(h.sendPanic).not.toHaveBeenCalled()`. The stale instance captured the
+  // previous test's fn at render time, so re-binding scopes each test's
+  // assertions to panics sent by ITS OWN component instance.
+  h.sendPanic = vi.fn();
+  // Same re-binding treatment for the click scheduler: the hook's cleanup calls
+  // stop() on unmount, which for a stale shared instance would leak a stop()
+  // from a PREVIOUS test's component into this test's assertions.
+  h.clickSched = { start: vi.fn(), stop: vi.fn(), setBpm: vi.fn() };
 });
 
 // Scores now open in Listen (default). The Learn tests select Learn first.
@@ -122,6 +139,18 @@ describe('ScorePlayer — per-score persistence (Task 2.5)', () => {
     unmount();
     renderScore();
     expect(screen.getByRole('tab', { name: /learn/i })).toHaveAttribute('aria-selected', 'true');
+  });
+
+  it('restores the metronome arm state for a given score id (M3)', () => {
+    const { unmount } = renderScore();
+    act(() => { screen.getByText('Polish').click(); });
+    const click = screen.getByRole('button', { name: /metronome/i });
+    expect(click).toHaveAttribute('aria-pressed', 'true'); // default ON
+    act(() => { fireEvent.click(click); }); // turn it off
+    unmount();
+    renderScore();
+    act(() => { screen.getByText('Polish').click(); });
+    expect(screen.getByRole('button', { name: /metronome/i })).toHaveAttribute('aria-pressed', 'false');
   });
 });
 
@@ -169,8 +198,8 @@ describe('ScorePlayer — Learn mode (full-hand, simulated MIDI input)', () => {
   });
 });
 
-describe('ScorePlayer — practice range persistence (J3)', () => {
-  it('carries the focus range across Learn↔Polish but clears it leaving for Listen', () => {
+describe('ScorePlayer — practice range persistence (J3/L6)', () => {
+  it('carries the focus range across Learn↔Polish↔Listen; only Perform releases it', () => {
     h.layoutExtras = {
       steps: [
         { onsetQuarter: 0, measure: 0, notes: [{ midi: 64, staff: 0, x: 100, top: 10, bottom: 200, width: 8 }] },
@@ -183,19 +212,25 @@ describe('ScorePlayer — practice range persistence (J3)', () => {
     };
     renderPlayer();
     enterLearn();
-    // Guided selection: Practice → Select measures… → two taps set a custom range.
-    act(() => { fireEvent.click(screen.getByRole('button', { name: /practice:/i })); });
+    // Guided selection: Loop → Select measures… → two taps set a custom range.
+    act(() => { fireEvent.click(screen.getByRole('button', { name: /^loop/i })); });
     act(() => { fireEvent.click(screen.getByRole('button', { name: /select measures/i })); });
-    act(() => { document.querySelector('.piano-score-player__scroll').click(); }); // first tap → measure 0
-    act(() => { document.querySelector('.piano-score-player__scroll').click(); }); // second tap → range set
-    // The Practice trigger now shows a measure-span scope (not "Whole piece").
-    expect(screen.getByRole('button', { name: /practice: m1/i })).toBeInTheDocument();
+    // Selection taps must land near a note (L3 threshold) — tap ON the first note.
+    const scroll = document.querySelector('.piano-score-player__scroll');
+    act(() => { fireEvent.click(scroll, { clientX: 100, clientY: 100 }); }); // first tap → measure 0
+    act(() => { fireEvent.click(scroll, { clientX: 100, clientY: 100 }); }); // second tap → range set
+    // The Loop trigger now shows a measure-span scope.
+    expect(screen.getByRole('button', { name: /loop m1/i })).toBeInTheDocument();
     // Switch to Polish — range must persist.
     act(() => { screen.getByText('Polish').click(); });
-    expect(screen.getByRole('button', { name: /practice: m1/i })).toBeInTheDocument();
-    // Switch to Listen — the Practice control is gone (range released).
+    expect(screen.getByRole('button', { name: /loop m1/i })).toBeInTheDocument();
+    // Switch to Listen — the loop now FOLLOWS (audit L6).
     act(() => { screen.getByText('Listen').click(); });
-    expect(screen.queryByRole('button', { name: /practice:/i })).toBeNull();
+    expect(screen.getByRole('button', { name: /loop m1/i })).toBeInTheDocument();
+    // Perform releases it.
+    act(() => { screen.getByText('Perform').click(); });
+    act(() => { screen.getByText('Listen').click(); });
+    expect(screen.getByRole('button', { name: /^loop$/i })).toBeInTheDocument(); // back to inactive trigger
   });
 });
 
@@ -278,7 +313,7 @@ describe('ScorePlayer — Polish mode (transport-driven)', () => {
     renderPlayer();
     screen.getByText('Polish').click();
     await act(async () => {});
-    screen.getByText('▶').click();
+    screen.getByRole('button', { name: 'Play' }).click();
     await act(async () => {});
     act(() => vi.advanceTimersByTime(4100)); // through the 4-beat @60 count-in (4000ms) → transport starts
 
@@ -295,7 +330,7 @@ describe('ScorePlayer — Polish mode (transport-driven)', () => {
     renderPlayer();
     screen.getByText('Polish').click();
     await act(async () => {});
-    screen.getByText('▶').click();
+    screen.getByRole('button', { name: 'Play' }).click();
     await act(async () => {});
     expect(document.querySelector('.piano-score-countin')).not.toBeNull(); // counting in
     expect(screen.getByText('1 / 4')).toBeTruthy();
@@ -312,7 +347,7 @@ describe('ScorePlayer — Polish mode (transport-driven)', () => {
     renderPlayer();
     screen.getByText('Polish').click();
     await act(async () => {});
-    screen.getByText('▶').click();
+    screen.getByRole('button', { name: 'Play' }).click();
     await act(async () => {});
     expect(document.querySelector('.piano-score-countin')).not.toBeNull();
     act(() => { document.querySelector('.piano-score-player__scroll').click(); }); // tap = abort
@@ -327,7 +362,7 @@ describe('ScorePlayer — Polish mode (transport-driven)', () => {
     renderPlayer();
     screen.getByText('Polish').click();
     await act(async () => {});
-    screen.getByText('▶').click();
+    screen.getByRole('button', { name: 'Play' }).click();
     await act(async () => {});
     act(() => vi.advanceTimersByTime(2100)); // through the 4-beat @120 count-in (2000ms)
     // Play the 4 onsets' expected notes so the final measure isn't silent, and run to the end.
@@ -336,6 +371,41 @@ describe('ScorePlayer — Polish mode (transport-driven)', () => {
     // Summary panel appears on completion (not only on silent-stop).
     expect(document.querySelector('.piano-score-run-summary')).not.toBeNull();
   });
+
+  it('a Polish loop on the final measure wraps at onDone instead of finishing (L6)', async () => {
+    h.layoutExtras = {
+      tempoEntries: [{ onsetQuarter: 0, bpm: 60 }],
+      // Single-step final measure: the loop's in-point IS the last timeline event
+      // (zero-span) — the nastiest wrap case; it must dwell + wrap, never finish.
+      events: [
+        { midi: 64, midis: [64], onsetQuarter: 0, x: 100, top: 10, bottom: 200, system: 0 },
+        { midi: 62, midis: [62], onsetQuarter: 1, x: 160, top: 10, bottom: 200, system: 0 },
+      ],
+      steps: [
+        { onsetQuarter: 0, measure: 0, notes: [{ midi: 64, staff: 0, x: 100, top: 10, bottom: 200, width: 8 }] },
+        { onsetQuarter: 1, measure: 1, notes: [{ midi: 62, staff: 0, x: 160, top: 10, bottom: 200, width: 8 }] },
+      ],
+      measures: [
+        { index: 0, number: 1, firstStep: 0, lastStep: 0 },
+        { index: 1, number: 2, firstStep: 1, lastStep: 1 },
+      ],
+    };
+    renderPlayer();
+    screen.getByText('Polish').click();
+    await act(async () => {});
+    act(() => { fireEvent.click(screen.getByRole('button', { name: /^loop/i })); });
+    act(() => { fireEvent.click(screen.getByRole('button', { name: /select measures/i })); });
+    const scroll = document.querySelector('.piano-score-player__scroll');
+    act(() => { fireEvent.click(scroll, { clientX: 160, clientY: 100 }); });
+    act(() => { fireEvent.click(scroll, { clientX: 160, clientY: 100 }); });
+    screen.getByRole('button', { name: 'Play' }).click();
+    await act(async () => {});
+    act(() => vi.advanceTimersByTime(4100)); // through the 4-beat @60 count-in → run starts at the in-point
+    act(() => vi.advanceTimersByTime(3500)); // several loop periods past the piece end
+    expect(document.querySelector('.piano-score-run-summary')).toBeNull(); // wrapped, never finalized
+    expect(screen.getByText('m 2 / 2')).toBeTruthy(); // still parked on the looped measure
+  });
+
 });
 
 describe('ScorePlayer — Listen mode', () => {
@@ -359,7 +429,7 @@ describe('ScorePlayer — Listen mode', () => {
     renderPlayer();
     screen.getByText('Listen').click();
     await act(async () => {});
-    screen.getByText('▶').click();
+    screen.getByRole('button', { name: 'Play' }).click();
     await act(async () => {});
     act(() => vi.advanceTimersByTime(100));
     // Audio plane: performed via timestamped sends (NOT pressNote — machine
@@ -367,7 +437,7 @@ describe('ScorePlayer — Listen mode', () => {
     expect(h.sendNoteAt).toHaveBeenCalledWith(40, expect.any(Number), expect.any(Number)); // LH performed
     expect(h.sendNoteAt).toHaveBeenCalledWith(64, expect.any(Number), expect.any(Number)); // RH performed too — full jukebox
     expect(h.pressNote).not.toHaveBeenCalled();
-    screen.getByText('❚❚').click(); // pause mid-note
+    screen.getByRole('button', { name: 'Pause' }).click(); // pause mid-note
     await act(async () => {});
     expect(h.sendPanic).toHaveBeenCalled(); // no droning chord
   });
@@ -385,7 +455,7 @@ describe('ScorePlayer — Listen mode', () => {
     await act(async () => {});
     fireEvent.click(screen.getByRole('radio', { name: 'RH' })); // My part = RH: the user plays staff 0, kiosk must NOT
     await act(async () => {});
-    screen.getByText('▶').click();
+    screen.getByRole('button', { name: 'Play' }).click();
     await act(async () => {});
     act(() => vi.advanceTimersByTime(4100)); // My part is set → count-in (4 beats @60) runs first
     act(() => vi.advanceTimersByTime(100));  // then the kiosk performs
@@ -399,13 +469,13 @@ describe('ScorePlayer — Listen mode', () => {
     screen.getByText('Listen').click();
     await act(async () => {});
     // My part = None → Play starts immediately (no count-in overlay).
-    screen.getByText('▶').click();
+    screen.getByRole('button', { name: 'Play' }).click();
     await act(async () => {});
     expect(document.querySelector('.piano-score-countin')).toBeNull();
     // Reset, claim a part, play again → count-in now runs.
     act(() => { fireEvent.click(screen.getByRole('radio', { name: 'RH' })); });
     // (a fresh Play after the timeline change)
-    if (screen.queryByText('▶')) { screen.getByText('▶').click(); await act(async () => {}); }
+    if (screen.queryByRole('button', { name: 'Play' })) { screen.getByRole('button', { name: 'Play' }).click(); await act(async () => {}); }
     expect(document.querySelector('.piano-score-countin')).not.toBeNull();
   });
 
@@ -417,7 +487,7 @@ describe('ScorePlayer — Listen mode', () => {
     renderPlayer();
     screen.getByText('Listen').click();
     await act(async () => {});
-    screen.getByText('▶').click();
+    screen.getByRole('button', { name: 'Play' }).click();
     await act(async () => {});
     act(() => vi.advanceTimersByTime(50)); // scheduled ahead — no timer advance strictly needed
     expect(h.sendNoteAt).toHaveBeenCalled();
@@ -436,11 +506,11 @@ describe('ScorePlayer — Listen mode', () => {
     renderPlayer();
     screen.getByText('Listen').click();
     await act(async () => {});
-    screen.getByText('▶').click();
+    screen.getByRole('button', { name: 'Play' }).click();
     await act(async () => {});
     act(() => vi.advanceTimersByTime(100)); // note 40 scheduled + sounding
     h.sendPanic.mockClear();
-    screen.getByText('❚❚').click(); // pause
+    screen.getByRole('button', { name: 'Pause' }).click(); // pause
     await act(async () => {});
     const panicsAtPause = h.sendPanic.mock.calls.length;
     expect(panicsAtPause).toBeGreaterThanOrEqual(1); // immediate flush killed the sounding note
@@ -456,14 +526,14 @@ describe('ScorePlayer — Listen mode', () => {
     renderPlayer();
     screen.getByText('Listen').click();
     await act(async () => {});
-    screen.getByText('▶').click();
+    screen.getByRole('button', { name: 'Play' }).click();
     await act(async () => {});
     act(() => vi.advanceTimersByTime(100)); // playing, note sounding
-    screen.getByText('❚❚').click();        // pause → immediate flush + delayed panic armed
+    screen.getByRole('button', { name: 'Pause' }).click();        // pause → immediate flush + delayed panic armed
     await act(async () => {});
     act(() => vi.advanceTimersByTime(100)); // still inside the ~460ms window
     h.sendPanic.mockClear();
-    screen.getByText('▶').click();          // resume within the window → must cancel the stale panic
+    screen.getByRole('button', { name: 'Play' }).click();          // resume within the window → must cancel the stale panic
     await act(async () => {});
     act(() => vi.advanceTimersByTime(500)); // advance past where the stale panic would have fired
     expect(h.sendPanic).not.toHaveBeenCalled(); // resumed playback was NOT cut
@@ -476,9 +546,9 @@ describe('ScorePlayer — Listen mode', () => {
     await act(async () => {});
     // Half speed (0.5×) → each step takes 2000ms.
     fireEvent.click(screen.getByRole('button', { name: /^tempo/i }));
-    fireEvent.click(screen.getByRole('button', { name: '50%' }));
+    fireEvent.click(screen.getByRole('button', { name: /^50%/ }));
     await act(async () => {});
-    screen.getByText('▶').click();
+    screen.getByRole('button', { name: 'Play' }).click();
     await act(async () => {});
     act(() => vi.advanceTimersByTime(1050)); // < 2000ms → not yet advanced
     expect(screen.getByText('1 / 4')).toBeTruthy();
@@ -525,15 +595,15 @@ describe('ScorePlayer — Listen mode', () => {
     renderPlayer();
     screen.getByText('Listen').click();
     await act(async () => {});
-    screen.getByText('▶').click(); // My part = None → plays immediately
+    screen.getByRole('button', { name: 'Play' }).click(); // My part = None → plays immediately
     await act(async () => {});
     act(() => vi.advanceTimersByTime(100));
-    expect(screen.getByText('❚❚')).toBeTruthy(); // playing
+    expect(screen.getByRole('button', { name: 'Pause' })).toBeInTheDocument(); // playing
     h.sendPanic.mockClear();
     act(() => { fireEvent.click(screen.getByRole('button', { name: /transpose up/i })); });
     await act(async () => {});
     expect(h.sendPanic).toHaveBeenCalled(); // silenced on the view change
-    expect(screen.getByText('▶')).toBeTruthy(); // paused
+    expect(screen.getByRole('button', { name: 'Play' })).toBeInTheDocument(); // paused
   });
 
   it('silences sounding notes on tap-seek in Play mode (no stuck note)', async () => {
@@ -544,11 +614,219 @@ describe('ScorePlayer — Listen mode', () => {
     renderPlayer();
     screen.getByText('Listen').click();
     await act(async () => {});
-    screen.getByText('▶').click();
+    screen.getByRole('button', { name: 'Play' }).click();
     await act(async () => {});
     act(() => vi.advanceTimersByTime(100)); // note 40 now sounding
     h.sendPanic.mockClear();
     act(() => { document.querySelector('.piano-score-player__scroll').click(); }); // tap to seek
     expect(h.sendPanic).toHaveBeenCalled(); // flushed, won't drone
+  });
+
+  it('Listen plays only the loop and wraps at the out-point with a silence flush (L6)', async () => {
+    h.layoutExtras = {
+      tempoEntries: [{ onsetQuarter: 0, bpm: 60 }],
+      // Two onsets only, matching the steps below — the loop (m2) contains the
+      // FINAL step, so the wrap must come from the onDone path, not onEvent.
+      events: [
+        { midi: 64, midis: [64], onsetQuarter: 0, x: 100, top: 10, bottom: 200, system: 0 },
+        { midi: 62, midis: [62], onsetQuarter: 1, x: 160, top: 10, bottom: 200, system: 0 },
+      ],
+      steps: [
+        { onsetQuarter: 0, measure: 0, notes: [{ midi: 64, staff: 0, x: 100, top: 10, bottom: 200, width: 8 }] },
+        { onsetQuarter: 1, measure: 1, notes: [{ midi: 62, staff: 0, x: 160, top: 10, bottom: 200, width: 8 }] },
+      ],
+      measures: [
+        { index: 0, number: 1, firstStep: 0, lastStep: 0 },
+        { index: 1, number: 2, firstStep: 1, lastStep: 1 },
+      ],
+    };
+    renderPlayer();
+    screen.getByText('Listen').click();
+    await act(async () => {});
+    // Loop measure 2 only (tail measure — exercises the onDone wrap path).
+    act(() => { fireEvent.click(screen.getByRole('button', { name: /^loop/i })); });
+    act(() => { fireEvent.click(screen.getByRole('button', { name: /select measures/i })); });
+    const scroll = document.querySelector('.piano-score-player__scroll');
+    act(() => { fireEvent.click(scroll, { clientX: 160, clientY: 100 }); });
+    act(() => { fireEvent.click(scroll, { clientX: 160, clientY: 100 }); });
+    expect(screen.getByText('m 2 / 2')).toBeTruthy();
+    screen.getByRole('button', { name: 'Play' }).click(); // My part = None → plays immediately
+    await act(async () => {});
+    act(() => vi.advanceTimersByTime(1100)); // past the final step @60bpm → would normally finish
+    expect(screen.getByRole('button', { name: 'Pause' })).toBeInTheDocument(); // still playing — wrapped, not done
+    expect(screen.getByText('m 2 / 2')).toBeTruthy(); // back at the loop in-point
+    // The wrap arms the silence flush; its delayed panic (lookahead+60ms) kills
+    // any in-flight tail sends so nothing drones across the loop boundary.
+    act(() => vi.advanceTimersByTime(500));
+    expect(h.sendPanic).toHaveBeenCalled();
+  });
+
+  it('a role change during the wrap dwell cancels the pending restart — no uncommanded audio (L6)', async () => {
+    // All staves claimed as "mine" → step-only timeline → a tail loop on the
+    // final step is ZERO-SPAN, so each pass ends in the one-beat dwell before
+    // wrapping. Un-claiming the parts DURING the dwell goes through
+    // disruptListenPlayback while nothing is playing — it must still cancel the
+    // dwell, or the stale timer restarts playback seconds later with the
+    // now-note-bearing timeline (uncommanded audio).
+    h.layoutExtras = {
+      tempoEntries: [{ onsetQuarter: 0, bpm: 60 }],
+      events: [
+        { midi: 64, midis: [64, 40], onsetQuarter: 0, x: 100, top: 10, bottom: 200, system: 0 },
+        { midi: 62, midis: [62, 41], onsetQuarter: 1, x: 160, top: 10, bottom: 200, system: 0 },
+      ],
+      steps: [
+        { onsetQuarter: 0, measure: 0, notes: [{ midi: 64, staff: 0, x: 100, top: 10, bottom: 200, width: 8 }, { midi: 40, staff: 1, x: 100, top: 10, bottom: 200, width: 8 }] },
+        { onsetQuarter: 1, measure: 1, notes: [{ midi: 62, staff: 0, x: 160, top: 10, bottom: 200, width: 8 }, { midi: 41, staff: 1, x: 160, top: 10, bottom: 200, width: 8 }] },
+      ],
+      measures: [
+        { index: 0, number: 1, firstStep: 0, lastStep: 0 },
+        { index: 1, number: 2, firstStep: 1, lastStep: 1 },
+      ],
+    };
+    renderPlayer();
+    screen.getByText('Listen').click();
+    await act(async () => {});
+    act(() => { fireEvent.click(screen.getByRole('radio', { name: 'Both' })); }); // My part = everything → kiosk sends nothing
+    act(() => { fireEvent.click(screen.getByRole('button', { name: /^loop/i })); });
+    act(() => { fireEvent.click(screen.getByRole('button', { name: /select measures/i })); });
+    const scroll = document.querySelector('.piano-score-player__scroll');
+    act(() => { fireEvent.click(scroll, { clientX: 160, clientY: 100 }); });
+    act(() => { fireEvent.click(scroll, { clientX: 160, clientY: 100 }); });
+    screen.getByRole('button', { name: 'Play' }).click();
+    await act(async () => {});
+    act(() => vi.advanceTimersByTime(4100)); // count-in (my part set) → zero-span run ends instantly → dwell armed
+    h.sendNoteAt.mockClear();
+    // Give the parts back to the kiosk DURING the dwell (transport idle).
+    act(() => { fireEvent.click(screen.getByRole('radio', { name: 'None' })); });
+    act(() => vi.advanceTimersByTime(1500)); // well past the one-beat dwell
+    expect(h.sendNoteAt).not.toHaveBeenCalled(); // stale dwell canceled — no uncommanded restart
+  });
+});
+
+describe('ScorePlayer — Restart honors the loop in-point (L5)', () => {
+  it('Restart returns to the loop in-point, not measure 1', () => {
+    h.layoutExtras = {
+      steps: [
+        { onsetQuarter: 0, measure: 0, notes: [{ midi: 64, staff: 0, x: 100, top: 10, bottom: 200, width: 8 }] },
+        { onsetQuarter: 1, measure: 1, notes: [{ midi: 62, staff: 0, x: 160, top: 10, bottom: 200, width: 8 }] },
+      ],
+      measures: [
+        { index: 0, number: 1, firstStep: 0, lastStep: 0 },
+        { index: 1, number: 2, firstStep: 1, lastStep: 1 },
+      ],
+    };
+    renderPlayer();
+    act(() => { screen.getByText('Polish').click(); });
+    // Set a loop on measure 2 only (two selection taps at x=160 → step 1 → measure index 1).
+    act(() => { fireEvent.click(screen.getByRole('button', { name: /^loop/i })); });
+    act(() => { fireEvent.click(screen.getByRole('button', { name: /select measures/i })); });
+    const scroll = document.querySelector('.piano-score-player__scroll');
+    act(() => { fireEvent.click(scroll, { clientX: 160, clientY: 100 }); });
+    act(() => { fireEvent.click(scroll, { clientX: 160, clientY: 100 }); });
+    expect(screen.getByText('m 2 / 2')).toBeTruthy(); // focus jump put the cursor at the in-point
+    act(() => { fireEvent.click(screen.getByRole('button', { name: /restart/i })); });
+    expect(screen.getByText('m 2 / 2')).toBeTruthy(); // NOT m 1 / 2
+  });
+});
+
+describe('ScorePlayer — loop endpoint nudging (L2)', () => {
+  it('nudging "Loop end later" from the menu grows the loop by one measure', () => {
+    h.layoutExtras = {
+      steps: [
+        { onsetQuarter: 0, measure: 0, notes: [{ midi: 64, staff: 0, x: 100, top: 10, bottom: 200, width: 8 }] },
+        { onsetQuarter: 1, measure: 1, notes: [{ midi: 62, staff: 0, x: 160, top: 10, bottom: 200, width: 8 }] },
+      ],
+      measures: [
+        { index: 0, number: 1, firstStep: 0, lastStep: 0 },
+        { index: 1, number: 2, firstStep: 1, lastStep: 1 },
+      ],
+    };
+    renderPlayer();
+    act(() => { screen.getByText('Learn').click(); });
+    // Set a loop of m1–m1 (two selection taps on the first note).
+    act(() => { fireEvent.click(screen.getByRole('button', { name: /^loop/i })); });
+    act(() => { fireEvent.click(screen.getByRole('button', { name: /select measures/i })); });
+    const scroll = document.querySelector('.piano-score-player__scroll');
+    act(() => { fireEvent.click(scroll, { clientX: 100, clientY: 100 }); });
+    act(() => { fireEvent.click(scroll, { clientX: 100, clientY: 100 }); });
+    expect(screen.getByRole('button', { name: /loop m1–m1/i })).toBeInTheDocument();
+    // Open the Loop menu and nudge the end later.
+    act(() => { fireEvent.click(screen.getByRole('button', { name: /loop m1–m1/i })); });
+    act(() => { fireEvent.click(screen.getByRole('button', { name: /loop end later/i })); });
+    expect(screen.getByRole('button', { name: /loop m1–m2/i })).toBeInTheDocument();
+  });
+});
+
+describe('ScorePlayer — selection tap threshold (L3)', () => {
+  it('ignores a margin tap during loop selection instead of committing a far measure', () => {
+    h.layoutExtras = {
+      steps: [
+        { onsetQuarter: 0, measure: 0, notes: [{ midi: 64, staff: 0, x: 100, top: 10, bottom: 200, width: 8 }] },
+        { onsetQuarter: 1, measure: 1, notes: [{ midi: 62, staff: 0, x: 160, top: 10, bottom: 200, width: 8 }] },
+      ],
+      measures: [
+        { index: 0, number: 1, firstStep: 0, lastStep: 0 },
+        { index: 1, number: 2, firstStep: 1, lastStep: 1 },
+      ],
+    };
+    renderPlayer();
+    act(() => { screen.getByText('Learn').click(); });
+    act(() => { fireEvent.click(screen.getByRole('button', { name: /^loop/i })); });
+    act(() => { fireEvent.click(screen.getByRole('button', { name: /select measures/i })); });
+    const scroll = document.querySelector('.piano-score-player__scroll');
+    // A tap 800px right of the last note (margin) must NOT arm an in-point.
+    act(() => { fireEvent.click(scroll, { clientX: 960, clientY: 100 }); });
+    expect(screen.getByText(/tap the first measure/i)).toBeInTheDocument(); // still stage 'first'
+    // A tap on a real note proceeds normally.
+    act(() => { fireEvent.click(scroll, { clientX: 100, clientY: 100 }); });
+    expect(screen.getByText(/now tap the last/i)).toBeInTheDocument();
+  });
+});
+
+describe('ScorePlayer — metronome in Learn (M1/M2/M4)', () => {
+  it('shows a labeled BPM toggle in Learn; toggling starts/stops the click immediately', () => {
+    renderPlayer();
+    enterLearn();
+    const btn = screen.getByRole('button', { name: /metronome/i });
+    expect(btn).toHaveTextContent('100'); // parseMusicXml default tempo 100 × 100% (note icon is SVG)
+    expect(btn.querySelector('svg')).not.toBeNull(); // QuarterNoteIcon
+    expect(btn).toHaveAttribute('aria-pressed', 'false'); // Learn defaults OFF
+    expect(h.clickSched.start).not.toHaveBeenCalled();
+    act(() => { fireEvent.click(btn); });
+    expect(h.clickSched.start).toHaveBeenCalledWith(100); // free-running click starts NOW
+    act(() => { fireEvent.click(btn); });
+    expect(h.clickSched.stop).toHaveBeenCalled();
+  });
+
+  it('Learn metronome follows the tempo control', () => {
+    renderPlayer();
+    enterLearn();
+    act(() => { fireEvent.click(screen.getByRole('button', { name: /^tempo/i })); });
+    act(() => { fireEvent.click(screen.getByRole('button', { name: /^50%/ })); }); // anchored — /50%/ also hits "150%"
+    act(() => { fireEvent.click(screen.getByRole('button', { name: /metronome/i })); });
+    expect(h.clickSched.start).toHaveBeenCalledWith(50); // 100 × 0.5
+  });
+
+  it('retunes a running Learn click live with the EXACT bpm (no display rounding)', () => {
+    h.layoutExtras = { tempoEntries: [{ onsetQuarter: 0, bpm: 63 }] }; // 63 × 0.5 = 31.5 — rounding would corrupt it
+    renderPlayer();
+    enterLearn();
+    act(() => { fireEvent.click(screen.getByRole('button', { name: /metronome/i })); }); // ON first
+    expect(h.clickSched.start).toHaveBeenCalledWith(63);
+    act(() => { fireEvent.click(screen.getByRole('button', { name: /^tempo/i })); });
+    act(() => { fireEvent.click(screen.getByRole('button', { name: /^50%/ })); }); // change tempo while ticking
+    // The hook must receive the exact product — rounding belongs to the bar's
+    // readout only, or the click drifts against the tempo-scaled timelines
+    // (playTimeline scales by exact 1/tempoMult): 32 vs 31.5 = a beat per ~64.
+    expect(h.clickSched.setBpm).toHaveBeenCalledWith(31.5);
+    expect(screen.getByRole('button', { name: /metronome/i })).toHaveTextContent('32'); // readout IS rounded
+  });
+
+  it('tempo steps show the resulting BPM (M4)', () => {
+    renderPlayer(); // Listen
+    act(() => { fireEvent.click(screen.getByRole('button', { name: /^tempo/i })); });
+    // Each percent step also shows the BPM it produces (base 100 from the fixture).
+    expect(screen.getByRole('button', { name: /^50%.*50/ })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^100%.*100/ })).toBeInTheDocument();
   });
 });

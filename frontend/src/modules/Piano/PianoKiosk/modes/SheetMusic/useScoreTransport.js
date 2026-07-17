@@ -23,6 +23,11 @@ const isNote = (ev) => ev.type === 'note_on' || ev.type === 'note_off';
  * pending notes with fresh timestamps. Already-dispatched future sends cannot
  * be recalled — the CONSUMER must flush (silence now + panic after the
  * lookahead window; see ScorePlayer's silenceScheduled).
+ *
+ * Seeking from INSIDE onEvent is supported (the focus-loop wrap): the fire loop
+ * detects the anchor change and continues from the new position. onDone fires
+ * only after the transport has fully reset itself (timer cleared, playing
+ * false), so the callback may synchronously seek() + play() to restart.
  */
 export function useScoreTransport({
   timeline, onEvent, onFire, onSchedule, onDone,
@@ -59,11 +64,21 @@ export function useScoreTransport({
       }
     }
 
-    // Visual plane: fire everything due now.
-    while (fireIdxRef.current < tl.length && tl[fireIdxRef.current].t <= pos) {
+    // Visual plane: fire everything due now. A callback may SEEK mid-loop (the
+    // focus-loop wrap re-seeks to its in-point from inside onEvent) — seek moves
+    // the anchor AND fireIdx, so detect it and restart from the fresh position
+    // instead of marching on with the stale one (which would re-fire the wrapped
+    // span forever within this tick).
+    let posNow = pos;
+    while (fireIdxRef.current < tl.length && tl[fireIdxRef.current].t <= posNow) {
       const ev = tl[fireIdxRef.current];
-      onFireRef.current?.(ev, pos - ev.t, gapMs);
-      onEventRef.current?.(ev, anchorRef.current + ev.t);
+      const anchorBefore = anchorRef.current;
+      onFireRef.current?.(ev, posNow - ev.t, gapMs);
+      onEventRef.current?.(ev, anchorBefore + ev.t);
+      if (anchorRef.current !== anchorBefore) { // callback seeked — index already repositioned
+        posNow = performance.now() - anchorRef.current;
+        continue;
+      }
       fireIdxRef.current += 1;
     }
 
@@ -101,6 +116,7 @@ export function useScoreTransport({
     fireIdxRef.current = i < 0 ? tl.length : i;
     schedIdxRef.current = fireIdxRef.current;
     anchorRef.current = performance.now() - pos;
+    lastPosRef.current = pos; // the next tick's gapMs measures from here, not the pre-seek position
   }, []);
 
   const stop = useCallback(() => {

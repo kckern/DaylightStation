@@ -34,4 +34,24 @@ export function sectionToRange(section, measures) {
   return { inMeasure, outMeasure };
 }
 
-export default { rangeSteps, clampStepToRange, nextStepInRange, sectionToRange };
+/** Where Restart/reset should land: the loop in-point when a range is active, else 0. */
+export function homeStep(range) {
+  return range ? range[0] : 0;
+}
+
+/**
+ * Nudge one edge of a focus by ±delta measures, clamped to [0, measureCount-1]
+ * and to in ≤ out. Any nudge yields a plain custom range (a section label would
+ * no longer describe the measures). Returns the same object if nothing changed
+ * (a React state no-op).
+ */
+export function nudgeRange(focus, edge, delta, measureCount) {
+  if (!focus) return focus;
+  let { inMeasure, outMeasure } = focus;
+  if (edge === 'in') inMeasure = Math.min(outMeasure, Math.max(0, inMeasure + delta));
+  else outMeasure = Math.min(measureCount - 1, Math.max(inMeasure, outMeasure + delta));
+  if (inMeasure === focus.inMeasure && outMeasure === focus.outMeasure) return focus;
+  return { kind: 'custom', inMeasure, outMeasure };
+}
+
+export default { rangeSteps, clampStepToRange, nextStepInRange, sectionToRange, homeStep, nudgeRange };
