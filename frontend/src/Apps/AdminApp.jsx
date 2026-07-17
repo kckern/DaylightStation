@@ -19,6 +19,7 @@ import DevicesIndex from '../modules/Admin/Household/DevicesIndex.jsx';
 import DeviceEditor from '../modules/Admin/Household/DeviceEditor.jsx';
 import IntegrationsIndex from '../modules/Admin/System/IntegrationsIndex.jsx';
 import IntegrationDetail from '../modules/Admin/System/IntegrationDetail.jsx';
+import NotificationsIndex from '../modules/Admin/Notifications/NotificationsIndex.jsx';
 import AgentsIndex from '../modules/Admin/Agents/AgentsIndex.jsx';
 import AgentDetail from '../modules/Admin/Agents/AgentDetail.jsx';
 import GamesIndex from '../modules/Admin/Games/GamesIndex.jsx';
@@ -168,6 +169,7 @@ function AdminApp() {
               <Route path="system/scheduler/:jobId" element={<JobDetail />} />
               <Route path="system/config" element={<ConfigIndex />} />
               <Route path="system/config/*" element={<ConfigFileEditor />} />
+              <Route path="system/notifications" element={<NotificationsIndex />} />
               <Route path="*" element={<Navigate to="content/lists/menus" replace />} />
             </Route>
           </Routes>
