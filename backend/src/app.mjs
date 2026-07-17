@@ -78,6 +78,7 @@ import { createHomeAutomationApiRouter, createHomeDashboardApiRouter } from '#co
 import { createDeviceApiRouter } from '#composition/modules/deviceApi.mjs';
 import { createTriggerApiRouter } from '#composition/modules/triggerApi.mjs';
 import { createGratitudeApiRouter } from '#composition/modules/gratitudeApi.mjs';
+import { createEconomyApi } from '#composition/modules/economyApi.mjs';
 import { createJournalistApiRouter } from '#composition/modules/journalistApi.mjs';
 import { createHomebotApiRouter } from '#composition/modules/homebotApi.mjs';
 import { createNutribotApiRouter } from '#composition/modules/nutribotApi.mjs';
@@ -1806,6 +1807,15 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     printerRegistry: hardwareAdapters.printerRegistry,
     logger: rootLogger.child({ module: 'gratitude-api' })
   });
+
+  // Household economy — per-user wallets, earn/deposit, metered spend sessions.
+  // Keep `economyApi` in scope: Task 8 wires `economyApi.economyService` into the
+  // piano earn-hook (lesson-complete → earn). This block only mounts the router.
+  const economyApi = createEconomyApi({
+    configService,
+    logger: rootLogger.child({ module: 'economy-api' })
+  });
+  v1Routers.economy = economyApi.router;
 
   // Printer router — thermal printer control, multi-printer via optional {/:location} URL segment
   v1Routers.printer = createPrinterRouter({
