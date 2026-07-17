@@ -61,17 +61,26 @@ export class EconomyService {
     if (!policy || policy.type !== 'earn') throw new ValidationError(`unknown earn action: ${action}`);
     const reward = policy.reward || 0;
     const cap = policy.daily_cap ?? Infinity;
+    // NOTE: cap accounting is UTC-day (matches how txn.at is stamped). Blackout
+    // windows are local-time; the split is intentional (see openSession).
     const today = new Date().toISOString().slice(0, 10);
-    const earnedToday = this.#ds.readLedgerDay(userId, today)
-      .filter((t) => t.kind === 'earn' && t.action === action)
-      .reduce((s, t) => s + t.delta, 0);
+    const todaysEarns = this.#ds.readLedgerDay(userId, today)
+      .filter((t) => t.kind === 'earn' && t.action === action);
+    // Replay guard: a completion event carrying a ref only ever pays out once
+    // per day. Bounds the damage of a retried/duplicated earn (coins cash out).
+    if (ref != null && todaysEarns.some((t) => t.ref === ref)) {
+      const wallet = this.#snapshot(userId);
+      this.#logger.info('economy-earn-duplicate', { userId, action, ref, balance: wallet.balance });
+      return { userId, earned: 0, capped: false, duplicate: true, balance: wallet.balance };
+    }
+    const earnedToday = todaysEarns.reduce((s, t) => s + t.delta, 0);
     const grant = Math.max(0, Math.min(reward, cap - earnedToday));
     if (grant > 0) {
       this.#ds.appendTransaction(userId, createTransaction({ kind: 'earn', delta: grant, action, source, ref }));
     }
     const wallet = this.#snapshot(userId);
     this.#logger.info('economy-earn', { userId, action, earned: grant, capped: grant < reward, balance: wallet.balance });
-    return { userId, earned: grant, capped: grant < reward, balance: wallet.balance };
+    return { userId, earned: grant, capped: grant < reward, duplicate: false, balance: wallet.balance };
   }
 
   async openSession(userId, { action, source }) {
@@ -93,26 +102,45 @@ export class EconomyService {
     return { userId, sessionId: session.id, balance: wallet.balance, drainPerSecond: drainPerSecond(policy) };
   }
 
+  /**
+   * Settle a metered session. `coins` is the CUMULATIVE whole-or-fractional
+   * coins the client reports consumed since the session opened (a monotonic
+   * high-water mark), NOT an increment. The server charges only the newly-
+   * crossed whole coins: spend = floor(cumulative) − settled_coins, clamped to
+   * balance. This makes settle idempotent (a retried settle with the same
+   * cumulative charges 0) and immune to sub-coin flushing (the remainder stays
+   * uncharged until the next whole coin is crossed).
+   */
   async settleSession(userId, { sessionId, coins }) {
     this.#assertUser(userId);
     const wallet = this.#ds.readWallet(userId);
     const session = wallet?.session;
     if (!session || session.id !== sessionId) throw new ValidationError(`no open session ${sessionId}`);
-    const spend = Math.min(Math.max(0, Math.floor(coins || 0)), wallet.balance);
+    const cumulative = Math.max(0, Math.floor(coins || 0));
+    const newlyConsumed = Math.max(0, cumulative - session.settled_coins);
+    const spend = Math.min(newlyConsumed, wallet.balance);
     if (spend > 0) {
       this.#ds.appendTransaction(userId, createTransaction({ kind: 'spend', delta: -spend, action: session.action, source: 'economy-session', ref: sessionId }));
     }
     const updated = { ...session, last_settled_at: new Date().toISOString(), settled_coins: session.settled_coins + spend };
     const next = this.#snapshot(userId, updated);
-    this.#logger.debug?.('economy-session-settle', { userId, sessionId, spend, balance: next.balance });
+    this.#logger.debug?.('economy-session-settle', { userId, sessionId, cumulative, spend, balance: next.balance });
     return { userId, balance: next.balance, depleted: next.balance <= 0 };
   }
 
   async closeSession(userId, { sessionId, coins = 0 }) {
-    const settled = await this.settleSession(userId, { sessionId, coins });
+    // Tolerate a session that was already stale-reaped (normal cleanup after a
+    // crash): treat as a no-op success rather than surfacing an error.
+    const wallet = this.#ds.readWallet(userId);
+    if (!wallet?.session || wallet.session.id !== sessionId) {
+      const fresh = this.#snapshot(userId);
+      this.#logger.info('economy-session-close-noop', { userId, sessionId, balance: fresh.balance });
+      return { userId, balance: fresh.balance };
+    }
+    await this.settleSession(userId, { sessionId, coins });
     const next = this.#snapshot(userId, null);
     this.#logger.info('economy-session-close', { userId, sessionId, balance: next.balance });
-    return { userId, balance: settled.balance };
+    return { userId, balance: next.balance };
   }
 
   #reapStale(userId) {
