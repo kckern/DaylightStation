@@ -2,6 +2,13 @@ import { describe, it, expect } from 'vitest';
 import { makeEmptyScore } from '#frontend/modules/Piano/PianoKiosk/modes/Composer/model/score.js';
 import { serializeMusicXml } from './serializeMusicXml.js';
 import { parseMusicXml } from './parseMusicXml.js';
+import { makeNote, makeRest } from '#frontend/modules/Piano/PianoKiosk/modes/Composer/model/note.js';
+
+function scoreWith(notes) {
+  const s = makeEmptyScore();
+  s.parts[0].measures[0].notes = notes;
+  return s;
+}
 
 describe('serializeMusicXml — scaffold', () => {
   const xml = serializeMusicXml(makeEmptyScore());
@@ -19,5 +26,20 @@ describe('serializeMusicXml — scaffold', () => {
     expect(back.timeSig).toEqual({ beats: 4, beatType: 4 });
     expect(back.key.fifths).toBe(0);
     expect(back.tempo).toBe(100);
+  });
+});
+
+describe('serializeMusicXml — pitched note', () => {
+  it('round-trips a single C4 quarter (midi 60, quarter, staff 1)', () => {
+    const xml = serializeMusicXml(scoreWith([makeNote({ step: 'C', octave: 4 }, { type: 'quarter' })]));
+    const n = parseMusicXml(xml).parts[0].measures[0].notes[0];
+    expect(n.midi).toBe(60);
+    expect(n.type).toBe('quarter');
+    expect(n.rest).toBe(false);
+  });
+  it('emits alter for F#4', () => {
+    const xml = serializeMusicXml(scoreWith([makeNote({ step: 'F', octave: 4, alter: 1 }, { type: 'eighth' })]));
+    expect(xml).toContain('<alter>1</alter>');
+    expect(parseMusicXml(xml).parts[0].measures[0].notes[0].midi).toBe(66);
   });
 });
