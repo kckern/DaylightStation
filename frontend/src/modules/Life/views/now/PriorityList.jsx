@@ -3,13 +3,29 @@ import { Stack, Paper, Group, Text, Badge, ThemeIcon, ActionIcon } from '@mantin
 import { IconX } from '@tabler/icons-react';
 import { useNavigate } from 'react-router-dom';
 import { priorityTypeMeta } from '../../theme/semantics.js';
+import { useLifeUsername } from '../../hooks/useLifeUser.js';
 
 const DISMISS_KEY = 'life.priorities.dismissed';
-const keyOf = (item) => `${item.type}:${item.title}`;
 
-function loadDismissed() {
-  try { return new Set(JSON.parse(localStorage.getItem(DISMISS_KEY) || '[]')); }
-  catch { return new Set(); }
+function todayStr() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+/**
+ * Load the dismissed-card set, dropping any entries whose date segment isn't
+ * today (dismissals are "for today, for this user" — they auto-expire) and
+ * persisting the pruned set so localStorage doesn't grow unbounded.
+ */
+function loadDismissed(today) {
+  try {
+    const raw = JSON.parse(localStorage.getItem(DISMISS_KEY) || '[]');
+    const pruned = raw.filter((k) => k.split(':')[1] === today);
+    if (pruned.length !== raw.length) {
+      try { localStorage.setItem(DISMISS_KEY, JSON.stringify(pruned)); }
+      catch { /* ignore quota/private-mode errors */ }
+    }
+    return new Set(pruned);
+  } catch { return new Set(); }
 }
 
 function routeFor(item) {
@@ -17,18 +33,26 @@ function routeFor(item) {
   if (item.type === 'plan_gap') {
     return { purpose: '/life/plan', values: '/life/plan/values', goals: '/life/plan/goals' }[item.gap] || '/life/coach';
   }
-  if (item.related_value) return '/life/plan/values';
+  // related_value is only a real value id on drift_alert items; on goal_deadline
+  // it's the goal's quality id, so routing it to /life/plan/values would be wrong.
+  // The backend doesn't emit a goal id on goal_deadline items, so there's no
+  // correct destination for those — leave them non-navigable.
+  if (item.type === 'drift_alert' && item.related_value) return '/life/plan/values';
   return null;
 }
 
 export function PriorityList({ priorities = [] }) {
   const navigate = useNavigate();
-  const [dismissed, setDismissed] = useState(loadDismissed);
+  const username = useLifeUsername();
+  const today = todayStr();
+  const keyOf = (item) => `${username || 'anon'}:${today}:${item.type}:${item.title}`;
+  const [dismissed, setDismissed] = useState(() => loadDismissed(today));
 
   const dismiss = (item) => {
     const next = new Set(dismissed); next.add(keyOf(item));
     setDismissed(next);
-    localStorage.setItem(DISMISS_KEY, JSON.stringify([...next]));
+    try { localStorage.setItem(DISMISS_KEY, JSON.stringify([...next])); }
+    catch { /* ignore quota/private-mode errors */ }
   };
 
   const visible = priorities.filter((p) => !dismissed.has(keyOf(p))).slice(0, 5);
