@@ -55,6 +55,7 @@ export class UserVideoProgressStore {
     const progress = loadYaml(path.join(dir, 'video-progress')) || {};
     const existing = progress[key] || {};
 
+    const wasCompleted = !!existing.completedAt;
     const nowEngaged = this.#wasEngaged(existing) || !!engaged;
     const normalizedPercent = Math.round(parseFloat(percent) || 0);
     const completedAt = existing.completedAt ||
@@ -77,7 +78,11 @@ export class UserVideoProgressStore {
     this.#logger.info?.('piano.video-progress.record', {
       userId, key, percent: normalizedPercent, engaged: nowEngaged, completed: !!completedAt,
     });
-    return entry;
+    // `newlyCompleted` is a RETURN-VALUE signal only (true iff completedAt went
+    // absent→present in THIS call). It is deliberately NOT part of the persisted
+    // `entry` above, so it never lands in video-progress.yml. Callers (the play
+    // /log route) use it to fire the one-time economy earn on the transition.
+    return { ...entry, newlyCompleted: !wasCompleted && !!completedAt };
   }
 
   /**
