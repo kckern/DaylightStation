@@ -1,13 +1,13 @@
 import { useMemo } from 'react';
-import { Stack, Text, Group, Tooltip, Box } from '@mantine/core';
+import { Stack, Text, ScrollArea } from '@mantine/core';
 
 const CELL_SIZE = 12;
 const GAP = 2;
 const DAYS_IN_WEEK = 7;
 
-function getColor(count, max) {
-  if (count === 0) return 'var(--mantine-color-dark-6)';
-  const ratio = count / max;
+export function getHeatColor(count, max) {
+  if (count === 0) return 'var(--mantine-color-dark-4)';
+  const ratio = max ? count / max : 0;
   if (ratio > 0.75) return 'var(--mantine-color-green-6)';
   if (ratio > 0.5) return 'var(--mantine-color-green-5)';
   if (ratio > 0.25) return 'var(--mantine-color-green-4)';
@@ -62,29 +62,31 @@ export function ActivityHeatmap({ days = {}, countFn }) {
 
   return (
     <Stack gap={4}>
-      <svg
-        width={weeks * (CELL_SIZE + GAP) + GAP}
-        height={DAYS_IN_WEEK * (CELL_SIZE + GAP) + GAP}
-      >
-        {cells.map((cell, i) => {
-          const week = Math.floor(i / DAYS_IN_WEEK);
-          const day = i % DAYS_IN_WEEK;
-          if (!cell.inRange) return null;
-
-          return (
-            <Tooltip key={cell.date} label={`${cell.date}: ${cell.count} sources`}>
+      <ScrollArea type="auto" scrollbarSize={6}>
+        <svg
+          width={weeks * (CELL_SIZE + GAP) + GAP}
+          height={DAYS_IN_WEEK * (CELL_SIZE + GAP) + GAP}
+        >
+          {cells.map((cell, i) => {
+            const week = Math.floor(i / DAYS_IN_WEEK);
+            const day = i % DAYS_IN_WEEK;
+            if (!cell.inRange) return null;
+            return (
               <rect
+                key={cell.date}
                 x={week * (CELL_SIZE + GAP) + GAP}
                 y={day * (CELL_SIZE + GAP) + GAP}
                 width={CELL_SIZE}
                 height={CELL_SIZE}
                 rx={2}
-                fill={getColor(cell.count, maxCount)}
-              />
-            </Tooltip>
-          );
-        })}
-      </svg>
+                fill={getHeatColor(cell.count, maxCount)}
+              >
+                <title>{`${cell.date}: ${cell.count} sources`}</title>
+              </rect>
+            );
+          })}
+        </svg>
+      </ScrollArea>
     </Stack>
   );
 }
