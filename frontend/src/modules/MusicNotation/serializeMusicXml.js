@@ -22,8 +22,9 @@ function tieMarks(tie) {
 
 // Assemble a single <notations> block from tied + articulations.
 // Emit nothing when there is no content (never an empty <notations/>).
-function notationsXml(note) {
-  const { tied } = tieMarks(note.tie);
+// `tied` is precomputed by the caller (see tieMarks) to avoid recomputing it.
+function notationsXml(note, tied) {
+  // assumes controlled MusicXML vocabulary (articulation names emitted as tag names)
   const arts = (note.articulations && note.articulations.length)
     ? `<articulations>${note.articulations.map((a) => `<${a}/>`).join('')}</articulations>`
     : '';
@@ -32,17 +33,19 @@ function notationsXml(note) {
 }
 
 // Dynamics render as a <direction> sibling emitted BEFORE the note.
+// TODO: add <staff> child when multi-staff dynamics are exercised
 function dynamicsXml(note) {
+  // assumes controlled MusicXML vocabulary (dynamics name emitted as tag name)
   return note.dynamics
     ? `<direction placement="below"><direction-type><dynamics><${note.dynamics}/></dynamics></direction-type></direction>`
     : '';
 }
 
-function noteXml(note, staves) {
-  const dur = noteDivisions(note);
+// `dur`, `tie`, `tied` are precomputed once by the caller (hot path — avoids a
+// second noteDivisions()/tieMarks() per note).
+function noteXml(note, staves, dur, tie, tied) {
   const body = note.rest ? `<rest/>` : pitchXml(note.pitch);
   const dots = '<dot/>'.repeat(note.dots || 0);
-  const { tie } = tieMarks(note.tie);
   const timeMod = note.triplet
     ? '<time-modification><actual-notes>3</actual-notes><normal-notes>2</normal-notes></time-modification>' : '';
   // <staff> only when the part has more than one staff (keeps single-staff output unchanged).
@@ -52,7 +55,7 @@ function noteXml(note, staves) {
     + `<type>${note.type}</type>${dots}`
     + timeMod
     + staff
-    + notationsXml(note)
+    + notationsXml(note, tied)
     + (note.lyric ? `<lyric><text>${esc(note.lyric)}</text></lyric>` : '')
     + `</note>`;
 }
@@ -69,20 +72,32 @@ function attributesXml(score, part) {
     + `</attributes>`;
 }
 
-// Render a measure's notes, inserting <backup> when notes switch to a different
-// staff so the time cursor rewinds to the start of the leaving staff's content.
+// Render a measure's notes. Multi-staff notes advance an independent write-position
+// per staff; before each note we move the MusicXML time cursor to where its staff
+// should resume by emitting <backup> (cursor ahead of target) or <forward> (cursor
+// behind target). This is correct for ANY note order within the measure — contiguous
+// staff runs OR interleaved (s1→s2→s1) — not just staff-grouped input.
 function notesXml(measure, staves) {
   let out = '';
-  let prevStaff = null;
-  let sectionElapsed = 0; // divisions written since measure start or last backup
+  const multi = staves > 1;
+  const staffElapsed = new Map(); // staff number → divisions already written on that staff
+  let cursor = 0;                 // absolute position (divisions) of the MusicXML time cursor
   for (const n of measure.notes) {
-    if (staves > 1 && prevStaff !== null && n.staff !== prevStaff) {
-      out += `<backup><duration>${sectionElapsed}</duration></backup>`;
-      sectionElapsed = 0;
+    const dur = noteDivisions(n);
+    const { tie, tied } = tieMarks(n.tie);
+    // Chord notes share the previous note's onset — they neither move the cursor
+    // nor consume time, so they need no backup/forward and no bookkeeping.
+    if (multi && !n.chord) {
+      const target = staffElapsed.get(n.staff) || 0;
+      if (cursor > target) out += `<backup><duration>${cursor - target}</duration></backup>`;
+      else if (target > cursor) out += `<forward><duration>${target - cursor}</duration></forward>`;
+      cursor = target;
     }
-    out += dynamicsXml(n) + noteXml(n, staves);
-    if (!n.chord) sectionElapsed += noteDivisions(n); // chord notes share their root's onset
-    prevStaff = n.staff;
+    out += dynamicsXml(n) + noteXml(n, staves, dur, tie, tied);
+    if (!n.chord) {
+      cursor += dur;
+      if (multi) staffElapsed.set(n.staff, (staffElapsed.get(n.staff) || 0) + dur);
+    }
   }
   return out;
 }
