@@ -2626,19 +2626,24 @@
 // ── Task 11: pinned bottom transport bar (ScoreTransportBar) ──────────────────
 .tabular-nums { font-variant-numeric: tabular-nums; } // utility (position readout, size preview)
 
+// Stable three-zone grid (audit C1/C2): tabs | transport+practice | view. Fixed
+// columns keep every control in the same place across mode changes; gating is
+// done in place via disabled/dimmed, never by unmounting (no flex-wrap raggedness).
 .piano-score-transportbar {
   flex: 0 0 auto; width: 100%;
-  display: flex; align-items: center; justify-content: space-between; gap: 1rem;
+  display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 1rem;
   padding: 0.55rem 1rem;
   padding-bottom: calc(0.55rem + env(safe-area-inset-bottom, 0px));
   background: rgba(0, 0, 0, 0.45); border-top: 1px solid rgba(255, 255, 255, 0.08);
   color: var(--piano-stage-fg, #f3efe6);
 }
 
-// Groups
-.piano-score-modes { display: flex; align-items: center; gap: 0.25rem; }
-.piano-score-playback { display: flex; align-items: center; gap: 0.5rem; }
-.piano-score-view { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; justify-content: flex-end; }
+// Zones
+.piano-score-modes { justify-self: start; display: flex; align-items: center; gap: 0.25rem; }
+.piano-score-playback { justify-self: center; display: flex; align-items: center; gap: 0.5rem; }
+.piano-score-view { justify-self: end; display: flex; align-items: center; gap: 0.5rem; flex-wrap: nowrap; }
+// Key transpose gates in place: disabled outside Listen, whole group dims (C2).
+.piano-score-key.is-dimmed { opacity: 0.35; }
 .piano-score-parts { display: flex; align-items: center; gap: 0.3rem; flex-wrap: wrap; }
 
 // Shared button chrome for the bar (reset / run / keyboard / flow / size / info).
@@ -2673,7 +2678,9 @@
 // Loop control popover (audit L1/L2) — first-class labeled loop with one-tap clear.
 .piano-score-loop-wrap { position: relative; display: inline-flex; align-items: center; gap: 0.3rem; }
 .piano-score-loop-menu {
-  position: absolute; bottom: calc(100% + 0.4rem); left: 0; z-index: 21;
+  // Anchored under the CENTER zone now (the loop trigger moved beside the
+  // transport) — center the menu on its trigger instead of left-aligning.
+  position: absolute; bottom: calc(100% + 0.4rem); left: 50%; transform: translateX(-50%); z-index: 21;
   display: flex; flex-direction: column; gap: 0.25rem; min-width: 12rem;
   padding: 0.4rem; background: var(--piano-surface, #1f1f26);
   border: 1px solid var(--piano-border, #34343f); border-radius: var(--r-md, 12px);
