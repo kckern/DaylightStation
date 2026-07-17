@@ -21,5 +21,9 @@ export function makeRest(opts = {}) {
   return {
     rest: true, type: opts.type ?? 'quarter', dots: opts.dots ?? 0,
     triplet: opts.triplet ?? false, staff: opts.staff ?? 1, voice: opts.voice ?? 1,
+    // Rests can carry expressive annotations too (a dynamic/lyric can sit on a
+    // rest). Spread them like makeNote so rebuildDuration/toggleDot on an annotated
+    // rest doesn't silently destroy them (finding #6).
+    lyric: opts.lyric, dynamics: opts.dynamics, articulations: opts.articulations,
   };
 }
