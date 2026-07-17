@@ -11,6 +11,11 @@ const PALETTE = [
   { type: '16th', divs: 6 },
 ];
 
+/** Divisions of a plain (undotted, non-triplet) note type, or undefined if unknown. */
+export function baseDivisions(type) {
+  return PALETTE.find((p) => p.type === type)?.divs;
+}
+
 /**
  * Split a duration (in divisions) into the fewest notatable palette pieces,
  * largest-first. Caller ties consecutive pieces. Non-triplet only; input must
