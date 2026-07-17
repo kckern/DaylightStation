@@ -129,10 +129,10 @@ export function ValuesView({ username }) {
               </Group>
             )}
 
-            {v.conflicts?.length > 0 && (
+            {v.conflicts_with?.length > 0 && (
               <Group gap="xs" mt="xs">
                 <Text size="xs" c="red">Conflicts:</Text>
-                {v.conflicts.map((c, j) => (
+                {v.conflicts_with.map((c, j) => (
                   <Badge key={j} variant="light" size="xs" color="red">{humanize(c)}</Badge>
                 ))}
               </Group>

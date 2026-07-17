@@ -87,6 +87,30 @@ describe('CeremonyToolFactory', () => {
     expect(unitIntention.isOverdue).toBe(true);
   });
 
+  it('check_ceremony_status default-enables the same ceremonies as the dashboard/scheduler when the plan has no explicit ceremonies config', async () => {
+    const defaultFactory = new CeremonyToolFactory({
+      ceremonyRecordStore: { hasRecord: () => false },
+      cadenceService: {
+        resolve: () => ({
+          unit: { periodId: 'u1' }, cycle: { periodId: 'c1' }, phase: { periodId: 'p1' },
+        }),
+        isCeremonyDue: () => true,
+      },
+      lifePlanStore: {
+        // No `ceremonies` key at all — mirrors a brand-new/default plan.
+        load: () => ({ cadence: {} }),
+      },
+    });
+    const tool = defaultFactory.createTools().find(t => t.name === 'check_ceremony_status');
+    const result = await tool.execute({ userId: 'test-user' });
+
+    // Mirrors CeremonyDueResolver.DEFAULT_ENABLED — must not come back empty.
+    const types = result.ceremonies.map(c => c.type);
+    expect(types).toEqual(expect.arrayContaining(['unit_intention', 'unit_capture', 'cycle_retro', 'phase_review']));
+    expect(types).not.toContain('season_alignment');
+    expect(types).not.toContain('era_vision');
+  });
+
   it('get_ceremony_history returns past records', async () => {
     const tool = tools.find(t => t.name === 'get_ceremony_history');
     const result = await tool.execute({ userId: 'test' });
