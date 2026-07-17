@@ -54,6 +54,14 @@ export function initEditor(score) {
   if (s.clef === undefined) {
     s.clef = s.parts?.[0]?.clefs?.[1] ?? { sign: 'G', line: 2 };
   }
+  // The parsed part.clefs map (e.g. {1:{G,2}, 2:{F,4}} for a grand staff) is the
+  // authoritative per-staff clef representation the serializer emits — PRESERVE it
+  // as-is. Only backfill staff-1 from the clef mirror when the part carries none
+  // (legacy/empty scores), so the serializer always has a clefs map to read.
+  const p0 = s.parts?.[0];
+  if (p0 && (!p0.clefs || Object.keys(p0.clefs).length === 0)) {
+    p0.clefs = { 1: { ...s.clef } };
+  }
   return {
     score: s,
     caret: { measureIdx: 0, noteIdx: 0 },
@@ -613,7 +621,12 @@ export function setAttribute(state, name, value) {
       score.key = { ...score.key, ...value };
       break;
     case 'clef':
+      // v1 is single-staff: staff 1 is the target. Update the authoritative
+      // part.clefs[1] AND the score.clef mirror.
       score.clef = value;
+      if (score.parts?.[0]) {
+        score.parts[0].clefs = { ...score.parts[0].clefs, 1: value };
+      }
       break;
     case 'time':
       score.timeSig = value;

@@ -34,6 +34,24 @@ describe('data-loss invariant — edit one note, nothing else changes', () => {
     expect(editedNote.midi).toBe(67); // G4
   });
 
+  it('preserves grand-staff structure (clefs, staves, per-note staff+voice) across edit+save+reload', () => {
+    const loaded = parseMusicXml(maryXml);
+    let ed = initEditor(loaded);
+    const m0 = ed.score.parts[0].measures[0];
+    const idx = m0.notes.findIndex((n) => !n.rest && !n.chord);
+    ed = replacePitch(ed, { measureIdx: 0, noteIdx: idx }, { step: 'G', octave: 4 });
+    const reloaded = parseMusicXml(serializeFromEditor(ed));
+
+    // staves count preserved
+    expect(reloaded.parts[0].staves).toBe(loaded.parts[0].staves); // 2
+    // BOTH clefs preserved (treble on staff 1, bass on staff 2)
+    expect(reloaded.parts[0].clefs[1]).toEqual(loaded.parts[0].clefs[1]); // {sign:'G',line:2}
+    expect(reloaded.parts[0].clefs[2]).toEqual(loaded.parts[0].clefs[2]); // {sign:'F',line:4}
+    // per-note staff + voice preserved (multiset compare, order-independent)
+    const staffVoice = (sc) => sc.parts[0].measures.flatMap((m) => m.notes.map((n) => `${n.staff}:${n.voice}`)).sort();
+    expect(staffVoice(reloaded)).toEqual(staffVoice(loaded));
+  });
+
   it('preserves ALL rich elements (tie/triplet/dynamics/articulation/lyric) when editing a DIFFERENT note', () => {
     const s = makeEmptyScore();
     const annotated = makeNote({ step: 'E', octave: 4 }, { type: 'eighth', triplet: true, tie: 'start' });
