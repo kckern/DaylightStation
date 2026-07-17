@@ -1,16 +1,9 @@
 import { Progress, Text, Group, Stack } from '@mantine/core';
-
-const STATE_COLORS = {
-  committed: 'blue',
-  dream: 'gray',
-  considered: 'cyan',
-  ready: 'teal',
-  paused: 'orange',
-};
+import { goalStateColor } from '../theme/semantics.js';
 
 export function GoalProgressBar({ name, state, progress = 0 }) {
   const pct = Math.round(progress * 100);
-  const color = STATE_COLORS[state] || 'blue';
+  const color = goalStateColor(state);
 
   return (
     <Stack gap={4}>

@@ -2,12 +2,7 @@ import { useState } from 'react';
 import { Stack, Paper, Title, Text, Group, Badge, Progress, Button, TextInput, Select, Modal, Alert } from '@mantine/core';
 import { IconFlask } from '@tabler/icons-react';
 import { useBeliefs } from '../../hooks/useLifePlan.js';
-
-function confidenceColor(c) {
-  if (c >= 0.8) return 'green';
-  if (c >= 0.5) return 'yellow';
-  return 'red';
-}
+import { beliefConfidenceColor } from '../../theme/semantics.js';
 
 function stateColor(state) {
   const map = {
@@ -126,7 +121,7 @@ export function BeliefsView({ username }) {
                   </Group>
                   <Progress
                     value={effectiveConf * 100}
-                    color={confidenceColor(effectiveConf)}
+                    color={beliefConfidenceColor(effectiveConf)}
                     size="sm"
                   />
                 </Stack>
