@@ -458,6 +458,24 @@ describe('setAttribute', () => {
     expect(before.score.parts[0].measures[0].notes).toHaveLength(4);
   });
 
+  it('THROWS on a time change for a grand-staff / multi-voice score (finding #3 guard)', () => {
+    // Correct multi-voice re-barring is out of v1 scope; a time change would flatten
+    // voices into one stream and lose data, so it must refuse loudly.
+    const s = makeEmptyScore();
+    s.parts[0].staves = 2;
+    s.parts[0].measures[0].notes = [
+      makeNote({ step: 'E', octave: 4 }, { type: 'half', staff: 1, voice: 1 }),
+      makeNote({ step: 'C', octave: 3 }, { type: 'half', staff: 2, voice: 2 }),
+    ];
+    const ed = initEditor(s);
+    expect(() => setAttribute(ed, 'time', { beats: 3, beatType: 4 }))
+      .toThrow(/multi-voice\/grand-staff/);
+    // A single-voice single-staff time change is unaffected (still works).
+    let solo = initEditor(makeEmptyScore());
+    solo = insertNote(solo, { step: 'C', octave: 4 }, { type: 'quarter' });
+    expect(() => setAttribute(solo, 'time', { beats: 3, beatType: 4 })).not.toThrow();
+  });
+
   it('time re-bar splits a straddling note into a tied chain', () => {
     // 4/4 bar [half, half] (96). Switch to 3/4: second half straddles the 72
     // barline → quarter(72, tie start) + quarter(next bar, tie stop).

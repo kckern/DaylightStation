@@ -25,12 +25,19 @@ export function barCapacity(timeSig) {
 }
 
 /**
- * Sum of the non-chord note durations already in a measure (divisions).
+ * Sum of the non-chord note durations already in a measure (divisions), scoped to
+ * a single voice. Each voice fills the bar independently (a grand-staff bar is two
+ * voices × the capacity, not one stream of both), so bar-fill MUST be per-voice —
+ * summing all voices reads a grand-staff bar as 2× over capacity and corrupts any
+ * reflow (finding #2). `voice` defaults to 1, so single-voice scores (all notes
+ * voice 1) sum exactly as before — byte-identical behavior.
  * Chord notes share their principal's onset, so they don't consume bar time.
- * Reused by insertNote and later commands (Unit 8).
  */
-export function measureFill(measure) {
-  return measure.notes.reduce((sum, n) => (n.chord ? sum : sum + noteDivisions(n)), 0);
+export function measureFill(measure, voice = 1) {
+  return measure.notes.reduce(
+    (sum, n) => (n.chord || (n.voice ?? 1) !== voice ? sum : sum + noteDivisions(n)),
+    0,
+  );
 }
 
 /**
@@ -49,7 +56,12 @@ export function initEditor(score) {
   if (s.composerName === undefined && s.composer !== undefined) {
     s.composerName = s.composer ?? '';
   }
-  if (s.divisions === undefined) s.divisions = DIVISIONS;
+  // The model's durations are type-derived on the 24-grid (DIVISIONS) regardless
+  // of what the source file used, and the serializer emits <divisions>=DIVISIONS.
+  // Normalize the model to match so it is self-consistent (finding #1). A source
+  // divisions of 1 (Mary) must NOT survive here — it would misrepresent every
+  // duration relative to the grid the editor actually works in.
+  s.divisions = DIVISIONS;
   if (s.timeSig === undefined) s.timeSig = { beats: 4, beatType: 4 }; // barCapacity depends on this
   if (s.clef === undefined) {
     s.clef = s.parts?.[0]?.clefs?.[1] ?? { sign: 'G', line: 2 };
@@ -62,6 +74,11 @@ export function initEditor(score) {
   if (p0 && (!p0.clefs || Object.keys(p0.clefs).length === 0)) {
     p0.clefs = { 1: { ...s.clef } };
   }
+  // Drop the parser's flat `part.notes` list on every part. It is a load-only
+  // convenience the editor commands do NOT maintain, so after any edit it goes
+  // stale. The serializer ignores it; dropping it here ensures nothing downstream
+  // trusts a stale list (finding: stale part.notes footgun).
+  for (const p of s.parts ?? []) delete p.notes;
   return {
     score: s,
     caret: { measureIdx: 0, noteIdx: 0 },
@@ -191,21 +208,23 @@ function insertElement(state, { isRest, pitch, opts }) {
   const probe = isRest ? makeRest(opts) : makeNote(pitch, opts);
   const total = noteDivisions(probe);
   const capacity = barCapacity(state.score.timeSig);
-  const staffVoice = { staff: opts.staff ?? 1, voice: opts.voice ?? 1 };
+  const voice = opts.voice ?? 1;
+  const staffVoice = { staff: opts.staff ?? 1, voice };
 
   const score = cloneScore(state.score);
   const part0 = score.parts[0];
 
-  // Normalize the caret off any already-full measure before inserting.
+  // Normalize the caret off any already-full measure before inserting. Fill is
+  // scoped to the insert's voice so a grand-staff bar is measured per-voice.
   let mIdx = state.caret.measureIdx;
   ensureMeasure(part0, mIdx);
-  while (capacity - measureFill(part0.measures[mIdx]) <= 0) {
+  while (capacity - measureFill(part0.measures[mIdx], voice) <= 0) {
     mIdx += 1;
     ensureMeasure(part0, mIdx);
   }
 
   const measure = part0.measures[mIdx];
-  const room = capacity - measureFill(measure);
+  const room = capacity - measureFill(measure, voice);
 
   // --- fits fully in the current measure ---
   if (total <= room) {
@@ -275,21 +294,36 @@ export function insertRest(state, opts = {}) {
 
 // ---------------------------------------------------------------------------
 // reflowMeasure — after a command changes a note's duration, a measure may no
-// longer fit its bar. Re-split the straddling element across the barline
-// (reusing the shared splitter) and cascade spill into fresh measures. Returns
-// an ARRAY of measures (the reflowed starting measure, plus any spill measures).
-// Underfull measures are left as-is (no back-pull) for v1.
+// longer fit its bar. VOICE-SCOPED (finding #2): a grand-staff bar is two voices
+// each filling the capacity independently, so reflow measures fill — and moves
+// content — for ONE voice only, leaving every other voice's notes exactly in
+// place and in order. `voice` defaults to 1, so single-voice scores behave as
+// before.
+//
+// v1 reflow NEVER tie-splits a straddling note (tie-splitting across a barline is
+// reserved for insertNote and the time re-bar, which build explicit tied chains
+// and have dedicated tests). It either:
+//   - room === 0: the straddle starts exactly on the barline → move it (and its
+//     chords, plus same-voice notes after it) whole to the next bar; OR
+//   - room  >  0: keep the straddle whole in its (now possibly over-full) starting
+//     bar and spill only the same-voice notes ENTIRELY past it.
+// Keeping the straddle whole (rather than cascading a split through a full piece)
+// is the data-safe choice: no note is ever fragmented or lost on a reflow.
+// Returns an ARRAY of measures (the reflowed starting measure, plus any spill
+// measures). Underfull measures are left as-is (no back-pull) for v1.
 // ---------------------------------------------------------------------------
-export function reflowMeasure(measure, timeSig) {
+export function reflowMeasure(measure, timeSig, voice = 1) {
   const capacity = barCapacity(timeSig);
   const notes = measure.notes;
+  const inVoice = (n) => (n.voice ?? 1) === voice;
 
-  // Find the first non-chord note that crosses the barline.
+  // Find the first non-chord note OF THIS VOICE that crosses the barline.
   let fill = 0;
   let straddleIdx = -1;
   for (let i = 0; i < notes.length; i++) {
-    if (notes[i].chord) continue; // chord notes share their principal's onset
-    const d = noteDivisions(notes[i]);
+    const n = notes[i];
+    if (!inVoice(n) || n.chord) continue; // other voices / chord notes don't fill
+    const d = noteDivisions(n);
     if (fill + d <= capacity) {
       fill += d;
       continue;
@@ -299,63 +333,56 @@ export function reflowMeasure(measure, timeSig) {
   }
   if (straddleIdx === -1) return [{ ...measure, notes: [...notes] }];
 
-  const head = notes.slice(0, straddleIdx);
-  const straddle = notes[straddleIdx];
-  // Chord notes attached to the straddling principal travel with it.
-  let after = straddleIdx + 1;
-  const straddleChords = [];
-  while (after < notes.length && notes[after].chord) {
-    straddleChords.push(notes[after]);
-    after += 1;
-  }
-  const restAfter = notes.slice(after);
-
   const room = capacity - fill;
-  const d = noteDivisions(straddle);
-  const hasChord = straddleChords.length > 0;
-  // Splittable only when both head and spill land on the 16th grid, and the
-  // straddle carries no chord (splitting a chord across a barline is out of
-  // scope for v1 — keep it whole).
-  const splittable =
-    room >= 6 && room % 6 === 0 && d % 6 === 0 && (d - room) % 6 === 0 && !hasChord;
-
-  let bar0Notes;
-  let spillNotes;
-  if (room > 0 && splittable) {
-    const placements = splitElement(
-      { isRest: !!straddle.rest, pitch: straddle.pitch, baseOpts: { ...straddle } },
-      d,
-      room,
-      capacity,
-    );
-    const headPieces = placements.filter((p) => p.offset === 0).map((p) => p.note);
-    const spillPieces = placements.filter((p) => p.offset > 0).map((p) => p.note);
-    bar0Notes = [...head, ...headPieces];
-    spillNotes = [...spillPieces, ...restAfter];
-  } else if (room === 0) {
-    // The straddle starts exactly on the barline — move it (and its rest) whole.
-    bar0Notes = [...head];
-    spillNotes = [straddle, ...straddleChords, ...restAfter];
+  // The first array index at which same-voice content starts spilling.
+  //   room === 0 → the straddle itself spills (it's entirely past the barline).
+  //   room  >  0 → keep the straddle (and its chord followers) whole; spill starts
+  //               after them.
+  let spillStart;
+  if (room === 0) {
+    spillStart = straddleIdx;
   } else {
-    // Non-grid or chorded: keep the straddle whole in bar0 (bar may go over);
-    // push only the following notes to the next bar.
-    bar0Notes = [...head, straddle, ...straddleChords];
-    spillNotes = [...restAfter];
+    spillStart = straddleIdx + 1;
+    while (spillStart < notes.length && notes[spillStart].chord && inVoice(notes[spillStart])) {
+      spillStart += 1; // the straddle's chord notes stay with it in this bar
+    }
+  }
+
+  // Partition everything from spillStart on: same-voice notes (and the chord notes
+  // riding on a spilling principal) SPILL; all other voices' notes STAY in bar0,
+  // in their original order.
+  const bar0Notes = notes.slice(0, spillStart);
+  const spillNotes = [];
+  let carrying = false; // inside a spilling principal's chord group?
+  for (let i = spillStart; i < notes.length; i++) {
+    const n = notes[i];
+    if (n.chord) {
+      (carrying ? spillNotes : bar0Notes).push(n);
+      continue;
+    }
+    if (inVoice(n)) {
+      spillNotes.push(n);
+      carrying = true;
+    } else {
+      bar0Notes.push(n);
+      carrying = false;
+    }
   }
 
   const bar0 = { ...measure, notes: bar0Notes };
   if (spillNotes.length === 0) return [bar0];
   const spillMeasure = { number: (measure.number ?? 1) + 1, notes: spillNotes };
-  return [bar0, ...reflowMeasure(spillMeasure, timeSig)];
+  return [bar0, ...reflowMeasure(spillMeasure, timeSig, voice)];
 }
 
 /**
  * Apply reflowMeasure to measure `mIdx` of a (mutable, already-cloned) part,
  * cascading any spill into the following measure(s) — merging with existing
- * content there — and renumbering. Used by the duration-changing commands.
+ * content there — and renumbering. Voice-scoped: only the edited note's voice is
+ * reflowed. Used by the duration-changing commands.
  */
-function reflowAt(part0, mIdx, timeSig) {
-  const reflowed = reflowMeasure(part0.measures[mIdx], timeSig);
+function reflowAt(part0, mIdx, timeSig, voice = 1) {
+  const reflowed = reflowMeasure(part0.measures[mIdx], timeSig, voice);
   part0.measures[mIdx] = reflowed[0];
   if (reflowed.length > 1) {
     const spillNotes = reflowed.slice(1).flatMap((m) => m.notes);
@@ -365,7 +392,7 @@ function reflowAt(part0, mIdx, timeSig) {
       ...part0.measures[nextIdx],
       notes: [...spillNotes, ...part0.measures[nextIdx].notes],
     };
-    reflowAt(part0, nextIdx, timeSig);
+    reflowAt(part0, nextIdx, timeSig, voice);
   }
   part0.measures.forEach((m, i) => {
     m.number = i + 1;
@@ -395,7 +422,7 @@ export function setDuration(state, { measureIdx, noteIdx }, { type, dots = 0, tr
   const part0 = score.parts[0];
   const old = part0.measures[measureIdx].notes[noteIdx];
   replaceNoteInPart(part0, measureIdx, noteIdx, rebuildDuration(old, { type, dots, triplet }));
-  reflowAt(part0, measureIdx, score.timeSig);
+  reflowAt(part0, measureIdx, score.timeSig, old.voice ?? 1);
   return { ...state, score, dirty: true, revision: state.revision + 1 };
 }
 
@@ -405,7 +432,7 @@ export function toggleDot(state, { measureIdx, noteIdx }) {
   const part0 = score.parts[0];
   const old = part0.measures[measureIdx].notes[noteIdx];
   replaceNoteInPart(part0, measureIdx, noteIdx, rebuildDuration(old, { dots: old.dots ? 0 : 1 }));
-  reflowAt(part0, measureIdx, score.timeSig);
+  reflowAt(part0, measureIdx, score.timeSig, old.voice ?? 1);
   return { ...state, score, dirty: true, revision: state.revision + 1 };
 }
 
@@ -415,7 +442,7 @@ export function toggleTriplet(state, { measureIdx, noteIdx }) {
   const part0 = score.parts[0];
   const old = part0.measures[measureIdx].notes[noteIdx];
   replaceNoteInPart(part0, measureIdx, noteIdx, rebuildDuration(old, { triplet: !old.triplet }));
-  reflowAt(part0, measureIdx, score.timeSig);
+  reflowAt(part0, measureIdx, score.timeSig, old.voice ?? 1);
   return { ...state, score, dirty: true, revision: state.revision + 1 };
 }
 
@@ -628,10 +655,21 @@ export function setAttribute(state, name, value) {
         score.parts[0].clefs = { ...score.parts[0].clefs, 1: value };
       }
       break;
-    case 'time':
+    case 'time': {
+      // Correct multi-voice re-barring is out of v1 scope: rebarPart flattens all
+      // notes into ONE stream, which would interleave/destroy independent voices
+      // and staves. Guard it — refuse loudly rather than silently corrupt (the
+      // data-loss spine). Single-voice single-staff time changes still work.
+      const part = score.parts[0];
+      const voices = new Set();
+      for (const m of part.measures) for (const n of m.notes) voices.add(n.voice ?? 1);
+      if ((part.staves ?? 1) > 1 || voices.size > 1) {
+        throw new Error('time change on multi-voice/grand-staff scores is not supported in v1 (would lose data)');
+      }
       score.timeSig = value;
-      rebarPart(score.parts[0], value);
+      rebarPart(part, value);
       break;
+    }
     default:
       break;
   }
