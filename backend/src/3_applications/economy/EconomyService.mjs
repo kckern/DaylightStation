@@ -74,6 +74,47 @@ export class EconomyService {
     return { userId, earned: grant, capped: grant < reward, balance: wallet.balance };
   }
 
+  async openSession(userId, { action, source }) {
+    this.#assertUser(userId);
+    const policy = resolvePolicy(this.#config(), userId, action);
+    if (!policy || policy.type !== 'spend') throw new ValidationError(`unknown spend action: ${action}`);
+    if (inBlackout(policy.blackout)) throw new ValidationError(`${action} is in a blackout window`);
+    const wallet = this.#reapStale(userId);
+    if (wallet.session) throw new ValidationError(`user already has an open session: ${wallet.session.id}`);
+    if (wallet.balance <= 0) throw new ValidationError('insufficient balance');
+    const session = {
+      id: `ses_${shortId()}`, action,
+      opened_at: new Date().toISOString(),
+      last_settled_at: new Date().toISOString(),
+      settled_coins: 0,
+    };
+    this.#snapshot(userId, session);
+    this.#logger.info('economy-session-open', { userId, action, sessionId: session.id, balance: wallet.balance });
+    return { userId, sessionId: session.id, balance: wallet.balance, drainPerSecond: drainPerSecond(policy) };
+  }
+
+  async settleSession(userId, { sessionId, coins }) {
+    this.#assertUser(userId);
+    const wallet = this.#ds.readWallet(userId);
+    const session = wallet?.session;
+    if (!session || session.id !== sessionId) throw new ValidationError(`no open session ${sessionId}`);
+    const spend = Math.min(Math.max(0, Math.floor(coins || 0)), wallet.balance);
+    if (spend > 0) {
+      this.#ds.appendTransaction(userId, createTransaction({ kind: 'spend', delta: -spend, action: session.action, source: 'economy-session', ref: sessionId }));
+    }
+    const updated = { ...session, last_settled_at: new Date().toISOString(), settled_coins: session.settled_coins + spend };
+    const next = this.#snapshot(userId, updated);
+    this.#logger.debug?.('economy-session-settle', { userId, sessionId, spend, balance: next.balance });
+    return { userId, balance: next.balance, depleted: next.balance <= 0 };
+  }
+
+  async closeSession(userId, { sessionId, coins = 0 }) {
+    const settled = await this.settleSession(userId, { sessionId, coins });
+    const next = this.#snapshot(userId, null);
+    this.#logger.info('economy-session-close', { userId, sessionId, balance: next.balance });
+    return { userId, balance: settled.balance };
+  }
+
   #reapStale(userId) {
     // Auto-close sessions that stopped settling (crash/power-loss). Costs the
     // kid nothing extra: consumed coins were already settled incrementally.
