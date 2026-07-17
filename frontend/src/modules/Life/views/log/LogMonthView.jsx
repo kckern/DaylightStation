@@ -1,15 +1,17 @@
-import { Stack, Title, Text, Loader, Paper, Group, Badge } from '@mantine/core';
+import { Stack, Text, Paper, Group, Badge } from '@mantine/core';
 import { useLifelog } from '../../hooks/useLifelog.js';
 import { ActivityHeatmap } from './shared/ActivityHeatmap.jsx';
+import { LifePage, LoadingState, ErrorState } from '../../components/index.js';
+import { formatDate } from '../../lib/format.js';
 
 /**
  * Month view with heatmap and weekly summary rows.
  */
 export function LogMonthView({ username, at }) {
-  const { data, loading, error } = useLifelog({ scope: 'month', username, at });
+  const { data, loading, error, refetch } = useLifelog({ scope: 'month', username, at });
 
-  if (loading) return <Loader size="sm" />;
-  if (error) return <Text c="red" size="sm">{error}</Text>;
+  if (loading) return <LoadingState />;
+  if (error) return <ErrorState error={error} onRetry={refetch} />;
 
   const days = data?.days || {};
   const dates = Object.keys(days).sort();
@@ -28,8 +30,7 @@ export function LogMonthView({ username, at }) {
   const weekKeys = Object.keys(weeks).sort().reverse();
 
   return (
-    <Stack gap="md">
-      <Title order={4}>This Month</Title>
+    <LifePage title="This Month">
       <ActivityHeatmap days={days} />
 
       <Stack gap="sm">
@@ -40,7 +41,7 @@ export function LogMonthView({ username, at }) {
           return (
             <Paper key={weekKey} p="sm" withBorder>
               <Group justify="space-between">
-                <Text size="sm" fw={500}>Week of {weekKey}</Text>
+                <Text size="sm" fw={500}>Week of {formatDate(weekKey)}</Text>
                 <Group gap="xs">
                   <Badge size="sm" variant="light">{weekDays.length} days</Badge>
                   <Badge size="sm" variant="light" color="green">{totalSources.size} sources</Badge>
@@ -50,6 +51,6 @@ export function LogMonthView({ username, at }) {
           );
         })}
       </Stack>
-    </Stack>
+    </LifePage>
   );
 }

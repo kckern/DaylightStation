@@ -56,6 +56,19 @@ export default function createPlanRouter(config) {
     } catch (error) { next(error); }
   });
 
+  // POST /purpose — set or replace the purpose statement (creates the plan if missing)
+  router.post('/purpose', (req, res, next) => {
+    try {
+      if (!planAuthoringService) return res.status(501).json({ error: 'Plan authoring service not configured' });
+      const { statement } = req.body || {};
+      if (!statement) return res.status(400).json({ error: 'statement is required' });
+      const username = getUsername(req);
+      const purpose = planAuthoringService.setPurpose(username, { statement });
+      logger.info('life.purpose.set', { username });
+      res.status(201).json(purpose);
+    } catch (error) { next(error); }
+  });
+
   // POST /beliefs — author a new belief (creates the plan if missing)
   router.post('/beliefs', (req, res, next) => {
     try {

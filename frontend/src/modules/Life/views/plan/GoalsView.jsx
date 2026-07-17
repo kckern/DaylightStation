@@ -1,10 +1,13 @@
 import { useState } from 'react';
 import {
-  Stack, Paper, Title, Text, Group, Badge, SimpleGrid,
+  Stack, Paper, Text, Group, Badge, SimpleGrid,
   Button, Modal, TextInput, Textarea, Alert,
 } from '@mantine/core';
 import { useGoals } from '../../hooks/useLifePlan.js';
 import { GoalProgressBar } from '../../widgets/GoalProgressBar.jsx';
+import { goalStateColor } from '../../theme/semantics.js';
+import { LifePage, LoadingState } from '../../components/index.js';
+import { formatDate } from '../../lib/format.js';
 
 const STATE_GROUPS = [
   { label: 'Dreams', states: ['dream'] },
@@ -14,20 +17,12 @@ const STATE_GROUPS = [
   { label: 'Completed', states: ['achieved', 'failed', 'abandoned', 'paused', 'evolved'] },
 ];
 
-function stateColor(state) {
-  const map = {
-    dream: 'grape', considered: 'blue', ready: 'cyan', committed: 'green',
-    achieved: 'teal', failed: 'red', abandoned: 'dark', paused: 'yellow', evolved: 'violet',
-  };
-  return map[state] || 'gray';
-}
-
 function GoalCard({ goal, onClick }) {
   return (
     <Paper p="sm" withBorder style={{ cursor: 'pointer' }} onClick={() => onClick?.(goal.id)}>
       <Group justify="space-between" mb={4}>
         <Text size="sm" fw={500} lineClamp={1}>{goal.name}</Text>
-        <Badge color={stateColor(goal.state)} variant="light" size="xs">
+        <Badge color={goalStateColor(goal.state)} variant="light" size="xs">
           {goal.state}
         </Badge>
       </Group>
@@ -38,7 +33,7 @@ function GoalCard({ goal, onClick }) {
         <GoalProgressBar name="" state={goal.state} progress={goal.progress} />
       )}
       {goal.deadline && (
-        <Text size="xs" c="dimmed" mt={4}>Due: {goal.deadline}</Text>
+        <Text size="xs" c="dimmed" mt={4}>Due: {formatDate(goal.deadline)}</Text>
       )}
     </Paper>
   );
@@ -117,14 +112,13 @@ export function GoalsView({ username, onGoalClick }) {
     </Modal>
   );
 
-  if (loading) return null;
+  if (loading) return <LoadingState />;
+
+  const headerActions = <Button onClick={() => setOpened(true)}>Add goal</Button>;
 
   if (goals.length === 0) {
     return (
-      <Stack gap="md">
-        <Group justify="space-between">
-          <Title order={4}>Goals</Title>
-        </Group>
+      <LifePage title="Goals">
         <Paper p="lg" withBorder radius="md">
           <Stack gap="sm" align="flex-start">
             <Text c="dimmed">
@@ -134,17 +128,12 @@ export function GoalsView({ username, onGoalClick }) {
           </Stack>
         </Paper>
         {addModal}
-      </Stack>
+      </LifePage>
     );
   }
 
   return (
-    <Stack gap="md">
-      <Group justify="space-between">
-        <Title order={4}>Goals</Title>
-        <Button onClick={() => setOpened(true)}>Add goal</Button>
-      </Group>
-
+    <LifePage title="Goals" actions={headerActions}>
       <SimpleGrid cols={{ base: 1, sm: 2, md: 3 }} spacing="md">
         {STATE_GROUPS.map(group => {
           const groupGoals = goals.filter(g => group.states.includes(g.state));
@@ -165,6 +154,6 @@ export function GoalsView({ username, onGoalClick }) {
       </SimpleGrid>
 
       {addModal}
-    </Stack>
+    </LifePage>
   );
 }

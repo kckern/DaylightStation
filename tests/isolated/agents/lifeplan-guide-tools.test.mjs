@@ -15,7 +15,7 @@ describe('PlanToolFactory write tools', () => {
     expect(names).toEqual(expect.arrayContaining(['create_goal', 'add_value', 'add_belief', 'set_purpose']));
 
     const createGoal = tools.find(t => t.name === 'create_goal');
-    const out = await createGoal.execute({ username: 'test-user', name: 'Ship it' });
+    const out = await createGoal.execute({ userId: 'test-user', name: 'Ship it' });
     expect(planAuthoringService.addGoal).toHaveBeenCalledWith('test-user', expect.objectContaining({ name: 'Ship it' }));
     expect(out.created.id).toBe('g');
   });
@@ -31,17 +31,17 @@ describe('PlanToolFactory write tools', () => {
     const tools = factory.createTools();
 
     const addValue = tools.find(t => t.name === 'add_value');
-    const v = await addValue.execute({ username: 'test-user', name: 'Health', description: 'well-being' });
+    const v = await addValue.execute({ userId: 'test-user', name: 'Health', description: 'well-being' });
     expect(planAuthoringService.addValue).toHaveBeenCalledWith('test-user', expect.objectContaining({ name: 'Health', description: 'well-being' }));
     expect(v.created.id).toBe('health');
 
     const addBelief = tools.find(t => t.name === 'add_belief');
-    const b = await addBelief.execute({ username: 'test-user', if_hypothesis: 'train am', then_outcome: 'it happens' });
+    const b = await addBelief.execute({ userId: 'test-user', if_hypothesis: 'train am', then_outcome: 'it happens' });
     expect(planAuthoringService.addBelief).toHaveBeenCalledWith('test-user', expect.objectContaining({ if_hypothesis: 'train am', then_outcome: 'it happens' }));
     expect(b.created.state).toBe('hypothesized');
 
     const setPurpose = tools.find(t => t.name === 'set_purpose');
-    const p = await setPurpose.execute({ username: 'test-user', statement: 'Live fully' });
+    const p = await setPurpose.execute({ userId: 'test-user', statement: 'Live fully' });
     expect(planAuthoringService.setPurpose).toHaveBeenCalledWith('test-user', expect.objectContaining({ statement: 'Live fully' }));
     expect(p.created.statement).toBe('Live fully');
   });
@@ -50,7 +50,7 @@ describe('PlanToolFactory write tools', () => {
     const planAuthoringService = { addGoal: vi.fn(() => { throw new Error('Plan already exists'); }), addValue: vi.fn(), addBelief: vi.fn(), setPurpose: vi.fn() };
     const factory = new PlanToolFactory({ lifePlanStore: { load: () => null }, planAuthoringService });
     const createGoal = factory.createTools().find(t => t.name === 'create_goal');
-    const out = await createGoal.execute({ username: 'test-user', name: 'X' });
+    const out = await createGoal.execute({ userId: 'test-user', name: 'X' });
     expect(out.error).toBeTruthy();
   });
 

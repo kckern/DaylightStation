@@ -1,9 +1,5 @@
 import { Stack, Paper, Text, Group, Badge, Progress, Textarea } from '@mantine/core';
-
-function stateColor(state) {
-  const map = { committed: 'green', achieved: 'teal', failed: 'red', paused: 'yellow' };
-  return map[state] || 'gray';
-}
+import { goalStateColor } from '../../theme/semantics.js';
 
 export function CycleRetro({ step, content, responses, setResponse }) {
   if (step === 0) {
@@ -15,7 +11,7 @@ export function CycleRetro({ step, content, responses, setResponse }) {
           <Paper key={g.id} p="xs" withBorder>
             <Group justify="space-between" mb={4}>
               <Text size="sm">{g.name}</Text>
-              <Badge size="xs" color={stateColor(g.state)}>{g.state}</Badge>
+              <Badge size="xs" color={goalStateColor(g.state)}>{g.state}</Badge>
             </Group>
             <Progress value={(g.progress || 0) * 100} size="sm" />
           </Paper>

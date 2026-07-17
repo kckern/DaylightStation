@@ -6,27 +6,11 @@
  * a missed hour (server down) simply skips that day's nudge.
  */
 
-const CEREMONY_TIMING = {
-  unit_intention: 'start_of_unit',
-  unit_capture: 'end_of_unit',
-  cycle_retro: 'end_of_cycle',
-  phase_review: 'end_of_phase',
-  season_alignment: 'end_of_season',
-  era_vision: 'end_of_era',
-};
-
-const CEREMONY_CADENCE_MAP = {
-  unit_intention: 'unit',
-  unit_capture: 'unit',
-  cycle_retro: 'cycle',
-  phase_review: 'phase',
-  season_alignment: 'season',
-  era_vision: 'era',
-};
+import { CEREMONY_TIMING, CEREMONY_CADENCE_MAP, DEFAULT_ENABLED } from '#domains/lifeplan/services/CeremonyDueResolver.mjs';
 
 // Ceremonies with a completed UI flow default to enabled; the rest require an
-// explicit plan.ceremonies[type].enabled = true.
-const DEFAULT_ENABLED = ['unit_intention', 'unit_capture', 'cycle_retro', 'phase_review'];
+// explicit plan.ceremonies[type].enabled = true. (DEFAULT_ENABLED is the
+// shared SSOT, imported above from CeremonyDueResolver.)
 
 // Household-local hour (0-23) each ceremony's nudge is delivered at, unless
 // overridden by plan.ceremonies[type].at ('HH:00'). The hourly scheduled task

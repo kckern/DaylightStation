@@ -29,13 +29,13 @@ export class CeremonyToolFactory extends ToolFactory {
           type: 'object',
           properties: {
             type: { type: 'string', description: 'Ceremony type' },
-            username: { type: 'string' },
+            userId: { type: 'string' },
           },
-          required: ['type', 'username'],
+          required: ['type', 'userId'],
         },
-        execute: async ({ type, username }) => {
+        execute: async ({ type, userId }) => {
           try {
-            return await ceremonyService.getCeremonyContent(type, username);
+            return await ceremonyService.getCeremonyContent(type, userId);
           } catch (err) {
             return { error: err.message };
           }
@@ -49,14 +49,14 @@ export class CeremonyToolFactory extends ToolFactory {
           type: 'object',
           properties: {
             type: { type: 'string' },
-            username: { type: 'string' },
+            userId: { type: 'string' },
             responses: { type: 'object', description: 'User responses from the ceremony conversation' },
           },
-          required: ['type', 'username', 'responses'],
+          required: ['type', 'userId', 'responses'],
         },
-        execute: async ({ type, username, responses }) => {
-          await ceremonyService.completeCeremony(type, username, responses);
-          return { completed: true, type, username };
+        execute: async ({ type, userId, responses }) => {
+          await ceremonyService.completeCeremony(type, userId, responses);
+          return { completed: true, type, userId };
         },
       }),
 
@@ -65,11 +65,11 @@ export class CeremonyToolFactory extends ToolFactory {
         description: 'Check which ceremonies are due, overdue, or completed for the current cadence position.',
         parameters: {
           type: 'object',
-          properties: { username: { type: 'string' } },
-          required: ['username'],
+          properties: { userId: { type: 'string' } },
+          required: ['userId'],
         },
-        execute: async ({ username }) => {
-          const plan = lifePlanStore.load(username);
+        execute: async ({ userId }) => {
+          const plan = lifePlanStore.load(userId);
           if (!plan) return { ceremonies: [], error: 'No plan found' };
 
           const now = new Date();
@@ -83,7 +83,7 @@ export class CeremonyToolFactory extends ToolFactory {
             const level = CEREMONY_CADENCE_MAP[type];
             const periodId = position?.[level]?.periodId;
             const isDue = cadenceService.isCeremonyDue(CEREMONY_TIMING_MAP[type], plan.cadence || {}, now, null);
-            const isCompleted = periodId ? ceremonyRecordStore.hasRecord(username, type, periodId) : false;
+            const isCompleted = periodId ? ceremonyRecordStore.hasRecord(userId, type, periodId) : false;
 
             ceremonies.push({
               type,
@@ -105,13 +105,13 @@ export class CeremonyToolFactory extends ToolFactory {
         parameters: {
           type: 'object',
           properties: {
-            username: { type: 'string' },
+            userId: { type: 'string' },
             type: { type: 'string', description: 'Filter by ceremony type (optional)' },
           },
-          required: ['username'],
+          required: ['userId'],
         },
-        execute: async ({ username, type }) => {
-          const records = ceremonyRecordStore.getRecords?.(username) || [];
+        execute: async ({ userId, type }) => {
+          const records = ceremonyRecordStore.getRecords?.(userId) || [];
           const filtered = type ? records.filter(r => r.type === type) : records;
           return { records: filtered };
         },

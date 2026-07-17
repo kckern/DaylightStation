@@ -1,10 +1,12 @@
 import { useState, useCallback } from 'react';
 import {
-  Stack, Paper, Title, Text, Group, Badge, ActionIcon,
+  Stack, Paper, Text, Group, Badge, ActionIcon,
   Button, Modal, TextInput, Alert,
 } from '@mantine/core';
 import { IconArrowUp, IconArrowDown } from '@tabler/icons-react';
 import { useLifePlan } from '../../hooks/useLifePlan.js';
+import { LifePage, LoadingState } from '../../components/index.js';
+import { humanize } from '../../lib/format.js';
 
 function alignmentColor(state) {
   if (state === 'aligned') return 'green';
@@ -55,18 +57,20 @@ export function ValuesView({ username }) {
 
     // Update rank numbers
     const updated = newValues.map((v, i) => ({ ...v, rank: i + 1 }));
-    await updateSection('values', updated);
+    try {
+      await updateSection('values', updated);
+    } catch {
+      // updateSection() records the failure in useLifePlan's internal `error`
+      // state (which this view doesn't currently surface); swallow here so a
+      // failed reorder doesn't become an unhandled promise rejection now that
+      // updateSection() rethrows for callers (e.g. PurposeView) that do want it.
+    }
   }, [values, updateSection]);
 
-  if (loading) return null;
+  if (loading) return <LoadingState />;
 
   return (
-    <Stack gap="md">
-      <Group justify="space-between">
-        <Title order={4}>Values</Title>
-        <Button onClick={() => setOpened(true)}>Add value</Button>
-      </Group>
-
+    <LifePage title="Values" actions={<Button onClick={() => setOpened(true)}>Add value</Button>}>
       {values.length === 0 && (
         <Text size="sm" c="dimmed">No values defined yet — add one to rank what matters most.</Text>
       )}
@@ -120,7 +124,7 @@ export function ValuesView({ username }) {
               <Group gap="xs" mt="xs">
                 <Text size="xs" c="dimmed">Justified by:</Text>
                 {v.justified_by.map((ref, j) => (
-                  <Badge key={j} variant="light" size="xs">{ref}</Badge>
+                  <Badge key={j} variant="light" size="xs">{humanize(ref)}</Badge>
                 ))}
               </Group>
             )}
@@ -129,7 +133,7 @@ export function ValuesView({ username }) {
               <Group gap="xs" mt="xs">
                 <Text size="xs" c="red">Conflicts:</Text>
                 {v.conflicts.map((c, j) => (
-                  <Badge key={j} variant="light" size="xs" color="red">{c}</Badge>
+                  <Badge key={j} variant="light" size="xs" color="red">{humanize(c)}</Badge>
                 ))}
               </Group>
             )}
@@ -157,6 +161,6 @@ export function ValuesView({ username }) {
           </Group>
         </Stack>
       </Modal>
-    </Stack>
+    </LifePage>
   );
 }

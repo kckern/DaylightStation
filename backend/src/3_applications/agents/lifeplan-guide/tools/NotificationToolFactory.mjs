@@ -14,7 +14,7 @@ export class NotificationToolFactory extends ToolFactory {
         parameters: {
           type: 'object',
           properties: {
-            username: { type: 'string' },
+            userId: { type: 'string' },
             title: { type: 'string', description: 'Notification title' },
             body: { type: 'string', description: 'Notification body text' },
             actions: {
@@ -31,9 +31,9 @@ export class NotificationToolFactory extends ToolFactory {
               },
             },
           },
-          required: ['username', 'title', 'body'],
+          required: ['userId', 'title', 'body'],
         },
-        execute: async ({ username, title, body, actions = [] }) => {
+        execute: async ({ userId, title, body, actions = [] }) => {
           // 'ceremony' is the closest valid NotificationCategory for coach
           // nudges ('lifeplan' is not a category and would throw on intent
           // construction).
@@ -43,7 +43,12 @@ export class NotificationToolFactory extends ToolFactory {
             category: 'ceremony',
             urgency: 'normal',
             actions,
-            metadata: { username, actions, source: 'lifeplan-guide' },
+            // NOTE: metadata key is `username`, not `userId` — this is a cross-module
+            // wire contract read by TelegramNotificationAdapter and
+            // PushNotificationAdapter (intent.metadata?.username) to resolve the
+            // delivery recipient. Do not rename this key without updating both
+            // adapters and every other producer (e.g. CeremonyScheduler).
+            metadata: { username: userId, actions, source: 'lifeplan-guide' },
           });
           return { delivered: Array.isArray(results) && results.some(r => r.delivered) };
         },

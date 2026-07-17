@@ -15,6 +15,7 @@ import { PlanAuthoringService } from '#apps/lifeplan/services/PlanAuthoringServi
 import { RetroService } from '#apps/lifeplan/services/RetroService.mjs';
 import { DriftService } from '#apps/lifeplan/services/DriftService.mjs';
 import { AlignmentService } from '#apps/lifeplan/services/AlignmentService.mjs';
+import { CeremonyDueResolver } from '#domains/lifeplan/services/CeremonyDueResolver.mjs';
 import { CeremonyScheduler } from '#apps/lifeplan/services/CeremonyScheduler.mjs';
 import createLifeRouter from '#api/v1/routers/life.mjs';
 
@@ -85,11 +86,15 @@ export function bootstrapLifeplan(deps) {
     driftService,
   });
 
+  const ceremonyDueResolver = new CeremonyDueResolver({ cadenceService: container.getCadenceService() });
+
   const alignmentService = new AlignmentService({
     lifePlanStore: container.getLifePlanStore(),
     metricsStore: container.getMetricsStore(),
     cadenceService: container.getCadenceService(),
     ceremonyRecordStore: container.getCeremonyRecordStore(),
+    ceremonyDueResolver,
+    clock,
   });
 
   // Ceremony scheduler

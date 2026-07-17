@@ -82,14 +82,17 @@ describe('AlignmentService', () => {
       const result = service.computeAlignment('testuser');
       const driftItem = result.priorities.find(p => p.type === 'drift_alert');
       expect(driftItem).toBeTruthy();
-      expect(driftItem.title).toContain('drift');
+      // No statedOrder/observedOrder on this mock snapshot, so #mostDriftedValue
+      // can't name a value — falls back to the generic human-readable copy
+      // (Task 13: named-value/coefficient-free rewrite of the drift alert).
+      expect(driftItem.title).toBe('Your time and your values are pulling apart');
+      expect(driftItem.title + driftItem.reason).not.toMatch(/reconsidering|correlation|0\.\d/i);
     });
 
-    it('includes anti-goal warning for approaching nightmares', () => {
+    it('does NOT emit anti-goal warnings (suppressed: proximity is a never-computed static field, see 2026-07-17 UX audit §4)', () => {
       const result = service.computeAlignment('testuser');
       const agItem = result.priorities.find(p => p.type === 'anti_goal_warning');
-      expect(agItem).toBeTruthy();
-      expect(agItem.urgency).toBe('high');
+      expect(agItem).toBeUndefined();
     });
 
     it('value-aligned items score higher', () => {
