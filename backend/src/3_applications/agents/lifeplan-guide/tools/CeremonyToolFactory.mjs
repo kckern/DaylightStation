@@ -1,5 +1,6 @@
 import { ToolFactory } from '../../framework/ToolFactory.mjs';
 import { createTool } from '../../ports/ITool.mjs';
+import { DEFAULT_ENABLED } from '#domains/lifeplan/services/CeremonyDueResolver.mjs';
 
 const CEREMONY_TYPES = ['unit_intention', 'unit_capture', 'cycle_retro', 'phase_review', 'season_alignment', 'era_vision'];
 const CEREMONY_CADENCE_MAP = {
@@ -78,7 +79,8 @@ export class CeremonyToolFactory extends ToolFactory {
 
           for (const type of CEREMONY_TYPES) {
             const config = plan.ceremonies?.[type];
-            if (!config?.enabled) continue;
+            const enabled = config?.enabled ?? DEFAULT_ENABLED.includes(type);
+            if (!enabled) continue;
 
             const level = CEREMONY_CADENCE_MAP[type];
             const periodId = position?.[level]?.periodId;

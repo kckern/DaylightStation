@@ -119,7 +119,7 @@ export class AlignmentService {
         reason: v ? `You rank it #${v.statedRank}, but it lands #${v.observedRank} in where your time actually goes`
                   : `Recent activity doesn't match your stated priorities`,
         urgency: snapshot.status === 'reconsidering' ? 'high' : 'medium',
-        related_value: v ? (plan.values || []).find((x) => x.name === v.name)?.id ?? null : null,
+        related_value: v ? v.id : null,
       });
     }
 
@@ -160,7 +160,7 @@ export class AlignmentService {
       const drop = o - s;
       if (!worst || drop > worst.drop) {
         const value = (plan.values || []).find((v) => v.id === id);
-        worst = { name: value?.name || id, statedRank: s + 1, observedRank: o + 1, drop };
+        worst = { id, name: value?.name || id, statedRank: s + 1, observedRank: o + 1, drop };
       }
     }
     return worst && worst.drop > 0 ? worst : null;
