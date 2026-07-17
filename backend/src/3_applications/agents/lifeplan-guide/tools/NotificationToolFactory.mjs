@@ -49,6 +49,12 @@ export class NotificationToolFactory extends ToolFactory {
             // delivery recipient. Do not rename this key without updating both
             // adapters and every other producer (e.g. CeremonyScheduler).
             metadata: { username: userId, actions, source: 'lifeplan-guide' },
+            // Stable per-logical-message key so governance dedupes on identity
+            // rather than the derived title fallback (Task 7). No date is
+            // available in this tool's scope, so userId+title is the most
+            // stable identity we have — a real duplicate call with the same
+            // title for the same user collapses to one send.
+            dedupeKey: `action:${userId}:${title}`,
           });
           return { delivered: Array.isArray(results) && results.some(r => r.delivered) };
         },
