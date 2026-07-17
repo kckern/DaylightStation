@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { initEditor, insertNote, moveCaret } from './editor.js';
+import { initEditor, insertNote, moveCaret, deleteNote, toggleTie } from './editor.js';
 import { makeEmptyScore } from './score.js';
 import { applyCommand, withHistory, undo, redo, HISTORY_CAP } from './history.js';
 
@@ -43,6 +43,25 @@ describe('undo/redo snapshot ring', () => {
     ed = applyCommand(ed, moveCaret, 'left');
     ed = applyCommand(ed, moveCaret, 'right');
     expect(ed.history.past.length).toBe(pastLenBefore); // unchanged by caret moves
+  });
+
+  it('a no-op deleteNote (out-of-range index) does NOT grow history.past', () => {
+    let ed = initEditor(makeEmptyScore());
+    ed = applyCommand(ed, insertNote, { step: 'C', octave: 4 }, { type: 'quarter' });
+    const pastLen = ed.history.past.length;
+    // index far out of range → nothing removed → must return the SAME state ref
+    ed = applyCommand(ed, deleteNote, { measureIdx: 0, noteIdx: 99 });
+    expect(ed.history.past.length).toBe(pastLen);
+  });
+
+  it('a no-op toggleTie is treated as a change (it does flip the tie)', () => {
+    // sanity: toggleTie genuinely mutates, so it SHOULD record — contrast to the
+    // out-of-range deleteNote above.
+    let ed = initEditor(makeEmptyScore());
+    ed = applyCommand(ed, insertNote, { step: 'C', octave: 4 }, { type: 'quarter' });
+    const pastLen = ed.history.past.length;
+    ed = applyCommand(ed, toggleTie, { measureIdx: 0, noteIdx: 0 });
+    expect(ed.history.past.length).toBe(pastLen + 1);
   });
 
   it('undo/redo at the ends are no-ops', () => {
