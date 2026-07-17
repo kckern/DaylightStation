@@ -155,7 +155,14 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
   const [connected, setConnected] = useState(false);
   const [internalPlayQueue, setInternalPlayQueue] = useState([]);
   const [preferredMicrophoneId, setPreferredMicrophoneId] = useState('');
-  const [vibrationState, setVibrationState] = useState({});
+  // Vibration state lives in a ref, not useState: raw Zigbee vibration packets
+  // arrive per-sensor at high frequency, and a useState setter re-rendered the
+  // whole provider on every packet, bypassing batchedForceUpdate's 250ms
+  // throttle (2026-07-17 render-storm incident). The handler mutates the ref and
+  // publishes through batchedForceUpdate so vibration re-renders at the same
+  // ~4/sec ceiling as HR. Read via getEquipmentVibration / value.vibrationState
+  // (both keyed on `version`, so each throttled publish surfaces the latest).
+  const vibrationStateRef = useRef({});
   // Bluetooth game-controller management (Task 3.3)
   const [btInventory, setBtInventory] = useState(null);
   const [controllerPairing, setControllerPairing] = useState(null);
@@ -1224,8 +1231,9 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
     const intensity = calculateIntensity(axes.x, axes.y, axes.z);
     const normalizedThresholds = thresholds || VIBRATION_CONSTANTS.DEFAULT_THRESHOLDS;
 
-    setVibrationState((prev) => ({
-      ...prev,
+    const prevVib = vibrationStateRef.current;
+    vibrationStateRef.current = {
+      ...prevVib,
       [equipmentId]: {
         id: equipmentId,
         name: equipmentName || equipmentId,
@@ -1234,12 +1242,13 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
         intensity,
         axes,
         thresholds: normalizedThresholds,
-        battery: battery ?? prev[equipmentId]?.battery ?? null,
+        battery: battery ?? prevVib[equipmentId]?.battery ?? null,
         batteryLow: Boolean(battery_low),
         linkquality: linkquality ?? null,
         lastEvent: timestamp
       }
-    }));
+    };
+    batchedForceUpdate();
 
     // Feed vibration data into session tracker for timeline/governance
     if (fitnessSessionRef.current) {
@@ -1258,20 +1267,20 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
 
     if (vibration) {
       vibrationTimeoutRefs.current[equipmentId] = setTimeout(() => {
-        setVibrationState((prev) => {
-          const existing = prev[equipmentId];
-          if (!existing) return prev;
-          return {
-            ...prev,
-            [equipmentId]: {
-              ...existing,
-              vibration: false
-            }
-          };
-        });
+        const prev = vibrationStateRef.current;
+        const existing = prev[equipmentId];
+        if (!existing) return;
+        vibrationStateRef.current = {
+          ...prev,
+          [equipmentId]: {
+            ...existing,
+            vibration: false
+          }
+        };
+        batchedForceUpdate();
       }, VIBRATION_CONSTANTS.ACTIVE_STATE_MS);
     }
-  }, []);
+  }, [batchedForceUpdate]);
 
   const pushFitnessToast = useCallback((toast) => {
     toastIdRef.current += 1;
@@ -2064,10 +2073,12 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
     return Number.isFinite(vitals.heartRate) ? vitals.heartRate : null;
   }, [getUserVitals]);
 
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed on `version` so
+  // each throttled publish returns a fresh accessor reading the latest ref value.
   const getEquipmentVibration = React.useCallback((equipmentId) => {
     if (!equipmentId) return null;
-    return vibrationState[equipmentId] || null;
-  }, [vibrationState]);
+    return vibrationStateRef.current[equipmentId] || null;
+  }, [version]);
 
   const resolveUserByDevice = React.useCallback((key) => {
     if (key === undefined || key === null) return null;
@@ -2427,7 +2438,7 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
     governedTypeSet,
     
     connected,
-    vibrationState,
+    vibrationState: vibrationStateRef.current,
     // Bluetooth game-controller management (Task 3.3)
     btInventory,
     controllerPairing,
