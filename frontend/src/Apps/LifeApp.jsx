@@ -23,6 +23,7 @@ import { CeremonyFlow } from '../modules/Life/views/ceremony/CeremonyFlow.jsx';
 import CoachChat from '../modules/Life/views/coach/CoachChat.jsx';
 import { LifeUserContext, useLifeUser } from '../modules/Life/hooks/useLifeUser.js';
 import { useAppNotifications } from '../modules/Life/hooks/useAppNotifications.js';
+import { lifeTheme } from './LifeApp.theme.js';
 
 const PlaceholderView = ({ title }) => (
   <div style={{ padding: '2rem' }}>
@@ -82,7 +83,7 @@ const LifeApp = () => {
   const isActive = (path) => location.pathname.startsWith(`/life/${path}`);
 
   return (
-    <MantineProvider>
+    <MantineProvider theme={lifeTheme} defaultColorScheme="dark">
       <Notifications position="top-right" autoClose={8000} />
       <LifeUserContext.Provider value={lifeUser}>
       <AppShell
