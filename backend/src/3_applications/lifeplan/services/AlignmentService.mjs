@@ -96,12 +96,15 @@ export class AlignmentService {
     // snapshots (values that map to <2 lifelog categories) must NOT raise a
     // drift alert — treat them like a missing snapshot (audit A-3.2c).
     if (snapshot.status === 'drifting' || snapshot.status === 'reconsidering') {
+      const v = this.#mostDriftedValue(plan, snapshot);
       items.push({
         type: 'drift_alert',
-        title: `Value drift detected (${snapshot.status})`,
-        reason: `Correlation: ${(snapshot.correlation || 0).toFixed(2)}`,
+        title: v ? `${v.name} matters to you, but it's getting little of your time`
+                 : `Your time and your values are pulling apart`,
+        reason: v ? `You rank it #${v.statedRank}, but it lands #${v.observedRank} in where your time actually goes`
+                  : `Recent activity doesn't match your stated priorities`,
         urgency: snapshot.status === 'reconsidering' ? 'high' : 'medium',
-        related_value: null,
+        related_value: v ? (plan.values || []).find((x) => x.name === v.name)?.id ?? null : null,
       });
     }
 
@@ -109,6 +112,23 @@ export class AlignmentService {
     return items
       .map(item => ({ ...item, score: this.#scoreItem(item, plan.values) }))
       .sort((a, b) => b.score - a.score);
+  }
+
+  #mostDriftedValue(plan, snapshot) {
+    const stated = snapshot.statedOrder || [];
+    const observed = snapshot.observedOrder || [];
+    let worst = null;
+    for (const id of stated) {
+      const s = stated.indexOf(id);
+      const o = observed.indexOf(id);
+      if (o < 0) continue;
+      const drop = o - s;
+      if (!worst || drop > worst.drop) {
+        const value = (plan.values || []).find((v) => v.id === id);
+        worst = { name: value?.name || id, statedRank: s + 1, observedRank: o + 1, drop };
+      }
+    }
+    return worst && worst.drop > 0 ? worst : null;
   }
 
   #scoreItem(item, values) {
