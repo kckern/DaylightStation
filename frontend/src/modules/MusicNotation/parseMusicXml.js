@@ -152,6 +152,16 @@ export function parseMusicXml(xml) {
           note.pitch = pitch;
           note.midi = pitchToMidi(pitch);
         }
+
+        // Ties — <tie> sound elements (direct children; NOT <tied> in notations).
+        // Both a stop and a start present → a note tied on both sides.
+        const tieTypes = [...child.querySelectorAll(':scope > tie')].map((t) => t.getAttribute('type'));
+        if (tieTypes.length) {
+          const hasStart = tieTypes.includes('start');
+          const hasStop = tieTypes.includes('stop');
+          note.tie = hasStart && hasStop ? 'both' : (hasStart ? 'start' : (hasStop ? 'stop' : undefined));
+        }
+
         measure.notes.push(note);
         part.notes.push(note);
         lastOnset = onsetDiv;
