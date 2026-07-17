@@ -2,14 +2,7 @@ import { Stack, Paper, Title, Text, Group, Badge, Progress, Timeline, Button, Se
 import { useState } from 'react';
 import { IconTarget, IconFlag, IconHistory } from '@tabler/icons-react';
 import { useGoalDetail, useGoals } from '../../hooks/useLifePlan.js';
-
-function stateColor(state) {
-  const map = {
-    dream: 'grape', considered: 'blue', ready: 'cyan', committed: 'green',
-    achieved: 'teal', failed: 'red', abandoned: 'dark', paused: 'yellow', evolved: 'violet',
-  };
-  return map[state] || 'gray';
-}
+import { goalStateColor } from '../../theme/semantics.js';
 
 const STATES = ['dream', 'considered', 'ready', 'committed', 'achieved', 'failed', 'abandoned', 'paused', 'evolved'];
 
@@ -32,7 +25,7 @@ export function GoalDetail({ goalId, username }) {
     <Stack gap="md">
       <Group justify="space-between">
         <Title order={4}>{goal.name}</Title>
-        <Badge color={stateColor(goal.state)} size="lg">{goal.state}</Badge>
+        <Badge color={goalStateColor(goal.state)} size="lg">{goal.state}</Badge>
       </Group>
 
       {goal.why && (

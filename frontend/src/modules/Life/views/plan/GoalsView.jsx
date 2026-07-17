@@ -5,6 +5,7 @@ import {
 } from '@mantine/core';
 import { useGoals } from '../../hooks/useLifePlan.js';
 import { GoalProgressBar } from '../../widgets/GoalProgressBar.jsx';
+import { goalStateColor } from '../../theme/semantics.js';
 
 const STATE_GROUPS = [
   { label: 'Dreams', states: ['dream'] },
@@ -14,20 +15,12 @@ const STATE_GROUPS = [
   { label: 'Completed', states: ['achieved', 'failed', 'abandoned', 'paused', 'evolved'] },
 ];
 
-function stateColor(state) {
-  const map = {
-    dream: 'grape', considered: 'blue', ready: 'cyan', committed: 'green',
-    achieved: 'teal', failed: 'red', abandoned: 'dark', paused: 'yellow', evolved: 'violet',
-  };
-  return map[state] || 'gray';
-}
-
 function GoalCard({ goal, onClick }) {
   return (
     <Paper p="sm" withBorder style={{ cursor: 'pointer' }} onClick={() => onClick?.(goal.id)}>
       <Group justify="space-between" mb={4}>
         <Text size="sm" fw={500} lineClamp={1}>{goal.name}</Text>
-        <Badge color={stateColor(goal.state)} variant="light" size="xs">
+        <Badge color={goalStateColor(goal.state)} variant="light" size="xs">
           {goal.state}
         </Badge>
       </Group>

@@ -1,10 +1,5 @@
 import { Badge, Tooltip } from '@mantine/core';
-
-function confidenceColor(confidence) {
-  if (confidence >= 0.8) return 'green';
-  if (confidence >= 0.5) return 'yellow';
-  return 'red';
-}
+import { beliefConfidenceColor } from '../theme/semantics.js';
 
 export function BeliefConfidenceChip({ belief }) {
   const { id, confidence, effectiveConfidence, state, foundational } = belief;
@@ -14,7 +9,7 @@ export function BeliefConfidenceChip({ belief }) {
   return (
     <Tooltip label={`${id}: ${state} (raw: ${Math.round(confidence * 100)}%)`}>
       <Badge
-        color={confidenceColor(displayConf)}
+        color={beliefConfidenceColor(displayConf)}
         variant={foundational ? 'filled' : 'light'}
         size="lg"
       >
