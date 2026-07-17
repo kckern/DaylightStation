@@ -43,7 +43,12 @@ export class NotificationToolFactory extends ToolFactory {
             category: 'ceremony',
             urgency: 'normal',
             actions,
-            metadata: { userId, actions, source: 'lifeplan-guide' },
+            // NOTE: metadata key is `username`, not `userId` — this is a cross-module
+            // wire contract read by TelegramNotificationAdapter and
+            // PushNotificationAdapter (intent.metadata?.username) to resolve the
+            // delivery recipient. Do not rename this key without updating both
+            // adapters and every other producer (e.g. CeremonyScheduler).
+            metadata: { username: userId, actions, source: 'lifeplan-guide' },
           });
           return { delivered: Array.isArray(results) && results.some(r => r.delivered) };
         },

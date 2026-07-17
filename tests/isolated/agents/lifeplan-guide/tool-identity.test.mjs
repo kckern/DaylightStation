@@ -3,6 +3,7 @@ import { PlanToolFactory } from '#apps/agents/lifeplan-guide/tools/PlanToolFacto
 import { CeremonyToolFactory } from '#apps/agents/lifeplan-guide/tools/CeremonyToolFactory.mjs';
 import { LifelogToolFactory } from '#apps/agents/lifeplan-guide/tools/LifelogToolFactory.mjs';
 import { NotificationToolFactory } from '#apps/agents/lifeplan-guide/tools/NotificationToolFactory.mjs';
+import { CoachingToolFactory } from '#apps/agents/lifeplan-guide/tools/CoachingToolFactory.mjs';
 
 const stub = new Proxy({}, { get: () => () => ({}) });
 
@@ -12,6 +13,7 @@ it('no lifeplan-guide tool exposes a username param', () => {
     new CeremonyToolFactory({ ceremonyService: stub, ceremonyRecordStore: stub, cadenceService: stub, lifePlanStore: stub }),
     new LifelogToolFactory({ aggregator: stub, metricsStore: stub, driftService: stub }),
     new NotificationToolFactory({ notificationService: stub }),
+    new CoachingToolFactory({ conversationStore: stub, workingMemory: stub }),
   ];
   for (const f of factories) {
     for (const tool of f.createTools()) {
