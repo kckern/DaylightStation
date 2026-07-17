@@ -32,6 +32,7 @@ export class Session {
     strava = null,     // Strava activity metadata (name, type, sportType, etc.)
     strava_notes = null, // Manually-entered Strava notes pulled back via reconciliation
     finalized = false,
+    provisional = false, // Real but sub-5-min, not-yet-finalized session (resumable; hidden from history; GC'd if never matured). See PersistenceManager Stage 3.
     timelapse = null // Session time-lapse recap status/record
   }) {
     // Normalize sessionId to SessionId value object
@@ -55,6 +56,7 @@ export class Session {
     this.strava = strava;
     this.strava_notes = strava_notes;
     this.finalized = !!finalized;
+    this.provisional = !!provisional;
     this.timelapse = timelapse;
   }
 
@@ -325,6 +327,10 @@ export class Session {
 
     // Finalized flag — true when user explicitly ended the session
     if (this.finalized) result.finalized = this.finalized;
+
+    // Provisional flag — real but sub-5-min session, resumable and hidden from
+    // user-facing history until it matures (crosses 5min) or is finalized.
+    if (this.provisional) result.provisional = this.provisional;
 
     // Entities (participation segments)
     if (this.entities.length > 0) result.entities = this.entities;

@@ -879,7 +879,13 @@ export class PersistenceManager {
     if (roster.length === 0 && !this.hasSuccessfulSave(sessionData.sessionId)) {
       return { ok: false, reason: 'no-participants' };
     }
-    if (sessionData.durationMs < 300000) {
+    // Hard floor: 60s. Below this, sensor flap / brief video-open noise. Between
+    // 60s and 5min a real (roster + HR + ticks) session persists as PROVISIONAL
+    // (set in the payload build) so a mid-workout crash/reload can resume it via
+    // /resumable instead of forking and losing the opening minutes (2026-07-17).
+    // The junk gates below (insufficient-ticks, no-meaningful-data, no-participants)
+    // still keep noise out. See docs/_wip/plans/2026-07-17-fitness-context-rearchitecture.md (Stage 3).
+    if (sessionData.durationMs < 60000) {
       return { ok: false, reason: 'session-too-short', durationMs: sessionData.durationMs };
     }
 
@@ -1018,6 +1024,11 @@ export class PersistenceManager {
         ...(durationSeconds != null ? { duration_seconds: durationSeconds } : {})
       },
       finalized: !!sessionData.finalized,
+      // Provisional: a real but sub-5-min, not-yet-finalized session. Resumable
+      // (non-finalized) so a reload continues it; filtered from user-facing
+      // history and GC'd server-side if never matured. Cleared once the session
+      // crosses 5min or is finalized.
+      provisional: !sessionData.finalized && Number(sessionData.durationMs) < 300000,
       participants
     };
 
