@@ -4,7 +4,6 @@ import { useNavigate } from 'react-router-dom';
 import { IconCircleCheck, IconCircle } from '@tabler/icons-react';
 import { useAlignment } from '../../hooks/useAlignment.js';
 import { useLifePlan } from '../../hooks/useLifePlan.js';
-import { useLifeStage } from '../../hooks/useLifeStage.js';
 import { CadenceIndicator } from '../../widgets/CadenceIndicator.jsx';
 import { DriftGauge } from '../../widgets/DriftGauge.jsx';
 import { GoalProgressBar } from '../../widgets/GoalProgressBar.jsx';
@@ -29,7 +28,9 @@ export function Dashboard() {
   const { data: priorityData, loading: pLoading } = useAlignment('priorities');
   const { data: dashData, loading: dLoading } = useAlignment('dashboard');
   const { isEmpty: planIsEmpty, loading: planLoading } = useLifePlan();
-  const { stage, completeness } = useLifeStage();
+  const dashboard = dashData?.dashboard;
+  const stage = dashboard?.stage;
+  const completeness = dashboard?.completeness;
 
   useEffect(() => {
     logger.info('life.dashboard.mounted');
@@ -53,7 +54,6 @@ export function Dashboard() {
     return <LoadingState />;
   }
 
-  const dashboard = dashData?.dashboard;
   const priorities = priorityData?.priorities || [];
 
   return (
