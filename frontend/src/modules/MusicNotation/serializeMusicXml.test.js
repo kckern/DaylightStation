@@ -91,3 +91,27 @@ describe('serializeMusicXml — lyrics', () => {
     expect(serializeMusicXml(scoreWith([n]))).toContain('<lyric><text>la</text></lyric>');
   });
 });
+
+describe('serializeMusicXml — chords + staves', () => {
+  it('emits <chord/> on stacked notes and <staff> when >1 staff', () => {
+    const s = makeEmptyScore(); s.parts[0].staves = 2;
+    const root = makeNote({ step: 'C', octave: 4 }, { type: 'quarter', staff: 1 });
+    const third = makeNote({ step: 'E', octave: 4 }, { type: 'quarter', staff: 1, chord: true });
+    const bass = makeNote({ step: 'C', octave: 3 }, { type: 'quarter', staff: 2 });
+    s.parts[0].measures[0].notes = [root, third, bass];
+    const xml = serializeMusicXml(s);
+    expect(xml).toContain('<chord/>');
+    expect(xml).toContain('<staff>2</staff>');
+    expect(xml).toContain('<backup>');
+  });
+});
+
+describe('serializeMusicXml — full-feature note stays parseable', () => {
+  it('a note with tie+triplet+dynamics+articulation+lyric is DOMParser-parseable (order valid)', () => {
+    const n = makeNote({ step: 'C', octave: 4 }, { type: 'eighth', tie: 'both', triplet: true });
+    n.dynamics = 'mf'; n.articulations = ['staccato', 'accent']; n.lyric = 'la';
+    const xml = serializeMusicXml(scoreWith([n]));
+    const doc = new DOMParser().parseFromString(xml, 'application/xml');
+    expect(doc.querySelector('parsererror')).toBeNull();
+  });
+});
