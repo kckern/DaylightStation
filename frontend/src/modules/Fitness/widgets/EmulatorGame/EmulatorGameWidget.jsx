@@ -71,10 +71,8 @@ export default function EmulatorGameWidget({ fitnessContext, onClose, config, on
   const [claimConflict, setClaimConflict] = useState(null);
 
   const saveClient = useMemo(() => createSaveClient(), []);
-  const zonesOrder = useMemo(() => Object.keys(fitnessContext?.zones || {}), [fitnessContext]);
   const getActivePlayerId = fitnessContext?.getActivePlayerId
     || (() => fitnessContext?.fitnessSessionInstance?.roster?.[0]?.userId ?? null);
-  const getUserVitals = fitnessContext?.getUserVitals || (() => null);
 
   const settings = library?.settings || {};
   const autosaveSeconds = Number.isFinite(Number(settings.autosaveSeconds)) ? Number(settings.autosaveSeconds) : DEFAULT_AUTOSAVE_SECONDS;
@@ -149,14 +147,27 @@ export default function EmulatorGameWidget({ fitnessContext, onClose, config, on
 
   const buildLaunchContext = useCallback((game, { userId, persist }) => {
     const controls = buildEjsControls(library?.input?.keyboard || {}, resolveControllerGamepad(library?.input?.controllers));
-    const gate = buildFitnessGameGate({ game, zonesOrder, getActivePlayerId, getUserVitals });
+    // Economy: coin-metered spend is OFF by default. When config.economy.enabled
+    // is on, the spender is whoever the identity surface unlocked (the
+    // spend-authorization scan) else the active fitness player. buildFitnessGameGate
+    // falls back to the free-play open gate when economy is off or no spender resolves.
+    const economyEnabled = config?.economy?.enabled === true;
+    const spenderId = unlockedUser?.userId
+      || (typeof getActivePlayerId === 'function' ? getActivePlayerId() : null);
+    const gate = buildFitnessGameGate({
+      economyEnabled,
+      getActivePlayerId: () => spenderId,
+      action: config?.economy?.action || 'arcade-play',
+      api: config?.economy?.api,
+      settleIntervalSec: config?.economy?.settleIntervalSec,
+    });
     const engineConfig = {
       pathtodata: ENGINE_PATH,
       core: game.core || library?.systems?.[game.system]?.core || game.system || 'gb',
       controls,
     };
     return { game, engineConfig, gate, persistence: buildPersistence(game, { userId, persist }) };
-  }, [library, zonesOrder, getActivePlayerId, getUserVitals, buildPersistence]);
+  }, [library, getActivePlayerId, buildPersistence, config, unlockedUser]);
 
   // Commit a launch. `remountKey` forces a fresh console mount (the load path).
   const startGame = useCallback((game, decision, { remountKey } = {}) => {
@@ -275,6 +286,45 @@ export default function EmulatorGameWidget({ fitnessContext, onClose, config, on
     setClaimConflict(null);
   }, []);
 
+  // Coin-metered economy lifecycle. The coin gate is INERT until start(); the open
+  // (free-play) gate has no start/stop. Drive the active gate's async lifecycle
+  // here and surface its live coin balance to the console overlay. Keyed on the
+  // gate identity so a post-mount claim (which keeps the same gate) never restarts
+  // metering. stop() is idempotent and runs exactly once on teardown/exit.
+  const activeGate = launch?.gate || null;
+  const [coins, setCoins] = useState(null);
+  useEffect(() => {
+    if (!activeGate || activeGate.mode !== 'coin-metered') {
+      setCoins(null);
+      return undefined;
+    }
+    const unsub = typeof activeGate.onChange === 'function'
+      ? activeGate.onChange((s) => setCoins(s?.coins ?? null))
+      : null;
+    try { setCoins(activeGate.getStatus?.()?.coins ?? null); } catch { setCoins(null); }
+    if (typeof activeGate.start === 'function') {
+      logger.info('fitness-emulator.coin-gate-start', {});
+      Promise.resolve(activeGate.start())
+        .catch((e) => logger.warn('fitness-emulator.coin-gate-start-failed', { error: e && e.message }));
+    }
+    return () => {
+      if (typeof unsub === 'function') unsub();
+      if (typeof activeGate.stop === 'function') {
+        logger.info('fitness-emulator.coin-gate-stop', {});
+        Promise.resolve(activeGate.stop())
+          .catch((e) => logger.warn('fitness-emulator.coin-gate-stop-failed', { error: e && e.message }));
+      }
+    };
+  }, [activeGate, logger]);
+
+  // Overlay data bag for the console's `session.coins` slot. Only supplied for a
+  // live coin gate; undefined otherwise so EmulatorConsole keeps its '—' fallback.
+  const overlayData = useMemo(() => (
+    activeGate?.mode === 'coin-metered' && coins != null
+      ? { 'session.coins': coins }
+      : undefined
+  ), [activeGate, coins]);
+
   if (error) return <div className="fitness-emulator__error">Video games unavailable: {error}</div>;
   if (!library) return <div className="fitness-emulator__loading">Loading…</div>;
 
@@ -320,6 +370,7 @@ export default function EmulatorGameWidget({ fitnessContext, onClose, config, on
             governanceGate={launch.gate}
             identity={{ getActivePlayerId: () => launch.userId }}
             persistence={launch.persistence}
+            overlayData={overlayData}
             autosaveSeconds={autosaveSeconds}
             nowPlaying={launch.person}
             playStartedAt={launch.startedAt}

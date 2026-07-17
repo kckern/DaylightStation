@@ -97,7 +97,7 @@ function overlayText(status) {
     const grace = status.graceMsLeft != null ? ` ${Math.ceil(status.graceMsLeft / 1000)}s` : '';
     return `Keep moving!${grace}`;
   }
-  if (status.state === 'depleted') return 'Out of credit — earn more!';
+  if (status.state === 'depleted') return 'Out of coins — earn more!';
   // paused
   return 'Paused — meet the zone to continue';
 }
