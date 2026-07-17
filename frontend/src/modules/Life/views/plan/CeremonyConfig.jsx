@@ -1,4 +1,4 @@
-import { Stack, Paper, Text, Group, Badge, Switch, Select } from '@mantine/core';
+import { Stack, Paper, Text, Group, Badge, Switch } from '@mantine/core';
 import { notifications } from '@mantine/notifications';
 import { IconCalendarEvent, IconFlame } from '@tabler/icons-react';
 import { useCeremonyConfig } from '../../hooks/useLifePlan.js';
@@ -12,12 +12,6 @@ const CEREMONY_TYPES = [
   { id: 'phase_review', label: 'Phase Review', description: 'Deep review of goals and beliefs each phase' },
   { id: 'season_alignment', label: 'Season Alignment', description: 'Value alignment check each season' },
   { id: 'era_vision', label: 'Era Vision', description: 'Long-term purpose and direction review' },
-];
-
-const CHANNELS = [
-  { value: 'app', label: 'In-app' },
-  { value: 'telegram', label: 'Telegram' },
-  { value: 'push', label: 'Push notification' },
 ];
 
 export function CeremonyConfig({ username }) {
@@ -39,21 +33,6 @@ export function CeremonyConfig({ username }) {
       await updateCadence(updated);
     } catch (err) {
       notifications.show({ color: 'red', title: "Couldn't update ceremony", message: err.message });
-    }
-  };
-
-  const setChannel = async (type, channel) => {
-    const updated = {
-      ...config,
-      ceremonies: {
-        ...ceremonies,
-        [type]: { ...(ceremonies[type] || {}), channel },
-      },
-    };
-    try {
-      await updateCadence(updated);
-    } catch (err) {
-      notifications.show({ color: 'red', title: "Couldn't update channel", message: err.message });
     }
   };
 
@@ -97,14 +76,6 @@ export function CeremonyConfig({ username }) {
 
               {enabled && (
                 <Group gap="md">
-                  <Select
-                    label="Channel"
-                    data={CHANNELS}
-                    value={ceremonyConfig.channel || 'app'}
-                    onChange={(v) => setChannel(type.id, v)}
-                    size="xs"
-                    style={{ width: 180 }}
-                  />
                   {ceremonyConfig.streak > 0 && (
                     <Group gap={4}>
                       <IconFlame size={14} color="orange" />
