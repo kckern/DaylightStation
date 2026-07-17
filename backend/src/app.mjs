@@ -231,6 +231,7 @@ import { GameShowSessionStore } from './3_applications/gameshow/GameShowSessionS
 import { buzzersToSelectors, makeBuzzerSelectHandler } from './3_applications/gameshow/buzzerSelectors.mjs';
 import { createContentFilterRouter } from './4_api/v1/routers/contentFilter.mjs';
 import { FeedbackService } from './3_applications/common/feedback/FeedbackService.mjs';
+import { NotificationConfigService } from './3_applications/notification/NotificationConfigService.mjs';
 import { createArtAdapter } from './1_adapters/content/art/ArtAdapter.mjs';
 import { createConfigRouter } from './4_api/v1/routers/config.mjs';
 import { createItemRouter } from './4_api/v1/routers/item.mjs';
@@ -798,6 +799,12 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     dataPath: dataBasePath,
     clock: null,
     logger: rootLogger.child({ module: 'notifications' }),
+  });
+  // Admin-facing config CRUD for household notification governance
+  // (quiet hours, cooldowns). Kept separate from the runtime notificationStack.
+  const notificationConfigService = new NotificationConfigService({
+    configService,
+    logger: rootLogger.child({ module: 'notifications', submodule: 'config' }),
   });
 
   // Lifeplan domain
@@ -2954,6 +2961,8 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     appsConfigService,
     schedulerAdminService,
     integrationsQueryService,
+    notificationConfigService,
+    notificationLedgerStore: notificationStack.ledgerStore,
     logger: adminApiLogger
   });
 

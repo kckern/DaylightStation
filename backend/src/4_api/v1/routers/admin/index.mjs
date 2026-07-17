@@ -9,6 +9,7 @@ import { createAdminHouseholdRouter } from './household.mjs';
 import { createAdminIntegrationsRouter } from './integrations.mjs';
 import { createAdminAppsRouter } from './apps.mjs';
 import { createAdminArtRouter } from './art.mjs';
+import { createAdminNotificationsRouter } from './notifications.mjs';
 
 /**
  * Combined Admin Router
@@ -55,6 +56,8 @@ export function createAdminRouter(config) {
     appsConfigService,
     schedulerAdminService,
     integrationsQueryService,
+    notificationConfigService,
+    notificationLedgerStore,
     logger = console
   } = config;
   const router = express.Router();
@@ -139,7 +142,17 @@ export function createAdminRouter(config) {
     router.use('/ws', eventBusRouter);
   }
 
-  logger.info?.('admin.router.mounted', { subroutes: ['/content', '/config', '/scheduler', '/household', '/integrations', '/apps', '/art', '/images', '/media', '/ws'] });
+  // Mount notifications router (household notification governance: quiet hours,
+  // cooldowns, and delivery ledger). Config validation + persistence live in the
+  // injected NotificationConfigService; ledger reads live in notificationLedgerStore.
+  const notificationsRouter = createAdminNotificationsRouter({
+    notificationConfigService,
+    notificationLedgerStore,
+    logger: logger.child?.({ submodule: 'notifications' }) || logger,
+  });
+  router.use('/notifications', notificationsRouter);
+
+  logger.info?.('admin.router.mounted', { subroutes: ['/content', '/config', '/scheduler', '/household', '/integrations', '/apps', '/art', '/images', '/media', '/ws', '/notifications'] });
   return router;
 }
 
@@ -153,3 +166,4 @@ export { createAdminHouseholdRouter } from './household.mjs';
 export { createAdminIntegrationsRouter } from './integrations.mjs';
 export { createAdminAppsRouter } from './apps.mjs';
 export { createAdminArtRouter } from './art.mjs';
+export { createAdminNotificationsRouter } from './notifications.mjs';
