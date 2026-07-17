@@ -10,6 +10,10 @@ function oneNoteEditor() {
   return initEditor(s);
 }
 
+function twoFourEditor() {
+  return initEditor(makeEmptyScore({ time: { beats: 2, beatType: 4 } }));
+}
+
 describe('initEditor', () => {
   it('starts disarmed, quarter sticky, caret at 0/0, no selection', () => {
     const ed = initEditor(makeEmptyScore());
@@ -36,6 +40,23 @@ describe('replacePitch', () => {
     expect(ed1.score.parts[0].measures[0].notes[0].midi).toBe(67);
     expect(ed1.score.parts[0].measures[0].notes[0].type).toBe('quarter');
     expect(ed0.score.parts[0].measures[0].notes[0].midi).toBe(60); // original untouched (immutability)
+  });
+  it('preserves lyric/dynamics/articulations on the rebuilt note (only pitch changes)', () => {
+    const s = makeEmptyScore();
+    s.parts[0].measures[0].notes = [makeNote(
+      { step: 'C', octave: 4 },
+      { type: 'quarter', lyric: 'la', dynamics: 'mf', articulations: ['staccato'] },
+    )];
+    const ed0 = initEditor(s);
+    const ed1 = replacePitch(ed0, { measureIdx: 0, noteIdx: 0 }, { step: 'G', octave: 4 });
+    const note = ed1.score.parts[0].measures[0].notes[0];
+    expect(note.lyric).toBe('la');
+    expect(note.dynamics).toBe('mf');
+    expect(note.articulations).toEqual(['staccato']);
+    // only pitch/midi changed
+    expect(note.midi).toBe(67);
+    expect(note.pitch.step).toBe('G');
+    expect(note.type).toBe('quarter');
   });
 });
 
@@ -102,5 +123,35 @@ describe('insertNote — auto-bar split/tie', () => {
     const ed1 = insertNote(ed0, { step: 'C', octave: 4 }, { type: 'quarter' });
     expect(ed0.score.parts[0].measures[0].notes).toHaveLength(0);
     expect(ed1.score.parts[0].measures[0].notes).toHaveLength(1);
+  });
+  it('distributes a note larger than a bar across MULTIPLE bars as one tied chain', () => {
+    // 2/4 (cap 48). Fill a quarter (room 24), then insert a whole note (96 divs)
+    // → chunks 24 | 48 | 24 across bars 0, 1, 2. One tie chain: start → both → stop.
+    let ed = twoFourEditor();
+    ed = insertNote(ed, { step: 'C', octave: 4 }, { type: 'quarter' });
+    ed = insertNote(ed, { step: 'A', octave: 4 }, { type: 'whole' });
+    const measures = ed.score.parts[0].measures;
+    // The A4 chain spans 3 bars: bar0 tail piece, bar1, bar2.
+    const chain = [];
+    for (const m of measures) for (const n of m.notes) if (n.midi === 69) chain.push(n);
+    expect(chain).toHaveLength(3);
+    expect(chain[0].tie).toBe('start');
+    expect(chain[chain.length - 1].tie).toBe('stop');
+    for (let i = 1; i < chain.length - 1; i++) expect(chain[i].tie).toBe('both');
+    // all same pitch, and the total placed duration equals the original whole note (96).
+    expect(chain.every((n) => n.midi === 69)).toBe(true);
+    expect(chain.reduce((s, n) => s + noteDivisions(n), 0)).toBe(96);
+    // three bars materialized; caret lands after the last placed piece.
+    expect(measures).toHaveLength(3);
+    expect(ed.caret).toEqual({ measureIdx: 2, noteIdx: 1 });
+  });
+  it('v1 limitation: appends at end even when caret.noteIdx points mid-measure', () => {
+    let ed = initEditor(makeEmptyScore());
+    ed = insertNote(ed, { step: 'C', octave: 4 }, { type: 'quarter' }); // [C]
+    ed = insertNote(ed, { step: 'D', octave: 4 }, { type: 'quarter' }); // [C, D]
+    ed = { ...ed, caret: { measureIdx: 0, noteIdx: 0 } }; // move caret to the front
+    ed = insertNote(ed, { step: 'E', octave: 4 }, { type: 'quarter' }); // still appends at END
+    const midis = ed.score.parts[0].measures[0].notes.map((n) => n.midi);
+    expect(midis).toEqual([60, 62, 64]); // E landed at the end, not at noteIdx 0
   });
 });

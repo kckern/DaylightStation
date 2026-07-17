@@ -49,6 +49,7 @@ export function initEditor(score) {
     s.composerName = s.composer ?? '';
   }
   if (s.divisions === undefined) s.divisions = DIVISIONS;
+  if (s.timeSig === undefined) s.timeSig = { beats: 4, beatType: 4 }; // barCapacity depends on this
   if (s.clef === undefined) {
     s.clef = s.parts?.[0]?.clefs?.[1] ?? { sign: 'G', line: 2 };
   }
@@ -76,10 +77,10 @@ export function replacePitch(state, { measureIdx, noteIdx }, pitch) {
   const part0 = state.score.parts[0];
   const measure = part0.measures[measureIdx];
   const old = measure.notes[noteIdx];
-  const rebuilt = makeNote(pitch, {
-    type: old.type, dots: old.dots, tie: old.tie, triplet: old.triplet,
-    chord: old.chord, staff: old.staff, voice: old.voice,
-  });
+  // Spread ALL of the old note's fields as opts so nothing (lyric/dynamics/
+  // articulations/…) is silently dropped; makeNote overrides pitch/midi/rest
+  // from the new pitch argument. (Unit 9 data-loss gate.)
+  const rebuilt = makeNote(pitch, { ...old });
   const notes = measure.notes.map((n, i) => (i === noteIdx ? rebuilt : n));
   const measures = part0.measures.map((m, i) => (i === measureIdx ? { ...m, notes } : m));
   const parts = state.score.parts.map((p, i) => (i === 0 ? { ...p, measures } : p));
@@ -96,12 +97,17 @@ function ensureMeasure(part, idx) {
 /**
  * Insert a note at the caret. If it fits the caret's measure, append and advance
  * the caret (rolling to a fresh next measure when the bar becomes exactly full).
- * If it overflows the barline, split it into a tied chain: the head fills the
- * remaining room, the spill starts the next measure. Tie types across a chain of
- * pieces p0..pk are: p0='start', interior='both', pk='stop'. Immutable.
+ * If it overflows the barline, distribute the whole duration across as many bars
+ * as needed as ONE tied chain (bar 1 gets only its remaining room; each later bar
+ * gets up to a full capacity). Tie types across the chain of pieces p0..pk are:
+ * p0='start', interior='both', pk='stop'. Immutable.
+ *
+ * v1 limitation: appends at end of the caret's measure; caret.noteIdx not yet
+ * honored. Mid-measure insertion + reflow is Unit 8 (reflowMeasure).
  */
 export function insertNote(state, pitch, opts = {}) {
-  const total = noteDivisions(makeNote(pitch, opts));
+  const probe = makeNote(pitch, opts); // build once; reused for the fit-path push
+  const total = noteDivisions(probe);
   const capacity = barCapacity(state.score.timeSig);
   const staffVoice = { staff: opts.staff ?? 1, voice: opts.voice ?? 1 };
 
@@ -121,7 +127,7 @@ export function insertNote(state, pitch, opts = {}) {
 
   // --- fits fully in the current measure ---
   if (total <= room) {
-    measure.notes.push(makeNote(pitch, opts));
+    measure.notes.push(probe);
     let caret;
     if (total === room) {
       // Bar is now exactly full: park the caret at the start of a fresh measure.
@@ -133,27 +139,58 @@ export function insertNote(state, pitch, opts = {}) {
     return { ...state, score, caret, dirty: true, revision: state.revision + 1 };
   }
 
-  // --- overflow: split across the barline into a tied chain ---
-  const headPieces = decomposeDuration(room);
-  const spillPieces = decomposeDuration(total - room);
-  const chain = [...headPieces, ...spillPieces];
-  const tied = chain.map((piece, i) => {
-    const tie = i === 0 ? 'start' : i === chain.length - 1 ? 'stop' : 'both';
-    return makeNote(pitch, { type: piece.type, dots: 0, triplet: false, tie, ...staffVoice });
+  // --- overflow: distribute across as many bars as needed, one tied chain ---
+  // TODO(Unit 8): a triplet/dotted-16th already in the bar makes room a
+  // non-multiple-of-6, so decomposeDuration throws. Handle when triplet
+  // insertion lands.
+  //
+  // Walk bar by bar taking min(remaining, bar-room) worth of the note, decompose
+  // each chunk into pieces, and record which bar each piece belongs to. The first
+  // bar contributes only its remaining `room`; every subsequent (fresh) bar can
+  // take a full `capacity`.
+  const placements = []; // { barIdx, type } in chain order
+  let remaining = total;
+  let barIdx = mIdx;
+  let barRoom = room;
+  while (remaining > 0) {
+    ensureMeasure(part0, barIdx);
+    const chunk = Math.min(remaining, barRoom);
+    for (const piece of decomposeDuration(chunk)) {
+      placements.push({ barIdx, type: piece.type });
+    }
+    remaining -= chunk;
+    barIdx += 1;
+    barRoom = capacity; // every later bar starts empty
+  }
+
+  const n = placements.length;
+  const tied = placements.map((pl, i) => {
+    const tie = i === 0 ? 'start' : i === n - 1 ? 'stop' : 'both';
+    return {
+      barIdx: pl.barIdx,
+      note: makeNote(pitch, { type: pl.type, dots: 0, triplet: false, tie, ...staffVoice }),
+    };
   });
-  const headTied = tied.slice(0, headPieces.length);
-  const spillTied = tied.slice(headPieces.length);
 
-  measure.notes.push(...headTied);
-  ensureMeasure(part0, mIdx + 1);
-  const nextMeasure = part0.measures[mIdx + 1];
-  // Spill goes at the FRONT of the next measure (in order).
-  nextMeasure.notes.splice(0, 0, ...spillTied);
+  // Group pieces by bar (preserving chain order). The caret's original bar gets
+  // its pieces appended at the end; each fresh later bar receives its pieces at
+  // the front (in order), matching spill-at-front semantics.
+  const byBar = new Map();
+  for (const t of tied) {
+    if (!byBar.has(t.barIdx)) byBar.set(t.barIdx, []);
+    byBar.get(t.barIdx).push(t.note);
+  }
+  for (const [idx, notes] of byBar) {
+    const m = part0.measures[idx];
+    if (idx === mIdx) m.notes.push(...notes);
+    else m.notes.splice(0, 0, ...notes);
+  }
 
+  const lastBarIdx = placements[n - 1].barIdx;
   return {
     ...state,
     score,
-    caret: { measureIdx: mIdx + 1, noteIdx: spillTied.length },
+    caret: { measureIdx: lastBarIdx, noteIdx: part0.measures[lastBarIdx].notes.length },
     dirty: true,
     revision: state.revision + 1,
   };
