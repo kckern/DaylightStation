@@ -1,7 +1,7 @@
 // serializeMusicXml.js — Score model → MusicXML string. Inverse of parseMusicXml.
 // Pure string-building (on the engrave hot path). Emits <divisions>=score.divisions.
 
-import { noteDivisions } from '#frontend/modules/Piano/PianoKiosk/modes/Composer/model/note.js';
+import { noteDivisions } from '#frontend/modules/MusicNotation/duration.js';
 
 const esc = (s) => String(s).replace(/[<>&]/g, (c) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;' }[c]));
 
