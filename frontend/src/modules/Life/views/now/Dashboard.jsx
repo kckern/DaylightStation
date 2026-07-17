@@ -1,8 +1,10 @@
 import { useMemo, useEffect } from 'react';
 import { Stack, Paper, Title, Text, Group, SimpleGrid, Button, Anchor } from '@mantine/core';
 import { useNavigate } from 'react-router-dom';
+import { IconCircleCheck, IconCircle } from '@tabler/icons-react';
 import { useAlignment } from '../../hooks/useAlignment.js';
 import { useLifePlan } from '../../hooks/useLifePlan.js';
+import { useLifeStage } from '../../hooks/useLifeStage.js';
 import { CadenceIndicator } from '../../widgets/CadenceIndicator.jsx';
 import { DriftGauge } from '../../widgets/DriftGauge.jsx';
 import { GoalProgressBar } from '../../widgets/GoalProgressBar.jsx';
@@ -12,12 +14,22 @@ import { PriorityList } from './PriorityList.jsx';
 import { LoadingState, SectionCard } from '../../components/index.js';
 import getLogger from '../../../../lib/logging/Logger.js';
 
+function ChecklistRow({ done, label, onClick }) {
+  return (
+    <Group gap="xs" className={done ? undefined : 'life-clickable'} onClick={done ? undefined : onClick}>
+      {done ? <IconCircleCheck size={18} color="var(--mantine-color-teal-5)" /> : <IconCircle size={18} color="var(--mantine-color-dimmed)" />}
+      <Text size="sm" c={done ? 'dimmed' : undefined} td={done ? 'line-through' : undefined}>{label}</Text>
+    </Group>
+  );
+}
+
 export function Dashboard() {
   const logger = useMemo(() => getLogger().child({ component: 'life-dashboard' }), []);
   const navigate = useNavigate();
   const { data: priorityData, loading: pLoading } = useAlignment('priorities');
   const { data: dashData, loading: dLoading } = useAlignment('dashboard');
   const { isEmpty: planIsEmpty, loading: planLoading } = useLifePlan();
+  const { stage, completeness } = useLifeStage();
 
   useEffect(() => {
     logger.info('life.dashboard.mounted');
@@ -60,6 +72,16 @@ export function Dashboard() {
                 Browse my life log first
               </Anchor>
             </Group>
+          </Stack>
+        </SectionCard>
+      )}
+
+      {!planIsEmpty && stage === 'scaffolding' && completeness && (
+        <SectionCard title="Finish setting up">
+          <Stack gap="xs">
+            <ChecklistRow done={completeness.hasPurpose} label="Name your purpose" onClick={() => navigate('/life/plan')} />
+            <ChecklistRow done={completeness.valueCount >= 2} label="Add a couple of values" onClick={() => navigate('/life/plan/values')} />
+            <ChecklistRow done={completeness.goalCount >= 1} label="Set your first goal" onClick={() => navigate('/life/plan/goals')} />
           </Stack>
         </SectionCard>
       )}
