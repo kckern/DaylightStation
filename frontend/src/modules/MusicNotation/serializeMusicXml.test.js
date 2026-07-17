@@ -73,3 +73,13 @@ describe('serializeMusicXml — triplets', () => {
     expect(xml).toContain('<time-modification><actual-notes>3</actual-notes><normal-notes>2</normal-notes></time-modification>');
   });
 });
+
+describe('serializeMusicXml — expressive marks', () => {
+  it('emits a dynamics direction and an articulation notation', () => {
+    const n = makeNote({ step: 'C', octave: 4 }, { type: 'quarter' });
+    n.dynamics = 'f'; n.articulations = ['staccato'];
+    const xml = serializeMusicXml(scoreWith([n]));
+    expect(xml).toContain('<dynamics><f/></dynamics>');
+    expect(xml).toContain('<articulations><staccato/></articulations>');
+  });
+});

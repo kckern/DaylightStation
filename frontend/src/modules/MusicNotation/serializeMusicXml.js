@@ -20,12 +20,22 @@ function tieMarks(tie) {
   return { tie: '', tied: '' };
 }
 
-// Assemble a single <notations> block (tied for now; grows with articulations).
+// Assemble a single <notations> block from tied + articulations.
 // Emit nothing when there is no content (never an empty <notations/>).
 function notationsXml(note) {
   const { tied } = tieMarks(note.tie);
-  const inner = `${tied}`;
+  const arts = (note.articulations && note.articulations.length)
+    ? `<articulations>${note.articulations.map((a) => `<${a}/>`).join('')}</articulations>`
+    : '';
+  const inner = `${tied}${arts}`;
   return inner ? `<notations>${inner}</notations>` : '';
+}
+
+// Dynamics render as a <direction> sibling emitted BEFORE the note.
+function dynamicsXml(note) {
+  return note.dynamics
+    ? `<direction placement="below"><direction-type><dynamics><${note.dynamics}/></dynamics></direction-type></direction>`
+    : '';
 }
 
 function noteXml(note) {
@@ -56,7 +66,7 @@ function measureXml(score, measure, isFirst) {
   const attrs = isFirst ? attributesXml(score) : '';
   const tempo = isFirst
     ? `<direction placement="above"><sound tempo="${score.tempo}"/></direction>` : '';
-  const notes = measure.notes.map(noteXml).join('');
+  const notes = measure.notes.map((n) => dynamicsXml(n) + noteXml(n)).join('');
   return `<measure number="${measure.number}">${attrs}${tempo}${notes}</measure>`;
 }
 
