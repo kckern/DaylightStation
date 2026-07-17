@@ -4,7 +4,7 @@
 // Playing), queue position, play/pause, next, and stop. Renders a slim "Idle"
 // bar when no session — never disappears entirely, so the session always has
 // a visible anchor.
-import React from 'react';
+import React, { useRef } from 'react';
 import {
   IconPlayerPlayFilled,
   IconPlayerPauseFilled,
@@ -14,6 +14,7 @@ import {
 import { useSessionController } from '../controller/useSessionController.js';
 import { usePlaybackPosition } from '../controller/usePlaybackPosition.js';
 import { useNav } from './NavProvider.jsx';
+import { usePlayerHost } from '../session/usePlayerHost.js';
 import './NowPlaying.scss';
 
 const PLAYING_STATES = new Set(['playing', 'buffering']);
@@ -23,6 +24,13 @@ export function MiniPlayer() {
   const live = usePlaybackPosition(controller);
   const { push, view } = useNav();
   const item = snapshot?.currentItem;
+
+  const dockRef = useRef(null);
+  // `format` is the canonical signal (set by resultToQueueInput/formatForChild);
+  // `mediaType` is a defensive fallback for items that carry only the raw type.
+  const isVideo = item?.format === 'video' || item?.mediaType === 'video';
+  const showVideoDock = isVideo && view !== 'nowPlaying';
+  usePlayerHost(dockRef, 1, showVideoDock);
 
   if (!item) {
     return (
@@ -62,8 +70,20 @@ export function MiniPlayer() {
           />
         </div>
       )}
-      {item.thumbnail && (
-        <img className="mini-player-thumb" src={item.thumbnail} alt="" loading="lazy" />
+      {showVideoDock ? (
+        <button
+          type="button"
+          data-testid="mini-player-video-dock"
+          className="mini-player-video-dock"
+          aria-label="Expand video"
+          onClick={() => { if (view !== 'nowPlaying') push('nowPlaying', {}); }}
+        >
+          <div ref={dockRef} className="mini-player-video-dock-host" />
+        </button>
+      ) : (
+        item.thumbnail && (
+          <img className="mini-player-thumb" src={item.thumbnail} alt="" loading="lazy" />
+        )
       )}
       <button
         type="button"
