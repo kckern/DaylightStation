@@ -120,10 +120,16 @@ export function parseMusicXml(xml) {
       // Walk children in document order, tracking a time cursor (in divisions).
       let cursor = 0; // divisions from measure start
       let lastOnset = 0;
+      let pendingDynamics = null; // a <direction> dynamics binds to the NEXT note in document order
       for (const child of measureEl.children) {
         const tag = child.tagName;
         if (tag === 'backup') { cursor -= num(child, 'duration', 0); continue; }
         if (tag === 'forward') { cursor += num(child, 'duration', 0); continue; }
+        if (tag === 'direction') {
+          const dyn = child.querySelector('direction-type dynamics *');
+          if (dyn) pendingDynamics = dyn.tagName;
+          continue;
+        }
         if (tag !== 'note') continue;
 
         const isChord = !!child.querySelector('chord');
@@ -170,6 +176,17 @@ export function parseMusicXml(xml) {
           const hasStop = tieTypes.includes('stop');
           note.tie = hasStart && hasStop ? 'both' : (hasStart ? 'start' : (hasStop ? 'stop' : undefined));
         }
+
+        // Articulations — child tag names of <notations><articulations>.
+        const arts = [...child.querySelectorAll('notations articulations > *')].map((a) => a.tagName);
+        if (arts.length) note.articulations = arts;
+
+        // Lyric — first syllable text.
+        const lyric = text(child, 'lyric text', null);
+        if (lyric != null) note.lyric = lyric;
+
+        // Dynamics — a preceding <direction> binds to this note (first non-chord note after it).
+        if (pendingDynamics && !isChord) { note.dynamics = pendingDynamics; pendingDynamics = null; }
 
         measure.notes.push(note);
         part.notes.push(note);
