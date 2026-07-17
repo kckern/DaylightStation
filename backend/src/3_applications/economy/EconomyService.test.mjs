@@ -58,6 +58,19 @@ describe('EconomyService', () => {
     await expect(svc.earn(USER, { action: 'nope', source: 'x' })).rejects.toThrow();
     await expect(svc.getBalance('nobody')).rejects.toThrow();
   });
+  it('earn dedups a replayed ref within the day (pays out once)', async () => {
+    const svc = makeService();
+    const first = await svc.earn(USER, { action: 'piano-lesson-complete', source: 'piano', ref: 'plex:1' });
+    expect(first.earned).toBe(5);
+    const replay = await svc.earn(USER, { action: 'piano-lesson-complete', source: 'piano', ref: 'plex:1' });
+    expect(replay.earned).toBe(0);
+    expect(replay.duplicate).toBe(true);
+    expect(replay.balance).toBe(5);
+    // a different ref still pays out
+    const other = await svc.earn(USER, { action: 'piano-lesson-complete', source: 'piano', ref: 'plex:2' });
+    expect(other.earned).toBe(5);
+    expect(other.balance).toBe(10);
+  });
   it('deposit validates amount is a positive integer', async () => {
     const svc = makeService();
     await expect(svc.deposit(USER, { amount: -5 })).rejects.toThrow();
@@ -93,6 +106,31 @@ describe('metered sessions', () => {
     expect(r2.balance).toBe(0);
     expect(r2.depleted).toBe(true);
   });
+  it('settle is idempotent — cumulative coins are a high-water mark, not an increment', async () => {
+    const svc = makeService();
+    await svc.deposit(USER, { amount: 10 });
+    const s = await svc.openSession(USER, { action: 'arcade-play', source: 'emulator' });
+    // client reports cumulative=2 consumed, then RETRIES the same cumulative
+    const first = await svc.settleSession(USER, { sessionId: s.sessionId, coins: 2 });
+    expect(first.balance).toBe(8);
+    const retry = await svc.settleSession(USER, { sessionId: s.sessionId, coins: 2 });
+    expect(retry.balance).toBe(8); // no double-charge
+    // cumulative advances to 5 → only the 3 newly-crossed coins are charged
+    const advance = await svc.settleSession(USER, { sessionId: s.sessionId, coins: 5 });
+    expect(advance.balance).toBe(5);
+    const txns = new YamlEconomyDatastore({ configService }).readAllTransactions(USER);
+    expect(txns.filter((t) => t.kind === 'spend')).toHaveLength(2); // 2 then 3, retry added nothing
+  });
+  it('settle never charges sub-coin cumulatives (fraction carries until a whole coin is crossed)', async () => {
+    const svc = makeService();
+    await svc.deposit(USER, { amount: 10 });
+    const s = await svc.openSession(USER, { action: 'arcade-play', source: 'emulator' });
+    await svc.settleSession(USER, { sessionId: s.sessionId, coins: 0.2 });
+    await svc.settleSession(USER, { sessionId: s.sessionId, coins: 0.9 });
+    expect((await svc.getBalance(USER)).balance).toBe(10); // still nothing charged
+    const crossed = await svc.settleSession(USER, { sessionId: s.sessionId, coins: 1.4 });
+    expect(crossed.balance).toBe(9); // first whole coin crossed
+  });
   it('closeSession settles the tail and clears the session', async () => {
     const svc = makeService();
     await svc.deposit(USER, { amount: 10 });
@@ -100,6 +138,19 @@ describe('metered sessions', () => {
     const r = await svc.closeSession(USER, { sessionId: s.sessionId, coins: 1 });
     expect(r.balance).toBe(9);
     expect((await svc.getBalance(USER)).session).toBeNull();
+  });
+  it('closeSession on an already-reaped session is a no-op success', async () => {
+    const svc = makeService();
+    await svc.deposit(USER, { amount: 10 });
+    const s = await svc.openSession(USER, { action: 'arcade-play', source: 'emulator' });
+    // reap it
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(new Date(Date.now() + 6 * 60 * 1000));
+      await svc.getBalance(USER); // triggers stale reap → session cleared
+      const r = await svc.closeSession(USER, { sessionId: s.sessionId, coins: 3 });
+      expect(r.balance).toBe(10); // no error, no extra charge
+    } finally { vi.useRealTimers(); }
   });
   it('settle with zero coins is a no-op ledger-wise', async () => {
     const svc = makeService();
