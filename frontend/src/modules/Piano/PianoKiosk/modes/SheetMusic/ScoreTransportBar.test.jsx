@@ -294,4 +294,25 @@ describe('ScoreTransportBar — stable geography (C2)', () => {
     expect(play.querySelector('svg')).not.toBeNull();
     expect(play.textContent).toBe(''); // no ▶ glyph
   });
+
+  it('geography invariant: the ordered button list is IDENTICAL across Listen/Learn/Polish', () => {
+    // The C2 contract itself: same buttons, same order, in every practice mode —
+    // only disabled state may differ. Grand staff keeps the parts control as
+    // radios (excluded from the button roll-call), since chip labels legitimately
+    // change wording between Listen roles and Learn/Polish toggles.
+    const collect = () => screen.getAllByRole('button').map((b) => {
+      const name = b.getAttribute('aria-label') || b.textContent.trim();
+      // Learn's run button carries an explanatory accessible name by design —
+      // it is the SAME Play button in the same slot, so normalize for comparison.
+      return name === 'Learn advances as you play' ? 'Play' : name;
+    });
+    const props = { ...base, grandStaff: true, handsVariant: 'hands', handsValue: 'both', onHandsChange: vi.fn() };
+    const { rerender } = render(<ScoreTransportBar {...props} mode="listen" />);
+    const listen = collect();
+    expect(listen.length).toBeGreaterThan(0);
+    rerender(<ScoreTransportBar {...props} mode="learn" />);
+    expect(collect()).toEqual(listen);
+    rerender(<ScoreTransportBar {...props} mode="polish" />);
+    expect(collect()).toEqual(listen);
+  });
 });

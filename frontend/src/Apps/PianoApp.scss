@@ -2643,7 +2643,20 @@
 .piano-score-playback { justify-self: center; display: flex; align-items: center; gap: 0.5rem; }
 .piano-score-view { justify-self: end; display: flex; align-items: center; gap: 0.5rem; flex-wrap: nowrap; }
 // Key transpose gates in place: disabled outside Listen, whole group dims (C2).
+// The wrapper carries the ONLY dim — reset the generic [disabled] opacity on its
+// buttons or the two multiply (0.35 × 0.4 ≈ 0.14: near-invisible ghosts).
 .piano-score-key.is-dimmed { opacity: 0.35; }
+.piano-score-key.is-dimmed .piano-score-btn[disabled] { opacity: 1; }
+
+// Narrow-bar fallback (C1): at tablet widths (~1280px CSS viewport) the full
+// Listen + loop + grand-staff bar is tight — trim button padding and step the
+// type down a notch for ~100px of headroom instead of clipping the right zone.
+@media (max-width: 1400px) {
+  .piano-score-transportbar {
+    font-size: 0.92rem;
+    .piano-score-btn { padding: 0.5rem 0.5rem; }
+  }
+}
 .piano-score-parts { display: flex; align-items: center; gap: 0.3rem; flex-wrap: wrap; }
 
 // Shared button chrome for the bar (reset / run / keyboard / flow / size / info).
@@ -2677,6 +2690,15 @@
 
 // Loop control popover (audit L1/L2) — first-class labeled loop with one-tap clear.
 .piano-score-loop-wrap { position: relative; display: inline-flex; align-items: center; gap: 0.3rem; }
+// The trigger's label can be free text (a section name), so bound + ellipsize it.
+// inline-block (not flex) so text-overflow can truncate the text run; the chevron
+// flips to inline and keeps its old flex-gap as a margin. Double-class beats the
+// later .piano-score-btn base rule regardless of source order.
+.piano-score-btn.piano-score-loop-trigger {
+  display: inline-block; max-width: 14rem;
+  overflow: hidden; text-overflow: ellipsis;
+  svg { display: inline-block; vertical-align: -0.15em; margin-left: 0.35rem; }
+}
 .piano-score-loop-menu {
   // Anchored under the CENTER zone now (the loop trigger moved beside the
   // transport) — center the menu on its trigger instead of left-aligning.
@@ -2734,6 +2756,7 @@
   font: inherit; font-weight: 600; line-height: 1;
   min-width: 2.4rem; padding: 0.5rem 0.8rem; border-radius: var(--r-md, 12px); cursor: pointer;
   display: inline-flex; align-items: center; justify-content: center; gap: 0.35rem;
+  white-space: nowrap; // labels never two-line — bar overflow stays binary/predictable (C1)
   &:active { background: rgba(255, 255, 255, 0.12); }
   &[disabled] { opacity: 0.4; cursor: default; }
   // Toggle-on state (keyboard) — neutral blue accent (Metronome/Manual palette).

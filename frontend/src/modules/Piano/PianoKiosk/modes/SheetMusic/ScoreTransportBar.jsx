@@ -132,14 +132,17 @@ const ScorePracticeCluster = memo(function ScorePracticeCluster({
   onNudge,
 }) {
   if (mode === 'perform') return null;
+  // Listen disables the click (its own performance is the beat); a persisted
+  // clickActive must not paint the accent on a button that can't act.
+  const metronomeDisabled = mode === 'listen';
   return (
     <>
       <button
         type="button"
-        className={`piano-score-btn piano-score-click${clickActive ? ' is-on' : ''}`}
+        className={`piano-score-btn piano-score-click${clickActive && !metronomeDisabled ? ' is-on' : ''}`}
         aria-label="Metronome"
         aria-pressed={clickActive}
-        disabled={mode === 'listen'}
+        disabled={metronomeDisabled}
         onClick={onToggleClick}
       >
         <QuarterNoteIcon />
