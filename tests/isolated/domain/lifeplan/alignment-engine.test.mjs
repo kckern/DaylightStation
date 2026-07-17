@@ -85,11 +85,10 @@ describe('AlignmentService', () => {
       expect(driftItem.title).toContain('drift');
     });
 
-    it('includes anti-goal warning for approaching nightmares', () => {
+    it('does NOT emit anti-goal warnings (suppressed: proximity is a never-computed static field, see 2026-07-17 UX audit §4)', () => {
       const result = service.computeAlignment('testuser');
       const agItem = result.priorities.find(p => p.type === 'anti_goal_warning');
-      expect(agItem).toBeTruthy();
-      expect(agItem.urgency).toBe('high');
+      expect(agItem).toBeUndefined();
     });
 
     it('value-aligned items score higher', () => {
