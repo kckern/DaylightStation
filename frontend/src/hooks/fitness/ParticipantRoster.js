@@ -35,6 +35,15 @@ export const DEFAULT_ANONYMOUS_HR_FLOOR_BPM = 60;
 export const DEFAULT_ANONYMOUS_HR_HARD_FLOOR_BPM = 40;
 
 /**
+ * Roster cache TTL backstop (ms). The version-key catches every device/user
+ * mutation instantly; this bounds staleness from the un-stamped inputs
+ * (TreasureBox raw-zone snapshot, ZoneProfileStore committed zones,
+ * ActivityMonitor status) to ≤1s — imperceptible for zone colour and 2+ orders
+ * of magnitude under the empty-roster timeout window.
+ */
+export const ROSTER_CACHE_TTL_MS = 1000;
+
+/**
  * @typedef {Object} RosterEntry
  * @property {string} name - Participant name
  * @property {string} displayLabel - Display label
@@ -60,9 +69,15 @@ export class ParticipantRoster {
     // Historical participant tracking
     this._historicalParticipants = new Set();
     
-    // Cached roster
+    // Cached roster. Rebuilt only when the underlying device/user state
+    // changes (tracked via mutationVersion stamps on DeviceManager/UserManager)
+    // or the TTL backstop expires. Collapses the ~34 rebuilds/sec render-storm
+    // (2026-07-17 incident) down to ~data rate. See
+    // docs/_wip/plans/2026-07-17-fitness-context-rearchitecture.md (Stage 1).
     this._cachedRoster = null;
     this._cacheVersion = 0;
+    this._cachedKey = null; // `${deviceMutationVersion}:${userMutationVersion}`
+    this._cachedAt = 0;     // timestamp of last real build (TTL backstop)
     
     // External references (set via configure)
     this._deviceManager = null;
@@ -122,6 +137,8 @@ export class ParticipantRoster {
    */
   _invalidateCache() {
     this._cachedRoster = null;
+    this._cachedKey = null;
+    this._cachedAt = 0;
     this._cacheVersion++;
   }
 
@@ -136,6 +153,40 @@ export class ParticipantRoster {
       return [];
     }
 
+    // Cache check: the roster is a pure function of device/user/zone state.
+    // Return the cached array when neither manager has mutated since the last
+    // build AND the TTL backstop (covering un-stamped zone/activity inputs)
+    // has not expired. Collapses the render-driven read amplification (~4
+    // consumers × several renders/sec + governance pulse) to ~one build per
+    // real data change. See ROSTER_CACHE_TTL_MS.
+    const key = `${this._deviceManager.mutationVersion ?? 'x'}:${this._userManager.mutationVersion ?? 'x'}`;
+    const now = Date.now();
+    if (
+      this._cachedRoster !== null &&
+      this._cachedKey === key &&
+      (now - this._cachedAt) < ROSTER_CACHE_TTL_MS
+    ) {
+      return this._cachedRoster;
+    }
+
+    const roster = this._buildRoster();
+    // Freeze in dev/test so any in-place mutation of the shared cached array
+    // (e.g. a caller pushing ghost entries) throws loudly instead of silently
+    // poisoning the cache. getFullRoster() copies before mutating.
+    if (import.meta.env?.DEV || import.meta.env?.MODE === 'test') {
+      Object.freeze(roster);
+    }
+    this._cachedRoster = roster;
+    this._cachedKey = key;
+    this._cachedAt = now;
+    return roster;
+  }
+
+  /**
+   * Build the roster from current device/user/zone state (uncached).
+   * @returns {RosterEntry[]}
+   */
+  _buildRoster() {
     const heartRateDevices = this._deviceManager.getAllDevices().filter(d => d.type === 'heart_rate');
 
     // Zone lookup (TreasureBox baseline + ZoneProfileStore committed zones)
@@ -378,7 +429,10 @@ export class ParticipantRoster {
    * @see /docs/reviews/guest-assignment-service-audit.md Issue #4
    */
   getFullRoster() {
-    const deviceRoster = this.getRoster(); // Current behavior - active devices only
+    // Copy: getRoster() returns the shared (frozen-in-dev) cached array, and we
+    // push ledger ghost entries below. Mutating the cache in place would poison
+    // every other reader (and throw on the frozen array). See roster cache.
+    const deviceRoster = [...this.getRoster()]; // Current behavior - active devices only
     const deviceIds = new Set(deviceRoster.flatMap(e => e.hrDeviceIds || [e.hrDeviceId].filter(Boolean)));
     
     // Add ledger entries for devices not currently broadcasting

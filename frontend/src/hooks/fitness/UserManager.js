@@ -303,6 +303,10 @@ export class UserManager {
     this.assignmentLedger = null;
     this._onLedgerChange = null;
     this._ownershipIndex = new DeviceOwnershipIndex();
+    // Monotonic counter bumped on mutations that change roster output (user
+    // set, guest/ledger assignments). Read by ParticipantRoster's roster cache.
+    // See docs/_wip/plans/2026-07-17-fitness-context-rearchitecture.md (Stage 1).
+    this.mutationVersion = 0;
   }
 
   get deviceOwnershipIndex() {
@@ -313,6 +317,8 @@ export class UserManager {
     this._ownershipIndex.rebuild(
       Array.from(this.users.values())
     );
+    // User set / device ownership changed → roster output can change.
+    this.mutationVersion++;
   }
 
   configure(usersConfig, globalZones) {
@@ -431,6 +437,7 @@ export class UserManager {
 
   setRoster(roster) {
     this.roster = Array.isArray(roster) ? roster : [];
+    this.mutationVersion++;
   }
 
   assignGuest(deviceId, guestName, metadata = {}) {
@@ -585,6 +592,8 @@ export class UserManager {
   }
 
   #emitLedgerChange() {
+    // Ledger assign/remove changes participant labels/ids in roster output.
+    this.mutationVersion++;
     if (typeof this._onLedgerChange === 'function') {
       this._onLedgerChange();
     }
