@@ -1,7 +1,13 @@
 // serializeMusicXml.js — Score model → MusicXML string. Inverse of parseMusicXml.
-// Pure string-building (on the engrave hot path). Emits <divisions>=score.divisions.
+// Pure string-building (on the engrave hot path).
+//
+// Divisions basis (finding #1): <duration> is computed via noteDivisions(), which
+// always works on the 24-grid (DIVISIONS). The <divisions> attribute MUST agree
+// with that basis, so we emit DIVISIONS — NOT score.divisions (the source file's
+// value, which may be 1). Emitting the source value with 24-grid durations inflated
+// every duration by up to 24× on reload.
 
-import { noteDivisions } from '#frontend/modules/MusicNotation/duration.js';
+import { noteDivisions, DIVISIONS } from '#frontend/modules/MusicNotation/duration.js';
 
 const esc = (s) => String(s).replace(/[<>&]/g, (c) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;' }[c]));
 
@@ -88,10 +94,15 @@ function clefsXml(score, part) {
 
 function attributesXml(score, part) {
   // MusicXML <attributes> child order: divisions, key, time, staves, clef.
+  // <divisions> MUST be DIVISIONS to match the 24-grid <duration> values (finding #1).
   const staves = part.staves > 1 ? `<staves>${part.staves}</staves>` : '';
+  // <mode> is optional in MusicXML; only emit it when the model carries one. A
+  // parsed score with no <mode> keeps mode:null and must round-trip as null — NOT
+  // be rewritten to 'major' (a silent modality change on save).
+  const mode = score.key.mode ? `<mode>${score.key.mode}</mode>` : '';
   return `<attributes>`
-    + `<divisions>${score.divisions}</divisions>`
-    + `<key><fifths>${score.key.fifths}</fifths><mode>${score.key.mode ?? 'major'}</mode></key>`
+    + `<divisions>${DIVISIONS}</divisions>`
+    + `<key><fifths>${score.key.fifths}</fifths>${mode}</key>`
     + `<time><beats>${score.timeSig.beats}</beats><beat-type>${score.timeSig.beatType}</beat-type></time>`
     + staves
     + clefsXml(score, part)

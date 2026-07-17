@@ -10,10 +10,90 @@
 //      exactly once (the splitElement / C1 path)
 import { describe, it, expect } from 'vitest';
 import { parseMusicXml } from '#frontend/modules/MusicNotation/parseMusicXml.js';
-import { initEditor, replacePitch, insertNote, serializeFromEditor } from './editor.js';
+import { initEditor, replacePitch, insertNote, toggleDot, serializeFromEditor } from './editor.js';
 import { makeEmptyScore } from './score.js';
 import { makeNote } from './note.js';
 import maryXml from '#frontend/modules/MusicNotation/__fixtures__/maryHadALittleLamb.musicxml?raw';
+
+// Project a Score to a stable, comparable shape (ignore only truly derived/positional noise).
+function project(score) {
+  return {
+    staves: score.parts[0].staves,
+    clefs: score.parts[0].clefs,
+    key: score.key, timeSig: score.timeSig, tempo: score.tempo,
+    measures: score.parts[0].measures.map((m) => ({
+      number: m.number,
+      notes: m.notes.map((n) => ({
+        midi: n.midi ?? null, rest: !!n.rest, type: n.type, dots: n.dots,
+        durationQuarters: n.durationQuarters, tie: n.tie ?? null,
+        triplet: !!n.triplet, staff: n.staff, voice: n.voice,
+        dynamics: n.dynamics ?? null, articulations: n.articulations ?? null, lyric: n.lyric ?? null,
+      })),
+    })),
+  };
+}
+
+// The HONEST data-loss gate: a NORMALIZED DEEP DIFF, not spot-checks. Load Mary,
+// apply a REFLOWING command (toggleDot the first treble quarter of measure 0),
+// round-trip through the serializer, and assert that EVERY element other than the
+// one edited note survives byte-for-byte. This is what proves findings #1 (24×
+// duration inflation) and #2 (grand-staff re-bar into 17 measures) are fixed:
+// before those fixes this diff explodes; after, exactly one note differs.
+describe('data-loss invariant — HONEST normalized deep diff (the P1 gate)', () => {
+  it('toggleDot on the first treble note changes ONLY that note (Mary deep-diff)', () => {
+    const loaded = parseMusicXml(maryXml);
+    let ed = initEditor(loaded);
+    const m0 = ed.score.parts[0].measures[0];
+    const firstIdx = m0.notes.findIndex((n) => n.staff === 1 && !n.rest && !n.chord);
+    ed = toggleDot(ed, { measureIdx: 0, noteIdx: firstIdx });
+    const reloaded = parseMusicXml(serializeFromEditor(ed));
+
+    const P = project(loaded);
+    const R = project(reloaded);
+
+    // score-level structure is untouched by a single-note edit
+    expect(R.staves).toEqual(P.staves);
+    expect(R.clefs).toEqual(P.clefs);
+    expect(R.key).toEqual(P.key);
+    expect(R.timeSig).toEqual(P.timeSig);
+    expect(R.tempo).toEqual(P.tempo);
+
+    // measure count unchanged
+    expect(R.measures.length).toBe(P.measures.length);
+
+    // total note count unchanged
+    const total = (pr) => pr.measures.reduce((a, m) => a + m.notes.length, 0);
+    expect(total(R)).toBe(total(P));
+
+    // every note identical EXCEPT the single edited one
+    const flat = (pr) => pr.measures.flatMap((m) => m.notes);
+    const pf = flat(P);
+    const rf = flat(R);
+    expect(rf.length).toBe(pf.length);
+    let diffs = 0;
+    for (let i = 0; i < pf.length; i++) {
+      const same = JSON.stringify(pf[i]) === JSON.stringify(rf[i]);
+      if (!same) {
+        diffs += 1;
+        // the ONLY note allowed to differ is the dotted one: it gained a dot and
+        // grew from 1.0 to 1.5 quarter-beats; everything else about it is intact.
+        expect(pf[i].dots).toBe(0);
+        expect(rf[i].dots).toBe(1);
+        expect(pf[i].durationQuarters).toBe(1);
+        expect(rf[i].durationQuarters).toBe(1.5);
+        expect(rf[i].midi).toBe(pf[i].midi);
+        expect(rf[i].type).toBe(pf[i].type);
+        expect(rf[i].lyric).toBe(pf[i].lyric);
+        expect(rf[i].staff).toBe(pf[i].staff);
+        expect(rf[i].voice).toBe(pf[i].voice);
+      } else {
+        // durationQuarters of every UNEDITED note is preserved (finding #1 proof)
+        expect(rf[i].durationQuarters).toBe(pf[i].durationQuarters);
+      }
+    }
+    expect(diffs).toBe(1);
+  });
+});
 
 describe('data-loss invariant — edit one note, nothing else changes', () => {
   it('editing one note preserves measure + note counts across save+reload (Mary fixture)', () => {
