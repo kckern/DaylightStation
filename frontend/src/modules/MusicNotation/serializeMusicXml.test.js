@@ -43,3 +43,12 @@ describe('serializeMusicXml — pitched note', () => {
     expect(parseMusicXml(xml).parts[0].measures[0].notes[0].midi).toBe(66);
   });
 });
+
+describe('serializeMusicXml — rests', () => {
+  it('round-trips a half rest', () => {
+    const xml = serializeMusicXml(scoreWith([makeRest({ type: 'half' })]));
+    const n = parseMusicXml(xml).parts[0].measures[0].notes[0];
+    expect(n.rest).toBe(true);
+    expect(n.type).toBe('half');
+  });
+});
