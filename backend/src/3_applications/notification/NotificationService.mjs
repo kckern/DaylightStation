@@ -57,7 +57,7 @@ export class NotificationService {
       try {
         const now = this.#clock?.now?.() || new Date();
         const username = intent.metadata?.username || null;
-        const dedupeKey = intent.dedupeKey || `${intent.category}:${username || '-'}:${intent.title || ''}`;
+        const dedupeKey = intent.dedupeKey || `${intent.category}:${username || '-'}:${String(intent.body || intent.title || '').slice(0, 80)}`;
         const cfg = this.#configLoader?.() || { quietHours: null, cooldowns: {} };
         const cooldownMins = cfg.cooldowns?.[intent.category] ?? cfg.cooldowns?.default ?? 60;
         const cooldownMs = cooldownMins * 60_000;

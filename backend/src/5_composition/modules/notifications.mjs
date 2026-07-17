@@ -69,7 +69,12 @@ export function bootstrapNotifications(deps = {}) {
   const ledgerStore = new YamlNotificationLedgerStore({ basePath: path.join(dataPath, 'household', 'state') });
   const policy = new NotificationPolicy();
   const configLoader = () => {
-    const c = configService?.getHouseholdAppConfig?.(null, 'notifications') || {};
+    // reloadHouseholdAppConfig (not getHouseholdAppConfig) — it reads fresh from
+    // disk on every call. getHouseholdAppConfig only reads the in-memory cache,
+    // which is never updated by admin edits (ConfigService's #config is frozen
+    // at startup), so quiet-hours/cooldown changes would never take effect
+    // without this. Notifications are infrequent, so a disk read per send is fine.
+    const c = configService?.reloadHouseholdAppConfig?.(null, 'notifications') || {};
     return {
       quietHours: new QuietHours(c.quiet_hours || { enabled: false }),
       cooldowns: c.cooldowns || { default: 60 },

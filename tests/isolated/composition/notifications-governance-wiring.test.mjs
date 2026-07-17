@@ -8,7 +8,14 @@ describe('bootstrapNotifications governance wiring', () => {
   it('wires a ledger store + config loader so a repeat send is suppressed', async () => {
     const dir = mkdtempSync(path.join(tmpdir(), 'notif-'));
     try {
-      const configService = { getHouseholdAppConfig: () => ({ quiet_hours: { enabled: false }, cooldowns: { ceremony: 60, default: 60 } }) };
+      // configLoader now reads via reloadHouseholdAppConfig (fresh-disk-read), not
+      // getHouseholdAppConfig (stale cache) — see notifications.mjs. Both are
+      // wired here so the wiring test still exercises the real configLoader path.
+      const notificationsConfig = { quiet_hours: { enabled: false }, cooldowns: { ceremony: 60, default: 60 } };
+      const configService = {
+        getHouseholdAppConfig: () => notificationsConfig,
+        reloadHouseholdAppConfig: () => notificationsConfig,
+      };
       const { notificationService } = bootstrapNotifications({
         eventBus: { publish() {} },
         configService,
