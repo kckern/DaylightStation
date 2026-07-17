@@ -369,3 +369,59 @@ describe('moveCaret / select', () => {
     expect(select(ed, null).selection).toBeNull();
   });
 });
+
+// --- Unit 8, B23 ------------------------------------------------------------
+describe('setAttribute', () => {
+  it('sets tempo, key, and clef immutably', () => {
+    const ed0 = initEditor(makeEmptyScore());
+    const ed1 = setAttribute(ed0, 'tempo', 132);
+    expect(ed1.score.tempo).toBe(132);
+    expect(ed0.score.tempo).toBe(100); // immutability
+    const ed2 = setAttribute(ed1, 'key', { fifths: 2, mode: 'major' });
+    expect(ed2.score.key).toEqual({ fifths: 2, mode: 'major' });
+    const ed3 = setAttribute(ed2, 'clef', { sign: 'F', line: 4 });
+    expect(ed3.score.clef).toEqual({ sign: 'F', line: 4 });
+  });
+
+  it('time 4/4 → 3/4 re-bars, preserving total duration and respecting the new capacity', () => {
+    // 4/4 bar of four quarters (96 divs).
+    let ed = initEditor(makeEmptyScore());
+    for (const step of ['C', 'D', 'E', 'F']) {
+      ed = insertNote(ed, { step, octave: 4 }, { type: 'quarter' });
+    }
+    const before = ed;
+    const totalBefore = ed.score.parts[0].measures.reduce((s, m) => s + sumDivs(m.notes), 0);
+
+    ed = setAttribute(ed, 'time', { beats: 3, beatType: 4 });
+    const measures = ed.score.parts[0].measures;
+    const cap = 3 * 24; // 72
+    // total duration preserved
+    const totalAfter = measures.reduce((s, m) => s + sumDivs(m.notes), 0);
+    expect(totalAfter).toBe(totalBefore);
+    // every bar respects the new capacity
+    for (const m of measures) expect(sumDivs(m.notes)).toBeLessThanOrEqual(cap);
+    // four quarters re-bar into 3/4 + a leftover quarter → 2 measures
+    expect(measures).toHaveLength(2);
+    expect(sumDivs(measures[0].notes)).toBe(72);
+    expect(sumDivs(measures[1].notes)).toBe(24);
+    // immutability: source still 4/4 with one bar
+    expect(before.score.timeSig).toEqual({ beats: 4, beatType: 4 });
+    expect(before.score.parts[0].measures[0].notes).toHaveLength(4);
+  });
+
+  it('time re-bar splits a straddling note into a tied chain', () => {
+    // 4/4 bar [half, half] (96). Switch to 3/4: second half straddles the 72
+    // barline → quarter(72, tie start) + quarter(next bar, tie stop).
+    let ed = initEditor(makeEmptyScore());
+    ed = insertNote(ed, { step: 'C', octave: 4 }, { type: 'half' });
+    ed = insertNote(ed, { step: 'C', octave: 4 }, { type: 'half' });
+    ed = setAttribute(ed, 'time', { beats: 3, beatType: 4 });
+    const m = ed.score.parts[0].measures;
+    expect(sumDivs(m[0].notes)).toBe(72);
+    const last0 = m[0].notes[m[0].notes.length - 1];
+    expect(last0.tie).toBe('start');
+    expect(m[1].notes[0].tie).toBe('stop');
+    // duration preserved: 48 + 48 = 96
+    expect(m.reduce((s, mm) => s + sumDivs(mm.notes), 0)).toBe(96);
+  });
+});
