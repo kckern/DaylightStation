@@ -5,8 +5,9 @@
 // input state or its score. Immutability is achieved by deep-copying only the
 // path down to the mutation (spreads) or by cloning the whole score for
 // larger structural edits.
-import { makeNote, noteDivisions } from './note.js';
+import { makeNote, makeRest, noteDivisions } from './note.js';
 import { DIVISIONS, decomposeDuration } from '#frontend/modules/MusicNotation/duration.js';
+import { pitchToMidi } from '#frontend/modules/MusicNotation/parseMusicXml.js';
 import { serializeMusicXml } from '#frontend/modules/MusicNotation/serializeMusicXml.js';
 
 /** Deep clone a score for structural edits. structuredClone handles the plain
@@ -61,6 +62,8 @@ export function initEditor(score) {
     stickyDuration: { type: 'quarter', dots: 0, triplet: false },
     dirty: false,
     revision: 0,
+    // Undo/redo snapshot ring (Unit 8, B24). Additive to the Unit 7 shape.
+    history: { past: [], future: [] },
   };
 }
 
@@ -94,19 +97,81 @@ function ensureMeasure(part, idx) {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Shared multi-bar splitter (DRY core reused by insertNote / insertRest /
+// reflowMeasure / the time re-bar). Given a single element's total duration and
+// the room left in its starting bar, decide how to lay it out:
+//   - whole:  a single element kept in the starting bar (offset 0), OR
+//   - split:  a chain of palette pieces across bars (offset 0 = start bar,
+//             offset k = the k-th bar after it).
+//
+// Non-multiple-of-6 rule (triplet / dotted-16th edge, flagged by the Unit 7
+// review): decomposeDuration only accepts multiples of the 16th grid (6). A
+// triplet (8 / 16 divs) or a dotted-16th makes a bar's fill — and hence the
+// remaining room — a non-multiple of 6, which would throw. v1 pragmatic rule:
+// only auto-split when EVERY per-bar chunk is a clean multiple of 6 (and the
+// total itself is), otherwise place the element WHOLE in its starting bar (the
+// bar may go slightly over; a future focus editor cleans it up). Because a
+// whole placement never calls decomposeDuration, triplets never throw.
+// ---------------------------------------------------------------------------
+
+/** Break `total` divisions into per-bar chunks: [{offset, divs}, …]. */
+function chunkAcrossBars(total, roomInStart, capacity) {
+  const chunks = [];
+  let remaining = total;
+  let room = roomInStart;
+  let offset = 0;
+  while (remaining > 0) {
+    const chunk = Math.min(remaining, room);
+    if (chunk > 0) chunks.push({ offset, divs: chunk });
+    remaining -= chunk;
+    offset += 1;
+    room = capacity; // every later bar starts empty
+  }
+  return chunks;
+}
+
 /**
- * Insert a note at the caret. If it fits the caret's measure, append and advance
- * the caret (rolling to a fresh next measure when the bar becomes exactly full).
- * If it overflows the barline, distribute the whole duration across as many bars
- * as needed as ONE tied chain (bar 1 gets only its remaining room; each later bar
- * gets up to a full capacity). Tie types across the chain of pieces p0..pk are:
- * p0='start', interior='both', pk='stop'. Immutable.
- *
- * v1 limitation: appends at end of the caret's measure; caret.noteIdx not yet
- * honored. Mid-measure insertion + reflow is Unit 8 (reflowMeasure).
+ * Produce placement objects [{offset, note}] for one element.
+ * @param {{isRest:boolean, pitch:object|null, baseOpts:object}} el
+ * @param {number} total  element duration in divisions
+ * @param {number} roomInStart  divisions free in the starting bar
+ * @param {number} capacity  bar capacity in divisions
  */
-export function insertNote(state, pitch, opts = {}) {
-  const probe = makeNote(pitch, opts); // build once; reused for the fit-path push
+function splitElement({ isRest, pitch, baseOpts }, total, roomInStart, capacity) {
+  const chunks = chunkAcrossBars(total, roomInStart, capacity);
+  const clean = (v) => Number.isInteger(v) && v % 6 === 0;
+  const splittable = chunks.length > 1 && total % 6 === 0 && chunks.every((c) => clean(c.divs));
+
+  if (!splittable) {
+    // Keep the element whole in its starting bar (preserves type/dots/triplet
+    // and any rich fields via baseOpts). Never calls decomposeDuration.
+    const note = isRest ? makeRest(baseOpts) : makeNote(pitch, baseOpts);
+    return [{ offset: 0, note }];
+  }
+
+  const pieces = []; // {offset, type}
+  for (const c of chunks) {
+    for (const p of decomposeDuration(c.divs)) pieces.push({ offset: c.offset, type: p.type });
+  }
+  const n = pieces.length;
+  const sv = { staff: baseOpts.staff ?? 1, voice: baseOpts.voice ?? 1 };
+  return pieces.map((pc, i) => {
+    if (isRest) {
+      // Rests DON'T tie: each bar's chunk becomes independent rests.
+      return { offset: pc.offset, note: makeRest({ type: pc.type, dots: 0, triplet: false, ...sv }) };
+    }
+    const tie = i === 0 ? 'start' : i === n - 1 ? 'stop' : 'both';
+    return {
+      offset: pc.offset,
+      note: makeNote(pitch, { type: pc.type, dots: 0, triplet: false, tie, ...sv }),
+    };
+  });
+}
+
+/** Insert a built element (note or rest) at the caret, sharing the splitter. */
+function insertElement(state, { isRest, pitch, opts }) {
+  const probe = isRest ? makeRest(opts) : makeNote(pitch, opts);
   const total = noteDivisions(probe);
   const capacity = barCapacity(state.score.timeSig);
   const staffVoice = { staff: opts.staff ?? 1, voice: opts.voice ?? 1 };
@@ -130,7 +195,6 @@ export function insertNote(state, pitch, opts = {}) {
     measure.notes.push(probe);
     let caret;
     if (total === room) {
-      // Bar is now exactly full: park the caret at the start of a fresh measure.
       ensureMeasure(part0, mIdx + 1);
       caret = { measureIdx: mIdx + 1, noteIdx: 0 };
     } else {
@@ -139,54 +203,29 @@ export function insertNote(state, pitch, opts = {}) {
     return { ...state, score, caret, dirty: true, revision: state.revision + 1 };
   }
 
-  // --- overflow: distribute across as many bars as needed, one tied chain ---
-  // TODO(Unit 8): a triplet/dotted-16th already in the bar makes room a
-  // non-multiple-of-6, so decomposeDuration throws. Handle when triplet
-  // insertion lands.
-  //
-  // Walk bar by bar taking min(remaining, bar-room) worth of the note, decompose
-  // each chunk into pieces, and record which bar each piece belongs to. The first
-  // bar contributes only its remaining `room`; every subsequent (fresh) bar can
-  // take a full `capacity`.
-  const placements = []; // { barIdx, type } in chain order
-  let remaining = total;
-  let barIdx = mIdx;
-  let barRoom = room;
-  while (remaining > 0) {
-    ensureMeasure(part0, barIdx);
-    const chunk = Math.min(remaining, barRoom);
-    for (const piece of decomposeDuration(chunk)) {
-      placements.push({ barIdx, type: piece.type });
-    }
-    remaining -= chunk;
-    barIdx += 1;
-    barRoom = capacity; // every later bar starts empty
+  // --- overflow: distribute via the shared splitter ---
+  const placements = splitElement(
+    { isRest, pitch, baseOpts: { ...opts, ...staffVoice } },
+    total,
+    room,
+    capacity,
+  );
+  const byOffset = new Map();
+  for (const pl of placements) {
+    if (!byOffset.has(pl.offset)) byOffset.set(pl.offset, []);
+    byOffset.get(pl.offset).push(pl.note);
+  }
+  let lastBarIdx = mIdx;
+  for (const [off, notes] of byOffset) {
+    const idx = mIdx + off;
+    ensureMeasure(part0, idx);
+    // Starting bar appends after existing content; each later bar receives its
+    // pieces at the front (spill-at-front semantics).
+    if (off === 0) part0.measures[idx].notes.push(...notes);
+    else part0.measures[idx].notes.splice(0, 0, ...notes);
+    if (idx > lastBarIdx) lastBarIdx = idx;
   }
 
-  const n = placements.length;
-  const tied = placements.map((pl, i) => {
-    const tie = i === 0 ? 'start' : i === n - 1 ? 'stop' : 'both';
-    return {
-      barIdx: pl.barIdx,
-      note: makeNote(pitch, { type: pl.type, dots: 0, triplet: false, tie, ...staffVoice }),
-    };
-  });
-
-  // Group pieces by bar (preserving chain order). The caret's original bar gets
-  // its pieces appended at the end; each fresh later bar receives its pieces at
-  // the front (in order), matching spill-at-front semantics.
-  const byBar = new Map();
-  for (const t of tied) {
-    if (!byBar.has(t.barIdx)) byBar.set(t.barIdx, []);
-    byBar.get(t.barIdx).push(t.note);
-  }
-  for (const [idx, notes] of byBar) {
-    const m = part0.measures[idx];
-    if (idx === mIdx) m.notes.push(...notes);
-    else m.notes.splice(0, 0, ...notes);
-  }
-
-  const lastBarIdx = placements[n - 1].barIdx;
   return {
     ...state,
     score,
@@ -194,4 +233,377 @@ export function insertNote(state, pitch, opts = {}) {
     dirty: true,
     revision: state.revision + 1,
   };
+}
+
+/**
+ * Insert a note at the caret. If it fits, append and advance the caret (rolling
+ * to a fresh next measure when the bar becomes exactly full). If it overflows,
+ * distribute the whole duration across as many bars as needed as ONE tied chain
+ * (start → both… → stop). Immutable.
+ *
+ * v1 limitation: appends at end of the caret's measure; caret.noteIdx not yet
+ * honored. Mid-measure insertion is a later unit.
+ */
+export function insertNote(state, pitch, opts = {}) {
+  return insertElement(state, { isRest: false, pitch, opts });
+}
+
+/**
+ * Insert a rest at the caret. Like insertNote, but rests DON'T tie: an overflow
+ * splits into separate rests per bar (no tie chain). Immutable.
+ */
+export function insertRest(state, opts = {}) {
+  return insertElement(state, { isRest: true, pitch: null, opts });
+}
+
+// ---------------------------------------------------------------------------
+// reflowMeasure — after a command changes a note's duration, a measure may no
+// longer fit its bar. Re-split the straddling element across the barline
+// (reusing the shared splitter) and cascade spill into fresh measures. Returns
+// an ARRAY of measures (the reflowed starting measure, plus any spill measures).
+// Underfull measures are left as-is (no back-pull) for v1.
+// ---------------------------------------------------------------------------
+export function reflowMeasure(measure, timeSig) {
+  const capacity = barCapacity(timeSig);
+  const notes = measure.notes;
+
+  // Find the first non-chord note that crosses the barline.
+  let fill = 0;
+  let straddleIdx = -1;
+  for (let i = 0; i < notes.length; i++) {
+    if (notes[i].chord) continue; // chord notes share their principal's onset
+    const d = noteDivisions(notes[i]);
+    if (fill + d <= capacity) {
+      fill += d;
+      continue;
+    }
+    straddleIdx = i;
+    break;
+  }
+  if (straddleIdx === -1) return [{ ...measure, notes: [...notes] }];
+
+  const head = notes.slice(0, straddleIdx);
+  const straddle = notes[straddleIdx];
+  // Chord notes attached to the straddling principal travel with it.
+  let after = straddleIdx + 1;
+  const straddleChords = [];
+  while (after < notes.length && notes[after].chord) {
+    straddleChords.push(notes[after]);
+    after += 1;
+  }
+  const restAfter = notes.slice(after);
+
+  const room = capacity - fill;
+  const d = noteDivisions(straddle);
+  const hasChord = straddleChords.length > 0;
+  // Splittable only when both head and spill land on the 16th grid, and the
+  // straddle carries no chord (splitting a chord across a barline is out of
+  // scope for v1 — keep it whole).
+  const splittable =
+    room >= 6 && room % 6 === 0 && d % 6 === 0 && (d - room) % 6 === 0 && !hasChord;
+
+  let bar0Notes;
+  let spillNotes;
+  if (room > 0 && splittable) {
+    const placements = splitElement(
+      { isRest: !!straddle.rest, pitch: straddle.pitch, baseOpts: { ...straddle } },
+      d,
+      room,
+      capacity,
+    );
+    const headPieces = placements.filter((p) => p.offset === 0).map((p) => p.note);
+    const spillPieces = placements.filter((p) => p.offset > 0).map((p) => p.note);
+    bar0Notes = [...head, ...headPieces];
+    spillNotes = [...spillPieces, ...restAfter];
+  } else if (room === 0) {
+    // The straddle starts exactly on the barline — move it (and its rest) whole.
+    bar0Notes = [...head];
+    spillNotes = [straddle, ...straddleChords, ...restAfter];
+  } else {
+    // Non-grid or chorded: keep the straddle whole in bar0 (bar may go over);
+    // push only the following notes to the next bar.
+    bar0Notes = [...head, straddle, ...straddleChords];
+    spillNotes = [...restAfter];
+  }
+
+  const bar0 = { ...measure, notes: bar0Notes };
+  if (spillNotes.length === 0) return [bar0];
+  const spillMeasure = { number: (measure.number ?? 1) + 1, notes: spillNotes };
+  return [bar0, ...reflowMeasure(spillMeasure, timeSig)];
+}
+
+/**
+ * Apply reflowMeasure to measure `mIdx` of a (mutable, already-cloned) part,
+ * cascading any spill into the following measure(s) — merging with existing
+ * content there — and renumbering. Used by the duration-changing commands.
+ */
+function reflowAt(part0, mIdx, timeSig) {
+  const reflowed = reflowMeasure(part0.measures[mIdx], timeSig);
+  part0.measures[mIdx] = reflowed[0];
+  if (reflowed.length > 1) {
+    const spillNotes = reflowed.slice(1).flatMap((m) => m.notes);
+    const nextIdx = mIdx + 1;
+    ensureMeasure(part0, nextIdx);
+    part0.measures[nextIdx] = {
+      ...part0.measures[nextIdx],
+      notes: [...spillNotes, ...part0.measures[nextIdx].notes],
+    };
+    reflowAt(part0, nextIdx, timeSig);
+  }
+  part0.measures.forEach((m, i) => {
+    m.number = i + 1;
+  });
+}
+
+/** Rebuild the note at `pos` with a new duration, preserving pitch/rich fields. */
+function rebuildDuration(note, patch) {
+  return note.rest
+    ? makeRest({ ...note, ...patch })
+    : makeNote(note.pitch, { ...note, ...patch });
+}
+
+/** Replace one note in measure `mIdx` at `noteIdx` inside a cloned part. */
+function replaceNoteInPart(part0, mIdx, noteIdx, newNote) {
+  const measure = part0.measures[mIdx];
+  measure.notes = measure.notes.map((n, i) => (i === noteIdx ? newNote : n));
+}
+
+/**
+ * Change the duration of the note at `pos`, then reflow its measure (which may
+ * re-split following content across the barline, or — per the triplet rule —
+ * keep it whole). Immutable.
+ */
+export function setDuration(state, { measureIdx, noteIdx }, { type, dots = 0, triplet = false }) {
+  const score = cloneScore(state.score);
+  const part0 = score.parts[0];
+  const old = part0.measures[measureIdx].notes[noteIdx];
+  replaceNoteInPart(part0, measureIdx, noteIdx, rebuildDuration(old, { type, dots, triplet }));
+  reflowAt(part0, measureIdx, score.timeSig);
+  return { ...state, score, dirty: true, revision: state.revision + 1 };
+}
+
+/** Toggle the dot on the note at `pos` (dots 0 ↔ 1), then reflow. Immutable. */
+export function toggleDot(state, { measureIdx, noteIdx }) {
+  const score = cloneScore(state.score);
+  const part0 = score.parts[0];
+  const old = part0.measures[measureIdx].notes[noteIdx];
+  replaceNoteInPart(part0, measureIdx, noteIdx, rebuildDuration(old, { dots: old.dots ? 0 : 1 }));
+  reflowAt(part0, measureIdx, score.timeSig);
+  return { ...state, score, dirty: true, revision: state.revision + 1 };
+}
+
+/** Toggle the triplet flag on the note at `pos`, then reflow. Immutable. */
+export function toggleTriplet(state, { measureIdx, noteIdx }) {
+  const score = cloneScore(state.score);
+  const part0 = score.parts[0];
+  const old = part0.measures[measureIdx].notes[noteIdx];
+  replaceNoteInPart(part0, measureIdx, noteIdx, rebuildDuration(old, { triplet: !old.triplet }));
+  reflowAt(part0, measureIdx, score.timeSig);
+  return { ...state, score, dirty: true, revision: state.revision + 1 };
+}
+
+/**
+ * Toggle the tie on the note at `pos`: null → 'start', anything → null. This is
+ * a simple single-note toggle; a full tie pairs 'start'/'stop' with the next
+ * note in a later unit. Tie doesn't change duration, so no reflow. Immutable.
+ */
+export function toggleTie(state, { measureIdx, noteIdx }) {
+  const score = cloneScore(state.score);
+  const part0 = score.parts[0];
+  const old = part0.measures[measureIdx].notes[noteIdx];
+  replaceNoteInPart(part0, measureIdx, noteIdx, rebuildDuration(old, { tie: old.tie ? null : 'start' }));
+  return { ...state, score, dirty: true, revision: state.revision + 1 };
+}
+
+/** Remove the note at `pos`; clamp the caret to a valid position. Immutable. */
+export function deleteNote(state, { measureIdx, noteIdx }) {
+  const score = cloneScore(state.score);
+  const part0 = score.parts[0];
+  const measure = part0.measures[measureIdx];
+  measure.notes = measure.notes.filter((_, i) => i !== noteIdx);
+  // Clamp the caret: keep an empty measure; land at the new last+1 (== length).
+  let caret = state.caret;
+  if (caret.measureIdx === measureIdx) {
+    caret = { measureIdx, noteIdx: Math.min(caret.noteIdx, measure.notes.length) };
+  }
+  return { ...state, score, caret, dirty: true, revision: state.revision + 1 };
+}
+
+// ---------------------------------------------------------------------------
+// Pitch nudging + caret/selection moves (B22)
+// ---------------------------------------------------------------------------
+
+/**
+ * Spell a MIDI number as {step, octave, alter}. Naturals where possible, sharps
+ * for the black keys by default (C, C#, D, D#, …). keyFifths is accepted for a
+ * future key-aware spelling; the v1 rule ignores it (always sharps).
+ */
+export function midiToPitch(midi, keyFifths = 0) {
+  void keyFifths;
+  const SPELL = [
+    { step: 'C', alter: 0 }, { step: 'C', alter: 1 }, { step: 'D', alter: 0 },
+    { step: 'D', alter: 1 }, { step: 'E', alter: 0 }, { step: 'F', alter: 0 },
+    { step: 'F', alter: 1 }, { step: 'G', alter: 0 }, { step: 'G', alter: 1 },
+    { step: 'A', alter: 0 }, { step: 'A', alter: 1 }, { step: 'B', alter: 0 },
+  ];
+  const semitone = ((midi % 12) + 12) % 12;
+  const s = SPELL[semitone];
+  return { step: s.step, octave: Math.floor(midi / 12) - 1, alter: s.alter };
+}
+
+/**
+ * Raise/lower the SELECTED note by `delta` chromatic semitones. No-op (returns
+ * the same state) when there's no selection or the selection is a rest.
+ * Immutable.
+ */
+export function nudgePitch(state, delta) {
+  const sel = state.selection;
+  if (!sel) return state;
+  const score = cloneScore(state.score);
+  const part0 = score.parts[0];
+  const old = part0.measures[sel.measureIdx]?.notes[sel.noteIdx];
+  if (!old || old.rest) return state;
+  const pitch = midiToPitch(old.midi + delta, score.key?.fifths ?? 0);
+  replaceNoteInPart(part0, sel.measureIdx, sel.noteIdx, makeNote(pitch, { ...old }));
+  return { ...state, score, dirty: true, revision: state.revision + 1 };
+}
+
+/**
+ * Move the caret. `where` ∈ left | right | barStart | barEnd | prevBar | nextBar.
+ * Clamped to valid bounds. Does NOT change the score (no history push).
+ */
+export function moveCaret(state, where) {
+  const measures = state.score.parts[0].measures;
+  const count = (idx) => measures[idx]?.notes.length ?? 0;
+  let { measureIdx, noteIdx } = state.caret;
+  switch (where) {
+    case 'left':
+      if (noteIdx > 0) noteIdx -= 1;
+      else if (measureIdx > 0) {
+        measureIdx -= 1;
+        noteIdx = count(measureIdx);
+      }
+      break;
+    case 'right':
+      if (noteIdx < count(measureIdx)) noteIdx += 1;
+      else if (measureIdx < measures.length - 1) {
+        measureIdx += 1;
+        noteIdx = 0;
+      }
+      break;
+    case 'barStart':
+      noteIdx = 0;
+      break;
+    case 'barEnd':
+      noteIdx = count(measureIdx);
+      break;
+    case 'prevBar':
+      if (measureIdx > 0) {
+        measureIdx -= 1;
+        noteIdx = Math.min(noteIdx, count(measureIdx));
+      }
+      break;
+    case 'nextBar':
+      if (measureIdx < measures.length - 1) {
+        measureIdx += 1;
+        noteIdx = Math.min(noteIdx, count(measureIdx));
+      }
+      break;
+    default:
+      break;
+  }
+  return { ...state, caret: { measureIdx, noteIdx } };
+}
+
+/** Set (or clear) the selection. Does NOT change the score. */
+export function select(state, pos) {
+  return { ...state, selection: pos ? { ...pos } : null };
+}
+
+// ---------------------------------------------------------------------------
+// setAttribute — score-level attributes (B23)
+// ---------------------------------------------------------------------------
+
+/**
+ * Re-bar an entire part into freshly-sized measures for `timeSig`. Flattens all
+ * notes to a single sequence and re-packs them via the shared splitter, so a
+ * 4/4 part set to 3/4 re-bars while preserving total duration. Mutates the
+ * (already-cloned) part.
+ */
+function rebarPart(part0, timeSig) {
+  const capacity = barCapacity(timeSig);
+  const flat = part0.measures.flatMap((m) => m.notes);
+  const measures = [{ number: 1, notes: [] }];
+  let barIdx = 0;
+  const ensure = (idx) => {
+    while (measures.length <= idx) measures.push({ number: measures.length + 1, notes: [] });
+  };
+
+  for (const el of flat) {
+    if (el.chord) {
+      measures[barIdx].notes.push(el); // rides with its principal, no fill
+      continue;
+    }
+    // Advance off any full (or over-full) bar.
+    while (measureFill(measures[barIdx]) >= capacity) {
+      barIdx += 1;
+      ensure(barIdx);
+    }
+    const room = capacity - measureFill(measures[barIdx]);
+    const d = noteDivisions(el);
+    if (d <= room) {
+      measures[barIdx].notes.push(el);
+      continue;
+    }
+    const placements = splitElement(
+      { isRest: !!el.rest, pitch: el.pitch, baseOpts: { ...el } },
+      d,
+      room,
+      capacity,
+    );
+    let maxOffset = 0;
+    for (const pl of placements) {
+      const idx = barIdx + pl.offset;
+      ensure(idx);
+      measures[idx].notes.push(pl.note);
+      if (pl.offset > maxOffset) maxOffset = pl.offset;
+    }
+    barIdx += maxOffset; // next iteration's room check advances off a full bar
+  }
+
+  // Drop a trailing empty bar, keep at least one, renumber.
+  while (measures.length > 1 && measures[measures.length - 1].notes.length === 0) measures.pop();
+  measures.forEach((m, i) => {
+    m.number = i + 1;
+  });
+  part0.measures = measures;
+}
+
+/**
+ * Set a score-level attribute immutably.
+ *   'tempo' → score.tempo = value
+ *   'key'   → score.key merged with value ({fifths, mode})
+ *   'clef'  → score.clef = value
+ *   'time'  → score.timeSig = value AND re-bar the whole part to the new capacity
+ */
+export function setAttribute(state, name, value) {
+  const score = cloneScore(state.score);
+  switch (name) {
+    case 'tempo':
+      score.tempo = value;
+      break;
+    case 'key':
+      score.key = { ...score.key, ...value };
+      break;
+    case 'clef':
+      score.clef = value;
+      break;
+    case 'time':
+      score.timeSig = value;
+      rebarPart(score.parts[0], value);
+      break;
+    default:
+      break;
+  }
+  return { ...state, score, dirty: true, revision: state.revision + 1 };
 }
