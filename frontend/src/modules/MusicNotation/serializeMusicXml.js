@@ -11,13 +11,32 @@ function pitchXml(p) {
     + `<octave>${p.octave}</octave></pitch>`;
 }
 
+// Tie: <tie> element (sound) goes between <duration> and <type>;
+// <tied> element (notation) goes in <notations>.
+function tieMarks(tie) {
+  if (tie === 'start') return { tie: '<tie type="start"/>', tied: '<tied type="start"/>' };
+  if (tie === 'stop') return { tie: '<tie type="stop"/>', tied: '<tied type="stop"/>' };
+  if (tie === 'both') return { tie: '<tie type="stop"/><tie type="start"/>', tied: '<tied type="stop"/><tied type="start"/>' };
+  return { tie: '', tied: '' };
+}
+
+// Assemble a single <notations> block (tied for now; grows with articulations).
+// Emit nothing when there is no content (never an empty <notations/>).
+function notationsXml(note) {
+  const { tied } = tieMarks(note.tie);
+  const inner = `${tied}`;
+  return inner ? `<notations>${inner}</notations>` : '';
+}
+
 function noteXml(note) {
   const dur = noteDivisions(note);
   const body = note.rest ? `<rest/>` : pitchXml(note.pitch);
   const dots = '<dot/>'.repeat(note.dots || 0);
+  const { tie } = tieMarks(note.tie);
   return `<note>${note.chord ? '<chord/>' : ''}${body}`
-    + `<duration>${dur}</duration>`
+    + `<duration>${dur}</duration>${tie}`
     + `<type>${note.type}</type>${dots}`
+    + notationsXml(note)
     + `</note>`;
 }
 

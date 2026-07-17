@@ -52,3 +52,17 @@ describe('serializeMusicXml — rests', () => {
     expect(n.type).toBe('half');
   });
 });
+
+describe('serializeMusicXml — ties', () => {
+  it('emits tie + tied for a tie-start note', () => {
+    const a = makeNote({ step: 'C', octave: 4 }, { type: 'quarter', tie: 'start' });
+    const xml = serializeMusicXml(scoreWith([a]));
+    expect(xml).toContain('<tie type="start"/>');
+    expect(xml).toContain('<tied type="start"/>');
+  });
+  it('emits stop then start for a tie:both note', () => {
+    const b = makeNote({ step: 'C', octave: 4 }, { type: 'quarter', tie: 'both' });
+    const xml = serializeMusicXml(scoreWith([b]));
+    expect(xml).toContain('<tie type="stop"/><tie type="start"/>');
+  });
+});
