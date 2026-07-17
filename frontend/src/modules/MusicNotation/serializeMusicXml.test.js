@@ -141,3 +141,65 @@ describe('serializeMusicXml — full-feature note stays parseable', () => {
     expect(doc.querySelector('parsererror')).toBeNull();
   });
 });
+
+describe('serializeMusicXml — loud guards for beyond-v1 silent-loss paths', () => {
+  it('THROWS on a multi-part score rather than dropping parts (finding #4)', () => {
+    const s = makeEmptyScore();
+    s.parts.push({ id: 'P2', name: 'Bass', staves: 1, clefs: { 1: { sign: 'F', line: 4 } }, measures: [{ number: 1, notes: [] }] });
+    expect(() => serializeMusicXml(s)).toThrow(/multi-part/);
+    // valid single-part v1 input does NOT throw
+    expect(() => serializeMusicXml(makeEmptyScore())).not.toThrow();
+  });
+
+  it('THROWS on a mid-piece key change rather than corrupting on save (finding #5)', () => {
+    const s = makeEmptyScore();
+    s.parts[0].measures.push({ number: 2, notes: [], attributes: { key: { fifths: 3 }, time: { beats: 4, beatType: 4 } } });
+    expect(() => serializeMusicXml(s)).toThrow(/mid-piece key\/time/);
+  });
+
+  it('THROWS on a mid-piece time change rather than corrupting on save (finding #5)', () => {
+    const s = makeEmptyScore();
+    s.parts[0].measures.push({ number: 2, notes: [], attributes: { key: { fifths: 0 }, time: { beats: 3, beatType: 4 } } });
+    expect(() => serializeMusicXml(s)).toThrow(/mid-piece key\/time/);
+    // a later measure re-declaring the SAME key/time is fine (no real change)
+    const same = makeEmptyScore();
+    same.parts[0].measures.push({ number: 2, notes: [], attributes: { key: { fifths: 0 }, time: { beats: 4, beatType: 4 } } });
+    expect(() => serializeMusicXml(same)).not.toThrow();
+  });
+
+  it('THROWS on a non-3:2 tuplet rather than corrupting it on save (finding #7)', () => {
+    const n = makeNote({ step: 'C', octave: 4 }, { type: '16th' });
+    n.tuplet = { actual: 5, normal: 4 }; // a quintuplet — not reproducible in v1
+    expect(() => serializeMusicXml(scoreWith([n]))).toThrow(/only 3:2 triplets/);
+    // a real 3:2 triplet continues to serialize normally
+    const trip = makeNote({ step: 'C', octave: 4 }, { type: 'eighth', triplet: true });
+    trip.tuplet = { actual: 3, normal: 2 };
+    expect(() => serializeMusicXml(scoreWith([trip]))).not.toThrow();
+  });
+});
+
+describe('serializeMusicXml — title / part-name correctness', () => {
+  it('omits <work-title> for a null/empty title (never emits the literal "null")', () => {
+    const s = makeEmptyScore(); s.title = null;
+    const xml = serializeMusicXml(s);
+    expect(xml).not.toContain('<work-title>');
+    expect(xml).not.toContain('null');
+    // reloaded title is not the string "null"
+    expect(parseMusicXml(xml).title).not.toBe('null');
+  });
+
+  it('round-trips a non-default part name instead of hardcoding "Music"', () => {
+    const s = makeEmptyScore(); s.parts[0].name = 'Piano';
+    const xml = serializeMusicXml(s);
+    expect(xml).toContain('<part-name>Piano</part-name>');
+    expect(parseMusicXml(xml).parts[0].name).toBe('Piano');
+  });
+
+  it('emits a schema-valid tempo direction and still round-trips the tempo', () => {
+    const s = makeEmptyScore(); s.tempo = 132;
+    const xml = serializeMusicXml(s);
+    // the <direction> now has a <direction-type> child (schema-valid)
+    expect(xml).toContain('<direction-type><metronome>');
+    expect(parseMusicXml(xml).tempo).toBe(132);
+  });
+});

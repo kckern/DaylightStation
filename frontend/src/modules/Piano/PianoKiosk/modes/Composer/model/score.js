@@ -14,6 +14,8 @@ export function makeEmptyScore(setup = {}) {
     // serializer reads. Keep the two in sync here.
     clef: { ...clef },
     divisions: DIVISIONS,
-    parts: [{ id: 'P1', staves: 1, clefs: { 1: { ...clef } }, measures: [{ number: 1, notes: [] }] }],
+    // `name` carries the MusicXML part-name. The serializer emits it (falling back
+    // to 'Music'); the parser sets it on load so an imported name round-trips.
+    parts: [{ id: 'P1', name: setup.partName ?? 'Music', staves: 1, clefs: { 1: { ...clef } }, measures: [{ number: 1, notes: [] }] }],
   };
 }
