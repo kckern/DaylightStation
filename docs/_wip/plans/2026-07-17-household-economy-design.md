@@ -1,7 +1,7 @@
 # Household Currency Economy — Design
 
 **Date:** 2026-07-17
-**Status:** Validated design (brainstorm complete, not yet built)
+**Status:** Phase 1 implemented on `feature/household-economy` (2026-07-17), live-smoked, awaiting on-kiosk verification + merge
 **Related:** `docs/reference/piano/README.md`, `frontend/src/modules/Emulator/`, `frontend/src/screen-framework/`
 
 ---
