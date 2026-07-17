@@ -528,3 +528,16 @@ veto path).
   in-measure) — sized in P0/P1 boundary.
 - Raw-take strip playback UX (two-lane compare) — design during P5.
 - Lyric entry input design (the gating question for the lyrics tier).
+
+### Known limitations (v1)
+
+Arbitrary external MusicXML import is **not** a v1 flow — the gallery only ever
+holds Composer-created files, and the save/reload data-loss invariant is proven
+against that self-produced content. If an arbitrary external score were ever
+loaded and saved, these paths would silently corrupt (the parser reads them into
+the model, but the serializer cannot faithfully reproduce them): notes finer than
+a 16th (32nd and below), typeless whole-measure rests, grace notes, and rehearsal
+marks / practice `<sections>` (parsed but not re-serialized). These are acceptable
+in v1 precisely because it never imports. If library import is ever added (a later
+tier), each of these needs a round-trip test or a loud guard before it ships —
+never a silent best-effort save.
