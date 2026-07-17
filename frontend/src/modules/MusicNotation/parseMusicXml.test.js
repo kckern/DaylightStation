@@ -73,3 +73,16 @@ describe('tempo extraction', () => {
     expect(parseMusicXml(xmlWithTempoChange).tempo).toBe(72);
   });
 });
+
+describe('parseMusicXml — per-measure attributes', () => {
+  it('captures a mid-piece time change on the measure where it occurs', () => {
+    const xml = `<?xml version="1.0"?><score-partwise><part-list><score-part id="P1"/></part-list><part id="P1">
+      <measure number="1"><attributes><divisions>24</divisions><time><beats>4</beats><beat-type>4</beat-type></time></attributes>
+      <note><pitch><step>C</step><octave>4</octave></pitch><duration>96</duration><type>whole</type></note></measure>
+      <measure number="2"><attributes><time><beats>3</beats><beat-type>4</beat-type></time></attributes>
+      <note><pitch><step>D</step><octave>4</octave></pitch><duration>72</duration><type>half</type><dot/></note></measure>
+    </part></score-partwise>`;
+    const s = parseMusicXml(xml);
+    expect(s.parts[0].measures[1].attributes.time).toEqual({ beats: 3, beatType: 4 });
+  });
+});
