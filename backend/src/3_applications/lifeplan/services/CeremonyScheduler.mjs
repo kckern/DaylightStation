@@ -128,6 +128,7 @@ export class CeremonyScheduler {
         urgency: 'normal',
         actions: [{ label: 'Begin', action: 'open', data: { url: `/life/ceremony/${type}` } }],
         metadata: { username, ceremony: type, periodId },
+        dedupeKey: `ceremony:${type}:${periodId}`,
       });
 
       const delivered = Array.isArray(results) && results.some(r => r.delivered);

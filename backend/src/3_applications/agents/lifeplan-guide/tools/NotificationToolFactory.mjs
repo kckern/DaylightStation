@@ -49,6 +49,15 @@ export class NotificationToolFactory extends ToolFactory {
             // delivery recipient. Do not rename this key without updating both
             // adapters and every other producer (e.g. CeremonyScheduler).
             metadata: { username: userId, actions, source: 'lifeplan-guide' },
+            // Stable per-logical-message key so governance dedupes on
+            // identity rather than a static title (Task 7 follow-up). The
+            // only production caller (CadenceCheck) passes a hardcoded
+            // title for every coach nudge, so keying on title alone
+            // collapsed all distinct messages to one key and silently
+            // suppressed genuinely different nudges. Key on the
+            // LLM-composed body — the thing that actually varies between
+            // messages — falling back to title if body is somehow absent.
+            dedupeKey: `action:${userId}:${String(body || title || '').trim().slice(0, 80)}`,
           });
           return { delivered: Array.isArray(results) && results.some(r => r.delivered) };
         },
