@@ -153,6 +153,15 @@ export function parseMusicXml(xml) {
           note.midi = pitchToMidi(pitch);
         }
 
+        // Tuplets — <time-modification> gives actual/normal counts; 3-in-2 is a triplet.
+        const timeMod = child.querySelector(':scope > time-modification');
+        if (timeMod) {
+          const actual = num(timeMod, 'actual-notes', 0);
+          const normal = num(timeMod, 'normal-notes', 0);
+          note.tuplet = { actual, normal };
+          note.triplet = actual === 3 && normal === 2;
+        }
+
         // Ties — <tie> sound elements (direct children; NOT <tied> in notations).
         // Both a stop and a start present → a note tied on both sides.
         const tieTypes = [...child.querySelectorAll(':scope > tie')].map((t) => t.getAttribute('type'));
