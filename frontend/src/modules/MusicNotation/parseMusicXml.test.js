@@ -118,3 +118,23 @@ describe('parseMusicXml — triplets', () => {
     expect(n.tuplet).toEqual({ actual: 3, normal: 2 });
   });
 });
+
+describe('parseMusicXml — expressive marks + lyrics', () => {
+  it('reads articulations and a lyric on a note', () => {
+    const xml = `<?xml version="1.0"?><score-partwise><part-list><score-part id="P1"/></part-list><part id="P1">
+      <measure number="1"><attributes><divisions>24</divisions></attributes>
+      <note><pitch><step>C</step><octave>4</octave></pitch><duration>24</duration><type>quarter</type><notations><articulations><staccato/></articulations></notations><lyric><text>la</text></lyric></note>
+    </measure></part></score-partwise>`;
+    const n = parseMusicXml(xml).parts[0].measures[0].notes[0];
+    expect(n.articulations).toEqual(['staccato']);
+    expect(n.lyric).toBe('la');
+  });
+  it('attaches a preceding dynamics direction to the next note', () => {
+    const xml = `<?xml version="1.0"?><score-partwise><part-list><score-part id="P1"/></part-list><part id="P1">
+      <measure number="1"><attributes><divisions>24</divisions></attributes>
+      <direction placement="below"><direction-type><dynamics><f/></dynamics></direction-type></direction>
+      <note><pitch><step>C</step><octave>4</octave></pitch><duration>24</duration><type>quarter</type></note>
+    </measure></part></score-partwise>`;
+    expect(parseMusicXml(xml).parts[0].measures[0].notes[0].dynamics).toBe('f');
+  });
+});
