@@ -50,6 +50,7 @@ function noteXml(note) {
     + `<type>${note.type}</type>${dots}`
     + timeMod
     + notationsXml(note)
+    + (note.lyric ? `<lyric><text>${esc(note.lyric)}</text></lyric>` : '')
     + `</note>`;
 }
 
