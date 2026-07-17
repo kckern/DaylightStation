@@ -698,6 +698,15 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     ? { baseUrl: `http://${raFileServer.host}:${raFileServer.port}`, thumbnailsPath: retroarchAppConfig.source.thumbnails_path }
     : null;
 
+  // Household economy — per-user wallets, earn/deposit, metered spend sessions.
+  // Built here (before the content routers) because the play /log route needs
+  // `economyService` to fire the piano lesson-complete earn-hook (Task 8). The
+  // router itself is mounted below where the other v1Routers are assembled.
+  const economyApi = createEconomyApi({
+    configService,
+    logger: rootLogger.child({ module: 'economy-api' })
+  });
+
   const { routers: contentRouters, services: contentServices } = createApiRouters({
     registry: contentRegistry,
     mediaProgressMemory,
@@ -716,6 +725,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     singalong: singalongConfig,
     savedQueryService,
     eventBus,
+    economyService: economyApi.economyService,
     logger: rootLogger.child({ module: 'content' })
   });
 
@@ -1809,12 +1819,8 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   });
 
   // Household economy — per-user wallets, earn/deposit, metered spend sessions.
-  // Keep `economyApi` in scope: Task 8 wires `economyApi.economyService` into the
-  // piano earn-hook (lesson-complete → earn). This block only mounts the router.
-  const economyApi = createEconomyApi({
-    configService,
-    logger: rootLogger.child({ module: 'economy-api' })
-  });
+  // `economyApi` is created earlier (above the content routers) so its
+  // economyService can back the play /log earn-hook; here we only mount the router.
   v1Routers.economy = economyApi.router;
 
   // Printer router — thermal printer control, multi-printer via optional {/:location} URL segment
