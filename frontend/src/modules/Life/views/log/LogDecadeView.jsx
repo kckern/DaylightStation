@@ -1,14 +1,15 @@
-import { Stack, Title, Text, Loader, Paper, Group, Badge, SimpleGrid } from '@mantine/core';
+import { Title, Paper, Group, Badge, SimpleGrid } from '@mantine/core';
 import { useLifelog } from '../../hooks/useLifelog.js';
+import { LifePage, LoadingState, ErrorState } from '../../components/index.js';
 
 /**
  * Decade view showing year-by-year summary cards.
  */
 export function LogDecadeView({ username, at }) {
-  const { data, loading, error } = useLifelog({ scope: 'decade', username, at });
+  const { data, loading, error, refetch } = useLifelog({ scope: 'decade', username, at });
 
-  if (loading) return <Loader size="sm" />;
-  if (error) return <Text c="red" size="sm">{error}</Text>;
+  if (loading) return <LoadingState />;
+  if (error) return <ErrorState error={error} onRetry={refetch} />;
 
   const days = data?.days || {};
   const dates = Object.keys(days).sort();
@@ -28,9 +29,7 @@ export function LogDecadeView({ username, at }) {
   const yearKeys = Object.keys(years).sort().reverse();
 
   return (
-    <Stack gap="md">
-      <Title order={4}>Decade</Title>
-
+    <LifePage title="Decade">
       <SimpleGrid cols={{ base: 1, sm: 2, md: 3 }} spacing="md">
         {yearKeys.map(year => {
           const y = years[year];
@@ -47,6 +46,6 @@ export function LogDecadeView({ username, at }) {
           );
         })}
       </SimpleGrid>
-    </Stack>
+    </LifePage>
   );
 }
