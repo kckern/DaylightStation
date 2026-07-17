@@ -1,7 +1,11 @@
 import { describe, it, expect } from 'vitest';
-import { initEditor, replacePitch, serializeFromEditor, insertNote } from './editor.js';
+import {
+  initEditor, replacePitch, serializeFromEditor, insertNote,
+  insertRest, deleteNote, setDuration, toggleDot, toggleTriplet, toggleTie,
+  reflowMeasure, nudgePitch, midiToPitch, moveCaret, select, setAttribute,
+} from './editor.js';
 import { makeEmptyScore } from './score.js';
-import { makeNote, noteDivisions } from './note.js';
+import { makeNote, makeRest, noteDivisions } from './note.js';
 import { parseMusicXml } from '#frontend/modules/MusicNotation/parseMusicXml.js';
 
 function oneNoteEditor() {
@@ -153,5 +157,131 @@ describe('insertNote — auto-bar split/tie', () => {
     ed = insertNote(ed, { step: 'E', octave: 4 }, { type: 'quarter' }); // still appends at END
     const midis = ed.score.parts[0].measures[0].notes.map((n) => n.midi);
     expect(midis).toEqual([60, 62, 64]); // E landed at the end, not at noteIdx 0
+  });
+});
+
+// --- Unit 8, B21 ------------------------------------------------------------
+const sumDivs = (notes) => notes.reduce((s, n) => (n.chord ? s : s + noteDivisions(n)), 0);
+
+describe('insertRest', () => {
+  it('inserts a rest that occupies bar space and advances the caret', () => {
+    let ed = initEditor(makeEmptyScore());
+    ed = insertRest(ed, { type: 'quarter' });
+    const notes = ed.score.parts[0].measures[0].notes;
+    expect(notes).toHaveLength(1);
+    expect(notes[0].rest).toBe(true);
+    expect(ed.caret).toEqual({ measureIdx: 0, noteIdx: 1 });
+  });
+  it('overflow splits into separate rests per bar with NO tie chain', () => {
+    // 2/4 (cap 48): quarter rest (24) then a whole rest (96) → 24|48|24 rests.
+    let ed = initEditor(makeEmptyScore({ time: { beats: 2, beatType: 4 } }));
+    ed = insertRest(ed, { type: 'quarter' });
+    ed = insertRest(ed, { type: 'whole' });
+    const m = ed.score.parts[0].measures;
+    const rests = [];
+    for (const mm of m) for (const n of mm.notes) rests.push(n);
+    expect(rests.every((n) => n.rest === true)).toBe(true);
+    // rests never carry a tie field at all
+    expect(rests.every((n) => !('tie' in n))).toBe(true);
+    expect(m).toHaveLength(3);
+    // total placed rest duration equals 24 (fill) + 96 (whole) = 120
+    expect(m.reduce((s, mm) => s + sumDivs(mm.notes), 0)).toBe(120);
+  });
+});
+
+describe('deleteNote', () => {
+  it('removes the note at pos and clamps the caret (immutably)', () => {
+    let ed = initEditor(makeEmptyScore());
+    ed = insertNote(ed, { step: 'C', octave: 4 }, { type: 'quarter' });
+    ed = insertNote(ed, { step: 'D', octave: 4 }, { type: 'quarter' });
+    const before = ed;
+    const after = deleteNote(ed, { measureIdx: 0, noteIdx: 0 });
+    expect(after.score.parts[0].measures[0].notes.map((n) => n.midi)).toEqual([62]);
+    // immutability: input untouched
+    expect(before.score.parts[0].measures[0].notes).toHaveLength(2);
+  });
+  it('clamps the caret back when it pointed past the new last note', () => {
+    let ed = initEditor(makeEmptyScore());
+    ed = insertNote(ed, { step: 'C', octave: 4 }, { type: 'quarter' }); // caret {0,1}
+    const after = deleteNote(ed, { measureIdx: 0, noteIdx: 0 });
+    expect(after.score.parts[0].measures[0].notes).toHaveLength(0);
+    expect(after.caret).toEqual({ measureIdx: 0, noteIdx: 0 });
+  });
+});
+
+describe('setDuration', () => {
+  it('changes a quarter to a half when the bar has room (simple case)', () => {
+    let ed = initEditor(makeEmptyScore()); // 4/4
+    ed = insertNote(ed, { step: 'C', octave: 4 }, { type: 'quarter' });
+    ed = setDuration(ed, { measureIdx: 0, noteIdx: 0 }, { type: 'half' });
+    const notes = ed.score.parts[0].measures[0].notes;
+    expect(notes[0].type).toBe('half');
+    expect(noteDivisions(notes[0])).toBe(48);
+  });
+  it('lengthening past the barline reflows following content into the next bar with a tie', () => {
+    // 4/4: [half(48), quarter C(24), quarter D(24)] fills the bar (96). Lengthen
+    // the first note half→whole(96): it now needs the whole bar; the tail C/D
+    // spill to bar 1.
+    let ed = initEditor(makeEmptyScore());
+    ed = insertNote(ed, { step: 'G', octave: 4 }, { type: 'half' });
+    ed = insertNote(ed, { step: 'C', octave: 4 }, { type: 'quarter' });
+    ed = insertNote(ed, { step: 'D', octave: 4 }, { type: 'quarter' });
+    const before = ed;
+    ed = setDuration(ed, { measureIdx: 0, noteIdx: 0 }, { type: 'whole' });
+    const m = ed.score.parts[0].measures;
+    // whole G4 fills bar 0; C4 and D4 spilled to bar 1
+    expect(sumDivs(m[0].notes)).toBe(96);
+    expect(m[1].notes.map((n) => n.midi)).toEqual([60, 62]);
+    // total duration preserved: 96 + 24 + 24 = 144
+    expect(m.reduce((s, mm) => s + sumDivs(mm.notes), 0)).toBe(144);
+    // immutability: input's bar 0 still holds the original 3 notes
+    expect(before.score.parts[0].measures[0].notes).toHaveLength(3);
+    expect(before.score.parts[0].measures[0].notes[0].type).toBe('half');
+  });
+});
+
+describe('toggleDot / toggleTriplet / toggleTie', () => {
+  it('toggleDot flips dots 0↔1 and reflows', () => {
+    let ed = initEditor(makeEmptyScore());
+    ed = insertNote(ed, { step: 'C', octave: 4 }, { type: 'quarter' });
+    ed = toggleDot(ed, { measureIdx: 0, noteIdx: 0 });
+    expect(ed.score.parts[0].measures[0].notes[0].dots).toBe(1);
+    ed = toggleDot(ed, { measureIdx: 0, noteIdx: 0 });
+    expect(ed.score.parts[0].measures[0].notes[0].dots).toBe(0);
+  });
+  it('toggleTriplet flips the triplet flag (and does NOT throw on a non-grid duration)', () => {
+    let ed = initEditor(makeEmptyScore());
+    ed = insertNote(ed, { step: 'C', octave: 4 }, { type: 'eighth' });
+    expect(() => {
+      ed = toggleTriplet(ed, { measureIdx: 0, noteIdx: 0 });
+    }).not.toThrow();
+    expect(ed.score.parts[0].measures[0].notes[0].triplet).toBe(true);
+    expect(noteDivisions(ed.score.parts[0].measures[0].notes[0])).toBe(8); // 12 * 2/3
+  });
+  it('toggleTie sets start then clears', () => {
+    let ed = initEditor(makeEmptyScore());
+    ed = insertNote(ed, { step: 'C', octave: 4 }, { type: 'quarter' });
+    ed = toggleTie(ed, { measureIdx: 0, noteIdx: 0 });
+    expect(ed.score.parts[0].measures[0].notes[0].tie).toBe('start');
+    ed = toggleTie(ed, { measureIdx: 0, noteIdx: 0 });
+    expect(ed.score.parts[0].measures[0].notes[0].tie).toBeNull();
+  });
+});
+
+describe('reflowMeasure — triplet non-multiple-of-6 edge', () => {
+  it('a triplet already in the bar does NOT throw when a following note is relengthened', () => {
+    // Put a triplet eighth (8 divs) in the bar, then a quarter, then lengthen the
+    // quarter to a half. The bar fill (8 + …) is a non-multiple of 6, so reflow
+    // must NOT call decomposeDuration on that room — it keeps the note whole.
+    let ed = initEditor(makeEmptyScore());
+    ed = insertNote(ed, { step: 'C', octave: 4 }, { type: 'eighth', triplet: true }); // 8 divs
+    ed = insertNote(ed, { step: 'D', octave: 4 }, { type: 'quarter' }); // 24 → fill 32
+    expect(() => {
+      ed = setDuration(ed, { measureIdx: 0, noteIdx: 1 }, { type: 'whole' });
+    }).not.toThrow();
+    // The whole D4 (96) overflows a bar that already has a triplet; per the rule
+    // it stays whole in the current measure (bar goes over) rather than throwing.
+    const notes = ed.score.parts[0].measures[0].notes;
+    expect(notes.some((n) => n.midi === 62 && n.type === 'whole')).toBe(true);
   });
 });
