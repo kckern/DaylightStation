@@ -28,6 +28,11 @@ function project(score) {
         durationQuarters: n.durationQuarters, tie: n.tie ?? null,
         triplet: !!n.triplet, staff: n.staff, voice: n.voice,
         dynamics: n.dynamics ?? null, articulations: n.articulations ?? null, lyric: n.lyric ?? null,
+        // Chord flag, absolute onset, and pitch spelling are part of the invariant:
+        // without them the gate is blind to a dropped <chord/>, an onset drift from
+        // a mis-emitted backup/forward, or an enharmonic respelling on save.
+        chord: !!n.chord, onsetQuarter: n.onsetQuarter,
+        step: n.pitch?.step ?? null, alter: n.pitch?.alter ?? null,
       })),
     })),
   };
@@ -65,31 +70,110 @@ describe('data-loss invariant — HONEST normalized deep diff (the P1 gate)', ()
     const total = (pr) => pr.measures.reduce((a, m) => a + m.notes.length, 0);
     expect(total(R)).toBe(total(P));
 
-    // every note identical EXCEPT the single edited one
+    // With onsetQuarter now projected, a REFLOWING dot-toggle produces TWO kinds of
+    // legitimate change and NOTHING else: (a) the ONE edited note (gains a dot, 1.0
+    // → 1.5 beats, same onset), and (b) the following same-voice notes pushed 0.5
+    // beat LATER — a pure onset shift, every other field byte-identical. Neither is
+    // data loss: the serialize→reparse round-trip reproduces them faithfully. The
+    // gate asserts exactly that partition — one true edit, all other diffs onset-only.
     const flat = (pr) => pr.measures.flatMap((m) => m.notes);
     const pf = flat(P);
     const rf = flat(R);
     expect(rf.length).toBe(pf.length);
+    let editDiffs = 0;
+    let onsetShiftDiffs = 0;
+    for (let i = 0; i < pf.length; i++) {
+      const a = pf[i];
+      const b = rf[i];
+      if (JSON.stringify(a) === JSON.stringify(b)) {
+        // durationQuarters of every untouched note is preserved (finding #1 proof)
+        expect(b.durationQuarters).toBe(a.durationQuarters);
+        continue;
+      }
+      // Neutralize onset and re-compare: if that makes them equal, the ONLY change
+      // was the onset (a reflow shift), not any pitch/duration/annotation corruption.
+      const onsetOnly = JSON.stringify({ ...a, onsetQuarter: 0 }) === JSON.stringify({ ...b, onsetQuarter: 0 });
+      if (onsetOnly) {
+        onsetShiftDiffs += 1;
+        expect(b.onsetQuarter).toBeGreaterThan(a.onsetQuarter); // pushed later by the added dot
+      } else {
+        editDiffs += 1;
+        // the ONE genuine edit: the dotted note. Everything but dots+duration intact.
+        expect(a.dots).toBe(0);
+        expect(b.dots).toBe(1);
+        expect(a.durationQuarters).toBe(1);
+        expect(b.durationQuarters).toBe(1.5);
+        expect(b.midi).toBe(a.midi);
+        expect(b.type).toBe(a.type);
+        expect(b.lyric).toBe(a.lyric);
+        expect(b.staff).toBe(a.staff);
+        expect(b.voice).toBe(a.voice);
+        expect(b.step).toBe(a.step);
+        expect(b.alter).toBe(a.alter);
+        expect(b.chord).toBe(a.chord);
+        expect(b.onsetQuarter).toBe(a.onsetQuarter); // the edited note starts where it did
+      }
+    }
+    expect(editDiffs).toBe(1); // exactly one real edit
+    expect(onsetShiftDiffs).toBeGreaterThanOrEqual(1); // the reflow tail actually moved
+  });
+});
+
+// The Mary fixture has no chords, so the chord + backup/forward serialization path
+// is unexercised by the deep-diff gate above. Build a score WITH a chord and prove
+// the SAME invariant: edit one UNRELATED note, and every other element — chord
+// flags, absolute onsets, and pitch spelling — survives byte-for-byte.
+describe('data-loss invariant — chorded round-trip (the gate is honest about chords)', () => {
+  it('edit one melody note; the C-major triad flags, onsets, and spelling all survive', () => {
+    const s = makeEmptyScore(); // 4/4, single staff
+    // A C-major triad at onset 0 (root + two chord notes on staff 1), then melody.
+    s.parts[0].measures[0].notes = [
+      makeNote({ step: 'C', octave: 4 }, { type: 'quarter' }),
+      makeNote({ step: 'E', octave: 4 }, { type: 'quarter', chord: true }),
+      makeNote({ step: 'G', octave: 4 }, { type: 'quarter', chord: true }),
+      makeNote({ step: 'D', octave: 4 }, { type: 'quarter' }),
+      makeNote({ step: 'F', octave: 4 }, { type: 'quarter' }),
+    ];
+    const ed0 = initEditor(s);
+    // Baseline = the UNEDITED score round-tripped, so both sides are parser output
+    // (with onsetQuarter/durationQuarters populated) and directly comparable.
+    const before = parseMusicXml(serializeFromEditor(ed0));
+    // Edit the D4 melody note (index 3) — UNRELATED to the chord. Pitch edit keeps
+    // duration, so no onset should move.
+    const edEdited = replacePitch(ed0, { measureIdx: 0, noteIdx: 3 }, { step: 'A', octave: 4 });
+    const after = parseMusicXml(serializeFromEditor(edEdited));
+
+    const P = project(before);
+    const R = project(after);
+
+    // score-level structure untouched
+    expect(R.staves).toEqual(P.staves);
+    expect(R.clefs).toEqual(P.clefs);
+    expect(R.key).toEqual(P.key);
+    expect(R.timeSig).toEqual(P.timeSig);
+    expect(R.measures.length).toBe(P.measures.length);
+
+    const flat = (pr) => pr.measures.flatMap((m) => m.notes);
+    const pf = flat(P);
+    const rf = flat(R);
+    expect(rf.length).toBe(pf.length); // 5
+
+    // The two chord notes survive the round-trip as chords at onset 0 (baseline).
+    expect(pf[1].chord).toBe(true); expect(pf[1].onsetQuarter).toBe(0);
+    expect(pf[2].chord).toBe(true); expect(pf[2].onsetQuarter).toBe(0);
+
+    // Exactly ONE note differs — the edited D4→A4 — everything else byte-identical.
     let diffs = 0;
     for (let i = 0; i < pf.length; i++) {
-      const same = JSON.stringify(pf[i]) === JSON.stringify(rf[i]);
-      if (!same) {
-        diffs += 1;
-        // the ONLY note allowed to differ is the dotted one: it gained a dot and
-        // grew from 1.0 to 1.5 quarter-beats; everything else about it is intact.
-        expect(pf[i].dots).toBe(0);
-        expect(rf[i].dots).toBe(1);
-        expect(pf[i].durationQuarters).toBe(1);
-        expect(rf[i].durationQuarters).toBe(1.5);
-        expect(rf[i].midi).toBe(pf[i].midi);
-        expect(rf[i].type).toBe(pf[i].type);
-        expect(rf[i].lyric).toBe(pf[i].lyric);
-        expect(rf[i].staff).toBe(pf[i].staff);
-        expect(rf[i].voice).toBe(pf[i].voice);
-      } else {
-        // durationQuarters of every UNEDITED note is preserved (finding #1 proof)
-        expect(rf[i].durationQuarters).toBe(pf[i].durationQuarters);
-      }
+      if (JSON.stringify(pf[i]) === JSON.stringify(rf[i])) continue;
+      diffs += 1;
+      expect(i).toBe(3);                // only the edited melody note
+      expect(pf[i].midi).toBe(62);      // was D4
+      expect(rf[i].midi).toBe(69);      // now A4
+      expect(pf[i].step).toBe('D');
+      expect(rf[i].step).toBe('A');
+      expect(rf[i].onsetQuarter).toBe(pf[i].onsetQuarter); // onset unmoved
+      expect(rf[i].chord).toBe(pf[i].chord);               // still not a chord
     }
     expect(diffs).toBe(1);
   });
