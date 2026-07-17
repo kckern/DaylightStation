@@ -247,7 +247,10 @@ export default function ScorePlayer({ score: scoreMeta }) {
   const flushTimerRef = useRef(null);
   // Pending zero-span loop-wrap restart (see onDone) — cleared by every playback
   // disruption so a stale dwell can't restart the transport under the user.
+  // NOTE: disruptions must clear UNCONDITIONALLY (before any `playing` check) —
+  // during the dwell nothing is playing, so a playing-gated clear never runs.
   const wrapTimerRef = useRef(null);
+  const clearWrapDwell = useCallback(() => { clearTimeout(wrapTimerRef.current); }, []);
   const silenceScheduled = useCallback(() => {
     silence();
     clearTimeout(flushTimerRef.current);
@@ -342,7 +345,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
         // disruption (play/pause, mode change, reset, tap-seek) clears the timer.
         const endT = playTimeline[playTimeline.length - 1]?.t ?? 0;
         if (tIn >= endT) {
-          clearTimeout(wrapTimerRef.current);
+          clearWrapDwell();
           wrapTimerRef.current = setTimeout(restart, 60000 / (tempoMap[0]?.bpm || 90) / tempoMult);
         } else {
           restart();
@@ -674,7 +677,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
     const i = nearestEvent(events, e.clientX - r.left, e.clientY - r.top);
     if (i < 0) return;
     // Normal seek. When a practice range is active, clamp the target into it.
-    clearTimeout(wrapTimerRef.current); // a tap-seek overrides a pending loop-wrap dwell
+    clearWrapDwell(); // a tap-seek overrides a pending loop-wrap dwell
     const target = range ? clampStepToRange(i, range) : i;
     setStep(target);
     setStruck(() => new Set());
@@ -690,18 +693,18 @@ export default function ScorePlayer({ score: scoreMeta }) {
     // Transport timeline is tempo-scaled (playTimeline uses factor 1/tempoMult);
     // seek positions come from the unscaled stepTimeline, so scale to match.
     transport.seek((stepTimeline[target]?.t ?? 0) / tempoMult);
-  }, [mode, flow, events, transport, stepTimeline, silenceScheduled, tempoMult, selecting, range, measureIndexOfStep, logger, countIn, scale]);
+  }, [mode, flow, events, transport, stepTimeline, silenceScheduled, tempoMult, selecting, range, measureIndexOfStep, logger, countIn, scale, clearWrapDwell]);
 
   // Single unmount teardown: immediate silence + one delayed panic (see the
   // silenceScheduled note above), plus any pending loop-wrap dwell — a restart
   // after unmount would replay into a dead view. One effect → order-independent
   // by construction.
-  useEffect(() => () => { clearTimeout(wrapTimerRef.current); silenceScheduled(); }, [silenceScheduled]);
+  useEffect(() => () => { clearWrapDwell(); silenceScheduled(); }, [clearWrapDwell, silenceScheduled]);
 
   // ── Focus range: selection + custom-loop taps ─────────────────────────────────
   // When a practice range is (re)selected, jump the cursor to its in-point and log.
   useEffect(() => {
-    clearTimeout(wrapTimerRef.current); // a loop change (set/clear/nudge) invalidates a pending dwell
+    clearWrapDwell(); // a loop change (set/clear/nudge) invalidates a pending dwell
     if (!focus) return;
     const r = layout.measures ? rangeSteps(layout.measures, focus) : null;
     if (!r) return;
@@ -751,7 +754,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
     setLearnDone(false);         // the Learn completion card belongs to Learn only
     flushPlaybackNow();          // leaving a Polish/Listen run
     if (mode === 'learn') flushFollowNow();
-    clearTimeout(wrapTimerRef.current); // a pending loop-wrap dwell dies with the run
+    clearWrapDwell();            // a pending loop-wrap dwell dies with the run
     transport.stop();
     silenceScheduled();
     setStruck(() => new Set());
@@ -763,7 +766,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
     setSummaryOpen(false); setGrades({});
     setMode(id); // keyboard visibility follows the new mode automatically (M2)
     logMode({ mode: id });
-  }, [mode, flushPlaybackNow, flushFollowNow, transport, silenceScheduled, logMode, countIn]);
+  }, [mode, flushPlaybackNow, flushFollowNow, transport, silenceScheduled, logMode, countIn, clearWrapDwell]);
 
   // Listen tempo: clamp to a sane playable range (0.25×–2×). Timeline rescales via
   // the playTimeline memo; the transport reads the new timings on its next tick.
@@ -777,12 +780,13 @@ export default function ScorePlayer({ score: scoreMeta }) {
   // in the new key/size while the audio kept playing the stale one and the cursor
   // vanished (audit H2). Pause + flush first so sound and sheet never diverge.
   const pauseForViewChange = useCallback(() => {
+    clearWrapDwell(); // BEFORE the playing check — during the dwell nothing plays
     if (!transportRef.current?.playing) return;
     transport.pause();
     silenceScheduled();
     flushPlaybackNow();
     logger.info('score.viewchange.pause', {});
-  }, [transport, silenceScheduled, flushPlaybackNow, logger]);
+  }, [clearWrapDwell, transport, silenceScheduled, flushPlaybackNow, logger]);
 
   // Listen key transpose: clamp to ±7 semitones (one fifth either way). The renderer
   // re-engraves in the new key and re-extracts pitches, so both the notation and the
@@ -800,7 +804,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
 
   const reset = useCallback(() => {
     countIn.cancel();       // reset aborts a pending count-in
-    clearTimeout(wrapTimerRef.current); // …and any pending loop-wrap dwell
+    clearWrapDwell();       // …and any pending loop-wrap dwell
     setLearnDone(false);    // fresh pass — close the completion card
     transport.stop();
     if (mode === 'listen') silenceScheduled();
@@ -813,7 +817,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
     // The auto-follow effect scrolls to the new step; only a true top-of-piece
     // reset should force-scroll to the origin.
     if (home === 0) scrollRef.current?.scrollTo({ top: 0, left: 0 });
-  }, [transport, mode, silenceScheduled, flushPlaybackNow, countIn]);
+  }, [transport, mode, silenceScheduled, flushPlaybackNow, countIn, clearWrapDwell]);
 
   // Run summary Replay: reset the run (clears grades + closes the panel).
   const onReplaySummary = useCallback(() => { reset(); }, [reset]);
@@ -853,7 +857,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
   }, [mode]);
 
   const toggleRun = useCallback(() => {
-    clearTimeout(wrapTimerRef.current); // a manual play/pause overrides a pending loop-wrap dwell
+    clearWrapDwell(); // a manual play/pause overrides a pending loop-wrap dwell
     // A second tap during the count-in aborts it (never reaches the transport).
     if (countIn.active) { countIn.cancel(); logger.info('score.countin.cancel', { via: 'toggle' }); return; }
     if (transport.playing) {
@@ -886,15 +890,16 @@ export default function ScorePlayer({ score: scoreMeta }) {
     }
     // NOTE: reads the live cursor via `stepRef.current` (mirrors `step`), NOT the
     // `step` closure — so `step` is deliberately OUT of the dep array.
-  }, [countIn, transport, mode, myStaves, silenceScheduled, flushPlaybackNow, logger, stepTimeline, tempoMap, tempoMult, parsed]);
+  }, [countIn, transport, mode, myStaves, silenceScheduled, flushPlaybackNow, logger, stepTimeline, tempoMap, tempoMult, parsed, clearWrapDwell]);
 
   // Changing the Listen role map mid-flight invalidates the note timeline — pause,
   // flush, and silence so a stale schedule doesn't drone. Shared by the chip
   // fallback and the My-part control.
   const disruptListenPlayback = useCallback(() => {
+    clearWrapDwell(); // BEFORE the playing check — during the dwell nothing plays
     if (transportRef.current?.playing) { transport.pause(); flushPlaybackNow(); }
     silenceScheduled();
-  }, [transport, flushPlaybackNow, silenceScheduled]);
+  }, [clearWrapDwell, transport, flushPlaybackNow, silenceScheduled]);
 
   const onCyclePart = useCallback((staff) => {
     if (mode === 'listen') {

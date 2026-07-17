@@ -405,6 +405,7 @@ describe('ScorePlayer — Polish mode (transport-driven)', () => {
     expect(document.querySelector('.piano-score-run-summary')).toBeNull(); // wrapped, never finalized
     expect(screen.getByText('m 2 / 2')).toBeTruthy(); // still parked on the looped measure
   });
+
 });
 
 describe('ScorePlayer — Listen mode', () => {
@@ -658,6 +659,47 @@ describe('ScorePlayer — Listen mode', () => {
     // any in-flight tail sends so nothing drones across the loop boundary.
     act(() => vi.advanceTimersByTime(500));
     expect(h.sendPanic).toHaveBeenCalled();
+  });
+
+  it('a role change during the wrap dwell cancels the pending restart — no uncommanded audio (L6)', async () => {
+    // All staves claimed as "mine" → step-only timeline → a tail loop on the
+    // final step is ZERO-SPAN, so each pass ends in the one-beat dwell before
+    // wrapping. Un-claiming the parts DURING the dwell goes through
+    // disruptListenPlayback while nothing is playing — it must still cancel the
+    // dwell, or the stale timer restarts playback seconds later with the
+    // now-note-bearing timeline (uncommanded audio).
+    h.layoutExtras = {
+      tempoEntries: [{ onsetQuarter: 0, bpm: 60 }],
+      events: [
+        { midi: 64, midis: [64, 40], onsetQuarter: 0, x: 100, top: 10, bottom: 200, system: 0 },
+        { midi: 62, midis: [62, 41], onsetQuarter: 1, x: 160, top: 10, bottom: 200, system: 0 },
+      ],
+      steps: [
+        { onsetQuarter: 0, measure: 0, notes: [{ midi: 64, staff: 0, x: 100, top: 10, bottom: 200, width: 8 }, { midi: 40, staff: 1, x: 100, top: 10, bottom: 200, width: 8 }] },
+        { onsetQuarter: 1, measure: 1, notes: [{ midi: 62, staff: 0, x: 160, top: 10, bottom: 200, width: 8 }, { midi: 41, staff: 1, x: 160, top: 10, bottom: 200, width: 8 }] },
+      ],
+      measures: [
+        { index: 0, number: 1, firstStep: 0, lastStep: 0 },
+        { index: 1, number: 2, firstStep: 1, lastStep: 1 },
+      ],
+    };
+    renderPlayer();
+    screen.getByText('Listen').click();
+    await act(async () => {});
+    act(() => { fireEvent.click(screen.getByRole('radio', { name: 'Both' })); }); // My part = everything → kiosk sends nothing
+    act(() => { fireEvent.click(screen.getByRole('button', { name: /^loop/i })); });
+    act(() => { fireEvent.click(screen.getByRole('button', { name: /select measures/i })); });
+    const scroll = document.querySelector('.piano-score-player__scroll');
+    act(() => { fireEvent.click(scroll, { clientX: 160, clientY: 100 }); });
+    act(() => { fireEvent.click(scroll, { clientX: 160, clientY: 100 }); });
+    screen.getByText('▶').click();
+    await act(async () => {});
+    act(() => vi.advanceTimersByTime(4100)); // count-in (my part set) → zero-span run ends instantly → dwell armed
+    h.sendNoteAt.mockClear();
+    // Give the parts back to the kiosk DURING the dwell (transport idle).
+    act(() => { fireEvent.click(screen.getByRole('radio', { name: 'None' })); });
+    act(() => vi.advanceTimersByTime(1500)); // well past the one-beat dwell
+    expect(h.sendNoteAt).not.toHaveBeenCalled(); // stale dwell canceled — no uncommanded restart
   });
 });
 
