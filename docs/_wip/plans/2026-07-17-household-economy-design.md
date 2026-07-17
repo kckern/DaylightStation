@@ -213,6 +213,20 @@ leaderboards. Build only on demonstrated demand.
   live-verify that only piano lessons pay out. If the contract ever loosens, add
   a play-`type`/collection guard around the earn.
 
+## Known Phase-1 limitations (fix when economy is enabled on-kiosk)
+
+- **Load-saver remount can race session open vs. close (economy-on only, money-safe).**
+  In `EmulatorGameWidget`, loading a save game rebuilds the gate, so the lifecycle
+  effect fires `stop()` (close session A) then `start()` (open session B) as two
+  unordered fire-and-forget HTTP calls. If B's `openSession` lands before A's
+  `close` commits, the single-session guard rejects B and the console shows a
+  spurious depleted/blocked state on a funded wallet. **No accounting impact** —
+  A still settles correctly and it self-heals on the next fresh launch. Fix when
+  the load-saver flow is exercised with economy on: either await the close before
+  reopening, or have `openSession` reclaim an existing same-user+same-action
+  session instead of rejecting (do NOT weaken the guard for a different action —
+  that's the double-spend protection).
+
 ## Open items
 
 - PIN storage/verification mechanism (likely per-user auth file alongside
