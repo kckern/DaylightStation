@@ -1,15 +1,17 @@
-import { Stack, Title, Text, Loader, Paper, Group, Badge, SimpleGrid } from '@mantine/core';
+import { Title, Paper, Group, Badge, SimpleGrid } from '@mantine/core';
 import { useLifelog } from '../../hooks/useLifelog.js';
 import { ActivityHeatmap } from './shared/ActivityHeatmap.jsx';
+import { LifePage, LoadingState, ErrorState } from '../../components/index.js';
+import { formatDate } from '../../lib/format.js';
 
 /**
  * Season (90-day) view with heatmap and monthly summary cards.
  */
 export function LogSeasonView({ username, at }) {
-  const { data, loading, error } = useLifelog({ scope: 'season', username, at });
+  const { data, loading, error, refetch } = useLifelog({ scope: 'season', username, at });
 
-  if (loading) return <Loader size="sm" />;
-  if (error) return <Text c="red" size="sm">{error}</Text>;
+  if (loading) return <LoadingState />;
+  if (error) return <ErrorState error={error} onRetry={refetch} />;
 
   const days = data?.days || {};
   const dates = Object.keys(days).sort();
@@ -28,8 +30,7 @@ export function LogSeasonView({ username, at }) {
   const monthKeys = Object.keys(months).sort().reverse();
 
   return (
-    <Stack gap="md">
-      <Title order={4}>This Season</Title>
+    <LifePage title="This Season">
       <ActivityHeatmap days={days} />
 
       <SimpleGrid cols={{ base: 1, sm: 3 }} spacing="md">
@@ -37,7 +38,7 @@ export function LogSeasonView({ username, at }) {
           const m = months[monthKey];
           return (
             <Paper key={monthKey} p="sm" withBorder>
-              <Title order={6} mb="xs">{monthKey}</Title>
+              <Title order={6} mb="xs">{formatDate(monthKey + '-01', { month: 'long', year: 'numeric' })}</Title>
               <Group gap="xs">
                 <Badge size="sm" variant="light">{m.days} days</Badge>
                 <Badge size="sm" variant="light" color="green">{m.sources.size} sources</Badge>
@@ -47,6 +48,6 @@ export function LogSeasonView({ username, at }) {
           );
         })}
       </SimpleGrid>
-    </Stack>
+    </LifePage>
   );
 }

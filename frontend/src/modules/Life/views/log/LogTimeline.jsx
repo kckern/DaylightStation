@@ -1,5 +1,6 @@
-import { Stack, Group, Text, Paper, Timeline } from '@mantine/core';
+import { Text, Timeline } from '@mantine/core';
 import { SourceIcon } from './shared/SourceIcon.jsx';
+import { EmptyState } from '../../components/index.js';
 
 /**
  * Vertical timeline showing source summaries for a single day.
@@ -9,7 +10,7 @@ import { SourceIcon } from './shared/SourceIcon.jsx';
  */
 export function LogTimeline({ summaries = [] }) {
   if (summaries.length === 0) {
-    return <Text size="sm" c="dimmed">No activity recorded.</Text>;
+    return <EmptyState message="No activity recorded." />;
   }
 
   return (

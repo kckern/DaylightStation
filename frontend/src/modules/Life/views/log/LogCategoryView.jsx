@@ -1,7 +1,9 @@
-import { Stack, Title, Text, Loader, Paper, Group, Badge } from '@mantine/core';
+import { Stack, Text, Paper, Group, Badge } from '@mantine/core';
 import { useLifelog } from '../../hooks/useLifelog.js';
 import { SourceIcon } from './shared/SourceIcon.jsx';
 import { ActivityHeatmap } from './shared/ActivityHeatmap.jsx';
+import { LifePage, LoadingState, ErrorState } from '../../components/index.js';
+import { formatDate, humanize } from '../../lib/format.js';
 
 /**
  * Category-filtered view showing activity for a single extractor category.
@@ -12,22 +14,20 @@ import { ActivityHeatmap } from './shared/ActivityHeatmap.jsx';
  * @param {string} [props.username]
  */
 export function LogCategoryView({ category, scope = 'month', username }) {
-  const { data, loading, error } = useLifelog({ category, scope, username });
+  const { data, loading, error, refetch } = useLifelog({ category, scope, username });
 
-  if (loading) return <Loader size="sm" />;
-  if (error) return <Text c="red" size="sm">{error}</Text>;
+  if (loading) return <LoadingState />;
+  if (error) return <ErrorState error={error} onRetry={refetch} />;
 
   const days = data?.days || {};
   const sortedDates = Object.keys(days).sort().reverse();
   const activeDays = sortedDates.filter(d => Object.keys(days[d].sources || {}).length > 0);
 
   return (
-    <Stack gap="md">
-      <Group>
-        <Title order={4} tt="capitalize">{category}</Title>
-        <Badge size="sm" variant="light">{activeDays.length} active days</Badge>
-      </Group>
-
+    <LifePage
+      title={humanize(category)}
+      actions={<Badge size="sm" variant="light">{activeDays.length} active days</Badge>}
+    >
       <ActivityHeatmap days={days} />
 
       <Stack gap="sm">
@@ -39,7 +39,7 @@ export function LogCategoryView({ category, scope = 'month', username }) {
           return (
             <Paper key={date} p="sm" withBorder>
               <Group justify="space-between" mb="xs">
-                <Text size="sm" fw={500}>{date}</Text>
+                <Text size="sm" fw={500}>{formatDate(date)}</Text>
                 <Group gap="xs">
                   {sources.map(s => (
                     <SourceIcon key={s} source={s} size="sm" />
@@ -53,6 +53,6 @@ export function LogCategoryView({ category, scope = 'month', username }) {
           );
         })}
       </Stack>
-    </Stack>
+    </LifePage>
   );
 }

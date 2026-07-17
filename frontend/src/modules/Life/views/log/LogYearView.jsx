@@ -1,15 +1,16 @@
-import { Stack, Title, Text, Loader, Paper, Group, Badge, SimpleGrid } from '@mantine/core';
+import { Title, Paper, Group, Badge, SimpleGrid } from '@mantine/core';
 import { useLifelog } from '../../hooks/useLifelog.js';
 import { ActivityHeatmap } from './shared/ActivityHeatmap.jsx';
+import { LifePage, LoadingState, ErrorState } from '../../components/index.js';
 
 /**
  * Year view with full-year heatmap and quarterly summary cards.
  */
 export function LogYearView({ username, at }) {
-  const { data, loading, error } = useLifelog({ scope: 'year', username, at });
+  const { data, loading, error, refetch } = useLifelog({ scope: 'year', username, at });
 
-  if (loading) return <Loader size="sm" />;
-  if (error) return <Text c="red" size="sm">{error}</Text>;
+  if (loading) return <LoadingState />;
+  if (error) return <ErrorState error={error} onRetry={refetch} />;
 
   const days = data?.days || {};
   const dates = Object.keys(days).sort();
@@ -32,8 +33,7 @@ export function LogYearView({ username, at }) {
   const qKeys = Object.keys(quarters).sort().reverse();
 
   return (
-    <Stack gap="md">
-      <Title order={4}>This Year</Title>
+    <LifePage title="This Year">
       <ActivityHeatmap days={days} />
 
       <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="md">
@@ -52,6 +52,6 @@ export function LogYearView({ username, at }) {
           );
         })}
       </SimpleGrid>
-    </Stack>
+    </LifePage>
   );
 }
