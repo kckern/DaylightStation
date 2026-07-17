@@ -10,17 +10,25 @@ shared OSMD renderer in `frontend/src/modules/MusicNotation/renderers/`.
 - **Top:** the standard always-on breadcrumb (`PianoChrome`) only — `🎹 › Sheet
   Music › {title}`. The mode publishes its title crumb via `usePianoBreadcrumb`;
   it does **not** render its own header. Back = the breadcrumb's mode crumb.
-- **Bottom:** a pinned `ScoreTransportBar` (`ScoreTransportBar.jsx`) holds all
-  controls — mode tabs (left), the playback cluster (reset · ▶/❚❚ · position,
-  center), and view/parts (right): per-staff part chips, keyboard toggle, flow
-  toggle, a single **Size** button (opens a modal; scale commits on release, so
-  the score repaints once, not per drag), and an ⓘ metadata popover.
+- **Bottom:** a pinned `ScoreTransportBar` (`ScoreTransportBar.jsx`) with a
+  **stable three-zone grid**: mode tabs (left) · metronome ♩BPM, restart,
+  play/pause, **Loop**, position readout (center) · Hands segments, Key ±,
+  Tempo, View menu (right). The geography never reshuffles — modes
+  **disable/dim controls in place** instead of unmounting them, so Play is
+  always where Play was; **Perform** is the sole exception (bar strips to tabs +
+  a page indicator). One button grammar throughout: shared inline-SVG icons
+  (`icons.jsx` — no text glyphs/emoji), ≥48px touch targets, one radius,
+  **blue = a setting is on** (metronome armed, loop active), **green = the
+  transport is running**, and a chevron on every button that opens a popover.
+  The View menu holds layout/size/keyboard toggles plus the score's About
+  metadata; size commits on release so the score repaints once, not per drag.
 
 ## Modes — a learning progression
 
 Four modes, **Listen · Learn · Polish · Perform**, selected by the bar's tabs. The
-bar is **mode-aware** (each mode shows only its relevant cluster). Standalone
-metronome is a **click toggle** (audible tempo reference), not a mode.
+bar is **mode-aware**: controls a mode doesn't use disable/dim in place (only
+Perform unmounts them). The metronome is a labeled **click toggle** (audible
+tempo reference), not a mode — see "Metronome" below for its per-mode semantics.
 
 | Mode | Idea | Cursor | Light-up | Sound |
 |------|------|--------|----------|-------|
@@ -32,12 +40,14 @@ metronome is a **click toggle** (audible tempo reference), not a mode.
 - **Listen** (`playParts.allPlayRoles` → `buildPlayTimeline` → `scaleTimeline`): the
   kiosk plays everything; a **tempo** control (multiplier, cheap timeline rescale)
   and a **key** control (± semitone, OSMD transpose — see below); an optional
-  **play-along** toggle lights notes green as you match them (non-gating).
-- **Learn** (`useFollowTracker`): notes-only exit criteria, no timing pressure. A
-  **focus range** and an optional **click** (reference-only — never gates).
+  **play-along** toggle lights notes green as you match them (non-gating). With a
+  loop active, **Listen plays only the loop**.
+- **Learn** (`useFollowTracker`): notes-only exit criteria, no timing pressure. The
+  loop confines practice; the metronome free-runs at the practice tempo
+  (reference-only — never gates).
 - **Polish** (`useScoreEvaluator`): the clock runs; each completed measure is graded
-  and washed R/Y/G; after N silent measures a **run summary** appears. Focus range
-  loops at tempo; **scoring is toggleable**.
+  and washed R/Y/G; after N silent measures a **run summary** appears. The loop
+  repeats at tempo; **scoring is toggleable**.
 - **Perform**: static sheet; `advancePedalCC` (default 67) / `backPedalCC` (default
   66) turn pages (rising-edge, config-driven); a `page / pages` indicator.
 
@@ -51,20 +61,62 @@ Per-staff chips toggle a staff on/off (Learn/Polish) or cycle its Listen role
 Learn). Advancement uses the **all-notes rule** — every expected midi at a step
 must be struck. A left-hand-only intro is a real cursor stop (see alignment note).
 
-## Focus range & sections (Learn + Polish)
+## The loop (focus range & sections)
 
 `focusRange.js` confines practice to `[inMeasure, outMeasure]` and **loops** it
-(wrap at the out-point). Set three ways, all feeding one range:
-- **Whole piece** (default).
+(wrap at the out-point). The loop is a first-class transport control
+(`LoopControl.jsx`): a labeled **Loop** trigger in the center zone that reads
+`Loop m9–m16` when active, with a one-tap ✕ clear beside it. Its menu offers,
+all feeding one range:
 - **A section** — rehearsal marks (`<rehearsal>` letter/named blocks) parsed from
-  the MusicXML by `parseMusicXml.extractSections` → `layout.sections`; a chip snaps
-  the range to that section (`sectionToRange`, mapping XML measure **numbers** to
-  measure **indices**).
-- **A custom bracket** — tap the start measure, then the end measure.
+  the MusicXML by `parseMusicXml.extractSections` → `layout.sections`; picking one
+  snaps the range to that section (`sectionToRange`, mapping XML measure
+  **numbers** to measure **indices**).
+- **Select measures…** — the guided two-tap flow (tap the start measure, then the
+  end). Taps farther than `SELECT_MAX_DIST` from any note — margins, between
+  systems, blank paper — are rejected rather than snapped to the mathematically
+  nearest note (`nearestEvent.js`).
+- **±1-measure nudges** — when a loop is active, Start/End −/+ rows adjust either
+  endpoint without redoing the selection (the menu stays open so endpoints can be
+  walked).
+
+Loop semantics:
+- **Follows Listen ↔ Learn ↔ Polish.** Hop to Listen to hear the passage, back to
+  Learn to drill it — the range survives. It is **cleared** on entering Perform
+  or opening a new score.
+- **Restart returns to the loop in-point** (`homeStep`), not measure 1.
+- In Listen, a loop that ends at the piece's final measure wraps at `onDone` (a
+  one-beat dwell covers the zero-span edge).
+- The on-score tint draws **one band per system** the range spans
+  (`FocusRangeLayer`), so a loop across a line break highlights exactly its own
+  measures; the endpoint brackets mark in/out.
 
 The **measure model** (`osmdRender.buildMeasures`) tags each step with its OSMD
 measure `index` and XML `number`, giving `measures[] = {index, number, firstStep,
 lastStep}` — the basis for tap-to-jump, ranges, chips, and per-measure grading.
+
+## Metronome
+
+One labeled toggle beside Play — a quarter-note SVG + live BPM readout
+(`useMetronomeClick` keeps the exact bpm; only the readout rounds). Per-mode
+semantics:
+- **Learn** — a **free-running** click at the practice tempo: toggling it ON
+  starts the beat immediately, transport running or not. Session-local by design
+  (not persisted) — it's an ambient practice aid, not a score setting.
+- **Polish** — the toggle **arms** a reference click that sounds only while a run
+  is playing; the armed state persists per score.
+- **Listen / Perform** — no metronome.
+
+Each step in the tempo popover shows the BPM it produces, so "75%" always reads
+against a concrete ♩ value.
+
+## Per-score persistence
+
+`scoreSettings.js` stores `mode, tempoMult, focus, activeParts, myStaves,
+clickOn` per score — device-local (`localStorage`, key `daylight.piano.sm.<id>`,
+merge-on-write, degrades to no-op without storage) — so a walk-up user finds a
+piece exactly the way they left it. The Learn free-run click is deliberately
+excluded (session-local, above).
 
 ## Polish scoring
 
@@ -176,8 +228,16 @@ running on the per-step fallback (keyboard stays note-precise regardless).
 |------|------|
 | `SheetMusic.jsx` | routing (grid ↔ viewer), MusicXML fetch + load timing |
 | `ScorePlayer.jsx` | orchestrator: modes, transport, overlays, telemetry wiring |
-| `ScoreTransportBar.jsx` | pinned bottom bar (presentational) |
+| `ScoreTransportBar.jsx` | pinned bottom bar (presentational, three-zone grid) |
+| `LoopControl.jsx` | Loop trigger + menu (sections · select measures · nudges · clear) |
+| `HandsControl.jsx` | per-staff Hands segments |
+| `icons.jsx` | shared inline-SVG icon set for all chrome buttons |
+| `nearestEvent.js` | tap→note mapping with `SELECT_MAX_DIST` miss rejection |
+| `scoreSettings.js` | per-score localStorage persistence |
 | `NoteHighlightLayer.jsx` / `MeasureGradeLayer.jsx` | per-notehead chips / per-measure R/Y/G washes |
+| `FocusRangeLayer.jsx` | loop brackets + per-system tint bands |
+| `countIn.js` / `useCountIn.js` | count-in beats before a run |
+| `clickScheduler.js` | look-ahead scheduling for the metronome click |
 | `RunSummary.jsx` | Polish end-of-run summary |
 | `activeParts.js` / `focusRange.js` | staff-responsibility model / practice-range math |
 | `useFollowTracker.js` | Learn matching + advancement (range-aware) |
