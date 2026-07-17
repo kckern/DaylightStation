@@ -30,6 +30,13 @@ const DEFAULT_DELIVERY_HOUR = {
 
 const DEFAULT_TZ = 'UTC';
 
+// Notification titles for ceremony nudges. Intentionally distinct from
+// CeremonyDueResolver.CEREMONY_TITLES (the terse dashboard-card labels): a
+// push/Telegram title reads better slightly more descriptive ("Monthly
+// review", "Weekly retrospective") than the compact card label ("Phase
+// review", "Weekly retro"). Two surfaces, two appropriate copies — not a
+// stale duplicate. The dueness LOGIC is the shared SSOT (via the resolver's
+// CEREMONY_TIMING/CADENCE_MAP/DEFAULT_ENABLED), not the presentational titles.
 const TITLES = {
   unit_intention: 'Set your intentions',
   unit_capture: 'Capture your day',
