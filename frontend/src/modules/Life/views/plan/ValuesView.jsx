@@ -57,7 +57,14 @@ export function ValuesView({ username }) {
 
     // Update rank numbers
     const updated = newValues.map((v, i) => ({ ...v, rank: i + 1 }));
-    await updateSection('values', updated);
+    try {
+      await updateSection('values', updated);
+    } catch {
+      // updateSection() records the failure in useLifePlan's internal `error`
+      // state (which this view doesn't currently surface); swallow here so a
+      // failed reorder doesn't become an unhandled promise rejection now that
+      // updateSection() rethrows for callers (e.g. PurposeView) that do want it.
+    }
   }, [values, updateSection]);
 
   if (loading) return <LoadingState />;
