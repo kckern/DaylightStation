@@ -794,6 +794,9 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     // identities.homeassistant.notify_service (e.g. 'mobile_app_kc_phone')
     resolveNotifyService: (username) =>
       userService.getProfile(username)?.identities?.homeassistant?.notify_service ?? null,
+    configService,
+    dataPath: dataBasePath,
+    clock: null,
     logger: rootLogger.child({ module: 'notifications' }),
   });
 
