@@ -65,6 +65,32 @@ describe('UserVideoProgressStore.record', () => {
     expect(second.completedAt).toBe(completedAt);
   });
 
+  it('returns newlyCompleted:true only on the call that first crosses completion', () => {
+    const store = makeStore();
+    // First completing call (percent>=90 AND engaged) → transition absent→present.
+    const first = store.record({ userId: USER, plexId: '100', percent: 95, engaged: true });
+    expect(first.completedAt).toBeTruthy();
+    expect(first.newlyCompleted).toBe(true);
+    // Subsequent call for the same lesson → already complete, no new transition.
+    const second = store.record({ userId: USER, plexId: '100', percent: 95, engaged: true });
+    expect(second.completedAt).toBeTruthy();
+    expect(second.newlyCompleted).toBe(false);
+  });
+
+  it('returns newlyCompleted:false on a non-completing call', () => {
+    const store = makeStore();
+    const entry = store.record({ userId: USER, plexId: '100', percent: 50, engaged: true });
+    expect(entry.completedAt).toBe(null);
+    expect(entry.newlyCompleted).toBe(false);
+  });
+
+  it('does NOT persist the newlyCompleted signal to the YAML', () => {
+    const store = makeStore();
+    store.record({ userId: USER, plexId: '100', percent: 95, engaged: true });
+    const raw = fs.readFileSync(PROGRESS, 'utf8');
+    expect(raw).not.toContain('newlyCompleted');
+  });
+
   it('strips plex: prefix consistently so 100 and plex:100 hit the same key', () => {
     const store = makeStore();
     store.record({ userId: USER, plexId: '100', percent: 30, engaged: false });
