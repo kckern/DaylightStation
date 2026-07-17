@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { DIVISIONS, decomposeDuration } from './duration.js';
+import { DIVISIONS, decomposeDuration, durationToType } from './duration.js';
 
 describe('DIVISIONS', () => {
   it('is 24 per quarter (divisible by 2/3/4/6/8)', () => {
@@ -32,5 +32,23 @@ describe('decomposeDuration', () => {
   });
   it('throws on a non-grid (non-multiple-of-6) duration', () => {
     expect(() => decomposeDuration(5)).toThrow();
+  });
+});
+
+describe('durationToType', () => {
+  it('maps a plain quarter (24)', () => {
+    expect(durationToType(24)).toEqual({ type: 'quarter', dots: 0 });
+  });
+  it('maps a dotted quarter (36)', () => {
+    expect(durationToType(36)).toEqual({ type: 'quarter', dots: 1 });
+  });
+  it('maps a dotted half (72)', () => {
+    expect(durationToType(72)).toEqual({ type: 'half', dots: 1 });
+  });
+  it('maps an 8th triplet (8)', () => {
+    expect(durationToType(8)).toEqual({ type: 'eighth', dots: 0, triplet: true });
+  });
+  it('returns null for a non-expressible single value (84)', () => {
+    expect(durationToType(84)).toBeNull();
   });
 });

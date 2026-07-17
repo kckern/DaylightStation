@@ -32,3 +32,28 @@ export function decomposeDuration(divs) {
   }
   return pieces;
 }
+
+// Base note values (no dots) largest→smallest, plus the two triplet values.
+const BASE = [
+  { type: 'whole', divs: 96 }, { type: 'half', divs: 48 },
+  { type: 'quarter', divs: 24 }, { type: 'eighth', divs: 12 }, { type: '16th', divs: 6 },
+];
+const TRIPLET = [
+  { type: 'quarter', divs: 16 }, { type: 'eighth', divs: 8 }, { type: '16th', divs: 4 },
+];
+
+/**
+ * Express a single note's duration (divisions) as {type, dots, triplet?} if it
+ * is exactly a palette value, a single-dotted palette value, or a triplet value.
+ * Returns null when the duration needs a tie (use decomposeDuration instead).
+ */
+export function durationToType(divs) {
+  for (const b of BASE) {
+    if (divs === b.divs) return { type: b.type, dots: 0 };
+    if (divs === b.divs * 1.5) return { type: b.type, dots: 1 };
+  }
+  for (const t of TRIPLET) {
+    if (divs === t.divs) return { type: t.type, dots: 0, triplet: true };
+  }
+  return null;
+}
