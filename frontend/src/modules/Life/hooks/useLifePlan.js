@@ -67,7 +67,20 @@ export function useLifePlan(username) {
     } catch (err) {
       setError(err.message);
       logger().error('section-update-error', { section, error: err.message });
+      throw err;
     }
+  }, [qs, fetchPlan]);
+
+  // Create-or-update the purpose statement. Unlike updateSection('purpose', ...)
+  // (a PATCH against an existing plan section, which 404s for a planless user),
+  // this POSTs to a dedicated endpoint that creates the plan/section if absent.
+  // Throws on failure so the caller (the editor) can surface the error inline
+  // instead of losing the user's draft.
+  const setPurpose = useCallback(async (statement) => {
+    const purpose = await api(`/purpose${qs}`, { method: 'POST', body: JSON.stringify({ statement }) });
+    await fetchPlan();
+    logger().info('purpose-set');
+    return purpose;
   }, [qs, fetchPlan]);
 
   // Author a new value (backend assigns the next rank). Throws on failure so
@@ -82,7 +95,7 @@ export function useLifePlan(username) {
     return value;
   }, [qs, fetchPlan]);
 
-  return { plan, isEmpty, loading, error, refetch: fetchPlan, updateSection, createValue };
+  return { plan, isEmpty, loading, error, refetch: fetchPlan, updateSection, setPurpose, createValue };
 }
 
 /**
