@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import fs from 'fs';
 import { YamlEconomyDatastore } from '#adapters/persistence/yaml/YamlEconomyDatastore.mjs';
 import { EconomyService } from './EconomyService.mjs';
@@ -62,5 +62,61 @@ describe('EconomyService', () => {
     const svc = makeService();
     await expect(svc.deposit(USER, { amount: -5 })).rejects.toThrow();
     await expect(svc.deposit(USER, { amount: 2.5 })).rejects.toThrow();
+  });
+});
+
+describe('metered sessions', () => {
+  it('openSession requires positive balance and no existing session', async () => {
+    const svc = makeService();
+    await expect(svc.openSession(USER, { action: 'arcade-play', source: 'emulator' })).rejects.toThrow(/balance/i);
+    await svc.deposit(USER, { amount: 10 });
+    const s = await svc.openSession(USER, { action: 'arcade-play', source: 'emulator' });
+    expect(s.sessionId).toMatch(/^ses_/);
+    expect(s.balance).toBe(10);
+    expect(s.drainPerSecond).toBeCloseTo(2 / 600);
+    await expect(svc.openSession(USER, { action: 'arcade-play', source: 'emulator' })).rejects.toThrow(/session/i);
+  });
+  it('openSession blocks during blackout windows', async () => {
+    ECONOMY_CONFIG.spend['arcade-play'].blackout = ['00:00-23:59'];
+    const svc = makeService();
+    await svc.deposit(USER, { amount: 10 });
+    await expect(svc.openSession(USER, { action: 'arcade-play', source: 'emulator' })).rejects.toThrow(/blackout/i);
+    ECONOMY_CONFIG.spend['arcade-play'].blackout = [];
+  });
+  it('settle appends one spend txn and clamps to balance', async () => {
+    const svc = makeService();
+    await svc.deposit(USER, { amount: 5 });
+    const s = await svc.openSession(USER, { action: 'arcade-play', source: 'emulator' });
+    const r1 = await svc.settleSession(USER, { sessionId: s.sessionId, coins: 2 });
+    expect(r1.balance).toBe(3);
+    const r2 = await svc.settleSession(USER, { sessionId: s.sessionId, coins: 99 }); // over-report clamps
+    expect(r2.balance).toBe(0);
+    expect(r2.depleted).toBe(true);
+  });
+  it('closeSession settles the tail and clears the session', async () => {
+    const svc = makeService();
+    await svc.deposit(USER, { amount: 10 });
+    const s = await svc.openSession(USER, { action: 'arcade-play', source: 'emulator' });
+    const r = await svc.closeSession(USER, { sessionId: s.sessionId, coins: 1 });
+    expect(r.balance).toBe(9);
+    expect((await svc.getBalance(USER)).session).toBeNull();
+  });
+  it('settle with zero coins is a no-op ledger-wise', async () => {
+    const svc = makeService();
+    await svc.deposit(USER, { amount: 10 });
+    const s = await svc.openSession(USER, { action: 'arcade-play', source: 'emulator' });
+    await svc.settleSession(USER, { sessionId: s.sessionId, coins: 0 });
+    const txns = new YamlEconomyDatastore({ configService }).readAllTransactions(USER);
+    expect(txns.filter((t) => t.kind === 'spend')).toHaveLength(0);
+  });
+  it('stale session is reaped on next getBalance', async () => {
+    vi.useFakeTimers();
+    try {
+      const svc = makeService();
+      await svc.deposit(USER, { amount: 10 });
+      await svc.openSession(USER, { action: 'arcade-play', source: 'emulator' });
+      vi.setSystemTime(new Date(Date.now() + 6 * 60 * 1000));
+      expect((await svc.getBalance(USER)).session).toBeNull();
+    } finally { vi.useRealTimers(); }
   });
 });
