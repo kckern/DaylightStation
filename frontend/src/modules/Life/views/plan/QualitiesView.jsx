@@ -1,6 +1,9 @@
-import { Stack, Paper, Title, Text, Group, Badge, Accordion, ThemeIcon } from '@mantine/core';
+import { useNavigate } from 'react-router-dom';
+import { Stack, Paper, Text, Group, Badge, Button, Accordion, ThemeIcon } from '@mantine/core';
 import { IconShield, IconAlertTriangle } from '@tabler/icons-react';
 import { useLifePlan } from '../../hooks/useLifePlan.js';
+import { LifePage, LoadingState, EmptyState } from '../../components/index.js';
+import { humanize } from '../../lib/format.js';
 
 function effectivenessColor(effectiveness) {
   if (effectiveness === 'effective') return 'green';
@@ -30,20 +33,27 @@ function RuleItem({ rule }) {
 }
 
 export function QualitiesView({ username }) {
+  const navigate = useNavigate();
   const { plan, loading } = useLifePlan(username);
 
-  if (loading) return null;
+  if (loading) return <LoadingState />;
 
   const qualities = plan?.qualities || [];
 
+  if (!qualities.length) {
+    return (
+      <LifePage title="Qualities">
+        <EmptyState
+          icon={IconShield}
+          message="Qualities are the character traits you want to embody. Your coach can help you name your first few."
+          cta={<Button onClick={() => navigate('/life/coach')}>Talk to your coach</Button>}
+        />
+      </LifePage>
+    );
+  }
+
   return (
-    <Stack gap="md">
-      <Title order={4}>Qualities</Title>
-
-      {qualities.length === 0 && (
-        <Text size="sm" c="dimmed">No qualities defined yet.</Text>
-      )}
-
+    <LifePage title="Qualities">
       <Accordion variant="separated">
         {qualities.map((q) => (
           <Accordion.Item key={q.id} value={q.id}>
@@ -97,10 +107,10 @@ export function QualitiesView({ username }) {
                   <Group gap="xs">
                     <Text size="xs" c="dimmed">Grounded in:</Text>
                     {q.grounded_in.beliefs?.map((ref, i) => (
-                      <Badge key={`b-${i}`} variant="light" size="xs">{ref}</Badge>
+                      <Badge key={`b-${i}`} variant="light" size="xs">{humanize(ref)}</Badge>
                     ))}
                     {q.grounded_in.values?.map((ref, i) => (
-                      <Badge key={`v-${i}`} variant="light" size="xs" color="green">{ref}</Badge>
+                      <Badge key={`v-${i}`} variant="light" size="xs" color="green">{humanize(ref)}</Badge>
                     ))}
                   </Group>
                 )}
@@ -109,6 +119,6 @@ export function QualitiesView({ username }) {
           </Accordion.Item>
         ))}
       </Accordion>
-    </Stack>
+    </LifePage>
   );
 }

@@ -18,9 +18,9 @@ export class CadenceCheck extends Assignment {
     };
 
     const [ceremonyStatus, driftData, planData] = await Promise.all([
-      call('check_ceremony_status', { username: userId }),
-      call('get_value_allocation', { username: userId }),
-      call('get_plan', { username: userId }),
+      call('check_ceremony_status', { userId }),
+      call('get_value_allocation', { userId }),
+      call('get_plan', { userId }),
     ]);
 
     const overdue = (ceremonyStatus?.ceremonies || []).filter(c => c.isOverdue);
@@ -114,7 +114,7 @@ Compose a single, concise notification message for the user.
     // Send notification via tool
     if (this.#notifyTool) {
       await this.#notifyTool.execute({
-        username: userId,
+        userId,
         title: 'Life Coach',
         body: validated.message,
         actions: validated.actions,

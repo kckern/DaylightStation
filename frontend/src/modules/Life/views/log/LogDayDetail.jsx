@@ -1,6 +1,7 @@
-import { Stack, Title, Text, Loader } from '@mantine/core';
 import { useLifelog } from '../../hooks/useLifelog.js';
 import { LogTimeline } from './LogTimeline.jsx';
+import { LifePage, LoadingState, ErrorState } from '../../components/index.js';
+import { formatDate } from '../../lib/format.js';
 
 /**
  * Full day detail view showing all sources as a timeline.
@@ -10,15 +11,14 @@ import { LogTimeline } from './LogTimeline.jsx';
  * @param {string} [props.username]
  */
 export function LogDayDetail({ date, username }) {
-  const { data, loading, error } = useLifelog({ date, username });
+  const { data, loading, error, refetch } = useLifelog({ date, username });
 
-  if (loading) return <Loader size="sm" />;
-  if (error) return <Text c="red" size="sm">{error}</Text>;
+  if (loading) return <LoadingState />;
+  if (error) return <ErrorState error={error} onRetry={refetch} />;
 
   return (
-    <Stack gap="md">
-      <Title order={4}>{date}</Title>
+    <LifePage title={formatDate(date)}>
       <LogTimeline summaries={data?.summaries || []} />
-    </Stack>
+    </LifePage>
   );
 }

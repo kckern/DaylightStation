@@ -9,14 +9,18 @@ describe('PlanToolFactory', () => {
     mockPlanStore = {
       load: () => ({
         goals: [{ id: 'g1', name: 'Run marathon', state: 'active' }],
-        beliefs: [{ id: 'b1', if_hypothesis: 'Running improves mood', state: 'testing', confidence: 0.7 }],
+        beliefs: [{ id: 'b1', if_hypothesis: 'Running improves mood', state: 'testing', confidence: 0.7, evidence_history: [] }],
         values: [{ id: 'v1', name: 'Health', rank: 1 }, { id: 'v2', name: 'Career', rank: 2 }],
         purpose: { statement: 'Live fully' },
         qualities: [],
       }),
+      save: () => {},
     };
     mockGoalStateService = {
-      getValidTransitions: () => ['progressing', 'paused'],
+      transition: (goal, newState, reason) => {
+        goal.state = newState;
+        goal.lastTransitionReason = reason;
+      },
     };
     mockBeliefEvaluator = {
       evaluateEvidence: (belief, evidence) => {
@@ -37,58 +41,71 @@ describe('PlanToolFactory', () => {
     tools = factory.createTools();
   });
 
-  it('creates 10 tools (read/propose + confirmed-write)', () => {
-    expect(tools).toHaveLength(10);
+  it('creates 8 tools (read + confirmed-write)', () => {
+    expect(tools).toHaveLength(8);
     const names = tools.map(t => t.name);
     expect(names).toContain('get_plan');
-    expect(names).toContain('propose_goal_transition');
-    expect(names).toContain('propose_add_belief');
-    expect(names).toContain('propose_reorder_values');
-    expect(names).toContain('propose_add_evidence');
     expect(names).toContain('record_feedback');
     expect(names).toContain('create_goal');
     expect(names).toContain('add_value');
     expect(names).toContain('add_belief');
     expect(names).toContain('set_purpose');
+    expect(names).toContain('transition_goal');
+    expect(names).toContain('add_evidence');
+    expect(names).not.toContain('propose_goal_transition');
+    expect(names).not.toContain('propose_add_belief');
+    expect(names).not.toContain('propose_reorder_values');
+    expect(names).not.toContain('propose_add_evidence');
   });
 
   it('get_plan returns full plan', async () => {
     const tool = tools.find(t => t.name === 'get_plan');
-    const result = await tool.execute({ username: 'testuser' });
+    const result = await tool.execute({ userId: 'testuser' });
     expect(result.goals).toHaveLength(1);
     expect(result.values).toHaveLength(2);
   });
 
-  it('propose_goal_transition returns proposal structure', async () => {
-    const tool = tools.find(t => t.name === 'propose_goal_transition');
+  it('transition_goal moves an existing goal to a new state', async () => {
+    const tool = tools.find(t => t.name === 'transition_goal');
     const result = await tool.execute({
-      username: 'testuser',
+      userId: 'testuser',
       goalId: 'g1',
-      newState: 'progressing',
-      reasoning: 'Making steady progress',
+      state: 'progressing',
+      reason: 'Making steady progress',
     });
-    expect(result.change).toBeDefined();
-    expect(result.reasoning).toBe('Making steady progress');
-    expect(result.confidence).toBeGreaterThan(0);
-    expect(result.validTransitions).toContain('progressing');
+    expect(result.updated).toBeDefined();
+    expect(result.updated.state).toBe('progressing');
   });
 
-  it('propose_reorder_values returns proposal with old and new order', async () => {
-    const tool = tools.find(t => t.name === 'propose_reorder_values');
+  it('transition_goal errors when the goal does not exist', async () => {
+    const tool = tools.find(t => t.name === 'transition_goal');
+    const result = await tool.execute({ userId: 'testuser', goalId: 'nope', state: 'progressing' });
+    expect(result.error).toBeDefined();
+  });
+
+  it('add_evidence records evidence against an existing belief', async () => {
+    const tool = tools.find(t => t.name === 'add_evidence');
     const result = await tool.execute({
-      username: 'testuser',
-      newOrder: ['v2', 'v1'],
-      reasoning: 'Career taking priority this season',
+      userId: 'testuser',
+      beliefId: 'b1',
+      type: 'confirmation',
+      note: 'Felt noticeably better after a run',
     });
-    expect(result.change.from).toBeDefined();
-    expect(result.change.to).toBeDefined();
-    expect(result.reasoning).toBeDefined();
+    expect(result.updated).toBeDefined();
+    expect(result.updated.evidence_history).toHaveLength(1);
+    expect(result.updated.evidence_history[0].type).toBe('confirmation');
+  });
+
+  it('add_evidence errors when the belief does not exist', async () => {
+    const tool = tools.find(t => t.name === 'add_evidence');
+    const result = await tool.execute({ userId: 'testuser', beliefId: 'nope', type: 'confirmation' });
+    expect(result.error).toBeDefined();
   });
 
   it('record_feedback executes directly (no proposal)', async () => {
     const tool = tools.find(t => t.name === 'record_feedback');
     const result = await tool.execute({
-      username: 'testuser',
+      userId: 'testuser',
       observation: 'Feeling more aligned this week',
     });
     expect(result.recorded).toBe(true);

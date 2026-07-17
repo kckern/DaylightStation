@@ -18,7 +18,7 @@ export default function CoachChat({ userId }) {
     <AgentChatSurface
       agentId="lifeplan-guide"
       userId={userId || 'default'}
-      style={{ height: 'calc(100vh - 60px)' }}
+      style={{ height: 'calc(100vh - var(--app-shell-header-height, 48px) - var(--app-shell-padding, 16px) * 2)' }}
     />
   );
 }

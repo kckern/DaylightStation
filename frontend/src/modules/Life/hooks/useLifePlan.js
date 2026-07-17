@@ -10,6 +10,18 @@ function logger() {
 
 const API_BASE = '/api/v1/life/plan';
 
+// A plan is "empty" when it has no substance yet: no object, no keys, or no
+// goals/values/beliefs/qualities/purpose. Consumers (e.g. the dashboard
+// funnel) use this to decide whether to route a new user to the coach.
+export function planIsEmpty(plan) {
+  if (!plan || Object.keys(plan).length === 0) return true;
+  return (plan.goals?.length ?? 0) === 0
+    && (plan.values?.length ?? 0) === 0
+    && (plan.beliefs?.length ?? 0) === 0
+    && (plan.qualities?.length ?? 0) === 0
+    && !plan.purpose;
+}
+
 async function api(path, options = {}) {
   const res = await fetch(`${API_BASE}${path}`, {
     headers: { 'Content-Type': 'application/json' },
@@ -51,13 +63,7 @@ export function useLifePlan(username) {
 
   useEffect(() => { fetchPlan(); }, [fetchPlan]);
 
-  // A plan is "empty" when it has no substance yet: no object, no keys, or no
-  // goals/values/purpose. Consumers (e.g. the dashboard funnel) use this to
-  // decide whether to route a new user to the coach.
-  const isEmpty = useMemo(() => (
-    !plan || Object.keys(plan).length === 0 ||
-    ((plan.goals?.length ?? 0) === 0 && (plan.values?.length ?? 0) === 0 && !plan.purpose)
-  ), [plan]);
+  const isEmpty = useMemo(() => planIsEmpty(plan), [plan]);
 
   const updateSection = useCallback(async (section, data) => {
     try {
@@ -67,7 +73,20 @@ export function useLifePlan(username) {
     } catch (err) {
       setError(err.message);
       logger().error('section-update-error', { section, error: err.message });
+      throw err;
     }
+  }, [qs, fetchPlan]);
+
+  // Create-or-update the purpose statement. Unlike updateSection('purpose', ...)
+  // (a PATCH against an existing plan section, which 404s for a planless user),
+  // this POSTs to a dedicated endpoint that creates the plan/section if absent.
+  // Throws on failure so the caller (the editor) can surface the error inline
+  // instead of losing the user's draft.
+  const setPurpose = useCallback(async (statement) => {
+    const purpose = await api(`/purpose${qs}`, { method: 'POST', body: JSON.stringify({ statement }) });
+    await fetchPlan();
+    logger().info('purpose-set');
+    return purpose;
   }, [qs, fetchPlan]);
 
   // Author a new value (backend assigns the next rank). Throws on failure so
@@ -82,7 +101,7 @@ export function useLifePlan(username) {
     return value;
   }, [qs, fetchPlan]);
 
-  return { plan, isEmpty, loading, error, refetch: fetchPlan, updateSection, createValue };
+  return { plan, isEmpty, loading, error, refetch: fetchPlan, updateSection, setPurpose, createValue };
 }
 
 /**

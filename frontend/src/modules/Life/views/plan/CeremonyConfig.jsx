@@ -1,9 +1,13 @@
-import { Stack, Paper, Title, Text, Group, Badge, Switch, Select } from '@mantine/core';
+import { Stack, Paper, Text, Group, Badge, Switch, Select } from '@mantine/core';
+import { notifications } from '@mantine/notifications';
 import { IconCalendarEvent, IconFlame } from '@tabler/icons-react';
 import { useCeremonyConfig } from '../../hooks/useLifePlan.js';
+import { LifePage, LoadingState } from '../../components/index.js';
+import { formatPeriodLabel } from '../../lib/format.js';
 
 const CEREMONY_TYPES = [
   { id: 'unit_intention', label: 'Unit Intention', description: 'Set intentions at the start of each unit' },
+  { id: 'unit_capture', label: 'Daily Capture', description: 'Reflect on how the day went each evening' },
   { id: 'cycle_retro', label: 'Cycle Retrospective', description: 'Review progress at end of each cycle' },
   { id: 'phase_review', label: 'Phase Review', description: 'Deep review of goals and beliefs each phase' },
   { id: 'season_alignment', label: 'Season Alignment', description: 'Value alignment check each season' },
@@ -11,15 +15,15 @@ const CEREMONY_TYPES = [
 ];
 
 const CHANNELS = [
-  { value: 'push', label: 'Push Notification' },
-  { value: 'email', label: 'Email' },
-  { value: 'screen', label: 'Screen Overlay' },
+  { value: 'app', label: 'In-app' },
+  { value: 'telegram', label: 'Telegram' },
+  { value: 'push', label: 'Push notification' },
 ];
 
 export function CeremonyConfig({ username }) {
   const { config, current, loading, updateCadence } = useCeremonyConfig(username);
 
-  if (loading) return null;
+  if (loading) return <LoadingState />;
 
   const ceremonies = config?.ceremonies || {};
 
@@ -31,7 +35,11 @@ export function CeremonyConfig({ username }) {
         [type]: { ...(ceremonies[type] || {}), enabled },
       },
     };
-    await updateCadence(updated);
+    try {
+      await updateCadence(updated);
+    } catch (err) {
+      notifications.show({ color: 'red', title: "Couldn't update ceremony", message: err.message });
+    }
   };
 
   const setChannel = async (type, channel) => {
@@ -42,13 +50,15 @@ export function CeremonyConfig({ username }) {
         [type]: { ...(ceremonies[type] || {}), channel },
       },
     };
-    await updateCadence(updated);
+    try {
+      await updateCadence(updated);
+    } catch (err) {
+      notifications.show({ color: 'red', title: "Couldn't update channel", message: err.message });
+    }
   };
 
   return (
-    <Stack gap="md">
-      <Title order={4}>Ceremonies</Title>
-
+    <LifePage title="Ceremonies">
       {current && (
         <Paper p="sm" withBorder>
           <Group gap="sm" mb="xs">
@@ -59,7 +69,7 @@ export function CeremonyConfig({ username }) {
             {Object.entries(current).map(([level, pos]) => (
               pos && (
                 <Badge key={level} variant="outline" size="sm" color="blue">
-                  {pos.alias || level}: {pos.periodId}
+                  {formatPeriodLabel({ alias: pos.alias, level, periodId: pos.periodId })}
                 </Badge>
               )
             ))}
@@ -90,7 +100,7 @@ export function CeremonyConfig({ username }) {
                   <Select
                     label="Channel"
                     data={CHANNELS}
-                    value={ceremonyConfig.channel || 'push'}
+                    value={ceremonyConfig.channel || 'app'}
                     onChange={(v) => setChannel(type.id, v)}
                     size="xs"
                     style={{ width: 180 }}
@@ -112,6 +122,6 @@ export function CeremonyConfig({ username }) {
           );
         })}
       </Stack>
-    </Stack>
+    </LifePage>
   );
 }

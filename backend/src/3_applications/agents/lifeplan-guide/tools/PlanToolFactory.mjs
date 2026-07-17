@@ -16,12 +16,12 @@ export class PlanToolFactory extends ToolFactory {
         parameters: {
           type: 'object',
           properties: {
-            username: { type: 'string', description: 'User identifier' },
+            userId: { type: 'string', description: 'User identifier' },
           },
-          required: ['username'],
+          required: ['userId'],
         },
-        execute: async ({ username }) => {
-          const plan = lifePlanStore.load(username);
+        execute: async ({ userId }) => {
+          const plan = lifePlanStore.load(userId);
           if (!plan) return { error: 'No plan found', goals: [], beliefs: [], values: [] };
           return {
             goals: plan.goals || [],
@@ -34,102 +34,58 @@ export class PlanToolFactory extends ToolFactory {
       }),
 
       createTool({
-        name: 'propose_goal_transition',
-        description: 'Propose a goal state transition. Returns a proposal for user confirmation — does NOT execute the change.',
+        name: 'transition_goal',
+        description: `${CONFIRM_PREFIX} Move an existing goal to a new state (e.g. considered → committed).`,
         parameters: {
           type: 'object',
           properties: {
-            username: { type: 'string' },
+            userId: { type: 'string', description: 'User identifier' },
             goalId: { type: 'string', description: 'Goal ID to transition' },
-            newState: { type: 'string', description: 'Target state' },
-            reasoning: { type: 'string', description: 'Data-backed explanation for the change' },
+            state: { type: 'string', description: 'Target state' },
+            reason: { type: 'string', description: 'Why this transition is happening' },
           },
-          required: ['username', 'goalId', 'newState', 'reasoning'],
+          required: ['userId', 'goalId', 'state'],
         },
-        execute: async ({ username, goalId, newState, reasoning }) => {
-          const plan = lifePlanStore.load(username);
-          const goal = plan?.goals?.find(g => g.id === goalId);
-          if (!goal) return { error: `Goal ${goalId} not found` };
+        execute: async ({ userId, goalId, state, reason }) => {
+          try {
+            const plan = lifePlanStore.load(userId);
+            const goal = plan?.goals?.find(g => g.id === goalId);
+            if (!goal) return { error: `Goal ${goalId} not found` };
 
-          const validTransitions = goalStateService.getValidTransitions?.(goal) || [];
-          return {
-            change: { goalId, goalName: goal.name, from: goal.state, to: newState },
-            reasoning,
-            confidence: validTransitions.includes(newState) ? 0.9 : 0.5,
-            validTransitions,
-          };
+            goalStateService.transition(goal, state, reason);
+            lifePlanStore.save(userId, plan);
+            return { updated: goal };
+          } catch (e) {
+            return { error: e.message };
+          }
         },
       }),
 
       createTool({
-        name: 'propose_add_belief',
-        description: 'Propose adding a new belief to the plan. Returns a proposal for user confirmation.',
+        name: 'add_evidence',
+        description: `${CONFIRM_PREFIX} Record a piece of evidence for or against an existing belief.`,
         parameters: {
           type: 'object',
           properties: {
-            username: { type: 'string' },
-            if_hypothesis: { type: 'string', description: 'The hypothesis (if part)' },
-            then_expectation: { type: 'string', description: 'The expected outcome (then part)' },
-            reasoning: { type: 'string', description: 'Why this belief is worth testing' },
+            userId: { type: 'string', description: 'User identifier' },
+            beliefId: { type: 'string', description: 'Belief ID to add evidence to' },
+            type: { type: 'string', description: 'confirmation, disconfirmation, spurious, or untested' },
+            note: { type: 'string', description: 'What was observed' },
           },
-          required: ['username', 'if_hypothesis', 'reasoning'],
+          required: ['userId', 'beliefId', 'type'],
         },
-        execute: async ({ username, if_hypothesis, then_expectation, reasoning }) => {
-          return {
-            change: { type: 'add_belief', if_hypothesis, then_expectation },
-            reasoning,
-            confidence: 0.7,
-          };
-        },
-      }),
+        execute: async ({ userId, beliefId, type, note }) => {
+          try {
+            const plan = lifePlanStore.load(userId);
+            const belief = plan?.beliefs?.find(b => b.id === beliefId);
+            if (!belief) return { error: `Belief ${beliefId} not found` };
 
-      createTool({
-        name: 'propose_reorder_values',
-        description: 'Propose a new value ranking order. Returns a proposal for user confirmation.',
-        parameters: {
-          type: 'object',
-          properties: {
-            username: { type: 'string' },
-            newOrder: { type: 'array', items: { type: 'string' }, description: 'Value IDs in new rank order' },
-            reasoning: { type: 'string', description: 'Data-backed explanation for the reorder' },
-          },
-          required: ['username', 'newOrder', 'reasoning'],
-        },
-        execute: async ({ username, newOrder, reasoning }) => {
-          const plan = lifePlanStore.load(username);
-          const currentOrder = (plan?.values || []).sort((a, b) => a.rank - b.rank).map(v => v.id);
-          return {
-            change: { from: currentOrder, to: newOrder },
-            reasoning,
-            confidence: 0.8,
-          };
-        },
-      }),
-
-      createTool({
-        name: 'propose_add_evidence',
-        description: 'Propose adding evidence for a belief. Returns a proposal for user confirmation.',
-        parameters: {
-          type: 'object',
-          properties: {
-            username: { type: 'string' },
-            beliefId: { type: 'string' },
-            type: { type: 'string', description: 'confirmation or disconfirmation' },
-            observation: { type: 'string', description: 'What was observed' },
-            reasoning: { type: 'string', description: 'Why this counts as evidence' },
-          },
-          required: ['username', 'beliefId', 'type', 'reasoning'],
-        },
-        execute: async ({ username, beliefId, type, observation, reasoning }) => {
-          const plan = lifePlanStore.load(username);
-          const belief = plan?.beliefs?.find(b => b.id === beliefId);
-          if (!belief) return { error: `Belief ${beliefId} not found` };
-
-          return {
-            change: { beliefId, evidenceType: type, observation },
-            reasoning,
-            confidence: 0.8,
-          };
+            beliefEvaluator.evaluateEvidence(belief, { type, note });
+            lifePlanStore.save(userId, plan);
+            return { updated: belief };
+          } catch (e) {
+            return { error: e.message };
+          }
         },
       }),
 
@@ -139,13 +95,13 @@ export class PlanToolFactory extends ToolFactory {
         parameters: {
           type: 'object',
           properties: {
-            username: { type: 'string' },
+            userId: { type: 'string' },
             observation: { type: 'string', description: 'What the user observed or felt' },
           },
-          required: ['username', 'observation'],
+          required: ['userId', 'observation'],
         },
-        execute: async ({ username, observation }) => {
-          feedbackService.recordObservation(username, { text: observation, date: new Date().toISOString() });
+        execute: async ({ userId, observation }) => {
+          feedbackService.recordObservation(userId, { text: observation, date: new Date().toISOString() });
           return { recorded: true };
         },
       }),
@@ -156,16 +112,16 @@ export class PlanToolFactory extends ToolFactory {
         parameters: {
           type: 'object',
           properties: {
-            username: { type: 'string', description: 'User identifier' },
+            userId: { type: 'string', description: 'User identifier' },
             name: { type: 'string', description: 'Short name of the goal' },
             why: { type: 'string', description: 'The motivation behind the goal' },
             milestone: { type: 'string', description: 'An optional first milestone' },
           },
-          required: ['username', 'name'],
+          required: ['userId', 'name'],
         },
-        execute: async ({ username, name, why, milestone }) => {
+        execute: async ({ userId, name, why, milestone }) => {
           try {
-            const created = planAuthoringService.addGoal(username, { name, why, milestone });
+            const created = planAuthoringService.addGoal(userId, { name, why, milestone });
             return { created };
           } catch (e) {
             return { error: e.message };
@@ -179,15 +135,15 @@ export class PlanToolFactory extends ToolFactory {
         parameters: {
           type: 'object',
           properties: {
-            username: { type: 'string', description: 'User identifier' },
+            userId: { type: 'string', description: 'User identifier' },
             name: { type: 'string', description: 'Short name of the value (e.g. Health, Family)' },
             description: { type: 'string', description: 'What this value means to the user' },
           },
-          required: ['username', 'name'],
+          required: ['userId', 'name'],
         },
-        execute: async ({ username, name, description }) => {
+        execute: async ({ userId, name, description }) => {
           try {
-            const created = planAuthoringService.addValue(username, { name, description });
+            const created = planAuthoringService.addValue(userId, { name, description });
             return { created };
           } catch (e) {
             return { error: e.message };
@@ -201,15 +157,15 @@ export class PlanToolFactory extends ToolFactory {
         parameters: {
           type: 'object',
           properties: {
-            username: { type: 'string', description: 'User identifier' },
+            userId: { type: 'string', description: 'User identifier' },
             if_hypothesis: { type: 'string', description: 'The hypothesis (if part)' },
             then_outcome: { type: 'string', description: 'The expected outcome (then part)' },
           },
-          required: ['username', 'if_hypothesis', 'then_outcome'],
+          required: ['userId', 'if_hypothesis', 'then_outcome'],
         },
-        execute: async ({ username, if_hypothesis, then_outcome }) => {
+        execute: async ({ userId, if_hypothesis, then_outcome }) => {
           try {
-            const created = planAuthoringService.addBelief(username, { if_hypothesis, then_outcome });
+            const created = planAuthoringService.addBelief(userId, { if_hypothesis, then_outcome });
             return { created };
           } catch (e) {
             return { error: e.message };
@@ -223,14 +179,14 @@ export class PlanToolFactory extends ToolFactory {
         parameters: {
           type: 'object',
           properties: {
-            username: { type: 'string', description: 'User identifier' },
+            userId: { type: 'string', description: 'User identifier' },
             statement: { type: 'string', description: 'The purpose statement' },
           },
-          required: ['username', 'statement'],
+          required: ['userId', 'statement'],
         },
-        execute: async ({ username, statement }) => {
+        execute: async ({ userId, statement }) => {
           try {
-            const created = planAuthoringService.setPurpose(username, { statement });
+            const created = planAuthoringService.setPurpose(userId, { statement });
             return { created };
           } catch (e) {
             return { error: e.message };

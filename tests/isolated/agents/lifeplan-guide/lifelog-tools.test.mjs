@@ -34,7 +34,7 @@ describe('LifelogToolFactory', () => {
 
   it('query_lifelog_range returns structured data', async () => {
     const tool = tools.find(t => t.name === 'query_lifelog_range');
-    const result = await tool.execute({ username: 'test', start: '2025-06-01', end: '2025-06-01' });
+    const result = await tool.execute({ userId: 'test', start: '2025-06-01', end: '2025-06-01' });
     expect(result.days).toBeDefined();
     expect(result._meta.dayCount).toBe(1);
   });
@@ -47,7 +47,7 @@ describe('LifelogToolFactory', () => {
 
   it('get_value_allocation returns drift data', async () => {
     const tool = tools.find(t => t.name === 'get_value_allocation');
-    const result = await tool.execute({ username: 'test' });
+    const result = await tool.execute({ userId: 'test' });
     expect(result.correlation).toBe(0.8);
   });
 });

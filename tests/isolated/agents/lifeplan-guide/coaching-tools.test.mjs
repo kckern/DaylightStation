@@ -48,13 +48,13 @@ describe('CoachingToolFactory', () => {
 
   it('get_conversation_history returns messages', async () => {
     const tool = tools.find(t => t.name === 'get_conversation_history');
-    const result = await tool.execute({ username: 'test', limit: 10 });
+    const result = await tool.execute({ userId: 'test', limit: 10 });
     expect(result.conversations).toBeDefined();
   });
 
   it('log_agent_feedback records rating', async () => {
     const tool = tools.find(t => t.name === 'log_agent_feedback');
-    const result = await tool.execute({ username: 'test', rating: 'positive', context: 'Good advice on values' });
+    const result = await tool.execute({ userId: 'test', rating: 'positive', context: 'Good advice on values' });
     expect(result.recorded).toBe(true);
   });
 });

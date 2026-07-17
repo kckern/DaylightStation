@@ -1,0 +1,5 @@
+.life-clickable { cursor: pointer; }
+// Kiosk-distance density bump: base text one notch larger on wide displays.
+@media (min-width: 1280px) {
+  .life-app-root { font-size: 1.02rem; }
+}
