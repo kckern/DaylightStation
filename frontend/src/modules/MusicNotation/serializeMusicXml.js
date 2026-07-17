@@ -50,6 +50,16 @@ function dynamicsXml(note) {
 // `dur`, `tie`, `tied` are precomputed once by the caller (hot path — avoids a
 // second noteDivisions()/tieMarks() per note).
 function noteXml(note, staves, dur, tie, tied) {
+  // Guard (finding #7): v1 only reproduces 3-in-2 triplets. A parsed tuplet with
+  // any other actual/normal ratio would be silently rewritten as a plain (or
+  // triplet) note on save — data loss. Refuse loudly instead. Composer-created
+  // triplets carry note.triplet with NO note.tuplet, so this never fires on them.
+  if (note.tuplet) {
+    const { actual, normal } = note.tuplet;
+    if (!(actual === 3 && normal === 2)) {
+      throw new Error('only 3:2 triplets are supported in v1 (would corrupt other tuplets on save)');
+    }
+  }
   const body = note.rest ? `<rest/>` : pitchXml(note.pitch);
   const dots = '<dot/>'.repeat(note.dots || 0);
   const timeMod = note.triplet
@@ -141,22 +151,63 @@ function notesXml(measure, staves) {
 
 function measureXml(score, part, measure, isFirst) {
   const attrs = isFirst ? attributesXml(score, part) : '';
+  // A bare <direction> with no <direction-type> child is schema-invalid. Wrap the
+  // tempo in a <metronome> direction-type (and keep the <sound tempo> the parser
+  // reads) so the emitted MusicXML validates and the tempo still round-trips.
   const tempo = isFirst
-    ? `<direction placement="above"><sound tempo="${score.tempo}"/></direction>` : '';
+    ? `<direction placement="above">`
+      + `<direction-type><metronome><beat-unit>quarter</beat-unit><per-minute>${score.tempo}</per-minute></metronome></direction-type>`
+      + `<sound tempo="${score.tempo}"/>`
+      + `</direction>`
+    : '';
   const notes = notesXml(measure, part.staves);
   return `<measure number="${measure.number}">${attrs}${tempo}${notes}</measure>`;
 }
 
+// Guard (finding #5): the parser folds <attributes> changes to score-level
+// last-wins, and the serializer only emits attributes on measure 1. So a score
+// with a mid-piece key/time change would BOTH collapse the modulation AND rewrite
+// the opening key on save. Detect it and refuse loudly. A Composer-created v1 file
+// never sets per-measure attributes, so this only fires on exotic imports.
+function assertNoMidPieceChanges(score) {
+  const measures = score.parts[0].measures;
+  if (measures.length < 2) return;
+  const first = measures[0].attributes;
+  const firstKey = first?.key ?? score.key;
+  const firstTime = first?.time ?? score.timeSig;
+  for (let i = 1; i < measures.length; i++) {
+    const a = measures[i].attributes;
+    if (!a) continue;
+    const keyDiff = a.key && firstKey && a.key.fifths !== firstKey.fifths;
+    const timeDiff = a.time && firstTime
+      && (a.time.beats !== firstTime.beats || a.time.beatType !== firstTime.beatType);
+    if (keyDiff || timeDiff) {
+      throw new Error('mid-piece key/time changes are not supported in v1 (would corrupt on save)');
+    }
+  }
+}
+
 export function serializeMusicXml(score) {
-  // v1: single-part scores only; multi-part (separate instruments) is out of
-  // scope and would need a parts.map here.
+  // Guard (finding #4): v1 serializes only parts[0]. A multi-part score would
+  // silently drop every part after the first — refuse loudly instead.
+  if (score.parts.length > 1) {
+    throw new Error('multi-part scores are not supported in v1 (would drop parts on save)');
+  }
+  assertNoMidPieceChanges(score);
+
   const part = score.parts[0];
   const measures = part.measures.map((m, i) => measureXml(score, part, m, i === 0)).join('');
+  // Omit <work>/<work-title> entirely when the title is empty/nullish so a reloaded
+  // title never becomes the literal string "null".
+  const workTitle = score.title != null && score.title !== ''
+    ? `<work><work-title>${esc(score.title)}</work-title></work>` : '';
+  // Preserve the parsed part name instead of hardcoding "Music".
+  const partName = esc(part.name ?? 'Music');
   return `<?xml version="1.0" encoding="UTF-8"?>`
     + `<score-partwise version="3.1">`
-    + `<work><work-title>${esc(score.title)}</work-title></work>`
+    + workTitle
     + `<identification><creator type="composer">${esc(score.composerName)}</creator></identification>`
-    + `<part-list><score-part id="${part.id}"><part-name>Music</part-name></score-part></part-list>`
+    + `<part-list><score-part id="${part.id}"><part-name>${partName}</part-name></score-part></part-list>`
     + `<part id="${part.id}">${measures}</part>`
     + `</score-partwise>`;
 }
