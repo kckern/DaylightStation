@@ -926,7 +926,7 @@ b) Router (extend the existing piano router test or add `piano.economyHook.test.
 **Gate contract to implement** (`createCoinMeteredGate({ userId, action = 'arcade-play', api, settleIntervalSec = 60 })` — `api` injected for testability, defaults to real `DaylightAPI` calls):
 
 - `start()` → `POST api/v1/economy/users/{userId}/sessions {action, source:'emulator'}`. On success: state `playing`, begin 1s local drain tick (`remaining -= drainPerSecond`) and the settle timer. On failure (blackout / broke / open session elsewhere): state `depleted`, expose `reason`.
-- Every `settleIntervalSec` and on `stop()`: send accumulated **whole** coins consumed (`Math.floor`), carry the fraction. Reconcile local `remaining` with the server's returned `balance` (server wins; server balance is whole coins — local view = server balance minus unsettled fraction).
+- Every `settleIntervalSec` and on `stop()`: send the **cumulative** coins consumed since the session opened (a monotonically increasing running total — the server treats it as a high-water mark and charges only newly-crossed whole coins, so settles are idempotent and safe to retry). Do NOT send per-interval deltas. Reconcile local `remaining` with the server's returned `balance` (server wins).
 - Local `remaining <= 0` → state `depleted`, stop the drain, `stop()` (close session).
 - `getStatus()` → `{ state, coins: Math.max(0, Math.floor(remaining)), secondsLeft }` — extra fields are safe; EmulatorConsole only reads `.state`, the widget overlay reads `coins`.
 - `stop()` idempotent; `close` uses the final unsent coins. All transitions notify `onChange` subscribers.
