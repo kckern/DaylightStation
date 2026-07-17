@@ -20,7 +20,7 @@ const PALETTE = [
  */
 export function decomposeDuration(divs) {
   if (!Number.isInteger(divs) || divs <= 0 || divs % 6 !== 0) {
-    throw new Error(`decomposeDuration: ${divs} is not on the 16th grid`);
+    throw new Error(`decomposeDuration: ${divs} must be a positive multiple of 6`);
   }
   const pieces = [];
   let rest = divs;
@@ -33,11 +33,7 @@ export function decomposeDuration(divs) {
   return pieces;
 }
 
-// Base note values (no dots) largest→smallest, plus the two triplet values.
-const BASE = [
-  { type: 'whole', divs: 96 }, { type: 'half', divs: 48 },
-  { type: 'quarter', divs: 24 }, { type: 'eighth', divs: 12 }, { type: '16th', divs: 6 },
-];
+// Triplet note values (⅔ of the plain palette), for exact-match lookup.
 const TRIPLET = [
   { type: 'quarter', divs: 16 }, { type: 'eighth', divs: 8 }, { type: '16th', divs: 4 },
 ];
@@ -48,7 +44,7 @@ const TRIPLET = [
  * Returns null when the duration needs a tie (use decomposeDuration instead).
  */
 export function durationToType(divs) {
-  for (const b of BASE) {
+  for (const b of PALETTE) {
     if (divs === b.divs) return { type: b.type, dots: 0 };
     if (divs === b.divs * 1.5) return { type: b.type, dots: 1 };
   }
