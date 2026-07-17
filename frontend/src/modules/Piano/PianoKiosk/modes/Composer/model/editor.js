@@ -5,8 +5,8 @@
 // input state or its score. Immutability is achieved by deep-copying only the
 // path down to the mutation (spreads) or by cloning the whole score for
 // larger structural edits.
-import { makeNote, makeRest, noteDivisions } from './note.js';
-import { DIVISIONS, decomposeDuration } from '#frontend/modules/MusicNotation/duration.js';
+import { makeNote, makeRest } from './note.js';
+import { DIVISIONS, decomposeDuration, noteDivisions } from '#frontend/modules/MusicNotation/duration.js';
 import { pitchToMidi } from '#frontend/modules/MusicNotation/parseMusicXml.js';
 import { serializeMusicXml } from '#frontend/modules/MusicNotation/serializeMusicXml.js';
 
