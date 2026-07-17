@@ -106,3 +106,15 @@ describe('parseMusicXml — ties', () => {
     expect(parseMusicXml(xml).parts[0].measures[0].notes[0].tie).toBe('both');
   });
 });
+
+describe('parseMusicXml — triplets', () => {
+  it('reads a 3-in-2 time-modification as triplet', () => {
+    const xml = `<?xml version="1.0"?><score-partwise><part-list><score-part id="P1"/></part-list><part id="P1">
+      <measure number="1"><attributes><divisions>24</divisions></attributes>
+      <note><pitch><step>C</step><octave>4</octave></pitch><duration>8</duration><type>eighth</type><time-modification><actual-notes>3</actual-notes><normal-notes>2</normal-notes></time-modification></note>
+    </measure></part></score-partwise>`;
+    const n = parseMusicXml(xml).parts[0].measures[0].notes[0];
+    expect(n.triplet).toBe(true);
+    expect(n.tuplet).toEqual({ actual: 3, normal: 2 });
+  });
+});
