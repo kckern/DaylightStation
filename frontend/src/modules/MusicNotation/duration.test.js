@@ -48,6 +48,12 @@ describe('durationToType', () => {
   it('maps an 8th triplet (8)', () => {
     expect(durationToType(8)).toEqual({ type: 'eighth', dots: 0, triplet: true });
   });
+  it('maps a quarter triplet (16)', () => {
+    expect(durationToType(16)).toEqual({ type: 'quarter', dots: 0, triplet: true });
+  });
+  it('maps a 16th triplet (4)', () => {
+    expect(durationToType(4)).toEqual({ type: '16th', dots: 0, triplet: true });
+  });
   it('returns null for a non-expressible single value (84)', () => {
     expect(durationToType(84)).toBeNull();
   });
