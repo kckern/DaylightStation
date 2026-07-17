@@ -78,6 +78,7 @@ import { createHomeAutomationApiRouter, createHomeDashboardApiRouter } from '#co
 import { createDeviceApiRouter } from '#composition/modules/deviceApi.mjs';
 import { createTriggerApiRouter } from '#composition/modules/triggerApi.mjs';
 import { createGratitudeApiRouter } from '#composition/modules/gratitudeApi.mjs';
+import { createEconomyApi } from '#composition/modules/economyApi.mjs';
 import { createJournalistApiRouter } from '#composition/modules/journalistApi.mjs';
 import { createHomebotApiRouter } from '#composition/modules/homebotApi.mjs';
 import { createNutribotApiRouter } from '#composition/modules/nutribotApi.mjs';
@@ -698,6 +699,15 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     ? { baseUrl: `http://${raFileServer.host}:${raFileServer.port}`, thumbnailsPath: retroarchAppConfig.source.thumbnails_path }
     : null;
 
+  // Household economy — per-user wallets, earn/deposit, metered spend sessions.
+  // Built here (before the content routers) because the play /log route needs
+  // `economyService` to fire the piano lesson-complete earn-hook (Task 8). The
+  // router itself is mounted below where the other v1Routers are assembled.
+  const economyApi = createEconomyApi({
+    configService,
+    logger: rootLogger.child({ module: 'economy-api' })
+  });
+
   const { routers: contentRouters, services: contentServices } = createApiRouters({
     registry: contentRegistry,
     mediaProgressMemory,
@@ -716,6 +726,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     singalong: singalongConfig,
     savedQueryService,
     eventBus,
+    economyService: economyApi.economyService,
     logger: rootLogger.child({ module: 'content' })
   });
 
@@ -1816,6 +1827,11 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     printerRegistry: hardwareAdapters.printerRegistry,
     logger: rootLogger.child({ module: 'gratitude-api' })
   });
+
+  // Household economy — per-user wallets, earn/deposit, metered spend sessions.
+  // `economyApi` is created earlier (above the content routers) so its
+  // economyService can back the play /log earn-hook; here we only mount the router.
+  v1Routers.economy = economyApi.router;
 
   // Printer router — thermal printer control, multi-printer via optional {/:location} URL segment
   v1Routers.printer = createPrinterRouter({

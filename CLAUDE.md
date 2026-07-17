@@ -204,6 +204,7 @@ git rev-parse HEAD > docs/docs-last-updated.txt
 | Coding standards | `docs/reference/core/coding-standards.md` |
 | Layer guidelines | `docs/reference/core/layers-of-abstraction/*.md` |
 | Piano Producer (jam/song builder) | `docs/reference/piano/producer.md` |
+| Household economy (coins) | `docs/reference/economy/economy.md` |
 | Journalist domain (journaling bot) | `docs/reference/journalist/journalist-domain.md` |
 | NewsReporter framework (scheduled reports) | `docs/reference/newsreporter/newsreporter-framework.md` |
 
