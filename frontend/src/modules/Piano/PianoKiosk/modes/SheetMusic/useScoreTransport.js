@@ -116,6 +116,7 @@ export function useScoreTransport({
     fireIdxRef.current = i < 0 ? tl.length : i;
     schedIdxRef.current = fireIdxRef.current;
     anchorRef.current = performance.now() - pos;
+    lastPosRef.current = pos; // the next tick's gapMs measures from here, not the pre-seek position
   }, []);
 
   const stop = useCallback(() => {
