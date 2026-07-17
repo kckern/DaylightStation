@@ -15,12 +15,12 @@ export class CoachingToolFactory extends ToolFactory {
         parameters: {
           type: 'object',
           properties: {
-            username: { type: 'string' },
+            userId: { type: 'string' },
             limit: { type: 'number', description: 'Max conversations to return', default: 5 },
           },
-          required: ['username'],
+          required: ['userId'],
         },
-        execute: async ({ username, limit = 5 }) => {
+        execute: async ({ userId, limit = 5 }) => {
           const convIds = await conversationStore.listConversations(agentId);
           const recent = convIds.slice(-limit);
           const conversations = [];
@@ -60,11 +60,11 @@ export class CoachingToolFactory extends ToolFactory {
         description: 'Load active session state to resume an interrupted conversation.',
         parameters: {
           type: 'object',
-          properties: { username: { type: 'string' } },
-          required: ['username'],
+          properties: { userId: { type: 'string' } },
+          required: ['userId'],
         },
-        execute: async ({ username }) => {
-          const memory = await workingMemory.load(agentId, username);
+        execute: async ({ userId }) => {
+          const memory = await workingMemory.load(agentId, userId);
           const session = memory.get('session_state');
           return session || { active: false };
         },
@@ -76,18 +76,18 @@ export class CoachingToolFactory extends ToolFactory {
         parameters: {
           type: 'object',
           properties: {
-            username: { type: 'string' },
+            userId: { type: 'string' },
             rating: { type: 'string', description: 'positive or negative' },
             context: { type: 'string', description: 'What the feedback relates to' },
           },
-          required: ['username', 'rating'],
+          required: ['userId', 'rating'],
         },
-        execute: async ({ username, rating, context: feedbackCtx }) => {
-          const memory = await workingMemory.load(agentId, username);
+        execute: async ({ userId, rating, context: feedbackCtx }) => {
+          const memory = await workingMemory.load(agentId, userId);
           const feedback = memory.get('agent_feedback') || [];
           feedback.push({ rating, context: feedbackCtx, date: new Date().toISOString() });
           memory.set('agent_feedback', feedback.slice(-50));
-          await workingMemory.save(agentId, username, memory);
+          await workingMemory.save(agentId, userId, memory);
           return { recorded: true };
         },
       }),

@@ -54,27 +54,27 @@ describe('CeremonyToolFactory', () => {
 
   it('get_ceremony_content returns ceremony data', async () => {
     const tool = tools.find(t => t.name === 'get_ceremony_content');
-    const result = await tool.execute({ type: 'cycle_retro', username: 'test' });
+    const result = await tool.execute({ type: 'cycle_retro', userId: 'test' });
     expect(result.type).toBe('cycle_retro');
     expect(result.steps).toBeDefined();
   });
 
   it('complete_ceremony records completion', async () => {
     const tool = tools.find(t => t.name === 'complete_ceremony');
-    await tool.execute({ type: 'cycle_retro', username: 'test', responses: { reflection: 'Good week' } });
+    await tool.execute({ type: 'cycle_retro', userId: 'test', responses: { reflection: 'Good week' } });
     expect(completedCeremonies).toHaveLength(1);
   });
 
   it('check_ceremony_status returns due/overdue/completed', async () => {
     const tool = tools.find(t => t.name === 'check_ceremony_status');
-    const result = await tool.execute({ username: 'test' });
+    const result = await tool.execute({ userId: 'test' });
     expect(result.ceremonies).toBeDefined();
     expect(Array.isArray(result.ceremonies)).toBe(true);
   });
 
   it('check_ceremony_status marks enabled ceremonies with correct status', async () => {
     const tool = tools.find(t => t.name === 'check_ceremony_status');
-    const result = await tool.execute({ username: 'test' });
+    const result = await tool.execute({ userId: 'test' });
     // Only enabled ceremonies should appear (unit_intention, cycle_retro — phase_review is disabled)
     const types = result.ceremonies.map(c => c.type);
     expect(types).toContain('unit_intention');
@@ -89,14 +89,14 @@ describe('CeremonyToolFactory', () => {
 
   it('get_ceremony_history returns past records', async () => {
     const tool = tools.find(t => t.name === 'get_ceremony_history');
-    const result = await tool.execute({ username: 'test' });
+    const result = await tool.execute({ userId: 'test' });
     expect(result.records).toHaveLength(1);
     expect(result.records[0].type).toBe('cycle_retro');
   });
 
   it('get_ceremony_history filters by type', async () => {
     const tool = tools.find(t => t.name === 'get_ceremony_history');
-    const result = await tool.execute({ username: 'test', type: 'unit_intention' });
+    const result = await tool.execute({ userId: 'test', type: 'unit_intention' });
     expect(result.records).toHaveLength(0);
   });
 
@@ -116,7 +116,7 @@ describe('CeremonyToolFactory', () => {
       },
     });
     const tool = spyFactory.createTools().find(t => t.name === 'check_ceremony_status');
-    const result = await tool.execute({ username: 'test-user' });
+    const result = await tool.execute({ userId: 'test-user' });
 
     const [timing, cadenceConfig, today, last] = calls[0];
     expect(timing).toBe('start_of_unit'); // timing string, not ceremony type
@@ -135,7 +135,7 @@ describe('CeremonyToolFactory', () => {
     });
     const failTools = failFactory.createTools();
     const tool = failTools.find(t => t.name === 'get_ceremony_content');
-    const result = await tool.execute({ type: 'bad', username: 'test' });
+    const result = await tool.execute({ type: 'bad', userId: 'test' });
     expect(result.error).toBe('not found');
   });
 });

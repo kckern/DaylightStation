@@ -14,15 +14,15 @@ export class LifelogToolFactory extends ToolFactory {
         parameters: {
           type: 'object',
           properties: {
-            username: { type: 'string' },
+            userId: { type: 'string' },
             start: { type: 'string', description: 'Start date (YYYY-MM-DD)' },
             end: { type: 'string', description: 'End date (YYYY-MM-DD)' },
           },
-          required: ['username', 'start', 'end'],
+          required: ['userId', 'start', 'end'],
         },
-        execute: async ({ username, start, end }) => {
+        execute: async ({ userId, start, end }) => {
           try {
-            return await aggregator.aggregateRange(username, start, end);
+            return await aggregator.aggregateRange(userId, start, end);
           } catch (err) {
             return { error: err.message, days: {} };
           }
@@ -44,11 +44,11 @@ export class LifelogToolFactory extends ToolFactory {
         description: 'Get the latest metrics snapshot (drift computation, allocation data)',
         parameters: {
           type: 'object',
-          properties: { username: { type: 'string' } },
-          required: ['username'],
+          properties: { userId: { type: 'string' } },
+          required: ['userId'],
         },
-        execute: async ({ username }) => {
-          const snapshot = metricsStore?.getLatest?.(username);
+        execute: async ({ userId }) => {
+          const snapshot = metricsStore?.getLatest?.(userId);
           return snapshot || { error: 'No snapshot available' };
         },
       }),
@@ -58,11 +58,11 @@ export class LifelogToolFactory extends ToolFactory {
         description: 'Get current value drift and time allocation analysis',
         parameters: {
           type: 'object',
-          properties: { username: { type: 'string' } },
-          required: ['username'],
+          properties: { userId: { type: 'string' } },
+          required: ['userId'],
         },
-        execute: async ({ username }) => {
-          const snapshot = driftService?.getLatestSnapshot?.(username);
+        execute: async ({ userId }) => {
+          const snapshot = driftService?.getLatestSnapshot?.(userId);
           return snapshot || { error: 'No drift data available' };
         },
       }),

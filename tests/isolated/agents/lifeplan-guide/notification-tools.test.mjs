@@ -22,7 +22,7 @@ describe('NotificationToolFactory', () => {
   it('sends notification with actions', async () => {
     const tool = tools[0];
     const result = await tool.execute({
-      username: 'test',
+      userId: 'test',
       title: 'Weekly retro is due',
       body: 'Time for your cycle retrospective.',
       actions: [
