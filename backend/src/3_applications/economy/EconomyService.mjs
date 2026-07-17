@@ -57,7 +57,16 @@ export class EconomyService {
 
   async earn(userId, { action, source, ref = null }) {
     this.#assertUser(userId);
-    const policy = resolvePolicy(this.#config(), userId, action);
+    const config = this.#config();
+    // Feature-off no-op: on an install with no economy policy at all (no
+    // economy.yml → no `earn` catalog), silently skip rather than throw. Keeps
+    // the always-on piano earn-hook quiet on stock installs. A CONFIGURED
+    // economy with an unknown action still throws below.
+    if (!config?.earn) {
+      const wallet = this.#snapshot(userId);
+      return { userId, earned: 0, capped: false, duplicate: false, skipped: true, balance: wallet.balance };
+    }
+    const policy = resolvePolicy(config, userId, action);
     if (!policy || policy.type !== 'earn') throw new ValidationError(`unknown earn action: ${action}`);
     const reward = policy.reward || 0;
     const cap = policy.daily_cap ?? Infinity;

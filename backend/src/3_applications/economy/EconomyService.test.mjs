@@ -58,6 +58,17 @@ describe('EconomyService', () => {
     await expect(svc.earn(USER, { action: 'nope', source: 'x' })).rejects.toThrow();
     await expect(svc.getBalance('nobody')).rejects.toThrow();
   });
+  it('earn no-ops (does not throw) when the install has no economy config', async () => {
+    const svc = new EconomyService({
+      datastore: new YamlEconomyDatastore({ configService }),
+      configService: { ...configService, getHouseholdAppConfig: () => null }, // no economy.yml
+      logger: { info: () => {}, warn: () => {}, error: () => {}, debug: () => {} },
+    });
+    const res = await svc.earn(USER, { action: 'piano-lesson-complete', source: 'piano', ref: 'plex:1' });
+    expect(res.earned).toBe(0);
+    expect(res.skipped).toBe(true);
+    expect(res.balance).toBe(0);
+  });
   it('earn dedups a replayed ref within the day (pays out once)', async () => {
     const svc = makeService();
     const first = await svc.earn(USER, { action: 'piano-lesson-complete', source: 'piano', ref: 'plex:1' });
