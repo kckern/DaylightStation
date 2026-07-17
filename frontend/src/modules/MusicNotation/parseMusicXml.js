@@ -164,6 +164,7 @@ export function parseMusicXml(xml) {
         if (timeMod) {
           const actual = num(timeMod, 'actual-notes', 0);
           const normal = num(timeMod, 'normal-notes', 0);
+          // NOTE: any tuplet is read, but serializeMusicXml only reproduces 3-in-2 triplets (note.triplet). Non-triplet tuplets won't round-trip yet.
           note.tuplet = { actual, normal };
           note.triplet = actual === 3 && normal === 2;
         }
@@ -174,7 +175,8 @@ export function parseMusicXml(xml) {
         if (tieTypes.length) {
           const hasStart = tieTypes.includes('start');
           const hasStop = tieTypes.includes('stop');
-          note.tie = hasStart && hasStop ? 'both' : (hasStart ? 'start' : (hasStop ? 'stop' : undefined));
+          const tie = hasStart && hasStop ? 'both' : (hasStart ? 'start' : (hasStop ? 'stop' : null));
+          if (tie) note.tie = tie; // only attach when a real tie was read (no enumerable tie:undefined)
         }
 
         // Articulations — child tag names of <notations><articulations>.
