@@ -141,7 +141,7 @@ const ScorePracticeCluster = memo(function ScorePracticeCluster({
         type="button"
         className={`piano-score-btn piano-score-click${clickActive && !metronomeDisabled ? ' is-on' : ''}`}
         aria-label="Metronome"
-        aria-pressed={clickActive}
+        aria-pressed={clickActive && !metronomeDisabled}
         disabled={metronomeDisabled}
         onClick={onToggleClick}
       >

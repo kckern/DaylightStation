@@ -96,7 +96,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
     const f = restored.focus;
     return f && f.kind && Number.isInteger(f.inMeasure) && Number.isInteger(f.outMeasure) ? f : null;
   });
-  // Guided measure-selection state machine (Practice → Select measures…):
+  // Guided measure-selection state machine (Loop → Select measures…):
   //   null | { stage: 'first' } | { stage: 'last', inMeasure } (audit J5/M3)
   const [selecting, setSelecting] = useState(null);
   const [clickOn, setClickOn] = useState(() => restored.clickOn !== false); // Polish metronome — on unless turned off
@@ -654,7 +654,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
     }
     if (!rdr || !events.length) return;
     const r = rdr.getBoundingClientRect();
-    // Guided loop selection (Learn/Polish): first tap sets the pending in-measure
+    // Guided loop selection (Listen/Learn/Polish): first tap sets the pending in-measure
     // (a bracket appears + the banner asks for the last), the second sets the
     // out-measure → an ordered { inMeasure, outMeasure } custom range. Selection taps
     // set the range instead of seeking (audit J5/M3), and require the tap to be
@@ -721,7 +721,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
     setFocus({ kind: 'section', label: section.label, ...r });
   }, [layout.measures]);
 
-  // Begin the guided two-tap measure selection (from Practice → Select measures…).
+  // Begin the guided two-tap measure selection (from Loop → Select measures…).
   const onStartSelect = useCallback(() => {
     setSelecting({ stage: 'first' });
     logger.info('score.focus.select-start', {});
@@ -1099,7 +1099,6 @@ export default function ScorePlayer({ score: scoreMeta }) {
         handsValue={handsValue}
         onHandsChange={onHandsChange}
         sections={sections}
-        focus={focus}
         loopActive={!!focus}
         scopeLabel={scopeLabel}
         onPickSection={onPickSection}
