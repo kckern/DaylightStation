@@ -2,7 +2,7 @@ import React, { useState, memo } from 'react';
 import HandsControl from './HandsControl.jsx';
 import LoopControl from './LoopControl.jsx';
 import ViewMenu from './ViewMenu.jsx';
-import { PlayIcon, PauseIcon, RestartIcon, QuarterNoteIcon } from './icons.jsx';
+import { PlayIcon, PauseIcon, RestartIcon, QuarterNoteIcon, ChevronDownIcon } from './icons.jsx';
 
 // Tab order: Listen · Learn · Polish · Perform.
 const MODES = [
@@ -204,7 +204,7 @@ const ScoreViewControls = memo(function ScoreViewControls({
 }) {
   if (onBodyRender) onBodyRender();
 
-  // Single-open popover discipline (audit M4): tempo and the ⋯ view menu share one
+  // Single-open popover discipline (audit M4): tempo and the View menu share one
   // state, so opening one closes the other, and a shared backdrop dismisses on an
   // outside tap. 'tempo' | 'view' | null.
   const [openPopover, setOpenPopover] = useState(null);
@@ -245,7 +245,7 @@ const ScoreViewControls = memo(function ScoreViewControls({
         aria-pressed={on}
         onClick={() => onCyclePart(staff)}
       >
-        {`${on ? '✓ ' : ''}${label}`}
+        {label}
       </button>
     );
   };
@@ -290,6 +290,7 @@ const ScoreViewControls = memo(function ScoreViewControls({
           onClick={() => toggle('tempo')}
         >
           {`Tempo ${Math.round(tempoMult * 100)}%`}
+          <ChevronDownIcon />
         </button>
         {openPopover === 'tempo' && (
           <div className="piano-score-tempo-modal" role="dialog" aria-label="Tempo">
@@ -319,7 +320,8 @@ const ScoreViewControls = memo(function ScoreViewControls({
           aria-expanded={openPopover === 'view'}
           onClick={() => toggle('view')}
         >
-          {'⋯'}
+          {'View'}
+          <ChevronDownIcon />
         </button>
         {openPopover === 'view' && (
           <ViewMenu
@@ -352,7 +354,7 @@ const ScoreViewControls = memo(function ScoreViewControls({
  * Stable three-zone geography (audit C1/C2): a fixed grid of
  *   left  — mode tabs
  *   center — Restart · Play/Pause · metronome · Loop · position readout
- *   right — Hands/parts · Key · Tempo · ⋯ View menu
+ *   right — Hands/parts · Key · Tempo · View menu
  * Every control renders in ALL modes but Perform; per-mode gating disables/dims
  * IN PLACE instead of unmounting, so nothing ever moves under the finger:
  *  Listen  — all live except metronome (disabled — the performance is the beat)

@@ -206,7 +206,7 @@ describe('ScoreTransportBar', () => {
     expect(screen.getByRole('button', { name: /restart/i })).toBeEnabled();
   });
 
-  it('View menu (⋯) holds size as a segmented stepper (no slider), commits scale on tap', () => {
+  it('View menu holds size as a segmented stepper (no slider), commits scale on tap', () => {
     render(<ScoreTransportBar {...base} />);
     fireEvent.click(screen.getByRole('button', { name: /view options/i }));
     expect(screen.getByRole('dialog', { name: /view/i })).toBeInTheDocument();
@@ -214,6 +214,23 @@ describe('ScoreTransportBar', () => {
     expect(screen.queryByRole('slider')).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: '125%' }));
     expect(base.onScale).toHaveBeenCalledWith(1.25);
+  });
+
+  it('menu affordance (C4): View and Tempo triggers each carry a chevron SVG', () => {
+    render(<ScoreTransportBar {...base} mode="listen" tempoMult={1} onTempo={vi.fn()} />);
+    const view = screen.getByRole('button', { name: /view options/i });
+    expect(view.querySelector('svg')).not.toBeNull(); // ChevronDownIcon, not a ⋯ glyph
+    expect(view).toHaveTextContent('View'); // plain typography label
+    expect(view.textContent).not.toContain('⋯');
+    const tempo = screen.getByRole('button', { name: /^tempo/i });
+    expect(tempo.querySelector('svg')).not.toBeNull(); // ChevronDownIcon
+  });
+
+  it('part chips carry no ✓ glyph — is-on/is-off styling holds the state (C3)', () => {
+    render(<ScoreTransportBar {...base} mode="learn" />);
+    const chip = screen.getByRole('button', { name: /RH/ });
+    expect(chip).toHaveAttribute('aria-pressed', 'true');
+    expect(chip.textContent).toBe('RH'); // no "✓ " prefix
   });
 
   it('single-open popovers: opening the View menu closes Tempo (M4)', () => {

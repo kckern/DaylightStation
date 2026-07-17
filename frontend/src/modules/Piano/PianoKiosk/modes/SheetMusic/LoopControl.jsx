@@ -32,8 +32,12 @@ const LoopControl = memo(function LoopControl({ active = false, scopeLabel = '',
         aria-expanded={open}
         onClick={() => setOpen((v) => !v)}
       >
-        {active ? `Loop ${scopeLabel}` : 'Loop'}
-        {!active && <ChevronDownIcon />}
+        {/* The label truncates inside its own span; the chevron is a flex sibling
+            OUTSIDE the truncation, so the menu affordance never disappears under
+            a long section name (C4). Active or not, the trigger opens the menu —
+            the chevron stays in both states. */}
+        <span className="piano-score-loop-trigger__label">{active ? `Loop ${scopeLabel}` : 'Loop'}</span>
+        <ChevronDownIcon />
       </button>
       {active && (
         <button type="button" className="piano-score-btn piano-score-loop-clear" aria-label="Clear loop" onClick={() => onClearFocus?.()}>

@@ -18,4 +18,10 @@ describe('LearnComplete', () => {
     fireEvent.click(screen.getByRole('button', { name: /polish it/i }));
     expect(onPolish).toHaveBeenCalled();
   });
+
+  it('uses plain typography — no emoji headline, no arrow glyph on the action (C3/C4)', () => {
+    render(<LearnComplete open onReplay={() => {}} onPolish={() => {}} />);
+    expect(screen.getByText('You played every note!')).toBeInTheDocument(); // no 🎉
+    expect(screen.getByRole('button', { name: 'Polish it' }).textContent).toBe('Polish it'); // no →
+  });
 });
