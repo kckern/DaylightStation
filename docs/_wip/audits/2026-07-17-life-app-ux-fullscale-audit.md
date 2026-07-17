@@ -27,6 +27,22 @@ What remains — and what the users are reacting to — is **UX quality on top o
 
 ---
 
+## Remediation status — 2026-07-17 (delivered)
+
+The remediation was implemented and merged the same day via the plan [docs/superpowers/plans/2026-07-17-life-app-beautiful-and-usable.md](../../superpowers/plans/2026-07-17-life-app-beautiful-and-usable.md) (24 tasks, branch `feature/life-beautiful-usable`, whole-branch review: *ready to merge*).
+
+| Complaint | Status | What landed |
+|---|---|---|
+| 1 — ugly / no design system | **Addressed** | `LifeApp.theme.js` dark theme + `components/` primitives (LifePage/SectionCard/EmptyState/LoadingState/ErrorState) + `theme/semantics.js` (one color source) + `lib/format.js`; swept across all views; heatmap + AppShell defects fixed. |
+| 2 — no lifecycle awareness | **Addressed** | Server-side `stage`/`completeness` model; `ceremony_due` + `plan_gap` priorities; dashboard setup checklist; dismissable, tap-through PriorityList. |
+| 3 — coach useless/clueless | **Addressed** | `username`→injected `userId` (the `user123` fabrication is now structurally impossible); Active-User section in scheduled prompts; real `transition_goal`/`add_evidence` writers; honest prompt (deleted the "confirmation cards" fiction). |
+| 4 — alerts vapid/spammy | **Mostly addressed** | Drift alert names the value + time gap (no enum/coefficient); small-sample drift gate + anti-goal suppression (kills false positives); client-side dismiss. *Deferred:* backend dedupe ledger / quiet hours (P2). |
+| 5 — can't get started | **Addressed** | `POST /plan/purpose` + non-swallowing purpose editor; honest ceremony config; `isEmpty` counts beliefs/qualities. |
+
+**Known follow-ups (non-blocking, from the whole-branch review):** PriorityList dismiss is permanent per `type:title` (no period expiry — the backend nudge still fires); `CeremonyConfig`'s channel dropdown saves a preference the scheduler doesn't yet route on (values are now real, routing is not wired); the notification dedupe ledger + quiet hours (audit §4 P2) remain for a follow-up "Loops" plan. A pre-existing bug surfaced during the sweep: `ValuesView` reads `v.conflicts` but the domain field is `conflicts_with`, so that badge never renders.
+
+---
+
 ## 1. Visual design & design system — "ugly af, no design system"
 
 **Verdict: substantiated to a high degree, with one honest caveat.** "No design system" is literally true. Life has **0 of 34 files** as SCSS/CSS, no Mantine theme, no color scheme, no shared tokens, and no layout primitives — it renders unconfigured, light-mode Mantine 7 defaults. Every other app-level module has a deliberate identity: `HealthApp.jsx:57` passes `theme={healthTheme} defaultColorScheme="dark"` backed by `HealthApp.theme.js`; Fitness has ~130 SCSS files, Piano ~30. The caveat: the *component hygiene* is decent — semantic spacing props (`p="sm"`, `gap="md"`, `c="dimmed"`), only 8 inline styles, responsive `SimpleGrid` breakpoints, a couple of genuinely designed empty states. It is not sloppy code; it is **undesigned** code, and "ugly" is the predictable output.
