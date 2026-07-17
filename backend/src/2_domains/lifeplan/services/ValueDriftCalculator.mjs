@@ -25,6 +25,8 @@ const MINUTE_DEFAULTS = {
   checkins: () => 30,
 };
 
+export const MIN_COMMON_VALUES = 4;
+
 export class ValueDriftCalculator {
   calculateAllocation(lifelogRange, valueMapping = {}, values = []) {
     const allocation = {};
@@ -75,6 +77,11 @@ export class ValueDriftCalculator {
     const observedOrder = Object.entries(allocation)
       .sort((a, b) => b[1] - a[1])
       .map(([id]) => id);
+
+    const common = statedOrder.filter((id) => observedOrder.includes(id));
+    if (common.length < MIN_COMMON_VALUES) {
+      return { correlation: null, status: 'insufficient_data', statedOrder, observedOrder, allocation };
+    }
 
     const correlation = this.#spearmanCorrelation(statedOrder, observedOrder);
 
