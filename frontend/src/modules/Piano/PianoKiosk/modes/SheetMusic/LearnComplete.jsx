@@ -15,10 +15,10 @@ export default function LearnComplete({ open, onReplay, onPolish }) {
   if (!open) return null;
   return (
     <div className="piano-score-learn-complete" role="dialog" aria-label="Learn complete">
-      <div className="piano-score-learn-complete__headline">You played every note 🎉</div>
+      <div className="piano-score-learn-complete__headline">You played every note!</div>
       <div className="piano-score-learn-complete__actions">
         <button type="button" className="piano-score-btn piano-score-learn-again" onClick={onReplay}>Practice again</button>
-        <button type="button" className="piano-score-btn piano-score-learn-polish" onClick={onPolish}>Polish it →</button>
+        <button type="button" className="piano-score-btn piano-score-learn-polish" onClick={onPolish}>Polish it</button>
       </div>
     </div>
   );

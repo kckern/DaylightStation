@@ -1,7 +1,8 @@
 import React, { useState, memo } from 'react';
 import HandsControl from './HandsControl.jsx';
-import PracticeScope from './PracticeScope.jsx';
+import LoopControl from './LoopControl.jsx';
 import ViewMenu from './ViewMenu.jsx';
+import { PlayIcon, PauseIcon, RestartIcon, QuarterNoteIcon, ChevronDownIcon } from './icons.jsx';
 
 // Tab order: Listen · Learn · Polish · Perform.
 const MODES = [
@@ -68,48 +69,107 @@ const ScoreModeTabs = memo(function ScoreModeTabs({ mode, onMode }) {
 });
 
 /**
- * ScoreTransportButtons — reset (⟲) + run (▶/❚❚). These drive the transport,
- * which only auto-advances in Polish/Listen; Learn waits and Perform is static,
- * so they render only when `hasTransport`. Memoized so a step advance can't
- * reconcile them (they depend on mode/running, not step).
+ * ScoreTransportButtons — Restart (icon) + run (Play/Pause icons). Stable
+ * geography (audit C2): both render in EVERY mode but Perform and gate in place
+ * via `disabled` instead of unmounting, so mode changes never shuffle the bar.
+ * Restart is inert until there is a run to restart; the run button in Learn is
+ * a permanently disabled Play (Learn advances as you play, not on a transport).
+ * Memoized so a step advance can't reconcile them (they depend on mode/running,
+ * not step).
  */
 const ScoreTransportButtons = memo(function ScoreTransportButtons({ mode, running, onToggleRun, onReset, ready = true, canRestart = false }) {
-  const hasTransport = mode === 'polish' || mode === 'listen';
-  if (!hasTransport) return null;
+  if (mode === 'perform') return null;
+  const isLearn = mode === 'learn';
   // Until geometry extraction publishes a timeline the transport is inert; show a
   // disabled "Preparing…" so the bar doesn't look live while it can't play (audit H0).
-  const runLabel = !ready ? 'Preparing' : running ? 'Pause' : 'Play';
+  const runLabel = isLearn ? 'Learn advances as you play' : !ready ? 'Preparing' : running ? 'Pause' : 'Play';
   return (
     <>
-      {canRestart && (
-        <button
-          type="button"
-          className="piano-score-btn piano-score-reset"
-          aria-label="Restart"
-          onClick={onReset}
-        >
-          {'↺ Restart'}
-        </button>
-      )}
       <button
         type="button"
-        className={`piano-score-btn piano-score-run${!ready ? ' is-preparing' : ''}`}
+        className="piano-score-btn piano-score-reset"
+        aria-label="Restart"
+        disabled={!canRestart}
+        onClick={onReset}
+      >
+        <RestartIcon />
+      </button>
+      <button
+        type="button"
+        className={`piano-score-btn piano-score-run${!ready && !isLearn ? ' is-preparing' : ''}`}
         aria-label={runLabel}
         aria-pressed={running}
-        disabled={!ready}
+        disabled={isLearn || !ready}
         onClick={onToggleRun}
       >
-        {!ready ? '…' : running ? '❚❚' : '▶'}
+        {isLearn ? <PlayIcon /> : !ready ? '…' : running ? <PauseIcon /> : <PlayIcon />}
       </button>
     </>
   );
 });
 
 /**
- * ScoreViewControls — the expensive right cluster: part chips, focus range,
- * click/scoring/play-along toggles, transpose, tempo & size popovers, keyboard,
- * flow, and the info popover. This is the bulk of the bar (~250 lines of DOM +
- * local popover state).
+ * ScorePracticeCluster — the center-zone practice controls: metronome + Loop.
+ * These moved out of the right cluster (audit C1/C2) so the practice loop and
+ * click sit beside the transport they modify. Both render in every mode but
+ * Perform; the metronome gates IN PLACE (disabled in Listen — Listen's own
+ * performance is the beat) instead of unmounting, preserving spatial memory.
+ *
+ * Memoized and step-INDEPENDENT: none of its props change as the cursor
+ * advances, so React.memo bails out per step.
+ */
+const ScorePracticeCluster = memo(function ScorePracticeCluster({
+  mode,
+  clickActive = false,
+  bpm = 90,
+  onToggleClick,
+  loopActive = false,
+  scopeLabel = '',
+  sections = [],
+  onPickSection,
+  onStartSelect,
+  onClearFocus,
+  onNudge,
+}) {
+  if (mode === 'perform') return null;
+  // Listen disables the click (its own performance is the beat); a persisted
+  // clickActive must not paint the accent on a button that can't act.
+  const metronomeDisabled = mode === 'listen';
+  return (
+    <>
+      <button
+        type="button"
+        className={`piano-score-btn piano-score-click${clickActive && !metronomeDisabled ? ' is-on' : ''}`}
+        aria-label="Metronome"
+        aria-pressed={clickActive && !metronomeDisabled}
+        disabled={metronomeDisabled}
+        onClick={onToggleClick}
+      >
+        <QuarterNoteIcon />
+        <span className="tabular-nums">{bpm}</span>
+      </button>
+      <LoopControl
+        active={loopActive}
+        scopeLabel={scopeLabel}
+        sections={sections}
+        onPickSection={onPickSection}
+        onStartSelect={onStartSelect}
+        onClearFocus={onClearFocus}
+        onNudge={onNudge}
+      />
+    </>
+  );
+});
+
+/**
+ * ScoreViewControls — the expensive right cluster: part chips / Hands, key
+ * transpose, tempo & view popovers. This is the bulk of the bar's DOM +
+ * local popover state. (The metronome and Loop control live in the center
+ * ScorePracticeCluster since audit C1/C2.)
+ *
+ * Stable geography (audit C2): every control renders in all non-Perform modes;
+ * mode gating disables IN PLACE (Key dims outside Listen) instead of unmounting,
+ * so the cluster never reflows on a mode change.
  *
  * Memoized and step-INDEPENDENT: none of its props change as the cursor advances,
  * so `React.memo` bails out and this whole subtree is skipped per step. Only the
@@ -136,21 +196,15 @@ const ScoreViewControls = memo(function ScoreViewControls({
   handsVariant = 'hands',
   handsValue = 'both',
   onHandsChange,
-  sections = [],
-  scopeLabel = 'Whole piece',
-  onPickSection,
-  onStartSelect,
-  onClearFocus,
   keyboardVisible,
   onToggleKeyboard,
-  clickOn = false,
-  onToggleClick,
+  baseBpm = 90, // the piece's written tempo (unscaled) — each tempo step shows the BPM it produces (M4)
   meta = {},
   onBodyRender,
 }) {
   if (onBodyRender) onBodyRender();
 
-  // Single-open popover discipline (audit M4): tempo and the ⋯ view menu share one
+  // Single-open popover discipline (audit M4): tempo and the View menu share one
   // state, so opening one closes the other, and a shared backdrop dismisses on an
   // outside tap. 'tempo' | 'view' | null.
   const [openPopover, setOpenPopover] = useState(null);
@@ -158,18 +212,13 @@ const ScoreViewControls = memo(function ScoreViewControls({
   const closePopover = () => setOpenPopover(null);
 
   // Per-mode cluster gating (all derived from `mode`, so identical across steps).
+  // Perform (music-stand mode) is the ONLY mode that drops chrome; everything
+  // else stays mounted and gates in place (audit C2).
   const isPerform = mode === 'perform';
-  const hasParts = !isPerform;
-  const hasViewControls = !isPerform;
-  // The metronome-click toggle lives in Polish only — the only mode with an
-  // audible, graded beat. Learn is self-paced; Listen's own performance is the beat.
-  const hasClick = mode === 'polish';
-  // Tempo control is a practice knob in BOTH Listen and Polish (Polish practices
-  // below tempo; audit J1). Key transpose + play-along stay Listen-only.
-  const hasTempo = mode === 'listen' || mode === 'polish';
-  const hasListenExtras = mode === 'listen';
-  // Focus range (section chips + custom loop) is a Learn + Polish practice affordance.
-  const hasFocus = mode === 'learn' || mode === 'polish';
+  if (isPerform) return null;
+  // Key transpose only ACTS in Listen (the demo can be re-pitched); elsewhere the
+  // control stays put but its buttons disable and the wrapper dims.
+  const keyEnabled = mode === 'listen';
 
   const renderPartChip = (part) => {
     const { staff, label } = part;
@@ -196,121 +245,96 @@ const ScoreViewControls = memo(function ScoreViewControls({
         aria-pressed={on}
         onClick={() => onCyclePart(staff)}
       >
-        {`${on ? '✓ ' : ''}${label}`}
+        {label}
       </button>
     );
   };
 
   return (
     <div className="piano-score-view">
-      {hasParts && (
-        grandStaff
-          ? <HandsControl variant={handsVariant} value={handsValue} onChange={onHandsChange} />
-          : <div className="piano-score-parts">{parts.map(renderPartChip)}</div>
-      )}
+      {grandStaff
+        ? <HandsControl variant={handsVariant} value={handsValue} onChange={onHandsChange} />
+        : <div className="piano-score-parts">{parts.map(renderPartChip)}</div>}
 
-      {hasFocus && (
-        <PracticeScope
-          scopeLabel={scopeLabel}
-          sections={sections}
-          onPickSection={onPickSection}
-          onStartSelect={onStartSelect}
-          onClearFocus={onClearFocus}
-        />
-      )}
-
-      {hasClick && (
+      <div className={`piano-score-key${keyEnabled ? '' : ' is-dimmed'}`} role="group" aria-label="Key">
+        <span className="piano-score-key-label">Key</span>
         <button
           type="button"
-          className={`piano-score-btn piano-score-click${clickOn ? ' is-on' : ''}`}
-          aria-label="Metronome click"
-          aria-pressed={clickOn}
-          onClick={onToggleClick}
+          className="piano-score-btn piano-score-key-down"
+          aria-label="Transpose down"
+          disabled={!keyEnabled}
+          onClick={() => onTranspose?.(transpose - 1)}
         >
-          {'♩'}
+          {'−'}
         </button>
-      )}
+        <span className="piano-score-key-readout tabular-nums">
+          {transpose > 0 ? `+${transpose}` : String(transpose)}
+        </span>
+        <button
+          type="button"
+          className="piano-score-btn piano-score-key-up"
+          aria-label="Transpose up"
+          disabled={!keyEnabled}
+          onClick={() => onTranspose?.(transpose + 1)}
+        >
+          {'+'}
+        </button>
+      </div>
 
-      {hasListenExtras && (
-        <div className="piano-score-key" role="group" aria-label="Key">
-          <span className="piano-score-key-label">Key</span>
-          <button
-            type="button"
-            className="piano-score-btn piano-score-key-down"
-            aria-label="Transpose down"
-            onClick={() => onTranspose?.(transpose - 1)}
-          >
-            {'−'}
-          </button>
-          <span className="piano-score-key-readout tabular-nums">
-            {transpose > 0 ? `+${transpose}` : String(transpose)}
-          </span>
-          <button
-            type="button"
-            className="piano-score-btn piano-score-key-up"
-            aria-label="Transpose up"
-            onClick={() => onTranspose?.(transpose + 1)}
-          >
-            {'+'}
-          </button>
-        </div>
-      )}
-
-      {hasTempo && (
-        <div className="piano-score-tempo-wrap">
-          <button
-            type="button"
-            className="piano-score-btn piano-score-tempo"
-            aria-label="Tempo"
-            aria-expanded={openPopover === 'tempo'}
-            onClick={() => toggle('tempo')}
-          >
-            {`Tempo ${Math.round(tempoMult * 100)}%`}
-          </button>
-          {openPopover === 'tempo' && (
-            <div className="piano-score-tempo-modal" role="dialog" aria-label="Tempo">
-              <div className="piano-score-steps" role="group" aria-label="Tempo">
-                {TEMPO_STEPS.map((s, i) => (
-                  <button
-                    key={s.label}
-                    type="button"
-                    className={`piano-score-btn piano-score-step${i === nearestStep(TEMPO_STEPS, tempoMult) ? ' is-on' : ''}`}
-                    aria-pressed={i === nearestStep(TEMPO_STEPS, tempoMult)}
-                    onClick={() => onTempo?.(s.value)}
-                  >
-                    {s.label}
-                  </button>
-                ))}
-              </div>
+      <div className="piano-score-tempo-wrap">
+        <button
+          type="button"
+          className="piano-score-btn piano-score-tempo"
+          aria-label="Tempo"
+          aria-expanded={openPopover === 'tempo'}
+          onClick={() => toggle('tempo')}
+        >
+          {`Tempo ${Math.round(tempoMult * 100)}%`}
+          <ChevronDownIcon />
+        </button>
+        {openPopover === 'tempo' && (
+          <div className="piano-score-tempo-modal" role="dialog" aria-label="Tempo">
+            <div className="piano-score-steps" role="group" aria-label="Tempo">
+              {TEMPO_STEPS.map((s, i) => (
+                <button
+                  key={s.label}
+                  type="button"
+                  className={`piano-score-btn piano-score-step${i === nearestStep(TEMPO_STEPS, tempoMult) ? ' is-on' : ''}`}
+                  aria-pressed={i === nearestStep(TEMPO_STEPS, tempoMult)}
+                  onClick={() => onTempo?.(s.value)}
+                >
+                  {s.label}
+                  <span className="piano-score-step__bpm tabular-nums"><QuarterNoteIcon /> {Math.round(baseBpm * s.value)}</span>
+                </button>
+              ))}
             </div>
-          )}
-        </div>
-      )}
+          </div>
+        )}
+      </div>
 
-      {hasViewControls && (
-        <div className="piano-score-view-wrap">
-          <button
-            type="button"
-            className="piano-score-btn piano-score-viewmenu"
-            aria-label="View options"
-            aria-expanded={openPopover === 'view'}
-            onClick={() => toggle('view')}
-          >
-            {'⋯'}
-          </button>
-          {openPopover === 'view' && (
-            <ViewMenu
-              flow={flow}
-              onToggleFlow={onToggleFlow}
-              scale={scale}
-              onScale={onScale}
-              keyboardVisible={keyboardVisible}
-              onToggleKeyboard={onToggleKeyboard}
-              meta={meta}
-            />
-          )}
-        </div>
-      )}
+      <div className="piano-score-view-wrap">
+        <button
+          type="button"
+          className="piano-score-btn piano-score-viewmenu"
+          aria-label="View options"
+          aria-expanded={openPopover === 'view'}
+          onClick={() => toggle('view')}
+        >
+          {'View'}
+          <ChevronDownIcon />
+        </button>
+        {openPopover === 'view' && (
+          <ViewMenu
+            flow={flow}
+            onToggleFlow={onToggleFlow}
+            scale={scale}
+            onScale={onScale}
+            keyboardVisible={keyboardVisible}
+            onToggleKeyboard={onToggleKeyboard}
+            meta={meta}
+          />
+        )}
+      </div>
 
       {/* Shared backdrop: an outside tap dismisses whichever popover is open (M4). */}
       {openPopover && (
@@ -327,20 +351,27 @@ const ScoreViewControls = memo(function ScoreViewControls({
  * router concerns live here. Replaces the old top toolbar (top bar becomes
  * breadcrumb-only).
  *
- * Mode-aware clusters:
- *  Listen  — playback (reset/run/position), part roles, tempo, play-along, size/keyboard/info, click toggle.
- *  Learn   — parts + click toggle + position (transport is a no-op — Learn waits).
- *  Polish  — parts + run/reset + position.
- *  Perform — a {page} / {pages} indicator only (no parts / no transport / no view controls).
+ * Stable three-zone geography (audit C1/C2): a fixed grid of
+ *   left  — mode tabs
+ *   center — Restart · Play/Pause · metronome · Loop · position readout
+ *   right — Hands/parts · Key · Tempo · View menu
+ * Every control renders in ALL modes but Perform; per-mode gating disables/dims
+ * IN PLACE instead of unmounting, so nothing ever moves under the finger:
+ *  Listen  — all live except metronome (disabled — the performance is the beat)
+ *            and the Learn-only Play lockout; Key enabled here only.
+ *  Learn   — Play disabled ("Learn advances as you play"); metronome free-runs;
+ *            Key dimmed.
+ *  Polish  — full transport; metronome arms the run click; Key dimmed.
+ *  Perform — tabs + a {page} / {pages} indicator only (music-stand mode).
  *
  * Perf structure (Task 10): this component is a THIN SHELL. It threads props and
  * owns only the cheap, step-dependent position readout in the center column. The
- * three expensive clusters — mode tabs, transport buttons, and the right-hand view
- * controls — are `React.memo`'d children whose props don't change as the cursor
- * steps, so advancing `step` re-renders only this shell + the small readout, and
- * the memoized subtrees bail out. (Approach B: sub-section memoization; the readout
- * must stay nested inside the space-between flex layout, so it can't be split off
- * as a sibling à la Approach A.)
+ * four expensive clusters — mode tabs, transport buttons, the practice cluster,
+ * and the right-hand view controls — are `React.memo`'d children whose props don't
+ * change as the cursor steps, so advancing `step` re-renders only this shell + the
+ * small readout, and the memoized subtrees bail out. (Approach B: sub-section
+ * memoization; the readout must stay nested inside the grid's center zone, so it
+ * can't be split off as a sibling à la Approach A.)
  */
 export default function ScoreTransportBar({
   mode,
@@ -378,14 +409,18 @@ export default function ScoreTransportBar({
   handsValue,
   onHandsChange,
   sections,
+  loopActive,
   scopeLabel,
   onPickSection,
   onStartSelect,
   onClearFocus,
+  onNudge,
   keyboardVisible,
   onToggleKeyboard,
-  clickOn,
+  clickActive,
   onToggleClick,
+  bpm,
+  baseBpm,
   meta,
   onBodyRender,
 }) {
@@ -404,7 +439,7 @@ export default function ScoreTransportBar({
       {/* Left — mode tabs (memoized; step-independent) */}
       <ScoreModeTabs mode={mode} onMode={onMode} />
 
-      {/* Center — transport buttons (memoized) + the per-step position readout (shell) */}
+      {/* Center — transport buttons + practice cluster (memoized) + the per-step position readout (shell) */}
       <div className="piano-score-playback">
         <ScoreTransportButtons
           mode={mode}
@@ -414,13 +449,26 @@ export default function ScoreTransportBar({
           ready={ready}
           canRestart={canRestart}
         />
+        <ScorePracticeCluster
+          mode={mode}
+          clickActive={clickActive}
+          bpm={bpm}
+          onToggleClick={onToggleClick}
+          loopActive={loopActive}
+          scopeLabel={scopeLabel}
+          sections={sections}
+          onPickSection={onPickSection}
+          onStartSelect={onStartSelect}
+          onClearFocus={onClearFocus}
+          onNudge={onNudge}
+        />
         {hasPosition && <span className="piano-score-position tabular-nums">{position}</span>}
         {isPerform && (
           <span className="piano-score-page-indicator tabular-nums" aria-label="Page">{`${page} / ${pages}`}</span>
         )}
       </div>
 
-      {/* Right — parts, click & view controls (memoized; step-independent) */}
+      {/* Right — parts, key, tempo & view controls (memoized; step-independent) */}
       <ScoreViewControls
         mode={mode}
         flow={flow}
@@ -439,15 +487,9 @@ export default function ScoreTransportBar({
         handsVariant={handsVariant}
         handsValue={handsValue}
         onHandsChange={onHandsChange}
-        sections={sections}
-        scopeLabel={scopeLabel}
-        onPickSection={onPickSection}
-        onStartSelect={onStartSelect}
-        onClearFocus={onClearFocus}
         keyboardVisible={keyboardVisible}
         onToggleKeyboard={onToggleKeyboard}
-        clickOn={clickOn}
-        onToggleClick={onToggleClick}
+        baseBpm={baseBpm}
         meta={meta}
         onBodyRender={onBodyRender}
       />

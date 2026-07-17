@@ -52,6 +52,23 @@ describe('useScoreTransport (lookahead scheduler)', () => {
     expect(sched[1].leadMs).toBeGreaterThan(0);
   });
 
+  it('a callback seek during the fire loop redirects it (loop wrap) instead of spinning on the stale position', () => {
+    const fired = [];
+    let api;
+    const { result } = renderHook(() => useScoreTransport({
+      timeline: STEPS,
+      onEvent: (e) => {
+        fired.push(e.index);
+        if (e.index === 2 && fired.length < 5) api.seek(500); // wrap back to the t:500 step (once)
+      },
+    }));
+    api = result.current;
+    act(() => result.current.play());
+    act(() => vi.advanceTimersByTime(1050)); // fires 0,1,2 → wrap-seek(500) → re-fires 1, then waits
+    expect(fired).toEqual([0, 1, 2, 1]);
+    expect(result.current.playing).toBe(true); // wrapped, not done
+  });
+
   it('never routes step events through onSchedule, and still fires notes via onEvent at due time', () => {
     const sched = []; const fired = [];
     const { result } = renderHook(() => useScoreTransport({
