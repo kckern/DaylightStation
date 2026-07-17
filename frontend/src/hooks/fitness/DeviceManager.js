@@ -149,6 +149,11 @@ export class Device {
 export class DeviceManager {
   constructor() {
     this.devices = new Map(); // deviceId -> Device
+    // Monotonic counter bumped on any mutation that can change roster output
+    // (device add/update/remove, inactive-state transitions). Read by
+    // ParticipantRoster's roster cache to know when a rebuild is required.
+    // See docs/_wip/plans/2026-07-17-fitness-context-rearchitecture.md (Stage 1).
+    this.mutationVersion = 0;
   }
 
   updateDevice(deviceId, profile, rawData) {
@@ -212,6 +217,9 @@ export class DeviceManager {
     } else {
       device.update(data);
     }
+    // Any register/update can change roster output (new device, HR/active
+    // state, inactiveSince clear) — invalidate the roster cache.
+    this.mutationVersion++;
     // 5A: Attach isNew flag to device object for caller to check
     device._isNew = isNew;
     return device;
@@ -221,7 +229,9 @@ export class DeviceManager {
     // Use device ID directly
     const id = deviceId ? String(deviceId) : null;
     if (!id) return false;
-    return this.devices.delete(id);
+    const deleted = this.devices.delete(id);
+    if (deleted) this.mutationVersion++;
+    return deleted;
   }
 
   getDevice(id) {
@@ -260,7 +270,8 @@ export class DeviceManager {
   pruneStaleDevices(config = {}) {
     const now = Date.now();
     const staleIds = [];
-    
+    let mutated = false;
+
     // Handle legacy signature (timeoutMs) or new config object
     const timeouts = typeof config === 'number' 
       ? { inactive: config, remove: config * 3, rpmZero: 1200 }
@@ -288,14 +299,16 @@ export class DeviceManager {
       if (isCadence && timeSinceSignificant > timeouts.rpmZero) {
         if (device.cadence > 0 || device.power > 0 || device.speed > 0) {
           device.resetMetrics();
+          mutated = true;
         }
       }
-      
+
       // 1. Check for Inactivity (Connection Loss OR Stopped Pedaling)
       if (timeSinceActivity > timeouts.inactive) {
         if (!device.inactiveSince) {
           device.inactiveSince = now;
           device.removalAt = now + (timeouts.remove - timeouts.inactive);
+          mutated = true; // active → inactive transition changes roster output
         }
         
         // 2. Calculate Countdown
@@ -315,11 +328,13 @@ export class DeviceManager {
           device.inactiveSince = null;
           device.removalAt = null;
           device.removalCountdown = null;
+          mutated = true; // inactive → active transition changes roster output
         }
       }
     }
-    
+
     staleIds.forEach(id => this.devices.delete(id));
+    if (mutated || staleIds.length > 0) this.mutationVersion++;
     return staleIds;
   }
   
