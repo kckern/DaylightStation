@@ -50,14 +50,40 @@ function noteXml(note, staves, dur, tie, tied) {
     ? '<time-modification><actual-notes>3</actual-notes><normal-notes>2</normal-notes></time-modification>' : '';
   // <staff> only when the part has more than one staff (keeps single-staff output unchanged).
   const staff = staves > 1 ? `<staff>${note.staff}</staff>` : '';
+  // MusicXML child order: … duration, tie, VOICE, type, dot, time-modification,
+  // stem, staff, notations, lyric. <voice> is emitted for every note (default 1)
+  // so the bass-staff voice round-trips — dropping it is the I2 data-loss bug.
+  // NOTE: <stem> is intentionally NOT serialized — it is presentational and
+  // auto-computed by the engraver, so we don't round-trip it.
   return `<note>${note.chord ? '<chord/>' : ''}${body}`
     + `<duration>${dur}</duration>${tie}`
+    + `<voice>${note.voice ?? 1}</voice>`
     + `<type>${note.type}</type>${dots}`
     + timeMod
     + staff
     + notationsXml(note, tied)
     + (note.lyric ? `<lyric><text>${esc(note.lyric)}</text></lyric>` : '')
     + `</note>`;
+}
+
+// Emit one <clef> per staff from the authoritative part.clefs map (keyed by staff
+// number). Sorted by staff number so a grand staff serializes staff 1 (treble)
+// before staff 2 (bass). Single-staff output stays byte-identical to before: one
+// lone <clef> with NO number attribute. Falls back to score.clef when the part
+// carries no clefs map (defensive; initEditor/makeEmptyScore always populate one).
+function clefsXml(score, part) {
+  const map = part.clefs && Object.keys(part.clefs).length
+    ? part.clefs
+    : { 1: score.clef };
+  const staffNums = Object.keys(map).map(Number).sort((a, b) => a - b);
+  const single = (part.staves ?? 1) === 1 && staffNums.length === 1;
+  return staffNums
+    .map((n) => {
+      const c = map[n];
+      const numAttr = single ? '' : ` number="${n}"`;
+      return `<clef${numAttr}><sign>${c.sign}</sign><line>${c.line}</line></clef>`;
+    })
+    .join('');
 }
 
 function attributesXml(score, part) {
@@ -68,7 +94,7 @@ function attributesXml(score, part) {
     + `<key><fifths>${score.key.fifths}</fifths><mode>${score.key.mode ?? 'major'}</mode></key>`
     + `<time><beats>${score.timeSig.beats}</beats><beat-type>${score.timeSig.beatType}</beat-type></time>`
     + staves
-    + `<clef><sign>${score.clef.sign}</sign><line>${score.clef.line}</line></clef>`
+    + clefsXml(score, part)
     + `</attributes>`;
 }
 
@@ -111,6 +137,8 @@ function measureXml(score, part, measure, isFirst) {
 }
 
 export function serializeMusicXml(score) {
+  // v1: single-part scores only; multi-part (separate instruments) is out of
+  // scope and would need a parts.map here.
   const part = score.parts[0];
   const measures = part.measures.map((m, i) => measureXml(score, part, m, i === 0)).join('');
   return `<?xml version="1.0" encoding="UTF-8"?>`
