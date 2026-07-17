@@ -19,6 +19,7 @@ vi.mock('../../../Emulator/EmulatorConsole.jsx', () => ({
         data-persist={props.persistence?.persist ? '1' : '0'}
         data-user={props.persistence?.userId || ''}
         data-player={props.nowPlaying?.name || ''}
+        data-coins={props.overlayData?.['session.coins'] ?? ''}
       />
       <button data-testid="exit" onClick={() => props.onExit?.()}>exit</button>
     </>
@@ -251,5 +252,101 @@ describe('EmulatorGameWidget save flow', () => {
       expect(el.getAttribute('data-persist')).toBe('1');
       expect(el.getAttribute('data-user')).toBe('user_5');
     });
+  });
+});
+
+describe('EmulatorGameWidget coin economy', () => {
+  // fitnessContext exposing a resolvable active player so spenderId is set even
+  // without an identity unlock (off-kiosk free launch path).
+  const economyFitnessContext = {
+    ...fitnessContext,
+    getActivePlayerId: () => 'user_5',
+  };
+
+  function makeEconomyApi() {
+    return {
+      openSession: vi.fn().mockResolvedValue({ sessionId: 'sess-1', balance: 42, drainPerSecond: 0.1 }),
+      settle: vi.fn().mockResolvedValue({}),
+      close: vi.fn().mockResolvedValue({ balance: 40 }),
+    };
+  }
+
+  it('economy on + resolvable player: builds a coin-metered gate and starts a spend session', async () => {
+    api.mockResolvedValue(libraryWith('none'));
+    const economyApi = makeEconomyApi();
+    render(
+      <EmulatorGameWidget
+        fitnessContext={economyFitnessContext}
+        onClose={() => {}}
+        config={{ economy: { enabled: true, api: economyApi } }}
+        onMount={() => {}}
+      />,
+    );
+    await waitFor(() => expect(screen.getByLabelText('Pokémon Red')).toBeTruthy());
+    fireEvent.pointerDown(screen.getByLabelText('Pokémon Red'));
+    const el = await screen.findByTestId('console');
+    expect(el.getAttribute('data-gate')).toBe('coin-metered');
+    // start() opens a spend session against the injected economy api.
+    await waitFor(() => expect(economyApi.openSession).toHaveBeenCalledWith(
+      expect.objectContaining({ userId: 'user_5', action: 'arcade-play' }),
+    ));
+  });
+
+  it('economy on: unmount stops the gate and closes the spend session', async () => {
+    api.mockResolvedValue(libraryWith('none'));
+    const economyApi = makeEconomyApi();
+    const { unmount } = render(
+      <EmulatorGameWidget
+        fitnessContext={economyFitnessContext}
+        onClose={() => {}}
+        config={{ economy: { enabled: true, api: economyApi } }}
+        onMount={() => {}}
+      />,
+    );
+    await waitFor(() => expect(screen.getByLabelText('Pokémon Red')).toBeTruthy());
+    fireEvent.pointerDown(screen.getByLabelText('Pokémon Red'));
+    await screen.findByTestId('console');
+    // Wait until the session is open (coins reflect the opened balance) so close has a sessionId.
+    await waitFor(() => expect(screen.getByTestId('console').getAttribute('data-coins')).toBe('42'));
+    unmount();
+    await waitFor(() => expect(economyApi.close).toHaveBeenCalledWith(
+      expect.objectContaining({ userId: 'user_5', sessionId: 'sess-1' }),
+    ));
+  });
+
+  it('economy on: the live coin balance threads into the console overlay session.coins', async () => {
+    api.mockResolvedValue(libraryWith('none'));
+    const economyApi = makeEconomyApi();
+    render(
+      <EmulatorGameWidget
+        fitnessContext={economyFitnessContext}
+        onClose={() => {}}
+        config={{ economy: { enabled: true, api: economyApi } }}
+        onMount={() => {}}
+      />,
+    );
+    await waitFor(() => expect(screen.getByLabelText('Pokémon Red')).toBeTruthy());
+    fireEvent.pointerDown(screen.getByLabelText('Pokémon Red'));
+    await screen.findByTestId('console');
+    await waitFor(() => expect(screen.getByTestId('console').getAttribute('data-coins')).toBe('42'));
+  });
+
+  it('economy off (default): open gate, no economy api calls, no coins overlay', async () => {
+    api.mockResolvedValue(libraryWith('none'));
+    const economyApi = makeEconomyApi();
+    render(
+      <EmulatorGameWidget
+        fitnessContext={economyFitnessContext}
+        onClose={() => {}}
+        config={{ economy: { enabled: false, api: economyApi } }}
+        onMount={() => {}}
+      />,
+    );
+    await waitFor(() => expect(screen.getByLabelText('Pokémon Red')).toBeTruthy());
+    fireEvent.pointerDown(screen.getByLabelText('Pokémon Red'));
+    const el = await screen.findByTestId('console');
+    expect(el.getAttribute('data-gate')).toBe('open');
+    expect(el.getAttribute('data-coins')).toBe(''); // '—' fallback stays in the console
+    expect(economyApi.openSession).not.toHaveBeenCalled();
   });
 });
