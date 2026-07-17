@@ -86,3 +86,23 @@ describe('parseMusicXml — per-measure attributes', () => {
     expect(s.parts[0].measures[1].attributes.time).toEqual({ beats: 3, beatType: 4 });
   });
 });
+
+describe('parseMusicXml — ties', () => {
+  it('reads tie start/stop', () => {
+    const xml = `<?xml version="1.0"?><score-partwise><part-list><score-part id="P1"/></part-list><part id="P1">
+      <measure number="1"><attributes><divisions>24</divisions></attributes>
+      <note><pitch><step>C</step><octave>4</octave></pitch><duration>24</duration><type>quarter</type><tie type="start"/><notations><tied type="start"/></notations></note>
+      <note><pitch><step>C</step><octave>4</octave></pitch><duration>24</duration><type>quarter</type><tie type="stop"/><notations><tied type="stop"/></notations></note>
+    </measure></part></score-partwise>`;
+    const notes = parseMusicXml(xml).parts[0].measures[0].notes;
+    expect(notes[0].tie).toBe('start');
+    expect(notes[1].tie).toBe('stop');
+  });
+  it('reads a tie:both note', () => {
+    const xml = `<?xml version="1.0"?><score-partwise><part-list><score-part id="P1"/></part-list><part id="P1">
+      <measure number="1"><attributes><divisions>24</divisions></attributes>
+      <note><pitch><step>C</step><octave>4</octave></pitch><duration>24</duration><type>quarter</type><tie type="stop"/><tie type="start"/></note>
+    </measure></part></score-partwise>`;
+    expect(parseMusicXml(xml).parts[0].measures[0].notes[0].tie).toBe('both');
+  });
+});
