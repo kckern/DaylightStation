@@ -1,8 +1,10 @@
 import { useState } from 'react';
-import { Stack, Paper, Title, Text, Group, Badge, Progress, Button, TextInput, Select, Modal, Alert } from '@mantine/core';
+import { Stack, Paper, Text, Group, Badge, Progress, Button, TextInput, Select, Modal, Alert } from '@mantine/core';
 import { IconFlask } from '@tabler/icons-react';
 import { useBeliefs } from '../../hooks/useLifePlan.js';
 import { beliefConfidenceColor } from '../../theme/semantics.js';
+import { LifePage, LoadingState } from '../../components/index.js';
+import { formatDate } from '../../lib/format.js';
 
 function stateColor(state) {
   const map = {
@@ -24,7 +26,7 @@ function EvidenceTimeline({ history = [] }) {
           <Badge size="xs" color={e.type === 'confirmation' ? 'green' : e.type === 'disconfirmation' ? 'red' : 'yellow'}>
             {e.type}
           </Badge>
-          <Text size="xs" c="dimmed">{e.date || 'undated'}</Text>
+          <Text size="xs" c="dimmed">{formatDate(e.date) || 'undated'}</Text>
           {e.note && <Text size="xs">{e.note}</Text>}
         </Group>
       ))}
@@ -44,7 +46,7 @@ export function BeliefsView({ username }) {
   const [submitting, setSubmitting] = useState(false);
   const [createError, setCreateError] = useState(null);
 
-  if (loading) return null;
+  if (loading) return <LoadingState />;
 
   const handleAddEvidence = async () => {
     if (!addingTo) return;
@@ -79,12 +81,7 @@ export function BeliefsView({ username }) {
   };
 
   return (
-    <Stack gap="md">
-      <Group justify="space-between">
-        <Title order={4}>Beliefs</Title>
-        <Button onClick={() => setCreating(true)}>Add belief</Button>
-      </Group>
-
+    <LifePage title="Beliefs" actions={<Button onClick={() => setCreating(true)}>Add belief</Button>}>
       {beliefs.length === 0 && (
         <Text size="sm" c="dimmed">No beliefs defined yet — add a hypothesis to start testing it.</Text>
       )}
@@ -196,6 +193,6 @@ export function BeliefsView({ username }) {
           <Button onClick={handleAddEvidence}>Submit</Button>
         </Stack>
       </Modal>
-    </Stack>
+    </LifePage>
   );
 }

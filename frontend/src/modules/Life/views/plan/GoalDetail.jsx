@@ -1,8 +1,10 @@
-import { Stack, Paper, Title, Text, Group, Badge, Progress, Timeline, Button, Select } from '@mantine/core';
+import { Stack, Paper, Text, Group, Badge, Progress, Timeline, Button, Select } from '@mantine/core';
 import { useState } from 'react';
 import { IconTarget, IconFlag, IconHistory } from '@tabler/icons-react';
 import { useGoalDetail, useGoals } from '../../hooks/useLifePlan.js';
 import { goalStateColor } from '../../theme/semantics.js';
+import { LifePage, LoadingState } from '../../components/index.js';
+import { formatDate, humanize } from '../../lib/format.js';
 
 const STATES = ['dream', 'considered', 'ready', 'committed', 'achieved', 'failed', 'abandoned', 'paused', 'evolved'];
 
@@ -11,7 +13,7 @@ export function GoalDetail({ goalId, username }) {
   const { transitionGoal } = useGoals(username);
   const [transitionState, setTransitionState] = useState(null);
 
-  if (loading) return null;
+  if (loading) return <LoadingState />;
   if (error) return <Text c="red">{error}</Text>;
   if (!goal) return <Text c="dimmed">Goal not found</Text>;
 
@@ -22,12 +24,7 @@ export function GoalDetail({ goalId, username }) {
   };
 
   return (
-    <Stack gap="md">
-      <Group justify="space-between">
-        <Title order={4}>{goal.name}</Title>
-        <Badge color={goalStateColor(goal.state)} size="lg">{goal.state}</Badge>
-      </Group>
-
+    <LifePage title={goal.name} actions={<Badge color={goalStateColor(goal.state)} size="lg">{goal.state}</Badge>}>
       {goal.why && (
         <Paper p="sm" withBorder>
           <Text size="sm" fw={500} mb={4}>Why</Text>
@@ -68,7 +65,7 @@ export function GoalDetail({ goalId, username }) {
                 color={m.completed ? 'green' : 'gray'}
               >
                 <Text size="xs" c="dimmed">
-                  {m.completed ? `Completed: ${m.completed_date || 'yes'}` : m.target_date || 'No date'}
+                  {m.completed ? `Completed: ${formatDate(m.completed_date) || 'yes'}` : formatDate(m.target_date) || 'No date'}
                 </Text>
               </Timeline.Item>
             ))}
@@ -82,7 +79,7 @@ export function GoalDetail({ goalId, username }) {
           <Group gap="xs">
             {goal.dependencies.map((d, i) => (
               <Badge key={i} variant="light" size="sm">
-                {d.type}: {d.target_id}
+                {humanize(d.type)}: {humanize(d.target_id)}
               </Badge>
             ))}
           </Group>
@@ -99,7 +96,7 @@ export function GoalDetail({ goalId, username }) {
                 bullet={<IconHistory size={12} />}
                 title={`${h.from} → ${h.to}`}
               >
-                <Text size="xs" c="dimmed">{h.reason} — {h.timestamp}</Text>
+                <Text size="xs" c="dimmed">{h.reason} — {formatDate(h.timestamp)}</Text>
               </Timeline.Item>
             ))}
           </Timeline>
@@ -128,6 +125,6 @@ export function GoalDetail({ goalId, username }) {
           <Text size="sm">{goal.retrospective}</Text>
         </Paper>
       )}
-    </Stack>
+    </LifePage>
   );
 }

@@ -1,6 +1,8 @@
-import { Stack, Paper, Title, Text, Group, Badge, Switch, Select } from '@mantine/core';
+import { Stack, Paper, Text, Group, Badge, Switch, Select } from '@mantine/core';
 import { IconCalendarEvent, IconFlame } from '@tabler/icons-react';
 import { useCeremonyConfig } from '../../hooks/useLifePlan.js';
+import { LifePage, LoadingState } from '../../components/index.js';
+import { formatPeriodLabel } from '../../lib/format.js';
 
 const CEREMONY_TYPES = [
   { id: 'unit_intention', label: 'Unit Intention', description: 'Set intentions at the start of each unit' },
@@ -19,7 +21,7 @@ const CHANNELS = [
 export function CeremonyConfig({ username }) {
   const { config, current, loading, updateCadence } = useCeremonyConfig(username);
 
-  if (loading) return null;
+  if (loading) return <LoadingState />;
 
   const ceremonies = config?.ceremonies || {};
 
@@ -46,9 +48,7 @@ export function CeremonyConfig({ username }) {
   };
 
   return (
-    <Stack gap="md">
-      <Title order={4}>Ceremonies</Title>
-
+    <LifePage title="Ceremonies">
       {current && (
         <Paper p="sm" withBorder>
           <Group gap="sm" mb="xs">
@@ -59,7 +59,7 @@ export function CeremonyConfig({ username }) {
             {Object.entries(current).map(([level, pos]) => (
               pos && (
                 <Badge key={level} variant="outline" size="sm" color="blue">
-                  {pos.alias || level}: {pos.periodId}
+                  {formatPeriodLabel({ alias: pos.alias, level, periodId: pos.periodId })}
                 </Badge>
               )
             ))}
@@ -112,6 +112,6 @@ export function CeremonyConfig({ username }) {
           );
         })}
       </Stack>
-    </Stack>
+    </LifePage>
   );
 }
