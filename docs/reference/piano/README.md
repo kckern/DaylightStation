@@ -246,4 +246,5 @@ logging, so a backend outage degrades gracefully rather than breaking the surfac
 | Hardware + setup | [kiosk-setup.md](./kiosk-setup.md) |
 | Game engines | [piano-games.md](./piano-games.md) |
 | Sheet music player | [sheet-music-player.md](./sheet-music-player.md) |
+| Composer (notation editor — spec, not yet built) | [composer.md](./composer.md) |
 | Performance + jank | [performance.md](./performance.md) |
