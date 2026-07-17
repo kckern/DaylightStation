@@ -19,7 +19,11 @@ export class NotificationConfigService {
   }
 
   getConfig() {
-    const c = this.#configService.getHouseholdAppConfig?.(null, 'notifications') || {};
+    // Use reloadHouseholdAppConfig (fresh disk read), NOT getHouseholdAppConfig
+    // (stale in-memory cache) — the latter never reflects admin edits written by
+    // updateConfig() below, since reloadHouseholdAppConfig returns the fresh
+    // value without updating the frozen #config cache.
+    const c = this.#configService.reloadHouseholdAppConfig?.(null, 'notifications') || {};
     return {
       quiet_hours: { ...DEFAULTS.quiet_hours, ...(c.quiet_hours || {}) },
       cooldowns: { ...DEFAULTS.cooldowns, ...(c.cooldowns || {}) },
