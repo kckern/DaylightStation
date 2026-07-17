@@ -24,7 +24,7 @@ import { MediaProgress } from '#domains/content/entities/MediaProgress.mjs';
  * @returns {express.Router}
  */
 export function createPlayRouter(config) {
-  const { registry, mediaProgressMemory, playResponseService, contentQueryService, contentIdResolver, progressSyncSources, progressSyncService, eventBus = null, userVideoProgressStore = null, logger = console } = config;
+  const { registry, mediaProgressMemory, playResponseService, contentQueryService, contentIdResolver, progressSyncSources, progressSyncService, eventBus = null, userVideoProgressStore = null, economyService = null, logger = console } = config;
   const router = express.Router();
 
   // ==========================================================================
@@ -194,6 +194,22 @@ export function createPlayRouter(config) {
         }
       }
 
+      // Economy earn-hook (Task 8): pay coins the first time a lesson crosses
+      // completion. Fire-and-forget — never awaited, never affects the HTTP
+      // response, and its own replay guard makes a double-fire harmless. The
+      // `newlyCompleted` flag guarantees we only fire on the genuine transition.
+      // ref matches the store's key form (plex:{id}) so earn dedups per lesson.
+      if (economyService && userProgress?.newlyCompleted) {
+        const ref = `plex:${String(assetId).replace(/^plex:/, '')}`;
+        economyService.earn(userId, { action: 'piano-lesson-complete', source: 'piano', ref })
+          .catch((err) => logger.warn?.('play.log.economy_earn_failed', { userId, assetId, error: err?.message }));
+      }
+
+      // Strip the internal newlyCompleted signal from the public response shape.
+      const userProgressPublic = userProgress
+        ? (() => { const { newlyCompleted, ...rest } = userProgress; return rest; })()
+        : undefined;
+
       res.json({
         response: {
           type,
@@ -206,7 +222,7 @@ export function createPlayRouter(config) {
           playCount: newState.playCount,
           lastPlayed: newState.lastPlayed,
           watchTime: newState.watchTime,
-          userProgress: userProgress || undefined,
+          userProgress: userProgressPublic,
         }
       });
   }));
