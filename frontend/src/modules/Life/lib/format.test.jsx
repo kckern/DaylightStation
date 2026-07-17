@@ -19,4 +19,8 @@ describe('life format helpers', () => {
     expect(humanize('family_time')).toBe('Family time');
     expect(humanize('health')).toBe('Health');
   });
+  it('returns empty string for a calendar-invalid date', () => {
+    expect(formatDate('2026-02-30')).toBe('');
+    expect(formatDate('2026-13-01')).toBe('');
+  });
 });

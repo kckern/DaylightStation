@@ -5,7 +5,10 @@ function parseLocal(iso) {
   if (!iso) return null;
   const [y, m, d] = String(iso).slice(0, 10).split('-').map(Number);
   if (!y || !m || !d) return null;
-  return new Date(y, m - 1, d);
+  const dt = new Date(y, m - 1, d);
+  // Reject calendar-invalid dates (JS Date silently rolls e.g. Feb 30 → Mar 2).
+  if (dt.getFullYear() !== y || dt.getMonth() !== m - 1 || dt.getDate() !== d) return null;
+  return dt;
 }
 
 export function formatDate(iso, opts = { month: 'short', day: 'numeric', year: 'numeric' }) {
