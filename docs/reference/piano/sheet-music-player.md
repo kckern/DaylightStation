@@ -21,7 +21,8 @@ shared OSMD renderer in `frontend/src/modules/MusicNotation/renderers/`.
   **blue = a setting is on** (metronome armed, loop active), **green = the
   transport is running**, and a chevron on every button that opens a popover.
   The View menu holds layout/size/keyboard toggles plus the score's About
-  metadata; size commits on release so the score repaints once, not per drag.
+  metadata; size is a discrete tap-commit stepper, so the score repaints once
+  per step.
 
 ## Modes — a learning progression
 
@@ -32,22 +33,22 @@ tempo reference), not a mode — see "Metronome" below for its per-mode semantic
 
 | Mode | Idea | Cursor | Light-up | Sound |
 |------|------|--------|----------|-------|
-| **Listen** | Jukebox / player-piano | auto, at tempo (settable) | optional play-along green | kiosk performs **all** parts |
+| **Listen** | Jukebox / player-piano | auto, at tempo (settable) | play-along green (always on) | kiosk performs **all** parts |
 | **Learn** | Wait-for-notes practice | waits — advances only when all active-part notes of the step are struck | dim `target` → green `hit`; wrong notes flash | you play |
 | **Polish** | At-tempo, scored | auto, at tempo | current onset lights (bouncing ball) + measure R/Y/G washes | silent for your parts |
 | **Perform** | Concert / recital | none (config pedal turns pages) | none | you play |
 
 - **Listen** (`playParts.allPlayRoles` → `buildPlayTimeline` → `scaleTimeline`): the
   kiosk plays everything; a **tempo** control (multiplier, cheap timeline rescale)
-  and a **key** control (± semitone, OSMD transpose — see below); an optional
-  **play-along** toggle lights notes green as you match them (non-gating). With a
+  and a **key** control (± semitone, OSMD transpose — see below); **play-along**
+  light-up marks notes green as you match them (always on, non-gating). With a
   loop active, **Listen plays only the loop**.
 - **Learn** (`useFollowTracker`): notes-only exit criteria, no timing pressure. The
   loop confines practice; the metronome free-runs at the practice tempo
   (reference-only — never gates).
 - **Polish** (`useScoreEvaluator`): the clock runs; each completed measure is graded
   and washed R/Y/G; after N silent measures a **run summary** appears. The loop
-  repeats at tempo; **scoring is toggleable**.
+  repeats at tempo; **scoring is always on** during Polish runs.
 - **Perform**: static sheet; `advancePedalCC` (default 67) / `backPedalCC` (default
   66) turn pages (rising-edge, config-driven); a `page / pages` indicator.
 

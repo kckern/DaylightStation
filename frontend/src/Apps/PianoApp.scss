@@ -2791,7 +2791,9 @@
 // Tempo popover — anchored above the bar, elevated.
 .piano-score-tempo-wrap { position: relative; }
 .piano-score-tempo-modal {
-  position: absolute; bottom: calc(100% + 0.5rem); right: 0; z-index: 20;
+  // 21 > .piano-score-popover-backdrop (20) — the backdrop renders later in the DOM,
+  // so an equal z-index would hit-test above the tempo steps and eat their taps.
+  position: absolute; bottom: calc(100% + 0.5rem); right: 0; z-index: 21;
   background: var(--piano-surface, #1f1f26); border: 1px solid var(--piano-border, #34343f);
   border-radius: var(--r-md, 12px); box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5);
   color: var(--piano-stage-fg, #f3efe6);
