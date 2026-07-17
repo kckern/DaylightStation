@@ -121,6 +121,7 @@ export function createApiRouter(config) {
     '/livestream': 'livestream',
     '/camera': 'camera',
     '/piano': 'piano',
+    '/economy': 'economy',
     '/feedback': 'feedback',
     '/gameshow': 'gameshow',
     '/content-filter': 'content-filter'
