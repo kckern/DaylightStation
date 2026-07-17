@@ -104,6 +104,21 @@ describe('serializeMusicXml — chords + staves', () => {
     expect(xml).toContain('<staff>2</staff>');
     expect(xml).toContain('<backup>');
   });
+
+  it('preserves onsets when a measure interleaves staves (s1,s2,s1)', () => {
+    const s = makeEmptyScore(); s.parts[0].staves = 2;
+    const c4 = makeNote({ step: 'C', octave: 4 }, { type: 'quarter', staff: 1 });
+    const c3 = makeNote({ step: 'C', octave: 3 }, { type: 'quarter', staff: 2 });
+    const d4 = makeNote({ step: 'D', octave: 4 }, { type: 'quarter', staff: 1 });
+    s.parts[0].measures[0].notes = [c4, c3, d4];
+    const back = parseMusicXml(serializeMusicXml(s));
+    const notes = back.parts[0].measures[0].notes.filter(n => !n.rest);
+    const byMidi = (m) => notes.find(n => n.midi === m);
+    // C4 at beat 0, D4 at beat 1 (staff 1 sequence), C3 at beat 0 (staff 2)
+    expect(byMidi(60).onsetQuarter).toBe(0);
+    expect(byMidi(62).onsetQuarter).toBe(1);
+    expect(byMidi(48).onsetQuarter).toBe(0);
+  });
 });
 
 describe('serializeMusicXml — full-feature note stays parseable', () => {
