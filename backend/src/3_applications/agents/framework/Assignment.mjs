@@ -41,6 +41,12 @@ export class Assignment {
     // 3. Build prompt — context engineering
     const prompt = this.buildPrompt(gathered, memory);
 
+    if (prompt == null) {
+      logger.info?.('assignment.skipped', { agentId, assignmentId: this.constructor.id, userId, reason: 'nothing_actionable' });
+      await workingMemory.save(agentId, userId, memory);
+      return null;
+    }
+
     // 4. Reason — LLM call
     const raw = await agentRuntime.execute({
       agentId,

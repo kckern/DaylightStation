@@ -139,8 +139,8 @@ export class BaseAgent {
       throw new Error(`Cannot run assignment '${assignmentId}': BaseAgent was constructed without workingMemory dep (assignments require an operational scratchpad)`);
     }
 
-    const augmentedContext = { mode: 'dashboard', ...context };
-    const systemPrompt = await this.getSystemPrompt(augmentedContext);
+    const augmentedContext = { mode: 'dashboard', ...context, userId };
+    const systemPrompt = await this.#assemblePrompt(augmentedContext);
 
     return assignment.execute({
       agentRuntime: this.#agentRuntime,
