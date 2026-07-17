@@ -2438,21 +2438,6 @@
   }
 }
 
-// Shared: mode-button pill (still used by the legacy ScorePlayer controls and any
-// generic .piano-score-mode consumers). Segmented tabs live below as -mode-tab.
-.piano-score-mode {
-  appearance: none; border: 1px solid rgba(255,255,255,0.18);
-  background: rgba(255,255,255,0.06); color: var(--piano-stage-fg, #f3efe6);
-  font: inherit; font-weight: 600; padding: 0.5rem 0.95rem; border-radius: 999px; cursor: pointer;
-  &.is-active { background: #2ec46f; border-color: #2ec46f; color: #07120a; }
-  &[disabled] { opacity: 0.4; cursor: default; }
-}
-// Play-mode part chips (legacy intent): Play (default) / You (amber) / Mute.
-.piano-score-part--you { background: #e8a33d; border-color: #e8a33d; color: #1d1405; }
-.piano-score-part--mute { opacity: 0.55; }
-.piano-score-player__pos { color: var(--piano-stage-muted, #9a958a); font-variant-numeric: tabular-nums; margin-left: 0.25rem; }
-.piano-score-zoom { display: inline-flex; align-items: center; gap: 0.3rem; }
-
 .piano-score-player__scroll {
   flex: 1 1 auto; min-height: 0; overflow-y: auto; overflow-x: hidden;
   // Paper — so the black engraving is legible on the dark kiosk.
@@ -2611,9 +2596,6 @@
 .piano-score-run-replay { background: rgba(46, 196, 111, 0.2); border-color: #2ec46f; color: #b8f2cf; }
 .piano-score-run-drill { background: rgba(232, 163, 61, 0.22); border-color: #e8a33d; color: #ffdca6; }
 
-// Polish scoring toggle — lights the neutral green Polish accent when on.
-.piano-score-scoring.is-on { background: rgba(46, 196, 111, 0.2); border-color: #2ec46f; color: #b8f2cf; }
-
 // Keyboard slot (Task 11: generalized to BOTH flows). A fixed-height row shown
 // when present, sitting above the transport bar in either flow.
 .piano-score-player__keys {
@@ -2669,7 +2651,7 @@
   font: inherit; font-weight: 600;
 }
 
-// View menu (audit J5/M4) — consolidates layout/size/keyboard/about behind ⋯.
+// View menu (audit J5/M4) — consolidates layout/size/keyboard/about behind the View trigger.
 .piano-score-view-wrap { position: relative; display: inline-block; }
 .piano-score-view-menu {
   position: absolute; bottom: calc(100% + 0.4rem); right: 0; z-index: 21;
@@ -2691,13 +2673,15 @@
 // Loop control popover (audit L1/L2) — first-class labeled loop with one-tap clear.
 .piano-score-loop-wrap { position: relative; display: inline-flex; align-items: center; gap: 0.3rem; }
 // The trigger's label can be free text (a section name), so bound + ellipsize it.
-// inline-block (not flex) so text-overflow can truncate the text run; the chevron
-// flips to inline and keeps its old flex-gap as a margin. Double-class beats the
-// later .piano-score-btn base rule regardless of source order.
+// The label lives in its own span that carries the truncation; the chevron is a
+// flex sibling OUTSIDE the truncating span, so the menu affordance survives any
+// label length (C4). Double-class beats the .piano-score-btn base rule.
 .piano-score-btn.piano-score-loop-trigger {
-  display: inline-block; max-width: 14rem;
-  overflow: hidden; text-overflow: ellipsis;
-  svg { display: inline-block; vertical-align: -0.15em; margin-left: 0.35rem; }
+  max-width: 14rem;
+  svg { flex: 0 0 auto; }
+}
+.piano-score-loop-trigger__label {
+  min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .piano-score-loop-menu {
   // Anchored under the CENTER zone now (the loop trigger moved beside the
@@ -2754,12 +2738,16 @@
   appearance: none; border: 1px solid rgba(255, 255, 255, 0.18);
   background: rgba(255, 255, 255, 0.06); color: var(--piano-stage-fg, #f3efe6);
   font: inherit; font-weight: 600; line-height: 1;
-  min-width: 2.4rem; padding: 0.5rem 0.8rem; border-radius: var(--r-md, 12px); cursor: pointer;
+  // 3rem = 48px touch target (C5) — rem-based, so the narrow-bar font-size step-down
+  // (the 1400px media query) never shrinks the tappable height below 48px.
+  min-width: 2.4rem; min-height: 3rem; padding: 0.5rem 0.8rem; border-radius: var(--r-md, 12px); cursor: pointer;
   display: inline-flex; align-items: center; justify-content: center; gap: 0.35rem;
   white-space: nowrap; // labels never two-line — bar overflow stays binary/predictable (C1)
   &:active { background: rgba(255, 255, 255, 0.12); }
   &[disabled] { opacity: 0.4; cursor: default; }
-  // Toggle-on state (keyboard) — neutral blue accent (Metronome/Manual palette).
+  // Toggle-colour grammar (C3): BLUE is-on = a setting is enabled (metronome,
+  // keyboard, tempo step, loop). GREEN is reserved for a RUNNING transport —
+  // .piano-score-run[aria-pressed="true"] below — nothing else in the bar is green.
   &.is-on { background: rgba(108, 204, 255, 0.18); border-color: #6cf; color: #cdefff; }
   svg { display: block; }
 }
@@ -2774,6 +2762,7 @@
 .piano-score-mode-tab {
   appearance: none; border: 1px solid transparent; background: transparent;
   color: var(--piano-stage-muted, #9a958a); font: inherit; font-weight: 600;
+  min-height: 3rem; // 48px touch target (C5)
   padding: 0.45rem 0.85rem; border-radius: var(--r-pill, 999px); cursor: pointer;
   &:hover { color: var(--piano-stage-fg, #f3efe6); }
   &.is-active {
@@ -2788,7 +2777,9 @@
   appearance: none; border: 1px solid rgba(255, 255, 255, 0.2);
   background: rgba(255, 255, 255, 0.08); color: var(--piano-stage-fg, #f3efe6);
   font: inherit; font-weight: 600; font-size: 0.9rem; line-height: 1;
-  padding: 0.4rem 0.7rem; border-radius: var(--r-pill, 999px); cursor: pointer; white-space: nowrap;
+  display: inline-flex; align-items: center;
+  // One radius family with .piano-score-btn (C3); 48px touch target (C5).
+  min-height: 3rem; padding: 0.4rem 0.7rem; border-radius: var(--r-md, 12px); cursor: pointer; white-space: nowrap;
   &.is-on { background: rgba(255, 255, 255, 0.16); border-color: rgba(255, 255, 255, 0.4); }
   &.is-off { opacity: 0.45; }
   // Play-mode roles
@@ -2797,15 +2788,13 @@
   &.is-role-mute { opacity: 0.45; }
 }
 
-// Tempo / size popovers & info popover — anchored above the bar, elevated.
-.piano-score-size-wrap, .piano-score-tempo-wrap, .piano-score-info-wrap { position: relative; }
-.piano-score-size-modal, .piano-score-tempo-modal, .piano-score-info-popover {
+// Tempo popover — anchored above the bar, elevated.
+.piano-score-tempo-wrap { position: relative; }
+.piano-score-tempo-modal {
   position: absolute; bottom: calc(100% + 0.5rem); right: 0; z-index: 20;
   background: var(--piano-surface, #1f1f26); border: 1px solid var(--piano-border, #34343f);
   border-radius: var(--r-md, 12px); box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5);
   color: var(--piano-stage-fg, #f3efe6);
-}
-.piano-score-size-modal, .piano-score-tempo-modal {
   display: flex; align-items: center; padding: 0.6rem 0.7rem;
 }
 // Discrete segmented stepper (tempo & size) — the kiosk touch language, no slider.
@@ -2813,12 +2802,6 @@
 .piano-score-step { min-width: 3.2rem; padding: 0.5rem 0.6rem; font-variant-numeric: tabular-nums; }
 // Resulting-BPM suffix on each tempo step (M4): "75%  ♩ 68".
 .piano-score-step__bpm { display: inline-flex; align-items: center; gap: 0.15rem; opacity: 0.75; font-size: 0.85em; }
-.piano-score-info-popover {
-  padding: 0.75rem 1rem; min-width: 14rem; max-width: 22rem;
-  dl { margin: 0; display: grid; grid-template-columns: auto 1fr; gap: 0.25rem 0.75rem; }
-  dt { color: var(--piano-stage-muted, #9a958a); font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.04em; }
-  dd { margin: 0; font-weight: 600; }
-}
 
 // ── Player roster: avatars, chip, and "Who's playing?" picker ────────────────
 .piano-avatar {

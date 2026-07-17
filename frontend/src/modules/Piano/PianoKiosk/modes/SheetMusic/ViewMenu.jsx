@@ -1,7 +1,7 @@
 import React from 'react';
 
 /**
- * ViewMenu — the consolidated "how the score looks" panel behind the ⋯ button
+ * ViewMenu — the consolidated "how the score looks" panel behind the View button
  * (audit J5/M4). Gathers what used to be four separate bar buttons (layout/flow,
  * size, keyboard, info) into one labeled menu, so the bar's view controls stop
  * competing with the practice controls.

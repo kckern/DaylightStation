@@ -19,6 +19,12 @@ describe('LoopControl', () => {
     expect(onClear).toHaveBeenCalled();
   });
 
+  it('active: the trigger keeps its chevron — it still opens the menu (C4)', () => {
+    render(<LoopControl active scopeLabel="m9–m16" sections={[]} onClearFocus={() => {}} />);
+    const trigger = screen.getByRole('button', { name: /loop m9/i });
+    expect(trigger.querySelector('svg')).not.toBeNull(); // ChevronDownIcon on the TRIGGER itself
+  });
+
   it('menu offers sections, Select measures…, and (when active) Clear loop', () => {
     const onPick = vi.fn();
     render(<LoopControl active scopeLabel="A" sections={[{ label: 'A' }]} onPickSection={onPick} onStartSelect={() => {}} onClearFocus={() => {}} />);
