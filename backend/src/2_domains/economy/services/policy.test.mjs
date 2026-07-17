@@ -38,6 +38,14 @@ describe('inBlackout', () => {
     expect(inBlackout([], new Date())).toBe(false);
     expect(inBlackout(undefined, new Date())).toBe(false);
   });
+  it('treats start as inclusive and end as exclusive at exact boundaries', () => {
+    // overnight 22:00-07:00
+    expect(inBlackout(['22:00-07:00'], new Date('2026-07-17T22:00:00'))).toBe(true);
+    expect(inBlackout(['22:00-07:00'], new Date('2026-07-17T07:00:00'))).toBe(false);
+    // same-day 15:00-17:00
+    expect(inBlackout(['15:00-17:00'], new Date('2026-07-17T15:00:00'))).toBe(true);
+    expect(inBlackout(['15:00-17:00'], new Date('2026-07-17T17:00:00'))).toBe(false);
+  });
 });
 
 describe('drainPerSecond', () => {
