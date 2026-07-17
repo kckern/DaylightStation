@@ -9,7 +9,7 @@ import {
   IconRun, IconCoin, IconHeart, IconShoppingCart,
   IconUsers, IconDevices,
   IconPlugConnected, IconClock, IconFileCode,
-  IconRobot, IconDeviceGamepad2, IconBroadcast, IconPhoto
+  IconRobot, IconDeviceGamepad2, IconBroadcast, IconPhoto, IconBell
 } from '@tabler/icons-react';
 
 const navSections = [
@@ -57,6 +57,7 @@ const navSections = [
       { label: 'Integrations', icon: IconPlugConnected, to: '/admin/system/integrations' },
       { label: 'Scheduler', icon: IconClock, to: '/admin/system/scheduler' },
       { label: 'Config', icon: IconFileCode, to: '/admin/system/config' },
+      { label: 'Notifications', icon: IconBell, to: '/admin/system/notifications' },
     ]
   }
 ];
