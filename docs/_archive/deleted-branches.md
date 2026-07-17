@@ -6,6 +6,7 @@ To restore: `git checkout -b branch-name <commit-hash>`
 
 | Date | Branch | Commit | Description |
 |------|--------|--------|-------------|
+| 2026-07-16 | feature/sheetmusic-practice-ux | 9e3dfd0ce | Sheet Music practice-UX overhaul (loop/metronome/three-zone bar) - merged to main (994f14982); on-kiosk verify still pending |
 | 2026-07-11 | fix/fitness-emergency-failsafe | 4754df171 | Fail-safe emergency-lockdown ceremony + cooldown/debounce guards - merged to main (c305774d0) |
 | 2026-01-29 | refactor/ddd-migration | c4d71d55 | DDD architecture refactor - merged to main |
 | 2026-02-03 | feature/display-name-resolver | ad2e1cba | DisplayNameResolver SSOT module - merged to main |
