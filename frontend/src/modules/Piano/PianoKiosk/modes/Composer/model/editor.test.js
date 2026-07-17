@@ -266,6 +266,21 @@ describe('toggleDot / toggleTriplet / toggleTie', () => {
     ed = toggleTie(ed, { measureIdx: 0, noteIdx: 0 });
     expect(ed.score.parts[0].measures[0].notes[0].tie).toBeNull();
   });
+  it('toggleDot on an annotated REST preserves its dynamics + lyric (finding #6)', () => {
+    // makeRest must carry annotations through rebuildDuration, else a dot toggle on
+    // an annotated rest silently destroys them.
+    const s = makeEmptyScore();
+    const rest = makeRest({ type: 'quarter' });
+    rest.dynamics = 'p'; rest.lyric = 'sh';
+    s.parts[0].measures[0].notes = [rest];
+    let ed = initEditor(s);
+    ed = toggleDot(ed, { measureIdx: 0, noteIdx: 0 });
+    const back = ed.score.parts[0].measures[0].notes[0];
+    expect(back.rest).toBe(true);
+    expect(back.dots).toBe(1);
+    expect(back.dynamics).toBe('p');
+    expect(back.lyric).toBe('sh');
+  });
 });
 
 describe('C1 — note annotations survive a barline split', () => {
