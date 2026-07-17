@@ -20,7 +20,7 @@ export class CadenceCheck extends Assignment {
     const [ceremonyStatus, driftData, planData] = await Promise.all([
       call('check_ceremony_status', { username: userId }),
       call('get_value_allocation', { username: userId }),
-      call('get_plan', { username: userId }),
+      call('get_plan', { userId }),
     ]);
 
     const overdue = (ceremonyStatus?.ceremonies || []).filter(c => c.isOverdue);

@@ -54,7 +54,7 @@ describe('PlanToolFactory', () => {
 
   it('get_plan returns full plan', async () => {
     const tool = tools.find(t => t.name === 'get_plan');
-    const result = await tool.execute({ username: 'testuser' });
+    const result = await tool.execute({ userId: 'testuser' });
     expect(result.goals).toHaveLength(1);
     expect(result.values).toHaveLength(2);
   });
@@ -62,7 +62,7 @@ describe('PlanToolFactory', () => {
   it('propose_goal_transition returns proposal structure', async () => {
     const tool = tools.find(t => t.name === 'propose_goal_transition');
     const result = await tool.execute({
-      username: 'testuser',
+      userId: 'testuser',
       goalId: 'g1',
       newState: 'progressing',
       reasoning: 'Making steady progress',
@@ -76,7 +76,7 @@ describe('PlanToolFactory', () => {
   it('propose_reorder_values returns proposal with old and new order', async () => {
     const tool = tools.find(t => t.name === 'propose_reorder_values');
     const result = await tool.execute({
-      username: 'testuser',
+      userId: 'testuser',
       newOrder: ['v2', 'v1'],
       reasoning: 'Career taking priority this season',
     });
@@ -88,7 +88,7 @@ describe('PlanToolFactory', () => {
   it('record_feedback executes directly (no proposal)', async () => {
     const tool = tools.find(t => t.name === 'record_feedback');
     const result = await tool.execute({
-      username: 'testuser',
+      userId: 'testuser',
       observation: 'Feeling more aligned this week',
     });
     expect(result.recorded).toBe(true);
