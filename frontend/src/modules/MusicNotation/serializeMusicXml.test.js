@@ -83,3 +83,11 @@ describe('serializeMusicXml — expressive marks', () => {
     expect(xml).toContain('<articulations><staccato/></articulations>');
   });
 });
+
+describe('serializeMusicXml — lyrics', () => {
+  it('emits a lyric syllable', () => {
+    const n = makeNote({ step: 'C', octave: 4 }, { type: 'quarter' });
+    n.lyric = 'la';
+    expect(serializeMusicXml(scoreWith([n]))).toContain('<lyric><text>la</text></lyric>');
+  });
+});
