@@ -2,6 +2,7 @@ import path from 'path';
 import { loadYamlSafe, saveYaml } from '#system/utils/FileIO.mjs';
 
 const MAX_EVENTS = 200;
+const COOLDOWN_RETENTION_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
 
 /**
  * Persists notification governance state in a single household file:
@@ -27,6 +28,12 @@ export class YamlNotificationLedgerStore {
     saveYaml(this.#file(), d);
   }
 
+  #pruneCooldowns(d, nowMs) {
+    for (const [k, v] of Object.entries(d.cooldowns)) {
+      if (typeof v !== 'number' || nowMs - v > COOLDOWN_RETENTION_MS) delete d.cooldowns[k];
+    }
+  }
+
   getLastSent(username, dedupeKey) {
     const v = this.#load().cooldowns[this.#key(username, dedupeKey)];
     return typeof v === 'number' ? v : null;
@@ -36,12 +43,14 @@ export class YamlNotificationLedgerStore {
     const d = this.#load();
     d.cooldowns[this.#key(username, dedupeKey)] = atMs;
     d.events.push({ at: atMs, username: username || null, category, dedupeKey, delivered: true, suppressed: false, reason: 'ok' });
+    this.#pruneCooldowns(d, atMs);
     this.#save(d);
   }
 
   recordSuppressed({ username, dedupeKey, category, reason, atMs }) {
     const d = this.#load();
     d.events.push({ at: atMs, username: username || null, category, dedupeKey, delivered: false, suppressed: true, reason });
+    this.#pruneCooldowns(d, atMs);
     this.#save(d);
   }
 

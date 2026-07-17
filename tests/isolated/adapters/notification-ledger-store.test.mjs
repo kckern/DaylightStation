@@ -31,4 +31,11 @@ describe('YamlNotificationLedgerStore', () => {
     for (let i = 0; i < 250; i++) store.recordSent({ username: 'u', dedupeKey: 'k', category: 'system', atMs: i });
     expect(store.recentEvents(1000).length).toBeLessThanOrEqual(200);
   });
+  it('prunes cooldown entries older than the retention window', () => {
+    const now = 30 * 24 * 60 * 60 * 1000; // day 30
+    store.recordSent({ username: 'u', dedupeKey: 'old', category: 'ceremony', atMs: 1000 }); // ancient
+    store.recordSent({ username: 'u', dedupeKey: 'fresh', category: 'ceremony', atMs: now }); // triggers prune with nowMs=now
+    expect(store.getLastSent('u', 'old')).toBeNull();   // pruned
+    expect(store.getLastSent('u', 'fresh')).toBe(now);  // kept
+  });
 });
