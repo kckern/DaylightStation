@@ -73,3 +73,68 @@ describe('tempo extraction', () => {
     expect(parseMusicXml(xmlWithTempoChange).tempo).toBe(72);
   });
 });
+
+describe('parseMusicXml — per-measure attributes', () => {
+  it('captures a mid-piece time change on the measure where it occurs', () => {
+    const xml = `<?xml version="1.0"?><score-partwise><part-list><score-part id="P1"/></part-list><part id="P1">
+      <measure number="1"><attributes><divisions>24</divisions><time><beats>4</beats><beat-type>4</beat-type></time></attributes>
+      <note><pitch><step>C</step><octave>4</octave></pitch><duration>96</duration><type>whole</type></note></measure>
+      <measure number="2"><attributes><time><beats>3</beats><beat-type>4</beat-type></time></attributes>
+      <note><pitch><step>D</step><octave>4</octave></pitch><duration>72</duration><type>half</type><dot/></note></measure>
+    </part></score-partwise>`;
+    const s = parseMusicXml(xml);
+    expect(s.parts[0].measures[1].attributes.time).toEqual({ beats: 3, beatType: 4 });
+  });
+});
+
+describe('parseMusicXml — ties', () => {
+  it('reads tie start/stop', () => {
+    const xml = `<?xml version="1.0"?><score-partwise><part-list><score-part id="P1"/></part-list><part id="P1">
+      <measure number="1"><attributes><divisions>24</divisions></attributes>
+      <note><pitch><step>C</step><octave>4</octave></pitch><duration>24</duration><type>quarter</type><tie type="start"/><notations><tied type="start"/></notations></note>
+      <note><pitch><step>C</step><octave>4</octave></pitch><duration>24</duration><type>quarter</type><tie type="stop"/><notations><tied type="stop"/></notations></note>
+    </measure></part></score-partwise>`;
+    const notes = parseMusicXml(xml).parts[0].measures[0].notes;
+    expect(notes[0].tie).toBe('start');
+    expect(notes[1].tie).toBe('stop');
+  });
+  it('reads a tie:both note', () => {
+    const xml = `<?xml version="1.0"?><score-partwise><part-list><score-part id="P1"/></part-list><part id="P1">
+      <measure number="1"><attributes><divisions>24</divisions></attributes>
+      <note><pitch><step>C</step><octave>4</octave></pitch><duration>24</duration><type>quarter</type><tie type="stop"/><tie type="start"/></note>
+    </measure></part></score-partwise>`;
+    expect(parseMusicXml(xml).parts[0].measures[0].notes[0].tie).toBe('both');
+  });
+});
+
+describe('parseMusicXml — triplets', () => {
+  it('reads a 3-in-2 time-modification as triplet', () => {
+    const xml = `<?xml version="1.0"?><score-partwise><part-list><score-part id="P1"/></part-list><part id="P1">
+      <measure number="1"><attributes><divisions>24</divisions></attributes>
+      <note><pitch><step>C</step><octave>4</octave></pitch><duration>8</duration><type>eighth</type><time-modification><actual-notes>3</actual-notes><normal-notes>2</normal-notes></time-modification></note>
+    </measure></part></score-partwise>`;
+    const n = parseMusicXml(xml).parts[0].measures[0].notes[0];
+    expect(n.triplet).toBe(true);
+    expect(n.tuplet).toEqual({ actual: 3, normal: 2 });
+  });
+});
+
+describe('parseMusicXml — expressive marks + lyrics', () => {
+  it('reads articulations and a lyric on a note', () => {
+    const xml = `<?xml version="1.0"?><score-partwise><part-list><score-part id="P1"/></part-list><part id="P1">
+      <measure number="1"><attributes><divisions>24</divisions></attributes>
+      <note><pitch><step>C</step><octave>4</octave></pitch><duration>24</duration><type>quarter</type><notations><articulations><staccato/></articulations></notations><lyric><text>la</text></lyric></note>
+    </measure></part></score-partwise>`;
+    const n = parseMusicXml(xml).parts[0].measures[0].notes[0];
+    expect(n.articulations).toEqual(['staccato']);
+    expect(n.lyric).toBe('la');
+  });
+  it('attaches a preceding dynamics direction to the next note', () => {
+    const xml = `<?xml version="1.0"?><score-partwise><part-list><score-part id="P1"/></part-list><part id="P1">
+      <measure number="1"><attributes><divisions>24</divisions></attributes>
+      <direction placement="below"><direction-type><dynamics><f/></dynamics></direction-type></direction>
+      <note><pitch><step>C</step><octave>4</octave></pitch><duration>24</duration><type>quarter</type></note>
+    </measure></part></score-partwise>`;
+    expect(parseMusicXml(xml).parts[0].measures[0].notes[0].dynamics).toBe('f');
+  });
+});
