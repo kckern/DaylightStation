@@ -59,11 +59,14 @@ describe('serializeMusicXml — ties', () => {
     const xml = serializeMusicXml(scoreWith([a]));
     expect(xml).toContain('<tie type="start"/>');
     expect(xml).toContain('<tied type="start"/>');
+    // round-trip: parser reads the tie back
+    expect(parseMusicXml(xml).parts[0].measures[0].notes[0].tie).toBe('start');
   });
   it('emits stop then start for a tie:both note', () => {
     const b = makeNote({ step: 'C', octave: 4 }, { type: 'quarter', tie: 'both' });
     const xml = serializeMusicXml(scoreWith([b]));
     expect(xml).toContain('<tie type="stop"/><tie type="start"/>');
+    expect(parseMusicXml(xml).parts[0].measures[0].notes[0].tie).toBe('both');
   });
 });
 
@@ -71,6 +74,9 @@ describe('serializeMusicXml — triplets', () => {
   it('emits time-modification 3-in-2 for an 8th triplet', () => {
     const xml = serializeMusicXml(scoreWith([makeNote({ step: 'C', octave: 4 }, { type: 'eighth', triplet: true })]));
     expect(xml).toContain('<time-modification><actual-notes>3</actual-notes><normal-notes>2</normal-notes></time-modification>');
+    const n = parseMusicXml(xml).parts[0].measures[0].notes[0];
+    expect(n.triplet).toBe(true);
+    expect(n.tuplet).toEqual({ actual: 3, normal: 2 });
   });
 });
 
@@ -81,6 +87,9 @@ describe('serializeMusicXml — expressive marks', () => {
     const xml = serializeMusicXml(scoreWith([n]));
     expect(xml).toContain('<dynamics><f/></dynamics>');
     expect(xml).toContain('<articulations><staccato/></articulations>');
+    const back = parseMusicXml(xml).parts[0].measures[0].notes[0];
+    expect(back.dynamics).toBe('f');
+    expect(back.articulations).toEqual(['staccato']);
   });
 });
 
@@ -88,7 +97,9 @@ describe('serializeMusicXml — lyrics', () => {
   it('emits a lyric syllable', () => {
     const n = makeNote({ step: 'C', octave: 4 }, { type: 'quarter' });
     n.lyric = 'la';
-    expect(serializeMusicXml(scoreWith([n]))).toContain('<lyric><text>la</text></lyric>');
+    const xml = serializeMusicXml(scoreWith([n]));
+    expect(xml).toContain('<lyric><text>la</text></lyric>');
+    expect(parseMusicXml(xml).parts[0].measures[0].notes[0].lyric).toBe('la');
   });
 });
 
