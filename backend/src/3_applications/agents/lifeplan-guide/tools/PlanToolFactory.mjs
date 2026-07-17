@@ -34,102 +34,58 @@ export class PlanToolFactory extends ToolFactory {
       }),
 
       createTool({
-        name: 'propose_goal_transition',
-        description: 'Propose a goal state transition. Returns a proposal for user confirmation — does NOT execute the change.',
+        name: 'transition_goal',
+        description: `${CONFIRM_PREFIX} Move an existing goal to a new state (e.g. considered → committed).`,
         parameters: {
           type: 'object',
           properties: {
-            userId: { type: 'string' },
+            userId: { type: 'string', description: 'User identifier' },
             goalId: { type: 'string', description: 'Goal ID to transition' },
-            newState: { type: 'string', description: 'Target state' },
-            reasoning: { type: 'string', description: 'Data-backed explanation for the change' },
+            state: { type: 'string', description: 'Target state' },
+            reason: { type: 'string', description: 'Why this transition is happening' },
           },
-          required: ['userId', 'goalId', 'newState', 'reasoning'],
+          required: ['userId', 'goalId', 'state'],
         },
-        execute: async ({ userId, goalId, newState, reasoning }) => {
-          const plan = lifePlanStore.load(userId);
-          const goal = plan?.goals?.find(g => g.id === goalId);
-          if (!goal) return { error: `Goal ${goalId} not found` };
+        execute: async ({ userId, goalId, state, reason }) => {
+          try {
+            const plan = lifePlanStore.load(userId);
+            const goal = plan?.goals?.find(g => g.id === goalId);
+            if (!goal) return { error: `Goal ${goalId} not found` };
 
-          const validTransitions = goalStateService.getValidTransitions?.(goal) || [];
-          return {
-            change: { goalId, goalName: goal.name, from: goal.state, to: newState },
-            reasoning,
-            confidence: validTransitions.includes(newState) ? 0.9 : 0.5,
-            validTransitions,
-          };
+            goalStateService.transition(goal, state, reason);
+            lifePlanStore.save(userId, plan);
+            return { updated: goal };
+          } catch (e) {
+            return { error: e.message };
+          }
         },
       }),
 
       createTool({
-        name: 'propose_add_belief',
-        description: 'Propose adding a new belief to the plan. Returns a proposal for user confirmation.',
+        name: 'add_evidence',
+        description: `${CONFIRM_PREFIX} Record a piece of evidence for or against an existing belief.`,
         parameters: {
           type: 'object',
           properties: {
-            userId: { type: 'string' },
-            if_hypothesis: { type: 'string', description: 'The hypothesis (if part)' },
-            then_expectation: { type: 'string', description: 'The expected outcome (then part)' },
-            reasoning: { type: 'string', description: 'Why this belief is worth testing' },
+            userId: { type: 'string', description: 'User identifier' },
+            beliefId: { type: 'string', description: 'Belief ID to add evidence to' },
+            type: { type: 'string', description: 'confirmation, disconfirmation, spurious, or untested' },
+            note: { type: 'string', description: 'What was observed' },
           },
-          required: ['userId', 'if_hypothesis', 'reasoning'],
+          required: ['userId', 'beliefId', 'type'],
         },
-        execute: async ({ userId, if_hypothesis, then_expectation, reasoning }) => {
-          return {
-            change: { type: 'add_belief', if_hypothesis, then_expectation },
-            reasoning,
-            confidence: 0.7,
-          };
-        },
-      }),
+        execute: async ({ userId, beliefId, type, note }) => {
+          try {
+            const plan = lifePlanStore.load(userId);
+            const belief = plan?.beliefs?.find(b => b.id === beliefId);
+            if (!belief) return { error: `Belief ${beliefId} not found` };
 
-      createTool({
-        name: 'propose_reorder_values',
-        description: 'Propose a new value ranking order. Returns a proposal for user confirmation.',
-        parameters: {
-          type: 'object',
-          properties: {
-            userId: { type: 'string' },
-            newOrder: { type: 'array', items: { type: 'string' }, description: 'Value IDs in new rank order' },
-            reasoning: { type: 'string', description: 'Data-backed explanation for the reorder' },
-          },
-          required: ['userId', 'newOrder', 'reasoning'],
-        },
-        execute: async ({ userId, newOrder, reasoning }) => {
-          const plan = lifePlanStore.load(userId);
-          const currentOrder = (plan?.values || []).sort((a, b) => a.rank - b.rank).map(v => v.id);
-          return {
-            change: { from: currentOrder, to: newOrder },
-            reasoning,
-            confidence: 0.8,
-          };
-        },
-      }),
-
-      createTool({
-        name: 'propose_add_evidence',
-        description: 'Propose adding evidence for a belief. Returns a proposal for user confirmation.',
-        parameters: {
-          type: 'object',
-          properties: {
-            userId: { type: 'string' },
-            beliefId: { type: 'string' },
-            type: { type: 'string', description: 'confirmation or disconfirmation' },
-            observation: { type: 'string', description: 'What was observed' },
-            reasoning: { type: 'string', description: 'Why this counts as evidence' },
-          },
-          required: ['userId', 'beliefId', 'type', 'reasoning'],
-        },
-        execute: async ({ userId, beliefId, type, observation, reasoning }) => {
-          const plan = lifePlanStore.load(userId);
-          const belief = plan?.beliefs?.find(b => b.id === beliefId);
-          if (!belief) return { error: `Belief ${beliefId} not found` };
-
-          return {
-            change: { beliefId, evidenceType: type, observation },
-            reasoning,
-            confidence: 0.8,
-          };
+            beliefEvaluator.evaluateEvidence(belief, { type, note });
+            lifePlanStore.save(userId, plan);
+            return { updated: belief };
+          } catch (e) {
+            return { error: e.message };
+          }
         },
       }),
 
