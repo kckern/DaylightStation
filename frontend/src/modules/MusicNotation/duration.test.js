@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { DIVISIONS, decomposeDuration, durationToType } from './duration.js';
+import { DIVISIONS, decomposeDuration, durationToType, noteDivisions } from './duration.js';
 
 describe('DIVISIONS', () => {
   it('is 24 per quarter (divisible by 2/3/4/6/8)', () => {
@@ -32,6 +32,19 @@ describe('decomposeDuration', () => {
   });
   it('throws on a non-grid (non-multiple-of-6) duration', () => {
     expect(() => decomposeDuration(5)).toThrow();
+  });
+});
+
+describe('noteDivisions — unknown type is LOUD (C1)', () => {
+  it('throws on a note type outside the v1 palette (32nd) instead of emitting NaN', () => {
+    expect(() => noteDivisions({ type: '32nd' })).toThrow(
+      'unsupported note type "32nd" (only whole/half/quarter/eighth/16th in v1)',
+    );
+  });
+  it('does NOT throw for any of the 5 palette types', () => {
+    for (const type of ['whole', 'half', 'quarter', 'eighth', '16th']) {
+      expect(() => noteDivisions({ type })).not.toThrow();
+    }
   });
 });
 

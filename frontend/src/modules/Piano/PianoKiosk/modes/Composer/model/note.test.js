@@ -14,6 +14,12 @@ describe('makeNote', () => {
     expect(n.midi).toBe(66);
     expect(n.dots).toBe(1);
   });
+  it('carries note.tuplet through opts so a rebuild cannot bypass the non-3:2 guard (C5)', () => {
+    const note = makeNote({ step: 'C', octave: 4 }, { type: '16th' });
+    note.tuplet = { actual: 5, normal: 4 }; // a quintuplet parsed from an import
+    const rebuilt = makeNote(note.pitch, { ...note }); // e.g. replacePitch/nudgePitch path
+    expect(rebuilt.tuplet).toEqual({ actual: 5, normal: 4 });
+  });
 });
 
 describe('makeRest', () => {

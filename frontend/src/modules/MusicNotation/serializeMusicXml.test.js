@@ -3,6 +3,7 @@ import { makeEmptyScore } from '#frontend/modules/Piano/PianoKiosk/modes/Compose
 import { serializeMusicXml } from './serializeMusicXml.js';
 import { parseMusicXml } from './parseMusicXml.js';
 import { makeNote, makeRest } from '#frontend/modules/Piano/PianoKiosk/modes/Composer/model/note.js';
+import { initEditor, replacePitch, serializeFromEditor } from '#frontend/modules/Piano/PianoKiosk/modes/Composer/model/editor.js';
 
 function scoreWith(notes) {
   const s = makeEmptyScore();
@@ -175,6 +176,16 @@ describe('serializeMusicXml — loud guards for beyond-v1 silent-loss paths', ()
     const trip = makeNote({ step: 'C', octave: 4 }, { type: 'eighth', triplet: true });
     trip.tuplet = { actual: 3, normal: 2 };
     expect(() => serializeMusicXml(scoreWith([trip]))).not.toThrow();
+  });
+
+  it('editing a quintuplet note (replacePitch) STILL throws the guard — makeNote preserves tuplet (C5)', () => {
+    // makeNote must carry note.tuplet through, or replacePitch rebuilds the note
+    // WITHOUT its tuplet, silently disarming the #7 guard and corrupting on save.
+    const quint = makeNote({ step: 'C', octave: 4 }, { type: '16th' });
+    quint.tuplet = { actual: 5, normal: 4 };
+    let ed = initEditor(scoreWith([quint]));
+    ed = replacePitch(ed, { measureIdx: 0, noteIdx: 0 }, { step: 'D', octave: 4 });
+    expect(() => serializeFromEditor(ed)).toThrow(/only 3:2 triplets/);
   });
 });
 

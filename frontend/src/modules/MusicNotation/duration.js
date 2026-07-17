@@ -25,6 +25,12 @@ const TRIPLET_FACTOR = 2 / 3;
  */
 export function noteDivisions(note) {
   let d = baseDivisions(note.type);
+  // A type outside the v1 palette (e.g. '32nd') has no base value → arithmetic
+  // yields NaN, which the serializer would write as literal <duration>NaN</duration>
+  // (invalid MusicXML) SILENTLY. Fail LOUD instead (finding C1).
+  if (d === undefined) {
+    throw new Error(`unsupported note type "${note.type}" (only whole/half/quarter/eighth/16th in v1)`);
+  }
   if (note.dots) for (let i = 0; i < note.dots; i++) d *= 1.5;
   if (note.triplet) d *= TRIPLET_FACTOR;
   return Math.round(d);
