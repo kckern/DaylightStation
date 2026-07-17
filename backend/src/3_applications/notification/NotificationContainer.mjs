@@ -18,6 +18,12 @@ export class NotificationContainer {
    *   instances (e.g. app/telegram/email/push), constructed at the
    *   composition root.
    * @param {Function} [options.preferenceLoader] - username -> NotificationPreference
+   * @param {Object} [options.policy] - NotificationPolicy; enables governance when
+   *   paired with options.ledgerStore.
+   * @param {Object} [options.ledgerStore] - dedupe/quiet-hours ledger; enables
+   *   governance when paired with options.policy.
+   * @param {Function} [options.configLoader] - () => ({ quietHours, cooldowns })
+   * @param {Object} [options.clock] - { now: () => Date }
    * @param {Object} [options.logger]
    */
   constructor(options = {}) {
@@ -30,6 +36,10 @@ export class NotificationContainer {
         adapters: this.#options.adapters || [],
         preferenceLoader: this.#options.preferenceLoader
           || (() => new NotificationPreference({})),
+        policy: this.#options.policy,
+        ledgerStore: this.#options.ledgerStore,
+        configLoader: this.#options.configLoader,
+        clock: this.#options.clock,
         logger: this.#options.logger,
       });
     }

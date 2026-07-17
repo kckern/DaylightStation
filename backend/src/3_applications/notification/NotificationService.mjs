@@ -10,19 +10,31 @@ export class NotificationService {
   #preferenceLoader;
   #logger;
   #pending;
+  #policy;
+  #ledgerStore;
+  #configLoader;
+  #clock;
 
   /**
    * @param {Object} deps
    * @param {Array<{channel: string, send: Function}>} deps.adapters - Channel adapters
    * @param {Function} deps.preferenceLoader - Returns NotificationPreference for current user
    * @param {Object} [deps.logger]
+   * @param {Object} [deps.policy] - NotificationPolicy; enables governance when paired with ledgerStore
+   * @param {Object} [deps.ledgerStore] - dedupe/quiet-hours ledger; enables governance when paired with policy
+   * @param {Function} [deps.configLoader] - () => ({ quietHours, cooldowns })
+   * @param {Object} [deps.clock] - { now: () => Date }
    */
-  constructor({ adapters = [], preferenceLoader, logger } = {}) {
+  constructor({ adapters = [], preferenceLoader, logger, policy, ledgerStore, configLoader, clock } = {}) {
     this.#adapters = adapters;
     this.#adapterMap = new Map(adapters.map(a => [a.channel, a]));
     this.#preferenceLoader = preferenceLoader;
     this.#logger = logger;
     this.#pending = [];
+    this.#policy = policy;
+    this.#ledgerStore = ledgerStore;
+    this.#configLoader = configLoader;
+    this.#clock = clock;
   }
 
   /**
@@ -36,6 +48,33 @@ export class NotificationService {
     const intent = rawIntent instanceof NotificationIntent
       ? rawIntent
       : new NotificationIntent(rawIntent);
+
+    // Governance (dedupe + quiet hours). Additive: only active when policy+ledger
+    // are wired. Degrades open — a governance error never blocks delivery.
+    const governed = this.#policy && this.#ledgerStore;
+    let gv = null;
+    if (governed) {
+      try {
+        const now = this.#clock?.now?.() || new Date();
+        const username = intent.metadata?.username || null;
+        const dedupeKey = intent.dedupeKey || `${intent.category}:${username || '-'}:${String(intent.body || intent.title || '').slice(0, 80)}`;
+        const cfg = this.#configLoader?.() || { quietHours: null, cooldowns: {} };
+        const cooldownMins = cfg.cooldowns?.[intent.category] ?? cfg.cooldowns?.default ?? 60;
+        const cooldownMs = cooldownMins * 60_000;
+        const lastSentAt = this.#ledgerStore.getLastSent(username, dedupeKey);
+        const decision = this.#policy.evaluate({ intent, lastSentAt, now, quietHours: cfg.quietHours, cooldownMs });
+        gv = { now, username, dedupeKey };
+        if (!decision.send) {
+          this.#ledgerStore.recordSuppressed({ username, dedupeKey, category: intent.category, reason: decision.reason, atMs: now.getTime() });
+          this.#logger?.debug?.('notification.suppressed', { category: intent.category, reason: decision.reason, dedupeKey });
+          return [{ delivered: false, suppressed: true, reason: decision.reason, channel: null }];
+        }
+      } catch (error) {
+        this.#logger?.warn?.('notification.governance.degraded', { error: error.message });
+        gv = null; // fall through and deliver
+      }
+    }
+
     const preference = this.#preferenceLoader?.();
     const channels = preference
       ? preference.getChannelsFor(intent.category, intent.urgency)
@@ -84,6 +123,14 @@ export class NotificationService {
     const anyDelivered = results.some(r => r.delivered);
     if (!anyDelivered) {
       this.#pending.push({ intent: intent.toJSON(), results, timestamp: new Date().toISOString() });
+    }
+
+    if (governed && gv) {
+      try {
+        this.#ledgerStore.recordSent({ username: gv.username, dedupeKey: gv.dedupeKey, category: intent.category, atMs: gv.now.getTime() });
+      } catch (error) {
+        this.#logger?.warn?.('notification.governance.degraded', { error: error.message });
+      }
     }
 
     return results;
