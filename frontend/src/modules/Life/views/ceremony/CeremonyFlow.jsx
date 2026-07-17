@@ -1,5 +1,5 @@
 import { useMemo, useEffect } from 'react';
-import { Stack, Paper, Title, Text, Group, Button, Stepper, Loader, Alert, Anchor } from '@mantine/core';
+import { Stack, Paper, Title, Text, Group, Button, Stepper, Alert, Anchor } from '@mantine/core';
 import { useNavigate } from 'react-router-dom';
 import { IconCheck, IconArrowRight, IconArrowLeft, IconAlertCircle } from '@tabler/icons-react';
 import { useCeremony } from '../../hooks/useCeremony.js';
@@ -7,6 +7,7 @@ import { UnitIntention } from './UnitIntention.jsx';
 import { UnitCapture } from './UnitCapture.jsx';
 import { CycleRetro } from './CycleRetro.jsx';
 import { PhaseReview } from './PhaseReview.jsx';
+import { LoadingState } from '../../components/index.js';
 import getLogger from '../../../../lib/logging/Logger.js';
 
 const CEREMONY_STEPS = {
@@ -50,7 +51,7 @@ export function CeremonyFlow({ type, username, onComplete }) {
     }
   }, [completed, type, content, logger]);
 
-  if (loading) return <Loader size="sm" />;
+  if (loading) return <LoadingState />;
   if (error) {
     logger.warn('life.ceremony.error', { type, status: error.status, code: error.code, message: error.message });
     if (error.code === 'NO_PLAN') {

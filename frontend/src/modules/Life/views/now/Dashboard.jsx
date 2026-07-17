@@ -1,5 +1,5 @@
 import { useMemo, useEffect } from 'react';
-import { Stack, Paper, Title, Text, Group, Loader, SimpleGrid, Button, Anchor } from '@mantine/core';
+import { Stack, Paper, Title, Text, Group, SimpleGrid, Button, Anchor } from '@mantine/core';
 import { useNavigate } from 'react-router-dom';
 import { useAlignment } from '../../hooks/useAlignment.js';
 import { useLifePlan } from '../../hooks/useLifePlan.js';
@@ -9,6 +9,7 @@ import { GoalProgressBar } from '../../widgets/GoalProgressBar.jsx';
 import { BeliefConfidenceChip } from '../../widgets/BeliefConfidenceChip.jsx';
 import { ValueAllocationChart } from '../../widgets/ValueAllocationChart.jsx';
 import { PriorityList } from './PriorityList.jsx';
+import { LoadingState, SectionCard } from '../../components/index.js';
 import getLogger from '../../../../lib/logging/Logger.js';
 
 export function Dashboard() {
@@ -37,7 +38,7 @@ export function Dashboard() {
   }, [pLoading, dLoading, planLoading, planIsEmpty, dashData, priorityData, logger]);
 
   if (pLoading || dLoading || planLoading) {
-    return <Loader size="sm" />;
+    return <LoadingState />;
   }
 
   const dashboard = dashData?.dashboard;
@@ -46,7 +47,7 @@ export function Dashboard() {
   return (
     <Stack gap="md">
       {planIsEmpty && (
-        <Paper p="lg" withBorder radius="md">
+        <SectionCard p="lg" withBorder radius="md">
           <Stack gap="sm">
             <Title order={4}>You don't have a life plan yet</Title>
             <Text c="dimmed">
@@ -60,7 +61,7 @@ export function Dashboard() {
               </Anchor>
             </Group>
           </Stack>
-        </Paper>
+        </SectionCard>
       )}
 
       {dashboard?.cadencePosition && (

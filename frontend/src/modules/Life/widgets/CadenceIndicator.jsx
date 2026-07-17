@@ -1,4 +1,5 @@
-import { Group, Badge, Text } from '@mantine/core';
+import { Group, Badge } from '@mantine/core';
+import { formatPeriodLabel } from '../lib/format.js';
 
 export function CadenceIndicator({ cadencePosition }) {
   if (!cadencePosition) return null;
@@ -9,8 +10,8 @@ export function CadenceIndicator({ cadencePosition }) {
         const pos = cadencePosition[level];
         if (!pos) return null;
         return (
-          <Badge key={level} variant="outline" size="sm" color="blue">
-            <Text span size="xs">{pos.alias || level}: {pos.periodId}</Text>
+          <Badge key={level} variant="light" size="sm" color="violet">
+            {formatPeriodLabel({ ...pos, level })}
           </Badge>
         );
       })}
