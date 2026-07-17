@@ -1,6 +1,6 @@
 # Life App — User Journey
 
-**Last Updated:** 2026-07-09
+**Last Updated:** 2026-07-17 (status markers refreshed after the beautiful-and-usable remediation)
 **Status:** Design reference. Steps marked **[EXISTS]** are implemented today; **[PARTIAL]** works but is unfinished; **[GAP]** is proposed design that has no implementation yet. The gap markers make this doc double as a UX roadmap.
 
 ---
@@ -47,9 +47,9 @@ The app has no single front door. Maya can arrive through any of these, and each
 | E3 | **Coach chat** `/life/coach` | [EXISTS] | She asks the household bot a life-adjacent question and gets referred | Conversational, expects dialogue not UI |
 | E4 | **Weekly Review TV ritual** | [EXISTS, separate surface] | Sunday couch ritual browsing the week's photos while narrating aloud (see [weekly-review.md](./weekly-review.md)) | Reflective, relaxed, voice-first — the natural feeder into life planning |
 | E5 | **Post-workout / post-event moment** | [GAP] | Fitness recap or calendar wrap-up offers "log how that felt" deep link | Endorphins up; 30-second attention window |
-| E6 | **In-app notification** | [PARTIAL — WebSocket channel broadcasts; no UI renders it] | Notification appears inside any DaylightStation surface | Already in the ecosystem, one click away |
+| E6 | **In-app notification** | [EXISTS — `useAppNotifications` renders the `notification` topic as a toast] | Notification appears inside any DaylightStation surface | Already in the ecosystem, one click away |
 
-**Decision point D0 — the first 60 seconds.** Whatever the entry, a user with no plan lands on a dashboard built to render a plan. Today `/life/now` renders empty charts for her **[GAP — no empty-state]**. The design requirement: an empty plan must never show empty widgets. It must show *one sentence and one button*: "You don't have a life plan yet. Talk to your coach for ten minutes and you'll have one." → routes to Phase 1. Secondary link, small: "I'd rather look around first" → Log views (which work with zero plan, and with lifelog data are genuinely impressive — the data-rich Maya sees her actual year at a glance and thinks *it already knows me*).
+**Decision point D0 — the first 60 seconds.** Whatever the entry, a user with no plan lands on a dashboard built to render a plan. `/life/now` now shows a planless funnel — *one sentence and one button* — instead of empty widgets **[EXISTS — `Dashboard.jsx` planless card]**. The design requirement: an empty plan must never show empty widgets. It shows: "You don't have a life plan yet. Talk to your coach for ten minutes and you'll have one." → routes to Phase 1. Secondary link, small: "I'd rather look around first" → Log views (which work with zero plan, and with lifelog data are genuinely impressive — the data-rich Maya sees her actual year at a glance and thinks *it already knows me*).
 
 ---
 
@@ -186,7 +186,7 @@ Week 6: Maya gets sick, then busy. Nine days of ignored nudges.
 
 ## Inventory: Cues, Decision Points, Input Cycles
 
-**All cues/hooks** (what can ever ping Maya): morning/evening ceremony nudges, weekly/monthly/seasonal ceremony nudges [EXISTS, prod-scheduled], coach CadenceCheck message [EXISTS], drift alert (threshold-crossing between retros) [PARTIAL — category exists, no trigger], belief-verdict-ready [GAP], dormant-belief prompt [GAP], post-workout capture hook (E5) [GAP]. Routing per category: ceremony → Telegram+push+app; drift → Telegram+app; rest app-only. One nudge per ceremony per period, silenced by completion.
+**All cues/hooks** (what can ever ping Maya): morning/evening ceremony nudges, weekly/monthly/seasonal ceremony nudges [EXISTS, prod-scheduled], coach CadenceCheck message [EXISTS], drift alert (threshold-crossing between retros) [EXISTS — nightly drift snapshot triggers; small-sample gate suppresses false positives; alert names the drifting value + time gap], belief-verdict-ready [GAP], dormant-belief prompt [GAP], post-workout capture hook (E5) [GAP]. Routing per category: ceremony → Telegram+push+app; drift → Telegram+app; rest app-only. One nudge per ceremony per period, silenced by completion.
 
 **All decision points:** D0 first-60-seconds (engage/bounce), D1 abandon-mid-onboarding (resume), D2 ignore micro-interviews (back off), D3 goal transitions (pause/shrink/let go), drift reaction (behavior/ranking/data), belief verdict (confirm/refute/keep testing → cascade), channel consent, lapse re-entry.
 
@@ -202,8 +202,8 @@ Week 6: Maya gets sick, then busy. Nine days of ignored nudges.
 | Daily/weekly/monthly ceremony flows | EXISTS |
 | Dashboard, drift, log views, plan CRUD views | EXISTS |
 | Coach with plan/lifelog tools + persistent memory | EXISTS |
-| Empty-state → onboarding entry | GAP |
-| First-session guided onboarding (card-sort, evidence mirror, incremental plan writing, resume) | GAP |
+| Empty-state → onboarding entry | EXISTS (planless dashboard/ceremony funnel → coach; per-view coach CTAs) |
+| First-session guided onboarding (card-sort, evidence mirror, incremental plan writing, resume) | PARTIAL (coach-led onboarding + create-from-view + `POST /plan/purpose` exist; the card-sort/evidence-mirror UI does not) |
 | Micro-interview drip (days 2–14) | GAP |
 | Reply-in-Telegram ceremony completion | GAP |
 | Nudge decay + lapse re-entry bridge | GAP |
