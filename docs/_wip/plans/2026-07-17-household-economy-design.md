@@ -201,6 +201,18 @@ exchange, parent dashboard / ledger history view, blackout & cap polish.
 **Phase 4 — YAGNI-gated extras.** Allowance automation, interest, savings goals,
 leaderboards. Build only on demonstrated demand.
 
+## Known assumptions to verify
+
+- **Piano earn hook rides on `/log` userId contract.** The lesson-complete earn
+  fires from `POST /api/play/log` whenever `UserVideoProgressStore.record()`
+  first stamps `completedAt` for a `userId`-attributed play. This assumes `/log`
+  receives a `userId` only from the piano kiosk (the same condition the
+  pre-existing piano progress write already depends on). If any non-piano surface
+  ever logs playback with a `userId`, its completion would mis-fire a
+  `piano-lesson-complete` earn. Bounded by the daily cap + per-ref dedup, but
+  live-verify that only piano lessons pay out. If the contract ever loosens, add
+  a play-`type`/collection guard around the earn.
+
 ## Open items
 
 - PIN storage/verification mechanism (likely per-user auth file alongside
