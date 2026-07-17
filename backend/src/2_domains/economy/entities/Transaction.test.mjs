@@ -25,4 +25,7 @@ describe('foldBalance', () => {
     expect(foldBalance([{ delta: 5 }, { delta: 3 }, { delta: -2 }])).toBe(6);
     expect(foldBalance([])).toBe(0);
   });
+  it('clamps a negative net to zero (never reports overdraft)', () => {
+    expect(foldBalance([{ delta: 5 }, { delta: -9 }])).toBe(0);
+  });
 });
