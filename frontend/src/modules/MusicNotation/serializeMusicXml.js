@@ -38,42 +38,66 @@ function dynamicsXml(note) {
     : '';
 }
 
-function noteXml(note) {
+function noteXml(note, staves) {
   const dur = noteDivisions(note);
   const body = note.rest ? `<rest/>` : pitchXml(note.pitch);
   const dots = '<dot/>'.repeat(note.dots || 0);
   const { tie } = tieMarks(note.tie);
   const timeMod = note.triplet
     ? '<time-modification><actual-notes>3</actual-notes><normal-notes>2</normal-notes></time-modification>' : '';
+  // <staff> only when the part has more than one staff (keeps single-staff output unchanged).
+  const staff = staves > 1 ? `<staff>${note.staff}</staff>` : '';
   return `<note>${note.chord ? '<chord/>' : ''}${body}`
     + `<duration>${dur}</duration>${tie}`
     + `<type>${note.type}</type>${dots}`
     + timeMod
+    + staff
     + notationsXml(note)
     + (note.lyric ? `<lyric><text>${esc(note.lyric)}</text></lyric>` : '')
     + `</note>`;
 }
 
-function attributesXml(score) {
+function attributesXml(score, part) {
+  // MusicXML <attributes> child order: divisions, key, time, staves, clef.
+  const staves = part.staves > 1 ? `<staves>${part.staves}</staves>` : '';
   return `<attributes>`
     + `<divisions>${score.divisions}</divisions>`
     + `<key><fifths>${score.key.fifths}</fifths><mode>${score.key.mode ?? 'major'}</mode></key>`
     + `<time><beats>${score.timeSig.beats}</beats><beat-type>${score.timeSig.beatType}</beat-type></time>`
+    + staves
     + `<clef><sign>${score.clef.sign}</sign><line>${score.clef.line}</line></clef>`
     + `</attributes>`;
 }
 
-function measureXml(score, measure, isFirst) {
-  const attrs = isFirst ? attributesXml(score) : '';
+// Render a measure's notes, inserting <backup> when notes switch to a different
+// staff so the time cursor rewinds to the start of the leaving staff's content.
+function notesXml(measure, staves) {
+  let out = '';
+  let prevStaff = null;
+  let sectionElapsed = 0; // divisions written since measure start or last backup
+  for (const n of measure.notes) {
+    if (staves > 1 && prevStaff !== null && n.staff !== prevStaff) {
+      out += `<backup><duration>${sectionElapsed}</duration></backup>`;
+      sectionElapsed = 0;
+    }
+    out += dynamicsXml(n) + noteXml(n, staves);
+    if (!n.chord) sectionElapsed += noteDivisions(n); // chord notes share their root's onset
+    prevStaff = n.staff;
+  }
+  return out;
+}
+
+function measureXml(score, part, measure, isFirst) {
+  const attrs = isFirst ? attributesXml(score, part) : '';
   const tempo = isFirst
     ? `<direction placement="above"><sound tempo="${score.tempo}"/></direction>` : '';
-  const notes = measure.notes.map((n) => dynamicsXml(n) + noteXml(n)).join('');
+  const notes = notesXml(measure, part.staves);
   return `<measure number="${measure.number}">${attrs}${tempo}${notes}</measure>`;
 }
 
 export function serializeMusicXml(score) {
   const part = score.parts[0];
-  const measures = part.measures.map((m, i) => measureXml(score, m, i === 0)).join('');
+  const measures = part.measures.map((m, i) => measureXml(score, part, m, i === 0)).join('');
   return `<?xml version="1.0" encoding="UTF-8"?>`
     + `<score-partwise version="3.1">`
     + `<work><work-title>${esc(score.title)}</work-title></work>`
