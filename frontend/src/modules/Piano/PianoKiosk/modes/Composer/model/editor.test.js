@@ -285,3 +285,87 @@ describe('reflowMeasure — triplet non-multiple-of-6 edge', () => {
     expect(notes.some((n) => n.midi === 62 && n.type === 'whole')).toBe(true);
   });
 });
+
+// --- Unit 8, B22 ------------------------------------------------------------
+describe('midiToPitch', () => {
+  it('spells naturals and sharps (C4=60→C4, 61→C#4, down an octave)', () => {
+    expect(midiToPitch(60)).toEqual({ step: 'C', octave: 4, alter: 0 });
+    expect(midiToPitch(61)).toEqual({ step: 'C', octave: 4, alter: 1 });
+    expect(midiToPitch(48)).toEqual({ step: 'C', octave: 3, alter: 0 });
+  });
+});
+
+describe('nudgePitch', () => {
+  function selectedEditor() {
+    let ed = initEditor(makeEmptyScore());
+    ed = insertNote(ed, { step: 'C', octave: 4 }, { type: 'quarter' });
+    return select(ed, { measureIdx: 0, noteIdx: 0 });
+  }
+  it('raises the selected note by a semitone (C4→C#4) immutably', () => {
+    const ed0 = selectedEditor();
+    const ed1 = nudgePitch(ed0, 1);
+    const note = ed1.score.parts[0].measures[0].notes[0];
+    expect(note.midi).toBe(61);
+    expect(note.pitch).toEqual({ step: 'C', octave: 4, alter: 1 });
+    // immutability
+    expect(ed0.score.parts[0].measures[0].notes[0].midi).toBe(60);
+  });
+  it('lowers by an octave with delta -12', () => {
+    const ed = nudgePitch(selectedEditor(), -12);
+    expect(ed.score.parts[0].measures[0].notes[0].midi).toBe(48);
+  });
+  it('returns the same state when there is no selection', () => {
+    let ed = initEditor(makeEmptyScore());
+    ed = insertNote(ed, { step: 'C', octave: 4 }, { type: 'quarter' });
+    expect(nudgePitch(ed, 1)).toBe(ed);
+  });
+});
+
+describe('moveCaret / select', () => {
+  function threeNoteBars() {
+    // bar0: [C, D] ; bar1: [E]
+    let ed = initEditor(makeEmptyScore());
+    ed = insertNote(ed, { step: 'C', octave: 4 }, { type: 'quarter' });
+    ed = insertNote(ed, { step: 'D', octave: 4 }, { type: 'quarter' });
+    // force a second bar with a note
+    ed = { ...ed, caret: { measureIdx: 1, noteIdx: 0 } };
+    ed = insertNote(ed, { step: 'E', octave: 4 }, { type: 'quarter' });
+    return { ...ed, caret: { measureIdx: 0, noteIdx: 0 } };
+  }
+  it('left clamps at the very start', () => {
+    const ed = threeNoteBars();
+    expect(moveCaret(ed, 'left').caret).toEqual({ measureIdx: 0, noteIdx: 0 });
+  });
+  it('right advances then rolls to the next bar and clamps at the end', () => {
+    let ed = threeNoteBars();
+    ed = moveCaret(ed, 'right'); // {0,1}
+    expect(ed.caret).toEqual({ measureIdx: 0, noteIdx: 1 });
+    ed = moveCaret(ed, 'right'); // {0,2} (insertion point after last)
+    expect(ed.caret).toEqual({ measureIdx: 0, noteIdx: 2 });
+    ed = moveCaret(ed, 'right'); // rolls to {1,0}
+    expect(ed.caret).toEqual({ measureIdx: 1, noteIdx: 0 });
+    ed = moveCaret(ed, 'right'); // {1,1}
+    ed = moveCaret(ed, 'right'); // clamped — last bar, at end
+    expect(ed.caret).toEqual({ measureIdx: 1, noteIdx: 1 });
+  });
+  it('barStart / barEnd jump within the bar', () => {
+    let ed = threeNoteBars();
+    expect(moveCaret(ed, 'barEnd').caret).toEqual({ measureIdx: 0, noteIdx: 2 });
+    ed = { ...ed, caret: { measureIdx: 0, noteIdx: 2 } };
+    expect(moveCaret(ed, 'barStart').caret).toEqual({ measureIdx: 0, noteIdx: 0 });
+  });
+  it('prevBar / nextBar clamp at the ends and never change the score', () => {
+    const ed = threeNoteBars();
+    expect(moveCaret(ed, 'prevBar').caret.measureIdx).toBe(0); // already first
+    const next = moveCaret(ed, 'nextBar');
+    expect(next.caret.measureIdx).toBe(1);
+    expect(next.score).toBe(ed.score); // caret moves don't touch the score
+    expect(moveCaret(next, 'nextBar').caret.measureIdx).toBe(1); // clamp at last
+  });
+  it('select sets and clears the selection', () => {
+    let ed = threeNoteBars();
+    ed = select(ed, { measureIdx: 0, noteIdx: 1 });
+    expect(ed.selection).toEqual({ measureIdx: 0, noteIdx: 1 });
+    expect(select(ed, null).selection).toBeNull();
+  });
+});
