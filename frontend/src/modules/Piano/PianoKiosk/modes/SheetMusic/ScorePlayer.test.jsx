@@ -313,7 +313,7 @@ describe('ScorePlayer — Polish mode (transport-driven)', () => {
     renderPlayer();
     screen.getByText('Polish').click();
     await act(async () => {});
-    screen.getByText('▶').click();
+    screen.getByRole('button', { name: 'Play' }).click();
     await act(async () => {});
     act(() => vi.advanceTimersByTime(4100)); // through the 4-beat @60 count-in (4000ms) → transport starts
 
@@ -330,7 +330,7 @@ describe('ScorePlayer — Polish mode (transport-driven)', () => {
     renderPlayer();
     screen.getByText('Polish').click();
     await act(async () => {});
-    screen.getByText('▶').click();
+    screen.getByRole('button', { name: 'Play' }).click();
     await act(async () => {});
     expect(document.querySelector('.piano-score-countin')).not.toBeNull(); // counting in
     expect(screen.getByText('1 / 4')).toBeTruthy();
@@ -347,7 +347,7 @@ describe('ScorePlayer — Polish mode (transport-driven)', () => {
     renderPlayer();
     screen.getByText('Polish').click();
     await act(async () => {});
-    screen.getByText('▶').click();
+    screen.getByRole('button', { name: 'Play' }).click();
     await act(async () => {});
     expect(document.querySelector('.piano-score-countin')).not.toBeNull();
     act(() => { document.querySelector('.piano-score-player__scroll').click(); }); // tap = abort
@@ -362,7 +362,7 @@ describe('ScorePlayer — Polish mode (transport-driven)', () => {
     renderPlayer();
     screen.getByText('Polish').click();
     await act(async () => {});
-    screen.getByText('▶').click();
+    screen.getByRole('button', { name: 'Play' }).click();
     await act(async () => {});
     act(() => vi.advanceTimersByTime(2100)); // through the 4-beat @120 count-in (2000ms)
     // Play the 4 onsets' expected notes so the final measure isn't silent, and run to the end.
@@ -398,7 +398,7 @@ describe('ScorePlayer — Polish mode (transport-driven)', () => {
     const scroll = document.querySelector('.piano-score-player__scroll');
     act(() => { fireEvent.click(scroll, { clientX: 160, clientY: 100 }); });
     act(() => { fireEvent.click(scroll, { clientX: 160, clientY: 100 }); });
-    screen.getByText('▶').click();
+    screen.getByRole('button', { name: 'Play' }).click();
     await act(async () => {});
     act(() => vi.advanceTimersByTime(4100)); // through the 4-beat @60 count-in → run starts at the in-point
     act(() => vi.advanceTimersByTime(3500)); // several loop periods past the piece end
@@ -429,7 +429,7 @@ describe('ScorePlayer — Listen mode', () => {
     renderPlayer();
     screen.getByText('Listen').click();
     await act(async () => {});
-    screen.getByText('▶').click();
+    screen.getByRole('button', { name: 'Play' }).click();
     await act(async () => {});
     act(() => vi.advanceTimersByTime(100));
     // Audio plane: performed via timestamped sends (NOT pressNote — machine
@@ -437,7 +437,7 @@ describe('ScorePlayer — Listen mode', () => {
     expect(h.sendNoteAt).toHaveBeenCalledWith(40, expect.any(Number), expect.any(Number)); // LH performed
     expect(h.sendNoteAt).toHaveBeenCalledWith(64, expect.any(Number), expect.any(Number)); // RH performed too — full jukebox
     expect(h.pressNote).not.toHaveBeenCalled();
-    screen.getByText('❚❚').click(); // pause mid-note
+    screen.getByRole('button', { name: 'Pause' }).click(); // pause mid-note
     await act(async () => {});
     expect(h.sendPanic).toHaveBeenCalled(); // no droning chord
   });
@@ -455,7 +455,7 @@ describe('ScorePlayer — Listen mode', () => {
     await act(async () => {});
     fireEvent.click(screen.getByRole('radio', { name: 'RH' })); // My part = RH: the user plays staff 0, kiosk must NOT
     await act(async () => {});
-    screen.getByText('▶').click();
+    screen.getByRole('button', { name: 'Play' }).click();
     await act(async () => {});
     act(() => vi.advanceTimersByTime(4100)); // My part is set → count-in (4 beats @60) runs first
     act(() => vi.advanceTimersByTime(100));  // then the kiosk performs
@@ -469,13 +469,13 @@ describe('ScorePlayer — Listen mode', () => {
     screen.getByText('Listen').click();
     await act(async () => {});
     // My part = None → Play starts immediately (no count-in overlay).
-    screen.getByText('▶').click();
+    screen.getByRole('button', { name: 'Play' }).click();
     await act(async () => {});
     expect(document.querySelector('.piano-score-countin')).toBeNull();
     // Reset, claim a part, play again → count-in now runs.
     act(() => { fireEvent.click(screen.getByRole('radio', { name: 'RH' })); });
     // (a fresh Play after the timeline change)
-    if (screen.queryByText('▶')) { screen.getByText('▶').click(); await act(async () => {}); }
+    if (screen.queryByRole('button', { name: 'Play' })) { screen.getByRole('button', { name: 'Play' }).click(); await act(async () => {}); }
     expect(document.querySelector('.piano-score-countin')).not.toBeNull();
   });
 
@@ -487,7 +487,7 @@ describe('ScorePlayer — Listen mode', () => {
     renderPlayer();
     screen.getByText('Listen').click();
     await act(async () => {});
-    screen.getByText('▶').click();
+    screen.getByRole('button', { name: 'Play' }).click();
     await act(async () => {});
     act(() => vi.advanceTimersByTime(50)); // scheduled ahead — no timer advance strictly needed
     expect(h.sendNoteAt).toHaveBeenCalled();
@@ -506,11 +506,11 @@ describe('ScorePlayer — Listen mode', () => {
     renderPlayer();
     screen.getByText('Listen').click();
     await act(async () => {});
-    screen.getByText('▶').click();
+    screen.getByRole('button', { name: 'Play' }).click();
     await act(async () => {});
     act(() => vi.advanceTimersByTime(100)); // note 40 scheduled + sounding
     h.sendPanic.mockClear();
-    screen.getByText('❚❚').click(); // pause
+    screen.getByRole('button', { name: 'Pause' }).click(); // pause
     await act(async () => {});
     const panicsAtPause = h.sendPanic.mock.calls.length;
     expect(panicsAtPause).toBeGreaterThanOrEqual(1); // immediate flush killed the sounding note
@@ -526,14 +526,14 @@ describe('ScorePlayer — Listen mode', () => {
     renderPlayer();
     screen.getByText('Listen').click();
     await act(async () => {});
-    screen.getByText('▶').click();
+    screen.getByRole('button', { name: 'Play' }).click();
     await act(async () => {});
     act(() => vi.advanceTimersByTime(100)); // playing, note sounding
-    screen.getByText('❚❚').click();        // pause → immediate flush + delayed panic armed
+    screen.getByRole('button', { name: 'Pause' }).click();        // pause → immediate flush + delayed panic armed
     await act(async () => {});
     act(() => vi.advanceTimersByTime(100)); // still inside the ~460ms window
     h.sendPanic.mockClear();
-    screen.getByText('▶').click();          // resume within the window → must cancel the stale panic
+    screen.getByRole('button', { name: 'Play' }).click();          // resume within the window → must cancel the stale panic
     await act(async () => {});
     act(() => vi.advanceTimersByTime(500)); // advance past where the stale panic would have fired
     expect(h.sendPanic).not.toHaveBeenCalled(); // resumed playback was NOT cut
@@ -548,7 +548,7 @@ describe('ScorePlayer — Listen mode', () => {
     fireEvent.click(screen.getByRole('button', { name: /^tempo/i }));
     fireEvent.click(screen.getByRole('button', { name: /^50%/ }));
     await act(async () => {});
-    screen.getByText('▶').click();
+    screen.getByRole('button', { name: 'Play' }).click();
     await act(async () => {});
     act(() => vi.advanceTimersByTime(1050)); // < 2000ms → not yet advanced
     expect(screen.getByText('1 / 4')).toBeTruthy();
@@ -595,15 +595,15 @@ describe('ScorePlayer — Listen mode', () => {
     renderPlayer();
     screen.getByText('Listen').click();
     await act(async () => {});
-    screen.getByText('▶').click(); // My part = None → plays immediately
+    screen.getByRole('button', { name: 'Play' }).click(); // My part = None → plays immediately
     await act(async () => {});
     act(() => vi.advanceTimersByTime(100));
-    expect(screen.getByText('❚❚')).toBeTruthy(); // playing
+    expect(screen.getByRole('button', { name: 'Pause' })).toBeInTheDocument(); // playing
     h.sendPanic.mockClear();
     act(() => { fireEvent.click(screen.getByRole('button', { name: /transpose up/i })); });
     await act(async () => {});
     expect(h.sendPanic).toHaveBeenCalled(); // silenced on the view change
-    expect(screen.getByText('▶')).toBeTruthy(); // paused
+    expect(screen.getByRole('button', { name: 'Play' })).toBeInTheDocument(); // paused
   });
 
   it('silences sounding notes on tap-seek in Play mode (no stuck note)', async () => {
@@ -614,7 +614,7 @@ describe('ScorePlayer — Listen mode', () => {
     renderPlayer();
     screen.getByText('Listen').click();
     await act(async () => {});
-    screen.getByText('▶').click();
+    screen.getByRole('button', { name: 'Play' }).click();
     await act(async () => {});
     act(() => vi.advanceTimersByTime(100)); // note 40 now sounding
     h.sendPanic.mockClear();
@@ -650,10 +650,10 @@ describe('ScorePlayer — Listen mode', () => {
     act(() => { fireEvent.click(scroll, { clientX: 160, clientY: 100 }); });
     act(() => { fireEvent.click(scroll, { clientX: 160, clientY: 100 }); });
     expect(screen.getByText('m 2 / 2')).toBeTruthy();
-    screen.getByText('▶').click(); // My part = None → plays immediately
+    screen.getByRole('button', { name: 'Play' }).click(); // My part = None → plays immediately
     await act(async () => {});
     act(() => vi.advanceTimersByTime(1100)); // past the final step @60bpm → would normally finish
-    expect(screen.getByText('❚❚')).toBeTruthy(); // still playing — wrapped, not done
+    expect(screen.getByRole('button', { name: 'Pause' })).toBeInTheDocument(); // still playing — wrapped, not done
     expect(screen.getByText('m 2 / 2')).toBeTruthy(); // back at the loop in-point
     // The wrap arms the silence flush; its delayed panic (lookahead+60ms) kills
     // any in-flight tail sends so nothing drones across the loop boundary.
@@ -692,7 +692,7 @@ describe('ScorePlayer — Listen mode', () => {
     const scroll = document.querySelector('.piano-score-player__scroll');
     act(() => { fireEvent.click(scroll, { clientX: 160, clientY: 100 }); });
     act(() => { fireEvent.click(scroll, { clientX: 160, clientY: 100 }); });
-    screen.getByText('▶').click();
+    screen.getByRole('button', { name: 'Play' }).click();
     await act(async () => {});
     act(() => vi.advanceTimersByTime(4100)); // count-in (my part set) → zero-span run ends instantly → dwell armed
     h.sendNoteAt.mockClear();
