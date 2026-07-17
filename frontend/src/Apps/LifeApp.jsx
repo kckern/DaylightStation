@@ -1,10 +1,12 @@
 import React, { useMemo, useEffect } from 'react';
-import { MantineProvider, AppShell, NavLink, Title, Group, Text, Select } from '@mantine/core';
+import { MantineProvider, AppShell, NavLink, Title, Group, Text, Select, Burger } from '@mantine/core';
+import { useDisclosure } from '@mantine/hooks';
 import { Notifications } from '@mantine/notifications';
 import { Routes, Route, Navigate, useNavigate, useLocation, useParams } from 'react-router-dom';
 import { IconDashboard, IconTimeline, IconTarget, IconHeart, IconBrain, IconDiamond, IconShield, IconCalendarEvent, IconMessageCircle } from '@tabler/icons-react';
 import '@mantine/core/styles.css';
 import '@mantine/notifications/styles.css';
+import './LifeApp.scss';
 import { configure } from '../lib/logging/Logger.js';
 import { getChildLogger } from '../lib/logging/singleton.js';
 import useDocumentTitle from '../hooks/useDocumentTitle.js';
@@ -58,6 +60,7 @@ const LifeApp = () => {
   const logger = useMemo(() => getChildLogger({ app: 'life' }), []);
   const navigate = useNavigate();
   const location = useLocation();
+  const [navOpened, { toggle: toggleNav, close: closeNav }] = useDisclosure(false);
   const { user: lifeUser, users: lifeUsers, setUsername } = useLifeUser();
 
   // Render the in-app fallback channel for the notification service. Most
@@ -88,12 +91,15 @@ const LifeApp = () => {
       <LifeUserContext.Provider value={lifeUser}>
       <AppShell
         header={{ height: 48 }}
-        navbar={{ width: 200, breakpoint: 'sm' }}
+        navbar={{ width: 200, breakpoint: 'sm', collapsed: { mobile: !navOpened } }}
         padding="md"
       >
         <AppShell.Header>
           <Group h="100%" px="md" justify="space-between">
-            <Title order={4}>Life</Title>
+            <Group gap="sm">
+              <Burger opened={navOpened} onClick={toggleNav} hiddenFrom="sm" size="sm" />
+              <Title order={4}>Life</Title>
+            </Group>
             {/* User switcher — only meaningful in a multi-member household. */}
             {lifeUsers.length > 1 && (
               <Select
@@ -114,13 +120,13 @@ const LifeApp = () => {
             label="Now"
             leftSection={<IconDashboard size={16} />}
             active={isActive('now')}
-            onClick={() => navigate('/life/now')}
+            onClick={() => { navigate('/life/now'); closeNav(); }}
           />
           <NavLink
             label="Log"
             leftSection={<IconTimeline size={16} />}
             active={isActive('log')}
-            onClick={() => navigate('/life/log')}
+            onClick={() => { navigate('/life/log'); closeNav(); }}
           />
           <NavLink
             label="Plan"
@@ -128,22 +134,22 @@ const LifeApp = () => {
             active={isActive('plan')}
             defaultOpened={isActive('plan')}
           >
-            <NavLink label="Purpose" leftSection={<IconHeart size={14} />} active={location.pathname === '/life/plan'} onClick={() => navigate('/life/plan')} />
-            <NavLink label="Goals" leftSection={<IconTarget size={14} />} active={isActive('plan/goals')} onClick={() => navigate('/life/plan/goals')} />
-            <NavLink label="Beliefs" leftSection={<IconBrain size={14} />} active={isActive('plan/beliefs')} onClick={() => navigate('/life/plan/beliefs')} />
-            <NavLink label="Values" leftSection={<IconDiamond size={14} />} active={isActive('plan/values')} onClick={() => navigate('/life/plan/values')} />
-            <NavLink label="Qualities" leftSection={<IconShield size={14} />} active={isActive('plan/qualities')} onClick={() => navigate('/life/plan/qualities')} />
-            <NavLink label="Ceremonies" leftSection={<IconCalendarEvent size={14} />} active={isActive('plan/ceremonies')} onClick={() => navigate('/life/plan/ceremonies')} />
+            <NavLink label="Purpose" leftSection={<IconHeart size={14} />} active={location.pathname === '/life/plan'} onClick={() => { navigate('/life/plan'); closeNav(); }} />
+            <NavLink label="Goals" leftSection={<IconTarget size={14} />} active={isActive('plan/goals')} onClick={() => { navigate('/life/plan/goals'); closeNav(); }} />
+            <NavLink label="Beliefs" leftSection={<IconBrain size={14} />} active={isActive('plan/beliefs')} onClick={() => { navigate('/life/plan/beliefs'); closeNav(); }} />
+            <NavLink label="Values" leftSection={<IconDiamond size={14} />} active={isActive('plan/values')} onClick={() => { navigate('/life/plan/values'); closeNav(); }} />
+            <NavLink label="Qualities" leftSection={<IconShield size={14} />} active={isActive('plan/qualities')} onClick={() => { navigate('/life/plan/qualities'); closeNav(); }} />
+            <NavLink label="Ceremonies" leftSection={<IconCalendarEvent size={14} />} active={isActive('plan/ceremonies')} onClick={() => { navigate('/life/plan/ceremonies'); closeNav(); }} />
           </NavLink>
           <NavLink
             label="Coach"
             leftSection={<IconMessageCircle size={16} />}
             active={isActive('coach')}
-            onClick={() => navigate('/life/coach')}
+            onClick={() => { navigate('/life/coach'); closeNav(); }}
           />
         </AppShell.Navbar>
 
-        <AppShell.Main>
+        <AppShell.Main className="life-app-root">
           <Routes>
             <Route index element={<Navigate to="now" />} />
             <Route path="now" element={<Dashboard />} />
