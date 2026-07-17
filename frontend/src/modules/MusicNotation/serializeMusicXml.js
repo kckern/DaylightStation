@@ -1,7 +1,25 @@
 // serializeMusicXml.js — Score model → MusicXML string. Inverse of parseMusicXml.
 // Pure string-building (on the engrave hot path). Emits <divisions>=score.divisions.
 
+import { noteDivisions } from '#frontend/modules/Piano/PianoKiosk/modes/Composer/model/note.js';
+
 const esc = (s) => String(s).replace(/[<>&]/g, (c) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;' }[c]));
+
+function pitchXml(p) {
+  return `<pitch><step>${p.step}</step>`
+    + (p.alter ? `<alter>${p.alter}</alter>` : '')
+    + `<octave>${p.octave}</octave></pitch>`;
+}
+
+function noteXml(note) {
+  const dur = noteDivisions(note);
+  const body = note.rest ? `<rest/>` : pitchXml(note.pitch);
+  const dots = '<dot/>'.repeat(note.dots || 0);
+  return `<note>${note.chord ? '<chord/>' : ''}${body}`
+    + `<duration>${dur}</duration>`
+    + `<type>${note.type}</type>${dots}`
+    + `</note>`;
+}
 
 function attributesXml(score) {
   return `<attributes>`
@@ -16,7 +34,7 @@ function measureXml(score, measure, isFirst) {
   const attrs = isFirst ? attributesXml(score) : '';
   const tempo = isFirst
     ? `<direction placement="above"><sound tempo="${score.tempo}"/></direction>` : '';
-  const notes = ''; // filled in by later tasks
+  const notes = measure.notes.map(noteXml).join('');
   return `<measure number="${measure.number}">${attrs}${tempo}${notes}</measure>`;
 }
 
