@@ -44,7 +44,7 @@ export function NowPlayingView() {
   const { snapshot, portability } = useSessionController('local');
   const item = snapshot?.currentItem;
   const hostRef = useRef(null);
-  usePlayerHost(hostRef);
+  usePlayerHost(hostRef, 2);
   const mediaEl = useHostMediaElement(hostRef, item?.contentId ?? null);
   const { pop } = useNav();
 

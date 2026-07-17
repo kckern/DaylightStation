@@ -3,9 +3,9 @@
 // attaches side effects (persistence, recents, logging), and mounts the
 // player bridge plus the URL-command / external-control / state-broadcast
 // hooks. Everything below the provider sees only the controller interface.
-import React, { useMemo, useEffect, useState } from 'react';
+import React, { useMemo, useEffect } from 'react';
 import { LocalSessionContext } from './LocalSessionContext.js';
-import { PlayerHostContext, PlayerHostSetterContext } from './playerHostContext.js';
+import { PlayerHostProvider } from './PlayerHostProvider.jsx';
 import { createLocalSessionController } from './LocalSessionController.js';
 import { attachPersistence, attachRecents, attachLogging } from './attachments.js';
 import {
@@ -94,17 +94,13 @@ export function LocalSessionProvider({ children }) {
     return () => window.removeEventListener('beforeunload', onUnload);
   }, [controller, clientId]);
 
-  const [playerHostEl, setPlayerHostEl] = useState(null);
-
   return (
     <LocalSessionContext.Provider value={value}>
-      <PlayerHostContext.Provider value={playerHostEl}>
-        <PlayerHostSetterContext.Provider value={setPlayerHostEl}>
-          <SessionSideEffects />
-          {children}
-          <PlayerBridge />
-        </PlayerHostSetterContext.Provider>
-      </PlayerHostContext.Provider>
+      <PlayerHostProvider>
+        <SessionSideEffects />
+        {children}
+        <PlayerBridge />
+      </PlayerHostProvider>
     </LocalSessionContext.Provider>
   );
 }
