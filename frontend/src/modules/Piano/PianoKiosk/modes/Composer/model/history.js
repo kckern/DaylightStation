@@ -13,6 +13,11 @@
 //
 // EditorState carries `history: { past: [], future: [] }` (seeded by initEditor).
 // `past` is capped at HISTORY_CAP (oldest dropped).
+//
+// Cost note (accepted v1 tradeoff): each mutating command deep-clones the whole
+// score (structuredClone in editor.js) and we retain up to HISTORY_CAP=200 whole
+// snapshots. Kid-scale scores are small, so this is fine for v1.
+// TODO: structural sharing / patch-based history if scores grow.
 
 export const HISTORY_CAP = 200;
 

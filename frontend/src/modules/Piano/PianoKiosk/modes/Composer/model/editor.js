@@ -161,10 +161,19 @@ function splitElement({ isRest, pitch, baseOpts }, total, roomInStart, capacity)
       // Rests DON'T tie: each bar's chunk becomes independent rests.
       return { offset: pc.offset, note: makeRest({ type: pc.type, dots: 0, triplet: false, ...sv }) };
     }
+    // TODO: if the note being split already had tie:'start' (incoming tie), the
+    // first piece should be 'both'. Edge-only until real tie-pairing lands.
     const tie = i === 0 ? 'start' : i === n - 1 ? 'stop' : 'both';
+    // Rich annotations (lyric/dynamics/articulations) belong on the note's ONSET,
+    // so seed them onto the FIRST piece only. Interior/final tied pieces must NOT
+    // repeat them (a lyric syllable or a dynamic marking sounds once). Dropping
+    // this = data loss across a barline split (Unit 9 data-loss gate).
+    const rich = i === 0
+      ? { lyric: baseOpts.lyric, dynamics: baseOpts.dynamics, articulations: baseOpts.articulations }
+      : {};
     return {
       offset: pc.offset,
-      note: makeNote(pitch, { type: pc.type, dots: 0, triplet: false, tie, ...sv }),
+      note: makeNote(pitch, { type: pc.type, dots: 0, triplet: false, tie, ...sv, ...rich }),
     };
   });
 }
@@ -408,15 +417,23 @@ export function toggleTriplet(state, { measureIdx, noteIdx }) {
  * note in a later unit. Tie doesn't change duration, so no reflow. Immutable.
  */
 export function toggleTie(state, { measureIdx, noteIdx }) {
+  // No-op guard: an out-of-range target changes nothing, so return the SAME
+  // state reference — history's reference check then skips a bogus undo entry.
+  const old = state.score.parts[0]?.measures[measureIdx]?.notes[noteIdx];
+  if (!old) return state;
   const score = cloneScore(state.score);
   const part0 = score.parts[0];
-  const old = part0.measures[measureIdx].notes[noteIdx];
-  replaceNoteInPart(part0, measureIdx, noteIdx, rebuildDuration(old, { tie: old.tie ? null : 'start' }));
+  const target = part0.measures[measureIdx].notes[noteIdx];
+  replaceNoteInPart(part0, measureIdx, noteIdx, rebuildDuration(target, { tie: target.tie ? null : 'start' }));
   return { ...state, score, dirty: true, revision: state.revision + 1 };
 }
 
 /** Remove the note at `pos`; clamp the caret to a valid position. Immutable. */
 export function deleteNote(state, { measureIdx, noteIdx }) {
+  // No-op guard: nothing to remove at an out-of-range index → return the SAME
+  // state reference so history doesn't record an empty change.
+  const measure0 = state.score.parts[0]?.measures[measureIdx];
+  if (!measure0 || noteIdx < 0 || noteIdx >= measure0.notes.length) return state;
   const score = cloneScore(state.score);
   const part0 = score.parts[0];
   const measure = part0.measures[measureIdx];

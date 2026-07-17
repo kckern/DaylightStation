@@ -268,6 +268,55 @@ describe('toggleDot / toggleTriplet / toggleTie', () => {
   });
 });
 
+describe('C1 — note annotations survive a barline split', () => {
+  const countCarrying = (notes, field) =>
+    notes.filter((n) => n[field] !== undefined && n[field] !== null).length;
+
+  it('insertNote overflow keeps lyric/dynamics/articulations on exactly the FIRST piece', () => {
+    // 4/4: fill a half (48), then insert an annotated whole (96) → 48 fits in bar 0,
+    // 48 spills to bar 1. The chain must carry each annotation exactly once, on the head.
+    let ed = initEditor(makeEmptyScore());
+    ed = insertNote(ed, { step: 'G', octave: 4 }, { type: 'half' });
+    ed = insertNote(ed, { step: 'C', octave: 4 }, {
+      type: 'whole', lyric: 'la', dynamics: 'f', articulations: ['staccato'],
+    });
+    const chainNotes = [];
+    for (const m of ed.score.parts[0].measures) {
+      for (const n of m.notes) if (n.midi === 60) chainNotes.push(n);
+    }
+    expect(chainNotes.length).toBeGreaterThan(1); // it really did split
+    expect(countCarrying(chainNotes, 'lyric')).toBe(1);
+    expect(countCarrying(chainNotes, 'dynamics')).toBe(1);
+    expect(countCarrying(chainNotes, 'articulations')).toBe(1);
+    // and it's the FIRST piece (tie 'start')
+    const first = chainNotes[0];
+    expect(first.tie).toBe('start');
+    expect(first.lyric).toBe('la');
+    expect(first.dynamics).toBe('f');
+    expect(first.articulations).toEqual(['staccato']);
+  });
+
+  it('time re-bar keeps an annotated straddling note\'s annotation exactly once on the first piece', () => {
+    // 4/4 [half, annotated half] → 3/4: second half straddles the 72 barline.
+    let ed = initEditor(makeEmptyScore());
+    ed = insertNote(ed, { step: 'C', octave: 4 }, { type: 'half' });
+    ed = insertNote(ed, { step: 'E', octave: 4 }, {
+      type: 'half', lyric: 'oo', dynamics: 'mp', articulations: ['tenuto'],
+    });
+    ed = setAttribute(ed, 'time', { beats: 3, beatType: 4 });
+    const chainNotes = [];
+    for (const m of ed.score.parts[0].measures) {
+      for (const n of m.notes) if (n.midi === 64) chainNotes.push(n);
+    }
+    expect(chainNotes.length).toBeGreaterThan(1);
+    expect(countCarrying(chainNotes, 'lyric')).toBe(1);
+    expect(countCarrying(chainNotes, 'dynamics')).toBe(1);
+    expect(countCarrying(chainNotes, 'articulations')).toBe(1);
+    expect(chainNotes[0].tie).toBe('start');
+    expect(chainNotes[0].lyric).toBe('oo');
+  });
+});
+
 describe('reflowMeasure — triplet non-multiple-of-6 edge', () => {
   it('a triplet already in the bar does NOT throw when a following note is relengthened', () => {
     // Put a triplet eighth (8 divs) in the bar, then a quarter, then lengthen the
