@@ -15,12 +15,18 @@ import { StickyDurationHud } from './StickyDurationHud.jsx';
 
 const logger = () => getLogger().child({ component: 'piano-composer' });
 
-// Caret model position → engraved step index: count notes before the caret's measure + noteIdx.
-function caretStepIndex(score, caret) {
+// Caret model position → engraved step index. The renderer's buildSteps
+// (osmdRender.js) groups same-onset notes — chords — into a SINGLE step, but
+// the model stores each chord note as its own array entry flagged `chord:
+// true` (model/editor.js). So a step index must count ONSET notes only (i.e.
+// notes where !note.chord), never raw note-array length, or the caret drifts
+// right by (chord-size - 1) per chord at/before it.
+export function caretStepIndex(score, caret) {
   const measures = score?.parts?.[0]?.measures || [];
+  const onsets = (notes = [], upto = notes.length) => notes.slice(0, upto).filter((n) => !n.chord).length;
   let idx = 0;
-  for (let m = 0; m < caret.measureIdx; m++) idx += (measures[m]?.notes?.length || 0);
-  return idx + caret.noteIdx;
+  for (let m = 0; m < caret.measureIdx; m++) idx += onsets(measures[m]?.notes);
+  return idx + onsets(measures[caret.measureIdx]?.notes, caret.noteIdx);
 }
 
 export function EditorSurface({ initialScore, songId, initialRevision = 1, save, config = {} }) {
