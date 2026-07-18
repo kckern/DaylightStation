@@ -42,6 +42,29 @@ in `app.mjs`) rebroadcasts these on `food-scale` and persists two record kinds:
   not. Pressing the button is the explicit "log this now" gesture, so the record
   carries `grams`/`unit`/`stable` from the moment of the press.
 
+## Nutribot integration
+
+A second, independent consumer of the `food-scale` topic
+(`backend/src/3_applications/hardware/ScaleNutribotBridge.mjs`) turns weights into
+Telegram density-logging prompts for the household head. Two paths:
+
+- **AUTO** — the scale never returns to ~0 (it rests at a variable load on the shelf),
+  so the bridge learns that resting load as a **baseline** and pushes a **new prompt for
+  every distinct settled value that rises above it**. Re-settles within
+  `baseline_tolerance_g` are suppressed (jostle); a settle back near/below baseline ends
+  the session and re-learns the resting load, so the next placement pushes fresh.
+  **Weights never expire** — a prompt waits until you answer it. The one unavoidable cost
+  of not having an orientation sensor: flipping the scale onto its shelf looks like a
+  placement, so it emits **one** stray prompt (just ignore it — it is not repeated).
+- **FORCE** — an **ESP button press logs the live weight right now**, bypassing the
+  baseline/dedup gates entirely. This is the reliable manual override for anything the
+  auto heuristic would miss or mis-gate (a small item, a load that never rose far above
+  the resting baseline, etc.).
+
+Tuning knobs live in the `nutribot:` block of `scales.yml` (see
+[`config.example.yml`](config.example.yml)); the persistence arm above is decoupled and
+records to disk regardless.
+
 ## Build & flash
 
 Prereqs: PlatformIO (`pio`), Node, the SM ATOM on USB (FTDI `/dev/cu.usbserial-*`).

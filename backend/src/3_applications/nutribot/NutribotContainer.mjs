@@ -34,7 +34,6 @@ import { LogFoodFromScale } from './usecases/LogFoodFromScale.mjs';
 import { SelectScaleContainer } from './usecases/SelectScaleContainer.mjs';
 import { SelectScaleDensity } from './usecases/SelectScaleDensity.mjs';
 import { ShowScaleDensityHelp } from './usecases/ShowScaleDensityHelp.mjs';
-import { ExpireScaleLog } from './usecases/ExpireScaleLog.mjs';
 import { LogScaleFoodFromText } from './usecases/LogScaleFoodFromText.mjs';
 
 /**
@@ -94,7 +93,6 @@ export class NutribotContainer {
   #selectScaleContainer;
   #selectScaleDensity;
   #showScaleDensityHelp;
-  #expireScaleLog;
   #logScaleFoodFromText;
 
   /**
@@ -318,18 +316,6 @@ export class NutribotContainer {
       });
     }
     return this.#showScaleDensityHelp;
-  }
-
-  getExpireScaleLog() {
-    if (!this.#expireScaleLog) {
-      this.#expireScaleLog = new ExpireScaleLog({
-        messagingGateway: this.getMessagingGateway(),
-        foodLogStore: this.#foodLogStore,
-        conversationStateStore: this.#conversationStateStore,
-        logger: this.#logger,
-      });
-    }
-    return this.#expireScaleLog;
   }
 
   getLogScaleFoodFromText() {
