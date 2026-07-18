@@ -1,30 +1,36 @@
 #!/usr/bin/env node
 /**
- * Camera Cold Archive — CLI entry point.
+ * Camera Cold Archive — backfill CLI (host).
  *
- *   ledger            Pipeline C: detection metadata only. No downloads.
- *   archive           Pipeline A: scored session selection + day/night timelapse.
- *   backfill-untagged Pipeline B: hard timelapse + comprehensive 24/7 audio.
+ * The nightly pipelines (ledger, archive) run in-app as scheduler jobs; see
+ * backend/src/3_applications/camera/. This CLI exists for the work that is
+ * inherently a one-off host operation:
  *
- * Every mode supports --dry-run, which plans and reports projected sizes
- * without fetching anything. Given a real Pipeline B run is a ~7-hour, ~500 GB
- * operation, inspecting the plan first is a requirement, not a convenience.
+ *   backfill-untagged  Pipeline B — the range where no trigger data survives.
+ *                      Hard-compressed day/night timelapses plus comprehensive
+ *                      24/7 audio, over a ~500 GB transient download. Runs
+ *                      overnight, sequentially, resumable.
+ *   plan               Dry-run Pipeline A selection for a day, to tune the
+ *                      scoring weights against real metadata without encoding.
+ *
+ * All logic is imported from the backend layers — this is an entry point, not
+ * a second implementation.
  *
  * Design: docs/superpowers/specs/2026-07-18-camera-cold-archive-design.md
  */
 
-import { readFile } from 'fs/promises';
-import { mkdir, rm } from 'fs/promises';
+import { readFile, mkdir, rm } from 'fs/promises';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import yaml from 'js-yaml';
 
 import { ReolinkClient, makeSource } from '#adapters/camera/ReolinkRecordingAdapter.mjs';
-import { toClip, sessionize, labelSessions, selectSessions } from '#domains/camera/selection.mjs';
+import { ArchiveEncoder } from '#adapters/camera/ArchiveEncoder.mjs';
+import { ArchiveManifestStore } from '#adapters/camera/ArchiveManifestStore.mjs';
+import { ArchiveCameraDay } from '#apps/camera/usecases/ArchiveCameraDay.mjs';
+import { readLedger } from '#apps/camera/usecases/BuildDetectionLedger.mjs';
+import { toClip } from '#domains/camera/selection.mjs';
 import { sunTimes, phaseAt } from '#domains/camera/sun.mjs';
-import { buildLedgerRecords, writeLedger, readLedger } from '#apps/camera/usecases/BuildDetectionLedger.mjs';
-import { encodeSession, encodeTimelapse, extractAudio } from './encode.lib.mjs';
-import { readManifest, writeManifest, buildManifest, isComplete, markInProgress } from './manifest.lib.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(HERE, '../..');
@@ -35,18 +41,8 @@ const REPO_ROOT = path.resolve(HERE, '../..');
 
 function parseArgs(argv) {
   const [first, ...rest] = argv;
-  // A leading flag means no mode was given — treat it as a help request rather
-  // than trying to load config for a mode called "--help".
   const mode = first && !first.startsWith('-') ? first : null;
-  const opts = {
-    mode,
-    help: !mode,
-    dryRun: false,
-    camera: null,
-    day: null,
-    range: null,
-    config: null,
-  };
+  const opts = { mode, help: !mode, dryRun: false, camera: null, day: null, range: null, config: null };
   if (!mode && first) rest.unshift(first);
   for (let i = 0; i < rest.length; i++) {
     const arg = rest[i];
@@ -60,26 +56,18 @@ function parseArgs(argv) {
   return opts;
 }
 
-async function loadConfig(configPath) {
-  const file = configPath ?? path.join(HERE, 'config.yml');
-  return yaml.load(await readFile(file, 'utf8'));
-}
+const loadConfig = async (p) => yaml.load(await readFile(p ?? path.join(HERE, 'config.yml'), 'utf8'));
 
 /**
- * Resolve a data-volume-relative path.
- *
  * `data/` is a bind mount, not part of the repo — on this host the real tree
- * lives at DAYLIGHT_BASE_PATH. Resolving against the repo root silently finds
- * nothing, so the base path is honoured first and the repo is only a fallback.
+ * lives at DAYLIGHT_BASE_PATH. Resolving against the repo root finds nothing.
  */
 function resolveDataPath(relative) {
-  // Pick up DAYLIGHT_BASE_PATH from the project .env if the caller did not
-  // export it, so the script works when invoked directly.
   if (!process.env.DAYLIGHT_BASE_PATH && typeof process.loadEnvFile === 'function') {
     try {
       process.loadEnvFile(path.join(REPO_ROOT, '.env'));
     } catch {
-      /* no .env — fall through to the repo-relative default */
+      /* no .env — fall back to repo-relative */
     }
   }
   const base = process.env.DAYLIGHT_BASE_PATH;
@@ -93,10 +81,7 @@ async function loadAuth(config) {
     raw = await readFile(file, 'utf8');
   } catch (err) {
     if (err.code === 'ENOENT') {
-      throw new Error(
-        `Reolink credentials not found at ${file}. ` +
-          'Set DAYLIGHT_BASE_PATH (see .env) or adjust auth.file in config.yml.',
-      );
+      throw new Error(`Reolink credentials not found at ${file}. Set DAYLIGHT_BASE_PATH (see .env).`);
     }
     if (err.code === 'EACCES') {
       throw new Error(`Cannot read ${file} — run as a user with access to the data volume.`);
@@ -104,9 +89,7 @@ async function loadAuth(config) {
     throw err;
   }
   const auth = yaml.load(raw);
-  if (!auth?.username || !auth?.password) {
-    throw new Error(`Reolink credentials missing username/password in ${file}`);
-  }
+  if (!auth?.username || !auth?.password) throw new Error(`Missing username/password in ${file}`);
   return auth;
 }
 
@@ -114,35 +97,33 @@ async function loadAuth(config) {
 // Dates
 // ---------------------------------------------------------------------------
 
-/** Local calendar date, not UTC — recordings are searched by local day. */
+const localDayOf = (d) =>
+  [d.getFullYear(), String(d.getMonth() + 1).padStart(2, '0'), String(d.getDate()).padStart(2, '0')].join('-');
+
 function localDay(offsetDays = 0) {
   const d = new Date();
   d.setDate(d.getDate() + offsetDays);
-  return [
-    d.getFullYear(),
-    String(d.getMonth() + 1).padStart(2, '0'),
-    String(d.getDate()).padStart(2, '0'),
-  ].join('-');
+  return localDayOf(d);
 }
 
 function expandRange(range) {
-  const [from, to] = range.split('..');
+  const [from, to] = String(range).split('..');
+  if (!from || !to) throw new Error(`Invalid range "${range}" (expected YYYY-MM-DD..YYYY-MM-DD)`);
   const days = [];
   const cursor = new Date(`${from}T12:00:00`);
   const end = new Date(`${to}T12:00:00`);
   while (cursor <= end) {
-    days.push(cursor.toISOString().slice(0, 10));
+    days.push(localDayOf(cursor));
     cursor.setDate(cursor.getDate() + 1);
   }
   return days;
 }
 
-/**
- * `yesterday` is the value a nightly cron should use: it archives a COMPLETED
- * day. Running `today` from cron captures only the hours elapsed so far.
- */
-function resolveDays(opts) {
+function resolveDays(opts, config) {
   if (opts.range) return expandRange(opts.range);
+  if (opts.mode === 'backfill-untagged' && config.backfill?.untagged?.range) {
+    return expandRange(config.backfill.untagged.range);
+  }
   if (!opts.day || opts.day === 'today') return [localDay(0)];
   if (opts.day === 'yesterday') return [localDay(-1)];
   if (!/^\d{4}-\d{2}-\d{2}$/.test(opts.day)) {
@@ -155,213 +136,126 @@ function resolveDays(opts) {
 // Wiring
 // ---------------------------------------------------------------------------
 
+const abs = (p) => (path.isAbsolute(p) ? p : path.join(REPO_ROOT, p));
+
 function buildSources(config, auth, cameraCfg, logger) {
   const streamType = config.sources.streamType;
-  const cameraClient = new ReolinkClient({ host: cameraCfg.host, ...auth, logger });
-  const nvrClient = new ReolinkClient({ host: config.nvr.host, ...auth, logger });
   return {
-    camera: makeSource({ kind: 'camera', client: cameraClient, channel: 0, streamType }),
-    nvr: makeSource({ kind: 'nvr', client: nvrClient, channel: cameraCfg.nvrChannel, streamType }),
+    camera: makeSource({
+      kind: 'camera',
+      client: new ReolinkClient({ host: cameraCfg.host, ...auth, logger }),
+      channel: 0,
+      streamType,
+    }),
+    nvr: makeSource({
+      kind: 'nvr',
+      client: new ReolinkClient({ host: config.nvr.host, ...auth, logger }),
+      channel: cameraCfg.nvrChannel,
+      streamType,
+    }),
   };
 }
 
-function resolveLedgerDests(config) {
-  return config.storage.ledgerPaths.map((p) => (path.isAbsolute(p) ? p : path.join(REPO_ROOT, p)));
-}
-
-function resolveArchiveRoots(config) {
-  const hot = path.isAbsolute(config.storage.hotPath)
-    ? config.storage.hotPath
-    : path.join(REPO_ROOT, config.storage.hotPath);
-  return { hot, nas: config.storage.nasPath };
+function selectCameras(config, opts) {
+  if (!opts.camera) return config.cameras;
+  const found = config.cameras.filter((c) => c.id === opts.camera);
+  if (!found.length) throw new Error(`Unknown camera: ${opts.camera}`);
+  return found;
 }
 
 // ---------------------------------------------------------------------------
-// Pipeline C — detection ledger
+// plan — dry-run Pipeline A selection (tuning tool)
 // ---------------------------------------------------------------------------
 
-async function runLedger({ config, auth, days, opts, logger }) {
-  const dests = resolveLedgerDests(config);
-  const results = [];
+async function runPlan({ config, auth, days, opts, logger }) {
+  const hotPath = abs(config.storage.hotPath);
+  const manifestStore = new ArchiveManifestStore({ root: hotPath, logger });
+  const ledgerRoot = abs(config.storage.ledgerPaths[0]);
 
   for (const cameraCfg of selectCameras(config, opts)) {
     const sources = buildSources(config, auth, cameraCfg, logger);
-    const bitMap = config.classification.filenameBits?.[cameraCfg.id] ?? {};
-
-    for (const day of days) {
-      const records = await buildLedgerRecords({
-        camera: cameraCfg.id,
-        day,
-        cameraSource: sources.camera,
-        nvrSource: sources.nvr,
-        haHistory: [], // HA join is wired in when the adapter is available offline
-        bitMap,
-      });
-
-      const bySource = records.reduce((acc, r) => {
-        acc[r.source] = (acc[r.source] ?? 0) + 1;
-        return acc;
-      }, {});
-
-      if (opts.dryRun) {
-        logger.info(`[dry-run] ${cameraCfg.id} ${day}: ${records.length} records`, bySource);
-      } else {
-        const written = await writeLedger({ records, camera: cameraCfg.id, day, destinations: dests });
-        logger.info(`${cameraCfg.id} ${day}: ${records.length} records -> ${written.length} destinations`);
-      }
-      results.push({ camera: cameraCfg.id, day, count: records.length, bySource });
-    }
-  }
-  return results;
-}
-
-// ---------------------------------------------------------------------------
-// Pipeline A — tagged archive
-// ---------------------------------------------------------------------------
-
-async function runArchive({ config, auth, days, opts, logger }) {
-  const { hot } = resolveArchiveRoots(config);
-  const ledgerDests = resolveLedgerDests(config);
-  const results = [];
-
-  for (const cameraCfg of selectCameras(config, opts)) {
-    const sources = buildSources(config, auth, cameraCfg, logger);
-    const metaSource = sources[config.sources.metadataFrom];
-    const footageSource = sources[config.sources.footageFrom];
-
-    for (const day of days) {
-      const existing = await readManifest(hot, cameraCfg.id, day);
-      if (isComplete(existing) && !opts.dryRun) {
-        logger.info(`${cameraCfg.id} ${day}: already complete, skipping`);
-        continue;
-      }
-
-      const clips = (await metaSource.search(day)).map((r) => toClip(r, { date: day }));
-      if (!clips.length) {
-        logger.warn(`${cameraCfg.id} ${day}: no recordings found`);
-        continue;
-      }
-
-      const ledgerRecords = await readLedger(ledgerDests[0], cameraCfg.id, day);
-      const sessions = labelSessions(
-        sessionize(clips, config.sessionize),
-        ledgerRecords,
-        { toleranceSeconds: config.classification.matchToleranceSeconds },
-      );
-
-      const plan = selectSessions(sessions, {
-        ...config.scoring,
-        budgetMB: config.budget.fullClipsMB,
-        compressionRatio: config.budget.compressionRatio,
-      });
-
-      const sun = sunTimes(day, config.sun.latitude, config.sun.longitude);
-
-      if (opts.dryRun) {
-        reportPlan({ camera: cameraCfg.id, day, plan, sun, logger });
-        results.push({ camera: cameraCfg.id, day, plan });
-        continue;
-      }
-
-      await markInProgress(hot, cameraCfg.id, day, 'A');
-      const outputs = await materialize({
-        config, cameraCfg, day, plan, sun, footageSource, root: hot, logger,
-      });
-
-      const manifest = buildManifest({
-        camera: cameraCfg.id,
-        day,
-        pipeline: 'A',
-        sessions: [...plan.selected, ...plan.rejected],
-        outputs,
-        sun,
-        config,
-        stats: { projectedMB: Math.round(plan.projectedMB), clipCount: clips.length },
-      });
-      await writeManifest(hot, cameraCfg.id, day, manifest);
-      results.push({ camera: cameraCfg.id, day, outputs });
-    }
-  }
-  return results;
-}
-
-/**
- * Download, encode, and write a day's outputs.
- *
- * Source segments are deleted as soon as they are consumed, so peak local disk
- * stays near one segment rather than the full day.
- */
-async function materialize({ config, cameraCfg, day, plan, sun, footageSource, root, logger }) {
-  const workDir = path.join(config.storage.workDir, cameraCfg.id, day);
-  const outDir = path.join(root, cameraCfg.id, day);
-  await mkdir(workDir, { recursive: true });
-  await mkdir(path.join(outDir, 'audio'), { recursive: true });
-
-  const outputs = { sessions: [], timelapse: {}, audio: [] };
-  const phaseFiles = { day: [], night: [] };
-
-  for (const [i, session] of plan.selected.entries()) {
-    const localPath = path.join(workDir, `session-${i}.mp4`);
-    await footageSource.fetch({ clip: session.clips[0], start: session.start, end: session.end, destPath: localPath });
-
-    const label = (session.labels[0] ?? 'motion').replace(/[^a-z0-9]/gi, '');
-    const stamp = `${String(session.start.getHours()).padStart(2, '0')}${String(session.start.getMinutes()).padStart(2, '0')}`;
-    const outPath = path.join(outDir, `s${String(i + 1).padStart(2, '0')}-${stamp}-${label}.mp4`);
-
-    await encodeSession({ files: [localPath], outPath, profile: config.encoding.fullClip, logger });
-    session.output = path.basename(outPath);
-    outputs.sessions.push(session.output);
-
-    phaseFiles[phaseAt(session.start, sun, config.sun.offsetMinutes)].push(localPath);
-    await pauseBetween(config);
-  }
-
-  for (const [phase, profile] of Object.entries(config.timelapse.phases)) {
-    if (!profile.enabled || !phaseFiles[phase]?.length) continue;
-    const outPath = path.join(outDir, `timelapse-${phase}.mp4`);
-    await encodeTimelapse({
-      files: phaseFiles[phase],
-      outPath,
-      profile: { ...profile, videoCodec: config.timelapse.videoCodec },
+    const useCase = new ArchiveCameraDay({
+      metaSource: sources[config.sources.metadataFrom],
+      footageSource: sources[config.sources.footageFrom],
+      encoder: new ArchiveEncoder({ logger }),
+      manifestStore,
+      readLedger: (camera, d) => readLedger(ledgerRoot, camera, d),
+      config: { ...config, storage: { ...config.storage, hotPath } },
       logger,
     });
-    outputs.timelapse[phase] = path.basename(outPath);
-  }
 
-  if (config.sources.deleteSourceAfterExtract) {
-    await rm(workDir, { recursive: true, force: true });
+    for (const day of days) {
+      const { plan, sun } = await useCase.execute({ camera: cameraCfg, day, dryRun: true });
+      if (plan) report({ camera: cameraCfg.id, day, plan, sun, logger });
+    }
   }
-  return outputs;
+}
+
+const hhmm = (d) =>
+  d ? `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}` : '--:--';
+
+function report({ camera, day, plan, sun, logger }) {
+  logger.info(
+    `${camera} ${day} — sunrise ${hhmm(sun.sunrise)} sunset ${hhmm(sun.sunset)}, ` +
+      `budget ${plan.budgetMB} MB, projected ${plan.projectedMB.toFixed(1)} MB`,
+  );
+  for (const s of plan.selected) {
+    logger.info(
+      `  KEEP  ${hhmm(s.start)} ${(s.durationSec / 60).toFixed(1).padStart(5)}min ` +
+        `${s.densityMBPerMin.toFixed(2)}MB/min score=${String(Math.round(s.score)).padStart(6)} ` +
+        `[${s.labels.join(',') || 'motion'}]`,
+    );
+  }
+  const shown = plan.rejected.slice(0, 5);
+  for (const s of shown) {
+    logger.info(
+      `  drop  ${hhmm(s.start)} ${(s.durationSec / 60).toFixed(1).padStart(5)}min ` +
+        `${s.densityMBPerMin.toFixed(2)}MB/min score=${String(Math.round(s.score)).padStart(6)} (${s.reason})`,
+    );
+  }
+  if (plan.rejected.length > shown.length) {
+    logger.info(`  ... and ${plan.rejected.length - shown.length} more dropped`);
+  }
 }
 
 // ---------------------------------------------------------------------------
-// Pipeline B — untagged backfill
+// backfill-untagged — Pipeline B
 // ---------------------------------------------------------------------------
 
+/**
+ * The range where no trigger data survives (~14+ days old). Without labels any
+ * clip selection is guesswork, so this spends almost nothing on video — hard
+ * day/night timelapses — and keeps audio comprehensively, because audio stays
+ * valuable without tags: it can be turned into searchable text later.
+ *
+ * Audio is muxed into the video, so the full source must be downloaded once
+ * regardless; each segment is extracted then deleted before the next is
+ * fetched, keeping peak disk near one segment rather than ~500 GB.
+ */
 async function runUntagged({ config, auth, days, opts, logger }) {
-  const { hot } = resolveArchiveRoots(config);
   const bcfg = config.backfill.untagged;
-  const results = [];
+  const encoder = new ArchiveEncoder({ logger });
+  const manifestStore = new ArchiveManifestStore({ root: abs(config.storage.hotPath), logger });
+  let totalGB = 0;
 
   for (const cameraCfg of selectCameras(config, opts)) {
-    const sources = buildSources(config, auth, cameraCfg, logger);
-    const footageSource = sources[config.sources.footageFrom];
+    const footageSource = buildSources(config, auth, cameraCfg, logger)[config.sources.footageFrom];
 
     for (const day of days) {
-      const existing = await readManifest(hot, cameraCfg.id, day);
-      if (isComplete(existing) && !opts.dryRun) {
+      if (manifestStore.isComplete(await manifestStore.read(cameraCfg.id, day)) && !opts.dryRun) {
         logger.info(`${cameraCfg.id} ${day}: already complete, skipping`);
         continue;
       }
 
       const segments = (await footageSource.search(day)).map((r) => toClip(r, { date: day }));
       if (!segments.length) {
-        logger.warn(`${cameraCfg.id} ${day}: no recordings found`);
+        logger.warn(`${cameraCfg.id} ${day}: no recordings`);
         continue;
       }
 
       const sun = sunTimes(day, config.sun.latitude, config.sun.longitude);
-      const totalGB = segments.reduce((a, s) => a + s.sizeBytes, 0) / 1e9;
+      const dayGB = segments.reduce((a, s) => a + s.sizeBytes, 0) / 1e9;
+      totalGB += dayGB;
 
       if (opts.dryRun) {
         const byPhase = segments.reduce((acc, s) => {
@@ -369,50 +263,30 @@ async function runUntagged({ config, auth, days, opts, logger }) {
           acc[p] = (acc[p] ?? 0) + 1;
           return acc;
         }, {});
-        logger.info(
-          `[dry-run] ${cameraCfg.id} ${day}: ${segments.length} segments, ` +
-            `${totalGB.toFixed(2)} GB to download`,
-          byPhase,
-        );
-        results.push({ camera: cameraCfg.id, day, segments: segments.length, totalGB });
+        logger.info(`[dry-run] ${cameraCfg.id} ${day}: ${segments.length} segments, ${dayGB.toFixed(2)} GB`, byPhase);
         continue;
       }
 
-      await markInProgress(hot, cameraCfg.id, day, 'B');
+      await manifestStore.markInProgress(cameraCfg.id, day, 'B');
       const outputs = await materializeUntagged({
-        config, bcfg, cameraCfg, day, segments, sun, footageSource, root: hot, logger,
+        config, bcfg, cameraCfg, day, segments, sun, footageSource, encoder, logger,
       });
-
-      await writeManifest(
-        hot,
+      await manifestStore.write(
         cameraCfg.id,
         day,
-        buildManifest({
-          camera: cameraCfg.id,
-          day,
-          pipeline: 'B',
-          sessions: [],
-          outputs,
-          sun,
-          config,
-          stats: { segments: segments.length, downloadedGB: Math.round(totalGB * 100) / 100 },
+        manifestStore.build({
+          camera: cameraCfg.id, day, pipeline: 'B', sessions: [], outputs, sun, config,
+          stats: { segments: segments.length, downloadedGB: Math.round(dayGB * 100) / 100 },
         }),
       );
-      results.push({ camera: cameraCfg.id, day, outputs });
     }
   }
-  return results;
+  logger.info(`${opts.dryRun ? '[dry-run] ' : ''}total download: ${totalGB.toFixed(1)} GB`);
 }
 
-/**
- * Pipeline B is a streaming loop: fetch one segment, extract its audio, keep it
- * for the timelapse pass, delete the source. Audio is kept for all 24 hours
- * because it stays valuable without trigger tags — it can become searchable
- * text later — while the video does not.
- */
-async function materializeUntagged({ config, bcfg, cameraCfg, day, segments, sun, footageSource, root, logger }) {
+async function materializeUntagged({ config, bcfg, cameraCfg, day, segments, sun, footageSource, encoder, logger }) {
   const workDir = path.join(config.storage.workDir, cameraCfg.id, day);
-  const outDir = path.join(root, cameraCfg.id, day);
+  const outDir = path.join(abs(config.storage.hotPath), cameraCfg.id, day);
   await mkdir(workDir, { recursive: true });
   await mkdir(path.join(outDir, 'audio'), { recursive: true });
 
@@ -425,93 +299,50 @@ async function materializeUntagged({ config, bcfg, cameraCfg, day, segments, sun
 
     const stamp = `${String(seg.start.getHours()).padStart(2, '0')}${String(seg.start.getMinutes()).padStart(2, '0')}`;
     const audioPath = path.join(outDir, 'audio', `${stamp}.${config.encoding.audioSidecar.container}`);
-    await extractAudio({ inputPath: localPath, outPath: audioPath, profile: bcfg.audio, logger });
+    await encoder.extractAudio({ inputPath: localPath, outPath: audioPath, profile: bcfg.audio });
     outputs.audio.push(path.basename(audioPath));
 
     phaseFiles[phaseAt(seg.start, sun, config.sun.offsetMinutes)].push(localPath);
     logger.info(`  ${cameraCfg.id} ${day} segment ${i + 1}/${segments.length}`);
-    await pauseBetween(config);
+    await pause(config.backfill?.interSegmentPauseMs);
   }
 
   for (const [phase, profile] of Object.entries(bcfg.timelapse.phases)) {
     if (!profile.enabled || !phaseFiles[phase]?.length) continue;
     const outPath = path.join(outDir, `timelapse-${phase}.mp4`);
-    await encodeTimelapse({
+    await encoder.encodeTimelapse({
       files: phaseFiles[phase],
       outPath,
       profile: { ...profile, videoCodec: config.timelapse.videoCodec },
-      logger,
     });
     outputs.timelapse[phase] = path.basename(outPath);
   }
 
-  if (config.sources.deleteSourceAfterExtract) {
-    await rm(workDir, { recursive: true, force: true });
-  }
+  if (config.sources.deleteSourceAfterExtract) await rm(workDir, { recursive: true, force: true });
   return outputs;
 }
 
+const pause = (ms) => (ms ? new Promise((r) => setTimeout(r, ms)) : Promise.resolve());
+
 // ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-function selectCameras(config, opts) {
-  const all = config.cameras;
-  if (!opts.camera) return all;
-  const found = all.filter((c) => c.id === opts.camera);
-  if (!found.length) throw new Error(`Unknown camera: ${opts.camera}`);
-  return found;
-}
-
-function pauseBetween(config) {
-  const ms = config.backfill?.interSegmentPauseMs ?? 0;
-  return ms ? new Promise((r) => setTimeout(r, ms)) : Promise.resolve();
-}
-
-function reportPlan({ camera, day, plan, sun, logger }) {
-  logger.info(
-    `[dry-run] ${camera} ${day} — sunrise ${fmt(sun.sunrise)} sunset ${fmt(sun.sunset)}, ` +
-      `budget ${plan.budgetMB} MB, projected ${plan.projectedMB.toFixed(1)} MB`,
-  );
-  for (const s of plan.selected) {
-    logger.info(
-      `  KEEP  ${fmt(s.start)} ${(s.durationSec / 60).toFixed(1).padStart(5)}min ` +
-        `${s.densityMBPerMin.toFixed(2)}MB/min score=${Math.round(s.score).toString().padStart(6)} ` +
-        `[${s.labels.join(',') || 'motion'}]`,
-    );
-  }
-  for (const s of plan.rejected.slice(0, 5)) {
-    logger.info(
-      `  drop  ${fmt(s.start)} ${(s.durationSec / 60).toFixed(1).padStart(5)}min ` +
-        `${s.densityMBPerMin.toFixed(2)}MB/min score=${Math.round(s.score).toString().padStart(6)}`,
-    );
-  }
-  if (plan.rejected.length > 5) logger.info(`  ... and ${plan.rejected.length - 5} more dropped`);
-}
-
-function fmt(date) {
-  if (!date) return '--:--';
-  return `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
-}
 
 const USAGE = `
-camera-archive — Reolink cold archive
+camera-archive — backfill CLI
+(nightly ledger + archive run as scheduler jobs; see Admin > Scheduler)
 
-  ledger             Pipeline C: detection metadata only (no downloads)
-  archive            Pipeline A: scored sessions + day/night timelapse
-  backfill-untagged  Pipeline B: hard timelapse + full 24/7 audio
+  backfill-untagged  Pipeline B: hard timelapse + full 24/7 audio for the
+                     pre-metadata range. ~500 GB download, overnight.
+  plan               Dry-run Pipeline A selection, for tuning scoring weights.
 
 Options
-  --day <YYYY-MM-DD|today|yesterday>   (cron should use "yesterday")
-  --range <YYYY-MM-DD..YYYY-MM-DD>
+  --day <YYYY-MM-DD|today|yesterday>
+  --range <YYYY-MM-DD..YYYY-MM-DD>    (defaults to backfill.untagged.range)
   --camera <id>
   --config <path>
   --dry-run          plan and report sizes without fetching
 
 Design: docs/superpowers/specs/2026-07-18-camera-cold-archive-design.md
 `;
-
-// ---------------------------------------------------------------------------
 
 async function main() {
   const opts = parseArgs(process.argv.slice(2));
@@ -524,13 +355,9 @@ async function main() {
 
   const config = await loadConfig(opts.config);
   const auth = await loadAuth(config);
-  const days = resolveDays(opts);
+  const days = resolveDays(opts, config);
 
-  const modes = {
-    ledger: runLedger,
-    archive: runArchive,
-    'backfill-untagged': runUntagged,
-  };
+  const modes = { plan: runPlan, 'backfill-untagged': runUntagged };
   const run = modes[opts.mode];
   if (!run) {
     console.error(`Unknown mode: ${opts.mode}`);
@@ -538,8 +365,10 @@ async function main() {
     process.exit(1);
   }
 
-  if (opts.mode !== 'ledger' && !opts.dryRun && config.backfill?.enabled === false && opts.range) {
-    throw new Error('Range runs require backfill.enabled: true in config (safety interlock)');
+  // Safety interlock: a real Pipeline B run is a multi-hour, ~500 GB operation.
+  // It must be opted into in config, not started by a stray command line.
+  if (opts.mode === 'backfill-untagged' && !opts.dryRun && config.backfill?.enabled !== true) {
+    throw new Error('backfill-untagged requires backfill.enabled: true in config (safety interlock)');
   }
 
   await run({ config, auth, days, opts, logger });
