@@ -7,7 +7,7 @@
 // value, which may be 1). Emitting the source value with 24-grid durations inflated
 // every duration by up to 24× on reload.
 
-import { noteDivisions, DIVISIONS } from '#frontend/modules/MusicNotation/duration.js';
+import { noteDivisions, DIVISIONS } from '@/modules/MusicNotation/duration.js';
 
 const esc = (s) => String(s).replace(/[<>&]/g, (c) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;' }[c]));
 
