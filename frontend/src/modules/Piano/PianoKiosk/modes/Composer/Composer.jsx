@@ -10,8 +10,9 @@
 // opens the gallery of saved songs; "＋ New song" (from the gallery) returns to
 // a fresh blank staff. A draft that is never edited is never persisted, so
 // entering and leaving leaves no junk behind.
-import { useEffect, useState, useCallback, useRef } from 'react';
+import { useEffect, useMemo, useState, useCallback, useRef } from 'react';
 import './Composer.scss';
+import getLogger from '../../../../../lib/logging/Logger.js';
 import { usePianoKioskConfig } from '../../PianoConfig.jsx';
 import { usePianoBreadcrumbBar } from '../../PianoBreadcrumbContext.jsx';
 import { usePianoUser } from '../../PianoUserContext.jsx';
@@ -31,14 +32,30 @@ function makeDraft() {
 }
 
 export function Composer() {
+  const logger = useMemo(() => getLogger().child({ component: 'composer-mode' }), []);
   const { config } = usePianoKioskConfig();
   const { setCrumbs } = usePianoBreadcrumbBar();
   const { currentUser } = usePianoUser();
-  const api = useCompositionsApi(currentUser);
+  const api = useCompositionsApi(currentUser, logger);
   const [view, setView] = useState('editor'); // 'editor' | 'gallery'
   const [open, setOpen] = useState(() => makeDraft()); // { key, id, title, score, revision }
   const openRef = useRef(open);
   openRef.current = open;
+
+  // Mode lifecycle.
+  useEffect(() => {
+    logger.info('composer.mode.mounted', { user: currentUser ?? null });
+    return () => logger.info('composer.mode.unmounted', {});
+  }, [logger]); // eslint-disable-line react-hooks/exhaustive-deps -- mount-once lifecycle log
+
+  // View transitions (editor ⇄ gallery) — the top-level navigation state.
+  const viewRef = useRef(view);
+  useEffect(() => {
+    if (viewRef.current !== view) {
+      logger.info('composer.mode.view', { from: viewRef.current, to: view });
+      viewRef.current = view;
+    }
+  }, [view, logger]);
 
   // PianoChrome already renders the "Composer" mode crumb — publish only the
   // deeper segment (the open song's title) when editing a NAMED song, and clear
@@ -51,23 +68,34 @@ export function Composer() {
   }, [view, open, setCrumbs]);
 
   const openSong = useCallback(async (id) => {
-    const { meta, musicxml } = await api.get(id);
-    setOpen({ key: `song-${id}`, id, title: meta?.title || '', score: parseMusicXml(musicxml), revision: meta?.revision || 1 });
-    setView('editor');
-  }, [api]);
+    logger.info('composer.song.open-start', { id });
+    const t0 = Date.now();
+    try {
+      const { meta, musicxml } = await api.get(id);
+      const score = parseMusicXml(musicxml);
+      setOpen({ key: `song-${id}`, id, title: meta?.title || '', score, revision: meta?.revision || 1 });
+      setView('editor');
+      logger.info('composer.song.open', { id, title: meta?.title || '', revision: meta?.revision || 1, ms: Date.now() - t0 });
+    } catch (err) {
+      logger.error('composer.song.open-failed', { id, error: err?.message, ms: Date.now() - t0 });
+    }
+  }, [api, logger]);
 
   const newDraft = useCallback(() => {
-    setOpen(makeDraft());
+    const draft = makeDraft();
+    logger.info('composer.draft.new', { key: draft.key });
+    setOpen(draft);
     setView('editor');
-  }, []);
+  }, [logger]);
 
   const showGallery = useCallback(() => setView('gallery'), []);
 
   // The draft's first edit created the song: record the assigned id/revision
   // WITHOUT changing `open.key`, so the editor keeps its mounted state.
   const onMaterialized = useCallback((id, revision) => {
+    logger.info('composer.draft.materialized', { id, revision, key: openRef.current?.key });
     setOpen((o) => (o && o.id == null ? { ...o, id, revision } : o));
-  }, []);
+  }, [logger]);
 
   return (
     <section className="piano-mode piano-mode--composer">

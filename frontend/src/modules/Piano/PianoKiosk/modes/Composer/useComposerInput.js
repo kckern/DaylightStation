@@ -14,9 +14,10 @@
 // model barrel (./model/index.js) — the barrel is frozen and this hook must not
 // modify the model, so it's imported directly from editor.js instead of the
 // barrel to avoid inventing an export that doesn't exist yet.
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { applyCommand, insertNote, insertRest, deleteNote, moveCaret } from './model/index.js';
 import { midiToPitch } from './model/editor.js';
+import getLogger from '../../../../../lib/logging/Logger.js';
 
 const DURATION_KEYS = { Numpad1: '16th', Numpad3: 'eighth', Numpad5: 'quarter', Numpad7: 'half', Numpad9: 'whole' };
 
@@ -80,7 +81,11 @@ export function mapKey(code) {
   }
 }
 
-export function useComposerInput({ setEditorState, subscribe }) {
+export function useComposerInput({ setEditorState, subscribe, logger }) {
+  // Reuse the parent's child logger when given (keeps one `composer-editor`
+  // context); fall back to a `composer-input` child so the hook is still
+  // observable when used standalone (and in tests).
+  const log = useMemo(() => logger || getLogger().child({ component: 'composer-input' }), [logger]);
   // Sticky entry state lives in a ref (read by the MIDI callback, which must
   // always see the LATEST duration/arm state rather than a stale closure) and
   // is mirrored to React state so the toolbar palette can render it. The setters
@@ -93,11 +98,17 @@ export function useComposerInput({ setEditorState, subscribe }) {
   // useCallback'd setters below may safely close over the first render's copy.
   const sync = () => setHud({ ...sticky.current, armed: armedRef.current });
 
-  const setDuration = useCallback((type) => { sticky.current = { ...sticky.current, type }; sync(); }, []);
-  const toggleDot = useCallback(() => { sticky.current = { ...sticky.current, dots: sticky.current.dots ? 0 : 1 }; sync(); }, []);
-  const toggleArm = useCallback(() => { armedRef.current = !armedRef.current; sync(); }, []);
-  const addRest = useCallback(() => { setEditorState((s) => applyCommand(s, insertRest, { ...sticky.current })); }, [setEditorState]);
-  const deleteAtCaret = useCallback(() => { setEditorState((s) => applyCommand(s, deleteNote, s.caret)); }, [setEditorState]);
+  const setDuration = useCallback((type) => { sticky.current = { ...sticky.current, type }; sync(); log.info('composer.input.duration', { type }); }, [log]);
+  const toggleDot = useCallback(() => { sticky.current = { ...sticky.current, dots: sticky.current.dots ? 0 : 1 }; sync(); log.info('composer.input.dot', { dots: sticky.current.dots }); }, [log]);
+  const toggleArm = useCallback(() => { armedRef.current = !armedRef.current; sync(); log.info('composer.input.arm', { armed: armedRef.current }); }, [log]);
+  const addRest = useCallback(() => {
+    log.info('composer.input.rest', { duration: sticky.current.type, dots: sticky.current.dots });
+    setEditorState((s) => applyCommand(s, insertRest, { ...sticky.current }));
+  }, [setEditorState, log]);
+  const deleteAtCaret = useCallback(() => {
+    log.info('composer.input.delete', {});
+    setEditorState((s) => applyCommand(s, deleteNote, s.caret));
+  }, [setEditorState, log]);
 
   useEffect(() => {
     const onKey = (e) => {
@@ -111,23 +122,40 @@ export function useComposerInput({ setEditorState, subscribe }) {
         case 'rest': addRest(); break;
         case 'deleteBack':
         case 'deleteAt': deleteAtCaret(); break;
-        case 'caret': setEditorState((s) => applyCommand(s, moveCaret, m.where)); break;
+        // Caret navigation is high-frequency (held arrow key) — debug, not info.
+        case 'caret': log.debug('composer.input.caret', { where: m.where }); setEditorState((s) => applyCommand(s, moveCaret, m.where)); break;
         default: break;
       }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [setDuration, toggleDot, toggleArm, addRest, deleteAtCaret, setEditorState]);
+  }, [setDuration, toggleDot, toggleArm, addRest, deleteAtCaret, setEditorState, log]);
 
   useEffect(() => {
     if (!subscribe) return undefined;
-    return subscribe((evt) => {
+    log.debug('composer.input.midi-subscribed', {});
+    const unsub = subscribe((evt) => {
       if (!evt || evt.type !== 'note_on' || !evt.velocity) return;
-      if (!armedRef.current) return; // disarmed = audition-only, no edit
       const pitch = midiToPitch(evt.note);
+      if (!armedRef.current) {
+        // Disarmed = audition-only (play freely, no score edit). Sampled: a kid
+        // can play many notes/sec, and this fires per note while disarmed.
+        log.sampled('composer.input.audition', { note: evt.note, pitch }, { maxPerMinute: 30, aggregate: true });
+        return;
+      }
+      // Armed insert — the core "did my note land?" signal. Sampled high so a
+      // fast passage is captured but a stuck stream can't storm the transport.
+      log.sampled('composer.input.note', {
+        note: evt.note,
+        pitch,
+        velocity: evt.velocity,
+        duration: sticky.current.type,
+        dots: sticky.current.dots,
+      }, { maxPerMinute: 120, aggregate: true });
       setEditorState((s) => applyCommand(s, insertNote, pitch, { ...sticky.current }));
     });
-  }, [subscribe, setEditorState]);
+    return () => { log.debug('composer.input.midi-unsubscribed', {}); if (unsub) unsub(); };
+  }, [subscribe, setEditorState, log]);
 
   return { hud, armed: hud.armed, setDuration, toggleDot, toggleArm, addRest };
 }

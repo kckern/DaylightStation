@@ -2,11 +2,27 @@
 // blank-staff editor (reached via the bottom bar's "☰ Songs"); a fresh song is
 // started from the bar's "＋ New song", so this view is purely a picker. Empty /
 // loading / grid states, tidily aligned.
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import getLogger from '../../../../../lib/logging/Logger.js';
 
 export function Gallery({ list, onOpen, onNew }) {
+  const logger = useMemo(() => getLogger().child({ component: 'composer-gallery' }), []);
   const [songs, setSongs] = useState(null);
-  useEffect(() => { let live = true; list().then((s) => { if (live) setSongs(s); }); return () => { live = false; }; }, [list]);
+  useEffect(() => {
+    let live = true;
+    list()
+      .then((s) => {
+        if (!live) return;
+        setSongs(s);
+        logger.info('composer.gallery.loaded', { count: s.length });
+      })
+      .catch((err) => {
+        if (!live) return;
+        setSongs([]); // render the empty/CTA state rather than a permanent spinner
+        logger.error('composer.gallery.load-failed', { error: err?.message });
+      });
+    return () => { live = false; };
+  }, [list, logger]);
 
   return (
     <div className="composer-gallery">
