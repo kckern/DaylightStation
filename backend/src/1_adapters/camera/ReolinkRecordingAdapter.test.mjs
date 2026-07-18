@@ -6,7 +6,7 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { toDownloadSource, toReolinkTime, parseTriggerBits, makeSource } from './reolink.lib.mjs';
+import { toDownloadSource, toReolinkTime, parseTriggerBits, makeSource } from './ReolinkRecordingAdapter.mjs';
 
 describe('toDownloadSource', () => {
   it('strips the driveway absolute mount prefix', () => {

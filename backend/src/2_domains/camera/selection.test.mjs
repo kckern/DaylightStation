@@ -13,7 +13,7 @@ import { readFileSync } from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
-import { toClip, sessionize, labelSessions, scoreSession, selectSessions } from './select.lib.mjs';
+import { toClip, sessionize, labelSessions, scoreSession, selectSessions } from './selection.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 

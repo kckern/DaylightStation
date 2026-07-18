@@ -1,8 +1,8 @@
 # Camera Cold Archive — Design
 
 **Date:** 2026-07-18
-**Status:** Implemented as `scripts/camera-archive/`. Not yet run against live hardware —
-Pipeline C (ledger) is ready to schedule; Pipelines A and B are dry-run validated only.
+**Status:** Ledger (Pipeline C) promoted into the backend and scheduled via jobs.yml as `camera-ledger`.
+Pipelines A and B remain the host CLI at `scripts/camera-archive/`, dry-run validated only.
 
 ## Problem
 
@@ -27,8 +27,8 @@ enough that it can be transcribed later by a local ASR model (Whisper, Parakeet)
   all externalized; no behavior is hardcoded.
 - **Unattended operation.** This eventually runs nightly for years without supervision; an
   anomalous day must not blow the budget.
-- **Execution deferred.** The deliverable is a reusable script, tested offline. No run against
-  live hardware or the NAS is part of this work.
+- **Execution deferred (Pipelines A/B).** No footage download or NAS write against
+  live hardware is part of this work. The ledger (C) does run — it only reads metadata.
 
 ## Key findings from exploration
 

@@ -12,7 +12,7 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { sunTimes, phaseAt, partitionByPhase } from './sun.lib.mjs';
+import { sunTimes, phaseAt, partitionByPhase } from './sun.mjs';
 
 const LAT = 47.4095041;
 const LNG = -122.1693485;

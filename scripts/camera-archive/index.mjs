@@ -19,10 +19,10 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import yaml from 'js-yaml';
 
-import { ReolinkClient, makeSource } from './reolink.lib.mjs';
-import { toClip, sessionize, labelSessions, selectSessions } from './select.lib.mjs';
-import { sunTimes, phaseAt } from './sun.lib.mjs';
-import { buildLedgerRecords, writeLedger, readLedger } from './ledger.lib.mjs';
+import { ReolinkClient, makeSource } from '#adapters/camera/ReolinkRecordingAdapter.mjs';
+import { toClip, sessionize, labelSessions, selectSessions } from '#domains/camera/selection.mjs';
+import { sunTimes, phaseAt } from '#domains/camera/sun.mjs';
+import { buildLedgerRecords, writeLedger, readLedger } from '#apps/camera/usecases/BuildDetectionLedger.mjs';
 import { encodeSession, encodeTimelapse, extractAudio } from './encode.lib.mjs';
 import { readManifest, writeManifest, buildManifest, isComplete, markInProgress } from './manifest.lib.mjs';
 
