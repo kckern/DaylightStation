@@ -31,7 +31,32 @@ describe('Composer mode', () => {
     render(<Composer />);
     await waitFor(() => expect(screen.getByRole('button', { name: /your songs/i })).toBeInTheDocument());
     fireEvent.click(screen.getByRole('button', { name: /your songs/i }));
-    // Gallery view: the bar swaps to "＋ New song".
+    // Gallery view: "New song" is how you get back to a blank staff.
     await waitFor(() => expect(screen.getByRole('button', { name: /new song/i })).toBeInTheDocument());
+  });
+
+  // The bottom bar is gone (Task 11B): four chrome strips on an 8" tablet, one
+  // of them spending ~70px on two buttons. Both of its controls moved into the
+  // editor toolbar, so nothing outside the editor renders mode chrome now.
+  it('renders no bottom bar — its controls live in the editor toolbar', async () => {
+    const { container } = render(<Composer />);
+    await waitFor(() => expect(container.querySelector('.composer-editor')).toBeInTheDocument());
+    expect(container.querySelector('.composer-bar')).toBeNull();
+    expect(container.querySelector('.composer-toolbar')).toContainElement(screen.getByRole('button', { name: /your songs/i }));
+  });
+
+  // Round trip: editor → gallery → back to a fresh blank staff. With the bar
+  // deleted the GALLERY is the only holder of the new-song path, so this is the
+  // test that proves it is not stranded.
+  it('round-trips editor → gallery → a fresh draft', async () => {
+    const { container } = render(<Composer />);
+    await waitFor(() => expect(screen.getByRole('button', { name: /your songs/i })).toBeInTheDocument());
+    fireEvent.click(screen.getByRole('button', { name: /your songs/i }));
+    await waitFor(() => expect(container.querySelector('.composer-gallery')).toBeInTheDocument());
+    expect(container.querySelector('.composer-editor')).toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: /new song/i }));
+    await waitFor(() => expect(container.querySelector('.composer-editor')).toBeInTheDocument());
+    expect(container.querySelector('.composer-gallery')).toBeNull();
   });
 });

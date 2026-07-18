@@ -11,11 +11,17 @@
 //     this lets a player try notes on the keyboard without committing them.
 //
 // NOTE: `midiToPitch` is a real editor.js export but is NOT re-exported from the
-// model barrel (./model/index.js) — the barrel is frozen and this hook must not
-// modify the model, so it's imported directly from editor.js instead of the
-// barrel to avoid inventing an export that doesn't exist yet.
+// model barrel (./model/index.js), so it's imported directly from editor.js.
+// Everything else the hook needs comes through the barrel.
+//
+// HEADS-UP for anyone hosting Composer inside another shell: `Backspace` is bound
+// to "back / previous" elsewhere in this codebase — lib/keyboard/keyboardConfig.js,
+// Emulator/ui/useArcadeInput.js, Player/renderers/WebViewRenderer.jsx. PianoKiosk
+// imports NONE of those, so there is no conflict today and this hook's Backspace
+// (delete the note before the caret) is unambiguous. If Composer is ever mounted
+// under one of those shells, the two bindings will fight over the same key.
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { applyCommand, insertNote, insertRest, deleteNote, moveCaret } from './model/index.js';
+import { applyCommand, insertNote, insertRest, deleteNote, deleteBeforeCaret, moveCaret } from './model/index.js';
 import { midiToPitch } from './model/editor.js';
 import getLogger from '../../../../../lib/logging/Logger.js';
 
@@ -43,15 +49,30 @@ export const KEY_LEGEND = [
   {
     group: 'Add notes',
     keys: [
-      { label: '4', code: 'Numpad4', does: 'Arm / disarm. When ARMED, the piano writes notes; when off, play freely without changing the song.' },
-      { label: '🎹', code: null, does: 'With 4 armed, play a piano key to add that note at the chosen length.' },
+      // Copy tracks the toolbar's Write button (DurationPalette.jsx). The help
+      // panel and the button must name the same thing, or the numpad key and
+      // the on-screen control read as two unrelated features.
+      { label: '4', code: 'Numpad4', does: 'Turn Write on or off. With Write ON, the piano writes notes; with it off, play freely without changing the song.' },
+      // WORDS, not glyphs. This is DATA in a .js module rendered as text by
+      // ComposerHelp, so it cannot carry an SVG component the way the toolbar
+      // does — and the emoji/symbol it used to carry painted as a tofu box on
+      // the kiosk, i.e. an unlabelled row in the panel that explains the keys.
+      { label: 'Piano', code: null, does: 'With Write on, play a piano key to add that note at the chosen length.' },
       { label: '0', code: 'Numpad0', does: 'Add a rest' },
+    ],
+  },
+  {
+    group: 'Listen',
+    keys: [
+      // Copy tracks the toolbar's Play/Pause button (EditorSurface.jsx).
+      { label: 'Enter', code: 'NumpadEnter', does: 'Play your song from the caret, or pause it' },
     ],
   },
   {
     group: 'Edit',
     keys: [
       { label: '−', code: 'NumpadSubtract', does: 'Delete the note before the caret' },
+      { label: 'Backspace', code: 'Backspace', does: 'Delete the note before the caret' },
       { label: 'Del', code: 'Delete', does: 'Delete the note at the caret' },
     ],
   },
@@ -69,9 +90,10 @@ export function mapKey(code) {
   if (DURATION_KEYS[code]) return { kind: 'duration', type: DURATION_KEYS[code] };
   switch (code) {
     case 'Numpad4': return { kind: 'arm' };
+    case 'NumpadEnter': return { kind: 'play' };
     case 'Numpad0': return { kind: 'rest' };
     case 'NumpadDecimal': return { kind: 'dot' };
-    case 'NumpadSubtract': return { kind: 'deleteBack' };
+    case 'NumpadSubtract': case 'Backspace': return { kind: 'deleteBack' };
     case 'Delete': return { kind: 'deleteAt' };
     case 'ArrowLeft': return { kind: 'caret', where: 'left' };
     case 'ArrowRight': return { kind: 'caret', where: 'right' };
@@ -81,7 +103,13 @@ export function mapKey(code) {
   }
 }
 
-export function useComposerInput({ setEditorState, subscribe, logger }) {
+/**
+ * @param {function} [onTogglePlay] invoked by the NumpadEnter transport key. The
+ *   hook does not own the transport (EditorSurface does) — it only routes the key.
+ * @param {boolean} [playing] whether score playback is currently running. Gates
+ *   armed note entry; see the echo guard on the MIDI subscription below.
+ */
+export function useComposerInput({ setEditorState, subscribe, logger, onTogglePlay, playing = false }) {
   // Reuse the parent's child logger when given (keeps one `composer-editor`
   // context); fall back to a `composer-input` child so the hook is still
   // observable when used standalone (and in tests).
@@ -93,6 +121,12 @@ export function useComposerInput({ setEditorState, subscribe, logger }) {
   // taps go through, so keyboard and touch can never drift apart.
   const sticky = useRef({ type: 'quarter', dots: 0, triplet: false });
   const armedRef = useRef(false);
+  // Mirrored every render for the same reason as `sticky`: the MIDI callback is
+  // registered once and would otherwise read `playing` from its first closure.
+  const playingRef = useRef(playing);
+  playingRef.current = playing;
+  const onTogglePlayRef = useRef(onTogglePlay);
+  onTogglePlayRef.current = onTogglePlay;
   const [hud, setHud] = useState({ ...sticky.current, armed: false });
   // `sync` only ever touches refs (stable identities) + setHud (stable), so the
   // useCallback'd setters below may safely close over the first render's copy.
@@ -109,9 +143,22 @@ export function useComposerInput({ setEditorState, subscribe, logger }) {
     log.info('composer.input.delete', {});
     setEditorState((s) => applyCommand(s, deleteNote, s.caret));
   }, [setEditorState, log]);
+  // Backspace semantics — deletes the note BEFORE the caret, which is the note
+  // just entered. Distinct from deleteAtCaret, which needs the caret parked ON
+  // an existing note to do anything.
+  const deleteBack = useCallback(() => {
+    log.info('composer.input.delete-back', {});
+    setEditorState((s) => applyCommand(s, deleteBeforeCaret));
+  }, [setEditorState, log]);
 
   useEffect(() => {
     const onKey = (e) => {
+      // Listener is on `window` and preventDefault()s every mapped code, so it
+      // must stand down inside text entry. Otherwise Backspace/Delete get
+      // swallowed (characters type but never erase) AND edit the score behind
+      // the field. Composer gains a rename field in a later unit.
+      const t = e.target;
+      if (t?.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t?.tagName || '')) return;
       const m = mapKey(e.code);
       if (!m) return;
       e.preventDefault();
@@ -120,7 +167,10 @@ export function useComposerInput({ setEditorState, subscribe, logger }) {
         case 'dot': toggleDot(); break;
         case 'arm': toggleArm(); break;
         case 'rest': addRest(); break;
-        case 'deleteBack':
+        // Routed through a ref so this listener (registered once) always reaches
+        // the CURRENT handler — EditorSurface rebuilds it as the transport changes.
+        case 'play': onTogglePlayRef.current?.(); break;
+        case 'deleteBack': deleteBack(); break;
         case 'deleteAt': deleteAtCaret(); break;
         // Caret navigation is high-frequency (held arrow key) — debug, not info.
         case 'caret': log.debug('composer.input.caret', { where: m.where }); setEditorState((s) => applyCommand(s, moveCaret, m.where)); break;
@@ -129,7 +179,7 @@ export function useComposerInput({ setEditorState, subscribe, logger }) {
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [setDuration, toggleDot, toggleArm, addRest, deleteAtCaret, setEditorState, log]);
+  }, [setDuration, toggleDot, toggleArm, addRest, deleteAtCaret, deleteBack, setEditorState, log]);
 
   useEffect(() => {
     if (!subscribe) return undefined;
@@ -141,6 +191,17 @@ export function useComposerInput({ setEditorState, subscribe, logger }) {
         // Disarmed = audition-only (play freely, no score edit). Sampled: a kid
         // can play many notes/sec, and this fires per note while disarmed.
         log.sampled('composer.input.audition', { note: evt.note, pitch }, { maxPerMinute: 30, aggregate: true });
+        return;
+      }
+      // PLAYBACK ECHO GUARD. Score playback sends notes OUT over Web MIDI; the
+      // kiosk's Jamcorder routes MIDI in a way that can echo those sends back to
+      // the INPUT port, where they are indistinguishable from a played key. With
+      // Write armed, an unguarded editor would therefore re-record the whole
+      // playback into the score — silent data corruption, and baffling to debug.
+      // Gate the INSERT only: the arm flag is untouched, so Write is still on
+      // when playback stops.
+      if (playingRef.current) {
+        log.sampled('composer.input.playback-echo-ignored', { note: evt.note, pitch }, { maxPerMinute: 10, aggregate: true });
         return;
       }
       // Armed insert — the core "did my note land?" signal. Sampled high so a
@@ -157,5 +218,5 @@ export function useComposerInput({ setEditorState, subscribe, logger }) {
     return () => { log.debug('composer.input.midi-unsubscribed', {}); if (unsub) unsub(); };
   }, [subscribe, setEditorState, log]);
 
-  return { hud, armed: hud.armed, setDuration, toggleDot, toggleArm, addRest };
+  return { hud, armed: hud.armed, setDuration, toggleDot, toggleArm, addRest, deleteBack };
 }

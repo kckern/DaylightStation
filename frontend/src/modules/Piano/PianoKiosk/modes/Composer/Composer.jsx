@@ -6,10 +6,15 @@
 // UX spine (blank-staff-first): the mode LANDS on the editor showing a fresh,
 // unsaved DRAFT (id === null) — no gallery gate, no title form. The first edit
 // materializes the song server-side (EditorSurface → useAutosave.create), and
-// `onMaterialized` records the assigned id so subsequent edits PUT. "☰ Songs"
-// opens the gallery of saved songs; "＋ New song" (from the gallery) returns to
-// a fresh blank staff. A draft that is never edited is never persisted, so
-// entering and leaving leaves no junk behind.
+// `onMaterialized` records the assigned id so subsequent edits PUT. "Songs" (in
+// the editor's own toolbar) opens the gallery of saved songs; "New song" (from
+// the gallery) returns to a fresh blank staff. A draft that is never edited is
+// never persisted, so entering and leaving leaves no junk behind.
+//
+// This root renders NO chrome of its own. It used to carry a full-width bottom
+// bar for those two buttons — a fourth chrome strip stacked above browser bar,
+// kiosk breadcrumb and editor toolbar, on a screen where the notation was
+// already too small. Both controls now live where the state they act on lives.
 import { useEffect, useMemo, useState, useCallback, useRef } from 'react';
 import './Composer.scss';
 import getLogger from '../../../../../lib/logging/Logger.js';
@@ -20,7 +25,6 @@ import { useCompositionsApi } from './useCompositionsApi.js';
 import { parseMusicXml, makeEmptyScore } from './model/index.js';
 import { Gallery } from './Gallery.jsx';
 import { EditorSurface } from './EditorSurface.jsx';
-import { ComposerBar } from './ComposerBar.jsx';
 
 let draftSeq = 0;
 function makeDraft() {
@@ -90,6 +94,17 @@ export function Composer() {
 
   const showGallery = useCallback(() => setView('gallery'), []);
 
+  // Renaming from the editor. The title lives HERE, not in EditorSurface, so
+  // one commit feeds three things at once: the editor's own control, the
+  // breadcrumb effect above (which only publishes a crumb for a NAMED song),
+  // and the autosave `meta` EditorSurface derives from the prop. Applied to a
+  // draft too — the name then rides along on the create when the first edit
+  // materializes it.
+  const renameOpen = useCallback((t) => {
+    logger.info('composer.song.rename', { id: openRef.current?.id ?? null, named: !!t });
+    setOpen((o) => ({ ...o, title: t }));
+  }, [logger]);
+
   // The draft's first edit created the song: record the assigned id/revision
   // WITHOUT changing `open.key`, so the editor keeps its mounted state.
   const onMaterialized = useCallback((id, revision) => {
@@ -106,9 +121,11 @@ export function Composer() {
           songId={open.id}
           initialRevision={open.revision}
           title={open.title}
+          onRename={renameOpen}
           save={api.save}
           create={api.create}
           onMaterialized={onMaterialized}
+          onSongs={showGallery}
           config={config.composer || {}}
         />
       )}
@@ -119,7 +136,6 @@ export function Composer() {
           <p className="piano-mode__placeholder">Loading…</p>
         )
       )}
-      <ComposerBar view={view} onSongs={showGallery} onNew={newDraft} />
     </section>
   );
 }
