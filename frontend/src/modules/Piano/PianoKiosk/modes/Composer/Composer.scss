@@ -295,6 +295,28 @@
   transition: transform 90ms ease-out;
 }
 
+// "Wet ink" — notes painted instantly by PendingLayer.jsx while OSMD has not
+// re-engraved yet. Like the caret it draws in the renderer's pixel space, so it
+// MUST be `position: absolute` over the same positioned ancestor or its
+// coordinates mean nothing. It spans the whole score area and its children carry
+// absolute coordinates, hence the 100%/100% box with no viewBox (1 SVG user unit
+// = 1 CSS px) and `overflow: visible`, so a stem or ledger line near an edge is
+// not clipped away.
+//
+// Drawn in the accent color at reduced opacity: wet ink reads as provisional,
+// and "dries" into ordinary engraved notation once the settle lands.
+.composer-wet-note {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  color: var(--piano-accent, #2ec46f);
+  opacity: 0.85;
+  pointer-events: none;
+}
+
 // ── Bottom bar (back + undo/redo) ────────────────────────────────────────
 .composer-bar {
   flex: 0 0 auto;
