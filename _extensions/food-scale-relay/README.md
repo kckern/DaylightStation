@@ -48,18 +48,16 @@ A second, independent consumer of the `food-scale` topic
 (`backend/src/3_applications/hardware/ScaleNutribotBridge.mjs`) turns weights into
 Telegram density-logging prompts for the household head. Two paths:
 
-- **AUTO** — the scale never returns to ~0 (it rests at a variable load on the shelf),
-  so the bridge learns that resting load as a **baseline** and pushes a **new prompt for
-  every distinct settled value that rises above it**. Re-settles within
-  `baseline_tolerance_g` are suppressed (jostle); a settle back near/below baseline ends
-  the session and re-learns the resting load, so the next placement pushes fresh.
-  **Weights never expire** — a prompt waits until you answer it. The one unavoidable cost
-  of not having an orientation sensor: flipping the scale onto its shelf looks like a
-  placement, so it emits **one** stray prompt (just ignore it — it is not repeated).
-- **FORCE** — an **ESP button press logs the live weight right now**, bypassing the
-  baseline/dedup gates entirely. This is the reliable manual override for anything the
-  auto heuristic would miss or mis-gate (a small item, a load that never rose far above
-  the resting baseline, etc.).
+- **AUTO** — a settled rise above the learned resting load posts **one** prompt that
+  then **edits in place** as the weight climbs (no message pile-up). Answering it frees
+  it, so the next load starts fresh. Returning near the resting load ends the session and
+  **retracts** an unanswered prompt (no leftover slop). A placement is **suppressed** when
+  it looks like putting the scale away — it lands in the configured `storage_weight_g`
+  band, or it's a `heavy_g`+ jump right after a burst of recent posts. Weights never
+  expire.
+- **FORCE** — an **ESP button press** logs the live weight now, **bypassing the suspicion
+  filter**. It no-ops when a live prompt already covers ~this weight (no duplicate), so
+  it's purely the override for anything auto suppressed or mis-gated.
 
 Tuning knobs live in the `nutribot:` block of `scales.yml` (see
 [`config.example.yml`](config.example.yml)); the persistence arm above is decoupled and
