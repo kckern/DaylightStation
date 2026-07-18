@@ -9,6 +9,7 @@ vi.mock('#system/utils/FileIO.mjs', () => ({
   saveYaml: (p, data) => { files[p] = data; },
   listYamlFiles: (dir) => Object.keys(files).filter(p => p.startsWith(dir + '/')).map(p => p.slice(dir.length + 1)),
   deleteYaml: (p) => { const had = p in files; delete files[p]; return had; },
+  deleteFile: (p) => { const had = p in blobs; delete blobs[p]; return had; },
   ensureDir: vi.fn(),
   writeBinary: (p, buf) => { blobs[p] = String(buf); },
   readFile: (p) => (p in blobs ? blobs[p] : null),
@@ -65,5 +66,20 @@ describe('ComposerSongStore', () => {
     s.create('soren', { title: 'Private', musicxml: XML });
     const shared = s.listShared();
     expect(shared.map(x => x.id)).toEqual([a.id]);
+  });
+  it('rejects a path-traversal id in listVersions (does not leak files outside the composer dir)', () => {
+    const s = store();
+    // Seed a blob at the exact path a '../../../etc' id would resolve to
+    // (path.join('/data/users/kc/apps/piano/composer', '../../../etc.versions')
+    // === '/data/users/kc/etc.versions') — outside the composer sandbox.
+    blobs['/data/users/kc/etc.versions/1.musicxml'] = 'leaked';
+    expect(s.listVersions('kc', '../../../etc')).toEqual([]);
+  });
+  it('remove deletes both meta and blob', () => {
+    const s = store();
+    const { id } = s.create('kc', { title: 'T', musicxml: XML });
+    expect(s.get('kc', id)).not.toBeNull();
+    expect(s.remove('kc', id)).toBe(true);
+    expect(s.get('kc', id)).toBeNull();
   });
 });
