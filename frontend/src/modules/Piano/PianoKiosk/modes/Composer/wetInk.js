@@ -13,6 +13,13 @@
 //
 // Kid-scale scores are a few dozen bars, so a JSON compare per keypress is
 // cheap enough and far cheaper than the engrave it avoids.
+//
+// TRIPWIRE: stringify is a sound equality test only while the score stays
+// JSON-plain. structuredClone faithfully clones Map/Set, and two DIFFERENT Maps
+// both stringify to "{}" — a collision in the UNSAFE direction (a real change
+// read as no-change, so it never engraves). Nothing in the model carries one
+// today (part.clefs is a plain object); if that changes, this needs a real
+// deep-equal.
 const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
 
 /**
@@ -55,7 +62,24 @@ export function pendingAppendDiff(settled, live) {
       if (!same(sNotes, lNotes.slice(0, sNotes.length))) return null;
       if (lNotes.length > sNotes.length) {
         if (found) return null; // grew in two places → settle
-        found = { measureIdx: m, notes: lNotes.slice(sNotes.length) };
+        // The grown measure must be the LAST one, because wet ink can only paint
+        // past the end of the engraving. Appending into an earlier measure widens
+        // it, which REFLOWS every bar to its right — and the lightweight layer
+        // can't move engraved bars, so the wet ink would land on top of them.
+        // Reachable without any exotic input: deleteNote doesn't reflow, so
+        // deleting from a full bar and moving the caret back into it leaves an
+        // underfull non-final measure the kid can type into. An imported score
+        // with a pickup bar has the same shape from the start.
+        if (m !== lMeasures.length - 1) return null;
+        const notes = lNotes.slice(sNotes.length);
+        // Forward-looking: a chord member shares its principal's onset instead of
+        // advancing time, but wet ink lays appended notes at successive
+        // x-positions — it would draw the chord as a separate sequential note.
+        // Nothing in the Composer input path sets `chord` today (chords arrive
+        // only via parsed MusicXML, where they're already settled), so this costs
+        // nothing now and fails safe if that changes.
+        if (notes.some((n) => n.chord)) return null;
+        found = { measureIdx: m, notes };
       }
     }
   }
