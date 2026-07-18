@@ -20,18 +20,20 @@ export class PianoContainer {
   #studioDatastore;
   #fitnessPlayableService;
   #userVideoProgressStore;
+  #composerSongStore;
   #configService;
   #logger;
 
   #getCourseProgress;
   #getPlayableUnits;
 
-  constructor({ studioDatastore, fitnessPlayableService = null, userVideoProgressStore = null, configService, logger = console } = {}) {
+  constructor({ studioDatastore, fitnessPlayableService = null, userVideoProgressStore = null, composerSongStore = null, configService, logger = console } = {}) {
     if (!studioDatastore) throw new Error('PianoContainer: studioDatastore required');
     if (!configService) throw new Error('PianoContainer: configService required');
     this.#studioDatastore = studioDatastore;
     this.#fitnessPlayableService = fitnessPlayableService;
     this.#userVideoProgressStore = userVideoProgressStore;
+    this.#composerSongStore = composerSongStore;
     this.#configService = configService;
     this.#logger = logger;
   }
@@ -39,6 +41,11 @@ export class PianoContainer {
   /** The persistence adapter (straight-through CRUD lives here). */
   get studioDatastore() {
     return this.#studioDatastore;
+  }
+
+  /** Per-user Composer-mode composition persistence. */
+  get composerSongStore() {
+    return this.#composerSongStore;
   }
 
   /** Course endpoints 503 when the Plex-backed playable service isn't wired. */
