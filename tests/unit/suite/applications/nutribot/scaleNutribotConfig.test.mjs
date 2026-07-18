@@ -16,7 +16,7 @@ describe('scaleNutribotConfig', () => {
     expect(cfg.containers.thresholdG).toBe(150);
     expect(cfg.containers.items.length).toBeGreaterThan(0);
     expect(cfg.densityLevels).toHaveLength(9);
-    expect(cfg.densityLevels[3]).toMatchObject({ level: 4, label: 'Everyday', kcal_per_g: 1.4 });
+    expect(cfg.densityLevels[3]).toMatchObject({ level: 4, label: 'Mixed', kcal_per_g: 1.4 });
   });
 
   it('honours provided overrides', () => {
@@ -35,7 +35,7 @@ describe('scaleNutribotConfig', () => {
 
   it('densityForLevel finds by ordinal', () => {
     const cfg = normalizeScaleNutribotConfig({});
-    expect(densityForLevel(cfg, 9)).toMatchObject({ label: 'Pure fat', kcal_per_g: 8.5 });
+    expect(densityForLevel(cfg, 9)).toMatchObject({ label: 'Oil', kcal_per_g: 8.5 });
     expect(densityForLevel(cfg, 99)).toBeNull();
   });
 
@@ -127,7 +127,7 @@ describe('scaleNutribotConfig', () => {
     const help = densityHelpText(cfg, 340);
     expect(help).toContain('340 g');
     expect(help).toContain('Watery');
-    expect(help).toContain('Pure fat');
+    expect(help).toContain('Oil');
     expect(help.split('\n').filter((l) => /kcal\/g/.test(l))).toHaveLength(9);
   });
 });
