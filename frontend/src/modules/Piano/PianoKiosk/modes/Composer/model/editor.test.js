@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   initEditor, replacePitch, serializeFromEditor, insertNote,
-  insertRest, deleteNote, setDuration, toggleDot, toggleTriplet, toggleTie,
+  insertRest, deleteNote, deleteBeforeCaret, setDuration, toggleDot, toggleTriplet, toggleTie,
   reflowMeasure, nudgePitch, midiToPitch, moveCaret, select, setAttribute,
 } from './editor.js';
 import { makeEmptyScore } from './score.js';
@@ -206,6 +206,39 @@ describe('deleteNote', () => {
     const after = deleteNote(ed, { measureIdx: 0, noteIdx: 0 });
     expect(after.score.parts[0].measures[0].notes).toHaveLength(0);
     expect(after.caret).toEqual({ measureIdx: 0, noteIdx: 0 });
+  });
+});
+
+describe('deleteBeforeCaret', () => {
+  it('deletes the note just entered (caret sits past the last note)', () => {
+    let ed = initEditor(makeEmptyScore());
+    ed = insertNote(ed, { step: 'C', octave: 4 }, { type: 'quarter' });
+    ed = insertNote(ed, { step: 'D', octave: 4 }, { type: 'quarter' }); // caret {0,2}
+    const out = deleteBeforeCaret(ed);
+    expect(out.score.parts[0].measures[0].notes.map((n) => n.pitch.step)).toEqual(['C']);
+    expect(out.caret).toEqual({ measureIdx: 0, noteIdx: 1 });
+  });
+  it('walks back across a barline when the caret is at a measure start', () => {
+    // Four quarters exactly fill the 4/4 bar, so insertNote rolls the caret to
+    // {1,0} — the state a kid is in right after completing a measure. Backspace
+    // must reach back over the barline instead of no-opping on the empty bar 1.
+    let ed = initEditor(makeEmptyScore());
+    for (const step of ['C', 'D', 'E', 'F']) ed = insertNote(ed, { step, octave: 4 }, { type: 'quarter' });
+    expect(ed.caret).toEqual({ measureIdx: 1, noteIdx: 0 });
+    const out = deleteBeforeCaret(ed);
+    expect(out.score.parts[0].measures[0].notes.map((n) => n.pitch.step)).toEqual(['C', 'D', 'E']);
+  });
+  it('skips empty measures to find the previous note', () => {
+    let ed = initEditor(makeEmptyScore());
+    ed = insertNote(ed, { step: 'C', octave: 4 }, { type: 'quarter' });
+    ed.score.parts[0].measures.push({ number: 2, notes: [] }, { number: 3, notes: [] });
+    ed = { ...ed, caret: { measureIdx: 2, noteIdx: 0 } };
+    const out = deleteBeforeCaret(ed);
+    expect(out.score.parts[0].measures[0].notes).toHaveLength(0);
+  });
+  it('is a same-reference no-op at the very start of the score', () => {
+    const ed = initEditor(makeEmptyScore());
+    expect(deleteBeforeCaret(ed)).toBe(ed);
   });
 });
 
