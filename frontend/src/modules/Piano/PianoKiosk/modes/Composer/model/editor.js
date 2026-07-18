@@ -492,14 +492,30 @@ export function deleteNote(state, { measureIdx, noteIdx }) {
  * a bar (which rolls the caret to the next one) doesn't strand the key.
  * At the absolute start nothing precedes the caret → same-reference no-op, so
  * history records no empty change.
+ *
+ * The caret then lands ON the deleted slot. deleteNote only clamps the caret to
+ * stay VALID, which is a weaker guarantee than backspace needs: mid-measure it
+ * leaves the caret one slot RIGHT of the hole (so a second press eats forward
+ * instead of walking left), and it doesn't follow a walk-back across a barline
+ * at all (stranding the caret in the later bar, leaving a gap at the next note
+ * entry). Positioning is intent, so it belongs here, not in deleteNote's clamp.
  */
 export function deleteBeforeCaret(state) {
   const { measureIdx, noteIdx } = state.caret;
-  if (noteIdx > 0) return deleteNote(state, { measureIdx, noteIdx: noteIdx - 1 });
+  const deleteAt = (m, i) => {
+    const out = deleteNote(state, { measureIdx: m, noteIdx: i });
+    return out === state ? state : { ...out, caret: { measureIdx: m, noteIdx: i } };
+  };
+  if (noteIdx > 0) {
+    const out = deleteAt(measureIdx, noteIdx - 1);
+    // Same reference = the caret was desynced (pointing past its measure's end),
+    // so nothing lived at noteIdx-1 — fall through to the walk-back.
+    if (out !== state) return out;
+  }
   const measures = state.score.parts[0]?.measures || [];
   for (let m = measureIdx - 1; m >= 0; m--) {
     const len = measures[m]?.notes?.length || 0;
-    if (len > 0) return deleteNote(state, { measureIdx: m, noteIdx: len - 1 });
+    if (len > 0) return deleteAt(m, len - 1);
   }
   return state;
 }
