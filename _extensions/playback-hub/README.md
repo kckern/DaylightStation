@@ -1,7 +1,7 @@
 # playback-hub — Bluetooth Auto-Play for headsets + BT speakers
 
 **Status:** Running on `kckern-playback-hub` (Ubuntu mini-PC, 10.0.0.109)
-**Last reviewed:** 2026-07-14
+**Last reviewed:** 2026-07-17
 
 ---
 
@@ -244,6 +244,39 @@ A "LANE GUARDRAIL" cleanup added these flags + a disconnect-time `ao-mute=true` 
 Accepting the bleed window turned out to be wrong — the window is **not** sub-second. On disconnect, `stop_playback` used to run `save_position` (a live mpv IPC round-trip) and then a *graceful* SIGTERM, and orphaned mpvs were observed surviving for minutes. With the bluez sink gone but mpv still alive, PipeWire migrates the orphaned stream onto whatever sink remains — so a disconnecting headset's audio piles onto another *connected* headset (observed: green + blue piling onto yellow).
 
 Fix (2026-05-28, no flags, no IPC mute): the BT-disconnect path calls `end_session … fast` → `stop_playback … fast`, which **SIGKILLs mpv first, before any IPC**, slamming the migration window shut. Resume accuracy is preserved by the `mpv_watchdog` loop, which now persists `state.json` every `WATCHDOG_INTERVAL` (5s) via a quiet `save_position`; the fast path reads that instead of doing a live IPC save against a dead sink. Graceful stops (scheduled window-end, `/play stop`, shutdown) keep the accurate live IPC save since their sink is still alive.
+
+### Cross-bleed detector + narrower reap window (2026-07-17)
+
+The fast-kill above only fires on a *detected BT disconnect*. But the migration also
+happens on a **sink-only drop** — the ACL link stays up (`Device1.Connected: true`)
+while the A2DP `bluez_output.<mac>` sink flaps out of PipeWire. The gdbus disconnect
+handler never fires, so containment falls to the watchdog's per-slot orphan-sink
+reaper (`mpv_check_orphan_sink`), which SIGKILLs a slot's mpv once its own sink has
+been absent for `ORPHAN_SINK_TICKS` watchdog ticks. Observed live 2026-07-17: a
+MusiCozy dropped, its orphaned mpv migrated onto the *surviving* headset, and that
+headset played **two overlapping streams** while the dropped one went silent — for up
+to `ORPHAN_SINK_TICKS × WATCHDOG_INTERVAL` seconds per flap.
+
+Two changes, both zero-audio-path-risk (no PipeWire routing flags — this deliberately
+does NOT repeat the `dont-reconnect`/`audio-fallback-to-null` mistake above):
+
+1. **`ORPHAN_SINK_TICKS` 2 → 1.** Halves the migration window (~10s → ~5s). `present=0`
+   already comes from PipeWire's live device list (via mpv IPC), so a single absent
+   sample is a real drop, not a stale cache; the worst spurious case (a <5s A2DP
+   renegotiation) costs only a brief self-respawn on that one headset, never cross-bleed.
+2. **`check_cross_bleed()` — a ground-truth detector** run once per watchdog tick. It
+   parses the actual `pw-link -l` graph and, if **any** bluez sink is fed by more than
+   one mpv stream (always a bug — a sink has one legit owner), logs `audio.cross_bleed`
+   attributed to the victim slot and dispatches a `cross_bleed` **warning alert** once
+   per streak (cleared when the graph goes clean). Pure observability — it never kills;
+   remediation stays with the orphan-sink reaper. Before this, cross-bleed was inaudible
+   to the daemon — only a human wearing both headsets could catch it. Route it to a
+   phone push with `alerts.on_cross_bleed: notify` in `devices.yml` (defaults to `log`).
+
+**Still open (Phase 2, needs a supervised 2-headset live test):** eliminate cross-bleed
+*entirely* by pinning each mpv to its own sink so a vanished sink yields silence on that
+headset only, never migration. This touches the exact routing that caused the all-headsets-
+silent outage above, so it must be verified one slot at a time with `/api/verify` before rollout.
 
 ### The mute IPC also persists into fresh mpvs
 

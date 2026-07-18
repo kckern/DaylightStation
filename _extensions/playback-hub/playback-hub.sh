@@ -34,7 +34,7 @@ MEMBERSHIP_INTERVAL=60
 HEAD_FULL_PASS=900
 SWEEP_INTERVAL=3600
 STALL_REVALIDATE_COOLDOWN=120  # min seconds between stall revalidations of the SAME plex_id (anti-thrash)
-ORPHAN_SINK_TICKS=2            # consecutive watchdog ticks a slot's sink must be ABSENT before reaping its mpv (audio cross-routing guard; ~ORPHAN_SINK_TICKS*WATCHDOG_INTERVAL s of hysteresis)
+ORPHAN_SINK_TICKS=1            # consecutive watchdog ticks a slot's sink must be ABSENT before reaping its mpv (audio cross-routing guard; ~ORPHAN_SINK_TICKS*WATCHDOG_INTERVAL s of hysteresis). Lowered 2->1 on 2026-07-17: at 2 the cross-bleed (a dropped headset's mpv migrating onto a SURVIVING headset) stayed audible for ~10s per flap; at 1 it's halved to one WATCHDOG_INTERVAL. mpv_output_sink reads PipeWire's live device list (via mpv IPC), so present=0 already means PipeWire dropped the sink — a single absent sample is a real drop, not a stale cache, and the worst spurious case (a <5s A2DP renegotiation) costs only a brief self-respawn on that ONE headset, never cross-bleed onto another. Prevention (never migrate at all) is the Phase-2 stream-pin.
 ORPHAN_REAP_COOLDOWN=20        # after an orphan-sink reap, suppress the watchdog's (blocking) respawn for this many seconds while the sink is still gone — avoids a 12s resolve_audio_device stall + log spam every tick during a sustained A2DP outage
 HEARTBEAT_INTERVAL=180         # seconds between playback.heartbeat liveness samples per live slot. track.start only fires on track CHANGE (and is suppressed on resume-to-same-track), so it can't answer "is audio actually flowing right now". The heartbeat is the positive liveness signal: {plex_id,pos,paused,sink_live} sampled while mpv is alive + BT-connected.
 RECONNECT_LOG_EVERY=30         # during a reconnect outage, after the FIRST miss only emit bt.reconnect_fail on escalation ticks + every Nth miss. The old per-tick emit was ~95% of events.jsonl (3.4k–7.3k lines/week/slot) and rotated genuinely-useful events out of the 5MB ledger. Onset + escalation + a coarse heartbeat preserve the signal.
@@ -2342,9 +2342,65 @@ note_silent_slot() {
     return 0
 }
 
+# GUARDRAIL — PipeWire cross-bleed detector (2026-07-17). A ground-truth check on
+# the ACTUAL audio graph, independent of any single mpv's self-report: a bluez
+# headset sink fed by MORE THAN ONE mpv stream means one slot's audio has migrated
+# onto ANOTHER slot's headset (the "2 streams on yellow, none on red" failure).
+# This is ALWAYS a bug — a sink has exactly one legitimate owner. Pure
+# observability: it logs `audio.cross_bleed` (attributed to the victim slot whose
+# headset is doubled) and dispatches a `cross_bleed` alert ONCE per streak; it
+# never kills anything. Remediation is the per-slot orphan-sink reaper
+# (ORPHAN_SINK_TICKS), which drops the migrated mpv within a tick. Before this,
+# cross-bleed was inaudible to the daemon — only a human wearing both headsets
+# could notice. Runs once per watchdog tick. Requires pw-link + the daemon's
+# XDG_RUNTIME_DIR (set by the systemd --user unit); a missing pw-link yields no
+# output and never false-alarms. State: $BASE_DIR/.cross_bleed_active (streak flag).
+check_cross_bleed() {
+    command -v pw-link >/dev/null 2>&1 || return 0
+    # For each bluez sink's playback_FL input port, count how many mpv output
+    # streams feed it. Emit "<mac_underscore> <count>" for any sink with count>1.
+    local doubled
+    doubled=$(pw-link -l 2>/dev/null | awk '
+        /^bluez_output\..*:playback_FL$/ { cur=$0; next }
+        /^[^[:space:]]/ { cur="" }
+        cur!="" && /\|<-/ && /mpv/ { n[cur]++ }
+        END {
+            for (s in n) if (n[s] > 1) {
+                mac=s; sub(/\.[0-9]+:playback_FL$/,"",mac); sub(/^bluez_output\./,"",mac)
+                print mac, n[s]
+            }
+        }
+    ') || true
+    local stamp="$BASE_DIR/.cross_bleed_active"
+    if [[ -z "$doubled" ]]; then
+        rm -f "$stamp" 2>/dev/null || true
+        return 0
+    fi
+    # Cross-bleed present. Log per victim slot always; alert once per streak.
+    local first=0; [[ ! -f "$stamp" ]] && first=1
+    local mac_u count mac slot tag summary=""
+    while read -r mac_u count; do
+        [[ -z "$mac_u" ]] && continue
+        mac="${mac_u//_/:}"
+        slot=$(jq -r --arg m "$mac" '.devices[] | select((.mac|ascii_upcase)==($m|ascii_upcase)) | .slot' "$CONFIG_FILE" 2>/dev/null | head -1)
+        tag="${slot:-cross-bleed}"
+        summary+="${mac}(x${count}) "
+        (( first == 1 )) && logev "$tag" audio.cross_bleed sink="$mac" mpv_inputs="$count"
+    done <<< "$doubled"
+    # Mark the streak so we alert once, not every tick; cleared above when the
+    # graph goes clean again (so the next episode re-alerts).
+    : > "$stamp"
+    if (( first == 1 )); then
+        dispatch_alert warning cross_bleed \
+            "PipeWire cross-bleed: a headset sink is fed by >1 mpv stream [ ${summary}] — one slot's audio migrated onto another headset. The orphan-sink reaper should clear it within a tick; if it persists, that headset's A2DP link is flapping."
+    fi
+    return 0
+}
+
 mpv_watchdog() {
     while true; do
         sleep "$WATCHDOG_INTERVAL"
+        check_cross_bleed || true
         local count idx
         count=$(jq '.devices | length' "$CONFIG_FILE" 2>/dev/null) || continue
         for ((idx=0; idx<count; idx++)); do
