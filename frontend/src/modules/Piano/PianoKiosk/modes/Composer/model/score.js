@@ -1,5 +1,5 @@
 // score.js — Score document factory.
-import { DIVISIONS } from '#frontend/modules/MusicNotation/duration.js';
+import { DIVISIONS } from '@/modules/MusicNotation/duration.js';
 
 export function makeEmptyScore(setup = {}) {
   const clef = setup.clef ?? { sign: 'G', line: 2 };

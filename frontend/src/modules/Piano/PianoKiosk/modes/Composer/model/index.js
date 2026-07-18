@@ -10,5 +10,5 @@ export {
   moveCaret, select, setAttribute, serializeFromEditor,
 } from './editor.js';
 export { applyCommand, withHistory, undo, redo } from './history.js';
-export { serializeMusicXml } from '#frontend/modules/MusicNotation/serializeMusicXml.js';
-export { parseMusicXml } from '#frontend/modules/MusicNotation/parseMusicXml.js';
+export { serializeMusicXml } from '@/modules/MusicNotation/serializeMusicXml.js';
+export { parseMusicXml } from '@/modules/MusicNotation/parseMusicXml.js';
