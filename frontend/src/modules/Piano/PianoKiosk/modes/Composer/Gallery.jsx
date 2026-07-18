@@ -9,6 +9,7 @@
 // present in EVERY state.
 import { useEffect, useMemo, useState } from 'react';
 import getLogger from '../../../../../lib/logging/Logger.js';
+import { IconPlus } from './icons.jsx';
 
 export function Gallery({ list, onOpen, onNew }) {
   const logger = useMemo(() => getLogger().child({ component: 'composer-gallery' }), []);
@@ -33,21 +34,23 @@ export function Gallery({ list, onOpen, onNew }) {
     <div className="composer-gallery">
       <div className="composer-gallery__head">
         <h2 className="composer-gallery__title">Your songs</h2>
-        {/* Text label, not a glyph — Unicode renders as tofu on the kiosk. */}
+        {/* Drawn plus + the words. A Unicode "+" variant renders as tofu on the
+            kiosk, so the mark comes from icons.jsx like every other glyph. */}
         <button
           type="button"
           className="composer-gallery__new"
           onClick={() => { logger.debug('composer.nav.new', {}); onNew(); }}
           aria-label="New song"
         >
-          New song
+          <IconPlus size={18} />
+          <span>New song</span>
         </button>
       </div>
       {songs == null ? (
         <p className="composer-gallery__empty">Loading…</p>
       ) : songs.length === 0 ? (
         <button type="button" className="composer-gallery__cta" onClick={onNew}>
-          {/* No glyph mark: Unicode "+" variants render as tofu on the kiosk. */}
+          <IconPlus size={26} />
           <span>No songs yet — start a new one</span>
         </button>
       ) : (

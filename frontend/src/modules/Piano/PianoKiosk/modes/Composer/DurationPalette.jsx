@@ -7,7 +7,9 @@
 //
 // Glyphs are hand-drawn inline SVG rather than Unicode music symbols (U+1D15x
 // half/whole/16th tofu in many system fonts on the kiosk's Firefox) — reliable
-// at any size, inherit `currentColor`.
+// at any size, inherit `currentColor`. The dot / rest / delete marks come from
+// icons.jsx, which extends that same house pattern to the rest of the mode.
+import { IconBackspace, IconDot, IconQuarterRest } from './icons.jsx';
 
 const DURATIONS = [
   { type: '16th', key: '1', label: 'Sixteenth' },
@@ -75,33 +77,50 @@ export function DurationPalette({ hud, setDuration, toggleDot, toggleArm, addRes
         ))}
       </div>
 
+      {/* DOTTED — drawn as what it means: a notehead followed by the
+          augmentation dot. The old `♩.` was a Unicode note, i.e. tofu on the
+          kiosk, in the very file whose header explains why the durations beside
+          it are hand-drawn. */}
       <button
         type="button"
-        className={`composer-palette__mod${dots ? ' is-active' : ''}`}
+        className={`composer-palette__mod composer-palette__dotted${dots ? ' is-active' : ''}`}
         aria-pressed={!!dots}
         aria-label="Dotted note (numpad .)"
         title="Dotted · numpad ."
         onClick={toggleDot}
       >
-        <span className="composer-palette__dot">♩<b>.</b></span>
+        <NoteGlyph type="quarter" />
+        <IconDot size={13} className="composer-palette__aug-dot" />
       </button>
 
       <button
         type="button"
-        className="composer-palette__mod"
+        className="composer-palette__mod composer-palette__rest"
         aria-label="Add a rest (numpad 0)"
         title="Rest · numpad 0"
         onClick={addRest}
       >
-        Rest
+        <IconQuarterRest size={24} />
+        <span>Rest</span>
       </button>
 
-      {/* DELETE — the touch path for the Backspace / numpad-minus binding. Wrong
-          notes are the most frequent event in this app's life, and before this
-          button a kid on the tablet (no numpad) could write notes and never
-          remove one. Safe to tap on an empty score: deleteBeforeCaret no-ops.
-          Text label for now; an SVG icon replaces it in a later task — no
-          Unicode erase glyph, which renders as tofu in the kiosk browser. */}
+      {/* DELETE — the touch path for the Backspace / numpad-minus binding, and
+          the one control on this toolbar whose misfire is not recoverable by
+          simply trying again: it and Rest used to sit adjacent at identical
+          size in identical chrome, told apart only by their words, so a kid
+          reaching for "remove that" who drifted one button left ADDED a rest
+          instead. Three signals now separate them, and they are deliberately
+          redundant because any one alone is thin:
+            - SHAPE — a backspace keycap next to a rest glyph, which is a far
+              bigger visual gap than "Delete" next to "Rest";
+            - SPACE — the divider before it takes it out of the rest cluster,
+              so the two are no longer neighbours at all;
+            - a restrained warm TINT — enough to mark it as the destructive one,
+              not enough to be alarming. Deleting a note is routine here and
+              undo sits at the other end of the toolbar; a red alert button
+              would teach a kid to fear the control they need most.
+          Safe to tap on an empty score: deleteBeforeCaret no-ops. */}
+      <span className="composer-palette__sep" aria-hidden="true" />
       <button
         type="button"
         className="composer-palette__mod composer-palette__delete"
@@ -109,7 +128,8 @@ export function DurationPalette({ hud, setDuration, toggleDot, toggleArm, addRes
         title="Delete the last note · Backspace"
         onClick={deleteBack}
       >
-        Delete
+        <IconBackspace size={22} />
+        <span>Delete</span>
       </button>
 
       {/* The WRITE toggle. Its label is CONSTANT in both states, deliberately:

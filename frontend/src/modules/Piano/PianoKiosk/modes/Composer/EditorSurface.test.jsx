@@ -767,3 +767,157 @@ describe('EditorSurface — toolbar nav + help', () => {
     expect(text).toContain('Songs');
   });
 });
+
+// ---------------------------------------------------------------------------
+// Task 12 — one SVG icon language across the toolbar. Every glyph the toolbar
+// used to typeset (`↶` `↷` for history, and the bare-word transport/nav) is now
+// a drawing, because Unicode symbols paint as tofu boxes in the kiosk WebView.
+// ---------------------------------------------------------------------------
+describe('EditorSurface — toolbar icons', () => {
+  const mount = (props = {}) => render(
+    <EditorSurface initialScore={makeEmptyScore()} songId="x" initialRevision={1} save={vi.fn()} onSongs={vi.fn()} config={{}} {...props} />
+  );
+
+  it('draws undo and redo instead of typesetting arrow characters', () => {
+    const { container } = mount();
+    const hist = container.querySelector('.composer-toolbar__history');
+    expect(hist.querySelectorAll('svg').length).toBe(2);
+    // The characters themselves are the regression: they rendered as empty
+    // rectangles on the device, so undo/redo were two blank buttons.
+    expect(hist.textContent).not.toMatch(/[↶↷]/);
+    expect(hist.textContent.trim()).toBe('');
+  });
+
+  it('gives every toolbar button an accessible name even though its icon is hidden', () => {
+    const { container } = mount();
+    for (const btn of container.querySelectorAll('.composer-toolbar button')) {
+      const name = btn.getAttribute('aria-label') || btn.textContent.trim();
+      expect(name, `a toolbar button rendered with no name: ${btn.className}`).not.toBe('');
+    }
+    // The icons must stay out of the accessibility tree; the button names them.
+    for (const svg of container.querySelectorAll('.composer-toolbar svg')) {
+      expect(svg.getAttribute('aria-hidden')).toBe('true');
+    }
+  });
+
+  it('pairs the transport icon with its word, and swaps the icon on state', () => {
+    // Needs a score with notes, or the transport is disabled and never flips.
+    const score = makeEmptyScore({ tempo: 100 });
+    score.parts[0].measures[0].notes = [makeNote({ step: 'C', octave: 4 })];
+    const { container } = render(<EditorSurface initialScore={score} songId="x" initialRevision={1} save={vi.fn()} config={{}} />);
+    const btn = container.querySelector('.composer-toolbar__play');
+    // The WORD stays: an icon-only transport is a guess for a kid who has not
+    // met the convention yet, and this is the mode's primary action.
+    expect(btn.textContent).toContain('Play');
+    const paused = btn.querySelector('svg').innerHTML;
+    act(() => { fireEvent.click(btn); });
+    expect(container.querySelector('.composer-toolbar__play').textContent).toContain('Pause');
+    expect(container.querySelector('.composer-toolbar__play svg').innerHTML).not.toBe(paused);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Task 14 — naming your song from the editor. An untitled draft showed no name
+// anywhere and offered no way to give one, so a kid's song stayed "Untitled" in
+// the gallery forever. The title control is the first step of the work having a
+// life outside this screen.
+// ---------------------------------------------------------------------------
+describe('EditorSurface — rename', () => {
+  const mount = (props = {}) => render(
+    <EditorSurface initialScore={makeEmptyScore()} songId="x" initialRevision={1} save={vi.fn()} config={{}} {...props} />
+  );
+  const titleBtn = () => screen.getByRole('button', { name: /name your song|rename/i });
+
+  it('invites a name when the song has none', () => {
+    mount({ title: '' });
+    expect(titleBtn()).toHaveTextContent('Name your song');
+  });
+
+  it('shows the song\'s own title once it has one', () => {
+    mount({ title: 'Ode to Waffles' });
+    expect(screen.getByRole('button', { name: /rename/i })).toHaveTextContent('Ode to Waffles');
+  });
+
+  it('sits on the LEFT of the toolbar, where a document title belongs', () => {
+    const { container } = mount({ title: 'Waffles' });
+    const kids = [...container.querySelector('.composer-toolbar').children];
+    const doc = kids.findIndex((n) => n.classList.contains('composer-toolbar__doc'));
+    const nav = kids.findIndex((n) => n.classList.contains('composer-toolbar__nav'));
+    expect(doc).toBe(0);
+    expect(doc).toBeLessThan(nav);
+    expect(kids[doc].querySelector('.composer-toolbar__title')).toBeTruthy();
+  });
+
+  it('stacks the save status under the title rather than beside the controls', () => {
+    // Layout constraint, not decoration: as its own flex item on a full 1280px
+    // toolbar, "Saved" appearing was enough to wrap a control onto a second row.
+    // Inside the title's column it costs no horizontal space at all.
+    const { container } = mount({ title: 'Waffles' });
+    const doc = container.querySelector('.composer-toolbar__doc');
+    expect(doc.querySelector('.composer-toolbar__status')).toBeTruthy();
+    expect(container.querySelector('.composer-toolbar > .composer-toolbar__status')).toBeNull();
+  });
+
+  it('swaps to a focused text field on tap, and commits on Enter', () => {
+    const onRename = vi.fn();
+    mount({ title: '', onRename });
+    fireEvent.click(titleBtn());
+    const input = screen.getByRole('textbox', { name: /song name/i });
+    expect(input).toHaveFocus(); // autoFocus: one tap to tapping, not two
+    fireEvent.change(input, { target: { value: 'Waffle Song' } });
+    fireEvent.keyDown(input, { key: 'Enter' });
+    expect(onRename).toHaveBeenCalledWith('Waffle Song');
+    expect(screen.queryByRole('textbox', { name: /song name/i })).not.toBeInTheDocument();
+  });
+
+  it('commits on blur too — a kid taps the staff to get back to work, not Enter', () => {
+    const onRename = vi.fn();
+    mount({ title: '', onRename });
+    fireEvent.click(titleBtn());
+    const input = screen.getByRole('textbox', { name: /song name/i });
+    fireEvent.change(input, { target: { value: 'Blur Song' } });
+    fireEvent.blur(input);
+    expect(onRename).toHaveBeenCalledWith('Blur Song');
+  });
+
+  it('abandons the edit on Escape, keeping the previous name', () => {
+    const onRename = vi.fn();
+    mount({ title: 'Keep Me', onRename });
+    fireEvent.click(screen.getByRole('button', { name: /rename/i }));
+    const input = screen.getByRole('textbox', { name: /song name/i });
+    fireEvent.change(input, { target: { value: 'Discard Me' } });
+    fireEvent.keyDown(input, { key: 'Escape' });
+    expect(onRename).not.toHaveBeenCalled();
+    expect(screen.getByRole('button', { name: /rename/i })).toHaveTextContent('Keep Me');
+  });
+
+  it('trims the name, and treats a whitespace-only one as no name at all', () => {
+    const onRename = vi.fn();
+    mount({ title: '', onRename });
+    fireEvent.click(titleBtn());
+    fireEvent.change(screen.getByRole('textbox', { name: /song name/i }), { target: { value: '   ' } });
+    fireEvent.keyDown(screen.getByRole('textbox', { name: /song name/i }), { key: 'Enter' });
+    expect(onRename).toHaveBeenCalledWith('');
+  });
+
+  // THE TRAP. useComposerInput's window keydown listener preventDefault()s every
+  // mapped code, and Backspace is bound to "delete the note before the caret".
+  // Without its INPUT/TEXTAREA guard, typing a name would erase the SCORE while
+  // the characters refused to erase. Both halves are asserted because they fail
+  // independently: the guard could stop the edit but still swallow the key.
+  it('typing Backspace in the name field edits TEXT, not the score', () => {
+    const { container } = render(<EditorSurface initialScore={makeEmptyScore()} songId="x" initialRevision={1} save={vi.fn()} config={{}} title="" onRename={vi.fn()} />);
+    playNotes(3);
+    const before = container.querySelector('[data-testid="renderer"]').getAttribute('data-xml-len');
+
+    fireEvent.click(screen.getByRole('button', { name: /name your song|rename/i }));
+    const input = screen.getByRole('textbox', { name: /song name/i });
+    const ev = new KeyboardEvent('keydown', { code: 'Backspace', key: 'Backspace', bubbles: true, cancelable: true });
+    act(() => { input.dispatchEvent(ev); });
+
+    // The score is untouched...
+    expect(container.querySelector('[data-testid="renderer"]').getAttribute('data-xml-len')).toBe(before);
+    // ...AND the browser's own text editing was left alone to do its job.
+    expect(ev.defaultPrevented).toBe(false);
+  });
+});

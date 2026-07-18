@@ -53,7 +53,11 @@ export const KEY_LEGEND = [
       // panel and the button must name the same thing, or the numpad key and
       // the on-screen control read as two unrelated features.
       { label: '4', code: 'Numpad4', does: 'Turn Write on or off. With Write ON, the piano writes notes; with it off, play freely without changing the song.' },
-      { label: '🎹', code: null, does: 'With Write on, play a piano key to add that note at the chosen length.' },
+      // WORDS, not glyphs. This is DATA in a .js module rendered as text by
+      // ComposerHelp, so it cannot carry an SVG component the way the toolbar
+      // does — and the emoji/symbol it used to carry painted as a tofu box on
+      // the kiosk, i.e. an unlabelled row in the panel that explains the keys.
+      { label: 'Piano', code: null, does: 'With Write on, play a piano key to add that note at the chosen length.' },
       { label: '0', code: 'Numpad0', does: 'Add a rest' },
     ],
   },
@@ -68,7 +72,7 @@ export const KEY_LEGEND = [
     group: 'Edit',
     keys: [
       { label: '−', code: 'NumpadSubtract', does: 'Delete the note before the caret' },
-      { label: '⌫', code: 'Backspace', does: 'Delete the note before the caret' },
+      { label: 'Backspace', code: 'Backspace', does: 'Delete the note before the caret' },
       { label: 'Del', code: 'Delete', does: 'Delete the note at the caret' },
     ],
   },

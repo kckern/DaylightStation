@@ -466,13 +466,26 @@ export function scheduleYield(cb) {
  *    its content stops — the 4-bar sheet occupied ~320px of a 1240px page, i.e.
  *    the fragment-on-a-white-card look this whole change exists to remove.
  *
- * Both are set on EngravingRules, which lives on the OSMD instance and so
+ *  - RenderMeasureNumbers left true put a stray "2" over bar 2 whenever bar 1
+ *    was PARTIALLY filled — which, on a surface you write into one note at a
+ *    time, is most of the time. MEASURED, not guessed (2026-07-18): with an
+ *    incomplete first bar OSMD sets `SourceMeasures[0].ImplicitMeasure = true`,
+ *    i.e. it reads the half-written bar as a PICKUP, and renumbers the sheet
+ *    0,1,2,3 instead of 1,2,3,4; the system-start label then lands on bar 2.
+ *    Fill bar 1 exactly and the flag clears and the numeral vanishes. Numbers
+ *    are for rehearsal on a score someone is READING, and this is a child's
+ *    manuscript page of four to eight bars — turning them off also makes every
+ *    fill state agree, since the correct-looking case rendered no number
+ *    either.
+ *
+ * All three are set on EngravingRules, which lives on the OSMD instance and so
  * survives the repaint (zoom/resize) path without being re-applied there.
  */
 function applyManuscriptRules(osmd, manuscript) {
   if (!manuscript) return;
   osmd.EngravingRules.RenderMultipleRestMeasures = false;
   osmd.EngravingRules.StretchLastSystemLine = true;
+  osmd.EngravingRules.RenderMeasureNumbers = false;
 }
 
 /**

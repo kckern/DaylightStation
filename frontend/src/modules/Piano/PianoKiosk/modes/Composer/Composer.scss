@@ -40,6 +40,9 @@
   }
 
   &__new {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45rem;
     min-height: 3rem;
     padding: 0.4rem 1.2rem;
     border-radius: 999px;
@@ -70,7 +73,6 @@
     font: 600 1rem 'Roboto Condensed', sans-serif;
     cursor: pointer;
     &:hover { background: var(--piano-surface-2, #1f3329); }
-    &-mark { font-size: 1.25rem; line-height: 1; }
   }
 
   &__grid {
@@ -162,15 +164,89 @@
   z-index: 5;
   display: flex;
   align-items: center;
-  gap: 0.75rem;
+  // Tight gaps are load-bearing here, not cosmetic: the kiosk tablet is 1280
+  // CSS px wide and this row carries a title, undo/redo, five durations, four
+  // modifiers, a transport and two nav buttons. At 0.75rem the last control
+  // (Help) was clipped off the right edge — an invisible button, not a cramped
+  // one. Wrapping is the safety net for anything narrower still; a second row
+  // costs vertical space, so it must stay a last resort rather than the norm.
+  flex-wrap: wrap;
+  gap: 0.4rem;
   margin-bottom: 0.75rem;
   padding: 0.35rem 0;
+
+  // The document cluster: title on top, save status beneath it. A COLUMN so the
+  // status never widens the row — see the comment on the markup in
+  // EditorSurface.jsx. Fixed line box for the status, so the toolbar does not
+  // change height as the status appears and clears.
+  &__doc {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    justify-content: center;
+    min-width: 0;
+    flex: 0 1 auto;
+  }
+
+  // The song's NAME, first thing on the left — where a document title sits in
+  // every editor a kid will ever meet. Capped and ellipsised rather than
+  // allowed to grow: this toolbar is already dense on an 8" tablet, and a long
+  // name must never push the note tools off the edge.
+  &__title,
+  &__title-input {
+    flex: 0 1 auto;
+    // Wide enough that the "Name your song" invitation fits WHOLE. At 6rem it
+    // ellipsised to "Name ..." — an unreadable prompt on the one control whose
+    // entire job is to invite a kid to do something.
+    min-width: 8.2rem;
+    max-width: 11rem;
+    min-height: 2.6rem;
+    padding: 0.3rem 0.55rem;
+    border-radius: 8px;
+    font: 700 0.95rem 'Roboto Condensed', sans-serif;
+    line-height: 1.2;
+  }
+
+  &__title {
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    text-align: left;
+    border: 1px solid transparent;
+    background: transparent;
+    color: var(--piano-fg, #dde);
+    cursor: text; // it becomes a text field — say so before it is tapped
+    // Dashed outline on hover, so "you can change this" is discoverable without
+    // the name looking like a button the rest of the time.
+    &:hover { border-color: var(--piano-border, #4a4a66); border-style: dashed; }
+    // Unnamed reads as a PROMPT, not as a title: lighter and italic, the way an
+    // empty field's placeholder does, so it never looks like the song is
+    // actually called "Name your song".
+    &.is-unnamed {
+      font-weight: 600;
+      font-style: italic;
+      color: var(--piano-muted, #8a8a9a);
+      border-color: var(--piano-border, #3a3a48);
+      border-style: dashed;
+    }
+  }
+
+  &__title-input {
+    border: 1px solid var(--piano-accent, #2ec46f);
+    background: var(--piano-surface, #16161e);
+    color: var(--piano-fg, #dde);
+    outline: none;
+    &::placeholder { color: var(--piano-muted, #8a8a9a); font-style: italic; font-weight: 600; }
+  }
 
   &__history {
     display: inline-flex;
     gap: 0.35rem;
 
     button {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
       min-width: 3.4rem;
       min-height: 3.4rem; // ~54px: a child's fingertip on an 8" tablet
       padding: 0.2rem 0.6rem;
@@ -200,6 +276,10 @@
   // play-looking control, so the control that actually plays should be it.
   // Text label, not a glyph: Unicode play/pause render as tofu on the kiosk.
   &__play {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.4rem;
     min-width: 5rem;
     min-height: 3.4rem;
     padding: 0.2rem 1rem;
@@ -236,12 +316,15 @@
   &__nav {
     margin-left: auto;
     display: inline-flex;
-    gap: 0.4rem;
+    gap: 0.35rem;
   }
 
   &__nav-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
     min-height: 2.6rem;
-    padding: 0.3rem 0.9rem;
+    padding: 0.3rem 0.65rem;
     border-radius: 999px;
     border: 1px solid var(--piano-border, #3a3a48);
     background: var(--piano-surface, #16161e);
@@ -257,7 +340,13 @@
   }
 
   &__status {
-    font: 600 0.85rem 'Roboto Condensed', sans-serif;
+    max-width: 100%;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    padding: 0 0.55rem;
+    font: 600 0.78rem 'Roboto Condensed', sans-serif;
+    line-height: 1.35;
     color: var(--piano-muted, #8a8a9a);
     &.is-saved { color: var(--piano-accent-text, #6fe39a); }
     &.is-invalid,
@@ -272,11 +361,11 @@
 .composer-palette {
   display: inline-flex;
   align-items: center;
-  gap: 0.5rem;
+  gap: 0.35rem;
 
   &__durations {
     display: inline-flex;
-    gap: 0.25rem;
+    gap: 0.15rem;
     padding: 0.2rem;
     border-radius: 12px;
     background: var(--piano-surface, #16161e);
@@ -341,7 +430,7 @@
     // the smallest thing on a toolbar built for a child's finger.
     min-width: 3.4rem;
     min-height: 3.4rem;
-    padding: 0.3rem 0.9rem;
+    padding: 0.3rem 0.6rem;
     border-radius: 10px;
     border: 1px solid var(--piano-border, #2c2c3a);
     background: var(--piano-surface, #16161e);
@@ -356,7 +445,44 @@
     }
   }
 
-  &__dot b { margin-left: 1px; }
+  // Icon-bearing modifier buttons. Icon FIRST, then the word: the glyph is what
+  // a returning kid recognises at speed, the word is what a new one reads.
+  &__dotted,
+  &__rest,
+  &__delete {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.35rem;
+  }
+
+  // The augmentation dot rides the NOTEHEAD's vertical centre, not the button's
+  // — NoteGlyph's head sits low in its box (the stem takes the upper half), so a
+  // centred dot would float beside the stem where it means nothing.
+  &__dotted { gap: 0.1rem; }
+  &__aug-dot { align-self: flex-end; margin-bottom: 0.28rem; }
+
+  // Spatial separation between the rest cluster and Delete. See the comment on
+  // the button in DurationPalette.jsx: adjacency was half of why a kid aiming to
+  // REMOVE a note could end up ADDING a rest, and shape alone doesn't fix
+  // adjacency. The margins do the real work; the hairline just makes the break
+  // legible rather than looking like a layout accident.
+  &__sep {
+    align-self: stretch;
+    width: 1px;
+    margin: 0.35rem 0.45rem;
+    background: var(--piano-border, #2c2c3a);
+  }
+
+  // The destructive one, marked warm but NOT alarming. A kid deletes wrong notes
+  // constantly and undo is one tap away, so this is routine work — a red alert
+  // button would make the most-needed control the scariest one. The tint only
+  // has to say "this one removes things".
+  &__delete {
+    border-color: var(--piano-danger-border, #5a3b38);
+    color: var(--piano-danger, #f0b1a8);
+    &:hover { border-color: var(--piano-danger, #f0b1a8); background: var(--piano-danger-surface, #2a1c1a); }
+  }
 
   // The arm toggle — the core "does the piano write?" control. Off = muted dot;
   // on = accent fill, so its state is unmistakable at a glance.
@@ -380,7 +506,11 @@
   }
 }
 
-.composer-glyph { display: block; }
+// Both hand-drawn families (DurationPalette's NoteGlyph and icons.jsx) go
+// `block` so they can't pick up the inline text baseline gap, which on an
+// icon+word button shows up as the icon sitting a couple of px too high.
+.composer-glyph,
+.composer-icon { display: block; flex: none; }
 
 // The score "sheet": OSMD engraves BLACK notation, so it lives on a white page
 // (like every notation app) — legible and it reads as real sheet music. Floats

@@ -28,6 +28,7 @@ import { CaretLayer, CARET_GAP, CARET_WIDTH, NOTE_WIDTH_FALLBACK, MEASURE_START_
 import { PendingLayer, WET_ADVANCE_UNITS, WET_RX_UNITS } from './PendingLayer.jsx';
 import { DurationPalette } from './DurationPalette.jsx';
 import { ComposerHelp } from './ComposerHelp.jsx';
+import { IconUndo, IconRedo, IconPlay, IconPause, IconSongs, IconInfo } from './icons.jsx';
 
 // The overlays own their own geometry; this file imports it rather than
 // restating it, because the anchor below has to land ON the glyphs PendingLayer
@@ -223,7 +224,87 @@ export function serializeForDisplay(editorState, minBars = DISPLAY_MIN_BARS) {
   return serializeFromEditor({ ...editorState, score });
 }
 
-export function EditorSurface({ initialScore, songId = null, initialRevision = 1, save, create, title, onMaterialized, onSongs, config = {} }) {
+/**
+ * The song's NAME, and the only way in the mode to give it one.
+ *
+ * A draft used to show no name anywhere and offer no control to set one, so a
+ * kid's song stayed "Untitled" in the gallery no matter how much work went into
+ * it. Naming it is the first step of the work having a life off this screen.
+ *
+ * Tap-to-edit rather than a permanent field: the toolbar is already dense on an
+ * 8" tablet, and the name is read far more often than it is written. Commits on
+ * Enter AND on blur, because a kid finishing a name taps the staff to get back
+ * to work — they do not press Enter. Escape abandons.
+ *
+ * ONE-SHOT COMMIT: Enter sets `editing` false, which in a real browser also
+ * fires blur on the disappearing input. `doneRef` makes the second call a
+ * no-op, and is also what keeps Escape's blur from committing the discarded
+ * draft — the bug that would make Escape silently mean "save anyway".
+ *
+ * Commits UNCONDITIONALLY (even when the name is unchanged) and leaves
+ * "is this actually different from what's on disk?" to useAutosave, which is
+ * the layer that knows what was persisted.
+ */
+function TitleControl({ title, onRename, logger }) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState('');
+  const doneRef = useRef(false);
+
+  const open = useCallback(() => {
+    setDraft(title || '');
+    doneRef.current = false;
+    setEditing(true);
+    logger.debug('composer.title.edit-start', { named: !!title });
+  }, [title, logger]);
+
+  const commit = useCallback(() => {
+    if (doneRef.current) return;
+    doneRef.current = true;
+    setEditing(false);
+    const next = (draft || '').trim(); // whitespace-only is no name at all
+    logger.info('composer.title.rename', { length: next.length, named: !!next });
+    onRename?.(next);
+  }, [draft, onRename, logger]);
+
+  const cancel = useCallback(() => {
+    doneRef.current = true;
+    setEditing(false);
+    logger.debug('composer.title.edit-cancel', {});
+  }, [logger]);
+
+  if (editing) {
+    return (
+      <input
+        className="composer-toolbar__title-input"
+        aria-label="Song name"
+        value={draft}
+        // autoFocus so naming is ONE tap, not tap-then-tap-again.
+        autoFocus
+        maxLength={60}
+        placeholder="Name your song"
+        onChange={(e) => setDraft(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') commit();
+          else if (e.key === 'Escape') cancel();
+        }}
+        onBlur={commit}
+      />
+    );
+  }
+  return (
+    <button
+      type="button"
+      className={`composer-toolbar__title${title ? '' : ' is-unnamed'}`}
+      onClick={open}
+      aria-label={title ? `Rename ${title}` : 'Name your song'}
+      title={title ? 'Rename your song' : 'Name your song'}
+    >
+      {title || 'Name your song'}
+    </button>
+  );
+}
+
+export function EditorSurface({ initialScore, songId = null, initialRevision = 1, save, create, title, onRename, onMaterialized, onSongs, config = {} }) {
   const logger = useMemo(() => getLogger().child({ component: 'composer-editor' }), []);
   const [editorState, setEditorState] = useState(() => initEditor(initialScore));
   const [layout, setLayout] = useState({ steps: [], staves: [] });
@@ -343,6 +424,12 @@ export function EditorSurface({ initialScore, songId = null, initialRevision = 1
   // Autosave consumes the LIVE editorState, never settledScore: the two-plane
   // split below is a RENDER concern, and persistence must never wait on an
   // engrave (a kid closing the mode mid-bar would lose the wet notes).
+  // `meta` is what actually carries a RENAME to the server: the PUT applies
+  // `meta.title ?? current`, so before this the editor sent `meta: undefined`
+  // and a renamed song kept its old name on disk forever. MEMOIZED on purpose —
+  // a fresh object each render would change useAutosave's doSave identity every
+  // render, which re-arms its debounce every render and means it never fires.
+  const meta = useMemo(() => ({ title: (title || '').trim() }), [title]);
   const { status, flush } = useAutosave({
     editorState,
     id: songId,
@@ -350,6 +437,7 @@ export function EditorSurface({ initialScore, songId = null, initialRevision = 1
     save,
     create,
     title,
+    meta,
     onMaterialized,
     idleMs: config.autosave_idle_ms || 3000,
     logger,
@@ -504,16 +592,31 @@ export function EditorSurface({ initialScore, songId = null, initialRevision = 1
   return (
     <div className="composer-editor">
       <div className="composer-toolbar">
+        {/* DOCUMENT cluster: what the song is called, and whether it is saved.
+            The status used to sit at the far right as its own flex item, which
+            worked only while the toolbar had spare width — once the title
+            joined the row, "Saved" appearing was enough to overflow it and
+            wrap a control onto a second line. Stacking the status UNDER the
+            title costs no horizontal space at all (the cluster is as wide as
+            the title alone) and reads better anyway: "Saved" is a fact about
+            the thing the title names. */}
+        <div className="composer-toolbar__doc">
+          <TitleControl title={title} onRename={onRename} logger={logger} />
+          <span className={`composer-toolbar__status is-${status}`} aria-live="polite">{statusLabel}</span>
+        </div>
         <div className="composer-toolbar__history">
-          <button type="button" onClick={doUndo} disabled={!canUndo} aria-label="Undo" title="Undo">↶</button>
-          <button type="button" onClick={doRedo} disabled={!canRedo} aria-label="Redo" title="Redo">↷</button>
+          {/* Icons, not `↶`/`↷`: those characters have no glyph in the kiosk
+              WebView's fonts, so undo and redo painted as two blank boxes on
+              the only device this mode runs on. */}
+          <button type="button" onClick={doUndo} disabled={!canUndo} aria-label="Undo" title="Undo"><IconUndo size={24} /></button>
+          <button type="button" onClick={doRedo} disabled={!canRedo} aria-label="Redo" title="Redo"><IconRedo size={24} /></button>
         </div>
         <DurationPalette hud={hud} setDuration={setDuration} toggleDot={toggleDot} toggleArm={toggleArm} addRest={addRest} deleteBack={deleteBack} />
         {/* The mode's transport. Deliberately NOT next to the Write toggle: the
             audit found a kid tapping the most play-looking control (then named
-            "Play") and hearing nothing, because it only armed note entry. TEXT
-            labels, not glyphs — Unicode play/pause render as tofu on the kiosk;
-            an SVG icon pass lands in a later task. */}
+            "Play") and hearing nothing, because it only armed note entry.
+            Icon AND word: the drawn triangle is what a returning kid finds at
+            speed, the word is what a new one reads. */}
         <button
           type="button"
           className={`composer-toolbar__play${transport.playing ? ' is-playing' : ''}`}
@@ -523,13 +626,13 @@ export function EditorSurface({ initialScore, songId = null, initialRevision = 1
           aria-label={transport.playing ? 'Pause your song' : 'Play your song'}
           title={transport.playing ? 'Pause (numpad Enter)' : 'Play from the caret (numpad Enter)'}
         >
-          {transport.playing ? 'Pause' : 'Play'}
+          {transport.playing ? <IconPause size={20} /> : <IconPlay size={20} />}
+          <span>{transport.playing ? 'Pause' : 'Play'}</span>
         </button>
         {/* Mode NAV, right-aligned before the save status. These two lived in a
             full-width bottom bar that spent ~70px of an 8" tablet's height on
-            exactly two buttons, starving the notation. TEXT labels, not glyphs
-            — Unicode renders as tofu on the kiosk browser; SVG icons land in a
-            later task. "Songs" is rendered only when the host gives it
+            exactly two buttons, starving the notation. Icon + word, drawn
+            rather than typeset. "Songs" is rendered only when the host gives it
             somewhere to go, so the editor stays mountable standalone (the
             verification harnesses do exactly that). */}
         <div className="composer-toolbar__nav">
@@ -541,7 +644,8 @@ export function EditorSurface({ initialScore, songId = null, initialRevision = 1
               aria-label="Your songs"
               title="Your saved songs"
             >
-              Songs
+              <IconSongs size={18} />
+              <span>Songs</span>
             </button>
           )}
           <button
@@ -552,10 +656,10 @@ export function EditorSurface({ initialScore, songId = null, initialRevision = 1
             aria-expanded={helpOpen}
             title="How to write music"
           >
-            Help
+            <IconInfo size={18} />
+            <span>Help</span>
           </button>
         </div>
-        <span className={`composer-toolbar__status is-${status}`} aria-live="polite">{statusLabel}</span>
       </div>
       {helpOpen && <ComposerHelp onClose={closeHelp} />}
       {/* Ink-on-paper: OSMD paints BLACK notation, so the staff lives on a white
