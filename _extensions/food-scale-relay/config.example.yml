@@ -59,8 +59,22 @@ scales:
 # backend supplies these same defaults (see
 # backend/src/3_applications/nutribot/lib/scaleNutribotConfig.mjs). The target
 # chat is NOT configured here; it is the household head (household.yml `head`).
+#
+# Two ways a weight reaches nutribot:
+#   AUTO  — the scale rests at a variable load on the shelf (never ~0), so the bridge
+#           learns that resting load as a baseline and pushes a NEW prompt for every
+#           DISTINCT settled value that rises above it. Re-settles within tolerance are
+#           suppressed; returning near baseline ends the session and re-learns the rest.
+#           Weights NEVER expire — a prompt waits until you answer it. Trade-off: the one
+#           moment you flip the scale onto its shelf looks like a placement → one stray
+#           prompt to ignore (it is not repeated).
+#   FORCE — press the ESP button to log the live weight right now, bypassing all gates.
+#           Use it whenever the auto heuristic would miss/mis-gate a real measurement.
 nutribot:
-  min_grams: 5              # ignore settled readings below this (noise / near-zero)
+  min_grams: 5              # floor: ignore settled readings below this (noise / near-zero)
+  baseline_tolerance_g: 6   # within this of the resting load = "at rest" (removed / jostle)
+  placement_delta_g: 10     # min rise above the resting load to count as a real placement
+  dedup_delta_g: 5          # min change from the last pushed value to post a NEW prompt
   containers:
     threshold_g: 150        # only offer container (tare) subtraction above this gross weight
     items:

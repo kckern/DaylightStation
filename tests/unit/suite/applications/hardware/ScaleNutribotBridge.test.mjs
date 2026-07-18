@@ -13,35 +13,25 @@ function makeBus() {
   };
 }
 
-function makeTimers() {
-  let pending = [];
-  return {
-    setTimeoutFn: (fn) => { const t = { fn, cleared: false, unref() { return this; } }; pending.push(t); return t; },
-    clearTimeoutFn: (t) => { if (t) t.cleared = true; },
-    fireAll: async () => { const due = pending.filter((t) => !t.cleared); pending = []; for (const t of due) await t.fn(); },
-  };
-}
-
-describe('ScaleNutribotBridge (idle-baseline)', () => {
-  let bus, execute, expire, container, timers, expired;
+describe('ScaleNutribotBridge (idle-baseline, new-message-per-value, no expiry)', () => {
+  let bus, execute, container;
   const emit = (grams, stable = true) => bus.emit('food-scale', { id: 'kitchen', grams, stable, unit: 'g' });
+  const press = (p = 'short') => bus.emit('food-scale', { id: 'kitchen', event: 'button', press: p });
 
   beforeEach(() => {
     bus = makeBus();
     execute = jest.fn().mockResolvedValue({ success: true, logUuid: 'l1', messageId: 'm1' });
-    expired = true;
-    expire = jest.fn(async () => ({ success: true, expired }));
-    container = { getLogFoodFromScale: () => ({ execute }), getExpireScaleLog: () => ({ execute: expire }) };
-    timers = makeTimers();
+    // No getExpireScaleLog — the bridge must never reach for expiry. If it did, this
+    // container would throw and the test would fail.
+    container = { getLogFoodFromScale: () => ({ execute }) };
     createScaleNutribotBridge({
       eventBus: bus, nutribotContainer: container,
       userId: 'kckern', conversationId: 'telegram:b1_c2',
       scaleConfig: normalizeScaleNutribotConfig({}), logger,
-      setTimeoutFn: timers.setTimeoutFn, clearTimeoutFn: timers.clearTimeoutFn,
     });
   });
 
-  it('learns the initial resting weight silently (no prompt)', async () => {
+  it('learns the initial resting weight silently (no push)', async () => {
     emit(480); await flush();
     expect(execute).not.toHaveBeenCalled();
   });
@@ -53,7 +43,7 @@ describe('ScaleNutribotBridge (idle-baseline)', () => {
     expect(execute).not.toHaveBeenCalled();
   });
 
-  it('prompts (gross) when the weight rises >= placementDelta above baseline', async () => {
+  it('pushes (gross) as a NEW message when the weight rises >= placementDelta above baseline', async () => {
     emit(480); await flush();      // baseline
     emit(680); await flush();      // +200 → placement
     expect(execute).toHaveBeenCalledTimes(1);
@@ -67,24 +57,33 @@ describe('ScaleNutribotBridge (idle-baseline)', () => {
     expect(execute).not.toHaveBeenCalled();
   });
 
-  it('edits in place while loaded when the weight changes >= editDelta', async () => {
+  it('posts a NEW message (not an edit) for each distinct value while loaded', async () => {
     emit(480); await flush();
-    emit(680); await flush();      // placement
-    emit(740); await flush();      // +60 while loaded → edit
+    emit(680); await flush();      // placement → push #1
+    emit(740); await flush();      // +60 → distinct value → push #2 (new message)
     expect(execute).toHaveBeenCalledTimes(2);
-    expect(execute.mock.calls[1][0]).toMatchObject({ grams: 740, existingLogUuid: 'l1', messageId: 'm1' });
+    expect(execute.mock.calls[1][0]).toMatchObject({ grams: 740, scaleId: 'kitchen' });
+    expect(execute.mock.calls[1][0].existingLogUuid).toBeUndefined(); // NOT an edit
   });
 
-  it('re-arms after the food is removed (returns to baseline), then a new placement creates fresh', async () => {
+  it('does not repeat a message for the same held value (dedup)', async () => {
+    emit(480); await flush();
+    emit(680); await flush();      // push
+    emit(681); await flush();      // +1 < dedupDelta(5) → no repeat
+    emit(683); await flush();      // +3 from last pushed → still < dedup
+    expect(execute).toHaveBeenCalledTimes(1);
+  });
+
+  it('re-arms after the food is removed (returns to baseline), then a new placement pushes fresh', async () => {
     emit(480); await flush();
     emit(680); await flush();      // placement
-    emit(482); await flush();      // back near baseline → removed
+    emit(482); await flush();      // back near baseline → removed / session ends
     emit(690); await flush();      // new placement
     expect(execute).toHaveBeenCalledTimes(2);
     expect(execute.mock.calls[1][0].existingLogUuid).toBeUndefined();
   });
 
-  it('adopts a lower resting weight (tare to ~0), then a small placement prompts', async () => {
+  it('adopts a lower resting weight (tare to ~0), then a small placement pushes', async () => {
     emit(480); await flush();      // baseline
     emit(0); await flush();        // tared → baseline adopts 0
     emit(30); await flush();       // +30 above 0 → placement
@@ -92,30 +91,19 @@ describe('ScaleNutribotBridge (idle-baseline)', () => {
     expect(execute.mock.calls[0][0]).toMatchObject({ grams: 30 });
   });
 
-  it('ignores wobble (unstable frames)', async () => {
+  it('ignores wobble (unstable frames) on the auto path', async () => {
     emit(480); await flush();
     emit(680, false); await flush();
     expect(execute).not.toHaveBeenCalled();
   });
 
-  it('auto-expires an untouched prompt and adopts its weight as the new baseline', async () => {
-    emit(30); await flush();       // baseline 30 (e.g. scale on counter)
-    emit(480); await flush();      // moved onto shelf → looks like placement
+  it('logs the shelf-storage settle once and never repeats it (weights do not expire)', async () => {
+    emit(0); await flush();        // resting baseline 0 (counter, empty)
+    emit(574); await flush();      // flipped onto shelf → looks like a placement → ONE push
+    emit(574); await flush();      // still sitting there → no repeat
+    emit(575); await flush();      // +1 → still within dedup → no repeat
     expect(execute).toHaveBeenCalledTimes(1);
-    expired = true;
-    await timers.fireAll();        // expire timer fires → untouched → rejected
-    expect(expire).toHaveBeenCalledTimes(1);
-    emit(481); await flush();      // shelf re-settle: now within tol of adopted baseline(480)
-    expect(execute).toHaveBeenCalledTimes(1); // no new prompt
-  });
-
-  it('commits (keeps, stops prompting) when the user engaged before expiry', async () => {
-    emit(480); await flush();
-    emit(680); await flush();      // placement
-    expired = false;               // user tapped density → ExpireScaleLog reports not-expired
-    await timers.fireAll();        // expire fires → committed
-    emit(750); await flush();      // more food while committed → no edit, no new prompt
-    expect(execute).toHaveBeenCalledTimes(1);
+    expect(execute.mock.calls[0][0]).toMatchObject({ grams: 574 });
   });
 
   it('does not double-create when two placement frames arrive before the first resolves', async () => {
@@ -123,5 +111,28 @@ describe('ScaleNutribotBridge (idle-baseline)', () => {
     emit(680); emit(680);          // synchronous, before flush
     await flush();
     expect(execute).toHaveBeenCalledTimes(1);
+  });
+
+  it('FORCE: a button press logs the live weight even when auto would suppress it', async () => {
+    emit(480); await flush();      // baseline
+    emit(487); await flush();      // +7 < placementDelta → auto ignores, but tracked as live weight
+    expect(execute).not.toHaveBeenCalled();
+    press(); await flush();        // button → force-log the live 487g
+    expect(execute).toHaveBeenCalledTimes(1);
+    expect(execute.mock.calls[0][0]).toMatchObject({ grams: 487, scaleId: 'kitchen' });
+    expect(execute.mock.calls[0][0].existingLogUuid).toBeUndefined();
+  });
+
+  it('FORCE: captures the latest weight even from an unstable frame', async () => {
+    emit(480); await flush();      // baseline
+    emit(690, false); await flush(); // unstable → auto ignores, live weight = 690
+    press(); await flush();
+    expect(execute).toHaveBeenCalledTimes(1);
+    expect(execute.mock.calls[0][0]).toMatchObject({ grams: 690 });
+  });
+
+  it('FORCE: does nothing when there is no weight yet', async () => {
+    press(); await flush();
+    expect(execute).not.toHaveBeenCalled();
   });
 });

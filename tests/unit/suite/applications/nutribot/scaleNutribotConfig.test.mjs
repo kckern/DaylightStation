@@ -69,23 +69,23 @@ describe('scaleNutribotConfig', () => {
     expect(cmds).toEqual(['a', 'r', 'x']);
   });
 
-  it('normalizes editDeltaG and per-level hint with defaults', () => {
+  it('normalizes dedupDeltaG and per-level hint with defaults', () => {
     const cfg = normalizeScaleNutribotConfig({});
-    expect(cfg.editDeltaG).toBe(3);
+    expect(cfg.dedupDeltaG).toBe(5);
     expect(cfg.densityLevels[0]).toMatchObject({ level: 1, hint: expect.any(String) });
     expect(cfg.densityLevels[0].hint.length).toBeGreaterThan(0);
 
-    const overridden = normalizeScaleNutribotConfig({ nutribot: { edit_delta_g: 10 } });
-    expect(overridden.editDeltaG).toBe(10);
+    const overridden = normalizeScaleNutribotConfig({ nutribot: { dedup_delta_g: 10 } });
+    expect(overridden.dedupDeltaG).toBe(10);
   });
 
-  it('normalizes baseline/placement/expire knobs with defaults', () => {
+  it('normalizes baseline/placement/dedup knobs with defaults (no expiry knob)', () => {
     const cfg = normalizeScaleNutribotConfig({});
     expect(cfg.baselineToleranceG).toBe(6);
     expect(cfg.placementDeltaG).toBe(10);
-    expect(cfg.expireMs).toBe(180000);
-    const o = normalizeScaleNutribotConfig({ nutribot: { baseline_tolerance_g: 8, placement_delta_g: 15, expire_minutes: 5 } });
-    expect(o).toMatchObject({ baselineToleranceG: 8, placementDeltaG: 15, expireMs: 300000 });
+    expect(cfg.expireMs).toBeUndefined(); // weights never expire
+    const o = normalizeScaleNutribotConfig({ nutribot: { baseline_tolerance_g: 8, placement_delta_g: 15, dedup_delta_g: 4 } });
+    expect(o).toMatchObject({ baselineToleranceG: 8, placementDeltaG: 15, dedupDeltaG: 4 });
   });
 
   it('buildDensityKeyboard lays out a 3x3 grid + a control row', () => {
