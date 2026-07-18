@@ -273,10 +273,25 @@ does NOT repeat the `dont-reconnect`/`audio-fallback-to-null` mistake above):
    to the daemon — only a human wearing both headsets could catch it. Route it to a
    phone push with `alerts.on_cross_bleed: notify` in `devices.yml` (defaults to `log`).
 
-**Still open (Phase 2, needs a supervised 2-headset live test):** eliminate cross-bleed
-*entirely* by pinning each mpv to its own sink so a vanished sink yields silence on that
-headset only, never migration. This touches the exact routing that caused the all-headsets-
-silent outage above, so it must be verified one slot at a time with `/api/verify` before rollout.
+**Phase 2 attempt — null-sink default: TESTED & REJECTED (2026-07-17).** The idea was to
+eliminate cross-bleed by making a persistent null "void" sink the PipeWire *default*, so an
+orphaned stream (whose bluez target vanished) would migrate to the void (silence) instead of
+onto another headset. It was validated live with instrumentation (peak-meter + `pw-link`) and
+**failed the same way as the forbidden `dont-reconnect` combo above:** the null default is a
+*trap*. A migrated stream parks on the void sink and never returns to its headset — because the
+void is a perfectly "valid" sink it's happy to sit on, WirePlumber has no reason to move it
+back when the real sink reappears. Within seconds, streams drifted onto the void and all audio
+went silent. Rolled back fully (destroy void node, restore default to a real sink, restart
+daemon). **Lesson: do not make any always-present sink (null or otherwise) the default as a
+migration sink — homeless streams get stuck on it.** The ground-truth takeaway confirmed here:
+orphans migrate to *whatever the default sink is* (the original bug landed cross-bleed on
+yellow precisely because yellow was the default). The only remaining viable path to *zero*
+cross-bleed is a **WirePlumber routing rule** that makes each `bluez_output` sink accept **only
+the stream that explicitly targeted it** (reject default/auto-routed links) — leaving mpv and
+the default untouched. That is more involved and MUST be developed + tested in a controlled
+maintenance window when the headsets are NOT in active household use (live testing during use
+proved disruptive and unreliable — headsets get toggled mid-test). Until then, the Phase 1
+guardrails (cross-bleed detector + ~5s reap window) are the shipped containment.
 
 ### The mute IPC also persists into fresh mpvs
 
