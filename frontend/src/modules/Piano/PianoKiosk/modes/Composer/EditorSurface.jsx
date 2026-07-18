@@ -27,6 +27,7 @@ import { useWetInk } from './wetInk.js';
 import { CaretLayer, CARET_GAP, CARET_WIDTH, NOTE_WIDTH_FALLBACK, MEASURE_START_UNITS, staveCaretMetrics, systemForY } from './CaretLayer.jsx';
 import { PendingLayer, WET_ADVANCE_UNITS, WET_RX_UNITS } from './PendingLayer.jsx';
 import { DurationPalette } from './DurationPalette.jsx';
+import { ComposerHelp } from './ComposerHelp.jsx';
 
 // The overlays own their own geometry; this file imports it rather than
 // restating it, because the anchor below has to land ON the glyphs PendingLayer
@@ -35,9 +36,29 @@ import { DurationPalette } from './DurationPalette.jsx';
 // position: tier 3 below and that caret must name the same spot, or a blank
 // draft would promise the first note one place and paint it in another.
 
-// The Composer engraves at a fixed zoom; kept as a named value so the caret's
-// scale-dependent terms read the same here as they do inside CaretLayer.
-const SCALE = 1;
+// ZOOM. The Composer used to engrave at OSMD zoom 1 inside a fixed 60rem page:
+// on the 8" kiosk tablet that put a tiny staff in the corner of a big blank
+// card. Notation for a child should be the largest thing on the screen, so the
+// default is 1.4 and `config.composer.zoom` can move it.
+//
+// ONE NUMBER, TWO CONSUMERS — this is the correctness constraint. OSMD's layout
+// output is already in ZOOMED screen pixels: `staves[].lineSpacing` is
+// 10px/unit x zoom (osmdRender.js) and `steps[].x/width` are DOM boxes. So
+// anything derived from those is zoom-correct for free — which is why
+// PendingLayer, written entirely in lineSpacing multiples, needs no zoom at
+// all. What is NOT free are CaretLayer's fixed-pixel constants (CARET_GAP,
+// CARET_WIDTH, its 40px height floor): it multiplies those by its own `scale`
+// prop. Feed CaretLayer a `scale` that differs from the engrave zoom and the
+// caret sits (zoom - 1) * CARET_GAP away from the notehead it is supposed to
+// clear. Hence: the value below goes to MusicXmlRenderer's `scale` AND to
+// CaretLayer's `scale` AND to the wet-caret override's gap term — never a
+// literal, never a second constant.
+export const DEFAULT_ZOOM = 1.4;
+
+// How many measures a sheet shows even when the model has fewer. Manuscript
+// paper is ruled ahead of what is written on it; a lone bar fragment on a big
+// white card reads as a broken widget instead of something to fill in.
+export const DISPLAY_MIN_BARS = 4;
 
 /**
  * Where the FIRST wet-ink note should paint, in engraved pixel space, plus which
@@ -144,7 +165,7 @@ function countNotes(score) {
  *
  * Render-only and NEVER saved: autosave serializes editorState directly.
  */
-function withDisplayRests(score) {
+export function withDisplayRests(score) {
   const parts = score?.parts || [];
   if (!parts.some((p) => (p.measures || []).some((m) => !(m.notes || []).length))) return score;
   return {
@@ -156,16 +177,63 @@ function withDisplayRests(score) {
   };
 }
 
-export function serializeForDisplay(editorState) {
-  return serializeFromEditor({ ...editorState, score: withDisplayRests(editorState?.score) });
+/**
+ * DISPLAY copy padded out to look like ruled manuscript paper: bars the model
+ * does not have, appended so the sheet always shows something to fill in.
+ *
+ * Two rules, whichever asks for more:
+ *  - a floor of `minBars`, so an untouched draft is a page of empty systems
+ *    rather than one bar fragment adrift on a white card;
+ *  - one empty RUNWAY bar past the last bar that has notes, so a kid writing
+ *    into the last bar can always see where the next one goes.
+ *
+ * The runway is measured from the last FILLED bar, not from the model's length,
+ * so the empty trailing bar ensureMeasure already opened counts AS the runway
+ * instead of earning a second one behind it.
+ *
+ * Purely additive and non-mutating: the bars are appended to a copy. Autosave
+ * serializes editorState directly (useAutosave), so none of this is ever saved.
+ */
+export function padDisplayMeasures(score, minBars = DISPLAY_MIN_BARS) {
+  const parts = score?.parts || [];
+  if (!parts.length) return score;
+  let lastFilled = -1;
+  let modelBars = 0;
+  for (const p of parts) {
+    const ms = p.measures || [];
+    if (ms.length > modelBars) modelBars = ms.length;
+    for (let i = 0; i < ms.length; i++) if ((ms[i].notes || []).length) lastFilled = Math.max(lastFilled, i);
+  }
+  const wanted = Math.max(minBars, lastFilled + 2); // +1 index→count, +1 runway
+  if (wanted <= modelBars) return score;
+  return {
+    ...score,
+    parts: parts.map((p) => {
+      const measures = (p.measures || []).slice();
+      while (measures.length < wanted) measures.push({ number: measures.length + 1, notes: [] });
+      return { ...p, measures };
+    }),
+  };
 }
 
-export function EditorSurface({ initialScore, songId = null, initialRevision = 1, save, create, title, onMaterialized, config = {} }) {
+// Pad FIRST, then rest: the bars padding appends are note-less, and a note-less
+// bar is exactly what OSMD cannot engrave.
+export function serializeForDisplay(editorState, minBars = DISPLAY_MIN_BARS) {
+  const score = withDisplayRests(padDisplayMeasures(editorState?.score, minBars));
+  return serializeFromEditor({ ...editorState, score });
+}
+
+export function EditorSurface({ initialScore, songId = null, initialRevision = 1, save, create, title, onMaterialized, onSongs, config = {} }) {
   const logger = useMemo(() => getLogger().child({ component: 'composer-editor' }), []);
   const [editorState, setEditorState] = useState(() => initEditor(initialScore));
   const [layout, setLayout] = useState({ steps: [], staves: [] });
+  const [helpOpen, setHelpOpen] = useState(false);
   const { steps, staves } = layout;
   const { subscribe, sendNoteAt, sendNoteOffAt, sendPanic } = usePianoMidi();
+  // See DEFAULT_ZOOM: this single value drives the engrave AND every caret term
+  // that is measured in fixed pixels. They must not diverge.
+  const zoom = config.zoom ?? DEFAULT_ZOOM;
+  const minBars = config.display_min_bars ?? DISPLAY_MIN_BARS;
 
   // ---- PLAYBACK -----------------------------------------------------------
   // The mode's only way to HEAR what you wrote. Driven by the shared
@@ -321,7 +389,7 @@ export function EditorSurface({ initialScore, songId = null, initialRevision = 1
   // stop. The score is passed on its OWN rather than spread over editorState so
   // that this is trivially true — nothing else can leak in and go stale behind
   // the dependency list.
-  const musicXml = useMemo(() => serializeForDisplay({ score: settledScore }), [settledScore]);
+  const musicXml = useMemo(() => serializeForDisplay({ score: settledScore }, minBars), [settledScore, minBars]);
 
   // Model state + engrave output on EVERY edit (debug). One record per editorState
   // change carries the whole picture: note/measure counts, caret, dirty/revision,
@@ -386,13 +454,13 @@ export function EditorSurface({ initialScore, songId = null, initialRevision = 1
     return {
       // Clamp the caret's RIGHT edge to the system end, so the caret itself
       // can't spill into the margin the noteheads are kept out of.
-      x: Math.min(lastCentre + ls * WET_RX_UNITS + CARET_GAP * SCALE, staff.right - CARET_WIDTH * SCALE),
+      x: Math.min(lastCentre + ls * WET_RX_UNITS + CARET_GAP * zoom, staff.right - CARET_WIDTH * zoom),
       // Vertical extent comes from CaretLayer's own helper, so the wet caret,
       // the blank-staff caret and the engraved caret all occupy the same band —
       // the caret must not change HEIGHT or jump vertically when ink dries.
-      ...staveCaretMetrics(staff, SCALE),
+      ...staveCaretMetrics(staff, zoom),
     };
-  }, [pending, anchor, staves]);
+  }, [pending, anchor, staves, zoom]);
 
   const clef = editorState.score?.parts?.[0]?.clefs?.[1];
 
@@ -422,6 +490,17 @@ export function EditorSurface({ initialScore, songId = null, initialRevision = 1
   }, [canRedo, editorState, logger]);
   const statusLabel = STATUS_LABEL[status] || '';
 
+  // The help panel's open state used to live in the deleted bottom bar. It sits
+  // here now for the same reason it sat there: nothing outside the toolbar that
+  // owns the toggle needs to know the reference sheet is showing.
+  const toggleHelp = useCallback(() => {
+    setHelpOpen((v) => { logger.info('composer.help.toggle', { open: !v }); return !v; });
+  }, [logger]);
+  const closeHelp = useCallback(() => {
+    logger.info('composer.help.toggle', { open: false });
+    setHelpOpen(false);
+  }, [logger]);
+
   return (
     <div className="composer-editor">
       <div className="composer-toolbar">
@@ -446,15 +525,51 @@ export function EditorSurface({ initialScore, songId = null, initialRevision = 1
         >
           {transport.playing ? 'Pause' : 'Play'}
         </button>
+        {/* Mode NAV, right-aligned before the save status. These two lived in a
+            full-width bottom bar that spent ~70px of an 8" tablet's height on
+            exactly two buttons, starving the notation. TEXT labels, not glyphs
+            — Unicode renders as tofu on the kiosk browser; SVG icons land in a
+            later task. "Songs" is rendered only when the host gives it
+            somewhere to go, so the editor stays mountable standalone (the
+            verification harnesses do exactly that). */}
+        <div className="composer-toolbar__nav">
+          {onSongs && (
+            <button
+              type="button"
+              className="composer-toolbar__nav-btn"
+              onClick={() => { logger.debug('composer.nav.songs', {}); onSongs(); }}
+              aria-label="Your songs"
+              title="Your saved songs"
+            >
+              Songs
+            </button>
+          )}
+          <button
+            type="button"
+            className="composer-toolbar__nav-btn"
+            onClick={toggleHelp}
+            aria-label="How to write music"
+            aria-expanded={helpOpen}
+            title="How to write music"
+          >
+            Help
+          </button>
+        </div>
         <span className={`composer-toolbar__status is-${status}`} aria-live="polite">{statusLabel}</span>
       </div>
+      {helpOpen && <ComposerHelp onClose={closeHelp} />}
       {/* Ink-on-paper: OSMD paints BLACK notation, so the staff lives on a white
           "sheet" page (like every notation app) — legible and it reads as real
           sheet music, not a dark widget. The caret positions against this page. */}
       <div className="composer-page">
-        <MusicXmlRenderer musicXml={musicXml} flow="wrapped" scale={SCALE} onLayout={onLayout}>
+        {/* `manuscript`: engrave this as a writing surface, not a reading one.
+            Without it OSMD collapses the padded runway bars into a
+            multi-measure rest ("3" over one bar) and stops the system where the
+            content stops — which is precisely the lonely-fragment look the
+            padding above exists to remove. */}
+        <MusicXmlRenderer musicXml={musicXml} flow="wrapped" scale={zoom} manuscript onLayout={onLayout}>
           <PendingLayer staves={staves} anchorX={anchor?.x ?? 0} anchorSystem={anchor?.system ?? 0} pending={pending.notes} clef={clef} />
-          <CaretLayer steps={steps} staves={staves} caretStepIndex={stepIdx} scale={SCALE} override={caretOverride} />
+          <CaretLayer steps={steps} staves={staves} caretStepIndex={stepIdx} scale={zoom} override={caretOverride} />
         </MusicXmlRenderer>
         {/* The invitation. Blank-staff-first is the design, but the arm toggle
             defaults OFF, so without this a kid sits down, plays, and nothing at

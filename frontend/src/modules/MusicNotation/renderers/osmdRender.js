@@ -450,6 +450,32 @@ export function scheduleYield(cb) {
 }
 
 /**
+ * MANUSCRIPT-PAPER engraving rules — opt-in, off by default, so the reading
+ * modes (SheetMusic) keep the conventional engraving they have always had.
+ *
+ * The Composer pads its DISPLAY score with empty bars so a blank draft reads as
+ * ruled paper waiting to be filled. Two OSMD 2.0 defaults defeat that, and both
+ * are correct for READING a score and wrong for WRITING one:
+ *
+ *  - RenderMultipleRestMeasures collapses runs of rest-only bars into a single
+ *    bar with a count over it. Standard notation for a player counting bars
+ *    rest; for a kid staring at an empty draft it turns four bars of paper into
+ *    one bar and a mystery numeral "3". (Verified 2026-07-18: bar 1 escapes the
+ *    collapse only because it carries the tempo direction.)
+ *  - StretchLastSystemLine left false means a short score's system stops where
+ *    its content stops — the 4-bar sheet occupied ~320px of a 1240px page, i.e.
+ *    the fragment-on-a-white-card look this whole change exists to remove.
+ *
+ * Both are set on EngravingRules, which lives on the OSMD instance and so
+ * survives the repaint (zoom/resize) path without being re-applied there.
+ */
+function applyManuscriptRules(osmd, manuscript) {
+  if (!manuscript) return;
+  osmd.EngravingRules.RenderMultipleRestMeasures = false;
+  osmd.EngravingRules.StretchLastSystemLine = true;
+}
+
+/**
  * Engrave (PAINT) `xml` into `host` up to and including `osmd.render()` — the
  * fast part the React wrapper reveals first. Does NOT extract events/geometry;
  * that expensive cursor walk is run separately (sliced) in Task 8 so the main
@@ -459,9 +485,10 @@ export function scheduleYield(cb) {
  * @param {HTMLElement} host
  * @param {string} xml - raw MusicXML
  * @param {{ width?:number, flow?:'wrapped'|'horizontal', scale?:number,
- *           transpose?:number, shouldAbort?:() => boolean }} [opts]
+ *           transpose?:number, manuscript?:boolean, shouldAbort?:() => boolean }} [opts]
  *   transpose is an integer semitone offset (default 0) re-engraving the score in
  *   a new key — the notation AND the extracted pitches follow it.
+ *   manuscript opts into the writing-surface rules — see applyManuscriptRules.
  *   shouldAbort is checked after each await so a stale render never clobbers
  *   a newer one's DOM.
  * @returns {Promise<{osmd:object,width:number,height:number,flow:string}|null>}
@@ -494,6 +521,7 @@ export async function osmdEngrave(host, xml, opts = {}) {
   });
   // Mid-system measure numbers pile onto tight chords; system-start only.
   osmd.EngravingRules.RenderMeasureNumbersOnlyAtSystemStart = true;
+  applyManuscriptRules(osmd, opts.manuscript);
   await osmd.load(xml);
   if (abort()) return null;
 

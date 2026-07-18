@@ -1,5 +1,5 @@
-// Composer.scss — mode container (gallery / new-song / editor), the bottom
-// ComposerBar, the sticky-duration HUD, and the caret overlay. Follows
+// Composer.scss — mode container (gallery / new-song / editor), the editor
+// toolbar, the sticky-duration HUD, and the caret overlay. Follows
 // Producer.scss's convention: `.piano-mode` (PianoApp.scss) supplies the
 // base padding/scroll, this file layers the mode-specific surface on top via
 // its own `.piano-mode--composer` root class.
@@ -24,10 +24,31 @@
   flex-direction: column;
   gap: 1rem;
 
+  // Title + the new-song action on one line. The action lives here rather than
+  // in mode chrome because this view is the only route back to a blank staff.
+  &__head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+  }
+
   &__title {
     margin: 0;
     font: 700 1.35rem 'Roboto Condensed', sans-serif;
     color: var(--piano-fg, #e8e8f2);
+  }
+
+  &__new {
+    min-height: 3rem;
+    padding: 0.4rem 1.2rem;
+    border-radius: 999px;
+    border: 1px solid var(--piano-accent, #2ec46f);
+    background: var(--piano-surface, #1c2a24);
+    color: var(--piano-accent-text, #5fe39a);
+    font: 600 1rem 'Roboto Condensed', sans-serif;
+    cursor: pointer;
+    &:hover { background: var(--piano-surface-2, #1f3329); }
   }
 
   &__empty {
@@ -208,8 +229,34 @@
     }
   }
 
-  &__status {
+  // Mode nav (Songs / Help), pushed to the right end of the toolbar ahead of the
+  // save status. These replace the deleted full-width bottom bar: same two
+  // controls, none of the ~70px of vertical screen it cost. Sized smaller than
+  // the play/undo controls on purpose — they are navigation, not the work.
+  &__nav {
     margin-left: auto;
+    display: inline-flex;
+    gap: 0.4rem;
+  }
+
+  &__nav-btn {
+    min-height: 2.6rem;
+    padding: 0.3rem 0.9rem;
+    border-radius: 999px;
+    border: 1px solid var(--piano-border, #3a3a48);
+    background: var(--piano-surface, #16161e);
+    color: var(--piano-fg, #dde);
+    font: 600 0.9rem 'Roboto Condensed', sans-serif;
+    cursor: pointer;
+    &:hover { border-color: var(--piano-border, #4a4a66); }
+    &[aria-expanded='true'] {
+      background: var(--piano-surface-2, #1f3329);
+      border-color: var(--piano-accent, #2ec46f);
+      color: var(--piano-accent-text, #6fe39a);
+    }
+  }
+
+  &__status {
     font: 600 0.85rem 'Roboto Condensed', sans-serif;
     color: var(--piano-muted, #8a8a9a);
     &.is-saved { color: var(--piano-accent-text, #6fe39a); }
@@ -338,9 +385,11 @@
 // The score "sheet": OSMD engraves BLACK notation, so it lives on a white page
 // (like every notation app) — legible and it reads as real sheet music. Floats
 // in the dark editor surface with a soft shadow and generous margins.
+// Full width, deliberately: it was a fixed 60rem slab regardless of content,
+// which on the 8" kiosk tablet left the staff a fragment in the corner of a big
+// card with the lower two-thirds of the viewport doing nothing. The page is the
+// notation's surface, so it takes the editor's width and the score fills it.
 .composer-page {
-  max-width: 60rem;
-  margin: 0 auto;
   padding: 1.5rem 1.75rem 2.25rem;
   border-radius: 10px;
   background: #fbfbf7; // warm paper white
@@ -400,57 +449,6 @@
   color: var(--piano-accent, #2ec46f);
   opacity: 0.85;
   pointer-events: none;
-}
-
-// ── Bottom bar (back + undo/redo) ────────────────────────────────────────
-.composer-bar {
-  flex: 0 0 auto;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 1rem;
-  padding: 0.6rem 1.25rem;
-  background: var(--piano-bg, #0e0e12);
-  border-top: 1px solid var(--piano-border, #22222e);
-
-  &__left,
-  &__right {
-    display: flex;
-    align-items: center;
-    gap: 0.6rem;
-  }
-
-  button {
-    min-height: 3rem;
-    min-width: 3rem;
-    padding: 0.3rem 1.1rem;
-    border-radius: 999px;
-    border: 1px solid var(--piano-border, #3a3a48);
-    background: var(--piano-surface, #16161e);
-    color: var(--piano-fg, #dde);
-    font: 600 0.95rem 'Roboto Condensed', sans-serif;
-    cursor: pointer;
-    &:hover { border-color: var(--piano-border, #4a4a66); }
-    &:disabled { opacity: 0.4; cursor: default; }
-  }
-
-  &__btn--primary {
-    border-color: var(--piano-accent, #2ec46f);
-    color: var(--piano-accent-text, #5fe39a);
-    background: var(--piano-surface, #1c2a24);
-    &:hover { background: var(--piano-surface-2, #1f3329); }
-  }
-
-  &__info {
-    padding: 0.3rem;
-    font-size: 1.35rem;
-    line-height: 1;
-    color: var(--piano-accent-text, #7c9);
-    &[aria-expanded='true'] {
-      background: var(--piano-surface-2, #1f3329);
-      border-color: var(--piano-accent, #2ec46f);
-    }
-  }
 }
 
 // ── Help panel (the (i) reference sheet — ComposerHelp) ──────────────────

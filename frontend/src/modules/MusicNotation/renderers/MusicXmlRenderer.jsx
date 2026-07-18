@@ -26,6 +26,10 @@ function logger() {
  * @param {number} [transpose] - integer semitone key offset (default 0); re-engraves
  *   the score in the new key so both the notation AND the extracted pitches move.
  *   `0` restores the written key.
+ * @param {boolean} [manuscript] - engrave as a WRITING surface rather than a
+ *   reading one: every bar drawn separately (no multi-measure-rest collapse) and
+ *   systems stretched to the full width, so empty bars read as ruled paper. Off
+ *   by default — only the Composer opts in. See osmdRender's applyManuscriptRules.
  * @param {(res:{width,height,events,notes,steps,tempoEntries}) => void} [onLayout]
  * @param {(p:number) => void} [onProgress] - extraction progress fraction 0..1
  * @param {() => void} [onReady] - fired once geometry extraction completes and
@@ -36,7 +40,7 @@ function logger() {
  *   extraction runs once `holdExtraction` flips back to false.
  * @param {React.ReactNode} [children] - overlay content positioned over the SVG
  */
-export function MusicXmlRenderer({ musicXml, width, flow = 'wrapped', scale = 1, transpose = 0, onLayout, onProgress, onReady, holdExtraction = false, children }) {
+export function MusicXmlRenderer({ musicXml, width, flow = 'wrapped', scale = 1, transpose = 0, manuscript = false, onLayout, onProgress, onReady, holdExtraction = false, children }) {
   const hostRef = useRef(null);
   const holdRef = useRef(holdExtraction); holdRef.current = holdExtraction;
   const pendingExtractRef = useRef(false); // an extraction was deferred while held
@@ -128,7 +132,7 @@ export function MusicXmlRenderer({ musicXml, width, flow = 'wrapped', scale = 1,
         // Full path: PAINT the engraved sheet first (Manual mode usable at once),
         // THEN extract geometry in yielded slices with progress.
         setRendering(true);
-        const eng = await osmdEngrave(host, musicXml, { width: w, flow, scale, transpose, shouldAbort: stale });
+        const eng = await osmdEngrave(host, musicXml, { width: w, flow, scale, transpose, manuscript, shouldAbort: stale });
         if (!eng || stale()) return;
         osmdRef.current = eng.osmd;
         osmdKeyRef.current = cacheKey;

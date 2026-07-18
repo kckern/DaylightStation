@@ -12,6 +12,17 @@ describe('Gallery', () => {
     fireEvent.click(screen.getByText('Tune A'));
     expect(onOpen).toHaveBeenCalledWith('a');
   });
+  // The mode's bottom bar used to carry "New song" in the gallery view. With
+  // that bar deleted (Task 11B) this view is the ONLY way back to a blank
+  // staff, and the empty-state CTA alone strands any kid who has songs saved.
+  it('offers "New song" even when songs already exist', async () => {
+    const onNew = vi.fn();
+    render(<Gallery list={vi.fn().mockResolvedValue([{ id: 'a', title: 'Tune A' }])} onOpen={vi.fn()} onNew={onNew} />);
+    const btn = await screen.findByRole('button', { name: /new song/i });
+    fireEvent.click(btn);
+    expect(onNew).toHaveBeenCalled();
+  });
+
   it('offers a start-a-new-song CTA when empty', async () => {
     const onNew = vi.fn();
     render(<Gallery list={vi.fn().mockResolvedValue([])} onOpen={vi.fn()} onNew={onNew} />);
