@@ -42,6 +42,7 @@ config.app.yml
 config.secrets.yml
 config.app-local.yml
 /scripts/*
+!scripts/camera-archive/
 !scripts/port-manager.mjs
 !scripts/dev-server.sh
 !scripts/test-env.sh

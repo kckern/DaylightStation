@@ -1,7 +1,8 @@
 # Camera Cold Archive — Design
 
 **Date:** 2026-07-18
-**Status:** Design approved, pending implementation plan
+**Status:** Implemented as `scripts/camera-archive/`. Not yet run against live hardware —
+Pipeline C (ledger) is ready to schedule; Pipelines A and B are dry-run validated only.
 
 ## Problem
 

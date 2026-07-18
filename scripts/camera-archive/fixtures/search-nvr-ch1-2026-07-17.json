@@ -1,0 +1,826 @@
+[
+   {
+      "cmd" : "Search",
+      "code" : 0,
+      "value" : {
+         "SearchResult" : {
+            "File" : [
+               {
+                  "EndTime" : {
+                     "day" : 17,
+                     "hour" : 1,
+                     "min" : 0,
+                     "mon" : 7,
+                     "sec" : 0,
+                     "year" : 2026
+                  },
+                  "PlaybackTime" : {
+                     "day" : 17,
+                     "hour" : 7,
+                     "min" : 0,
+                     "mon" : 7,
+                     "sec" : 0,
+                     "year" : 2026
+                  },
+                  "StartTime" : {
+                     "day" : 17,
+                     "hour" : 0,
+                     "min" : 0,
+                     "mon" : 7,
+                     "sec" : 0,
+                     "year" : 2026
+                  },
+                  "frameRate" : 0,
+                  "height" : 0,
+                  "size" : "47710208",
+                  "type" : "sub",
+                  "width" : 0
+               },
+               {
+                  "EndTime" : {
+                     "day" : 17,
+                     "hour" : 2,
+                     "min" : 0,
+                     "mon" : 7,
+                     "sec" : 0,
+                     "year" : 2026
+                  },
+                  "PlaybackTime" : {
+                     "day" : 17,
+                     "hour" : 8,
+                     "min" : 0,
+                     "mon" : 7,
+                     "sec" : 0,
+                     "year" : 2026
+                  },
+                  "StartTime" : {
+                     "day" : 17,
+                     "hour" : 1,
+                     "min" : 0,
+                     "mon" : 7,
+                     "sec" : 0,
+                     "year" : 2026
+                  },
+                  "frameRate" : 0,
+                  "height" : 0,
+                  "size" : "46661632",
+                  "type" : "sub",
+                  "width" : 0
+               },
+               {
+                  "EndTime" : {
+                     "day" : 17,
+                     "hour" : 3,
+                     "min" : 0,
+                     "mon" : 7,
+                     "sec" : 1,
+                     "year" : 2026
+                  },
+                  "PlaybackTime" : {
+                     "day" : 17,
+                     "hour" : 9,
+                     "min" : 0,
+                     "mon" : 7,
+                     "sec" : 0,
+                     "year" : 2026
+                  },
+                  "StartTime" : {
+                     "day" : 17,
+                     "hour" : 2,
+                     "min" : 0,
+                     "mon" : 7,
+                     "sec" : 0,
+                     "year" : 2026
+                  },
+                  "frameRate" : 0,
+                  "height" : 0,
+                  "size" : "46661632",
+                  "type" : "sub",
+                  "width" : 0
+               },
+               {
+                  "EndTime" : {
+                     "day" : 17,
+                     "hour" : 4,
+                     "min" : 0,
+                     "mon" : 7,
+                     "sec" : 1,
+                     "year" : 2026
+                  },
+                  "PlaybackTime" : {
+                     "day" : 17,
+                     "hour" : 10,
+                     "min" : 0,
+                     "mon" : 7,
+                     "sec" : 1,
+                     "year" : 2026
+                  },
+                  "StartTime" : {
+                     "day" : 17,
+                     "hour" : 3,
+                     "min" : 0,
+                     "mon" : 7,
+                     "sec" : 1,
+                     "year" : 2026
+                  },
+                  "frameRate" : 0,
+                  "height" : 0,
+                  "size" : "46137344",
+                  "type" : "sub",
+                  "width" : 0
+               },
+               {
+                  "EndTime" : {
+                     "day" : 17,
+                     "hour" : 5,
+                     "min" : 0,
+                     "mon" : 7,
+                     "sec" : 1,
+                     "year" : 2026
+                  },
+                  "PlaybackTime" : {
+                     "day" : 17,
+                     "hour" : 11,
+                     "min" : 0,
+                     "mon" : 7,
+                     "sec" : 1,
+                     "year" : 2026
+                  },
+                  "StartTime" : {
+                     "day" : 17,
+                     "hour" : 4,
+                     "min" : 0,
+                     "mon" : 7,
+                     "sec" : 1,
+                     "year" : 2026
+                  },
+                  "frameRate" : 0,
+                  "height" : 0,
+                  "size" : "47185920",
+                  "type" : "sub",
+                  "width" : 0
+               },
+               {
+                  "EndTime" : {
+                     "day" : 17,
+                     "hour" : 5,
+                     "min" : 59,
+                     "mon" : 7,
+                     "sec" : 59,
+                     "year" : 2026
+                  },
+                  "PlaybackTime" : {
+                     "day" : 17,
+                     "hour" : 12,
+                     "min" : 0,
+                     "mon" : 7,
+                     "sec" : 1,
+                     "year" : 2026
+                  },
+                  "StartTime" : {
+                     "day" : 17,
+                     "hour" : 5,
+                     "min" : 0,
+                     "mon" : 7,
+                     "sec" : 1,
+                     "year" : 2026
+                  },
+                  "frameRate" : 0,
+                  "height" : 0,
+                  "size" : "94896128",
+                  "type" : "sub",
+                  "width" : 0
+               },
+               {
+                  "EndTime" : {
+                     "day" : 17,
+                     "hour" : 6,
+                     "min" : 35,
+                     "mon" : 7,
+                     "sec" : 56,
+                     "year" : 2026
+                  },
+                  "PlaybackTime" : {
+                     "day" : 17,
+                     "hour" : 12,
+                     "min" : 59,
+                     "mon" : 7,
+                     "sec" : 59,
+                     "year" : 2026
+                  },
+                  "StartTime" : {
+                     "day" : 17,
+                     "hour" : 5,
+                     "min" : 59,
+                     "mon" : 7,
+                     "sec" : 59,
+                     "year" : 2026
+                  },
+                  "frameRate" : 0,
+                  "height" : 0,
+                  "size" : "77070336",
+                  "type" : "sub",
+                  "width" : 0
+               },
+               {
+                  "EndTime" : {
+                     "day" : 17,
+                     "hour" : 7,
+                     "min" : 0,
+                     "mon" : 7,
+                     "sec" : 0,
+                     "year" : 2026
+                  },
+                  "PlaybackTime" : {
+                     "day" : 17,
+                     "hour" : 13,
+                     "min" : 35,
+                     "mon" : 7,
+                     "sec" : 56,
+                     "year" : 2026
+                  },
+                  "StartTime" : {
+                     "day" : 17,
+                     "hour" : 6,
+                     "min" : 35,
+                     "mon" : 7,
+                     "sec" : 56,
+                     "year" : 2026
+                  },
+                  "frameRate" : 0,
+                  "height" : 0,
+                  "size" : "51904512",
+                  "type" : "sub",
+                  "width" : 0
+               },
+               {
+                  "EndTime" : {
+                     "day" : 17,
+                     "hour" : 8,
+                     "min" : 0,
+                     "mon" : 7,
+                     "sec" : 0,
+                     "year" : 2026
+                  },
+                  "PlaybackTime" : {
+                     "day" : 17,
+                     "hour" : 14,
+                     "min" : 0,
+                     "mon" : 7,
+                     "sec" : 0,
+                     "year" : 2026
+                  },
+                  "StartTime" : {
+                     "day" : 17,
+                     "hour" : 7,
+                     "min" : 0,
+                     "mon" : 7,
+                     "sec" : 0,
+                     "year" : 2026
+                  },
+                  "frameRate" : 0,
+                  "height" : 0,
+                  "size" : "139984896",
+                  "type" : "sub",
+                  "width" : 0
+               },
+               {
+                  "EndTime" : {
+                     "day" : 17,
+                     "hour" : 9,
+                     "min" : 0,
+                     "mon" : 7,
+                     "sec" : 1,
+                     "year" : 2026
+                  },
+                  "PlaybackTime" : {
+                     "day" : 17,
+                     "hour" : 15,
+                     "min" : 0,
+                     "mon" : 7,
+                     "sec" : 0,
+                     "year" : 2026
+                  },
+                  "StartTime" : {
+                     "day" : 17,
+                     "hour" : 8,
+                     "min" : 0,
+                     "mon" : 7,
+                     "sec" : 0,
+                     "year" : 2026
+                  },
+                  "frameRate" : 0,
+                  "height" : 0,
+                  "size" : "140509184",
+                  "type" : "sub",
+                  "width" : 0
+               },
+               {
+                  "EndTime" : {
+                     "day" : 17,
+                     "hour" : 10,
+                     "min" : 0,
+                     "mon" : 7,
+                     "sec" : 1,
+                     "year" : 2026
+                  },
+                  "PlaybackTime" : {
+                     "day" : 17,
+                     "hour" : 16,
+                     "min" : 0,
+                     "mon" : 7,
+                     "sec" : 1,
+                     "year" : 2026
+                  },
+                  "StartTime" : {
+                     "day" : 17,
+                     "hour" : 9,
+                     "min" : 0,
+                     "mon" : 7,
+                     "sec" : 1,
+                     "year" : 2026
+                  },
+                  "frameRate" : 0,
+                  "height" : 0,
+                  "size" : "158859264",
+                  "type" : "sub",
+                  "width" : 0
+               },
+               {
+                  "EndTime" : {
+                     "day" : 17,
+                     "hour" : 10,
+                     "min" : 59,
+                     "mon" : 7,
+                     "sec" : 58,
+                     "year" : 2026
+                  },
+                  "PlaybackTime" : {
+                     "day" : 17,
+                     "hour" : 17,
+                     "min" : 0,
+                     "mon" : 7,
+                     "sec" : 1,
+                     "year" : 2026
+                  },
+                  "StartTime" : {
+                     "day" : 17,
+                     "hour" : 10,
+                     "min" : 0,
+                     "mon" : 7,
+                     "sec" : 1,
+                     "year" : 2026
+                  },
+                  "frameRate" : 0,
+                  "height" : 0,
+                  "size" : "156762112",
+                  "type" : "sub",
+                  "width" : 0
+               },
+               {
+                  "EndTime" : {
+                     "day" : 17,
+                     "hour" : 11,
+                     "min" : 59,
+                     "mon" : 7,
+                     "sec" : 58,
+                     "year" : 2026
+                  },
+                  "PlaybackTime" : {
+                     "day" : 17,
+                     "hour" : 17,
+                     "min" : 59,
+                     "mon" : 7,
+                     "sec" : 58,
+                     "year" : 2026
+                  },
+                  "StartTime" : {
+                     "day" : 17,
+                     "hour" : 10,
+                     "min" : 59,
+                     "mon" : 7,
+                     "sec" : 58,
+                     "year" : 2026
+                  },
+                  "frameRate" : 0,
+                  "height" : 0,
+                  "size" : "138412032",
+                  "type" : "sub",
+                  "width" : 0
+               },
+               {
+                  "EndTime" : {
+                     "day" : 17,
+                     "hour" : 12,
+                     "min" : 59,
+                     "mon" : 7,
+                     "sec" : 59,
+                     "year" : 2026
+                  },
+                  "PlaybackTime" : {
+                     "day" : 17,
+                     "hour" : 18,
+                     "min" : 59,
+                     "mon" : 7,
+                     "sec" : 58,
+                     "year" : 2026
+                  },
+                  "StartTime" : {
+                     "day" : 17,
+                     "hour" : 11,
+                     "min" : 59,
+                     "mon" : 7,
+                     "sec" : 58,
+                     "year" : 2026
+                  },
+                  "frameRate" : 0,
+                  "height" : 0,
+                  "size" : "148373504",
+                  "type" : "sub",
+                  "width" : 0
+               },
+               {
+                  "EndTime" : {
+                     "day" : 17,
+                     "hour" : 14,
+                     "min" : 0,
+                     "mon" : 7,
+                     "sec" : 0,
+                     "year" : 2026
+                  },
+                  "PlaybackTime" : {
+                     "day" : 17,
+                     "hour" : 19,
+                     "min" : 59,
+                     "mon" : 7,
+                     "sec" : 59,
+                     "year" : 2026
+                  },
+                  "StartTime" : {
+                     "day" : 17,
+                     "hour" : 12,
+                     "min" : 59,
+                     "mon" : 7,
+                     "sec" : 59,
+                     "year" : 2026
+                  },
+                  "frameRate" : 0,
+                  "height" : 0,
+                  "size" : "157810688",
+                  "type" : "sub",
+                  "width" : 0
+               },
+               {
+                  "EndTime" : {
+                     "day" : 17,
+                     "hour" : 15,
+                     "min" : 0,
+                     "mon" : 7,
+                     "sec" : 0,
+                     "year" : 2026
+                  },
+                  "PlaybackTime" : {
+                     "day" : 17,
+                     "hour" : 21,
+                     "min" : 0,
+                     "mon" : 7,
+                     "sec" : 0,
+                     "year" : 2026
+                  },
+                  "StartTime" : {
+                     "day" : 17,
+                     "hour" : 14,
+                     "min" : 0,
+                     "mon" : 7,
+                     "sec" : 0,
+                     "year" : 2026
+                  },
+                  "frameRate" : 0,
+                  "height" : 0,
+                  "size" : "165675008",
+                  "type" : "sub",
+                  "width" : 0
+               },
+               {
+                  "EndTime" : {
+                     "day" : 17,
+                     "hour" : 16,
+                     "min" : 0,
+                     "mon" : 7,
+                     "sec" : 1,
+                     "year" : 2026
+                  },
+                  "PlaybackTime" : {
+                     "day" : 17,
+                     "hour" : 22,
+                     "min" : 0,
+                     "mon" : 7,
+                     "sec" : 0,
+                     "year" : 2026
+                  },
+                  "StartTime" : {
+                     "day" : 17,
+                     "hour" : 15,
+                     "min" : 0,
+                     "mon" : 7,
+                     "sec" : 0,
+                     "year" : 2026
+                  },
+                  "frameRate" : 0,
+                  "height" : 0,
+                  "size" : "146276352",
+                  "type" : "sub",
+                  "width" : 0
+               },
+               {
+                  "EndTime" : {
+                     "day" : 17,
+                     "hour" : 17,
+                     "min" : 0,
+                     "mon" : 7,
+                     "sec" : 1,
+                     "year" : 2026
+                  },
+                  "PlaybackTime" : {
+                     "day" : 17,
+                     "hour" : 23,
+                     "min" : 0,
+                     "mon" : 7,
+                     "sec" : 1,
+                     "year" : 2026
+                  },
+                  "StartTime" : {
+                     "day" : 17,
+                     "hour" : 16,
+                     "min" : 0,
+                     "mon" : 7,
+                     "sec" : 1,
+                     "year" : 2026
+                  },
+                  "frameRate" : 0,
+                  "height" : 0,
+                  "size" : "162004992",
+                  "type" : "sub",
+                  "width" : 0
+               },
+               {
+                  "EndTime" : {
+                     "day" : 17,
+                     "hour" : 17,
+                     "min" : 59,
+                     "mon" : 7,
+                     "sec" : 58,
+                     "year" : 2026
+                  },
+                  "PlaybackTime" : {
+                     "day" : 18,
+                     "hour" : 0,
+                     "min" : 0,
+                     "mon" : 7,
+                     "sec" : 1,
+                     "year" : 2026
+                  },
+                  "StartTime" : {
+                     "day" : 17,
+                     "hour" : 17,
+                     "min" : 0,
+                     "mon" : 7,
+                     "sec" : 1,
+                     "year" : 2026
+                  },
+                  "frameRate" : 0,
+                  "height" : 0,
+                  "size" : "148373504",
+                  "type" : "sub",
+                  "width" : 0
+               },
+               {
+                  "EndTime" : {
+                     "day" : 17,
+                     "hour" : 18,
+                     "min" : 59,
+                     "mon" : 7,
+                     "sec" : 54,
+                     "year" : 2026
+                  },
+                  "PlaybackTime" : {
+                     "day" : 18,
+                     "hour" : 0,
+                     "min" : 59,
+                     "mon" : 7,
+                     "sec" : 58,
+                     "year" : 2026
+                  },
+                  "StartTime" : {
+                     "day" : 17,
+                     "hour" : 17,
+                     "min" : 59,
+                     "mon" : 7,
+                     "sec" : 58,
+                     "year" : 2026
+                  },
+                  "frameRate" : 0,
+                  "height" : 0,
+                  "size" : "153092096",
+                  "type" : "sub",
+                  "width" : 0
+               },
+               {
+                  "EndTime" : {
+                     "day" : 17,
+                     "hour" : 19,
+                     "min" : 18,
+                     "mon" : 7,
+                     "sec" : 22,
+                     "year" : 2026
+                  },
+                  "PlaybackTime" : {
+                     "day" : 18,
+                     "hour" : 2,
+                     "min" : 0,
+                     "mon" : 7,
+                     "sec" : 14,
+                     "year" : 2026
+                  },
+                  "StartTime" : {
+                     "day" : 17,
+                     "hour" : 19,
+                     "min" : 0,
+                     "mon" : 7,
+                     "sec" : 14,
+                     "year" : 2026
+                  },
+                  "frameRate" : 0,
+                  "height" : 0,
+                  "size" : "48758784",
+                  "type" : "sub",
+                  "width" : 0
+               },
+               {
+                  "EndTime" : {
+                     "day" : 17,
+                     "hour" : 19,
+                     "min" : 59,
+                     "mon" : 7,
+                     "sec" : 59,
+                     "year" : 2026
+                  },
+                  "PlaybackTime" : {
+                     "day" : 18,
+                     "hour" : 2,
+                     "min" : 18,
+                     "mon" : 7,
+                     "sec" : 22,
+                     "year" : 2026
+                  },
+                  "StartTime" : {
+                     "day" : 17,
+                     "hour" : 19,
+                     "min" : 18,
+                     "mon" : 7,
+                     "sec" : 22,
+                     "year" : 2026
+                  },
+                  "frameRate" : 0,
+                  "height" : 0,
+                  "size" : "103809024",
+                  "type" : "sub",
+                  "width" : 0
+               },
+               {
+                  "EndTime" : {
+                     "day" : 17,
+                     "hour" : 20,
+                     "min" : 59,
+                     "mon" : 7,
+                     "sec" : 59,
+                     "year" : 2026
+                  },
+                  "PlaybackTime" : {
+                     "day" : 18,
+                     "hour" : 2,
+                     "min" : 59,
+                     "mon" : 7,
+                     "sec" : 59,
+                     "year" : 2026
+                  },
+                  "StartTime" : {
+                     "day" : 17,
+                     "hour" : 19,
+                     "min" : 59,
+                     "mon" : 7,
+                     "sec" : 59,
+                     "year" : 2026
+                  },
+                  "frameRate" : 0,
+                  "height" : 0,
+                  "size" : "126877696",
+                  "type" : "sub",
+                  "width" : 0
+               },
+               {
+                  "EndTime" : {
+                     "day" : 17,
+                     "hour" : 22,
+                     "min" : 0,
+                     "mon" : 7,
+                     "sec" : 3,
+                     "year" : 2026
+                  },
+                  "PlaybackTime" : {
+                     "day" : 18,
+                     "hour" : 3,
+                     "min" : 59,
+                     "mon" : 7,
+                     "sec" : 59,
+                     "year" : 2026
+                  },
+                  "StartTime" : {
+                     "day" : 17,
+                     "hour" : 20,
+                     "min" : 59,
+                     "mon" : 7,
+                     "sec" : 59,
+                     "year" : 2026
+                  },
+                  "frameRate" : 0,
+                  "height" : 0,
+                  "size" : "71303168",
+                  "type" : "sub",
+                  "width" : 0
+               },
+               {
+                  "EndTime" : {
+                     "day" : 17,
+                     "hour" : 23,
+                     "min" : 0,
+                     "mon" : 7,
+                     "sec" : 0,
+                     "year" : 2026
+                  },
+                  "PlaybackTime" : {
+                     "day" : 18,
+                     "hour" : 5,
+                     "min" : 0,
+                     "mon" : 7,
+                     "sec" : 3,
+                     "year" : 2026
+                  },
+                  "StartTime" : {
+                     "day" : 17,
+                     "hour" : 22,
+                     "min" : 0,
+                     "mon" : 7,
+                     "sec" : 3,
+                     "year" : 2026
+                  },
+                  "frameRate" : 0,
+                  "height" : 0,
+                  "size" : "47185920",
+                  "type" : "sub",
+                  "width" : 0
+               },
+               {
+                  "EndTime" : {
+                     "day" : 18,
+                     "hour" : 0,
+                     "min" : 0,
+                     "mon" : 7,
+                     "sec" : 0,
+                     "year" : 2026
+                  },
+                  "PlaybackTime" : {
+                     "day" : 18,
+                     "hour" : 6,
+                     "min" : 0,
+                     "mon" : 7,
+                     "sec" : 0,
+                     "year" : 2026
+                  },
+                  "StartTime" : {
+                     "day" : 17,
+                     "hour" : 23,
+                     "min" : 0,
+                     "mon" : 7,
+                     "sec" : 0,
+                     "year" : 2026
+                  },
+                  "frameRate" : 0,
+                  "height" : 0,
+                  "size" : "46137344",
+                  "type" : "sub",
+                  "width" : 0
+               }
+            ],
+            "Status" : [
+               {
+                  "mon" : 7,
+                  "table" : "1111111111111111110000000000000",
+                  "year" : 2026
+               }
+            ],
+            "channel" : 1
+         }
+      }
+   }
+]
