@@ -1,5 +1,6 @@
-import { describe, it, expect } from 'vitest';
-import { pendingAppendDiff } from './wetInk.js';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { renderHook, act } from '@testing-library/react';
+import { pendingAppendDiff, useWetInk } from './wetInk.js';
 import { makeEmptyScore, makeNote } from './model/index.js';
 import { initEditor, insertNote, deleteNote, moveCaret, setAttribute } from './model/editor.js';
 
@@ -121,5 +122,127 @@ describe('pendingAppendDiff', () => {
   it('treats a missing or malformed score as a settle rather than a no-op', () => {
     expect(pendingAppendDiff(withNotes(2), null)).toBeNull();
     expect(pendingAppendDiff(null, withNotes(2))).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// useWetInk — the settle POLICY on top of the pure diff.
+// ---------------------------------------------------------------------------
+
+/** Editor states after each of `n` successive quarter-note inserts: [s0…sn]. */
+function trail(n) {
+  const out = [initEditor(makeEmptyScore())];
+  for (let i = 0; i < n; i++) out.push(insertNote(out[out.length - 1], C4, { type: 'quarter' }));
+  return out;
+}
+
+const mkLogger = () => ({ info: vi.fn(), debug: vi.fn(), warn: vi.fn(), error: vi.fn() });
+
+/** renderHook harness driving the hook with real editor states. */
+function driveWetInk(initial, logger, idleMs = 600) {
+  return renderHook(
+    ({ st }) => useWetInk({ score: st.score, caretMeasureIdx: st.caret.measureIdx, idleMs, logger }),
+    { initialProps: { st: initial } }
+  );
+}
+
+describe('useWetInk', () => {
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => vi.useRealTimers());
+
+  it('holds the settled score back and reports the appended note as pending', () => {
+    const [s0, s1] = trail(1);
+    const { result, rerender } = driveWetInk(s0, mkLogger());
+    rerender({ st: s1 });
+    expect(result.current.settledScore).toBe(s0.score); // NOT re-engraved yet
+    expect(result.current.pending.notes).toHaveLength(1);
+  });
+
+  it('settles after idleMs of quiet, clearing the wet ink', () => {
+    const [s0, s1] = trail(1);
+    const logger = mkLogger();
+    const { result, rerender } = driveWetInk(s0, logger);
+    rerender({ st: s1 });
+    act(() => { vi.advanceTimersByTime(600); });
+    expect(result.current.settledScore).toBe(s1.score);
+    expect(result.current.pending.notes).toHaveLength(0);
+    expect(logger.info).toHaveBeenCalledWith('composer.wetink.settle', expect.objectContaining({ reason: 'idle' }));
+  });
+
+  it('settles IMMEDIATELY on a delete (a structural change wet ink cannot express)', () => {
+    const [, , s2] = trail(2);
+    const deleted = deleteNote(s2, { measureIdx: 0, noteIdx: 0 });
+    const logger = mkLogger();
+    const { result, rerender } = driveWetInk(s2, logger);
+    rerender({ st: deleted });
+    // No timer advanced — the settle must already have happened.
+    expect(result.current.settledScore).toBe(deleted.score);
+    expect(result.current.pending.notes).toHaveLength(0);
+    expect(logger.info).toHaveBeenCalledWith('composer.wetink.settle', { reason: 'structural' });
+  });
+
+  it('settles IMMEDIATELY when a note opens a new measure (a barline only OSMD can draw)', () => {
+    const t = trail(4);
+    const logger = mkLogger();
+    const { result, rerender } = driveWetInk(t[3], logger);
+    rerender({ st: t[4] }); // the 4th quarter exactly fills the bar → new measure
+    expect(t[4].score.parts[0].measures).toHaveLength(2);
+    expect(result.current.settledScore).toBe(t[4].score);
+    expect(logger.info).toHaveBeenCalledWith('composer.wetink.settle', { reason: 'structural' });
+  });
+
+  it('settles IMMEDIATELY when the caret has left the measure the ink is drying in', () => {
+    // Ink pending in bar 0, but the caret reports bar 1 — the kid moved on, so
+    // the wet layer is painting somewhere the caret no longer is.
+    const [s0, s1] = trail(1);
+    const logger = mkLogger();
+    const { result, rerender } = renderHook(
+      ({ score, m }) => useWetInk({ score, caretMeasureIdx: m, idleMs: 600, logger }),
+      { initialProps: { score: s0.score, m: 0 } }
+    );
+    rerender({ score: s1.score, m: 1 });
+    expect(result.current.settledScore).toBe(s1.score);
+    expect(logger.info).toHaveBeenCalledWith('composer.wetink.settle', { reason: 'measure-exit' });
+  });
+
+  // THE load test for the two-trigger design: unbroken fast entry never pauses,
+  // so the idle timer alone would leave ink wet forever. The bar boundary is what
+  // bounds it — settled is never more than one bar behind (spec §2.1).
+  it('a rapid burst with no idle gap stays wet until the bar boundary, then settles', () => {
+    const t = trail(4);
+    const logger = mkLogger();
+    const { result, rerender } = driveWetInk(t[0], logger);
+    for (const st of [t[1], t[2], t[3]]) rerender({ st }); // no timer advance between
+    expect(result.current.settledScore).toBe(t[0].score); // still zero engraves
+    expect(result.current.pending.notes).toHaveLength(3);
+    expect(logger.info).not.toHaveBeenCalled();
+
+    rerender({ st: t[4] }); // this one fills the bar → ensureMeasure → settle
+    expect(result.current.settledScore).toBe(t[4].score);
+    expect(result.current.pending.notes).toHaveLength(0);
+    expect(logger.info).toHaveBeenCalledWith('composer.wetink.settle', { reason: 'structural' });
+  });
+
+  // Regression guard: the idle timer is rescheduled on every keystroke, so a
+  // cleared-but-never-rescheduled timer would strand settledScore behind forever.
+  it('reschedules the idle timer across a burst rather than stranding the settle', () => {
+    const t = trail(3);
+    const { result, rerender } = driveWetInk(t[0], mkLogger());
+    rerender({ st: t[1] });
+    act(() => { vi.advanceTimersByTime(400); }); // not yet
+    rerender({ st: t[2] });
+    act(() => { vi.advanceTimersByTime(400); }); // 800ms since t[1] but only 400 since t[2]
+    expect(result.current.settledScore).toBe(t[0].score);
+    act(() => { vi.advanceTimersByTime(200); });
+    expect(result.current.settledScore).toBe(t[2].score);
+  });
+
+  it('does not settle, or log, when nothing has changed', () => {
+    const [s0] = trail(0);
+    const logger = mkLogger();
+    const { result } = driveWetInk(s0, logger);
+    act(() => { vi.advanceTimersByTime(5000); });
+    expect(result.current.settledScore).toBe(s0.score);
+    expect(logger.info).not.toHaveBeenCalled();
   });
 });

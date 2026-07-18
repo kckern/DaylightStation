@@ -20,6 +20,8 @@
 // read as no-change, so it never engraves). Nothing in the model carries one
 // today (part.clefs is a plain object); if that changes, this needs a real
 // deep-equal.
+import { useEffect, useMemo, useRef, useState } from 'react';
+
 const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
 
 /**
@@ -84,4 +86,54 @@ export function pendingAppendDiff(settled, live) {
     }
   }
   return found || { measureIdx: null, notes: [] };
+}
+
+// Stable identity so a settled editor hands its consumer the same `pending`
+// object every render — PendingLayer then has nothing to diff.
+const NO_PENDING = { measureIdx: null, notes: [] };
+
+/**
+ * The settle POLICY on top of pendingAppendDiff: owns WHEN the engraved
+ * (settled) score is allowed to catch up to the live one.
+ *
+ * Two triggers, and BOTH are load-bearing — neither subsumes the other:
+ *   - structural / measure-exit → settle NOW. This is what bounds wet ink during
+ *     UNBROKEN fast entry, which never goes idle. insertNote's exact-fill branch
+ *     calls ensureMeasure (model/editor.js), so the note that fills a bar opens
+ *     the next one, pendingAppendDiff returns null, and we engrave. Hence the
+ *     spec §2.1 promise: the settled score is never more than one bar behind.
+ *   - idle → settle after `idleMs` of quiet. This is what covers the kid PAUSING
+ *     mid-bar; without it the ink would stay wet indefinitely.
+ *
+ * @returns {{settledScore: object, pending: {measureIdx: number|null, notes: Array}}}
+ */
+export function useWetInk({ score, caretMeasureIdx, idleMs = 600, logger }) {
+  const [settled, setSettled] = useState(score);
+  const timerRef = useRef(null);
+  // Logger identity is NOT an effect dep: a caller that rebuilds its child
+  // logger each render would otherwise clear and reschedule the idle timer on
+  // every render, and a busy component would strand the settle forever.
+  const logRef = useRef(logger);
+  logRef.current = logger;
+
+  const diff = useMemo(() => pendingAppendDiff(settled, score), [settled, score]);
+
+  useEffect(() => {
+    if (settled === score) return undefined;
+    // Closes over THIS render's `score`, which is correct precisely because the
+    // effect re-runs (and the pending timer is cleared) on every score change:
+    // the timer that finally fires is always the one holding the newest score.
+    const settle = (reason) => {
+      setSettled(score);
+      logRef.current?.info('composer.wetink.settle', { reason });
+    };
+    if (diff === null) { settle('structural'); return undefined; }
+    // The caret has walked out of the bar the ink is drying in, so the wet layer
+    // is painting where the kid no longer is — engrave and re-anchor.
+    if (diff.measureIdx !== null && diff.measureIdx !== caretMeasureIdx) { settle('measure-exit'); return undefined; }
+    timerRef.current = setTimeout(() => settle('idle'), idleMs);
+    return () => clearTimeout(timerRef.current);
+  }, [score, settled, diff, caretMeasureIdx, idleMs]);
+
+  return { settledScore: settled, pending: diff ?? NO_PENDING };
 }
