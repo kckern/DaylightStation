@@ -1,0 +1,213 @@
+// Composer.scss — mode container (gallery / new-song / editor), the bottom
+// ComposerBar, the sticky-duration HUD, and the caret overlay. Follows
+// Producer.scss's convention: `.piano-mode` (PianoApp.scss) supplies the
+// base padding/scroll, this file layers the mode-specific surface on top via
+// its own `.piano-mode--composer` root class.
+
+.piano-mode--composer {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  padding: 0;
+  overflow: hidden;
+  font-family: 'Roboto Condensed', sans-serif;
+  color: var(--piano-fg, #e8e8ee);
+}
+
+// ── Gallery ──────────────────────────────────────────────────────────────
+.composer-gallery {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--sp-5, 1.25rem);
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+
+  &__head {
+    display: flex;
+    justify-content: flex-end;
+
+    button {
+      min-height: 3rem;
+      padding: 0.5rem 1.4rem;
+      border-radius: 999px;
+      border: 1px solid var(--piano-accent, #2ec46f);
+      background: var(--piano-surface, #1c2a24);
+      color: var(--piano-accent-text, #5fe39a);
+      font: 600 1rem 'Roboto Condensed', sans-serif;
+      cursor: pointer;
+      &:hover { background: var(--piano-surface-2, #1f3329); }
+    }
+  }
+
+  &__loading,
+  &__empty {
+    color: var(--piano-muted, #8a8a9a);
+    font-style: italic;
+  }
+
+  &__grid {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+    gap: 0.75rem;
+  }
+
+  &__tile {
+    width: 100%;
+    min-height: 5rem;
+    padding: 1rem 1.2rem;
+    text-align: left;
+    border-radius: 12px;
+    border: 1px solid var(--piano-border, #2a2a36);
+    background: var(--piano-surface, #15151d);
+    color: var(--piano-fg, #e8e8f2);
+    font: 600 1.05rem 'Roboto Condensed', sans-serif;
+    cursor: pointer;
+    transition: border-color 0.12s, background 0.12s;
+    &:hover { border-color: var(--piano-border, #4a4a66); background: var(--piano-surface-2, #1b1b27); }
+  }
+}
+
+// ── New song setup ───────────────────────────────────────────────────────
+.composer-newsong {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--sp-5, 1.25rem);
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  align-items: flex-start;
+
+  input {
+    min-height: 3rem;
+    width: 100%;
+    max-width: 24rem;
+    padding: 0.5rem 0.8rem;
+    border-radius: 8px;
+    border: 1px solid var(--piano-border, #334);
+    background: var(--piano-surface, #14141b);
+    color: var(--piano-fg, #eee);
+    font: 1rem 'Roboto Condensed', sans-serif;
+  }
+
+  button {
+    min-height: 3rem;
+    padding: 0.5rem 1.4rem;
+    border-radius: 999px;
+    border: 1px solid var(--piano-accent, #2ec46f);
+    background: var(--piano-surface, #1c2a24);
+    color: var(--piano-accent-text, #5fe39a);
+    font: 600 1rem 'Roboto Condensed', sans-serif;
+    cursor: pointer;
+    &:disabled { opacity: 0.45; cursor: default; }
+  }
+
+  [role='alert'] {
+    margin: 0;
+    padding: 0.5rem 0.75rem;
+    border-radius: 8px;
+    border: 1px solid var(--piano-danger, #e05a4f);
+    background: var(--piano-surface, #241618);
+    color: var(--piano-danger, #f7a29a);
+    font-size: 0.92rem;
+  }
+}
+
+// ── Editor surface (engraved score + HUD + caret) ───────────────────────
+.composer-editor {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--sp-4, 1rem) var(--sp-5, 1.25rem);
+}
+
+// Sticky duration/dot/triplet/armed HUD (StickyDurationHud) — pinned to the
+// top of the editor surface so the current input mode is always in view.
+.composer-hud {
+  position: sticky;
+  top: 0;
+  z-index: 4;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+  padding: 0.35rem 0.75rem;
+  border-radius: 999px;
+  border: 1px solid var(--piano-border, #2c2c3a);
+  background: rgba(20, 26, 40, 0.92);
+  color: var(--piano-fg, #dde);
+  font: 600 0.95rem 'Roboto Condensed', sans-serif;
+
+  &__duration { text-transform: capitalize; }
+  &__dot,
+  &__triplet {
+    color: var(--piano-accent-text, #7c9);
+  }
+  &__armed {
+    padding: 0.1rem 0.5rem;
+    border-radius: 999px;
+    background: var(--piano-surface, #16161f);
+    color: var(--piano-muted, #99a);
+    font-size: 0.8rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    &.is-armed {
+      background: var(--piano-accent, #2ec46f);
+      color: var(--piano-accent-ink, #06210f);
+    }
+  }
+}
+
+// The caret is positioned via inline transform (x/y from the renderer's
+// layout, see CaretLayer.jsx) relative to the nearest positioned ancestor —
+// it MUST be `position: absolute`, or it renders in normal document flow at
+// (0,0) and never tracks the score.
+.composer-caret {
+  position: absolute;
+  top: 0;
+  left: 0;
+  border-radius: 2px;
+  background: var(--piano-accent, #2ec46f);
+  opacity: 0.55;
+  pointer-events: none;
+  transition: transform 90ms ease-out;
+}
+
+// ── Bottom bar (back + undo/redo) ────────────────────────────────────────
+.composer-bar {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.6rem 1.25rem;
+  background: var(--piano-bg, #0e0e12);
+  border-top: 1px solid var(--piano-border, #22222e);
+
+  &__left,
+  &__right {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+  }
+
+  button {
+    min-height: 3rem;
+    min-width: 3rem;
+    padding: 0.3rem 1.1rem;
+    border-radius: 999px;
+    border: 1px solid var(--piano-border, #3a3a48);
+    background: var(--piano-surface, #16161e);
+    color: var(--piano-fg, #dde);
+    font: 600 0.95rem 'Roboto Condensed', sans-serif;
+    cursor: pointer;
+    &:hover { border-color: var(--piano-border, #4a4a66); }
+    &:disabled { opacity: 0.4; cursor: default; }
+  }
+}
