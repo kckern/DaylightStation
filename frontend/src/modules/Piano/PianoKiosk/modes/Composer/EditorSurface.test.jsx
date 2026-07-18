@@ -22,7 +22,7 @@ vi.mock('../../../../MusicNotation/renderers/MusicXmlRenderer.jsx', () => ({
   },
 }));
 import { EditorSurface, caretStepIndex, wetInkAnchor, serializeForDisplay } from './EditorSurface.jsx';
-import { CARET_GAP, CARET_WIDTH } from './CaretLayer.jsx';
+import { CARET_GAP, CARET_WIDTH, MEASURE_START_UNITS } from './CaretLayer.jsx';
 import { WET_ADVANCE_UNITS, WET_RX_UNITS } from './PendingLayer.jsx';
 import { makeEmptyScore, makeNote } from './model/index.js';
 
@@ -290,6 +290,15 @@ describe('EditorSurface — wet caret position', () => {
     expect(caretLeft(container) + CARET_WIDTH).toBeLessThanOrEqual(150);
   });
 
+  // The landing screen. Before this, `steps` was empty on a fresh draft and the
+  // caret simply did not render — no insertion point on the one screen every
+  // session opens with.
+  it('shows a caret at the measure entry point on an untouched draft', () => {
+    const { container } = render(<EditorSurface initialScore={makeEmptyScore()} songId="x" initialRevision={1} save={vi.fn()} config={{}} />);
+    expect(container.querySelector('.composer-caret')).toBeTruthy();
+    expect(caretLeft(container)).toBe(staff.left + LS * MEASURE_START_UNITS);
+  });
+
   it('hands the caret back to the engraved layout once the ink dries', () => {
     layoutToPublish = { steps: [{ measure: 0, notes: [{ x: 300, top: 100, bottom: 140, width: 12 }] }], staves: [staff] };
     const { container } = render(<EditorSurface initialScore={makeEmptyScore()} songId="x" initialRevision={1} save={vi.fn()} config={{ wetink_idle_ms: 600 }} />);
@@ -298,5 +307,59 @@ describe('EditorSurface — wet caret position', () => {
     expect(container.querySelectorAll('.composer-wet-note__head')).toHaveLength(0);
     // Engraved past-the-end position: note right edge (300 + 12) + CARET_GAP.
     expect(caretLeft(container)).toBe(300 + 12 + CARET_GAP);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The empty-state invitation. The blank staff is the design, but landing on one
+// with no copy and an arm toggle that defaults OFF means a kid who sits down and
+// plays sees nothing happen at all.
+// ---------------------------------------------------------------------------
+describe('EditorSurface — empty-state hint', () => {
+  const hint = (c) => c.querySelector('.composer-page__hint');
+  beforeEach(() => { engraves.length = 0; midiHandler = null; layoutToPublish = null; vi.useFakeTimers(); });
+  afterEach(() => vi.useRealTimers());
+
+  it('invites the kid to play on an untouched draft', () => {
+    const { container } = render(<EditorSurface initialScore={makeEmptyScore()} songId="x" initialRevision={1} save={vi.fn()} config={{}} />);
+    expect(hint(container)).toBeTruthy();
+    // Names both things the kid controls: the duration palette and the arm toggle.
+    expect(hint(container).textContent).toMatch(/note length/i);
+    expect(hint(container).textContent).toMatch(/play/i);
+  });
+
+  it('names the arm toggle by the label that button ACTUALLY carries today', () => {
+    const { container } = render(<EditorSurface initialScore={makeEmptyScore()} songId="x" initialRevision={1} save={vi.fn()} config={{}} />);
+    // Guards the copy/label coupling: if DurationPalette's unarmed label is
+    // renamed (a later task renames it to "Write"), this fails and the hint
+    // string must be updated with it.
+    const armLabel = container.querySelector('.composer-palette__arm').textContent.trim();
+    expect(armLabel).toBe('Play');
+    expect(hint(container).textContent).toContain(armLabel);
+  });
+
+  it('disappears the instant the first note lands, while that note is still WET', () => {
+    layoutToPublish = { steps: [], staves: [{ system: 0, top: 100, left: 20, right: 900, lineSpacing: 10 }] };
+    const { container } = render(<EditorSurface initialScore={makeEmptyScore()} songId="x" initialRevision={1} save={vi.fn()} config={{ wetink_idle_ms: 600 }} />);
+    expect(hint(container)).toBeTruthy();
+    playNotes(1);
+    // No timers advanced: the note has NOT settled or been engraved yet.
+    expect(container.querySelectorAll('.composer-wet-note__head')).toHaveLength(1);
+    expect(hint(container)).toBeNull();
+  });
+
+  it('stays gone once the ink dries', () => {
+    layoutToPublish = { steps: [], staves: [{ system: 0, top: 100, left: 20, right: 900, lineSpacing: 10 }] };
+    const { container } = render(<EditorSurface initialScore={makeEmptyScore()} songId="x" initialRevision={1} save={vi.fn()} config={{ wetink_idle_ms: 600 }} />);
+    playNotes(1);
+    act(() => { vi.advanceTimersByTime(600); });
+    expect(hint(container)).toBeNull();
+  });
+
+  it('is absent when opening a song that already has notes', () => {
+    const score = makeEmptyScore();
+    score.parts[0].measures = [{ number: 1, notes: [makeNote({ step: 'C', octave: 4 })] }];
+    const { container } = render(<EditorSurface initialScore={score} songId="x" initialRevision={1} save={vi.fn()} config={{}} />);
+    expect(hint(container)).toBeNull();
   });
 });

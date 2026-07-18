@@ -280,6 +280,22 @@
   .musicxml-renderer { color: #101014; } // ensure any inherited light color can't wash out the ink
 }
 
+// Empty-state invitation, shown only while the score has no notes. It sits on
+// the PAPER, not the dark chrome, so it takes an ink gray from the notation's
+// palette rather than the surrounding light-on-dark UI — muted enough to read
+// as a hint, dark enough to stay legible on #fbfbf7 (about 4.9:1 there).
+// Deliberately no box, border or background: an invitation, not a banner.
+// In normal flow AFTER the renderer, so it cannot collide with the staff or
+// with the absolutely-positioned caret drawn over it.
+.composer-page__hint {
+  margin: 1rem 0 0;
+  text-align: center;
+  color: #75756b;
+  font-size: 0.95rem;
+  font-weight: 400;
+  line-height: 1.4;
+}
+
 // The caret is positioned via inline transform (x/y from the renderer's
 // layout, see CaretLayer.jsx) relative to the nearest positioned ancestor —
 // it MUST be `position: absolute`, or it renders in normal document flow at

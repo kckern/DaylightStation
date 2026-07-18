@@ -22,17 +22,16 @@ import { initEditor, serializeFromEditor, undo, redo, makeRest } from './model/i
 import { useComposerInput } from './useComposerInput.js';
 import { useAutosave } from './useAutosave.js';
 import { useWetInk } from './wetInk.js';
-import { CaretLayer, CARET_GAP, CARET_WIDTH, NOTE_WIDTH_FALLBACK } from './CaretLayer.jsx';
+import { CaretLayer, CARET_GAP, CARET_WIDTH, NOTE_WIDTH_FALLBACK, MEASURE_START_UNITS, staveCaretMetrics } from './CaretLayer.jsx';
 import { PendingLayer, WET_ADVANCE_UNITS, WET_RX_UNITS } from './PendingLayer.jsx';
 import { DurationPalette } from './DurationPalette.jsx';
 
 // The overlays own their own geometry; this file imports it rather than
 // restating it, because the anchor below has to land ON the glyphs PendingLayer
 // draws and the caret has to clear them by the same margin CaretLayer uses.
-
-// Clef + key + time signature eat roughly this many staff spaces at the head of
-// a system, so a bar with nothing engraved in it starts about here.
-const MEASURE_START_UNITS = 8;
+// MEASURE_START_UNITS in particular is SHARED with the caret's blank-staff
+// position: tier 3 below and that caret must name the same spot, or a blank
+// draft would promise the first note one place and paint it in another.
 
 // The Composer engraves at a fixed zoom; kept as a named value so the caret's
 // scale-dependent terms read the same here as they do inside CaretLayer.
@@ -294,10 +293,10 @@ export function EditorSurface({ initialScore, songId = null, initialRevision = 1
       // Clamp the caret's RIGHT edge to the system end, so the caret itself
       // can't spill into the margin the noteheads are kept out of.
       x: Math.min(lastCentre + ls * WET_RX_UNITS + CARET_GAP * SCALE, staff.right - CARET_WIDTH * SCALE),
-      top: staff.top,
-      // Matches the engraved path's floor (Math.max(40 * scale, …)) so the
-      // caret doesn't change HEIGHT as well as position when ink dries.
-      height: Math.max(40 * SCALE, ls * 4),
+      // Vertical extent comes from CaretLayer's own helper, so the wet caret,
+      // the blank-staff caret and the engraved caret all occupy the same band —
+      // the caret must not change HEIGHT or jump vertically when ink dries.
+      ...staveCaretMetrics(staff, SCALE),
     };
   }, [pending, anchor, staves]);
 
@@ -345,8 +344,19 @@ export function EditorSurface({ initialScore, songId = null, initialRevision = 1
       <div className="composer-page">
         <MusicXmlRenderer musicXml={musicXml} flow="wrapped" scale={SCALE} onLayout={onLayout}>
           <PendingLayer staves={staves} anchorX={anchor?.x ?? 0} anchorSystem={anchor?.system ?? 0} pending={pending.notes} clef={clef} />
-          <CaretLayer steps={steps} caretStepIndex={stepIdx} scale={SCALE} override={caretOverride} />
+          <CaretLayer steps={steps} staves={staves} caretStepIndex={stepIdx} scale={SCALE} override={caretOverride} />
         </MusicXmlRenderer>
+        {/* The invitation. Blank-staff-first is the design, but the arm toggle
+            defaults OFF, so without this a kid sits down, plays, and nothing at
+            all happens. Reads off the LIVE score (not settledScore), so it
+            clears on the first note while that note is still wet ink.
+            COPY COUPLING: "Play" is the literal label DurationPalette's arm
+            button carries while disarmed. A later task renames it to "Write" —
+            rename it here in the same change (EditorSurface.test.jsx asserts
+            the two match, so it will fail loudly if they drift). */}
+        {!scoreHasNotes(editorState.score) && !pending.notes.length && (
+          <p className="composer-page__hint">Pick a note length, then play a key on the piano. Tap Play to arm it so your notes land here.</p>
+        )}
       </div>
     </div>
   );
