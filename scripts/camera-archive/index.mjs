@@ -28,7 +28,7 @@ import { ReolinkClient, makeSource } from '#adapters/camera/ReolinkRecordingAdap
 import { ArchiveEncoder } from '#adapters/camera/ArchiveEncoder.mjs';
 import { ArchiveManifestStore } from '#adapters/camera/ArchiveManifestStore.mjs';
 import { ArchiveCameraDay } from '#apps/camera/usecases/ArchiveCameraDay.mjs';
-import { readLedger } from '#apps/camera/usecases/BuildDetectionLedger.mjs';
+import { readLedger, buildLedgerRecords, writeLedger } from '#apps/camera/usecases/BuildDetectionLedger.mjs';
 import { toClip } from '#domains/camera/selection.mjs';
 import { sunTimes, phaseAt } from '#domains/camera/sun.mjs';
 
@@ -169,6 +169,51 @@ function selectCameras(config, opts) {
   const found = config.cameras.filter((c) => c.id === opts.camera);
   if (!found.length) throw new Error(`Unknown camera: ${opts.camera}`);
   return found;
+}
+
+// ---------------------------------------------------------------------------
+// ledger — Pipeline C over a historical range
+// ---------------------------------------------------------------------------
+
+/**
+ * The scheduled job only ever archives yesterday, so catching up a range of
+ * past days belongs here.
+ *
+ * This is the most time-critical mode in the tool despite being the cheapest:
+ * detections are the perishable half of the system. HA history holds ~10 days
+ * and the driveway's trigger bits ~14, while the NVR keeps the footage for
+ * years. Days that age out cannot be re-derived at any download cost.
+ */
+async function runLedger({ config, auth, days, opts, logger }) {
+  const destinations = config.storage.ledgerPaths.map(abs);
+
+  for (const cameraCfg of selectCameras(config, opts)) {
+    const sources = buildSources(config, auth, cameraCfg, logger);
+    const bitMap = config.classification?.filenameBits?.[cameraCfg.id] ?? {};
+
+    for (const day of days) {
+      const records = await buildLedgerRecords({
+        camera: cameraCfg.id,
+        day,
+        cameraSource: sources.camera,
+        nvrSource: sources.nvr,
+        haHistory: [],
+        bitMap,
+      });
+
+      const bySource = records.reduce((acc, r) => {
+        acc[r.source] = (acc[r.source] ?? 0) + 1;
+        return acc;
+      }, {});
+
+      if (opts.dryRun) {
+        logger.info(`[dry-run] ${cameraCfg.id} ${day}: ${records.length} records`, bySource);
+        continue;
+      }
+      const written = await writeLedger({ records, camera: cameraCfg.id, day, destinations });
+      logger.info(`${cameraCfg.id} ${day}: ${records.length} records -> ${written.length} dest`, bySource);
+    }
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -338,8 +383,12 @@ const USAGE = `
 camera-archive — backfill CLI
 (nightly ledger + archive run as scheduler jobs; see Admin > Scheduler)
 
+  ledger             Pipeline C over a past range. No downloads, fast.
+                     Time-critical: detections age out (~10-14 days) while the
+                     footage they describe survives for years.
   backfill-untagged  Pipeline B: hard timelapse + full 24/7 audio for the
-                     pre-metadata range. ~500 GB download, overnight.
+                     pre-metadata range. NVR serves ~1 MB/s, so budget ~45 min
+                     per camera-day.
   plan               Dry-run Pipeline A selection, for tuning scoring weights.
 
 Options
@@ -365,7 +414,7 @@ async function main() {
   const auth = await loadAuth(config);
   const days = resolveDays(opts, config);
 
-  const modes = { plan: runPlan, 'backfill-untagged': runUntagged };
+  const modes = { ledger: runLedger, plan: runPlan, 'backfill-untagged': runUntagged };
   const run = modes[opts.mode];
   if (!run) {
     console.error(`Unknown mode: ${opts.mode}`);
