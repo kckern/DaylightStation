@@ -93,13 +93,20 @@ function hoursTouched(start, end, dayStart) {
 /**
  * Frames-per-second needed to land `frameCount` frames across a span.
  *
- * Capped at the source rate: asking ffmpeg for more frames than the source has
- * duplicates them, producing a grid of near-identical tiles that looks like
- * detail but is not.
+ * Two ceilings, both there to stop the sheet manufacturing false detail:
+ *
+ *  - the source rate, since asking ffmpeg for more frames than exist just
+ *    duplicates them;
+ *  - `minGapSeconds`, a floor on the wall-clock distance between tiles. A
+ *    10-second event spread over 24 tiles puts them 0.4s apart — two dozen
+ *    near-identical frames that look like detail and are not. Better to fill
+ *    fewer cells with genuinely different moments.
  */
-export function sampleRateFor(spanMs, frameCount, sourceFps = 10) {
+export function sampleRateFor(spanMs, frameCount, sourceFps = 10, minGapSeconds = 0) {
   const seconds = Math.max(1, spanMs / 1000);
-  return Math.min(frameCount / seconds, sourceFps);
+  const ceilings = [frameCount / seconds, sourceFps];
+  if (minGapSeconds > 0) ceilings.push(1 / minGapSeconds);
+  return Math.min(...ceilings);
 }
 
 /**

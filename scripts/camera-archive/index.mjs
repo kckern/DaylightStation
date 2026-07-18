@@ -32,8 +32,10 @@ import { ArchiveCameraDay } from '#apps/camera/usecases/ArchiveCameraDay.mjs';
 import { readLedger, buildLedgerRecords, writeLedger } from '#apps/camera/usecases/BuildDetectionLedger.mjs';
 import { createHaDetectionSource } from '#adapters/camera/HaDetectionSource.mjs';
 import { HomeAssistantAdapter } from '#adapters/home-automation/homeassistant/HomeAssistantAdapter.mjs';
-import { toClip } from '#domains/camera/selection.mjs';
+import { toClip, sessionize, labelSessions } from '#domains/camera/selection.mjs';
 import { sunTimes, phaseAt } from '#domains/camera/sun.mjs';
+import { planContactSheets } from '#domains/camera/sheetPlan.mjs';
+import { renderContactSheets } from '#apps/camera/usecases/RenderContactSheets.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(HERE, '../..');
@@ -348,8 +350,9 @@ async function materializeUntagged({ config, bcfg, cameraCfg, day, segments, sun
   await mkdir(workDir, { recursive: true });
   await mkdir(path.join(outDir, 'audio'), { recursive: true });
 
-  const outputs = { timelapse: {}, audio: [] };
+  const outputs = { timelapse: {}, audio: [], sheets: [] };
   const phaseFiles = { day: [], night: [] };
+  const localSegments = [];
 
   for (const [i, seg] of segments.entries()) {
     const localPath = path.join(workDir, `seg-${String(i).padStart(3, '0')}.mp4`);
@@ -361,8 +364,41 @@ async function materializeUntagged({ config, bcfg, cameraCfg, day, segments, sun
     outputs.audio.push(path.basename(audioPath));
 
     phaseFiles[phaseAt(seg.start, sun, config.sun.offsetMinutes)].push(localPath);
+    localSegments.push({ start: seg.start, end: seg.end, path: localPath });
     logger.info(`  ${cameraCfg.id} ${day} segment ${i + 1}/${segments.length}`);
     await pause(config.backfill?.interSegmentPauseMs);
+  }
+
+  // Contact sheets, before the source segments are deleted. The ledger is read
+  // rather than assumed empty: this range was labelled retroactively, so days
+  // that do have detections get event sheets instead of blanket hourly ones.
+  if (config.contactSheets?.enabled !== false) {
+    const ledgerRoot = abs(config.storage.ledgerPaths[0]);
+    const detections = await readLedger(ledgerRoot, cameraCfg.id, day);
+    const sessions = labelSessions(
+      sessionize(detections.filter((d) => d.source !== 'density').map(toLedgerClip), config.sessionize),
+      detections,
+      { toleranceSeconds: config.classification?.matchToleranceSeconds ?? 15 },
+    );
+    const plan = planContactSheets(sessions, day, {
+      maxSpanMs: (config.contactSheets?.maxSpanMinutes ?? 60) * 60_000,
+    });
+    const sheetProfile = {
+      ...(config.contactSheets ?? {}),
+      ...(config.contactSheets?.byCamera?.[cameraCfg.id] ?? {}),
+    };
+    const res = await renderContactSheets({
+      segments: localSegments,
+      plan,
+      camera: cameraCfg.id,
+      outDir: path.join(outDir, 'sheets'),
+      encoder,
+      detections,
+      profile: sheetProfile,
+      provenance: { pipeline: 'B', source: config.sources.footageFrom, channel: cameraCfg.nvrChannel },
+      logger,
+    });
+    outputs.sheets = res.written;
   }
 
   for (const [phase, profile] of Object.entries(bcfg.timelapse.phases)) {
@@ -381,6 +417,21 @@ async function materializeUntagged({ config, bcfg, cameraCfg, day, segments, sun
 }
 
 const pause = (ms) => (ms ? new Promise((r) => setTimeout(r, ms)) : Promise.resolve());
+
+/** Ledger record -> the clip shape sessionize() expects. */
+function toLedgerClip(rec) {
+  const start = new Date(rec.ts);
+  const end = new Date(rec.endTs ?? rec.ts);
+  const durationSec = Math.max(1, (end - start) / 1000);
+  return {
+    start,
+    end,
+    durationSec,
+    sizeBytes: rec.clip?.sizeBytes ?? 0,
+    name: rec.clip?.name ?? null,
+    densityMBPerMin: rec.densityMBPerMin ?? 0,
+  };
+}
 
 // ---------------------------------------------------------------------------
 
