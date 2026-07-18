@@ -303,6 +303,42 @@ proved disruptive and unreliable — headsets get toggled mid-test). Until then,
 guardrails (cross-bleed detector + 1s active reaper, ~1s residual window) are the shipped
 containment — a rare, ~1s, now-alerted artifact rather than a silent multi-second one.
 
+### Zero-cross-bleed WirePlumber hook — window activation (STAGED, not enabled)
+
+The turnkey literal-zero fix is written and staged at
+`contrib/wireplumber/51-bluez-sink-pin.lua` (see its header for the full mechanism and
+why the two simpler options fail). It makes each `bluez_output` sink accept **only** the
+mpv stream that explicitly targeted it, destroying any foreign migrated link the instant
+it forms — leaving mpv and the default sink untouched (so it avoids both the
+`dont-reconnect` and null-default traps). It is **not** deployed: enabling it needs a
+WirePlumber reload (a brief blip on every connected headset) and a wrong rule can misroute
+all headsets, and there is **no offline Lua validation on the hub** — so it must be
+validated live. Do this in a window when the headsets are free, not during household use.
+
+```bash
+# ACTIVATE (in a maintenance window, headsets available for testing)
+scp contrib/wireplumber/51-bluez-sink-pin.lua \
+  kckern@10.0.0.109:/home/kckern/.config/wireplumber/main.lua.d/51-bluez-sink-pin.lua
+ssh kckern-playback-hub 'sudo -u kckern XDG_RUNTIME_DIR=/run/user/1000 \
+  systemctl --user restart wireplumber'   # ~2-3s blip on connected headsets
+
+# VALIDATE (all must hold before leaving it enabled)
+#  a. each connected headset still plays:  curl localhost:8080/api/verify/<color>
+#     (or pw-cat monitor peak > 0 on each bluez_output.<mac>.1:monitor_FL)
+#  b. reconnect-to-own works: disconnect+reconnect one headset -> it resumes on ITS sink
+#  c. no cross-bleed on a drop: with 2+ headsets, drop one -> the others' sink input
+#     count stays 1 (pw-link -l), and journalctl shows "bluez-sink-pin: rejecting ..."
+#  d. journal has no Lua errors from wireplumber
+
+# ROLLBACK (if any of a-d fails, or audio misroutes)
+ssh kckern-playback-hub 'rm ~/.config/wireplumber/main.lua.d/51-bluez-sink-pin.lua; \
+  sudo -u kckern XDG_RUNTIME_DIR=/run/user/1000 systemctl --user restart wireplumber'
+```
+
+Note: `main.lua.d/` files can be clobbered by package updates; the `51-` prefix loads after
+`50-*-config`. Re-verify after any `apt upgrade` (same caveat as the seat-gate fix). Until
+this is validated + enabled, the shipped 1s active reaper is the containment.
+
 ### The mute IPC also persists into fresh mpvs
 
 Sending `ao-mute=true` via mpv IPC just before killing mpv can race the *new* mpv's socket on reconnect. The new mpv comes up already muted with no log indication. If you ever bring back any disconnect-time IPC, make sure the OLD socket is gone *before* the new mpv is spawned.
