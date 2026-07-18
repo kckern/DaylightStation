@@ -20,6 +20,7 @@
 
 import { ReolinkClient, makeSource } from '#adapters/camera/ReolinkRecordingAdapter.mjs';
 import { buildLedgerRecords, writeLedger } from '#apps/camera/usecases/BuildDetectionLedger.mjs';
+import { createHaDetectionSource } from '#adapters/camera/HaDetectionSource.mjs';
 
 /** Local calendar date offset by N days — recordings are searched by local day. */
 function localDay(offsetDays = 0, now = new Date()) {
@@ -41,7 +42,12 @@ function localDay(offsetDays = 0, now = new Date()) {
  * @param {Object} [deps.logger]
  * @returns {Function} handler
  */
-export function createCameraLedgerJobHandler({ configService, householdId = null, logger = console }) {
+export function createCameraLedgerJobHandler({
+  configService,
+  haGateway = null,
+  householdId = null,
+  logger = console,
+}) {
   return async function runCameraLedger(scopedLogger, executionId) {
     const log = scopedLogger?.info ? scopedLogger : logger;
     const config = configService.getHouseholdAppConfig(householdId, 'camera-archive');
@@ -66,6 +72,18 @@ export function createCameraLedgerJobHandler({ configService, householdId = null
     const destinations = config.storage.ledgerPaths;
     const streamType = config.sources?.streamType ?? 'sub';
 
+    // HA is the PRIMARY classifier and the only label source for the doorbell.
+    // Its absence is worth shouting about, but must not stop the run — the
+    // filename bits and density timeline still produce a usable ledger.
+    const ha = haGateway
+      ? createHaDetectionSource({
+          haGateway,
+          sensorsByCamera: config.classification?.sensorsByCamera ?? {},
+          logger: log,
+        })
+      : null;
+    if (!ha) log.warn?.('camera.ledger.no_ha', { executionId, impact: 'doorbell will have no labels' });
+
     const results = [];
     for (const cameraCfg of config.cameras) {
       try {
@@ -89,7 +107,7 @@ export function createCameraLedgerJobHandler({ configService, householdId = null
           day,
           cameraSource,
           nvrSource,
-          haHistory: [],
+          haHistory: ha ? await ha.fetchDay(cameraCfg.id, day) : [],
           bitMap: config.classification?.filenameBits?.[cameraCfg.id] ?? {},
         });
 

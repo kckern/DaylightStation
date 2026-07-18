@@ -2848,6 +2848,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   // perishable half of the camera archive (see cameraLedgerJobHandler).
   mediaExecutor.register('camera-ledger', createCameraLedgerJobHandler({
     configService,
+    haGateway: householdAdapters?.has?.('home_automation') ? householdAdapters.get('home_automation') : null,
     logger: rootLogger.child({ module: 'camera-ledger' })
   }));
 
