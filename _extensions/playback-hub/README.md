@@ -1,7 +1,7 @@
 # playback-hub — Bluetooth Auto-Play for headsets + BT speakers
 
 **Status:** Running on `kckern-playback-hub` (Ubuntu mini-PC, 10.0.0.109)
-**Last reviewed:** 2026-07-14
+**Last reviewed:** 2026-07-17
 
 ---
 
@@ -244,6 +244,100 @@ A "LANE GUARDRAIL" cleanup added these flags + a disconnect-time `ao-mute=true` 
 Accepting the bleed window turned out to be wrong — the window is **not** sub-second. On disconnect, `stop_playback` used to run `save_position` (a live mpv IPC round-trip) and then a *graceful* SIGTERM, and orphaned mpvs were observed surviving for minutes. With the bluez sink gone but mpv still alive, PipeWire migrates the orphaned stream onto whatever sink remains — so a disconnecting headset's audio piles onto another *connected* headset (observed: green + blue piling onto yellow).
 
 Fix (2026-05-28, no flags, no IPC mute): the BT-disconnect path calls `end_session … fast` → `stop_playback … fast`, which **SIGKILLs mpv first, before any IPC**, slamming the migration window shut. Resume accuracy is preserved by the `mpv_watchdog` loop, which now persists `state.json` every `WATCHDOG_INTERVAL` (5s) via a quiet `save_position`; the fast path reads that instead of doing a live IPC save against a dead sink. Graceful stops (scheduled window-end, `/play stop`, shutdown) keep the accurate live IPC save since their sink is still alive.
+
+### Cross-bleed detector + narrower reap window (2026-07-17)
+
+The fast-kill above only fires on a *detected BT disconnect*. But the migration also
+happens on a **sink-only drop** — the ACL link stays up (`Device1.Connected: true`)
+while the A2DP `bluez_output.<mac>` sink flaps out of PipeWire. The gdbus disconnect
+handler never fires, so containment falls to the watchdog's per-slot orphan-sink
+reaper (`mpv_check_orphan_sink`), which SIGKILLs a slot's mpv once its own sink has
+been absent for `ORPHAN_SINK_TICKS` watchdog ticks. Observed live 2026-07-17: a
+MusiCozy dropped, its orphaned mpv migrated onto the *surviving* headset, and that
+headset played **two overlapping streams** while the dropped one went silent — for up
+to `ORPHAN_SINK_TICKS × WATCHDOG_INTERVAL` seconds per flap.
+
+Three changes, all zero-audio-path-risk (no PipeWire routing flags — this deliberately
+does NOT repeat the `dont-reconnect`/`audio-fallback-to-null` mistake above):
+
+1. **`ORPHAN_SINK_TICKS` 2 → 1.** Halves the watchdog's per-slot reap window (~10s → ~5s).
+   `present=0` already comes from PipeWire's live device list (via mpv IPC), so a single
+   absent sample is a real drop, not a stale cache; the worst spurious case (a <5s A2DP
+   renegotiation) costs only a brief self-respawn on that one headset, never cross-bleed.
+2. **`check_cross_bleed()` — a ground-truth detector.** Parses the actual `pw-link -l`
+   graph and, if **any** bluez sink is fed by more than one mpv stream (always a bug — a
+   sink has one legit owner), logs `audio.cross_bleed` attributed to the victim slot and
+   dispatches a `cross_bleed` **warning alert** once per streak (cleared when the graph
+   goes clean). Before this, cross-bleed was inaudible to the daemon — only a human
+   wearing both headsets could catch it. Route it to a phone push with
+   `alerts.on_cross_bleed: notify` in `devices.yml` (defaults to `log`).
+3. **`cross_bleed_guard()` — a fast (1s) active reaper**, a loop SEPARATE from the 5s
+   watchdog. Each `CROSS_BLEED_INTERVAL` (1s) it runs the detector, and **only when a
+   doubling is actually measured** calls `reap_migrated_orphans()`, which SIGKILLs the
+   migrated orphan — the slot whose OWN sink is absent from the live graph while its mpv
+   is alive. This shrinks the audible cross-bleed window from ~5s (a full watchdog tick)
+   to **~1s**. SAFE BY CONSTRUCTION: a legitimately-playing slot's own sink IS present in
+   the graph, so it is never reaped; and the reaper fires only on a measured doubling, so
+   a benign sub-second sink blip (no doubling) cannot trigger a spurious reap. The 5s
+   watchdog orphan reaper remains as the backstop. Verified live: the 1s guard ran ~30
+   ticks with the one connected headset playing and never false-reaped it.
+
+**Phase 2 attempt — null-sink default: TESTED & REJECTED (2026-07-17).** The idea was to
+eliminate cross-bleed by making a persistent null "void" sink the PipeWire *default*, so an
+orphaned stream (whose bluez target vanished) would migrate to the void (silence) instead of
+onto another headset. It was validated live with instrumentation (peak-meter + `pw-link`) and
+**failed the same way as the forbidden `dont-reconnect` combo above:** the null default is a
+*trap*. A migrated stream parks on the void sink and never returns to its headset — because the
+void is a perfectly "valid" sink it's happy to sit on, WirePlumber has no reason to move it
+back when the real sink reappears. Within seconds, streams drifted onto the void and all audio
+went silent. Rolled back fully (destroy void node, restore default to a real sink, restart
+daemon). **Lesson: do not make any always-present sink (null or otherwise) the default as a
+migration sink — homeless streams get stuck on it.** The ground-truth takeaway confirmed here:
+orphans migrate to *whatever the default sink is* (the original bug landed cross-bleed on
+yellow precisely because yellow was the default). The only remaining viable path to *zero*
+cross-bleed is a **WirePlumber routing rule** that makes each `bluez_output` sink accept **only
+the stream that explicitly targeted it** (reject default/auto-routed links) — leaving mpv and
+the default untouched. That is more involved and MUST be developed + tested in a controlled
+maintenance window when the headsets are NOT in active household use (live testing during use
+proved disruptive and unreliable — headsets get toggled mid-test). Until then, the Phase 1
+guardrails (cross-bleed detector + 1s active reaper, ~1s residual window) are the shipped
+containment — a rare, ~1s, now-alerted artifact rather than a silent multi-second one.
+
+### Zero-cross-bleed WirePlumber hook — window activation (STAGED, not enabled)
+
+The turnkey literal-zero fix is written and staged at
+`contrib/wireplumber/51-bluez-sink-pin.lua` (see its header for the full mechanism and
+why the two simpler options fail). It makes each `bluez_output` sink accept **only** the
+mpv stream that explicitly targeted it, destroying any foreign migrated link the instant
+it forms — leaving mpv and the default sink untouched (so it avoids both the
+`dont-reconnect` and null-default traps). It is **not** deployed: enabling it needs a
+WirePlumber reload (a brief blip on every connected headset) and a wrong rule can misroute
+all headsets, and there is **no offline Lua validation on the hub** — so it must be
+validated live. Do this in a window when the headsets are free, not during household use.
+
+```bash
+# ACTIVATE (in a maintenance window, headsets available for testing)
+scp contrib/wireplumber/51-bluez-sink-pin.lua \
+  kckern@10.0.0.109:/home/kckern/.config/wireplumber/main.lua.d/51-bluez-sink-pin.lua
+ssh kckern-playback-hub 'sudo -u kckern XDG_RUNTIME_DIR=/run/user/1000 \
+  systemctl --user restart wireplumber'   # ~2-3s blip on connected headsets
+
+# VALIDATE (all must hold before leaving it enabled)
+#  a. each connected headset still plays:  curl localhost:8080/api/verify/<color>
+#     (or pw-cat monitor peak > 0 on each bluez_output.<mac>.1:monitor_FL)
+#  b. reconnect-to-own works: disconnect+reconnect one headset -> it resumes on ITS sink
+#  c. no cross-bleed on a drop: with 2+ headsets, drop one -> the others' sink input
+#     count stays 1 (pw-link -l), and journalctl shows "bluez-sink-pin: rejecting ..."
+#  d. journal has no Lua errors from wireplumber
+
+# ROLLBACK (if any of a-d fails, or audio misroutes)
+ssh kckern-playback-hub 'rm ~/.config/wireplumber/main.lua.d/51-bluez-sink-pin.lua; \
+  sudo -u kckern XDG_RUNTIME_DIR=/run/user/1000 systemctl --user restart wireplumber'
+```
+
+Note: `main.lua.d/` files can be clobbered by package updates; the `51-` prefix loads after
+`50-*-config`. Re-verify after any `apt upgrade` (same caveat as the seat-gate fix). Until
+this is validated + enabled, the shipped 1s active reaper is the containment.
 
 ### The mute IPC also persists into fresh mpvs
 

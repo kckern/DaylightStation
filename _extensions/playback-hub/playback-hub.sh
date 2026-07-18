@@ -34,8 +34,9 @@ MEMBERSHIP_INTERVAL=60
 HEAD_FULL_PASS=900
 SWEEP_INTERVAL=3600
 STALL_REVALIDATE_COOLDOWN=120  # min seconds between stall revalidations of the SAME plex_id (anti-thrash)
-ORPHAN_SINK_TICKS=2            # consecutive watchdog ticks a slot's sink must be ABSENT before reaping its mpv (audio cross-routing guard; ~ORPHAN_SINK_TICKS*WATCHDOG_INTERVAL s of hysteresis)
+ORPHAN_SINK_TICKS=1            # consecutive watchdog ticks a slot's sink must be ABSENT before reaping its mpv (audio cross-routing guard; ~ORPHAN_SINK_TICKS*WATCHDOG_INTERVAL s of hysteresis). Lowered 2->1 on 2026-07-17: at 2 the cross-bleed (a dropped headset's mpv migrating onto a SURVIVING headset) stayed audible for ~10s per flap; at 1 it's halved to one WATCHDOG_INTERVAL. mpv_output_sink reads PipeWire's live device list (via mpv IPC), so present=0 already means PipeWire dropped the sink — a single absent sample is a real drop, not a stale cache, and the worst spurious case (a <5s A2DP renegotiation) costs only a brief self-respawn on that ONE headset, never cross-bleed onto another. Prevention (never migrate at all) is the Phase-2 stream-pin.
 ORPHAN_REAP_COOLDOWN=20        # after an orphan-sink reap, suppress the watchdog's (blocking) respawn for this many seconds while the sink is still gone — avoids a 12s resolve_audio_device stall + log spam every tick during a sustained A2DP outage
+CROSS_BLEED_INTERVAL=1         # seconds between fast cross-bleed guard ticks (2026-07-17). A dedicated tight loop (SEPARATE from the 5s watchdog) that parses the live pw-link graph and, ONLY when a real doubling is measured (a bluez sink fed by >1 mpv stream), fast-reaps the migrated orphan — the slot whose OWN sink is absent from the graph while its mpv is alive. Shrinks the audible cross-bleed window from ~WATCHDOG_INTERVAL (5s) to ~1s. Safe by construction: a legit stream's own sink IS present, so it is never reaped; and the reaper fires only when doubling is actually observed, so a benign sub-second A2DP renegotiation blip (sink briefly absent, no doubling yet) does NOT trigger a spurious reap.
 HEARTBEAT_INTERVAL=180         # seconds between playback.heartbeat liveness samples per live slot. track.start only fires on track CHANGE (and is suppressed on resume-to-same-track), so it can't answer "is audio actually flowing right now". The heartbeat is the positive liveness signal: {plex_id,pos,paused,sink_live} sampled while mpv is alive + BT-connected.
 RECONNECT_LOG_EVERY=30         # during a reconnect outage, after the FIRST miss only emit bt.reconnect_fail on escalation ticks + every Nth miss. The old per-tick emit was ~95% of events.jsonl (3.4k–7.3k lines/week/slot) and rotated genuinely-useful events out of the 5MB ledger. Onset + escalation + a coarse heartbeat preserve the signal.
 SILENT_SLOT_ALERT_SEC=300      # GUARDRAIL: seconds a slot may be BT-connected + should-be-playing (armed or in an active schedule window) but have NO live mpv before we dispatch a `slot_silent` alert. Catches the 2026-07-06 failure mode where start_playback bailed EVERY tick (WirePlumber bluez monitor seat-gated off → no A2DP sink → resolve_audio_device fails before spawning mpv), leaving slots "connected but silent" with no mpv.start and no heartbeat — invisible for 8 days. Cleared the instant mpv is alive; alert fires once per outage streak.
@@ -2342,6 +2343,120 @@ note_silent_slot() {
     return 0
 }
 
+# GUARDRAIL — PipeWire cross-bleed detector (2026-07-17). A ground-truth check on
+# the ACTUAL audio graph, independent of any single mpv's self-report: a bluez
+# headset sink fed by MORE THAN ONE mpv stream means one slot's audio has migrated
+# onto ANOTHER slot's headset (the "2 streams on yellow, none on red" failure).
+# This is ALWAYS a bug — a sink has exactly one legitimate owner. Pure
+# observability: it logs `audio.cross_bleed` (attributed to the victim slot whose
+# headset is doubled) and dispatches a `cross_bleed` alert ONCE per streak. This
+# function itself never kills — active remediation is reap_migrated_orphans(),
+# which the fast guard loop calls immediately after this reports a doubling
+# (backstopped by the watchdog's per-slot orphan reaper, ORPHAN_SINK_TICKS).
+# Before this, cross-bleed was inaudible to the daemon — only a human wearing both
+# headsets could notice. Called from cross_bleed_guard every CROSS_BLEED_INTERVAL
+# (1s), not the 5s watchdog. Requires pw-link + the daemon's
+# XDG_RUNTIME_DIR (set by the systemd --user unit); a missing pw-link yields no
+# output and never false-alarms. State: $BASE_DIR/.cross_bleed_active (streak flag).
+check_cross_bleed() {
+    command -v pw-link >/dev/null 2>&1 || return 0
+    # For each bluez sink's playback_FL input port, count how many mpv output
+    # streams feed it. Emit "<mac_underscore> <count>" for any sink with count>1.
+    local doubled
+    doubled=$(pw-link -l 2>/dev/null | awk '
+        /^bluez_output\..*:playback_FL$/ { cur=$0; next }
+        /^[^[:space:]]/ { cur="" }
+        cur!="" && /\|<-/ && /mpv/ { n[cur]++ }
+        END {
+            for (s in n) if (n[s] > 1) {
+                mac=s; sub(/\.[0-9]+:playback_FL$/,"",mac); sub(/^bluez_output\./,"",mac)
+                print mac, n[s]
+            }
+        }
+    ') || true
+    local stamp="$BASE_DIR/.cross_bleed_active"
+    if [[ -z "$doubled" ]]; then
+        rm -f "$stamp" 2>/dev/null || true
+        return 0
+    fi
+    # Cross-bleed present. Log per victim slot always; alert once per streak.
+    local first=0; [[ ! -f "$stamp" ]] && first=1
+    local mac_u count mac slot tag summary=""
+    while read -r mac_u count; do
+        [[ -z "$mac_u" ]] && continue
+        mac="${mac_u//_/:}"
+        slot=$(jq -r --arg m "$mac" '.devices[] | select((.mac|ascii_upcase)==($m|ascii_upcase)) | .slot' "$CONFIG_FILE" 2>/dev/null | head -1)
+        tag="${slot:-cross-bleed}"
+        summary+="${mac}(x${count}) "
+        (( first == 1 )) && logev "$tag" audio.cross_bleed sink="$mac" mpv_inputs="$count"
+    done <<< "$doubled"
+    # Mark the streak so we alert once, not every tick; cleared above when the
+    # graph goes clean again (so the next episode re-alerts).
+    : > "$stamp"
+    if (( first == 1 )); then
+        dispatch_alert warning cross_bleed \
+            "PipeWire cross-bleed: a headset sink is fed by >1 mpv stream [ ${summary}] — one slot's audio migrated onto another headset. Fast-reaping the migrated orphan; if it persists, that headset's A2DP link is flapping."
+    fi
+    return 0
+}
+
+# ACTIVE remediation for a measured cross-bleed. Called from the fast guard loop
+# ONLY when detect has confirmed a real doubling. Reaps the migrated orphan(s):
+# any slot whose OWN bluez sink is ABSENT from the live graph while its mpv is
+# still alive — that mpv is the stream PipeWire has migrated onto a surviving
+# headset. SAFE BY CONSTRUCTION: a legitimately-playing slot's own sink IS present
+# in the graph, so it is skipped; only a genuinely-orphaned mpv is killed. Uses
+# the same fast SIGKILL teardown as the watchdog's orphan reaper and stamps
+# .last_orphan_reap so the watchdog suppresses its blocking respawn while the sink
+# is still gone (a real reconnect respawns instantly via the gdbus handler).
+# Returns 0 always (never breaks the guard loop under set -e).
+reap_migrated_orphans() {
+    command -v pw-link >/dev/null 2>&1 || return 0
+    # Macs (colon form, upper) of bluez sinks CURRENTLY present in the graph.
+    local present
+    present=$(pw-link -l 2>/dev/null \
+        | grep -oE 'bluez_output\.[0-9A-Fa-f_]+' \
+        | sed -e 's/^bluez_output\.//' -e 's/_/:/g' \
+        | tr '[:lower:]' '[:upper:]' | sort -u) || true
+    local count idx
+    count=$(jq '.devices | length' "$CONFIG_FILE" 2>/dev/null) || return 0
+    for ((idx=0; idx<count; idx++)); do
+        local dj slot mac name dir mpid mac_u
+        dj=$(jq -c ".devices[$idx]" "$CONFIG_FILE") || continue
+        slot=$(jq -r '.slot' <<< "$dj")
+        mac=$(jq -r '.mac' <<< "$dj")
+        name=$(jq -r '.name // ""' <<< "$dj")
+        dir="$(slot_dir "$slot")"
+        [[ -f "$dir/mpv.pid" ]] || continue
+        mpid="$(cat "$dir/mpv.pid" 2>/dev/null)"
+        { [[ -n "$mpid" ]] && kill -0 "$mpid" 2>/dev/null; } || continue
+        mac_u="$(echo "$mac" | tr '[:lower:]' '[:upper:]')"
+        # Own sink present -> this slot is playing legitimately; never reap.
+        grep -qxF "$mac_u" <<< "$present" && continue
+        # Own sink absent + mpv alive + a doubling was just measured -> migrated orphan.
+        local tag; tag="$(device_tag "$slot" "$mac" "$name")"
+        logev "$tag" audio.cross_bleed_reap slot="$slot" mac="$mac"
+        stop_playback "$slot" "$tag" fast
+        printf '%s' "$(date +%s)" > "$dir/.last_orphan_reap"
+    done
+    return 0
+}
+
+# Fast cross-bleed guard loop. SEPARATE from the 5s mpv_watchdog so a migrated
+# stream is detected + reaped within ~CROSS_BLEED_INTERVAL (1s) instead of a full
+# watchdog tick. Detection + alerting live in check_cross_bleed (once-per-streak);
+# reaping in reap_migrated_orphans, gated on a measured doubling. Unbreakable under
+# set -e (every risky call is `|| true`).
+cross_bleed_guard() {
+    while true; do
+        sleep "$CROSS_BLEED_INTERVAL"
+        # Detect + alert (manages the .cross_bleed_active streak stamp). Only when
+        # the stamp is set (a doubling is present this tick) do we pay for a reap.
+        check_cross_bleed || true
+        [[ -f "$BASE_DIR/.cross_bleed_active" ]] && { reap_migrated_orphans || true; }
+    done
+}
+
 mpv_watchdog() {
     while true; do
         sleep "$WATCHDOG_INTERVAL"
@@ -2534,6 +2649,11 @@ monitor() {
     # Start tight mpv watchdog (respawn dead mpv on connected headsets within seconds)
     mpv_watchdog &
     WATCHDOG_PID=$!
+
+    # Start fast cross-bleed guard (1s): detect a migrated stream on the live
+    # pw-link graph and reap the orphan within ~1s, well ahead of the 5s watchdog.
+    cross_bleed_guard &
+    CROSS_BLEED_PID=$!
 
     # Start membership self-heal loop (reconcile mpv to server-side queue
     # membership/order drift every MEMBERSHIP_INTERVAL)
