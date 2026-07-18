@@ -254,6 +254,10 @@ describe('EditorSurface — wet caret position', () => {
   const LS = 10;
   const staff = { system: 0, top: 100, left: 20, right: 900, lineSpacing: LS };
   const caretLeft = (c) => Number(/translate3d\(([-\d.]+)px/.exec(c.querySelector('.composer-caret').style.transform)[1]);
+  const caretBand = (c) => {
+    const el = c.querySelector('.composer-caret');
+    return { top: Number(/translate3d\([-\d.]+px,\s*([-\d.]+)px/.exec(el.style.transform)[1]), height: el.style.height };
+  };
   const headCentres = (c) => [...c.querySelectorAll('.composer-wet-note__head')].map((e) => Number(e.getAttribute('cx')));
 
   beforeEach(() => { engraves.length = 0; midiHandler = null; layoutToPublish = { steps: [], staves: [staff] }; vi.useFakeTimers(); });
@@ -307,6 +311,23 @@ describe('EditorSurface — wet caret position', () => {
     expect(container.querySelectorAll('.composer-wet-note__head')).toHaveLength(0);
     // Engraved past-the-end position: note right edge (300 + 12) + CARET_GAP.
     expect(caretLeft(container)).toBe(300 + 12 + CARET_GAP);
+  });
+
+  // THE regression this unification is about. The caret is the most-watched
+  // element on the screen, and when ink dried it used to jump DIAGONALLY: the
+  // horizontal shift (expected, documented on caretOverride) was compounded by a
+  // vertical one, because the engraved tier read the NOTE's box while the wet
+  // tier read the STAVE. A middle C engraves BELOW a treble staff, so the two
+  // disagreed by a ledger line's worth on every settle.
+  it('keeps the caret in the SAME vertical band across a settle', () => {
+    layoutToPublish = { steps: [{ measure: 0, notes: [{ x: 300, top: 116, bottom: 156, width: 12 }] }], staves: [staff] };
+    const { container } = render(<EditorSurface initialScore={makeEmptyScore()} songId="x" initialRevision={1} save={vi.fn()} config={{ wetink_idle_ms: 600 }} />);
+    playNotes(1);
+    const wet = caretBand(container);
+    act(() => { vi.advanceTimersByTime(600); });
+    expect(container.querySelectorAll('.composer-wet-note__head')).toHaveLength(0); // genuinely engraved now
+    expect(caretBand(container)).toEqual(wet);
+    expect(wet).toEqual({ top: staff.top, height: '40px' }); // the stave's band, not the note's 116
   });
 });
 

@@ -12,10 +12,13 @@ const caretPos = (container) => {
 
 describe('CaretLayer', () => {
   it('renders a caret positioned at the target step', () => {
-    const { container } = render(<CaretLayer steps={steps} caretStepIndex={1} scale={1} />);
+    const { container } = render(<CaretLayer steps={steps} staves={staves} caretStepIndex={1} scale={1} />);
     const caret = container.querySelector('.composer-caret');
     expect(caret).toBeTruthy();
-    expect(caret.style.transform).toContain('80'); // step[1].x
+    expect(caret.style.transform).toContain('80'); // step[1].x — horizontal math unchanged
+    // Vertical band comes from the STAVE, not from the note box (top 10 / bottom 60).
+    expect(caretPos(container).top).toBe(100);
+    expect(caretPos(container).height).toBe('40px');
   });
   it('parks past the last step when caret is at the open insertion point', () => {
     const { container } = render(<CaretLayer steps={steps} caretStepIndex={5} scale={1} />);
@@ -69,6 +72,32 @@ describe('CaretLayer — blank staff', () => {
       <CaretLayer steps={[]} staves={staves} caretStepIndex={0} scale={1} override={{ x: 240, top: 55, height: 44 }} />
     );
     expect(caretPos(container).x).toBe(240);
+  });
+
+  // A caret is an INSERTION POINT, not a note: it marks where the NEXT note will
+  // go, and that note's pitch is unknown, so there is nothing to track
+  // vertically. Deriving the band from the last note's pitch made the caret
+  // bounce up and down the staff as the kid played.
+  it('takes its vertical band from the stave the note sits on, not from the note pitch', () => {
+    const twoSystems = [
+      { system: 0, top: 100, left: 20, right: 520, lineSpacing: 10 },
+      { system: 1, top: 300, left: 20, right: 520, lineSpacing: 10 },
+    ];
+    // A note engraved low on the SECOND system (ledger lines below it).
+    const low = [{ notes: [{ x: 200, top: 355, bottom: 395, width: 12 }] }];
+    const { container } = render(<CaretLayer steps={low} staves={twoSystems} caretStepIndex={0} scale={1} />);
+    const pos = caretPos(container);
+    expect(pos.x).toBe(200);      // horizontal untouched
+    expect(pos.top).toBe(300);    // system 1's band, NOT the note's 355
+    expect(pos.height).toBe('40px');
+  });
+
+  it('falls back to the note box when there is no stave geometry at all', () => {
+    const { container } = render(<CaretLayer steps={steps} caretStepIndex={1} scale={1} />);
+    const pos = caretPos(container);
+    expect(pos.x).toBe(80);
+    expect(pos.top).toBe(10);         // the note box's own top
+    expect(pos.height).toBe('50px');  // bottom - top
   });
 
   it('falls back to the stave when the engraved step carries no note box', () => {
