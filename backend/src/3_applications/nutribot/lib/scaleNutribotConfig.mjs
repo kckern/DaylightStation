@@ -70,8 +70,9 @@ function chunk(arr, size) {
 
 export function buildDensityKeyboard(cfg, encodeCallback, logUuid, opts = {}) {
   const showingHelp = opts.showingHelp === true;
+  // UI shows emoji + word label only; the numeric level rides in the callback payload.
   const buttons = cfg.densityLevels.map((l) => ({
-    text: `${l.level} ${l.emoji}`,
+    text: `${l.emoji} ${l.label}`,
     callback_data: encodeCallback('sd', { id: logUuid, l: l.level }),
   }));
   const helpBtn = showingHelp
@@ -87,8 +88,9 @@ export function buildDensityKeyboard(cfg, encodeCallback, logUuid, opts = {}) {
 
 export function buildContainerKeyboard(cfg, encodeCallback, logUuid) {
   const none = [{ text: '🚫 No container', callback_data: encodeCallback('st', { id: logUuid, c: 'none' }) }];
+  // UI shows emoji + label only; the tare grams stays server-side, resolved from c.id.
   const containers = cfg.containers.items.map((c) => ({
-    text: `${c.emoji} ${c.label} −${c.grams}`,
+    text: `${c.emoji} ${c.label}`,
     callback_data: encodeCallback('st', { id: logUuid, c: c.id }),
   }));
   return [none, ...chunk(containers, 3)];
@@ -108,7 +110,7 @@ export function densityPromptText(grams) {
 
 export function densityHelpText(cfg, grams) {
   const lines = cfg.densityLevels.map(
-    (l) => `${l.level} ${l.emoji} ${l.label} · ${l.kcal_per_g} kcal/g${l.hint ? `  (${l.hint})` : ''}`,
+    (l) => `${l.emoji} ${l.label} · ${l.kcal_per_g} kcal/g${l.hint ? `  (${l.hint})` : ''}`,
   );
   return `⚖️ ${grams} g — tap a level or describe it\n\n${lines.join('\n')}`;
 }
