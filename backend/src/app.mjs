@@ -196,6 +196,7 @@ import { YamlConversationStateDatastore } from '#adapters/messaging/YamlConversa
 import { MediaJobExecutor } from './3_applications/media/MediaJobExecutor.mjs';
 import { MediaDownloadService } from './3_applications/media/services/MediaDownloadService.mjs';
 import { createFreshVideoJobHandler } from './3_applications/media/FreshVideoJobHandler.mjs';
+import { createCameraLedgerJobHandler } from './3_applications/camera/cameraLedgerJobHandler.mjs';
 import { YtDlpAdapter } from '#adapters/media/YtDlpAdapter.mjs';
 
 // Content composition use case
@@ -2839,6 +2840,15 @@ export async function createApp({ server, logger, configPaths, configExists, ena
       reason: 'mediaBasePath not configured - video downloads disabled'
     });
   }
+
+  // Camera detection ledger (Pipeline C). Registered unconditionally: it needs
+  // no media path and no NAS — only the Reolink search API — so it should keep
+  // running even when the heavier media plumbing is unavailable. It is the
+  // perishable half of the camera archive (see cameraLedgerJobHandler).
+  mediaExecutor.register('camera-ledger', createCameraLedgerJobHandler({
+    configService,
+    logger: rootLogger.child({ module: 'camera-ledger' })
+  }));
 
   const schedulerService = new SchedulerService({
     timezone: 'America/Los_Angeles'

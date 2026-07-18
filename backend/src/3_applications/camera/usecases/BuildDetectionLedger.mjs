@@ -14,8 +14,8 @@
 
 import { mkdir, writeFile, readFile } from 'fs/promises';
 import path from 'path';
-import { toClip } from './select.lib.mjs';
-import { parseTriggerBits } from './reolink.lib.mjs';
+import { toClip } from '#domains/camera/selection.mjs';
+import { parseTriggerBits } from '#adapters/camera/ReolinkRecordingAdapter.mjs';
 
 /**
  * Build ledger records for one camera-day from every source available.
