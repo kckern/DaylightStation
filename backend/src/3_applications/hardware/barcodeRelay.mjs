@@ -21,6 +21,8 @@
 import { promises as fs } from 'fs';
 import path from 'path';
 import yaml from 'js-yaml';
+import { formatLocalTimestamp, getDateInTimezone } from '#domains/core/utils/time.mjs';
+import { DEFAULT_TIMEZONE } from '#domains/core/utils/timezone.mjs';
 
 const RELAY_SOURCE = 'barcode-relay';
 const TOPIC = 'barcode-relay';
@@ -33,6 +35,7 @@ const DEFAULT_DIR = 'household/history/barcode'; // relative to dataDir
  * @param {string}   [deps.defaultDevice]     device id when the relay omits one
  * @param {string}   [deps.dataDir]           resolved data dir — enables disk persistence when set
  * @param {string}   [deps.persistDir]        history root relative to dataDir (default household/history/barcode)
+ * @param {string}   [deps.timezone]          IANA tz for the `ts` field + day-file bucket (default household tz)
  * @param {object}   [deps.logger]
  * @returns {{ dispose: () => void }}
  */
@@ -42,6 +45,7 @@ export function createBarcodeRelay({
   defaultDevice = 'barcode-relay',
   dataDir = null,
   persistDir = DEFAULT_DIR,
+  timezone = DEFAULT_TIMEZONE,
   logger = console,
 }) {
   if (!eventBus?.onClientMessage || !eventBus?.broadcast) {
@@ -58,7 +62,8 @@ export function createBarcodeRelay({
       return;
     }
     const device = (typeof message.device === 'string' && message.device) ? message.device : defaultDevice;
-    const payload = { source: RELAY_SOURCE, device, code, ts: new Date().toISOString() };
+    // Local wall-clock timestamp (household tz), NOT UTC — matches the day-file bucket.
+    const payload = { source: RELAY_SOURCE, device, code, ts: formatLocalTimestamp(new Date(), timezone) };
 
     eventBus.broadcast(TOPIC, payload);
     logger.info?.('barcode_relay.scan', { device, code });
@@ -79,7 +84,7 @@ export function createBarcodeRelay({
     let writeChain = Promise.resolve();
     const enqueueAppend = (device, record) => {
       writeChain = writeChain
-        .then(() => appendRecord(historyRoot, device, record, logger))
+        .then(() => appendRecord(historyRoot, device, record, timezone, logger))
         .catch((err) => logger.warn?.('barcode_relay.persist.failed', { device, error: err.message }));
     };
 
@@ -98,8 +103,11 @@ export function createBarcodeRelay({
 }
 
 /** Append one scan to the device's append-only day log (read-modify-write). */
-async function appendRecord(historyRoot, device, record, logger) {
-  const day = new Date().toISOString().slice(0, 10); // YYYY-MM-DD (UTC)
+async function appendRecord(historyRoot, device, record, timezone, logger) {
+  // Bucket by the scan's LOCAL day (date prefix of its local `ts`), not UTC.
+  const day = (typeof record?.ts === 'string' && /^\d{4}-\d{2}-\d{2}/.test(record.ts))
+    ? record.ts.slice(0, 10)
+    : getDateInTimezone(new Date(), timezone);
   const dir = path.join(historyRoot, device);
   const file = path.join(dir, `${day}.yml`);
   await fs.mkdir(dir, { recursive: true });
