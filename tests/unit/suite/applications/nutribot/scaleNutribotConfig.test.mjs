@@ -60,6 +60,10 @@ describe('scaleNutribotConfig', () => {
     expect(JSON.parse(kb[0][0].callback_data)).toMatchObject({ cmd: 'st', id: 'log123', c: 'none' });
     const encoded = kb.flat().map((b) => JSON.parse(b.callback_data));
     expect(encoded.some((e) => e.c === 'dinner-plate')).toBe(true);
+    // button text = emoji + label, no tare number in the UI (grams resolved server-side from c.id)
+    const plate = kb.flat().find((b) => JSON.parse(b.callback_data).c === 'dinner-plate');
+    expect(plate.text).toBe('🍽 Dinner plate');
+    expect(plate.text).not.toMatch(/\d/);
   });
 
   it('buildConfirmButtons emits accept/revise/discard', () => {
@@ -98,8 +102,9 @@ describe('scaleNutribotConfig', () => {
     expect(kb[1]).toHaveLength(3);
     expect(kb[2]).toHaveLength(3);
     expect(kb[3]).toHaveLength(3);
-    // density button text = "<level> <emoji>"
-    expect(kb[0][0].text).toBe('1 🥬');
+    // density button text = "<emoji> <label>" (no number; level rides in the payload)
+    expect(kb[0][0].text).toBe('🥬 Watery');
+    expect(JSON.parse(kb[0][0].callback_data)).toMatchObject({ cmd: 'sd', l: 1 }); // number stays in payload
     // control row callbacks: container (st), help (sh h:1), cancel (x)
     const ctrl = kb[3].map((b) => JSON.parse(b.callback_data));
     expect(ctrl[0]).toMatchObject({ cmd: 'st', id: 'log123' });
