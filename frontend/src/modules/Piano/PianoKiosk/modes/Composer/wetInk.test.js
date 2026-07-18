@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { pendingAppendDiff } from './wetInk.js';
 import { makeEmptyScore, makeNote } from './model/index.js';
-import { initEditor, insertNote, deleteNote, setAttribute } from './model/editor.js';
+import { initEditor, insertNote, deleteNote, moveCaret, setAttribute } from './model/editor.js';
 
 const C4 = { step: 'C', octave: 4, alter: 0 };
 
@@ -68,6 +68,37 @@ describe('pendingAppendDiff', () => {
     const settled = withNotes(3); // 72 of 96 divisions used → 24 left
     const live = insertNote(initEditor(settled), C4, { type: 'whole' }).score;
     expect(live.parts[0].measures.length).toBeGreaterThan(1);
+    expect(pendingAppendDiff(settled, live)).toBeNull();
+  });
+
+  // Wet ink can only paint past the end of the engraving; growing an earlier
+  // measure reflows every bar to its right. deleteNote doesn't reflow, so this
+  // shape is reachable by ordinary input: fill a bar, delete from it, walk the
+  // caret back, type.
+  it('demands a settle when the grown measure is not the last one', () => {
+    let s = initEditor(makeEmptyScore());
+    for (let i = 0; i < 5; i++) s = insertNote(s, C4, { type: 'quarter' });
+    s = deleteNote(s, { measureIdx: 0, noteIdx: 1 }); // bar 0 now underfull
+    const settled = s.score;
+    expect(settled.parts[0].measures).toHaveLength(2);
+
+    s = moveCaret(s, 'prevBar');
+    expect(s.caret.measureIdx).toBe(0);
+    const live = insertNote(s, C4, { type: 'quarter' }).score;
+
+    // The append really did land in the non-final bar 0, and it must still settle.
+    expect(live.parts[0].measures[0].notes).toHaveLength(4);
+    expect(live.parts[0].measures).toHaveLength(2);
+    expect(pendingAppendDiff(settled, live)).toBeNull();
+  });
+
+  // Forward-looking: unreachable from the Composer input path today, but a chord
+  // member shares its principal's onset and would be mis-drawn as a sequential
+  // note by the wet-ink layer.
+  it('demands a settle when an appended note is a chord member', () => {
+    const settled = withNotes(2);
+    const live = structuredClone(settled);
+    live.parts[0].measures[0].notes.push(makeNote(C4, { type: 'quarter', chord: true }));
     expect(pendingAppendDiff(settled, live)).toBeNull();
   });
 
