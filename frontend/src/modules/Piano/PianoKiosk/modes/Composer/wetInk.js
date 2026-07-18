@@ -109,7 +109,6 @@ const NO_PENDING = { measureIdx: null, notes: [] };
  */
 export function useWetInk({ score, caretMeasureIdx, idleMs = 600, logger }) {
   const [settled, setSettled] = useState(score);
-  const timerRef = useRef(null);
   // Logger identity is NOT an effect dep: a caller that rebuilds its child
   // logger each render would otherwise clear and reschedule the idle timer on
   // every render, and a busy component would strand the settle forever.
@@ -131,8 +130,8 @@ export function useWetInk({ score, caretMeasureIdx, idleMs = 600, logger }) {
     // The caret has walked out of the bar the ink is drying in, so the wet layer
     // is painting where the kid no longer is — engrave and re-anchor.
     if (diff.measureIdx !== null && diff.measureIdx !== caretMeasureIdx) { settle('measure-exit'); return undefined; }
-    timerRef.current = setTimeout(() => settle('idle'), idleMs);
-    return () => clearTimeout(timerRef.current);
+    const id = setTimeout(() => settle('idle'), idleMs);
+    return () => clearTimeout(id);
   }, [score, settled, diff, caretMeasureIdx, idleMs]);
 
   return { settledScore: settled, pending: diff ?? NO_PENDING };

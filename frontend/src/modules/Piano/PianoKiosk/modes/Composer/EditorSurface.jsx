@@ -22,20 +22,21 @@ import { initEditor, serializeFromEditor, undo, redo, makeRest } from './model/i
 import { useComposerInput } from './useComposerInput.js';
 import { useAutosave } from './useAutosave.js';
 import { useWetInk } from './wetInk.js';
-import { CaretLayer } from './CaretLayer.jsx';
-import { PendingLayer } from './PendingLayer.jsx';
+import { CaretLayer, CARET_GAP, CARET_WIDTH, NOTE_WIDTH_FALLBACK } from './CaretLayer.jsx';
+import { PendingLayer, WET_ADVANCE_UNITS, WET_RX_UNITS } from './PendingLayer.jsx';
 import { DurationPalette } from './DurationPalette.jsx';
 
-// Wet-ink glyph geometry, in staff-line-spacing units. These MIRROR the private
-// constants in PendingLayer.jsx (advance = lineSpacing * 2.4, notehead
-// rx = lineSpacing * 0.62); that file exports no geometry and is owned
-// elsewhere, so they are duplicated deliberately — keep the two in step or the
-// anchor and the glyphs will disagree about where a note goes.
-const WET_ADVANCE = 2.4;
-const WET_RX = 0.62;
+// The overlays own their own geometry; this file imports it rather than
+// restating it, because the anchor below has to land ON the glyphs PendingLayer
+// draws and the caret has to clear them by the same margin CaretLayer uses.
+
 // Clef + key + time signature eat roughly this many staff spaces at the head of
 // a system, so a bar with nothing engraved in it starts about here.
 const MEASURE_START_UNITS = 8;
+
+// The Composer engraves at a fixed zoom; kept as a named value so the caret's
+// scale-dependent terms read the same here as they do inside CaretLayer.
+const SCALE = 1;
 
 /** Which stave band a y pixel falls in — nearest band wins, so ledger-line notes
  *  above or below the staff still resolve to their own system. */
@@ -60,9 +61,14 @@ function systemForY(y, staves) {
  *  2. it does not (a bar the previous settle just opened is still empty) → fall
  *     back to the last engraved note anywhere, plus a barline's breathing room;
  *  3. nothing is engraved at all (blank draft) → the head of the first system.
+ *
+ * @param {number} pendingCount how many notes will paint from this anchor. Tier
+ *   2 needs it: the wrap decision has to consider where the LAST note of the run
+ *   lands, not the first. A bar of sixteenths can leave 8+ notes pending, and
+ *   judging by note 0 alone would let notes 3-8 clamp onto the margin in a pile.
  * @returns {{x:number, system:number}|null} null when there is no geometry yet.
  */
-export function wetInkAnchor({ steps = [], staves = [], caretMeasureIdx = 0 }) {
+export function wetInkAnchor({ steps = [], staves = [], caretMeasureIdx = 0, pendingCount = 1 }) {
   if (!staves.length) return null;
   let inBar = null;
   for (let i = steps.length - 1; i >= 0; i--) {
@@ -74,15 +80,20 @@ export function wetInkAnchor({ steps = [], staves = [], caretMeasureIdx = 0 }) {
   const system = systemForY(box.top, staves);
   const staff = staves[system];
   const ls = staff.lineSpacing;
-  const maxX = staff.right - ls * WET_RX; // never spill past the system's end
-  const x = box.x + (box.width || ls) / 2 + ls * WET_ADVANCE;
+  const maxX = staff.right - ls * WET_RX_UNITS; // never spill past the system's end
+  const x = box.x + (box.width || NOTE_WIDTH_FALLBACK) / 2 + ls * WET_ADVANCE_UNITS;
+
+  // Tier 1 has NO wrap escape, deliberately: the caret's bar is already engraved
+  // on THIS system, so its notes belong here. Moving them to the next system
+  // would be wrong, not merely unimplemented — the clamp is the only option.
   if (inBar) return { x: Math.min(x, maxX), system };
 
-  // Tier 2: anchoring off the PREVIOUS bar's last note. If that bar ran to the
-  // end of its system there is no room left, and OSMD would have opened the new
-  // bar on the next system — follow it there rather than clamping several notes
-  // into the margin, which stacks them into an unreadable pile.
-  if (x > staff.right - ls * WET_ADVANCE * 2 && staves[system + 1]) {
+  // Tier 2: anchoring off the PREVIOUS bar's last note. If the pending run
+  // wouldn't fit before the end of this system, OSMD will have opened the new
+  // bar on the next one — follow it there rather than clamping the tail of the
+  // run into the margin, which stacks those notes into an unreadable pile.
+  const runEnd = x + Math.max(0, pendingCount - 1) * ls * WET_ADVANCE_UNITS;
+  if (runEnd > maxX && staves[system + 1]) {
     const next = staves[system + 1];
     return { x: next.left + next.lineSpacing * MEASURE_START_UNITS, system: system + 1 };
   }
@@ -214,12 +225,10 @@ export function EditorSurface({ initialScore, songId = null, initialRevision = 1
 
   // Keyed on settledScore ALONE, deliberately: re-serializing on every
   // editorState change is exactly the per-keypress engrave this split exists to
-  // stop. Safe because serializeForDisplay reads nothing off editorState but
-  // `.score` (serializeFromEditor → serializeMusicXml(state.score)).
-  const musicXml = useMemo(
-    () => serializeForDisplay({ ...editorState, score: settledScore }),
-    [settledScore] // eslint-disable-line react-hooks/exhaustive-deps -- engrave the settled plane only
-  );
+  // stop. The score is passed on its OWN rather than spread over editorState so
+  // that this is trivially true — nothing else can leak in and go stale behind
+  // the dependency list.
+  const musicXml = useMemo(() => serializeForDisplay({ score: settledScore }), [settledScore]);
 
   // Model state + engrave output on EVERY edit (debug). One record per editorState
   // change carries the whole picture: note/measure counts, caret, dirty/revision,
@@ -254,26 +263,45 @@ export function EditorSurface({ initialScore, songId = null, initialRevision = 1
   const stepIdx = caretStepIndex(settledScore, editorState.caret);
 
   const anchor = useMemo(
-    () => wetInkAnchor({ steps, staves, caretMeasureIdx: editorState.caret.measureIdx }),
-    [steps, staves, editorState.caret.measureIdx]
+    () => wetInkAnchor({ steps, staves, caretMeasureIdx: editorState.caret.measureIdx, pendingCount: pending.notes.length }),
+    [steps, staves, editorState.caret.measureIdx, pending.notes.length]
   );
 
   // While ink is wet the caret must stand past the LAST WET NOTE. Its engraved
   // position can't: caretStepIndex counts the model, `steps` is the last
   // engrave, and the difference is exactly the pending notes.
+  //
+  // COORDINATE CARE: `anchor.x` is a notehead CENTRE (PendingLayer draws with
+  // it as `cx`), but CaretLayer positions by LEFT EDGE. So this walks to the
+  // last wet note's centre, out to its right edge (+rx), then clears it by the
+  // same CARET_GAP the engraved path uses.
+  //
+  // The caret still shifts a little when ink dries, and that is EXPECTED —
+  // measured against a real engrave (2026-07-18, lineSpacing 10): ~11.6px of it
+  // is the NOTE itself moving, because the wet layer lays notes at a fixed
+  // advance while OSMD spaces them by duration and justifies the bar. The rest
+  // (~6px) is the engraved caret measuring from the layout box of the whole
+  // stavenote (notehead + stem) where this measures from the notehead alone.
+  // Neither is fixable here; chasing them by padding this number would only
+  // mis-place the caret against the glyph actually drawn.
   const caretOverride = useMemo(() => {
     if (!pending.notes.length || !anchor) return null;
     const staff = staves[anchor.system];
     if (!staff) return null;
     const ls = staff.lineSpacing;
+    const lastCentre = anchor.x + (pending.notes.length - 1) * ls * WET_ADVANCE_UNITS;
     return {
-      x: Math.min(anchor.x + pending.notes.length * ls * WET_ADVANCE, staff.right),
+      // Clamp the caret's RIGHT edge to the system end, so the caret itself
+      // can't spill into the margin the noteheads are kept out of.
+      x: Math.min(lastCentre + ls * WET_RX_UNITS + CARET_GAP * SCALE, staff.right - CARET_WIDTH * SCALE),
       top: staff.top,
-      height: Math.max(40, ls * 4),
+      // Matches the engraved path's floor (Math.max(40 * scale, …)) so the
+      // caret doesn't change HEIGHT as well as position when ink dries.
+      height: Math.max(40 * SCALE, ls * 4),
     };
   }, [pending, anchor, staves]);
 
-  const clef = editorState.score?.parts?.[0]?.clefs?.[1] || editorState.score?.parts?.[0]?.clefs?.['1'];
+  const clef = editorState.score?.parts?.[0]?.clefs?.[1];
 
   // Caret resolution: where the engraved caret landed vs the model caret. Keyed
   // on stepIdx so it logs on movement, not on every render.
@@ -315,9 +343,9 @@ export function EditorSurface({ initialScore, songId = null, initialRevision = 1
           "sheet" page (like every notation app) — legible and it reads as real
           sheet music, not a dark widget. The caret positions against this page. */}
       <div className="composer-page">
-        <MusicXmlRenderer musicXml={musicXml} flow="wrapped" scale={1} onLayout={onLayout}>
+        <MusicXmlRenderer musicXml={musicXml} flow="wrapped" scale={SCALE} onLayout={onLayout}>
           <PendingLayer staves={staves} anchorX={anchor?.x ?? 0} anchorSystem={anchor?.system ?? 0} pending={pending.notes} clef={clef} />
-          <CaretLayer steps={steps} caretStepIndex={stepIdx} scale={1} override={caretOverride} />
+          <CaretLayer steps={steps} caretStepIndex={stepIdx} scale={SCALE} override={caretOverride} />
         </MusicXmlRenderer>
       </div>
     </div>
