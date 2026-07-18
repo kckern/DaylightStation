@@ -22,7 +22,7 @@ describe('mapKey (numpad)', () => {
 
 describe('KEY_LEGEND (on-screen help SSOT)', () => {
   it('documents only keys that are actually wired — every legend code maps to a command', () => {
-    // The one exception is the `🎹` row, which documents armed piano-note entry
+    // The one exception is the `Piano` row, which documents armed piano-note entry
     // (it comes through the MIDI subscription, not a keydown) and carries code null.
     for (const section of KEY_LEGEND) {
       for (const entry of section.keys) {

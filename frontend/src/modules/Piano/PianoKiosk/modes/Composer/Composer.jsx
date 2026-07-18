@@ -94,6 +94,17 @@ export function Composer() {
 
   const showGallery = useCallback(() => setView('gallery'), []);
 
+  // Renaming from the editor. The title lives HERE, not in EditorSurface, so
+  // one commit feeds three things at once: the editor's own control, the
+  // breadcrumb effect above (which only publishes a crumb for a NAMED song),
+  // and the autosave `meta` EditorSurface derives from the prop. Applied to a
+  // draft too — the name then rides along on the create when the first edit
+  // materializes it.
+  const renameOpen = useCallback((t) => {
+    logger.info('composer.song.rename', { id: openRef.current?.id ?? null, named: !!t });
+    setOpen((o) => ({ ...o, title: t }));
+  }, [logger]);
+
   // The draft's first edit created the song: record the assigned id/revision
   // WITHOUT changing `open.key`, so the editor keeps its mounted state.
   const onMaterialized = useCallback((id, revision) => {
@@ -110,6 +121,7 @@ export function Composer() {
           songId={open.id}
           initialRevision={open.revision}
           title={open.title}
+          onRename={renameOpen}
           save={api.save}
           create={api.create}
           onMaterialized={onMaterialized}

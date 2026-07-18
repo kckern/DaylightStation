@@ -93,6 +93,65 @@ describe('DurationPalette — the write toggle', () => {
   });
 });
 
+// ---------------------------------------------------------------------------
+// Delete vs Rest (Task 12). These two sat adjacent, same size, same neutral
+// chrome, told apart ONLY by their words. A kid aiming for Delete who lands on
+// Rest INSERTS something instead of removing something — the exact opposite of
+// the intent, on the one control that exists to undo mistakes. Three separate
+// signals now carry the distinction, and each is pinned here because losing any
+// one of them quietly restores the confusion.
+// ---------------------------------------------------------------------------
+describe('DurationPalette — Delete cannot be mistaken for Rest', () => {
+  it('draws them as different SHAPES, not just different words', () => {
+    const { container } = renderPalette();
+    const rest = container.querySelector('.composer-palette__rest svg');
+    const del = container.querySelector('.composer-palette__delete svg');
+    expect(rest).toBeTruthy();
+    expect(del).toBeTruthy();
+    // A rest glyph and a backspace keycap look nothing alike; two similar words
+    // at a glance do. Comparing the drawn geometry is what proves that holds.
+    expect(rest.innerHTML).not.toBe(del.innerHTML);
+  });
+
+  it('separates Delete from the rest cluster instead of butting them together', () => {
+    const { container } = renderPalette();
+    // The divider is the spatial signal — Delete is no longer the neighbour of
+    // the control it gets confused with. Adjacency was half the problem, and
+    // icons alone would not have fixed it.
+    const kids = [...container.querySelector('.composer-palette').children];
+    const sep = kids.findIndex((n) => n.classList.contains('composer-palette__sep'));
+    const del = kids.findIndex((n) => n.classList.contains('composer-palette__delete'));
+    const rest = kids.findIndex((n) => n.classList.contains('composer-palette__rest'));
+    expect(sep).toBeGreaterThan(-1);
+    expect(rest).toBeLessThan(sep);
+    expect(del).toBeGreaterThan(sep);
+  });
+
+  it('keeps its word as well as its icon — a lone glyph is a guess for a new reader', () => {
+    const { container } = renderPalette();
+    expect(container.querySelector('.composer-palette__delete').textContent).toContain('Delete');
+    expect(container.querySelector('.composer-palette__rest').textContent).toContain('Rest');
+  });
+
+  it('still fires deleteBack, not addRest, when Delete is tapped', () => {
+    const { props } = renderPalette();
+    fireEvent.click(screen.getByRole('button', { name: /delete the last note/i }));
+    expect(props.deleteBack).toHaveBeenCalledTimes(1);
+    expect(props.addRest).not.toHaveBeenCalled();
+  });
+});
+
+describe('DurationPalette — the dot button', () => {
+  it('draws the dotted note rather than typesetting a Unicode one', () => {
+    const { container } = renderPalette();
+    const dot = container.querySelector('.composer-palette__mod[aria-pressed]');
+    // Two drawings: the notehead it modifies, then the augmentation dot — which
+    // is what "dotted" actually looks like on the staff.
+    expect(dot.querySelectorAll('svg').length).toBe(2);
+    expect(dot.textContent.trim()).toBe('');
+  });
+});
+
 describe('DurationPalette — numpad hints read as keycaps, not fingering', () => {
   it('wraps every duration digit in a keycap element rather than printing it bare', () => {
     const { container } = renderPalette();
