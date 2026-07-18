@@ -14,8 +14,23 @@
  */
 
 import https from 'https';
+import path from 'path';
 import { createWriteStream } from 'fs';
 import { pipeline } from 'stream/promises';
+
+/**
+ * Normalize a search `name` into what cmd=Download accepts.
+ *
+ * The two cameras disagree on this, and only one of them is obvious:
+ *   driveway (F760P):  /mnt/sda/Mp4Record/2026-07-17/RecS0A_...  (absolute)
+ *   doorbell (D340W):  Mp4Record/2026-07-17/RecS07_...           (relative)
+ *
+ * Download only accepts the relative form, so testing against the doorbell
+ * alone hides a total failure on the driveway.
+ */
+export function toDownloadSource(name) {
+  return String(name).replace(/^\/mnt\/sd[a-z]*\//, '');
+}
 
 const AGENT = new https.Agent({ rejectUnauthorized: false, keepAlive: true });
 
@@ -162,7 +177,8 @@ export class ReolinkClient {
 
   /** Stream a named recording to disk. Returns bytes written. */
   async download({ source, destPath, timeoutMs = 300000 }) {
-    const url = this.#url({ cmd: 'Download', source, output: source });
+    const rel = toDownloadSource(source);
+    const url = this.#url({ cmd: 'Download', source: rel, output: path.basename(rel) });
     return new Promise((resolve, reject) => {
       const req = https.get(url, { agent: AGENT, timeout: timeoutMs }, async (res) => {
         if (res.statusCode !== 200) {

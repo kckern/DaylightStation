@@ -581,6 +581,58 @@ Notes:
 `channel: 0`) and `nvr` (two-step, per-camera `channel`) — behind one interface, selected by
 config.
 
+### Camera-side download is unreliable; the NVR is the only footage path
+
+The cameras disagree on the `name` format returned by `Search`, and only one form works:
+
+```
+driveway (F760P):  /mnt/sda/Mp4Record/2026-07-17/RecS0A_...   absolute
+doorbell (D340W):  Mp4Record/2026-07-17/RecS07_...            relative
+```
+
+`cmd=Download` accepts only the relative form, so testing against the doorbell alone hides a
+total failure on the driveway. `toDownloadSource()` strips the prefix.
+
+Beyond that, the **driveway's own `Download` endpoint does not work at all** — it returns an
+empty reply over HTTPS regardless of path form, query auth, token auth, or forced HTTP/1.1, while
+`Search` and `GetDevInfo` on the same camera respond normally. Its card is 99.4% full, which is
+the likely cause. Plain HTTP redirects (302) to HTTPS and drops the query string, returning the
+web UI.
+
+This is not a blocker, because footage comes from the NVR regardless. The division of labour is:
+
+| | metadata (`Search`) | footage (`Download`) |
+|---|---|---|
+| driveway | camera (works) | **NVR** (camera endpoint dead) |
+| doorbell | camera (works) | **NVR** |
+
+The Reolink mobile app can still "download from the driveway camera" because NVR-bound cameras
+are addressed through the NVR — the same path this design uses.
+
+### The NVR also holds the main streams
+
+Resolution is identical between a camera's SD card and the NVR for the same `streamType`: the NVR
+records what the camera sends, it does not transcode. But it stores **both** streams:
+
+| Channel | Stream | Codec | Resolution | Size/min |
+|---|---|---|---|---|
+| driveway | sub | h264 | 1536x432 | 4.4 MB |
+| driveway | main | **hevc** | **7680x2160** | 68 MB |
+| doorbell | sub | h264 | 640x480 | ~2.7 MB |
+| doorbell | main | h264 | 2560x1920 | 40 MB |
+
+The driveway is a dual-lens stitched panoramic (3.55:1), which is why its sub stream is only
+**432 pixels tall**. That is adequate for "something happened in the yard" but likely too coarse
+to identify a face at driveway distance — and "who visited the house" is one of the two stated
+goals. Main gives 5x the vertical detail.
+
+**Open decision:** whether Pipeline A should pull `main` for sessions carrying a person/visitor
+label, and `sub` for everything else. That targets the extra cost at exactly the clips where
+identification matters (a handful per day) rather than the whole archive. At 68 MB/min a day's
+selected driveway sessions would be ~7.7 GB of transient download instead of ~0.5 GB. Storage is
+unaffected — output is re-encoded to the same budget either way, just from a far better source.
+`sources.streamType` already exists; this would become a per-label override.
+
 ## Failure handling
 
 - **Idempotent per day.** The manifest is the ledger; a re-run resumes rather than duplicating.
