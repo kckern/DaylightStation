@@ -179,6 +179,7 @@ the encoding-resilience doc.
 ## Related docs
 
 - `docs/reference/player/playback-encoding-resilience.md` — Plex transcode decision pipeline, native-60fps direct-stream fix, MSE codec constraints
+- `docs/reference/player/hardware-decoding.md` — GPU decode/encode offload, the AMD Cezanne AV1-decode boundary, and a benchmark plan for SW vs HW transcode
 - `docs/reference/player/lessons-and-gotchas.md` — recurring failure modes, breakthroughs, and traps mined from audits/bugs/plans + git history (read before changing Player code)
 - `docs/reference/media/dash-video-resilience.md` — stall/seek troubleshooting runbook (warmup, recovery seek, stale sessions)
 - `docs/reference/content/content-playback.md` — content resolution → playable → stream URL
