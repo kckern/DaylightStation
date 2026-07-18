@@ -109,6 +109,53 @@ export function buildMeasures(steps) {
   return out;
 }
 
+// OSMD engraves in its own unit space where 1 unit == one staff space, painted at
+// 10 px/unit × osmd.Zoom. Verified empirically 2026-07-18 against OSMD 2.0 by
+// engraving real scores in headless Chromium and comparing the graphical model to
+// the rendered DOM: exact at zoom 1.0 (10.0000 px/unit), 1.4 (13.9994) and 0.75
+// (7.5000), on both axes, with staff-line spacing exactly 1 unit. OSMD does export
+// `unitInPixels` from VexFlowMusicSheetDrawer, but that is not public surface.
+const OSMD_UNIT_PX = 10;
+
+/**
+ * Per-system staff geometry, in the same pixel space as the engraved SVG.
+ *
+ * Read from the GRAPHICAL MODEL rather than the DOM, so it also works on a
+ * note-less staff — a blank draft has no noteheads to measure, but the wet-ink
+ * overlay and the Composer caret still need to know where the staff lines are.
+ * (Confirmed on a whole-measure-rest score: geometry is available, 5 lines,
+ * 10 px spacing at zoom 1.)
+ *
+ * Defensive throughout: any missing OSMD internal yields `[]` (or skips just that
+ * system) so consumers degrade to their prior, geometry-free behavior.
+ * @param {object} osmd
+ * @returns {Array<{system:number,top:number,left:number,right:number,lineSpacing:number}>}
+ */
+export function extractStaffGeometry(osmd) {
+  try {
+    const zoom = osmd?.Zoom ?? osmd?.zoom ?? 1;
+    const px = (u) => u * OSMD_UNIT_PX * zoom;
+    const systems = osmd?.GraphicSheet?.MusicPages?.[0]?.MusicSystems || [];
+    const out = [];
+    systems.forEach((sys, i) => {
+      const box = sys?.StaffLines?.[0]?.PositionAndShape;
+      const pos = box?.AbsolutePosition;
+      if (!pos) return; // this system isn't laid out yet — skip it, keep the rest
+      out.push({
+        system: i,
+        top: px(pos.y),
+        left: px(pos.x),
+        right: px(pos.x + (box.Size?.width ?? 0)),
+        lineSpacing: px(1), // staff-line spacing IS one OSMD unit
+      });
+    });
+    return out;
+  } catch (err) {
+    logger().warn('osmd.staff-geometry-failed', { error: err?.message });
+    return [];
+  }
+}
+
 /**
  * The engraved SVG `<g>` for a note's notehead (OSMD's per-note group: notehead,
  * stem, flag). The light-up overlay recolors this element directly instead of
@@ -242,7 +289,7 @@ function makeCursorWalk(osmd) {
         bottom: box.bottom,
       };
     });
-    return { events, notes, tempoEntries, steps, measures };
+    return { events, notes, tempoEntries, steps, measures, staves: extractStaffGeometry(osmd) };
   }
 
   return { cursor, processStep, finalize };
@@ -275,7 +322,9 @@ function leadMidi(stepNotes) {
  */
 export function extractEvents(osmd) {
   const cursor = osmd.cursor;
-  if (!cursor) return { events: [], notes: [], tempoEntries: [], steps: [], measures: [] };
+  // No cursor == a score with nothing to walk (the blank-draft case) — still
+  // publish staff geometry, which is exactly what a blank staff's caret needs.
+  if (!cursor) return { events: [], notes: [], tempoEntries: [], steps: [], measures: [], staves: extractStaffGeometry(osmd) };
   const walk = makeCursorWalk(osmd);
   const cursorEl = cursor.cursorElement;
   try {
@@ -327,7 +376,7 @@ export async function extractLayoutSliced(osmd, opts = {}) {
     shouldAbort = () => false,
   } = opts;
   const cursor = osmd?.cursor;
-  if (!cursor) { onProgress?.(1); return { events: [], notes: [], tempoEntries: [], steps: [], measures: [] }; }
+  if (!cursor) { onProgress?.(1); return { events: [], notes: [], tempoEntries: [], steps: [], measures: [], staves: extractStaffGeometry(osmd) }; }
 
   const walk = makeCursorWalk(osmd);
 
@@ -401,6 +450,45 @@ export function scheduleYield(cb) {
 }
 
 /**
+ * MANUSCRIPT-PAPER engraving rules — opt-in, off by default, so the reading
+ * modes (SheetMusic) keep the conventional engraving they have always had.
+ *
+ * The Composer pads its DISPLAY score with empty bars so a blank draft reads as
+ * ruled paper waiting to be filled. Two OSMD 2.0 defaults defeat that, and both
+ * are correct for READING a score and wrong for WRITING one:
+ *
+ *  - RenderMultipleRestMeasures collapses runs of rest-only bars into a single
+ *    bar with a count over it. Standard notation for a player counting bars
+ *    rest; for a kid staring at an empty draft it turns four bars of paper into
+ *    one bar and a mystery numeral "3". (Verified 2026-07-18: bar 1 escapes the
+ *    collapse only because it carries the tempo direction.)
+ *  - StretchLastSystemLine left false means a short score's system stops where
+ *    its content stops — the 4-bar sheet occupied ~320px of a 1240px page, i.e.
+ *    the fragment-on-a-white-card look this whole change exists to remove.
+ *
+ *  - RenderMeasureNumbers left true put a stray "2" over bar 2 whenever bar 1
+ *    was PARTIALLY filled — which, on a surface you write into one note at a
+ *    time, is most of the time. MEASURED, not guessed (2026-07-18): with an
+ *    incomplete first bar OSMD sets `SourceMeasures[0].ImplicitMeasure = true`,
+ *    i.e. it reads the half-written bar as a PICKUP, and renumbers the sheet
+ *    0,1,2,3 instead of 1,2,3,4; the system-start label then lands on bar 2.
+ *    Fill bar 1 exactly and the flag clears and the numeral vanishes. Numbers
+ *    are for rehearsal on a score someone is READING, and this is a child's
+ *    manuscript page of four to eight bars — turning them off also makes every
+ *    fill state agree, since the correct-looking case rendered no number
+ *    either.
+ *
+ * All three are set on EngravingRules, which lives on the OSMD instance and so
+ * survives the repaint (zoom/resize) path without being re-applied there.
+ */
+function applyManuscriptRules(osmd, manuscript) {
+  if (!manuscript) return;
+  osmd.EngravingRules.RenderMultipleRestMeasures = false;
+  osmd.EngravingRules.StretchLastSystemLine = true;
+  osmd.EngravingRules.RenderMeasureNumbers = false;
+}
+
+/**
  * Engrave (PAINT) `xml` into `host` up to and including `osmd.render()` — the
  * fast part the React wrapper reveals first. Does NOT extract events/geometry;
  * that expensive cursor walk is run separately (sliced) in Task 8 so the main
@@ -410,9 +498,10 @@ export function scheduleYield(cb) {
  * @param {HTMLElement} host
  * @param {string} xml - raw MusicXML
  * @param {{ width?:number, flow?:'wrapped'|'horizontal', scale?:number,
- *           transpose?:number, shouldAbort?:() => boolean }} [opts]
+ *           transpose?:number, manuscript?:boolean, shouldAbort?:() => boolean }} [opts]
  *   transpose is an integer semitone offset (default 0) re-engraving the score in
  *   a new key — the notation AND the extracted pitches follow it.
+ *   manuscript opts into the writing-surface rules — see applyManuscriptRules.
  *   shouldAbort is checked after each await so a stale render never clobbers
  *   a newer one's DOM.
  * @returns {Promise<{osmd:object,width:number,height:number,flow:string}|null>}
@@ -445,6 +534,7 @@ export async function osmdEngrave(host, xml, opts = {}) {
   });
   // Mid-system measure numbers pile onto tight chords; system-start only.
   osmd.EngravingRules.RenderMeasureNumbersOnlyAtSystemStart = true;
+  applyManuscriptRules(osmd, opts.manuscript);
   await osmd.load(xml);
   if (abort()) return null;
 
