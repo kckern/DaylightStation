@@ -42,6 +42,27 @@ in `app.mjs`) rebroadcasts these on `food-scale` and persists two record kinds:
   not. Pressing the button is the explicit "log this now" gesture, so the record
   carries `grams`/`unit`/`stable` from the moment of the press.
 
+## Nutribot integration
+
+A second, independent consumer of the `food-scale` topic
+(`backend/src/3_applications/hardware/ScaleNutribotBridge.mjs`) turns weights into
+Telegram density-logging prompts for the household head. Two paths:
+
+- **AUTO** — a settled rise above the learned resting load posts **one** prompt that
+  then **edits in place** as the weight climbs (no message pile-up). Answering it frees
+  it, so the next load starts fresh. Returning near the resting load ends the session and
+  **retracts** an unanswered prompt (no leftover slop). A placement is **suppressed** when
+  it looks like putting the scale away — it lands in the configured `storage_weight_g`
+  band, or it's a `heavy_g`+ jump right after a burst of recent posts. Weights never
+  expire.
+- **FORCE** — an **ESP button press** logs the live weight now, **bypassing the suspicion
+  filter**. It no-ops when a live prompt already covers ~this weight (no duplicate), so
+  it's purely the override for anything auto suppressed or mis-gated.
+
+Tuning knobs live in the `nutribot:` block of `scales.yml` (see
+[`config.example.yml`](config.example.yml)); the persistence arm above is decoupled and
+records to disk regardless.
+
 ## Build & flash
 
 Prereqs: PlatformIO (`pio`), Node, the SM ATOM on USB (FTDI `/dev/cu.usbserial-*`).

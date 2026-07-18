@@ -19,12 +19,12 @@ export const DEFAULT_DENSITY_LEVELS = [
   { level: 1, label: 'Watery', emoji: '🥬', kcal_per_g: 0.2, hint: 'broth, greens' },
   { level: 2, label: 'Light', emoji: '🥗', kcal_per_g: 0.6, hint: 'salad, fruit' },
   { level: 3, label: 'Lean', emoji: '🍲', kcal_per_g: 1.0, hint: 'soup, lean meat' },
-  { level: 4, label: 'Everyday', emoji: '🍛', kcal_per_g: 1.4, hint: 'rice + veg + protein' },
+  { level: 4, label: 'Mixed', emoji: '🍛', kcal_per_g: 1.4, hint: 'rice + veg + protein' },
   { level: 5, label: 'Hearty', emoji: '🍝', kcal_per_g: 1.9, hint: 'pasta, casserole' },
-  { level: 6, label: 'Filling', emoji: '🍕', kcal_per_g: 2.6, hint: 'pizza, fried' },
+  { level: 6, label: 'Heavy', emoji: '🍕', kcal_per_g: 2.6, hint: 'pizza, fried' },
   { level: 7, label: 'Rich', emoji: '🧀', kcal_per_g: 3.8, hint: 'cheese, creamy' },
-  { level: 8, label: 'Very rich', emoji: '🥜', kcal_per_g: 6.0, hint: 'nuts, nut butter' },
-  { level: 9, label: 'Pure fat', emoji: '🫒', kcal_per_g: 8.5, hint: 'oil, butter' },
+  { level: 8, label: 'Thick', emoji: '🥜', kcal_per_g: 6.0, hint: 'nuts, nut butter' },
+  { level: 9, label: 'Oil', emoji: '🫒', kcal_per_g: 8.5, hint: 'oil, butter' },
 ];
 
 const num = (v, fallback) => (Number.isFinite(Number(v)) ? Number(v) : fallback);
@@ -46,10 +46,15 @@ export function normalizeScaleNutribotConfig(raw = {}) {
 
   return {
     minGrams: num(nb.min_grams, DEFAULT_MIN_GRAMS),
-    editDeltaG: num(nb.edit_delta_g, 3),
     baselineToleranceG: num(nb.baseline_tolerance_g, 6),
     placementDeltaG: num(nb.placement_delta_g, 10),
-    expireMs: num(nb.expire_minutes, 3) * 60000,
+    dedupDeltaG: num(nb.dedup_delta_g, 5),
+    storageWeightG: num(nb.storage_weight_g, 0),
+    storageToleranceG: num(nb.storage_tolerance_g, 15),
+    suspicionWindowSec: num(nb.suspicion_window_sec, 90),
+    stormMinPushes: num(nb.storm_min_pushes, 2),
+    heavyG: num(nb.heavy_g, 300),
+    forceToleranceG: num(nb.force_tolerance_g, 10),
     containers: {
       thresholdG: num(nb.containers?.threshold_g, DEFAULT_CONTAINERS.thresholdG),
       items,
@@ -71,8 +76,9 @@ function chunk(arr, size) {
 
 export function buildDensityKeyboard(cfg, encodeCallback, logUuid, opts = {}) {
   const showingHelp = opts.showingHelp === true;
+  // UI shows emoji + word label only; the numeric level rides in the callback payload.
   const buttons = cfg.densityLevels.map((l) => ({
-    text: `${l.level} ${l.emoji}`,
+    text: `${l.emoji} ${l.label}`,
     callback_data: encodeCallback('sd', { id: logUuid, l: l.level }),
   }));
   const helpBtn = showingHelp
@@ -88,8 +94,9 @@ export function buildDensityKeyboard(cfg, encodeCallback, logUuid, opts = {}) {
 
 export function buildContainerKeyboard(cfg, encodeCallback, logUuid) {
   const none = [{ text: '🚫 No container', callback_data: encodeCallback('st', { id: logUuid, c: 'none' }) }];
+  // UI shows emoji + label only; the tare grams stays server-side, resolved from c.id.
   const containers = cfg.containers.items.map((c) => ({
-    text: `${c.emoji} ${c.label} −${c.grams}`,
+    text: `${c.emoji} ${c.label}`,
     callback_data: encodeCallback('st', { id: logUuid, c: c.id }),
   }));
   return [none, ...chunk(containers, 3)];
@@ -109,7 +116,7 @@ export function densityPromptText(grams) {
 
 export function densityHelpText(cfg, grams) {
   const lines = cfg.densityLevels.map(
-    (l) => `${l.level} ${l.emoji} ${l.label} · ${l.kcal_per_g} kcal/g${l.hint ? `  (${l.hint})` : ''}`,
+    (l) => `${l.emoji} ${l.label} · ${l.kcal_per_g} kcal/g${l.hint ? `  (${l.hint})` : ''}`,
   );
   return `⚖️ ${grams} g — tap a level or describe it\n\n${lines.join('\n')}`;
 }

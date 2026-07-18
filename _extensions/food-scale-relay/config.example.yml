@@ -59,8 +59,33 @@ scales:
 # backend supplies these same defaults (see
 # backend/src/3_applications/nutribot/lib/scaleNutribotConfig.mjs). The target
 # chat is NOT configured here; it is the household head (household.yml `head`).
+#
+# Two ways a weight reaches nutribot:
+#   AUTO  — the scale rests at a variable load on the shelf (never ~0), so the bridge
+#           learns that resting load as a baseline. A rise above it posts ONE prompt that
+#           then edits in place as the weight climbs (no message pile-up). Answering it
+#           frees it, so the next load starts fresh; returning near baseline ends the
+#           session and RETRACTS an unanswered prompt (no leftover slop). A placement is
+#           SUPPRESSED when it looks like putting the scale away — it lands in the
+#           storage_weight_g band, or is a heavy_g+ jump right after a burst of recent
+#           posts. Weights NEVER expire — a prompt waits until you answer it.
+#   FORCE — press the ESP button to log the live weight right now, bypassing the suspicion
+#           filter. No-ops when a live prompt already covers ~this weight (no duplicate).
+#           Use it whenever the auto heuristic would miss/mis-gate a real measurement.
 nutribot:
-  min_grams: 5              # ignore settled readings below this (noise / near-zero)
+  min_grams: 5              # floor: ignore settled readings below this (noise / near-zero)
+  baseline_tolerance_g: 6   # within this of the resting load = "at rest" (removed / jostle)
+  placement_delta_g: 10     # min rise above the resting load to count as a real placement
+  dedup_delta_g: 5          # min change from the last pushed value to post a NEW prompt
+  # Suspicion filter — keep the "scale put away on its shelf" phantom off nutribot.
+  # A placement is suppressed (logged, not posted) when it lands in the storage band
+  # OR is a heavy jump right after a burst of recent posts. The ESP button overrides.
+  storage_weight_g: 0        # known put-away weight; 0 disables the band
+  storage_tolerance_g: 15    # ± window around storage_weight_g
+  suspicion_window_sec: 90   # how recently the "storm" of posts must have happened
+  storm_min_pushes: 2        # recent posts within the window that constitute a storm
+  heavy_g: 300               # min rise above rest for the jump-after-storm gate
+  force_tolerance_g: 10      # button no-ops within this of the live prompt
   containers:
     threshold_g: 150        # only offer container (tare) subtraction above this gross weight
     items:
@@ -72,9 +97,9 @@ nutribot:
     - { level: 1, label: "Watery",    emoji: "🥬", kcal_per_g: 0.2 }
     - { level: 2, label: "Light",     emoji: "🥗", kcal_per_g: 0.6 }
     - { level: 3, label: "Lean",      emoji: "🍲", kcal_per_g: 1.0 }
-    - { level: 4, label: "Everyday",  emoji: "🍛", kcal_per_g: 1.4 }
+    - { level: 4, label: "Mixed",     emoji: "🍛", kcal_per_g: 1.4 }
     - { level: 5, label: "Hearty",    emoji: "🍝", kcal_per_g: 1.9 }
-    - { level: 6, label: "Filling",   emoji: "🍕", kcal_per_g: 2.6 }
+    - { level: 6, label: "Heavy",     emoji: "🍕", kcal_per_g: 2.6 }
     - { level: 7, label: "Rich",      emoji: "🧀", kcal_per_g: 3.8 }
-    - { level: 8, label: "Very rich", emoji: "🥜", kcal_per_g: 6.0 }
-    - { level: 9, label: "Pure fat",  emoji: "🫒", kcal_per_g: 8.5 }
+    - { level: 8, label: "Thick",     emoji: "🥜", kcal_per_g: 6.0 }
+    - { level: 9, label: "Oil",       emoji: "🫒", kcal_per_g: 8.5 }

@@ -16,7 +16,7 @@ describe('scaleNutribotConfig', () => {
     expect(cfg.containers.thresholdG).toBe(150);
     expect(cfg.containers.items.length).toBeGreaterThan(0);
     expect(cfg.densityLevels).toHaveLength(9);
-    expect(cfg.densityLevels[3]).toMatchObject({ level: 4, label: 'Everyday', kcal_per_g: 1.4 });
+    expect(cfg.densityLevels[3]).toMatchObject({ level: 4, label: 'Mixed', kcal_per_g: 1.4 });
   });
 
   it('honours provided overrides', () => {
@@ -35,7 +35,7 @@ describe('scaleNutribotConfig', () => {
 
   it('densityForLevel finds by ordinal', () => {
     const cfg = normalizeScaleNutribotConfig({});
-    expect(densityForLevel(cfg, 9)).toMatchObject({ label: 'Pure fat', kcal_per_g: 8.5 });
+    expect(densityForLevel(cfg, 9)).toMatchObject({ label: 'Oil', kcal_per_g: 8.5 });
     expect(densityForLevel(cfg, 99)).toBeNull();
   });
 
@@ -60,6 +60,10 @@ describe('scaleNutribotConfig', () => {
     expect(JSON.parse(kb[0][0].callback_data)).toMatchObject({ cmd: 'st', id: 'log123', c: 'none' });
     const encoded = kb.flat().map((b) => JSON.parse(b.callback_data));
     expect(encoded.some((e) => e.c === 'dinner-plate')).toBe(true);
+    // button text = emoji + label, no tare number in the UI (grams resolved server-side from c.id)
+    const plate = kb.flat().find((b) => JSON.parse(b.callback_data).c === 'dinner-plate');
+    expect(plate.text).toBe('🍽 Dinner plate');
+    expect(plate.text).not.toMatch(/\d/);
   });
 
   it('buildConfirmButtons emits accept/revise/discard', () => {
@@ -69,23 +73,45 @@ describe('scaleNutribotConfig', () => {
     expect(cmds).toEqual(['a', 'r', 'x']);
   });
 
-  it('normalizes editDeltaG and per-level hint with defaults', () => {
+  it('normalizes dedupDeltaG and per-level hint with defaults', () => {
     const cfg = normalizeScaleNutribotConfig({});
-    expect(cfg.editDeltaG).toBe(3);
+    expect(cfg.dedupDeltaG).toBe(5);
     expect(cfg.densityLevels[0]).toMatchObject({ level: 1, hint: expect.any(String) });
     expect(cfg.densityLevels[0].hint.length).toBeGreaterThan(0);
 
-    const overridden = normalizeScaleNutribotConfig({ nutribot: { edit_delta_g: 10 } });
-    expect(overridden.editDeltaG).toBe(10);
+    const overridden = normalizeScaleNutribotConfig({ nutribot: { dedup_delta_g: 10 } });
+    expect(overridden.dedupDeltaG).toBe(10);
   });
 
-  it('normalizes baseline/placement/expire knobs with defaults', () => {
+  it('normalizes baseline/placement/dedup knobs with defaults (no expiry knob)', () => {
     const cfg = normalizeScaleNutribotConfig({});
     expect(cfg.baselineToleranceG).toBe(6);
     expect(cfg.placementDeltaG).toBe(10);
-    expect(cfg.expireMs).toBe(180000);
-    const o = normalizeScaleNutribotConfig({ nutribot: { baseline_tolerance_g: 8, placement_delta_g: 15, expire_minutes: 5 } });
-    expect(o).toMatchObject({ baselineToleranceG: 8, placementDeltaG: 15, expireMs: 300000 });
+    expect(cfg.expireMs).toBeUndefined(); // weights never expire
+    const o = normalizeScaleNutribotConfig({ nutribot: { baseline_tolerance_g: 8, placement_delta_g: 15, dedup_delta_g: 4 } });
+    expect(o).toMatchObject({ baselineToleranceG: 8, placementDeltaG: 15, dedupDeltaG: 4 });
+  });
+
+  it('normalizes suspicion/force knobs with defaults', () => {
+    const cfg = normalizeScaleNutribotConfig({});
+    expect(cfg).toMatchObject({
+      storageWeightG: 0,
+      storageToleranceG: 15,
+      suspicionWindowSec: 90,
+      stormMinPushes: 2,
+      heavyG: 300,
+      forceToleranceG: 10,
+    });
+    const o = normalizeScaleNutribotConfig({
+      nutribot: {
+        storage_weight_g: 430, storage_tolerance_g: 20, suspicion_window_sec: 120,
+        storm_min_pushes: 3, heavy_g: 250, force_tolerance_g: 8,
+      },
+    });
+    expect(o).toMatchObject({
+      storageWeightG: 430, storageToleranceG: 20, suspicionWindowSec: 120,
+      stormMinPushes: 3, heavyG: 250, forceToleranceG: 8,
+    });
   });
 
   it('buildDensityKeyboard lays out a 3x3 grid + a control row', () => {
@@ -98,8 +124,9 @@ describe('scaleNutribotConfig', () => {
     expect(kb[1]).toHaveLength(3);
     expect(kb[2]).toHaveLength(3);
     expect(kb[3]).toHaveLength(3);
-    // density button text = "<level> <emoji>"
-    expect(kb[0][0].text).toBe('1 🥬');
+    // density button text = "<emoji> <label>" (no number; level rides in the payload)
+    expect(kb[0][0].text).toBe('🥬 Watery');
+    expect(JSON.parse(kb[0][0].callback_data)).toMatchObject({ cmd: 'sd', l: 1 }); // number stays in payload
     // control row callbacks: container (st), help (sh h:1), cancel (x)
     const ctrl = kb[3].map((b) => JSON.parse(b.callback_data));
     expect(ctrl[0]).toMatchObject({ cmd: 'st', id: 'log123' });
@@ -122,7 +149,7 @@ describe('scaleNutribotConfig', () => {
     const help = densityHelpText(cfg, 340);
     expect(help).toContain('340 g');
     expect(help).toContain('Watery');
-    expect(help).toContain('Pure fat');
+    expect(help).toContain('Oil');
     expect(help.split('\n').filter((l) => /kcal\/g/.test(l))).toHaveLength(9);
   });
 });
