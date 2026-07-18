@@ -50,4 +50,20 @@ describe('caretStepIndex', () => {
     const caret = { measureIdx: 1, noteIdx: 1 };
     expect(caretStepIndex(score, caret)).toBe(2); // 1 (measure 0 chord) + 1 (melody)
   });
+
+  it('excludes rests from the onset count — the renderer never engraves a step for a rest', () => {
+    // Measure: [note, REST, note]. The renderer's buildSteps skips rests
+    // (n.isRest()), so only the two real notes get engraved steps. Caret
+    // positioned after the 2nd (real) note — i.e. past all three model
+    // entries — must count 2 onset steps (note + note), NOT 3 (which would
+    // happen if the rest were counted as an onset).
+    const first = makeNote({ step: 'C', octave: 4 });
+    const rest = { rest: true, type: 'quarter' };
+    const second = makeNote({ step: 'D', octave: 4 });
+    const score = {
+      parts: [{ measures: [{ number: 1, notes: [first, rest, second] }] }],
+    };
+    const caret = { measureIdx: 0, noteIdx: 3 };
+    expect(caretStepIndex(score, caret)).toBe(2);
+  });
 });

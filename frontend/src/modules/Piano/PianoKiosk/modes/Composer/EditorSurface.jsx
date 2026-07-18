@@ -20,10 +20,13 @@ const logger = () => getLogger().child({ component: 'piano-composer' });
 // the model stores each chord note as its own array entry flagged `chord:
 // true` (model/editor.js). So a step index must count ONSET notes only (i.e.
 // notes where !note.chord), never raw note-array length, or the caret drifts
-// right by (chord-size - 1) per chord at/before it.
+// right by (chord-size - 1) per chord at/before it. The renderer's buildSteps
+// also EXCLUDES rests entirely (`n.isRest()` — osmdRender.js ~line 40), so a
+// model rest (makeRest: `rest: true`, no `chord` field) must be excluded here
+// too, or the caret drifts right by the rest count.
 export function caretStepIndex(score, caret) {
   const measures = score?.parts?.[0]?.measures || [];
-  const onsets = (notes = [], upto = notes.length) => notes.slice(0, upto).filter((n) => !n.chord).length;
+  const onsets = (notes = [], upto = notes.length) => notes.slice(0, upto).filter((n) => !n.chord && !n.rest).length;
   let idx = 0;
   for (let m = 0; m < caret.measureIdx; m++) idx += onsets(measures[m]?.notes);
   return idx + onsets(measures[caret.measureIdx]?.notes, caret.noteIdx);

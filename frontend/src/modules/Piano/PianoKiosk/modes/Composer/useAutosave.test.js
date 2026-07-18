@@ -25,4 +25,10 @@ describe('useAutosave', () => {
     expect(save).not.toHaveBeenCalled();
     expect(result.current.status).toBe('invalid');
   });
+  it('flush() is a no-op when the editor is not dirty (no spurious save on a zero-edit open/close)', async () => {
+    const save = vi.fn();
+    const { result } = renderHook(({ st }) => useAutosave({ editorState: st, id: 'x', revision: 1, save, idleMs: 1000 }), { initialProps: { st: { dirty: false, __xml: 'GOOD' } } });
+    await act(async () => { result.current.flush(); });
+    expect(save).not.toHaveBeenCalled();
+  });
 });
