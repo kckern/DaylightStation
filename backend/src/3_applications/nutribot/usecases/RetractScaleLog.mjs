@@ -1,10 +1,10 @@
 //
-// Auto-expire an unanswered scale prompt. The bridge arms a timer per prompt; on fire it
-// calls this. If the log is still untouched (the user never engaged), we reject it and
-// delete the message — a phantom (e.g. the scale's shelf/idle load) nobody logged. If the
-// user has engaged (picked a container/density), we leave it entirely alone.
+// Retract an UNANSWERED scale prompt — event-triggered (session-end sweep, forced
+// supersede), the successor to the retired timer-based ExpireScaleLog. If the log is
+// still untouched (user never engaged), reject it and delete its Telegram message. If
+// the user has engaged (picked a container/density), leave it entirely alone.
 
-export class ExpireScaleLog {
+export class RetractScaleLog {
   #messagingGateway; #foodLogStore; #conversationStateStore; #logger;
 
   constructor(deps) {
@@ -26,7 +26,7 @@ export class ExpireScaleLog {
   async execute(input) {
     const { userId, conversationId, logUuid, messageId } = input;
     const log = await this.#foodLogStore.findByUuid(logUuid, userId);
-    if (!this.#isUntouched(log)) return { success: true, expired: false };
+    if (!this.#isUntouched(log)) return { success: true, retracted: false };
 
     await this.#foodLogStore.updateStatus(userId, logUuid, 'rejected');
 
@@ -34,16 +34,17 @@ export class ExpireScaleLog {
       try {
         const st = await this.#conversationStateStore.get?.(conversationId);
         if (st?.flowState?.pendingLogUuid === logUuid) await this.#conversationStateStore.clear(conversationId);
-      } catch (e) { this.#logger.debug?.('scaleExpire.clearFailed', { error: e.message }); }
+      } catch (e) { this.#logger.debug?.('scaleRetract.clearFailed', { error: e.message }); }
     }
 
     if (messageId) {
-      try { await this.#messagingGateway.deleteMessage(conversationId, messageId); } catch (e) { this.#logger.debug?.('scaleExpire.deleteFailed', { error: e.message }); }
+      try { await this.#messagingGateway.deleteMessage(conversationId, messageId); }
+      catch (e) { this.#logger.debug?.('scaleRetract.deleteFailed', { error: e.message }); }
     }
 
-    this.#logger.info?.('scaleExpire.done', { conversationId, logUuid });
-    return { success: true, expired: true };
+    this.#logger.info?.('scaleRetract.done', { conversationId, logUuid });
+    return { success: true, retracted: true };
   }
 }
 
-export default ExpireScaleLog;
+export default RetractScaleLog;

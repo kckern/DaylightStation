@@ -165,6 +165,7 @@ See the resilience runbook for diagnosing each.
 ## Related docs
 
 - `docs/reference/player/README.md` — the Player subsystem and its resilience layers
+- `docs/reference/player/hardware-decoding.md` — GPU decode/encode offload and the "make the forced re-encode cheap" lever; benchmark plan for the AV1 decode wall
 - `docs/reference/player/lessons-and-gotchas.md` — encoding/transcode failure modes & history (AV1/VP9 advertise revert, force-re-encode revert, idle-reap, warmup)
 - `docs/reference/media/dash-video-resilience.md` — stall/seek troubleshooting runbook
 - `docs/reference/content/content-playback.md` — content → playable → stream URL
