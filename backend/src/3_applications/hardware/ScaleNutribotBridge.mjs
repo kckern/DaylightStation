@@ -98,6 +98,8 @@ export function createScaleNutribotBridge({
           if (res?.touched) s.live = null;                 // answered → post fresh below
         }
         await post(id, s, g, 'button');
+      } catch (err) {
+        logger.warn?.('scaleNutribot.dispatch.failed', { id, error: err.message });
       } finally { inflight.delete(id); }
       return;
     }
@@ -136,6 +138,8 @@ export function createScaleNutribotBridge({
       const why = suspicious(s, grams, rise);
       if (why) { logger.info?.('scaleNutribot.suppressed', { id, grams, why }); return; }
       await post(id, s, grams, 'auto');
+    } catch (err) {
+      logger.warn?.('scaleNutribot.dispatch.failed', { id, error: err.message });
     } finally { inflight.delete(id); }
   };
 
