@@ -58,6 +58,13 @@ export const KEY_LEGEND = [
     ],
   },
   {
+    group: 'Listen',
+    keys: [
+      // Copy tracks the toolbar's Play/Pause button (EditorSurface.jsx).
+      { label: 'Enter', code: 'NumpadEnter', does: 'Play your song from the caret, or pause it' },
+    ],
+  },
+  {
     group: 'Edit',
     keys: [
       { label: '−', code: 'NumpadSubtract', does: 'Delete the note before the caret' },
@@ -79,6 +86,7 @@ export function mapKey(code) {
   if (DURATION_KEYS[code]) return { kind: 'duration', type: DURATION_KEYS[code] };
   switch (code) {
     case 'Numpad4': return { kind: 'arm' };
+    case 'NumpadEnter': return { kind: 'play' };
     case 'Numpad0': return { kind: 'rest' };
     case 'NumpadDecimal': return { kind: 'dot' };
     case 'NumpadSubtract': case 'Backspace': return { kind: 'deleteBack' };
@@ -91,7 +99,13 @@ export function mapKey(code) {
   }
 }
 
-export function useComposerInput({ setEditorState, subscribe, logger }) {
+/**
+ * @param {function} [onTogglePlay] invoked by the NumpadEnter transport key. The
+ *   hook does not own the transport (EditorSurface does) — it only routes the key.
+ * @param {boolean} [playing] whether score playback is currently running. Gates
+ *   armed note entry; see the echo guard on the MIDI subscription below.
+ */
+export function useComposerInput({ setEditorState, subscribe, logger, onTogglePlay, playing = false }) {
   // Reuse the parent's child logger when given (keeps one `composer-editor`
   // context); fall back to a `composer-input` child so the hook is still
   // observable when used standalone (and in tests).
@@ -103,6 +117,12 @@ export function useComposerInput({ setEditorState, subscribe, logger }) {
   // taps go through, so keyboard and touch can never drift apart.
   const sticky = useRef({ type: 'quarter', dots: 0, triplet: false });
   const armedRef = useRef(false);
+  // Mirrored every render for the same reason as `sticky`: the MIDI callback is
+  // registered once and would otherwise read `playing` from its first closure.
+  const playingRef = useRef(playing);
+  playingRef.current = playing;
+  const onTogglePlayRef = useRef(onTogglePlay);
+  onTogglePlayRef.current = onTogglePlay;
   const [hud, setHud] = useState({ ...sticky.current, armed: false });
   // `sync` only ever touches refs (stable identities) + setHud (stable), so the
   // useCallback'd setters below may safely close over the first render's copy.
@@ -143,6 +163,9 @@ export function useComposerInput({ setEditorState, subscribe, logger }) {
         case 'dot': toggleDot(); break;
         case 'arm': toggleArm(); break;
         case 'rest': addRest(); break;
+        // Routed through a ref so this listener (registered once) always reaches
+        // the CURRENT handler — EditorSurface rebuilds it as the transport changes.
+        case 'play': onTogglePlayRef.current?.(); break;
         case 'deleteBack': deleteBack(); break;
         case 'deleteAt': deleteAtCaret(); break;
         // Caret navigation is high-frequency (held arrow key) — debug, not info.
@@ -164,6 +187,17 @@ export function useComposerInput({ setEditorState, subscribe, logger }) {
         // Disarmed = audition-only (play freely, no score edit). Sampled: a kid
         // can play many notes/sec, and this fires per note while disarmed.
         log.sampled('composer.input.audition', { note: evt.note, pitch }, { maxPerMinute: 30, aggregate: true });
+        return;
+      }
+      // PLAYBACK ECHO GUARD. Score playback sends notes OUT over Web MIDI; the
+      // kiosk's Jamcorder routes MIDI in a way that can echo those sends back to
+      // the INPUT port, where they are indistinguishable from a played key. With
+      // Write armed, an unguarded editor would therefore re-record the whole
+      // playback into the score — silent data corruption, and baffling to debug.
+      // Gate the INSERT only: the arm flag is untouched, so Write is still on
+      // when playback stops.
+      if (playingRef.current) {
+        log.sampled('composer.input.playback-echo-ignored', { note: evt.note, pitch }, { maxPerMinute: 10, aggregate: true });
         return;
       }
       // Armed insert — the core "did my note land?" signal. Sampled high so a

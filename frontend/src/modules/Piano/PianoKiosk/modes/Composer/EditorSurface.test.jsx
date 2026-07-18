@@ -2,10 +2,16 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, act } from '@testing-library/react';
 import { useEffect } from 'react';
 
-// Capture the MIDI callback so tests can play real notes into the editor.
+// Capture the MIDI callback so tests can play real notes into the editor, and
+// spy on the OUTBOUND send API the transport drives (playback goes out through
+// these three; nothing else in the editor sends MIDI).
 let midiHandler = null;
+const midiOut = { sendNoteAt: vi.fn(), sendNoteOffAt: vi.fn(), sendPanic: vi.fn() };
 vi.mock('../../PianoMidiContext.jsx', () => ({
-  usePianoMidi: () => ({ subscribe: (fn) => { midiHandler = fn; return () => { midiHandler = null; }; } }),
+  usePianoMidi: () => ({
+    subscribe: (fn) => { midiHandler = fn; return () => { midiHandler = null; }; },
+    ...midiOut,
+  }),
 }));
 // Records every DISTINCT musicXml the renderer is handed — i.e. one entry per
 // OSMD engrave. The whole point of the two-plane split is that this list does
@@ -413,5 +419,145 @@ describe('EditorSurface — delete button wiring', () => {
     act(() => { fireEvent.click(del()); });
     expect(hint(container)).toBeTruthy();
     expect(screen.getByTestId('renderer')).toBeInTheDocument();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// TRANSPORT. Before this, the Composer had no way to HEAR what you wrote — the
+// only transport-looking control was the arm toggle, which is now "Write". The
+// button below is the mode's actual playback control.
+// ---------------------------------------------------------------------------
+describe('EditorSurface — playback transport', () => {
+  const playBtn = () => screen.getByRole('button', { name: /^(play|pause) your song$/i });
+  beforeEach(() => {
+    engraves.length = 0; midiHandler = null; layoutToPublish = null;
+    midiOut.sendNoteAt.mockClear(); midiOut.sendNoteOffAt.mockClear(); midiOut.sendPanic.mockClear();
+    vi.useFakeTimers();
+    vi.spyOn(performance, 'now').mockImplementation(() => Date.now());
+    vi.setSystemTime(0);
+  });
+  afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks(); });
+
+  /** A one-bar score of four quarters at 100bpm: C4 D4 E4 F4, 600ms apart. */
+  function fourQuarters() {
+    const s = makeEmptyScore({ tempo: 100 });
+    s.parts[0].measures[0].notes = [
+      makeNote({ step: 'C', octave: 4 }), makeNote({ step: 'D', octave: 4 }),
+      makeNote({ step: 'E', octave: 4 }), makeNote({ step: 'F', octave: 4 }),
+    ];
+    return s;
+  }
+
+  it('starts disabled on an empty score — there is nothing to play yet', () => {
+    render(<EditorSurface initialScore={makeEmptyScore()} songId="x" initialRevision={1} save={vi.fn()} config={{}} />);
+    expect(playBtn()).toBeDisabled();
+    expect(playBtn()).toHaveTextContent('Play');
+  });
+
+  it('plays: the button flips to Pause and the notes go out as timestamped sends', () => {
+    render(<EditorSurface initialScore={fourQuarters()} songId="x" initialRevision={1} save={vi.fn()} config={{}} />);
+    act(() => { fireEvent.click(playBtn()); });
+    expect(playBtn()).toHaveTextContent('Pause');
+
+    act(() => { vi.advanceTimersByTime(2500); });
+    // Sensible pitches, in order, at sensible wall times (100bpm → 600ms apart).
+    expect(midiOut.sendNoteAt.mock.calls.map((c) => c[0])).toEqual([60, 62, 64, 65]);
+    expect(midiOut.sendNoteAt.mock.calls.map((c) => c[2])).toEqual([0, 600, 1200, 1800]);
+    // Every note is released, gated early (540ms into a 600ms quarter).
+    expect(midiOut.sendNoteOffAt.mock.calls.map((c) => c[1])).toEqual([540, 1140, 1740, 2340]);
+  });
+
+  it('pause stops the sends and panics, so nothing can be left droning', () => {
+    render(<EditorSurface initialScore={fourQuarters()} songId="x" initialRevision={1} save={vi.fn()} config={{}} />);
+    act(() => { fireEvent.click(playBtn()); });
+    act(() => { vi.advanceTimersByTime(700); });
+    const sentSoFar = midiOut.sendNoteAt.mock.calls.length;
+
+    act(() => { fireEvent.click(playBtn()); });
+    expect(playBtn()).toHaveTextContent('Play');
+    // Already-dispatched sends can't be recalled, so the panic is the ONLY thing
+    // that stops a note whose note_off was scheduled past the pause.
+    expect(midiOut.sendPanic).toHaveBeenCalled();
+    // …and a second panic clears the lookahead tail once that window elapses.
+    midiOut.sendPanic.mockClear();
+    act(() => { vi.advanceTimersByTime(600); });
+    expect(midiOut.sendPanic).toHaveBeenCalled();
+
+    act(() => { vi.advanceTimersByTime(3000); });
+    expect(midiOut.sendNoteAt.mock.calls.length).toBe(sentSoFar); // paused means paused
+  });
+
+  it('NumpadEnter toggles playback (the spec\'s transport key)', () => {
+    render(<EditorSurface initialScore={fourQuarters()} songId="x" initialRevision={1} save={vi.fn()} config={{}} />);
+    act(() => { fireEvent.keyDown(window, { code: 'NumpadEnter' }); });
+    expect(playBtn()).toHaveTextContent('Pause');
+    act(() => { fireEvent.keyDown(window, { code: 'NumpadEnter' }); });
+    expect(playBtn()).toHaveTextContent('Play');
+  });
+
+  it('plays from the CARET measure, not always from the top', () => {
+    const s = fourQuarters();
+    s.parts[0].measures.push({ number: 2, notes: [makeNote({ step: 'G', octave: 4 })] });
+    render(<EditorSurface initialScore={s} songId="x" initialRevision={1} save={vi.fn()} config={{}} />);
+    act(() => { fireEvent.keyDown(window, { code: 'PageDown' }); }); // caret → bar 2
+    act(() => { fireEvent.click(playBtn()); });
+    act(() => { vi.advanceTimersByTime(1000); });
+    // Only bar 2's note, and re-zeroed to t=0 — not offset by bar 1's 2400ms.
+    expect(midiOut.sendNoteAt.mock.calls.map((c) => c[0])).toEqual([67]);
+    expect(midiOut.sendNoteAt.mock.calls[0][2]).toBe(0);
+  });
+
+  it('DOES NOT record playback back into the score when Write is armed (MIDI echo guard)', () => {
+    render(<EditorSurface initialScore={fourQuarters()} songId="x" initialRevision={1} save={vi.fn()} config={{}} />);
+    act(() => { fireEvent.keyDown(window, { code: 'Numpad4' }); }); // arm Write
+    act(() => { fireEvent.click(playBtn()); });
+    act(() => { vi.advanceTimersByTime(300); });
+
+    // Simulate the Jamcorder echoing our own output straight back to the input.
+    act(() => { midiHandler({ type: 'note_on', note: 60, velocity: 80 }); });
+    act(() => { midiHandler({ type: 'note_on', note: 62, velocity: 80 }); });
+
+    // The engraved XML is the observable proxy for the model: if the echo had
+    // been recorded, the score would have grown by two notes.
+    const xmlDuringPlayback = screen.getByTestId('renderer').getAttribute('data-xml-len');
+    act(() => { vi.advanceTimersByTime(1000); });
+    expect(screen.getByTestId('renderer').getAttribute('data-xml-len')).toBe(xmlDuringPlayback);
+
+    // Write is still armed — stop playback and a real key writes again.
+    act(() => { fireEvent.click(playBtn()); });
+    act(() => { midiHandler({ type: 'note_on', note: 71, velocity: 80 }); });
+    act(() => { vi.advanceTimersByTime(1200); }); // let the wet ink settle + re-engrave
+    expect(Number(screen.getByTestId('renderer').getAttribute('data-xml-len')))
+      .toBeGreaterThan(Number(xmlDuringPlayback));
+  });
+
+  it('unmounting mid-playback silences — a kid leaving the mode must not leave a drone', () => {
+    const { unmount } = render(<EditorSurface initialScore={fourQuarters()} songId="x" initialRevision={1} save={vi.fn()} config={{}} />);
+    act(() => { fireEvent.click(playBtn()); });
+    act(() => { vi.advanceTimersByTime(700); });
+    midiOut.sendPanic.mockClear();
+    const sentAtUnmount = midiOut.sendNoteAt.mock.calls.length;
+
+    act(() => { unmount(); });
+    expect(midiOut.sendPanic).toHaveBeenCalled();
+    // The delayed panic is DESIRED after unmount: it clears note-ons already
+    // handed to the MIDI service for a time in the lookahead window.
+    midiOut.sendPanic.mockClear();
+    act(() => { vi.advanceTimersByTime(600); });
+    expect(midiOut.sendPanic).toHaveBeenCalled();
+    expect(midiOut.sendNoteAt.mock.calls.length).toBe(sentAtUnmount); // the timer is dead
+  });
+
+  it('reaching the end resets to Play so the button can start it again', () => {
+    render(<EditorSurface initialScore={fourQuarters()} songId="x" initialRevision={1} save={vi.fn()} config={{}} />);
+    act(() => { fireEvent.click(playBtn()); });
+    act(() => { vi.advanceTimersByTime(4000); });
+    expect(playBtn()).toHaveTextContent('Play');
+    expect(midiOut.sendPanic).toHaveBeenCalled(); // the gated tail is flushed
+
+    midiOut.sendNoteAt.mockClear();
+    act(() => { fireEvent.click(playBtn()); });
+    act(() => { vi.advanceTimersByTime(2500); });
+    expect(midiOut.sendNoteAt.mock.calls.map((c) => c[0])).toEqual([60, 62, 64, 65]); // from the top again
   });
 });
