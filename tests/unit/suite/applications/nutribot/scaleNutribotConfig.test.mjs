@@ -92,6 +92,28 @@ describe('scaleNutribotConfig', () => {
     expect(o).toMatchObject({ baselineToleranceG: 8, placementDeltaG: 15, dedupDeltaG: 4 });
   });
 
+  it('normalizes suspicion/force knobs with defaults', () => {
+    const cfg = normalizeScaleNutribotConfig({});
+    expect(cfg).toMatchObject({
+      storageWeightG: 0,
+      storageToleranceG: 15,
+      suspicionWindowSec: 90,
+      stormMinPushes: 2,
+      heavyG: 300,
+      forceToleranceG: 10,
+    });
+    const o = normalizeScaleNutribotConfig({
+      nutribot: {
+        storage_weight_g: 430, storage_tolerance_g: 20, suspicion_window_sec: 120,
+        storm_min_pushes: 3, heavy_g: 250, force_tolerance_g: 8,
+      },
+    });
+    expect(o).toMatchObject({
+      storageWeightG: 430, storageToleranceG: 20, suspicionWindowSec: 120,
+      stormMinPushes: 3, heavyG: 250, forceToleranceG: 8,
+    });
+  });
+
   it('buildDensityKeyboard lays out a 3x3 grid + a control row', () => {
     const cfg = normalizeScaleNutribotConfig({});
     const enc = (cmd, data) => JSON.stringify({ cmd, ...data });

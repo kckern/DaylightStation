@@ -62,19 +62,30 @@ scales:
 #
 # Two ways a weight reaches nutribot:
 #   AUTO  — the scale rests at a variable load on the shelf (never ~0), so the bridge
-#           learns that resting load as a baseline and pushes a NEW prompt for every
-#           DISTINCT settled value that rises above it. Re-settles within tolerance are
-#           suppressed; returning near baseline ends the session and re-learns the rest.
-#           Weights NEVER expire — a prompt waits until you answer it. Trade-off: the one
-#           moment you flip the scale onto its shelf looks like a placement → one stray
-#           prompt to ignore (it is not repeated).
-#   FORCE — press the ESP button to log the live weight right now, bypassing all gates.
+#           learns that resting load as a baseline. A rise above it posts ONE prompt that
+#           then edits in place as the weight climbs (no message pile-up). Answering it
+#           frees it, so the next load starts fresh; returning near baseline ends the
+#           session and RETRACTS an unanswered prompt (no leftover slop). A placement is
+#           SUPPRESSED when it looks like putting the scale away — it lands in the
+#           storage_weight_g band, or is a heavy_g+ jump right after a burst of recent
+#           posts. Weights NEVER expire — a prompt waits until you answer it.
+#   FORCE — press the ESP button to log the live weight right now, bypassing the suspicion
+#           filter. No-ops when a live prompt already covers ~this weight (no duplicate).
 #           Use it whenever the auto heuristic would miss/mis-gate a real measurement.
 nutribot:
   min_grams: 5              # floor: ignore settled readings below this (noise / near-zero)
   baseline_tolerance_g: 6   # within this of the resting load = "at rest" (removed / jostle)
   placement_delta_g: 10     # min rise above the resting load to count as a real placement
   dedup_delta_g: 5          # min change from the last pushed value to post a NEW prompt
+  # Suspicion filter — keep the "scale put away on its shelf" phantom off nutribot.
+  # A placement is suppressed (logged, not posted) when it lands in the storage band
+  # OR is a heavy jump right after a burst of recent posts. The ESP button overrides.
+  storage_weight_g: 0        # known put-away weight; 0 disables the band
+  storage_tolerance_g: 15    # ± window around storage_weight_g
+  suspicion_window_sec: 90   # how recently the "storm" of posts must have happened
+  storm_min_pushes: 2        # recent posts within the window that constitute a storm
+  heavy_g: 300               # min rise above rest for the jump-after-storm gate
+  force_tolerance_g: 10      # button no-ops within this of the live prompt
   containers:
     threshold_g: 150        # only offer container (tare) subtraction above this gross weight
     items:
