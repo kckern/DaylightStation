@@ -28,6 +28,10 @@ const configService = {
 };
 // A minimal but well-formed single-note score so musicXmlToNotes finds >=1 note.
 const VALID_XML = `<?xml version="1.0"?><score-partwise><part-list><score-part id="P1"><part-name>P</part-name></score-part></part-list><part id="P1"><measure number="1"><attributes><divisions>1</divisions><time><beats>4</beats><beat-type>4</beat-type></time></attributes><note><pitch><step>C</step><octave>4</octave></pitch><duration>1</duration><type>quarter</type></note></measure></part></score-partwise>`;
+// A well-formed but EMPTY score — no <note> elements at all. This is what
+// NewSongSetup's makeEmptyScore() serializes into for a brand-new song; the
+// write gate must accept it (0 notes is still a valid, readable score).
+const EMPTY_VALID_XML = `<?xml version="1.0"?><score-partwise><part-list><score-part id="P1"><part-name>Music</part-name></score-part></part-list><part id="P1"><measure number="1"><attributes><divisions>1</divisions><time><beats>4</beats><beat-type>4</beat-type></time></attributes></measure></part></score-partwise>`;
 
 function app() {
   const composerSongStore = new ComposerSongStore({ configService, logger: { info() {}, warn() {}, debug() {} } });
@@ -50,6 +54,12 @@ describe('piano compositions routes', () => {
     const id = c.body.id;
     expect((await request(a).get(`/api/v1/piano/users/kc/compositions/${id}`)).body.musicxml).toBe(VALID_XML);
     expect((await request(a).get('/api/v1/piano/users/kc/compositions')).body.compositions.map(x => x.id)).toContain(id);
+  });
+  it('accepts a brand-new EMPTY score (0 notes) on create, 201', async () => {
+    const a = app();
+    const c = await request(a).post('/api/v1/piano/users/kc/compositions').send({ title: 'Untitled', musicxml: EMPTY_VALID_XML });
+    expect(c.status).toBe(201);
+    expect((await request(a).get(`/api/v1/piano/users/kc/compositions/${c.body.id}`)).body.musicxml).toBe(EMPTY_VALID_XML);
   });
   it('rejects invalid xml on save (validation gate, 400)', async () => {
     const a = app();

@@ -11,4 +11,15 @@ describe('NewSongSetup', () => {
     await waitFor(() => expect(onCreated).toHaveBeenCalledWith('new1'));
     expect(create).toHaveBeenCalledWith(expect.objectContaining({ musicxml: expect.stringContaining('score-partwise') }));
   });
+
+  it('resets busy and shows an error when create rejects, without calling onCreated', async () => {
+    const create = vi.fn().mockRejectedValue(new Error('network down'));
+    const onCreated = vi.fn();
+    render(<NewSongSetup create={create} onCreated={onCreated} />);
+    const button = screen.getByRole('button', { name: /skip/i });
+    fireEvent.click(button);
+    await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('network down'));
+    expect(button).not.toBeDisabled();
+    expect(onCreated).not.toHaveBeenCalled();
+  });
 });

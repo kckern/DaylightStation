@@ -61,9 +61,18 @@ export function createPianoRouter({ pianoContainer, logger = console }) {
   // Pure, config-free path-segment guards (HTTP input validation stays here).
   const safeSegment = (s) => typeof s === 'string' && s.length > 0 && !s.includes('/') && !s.includes('\\') && !s.includes('..');
 
-  // Write-gate: reject a musicxml payload that doesn't parse to at least one note.
-  const xmlHasNotes = (xml) => {
-    try { const r = musicXmlToNotes(xml); return !!r && Array.isArray(r.notes) && r.notes.length > 0; }
+  // Write-gate: reject a musicxml payload the app can't read back. The real bar
+  // (spec §4) is "well-formed score", NOT "has notes" — a brand-new song from
+  // NewSongSetup's makeEmptyScore() is a valid score with 0 notes and must be
+  // accepted. musicXmlToNotes is a permissive regex scanner: it does NOT throw
+  // on garbage (e.g. '<not-a-score/>' silently parses to `{notes:[]}`, same
+  // shape as a valid empty score), so "doesn't throw" can't discriminate the
+  // two — verified via a direct call. The real discriminator is structural:
+  // every genuine score carries the <score-partwise> root element; garbage
+  // doesn't.
+  const isValidScore = (xml) => {
+    if (typeof xml !== 'string' || !xml.includes('<score-partwise')) return false;
+    try { musicXmlToNotes(xml); return true; }
     catch { return false; }
   };
 
@@ -148,14 +157,14 @@ export function createPianoRouter({ pianoContainer, logger = console }) {
   router.post('/users/:userId/compositions', asyncHandler((req, res) => {
     if (!cs.isKnownUser(req.params.userId)) return res.status(400).json({ error: 'Invalid user' });
     const { title, musicxml, meta } = req.body || {};
-    if (typeof musicxml !== 'string' || !xmlHasNotes(musicxml)) return res.status(400).json({ error: 'musicxml must be a valid score' });
+    if (!isValidScore(musicxml)) return res.status(400).json({ error: 'musicxml must be a valid score' });
     const rec = cs.create(req.params.userId, { title, musicxml, meta });
     res.status(201).json(rec);
   }));
 
   router.put('/users/:userId/compositions/:id', asyncHandler((req, res) => {
     const { musicxml, meta, revision } = req.body || {};
-    if (typeof musicxml !== 'string' || !xmlHasNotes(musicxml)) {
+    if (!isValidScore(musicxml)) {
       logger.info?.('composer.song.save-invalid-xml', { userId: req.params.userId, id: req.params.id });
       return res.status(400).json({ error: 'musicxml failed validation' });
     }
