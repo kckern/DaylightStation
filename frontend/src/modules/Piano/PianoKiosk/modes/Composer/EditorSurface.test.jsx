@@ -1,11 +1,31 @@
-import { describe, it, expect, vi } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
-vi.mock('../../PianoMidiContext.jsx', () => ({ usePianoMidi: () => ({ subscribe: () => () => {} }) }));
-vi.mock('../../../../MusicNotation/renderers/MusicXmlRenderer.jsx', () => ({
-  MusicXmlRenderer: ({ musicXml, children }) => (<div data-testid="renderer" data-xml-len={String(musicXml || '').length}>{children}</div>),
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { render, screen, fireEvent, act } from '@testing-library/react';
+
+// Capture the MIDI callback so tests can play real notes into the editor.
+let midiHandler = null;
+vi.mock('../../PianoMidiContext.jsx', () => ({
+  usePianoMidi: () => ({ subscribe: (fn) => { midiHandler = fn; return () => { midiHandler = null; }; } }),
 }));
-import { EditorSurface, caretStepIndex } from './EditorSurface.jsx';
+// Records every DISTINCT musicXml the renderer is handed — i.e. one entry per
+// OSMD engrave. The whole point of the two-plane split is that this list does
+// NOT grow per keypress.
+const engraves = [];
+vi.mock('../../../../MusicNotation/renderers/MusicXmlRenderer.jsx', () => ({
+  MusicXmlRenderer: ({ musicXml, children }) => {
+    if (engraves[engraves.length - 1] !== musicXml) engraves.push(musicXml);
+    return (<div data-testid="renderer" data-xml-len={String(musicXml || '').length}>{children}</div>);
+  },
+}));
+import { EditorSurface, caretStepIndex, wetInkAnchor, serializeForDisplay } from './EditorSurface.jsx';
 import { makeEmptyScore, makeNote } from './model/index.js';
+
+/** Arm note entry (numpad 4) and play `n` middle-C note-ons. */
+function playNotes(n) {
+  act(() => { fireEvent.keyDown(window, { code: 'Numpad4' }); });
+  for (let i = 0; i < n; i++) {
+    act(() => { midiHandler({ type: 'note_on', note: 60, velocity: 80 }); });
+  }
+}
 
 describe('EditorSurface', () => {
   it('mounts, renders the score xml, and shows the duration palette', () => {
@@ -77,5 +97,120 @@ describe('caretStepIndex', () => {
     };
     const caret = { measureIdx: 0, noteIdx: 3 };
     expect(caretStepIndex(score, caret)).toBe(2);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Two-plane render (spec §2.1): the settled engrave must NOT rebuild per keypress.
+// ---------------------------------------------------------------------------
+describe('EditorSurface — settled engrave vs wet ink', () => {
+  beforeEach(() => { engraves.length = 0; midiHandler = null; vi.useFakeTimers(); });
+  afterEach(() => vi.useRealTimers());
+
+  it('does not re-engrave while notes are being entered, then engraves once on idle', () => {
+    render(<EditorSurface initialScore={makeEmptyScore()} songId="x" initialRevision={1} save={vi.fn()} config={{ wetink_idle_ms: 600 }} />);
+    expect(engraves).toHaveLength(1); // the initial blank staff
+
+    playNotes(3); // three notes into bar 0 — none of them fills it
+    expect(engraves).toHaveLength(1); // ← the defect this task fixes: still ONE engrave
+
+    act(() => { vi.advanceTimersByTime(600); });
+    expect(engraves).toHaveLength(2); // one engrave for the whole burst
+  });
+
+  it('engraves at the bar boundary during unbroken entry, with no idle gap at all', () => {
+    render(<EditorSurface initialScore={makeEmptyScore()} songId="x" initialRevision={1} save={vi.fn()} config={{ wetink_idle_ms: 600 }} />);
+    playNotes(4); // the 4th quarter fills 4/4 → new measure → structural settle
+    expect(engraves).toHaveLength(2); // settled without any timer advancing
+  });
+});
+
+describe('wetInkAnchor', () => {
+  const staves = [
+    { system: 0, top: 100, left: 20, right: 520, lineSpacing: 10 },
+    { system: 1, top: 300, left: 20, right: 520, lineSpacing: 10 },
+  ];
+  const step = (measure, x, top) => ({ measure, notes: [{ x, top, width: 12, bottom: top + 40 }] });
+
+  it('anchors one wet advance past the last engraved note of the caret bar', () => {
+    const steps = [step(0, 100, 100), step(0, 160, 100)];
+    // centre (160 + 6) + 2.4 spaces (24px)
+    expect(wetInkAnchor({ steps, staves, caretMeasureIdx: 0 })).toEqual({ x: 190, system: 0 });
+  });
+
+  it('picks the system the anchor note actually sits on', () => {
+    const steps = [step(0, 100, 100), step(1, 160, 305)];
+    expect(wetInkAnchor({ steps, staves, caretMeasureIdx: 1 }).system).toBe(1);
+  });
+
+  it('resolves a ledger-line note above the staff to that staff, not the one above it', () => {
+    // y=285 is above system 1's top (300) but far below system 0's band.
+    const steps = [step(0, 100, 100), step(1, 160, 285)];
+    expect(wetInkAnchor({ steps, staves, caretMeasureIdx: 1 }).system).toBe(1);
+  });
+
+  it('falls back to the head of the first system when nothing is engraved (blank draft)', () => {
+    expect(wetInkAnchor({ steps: [], staves, caretMeasureIdx: 0 })).toEqual({ x: 100, system: 0 });
+  });
+
+  it('returns null when there is no staff geometry yet', () => {
+    expect(wetInkAnchor({ steps: [], staves: [], caretMeasureIdx: 0 })).toBeNull();
+  });
+
+  // A bar the previous settle just opened has no engraving of its own, so the
+  // anchor comes off the PREVIOUS bar's last note plus a barline's room.
+  it('anchors off the previous bar when the caret bar is empty', () => {
+    const steps = [step(0, 160, 100)];
+    expect(wetInkAnchor({ steps, staves, caretMeasureIdx: 1 })).toEqual({ x: 200, system: 0 });
+  });
+
+  // CROWDING GUARD: the previous bar ran to the end of its system, so OSMD put
+  // the new bar on the next one. Following it is what stops several wet notes
+  // being clamped into the right margin as an unreadable pile.
+  it('follows the wrap to the next system when the previous bar ended flush right', () => {
+    const steps = [step(0, 500, 100)];
+    expect(wetInkAnchor({ steps, staves, caretMeasureIdx: 1 })).toEqual({ x: 100, system: 1 });
+  });
+
+  // Last-resort clamp: no next system to wrap to, so stay inside this one.
+  it('never anchors past the end of the system', () => {
+    const tight = [staves[0]];
+    const steps = [step(0, 510, 100)];
+    const a = wetInkAnchor({ steps, staves: tight, caretMeasureIdx: 0 });
+    expect(a.x).toBeLessThanOrEqual(520);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Empty measures in the DISPLAY copy. OSMD throws on a note-less measure, and
+// MusicXmlRenderer responds by refusing to render its children — staff AND
+// overlays blank out. insertNote's exact-fill branch opens exactly such a bar,
+// and it is the state a 'structural' settle engraves, so this is on the hot path.
+// ---------------------------------------------------------------------------
+describe('serializeForDisplay — no note-less measure ever reaches OSMD', () => {
+  const measuresIn = (xml) => xml.split('<measure').length - 1;
+  const restsIn = (xml) => xml.split('<rest').length - 1;
+
+  it('gives an untouched draft a full-measure rest so it engraves as a real staff', () => {
+    const xml = serializeForDisplay({ score: makeEmptyScore() });
+    expect(measuresIn(xml)).toBe(1);
+    expect(restsIn(xml)).toBe(1);
+  });
+
+  it('fills the empty trailing bar that a bar-filling note opens, rather than emitting it bare', () => {
+    const score = makeEmptyScore();
+    score.parts[0].measures = [
+      { number: 1, notes: [makeNote({ step: 'C', octave: 4 })] },
+      { number: 2, notes: [] }, // what ensureMeasure leaves behind
+    ];
+    const xml = serializeForDisplay({ score });
+    expect(measuresIn(xml)).toBe(2); // the new bar IS drawn — wet ink needs the room
+    expect(restsIn(xml)).toBe(1);    // and it is not empty, so OSMD can engrave it
+  });
+
+  it('leaves a fully-populated score untouched', () => {
+    const score = makeEmptyScore();
+    score.parts[0].measures = [{ number: 1, notes: [makeNote({ step: 'C', octave: 4 })] }];
+    expect(restsIn(serializeForDisplay({ score }))).toBe(0);
   });
 });
