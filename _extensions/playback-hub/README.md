@@ -257,21 +257,30 @@ MusiCozy dropped, its orphaned mpv migrated onto the *surviving* headset, and th
 headset played **two overlapping streams** while the dropped one went silent — for up
 to `ORPHAN_SINK_TICKS × WATCHDOG_INTERVAL` seconds per flap.
 
-Two changes, both zero-audio-path-risk (no PipeWire routing flags — this deliberately
+Three changes, all zero-audio-path-risk (no PipeWire routing flags — this deliberately
 does NOT repeat the `dont-reconnect`/`audio-fallback-to-null` mistake above):
 
-1. **`ORPHAN_SINK_TICKS` 2 → 1.** Halves the migration window (~10s → ~5s). `present=0`
-   already comes from PipeWire's live device list (via mpv IPC), so a single absent
-   sample is a real drop, not a stale cache; the worst spurious case (a <5s A2DP
+1. **`ORPHAN_SINK_TICKS` 2 → 1.** Halves the watchdog's per-slot reap window (~10s → ~5s).
+   `present=0` already comes from PipeWire's live device list (via mpv IPC), so a single
+   absent sample is a real drop, not a stale cache; the worst spurious case (a <5s A2DP
    renegotiation) costs only a brief self-respawn on that one headset, never cross-bleed.
-2. **`check_cross_bleed()` — a ground-truth detector** run once per watchdog tick. It
-   parses the actual `pw-link -l` graph and, if **any** bluez sink is fed by more than
-   one mpv stream (always a bug — a sink has one legit owner), logs `audio.cross_bleed`
-   attributed to the victim slot and dispatches a `cross_bleed` **warning alert** once
-   per streak (cleared when the graph goes clean). Pure observability — it never kills;
-   remediation stays with the orphan-sink reaper. Before this, cross-bleed was inaudible
-   to the daemon — only a human wearing both headsets could catch it. Route it to a
-   phone push with `alerts.on_cross_bleed: notify` in `devices.yml` (defaults to `log`).
+2. **`check_cross_bleed()` — a ground-truth detector.** Parses the actual `pw-link -l`
+   graph and, if **any** bluez sink is fed by more than one mpv stream (always a bug — a
+   sink has one legit owner), logs `audio.cross_bleed` attributed to the victim slot and
+   dispatches a `cross_bleed` **warning alert** once per streak (cleared when the graph
+   goes clean). Before this, cross-bleed was inaudible to the daemon — only a human
+   wearing both headsets could catch it. Route it to a phone push with
+   `alerts.on_cross_bleed: notify` in `devices.yml` (defaults to `log`).
+3. **`cross_bleed_guard()` — a fast (1s) active reaper**, a loop SEPARATE from the 5s
+   watchdog. Each `CROSS_BLEED_INTERVAL` (1s) it runs the detector, and **only when a
+   doubling is actually measured** calls `reap_migrated_orphans()`, which SIGKILLs the
+   migrated orphan — the slot whose OWN sink is absent from the live graph while its mpv
+   is alive. This shrinks the audible cross-bleed window from ~5s (a full watchdog tick)
+   to **~1s**. SAFE BY CONSTRUCTION: a legitimately-playing slot's own sink IS present in
+   the graph, so it is never reaped; and the reaper fires only on a measured doubling, so
+   a benign sub-second sink blip (no doubling) cannot trigger a spurious reap. The 5s
+   watchdog orphan reaper remains as the backstop. Verified live: the 1s guard ran ~30
+   ticks with the one connected headset playing and never false-reaped it.
 
 **Phase 2 attempt — null-sink default: TESTED & REJECTED (2026-07-17).** The idea was to
 eliminate cross-bleed by making a persistent null "void" sink the PipeWire *default*, so an
@@ -291,7 +300,8 @@ the stream that explicitly targeted it** (reject default/auto-routed links) — 
 the default untouched. That is more involved and MUST be developed + tested in a controlled
 maintenance window when the headsets are NOT in active household use (live testing during use
 proved disruptive and unreliable — headsets get toggled mid-test). Until then, the Phase 1
-guardrails (cross-bleed detector + ~5s reap window) are the shipped containment.
+guardrails (cross-bleed detector + 1s active reaper, ~1s residual window) are the shipped
+containment — a rare, ~1s, now-alerted artifact rather than a silent multi-second one.
 
 ### The mute IPC also persists into fresh mpvs
 
