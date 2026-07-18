@@ -136,7 +136,15 @@ function resolveDays(opts, config) {
 // Wiring
 // ---------------------------------------------------------------------------
 
-const abs = (p) => (path.isAbsolute(p) ? p : path.join(REPO_ROOT, p));
+/**
+ * Resolve a storage path.
+ *
+ * Relative paths resolve against the DATA VOLUME, not the repo — `media/` is a
+ * bind mount that lives at DAYLIGHT_BASE_PATH on this host. Resolving against
+ * the repo root would quietly write tens of GB of archive into the working
+ * tree, which is both wrong and easy not to notice until git status explodes.
+ */
+const abs = (p) => (path.isAbsolute(p) ? p : resolveDataPath(p));
 
 function buildSources(config, auth, cameraCfg, logger) {
   const streamType = config.sources.streamType;
