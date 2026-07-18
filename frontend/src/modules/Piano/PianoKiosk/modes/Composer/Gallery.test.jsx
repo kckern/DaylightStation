@@ -12,8 +12,11 @@ describe('Gallery', () => {
     fireEvent.click(screen.getByText('Tune A'));
     expect(onOpen).toHaveBeenCalledWith('a');
   });
-  it('shows New Song', async () => {
-    render(<Gallery list={vi.fn().mockResolvedValue([])} onOpen={vi.fn()} onNew={vi.fn()} />);
-    await waitFor(() => expect(screen.getByRole('button', { name: /new song/i })).toBeInTheDocument());
+  it('offers a start-a-new-song CTA when empty', async () => {
+    const onNew = vi.fn();
+    render(<Gallery list={vi.fn().mockResolvedValue([])} onOpen={vi.fn()} onNew={onNew} />);
+    const cta = await screen.findByRole('button', { name: /start a new one/i });
+    fireEvent.click(cta);
+    expect(onNew).toHaveBeenCalled();
   });
 });

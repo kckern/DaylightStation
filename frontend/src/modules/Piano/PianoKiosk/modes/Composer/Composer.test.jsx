@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, fireEvent } from '@testing-library/react';
 
 // Mock the piano contexts + api so the mode renders headless.
 vi.mock('../../PianoConfig.jsx', () => ({ usePianoKioskConfig: () => ({ config: { composer: {} } }) }));
@@ -8,12 +8,30 @@ vi.mock('./useCompositionsApi.js', () => ({ useCompositionsApi: () => ({ list: v
 // Real active-user hook (grepped from Studio.jsx / Studio.test.jsx): usePianoUser()
 // from PianoUserContext.jsx returns { currentUser }, not { userId }.
 vi.mock('../../PianoUserContext.jsx', () => ({ usePianoUser: () => ({ currentUser: 'kc' }) }));
+// EditorSurface pulls in the OSMD renderer + MIDI context; stub both so the mode
+// mounts in happy-dom without engraving.
+vi.mock('../../PianoMidiContext.jsx', () => ({ usePianoMidi: () => ({ subscribe: () => () => {} }) }));
+vi.mock('../../../../MusicNotation/renderers/MusicXmlRenderer.jsx', () => ({
+  MusicXmlRenderer: ({ children }) => <div data-testid="renderer">{children}</div>,
+}));
 
 import { Composer } from './Composer.jsx';
 
 describe('Composer mode', () => {
-  it('mounts to the gallery view', async () => {
+  it('leads with a blank-staff editor (not a gallery gate)', async () => {
     render(<Composer />);
+    // Editor surface + its "Songs" nav are present immediately; the gallery's
+    // "New song" is NOT (we did not have to pass through a gallery to compose).
+    await waitFor(() => expect(document.querySelector('.composer-editor')).toBeInTheDocument());
+    expect(screen.getByRole('button', { name: /your songs/i })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /new song/i })).not.toBeInTheDocument();
+  });
+
+  it('opens the gallery when "Songs" is tapped', async () => {
+    render(<Composer />);
+    await waitFor(() => expect(screen.getByRole('button', { name: /your songs/i })).toBeInTheDocument());
+    fireEvent.click(screen.getByRole('button', { name: /your songs/i }));
+    // Gallery view: the bar swaps to "＋ New song".
     await waitFor(() => expect(screen.getByRole('button', { name: /new song/i })).toBeInTheDocument());
   });
 });

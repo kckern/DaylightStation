@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
-import { mapKey, useComposerInput } from './useComposerInput.js';
+import { mapKey, useComposerInput, KEY_LEGEND } from './useComposerInput.js';
 import { makeEmptyScore, initEditor } from './model/index.js';
 
 describe('mapKey (numpad)', () => {
@@ -13,6 +13,29 @@ describe('mapKey (numpad)', () => {
     expect(mapKey('NumpadSubtract')).toEqual({ kind: 'deleteBack' });
     expect(mapKey('NumpadDecimal')).toEqual({ kind: 'dot' });
     expect(mapKey('KeyQ')).toBeNull();
+  });
+});
+
+describe('KEY_LEGEND (on-screen help SSOT)', () => {
+  it('documents only keys that are actually wired — every legend code maps to a command', () => {
+    // The one exception is the `🎹` row, which documents armed piano-note entry
+    // (it comes through the MIDI subscription, not a keydown) and carries code null.
+    for (const section of KEY_LEGEND) {
+      for (const entry of section.keys) {
+        if (entry.code == null) continue;
+        expect(mapKey(entry.code), `legend key "${entry.label}" (${entry.code}) should map to a command`).not.toBeNull();
+      }
+    }
+  });
+
+  it('covers every duration/arm/rest/dot/delete command the keymap exposes', () => {
+    // A guard against silently adding a wired key without documenting it. The
+    // caret-navigation codes are represented by the "← →" / "PgUp / PgDn" rows
+    // whose sample codes (ArrowLeft / PageUp) stand in for their pairs.
+    const documented = new Set(KEY_LEGEND.flatMap((s) => s.keys.map((k) => k.code)));
+    for (const code of ['Numpad1', 'Numpad3', 'Numpad5', 'Numpad7', 'Numpad9', 'Numpad4', 'Numpad0', 'NumpadDecimal', 'NumpadSubtract', 'Delete']) {
+      expect(documented.has(code), `mapped key ${code} should appear in KEY_LEGEND`).toBe(true);
+    }
   });
 });
 
