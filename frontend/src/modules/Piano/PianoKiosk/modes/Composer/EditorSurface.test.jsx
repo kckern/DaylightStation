@@ -21,13 +21,22 @@ const engraves = [];
 // staff geometry, the way a real OSMD extract would.
 let layoutToPublish = null;
 vi.mock('../../../../MusicNotation/renderers/MusicXmlRenderer.jsx', () => ({
-  MusicXmlRenderer: ({ musicXml, onLayout, children }) => {
+  MusicXmlRenderer: ({ musicXml, onLayout, scale, manuscript, children }) => {
     if (engraves[engraves.length - 1] !== musicXml) engraves.push(musicXml);
     useEffect(() => { if (layoutToPublish) onLayout?.(layoutToPublish); }, [musicXml, onLayout]);
-    return (<div data-testid="renderer" data-xml-len={String(musicXml || '').length}>{children}</div>);
+    // `data-scale` is the OSMD zoom the editor asked for. Surfaced because the
+    // caret's scale-dependent terms MUST be driven by the same number.
+    return (
+      <div data-testid="renderer" data-xml-len={String(musicXml || '').length} data-scale={String(scale)} data-manuscript={String(!!manuscript)}>
+        {children}
+      </div>
+    );
   },
 }));
-import { EditorSurface, caretStepIndex, wetInkAnchor, serializeForDisplay } from './EditorSurface.jsx';
+import {
+  EditorSurface, caretStepIndex, wetInkAnchor, serializeForDisplay,
+  padDisplayMeasures, withDisplayRests, DISPLAY_MIN_BARS, DEFAULT_ZOOM,
+} from './EditorSurface.jsx';
 import { CARET_GAP, CARET_WIDTH, MEASURE_START_UNITS } from './CaretLayer.jsx';
 import { WET_ADVANCE_UNITS, WET_RX_UNITS } from './PendingLayer.jsx';
 import { makeEmptyScore, makeNote } from './model/index.js';
@@ -226,10 +235,12 @@ describe('serializeForDisplay — no note-less measure ever reaches OSMD', () =>
   const measuresIn = (xml) => xml.split('<measure').length - 1;
   const restsIn = (xml) => xml.split('<rest').length - 1;
 
-  it('gives an untouched draft a full-measure rest so it engraves as a real staff', () => {
+  it('gives an untouched draft full-measure rests so it engraves as a real staff', () => {
     const xml = serializeForDisplay({ score: makeEmptyScore() });
-    expect(measuresIn(xml)).toBe(1);
-    expect(restsIn(xml)).toBe(1);
+    // Every displayed bar is padded AND rested — a blank draft engraves as ruled
+    // manuscript paper, not one lonely bar (see the DISPLAY_MIN_BARS block below).
+    expect(measuresIn(xml)).toBe(DISPLAY_MIN_BARS);
+    expect(restsIn(xml)).toBe(DISPLAY_MIN_BARS);
   });
 
   it('fills the empty trailing bar that a bar-filling note opens, rather than emitting it bare', () => {
@@ -239,14 +250,164 @@ describe('serializeForDisplay — no note-less measure ever reaches OSMD', () =>
       { number: 2, notes: [] }, // what ensureMeasure leaves behind
     ];
     const xml = serializeForDisplay({ score });
-    expect(measuresIn(xml)).toBe(2); // the new bar IS drawn — wet ink needs the room
-    expect(restsIn(xml)).toBe(1);    // and it is not empty, so OSMD can engrave it
+    // The new bar IS drawn (wet ink needs the room) and it is not empty, so OSMD
+    // can engrave it. Padding then takes the sheet out to the 4-bar minimum.
+    expect(measuresIn(xml)).toBe(DISPLAY_MIN_BARS);
+    expect(restsIn(xml)).toBe(DISPLAY_MIN_BARS - 1); // bar 1 has the note
   });
 
-  it('leaves a fully-populated score untouched', () => {
+  it('emits no rest in a bar that has notes', () => {
     const score = makeEmptyScore();
     score.parts[0].measures = [{ number: 1, notes: [makeNote({ step: 'C', octave: 4 })] }];
-    expect(restsIn(serializeForDisplay({ score }))).toBe(0);
+    const xml = serializeForDisplay({ score });
+    // Only the PADDED bars carry rests; the written bar is untouched.
+    expect(restsIn(xml)).toBe(DISPLAY_MIN_BARS - 1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// MANUSCRIPT PAPER (Task 10). A fresh draft used to show a single bar fragment
+// floating on a big empty card: maximum dead space, minimum invitation. Real
+// manuscript paper shows ruled systems waiting to be filled, so the DISPLAY copy
+// is padded out with bars the model does not have. Padding is render-only — the
+// autosave path serializes editorState directly and must never see it.
+// ---------------------------------------------------------------------------
+describe('serializeForDisplay — manuscript-paper padding', () => {
+  const measuresIn = (xml) => xml.split('<measure').length - 1;
+  const filled = (n) => {
+    const score = makeEmptyScore();
+    score.parts[0].measures = Array.from({ length: n }, (_, i) => ({ number: i + 1, notes: [makeNote({ step: 'C', octave: 4 })] }));
+    return score;
+  };
+
+  it('pads a blank score out to the 4-bar minimum', () => {
+    expect(measuresIn(serializeForDisplay({ score: makeEmptyScore() }))).toBe(4);
+  });
+
+  it('keeps one empty runway bar past the last filled bar once the score is long', () => {
+    expect(measuresIn(serializeForDisplay({ score: filled(6) }))).toBe(7);
+  });
+
+  it('holds the minimum when the score is still short', () => {
+    expect(measuresIn(serializeForDisplay({ score: filled(2) }))).toBe(4);
+  });
+
+  it('takes the minimum from config so a bigger sheet is a config change, not a code change', () => {
+    expect(measuresIn(serializeForDisplay({ score: makeEmptyScore() }, 8))).toBe(8);
+    // The runway rule still wins when it asks for more than the minimum.
+    expect(measuresIn(serializeForDisplay({ score: filled(9) }, 8))).toBe(10);
+  });
+
+  // Padding the XML is only half of it: OSMD's reading defaults collapse a run
+  // of rest bars into ONE bar with a count over it, and stop the system where
+  // the content stops — so the padded sheet engraves as a fragment plus a
+  // mystery numeral unless the editor opts into the writing-surface rules.
+  // Observed in headless Chromium 2026-07-18 before the prop existed.
+  it('asks the renderer for manuscript-paper engraving, not reading engraving', () => {
+    render(<EditorSurface initialScore={makeEmptyScore()} songId="x" initialRevision={1} save={vi.fn()} config={{}} />);
+    expect(screen.getByTestId('renderer').getAttribute('data-manuscript')).toBe('true');
+  });
+
+  it('never mutates the model score it was handed', () => {
+    const score = makeEmptyScore();
+    serializeForDisplay({ score });
+    expect(score.parts[0].measures).toHaveLength(1);
+  });
+
+  // The caret indexes the MODEL, and the renderer's buildSteps excludes rests
+  // (osmdRender.js, `n.isRest()`), so padded bars contribute no engraved steps
+  // and cannot shift the caret. Proven rather than assumed: caretStepIndex is
+  // the function that would drift, and it reads the same on both scores.
+  it('leaves caret step math identical — padded bars hold only rests, which are not steps', () => {
+    const score = filled(2);
+    const caret = { measureIdx: 1, noteIdx: 1 };
+    const before = caretStepIndex(score, caret);
+    // Pad THEN rest — the order the display pipeline uses, so the bars padding
+    // adds are themselves rested rather than emitted bare.
+    const padded = withDisplayRests(padDisplayMeasures(score, 4));
+    expect(padded.parts[0].measures).toHaveLength(4);
+    // Every bar the padding added carries a rest and nothing else.
+    for (const m of padded.parts[0].measures.slice(2)) {
+      expect(m.notes.every((n) => n.rest)).toBe(true);
+    }
+    expect(caretStepIndex(padded, caret)).toBe(before);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Padding is a RENDER concern and must never be persisted: a kid who writes two
+// bars must get two bars back, not four bars with two of them full of rests that
+// the next session's runway rule then pads AGAIN. Proven through the real
+// autosave path rather than by reading serializeForDisplay's call sites.
+// ---------------------------------------------------------------------------
+describe('EditorSurface — display padding never reaches the saved MusicXML', () => {
+  beforeEach(() => { engraves.length = 0; midiHandler = null; layoutToPublish = null; vi.useFakeTimers(); });
+  afterEach(() => vi.useRealTimers());
+
+  const measuresIn = (xml) => xml.split('<measure').length - 1;
+
+  it('saves only the bars the model actually holds', async () => {
+    const save = vi.fn().mockResolvedValue({ ok: true, revision: 2 });
+    render(<EditorSurface initialScore={makeEmptyScore()} songId="x" initialRevision={1} save={save} config={{}} />);
+
+    // One note → one filled bar in the MODEL. The DISPLAY copy is 4 bars.
+    playNotes(1);
+    const displayed = engraves[engraves.length - 1];
+    expect(measuresIn(displayed)).toBe(DISPLAY_MIN_BARS);
+
+    await act(async () => { vi.advanceTimersByTime(4000); }); // past the autosave idle
+    expect(save).toHaveBeenCalled();
+    const savedXml = save.mock.calls[0][1].musicxml;
+    expect(measuresIn(savedXml)).toBe(1);   // the model's single bar, nothing else
+    expect(savedXml).not.toContain('<rest'); // and no display rest rode along
+  });
+});
+
+// ---------------------------------------------------------------------------
+// ZOOM (Task 11). The staff used to render at OSMD zoom 1 inside a 60rem slab —
+// on the 8" kiosk tablet, a tiny staff in the corner of a big blank card. The
+// correctness risk in zooming is the CARET: OSMD's layout output (staves[].
+// lineSpacing, steps[].x/width) is already in ZOOMED screen pixels, but
+// CaretLayer's CARET_GAP / CARET_WIDTH are unscaled constants it multiplies by
+// its own `scale` prop. So `scale` MUST be the OSMD zoom — one value feeding
+// both, or the caret drifts from the notes by (zoom - 1) * CARET_GAP.
+// ---------------------------------------------------------------------------
+describe('EditorSurface — engrave zoom', () => {
+  const LS = 14; // what lineSpacing measures at zoom 1.4 (10px/unit x zoom)
+  const staff = { system: 0, top: 100, left: 20, right: 900, lineSpacing: LS };
+  const caretLeft = (c) => Number(/translate3d\(([-\d.]+)px/.exec(c.querySelector('.composer-caret').style.transform)[1]);
+  const headCentres = (c) => [...c.querySelectorAll('.composer-wet-note__head')].map((e) => Number(e.getAttribute('cx')));
+
+  beforeEach(() => { engraves.length = 0; midiHandler = null; layoutToPublish = { steps: [], staves: [staff] }; vi.useFakeTimers(); });
+  afterEach(() => vi.useRealTimers());
+
+  it('engraves at the 1.4 default rather than 1', () => {
+    render(<EditorSurface initialScore={makeEmptyScore()} songId="x" initialRevision={1} save={vi.fn()} config={{}} />);
+    expect(screen.getByTestId('renderer').getAttribute('data-scale')).toBe(String(DEFAULT_ZOOM));
+    expect(DEFAULT_ZOOM).toBe(1.4);
+  });
+
+  it('takes the zoom from config when set', () => {
+    render(<EditorSurface initialScore={makeEmptyScore()} songId="x" initialRevision={1} save={vi.fn()} config={{ zoom: 0.9 }} />);
+    expect(screen.getByTestId('renderer').getAttribute('data-scale')).toBe('0.9');
+  });
+
+  it('scales the caret by the SAME zoom it engraves at', () => {
+    const { container } = render(<EditorSurface initialScore={makeEmptyScore()} songId="x" initialRevision={1} save={vi.fn()} config={{ wetink_idle_ms: 600 }} />);
+    playNotes(2);
+    const heads = headCentres(container);
+    const lastRightEdge = heads[1] + LS * WET_RX_UNITS;
+    // The gap is a fixed-pixel constant, so at zoom 1.4 it must measure 1.4x. A
+    // caret still running on a hardcoded scale of 1 would sit CARET_GAP away.
+    expect(caretLeft(container) - lastRightEdge).toBeCloseTo(CARET_GAP * DEFAULT_ZOOM);
+  });
+
+  it('sizes the caret band by the same zoom', () => {
+    const { container } = render(<EditorSurface initialScore={makeEmptyScore()} songId="x" initialRevision={1} save={vi.fn()} config={{ wetink_idle_ms: 600 }} />);
+    playNotes(1);
+    // staveCaretMetrics: max(40 * zoom, lineSpacing * 4) — both are 56 at 1.4,
+    // which is the point: the floor tracks the zoom instead of stranding at 40.
+    expect(container.querySelector('.composer-caret').style.height).toBe('56px');
   });
 });
 
@@ -255,6 +416,10 @@ describe('serializeForDisplay — no note-less measure ever reaches OSMD', () =>
 // proves it honours SOME override — the coordinate conversion between them
 // lives here, and getting it wrong makes the caret jump sideways on every
 // settle rather than being wrong once.
+//
+// These pin `zoom: 1` deliberately: what they assert is the coordinate
+// CONVERSION between the wet anchor (a notehead CENTRE) and the caret (a LEFT
+// edge), in unscaled pixels. Zoom is proven separately, above.
 // ---------------------------------------------------------------------------
 describe('EditorSurface — wet caret position', () => {
   const LS = 10;
@@ -270,7 +435,7 @@ describe('EditorSurface — wet caret position', () => {
   afterEach(() => vi.useRealTimers());
 
   it('clears the LAST wet notehead by exactly the gap the engraved caret uses', () => {
-    const { container } = render(<EditorSurface initialScore={makeEmptyScore()} songId="x" initialRevision={1} save={vi.fn()} config={{ wetink_idle_ms: 600 }} />);
+    const { container } = render(<EditorSurface initialScore={makeEmptyScore()} songId="x" initialRevision={1} save={vi.fn()} config={{ zoom: 1, wetink_idle_ms: 600 }} />);
     playNotes(2);
     const heads = headCentres(container);
     expect(heads).toHaveLength(2);
@@ -283,7 +448,7 @@ describe('EditorSurface — wet caret position', () => {
   });
 
   it('does not sit a whole advance past the last note (the pre-fix off-by-one)', () => {
-    const { container } = render(<EditorSurface initialScore={makeEmptyScore()} songId="x" initialRevision={1} save={vi.fn()} config={{ wetink_idle_ms: 600 }} />);
+    const { container } = render(<EditorSurface initialScore={makeEmptyScore()} songId="x" initialRevision={1} save={vi.fn()} config={{ zoom: 1, wetink_idle_ms: 600 }} />);
     playNotes(2);
     const heads = headCentres(container);
     // The bug put the caret at anchor.x + n*advance — a full advance past the
@@ -295,7 +460,7 @@ describe('EditorSurface — wet caret position', () => {
     // A staff with almost no room: the caret's right edge, not its left, is what
     // must stay in bounds.
     layoutToPublish = { steps: [], staves: [{ ...staff, right: 150 }] };
-    const { container } = render(<EditorSurface initialScore={makeEmptyScore()} songId="x" initialRevision={1} save={vi.fn()} config={{ wetink_idle_ms: 600 }} />);
+    const { container } = render(<EditorSurface initialScore={makeEmptyScore()} songId="x" initialRevision={1} save={vi.fn()} config={{ zoom: 1, wetink_idle_ms: 600 }} />);
     playNotes(3);
     expect(caretLeft(container) + CARET_WIDTH).toBeLessThanOrEqual(150);
   });
@@ -304,14 +469,14 @@ describe('EditorSurface — wet caret position', () => {
   // caret simply did not render — no insertion point on the one screen every
   // session opens with.
   it('shows a caret at the measure entry point on an untouched draft', () => {
-    const { container } = render(<EditorSurface initialScore={makeEmptyScore()} songId="x" initialRevision={1} save={vi.fn()} config={{}} />);
+    const { container } = render(<EditorSurface initialScore={makeEmptyScore()} songId="x" initialRevision={1} save={vi.fn()} config={{ zoom: 1 }} />);
     expect(container.querySelector('.composer-caret')).toBeTruthy();
     expect(caretLeft(container)).toBe(staff.left + LS * MEASURE_START_UNITS);
   });
 
   it('hands the caret back to the engraved layout once the ink dries', () => {
     layoutToPublish = { steps: [{ measure: 0, notes: [{ x: 300, top: 100, bottom: 140, width: 12 }] }], staves: [staff] };
-    const { container } = render(<EditorSurface initialScore={makeEmptyScore()} songId="x" initialRevision={1} save={vi.fn()} config={{ wetink_idle_ms: 600 }} />);
+    const { container } = render(<EditorSurface initialScore={makeEmptyScore()} songId="x" initialRevision={1} save={vi.fn()} config={{ zoom: 1, wetink_idle_ms: 600 }} />);
     playNotes(1);
     act(() => { vi.advanceTimersByTime(600); });
     expect(container.querySelectorAll('.composer-wet-note__head')).toHaveLength(0);
@@ -327,7 +492,7 @@ describe('EditorSurface — wet caret position', () => {
   // disagreed by a ledger line's worth on every settle.
   it('keeps the caret in the SAME vertical band across a settle', () => {
     layoutToPublish = { steps: [{ measure: 0, notes: [{ x: 300, top: 116, bottom: 156, width: 12 }] }], staves: [staff] };
-    const { container } = render(<EditorSurface initialScore={makeEmptyScore()} songId="x" initialRevision={1} save={vi.fn()} config={{ wetink_idle_ms: 600 }} />);
+    const { container } = render(<EditorSurface initialScore={makeEmptyScore()} songId="x" initialRevision={1} save={vi.fn()} config={{ zoom: 1, wetink_idle_ms: 600 }} />);
     playNotes(1);
     const wet = caretBand(container);
     act(() => { vi.advanceTimersByTime(600); });
@@ -559,5 +724,46 @@ describe('EditorSurface — playback transport', () => {
     act(() => { fireEvent.click(playBtn()); });
     act(() => { vi.advanceTimersByTime(2500); });
     expect(midiOut.sendNoteAt.mock.calls.map((c) => c[0])).toEqual([60, 62, 64, 65]); // from the top again
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Toolbar chrome (Task 11B). The mode used to stack FOUR chrome strips on an 8"
+// tablet — browser bar, kiosk breadcrumb, editor toolbar, and a full-width
+// bottom bar holding exactly two buttons. The bottom bar is gone; its two
+// controls live here, where the rest of the editor's chrome already is.
+// TEXT labels, not glyphs — Unicode renders as tofu on the kiosk browser.
+// ---------------------------------------------------------------------------
+describe('EditorSurface — toolbar nav + help', () => {
+  it('offers "Songs" in the toolbar and calls back when tapped', () => {
+    const onSongs = vi.fn();
+    const { container } = render(<EditorSurface initialScore={makeEmptyScore()} songId="x" initialRevision={1} save={vi.fn()} onSongs={onSongs} config={{}} />);
+    const btn = screen.getByRole('button', { name: /your songs/i });
+    expect(container.querySelector('.composer-toolbar')).toContainElement(btn);
+    fireEvent.click(btn);
+    expect(onSongs).toHaveBeenCalled();
+  });
+
+  it('omits "Songs" entirely when the host gives it nowhere to go', () => {
+    render(<EditorSurface initialScore={makeEmptyScore()} songId="x" initialRevision={1} save={vi.fn()} config={{}} />);
+    expect(screen.queryByRole('button', { name: /your songs/i })).not.toBeInTheDocument();
+  });
+
+  it('toggles the help panel from the toolbar', () => {
+    render(<EditorSurface initialScore={makeEmptyScore()} songId="x" initialRevision={1} save={vi.fn()} config={{}} />);
+    const help = screen.getByRole('button', { name: /how to write music/i });
+    expect(help).toHaveAttribute('aria-expanded', 'false');
+    expect(document.querySelector('.composer-help')).toBeNull();
+    fireEvent.click(help);
+    expect(document.querySelector('.composer-help')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: /how to write music/i }));
+    expect(document.querySelector('.composer-help')).toBeNull();
+  });
+
+  it('labels its nav buttons with words, not Unicode glyphs (tofu on the kiosk)', () => {
+    const { container } = render(<EditorSurface initialScore={makeEmptyScore()} songId="x" initialRevision={1} save={vi.fn()} onSongs={vi.fn()} config={{}} />);
+    const text = container.querySelector('.composer-toolbar').textContent;
+    for (const glyph of ['☰', 'ⓘ', '＋']) expect(text).not.toContain(glyph);
+    expect(text).toContain('Songs');
   });
 });
