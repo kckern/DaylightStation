@@ -34,7 +34,7 @@ describe('SelectScaleDensity', () => {
     });
     expect(res.calories).toBe(336); // 240 × 1.4
     expect(savedLog.items[0].calories).toBe(336);
-    expect(savedLog.items[0].label).toBe('Everyday');
+    expect(savedLog.items[0].label).toBe('Mixed');
     expect(stateStore.clear).toHaveBeenCalledWith('telegram:b1_c2');
     const cmds = messaging.updateMessage.mock.calls[0][1].choices.flat().map((b) => JSON.parse(b.callback_data).cmd);
     expect(cmds).toEqual(['a', 'r', 'x']);

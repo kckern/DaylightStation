@@ -19,12 +19,12 @@ export const DEFAULT_DENSITY_LEVELS = [
   { level: 1, label: 'Watery', emoji: '🥬', kcal_per_g: 0.2, hint: 'broth, greens' },
   { level: 2, label: 'Light', emoji: '🥗', kcal_per_g: 0.6, hint: 'salad, fruit' },
   { level: 3, label: 'Lean', emoji: '🍲', kcal_per_g: 1.0, hint: 'soup, lean meat' },
-  { level: 4, label: 'Everyday', emoji: '🍛', kcal_per_g: 1.4, hint: 'rice + veg + protein' },
+  { level: 4, label: 'Mixed', emoji: '🍛', kcal_per_g: 1.4, hint: 'rice + veg + protein' },
   { level: 5, label: 'Hearty', emoji: '🍝', kcal_per_g: 1.9, hint: 'pasta, casserole' },
-  { level: 6, label: 'Filling', emoji: '🍕', kcal_per_g: 2.6, hint: 'pizza, fried' },
+  { level: 6, label: 'Heavy', emoji: '🍕', kcal_per_g: 2.6, hint: 'pizza, fried' },
   { level: 7, label: 'Rich', emoji: '🧀', kcal_per_g: 3.8, hint: 'cheese, creamy' },
-  { level: 8, label: 'Very rich', emoji: '🥜', kcal_per_g: 6.0, hint: 'nuts, nut butter' },
-  { level: 9, label: 'Pure fat', emoji: '🫒', kcal_per_g: 8.5, hint: 'oil, butter' },
+  { level: 8, label: 'Thick', emoji: '🥜', kcal_per_g: 6.0, hint: 'nuts, nut butter' },
+  { level: 9, label: 'Oil', emoji: '🫒', kcal_per_g: 8.5, hint: 'oil, butter' },
 ];
 
 const num = (v, fallback) => (Number.isFinite(Number(v)) ? Number(v) : fallback);
