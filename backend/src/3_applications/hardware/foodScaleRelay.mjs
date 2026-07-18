@@ -27,6 +27,8 @@
 import { promises as fs } from 'fs';
 import path from 'path';
 import yaml from 'js-yaml';
+import { formatLocalTimestamp, getDateInTimezone } from '#domains/core/utils/time.mjs';
+import { DEFAULT_TIMEZONE } from '#domains/core/utils/timezone.mjs';
 
 const RELAY_SOURCE = 'food-scale-relay';
 const DEFAULT_TOPIC = 'food-scale';
@@ -48,10 +50,11 @@ const DEFAULT_DEDUP_DELTA_G = 2;
  * @param {object}   deps.eventBus  IEventBus (WebSocketEventBus)
  * @param {string}   deps.dataDir   resolved data dir (configService.getDataDir())
  * @param {object}   [deps.config]  parsed config/scales.yml — { persistence:{dir}, scales:{<id>:{topic}} }
+ * @param {string}   [deps.timezone] IANA tz for the `ts` field + day-file bucket (default household tz)
  * @param {object}   [deps.logger]  structured logger
  * @returns {{ dispose: () => void }}
  */
-export function createFoodScaleRelay({ eventBus, dataDir, config = {}, logger = console }) {
+export function createFoodScaleRelay({ eventBus, dataDir, config = {}, timezone = DEFAULT_TIMEZONE, logger = console }) {
   if (!eventBus?.onClientMessage || !eventBus?.subscribe) {
     throw new Error('createFoodScaleRelay: eventBus with onClientMessage + subscribe required');
   }
@@ -69,7 +72,9 @@ export function createFoodScaleRelay({ eventBus, dataDir, config = {}, logger = 
   eventBus.onClientMessage((clientId, message) => {
     if (!message || message.source !== RELAY_SOURCE) return;
     const id = typeof message.id === 'string' && message.id ? message.id : 'unknown';
-    const ts = new Date().toISOString();
+    // Local wall-clock timestamp (household tz), NOT UTC — the day-file bucket is
+    // its date prefix, so an evening-local event never spills into the next UTC day.
+    const ts = formatLocalTimestamp(new Date(), timezone);
     const topic = topicForId(id);
 
     if (message.type === 'scale') {
@@ -117,7 +122,7 @@ export function createFoodScaleRelay({ eventBus, dataDir, config = {}, logger = 
   let writeChain = Promise.resolve();
   const enqueueAppend = (id, record) => {
     writeChain = writeChain
-      .then(() => appendRecord(historyRoot, id, record, logger))
+      .then(() => appendRecord(historyRoot, id, record, timezone, logger))
       .catch((err) => logger.warn?.('food_scale.persist.failed', { id, error: err.message }));
   };
 
@@ -160,8 +165,13 @@ export function createFoodScaleRelay({ eventBus, dataDir, config = {}, logger = 
 }
 
 /** Append one record to the scale's append-only day log (read-modify-write). */
-async function appendRecord(historyRoot, id, record, logger) {
-  const day = new Date().toISOString().slice(0, 10); // YYYY-MM-DD (UTC)
+async function appendRecord(historyRoot, id, record, timezone, logger) {
+  // Bucket by the record's LOCAL day (the date prefix of its local `ts`), so an
+  // evening-local event doesn't spill into the next UTC day's file. Fallback to
+  // the current local date if a record somehow lacks a parseable ts.
+  const day = (typeof record?.ts === 'string' && /^\d{4}-\d{2}-\d{2}/.test(record.ts))
+    ? record.ts.slice(0, 10)
+    : getDateInTimezone(new Date(), timezone);
   const dir = path.join(historyRoot, id);
   const file = path.join(dir, `${day}.yml`);
   await fs.mkdir(dir, { recursive: true });

@@ -540,6 +540,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     config: configService.getHouseholdAppConfig(householdId, 'scales')
       || configService.reloadHouseholdAppConfig?.(householdId, 'scales')
       || {},
+    timezone: configService.getHouseholdTimezone?.(householdId),
     logger: rootLogger.child({ module: 'food-scale-relay' }),
   });
 
@@ -2307,6 +2308,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     eventBus,
     dataDir,
     persistDir: barcodePersistDir,
+    timezone: configService.getHouseholdTimezone?.(householdId),
     logger: rootLogger.child({ module: 'barcode-relay' }),
     onScan: (relay) => {
       const event = TriggerEvent.create({
