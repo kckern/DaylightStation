@@ -4,6 +4,12 @@
  * Every encoder setting arrives from config — nothing here hardcodes a CRF,
  * scale, or sampling rate. `extraArgs` on each profile is a deliberate escape
  * hatch so ffmpeg tuning never requires a code change.
+ *
+ * Exposed both as free functions (used by the backfill CLI) and as an
+ * injectable `ArchiveEncoder` class (used by the scheduled job), so there is
+ * one implementation behind both entry points.
+ *
+ * @module 1_adapters/camera/ArchiveEncoder
  */
 
 import { spawn } from 'child_process';
@@ -151,3 +157,29 @@ export async function extractAudio({ inputPath, outPath, profile, logger }) {
   await runFfmpeg(args, { logger });
   return outPath;
 }
+
+/**
+ * Injectable façade over the functions above — binds a logger once so callers
+ * do not thread it through every call.
+ */
+export class ArchiveEncoder {
+  #logger;
+
+  constructor({ logger = console } = {}) {
+    this.#logger = logger;
+  }
+
+  encodeSession(args) {
+    return encodeSession({ ...args, logger: this.#logger });
+  }
+
+  encodeTimelapse(args) {
+    return encodeTimelapse({ ...args, logger: this.#logger });
+  }
+
+  extractAudio(args) {
+    return extractAudio({ ...args, logger: this.#logger });
+  }
+}
+
+export default ArchiveEncoder;

@@ -197,6 +197,7 @@ import { MediaJobExecutor } from './3_applications/media/MediaJobExecutor.mjs';
 import { MediaDownloadService } from './3_applications/media/services/MediaDownloadService.mjs';
 import { createFreshVideoJobHandler } from './3_applications/media/FreshVideoJobHandler.mjs';
 import { createCameraLedgerJobHandler } from './3_applications/camera/cameraLedgerJobHandler.mjs';
+import { createCameraArchiveJobHandler } from './3_applications/camera/cameraArchiveJobHandler.mjs';
 import { YtDlpAdapter } from '#adapters/media/YtDlpAdapter.mjs';
 
 // Content composition use case
@@ -2848,6 +2849,15 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   mediaExecutor.register('camera-ledger', createCameraLedgerJobHandler({
     configService,
     logger: rootLogger.child({ module: 'camera-ledger' })
+  }));
+
+  // Camera archive (Pipeline A) — scored session selection under a hard budget
+  // cap, plus day/night timelapses. Scheduled AFTER camera-ledger so the day's
+  // detections exist to select against; without them selection degrades to
+  // duration and bitrate density alone.
+  mediaExecutor.register('camera-archive', createCameraArchiveJobHandler({
+    configService,
+    logger: rootLogger.child({ module: 'camera-archive' })
   }));
 
   const schedulerService = new SchedulerService({
