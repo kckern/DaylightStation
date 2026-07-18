@@ -5,7 +5,7 @@
 export { makeEmptyScore } from './score.js';
 export { makeNote, makeRest, noteDivisions } from './note.js';
 export {
-  initEditor, replacePitch, insertNote, insertRest, deleteNote,
+  initEditor, replacePitch, insertNote, insertRest, deleteNote, deleteBeforeCaret,
   setDuration, toggleDot, toggleTriplet, toggleTie, nudgePitch,
   moveCaret, select, setAttribute, serializeFromEditor,
 } from './editor.js';
