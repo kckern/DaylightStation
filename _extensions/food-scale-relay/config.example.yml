@@ -62,13 +62,15 @@ scales:
 #
 # Two ways a weight reaches nutribot:
 #   AUTO  — the scale rests at a variable load on the shelf (never ~0), so the bridge
-#           learns that resting load as a baseline and pushes a NEW prompt for every
-#           DISTINCT settled value that rises above it. Re-settles within tolerance are
-#           suppressed; returning near baseline ends the session and re-learns the rest.
-#           Weights NEVER expire — a prompt waits until you answer it. Trade-off: the one
-#           moment you flip the scale onto its shelf looks like a placement → one stray
-#           prompt to ignore (it is not repeated).
-#   FORCE — press the ESP button to log the live weight right now, bypassing all gates.
+#           learns that resting load as a baseline. A rise above it posts ONE prompt that
+#           then edits in place as the weight climbs (no message pile-up). Answering it
+#           frees it, so the next load starts fresh; returning near baseline ends the
+#           session and RETRACTS an unanswered prompt (no leftover slop). A placement is
+#           SUPPRESSED when it looks like putting the scale away — it lands in the
+#           storage_weight_g band, or is a heavy_g+ jump right after a burst of recent
+#           posts. Weights NEVER expire — a prompt waits until you answer it.
+#   FORCE — press the ESP button to log the live weight right now, bypassing the suspicion
+#           filter. No-ops when a live prompt already covers ~this weight (no duplicate).
 #           Use it whenever the auto heuristic would miss/mis-gate a real measurement.
 nutribot:
   min_grams: 5              # floor: ignore settled readings below this (noise / near-zero)
