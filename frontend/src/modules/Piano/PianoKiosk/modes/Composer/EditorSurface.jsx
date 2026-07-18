@@ -9,7 +9,7 @@ import { useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import { MusicXmlRenderer } from '../../../../MusicNotation/renderers/MusicXmlRenderer.jsx';
 import { usePianoMidi } from '../../PianoMidiContext.jsx';
 import getLogger from '../../../../../lib/logging/Logger.js';
-import { initEditor, serializeFromEditor, undo, redo } from './model/index.js';
+import { initEditor, serializeFromEditor, undo, redo, makeRest } from './model/index.js';
 import { useComposerInput } from './useComposerInput.js';
 import { useAutosave } from './useAutosave.js';
 import { CaretLayer } from './CaretLayer.jsx';
@@ -38,6 +38,24 @@ export function caretStepIndex(score, caret) {
 // (an untouched blank staff shouldn't shout a status at the kid).
 const STATUS_LABEL = { saving: 'Saving…', saved: 'Saved', invalid: 'Fix note to save', error: "Couldn't save" };
 
+function scoreHasNotes(score) {
+  return (score?.parts || []).some((p) => (p.measures || []).some((m) => (m.notes || []).length > 0));
+}
+
+// Blank-staff render: OSMD cannot engrave a note-less measure (and a MusicXML
+// bar can't be truly empty), so an untouched draft is DISPLAYED as a single
+// full-measure rest — a real clef'd staff, ready to play into. This copy is
+// render-only and NEVER saved: autosave fires only once a real edit dirties the
+// score, by which point it has genuine content and this branch no longer runs.
+function serializeForDisplay(editorState) {
+  if (scoreHasNotes(editorState?.score)) return serializeFromEditor(editorState);
+  const score = editorState.score;
+  const measures = score.parts[0].measures.slice();
+  measures[0] = { ...measures[0], notes: [makeRest({ type: 'whole' })] };
+  const parts = [{ ...score.parts[0], measures }, ...score.parts.slice(1)];
+  return serializeFromEditor({ ...editorState, score: { ...score, parts } });
+}
+
 export function EditorSurface({ initialScore, songId = null, initialRevision = 1, save, create, title, onMaterialized, config = {} }) {
   const [editorState, setEditorState] = useState(() => initEditor(initialScore));
   const [steps, setSteps] = useState([]);
@@ -64,7 +82,7 @@ export function EditorSurface({ initialScore, songId = null, initialRevision = 1
 
   useEffect(() => { logger().info('composer.mounted', { songId }); }, [songId]);
 
-  const musicXml = useMemo(() => serializeFromEditor(editorState), [editorState]);
+  const musicXml = useMemo(() => serializeForDisplay(editorState), [editorState]);
   const onLayout = useCallback((res) => { setSteps(res?.steps || []); }, []);
   const stepIdx = caretStepIndex(editorState.score, editorState.caret);
 
