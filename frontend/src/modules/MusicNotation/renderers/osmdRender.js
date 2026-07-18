@@ -109,6 +109,53 @@ export function buildMeasures(steps) {
   return out;
 }
 
+// OSMD engraves in its own unit space where 1 unit == one staff space, painted at
+// 10 px/unit × osmd.Zoom. Verified empirically 2026-07-18 against OSMD 2.0 by
+// engraving real scores in headless Chromium and comparing the graphical model to
+// the rendered DOM: exact at zoom 1.0 (10.0000 px/unit), 1.4 (13.9994) and 0.75
+// (7.5000), on both axes, with staff-line spacing exactly 1 unit. OSMD does export
+// `unitInPixels` from VexFlowMusicSheetDrawer, but that is not public surface.
+const OSMD_UNIT_PX = 10;
+
+/**
+ * Per-system staff geometry, in the same pixel space as the engraved SVG.
+ *
+ * Read from the GRAPHICAL MODEL rather than the DOM, so it also works on a
+ * note-less staff — a blank draft has no noteheads to measure, but the wet-ink
+ * overlay and the Composer caret still need to know where the staff lines are.
+ * (Confirmed on a whole-measure-rest score: geometry is available, 5 lines,
+ * 10 px spacing at zoom 1.)
+ *
+ * Defensive throughout: any missing OSMD internal yields `[]` (or skips just that
+ * system) so consumers degrade to their prior, geometry-free behavior.
+ * @param {object} osmd
+ * @returns {Array<{system:number,top:number,left:number,right:number,lineSpacing:number}>}
+ */
+export function extractStaffGeometry(osmd) {
+  try {
+    const zoom = osmd?.Zoom ?? osmd?.zoom ?? 1;
+    const px = (u) => u * OSMD_UNIT_PX * zoom;
+    const systems = osmd?.GraphicSheet?.MusicPages?.[0]?.MusicSystems || [];
+    const out = [];
+    systems.forEach((sys, i) => {
+      const box = sys?.StaffLines?.[0]?.PositionAndShape;
+      const pos = box?.AbsolutePosition;
+      if (!pos) return; // this system isn't laid out yet — skip it, keep the rest
+      out.push({
+        system: i,
+        top: px(pos.y),
+        left: px(pos.x),
+        right: px(pos.x + (box.Size?.width ?? 0)),
+        lineSpacing: px(1), // staff-line spacing IS one OSMD unit
+      });
+    });
+    return out;
+  } catch (err) {
+    logger().warn('osmd.staff-geometry-failed', { error: err?.message });
+    return [];
+  }
+}
+
 /**
  * The engraved SVG `<g>` for a note's notehead (OSMD's per-note group: notehead,
  * stem, flag). The light-up overlay recolors this element directly instead of
@@ -242,7 +289,7 @@ function makeCursorWalk(osmd) {
         bottom: box.bottom,
       };
     });
-    return { events, notes, tempoEntries, steps, measures };
+    return { events, notes, tempoEntries, steps, measures, staves: extractStaffGeometry(osmd) };
   }
 
   return { cursor, processStep, finalize };
@@ -275,7 +322,9 @@ function leadMidi(stepNotes) {
  */
 export function extractEvents(osmd) {
   const cursor = osmd.cursor;
-  if (!cursor) return { events: [], notes: [], tempoEntries: [], steps: [], measures: [] };
+  // No cursor == a score with nothing to walk (the blank-draft case) — still
+  // publish staff geometry, which is exactly what a blank staff's caret needs.
+  if (!cursor) return { events: [], notes: [], tempoEntries: [], steps: [], measures: [], staves: extractStaffGeometry(osmd) };
   const walk = makeCursorWalk(osmd);
   const cursorEl = cursor.cursorElement;
   try {
@@ -327,7 +376,7 @@ export async function extractLayoutSliced(osmd, opts = {}) {
     shouldAbort = () => false,
   } = opts;
   const cursor = osmd?.cursor;
-  if (!cursor) { onProgress?.(1); return { events: [], notes: [], tempoEntries: [], steps: [], measures: [] }; }
+  if (!cursor) { onProgress?.(1); return { events: [], notes: [], tempoEntries: [], steps: [], measures: [], staves: extractStaffGeometry(osmd) }; }
 
   const walk = makeCursorWalk(osmd);
 
