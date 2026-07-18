@@ -49,6 +49,12 @@ export function normalizeScaleNutribotConfig(raw = {}) {
     baselineToleranceG: num(nb.baseline_tolerance_g, 6),
     placementDeltaG: num(nb.placement_delta_g, 10),
     dedupDeltaG: num(nb.dedup_delta_g, 5),
+    storageWeightG: num(nb.storage_weight_g, 0),
+    storageToleranceG: num(nb.storage_tolerance_g, 15),
+    suspicionWindowSec: num(nb.suspicion_window_sec, 90),
+    stormMinPushes: num(nb.storm_min_pushes, 2),
+    heavyG: num(nb.heavy_g, 300),
+    forceToleranceG: num(nb.force_tolerance_g, 10),
     containers: {
       thresholdG: num(nb.containers?.threshold_g, DEFAULT_CONTAINERS.thresholdG),
       items,
