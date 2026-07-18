@@ -49,8 +49,11 @@ export const KEY_LEGEND = [
   {
     group: 'Add notes',
     keys: [
-      { label: '4', code: 'Numpad4', does: 'Arm / disarm. When ARMED, the piano writes notes; when off, play freely without changing the song.' },
-      { label: '🎹', code: null, does: 'With 4 armed, play a piano key to add that note at the chosen length.' },
+      // Copy tracks the toolbar's Write button (DurationPalette.jsx). The help
+      // panel and the button must name the same thing, or the numpad key and
+      // the on-screen control read as two unrelated features.
+      { label: '4', code: 'Numpad4', does: 'Turn Write on or off. With Write ON, the piano writes notes; with it off, play freely without changing the song.' },
+      { label: '🎹', code: null, does: 'With Write on, play a piano key to add that note at the chosen length.' },
       { label: '0', code: 'Numpad0', does: 'Add a rest' },
     ],
   },

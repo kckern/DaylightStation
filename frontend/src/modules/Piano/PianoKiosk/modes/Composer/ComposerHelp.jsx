@@ -21,7 +21,7 @@ export function ComposerHelp({ onClose }) {
         <p className="composer-help__lede">
           The <strong>number pad</strong> picks <strong>how long</strong> a note is.
           The <strong>piano</strong> picks <strong>which note</strong> it is.
-          Press <strong>4</strong> to arm, choose a length, then play.
+          Press <strong>4</strong> to turn <strong>Write</strong> on, choose a length, then play.
         </p>
         {KEY_LEGEND.map((section) => (
           <div key={section.group} className="composer-help__group">

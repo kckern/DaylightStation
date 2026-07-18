@@ -355,7 +355,7 @@ describe('EditorSurface — empty-state hint', () => {
     // renamed (a later task renames it to "Write"), this fails and the hint
     // string must be updated with it.
     const armLabel = container.querySelector('.composer-palette__arm').textContent.trim();
-    expect(armLabel).toBe('Play');
+    expect(armLabel).toBe('Write');
     expect(hint(container).textContent).toContain(armLabel);
   });
 
@@ -382,5 +382,36 @@ describe('EditorSurface — empty-state hint', () => {
     score.parts[0].measures = [{ number: 1, notes: [makeNote({ step: 'C', octave: 4 })] }];
     const { container } = render(<EditorSurface initialScore={score} songId="x" initialRevision={1} save={vi.fn()} config={{}} />);
     expect(hint(container)).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Palette WIRING. DurationPalette.test.jsx proves the button calls its prop;
+// this proves EditorSurface hands it the hook's real deleteBack — the seam that
+// was simply missing (the hook returned it, nothing consumed it), so a touch
+// user could write notes and never remove one.
+// ---------------------------------------------------------------------------
+describe('EditorSurface — delete button wiring', () => {
+  const hint = (c) => c.querySelector('.composer-page__hint');
+  const del = () => screen.getByRole('button', { name: /delete the last note/i });
+  beforeEach(() => { engraves.length = 0; midiHandler = null; layoutToPublish = null; vi.useFakeTimers(); });
+  afterEach(() => vi.useRealTimers());
+
+  it('removes the note just played (the wet note goes, the invitation comes back)', () => {
+    layoutToPublish = { steps: [], staves: [{ system: 0, top: 100, left: 20, right: 900, lineSpacing: 10 }] };
+    const { container } = render(<EditorSurface initialScore={makeEmptyScore()} songId="x" initialRevision={1} save={vi.fn()} config={{ wetink_idle_ms: 600 }} />);
+    playNotes(1);
+    expect(container.querySelectorAll('.composer-wet-note__head')).toHaveLength(1);
+    act(() => { fireEvent.click(del()); });
+    expect(container.querySelectorAll('.composer-wet-note__head')).toHaveLength(0);
+    expect(hint(container)).toBeTruthy();
+  });
+
+  it('is a harmless no-op on an empty score — a kid will tap it first, before writing anything', () => {
+    const { container } = render(<EditorSurface initialScore={makeEmptyScore()} songId="x" initialRevision={1} save={vi.fn()} config={{}} />);
+    act(() => { fireEvent.click(del()); });
+    act(() => { fireEvent.click(del()); });
+    expect(hint(container)).toBeTruthy();
+    expect(screen.getByTestId('renderer')).toBeInTheDocument();
   });
 });

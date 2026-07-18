@@ -150,18 +150,26 @@
     gap: 0.35rem;
 
     button {
-      min-width: 2.6rem;
-      min-height: 2.6rem;
+      min-width: 3.4rem;
+      min-height: 3.4rem; // ~54px: a child's fingertip on an 8" tablet
       padding: 0.2rem 0.6rem;
       border-radius: 10px;
       border: 1px solid var(--piano-border, #2c2c3a);
       background: var(--piano-surface, #16161e);
       color: var(--piano-fg, #dde);
-      font-size: 1.2rem;
+      font-size: 1.4rem;
       line-height: 1;
       cursor: pointer;
       &:hover:not(:disabled) { border-color: var(--piano-border, #4a4a66); }
-      &:disabled { opacity: 0.32; cursor: default; }
+      // Disabled must still read as a CONTROL that is currently inert, not as
+      // absence. At 0.32 on this dark chrome undo/redo were ghosts a kid would
+      // not register as buttons at all — so they'd never learn undo exists.
+      // The dashed border says "here, just not now" without inviting a tap.
+      &:disabled {
+        opacity: 0.55;
+        border-style: dashed;
+        cursor: default;
+      }
     }
   }
 
@@ -199,10 +207,10 @@
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    gap: 0.05rem;
-    min-width: 2.6rem;
-    min-height: 2.9rem;
-    padding: 0.2rem 0.35rem;
+    gap: 0.15rem;
+    min-width: 3.4rem;
+    min-height: 3.4rem; // ~54px, matching the toolbar's history buttons
+    padding: 0.25rem 0.35rem;
     border: 1px solid transparent;
     border-radius: 9px;
     background: transparent;
@@ -217,15 +225,41 @@
     }
   }
 
-  &__key {
+  // The numpad hint, drawn as a physical KEYCAP — a small bordered chip in the
+  // dark surface colour. Bare digits under noteheads collide head-on with piano
+  // FINGERING notation (1-5 under a note means "which finger" in every method
+  // book), so the chrome around the digit is doing real work: it says "press
+  // this key", not "use this finger".
+  &__keycap {
+    display: inline-block;
+    min-width: 1.15rem;
+    padding: 0.05rem 0.25rem;
+    border: 1px solid var(--piano-border, #3a3a4c);
+    border-radius: 4px;
+    background: var(--piano-surface, #16161e);
     font: 700 0.7rem 'Roboto Condensed', sans-serif;
-    opacity: 0.75;
+    line-height: 1.3;
+    text-align: center;
+    opacity: 0.85;
+  }
+
+  // On the ACTIVE (accent-filled) button the keycap must invert, or a dark chip
+  // on the accent fill goes muddy and a light one disappears into it.
+  &__dur.is-active &__keycap {
+    border-color: var(--piano-accent-ink, #06210f);
+    background: var(--piano-accent-ink, #06210f);
+    color: var(--piano-accent, #2ec46f);
+    opacity: 1;
   }
 
   &__mod,
   &__arm {
-    min-height: 2.9rem;
-    padding: 0.3rem 0.8rem;
+    // min-WIDTH as well as height: the dot button's content is a single narrow
+    // glyph, so padding alone left it a ~41px target next to 54px neighbours —
+    // the smallest thing on a toolbar built for a child's finger.
+    min-width: 3.4rem;
+    min-height: 3.4rem;
+    padding: 0.3rem 0.9rem;
     border-radius: 10px;
     border: 1px solid var(--piano-border, #2c2c3a);
     background: var(--piano-surface, #16161e);
