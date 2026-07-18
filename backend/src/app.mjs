@@ -225,6 +225,7 @@ import { createArtRouter } from './4_api/v1/routers/art.mjs';
 import { createPianoRouter } from './4_api/v1/routers/piano.mjs';
 import { PianoContainer } from './3_applications/piano/PianoContainer.mjs';
 import { YamlPianoStudioDatastore } from './1_adapters/piano/YamlPianoStudioDatastore.mjs';
+import { ComposerSongStore } from './3_applications/piano/ComposerSongStore.mjs';
 import { createFeedbackRouter } from './4_api/v1/routers/feedback.mjs';
 import { createGameshowRouter } from './4_api/v1/routers/gameshow.mjs';
 import { GameShowService } from './3_applications/gameshow/GameShowService.mjs';
@@ -1920,10 +1921,15 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     userService,
     logger: rootLogger.child({ module: 'piano-datastore' })
   });
+  const composerSongStore = new ComposerSongStore({
+    configService,
+    logger: rootLogger.child({ module: 'composer-store' })
+  });
   const pianoContainer = new PianoContainer({
     studioDatastore: pianoStudioDatastore,
     fitnessPlayableService,
     userVideoProgressStore: contentServices.userVideoProgressStore,
+    composerSongStore,
     configService,
     logger: rootLogger.child({ module: 'piano-api' })
   });
