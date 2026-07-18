@@ -13,6 +13,13 @@
 // NOTE: `midiToPitch` is a real editor.js export but is NOT re-exported from the
 // model barrel (./model/index.js), so it's imported directly from editor.js.
 // Everything else the hook needs comes through the barrel.
+//
+// HEADS-UP for anyone hosting Composer inside another shell: `Backspace` is bound
+// to "back / previous" elsewhere in this codebase — lib/keyboard/keyboardConfig.js,
+// Emulator/ui/useArcadeInput.js, Player/renderers/WebViewRenderer.jsx. PianoKiosk
+// imports NONE of those, so there is no conflict today and this hook's Backspace
+// (delete the note before the caret) is unambiguous. If Composer is ever mounted
+// under one of those shells, the two bindings will fight over the same key.
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { applyCommand, insertNote, insertRest, deleteNote, deleteBeforeCaret, moveCaret } from './model/index.js';
 import { midiToPitch } from './model/editor.js';
@@ -119,6 +126,12 @@ export function useComposerInput({ setEditorState, subscribe, logger }) {
 
   useEffect(() => {
     const onKey = (e) => {
+      // Listener is on `window` and preventDefault()s every mapped code, so it
+      // must stand down inside text entry. Otherwise Backspace/Delete get
+      // swallowed (characters type but never erase) AND edit the score behind
+      // the field. Composer gains a rename field in a later unit.
+      const t = e.target;
+      if (t?.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t?.tagName || '')) return;
       const m = mapKey(e.code);
       if (!m) return;
       e.preventDefault();

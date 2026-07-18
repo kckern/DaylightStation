@@ -69,6 +69,46 @@ describe('useComposerInput delete keys', () => {
   });
 });
 
+describe('useComposerInput text-entry guard', () => {
+  // The keydown listener lives on `window`, so without a guard a Composer text
+  // field (the rename box, added in a later unit) would be un-editable: Backspace
+  // would be preventDefault()ed away AND would delete a note behind the field.
+  it.each(['Backspace', 'Delete', 'Numpad0'])('%s targeting an <input> neither edits the score nor is preventDefault()ed', (code) => {
+    let state = initEditor(makeEmptyScore());
+    const setEditorState = vi.fn((fn) => { state = typeof fn === 'function' ? fn(state) : fn; });
+    let midiFn;
+    renderHook(() => useComposerInput({ setEditorState, subscribe: (fn) => { midiFn = fn; return () => {}; } }));
+    act(() => { window.dispatchEvent(new KeyboardEvent('keydown', { code: 'Numpad4' })); });
+    act(() => { midiFn({ type: 'note_on', note: 60, velocity: 80 }); });
+    const before = state;
+
+    const input = document.createElement('input');
+    document.body.appendChild(input);
+    const evt = new KeyboardEvent('keydown', { code, bubbles: true, cancelable: true });
+    act(() => { input.dispatchEvent(evt); });
+
+    expect(state).toBe(before); // score untouched
+    expect(evt.defaultPrevented).toBe(false); // the field keeps its native behavior
+    input.remove();
+  });
+
+  it('still handles a key targeting a non-input element', () => {
+    let state = initEditor(makeEmptyScore());
+    const setEditorState = vi.fn((fn) => { state = typeof fn === 'function' ? fn(state) : fn; });
+    let midiFn;
+    renderHook(() => useComposerInput({ setEditorState, subscribe: (fn) => { midiFn = fn; return () => {}; } }));
+    act(() => { window.dispatchEvent(new KeyboardEvent('keydown', { code: 'Numpad4' })); });
+    act(() => { midiFn({ type: 'note_on', note: 60, velocity: 80 }); });
+
+    const div = document.createElement('div');
+    document.body.appendChild(div);
+    act(() => { div.dispatchEvent(new KeyboardEvent('keydown', { code: 'Backspace', bubbles: true, cancelable: true })); });
+
+    expect(state.score.parts[0].measures[0].notes).toHaveLength(0);
+    div.remove();
+  });
+});
+
 describe('useComposerInput MIDI entry', () => {
   it('armed note-on inserts a note at the sticky duration; disarmed does not edit', () => {
     let state = initEditor(makeEmptyScore());
