@@ -408,6 +408,9 @@ async function materializeUntagged({ config, bcfg, cameraCfg, day, segments, sun
       files: phaseFiles[phase],
       outPath,
       profile: { ...profile, videoCodec: config.timelapse.videoCodec },
+      // scratch list stays in workDir — a stray .concat.txt beside the archived
+      // outputs reads like an artifact of the archive, not of the build
+      listPath: path.join(workDir, `timelapse-${phase}.concat.txt`),
     });
     outputs.timelapse[phase] = path.basename(outPath);
   }
