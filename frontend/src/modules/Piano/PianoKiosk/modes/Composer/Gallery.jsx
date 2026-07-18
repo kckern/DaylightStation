@@ -1,4 +1,7 @@
-// frontend/src/modules/Piano/PianoKiosk/modes/Composer/Gallery.jsx
+// Gallery.jsx — the "Songs" view: the kid's saved compositions. Secondary to the
+// blank-staff editor (reached via the bottom bar's "☰ Songs"); a fresh song is
+// started from the bar's "＋ New song", so this view is purely a picker. Empty /
+// loading / grid states, tidily aligned.
 import { useEffect, useState } from 'react';
 
 export function Gallery({ list, onOpen, onNew }) {
@@ -7,18 +10,21 @@ export function Gallery({ list, onOpen, onNew }) {
 
   return (
     <div className="composer-gallery">
-      <div className="composer-gallery__head">
-        <button onClick={onNew}>New Song</button>
-      </div>
+      <h2 className="composer-gallery__title">Your songs</h2>
       {songs == null ? (
-        <p className="composer-gallery__loading">Loading…</p>
+        <p className="composer-gallery__empty">Loading…</p>
       ) : songs.length === 0 ? (
-        <p className="composer-gallery__empty">No songs yet — tap New Song to start writing.</p>
+        <button type="button" className="composer-gallery__cta" onClick={onNew}>
+          <span className="composer-gallery__cta-mark">＋</span>
+          <span>No songs yet — start a new one</span>
+        </button>
       ) : (
         <ul className="composer-gallery__grid">
           {songs.map((s) => (
             <li key={s.id}>
-              <button className="composer-gallery__tile" onClick={() => onOpen(s.id)}>{s.title}</button>
+              <button type="button" className="composer-gallery__tile" onClick={() => onOpen(s.id)}>
+                {s.title || 'Untitled'}
+              </button>
             </li>
           ))}
         </ul>

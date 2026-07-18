@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render, screen, fireEvent } from '@testing-library/react';
 vi.mock('../../PianoMidiContext.jsx', () => ({ usePianoMidi: () => ({ subscribe: () => () => {} }) }));
 vi.mock('../../../../MusicNotation/renderers/MusicXmlRenderer.jsx', () => ({
   MusicXmlRenderer: ({ musicXml, children }) => (<div data-testid="renderer" data-xml-len={String(musicXml || '').length}>{children}</div>),
@@ -8,11 +8,23 @@ import { EditorSurface, caretStepIndex } from './EditorSurface.jsx';
 import { makeEmptyScore, makeNote } from './model/index.js';
 
 describe('EditorSurface', () => {
-  it('mounts, renders the score xml, and shows the HUD', () => {
+  it('mounts, renders the score xml, and shows the duration palette', () => {
     render(<EditorSurface initialScore={makeEmptyScore()} songId="x" initialRevision={1} save={vi.fn()} config={{}} />);
     expect(screen.getByTestId('renderer')).toBeInTheDocument();
     expect(Number(screen.getByTestId('renderer').getAttribute('data-xml-len'))).toBeGreaterThan(0);
-    expect(screen.getByRole('status')).toBeInTheDocument(); // the HUD
+    // Self-documenting palette: the quarter-note button (numpad 5) is present,
+    // and it starts active (quarter is the default sticky duration).
+    const quarter = screen.getByRole('button', { name: /quarter note \(numpad 5\)/i });
+    expect(quarter).toBeInTheDocument();
+    expect(quarter).toHaveAttribute('aria-pressed', 'true');
+  });
+
+  it('tapping a duration button selects it (touch path mirrors the numpad)', () => {
+    render(<EditorSurface initialScore={makeEmptyScore()} songId="x" initialRevision={1} save={vi.fn()} config={{}} />);
+    const half = screen.getByRole('button', { name: /half note \(numpad 7\)/i });
+    fireEvent.click(half);
+    expect(half).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('button', { name: /quarter note \(numpad 5\)/i })).toHaveAttribute('aria-pressed', 'false');
   });
 });
 
