@@ -9,7 +9,7 @@ import { usePianoPlayback } from '../../PianoPlaybackContext.jsx';
 import { usePianoBreadcrumb } from '../../PianoBreadcrumbContext.jsx';
 import useReloadGuard from '../../useReloadGuard.js';
 import { buildTempoMap, buildStepTimeline, scaleTimeline } from '../../../../MusicNotation/scoreTimeline.js';
-import { useScoreTransport } from './useScoreTransport.js';
+import { useScoreTransport } from '../../score/useScoreTransport.js';
 import { tweenScrollTo, cancelScrollTween } from './scrollTween.js';
 import { partsOf, cyclePart, buildPlayTimeline, youMidisAt } from './playParts.js';
 import { staffLabels, defaultActiveParts, expectedMidisAtStep } from './activeParts.js';
