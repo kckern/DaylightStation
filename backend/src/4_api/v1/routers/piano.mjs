@@ -144,37 +144,58 @@ export function createPianoRouter({ pianoContainer, logger = console }) {
   // ── Compositions (Composer mode, per-user) ──────────────────────────────────
   router.get('/users/:userId/compositions', asyncHandler((req, res) => {
     const list = cs.list(req.params.userId);
-    if (list === null) return res.status(400).json({ error: 'Invalid user' });
+    if (list === null) {
+      logger.warn?.('composer.song.list-invalid-user', { userId: req.params.userId });
+      return res.status(400).json({ error: 'Invalid user' });
+    }
+    logger.info?.('composer.song.list', { userId: req.params.userId, count: list.length });
     res.json({ compositions: list });
   }));
 
   router.get('/users/:userId/compositions/:id', asyncHandler((req, res) => {
     const got = cs.get(req.params.userId, req.params.id);
-    if (!got) return res.status(404).json({ error: 'Not found' });
+    if (!got) {
+      logger.warn?.('composer.song.get-not-found', { userId: req.params.userId, id: req.params.id });
+      return res.status(404).json({ error: 'Not found' });
+    }
+    logger.info?.('composer.song.get', { userId: req.params.userId, id: req.params.id, revision: got.meta?.revision, xmlLen: got.musicxml?.length || 0 });
     res.json(got);
   }));
 
   router.post('/users/:userId/compositions', asyncHandler((req, res) => {
-    if (!cs.isKnownUser(req.params.userId)) return res.status(400).json({ error: 'Invalid user' });
+    if (!cs.isKnownUser(req.params.userId)) {
+      logger.warn?.('composer.song.create-invalid-user', { userId: req.params.userId });
+      return res.status(400).json({ error: 'Invalid user' });
+    }
     const { title, musicxml, meta } = req.body || {};
-    if (!isValidScore(musicxml)) return res.status(400).json({ error: 'musicxml must be a valid score' });
+    if (!isValidScore(musicxml)) {
+      logger.warn?.('composer.song.create-invalid-xml', { userId: req.params.userId, xmlLen: musicxml?.length || 0 });
+      return res.status(400).json({ error: 'musicxml must be a valid score' });
+    }
     const rec = cs.create(req.params.userId, { title, musicxml, meta });
+    logger.info?.('composer.song.create', { userId: req.params.userId, id: rec?.id, title: rec?.title, revision: rec?.revision });
     res.status(201).json(rec);
   }));
 
   router.put('/users/:userId/compositions/:id', asyncHandler((req, res) => {
     const { musicxml, meta, revision } = req.body || {};
     if (!isValidScore(musicxml)) {
-      logger.info?.('composer.song.save-invalid-xml', { userId: req.params.userId, id: req.params.id });
+      logger.warn?.('composer.song.save-invalid-xml', { userId: req.params.userId, id: req.params.id });
       return res.status(400).json({ error: 'musicxml failed validation' });
     }
     const r = cs.save(req.params.userId, req.params.id, { musicxml, meta, revision });
-    if (r.conflict) return res.status(409).json({ error: 'revision conflict', current: r.current });
+    if (r.conflict) {
+      logger.warn?.('composer.song.save-conflict', { userId: req.params.userId, id: req.params.id, sentRevision: revision, current: r.current });
+      return res.status(409).json({ error: 'revision conflict', current: r.current });
+    }
+    logger.info?.('composer.song.save', { userId: req.params.userId, id: req.params.id, revision: r.revision, xmlLen: musicxml?.length || 0 });
     res.json(r);
   }));
 
   router.delete('/users/:userId/compositions/:id', asyncHandler((req, res) => {
-    res.json({ ok: cs.remove(req.params.userId, req.params.id), id: req.params.id });
+    const ok = cs.remove(req.params.userId, req.params.id);
+    logger.info?.('composer.song.delete', { userId: req.params.userId, id: req.params.id, ok });
+    res.json({ ok, id: req.params.id });
   }));
 
   router.get('/compositions/shared', asyncHandler((req, res) => {

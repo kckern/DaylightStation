@@ -5,6 +5,14 @@
 // This is the seam that ties Tasks 4-7 together into something a mode router
 // can mount. It may edit a DRAFT (songId === null): the first edit materializes
 // the song via `create`, and `onMaterialized(id, revision)` reports the new id.
+//
+// OBSERVABILITY: this file is the diagnostic hub for the editor. Under the
+// `composer-editor` child logger it emits the full edit→engrave→layout→caret
+// loop — model state on every edit (debug), the engrave output + blank-staff
+// fallback (debug), OSMD layout results (sampled, since resize re-fires),
+// caret step resolution (debug), and undo/redo (info) — so any "note didn't
+// appear / caret drifted / staff blank / didn't save" report is traceable from
+// the logs alone.
 import { useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import { MusicXmlRenderer } from '../../../../MusicNotation/renderers/MusicXmlRenderer.jsx';
 import { usePianoMidi } from '../../PianoMidiContext.jsx';
@@ -14,8 +22,6 @@ import { useComposerInput } from './useComposerInput.js';
 import { useAutosave } from './useAutosave.js';
 import { CaretLayer } from './CaretLayer.jsx';
 import { DurationPalette } from './DurationPalette.jsx';
-
-const logger = () => getLogger().child({ component: 'piano-composer' });
 
 // Caret model position → engraved step index. The renderer's buildSteps
 // (osmdRender.js) groups same-onset notes — chords — into a SINGLE step, but
@@ -42,6 +48,12 @@ function scoreHasNotes(score) {
   return (score?.parts || []).some((p) => (p.measures || []).some((m) => (m.notes || []).length > 0));
 }
 
+function countNotes(score) {
+  let n = 0;
+  for (const p of score?.parts || []) for (const m of p.measures || []) n += (m.notes || []).length;
+  return n;
+}
+
 // Blank-staff render: OSMD cannot engrave a note-less measure (and a MusicXML
 // bar can't be truly empty), so an untouched draft is DISPLAYED as a single
 // full-measure rest — a real clef'd staff, ready to play into. This copy is
@@ -57,10 +69,11 @@ function serializeForDisplay(editorState) {
 }
 
 export function EditorSurface({ initialScore, songId = null, initialRevision = 1, save, create, title, onMaterialized, config = {} }) {
+  const logger = useMemo(() => getLogger().child({ component: 'composer-editor' }), []);
   const [editorState, setEditorState] = useState(() => initEditor(initialScore));
   const [steps, setSteps] = useState([]);
   const { subscribe } = usePianoMidi();
-  const { hud, setDuration, toggleDot, toggleArm, addRest } = useComposerInput({ setEditorState, subscribe });
+  const { hud, setDuration, toggleDot, toggleArm, addRest } = useComposerInput({ setEditorState, subscribe, logger });
   const { status, flush } = useAutosave({
     editorState,
     id: songId,
@@ -70,6 +83,7 @@ export function EditorSurface({ initialScore, songId = null, initialRevision = 1
     title,
     onMaterialized,
     idleMs: config.autosave_idle_ms || 3000,
+    logger,
   });
 
   // flush() closes over the LATEST autosave state via useAutosave's own
@@ -78,18 +92,74 @@ export function EditorSurface({ initialScore, songId = null, initialRevision = 1
   // (autosave-on-exit: don't lose the last few keystrokes' edits).
   const flushRef = useRef(flush);
   flushRef.current = flush;
-  useEffect(() => () => { flushRef.current?.(); }, []);
+  const songIdRef = useRef(songId);
+  songIdRef.current = songId;
 
-  useEffect(() => { logger().info('composer.mounted', { songId }); }, [songId]);
+  // Mount / unmount. songId in the mount log is the value at MOUNT (null for a
+  // fresh draft); the unmount log reads the ref so a draft that materialized
+  // mid-life reports the id it ended up with.
+  useEffect(() => {
+    logger.info('composer.editor.mounted', { songId: songId ?? null, isDraft: songId == null, initialRevision });
+    return () => {
+      logger.info('composer.editor.unmounted', { songId: songIdRef.current ?? null });
+      flushRef.current?.(); // autosave-on-exit
+    };
+  }, [logger]); // eslint-disable-line react-hooks/exhaustive-deps -- mount-once lifecycle log
 
   const musicXml = useMemo(() => serializeForDisplay(editorState), [editorState]);
-  const onLayout = useCallback((res) => { setSteps(res?.steps || []); }, []);
+
+  // Model state + engrave output on EVERY edit (debug). One record per editorState
+  // change carries the whole picture: note/measure counts, caret, dirty/revision,
+  // undo depth, the engraved XML length, and whether the blank-staff fallback ran.
+  useEffect(() => {
+    const s = editorState;
+    logger.debug('composer.editor.state', {
+      measures: s.score?.parts?.[0]?.measures?.length || 0,
+      notes: countNotes(s.score),
+      caret: { measureIdx: s.caret.measureIdx, noteIdx: s.caret.noteIdx },
+      dirty: s.dirty,
+      revision: s.revision,
+      historyPast: s.history?.past?.length || 0,
+      historyFuture: s.history?.future?.length || 0,
+      xmlLen: musicXml.length,
+      blankStaff: !scoreHasNotes(s.score),
+    });
+  }, [editorState, musicXml, logger]);
+
+  // OSMD layout result. Sampled — a ResizeObserver re-engrave re-fires onLayout
+  // without any edit, so an unsampled log could storm on a flapping viewport.
+  const onLayout = useCallback((res) => {
+    const st = res?.steps || [];
+    setSteps(st);
+    logger.sampled('composer.editor.layout', { steps: st.length, width: res?.width, height: res?.height }, { maxPerMinute: 30, aggregate: true });
+  }, [logger]);
+
   const stepIdx = caretStepIndex(editorState.score, editorState.caret);
+
+  // Caret resolution: where the engraved caret landed vs the model caret. Keyed
+  // on stepIdx so it logs on movement, not on every render.
+  useEffect(() => {
+    logger.debug('composer.editor.caret', {
+      stepIdx,
+      measureIdx: editorState.caret.measureIdx,
+      noteIdx: editorState.caret.noteIdx,
+      engravedSteps: steps.length,
+      resolved: steps.length > 0 && stepIdx <= steps.length,
+    });
+  }, [stepIdx, logger]); // eslint-disable-line react-hooks/exhaustive-deps -- fire on caret-step change
 
   const canUndo = (editorState.history?.past?.length || 0) > 0;
   const canRedo = (editorState.history?.future?.length || 0) > 0;
-  const doUndo = useCallback(() => setEditorState((s) => undo(s)), []);
-  const doRedo = useCallback(() => setEditorState((s) => redo(s)), []);
+  const doUndo = useCallback(() => {
+    if (!canUndo) return;
+    logger.info('composer.editor.undo', { remainingPast: (editorState.history?.past?.length || 1) - 1 });
+    setEditorState((s) => undo(s));
+  }, [canUndo, editorState, logger]);
+  const doRedo = useCallback(() => {
+    if (!canRedo) return;
+    logger.info('composer.editor.redo', { remainingFuture: (editorState.history?.future?.length || 1) - 1 });
+    setEditorState((s) => redo(s));
+  }, [canRedo, editorState, logger]);
   const statusLabel = STATUS_LABEL[status] || '';
 
   return (
