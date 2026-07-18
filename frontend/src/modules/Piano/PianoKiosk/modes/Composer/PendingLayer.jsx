@@ -42,6 +42,17 @@ const bottomLineDiatonic = (clef) => (clef?.sign === 'F' ? 18 : 30);
  */
 const staffPosition = (pitch, clef) => absDiatonic(pitch) - bottomLineDiatonic(clef);
 
+// Wet-ink glyph geometry, in staff-line-spacing units (the engraving zoom
+// varies, so nothing here can be a pixel constant). Notehead proportions come
+// from DurationPalette's NoteGlyph (rx 5 / ry 3.4), rescaled.
+//
+// EXPORTED because EditorSurface must agree with them: it computes `anchorX`
+// (where note 0 paints) and the wet caret position (which clears the LAST
+// note's right edge) from the same numbers. Tuning note spacing here without
+// them would silently drift the anchor and the caret off the glyphs.
+export const WET_ADVANCE_UNITS = 2.4; // note centre → next note centre
+export const WET_RX_UNITS = 0.62;     // notehead half-width
+
 const MIDDLE_LINE = 4; // position of the centre staff line — the stem-flip point
 const TOP_LINE = 8; // 5 lines, so the top line is 8 half-steps up
 
@@ -55,12 +66,10 @@ export function PendingLayer({ staves, anchorX, anchorSystem = 0, pending = [], 
   const bottomLineY = top + lineSpacing * 4;
   const yFor = (position) => bottomLineY - position * half;
 
-  // Notehead proportions taken from DurationPalette's NoteGlyph (rx 5 / ry 3.4)
-  // but expressed against lineSpacing, since the engraving zoom varies.
-  const rx = lineSpacing * 0.62;
+  const rx = lineSpacing * WET_RX_UNITS;
   const ry = lineSpacing * 0.42;
   const stemLen = lineSpacing * 3.5;
-  const advance = lineSpacing * 2.4;
+  const advance = lineSpacing * WET_ADVANCE_UNITS;
   // Clamp on the notehead's right EDGE, not its centre, so wet ink never spills
   // past the end of the system into the margin.
   const maxX = right - rx;

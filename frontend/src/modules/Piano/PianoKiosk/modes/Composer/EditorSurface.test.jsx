@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, act } from '@testing-library/react';
+import { useEffect } from 'react';
 
 // Capture the MIDI callback so tests can play real notes into the editor.
 let midiHandler = null;
@@ -10,13 +11,19 @@ vi.mock('../../PianoMidiContext.jsx', () => ({
 // OSMD engrave. The whole point of the two-plane split is that this list does
 // NOT grow per keypress.
 const engraves = [];
+// Fed back through onLayout so tests can place the overlays against a known
+// staff geometry, the way a real OSMD extract would.
+let layoutToPublish = null;
 vi.mock('../../../../MusicNotation/renderers/MusicXmlRenderer.jsx', () => ({
-  MusicXmlRenderer: ({ musicXml, children }) => {
+  MusicXmlRenderer: ({ musicXml, onLayout, children }) => {
     if (engraves[engraves.length - 1] !== musicXml) engraves.push(musicXml);
+    useEffect(() => { if (layoutToPublish) onLayout?.(layoutToPublish); }, [musicXml, onLayout]);
     return (<div data-testid="renderer" data-xml-len={String(musicXml || '').length}>{children}</div>);
   },
 }));
 import { EditorSurface, caretStepIndex, wetInkAnchor, serializeForDisplay } from './EditorSurface.jsx';
+import { CARET_GAP, CARET_WIDTH } from './CaretLayer.jsx';
+import { WET_ADVANCE_UNITS, WET_RX_UNITS } from './PendingLayer.jsx';
 import { makeEmptyScore, makeNote } from './model/index.js';
 
 /** Arm note entry (numpad 4) and play `n` middle-C note-ons. */
@@ -104,7 +111,7 @@ describe('caretStepIndex', () => {
 // Two-plane render (spec §2.1): the settled engrave must NOT rebuild per keypress.
 // ---------------------------------------------------------------------------
 describe('EditorSurface — settled engrave vs wet ink', () => {
-  beforeEach(() => { engraves.length = 0; midiHandler = null; vi.useFakeTimers(); });
+  beforeEach(() => { engraves.length = 0; midiHandler = null; layoutToPublish = null; vi.useFakeTimers(); });
   afterEach(() => vi.useRealTimers());
 
   it('does not re-engrave while notes are being entered, then engraves once on idle', () => {
@@ -172,12 +179,34 @@ describe('wetInkAnchor', () => {
     expect(wetInkAnchor({ steps, staves, caretMeasureIdx: 1 })).toEqual({ x: 100, system: 1 });
   });
 
-  // Last-resort clamp: no next system to wrap to, so stay inside this one.
-  it('never anchors past the end of the system', () => {
+  // Tier 1 clamp: the bar is already engraved on THIS system, so wrapping is
+  // not an option and the anchor simply stays in bounds.
+  it('never anchors past the end of the system (tier 1)', () => {
     const tight = [staves[0]];
     const steps = [step(0, 510, 100)];
     const a = wetInkAnchor({ steps, staves: tight, caretMeasureIdx: 0 });
     expect(a.x).toBeLessThanOrEqual(520);
+    expect(a.system).toBe(0);
+  });
+
+  // Tier 2 clamp: out of room AND no next system to wrap onto. Distinct code
+  // path from the tier 1 clamp above, and the one the browser run never reached.
+  it('clamps inside the last system when tier 2 has nowhere to wrap to', () => {
+    const tight = [staves[0]];
+    const a = wetInkAnchor({ steps: [step(0, 500, 100)], staves: tight, caretMeasureIdx: 1 });
+    expect(a.system).toBe(0);
+    expect(a.x).toBeLessThanOrEqual(520 - 10 * 0.62); // notehead right edge at the system end
+  });
+
+  // The wrap decision must consider the WHOLE pending run. A bar of sixteenths
+  // leaves 8+ notes wet; judging by note 0 alone lets the tail clamp onto the
+  // margin in a pile — the exact defect this anchor exists to avoid.
+  it('wraps on where the LAST pending note lands, not the first', () => {
+    const steps = [step(0, 300, 100)];
+    // One note fits comfortably on system 0 …
+    expect(wetInkAnchor({ steps, staves, caretMeasureIdx: 1, pendingCount: 1 }).system).toBe(0);
+    // … but a run of nine would run off the end, so the whole run moves.
+    expect(wetInkAnchor({ steps, staves, caretMeasureIdx: 1, pendingCount: 9 })).toEqual({ x: 100, system: 1 });
   });
 });
 
@@ -212,5 +241,62 @@ describe('serializeForDisplay — no note-less measure ever reaches OSMD', () =>
     const score = makeEmptyScore();
     score.parts[0].measures = [{ number: 1, notes: [makeNote({ step: 'C', octave: 4 })] }];
     expect(restsIn(serializeForDisplay({ score }))).toBe(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The caretOverride seam. wetInkAnchor is tested standalone and CaretLayer only
+// proves it honours SOME override — the coordinate conversion between them
+// lives here, and getting it wrong makes the caret jump sideways on every
+// settle rather than being wrong once.
+// ---------------------------------------------------------------------------
+describe('EditorSurface — wet caret position', () => {
+  const LS = 10;
+  const staff = { system: 0, top: 100, left: 20, right: 900, lineSpacing: LS };
+  const caretLeft = (c) => Number(/translate3d\(([-\d.]+)px/.exec(c.querySelector('.composer-caret').style.transform)[1]);
+  const headCentres = (c) => [...c.querySelectorAll('.composer-wet-note__head')].map((e) => Number(e.getAttribute('cx')));
+
+  beforeEach(() => { engraves.length = 0; midiHandler = null; layoutToPublish = { steps: [], staves: [staff] }; vi.useFakeTimers(); });
+  afterEach(() => vi.useRealTimers());
+
+  it('clears the LAST wet notehead by exactly the gap the engraved caret uses', () => {
+    const { container } = render(<EditorSurface initialScore={makeEmptyScore()} songId="x" initialRevision={1} save={vi.fn()} config={{ wetink_idle_ms: 600 }} />);
+    playNotes(2);
+    const heads = headCentres(container);
+    expect(heads).toHaveLength(2);
+
+    // anchor.x is a notehead CENTRE; the caret is positioned by its LEFT EDGE.
+    // The invariant that keeps settle from jolting: caret-left minus the last
+    // notehead's RIGHT edge is the same CARET_GAP the engraved path applies.
+    const lastRightEdge = heads[1] + LS * WET_RX_UNITS;
+    expect(caretLeft(container) - lastRightEdge).toBeCloseTo(CARET_GAP);
+  });
+
+  it('does not sit a whole advance past the last note (the pre-fix off-by-one)', () => {
+    const { container } = render(<EditorSurface initialScore={makeEmptyScore()} songId="x" initialRevision={1} save={vi.fn()} config={{ wetink_idle_ms: 600 }} />);
+    playNotes(2);
+    const heads = headCentres(container);
+    // The bug put the caret at anchor.x + n*advance — a full advance past the
+    // last notehead's CENTRE — so it snapped ~12px left when ink dried.
+    expect(caretLeft(container)).toBeLessThan(heads[1] + LS * WET_ADVANCE_UNITS);
+  });
+
+  it('keeps the caret WHOLLY inside the system when it has to clamp', () => {
+    // A staff with almost no room: the caret's right edge, not its left, is what
+    // must stay in bounds.
+    layoutToPublish = { steps: [], staves: [{ ...staff, right: 150 }] };
+    const { container } = render(<EditorSurface initialScore={makeEmptyScore()} songId="x" initialRevision={1} save={vi.fn()} config={{ wetink_idle_ms: 600 }} />);
+    playNotes(3);
+    expect(caretLeft(container) + CARET_WIDTH).toBeLessThanOrEqual(150);
+  });
+
+  it('hands the caret back to the engraved layout once the ink dries', () => {
+    layoutToPublish = { steps: [{ measure: 0, notes: [{ x: 300, top: 100, bottom: 140, width: 12 }] }], staves: [staff] };
+    const { container } = render(<EditorSurface initialScore={makeEmptyScore()} songId="x" initialRevision={1} save={vi.fn()} config={{ wetink_idle_ms: 600 }} />);
+    playNotes(1);
+    act(() => { vi.advanceTimersByTime(600); });
+    expect(container.querySelectorAll('.composer-wet-note__head')).toHaveLength(0);
+    // Engraved past-the-end position: note right edge (300 + 12) + CARET_GAP.
+    expect(caretLeft(container)).toBe(300 + 12 + CARET_GAP);
   });
 });
