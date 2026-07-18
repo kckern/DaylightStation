@@ -481,6 +481,29 @@ export function deleteNote(state, { measureIdx, noteIdx }) {
   return { ...state, score, caret, dirty: true, revision: state.revision + 1 };
 }
 
+/**
+ * Delete the note immediately BEFORE the caret — the "backspace" of note entry.
+ *
+ * The caret is an INSERTION POINT sitting after the last entered note, so
+ * `deleteNote(state, state.caret)` is a no-op in the commonest state (right
+ * after entering a note, where caret.noteIdx === notes.length). Backspace has
+ * to look one step back instead. A caret parked at a measure start walks back
+ * over the barline to the previous non-empty measure's last note, so completing
+ * a bar (which rolls the caret to the next one) doesn't strand the key.
+ * At the absolute start nothing precedes the caret → same-reference no-op, so
+ * history records no empty change.
+ */
+export function deleteBeforeCaret(state) {
+  const { measureIdx, noteIdx } = state.caret;
+  if (noteIdx > 0) return deleteNote(state, { measureIdx, noteIdx: noteIdx - 1 });
+  const measures = state.score.parts[0]?.measures || [];
+  for (let m = measureIdx - 1; m >= 0; m--) {
+    const len = measures[m]?.notes?.length || 0;
+    if (len > 0) return deleteNote(state, { measureIdx: m, noteIdx: len - 1 });
+  }
+  return state;
+}
+
 // ---------------------------------------------------------------------------
 // Pitch nudging + caret/selection moves (B22)
 // ---------------------------------------------------------------------------

@@ -11,11 +11,10 @@
 //     this lets a player try notes on the keyboard without committing them.
 //
 // NOTE: `midiToPitch` is a real editor.js export but is NOT re-exported from the
-// model barrel (./model/index.js) — the barrel is frozen and this hook must not
-// modify the model, so it's imported directly from editor.js instead of the
-// barrel to avoid inventing an export that doesn't exist yet.
+// model barrel (./model/index.js), so it's imported directly from editor.js.
+// Everything else the hook needs comes through the barrel.
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { applyCommand, insertNote, insertRest, deleteNote, moveCaret } from './model/index.js';
+import { applyCommand, insertNote, insertRest, deleteNote, deleteBeforeCaret, moveCaret } from './model/index.js';
 import { midiToPitch } from './model/editor.js';
 import getLogger from '../../../../../lib/logging/Logger.js';
 
@@ -52,6 +51,7 @@ export const KEY_LEGEND = [
     group: 'Edit',
     keys: [
       { label: '−', code: 'NumpadSubtract', does: 'Delete the note before the caret' },
+      { label: '⌫', code: 'Backspace', does: 'Delete the note before the caret' },
       { label: 'Del', code: 'Delete', does: 'Delete the note at the caret' },
     ],
   },
@@ -71,7 +71,7 @@ export function mapKey(code) {
     case 'Numpad4': return { kind: 'arm' };
     case 'Numpad0': return { kind: 'rest' };
     case 'NumpadDecimal': return { kind: 'dot' };
-    case 'NumpadSubtract': return { kind: 'deleteBack' };
+    case 'NumpadSubtract': case 'Backspace': return { kind: 'deleteBack' };
     case 'Delete': return { kind: 'deleteAt' };
     case 'ArrowLeft': return { kind: 'caret', where: 'left' };
     case 'ArrowRight': return { kind: 'caret', where: 'right' };
@@ -109,6 +109,13 @@ export function useComposerInput({ setEditorState, subscribe, logger }) {
     log.info('composer.input.delete', {});
     setEditorState((s) => applyCommand(s, deleteNote, s.caret));
   }, [setEditorState, log]);
+  // Backspace semantics — deletes the note BEFORE the caret, which is the note
+  // just entered. Distinct from deleteAtCaret, which needs the caret parked ON
+  // an existing note to do anything.
+  const deleteBack = useCallback(() => {
+    log.info('composer.input.delete-back', {});
+    setEditorState((s) => applyCommand(s, deleteBeforeCaret));
+  }, [setEditorState, log]);
 
   useEffect(() => {
     const onKey = (e) => {
@@ -120,7 +127,7 @@ export function useComposerInput({ setEditorState, subscribe, logger }) {
         case 'dot': toggleDot(); break;
         case 'arm': toggleArm(); break;
         case 'rest': addRest(); break;
-        case 'deleteBack':
+        case 'deleteBack': deleteBack(); break;
         case 'deleteAt': deleteAtCaret(); break;
         // Caret navigation is high-frequency (held arrow key) — debug, not info.
         case 'caret': log.debug('composer.input.caret', { where: m.where }); setEditorState((s) => applyCommand(s, moveCaret, m.where)); break;
@@ -129,7 +136,7 @@ export function useComposerInput({ setEditorState, subscribe, logger }) {
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [setDuration, toggleDot, toggleArm, addRest, deleteAtCaret, setEditorState, log]);
+  }, [setDuration, toggleDot, toggleArm, addRest, deleteAtCaret, deleteBack, setEditorState, log]);
 
   useEffect(() => {
     if (!subscribe) return undefined;
@@ -157,5 +164,5 @@ export function useComposerInput({ setEditorState, subscribe, logger }) {
     return () => { log.debug('composer.input.midi-unsubscribed', {}); if (unsub) unsub(); };
   }, [subscribe, setEditorState, log]);
 
-  return { hud, armed: hud.armed, setDuration, toggleDot, toggleArm, addRest };
+  return { hud, armed: hud.armed, setDuration, toggleDot, toggleArm, addRest, deleteBack };
 }
