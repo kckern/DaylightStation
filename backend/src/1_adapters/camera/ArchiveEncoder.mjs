@@ -16,6 +16,8 @@ import { spawn } from 'child_process';
 import { writeFile, mkdir } from 'fs/promises';
 import path from 'path';
 
+import { localEpochSeconds, exifTimestamp } from '#domains/camera/sheetPlan.mjs';
+
 export function runFfmpeg(args, { logger = console, timeoutMs = 3600000 } = {}) {
   return new Promise((resolve, reject) => {
     const proc = spawn('ffmpeg', ['-hide_banner', '-loglevel', 'error', '-y', ...args]);
@@ -197,6 +199,109 @@ export class ArchiveEncoder {
   extractAudio(args) {
     return extractAudio({ ...args, logger: this.#logger });
   }
+
+  encodeContactSheet(args) {
+    return encodeContactSheet({ ...args, logger: this.#logger });
+  }
 }
 
 export default ArchiveEncoder;
+
+/**
+ * Render a contact sheet: a grid of frames sampled across a time span.
+ *
+ * Purpose is at-a-glance scanning without scrubbing video. The sample rate is
+ * supplied by the caller (see sampleRateFor) so it adapts to the span — a 30s
+ * doorbell ring gets ~1 fps, a full hour gets 1 per 100s. A fixed rate would
+ * make short events invisible.
+ *
+ * Timestamps are burned into each tile. Without them a sheet tells you that
+ * something happened but not when, which makes it useless for finding the
+ * moment in the underlying footage.
+ *
+ * @param {Object} args
+ * @param {string} args.inputPath
+ * @param {string} args.outPath
+ * @param {number} args.fps - frames per second to sample (fractional)
+ * @param {Date} [args.spanStart] - wall-clock time of the first frame, for labels
+ * @param {Object} args.profile - { grid, tileWidth, quality, drawTimestamp, extraArgs }
+ */
+export async function encodeContactSheet({ inputPath, outPath, fps, spanStart, profile, logger }) {
+  const grid = profile.grid ?? '6x6';
+  const [cols, rows] = grid.split('x').map(Number);
+  if (!cols || !rows) throw new Error(`Invalid contact sheet grid "${grid}" (expected e.g. 6x6)`);
+
+  const tileWidth = profile.tileWidth ?? 320;
+  const filters = [`fps=${fps}`, `scale=${tileWidth}:-2`];
+
+  if (profile.drawTimestamp !== false && spanStart) {
+    // gmtime against a LOCAL-shifted epoch, deliberately not ffmpeg's
+    // `localtime`: that reads the TZ env var of whatever process runs it, and a
+    // sheet whose burned-in clock is silently 7 hours off is easy to cause and
+    // hard to notice. localEpochSeconds bakes the offset in.
+    const epoch = localEpochSeconds(spanStart);
+    const size = Math.max(10, Math.round(tileWidth / 18));
+    filters.push(
+      `drawtext=text='%{pts\\:gmtime\\:${epoch}\\:%H\\\\\\:%M\\\\\\:%S}'` +
+        `:x=4:y=4:fontsize=${size}:fontcolor=white:box=1:boxcolor=black@0.5:boxborderw=3`,
+    );
+  }
+
+  filters.push(`tile=${cols}x${rows}:margin=${profile.margin ?? 4}:padding=${profile.padding ?? 2}`);
+
+  const args = [
+    '-i', inputPath,
+    '-vf', filters.join(','),
+    '-frames:v', '1',
+    '-q:v', String(profile.quality ?? 3),
+    ...(profile.extraArgs ?? []),
+    outPath,
+  ];
+  await runFfmpeg(args, { logger });
+  return outPath;
+}
+
+/**
+ * Embed forensic metadata into a rendered sheet via exiftool.
+ *
+ * Writes DateTimeOriginal (local), a one-line ImageDescription, and the full
+ * YAML block as UserComment. EXIF UserComment holds arbitrary text up to the
+ * ~64KB APP1 limit, which is ample for a span's detection records.
+ *
+ * Degrades gracefully: exiftool is not present in every environment (it is on
+ * this host but not yet in the container image), and a sheet without metadata
+ * is still a useful sheet. Never fail the archive over it.
+ *
+ * @returns {Promise<boolean>} whether metadata was written
+ */
+export async function writeSheetMetadata({ filePath, dateTaken, description, yaml, logger = console }) {
+  const args = [
+    '-overwrite_original',
+    `-DateTimeOriginal=${exifTimestamp(dateTaken)}`,
+    `-CreateDate=${exifTimestamp(dateTaken)}`,
+    '-Software=DaylightStation camera-archive',
+  ];
+  if (description) args.push(`-ImageDescription=${description}`);
+  if (yaml) args.push(`-UserComment=${yaml}`);
+  args.push(filePath);
+
+  try {
+    await new Promise((resolve, reject) => {
+      const proc = spawn('exiftool', args);
+      let stderr = '';
+      proc.stderr.on('data', (d) => { stderr += d.toString(); });
+      proc.on('error', reject);
+      proc.on('close', (code) =>
+        code === 0 ? resolve() : reject(new Error(`exiftool exited ${code}: ${stderr.slice(-200)}`)),
+      );
+    });
+    return true;
+  } catch (err) {
+    logger.warn?.('camera.sheet.metadata_failed', {
+      file: path.basename(filePath),
+      error: err.message,
+      hint: err.code === 'ENOENT' ? 'exiftool not installed' : undefined,
+    });
+    return false;
+  }
+}
