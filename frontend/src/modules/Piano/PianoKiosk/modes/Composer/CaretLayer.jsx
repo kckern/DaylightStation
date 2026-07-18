@@ -23,13 +23,37 @@ export const MEASURE_START_UNITS = 8;
 
 /**
  * The caret's VERTICAL extent against a stave — its own geometry, independent of
- * any note. Exported because EditorSurface's wet-ink override needs the identical
- * numbers: the caret must not change height or jump vertically at the moment ink
- * dries, so blank-staff, wet, and engraved paths all resolve to the same band.
- * The 40 * scale floor is the engraved path's floor, kept verbatim.
+ * any note. ALL THREE positioning tiers resolve their band through this, so the
+ * caret never changes height or shifts vertically as it moves between them.
+ *
+ * WHY the band is the STAVE's and not the note's: a caret is an INSERTION POINT,
+ * not a note. It marks where the NEXT note will go, and that note's pitch is
+ * unknown — so there is nothing for it to track vertically. Sizing it from the
+ * last engraved note's box made it bounce up and down the staff as the kid
+ * played, and made it jump diagonally on every settle (the wet tier already used
+ * the stave band, so the two disagreed by a ledger line for anything off-staff).
+ *
+ * Exported because EditorSurface's wet-ink override needs the identical numbers.
+ * The 40 * scale floor is the engraved path's original floor, kept verbatim.
  */
 export function staveCaretMetrics(staff, scale = 1) {
   return { top: staff.top, height: Math.max(40 * scale, staff.lineSpacing * 4) };
+}
+
+/** Which stave band a y pixel falls in — nearest band wins, so a ledger-line
+ *  note above or below the staff still resolves to its own system. Lives here
+ *  with the rest of the caret geometry; EditorSurface imports it for the wet-ink
+ *  anchor, so the caret and the wet layer can never disagree about which system
+ *  a given note belongs to. */
+export function systemForY(y, staves) {
+  let best = 0;
+  let bestDist = Infinity;
+  staves.forEach((s, i) => {
+    const bottom = s.top + s.lineSpacing * 4;
+    const d = y < s.top ? s.top - y : (y > bottom ? y - bottom : 0);
+    if (d < bestDist) { bestDist = d; best = i; }
+  });
+  return best;
 }
 
 // Where the caret sits with NOTHING engraved — the screen every session opens
@@ -43,8 +67,11 @@ function blankStavePosition(staves, scale) {
 }
 
 // Where the caret sits against the ENGRAVED layout: `steps` comes from the last
-// OSMD engrave, so this is only right while the engraving is current.
-function engravedPosition(steps, caretStepIndex, scale) {
+// OSMD engrave, so this is only right while the engraving is current. Only the
+// HORIZONTAL position is the note's; the band is the stave's (see
+// staveCaretMetrics), found via the system the note actually landed on so that
+// multi-system scores that wrap resolve to the right one.
+function engravedPosition(steps, caretStepIndex, scale, staves) {
   if (!steps.length) return null;
   const clamped = Math.min(caretStepIndex, steps.length - 1);
   const step = steps[clamped];
@@ -53,8 +80,11 @@ function engravedPosition(steps, caretStepIndex, scale) {
   // Past-the-end caret parks just right of the last note; otherwise sits at the step's x.
   const past = caretStepIndex >= steps.length;
   const x = past ? note.x + (note.width || NOTE_WIDTH_FALLBACK) + CARET_GAP * scale : note.x;
-  const height = Math.max(40 * scale, (note.bottom - note.top) || 40);
-  return { x, top: note.top, height };
+  const staff = staves[systemForY(note.top, staves)];
+  // No stave geometry at all (an engrave whose layout extract came back empty)
+  // — fall back to the note's own box rather than dropping the caret entirely.
+  if (!staff) return { x, top: note.top, height: Math.max(40 * scale, (note.bottom - note.top) || 40) };
+  return { x, ...staveCaretMetrics(staff, scale) };
 }
 
 /**
@@ -83,7 +113,7 @@ function engravedPosition(steps, caretStepIndex, scale) {
  *   note-less staff, which is what makes tier 3 possible.
  */
 export function CaretLayer({ steps = [], staves = [], caretStepIndex = 0, scale = 1, override = null }) {
-  const pos = override || engravedPosition(steps, caretStepIndex, scale) || blankStavePosition(staves, scale);
+  const pos = override || engravedPosition(steps, caretStepIndex, scale, staves) || blankStavePosition(staves, scale);
   if (!pos) return null;
   return (
     <div

@@ -22,7 +22,7 @@ import { initEditor, serializeFromEditor, undo, redo, makeRest } from './model/i
 import { useComposerInput } from './useComposerInput.js';
 import { useAutosave } from './useAutosave.js';
 import { useWetInk } from './wetInk.js';
-import { CaretLayer, CARET_GAP, CARET_WIDTH, NOTE_WIDTH_FALLBACK, MEASURE_START_UNITS, staveCaretMetrics } from './CaretLayer.jsx';
+import { CaretLayer, CARET_GAP, CARET_WIDTH, NOTE_WIDTH_FALLBACK, MEASURE_START_UNITS, staveCaretMetrics, systemForY } from './CaretLayer.jsx';
 import { PendingLayer, WET_ADVANCE_UNITS, WET_RX_UNITS } from './PendingLayer.jsx';
 import { DurationPalette } from './DurationPalette.jsx';
 
@@ -36,19 +36,6 @@ import { DurationPalette } from './DurationPalette.jsx';
 // The Composer engraves at a fixed zoom; kept as a named value so the caret's
 // scale-dependent terms read the same here as they do inside CaretLayer.
 const SCALE = 1;
-
-/** Which stave band a y pixel falls in — nearest band wins, so ledger-line notes
- *  above or below the staff still resolve to their own system. */
-function systemForY(y, staves) {
-  let best = 0;
-  let bestDist = Infinity;
-  staves.forEach((s, i) => {
-    const bottom = s.top + s.lineSpacing * 4;
-    const d = y < s.top ? s.top - y : (y > bottom ? y - bottom : 0);
-    if (d < bestDist) { bestDist = d; best = i; }
-  });
-  return best;
-}
 
 /**
  * Where the FIRST wet-ink note should paint, in engraved pixel space, plus which
