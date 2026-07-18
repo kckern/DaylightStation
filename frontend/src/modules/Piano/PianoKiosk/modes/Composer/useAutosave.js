@@ -24,11 +24,20 @@ export function useAutosave({ editorState, id, revision, save, create, title, on
   const idRef = useRef(id);
   const revRef = useRef(revision);
   const creatingRef = useRef(false);
+  // Last title known to be ON DISK. A rename is a second, independent kind of
+  // unsaved change: `editorState.dirty` only ever tracks the NOTES, so renaming
+  // a song you haven't otherwise touched leaves the editor clean and every
+  // guard below would bail before reaching the wire. Comparing against what was
+  // actually persisted is also what stops a rename re-saving on every render.
+  const savedTitleRef = useRef(title);
   useEffect(() => { idRef.current = id; }, [id]);
   useEffect(() => { revRef.current = revision; }, [revision]);
 
+  const renamed = (title || '') !== (savedTitleRef.current || '');
+
   const doSave = useCallback(async (trigger) => {
-    if (!editorState?.dirty) return; // no-op on a clean editor — never persist zero edits
+    // Clean editor AND the name is already on disk → genuinely nothing to do.
+    if (!editorState?.dirty && !renamed) return;
     let xml;
     try {
       xml = serializeFromEditor(editorState);
@@ -44,6 +53,11 @@ export function useAutosave({ editorState, id, revision, save, create, title, on
     // No id yet → this is a draft's first edit: materialize it (POST).
     if (!idRef.current) {
       if (!create) return;            // nothing to persist to (shouldn't happen in the mode)
+      // A NAME alone must not create the song. "Creation is earned by an edit"
+      // is the whole reason opening the mode and leaving writes nothing; a kid
+      // idly tapping the title control would otherwise leave a junk empty row.
+      // The name is not lost — it rides along on whatever edit comes next.
+      if (!editorState?.dirty) return;
       if (creatingRef.current) return; // a create is already in flight — let it finish
       creatingRef.current = true;
       setStatus('saving');
@@ -54,6 +68,7 @@ export function useAutosave({ editorState, id, revision, save, create, title, on
         if (rec && rec.id) {
           idRef.current = rec.id;
           revRef.current = rec.revision || 1;
+          savedTitleRef.current = title;
           onMaterialized?.(rec.id, revRef.current);
           setStatus('saved');
           log.info('composer.autosave.materialized', { id: rec.id, revision: revRef.current, ms: Date.now() - t0 });
@@ -78,6 +93,10 @@ export function useAutosave({ editorState, id, revision, save, create, title, on
       const r = await save(idRef.current, { musicxml: xml, meta, revision: revRef.current });
       if (r && r.ok) {
         revRef.current = r.revision;
+        // Only NOW is the name on disk. Recording it here (and not at commit
+        // time) means a rejected or failed save leaves the rename outstanding,
+        // so the next tick retries it instead of dropping it.
+        savedTitleRef.current = title;
         setStatus('saved');
         log.info('composer.autosave.saved', { id: idRef.current, revision: r.revision, ms: Date.now() - t0 });
       } else {
@@ -90,15 +109,18 @@ export function useAutosave({ editorState, id, revision, save, create, title, on
       setStatus('error');
       log.error('composer.autosave.save-error', { id: idRef.current, error: err?.message, ms: Date.now() - t0 });
     }
-  }, [editorState, save, create, title, onMaterialized, meta, log]);
+  }, [editorState, renamed, save, create, title, onMaterialized, meta, log]);
 
   useEffect(() => {
-    if (!editorState?.dirty) return undefined;
+    // A rename schedules a save on its own. `renamed` is in the deps rather
+    // than `title` so this settles once the name is on disk, instead of
+    // re-arming the debounce on every render that passes the same title.
+    if (!editorState?.dirty && !renamed) return undefined;
     clearTimeout(timer.current);
-    log.debug('composer.autosave.scheduled', { id: idRef.current ?? null, idleMs, revision: editorState.revision });
+    log.debug('composer.autosave.scheduled', { id: idRef.current ?? null, idleMs, revision: editorState.revision, renamed });
     timer.current = setTimeout(() => doSave('debounce'), idleMs);
     return () => clearTimeout(timer.current);
-  }, [editorState, idleMs, doSave, log]);
+  }, [editorState, renamed, idleMs, doSave, log]);
 
   const flush = useCallback(() => { clearTimeout(timer.current); log.debug('composer.autosave.flush', { id: idRef.current ?? null, dirty: !!editorState?.dirty }); doSave('flush'); }, [doSave, editorState, log]);
   return { status, flush };
