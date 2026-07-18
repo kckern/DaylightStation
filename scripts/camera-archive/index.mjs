@@ -114,8 +114,15 @@ async function loadAuth(config) {
 // Dates
 // ---------------------------------------------------------------------------
 
-function today() {
-  return new Date().toISOString().slice(0, 10);
+/** Local calendar date, not UTC — recordings are searched by local day. */
+function localDay(offsetDays = 0) {
+  const d = new Date();
+  d.setDate(d.getDate() + offsetDays);
+  return [
+    d.getFullYear(),
+    String(d.getMonth() + 1).padStart(2, '0'),
+    String(d.getDate()).padStart(2, '0'),
+  ].join('-');
 }
 
 function expandRange(range) {
@@ -130,10 +137,18 @@ function expandRange(range) {
   return days;
 }
 
+/**
+ * `yesterday` is the value a nightly cron should use: it archives a COMPLETED
+ * day. Running `today` from cron captures only the hours elapsed so far.
+ */
 function resolveDays(opts) {
   if (opts.range) return expandRange(opts.range);
-  const day = opts.day === 'today' || !opts.day ? today() : opts.day;
-  return [day];
+  if (!opts.day || opts.day === 'today') return [localDay(0)];
+  if (opts.day === 'yesterday') return [localDay(-1)];
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(opts.day)) {
+    throw new Error(`Invalid --day "${opts.day}" (expected YYYY-MM-DD, "today", or "yesterday")`);
+  }
+  return [opts.day];
 }
 
 // ---------------------------------------------------------------------------
@@ -487,7 +502,7 @@ camera-archive — Reolink cold archive
   backfill-untagged  Pipeline B: hard timelapse + full 24/7 audio
 
 Options
-  --day <YYYY-MM-DD|today>
+  --day <YYYY-MM-DD|today|yesterday>   (cron should use "yesterday")
   --range <YYYY-MM-DD..YYYY-MM-DD>
   --camera <id>
   --config <path>
