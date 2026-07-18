@@ -21,6 +21,8 @@ import getLogger from '../../../../../lib/logging/Logger.js';
 import { initEditor, serializeFromEditor, undo, redo, makeRest } from './model/index.js';
 import { useComposerInput } from './useComposerInput.js';
 import { useAutosave } from './useAutosave.js';
+import { useScoreTransport } from '../../score/useScoreTransport.js';
+import { buildComposerTimeline } from './playTimeline.js';
 import { useWetInk } from './wetInk.js';
 import { CaretLayer, CARET_GAP, CARET_WIDTH, NOTE_WIDTH_FALLBACK, MEASURE_START_UNITS, staveCaretMetrics, systemForY } from './CaretLayer.jsx';
 import { PendingLayer, WET_ADVANCE_UNITS, WET_RX_UNITS } from './PendingLayer.jsx';
@@ -163,8 +165,113 @@ export function EditorSurface({ initialScore, songId = null, initialRevision = 1
   const [editorState, setEditorState] = useState(() => initEditor(initialScore));
   const [layout, setLayout] = useState({ steps: [], staves: [] });
   const { steps, staves } = layout;
-  const { subscribe } = usePianoMidi();
-  const { hud, setDuration, toggleDot, toggleArm, addRest, deleteBack } = useComposerInput({ setEditorState, subscribe, logger });
+  const { subscribe, sendNoteAt, sendNoteOffAt, sendPanic } = usePianoMidi();
+
+  // ---- PLAYBACK -----------------------------------------------------------
+  // The mode's only way to HEAR what you wrote. Driven by the shared
+  // useScoreTransport (score/), the same two-plane transport SheetMusic uses:
+  // audio is handed to the MIDI service AHEAD of time with wall timestamps, so
+  // it stays in tempo through main-thread jank on the kiosk tablet.
+  //
+  // The timeline is a SNAPSHOT taken when playback starts, not a live derivation
+  // of editorState. useScoreTransport indexes into the array it was last handed;
+  // swapping it mid-run under those indices would skip, repeat or strand notes.
+  // So an edit made while playing changes the score for the NEXT run, and the
+  // current run finishes coherently.
+  const [playSpec, setPlaySpec] = useState(null);
+  const playTimeline = useMemo(
+    () => (playSpec ? buildComposerTimeline(playSpec.score, { startAtMeasure: playSpec.startAtMeasure }) : []),
+    [playSpec],
+  );
+
+  // Everything the transport has sounded and not yet released. Playback is the
+  // ONLY sender here, so a panic can never cut off a note the kid is holding on
+  // the piano — but the ledger still avoids a pointless broadcast when silent.
+  const soundingRef = useRef(new Set());
+  const transportRef = useRef(null);
+  const flushTimerRef = useRef(null);
+  // Sends already handed to the MIDI service CANNOT be recalled (useScoreTransport's
+  // header; MIDIOutput.clear() is unreliable on this WebView). So flush TWICE, the
+  // contract ScorePlayer's silenceScheduled established: once now for everything
+  // sounding, and once more after the lookahead window for note-ons that dispatch
+  // after the first flush. Every pending timestamp is <= now + lookahead, so the
+  // delayed panic covers the whole tail.
+  const silenceScheduled = useCallback(() => {
+    if (soundingRef.current.size) {
+      soundingRef.current.clear();
+      sendPanic?.();
+    }
+    clearTimeout(flushTimerRef.current);
+    flushTimerRef.current = setTimeout(() => sendPanic?.(), (transportRef.current?.lookaheadMs ?? 400) + 60);
+  }, [sendPanic]);
+
+  const transport = useScoreTransport({
+    timeline: playTimeline,
+    // AUDIO PLANE — runs up to lookaheadMs ahead of due time and must touch no
+    // React state; the sends carry the transport's wall timestamp so the MIDI
+    // service dispatches them in tempo even if this tick woke late.
+    onSchedule: (e, atWall) => {
+      if (e.type === 'note_on') {
+        sendNoteAt?.(e.note, e.velocity ?? 80, atWall);
+        soundingRef.current.add(e.note);
+      } else {
+        sendNoteOffAt?.(e.note, atWall);
+        soundingRef.current.delete(e.note);
+      }
+    },
+    onDone: () => {
+      // Note-offs are gated to 90%, so the last one is already scheduled — but
+      // flush anyway: a note whose off was dropped (unplayable type, echo of a
+      // mid-run edit) would otherwise drone forever with the transport stopped.
+      silenceScheduled();
+      logger.info('composer.transport.done', { events: playTimeline.length });
+    },
+  });
+  transportRef.current = transport;
+
+  const playingRef = useRef(false);
+  playingRef.current = transport.playing;
+
+  const togglePlay = useCallback(() => {
+    if (playingRef.current) {
+      transportRef.current?.pause();
+      silenceScheduled();
+      logger.info('composer.transport.pause', {});
+      return;
+    }
+    setPlaySpec({ score: editorState.score, startAtMeasure: editorState.caret.measureIdx });
+  }, [editorState.score, editorState.caret.measureIdx, silenceScheduled, logger]);
+
+  // Start on the render AFTER the snapshot lands, because useScoreTransport reads
+  // its timeline from the props of the current render — calling play() inside
+  // togglePlay would run the PREVIOUS snapshot (or, on the first play, nothing).
+  const startedRef = useRef(null);
+  useEffect(() => {
+    if (!playSpec || startedRef.current === playSpec) return;
+    startedRef.current = playSpec;
+    if (!playTimeline.length) {
+      logger.info('composer.transport.empty', { startAtMeasure: playSpec.startAtMeasure });
+      return;
+    }
+    transportRef.current?.stop(); // rewind: this is a fresh timeline, not a resume
+    transportRef.current?.play();
+    logger.info('composer.transport.play', {
+      startAtMeasure: playSpec.startAtMeasure,
+      tempo: playSpec.score?.tempo ?? null,
+      events: playTimeline.length,
+    });
+  }, [playSpec, playTimeline, logger]);
+
+  // Leaving the mode mid-playback must not leave the piano droning. No
+  // clearTimeout here on purpose: silenceScheduled's delayed panic is DESIRED
+  // after we're gone, since sends already dispatched into the lookahead window
+  // would otherwise sound with no note-off. sendPanic comes from the MIDI
+  // context, which outlives this component.
+  useEffect(() => () => { transportRef.current?.stop(); silenceScheduled(); }, [silenceScheduled]);
+
+  const { hud, setDuration, toggleDot, toggleArm, addRest, deleteBack } = useComposerInput({
+    setEditorState, subscribe, logger, onTogglePlay: togglePlay, playing: transport.playing,
+  });
   // Autosave consumes the LIVE editorState, never settledScore: the two-plane
   // split below is a RENDER concern, and persistence must never wait on an
   // engrave (a kid closing the mode mid-bar would lose the wet notes).
@@ -323,6 +430,22 @@ export function EditorSurface({ initialScore, songId = null, initialRevision = 1
           <button type="button" onClick={doRedo} disabled={!canRedo} aria-label="Redo" title="Redo">↷</button>
         </div>
         <DurationPalette hud={hud} setDuration={setDuration} toggleDot={toggleDot} toggleArm={toggleArm} addRest={addRest} deleteBack={deleteBack} />
+        {/* The mode's transport. Deliberately NOT next to the Write toggle: the
+            audit found a kid tapping the most play-looking control (then named
+            "Play") and hearing nothing, because it only armed note entry. TEXT
+            labels, not glyphs — Unicode play/pause render as tofu on the kiosk;
+            an SVG icon pass lands in a later task. */}
+        <button
+          type="button"
+          className={`composer-toolbar__play${transport.playing ? ' is-playing' : ''}`}
+          onClick={togglePlay}
+          disabled={!transport.playing && !scoreHasNotes(editorState.score)}
+          aria-pressed={transport.playing}
+          aria-label={transport.playing ? 'Pause your song' : 'Play your song'}
+          title={transport.playing ? 'Pause (numpad Enter)' : 'Play from the caret (numpad Enter)'}
+        >
+          {transport.playing ? 'Pause' : 'Play'}
+        </button>
         <span className={`composer-toolbar__status is-${status}`} aria-live="polite">{statusLabel}</span>
       </div>
       {/* Ink-on-paper: OSMD paints BLACK notation, so the staff lives on a white

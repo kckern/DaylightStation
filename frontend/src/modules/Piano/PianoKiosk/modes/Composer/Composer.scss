@@ -173,6 +173,41 @@
     }
   }
 
+  // The transport. Sized like the history buttons (same ~54px fingertip target)
+  // but filled rather than outlined, because it is the toolbar's one PRIMARY
+  // action — the audit's finding was that a kid reached for the most
+  // play-looking control, so the control that actually plays should be it.
+  // Text label, not a glyph: Unicode play/pause render as tofu on the kiosk.
+  &__play {
+    min-width: 5rem;
+    min-height: 3.4rem;
+    padding: 0.2rem 1rem;
+    border-radius: 10px;
+    border: 1px solid var(--piano-accent, #3a7d5a);
+    background: var(--piano-accent, #2f6b4c);
+    color: var(--piano-fg, #eef);
+    font: 700 1rem 'Roboto Condensed', sans-serif;
+    letter-spacing: 0.02em;
+    line-height: 1;
+    cursor: pointer;
+
+    &:hover:not(:disabled) { filter: brightness(1.15); }
+    // Playing reads as an ACTIVE state, not a different button.
+    &.is-playing {
+      background: var(--piano-surface, #16161e);
+      border-color: var(--piano-accent, #3a7d5a);
+      color: var(--piano-accent-text, #6fe39a);
+    }
+    // Same "here, just not now" treatment undo/redo use, for the same reason:
+    // an empty score has nothing to play, but the control must still be legible
+    // as a control so the kid learns it exists.
+    &:disabled {
+      opacity: 0.55;
+      border-style: dashed;
+      cursor: default;
+    }
+  }
+
   &__status {
     margin-left: auto;
     font: 600 0.85rem 'Roboto Condensed', sans-serif;

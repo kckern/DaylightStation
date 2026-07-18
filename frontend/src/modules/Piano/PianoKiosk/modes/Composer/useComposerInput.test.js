@@ -14,6 +14,10 @@ describe('mapKey (numpad)', () => {
     expect(mapKey('NumpadDecimal')).toEqual({ kind: 'dot' });
     expect(mapKey('KeyQ')).toBeNull();
   });
+
+  it('maps NumpadEnter to play/pause (the spec\'s transport key)', () => {
+    expect(mapKey('NumpadEnter')).toEqual({ kind: 'play' });
+  });
 });
 
 describe('KEY_LEGEND (on-screen help SSOT)', () => {
@@ -33,7 +37,7 @@ describe('KEY_LEGEND (on-screen help SSOT)', () => {
     // caret-navigation codes are represented by the "← →" / "PgUp / PgDn" rows
     // whose sample codes (ArrowLeft / PageUp) stand in for their pairs.
     const documented = new Set(KEY_LEGEND.flatMap((s) => s.keys.map((k) => k.code)));
-    for (const code of ['Numpad1', 'Numpad3', 'Numpad5', 'Numpad7', 'Numpad9', 'Numpad4', 'Numpad0', 'NumpadDecimal', 'NumpadSubtract', 'Backspace', 'Delete']) {
+    for (const code of ['Numpad1', 'Numpad3', 'Numpad5', 'Numpad7', 'Numpad9', 'Numpad4', 'Numpad0', 'NumpadDecimal', 'NumpadSubtract', 'Backspace', 'Delete', 'NumpadEnter']) {
       expect(documented.has(code), `mapped key ${code} should appear in KEY_LEGEND`).toBe(true);
     }
   });
@@ -125,5 +129,70 @@ describe('useComposerInput MIDI entry', () => {
     act(() => { window.dispatchEvent(new KeyboardEvent('keydown', { code: 'Numpad4' })); });
     act(() => { midiFn({ type: 'note_on', note: 62, velocity: 80 }); });
     expect(state.score.parts[0].measures[0].notes.length).toBe(1);
+  });
+});
+
+describe('useComposerInput transport key', () => {
+  it('NumpadEnter calls onTogglePlay and does not touch the score', () => {
+    let state = initEditor(makeEmptyScore());
+    const setEditorState = vi.fn((fn) => { state = typeof fn === 'function' ? fn(state) : fn; });
+    const onTogglePlay = vi.fn();
+    renderHook(() => useComposerInput({ setEditorState, subscribe: () => () => {}, onTogglePlay }));
+    const before = state;
+    act(() => { window.dispatchEvent(new KeyboardEvent('keydown', { code: 'NumpadEnter' })); });
+    expect(onTogglePlay).toHaveBeenCalledTimes(1);
+    expect(state).toBe(before);
+  });
+
+  it('NumpadEnter inside a text field is ignored (Enter belongs to the field)', () => {
+    const onTogglePlay = vi.fn();
+    renderHook(() => useComposerInput({ setEditorState: vi.fn(), subscribe: () => () => {}, onTogglePlay }));
+    const input = document.createElement('input');
+    document.body.appendChild(input);
+    act(() => { input.dispatchEvent(new KeyboardEvent('keydown', { code: 'NumpadEnter', bubbles: true, cancelable: true })); });
+    expect(onTogglePlay).not.toHaveBeenCalled();
+    input.remove();
+  });
+});
+
+describe('useComposerInput playback echo guard', () => {
+  // DATA-CORRUPTION GUARD. Playback sends notes OUT over Web MIDI; on the kiosk
+  // the Jamcorder may route them straight back IN. With Write armed, an echoed
+  // note-on is indistinguishable from a played one — so an unguarded editor
+  // would silently re-record the entire playback into the score.
+  it('an armed note-on does NOT insert while the transport is playing', () => {
+    let state = initEditor(makeEmptyScore());
+    const setEditorState = vi.fn((fn) => { state = typeof fn === 'function' ? fn(state) : fn; });
+    let midiFn;
+    const subscribe = (fn) => { midiFn = fn; return () => {}; };
+    const { rerender } = renderHook(
+      ({ playing }) => useComposerInput({ setEditorState, subscribe, playing }),
+      { initialProps: { playing: false } },
+    );
+    act(() => { window.dispatchEvent(new KeyboardEvent('keydown', { code: 'Numpad4' })); }); // arm
+    act(() => { midiFn({ type: 'note_on', note: 60, velocity: 80 }); });
+    expect(state.score.parts[0].measures[0].notes).toHaveLength(1);
+
+    rerender({ playing: true });
+    act(() => { midiFn({ type: 'note_on', note: 62, velocity: 80 }); });
+    act(() => { midiFn({ type: 'note_on', note: 64, velocity: 80 }); });
+    expect(state.score.parts[0].measures[0].notes, 'playback echo must not be recorded').toHaveLength(1);
+
+    // …and entry resumes the moment playback stops (the guard must not latch).
+    rerender({ playing: false });
+    act(() => { midiFn({ type: 'note_on', note: 65, velocity: 80 }); });
+    expect(state.score.parts[0].measures[0].notes).toHaveLength(2);
+  });
+
+  it('leaves the arm flag alone, so Write is still on after playback', () => {
+    const { result, rerender } = renderHook(
+      ({ playing }) => useComposerInput({ setEditorState: vi.fn(), subscribe: () => () => {}, playing }),
+      { initialProps: { playing: false } },
+    );
+    act(() => { window.dispatchEvent(new KeyboardEvent('keydown', { code: 'Numpad4' })); });
+    rerender({ playing: true });
+    expect(result.current.armed).toBe(true);
+    rerender({ playing: false });
+    expect(result.current.armed).toBe(true);
   });
 });
