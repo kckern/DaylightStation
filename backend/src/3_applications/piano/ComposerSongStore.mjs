@@ -86,14 +86,15 @@ export class ComposerSongStore {
     const priorXml = readFile(this.#xmlPath(dir, id));
     if (priorXml != null) {
       writeBinary(path.join(vdir, `${cur.revision}.musicxml`), priorXml);
-      const keep = Number(this.#cfg().versions_keep) || 5;
+      const rawKeep = Number(this.#cfg().versions_keep);
+      const keep = Number.isFinite(rawKeep) ? rawKeep : 5;
       const versions = listFiles(vdir).filter(n => n.endsWith('.musicxml'))
         .map(n => Number(n.replace('.musicxml', ''))).filter(Number.isFinite).sort((a, b) => a - b);
       while (versions.length > keep) {
         // Version filenames are full ".musicxml" filenames, not YAML basenames —
         // deleteYaml would look for "N.musicxml.yml"/"N.musicxml.yaml" and never
-        // find them. deleteFile (imported below where available) targets the
-        // literal path. See #deleteBlob for the shared helper.
+        // find them. #deleteBlob uses FileIO's deleteFile, which targets the
+        // literal path.
         this.#deleteBlob(path.join(vdir, `${versions.shift()}.musicxml`));
       }
     }
@@ -118,19 +119,14 @@ export class ComposerSongStore {
   // for a path that already carries its own extension — it would silently
   // no-op against "id.musicxml.yml" instead of removing "id.musicxml". Real
   // FileIO exports `deleteFile(filePath)` for exactly this (verified against
-  // backend/src/0_system/utils/FileIO.mjs); the test's in-memory FileIO mock
-  // does not stub `deleteFile` at all, but this path is never exercised by
-  // the current test suite (no test calls remove(), and no test rotates past
-  // versions_keep), so falling back to a manual `blobs` delete only matters
-  // in prod, where the real deleteFile is used.
+  // backend/src/0_system/utils/FileIO.mjs) — always use it for blob deletes.
   #deleteBlob(filePath) {
-    if (typeof deleteFile === 'function') return deleteFile(filePath);
-    return deleteYaml(filePath);
+    return deleteFile(filePath);
   }
 
   listVersions(userId, id) {
     const dir = this.#dir(userId);
-    if (!dir) return [];
+    if (!dir || !ID_RE.test(id)) return [];
     return listFiles(this.#versionsDir(dir, id)).filter(n => n.endsWith('.musicxml'));
   }
 
