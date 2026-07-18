@@ -15,6 +15,7 @@ export function useAutosave({ editorState, id, revision, save, meta, idleMs = 30
 
   const doSave = useCallback(async () => {
     if (!id) return;
+    if (!editorState?.dirty) return; // no-op flush on a clean editor — don't bump revision / add a version-ring entry for zero edits
     let xml;
     try {
       xml = serializeFromEditor(editorState);
