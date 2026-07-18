@@ -23,12 +23,15 @@ import { readFile, mkdir, rm } from 'fs/promises';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import yaml from 'js-yaml';
+import axios from 'axios';
 
 import { ReolinkClient, makeSource } from '#adapters/camera/ReolinkRecordingAdapter.mjs';
 import { ArchiveEncoder } from '#adapters/camera/ArchiveEncoder.mjs';
 import { ArchiveManifestStore } from '#adapters/camera/ArchiveManifestStore.mjs';
 import { ArchiveCameraDay } from '#apps/camera/usecases/ArchiveCameraDay.mjs';
 import { readLedger, buildLedgerRecords, writeLedger } from '#apps/camera/usecases/BuildDetectionLedger.mjs';
+import { createHaDetectionSource } from '#adapters/camera/HaDetectionSource.mjs';
+import { HomeAssistantAdapter } from '#adapters/home-automation/homeassistant/HomeAssistantAdapter.mjs';
 import { toClip } from '#domains/camera/selection.mjs';
 import { sunTimes, phaseAt } from '#domains/camera/sun.mjs';
 
@@ -186,18 +189,20 @@ function selectCameras(config, opts) {
  */
 async function runLedger({ config, auth, days, opts, logger }) {
   const destinations = config.storage.ledgerPaths.map(abs);
+  const ha = await buildHaSource(config, logger);
 
   for (const cameraCfg of selectCameras(config, opts)) {
     const sources = buildSources(config, auth, cameraCfg, logger);
     const bitMap = config.classification?.filenameBits?.[cameraCfg.id] ?? {};
 
     for (const day of days) {
+      const haHistory = ha ? await ha.fetchDay(cameraCfg.id, day) : [];
       const records = await buildLedgerRecords({
         camera: cameraCfg.id,
         day,
         cameraSource: sources.camera,
         nvrSource: sources.nvr,
-        haHistory: [],
+        haHistory,
         bitMap,
       });
 
@@ -435,5 +440,34 @@ if (import.meta.url === `file://${process.argv[1]}`) {
   main().catch((err) => {
     console.error(`camera-archive failed: ${err.message}`);
     process.exitCode = 1;
+  });
+}
+
+/**
+ * Construct the Home Assistant detection source, or null if unconfigured.
+ *
+ * HA is the PRIMARY classifier — the only label source for the doorbell — so a
+ * misconfiguration should be loud, but it must not be fatal: the filename bits
+ * and density timeline still yield a usable ledger without it.
+ */
+async function buildHaSource(config, logger) {
+  const ha = config.homeassistant;
+  if (!ha?.baseUrl) {
+    logger.warn('homeassistant not configured — ledger will have no HA labels');
+    return null;
+  }
+  let token = ha.token;
+  if (!token && ha.authFile) {
+    token = yaml.load(await readFile(resolveDataPath(ha.authFile), 'utf8'))?.token;
+  }
+  if (!token) {
+    logger.warn(`no Home Assistant token (${ha.authFile}) — ledger will have no HA labels`);
+    return null;
+  }
+  const gateway = new HomeAssistantAdapter({ baseUrl: ha.baseUrl, token }, { httpClient: axios, logger });
+  return createHaDetectionSource({
+    haGateway: gateway,
+    sensorsByCamera: config.classification?.sensorsByCamera ?? {},
+    logger,
   });
 }

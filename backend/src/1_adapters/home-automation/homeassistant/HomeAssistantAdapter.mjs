@@ -153,16 +153,20 @@ export class HomeAssistantAdapter {
    * @param {{ sinceIso: string }} options
    * @returns {Promise<Map<string, Array<{t:string,v:number|string}>>>}
    */
-  async getHistory(entityIds, { sinceIso } = {}) {
+  async getHistory(entityIds, { sinceIso, endIso } = {}) {
     if (!Array.isArray(entityIds) || entityIds.length === 0) return new Map();
     if (!sinceIso) throw new Error('getHistory requires sinceIso');
 
-    const key = `${sinceIso}|${[...entityIds].sort().join(',')}`;
+    const key = `${sinceIso}|${endIso ?? ''}|${[...entityIds].sort().join(',')}`;
     const cached = this.#historyCache.get(key);
     if (cached && cached.expires > Date.now()) return cached.data;
 
     const filter = entityIds.join(',');
-    const path = `/api/history/period/${encodeURIComponent(sinceIso)}?filter_entity_id=${encodeURIComponent(filter)}&minimal_response`;
+    // `end_time` bounds the window. Without it, asking for a day ten days back
+    // returns everything from then until now — for high-frequency entities like
+    // camera detections that is orders of magnitude more data than needed.
+    const endParam = endIso ? `&end_time=${encodeURIComponent(endIso)}` : '';
+    const path = `/api/history/period/${encodeURIComponent(sinceIso)}?filter_entity_id=${encodeURIComponent(filter)}${endParam}&minimal_response`;
 
     try {
       const response = await this.#apiGet(path);
