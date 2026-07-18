@@ -1,15 +1,22 @@
 /**
  * ArchiveCameraDay — Pipeline A: archive one camera-day.
  *
- * Selects the day's activity sessions against a hard budget cap, encodes the
- * winners at watchable quality with audio, and renders separate day/night
- * timelapses. Everything not selected still appears in the timelapse.
+ * Fetches the day's continuous footage once, then derives everything from it:
+ *
+ *   - contact sheets (event sheets where the ledger has detections, hourly
+ *     sheets for the hours that had none)
+ *   - full clips for the sessions that win a hard budget cap
+ *   - day/night timelapses covering the WHOLE day
+ *   - daylight-gated audio sidecars
+ *
+ * Fetching the whole day rather than only the selected sessions is deliberate.
+ * An earlier version downloaded just the budget winners, which meant the
+ * timelapse silently covered only those — three sessions out of a hundred — and
+ * presented itself as a timelapse of the day. It also made sheets-for-every-
+ * session impossible. One day-sized fetch removes both problems.
  *
  * The budget cap is what makes this safe to run unattended for years: a party,
  * a storm, or a stuck floodlight cannot blow the daily allowance.
- *
- * Dependencies are injected so the whole use case is testable without a
- * camera, an NVR, or ffmpeg.
  *
  * Design: docs/superpowers/specs/2026-07-18-camera-cold-archive-design.md
  *
@@ -21,17 +28,9 @@ import { mkdir, rm } from 'fs/promises';
 
 import { toClip, sessionize, labelSessions, selectSessions } from '#domains/camera/selection.mjs';
 import { sunTimes, phaseAt } from '#domains/camera/sun.mjs';
+import { planContactSheets } from '#domains/camera/sheetPlan.mjs';
+import { renderContactSheets } from '#apps/camera/usecases/RenderContactSheets.mjs';
 
-/**
- * @param {Object} deps
- * @param {Object} deps.metaSource   - source carrying trigger names (camera)
- * @param {Object} deps.footageSource- source carrying the bytes (NVR)
- * @param {Object} deps.encoder      - ArchiveEncoder
- * @param {Object} deps.manifestStore- ArchiveManifestStore
- * @param {Function} deps.readLedger - (camera, day) => Promise<records[]>
- * @param {Object} deps.config
- * @param {Object} [deps.logger]
- */
 export class ArchiveCameraDay {
   #deps;
 
@@ -39,11 +38,8 @@ export class ArchiveCameraDay {
     this.#deps = { logger: console, ...deps };
   }
 
-  /**
-   * @param {{ camera: object, day: string, dryRun?: boolean }} params
-   */
   async execute({ camera, day, dryRun = false }) {
-    const { metaSource, footageSource, manifestStore, readLedger, config, logger } = this.#deps;
+    const { metaSource, manifestStore, readLedger, config, logger } = this.#deps;
 
     const existing = await manifestStore.read(camera.id, day);
     if (manifestStore.isComplete(existing) && !dryRun) {
@@ -67,7 +63,6 @@ export class ArchiveCameraDay {
       budgetMB: config.budget.fullClipsMB,
       compressionRatio: config.budget.compressionRatio,
     });
-
     const sun = sunTimes(day, config.sun.latitude, config.sun.longitude);
 
     logger.info?.('camera.archive.planned', {
@@ -80,10 +75,10 @@ export class ArchiveCameraDay {
       ledgerRecords: ledger.length,
     });
 
-    if (dryRun) return { camera: camera.id, day, plan, sun, dryRun: true };
+    if (dryRun) return { camera: camera.id, day, plan, sun, sessions, dryRun: true };
 
     await manifestStore.markInProgress(camera.id, day, 'A');
-    const outputs = await this.#materialize({ camera, day, plan, sun, footageSource });
+    const outputs = await this.#materialize({ camera, day, plan, sessions, sun, ledger });
 
     const manifest = manifestStore.build({
       camera: camera.id,
@@ -101,48 +96,89 @@ export class ArchiveCameraDay {
       camera: camera.id,
       day,
       clips: outputs.sessions.length,
+      sheets: outputs.sheets.length,
       timelapse: Object.keys(outputs.timelapse),
     });
     return { camera: camera.id, day, outputs };
   }
 
-  /**
-   * Fetch, encode, and write outputs.
-   *
-   * Source segments are deleted once consumed so peak local disk stays near one
-   * segment rather than the whole day.
-   */
-  async #materialize({ camera, day, plan, sun, footageSource }) {
-    const { encoder, config, logger } = this.#deps;
+  async #materialize({ camera, day, plan, sessions, sun, ledger }) {
+    const { footageSource, encoder, config, logger } = this.#deps;
 
     const workDir = path.join(config.storage.workDir, camera.id, day);
     const outDir = path.join(config.storage.hotPath, camera.id, day);
     await mkdir(workDir, { recursive: true });
     await mkdir(path.join(outDir, 'audio'), { recursive: true });
 
-    const outputs = { sessions: [], timelapse: {}, audio: [] };
-    const phaseFiles = { day: [], night: [] };
+    const outputs = { sessions: [], sheets: [], timelapse: {}, audio: [] };
 
-    for (const [i, session] of plan.selected.entries()) {
-      const localPath = path.join(workDir, `session-${i}.mp4`);
-      await footageSource.fetch({
-        clip: session.clips[0],
-        start: session.start,
-        end: session.end,
-        destPath: localPath,
-      });
-
-      const label = (session.labels[0] ?? 'motion').replace(/[^a-z0-9]/gi, '');
-      const stamp = hhmm(session.start);
-      const outPath = path.join(outDir, `s${String(i + 1).padStart(2, '0')}-${stamp}-${label}.mp4`);
-
-      await encoder.encodeSession({ files: [localPath], outPath, profile: config.encoding.fullClip });
-      session.output = path.basename(outPath);
-      outputs.sessions.push(session.output);
-
-      phaseFiles[phaseAt(session.start, sun, config.sun.offsetMinutes)].push(localPath);
+    // --- fetch the day, once -------------------------------------------------
+    const segments = (await footageSource.search(day)).map((r) => toClip(r, { date: day }));
+    const local = [];
+    for (const [i, seg] of segments.entries()) {
+      const segPath = path.join(workDir, `seg-${String(i).padStart(3, '0')}.mp4`);
+      await footageSource.fetch({ clip: seg, start: seg.start, end: seg.end, destPath: segPath });
+      local.push({ start: seg.start, end: seg.end, path: segPath });
+      logger.debug?.('camera.archive.segment', { camera: camera.id, day, n: i + 1, of: segments.length });
     }
 
+    // --- contact sheets ------------------------------------------------------
+    if (config.contactSheets?.enabled !== false) {
+      const sheetPlan = planContactSheets(sessions, day, {
+        maxSpanMs: (config.contactSheets?.maxSpanMinutes ?? 60) * 60_000,
+      });
+      const profile = {
+        ...(config.contactSheets ?? {}),
+        ...(config.contactSheets?.byCamera?.[camera.id] ?? {}),
+      };
+      const res = await renderContactSheets({
+        segments: local,
+        plan: sheetPlan,
+        camera: camera.id,
+        outDir: path.join(outDir, 'sheets'),
+        encoder,
+        detections: ledger,
+        profile,
+        provenance: {
+          pipeline: 'A',
+          source: config.sources?.footageFrom ?? 'nvr',
+          channel: camera.nvrChannel,
+          streamType: config.sources?.streamType ?? 'sub',
+        },
+        logger,
+      });
+      outputs.sheets = res.written;
+    }
+
+    // --- selected session clips ---------------------------------------------
+    for (const [i, session] of plan.selected.entries()) {
+      const label = (session.labels[0] ?? 'motion').replace(/[^a-z0-9]/gi, '');
+      const outPath = path.join(outDir, `s${String(i + 1).padStart(2, '0')}-${hhmm(session.start)}-${label}.mp4`);
+      const cut = await this.#cutSpan({ local, start: session.start, end: session.end, outPath, workDir, i });
+      if (!cut) continue;
+      session.output = path.basename(outPath);
+      outputs.sessions.push(session.output);
+    }
+
+    // --- audio sidecars, daylight-gated -------------------------------------
+    const active = config.audio?.activeHours;
+    for (const seg of local) {
+      const h = seg.start.getHours();
+      if (active && (h < active.start || h >= active.end)) continue;
+      const audioPath = path.join(outDir, 'audio', `${hhmm(seg.start)}.${config.encoding.audioSidecar.container}`);
+      await encoder.extractAudio({
+        inputPath: seg.path,
+        outPath: audioPath,
+        profile: config.encoding.audioSidecar,
+      });
+      outputs.audio.push(path.basename(audioPath));
+    }
+
+    // --- timelapses, over the WHOLE day -------------------------------------
+    const phaseFiles = { day: [], night: [] };
+    for (const seg of local) {
+      phaseFiles[phaseAt(seg.start, sun, config.sun.offsetMinutes)].push(seg.path);
+    }
     for (const [phase, profile] of Object.entries(config.timelapse.phases)) {
       if (!profile.enabled || !phaseFiles[phase]?.length) continue;
       const outPath = path.join(outDir, `timelapse-${phase}.mp4`);
@@ -160,6 +196,40 @@ export class ArchiveCameraDay {
       );
     }
     return outputs;
+  }
+
+  /**
+   * Cut a wall-clock span out of the downloaded segments.
+   *
+   * A session usually sits inside one segment; when it straddles a boundary the
+   * overlapping segments are concatenated first, so a clip is never silently
+   * truncated at an arbitrary hour mark.
+   */
+  async #cutSpan({ local, start, end, outPath, workDir, i }) {
+    const { encoder, config, logger } = this.#deps;
+    const overlapping = local.filter((s) => s.start < end && s.end > start);
+    if (!overlapping.length) {
+      logger.warn?.('camera.archive.session_no_footage', { at: start.toISOString() });
+      return null;
+    }
+
+    const seekSeconds = Math.max(0, (start - overlapping[0].start) / 1000);
+    const durationSeconds = Math.max(1, (end - start) / 1000);
+
+    try {
+      await encoder.encodeSession({
+        files: overlapping.map((s) => s.path),
+        outPath,
+        profile: config.encoding.fullClip,
+        seekSeconds,
+        durationSeconds,
+        listPath: path.join(workDir, `session-${i}.concat.txt`),
+      });
+      return outPath;
+    } catch (err) {
+      logger.warn?.('camera.archive.session_failed', { at: start.toISOString(), error: err.message });
+      return null;
+    }
   }
 }
 

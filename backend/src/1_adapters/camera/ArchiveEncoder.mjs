@@ -81,11 +81,22 @@ export async function writeConcatList(files, listPath) {
  * up in practice, set audioCodec to 'aac' to force a single clean re-encode at
  * the session level.
  */
-export async function encodeSession({ files, outPath, profile, logger }) {
-  const listPath = outPath + '.concat.txt';
+export async function encodeSession({
+  files, outPath, profile, logger,
+  seekSeconds = 0, durationSeconds = null, listPath: listPathOpt = null,
+}) {
+  // Keep the concat list out of the output directory: it is scratch, and a
+  // stray .concat.txt sitting next to the archived clips looks like an artifact
+  // of the archive rather than of the build.
+  const listPath = listPathOpt ?? outPath + '.concat.txt';
   await writeConcatList(files, listPath);
 
-  const args = ['-f', 'concat', '-safe', '0', '-i', listPath];
+  const args = [
+    '-f', 'concat', '-safe', '0',
+    ...(seekSeconds > 0 ? ['-ss', String(seekSeconds)] : []),
+    '-i', listPath,
+    ...(durationSeconds ? ['-t', String(durationSeconds)] : []),
+  ];
 
   args.push('-c:v', profile.videoCodec ?? 'libx264');
   if (profile.crf != null) args.push('-crf', String(profile.crf));
@@ -118,9 +129,9 @@ export async function encodeSession({ files, outPath, profile, logger }) {
  * files also mean the day reel — the one anyone actually watches — is not
  * padded with hours of black frames.
  */
-export async function encodeTimelapse({ files, outPath, profile, logger }) {
+export async function encodeTimelapse({ files, outPath, profile, logger, listPath: listPathOpt = null }) {
   if (!files.length) return null;
-  const listPath = outPath + '.concat.txt';
+  const listPath = listPathOpt ?? outPath + '.concat.txt';
   await writeConcatList(files, listPath);
 
   const vf = [`select='not(mod(n\\,${profile.sampleEveryNthFrame ?? 30}))'`];
