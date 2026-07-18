@@ -1,6 +1,7 @@
 import express from 'express';
 import { shortId } from '#domains/core/utils/id.mjs';
 import { asyncHandler, errorHandlerMiddleware } from '#system/http/middleware/index.mjs';
+import { musicXmlToNotes } from '#shared/music/musicXmlToNotes.mjs';
 
 /**
  * Piano kiosk API.
@@ -27,6 +28,14 @@ import { asyncHandler, errorHandlerMiddleware } from '#system/http/middleware/in
  *   PATCH  /users/:userId/studio/:id        → curate (body: { title?, favorite? })
  *   DELETE /users/:userId/studio/:id        → { ok, id }
  *
+ *   Compositions (Composer mode), scoped to a user:
+ *   GET    /users/:userId/compositions          → { compositions: [{id,title,tags,share,updatedAt,revision}] }
+ *   GET    /users/:userId/compositions/:id       → { meta, musicxml }
+ *   POST   /users/:userId/compositions           → 201 record  (body: { title, musicxml, meta }; 400 on invalid xml)
+ *   PUT    /users/:userId/compositions/:id       → { ok, revision }  (body: { musicxml, meta, revision }; 400 invalid xml, 409 stale revision)
+ *   DELETE /users/:userId/compositions/:id       → { ok, id }
+ *   GET    /compositions/shared                  → { compositions: [{userId,id,title,tags}] }  (household pool)
+ *
  *   Preferences (voice, shaders, etc.) — opaque per-user blob:
  *   GET    /users/:userId/preferences       → { ...prefs }
  *   PUT    /users/:userId/preferences        → { ...prefs }  (body merged)
@@ -47,9 +56,16 @@ export function createPianoRouter({ pianoContainer, logger = console }) {
   if (!pianoContainer) throw new Error('createPianoRouter: pianoContainer required');
   const router = express.Router();
   const ds = pianoContainer.studioDatastore;
+  const cs = pianoContainer.composerSongStore;
 
   // Pure, config-free path-segment guards (HTTP input validation stays here).
   const safeSegment = (s) => typeof s === 'string' && s.length > 0 && !s.includes('/') && !s.includes('\\') && !s.includes('..');
+
+  // Write-gate: reject a musicxml payload that doesn't parse to at least one note.
+  const xmlHasNotes = (xml) => {
+    try { const r = musicXmlToNotes(xml); return !!r && Array.isArray(r.notes) && r.notes.length > 0; }
+    catch { return false; }
+  };
 
   // ── Roster ────────────────────────────────────────────────────────────────
   router.get('/users', asyncHandler((req, res) => {
@@ -115,6 +131,46 @@ export function createPianoRouter({ pianoContainer, logger = console }) {
     if (!deleted) return res.status(404).json({ error: 'Take not found' });
     res.json({ ok: true, id: req.params.id });
   });
+
+  // ── Compositions (Composer mode, per-user) ──────────────────────────────────
+  router.get('/users/:userId/compositions', asyncHandler((req, res) => {
+    const list = cs.list(req.params.userId);
+    if (list === null) return res.status(400).json({ error: 'Invalid user' });
+    res.json({ compositions: list });
+  }));
+
+  router.get('/users/:userId/compositions/:id', asyncHandler((req, res) => {
+    const got = cs.get(req.params.userId, req.params.id);
+    if (!got) return res.status(404).json({ error: 'Not found' });
+    res.json(got);
+  }));
+
+  router.post('/users/:userId/compositions', asyncHandler((req, res) => {
+    if (!cs.isKnownUser(req.params.userId)) return res.status(400).json({ error: 'Invalid user' });
+    const { title, musicxml, meta } = req.body || {};
+    if (typeof musicxml !== 'string' || !xmlHasNotes(musicxml)) return res.status(400).json({ error: 'musicxml must be a valid score' });
+    const rec = cs.create(req.params.userId, { title, musicxml, meta });
+    res.status(201).json(rec);
+  }));
+
+  router.put('/users/:userId/compositions/:id', asyncHandler((req, res) => {
+    const { musicxml, meta, revision } = req.body || {};
+    if (typeof musicxml !== 'string' || !xmlHasNotes(musicxml)) {
+      logger.info?.('composer.song.save-invalid-xml', { userId: req.params.userId, id: req.params.id });
+      return res.status(400).json({ error: 'musicxml failed validation' });
+    }
+    const r = cs.save(req.params.userId, req.params.id, { musicxml, meta, revision });
+    if (r.conflict) return res.status(409).json({ error: 'revision conflict', current: r.current });
+    res.json(r);
+  }));
+
+  router.delete('/users/:userId/compositions/:id', asyncHandler((req, res) => {
+    res.json({ ok: cs.remove(req.params.userId, req.params.id), id: req.params.id });
+  }));
+
+  router.get('/compositions/shared', asyncHandler((req, res) => {
+    res.json({ compositions: cs.listShared() });
+  }));
 
   // ── Producer (household pool, author-tagged) ────────────────────────────────
   // Unlike Studio (per-user), the Producer crate is a shared household pool: loops,
