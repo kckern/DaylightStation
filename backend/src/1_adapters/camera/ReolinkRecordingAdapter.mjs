@@ -16,6 +16,8 @@
 import https from 'https';
 import path from 'path';
 import { createWriteStream } from 'fs';
+import { spawn } from 'child_process';
+import { rm, rename, writeFile } from 'fs/promises';
 import { pipeline } from 'stream/promises';
 
 /**
@@ -219,7 +221,14 @@ export function toReolinkTime(date) {
  * `camera` downloads by the filename the search returned. `nvr` must first
  * resolve the range to a generated fragment.
  */
-export function makeSource({ kind, client, channel, streamType = 'sub' }) {
+export function makeSource({
+  kind,
+  client,
+  channel,
+  streamType = 'sub',
+  maxChunkMinutes = 10,
+  logger = console,
+}) {
   if (kind === 'camera') {
     return {
       kind,
@@ -235,10 +244,8 @@ export function makeSource({ kind, client, channel, streamType = 'sub' }) {
       hasTriggerNames: false,
       search: (day) => client.search({ channel, day, streamType }),
       coverage: (year, mon) => client.coverage({ channel, year, mon, streamType }),
-      fetch: async ({ start, end, destPath }) => {
-        const fragment = await client.nvrResolveFragment({ channel, start, end, streamType });
-        return client.download({ source: fragment.name, destPath });
-      },
+      fetch: ({ start, end, destPath }) =>
+        fetchNvrRange({ client, channel, streamType, start, end, destPath, maxChunkMinutes, logger }),
     };
   }
   throw new Error(`Unknown source kind: ${kind}`);
@@ -272,4 +279,155 @@ export function parseTriggerBits(name, bitMap) {
     if ((flags >> BigInt(bit)) & 1n) labels.push(label);
   }
   return { flags: hex, labels };
+}
+
+/**
+ * Fetch an arbitrary time range from the NVR, in chunks.
+ *
+ * WHY CHUNKING IS MANDATORY: `NvrDownload` silently truncates long ranges. A
+ * one-hour request against a busy channel deterministically returns a ~4-second
+ * stub — the HTTP download completes cleanly and the byte count matches what
+ * NvrDownload advertised, so nothing looks wrong. The first real backfill run
+ * lost roughly half a day of audio this way and exited 0.
+ *
+ * Ten-minute requests return correct ~600s fragments. So the range is split,
+ * each chunk verified against its expected duration, and the parts concatenated.
+ *
+ * Verification is the important half: without it a future firmware change to
+ * the truncation threshold would silently start eating data again.
+ */
+export async function fetchNvrRange({
+  client,
+  channel,
+  streamType,
+  start,
+  end,
+  destPath,
+  maxChunkMinutes = 10,
+  tolerance = 0.9,
+  maxSplitDepth = 4,
+  minSplitSeconds = 60,
+  probe = probeDuration,
+  concat = concatParts,
+  logger = console,
+}) {
+  const chunkMs = maxChunkMinutes * 60_000;
+  const spans = [];
+  for (let t = start.getTime(); t < end.getTime(); t += chunkMs) {
+    spans.push([new Date(t), new Date(Math.min(t + chunkMs, end.getTime()))]);
+  }
+
+  const parts = [];
+  let shortfall = 0;
+  let partIndex = 0;
+
+  /**
+   * Fetch one span, halving it and retrying if the NVR truncates.
+   *
+   * The truncation threshold is undocumented and clearly not a fixed duration —
+   * a 60-minute request returns ~4 seconds while 10-minute requests mostly
+   * succeed, and even some 10-minute ones come back short. Rather than guess a
+   * magic chunk size, back off adaptively until the NVR cooperates or the span
+   * is too small to be worth splitting further.
+   */
+  const fetchSpan = async (s, e, depth = 0) => {
+    const expectedSec = (e - s) / 1000;
+    const partPath = `${destPath}.part${String(partIndex++).padStart(3, '0')}.mp4`;
+
+    const fragment = await client.nvrResolveFragment({ channel, start: s, end: e, streamType });
+    await client.download({ source: fragment.name, destPath: partPath });
+    const actualSec = await probe(partPath);
+
+    if (actualSec >= expectedSec * tolerance) {
+      parts.push(partPath);
+      return;
+    }
+
+    // Too short. Below a minute, splitting stops paying for itself — the
+    // request overhead exceeds the data recovered — so keep what we got.
+    if (depth >= maxSplitDepth || expectedSec <= minSplitSeconds) {
+      shortfall += expectedSec - actualSec;
+      logger.warn?.('camera.nvr.chunk_short', {
+        channel,
+        from: s.toISOString(),
+        expectedSec: Math.round(expectedSec),
+        actualSec: Math.round(actualSec),
+        gaveUpAtDepth: depth,
+      });
+      parts.push(partPath);
+      return;
+    }
+
+    await rm(partPath, { force: true });
+    partIndex--;
+    const mid = new Date(s.getTime() + (e - s) / 2);
+    logger.debug?.('camera.nvr.chunk_split', {
+      channel,
+      from: s.toISOString(),
+      expectedSec: Math.round(expectedSec),
+      actualSec: Math.round(actualSec),
+      depth,
+    });
+    await fetchSpan(s, mid, depth + 1);
+    await fetchSpan(mid, e, depth + 1);
+  };
+
+  for (const [s, e] of spans) {
+    await fetchSpan(s, e);
+  }
+
+  await concat(parts, destPath);
+  await Promise.all(parts.map((p) => rm(p, { force: true })));
+
+  const totalExpected = (end - start) / 1000;
+  const totalActual = await probe(destPath);
+  if (totalActual < totalExpected * tolerance) {
+    // Loud, but not fatal: a partial hour is still worth archiving. The caller
+    // records it, and the manifest carries the shortfall.
+    logger.warn?.('camera.nvr.range_short', {
+      channel,
+      from: start.toISOString(),
+      expectedSec: Math.round(totalExpected),
+      actualSec: Math.round(totalActual),
+      chunks: spans.length,
+    });
+  }
+  return { bytes: 0, expectedSec: totalExpected, actualSec: totalActual, shortfallSec: shortfall };
+}
+
+/** Duration in seconds, or 0 if the file is unreadable/empty. */
+export function probeDuration(file) {
+  return new Promise((resolve) => {
+    const proc = spawn('ffprobe', [
+      '-v', 'error', '-show_entries', 'format=duration', '-of', 'csv=p=0', file,
+    ]);
+    let out = '';
+    proc.stdout.on('data', (d) => { out += d.toString(); });
+    proc.on('error', () => resolve(0));
+    proc.on('close', () => resolve(Number.parseFloat(out.trim()) || 0));
+  });
+}
+
+/** Concatenate downloaded parts without re-encoding. */
+async function concatParts(parts, destPath) {
+  if (parts.length === 1) {
+    await rename(parts[0], destPath);
+    return destPath;
+  }
+  const listPath = `${destPath}.parts.txt`;
+  await writeFile(listPath, parts.map((p) => `file '${p.replace(/'/g, "'\\''")}'`).join('\n') + '\n');
+  await new Promise((resolve, reject) => {
+    const proc = spawn('ffmpeg', [
+      '-hide_banner', '-loglevel', 'error', '-y',
+      '-f', 'concat', '-safe', '0', '-i', listPath, '-c', 'copy', destPath,
+    ]);
+    let stderr = '';
+    proc.stderr.on('data', (d) => { stderr += d.toString(); });
+    proc.on('error', reject);
+    proc.on('close', (code) =>
+      code === 0 ? resolve() : reject(new Error(`concat failed (${code}): ${stderr.slice(-300)}`)),
+    );
+  });
+  await rm(listPath, { force: true });
+  return destPath;
 }
