@@ -41,6 +41,23 @@ export function runFfmpeg(args, { logger = console, timeoutMs = 3600000 } = {}) 
   });
 }
 
+/**
+ * Build a scale filter that never distorts the image.
+ *
+ * A plain `scale=W:H` forces exact dimensions. That silently squashes sources
+ * whose aspect ratio differs from the target — and the driveway is a dual-lens
+ * panoramic at 1536x432 (3.55:1), nothing like a 16:9 box. `decrease` fits the
+ * frame inside the box instead, preserving geometry; `-2` keeps dimensions
+ * even, which h264 requires.
+ *
+ * @param {string} scale - "WxH"
+ */
+export function scaleFilter(scale) {
+  const [w, h] = String(scale).split('x').map(Number);
+  if (!w || !h) throw new Error(`Invalid scale "${scale}" (expected WxH, e.g. 1280x720)`);
+  return `scale=${w}:${h}:force_original_aspect_ratio=decrease,scale=trunc(iw/2)*2:trunc(ih/2)*2`;
+}
+
 /** Write an ffmpeg concat demuxer list. Paths are single-quote escaped. */
 export async function writeConcatList(files, listPath) {
   const body = files.map((f) => `file '${path.resolve(f).replace(/'/g, "'\\''")}'`).join('\n');
@@ -73,7 +90,7 @@ export async function encodeSession({ files, outPath, profile, logger }) {
   if (profile.preset) args.push('-preset', profile.preset);
 
   const filters = [];
-  if (profile.scale) filters.push(`scale=${profile.scale.replace('x', ':')}`);
+  if (profile.scale) filters.push(scaleFilter(profile.scale));
   if (profile.fps) args.push('-r', String(profile.fps));
   if (filters.length) args.push('-vf', filters.join(','));
 
@@ -105,7 +122,7 @@ export async function encodeTimelapse({ files, outPath, profile, logger }) {
   await writeConcatList(files, listPath);
 
   const vf = [`select='not(mod(n\\,${profile.sampleEveryNthFrame ?? 30}))'`];
-  if (profile.scale) vf.push(`scale=${profile.scale.replace('x', ':')}`);
+  if (profile.scale) vf.push(scaleFilter(profile.scale));
   vf.push(`setpts=N/${profile.outputFps ?? 30}/TB`);
 
   const args = [

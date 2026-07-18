@@ -378,9 +378,15 @@ same per-day pipeline for each.
   and failures easy to reason about. Downloading the full ~500 GB is explicitly acceptable.
 - **Overnight.** Intended to run when nobody is using the network. A configurable inter-segment
   pause and an optional run window keep it out of the way.
-- **Transient source files.** Each downloaded segment is extracted (audio out, frames sampled for
-  timelapse) and then deleted before the next is fetched, so peak local disk stays near one
-  segment rather than 500 GB.
+- **Transient source files.** Downloaded segments are deleted once the day completes, so the
+  ~500 GB total never accumulates on disk.
+
+  **Peak disk is one DAY (~2.7 GB/camera), not one segment.** An earlier draft of this spec
+  claimed per-segment cleanup; the trial run disproved it. The timelapse pass concatenates every
+  segment of a phase, so each day's segments must all still exist when it runs — they cannot be
+  deleted as they are consumed. Audio extraction *is* per-segment; only the timelapse forces the
+  retention. Budget ~3 GB of scratch per camera being processed, and note that `workDir` must
+  therefore live somewhere with several GB free, not a small tmpfs.
 - **Resumable and idempotent.** The per-day manifest is the ledger. An interrupted backfill
   resumes at the first day lacking a complete manifest; a completed day is never re-fetched.
 - **Runs off-peak.** Default to a window that avoids competing with the nightly job.
