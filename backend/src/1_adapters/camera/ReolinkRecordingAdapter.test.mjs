@@ -6,7 +6,7 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { toDownloadSource, toReolinkTime, parseTriggerBits, makeSource } from './ReolinkRecordingAdapter.mjs';
+import { toDownloadSource, toReolinkTime, parseTriggerBits, makeSource, fetchNvrRange } from './ReolinkRecordingAdapter.mjs';
 
 describe('toDownloadSource', () => {
   it('strips the driveway absolute mount prefix', () => {
@@ -101,10 +101,102 @@ describe('makeSource', () => {
         return 4443106;
       },
     };
-    const source = makeSource({ kind: 'nvr', client, channel: 1 });
-    await source.fetch({ start: new Date(2026, 6, 17, 18, 0), end: new Date(2026, 6, 17, 18, 1), destPath: '/tmp/x.mp4' });
+    await fetchNvrRange({
+      client,
+      channel: 1,
+      streamType: 'sub',
+      start: new Date(2026, 6, 17, 18, 0),
+      end: new Date(2026, 6, 17, 18, 1),
+      destPath: '/tmp/x.mp4',
+      probe: async () => 60, // full 1-minute span, no split needed
+      concat: async () => {},
+      logger: { warn() {}, debug() {} },
+    });
 
     expect(calls.map((c) => c[0])).toEqual(['resolve', 'download']);
     expect(calls[1][1].source).toBe('fragment_02_2_20260717110000.mp4');
+  });
+});
+
+/**
+ * Adaptive NVR range fetching.
+ *
+ * This encodes the defect the first real backfill run exposed: NvrDownload
+ * silently truncates long ranges. A 60-minute request came back as a ~4-second
+ * stub whose byte count matched exactly what the NVR advertised, so the
+ * download looked clean and the run exited 0 having lost half a day of audio.
+ *
+ * The fake below reproduces that: spans over a threshold return a token
+ * duration instead of failing.
+ */
+describe('fetchNvrRange — adaptive splitting', () => {
+  function makeFake({ truncateOverSec }) {
+    const durations = new Map();
+    const requested = [];
+    const client = {
+      nvrResolveFragment: async ({ start, end }) => {
+        const span = (end - start) / 1000;
+        requested.push(span);
+        return { name: `frag_${start.getTime()}.mp4`, sizeBytes: 1 };
+      },
+      download: async ({ source, destPath }) => {
+        const span = requested[requested.length - 1];
+        durations.set(destPath, span > truncateOverSec ? 4 : span);
+        return 1;
+      },
+    };
+    const probe = async (file) => {
+      if (durations.has(file)) return durations.get(file);
+      // the concatenated destination = sum of its parts
+      return [...durations.values()].reduce((a, b) => a + b, 0);
+    };
+    const concat = async () => {};
+    return { client, probe, concat, requested };
+  }
+
+  it('splits until the NVR stops truncating, recovering the full range', async () => {
+    const { client, probe, concat } = makeFake({ truncateOverSec: 300 });
+    const r = await fetchNvrRange({
+      client, channel: 1, streamType: 'sub',
+      start: new Date(2026, 6, 17, 7, 0, 0),
+      end: new Date(2026, 6, 17, 8, 0, 0),
+      destPath: '/tmp/x.mp4',
+      maxChunkMinutes: 10,
+      probe, concat,
+      logger: { warn() {}, debug() {} },
+    });
+    expect(r.expectedSec).toBe(3600);
+    expect(r.actualSec).toBe(3600); // fully recovered via splitting
+  });
+
+  it('does not split when the first attempt already succeeds', async () => {
+    const { client, probe, concat, requested } = makeFake({ truncateOverSec: 100000 });
+    await fetchNvrRange({
+      client, channel: 1, streamType: 'sub',
+      start: new Date(2026, 6, 17, 7, 0, 0),
+      end: new Date(2026, 6, 17, 8, 0, 0),
+      destPath: '/tmp/y.mp4',
+      maxChunkMinutes: 10,
+      probe, concat,
+      logger: { warn() {}, debug() {} },
+    });
+    expect(requested).toEqual([600, 600, 600, 600, 600, 600]); // no retries
+  });
+
+  it('gives up below the minimum span rather than splitting forever', async () => {
+    const { client, probe, concat } = makeFake({ truncateOverSec: 1 });
+    const warns = [];
+    const r = await fetchNvrRange({
+      client, channel: 1, streamType: 'sub',
+      start: new Date(2026, 6, 17, 7, 0, 0),
+      end: new Date(2026, 6, 17, 7, 10, 0),
+      destPath: '/tmp/z.mp4',
+      maxChunkMinutes: 10,
+      minSplitSeconds: 60,
+      probe, concat,
+      logger: { warn: (e, d) => warns.push(e), debug() {} },
+    });
+    expect(warns).toContain('camera.nvr.chunk_short');
+    expect(r.shortfallSec).toBeGreaterThan(0); // reported, not hidden
   });
 });
