@@ -164,7 +164,7 @@ export function EditorSurface({ initialScore, songId = null, initialRevision = 1
   const [layout, setLayout] = useState({ steps: [], staves: [] });
   const { steps, staves } = layout;
   const { subscribe } = usePianoMidi();
-  const { hud, setDuration, toggleDot, toggleArm, addRest } = useComposerInput({ setEditorState, subscribe, logger });
+  const { hud, setDuration, toggleDot, toggleArm, addRest, deleteBack } = useComposerInput({ setEditorState, subscribe, logger });
   // Autosave consumes the LIVE editorState, never settledScore: the two-plane
   // split below is a RENDER concern, and persistence must never wait on an
   // engrave (a kid closing the mode mid-bar would lose the wet notes).
@@ -322,7 +322,7 @@ export function EditorSurface({ initialScore, songId = null, initialRevision = 1
           <button type="button" onClick={doUndo} disabled={!canUndo} aria-label="Undo" title="Undo">↶</button>
           <button type="button" onClick={doRedo} disabled={!canRedo} aria-label="Redo" title="Redo">↷</button>
         </div>
-        <DurationPalette hud={hud} setDuration={setDuration} toggleDot={toggleDot} toggleArm={toggleArm} addRest={addRest} />
+        <DurationPalette hud={hud} setDuration={setDuration} toggleDot={toggleDot} toggleArm={toggleArm} addRest={addRest} deleteBack={deleteBack} />
         <span className={`composer-toolbar__status is-${status}`} aria-live="polite">{statusLabel}</span>
       </div>
       {/* Ink-on-paper: OSMD paints BLACK notation, so the staff lives on a white
@@ -337,12 +337,14 @@ export function EditorSurface({ initialScore, songId = null, initialRevision = 1
             defaults OFF, so without this a kid sits down, plays, and nothing at
             all happens. Reads off the LIVE score (not settledScore), so it
             clears on the first note while that note is still wet ink.
-            COPY COUPLING: "Play" is the literal label DurationPalette's arm
-            button carries while disarmed. A later task renames it to "Write" —
-            rename it here in the same change (EditorSurface.test.jsx asserts
-            the two match, so it will fail loudly if they drift). */}
+            COPY COUPLING: "Write" is the literal label DurationPalette's arm
+            button carries, in BOTH states. Rename one and you must rename the
+            other in the same change — EditorSurface.test.jsx asserts the hint
+            contains that button's actual rendered label, so drift fails loudly
+            rather than leaving the hint pointing at a button that no longer
+            exists by that name. */}
         {!scoreHasNotes(editorState.score) && !pending.notes.length && (
-          <p className="composer-page__hint">Pick a note length, then play a key on the piano. Tap Play to arm it so your notes land here.</p>
+          <p className="composer-page__hint">Pick a note length, then play a key on the piano. Turn on Write so your notes land here.</p>
         )}
       </div>
     </div>
