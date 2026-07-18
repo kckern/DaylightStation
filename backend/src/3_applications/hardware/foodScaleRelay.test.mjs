@@ -69,12 +69,13 @@ describe('createFoodScaleRelay persistence', () => {
     await fs.rm(dataDir, { recursive: true, force: true });
   });
 
-  function wire() {
+  function wire(timezone = 'UTC') {
     const bus = makeBus();
     createFoodScaleRelay({
       eventBus: bus,
       dataDir,
       config: { persistence: { dir: 'nutrition' } },
+      timezone,
       logger: NOOP_LOGGER,
     });
     return bus;
@@ -123,5 +124,30 @@ describe('createFoodScaleRelay persistence', () => {
     const recs = await waitForRecords(3);
     const settled = recs.filter((r) => r.kind === 'settled').map((r) => r.grams);
     expect(settled).toEqual([200, 350, 200]);
+  });
+
+  it('writes a LOCAL-time ts and buckets the day file by the LOCAL date (not UTC)', async () => {
+    // Bug fixed 2026-07-18: `ts` was UTC ISO ("...Z") and the filename was the UTC
+    // date, so an evening-local event (next-day UTC) landed in tomorrow's file.
+    const tz = 'America/Los_Angeles';
+    const laDay = new Intl.DateTimeFormat('en-CA', {
+      timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit',
+    }).format(new Date());
+    const laFile = path.join(dataDir, 'nutrition', SCALE_ID, `${laDay}.yml`);
+
+    const bus = wire(tz);
+    bus.emit(scaleFrame(300, true, 'g'));
+
+    // Poll the LOCAL-date file specifically — proves the bucket is local, not UTC.
+    let recs = [];
+    for (let i = 0; i < 50 && recs.length < 1; i++) {
+      try { recs = yaml.load(await fs.readFile(laFile, 'utf8')) || []; } catch { /* not yet */ }
+      if (recs.length < 1) await new Promise((r) => setTimeout(r, 5));
+    }
+    expect(recs.length).toBe(1);
+    // Local wall-clock format "YYYY-MM-DD HH:mm:ss" — no "T", no "Z".
+    expect(recs[0].ts).toMatch(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/);
+    // Invariant: the file's day == the date prefix of the record's local ts.
+    expect(recs[0].ts.slice(0, 10)).toBe(laDay);
   });
 });
