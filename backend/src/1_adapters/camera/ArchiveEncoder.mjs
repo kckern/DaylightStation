@@ -203,6 +203,10 @@ export class ArchiveEncoder {
   encodeContactSheet(args) {
     return encodeContactSheet({ ...args, logger: this.#logger });
   }
+
+  writeSheetMetadata(args) {
+    return writeSheetMetadata({ ...args, logger: this.#logger });
+  }
 }
 
 export default ArchiveEncoder;
@@ -226,7 +230,10 @@ export default ArchiveEncoder;
  * @param {Date} [args.spanStart] - wall-clock time of the first frame, for labels
  * @param {Object} args.profile - { grid, tileWidth, quality, drawTimestamp, extraArgs }
  */
-export async function encodeContactSheet({ inputPath, outPath, fps, spanStart, profile, logger }) {
+export async function encodeContactSheet({
+  inputPath, outPath, fps, spanStart, profile, logger,
+  seekSeconds = 0, durationSeconds = null,
+}) {
   const grid = profile.grid ?? '6x6';
   const [cols, rows] = grid.split('x').map(Number);
   if (!cols || !rows) throw new Error(`Invalid contact sheet grid "${grid}" (expected e.g. 6x6)`);
@@ -250,7 +257,11 @@ export async function encodeContactSheet({ inputPath, outPath, fps, spanStart, p
   filters.push(`tile=${cols}x${rows}:margin=${profile.margin ?? 4}:padding=${profile.padding ?? 2}`);
 
   const args = [
+    // -ss before -i seeks by keyframe (fast); accurate enough for a contact
+    // sheet, where a second either way does not matter.
+    ...(seekSeconds > 0 ? ['-ss', String(seekSeconds)] : []),
     '-i', inputPath,
+    ...(durationSeconds ? ['-t', String(durationSeconds)] : []),
     '-vf', filters.join(','),
     '-frames:v', '1',
     '-q:v', String(profile.quality ?? 3),

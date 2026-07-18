@@ -94,6 +94,20 @@ describe('sampleRateFor', () => {
     // 2-second event: 18 fps would be requested, but the source only has 10
     expect(sampleRateFor(2000, 36, 10)).toBe(10);
   });
+
+  it('honours a minimum gap so short events do not fill with near-duplicates', () => {
+    // 10s span, 24 tiles would be 0.4s apart; a 2s floor caps it at 0.5 fps
+    expect(sampleRateFor(10_000, 24, 10, 2)).toBe(0.5);
+  });
+
+  it('leaves already-sparse spans untouched by the minimum gap', () => {
+    // an hour is far sparser than the floor, so the floor must not raise it
+    expect(sampleRateFor(3600_000, 24, 10, 2)).toBeCloseTo(24 / 3600, 6);
+  });
+
+  it('treats a zero minimum gap as no constraint', () => {
+    expect(sampleRateFor(10_000, 24, 10, 0)).toBeCloseTo(2.4, 4);
+  });
 });
 
 describe('sheetName', () => {
