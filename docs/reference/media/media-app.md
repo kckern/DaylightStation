@@ -201,7 +201,11 @@ and a **canvas** that shows exactly one view at a time:
   row carries the full action set (queue actions + cast),
 - the **fleet indicator** — an at-a-glance summary of what's playing in the
   house, linking to the fleet view,
-- the **cast target chip** — the currently-preferred dispatch target,
+- the **cast target chip** — the currently-preferred dispatch target. It
+  governs the search bar too: with a target configured, picking a search
+  result casts there in the chip's mode rather than playing locally. Peek
+  view is the one exception — while remote-controlling a device, selections
+  always go to that device (forked, never transferred),
 - the **mini player** — current local item, queue position counter,
   play/pause/stop; tapping the title opens Now Playing,
 - the **settings menu** — session reset (confirmed) and client identity,

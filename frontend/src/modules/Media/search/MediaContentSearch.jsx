@@ -23,8 +23,13 @@ export function MediaContentSearch() {
   const handleChange = useCallback((id, item) => {
     if (!id) return; // clear/empty commits are no-ops for a transient picker
     log.info('select', { contentId: id, title: item?.title ?? null, type: item?.type ?? null });
-    dispatch(id, item);
-    log.info('dispatch', { contentId: id });
+    // `route` is 'peek' | 'cast' | 'local' — without it, a selection that went
+    // to the wrong surface is invisible in the logs. It records the routing
+    // INTENT, not the outcome: the cast dispatch is async and unawaited, so a
+    // dispatch that later fails (or is swallowed by the dedupe window) still
+    // logs route:'cast'. Outcome lives in dispatch.succeeded/failed/deduplicated.
+    const route = dispatch(id, item);
+    log.info('dispatch', { contentId: id, route });
   }, [dispatch, log]);
 
   return (
