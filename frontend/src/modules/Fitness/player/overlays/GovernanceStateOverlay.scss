@@ -6,7 +6,11 @@
   --governance-overlay-panel-h-driven-w: calc((var(--governance-overlay-avail-h) * 16) / 9);
   --governance-overlay-panel-w: min(var(--governance-overlay-panel-max-w), var(--governance-overlay-panel-h-driven-w));
   --governance-lock-row-min-h: clamp(54px, 8.8vh, 64px);
+  // Rows absorb the height the panel reserves, but only up to a point — one
+  // rider alone should get a large legible row, not a single 600px slab.
+  --governance-lock-row-max-h: clamp(72px, 20vh, 132px);
   --governance-lock-table-min-h: calc((var(--governance-lock-row-min-h) * 2) + 1px);
+  --governance-lock-credit-size: clamp(34px, 3.4vw, 52px);
   position: absolute;
   inset: 0;
   display: flex;
@@ -58,6 +62,27 @@
   }
 }
 
+// A rider earning their slot is the one moment of celebration on this panel —
+// their face lands and the ring flares once. Everything else stays still.
+@keyframes governance-credit-earned {
+  0% {
+    opacity: 0;
+    transform: scale(0.4);
+  }
+
+  60% {
+    opacity: 1;
+    transform: scale(1.12);
+    box-shadow: 0 0 0 6px rgba(255, 255, 255, 0.18), 0 4px 14px rgba(0, 0, 0, 0.45);
+  }
+
+  100% {
+    opacity: 1;
+    transform: scale(1);
+    box-shadow: 0 0 0 1px rgba(10, 10, 18, 0.8), 0 4px 14px rgba(0, 0, 0, 0.45);
+  }
+}
+
 @keyframes governance-row-grow-out {
   from {
     opacity: 1;
@@ -77,25 +102,18 @@
   min-height: 0;
   text-align: left;
 
+  // Single chrome line: earned faces, the count, the unlock affordance.
+  // Nothing else sits between this and the rows.
   &__header {
     display: flex;
     align-items: center;
-    justify-content: space-between;
     gap: clamp(10px, 1.8vw, 20px);
+    flex: 0 0 auto;
     padding-bottom: clamp(8px, 1.3vw, 12px);
     border-bottom: 1px solid rgba(255, 255, 255, 0.12);
 
     &--summary-only {
       justify-content: flex-start;
-
-      .governance-lock__summary {
-        align-items: flex-start;
-      }
-
-      .governance-lock__summary-main,
-      .governance-lock__summary-sub {
-        text-align: left;
-      }
     }
   }
 
@@ -127,82 +145,58 @@
     }
   }
 
-  &__count-blocks {
+  // Credit slots: one per required participant, filled left-to-right with the
+  // face of whoever earned it. Open slots stay as rings so the remaining work
+  // reads from across the room without parsing the count.
+  &__credits {
     display: flex;
     align-items: center;
-    gap: clamp(5px, 0.8vw, 8px);
+    gap: clamp(6px, 0.7vw, 10px);
     flex: 0 0 auto;
   }
 
-  &__count-block {
-    width: clamp(16px, 1.5vw, 22px);
-    height: clamp(16px, 1.5vw, 22px);
-    border-radius: clamp(4px, 0.35vw, 6px);
-    background: rgba(10, 10, 18, 0.9);
-    border: 1px solid rgba(248, 250, 252, 0.4);
-    box-shadow: inset 0 0 6px rgba(0, 0, 0, 0.45);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: clamp(0.52rem, 0.9vw, 0.68rem);
-    font-weight: 700;
-    line-height: 1;
-    text-transform: uppercase;
-    color: rgba(248, 250, 252, 0.92);
+  &__credit {
+    width: var(--governance-lock-credit-size);
+    height: var(--governance-lock-credit-size);
+    border-radius: 50%;
+    box-sizing: border-box;
+    flex: 0 0 auto;
+    display: block;
 
-    &--complete {
-      background: #f8fafc;
-      border-color: rgba(255, 255, 255, 0.95);
-      box-shadow: 0 4px 12px rgba(255, 255, 255, 0.28), inset 0 0 8px rgba(203, 213, 225, 0.45);
-      color: rgba(15, 23, 42, 0.9);
+    &--open {
+      border: 2px dashed rgba(226, 232, 240, 0.32);
+      background: rgba(10, 10, 18, 0.35);
     }
-  }
 
-  &__summary {
-    display: flex;
-    flex-direction: column;
-    align-items: flex-end;
-    gap: 2px;
-    min-width: 0;
-  }
+    &--met {
+      position: relative;
+      overflow: hidden;
+      border: 2px solid var(--credit-ring, rgba(34, 197, 94, 0.9));
+      background: rgba(10, 10, 18, 0.9);
+      box-shadow: 0 0 0 1px rgba(10, 10, 18, 0.8), 0 4px 14px rgba(0, 0, 0, 0.45);
+      animation: governance-credit-earned 320ms cubic-bezier(0.2, 0.9, 0.25, 1) both;
 
-  &__summary-main,
-  &__summary-sub {
-    margin: 0;
-    line-height: 1.2;
+      img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+        display: block;
+      }
+    }
   }
 
   &__summary-main {
-    font-size: clamp(0.85rem, 1.4vw, 1rem);
+    margin: 0;
+    flex: 1 1 auto;
+    min-width: 0;
+    line-height: 1.2;
+    font-size: clamp(0.95rem, 1.6vw, 1.2rem);
     font-weight: 600;
     color: rgba(248, 250, 252, 0.96);
-    text-align: right;
+    text-align: left;
     white-space: nowrap;
-  }
-
-  &__summary-sub {
-    font-size: clamp(0.7rem, 1.05vw, 0.8rem);
-    color: rgba(226, 232, 240, 0.72);
-    text-align: right;
-    white-space: nowrap;
-  }
-
-  &__title {
-    font-size: clamp(1rem, 1.8vw, 1.3rem);
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: 0.07em;
-    margin: 0;
-  }
-
-  &__message {
-    margin: 0;
-    font-size: clamp(0.84rem, 1.25vw, 0.98rem);
-    color: rgba(248, 250, 252, 0.85);
-
-    &--compact {
-      margin-top: -2px;
-    }
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 
   &__exit-criteria {
@@ -220,7 +214,12 @@
     overflow: hidden;
     background: rgba(15, 23, 42, 0.65);
     margin-top: clamp(4px, 0.9vw, 8px);
-    flex: 0 0 auto;
+    // The panel holds a 16:9 floor; the table absorbs whatever the header
+    // doesn't use instead of leaving dead space below it.
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    flex: 1 1 auto;
     min-height: var(--governance-lock-table-min-h);
     overflow-y: auto;
 
@@ -272,7 +271,9 @@
     border-bottom: 1px solid rgba(255, 255, 255, 0.08);
     align-items: center;
     column-gap: clamp(8px, 1vw, 14px);
+    flex: 1 1 auto;
     min-height: var(--governance-lock-row-min-h);
+    max-height: var(--governance-lock-row-max-h);
     padding: clamp(8px, 1vw, 12px) clamp(10px, 1.4vw, 16px);
     transform-origin: center;
     will-change: transform, opacity;
@@ -648,7 +649,8 @@
 
 @media (prefers-reduced-motion: reduce) {
   .governance-lock__row--grow-in,
-  .governance-lock__row--grow-out {
+  .governance-lock__row--grow-out,
+  .governance-lock__credit--met {
     animation: none;
   }
 }

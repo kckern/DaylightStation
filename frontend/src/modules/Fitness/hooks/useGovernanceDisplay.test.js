@@ -131,3 +131,133 @@ describe('resolveGovernanceDisplay — non-governed', () => {
     expect(result).toBeNull();
   });
 });
+
+// ---------------------------------------------------------------------------
+// metRows: participants who HAVE satisfied their requirement.
+// `rows` is missing-only by construction, so without metRows a rider who
+// reaches their target disappears from the lock screen the moment they earn it.
+// ---------------------------------------------------------------------------
+
+const zoneMetaWithCardio = {
+  map: {
+    cardio: { id: 'cardio', name: 'Cardio', rank: 3, color: '#f97316' },
+    'fat-burn': { id: 'fat-burn', name: 'Fat Burn', rank: 2, color: '#facc15' }
+  }
+};
+
+function makeDisplayMap(entries) {
+  return new Map(Object.entries(entries));
+}
+
+describe('resolveGovernanceDisplay — metRows', () => {
+  it('resolves met users of an unsatisfied requirement against the display map', () => {
+    const govState = makeGovState({
+      status: 'locked',
+      requirements: [{
+        satisfied: false,
+        zone: 'cardio',
+        missingUsers: ['rider-b'],
+        metUsers: ['rider-a']
+      }]
+    });
+    const displayMap = makeDisplayMap({
+      'rider-a': { displayName: 'Rider A', avatarSrc: '/img/a', heartRate: 150, zoneId: 'cardio' },
+      'rider-b': { displayName: 'Rider B', avatarSrc: '/img/b', heartRate: 95, zoneId: 'fat-burn' }
+    });
+
+    const result = resolveGovernanceDisplay(govState, displayMap, zoneMetaWithCardio);
+
+    expect(result.metRows).toHaveLength(1);
+    expect(result.metRows[0]).toMatchObject({
+      key: 'rider-a',
+      displayName: 'Rider A',
+      avatarSrc: '/img/a',
+      heartRate: 150
+    });
+    expect(result.metRows[0].currentZone).toMatchObject({ id: 'cardio', name: 'Cardio' });
+  });
+
+  it('keeps met and missing participants disjoint — missing wins', () => {
+    const govState = makeGovState({
+      status: 'locked',
+      requirements: [
+        { satisfied: false, zone: 'cardio', missingUsers: ['rider-a'], metUsers: [] },
+        { satisfied: false, zone: 'fat-burn', missingUsers: [], metUsers: ['rider-a'] }
+      ]
+    });
+    const displayMap = makeDisplayMap({
+      'rider-a': { displayName: 'Rider A', avatarSrc: '/img/a', heartRate: 120, zoneId: 'fat-burn' }
+    });
+
+    const result = resolveGovernanceDisplay(govState, displayMap, zoneMetaWithCardio);
+
+    expect(result.rows.map((r) => r.key)).toContain('rider-a');
+    expect(result.metRows.map((r) => r.key)).not.toContain('rider-a');
+  });
+
+  it('credits met users from an active challenge', () => {
+    const govState = makeGovState({
+      status: 'locked',
+      challenge: {
+        type: 'zone',
+        status: 'pending',
+        zone: 'cardio',
+        missingUsers: ['rider-b'],
+        metUsers: ['rider-a']
+      }
+    });
+    const displayMap = makeDisplayMap({
+      'rider-a': { displayName: 'Rider A', avatarSrc: '/img/a', heartRate: 160, zoneId: 'cardio' },
+      'rider-b': { displayName: 'Rider B', avatarSrc: '/img/b', heartRate: 90, zoneId: 'fat-burn' }
+    });
+
+    const result = resolveGovernanceDisplay(govState, displayMap, zoneMetaWithCardio);
+
+    expect(result.metRows.map((r) => r.key)).toEqual(['rider-a']);
+  });
+
+  it('dedupes a user credited by more than one requirement', () => {
+    const govState = makeGovState({
+      status: 'locked',
+      requirements: [
+        { satisfied: false, zone: 'cardio', missingUsers: ['rider-b'], metUsers: ['rider-a'] },
+        { satisfied: false, zone: 'fat-burn', missingUsers: ['rider-b'], metUsers: ['rider-a'] }
+      ]
+    });
+    const displayMap = makeDisplayMap({
+      'rider-a': { displayName: 'Rider A', avatarSrc: '/img/a', heartRate: 150, zoneId: 'cardio' },
+      'rider-b': { displayName: 'Rider B', avatarSrc: '/img/b', heartRate: 80, zoneId: 'fat-burn' }
+    });
+
+    const result = resolveGovernanceDisplay(govState, displayMap, zoneMetaWithCardio);
+
+    expect(result.metRows).toHaveLength(1);
+  });
+
+  it('still credits a met user the display map has no entry for', () => {
+    const govState = makeGovState({
+      status: 'locked',
+      requirements: [{ satisfied: false, zone: 'cardio', missingUsers: [], metUsers: ['ghost'] }]
+    });
+
+    const result = resolveGovernanceDisplay(govState, emptyDisplayMap, zoneMetaWithCardio);
+
+    expect(result.metRows).toHaveLength(1);
+    expect(result.metRows[0].displayName).toBe('ghost');
+    expect(result.metRows[0].avatarSrc).toBeTruthy();
+  });
+
+  it('returns an empty metRows when nobody has satisfied yet', () => {
+    const govState = makeGovState({
+      status: 'pending',
+      requirements: [{ satisfied: false, zone: 'cardio', missingUsers: ['rider-a'], metUsers: [] }]
+    });
+    const displayMap = makeDisplayMap({
+      'rider-a': { displayName: 'Rider A', avatarSrc: '/img/a', heartRate: 80, zoneId: 'fat-burn' }
+    });
+
+    const result = resolveGovernanceDisplay(govState, displayMap, zoneMetaWithCardio);
+
+    expect(result.metRows).toEqual([]);
+  });
+});
