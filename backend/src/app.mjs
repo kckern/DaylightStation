@@ -25,6 +25,7 @@ import { getDispatcher } from './0_system/logging/dispatcher.mjs';
 import { createLogger } from './0_system/logging/logger.mjs';
 import { ingestFrontendLogs } from './0_system/logging/ingestion.mjs';
 import { shouldRelayBtTopic } from './0_system/eventbus/btRelay.mjs';
+import { shouldRelayKioskLaunchTopic } from './0_system/eventbus/kioskLaunchRelay.mjs';
 import { loadLoggingConfig, resolveLoggerLevel } from './0_system/logging/config.mjs';
 
 // Bootstrap functions
@@ -520,6 +521,22 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     if (message && shouldRelayBtTopic(message.topic)) {
       eventBus.broadcast(message.topic, message);
       rootLogger.debug?.('eventbus.bt.relay', { clientId, topic: message.topic });
+    }
+  });
+
+  // Kiosk app-launch relay (admin ⇒ kiosk SPA, and the result back). The launch
+  // must execute inside the kiosk page — intent extras need FKB's in-page
+  // startIntent — so the command is relayed to the page rather than issued from
+  // the backend. Whitelist only. The kiosk drops anything not addressed to its
+  // own deviceId.
+  eventBus.onClientMessage((clientId, message) => {
+    if (message && shouldRelayKioskLaunchTopic(message.topic)) {
+      eventBus.broadcast(message.topic, message);
+      rootLogger.debug?.('eventbus.kiosk.relay', {
+        clientId,
+        topic: message.topic,
+        deviceId: message.deviceId
+      });
     }
   });
 
