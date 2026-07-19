@@ -420,7 +420,7 @@ peek | cast | local."
 
 - `useContentDispatch` has exactly one consumer: `MediaContentSearch.jsx:18`. Nothing else changes behavior.
 - `CastTargetProvider` wraps `DispatchProvider` in `MediaApp.jsx:44-52`, above `MediaAppShell` → `Dock` → `MediaContentSearch`, so `useCastTarget()` (which **throws** outside its provider) is always inside one.
-- The three live flow tests that touch the dock (`tests/live/flow/media/media-app-cast.runtime.test.mjs`, `media-app-autoplay.runtime.test.mjs`, `media-app-now-playing-exit.runtime.test.mjs`) each `localStorage.clear()` in `beforeEach` and never tick a target checkbox before searching, so they keep taking the local branch. No live-test updates needed.
+- The three live flow tests that touch the dock (`tests/live/flow/media/media-app-cast.runtime.test.mjs`, `media-app-autoplay.runtime.test.mjs`, `media-app-now-playing-exit.runtime.test.mjs`) never tick a `cast-target-checkbox-*` before searching, so `targetIds` stays empty and they keep taking the local branch. No live-test updates needed. (An earlier draft of this plan justified that with "each `localStorage.clear()` in `beforeEach`" — that is **wrong** for `media-app-autoplay.runtime.test.mjs:11-14`, which selectively `removeItem`s instead. The conclusion holds for the stronger reason that no live test ever persists a cast target at all.)
 
 ## Verification
 
