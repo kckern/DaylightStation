@@ -24,6 +24,7 @@ import {
 } from '../modules/Piano/PianoKiosk/usePianoScreensaver.jsx';
 import { usePianoScreenOff } from '../modules/Piano/PianoKiosk/usePianoScreenOff.js';
 import { KIOSK_DEVICE_ID } from '../modules/Piano/PianoKiosk/kioskDeviceIdentity.js';
+import { useKioskLaunchCommand } from '../modules/Piano/PianoKiosk/useKioskLaunchCommand.js';
 import {
   PianoPlaybackProvider,
   usePianoPlayback,
@@ -191,6 +192,20 @@ function PianoFleetPublisher() {
   return <DeviceStatePublisher deviceId={config.screensaver?.deviceId ?? null} />;
 }
 
+/**
+ * Listens for a parent-initiated app launch from the admin UI and performs it
+ * in-page (intent extras need FKB's startIntent, which only exists here).
+ *
+ * Mounted beside ScreensaverDriver so it runs whether or not anyone is at the
+ * keyboard — the whole point is that a parent can start a game remotely.
+ * The hook's own identity guard drops anything not addressed to this device, so
+ * mounting it on a laptop dev tab is harmless.
+ */
+function KioskLaunchListener() {
+  useKioskLaunchCommand();
+  return null;
+}
+
 function ScreensaverDriver() {
   const { config } = usePianoKioskConfig();
   const { activeNotes, noteHistory } = usePianoMidiNotes();
@@ -335,6 +350,7 @@ function ActivePiano({ pianoId: pianoIdProp, basePath: basePathProp }) {
             <PianoPlaybackProvider>
               <ScreensaverDriver />
               <PianoFleetPublisher />
+              <KioskLaunchListener />
               <ConnectGate>
                 <PianoMixProvider>
                   <PianoShell />

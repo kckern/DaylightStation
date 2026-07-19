@@ -48,6 +48,7 @@ export function resolveGovernanceDisplay(govState, displayMap, zoneMeta, options
           deadline: null,
           gracePeriodTotal: null,
           videoLocked: true,
+          metRows: [],
           challenge,
           activeUserCount: Number.isFinite(activeUserCount) ? Math.max(0, Math.round(activeUserCount)) : null
         };
@@ -61,11 +62,12 @@ export function resolveGovernanceDisplay(govState, displayMap, zoneMeta, options
         deadline: null,
         gracePeriodTotal: null,
         videoLocked: false,
+        metRows: [],
         challenge,
         activeUserCount: Number.isFinite(activeUserCount) ? Math.max(0, Math.round(activeUserCount)) : null
       };
     }
-    return { show: false, status, rows: [] };
+    return { show: false, status, rows: [], metRows: [] };
   }
 
   // Collect all (userId, targetZoneId) pairs from unsatisfied requirements + active challenge
@@ -171,6 +173,48 @@ export function resolveGovernanceDisplay(govState, displayMap, zoneMeta, options
   // Sort by severity (highest target zone first)
   rows.sort((a, b) => rankOf(b.targetZone?.id) - rankOf(a.targetZone?.id));
 
+  // Participants who HAVE satisfied their requirement. `rows` above is
+  // missing-only by construction, so without this a rider drops off the lock
+  // screen the instant they reach their target — the header count is the only
+  // trace they were ever there. Collected from the same requirement/challenge
+  // pair that feeds userTargets so the credit and the count agree.
+  const metUserIds = new Map(); // normalized key → raw userId
+  const collectMet = (list) => {
+    (Array.isArray(list) ? list : []).forEach((userId) => {
+      const key = normalize(userId);
+      if (!key || metUserIds.has(key)) return;
+      metUserIds.set(key, userId);
+    });
+  };
+  normalizedRequirements.forEach((req) => {
+    if (req.satisfied) return;
+    collectMet(req.metUsers);
+  });
+  if (challenge && !challenge.paused && (challenge.status === 'pending' || challenge.status === 'failed')) {
+    collectMet(challenge.metUsers);
+  }
+
+  const metRows = [];
+  for (const [key, userId] of metUserIds) {
+    // A participant can't simultaneously block and credit. If governance has
+    // them on both lists (conflicting requirements), the blocking row wins —
+    // otherwise their face would say "done" while their row says "not yet".
+    if (userTargets.has(key)) continue;
+    const display = displayMap.get(key);
+    const currentZoneId = display?.zoneId || null;
+    metRows.push({
+      key,
+      userId,
+      displayName: (preferGroupLabels && display?.groupLabel)
+        ? display.groupLabel
+        : (display?.displayName || userId),
+      avatarSrc: display?.avatarSrc || FALLBACK_AVATAR,
+      heartRate: display?.heartRate ?? null,
+      currentZone: currentZoneId ? (zoneMap[currentZoneId] || null) : null,
+      groupLabel: display?.groupLabel || null
+    });
+  }
+
   const show = rows.length > 0 || status === 'locked' || status === 'pending';
 
   return {
@@ -182,7 +226,8 @@ export function resolveGovernanceDisplay(govState, displayMap, zoneMeta, options
     challenge: challenge || null,
     requirements: normalizedRequirements,
     activeUserCount: Number.isFinite(activeUserCount) ? Math.max(0, Math.round(activeUserCount)) : null,
-    rows
+    rows,
+    metRows
   };
 }
 

@@ -4,7 +4,7 @@ import { DaylightMediaPath } from '@/lib/api.mjs';
 import { getLogger } from '@/lib/logging/Logger.js';
 import { useDeadlineCountdown } from '@/modules/Fitness/shared';
 import GovernanceAudioPlayer from './GovernanceAudioPlayer.jsx';
-import CompletionCountBlocks from './CompletionCountBlocks.jsx';
+import CompletionAvatars from './CompletionAvatars.jsx';
 import LockIcon from './LockIcon.jsx';
 import './GovernanceStateOverlay.scss';
 
@@ -133,10 +133,6 @@ function normalizeRequiredCountFromRule(rule, totalCount) {
 const GovernancePanelOverlay = React.memo(function GovernancePanelOverlay({ display, overlay, lockRows = [], onUnlock = null }) {
   // Support both new (display) and legacy (overlay + lockRows) format
   const status = display?.status || overlay?.status || 'unknown';
-  const title = overlay?.title || 'Video Locked';
-  const overlayPrimaryMessage = Array.isArray(overlay?.descriptions) && overlay.descriptions.length > 0
-    ? overlay.descriptions[0]
-    : null;
   const requirements = Array.isArray(display?.requirements)
     ? display.requirements
     : (Array.isArray(overlay?.requirements) ? overlay.requirements : []);
@@ -206,10 +202,6 @@ const GovernancePanelOverlay = React.memo(function GovernancePanelOverlay({ disp
 
   const hasAnimatedRows = animatedRows.length > 0;
   const isInitPoolEmpty = !hasRows && (!Number.isFinite(activeUserCount) || activeUserCount <= 0);
-  const panelTitle = isInitPoolEmpty ? null : title;
-  const primaryMessage = isInitPoolEmpty
-    ? null
-    : (overlayPrimaryMessage || 'Meet these conditions to unlock playback.');
 
   const activeRequirement = useMemo(() => {
     if (!requirements.length) return null;
@@ -249,17 +241,13 @@ const GovernancePanelOverlay = React.memo(function GovernancePanelOverlay({ disp
     return resolved;
   }, [challenge, activeRequirement, targetCount]);
 
-  const metUsers = useMemo(() => {
-    const challengeMetUsers = Array.isArray(challenge?.metUsers)
-      ? challenge.metUsers.filter(Boolean)
-      : [];
-    if (challengeMetUsers.length > 0) {
-      return challengeMetUsers;
-    }
-    return Array.isArray(activeRequirement?.metUsers)
-      ? activeRequirement.metUsers.filter(Boolean)
-      : [];
-  }, [challenge, activeRequirement]);
+  // Participants who have already satisfied, joined to their avatar/zone by
+  // resolveGovernanceDisplay. `rows` is missing-only, so these riders exist
+  // nowhere else on the panel.
+  const metRows = useMemo(
+    () => (Array.isArray(display?.metRows) ? display.metRows.filter(Boolean) : []),
+    [display]
+  );
 
   const hasTargetCount = Number.isFinite(targetCount) && targetCount > 0;
   const showCountBlocks = !isInitPoolEmpty && hasTargetCount;
@@ -276,16 +264,6 @@ const GovernancePanelOverlay = React.memo(function GovernancePanelOverlay({ disp
     }
     return 'Waiting for participant data...';
   }, [isInitPoolEmpty, hasTargetCount, targetCount, actualCount, targetZoneName, activeUserCount]);
-
-  const summarySub = useMemo(() => {
-    if (isInitPoolEmpty) {
-      return 'Start a participant or connect an HR sensor to continue.';
-    }
-    if (Number.isFinite(activeUserCount) && hasTargetCount) {
-      return `${activeUserCount} participant${activeUserCount === 1 ? '' : 's'} in pool`;
-    }
-    return null;
-  }, [isInitPoolEmpty, activeUserCount, hasTargetCount]);
 
   // Log when "Waiting for participant data" renders (rate-limited)
   const lastWaitingLogRef = useRef(0);
@@ -409,22 +387,22 @@ const GovernancePanelOverlay = React.memo(function GovernancePanelOverlay({ disp
   return (
     <div className={`governance-overlay governance-overlay--${status}`}>
       <div className="governance-overlay__panel governance-lock governance-lock--wide">
+        {/* One chrome line owns all the standing state: who has earned it, the
+            count, and the unlock affordance. The former stacked title
+            ("Video Locked") and instruction line were static copy the paused
+            video already communicated, and they pushed the rows — the only part
+            that answers "what do I do?" — down the panel. */}
         <div className={`governance-lock__header${showCountBlocks ? '' : ' governance-lock__header--summary-only'}`}>
           {showCountBlocks ? (
-            <CompletionCountBlocks
+            <CompletionAvatars
               targetCount={targetCount}
               actualCount={actualCount}
-              metUsers={metUsers}
-              containerClassName="governance-lock__count-blocks"
-              blockClassName="governance-lock__count-block"
-              completeBlockClassName="governance-lock__count-block--complete"
+              metRows={metRows}
+              containerClassName="governance-lock__credits"
               ariaLabel={`Exit criteria progress ${actualCount} of ${targetCount}`}
             />
           ) : null}
-          <div className="governance-lock__summary">
-            <p className="governance-lock__summary-main">{summaryMain}</p>
-            {summarySub ? <p className="governance-lock__summary-sub">{summarySub}</p> : null}
-          </div>
+          <p className="governance-lock__summary-main">{summaryMain}</p>
           {onUnlock ? (
             <button
               type="button"
@@ -442,11 +420,6 @@ const GovernancePanelOverlay = React.memo(function GovernancePanelOverlay({ disp
             </button>
           ) : null}
         </div>
-
-          {panelTitle ? <div className="governance-lock__title">{panelTitle}</div> : null}
-          {primaryMessage ? (
-            <p className="governance-lock__message governance-lock__message--compact">{primaryMessage}</p>
-          ) : null}
 
         <div
           className={`governance-lock__table${isInitPoolEmpty ? ' governance-lock__table--init' : ''}`}
@@ -507,7 +480,10 @@ const GovernancePanelOverlay = React.memo(function GovernancePanelOverlay({ disp
             );
             }) : isInitPoolEmpty ? (
               <div className="governance-lock__init" role="note" aria-live="polite">
-                <p className="governance-lock__init-title">Waiting for first participant...</p>
+                <p className="governance-lock__init-title">Waiting for first participant</p>
+                <p className="governance-lock__init-text">
+                  Start a participant or connect a heart rate sensor to continue.
+                </p>
               </div>
             ) : (
               <div className="governance-lock__row governance-lock__row--empty" role="row">
@@ -526,6 +502,7 @@ GovernancePanelOverlay.propTypes = {
   display: PropTypes.shape({
     status: PropTypes.string,
     rows: PropTypes.array,
+    metRows: PropTypes.array,
     requirements: PropTypes.array,
     activeUserCount: PropTypes.number
   }),
@@ -678,6 +655,7 @@ GovernanceStateOverlay.propTypes = {
     deadline: PropTypes.number,
     gracePeriodTotal: PropTypes.number,
     rows: PropTypes.array,
+    metRows: PropTypes.array,
     requirements: PropTypes.array,
     activeUserCount: PropTypes.number,
     challenge: PropTypes.object,

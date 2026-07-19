@@ -641,6 +641,32 @@ export function createContentRouter(registry, mediaProgressMemory = null, option
     res.json({ available, nextWindow, schedule: config?.schedule || null });
   });
 
+  /**
+   * GET /api/content/launch-targets/:source
+   * Which devices a parent may launch this source's content on, and which
+   * titles on each.
+   *
+   * Single source of truth for the allowlist, read by BOTH the admin UI (to
+   * decide what to offer) and the kiosk (to re-check on receipt). They must
+   * agree: the allowlist exists because a title with a live save on one device
+   * must not boot on a second, and there is no save-sync to reconcile two
+   * divergent saves afterwards. Splitting it across two config files would let
+   * them drift, so it lives in games.yml only and is served from here.
+   *
+   * Read-only and unauthenticated, matching /schedule/:source above — it
+   * exposes content ids the caller can already list, and the kiosk has no admin
+   * credentials.
+   */
+  router.get('/launch-targets/:source', (req, res) => {
+    const config = configService?.reloadHouseholdAppConfig(null, req.params.source === 'retroarch' ? 'games' : req.params.source);
+    const raw = config?.launch?.device_targets || {};
+    const targets = Object.entries(raw).map(([deviceId, cfg]) => ({
+      deviceId,
+      allow: Array.isArray(cfg?.allow) ? cfg.allow.filter(Boolean) : []
+    }));
+    res.json({ targets });
+  });
+
   // ==========================================================================
   // Deprecation Redirects (301 to new action-based routes)
   // ==========================================================================
