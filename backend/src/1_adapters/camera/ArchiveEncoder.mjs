@@ -13,7 +13,7 @@
  */
 
 import { spawn } from 'child_process';
-import { writeFile, mkdir } from 'fs/promises';
+import { writeFile, mkdir, stat } from 'fs/promises';
 import path from 'path';
 
 import { localEpochSeconds, exifTimestamp } from '#domains/camera/sheetPlan.mjs';

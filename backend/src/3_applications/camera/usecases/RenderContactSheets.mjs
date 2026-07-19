@@ -73,7 +73,7 @@ export async function renderContactSheets({
     const outPath = path.join(outDir, `${name}.jpg`);
 
     try {
-      await encoder.encodeContactSheet({
+      const rendered = await encoder.encodeContactSheet({
         inputPath: segment.path,
         outPath,
         fps: sampleRateFor(
@@ -87,6 +87,12 @@ export async function renderContactSheets({
         durationSeconds,
         profile,
       });
+
+      if (!rendered) {
+        // No frames in that span — nothing to tag, nothing to record.
+        skipped++;
+        continue;
+      }
 
       await encoder.writeSheetMetadata({
         filePath: outPath,
