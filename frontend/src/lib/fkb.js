@@ -13,11 +13,18 @@ function logger() {
 /**
  * Percent-encode one piece of an Android intent: URI.
  *
- * Everything interpolated into an intent URI must be encoded — an unencoded
- * ';' ends the field and injects intent structure, and raw spaces break
- * Intent.parseUri. This must be percent-encoding, not form-encoding: AOSP
- * decodes with Uri.decode, which does NOT map '+' to a space, so a '+' in a
- * filename has to survive as %2B (URLSearchParams would corrupt both cases).
+ * Everything interpolated into an intent URI must be encoded. An unencoded ';'
+ * ends the field and injects intent structure (parseUri finds each value with
+ * indexOf('=')/indexOf(';')). An unencoded '#' is worse and silent: parseUri
+ * locates the marker with lastIndexOf("#") and then checks
+ * startsWith("#Intent;", i), so a '#' anywhere later in the URI — in a ROM
+ * filename, say — makes that check fail and drops the WHOLE URI into the
+ * legacy getIntentOld path, which has different semantics.
+ * This must be percent-encoding, not form-encoding: AOSP decodes with
+ * Uri.decode, i.e. UriCodec.decode(convertPlus=false), which does NOT map '+'
+ * to a space, so a '+' in a filename has to survive as %2B (URLSearchParams
+ * would corrupt both cases).
+ * (Verified against AOSP Intent.java parseUriInternal and Uri.java decode.)
  *
  * Returns null rather than throwing — encodeURIComponent raises URIError on a
  * lone surrogate, and every export in this module is documented to return a
@@ -95,7 +102,8 @@ export function startApplication(packageName, activityName) {
  * startApplication form (which silently no-ops for a class string).
  *
  * @param {{action?: string, package?: string, activity?: string}} target
- * @returns {boolean} true if a launch was attempted
+ * @returns {boolean} true if a launch was attempted; false if FKB is absent or
+ *   a target field could not be percent-encoded
  */
 export function launchAndroidTarget(target = {}) {
   const { action, package: pkg, activity } = target;
@@ -145,7 +153,8 @@ export function launchAndroidTarget(target = {}) {
  * @param {string} packageName - Android package name
  * @param {string} activityName - Full activity class name
  * @param {Object} extras - Key-value pairs for intent string extras
- * @returns {boolean} true if FKB was available and intent was sent
+ * @returns {boolean} true if FKB was available and intent was sent; false if
+ *   FKB is absent or the component/an extra could not be percent-encoded
  */
 export function launchIntent(packageName, activityName, extras = {}) {
   if (!isFKBAvailable() || typeof fully.startIntent !== 'function') {
