@@ -115,9 +115,17 @@ export function launchIntent(packageName, activityName, extras = {}) {
     return false;
   }
 
+  // Keys and values are URL-encoded — Android's Intent.parseUri expects that,
+  // and it keeps a ROM path's spaces/brackets intact and a stray ';' inside a
+  // value from terminating the field and injecting intent structure.
+  // (The sibling ADB path guards the same way — AdbLauncher#validateIntentParam.)
+  // The component is NOT encoded: its dots and '/' are structural syntax.
+  // encodeURIComponent leaves ! ' ( ) * raw. That's deliberate and safe here —
+  // none of those are structural in an intent URI (only ';' '=' '#' are), and
+  // ROM filenames are full of them, so encoding would only add noise.
   let uri = `intent:#Intent;component=${packageName}/${activityName};`;
   for (const [key, value] of Object.entries(extras)) {
-    uri += `S.${key}=${value};`;
+    uri += `S.${encodeURIComponent(key)}=${encodeURIComponent(value)};`;
   }
   uri += 'end';
 
