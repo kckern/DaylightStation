@@ -7,7 +7,7 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { planContactSheets, sampleRateFor, sheetName, exifTimestamp, localEpochSeconds } from './sheetPlan.mjs';
+import { planContactSheets, sampleRateFor, sheetName, exifTimestamp, localEpochSeconds, primaryLabel } from './sheetPlan.mjs';
 
 const DAY = '2026-07-17';
 const at = (h, m = 0, s = 0) => new Date(2026, 6, 17, h, m, s);
@@ -155,5 +155,22 @@ describe('localEpochSeconds', () => {
   it('differs from a plain epoch by the zone offset', () => {
     const d = at(12, 0, 0);
     expect(localEpochSeconds(d)).not.toBe(Math.floor(d.getTime() / 1000));
+  });
+});
+
+describe('primaryLabel', () => {
+  it('prefers person over the co-occurring motion label', () => {
+    // HA sessions almost always carry 'motion' alongside the real detection;
+    // labels[0] used to bury every person event as "motion"
+    expect(primaryLabel(['motion', 'vehicle', 'person', 'pet'])).toBe('person');
+  });
+
+  it('falls through the priority order', () => {
+    expect(primaryLabel(['motion', 'vehicle'])).toBe('vehicle');
+    expect(primaryLabel(['motion'])).toBe('motion');
+  });
+
+  it('defaults to motion when unlabelled', () => {
+    expect(primaryLabel([])).toBe('motion');
   });
 });

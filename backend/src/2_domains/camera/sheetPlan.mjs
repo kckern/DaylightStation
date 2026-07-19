@@ -136,9 +136,27 @@ export function sheetName(entry) {
   const { Y, M, D, h, m, s } = parts(entry.start);
   const stamp = `${Y}-${M}-${D}_${h}${m}${s}`;
   if (entry.kind === 'hour') return `${stamp}-hour`;
-  const label = (entry.labels[0] ?? 'motion').replace(/[^a-z0-9]/gi, '');
   const suffix = entry.parts ? `-p${entry.part}of${entry.parts}` : '';
-  return `${stamp}-${label}${suffix}`;
+  return `${stamp}-${primaryLabel(entry.labels)}${suffix}`;
+}
+
+/**
+ * The label a human would file this under.
+ *
+ * Ordered by interest, NOT by the order labels happened to arrive. A session
+ * where Home Assistant saw a person almost always also carries 'motion', and
+ * taking labels[0] named those sheets "motion" — burying every person event
+ * under the least informative word available, in the field that serves as the
+ * archive's primary index.
+ */
+export const LABEL_PRIORITY = ['person', 'visitor', 'pet', 'vehicle', 'motion'];
+
+export function primaryLabel(labels = []) {
+  const clean = labels.map((l) => String(l).replace(/[^a-z0-9]/gi, '')).filter(Boolean);
+  for (const want of LABEL_PRIORITY) {
+    if (clean.includes(want)) return want;
+  }
+  return clean[0] ?? 'motion';
 }
 
 /** EXIF-format local timestamp: "YYYY:MM:DD HH:MM:SS". */
