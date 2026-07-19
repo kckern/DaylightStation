@@ -11,6 +11,30 @@ function logger() {
 }
 
 /**
+ * Percent-encode one piece of an Android intent: URI.
+ *
+ * Everything interpolated into an intent URI must be encoded — an unencoded
+ * ';' ends the field and injects intent structure, and raw spaces break
+ * Intent.parseUri. This must be percent-encoding, not form-encoding: AOSP
+ * decodes with Uri.decode, which does NOT map '+' to a space, so a '+' in a
+ * filename has to survive as %2B (URLSearchParams would corrupt both cases).
+ *
+ * Returns null rather than throwing — encodeURIComponent raises URIError on a
+ * lone surrogate, and every export in this module is documented to return a
+ * boolean and never throw.
+ *
+ * @param {string} part
+ * @returns {string|null} encoded part, or null if it cannot be encoded
+ */
+function encodeIntentPart(part) {
+  try {
+    return encodeURIComponent(part);
+  } catch {
+    return null; // lone surrogate → URIError
+  }
+}
+
+/**
  * Check if the FKB JavaScript interface is available.
  * The `fully` global is injected by FKB into all WebView pages.
  */
@@ -81,9 +105,23 @@ export function launchAndroidTarget(target = {}) {
   }
   let uri;
   if (action) {
-    uri = `intent:#Intent;action=${action};end`;
+    const encodedAction = encodeIntentPart(action);
+    if (encodedAction === null) {
+      logger().warn('fkb.launchTarget.unencodable', { action });
+      return false;
+    }
+    uri = `intent:#Intent;action=${encodedAction};end`;
   } else if (pkg && activity) {
-    uri = `intent:#Intent;component=${pkg}/${activity};end`;
+    // Each half is encoded; the '/' between them stays literal. AOSP decodes
+    // the component value before ComponentName.unflattenFromString, so an
+    // encoded half still unflattens correctly.
+    const encodedPkg = encodeIntentPart(pkg);
+    const encodedActivity = encodeIntentPart(activity);
+    if (encodedPkg === null || encodedActivity === null) {
+      logger().warn('fkb.launchTarget.unencodable', { pkg, activity });
+      return false;
+    }
+    uri = `intent:#Intent;component=${encodedPkg}/${encodedActivity};end`;
   } else if (pkg) {
     logger().info('fkb.launchTarget.app', { pkg });
     fully.startApplication(pkg);
@@ -115,21 +153,31 @@ export function launchIntent(packageName, activityName, extras = {}) {
     return false;
   }
 
-  // Keys and values are URL-encoded — Android's Intent.parseUri expects that,
-  // and it keeps a ROM path's spaces/brackets intact and a stray ';' inside a
-  // value from terminating the field and injecting intent structure.
-  // (The sibling ADB path guards the same way — AdbLauncher#validateIntentParam.)
-  // The component is NOT encoded: its dots and '/' are structural syntax.
-  // encodeURIComponent leaves ! ' ( ) * raw. That's deliberate and safe here —
-  // none of those are structural in an intent URI (only ';' '=' '#' are), and
-  // ROM filenames are full of them, so encoding would only add noise.
-  let uri = `intent:#Intent;component=${packageName}/${activityName};`;
+  // Component and extras alike are percent-encoded (see encodeIntentPart).
+  // The component's two halves are encoded individually; the '/' between them
+  // stays literal, since AOSP decodes the value before unflattening it.
+  // The target and the params arrive from the same untrusted JSON response,
+  // so neither half gets to be the trusted one.
+  const encodedPkg = encodeIntentPart(packageName);
+  const encodedActivity = encodeIntentPart(activityName);
+  if (encodedPkg === null || encodedActivity === null) {
+    logger().warn('fkb.intent.unencodable', { packageName, activityName });
+    return false;
+  }
+
+  let uri = `intent:#Intent;component=${encodedPkg}/${encodedActivity};`;
   for (const [key, value] of Object.entries(extras)) {
-    uri += `S.${encodeURIComponent(key)}=${encodeURIComponent(value)};`;
+    const encodedKey = encodeIntentPart(key);
+    const encodedValue = encodeIntentPart(value);
+    if (encodedKey === null || encodedValue === null) {
+      logger().warn('fkb.intent.unencodable', { packageName, activityName, key });
+      return false;
+    }
+    uri += `S.${encodedKey}=${encodedValue};`;
   }
   uri += 'end';
 
-  logger().info('fkb.intent.attempt', { packageName, activityName, extraKeys: Object.keys(extras) });
+  logger().info('fkb.intent.attempt', { packageName, activityName, extraKeys: Object.keys(extras), uri });
   fully.startIntent(uri);
   return true;
 }
