@@ -23,8 +23,10 @@ export function MediaContentSearch() {
   const handleChange = useCallback((id, item) => {
     if (!id) return; // clear/empty commits are no-ops for a transient picker
     log.info('select', { contentId: id, title: item?.title ?? null, type: item?.type ?? null });
-    dispatch(id, item);
-    log.info('dispatch', { contentId: id });
+    // `route` is 'peek' | 'cast' | 'local' — without it, a selection that went
+    // to the wrong surface is invisible in the logs.
+    const route = dispatch(id, item);
+    log.info('dispatch', { contentId: id, route });
   }, [dispatch, log]);
 
   return (
