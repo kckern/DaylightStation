@@ -97,6 +97,37 @@ export function launchAndroidTarget(target = {}) {
   return true;
 }
 
+// Intent URI fields are `;`-delimited and `=`-separated, so an extra KEY carrying
+// either character would terminate its field and inject intent structure. Keys
+// are ours (ROM/LIBRETRO/CONFIGFILE), never user input, so reject rather than
+// escape — a key that needs escaping is a bug, not a value to sanitize.
+const INTENT_KEY_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*$/;
+
+/**
+ * Build an Android intent URI with string extras.
+ *
+ * Values are URL-encoded because `Intent.parseUri` runs `Uri.decode` on them:
+ * every ROM path has spaces and most have brackets — e.g.
+ * `Super Mario Land (JUE) (V1.1) [!].gb` — and a raw `;` would end the field.
+ *
+ * Exported for testing; callers should use `launchIntent`.
+ *
+ * @param {string} packageName
+ * @param {string} activityName
+ * @param {Object} extras - string-valued extras
+ * @returns {string} intent URI
+ */
+export function buildIntentUri(packageName, activityName, extras = {}) {
+  let uri = `intent:#Intent;component=${packageName}/${activityName};`;
+  for (const [key, value] of Object.entries(extras)) {
+    if (!INTENT_KEY_PATTERN.test(key)) {
+      throw new Error(`Invalid intent extra key: ${key}`);
+    }
+    uri += `S.${key}=${encodeURIComponent(String(value))};`;
+  }
+  return uri + 'end';
+}
+
 /**
  * Launch an Android intent with extras via FKB's startIntent API.
  * Uses Android intent URI format: intent:#Intent;component=pkg/act;S.key=val;end
@@ -115,11 +146,13 @@ export function launchIntent(packageName, activityName, extras = {}) {
     return false;
   }
 
-  let uri = `intent:#Intent;component=${packageName}/${activityName};`;
-  for (const [key, value] of Object.entries(extras)) {
-    uri += `S.${key}=${value};`;
+  let uri;
+  try {
+    uri = buildIntentUri(packageName, activityName, extras);
+  } catch (err) {
+    logger().error('fkb.intent.invalid', { packageName, error: err.message });
+    return false;
   }
-  uri += 'end';
 
   logger().info('fkb.intent.attempt', { packageName, activityName, extraKeys: Object.keys(extras) });
   fully.startIntent(uri);
