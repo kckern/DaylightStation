@@ -6,7 +6,7 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { toDownloadSource, toReolinkTime, parseTriggerBits, makeSource, fetchNvrRange } from './ReolinkRecordingAdapter.mjs';
+import { toDownloadSource, toReolinkTime, parseTriggerBits, makeSource, fetchNvrRange, withRetry } from './ReolinkRecordingAdapter.mjs';
 
 describe('toDownloadSource', () => {
   it('strips the driveway absolute mount prefix', () => {
@@ -201,26 +201,44 @@ describe('fetchNvrRange — adaptive splitting', () => {
   });
 });
 
-describe('download retries', () => {
-  it('retries a transient failure and succeeds', async () => {
+describe('withRetry', () => {
+  const noSleep = async () => {};
+
+  it('retries a transient failure and returns the eventual success', async () => {
     let calls = 0;
-    const client = new ReolinkClient({ host: 'x', username: 'u', password: 'p', logger: { warn() {} } });
-    // exercise the retry wrapper by stubbing the single-attempt path
-    client.constructor.prototype.__test = true;
-    const orig = Object.getPrototypeOf(client);
-    let resolved = false;
-    const fake = {
-      async download({ source, destPath, retries = 4, backoffMs = 1 }) {
-        for (let a = 0; a <= retries; a++) {
-          calls++;
-          if (calls >= 3) { resolved = true; return 123; }
-        }
-        throw new Error('exhausted');
+    const out = await withRetry(
+      async () => {
+        calls++;
+        if (calls < 3) throw new Error('HTTP 503');
+        return 'ok';
       },
-    };
-    const bytes = await fake.download({ source: 's', destPath: '/tmp/x', backoffMs: 1 });
-    expect(resolved).toBe(true);
-    expect(bytes).toBe(123);
+      { retries: 4, backoffMs: 1, sleep: noSleep },
+    );
+    expect(out).toBe('ok');
     expect(calls).toBe(3);
+  });
+
+  it('gives up after the configured attempts and rethrows the last error', async () => {
+    let calls = 0;
+    await expect(
+      withRetry(async () => { calls++; throw new Error('HTTP 503'); },
+        { retries: 2, backoffMs: 1, sleep: noSleep }),
+    ).rejects.toThrow('HTTP 503');
+    expect(calls).toBe(3); // initial + 2 retries
+  });
+
+  it('does not retry a call that succeeds first time', async () => {
+    let calls = 0;
+    await withRetry(async () => { calls++; return 1; }, { backoffMs: 1, sleep: noSleep });
+    expect(calls).toBe(1);
+  });
+
+  it('backs off exponentially', async () => {
+    const waits = [];
+    await expect(
+      withRetry(async () => { throw new Error('x'); },
+        { retries: 3, backoffMs: 100, sleep: async (ms) => { waits.push(ms); } }),
+    ).rejects.toThrow();
+    expect(waits).toEqual([100, 200, 400]);
   });
 });

@@ -186,21 +186,14 @@ export class ReolinkClient {
    * Backoff is generous because the remedy is simply to let the device breathe.
    */
   async download({ source, destPath, timeoutMs = 300000, retries = 4, backoffMs = 5000 }) {
-    let lastErr;
-    for (let attempt = 0; attempt <= retries; attempt++) {
-      try {
-        return await this.#downloadOnce({ source, destPath, timeoutMs });
-      } catch (err) {
-        lastErr = err;
-        if (attempt === retries) break;
-        const wait = backoffMs * Math.pow(2, attempt);
+    return withRetry(() => this.#downloadOnce({ source, destPath, timeoutMs }), {
+      retries,
+      backoffMs,
+      onRetry: (attempt, waitMs, err) =>
         this.#logger.warn?.('camera.download.retry', {
-          source, attempt: attempt + 1, of: retries, waitMs: wait, error: err.message,
-        });
-        await new Promise((r) => setTimeout(r, wait));
-      }
-    }
-    throw lastErr;
+          source, attempt, of: retries, waitMs, error: err.message,
+        }),
+    });
   }
 
   async #downloadOnce({ source, destPath, timeoutMs }) {
@@ -227,6 +220,30 @@ export class ReolinkClient {
       });
     });
   }
+}
+
+/**
+ * Run an operation, retrying transient failures with exponential backoff.
+ *
+ * Extracted so the policy is testable without touching the network — the
+ * behaviour it guards (one 503 killing a multi-hour backfill) is exactly the
+ * kind that only shows up hours into a run.
+ */
+export async function withRetry(fn, { retries = 4, backoffMs = 5000, onRetry = null, sleep = null } = {}) {
+  const wait = sleep ?? ((ms) => new Promise((r) => setTimeout(r, ms)));
+  let lastErr;
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      return await fn(attempt);
+    } catch (err) {
+      lastErr = err;
+      if (attempt === retries) break;
+      const delay = backoffMs * Math.pow(2, attempt);
+      onRetry?.(attempt + 1, delay, err);
+      await wait(delay);
+    }
+  }
+  throw lastErr;
 }
 
 export function toReolinkTime(date) {
