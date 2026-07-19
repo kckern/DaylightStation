@@ -177,8 +177,33 @@ export class ReolinkClient {
     return { name: file.fileName, sizeBytes: Number(file.fileSize) };
   }
 
-  /** Stream a named recording to disk. Returns bytes written. */
-  async download({ source, destPath, timeoutMs = 300000 }) {
+  /**
+   * Stream a named recording to disk, retrying transient failures.
+   *
+   * The NVR is serving live recording for both cameras while we pull from it,
+   * and under sustained load it returns 503. Without retries a single one kills
+   * the whole run — a 40-hour backfill died on one 503 after several hours.
+   * Backoff is generous because the remedy is simply to let the device breathe.
+   */
+  async download({ source, destPath, timeoutMs = 300000, retries = 4, backoffMs = 5000 }) {
+    let lastErr;
+    for (let attempt = 0; attempt <= retries; attempt++) {
+      try {
+        return await this.#downloadOnce({ source, destPath, timeoutMs });
+      } catch (err) {
+        lastErr = err;
+        if (attempt === retries) break;
+        const wait = backoffMs * Math.pow(2, attempt);
+        this.#logger.warn?.('camera.download.retry', {
+          source, attempt: attempt + 1, of: retries, waitMs: wait, error: err.message,
+        });
+        await new Promise((r) => setTimeout(r, wait));
+      }
+    }
+    throw lastErr;
+  }
+
+  async #downloadOnce({ source, destPath, timeoutMs }) {
     const rel = toDownloadSource(source);
     const url = this.#url({ cmd: 'Download', source: rel, output: path.basename(rel) });
     return new Promise((resolve, reject) => {

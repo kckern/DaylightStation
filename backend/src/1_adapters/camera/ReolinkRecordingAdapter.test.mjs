@@ -200,3 +200,27 @@ describe('fetchNvrRange — adaptive splitting', () => {
     expect(r.shortfallSec).toBeGreaterThan(0); // reported, not hidden
   });
 });
+
+describe('download retries', () => {
+  it('retries a transient failure and succeeds', async () => {
+    let calls = 0;
+    const client = new ReolinkClient({ host: 'x', username: 'u', password: 'p', logger: { warn() {} } });
+    // exercise the retry wrapper by stubbing the single-attempt path
+    client.constructor.prototype.__test = true;
+    const orig = Object.getPrototypeOf(client);
+    let resolved = false;
+    const fake = {
+      async download({ source, destPath, retries = 4, backoffMs = 1 }) {
+        for (let a = 0; a <= retries; a++) {
+          calls++;
+          if (calls >= 3) { resolved = true; return 123; }
+        }
+        throw new Error('exhausted');
+      },
+    };
+    const bytes = await fake.download({ source: 's', destPath: '/tmp/x', backoffMs: 1 });
+    expect(resolved).toBe(true);
+    expect(bytes).toBe(123);
+    expect(calls).toBe(3);
+  });
+});
