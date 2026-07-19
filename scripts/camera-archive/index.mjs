@@ -35,6 +35,7 @@ import { HomeAssistantAdapter } from '#adapters/home-automation/homeassistant/Ho
 import { toClip, sessionize, labelSessions } from '#domains/camera/selection.mjs';
 import { sunTimes, phaseAt } from '#domains/camera/sun.mjs';
 import { planContactSheets } from '#domains/camera/sheetPlan.mjs';
+import { pendingHours, segmentWanted, hoursCovered } from '#domains/camera/hourSelection.mjs';
 import { renderContactSheets } from '#apps/camera/usecases/RenderContactSheets.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -56,6 +57,7 @@ function parseArgs(argv) {
     else if (arg === '--day') opts.day = rest[++i];
     else if (arg === '--range') opts.range = rest[++i];
     else if (arg === '--config') opts.config = rest[++i];
+    else if (arg === '--tier') opts.tier = rest[++i];
     else if (arg === '--help' || arg === '-h') opts.help = true;
   }
   return opts;
@@ -298,24 +300,134 @@ async function runUntagged({ config, auth, days, opts, logger }) {
   const manifestStore = new ArchiveManifestStore({ root: abs(config.storage.hotPath), logger });
   let totalGB = 0;
 
+  // Tiers run across the WHOLE range before the next begins, so the
+  // interesting content lands across every day early rather than the first few
+  // days landing complete while the rest stay empty. Measured over 17 July
+  // days: person/pet hours are 33% of the total, so the first pass covers the
+  // whole month in a third of the time.
+  const tiers = opts.tier ? [opts.tier] : (config.backfill?.tiers ?? ['person', 'detections', 'all']);
+  for (const tier of tiers) {
+    logger.info(`=== tier: ${tier} ===`);
+    const spanTiers = config.backfill?.spanTiers ?? ['person', 'events'];
+    if (spanTiers.includes(tier)) {
+      await runSpanTier({ config, auth, days, opts, logger, encoder, manifestStore, tier, onGB: (g) => { totalGB += g; } });
+      continue;
+    }
+    await runTier({ config, bcfg, auth, days, opts, logger, encoder, manifestStore, tier, onGB: (g) => { totalGB += g; } });
+  }
+  logger.info(`${opts.dryRun ? '[dry-run] ' : ''}total download: ${totalGB.toFixed(1)} GB`);
+}
+
+/**
+ * Span tier — fetch only the minutes around detections, render their contact
+ * sheets, and stop.
+ *
+ * NvrDownload takes arbitrary ranges, so a 6-minute event costs 6 minutes of
+ * transfer instead of the 60-minute segment containing it. Measured over July
+ * that is ~21% of the full download for every person/pet moment in the range.
+ *
+ * Deliberately produces sheets ONLY. Audio and timelapses need continuous
+ * coverage, so they belong to the later full pass; trying to build them from
+ * fragments would produce something that looks complete and is not.
+ *
+ * The spans are re-downloaded by that later pass. Roughly 20% duplicated work,
+ * bought in exchange for cutting time-to-first-value from ~40 hours to ~6.
+ */
+async function runSpanTier({ config, auth, days, opts, logger, encoder, manifestStore, tier, onGB }) {
+  const strong = ['person', 'visitor', 'pet'];
+  const padSec = config.backfill?.spanPaddingSeconds ?? 60;
+
   for (const cameraCfg of selectCameras(config, opts)) {
     const footageSource = buildSources(config, auth, cameraCfg, logger)[config.sources.footageFrom];
+    const ledgerRoot = abs(config.storage.ledgerPaths[0]);
 
     for (const day of days) {
-      if (manifestStore.isComplete(await manifestStore.read(cameraCfg.id, day)) && !opts.dryRun) {
-        logger.info(`${cameraCfg.id} ${day}: already complete, skipping`);
-        continue;
-      }
+      const detections = await readLedger(ledgerRoot, cameraCfg.id, day);
+      const clips = detections.filter((d) => d.source !== 'density').map(toLedgerClip);
+      if (!clips.length) continue;
 
-      const segments = (await footageSource.search(day)).map((r) => toClip(r, { date: day }));
+      let sessions = labelSessions(sessionize(clips, config.sessionize), detections, {
+        toleranceSeconds: config.classification?.matchToleranceSeconds ?? 15,
+      });
+      if (tier === 'person') sessions = sessions.filter((s) => (s.labels ?? []).some((l) => strong.includes(l)));
+      if (!sessions.length) continue;
+
+      const outDir = path.join(abs(config.storage.hotPath), cameraCfg.id, day);
+      const sheetDir = path.join(outDir, 'sheets');
+      const workDir = path.join(config.storage.workDir, cameraCfg.id, day, 'spans');
+      await mkdir(workDir, { recursive: true });
+
+      const plan = planContactSheets(sessions, day, {
+        maxSpanMs: (config.contactSheets?.maxSpanMinutes ?? 60) * 60_000,
+      }).filter((e) => e.kind === 'event');
+
+      const profile = {
+        ...(config.contactSheets ?? {}),
+        ...(config.contactSheets?.byCamera?.[cameraCfg.id] ?? {}),
+      };
+
+      let gb = 0;
+      for (const [i, entry] of plan.entries()) {
+        const from = new Date(entry.start.getTime() - padSec * 1000);
+        const to = new Date(entry.end.getTime() + padSec * 1000);
+        const spanPath = path.join(workDir, `span-${String(i).padStart(3, '0')}.mp4`);
+
+        if (opts.dryRun) {
+          gb += ((to - from) / 1000) * 0.031; // ~31 KB/s observed for sub
+          continue;
+        }
+        try {
+          await footageSource.fetch({ clip: null, start: from, end: to, destPath: spanPath });
+          await renderContactSheets({
+            segments: [{ start: from, end: to, path: spanPath }],
+            plan: [entry],
+            camera: cameraCfg.id,
+            outDir: sheetDir,
+            encoder,
+            detections,
+            profile,
+            provenance: { pipeline: 'B-span', source: config.sources.footageFrom, channel: cameraCfg.nvrChannel, tier },
+            logger,
+          });
+          await rm(spanPath, { force: true });
+        } catch (err) {
+          logger.warn(`  span failed ${cameraCfg.id} ${day} #${i}: ${err.message}`);
+        }
+        await pause(config.backfill?.interSegmentPauseMs);
+      }
+      onGB(gb / 1000);
+      logger.info(`${tier} ${cameraCfg.id} ${day}: ${plan.length} event sheets`);
+      await rm(workDir, { recursive: true, force: true });
+    }
+  }
+}
+
+async function runTier({ config, bcfg, auth, days, opts, logger, encoder, manifestStore, tier, onGB }) {
+  for (const cameraCfg of selectCameras(config, opts)) {
+    const footageSource = buildSources(config, auth, cameraCfg, logger)[config.sources.footageFrom];
+    const ledgerRoot = abs(config.storage.ledgerPaths[0]);
+
+    for (const day of days) {
+      const prior = await manifestStore.read(cameraCfg.id, day);
+      if (manifestStore.isComplete(prior) && !opts.dryRun) continue;
+
+      // Per-hour resume: a day killed at segment 21/26 keeps those 21 rather
+      // than redoing the whole day, and later tiers skip what earlier ones did.
+      const doneHours = prior?.hoursComplete ?? [];
+      const detections = await readLedger(ledgerRoot, cameraCfg.id, day);
+      const wanted = pendingHours(detections, tier, doneHours);
+      if (!wanted.length) continue;
+
+      const all = (await footageSource.search(day)).map((r) => toClip(r, { date: day }));
+      const segments = all.filter((seg) => segmentWanted(seg, wanted));
       if (!segments.length) {
-        logger.warn(`${cameraCfg.id} ${day}: no recordings`);
+        logger.warn(`${cameraCfg.id} ${day}: no segments for tier ${tier}`);
         continue;
       }
 
       const sun = sunTimes(day, config.sun.latitude, config.sun.longitude);
       const dayGB = segments.reduce((a, s) => a + s.sizeBytes, 0) / 1e9;
-      totalGB += dayGB;
+      onGB(dayGB);
 
       if (opts.dryRun) {
         const byPhase = segments.reduce((acc, s) => {
@@ -323,28 +435,52 @@ async function runUntagged({ config, auth, days, opts, logger }) {
           acc[p] = (acc[p] ?? 0) + 1;
           return acc;
         }, {});
-        logger.info(`[dry-run] ${cameraCfg.id} ${day}: ${segments.length} segments, ${dayGB.toFixed(2)} GB`, byPhase);
+        logger.info(
+          `[dry-run] ${tier} ${cameraCfg.id} ${day}: ${segments.length}/${all.length} segments, ${dayGB.toFixed(2)} GB`,
+          byPhase,
+        );
         continue;
       }
 
       await manifestStore.markInProgress(cameraCfg.id, day, 'B');
       const outputs = await materializeUntagged({
         config, bcfg, cameraCfg, day, segments, sun, footageSource, encoder, logger,
+        detections, onHoursDone: async (hours) => {
+          // Checkpoint after every segment. Without this a day killed near the
+          // end loses everything already downloaded, which at ~1 MB/s is an
+          // hour of work.
+          const merged = [...new Set([...doneHours, ...hours])].sort((a, b) => a - b);
+          await manifestStore.write(cameraCfg.id, day, {
+            ...(await manifestStore.read(cameraCfg.id, day)),
+            camera: cameraCfg.id, day, pipeline: 'B', status: 'partial',
+            hoursComplete: merged,
+          });
+        },
       });
-      await manifestStore.write(
-        cameraCfg.id,
-        day,
-        manifestStore.build({
-          camera: cameraCfg.id, day, pipeline: 'B', sessions: [], outputs, sun, config,
-          stats: { segments: segments.length, downloadedGB: Math.round(dayGB * 100) / 100 },
-        }),
-      );
+
+      const covered = [...new Set([...doneHours, ...segments.flatMap(hoursCovered)])].sort((a, b) => a - b);
+      const manifest = manifestStore.build({
+        camera: cameraCfg.id, day, pipeline: 'B', sessions: [], outputs, sun, config,
+        stats: { segments: segments.length, downloadedGB: Math.round(dayGB * 100) / 100, tier },
+      });
+      // Only a day whose every hour has been materialised is 'complete'; a
+      // tiered pass leaves the rest for a later tier to fill in.
+      const missing = Array.from({ length: 24 }, (_, i) => i).filter((h) => !covered.includes(h));
+      await manifestStore.write(cameraCfg.id, day, {
+        ...manifest,
+        status: missing.length ? 'partial' : 'complete',
+        hoursComplete: covered,
+        hoursPending: missing,
+      });
     }
   }
   logger.info(`${opts.dryRun ? '[dry-run] ' : ''}total download: ${totalGB.toFixed(1)} GB`);
 }
 
-async function materializeUntagged({ config, bcfg, cameraCfg, day, segments, sun, footageSource, encoder, logger }) {
+async function materializeUntagged({
+  config, bcfg, cameraCfg, day, segments, sun, footageSource, encoder, logger,
+  detections = [], onHoursDone = null,
+}) {
   const workDir = path.join(config.storage.workDir, cameraCfg.id, day);
   const outDir = path.join(abs(config.storage.hotPath), cameraCfg.id, day);
   await mkdir(workDir, { recursive: true });
@@ -366,6 +502,7 @@ async function materializeUntagged({ config, bcfg, cameraCfg, day, segments, sun
     phaseFiles[phaseAt(seg.start, sun, config.sun.offsetMinutes)].push(localPath);
     localSegments.push({ start: seg.start, end: seg.end, path: localPath });
     logger.info(`  ${cameraCfg.id} ${day} segment ${i + 1}/${segments.length}`);
+    if (onHoursDone) await onHoursDone(segments.slice(0, i + 1).flatMap(hoursCovered));
     await pause(config.backfill?.interSegmentPauseMs);
   }
 
@@ -373,8 +510,6 @@ async function materializeUntagged({ config, bcfg, cameraCfg, day, segments, sun
   // rather than assumed empty: this range was labelled retroactively, so days
   // that do have detections get event sheets instead of blanket hourly ones.
   if (config.contactSheets?.enabled !== false) {
-    const ledgerRoot = abs(config.storage.ledgerPaths[0]);
-    const detections = await readLedger(ledgerRoot, cameraCfg.id, day);
     const sessions = labelSessions(
       sessionize(detections.filter((d) => d.source !== 'density').map(toLedgerClip), config.sessionize),
       detections,

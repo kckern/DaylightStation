@@ -28,7 +28,7 @@ import { mkdir, rm } from 'fs/promises';
 
 import { toClip, sessionize, labelSessions, selectSessions } from '#domains/camera/selection.mjs';
 import { sunTimes, phaseAt } from '#domains/camera/sun.mjs';
-import { planContactSheets } from '#domains/camera/sheetPlan.mjs';
+import { planContactSheets, primaryLabel } from '#domains/camera/sheetPlan.mjs';
 import { renderContactSheets } from '#apps/camera/usecases/RenderContactSheets.mjs';
 
 export class ArchiveCameraDay {
@@ -152,7 +152,7 @@ export class ArchiveCameraDay {
 
     // --- selected session clips ---------------------------------------------
     for (const [i, session] of plan.selected.entries()) {
-      const label = (session.labels[0] ?? 'motion').replace(/[^a-z0-9]/gi, '');
+      const label = primaryLabel(session.labels);
       const outPath = path.join(outDir, `s${String(i + 1).padStart(2, '0')}-${hhmm(session.start)}-${label}.mp4`);
       const cut = await this.#cutSpan({ local, start: session.start, end: session.end, outPath, workDir, i });
       if (!cut) continue;
