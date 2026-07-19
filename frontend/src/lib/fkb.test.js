@@ -50,6 +50,17 @@ describe('fkb launchIntent', () => {
     expect(startIntent.mock.calls[0][0]).toBe(`${HEAD}S.ROM=Rock%2BRoll.gb;end`);
   });
 
+  // A raw '#' is the quiet killer: parseUri does lastIndexOf("#") then
+  // startsWith("#Intent;", i), so a later '#' fails that check and drops the
+  // whole URI into the legacy getIntentOld path instead of erroring.
+  it('encodes # so the #Intent; marker stays the last one', () => {
+    const { startIntent } = mockBridge();
+    launchIntent(PKG, ACT, { ROM: 'Tetris #1.gb' });
+    const uri = startIntent.mock.calls[0][0];
+    expect(uri).toBe(`${HEAD}S.ROM=Tetris%20%231.gb;end`);
+    expect(uri.lastIndexOf('#')).toBe(uri.indexOf('#Intent;'));
+  });
+
   it('encodes non-ASCII filenames as UTF-8 percent escapes', () => {
     const { startIntent } = mockBridge();
     launchIntent(PKG, ACT, { ROM: 'Pokémon.gb' });
@@ -74,10 +85,14 @@ describe('fkb launchIntent', () => {
     const { startIntent } = mockBridge();
 
     launchIntent('com.evil;S.EVIL=1', ACT, {});
-    expect(startIntent.mock.calls[0][0]).not.toMatch(/;S\.EVIL=1;/);
+    expect(startIntent.mock.calls[0][0]).toBe(
+      `intent:#Intent;component=com.evil%3BS.EVIL%3D1/${ACT};end`
+    );
 
     launchIntent(PKG, 'Act;S.EVIL=1', {});
-    expect(startIntent.mock.calls[1][0]).not.toMatch(/;S\.EVIL=1;/);
+    expect(startIntent.mock.calls[1][0]).toBe(
+      `intent:#Intent;component=${PKG}/Act%3BS.EVIL%3D1;end`
+    );
   });
 
   it('keeps the component usable: dots raw, / separator literal', () => {
@@ -177,7 +192,9 @@ describe('fkb launchAndroidTarget', () => {
   it('does not let a component field inject intent structure', () => {
     const { startIntent } = mockBridge();
     launchAndroidTarget({ package: 'com.evil;S.EVIL=1', activity: '.Main' });
-    expect(startIntent.mock.calls[0][0]).not.toMatch(/;S\.EVIL=1;/);
+    expect(startIntent.mock.calls[0][0]).toBe(
+      'intent:#Intent;component=com.evil%3BS.EVIL%3D1/.Main;end'
+    );
   });
 
   it('returns false instead of throwing on an unencodable action', () => {
