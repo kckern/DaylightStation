@@ -42,37 +42,42 @@ describe('FitnessTimeline pruning', () => {
     // Series should be at MAX_SERIES_LENGTH
     expect(series.length).toBe(2000);
 
-    // Most recent value should be preserved at the end
-    // Note: Due to tickIndex/array index mismatch after pruning,
-    // only the final value is guaranteed to be at the expected position
-    const lastValue = series[series.length - 1];
-    expect(lastValue).toBe(2099);
+    expect(series[0]).toBe(100);
+    expect(series[series.length - 1]).toBe(2099);
   });
 
-  test('pruning behavior with tickIndex mismatch documented', () => {
-    // This test documents the actual pruning behavior.
-    // After pruning, array indices no longer match tickIndex, causing sparse arrays.
-    // The pruning DOES cap array length, preventing unbounded growth.
-
+  test('pruning keeps a dense rolling window without repadding to absolute tick count', () => {
     for (let i = 0; i < 2100; i++) {
       timeline.tick({ 'test:hr': i });
     }
 
     const series = timeline.series['test:hr'];
 
-    // Length is capped
     expect(series.length).toBe(2000);
-
-    // The tickCount keeps incrementing regardless of pruning
     expect(timeline.timebase.tickCount).toBe(2100);
+    expect(timeline.timebase.prunedTickCount).toBe(100);
 
-    // Count non-null values - most will be null due to index padding after prune
     const nonNullCount = series.filter(v => v !== null).length;
+    expect(nonNullCount).toBe(2000);
+    expect(series[0]).toBe(100);
+    expect(series[1999]).toBe(2099);
+  });
 
-    // After pruning, the array has many nulls due to the tickIndex/array index mismatch
-    // The key point: memory is bounded, even if data isn't perfectly preserved
-    expect(nonNullCount).toBeLessThan(2100);
-    expect(series.length).toBeLessThanOrEqual(2000);
+  test('long-running timeline prunes a constant one tick per tick after cap', () => {
+    for (let i = 0; i < 5000; i++) {
+      timeline.tick({ 'device:7138:rpm': i });
+    }
+
+    const series = timeline.series['device:7138:rpm'];
+    expect(series.length).toBe(2000);
+    expect(timeline.timebase.tickCount).toBe(5000);
+    expect(timeline.timebase.prunedTickCount).toBe(3000);
+    expect(series[0]).toBe(3000);
+    expect(series[1999]).toBe(4999);
+    expect(FitnessTimeline.validateSeriesLengths(timeline.timebase, timeline.series)).toEqual({
+      ok: true,
+      issues: []
+    });
   });
 
   test('multiple series are pruned independently', () => {

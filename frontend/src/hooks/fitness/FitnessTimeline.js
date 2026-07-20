@@ -43,6 +43,7 @@ export class FitnessTimeline {
       startTime: this._normalizeStartTime(startTime),
       intervalMs: this._normalizeInterval(intervalMs),
       tickCount: 0,
+      prunedTickCount: 0,
       lastTickTimestamp: null
     };
     this.series = {};
@@ -53,6 +54,7 @@ export class FitnessTimeline {
     this.timebase.startTime = this._normalizeStartTime(startTime);
     this.timebase.intervalMs = this._normalizeInterval(intervalMs);
     this.timebase.tickCount = 0;
+    this.timebase.prunedTickCount = 0;
     this.timebase.lastTickTimestamp = null;
     this.series = {};
     this.events = [];
@@ -71,6 +73,7 @@ export class FitnessTimeline {
       }
     }
     this.timebase.tickCount += count;
+    this._pruneSeriesWindow();
   }
 
   setIntervalMs(intervalMs) {
@@ -79,40 +82,28 @@ export class FitnessTimeline {
 
   tick(metricsSnapshot = {}, options = {}) {
     const tickIndex = this.timebase.tickCount;
+    const localTickIndex = this._getLocalTickIndex(tickIndex);
     const normalizedSnapshot = this._normalizeSnapshot(metricsSnapshot);
     const providedKeys = new Set(Object.keys(normalizedSnapshot));
     const allKnownKeys = new Set([...Object.keys(this.series), ...providedKeys]);
 
     providedKeys.forEach((key) => {
-      const seriesRef = this._getOrCreateSeries(key, tickIndex);
-      seriesRef[tickIndex] = normalizedSnapshot[key];
+      const seriesRef = this._getOrCreateSeries(key, localTickIndex);
+      seriesRef[localTickIndex] = normalizedSnapshot[key];
     });
 
     // Ensure every tracked series advances even without new data.
     allKnownKeys.forEach((key) => {
       if (providedKeys.has(key)) return;
-      const seriesRef = this._getOrCreateSeries(key, tickIndex);
-      seriesRef[tickIndex] = null;
+      const seriesRef = this._getOrCreateSeries(key, localTickIndex);
+      seriesRef[localTickIndex] = null;
     });
 
     const timestamp = this._resolveTickTimestamp(tickIndex, options.timestamp);
     this.timebase.tickCount = tickIndex + 1;
     this.timebase.lastTickTimestamp = timestamp;
 
-    // MEMORY LEAK FIX: Prune old data to prevent unbounded growth
-    let prunedCount = 0;
-    Object.entries(this.series).forEach(([key, arr]) => {
-      if (Array.isArray(arr) && arr.length > MAX_SERIES_LENGTH) {
-        const removed = arr.length - MAX_SERIES_LENGTH;
-        arr.splice(0, removed);
-        prunedCount++;
-        
-        // Log first prune only to avoid spam
-        if (prunedCount === 1 && typeof console !== 'undefined') {
-          console.warn('[FitnessTimeline] Pruned', removed, 'old points from', key, '(current length:', arr.length, ')');
-        }
-      }
-    });
+    this._pruneSeriesWindow();
 
     return { tickIndex, timestamp };
   }
@@ -298,7 +289,8 @@ export class FitnessTimeline {
     const timebaseSummary = {
       startTime: this.timebase.startTime,
       intervalMs: this.timebase.intervalMs,
-      tickCount: this.timebase.tickCount
+      tickCount: this.timebase.tickCount,
+      prunedTickCount: this._getPrunedTickCount()
     };
     if (Number.isFinite(this.timebase.lastTickTimestamp)) {
       timebaseSummary.lastTickTimestamp = this.timebase.lastTickTimestamp;
@@ -315,12 +307,16 @@ export class FitnessTimeline {
     if (!Number.isFinite(tickCount) || tickCount < 0) {
       return { ok: true, issues: [] };
     }
+    const prunedTickCount = Number(timebase?.prunedTickCount);
+    const expectedLength = Number.isFinite(prunedTickCount) && prunedTickCount > 0
+      ? Math.max(0, tickCount - prunedTickCount)
+      : tickCount;
 
     const issues = [];
     Object.entries(series || {}).forEach(([key, arr]) => {
       if (!Array.isArray(arr)) return;
-      if (arr.length !== tickCount) {
-        issues.push({ key, length: arr.length, tickCount });
+      if (arr.length !== expectedLength) {
+        issues.push({ key, length: arr.length, tickCount, prunedTickCount: Math.max(0, prunedTickCount || 0), expectedLength });
       }
     });
 
@@ -365,6 +361,33 @@ export class FitnessTimeline {
       }
     }
     return this.series[key];
+  }
+
+  _getPrunedTickCount() {
+    const value = Number(this.timebase.prunedTickCount);
+    return Number.isFinite(value) && value > 0 ? value : 0;
+  }
+
+  _getLocalTickIndex(tickIndex) {
+    return Math.max(0, tickIndex - this._getPrunedTickCount());
+  }
+
+  _pruneSeriesWindow() {
+    const lengths = Object.values(this.series)
+      .filter(Array.isArray)
+      .map((arr) => arr.length);
+    if (!lengths.length) return 0;
+
+    const maxLength = Math.max(...lengths);
+    const removeCount = maxLength - MAX_SERIES_LENGTH;
+    if (removeCount <= 0) return 0;
+
+    Object.values(this.series).forEach((arr) => {
+      if (!Array.isArray(arr) || arr.length === 0) return;
+      arr.splice(0, Math.min(removeCount, arr.length));
+    });
+    this.timebase.prunedTickCount = this._getPrunedTickCount() + removeCount;
+    return removeCount;
   }
 
   _normalizeStartTime(value) {
