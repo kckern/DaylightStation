@@ -4,7 +4,7 @@ import {
   encodeDensity,
   encodeContainer,
   RESET_CODE,
-} from '#domains/nutrition/ScanVocabulary.mjs';
+} from '#domains/nutrition';
 
 describe('parseScan', () => {
   describe('density codes', () => {

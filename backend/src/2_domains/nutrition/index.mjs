@@ -35,5 +35,13 @@ export {
   formatFoodList,
 } from './entities/formatters.mjs';
 
+// Scan vocabulary (fridge-sheet QR grammar)
+export {
+  parseScan,
+  encodeDensity,
+  encodeContainer,
+  RESET_CODE,
+} from './ScanVocabulary.mjs';
+
 // Services
 export { FoodLogService } from './services/FoodLogService.mjs';
