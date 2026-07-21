@@ -41,6 +41,19 @@ async function req(method, path, body) {
 }
 
 function pretty(o) { console.log(typeof o === 'string' ? o : JSON.stringify(o, null, 2)); }
+
+/**
+ * Report a guard-deadline change that reached memory but not disk. Never prints a
+ * tick: the operator must know the change evaporates at the next restart, which is
+ * exactly what the v23 rearm bug hid.
+ */
+function halfApplied(r, summary) {
+  if (!r || typeof r === 'string' || (!r.inMemoryCleared && !r.warning)) { pretty(r); return; }
+  console.log(`⚠ PARTIALLY APPLIED — ${summary}.`);
+  console.log(`  in memory : ${r.inMemoryCleared ? 'applied' : 'NOT applied'}`);
+  console.log(`  persisted : ${r.persistedCleared ? 'applied' : 'FAILED'}`);
+  if (r.warning) console.log(`  ${r.warning}`);
+}
 function fmtDur(ms) {
   if (!ms && ms !== 0) return '?';
   const s = Math.round(ms / 1000);
@@ -253,15 +266,19 @@ const cmds = {
     if (r.verdict === 'DISABLED') console.log('(guard is off — set watchdogKioskSettingsEnabled true)');
     if (r.verdict === 'UNREACHABLE') console.log('(FKB did not answer — check fkbPassword / is FKB running?)');
   },
+  // Both of these report the IN-MEMORY and PERSISTED halves separately. A change that
+  // applied to only one half is not a success: it reverts at the next restart, and the
+  // v23 bug was precisely a rearm that printed "✓" while the guard stayed inert.
   async ['kiosk-disarm']([minutes]) {
     const m = minutes || '60';
     const r = await req('POST', `/kiosk/settings/disarm?minutes=${encodeURIComponent(m)}`);
     if (r.ok) console.log(`✓ drift guard disarmed for ${r.minutes} min (until ${new Date(r.disarmUntilMs).toISOString()})`);
-    else pretty(r);
+    else halfApplied(r, `disarm applied for this session only`);
   },
   async ['kiosk-rearm']() {
     const r = await req('POST', '/kiosk/settings/rearm');
-    console.log(r.ok ? '✓ drift guard re-armed' : JSON.stringify(r));
+    if (r.ok) console.log('✓ drift guard re-armed (in memory and on disk)');
+    else halfApplied(r, 'guard re-armed for this session only');
   },
   async crashlog() {
     const r = await req('GET', '/crashlog');
