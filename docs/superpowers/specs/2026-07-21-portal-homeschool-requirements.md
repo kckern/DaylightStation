@@ -368,6 +368,8 @@ Each row is an independent spec → plan → build cycle.
 | 5 | Parent view + sign-off + reassignment | M | 4 | R7, R6.5 |
 | 6 | Economy hooks | S | 1 or 2 | R8 |
 | 7 | Content gates | S | 4 | R10 |
+| 9 | Writing assignments (TipTap) | M | 1 | spec: `2026-07-21-school-writing-assignments-design.md` |
+| 10 | Typing tutor (drill + arcade) | M | 1 | spec: `2026-07-21-school-typing-tutor-design.md` |
 | 8 | Android launch touch affordances | XS | — | R11.4 |
 
 **R11 (Zoom) is mostly not a sub-project.** Launching already works generically
