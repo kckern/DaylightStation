@@ -25,7 +25,7 @@ export default function ClozeItem({ item, onSubmit, verdict }) {
         {after}
       </p>
       {!verdict && <button type="button" className="school-item__check" onClick={submit}>Check</button>}
-      {verdict && !verdict.correct && (
+      {verdict && !verdict.correct && verdict.expected && (
         <p className="school-item__expected">Answer: <strong>{verdict.expected}</strong></p>
       )}
     </div>

@@ -20,7 +20,7 @@ export default function ShortAnswerItem({ item, onSubmit, verdict }) {
         onChange={(e) => setText(e.target.value)}
         onKeyDown={(e) => { if (e.key === 'Enter') submit(); }} />
       {!verdict && <button type="button" className="school-item__check" onClick={submit}>Check</button>}
-      {verdict && !verdict.correct && (
+      {verdict && !verdict.correct && verdict.expected && (
         <p className="school-item__expected">Answer: <strong>{verdict.expected}</strong></p>
       )}
     </div>

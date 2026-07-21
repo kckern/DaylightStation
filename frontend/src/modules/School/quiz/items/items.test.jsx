@@ -25,6 +25,13 @@ describe('MultipleChoiceItem', () => {
     fireEvent.click(btn);
     expect(onSubmit).toHaveBeenCalledTimes(1);
   });
+  it('renders safely and goes inert on an unrecorded verdict carrying no expected/correct', () => {
+    const onSubmit = vi.fn();
+    render(<MultipleChoiceItem item={item} onSubmit={onSubmit} verdict={{ unrecorded: true }} />);
+    expect(screen.getByRole('button', { name: 'Olympia' })).toBeDisabled();
+    fireEvent.click(screen.getByRole('button', { name: 'Olympia' }));
+    expect(onSubmit).not.toHaveBeenCalled();
+  });
 });
 
 describe('ShortAnswerItem', () => {
@@ -47,6 +54,12 @@ describe('ShortAnswerItem', () => {
     fireEvent.click(screen.getByRole('button', { name: /check/i }));
     expect(onSubmit).toHaveBeenCalledTimes(1);
   });
+  it('renders safely (no answer block) on an unrecorded verdict carrying no expected/correct', () => {
+    const onSubmit = vi.fn();
+    render(<ShortAnswerItem item={item} onSubmit={onSubmit} verdict={{ unrecorded: true }} />);
+    expect(screen.queryByText(/^Answer:/)).not.toBeInTheDocument();
+    expect(screen.getByRole('textbox')).toBeDisabled();
+  });
 });
 
 describe('ClozeItem', () => {
@@ -66,6 +79,12 @@ describe('ClozeItem', () => {
     fireEvent.keyDown(input, { key: 'Enter' });
     fireEvent.click(screen.getByRole('button', { name: /check/i }));
     expect(onSubmit).toHaveBeenCalledTimes(1);
+  });
+  it('renders safely (no answer block) on an unrecorded verdict carrying no expected/correct', () => {
+    const onSubmit = vi.fn();
+    render(<ClozeItem item={{ id: 'q', type: 'cloze', prompt: 'Capital of Idaho is ___.', answer: 'Boise' }} onSubmit={onSubmit} verdict={{ unrecorded: true }} />);
+    expect(screen.queryByText(/^Answer:/)).not.toBeInTheDocument();
+    expect(screen.getByRole('textbox')).toBeDisabled();
   });
 });
 
@@ -114,5 +133,11 @@ describe('MatchingItem', () => {
     fireEvent.click(check);
     fireEvent.click(check);
     expect(onSubmit).toHaveBeenCalledTimes(1);
+  });
+  it('renders safely (no answer block, no crash) on an unrecorded verdict carrying no expected/correct', () => {
+    const onSubmit = vi.fn();
+    render(<MatchingItem item={item} onSubmit={onSubmit} verdict={{ unrecorded: true }} />);
+    expect(screen.queryByRole('button', { name: /check/i })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'WA' })).toBeDisabled();
   });
 });
