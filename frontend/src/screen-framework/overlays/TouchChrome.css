@@ -1,0 +1,50 @@
+/* TouchChrome — the reserved control lane for touch-only screens.
+   The lane sits BESIDE content, not over it, so it never occludes the picture.
+   translateZ(0) is defensive: a playing <video> GPU-promotes above sibling
+   elements and can cover controls that lack their own compositing layer. */
+.touch-chrome {
+  flex: 0 0 auto;
+  height: 80px;
+  display: flex;
+  align-items: center;
+  gap: 1.5rem;
+  padding: 0 1.5rem;
+  background: #101014;
+  border-top: 1px solid rgba(255, 255, 255, 0.12);
+  transform: translateZ(0);
+  user-select: none;
+}
+
+.touch-chrome__group {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+/* Pushes volume to the far edge, away from Back, so a mis-tap can't exit. */
+.touch-chrome__group--end {
+  margin-left: auto;
+}
+
+.touch-chrome__btn {
+  min-width: 64px;
+  height: 64px;
+  padding: 0 1rem;
+  font-size: 1.75rem;
+  line-height: 1;
+  color: #e8e8ea;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 12px;
+  cursor: pointer;
+  /* No transition: kiosk WebViews drop frames animating many elements at once. */
+}
+
+.touch-chrome__btn:active {
+  background: rgba(255, 255, 255, 0.22);
+}
+
+.touch-chrome__btn--back {
+  min-width: 88px;
+  background: rgba(255, 255, 255, 0.14);
+}
