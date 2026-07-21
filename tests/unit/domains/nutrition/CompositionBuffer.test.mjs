@@ -265,21 +265,44 @@ describe('CompositionBuffer', () => {
       expect(buf.read('scale-1')).toMatchObject({ grams: 320, density: 4, complete: true });
     });
 
-    it('preserves scans made before anything was placed on the scale', () => {
-      // A session-end with no weight recorded is not a placement ending — it is
-      // noise (a bump, a re-baseline). Consuming on it would destroy a scan the
-      // user made in advance, which is the flow order-independence exists for.
+    it('consumes scans even when no weight was ever recorded', () => {
+      // The bridge ends sessions that never yield a weight: the min_grams floor
+      // guard, and the suspicion filter that suppresses a storage-band placement
+      // or a heavy jump after a post storm. Surviving those would hand the next
+      // real weight a density and tare belonging to no food on the scale.
       buf.setDensity('scale-1', 4);
       buf.setContainer('scale-1', 'mug');
       buf.endPlacement('scale-1');
-      expect(buf.read('scale-1')).toMatchObject({ density: 4, container: 'mug' });
+      expect(buf.read('scale-1')).toMatchObject({ density: null, container: null });
     });
 
-    it('reports whether it consumed a placement', () => {
+    it('does not let a suppressed placement leak scans into the next weight', () => {
+      // Full walk of the configured leak path, end to end.
+      buf.setDensity('scale-1', 2);
+      buf.setContainer('scale-1', 'small-bowl');
+      buf.endPlacement('scale-1');            // suppressed placement: no weight posted
+
+      clock += 60_000;
+      buf.setWeight('scale-1', { grams: 700, unit: 'g' });
+      expect(buf.read('scale-1')).toMatchObject({
+        grams: 700, density: null, container: null, complete: false,
+      });
+    });
+
+    it('reports whether it had anything to consume', () => {
+      expect(buf.endPlacement('scale-1')).toBe(false);   // nothing buffered at all
       buf.setDensity('scale-1', 4);
-      expect(buf.endPlacement('scale-1')).toBe(false);   // nothing was placed
+      expect(buf.endPlacement('scale-1')).toBe(true);    // weightless scans still count
       buf.setWeight('scale-1', { grams: 300, unit: 'g' });
-      expect(buf.endPlacement('scale-1')).toBe(true);    // consumed
+      expect(buf.endPlacement('scale-1')).toBe(true);
+    });
+
+    it('treats an expired slot as nothing to consume', () => {
+      // Matches clear(): an already-expired buffer was not consumed by this
+      // placement, and must not report as though it were.
+      buf.setDensity('scale-1', 4);
+      clock += 900_001;
+      expect(buf.endPlacement('scale-1')).toBe(false);
     });
 
     it('is idempotent on repeated placement ends', () => {
@@ -353,10 +376,24 @@ describe('CompositionBuffer', () => {
     });
   });
 
-  it('never reads the wall clock', () => {
-    // A buffer built with an injected clock must not age against Date.now().
-    const frozen = createCompositionBuffer({ windowMs: 1, now: () => 0 });
-    frozen.setDensity('scale-1', 4);
-    expect(frozen.read('scale-1').density).toBe(4);
+  describe('clock injection', () => {
+    it('requires a clock rather than defaulting to Date.now', () => {
+      // No Date.now fallback: a caller who forgets to inject would otherwise get
+      // wall-clock aging in a module whose contract is deterministic window math,
+      // and no test would catch it. Fail at construction instead.
+      expect(() => createCompositionBuffer({ windowMs: 900_000 })).toThrow(ValidationError);
+      expect(() => createCompositionBuffer()).toThrow(ValidationError);
+      expect(() => createCompositionBuffer({ windowMs: 900_000, now: undefined }))
+        .toThrow(ValidationError);
+    });
+
+    it('ages only against the injected clock, never the wall clock', () => {
+      // windowMs of 1 with a frozen clock: anything consulting Date.now would
+      // expire this immediately, since real time advances between the two calls.
+      const frozen = createCompositionBuffer({ windowMs: 1, now: () => 0 });
+      frozen.setDensity('scale-1', 4);
+      expect(frozen.read('scale-1').density).toBe(4);
+      expect(frozen.endPlacement('scale-1')).toBe(true);
+    });
   });
 });
