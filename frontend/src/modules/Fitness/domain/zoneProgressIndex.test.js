@@ -69,6 +69,51 @@ describe('buildZoneProgressIndex', () => {
     expect(index.get('dev_a').progress).toBe(0.66); // the real device id wins
   });
 
+  it('indexes every strap in deviceIds, not just the primary', () => {
+    // Multi-strap users: participantLookupByDevice already indexes ALL device
+    // IDs, so this index must too or multi-strap users regress to a miss.
+    const index = buildZoneProgressIndex(new Map([
+      ['user_1', {
+        name: 'Kevin', displayLabel: 'Dad', deviceId: 'dev_primary',
+        deviceIds: ['dev_primary', 'dev_secondary'], progress: 0.66, profileId: 'user_1',
+      }],
+    ]));
+    expect(index.get('dev_secondary').progress).toBe(0.66);
+    expect(index.get('dev_primary').progress).toBe(0.66);
+  });
+
+  it('does not let a deviceIds entry override a higher-precedence alias', () => {
+    // user_2 lists user_1's profileId and primary deviceId among its straps.
+    // Both higher-precedence passes have already claimed those aliases.
+    const colliding = new Map([
+      ['user_1', { name: 'Kevin', deviceId: 'dev_a', progress: 0.66, profileId: 'user_1' }],
+      ['user_2', { name: 'Sam', deviceIds: ['user_1', 'dev_a', 'dev_own'], progress: 0.11, profileId: 'user_2' }],
+    ]);
+    const index = buildZoneProgressIndex(colliding);
+    expect(index.get('user_1').progress).toBe(0.66); // profileId pass wins
+    expect(index.get('dev_a').progress).toBe(0.66);  // deviceId pass wins
+    expect(index.get('dev_own').progress).toBe(0.11); // uncontested strap resolves
+  });
+
+  it('gives deviceIds precedence over a colliding name', () => {
+    const colliding = new Map([
+      ['user_1', { name: 'Kevin', deviceIds: ['dev_x'], progress: 0.66, profileId: 'user_1' }],
+      ['user_2', { name: 'dev_x', progress: 0.2, profileId: 'user_2' }],
+    ]);
+    const index = buildZoneProgressIndex(colliding);
+    expect(index.get('dev_x').progress).toBe(0.66);
+  });
+
+  it('tolerates a missing or non-array deviceIds', () => {
+    const index = buildZoneProgressIndex(new Map([
+      ['user_1', { name: 'Kevin', progress: 0.66, profileId: 'user_1' }],
+      ['user_2', { name: 'Sam', deviceIds: 'not-an-array', progress: 0.11, profileId: 'user_2' }],
+    ]));
+    expect(index.get('Kevin').progress).toBe(0.66);
+    expect(index.get('Sam').progress).toBe(0.11);
+    expect(index.has('not-an-array')).toBe(false);
+  });
+
   it('resolves a shared group label to one arbitrary user (first writer wins)', () => {
     // Two participants can share a group_label. A label-only lookup is
     // therefore AMBIGUOUS — callers must pass profileId first.

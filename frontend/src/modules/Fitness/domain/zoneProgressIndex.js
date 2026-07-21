@@ -18,10 +18,11 @@
 /**
  * Build a lookup index from a userVitals collection.
  *
- * Aliases are added in four passes so precedence is deterministic regardless
- * of iteration order: profile IDs (stable, never a display string) > device
- * IDs (stable) > given names > display labels (group labels like "Dad", which
- * can legitimately collide across users). First writer wins within a pass.
+ * Aliases are added in five passes so precedence is deterministic regardless
+ * of iteration order: profile IDs (stable, never a display string) > primary
+ * device ID (stable) > secondary device IDs > given names > display labels
+ * (group labels like "Dad", which can legitimately collide across users).
+ * First writer wins, both within a pass and across passes.
  *
  * Device IDs are indexed because `resolveDisplayName` falls back to the raw
  * device ID string when a strap has no resolved user
@@ -33,11 +34,12 @@
  * case-folding them risks collapsing distinct users onto one entry.
  *
  * Reads these fields off each entry: `profileId` (falls back to the
- * collection key), `deviceId`, `name`, `displayLabel`.
+ * collection key), `deviceId`, `deviceIds`, `name`, `displayLabel`.
  *
- * Known partial: `deviceId` is the user's PRIMARY strap only
- * (`user.hrDeviceId`, FitnessContext.jsx:1855). A multi-device user's
- * secondary straps in `user.hrDeviceIds` are not aliased.
+ * `deviceId` is the user's PRIMARY strap (`user.hrDeviceId`); `deviceIds` is
+ * the full strap list (`user.hrDeviceIds`), so multi-strap users resolve from
+ * ANY of their straps. This mirrors `participantLookupByDevice`, which already
+ * indexes every device ID rather than just the primary.
  *
  * @param {Map<string, Object>|Object|null} userVitals - keyed by profile ID
  * @returns {Map<string, Object>} alias → progress entry
@@ -70,6 +72,10 @@ export const buildZoneProgressIndex = (userVitals) => {
 
   entries.forEach((entry) => addAlias(entry.profileId, entry));
   entries.forEach((entry) => addAlias(entry.deviceId, entry));
+  entries.forEach((entry) => {
+    if (!Array.isArray(entry.deviceIds)) return;
+    entry.deviceIds.forEach((id) => addAlias(id, entry));
+  });
   entries.forEach((entry) => addAlias(entry.name, entry));
   entries.forEach((entry) => addAlias(entry.displayLabel, entry));
 
