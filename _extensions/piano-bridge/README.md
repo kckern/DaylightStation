@@ -167,17 +167,31 @@ stands down for **15 minutes** afterwards (verdict `INSTALL_HOLD`) — it will n
 *read*, let alone write. The suppression is inferred from install activity, so the
 deploy needs no extra manual step.
 
+**Force a check.** `pbctl kiosk-check` runs one pass immediately and reports what it
+found and fixed, **bypassing the install hold**. This is how you verify the guard after
+a deploy without waiting out the 15-minute hold — and it exists precisely so nobody has
+to temporarily zero `watchdogKioskSettingsInstallHoldMs` and risk forgetting to restore
+it, which would break the next install.
+
+> A forced check bypasses the install hold but is **still refused while disarmed or
+> disabled**. The asymmetry is deliberate: the install hold is something the guard
+> *inferred* from a recent `/update`, and an operator asking for a check right now
+> knows better than the inference. Disarm and disable are explicit human instructions
+> to leave things alone, and "check now" is not "override my instruction". Same
+> reasoning is recorded at `KioskSettingsGuard.runPass`.
+
 **Disarm — the hands-on escape hatch.** For deliberate fiddling with FKB's settings:
 
 ```bash
 PB_HOST=$PB node pbctl.mjs kiosk-settings        # verdict, drift, repairs, desired table
+PB_HOST=$PB node pbctl.mjs kiosk-check           # force one pass NOW (ignores install hold)
 PB_HOST=$PB node pbctl.mjs kiosk-disarm          # pause repair for 60 min (the default)
 PB_HOST=$PB node pbctl.mjs kiosk-disarm 15       # …or an explicit number of minutes
 PB_HOST=$PB node pbctl.mjs kiosk-rearm           # resume repair immediately
 ```
 
-Underlying routes: `GET /kiosk/settings`, `POST /kiosk/settings/disarm?minutes=60`,
-`POST /kiosk/settings/rearm`. `minutes` defaults to **60** and is clamped to **1 …
+Underlying routes: `GET /kiosk/settings`, `POST /kiosk/settings/check`,
+`POST /kiosk/settings/disarm?minutes=60`, `POST /kiosk/settings/rearm`. `minutes` defaults to **60** and is clamped to **1 …
 1440 (24 h)** so a fat-fingered `6000` can't disarm the guard until next year. The
 deadline takes effect in memory immediately **and** is persisted to
 `kioskSettingsDisarmUntilEpochMs` via the merging `writeOverride`, so it **survives a
@@ -305,23 +319,17 @@ node ../../../cli/fkb.cli.mjs url https://daylightlocal.kckern.net/piano
 node ../../../cli/fkb.cli.mjs set kioskMode true
 pkill -f "http.server 8799"                     # stop the temp server
 
-# 9. VERIFY the guard is live (new in versionCode 22)
-PB_HOST=$PB node ../pbctl.mjs kiosk-settings
-#    Right after a deploy this reports INSTALL_HOLD — step 5 stamped the hold and it
-#    runs 15 min. That is correct behaviour, not a fault. To run the acceptance test
-#    NOW rather than waiting it out, drop the hold to zero, test, then restore it:
-PB_HOST=$PB node ../pbctl.mjs config set watchdogKioskSettingsInstallHoldMs 0
+# 9. VERIFY the guard is live (new in versionCode 22) — break it, prove it heals.
+#    `kiosk-check` forces one pass immediately, bypassing the 15-min install hold
+#    step 5 just stamped, so there is nothing to edit and nothing to restore.
 node ../../../cli/fkb.cli.mjs set kioskMode false     # break it on purpose
-#    …wait ~60s, then BOTH of these must show the repair:
+PB_HOST=$PB node ../pbctl.mjs kiosk-check             # want: verdict REPAIRED, repaired: kioskMode
 node ../../../cli/fkb.cli.mjs get kioskMode           # want: true
-PB_HOST=$PB node ../pbctl.mjs crashlog | grep KIOSKSET
-PB_HOST=$PB node ../pbctl.mjs config set watchdogKioskSettingsInstallHoldMs 900000   # ⚠ RESTORE
 ```
 
-> ⚠️ If you zero `watchdogKioskSettingsInstallHoldMs` for the step-9 test, **restore it
-> to `900000` before the next deploy** — with the hold at zero the guard will re-arm
-> `kioskMode` under your install-confirm tap and the install dies with
-> `INSTALL_FAILED_ABORTED`. `pbctl kiosk-settings` shows the live value.
+This is the real acceptance test — everything before it is unit-tested scaffolding.
+`pbctl kiosk-settings` afterwards should show `repairs: kioskMode×1`, and the repair
+is in the durable log (`pbctl crashlog | grep KIOSKSET`).
 
 **Config note:** a replace-install used to wipe the on-device override — as of
 versionCode 19 (`1.11-config-merge`) `POST /config` **merges** and the baked
@@ -451,12 +459,9 @@ Output: `app/app/build/outputs/apk/debug/app-debug.apk`.
 > **`:app:testDebugUnitTest` is unaffected** — the JVM unit tests need no NDK and no
 > `third_party`, and run fine in a bare worktree. Only the APK build needs the symlink.
 >
-> ⚠️ **Do not commit that symlink.** The ignore rule is `third_party/` — a
-> *directory-only* pattern, which does **not** match a symlink of the same name. So the
-> symlink shows up as an untracked file and a careless `git add -A` will commit an
-> absolute path from one machine into the repo. Verify with
-> `git status --short -- app/src/main/cpp/` before committing from a worktree, and
-> remove the symlink when you're done building.
+> The symlink is gitignored and safe to leave in place. (`cpp/.gitignore` carries both
+> `third_party/` and a bare `third_party` — the directory-only form does **not** match
+> a symlink, so the bare entry is what covers the worktree case. Keep both.)
 
 > **Historical note (superseded):** a 2026-07-02 revision of this section claimed the
 > checked-in `gradle-wrapper.jar` was "truncated (46 KB)" and told you to invoke the

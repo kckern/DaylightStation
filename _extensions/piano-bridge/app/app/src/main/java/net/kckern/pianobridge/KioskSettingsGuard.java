@@ -181,25 +181,55 @@ public final class KioskSettingsGuard {
 
     // --- the tick -----------------------------------------------------------
 
+    /** The outcome of one pass: what was found wrong, and what was successfully fixed. */
+    static final class Pass {
+        final Verdict verdict;
+        /** Keys observed to have drifted. Empty unless the pass got as far as reading. */
+        final List<String> drifted;
+        /** Keys actually written back OK — diverges from {@link #drifted} on write failure. */
+        final List<String> repaired;
+        Pass(Verdict verdict, List<String> drifted, List<String> repaired) {
+            this.verdict = verdict; this.drifted = drifted; this.repaired = repaired;
+        }
+    }
+
     /**
-     * One evaluation. Returns the verdict so it is directly assertable; the on-device
-     * timer ignores the return value and reads {@link #snapshot()} instead.
+     * One scheduled evaluation. Returns the verdict so it is directly assertable; the
+     * on-device timer ignores the return value and reads {@link #snapshot()} instead.
      */
-    Verdict tick() {
+    Verdict tick() { return runPass(false).verdict; }
+
+    /**
+     * One evaluation.
+     *
+     * <p><b>What {@code force} does, and what it deliberately does NOT.</b> A forced
+     * pass (POST /kiosk/settings/check) bypasses the INSTALL HOLD but is still refused
+     * by DISABLED and DISARMED. The distinction is inference vs. instruction: the
+     * install hold is something the guard *inferred* from a recent /update, and the
+     * operator asking for a check right now has better information than the inference
+     * — they know whether an install is really pending. Disabled and disarmed are
+     * explicit human settings meaning "leave this alone", and a request to check is
+     * not a request to override them. A future reader will wonder why the three gates
+     * aren't treated alike; this is why.
+     *
+     * <p>Synchronized so a forced pass and the timer's pass can't interleave their
+     * reads, writes and result bookkeeping.
+     */
+    synchronized Pass runPass(boolean force) {
         Params p = params.get();
         long now = clock.getAsLong();
         lastCheckAtMs = now;
 
-        if (!p.enabled) return record(Verdict.DISABLED, 0);
+        if (!p.enabled) return refuse(Verdict.DISABLED);
 
         long disarmUntil = Math.max(p.disarmUntilMs, disarmUntilOverrideMs);
-        if (now < disarmUntil) return record(Verdict.DISARMED, 0);
+        if (now < disarmUntil) return refuse(Verdict.DISARMED);
 
         // Stand down while an APK install may be in flight — re-arming kiosk mode
         // mid-install auto-dismisses the confirm dialog and aborts the install.
         long sinceUpdate = now - lastUpdateRequestAtMs.getAsLong();
-        if (lastUpdateRequestAtMs.getAsLong() > 0 && sinceUpdate < p.installHoldMs) {
-            return record(Verdict.INSTALL_HOLD, 0);
+        if (!force && lastUpdateRequestAtMs.getAsLong() > 0 && sinceUpdate < p.installHoldMs) {
+            return refuse(Verdict.INSTALL_HOLD);
         }
 
         if (!p.hasPassword) {
@@ -210,38 +240,70 @@ public final class KioskSettingsGuard {
                 notes.note("KIOSKSET", "fkbPassword is unset — kiosk-settings guard is INERT. "
                         + "Set it with `pbctl config set fkbPassword …`.");
             }
-            return record(Verdict.NO_PASSWORD, 0);
+            return refuse(Verdict.NO_PASSWORD);
         }
 
         Map<String, String> live = fkb.listSettings();
-        if (live == null || live.isEmpty()) return record(Verdict.UNREACHABLE, 0);
+        if (live == null || live.isEmpty()) return refuse(Verdict.UNREACHABLE);
 
         List<KioskSettings.Drift> drifts = KioskSettings.detect(live);
-        if (drifts.isEmpty()) return record(Verdict.OK, 0);
+        if (drifts.isEmpty()) return record(Verdict.OK, emptyList(), emptyList());
 
         // Write ONLY what drifted, never the whole desired set.
+        List<String> drifted = new ArrayList<>();
         List<String> repaired = new ArrayList<>();
+        List<String> detail = new ArrayList<>();
         for (KioskSettings.Drift d : drifts) {
+            drifted.add(d.key);
             boolean ok = d.type == KioskSettings.Type.BOOL
                     ? fkb.setBoolean(d.key, d.desired)
                     : fkb.setString(d.key, d.desired);
-            repaired.add(d.key + " " + d.live + "→" + d.desired + (ok ? "" : " [WRITE FAILED]"));
+            detail.add(d.key + " " + d.live + "→" + d.desired + (ok ? "" : " [WRITE FAILED]"));
             if (ok) {
+                repaired.add(d.key);
                 repairsSinceBoot.computeIfAbsent(d.key, k -> new AtomicInteger()).incrementAndGet();
             }
         }
-        lastRepair = String.join(", ", repaired);
+        lastRepair = String.join(", ", detail);
         // This line is the whole point of the feature: it is how a kiosk found
         // switched off becomes visible after the fact.
         notes.note("KIOSKSET", "drift repaired: " + lastRepair);
         Log.w(TAG, "drift repaired: " + lastRepair);
-        return record(Verdict.REPAIRED, drifts.size());
+        return record(Verdict.REPAIRED, drifted, repaired);
     }
 
-    private Verdict record(Verdict v, int driftCount) {
+    /** A pass that stopped at a gate — no read, no write, nothing found. */
+    private Pass refuse(Verdict v) { return record(v, emptyList(), emptyList()); }
+
+    private Pass record(Verdict v, List<String> drifted, List<String> repaired) {
         lastVerdict = v;
-        lastDriftCount = driftCount;
-        return v;
+        lastDriftCount = drifted.size();
+        return new Pass(v, drifted, repaired);
+    }
+
+    private static List<String> emptyList() { return java.util.Collections.emptyList(); }
+
+    /**
+     * Run one pass RIGHT NOW, bypassing the install hold, and report what happened.
+     * Drives POST /kiosk/settings/check — the deploy-time acceptance test. See
+     * {@link #runPass} for why this overrides the hold but not a disarm.
+     */
+    public JSONObject forceCheck() {
+        Pass p = runPass(true);
+        JSONObject o = new JSONObject();
+        try {
+            o.put("ok", true);
+            o.put("forced", true);
+            o.put("verdict", p.verdict.name());
+            o.put("driftCount", p.drifted.size());
+            o.put("drifted", new org.json.JSONArray(p.drifted));
+            o.put("repaired", new org.json.JSONArray(p.repaired));
+            o.put("lastRepair", lastRepair == null ? JSONObject.NULL : lastRepair);
+        } catch (Exception e) {
+            try { o.put("ok", false).put("error", String.valueOf(e.getMessage())); }
+            catch (Exception ignored) { }
+        }
+        return o;
     }
 
     // --- disarm / re-arm ----------------------------------------------------
