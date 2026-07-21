@@ -2349,7 +2349,17 @@ export default function SchoolApp({ clear }) {
 }
 ```
 
-`frontend/src/modules/School/School.scss` — write the module stylesheet: dark theme matching the Portal, `.school-app` column layout (header 64px / body flex-1), `.school-app__chip` right-aligned with the avatar at 2rem, `.school-browse__grid` as `repeat(auto-fill, minmax(280px, 1fr))` cards, all buttons `min-height: 64px` (touch floor), `.school-item__choices` as a 2-column grid, `.school-item__chip` full-width, `.school-runner__unrecorded` a high-contrast warning bar, `.school-runner__grades` two half-width buttons (Missed left / Got it right). Keep it under ~150 lines; no animation (kiosk WebView frame budget).
+**First, make `frontend/src/lib/identity/identity.scss` self-sufficient.** Its
+rules reference Piano theme tokens (`--piano-surface`, `--piano-border`,
+`--piano-accent`, `--piano-warn`, `--r-lg`, `--t-display`, and any others it
+uses) that are defined ONLY in the `:root` block of `frontend/src/Apps/PianoApp.scss`.
+That resolves today purely because bundling makes them global — School must not
+depend on that. Give every `var()` in `identity.scss` a fallback, e.g.
+`var(--piano-surface, #16161a)`, choosing fallbacks that match the values in
+`PianoApp.scss`'s `:root` so Piano is visually unchanged. Do not redefine the
+tokens in `School.scss` — the shared module owns its own defaults.
+
+Then `frontend/src/modules/School/School.scss` — write the module stylesheet: dark theme matching the Portal, `.school-app` column layout (header 64px / body flex-1), `.school-app__chip` right-aligned with the avatar at 2rem, `.school-browse__grid` as `repeat(auto-fill, minmax(280px, 1fr))` cards, all buttons `min-height: 64px` (touch floor), `.school-item__choices` as a 2-column grid, `.school-item__chip` full-width, `.school-runner__unrecorded` a high-contrast warning bar, `.school-runner__grades` two half-width buttons (Missed left / Got it right). Keep it under ~150 lines; no animation (kiosk WebView frame budget).
 
 Registry — add to `frontend/src/lib/appRegistry.js` after the `'gameshow'` entry:
 
