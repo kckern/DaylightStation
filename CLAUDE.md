@@ -206,6 +206,7 @@ git rev-parse HEAD > docs/docs-last-updated.txt
 | Piano Producer (jam/song builder) | `docs/reference/piano/producer.md` |
 | Household economy (coins) | `docs/reference/economy/economy.md` |
 | Journalist domain (journaling bot) | `docs/reference/journalist/journalist-domain.md` |
+| School / Portal homeschool | `docs/reference/school/README.md` |
 | NewsReporter framework (scheduled reports) | `docs/reference/newsreporter/newsreporter-framework.md` |
 
 ---
