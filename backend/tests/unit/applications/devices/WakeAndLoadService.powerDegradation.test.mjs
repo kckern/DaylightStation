@@ -23,7 +23,10 @@ function makeDevice(overrides) {
     id: 'office-tv',
     screenPath: '/screen/office',
     defaultVolume: null,
-    hasCapability: () => false,
+    // This suite models a TV that HAS device_control — its power script dispatches
+    // but the state sensor never confirms. A blanket-false stub would send it down
+    // the self-powered skip path and bypass the power semantics under test.
+    hasCapability: (cap) => cap === 'deviceControl',
     prepareForContent: async () => ({ ok: true }),
     loadContent: async () => ({ ok: true, url: 'http://test/screen/office' }),
     powerOn: async () => ({ ok: true, verified: true }),
