@@ -14,6 +14,27 @@ describe('validateQuestionBank', () => {
   it('keeps an explicit generic audience', () => {
     expect(validateQuestionBank(bank({ audience: 'generic' })).bank.audience).toBe('generic');
   });
+  it('finding 6: treats a null audience (YAML `audience:` with no value) the same as absent', () => {
+    const r = validateQuestionBank(bank({ audience: null }));
+    expect(r.ok).toBe(true);
+    expect(r.bank.audience).toBe('assigned');
+  });
+  it('finding 1: a single long run of underscores counts as exactly one blank', () => {
+    const r = validateQuestionBank(bank({ items: [
+      { id: 'q1', type: 'cloze', prompt: 'The capital is ________.', answer: 'Olympia' },
+    ] }));
+    expect(r.ok).toBe(true);
+  });
+  it('finding 2: rejects a multiple_choice answer that is not a string, naming the item', () => {
+    const r = validateQuestionBank(bank({ items: [mc({ answer: { fake: 1 } })] }));
+    expect(r.ok).toBe(false);
+    expect(r.errors).toContain('items[0]: answer must be a non-empty string');
+  });
+  it('finding 4: rejects a multiple_choice answer that is an empty string, naming the item', () => {
+    const r = validateQuestionBank(bank({ items: [mc({ answer: '' })] }));
+    expect(r.ok).toBe(false);
+    expect(r.errors).toContain('items[0]: answer must be a non-empty string');
+  });
   it.each([
     ['missing id', bank({ id: undefined })],
     ['missing title', bank({ title: undefined })],
@@ -31,6 +52,19 @@ describe('validateQuestionBank', () => {
     ['matching duplicate lefts', bank({ items: [{ id: 'q1', type: 'matching', prompt: 'M', pairs: [{ left: 'a', right: 'b' }, { left: 'a', right: 'c' }] }] })],
     ['matching duplicate rights', bank({ items: [{ id: 'q1', type: 'matching', prompt: 'M', pairs: [{ left: 'a', right: 'b' }, { left: 'c', right: 'b' }] }] })],
     ['not an object', null],
+    // finding 2: leaf values rendered by the UI must be strings, not objects
+    ['choices with a non-string entry', bank({ items: [mc({ choices: [{ fake: 1 }, 'Olympia'] })] })],
+    ['accept with a non-string entry', bank({ items: [{ id: 'q1', type: 'short_answer', prompt: 'P?', answer: 'x', accept: [{ fake: 1 }] }] })],
+    ['matching pair left not a string', bank({ items: [{ id: 'q1', type: 'matching', prompt: 'M', pairs: [{ left: { fake: 1 }, right: 'b' }, { left: 'c', right: 'd' }] }] })],
+    ['matching pair right not a string', bank({ items: [{ id: 'q1', type: 'matching', prompt: 'M', pairs: [{ left: 'a', right: { fake: 1 } }, { left: 'c', right: 'd' }] }] })],
+    // finding 4: empty / whitespace-only leaves must be rejected, not just falsy
+    ['multiple_choice choice is empty string', bank({ items: [mc({ choices: ['', 'Olympia'] })] })],
+    ['multiple_choice choice is whitespace only', bank({ items: [mc({ choices: ['   ', 'Olympia'] })] })],
+    // finding 5: a malformed `topics` must be rejected, not silently discarded
+    ['topics present but not an array', bank({ topics: 'science' })],
+    ['topics array with a non-string entry', bank({ topics: ['science', 5] })],
+    // finding 7: accept-must-be-an-array branch, previously untested
+    ['accept not an array', bank({ items: [{ id: 'q1', type: 'short_answer', prompt: 'P?', answer: 'x', accept: 'salem' }] })],
   ])('rejects: %s', (_label, raw) => {
     const r = validateQuestionBank(raw);
     expect(r.ok).toBe(false);
