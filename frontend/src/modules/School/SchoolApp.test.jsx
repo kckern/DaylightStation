@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
 import SchoolApp from './SchoolApp.jsx';
 
 const banksMock = vi.fn();
@@ -23,20 +23,52 @@ beforeEach(() => {
   }));
 });
 
+// Both bank cards render the title as an <h3>; find the card wrapper so we can
+// scope a Quiz/Cards button lookup to the specific bank under test (the grid
+// otherwise has ambiguous duplicate "Quiz"/"Cards" buttons once both an
+// assigned and a generic bank are visible at once).
+function cardFor(title) {
+  return screen.getByText(title).closest('.school-browse__card');
+}
+
 describe('SchoolApp', () => {
-  it('unclaimed: starting a bank opens the picker; picking claims and enters the quiz', async () => {
+  it('unclaimed browser sees both an assigned and a generic bank (gate loosened)', async () => {
     render(<SchoolApp clear={() => {}} />);
-    fireEvent.click(await screen.findByRole('button', { name: /quiz/i }));
+    expect(await screen.findByText('Caps')).toBeInTheDocument();
+    expect(screen.getByText('Animals')).toBeInTheDocument();
+  });
+
+  it('unclaimed: launching an assigned bank opens the picker; picking a profile proceeds into the runner', async () => {
+    render(<SchoolApp clear={() => {}} />);
+    await screen.findByText('Caps');
+    fireEvent.click(within(cardFor('Caps')).getByRole('button', { name: /quiz/i }));
     expect(await screen.findByRole('dialog')).toBeInTheDocument(); // ProfilePicker
     fireEvent.click(screen.getByText('Alpha'));
     expect(await screen.findByText('WA?')).toBeInTheDocument();
   });
-  it('guest sees only generic banks', async () => {
+
+  it('unclaimed: launching an assigned bank then dismissing the picker refuses it, does not enter the runner, and narrows the list to generic', async () => {
     render(<SchoolApp clear={() => {}} />);
-    fireEvent.click(await screen.findByRole('button', { name: /tap to sign in/i }));
-    fireEvent.click(await screen.findByLabelText(/close/i)); // dismiss picker -> guest
+    await screen.findByText('Caps');
+    fireEvent.click(within(cardFor('Caps')).getByRole('button', { name: /quiz/i }));
+    await screen.findByRole('dialog');
+    fireEvent.click(screen.getByLabelText(/close/i)); // dismiss picker -> guest
+
+    expect(await screen.findByText(/sign in to take this one/i)).toBeInTheDocument();
+    expect(screen.queryByText('WA?')).toBeNull();
+
     await waitFor(() => expect(banksMock).toHaveBeenLastCalledWith('generic'));
     expect(await screen.findByText('Animals')).toBeInTheDocument();
     expect(screen.queryByText('Caps')).toBeNull();
+  });
+
+  it('unclaimed: launching a generic bank then dismissing the picker proceeds as guest into the runner', async () => {
+    render(<SchoolApp clear={() => {}} />);
+    await screen.findByText('Animals');
+    fireEvent.click(within(cardFor('Animals')).getByRole('button', { name: /quiz/i }));
+    await screen.findByRole('dialog');
+    fireEvent.click(screen.getByLabelText(/close/i)); // dismiss picker -> guest, but generic work proceeds
+
+    expect(await screen.findByText('WA?')).toBeInTheDocument();
   });
 });
