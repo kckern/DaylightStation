@@ -28,7 +28,7 @@ public class KioskSettingsGuardTest {
     // --- fakes ------------------------------------------------------------
 
     /** Records every read and write so tests can assert on "did nothing". */
-    private static final class FakeFkb implements KioskSettingsGuard.Fkb {
+    private static class FakeFkb implements KioskSettingsGuard.Fkb {
         Map<String, String> live = new HashMap<>();
         int reads = 0;
         final List<String> writes = new ArrayList<>();
@@ -215,6 +215,101 @@ public class KioskSettingsGuardTest {
 
         assertEquals(Verdict.UNREACHABLE, v);
         assertEquals(1, fkb.reads);
+        assertTrue(fkb.writes.isEmpty());
+    }
+
+    // --- force check ------------------------------------------------------
+    //
+    // The asymmetry these assert: a force check BYPASSES the install hold but is still
+    // refused by an explicit disarm. See KioskSettingsGuard.runPass for the reasoning.
+
+    @Test
+    public void forceCheck_bypassesAnActiveInstallHold() {
+        // Exactly the deploy-verification case: an /update landed seconds ago, so the
+        // ordinary tick is standing down, but the operator has asked for a check NOW.
+        FakeFkb fkb = new FakeFkb();
+        fkb.live = healthy();
+        fkb.live.put("kioskMode", "false");
+        long now = 1_000_000L;
+        KioskSettingsGuard g = guard(fkb, new FakeNotes(), params(true, true, 0, 900_000L),
+                now, now - 5_000L);
+
+        // The scheduled tick refuses, as it must — it would abort an install in flight.
+        assertEquals(Verdict.INSTALL_HOLD, g.tick());
+        assertEquals(0, fkb.reads);
+
+        KioskSettingsGuard.Pass p = g.runPass(true);
+        assertEquals(Verdict.REPAIRED, p.verdict);
+        assertEquals(java.util.Collections.singletonList("kioskMode"), p.drifted);
+        assertEquals(java.util.Collections.singletonList("kioskMode"), p.repaired);
+        assertTrue(fkb.writes.contains("bool:kioskMode=true"));
+    }
+
+    @Test
+    public void forceCheck_isStillRefusedWhileDisarmed() {
+        // A disarm is a human saying "leave me alone"; a force check must not override
+        // it. Only the install hold — an INFERENCE — is bypassable.
+        FakeFkb fkb = new FakeFkb();
+        fkb.live = healthy();
+        fkb.live.put("kioskMode", "false");
+        long now = 1_000_000L;
+        KioskSettingsGuard g = guard(fkb, new FakeNotes(), params(true, true, now + 60_000L, 900_000L),
+                now, 0L);
+
+        KioskSettingsGuard.Pass p = g.runPass(true);
+        assertEquals(Verdict.DISARMED, p.verdict);
+        assertEquals(0, fkb.reads);
+        assertTrue(fkb.writes.isEmpty());
+        assertTrue(p.repaired.isEmpty());
+    }
+
+    @Test
+    public void forceCheck_isStillRefusedWhileDisabled() {
+        // Same reasoning as disarm: watchdogKioskSettingsEnabled=false is an explicit
+        // human setting, not an inference.
+        FakeFkb fkb = new FakeFkb();
+        fkb.live = healthy();
+        fkb.live.put("kioskMode", "false");
+        KioskSettingsGuard g = guard(fkb, new FakeNotes(), params(false, true, 0, 900_000L),
+                1_000_000L, 0L);
+
+        assertEquals(Verdict.DISABLED, g.runPass(true).verdict);
+        assertEquals(0, fkb.reads);
+        assertTrue(fkb.writes.isEmpty());
+    }
+
+    @Test
+    public void forceCheck_reportsDriftedAndRepairedKeysSeparately() {
+        // They diverge when a write fails, which is what makes reporting both useful.
+        FakeFkb fkb = new FakeFkb() {
+            @Override public boolean setString(String key, String value) {
+                super.setString(key, value);
+                return false;   // FKB rejected it
+            }
+        };
+        fkb.live = healthy();
+        fkb.live.put("kioskMode", "false");         // bool  — will succeed
+        fkb.live.put("reloadPageFailure", "0");     // string — will fail
+        KioskSettingsGuard g = guard(fkb, new FakeNotes(), params(true, true, 0, 900_000L),
+                1_000_000L, 0L);
+
+        KioskSettingsGuard.Pass p = g.runPass(true);
+        assertEquals(2, p.drifted.size());
+        assertEquals("only the successful write counts as repaired",
+                java.util.Collections.singletonList("kioskMode"), p.repaired);
+    }
+
+    @Test
+    public void forceCheck_onACleanKioskReportsOkAndRepairsNothing() {
+        FakeFkb fkb = new FakeFkb();
+        fkb.live = healthy();
+        KioskSettingsGuard g = guard(fkb, new FakeNotes(), params(true, true, 0, 900_000L),
+                1_000_000L, 0L);
+
+        KioskSettingsGuard.Pass p = g.runPass(true);
+        assertEquals(Verdict.OK, p.verdict);
+        assertTrue(p.drifted.isEmpty());
+        assertTrue(p.repaired.isEmpty());
         assertTrue(fkb.writes.isEmpty());
     }
 

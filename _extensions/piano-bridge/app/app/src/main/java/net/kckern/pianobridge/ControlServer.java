@@ -114,6 +114,7 @@ public class ControlServer extends NanoWSD {
                             .put("GET /kiosk                  (WebView watchdog verdict + recovery counters)")
                             .put("POST /kiosk/beat            (page heartbeat ingest: {fps,visibility,url})")
                             .put("GET /kiosk/settings         (FKB kiosk-settings drift guard: verdict, repairs, disarm)")
+                            .put("POST /kiosk/settings/check   (force one drift pass NOW, bypassing the install hold)")
                             .put("POST /kiosk/settings/disarm?minutes=60  (stop repairing drift while fiddling; max 24h)")
                             .put("POST /kiosk/settings/rearm   (re-arm the drift guard now)")
                             .put("GET /crashlog               (durable death/crash + reboot-cap record)")
@@ -171,6 +172,15 @@ public class ControlServer extends NanoWSD {
                 case "/kiosk/settings": {
                     KioskSettingsGuard g = service.getKioskSettingsGuard();
                     return json(g != null ? g.snapshot() : err("no_settings_guard"));
+                }
+                case "/kiosk/settings/check": {
+                    // Run one pass NOW, bypassing the install hold — the deploy-time
+                    // acceptance test ("break kioskMode, prove the guard fixes it")
+                    // without having to edit the hold out of the config and remember to
+                    // put it back. Still refused while disarmed/disabled.
+                    KioskSettingsGuard g = service.getKioskSettingsGuard();
+                    if (g == null) return json(err("no_settings_guard"));
+                    return json(g.forceCheck());
                 }
                 case "/kiosk/settings/disarm": {
                     // Hands-on escape hatch: stop the guard repairing drift while
