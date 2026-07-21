@@ -11,6 +11,43 @@ export function laneX(idx, n, halfW, inset) {
 }
 
 /**
+ * De-collide the fixed-screen-size rank/gap badges in the POV panel.
+ *
+ * Rider lateral separation on screen is a function of the panel's HEIGHT alone —
+ * three.js `PerspectiveCamera` takes a VERTICAL fov, so the width term cancels
+ * out of the projection and a wider panel reveals more road without moving the
+ * riders apart. In the tall, narrow POV column that leaves adjacent-rank riders
+ * closer together than two badges are wide, and their gap readouts overlap into
+ * unreadable mush.
+ *
+ * Resolution: place nearest-first (so the rider you care about most keeps its
+ * natural spot) and push each colliding badge below whatever it hit. Boxes are
+ * centred on x and top-anchored at y, matching the `translate(-50%,0)` the
+ * renderer applies. Mutates nothing — returns new boxes with resolved `y`.
+ *
+ * @param {Array<{x:number,y:number,w:number,h:number,dist:number}>} boxes
+ * @param {number} gapPx  vertical breathing room between stacked badges
+ * @returns {Array} same objects (new refs) ordered nearest-first, `y` resolved
+ */
+export function resolveBadgeStack(boxes = [], gapPx = 3) {
+  const sorted = [...boxes].sort((a, b) => a.dist - b.dist).map((b) => ({ ...b }));
+  const placed = [];
+  sorted.forEach((b) => {
+    const hits = (q) => Math.abs(b.x - q.x) < (b.w + q.w) / 2
+      && b.y < q.y + q.h + gapPx
+      && b.y + b.h + gapPx > q.y;
+    // Each push strictly increases b.y past the box it hit, so this terminates;
+    // the pass bound is a backstop against a pathological frame, not a real case.
+    for (let pass = 0, moved = true; moved && pass <= placed.length; pass++) {
+      moved = false;
+      placed.forEach((q) => { if (hits(q)) { b.y = q.y + q.h + gapPx; moved = true; } });
+    }
+    placed.push(b);
+  });
+  return placed;
+}
+
+/**
  * Gap compression (audit C5): a rider more than ~100 m ahead of the camera
  * anchor would dolly past the max-zoom cap and fog out, so the person you're
  * chasing leaves the screen. We keep true metres inside the identity window
