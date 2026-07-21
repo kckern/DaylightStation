@@ -6,6 +6,7 @@ import CircularUserAvatar from '@/modules/Fitness/components/CircularUserAvatar.
 import RpmDeviceAvatar from '@/modules/Fitness/components/RpmDeviceAvatar.jsx';
 import { DEFAULT_ANONYMOUS_HR_HARD_FLOOR_BPM } from '@/hooks/fitness/ParticipantRoster.js';
 import { resolveUserZone } from './resolveUserZone.js';
+import { lookupZoneProgress } from '@/modules/Fitness/domain/zoneProgressIndex.js';
 import './FullscreenVitalsOverlay.scss';
 
 const RPM_COLOR_MAP = {
@@ -62,7 +63,7 @@ const FullscreenVitalsOverlay = ({ visible = false }) => {
     usersConfigRaw = {},
     equipment = [],
     deviceConfiguration,
-    userZoneProgress
+    zoneProgressIndex
   } = fitnessCtx || {};
 
   const cycleChallenge = fitnessCtx?.governanceState?.challenge || null;
@@ -116,11 +117,14 @@ const FullscreenVitalsOverlay = ({ visible = false }) => {
         const zoneInfo = resolveUserZone(user?.name, device, { userCurrentZones, zones, usersConfigRaw });
         const profileSlug = getProfileSlug(user);
         const avatarSrc = DaylightMediaPath(`/static/img/users/${profileSlug}`);
-        const progressEntry = user?.name && userZoneProgress instanceof Map
-          ? userZoneProgress.get(user.name)
-          : (userZoneProgress && typeof userZoneProgress === 'object'
-            ? userZoneProgress[user?.name]
-            : null);
+        // ID first: a name-only lookup misses whenever the display name has
+        // become a group label (2+ riders present).
+        const progressEntry = lookupZoneProgress(zoneProgressIndex, {
+          profileId: user?.id,
+          name: user?.name,
+          displayLabel: user?.displayLabel,
+          deviceId: device.deviceId
+        });
         const progressValue = typeof progressEntry?.progress === 'number'
           ? Math.max(0, Math.min(1, progressEntry.progress))
           : null;
@@ -143,7 +147,7 @@ const FullscreenVitalsOverlay = ({ visible = false }) => {
             : null
         };
       });
-  }, [allUsers, getUserByDevice, heartRateDevices, userCurrentZones, usersConfigRaw, zones, userZoneProgress, boostContributions]);
+  }, [allUsers, getUserByDevice, heartRateDevices, userCurrentZones, usersConfigRaw, zones, zoneProgressIndex, boostContributions]);
 
   const rpmItems = useMemo(() => {
     const cadenceConfig = deviceConfiguration?.cadence || {};

@@ -15,6 +15,7 @@
  */
 
 import { createEmptyParticipant, validateParticipant } from './Participant.js';
+import { lookupZoneProgress } from './zoneProgressIndex.js';
 
 /**
  * Default inactive timeout (ms) - device considered inactive after this period without readings
@@ -31,6 +32,7 @@ const DEFAULT_INACTIVE_TIMEOUT = 60000;
  * @param {Array} [options.zoneConfig] - Zone configuration for zone lookup
  * @param {number} [options.inactiveTimeout] - Timeout for inactive determination
  * @param {Function} [options.getDisplayLabel] - Function to resolve display labels
+ * @param {Map<string, Object>} [options.zoneProgressIndex] - From buildZoneProgressIndex(); resolves zoneProgress by stable ID
  * @returns {import('./Participant.js').Participant}
  */
 export const fromRosterEntry = (rosterEntry, options = {}) => {
@@ -42,7 +44,8 @@ export const fromRosterEntry = (rosterEntry, options = {}) => {
     devices = [],
     zoneConfig = [],
     inactiveTimeout = DEFAULT_INACTIVE_TIMEOUT,
-    getDisplayLabel
+    getDisplayLabel,
+    zoneProgressIndex = null
   } = options;
 
   // Find matching raw device (for timestamp info)
@@ -67,6 +70,18 @@ export const fromRosterEntry = (rosterEntry, options = {}) => {
     ? getDisplayLabel(rosterEntry.name, { userId: id })
     : (rosterEntry.displayLabel || rosterEntry.name || 'Participant');
 
+  // Resolve zone progress by STABLE ID first. Looking this up by display name
+  // is what broke the sidebar sort on 2026-07-21 — see zoneProgressIndex.js.
+  const progressEntry = zoneProgressIndex
+    ? lookupZoneProgress(zoneProgressIndex, {
+        profileId: rosterEntry.profileId || id,
+        id,
+        name: rosterEntry.name,
+        displayLabel,
+        deviceId: rosterEntry.hrDeviceId
+      })
+    : null;
+
   return {
     id,
     name: rosterEntry.name || '',
@@ -79,7 +94,21 @@ export const fromRosterEntry = (rosterEntry, options = {}) => {
     isActive,
     zoneId,
     zoneColor,
-    zoneProgress: rosterEntry.zoneProgress ?? null,
+    // Live (non-hysteresis) zone — what the cards render and what sortByZoneRank
+    // ranks on. Three rungs, each validated against the canonical zone list so an
+    // unrecognized value falls THROUGH rather than being written:
+    //   1. roster rawZoneId  — TreasureBox baseline (live HR)
+    //   2. vitals zoneId     — user.currentData.zone, derived from live HR by
+    //      UserManager (deriveZoneProgressSnapshot); survives the cases rung 1
+    //      misses, notably guests, whose entityId-keyed TreasureBox lookup fails
+    //      while userVitalsMap resolves them by profileId.
+    //   3. committed zoneId  — hysteresis-smoothed last resort.
+    rawZoneId: canonicalZoneId(rosterEntry.rawZoneId)
+      ?? canonicalZoneId(progressEntry?.zoneId)
+      ?? canonicalZoneId(zoneId),
+    rawZoneColor: rosterEntry.rawZoneColor || zoneColor,
+    // null (not 0) on a miss, so a later task's diagnostic can tell a miss from a real 0.
+    zoneProgress: Number.isFinite(progressEntry?.progress) ? progressEntry.progress : null,
     isGuest: Boolean(rosterEntry.isGuest),
     timestamp: rawDevice?.timestamp || Date.now(),
     lastSeen: rawDevice?.lastSeen || Date.now(),
@@ -169,30 +198,72 @@ export const fromRoster = (roster, options = {}) => {
 };
 
 /**
- * Sort participants by zone rank (highest first), then by zone progress.
- * 
- * @param {import('./Participant.js').Participant[]} participants - Participants to sort
- * @param {Object} zoneRankMap - Map of zoneId → rank number
- * @returns {import('./Participant.js').Participant[]}
+ * Canonical zone ranking, coolest → hottest.
+ *
+ * SSOT: previously duplicated as CONFIG.zone.rankMap in FitnessUsers.jsx.
+ * Import this instead of redeclaring it.
  */
-export const sortByZoneRank = (participants, zoneRankMap = {}) => {
+export const ZONE_RANK_MAP = Object.freeze({ cool: 0, active: 1, warm: 2, hot: 3, fire: 4 });
+
+/**
+ * Normalize a zone ID, returning null unless it is one of the canonical zones.
+ *
+ * ZONE_RANK_MAP's keys ARE the canonical list — reusing them avoids a fifth
+ * hardcoding of zone order and keeps validation pinned to the same literal that
+ * participantSort.test.js holds in lockstep with the config-derived rank map.
+ * (The config-derived list lives in hooks/, which the domain layer must not
+ * import in production code.)
+ *
+ * @param {any} value
+ * @returns {string|null} lowercased canonical zone ID, or null
+ */
+export const canonicalZoneId = (value) => {
+  if (value == null) return null;
+  const normalized = String(value).trim().toLowerCase();
+  return Object.prototype.hasOwnProperty.call(ZONE_RANK_MAP, normalized) ? normalized : null;
+};
+
+/**
+ * Rank a participant by their LIVE zone.
+ *
+ * Deliberately prefers `rawZoneId` over the committed `zoneId`: the committed
+ * zone is hysteresis-smoothed for governance stability, and using it here would
+ * desync sort order from the card color and progress bar, which both render
+ * live state. Hysteresis remains in force for governance decisions only.
+ */
+const rankOf = (participant, zoneRankMap) => {
+  const zoneId = participant?.rawZoneId || participant?.zoneId || null;
+  if (!zoneId) return -1;
+  return zoneRankMap[String(zoneId).toLowerCase()] ?? -1;
+};
+
+/**
+ * THE sort for heart-rate participants. Order: live zone rank desc →
+ * progress-within-zone desc → active before inactive → id asc (determinism).
+ *
+ * Progress is only meaningful as a tiebreaker WITHIN a zone, since each user
+ * has their own BPM ranges.
+ *
+ * @param {import('./Participant.js').Participant[]} participants
+ * @param {Object} [zoneRankMap] - defaults to ZONE_RANK_MAP
+ * @returns {import('./Participant.js').Participant[]} a new sorted array
+ */
+export const sortByZoneRank = (participants, zoneRankMap = ZONE_RANK_MAP) => {
+  if (!Array.isArray(participants)) return [];
+
   return [...participants].sort((a, b) => {
-    const aRank = a.zoneId ? (zoneRankMap[a.zoneId] ?? -1) : -1;
-    const bRank = b.zoneId ? (zoneRankMap[b.zoneId] ?? -1) : -1;
-    
+    const aRank = rankOf(a, zoneRankMap);
+    const bRank = rankOf(b, zoneRankMap);
     if (bRank !== aRank) return bRank - aRank;
-    
-    // Secondary: zone progress
-    const aProgress = a.zoneProgress ?? 0;
-    const bProgress = b.zoneProgress ?? 0;
+
+    const aProgress = Number.isFinite(a?.zoneProgress) ? a.zoneProgress : 0;
+    const bProgress = Number.isFinite(b?.zoneProgress) ? b.zoneProgress : 0;
     if (bProgress !== aProgress) return bProgress - aProgress;
-    
-    // Tertiary: active first
-    if (a.isActive && !b.isActive) return -1;
-    if (!a.isActive && b.isActive) return 1;
-    
-    // Stable fallback
-    return String(a.id).localeCompare(String(b.id));
+
+    if (a?.isActive && !b?.isActive) return -1;
+    if (!a?.isActive && b?.isActive) return 1;
+
+    return String(a?.id ?? '').localeCompare(String(b?.id ?? ''));
   });
 };
 
@@ -225,5 +296,7 @@ export default {
   resolveZoneInfo,
   lookupZoneColor,
   sortByZoneRank,
+  ZONE_RANK_MAP,
+  canonicalZoneId,
   validateParticipants
 };

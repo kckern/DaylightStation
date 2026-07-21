@@ -553,6 +553,86 @@ Rules:
 
 ---
 
+## Participant Sort Order
+
+### SSOT
+
+`sortByZoneRank` in `frontend/src/modules/Fitness/domain/ParticipantFactory.js` is the
+**single source of truth** for heart-rate participant ordering.
+
+`activeHeartRateParticipants` from `FitnessContext` is delivered **PRE-SORTED**.
+Consumers must render in the order given and **must not re-sort**. A consumer that
+re-sorts reintroduces a second comparator that will drift from this one — which is
+exactly how the 2026-07-21 bug survived as long as it did.
+
+### The order
+
+1. Live zone rank, descending (`fire` top → `cool` bottom; unknown zone below `cool`)
+2. Progress within that zone, descending
+3. Active before inactive
+4. `id` ascending (stable tiebreak)
+
+### Why progress is only a within-zone tiebreaker
+
+Every user has their own BPM ranges, so **raw BPM is not comparable across users**.
+120 BPM might be `cool` for one rider and `hot` for another. Zone rank normalizes
+that; progress-within-zone then orders riders who are genuinely in the same band.
+
+Worked example (the real 2026-07-21 case): a rider at **115 BPM who is 2/3 through
+their zone outranks** a rider at **127 BPM who is only 1/3 through the same zone**.
+The lower absolute BPM is the higher relative effort, and relative effort is what
+the roster is ranking.
+
+### Sorting ranks the RAW zone, not the committed zone
+
+The comparator reads `rawZoneId` — the live, non-hysteresis zone — deliberately.
+The hysteresis-smoothed **committed** zone (see [Zone Hysteresis](#zone-hysteresis-zoneprofilestore))
+remains in force for **governance** and coin awards, and is unaffected by this.
+
+The reason is coherence: **card color, progress bar fill, and sort order must track
+together.** Card color already renders the live zone. If the sort ranked the
+committed zone instead, a rider's card would visibly turn `hot` while they stayed
+sorted among the `warm` riders for several seconds — reading as a broken sort
+rather than as deliberate smoothing.
+
+### Progress lookup: `zoneProgressIndex`
+
+`frontend/src/modules/Fitness/domain/zoneProgressIndex.js` is the SSOT for resolving
+a participant's progress entry. `FitnessContext` builds it from `userVitalsMap` and
+exposes it as `zoneProgressIndex`; resolve through `lookupZoneProgress(index, keys)`.
+
+**Resolve by stable ID — never by display name.** `resolveDisplayName` returns the
+configured **group label** (e.g. `"Dad"`) as soon as 2+ HR participants are present.
+A name-keyed lookup therefore misses precisely when a second rider joins, and a
+`?? 0` at the call site silently pins that rider to zero progress — sorting them to
+the bottom of their zone. That was the 2026-07-21 defect.
+
+Pass the richest key set available, IDs first:
+
+```js
+lookupZoneProgress(zoneProgressIndex, {
+  profileId, id, name, displayLabel, deviceId
+});
+```
+
+Two riders can legitimately share a group label, so a **label-only hit is ambiguous**
+and may return a plausible-but-wrong rider's progress. Treat it as a best-effort
+fallback, not an identification.
+
+Do **not** rebuild an index from `userZoneProgress`. That map is a lossy projection:
+it is keyed by given name only, and its values carry none of `profileId`, `deviceId`,
+`name` or `displayLabel`. An index built from it can still only resolve by given name.
+
+### Diagnostic
+
+`fitness.zone_progress.lookup_miss` (warn, sampled) fires when a participant has a
+live heart rate but no resolvable progress entry. It is the signal that **the index
+and the entity disagree on identity** — a new alias scheme, a renamed profile, or a
+participant whose ID never made it into `userVitalsMap`. Treat any sustained
+occurrence as a sort-correctness bug, not as noise.
+
+---
+
 ## Coin System (TreasureBox)
 
 Coins are awarded per-user based on their current zone at each tick:

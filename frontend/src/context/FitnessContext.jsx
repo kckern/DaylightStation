@@ -26,6 +26,7 @@ import { buildChallengeToast } from '../modules/Fitness/player/overlays/buildCha
 
 // Phase 3 SSOT: Domain model imports
 import ParticipantFactory from '../modules/Fitness/domain/ParticipantFactory.js';
+import { buildZoneProgressIndex } from '../modules/Fitness/domain/zoneProgressIndex.js';
 
 // Phase 5 SSOT: Participant display map — single source for "how to render a participant"
 import { buildParticipantDisplayMap } from '../hooks/fitness/participantDisplayMap.js';
@@ -1702,17 +1703,10 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
   // 
   // Phase 3 upgrade: Uses ParticipantFactory to create proper domain entities.
   // See: docs/ops/fix-fitness-user-consistency.md
-  
-  const activeHeartRateParticipants = React.useMemo(() => {
-    const inactiveTimeout = ant_devices?.timeout?.inactive ?? 60000;
-    
-    return ParticipantFactory.fromRoster(participantRoster, {
-      devices: heartRateDevices,
-      zoneConfig,
-      inactiveTimeout,
-      getDisplayLabel
-    });
-  }, [participantRoster, heartRateDevices, zoneConfig, ant_devices, getDisplayLabel]);
+  //
+  // The `activeHeartRateParticipants` memo now lives BELOW `userVitalsMap`
+  // (search for "Phase 3 SSOT: participant domain entities, PRE-SORTED"), which
+  // it depends on via `zoneProgressIndex`. It cannot be declared here.
 
   // ==========================================================================
   // Ambient LED Zone Sync (Home Assistant Integration)
@@ -1877,6 +1871,9 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
         source,
         profileId: user.id,
         deviceId,
+        // Full strap list, not just the primary — zoneProgressIndex aliases
+        // every one so a multi-strap user resolves from any of their devices.
+        deviceIds: allDeviceIds,
         isGuest: !!isGuest,
         displayLabel
       });
@@ -1884,6 +1881,49 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
     return map;
   // Note: preferGroupLabels is included to ensure displayLabel updates when device count changes
   }, [allUsers, deviceAssignmentMap, getDisplayLabel, preferGroupLabels]);
+
+  // Zone-progress lookup index. Keyed by profile ID, device IDs, given name,
+  // AND display label so a caller holding any of them resolves the same entry.
+  // Before this, userZoneProgress was name-keyed only and every group-labelled
+  // user ("Dad") missed — silently sorting them as progress 0.
+  const zoneProgressIndex = React.useMemo(
+    () => buildZoneProgressIndex(userVitalsMap),
+    [userVitalsMap]
+  );
+
+  // Phase 3 SSOT: participant domain entities, PRE-SORTED.
+  // Consumers must render in the order given and must not re-sort.
+  const activeHeartRateParticipants = React.useMemo(() => {
+    const inactiveTimeout = ant_devices?.timeout?.inactive ?? 60000;
+
+    const participants = ParticipantFactory.fromRoster(participantRoster, {
+      devices: heartRateDevices,
+      zoneConfig,
+      inactiveTimeout,
+      getDisplayLabel,
+      zoneProgressIndex
+    });
+
+    // A participant with a live heart rate but no resolvable progress entry means
+    // the index and the entity disagree on identity — the 2026-07-21 failure mode.
+    const unresolved = participants.filter(
+      (p) => Number.isFinite(p.heartRate) && p.heartRate > 0 && p.zoneProgress === null
+    );
+    if (unresolved.length > 0) {
+      getLogger().sampled('fitness.zone_progress.lookup_miss', {
+        count: unresolved.length,
+        participants: unresolved.map((p) => ({
+          id: p.id,
+          name: p.name,
+          displayLabel: p.displayLabel,
+          heartRate: p.heartRate
+        })),
+        indexKeys: zoneProgressIndex.size
+      }, { maxPerMinute: 6, aggregate: true });
+    }
+
+    return ParticipantFactory.sortByZoneRank(participants);
+  }, [participantRoster, heartRateDevices, zoneConfig, ant_devices, getDisplayLabel, zoneProgressIndex]);
 
   const userCollections = React.useMemo(() => {
     const collections = session?.userCollections;
@@ -2586,6 +2626,14 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
     getUserVitals,
     // DEPRECATED: Use participantDisplayMap.get(name).progress instead
     userZoneProgress,
+    // SSOT for zone-progress lookup. Built from userVitalsMap, so entries are
+    // aliased by profileId, deviceId(s), name AND displayLabel. Resolve with
+    // lookupZoneProgress() from modules/Fitness/domain/zoneProgressIndex.js and
+    // ALWAYS pass a stable ID first — display name becomes a group label
+    // ("Dad") once 2+ riders are present, which is the 2026-07-21 sort bug.
+    // Prefer this over rebuilding an index from `userZoneProgress`: that map is
+    // a lossy, name-keyed projection whose values carry no ID fields.
+    zoneProgressIndex,
     getUserZoneThreshold,
     userHeartRates: new Map(), // TODO
     getUserHeartRate,
