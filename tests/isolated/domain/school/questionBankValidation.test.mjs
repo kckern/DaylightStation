@@ -19,6 +19,11 @@ describe('validateQuestionBank', () => {
     expect(r.ok).toBe(true);
     expect(r.bank.audience).toBe('assigned');
   });
+  it('fix 1: treats a null topics (YAML `topics:` with no value) the same as absent', () => {
+    const r = validateQuestionBank(bank({ topics: null }));
+    expect(r.ok).toBe(true);
+    expect(r.bank.topics).toEqual([]);
+  });
   it('finding 1: a single long run of underscores counts as exactly one blank', () => {
     const r = validateQuestionBank(bank({ items: [
       { id: 'q1', type: 'cloze', prompt: 'The capital is ________.', answer: 'Olympia' },
@@ -65,6 +70,10 @@ describe('validateQuestionBank', () => {
     ['topics array with a non-string entry', bank({ topics: ['science', 5] })],
     // finding 7: accept-must-be-an-array branch, previously untested
     ['accept not an array', bank({ items: [{ id: 'q1', type: 'short_answer', prompt: 'P?', answer: 'x', accept: 'salem' }] })],
+    // fix 2: whitespace-only strings should be rejected
+    ['bank id is whitespace-only', bank({ id: '   ' })],
+    ['bank title is whitespace-only', bank({ title: '   ' })],
+    ['item prompt is whitespace-only', bank({ items: [mc({ prompt: '   ' })] })],
   ])('rejects: %s', (_label, raw) => {
     const r = validateQuestionBank(raw);
     expect(r.ok).toBe(false);
