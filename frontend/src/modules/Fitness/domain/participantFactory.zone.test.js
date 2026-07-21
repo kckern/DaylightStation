@@ -5,7 +5,7 @@ import { buildZoneProgressIndex } from './zoneProgressIndex.js';
 const ROSTER_ENTRY = {
   id: 'user_1',
   profileId: 'user_1',
-  name: 'Kevin',
+  name: 'test-parent',
   displayLabel: 'Dad',
   hrDeviceId: '10366',
   heartRate: 115,
@@ -30,7 +30,7 @@ describe('fromRosterEntry zone fields', () => {
 
   it('REGRESSION: resolves zoneProgress by profileId even when displayLabel is a group label', () => {
     const index = buildZoneProgressIndex(
-      new Map([['user_1', { name: 'Kevin', displayLabel: 'Dad', progress: 0.66, profileId: 'user_1' }]])
+      new Map([['user_1', { name: 'test-parent', displayLabel: 'Dad', progress: 0.66, profileId: 'user_1' }]])
     );
     expect(fromRosterEntry(ROSTER_ENTRY, { zoneProgressIndex: index }).zoneProgress).toBe(0.66);
   });
@@ -46,7 +46,7 @@ describe('fromRosterEntry zone fields', () => {
 
   it('preserves a real zoneProgress of 0 rather than nulling it', () => {
     const index = buildZoneProgressIndex(
-      new Map([['user_1', { name: 'Kevin', progress: 0, profileId: 'user_1' }]])
+      new Map([['user_1', { name: 'test-parent', progress: 0, profileId: 'user_1' }]])
     );
     expect(fromRosterEntry(ROSTER_ENTRY, { zoneProgressIndex: index }).zoneProgress).toBe(0);
   });
@@ -57,7 +57,7 @@ describe('fromRosterEntry rawZoneId fallback chain', () => {
   // user.currentData.zone — derived from LIVE HR by UserManager
   // (deriveZoneProgressSnapshot, UserManager.js:133), NOT hysteresis-smoothed.
   const indexWith = (over) => buildZoneProgressIndex(
-    new Map([['user_1', { name: 'Kevin', profileId: 'user_1', progress: 0.4, ...over }]])
+    new Map([['user_1', { name: 'test-parent', profileId: 'user_1', progress: 0.4, ...over }]])
   );
 
   it('engages the vitals zone when rawZoneId is null', () => {
