@@ -215,6 +215,22 @@ that evaporated on restart would be worse than useless. It deliberately does *no
 trigger `reloadConfigAndReconnect`: dropping BLE-MIDI and A2DP mid-fiddle is exactly
 the annoyance the disarm exists to avoid.
 
+> **`rearm` clears both halves, and says so if it can't** (fixed in v24). Setting a
+> deadline writes memory *and* disk, so clearing one must clear both. In v23 `rearm`
+> zeroed only the in-memory half while the guard combined the two with `max()` — which
+> cannot express a clear — so a stale persisted deadline kept winning and
+> `pbctl kiosk-rearm` printed `✓ re-armed` while the guard stayed completely inert.
+> That was observed on the tablet: disarm 30 min → restart → rearm → still disarmed,
+> and it took a hand-written `pbctl config set kioskSettingsDisarmUntilEpochMs 0` to
+> recover.
+>
+> Two changes prevent the whole class. The guard now treats **this process's latest
+> explicit instruction as authoritative**, falling back to the persisted value only
+> when it has issued none — so a clear can never be outvoted. And `disarm`/`rearm`
+> report the two halves separately: if the persisted write fails they return
+> `ok:false` with a warning and `pbctl` prints `⚠ PARTIALLY APPLIED` rather than a
+> tick, because a half-applied change silently reverts at the next restart.
+
 A `kiosk.settings` node also appears in `GET /diagnostics` (`pbctl diag`), alongside
 the existing `kiosk.webview` and `kiosk.fkbApp` views — a tablet can be rendering fine
 from a healthy FKB and still be sitting unlocked.
@@ -486,8 +502,8 @@ Output: `app/app/build/outputs/apk/debug/app-debug.apk`.
 
 > **Always bump `versionCode` in `app/app/build.gradle` on every build** — the
 > self-update path (below) rejects an APK whose `versionCode` is not strictly greater
-> than the installed one. Current shipped build: **versionCode 23 / versionName
-> `1.15-install-hold-persist`** (SM-T590, 2026-07-21).
+> than the installed one. Current shipped build: **versionCode 24 / versionName
+> `1.16-rearm-clears-persisted`** (SM-T590, 2026-07-21).
 
 ### Unit tests
 

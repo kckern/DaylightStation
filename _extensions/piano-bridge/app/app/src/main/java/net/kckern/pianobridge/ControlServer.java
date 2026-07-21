@@ -190,16 +190,15 @@ public class ControlServer extends NanoWSD {
                     int minutes = parseIntParam(session, "minutes", 60);
                     // Clamp to 24h so a fat-fingered "6000" can't disarm until next year.
                     minutes = Math.max(1, Math.min(24 * 60, minutes));
-                    long until = System.currentTimeMillis() + minutes * 60_000L;
-                    setDisarmUntil(g, until);
-                    return json(ok().put("action", "kiosk_settings_disarm")
-                            .put("minutes", minutes).put("disarmUntilMs", until));
+                    JSONObject r = g.disarmForMinutes(minutes);
+                    return json(r.put("minutes", minutes).put("disarmUntilMs", g.disarmUntilMs()));
                 }
                 case "/kiosk/settings/rearm": {
                     KioskSettingsGuard g = service.getKioskSettingsGuard();
                     if (g == null) return json(err("no_settings_guard"));
-                    setDisarmUntil(g, 0L);
-                    return json(ok().put("action", "kiosk_settings_rearm"));
+                    // Clears BOTH halves; reports ok:false if the persisted half failed,
+                    // because a half-cleared rearm re-disarms at the next restart.
+                    return json(g.rearm().put("disarmUntilMs", g.disarmUntilMs()));
                 }
                 case "/crashlog":
                     return json(CrashLog.read());
@@ -351,21 +350,6 @@ public class ControlServer extends NanoWSD {
             Log.e(TAG, "HTTP handler error on " + uri, e);
             return json(NanoHTTPD.Response.Status.INTERNAL_ERROR, err(e.getMessage()));
         }
-    }
-
-    /**
-     * Apply a disarm deadline BOTH in memory (immediate) and to the persisted config
-     * (survives a restart — someone fiddling with the tablet will restart the bridge,
-     * and a disarm that evaporated then would be worse than useless).
-     *
-     * Deliberately does NOT call reloadConfigAndReconnect: that tears down BLE-MIDI and
-     * A2DP, and dropping the piano mid-fiddle is exactly the annoyance the disarm
-     * exists to avoid. writeOverride MERGES, so no sibling key is disturbed, and the
-     * persisted value is picked up by the guard on the next real config reload.
-     */
-    private void setDisarmUntil(KioskSettingsGuard g, long untilEpochMs) throws IOException {
-        g.setDisarmUntil(untilEpochMs);
-        DeviceConfig.writeOverride(service, "kioskSettingsDisarmUntilEpochMs: " + untilEpochMs + "\n");
     }
 
     private JSONObject ok() { try { return new JSONObject().put("ok", true); } catch (JSONException e) { return new JSONObject(); } }

@@ -1,8 +1,10 @@
 package net.kckern.pianobridge;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
+import org.json.JSONObject;
 import org.junit.Test;
 
 import java.util.ArrayList;
@@ -50,6 +52,22 @@ public class KioskSettingsGuardTest {
             for (String l : lines) if (l.contains(needle)) n++;
             return n;
         }
+    }
+
+    /**
+     * Stands in for the persisted flat-YAML override, so a "service restart" can be
+     * simulated faithfully: build a NEW guard (empty in-memory state) against the SAME
+     * store, exactly as the process does when it reloads config from disk at startup.
+     */
+    private static final class FakeConfigStore implements KioskSettingsGuard.ConfigWriter {
+        final Map<String, Long> persisted = new HashMap<>();
+        boolean failWrites = false;
+
+        @Override public void write(String key, long value) throws Exception {
+            if (failWrites) throw new java.io.IOException("simulated write failure");
+            persisted.put(key, value);
+        }
+        long get(String key) { return persisted.getOrDefault(key, 0L); }
     }
 
     /** A live settings map that matches the desired set exactly. */
@@ -409,6 +427,206 @@ public class KioskSettingsGuardTest {
         assertTrue(p.drifted.isEmpty());
         assertTrue(p.repaired.isEmpty());
         assertTrue(fkb.writes.isEmpty());
+    }
+
+    // --- disarm / rearm round trip ----------------------------------------
+    //
+    // The v23 defect these pin (observed on the tablet, 2026-07-21): `kiosk-disarm 30`
+    // → service restart → `kiosk-rearm` printed "✓ re-armed" while the guard stayed
+    // inert, because rearm cleared only the in-memory half and max(in-memory, persisted)
+    // let the stale persisted deadline keep winning. The command reported success while
+    // doing nothing — the worst possible failure mode.
+
+    /** Guard sharing a config store, so writes and reads round-trip like the device. */
+    private static KioskSettingsGuard guardWithStore(FakeFkb fkb, FakeNotes notes,
+                                                     FakeConfigStore store, long nowMs) {
+        return new KioskSettingsGuard(
+                () -> new Params(true, 60_000L, HOLD_MS,
+                        store.get("kioskSettingsInstallHoldUntilEpochMs"),
+                        store.get("kioskSettingsDisarmUntilEpochMs"),
+                        true),
+                () -> 0L, fkb, notes, () -> nowMs, store);
+    }
+
+    @Test
+    public void rearm_clearsThePersistedDeadlineNotJustTheInMemoryOne() {
+        FakeFkb fkb = new FakeFkb();
+        fkb.live = healthy();
+        fkb.live.put("kioskMode", "false");
+        FakeConfigStore store = new FakeConfigStore();
+        long now = 1_000_000L;
+        KioskSettingsGuard g = guardWithStore(fkb, new FakeNotes(), store, now);
+
+        g.disarmForMinutes(30);
+        assertEquals("disarm must persist its deadline",
+                now + 30 * 60_000L, store.get("kioskSettingsDisarmUntilEpochMs"));
+        assertEquals(Verdict.DISARMED, g.tick());
+
+        JSONObject r = g.rearm();
+        assertTrue("rearm reported failure: " + r, r.optBoolean("ok"));
+        assertEquals("rearm MUST zero the persisted deadline, not only the in-memory one",
+                0L, store.get("kioskSettingsDisarmUntilEpochMs"));
+        assertEquals(Verdict.REPAIRED, g.tick());
+    }
+
+    @Test
+    public void rearm_worksAfterTheServiceRestart_theExactScenarioThatFailed() {
+        FakeFkb fkb = new FakeFkb();
+        fkb.live = healthy();
+        fkb.live.put("kioskMode", "false");
+        FakeConfigStore store = new FakeConfigStore();
+        long now = 1_000_000L;
+
+        // 1. Disarm for 30 min.
+        guardWithStore(fkb, new FakeNotes(), store, now).disarmForMinutes(30);
+
+        // 2. An APK install restarts the service: a brand-new guard, no in-memory state,
+        //    reading the persisted store. It must still be disarmed (that part worked).
+        KioskSettingsGuard afterRestart = guardWithStore(fkb, new FakeNotes(), store, now);
+        assertEquals(Verdict.DISARMED, afterRestart.tick());
+
+        // 3. Rearm on THAT guard. Before the fix this cleared only the in-memory field,
+        //    which was already null, so the stale persisted deadline kept the guard
+        //    inert while the CLI cheerfully printed "✓ re-armed".
+        JSONObject r = afterRestart.rearm();
+        assertTrue(r.optBoolean("ok"));
+        assertEquals(0L, store.get("kioskSettingsDisarmUntilEpochMs"));
+        assertEquals("the guard must actually resume repairing drift",
+                Verdict.REPAIRED, afterRestart.tick());
+    }
+
+    @Test
+    public void aGuardReconstructedAfterRearmIsArmed() {
+        // Belt-and-braces on the persistence itself: rearm's effect must outlive the
+        // process that performed it, or the next restart silently re-disarms.
+        FakeFkb fkb = new FakeFkb();
+        fkb.live = healthy();
+        fkb.live.put("kioskMode", "false");
+        FakeConfigStore store = new FakeConfigStore();
+        long now = 1_000_000L;
+
+        KioskSettingsGuard g = guardWithStore(fkb, new FakeNotes(), store, now);
+        g.disarmForMinutes(30);
+        g.rearm();
+
+        KioskSettingsGuard rebuilt = guardWithStore(fkb, new FakeNotes(), store, now);
+        assertEquals(Verdict.REPAIRED, rebuilt.tick());
+    }
+
+    @Test
+    public void rearm_reportsFailureHonestlyWhenThePersistedWriteFails() {
+        // Requirement: never print "✓ re-armed" when the persisted half did not clear.
+        // A half-cleared rearm evaporates on the next restart, so silence here would
+        // hand back a tablet that re-disarms itself.
+        FakeFkb fkb = new FakeFkb();
+        fkb.live = healthy();
+        FakeConfigStore store = new FakeConfigStore();
+        FakeNotes notes = new FakeNotes();
+        long now = 1_000_000L;
+
+        KioskSettingsGuard g = guardWithStore(fkb, notes, store, now);
+        g.disarmForMinutes(30);
+        store.failWrites = true;
+
+        JSONObject r = g.rearm();
+        assertFalse("a rearm that could not persist must NOT report success", r.optBoolean("ok"));
+        assertTrue("must say the in-memory half did clear", r.optBoolean("inMemoryCleared"));
+        assertFalse(r.optBoolean("persistedCleared"));
+        assertTrue("must explain what is still wrong", r.optString("warning").length() > 0);
+        assertTrue("the failure must reach the durable log",
+                notes.countContaining("KIOSKSET") > 0);
+    }
+
+    @Test
+    public void disarm_reportsFailureHonestlyWhenThePersistedWriteFails() {
+        // Same honesty requirement on the setting side: a disarm that didn't persist
+        // will evaporate on restart and start repairing under the operator's hands.
+        FakeFkb fkb = new FakeFkb();
+        fkb.live = healthy();
+        FakeConfigStore store = new FakeConfigStore();
+        store.failWrites = true;
+        KioskSettingsGuard g = guardWithStore(fkb, new FakeNotes(), store, 1_000_000L);
+
+        JSONObject r = g.disarmForMinutes(30);
+        assertFalse(r.optBoolean("ok"));
+        assertFalse(r.optBoolean("persistedCleared"));
+        // …but the in-memory half still applies to THIS process.
+        assertEquals(Verdict.DISARMED, g.tick());
+    }
+
+    @Test
+    public void rearm_worksEvenWhenTheCachedConfigIsStale_theRealDeviceMechanism() {
+        // The exact on-device mechanism of the v23 bug, which the round-tripping
+        // FakeConfigStore is too forgiving to reproduce.
+        //
+        // On the device the guard reads the PERSISTED half through a DeviceConfig
+        // object cached at startup. `writeOverride` updates the FILE but not that
+        // cached object, so rearm wrote 0 to disk while the guard kept reading the old
+        // deadline — and max() let the stale value win. Modelled here by a store whose
+        // write() deliberately does NOT refresh what params reads.
+        FakeFkb fkb = new FakeFkb();
+        fkb.live = healthy();
+        fkb.live.put("kioskMode", "false");
+        long now = 1_000_000L;
+
+        Map<String, Long> file = new HashMap<>();
+        Map<String, Long> staleCache = new HashMap<>();
+        KioskSettingsGuard.ConfigWriter writerThatDoesNotRefreshTheCache =
+                (key, value) -> file.put(key, value);   // no cache refresh — the v23 device
+
+        // Both start out disarmed for another 10 minutes.
+        file.put("kioskSettingsDisarmUntilEpochMs", now + 600_000L);
+        staleCache.put("kioskSettingsDisarmUntilEpochMs", now + 600_000L);
+
+        KioskSettingsGuard g = new KioskSettingsGuard(
+                () -> new Params(true, 60_000L, HOLD_MS, 0L,
+                        staleCache.getOrDefault("kioskSettingsDisarmUntilEpochMs", 0L), true),
+                () -> 0L, fkb, new FakeNotes(), () -> now, writerThatDoesNotRefreshTheCache);
+
+        assertEquals(Verdict.DISARMED, g.tick());
+
+        JSONObject r = g.rearm();
+        assertTrue(r.optBoolean("ok"));
+        assertEquals("the file must be cleared", 0L, (long) file.get("kioskSettingsDisarmUntilEpochMs"));
+        assertEquals("the cache is STILL stale — and the guard must be armed anyway",
+                now + 600_000L, (long) staleCache.get("kioskSettingsDisarmUntilEpochMs"));
+        assertEquals("an explicit clear must not be outvoted by a stale cached deadline",
+                Verdict.REPAIRED, g.tick());
+    }
+
+    @Test
+    public void anExplicitClearBeatsAStalePersistedDeadline_disarm() {
+        // The general invariant, stated directly: for an in-memory + persisted pair,
+        // an explicit instruction from THIS process wins over whatever config says.
+        // max() could never express a clear, which is what made the v23 bug possible.
+        FakeFkb fkb = new FakeFkb();
+        fkb.live = healthy();
+        fkb.live.put("kioskMode", "false");
+        long now = 1_000_000L;
+        // Persisted still says "disarmed for another 10 minutes"…
+        KioskSettingsGuard g = guard(fkb, new FakeNotes(), params(true, true, now + 600_000L, 0),
+                now, 0L);
+        assertEquals(Verdict.DISARMED, g.tick());
+
+        // …but an explicit clear must win.
+        g.setDisarmUntil(0L);
+        assertEquals(Verdict.REPAIRED, g.tick());
+    }
+
+    @Test
+    public void anExplicitClearBeatsAStalePersistedDeadline_installHold() {
+        // The install hold is the other in-memory + persisted pair. It has no clear
+        // path today, but it must not be able to acquire the same asymmetry.
+        FakeFkb fkb = new FakeFkb();
+        fkb.live = healthy();
+        fkb.live.put("kioskMode", "false");
+        long now = 1_000_000L;
+        KioskSettingsGuard g = guard(fkb, new FakeNotes(), params(true, true, 0, now + 600_000L),
+                now, 0L);
+        assertEquals(Verdict.INSTALL_HOLD, g.tick());
+
+        g.setInstallHoldUntil(0L);
+        assertEquals(Verdict.REPAIRED, g.tick());
     }
 
     // --- observability ----------------------------------------------------
