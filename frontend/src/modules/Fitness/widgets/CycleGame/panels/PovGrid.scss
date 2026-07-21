@@ -39,10 +39,14 @@
     position: absolute; top: 0; left: 0;
     display: inline-block; white-space: nowrap;
     font-family: cg.$cg-display; font-weight: 800; font-style: italic;
-    font-size: 1.2rem; line-height: 1; letter-spacing: -0.01em;
+    // 1.1rem (down from 1.2) + tighter side padding: width is the constrained
+    // axis in the tall POV column, and a narrower badge collides less often, so
+    // the de-collide pass in positionCards has to restack less. 1.1rem is the
+    // floor for anything that renders during `racing` — do not go below it.
+    font-size: 1.1rem; line-height: 1; letter-spacing: -0.01em;
     font-variant-numeric: tabular-nums;
     color: cg.$cg-text;
-    padding: 0.18em 0.5em; border-radius: 6px;
+    padding: 0.18em 0.4em; border-radius: 6px;
     background: rgba(10, 10, 20, 0.82);
     border: 1px solid var(--cg-pov-color, #{cg.$cg-cyan});
     box-shadow: 0 0 12px -4px var(--cg-pov-color, #{cg.$cg-cyan});

@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="net.kckern.portalkeys">
+
+    <!-- INTERNET: the control plane (NanoWSD on :8771) binds a listening socket —
+         localhost for the kiosk SPA, LAN for the pkctl CLI. Also used for the FKB
+         REST calls that drive the backlight. -->
+    <uses-permission android:name="android.permission.INTERNET" />
+
+    <!-- ADB-FREE OPERATIONS. ADB-over-WiFi does NOT survive a reboot on this panel and
+         cannot be made to: `adb root` is refused (production build) and
+         `setprop persist.adb.tcp.port` needs root. So rather than persist ADB, we make it
+         unnecessary. Both of these are granted ONCE over USB and then survive reboots:
+
+           appops set net.kckern.portalkeys REQUEST_INSTALL_PACKAGES allow
+           pm grant  net.kckern.portalkeys android.permission.READ_LOGS
+
+         REQUEST_INSTALL_PACKAGES → POST /update installs a new APK from a URL.
+         READ_LOGS                → GET /logcat returns our own log lines, so a failure
+                                    can be diagnosed without a shell. -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+    <uses-permission android:name="android.permission.READ_LOGS" />
+
+    <!-- usesCleartextTraffic: FKB's REST API is plain http on :2323. Android 9 (API 28)
+         BLOCKS cleartext by default once targetSdk >= 28, so without this every call to
+         FKB fails before leaving the process — which is exactly what happened: the
+         double-press gesture fired correctly and `screen-off ok=false` came back on both
+         127.0.0.1 and the LAN address, while the identical URL worked from a laptop.
+         There is no https option on FKB, so opting in is the only route. -->
+    <application
+        android:label="Portal Keys"
+        android:usesCleartextTraffic="true"
+        android:allowBackup="false">
+
+        <!-- AccessibilityService is bound by the SYSTEM. No launcher activity, no
+             BootReceiver, no foreground service: the system rebinds it after reboot
+             on its own, provided the grant in Settings -> Accessibility survives.
+
+             BIND_ACCESSIBILITY_SERVICE is required on the <service> itself, and the
+             key-filtering capability is declared in res/xml/accessibility_service_config
+             (canRequestFilterKeyEvents + flagRequestFilterKeyEvents). ALL THREE are
+             needed — omitting any one makes onKeyEvent never fire, SILENTLY. -->
+        <service
+            android:name=".PortalKeysService"
+            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.accessibilityservice.AccessibilityService" />
+            </intent-filter>
+            <meta-data
+                android:name="android.accessibilityservice"
+                android:resource="@xml/accessibility_service_config" />
+        </service>
+    </application>
+</manifest>

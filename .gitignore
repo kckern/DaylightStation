@@ -111,3 +111,6 @@ dev.log*
 # PII-scrub tooling (contains the real->alias map; local only, never commit)
 .pii-scrub/
 !scripts/migrate-trigger-config.mjs
+/_extensions/portal-keys/app/app/build/intermediates/project_dex_archive/debug
+/_extensions/portal-keys/app/app/build/intermediates/incremental/debug-mergeJavaRes
+/_extensions/portal-keys/app/app/build/intermediates/desugar_graph/debug

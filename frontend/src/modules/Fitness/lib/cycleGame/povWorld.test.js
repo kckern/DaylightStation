@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { povWorld, laneX, displayGap, displayDist, povBadges } from './povWorld.js';
+import { povWorld, laneX, displayGap, displayDist, povBadges, resolveBadgeStack } from './povWorld.js';
 
 const mk = (id, idx, prev, cur, isGhost = false) => ({ id, idx, prev, cur, isGhost });
 
@@ -241,5 +241,52 @@ describe('povBadges (rank + gap-to-next)', () => {
     const riderLive = { a: { placement: 1, finished: true } };
     const badges = povBadges({ riderIds: ['a'], riders: finishRiders, riderLive, winCondition: 'time' });
     expect(badges.a.text).toBe('1st · 820 m');
+  });
+});
+
+describe('resolveBadgeStack (POV badge de-collision)', () => {
+  // Boxes are centred on x, top-anchored at y — matching the renderer's
+  // translate(-50%,0). A 100-wide badge at x=0 spans [-50, +50].
+  const box = (x, y, dist, w = 100, h = 26) => ({ x, y, w, h, dist });
+
+  it('leaves badges alone when they do not overlap', () => {
+    const out = resolveBadgeStack([box(0, 100, 10), box(200, 100, 20)]);
+    expect(out.map((b) => b.y)).toEqual([100, 100]);
+  });
+
+  it('leaves badges alone when they share x but are vertically clear', () => {
+    const out = resolveBadgeStack([box(0, 100, 10), box(0, 200, 20)]);
+    expect(out.map((b) => b.y)).toEqual([100, 200]);
+  });
+
+  it('pushes an overlapping badge below the one it hit', () => {
+    // Same row, centres 80 apart — closer than (100+100)/2 = 100, so they collide.
+    const out = resolveBadgeStack([box(0, 100, 10), box(80, 100, 20)], 3);
+    expect(out[0].y).toBe(100);        // nearest keeps its natural spot
+    expect(out[1].y).toBe(129);        // 100 + h(26) + gap(3)
+  });
+
+  it('resolves nearest-first regardless of input order', () => {
+    const far = box(80, 100, 20);
+    const near = box(0, 100, 10);
+    const out = resolveBadgeStack([far, near], 3);
+    expect(out[0].dist).toBe(10);
+    expect(out[0].y).toBe(100);
+    expect(out[1].y).toBe(129);        // the FAR one yields, not the near one
+  });
+
+  it('cascades a third badge clear of the two already stacked', () => {
+    const out = resolveBadgeStack([box(0, 100, 10), box(40, 100, 20), box(70, 100, 30)], 3);
+    expect(out.map((b) => b.y)).toEqual([100, 129, 158]);
+  });
+
+  it('does not mutate the input boxes', () => {
+    const input = [box(0, 100, 10), box(80, 100, 20)];
+    resolveBadgeStack(input, 3);
+    expect(input.map((b) => b.y)).toEqual([100, 100]);
+  });
+
+  it('handles an empty field', () => {
+    expect(resolveBadgeStack([])).toEqual([]);
   });
 });
