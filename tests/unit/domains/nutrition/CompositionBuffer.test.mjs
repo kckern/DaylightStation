@@ -138,7 +138,7 @@ describe('CompositionBuffer', () => {
   });
 
   // ---------------------------------------------------------------------------
-  // Input contract: this buffer feeds scanNutrition, which refuses non-finite
+  // Input contract: this buffer feeds ScanNutritionService, which refuses non-finite
   // and stringified numbers. Storing what it would refuse just relocates the
   // failure to auto-accept time, past the point a human could catch it.
   // ---------------------------------------------------------------------------
@@ -150,7 +150,7 @@ describe('CompositionBuffer', () => {
     });
 
     it('refuses a stringified weight', () => {
-      // scanNutrition refuses '500'; accepting it here would mean the buffer
+      // ScanNutritionService refuses '500'; accepting it here would mean the buffer
       // reports complete: true on something that throws downstream.
       expect(() => buf.setWeight('scale-1', { grams: '500', unit: 'g' })).toThrow(ValidationError);
     });
