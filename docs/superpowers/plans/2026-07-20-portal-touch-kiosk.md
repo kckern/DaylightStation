@@ -394,8 +394,8 @@ describe('TouchChrome', () => {
     ['next', 'media:playback', { command: 'next' }],
     ['rew', 'media:playback', { command: 'rew' }],
     ['fwd', 'media:playback', { command: 'fwd' }],
-    ['vol-down', 'display:volume', { command: 'down' }],
-    ['vol-up', 'display:volume', { command: 'up' }],
+    ['vol-down', 'display:volume', { command: '-1' }],
+    ['vol-up', 'display:volume', { command: '+1' }],
   ])('%s emits %s', (testId, action, payload) => {
     render(<TouchChrome mode="media" />);
     fireEvent.click(screen.getByTestId(`touch-chrome-${testId}`));
@@ -403,6 +403,10 @@ describe('TouchChrome', () => {
   });
 });
 ```
+
+`handleVolume` (`ScreenActionHandler.jsx`) only accepts `'+1'`, `'-1'`, and `'mute_toggle'` —
+`'up'`/`'down'` fall through to `volume.unknown-command` and do nothing. Use `'+1'`/`'-1'`,
+matching the vocabulary the remote's Volume Up/Down already send (`RemoteAdapter.test.js`).
 
 - [ ] **Step 2: Run the test to verify it fails**
 
@@ -473,11 +477,14 @@ export function TouchChrome({ mode = 'back' }) {
               aria-label="Seek forward" onClick={() => emit('media:playback', { command: 'fwd' })}>↻</button>
           </div>
 
+          {/* handleVolume (ScreenActionHandler) only accepts '+1' / '-1' / 'mute_toggle' —
+              anything else (e.g. 'up'/'down') falls through to volume.unknown-command and
+              is silently ignored. Do not "modernise" these back to up/down. */}
           <div className="touch-chrome__group touch-chrome__group--end">
             <button type="button" className="touch-chrome__btn" data-testid="touch-chrome-vol-down"
-              aria-label="Volume down" onClick={() => emit('display:volume', { command: 'down' })}>–</button>
+              aria-label="Volume down" onClick={() => emit('display:volume', { command: '-1' })}>–</button>
             <button type="button" className="touch-chrome__btn" data-testid="touch-chrome-vol-up"
-              aria-label="Volume up" onClick={() => emit('display:volume', { command: 'up' })}>+</button>
+              aria-label="Volume up" onClick={() => emit('display:volume', { command: '+1' })}>+</button>
           </div>
         </>
       )}
@@ -487,6 +494,9 @@ export function TouchChrome({ mode = 'back' }) {
 
 export default TouchChrome;
 ```
+
+`handleVolume` (`ScreenActionHandler.jsx`) only accepts `'+1'`, `'-1'`, and `'mute_toggle'` —
+`'up'`/`'down'` fall through to `volume.unknown-command` and do nothing.
 
 - [ ] **Step 4: Write the stylesheet**
 

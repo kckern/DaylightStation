@@ -57,11 +57,14 @@ export function TouchChrome({ mode = 'back' }) {
               aria-label="Seek forward" onClick={() => emit('media:playback', { command: 'fwd' })}>↻</button>
           </div>
 
+          {/* handleVolume (ScreenActionHandler) only accepts '+1' / '-1' / 'mute_toggle' —
+              anything else (e.g. 'up'/'down') falls through to volume.unknown-command and
+              is silently ignored. Do not "modernise" these back to up/down. */}
           <div className="touch-chrome__group touch-chrome__group--end">
             <button type="button" className="touch-chrome__btn" data-testid="touch-chrome-vol-down"
-              aria-label="Volume down" onClick={() => emit('display:volume', { command: 'down' })}>–</button>
+              aria-label="Volume down" onClick={() => emit('display:volume', { command: '-1' })}>–</button>
             <button type="button" className="touch-chrome__btn" data-testid="touch-chrome-vol-up"
-              aria-label="Volume up" onClick={() => emit('display:volume', { command: 'up' })}>+</button>
+              aria-label="Volume up" onClick={() => emit('display:volume', { command: '+1' })}>+</button>
           </div>
         </>
       )}
