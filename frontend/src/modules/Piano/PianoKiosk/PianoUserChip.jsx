@@ -1,14 +1,14 @@
 import { useState, useContext } from 'react';
 import PianoUserContext from './PianoUserContext.jsx';
-import PianoAvatar from './PianoAvatar.jsx';
-import WhoIsPlayingPrompt from './WhoIsPlayingPrompt.jsx';
+import ProfileAvatar from '../../../lib/identity/ProfileAvatar.jsx';
+import ProfilePicker from '../../../lib/identity/ProfilePicker.jsx';
 import { usePianoPlayback } from './PianoPlaybackContext.jsx';
 import { usePianoScreenOff } from './usePianoScreenOff.js';
 import LockIcon from '@/modules/Fitness/player/overlays/LockIcon.jsx';
 
 /**
  * Current-player chip for the chrome. Shows who's playing; tap to open the
- * shared WhoIsPlayingPrompt picker and switch. Selecting a user re-scopes
+ * shared ProfilePicker and switch. Selecting a user re-scopes
  * recordings, lesson progress, and preferences to them.
  *
  * Manual switch, so: no auto-dismiss timeout, and dismissing just closes the
@@ -53,12 +53,12 @@ function PianoUserChipInner({ ctx }) {
         aria-label={locked ? 'Player locked during lesson' : 'Switch player'}
         title={locked ? 'Finish the lesson to switch players' : (currentProfile?.name || 'Choose player')}
       >
-        <PianoAvatar id={currentProfile?.id} name={currentProfile?.name} />
+        <ProfileAvatar id={currentProfile?.id} name={currentProfile?.name} />
         <span className="piano-chrome__username">{label}</span>
         {locked && <span className="piano-chrome__user-lock" aria-hidden="true"><LockIcon /></span>}
       </button>
 
-      <WhoIsPlayingPrompt
+      <ProfilePicker
         open={open && !locked}
         users={users}
         activeId={currentUser}

@@ -1,4 +1,4 @@
-// whoIsPlayingLayout.js
+// profilePickerLayout.js
 // Pure layout helpers for the "Who's playing?" picker: balance a page of faces
 // into even-ish rows and split a large roster into pages. No React here so the
 // rules are unit-testable in isolation.

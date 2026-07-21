@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState, useMemo } from 'react';
-import PianoAvatar from './PianoAvatar.jsx';
-import { columnsForCount, paginatePlayers } from './whoIsPlayingLayout.js';
+import ProfileAvatar from './ProfileAvatar.jsx';
+import { columnsForCount, paginatePlayers } from './profilePickerLayout.js';
 import { hasFamilyContext, resolveUserDisplayName } from '@/lib/userDisplayName.js';
 import useArmedAction from './useArmedAction.js';
+import './identity.scss';
 
 /**
  * "Who's playing?" prompt — roster faces ONLY (Guest is never a card). Tap a
@@ -19,7 +20,7 @@ import useArmedAction from './useArmedAction.js';
  * grid to `columnsForCount` columns. A roster larger than 6 paginates, with page
  * dots beneath the grid.
  */
-export default function WhoIsPlayingPrompt({ open, users = [], activeId, onPick, onDismiss, onScreenOff, timeoutMs = 30000 }) {
+export default function ProfilePicker({ open, users = [], activeId, onPick, onDismiss, onScreenOff, timeoutMs = 30000, title = "Who's playing?" }) {
   const onDismissRef = useRef(onDismiss);
   onDismissRef.current = onDismiss;
 
@@ -46,11 +47,11 @@ export default function WhoIsPlayingPrompt({ open, users = [], activeId, onPick,
   const current = pages[Math.min(page, Math.max(0, pages.length - 1))] || [];
   const columns = columnsForCount(current.length);
   return (
-    <div className="piano-userpicker piano-userpicker--prompt" role="dialog" aria-modal="true" aria-label="Who's playing?">
+    <div className="piano-userpicker piano-userpicker--prompt" role="dialog" aria-modal="true" aria-label={title}>
       <div className="piano-userpicker__scrim" onClick={() => onDismiss?.()} />
       <div className="piano-userpicker__sheet">
         <button type="button" className="piano-userpicker__close" aria-label="Close" onClick={() => onDismiss?.()}>✕</button>
-        <h2 className="piano-userpicker__title">Who's playing?</h2>
+        <h2 className="piano-userpicker__title">{title}</h2>
         <ul
           className="piano-userpicker__grid"
           data-columns={columns}
@@ -64,7 +65,7 @@ export default function WhoIsPlayingPrompt({ open, users = [], activeId, onPick,
                 aria-pressed={activeId ? u.id === activeId : undefined}
                 onClick={() => onPick?.(u.id)}
               >
-                <PianoAvatar id={u.id} name={u.name} />
+                <ProfileAvatar id={u.id} name={u.name} />
                 <span className="piano-usercard__name">{resolveUserDisplayName(u, { familyContext }).displayName}</span>
               </button>
             </li>

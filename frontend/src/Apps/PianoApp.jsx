@@ -16,7 +16,7 @@ import { PianoMidiProvider, usePianoMidi, usePianoMidiNotes } from '../modules/P
 import { PianoUserProvider } from '../modules/Piano/PianoKiosk/PianoUserContext.jsx';
 import { useInactivityReturn } from '../modules/Piano/PianoKiosk/useInactivityReturn.js';
 import { useScreenControl, screenOffFailureMessage } from '../modules/Piano/PianoKiosk/useScreenControl.js';
-import { useArmedAction } from '../modules/Piano/PianoKiosk/useArmedAction.js';
+import { useArmedAction } from '../lib/identity/useArmedAction.js';
 import {
   PianoWakeLockProvider,
   usePianoScreensaver,
@@ -37,6 +37,8 @@ import { PianoPresetProvider } from '../modules/Piano/PianoKiosk/usePianoPreset.
 import { PianoMenu } from '../modules/Piano/PianoKiosk/PianoMenu.jsx';
 import { PianoPicker } from '../modules/Piano/PianoKiosk/PianoPicker.jsx';
 import { useRenderWatchdog } from '../modules/Piano/PianoKiosk/useRenderWatchdog.js';
+import { useJankRebootPrompt } from '../modules/Piano/PianoKiosk/useJankRebootPrompt.js';
+import RebootPromptModal from '../modules/Piano/PianoKiosk/RebootPromptModal.jsx';
 import { applyPianoBodyTheme } from './pianoBodyTheme.js';
 import { Videos } from '../modules/Piano/PianoKiosk/modes/Videos/Videos.jsx';
 import { Music } from '../modules/Piano/PianoKiosk/modes/Music/Music.jsx';
@@ -52,9 +54,9 @@ import PianoTest from '../modules/Piano/PianoKiosk/modes/Test/PianoTest.jsx';
 import KeepAliveVideo from '../modules/Piano/PianoKiosk/KeepAliveVideo.jsx';
 import { PianoMixProvider } from '../modules/Piano/PianoKiosk/PianoMixContext.jsx';
 import { usePianoUser } from '../modules/Piano/PianoKiosk/PianoUserContext.jsx';
-import { useWhoIsPlaying } from '../modules/Piano/PianoKiosk/useWhoIsPlaying.js';
+import { useIdleGap } from '../lib/identity/useIdleGap.js';
 import { useAutoMidiHistory } from '../modules/Piano/PianoKiosk/useAutoMidiHistory.js';
-import WhoIsPlayingPrompt from '../modules/Piano/PianoKiosk/WhoIsPlayingPrompt.jsx';
+import ProfilePicker from '../lib/identity/ProfilePicker.jsx';
 import './PianoApp.scss';
 
 /**
@@ -259,7 +261,7 @@ function PianoShell() {
   // Re-prompt "who's playing?" after an idle gap so the next player is credited.
   // Suppressed while a video lecture is open: the open player is already earning
   // watch credit for the current user, so a mid-lesson re-prompt would mis-credit.
-  useWhoIsPlaying(activeNotes, noteHistory.length, config.whoIsPlayingMinutes, () => {
+  useIdleGap(activeNotes, noteHistory.length, config.whoIsPlayingMinutes, () => {
     // Suppress mid-performance too: Listen mode performs via timestamped MIDI
     // with no activeNotes churn, so the idle-gap could otherwise fire mid-piece.
     if (videoActive || playing) return;
@@ -289,7 +291,7 @@ function PianoShell() {
       <PianoPresetProvider>
       <PianoBreadcrumbProvider>
         <div className="piano-app">
-          <WhoIsPlayingPrompt
+          <ProfilePicker
             open={whoOpen}
             users={users}
             onPick={(id) => { setCurrentUser(id); setWhoOpen(false); }}
@@ -400,6 +402,12 @@ export default function PianoApp() {
   // collapses, a reload won't clear it), restart the WebView via the Fully JS
   // Interface. No-op outside the kiosk. See useRenderWatchdog.js.
   useRenderWatchdog();
+  // User-controlled recovery: instead of silently reloading/restarting/rebooting
+  // when the SM-T590 render latch hits, ask the user (reboot now / not now → snooze
+  // 1h → re-arm). The bridge watchdog is configured to only auto-act on a TRUE hang
+  // (no heartbeat), leaving this alive-but-slow case to the user. See
+  // useJankRebootPrompt.js / reference_piano_tablet_jank_current_state.
+  const jankReboot = useJankRebootPrompt();
   // Always-on frame telemetry (1/min): the 2026-07-01 jank hunt stalled because
   // fps was only measured inside the side-scroller or via probes that reloaded
   // the page (fresh pages read 60 while aged pages had decayed to ~10). This
@@ -413,6 +421,7 @@ export default function PianoApp() {
   return (
     <PianoConfigProvider>
       <PianoRoutes />
+      <RebootPromptModal open={jankReboot.open} onReboot={jankReboot.onReboot} onDismiss={jankReboot.onDismiss} />
     </PianoConfigProvider>
   );
 }
