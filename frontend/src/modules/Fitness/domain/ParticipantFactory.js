@@ -95,8 +95,17 @@ export const fromRosterEntry = (rosterEntry, options = {}) => {
     zoneId,
     zoneColor,
     // Live (non-hysteresis) zone — what the cards render and what sortByZoneRank
-    // ranks on. Falls back to the committed zone when the roster has no raw value.
-    rawZoneId: rosterEntry.rawZoneId ? String(rosterEntry.rawZoneId).toLowerCase() : zoneId,
+    // ranks on. Three rungs, each validated against the canonical zone list so an
+    // unrecognized value falls THROUGH rather than being written:
+    //   1. roster rawZoneId  — TreasureBox baseline (live HR)
+    //   2. vitals zoneId     — user.currentData.zone, derived from live HR by
+    //      UserManager (deriveZoneProgressSnapshot); survives the cases rung 1
+    //      misses, notably guests, whose entityId-keyed TreasureBox lookup fails
+    //      while userVitalsMap resolves them by profileId.
+    //   3. committed zoneId  — hysteresis-smoothed last resort.
+    rawZoneId: canonicalZoneId(rosterEntry.rawZoneId)
+      ?? canonicalZoneId(progressEntry?.zoneId)
+      ?? canonicalZoneId(zoneId),
     rawZoneColor: rosterEntry.rawZoneColor || zoneColor,
     // null (not 0) on a miss, so a later task's diagnostic can tell a miss from a real 0.
     zoneProgress: Number.isFinite(progressEntry?.progress) ? progressEntry.progress : null,
@@ -197,6 +206,24 @@ export const fromRoster = (roster, options = {}) => {
 export const ZONE_RANK_MAP = Object.freeze({ cool: 0, active: 1, warm: 2, hot: 3, fire: 4 });
 
 /**
+ * Normalize a zone ID, returning null unless it is one of the canonical zones.
+ *
+ * ZONE_RANK_MAP's keys ARE the canonical list — reusing them avoids a fifth
+ * hardcoding of zone order and keeps validation pinned to the same literal that
+ * participantSort.test.js holds in lockstep with the config-derived rank map.
+ * (The config-derived list lives in hooks/, which the domain layer must not
+ * import in production code.)
+ *
+ * @param {any} value
+ * @returns {string|null} lowercased canonical zone ID, or null
+ */
+export const canonicalZoneId = (value) => {
+  if (value == null) return null;
+  const normalized = String(value).trim().toLowerCase();
+  return Object.prototype.hasOwnProperty.call(ZONE_RANK_MAP, normalized) ? normalized : null;
+};
+
+/**
  * Rank a participant by their LIVE zone.
  *
  * Deliberately prefers `rawZoneId` over the committed `zoneId`: the committed
@@ -270,5 +297,6 @@ export default {
   lookupZoneColor,
   sortByZoneRank,
   ZONE_RANK_MAP,
+  canonicalZoneId,
   validateParticipants
 };

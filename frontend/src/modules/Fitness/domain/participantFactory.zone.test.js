@@ -51,3 +51,71 @@ describe('fromRosterEntry zone fields', () => {
     expect(fromRosterEntry(ROSTER_ENTRY, { zoneProgressIndex: index }).zoneProgress).toBe(0);
   });
 });
+
+describe('fromRosterEntry rawZoneId fallback chain', () => {
+  // Middle rung: userVitals.zoneId, which FitnessContext:1867 sources from
+  // user.currentData.zone — derived from LIVE HR by UserManager
+  // (deriveZoneProgressSnapshot, UserManager.js:133), NOT hysteresis-smoothed.
+  const indexWith = (over) => buildZoneProgressIndex(
+    new Map([['user_1', { name: 'Kevin', profileId: 'user_1', progress: 0.4, ...over }]])
+  );
+
+  it('engages the vitals zone when rawZoneId is null', () => {
+    const p = fromRosterEntry(
+      { ...ROSTER_ENTRY, rawZoneId: null },
+      { zoneProgressIndex: indexWith({ zoneId: 'warm' }) }
+    );
+    expect(p.rawZoneId).toBe('warm'); // not the committed 'cool'
+  });
+
+  it('prefers the roster rawZoneId over the vitals zone', () => {
+    const p = fromRosterEntry(ROSTER_ENTRY, { zoneProgressIndex: indexWith({ zoneId: 'warm' }) });
+    expect(p.rawZoneId).toBe('active');
+  });
+
+  it('falls through a garbage rawZoneId to the vitals zone rather than writing it', () => {
+    const p = fromRosterEntry(
+      { ...ROSTER_ENTRY, rawZoneId: 'bogus-zone' },
+      { zoneProgressIndex: indexWith({ zoneId: 'warm' }) }
+    );
+    expect(p.rawZoneId).toBe('warm');
+  });
+
+  it('falls through a garbage vitals zone to the committed zone', () => {
+    const p = fromRosterEntry(
+      { ...ROSTER_ENTRY, rawZoneId: null },
+      { zoneProgressIndex: indexWith({ zoneId: 'nonsense' }) }
+    );
+    expect(p.rawZoneId).toBe('cool');
+  });
+
+  it('normalizes a mixed-case vitals zone', () => {
+    const p = fromRosterEntry(
+      { ...ROSTER_ENTRY, rawZoneId: null },
+      { zoneProgressIndex: indexWith({ zoneId: 'WARM' }) }
+    );
+    expect(p.rawZoneId).toBe('warm');
+  });
+
+  it('GUEST: resolves the vitals zone by profileId even when the TreasureBox lookup missed', () => {
+    // A guest misses _buildZoneLookup (entityId-keyed vs profileId-keyed), so the
+    // roster emits BOTH zoneId and rawZoneId null. userVitalsMap is keyed by
+    // user.id, so the middle rung still resolves them.
+    const guest = { ...ROSTER_ENTRY, rawZoneId: null, zoneId: null, isGuest: true };
+    const p = fromRosterEntry(guest, { zoneProgressIndex: indexWith({ zoneId: 'hot' }) });
+    expect(p.rawZoneId).toBe('hot');
+  });
+
+  it('yields null when all three rungs are empty, without crashing', () => {
+    const p = fromRosterEntry(
+      { ...ROSTER_ENTRY, rawZoneId: null, zoneId: null },
+      { zoneProgressIndex: indexWith({ zoneId: null }) }
+    );
+    expect(p.rawZoneId).toBeNull();
+  });
+
+  it('yields null when all three rungs are empty and no index is supplied', () => {
+    const p = fromRosterEntry({ ...ROSTER_ENTRY, rawZoneId: null, zoneId: null });
+    expect(p.rawZoneId).toBeNull();
+  });
+});
