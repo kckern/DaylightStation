@@ -22,11 +22,11 @@ describe('ZONE_RANK_MAP', () => {
 
 describe('sortByZoneRank', () => {
   it('REGRESSION 2026-07-21: within one zone, higher progress wins regardless of raw BPM', () => {
-    // Felix 127 BPM @ 1/3 through active; Dad 115 BPM @ 2/3 through active.
+    // test-child 127 BPM @ 1/3 through active; Dad 115 BPM @ 2/3 through active.
     // Dad must be on top — the sidebar showed the reverse when Dad's progress
     // lookup missed on his group label and degraded to 0.
-    const felix = p({ id: 'user_4', name: 'Felix', zoneProgress: 0.33, heartRate: 127 });
-    const dad = p({ id: 'user_1', name: 'Kevin', zoneProgress: 0.66, heartRate: 115 });
+    const felix = p({ id: 'user_4', name: 'test-child', zoneProgress: 0.33, heartRate: 127 });
+    const dad = p({ id: 'user_1', name: 'test-parent', zoneProgress: 0.66, heartRate: 115 });
     expect(sortByZoneRank([felix, dad]).map((x) => x.id)).toEqual(['user_1', 'user_4']);
   });
 
