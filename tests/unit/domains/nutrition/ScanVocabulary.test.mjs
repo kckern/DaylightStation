@@ -136,15 +136,19 @@ describe('encodeDensity', () => {
   });
 
   it('reports the offending value on the error', () => {
+    // Capture outside the try so a removed guard fails on the assertion below
+    // (caught === undefined) rather than on a sentinel throw caught by its own
+    // catch, which would point the diagnostic at the wrong line.
+    let caught;
     try {
       encodeDensity(MAX_DENSITY_LEVEL + 1);
-      throw new Error('expected encodeDensity to throw');
     } catch (err) {
-      expect(err).toBeInstanceOf(ValidationError);
-      expect(err.code).toBe('INVALID_DENSITY_LEVEL');
-      expect(err.field).toBe('level');
-      expect(err.value).toBe(MAX_DENSITY_LEVEL + 1);
+      caught = err;
     }
+    expect(caught).toBeInstanceOf(ValidationError);
+    expect(caught.code).toBe('INVALID_DENSITY_LEVEL');
+    expect(caught.field).toBe('level');
+    expect(caught.value).toBe(MAX_DENSITY_LEVEL + 1);
   });
 });
 
@@ -169,15 +173,16 @@ describe('encodeContainer', () => {
   });
 
   it('reports the offending value on the error', () => {
+    let caught;
     try {
       encodeContainer('bento_box');
-      throw new Error('expected encodeContainer to throw');
     } catch (err) {
-      expect(err).toBeInstanceOf(ValidationError);
-      expect(err.code).toBe('INVALID_CONTAINER_ID');
-      expect(err.field).toBe('id');
-      expect(err.value).toBe('bento_box');
+      caught = err;
     }
+    expect(caught).toBeInstanceOf(ValidationError);
+    expect(caught.code).toBe('INVALID_CONTAINER_ID');
+    expect(caught.field).toBe('id');
+    expect(caught.value).toBe('bento_box');
   });
 });
 
@@ -188,8 +193,9 @@ describe('RESET_CODE', () => {
 });
 
 describe('MAX_DENSITY_LEVEL', () => {
-  // Task 4's config validator asserts the density_levels table against this.
-  it('matches the density_levels table it governs', () => {
+  // This does NOT read config.example.yml — it only pins the constant so the
+  // bound cannot drift silently. Task 4 adds the real config-coupling check.
+  it('is pinned deliberately — update config.example.yml in the same commit', () => {
     expect(MAX_DENSITY_LEVEL).toBe(9);
   });
 });
