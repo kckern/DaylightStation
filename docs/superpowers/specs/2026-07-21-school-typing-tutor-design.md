@@ -132,6 +132,9 @@ means no attribution — a guest may play arcade freely, and nothing is written.
 
 Touch typing on an on-screen keyboard is not touch typing. The Portal is a
 touch panel; this mode is meaningless without the Bluetooth keyboard paired.
+**Confirmed 2026-07-21: a Bluetooth keyboard will be connected**, which is the
+assumption the whole mode rests on — and the reason the on-screen keyboard map
+is display-only (§6a) rather than an input surface.
 
 The tutor **detects whether real keystrokes are arriving** and, if the child is
 tapping the soft keyboard, says so plainly and points at the Bluetooth keyboard
@@ -140,6 +143,33 @@ tapping as touch typing is actively teaching the wrong thing.
 
 The Portal's physical volume keys are claimed by `portalKeys` (`portal.yml`) —
 they are not text input and are unaffected.
+
+---
+
+## 6a. Dependencies — none, and why
+
+Surveyed 2026-07-21. **No typing-tutor framework is worth importing.**
+
+| Package | Finding |
+|---|---|
+| `typewriter-effect` (MIT, 2.22.0) | Animates text appearing letter-by-letter. Not a tutor at all — it simply dominates npm search for "typing" and is an easy mis-pick |
+| `react-typing-game-hook` (Apache-2.0, 1.4.2) | The closest real match and zero-dep, but **last published 2023-03-10**. It handles only char-by-char comparison against a target string — roughly 50 lines — and none of the curriculum, per-key statistics, weak-key ranking, finger mapping, or cross-session WPM that constitute the actual tutor |
+| `react-simple-keyboard` (MIT, actively maintained) | Genuinely healthy, but the wrong shape: it exists to *be typed on*. With a Bluetooth keyboard connected (confirmed), our on-screen keyboard is display-only — highlight the next key, colour finger zones, never accept a tap. Using it would mean suppressing its input behaviour and fighting its styling for finger-zone colouring it does not support |
+
+**Decision: hand-roll both the engine and the keyboard map.** The engine is
+exactly the pure, testable logic we want to own (§8), and the map is a static
+CSS grid. Taking a stale dependency to save ~50 lines, then building everything
+that matters around it, is a poor trade.
+
+**Worth studying, not importing:** keybr's adaptive generator produces
+pronounceable pseudo-words weighted toward the user's weak keys, rather than
+picking dictionary words and hoping they contain the target letters. Borrow the
+idea into `weakKeys.js` / `generateWords`.
+
+**Use the standard WPM definition**, so the numbers mean something outside this
+app: gross WPM = `(characters / 5) / minutes`; net WPM subtracts uncorrected
+errors. `typingEngine.js` computes and exposes both, and the UI must label
+which it is showing.
 
 ---
 
