@@ -162,10 +162,25 @@ kiosk found switched off becomes visible after the fact. Read it with `pbctl cra
 APK *requires* kiosk mode to be **off**: FKB's kiosk mode auto-dismisses Android's
 install dialog and the install dies with `INSTALL_FAILED_ABORTED` (deploy step 4
 below). A guard that blindly re-asserted `kioskMode=true` would kill the confirm tap.
-So `POST /update` stamps the request time *before* the download begins, and the guard
-stands down for **15 minutes** afterwards (verdict `INSTALL_HOLD`) — it will not even
-*read*, let alone write. The suppression is inferred from install activity, so the
-deploy needs no extra manual step.
+So `POST /update` computes a hold **deadline** (`now + watchdogKioskSettingsInstallHoldMs`,
+15 min by default) *before* the download begins, and until it lapses the guard stands
+down (verdict `INSTALL_HOLD`) — it will not even *read*, let alone write. The
+suppression is inferred from install activity, so the deploy needs no extra manual step.
+
+> **The deadline is persisted, and that is essential.** The install this guards against
+> **stops the service**, and deploy step 7 relaunches it — "repeat until `pbctl status`
+> answers", so more than once is normal. In v22 the hold lived only in a
+> `PianoBridgeService` field, so every one of those restarts reset it to 0 and the
+> suppression silently evaporated; a retried or second install then ran with **no hold
+> at all**. Since v23 the deadline is written through the merging `writeOverride` to
+> `kioskSettingsInstallHoldUntilEpochMs` and the guard honours the **later** of the
+> in-memory and persisted values, so the hold survives its own install.
+>
+> It stores the *deadline*, not the request timestamp, so shortening
+> `watchdogKioskSettingsInstallHoldMs` later cannot retroactively cut short a hold that
+> is already running. Like the disarm, it deliberately does not trigger
+> `reloadConfigAndReconnect` — tearing down BLE-MIDI and A2DP during an install is
+> exactly wrong.
 
 **Force a check.** `pbctl kiosk-check` runs one pass immediately and reports what it
 found and fixed, **bypassing the install hold**. This is how you verify the guard after
@@ -210,7 +225,8 @@ from a healthy FKB and still be sitting unlocked.
 |---|---|---|
 | `watchdogKioskSettingsEnabled` | `true` | Master switch for the guard |
 | `watchdogKioskSettingsIntervalMs` | `60000` | Tick cadence. Floored at 5 s at start-up so a typo can't hot-loop FKB's REST API |
-| `watchdogKioskSettingsInstallHoldMs` | `900000` | Stand-down window after a `POST /update` (15 min) |
+| `watchdogKioskSettingsInstallHoldMs` | `900000` | Stand-down **duration** after a `POST /update` (15 min). Used to compute the deadline below |
+| `kioskSettingsInstallHoldUntilEpochMs` | `0` | The computed hold **deadline**, epoch ms. Written by `/update`; persisted so the hold survives the service restart the install causes. `0` = no hold |
 | `kioskSettingsDisarmUntilEpochMs` | `0` | Disarm deadline, epoch ms. Set by the disarm API; `0` = armed |
 
 > ⚠️ **`kioskMode` is NOT in `cli/fkb.cli.mjs`'s `keepawake` or `recovery` sets.**
@@ -470,8 +486,8 @@ Output: `app/app/build/outputs/apk/debug/app-debug.apk`.
 
 > **Always bump `versionCode` in `app/app/build.gradle` on every build** — the
 > self-update path (below) rejects an APK whose `versionCode` is not strictly greater
-> than the installed one. Current shipped build: **versionCode 22 / versionName
-> `1.14-kiosk-settings-guard`** (SM-T590, 2026-07-21).
+> than the installed one. Current shipped build: **versionCode 23 / versionName
+> `1.15-install-hold-persist`** (SM-T590, 2026-07-21).
 
 ### Unit tests
 
