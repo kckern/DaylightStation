@@ -1,6 +1,8 @@
 # School Portal — Identity + Quiz/Flashcard Engine (Slice 1)
 
-**Status:** Design spec, approved 2026-07-21.
+**Status:** Design spec, approved 2026-07-21. Revised same day after a stern
+review pass (roster endpoint, flashcard answer contract, lapse-vs-session,
+results shape, quiz vs. drill semantics).
 **Parent requirements:** `2026-07-21-portal-homeschool-requirements.md`
 **Covers:** R1 (identity), R3 (quizzes), R4 (flashcards)
 
@@ -110,12 +112,12 @@ already has an established test shape.
 | `modules/School/identity/SchoolProfileContext.jsx` | Provider: roster, current profile, persistence, lapse |
 | `modules/School/identity/useSchoolProfile.js` | Consumer hook |
 | `modules/School/browse/BankBrowser.jsx` | Grid of available banks, filtered by audience |
-| `modules/School/quiz/QuizRunner.jsx` | Drives a quiz session, one item at a time |
+| `modules/School/quiz/QuizRunner.jsx` | Drives a quiz session: **one pass**, one item at a time, score summary at the end. No resurfacing — a quiz is an assessment, and re-asking missed items until correct would converge every score to 100% and gut the R2.5 completion signal |
 | `modules/School/quiz/items/MultipleChoiceItem.jsx` | Tap targets |
 | `modules/School/quiz/items/ShortAnswerItem.jsx` | On-screen keyboard input |
 | `modules/School/quiz/items/ClozeItem.jsx` | Short answer with split prompt |
 | `modules/School/quiz/items/MatchingItem.jsx` | Drag-to-connect pairs |
-| `modules/School/flashcards/FlashcardRunner.jsx` | Prompt → reveal → self-grade |
+| `modules/School/flashcards/FlashcardRunner.jsx` | Prompt → reveal → self-grade. **Missed items resurface before the session ends (R4.3)** — resurfacing belongs to drilling, not assessment |
 | `modules/School/schoolLog.js` | Logging facade (see §9) |
 
 ### Frontend — modified
@@ -180,9 +182,12 @@ superseded by curriculum config in sub-project 4.
 - `id`, `title`, `items` required; `items` non-empty.
 - Item `id` required and unique within the bank.
 - `type` ∈ {`multiple_choice`, `short_answer`, `cloze`, `matching`}.
-- `multiple_choice`: `choices` ≥ 2, and `answer` must appear in `choices`.
+- `multiple_choice`: `choices` ≥ 2, all unique (duplicates render as identical
+  tap targets), and `answer` must appear in `choices`.
 - `short_answer` / `cloze`: `answer` required; `accept` optional array.
-- `cloze`: `prompt` must contain the blank marker `___`.
+- `cloze`: `prompt` must contain the blank marker `___` **exactly once**.
+  Multi-blank cloze is a different item type with its own grading and UI
+  questions; rejecting it now is cheaper than half-supporting it.
 - `matching`: `pairs` ≥ 2; `left` values unique; `right` values unique.
 - `audience` defaults to `assigned` when absent — **fail closed**, so a bank
   is never accidentally exposed to guests by omission.
@@ -202,10 +207,12 @@ Append-only array, date-sharded by `at`. Layout and semantics mirror
   itemId: wa
   itemType: multiple_choice
   mode: quiz              # quiz | flashcard
-  given: Olympia          # what the child answered (self-report for flashcard).
-                          # A string for every type except matching, where it
-                          # is an array of {left, right} pairs.
-  correct: true
+  given: Olympia          # quiz mode: what the child answered — a string for
+                          # every type except matching, where it is an array of
+                          # {left, right} pairs. Flashcard mode: always null
+                          # (the child self-grades; there is no typed answer).
+  correct: true           # server-assigned in quiz mode; the child's own
+                          # self-report in flashcard mode (see mode)
   attributedTo: kckern    # denormalised for reassignment auditing
 ```
 
@@ -225,24 +232,57 @@ All under `/api/v1/school`.
 
 | Method | Path | Purpose |
 |---|---|---|
+| `GET` | `/roster` | Household roster for the picker: `[{id, name}]` |
 | `GET` | `/banks?audience=` | List banks. `audience=generic` filters to guest-safe sets |
 | `GET` | `/banks/:bankId` | One bank, full (answers included — see §2) |
 | `POST` | `/sessions` | Open a session → `{sessionId}`. Body `{userId?, bankId, mode}` |
-| `POST` | `/sessions/:sessionId/answer` | Grade and record one answer |
+| `POST` | `/sessions/:sessionId/answer` | Record one answer (server-graded in quiz mode) |
 | `GET` | `/users/:userId/results?bankId=` | Derived rollup from the attempt log |
 
-**`POST /sessions/:sessionId/answer`**
+**`GET /roster`.** The school roster lives in household config at
+`data/household/config/school.yml`:
 
-Request `{itemId, given}` → response `{correct, expected, attemptId}`.
+```yaml
+users:
+  - kckern
+  - user_2
+```
 
-`bankId` is deliberately **not** in the request — the session already holds it,
-and accepting it again would let a client grade against one bank while
-recording under another. `given` is a string for every type except `matching`,
-where it is an array of `{left, right}`.
+Read via `configService.getHouseholdAppConfig(null, 'school')` — **not**
+`getAppConfig`, which silently returns null for household app config — and
+hydrated to `[{id, name}]` with the existing `UserService.hydrateUsers`.
+School must not call `/api/v1/piano/users`; that endpoint is piano-private
+(§3). An empty or missing `users` list yields an empty roster and the UI's
+empty state, not an error.
 
+**Bank reads are ungated.** `GET /banks` and `GET /banks/:bankId` require no
+identity and enforce no audience — per §2 the bank content is not a security
+boundary, and inventing auth on reads would only pretend it is. The `audience`
+rule is enforced at exactly one place: session open.
+
+**`POST /sessions/:sessionId/answer`** — shape depends on the session's `mode`.
+
+*Quiz mode:* request `{itemId, given}` → response `{correct, expected, attemptId}`.
 The server grades via the pure domain module, appends the attempt, and returns
-the verdict. `expected` is returned so the UI can show the right answer after a
-wrong response without a second call.
+the verdict. `expected` lets the UI show the right answer after a wrong
+response without a second call. `given` is a string for every type except
+`matching`, where it is an array of `{left, right}`.
+
+*Flashcard mode:* request `{itemId, selfGrade: 'correct' | 'incorrect'}` →
+response `{attemptId}`. **The server does not grade a flashcard** — the child
+revealed the answer and judged themselves, so there is nothing to grade. The
+server records the self-report verbatim: `correct` from `selfGrade`,
+`given: null`. No `correct`/`expected` in the response; the client already
+knows both. `mode: flashcard` on the attempt is what marks the verdict as
+self-reported rather than server-assigned — rollups must never mix the two as
+if they were the same kind of evidence.
+
+All four item types are drillable as cards: prompt shown, answer (or pair
+list, for `matching`) revealed on tap, self-graded.
+
+`bankId` is deliberately **not** in either request — the session already holds
+it, and accepting it again would let a client grade against one bank while
+recording under another.
 
 **Session state.** Sessions are held **in memory** — `{sessionId, userId|null,
 bankId, mode, startedAt}` — not persisted. Server-side session state is what
@@ -254,6 +294,28 @@ the UI sends the child back to the bank browser. This is acceptable because
 remainder of one sitting, never a recorded result. Sessions are dropped after
 2 hours of inactivity so the map cannot grow without bound.
 
+There is deliberately **no close endpoint**. Nothing downstream depends on a
+session "ending" — results derive from the attempt log, and expiry is the only
+cleanup. The `school.session.end` log event (§9) is emitted by the frontend
+when a runner finishes or is abandoned; it is telemetry, not state.
+
+**`GET /users/:userId/results?bankId=`** — derived by folding the user's
+attempt log, never stored. Response, per bank:
+
+```json
+{
+  "bankId": "us-state-capitals",
+  "quiz":      { "attempts": 12, "correct": 9, "lastAt": "2026-07-21T15:04:11Z" },
+  "flashcard": { "attempts": 30, "correct": 24, "lastAt": "2026-07-20T19:11:02Z" },
+  "items": { "wa": { "quizAttempts": 2, "quizCorrect": 1, "lastCorrect": true } }
+}
+```
+
+Quiz and flashcard counts are **never merged**: one is server-graded evidence,
+the other a self-report (§5, flashcard mode). `items` carries quiz-mode
+per-item state only — it is what sub-project 2 will read to gate lesson
+completion, and self-reports must not leak into that.
+
 **Guest sessions.** A session with no `userId` is a guest session: it grades and
 returns verdicts normally but **appends nothing**. Per R1.7 a guest may drill
 generic sets; per R1.2 nothing untracked may be attributed. The API must reject
@@ -263,7 +325,8 @@ a guest session opened against an `audience: assigned` bank with `403`.
 
 ## 6. Identity behaviour
 
-- **Roster** from household config, hydrated via the existing
+- **Roster** fetched from `GET /api/v1/school/roster` (§5), which reads
+  `data/household/config/school.yml` and hydrates via the existing
   `UserService.hydrateUsers` (`0_system/config/UserService.mjs`).
 - **Selection** via the extracted `ProfilePicker`.
 - **Persistence** in `localStorage` under the flat key `school:user`, restored
@@ -284,6 +347,18 @@ a guest session opened against an `audience: assigned` bank with `403`.
   opens the picker. Browsing does not.
 - **Guest** is reachable by dismissing the picker. Guests see only
   `audience: generic` banks and produce no attempts.
+- **Lapse or profile switch abandons any open session.** A server session is
+  pinned to the user who opened it, and it outlives the 10-minute identity
+  lapse by design (2-hour expiry). Without this rule, child A walks away
+  mid-quiz, identity lapses, child B walks up to a still-live quiz screen and
+  records attempts as A — exactly the accidental mis-credit this identity
+  design exists to prevent. So: when identity lapses or the chip is used to
+  switch profiles, the client **discards the sessionId and leaves the runner**
+  (back to the bank browser, via the claim prompt if lapsed). The abandoned
+  session is never resumed; it simply expires server-side. Attempts already
+  appended remain, correctly attributed to A. Answering an item **counts as
+  interaction** for the lapse timer — a child slowly thinking through a quiz
+  is present, not idle.
 
 ---
 
@@ -318,6 +393,8 @@ Grading must not read the clock or any I/O. Timestamps are applied by
 | Unknown `itemId` in an answer | `400`; nothing appended |
 | Unknown or expired `sessionId` | `410`; UI returns to the bank browser |
 | `given` of the wrong shape for the item type | `400`; nothing appended |
+| `given` on a flashcard session, or `selfGrade` on a quiz session | `400`; nothing appended — the mode contract (§5) is strict both ways |
+| Invalid `mode` on session open | `400` |
 | Unknown `userId` on session open | `400` before any file is touched |
 | Guest session against `assigned` bank | `403` |
 | Attempt append fails (disk/permission) | `500`, and the UI must show the answer as **unrecorded** rather than silently proceeding — a lost attempt is a lost record, and silence here is what makes progress untrustworthy |
@@ -345,7 +422,8 @@ Events to emit from the start:
 
 **Pure domain** — `tests/isolated/domain/school/`, vitest.
 - `questionBankValidation.test.mjs` — each rule, each failure, `audience`
-  defaulting to `assigned` when absent.
+  defaulting to `assigned` when absent, duplicate choices rejected, multi-blank
+  cloze rejected.
 - `grading.test.mjs` — every type; whitespace/case tolerance; that
   normalisation does *not* accept near-misses it shouldn't; matching
   all-or-nothing.
@@ -362,13 +440,22 @@ Events to emit from the start:
 - A recorded attempt carries `attributedTo` matching the session user.
 - An answer against an unknown session is rejected without appending.
 - An answer naming an `itemId` absent from the session's bank is rejected.
+- A flashcard `selfGrade` is recorded verbatim with `given: null` and is never
+  passed through grading.
+- `given` on a flashcard session (and `selfGrade` on a quiz session) is
+  rejected without appending.
+- Results rollup keeps quiz and flashcard counts separate.
 
 **Frontend** — colocated `.test.jsx`, vitest.
 - `ProfilePicker` renders and pages correctly **after the move**, from its new
   path.
 - Lapse fires at the threshold and returns to unclaimed.
+- Lapse (or a chip profile switch) while a runner is open discards the session
+  and leaves the runner — the mis-credit handoff case in §6.
+- Answering an item resets the lapse timer.
 - Each item type: renders, accepts input, reports the answer.
-- `QuizRunner` resurfaces a missed item before the session ends (R4.3).
+- `FlashcardRunner` resurfaces a missed item before the session ends (R4.3).
+- `QuizRunner` does **not** resurface — one pass, then a summary.
 
 **Regression gate for the extraction.** The moved Piano tests
 (`WhoIsPlayingPrompt.test.jsx`, `whoIsPlayingLayout.test.js`,
