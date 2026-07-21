@@ -154,7 +154,7 @@ export function ScreenActionHandler({ actions = {}, inputType = null }) {
     showOverlay(Player, {
       play: { contentId: payload.contentId, ...payload },
       clear: () => dismissOverlay(),
-    });
+    }, { chrome: 'media' });
   }, [showOverlay, dismissOverlay, isMediaDuplicate]);
 
   const handleMediaQueue = useCallback((payload) => {
@@ -163,7 +163,7 @@ export function ScreenActionHandler({ actions = {}, inputType = null }) {
     showOverlay(Player, {
       queue: { contentId: payload.contentId, ...payload },
       clear: () => dismissOverlay(),
-    });
+    }, { chrome: 'media' });
   }, [showOverlay, dismissOverlay, isMediaDuplicate]);
 
   // --- Queue ops (envelope command=queue) ---
@@ -188,7 +188,7 @@ export function ScreenActionHandler({ actions = {}, inputType = null }) {
       showOverlay(Player, {
         queue: { contentId: payload.contentId, ...payload },
         clear: () => dismissOverlay(),
-      });
+      }, { chrome: 'media' });
       return;
     }
 
@@ -212,9 +212,9 @@ export function ScreenActionHandler({ actions = {}, inputType = null }) {
       logger().debug('playback.secondary-fallback', { secondary: payload.secondary.action });
       const { action, payload: secPayload } = payload.secondary;
       if (action === 'media:queue') {
-        showOverlay(Player, { queue: { contentId: secPayload.contentId }, clear: () => dismissOverlay() });
+        showOverlay(Player, { queue: { contentId: secPayload.contentId }, clear: () => dismissOverlay() }, { chrome: 'media' });
       } else if (action === 'media:play') {
-        showOverlay(Player, { play: secPayload.contentId, clear: () => dismissOverlay() });
+        showOverlay(Player, { play: secPayload.contentId, clear: () => dismissOverlay() }, { chrome: 'media' });
       } else if (action === 'menu:open') {
         showOverlay(MenuStack, { rootMenu: secPayload.menuId, playerRef: navPlayerRef });
       }

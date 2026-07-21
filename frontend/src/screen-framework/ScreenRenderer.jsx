@@ -393,7 +393,7 @@ export function ScreenRenderer({ screenId: propScreenId }) {
             <ScreenAmbientProvider value={config.ambient}>
             <MenuNavigationProvider>
               <ScreenSceneProvider>
-              <ScreenOverlayProvider>
+              <ScreenOverlayProvider inputType={config.input?.type}>
                 <SessionSourceProvider source={sessionSource}>
                 <PipManager config={config.pip}>
                   <ScreenAutoplay routes={config.routes} />
