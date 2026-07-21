@@ -116,9 +116,15 @@ const CONTAINER_PREFIX = 'ct';   // 'rs' not 'ctl' so no prefix is a near-twin o
 const RESET_PREFIX = 'rs';
 
 export const RESET_CODE = `${RESET_PREFIX}:clear`;
+export const MAX_DENSITY_LEVEL = 9;   // must match density_levels in config.example.yml
+const CONTAINER_ID_RE = /^[a-z0-9][a-z0-9-]*$/;   // case-SENSITIVE; shared by parse and encode
 
-export const encodeDensity = (level) => `${DENSITY_PREFIX}:${level}`;
-export const encodeContainer = (id) => `${CONTAINER_PREFIX}:${id}`;
+// The encoders MUST validate. This module exists so the printed page cannot drift
+// from the parser, and an id that encodes but does not parse produces a laminated
+// QR that can never be read — remedied by a reprint, not a code fix. Throw a
+// ValidationError instead. Failing at PDF-generation time is cheap.
+export const encodeDensity = (level) => { /* validate 1..MAX_DENSITY_LEVEL, else throw */ };
+export const encodeContainer = (id) => { /* validate CONTAINER_ID_RE, else throw */ };
 
 export function parseScan(code) {
   if (typeof code !== 'string') return null;
@@ -135,7 +141,7 @@ export function parseScan(code) {
     return { kind: 'density', level: Number(rest) };
   }
   if (prefix === CONTAINER_PREFIX) {
-    if (!/^[a-z0-9][a-z0-9-]*$/i.test(rest)) return null;
+    if (!CONTAINER_ID_RE.test(rest)) return null;   // no `i` flag — see below
     return { kind: 'container', id: rest };
   }
   if (prefix === RESET_PREFIX) {
@@ -144,8 +150,16 @@ export function parseScan(code) {
   return null;
 }
 
-export default { parseScan, encodeDensity, encodeContainer, RESET_CODE };
 ```
+
+No `export default` — the nutrition domain has a barrel (`2_domains/nutrition/index.mjs`)
+and `coding-standards.md:91-104` calls reaching into domain internals the bad pattern.
+Add the four named exports there and import via `#domains/nutrition`.
+
+**Case sensitivity is uniform and deliberate.** `DL:4`, `CT:mug`, `RS:clear` all return
+null, so container ids must too — a case-preserved `Dinner-Bowl` would miss the
+`dinner-bowl` key in `containers.items` and silently skip the tare, producing a
+wrong-but-plausible calorie number instead of a visible error.
 
 **Step 4: Run, confirm pass**
 
@@ -664,7 +678,7 @@ git commit -m "refactor(catalog): tile via the shared layoutSections helper"
 - Create: `backend/src/4_api/v1/routers/nutritionSheet.mjs`
 - Modify: `backend/src/app.mjs` (register `v1Routers['nutrition-sheet']`)
 
-`GET /api/v1/nutrition-sheet` → PDF. Builds codes via `encodeDensity` / `encodeContainer` / `RESET_CODE` from `ScanVocabulary` — never string-concatenated locally — renders each through `createQRCodeRenderer()` **in process** (no internal HTTP; that indirection in `catalog.mjs` exists for content lookups we don't need), tiles via `layoutSections`, and stamps a config version in the page footer so a sheet on the fridge can be matched to the config that produced it.
+`GET /api/v1/nutrition-sheet` → PDF. Builds codes via `encodeDensity` / `encodeContainer` / `RESET_CODE` from `ScanVocabulary` — never string-concatenated locally. Those encoders **throw** on an unencodable id, so a bad container key in YAML fails this endpoint loudly instead of printing a QR that parses to null. Let it throw; do not catch and skip the entry — renders each through `createQRCodeRenderer()` **in process** (no internal HTTP; that indirection in `catalog.mjs` exists for content lookups we don't need), tiles via `layoutSections`, and stamps a config version in the page footer so a sheet on the fridge can be matched to the config that produced it.
 
 ```bash
 git commit -m "feat(api): printable nutrition scan sheet endpoint"
@@ -685,6 +699,21 @@ git commit -m "docs(food-scale-relay): scan-enriched logging flow"
 ```
 
 ---
+
+## A parse miss is NOT a no-op (verified, affects Tasks 7 and 11)
+
+The design doc assumed a nutrition code that misses `parseScan` would be dropped. It is
+not. `BarcodePayload.#parseCommand` returns null for `ct:dinner-bowl` (neither segment is
+a known command), so it falls through to `ContentExpression.fromString` and becomes
+`{ type: 'content', contentId: 'ct:dinner-bowl' }` — a content dispatch *attempt*.
+`resolveCommand` never runs; nothing rejects it.
+
+Consequences: Task 7's `nutriscan` branch must come strictly first (ordering is
+load-bearing, not stylistic), and an orphaned or typo'd code fails noisily in the content
+pipeline rather than quietly. That is why Task 1's encoders throw.
+
+No live prefix collision exists today — configured screen ids are `livingroom-tv`,
+`office-tv`, `piano`, `garage-tv`, `portal`, `speaker-*`, none named `dl`/`ct`/`rs`.
 
 ## Known Gaps — do not silently "fix" these
 
