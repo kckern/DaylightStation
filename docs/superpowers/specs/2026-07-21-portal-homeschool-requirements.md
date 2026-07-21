@@ -101,12 +101,47 @@ no curriculum attached.
 - R3.3 Question banks must be authorable as plain data files in the data
   volume, hand-writable without touching code.
 - R3.4 Quiz results feed per-child progress.
+- R3.5 **DECIDED (2026-07-21):** A **new canonical question-bank schema**, in
+  its own domain. The existing GameShow (Jeopardy-shaped) and journalist
+  (Telegram multiple-choice) models are left untouched — no regression risk to
+  the party game or the journaling bot. This schema is intended as the
+  household's lasting question format; the others may migrate later, or never.
+- R3.6 **DECIDED (2026-07-21):** `type` describes how an item is **graded**;
+  mode (quiz vs. flashcard drill) describes how it is **presented**. One bank
+  serves both consumers — a flashcard is any item shown prompt-first with the
+  answer revealed. This is what lets R3 and R4 share a sub-project without
+  duplicating content.
+- R3.7 **DECIDED (2026-07-21):** First slice supports four types:
+  `multiple_choice`, `short_answer`, `cloze`, `matching`.
+- R3.8 **DECIDED (2026-07-21):** Banks carry no scoring, rounds, point values,
+  or scheduling — nothing about who is asking or how well they did. That state
+  belongs to the attempt log (R3.9). Keeps banks portable and hand-writable
+  per R3.3.
+- R3.9 **Attempt log must be append-only.** Quiz results are individually
+  attributable events, not a rollup, so that R6.5 reassignment is possible.
+
+  **The existing generic endpoint is NOT sufficient.** Verified 2026-07-21 at
+  `backend/src/4_api/v1/routers/piano.mjs:346-364`:
+  `PUT /users/:userId/progress/:collection/:drillId` performs a spread-merge
+  into a single per-drill record and increments a `plays` counter. Prior
+  attempts are overwritten and unrecoverable. That shape is fine for drilling,
+  where only latest state matters, but a merged counter cannot be split or
+  reattributed after the fact.
+
+  Rollups may be derived from the attempt log for display; the log is the
+  source of truth.
 
 ### R4 — Flashcards
 
 - R4.1 Standard flashcard drilling, same content domain as quizzes.
 - R4.2 Shares a question/item bank with quizzes where sensible.
-- R4.3 Whether flashcards use spaced repetition is **OPEN**.
+- R4.3 Whether flashcards use spaced repetition is **OPEN**. See OPEN-6.
+- R4.4 **Drag interactions are acceptable on the Portal.** The project's
+  no-drag touch preference originates with the **fitness** widgets, where the
+  display is wall-mounted and used at arm's length mid-workout. The Portal is a
+  desk panel at close range, which is a different ergonomic case. Drag-to-connect
+  is therefore allowed for `matching`. This is scoped to this device and does
+  not relax the fitness rule.
 
 ### R5 — Reading
 
@@ -184,7 +219,7 @@ scope and should be verified still-current before each sub-project starts.
 |---|---|---|
 | Per-user video progress | `3_applications/piano/UserVideoProgressStore.mjs` | Constructed once in `contentApi.mjs` and **injected** into Piano — not owned by it. Stores at `data/users/{id}/apps/{app}/video-progress.yml`; the app segment is a parameter |
 | Generic watch logging | `POST /api/v1/play/log` | Records per-user progress whenever `userId` is present in the body |
-| Generic per-user drill progress | `PUT /users/:userId/progress/:collection/:drillId` | Already app-agnostic; arbitrary collection/drill keys, merge-and-increment semantics |
+| Generic per-user drill progress | `PUT /users/:userId/progress/:collection/:drillId` | App-agnostic keys, but **merge-and-increment rollup — not an event log.** Suitable for drilling; **cannot** back reassignable quiz results. See R3.9 |
 | Course/episode machinery | shared `fitnessPlayableService` | Plex-backed; Piano consumes it rather than reimplementing |
 | Roster hydration | `0_system/config/UserService.mjs` — `hydrateUsers` | App-agnostic id → profile |
 | Display naming | `frontend/src/lib/userDisplayName.js` | Already app-wide; used by Piano and Fitness |
@@ -275,10 +310,8 @@ could run at any point. Everything else funnels through identity.
 
 - ~~**OPEN-1 — Engagement signal.**~~ **RESOLVED 2026-07-21.** Completion
   requires a post-video quiz; see R2.5.
-- **OPEN-2 — Question bank schema. ⚠ CRITICAL PATH.** Given two existing
-  incompatible models, what does the school question schema look like, and does
-  it deliberately align with the journalist model, extend it, or stand apart?
-  This now gates the first slice and is the next decision to settle.
+- ~~**OPEN-2 — Question bank schema.**~~ **RESOLVED 2026-07-21.** New canonical
+  standalone schema; see R3.5–R3.9.
 - **OPEN-3 — Bank sharing with the game show.** Sharing a *format* is ruled
   out. Whether to support an export/adapt step from a school bank into a
   Jeopardy set is undecided and low priority.
