@@ -121,4 +121,45 @@ describe('FlashcardRunner', () => {
     const summary = await screen.findByTestId('cards-summary');
     expect(summary).toHaveTextContent(/not recorded/i);
   });
+
+  it('a failed self-grade recording surfaces an immediate per-card indicator, not just the end-of-session summary', async () => {
+    answerMock.mockResolvedValueOnce({ ok: false, status: 500, data: null });
+    render(<FlashcardRunner bank={bank} onExit={() => {}} />);
+    fireEvent.click(await screen.findByRole('button', { name: /show answer/i }));
+    fireEvent.click(screen.getByRole('button', { name: /got it/i }));
+    expect(await screen.findByTestId('unrecorded')).toHaveTextContent(/answer not recorded/i);
+  });
+
+  it('a double-tap on Got it produces exactly one POST and does not drop the next card', async () => {
+    let resolveAnswer;
+    answerMock.mockImplementationOnce(() => new Promise((resolve) => { resolveAnswer = resolve; }));
+    render(<FlashcardRunner bank={bank} onExit={() => {}} />);
+    fireEvent.click(await screen.findByRole('button', { name: /show answer/i }));
+    const gotBtn = screen.getByRole('button', { name: /got it/i });
+    fireEvent.click(gotBtn);
+    fireEvent.click(gotBtn); // double-tap before the first POST resolves
+    resolveAnswer({ ok: true, status: 200, data: { attemptId: 'att_1' } });
+    // q2 must still be reachable — a re-entrant grade() must not silently
+    // drop it from the queue via a duplicate slice(1).
+    expect(await screen.findByText('WA?')).toBeInTheDocument();
+    expect(answerMock).toHaveBeenCalledTimes(1);
+    fireEvent.click(screen.getByRole('button', { name: /show answer/i }));
+    fireEvent.click(screen.getByRole('button', { name: /got it/i }));
+    const summary = await screen.findByTestId('cards-summary');
+    expect(summary).toHaveTextContent('2 / 2'); // both cards graded first-try, none dropped
+  });
+
+  it('disables the grade buttons while a grade is in flight, as the honest affordance for the guard', async () => {
+    let resolveAnswer;
+    answerMock.mockImplementationOnce(() => new Promise((resolve) => { resolveAnswer = resolve; }));
+    render(<FlashcardRunner bank={bank} onExit={() => {}} />);
+    fireEvent.click(await screen.findByRole('button', { name: /show answer/i }));
+    const gotBtn = screen.getByRole('button', { name: /got it/i });
+    const missedBtn = screen.getByRole('button', { name: /missed/i });
+    fireEvent.click(gotBtn);
+    expect(gotBtn).toBeDisabled();
+    expect(missedBtn).toBeDisabled();
+    resolveAnswer({ ok: true, status: 200, data: { attemptId: 'att_1' } });
+    await waitFor(() => expect(screen.getByText('WA?')).toBeInTheDocument());
+  });
 });
