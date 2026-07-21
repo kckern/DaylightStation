@@ -600,6 +600,21 @@ Three changes, each independently testable:
 
 1. **Unit passthrough** — line ~50 hardcodes `unit: 'g'`. Read `payload.unit` and carry it into the buffer and the log. An `ml` reading must reach `ApplyScanToComposition`'s refusal path, not be silently logged as grams.
 2. **Session end consumes slots** — in the `rise <= baselineTolG` branch (~line 120), call `buffer.endPlacement(id)` alongside the existing retract.
+**Two obligations inherited from Task 2's review — do not drop them:**
+
+- **Fix the payload-discarding dispatch sites.** `barcodeRelay.mjs:77` and
+  `ScaleNutribotBridge.mjs:141` both log `{ error: err.message }`, throwing away
+  `ValidationError`'s `code` / `field` / `value`. Task 2's domain errors carry real
+  diagnostic payload that currently evaporates before anyone can read it. Log the
+  structured fields.
+- **Round at the storage boundary.** `computeNutrition` deliberately returns unrounded
+  macro grams (`fat_g: 9.333333333333334`) so stored macros reconcile against the stored
+  calorie total. That is correct in the domain, but existing
+  `history/nutrition/kitchen-food-scale/*.yml` entries are clean integers — writing 17
+  significant digits beside `grams: 74` makes the day-file materially harder to eyeball.
+  Round here or in Task 5, not in the domain. Rounding at `scanNutrition.mjs:161-163`
+  breaks the reconciliation invariant.
+
 3. **Shared serialization** — the bridge's `inflight` Set must be reachable by the scan path. Extract it into a small per-scale mutex passed to both the bridge and `ApplyScanToComposition`, so a density scan landing during an awaited `create()` cannot produce two concurrent read-modify-writes on the same food log.
 
 Write the mutex test first: two concurrent operations on the same scale id must serialize; on different ids they must not.
