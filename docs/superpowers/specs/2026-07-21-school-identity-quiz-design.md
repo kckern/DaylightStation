@@ -222,7 +222,7 @@ records who it was *originally* credited to — without it, a reassignment is
 unauditable after the fact.
 
 `sessionId` groups the attempts from one sitting, which is the natural unit a
-parent would reassign ("that whole quiz was actually Milo").
+parent would reassign ("that whole quiz was actually the younger one").
 
 ---
 
