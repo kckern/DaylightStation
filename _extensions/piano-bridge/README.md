@@ -450,6 +450,13 @@ Output: `app/app/build/outputs/apk/debug/app-debug.apk`.
 > ```
 > **`:app:testDebugUnitTest` is unaffected** — the JVM unit tests need no NDK and no
 > `third_party`, and run fine in a bare worktree. Only the APK build needs the symlink.
+>
+> ⚠️ **Do not commit that symlink.** The ignore rule is `third_party/` — a
+> *directory-only* pattern, which does **not** match a symlink of the same name. So the
+> symlink shows up as an untracked file and a careless `git add -A` will commit an
+> absolute path from one machine into the repo. Verify with
+> `git status --short -- app/src/main/cpp/` before committing from a worktree, and
+> remove the symlink when you're done building.
 
 > **Historical note (superseded):** a 2026-07-02 revision of this section claimed the
 > checked-in `gradle-wrapper.jar` was "truncated (46 KB)" and told you to invoke the
