@@ -1,0 +1,29 @@
+# Example schema for the ir-blaster SSOT. The REAL file lives in household data
+# (private, Dropbox-synced), NOT in this repo:
+#   data/household/config/ir-blasters.yml
+#
+# A registry: each key under `blasters:` is one physical ATOM Lite + the set of
+# IR codes it can emit. Add more keys (bedroom-tv, projector, …) and flash one
+# ATOM per key with the matching id. Regenerate + reflash after editing:
+#   node firmware/tools/flash.mjs <dataDir>/household/config/ir-blasters.yml <id>
+
+provisioning:
+  wifi_ssid: "YOUR_SSID"
+  wifi_password: "YOUR_WIFI_PASSWORD"
+
+blasters:
+  office-tv:
+    label: "Office TV"
+    device:
+      board: m5-atom-lite     # ESP32-PICO-D4; onboard IR LED GPIO12, RGB GPIO27
+      ir_pin: 12              # onboard IR LED (default 12)
+      carrier_khz: 38         # NEC/most consumer IR = 38kHz
+    # Named codes. Each value is either:
+    #   - a Tuya-format base64 string (what the HA IR-blaster text entity uses), OR
+    #   - a raw array of microsecond mark/space durations (escape hatch).
+    # Decoded host-side by tools/gen-config.mjs; the firmware just replays them.
+    codes:
+      power: "BYAjoBFCAsABA4wGQgLgCwFAF0ADQAFAB+AHA+ADAUAb4AcBQBPAA0ABwAvABw+YmoAjxwhCAv//gCPHCEIC"  # power toggle
+      hdmi1: "BaMj2REcAsABA7AGHAJAAQFYAoADQAFAC0AXQANAAUAH4AsD4AsBwDtAAeALM0ATCxwCHAI4pKMjCQkcAg=="
+      hdmi2: "BXcjDxIdAsABA7kGHQLgCwFAF0ADQAFAB+AHAwNYAh0CQBPgCwFAF0ADQAFAB+AHAwtYAh0CRqR3I/QIHQI="
+      hdmi3: "CIkjABIDAlwCA2ABA8MGAwJAC+AHA0AXQANAF0AH4A8DQB/AA0ABQAtAK0AHQANAC+AHAwtcAgMCgqSJI+AIAwI="
