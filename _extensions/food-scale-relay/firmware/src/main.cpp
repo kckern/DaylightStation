@@ -71,6 +71,36 @@ static volatile bool g_barcodeOpenPending = false;
 static bool g_classicDiscoveryActive = false;
 static bool g_hidHostInitialized = false;
 static bool g_barcodeConnected = false;
+static volatile bool g_classicConnecting = false;   // connect issued, awaiting final OPEN/CLOSE
+static uint32_t g_classicConnectStartMs = 0;
+static uint32_t g_classicLastCloseMs = 0;           // backoff anchor after CLOSE/fail
+// In "Bluetooth Keyboard Emulation (HID Slave)" the DS6878 is the slave and
+// waits for the host to connect (DS6878 PRG p.4-5), so we page it. Listening
+// mode is kept behind /barcode/mode?passive=1 for other scanners that initiate.
+static bool g_classicPassive = BARCODE_PASSIVE;
+static uint32_t g_classicOpenCount = 0;             // successful HID opens (incl. short-lived)
+static uint32_t g_classicCloseCount = 0;
+static char g_classicLastEvent[64] = "";
+// SSP passkey the operator must key into the scanner (via Variable PIN Code +
+// alphanumeric bar codes). Surfaced on /status — serial isn't always attached.
+static uint32_t g_classicPasskey = 0;
+static uint32_t g_classicPasskeyMs = 0;
+// IO capability drives which SSP association model is negotiated:
+//   DisplayOnly (false) — stack picks the passkey, operator keys it into the
+//     scanner. Proven to work, but you race the ~30 s LMP timeout every pair.
+//   KeyboardOnly (true) — both ends input, so we can supply a FIXED passkey the
+//     operator can pre-stage as digit bar codes. Repeatable.
+// NoInputNoOutput is never correct here: it degrades SSP to Just Works, and the
+// scanner drops an unauthenticated HID channel ~16 ms after it opens.
+static bool g_classicIoKeyboard = false;
+static uint32_t g_classicFixedPasskey = BARCODE_FIXED_PASSKEY;
+
+static void applyClassicIoCap() {
+  esp_bt_sp_param_t ioParam = ESP_BT_SP_IOCAP_MODE;
+  esp_bt_io_cap_t ioCap = g_classicIoKeyboard ? ESP_BT_IO_CAP_IN : ESP_BT_IO_CAP_OUT;
+  esp_bt_gap_set_security_param(ioParam, &ioCap, sizeof(ioCap));
+  relayLogf("[classic-hid] io-cap = %s", g_classicIoKeyboard ? "KeyboardOnly" : "DisplayOnly");
+}
 struct RawRep { uint16_t handle; uint8_t len; uint8_t d[40]; };
 static QueueHandle_t g_rawQueue;
 static QueueHandle_t g_bcQueue;
@@ -192,9 +222,20 @@ static void classicHidHostCB(esp_hidh_cb_event_t event, esp_hidh_cb_param_t* p) 
       relayLogf("[classic-hid] host init: %d", (int)p->init.status);
       break;
     case ESP_HIDH_OPEN_EVT:
+      relayLogf("[classic-hid] OPEN status=%d conn=%d handle=%u",
+                (int)p->open.status, (int)p->open.conn_status, p->open.handle);
+      if (p->open.conn_status == ESP_HIDH_CONN_STATE_CONNECTING) break; // interim event
       g_barcodeConnected = p->open.status == ESP_HIDH_OK &&
                            p->open.conn_status == ESP_HIDH_CONN_STATE_CONNECTED;
-      relayLogf("[classic-hid] OPEN status=%d handle=%u", (int)p->open.status, p->open.handle);
+      g_classicConnecting = false;
+      if (g_barcodeConnected) {
+        g_classicOpenCount++;
+        memcpy(g_barcodeAddr, p->open.bd_addr, sizeof(esp_bd_addr_t)); // may be an inbound peer
+        snprintf(g_classicLastEvent, sizeof(g_classicLastEvent), "open handle=%u", p->open.handle);
+      } else {
+        g_classicLastCloseMs = millis();
+        snprintf(g_classicLastEvent, sizeof(g_classicLastEvent), "open failed status=%d", (int)p->open.status);
+      }
       break;
     case ESP_HIDH_DATA_IND_EVT: {
       RawRep r; r.handle = p->data_ind.handle; r.len = min((size_t)40, (size_t)p->data_ind.len);
@@ -202,10 +243,32 @@ static void classicHidHostCB(esp_hidh_cb_event_t event, esp_hidh_cb_param_t* p) 
       break;
     }
     case ESP_HIDH_CLOSE_EVT:
-      relayLogf("[classic-hid] CLOSED: %d", (int)p->close.status);
+      relayLogf("[classic-hid] CLOSED: %d reason=%u conn=%d",
+                (int)p->close.status, p->close.reason, (int)p->close.conn_status);
       g_barcodeConnected = false;
+      g_classicConnecting = false;
+      g_classicLastCloseMs = millis();
+      g_classicCloseCount++;
+      snprintf(g_classicLastEvent, sizeof(g_classicLastEvent), "closed reason=%u", p->close.reason);
       break;
-    default: break;
+    case ESP_HIDH_VC_UNPLUG_EVT:
+      relayLogf("[classic-hid] VC_UNPLUG status=%d", (int)p->unplug.status);
+      g_barcodeConnected = false;
+      g_classicConnecting = false;
+      g_classicLastCloseMs = millis();
+      break;
+    case ESP_HIDH_ADD_DEV_EVT:
+      relayLogf("[classic-hid] ADD_DEV status=%d handle=%u", (int)p->add_dev.status, p->add_dev.handle);
+      break;
+    case ESP_HIDH_GET_DSCP_EVT:
+      relayLogf("[classic-hid] GET_DSCP found=%d dl_len=%d", (int)p->dscp.added, (int)p->dscp.dl_len);
+      break;
+    case ESP_HIDH_SET_PROTO_EVT:
+      relayLogf("[classic-hid] SET_PROTO status=%d", (int)p->set_proto.status);
+      break;
+    default:
+      relayLogf("[classic-hid] event %d", (int)event);
+      break;
   }
 }
 
@@ -223,13 +286,29 @@ static bool classicAddressMatches(const esp_bd_addr_t addr) {
 static void classicGapCB(esp_bt_gap_cb_event_t event, esp_bt_gap_cb_param_t* p) {
   if (event == ESP_BT_GAP_AUTH_CMPL_EVT) {
     relayLogf("[classic-hid] auth status=%d", (int)p->auth_cmpl.stat);
+  } else if (event == ESP_BT_GAP_ACL_CONN_CMPL_STAT_EVT) {
+    relayLogf("[classic-hid] ACL up stat=%d", (int)p->acl_conn_cmpl_stat.stat);
+  } else if (event == ESP_BT_GAP_ACL_DISCONN_CMPL_STAT_EVT) {
+    relayLogf("[classic-hid] ACL down reason=%d", (int)p->acl_disconn_cmpl_stat.reason);
+  } else if (event == ESP_BT_GAP_MODE_CHG_EVT) {
+    // sniff/active transitions — debug-level noise, skip
   } else if (event == ESP_BT_GAP_KEY_NOTIF_EVT) {
-    relayLogf("[classic-hid] passkey=%lu", (unsigned long)p->key_notif.passkey);
+    g_classicPasskey = p->key_notif.passkey;
+    g_classicPasskeyMs = millis();
+    relayLogf("[classic-hid] ENTER PASSKEY ON SCANNER: %06lu", (unsigned long)p->key_notif.passkey);
+    flashLed(CRGB::Yellow, 400);
   } else if (event == ESP_BT_GAP_CFM_REQ_EVT) {
     relayLogf("[classic-hid] SSP confirm %06lx", (unsigned long)p->cfm_req.num_val);
     esp_bt_gap_ssp_confirm_reply(p->cfm_req.bda, true);
   } else if (event == ESP_BT_GAP_KEY_REQ_EVT) {
-    relayLogLine("[classic-hid] SSP key requested");
+    // KeyboardOnly path: the stack wants the passkey from us. Supply the fixed
+    // one so the operator can pre-stage the matching digit bar codes.
+    g_classicPasskey = g_classicFixedPasskey;
+    g_classicPasskeyMs = millis();
+    relayLogf("[classic-hid] SSP key requested -> replying %06lu (scan this on the scanner)",
+              (unsigned long)g_classicFixedPasskey);
+    esp_bt_gap_ssp_passkey_reply(p->key_req.bda, true, g_classicFixedPasskey);
+    flashLed(CRGB::Yellow, 400);
   } else if (event == ESP_BT_GAP_PIN_REQ_EVT) {
     if (p->pin_req.min_16_digit) {
       relayLogLine("[classic-hid] scanner requested 16-digit PIN");
@@ -258,17 +337,29 @@ static void classicGapCB(esp_bt_gap_cb_event_t event, esp_bt_gap_cb_param_t* p) 
 }
 
 static void startClassicDiscovery() {
-  if (!g_hidHostInitialized || g_classicDiscoveryActive || g_barcodeConnected || g_barcodeOpenPending) return;
+  if (!g_hidHostInitialized || g_classicDiscoveryActive || g_barcodeConnected ||
+      g_barcodeOpenPending || g_classicConnecting) return;
   esp_err_t err = esp_bt_gap_start_discovery(ESP_BT_INQ_MODE_GENERAL_INQUIRY, 8, 0);
   if (err == ESP_OK) { g_classicDiscoveryActive = true; relayLogLine("[classic-hid] discovery started"); }
   else relayLogf("[classic-hid] discovery start failed: %d", (int)err);
 }
 
+static void logClassicBonds() {
+  int count = esp_bt_gap_get_bond_device_num();
+  relayLogf("[classic-hid] bonded devices: %d", count);
+  if (count <= 0) return;
+  esp_bd_addr_t list[4];
+  int n = min(count, 4);
+  if (esp_bt_gap_get_bond_device_list(&n, list) == ESP_OK) {
+    for (int i = 0; i < n; i++)
+      relayLogf("[classic-hid] bond[%d] %02x:%02x:%02x:%02x:%02x:%02x", i,
+        list[i][0], list[i][1], list[i][2], list[i][3], list[i][4], list[i][5]);
+  }
+}
+
 static void initClassicHidHost() {
   relayLogLine("[classic-hid] init begin");
-  esp_bt_sp_param_t ioParam = ESP_BT_SP_IOCAP_MODE;
-  esp_bt_io_cap_t ioCap = ESP_BT_IO_CAP_NONE;
-  esp_bt_gap_set_security_param(ioParam, &ioCap, sizeof(ioCap));
+  applyClassicIoCap();
   esp_bt_pin_type_t pinType = ESP_BT_PIN_TYPE_FIXED;
   esp_bt_pin_code_t pin = {'1', '2', '3', '4', '5'};
   esp_bt_gap_set_pin(pinType, 5, pin);
@@ -279,9 +370,40 @@ static void initClassicHidHost() {
   relayLogLine("[classic-hid] HID stack ready");
   err = esp_bt_gap_register_callback(classicGapCB);
   if (err != ESP_OK) { relayLogf("[classic-hid] GAP callback failed: %d", (int)err); return; }
-  esp_bt_gap_set_scan_mode(ESP_BT_CONNECTABLE, ESP_BT_NON_DISCOVERABLE);
+  // Named + discoverable so the scanner can find and page us on its own.
+  esp_bt_gap_set_device_name(BARCODE_HOST_NAME);
+  esp_bt_gap_set_scan_mode(ESP_BT_CONNECTABLE, ESP_BT_GENERAL_DISCOVERABLE);
   g_hidHostInitialized = true;
-  relayLogLine("[classic-hid] host ready");
+  relayLogf("[classic-hid] host ready as \"%s\" (%s)", BARCODE_HOST_NAME,
+            g_classicPassive ? "listening" : "paging");
+  logClassicBonds();
+}
+
+// Register the scanner in the HID device DB without paging it, so an inbound
+// connection from the scanner is accepted while we stay passive.
+static void classicPrimeTarget() {
+  if (!g_hidHostInitialized || !BARCODE_MAC[0]) return;
+  unsigned v[6];
+  if (sscanf(BARCODE_MAC, "%x:%x:%x:%x:%x:%x", &v[0],&v[1],&v[2],&v[3],&v[4],&v[5]) != 6) return;
+  for (int i=0;i<6;i++) g_barcodeAddr[i] = (uint8_t)v[i];
+  relayLogf("[classic-hid] target %s (%s)", BARCODE_MAC,
+            g_classicPassive ? "waiting for scanner to connect" : "will page it");
+}
+
+static void classicUnbond() {
+  bool any = false;
+  int count = esp_bt_gap_get_bond_device_num();
+  if (count > 0) {
+    esp_bd_addr_t list[4];
+    int n = min(count, 4);
+    if (esp_bt_gap_get_bond_device_list(&n, list) == ESP_OK) {
+      for (int i = 0; i < n; i++) { esp_bt_gap_remove_bond_device(list[i]); any = true; }
+    }
+  }
+  relayLogf("[classic-hid] unbond: removed %d bond(s)", any ? count : 0);
+  g_barcodeConnected = false;
+  g_classicConnecting = false;
+  g_classicLastCloseMs = millis();
 }
 #endif
 
@@ -324,8 +446,15 @@ static bool connectToScale() {
   return true;
 }
 
+// Kill switch for the BLE scale scan. A continuous BLE scan shares the single
+// 2.4 GHz radio with the Classic HID link; when the scale is absent the scan
+// gate below opens the instant the HID link connects and never closes. The
+// DS6878 works fine against macOS (dedicated radio), so coexistence starvation
+// is a live suspect for the ~16 ms HID teardown. Toggle: /ble/scan?on=0|1
+static bool g_bleScanEnabled = true;
+
 static void startScan() {
-  if (g_scanActive) return;
+  if (g_scanActive || !g_bleScanEnabled) return;
   BLEScan* scan = BLEDevice::getScan();
   scan->setAdvertisedDeviceCallbacks(new ScanCallbacks());
   scan->setActiveScan(true);
@@ -379,6 +508,19 @@ static void handleStatus() {
   barcode["transport"] = "classic-hid";
   barcode["id"] = BARCODE_ID; barcode["route"] = BARCODE_ROUTE;
   barcode["target_name"] = BARCODE_NAME; barcode["mac"] = BARCODE_MAC;
+  barcode["host_name"] = BARCODE_HOST_NAME;
+  barcode["mode"] = g_classicPassive ? "listening" : "paging";
+  barcode["iocap"] = g_classicIoKeyboard ? "keyboard" : "display";
+  barcode["connecting"] = g_classicConnecting;
+  barcode["open_count"] = g_classicOpenCount;
+  barcode["close_count"] = g_classicCloseCount;
+  if (g_classicLastEvent[0]) barcode["last_event"] = g_classicLastEvent;
+  barcode["bonds"] = esp_bt_gap_get_bond_device_num();
+  if (g_classicPasskeyMs) {
+    char pk[8]; snprintf(pk, sizeof(pk), "%06lu", (unsigned long)g_classicPasskey);
+    barcode["passkey"] = pk;   // key this into the scanner to finish pairing
+    barcode["passkey_age_s"] = (uint32_t)((millis() - g_classicPasskeyMs) / 1000);
+  }
   char boundMac[18] = "";
   bool haveBoundMac = false;
   for (uint8_t b : g_barcodeAddr) if (b) { haveBoundMac = true; break; }
@@ -465,13 +607,57 @@ void setup() {
 
   http.on("/", handleStatus);
   http.on("/status", handleStatus);
+#if BARCODE_ENABLED
+  // Barcode control plane — bring-up/ops without a serial cable.
+  http.on("/barcode/connect", [](){          // one-shot host-initiated page
+    g_barcodeOpenPending = true;
+    http.send(200, "application/json", "{\"ok\":true,\"action\":\"connect\"}");
+  });
+  http.on("/barcode/disconnect", [](){
+    esp_bt_hid_host_disconnect(g_barcodeAddr);
+    http.send(200, "application/json", "{\"ok\":true,\"action\":\"disconnect\"}");
+  });
+  http.on("/barcode/unbond", [](){           // forget link keys, force fresh pairing
+    classicUnbond();
+    http.send(200, "application/json", "{\"ok\":true,\"action\":\"unbond\"}");
+  });
+  http.on("/ble/scan", [](){                 // ?on=0|1 — silence the radio to test coexistence
+    if (http.hasArg("on")) {
+      g_bleScanEnabled = http.arg("on") != "0";
+      if (!g_bleScanEnabled && g_scanActive) { BLEDevice::getScan()->stop(); g_scanActive = false; }
+      relayLogf("[ble] scale scan %s", g_bleScanEnabled ? "enabled" : "DISABLED");
+    }
+    http.send(200, "application/json",
+      g_bleScanEnabled ? "{\"ok\":true,\"ble_scan\":true}" : "{\"ok\":true,\"ble_scan\":false}");
+  });
+  http.on("/barcode/iocap", [](){            // ?mode=display|keyboard
+    if (http.hasArg("mode")) {
+      g_classicIoKeyboard = http.arg("mode") == "keyboard";
+      applyClassicIoCap();
+    }
+    if (http.hasArg("passkey")) g_classicFixedPasskey = http.arg("passkey").toInt();
+    char out[96];
+    snprintf(out, sizeof(out), "{\"ok\":true,\"iocap\":\"%s\",\"fixed_passkey\":\"%06lu\"}",
+             g_classicIoKeyboard ? "keyboard" : "display", (unsigned long)g_classicFixedPasskey);
+    http.send(200, "application/json", out);
+  });
+  http.on("/barcode/mode", [](){             // ?passive=0|1
+    if (http.hasArg("passive")) {
+      g_classicPassive = http.arg("passive") != "0";
+      relayLogf("[classic-hid] mode -> %s", g_classicPassive ? "listening" : "paging");
+    }
+    http.send(200, "application/json",
+      g_classicPassive ? "{\"ok\":true,\"mode\":\"listening\"}" : "{\"ok\":true,\"mode\":\"paging\"}");
+  });
+#endif
   http.onNotFound([](){ http.send(404, "text/plain", "food-scale-relay: GET /status\\n"); });
   http.begin();
   relayLogLine("[http] status server listening on :80");
 
   startScan();
 #if BARCODE_ENABLED
-  startClassicDiscovery();
+  classicPrimeTarget();
+  if (!g_classicPassive) startClassicDiscovery();
 #endif
 }
 
@@ -495,10 +681,30 @@ void loop() {
 #if BARCODE_ENABLED
   if (g_barcodeOpenPending) {
     g_barcodeOpenPending=false;
+    // Pause the BLE scale scan while paging the scanner — the shared radio
+    // starves classic paging under a continuous BLE scan (page timeout 0x4).
+    if (g_scanActive) { BLEDevice::getScan()->stop(); g_scanActive = false; }
     relayLogLine("[classic-hid] opening scanner");
-    if (esp_bt_hid_host_connect(g_barcodeAddr) != ESP_OK) {
+    if (esp_bt_hid_host_connect(g_barcodeAddr) == ESP_OK) {
+      g_classicConnecting = true;
+      g_classicConnectStartMs = millis();
+    } else {
       relayLogLine("[classic-hid] open request failed");
+      g_classicLastCloseMs = millis();
     }
+  }
+  // An SSP passkey is outstanding: hold off both the connect watchdog and the
+  // retry loop. A retry fired mid-pairing collides with the in-flight connect
+  // (OPEN status=15 BUSY) and eats the operator's ~30 s window to key it in.
+  bool pairingPending = g_classicPasskeyMs && (millis() - g_classicPasskeyMs < 45000);
+
+  // Watchdog: if the stack never delivers a final OPEN/CLOSE, unwedge ourselves.
+  // Must exceed bluedroid's own page/SDP timeout (~24 s observed) or it preempts
+  // the real result and we lose the status code.
+  if (g_classicConnecting && !pairingPending && millis() - g_classicConnectStartMs > 35000) {
+    relayLogLine("[classic-hid] connect timed out; resetting state");
+    g_classicConnecting = false;
+    g_classicLastCloseMs = millis();
   }
 #endif
   if ((!g_bleConnected
@@ -507,16 +713,20 @@ void loop() {
 #endif
       ) && !g_doConnect
 #if BARCODE_ENABLED
-      && !g_barcodeOpenPending
+      && !g_barcodeOpenPending && !g_classicConnecting
 #endif
       && !g_scanActive) {
     startScan();
   }
 
 #if BARCODE_ENABLED
+  // In passive mode we never page the scanner — we stay discoverable and let it
+  // connect to us. Discovery/paging only runs when explicitly enabled.
   static uint32_t lastClassicTry = 0;
-  if (!g_barcodeConnected && !g_classicDiscoveryActive && !g_barcodeOpenPending &&
-      millis() - lastClassicTry > 12000) {
+  if (!g_classicPassive && !pairingPending &&
+      !g_barcodeConnected && !g_classicDiscoveryActive && !g_barcodeOpenPending &&
+      !g_classicConnecting && millis() - lastClassicTry > 12000 &&
+      (g_classicLastCloseMs == 0 || millis() - g_classicLastCloseMs > 20000)) {
     lastClassicTry = millis();
     startClassicDiscovery();
   }
