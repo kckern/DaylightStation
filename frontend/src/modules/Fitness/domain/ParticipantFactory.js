@@ -169,30 +169,54 @@ export const fromRoster = (roster, options = {}) => {
 };
 
 /**
- * Sort participants by zone rank (highest first), then by zone progress.
- * 
- * @param {import('./Participant.js').Participant[]} participants - Participants to sort
- * @param {Object} zoneRankMap - Map of zoneId → rank number
- * @returns {import('./Participant.js').Participant[]}
+ * Canonical zone ranking, coolest → hottest.
+ *
+ * SSOT: previously duplicated as CONFIG.zone.rankMap in FitnessUsers.jsx.
+ * Import this instead of redeclaring it.
  */
-export const sortByZoneRank = (participants, zoneRankMap = {}) => {
+export const ZONE_RANK_MAP = Object.freeze({ cool: 0, active: 1, warm: 2, hot: 3, fire: 4 });
+
+/**
+ * Rank a participant by their LIVE zone.
+ *
+ * Deliberately prefers `rawZoneId` over the committed `zoneId`: the committed
+ * zone is hysteresis-smoothed for governance stability, and using it here would
+ * desync sort order from the card color and progress bar, which both render
+ * live state. Hysteresis remains in force for governance decisions only.
+ */
+const rankOf = (participant, zoneRankMap) => {
+  const zoneId = participant?.rawZoneId || participant?.zoneId || null;
+  if (!zoneId) return -1;
+  return zoneRankMap[String(zoneId).toLowerCase()] ?? -1;
+};
+
+/**
+ * THE sort for heart-rate participants. Order: live zone rank desc →
+ * progress-within-zone desc → active before inactive → id asc (determinism).
+ *
+ * Progress is only meaningful as a tiebreaker WITHIN a zone, since each user
+ * has their own BPM ranges.
+ *
+ * @param {import('./Participant.js').Participant[]} participants
+ * @param {Object} [zoneRankMap] - defaults to ZONE_RANK_MAP
+ * @returns {import('./Participant.js').Participant[]} a new sorted array
+ */
+export const sortByZoneRank = (participants, zoneRankMap = ZONE_RANK_MAP) => {
+  if (!Array.isArray(participants)) return [];
+
   return [...participants].sort((a, b) => {
-    const aRank = a.zoneId ? (zoneRankMap[a.zoneId] ?? -1) : -1;
-    const bRank = b.zoneId ? (zoneRankMap[b.zoneId] ?? -1) : -1;
-    
+    const aRank = rankOf(a, zoneRankMap);
+    const bRank = rankOf(b, zoneRankMap);
     if (bRank !== aRank) return bRank - aRank;
-    
-    // Secondary: zone progress
-    const aProgress = a.zoneProgress ?? 0;
-    const bProgress = b.zoneProgress ?? 0;
+
+    const aProgress = Number.isFinite(a?.zoneProgress) ? a.zoneProgress : 0;
+    const bProgress = Number.isFinite(b?.zoneProgress) ? b.zoneProgress : 0;
     if (bProgress !== aProgress) return bProgress - aProgress;
-    
-    // Tertiary: active first
-    if (a.isActive && !b.isActive) return -1;
-    if (!a.isActive && b.isActive) return 1;
-    
-    // Stable fallback
-    return String(a.id).localeCompare(String(b.id));
+
+    if (a?.isActive && !b?.isActive) return -1;
+    if (!a?.isActive && b?.isActive) return 1;
+
+    return String(a?.id ?? '').localeCompare(String(b?.id ?? ''));
   });
 };
 
@@ -225,5 +249,6 @@ export default {
   resolveZoneInfo,
   lookupZoneColor,
   sortByZoneRank,
+  ZONE_RANK_MAP,
   validateParticipants
 };
