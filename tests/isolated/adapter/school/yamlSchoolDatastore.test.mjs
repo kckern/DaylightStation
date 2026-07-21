@@ -37,6 +37,29 @@ describe('attempt log', () => {
     expect(ds.appendAttempt('ghost', att())).toBe(null);
     expect(ds.readAllAttempts('ghost')).toEqual([]);
   });
+  it('rejects a path-traversal day and does not leak another user\'s attempt file', () => {
+    // Plant a "secret" attempt log for a different user, outside kid1's tree.
+    const otherDir = path.join(tmp, 'users', 'otherKid', 'apps', 'school', 'attempts');
+    fs.mkdirSync(otherDir, { recursive: true });
+    fs.writeFileSync(path.join(otherDir, '2026-07-21.yml'), '- id: secret_att\n  attributedTo: otherKid\n');
+
+    const kid1Dir = path.join(tmp, 'users', USER, 'apps', 'school', 'attempts');
+    const traversalDay = path.relative(kid1Dir, path.join(otherDir, '2026-07-21'));
+
+    expect(ds.readAttemptDay(USER, traversalDay)).toEqual([]);
+  });
+  it('rejects a malformed day string (not matching YYYY-MM-DD)', () => {
+    ds.appendAttempt(USER, att());
+    expect(ds.readAttemptDay(USER, '2026-07-21-extra')).toEqual([]);
+    expect(ds.readAttemptDay(USER, 'not-a-day')).toEqual([]);
+  });
+  it('non-string day (e.g. duplicated query param arriving as an array) returns [] instead of throwing', () => {
+    ds.appendAttempt(USER, att());
+    expect(() => ds.readAttemptDay(USER, ['2026-07-21', '2026-07-22'])).not.toThrow();
+    expect(ds.readAttemptDay(USER, ['2026-07-21', '2026-07-22'])).toEqual([]);
+    expect(() => ds.readAttemptDay(USER, null)).not.toThrow();
+    expect(ds.readAttemptDay(USER, null)).toEqual([]);
+  });
 });
 
 describe('banks', () => {
@@ -51,5 +74,19 @@ describe('banks', () => {
     expect(ds.listBankIds()).toEqual([]);
     expect(ds.readBankRaw('nope')).toBe(null);
     expect(ds.readBankRaw('../secrets')).toBe(null);
+  });
+  it('lists and reads a .yaml bank (not just .yml)', () => {
+    const dir = path.join(tmp, 'content', 'quizzes');
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, 'states.yaml'), 'id: states\ntitle: States\nitems:\n  - id: q1\n');
+    expect(ds.listBankIds()).toEqual(['states']);
+    expect(ds.readBankRaw('states')).toMatchObject({ id: 'states', title: 'States' });
+  });
+  it('excludes AppleDouble hidden sidecar files from listings', () => {
+    const dir = path.join(tmp, 'content', 'quizzes');
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, 'caps.yml'), 'id: caps\ntitle: Caps\nitems:\n  - id: q1\n');
+    fs.writeFileSync(path.join(dir, '._caps.yml'), 'garbage-not-yaml-safe-content');
+    expect(ds.listBankIds()).toEqual(['caps']);
   });
 });
