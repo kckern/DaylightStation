@@ -21,8 +21,9 @@
 #include "config.h"
 #if BARCODE_ENABLED
 extern "C" {
-#include "esp_hidh_api.h"
+#include "esp_spp_api.h"
 #include "esp_gap_bt_api.h"
+#include "esp_bt_device.h"
 }
 #endif
 
@@ -66,49 +67,52 @@ static BLEClient* g_client = nullptr;
 static bool g_scanActive = false;
 
 #if BARCODE_ENABLED
+// ---- Classic Bluetooth SPP acceptor -------------------------------------
+// The DS6878 has no BLE mode at all — PRG p.4-5 lists its complete host-type
+// set as Cradle Host, SPP Master, SPP Slave and Bluetooth Keyboard Emulation
+// (HID Slave) — so this link is Classic BT, unlike the DS2278 content scanner
+// which is BLE HID/HOGP.
+//
+// We run as an SPP *acceptor* and let the scanner initiate. The scanner is put
+// in SPP Master mode and given this ESP's Classic BT MAC via a pairing bar code
+// (PRG p.4-25: Code 128 containing <Fnc 3>B + the 12-char address; generate one
+// with tools/gen-pairing-barcode.mjs). That inverts the previous HID topology,
+// where we had to page the scanner — which sleeps between scans, so it answered
+// inquiry but refused paging and every attempt died on ESP_BT_STATUS_TIMEOUT.
+// Letting it come to us also means a power blip needs no paging race: whoever
+// pulls the trigger next re-establishes the link.
+//
+// Security: the server is started with ESP_SPP_SEC_NONE, so we demand no
+// authenticated link on the incoming channel. That sidesteps the wall the HID
+// path hit — a keyboard-class HID device requires an MITM-authenticated link
+// key, so SSP negotiated Passkey Entry and demanded a 6-digit code the operator
+// had to key in by scanning digit bar codes inside a ~30 s LMP window. Four
+// attempts all expired with auth status=9 (AUTH_FAILURE) / ACL reason 0x22
+// (LMP response timeout), having received nothing.
+//
+// SSP is still compiled in: on ESP-IDF 5.3+ it is a runtime flag on
+// esp_bluedroid_init_with_cfg() rather than a Kconfig symbol, and Arduino's
+// BLEDevice::init() owns Bluedroid startup here (it calls esp_bt_controller_init
+// unconditionally, so pre-initialising it ourselves would make that call fail).
+// If the scanner turns out to demand authentication anyway, the fallback is to
+// take over Bluedroid startup with .ssp_en = false so legacy pairing runs and
+// the fixed PIN below matches the DS6878 factory default (12345, PRG p.4-30).
 static esp_bd_addr_t g_barcodeAddr = {0};
-static volatile bool g_barcodeOpenPending = false;
-static bool g_classicDiscoveryActive = false;
-static bool g_hidHostInitialized = false;
+static bool g_sppInitialized = false;
 static bool g_barcodeConnected = false;
-static volatile bool g_classicConnecting = false;   // connect issued, awaiting final OPEN/CLOSE
-static uint32_t g_classicConnectStartMs = 0;
-static uint32_t g_classicLastCloseMs = 0;           // backoff anchor after CLOSE/fail
-// In "Bluetooth Keyboard Emulation (HID Slave)" the DS6878 is the slave and
-// waits for the host to connect (DS6878 PRG p.4-5), so we page it. Listening
-// mode is kept behind /barcode/mode?passive=1 for other scanners that initiate.
-static bool g_classicPassive = BARCODE_PASSIVE;
-static uint32_t g_classicOpenCount = 0;             // successful HID opens (incl. short-lived)
+static uint32_t g_sppHandle = 0;
+static uint32_t g_classicOpenCount = 0;
 static uint32_t g_classicCloseCount = 0;
 static char g_classicLastEvent[64] = "";
-// SSP passkey the operator must key into the scanner (via Variable PIN Code +
-// alphanumeric bar codes). Surfaced on /status — serial isn't always attached.
-static uint32_t g_classicPasskey = 0;
-static uint32_t g_classicPasskeyMs = 0;
-// IO capability drives which SSP association model is negotiated:
-//   DisplayOnly (false) — stack picks the passkey, operator keys it into the
-//     scanner. Proven to work, but you race the ~30 s LMP timeout every pair.
-//   KeyboardOnly (true) — both ends input, so we can supply a FIXED passkey the
-//     operator can pre-stage as digit bar codes. Repeatable.
-// NoInputNoOutput is never correct here: it degrades SSP to Just Works, and the
-// scanner drops an unauthenticated HID channel ~16 ms after it opens.
-static bool g_classicIoKeyboard = false;
-static uint32_t g_classicFixedPasskey = BARCODE_FIXED_PASSKEY;
-
-static void applyClassicIoCap() {
-  esp_bt_sp_param_t ioParam = ESP_BT_SP_IOCAP_MODE;
-  esp_bt_io_cap_t ioCap = g_classicIoKeyboard ? ESP_BT_IO_CAP_IN : ESP_BT_IO_CAP_OUT;
-  esp_bt_gap_set_security_param(ioParam, &ioCap, sizeof(ioCap));
-  relayLogf("[classic-hid] io-cap = %s", g_classicIoKeyboard ? "KeyboardOnly" : "DisplayOnly");
-}
-struct RawRep { uint16_t handle; uint8_t len; uint8_t d[40]; };
+// SPP delivers raw decoded barcode bytes (not HID keyboard reports), copied out
+// of the Bluedroid task via a queue and reassembled in loop().
+struct RawRep { uint16_t handle; uint8_t len; uint8_t d[64]; };
 static QueueHandle_t g_rawQueue;
 static QueueHandle_t g_bcQueue;
 static volatile uint32_t g_scanCount = 0;
 static char g_lastBarcode[128] = "";
 static uint32_t g_lastBarcodeMs = 0;
 static String g_code;
-static uint8_t g_prevKeys[6] = {0};
 static uint32_t g_lastKeyMs = 0;
 #endif
 
@@ -177,217 +181,150 @@ static void onNotify(BLERemoteCharacteristic* chr, uint8_t* data, size_t len, bo
 }
 
 #if BARCODE_ENABLED
-static char hidToChar(uint8_t k, bool shift) {
-  if (k >= 0x04 && k <= 0x1d) { char c='a'+k-0x04; return shift ? c-32 : c; }
-  if (k >= 0x1e && k <= 0x26) { const char* n="123456789"; const char* s="!@#$%^&*("; return shift ? s[k-0x1e] : n[k-0x1e]; }
-  if (k == 0x27) return shift ? ')' : '0';
-  switch (k) {
-    case 0x28: case 0x58: return '\n'; case 0x2c: return ' ';
-    case 0x2d: return shift ? '_' : '-'; case 0x2e: return shift ? '+' : '=';
-    case 0x2f: return shift ? '{' : '['; case 0x30: return shift ? '}' : ']';
-    case 0x31: return shift ? '|' : '\\'; case 0x33: return shift ? ':' : ';';
-    case 0x34: return shift ? '"' : '\''; case 0x35: return shift ? '~' : '`';
-    case 0x36: return shift ? '<' : ','; case 0x37: return shift ? '>' : '.';
-    case 0x38: return shift ? '?' : '/'; default: return 0;
-  }
-}
-
 static void flushBarcode() {
   if (!g_code.length()) return;
   char buf[128]; strncpy(buf, g_code.c_str(), sizeof(buf)-1); buf[sizeof(buf)-1]=0;
   xQueueSend(g_bcQueue, buf, 0); g_code="";
 }
 
-static void onHidReport(const uint8_t* data, size_t len) {
-  if (len < 3) return;
-  // Report-protocol input reports may prepend a report ID; boot keyboard
-  // reports do not. Accept both layouts because Zebra firmware can expose
-  // either depending on the negotiated HID protocol.
-  if (len >= 9 && (data[0] == 1 || data[0] == 2 || data[0] == 3)) { data++; len--; }
-  bool shift = (data[0] & 0x22) != 0;
-  const uint8_t* keys=data+2; size_t nk=min((size_t)6,len-2);
-  for (size_t i=0;i<nk;i++) {
-    uint8_t k=keys[i]; if (!k || k==1) continue;
-    bool was=false; for (uint8_t old:g_prevKeys) if (old==k) was=true;
-    if (was) continue;
-    char c=hidToChar(k,shift); if (c=='\n') flushBarcode();
-    else if (c) { g_code+=c; g_lastKeyMs=millis(); }
+// SPP carries the decoded symbol as plain bytes, so there are no HID keyboard
+// reports to translate. Zebra scanners may or may not append a terminator
+// depending on configuration, so treat CR/LF as an immediate flush and keep the
+// idle-gap flush in loop() as the fallback (the DS2278 sends no terminator at
+// all over BLE HID, and the DS6878's SPP behaviour is unverified until we see a
+// real scan).
+static void onSppBytes(const uint8_t* data, size_t len) {
+  for (size_t i = 0; i < len; i++) {
+    uint8_t b = data[i];
+    if (b == '\r' || b == '\n') { flushBarcode(); continue; }
+    if (b < 0x20 || b > 0x7e) continue;            // drop control / non-printable
+    if (g_code.length() < 120) g_code += (char)b;
+    g_lastKeyMs = millis();
   }
-  for (size_t i=0;i<6;i++) g_prevKeys[i]=i<nk?keys[i]:0;
 }
 
-static void classicHidHostCB(esp_hidh_cb_event_t event, esp_hidh_cb_param_t* p) {
+static void sppCB(esp_spp_cb_event_t event, esp_spp_cb_param_t* p) {
   switch (event) {
-    case ESP_HIDH_INIT_EVT:
-      relayLogf("[classic-hid] host init: %d", (int)p->init.status);
+    case ESP_SPP_INIT_EVT:
+      relayLogf("[classic-spp] init status=%d", (int)p->init.status);
+      if (p->init.status != ESP_SPP_SUCCESS) break;
+      // Be discoverable *and* connectable: the scanner needs to reach us on its
+      // own schedule. The pairing bar code already tells it our address, so
+      // discovery is only a convenience for bring-up.
+      esp_bt_gap_set_device_name(BARCODE_HOST_NAME);
+      esp_bt_gap_set_scan_mode(ESP_BT_CONNECTABLE, ESP_BT_GENERAL_DISCOVERABLE);
+      // SEC_NONE: don't demand authentication on the incoming channel. If the
+      // scanner insists on pairing it still gets legacy PIN via GAP below.
+      esp_spp_start_srv(ESP_SPP_SEC_NONE, ESP_SPP_ROLE_SLAVE, 0, "DaylightScan");
       break;
-    case ESP_HIDH_OPEN_EVT:
-      relayLogf("[classic-hid] OPEN status=%d conn=%d handle=%u",
-                (int)p->open.status, (int)p->open.conn_status, p->open.handle);
-      if (p->open.conn_status == ESP_HIDH_CONN_STATE_CONNECTING) break; // interim event
-      g_barcodeConnected = p->open.status == ESP_HIDH_OK &&
-                           p->open.conn_status == ESP_HIDH_CONN_STATE_CONNECTED;
-      g_classicConnecting = false;
+    case ESP_SPP_START_EVT:
+      relayLogf("[classic-spp] server listening scn=%d status=%d",
+                (int)p->start.scn, (int)p->start.status);
+      g_sppInitialized = p->start.status == ESP_SPP_SUCCESS;
+      snprintf(g_classicLastEvent, sizeof(g_classicLastEvent), "listening scn=%d", (int)p->start.scn);
+      break;
+    case ESP_SPP_SRV_OPEN_EVT:
+      g_barcodeConnected = p->srv_open.status == ESP_SPP_SUCCESS;
+      g_sppHandle = p->srv_open.handle;
+      memcpy(g_barcodeAddr, p->srv_open.rem_bda, sizeof(esp_bd_addr_t));
+      relayLogf("[classic-spp] scanner connected status=%d handle=%lu",
+                (int)p->srv_open.status, (unsigned long)p->srv_open.handle);
       if (g_barcodeConnected) {
         g_classicOpenCount++;
-        memcpy(g_barcodeAddr, p->open.bd_addr, sizeof(esp_bd_addr_t)); // may be an inbound peer
-        snprintf(g_classicLastEvent, sizeof(g_classicLastEvent), "open handle=%u", p->open.handle);
-      } else {
-        g_classicLastCloseMs = millis();
-        snprintf(g_classicLastEvent, sizeof(g_classicLastEvent), "open failed status=%d", (int)p->open.status);
+        snprintf(g_classicLastEvent, sizeof(g_classicLastEvent), "open handle=%lu",
+                 (unsigned long)p->srv_open.handle);
+        flashLed(CRGB::Green, 200);
       }
       break;
-    case ESP_HIDH_DATA_IND_EVT: {
-      RawRep r; r.handle = p->data_ind.handle; r.len = min((size_t)40, (size_t)p->data_ind.len);
+    case ESP_SPP_DATA_IND_EVT: {
+      RawRep r;
+      r.handle = (uint16_t)p->data_ind.handle;
+      r.len = (uint8_t)min((size_t)sizeof(r.d), (size_t)p->data_ind.len);
       if (p->data_ind.data && r.len) { memcpy(r.d, p->data_ind.data, r.len); xQueueSend(g_rawQueue, &r, 0); }
       break;
     }
-    case ESP_HIDH_CLOSE_EVT:
-      relayLogf("[classic-hid] CLOSED: %d reason=%u conn=%d",
-                (int)p->close.status, p->close.reason, (int)p->close.conn_status);
+    case ESP_SPP_CLOSE_EVT:
+      relayLogf("[classic-spp] closed status=%d port_status=%lu async=%d",
+                (int)p->close.status, (unsigned long)p->close.port_status, (int)p->close.async);
       g_barcodeConnected = false;
-      g_classicConnecting = false;
-      g_classicLastCloseMs = millis();
+      g_sppHandle = 0;
       g_classicCloseCount++;
-      snprintf(g_classicLastEvent, sizeof(g_classicLastEvent), "closed reason=%u", p->close.reason);
-      break;
-    case ESP_HIDH_VC_UNPLUG_EVT:
-      relayLogf("[classic-hid] VC_UNPLUG status=%d", (int)p->unplug.status);
-      g_barcodeConnected = false;
-      g_classicConnecting = false;
-      g_classicLastCloseMs = millis();
-      break;
-    case ESP_HIDH_ADD_DEV_EVT:
-      relayLogf("[classic-hid] ADD_DEV status=%d handle=%u", (int)p->add_dev.status, p->add_dev.handle);
-      break;
-    case ESP_HIDH_GET_DSCP_EVT:
-      relayLogf("[classic-hid] GET_DSCP found=%d dl_len=%d", (int)p->dscp.added, (int)p->dscp.dl_len);
-      break;
-    case ESP_HIDH_SET_PROTO_EVT:
-      relayLogf("[classic-hid] SET_PROTO status=%d", (int)p->set_proto.status);
+      snprintf(g_classicLastEvent, sizeof(g_classicLastEvent), "closed status=%d", (int)p->close.status);
       break;
     default:
-      relayLogf("[classic-hid] event %d", (int)event);
+      relayLogf("[classic-spp] event %d", (int)event);
       break;
   }
-}
-
-static bool classicNameMatches(const char* name) {
-  return name && *name && String(name).indexOf(BARCODE_NAME) >= 0;
-}
-
-static bool classicAddressMatches(const esp_bd_addr_t addr) {
-  if (!BARCODE_MAC[0]) return false;
-  char text[18]; snprintf(text, sizeof(text), "%02x:%02x:%02x:%02x:%02x:%02x",
-    addr[0], addr[1], addr[2], addr[3], addr[4], addr[5]);
-  return String(text).equalsIgnoreCase(BARCODE_MAC);
 }
 
 static void classicGapCB(esp_bt_gap_cb_event_t event, esp_bt_gap_cb_param_t* p) {
   if (event == ESP_BT_GAP_AUTH_CMPL_EVT) {
-    relayLogf("[classic-hid] auth status=%d", (int)p->auth_cmpl.stat);
+    relayLogf("[classic-spp] auth status=%d", (int)p->auth_cmpl.stat);
   } else if (event == ESP_BT_GAP_ACL_CONN_CMPL_STAT_EVT) {
-    relayLogf("[classic-hid] ACL up stat=%d", (int)p->acl_conn_cmpl_stat.stat);
+    relayLogf("[classic-spp] ACL up stat=%d", (int)p->acl_conn_cmpl_stat.stat);
   } else if (event == ESP_BT_GAP_ACL_DISCONN_CMPL_STAT_EVT) {
-    relayLogf("[classic-hid] ACL down reason=%d", (int)p->acl_disconn_cmpl_stat.reason);
+    relayLogf("[classic-spp] ACL down reason=%d", (int)p->acl_disconn_cmpl_stat.reason);
   } else if (event == ESP_BT_GAP_MODE_CHG_EVT) {
     // sniff/active transitions — debug-level noise, skip
-  } else if (event == ESP_BT_GAP_KEY_NOTIF_EVT) {
-    g_classicPasskey = p->key_notif.passkey;
-    g_classicPasskeyMs = millis();
-    relayLogf("[classic-hid] ENTER PASSKEY ON SCANNER: %06lu", (unsigned long)p->key_notif.passkey);
-    flashLed(CRGB::Yellow, 400);
-  } else if (event == ESP_BT_GAP_CFM_REQ_EVT) {
-    relayLogf("[classic-hid] SSP confirm %06lx", (unsigned long)p->cfm_req.num_val);
-    esp_bt_gap_ssp_confirm_reply(p->cfm_req.bda, true);
-  } else if (event == ESP_BT_GAP_KEY_REQ_EVT) {
-    // KeyboardOnly path: the stack wants the passkey from us. Supply the fixed
-    // one so the operator can pre-stage the matching digit bar codes.
-    g_classicPasskey = g_classicFixedPasskey;
-    g_classicPasskeyMs = millis();
-    relayLogf("[classic-hid] SSP key requested -> replying %06lu (scan this on the scanner)",
-              (unsigned long)g_classicFixedPasskey);
-    esp_bt_gap_ssp_passkey_reply(p->key_req.bda, true, g_classicFixedPasskey);
-    flashLed(CRGB::Yellow, 400);
   } else if (event == ESP_BT_GAP_PIN_REQ_EVT) {
+    // Legacy-pairing path. Only reachable if the scanner declines SSP; kept
+    // because the DS6878's factory default static PIN is 12345 (PRG p.4-30).
     if (p->pin_req.min_16_digit) {
-      relayLogLine("[classic-hid] scanner requested 16-digit PIN");
+      relayLogLine("[classic-spp] scanner requested 16-digit PIN");
       esp_bt_gap_pin_reply(p->pin_req.bda, false, 0, nullptr);
     } else {
       esp_bt_pin_code_t pin = {'1', '2', '3', '4', '5'};
-      relayLogLine("[classic-hid] replying with DS6878 default PIN");
+      relayLogLine("[classic-spp] replying with DS6878 default PIN 12345");
       esp_bt_gap_pin_reply(p->pin_req.bda, true, 5, pin);
     }
-  } else if (event == ESP_BT_GAP_DISC_RES_EVT) {
-    const char* name = nullptr;
-    for (int i=0; i<p->disc_res.num_prop; i++) {
-      auto* prop = &p->disc_res.prop[i];
-      if (prop->type == ESP_BT_GAP_DEV_PROP_BDNAME) name = (const char*)prop->val;
-    }
-    if (classicAddressMatches(p->disc_res.bda) || classicNameMatches(name)) {
-      memcpy(g_barcodeAddr, p->disc_res.bda, sizeof(esp_bd_addr_t));
-      relayLogf("[classic-hid] found %s", name ? name : BARCODE_NAME);
-      esp_bt_gap_cancel_discovery();
-      g_barcodeOpenPending = true;
-    }
-  } else if (event == ESP_BT_GAP_DISC_STATE_CHANGED_EVT &&
-             p->disc_st_chg.state == ESP_BT_GAP_DISCOVERY_STOPPED) {
-    g_classicDiscoveryActive = false;
   }
-}
-
-static void startClassicDiscovery() {
-  if (!g_hidHostInitialized || g_classicDiscoveryActive || g_barcodeConnected ||
-      g_barcodeOpenPending || g_classicConnecting) return;
-  esp_err_t err = esp_bt_gap_start_discovery(ESP_BT_INQ_MODE_GENERAL_INQUIRY, 8, 0);
-  if (err == ESP_OK) { g_classicDiscoveryActive = true; relayLogLine("[classic-hid] discovery started"); }
-  else relayLogf("[classic-hid] discovery start failed: %d", (int)err);
 }
 
 static void logClassicBonds() {
   int count = esp_bt_gap_get_bond_device_num();
-  relayLogf("[classic-hid] bonded devices: %d", count);
+  relayLogf("[classic-spp] bonded devices: %d", count);
   if (count <= 0) return;
   esp_bd_addr_t list[4];
   int n = min(count, 4);
   if (esp_bt_gap_get_bond_device_list(&n, list) == ESP_OK) {
     for (int i = 0; i < n; i++)
-      relayLogf("[classic-hid] bond[%d] %02x:%02x:%02x:%02x:%02x:%02x", i,
+      relayLogf("[classic-spp] bond[%d] %02x:%02x:%02x:%02x:%02x:%02x", i,
         list[i][0], list[i][1], list[i][2], list[i][3], list[i][4], list[i][5]);
   }
 }
 
-static void initClassicHidHost() {
-  relayLogLine("[classic-hid] init begin");
-  applyClassicIoCap();
+// Log this ESP's Classic BT MAC — it is what the scanner's pairing bar code
+// must encode, and it differs from the WiFi/STA MAC by one in the last octet.
+static void logClassicIdentity() {
+  const uint8_t* mac = esp_bt_dev_get_address();
+  if (!mac) { relayLogLine("[classic-spp] BT address unavailable"); return; }
+  relayLogf("[classic-spp] our BT MAC %02X:%02X:%02X:%02X:%02X:%02X "
+            "(pairing bar code: B%02X%02X%02X%02X%02X%02X)",
+            mac[0],mac[1],mac[2],mac[3],mac[4],mac[5],
+            mac[0],mac[1],mac[2],mac[3],mac[4],mac[5]);
+}
+
+static void initClassicSpp() {
+  relayLogLine("[classic-spp] init begin");
+  // Legacy pairing only (CONFIG_BT_SSP_ENABLED off): a fixed PIN matching the
+  // DS6878 factory default means an unattended bond with no operator step.
   esp_bt_pin_type_t pinType = ESP_BT_PIN_TYPE_FIXED;
   esp_bt_pin_code_t pin = {'1', '2', '3', '4', '5'};
   esp_bt_gap_set_pin(pinType, 5, pin);
-  esp_err_t err = esp_bt_hid_host_register_callback(classicHidHostCB);
-  if (err != ESP_OK) { relayLogf("[classic-hid] callback registration failed: %d", (int)err); return; }
-  err = esp_bt_hid_host_init();
-  if (err != ESP_OK) { relayLogf("[classic-hid] HID init failed: %d", (int)err); return; }
-  relayLogLine("[classic-hid] HID stack ready");
-  err = esp_bt_gap_register_callback(classicGapCB);
-  if (err != ESP_OK) { relayLogf("[classic-hid] GAP callback failed: %d", (int)err); return; }
-  // Named + discoverable so the scanner can find and page us on its own.
-  esp_bt_gap_set_device_name(BARCODE_HOST_NAME);
-  esp_bt_gap_set_scan_mode(ESP_BT_CONNECTABLE, ESP_BT_GENERAL_DISCOVERABLE);
-  g_hidHostInitialized = true;
-  relayLogf("[classic-hid] host ready as \"%s\" (%s)", BARCODE_HOST_NAME,
-            g_classicPassive ? "listening" : "paging");
+  esp_err_t err = esp_bt_gap_register_callback(classicGapCB);
+  if (err != ESP_OK) { relayLogf("[classic-spp] GAP callback failed: %d", (int)err); return; }
+  err = esp_spp_register_callback(sppCB);
+  if (err != ESP_OK) { relayLogf("[classic-spp] callback registration failed: %d", (int)err); return; }
+  esp_spp_cfg_t cfg = {};
+  cfg.mode = ESP_SPP_MODE_CB;
+  cfg.enable_l2cap_ertm = false;
+  cfg.tx_buffer_size = 0;                 // only used in VFS mode
+  err = esp_spp_enhanced_init(&cfg);
+  if (err != ESP_OK) { relayLogf("[classic-spp] SPP init failed: %d", (int)err); return; }
+  // The server is started from ESP_SPP_INIT_EVT once the stack is up.
+  relayLogf("[classic-spp] host \"%s\" waiting for scanner to connect", BARCODE_HOST_NAME);
+  logClassicIdentity();
   logClassicBonds();
-}
-
-// Register the scanner in the HID device DB without paging it, so an inbound
-// connection from the scanner is accepted while we stay passive.
-static void classicPrimeTarget() {
-  if (!g_hidHostInitialized || !BARCODE_MAC[0]) return;
-  unsigned v[6];
-  if (sscanf(BARCODE_MAC, "%x:%x:%x:%x:%x:%x", &v[0],&v[1],&v[2],&v[3],&v[4],&v[5]) != 6) return;
-  for (int i=0;i<6;i++) g_barcodeAddr[i] = (uint8_t)v[i];
-  relayLogf("[classic-hid] target %s (%s)", BARCODE_MAC,
-            g_classicPassive ? "waiting for scanner to connect" : "will page it");
 }
 
 static void classicUnbond() {
@@ -400,10 +337,8 @@ static void classicUnbond() {
       for (int i = 0; i < n; i++) { esp_bt_gap_remove_bond_device(list[i]); any = true; }
     }
   }
-  relayLogf("[classic-hid] unbond: removed %d bond(s)", any ? count : 0);
+  relayLogf("[classic-spp] unbond: removed %d bond(s)", any ? count : 0);
   g_barcodeConnected = false;
-  g_classicConnecting = false;
-  g_classicLastCloseMs = millis();
 }
 #endif
 
@@ -505,21 +440,26 @@ static void handleStatus() {
   JsonObject barcode = doc["barcode"].to<JsonObject>();
   barcode["enabled"] = BARCODE_ENABLED;
   barcode["connected"] = g_barcodeConnected;
-  barcode["transport"] = "classic-hid";
+  barcode["transport"] = "classic-spp";
   barcode["id"] = BARCODE_ID; barcode["route"] = BARCODE_ROUTE;
   barcode["target_name"] = BARCODE_NAME; barcode["mac"] = BARCODE_MAC;
   barcode["host_name"] = BARCODE_HOST_NAME;
-  barcode["mode"] = g_classicPassive ? "listening" : "paging";
-  barcode["iocap"] = g_classicIoKeyboard ? "keyboard" : "display";
-  barcode["connecting"] = g_classicConnecting;
+  barcode["mode"] = "spp-acceptor";           // the scanner initiates; we listen
+  barcode["listening"] = g_sppInitialized;
   barcode["open_count"] = g_classicOpenCount;
   barcode["close_count"] = g_classicCloseCount;
   if (g_classicLastEvent[0]) barcode["last_event"] = g_classicLastEvent;
   barcode["bonds"] = esp_bt_gap_get_bond_device_num();
-  if (g_classicPasskeyMs) {
-    char pk[8]; snprintf(pk, sizeof(pk), "%06lu", (unsigned long)g_classicPasskey);
-    barcode["passkey"] = pk;   // key this into the scanner to finish pairing
-    barcode["passkey_age_s"] = (uint32_t)((millis() - g_classicPasskeyMs) / 1000);
+  // What the scanner's pairing bar code must encode (PRG p.4-25: <Fnc3>B+addr).
+  const uint8_t* btMac = esp_bt_dev_get_address();
+  if (btMac) {
+    char hostMac[18], pairing[16];
+    snprintf(hostMac, sizeof(hostMac), "%02x:%02x:%02x:%02x:%02x:%02x",
+             btMac[0],btMac[1],btMac[2],btMac[3],btMac[4],btMac[5]);
+    snprintf(pairing, sizeof(pairing), "B%02X%02X%02X%02X%02X%02X",
+             btMac[0],btMac[1],btMac[2],btMac[3],btMac[4],btMac[5]);
+    barcode["host_bt_mac"] = hostMac;
+    barcode["pairing_payload"] = pairing;
   }
   char boundMac[18] = "";
   bool haveBoundMac = false;
@@ -530,7 +470,6 @@ static void handleStatus() {
       g_barcodeAddr[3], g_barcodeAddr[4], g_barcodeAddr[5]);
   }
   barcode["bound_mac"] = boundMac;
-  barcode["discovery_active"] = g_classicDiscoveryActive;
   barcode["scan_count"] = g_scanCount;
   if (g_lastBarcodeMs) { barcode["last_scan"] = g_lastBarcode; barcode["last_scan_age_s"] = (uint32_t)((millis()-g_lastBarcodeMs)/1000); }
 
@@ -590,7 +529,7 @@ void setup() {
   relayLogLine("[ble] init ready");
   BLEDevice::setPower(ESP_PWR_LVL_P9);
 #if BARCODE_ENABLED
-  initClassicHidHost();
+  initClassicSpp();
 #endif
 
   WiFi.mode(WIFI_STA);
@@ -608,13 +547,11 @@ void setup() {
   http.on("/", handleStatus);
   http.on("/status", handleStatus);
 #if BARCODE_ENABLED
-  // Barcode control plane — bring-up/ops without a serial cable.
-  http.on("/barcode/connect", [](){          // one-shot host-initiated page
-    g_barcodeOpenPending = true;
-    http.send(200, "application/json", "{\"ok\":true,\"action\":\"connect\"}");
-  });
+  // Barcode control plane — bring-up/ops without a serial cable. There is no
+  // /barcode/connect any more: in SPP-acceptor mode the scanner initiates, so
+  // the only way to (re)establish a link is to pull its trigger.
   http.on("/barcode/disconnect", [](){
-    esp_bt_hid_host_disconnect(g_barcodeAddr);
+    if (g_sppHandle) esp_spp_disconnect(g_sppHandle);
     http.send(200, "application/json", "{\"ok\":true,\"action\":\"disconnect\"}");
   });
   http.on("/barcode/unbond", [](){           // forget link keys, force fresh pairing
@@ -630,35 +567,12 @@ void setup() {
     http.send(200, "application/json",
       g_bleScanEnabled ? "{\"ok\":true,\"ble_scan\":true}" : "{\"ok\":true,\"ble_scan\":false}");
   });
-  http.on("/barcode/iocap", [](){            // ?mode=display|keyboard
-    if (http.hasArg("mode")) {
-      g_classicIoKeyboard = http.arg("mode") == "keyboard";
-      applyClassicIoCap();
-    }
-    if (http.hasArg("passkey")) g_classicFixedPasskey = http.arg("passkey").toInt();
-    char out[96];
-    snprintf(out, sizeof(out), "{\"ok\":true,\"iocap\":\"%s\",\"fixed_passkey\":\"%06lu\"}",
-             g_classicIoKeyboard ? "keyboard" : "display", (unsigned long)g_classicFixedPasskey);
-    http.send(200, "application/json", out);
-  });
-  http.on("/barcode/mode", [](){             // ?passive=0|1
-    if (http.hasArg("passive")) {
-      g_classicPassive = http.arg("passive") != "0";
-      relayLogf("[classic-hid] mode -> %s", g_classicPassive ? "listening" : "paging");
-    }
-    http.send(200, "application/json",
-      g_classicPassive ? "{\"ok\":true,\"mode\":\"listening\"}" : "{\"ok\":true,\"mode\":\"paging\"}");
-  });
 #endif
   http.onNotFound([](){ http.send(404, "text/plain", "food-scale-relay: GET /status\\n"); });
   http.begin();
   relayLogLine("[http] status server listening on :80");
 
   startScan();
-#if BARCODE_ENABLED
-  classicPrimeTarget();
-  if (!g_classicPassive) startClassicDiscovery();
-#endif
 }
 
 void loop() {
@@ -678,67 +592,18 @@ void loop() {
     g_doConnect = false;
     if (!connectToScale()) { delay(500); startScan(); }
   }
-#if BARCODE_ENABLED
-  if (g_barcodeOpenPending) {
-    g_barcodeOpenPending=false;
-    // Pause the BLE scale scan while paging the scanner — the shared radio
-    // starves classic paging under a continuous BLE scan (page timeout 0x4).
-    if (g_scanActive) { BLEDevice::getScan()->stop(); g_scanActive = false; }
-    relayLogLine("[classic-hid] opening scanner");
-    if (esp_bt_hid_host_connect(g_barcodeAddr) == ESP_OK) {
-      g_classicConnecting = true;
-      g_classicConnectStartMs = millis();
-    } else {
-      relayLogLine("[classic-hid] open request failed");
-      g_classicLastCloseMs = millis();
-    }
-  }
-  // An SSP passkey is outstanding: hold off both the connect watchdog and the
-  // retry loop. A retry fired mid-pairing collides with the in-flight connect
-  // (OPEN status=15 BUSY) and eats the operator's ~30 s window to key it in.
-  bool pairingPending = g_classicPasskeyMs && (millis() - g_classicPasskeyMs < 45000);
-
-  // Watchdog: if the stack never delivers a final OPEN/CLOSE, unwedge ourselves.
-  // Must exceed bluedroid's own page/SDP timeout (~24 s observed) or it preempts
-  // the real result and we lose the status code.
-  if (g_classicConnecting && !pairingPending && millis() - g_classicConnectStartMs > 35000) {
-    relayLogLine("[classic-hid] connect timed out; resetting state");
-    g_classicConnecting = false;
-    g_classicLastCloseMs = millis();
-  }
-#endif
-  if ((!g_bleConnected
-#if BARCODE_ENABLED
-       || !g_barcodeConnected
-#endif
-      ) && !g_doConnect
-#if BARCODE_ENABLED
-      && !g_barcodeOpenPending && !g_classicConnecting
-#endif
-      && !g_scanActive) {
-    startScan();
-  }
-
-#if BARCODE_ENABLED
-  // In passive mode we never page the scanner — we stay discoverable and let it
-  // connect to us. Discovery/paging only runs when explicitly enabled.
-  static uint32_t lastClassicTry = 0;
-  if (!g_classicPassive && !pairingPending &&
-      !g_barcodeConnected && !g_classicDiscoveryActive && !g_barcodeOpenPending &&
-      !g_classicConnecting && millis() - lastClassicTry > 12000 &&
-      (g_classicLastCloseMs == 0 || millis() - g_classicLastCloseMs > 20000)) {
-    lastClassicTry = millis();
-    startClassicDiscovery();
-  }
-#endif
+  // Nothing to page over Classic any more: the scanner is the SPP initiator, so
+  // there is no connect state machine, no retry backoff, and no need to pause
+  // the BLE scan to keep a continuous scan from starving classic paging.
+  if (!g_bleConnected && !g_doConnect && !g_scanActive) startScan();
 
 #if BARCODE_ENABLED
   RawRep r;
   while (xQueueReceive(g_rawQueue,&r,0)==pdTRUE) {
     char hex[72]; size_t shown = min((size_t)12, (size_t)r.len); size_t at = 0;
     for (size_t i=0; i<shown && at+4<sizeof(hex); i++) at += snprintf(hex+at, sizeof(hex)-at, "%02x ", r.d[i]);
-    relayLogf("[hid] h=%u len=%u %s", r.handle, r.len, hex);
-    onHidReport(r.d,r.len);
+    relayLogf("[spp] h=%u len=%u %s", r.handle, r.len, hex);
+    onSppBytes(r.d,r.len);
   }
   if (g_code.length() && millis()-g_lastKeyMs>150) flushBarcode();
   char code[128];
