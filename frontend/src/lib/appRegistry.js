@@ -23,6 +23,7 @@ export const APP_REGISTRY = {
   'websocket':       { label: 'WebSocket',        icon: websocketIcon,      param: { name: 'path' }, component: () => import('../modules/AppContainer/Apps/WebSocket/WebSocket.jsx') },
   'weekly-review':   { label: 'Weekly Review',    icon: null,               param: null, component: () => import('../modules/WeeklyReview/WeeklyReview.jsx') },
   'gameshow':        { label: 'Game Show',        icon: null,               param: null, component: () => import('../modules/GameShow/GameShow.jsx') },
+  'school':          { label: 'School',           icon: null,               param: null, component: () => import('../modules/School/SchoolApp.jsx') },
 };
 
 /**

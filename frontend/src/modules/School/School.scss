@@ -1,0 +1,90 @@
+// School.scss — dark theme for the School kiosk (Portal panel, 1280x800,
+// touch-only). Local tokens ONLY: identity.scss owns its own --piano-*
+// fallbacks, so nothing here redefines those. No animation — the kiosk
+// WebView drops frames under transitions/keyframes.
+.school-app {
+  --school-bg: #16161b;
+  --school-surface: #1f1f26;
+  --school-surface-2: #2a2a33;
+  --school-border: #34343f;
+  --school-fg: #f1f1f4;
+  --school-muted: #9a9aa6;
+  --school-accent: #2ec46f;
+  --school-accent-ink: #07210f;
+  --school-danger: #e05a4f;
+  --school-warn: #e0a83a;
+
+  width: 100%; height: 100%;
+  display: flex; flex-direction: column;
+  background: var(--school-bg); color: var(--school-fg);
+
+  &--loading { align-items: center; justify-content: center; color: var(--school-muted); }
+
+  &__header {
+    flex: 0 0 64px;
+    display: flex; align-items: center; gap: 0.75rem;
+    padding: 0 1rem;
+    border-bottom: 1px solid var(--school-border);
+    background: var(--school-surface);
+  }
+  &__back { min-width: 64px; min-height: 64px; border: none; background: transparent; color: var(--school-fg); font-size: 1.8rem; cursor: pointer; }
+  &__title { flex: 1; margin: 0; font-size: 1.4rem; font-weight: 800; }
+  &__chip {
+    margin-left: auto; min-height: 64px;
+    display: flex; align-items: center; gap: 0.6rem;
+    padding: 0 1rem; border: 1px solid var(--school-border); border-radius: 999px;
+    background: var(--school-surface-2); color: var(--school-fg); font-size: 1rem; cursor: pointer;
+    .piano-avatar { width: 2rem; height: 2rem; }
+  }
+  &__body { flex: 1; overflow: auto; padding: 1rem; }
+}
+
+// --- bank browser ---
+.school-browse {
+  &--loading, &--empty { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; color: var(--school-muted); text-align: center; gap: 0.5rem; }
+  &__notice { margin-bottom: 1rem; padding: 0.85rem 1rem; border-radius: 12px; background: var(--school-warn); color: #241a05; font-weight: 700; }
+  &__grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 1rem; }
+  &__card { display: flex; flex-direction: column; gap: 0.5rem; padding: 1rem; border: 1px solid var(--school-border); border-radius: 12px; background: var(--school-surface); }
+  &__title { margin: 0; font-size: 1.2rem; }
+  &__meta { margin: 0; color: var(--school-muted); }
+  &__hint { color: var(--school-muted); font-size: 0.9rem; }
+  &__actions {
+    display: flex; gap: 0.5rem; margin-top: auto;
+    button { flex: 1; min-height: 64px; border: 1px solid var(--school-border); border-radius: 12px; background: var(--school-surface-2); color: var(--school-fg); font-size: 1rem; cursor: pointer; }
+  }
+}
+
+// --- quiz / flashcard items ---
+.school-item {
+  display: flex; flex-direction: column; gap: 1rem;
+  &__prompt { font-size: 1.3rem; margin: 0; }
+  &__choices { display: grid; grid-template-columns: repeat(2, 1fr); gap: 0.75rem; }
+  &__choice, &__check, &__chip { min-height: 64px; border: 1px solid var(--school-border); border-radius: 12px; background: var(--school-surface-2); color: var(--school-fg); font-size: 1.1rem; cursor: pointer; }
+  &__choice--right { border-color: var(--school-accent); color: var(--school-accent); }
+  &__choice--dim { opacity: 0.5; }
+  &__chip { width: 100%; &--selected { border-color: var(--school-accent); } &--paired { opacity: 0.5; } }
+  &__columns { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+  &__col { display: flex; flex-direction: column; gap: 0.5rem; }
+  &__input { min-height: 64px; padding: 0 1rem; border: 1px solid var(--school-border); border-radius: 12px; background: var(--school-surface); color: var(--school-fg); font-size: 1.1rem; &--inline { display: inline-block; width: 8rem; } }
+  &__expected { color: var(--school-muted); }
+}
+
+// --- runner chrome (quiz + flashcards) ---
+.school-runner {
+  display: flex; flex-direction: column; gap: 1rem; max-width: 640px; margin: 0 auto;
+  &__progress { color: var(--school-muted); }
+  &__unrecorded { padding: 0.85rem 1rem; border-radius: 12px; background: var(--school-danger); color: #2a0806; font-weight: 700; }
+  &__next, &__done { min-height: 64px; border: none; border-radius: 12px; background: var(--school-accent); color: var(--school-accent-ink); font-size: 1.1rem; font-weight: 700; cursor: pointer; }
+  &__grades { display: flex; gap: 0.75rem; button { flex: 0 0 calc(50% - 0.375rem); min-height: 64px; border-radius: 12px; font-size: 1.1rem; cursor: pointer; } }
+  &__missed { border: 1px solid var(--school-danger); background: transparent; color: var(--school-danger); }
+  &__got { border: none; background: var(--school-accent); color: var(--school-accent-ink); }
+  &__score { font-size: 2rem; font-weight: 800; margin: 0; }
+  &__loading, &__hint, &__cards-seen, &__unrecorded-summary { color: var(--school-muted); }
+}
+
+.school-card {
+  display: flex; flex-direction: column; gap: 1rem; padding: 1.5rem;
+  border: 1px solid var(--school-border); border-radius: 12px; background: var(--school-surface);
+  &__prompt { font-size: 1.4rem; margin: 0; }
+  &__answer { font-size: 1.2rem; color: var(--school-accent); margin: 0; }
+}
