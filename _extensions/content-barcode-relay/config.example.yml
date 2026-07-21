@@ -1,0 +1,38 @@
+# Example schema for the barcode-relay SSOT. The REAL file lives in the
+# household data volume (private, Dropbox-synced), not in this repo:
+#   data/household/config/barcode-relay.yml
+#
+# One registry, two physical instances:
+#   - content-barcode: relays into the trigger/content pipeline
+#   - nutribot-upc: relays into Nutribot UPC lookup/logging
+#
+# Flash one ATOM per key:
+#   node firmware/tools/flash.mjs <dataDir>/household/config/barcode-relay.yml <id>
+
+provisioning:
+  wifi_ssid: "YOUR_SSID"
+  wifi_password: "YOUR_WIFI_PASSWORD"
+
+backend:
+  host: "daylightlocal.kckern.net"
+  port: 3111
+  ws_path: /ws
+
+relays:
+  content-barcode:
+    label: "Content barcode scanner"
+    route: content
+    scanner:
+      mac: "11:22:33:44:55:66"
+      name: "DS2278"
+
+  nutribot-upc:
+    label: "Nutribot UPC scanner"
+    route: nutribot
+    nutribot:
+      user_id: "kckern"
+      conversation_id: "nutribot-upc"
+    scanner:
+      mac: "aa:bb:cc:dd:ee:ff"
+      name: "DS6878-R"
+

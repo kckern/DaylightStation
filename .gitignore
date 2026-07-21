@@ -111,6 +111,27 @@ dev.log*
 # PII-scrub tooling (contains the real->alias map; local only, never commit)
 .pii-scrub/
 !scripts/migrate-trigger-config.mjs
-/_extensions/portal-keys/app/app/build/intermediates/project_dex_archive/debug
-/_extensions/portal-keys/app/app/build/intermediates/incremental/debug-mergeJavaRes
-/_extensions/portal-keys/app/app/build/intermediates/desugar_graph/debug
+# Portal Keys Android build outputs — same treatment as audio-bridge above.
+# (Superseded three reactive per-subdirectory rules that only covered whichever
+# intermediates happened to churn; the whole build tree is generated.)
+/_extensions/portal-keys/app/app/build
+/_extensions/portal-keys/app/.gradle
+/_extensions/portal-keys/app/local.properties
+
+# ESP-IDF fetched dependencies (~165 MB). The component manager refetches these
+# from dependencies.lock, which IS tracked and pins exact versions + hashes, so
+# a fresh clone reproduces the same tree with `idf.py reconfigure`.
+/_extensions/food-scale-relay/firmware/managed_components/
+/_extensions/food-scale-relay/firmware/build/
+# ...but the refetch ALSO needs the manifest, and the global `*.yml` rule at the
+# top of this file was swallowing it. Without this negation a fresh clone gets
+# the lock and no manifest, and the firmware cannot be built at all.
+!/_extensions/food-scale-relay/firmware/src/idf_component.yml
+
+# Extension config TEMPLATES. These document each extension's schema and are
+# meant to be committed — the global `*.yml` rule at the top was hiding them,
+# which is the whole point of an example file defeated. The REAL configs stay
+# in the household data volume and are still ignored.
+!/_extensions/content-barcode-relay/config.example.yml
+!/_extensions/ir-blaster/config.example.yml
+!/_extensions/piano/recorder/config.example.yml
