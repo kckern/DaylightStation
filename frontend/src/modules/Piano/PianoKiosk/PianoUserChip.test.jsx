@@ -7,7 +7,7 @@ const screenOff = vi.hoisted(() => vi.fn(() => Promise.resolve()));
 
 vi.mock('./PianoPlaybackContext.jsx', () => ({ usePianoPlayback: () => playback }));
 vi.mock('./usePianoScreenOff.js', () => ({ usePianoScreenOff: () => screenOff }));
-vi.mock('./PianoAvatar.jsx', () => ({ default: () => null }));
+vi.mock('../../../lib/identity/ProfileAvatar.jsx', () => ({ default: () => null }));
 vi.mock('@/modules/Fitness/player/overlays/LockIcon.jsx', () => ({ default: () => <span data-testid="lock-icon" /> }));
 
 import PianoUserChip from './PianoUserChip.jsx';
@@ -43,7 +43,7 @@ describe('PianoUserChip', () => {
     expect(setCurrentUser).toHaveBeenCalledWith('user_3');
   });
 
-  // The chip renders the SAME WhoIsPlayingPrompt as the idle-gap re-prompt, but
+  // The chip renders the SAME ProfilePicker as the idle-gap re-prompt, but
   // as a manual switch: it marks the current player and never auto-dismisses.
   it('marks the current player and does not time out', () => {
     vi.useFakeTimers();

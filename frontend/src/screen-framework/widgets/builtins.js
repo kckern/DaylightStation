@@ -12,6 +12,7 @@ import ArtMode from './ArtMode.jsx';
 import WeeklyReview from '../../modules/WeeklyReview/WeeklyReview.jsx';
 import CameraOverlay from '../../modules/CameraFeed/CameraOverlay.jsx';
 import GameShow from '../../modules/GameShow/GameShow.jsx';
+import SchoolApp from '../../modules/School/SchoolApp.jsx';
 
 export function registerBuiltinWidgets() {
   const registry = getWidgetRegistry();
@@ -28,5 +29,9 @@ export function registerBuiltinWidgets() {
   registry.register('weekly-review', WeeklyReview);
   registry.register('camera', CameraOverlay);
   registry.register('gameshow', GameShow);
+  // Mounted as a whole screen, not a panel among others: the Portal IS the
+  // school device, the way living-room is the TV. Rendered without `clear`,
+  // so its exit affordance is omitted (see SchoolApp.jsx).
+  registry.register('school', SchoolApp);
   return registry;
 }

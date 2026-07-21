@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { firesOnGap } from './whoIsPlaying.js';
+import { firesOnGap } from './idleGap.js';
 
 describe('firesOnGap', () => {
   const THRESH = 120000; // 2 min
