@@ -103,8 +103,10 @@ function requireNonEmptyString(value, field, code) {
  * @param {number} [options.windowMs=900000] Rolling window in ms. Must be finite
  *   and positive — a zero or negative window would expire every slot on arrival,
  *   silently disabling scan enrichment rather than failing loudly.
- * @param {() => number} [options.now] Clock injection. Supply a deterministic
- *   clock under test; this module never reads the wall clock itself.
+ * @param {() => number} options.now REQUIRED clock. There is deliberately no
+ *   `Date.now` default: this module's contract is deterministic window math, and a
+ *   default would let a caller who forgets to inject silently get wall-clock aging
+ *   that no test would catch. Making it required turns that into a startup error.
  * @returns {{
  *   setWeight: (scaleId: string, payload: {grams: number, unit?: string}) => object,
  *   setDensity: (scaleId: string, level: number) => object,
@@ -116,7 +118,7 @@ function requireNonEmptyString(value, field, code) {
  * @throws {ValidationError} If `windowMs` or `now` is unusable.
  */
 export function createCompositionBuffer(options = {}) {
-  const { windowMs = DEFAULT_WINDOW_MS, now = () => Date.now() } = options ?? {};
+  const { windowMs = DEFAULT_WINDOW_MS, now } = options ?? {};
 
   if (typeof windowMs !== 'number' || !Number.isFinite(windowMs) || windowMs <= 0) {
     throw new ValidationError(
@@ -276,8 +278,15 @@ export function createCompositionBuffer(options = {}) {
      * Checked for usability but NOT against `ScanVocabulary`'s id pattern: that
      * regex is the printed grammar's business and is not exported, and restating
      * it here would create exactly the sheet-versus-parser drift ScanVocabulary
-     * exists to prevent. An unknown-but-well-formed id fails at table lookup,
-     * where the error can name the missing container.
+     * exists to prevent.
+     *
+     * An unknown-but-well-formed id is therefore NOT caught anywhere today. A
+     * container missing from the table resolves to `undefined`, and `computeNet`
+     * reads an absent container as "no tare" and returns silently — so a mistyped
+     * or retired container id currently yields an untared entry rather than an
+     * error. Whoever resolves ids against the container table (Task 4/5) has to
+     * reject the miss explicitly; do not assume this layer or `scanNutrition`
+     * will surface it.
      *
      * @param {string} scaleId
      * @param {string} containerId
@@ -296,31 +305,52 @@ export function createCompositionBuffer(options = {}) {
      * Consume the slots at the end of a placement (D10) — the bridge's session-end,
      * `rise <= baselineTolG`, and after a post.
      *
-     * Consumes ONLY when a weight was actually recorded. A session-end with no
-     * weight is not a placement ending; it is noise — a bump, a re-baseline, a
-     * settling shelf. Wiping on that would destroy scans the user made in advance
-     * of putting the food down, which is the exact flow order-independence exists
-     * to support, and would fail in the same silent direction as the leak this
-     * method prevents.
+     * UNCONDITIONAL: it consumes whether or not a weight was ever recorded. Gating
+     * on a recorded weight looks safer and is not. `ScaleNutribotBridge` routinely
+     * ends sessions that never yield a weight — the `min_grams` floor guard, and the
+     * suspicion filter that suppresses a placement landing in the `storage_weight_g`
+     * band or making a `heavy_g` jump after a post storm ("logged, not posted", see
+     * `_extensions/food-scale-relay/config.example.yml`). Each opens on a rise and
+     * ends at baseline with nothing posted. Under a weight-gate the scans would
+     * survive all of them and the NEXT real weight would inherit a density and a
+     * tare that belong to no food on the scale — then auto-accept, because weight
+     * plus density is the accept condition.
+     *
+     * The two failure directions are not symmetric. Consuming too eagerly loses a
+     * pre-scan: the entry comes back incomplete and the user rescans, having seen
+     * it. Consuming too little writes a wrong calorie count to history with nobody
+     * watching. Prefer the visible failure.
+     *
+     * ## Integration requirement (Task 4/5) — call this on the TRANSITION only
+     *
+     * Because there is no weight-gate left to absorb it, the caller now owns the
+     * edge detection. `rise <= baselineTolG` is true on EVERY settled at-rest frame,
+     * and the firmware emits those at 0.5 Hz forever while the scale sits on its
+     * shelf. Calling `endPlacement` per at-rest frame would consume any pre-scan
+     * within about two seconds and make scan-before-placing impossible — the flow
+     * this buffer exists to support. Call it once, when the scale CROSSES from
+     * placed to at-rest.
      *
      * @param {string} scaleId
-     * @returns {boolean} Whether a placement was consumed.
+     * @returns {boolean} Whether there was anything live to consume.
      */
     endPlacement(scaleId) {
       requireScaleId(scaleId);
-      const slots = live(scaleId);
-      if (!slots || slots.grams === null) return false;
+      const had = live(scaleId) !== null;
       scales.delete(scaleId);
-      return true;
+      return had;
     },
 
     /**
      * Discard everything for a scale — the `rs:clear` scan.
      *
-     * Unconditional, which is the asymmetry with `endPlacement`: this is an
-     * explicit human "forget it", so it wipes a weightless buffer of pre-scans too.
-     * `endPlacement` is the machine inferring that a placement finished, and must
-     * be conservative; `clear` is the human saying so, and must be total.
+     * Mechanically identical to `endPlacement` — both wipe the scale's slots and
+     * report whether anything was live. They are kept separate because they mean
+     * different things and are expected to diverge: this one is the human saying
+     * "forget it" and pairs with a user-visible ack, while `endPlacement` is the
+     * machine observing that a placement finished. Collapsing them into one method
+     * would make the call sites lie about which event occurred, and would have to
+     * be un-collapsed the moment either side grows a distinct behaviour.
      *
      * @param {string} scaleId
      * @returns {boolean} Whether there was anything live to clear. Drives the
