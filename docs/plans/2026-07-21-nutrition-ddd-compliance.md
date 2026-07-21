@@ -39,6 +39,13 @@ Three violations, found by auditing the shipped code against the DDD reference:
 
 **Precedent for the store:** `backend/src/3_applications/gameshow/GameShowSessionStore.mjs`.
 
+**⚠️ Bare barrel imports break in production.** `import '#domains/nutrition'` resolves under
+Vitest but throws `ERR_UNSUPPORTED_DIR_IMPORT` in plain Node — verified directly. `#domains/*`
+maps to a literal path with no directory resolution. Test files get away with it today.
+**`CompositionStore` (Task 4) is production code loaded by real Node**, so it must import
+`#domains/nutrition/index.mjs` with the explicit filename, or the module path directly. Getting
+this wrong fails at boot, not in tests.
+
 **Error convention:** `ValidationError` from `#domains/core/errors/index.mjs` — the explicit `/index.mjs` is REQUIRED (`#domains/*` has no directory resolution; the bare form throws `ERR_UNSUPPORTED_DIR_IMPORT`).
 
 **Behaviour must not change.** This is a structural refactor. If you find a behavioural bug, report it — do not fix it silently in the same commit.
@@ -174,6 +181,22 @@ TDD. Model the file on `backend/src/3_applications/gameshow/GameShowSessionStore
 6. **Scales are independent** — one scale's slots never affect another's.
 7. **`endPlacement` and `clear` both return a boolean** indicating whether anything was live, and both return `false` on an already-expired entry.
 8. **`read()` never returns internal state** — a caller mutating the returned object must not affect the store.
+
+**Two things Task 3 could NOT absorb — they are yours:**
+
+- **The live-but-empty vs absent distinction.** `Composition.empty()` reads all-null, and so does
+  a scale that has no entry at all. The `rs:clear` "nothing to clear" ack depends on telling them
+  apart, which is why `clear()` and `endPlacement()` return booleans. Carry `active` on `read()`,
+  or expose `has(scaleId)`.
+- **"A rejected setter must not refresh the window" is now split across two objects.**
+  `Composition` guarantees no half-built instance; the store must separately not touch `touchedAt`
+  when a `with*` throws. Construct the new `Composition` FIRST and only write to the Map on
+  success. Easy to lose, so test it directly for all three setters.
+
+**Also inherited, still unowned by anyone:** a well-formed but *unknown* container id is validated
+by nobody. `Composition` accepts any non-empty string and `computeNet` reads an absent container as
+"no tare", so a mistyped or retired id silently produces an untared entry. Do not solve it here —
+but do not assume it is solved either. It belongs to the parent plan's Task 5.
 
 **Port the test file.** Start from `tests/unit/domains/nutrition/CompositionBuffer.test.mjs`, move it to the new path, and adjust construction (`new CompositionStore({ windowMs, now })`) and imports. Do not drop cases. Cases that are now about `Composition` rather than the store (slot validation, immutability) belong in Task 3's suite — move them there rather than deleting them.
 
