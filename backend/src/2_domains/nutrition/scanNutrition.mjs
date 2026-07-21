@@ -196,7 +196,7 @@ export function computeNet(grossG, container = null) {
 export function computeNutrition(netG, level) {
   const netGrams = requireNumber(netG, 'netG', 'INVALID_NET_WEIGHT', { min: 0 });
 
-  // MALFORMED_ rather than INVALID_DENSITY_LEVEL: ScanVocabulary already uses
+  // MALFORMED_ rather than INVALID_DENSITY_LEVEL: ScanVocabularyService already uses
   // that code for an out-of-range SCANNED level, whose remediation is "rescan".
   // This one means the config table row is malformed — "fix the YAML". A caller
   // branching on err.code must be able to tell those apart.

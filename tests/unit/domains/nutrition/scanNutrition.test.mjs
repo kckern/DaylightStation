@@ -279,10 +279,10 @@ describe('computeNutrition', () => {
 
   // Regression guard for a real collision: both modules once emitted
   // INVALID_DENSITY_LEVEL with field 'level' for opposite conditions —
-  // ScanVocabulary for an out-of-range SCANNED level ("rescan"), this module for a
+  // ScanVocabularyService for an out-of-range SCANNED level ("rescan"), this module for a
   // malformed config row ("fix the YAML"). A caller branching on err.code could
   // not tell them apart.
-  it('does not reuse ScanVocabulary\'s error code for a malformed config row', () => {
+  it('does not reuse ScanVocabularyService\'s error code for a malformed config row', () => {
     let scanCode;
     try { encodeDensity(MAX_DENSITY_LEVEL + 1); } catch (err) { scanCode = err.code; }
     let configCode;
