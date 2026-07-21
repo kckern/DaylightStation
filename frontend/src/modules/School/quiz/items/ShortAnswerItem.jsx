@@ -1,9 +1,18 @@
 /** Free-text answer via the device's soft keyboard. Empty submits are ignored. */
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 export default function ShortAnswerItem({ item, onSubmit, verdict }) {
   const [text, setText] = useState('');
-  const submit = () => { if (text.trim()) onSubmit(text); };
+  // Guards against Enter-then-Check (or a double-tap on Check) firing onSubmit
+  // twice before `verdict` arrives. A ref (not state) so the second submit
+  // path in the same synchronous burst sees the guard already set.
+  const submittedRef = useRef(false);
+  useEffect(() => { submittedRef.current = false; }, [item.id]);
+  const submit = () => {
+    if (verdict || submittedRef.current || !text.trim()) return;
+    submittedRef.current = true;
+    onSubmit(text);
+  };
   return (
     <div className="school-item school-item--short">
       <p className="school-item__prompt">{item.prompt}</p>
