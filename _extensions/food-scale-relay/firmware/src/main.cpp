@@ -464,6 +464,8 @@ static bool connectToScale() {
 // is a live suspect for the ~16 ms HID teardown. Toggle: /ble/scan?on=0|1
 static bool g_bleScanEnabled = true;
 
+static uint32_t g_scanStartedMs = 0;
+
 static void startScan() {
   if (g_scanActive || !g_bleScanEnabled) return;
   BLEScan* scan = BLEDevice::getScan();
@@ -478,6 +480,24 @@ static void startScan() {
   scan->setWindow(30);
   scan->start(0, nullptr, false); // continuous until a match stops it
   g_scanActive = true;
+  g_scanStartedMs = millis();
+}
+
+// A Bluedroid duration-0 scan can stop delivering results without telling us.
+// g_scanActive is only ever cleared when a device is FOUND, so once that
+// happens the ESP is permanently deaf: startScan() early-returns forever and
+// the scale can never be re-acquired. Observed live — the scale dropped and
+// stayed gone for 56 minutes with scanning "enabled", and came back instantly
+// when the scan was toggled off/on by hand. Restart it periodically while we
+// have no scale, which costs nothing when the scan is genuinely healthy.
+#define SCAN_RESTART_MS 45000
+static void serviceScanWatchdog() {
+  if (!g_bleScanEnabled || g_bleConnected || g_doConnect) return;
+  if (!g_scanActive || millis() - g_scanStartedMs < SCAN_RESTART_MS) return;
+  relayLogLine("[ble] scan watchdog — restarting a stalled scan");
+  BLEDevice::getScan()->stop();
+  g_scanActive = false;
+  startScan();
 }
 
 // ---- WebSocket events ---------------------------------------------------
@@ -517,6 +537,11 @@ static void handleStatus() {
   scale["target_name"] = SCALE_MATCH_NAME;
   scale["have_reading"] = g_haveReading;
   scale["grams"] = g_grams; scale["stable"] = g_stable; scale["unit"] = unitStr(g_unit);
+  // Scan state is not cosmetic: a stalled scan is invisible from the outside
+  // and looks identical to "the scale is switched off".
+  scale["scan_enabled"] = g_bleScanEnabled;
+  scale["scan_active"] = g_scanActive;
+  if (g_scanActive) scale["scan_age_s"] = (uint32_t)((millis() - g_scanStartedMs) / 1000);
 
   JsonObject barcode = doc["barcode"].to<JsonObject>();
   barcode["enabled"] = BARCODE_ENABLED;
@@ -750,6 +775,7 @@ void loop() {
   // there is no connect state machine, no retry backoff, and no need to pause
   // the BLE scan to keep a continuous scan from starving classic paging.
   if (!g_bleConnected && !g_doConnect && !g_scanActive) startScan();
+  serviceScanWatchdog();
 
 #if BARCODE_ENABLED
   RawRep r;
