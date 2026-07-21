@@ -1,0 +1,94 @@
+1<?xml version="1.0" encoding="utf-8"?>
+2<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+3    package="net.kckern.portalkeys"
+4    android:versionCode="8"
+5    android:versionName="0.8-adb-free" >
+6
+7    <uses-sdk
+8        android:minSdkVersion="26"
+8-->/Users/kckern/Documents/GitHub/DaylightStation/_extensions/portal-keys/app/app/src/main/AndroidManifest.xml
+9        android:targetSdkVersion="28" />
+9-->/Users/kckern/Documents/GitHub/DaylightStation/_extensions/portal-keys/app/app/src/main/AndroidManifest.xml
+10
+11    <!--
+12         INTERNET: the control plane (NanoWSD on :8771) binds a listening socket —
+13         localhost for the kiosk SPA, LAN for the pkctl CLI. Also used for the FKB
+14         REST calls that drive the backlight.
+15    -->
+16    <uses-permission android:name="android.permission.INTERNET" />
+16-->/Users/kckern/Documents/GitHub/DaylightStation/_extensions/portal-keys/app/app/src/main/AndroidManifest.xml:8:5-67
+16-->/Users/kckern/Documents/GitHub/DaylightStation/_extensions/portal-keys/app/app/src/main/AndroidManifest.xml:8:22-64
+17
+18    <!--
+19         ADB-FREE OPERATIONS. ADB-over-WiFi does NOT survive a reboot on this panel and
+20         cannot be made to: `adb root` is refused (production build) and
+21         `setprop persist.adb.tcp.port` needs root. So rather than persist ADB, we make it
+22         unnecessary. Both of these are granted ONCE over USB and then survive reboots:
+23
+24           appops set net.kckern.portalkeys REQUEST_INSTALL_PACKAGES allow
+25           pm grant  net.kckern.portalkeys android.permission.READ_LOGS
+26
+27         REQUEST_INSTALL_PACKAGES → POST /update installs a new APK from a URL.
+28         READ_LOGS                → GET /logcat returns our own log lines, so a failure
+29                                    can be diagnosed without a shell.
+30    -->
+31    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+31-->/Users/kckern/Documents/GitHub/DaylightStation/_extensions/portal-keys/app/app/src/main/AndroidManifest.xml:21:5-83
+31-->/Users/kckern/Documents/GitHub/DaylightStation/_extensions/portal-keys/app/app/src/main/AndroidManifest.xml:21:22-80
+32    <uses-permission android:name="android.permission.READ_LOGS" />
+32-->/Users/kckern/Documents/GitHub/DaylightStation/_extensions/portal-keys/app/app/src/main/AndroidManifest.xml:22:5-68
+32-->/Users/kckern/Documents/GitHub/DaylightStation/_extensions/portal-keys/app/app/src/main/AndroidManifest.xml:22:22-65
+33    <!--
+34     usesCleartextTraffic: FKB's REST API is plain http on :2323. Android 9 (API 28)
+35         BLOCKS cleartext by default once targetSdk >= 28, so without this every call to
+36         FKB fails before leaving the process — which is exactly what happened: the
+37         double-press gesture fired correctly and `screen-off ok=false` came back on both
+38         127.0.0.1 and the LAN address, while the identical URL worked from a laptop.
+39         There is no https option on FKB, so opting in is the only route.
+40    -->
+41    <application
+41-->/Users/kckern/Documents/GitHub/DaylightStation/_extensions/portal-keys/app/app/src/main/AndroidManifest.xml:30:5-54:19
+42        android:allowBackup="false"
+42-->/Users/kckern/Documents/GitHub/DaylightStation/_extensions/portal-keys/app/app/src/main/AndroidManifest.xml:33:9-36
+43        android:debuggable="true"
+44        android:extractNativeLibs="false"
+45        android:label="Portal Keys"
+45-->/Users/kckern/Documents/GitHub/DaylightStation/_extensions/portal-keys/app/app/src/main/AndroidManifest.xml:31:9-36
+46        android:usesCleartextTraffic="true" >
+46-->/Users/kckern/Documents/GitHub/DaylightStation/_extensions/portal-keys/app/app/src/main/AndroidManifest.xml:32:9-44
+47
+48        <!--
+49             AccessibilityService is bound by the SYSTEM. No launcher activity, no
+50             BootReceiver, no foreground service: the system rebinds it after reboot
+51             on its own, provided the grant in Settings -> Accessibility survives.
+52
+53             BIND_ACCESSIBILITY_SERVICE is required on the <service> itself, and the
+54             key-filtering capability is declared in res/xml/accessibility_service_config
+55             (canRequestFilterKeyEvents + flagRequestFilterKeyEvents). ALL THREE are
+56             needed — omitting any one makes onKeyEvent never fire, SILENTLY.
+57        -->
+58        <service
+58-->/Users/kckern/Documents/GitHub/DaylightStation/_extensions/portal-keys/app/app/src/main/AndroidManifest.xml:43:9-53:19
+59            android:name="net.kckern.portalkeys.PortalKeysService"
+59-->/Users/kckern/Documents/GitHub/DaylightStation/_extensions/portal-keys/app/app/src/main/AndroidManifest.xml:44:13-46
+60            android:exported="true"
+60-->/Users/kckern/Documents/GitHub/DaylightStation/_extensions/portal-keys/app/app/src/main/AndroidManifest.xml:46:13-36
+61            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE" >
+61-->/Users/kckern/Documents/GitHub/DaylightStation/_extensions/portal-keys/app/app/src/main/AndroidManifest.xml:45:13-79
+62            <intent-filter>
+62-->/Users/kckern/Documents/GitHub/DaylightStation/_extensions/portal-keys/app/app/src/main/AndroidManifest.xml:47:13-49:29
+63                <action android:name="android.accessibilityservice.AccessibilityService" />
+63-->/Users/kckern/Documents/GitHub/DaylightStation/_extensions/portal-keys/app/app/src/main/AndroidManifest.xml:48:17-92
+63-->/Users/kckern/Documents/GitHub/DaylightStation/_extensions/portal-keys/app/app/src/main/AndroidManifest.xml:48:25-89
+64            </intent-filter>
+65
+66            <meta-data
+66-->/Users/kckern/Documents/GitHub/DaylightStation/_extensions/portal-keys/app/app/src/main/AndroidManifest.xml:50:13-52:72
+67                android:name="android.accessibilityservice"
+67-->/Users/kckern/Documents/GitHub/DaylightStation/_extensions/portal-keys/app/app/src/main/AndroidManifest.xml:51:17-60
+68                android:resource="@xml/accessibility_service_config" />
+68-->/Users/kckern/Documents/GitHub/DaylightStation/_extensions/portal-keys/app/app/src/main/AndroidManifest.xml:52:17-69
+69        </service>
+70    </application>
+71
+72</manifest>
