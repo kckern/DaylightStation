@@ -1,0 +1,77 @@
+-- Merging decision tree log ---
+manifest
+ADDED from /Users/kckern/Documents/GitHub/DaylightStation/_extensions/portal-keys/app/app/src/main/AndroidManifest.xml:2:1-55:12
+INJECTED from /Users/kckern/Documents/GitHub/DaylightStation/_extensions/portal-keys/app/app/src/main/AndroidManifest.xml:2:1-55:12
+INJECTED from /Users/kckern/Documents/GitHub/DaylightStation/_extensions/portal-keys/app/app/src/main/AndroidManifest.xml:2:1-55:12
+INJECTED from /Users/kckern/Documents/GitHub/DaylightStation/_extensions/portal-keys/app/app/src/main/AndroidManifest.xml:2:1-55:12
+INJECTED from /Users/kckern/Documents/GitHub/DaylightStation/_extensions/portal-keys/app/app/src/main/AndroidManifest.xml:2:1-55:12
+INJECTED from /Users/kckern/Documents/GitHub/DaylightStation/_extensions/portal-keys/app/app/src/main/AndroidManifest.xml:2:1-55:12
+INJECTED from /Users/kckern/Documents/GitHub/DaylightStation/_extensions/portal-keys/app/app/src/main/AndroidManifest.xml:2:1-55:12
+	package
+		ADDED from /Users/kckern/Documents/GitHub/DaylightStation/_extensions/portal-keys/app/app/src/main/AndroidManifest.xml:3:5-36
+		INJECTED from /Users/kckern/Documents/GitHub/DaylightStation/_extensions/portal-keys/app/app/src/main/AndroidManifest.xml
+		INJECTED from /Users/kckern/Documents/GitHub/DaylightStation/_extensions/portal-keys/app/app/src/main/AndroidManifest.xml
+	android:versionName
+		INJECTED from /Users/kckern/Documents/GitHub/DaylightStation/_extensions/portal-keys/app/app/src/main/AndroidManifest.xml
+		ADDED from /Users/kckern/Documents/GitHub/DaylightStation/_extensions/portal-keys/app/app/src/main/AndroidManifest.xml:2:1-55:12
+		INJECTED from /Users/kckern/Documents/GitHub/DaylightStation/_extensions/portal-keys/app/app/src/main/AndroidManifest.xml
+	android:versionCode
+		INJECTED from /Users/kckern/Documents/GitHub/DaylightStation/_extensions/portal-keys/app/app/src/main/AndroidManifest.xml
+		ADDED from /Users/kckern/Documents/GitHub/DaylightStation/_extensions/portal-keys/app/app/src/main/AndroidManifest.xml:2:1-55:12
+		INJECTED from /Users/kckern/Documents/GitHub/DaylightStation/_extensions/portal-keys/app/app/src/main/AndroidManifest.xml
+	xmlns:android
+		ADDED from /Users/kckern/Documents/GitHub/DaylightStation/_extensions/portal-keys/app/app/src/main/AndroidManifest.xml:2:11-69
+uses-permission#android.permission.INTERNET
+ADDED from /Users/kckern/Documents/GitHub/DaylightStation/_extensions/portal-keys/app/app/src/main/AndroidManifest.xml:8:5-67
+	android:name
+		ADDED from /Users/kckern/Documents/GitHub/DaylightStation/_extensions/portal-keys/app/app/src/main/AndroidManifest.xml:8:22-64
+uses-permission#android.permission.REQUEST_INSTALL_PACKAGES
+ADDED from /Users/kckern/Documents/GitHub/DaylightStation/_extensions/portal-keys/app/app/src/main/AndroidManifest.xml:21:5-83
+	android:name
+		ADDED from /Users/kckern/Documents/GitHub/DaylightStation/_extensions/portal-keys/app/app/src/main/AndroidManifest.xml:21:22-80
+uses-permission#android.permission.READ_LOGS
+ADDED from /Users/kckern/Documents/GitHub/DaylightStation/_extensions/portal-keys/app/app/src/main/AndroidManifest.xml:22:5-68
+	android:name
+		ADDED from /Users/kckern/Documents/GitHub/DaylightStation/_extensions/portal-keys/app/app/src/main/AndroidManifest.xml:22:22-65
+application
+ADDED from /Users/kckern/Documents/GitHub/DaylightStation/_extensions/portal-keys/app/app/src/main/AndroidManifest.xml:30:5-54:19
+	android:label
+		ADDED from /Users/kckern/Documents/GitHub/DaylightStation/_extensions/portal-keys/app/app/src/main/AndroidManifest.xml:31:9-36
+	android:allowBackup
+		ADDED from /Users/kckern/Documents/GitHub/DaylightStation/_extensions/portal-keys/app/app/src/main/AndroidManifest.xml:33:9-36
+	android:usesCleartextTraffic
+		ADDED from /Users/kckern/Documents/GitHub/DaylightStation/_extensions/portal-keys/app/app/src/main/AndroidManifest.xml:32:9-44
+service#net.kckern.portalkeys.PortalKeysService
+ADDED from /Users/kckern/Documents/GitHub/DaylightStation/_extensions/portal-keys/app/app/src/main/AndroidManifest.xml:43:9-53:19
+	android:exported
+		ADDED from /Users/kckern/Documents/GitHub/DaylightStation/_extensions/portal-keys/app/app/src/main/AndroidManifest.xml:46:13-36
+	android:permission
+		ADDED from /Users/kckern/Documents/GitHub/DaylightStation/_extensions/portal-keys/app/app/src/main/AndroidManifest.xml:45:13-79
+	android:name
+		ADDED from /Users/kckern/Documents/GitHub/DaylightStation/_extensions/portal-keys/app/app/src/main/AndroidManifest.xml:44:13-46
+intent-filter#action:name:android.accessibilityservice.AccessibilityService
+ADDED from /Users/kckern/Documents/GitHub/DaylightStation/_extensions/portal-keys/app/app/src/main/AndroidManifest.xml:47:13-49:29
+action#android.accessibilityservice.AccessibilityService
+ADDED from /Users/kckern/Documents/GitHub/DaylightStation/_extensions/portal-keys/app/app/src/main/AndroidManifest.xml:48:17-92
+	android:name
+		ADDED from /Users/kckern/Documents/GitHub/DaylightStation/_extensions/portal-keys/app/app/src/main/AndroidManifest.xml:48:25-89
+meta-data#android.accessibilityservice
+ADDED from /Users/kckern/Documents/GitHub/DaylightStation/_extensions/portal-keys/app/app/src/main/AndroidManifest.xml:50:13-52:72
+	android:resource
+		ADDED from /Users/kckern/Documents/GitHub/DaylightStation/_extensions/portal-keys/app/app/src/main/AndroidManifest.xml:52:17-69
+	android:name
+		ADDED from /Users/kckern/Documents/GitHub/DaylightStation/_extensions/portal-keys/app/app/src/main/AndroidManifest.xml:51:17-60
+uses-sdk
+INJECTED from /Users/kckern/Documents/GitHub/DaylightStation/_extensions/portal-keys/app/app/src/main/AndroidManifest.xml reason: use-sdk injection requested
+INJECTED from /Users/kckern/Documents/GitHub/DaylightStation/_extensions/portal-keys/app/app/src/main/AndroidManifest.xml
+INJECTED from /Users/kckern/Documents/GitHub/DaylightStation/_extensions/portal-keys/app/app/src/main/AndroidManifest.xml
+INJECTED from /Users/kckern/Documents/GitHub/DaylightStation/_extensions/portal-keys/app/app/src/main/AndroidManifest.xml
+INJECTED from /Users/kckern/Documents/GitHub/DaylightStation/_extensions/portal-keys/app/app/src/main/AndroidManifest.xml
+	android:targetSdkVersion
+		INJECTED from /Users/kckern/Documents/GitHub/DaylightStation/_extensions/portal-keys/app/app/src/main/AndroidManifest.xml
+		ADDED from /Users/kckern/Documents/GitHub/DaylightStation/_extensions/portal-keys/app/app/src/main/AndroidManifest.xml
+		INJECTED from /Users/kckern/Documents/GitHub/DaylightStation/_extensions/portal-keys/app/app/src/main/AndroidManifest.xml
+	android:minSdkVersion
+		INJECTED from /Users/kckern/Documents/GitHub/DaylightStation/_extensions/portal-keys/app/app/src/main/AndroidManifest.xml
+		ADDED from /Users/kckern/Documents/GitHub/DaylightStation/_extensions/portal-keys/app/app/src/main/AndroidManifest.xml
+		INJECTED from /Users/kckern/Documents/GitHub/DaylightStation/_extensions/portal-keys/app/app/src/main/AndroidManifest.xml

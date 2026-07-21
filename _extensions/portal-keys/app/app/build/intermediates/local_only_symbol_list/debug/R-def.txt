@@ -1,0 +1,4 @@
+R_DEF: Internal format may change without notice
+local
+string accessibility_service_description
+xml accessibility_service_config

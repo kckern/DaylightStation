@@ -9,6 +9,7 @@ import { ScreenOverlayProvider, useScreenOverlay } from './overlays/ScreenOverla
 import { PipManager, usePip } from './pip/PipManager.jsx';
 import { ScreenVolumeProvider } from './providers/ScreenVolumeProvider.jsx';
 import { MasterVolumeToast } from './overlays/MasterVolumeToast.jsx';
+import { PortalKeysBridge } from './PortalKeysBridge.jsx';
 import { registerBuiltinWidgets } from './widgets/builtins.js';
 import { getActionBus } from './input/ActionBus.js';
 import { createInputManager } from './input/InputManager.js';
@@ -390,6 +391,7 @@ export function ScreenRenderer({ screenId: propScreenId }) {
             fixed={config.volume?.fixed}
           >
             <MasterVolumeToast />
+            <PortalKeysBridge config={config.portalKeys} />
             <ScreenAmbientProvider value={config.ambient}>
             <MenuNavigationProvider>
               <ScreenSceneProvider>
