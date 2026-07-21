@@ -74,7 +74,22 @@ function SchoolShell({ clear }) {
   return (
     <div className="school-app">
       <header className="school-app__header">
-        <button type="button" className="school-app__back" aria-label={active ? 'Back to bank list' : 'Exit school'} onClick={() => (active ? setActive(null) : clear())}>‹</button>
+        {/* Back has two meanings, and on the Portal it sometimes has none.
+            Inside a running bank it steps back to the list. Otherwise it exits
+            the app -- but when School IS the screen (mounted as the `school`
+            widget, the Portal's whole purpose) there is nowhere to exit TO, so
+            `clear` is absent and the control is omitted entirely rather than
+            rendering a dead button on a touch-only panel. */}
+        {(active || clear) && (
+          <button
+            type="button"
+            className="school-app__back"
+            aria-label={active ? 'Back to bank list' : 'Exit school'}
+            onClick={() => (active ? setActive(null) : clear())}
+          >
+            ‹
+          </button>
+        )}
         <h1 className="school-app__title">School</h1>
         <button type="button" className="school-app__chip" onClick={openPicker}>
           {currentUser
@@ -98,6 +113,12 @@ function SchoolShell({ clear }) {
   );
 }
 
+/**
+ * Mounts two ways:
+ *  - as a registered app via AppContainer, which passes `clear` to exit;
+ *  - as the `school` screen widget, where it IS the screen (the Portal) and no
+ *    `clear` exists because there is nothing behind it.
+ */
 export default function SchoolApp({ clear }) {
   return (
     <SchoolProfileProvider>
