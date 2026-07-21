@@ -26,7 +26,7 @@
  *
  * ## Why the setters refuse input instead of coercing it
  *
- * Everything buffered here flows into `scanNutrition`, which requires finite
+ * Everything buffered here flows into `ScanNutritionService`, which requires finite
  * `number` inputs and throws on anything else — including numeric strings. If this
  * buffer coerced (`Number(grams)`, `Math.round(Number(grams))`), three things go
  * wrong. `Number(undefined)` is NaN, which is not `null`, so `complete` reports
@@ -64,7 +64,7 @@ const emptySlots = () => ({
 /**
  * Render a received value for an error message.
  *
- * Mirrors `scanNutrition`'s helper for the same reason: callers that surface these
+ * Mirrors `ScanNutritionService`'s helper for the same reason: callers that surface these
  * errors log `err.message` alone and drop the structured payload, so someone
  * debugging at the fridge needs to see what actually arrived.
  *
@@ -234,7 +234,7 @@ export function createCompositionBuffer(options = {}) {
       }
 
       // Weight is stored VERBATIM, not rounded. The bridge already rounds before
-      // it gets here, and `scanNutrition` needs no integer; rounding is a storage
+      // it gets here, and `ScanNutritionService` needs no integer; rounding is a storage
       // and display concern, and doing it twice only risks disagreement.
       const slots = touch(scaleId);
       slots.grams = grams;
@@ -251,7 +251,7 @@ export function createCompositionBuffer(options = {}) {
      * failure it prevents is a misdiagnosis: an out-of-range level would sail
      * through to `computeNutrition`, miss the config table, and surface as
      * MALFORMED_DENSITY_LEVEL — "fix the YAML" — when the truth is "rescan".
-     * `scanNutrition` deliberately separates those two codes; honouring that
+     * `ScanNutritionService` deliberately separates those two codes; honouring that
      * distinction costs three lines here.
      *
      * @param {string} scaleId
@@ -285,7 +285,7 @@ export function createCompositionBuffer(options = {}) {
      * reads an absent container as "no tare" and returns silently — so a mistyped
      * or retired container id currently yields an untared entry rather than an
      * error. Whoever resolves ids against the container table (Task 4/5) has to
-     * reject the miss explicitly; do not assume this layer or `scanNutrition`
+     * reject the miss explicitly; do not assume this layer or `ScanNutritionService`
      * will surface it.
      *
      * @param {string} scaleId

@@ -48,7 +48,7 @@ export {
 export {
   computeNet,
   computeNutrition,
-} from './scanNutrition.mjs';
+} from './services/ScanNutritionService.mjs';
 
 // Composition buffer (order-independent per-scale slot state machine)
 export { createCompositionBuffer } from './CompositionBuffer.mjs';

@@ -35,7 +35,7 @@
  * === calories`). Round at the display or storage boundary instead, where the
  * reconciliation has already been done.
  *
- * @module nutrition/scanNutrition
+ * @module nutrition/services/ScanNutritionService
  */
 
 import { ValidationError } from '#domains/core/errors/index.mjs';
