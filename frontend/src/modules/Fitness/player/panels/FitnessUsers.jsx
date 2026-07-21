@@ -9,10 +9,7 @@ import RpmDeviceAvatar from '@/modules/Fitness/components/RpmDeviceAvatar.jsx';
 import { VibrationCard } from './RealtimeCards/VibrationCard.jsx';
 import { useZoneProfiles } from '@/hooks/useZoneProfiles.js';
 import { heartEmojiForColor, cssColorForStrap, hashColorForDevice, strapLabel } from '../../lib/strapColors.js';
-import {
-  buildZoneProgressIndex,
-  lookupZoneProgress as lookupZoneProgressFromIndex
-} from '@/modules/Fitness/domain/zoneProgressIndex.js';
+import { lookupZoneProgress as lookupZoneProgressFromIndex } from '@/modules/Fitness/domain/zoneProgressIndex.js';
 import { genericGuestImageId, isGenericGuestProfileId } from '../../lib/guestPlaceholders.js';
 
 // Note: slugifyId has been removed - we now use explicit IDs from config
@@ -128,7 +125,7 @@ const FitnessUsersList = ({ onRequestGuestAssignment }) => {
     zones,
     deviceAssignments = [],
     getDeviceAssignment,
-    userZoneProgress,
+    zoneProgressIndex,
     getUserVitals,
     participantsByDevice: participantsByDeviceMap,
     participantRoster,
@@ -345,23 +342,17 @@ const FitnessUsersList = ({ onRequestGuestAssignment }) => {
     return { userIdMap: map, participantByHrId: participantMap };
   }, [participantRoster, participantsByDevice, guestAssignmentEntries, registeredUsers, getConfiguredProfileId, heartRateOwners]);
 
-  // Card display only — the sort moved to FitnessContext. Same builder as the
-  // sort's index, so the two share one precedence order.
+  // Card display only — the sort moved to FitnessContext, which is also where
+  // `zoneProgressIndex` is built (from userVitalsMap), so cards and sort order
+  // resolve progress through ONE index with one precedence order.
   //
-  // NOTE: `userZoneProgress` is a LOSSY projection of userVitalsMap — it is
-  // keyed by given name and its values carry no profileId/deviceId/name/
-  // displayLabel fields (FitnessContext.jsx, `userZoneProgress` memo). So this
-  // index resolves by NAME ONLY, exactly like the hand-rolled map it replaces;
-  // the displayLabel/id fallbacks below still miss. That is not a regression,
-  // but widening card-display coverage requires enriching userZoneProgress
-  // first.
-  const zoneProgressIndex = React.useMemo(
-    () => buildZoneProgressIndex(userZoneProgress),
-    [userZoneProgress]
-  );
-
+  // This used to build a local index from `userZoneProgress`, which is a LOSSY
+  // projection: name-keyed, with values carrying no profileId/deviceId/name/
+  // displayLabel. That local index could only ever resolve by given name, so
+  // the id/displayLabel fallbacks below were dead. The context index carries
+  // the ID aliases, so they now actually resolve.
   const lookupZoneProgress = React.useCallback(
-    (idOrName) => lookupZoneProgressFromIndex(zoneProgressIndex, [idOrName]),
+    (keys) => lookupZoneProgressFromIndex(zoneProgressIndex, keys),
     [zoneProgressIndex]
   );
 
@@ -878,11 +869,24 @@ const FitnessUsersList = ({ onRequestGuestAssignment }) => {
                 ? (cssColorForStrap(hrColorMap[deviceIdStr])
                     || (!resolvedUser && !guestAssignment ? hashColorForDevice(deviceIdStr) : null))
                 : null;
+              // One index lookup, ID first. The four separate calls this
+              // replaces walked name → canonicalUserName → displayLabel → id
+              // against a name-only index, so only the first two could ever hit.
               const progressInfo = isHeartRate
-                ? (lookupZoneProgress(participantEntry?.name)
-                    || lookupZoneProgress(canonicalUserName)
-                    || (participantEntry?.displayLabel ? lookupZoneProgress(participantEntry.displayLabel) : null)
-                    || (participantEntry?.id ? lookupZoneProgress(participantEntry.id) : null)
+                ? (lookupZoneProgress([
+                      participantEntry?.profileId,
+                      participantEntry?.id,
+                      participantEntry?.name,
+                      canonicalUserName,
+                      displayLabel,
+                      participantEntry?.displayLabel,
+                      deviceIdStr
+                    ])
+                    // KEPT: getUserVitals() resolves through its own name
+                    // normalization + participantLookupByName, a path the index
+                    // does not replicate. When participantEntry is null but
+                    // canonicalUserName still resolves vitals, this is the only
+                    // rung carrying a real progress/showBar.
                     || (userVitalsEntry
                       ? {
                           progress: userVitalsEntry.progress ?? null,

@@ -2626,6 +2626,14 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
     getUserVitals,
     // DEPRECATED: Use participantDisplayMap.get(name).progress instead
     userZoneProgress,
+    // SSOT for zone-progress lookup. Built from userVitalsMap, so entries are
+    // aliased by profileId, deviceId(s), name AND displayLabel. Resolve with
+    // lookupZoneProgress() from modules/Fitness/domain/zoneProgressIndex.js and
+    // ALWAYS pass a stable ID first — display name becomes a group label
+    // ("Dad") once 2+ riders are present, which is the 2026-07-21 sort bug.
+    // Prefer this over rebuilding an index from `userZoneProgress`: that map is
+    // a lossy, name-keyed projection whose values carry no ID fields.
+    zoneProgressIndex,
     getUserZoneThreshold,
     userHeartRates: new Map(), // TODO
     getUserHeartRate,
