@@ -208,7 +208,7 @@ const cmds = {
       console.log(`── kiosk: settings (is FKB still CONFIGURED as a kiosk?) ─────`);
       console.log(`  verdict=${ks.verdict ?? '(no tick yet)'}  drift=${ks.lastDriftCount}  password=${ks.hasPassword ? 'set' : 'MISSING'}`);
       if (ks.disarmed) console.log(`  ⚠ DISARMED until ${new Date(ks.disarmUntilMs).toISOString()} — drift NOT repaired`);
-      if (ks.installHoldActive) console.log(`  ⏸ install hold active — guard standing down`);
+      if (ks.installHoldActive) console.log(`  ⏸ install hold active — ${fmtDur(ks.installHoldRemainingMs)} remaining`);
       if (ks.lastRepair) console.log(`  last repair: ${ks.lastRepair}`);
     }
     if (cr.prevDeathUnclean) console.log(`── ⚠ previous bridge death was UNCLEAN (crash/kill/reboot) — see \`pbctl crashlog\``);
@@ -231,8 +231,11 @@ const cmds = {
     console.log(`repairs      : ${repairs.length ? repairs.map(([k, n]) => `${k}×${n}`).join(', ') : 'none since boot'}`);
     if (s.disarmed) console.log(`⚠ DISARMED until ${new Date(s.disarmUntilMs).toISOString()} — drift will NOT be repaired`);
     if (s.installHoldActive) {
-      const ago = Math.round((Date.now() - s.lastUpdateRequestAtMs) / 1000);
-      console.log(`⏸ INSTALL HOLD — an /update landed ${ago}s ago; guard stands down for ${fmtDur(s.installHoldMs)}`);
+      // Report time REMAINING, not time since the /update: the hold is persisted and
+      // survives the service restart the install causes, after which
+      // lastUpdateRequestAtMs is 0 (it lives only in the process that received it).
+      console.log(`⏸ INSTALL HOLD — ${fmtDur(s.installHoldRemainingMs)} remaining; drift will not be repaired until it lapses`);
+      console.log(`  (\`pbctl kiosk-check\` forces a pass through it)`);
     }
     console.log('--- desired ---');
     for (const [k, v] of Object.entries(s.desired || {})) console.log(`  ${k.padEnd(28)} = ${v}`);
