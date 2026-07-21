@@ -417,10 +417,36 @@ public class PianoBridgeService extends Service {
 
     public KioskSettingsGuard getKioskSettingsGuard() { return kioskSettingsGuard; }
 
-    /** Stamp an install request (POST /update) so the kiosk-settings guard stands down. */
+    /**
+     * Stamp an install request (POST /update) so the kiosk-settings guard stands down.
+     *
+     * <p>The hold DEADLINE is both set on the guard (immediate effect) and PERSISTED to
+     * config, because the install this guards against stops the service — deploy step 7
+     * relaunches it, repeatedly if need be. An in-memory-only hold reset to 0 on each of
+     * those restarts and evaporated (found deploying v22, 2026-07-21), so a retried or
+     * second install ran with no suppression at all. Persisting the deadline (not the
+     * request time) also means later shortening {@code watchdogKioskSettingsInstallHoldMs}
+     * can't cut short a hold that is already running.
+     *
+     * <p>Deliberately does NOT call {@link #reloadConfigAndReconnect()}: that tears down
+     * BLE-MIDI and A2DP, and doing that during an install is exactly wrong. The merging
+     * {@code writeOverride} leaves every sibling key intact.
+     */
     public void markUpdateRequested() {
-        lastUpdateRequestAtMs = System.currentTimeMillis();
-        CrashLog.note("KIOSKSET", "install requested — kiosk-settings guard holding off");
+        long now = System.currentTimeMillis();
+        lastUpdateRequestAtMs = now;
+        long holdMs = config != null ? config.watchdogKioskSettingsInstallHoldMs() : 900000L;
+        long until = now + holdMs;
+        if (kioskSettingsGuard != null) kioskSettingsGuard.setInstallHoldUntil(until);
+        try {
+            DeviceConfig.writeOverride(this, "kioskSettingsInstallHoldUntilEpochMs: " + until + "\n");
+        } catch (IOException e) {
+            // In-memory hold still applies for this process; only restart-survival is lost.
+            Log.w(TAG, "could not persist install hold deadline", e);
+            CrashLog.note("KIOSKSET", "WARN: install-hold deadline not persisted (" + e.getMessage()
+                    + ") — hold will not survive the install's service restart");
+        }
+        CrashLog.note("KIOSKSET", "install requested — kiosk-settings guard holding off until " + until);
     }
 
     public long lastUpdateRequestAtMs() { return lastUpdateRequestAtMs; }

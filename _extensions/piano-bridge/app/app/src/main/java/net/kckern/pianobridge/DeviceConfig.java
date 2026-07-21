@@ -239,6 +239,15 @@ public class DeviceConfig {
     public long watchdogKioskSettingsInstallHoldMs() { return longOr("watchdogKioskSettingsInstallHoldMs", 900000L); }
     public long kioskSettingsDisarmUntilMs() { return longOr("kioskSettingsDisarmUntilEpochMs", 0L); }
 
+    // The install hold's DEADLINE, persisted because the APK install it guards against
+    // STOPS this service — deploy step 7 then relaunches it (and says to repeat until
+    // it answers). While this lived only in a PianoBridgeService field it reset to 0 on
+    // every such restart and the suppression silently evaporated, so a retried or
+    // second install landed with no hold at all (found deploying v22, 2026-07-21).
+    // Storing the deadline rather than the request time means a later change to
+    // watchdogKioskSettingsInstallHoldMs can't retroactively shorten a running hold.
+    public long kioskSettingsInstallHoldUntilMs() { return longOr("kioskSettingsInstallHoldUntilEpochMs", 0L); }
+
     /** Raw key/value snapshot for the /config endpoint. */
     public Map<String, String> asMap() { return new LinkedHashMap<>(values); }
 
