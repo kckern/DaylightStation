@@ -31,10 +31,11 @@ import java.util.function.Supplier;
  * that blindly re-asserted kiosk mode would kill the confirm tap and break the very
  * deploy that ships it. Two mechanisms prevent that:
  * <ul>
- *   <li><b>Install hold</b> — after POST /update stamps
- *       {@code lastUpdateRequestAtMs}, the guard stands down for
- *       {@code watchdogKioskSettingsInstallHoldMs} (default 15 min). Inferred from
- *       install activity, so the deploy needs no new manual step.</li>
+ *   <li><b>Install hold</b> — POST /update computes a deadline
+ *       {@code now + watchdogKioskSettingsInstallHoldMs} (default 15 min) and both
+ *       holds it in memory and PERSISTS it, so the hold survives the service restart
+ *       that the install itself causes. Inferred from install activity, so the deploy
+ *       needs no new manual step. See {@link #installHoldUntilMs()}.</li>
  *   <li><b>Disarm</b> — POST /kiosk/settings/disarm silences the guard for an hour
  *       (persisted, so it survives the bridge restarts that hands-on fiddling causes).</li>
  * </ul>
@@ -82,14 +83,18 @@ public final class KioskSettingsGuard {
     public static final class Params {
         public final boolean enabled;
         public final long intervalMs;
+        /** Hold DURATION — used to compute a new deadline, and for display. */
         public final long installHoldMs;
+        /** PERSISTED hold deadline (epoch ms). Survives the restart an install causes. */
+        public final long installHoldUntilMs;
         public final long disarmUntilMs;
         public final boolean hasPassword;
         public Params(boolean enabled, long intervalMs, long installHoldMs,
-                      long disarmUntilMs, boolean hasPassword) {
+                      long installHoldUntilMs, long disarmUntilMs, boolean hasPassword) {
             this.enabled = enabled;
             this.intervalMs = intervalMs;
             this.installHoldMs = installHoldMs;
+            this.installHoldUntilMs = installHoldUntilMs;
             this.disarmUntilMs = disarmUntilMs;
             this.hasPassword = hasPassword;
         }
@@ -111,6 +116,8 @@ public final class KioskSettingsGuard {
     private volatile boolean noPasswordLogged = false;
     /** In-memory disarm, set by the API for IMMEDIATE effect; also persisted to config. */
     private volatile long disarmUntilOverrideMs = 0;
+    /** In-memory install-hold deadline; the persisted twin is what survives a restart. */
+    private volatile long installHoldUntilOverrideMs = 0;
 
     private java.util.Timer timer;
 
@@ -123,6 +130,7 @@ public final class KioskSettingsGuard {
             return new Params(c.watchdogKioskSettingsEnabled(),
                     c.watchdogKioskSettingsIntervalMs(),
                     c.watchdogKioskSettingsInstallHoldMs(),
+                    c.kioskSettingsInstallHoldUntilMs(),
                     c.kioskSettingsDisarmUntilMs(),
                     !c.fkbPassword().isEmpty());
         };
@@ -227,10 +235,7 @@ public final class KioskSettingsGuard {
 
         // Stand down while an APK install may be in flight — re-arming kiosk mode
         // mid-install auto-dismisses the confirm dialog and aborts the install.
-        long sinceUpdate = now - lastUpdateRequestAtMs.getAsLong();
-        if (!force && lastUpdateRequestAtMs.getAsLong() > 0 && sinceUpdate < p.installHoldMs) {
-            return refuse(Verdict.INSTALL_HOLD);
-        }
+        if (!force && now < installHoldUntilMs()) return refuse(Verdict.INSTALL_HOLD);
 
         if (!p.hasPassword) {
             // ONCE, not every tick: the durable log is head-truncated at 128KB, so a
@@ -325,6 +330,36 @@ public final class KioskSettingsGuard {
         return Math.max(p.disarmUntilMs, disarmUntilOverrideMs);
     }
 
+    /**
+     * Arm the install hold until {@code untilEpochMs}. Set from
+     * {@link PianoBridgeService#markUpdateRequested()}, which also PERSISTS the same
+     * deadline to config — see {@link #installHoldUntilMs()} for why that matters.
+     */
+    public void setInstallHoldUntil(long untilEpochMs) {
+        installHoldUntilOverrideMs = Math.max(0L, untilEpochMs);
+    }
+
+    /**
+     * The effective install-hold deadline: the LATER of the in-memory value and the
+     * persisted one.
+     *
+     * <p>Both halves are load-bearing, and the persisted half is the bug fix (found
+     * deploying v22, 2026-07-21). An APK install STOPS this service; deploy step 7
+     * relaunches it, and says to repeat until it answers — so restarts here are normal
+     * and can happen several times. While the hold lived only in a
+     * {@link PianoBridgeService} field it reset to 0 on each restart and the
+     * suppression silently evaporated, leaving a retried or second install with no
+     * hold at all. Persisting the deadline makes it survive its own install.
+     *
+     * <p>We persist the DEADLINE, not the request timestamp, so that later reducing
+     * {@code watchdogKioskSettingsInstallHoldMs} cannot retroactively cut short a hold
+     * that is already running.
+     */
+    public long installHoldUntilMs() {
+        Params p = params.get();
+        return Math.max(p.installHoldUntilMs, installHoldUntilOverrideMs);
+    }
+
     // --- introspection (GET /kiosk/settings, embedded in /diagnostics) ------
 
     public JSONObject snapshot() {
@@ -346,9 +381,12 @@ public final class KioskSettingsGuard {
             o.put("lastRepair", lastRepair == null ? JSONObject.NULL : lastRepair);
             o.put("disarmUntilMs", disarmUntil == 0 ? JSONObject.NULL : disarmUntil);
             o.put("disarmed", now < disarmUntil);
+            long holdUntil = Math.max(p.installHoldUntilMs, installHoldUntilOverrideMs);
             o.put("installHoldMs", p.installHoldMs);
+            o.put("installHoldUntilMs", holdUntil == 0 ? JSONObject.NULL : holdUntil);
+            o.put("installHoldRemainingMs", Math.max(0L, holdUntil - now));
             o.put("lastUpdateRequestAtMs", lastUpdate == 0 ? JSONObject.NULL : lastUpdate);
-            o.put("installHoldActive", lastUpdate > 0 && (now - lastUpdate) < p.installHoldMs);
+            o.put("installHoldActive", now < holdUntil);
 
             JSONObject repairs = new JSONObject();
             for (Map.Entry<String, AtomicInteger> e : repairsSinceBoot.entrySet()) {

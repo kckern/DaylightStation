@@ -61,9 +61,16 @@ public class KioskSettingsGuardTest {
         return m;
     }
 
+    /** The configured hold DURATION. Only used to compute new deadlines / for display. */
+    private static final long HOLD_MS = 900_000L;
+
+    /**
+     * @param installHoldUntilMs the PERSISTED hold deadline (epoch ms), as it would be
+     *                           read back from config after a service restart. 0 = none.
+     */
     private static Params params(boolean enabled, boolean hasPassword,
-                                 long disarmUntilMs, long installHoldMs) {
-        return new Params(enabled, 60_000L, installHoldMs, disarmUntilMs, hasPassword);
+                                 long disarmUntilMs, long installHoldUntilMs) {
+        return new Params(enabled, 60_000L, HOLD_MS, installHoldUntilMs, disarmUntilMs, hasPassword);
     }
 
     /** Guard wired to fakes, with a fixed clock and a settable last-/update stamp. */
@@ -112,15 +119,15 @@ public class KioskSettingsGuardTest {
 
     @Test
     public void installHold_writesNothing() {
-        // An /update landed 60s ago and the hold is 15 min. Re-arming kiosk mode now
-        // would auto-dismiss Android's install confirm dialog (INSTALL_FAILED_ABORTED)
-        // and break the deploy in progress.
+        // An /update stamped a deadline 14 min out. Re-arming kiosk mode now would
+        // auto-dismiss Android's install confirm dialog (INSTALL_FAILED_ABORTED) and
+        // break the deploy in progress.
         FakeFkb fkb = new FakeFkb();
         fkb.live = healthy();
         fkb.live.put("kioskMode", "false");   // deploy step 4 turned it off, correctly
         long now = 1_000_000L;
 
-        Verdict v = guard(fkb, new FakeNotes(), params(true, true, 0, 900_000L),
+        Verdict v = guard(fkb, new FakeNotes(), params(true, true, 0, now + 840_000L),
                 now, now - 60_000L).tick();
 
         assertEquals(Verdict.INSTALL_HOLD, v);
@@ -135,13 +142,102 @@ public class KioskSettingsGuardTest {
         fkb.live.put("kioskMode", "false");
         long now = 1_000_000L;
 
-        // 16 minutes after the /update, past the 15-minute hold.
-        Verdict v = guard(fkb, new FakeNotes(), params(true, true, 0, 900_000L),
+        // Deadline already passed.
+        Verdict v = guard(fkb, new FakeNotes(), params(true, true, 0, now - 1L),
                 now, now - 960_000L).tick();
 
         assertEquals(Verdict.REPAIRED, v);
         assertEquals(1, fkb.writes.size());
         assertTrue(fkb.writes.contains("bool:kioskMode=true"));
+    }
+
+    @Test
+    public void installHold_survivesTheServiceRestartTheInstallItselfCauses() {
+        // THE DEFECT THIS FIXES (found deploying v22, 2026-07-21). An APK install stops
+        // the service; deploy step 7 relaunches it — and step 7 says "repeat until
+        // pbctl status answers", so this can happen more than once. When the hold lived
+        // only in a PianoBridgeService field it reset to 0 on every one of those
+        // restarts, and the 15-minute suppression silently evaporated. A retried or
+        // second install then landed with NO hold at all.
+        //
+        // A fresh guard (in-memory state empty, exactly as after a restart) must still
+        // refuse, on the strength of the PERSISTED deadline alone.
+        FakeFkb fkb = new FakeFkb();
+        fkb.live = healthy();
+        fkb.live.put("kioskMode", "false");
+        long now = 1_000_000L;
+
+        KioskSettingsGuard freshAfterRestart = guard(fkb, new FakeNotes(),
+                params(true, true, 0, now + 600_000L),  // persisted: 10 min left
+                now,
+                0L);                                     // in-memory: nothing, we just booted
+
+        assertEquals(Verdict.INSTALL_HOLD, freshAfterRestart.tick());
+        assertEquals(0, fkb.reads);
+        assertTrue(fkb.writes.isEmpty());
+    }
+
+    @Test
+    public void installHold_takesTheLaterOfInMemoryAndPersisted_persistedWins() {
+        FakeFkb fkb = new FakeFkb();
+        fkb.live = healthy();
+        fkb.live.put("kioskMode", "false");
+        long now = 1_000_000L;
+
+        // Persisted deadline is in the future, in-memory has none.
+        KioskSettingsGuard g = guard(fkb, new FakeNotes(),
+                params(true, true, 0, now + 300_000L), now, 0L);
+        assertEquals(Verdict.INSTALL_HOLD, g.tick());
+    }
+
+    @Test
+    public void installHold_takesTheLaterOfInMemoryAndPersisted_inMemoryWins() {
+        FakeFkb fkb = new FakeFkb();
+        fkb.live = healthy();
+        fkb.live.put("kioskMode", "false");
+        long now = 1_000_000L;
+
+        // Persisted deadline has EXPIRED, but a newer /update set a live one. The stale
+        // persisted value must not shorten the running hold.
+        KioskSettingsGuard g = guard(fkb, new FakeNotes(),
+                params(true, true, 0, now - 500_000L), now, 0L);
+        g.setInstallHoldUntil(now + 300_000L);
+
+        assertEquals(Verdict.INSTALL_HOLD, g.tick());
+        assertEquals(0, fkb.reads);
+    }
+
+    @Test
+    public void installHold_bothExpired_lettingTheGuardRun() {
+        FakeFkb fkb = new FakeFkb();
+        fkb.live = healthy();
+        fkb.live.put("kioskMode", "false");
+        long now = 1_000_000L;
+
+        KioskSettingsGuard g = guard(fkb, new FakeNotes(),
+                params(true, true, 0, now - 10L), now, 0L);
+        g.setInstallHoldUntil(now - 5L);
+
+        assertEquals(Verdict.REPAIRED, g.tick());
+    }
+
+    @Test
+    public void installHoldDeadlineIsAbsolute_soShorteningTheDurationCannotCutItShort() {
+        // The deadline is persisted, NOT the request timestamp. So dropping
+        // watchdogKioskSettingsInstallHoldMs mid-install can't retroactively end a hold
+        // that is already running — the stored deadline still governs.
+        FakeFkb fkb = new FakeFkb();
+        fkb.live = healthy();
+        fkb.live.put("kioskMode", "false");
+        long now = 1_000_000L;
+
+        // Duration reconfigured to 0, but a deadline 5 min out is already stored.
+        Params shortened = new Params(true, 60_000L, 0L, now + 300_000L, 0L, true);
+        KioskSettingsGuard g = new KioskSettingsGuard(
+                () -> shortened, () -> 0L, fkb, new FakeNotes(), () -> now);
+
+        assertEquals(Verdict.INSTALL_HOLD, g.tick());
+        assertTrue(fkb.writes.isEmpty());
     }
 
     @Test
@@ -231,7 +327,9 @@ public class KioskSettingsGuardTest {
         fkb.live = healthy();
         fkb.live.put("kioskMode", "false");
         long now = 1_000_000L;
-        KioskSettingsGuard g = guard(fkb, new FakeNotes(), params(true, true, 0, 900_000L),
+        // A PERSISTED deadline — i.e. the hold also survives a restart, and the force
+        // check must still be able to punch through it.
+        KioskSettingsGuard g = guard(fkb, new FakeNotes(), params(true, true, 0, now + 895_000L),
                 now, now - 5_000L);
 
         // The scheduled tick refuses, as it must — it would abort an install in flight.
