@@ -1,0 +1,12 @@
+# MIDI Recorder Configuration
+# Copy this file to config.yml and adjust settings
+
+# Recording settings
+silence_timeout: 30  # seconds of silence before ending a session
+
+# WebSocket broadcasting to DaylightStation
+websocket:
+  enabled: true
+  host: localhost      # DaylightStation backend IP/hostname
+  port: 3112           # DaylightStation backend port
+  path: /ws            # WebSocket endpoint path
