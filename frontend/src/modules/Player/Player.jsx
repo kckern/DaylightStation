@@ -265,7 +265,11 @@ const Player = forwardRef(function Player(props, ref) {
 
   useEffect(() => {
     setResolvedMeta(null);
-    setMediaAccess(createDefaultMediaAccess());
+    // Keep the ref in lockstep with the state — handleResilienceReload reads
+    // mediaAccessRef.current, and a stale hardReset on a dead renderer would
+    // short-circuit the remount and burn recovery attempts.
+    mediaAccessRef.current = createDefaultMediaAccess();
+    setMediaAccess(mediaAccessRef.current);
     setPlaybackMetrics(createDefaultPlaybackMetrics());
     setRemountState((prev) => (prev.guid === currentMediaGuid ? prev : { guid: currentMediaGuid || null, nonce: 0, context: null }));
     clearRemountTimer();
@@ -505,7 +509,9 @@ const Player = forwardRef(function Player(props, ref) {
     });
 
     setTargetTimeSeconds(normalized);
-    setMediaAccess(createDefaultMediaAccess());
+    // Keep the ref in lockstep with the state (see note at the other reset site).
+    mediaAccessRef.current = createDefaultMediaAccess();
+    setMediaAccess(mediaAccessRef.current);
     setPlaybackMetrics(createDefaultPlaybackMetrics());
     setRemountState((prev) => {
       if (prev.guid !== currentMediaGuid) {
@@ -616,13 +622,21 @@ const Player = forwardRef(function Player(props, ref) {
 
   const resilienceControllerRef = resolvedResilience.controllerRef;
 
-  const transportAdapter = useMediaTransportAdapter({ controllerRef, mediaAccess, resilienceBridge: resilienceBridgeRef.current });
+  // Pass the bridge REF (not .current) — the adapter reads it at call time.
+  // Passing the value both went stale between renders and (pre-2026-07-21 fix)
+  // minted per-render closures that chained every generation into a leak.
+  const transportAdapter = useMediaTransportAdapter({ controllerRef, mediaAccess, resilienceBridgeRef });
 
   useMediaErrorReporter({
     getMediaEl: transportAdapter.getMediaEl,
     mediaKey: currentMediaGuid,
     onError,
     mediaLoadTimeoutMs: mediaLoadTimeoutMs ?? null,
+    // The transport callbacks are identity-stable now, so this is what tells the
+    // reporter an element has actually appeared. `mediaAccess` identity changes
+    // only on a real renderer registration (field-compared in
+    // handleRegisterMediaAccess), so it re-attaches without churning.
+    registrationSignal: mediaAccess,
   });
 
   const resolvedResilienceOnState = resolvedResilience.onStateChange;
@@ -656,12 +670,18 @@ const Player = forwardRef(function Player(props, ref) {
 
     const seekSeconds = Number.isFinite(seekToIntentMs) ? Math.max(0, seekToIntentMs / 1000) : null;
 
+    // Read via mediaAccessRef (kept in sync by setMediaAccess) — having the
+    // mediaAccess STATE as a dep rebuilt this callback on every registration,
+    // which cascaded through triggerRecovery -> requestRecovery -> the
+    // SinglePlayer bridge memo -> renderer re-registration -> setMediaAccess:
+    // the render/setState feedback loop behind the 2026-07-21 fitness leak.
+    const currentMediaAccess = mediaAccessRef.current;
     let hardResetInvoked = false;
     let hardResetErrored = false;
-    if (typeof mediaAccess.hardReset === 'function') {
+    if (typeof currentMediaAccess?.hardReset === 'function') {
       hardResetInvoked = true;
       try {
-        mediaAccess.hardReset({ seekToSeconds: seekSeconds, refreshUrl: Boolean(refreshUrl) });
+        currentMediaAccess.hardReset({ seekToSeconds: seekSeconds, refreshUrl: Boolean(refreshUrl) });
       } catch (error) {
         hardResetErrored = true;
       }
@@ -716,7 +736,7 @@ const Player = forwardRef(function Player(props, ref) {
       trigger: triggerDetails,
       conditions
     });
-  }, [scheduleSinglePlayerRemount, mediaAccess, transportAdapter, playerType, isQueue, advance, clear, currentMediaGuid, resolvedWaitKey, activeSource, resolvedMeta]);
+  }, [scheduleSinglePlayerRemount, transportAdapter, playerType, isQueue, advance, clear, currentMediaGuid, resolvedWaitKey, activeSource, resolvedMeta]);
 
   const handleResilienceExhausted = useCallback(({ reason, attempts, waitKey: exhaustedWaitKey }) => {
     if (isQueue && hasNextQueueItem) {
@@ -746,6 +766,7 @@ const Player = forwardRef(function Player(props, ref) {
 
   const { overlayProps, state: resilienceState, cancelDeadline, requestRecovery } = useMediaResilience({
     getMediaEl: transportAdapter.getMediaEl,
+    registrationSignal: mediaAccess,
     meta: effectiveMeta,
     seconds: effectiveMeta ? playbackMetrics.seconds : 0,
     isPaused: effectiveMeta ? playbackMetrics.isPaused : false,

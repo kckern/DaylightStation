@@ -10,17 +10,40 @@ const guard = (label, fn) => (...args) => {
   }
 };
 
-export function useMediaTransportAdapter({ controllerRef, mediaAccess, resilienceBridge }) {
+/**
+ * Media transport adapter with STABLE callback identities.
+ *
+ * LEAK REGRESSION GUARD (2026-07-21 fitness kiosk, 14 GB heap): the previous
+ * implementation took `resilienceBridge` (a value read from a ref during
+ * render) and `mediaAccess` as useCallback deps. Every bridge/mediaAccess
+ * re-registration minted a new `getMediaEl` closure that captured the
+ * PREVIOUS generation's bridge object, chaining all render generations into
+ * one unbounded retained list — and the identity churn fed a setState
+ * feedback loop (renderer registration effect <-> Player.setMediaAccess <->
+ * useMediaResilience/requestRecovery <-> SinglePlayer bridge memo) running at
+ * thousands of renders per second.
+ *
+ * The adapter now receives `resilienceBridgeRef` (the ref itself) and mirrors
+ * `mediaAccess` into a ref, so every callback keeps ONE identity for the
+ * life of the Player while always resolving the CURRENT objects at call time.
+ */
+export function useMediaTransportAdapter({ controllerRef, mediaAccess, resilienceBridgeRef }) {
   const warnedMissingMediaRef = useRef(false);
+
+  // Live mirror — read at call time, never captured as a dep.
+  const mediaAccessRef = useRef(mediaAccess);
+  mediaAccessRef.current = mediaAccess;
 
   const getMediaEl = useCallback(() => {
     // Prefer resilience bridge (canonical path)
-    if (typeof resilienceBridge?.getMediaEl === 'function') {
-      const el = resilienceBridge.getMediaEl();
+    const bridge = resilienceBridgeRef?.current;
+    if (typeof bridge?.getMediaEl === 'function') {
+      const el = bridge.getMediaEl();
       if (el) return el;
     }
     // Fallback to legacy mediaAccess
-    const accessEl = typeof mediaAccess?.getMediaEl === 'function' ? mediaAccess.getMediaEl() : null;
+    const access = mediaAccessRef.current;
+    const accessEl = typeof access?.getMediaEl === 'function' ? access.getMediaEl() : null;
     if (accessEl) return accessEl;
     // Final fallback to controllerRef transport
     const transportEl = controllerRef?.current?.transport?.getMediaEl;
@@ -33,27 +56,28 @@ export function useMediaTransportAdapter({ controllerRef, mediaAccess, resilienc
       }
     }
     return null;
-  }, [controllerRef, mediaAccess, resilienceBridge]);
+  }, [controllerRef, resilienceBridgeRef]);
 
   const getContainerEl = useCallback(() => {
-    if (typeof resilienceBridge?.getContainerEl === 'function') {
-      return resilienceBridge.getContainerEl();
+    const bridge = resilienceBridgeRef?.current;
+    if (typeof bridge?.getContainerEl === 'function') {
+      return bridge.getContainerEl();
     }
     return null;
-  }, [resilienceBridge]);
+  }, [resilienceBridgeRef]);
 
   // Deferred capability check — warn only if getMediaEl is still unavailable
   // after the shadow DOM initialization window (2s grace period).
   // The <dash-video> web component needs time to initialize its shadow DOM
-  // after mount. Previous mount-time check always fired a false positive.
+  // after mount. Reads the live refs at fire time; armed once per mount.
   const mountTimeRef = useRef(Date.now());
   useEffect(() => {
-    if (warnedMissingMediaRef.current) return;
+    if (warnedMissingMediaRef.current) return undefined;
     const timer = setTimeout(() => {
       if (warnedMissingMediaRef.current) return;
       const hasMediaEl =
-        typeof resilienceBridge?.getMediaEl === 'function' ||
-        typeof mediaAccess?.getMediaEl === 'function' ||
+        typeof resilienceBridgeRef?.current?.getMediaEl === 'function' ||
+        typeof mediaAccessRef.current?.getMediaEl === 'function' ||
         typeof controllerRef?.current?.transport?.getMediaEl === 'function';
       if (!hasMediaEl) {
         warnedMissingMediaRef.current = true;
@@ -64,19 +88,19 @@ export function useMediaTransportAdapter({ controllerRef, mediaAccess, resilienc
       }
     }, 2000);
     return () => clearTimeout(timer);
-  }, [controllerRef, mediaAccess, resilienceBridge]);
+  }, [controllerRef, resilienceBridgeRef]);
 
   const play = useMemo(() => guard('play', () => controllerRef?.current?.transport?.play?.()), [controllerRef]);
   const pause = useMemo(() => guard('pause', () => controllerRef?.current?.transport?.pause?.()), [controllerRef]);
   const seek = useMemo(() => guard('seek', (seconds) => controllerRef?.current?.transport?.seek?.(seconds)), [controllerRef]);
 
-  return {
+  return useMemo(() => ({
     getMediaEl,
     getContainerEl,
     play,
     pause,
     seek
-  };
+  }), [getMediaEl, getContainerEl, play, pause, seek]);
 }
 
 export default useMediaTransportAdapter;
