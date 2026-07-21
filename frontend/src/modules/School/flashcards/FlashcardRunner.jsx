@@ -33,7 +33,18 @@ export default function FlashcardRunner({ bank, onExit }) {
   const [firstTry, setFirstTry] = useState(0);
   const [cardsSeen, setCardsSeen] = useState(0);
   const [unrecordedCount, setUnrecordedCount] = useState(0);
+  const [unrecorded, setUnrecorded] = useState(false);
+  const [grading, setGrading] = useState(false);
   const missedOnce = useRef(new Set());
+  // Synchronous in-flight guard: a double-tap on Missed/Got-it before the
+  // first POST resolves must not re-enter grade() with the same `card`
+  // closure — that duplicates the POST and, worse, runs setQueue(slice(1))
+  // twice against the same functional-update chain, silently dropping the
+  // NEXT card without it ever being shown or graded. A ref (not state)
+  // because it must block the second call within the same synchronous
+  // click burst, before React would ever re-render with updated state
+  // (same pattern as MultipleChoiceItem's submittedRef).
+  const gradingRef = useRef(false);
 
   const identityKey = currentUser?.id ?? (isGuest ? 'guest' : 'none');
   // null means "not pinned yet" — the abandon effect below is inert until the
@@ -74,32 +85,46 @@ export default function FlashcardRunner({ bank, onExit }) {
   const card = queue[0];
 
   const grade = async (got) => {
-    if (!sessionId || !card || abandonedRef.current) return;
-    const wasMissedBefore = missedOnce.current.has(card.id);
-    const selfGrade = got ? 'correct' : 'incorrect';
-    const { ok, status: answerStatus } = await schoolApi.answer(sessionId, { itemId: card.id, selfGrade });
-    if (abandonedRef.current) return; // identity changed while the request was in flight
-    if (answerStatus === 410) { onExit(); return; }
-    if (!ok) {
-      // Unlike a quiz's server-computed correctness, the self-grade is
-      // already known to the child the instant they tap Got it/Missed —
-      // only the *recording* of it failed. There is nothing to wait on, so
-      // never strand the child on the card (spec §8): proceed with the
-      // local deck logic and surface the loss on the summary instead of
-      // silently dropping it.
-      schoolLog.answerError('record-failed', { sessionId, itemId: card.id, status: answerStatus });
-      setUnrecordedCount((c) => c + 1);
-    } else {
-      schoolLog.answer('graded', { sessionId, itemId: card.id, itemType: card.type, selfGrade });
-    }
-    setCardsSeen((n) => n + 1);
-    setRevealed(false);
-    if (got) {
-      if (!wasMissedBefore) setFirstTry((n) => n + 1);
-      setQueue((q) => q.slice(1));
-    } else {
-      missedOnce.current.add(card.id); // resurface at the end until got (R4.3)
-      setQueue((q) => [...q.slice(1), card]);
+    if (!sessionId || !card || abandonedRef.current || gradingRef.current) return;
+    gradingRef.current = true;
+    setGrading(true);
+    try {
+      const wasMissedBefore = missedOnce.current.has(card.id);
+      const selfGrade = got ? 'correct' : 'incorrect';
+      const { ok, status: answerStatus } = await schoolApi.answer(sessionId, { itemId: card.id, selfGrade });
+      if (abandonedRef.current) return; // identity changed while the request was in flight
+      if (answerStatus === 410) { onExit(); return; }
+      if (!ok) {
+        // Unlike a quiz's server-computed correctness, the self-grade is
+        // already known to the child the instant they tap Got it/Missed —
+        // only the *recording* of it failed. There is nothing to wait on, so
+        // never strand the child on the card (spec §8): proceed with the
+        // local deck logic. Surface it immediately (per-card, consistent
+        // with QuizRunner's inline banner) as well as on the end-of-session
+        // summary — a whole session with the backend down must not drill
+        // silently with no signal until the very end.
+        schoolLog.answerError('record-failed', { sessionId, itemId: card.id, status: answerStatus });
+        setUnrecorded(true);
+        setUnrecordedCount((c) => c + 1);
+      } else {
+        setUnrecorded(false);
+        schoolLog.answer('graded', { sessionId, itemId: card.id, itemType: card.type, selfGrade });
+      }
+      setCardsSeen((n) => n + 1);
+      setRevealed(false);
+      if (got) {
+        if (!wasMissedBefore) setFirstTry((n) => n + 1);
+        setQueue((q) => q.slice(1));
+      } else {
+        missedOnce.current.add(card.id); // resurface at the end until got (R4.3)
+        setQueue((q) => [...q.slice(1), card]);
+      }
+    } finally {
+      // Cleared unconditionally (including the abandoned/410 early-return
+      // paths above) so a stray guard state can never strand the child —
+      // those paths already stop drilling via onExit()/abandonedRef.
+      gradingRef.current = false;
+      setGrading(false);
     }
   };
 
@@ -134,6 +159,7 @@ export default function FlashcardRunner({ bank, onExit }) {
   return (
     <div className="school-runner school-runner--cards">
       <div className="school-runner__progress">{cardsSeen} seen · {queue.length} left</div>
+      {unrecorded && <div className="school-runner__unrecorded" data-testid="unrecorded">Answer not recorded — check the server.</div>}
       <div className="school-card">
         <p className="school-card__prompt">{card.prompt}</p>
         {revealed && <p className="school-card__answer" style={{ whiteSpace: 'pre-line' }}>{answerText(card)}</p>}
@@ -142,8 +168,8 @@ export default function FlashcardRunner({ bank, onExit }) {
         ? <button type="button" className="school-runner__next" onClick={() => setRevealed(true)}>Show answer</button>
         : (
           <div className="school-runner__grades">
-            <button type="button" className="school-runner__missed" onClick={() => grade(false)}>Missed</button>
-            <button type="button" className="school-runner__got" onClick={() => grade(true)}>Got it</button>
+            <button type="button" className="school-runner__missed" disabled={grading} onClick={() => grade(false)}>Missed</button>
+            <button type="button" className="school-runner__got" disabled={grading} onClick={() => grade(true)}>Got it</button>
           </div>
         )}
     </div>
