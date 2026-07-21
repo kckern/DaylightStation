@@ -234,6 +234,9 @@ import { createGameshowRouter } from './4_api/v1/routers/gameshow.mjs';
 import { GameShowService } from './3_applications/gameshow/GameShowService.mjs';
 import { GameShowSessionStore } from './3_applications/gameshow/GameShowSessionStore.mjs';
 import { buzzersToSelectors, makeBuzzerSelectHandler } from './3_applications/gameshow/buzzerSelectors.mjs';
+import { createSchoolRouter } from './4_api/v1/routers/school.mjs';
+import { SchoolService } from './3_applications/school/SchoolService.mjs';
+import { YamlSchoolDatastore } from './1_adapters/persistence/yaml/YamlSchoolDatastore.mjs';
 import { createContentFilterRouter } from './4_api/v1/routers/contentFilter.mjs';
 import { FeedbackService } from './3_applications/common/feedback/FeedbackService.mjs';
 import { NotificationConfigService } from './3_applications/notification/NotificationConfigService.mjs';
@@ -1505,6 +1508,17 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     broadcastEvent,
     mediaAppsDir: join(mediaBasePath, 'apps'),
     logger: rootLogger.child({ module: 'gameshow-api' }),
+  });
+
+  // School (portal homeschool): banks from data/content/quizzes/, per-user
+  // append-only attempt log under data/users/{id}/apps/school/attempts/.
+  v1Routers.school = createSchoolRouter({
+    schoolService: new SchoolService({
+      datastore: new YamlSchoolDatastore({ configService }),
+      userService,
+      logger: rootLogger.child({ module: 'school' }),
+    }),
+    logger: rootLogger.child({ module: 'school-api' }),
   });
 
   // Content-filter cascade (EDL + profile + override) for the Player's
