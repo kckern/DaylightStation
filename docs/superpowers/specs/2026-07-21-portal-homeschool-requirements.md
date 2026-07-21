@@ -230,6 +230,42 @@ no curriculum attached.
   Audiobookshelf.
 - R9.2 Selection driven by config (tags or collections), not hardcoded lists.
 
+### R11 — Launching native Android apps (live lessons)
+
+- R11.1 The Portal must be able to launch a native Android app — specifically
+  **Zoom**, for live lessons with a teacher.
+- R11.2 **The launch mechanism already exists and is generic.** No new
+  launching code is required:
+  - `frontend/src/lib/fkb.js` — `launchApp(pkg)` / `startApplication(pkg, activity)`,
+    wrapping FKB's `fully.startApplication`.
+  - `Menu/MenuStack.jsx:150` — handles an `android` selection, pushes an
+    `android-launch` nav entry.
+  - `Menu/AndroidLaunchCard.jsx` — performs the launch and verifies it: if FKB
+    is still foregrounded after 2.5s the app did not start, so it reports
+    failure and offers up to 2 retries; an FKB `onResume` dismisses the card
+    when the user returns.
+  - Menu YAML: `input: android:<package>[/<activity>]`.
+
+  Adding Zoom is therefore a **menu entry plus device config**, not a build.
+
+- R11.3 **RISK — FKB kiosk mode may kill the launched app.** This project has
+  already hit this on the Shield TV, where kiosk mode kills any launched
+  activity within ~28ms, forcing an architectural workaround (see the
+  AudioBridge design notes). Whether the Portal's kiosk configuration behaves
+  the same is unverified. **Test this early**, before designing a lesson flow
+  that assumes Zoom launches and returns cleanly. If it reproduces, the fix is
+  FKB configuration, not application code.
+
+- R11.4 **GAP — `AndroidLaunchCard` is keyboard-only.** It binds raw
+  `Escape`/`Enter` keydowns, and its failure state reads "Press OK to retry" /
+  "Press Back to return". The Portal has neither key. Back happens to work
+  (TouchChrome emits `escape`, which pops the nav stack) and retry happens to
+  be reachable only because play/pause synthesizes `Enter` — both accidental,
+  and the on-screen text instructs a touch user to press keys that do not
+  exist. Needs touch affordances and corrected copy. Small, but real.
+
+- R11.5 Zoom must be added to FKB's launcher whitelist on the device.
+
 ### R10 — Content gates
 
 - R10.1 Ability to inject a prerequisite before content unlocks — e.g. read a
@@ -316,6 +352,14 @@ Each row is an independent spec → plan → build cycle.
 | 5 | Parent view + sign-off + reassignment | M | 4 | R7, R6.5 |
 | 6 | Economy hooks | S | 1 or 2 | R8 |
 | 7 | Content gates | S | 4 | R10 |
+| 8 | Android launch touch affordances | XS | — | R11.4 |
+
+**R11 (Zoom) is mostly not a sub-project.** Launching already works generically
+(R11.2); adding Zoom is a menu entry plus a whitelist change. The only code
+work is making `AndroidLaunchCard`'s failure state usable without a keyboard,
+listed above as sub-project 8. It is independent of everything else and can be
+done at any time — including alongside the first slice, since it is small and
+the Portal will want Zoom before the curriculum exists.
 
 **Sequencing revised 2026-07-21.** Identity and the quiz engine are built
 together as the first slice, ahead of courses. R2.5 makes quizzes a
