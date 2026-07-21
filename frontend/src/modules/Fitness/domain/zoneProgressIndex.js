@@ -18,10 +18,26 @@
 /**
  * Build a lookup index from a userVitals collection.
  *
- * Aliases are added in three passes so precedence is deterministic regardless
- * of iteration order: profile IDs (stable, never a display string) > given
- * names > display labels (group labels like "Dad", which can legitimately
- * collide across users). First writer wins within a pass.
+ * Aliases are added in four passes so precedence is deterministic regardless
+ * of iteration order: profile IDs (stable, never a display string) > device
+ * IDs (stable) > given names > display labels (group labels like "Dad", which
+ * can legitimately collide across users). First writer wins within a pass.
+ *
+ * Device IDs are indexed because `resolveDisplayName` falls back to the raw
+ * device ID string when a strap has no resolved user
+ * (userDisplayName.js:167) — so a caller's "display name" can legitimately BE
+ * a device ID.
+ *
+ * Alias matching is TRIMMED but NOT case-folded: "dad" will not find "Dad".
+ * This is deliberate — profile and device IDs are case-sensitive, and
+ * case-folding them risks collapsing distinct users onto one entry.
+ *
+ * Reads these fields off each entry: `profileId` (falls back to the
+ * collection key), `deviceId`, `name`, `displayLabel`.
+ *
+ * Known partial: `deviceId` is the user's PRIMARY strap only
+ * (`user.hrDeviceId`, FitnessContext.jsx:1855). A multi-device user's
+ * secondary straps in `user.hrDeviceIds` are not aliased.
  *
  * @param {Map<string, Object>|Object|null} userVitals - keyed by profile ID
  * @returns {Map<string, Object>} alias → progress entry
@@ -37,7 +53,9 @@ export const buildZoneProgressIndex = (userVitals) => {
     Object.entries(userVitals).forEach(([key, value]) => { if (value) raw.push([key, value]); });
   }
 
-  // Normalize once so every alias points at the same object identity.
+  // Copy each entry once (backfilling profileId from the map key) so all of an
+  // entry's aliases share one object. Note: these are copies — not
+  // identity-equal to the input values.
   const entries = raw.map(([key, vitals]) => ({
     ...vitals,
     profileId: vitals.profileId ?? key ?? null,
@@ -51,6 +69,7 @@ export const buildZoneProgressIndex = (userVitals) => {
   };
 
   entries.forEach((entry) => addAlias(entry.profileId, entry));
+  entries.forEach((entry) => addAlias(entry.deviceId, entry));
   entries.forEach((entry) => addAlias(entry.name, entry));
   entries.forEach((entry) => addAlias(entry.displayLabel, entry));
 
@@ -60,9 +79,22 @@ export const buildZoneProgressIndex = (userVitals) => {
 /**
  * Resolve a progress entry from any identifier a caller happens to hold.
  *
+ * ALWAYS pass `profileId` when you have it. Two participants can share a
+ * `group_label` (both "Dad"), and the index resolves a shared label to whichever
+ * user was indexed first — so a label-only hit is AMBIGUOUS and may return a
+ * plausible-but-wrong user's progress. Treat it as a best-effort fallback, not
+ * an identification.
+ *
+ * Matching is trimmed but NOT case-folded; see buildZoneProgressIndex.
+ *
+ * Returns the ENTRY, not a number. Callers typically write
+ * `lookupZoneProgress(...)?.progress ?? 0` — keep the entry-vs-null distinction
+ * intact, because a genuine `progress: 0` and a miss both collapse to 0 at the
+ * call site and that ambiguity is precisely the 2026-07-21 bug.
+ *
  * @param {Map<string, Object>|null} index - from buildZoneProgressIndex
  * @param {Object|Array} keys - { profileId, id, name, displayLabel, deviceId } or an ordered array
- * @returns {Object|null}
+ * @returns {Object|null} the progress entry, or null when no candidate matches
  */
 export const lookupZoneProgress = (index, keys) => {
   if (!index || !keys) return null;
