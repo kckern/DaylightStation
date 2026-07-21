@@ -24,7 +24,11 @@
 
   // Wide mode: main column (chart/tower row + speedo band) beside the POV grid
   // docked as a right-edge column spanning the full height.
-  &--wide { display: grid; height: 100%; grid-template-columns: minmax(0, 1fr) minmax(220px, 26%); grid-template-rows: 1fr; gap: 8px; }
+  // 33% (not the old 26%): the POV's rank badges are fixed screen size and don't
+  // scale with the column, so a narrow POV bunches mid-pack riders near the
+  // centreline until their badges overlap. 33% ≈ 410px at 1080p, the width the
+  // POV had in the top row before it and the tower traded places.
+  &--wide { display: grid; height: 100%; grid-template-columns: minmax(0, 1fr) minmax(220px, 33%); grid-template-rows: 1fr; gap: 8px; }
   .race-layout__wide-main { display: grid; min-height: 0; grid-template-rows: 1fr minmax(200px, 42%); gap: 8px; }
   .race-layout__wide-main--no-speedo { grid-template-rows: 1fr; }
   .race-layout__top3 { display: grid; min-height: 0; grid-template-columns: 2fr 1fr; gap: 8px; }

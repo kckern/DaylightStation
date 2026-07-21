@@ -3,7 +3,7 @@ import PropTypes from 'prop-types';
 import CircularUserAvatar from '@/modules/Fitness/components/CircularUserAvatar.jsx';
 import { LINE_COLORS } from '@/modules/Fitness/lib/cycleGame/lineColors.js';
 import { tickFraction } from '@/modules/Fitness/lib/cycleGame/tickFraction.js';
-import { povWorld, povBadges } from '@/modules/Fitness/lib/cycleGame/povWorld.js';
+import { povWorld, povBadges, resolveBadgeStack } from '@/modules/Fitness/lib/cycleGame/povWorld.js';
 import { povFollowCam, horizonChipState } from '@/modules/Fitness/lib/cycleGame/povFollowCam.js';
 import getLogger from '@/lib/logging/Logger.js';
 import './PovGrid.scss';
@@ -12,6 +12,7 @@ import './PovGrid.scss';
 const RACE_TICK_MS = 1000;   // matches RACE_TICK_MS data cadence
 const ROAD_HALF_W = 4;       // road spans x ∈ [-4, +4] world units
 const LANE_INSET = 0.85;     // riders spread across ±halfW*inset
+const BADGE_STACK_GAP_PX = 3; // vertical breathing room when badges de-collide
 const GRID_MINOR_M = 1;      // minor metre mark spacing
 const GRID_MAJOR_M = 10;     // shader road-stripe spacing (visual grid density — unrelated to labels)
 // DOM metre-label spacing (audit UX §7): widened from every 10 m to every
@@ -140,6 +141,10 @@ export default function PovGrid({ riderIds, riders, riderLive = {}, lapLengthM =
   const labelsRef = useRef(null);
   const markerEls = useRef({});           // { id: card DOM node }
   const badgeEls = useRef({});            // { id: fixed-size badge DOM node }
+  const badgeSize = useRef({});           // { id: { text, w, h } } — see positionCards:
+                                          // offsetWidth forces a reflow, so the badge box
+                                          // is measured only when its text actually changes
+                                          // (once per race tick), never per frame.
   const horizonChipRef = useRef(null);    // pinned "LEADER +N m" plate
   const chipShownRef = useRef(false);     // horizon-chip hysteresis state
   const sceneRef = useRef(null);          // built three.js scene + pools
@@ -348,6 +353,8 @@ export default function PovGrid({ riderIds, riders, riderLive = {}, lapLengthM =
       // pinned just below at a FIXED screen size (counter to depth) so the "who
       // am I chasing" readout is legible even for a tiny, far, compressed leader.
       const positionCards = (worldRiders, fogFar) => {
+        // Pass 1 — project every card, and collect each badge's would-be box.
+        const boxes = [];
         worldRiders.forEach((r) => {
           const el = markerEls.current[r.id];
           const badgeEl = badgeEls.current[r.id];
@@ -367,9 +374,20 @@ export default function PovGrid({ riderIds, riders, riderLive = {}, lapLengthM =
           if (badgeEl) {
             const belowPx = 44 * scale + 10; // avatar half-height at this scale + gap
             badgeEl.style.opacity = clamp(0.6, 1, 1 - p.dist / fogFar).toFixed(3);
-            badgeEl.style.transform = `translate(${p.sx.toFixed(1)}px,${(p.sy + belowPx).toFixed(1)}px) translate(-50%,0)`;
             badgeEl.style.zIndex = z;
+            const text = badgeEl.textContent;
+            const cached = badgeSize.current[r.id];
+            if (!cached || cached.text !== text) {
+              badgeSize.current[r.id] = { text, w: badgeEl.offsetWidth, h: badgeEl.offsetHeight };
+            }
+            const { w, h } = badgeSize.current[r.id];
+            boxes.push({ el: badgeEl, x: p.sx, y: p.sy + belowPx, w, h, dist: p.dist });
           }
+        });
+
+        // Pass 2 — de-collide in screen space (pure, unit-tested in povWorld).
+        resolveBadgeStack(boxes, BADGE_STACK_GAP_PX).forEach((b) => {
+          b.el.style.transform = `translate(${b.x.toFixed(1)}px,${b.y.toFixed(1)}px) translate(-50%,0)`;
         });
       };
 
