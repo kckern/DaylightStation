@@ -52,6 +52,11 @@ scales:
       min_delta_g: 1
       heartbeat_hz: 0.5
     topic: food-scale
+    barcode:
+      id: content-barcode
+      route: content
+      mac: "c8:1c:fe:fd:ce:90"       # optional Zebra DS2278 BLE HID target
+      name: "DS2278"
 
 # ---------------------------------------------------------------------------
 # Nutribot integration: settled readings become density-logged food entries.

@@ -32,3 +32,10 @@
 // ---- emit throttle -------------------------------------------------------
 #define EMIT_MIN_DELTA_G   1        // emit on >= this many grams of change
 #define HEARTBEAT_MS       2000     // ...or at least this often while idle
+
+// ---- optional barcode scanner sharing this ESP -------------------------
+#define BARCODE_ENABLED    1
+#define BARCODE_ID         "content-barcode"
+#define BARCODE_ROUTE      "content"
+#define BARCODE_MAC        "c8:1c:fe:fd:ce:90"
+#define BARCODE_NAME       "DS2278"

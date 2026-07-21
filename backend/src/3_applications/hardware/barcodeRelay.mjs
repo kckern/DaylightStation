@@ -3,10 +3,11 @@
 // Barcode relay wiring — like foodScaleRelay.mjs, two decoupled concerns on the
 // event bus:
 //
-//   1) INGEST  (client → bus): the ESP32 barcode-relay (a Zebra DS2278 bridged
-//      over BLE HID — see _extensions/barcode-relay) connects to the WS event
-//      bus as a device client and sends one message per completed scan:
-//        { source:'barcode-relay', type:'scan', device:'<id>', code:'<barcode>', ts:<ms> }
+//   1) INGEST  (client → bus): the shared food-scale/content-barcode ESP32
+//      (see _extensions/food-scale-relay and _extensions/content-barcode-relay)
+//      connects to the WS event bus as a device client and sends one message per
+//      completed scan:
+//        { source:'barcode-relay', type:'scan', device:'<relay-id>', route:'content|nutribot', code:'<barcode>', ts:<ms> }
 //      We re-broadcast on the `barcode-relay` topic (any app can subscribe live)
 //      and, when a pipeline is wired, hand the scan to `onScan` (BarcodeScanService
 //      → gatekeeper → queue/play/open) so BLE scans behave exactly like the USB scanner.
@@ -33,6 +34,7 @@ const DEFAULT_DIR = 'household/history/barcode'; // relative to dataDir
  * @param {object}   deps.eventBus            IEventBus (WebSocketEventBus)
  * @param {Function} [deps.onScan]            optional (payload) => void — e.g. BarcodeScanService dispatch
  * @param {string}   [deps.defaultDevice]     device id when the relay omits one
+ * @param {string}   [deps.defaultRoute]      route when the relay omits one (content|nutribot)
  * @param {string}   [deps.dataDir]           resolved data dir — enables disk persistence when set
  * @param {string}   [deps.persistDir]        history root relative to dataDir (default household/history/barcode)
  * @param {string}   [deps.timezone]          IANA tz for the `ts` field + day-file bucket (default household tz)
@@ -43,6 +45,7 @@ export function createBarcodeRelay({
   eventBus,
   onScan = null,
   defaultDevice = 'barcode-relay',
+  defaultRoute = 'content',
   dataDir = null,
   persistDir = DEFAULT_DIR,
   timezone = DEFAULT_TIMEZONE,
@@ -62,8 +65,9 @@ export function createBarcodeRelay({
       return;
     }
     const device = (typeof message.device === 'string' && message.device) ? message.device : defaultDevice;
+    const route = (message.route === 'content' || message.route === 'nutribot') ? message.route : defaultRoute;
     // Local wall-clock timestamp (household tz), NOT UTC — matches the day-file bucket.
-    const payload = { source: RELAY_SOURCE, device, code, ts: formatLocalTimestamp(new Date(), timezone) };
+    const payload = { source: RELAY_SOURCE, device, route, code, ts: formatLocalTimestamp(new Date(), timezone) };
 
     eventBus.broadcast(TOPIC, payload);
     logger.info?.('barcode_relay.scan', { device, code });

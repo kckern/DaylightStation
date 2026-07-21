@@ -49,17 +49,18 @@ That MAC is the `TARGET_MAC` in `firmware/src/main.cpp`.
 4. Scanning is host-gated in USB **SNAPI** mode; irrelevant once in HID-BLE.
 
 ## Flashing
-Config is CONFIG-DRIVEN from the household SSOT (mirrors eink-panel) — do NOT hand-edit
+Config is CONFIG-DRIVEN from the household SSOT (mirrors food-scale-relay) — do NOT hand-edit
 `main.cpp`. Generate the gitignored `include/config.h` from the SSOT first, then flash:
 ```
 cd firmware
-node tools/gen-config.mjs <data>/household/config/barcode-relay.yml   # -> include/config.h
+node tools/gen-config.mjs <data>/household/config/barcode-relay.yml <relay-id>   # -> include/config.h
 ~/.platformio/penv/bin/pio run -t upload --upload-port /dev/cu.usbserial-XXXX
 ```
 `barcode-relay.yml` (private data volume) holds `provisioning.wifi_*`, `backend.host`
-(the stable HOSTNAME `daylightlocal.kckern.net`, never an IP) `+ port + ws_path`, and the
-`scanner.mac/name`. `config.example.h` documents the shape. Changing the endpoint/creds
-is a SSOT edit + regen + reflash — no source change.
+(the stable HOSTNAME `daylightlocal.kckern.net`, never an IP) `+ port + ws_path`, and a
+`relays:` registry. Each relay entry sets `route` (`content` or `nutribot`), scanner MAC/name,
+and optional Nutribot target user/conversation. `config.example.yml` and `config.example.h`
+document the shapes. Changing the endpoint/creds is a SSOT edit + regen + reflash — no source change.
 `upload_speed=115200` (FTDI link marginal), `huge_app.csv` partitions, `espressif32@6.5.0`
 (NimBLE 1.4.x needs Arduino core 2.x). Free the port first if held:
 `kill $(lsof -t /dev/cu.usbserial-*)`.
