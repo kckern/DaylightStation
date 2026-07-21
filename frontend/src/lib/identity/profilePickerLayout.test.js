@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { columnsForCount, paginatePlayers, PICKER_PAGE_SIZE } from './whoIsPlayingLayout.js';
+import { columnsForCount, paginatePlayers, PICKER_PAGE_SIZE } from './profilePickerLayout.js';
 
 describe('columnsForCount — balanced rows', () => {
   it('keeps ≤4 faces in a single row', () => {

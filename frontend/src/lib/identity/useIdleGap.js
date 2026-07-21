@@ -1,17 +1,17 @@
 import { useEffect, useRef } from 'react';
-import { firesOnGap } from './whoIsPlaying.js';
+import { firesOnGap } from './idleGap.js';
 
 /**
- * useWhoIsPlaying — after `timeoutMinutes` with no input, the NEXT input (a MIDI
- * note OR a screen touch/keydown) calls `onIdleGap` once. Mirrors the idle
- * signals of useInactivityReturn. Disabled when timeoutMinutes <= 0.
+ * useIdleGap — after `timeoutMinutes` with no input, the NEXT input (signalA or
+ * signalB changing, OR a screen touch/keydown) calls `onIdleGap` once. Mirrors
+ * the idle signals of useInactivityReturn. Disabled when timeoutMinutes <= 0.
  *
- * @param {Map}    activeNotes  live notes (identity changes = MIDI activity)
- * @param {number} historyLen   noteHistory length (grows per note = activity)
+ * @param {*}      signalA  first activity signal (identity/value change = activity)
+ * @param {*}      signalB  second activity signal (identity/value change = activity)
  * @param {number} timeoutMinutes  gap threshold in minutes
  * @param {() => void} onIdleGap
  */
-export function useWhoIsPlaying(activeNotes, historyLen, timeoutMinutes, onIdleGap) {
+export function useIdleGap(signalA, signalB, timeoutMinutes, onIdleGap) {
   const lastRef = useRef(Date.now());
   const onGapRef = useRef(onIdleGap);
   onGapRef.current = onIdleGap;
@@ -25,12 +25,12 @@ export function useWhoIsPlaying(activeNotes, historyLen, timeoutMinutes, onIdleG
     lastRef.current = now;
   };
 
-  // MIDI activity: any change to activeNotes / historyLen is an input.
+  // Signal activity: any change to signalA / signalB is an input.
   useEffect(() => {
     if (thresholdMs <= 0) return;
     onInput.current();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeNotes, historyLen]);
+  }, [signalA, signalB]);
 
   // Touch / keyboard activity.
   useEffect(() => {
@@ -45,4 +45,4 @@ export function useWhoIsPlaying(activeNotes, historyLen, timeoutMinutes, onIdleG
   }, [thresholdMs]);
 }
 
-export default useWhoIsPlaying;
+export default useIdleGap;
