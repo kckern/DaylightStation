@@ -44,5 +44,11 @@ export {
   MAX_DENSITY_LEVEL,
 } from './ScanVocabulary.mjs';
 
+// Scan nutrition math (net weight, calories, macro split)
+export {
+  computeNet,
+  computeNutrition,
+} from './scanNutrition.mjs';
+
 // Services
 export { FoodLogService } from './services/FoodLogService.mjs';
