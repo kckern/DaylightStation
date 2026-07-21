@@ -9,6 +9,10 @@ import RpmDeviceAvatar from '@/modules/Fitness/components/RpmDeviceAvatar.jsx';
 import { VibrationCard } from './RealtimeCards/VibrationCard.jsx';
 import { useZoneProfiles } from '@/hooks/useZoneProfiles.js';
 import { heartEmojiForColor, cssColorForStrap, hashColorForDevice, strapLabel } from '../../lib/strapColors.js';
+import {
+  buildZoneProgressIndex,
+  lookupZoneProgress as lookupZoneProgressFromIndex
+} from '@/modules/Fitness/domain/zoneProgressIndex.js';
 import { genericGuestImageId, isGenericGuestProfileId } from '../../lib/guestPlaceholders.js';
 
 // Note: slugifyId has been removed - we now use explicit IDs from config
@@ -43,8 +47,8 @@ const CONFIG = {
     otherTypeOrder: { power: 1, speed: 2, unknown: 3 }
   },
   zone: {
-    canonical: ['cool','active','warm','hot','fire'],
-    rankMap: { cool:0, active:1, warm:2, hot:3, fire:4 }
+    // rankMap moved to ParticipantFactory.ZONE_RANK_MAP — the sorting SSOT.
+    canonical: ['cool','active','warm','hot','fire']
   },
   layout: {
     // Layout decision logic (when vertical is allowed)
@@ -341,34 +345,25 @@ const FitnessUsersList = ({ onRequestGuestAssignment }) => {
     return { userIdMap: map, participantByHrId: participantMap };
   }, [participantRoster, participantsByDevice, guestAssignmentEntries, registeredUsers, getConfiguredProfileId, heartRateOwners]);
 
-  const zoneProgressMap = React.useMemo(() => {
-    const map = new Map();
-    if (!userZoneProgress) return map;
-    const addEntry = (key, value) => {
-      if (!key || !value) return;
-      map.set(key, value);
-      // Also set by name for backward compatibility
-      if (value?.name) {
-        const nameKey = String(value.name).trim();
-        if (nameKey && nameKey !== key) {
-          map.set(nameKey, value);
-        }
-      }
-    };
-    if (userZoneProgress instanceof Map) {
-      userZoneProgress.forEach((value, key) => addEntry(key, value));
-      return map;
-    }
-    if (typeof userZoneProgress === 'object') {
-      Object.entries(userZoneProgress).forEach(([key, value]) => addEntry(key, value));
-    }
-    return map;
-  }, [userZoneProgress]);
+  // Card display only — the sort moved to FitnessContext. Same builder as the
+  // sort's index, so the two share one precedence order.
+  //
+  // NOTE: `userZoneProgress` is a LOSSY projection of userVitalsMap — it is
+  // keyed by given name and its values carry no profileId/deviceId/name/
+  // displayLabel fields (FitnessContext.jsx, `userZoneProgress` memo). So this
+  // index resolves by NAME ONLY, exactly like the hand-rolled map it replaces;
+  // the displayLabel/id fallbacks below still miss. That is not a regression,
+  // but widening card-display coverage requires enriching userZoneProgress
+  // first.
+  const zoneProgressIndex = React.useMemo(
+    () => buildZoneProgressIndex(userZoneProgress),
+    [userZoneProgress]
+  );
 
-  const lookupZoneProgress = React.useCallback((idOrName) => {
-    if (!idOrName) return null;
-    return zoneProgressMap.get(idOrName) || null;
-  }, [zoneProgressMap]);
+  const lookupZoneProgress = React.useCallback(
+    (idOrName) => lookupZoneProgressFromIndex(zoneProgressIndex, [idOrName]),
+    [zoneProgressIndex]
+  );
 
   // State for sorted devices
   const [sortedDevices, setSortedDevices] = useState([]);
@@ -516,11 +511,11 @@ const FitnessUsersList = ({ onRequestGuestAssignment }) => {
   }, [onRequestGuestAssignment, getDisplayName]);
 
   const canonicalZones = CONFIG.zone.canonical;
-  const zoneRankMap = CONFIG.zone.rankMap;
   // Live (raw) zone — reflects current HR, bypassing the ZoneProfileStore
   // hysteresis that smooths the committed zone for governance stability.
-  // Used for BOTH sort and card display so the card color, progress bar,
-  // and sort order all track the user's actual HR together.
+  // Used for CARD DISPLAY only; sorting now happens in FitnessContext against
+  // the same rawZoneId, so card color, progress bar, and sort order still
+  // track the user's actual HR together.
   //
   // Fallback chain:
   //   1. participantEntry.rawZoneId   (populated by ParticipantRoster from
@@ -598,43 +593,15 @@ const FitnessUsersList = ({ onRequestGuestAssignment }) => {
   useEffect(() => {
     // Phase 1 SSOT: Use activeHeartRateParticipants directly from context
     // No more inline roster-to-device derivation - that logic now lives in FitnessContext
+    // activeHeartRateParticipants is PRE-SORTED by sortByZoneRank in
+    // FitnessContext (the sorting SSOT). Do not re-sort here — a second
+    // comparator is exactly what desynced order from card display in the
+    // 2026-07-21 bug.
     const hrDevices = [...(activeHeartRateParticipants || [])];
 
     // Phase 2 SSOT: Use domain selectors from context instead of filtering allDevices
     const rpmDevicesCopy = [...rpmDevices];
     const otherDevices = [...equipmentDevices];
-
-    // HR sort (primary = live zone rank, secondary = HR-within-zone %).
-    //
-    // Both keys read LIVE (non-hysteresis-smoothed) state:
-    //   - getRawZoneId() reads participantEntry.rawZoneId — the live zone
-    //     derived directly from current HR, bypassing the committed-zone
-    //     hysteresis that ZoneProfileStore applies for governance stability.
-    //   - lookupZoneProgress(name).progress is computed in types.js against
-    //     the LIVE zone's rangeMin/rangeMax (see calculateZoneProgress at
-    //     types.js:290-331), so it's HR-within-zone %.
-    //
-    // The card display (zoneClass below) also reads getRawZoneId, so color,
-    // progress-bar fill, and sort order all track current HR together.
-    // Hysteresis remains in effect for governance decisions (committed zone)
-    // but no longer leaks into the UI.
-    hrDevices.sort((a, b) => {
-      const aZone = getRawZoneId(a);
-      const bZone = getRawZoneId(b);
-      const aRank = aZone ? zoneRankMap[aZone] : -1;
-      const bRank = bZone ? zoneRankMap[bZone] : -1;
-      if (bRank !== aRank) return bRank - aRank;
-
-      const aName = resolveCanonicalUserName(a.deviceId);
-      const bName = resolveCanonicalUserName(b.deviceId);
-      const aProgress = lookupZoneProgress(aName)?.progress ?? 0;
-      const bProgress = lookupZoneProgress(bName)?.progress ?? 0;
-      if (bProgress !== aProgress) return bProgress - aProgress;
-
-      if (a.isActive && !b.isActive) return -1;
-      if (!a.isActive && b.isActive) return 1;
-      return String(a.deviceId).localeCompare(String(b.deviceId));
-    });
 
     // RPM: Sort by appearance time (stable deviceId order), active devices first
     rpmDevicesCopy.sort((a, b) => {
@@ -665,7 +632,9 @@ const FitnessUsersList = ({ onRequestGuestAssignment }) => {
     }
     combined.push(...otherDevices);
     setSortedDevices(combined);
-  }, [equipmentMap, resolveCanonicalUserName, lookupZoneProgress, activeHeartRateParticipants, rpmDevices, equipmentDevices]);
+    // resolveCanonicalUserName/lookupZoneProgress dropped from deps with the HR
+    // comparator that used them. equipmentMap was already unused here.
+  }, [equipmentMap, activeHeartRateParticipants, rpmDevices, equipmentDevices]);
 
   // Decide vertical vs horizontal layout for user (heart_rate) cards
   useLayoutEffect(() => {
