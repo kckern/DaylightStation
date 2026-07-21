@@ -509,6 +509,18 @@ describe('density macro validation', () => {
 **Step 3: Implement.** Add to `scaleNutribotConfig.mjs`:
 
 ```javascript
+**Two landmines found during Task 2 review — both WILL break every scan if missed:**
+
+1. **`scaleNutribotConfig.mjs:44` currently drops `macros` and `per_100g`.** It builds each level
+   as `{ level, label, emoji, kcal_per_g, hint }` via `.map()`. Validating the new fields is not
+   enough — they must be *carried through* that map, or `computeNutrition` receives a level with
+   no macros and throws on every scan.
+2. **Require finite numbers, not `Number(x) || 0`.** Task 2 established a strict finite-number
+   contract in the domain. If the validator coerces, a stringly-typed `fat_pct: "30"` passes
+   config load and then throws per-scan at runtime — the failure lands at the fridge instead of
+   at startup, which is the whole thing this validator exists to prevent.
+
+```javascript
 const MACRO_KEYS = ['fat_pct', 'carb_pct', 'protein_pct'];
 
 function validateDensityLevel(lvl) {
