@@ -90,6 +90,7 @@ export default function QuizRunner({ bank, onExit }) {
   };
 
   const next = () => {
+    if (abandonedRef.current) return; // prevent advancing after identity change
     setVerdict(null);
     setUnrecorded(false);
     if (index + 1 >= bank.items.length) {

@@ -130,4 +130,25 @@ describe('QuizRunner', () => {
     expect(openSessionMock).toHaveBeenCalledWith({ userId: 'kid1', bankId: 'caps', mode: 'quiz' });
     expect(onExit).not.toHaveBeenCalled(); // must not read this as a mid-quiz identity change
   });
+
+  it('does not advance to the next item or reach summary when identity changes while a verdict is showing', async () => {
+    const onExit = vi.fn();
+    const { rerender } = render(<QuizRunner bank={bank} onExit={onExit} />);
+    // Answer the first item correctly
+    const btn = await screen.findByRole('button', { name: 'Olympia' });
+    fireEvent.click(btn);
+    // Verdict appears
+    await waitFor(() => expect(screen.getByRole('button', { name: /next/i })).toBeInTheDocument());
+    // Identity changes mid-quiz while verdict is showing
+    profile = { status: 'ready', currentUser: null, isGuest: false }; // lapse
+    rerender(<QuizRunner bank={bank} onExit={onExit} />);
+    await waitFor(() => expect(onExit).toHaveBeenCalled());
+    // Click the Next button that's still in the DOM (parent hasn't unmounted yet)
+    const nextBtn = screen.getByRole('button', { name: /next/i });
+    fireEvent.click(nextBtn);
+    // Should NOT advance to the next item
+    expect(screen.queryByText(/2 \/ 2/)).not.toBeInTheDocument();
+    // Should NOT reach the summary
+    expect(screen.queryByTestId('quiz-summary')).not.toBeInTheDocument();
+  });
 });
