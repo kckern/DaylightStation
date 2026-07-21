@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import PianoAvatar from '../../PianoAvatar.jsx';
+import ProfileAvatar from '../../../../../lib/identity/ProfileAvatar.jsx';
 
 /**
  * One course/poster tile. The cover loads lazily and starts blurred
@@ -45,7 +45,7 @@ export default function CourseTile({ item, onSelect, progress = null }) {
           <div className="piano-cover-progress" aria-label="Player progress">
             {users.map((u) => (
               <span key={u.id} className="piano-cover-progress__chip" title={`${u.name}: ${u.completed}/${u.total}`}>
-                <PianoAvatar id={u.id} name={u.name} />
+                <ProfileAvatar id={u.id} name={u.name} />
                 <span className="piano-cover-progress__count">{u.completed}/{u.total}</span>
               </span>
             ))}

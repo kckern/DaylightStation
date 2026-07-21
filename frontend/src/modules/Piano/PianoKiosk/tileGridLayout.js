@@ -4,7 +4,7 @@
 // columns, then widens to spread those rows evenly and centre. A kiosk tile
 // menu sits above the keyboard, so minimising rows (staying above the fold)
 // matters more than a perfectly square grid. Mirrors columnsForCount in
-// whoIsPlayingLayout.js (that one caps at 4; the tile wall caps at 5).
+// lib/identity/profilePickerLayout.js (that one caps at 4; the tile wall caps at 5).
 //
 // rows = ceil(count / max); cols = min(max, ceil(count / rows)). This stays
 // wide and short for ANY count instead of collapsing large counts into narrow,

@@ -120,6 +120,19 @@ no curriculum attached.
   ordering, season/episode structure, watch state, resume, and transcoding.
   Loose materials (PDFs, maps, worksheets) stay filesystem-backed via the
   existing `FileAdapter`.
+- R2.7 **Course collections staged (2026-07-21).** `data/household/config/school.yml`
+  now carries a `courses.collections` block, shaped like `piano.yml`'s
+  `videos.collections` (each entry is a tab; its collections merge into one
+  poster wall):
+  - `Art Lessons` — `plex:685094` (25 items)
+  - `Kids Courses` — `plex:685095` (2 items)
+
+  Both live in the Plex **Lectures** library. Nothing reads this yet — slice 1
+  does not touch `school.yml` at all — it is staged for sub-project 2.
+
+  Piano's `completion_threshold_percent` / `engagement_timeout_seconds` were
+  deliberately **not** copied across, because R2.5 makes school completion
+  comprehension-based rather than watch-percentage-plus-presence.
 
 ### R3 — Quizzes
 
