@@ -206,10 +206,14 @@ const commands = {
   // FKB wake-locks (REST, survive without ADB) with the OS-level globals (ADB)
   // that FKB can't set. Idempotent — safe to re-run.
   async keepawake() {
+    // NOTE: there is NO `setCpuWakelock` setting in Fully. This list used to include it;
+    // FKB answered "✓ Saved and applied setCpuWakelock" (echoing the raw key rather than a
+    // friendly label — the tell that it didn't recognise it) while `listSettings` never
+    // grew the field. It was a no-op reporting success on every kiosk for as long as it
+    // was here. `preventSleepWhileScreenOff` is the real CPU-side control.
     const fkb = {
       keepScreenOn: 'true',
       setWifiWakelock: 'true',
-      setCpuWakelock: 'true',
       preventSleepWhileScreenOff: 'true',
       reloadOnWifiOn: 'true',
     };

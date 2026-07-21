@@ -247,7 +247,7 @@ until then, so there's a one-cycle lag, no reflash.
 
 | Panel `id` | IP | Model | Status |
 |-----------|-----|-------|--------|
-| `kitchen-eink` | 10.0.0.64 | reTerminal E1003 (1872×1404 mono) | Working end-to-end (firmware flashed; fetch + dither + push verified) |
+| `kitchen-eink` | 10.0.0.63 | reTerminal E1003 (1872×1404 mono) | Working end-to-end (firmware flashed; fetch + dither + push verified) |
 | _(second unit)_ | 10.0.0.88 | reTerminal E10xx — model TBD | Hardware present, not yet provisioned |
 
 **Available widgets:**

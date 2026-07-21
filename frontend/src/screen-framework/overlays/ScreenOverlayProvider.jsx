@@ -1,10 +1,109 @@
 import React, { createContext, useContext, useState, useCallback, useEffect, useRef } from 'react';
 import { getActionBus } from '../input/ActionBus.js';
+import TouchChrome from './TouchChrome.jsx';
+import { useHasMenuNavigationContext, useMenuNavigationContext } from '../../context/MenuNavigationContext.jsx';
+import { BROWSE_NAV_TYPES } from '../screenActivity.js';
+import getLogger from '../../lib/logging/Logger.js';
 import './ScreenOverlayProvider.css';
 
 const ScreenOverlayContext = createContext(null);
 
+// Lazy module-level logger: getLogger() must not run at import time.
+let _logger;
+function logger() {
+  if (!_logger) _logger = getLogger().child({ component: 'screen-overlay' });
+  return _logger;
+}
+
 let toastIdCounter = 0;
+
+// Content types on the MenuNavigation stack that are "just browsing" and must
+// never light up the media transport: media:playback {command:'toggle'} is
+// translated into a synthetic Enter keydown by ScreenActionHandler, and on a
+// menu Enter activates the highlighted item. Showing play/pause while
+// browsing would let a mis-tap launch whatever happens to be selected.
+// BROWSE_NAV_TYPES (screenActivity.js) is the single source of truth for
+// this distinction -- do not redeclare it here.
+function isNavStackContent(currentContent) {
+  return !!currentContent && !BROWSE_NAV_TYPES.has(currentContent.type);
+}
+
+// Elements whose own tap must not ALSO be read as a play/pause gesture on the
+// surrounding surface. Covers generic controls, the Player's seek affordances
+// (ProgressBar renders `.progress-bar`; ContentScroller renders `.seek-bar`
+// inside `.controls`), and its click-to-resume overlay (`.loading-overlay`).
+// `data-no-fullscreen` is this codebase's existing opt-out marker for surface
+// tap gestures (see the Fitness player) -- honour it here too so a single
+// annotation works for both. `data-no-tap-toggle` is the explicit opt-out.
+const TAP_EXEMPT_SELECTOR = [
+  'button', 'a', 'input', 'select', 'textarea',
+  '[role="button"]', '[role="link"]', '[role="slider"]',
+  '.progress-bar', '.seek-bar', '.controls', '.loading-overlay',
+  '[data-no-fullscreen]', '[data-no-tap-toggle]',
+].join(',');
+
+// Shell layout for touch screens: a content box that doubles as a play/pause
+// tap target, above the persistent control lane.
+//
+// The surface gesture is armed ONLY in 'media' mode. In 'back' mode the user is
+// browsing, and media:playback {command:'toggle'} is translated by
+// ScreenActionHandler into a synthetic Enter keydown -- which on a menu
+// activates the highlighted item. An always-armed surface would turn any stray
+// tap on menu whitespace into "launch whatever is selected".
+function TouchShellLayout({ mode, children }) {
+  const isMedia = mode === 'media';
+
+  const handleSurfaceTap = useCallback((event) => {
+    // Let real controls own their own taps -- otherwise seeking would also
+    // toggle playback, and the chrome's own buttons would fire twice.
+    if (event.target?.closest?.(TAP_EXEMPT_SELECTOR)) return;
+    logger().debug('touch-surface.toggle', {});
+    getActionBus().emit('media:playback', { command: 'toggle' });
+  }, []);
+
+  return (
+    <div className="screen-overlay--touch-shell">
+      <div
+        className={`screen-overlay--touch-content${isMedia ? ' screen-overlay--touch-content-tappable' : ''}`}
+        onClick={isMedia ? handleSurfaceTap : undefined}
+      >
+        {children}
+      </div>
+      <TouchChrome mode={mode} />
+    </div>
+  );
+}
+
+// Reads currentContent from the nav stack and renders the shell with the
+// derived mode. Only ever mounted when useHasMenuNavigationContext() is
+// true (see TouchShell below), so calling the throwing accessor here is
+// safe -- and it is called unconditionally within this component, satisfying
+// the rules of hooks.
+function NavAwareTouchShell({ overlayChrome, children }) {
+  const { currentContent } = useMenuNavigationContext();
+  const mode = (overlayChrome === 'media' || isNavStackContent(currentContent)) ? 'media' : 'back';
+  return <TouchShellLayout mode={mode}>{children}</TouchShellLayout>;
+}
+
+// Screen-level touch shell. Mode considers BOTH content paths: a showOverlay()
+// fullscreen record (its `chrome` option) and MenuStack's nav-stack push
+// (MenuStack.jsx:126 pushes the Player directly, with no fullscreen record at
+// all -- the case this component exists to cover). Mode is derived ONCE here
+// and drives both the chrome lane and whether the surface gesture is armed, so
+// the two can never disagree.
+// useHasMenuNavigationContext() is always called (never throws), and only
+// gates which child renders -- it does not gate a hook call itself.
+function TouchShell({ overlayChrome, children }) {
+  const hasNavContext = useHasMenuNavigationContext();
+  if (hasNavContext) {
+    return <NavAwareTouchShell overlayChrome={overlayChrome}>{children}</NavAwareTouchShell>;
+  }
+  return (
+    <TouchShellLayout mode={overlayChrome === 'media' ? 'media' : 'back'}>
+      {children}
+    </TouchShellLayout>
+  );
+}
 
 function ToastWrapper({ Component, props, timeout, onDismiss }) {
   const timerRef = useRef(null);
@@ -29,7 +128,7 @@ function ToastWrapper({ Component, props, timeout, onDismiss }) {
   );
 }
 
-export function ScreenOverlayProvider({ children }) {
+export function ScreenOverlayProvider({ children, inputType = null }) {
   const [fullscreen, setFullscreen] = useState(null);
   const [pip, setPip] = useState(null);
   const [toasts, setToasts] = useState([]);
@@ -44,14 +143,14 @@ export function ScreenOverlayProvider({ children }) {
   }, []);
 
   const showOverlay = useCallback((Component, props = {}, options = {}) => {
-    const { mode = 'fullscreen', position = 'top-right', priority, timeout = 3000 } = options;
+    const { mode = 'fullscreen', position = 'top-right', priority, timeout = 3000, chrome = 'back' } = options;
 
     if (mode === 'fullscreen') {
       setFullscreen((current) => {
         if (current && priority !== 'high') {
           return current;
         }
-        return { Component, props, priority };
+        return { Component, props, priority, chrome };
       });
     } else if (mode === 'pip') {
       setPip({ Component, props, position });
@@ -87,8 +186,8 @@ export function ScreenOverlayProvider({ children }) {
     getActionBus().emit('screen:overlay-mounted', { mode: 'fullscreen' });
   }, [fullscreen]);
 
-  return (
-    <ScreenOverlayContext.Provider value={{ showOverlay, dismissOverlay, hasOverlay, registerEscapeInterceptor, unregisterEscapeInterceptor, escapeInterceptorRef }}>
+  const content = (
+    <>
       {children}
       {fullscreen && (
         <div className="screen-overlay--fullscreen">
@@ -101,6 +200,22 @@ export function ScreenOverlayProvider({ children }) {
         >
           <pip.Component {...pip.props} dismiss={() => dismissOverlay('pip')} />
         </div>
+      )}
+    </>
+  );
+
+  return (
+    <ScreenOverlayContext.Provider value={{ showOverlay, dismissOverlay, hasOverlay, registerEscapeInterceptor, unregisterEscapeInterceptor, escapeInterceptorRef }}>
+      {inputType === 'touch' ? (
+        // Touch screens get a reserved control lane wrapping EVERYTHING, not just
+        // a fullscreen overlay: MenuStack pushes the Player straight onto the nav
+        // stack (no showOverlay call at all), so the lane has to sit above the
+        // whole screen to guarantee a touch user always has a way back.
+        <TouchShell overlayChrome={fullscreen?.chrome}>
+          {content}
+        </TouchShell>
+      ) : (
+        content
       )}
       {toasts.length > 0 && (
         <div className="screen-overlay--toast-stack">

@@ -1,0 +1,8 @@
+net.kckern.portalkeys.app-pngs-0 /Users/kckern/Documents/GitHub/DaylightStation/_extensions/portal-keys/app/app/build/generated/res/pngs/debug
+net.kckern.portalkeys.app-resValues-1 /Users/kckern/Documents/GitHub/DaylightStation/_extensions/portal-keys/app/app/build/generated/res/resValues/debug
+net.kckern.portalkeys.app-rs-2 /Users/kckern/Documents/GitHub/DaylightStation/_extensions/portal-keys/app/app/build/generated/res/rs/debug
+net.kckern.portalkeys.app-packageDebugResources-3 /Users/kckern/Documents/GitHub/DaylightStation/_extensions/portal-keys/app/app/build/intermediates/incremental/debug/packageDebugResources/merged.dir
+net.kckern.portalkeys.app-packageDebugResources-4 /Users/kckern/Documents/GitHub/DaylightStation/_extensions/portal-keys/app/app/build/intermediates/incremental/debug/packageDebugResources/stripped.dir
+net.kckern.portalkeys.app-merged_res-5 /Users/kckern/Documents/GitHub/DaylightStation/_extensions/portal-keys/app/app/build/intermediates/merged_res/debug
+net.kckern.portalkeys.app-debug-6 /Users/kckern/Documents/GitHub/DaylightStation/_extensions/portal-keys/app/app/src/debug/res
+net.kckern.portalkeys.app-main-7 /Users/kckern/Documents/GitHub/DaylightStation/_extensions/portal-keys/app/app/src/main/res

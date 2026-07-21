@@ -11,6 +11,37 @@ function logger() {
 }
 
 /**
+ * Percent-encode one piece of an Android intent: URI.
+ *
+ * Everything interpolated into an intent URI must be encoded. An unencoded ';'
+ * ends the field and injects intent structure (parseUri finds each value with
+ * indexOf('=')/indexOf(';')). An unencoded '#' is worse and silent: parseUri
+ * locates the marker with lastIndexOf("#") and then checks
+ * startsWith("#Intent;", i), so a '#' anywhere later in the URI — in a ROM
+ * filename, say — makes that check fail and drops the WHOLE URI into the
+ * legacy getIntentOld path, which has different semantics.
+ * This must be percent-encoding, not form-encoding: AOSP decodes with
+ * Uri.decode, i.e. UriCodec.decode(convertPlus=false), which does NOT map '+'
+ * to a space, so a '+' in a filename has to survive as %2B (URLSearchParams
+ * would corrupt both cases).
+ * (Verified against AOSP Intent.java parseUriInternal and Uri.java decode.)
+ *
+ * Returns null rather than throwing — encodeURIComponent raises URIError on a
+ * lone surrogate, and every export in this module is documented to return a
+ * boolean and never throw.
+ *
+ * @param {string} part
+ * @returns {string|null} encoded part, or null if it cannot be encoded
+ */
+function encodeIntentPart(part) {
+  try {
+    return encodeURIComponent(part);
+  } catch {
+    return null; // lone surrogate → URIError
+  }
+}
+
+/**
  * Check if the FKB JavaScript interface is available.
  * The `fully` global is injected by FKB into all WebView pages.
  */
@@ -71,7 +102,8 @@ export function startApplication(packageName, activityName) {
  * startApplication form (which silently no-ops for a class string).
  *
  * @param {{action?: string, package?: string, activity?: string}} target
- * @returns {boolean} true if a launch was attempted
+ * @returns {boolean} true if a launch was attempted; false if FKB is absent or
+ *   a target field could not be percent-encoded
  */
 export function launchAndroidTarget(target = {}) {
   const { action, package: pkg, activity } = target;
@@ -81,9 +113,23 @@ export function launchAndroidTarget(target = {}) {
   }
   let uri;
   if (action) {
-    uri = `intent:#Intent;action=${action};end`;
+    const encodedAction = encodeIntentPart(action);
+    if (encodedAction === null) {
+      logger().warn('fkb.launchTarget.unencodable', { action });
+      return false;
+    }
+    uri = `intent:#Intent;action=${encodedAction};end`;
   } else if (pkg && activity) {
-    uri = `intent:#Intent;component=${pkg}/${activity};end`;
+    // Each half is encoded; the '/' between them stays literal. AOSP decodes
+    // the component value before ComponentName.unflattenFromString, so an
+    // encoded half still unflattens correctly.
+    const encodedPkg = encodeIntentPart(pkg);
+    const encodedActivity = encodeIntentPart(activity);
+    if (encodedPkg === null || encodedActivity === null) {
+      logger().warn('fkb.launchTarget.unencodable', { pkg, activity });
+      return false;
+    }
+    uri = `intent:#Intent;component=${encodedPkg}/${encodedActivity};end`;
   } else if (pkg) {
     logger().info('fkb.launchTarget.app', { pkg });
     fully.startApplication(pkg);
@@ -97,37 +143,6 @@ export function launchAndroidTarget(target = {}) {
   return true;
 }
 
-// Intent URI fields are `;`-delimited and `=`-separated, so an extra KEY carrying
-// either character would terminate its field and inject intent structure. Keys
-// are ours (ROM/LIBRETRO/CONFIGFILE), never user input, so reject rather than
-// escape — a key that needs escaping is a bug, not a value to sanitize.
-const INTENT_KEY_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*$/;
-
-/**
- * Build an Android intent URI with string extras.
- *
- * Values are URL-encoded because `Intent.parseUri` runs `Uri.decode` on them:
- * every ROM path has spaces and most have brackets — e.g.
- * `Super Mario Land (JUE) (V1.1) [!].gb` — and a raw `;` would end the field.
- *
- * Exported for testing; callers should use `launchIntent`.
- *
- * @param {string} packageName
- * @param {string} activityName
- * @param {Object} extras - string-valued extras
- * @returns {string} intent URI
- */
-export function buildIntentUri(packageName, activityName, extras = {}) {
-  let uri = `intent:#Intent;component=${packageName}/${activityName};`;
-  for (const [key, value] of Object.entries(extras)) {
-    if (!INTENT_KEY_PATTERN.test(key)) {
-      throw new Error(`Invalid intent extra key: ${key}`);
-    }
-    uri += `S.${key}=${encodeURIComponent(String(value))};`;
-  }
-  return uri + 'end';
-}
-
 /**
  * Launch an Android intent with extras via FKB's startIntent API.
  * Uses Android intent URI format: intent:#Intent;component=pkg/act;S.key=val;end
@@ -138,8 +153,55 @@ export function buildIntentUri(packageName, activityName, extras = {}) {
  * @param {string} packageName - Android package name
  * @param {string} activityName - Full activity class name
  * @param {Object} extras - Key-value pairs for intent string extras
- * @returns {boolean} true if FKB was available and intent was sent
+ * @returns {boolean} true if FKB was available and intent was sent; false if
+ *   FKB is absent or the component/an extra could not be percent-encoded
  */
+// Intent URI fields are `;`-delimited and `=`-separated, so an extra KEY carrying
+// either character would terminate its field and inject intent structure. Keys
+// are ours (ROM/LIBRETRO/CONFIGFILE), never user input, so reject rather than
+// escape — a key that needs escaping is a bug, not a value to sanitize. VALUES
+// are the opposite: they carry arbitrary ROM filenames, so they get encoded.
+const INTENT_KEY_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*$/;
+
+/**
+ * Build an Android intent URI with string extras.
+ *
+ * Throws rather than returning a sentinel so every failure mode — an
+ * unencodable component, a structural key, a lone-surrogate value — funnels
+ * through one `catch` in `launchIntent`. Exported for testing; callers should
+ * use `launchIntent`.
+ *
+ * @param {string} packageName
+ * @param {string} activityName
+ * @param {Object} extras - string-valued extras
+ * @returns {string} intent URI
+ * @throws {Error} on an unencodable component/value or a structural extra key
+ */
+export function buildIntentUri(packageName, activityName, extras = {}) {
+  // The component's two halves are encoded individually; the '/' between them
+  // stays literal, since AOSP decodes the value before unflattening it. The
+  // target and the params arrive from the same untrusted JSON response, so
+  // neither half gets to be the trusted one.
+  const encodedPkg = encodeIntentPart(packageName);
+  const encodedActivity = encodeIntentPart(activityName);
+  if (encodedPkg === null || encodedActivity === null) {
+    throw new Error(`Unencodable intent component: ${packageName}/${activityName}`);
+  }
+
+  let uri = `intent:#Intent;component=${encodedPkg}/${encodedActivity};`;
+  for (const [key, value] of Object.entries(extras)) {
+    if (!INTENT_KEY_PATTERN.test(key)) {
+      throw new Error(`Invalid intent extra key: ${key}`);
+    }
+    const encodedValue = encodeIntentPart(value);
+    if (encodedValue === null) {
+      throw new Error(`Unencodable intent extra value for key: ${key}`);
+    }
+    uri += `S.${key}=${encodedValue};`;
+  }
+  return uri + 'end';
+}
+
 export function launchIntent(packageName, activityName, extras = {}) {
   if (!isFKBAvailable() || typeof fully.startIntent !== 'function') {
     logger().warn('fkb.intent.unavailable', { packageName });
@@ -150,11 +212,11 @@ export function launchIntent(packageName, activityName, extras = {}) {
   try {
     uri = buildIntentUri(packageName, activityName, extras);
   } catch (err) {
-    logger().error('fkb.intent.invalid', { packageName, error: err.message });
+    logger().warn('fkb.intent.invalid', { packageName, activityName, error: err.message });
     return false;
   }
 
-  logger().info('fkb.intent.attempt', { packageName, activityName, extraKeys: Object.keys(extras) });
+  logger().info('fkb.intent.attempt', { packageName, activityName, extraKeys: Object.keys(extras), uri });
   fully.startIntent(uri);
   return true;
 }
