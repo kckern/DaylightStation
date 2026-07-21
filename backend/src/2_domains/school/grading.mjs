@@ -26,9 +26,19 @@ export function gradeAnswer(item, given) {
     const accepted = [item.answer, ...(item.accept || [])].map(norm);
     return { correct: accepted.includes(norm(given)), expected: item.answer };
   }
-  // matching: all-or-nothing (spec §7 — partial credit has no agreed weighting)
-  const want = new Map(item.pairs.map((p) => [p.left, p.right]));
-  const correct = given.length === item.pairs.length
-    && given.every((p) => want.get(p.left) === p.right);
-  return { correct, expected: item.pairs };
+  if (item.type === 'matching') {
+    // all-or-nothing (spec §7 — partial credit has no agreed weighting).
+    // `given` is untrusted (givenShapeError only guarantees element shape, not
+    // uniqueness/coverage of `left`), so this must be a genuine bijection check
+    // against item.pairs, not a length + per-pair lookup — a client who knows
+    // only one correct pair could otherwise repeat it N times to fake a full
+    // match (right length, every submitted pair individually correct).
+    const want = new Map(item.pairs.map((p) => [p.left, p.right]));
+    const seenLefts = new Set(given.map((p) => p.left));
+    const correct = given.length === item.pairs.length
+      && seenLefts.size === item.pairs.length
+      && given.every((p) => want.has(p.left) && want.get(p.left) === p.right);
+    return { correct, expected: item.pairs };
+  }
+  throw new Error(`gradeAnswer: unrecognised item.type "${item.type}"`);
 }

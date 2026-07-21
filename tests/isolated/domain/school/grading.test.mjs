@@ -28,12 +28,34 @@ describe('gradeAnswer', () => {
     expect(gradeAnswer(match, [{ left: 'OR', right: 'Salem' }, { left: 'WA', right: 'Olympia' }]).correct).toBe(true);
   });
   it('matching: one wrong pair fails the whole item (all-or-nothing)', () => {
-    const r = gradeAnswer(match, [{ left: 'WA', right: 'Salem' }, { left: 'OR', right: 'Olympia' }]);
+    const three = {
+      id: 'm3',
+      type: 'matching',
+      prompt: 'M3',
+      pairs: [{ left: 'WA', right: 'Olympia' }, { left: 'OR', right: 'Salem' }, { left: 'ID', right: 'Boise' }],
+    };
+    // Two pairs genuinely correct, one wrong — must not get credit for the two right ones.
+    const r = gradeAnswer(three, [
+      { left: 'WA', right: 'Olympia' },
+      { left: 'OR', right: 'Salem' },
+      { left: 'ID', right: 'Salem' }, // wrong
+    ]);
     expect(r.correct).toBe(false);
-    expect(r.expected).toEqual(match.pairs);
+    expect(r.expected).toEqual(three.pairs);
   });
   it('matching: missing a pair fails', () => {
     expect(gradeAnswer(match, [{ left: 'WA', right: 'Olympia' }]).correct).toBe(false);
+  });
+  it('matching: repeating one correct pair N times does not fake a full match', () => {
+    // Exploit: client knows only one correct pair, submits it match.pairs.length times.
+    // Length matches item.pairs.length and every submitted pair is individually correct,
+    // but lefts are not unique and don't cover the item's left set.
+    const r = gradeAnswer(match, [{ left: 'OR', right: 'Salem' }, { left: 'OR', right: 'Salem' }]);
+    expect(r.correct).toBe(false);
+  });
+  it('matching: lefts not matching the item\'s left set fails, even with the right pair count', () => {
+    const r = gradeAnswer(match, [{ left: 'OR', right: 'Salem' }, { left: 'CA', right: 'Olympia' }]);
+    expect(r.correct).toBe(false);
   });
 });
 
