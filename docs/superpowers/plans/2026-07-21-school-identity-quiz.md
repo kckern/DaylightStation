@@ -88,7 +88,7 @@ backend/src/app.mjs                       (import + construct + mount school rou
 
 **Interfaces:**
 - Produces (later tasks rely on these exact names):
-  - `lib/identity/ProfilePicker.jsx` — default export `ProfilePicker({ open, users, activeId, onPick, onDismiss, onScreenOff, timeoutMs = 30000 })` (props unchanged from `WhoIsPlayingPrompt`)
+  - `lib/identity/ProfilePicker.jsx` — default export `ProfilePicker({ open, users, activeId, onPick, onDismiss, onScreenOff, timeoutMs = 30000, title = "Who's playing?" })` (props unchanged from `WhoIsPlayingPrompt` apart from the added `title`)
   - `lib/identity/ProfileAvatar.jsx` — default export `ProfileAvatar({ id, name })`
   - `lib/identity/idleGap.js` — `firesOnGap(lastMs, nowMs, thresholdMs)`
   - `lib/identity/useIdleGap.js` — `useIdleGap(signalA, signalB, timeoutMinutes, onIdleGap)` (signature unchanged from `useWhoIsPlaying`; piano passes `activeNotes, historyLen`; school passes `undefined, 0`)
@@ -120,6 +120,14 @@ In `frontend/src/lib/identity/ProfilePicker.jsx`:
 - `import useArmedAction from './useArmedAction.js';` — unchanged (sibling)
 - `export default function WhoIsPlayingPrompt(` → `export default function ProfilePicker(`
 - Add as the last import: `import './identity.scss';`
+- **Add a `title` prop so the copy is not piano-specific.** The component
+  hardcodes "Who's playing?" in two places; on a school screen that is the
+  wrong question. Change the signature to
+  `({ open, users = [], activeId, onPick, onDismiss, onScreenOff, timeoutMs = 30000, title = "Who's playing?" })`
+  and use `{title}` for BOTH the dialog's `aria-label` and the `<h2>` text.
+  The default keeps Piano byte-identical in behaviour, so its moved tests must
+  still pass unchanged — that is the point of defaulting rather than
+  requiring the prop.
 
 In `frontend/src/lib/identity/ProfileAvatar.jsx`:
 - `export default function PianoAvatar(` → `export default function ProfileAvatar(`
@@ -158,8 +166,8 @@ Do **not** touch the nested `.piano-avatar` rule inside the chip styles (~line 1
 - `frontend/src/Apps/PianoApp.jsx:19` → `import { useArmedAction } from '../lib/identity/useArmedAction.js';`
 - `frontend/src/Apps/PianoApp.jsx:57` → `import ProfilePicker from '../lib/identity/ProfilePicker.jsx';` and rename the `<WhoIsPlayingPrompt` JSX usage (~line 292) to `<ProfilePicker`.
 - `PianoUserChip.jsx:3-4` → `import ProfileAvatar from '../../../lib/identity/ProfileAvatar.jsx';` / `import ProfilePicker from '../../../lib/identity/ProfilePicker.jsx';` — rename JSX usages (~lines 56, 61).
-- `OperatorDrawer.jsx` → `import { useArmedAction } from '../../../lib/identity/useArmedAction.js';` (adjust to its actual current specifier form).
-- `modes/Videos/CourseTile.jsx` → `import ProfileAvatar from '../../../../../lib/identity/ProfileAvatar.jsx';` — rename JSX usage. (Verify relative depth with `ls`; the file sits 5 levels below `src/`.)
+- `OperatorDrawer.jsx:7` — currently `import { useArmedAction } from './useArmedAction.js';` → `from '../../../lib/identity/useArmedAction.js';`
+- `modes/Videos/CourseTile.jsx:2` — currently `import PianoAvatar from '../../PianoAvatar.jsx';` → `import ProfileAvatar from '../../../../../lib/identity/ProfileAvatar.jsx';` — rename the JSX usage at line 48.
 - Search for stragglers: `grep -rn "WhoIsPlayingPrompt\|PianoAvatar\|useWhoIsPlaying\|whoIsPlayingLayout\|from './whoIsPlaying" frontend/src --include=*.jsx --include=*.js` must return **zero** hits outside `lib/identity/` (comments in `tileGridLayout.js` may mention the old name in prose; update the comment path, no code change).
 
 - [ ] **Step 6: Run the moved tests + every Piano test**
@@ -2190,7 +2198,7 @@ describe('SchoolApp', () => {
 });
 ```
 
-Note: the dismiss control in `ProfilePicker` is the moved piano markup — before writing the test assertion, read `frontend/src/lib/identity/ProfilePicker.jsx` and target its actual close-affordance selector (the ✕ button's aria-label or class); adjust `findByLabelText(/close/i)` to match reality, keeping the test's *behaviour* (dismiss → guest) identical.
+Note: `findByLabelText(/close/i)` is correct and verified — the moved picker's dismiss control is `<button className="piano-userpicker__close" aria-label="Close">✕</button>`. Use it as written.
 
 - [ ] **Step 2: Run to verify it fails**
 
@@ -2313,7 +2321,7 @@ function SchoolShell({ clear }) {
         {active?.mode === 'quiz' && <QuizRunner bank={active.bank} onExit={() => setActive(null)} />}
         {active?.mode === 'flashcard' && <FlashcardRunner bank={active.bank} onExit={() => setActive(null)} />}
       </main>
-      <ProfilePicker open={pickerOpen} users={roster} activeId={currentUser?.id} onPick={onPick} onDismiss={onDismiss} timeoutMs={30000} />
+      <ProfilePicker open={pickerOpen} users={roster} activeId={currentUser?.id} onPick={onPick} onDismiss={onDismiss} timeoutMs={30000} title="Who's here?" />
     </div>
   );
 }
