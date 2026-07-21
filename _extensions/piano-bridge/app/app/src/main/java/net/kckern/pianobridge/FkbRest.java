@@ -10,6 +10,10 @@ import java.net.HttpURLConnection;
 import java.net.URL;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
+import java.util.Collections;
+import java.util.Iterator;
+import java.util.LinkedHashMap;
+import java.util.Map;
 
 /**
  * FkbRest — thin client for the co-resident Fully Kiosk Browser REST API on
@@ -38,8 +42,30 @@ public final class FkbRest {
     }
 
     private static String url(DeviceConfig cfg, String cmd, boolean json) {
-        return base(cfg) + "?cmd=" + cmd + (json ? "&type=json" : "")
-                + "&password=" + enc(cfg.fkbPassword());
+        Map<String, String> p = null;
+        if (json) { p = new LinkedHashMap<>(); p.put("type", "json"); }
+        return buildUrl(cfg.fkbHost(), cfg.fkbPort(), cfg.fkbPassword(), cmd, p);
+    }
+
+    /**
+     * Pure URL construction — extracted so it is assertable without a device.
+     *
+     * Shape: {@code http://host:port/?cmd=<cmd>[&k=v…]&password=<pw>}. EVERY component
+     * is percent-encoded, not just the password: a param value carrying {@code &} or
+     * {@code =} (a start URL, say) would otherwise split the query string and hand FKB
+     * a mangled command. Params are emitted in the map's iteration order, so pass a
+     * {@link LinkedHashMap} when the exact output matters.
+     */
+    static String buildUrl(String host, int port, String password, String cmd, Map<String, String> params) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("http://").append(host).append(':').append(port).append("/?cmd=").append(enc(cmd));
+        if (params != null) {
+            for (Map.Entry<String, String> e : params.entrySet()) {
+                sb.append('&').append(enc(e.getKey())).append('=').append(enc(e.getValue()));
+            }
+        }
+        sb.append("&password=").append(enc(password == null ? "" : password));
+        return sb.toString();
     }
 
     /**
@@ -48,9 +74,19 @@ public final class FkbRest {
      * actions where we only care that FKB accepted the command.
      */
     public static int command(DeviceConfig cfg, String cmd) {
+        return command(cfg, cmd, null);
+    }
+
+    /**
+     * Fire an FKB command WITH query params — e.g.
+     * {@code command(cfg, "setBooleanSetting", {key:"kioskMode", value:"true"})}.
+     * Returns the HTTP status code, or -1 on transport failure.
+     */
+    public static int command(DeviceConfig cfg, String cmd, Map<String, String> params) {
         HttpURLConnection c = null;
         try {
-            c = (HttpURLConnection) new URL(url(cfg, cmd, false)).openConnection();
+            c = (HttpURLConnection) new URL(
+                    buildUrl(cfg.fkbHost(), cfg.fkbPort(), cfg.fkbPassword(), cmd, params)).openConnection();
             c.setConnectTimeout(3000);
             c.setReadTimeout(4000);
             c.setRequestMethod("GET");
@@ -123,6 +159,62 @@ public final class FkbRest {
             if (c != null) c.disconnect();
         }
         return o;
+    }
+
+    /**
+     * FKB's full live settings map (`cmd=listSettings&type=json`), values normalized
+     * to strings — FKB emits booleans and numbers unquoted, so {@code kioskMode} comes
+     * back as {@code "true"} and {@code reloadPageFailure} as {@code "30"}.
+     *
+     * <p><b>Empty means UNKNOWN, never "everything is wrong."</b> Unreachable FKB, a
+     * wrong password (FKB serves an HTML login page), a truncated body — all return an
+     * empty map. {@link KioskSettings#detect} treats empty as "no drift", so a network
+     * blip can never trigger a blind rewrite of every setting.
+     */
+    public static Map<String, String> listSettings(DeviceConfig cfg) {
+        HttpURLConnection c = null;
+        try {
+            c = (HttpURLConnection) new URL(url(cfg, "listSettings", true)).openConnection();
+            c.setConnectTimeout(2500);
+            c.setReadTimeout(5000);
+            c.setRequestMethod("GET");
+            int code = c.getResponseCode();
+            if (code < 200 || code >= 400) {
+                Log.w(TAG, "listSettings -> HTTP " + code);
+                return Collections.emptyMap();
+            }
+            return parseSettings(drain(c.getInputStream()));
+        } catch (Exception e) {
+            Log.w(TAG, "listSettings failed: " + e.getMessage());
+            return Collections.emptyMap();
+        } finally {
+            if (c != null) c.disconnect();
+        }
+    }
+
+    /**
+     * Parse a flat FKB settings JSON object into a string map. Pure and total: any
+     * malformed / non-JSON / null input yields an EMPTY map (see listSettings).
+     * Nested values (FKB has none at time of writing) are skipped rather than
+     * stringified into something a comparison could misread.
+     */
+    static Map<String, String> parseSettings(String body) {
+        if (body == null || body.trim().isEmpty()) return Collections.emptyMap();
+        LinkedHashMap<String, String> out = new LinkedHashMap<>();
+        try {
+            JSONObject o = new JSONObject(body);
+            for (Iterator<String> it = o.keys(); it.hasNext(); ) {
+                String k = it.next();
+                Object v = o.opt(k);
+                if (v == null || v == JSONObject.NULL) continue;
+                if (v instanceof org.json.JSONObject || v instanceof org.json.JSONArray) continue;
+                out.put(k, String.valueOf(v));
+            }
+        } catch (Exception e) {
+            // Non-JSON body (login page / garbage) — unknown, not drifted.
+            return Collections.emptyMap();
+        }
+        return out;
     }
 
     private static long asMb(long bytes) { return bytes < 0 ? -1 : bytes / (1024 * 1024); }

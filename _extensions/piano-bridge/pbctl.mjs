@@ -20,6 +20,10 @@
 //   node pbctl.mjs update <apk-url>  # ADB-free self-update (one-tap confirm on device)
 //   node pbctl.mjs quiet <s> <e>     # daily MIDI-wake quiet window "HH:mm" (or: quiet off)
 //   node pbctl.mjs suppress <ms>     # mute MIDI-wake for <ms> from now (0 = clear)
+//   node pbctl.mjs kiosk-settings    # FKB kiosk-settings drift guard: verdict + repairs
+//   node pbctl.mjs kiosk-check       # force one drift pass NOW (bypasses install hold)
+//   node pbctl.mjs kiosk-disarm [m]  # pause drift repair while fiddling (default 60 min)
+//   node pbctl.mjs kiosk-rearm       # resume drift repair now
 
 const HOST = process.env.PB_HOST || '10.0.0.245:8770';
 const BASE = `http://${HOST}`;
@@ -199,9 +203,63 @@ const cmds = {
     console.log(`── kiosk: FKB app (is Fully itself alive?) ─────`);
     if (fkb.reachable) console.log(`  reachable  screenOn=${fkb.screenOn}  url=${fkb.currentPageUrl}  ram ${fkb.ramFreeMb}/${fkb.ramTotalMb} MB${fkb.authOk === false ? '  [AUTH FAIL — set fkbPassword]' : ''}`);
     else console.log(`  UNREACHABLE — FKB itself may be wedged (${fkb.error || '?'})`);
+    const ks = k.settings;
+    if (ks) {
+      console.log(`── kiosk: settings (is FKB still CONFIGURED as a kiosk?) ─────`);
+      console.log(`  verdict=${ks.verdict ?? '(no tick yet)'}  drift=${ks.lastDriftCount}  password=${ks.hasPassword ? 'set' : 'MISSING'}`);
+      if (ks.disarmed) console.log(`  ⚠ DISARMED until ${new Date(ks.disarmUntilMs).toISOString()} — drift NOT repaired`);
+      if (ks.installHoldActive) console.log(`  ⏸ install hold active — guard standing down`);
+      if (ks.lastRepair) console.log(`  last repair: ${ks.lastRepair}`);
+    }
     if (cr.prevDeathUnclean) console.log(`── ⚠ previous bridge death was UNCLEAN (crash/kill/reboot) — see \`pbctl crashlog\``);
   },
   async kiosk() { pretty(await req('GET', '/kiosk')); },
+
+  // --- FKB kiosk-settings drift guard ---------------------------------------
+  // Answers a different question from `kiosk`: not "is the WebView rendering?"
+  // but "is FKB still CONFIGURED as a kiosk?". The tablet was found on 2026-07-21
+  // with kioskMode=false — presenting frames perfectly, just not locked.
+  async ['kiosk-settings']() {
+    const s = await req('GET', '/kiosk/settings');
+    if (typeof s === 'string' || !s.ok) { pretty(s); return; }
+    const checked = s.lastCheckAgoMs == null ? 'never' : `${Math.round(s.lastCheckAgoMs / 1000)}s ago`;
+    console.log(`verdict      : ${s.verdict ?? '(no tick yet)'}   checked ${checked}`);
+    console.log(`enabled      : ${s.enabled}   every ${fmtDur(s.intervalMs)}   password: ${s.hasPassword ? 'set' : 'MISSING — guard is INERT'}`);
+    console.log(`drift now    : ${s.lastDriftCount}`);
+    if (s.lastRepair) console.log(`last repair  : ${s.lastRepair}`);
+    const repairs = Object.entries(s.repairsSinceBoot || {});
+    console.log(`repairs      : ${repairs.length ? repairs.map(([k, n]) => `${k}×${n}`).join(', ') : 'none since boot'}`);
+    if (s.disarmed) console.log(`⚠ DISARMED until ${new Date(s.disarmUntilMs).toISOString()} — drift will NOT be repaired`);
+    if (s.installHoldActive) {
+      const ago = Math.round((Date.now() - s.lastUpdateRequestAtMs) / 1000);
+      console.log(`⏸ INSTALL HOLD — an /update landed ${ago}s ago; guard stands down for ${fmtDur(s.installHoldMs)}`);
+    }
+    console.log('--- desired ---');
+    for (const [k, v] of Object.entries(s.desired || {})) console.log(`  ${k.padEnd(28)} = ${v}`);
+  },
+  async ['kiosk-check']() {
+    // Force one drift pass now, bypassing the install hold. The deploy-time
+    // acceptance test: break kioskMode by hand, run this, watch it get repaired.
+    const r = await req('POST', '/kiosk/settings/check');
+    if (typeof r === 'string' || !r.ok) { pretty(r); return; }
+    console.log(`verdict  : ${r.verdict}`);
+    console.log(`drifted  : ${r.drifted?.length ? r.drifted.join(', ') : 'none'}`);
+    console.log(`repaired : ${r.repaired?.length ? r.repaired.join(', ') : 'none'}`);
+    if (r.lastRepair && r.repaired?.length) console.log(`detail   : ${r.lastRepair}`);
+    if (r.verdict === 'DISARMED') console.log('(guard is disarmed — `pbctl kiosk-rearm` first)');
+    if (r.verdict === 'DISABLED') console.log('(guard is off — set watchdogKioskSettingsEnabled true)');
+    if (r.verdict === 'UNREACHABLE') console.log('(FKB did not answer — check fkbPassword / is FKB running?)');
+  },
+  async ['kiosk-disarm']([minutes]) {
+    const m = minutes || '60';
+    const r = await req('POST', `/kiosk/settings/disarm?minutes=${encodeURIComponent(m)}`);
+    if (r.ok) console.log(`✓ drift guard disarmed for ${r.minutes} min (until ${new Date(r.disarmUntilMs).toISOString()})`);
+    else pretty(r);
+  },
+  async ['kiosk-rearm']() {
+    const r = await req('POST', '/kiosk/settings/rearm');
+    console.log(r.ok ? '✓ drift guard re-armed' : JSON.stringify(r));
+  },
   async crashlog() {
     const r = await req('GET', '/crashlog');
     if (typeof r === 'string' || !r.ok) { pretty(r); return; }
@@ -233,6 +291,7 @@ if (!name || !cmds[name]) {
   console.log('  audio: speaker | bootstrap | override [ms]   (A2DP+guard status / spend clamp window / time-boxed synth-gate reopen)');
   console.log('  wake:  update <apk-url> | quiet <HH:mm> <HH:mm>|off | suppress <ms>');
   console.log('  health: diag | kiosk | crashlog        (full snapshot / WebView watchdog / durable death log)');
+  console.log('  kiosk:  kiosk-settings | kiosk-check | kiosk-disarm [min] | kiosk-rearm   (drift guard: show / force pass / pause / resume)');
   console.log('  diag:  logcat [lines] [tag] | exec <cmd…> | cpu [ms] | info | props [key]');
   console.log('  sys:   getsetting <ns> <k> | setsetting <ns> <k> <v>   (ns=secure|global|system)');
   process.exit(name ? 1 : 0);

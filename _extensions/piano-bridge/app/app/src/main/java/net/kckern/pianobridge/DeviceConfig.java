@@ -219,6 +219,26 @@ public class DeviceConfig {
     public long watchdogRebootMinGapMs() { return longOr("watchdogRebootMinGapMs", 3600000L); }
     public int watchdogLadderCooldownMs() { return intOr("watchdogLadderCooldownMs", 60000); }
 
+    // --- KioskSettingsGuard (FKB kiosk-settings drift repair). A SEPARATE, slow
+    //     concern from the page-health watchdog above: it asks "is FKB still
+    //     configured as a kiosk?", not "is the WebView rendering?". 60s because drift
+    //     is not urgent — the tablet sat with kioskMode=false for days before anyone
+    //     noticed, so minutes of latency cost nothing.
+    //
+    //     installHold is the deploy-safety valve. Installing a new bridge APK REQUIRES
+    //     kiosk mode OFF (FKB's kiosk mode auto-dismisses Android's install dialog →
+    //     INSTALL_FAILED_ABORTED; see README deploy step 4), so the guard stands down
+    //     for 15 min after a POST /update rather than fighting the deploy that ships it.
+    //
+    //     kioskSettingsDisarmUntilEpochMs is the hands-on escape hatch, set by
+    //     POST /kiosk/settings/disarm and PERSISTED here on purpose: someone fiddling
+    //     with the tablet will restart the bridge, and a disarm that evaporated on
+    //     restart would be worse than none.
+    public boolean watchdogKioskSettingsEnabled() { return boolOr("watchdogKioskSettingsEnabled", true); }
+    public long watchdogKioskSettingsIntervalMs() { return longOr("watchdogKioskSettingsIntervalMs", 60000L); }
+    public long watchdogKioskSettingsInstallHoldMs() { return longOr("watchdogKioskSettingsInstallHoldMs", 900000L); }
+    public long kioskSettingsDisarmUntilMs() { return longOr("kioskSettingsDisarmUntilEpochMs", 0L); }
+
     /** Raw key/value snapshot for the /config endpoint. */
     public Map<String, String> asMap() { return new LinkedHashMap<>(values); }
 
