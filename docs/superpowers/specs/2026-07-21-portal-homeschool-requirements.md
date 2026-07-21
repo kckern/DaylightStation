@@ -62,6 +62,31 @@ no curriculum attached.
   A child taps their face to claim the device; identity stays visible in the
   chrome and lapses after an idle gap, re-prompting on next use. No PIN, no
   authentication.
+- R1.8 **DECIDED (2026-07-21):** The reusable identity elements are
+  **extracted from Piano into a system-wide home**, and Piano is refactored to
+  consume them from there.
+
+  **Governing principle: a module is not an export surface for other modules.**
+  School must not import from `modules/Piano/`. Shared code moves to a shared
+  location and every consumer — including Piano — imports from there. Without
+  this, school would depend on Piano, a worse coupling than duplication.
+
+  In scope for extraction: the presentational picker (`WhoIsPlayingPrompt.jsx`),
+  pagination math (`whoIsPlayingLayout.js`), and the idle-gap predicate
+  (`whoIsPlaying.js` / `useWhoIsPlaying.js`). Already shared and needs no move:
+  `frontend/src/lib/userDisplayName.js`.
+
+  Out of scope, stays piano-private: the `piano:user:${pianoId}` storage key,
+  the `/api/v1/piano/users` roster endpoint, and the screensaver coupling that
+  drops to guest on screen-off.
+
+  **Risk note.** This edits a kiosk with a history of subtle breakage. It is
+  tolerable because the change is mechanical (import paths, not logic) and the
+  extracted pieces carry existing test coverage — `WhoIsPlayingPrompt.test.jsx`,
+  `whoIsPlayingLayout.test.js`, `whoIsPlaying.test.js` — so the extraction is
+  verifiable. Those tests must pass unchanged, aside from import paths, before
+  the extraction is considered done. Proposed home: `frontend/src/lib/identity/`,
+  consistent with `userDisplayName.js` already living under `lib/`.
 - R1.7 **DECIDED (2026-07-21):** A **guest mode** exists but is severely
   gated. A guest may use generic, non-curricular things — play music, take a
   generic quiz, drill generic flashcards. A guest is never assigned curriculum
@@ -135,7 +160,13 @@ no curriculum attached.
 
 - R4.1 Standard flashcard drilling, same content domain as quizzes.
 - R4.2 Shares a question/item bank with quizzes where sensible.
-- R4.3 Whether flashcards use spaced repetition is **OPEN**. See OPEN-6.
+- R4.3 **DECIDED (2026-07-21):** First slice is a **simple drill with missed
+  items resurfacing within the session**. No persistent scheduling state, no
+  due dates.
+
+  Deferring this is low-risk precisely because of R3.9: every attempt is
+  logged, so Leitner buckets or full spaced repetition can be computed from
+  history later without having lost the data needed to do it.
 - R4.4 **Drag interactions are acceptable on the Portal.** The project's
   no-drag touch preference originates with the **fitness** widgets, where the
   display is wall-mounted and used at arm's length mid-workout. The Portal is a
@@ -315,16 +346,15 @@ could run at any point. Everything else funnels through identity.
 - **OPEN-3 — Bank sharing with the game show.** Sharing a *format* is ruled
   out. Whether to support an export/adapt step from a school bank into a
   Jeopardy set is undecided and low priority.
-- **OPEN-4 — Identity promotion vs. fresh build.** Piano's picker components
-  are reusable by import, but promoting them into the framework means editing
-  working Piano code on a device that has historically been fragile. Building
-  the school identity container fresh — reusing only the presentational pieces
-  — costs some duplication but carries no regression risk to Piano.
+- ~~**OPEN-4 — Identity promotion vs. fresh build.**~~ **RESOLVED 2026-07-21.**
+  Neither: extract to a shared home. See R1.8.
 - ~~**OPEN-5 — Identity strength.**~~ **RESOLVED 2026-07-21.** Soft pick with
   idle lapse; see R1.6. Justified by R6.5 — mis-credit is repairable, so
   attribution need not be authenticated at the point of capture. Revisit only
   if reassignment proves to be a frequent chore rather than a rare correction.
-- **OPEN-6 — Flashcard scheduling.** Spaced repetition or simple drilling.
+- ~~**OPEN-6 — Flashcard scheduling.**~~ **RESOLVED 2026-07-21.** Simple drill
+  with in-session resurfacing; see R4.3. Revisit once there is real usage data
+  in the attempt log to compute schedules from.
 - **OPEN-7 — Parent view location.** Admin module vs. a Portal surface vs.
   both. Note this surface now also owns reassignment (R6.5), not just review
   and sign-off.
