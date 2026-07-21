@@ -6,6 +6,7 @@
  */
 import { validateQuestionBank, gradeAnswer, givenShapeError, createAttempt, GuestForbiddenError, SessionGoneError } from '#domains/school/index.mjs';
 import { ValidationError, EntityNotFoundError } from '#domains/core/errors/index.mjs';
+import { PersistenceError } from '#system/utils/errors/index.mjs';
 import { shortId } from '#domains/core/utils/id.mjs';
 
 const SESSION_TTL_MS = 2 * 60 * 60 * 1000;
@@ -50,11 +51,28 @@ export class SchoolService {
 
   getBank(bankId) {
     const bank = this.#loadBank(bankId);
-    if (!bank) throw new EntityNotFoundError(`unknown bank: ${bankId}`);
+    if (!bank) throw new EntityNotFoundError('bank', bankId);
     return bank;
   }
 
+  #isExpired(session) {
+    return this.#now() - session.lastActiveAt > SESSION_TTL_MS;
+  }
+
+  // Sweeps every stale entry out of #sessions. Driven by normal traffic (called
+  // from openSession, which runs as a public HTTP endpoint) rather than a timer,
+  // so an opened-then-abandoned session (reload, dropped connection, a kid who
+  // never comes back) doesn't sit in memory forever waiting for someone to look
+  // it up by id. Uses the same #isExpired/#now/SESSION_TTL_MS as #session() —
+  // one notion of expiry, not two.
+  #sweepExpired() {
+    for (const [id, s] of this.#sessions) {
+      if (this.#isExpired(s)) this.#sessions.delete(id);
+    }
+  }
+
   openSession({ userId = null, bankId, mode }) {
+    this.#sweepExpired();
     if (!MODES.has(mode)) throw new ValidationError(`mode must be quiz|flashcard, got: ${mode}`);
     if (userId != null && !this.#userService.getProfile(userId)) throw new ValidationError(`unknown user: ${userId}`);
     const bank = this.getBank(bankId); // throws EntityNotFoundError
@@ -70,7 +88,7 @@ export class SchoolService {
   #session(sessionId) {
     const s = this.#sessions.get(sessionId);
     if (!s) throw new SessionGoneError(`no session ${sessionId}`);
-    if (this.#now() - s.lastActiveAt > SESSION_TTL_MS) {
+    if (this.#isExpired(s)) {
       this.#sessions.delete(sessionId);
       throw new SessionGoneError(`session expired: ${sessionId}`);
     }
@@ -103,7 +121,18 @@ export class SchoolService {
         sessionId: s.id, bankId: s.bankId, itemId, itemType: item.type,
         mode: s.mode, given: recordedGiven, correct, attributedTo: s.userId,
       });
-      this.#ds.appendAttempt(s.userId, attempt); // throws -> router 500, UI shows "unrecorded"
+      // appendAttempt can fail two ways: it can throw (router 500, UI shows
+      // "unrecorded"), or — per YamlSchoolDatastore — return null/falsy without
+      // throwing when it can't resolve the user's attempts dir (a profile lookup
+      // that disagrees with the one openSession checked). A falsy return must be
+      // treated as a failure too, or the caller gets a plausible attemptId for an
+      // attempt that was never written.
+      const appended = this.#ds.appendAttempt(s.userId, attempt);
+      if (!appended) {
+        throw new PersistenceError('write', `attempt not recorded for user ${s.userId} (session ${s.id})`, {
+          userId: s.userId, sessionId: s.id, itemId, bankId: s.bankId,
+        });
+      }
       attemptId = attempt.id;
     }
     return s.mode === 'quiz' ? { correct, expected, attemptId } : { attemptId };
