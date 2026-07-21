@@ -15,6 +15,7 @@
  */
 
 import { createEmptyParticipant, validateParticipant } from './Participant.js';
+import { lookupZoneProgress } from './zoneProgressIndex.js';
 
 /**
  * Default inactive timeout (ms) - device considered inactive after this period without readings
@@ -31,6 +32,7 @@ const DEFAULT_INACTIVE_TIMEOUT = 60000;
  * @param {Array} [options.zoneConfig] - Zone configuration for zone lookup
  * @param {number} [options.inactiveTimeout] - Timeout for inactive determination
  * @param {Function} [options.getDisplayLabel] - Function to resolve display labels
+ * @param {Map<string, Object>} [options.zoneProgressIndex] - From buildZoneProgressIndex(); resolves zoneProgress by stable ID
  * @returns {import('./Participant.js').Participant}
  */
 export const fromRosterEntry = (rosterEntry, options = {}) => {
@@ -42,7 +44,8 @@ export const fromRosterEntry = (rosterEntry, options = {}) => {
     devices = [],
     zoneConfig = [],
     inactiveTimeout = DEFAULT_INACTIVE_TIMEOUT,
-    getDisplayLabel
+    getDisplayLabel,
+    zoneProgressIndex = null
   } = options;
 
   // Find matching raw device (for timestamp info)
@@ -67,6 +70,18 @@ export const fromRosterEntry = (rosterEntry, options = {}) => {
     ? getDisplayLabel(rosterEntry.name, { userId: id })
     : (rosterEntry.displayLabel || rosterEntry.name || 'Participant');
 
+  // Resolve zone progress by STABLE ID first. Looking this up by display name
+  // is what broke the sidebar sort on 2026-07-21 — see zoneProgressIndex.js.
+  const progressEntry = zoneProgressIndex
+    ? lookupZoneProgress(zoneProgressIndex, {
+        profileId: rosterEntry.profileId || id,
+        id,
+        name: rosterEntry.name,
+        displayLabel,
+        deviceId: rosterEntry.hrDeviceId
+      })
+    : null;
+
   return {
     id,
     name: rosterEntry.name || '',
@@ -79,7 +94,12 @@ export const fromRosterEntry = (rosterEntry, options = {}) => {
     isActive,
     zoneId,
     zoneColor,
-    zoneProgress: rosterEntry.zoneProgress ?? null,
+    // Live (non-hysteresis) zone — what the cards render and what sortByZoneRank
+    // ranks on. Falls back to the committed zone when the roster has no raw value.
+    rawZoneId: rosterEntry.rawZoneId ? String(rosterEntry.rawZoneId).toLowerCase() : zoneId,
+    rawZoneColor: rosterEntry.rawZoneColor || zoneColor,
+    // null (not 0) on a miss, so a later task's diagnostic can tell a miss from a real 0.
+    zoneProgress: Number.isFinite(progressEntry?.progress) ? progressEntry.progress : null,
     isGuest: Boolean(rosterEntry.isGuest),
     timestamp: rawDevice?.timestamp || Date.now(),
     lastSeen: rawDevice?.lastSeen || Date.now(),
