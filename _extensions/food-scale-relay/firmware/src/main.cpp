@@ -24,6 +24,7 @@ extern "C" {
 #include "esp_spp_api.h"
 #include "esp_gap_bt_api.h"
 #include "esp_bt_device.h"
+#include "esp_coexist.h"
 }
 #endif
 
@@ -200,6 +201,56 @@ static void onSppBytes(const uint8_t* data, size_t len) {
     if (b < 0x20 || b > 0x7e) continue;            // drop control / non-printable
     if (g_code.length() < 120) g_code += (char)b;
     g_lastKeyMs = millis();
+  }
+}
+
+// ---- offline scan queue -------------------------------------------------
+// A dropped scan is a missing food-log entry that nobody can notice after the
+// fact, so scans are the one event worth buffering across a backend outage.
+// Weight readings deliberately are NOT queued: they are continuous, and a lost
+// sample is superseded a second later. Bounded so a long outage cannot exhaust
+// heap; on overflow the OLDEST is dropped, since a stale scan is worth less
+// than a fresh one, and the drop is counted so /status can show it happened.
+#define PENDING_SCAN_MAX 24
+struct PendingScan { char code[128]; uint32_t ms; };
+static PendingScan g_pending[PENDING_SCAN_MAX];
+static uint8_t  g_pendingHead = 0;      // index of oldest queued scan
+static uint8_t  g_pendingCount = 0;
+static uint32_t g_pendingDropped = 0;
+
+static bool sendScan(const char* code, uint32_t capturedMs) {
+  if (!wsConnected) return false;
+  JsonDocument d;
+  d["source"] = "barcode-relay"; d["type"] = "scan";
+  d["device"] = BARCODE_ID; d["route"] = BARCODE_ROUTE; d["code"] = code;
+  d["ts"] = capturedMs;                    // capture time, not send time
+  uint32_t delayed = millis() - capturedMs;
+  if (delayed > 1000) d["delayed_ms"] = delayed;   // only present if it waited
+  String out; serializeJson(d, out);
+  return webSocket.sendTXT(out);
+}
+
+static void queueScan(const char* code, uint32_t capturedMs) {
+  if (g_pendingCount == PENDING_SCAN_MAX) {
+    g_pendingHead = (g_pendingHead + 1) % PENDING_SCAN_MAX;
+    g_pendingCount--;
+    g_pendingDropped++;
+  }
+  PendingScan& slot = g_pending[(g_pendingHead + g_pendingCount) % PENDING_SCAN_MAX];
+  strncpy(slot.code, code, sizeof(slot.code) - 1);
+  slot.code[sizeof(slot.code) - 1] = 0;
+  slot.ms = capturedMs;
+  g_pendingCount++;
+}
+
+static void flushPendingScans() {
+  while (g_pendingCount && wsConnected) {
+    PendingScan& p = g_pending[g_pendingHead];
+    if (!sendScan(p.code, p.ms)) break;    // socket refused — keep it queued
+    relayLogf("[barcode] flushed queued %s (%lus late)", p.code,
+              (unsigned long)((millis() - p.ms) / 1000));
+    g_pendingHead = (g_pendingHead + 1) % PENDING_SCAN_MAX;
+    g_pendingCount--;
   }
 }
 
@@ -389,6 +440,18 @@ static bool connectToScale() {
   BLERemoteCharacteristic* chr = svc->getCharacteristic(SCALE_NOTIFY_UUID);
   if (!chr || !chr->canNotify()) { relayLogLine("[ble] scale notify char missing"); g_client->disconnect(); return false; }
   chr->registerForNotify(onNotify);
+  // Relax the BLE connection interval before declaring success. The default
+  // fast interval (7.5-30 ms) keeps the BLE radio busy enough to starve the
+  // Classic-BT barcode link on this shared antenna — the scanner then drops
+  // with ACL reason 0x08 and beeps on every reconnect. A kitchen scale does not
+  // need sub-100 ms latency: 100-160 ms still feels instant on the display and
+  // frees a large slice of radio time for Classic.
+  //   min/max in 1.25 ms units, timeout in 10 ms units.
+  if (g_client->updateConnParams(80, 128, 0, 600)) {
+    relayLogLine("[ble] scale conn interval relaxed to 100-160 ms");
+  } else {
+    relayLogLine("[ble] scale conn param update REJECTED (peer kept its own)");
+  }
   relayLogLine("[ble] subscribed to scale");
   g_bleConnected = true;
   return true;
@@ -489,6 +552,8 @@ static void handleStatus() {
   }
   barcode["bound_mac"] = boundMac;
   barcode["scan_count"] = g_scanCount;
+  barcode["pending_scans"] = g_pendingCount;      // buffered, awaiting the WS
+  barcode["dropped_scans"] = g_pendingDropped;    // lost to queue overflow
   if (g_lastBarcodeMs) { barcode["last_scan"] = g_lastBarcode; barcode["last_scan_age_s"] = (uint32_t)((millis()-g_lastBarcodeMs)/1000); }
 
   JsonObject button = doc["button"].to<JsonObject>();
@@ -547,6 +612,15 @@ void setup() {
   relayLogLine("[ble] init ready");
   BLEDevice::setPower(ESP_PWR_LVL_P9);
 #if BARCODE_ENABLED
+  // Give Bluetooth priority over WiFi on the shared radio. Without this the SPP
+  // link opens and pairs cleanly, then dies ~3 s later with ACL reason 0x08
+  // (connection timeout) — a supervision timeout, i.e. the Classic link is
+  // being starved by WiFi (WebSocket heartbeat, HTTP server, status polling)
+  // rather than rejected by the scanner. The barcode link is latency-tolerant
+  // in one direction only: we can afford slower WiFi, we cannot afford a
+  // dropped scan.
+  esp_err_t coexRc = esp_coex_preference_set(ESP_COEX_PREFER_BT);
+  relayLogf("[coex] prefer BT over WiFi: rc=%d", (int)coexRc);
   initClassicSpp();
 #endif
 
@@ -586,6 +660,68 @@ void setup() {
       g_bleScanEnabled ? "{\"ok\":true,\"ble_scan\":true}" : "{\"ok\":true,\"ble_scan\":false}");
   });
 #endif
+  // ---- simulation endpoints ---------------------------------------------
+  // Exercise the backend pipeline without the physical scale or scanner (and
+  // without eating a real food-log entry by accident — these emit exactly the
+  // same messages, so whatever consumes them cannot tell the difference).
+  // Accepts query args or a JSON body:
+  //   curl -X POST "http://<ip>/simulate/scale?grams=250&stable=1&unit=g"
+  //   curl -X POST "http://<ip>/simulate/barcode?code=041260010682"
+  //   curl -X POST http://<ip>/simulate/barcode -d '{"code":"041260010682"}'
+  auto simArg = [](const char* key) -> String {
+    if (http.hasArg(key)) return http.arg(key);
+    if (http.hasArg("plain")) {                     // JSON body fallback
+      JsonDocument body;
+      if (!deserializeJson(body, http.arg("plain")) && body[key].is<JsonVariant>()) {
+        return body[key].as<String>();
+      }
+    }
+    return String();
+  };
+
+  http.on("/simulate/scale", HTTP_POST, [simArg](){
+    String gramsArg = simArg("grams");
+    if (!gramsArg.length()) {
+      http.send(400, "application/json", "{\"ok\":false,\"error\":\"grams required\"}");
+      return;
+    }
+    int grams = gramsArg.toInt();
+    String stableArg = simArg("stable");
+    bool stable = !stableArg.length() || (stableArg != "0" && stableArg != "false");
+    String unitArg = simArg("unit");
+    uint8_t unit = unitArg == "ml" ? 0x02 : 0x00;
+    // Emit directly rather than faking the notify state: this deliberately
+    // bypasses the g_bleConnected gate so it works with no scale present.
+    sendReading(grams, stable, unit);
+    char out[96];
+    snprintf(out, sizeof(out), "{\"ok\":true,\"simulated\":\"scale\",\"grams\":%d,\"stable\":%s}",
+             grams, stable ? "true" : "false");
+    http.send(200, "application/json", out);
+  });
+
+#if BARCODE_ENABLED
+  http.on("/simulate/barcode", HTTP_POST, [simArg](){
+    String code = simArg("code");
+    if (!code.length()) {
+      http.send(400, "application/json", "{\"ok\":false,\"error\":\"code required\"}");
+      return;
+    }
+    // Push onto the same queue a real decode feeds, so the scan goes through
+    // the identical loop() path: scan_count, last_scan, LED, and the offline
+    // queue if the WebSocket happens to be down.
+    char buf[128];
+    strncpy(buf, code.c_str(), sizeof(buf) - 1); buf[sizeof(buf) - 1] = 0;
+    if (xQueueSend(g_bcQueue, buf, 0) != pdTRUE) {
+      http.send(503, "application/json", "{\"ok\":false,\"error\":\"scan queue full\"}");
+      return;
+    }
+    char out[160];
+    snprintf(out, sizeof(out), "{\"ok\":true,\"simulated\":\"barcode\",\"code\":\"%s\",\"route\":\"%s\"}",
+             buf, BARCODE_ROUTE);
+    http.send(200, "application/json", out);
+  });
+#endif
+
   http.onNotFound([](){ http.send(404, "text/plain", "food-scale-relay: GET /status\\n"); });
   http.begin();
   relayLogLine("[http] status server listening on :80");
@@ -631,16 +767,22 @@ void loop() {
     g_lastBarcodeMs = millis();
     relayLogf("[barcode] %s",code);
     flashLed(CRGB::Blue);
-    if (wsConnected) {
-      JsonDocument d; d["source"]="barcode-relay"; d["type"]="scan";
-      d["device"]=BARCODE_ID; d["route"]=BARCODE_ROUTE; d["code"]=code; d["ts"]=(uint32_t)millis();
-      String out; serializeJson(d,out); webSocket.sendTXT(out);
+    uint32_t capturedMs = millis();
+    if (!sendScan(code, capturedMs)) {
+      queueScan(code, capturedMs);
+      relayLogf("[barcode] queued (ws down) — %u pending", (unsigned)g_pendingCount);
     }
   }
+  // Drain anything buffered during an outage, oldest first.
+  if (g_pendingCount && wsConnected) flushPendingScans();
 #endif
 
   // Emit decoded readings: on meaningful change / stable-flag flip / heartbeat.
-  if (g_haveReading) {
+  // Gated on a live BLE link: g_haveReading latches, so without this the
+  // heartbeat keeps re-publishing the last known weight after the scale has
+  // gone away, which is both wrong (stale data presented as current) and pure
+  // WiFi noise competing with the Classic barcode link.
+  if (g_haveReading && g_bleConnected) {
     int grams = g_grams; bool stable = g_stable; uint8_t unit = g_unit;
     bool changed   = abs(grams - g_lastSentGrams) >= EMIT_MIN_DELTA_G;
     bool flip      = stable != g_lastSentStable;
