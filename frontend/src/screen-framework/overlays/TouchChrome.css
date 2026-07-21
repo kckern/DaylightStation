@@ -6,51 +6,100 @@
    no containing block, so a `position: fixed` descendant elsewhere on the
    screen could otherwise stack above this lane -- stranding a touch user with
    no way out. Comfortably above the overlay stack in ScreenOverlayProvider.css
-   (1000-1002) but below MasterVolumeToast.css's 10000 (system-level toast). */
+   (1000-1002) but below MasterVolumeToast.css's 10000 (system-level toast).
+
+   Three equal-weight outer zones (1fr auto 1fr) rather than a flex row: the
+   centre zone is centred against the PANEL, not against whatever the side zones
+   happen to weigh. With a symmetric transport (two controls either side of
+   play/pause) that puts play/pause on the exact centre line and keeps it there
+   in `back` mode too, when both side zones are empty. */
 .touch-chrome {
   flex: 0 0 auto;
   height: 80px;
-  display: flex;
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
   align-items: center;
-  gap: 1.5rem;
-  padding: 0 1.5rem;
-  background: #101014;
-  border-top: 1px solid rgba(255, 255, 255, 0.12);
+  padding: 0 1.25rem;
+  background: #0e0e11;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
   transform: translateZ(0);
   z-index: 9000;
   user-select: none;
 }
 
-.touch-chrome__group {
+.touch-chrome__zone {
   display: flex;
   align-items: center;
-  gap: 0.75rem;
+  gap: 0.25rem;
+  min-width: 0;
 }
 
-/* Pushes volume to the far edge, away from Back, so a mis-tap can't exit. */
-.touch-chrome__group--end {
-  margin-left: auto;
-}
+.touch-chrome__zone--leave { justify-self: start; }
+.touch-chrome__zone--transport { justify-self: center; gap: 0.5rem; }
+/* Volume sits at the far edge, the full width of the panel away from Back, so a
+   mis-tap while reaching for it can never exit the screen. */
+.touch-chrome__zone--adjust { justify-self: end; }
 
+/* Controls are bare icons, not tiles. Eight identical boxes gave every control
+   the same weight and read as a row of chrome; stripping them leaves the single
+   filled disc below as the only thing competing for attention. The 64px tap
+   target stays regardless -- it is just no longer drawn. */
 .touch-chrome__btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
   min-width: 64px;
   height: 64px;
-  padding: 0 1rem;
-  font-size: 1.75rem;
-  line-height: 1;
-  color: #e8e8ea;
-  background: rgba(255, 255, 255, 0.08);
-  border: 1px solid rgba(255, 255, 255, 0.14);
+  padding: 0;
+  color: rgba(255, 255, 255, 0.8);
+  background: none;
+  border: 0;
   border-radius: 12px;
   cursor: pointer;
-  /* No transition: kiosk WebViews drop frames animating many elements at once. */
+  -webkit-tap-highlight-color: transparent;
 }
 
-.touch-chrome__btn:active {
-  background: rgba(255, 255, 255, 0.22);
+.touch-chrome__icon { display: block; }
+
+/* Volume is secondary: you reach for it deliberately, so it does not need to
+   compete with transport for attention. */
+.touch-chrome__btn--quiet { color: rgba(255, 255, 255, 0.5); }
+
+/* The one chromed control. Inverted against the lane so it reads as the primary
+   action from across the room -- this is the element the whole bar is arranged
+   around. */
+.touch-chrome__btn--primary {
+  width: 60px;
+  min-width: 60px;
+  height: 60px;
+  margin: 0 0.5rem;
+  border-radius: 50%;
+  color: #0e0e11;
+  background: #f2f2f4;
 }
 
-.touch-chrome__btn--back {
-  min-width: 88px;
-  background: rgba(255, 255, 255, 0.14);
+/* Press feedback only. Kiosk WebViews drop frames when several elements animate
+   at once, so there is no ambient motion anywhere in this component. */
+.touch-chrome__btn:active { color: #ffffff; }
+.touch-chrome__btn--quiet:active { color: rgba(255, 255, 255, 0.85); }
+
+.touch-chrome__btn--primary {
+  transition: transform 90ms ease-out, background-color 90ms ease-out;
+}
+.touch-chrome__btn--primary:active {
+  color: #0e0e11;
+  background: #cfcfd6;
+  transform: scale(0.94);
+}
+
+/* Keyboard/assistive floor. The panel is touch-only, but this costs nothing and
+   the component is shared with any future screen. */
+.touch-chrome__btn:focus-visible {
+  outline: 2px solid rgba(255, 255, 255, 0.85);
+  outline-offset: -4px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .touch-chrome__btn--primary { transition: none; }
+  .touch-chrome__btn--primary:active { transform: none; }
 }
