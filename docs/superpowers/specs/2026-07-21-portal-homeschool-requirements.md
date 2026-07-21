@@ -58,6 +58,14 @@ no curriculum attached.
 - R1.5 Conceptually similar to the Piano Kiosk's "who is playing" flow, but
   with a materially different role: in Piano identity is soft attribution for
   watch credit; here it is the spine of the entire application.
+- R1.6 **DECIDED (2026-07-21):** Identity is a **soft pick with idle lapse**.
+  A child taps their face to claim the device; identity stays visible in the
+  chrome and lapses after an idle gap, re-prompting on next use. No PIN, no
+  authentication.
+- R1.7 **DECIDED (2026-07-21):** A **guest mode** exists but is severely
+  gated. A guest may use generic, non-curricular things — play music, take a
+  generic quiz, drill generic flashcards. A guest is never assigned curriculum
+  and accrues no curricular progress.
 
 ### R2 — Video courses
 
@@ -103,6 +111,24 @@ no curriculum attached.
 - R6.3 Track discrete obligations — homework done, exam passed, work signed
   off.
 - R6.4 Precedent exists in the Piano Kiosk, but only partially.
+- R6.5 **Reassignment (DECIDED 2026-07-21).** A parent or teacher must be able
+  to **reallocate credit and progress between children** when work was
+  attributed to the wrong person.
+
+  This is the primary mitigation for mis-credit, and it is why identity can
+  safely be a soft pick (R1.6): attribution does not have to be correct at the
+  moment it happens, it has to be correctable afterwards.
+
+  **Architectural consequence — binds sub-project 2.** Progress must be stored
+  as individually attributable **events**, not solely as per-child rollups. A
+  record must carry enough provenance to be identified and moved: what content,
+  what happened, when, and how far. A design that persists only a summary per
+  child (e.g. a single "percent complete" figure) makes reassignment impossible
+  after the fact and must be rejected. Rollups may be derived from events, but
+  events are the source of truth.
+
+  Reassignment of a completion that already paid out coins must also decide
+  whether the coin transaction follows the progress. See **OPEN-9**.
 
 ### R7 — Parent view
 
@@ -240,13 +266,20 @@ could run at any point. Everything else funnels through identity.
   working Piano code on a device that has historically been fragile. Building
   the school identity container fresh — reusing only the presentational pieces
   — costs some duplication but carries no regression risk to Piano.
-- **OPEN-5 — Identity strength.** Whether identity is a soft self-declared
-  pick (Piano-style) or something stronger, given that credit and coins hang
-  off it. Note the garage already has a fingerprint reader; whether the Portal
-  warrants anything beyond a tap is undecided.
+- ~~**OPEN-5 — Identity strength.**~~ **RESOLVED 2026-07-21.** Soft pick with
+  idle lapse; see R1.6. Justified by R6.5 — mis-credit is repairable, so
+  attribution need not be authenticated at the point of capture. Revisit only
+  if reassignment proves to be a frequent chore rather than a rare correction.
 - **OPEN-6 — Flashcard scheduling.** Spaced repetition or simple drilling.
 - **OPEN-7 — Parent view location.** Admin module vs. a Portal surface vs.
-  both.
+  both. Note this surface now also owns reassignment (R6.5), not just review
+  and sign-off.
+- **OPEN-9 — Do coins follow reassigned progress?** If a completion paid out
+  coins to the wrong child and is then reassigned, the coins may need to move
+  too. `EconomyService` is an append-only ledger with a per-ref replay guard,
+  so this would be a compensating pair of transactions rather than an edit.
+  Whether that is worth doing — or whether coin errors are simply left alone —
+  is undecided.
 - **OPEN-8 — Course content source.** Whether courses are Plex-backed (as
   Piano's are, via `fitnessPlayableService`), filesystem-backed, or both.
 
