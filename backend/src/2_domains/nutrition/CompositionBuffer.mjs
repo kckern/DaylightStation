@@ -45,7 +45,7 @@
  */
 
 import { ValidationError } from '#domains/core/errors/index.mjs';
-import { MAX_DENSITY_LEVEL } from './ScanVocabulary.mjs';
+import { MAX_DENSITY_LEVEL } from './services/ScanVocabularyService.mjs';
 
 /** Default rolling window: 15 minutes (D2). */
 const DEFAULT_WINDOW_MS = 900_000;
@@ -275,9 +275,9 @@ export function createCompositionBuffer(options = {}) {
     /**
      * Record a scanned container/tare id. Refreshes the window.
      *
-     * Checked for usability but NOT against `ScanVocabulary`'s id pattern: that
+     * Checked for usability but NOT against `ScanVocabularyService`'s id pattern: that
      * regex is the printed grammar's business and is not exported, and restating
-     * it here would create exactly the sheet-versus-parser drift ScanVocabulary
+     * it here would create exactly the sheet-versus-parser drift ScanVocabularyService
      * exists to prevent.
      *
      * An unknown-but-well-formed id is therefore NOT caught anywhere today. A

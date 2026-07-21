@@ -42,7 +42,7 @@ export {
   encodeContainer,
   RESET_CODE,
   MAX_DENSITY_LEVEL,
-} from './ScanVocabulary.mjs';
+} from './services/ScanVocabularyService.mjs';
 
 // Scan nutrition math (net weight, calories, macro split)
 export {
