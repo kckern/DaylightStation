@@ -134,11 +134,13 @@ export function parseScan(code) {
 
   const prefix = trimmed.slice(0, idx);
   const rest = trimmed.slice(idx + 1);
-  if (!rest) return null;
-
   if (prefix === DENSITY_PREFIX) {
-    if (!/^[1-9]$/.test(rest)) return null;
-    return { kind: 'density', level: Number(rest) };
+    // Shape and range are checked separately so MAX_DENSITY_LEVEL is the single
+    // lever: raising it to 10 makes `dl:10` parse with no other edit. The regex
+    // admits no leading zero, so `dl:04` stays null.
+    if (!DENSITY_LEVEL_RE.test(rest)) return null;
+    const level = Number(rest);
+    return isDensityLevel(level) ? { kind: 'density', level } : null;
   }
   if (prefix === CONTAINER_PREFIX) {
     if (!CONTAINER_ID_RE.test(rest)) return null;   // no `i` flag — see below
