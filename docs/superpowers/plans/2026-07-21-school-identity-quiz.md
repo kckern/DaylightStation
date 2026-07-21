@@ -1682,8 +1682,15 @@ export default function MatchingItem({ item, onSubmit, verdict }) {
   const pairedRights = new Set(Object.values(pairs));
   const complete = Object.keys(pairs).length === item.pairs.length;
 
-  const downLeft = (left) => {
+  const downLeft = (e, left) => {
     if (verdict) return;
+    // Touch pointers get IMPLICIT POINTER CAPTURE: without this release, every
+    // later pointer event (including the pointerup that lands on a right chip)
+    // is retargeted to THIS chip, so drag-to-connect silently never completes
+    // on the real panel. Tests dispatch events directly at elements and would
+    // not catch it. releasePointerCapture makes pointerup hit what's under the
+    // finger. Guarded: jsdom/mouse paths may not have the pointer captured.
+    try { e.currentTarget.releasePointerCapture?.(e.pointerId); } catch { /* not captured */ }
     if (pairs[left]) { // unpair
       setPairs((p) => { const n = { ...p }; delete n[left]; return n; });
       setSelected(null);
@@ -1710,8 +1717,7 @@ export default function MatchingItem({ item, onSubmit, verdict }) {
             <button key={left} type="button"
               className={`school-item__chip${selected === left ? ' school-item__chip--selected' : ''}${pairs[left] ? ' school-item__chip--paired' : ''}`}
               disabled={!!verdict}
-              onPointerDown={() => downLeft(left)}
-              onPointerUp={() => { /* pointerup on the same chip keeps the selection */ }}>
+              onPointerDown={(e) => downLeft(e, left)}>
               {left}{pairs[left] ? ` → ${pairs[left]}` : ''}
             </button>
           ))}
@@ -1747,6 +1753,14 @@ export default function MatchingItem({ item, onSubmit, verdict }) {
 
 Run: `npx vitest run frontend/src/modules/School/quiz/ 2>&1 | tail -5`
 Expected: PASS. (If the unpair test fails because `disabled` chips swallow pointer events, keep chips enabled and gate inside the handlers — the `verdict` early-return already does this.)
+
+Device-behaviour note for the implementer: the `releasePointerCapture` call in
+`downLeft` is **not** decoration and must not be removed as unused. Touch
+pointers are implicitly captured by the `pointerdown` target, so without it the
+`pointerup` ending a drag is retargeted to the left chip and the right chip's
+handler never fires — drag-to-connect would be dead on the Portal while every
+test still passed. Task 13's live verification is the only step that would
+otherwise catch it.
 
 - [ ] **Step 5: Commit**
 
