@@ -45,6 +45,28 @@ describe('banks', () => {
     expect(() => svc.getBank('nope')).toThrow();
     expect(() => svc.getBank('broken')).toThrow();
   });
+  it('getBank not-found error message names the bank id sensibly', () => {
+    expect(() => svc.getBank('nope')).toThrow(/nope/);
+  });
+});
+
+describe('getRoster', () => {
+  it('falls back to username when display_name is absent, passes through group_label, and sorts by name', () => {
+    const userService = {
+      getProfile: () => null,
+      getAllProfiles: () => new Map([
+        ['zed', { username: 'zed', display_name: 'Zed', group_label: 'kids' }],
+        ['nodisplay', { username: 'nodisplay' }],
+        ['abby', { username: 'abby', display_name: 'Abby', group_label: 'parents' }],
+      ]),
+    };
+    const roster = new SchoolService({ datastore: ds, userService, now: () => clock.t }).getRoster();
+    expect(roster).toEqual([
+      { id: 'abby', name: 'Abby', group_label: 'parents' },
+      { id: 'nodisplay', name: 'nodisplay', group_label: undefined },
+      { id: 'zed', name: 'Zed', group_label: 'kids' },
+    ]);
+  });
 });
 
 describe('sessions + answers', () => {
@@ -94,6 +116,21 @@ describe('sessions + answers', () => {
     const { sessionId } = svc.openSession({ userId: 'kid1', bankId: 'caps', mode: 'quiz' });
     clock.t += 2 * 60 * 60 * 1000 + 1;
     expect(() => svc.answer({ sessionId, itemId: 'q1', given: 'Olympia' })).toThrow(SessionGoneError);
+  });
+  it('sweeps expired sessions on openSession, so an abandoned session does not linger forever', () => {
+    const { sessionId: abandoned } = svc.openSession({ userId: 'kid1', bankId: 'caps', mode: 'quiz' });
+    clock.t += 2 * 60 * 60 * 1000 + 1; // past TTL; nobody ever touched `abandoned` again
+    // A later openSession is normal traffic — it must sweep the stale entry before inserting.
+    svc.openSession({ userId: 'kid2', bankId: 'caps', mode: 'quiz' });
+    // If the sweep ran, `abandoned` is already gone from the map, so answer() hits the
+    // "no session" branch, not the lazy "session expired" branch — that's the
+    // observable difference (via the public API only) between swept and unswept.
+    expect(() => svc.answer({ sessionId: abandoned, itemId: 'q1', given: 'Olympia' })).toThrow(/no session/i);
+  });
+  it('a dropped appendAttempt (returns null/falsy) fails loudly instead of returning a fake attemptId', () => {
+    ds.appendAttempt = () => null; // e.g. profile-lookup skew inside the datastore
+    const { sessionId } = svc.openSession({ userId: 'kid1', bankId: 'caps', mode: 'quiz' });
+    expect(() => svc.answer({ sessionId, itemId: 'q1', given: 'Olympia' })).toThrow();
   });
 });
 
