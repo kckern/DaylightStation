@@ -1,5 +1,10 @@
 import { describe, it, expect } from 'vitest';
 import { sortByZoneRank, ZONE_RANK_MAP } from './ParticipantFactory.js';
+// Test-only import from hooks/: the domain layer must not depend on hooks/ in
+// production code, but this pins our literal to the config-derived rank map so
+// a zone rename/reorder in fitness.yml fails here instead of drifting silently.
+import { buildZoneMetadata } from '../../../hooks/fitness/zoneMetadata.js';
+import { DEFAULT_ZONE_CONFIG } from '../../../hooks/fitness/types.js';
 
 const p = (over) => ({
   id: 'p', name: 'p', rawZoneId: 'active', zoneProgress: 0, isActive: true, ...over,
@@ -8,6 +13,10 @@ const p = (over) => ({
 describe('ZONE_RANK_MAP', () => {
   it('ranks the five canonical zones coolest to hottest', () => {
     expect(ZONE_RANK_MAP).toEqual({ cool: 0, active: 1, warm: 2, hot: 3, fire: 4 });
+  });
+
+  it('stays in lockstep with the config-derived rank map', () => {
+    expect(ZONE_RANK_MAP).toEqual(buildZoneMetadata(DEFAULT_ZONE_CONFIG).rankMap);
   });
 });
 
