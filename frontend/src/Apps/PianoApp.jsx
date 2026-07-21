@@ -37,6 +37,8 @@ import { PianoPresetProvider } from '../modules/Piano/PianoKiosk/usePianoPreset.
 import { PianoMenu } from '../modules/Piano/PianoKiosk/PianoMenu.jsx';
 import { PianoPicker } from '../modules/Piano/PianoKiosk/PianoPicker.jsx';
 import { useRenderWatchdog } from '../modules/Piano/PianoKiosk/useRenderWatchdog.js';
+import { useJankRebootPrompt } from '../modules/Piano/PianoKiosk/useJankRebootPrompt.js';
+import RebootPromptModal from '../modules/Piano/PianoKiosk/RebootPromptModal.jsx';
 import { applyPianoBodyTheme } from './pianoBodyTheme.js';
 import { Videos } from '../modules/Piano/PianoKiosk/modes/Videos/Videos.jsx';
 import { Music } from '../modules/Piano/PianoKiosk/modes/Music/Music.jsx';
@@ -400,6 +402,12 @@ export default function PianoApp() {
   // collapses, a reload won't clear it), restart the WebView via the Fully JS
   // Interface. No-op outside the kiosk. See useRenderWatchdog.js.
   useRenderWatchdog();
+  // User-controlled recovery: instead of silently reloading/restarting/rebooting
+  // when the SM-T590 render latch hits, ask the user (reboot now / not now → snooze
+  // 1h → re-arm). The bridge watchdog is configured to only auto-act on a TRUE hang
+  // (no heartbeat), leaving this alive-but-slow case to the user. See
+  // useJankRebootPrompt.js / reference_piano_tablet_jank_current_state.
+  const jankReboot = useJankRebootPrompt();
   // Always-on frame telemetry (1/min): the 2026-07-01 jank hunt stalled because
   // fps was only measured inside the side-scroller or via probes that reloaded
   // the page (fresh pages read 60 while aged pages had decayed to ~10). This
@@ -413,6 +421,7 @@ export default function PianoApp() {
   return (
     <PianoConfigProvider>
       <PianoRoutes />
+      <RebootPromptModal open={jankReboot.open} onReboot={jankReboot.onReboot} onDismiss={jankReboot.onDismiss} />
     </PianoConfigProvider>
   );
 }
