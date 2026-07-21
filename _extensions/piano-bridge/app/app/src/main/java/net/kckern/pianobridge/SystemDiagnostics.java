@@ -114,8 +114,12 @@ public final class SystemDiagnostics {
     private static JSONObject kiosk(PianoBridgeService service, DeviceConfig cfg) throws Exception {
         JSONObject o = new JSONObject();
         KioskWatchdog wd = service.getKioskWatchdog();
+        KioskSettingsGuard sg = service.getKioskSettingsGuard();
         o.put("webview", wd != null ? wd.snapshot() : JSONObject.NULL); // is the WebView presenting frames?
         o.put("fkbApp", FkbRest.deviceInfo(cfg));                        // is FKB itself alive + its own view
+        // Third view: is FKB still CONFIGURED as a kiosk? A tablet can be presenting
+        // frames from a healthy FKB and still be sitting unlocked with kioskMode=false.
+        o.put("settings", sg != null ? sg.snapshot() : JSONObject.NULL);
         return o;
     }
 

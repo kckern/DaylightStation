@@ -2,6 +2,7 @@ import React, { useRef, useState, useCallback, useMemo, useEffect } from 'react'
 import { useFitnessContext } from '@/context/FitnessContext.jsx';
 import { Webcam as FitnessWebcam } from '@/modules/Fitness/components/FitnessWebcam.jsx';
 import { getDaylightLogger } from '@/lib/logging/singleton.js';
+import { heapSnapshotFields, reportMemoryMonitoringAvailability } from '@/lib/perf/memoryProbe.js';
 import '../FitnessSidebar.scss';
 
 const FitnessVideo = ({ minimal = false }) => {
@@ -27,6 +28,10 @@ const FitnessVideo = ({ minimal = false }) => {
       componentId,
       timestamp: Date.now()
     });
+
+    // Announce (once per page load) whether the health check below can see the
+    // heap at all — on Firefox it cannot, and the memory fields will say so.
+    reportMemoryMonitoringAvailability({ monitor: 'fitness-video' });
     
     // TELEMETRY: Periodic health check every 30 seconds
     healthCheckIntervalRef.current = setInterval(() => {
@@ -36,15 +41,9 @@ const FitnessVideo = ({ minimal = false }) => {
       const streamActive = hasStream && webcamRef.current.stream.active;
       const trackCount = hasStream ? webcamRef.current.stream.getTracks?.().length : 0;
       
-      // Memory snapshot if available
-      let memoryInfo = null;
-      if (performance.memory) {
-        memoryInfo = {
-          usedJSHeapSize: Math.round(performance.memory.usedJSHeapSize / 1024 / 1024),
-          totalJSHeapSize: Math.round(performance.memory.totalJSHeapSize / 1024 / 1024),
-          jsHeapSizeLimit: Math.round(performance.memory.jsHeapSizeLimit / 1024 / 1024)
-        };
-      }
+      // Memory snapshot — always an object with an explicit heapSource, so a
+      // Firefox sample is visibly "unavailable" rather than silently absent.
+      const memoryInfo = heapSnapshotFields({ precision: 0 });
       
       logger.debug('fitness.video.health', {
         componentId,
@@ -124,10 +123,7 @@ const FitnessVideo = ({ minimal = false }) => {
       timeSinceStreamMs: timeSinceStream,
       wasStreaming: !!streamStartTimeRef.current,
       // Capture memory state at error time
-      memory: performance.memory ? {
-        usedJSHeapSize: Math.round(performance.memory.usedJSHeapSize / 1024 / 1024),
-        totalJSHeapSize: Math.round(performance.memory.totalJSHeapSize / 1024 / 1024)
-      } : null
+      memory: heapSnapshotFields({ precision: 0 })
     });
     
     setError(err?.message || 'Failed to access webcam');

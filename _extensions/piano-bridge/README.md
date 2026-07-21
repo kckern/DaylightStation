@@ -103,6 +103,161 @@ piano's own idle screensaver (FKB `screenOff`, 3-min) — exactly the dark-table
 `ScreenWaker` wakes from. To make it stay on 24/7 instead, disable that screensaver
 (piano.yml `timeoutMinutes: 0`); the wake then becomes a pure safety net.
 
+### FKB kiosk-settings drift guard (`KioskSettingsGuard`, versionCode 22)
+
+**Why it exists.** On 2026-07-21 the tablet was found with `kioskMode = false`. It had
+been switched off during an earlier debugging session and never switched back, and
+**nothing detected it** — the kiosk sat unlocked for days while looking perfectly
+healthy from every other angle. The page was rendering, FKB was alive, the piano
+worked. The one thing nobody was watching was whether FKB was still *configured* to
+be a kiosk.
+
+This guard watches that. It is a **separate concern from `KioskWatchdog`**: that one
+asks "is the WebView presenting frames?" every 2 s and can reboot the device; this one
+asks "is FKB still configured as a kiosk?" every 60 s and only ever writes settings.
+Different question, different urgency, different blast radius — so it has its own
+timer, its own config keys, and touches nothing in the self-heal ladder.
+
+**Desired settings** (`KioskSettings.java` — the single source of truth):
+
+| Key | Desired | Type | Why |
+|---|---|---|---|
+| `kioskMode` | `true` | bool | The kiosk must actually be locked. **The trigger for this feature.** |
+| `keepScreenOn` | `true` | bool | Stay lit on permanent wired power |
+| `setWifiWakelock` | `true` | bool | Survive WiFi doze |
+| `preventSleepWhileScreenOff` | `true` | bool | The real CPU-side keep-awake control |
+| `reloadOnWifiOn` | `true` | bool | Reload when WiFi returns |
+| `reloadOnInternet` | `true` | bool | Reload when connectivity returns |
+| `waitInternetOnReload` | `true` | bool | Wait for net rather than hammer while offline |
+| `restartOnCrash` | `true` | bool | Relaunch FKB if its process dies |
+| `reloadPageFailure` | `"30"` | string | Retry a **failed** page load after 30 s |
+| `reloadOnIdle` | `"0"` | string | **OFF on purpose — see below** |
+| `reloadEachSeconds` | `"0"` | string | **OFF on purpose — see below** |
+
+> ⚠️ **`reloadOnIdle` and `reloadEachSeconds` are asserted OFF deliberately. Do not
+> "fix" them to a non-zero value.** Both reload a page that is working fine, which
+> interrupts idle video watching. Only `reloadPageFailure` is wanted, because it fires
+> solely on an actual load failure. Same reasoning as `cli/fkb.cli.mjs:248-249`.
+
+**How a tick behaves.** Every 60 s the guard reads FKB's live settings
+(`cmd=listSettings&type=json`), compares, and **writes only the keys that have
+drifted** — never the whole desired set, and always with the setter matching the
+value's type (`setBooleanSetting` / `setStringSetting`). It is deliberately timid:
+
+- A **read failure** (FKB unreachable, wrong password → HTML login page, malformed
+  body) yields an empty map, which means *unknown*, **not** "all 11 settings drifted".
+  No writes. Verdict `UNREACHABLE`.
+- A key **absent** from FKB's live settings is **not** drift. FKB builds differ in
+  which knobs they expose; writing one FKB doesn't have would repeat every tick
+  forever because FKB would never report it back.
+- Empty `fkbPassword` → verdict `NO_PASSWORD`, and the warning is logged **once per
+  process**, not per tick (`CrashLog` is head-truncated at 128 KB — a per-tick note on
+  a permanently unconfigured device would evict the real history).
+
+Every repair writes a `KIOSKSET` line to the durable log naming each key with its
+before → after value. **That line is the whole point of the feature** — it is how a
+kiosk found switched off becomes visible after the fact. Read it with `pbctl crashlog`.
+
+**Install hold — why the guard does not break its own deploy.** Installing a bridge
+APK *requires* kiosk mode to be **off**: FKB's kiosk mode auto-dismisses Android's
+install dialog and the install dies with `INSTALL_FAILED_ABORTED` (deploy step 4
+below). A guard that blindly re-asserted `kioskMode=true` would kill the confirm tap.
+So `POST /update` computes a hold **deadline** (`now + watchdogKioskSettingsInstallHoldMs`,
+15 min by default) *before* the download begins, and until it lapses the guard stands
+down (verdict `INSTALL_HOLD`) — it will not even *read*, let alone write. The
+suppression is inferred from install activity, so the deploy needs no extra manual step.
+
+> **The deadline is persisted, and that is essential.** The install this guards against
+> **stops the service**, and deploy step 7 relaunches it — "repeat until `pbctl status`
+> answers", so more than once is normal. In v22 the hold lived only in a
+> `PianoBridgeService` field, so every one of those restarts reset it to 0 and the
+> suppression silently evaporated; a retried or second install then ran with **no hold
+> at all**. Since v23 the deadline is written through the merging `writeOverride` to
+> `kioskSettingsInstallHoldUntilEpochMs` and the guard honours the **later** of the
+> in-memory and persisted values, so the hold survives its own install.
+>
+> It stores the *deadline*, not the request timestamp, so shortening
+> `watchdogKioskSettingsInstallHoldMs` later cannot retroactively cut short a hold that
+> is already running. Like the disarm, it deliberately does not trigger
+> `reloadConfigAndReconnect` — tearing down BLE-MIDI and A2DP during an install is
+> exactly wrong.
+
+**Force a check.** `pbctl kiosk-check` runs one pass immediately and reports what it
+found and fixed, **bypassing the install hold**. This is how you verify the guard after
+a deploy without waiting out the 15-minute hold — and it exists precisely so nobody has
+to temporarily zero `watchdogKioskSettingsInstallHoldMs` and risk forgetting to restore
+it, which would break the next install.
+
+> A forced check bypasses the install hold but is **still refused while disarmed or
+> disabled**. The asymmetry is deliberate: the install hold is something the guard
+> *inferred* from a recent `/update`, and an operator asking for a check right now
+> knows better than the inference. Disarm and disable are explicit human instructions
+> to leave things alone, and "check now" is not "override my instruction". Same
+> reasoning is recorded at `KioskSettingsGuard.runPass`.
+
+**Disarm — the hands-on escape hatch.** For deliberate fiddling with FKB's settings:
+
+```bash
+PB_HOST=$PB node pbctl.mjs kiosk-settings        # verdict, drift, repairs, desired table
+PB_HOST=$PB node pbctl.mjs kiosk-check           # force one pass NOW (ignores install hold)
+PB_HOST=$PB node pbctl.mjs kiosk-disarm          # pause repair for 60 min (the default)
+PB_HOST=$PB node pbctl.mjs kiosk-disarm 15       # …or an explicit number of minutes
+PB_HOST=$PB node pbctl.mjs kiosk-rearm           # resume repair immediately
+```
+
+Underlying routes: `GET /kiosk/settings`, `POST /kiosk/settings/check`,
+`POST /kiosk/settings/disarm?minutes=60`, `POST /kiosk/settings/rearm`. `minutes` defaults to **60** and is clamped to **1 …
+1440 (24 h)** so a fat-fingered `6000` can't disarm the guard until next year. The
+deadline takes effect in memory immediately **and** is persisted to
+`kioskSettingsDisarmUntilEpochMs` via the merging `writeOverride`, so it **survives a
+bridge restart** — someone fiddling with the tablet will restart things, and a disarm
+that evaporated on restart would be worse than useless. It deliberately does *not*
+trigger `reloadConfigAndReconnect`: dropping BLE-MIDI and A2DP mid-fiddle is exactly
+the annoyance the disarm exists to avoid.
+
+> **`rearm` clears both halves, and says so if it can't** (fixed in v24). Setting a
+> deadline writes memory *and* disk, so clearing one must clear both. In v23 `rearm`
+> zeroed only the in-memory half while the guard combined the two with `max()` — which
+> cannot express a clear — so a stale persisted deadline kept winning and
+> `pbctl kiosk-rearm` printed `✓ re-armed` while the guard stayed completely inert.
+> That was observed on the tablet: disarm 30 min → restart → rearm → still disarmed,
+> and it took a hand-written `pbctl config set kioskSettingsDisarmUntilEpochMs 0` to
+> recover.
+>
+> Two changes prevent the whole class. The guard now treats **this process's latest
+> explicit instruction as authoritative**, falling back to the persisted value only
+> when it has issued none — so a clear can never be outvoted. And `disarm`/`rearm`
+> report the two halves separately: if the persisted write fails they return
+> `ok:false` with a warning and `pbctl` prints `⚠ PARTIALLY APPLIED` rather than a
+> tick, because a half-applied change silently reverts at the next restart.
+
+A `kiosk.settings` node also appears in `GET /diagnostics` (`pbctl diag`), alongside
+the existing `kiosk.webview` and `kiosk.fkbApp` views — a tablet can be rendering fine
+from a healthy FKB and still be sitting unlocked.
+
+**Config keys** (all live-tunable via `pbctl config set`, no rebuild):
+
+| Key | Default | Meaning |
+|---|---|---|
+| `watchdogKioskSettingsEnabled` | `true` | Master switch for the guard |
+| `watchdogKioskSettingsIntervalMs` | `60000` | Tick cadence. Floored at 5 s at start-up so a typo can't hot-loop FKB's REST API |
+| `watchdogKioskSettingsInstallHoldMs` | `900000` | Stand-down **duration** after a `POST /update` (15 min). Used to compute the deadline below |
+| `kioskSettingsInstallHoldUntilEpochMs` | `0` | The computed hold **deadline**, epoch ms. Written by `/update`; persisted so the hold survives the service restart the install causes. `0` = no hold |
+| `kioskSettingsDisarmUntilEpochMs` | `0` | Disarm deadline, epoch ms. Set by the disarm API; `0` = armed |
+
+> ⚠️ **`kioskMode` is NOT in `cli/fkb.cli.mjs`'s `keepawake` or `recovery` sets.**
+> Ten of the eleven keys above mirror those two host-CLI commands exactly; `kioskMode`
+> is a net-new assertion that **only the APK makes**. Consequence: running
+> `fkb.cli.mjs keepawake && fkb.cli.mjs recovery` by hand will **not** restore kiosk
+> mode. After versionCode 22, **the APK guard is the only automatic restorer of kiosk
+> mode.** If you turn it off by hand, either turn it back on by hand
+> (`fkb.cli.mjs set kioskMode true`) or let the guard do it within ~60 s.
+>
+> **This asymmetry is deliberate — please don't "fix" it by copying the desired set
+> into `fkb.cli.mjs`.** That would create a second hardcoded copy of the table, free to
+> drift from `KioskSettings.java`, and the two would silently disagree about what a
+> healthy kiosk looks like. One source of truth, on the device that enforces it.
+
 ### Self-update (ADB-free upgrades)
 
 New APK must be **same-signed** (debug keystore) and have **versionCode ≥ installed**.
@@ -165,6 +320,9 @@ PB_HOST=$PB node ../pbctl.mjs exec "curl -sI http://$IP:8799/app-debug.apk | hea
 #        'INSTALL_FAILED_ABORTED: User rejected permissions'). Turn it OFF.
 #    (b) A screen-OFF tablet shows the dialog to nobody. Force it ON + keep it lit,
 #        and blank the SPA so its own screensaver can't screenOff mid-install.
+#    NOTE (versionCode 22+): the kiosk-settings guard will NOT fight this. Step 5's
+#    /update stamps an install hold and the guard stands down for 15 min — it won't
+#    re-arm kioskMode under your confirm tap. Turning it off here is still REQUIRED.
 node ../../../cli/fkb.cli.mjs set kioskMode false
 node ../../../cli/fkb.cli.mjs screen on
 node ../../../cli/fkb.cli.mjs set keepScreenOn true
@@ -185,10 +343,25 @@ node ../../../cli/fkb.cli.mjs launch net.kckern.pianobridge
 PB_HOST=$PB node ../pbctl.mjs status            # want state=CONNECTED on the new build
 
 # 8. RESTORE the kiosk
+#    Still do this — but as of versionCode 22 it is BELT-AND-BRACES, not the only
+#    net: if you forget the kioskMode line, the settings guard repairs it within
+#    ~60s of the install hold expiring (15 min after step 5) and logs a KIOSKSET
+#    line. Doing it here just skips that wait. The url line has no such backstop.
 node ../../../cli/fkb.cli.mjs url https://daylightlocal.kckern.net/piano
 node ../../../cli/fkb.cli.mjs set kioskMode true
 pkill -f "http.server 8799"                     # stop the temp server
+
+# 9. VERIFY the guard is live (new in versionCode 22) — break it, prove it heals.
+#    `kiosk-check` forces one pass immediately, bypassing the 15-min install hold
+#    step 5 just stamped, so there is nothing to edit and nothing to restore.
+node ../../../cli/fkb.cli.mjs set kioskMode false     # break it on purpose
+PB_HOST=$PB node ../pbctl.mjs kiosk-check             # want: verdict REPAIRED, repaired: kioskMode
+node ../../../cli/fkb.cli.mjs get kioskMode           # want: true
 ```
+
+This is the real acceptance test — everything before it is unit-tested scaffolding.
+`pbctl kiosk-settings` afterwards should show `repairs: kioskMode×1`, and the repair
+is in the durable log (`pbctl crashlog | grep KIOSKSET`).
 
 **Config note:** a replace-install used to wipe the on-device override — as of
 versionCode 19 (`1.11-config-merge`) `POST /config` **merges** and the baked
@@ -238,7 +411,9 @@ actually required:
 
 ### Diagnostics (`pbctl`)
 
-`status | log | logcat [lines] [tag] | exec <cmd…> | cpu [ms] | info | props [key]` —
+`status | log | logcat [lines] [tag] | exec <cmd…> | cpu [ms] | info | props [key]`
+plus `diag | kiosk | crashlog` and the settings-guard trio
+`kiosk-settings | kiosk-disarm [min] | kiosk-rearm` —
 see the header of `pbctl.mjs`. `/exec` runs `sh -c` as the app uid; other-process CPU
 is impossible under the Knox untrusted-app SELinux ceiling (needs adb's shell uid).
 
@@ -282,25 +457,69 @@ Set `sdk.dir` in `app/local.properties` to your SDK path
 
 ## Build
 
+**The verified recipe (re-confirmed 2026-07-21, versionCode 22):**
+
 ```bash
 cd _extensions/piano-bridge/app
-JAVA_HOME=/opt/homebrew/opt/openjdk@17 ./gradlew assembleDebug
+echo "sdk.dir=$HOME/Library/Android/sdk" > local.properties   # gitignored; must exist
+export JAVA_HOME=/opt/homebrew/opt/openjdk@11/libexec/openjdk.jdk/Contents/Home
+./gradlew :app:testDebugUnitTest      # unit tests — no NDK, no third_party needed
+./gradlew :app:assembleDebug          # → app/build/outputs/apk/debug/app-debug.apk
 ```
 
 Output: `app/app/build/outputs/apk/debug/app-debug.apk`.
 
-> **Gotcha (2026-07-02):** the `gradle/wrapper/gradle-wrapper.jar` in this tree is
-> truncated (46 KB) and throws `NoClassDefFoundError: …MissingResourceException`.
-> The extracted Gradle 7.5.1 distribution itself is fine — build with it directly:
+> **Use `./gradlew`, NOT the `gradle` on your PATH.** A modern Homebrew `gradle`
+> refuses this build outright — *"Gradle requires JVM 17 or later"* — while the module
+> targets `JavaVersion.VERSION_11`. The wrapper pins Gradle 7.5.1, which is correct
+> with JDK 11. `JAVA_HOME` must point at **openjdk@11**; JDK 17 is not
+> interchangeable here despite what older revisions of this section claimed.
+
+> **`local.properties` must exist and is gitignored** (`app/.gitignore`). It carries
+> only `sdk.dir`. A fresh clone or worktree has no such file and the build fails
+> before it starts. Never commit it.
+
+> ⚠️ **A fresh git worktree cannot run `assembleDebug`.** `third_party/` is gitignored
+> (`app/src/main/cpp/.gitignore:1`), so the vendored ~445 MB sfizz tree exists **only
+> in the main checkout**. In a worktree CMake fails at
+> `add_subdirectory(third_party/sfizz)` (`CMakeLists.txt:44`) with
+> `[CXX1429] … Configuring incomplete`. Symlink it from the main checkout:
 > ```bash
-> JAVA_HOME=/opt/homebrew/opt/openjdk@17 \
->   ~/.gradle/wrapper/dists/gradle-7.5.1-bin/*/gradle-7.5.1/bin/gradle assembleDebug
+> ln -s /path/to/main/checkout/_extensions/piano-bridge/app/app/src/main/cpp/third_party \
+>       app/src/main/cpp/third_party
 > ```
+> **`:app:testDebugUnitTest` is unaffected** — the JVM unit tests need no NDK and no
+> `third_party`, and run fine in a bare worktree. Only the APK build needs the symlink.
+>
+> The symlink is gitignored and safe to leave in place. (`cpp/.gitignore` carries both
+> `third_party/` and a bare `third_party` — the directory-only form does **not** match
+> a symlink, so the bare entry is what covers the worktree case. Keep both.)
+
+> **Historical note (superseded):** a 2026-07-02 revision of this section claimed the
+> checked-in `gradle-wrapper.jar` was "truncated (46 KB)" and told you to invoke the
+> extracted Gradle distribution directly. That was a misdiagnosis — 46,175 bytes is
+> the *normal* size for this jar, and `./gradlew` works. Use the wrapper.
 
 > **Always bump `versionCode` in `app/app/build.gradle` on every build** — the
 > self-update path (below) rejects an APK whose `versionCode` is not strictly greater
-> than the installed one. Current shipped build: **versionCode 18 / versionName
-> `1.10-audio-guard`** (SM-T590, verified 2026-07-09).
+> than the installed one. Current shipped build: **versionCode 24 / versionName
+> `1.16-rearm-clears-persisted`** (SM-T590, 2026-07-21).
+
+### Unit tests
+
+```bash
+export JAVA_HOME=/opt/homebrew/opt/openjdk@11/libexec/openjdk.jdk/Contents/Home
+./gradlew :app:testDebugUnitTest                        # all
+./gradlew :app:testDebugUnitTest --tests '*KioskSettingsTest*'   # one class
+```
+
+> **`org.json` is a STUB on the unit-test classpath.** `android.jar`'s `org.json` is
+> stubbed, and this module sets `unitTests.returnDefaultValues = true`, so those stubs
+> silently return defaults instead of throwing — `new JSONObject("{\"a\":1}").length()`
+> evaluates to `0`. Any JSON-parsing test would "pass" against a no-op. The module
+> therefore carries a **test-only** `org.json:json` dependency; AGP appends the
+> mockable `android.jar` last, so the real implementation wins in tests while the APK
+> keeps using Android's own `org.json`. Don't remove it.
 
 ## Install
 
@@ -436,6 +655,10 @@ _extensions/piano-bridge/
             │   ├── Updater.java               (self-update: PackageInstaller session)
             │   ├── InstallReceiver.java       (self-update: launches the confirm dialog)
             │   ├── DeviceConfig.java          (runtime override; wake-policy keys)
+            │   ├── KioskWatchdog.java         (page-health: 2s beat/fps + self-heal ladder)
+            │   ├── KioskSettings.java         (DESIRED FKB settings table + pure drift detect)
+            │   ├── KioskSettingsGuard.java    (60s drift repair; install-hold + disarm)
+            │   ├── FkbRest.java               (FKB REST: command/params, listSettings, deviceInfo)
             │   ├── ControlServer.java         (NanoWSD :8770 — WS + /config /update /exec …)
             │   └── PianoEngine.java           (JNI facade)
             └── cpp/

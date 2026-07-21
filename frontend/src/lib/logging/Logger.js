@@ -6,6 +6,7 @@
  */
 
 import { getSharedWsTransport } from './sharedTransport.js';
+import { readHeap } from '../perf/memoryProbe.js';
 import {
   startJankProbes,
   stopJankProbes,
@@ -307,12 +308,15 @@ function collectSnapshot() {
     maxMs = hi;
   }
 
-  const mem = performance.memory;
-  const heap = mem ? {
-    usedMB: +(mem.usedJSHeapSize / 1048576).toFixed(1),
-    totalMB: +(mem.totalJSHeapSize / 1048576).toFixed(1),
-    limitMB: +(mem.jsHeapSizeLimit / 1048576).toFixed(1),
-  } : null;
+  // Heap where the browser provides it. `source` is always present so a null
+  // usedMB reads as "this browser won't say", not as "nothing allocated".
+  const { heapMB, heapTotalMB, heapLimitMB, heapSource } = readHeap({ precision: 1 });
+  const heap = {
+    usedMB: heapMB,
+    totalMB: heapTotalMB,
+    limitMB: heapLimitMB,
+    source: heapSource,
+  };
 
   const domNodes = typeof document !== 'undefined'
     ? document.getElementsByTagName('*').length

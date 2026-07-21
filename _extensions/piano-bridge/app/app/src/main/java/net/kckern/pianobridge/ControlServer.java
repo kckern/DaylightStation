@@ -113,6 +113,10 @@ public class ControlServer extends NanoWSD {
                             .put("GET /diagnostics            (FULL system+FKB health snapshot for `pbctl diag`)")
                             .put("GET /kiosk                  (WebView watchdog verdict + recovery counters)")
                             .put("POST /kiosk/beat            (page heartbeat ingest: {fps,visibility,url})")
+                            .put("GET /kiosk/settings         (FKB kiosk-settings drift guard: verdict, repairs, disarm)")
+                            .put("POST /kiosk/settings/check   (force one drift pass NOW, bypassing the install hold)")
+                            .put("POST /kiosk/settings/disarm?minutes=60  (stop repairing drift while fiddling; max 24h)")
+                            .put("POST /kiosk/settings/rearm   (re-arm the drift guard now)")
                             .put("GET /crashlog               (durable death/crash + reboot-cap record)")
                             .put("GET|POST /update?url=<apk-url>  (ADB-free self-update; one-tap confirm)")
                             .put("GET /speaker · POST /speaker  (A2DP speaker status+guard / force reconnect)")
@@ -164,6 +168,37 @@ public class ControlServer extends NanoWSD {
                         catch (JSONException je) { return json(err("bad_beat_json")); }
                     }
                     return json(ok());
+                }
+                case "/kiosk/settings": {
+                    KioskSettingsGuard g = service.getKioskSettingsGuard();
+                    return json(g != null ? g.snapshot() : err("no_settings_guard"));
+                }
+                case "/kiosk/settings/check": {
+                    // Run one pass NOW, bypassing the install hold — the deploy-time
+                    // acceptance test ("break kioskMode, prove the guard fixes it")
+                    // without having to edit the hold out of the config and remember to
+                    // put it back. Still refused while disarmed/disabled.
+                    KioskSettingsGuard g = service.getKioskSettingsGuard();
+                    if (g == null) return json(err("no_settings_guard"));
+                    return json(g.forceCheck());
+                }
+                case "/kiosk/settings/disarm": {
+                    // Hands-on escape hatch: stop the guard repairing drift while
+                    // someone is deliberately fiddling with FKB's settings.
+                    KioskSettingsGuard g = service.getKioskSettingsGuard();
+                    if (g == null) return json(err("no_settings_guard"));
+                    int minutes = parseIntParam(session, "minutes", 60);
+                    // Clamp to 24h so a fat-fingered "6000" can't disarm until next year.
+                    minutes = Math.max(1, Math.min(24 * 60, minutes));
+                    JSONObject r = g.disarmForMinutes(minutes);
+                    return json(r.put("minutes", minutes).put("disarmUntilMs", g.disarmUntilMs()));
+                }
+                case "/kiosk/settings/rearm": {
+                    KioskSettingsGuard g = service.getKioskSettingsGuard();
+                    if (g == null) return json(err("no_settings_guard"));
+                    // Clears BOTH halves; reports ok:false if the persisted half failed,
+                    // because a half-cleared rearm re-disarms at the next restart.
+                    return json(g.rearm().put("disarmUntilMs", g.disarmUntilMs()));
                 }
                 case "/crashlog":
                     return json(CrashLog.read());
@@ -248,6 +283,10 @@ public class ControlServer extends NanoWSD {
                     if (url == null && method == NanoHTTPD.Method.POST) url = readBody(session);
                     if (url == null || url.trim().isEmpty()) return json(err("missing url"));
                     url = url.trim();
+                    // Stamp BEFORE the download: deploy step 4 sets kioskMode=false so
+                    // Android's install dialog isn't auto-dismissed, and the kiosk-settings
+                    // guard must not "repair" that back to true mid-install and abort it.
+                    service.markUpdateRequested();
                     Diag.log(TAG, "/update from " + session.getRemoteIpAddress() + " url=" + url);
                     File staged = new File(service.getCacheDir(), "update.apk");
                     long bytes = downloadTo(url, staged);
