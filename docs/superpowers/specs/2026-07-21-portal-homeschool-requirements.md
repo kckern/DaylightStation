@@ -76,8 +76,22 @@ no curriculum attached.
 - R2.3 Chrome features are **OPEN**: candidates include pause behaviour,
   overlays, progress display, and resume affordances.
 - R2.4 Progress must resume where the child left off.
-- R2.5 Completion must be resistant to a child parking a video and walking
-  away. See **OPEN-1**.
+- R2.5 **DECIDED (2026-07-21):** Completion requires a **post-video quiz**.
+  Watch percentage alone does not complete a lesson; the child must answer
+  questions about the material.
+
+  Rationale: an attention check only proves a body was in the room.
+  Comprehension is the signal that actually measures learning. This is a
+  deliberate rejection of Piano's presence-based `engaged` flag as the model
+  here.
+
+  **Consequence:** the quiz engine (sub-project 3) is a **dependency** of the
+  course slice, not a later addition. See §5 sequencing.
+- R2.6 **DECIDED (2026-07-21):** Course videos are **Plex-backed**, consuming
+  the shared `fitnessPlayableService` exactly as Piano does — inheriting
+  ordering, season/episode structure, watch state, resume, and transcoding.
+  Loose materials (PDFs, maps, worksheets) stay filesystem-backed via the
+  existing `FileAdapter`.
 
 ### R3 — Quizzes
 
@@ -229,14 +243,24 @@ Each row is an independent spec → plan → build cycle.
 
 | # | Sub-project | Size | Depends on | Covers |
 |---|---|---|---|---|
-| 1 | Identity / profiles on the screen framework | M | — | R1 |
+| 1 | **Identity + quiz/flashcard engine** | L | question schema | R1, R3, R4 |
 | 2 | Course player + progress | M | 1 | R2, R6.1 |
-| 3 | Quiz + flashcard engine | L | 1, question schema | R3, R4 |
-| 4 | Reader (paged + flow) | S–M | — | R5.1–R5.3 |
-| 5 | Curriculum / assignments | L | 1, 2 | R6.2, R6.3 |
-| 6 | Parent view + sign-off | M | 5 | R7 |
-| 7 | Economy hooks | S | 2 or 3 | R8 |
-| 8 | Content gates | S | 5 | R10 |
+| 3 | Reader (paged + flow) | S–M | — | R5.1–R5.3 |
+| 4 | Curriculum / assignments | L | 1, 2 | R6.2, R6.3 |
+| 5 | Parent view + sign-off + reassignment | M | 4 | R7, R6.5 |
+| 6 | Economy hooks | S | 1 or 2 | R8 |
+| 7 | Content gates | S | 4 | R10 |
+
+**Sequencing revised 2026-07-21.** Identity and the quiz engine are built
+together as the first slice, ahead of courses. R2.5 makes quizzes a
+prerequisite for course completion, so building courses first would ship
+videos that play and resume but can never complete — no completion events, no
+coins, nothing to sign off.
+
+Quizzes are independently useful, so this is a shippable slice rather than
+scaffolding: R1.7 already establishes that a guest can drill a generic quiz or
+flashcard set with no curriculum attached. First deliverable is a child
+claiming a profile, taking a quiz, and the result being recorded against them.
 
 **Not a sub-project:** R5.4 (filesystem materials) is satisfied by existing
 `FileAdapter` plus a `local-media.yml` roots entry. R9 (freestyle audio) is
@@ -249,15 +273,12 @@ could run at any point. Everything else funnels through identity.
 
 ## 6. Open decisions
 
-- **OPEN-1 — Engagement signal.** Piano's completion rule is
-  `watched ≥ threshold% AND engaged`, where `engaged` means the student played
-  along on MIDI at least once. That conjunction is what makes completion
-  honest. School has the same park-the-video problem and **no equivalent
-  signal**. What counts as engagement for a course video is undecided and must
-  be answered in sub-project 2.
-- **OPEN-2 — Question bank schema.** Given two existing incompatible models,
-  what does the school question schema look like, and does it deliberately
-  align with the journalist model, extend it, or stand apart?
+- ~~**OPEN-1 — Engagement signal.**~~ **RESOLVED 2026-07-21.** Completion
+  requires a post-video quiz; see R2.5.
+- **OPEN-2 — Question bank schema. ⚠ CRITICAL PATH.** Given two existing
+  incompatible models, what does the school question schema look like, and does
+  it deliberately align with the journalist model, extend it, or stand apart?
+  This now gates the first slice and is the next decision to settle.
 - **OPEN-3 — Bank sharing with the game show.** Sharing a *format* is ruled
   out. Whether to support an export/adapt step from a school bank into a
   Jeopardy set is undecided and low priority.
@@ -280,8 +301,14 @@ could run at any point. Everything else funnels through identity.
   so this would be a compensating pair of transactions rather than an edit.
   Whether that is worth doing — or whether coin errors are simply left alone —
   is undecided.
-- **OPEN-8 — Course content source.** Whether courses are Plex-backed (as
-  Piano's are, via `fitnessPlayableService`), filesystem-backed, or both.
+- ~~**OPEN-8 — Course content source.**~~ **RESOLVED 2026-07-21.** Plex-backed
+  courses, filesystem materials; see R2.6.
+- **OPEN-10 — Generic vs. curricular content.** R1.7 implies content carries a
+  property distinguishing generic material (open to any user, including guests)
+  from curricular material (assigned to a specific child). Where that property
+  lives — content metadata, curriculum config, or an explicit allow-list — is
+  undecided. Mostly lands in sub-project 4, but the first slice must know which
+  bucket a quiz is in.
 
 ---
 
