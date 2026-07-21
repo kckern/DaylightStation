@@ -65,3 +65,17 @@
   pointer-events: auto;
   max-width: 320px;
 }
+
+/* Touch shell: column layout so TouchChrome's fixed-height lane reserves space and
+   the content box takes the remainder (1280x800 panel -> 720px content + 80px lane). */
+.screen-overlay--touch-shell {
+  display: flex;
+  flex-direction: column;
+}
+
+.screen-overlay--touch-content {
+  flex: 1 1 auto;
+  min-height: 0; /* lets the content box actually shrink inside the flex column */
+  position: relative;
+  overflow: hidden;
+}
