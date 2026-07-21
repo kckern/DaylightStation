@@ -2,6 +2,7 @@ import React, { createContext, useContext, useState, useCallback, useEffect, use
 import { getActionBus } from '../input/ActionBus.js';
 import TouchChrome from './TouchChrome.jsx';
 import { useHasMenuNavigationContext, useMenuNavigationContext } from '../../context/MenuNavigationContext.jsx';
+import { BROWSE_NAV_TYPES } from '../screenActivity.js';
 import './ScreenOverlayProvider.css';
 
 const ScreenOverlayContext = createContext(null);
@@ -13,10 +14,10 @@ let toastIdCounter = 0;
 // translated into a synthetic Enter keydown by ScreenActionHandler, and on a
 // menu Enter activates the highlighted item. Showing play/pause while
 // browsing would let a mis-tap launch whatever happens to be selected.
-const BROWSE_TYPES = new Set(['menu', 'plex-menu', 'show-view', 'season-view']);
-
+// BROWSE_NAV_TYPES (screenActivity.js) is the single source of truth for
+// this distinction -- do not redeclare it here.
 function isNavStackContent(currentContent) {
-  return !!currentContent && !BROWSE_TYPES.has(currentContent.type);
+  return !!currentContent && !BROWSE_NAV_TYPES.has(currentContent.type);
 }
 
 // Reads currentContent from the nav stack and renders the chrome lane with
