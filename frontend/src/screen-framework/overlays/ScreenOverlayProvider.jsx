@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useCallback, useEffect, useRef } from 'react';
 import { getActionBus } from '../input/ActionBus.js';
+import TouchChrome from './TouchChrome.jsx';
 import './ScreenOverlayProvider.css';
 
 const ScreenOverlayContext = createContext(null);
@@ -29,7 +30,7 @@ function ToastWrapper({ Component, props, timeout, onDismiss }) {
   );
 }
 
-export function ScreenOverlayProvider({ children }) {
+export function ScreenOverlayProvider({ children, inputType = null }) {
   const [fullscreen, setFullscreen] = useState(null);
   const [pip, setPip] = useState(null);
   const [toasts, setToasts] = useState([]);
@@ -44,14 +45,14 @@ export function ScreenOverlayProvider({ children }) {
   }, []);
 
   const showOverlay = useCallback((Component, props = {}, options = {}) => {
-    const { mode = 'fullscreen', position = 'top-right', priority, timeout = 3000 } = options;
+    const { mode = 'fullscreen', position = 'top-right', priority, timeout = 3000, chrome = 'back' } = options;
 
     if (mode === 'fullscreen') {
       setFullscreen((current) => {
         if (current && priority !== 'high') {
           return current;
         }
-        return { Component, props, priority };
+        return { Component, props, priority, chrome };
       });
     } else if (mode === 'pip') {
       setPip({ Component, props, position });
@@ -91,9 +92,21 @@ export function ScreenOverlayProvider({ children }) {
     <ScreenOverlayContext.Provider value={{ showOverlay, dismissOverlay, hasOverlay, registerEscapeInterceptor, unregisterEscapeInterceptor, escapeInterceptorRef }}>
       {children}
       {fullscreen && (
-        <div className="screen-overlay--fullscreen">
-          <fullscreen.Component {...fullscreen.props} dismiss={() => dismissOverlay('fullscreen')} />
-        </div>
+        inputType === 'touch' ? (
+          // Touch screens get a reserved control lane rather than an overlaid one:
+          // the content box shrinks so chrome never occludes the picture, and the
+          // controls are always visible (no hidden affordance to hunt for).
+          <div className="screen-overlay--fullscreen screen-overlay--touch-shell">
+            <div className="screen-overlay--touch-content">
+              <fullscreen.Component {...fullscreen.props} dismiss={() => dismissOverlay('fullscreen')} />
+            </div>
+            <TouchChrome mode={fullscreen.chrome || 'back'} />
+          </div>
+        ) : (
+          <div className="screen-overlay--fullscreen">
+            <fullscreen.Component {...fullscreen.props} dismiss={() => dismissOverlay('fullscreen')} />
+          </div>
+        )
       )}
       {pip && (
         <div
