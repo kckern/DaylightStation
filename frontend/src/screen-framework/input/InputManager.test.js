@@ -24,9 +24,17 @@ vi.mock('./adapters/RemoteAdapter.js', () => ({
   }),
 }));
 
+vi.mock('./adapters/TouchAdapter.js', () => ({
+  TouchAdapter: vi.fn().mockImplementation(function () {
+    this.attach = vi.fn();
+    this.destroy = vi.fn();
+  }),
+}));
+
 import { KeyboardAdapter } from './adapters/KeyboardAdapter.js';
 import { NumpadAdapter } from './adapters/NumpadAdapter.js';
 import { RemoteAdapter } from './adapters/RemoteAdapter.js';
+import { TouchAdapter } from './adapters/TouchAdapter.js';
 
 describe('InputManager', () => {
   let bus;
@@ -51,6 +59,12 @@ describe('InputManager', () => {
   it('should create KeyboardAdapter for type keyboard', () => {
     const manager = createInputManager(bus, { type: 'keyboard' });
     expect(KeyboardAdapter).toHaveBeenCalledWith(bus);
+    manager.destroy();
+  });
+
+  it('should create TouchAdapter for type touch', () => {
+    const manager = createInputManager(bus, { type: 'touch' });
+    expect(TouchAdapter).toHaveBeenCalledWith();
     manager.destroy();
   });
 

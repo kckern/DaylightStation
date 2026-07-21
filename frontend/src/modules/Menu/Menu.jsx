@@ -532,12 +532,21 @@ const MenuIMG = React.memo(function MenuIMG({ img, label }) {
  * Memoized individual menu item — only re-renders when isActive or item data changes.
  * This eliminates 32 of 34 re-renders per keystroke (only old + new active items update).
  */
-const MenuItem = React.memo(function MenuItem({ item, isActive, isDisabled, imageSrc, imageReady, itemKey }) {
+const MenuItem = React.memo(function MenuItem({
+  item,
+  isActive,
+  isDisabled,
+  imageSrc,
+  imageReady,
+  itemKey,
+  onActivate,
+}) {
   const img = imageReady ? imageSrc : null;
   const imageKey = img ? `img-${img}` : `no-img-${itemKey}`;
   return (
     <div
       className={`menu-item ${item.type || ""} ${isActive ? "active" : ""} ${isDisabled ? "disabled" : ""}`}
+      onClick={onActivate}
     >
       <MenuIMG key={imageKey} img={img} label={item.label} />
       <h3 className="menu-item-label">{item.label}</h3>
@@ -797,6 +806,17 @@ function MenuItems({
     }, { maxPerMinute: 10 });
   }, [containerRef, columns, buildLayoutCache]);
 
+  const handleItemActivate = useCallback((index) => {
+    const item = items[index];
+    if (!item) return;
+
+    const key = findKeyForItem(item);
+    navigateTo(index);
+    setSelectedIndex(index, key);
+    logger.info('menu.tap-select', { index, title: item.label });
+    onSelect?.(item);
+  }, [items, findKeyForItem, navigateTo, setSelectedIndex, onSelect, logger]);
+
   // Restore or reset scroll + active index when items change or on (re-)mount.
   // If the context has a saved selection for this depth, restore to it (back navigation).
   // Otherwise reset to 0 (new submenu opened).
@@ -1050,6 +1070,7 @@ function MenuItems({
             imageSrc={imageSrc}
             imageReady={index < imageReadyCount}
             itemKey={itemKey}
+            onActivate={isDisabled ? undefined : () => handleItemActivate(index)}
           />
         );
       })}
