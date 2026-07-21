@@ -10,8 +10,26 @@ import { useEffect, useRef } from 'react';
  *   onError     ({ kind, ...details }) => void
  *   mediaLoadTimeoutMs  number|null — if set, fires kind=media-load-timeout when
  *                       neither 'canplay' nor 'playing' arrive within the window
+ *   registrationSignal  any — an value whose identity changes whenever a renderer
+ *                       registers/deregisters its media element (Player passes its
+ *                       `mediaAccess` state). See the note below on why.
+ *
+ * ELEMENT-AVAILABILITY RE-TRIGGER (2026-07-21):
+ * The effect bails when `getMediaEl()` returns null, and at track start it DOES:
+ * SinglePlayer renders null until its async meta fetch resolves, so no
+ * <video>/<audio> exists yet. Something in the dep list must therefore change
+ * again once the element appears, or the 'error' listener and load-timeout timer
+ * are never armed for that item.
+ *
+ * This used to happen by accident: `getMediaEl` carried `[mediaAccess,
+ * resilienceBridge]` deps, so every renderer registration minted a new identity
+ * and re-ran this effect. The 2026-07-21 leak fix made those callbacks stable for
+ * the Player's life (they chained render generations into an unbounded retained
+ * list), which silently removed that accidental re-trigger. `registrationSignal`
+ * replaces it explicitly — do not remove it, and do not re-couple this to
+ * callback identity.
  */
-export function useMediaErrorReporter({ getMediaEl, mediaKey, onError, mediaLoadTimeoutMs }) {
+export function useMediaErrorReporter({ getMediaEl, mediaKey, onError, mediaLoadTimeoutMs, registrationSignal }) {
   // Stabilize onError via ref so consumers don't have to wrap in useCallback.
   // Identity churn on onError would otherwise re-run the effect every parent
   // re-render, tearing down listeners and resetting the load-timeout window.
@@ -78,5 +96,6 @@ export function useMediaErrorReporter({ getMediaEl, mediaKey, onError, mediaLoad
       el.removeEventListener('error', handleError);
       clearLoadTimer();
     };
-  }, [getMediaEl, mediaKey, mediaLoadTimeoutMs]);
+    // registrationSignal: re-run when a renderer registers its element (see note above).
+  }, [getMediaEl, mediaKey, mediaLoadTimeoutMs, registrationSignal]);
 }

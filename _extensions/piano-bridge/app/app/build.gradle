@@ -24,8 +24,8 @@ android {
         // BUMP versionCode on EVERY build: PackageInstaller self-update (POST /update)
         // rejects an APK whose versionCode is < the installed one. Future ADB-free
         // upgrades must keep incrementing this.
-        versionCode 21
-        versionName "1.13-midiin-port-race"
+        versionCode 24
+        versionName "1.16-rearm-clears-persisted"
 
         // The native synth host (sfizz/dexed via Oboe). 32-bit armeabi-v7a is the
         // real target (Samsung SM-T590, Snapdragon 450); arm64-v8a included for
@@ -79,4 +79,11 @@ dependencies {
     // NanoHTTPD WebSocket server — control channel from the browser kiosk.
     implementation 'org.nanohttpd:nanohttpd-websocket:2.3.1'
     testImplementation 'junit:junit:4.13.2'
+    // Real org.json for JVM unit tests ONLY. The android.jar on the unit-test
+    // classpath ships org.json as STUBS, and with unitTests.returnDefaultValues=true
+    // those stubs silently return defaults (new JSONObject("{…}").length() == 0)
+    // instead of throwing — so JSON-parsing logic would "pass" against a no-op.
+    // AGP appends the mockable android.jar LAST, so this real implementation wins.
+    // Test-only: nothing here reaches the APK, which keeps using Android's org.json.
+    testImplementation 'org.json:json:20231013'
 }

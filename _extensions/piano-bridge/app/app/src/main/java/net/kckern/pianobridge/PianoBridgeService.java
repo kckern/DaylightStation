@@ -88,6 +88,16 @@ public class PianoBridgeService extends Service {
     private ScreenWaker screenWaker;
     private TouchPulser touchPulser;
     private KioskWatchdog kioskWatchdog;
+    private KioskSettingsGuard kioskSettingsGuard;
+
+    /**
+     * Wall-clock ms of the last POST /update. The kiosk-settings guard stands down for
+     * a window after this: installing a new APK REQUIRES kiosk mode to be OFF (FKB's
+     * kiosk mode auto-dismisses Android's install dialog → INSTALL_FAILED_ABORTED), so
+     * re-asserting it mid-install would break the very deploy that ships the guard.
+     * 0 = no install has been requested this process lifetime.
+     */
+    private volatile long lastUpdateRequestAtMs = 0;
 
     // Fail-closed audio guard: keeps the built-in speaker silent whenever the piano's
     // A2DP sink isn't the active route. Reconciled off the main thread (binder calls).
@@ -159,6 +169,16 @@ public class PianoBridgeService extends Service {
             kioskWatchdog.updateConfig(config);
         }
 
+        // FKB kiosk-settings drift guard — a SEPARATE concern from the page-health
+        // watchdog above, on its own slow (60s) timer. Same create-once/update-config
+        // lifecycle so a config reload never resets its repair counters.
+        if (kioskSettingsGuard == null) {
+            kioskSettingsGuard = new KioskSettingsGuard(this, config);
+            kioskSettingsGuard.start();
+        } else {
+            kioskSettingsGuard.updateConfig(config);
+        }
+
         // START_STICKY: if the OS reclaims the process under memory pressure, revive
         // the service automatically (onStartCommand re-runs with a null intent, which
         // the midi_name guard above tolerates). Reboots are covered by BootReceiver and
@@ -171,6 +191,7 @@ public class PianoBridgeService extends Service {
     public void onDestroy() {
         Log.i(TAG, "Service destroying");
         if (kioskWatchdog != null) { kioskWatchdog.stop(); kioskWatchdog = null; }
+        if (kioskSettingsGuard != null) { kioskSettingsGuard.stop(); kioskSettingsGuard = null; }
         CrashLog.markCleanShutdown(); // so the next start isn't misread as a crash
         if (bleConnector != null) { bleConnector.stop(); bleConnector = null; }
         if (a2dpConnector != null) { a2dpConnector.stop(); a2dpConnector = null; }
@@ -394,6 +415,37 @@ public class PianoBridgeService extends Service {
 
     public KioskWatchdog getKioskWatchdog() { return kioskWatchdog; }
 
+    public KioskSettingsGuard getKioskSettingsGuard() { return kioskSettingsGuard; }
+
+    /**
+     * Stamp an install request (POST /update) so the kiosk-settings guard stands down.
+     *
+     * <p>The hold DEADLINE is both set on the guard (immediate effect) and PERSISTED to
+     * config, because the install this guards against stops the service — deploy step 7
+     * relaunches it, repeatedly if need be. An in-memory-only hold reset to 0 on each of
+     * those restarts and evaporated (found deploying v22, 2026-07-21), so a retried or
+     * second install ran with no suppression at all. Persisting the deadline (not the
+     * request time) also means later shortening {@code watchdogKioskSettingsInstallHoldMs}
+     * can't cut short a hold that is already running.
+     *
+     * <p>Deliberately does NOT call {@link #reloadConfigAndReconnect()}: that tears down
+     * BLE-MIDI and A2DP, and doing that during an install is exactly wrong. The merging
+     * {@code writeOverride} leaves every sibling key intact.
+     */
+    public void markUpdateRequested() {
+        long now = System.currentTimeMillis();
+        lastUpdateRequestAtMs = now;
+        long holdMs = config != null ? config.watchdogKioskSettingsInstallHoldMs() : 900000L;
+        long until = now + holdMs;
+        if (kioskSettingsGuard != null) {
+            // Shared path: sets the in-memory half AND persists, and logs a warning if
+            // the persist fails rather than pretending the hold will survive a restart.
+            kioskSettingsGuard.holdInstallUntil(until);
+        }
+    }
+
+    public long lastUpdateRequestAtMs() { return lastUpdateRequestAtMs; }
+
     /**
      * Wire a freshly opened MidiDevice's output port 0 to the MIDI receiver — the
      * note-IN path. Delegates to the retrying opener because on the SM-T590 (Android
@@ -479,6 +531,28 @@ public class PianoBridgeService extends Service {
 
     public DeviceConfig getConfig() { return config; }
 
+    /**
+     * Re-read the device config from disk WITHOUT touching BLE-MIDI or A2DP.
+     *
+     * <p>For config writes that only concern the watchdogs — the kiosk-settings guard's
+     * disarm and install-hold deadlines. Those are written with the merging
+     * {@code writeOverride} while the piano is in use (or mid-install), so the full
+     * {@link #reloadConfigAndReconnect()} is exactly wrong: it would drop the MIDI link
+     * and the speaker. But SOME reload is required, because the guard reads the
+     * persisted half of its deadlines through this cached {@code config} object — a
+     * write that lands on disk without a reload leaves the guard reading the value it
+     * loaded at startup, which is half of the v23 rearm bug.
+     *
+     * <p>Other components (ScreenWaker, TouchPulser, the connectors) keep the config
+     * instance they were built with. Safe here because the merge only alters the guard
+     * keys, which none of them read; a real reload rebuilds them.
+     */
+    public synchronized void reloadConfigOnly() {
+        config = DeviceConfig.load(this);
+        if (kioskWatchdog != null) kioskWatchdog.updateConfig(config);
+        if (kioskSettingsGuard != null) kioskSettingsGuard.updateConfig(config);
+    }
+
     /** Re-read the device config (after a pbctl /config edit) and reconnect. */
     public synchronized void reloadConfigAndReconnect() {
         config = DeviceConfig.load(this);
@@ -492,6 +566,9 @@ public class PianoBridgeService extends Service {
         startBleMidi();
         // Refresh watchdog thresholds/policy in place (keeps its beat state).
         if (kioskWatchdog != null) kioskWatchdog.updateConfig(config);
+        // Same for the kiosk-settings guard, so `pbctl config set` takes effect
+        // without a restart and its repair counters survive the reload.
+        if (kioskSettingsGuard != null) kioskSettingsGuard.updateConfig(config);
     }
 
     private synchronized void closeMidi() {
