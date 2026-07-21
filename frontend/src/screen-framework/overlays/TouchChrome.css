@@ -1,7 +1,12 @@
 /* TouchChrome — the reserved control lane for touch-only screens.
    The lane sits BESIDE content, not over it, so it never occludes the picture.
    translateZ(0) is defensive: a playing <video> GPU-promotes above sibling
-   elements and can cover controls that lack their own compositing layer. */
+   elements and can cover controls that lack their own compositing layer.
+   z-index is defensive too: .screen-overlay--touch-shell (the ancestor) creates
+   no containing block, so a `position: fixed` descendant elsewhere on the
+   screen could otherwise stack above this lane -- stranding a touch user with
+   no way out. Comfortably above the overlay stack in ScreenOverlayProvider.css
+   (1000-1002) but below MasterVolumeToast.css's 10000 (system-level toast). */
 .touch-chrome {
   flex: 0 0 auto;
   height: 80px;
@@ -12,6 +17,7 @@
   background: #101014;
   border-top: 1px solid rgba(255, 255, 255, 0.12);
   transform: translateZ(0);
+  z-index: 9000;
   user-select: none;
 }
 
