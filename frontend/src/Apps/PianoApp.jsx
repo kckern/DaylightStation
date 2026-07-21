@@ -16,7 +16,7 @@ import { PianoMidiProvider, usePianoMidi, usePianoMidiNotes } from '../modules/P
 import { PianoUserProvider } from '../modules/Piano/PianoKiosk/PianoUserContext.jsx';
 import { useInactivityReturn } from '../modules/Piano/PianoKiosk/useInactivityReturn.js';
 import { useScreenControl, screenOffFailureMessage } from '../modules/Piano/PianoKiosk/useScreenControl.js';
-import { useArmedAction } from '../modules/Piano/PianoKiosk/useArmedAction.js';
+import { useArmedAction } from '../lib/identity/useArmedAction.js';
 import {
   PianoWakeLockProvider,
   usePianoScreensaver,
@@ -52,9 +52,9 @@ import PianoTest from '../modules/Piano/PianoKiosk/modes/Test/PianoTest.jsx';
 import KeepAliveVideo from '../modules/Piano/PianoKiosk/KeepAliveVideo.jsx';
 import { PianoMixProvider } from '../modules/Piano/PianoKiosk/PianoMixContext.jsx';
 import { usePianoUser } from '../modules/Piano/PianoKiosk/PianoUserContext.jsx';
-import { useWhoIsPlaying } from '../modules/Piano/PianoKiosk/useWhoIsPlaying.js';
+import { useIdleGap } from '../lib/identity/useIdleGap.js';
 import { useAutoMidiHistory } from '../modules/Piano/PianoKiosk/useAutoMidiHistory.js';
-import WhoIsPlayingPrompt from '../modules/Piano/PianoKiosk/WhoIsPlayingPrompt.jsx';
+import ProfilePicker from '../lib/identity/ProfilePicker.jsx';
 import './PianoApp.scss';
 
 /**
@@ -259,7 +259,7 @@ function PianoShell() {
   // Re-prompt "who's playing?" after an idle gap so the next player is credited.
   // Suppressed while a video lecture is open: the open player is already earning
   // watch credit for the current user, so a mid-lesson re-prompt would mis-credit.
-  useWhoIsPlaying(activeNotes, noteHistory.length, config.whoIsPlayingMinutes, () => {
+  useIdleGap(activeNotes, noteHistory.length, config.whoIsPlayingMinutes, () => {
     // Suppress mid-performance too: Listen mode performs via timestamped MIDI
     // with no activeNotes churn, so the idle-gap could otherwise fire mid-piece.
     if (videoActive || playing) return;
@@ -289,7 +289,7 @@ function PianoShell() {
       <PianoPresetProvider>
       <PianoBreadcrumbProvider>
         <div className="piano-app">
-          <WhoIsPlayingPrompt
+          <ProfilePicker
             open={whoOpen}
             users={users}
             onPick={(id) => { setCurrentUser(id); setWhoOpen(false); }}

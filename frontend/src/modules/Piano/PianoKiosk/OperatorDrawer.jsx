@@ -4,7 +4,7 @@ import { usePianoMidi } from './PianoMidiContext.jsx';
 import { usePianoSoundBundle } from './usePianoSoundBundle.js';
 import { usePianoKioskConfig } from './PianoConfig.jsx';
 import { useScreenControl, screenOffFailureMessage } from './useScreenControl.js';
-import { useArmedAction } from './useArmedAction.js';
+import { useArmedAction } from '../../../lib/identity/useArmedAction.js';
 import { launchAndroidTarget } from '../../../lib/fkb.js';
 import { DaylightAPI } from '../../../lib/api.mjs';
 import PianoMidiMonitor from './PianoMidiMonitor.jsx';
