@@ -204,7 +204,6 @@ const SidebarFooter = ({ onContentSelect, onAvatarClick }) => {
 
   // Helper: derive canonical zone id (cool..fire) for a heart rate device or null
   const canonicalZones = ['cool','active','warm','hot','fire'];
-  const zoneRankMap = { cool:0, active:1, warm:2, hot:3, fire:4 };
   const resolveDeviceKey = React.useCallback((device) => {
     if (!device) return null;
     const candidates = [device.deviceId, device.id, device.device_id, device.hrDeviceId];
@@ -281,47 +280,15 @@ const SidebarFooter = ({ onContentSelect, onAvatarClick }) => {
   }, [resolveDeviceParticipant, userCurrentZones, deriveZoneFromHR]);
 
   const sortedDevices = React.useMemo(() => {
-    // Phase 1 SSOT: Use activeHeartRateParticipants from context instead of inline derivation
-    // This eliminates duplicated roster-to-device logic (see docs/ops/fix-fitness-user-consistency.md)
-    const hrDevices = [...(activeHeartRateParticipants || [])];
-
-    // Sort heart rate devices: zone rank DESC (fire top, cool bottom), then HR DESC, then active status as tertiary
-    hrDevices.sort((a, b) => {
-      const aZone = getDeviceZoneId(a);
-      const bZone = getDeviceZoneId(b);
-      const aRank = aZone ? zoneRankMap[aZone] : -1; // unknown below cool
-      const bRank = bZone ? zoneRankMap[bZone] : -1;
-      if (bRank !== aRank) return bRank - aRank; // higher rank first
-      // Within same zone: zone progress descending (normalized position within
-      // zone). These are Participant entities, so resolve by stable ID first —
-      // the old hrOwnerMap name lookup missed for every group-labelled rider and
-      // degraded them to 0 (the 2026-07-21 bug).
-      const progressFor = (p) => lookupZoneProgress(zoneProgressMap, {
-        profileId: p?.profileId,
-        id: p?.id,
-        name: p?.name,
-        displayLabel: p?.displayLabel,
-        deviceId: p?.deviceId ?? resolveDeviceKey(p)
-      })?.progress ?? 0;
-      const aProgress = progressFor(a);
-      const bProgress = progressFor(b);
-      if (bProgress !== aProgress) return bProgress - aProgress;
-      // Tertiary: active devices first
-      const aActive = computeDeviceActive(a);
-      const bActive = computeDeviceActive(b);
-      if (aActive && !bActive) return -1;
-      if (!aActive && bActive) return 1;
-      // Stable fallback by deviceId
-      const aKey = resolveDeviceKey(a) || '';
-      const bKey = resolveDeviceKey(b) || '';
-      return aKey.localeCompare(bKey);
-    });
-
-    // Only keep the single top performer to prevent growth
-    return hrDevices.length > 1 ? hrDevices.slice(0, 1) : hrDevices;
-    // hrOwnerMap is no longer a dep: the comparator resolves progress by stable
-    // ID through zoneProgressMap instead of by owner name.
-  }, [activeHeartRateParticipants, getDeviceZoneId, zoneRankMap, resolveDeviceKey, computeDeviceActive, zoneProgressMap]);
+    // activeHeartRateParticipants is PRE-SORTED by sortByZoneRank in FitnessContext
+    // (the sorting SSOT). Do not re-sort — a second comparator is exactly what
+    // desynced order from card display in the 2026-07-21 bug. The comparator that
+    // used to live here also ranked on the COMMITTED (hysteresis-smoothed) zone via
+    // getDeviceZoneId, so it actively disagreed with the SSOT's live-zone order.
+    // The top performer is simply the first entry.
+    const hrDevices = activeHeartRateParticipants || [];
+    return hrDevices.length > 1 ? hrDevices.slice(0, 1) : [...hrDevices];
+  }, [activeHeartRateParticipants]);
 
   const isVideoPlaying = Array.isArray(fitnessPlayQueue) && fitnessPlayQueue.length > 0;
 
