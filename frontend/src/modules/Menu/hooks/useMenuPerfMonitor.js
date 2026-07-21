@@ -15,6 +15,7 @@
 
 import { useEffect, useRef, useCallback } from 'react';
 import getLogger from '../../../lib/logging/Logger.js';
+import { heapFields, reportMemoryMonitoringAvailability } from '../../../lib/perf/memoryProbe.js';
 
 let _logger;
 function log() {
@@ -74,6 +75,8 @@ export function useMenuPerfMonitor(active, selectedIndex) {
   // Main monitoring loop
   useEffect(() => {
     if (!active) return;
+
+    reportMemoryMonitoringAvailability({ monitor: 'menu' });
 
     const stats = statsRef.current;
     stats.lastFrameTime = performance.now();
@@ -139,9 +142,7 @@ export function useMenuPerfMonitor(active, selectedIndex) {
         nodeCount: document.querySelectorAll('*').length,
       };
 
-      if (performance.memory) {
-        snapshot.heapUsedMB = Math.round(performance.memory.usedJSHeapSize / 1048576);
-      }
+      Object.assign(snapshot, heapFields({ key: 'heapUsedMB' }));
 
       log().info('menu-perf.snapshot', snapshot);
 
