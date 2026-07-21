@@ -74,7 +74,14 @@ export function useMediaResilience({
   // External stalled flag from useCommonMediaController - if provided, trust this instead of internal detection
   externalStalled = null,
   // Self-contained formats (titlecard, etc.) have no media element — disable resilience monitoring
-  disabled = false
+  disabled = false,
+  // Identity changes when a renderer registers/deregisters its media element.
+  // The transcode-warmup effect below bails when no element exists yet; since the
+  // 2026-07-21 leak fix made `getMediaEl` identity-stable, this is what re-runs it
+  // once the element appears. Without it the cold-start `transcodewarming` window
+  // can be missed, so a legitimately-warming transcode gets killed by the startup
+  // deadline. See useMediaErrorReporter for the full rationale.
+  registrationSignal = null
 }) {
   const { monitorSettings } = useResilienceConfig({ configOverrides });
   const {
@@ -415,7 +422,8 @@ export function useMediaResilience({
       target.removeEventListener('transcodewarming', handleWarming);
       target.removeEventListener('transcodewarmed', handleWarmed);
     };
-  }, [disabled, getMediaEl, logWaitKey, triggerRecovery]);
+    // registrationSignal: re-run once a renderer's element actually exists.
+  }, [disabled, getMediaEl, logWaitKey, triggerRecovery, registrationSignal]);
 
   // Handle outside onStateChange
   useEffect(() => {
