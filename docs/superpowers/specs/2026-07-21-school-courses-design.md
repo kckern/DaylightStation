@@ -228,10 +228,103 @@ not a bug.
 
 ---
 
-## 9. Out of scope
+## 9. Learning log
+
+A child records a short spoken reflection after a lecture — "what did you
+learn?" — which is transcribed and kept against their record. Modelled on the
+Fitness voice memo, but reusing the layers that are already shared rather than
+building a third recorder.
+
+### What already exists and is reused as-is
+
+| Layer | Where | Note |
+|---|---|---|
+| Capture UI + recorder | `frontend/src/modules/VoiceCapture/` — `useMediaRecorderCapture`, `VoiceCaptureOverlay`, `MicMeter` | Already consumed cross-module by `modules/Feedback` and `modules/Fitness/feedback`, so this is the established shared home |
+| Transcription | `POST /api/v1/ai/transcribe` (`4_api/v1/routers/ai.mjs`, OpenAI adapter) | Generic; takes an audio buffer, returns text |
+
+### What is NOT reused, and why
+
+`POST /api/v1/fitness/voice_memo` welds upload, transcription and
+fitness-session storage into one endpoint, and requires a fitness session. It
+is not a general memo service and school must not call it.
+
+Note also that `Fitness/player/panels/hooks/useVoiceMemoRecorder.js` is a
+*separate* MediaRecorder implementation that predates and ignores
+`modules/VoiceCapture/`. That duplication is pre-existing debt. **It is not
+this sub-project's job to fix it** — School simply uses the shared module, so
+we add no new fragmentation. Converging Fitness onto `VoiceCapture` is a
+worthwhile follow-up, tracked separately, and touching a live workout surface
+is not something to bundle into a courses build.
+
+### Storage — its own store, deliberately
+
+Log entries are **per-child records**, so they get the same treatment as quiz
+attempts rather than living in a generic memo blob: append-only, date-sharded,
+carrying `attributedTo`.
+
+`data/users/{userId}/apps/school/log/{YYYY-MM-DD}.yml`:
+
+```yaml
+- id: log_7fd2a1
+  at: '2026-07-21T16:04:11.212Z'
+  contentId: plex:685101      # the lecture reflected on (null for a free-standing entry)
+  bankId: null                # or the quiz, if logged after one
+  audio: media/school/log/kckern/log_7fd2a1.webm
+  transcript: "I learned that mixing too many colours makes mud."
+  transcriptStatus: ok        # ok | pending | failed
+  attributedTo: kckern
+```
+
+This is what lets a parent reassign a log entry alongside the attempts from the
+same sitting (R6.5) — a rollup-only design could not.
+
+**The audio is the artifact; the transcript is derived.** If transcription
+fails, the entry is still written with `transcriptStatus: failed` and the audio
+retained. Losing a child's recording because a cloud API was down would be the
+worst outcome here, and it is the one thing this design refuses to allow.
+Retrying a failed transcript is a later concern; keeping the audio is not.
+
+### Rules
+
+- **Optional, and never a gate.** A learning log entry is never required to
+  complete a lecture or unlock the next one. Sequential courses already gate on
+  a quiz pass (§6), and stacking a second lock on a spoken reflection would
+  compound the dead-end risk that section exists to contain.
+- **Never for guests.** A guest produces no attempts (slice 1) and likewise
+  produces no log entries — there is nobody to attribute them to. The record
+  button is absent for a guest rather than failing on submit.
+- **Prompted, not nagged.** Offered after a lecture ends, alongside the quiz
+  handoff. Skipping is a tap and carries no penalty.
+- The mic on this panel is already available: FKB `microphoneAccess` is true
+  on the Portal (see `portal.yml`).
+
+### Surface
+
+| Path | Responsibility |
+|---|---|
+| `modules/School/log/LearningLogButton.jsx` | Record affordance + entry count, mirroring `FitnessVoiceMemo`'s thin-shell shape |
+| `modules/School/log/useLearningLog.js` | Submit (audio → transcribe → persist), list for the current child |
+
+Backend: `3_applications/school/LearningLogService.mjs` plus routes
+`POST /api/v1/school/log` and `GET /api/v1/school/users/:userId/log`. The
+datastore gains append/read methods alongside the attempt log, reusing the same
+date-sharded pattern.
+
+Although it lands with courses, nothing about the record ties it to video —
+`contentId` may name a quiz bank or be null, so reading (sub-project 3) and
+free-standing reflections work later without a schema change.
+
+---
+
+## 10. Out of scope
 
 - Curriculum and assignment — what a child *should* do today (sub-project 4).
 - Parent view, sign-off, reassignment UI, and any parent override of a lock
   (sub-project 5).
 - Reading / PDF / EPUB (sub-project 3).
 - `co_progress`, `reference_units`, subcourse lanes, spaced repetition.
+- Converging `Fitness/player/panels/hooks/useVoiceMemoRecorder.js` onto the
+  shared `modules/VoiceCapture/` (§9) — real debt, but a live workout surface
+  is not something to refactor inside a courses build.
+- Retrying a failed transcript. The audio is kept and the entry is marked
+  `failed`; re-transcription can come later without a schema change.
