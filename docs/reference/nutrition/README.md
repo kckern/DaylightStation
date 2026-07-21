@@ -3,8 +3,9 @@
 How a weight on the kitchen scale becomes a net-weighted, density-classified nutrition
 entry, using a laminated QR sheet on the refrigerator instead of a tare button.
 
-**Status: partially implemented.** The `2_domains/nutrition` layer is built and tested;
-nothing is wired to the relay or nutribot yet. See [Implementation status](#implementation-status)
+**Status: partially implemented.** The nutrition domain layer and the application-layer
+composition store are built and tested; nothing is wired to the relay or nutribot yet, so
+none of it is reachable from the running system. See [Implementation status](#implementation-status)
 before relying on anything here. Design rationale:
 [`docs/plans/2026-07-21-scan-enriched-food-logging-design.md`](../../plans/2026-07-21-scan-enriched-food-logging-design.md).
 Task plan: [`docs/plans/2026-07-21-scan-enriched-food-logging.md`](../../plans/2026-07-21-scan-enriched-food-logging.md).
@@ -40,8 +41,8 @@ a precise gram measurement, never survives to the entry.
          │  hit → route:'nutriscan'        └─▶ ScaleNutribotBridge
          │  miss → content dispatch                    │
          ▼                                             ▼
-   ApplyScanToComposition  ────────▶  CompositionBuffer  ◀──── setWeight()
-         setDensity() / setContainer() / clear()   │
+   ApplyScanToComposition  ────────▶  CompositionStore   ◀──── setWeight()
+         setDensity() / setContainer() / clear()   │  (holds immutable Composition values)
                                                    │ complete = grams && density
                                                    ▼
                                         computeNet → computeNutrition   [2_domains/nutrition]
@@ -60,7 +61,8 @@ first, and why the encoders throw rather than emit an unparseable code.
 
 ## The scan grammar
 
-`backend/src/2_domains/nutrition/ScanVocabulary.mjs` is the **single owner** of the grammar.
+`backend/src/2_domains/nutrition/services/ScanVocabularyService.mjs` is the **single owner**
+of the grammar.
 Both the parser and the PDF sheet generator import it, so the printed page cannot drift from
 the parser.
 
@@ -68,7 +70,7 @@ the parser.
 |------|---------|
 | `dl:<1-9>` | caloric density level |
 | `ct:<id>` | container tare, `id` matching `/^[a-z0-9][a-z0-9-]*$/` |
-| `rs:clear` | reset the composition buffer |
+| `rs:clear` | reset the in-progress composition |
 
 **Case-sensitive throughout.** `DL:4`, `CT:mug`, `RS:clear` and `ct:Dinner-Bowl` all return
 `null`. A case-preserved id would miss its `containers.items` key and silently skip the tare,
@@ -91,7 +93,7 @@ collision exists: configured screen ids are `livingroom-tv`, `office-tv`, `piano
 
 ## The math
 
-`backend/src/2_domains/nutrition/scanNutrition.mjs`.
+`backend/src/2_domains/nutrition/services/ScanNutritionService.mjs`.
 
 ```
 net_g  = max(0, gross_g − (container ? container.grams : 0))
@@ -128,8 +130,8 @@ the entry and release the mutex. A dropped scan, not a crash.
 
 | Code | Means | Remediation |
 |------|-------|-------------|
-| `INVALID_DENSITY_LEVEL` | a scanned level is out of range (`ScanVocabulary`) | rescan |
-| `MALFORMED_DENSITY_LEVEL` | the config table row is malformed (`scanNutrition`) | fix the YAML |
+| `INVALID_DENSITY_LEVEL` | a scanned level is out of range (`ScanVocabularyService`) | rescan |
+| `MALFORMED_DENSITY_LEVEL` | the config table row is malformed (`ScanNutritionService`) | fix the YAML |
 | `INVALID_GROSS_WEIGHT` / `INVALID_NET_WEIGHT` | non-finite weight | upstream defect |
 | `INVALID_CONTAINER_TARE` | container is not an object, or `grams` unusable | fix the container row |
 | `INVALID_MACROS` / `INVALID_KCAL_PER_G` / `INVALID_PER_100G` | density row fields | fix the YAML |
@@ -144,9 +146,10 @@ macro split *can* produce a plausible-looking wrong entry.
 
 ---
 
-## The composition buffer
+## The composition
 
-`backend/src/2_domains/nutrition/CompositionBuffer.mjs`. Per-scale, three slots —
+`2_domains/nutrition/value-objects/Composition.mjs` (immutable value object) plus
+`3_applications/nutribot/CompositionStore.mjs` (the per-scale map and the window). Three slots —
 `grams` / `density` / `container` — filled by whichever event arrives, **in any order**,
 within a rolling window (default 900 s).
 
@@ -192,9 +195,10 @@ restart before it takes effect.
 
 | Component | State |
 |-----------|-------|
-| `ScanVocabulary.mjs` — grammar, encoders | **shipped**, reviewed, 24 tests |
-| `scanNutrition.mjs` — net weight, calories, macros | **shipped**, reviewed, 58 tests |
-| `CompositionBuffer.mjs` — order-independent slots | **shipped**, 51 tests, review fixes in flight |
+| `services/ScanVocabularyService.mjs` — grammar, encoders | **shipped**, reviewed, 24 tests |
+| `services/ScanNutritionService.mjs` — net weight, calories, macros | **shipped**, reviewed, 58 tests |
+| `value-objects/Composition.mjs` — immutable slots | **shipped**, 62 tests |
+| `3_applications/nutribot/CompositionStore.mjs` — per-scale state, window | **shipped**, 70 tests |
 | Config: macros, 25 containers, validator | not started |
 | `ApplyScanToComposition` use case | not started |
 | Bridge integration: unit passthrough, session end, mutex | not started |
