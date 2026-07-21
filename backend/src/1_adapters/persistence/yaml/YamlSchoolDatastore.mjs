@@ -6,10 +6,11 @@
  */
 import path from 'path';
 import fs from 'fs';
-import { loadYamlSafe, saveYaml, ensureDir } from '#system/utils/FileIO.mjs';
+import { loadYamlSafe, saveYaml, ensureDir, listYamlFiles } from '#system/utils/FileIO.mjs';
 import { InfrastructureError } from '#system/utils/errors/index.mjs';
 
 const BANK_ID_RE = /^[a-z0-9][a-z0-9_-]*$/i;
+const DAY_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 export class YamlSchoolDatastore {
   #configService;
@@ -31,14 +32,12 @@ export class YamlSchoolDatastore {
   }
 
   listBankIds() {
-    const dir = this.#banksDir();
-    if (!fs.existsSync(dir)) return [];
-    return fs.readdirSync(dir).filter((f) => f.endsWith('.yml')).map((f) => f.replace(/\.yml$/, '')).sort();
+    return listYamlFiles(this.#banksDir()).sort();
   }
 
   readBankRaw(bankId) {
     if (!BANK_ID_RE.test(String(bankId))) return null;
-    return loadYamlSafe(path.join(this.#banksDir(), String(bankId))) || null;
+    return loadYamlSafe(path.join(this.#banksDir(), String(bankId)));
   }
 
   appendAttempt(userId, attempt) {
@@ -56,7 +55,9 @@ export class YamlSchoolDatastore {
   readAttemptDay(userId, day) {
     const dir = this.#attemptsDir(userId);
     if (!dir) return [];
-    return loadYamlSafe(path.join(dir, day)) || [];
+    const dayStr = String(day);
+    if (!DAY_RE.test(dayStr)) return [];
+    return loadYamlSafe(path.join(dir, dayStr)) || [];
   }
 
   readAllAttempts(userId) {
