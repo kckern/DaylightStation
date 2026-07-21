@@ -1,5 +1,6 @@
 import { useEffect } from 'react';
 import getLogger from '../../../../lib/logging/Logger.js';
+import { heapSnapshotFields, reportMemoryMonitoringAvailability } from '../../../../lib/perf/memoryProbe.js';
 
 // Lazy init to pick up sessionLog context
 function log() { return getLogger().child({ component: 'feed-perf' }); }
@@ -16,6 +17,11 @@ function log() { return getLogger().child({ component: 'feed-perf' }); }
 export function usePerfMonitor(active, snapshotIntervalMs = 5000) {
   useEffect(() => {
     if (!active) return;
+
+    // Say once, up front, whether heap figures are obtainable here. Without
+    // this a Firefox session looks identical to a healthy one: heap fields
+    // null, no threshold ever crossed, nothing in the logs explaining why.
+    reportMemoryMonitoringAvailability({ monitor: 'feed-scroll' });
 
     // ── FPS + jank tracking via rAF ──
     let rafId;
@@ -116,12 +122,9 @@ export function usePerfMonitor(active, snapshotIntervalMs = 5000) {
         nodeCount: document.querySelectorAll('*').length,
       };
 
-      // Chrome-only: heap memory
-      if (performance.memory) {
-        snapshot.heapUsedMB = Math.round(performance.memory.usedJSHeapSize / 1048576);
-        snapshot.heapTotalMB = Math.round(performance.memory.totalJSHeapSize / 1048576);
-        snapshot.heapLimitMB = Math.round(performance.memory.jsHeapSizeLimit / 1048576);
-      }
+      // Heap figures where the browser provides them. Always carries
+      // heapSource so a null is never mistaken for a real reading.
+      Object.assign(snapshot, heapSnapshotFields({ precision: 0 }));
 
       log().info('perf.snapshot', snapshot);
 

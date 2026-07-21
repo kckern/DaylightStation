@@ -15,6 +15,7 @@ import { VibrationActivityTracker } from './VibrationActivityTracker.js';
 import { findUnclosedMedia } from './closeOpenMedia.js';
 import moment from 'moment-timezone';
 import getLogger from '../../lib/logging/Logger.js';
+import { heapSnapshotFields } from '../../lib/perf/memoryProbe.js';
 
 // Phase 4: Extracted modules for decomposed session management
 import { SessionLifecycle } from './SessionLifecycle.js';
@@ -412,9 +413,14 @@ export class FitnessSession {
     this._tickTelemetry = {
       ingestCalls: 0,
       maybeTickCalls: 0,
-      actualTicks: 0,
+      actualTicks: 0,       // every recorded tick, whatever produced it
+      catchupTicks: 0,      // subset produced by the per-ingest catch-up loop
       loopIterationsTotal: 0,
-      lastLogAt: 0,
+      // Seed with `now`, not 0: a 0 here makes the FIRST call log immediately
+      // against a ~0-second window, dividing a tick or two by ~0.1s and
+      // reporting an absurd rate (~10/sec vs an expected 0.20/sec) that trips
+      // the HIGH_TICK_RATE anomaly on every fresh session.
+      lastLogAt: Date.now(),
       logIntervalMs: 30000, // Log every 30 seconds
       windowStart: Date.now()
     };
@@ -2194,6 +2200,15 @@ export class FitnessSession {
   _collectTimelineTick({ timestamp } = {}) {
     if (!this.timeline || !this.sessionId) return null;
 
+    // Tick telemetry: count EVERY recorded tick here, at the one point all tick
+    // sources funnel through. This used to be incremented only inside the
+    // per-ingest catch-up loop in _maybeTickTimeline, which runs zero iterations
+    // in steady state because the 5s wall-clock timer in _startTickTimer already
+    // produced the tick. Result: `actualTicks: 0` reported for 100 minutes
+    // straight while `tickCount` in the same payload advanced at exactly the
+    // expected 0.2/sec — a false alarm every 30s.
+    this._tickTelemetry.actualTicks++;
+
     // Delegate to TimelineRecorder
     const tickResult = this._timelineRecorder.recordTick({
       timestamp,
@@ -2936,10 +2951,9 @@ export class FitnessSession {
       // VoiceMemo
       voiceMemoCount: this.voiceMemoManager?.getMemos?.()?.length || 0,
 
-      // Heap (if available - Chrome only)
-      heapUsedMB: typeof performance !== 'undefined' && performance.memory
-        ? Math.round(performance.memory.usedJSHeapSize / 1024 / 1024 * 10) / 10
-        : null
+      // Heap where the browser provides it; heapSource says which browser API
+      // answered, or 'unavailable' (Firefox) so null is not read as zero.
+      ...heapSnapshotFields({ precision: 1 })
     };
   }
 
@@ -3041,7 +3055,9 @@ export class FitnessSession {
       this._collectTimelineTick({ timestamp: nextTickTimestamp });
       lastTick = this.timeline.timebase?.lastTickTimestamp ?? nextTickTimestamp;
       iterations += 1;
-      this._tickTelemetry.actualTicks++;
+      // NOTE: actualTicks is NOT incremented here — _collectTimelineTick counts
+      // it. Incrementing in both places would double-count catch-up ticks.
+      this._tickTelemetry.catchupTicks++;
     }
 
     // A catch-up of >3 intervals (>15s) from one ingest is pathological — surface
@@ -3077,7 +3093,10 @@ export class FitnessSession {
     // Calculate rates
     const ingestRate = windowSec > 0 ? (tel.ingestCalls / windowSec).toFixed(1) : 0;
     const maybeTickRate = windowSec > 0 ? (tel.maybeTickCalls / windowSec).toFixed(1) : 0;
-    const actualTickRate = windowSec > 0 ? (tel.actualTicks / windowSec).toFixed(1) : 0;
+    const actualTickRate = windowSec > 0 ? (tel.actualTicks / windowSec).toFixed(2) : 0;
+    // avgLoopIterations measures the CATCH-UP loop only. In a healthy session
+    // it is legitimately 0.00 because the wall-clock timer does the ticking —
+    // catchupTicks below makes that reading interpretable instead of alarming.
     const avgLoopIter = tel.maybeTickCalls > 0
       ? (tel.loopIterationsTotal / tel.maybeTickCalls).toFixed(2)
       : 0;
@@ -3085,7 +3104,18 @@ export class FitnessSession {
     const tickCount = this.timeline?.timebase?.tickCount || 0;
     const expectedTickRate = (1000 / (this.timeline?.timebase?.intervalMs || 5000)).toFixed(2);
 
-    getLogger().warn('fitness.tick_telemetry', {
+    const actual = parseFloat(actualTickRate);
+    const expected = parseFloat(expectedTickRate);
+    let anomaly = null;
+    if (actual > expected * 2) {
+      anomaly = 'HIGH_TICK_RATE';
+    } else if (this.isActive && tel.ingestCalls > 0 && actual < expected * 0.5) {
+      // Ticks stalled while data was still arriving — the timer died or the
+      // timebase is wedged. This is the reading worth waking someone for.
+      anomaly = 'LOW_TICK_RATE';
+    }
+
+    const payload = {
       sessionId: this.sessionId,
       windowSec: windowSec.toFixed(0),
       ingestCalls: tel.ingestCalls,
@@ -3095,15 +3125,26 @@ export class FitnessSession {
       actualTicks: tel.actualTicks,
       actualTickRate: `${actualTickRate}/sec`,
       expectedTickRate: `${expectedTickRate}/sec`,
+      catchupTicks: tel.catchupTicks,
       avgLoopIterations: avgLoopIter,
       tickCount,
-      anomaly: parseFloat(actualTickRate) > parseFloat(expectedTickRate) * 2 ? 'HIGH_TICK_RATE' : null
-    });
+      anomaly
+    };
+
+    // Healthy windows are routine observability, not alarms. Emitting this at
+    // warn every 30s (100+ times a session) trained the operator to ignore the
+    // warn channel entirely — so warn is now reserved for a real anomaly.
+    if (anomaly) {
+      getLogger().warn('fitness.tick_telemetry', payload);
+    } else {
+      getLogger().sampled('fitness.tick_telemetry', payload, { maxPerMinute: 2, aggregate: true });
+    }
 
     // Reset counters for next window
     tel.ingestCalls = 0;
     tel.maybeTickCalls = 0;
     tel.actualTicks = 0;
+    tel.catchupTicks = 0;
     tel.loopIterationsTotal = 0;
     tel.windowStart = now;
     tel.lastLogAt = now;
