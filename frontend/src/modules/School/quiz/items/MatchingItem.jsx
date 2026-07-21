@@ -8,18 +8,28 @@
  * allowed on the Portal (R4.4) — this is NOT the fitness no-drag surface.
  * Rights are displayed shuffled so the answer isn't the layout.
  */
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 
 export default function MatchingItem({ item, onSubmit, verdict }) {
   const [selected, setSelected] = useState(null);      // left value awaiting a right
   const [pairs, setPairs] = useState({});               // left -> right
   const dragFrom = useRef(null);
+  // Guards against a double-tap on Check firing onSubmit twice before
+  // `verdict` arrives. A ref (not state) so the second click in the same
+  // synchronous burst sees the guard already set.
+  const submittedRef = useRef(false);
+  useEffect(() => { submittedRef.current = false; }, [item.id]);
   const rights = useMemo(
     () => [...item.pairs].map((p) => p.right).sort(() => 0.5 - Math.random()),
     [item],
   );
   const pairedRights = new Set(Object.values(pairs));
   const complete = Object.keys(pairs).length === item.pairs.length;
+  const submit = () => {
+    if (verdict || submittedRef.current || !complete) return;
+    submittedRef.current = true;
+    onSubmit(item.pairs.map(({ left }) => ({ left, right: pairs[left] })));
+  };
 
   const downLeft = (e, left) => {
     if (verdict) return;
@@ -75,7 +85,7 @@ export default function MatchingItem({ item, onSubmit, verdict }) {
       </div>
       {!verdict && (
         <button type="button" className="school-item__check" disabled={!complete}
-          onClick={() => onSubmit(item.pairs.map(({ left }) => ({ left, right: pairs[left] })))}>
+          onClick={submit}>
           Check
         </button>
       )}

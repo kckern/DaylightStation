@@ -17,6 +17,14 @@ describe('MultipleChoiceItem', () => {
     expect(onSubmit).toHaveBeenCalledTimes(1);
     expect(screen.getByText(/Olympia/)).toBeInTheDocument(); // expected shown on wrong
   });
+  it('double-tap on the same choice submits exactly once while verdict is still null', () => {
+    const onSubmit = vi.fn();
+    render(<MultipleChoiceItem item={item} onSubmit={onSubmit} verdict={null} />);
+    const btn = screen.getByRole('button', { name: 'Olympia' });
+    fireEvent.click(btn);
+    fireEvent.click(btn);
+    expect(onSubmit).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe('ShortAnswerItem', () => {
@@ -30,6 +38,15 @@ describe('ShortAnswerItem', () => {
     fireEvent.click(screen.getByRole('button', { name: /check/i }));
     expect(onSubmit).toHaveBeenCalledWith(' Salem ');
   });
+  it('Enter then a Check tap submits exactly once while verdict is still null', () => {
+    const onSubmit = vi.fn();
+    render(<ShortAnswerItem item={item} onSubmit={onSubmit} verdict={null} />);
+    const input = screen.getByRole('textbox');
+    fireEvent.change(input, { target: { value: 'Salem' } });
+    fireEvent.keyDown(input, { key: 'Enter' });
+    fireEvent.click(screen.getByRole('button', { name: /check/i }));
+    expect(onSubmit).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe('ClozeItem', () => {
@@ -40,6 +57,15 @@ describe('ClozeItem', () => {
     fireEvent.change(screen.getByRole('textbox'), { target: { value: 'Boise' } });
     fireEvent.click(screen.getByRole('button', { name: /check/i }));
     expect(onSubmit).toHaveBeenCalledWith('Boise');
+  });
+  it('Enter then a Check tap submits exactly once while verdict is still null', () => {
+    const onSubmit = vi.fn();
+    render(<ClozeItem item={{ id: 'q', type: 'cloze', prompt: 'Capital of Idaho is ___.', answer: 'Boise' }} onSubmit={onSubmit} verdict={null} />);
+    const input = screen.getByRole('textbox');
+    fireEvent.change(input, { target: { value: 'Boise' } });
+    fireEvent.keyDown(input, { key: 'Enter' });
+    fireEvent.click(screen.getByRole('button', { name: /check/i }));
+    expect(onSubmit).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -74,5 +100,19 @@ describe('MatchingItem', () => {
     pairUp('OR', 'Olympia');
     fireEvent.click(screen.getByRole('button', { name: /check/i }));
     expect(onSubmit).toHaveBeenCalledWith([{ left: 'WA', right: 'Salem' }, { left: 'OR', right: 'Olympia' }]);
+  });
+  it('double-click Check after completing pairs submits exactly once while verdict is still null', () => {
+    const onSubmit = vi.fn();
+    render(<MatchingItem item={item} onSubmit={onSubmit} verdict={null} />);
+    const pairUp = (l, r) => {
+      fireEvent.pointerDown(screen.getByRole('button', { name: l })); fireEvent.pointerUp(screen.getByRole('button', { name: l }));
+      fireEvent.pointerDown(screen.getByRole('button', { name: r })); fireEvent.pointerUp(screen.getByRole('button', { name: r }));
+    };
+    pairUp('WA', 'Olympia');
+    pairUp('OR', 'Salem');
+    const check = screen.getByRole('button', { name: /check/i });
+    fireEvent.click(check);
+    fireEvent.click(check);
+    expect(onSubmit).toHaveBeenCalledTimes(1);
   });
 });
