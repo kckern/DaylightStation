@@ -437,16 +437,11 @@ public class PianoBridgeService extends Service {
         lastUpdateRequestAtMs = now;
         long holdMs = config != null ? config.watchdogKioskSettingsInstallHoldMs() : 900000L;
         long until = now + holdMs;
-        if (kioskSettingsGuard != null) kioskSettingsGuard.setInstallHoldUntil(until);
-        try {
-            DeviceConfig.writeOverride(this, "kioskSettingsInstallHoldUntilEpochMs: " + until + "\n");
-        } catch (IOException e) {
-            // In-memory hold still applies for this process; only restart-survival is lost.
-            Log.w(TAG, "could not persist install hold deadline", e);
-            CrashLog.note("KIOSKSET", "WARN: install-hold deadline not persisted (" + e.getMessage()
-                    + ") — hold will not survive the install's service restart");
+        if (kioskSettingsGuard != null) {
+            // Shared path: sets the in-memory half AND persists, and logs a warning if
+            // the persist fails rather than pretending the hold will survive a restart.
+            kioskSettingsGuard.holdInstallUntil(until);
         }
-        CrashLog.note("KIOSKSET", "install requested — kiosk-settings guard holding off until " + until);
     }
 
     public long lastUpdateRequestAtMs() { return lastUpdateRequestAtMs; }
@@ -535,6 +530,28 @@ public class PianoBridgeService extends Service {
     public BleMidiConnector getBleConnector() { return bleConnector; }
 
     public DeviceConfig getConfig() { return config; }
+
+    /**
+     * Re-read the device config from disk WITHOUT touching BLE-MIDI or A2DP.
+     *
+     * <p>For config writes that only concern the watchdogs — the kiosk-settings guard's
+     * disarm and install-hold deadlines. Those are written with the merging
+     * {@code writeOverride} while the piano is in use (or mid-install), so the full
+     * {@link #reloadConfigAndReconnect()} is exactly wrong: it would drop the MIDI link
+     * and the speaker. But SOME reload is required, because the guard reads the
+     * persisted half of its deadlines through this cached {@code config} object — a
+     * write that lands on disk without a reload leaves the guard reading the value it
+     * loaded at startup, which is half of the v23 rearm bug.
+     *
+     * <p>Other components (ScreenWaker, TouchPulser, the connectors) keep the config
+     * instance they were built with. Safe here because the merge only alters the guard
+     * keys, which none of them read; a real reload rebuilds them.
+     */
+    public synchronized void reloadConfigOnly() {
+        config = DeviceConfig.load(this);
+        if (kioskWatchdog != null) kioskWatchdog.updateConfig(config);
+        if (kioskSettingsGuard != null) kioskSettingsGuard.updateConfig(config);
+    }
 
     /** Re-read the device config (after a pbctl /config edit) and reconnect. */
     public synchronized void reloadConfigAndReconnect() {

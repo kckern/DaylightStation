@@ -79,6 +79,16 @@ public final class KioskSettingsGuard {
     /** Durable event sink — CrashLog on device, a recorder in tests. */
     public interface Notes { void note(String kind, String msg); }
 
+    /**
+     * Persists one flat config key. Throws on failure — callers MUST surface that
+     * rather than reporting a clean success, because a deadline that did not persist
+     * silently reverts at the next restart.
+     */
+    public interface ConfigWriter { void write(String key, long value) throws Exception; }
+
+    static final String KEY_DISARM_UNTIL = "kioskSettingsDisarmUntilEpochMs";
+    static final String KEY_INSTALL_HOLD_UNTIL = "kioskSettingsInstallHoldUntilEpochMs";
+
     /** Config snapshot for one tick, so tests need no Android Context. */
     public static final class Params {
         public final boolean enabled;
@@ -105,6 +115,7 @@ public final class KioskSettingsGuard {
     private final Fkb fkb;
     private final Notes notes;
     private final LongSupplier clock;
+    private final ConfigWriter configWriter;
 
     // --- state (read by snapshot(), written by tick()) ---
     private volatile Verdict lastVerdict = null;
@@ -114,10 +125,21 @@ public final class KioskSettingsGuard {
     private final Map<String, AtomicInteger> repairsSinceBoot = new ConcurrentHashMap<>();
     /** One-shot latch: a permanently unconfigured device must not log every tick. */
     private volatile boolean noPasswordLogged = false;
-    /** In-memory disarm, set by the API for IMMEDIATE effect; also persisted to config. */
-    private volatile long disarmUntilOverrideMs = 0;
-    /** In-memory install-hold deadline; the persisted twin is what survives a restart. */
-    private volatile long installHoldUntilOverrideMs = 0;
+
+    // --- the two in-memory + persisted deadline pairs ------------------------
+    //
+    // {@code null} means "this process has issued no explicit instruction" — the
+    // persisted config value then governs, which is how a deadline survives the restart
+    // an APK install causes. A non-null value is THIS PROCESS'S latest explicit
+    // instruction and WINS, including when it is 0 (a clear).
+    //
+    // These were previously plain longs combined with max(persisted, inMemory), and
+    // that is precisely what made the v23 rearm bug possible: max() cannot express a
+    // clear. Zeroing the in-memory half left the stale persisted deadline winning, so
+    // `pbctl kiosk-rearm` printed success while the guard stayed inert. Any future
+    // in-memory + persisted pair must use this shape, not max().
+    private volatile Long disarmUntilOverride = null;
+    private volatile Long installHoldUntilOverride = null;
 
     private java.util.Timer timer;
 
@@ -149,12 +171,27 @@ public final class KioskSettingsGuard {
         };
         this.notes = CrashLog::note;
         this.clock = System::currentTimeMillis;
+        // Persist through the MERGING writeOverride (no sibling key is disturbed), then
+        // refresh the cached DeviceConfig so the persisted half of every deadline pair
+        // is read fresh. Without that refresh a write lands on disk while this guard
+        // keeps reading the value it loaded at startup — half of the v23 rearm bug.
+        this.configWriter = (key, value) -> {
+            DeviceConfig.writeOverride(service, key + ": " + value + "\n");
+            service.reloadConfigOnly();
+        };
     }
 
     /** Test wiring: everything injected, no Android, no network. */
     KioskSettingsGuard(Supplier<Params> params, LongSupplier lastUpdateRequestAtMs,
                        Fkb fkb, Notes notes, LongSupplier clock) {
+        this(params, lastUpdateRequestAtMs, fkb, notes, clock, (key, value) -> { });
+    }
+
+    /** Test wiring with a config store, so persistence round-trips are assertable. */
+    KioskSettingsGuard(Supplier<Params> params, LongSupplier lastUpdateRequestAtMs,
+                       Fkb fkb, Notes notes, LongSupplier clock, ConfigWriter configWriter) {
         this.configHolder = null;
+        this.configWriter = configWriter;
         this.params = params;
         this.lastUpdateRequestAtMs = lastUpdateRequestAtMs;
         this.fkb = fkb;
@@ -165,9 +202,19 @@ public final class KioskSettingsGuard {
     /** Holds the live DeviceConfig on device (null in tests); swapped by updateConfig. */
     private final DeviceConfig[] configHolder;
 
-    /** Swap in refreshed config after a pbctl /config edit, keeping counters. */
+    /**
+     * Swap in refreshed config after a pbctl /config edit, keeping counters.
+     *
+     * <p>Also RETIRES both in-memory deadline overrides. A freshly loaded config is by
+     * definition the newest authority — it is what our own persist just wrote, or what
+     * an operator set directly with {@code pbctl config set}. Keeping a stale override
+     * alive past a reload would make {@code config set} silently ineffective on these
+     * two keys, which is the mirror image of the v23 bug.
+     */
     public void updateConfig(DeviceConfig cfg) {
         if (configHolder != null) configHolder[0] = cfg;
+        disarmUntilOverride = null;
+        installHoldUntilOverride = null;
     }
 
     public void start() {
@@ -230,7 +277,7 @@ public final class KioskSettingsGuard {
 
         if (!p.enabled) return refuse(Verdict.DISABLED);
 
-        long disarmUntil = Math.max(p.disarmUntilMs, disarmUntilOverrideMs);
+        long disarmUntil = disarmUntilMs();
         if (now < disarmUntil) return refuse(Verdict.DISARMED);
 
         // Stand down while an APK install may be in flight — re-arming kiosk mode
@@ -314,50 +361,111 @@ public final class KioskSettingsGuard {
     // --- disarm / re-arm ----------------------------------------------------
 
     /**
-     * Silence the guard until {@code untilEpochMs} (0 = re-arm now). Takes effect
-     * IMMEDIATELY in memory; the caller separately persists the value to config so it
-     * survives the bridge restart that hands-on tablet work usually involves.
+     * Set the in-memory disarm deadline only (0 = armed). Prefer
+     * {@link #disarmForMinutes} / {@link #rearm}, which also persist and report
+     * honestly; this is the raw half, used by them and by tests.
      */
     public void setDisarmUntil(long untilEpochMs) {
-        disarmUntilOverrideMs = Math.max(0L, untilEpochMs);
-        notes.note("KIOSKSET", untilEpochMs > 0
-                ? "DISARMED until " + untilEpochMs + " (drift will not be repaired)"
-                : "re-armed");
+        disarmUntilOverride = Math.max(0L, untilEpochMs);
     }
 
-    public long disarmUntilMs() {
-        Params p = params.get();
-        return Math.max(p.disarmUntilMs, disarmUntilOverrideMs);
-    }
-
-    /**
-     * Arm the install hold until {@code untilEpochMs}. Set from
-     * {@link PianoBridgeService#markUpdateRequested()}, which also PERSISTS the same
-     * deadline to config — see {@link #installHoldUntilMs()} for why that matters.
-     */
+    /** The in-memory install-hold deadline only (0 = no hold). See {@link #setDisarmUntil}. */
     public void setInstallHoldUntil(long untilEpochMs) {
-        installHoldUntilOverrideMs = Math.max(0L, untilEpochMs);
+        installHoldUntilOverride = Math.max(0L, untilEpochMs);
     }
 
     /**
-     * The effective install-hold deadline: the LATER of the in-memory value and the
-     * persisted one.
+     * Effective disarm deadline: this process's explicit instruction if it has issued
+     * one, otherwise the persisted config value. See the field comments for why this is
+     * NOT {@code max(persisted, inMemory)}.
+     */
+    public long disarmUntilMs() {
+        Long o = disarmUntilOverride;
+        return o != null ? o : params.get().disarmUntilMs;
+    }
+
+    /**
+     * Effective install-hold deadline, same rule as {@link #disarmUntilMs}.
      *
-     * <p>Both halves are load-bearing, and the persisted half is the bug fix (found
-     * deploying v22, 2026-07-21). An APK install STOPS this service; deploy step 7
-     * relaunches it, and says to repeat until it answers — so restarts here are normal
-     * and can happen several times. While the hold lived only in a
-     * {@link PianoBridgeService} field it reset to 0 on each restart and the
-     * suppression silently evaporated, leaving a retried or second install with no
-     * hold at all. Persisting the deadline makes it survive its own install.
+     * <p>The persisted half is the v22 fix: an APK install STOPS this service, deploy
+     * step 7 relaunches it (and says to repeat until it answers), and a hold living
+     * only in a {@link PianoBridgeService} field reset to 0 on each such restart —
+     * leaving a retried or second install with no hold at all.
      *
-     * <p>We persist the DEADLINE, not the request timestamp, so that later reducing
+     * <p>We persist the DEADLINE, not the request timestamp, so later reducing
      * {@code watchdogKioskSettingsInstallHoldMs} cannot retroactively cut short a hold
      * that is already running.
      */
     public long installHoldUntilMs() {
-        Params p = params.get();
-        return Math.max(p.installHoldUntilMs, installHoldUntilOverrideMs);
+        Long o = installHoldUntilOverride;
+        return o != null ? o : params.get().installHoldUntilMs;
+    }
+
+    /** Disarm for {@code minutes}, persisting the deadline. Clamped 1…1440 by the caller. */
+    public JSONObject disarmForMinutes(int minutes) {
+        long until = clock.getAsLong() + minutes * 60_000L;
+        return applyDeadline(KEY_DISARM_UNTIL, until, "kiosk_settings_disarm",
+                "DISARMED until " + until + " (drift will not be repaired)");
+    }
+
+    /** Re-arm now: clears BOTH the in-memory and the persisted disarm deadline. */
+    public JSONObject rearm() {
+        return applyDeadline(KEY_DISARM_UNTIL, 0L, "kiosk_settings_rearm", "re-armed");
+    }
+
+    /**
+     * Arm the install hold until {@code untilEpochMs}, persisting it. Called from
+     * {@link PianoBridgeService#markUpdateRequested()} — the same both-halves path as
+     * disarm, so the hold can never end up applied to only one of them.
+     */
+    public JSONObject holdInstallUntil(long untilEpochMs) {
+        return applyDeadline(KEY_INSTALL_HOLD_UNTIL, untilEpochMs, "kiosk_settings_install_hold",
+                "install requested — kiosk-settings guard holding off until " + untilEpochMs);
+    }
+
+    /**
+     * Apply a deadline to BOTH halves of a pair and report each half honestly.
+     *
+     * <p>The invariant this exists to enforce: <b>setting writes both, and clearing
+     * must clear both.</b> The v23 rearm cleared only the in-memory half, so the stale
+     * persisted deadline kept the guard inert while the CLI reported success — the
+     * worst failure mode available, since the operator walks away believing the tablet
+     * is protected. A half-applied change is reported as {@code ok:false} with a
+     * warning, never as a clean success.
+     */
+    private synchronized JSONObject applyDeadline(String key, long value, String action, String note) {
+        if (KEY_DISARM_UNTIL.equals(key)) setDisarmUntil(value); else setInstallHoldUntil(value);
+
+        boolean persisted;
+        String error = null;
+        try {
+            configWriter.write(key, value);
+            persisted = true;
+        } catch (Exception e) {
+            persisted = false;
+            error = String.valueOf(e.getMessage());
+            Log.w(TAG, "could not persist " + key + "=" + value, e);
+        }
+
+        notes.note("KIOSKSET", persisted
+                ? note
+                : "WARN: " + note + " applied IN MEMORY ONLY — could not persist " + key
+                        + " (" + error + "); it will revert when the bridge restarts");
+
+        JSONObject o = new JSONObject();
+        try {
+            o.put("ok", persisted);
+            o.put("action", action);
+            o.put("inMemoryCleared", true);      // the in-memory half always applies
+            o.put("inMemoryValue", value);
+            o.put("persistedCleared", persisted);
+            if (!persisted) {
+                o.put("warning", "applied in memory only — could not persist " + key
+                        + " (" + error + "). It will revert when the bridge restarts; "
+                        + "clear it by hand with `pbctl config set " + key + " " + value + "`.");
+            }
+        } catch (Exception ignored) { }
+        return o;
     }
 
     // --- introspection (GET /kiosk/settings, embedded in /diagnostics) ------
@@ -368,7 +476,7 @@ public final class KioskSettingsGuard {
             Params p = params.get();
             long now = clock.getAsLong();
             long lastUpdate = lastUpdateRequestAtMs.getAsLong();
-            long disarmUntil = Math.max(p.disarmUntilMs, disarmUntilOverrideMs);
+            long disarmUntil = disarmUntilMs();
 
             o.put("ok", true);
             o.put("enabled", p.enabled);
@@ -381,7 +489,7 @@ public final class KioskSettingsGuard {
             o.put("lastRepair", lastRepair == null ? JSONObject.NULL : lastRepair);
             o.put("disarmUntilMs", disarmUntil == 0 ? JSONObject.NULL : disarmUntil);
             o.put("disarmed", now < disarmUntil);
-            long holdUntil = Math.max(p.installHoldUntilMs, installHoldUntilOverrideMs);
+            long holdUntil = installHoldUntilMs();
             o.put("installHoldMs", p.installHoldMs);
             o.put("installHoldUntilMs", holdUntil == 0 ? JSONObject.NULL : holdUntil);
             o.put("installHoldRemainingMs", Math.max(0L, holdUntil - now));
