@@ -26,7 +26,16 @@
  * The one input that is tolerated rather than refused is a negative result, which
  * is a real physical reading (see `computeNet`).
  *
- * @module nutrition/scanNutrition
+ * ## Macro grams are returned UNROUNDED — do not "tidy" them
+ *
+ * `fat_g` comes back as 9.333333333333334, which looks untidy beside a whole
+ * `grams: 74` in the history YAML. Rounding it here would break the invariant
+ * that justifies the percent-of-calories design: the derived grams must burn
+ * back to exactly the stored calorie total (`fat_g*9 + carb_g*4 + protein_g*4
+ * === calories`). Round at the display or storage boundary instead, where the
+ * reconciliation has already been done.
+ *
+ * @module nutrition/services/ScanNutritionService
  */
 
 import { ValidationError } from '#domains/core/errors/index.mjs';
@@ -36,7 +45,24 @@ const KCAL_PER_G_FAT = 9;
 const KCAL_PER_G_CARB = 4;
 const KCAL_PER_G_PROTEIN = 4;
 
-const PER_100G_FIELDS = ['fiber_g', 'sugar_g', 'sodium_mg'];
+/**
+ * Render a received value for an error message.
+ *
+ * The message is appended with what actually arrived because the callers that
+ * surface these errors log `err.message` alone and drop the structured
+ * `code`/`field`/`value`. Without this, someone debugging at the fridge learns
+ * which field was bad but never what it held.
+ *
+ * @param {unknown} value
+ * @returns {string}
+ */
+function describe(value) {
+  if (typeof value === 'string') return JSON.stringify(value);
+  if (Array.isArray(value)) return 'an array';
+  if (typeof value === 'number' || typeof value === 'boolean') return String(value);
+  if (value === null || value === undefined) return String(value);
+  return typeof value;
+}
 
 /**
  * @param {unknown} value
@@ -48,10 +74,16 @@ const PER_100G_FIELDS = ['fiber_g', 'sugar_g', 'sodium_mg'];
  */
 function requireNumber(value, field, code, { min } = {}) {
   if (typeof value !== 'number' || !Number.isFinite(value)) {
-    throw new ValidationError(`${field} must be a finite number`, { code, field, value });
+    throw new ValidationError(
+      `${field} must be a finite number (received: ${describe(value)})`,
+      { code, field, value },
+    );
   }
   if (min !== undefined && value < min) {
-    throw new ValidationError(`${field} must be at least ${min}`, { code, field, value });
+    throw new ValidationError(
+      `${field} must be at least ${min} (received: ${describe(value)})`,
+      { code, field, value },
+    );
   }
   return value;
 }
@@ -65,9 +97,34 @@ function requireNumber(value, field, code, { min } = {}) {
  */
 function requireObject(value, field, code) {
   if (value === null || typeof value !== 'object' || Array.isArray(value)) {
-    throw new ValidationError(`${field} must be an object`, { code, field, value });
+    throw new ValidationError(
+      `${field} must be an object (received: ${describe(value)})`,
+      { code, field, value },
+    );
   }
   return value;
+}
+
+/**
+ * Read one optional secondary-nutrient field off a `per_100g` block.
+ *
+ * Absent means "none recorded" and yields 0. YAML-blank (`fiber_g:` with no
+ * value) parses to `null` and is treated the same as absent — the density table
+ * is hand-authored, that slip is plausible, and a zero secondary nutrient cannot
+ * fabricate calories. A field that is present with an unusable value still throws.
+ *
+ * Deliberately NOT symmetric with `macros`, where a blank field must throw: a
+ * zeroed macro split yields a plausible-looking but wrong entry, which is the
+ * failure this module exists to prevent.
+ *
+ * @param {Record<string, unknown>} per100
+ * @param {string} field
+ * @returns {number}
+ */
+function optionalPer100(per100, field) {
+  const value = per100[field];
+  if (value === undefined || value === null) return 0;
+  return requireNumber(value, `level.per_100g.${field}`, 'INVALID_PER_100G', { min: 0 });
 }
 
 /**
@@ -97,9 +154,11 @@ export function computeNet(grossG, container = null) {
   // Only an absent container means "no tare". A container that IS present but
   // carries no usable weight is a defect in the container table: coercing it to a
   // 0 tare would silently log the container's own weight as food.
-  const tare = container === null || container === undefined
-    ? 0
-    : requireNumber(container.grams, 'container.grams', 'INVALID_CONTAINER_TARE', { min: 0 });
+  let tare = 0;
+  if (container !== null && container !== undefined) {
+    requireObject(container, 'container', 'INVALID_CONTAINER_TARE');
+    tare = requireNumber(container.grams, 'container.grams', 'INVALID_CONTAINER_TARE', { min: 0 });
+  }
 
   const raw = gross - tare;
   return {
@@ -120,8 +179,10 @@ export function computeNet(grossG, container = null) {
  * drift. Grams are derived from whatever split this is handed.
  *
  * `per_100g` is optional: it carries secondary nutrients, and treating an absent
- * block as zero cannot fabricate calories the way a zeroed macro split would. A
- * field that is PRESENT but unusable still throws.
+ * block as zero cannot fabricate calories the way a zeroed macro split would.
+ * Absent, `null`, and a `null` individual field all read as zero; a field present
+ * with an unusable non-null value still throws. See `optionalPer100` for why this
+ * leniency stops at `per_100g` and does not extend to `macros`.
  *
  * @param {number} netG Net weight in grams. Finite and non-negative — normally
  *   straight from `computeNet`, which guarantees both.
@@ -133,36 +194,36 @@ export function computeNet(grossG, container = null) {
  * @throws {ValidationError} If the net weight or any required level field is unusable.
  */
 export function computeNutrition(netG, level) {
-  const g = requireNumber(netG, 'netG', 'INVALID_NET_WEIGHT', { min: 0 });
+  const netGrams = requireNumber(netG, 'netG', 'INVALID_NET_WEIGHT', { min: 0 });
 
-  requireObject(level, 'level', 'INVALID_DENSITY_LEVEL');
-  const kcalPerG = requireNumber(level.kcal_per_g, 'level.kcal_per_g', 'INVALID_KCAL_PER_G', { min: 0 });
+  // MALFORMED_ rather than INVALID_DENSITY_LEVEL: ScanVocabularyService already uses
+  // that code for an out-of-range SCANNED level, whose remediation is "rescan".
+  // This one means the config table row is malformed — "fix the YAML". A caller
+  // branching on err.code must be able to tell those apart.
+  const densityLevel = requireObject(level, 'level', 'MALFORMED_DENSITY_LEVEL');
+  const kcalPerG = requireNumber(densityLevel.kcal_per_g, 'level.kcal_per_g', 'INVALID_KCAL_PER_G', { min: 0 });
 
-  const macros = requireObject(level.macros, 'level.macros', 'INVALID_MACROS');
+  const macros = requireObject(densityLevel.macros, 'level.macros', 'INVALID_MACROS');
   const pct = (field) =>
     requireNumber(macros[field], `level.macros.${field}`, 'INVALID_MACROS', { min: 0 });
   const fatPct = pct('fat_pct');
   const carbPct = pct('carb_pct');
   const proteinPct = pct('protein_pct');
 
-  const per100 = level.per_100g === null || level.per_100g === undefined
+  const per100 = densityLevel.per_100g === null || densityLevel.per_100g === undefined
     ? {}
-    : requireObject(level.per_100g, 'level.per_100g', 'INVALID_PER_100G');
-  const [fiberPer100, sugarPer100, sodiumPer100] = PER_100G_FIELDS.map((field) =>
-    per100[field] === undefined
-      ? 0
-      : requireNumber(per100[field], `level.per_100g.${field}`, 'INVALID_PER_100G', { min: 0 }));
+    : requireObject(densityLevel.per_100g, 'level.per_100g', 'INVALID_PER_100G');
 
-  const calories = Math.round(g * kcalPerG);
-  const scale = g / 100;
+  const calories = Math.round(netGrams * kcalPerG);
+  const scale = netGrams / 100;
 
   return {
     calories,
     fat_g: (calories * fatPct / 100) / KCAL_PER_G_FAT,
     carb_g: (calories * carbPct / 100) / KCAL_PER_G_CARB,
     protein_g: (calories * proteinPct / 100) / KCAL_PER_G_PROTEIN,
-    fiber_g: fiberPer100 * scale,
-    sugar_g: sugarPer100 * scale,
-    sodium_mg: sodiumPer100 * scale,
+    fiber_g: optionalPer100(per100, 'fiber_g') * scale,
+    sugar_g: optionalPer100(per100, 'sugar_g') * scale,
+    sodium_mg: optionalPer100(per100, 'sodium_mg') * scale,
   };
 }

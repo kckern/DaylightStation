@@ -1,5 +1,10 @@
 import { describe, it, expect } from 'vitest';
-import { computeNet, computeNutrition } from '#domains/nutrition';
+import {
+  computeNet,
+  computeNutrition,
+  encodeDensity,
+  MAX_DENSITY_LEVEL,
+} from '#domains/nutrition';
 import { ValidationError } from '#domains/core/errors/index.mjs';
 
 const LEVEL_4 = {
@@ -85,6 +90,20 @@ describe('computeNet', () => {
         expect.objectContaining({ code: 'INVALID_CONTAINER_TARE' }),
       );
     });
+
+    // A container that is not an object at all should say so, rather than blaming
+    // a `.grams` field that could not have existed.
+    it('throws on a container that is not an object', () => {
+      expect(() => computeNet(500, 'bowl')).toThrow(/container must be an object/);
+    });
+
+    // The dispatch sites that surface these log err.message alone and drop the
+    // structured code/field/value, so the message has to carry what arrived.
+    it('names the offending value in the error message', () => {
+      expect(() => computeNet(undefined, null)).toThrow(/received: undefined/);
+      expect(() => computeNet('500', null)).toThrow(/received: "500"/);
+      expect(() => computeNet(500, { grams: -10 })).toThrow(/received: -10/);
+    });
   });
 });
 
@@ -102,10 +121,6 @@ describe('computeNutrition', () => {
     expect(r.fiber_g).toBeCloseTo(4, 2);
     expect(r.sugar_g).toBeCloseTo(10, 2);
     expect(r.sodium_mg).toBeCloseTo(600, 2);
-  });
-
-  it('returns zeros for a zero net weight', () => {
-    expect(computeNutrition(0, LEVEL_4).calories).toBe(0);
   });
 
   it('returns zeros across every nutrient for a zero net weight', () => {
@@ -162,7 +177,31 @@ describe('computeNutrition', () => {
     expect(r.sodium_mg).toBeCloseTo(600, 2);
   });
 
+  it('treats a null per_100g block as zero secondary nutrients', () => {
+    const r = computeNutrition(200, { ...LEVEL_4, per_100g: null });
+    expect(r).toMatchObject({ calories: 280, fiber_g: 0, sugar_g: 0, sodium_mg: 0 });
+  });
+
+  // `fiber_g:` with no value parses to null out of the hand-authored YAML table.
+  // A blank field must behave like a blank block, not hard-fail an otherwise-fine
+  // entry at the fridge.
+  it('treats a YAML-blank per_100g field the same as an absent one', () => {
+    const r = computeNutrition(200, { ...LEVEL_4, per_100g: { fiber_g: null, sodium_mg: 300 } });
+    expect(r).toMatchObject({ calories: 280, fiber_g: 0 });
+    expect(r.sodium_mg).toBeCloseTo(600, 2);
+  });
+
+  // The asymmetry is deliberate: a blank MACRO cannot be waved through, because a
+  // zeroed macro split produces a plausible-looking entry whose macros contradict
+  // its own calorie count.
+  it('still throws on a YAML-blank macro field', () => {
+    expect(() => computeNutrition(200, { ...LEVEL_4, macros: { ...LEVEL_4.macros, fat_pct: null } }))
+      .toThrow(expect.objectContaining({ code: 'INVALID_MACROS' }));
+  });
+
   describe('rejects unusable input rather than coercing it', () => {
+    // Codes are asserted, not just the error type: they are the machine-readable
+    // contract downstream branches on, so a typo'd code must not ship green.
     it.each([
       ['NaN', NaN],
       ['Infinity', Infinity],
@@ -170,21 +209,28 @@ describe('computeNutrition', () => {
       ['null', null],
       ['a numeric string', '200'],
     ])('throws on a net weight that is %s', (_label, netG) => {
-      expect(() => computeNutrition(netG, LEVEL_4)).toThrow(ValidationError);
+      expect(() => computeNutrition(netG, LEVEL_4)).toThrow(
+        expect.objectContaining({ code: 'INVALID_NET_WEIGHT', field: 'netG' }),
+      );
     });
 
     // computeNet already clamps, so a negative arriving here means the caller
     // bypassed it. Swallowing that to 0 would hide the bug behind a plausible entry.
     it('throws on a negative net weight', () => {
-      expect(() => computeNutrition(-1, LEVEL_4)).toThrow(ValidationError);
+      expect(() => computeNutrition(-1, LEVEL_4)).toThrow(
+        expect.objectContaining({ code: 'INVALID_NET_WEIGHT' }),
+      );
     });
 
     it.each([
       ['null', null],
       ['undefined', undefined],
       ['a non-object', 4],
+      ['an array', []],
     ])('throws on a level that is %s', (_label, level) => {
-      expect(() => computeNutrition(200, level)).toThrow(ValidationError);
+      expect(() => computeNutrition(200, level)).toThrow(
+        expect.objectContaining({ code: 'MALFORMED_DENSITY_LEVEL', field: 'level' }),
+      );
     });
 
     it.each([
@@ -192,7 +238,9 @@ describe('computeNutrition', () => {
       ['a non-numeric kcal_per_g', { kcal_per_g: 'high', macros: LEVEL_4.macros }],
       ['a negative kcal_per_g', { kcal_per_g: -1, macros: LEVEL_4.macros }],
     ])('throws on a level with %s', (_label, level) => {
-      expect(() => computeNutrition(200, level)).toThrow(ValidationError);
+      expect(() => computeNutrition(200, level)).toThrow(
+        expect.objectContaining({ code: 'INVALID_KCAL_PER_G', field: 'level.kcal_per_g' }),
+      );
     });
 
     // A level with no usable macro split would yield calories with zero macros —
@@ -204,19 +252,45 @@ describe('computeNutrition', () => {
       ['a non-numeric carb_pct', { kcal_per_g: 1.4, macros: { fat_pct: 30, carb_pct: '45', protein_pct: 25 } }],
       ['a negative protein_pct', { kcal_per_g: 1.4, macros: { fat_pct: 30, carb_pct: 45, protein_pct: -25 } }],
     ])('throws on a level with %s', (_label, level) => {
-      expect(() => computeNutrition(200, level)).toThrow(ValidationError);
+      expect(() => computeNutrition(200, level)).toThrow(
+        expect.objectContaining({ code: 'INVALID_MACROS' }),
+      );
     });
 
     it('throws on a per_100g field that is present but not a number', () => {
       expect(() => computeNutrition(200, { ...LEVEL_4, per_100g: { fiber_g: 'lots' } }))
-        .toThrow(ValidationError);
+        .toThrow(expect.objectContaining({
+          code: 'INVALID_PER_100G', field: 'level.per_100g.fiber_g',
+        }));
+    });
+
+    it('throws on a negative per_100g field', () => {
+      expect(() => computeNutrition(200, { ...LEVEL_4, per_100g: { sodium_mg: -1 } }))
+        .toThrow(expect.objectContaining({ code: 'INVALID_PER_100G' }));
     });
 
     // An array would otherwise slip past a bare `typeof === 'object'` check and
     // read as a block whose every field is absent, i.e. silent zeros.
     it('throws on a per_100g that is an array', () => {
-      expect(() => computeNutrition(200, { ...LEVEL_4, per_100g: [] })).toThrow(ValidationError);
+      expect(() => computeNutrition(200, { ...LEVEL_4, per_100g: [] }))
+        .toThrow(expect.objectContaining({ code: 'INVALID_PER_100G' }));
     });
+  });
+
+  // Regression guard for a real collision: both modules once emitted
+  // INVALID_DENSITY_LEVEL with field 'level' for opposite conditions —
+  // ScanVocabularyService for an out-of-range SCANNED level ("rescan"), this module for a
+  // malformed config row ("fix the YAML"). A caller branching on err.code could
+  // not tell them apart.
+  it('does not reuse ScanVocabularyService\'s error code for a malformed config row', () => {
+    let scanCode;
+    try { encodeDensity(MAX_DENSITY_LEVEL + 1); } catch (err) { scanCode = err.code; }
+    let configCode;
+    try { computeNutrition(200, null); } catch (err) { configCode = err.code; }
+
+    expect(scanCode).toBe('INVALID_DENSITY_LEVEL');
+    expect(configCode).toBe('MALFORMED_DENSITY_LEVEL');
+    expect(configCode).not.toBe(scanCode);
   });
 
   // Whether the macro percentages sum to 100 is the config schema's job (Task 4).
