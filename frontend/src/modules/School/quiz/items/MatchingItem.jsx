@@ -89,7 +89,7 @@ export default function MatchingItem({ item, onSubmit, verdict }) {
           Check
         </button>
       )}
-      {verdict && !verdict.correct && (
+      {verdict && !verdict.correct && verdict.expected && (
         <div className="school-item__expected">
           {verdict.expected.map((p) => <p key={p.left}>{p.left} → {p.right}</p>)}
         </div>

@@ -22,19 +22,30 @@ const ITEM_COMPONENTS = {
 };
 
 export default function QuizRunner({ bank, onExit }) {
-  const { currentUser, isGuest } = useSchoolProfile();
+  const { status, currentUser, isGuest } = useSchoolProfile();
   const [sessionId, setSessionId] = useState(null);
   const [index, setIndex] = useState(0);
   const [verdict, setVerdict] = useState(null);
   const [unrecorded, setUnrecorded] = useState(false);
+  const [unrecordedCount, setUnrecordedCount] = useState(0);
   const [score, setScore] = useState(0);
   const [done, setDone] = useState(false);
 
-  // Identity pinned at mount; any change (lapse, switch, guest flip) abandons.
   const identityKey = currentUser?.id ?? (isGuest ? 'guest' : 'none');
-  const initialIdentity = useRef(identityKey);
+  // Identity is pinned the moment the session actually opens (not at first
+  // render — the profile context may still be resolving the roster then).
+  // null means "not pinned yet"; the abandon effect below is inert until then.
+  const initialIdentity = useRef(null);
+  const sessionOpenedRef = useRef(false);
+  // Checked synchronously in submit() so recording stops the instant identity
+  // changes, regardless of whether the parent unmounts us before or after
+  // onExit() fires — a `useEffect` calling onExit() only REQUESTS teardown.
+  const abandonedRef = useRef(false);
+
   useEffect(() => {
+    if (initialIdentity.current === null) return; // session not open yet; nothing pinned
     if (identityKey !== initialIdentity.current) {
+      abandonedRef.current = true;
       schoolLog.session('end', { sessionId, bankId: bank.id, mode: 'quiz', reason: 'identity-changed' });
       onExit();
     }
@@ -42,28 +53,35 @@ export default function QuizRunner({ bank, onExit }) {
   }, [identityKey]);
 
   useEffect(() => {
+    if (status !== 'ready' || sessionOpenedRef.current) return;
+    sessionOpenedRef.current = true;
+    initialIdentity.current = identityKey;
     let alive = true;
-    schoolApi.openSession({ userId: currentUser?.id ?? null, bankId: bank.id, mode: 'quiz' }).then(({ ok, data }) => {
+    const userId = currentUser?.id ?? null;
+    schoolApi.openSession({ userId, bankId: bank.id, mode: 'quiz' }).then(({ ok, data }) => {
       if (!alive) return;
       if (!ok) { onExit(); return; }
       setSessionId(data.sessionId);
-      schoolLog.session('start', { sessionId: data.sessionId, bankId: bank.id, mode: 'quiz', userId: currentUser?.id ?? null, itemCount: bank.items.length });
+      schoolLog.session('start', { sessionId: data.sessionId, bankId: bank.id, mode: 'quiz', userId, itemCount: bank.items.length });
     });
     return () => { alive = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [status, identityKey]);
 
   const item = bank.items[index];
 
   const submit = async (given) => {
-    if (!sessionId || verdict) return;
-    const { ok, status, data } = await schoolApi.answer(sessionId, { itemId: item.id, given });
-    if (status === 410) { onExit(); return; }
+    if (!sessionId || verdict || abandonedRef.current) return;
+    const { ok, status: answerStatus, data } = await schoolApi.answer(sessionId, { itemId: item.id, given });
+    if (abandonedRef.current) return; // identity changed while the request was in flight
+    if (answerStatus === 410) { onExit(); return; }
     if (!ok) {
       // Grading state unknowable; the attempt is NOT on disk. Never silent (spec §8).
-      schoolLog.answerError('record-failed', { sessionId, itemId: item.id, status });
+      // The true grade is UNKNOWN, not wrong — the verdict must not claim one.
+      schoolLog.answerError('record-failed', { sessionId, itemId: item.id, status: answerStatus });
       setUnrecorded(true);
-      setVerdict({ correct: false, expected: null, unrecorded: true });
+      setUnrecordedCount((c) => c + 1);
+      setVerdict({ unrecorded: true });
       return;
     }
     schoolLog.answer('graded', { sessionId, itemId: item.id, itemType: item.type, correct: data.correct });
@@ -83,11 +101,28 @@ export default function QuizRunner({ bank, onExit }) {
   };
 
   if (done) {
+    const gradedCount = bank.items.length - unrecordedCount;
     return (
       <div className="school-runner school-runner--summary" data-testid="quiz-summary">
         <h2>{bank.title}</h2>
-        <p className="school-runner__score">{score} / {bank.items.length}</p>
+        <p className="school-runner__score">{score} / {gradedCount}</p>
+        {unrecordedCount > 0 && (
+          <p className="school-runner__unrecorded-summary" data-testid="unrecorded-summary">
+            {unrecordedCount} answer{unrecordedCount === 1 ? '' : 's'} not recorded — not counted as wrong
+          </p>
+        )}
         <button type="button" className="school-runner__done" onClick={onExit}>Done</button>
+      </div>
+    );
+  }
+  // A live item must never be in front of the child before the session
+  // exists: submit() no-ops while sessionId is null, and each item component
+  // latches its own submittedRef on the first tap, so a tap that lands during
+  // this window would be swallowed with no retry. Show a loading state instead.
+  if (!sessionId) {
+    return (
+      <div className="school-runner school-runner--quiz" data-testid="quiz-loading">
+        <p className="school-runner__loading">Loading…</p>
       </div>
     );
   }
