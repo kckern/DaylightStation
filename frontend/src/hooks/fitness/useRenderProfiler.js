@@ -14,6 +14,7 @@
 
 import { useRef, useEffect, useCallback } from 'react';
 import getLogger from '../../lib/logging/Logger.js';
+import { heapFields, reportMemoryMonitoringAvailability } from '../../lib/perf/memoryProbe.js';
 
 const logger = getLogger('RenderProfiler');
 
@@ -117,9 +118,7 @@ export function useRenderProfiler(componentName) {
           sustainedMs: Math.round(now - sustainedThrashingStart.current),
           governancePhase: governance?.phase || null,
           governanceWarningDurationMs: governance?.warningDuration || 0,
-          heapMB: typeof performance !== 'undefined' && performance.memory
-            ? Math.round(performance.memory.usedJSHeapSize / 1024 / 1024)
-            : null
+          ...heapFields()
         });
       }
     }
@@ -133,6 +132,10 @@ export function useRenderProfiler(componentName) {
 
   // Track mounts/unmounts
   useEffect(() => {
+    // The thrashing/remount reports below carry heapMB. Announce once whether
+    // that figure is obtainable, so a Firefox log is not mistaken for a clean one.
+    reportMemoryMonitoringAvailability({ monitor: 'render-profiler' });
+
     const mountTime = performance.now();
     componentRegistry.mountTimestamps[componentName].push(mountTime);
 
@@ -155,9 +158,7 @@ export function useRenderProfiler(componentName) {
           mountCount,
           windowMs: REMOUNT_WINDOW_MS,
           governancePhase: governance?.phase || null,
-          heapMB: typeof performance !== 'undefined' && performance.memory
-            ? Math.round(performance.memory.usedJSHeapSize / 1024 / 1024)
-            : null
+          ...heapFields()
         });
       }
     }

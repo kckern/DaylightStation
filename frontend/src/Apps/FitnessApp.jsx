@@ -14,6 +14,7 @@ import { getModuleManifest } from '../modules/Fitness/index.js';
 import { VolumeProvider } from '../modules/Fitness/nav/VolumeProvider.jsx';
 import { FitnessProvider } from '../context/FitnessContext.jsx';
 import getLogger, { configure as configureLogger } from '../lib/logging/Logger.js';
+import { readHeap, heapFields, heapSnapshotFields, isMemoryMonitoringAvailable, reportMemoryMonitoringAvailability } from '../lib/perf/memoryProbe.js';
 import { sortNavItems, filterNavItemsByDay, isNavItemActive } from '../modules/Fitness/lib/navigationUtils.js';
 import useDayOfWeek from '../hooks/useDayOfWeek.js';
 import VoiceMemoOverlay from '../modules/Fitness/player/overlays/VoiceMemoOverlay.jsx';
@@ -121,11 +122,7 @@ const FitnessApp = () => {
         stack: new Error('Unload stack trace').stack,
         governancePhase: window.__fitnessGovernance?.phase || null,
         sessionStats: window.__fitnessSession?.getMemoryStats?.() || null,
-        performanceMemory: performance.memory ? {
-          usedJSHeapSize: performance.memory.usedJSHeapSize,
-          totalJSHeapSize: performance.memory.totalJSHeapSize,
-          jsHeapSizeLimit: performance.memory.jsHeapSizeLimit
-        } : null
+        performanceMemory: heapSnapshotFields({ precision: 1 })
       });
     };
 
@@ -164,13 +161,21 @@ const FitnessApp = () => {
       return { activeIntervals: -1, activeTimeouts: -1 };
     };
 
+    // Announce once whether heap monitoring works at all in this browser. The
+    // garage kiosk is Firefox, which implements neither performance.memory nor
+    // (outside cross-origin isolation) measureUserAgentSpecificMemory — so the
+    // growth thresholds below can never fire. Saying so beats logging a null
+    // that reads like "no growth".
+    const memoryAvailable = reportMemoryMonitoringAvailability({ monitor: 'fitness-profile' });
+
     const getMemoryMB = () => {
-      const mem = performance.memory;
-      if (!mem) return null;
+      const { heapMB, heapTotalMB, heapLimitMB, heapSource } = readHeap({ precision: 1 });
+      if (heapMB === null) return null;
       return {
-        usedMB: Math.round(mem.usedJSHeapSize / 1024 / 1024 * 10) / 10,
-        totalMB: Math.round(mem.totalJSHeapSize / 1024 / 1024 * 10) / 10,
-        limitMB: Math.round(mem.jsHeapSizeLimit / 1024 / 1024)
+        usedMB: heapMB,
+        totalMB: heapTotalMB,
+        limitMB: heapLimitMB === null ? null : Math.round(heapLimitMB),
+        source: heapSource
       };
     };
 
@@ -279,7 +284,8 @@ const FitnessApp = () => {
       logger.sampled('fitness-profile', {
         sample: sampleCount,
         elapsedSec: elapsed,
-        heapMB: mem?.usedMB,
+        heapMB: mem?.usedMB ?? null,
+        heapSource: mem?.source ?? 'unavailable',
         heapGrowthMB: growthMB,
         heapGrowthRateMBperMin,
         timers: timers.activeIntervals,
@@ -324,9 +330,11 @@ const FitnessApp = () => {
 
       // === WARNING THRESHOLDS ===
 
-      // Memory warnings
-      if (growthMB > 20) {
-        logger.warn('fitness-profile-memory-warning', { growthMB, elapsed });
+      // Memory warnings. Guarded on availability so the absence of a warning
+      // means "measured, and fine" rather than "never measured" — the
+      // distinction the Firefox kiosk logs could not previously express.
+      if (memoryAvailable && growthMB > 20) {
+        logger.warn('fitness-profile-memory-warning', { growthMB, elapsed, ...heapFields() });
       }
       if (timerGrowth > 5) {
         logger.warn('fitness-profile-timer-warning', { timerGrowth, elapsed });
@@ -340,7 +348,8 @@ const FitnessApp = () => {
           droppedFrames: videoFps.droppedFrames,
           governancePhase,
           governanceWarningDurationMs,
-          heapMB: mem?.usedMB,
+          heapMB: mem?.usedMB ?? null,
+          heapSource: mem?.source ?? 'unavailable',
           rosterSize: sessionStats.rosterSize,
           forceUpdateCount: renderStats.forceUpdateCount
         });
@@ -353,12 +362,13 @@ const FitnessApp = () => {
           dropRate: videoFps.dropRate,
           videoState,
           governancePhase,
-          heapMB: mem?.usedMB
+          heapMB: mem?.usedMB ?? null,
+          heapSource: mem?.source ?? 'unavailable'
         });
       }
 
       // Memory + Governance correlation
-      if (growthMB > 15 && governancePhase === 'warning') {
+      if (memoryAvailable && growthMB > 15 && governancePhase === 'warning') {
         logger.warn('fitness-profile-memory-governance-correlation', {
           growthMB,
           heapGrowthRateMBperMin,
@@ -369,7 +379,7 @@ const FitnessApp = () => {
       }
 
       // Memory + Render correlation
-      if (growthMB > 15 && (renderStats.ratePer5s || 0) > 50) {
+      if (memoryAvailable && growthMB > 15 && (renderStats.ratePer5s || 0) > 50) {
         logger.warn('fitness-profile-memory-render-correlation', {
           growthMB,
           heapGrowthRateMBperMin,
