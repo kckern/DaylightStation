@@ -19,8 +19,8 @@ Slot.propTypes = { id: PropTypes.string, panels: PropTypes.object, testid: PropT
  *    + right sidebar (POV grid top ~70%, standings tower bottom ~30% — the
  *    tower REPLACES the oval's slot; the oval's lap strip folds into the
  *    tower's own header row instead).
- *  - wide (≥4 riders): top row of chart (2×) | POV, speedometers full-width
- *    below, plus the standings tower docked as a right-edge column spanning
+ *  - wide (≥4 riders): top row of chart (2×) | standings tower, speedometers
+ *    full-width below, plus the POV grid docked as a right-edge column spanning
  *    the full height (audit UX §4.2 — wide mode used to lose rank/lap info
  *    entirely; now it never does).
  */
@@ -41,11 +41,11 @@ export default function RaceLayoutManager({ panels = {}, fieldSize = 0 }) {
         <div className={`race-layout__wide-main${hasSpeedo ? '' : ' race-layout__wide-main--no-speedo'}`}>
           <div className="race-layout__top3">
             {p('distanceChart', 'zone-chart', 'race-layout__zone--chart')}
-            {p('povGrid', 'zone-pov', 'race-layout__zone--pov')}
+            {p('standingsTower', 'zone-tower', 'race-layout__zone--tower')}
           </div>
           {hasSpeedo && p('speedoRow', 'zone-speedo', 'race-layout__zone--speedo')}
         </div>
-        {p('standingsTower', 'zone-tower', 'race-layout__zone--tower')}
+        {p('povGrid', 'zone-pov', 'race-layout__zone--pov')}
       </div>
     );
   }

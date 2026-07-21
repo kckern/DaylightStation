@@ -1,0 +1,35 @@
+plugins {
+    id 'com.android.application'
+}
+
+android {
+    namespace 'net.kckern.portalkeys'
+    compileSdk 33
+
+    defaultConfig {
+        applicationId 'net.kckern.portalkeys'
+        // Facebook Portal 10" runs sideloaded Android 9 = API 28.
+        minSdk 26
+        targetSdk 28
+        // BUMP on every build — install -r rejects a lower versionCode.
+        versionCode 8
+        versionName "0.8-adb-free"
+    }
+
+    buildTypes {
+        debug {
+            minifyEnabled false
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_1_8
+        targetCompatibility JavaVersion.VERSION_1_8
+    }
+}
+
+dependencies {
+    // NanoHTTPD WebSocket server — control channel to the browser kiosk, same
+    // version piano-bridge uses on the tablet.
+    implementation 'org.nanohttpd:nanohttpd-websocket:2.3.1'
+}

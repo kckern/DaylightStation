@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Key interception requires canRequestFilterKeyEvents="true" AND
+     flagRequestFilterKeyEvents in accessibilityFlags. Declaring only one of the two
+     yields a service that binds fine but never receives onKeyEvent — with no error
+     anywhere. Both are load-bearing.
+
+     accessibilityEventTypes is deliberately typeAllMask-free: this service does not
+     want UI events, only keys. canRetrieveWindowContent stays false so the service
+     never gains screen-content access it has no use for. -->
+<accessibility-service xmlns:android="http://schemas.android.com/apk/res/android"
+    android:description="@string/accessibility_service_description"
+    android:accessibilityEventTypes=""
+    android:accessibilityFeedbackType="feedbackGeneric"
+    android:canRequestFilterKeyEvents="true"
+    android:accessibilityFlags="flagRequestFilterKeyEvents"
+    android:canRetrieveWindowContent="false"
+    android:notificationTimeout="0" />

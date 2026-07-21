@@ -2339,10 +2339,33 @@ export async function createApp({ server, logger, configPaths, configExists, ena
 
       if (route === 'nutribot') {
         const userId = relayCfg.nutribot?.user_id || barcodeRelayConfig.nutribot?.user_id || configService.getHeadOfHousehold?.() || null;
-        const conversationId = relayCfg.nutribot?.conversation_id || barcodeRelayConfig.nutribot?.conversation_id || (userId ? `nutribot-upc:${userId}` : `nutribot-upc:${relay.device}`);
 
         if (!userId) {
           barcodeLogger?.warn?.('barcode_relay.nutribot.no_user', { device: relay.device, code: relay.code });
+          return;
+        }
+
+        // Derive the Telegram address the same way the scale->nutribot bridge
+        // does (see createScaleNutribotBridge below): telegram:b<botId>_c<chatId>.
+        // The old fallback built "nutribot-upc:<userId>", which
+        // TelegramAdapter.extractChatId() cannot parse — it was handed to the
+        // Telegram API verbatim and rejected with 400, so scans reached
+        // UPCGateway and then died silently at delivery. Deriving it also means
+        // a changed bot or head-of-household stays correct without a config edit.
+        const resolveNutribotConversationId = () => {
+          const botId = configService.getSystemConfig?.('bots')?.nutribot?.telegram?.bot_id || '';
+          const platformId = userIdentityService.resolvePlatformId?.('telegram', userId);
+          return botId && platformId ? `telegram:b${botId}_c${platformId}` : null;
+        };
+
+        const conversationId = relayCfg.nutribot?.conversation_id
+          || barcodeRelayConfig.nutribot?.conversation_id
+          || resolveNutribotConversationId();
+
+        if (!conversationId) {
+          barcodeLogger?.warn?.('barcode_relay.nutribot.no_conversation', {
+            device: relay.device, code: relay.code, userId,
+          });
           return;
         }
 

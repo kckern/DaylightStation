@@ -13,7 +13,10 @@ function makeDevice(overrides = {}) {
     screenPath: '/screen/tv',
     defaultVolume: 10,
     notifyService: 'mobile_app_kc_phone',
-    hasCapability: vi.fn().mockReturnValue(false),
+    // This suite models a TV that HAS device_control — its power script dispatches
+    // but the state sensor never confirms. A blanket-false stub would send it down
+    // the self-powered skip path and bypass the power semantics under test.
+    hasCapability: vi.fn((cap) => cap === 'deviceControl'),
     // Simulates the real failure: script ran but sensor never confirmed
     powerOn: vi.fn().mockResolvedValue({ ok: false, verifyFailed: true, elapsedMs: 25000 }),
     setVolume: vi.fn().mockResolvedValue({ ok: true }),
