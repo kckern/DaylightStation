@@ -7,8 +7,12 @@ import './SidebarFooter.scss';
 import getLogger from '@/lib/logging/Logger.js';
 import useLongPress from '../lib/useLongPress.js';
 import hardReload from '../lib/hardReload.js';
+import { lookupZoneProgress } from '@/modules/Fitness/domain/zoneProgressIndex.js';
 
 // Note: slugifyId has been removed - we now use explicit IDs from config
+
+// Stable identity so a missing index doesn't churn the memos that read it.
+const EMPTY_ZONE_PROGRESS_INDEX = new Map();
 
 const SidebarFooter = ({ onContentSelect, onAvatarClick }) => {
   const { 
@@ -22,7 +26,7 @@ const SidebarFooter = ({ onContentSelect, onAvatarClick }) => {
     usersConfigRaw,
     userCurrentZones,
     zones,
-    userZoneProgress,
+    zoneProgressIndex,
     getUserByDevice,
     fitnessPlayQueue
   } = useFitnessContext();
@@ -161,12 +165,10 @@ const SidebarFooter = ({ onContentSelect, onAvatarClick }) => {
     return { userIdMap: map, participantByHrId: participantMap };
   }, [participantRoster, participantsByDevice, usersConfigRaw, getConfiguredProfileId]);
 
-  const zoneProgressMap = React.useMemo(() => {
-    if (!userZoneProgress) return new Map();
-    if (userZoneProgress instanceof Map) return userZoneProgress;
-    const entries = Object.entries(userZoneProgress);
-    return new Map(entries);
-  }, [userZoneProgress]);
+  // `zoneProgressIndex` from context is already a Map aliased by profileId,
+  // deviceId(s), name and displayLabel — no local normalization needed. Resolve
+  // through lookupZoneProgress() with a stable ID first wherever one is on hand.
+  const zoneProgressMap = zoneProgressIndex || EMPTY_ZONE_PROGRESS_INDEX;
 
   // Build color -> zoneId map from zones config
   const colorToZoneId = React.useMemo(() => {
@@ -202,7 +204,6 @@ const SidebarFooter = ({ onContentSelect, onAvatarClick }) => {
 
   // Helper: derive canonical zone id (cool..fire) for a heart rate device or null
   const canonicalZones = ['cool','active','warm','hot','fire'];
-  const zoneRankMap = { cool:0, active:1, warm:2, hot:3, fire:4 };
   const resolveDeviceKey = React.useCallback((device) => {
     if (!device) return null;
     const candidates = [device.deviceId, device.id, device.device_id, device.hrDeviceId];
@@ -279,37 +280,15 @@ const SidebarFooter = ({ onContentSelect, onAvatarClick }) => {
   }, [resolveDeviceParticipant, userCurrentZones, deriveZoneFromHR]);
 
   const sortedDevices = React.useMemo(() => {
-    // Phase 1 SSOT: Use activeHeartRateParticipants from context instead of inline derivation
-    // This eliminates duplicated roster-to-device logic (see docs/ops/fix-fitness-user-consistency.md)
-    const hrDevices = [...(activeHeartRateParticipants || [])];
-
-    // Sort heart rate devices: zone rank DESC (fire top, cool bottom), then HR DESC, then active status as tertiary
-    hrDevices.sort((a, b) => {
-      const aZone = getDeviceZoneId(a);
-      const bZone = getDeviceZoneId(b);
-      const aRank = aZone ? zoneRankMap[aZone] : -1; // unknown below cool
-      const bRank = bZone ? zoneRankMap[bZone] : -1;
-      if (bRank !== aRank) return bRank - aRank; // higher rank first
-      // Within same zone: zone progress descending (normalized position within zone)
-      const aName = hrOwnerMap[resolveDeviceKey(a)] || '';
-      const bName = hrOwnerMap[resolveDeviceKey(b)] || '';
-      const aProgress = zoneProgressMap.get(aName)?.progress ?? 0;
-      const bProgress = zoneProgressMap.get(bName)?.progress ?? 0;
-      if (bProgress !== aProgress) return bProgress - aProgress;
-      // Tertiary: active devices first
-      const aActive = computeDeviceActive(a);
-      const bActive = computeDeviceActive(b);
-      if (aActive && !bActive) return -1;
-      if (!aActive && bActive) return 1;
-      // Stable fallback by deviceId
-      const aKey = resolveDeviceKey(a) || '';
-      const bKey = resolveDeviceKey(b) || '';
-      return aKey.localeCompare(bKey);
-    });
-
-    // Only keep the single top performer to prevent growth
-    return hrDevices.length > 1 ? hrDevices.slice(0, 1) : hrDevices;
-  }, [activeHeartRateParticipants, getDeviceZoneId, zoneRankMap, resolveDeviceKey, computeDeviceActive, hrOwnerMap, zoneProgressMap]);
+    // activeHeartRateParticipants is PRE-SORTED by sortByZoneRank in FitnessContext
+    // (the sorting SSOT). Do not re-sort — a second comparator is exactly what
+    // desynced order from card display in the 2026-07-21 bug. The comparator that
+    // used to live here also ranked on the COMMITTED (hysteresis-smoothed) zone via
+    // getDeviceZoneId, so it actively disagreed with the SSOT's live-zone order.
+    // The top performer is simply the first entry.
+    const hrDevices = activeHeartRateParticipants || [];
+    return hrDevices.length > 1 ? hrDevices.slice(0, 1) : [...hrDevices];
+  }, [activeHeartRateParticipants]);
 
   const isVideoPlaying = Array.isArray(fitnessPlayQueue) && fitnessPlayQueue.length > 0;
 
@@ -378,7 +357,13 @@ const SidebarFooter = ({ onContentSelect, onAvatarClick }) => {
           const heartRate = device.type === 'heart_rate' && device.heartRate ? device.heartRate : null;
           const zoneId = getDeviceZoneId(device);
           const zoneColor = getDeviceZoneColor(device) || null;
-          const progressEntry = ownerName ? zoneProgressMap.get(ownerName) : null;
+          const progressEntry = lookupZoneProgress(zoneProgressMap, {
+            profileId: device.profileId,
+            id: device.id,
+            name: ownerName,
+            displayLabel: device.displayLabel,
+            deviceId: deviceKey
+          });
           const progressValue = typeof progressEntry?.progress === 'number'
             ? Math.max(0, Math.min(1, progressEntry.progress))
             : null;
