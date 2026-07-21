@@ -599,6 +599,15 @@ Three changes, each independently testable:
 
 1. **Unit passthrough** — line ~50 hardcodes `unit: 'g'`. Read `payload.unit` and carry it into the buffer and the log. An `ml` reading must reach `ApplyScanToComposition`'s refusal path, not be silently logged as grams.
 2. **Session end consumes slots** — in the `rise <= baselineTolG` branch (~line 120), call `buffer.endPlacement(id)` alongside the existing retract.
+
+   **Wire this to the placed→at-rest TRANSITION, not to the condition.** `rise <= baselineTolG`
+   is true on *every* settled at-rest frame, and the firmware emits those at 0.5 Hz indefinitely
+   while the scale sits on its shelf. Calling `endPlacement` on the condition consumes any
+   pre-scan within about two seconds, making scan-before-placing impossible — the exact flow the
+   buffer exists to support. Track the edge (was-placed → now-at-rest) and fire once.
+
+   Test this explicitly: a `dl:` scan followed by twenty at-rest frames must still have its
+   density when a weight finally arrives.
 3. **Shared serialization** — the bridge's `inflight` Set must be reachable by the scan path. Extract it into a small per-scale mutex passed to both the bridge and `ApplyScanToComposition`, so a density scan landing during an awaited `create()` cannot produce two concurrent read-modify-writes on the same food log.
 
 Write the mutex test first: two concurrent operations on the same scale id must serialize; on different ids they must not.
