@@ -145,10 +145,21 @@ export class WakeAndLoadService {
     };
 
     // --- Step 1: Power On ---
-    this.#emitProgress(topic, dispatchId, 'power', 'running');
-    this.#logger.info?.('wake-and-load.power.start', { deviceId, dispatchId });
+    // Self-powered surfaces (touch panels, speakers) declare content_control but no
+    // device_control: there is nothing to switch on and no state sensor to verify
+    // against. Skip the step rather than hard-failing the whole dispatch.
+    //
+    // The predicate is 'deviceControl', NOT 'power' — getCapabilities() emits no
+    // `power` key, so hasCapability('power') is always false. (That is exactly why
+    // the Step 4b block at ~line 294 has never executed; see the plan's Known Issue.)
+    const canPowerOn = device.hasCapability('deviceControl');
 
-    const powerResult = await device.powerOn();
+    this.#emitProgress(topic, dispatchId, 'power', 'running');
+    this.#logger.info?.('wake-and-load.power.start', { deviceId, dispatchId, canPowerOn });
+
+    const powerResult = canPowerOn
+      ? await device.powerOn()
+      : { ok: true, skipped: 'no_device_control' };
     result.steps.power = powerResult;
 
     // Three outcomes to distinguish:
@@ -183,7 +194,11 @@ export class WakeAndLoadService {
     // or if the device has no sensor (verifySkipped). Only invoke the
     // readiness policy when power-on couldn't verify on its own.
     const alreadyVerified = powerResult.verified === true;
-    const noSensor = powerResult.verifySkipped === 'no_state_sensor';
+    // `skipped` covers self-powered devices, which have no sensor to consult at all;
+    // without this they fall into readinessPolicy.isReady() and fail with 'no_sensor'
+    // plus a spurious 45s retry.
+    const noSensor = powerResult.verifySkipped === 'no_state_sensor'
+      || powerResult.skipped === 'no_device_control';
 
     if (alreadyVerified || noSensor) {
       const skipReason = alreadyVerified ? 'power_on_verified' : 'no_sensor';
