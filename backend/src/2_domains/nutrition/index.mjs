@@ -50,6 +50,9 @@ export {
   computeNutrition,
 } from './services/ScanNutritionService.mjs';
 
+// Value objects
+export { Composition } from './value-objects/index.mjs';
+
 // Composition buffer (order-independent per-scale slot state machine)
 export { createCompositionBuffer } from './CompositionBuffer.mjs';
 
