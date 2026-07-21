@@ -41,6 +41,9 @@ static void flashLed(const CRGB& c, uint16_t ms = 60) {
 // ---- WebSocket ----------------------------------------------------------
 static WebSocketsClient webSocket;
 static bool wsConnected = false;
+static uint32_t g_wsDownSinceMs = 0;   // when the live link actually dropped
+static uint32_t g_wsRetries = 0;       // failed reconnects since that drop
+static uint32_t g_wsDropCount = 0;     // real drops since boot (not retries)
 static WebServer http(80);
 
 struct RecentLog { uint32_t ms; char text[128]; };
@@ -503,13 +506,36 @@ static void serviceScanWatchdog() {
 // ---- WebSocket events ---------------------------------------------------
 static void wsEvent(WStype_t type, uint8_t* payload, size_t length) {
   switch (type) {
+    // Log only STATE TRANSITIONS, not every failed reconnect. arduinoWebSockets
+    // raises DISCONNECTED on each retry, so a backend restart used to emit one
+    // line every 5 s and flush the 24-entry ring buffer — during one outage it
+    // evicted every classic-spp diagnostic, which made a scanner fault
+    // impossible to diagnose from /status. Diagnostics must survive routine
+    // noise, so the noise is what gets suppressed.
     case WStype_CONNECTED:
+      if (!wsConnected) {
+        if (g_wsDownSinceMs) {
+          relayLogf("[ws] connected (down %lus, %lu attempts)",
+                    (unsigned long)((millis() - g_wsDownSinceMs) / 1000),
+                    (unsigned long)g_wsRetries);
+        } else {
+          relayLogLine("[ws] connected");
+        }
+      }
       wsConnected = true;
-      relayLogLine("[ws] connected");
+      g_wsDownSinceMs = 0;
+      g_wsRetries = 0;
       break;
     case WStype_DISCONNECTED:
+      if (wsConnected) {                       // the real disconnect
+        relayLogLine("[ws] disconnected");
+        g_wsDownSinceMs = millis();
+        g_wsRetries = 0;
+        g_wsDropCount++;
+      } else {
+        g_wsRetries++;                         // a retry that failed — count only
+      }
       wsConnected = false;
-      relayLogLine("[ws] disconnected");
       break;
     default: break; // inbound bus messages (heartbeat etc.) ignored — we're a producer
   }
@@ -531,6 +557,11 @@ static void handleStatus() {
   JsonObject ws = doc["websocket"].to<JsonObject>();
   ws["connected"] = wsConnected;
   ws["host"] = WS_HOST; ws["port"] = WS_PORT; ws["path"] = WS_PATH;
+  ws["drops"] = g_wsDropCount;              // real drops since boot
+  if (!wsConnected && g_wsDownSinceMs) {
+    ws["down_s"] = (uint32_t)((millis() - g_wsDownSinceMs) / 1000);
+    ws["retries"] = g_wsRetries;
+  }
 
   JsonObject scale = doc["scale"].to<JsonObject>();
   scale["connected"] = g_bleConnected;
@@ -659,7 +690,15 @@ void setup() {
   webSocket.begin(WS_HOST, WS_PORT, WS_PATH);
   webSocket.onEvent(wsEvent);
   webSocket.setReconnectInterval(5000);
-  webSocket.enableHeartbeat(15000, 3000, 2);
+  // Tolerant heartbeat: ping 20 s, allow 8 s for the pong, 3 strikes before
+  // tearing the link down (~60 s to notice a genuinely dead backend). The old
+  // 3 s / 2-strike setting was too tight for this board — three radios share
+  // one antenna and esp_coex_preference_set(ESP_COEX_PREFER_BT) deliberately
+  // gives WiFi the smaller share, so a pong can legitimately arrive late while
+  // Classic or BLE holds the radio. Losing the socket over that costs more than
+  // noticing a dead backend 30 s later, especially now that scans are queued
+  // across an outage rather than dropped.
+  webSocket.enableHeartbeat(20000, 8000, 3);
 
   http.on("/", handleStatus);
   http.on("/status", handleStatus);
