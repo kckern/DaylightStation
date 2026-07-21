@@ -41,6 +41,7 @@ export {
   encodeDensity,
   encodeContainer,
   RESET_CODE,
+  MAX_DENSITY_LEVEL,
 } from './ScanVocabulary.mjs';
 
 // Services
