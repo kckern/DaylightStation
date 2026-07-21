@@ -28,11 +28,14 @@ describe('RaceLayoutManager', () => {
     const zones = [...root.querySelectorAll('[data-testid^="zone-"]')].map((z) => z.dataset.testid);
     expect(zones.indexOf('zone-chart')).toBeLessThan(zones.indexOf('zone-pov'));
   });
-  it('puts the chart before the POV grid in wide mode', () => {
+  // Wide mode pairs the chart with the standings tower in the top row; the POV
+  // grid is the docked right-edge column, so it comes last in DOM order.
+  it('puts the chart, then the tower, then the POV grid in wide mode', () => {
     const { getByTestId } = render(<RaceLayoutManager panels={panels} fieldSize={4} />);
     const root = getByTestId('race-layout');
     const zones = [...root.querySelectorAll('[data-testid^="zone-"]')].map((z) => z.dataset.testid);
-    expect(zones.indexOf('zone-chart')).toBeLessThan(zones.indexOf('zone-pov'));
+    expect(zones.indexOf('zone-chart')).toBeLessThan(zones.indexOf('zone-tower'));
+    expect(zones.indexOf('zone-tower')).toBeLessThan(zones.indexOf('zone-pov'));
   });
   it('renders the standings tower in its own zone in both modes', () => {
     const sidebar = render(<RaceLayoutManager panels={panels} fieldSize={2} />);

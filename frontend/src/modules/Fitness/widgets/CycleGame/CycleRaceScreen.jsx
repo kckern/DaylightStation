@@ -20,8 +20,8 @@ import './CycleRaceScreen.scss';
  * Presentational race screen — a velodrome broadcast HUD. RaceLayoutManager picks a
  * fixed layout by field size: ≤3 riders → sidebar mode (distance chart over the
  * speedometers, with a POV grid + standings tower in a right sidebar); ≥4 riders →
- * wide mode (chart 2× | POV across the top, speedometers full-width, standings
- * tower docked as a right-edge column). The race clock lives inside the chart's
+ * wide mode (chart 2× | standings tower across the top, speedometers full-width,
+ * POV grid docked as a right-edge column). The race clock lives inside the chart's
  * header; the standings tower (audit UX §4.1-4.2) is the always-on rank/gap
  * readout in BOTH layouts and absorbs the old oval's lap strip into its header.
  * `OvalTrack` stays in the codebase but is no longer part of this live panel map.
