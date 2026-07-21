@@ -3,6 +3,7 @@ import { KeyboardAdapter } from './adapters/KeyboardAdapter.js';
 import { NumpadAdapter } from './adapters/NumpadAdapter.js';
 import { RemoteAdapter } from './adapters/RemoteAdapter.js';
 import { GamepadAdapter } from './adapters/GamepadAdapter.js';
+import { TouchAdapter } from './adapters/TouchAdapter.js';
 
 export function createInputManager(actionBus, inputConfig) {
   if (!actionBus || !inputConfig) {
@@ -22,6 +23,9 @@ export function createInputManager(actionBus, inputConfig) {
       break;
     case 'gamepad':
       adapter = new GamepadAdapter(actionBus, { gamepadIndex: inputConfig.gamepad_index ?? null });
+      break;
+    case 'touch':
+      adapter = new TouchAdapter();
       break;
     case 'keyboard':
     default:

@@ -26,6 +26,7 @@ export { KeyboardAdapter } from './input/adapters/KeyboardAdapter.js';
 export { NumpadAdapter } from './input/adapters/NumpadAdapter.js';
 export { RemoteAdapter } from './input/adapters/RemoteAdapter.js';
 export { GamepadAdapter } from './input/adapters/GamepadAdapter.js';
+export { TouchAdapter } from './input/adapters/TouchAdapter.js';
 
 // Actions
 export { ScreenActionHandler } from './actions/ScreenActionHandler.jsx';
