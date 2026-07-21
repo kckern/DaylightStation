@@ -3,11 +3,14 @@
  * @module nutrition
  */
 
+// Value Objects
+export { Composition } from './value-objects/index.mjs';
+
 // Entities
 export { NutriLog } from './entities/NutriLog.mjs';
 export { FoodItem } from './entities/FoodItem.mjs';
 
-// Schemas and validation
+// Entities — schemas and validation
 export {
   NoomColors,
   LogStatuses,
@@ -24,7 +27,7 @@ export {
   getColorLabel,
 } from './entities/schemas.mjs';
 
-// Formatters
+// Entities — formatters
 export {
   NOOM_COLOR_EMOJI,
   getNoomColorEmoji,
@@ -35,20 +38,20 @@ export {
   formatFoodList,
 } from './entities/formatters.mjs';
 
-// Scan vocabulary (fridge-sheet QR grammar)
+// Services
+export { FoodLogService } from './services/FoodLogService.mjs';
+
+// Services — scan vocabulary (fridge-sheet QR grammar)
 export {
   parseScan,
   encodeDensity,
   encodeContainer,
   RESET_CODE,
   MAX_DENSITY_LEVEL,
-} from './ScanVocabulary.mjs';
+} from './services/ScanVocabularyService.mjs';
 
-// Scan nutrition math (net weight, calories, macro split)
+// Services — scan nutrition math (net weight, calories, macro split)
 export {
   computeNet,
   computeNutrition,
-} from './scanNutrition.mjs';
-
-// Services
-export { FoodLogService } from './services/FoodLogService.mjs';
+} from './services/ScanNutritionService.mjs';

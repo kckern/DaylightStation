@@ -23,7 +23,7 @@
  * and therefore never match. The one theoretical collision is a screen named
  * `dl`, `ct`, or `rs`; keep screen names out of that set.
  *
- * @module nutrition/ScanVocabulary
+ * @module nutrition/services/ScanVocabularyService
  */
 
 import { ValidationError } from '#domains/core/errors/index.mjs';

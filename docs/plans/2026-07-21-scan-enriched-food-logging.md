@@ -4,7 +4,20 @@
 
 **Goal:** Let a fridge-mounted QR sheet turn a raw scale weight into a net-weighted, density-classified, auto-accepted nutrition entry — scanned in any order, before or after the weighing.
 
-**Architecture:** A `ScanVocabulary` domain module owns the `dl:` / `ct:` / `rs:` grammar and is imported by both the scan parser and the PDF sheet generator, so the printed page and the parser can never drift. A per-scale `CompositionBuffer` collects `grams` / `density` / `container` slots in any order within a rolling window, consuming them at placement end. Weights reach it through the existing `ScaleNutribotBridge`; scans reach it through `barcodeRelay` under a new `nutriscan` route. When weight **and** density are both present the entry auto-accepts; a bare weight stays pending on today's keyboard.
+**Architecture:** A scan-grammar domain service owns the `dl:` / `ct:` / `rs:` vocabulary and is imported by both the scan parser and the PDF sheet generator, so the printed page and the parser can never drift. An immutable `Composition` value object holds `grams` / `density` / `container` slots filled in any order; a `CompositionStore` in the application layer keys those by `scaleId` and owns the rolling window, consuming slots at placement end. Weights reach it through the existing `ScaleNutribotBridge`; scans reach it through `barcodeRelay` under a new `nutriscan` route. When weight **and** density are both present the entry auto-accepts; a bare weight stays pending on today's keyboard.
+
+> **⚠️ Tasks 1-3 are SHIPPED, and their specs below are stale on file paths.** A later DDD
+> compliance pass ([`2026-07-21-nutrition-ddd-compliance.md`](./2026-07-21-nutrition-ddd-compliance.md))
+> moved the modules and split the buffer. Executing Tasks 1-3 from this document would recreate
+> the violations. Where the code actually lives:
+>
+> | Was specified as | Actually shipped at |
+> |---|---|
+> | `2_domains/nutrition/ScanVocabulary.mjs` | `2_domains/nutrition/services/ScanVocabularyService.mjs` |
+> | `2_domains/nutrition/scanNutrition.mjs` | `2_domains/nutrition/services/ScanNutritionService.mjs` |
+> | `2_domains/nutrition/CompositionBuffer.mjs` | `2_domains/nutrition/value-objects/Composition.mjs` **+** `3_applications/nutribot/CompositionStore.mjs` |
+>
+> Exported function names are unchanged. **Tasks 4-12 are still current** — start there.
 
 **Tech Stack:** Node ESM (`.mjs`), vitest, js-yaml, pdfkit + svg-to-pdfkit, existing `QRCodeRenderer`, Telegram via the nutribot container.
 
@@ -280,183 +293,38 @@ git commit -m "feat(nutrition): net-weight clamp and percent-of-calories macro s
 
 ---
 
-## Task 3: CompositionBuffer — the order-independent state machine
+## Task 3: Composition + CompositionStore — SHIPPED, and SUPERSEDED
 
-**Files:**
-- Create: `backend/src/2_domains/nutrition/CompositionBuffer.mjs`
-- Test: `tests/unit/domains/nutrition/compositionBuffer.test.mjs`
+**Do not implement this task from this document.** The original spec here created
+`2_domains/nutrition/CompositionBuffer.mjs`, a factory holding a mutable `Map` in the domain
+layer. That violates `docs/reference/core/layers-of-abstraction/ddd-reference.md`, which
+restricts `2_domains` to entities, value objects, domain services and rules — with domain
+services required to be **stateless**. The module has been deleted.
 
-This is the riskiest component. Its whole correctness claim is order independence, plus **slot consumption at placement end** — without that, the evening's second food inherits the first food's density and tare. Inject `now` for testable window math; never call `Date.now()` inside.
+What shipped instead, per
+[`docs/plans/2026-07-21-nutrition-ddd-compliance.md`](./2026-07-21-nutrition-ddd-compliance.md):
 
-**Step 1: Write the failing test**
+| Module | Layer | Holds |
+|--------|-------|-------|
+| `2_domains/nutrition/value-objects/Composition.mjs` | domain | an immutable four-slot snapshot; `withWeight` / `withDensity` / `withContainer` return NEW instances; `isComplete`, `equals`, `toData` / `fromData` |
+| `3_applications/nutribot/CompositionStore.mjs` | application | the `Map<scaleId, …>`, the rolling window, expiry, `endPlacement` / `clear` |
 
-```javascript
-import { describe, it, expect, beforeEach } from 'vitest';
-import { createCompositionBuffer } from '#domains/nutrition/CompositionBuffer.mjs';
+`CompositionStore`'s surface is unchanged from the old buffer — `setWeight`, `setDensity`,
+`setContainer`, `endPlacement`, `clear`, `read` — and `read()` still returns
+`{ grams, unit, density, container, complete, active }`, so Tasks 5-7 are unaffected apart from
+the import path.
 
-describe('CompositionBuffer', () => {
-  let clock, buf;
-  beforeEach(() => {
-    clock = 1_000_000;
-    buf = createCompositionBuffer({ windowMs: 900_000, now: () => clock });
-  });
+**The behaviours later tasks depend on, all still pinned by tests:** `now` is required (no
+`Date.now()` default); slots are consumed **unconditionally** at `endPlacement`; the window
+refresh set is the three setters only, so `read()` never refreshes; expiry is strictly
+`now() - touchedAt > windowMs`; a rejected setter leaves the store untouched; scales are
+independent; `endPlacement` / `clear` return booleans and return `false` when already expired;
+`read()` never hands back internal state.
 
-  const permutations = [
-    ['weight', 'density', 'container'],
-    ['weight', 'container', 'density'],
-    ['density', 'weight', 'container'],
-    ['density', 'container', 'weight'],
-    ['container', 'weight', 'density'],
-    ['container', 'density', 'weight'],
-  ];
-
-  const apply = (id, step) => {
-    if (step === 'weight')    buf.setWeight(id, { grams: 500, unit: 'g' });
-    if (step === 'density')   buf.setDensity(id, 4);
-    if (step === 'container') buf.setContainer(id, 'dinner-bowl');
-  };
-
-  it.each(permutations)('converges identically: %s → %s → %s', (a, b, c) => {
-    [a, b, c].forEach((step) => apply('scale-1', step));
-    expect(buf.read('scale-1')).toMatchObject({
-      grams: 500, unit: 'g', density: 4, container: 'dinner-bowl', complete: true,
-    });
-  });
-
-  it('is not complete without a weight', () => {
-    buf.setDensity('scale-1', 4);
-    buf.setContainer('scale-1', 'dinner-bowl');
-    expect(buf.read('scale-1').grams).toBeNull();
-    expect(buf.read('scale-1').complete).toBe(false);
-  });
-
-  it('is complete on weight + density with no container', () => {
-    buf.setWeight('scale-1', { grams: 500, unit: 'g' });
-    buf.setDensity('scale-1', 4);
-    expect(buf.read('scale-1').complete).toBe(true);
-  });
-
-  // THE regression case: two foods in one window.
-  it('does not leak slots from one placement to the next', () => {
-    buf.setWeight('scale-1', { grams: 300, unit: 'g' });
-    buf.setDensity('scale-1', 2);
-    buf.setContainer('scale-1', 'small-bowl');
-    buf.endPlacement('scale-1');                       // pan returned to baseline
-
-    clock += 6 * 60_000;                                // six minutes later
-    buf.setWeight('scale-1', { grams: 700, unit: 'g' });
-    const s = buf.read('scale-1');
-    expect(s.density).toBeNull();
-    expect(s.container).toBeNull();
-    expect(s.complete).toBe(false);
-  });
-
-  it('scans refresh the window', () => {
-    buf.setDensity('scale-1', 4);
-    clock += 800_000;
-    buf.setContainer('scale-1', 'mug');   // refresh
-    clock += 800_000;                     // 1.6M ms total, but only 800k since refresh
-    expect(buf.read('scale-1').density).toBe(4);
-  });
-
-  it('expires after the window with no activity', () => {
-    buf.setDensity('scale-1', 4);
-    clock += 900_001;
-    expect(buf.read('scale-1').density).toBeNull();
-  });
-
-  it('clear() empties every slot', () => {
-    buf.setWeight('scale-1', { grams: 500, unit: 'g' });
-    buf.setDensity('scale-1', 4);
-    buf.clear('scale-1');
-    expect(buf.read('scale-1')).toMatchObject({ grams: null, density: null, container: null });
-  });
-
-  it('keeps scales independent', () => {
-    buf.setDensity('scale-1', 4);
-    buf.setDensity('scale-2', 9);
-    expect(buf.read('scale-1').density).toBe(4);
-    expect(buf.read('scale-2').density).toBe(9);
-  });
-
-  it('carries the unit through instead of assuming grams', () => {
-    buf.setWeight('scale-1', { grams: 250, unit: 'ml' });
-    expect(buf.read('scale-1').unit).toBe('ml');
-  });
-});
-```
-
-**Step 2: Run, confirm fail.**
-
-**Step 3: Implement**
-
-```javascript
-// Per-scale composition buffer: three slots (grams / density / container) filled
-// by whichever event arrives, in any order, within a rolling window that each
-// SCAN or QUALIFYING PLACEMENT refreshes.
-//
-// The refresh set deliberately EXCLUDES raw scale frames: the firmware heartbeats
-// at 0.5 Hz while the scale rests on its shelf, so frame-driven refresh would mean
-// the buffer never expires.
-//
-// Slots are CONSUMED at placement end (the bridge's rise<=baselineTolerance event),
-// so the second food weighed in one window cannot inherit the first food's density
-// and tare.
-
-const EMPTY = () => ({ grams: null, unit: null, density: null, container: null, touchedAt: 0 });
-
-export function createCompositionBuffer({ windowMs = 900_000, now = () => Date.now() } = {}) {
-  const scales = new Map();
-
-  const live = (id) => {
-    const s = scales.get(id);
-    if (!s) return null;
-    if (now() - s.touchedAt > windowMs) { scales.delete(id); return null; }
-    return s;
-  };
-
-  const touch = (id) => {
-    let s = live(id);
-    if (!s) { s = EMPTY(); scales.set(id, s); }
-    s.touchedAt = now();
-    return s;
-  };
-
-  return {
-    setWeight(id, { grams, unit }) {
-      const s = touch(id);
-      s.grams = Math.round(Number(grams));
-      s.unit = unit || 'g';
-      return this.read(id);
-    },
-    setDensity(id, level) { const s = touch(id); s.density = Number(level); return this.read(id); },
-    setContainer(id, containerId) { const s = touch(id); s.container = containerId; return this.read(id); },
-
-    // Pan returned to baseline: the placement is over, slots are spent.
-    endPlacement(id) { scales.delete(id); },
-    clear(id) { scales.delete(id); },
-
-    read(id) {
-      const s = live(id) || EMPTY();
-      return {
-        grams: s.grams, unit: s.unit, density: s.density, container: s.container,
-        complete: s.grams != null && s.density != null,
-      };
-    },
-  };
-}
-
-export default { createCompositionBuffer };
-```
-
-**Step 4: Run, confirm all pass — especially the leak test.**
-
-**Step 5: Commit**
-
-```bash
-git add backend/src/2_domains/nutrition/CompositionBuffer.mjs tests/unit/domains/nutrition/compositionBuffer.test.mjs
-git commit -m "feat(nutrition): order-independent composition buffer with slot consumption"
-```
+**Why the split also matters for the Telegram/scan convergence:** the old buffer was scan-shaped
+and keyed by `scaleId`, which is precisely why the button path could not share it. An immutable
+`Composition` is modality-agnostic — a Telegram density tap and a `dl:4` fridge scan both produce
+`composition.withDensity(4)` — and the application layer decides where it lives.
 
 ---
 
@@ -508,7 +376,6 @@ describe('density macro validation', () => {
 
 **Step 3: Implement.** Add to `scaleNutribotConfig.mjs`:
 
-```javascript
 **Two landmines found during Task 2 review — both WILL break every scan if missed:**
 
 1. **`scaleNutribotConfig.mjs:44` currently drops `macros` and `per_100g`.** It builds each level
@@ -600,9 +467,33 @@ Three changes, each independently testable:
 
 1. **Unit passthrough** — line ~50 hardcodes `unit: 'g'`. Read `payload.unit` and carry it into the buffer and the log. An `ml` reading must reach `ApplyScanToComposition`'s refusal path, not be silently logged as grams.
 2. **Session end consumes slots** — in the `rise <= baselineTolG` branch (~line 120), call `buffer.endPlacement(id)` alongside the existing retract.
+
+   **Wire this to the placed→at-rest TRANSITION, not to the condition.** `rise <= baselineTolG`
+   is true on *every* settled at-rest frame, and the firmware emits those at 0.5 Hz indefinitely
+   while the scale sits on its shelf. Calling `endPlacement` on the condition consumes any
+   pre-scan within about two seconds, making scan-before-placing impossible — the exact flow the
+   buffer exists to support. Track the edge (was-placed → now-at-rest) and fire once.
+
+   Test this explicitly: a `dl:` scan followed by twenty at-rest frames must still have its
+   density when a weight finally arrives.
 3. **Shared serialization** — the bridge's `inflight` Set must be reachable by the scan path. Extract it into a small per-scale mutex passed to both the bridge and `ApplyScanToComposition`, so a density scan landing during an awaited `create()` cannot produce two concurrent read-modify-writes on the same food log.
 
 Write the mutex test first: two concurrent operations on the same scale id must serialize; on different ids they must not.
+
+**Two obligations inherited from Task 2's review — do not drop them:**
+
+- **Fix the payload-discarding dispatch sites.** `barcodeRelay.mjs:77` and
+  `ScaleNutribotBridge.mjs:141` both log `{ error: err.message }`, throwing away
+  `ValidationError`'s `code` / `field` / `value`. Task 2's domain errors carry real
+  diagnostic payload that currently evaporates before anyone can read it. Log the
+  structured fields.
+- **Round at the storage boundary.** `computeNutrition` deliberately returns unrounded
+  macro grams (`fat_g: 9.333333333333334`) so stored macros reconcile against the stored
+  calorie total. That is correct in the domain, but existing
+  `history/nutrition/kitchen-food-scale/*.yml` entries are clean integers — writing 17
+  significant digits beside `grams: 74` makes the day-file materially harder to eyeball.
+  Round here or in Task 5, not in the domain. Rounding at `scanNutrition.mjs:222-224`
+  breaks the reconciliation invariant.
 
 ```bash
 git commit -m "fix(scale): carry the scale unit, consume slots at session end, serialize both paths"
