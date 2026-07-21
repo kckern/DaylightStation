@@ -51,7 +51,10 @@ no curriculum attached.
 - R1.2 Identity drives everything downstream: progress, curriculum, gates,
   sign-off, and economy credit are all per-child.
 - R1.3 Roster must be config-driven, consistent with how other household apps
-  define their rosters.
+  define their rosters. **DECIDED (2026-07-21): the household IS the school.**
+  The roster is the full household membership from the existing profile store
+  (`data/users/{id}/profile.yml` via `getAllUserProfiles()`) — no separate
+  school roster file, unlike Piano's `users.primary` subset.
 - R1.4 Selection should be remembered between visits, and must be able to
   lapse — a stale identity that silently credits the wrong child is worse than
   no identity.

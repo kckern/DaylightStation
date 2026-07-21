@@ -239,21 +239,18 @@ All under `/api/v1/school`.
 | `POST` | `/sessions/:sessionId/answer` | Record one answer (server-graded in quiz mode) |
 | `GET` | `/users/:userId/results?bankId=` | Derived rollup from the attempt log |
 
-**`GET /roster`.** The school roster lives in household config at
-`data/household/config/school.yml`:
+**`GET /roster`.** The household **is** the school — there is no separate
+school roster, and no `school.yml`. The endpoint returns every household
+member, straight from the existing profile store:
+`UserService.getAllProfiles()` (backed by `configService.getAllUserProfiles()`,
+i.e. `data/users/{id}/profile.yml`), shaped to
+`[{id, name, group_label?}]` and sorted by name for a deterministic picker.
+Adding a child to the household automatically adds them here; there is no
+second list to forget to update.
 
-```yaml
-users:
-  - kckern
-  - user_2
-```
-
-Read via `configService.getHouseholdAppConfig(null, 'school')` — **not**
-`getAppConfig`, which silently returns null for household app config — and
-hydrated to `[{id, name}]` with the existing `UserService.hydrateUsers`.
 School must not call `/api/v1/piano/users`; that endpoint is piano-private
-(§3). An empty or missing `users` list yields an empty roster and the UI's
-empty state, not an error.
+(§3) and reflects piano's own subset roster. No profiles on disk yields an
+empty roster and the UI's empty state, not an error.
 
 **Bank reads are ungated.** `GET /banks` and `GET /banks/:bankId` require no
 identity and enforce no audience — per §2 the bank content is not a security
@@ -325,9 +322,9 @@ a guest session opened against an `audience: assigned` bank with `403`.
 
 ## 6. Identity behaviour
 
-- **Roster** fetched from `GET /api/v1/school/roster` (§5), which reads
-  `data/household/config/school.yml` and hydrates via the existing
-  `UserService.hydrateUsers` (`0_system/config/UserService.mjs`).
+- **Roster** fetched from `GET /api/v1/school/roster` (§5): the full household
+  membership from the existing profile store. The household is the school —
+  no per-app roster config exists for this slice.
 - **Selection** via the extracted `ProfilePicker`.
 - **Persistence** in `localStorage` under the flat key `school:user`, restored
   on load if the id is still on the roster; otherwise cleared to unclaimed.
