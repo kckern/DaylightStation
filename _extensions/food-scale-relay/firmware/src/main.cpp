@@ -213,8 +213,11 @@ static void sppCB(esp_spp_cb_event_t event, esp_spp_cb_param_t* p) {
       // discovery is only a convenience for bring-up.
       esp_bt_gap_set_device_name(BARCODE_HOST_NAME);
       esp_bt_gap_set_scan_mode(ESP_BT_CONNECTABLE, ESP_BT_GENERAL_DISCOVERABLE);
-      // SEC_NONE: don't demand authentication on the incoming channel. If the
-      // scanner insists on pairing it still gets legacy PIN via GAP below.
+      // SEC_NONE. SEC_AUTHENTICATE was tried and is strictly worse: with it the
+      // stack refuses the incoming connection before GAP even reports the ACL
+      // (scanner beeps "connection rejected by remote device", PRG Table 2-1),
+      // whereas SEC_NONE at least gets ACL up stat=0 before the scanner hangs
+      // up with reason 0x13.
       esp_spp_start_srv(ESP_SPP_SEC_NONE, ESP_SPP_ROLE_SLAVE, 0, "DaylightScan");
       break;
     case ESP_SPP_START_EVT:
@@ -266,6 +269,12 @@ static void classicGapCB(esp_bt_gap_cb_event_t event, esp_bt_gap_cb_param_t* p) 
     relayLogf("[classic-spp] ACL down reason=%d", (int)p->acl_disconn_cmpl_stat.reason);
   } else if (event == ESP_BT_GAP_MODE_CHG_EVT) {
     // sniff/active transitions — debug-level noise, skip
+  } else if (event == ESP_BT_GAP_KEY_NOTIF_EVT) {
+    relayLogf("[classic-spp] SSP passkey shown %06lu", (unsigned long)p->key_notif.passkey);
+  } else if (event == ESP_BT_GAP_CFM_REQ_EVT) {
+    // Just Works / numeric comparison — accept without operator involvement.
+    relayLogf("[classic-spp] SSP confirm %06lu -> accept", (unsigned long)p->cfm_req.num_val);
+    esp_bt_gap_ssp_confirm_reply(p->cfm_req.bda, true);
   } else if (event == ESP_BT_GAP_PIN_REQ_EVT) {
     // Legacy-pairing path. Only reachable if the scanner declines SSP; kept
     // because the DS6878's factory default static PIN is 12345 (PRG p.4-30).
@@ -277,6 +286,10 @@ static void classicGapCB(esp_bt_gap_cb_event_t event, esp_bt_gap_cb_param_t* p) 
       relayLogLine("[classic-spp] replying with DS6878 default PIN 12345");
       esp_bt_gap_pin_reply(p->pin_req.bda, true, 5, pin);
     }
+  } else {
+    // Catch-all: we have been diagnosing blind between ACL-up and the scanner
+    // hanging up, so log every other GAP event rather than swallowing it.
+    relayLogf("[classic-spp] GAP event %d", (int)event);
   }
 }
 
@@ -393,8 +406,13 @@ static void startScan() {
   BLEScan* scan = BLEDevice::getScan();
   scan->setAdvertisedDeviceCallbacks(new ScanCallbacks());
   scan->setActiveScan(true);
-  scan->setInterval(45);
-  scan->setWindow(15);
+  // Low duty cycle (30/400 = 7.5%) on purpose. The previous 15/45 (33% in very
+  // tight slices) starved Classic page scanning on the shared radio: the
+  // scanner's connection attempts never reached us at all until the BLE scan
+  // was switched off entirely. Finding the scale a second or two later is a
+  // fine trade for the barcode link staying reachable.
+  scan->setInterval(400);
+  scan->setWindow(30);
   scan->start(0, nullptr, false); // continuous until a match stops it
   g_scanActive = true;
 }
