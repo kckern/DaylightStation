@@ -53,8 +53,5 @@ export {
 // Value objects
 export { Composition } from './value-objects/index.mjs';
 
-// Composition buffer (order-independent per-scale slot state machine)
-export { createCompositionBuffer } from './CompositionBuffer.mjs';
-
 // Services
 export { FoodLogService } from './services/FoodLogService.mjs';
