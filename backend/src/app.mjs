@@ -563,11 +563,12 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     logger: rootLogger.child({ module: 'food-scale-relay' }),
   });
 
-  // Barcode relay (ESP32 BLE-scanner bridge, source: 'barcode-relay') is wired
+  // Content barcode input (now produced by the shared food-scale/content-barcode
+  // ESP32, source: 'barcode-relay') is wired
   // later, once the trigger pipeline's triggerDispatchService exists, so BLE
   // scans flow through the same queue/play/open → TV-wake path the retired USB
   // scanner used. See the "Barcode ingress" block + the relay wiring next to
-  // createTriggerApiRouter() below. (_extensions/barcode-relay)
+  // createTriggerApiRouter() below. (_extensions/content-barcode-relay)
 
   // Fingerprint unlock service — binds the unlock broker to the live bus so
   // `fitness.unlock.request` broadcasts reach the garage client and inbound
@@ -2298,6 +2299,9 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     logger: rootLogger.child({ module: 'device-api' })
   });
 
+  const barcodeRelayConfig = configService.getHouseholdAppConfig(householdId, 'barcode-relay') || {};
+  const barcodeRelayInstances = barcodeRelayConfig.relays || {};
+
   // Trigger dispatch (NFC modality source: apps/nfc/config.yml; barcode modality
   // shares this same dispatch core — see the barcode-relay wiring just below).
   const { router: triggerRouter, triggerDispatchService } = createTriggerApiRouter({
@@ -2330,11 +2334,34 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     timezone: configService.getHouseholdTimezone?.(householdId),
     logger: rootLogger.child({ module: 'barcode-relay' }),
     onScan: (relay) => {
+      const relayCfg = barcodeRelayInstances[relay.device] || {};
+      const route = relay.route || relayCfg.route || 'content';
+
+      if (route === 'nutribot') {
+        const userId = relayCfg.nutribot?.user_id || barcodeRelayConfig.nutribot?.user_id || configService.getHeadOfHousehold?.() || null;
+        const conversationId = relayCfg.nutribot?.conversation_id || barcodeRelayConfig.nutribot?.conversation_id || (userId ? `nutribot-upc:${userId}` : `nutribot-upc:${relay.device}`);
+
+        if (!userId) {
+          barcodeLogger?.warn?.('barcode_relay.nutribot.no_user', { device: relay.device, code: relay.code });
+          return;
+        }
+
+        nutribotServices.nutribotContainer.getLogFoodFromUPC().execute({
+          userId,
+          conversationId,
+          upc: relay.code,
+          messageId: null,
+        }).catch((err) => {
+          barcodeLogger?.warn?.('barcode_relay.nutribot.dispatch.failed', { device: relay.device, error: err.message });
+        });
+        return;
+      }
+
       const event = TriggerEvent.create({
         source: 'barcode',
         location: relay.device,
         value: relay.code,
-        meta: { device: relay.device, timestamp: relay.ts, transport: 'ws' },
+        meta: { device: relay.device, timestamp: relay.ts, transport: 'ws', route },
       });
       triggerDispatchService.handleEvent(event).catch((err) => {
         barcodeLogger?.warn?.('trigger.ingress.barcode.dispatch.failed', { error: err.message });

@@ -21,14 +21,16 @@
 #include <time.h>
 
 // ---------- config ----------
-// All instance config (Wi-Fi creds, backend WS host/port/path, scanner BLE
-// identity) is CONFIG-DRIVEN from the household SSOT, NOT hardcoded here — see
-// tools/gen-config.mjs, which generates include/config.h (gitignored) from
-// data/household/config/barcode-relay.yml. `config.h` uses the stable hostname
-// (daylightlocal.kckern.net), never a raw IP. Run gen-config before building;
-// config.example.h documents the shape.
+// All instance config (Wi-Fi creds, backend WS host/port/path, relay route,
+// relay instance identity, scanner BLE identity) is CONFIG-DRIVEN from the
+// household SSOT, NOT hardcoded here — see tools/gen-config.mjs, which
+// generates include/config.h (gitignored) from data/household/config/barcode-relay.yml.
+// `config.h` uses the stable hostname (daylightlocal.kckern.net), never a raw IP.
+// Run gen-config before building; config.example.h documents the shape.
 #include "config.h"    // GENERATED, gitignored — defines WIFI_SSID / WIFI_PASSWORD /
-                        // WS_HOST / WS_PORT / WS_PATH / SCANNER_MAC / SCANNER_NAME
+                        // WS_HOST / WS_PORT / WS_PATH / RELAY_ID / RELAY_LABEL /
+                        // RELAY_ROUTE / NUTRIBOT_USER_ID / NUTRIBOT_CONVERSATION_ID /
+                        // SCANNER_MAC / SCANNER_NAME
 
 #define LED_PIN 27
 static CRGB led[1];
@@ -289,7 +291,14 @@ static void relay(const char* code){
   strncpy(g_lastCode, code, sizeof(g_lastCode)-1); g_lastCode[sizeof(g_lastCode)-1]=0;
   g_lastScanMs = millis(); g_lastScanEpoch = clockSynced()? time(nullptr) : 0; g_scanCount++;
   if(wsConnected){
-    JsonDocument d; d["source"]="barcode-relay"; d["type"]="scan"; d["device"]="ds2278"; d["code"]=code; d["ts"]=(uint32_t)millis();
+    JsonDocument d;
+    d["source"] = "barcode-relay";
+    d["type"] = "scan";
+    d["device"] = RELAY_ID;
+    d["route"] = RELAY_ROUTE;
+    d["label"] = RELAY_LABEL;
+    d["code"] = code;
+    d["ts"] = (uint32_t)millis();
     String out; serializeJson(d,out); ws.sendTXT(out);
     setLed(CRGB::Blue); delay(60); setLed(g_connected?CRGB::Green:CRGB(20,10,0));
   }

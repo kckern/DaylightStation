@@ -1,10 +1,10 @@
-# food-scale-relay — BLE kitchen scale → DaylightStation event bus
+# food-scale-relay — shared BLE kitchen scale + content barcode gateway
 
 An **M5Stack ATOM Lite** (ESP32-PICO-D4) BLE-bridges a **KitchenIQ 50797**
 (SENSSUN FOOD) kitchen scale and streams decoded weight + button events over
-**WebSocket** to the DaylightStation backend event bus (`/ws`). The backend
-re-broadcasts the `food-scale` topic and persists settled measurements +
-button-captured weights.
+**WebSocket** to the DaylightStation backend event bus (`/ws`). When configured,
+the same ATOM also connects to a Zebra DS2278 BLE-HID scanner and emits barcode
+events. The backend re-broadcasts scale and barcode topics independently.
 
 No host daemon — this is **firmware only**, config-driven from the household
 SSOT (`data/household/config/scales.yml`). Nothing is hardcoded.
@@ -12,6 +12,7 @@ SSOT (`data/household/config/scales.yml`). Nothing is hardcoded.
 ```
 BLE scale ──BLE notify(FFB2)──▶ ATOM Lite ──WS /ws──▶ backend event bus
                                    │ button GPIO39      │ broadcast('food-scale')
+                                   ├─▶ barcode HID       │ broadcast('barcode-relay')
                                    └────────────────────┘   ├─▶ apps (live)
                                                              └─▶ history/nutrition/<scale-id>/
 ```
@@ -78,7 +79,10 @@ pio run -e m5-atom -t upload --upload-port /dev/cu.usbserial-XXXX
 pio device monitor -b 115200        # watch [wifi]/[ble]/[ws] logs
 ```
 
-## Status LED (onboard SK6812, GPIO27)
+## Status LED
+
+Event-only lighting: the LED stays dark during idle/connection monitoring and
+briefly flashes when a scale reading, button press, or barcode scan is emitted.
 
 | Color | Meaning |
 |-------|---------|
@@ -91,6 +95,8 @@ pio device monitor -b 115200        # watch [wifi]/[ble]/[ws] logs
 ## Config — `data/household/config/scales.yml`
 
 Keyed by scale id (plural, so a second scale is just another key + another ATOM).
-Holds Wi-Fi creds, backend host/port, and per-scale BLE target + decode params.
+Each scale entry may also contain a `barcode:` target; that scanner shares the
+same ATOM and BLE controller. The content-barcode use case is documented in
+[`../content-barcode-relay`](../content-barcode-relay).
 Schema/example: [`config.example.yml`](config.example.yml). The generated
 `firmware/include/config.h` is gitignored.
