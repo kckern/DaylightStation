@@ -11,7 +11,7 @@ function logger() {
 function emit(category, detail, data, level = 'info') {
   const payload = typeof data === 'object' && data !== null ? { ...data } : {};
   payload.detail = detail;
-  logger()[level](`school.${category}`, payload);
+  logger()[level](`school.${category}.${detail}`, payload);
 }
 
 export const schoolLog = {
