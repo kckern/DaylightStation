@@ -88,3 +88,8 @@
   position: relative;
   overflow: hidden;
 }
+
+/* When the surface doubles as a play/pause target, say so. `cursor` is inert on
+   the touch panel itself but makes the affordance discoverable when the same
+   screen is opened on a desktop browser for debugging. */
+.screen-overlay--touch-content-tappable { cursor: pointer; }

@@ -1,7 +1,15 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, act } from '@testing-library/react';
+import { render, screen, act, fireEvent } from '@testing-library/react';
 import { ScreenOverlayProvider, useScreenOverlay } from './ScreenOverlayProvider.jsx';
 import { useHasMenuNavigationContext, useMenuNavigationContext } from '../../context/MenuNavigationContext.jsx';
+import { getActionBus } from '../input/ActionBus.js';
+
+// The provider emits `screen:overlay-mounted` on the real bus; mock it so the
+// surface-tap tests can assert on emissions without side effects.
+vi.mock('../input/ActionBus.js', () => {
+  const emit = vi.fn();
+  return { getActionBus: () => ({ emit }) };
+});
 
 // The provider is used both standalone (tests) and nested inside a real
 // MenuNavigationProvider (ScreenRenderer.jsx). Mock the nav context module so
@@ -88,5 +96,92 @@ describe('ScreenOverlayProvider touch chrome', () => {
     renderWith('touch');
     expect(screen.getByTestId('touch-chrome-back')).toBeInTheDocument();
     expect(screen.queryByTestId('touch-chrome-playpause')).toBeNull();
+  });
+});
+
+// The whole content surface doubles as a play/pause target on touch screens,
+// so a user watching something can tap anywhere rather than hunting for the
+// 60px disc. Arming it is mode-gated for a correctness reason, not comfort.
+describe('ScreenOverlayProvider touch surface play/pause', () => {
+  beforeEach(() => {
+    vi.mocked(useHasMenuNavigationContext).mockReturnValue(false);
+    vi.mocked(useMenuNavigationContext).mockReturnValue({ currentContent: null });
+    getActionBus().emit.mockClear();
+  });
+
+  it('emits a play/pause toggle when the surface is tapped in media mode', () => {
+    const { container } = renderWith('touch');
+    act(() => { api.showOverlay(Dummy, {}, { chrome: 'media' }); });
+
+    fireEvent.click(container.querySelector('.screen-overlay--touch-content'));
+
+    expect(getActionBus().emit).toHaveBeenCalledWith('media:playback', { command: 'toggle' });
+  });
+
+  it('stays disarmed while browsing, so a stray tap cannot activate a menu item', () => {
+    // toggle becomes a synthetic Enter downstream; on a menu Enter launches the
+    // highlighted item. Browsing must never arm the surface.
+    const { container } = renderWith('touch');
+
+    fireEvent.click(container.querySelector('.screen-overlay--touch-content'));
+
+    expect(getActionBus().emit).not.toHaveBeenCalledWith('media:playback', { command: 'toggle' });
+  });
+
+  it('stays disarmed for nav-stack browse content', () => {
+    vi.mocked(useHasMenuNavigationContext).mockReturnValue(true);
+    vi.mocked(useMenuNavigationContext).mockReturnValue({ currentContent: { type: 'menu' } });
+    const { container } = renderWith('touch');
+
+    fireEvent.click(container.querySelector('.screen-overlay--touch-content'));
+
+    expect(getActionBus().emit).not.toHaveBeenCalledWith('media:playback', { command: 'toggle' });
+  });
+
+  it('arms for a nav-stack player even with no fullscreen overlay', () => {
+    vi.mocked(useHasMenuNavigationContext).mockReturnValue(true);
+    vi.mocked(useMenuNavigationContext).mockReturnValue({ currentContent: { type: 'player' } });
+    const { container } = renderWith('touch');
+
+    fireEvent.click(container.querySelector('.screen-overlay--touch-content'));
+
+    expect(getActionBus().emit).toHaveBeenCalledWith('media:playback', { command: 'toggle' });
+  });
+
+  it('ignores taps that land on a control, so seeking does not also toggle', () => {
+    function WithControls() {
+      return (
+        <div>
+          <div className="seek-bar" data-testid="seek" />
+          <button data-testid="inner-btn">go</button>
+          <span data-testid="plain">plain</span>
+        </div>
+      );
+    }
+    render(
+      <ScreenOverlayProvider inputType="touch">
+        <Harness />
+        <WithControls />
+      </ScreenOverlayProvider>
+    );
+    act(() => { api.showOverlay(Dummy, {}, { chrome: 'media' }); });
+
+    fireEvent.click(screen.getByTestId('seek'));
+    expect(getActionBus().emit).not.toHaveBeenCalledWith('media:playback', { command: 'toggle' });
+
+    fireEvent.click(screen.getByTestId('inner-btn'));
+    expect(getActionBus().emit).not.toHaveBeenCalledWith('media:playback', { command: 'toggle' });
+
+    // A non-interactive descendant still toggles — that is the whole point.
+    fireEvent.click(screen.getByTestId('plain'));
+    expect(getActionBus().emit).toHaveBeenCalledWith('media:playback', { command: 'toggle' });
+  });
+
+  it('never arms on a non-touch screen', () => {
+    const { container } = renderWith('remote');
+    act(() => { api.showOverlay(Dummy, {}, { chrome: 'media' }); });
+
+    expect(container.querySelector('.screen-overlay--touch-content')).toBeNull();
+    expect(getActionBus().emit).not.toHaveBeenCalledWith('media:playback', { command: 'toggle' });
   });
 });
