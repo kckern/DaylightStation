@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, act, fireEvent, waitFor } from '@testing-library/react';
 import { SchoolProfileProvider, useSchoolProfile } from './SchoolProfileContext.jsx';
+import { schoolApi } from '../schoolApi.js';
 
 vi.mock('../schoolApi.js', () => ({
   schoolApi: { roster: vi.fn(async () => ({ ok: true, status: 200, data: [{ id: 'kid1', name: 'Alpha' }, { id: 'kid2', name: 'Beta' }] })) },
@@ -19,7 +20,7 @@ describe('SchoolProfileContext', () => {
     expect(ctx.roster).toHaveLength(2);
     expect(screen.getByTestId('user').textContent).toBe('none');
   });
-  it('claim persists to localStorage["school:user"]; restore works; guest never persists', async () => {
+  it('claim persists to localStorage["school:user"]; guest clears it and never persists', async () => {
     mount();
     await waitFor(() => expect(ctx.status).toBe('ready'));
     act(() => ctx.claim('kid1'));
@@ -37,6 +38,13 @@ describe('SchoolProfileContext', () => {
     await waitFor(() => expect(ctx.status).toBe('ready'));
     expect(ctx.currentUser).toBe(null);
     expect(localStorage.getItem('school:user')).toBe(null);
+  });
+  it('a failed roster fetch does not wipe a persisted claim; still reaches ready', async () => {
+    localStorage.setItem('school:user', 'kid1');
+    schoolApi.roster.mockResolvedValueOnce({ ok: false, status: 0, data: null });
+    mount();
+    await waitFor(() => expect(ctx.status).toBe('ready'));
+    expect(localStorage.getItem('school:user')).toBe('kid1');
   });
   it('lapses after a 10-minute idle gap on the next interaction; activity inside the window does not lapse', async () => {
     vi.useFakeTimers();

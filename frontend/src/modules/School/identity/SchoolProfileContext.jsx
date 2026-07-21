@@ -29,11 +29,17 @@ export function SchoolProfileProvider({ children }) {
       if (!alive) return;
       const users = ok && Array.isArray(data) ? data : [];
       setRoster(users);
-      const stored = localStorage.getItem(STORAGE_KEY);
-      if (stored && users.some((u) => u.id === stored)) {
-        setCurrentId(stored);
-      } else if (stored) {
-        localStorage.removeItem(STORAGE_KEY); // departed roster member: fail to unclaimed
+      // Departed-member cleanup only makes sense once we actually know who's
+      // on the roster. A failed fetch (network hiccup, container redeploy)
+      // must not be mistaken for "this child left the household" -- leave
+      // any persisted claim untouched so it survives to the next load.
+      if (ok) {
+        const stored = localStorage.getItem(STORAGE_KEY);
+        if (stored && users.some((u) => u.id === stored)) {
+          setCurrentId(stored);
+        } else if (stored) {
+          localStorage.removeItem(STORAGE_KEY); // departed roster member: fail to unclaimed
+        }
       }
       setStatus('ready');
     });
@@ -56,14 +62,21 @@ export function SchoolProfileProvider({ children }) {
     schoolLog.profile('claimed', { userId: null, guest: true });
   }, []);
 
-  const unclaim = useCallback((reason = 'lapse') => {
-    setCurrentId((prev) => {
-      if (prev) schoolLog.profile('lapsed', { userId: prev, reason });
-      return null;
-    });
+  // No caller ever supplies a custom reason (the only trigger is the idle
+  // gap below), so the log site is hardcoded rather than carrying a
+  // parameter nothing reaches. A guest session lapsing is logged too,
+  // distinguished by a null userId + guest flag, so it's not silently
+  // indistinguishable from "nothing happened".
+  const unclaim = useCallback(() => {
+    if (currentId) {
+      schoolLog.profile('lapsed', { userId: currentId, reason: 'lapse' });
+    } else if (isGuest) {
+      schoolLog.profile('lapsed', { userId: null, guest: true, reason: 'lapse' });
+    }
+    setCurrentId(null);
     setIsGuest(false);
     localStorage.removeItem(STORAGE_KEY);
-  }, []);
+  }, [currentId, isGuest]);
 
   // 10-minute idle lapse. Any pointerdown/keydown counts as interaction
   // (answering an item is a tap), so a slow thinker never lapses mid-quiz.
