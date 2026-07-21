@@ -101,8 +101,13 @@ existing semantics — MenuStack's pop-one-level escape interceptor, PiP dismiss
 | Next | `media:playback` | `{command:'next'}` | synthetic `Tab` |
 | Seek back | `media:playback` | `{command:'rew'}` | synthetic `ArrowLeft` |
 | Seek fwd | `media:playback` | `{command:'fwd'}` | synthetic `ArrowRight` |
-| Volume down | `display:volume` | `{command:'down'}` | `useScreenVolume().step` |
-| Volume up | `display:volume` | `{command:'up'}` | `useScreenVolume().step` |
+| Volume down | `display:volume` | `{command:'-1'}` | `useScreenVolume().step` |
+| Volume up | `display:volume` | `{command:'+1'}` | `useScreenVolume().step` |
+
+`handleVolume` (the live handler in `ScreenActionHandler.jsx`) only accepts `'+1'`, `'-1'`,
+and `'mute_toggle'` — any other command (e.g. `'up'`/`'down'`) falls through to
+`volume.unknown-command` and does nothing. Use `'+1'`/`'-1'`, matching the vocabulary the
+remote's Volume Up/Down already send (see `RemoteAdapter.test.js`).
 
 `media:playback` is handled by `handleMediaPlayback`, which dispatches synthetic keydown
 events via its `keyMapping` table. Chrome therefore drives media through the identical path

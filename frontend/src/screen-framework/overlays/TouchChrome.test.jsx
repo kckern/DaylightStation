@@ -39,8 +39,8 @@ describe('TouchChrome', () => {
     ['next', 'media:playback', { command: 'next' }],
     ['rew', 'media:playback', { command: 'rew' }],
     ['fwd', 'media:playback', { command: 'fwd' }],
-    ['vol-down', 'display:volume', { command: 'down' }],
-    ['vol-up', 'display:volume', { command: 'up' }],
+    ['vol-down', 'display:volume', { command: '-1' }],
+    ['vol-up', 'display:volume', { command: '+1' }],
   ])('%s emits %s', (testId, action, payload) => {
     render(<TouchChrome mode="media" />);
     fireEvent.click(screen.getByTestId(`touch-chrome-${testId}`));
