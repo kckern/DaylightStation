@@ -1,0 +1,696 @@
+# Scan-Enriched Food Logging Implementation Plan
+
+> **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
+
+**Goal:** Let a fridge-mounted QR sheet turn a raw scale weight into a net-weighted, density-classified, auto-accepted nutrition entry — scanned in any order, before or after the weighing.
+
+**Architecture:** A `ScanVocabulary` domain module owns the `dl:` / `ct:` / `rs:` grammar and is imported by both the scan parser and the PDF sheet generator, so the printed page and the parser can never drift. A per-scale `CompositionBuffer` collects `grams` / `density` / `container` slots in any order within a rolling window, consuming them at placement end. Weights reach it through the existing `ScaleNutribotBridge`; scans reach it through `barcodeRelay` under a new `nutriscan` route. When weight **and** density are both present the entry auto-accepts; a bare weight stays pending on today's keyboard.
+
+**Tech Stack:** Node ESM (`.mjs`), vitest, js-yaml, pdfkit + svg-to-pdfkit, existing `QRCodeRenderer`, Telegram via the nutribot container.
+
+**Design doc:** `docs/plans/2026-07-21-scan-enriched-food-logging-design.md` (rev 2). Read it first — every decision below is justified there.
+
+---
+
+## Before You Start
+
+**Verified facts you must not re-derive (they were checked against the tree at `e877a7ba8`):**
+
+- `BarcodeScanService` is **retired**. `app.mjs` `onScan` dispatches to `triggerDispatchService.handleEvent`.
+- `route === 'nutribot'` in `app.mjs` (~line 2353) **already means "this code is a food UPC"** → `LogFoodFromUPC`. Do not reuse it. The new value is `nutriscan`.
+- `LogFoodFromScale.mjs:29` and `RetractScaleLog.mjs:18` both gate on `#isUntouched(log)` = `status === 'pending' && metadata.source === 'scale' && metadata.containerId == null && metadata.densityLevel == null`.
+- `SelectScaleDensity.mjs` requires `status === 'pending'`, so scan-driven density must run **before** accept.
+- Voice transcription is fully wired (`TelegramVoiceTranscriptionService` → `LogFoodFromVoice`). The only gap is `NutribotInputRouter.handleVoice` (line 119) ignoring conversation state.
+- `ScaleNutribotBridge.mjs:50` hardcodes `unit: 'g'`, discarding the scale's real unit.
+- Test runner is **vitest**. Run a single file with `npx vitest run <path>`.
+
+**Repo state note:** local `main` is 10 commits ahead of `origin/main` and is the most current tree for every file this plan touches. The homeserver's `feat/school-slice-1` is stale relative to `origin/main` for `app.mjs` and the food-scale firmware — do not pull from it. See the sync report in the session that produced this plan.
+
+---
+
+## Task 1: ScanVocabulary — the grammar
+
+**Files:**
+- Create: `backend/src/2_domains/nutrition/ScanVocabulary.mjs`
+- Test: `tests/unit/domains/nutrition/scanVocabulary.test.mjs`
+
+**Step 1: Write the failing test**
+
+```javascript
+import { describe, it, expect } from 'vitest';
+import { parseScan } from '#domains/nutrition/ScanVocabulary.mjs';
+
+describe('parseScan', () => {
+  it('parses a density code', () => {
+    expect(parseScan('dl:4')).toEqual({ kind: 'density', level: 4 });
+  });
+
+  it('parses a container code', () => {
+    expect(parseScan('ct:dinner-bowl')).toEqual({ kind: 'container', id: 'dinner-bowl' });
+  });
+
+  it('parses the reset code', () => {
+    expect(parseScan('rs:clear')).toEqual({ kind: 'reset' });
+  });
+
+  it('rejects density levels outside 1-9', () => {
+    expect(parseScan('dl:0')).toBeNull();
+    expect(parseScan('dl:10')).toBeNull();
+    expect(parseScan('dl:x')).toBeNull();
+  });
+
+  // THE case that matters: a real product barcode must fall through untouched.
+  it('returns null for a UPC', () => {
+    expect(parseScan('012000161155')).toBeNull();
+    expect(parseScan('4006381333931')).toBeNull();
+  });
+
+  // Content QR payloads share the colon namespace (BarcodeCommandMap). Never claim them.
+  it('returns null for content grammar', () => {
+    expect(parseScan('screen:living-room')).toBeNull();
+    expect(parseScan('volume:5')).toBeNull();
+  });
+
+  it('returns null for junk and empty input', () => {
+    expect(parseScan('')).toBeNull();
+    expect(parseScan(null)).toBeNull();
+    expect(parseScan('ct:')).toBeNull();
+    expect(parseScan('rs:something-else')).toBeNull();
+  });
+
+  it('is whitespace tolerant', () => {
+    expect(parseScan('  dl:4 ')).toEqual({ kind: 'density', level: 4 });
+  });
+});
+
+describe('encode helpers', () => {
+  it('round-trips through parseScan', () => {
+    const { encodeDensity, encodeContainer, RESET_CODE } = require('#domains/nutrition/ScanVocabulary.mjs');
+    expect(parseScan(encodeDensity(7))).toEqual({ kind: 'density', level: 7 });
+    expect(parseScan(encodeContainer('mug'))).toEqual({ kind: 'container', id: 'mug' });
+    expect(parseScan(RESET_CODE)).toEqual({ kind: 'reset' });
+  });
+});
+```
+
+Replace the `require` with a top-level `import { encodeDensity, encodeContainer, RESET_CODE }` — it's written inline above only to show what's needed.
+
+**Step 2: Run it, confirm it fails**
+
+`npx vitest run tests/unit/domains/nutrition/scanVocabulary.test.mjs`
+Expected: FAIL — cannot resolve `#domains/nutrition/ScanVocabulary.mjs`.
+
+**Step 3: Implement**
+
+```javascript
+// Scan grammar for fridge-sheet QR codes. Imported by BOTH the scan parser and
+// the PDF sheet generator so the printed page can never drift from the parser.
+//
+// Namespace note: content barcodes use a colon grammar too (screen:<id>,
+// volume:<n> — see 2_domains/barcode/BarcodeCommandMap.mjs). There is no shared
+// registry, so this module claims ONLY the three prefixes below and returns null
+// for everything else, letting content dispatch proceed untouched.
+
+const DENSITY_PREFIX = 'dl';
+const CONTAINER_PREFIX = 'ct';   // 'rs' not 'ctl' so no prefix is a near-twin of 'ct'
+const RESET_PREFIX = 'rs';
+
+export const RESET_CODE = `${RESET_PREFIX}:clear`;
+
+export const encodeDensity = (level) => `${DENSITY_PREFIX}:${level}`;
+export const encodeContainer = (id) => `${CONTAINER_PREFIX}:${id}`;
+
+export function parseScan(code) {
+  if (typeof code !== 'string') return null;
+  const trimmed = code.trim();
+  const idx = trimmed.indexOf(':');
+  if (idx <= 0) return null;
+
+  const prefix = trimmed.slice(0, idx);
+  const rest = trimmed.slice(idx + 1);
+  if (!rest) return null;
+
+  if (prefix === DENSITY_PREFIX) {
+    if (!/^[1-9]$/.test(rest)) return null;
+    return { kind: 'density', level: Number(rest) };
+  }
+  if (prefix === CONTAINER_PREFIX) {
+    if (!/^[a-z0-9][a-z0-9-]*$/i.test(rest)) return null;
+    return { kind: 'container', id: rest };
+  }
+  if (prefix === RESET_PREFIX) {
+    return rest === 'clear' ? { kind: 'reset' } : null;
+  }
+  return null;
+}
+
+export default { parseScan, encodeDensity, encodeContainer, RESET_CODE };
+```
+
+**Step 4: Run, confirm pass**
+
+`npx vitest run tests/unit/domains/nutrition/scanVocabulary.test.mjs` → PASS.
+
+**Step 5: Commit**
+
+```bash
+git add backend/src/2_domains/nutrition/ScanVocabulary.mjs tests/unit/domains/nutrition/scanVocabulary.test.mjs
+git commit -m "feat(nutrition): scan grammar for fridge-sheet QR codes"
+```
+
+---
+
+## Task 2: Nutrition math — net weight, calories, macro split
+
+**Files:**
+- Create: `backend/src/2_domains/nutrition/scanNutrition.mjs`
+- Test: `tests/unit/domains/nutrition/scanNutrition.test.mjs`
+
+The clamp and the `tared` flag are the load-bearing parts — placeholder container weights guarantee `gross < tare` during the fill-in period, and a silent 0 kcal entry is worse than a flagged one.
+
+**Step 1: Write the failing test**
+
+```javascript
+import { describe, it, expect } from 'vitest';
+import { computeNet, computeNutrition } from '#domains/nutrition/scanNutrition.mjs';
+
+const LEVEL_4 = { level: 4, label: 'Mixed', kcal_per_g: 1.4,
+  macros: { fat_pct: 30, carb_pct: 45, protein_pct: 25 },
+  per_100g: { fiber_g: 2, sugar_g: 5, sodium_mg: 300 } };
+
+describe('computeNet', () => {
+  it('subtracts the container tare', () => {
+    expect(computeNet(500, { grams: 180 })).toEqual({ netG: 320, tared: true, clamped: false });
+  });
+
+  it('passes gross through untared when no container', () => {
+    expect(computeNet(500, null)).toEqual({ netG: 500, tared: false, clamped: false });
+  });
+
+  // Guaranteed during the placeholder-weight period. Must clamp AND flag.
+  it('clamps a negative net to zero and flags it', () => {
+    expect(computeNet(100, { grams: 180 })).toEqual({ netG: 0, tared: true, clamped: true });
+  });
+});
+
+describe('computeNutrition', () => {
+  it('derives calories and macro grams from percent-of-calories', () => {
+    const r = computeNutrition(200, LEVEL_4);
+    expect(r.calories).toBe(280);                 // 200 * 1.4
+    expect(r.fat_g).toBeCloseTo(9.33, 2);         // 280 * .30 / 9
+    expect(r.carb_g).toBeCloseTo(31.5, 2);        // 280 * .45 / 4
+    expect(r.protein_g).toBeCloseTo(17.5, 2);     // 280 * .25 / 4
+  });
+
+  it('scales per-100g nutrients by net weight', () => {
+    const r = computeNutrition(200, LEVEL_4);
+    expect(r.fiber_g).toBeCloseTo(4, 2);
+    expect(r.sodium_mg).toBeCloseTo(600, 2);
+  });
+
+  it('returns zeros for a zero net weight', () => {
+    expect(computeNutrition(0, LEVEL_4).calories).toBe(0);
+  });
+});
+```
+
+**Step 2: Run, confirm fail.** `npx vitest run tests/unit/domains/nutrition/scanNutrition.test.mjs`
+
+**Step 3: Implement**
+
+```javascript
+// Net weight and nutrient derivation for scan-enriched scale entries.
+// Macros are stored as PERCENT OF CALORIES (must sum to 100) so the
+// hand-authored density table is self-validating; grams are derived here.
+
+const KCAL_PER_G_FAT = 9;
+const KCAL_PER_G_CARB = 4;
+const KCAL_PER_G_PROTEIN = 4;
+
+export function computeNet(grossG, container) {
+  const tare = Number(container?.grams) || 0;
+  const raw = Number(grossG) - tare;
+  return {
+    netG: Math.max(0, raw),
+    tared: tare > 0,
+    clamped: raw < 0,
+  };
+}
+
+export function computeNutrition(netG, level) {
+  const g = Math.max(0, Number(netG) || 0);
+  const calories = Math.round(g * Number(level.kcal_per_g));
+  const m = level.macros || {};
+  const per100 = level.per_100g || {};
+  const scale = g / 100;
+  return {
+    calories,
+    fat_g:     (calories * (Number(m.fat_pct)     || 0) / 100) / KCAL_PER_G_FAT,
+    carb_g:    (calories * (Number(m.carb_pct)    || 0) / 100) / KCAL_PER_G_CARB,
+    protein_g: (calories * (Number(m.protein_pct) || 0) / 100) / KCAL_PER_G_PROTEIN,
+    fiber_g:   (Number(per100.fiber_g)  || 0) * scale,
+    sugar_g:   (Number(per100.sugar_g)  || 0) * scale,
+    sodium_mg: (Number(per100.sodium_mg)|| 0) * scale,
+  };
+}
+```
+
+**Step 4: Run, confirm pass. Step 5: Commit**
+
+```bash
+git add backend/src/2_domains/nutrition/scanNutrition.mjs tests/unit/domains/nutrition/scanNutrition.test.mjs
+git commit -m "feat(nutrition): net-weight clamp and percent-of-calories macro split"
+```
+
+---
+
+## Task 3: CompositionBuffer — the order-independent state machine
+
+**Files:**
+- Create: `backend/src/2_domains/nutrition/CompositionBuffer.mjs`
+- Test: `tests/unit/domains/nutrition/compositionBuffer.test.mjs`
+
+This is the riskiest component. Its whole correctness claim is order independence, plus **slot consumption at placement end** — without that, the evening's second food inherits the first food's density and tare. Inject `now` for testable window math; never call `Date.now()` inside.
+
+**Step 1: Write the failing test**
+
+```javascript
+import { describe, it, expect, beforeEach } from 'vitest';
+import { createCompositionBuffer } from '#domains/nutrition/CompositionBuffer.mjs';
+
+describe('CompositionBuffer', () => {
+  let clock, buf;
+  beforeEach(() => {
+    clock = 1_000_000;
+    buf = createCompositionBuffer({ windowMs: 900_000, now: () => clock });
+  });
+
+  const permutations = [
+    ['weight', 'density', 'container'],
+    ['weight', 'container', 'density'],
+    ['density', 'weight', 'container'],
+    ['density', 'container', 'weight'],
+    ['container', 'weight', 'density'],
+    ['container', 'density', 'weight'],
+  ];
+
+  const apply = (id, step) => {
+    if (step === 'weight')    buf.setWeight(id, { grams: 500, unit: 'g' });
+    if (step === 'density')   buf.setDensity(id, 4);
+    if (step === 'container') buf.setContainer(id, 'dinner-bowl');
+  };
+
+  it.each(permutations)('converges identically: %s → %s → %s', (a, b, c) => {
+    [a, b, c].forEach((step) => apply('scale-1', step));
+    expect(buf.read('scale-1')).toMatchObject({
+      grams: 500, unit: 'g', density: 4, container: 'dinner-bowl', complete: true,
+    });
+  });
+
+  it('is not complete without a weight', () => {
+    buf.setDensity('scale-1', 4);
+    buf.setContainer('scale-1', 'dinner-bowl');
+    expect(buf.read('scale-1').grams).toBeNull();
+    expect(buf.read('scale-1').complete).toBe(false);
+  });
+
+  it('is complete on weight + density with no container', () => {
+    buf.setWeight('scale-1', { grams: 500, unit: 'g' });
+    buf.setDensity('scale-1', 4);
+    expect(buf.read('scale-1').complete).toBe(true);
+  });
+
+  // THE regression case: two foods in one window.
+  it('does not leak slots from one placement to the next', () => {
+    buf.setWeight('scale-1', { grams: 300, unit: 'g' });
+    buf.setDensity('scale-1', 2);
+    buf.setContainer('scale-1', 'small-bowl');
+    buf.endPlacement('scale-1');                       // pan returned to baseline
+
+    clock += 6 * 60_000;                                // six minutes later
+    buf.setWeight('scale-1', { grams: 700, unit: 'g' });
+    const s = buf.read('scale-1');
+    expect(s.density).toBeNull();
+    expect(s.container).toBeNull();
+    expect(s.complete).toBe(false);
+  });
+
+  it('scans refresh the window', () => {
+    buf.setDensity('scale-1', 4);
+    clock += 800_000;
+    buf.setContainer('scale-1', 'mug');   // refresh
+    clock += 800_000;                     // 1.6M ms total, but only 800k since refresh
+    expect(buf.read('scale-1').density).toBe(4);
+  });
+
+  it('expires after the window with no activity', () => {
+    buf.setDensity('scale-1', 4);
+    clock += 900_001;
+    expect(buf.read('scale-1').density).toBeNull();
+  });
+
+  it('clear() empties every slot', () => {
+    buf.setWeight('scale-1', { grams: 500, unit: 'g' });
+    buf.setDensity('scale-1', 4);
+    buf.clear('scale-1');
+    expect(buf.read('scale-1')).toMatchObject({ grams: null, density: null, container: null });
+  });
+
+  it('keeps scales independent', () => {
+    buf.setDensity('scale-1', 4);
+    buf.setDensity('scale-2', 9);
+    expect(buf.read('scale-1').density).toBe(4);
+    expect(buf.read('scale-2').density).toBe(9);
+  });
+
+  it('carries the unit through instead of assuming grams', () => {
+    buf.setWeight('scale-1', { grams: 250, unit: 'ml' });
+    expect(buf.read('scale-1').unit).toBe('ml');
+  });
+});
+```
+
+**Step 2: Run, confirm fail.**
+
+**Step 3: Implement**
+
+```javascript
+// Per-scale composition buffer: three slots (grams / density / container) filled
+// by whichever event arrives, in any order, within a rolling window that each
+// SCAN or QUALIFYING PLACEMENT refreshes.
+//
+// The refresh set deliberately EXCLUDES raw scale frames: the firmware heartbeats
+// at 0.5 Hz while the scale rests on its shelf, so frame-driven refresh would mean
+// the buffer never expires.
+//
+// Slots are CONSUMED at placement end (the bridge's rise<=baselineTolerance event),
+// so the second food weighed in one window cannot inherit the first food's density
+// and tare.
+
+const EMPTY = () => ({ grams: null, unit: null, density: null, container: null, touchedAt: 0 });
+
+export function createCompositionBuffer({ windowMs = 900_000, now = () => Date.now() } = {}) {
+  const scales = new Map();
+
+  const live = (id) => {
+    const s = scales.get(id);
+    if (!s) return null;
+    if (now() - s.touchedAt > windowMs) { scales.delete(id); return null; }
+    return s;
+  };
+
+  const touch = (id) => {
+    let s = live(id);
+    if (!s) { s = EMPTY(); scales.set(id, s); }
+    s.touchedAt = now();
+    return s;
+  };
+
+  return {
+    setWeight(id, { grams, unit }) {
+      const s = touch(id);
+      s.grams = Math.round(Number(grams));
+      s.unit = unit || 'g';
+      return this.read(id);
+    },
+    setDensity(id, level) { const s = touch(id); s.density = Number(level); return this.read(id); },
+    setContainer(id, containerId) { const s = touch(id); s.container = containerId; return this.read(id); },
+
+    // Pan returned to baseline: the placement is over, slots are spent.
+    endPlacement(id) { scales.delete(id); },
+    clear(id) { scales.delete(id); },
+
+    read(id) {
+      const s = live(id) || EMPTY();
+      return {
+        grams: s.grams, unit: s.unit, density: s.density, container: s.container,
+        complete: s.grams != null && s.density != null,
+      };
+    },
+  };
+}
+
+export default { createCompositionBuffer };
+```
+
+**Step 4: Run, confirm all pass — especially the leak test.**
+
+**Step 5: Commit**
+
+```bash
+git add backend/src/2_domains/nutrition/CompositionBuffer.mjs tests/unit/domains/nutrition/compositionBuffer.test.mjs
+git commit -m "feat(nutrition): order-independent composition buffer with slot consumption"
+```
+
+---
+
+## Task 4: Config — macros, containers, knobs, rejecting validator
+
+**Files:**
+- Modify: `backend/src/3_applications/nutribot/lib/scaleNutribotConfig.mjs`
+- Modify: `_extensions/food-scale-relay/config.example.yml`
+- Test: `tests/unit/applications/nutribot/scaleNutribotConfig.test.mjs`
+
+`normalizeScaleNutribotConfig` currently **drops** malformed entries. A typo'd density level would then vanish from both the Telegram keyboard and the printed sheet with no error. It must reject loudly instead.
+
+**Step 1: Write the failing test**
+
+```javascript
+import { describe, it, expect } from 'vitest';
+import { normalizeScaleNutribotConfig } from '#apps/nutribot/lib/scaleNutribotConfig.mjs';
+
+const level = (over = {}) => ({
+  level: 4, label: 'Mixed', emoji: '🍛', kcal_per_g: 1.4,
+  macros: { fat_pct: 30, carb_pct: 45, protein_pct: 25 }, ...over,
+});
+
+describe('density macro validation', () => {
+  it('accepts a table whose macros sum to 100', () => {
+    const cfg = normalizeScaleNutribotConfig({ density_levels: [level()] });
+    expect(cfg.densityLevels[0].macros.fat_pct).toBe(30);
+  });
+
+  it('THROWS when macros do not sum to 100 (must not silently drop)', () => {
+    expect(() => normalizeScaleNutribotConfig({
+      density_levels: [level({ macros: { fat_pct: 30, carb_pct: 45, protein_pct: 30 } })],
+    })).toThrow(/sum to 100/i);
+  });
+
+  it('throws when a level is missing its macros block', () => {
+    expect(() => normalizeScaleNutribotConfig({
+      density_levels: [level({ macros: undefined })],
+    })).toThrow(/macros/i);
+  });
+
+  it('defaults bufferWindowSec to 900', () => {
+    expect(normalizeScaleNutribotConfig({}).bufferWindowSec).toBe(900);
+  });
+});
+```
+
+**Step 2: Run, confirm fail.**
+
+**Step 3: Implement.** Add to `scaleNutribotConfig.mjs`:
+
+```javascript
+const MACRO_KEYS = ['fat_pct', 'carb_pct', 'protein_pct'];
+
+function validateDensityLevel(lvl) {
+  if (!lvl.macros) {
+    throw new Error(`density level ${lvl.level} (${lvl.label}) is missing its macros block`);
+  }
+  const sum = MACRO_KEYS.reduce((t, k) => t + (Number(lvl.macros[k]) || 0), 0);
+  if (Math.abs(sum - 100) > 0.01) {
+    throw new Error(
+      `density level ${lvl.level} (${lvl.label}) macros sum to ${sum}, must sum to 100`
+    );
+  }
+  return lvl;
+}
+```
+
+Call it for every entry as the table is normalized, and add `bufferWindowSec: config?.buffer_window_sec ?? 900` to the returned object. Keep the existing drop-behaviour for *other* malformed fields; only macros escalate to a throw.
+
+**Step 4: Run, confirm pass.**
+
+**Step 5: Extend `config.example.yml`.** Add a `macros` + `per_100g` block to all nine levels (hand-authored from representative foods per design D5), expand `containers.items` to ~25 placeholder entries under a loud banner, and add `buffer_window_sec: 900` plus a `sheet:` block. Placeholder banner text:
+
+```yaml
+    # ⚠️ PLACEHOLDER WEIGHTS — every `grams` below is FAKE. Weigh each container
+    # on the scale and replace them before trusting any tared entry. Config is
+    # cached at startup, so RESTART THE BACKEND after each edit.
+```
+
+**Step 6: Commit**
+
+```bash
+git add backend/src/3_applications/nutribot/lib/scaleNutribotConfig.mjs \
+        _extensions/food-scale-relay/config.example.yml \
+        tests/unit/applications/nutribot/scaleNutribotConfig.test.mjs
+git commit -m "feat(nutribot): density macro baselines with a rejecting validator"
+```
+
+---
+
+## Task 5: ApplyScanToComposition use case
+
+**Files:**
+- Create: `backend/src/3_applications/nutribot/usecases/ApplyScanToComposition.mjs`
+- Test: `tests/unit/applications/nutribot/applyScanToComposition.test.mjs`
+
+Owns the decision tree: fill a slot, then post / edit / accept / reset. Per design D4, accept **only** when the buffer is complete. Density is applied via the existing `SelectScaleDensity` (which requires `status === 'pending'`), then `AcceptFoodLog`.
+
+**Behaviour to test (stub the container's use cases and the buffer):**
+
+1. `dl:4` with no weight buffered → slot set, **nothing posted**.
+2. `dl:4` with a weight already posted-pending → `SelectScaleDensity` then `AcceptFoodLog`.
+3. `ct:mug` alone with a pending entry → recomputes net, entry stays pending (no density yet).
+4. `rs:clear` with a pending entry → `RetractScaleLog`; buffer cleared.
+5. `rs:clear` with an already-accepted entry → `DiscardFoodLog`; buffer cleared.
+6. `rs:clear` with nothing live → no use case called, returns `{ ok: true, cleared: false }`.
+7. Unknown container id → returns `{ ok: false, reason: 'unknown-container' }` and does **not** touch the log. (Orphaned laminated code — this is where stale-sheet bugs land.)
+8. Unknown density level → same shape, `reason: 'unknown-density'`.
+9. `unit === 'ml'` in the buffer → refuses with `reason: 'unit-ml'` rather than treating ml as g.
+
+**Step 5: Commit**
+
+```bash
+git add backend/src/3_applications/nutribot/usecases/ApplyScanToComposition.mjs \
+        tests/unit/applications/nutribot/applyScanToComposition.test.mjs
+git commit -m "feat(nutribot): apply scanned density/container/reset to a composition"
+```
+
+---
+
+## Task 6: Bridge integration — unit passthrough, session end, serialization
+
+**Files:**
+- Modify: `backend/src/3_applications/hardware/ScaleNutribotBridge.mjs`
+- Test: `tests/unit/applications/hardware/scaleNutribotBridge.buffer.test.mjs`
+
+Three changes, each independently testable:
+
+1. **Unit passthrough** — line ~50 hardcodes `unit: 'g'`. Read `payload.unit` and carry it into the buffer and the log. An `ml` reading must reach `ApplyScanToComposition`'s refusal path, not be silently logged as grams.
+2. **Session end consumes slots** — in the `rise <= baselineTolG` branch (~line 120), call `buffer.endPlacement(id)` alongside the existing retract.
+3. **Shared serialization** — the bridge's `inflight` Set must be reachable by the scan path. Extract it into a small per-scale mutex passed to both the bridge and `ApplyScanToComposition`, so a density scan landing during an awaited `create()` cannot produce two concurrent read-modify-writes on the same food log.
+
+Write the mutex test first: two concurrent operations on the same scale id must serialize; on different ids they must not.
+
+```bash
+git commit -m "fix(scale): carry the scale unit, consume slots at session end, serialize both paths"
+```
+
+---
+
+## Task 7: Wire the nutriscan route
+
+**Files:**
+- Modify: `backend/src/3_applications/hardware/barcodeRelay.mjs`
+- Modify: `backend/src/app.mjs` (~line 2340, the `onScan` callback)
+- Test: `tests/unit/applications/hardware/barcodeRelay.nutriscan.test.mjs`
+
+In `barcodeRelay`, consult `parseScan(code)` before building the payload. On a hit, set `route: 'nutriscan'`; on a miss, leave the payload exactly as today. Persistence is unchanged — nutrition scans still append to the barcode day-log, because excluding them would hole the audit trail exactly where you'd look when a meal logged wrong.
+
+In `app.mjs`, add a `route === 'nutriscan'` branch **before** the existing `route === 'nutribot'` branch, dispatching to `ApplyScanToComposition`. Do not modify the `nutribot` branch.
+
+Tests: a `dl:4` scan sets `route: 'nutriscan'` and does not reach `onScan`'s trigger path; a UPC still produces a `TriggerEvent`; both still persist.
+
+```bash
+git commit -m "feat(hardware): route fridge-sheet scans through nutriscan"
+```
+
+---
+
+## Task 8: Memo — voice flow-state branch and the Memo button
+
+**Files:**
+- Modify: `backend/src/1_adapters/nutribot/NutribotInputRouter.mjs` (`handleVoice`, line 119)
+- Modify: `backend/src/3_applications/nutribot/lib/scaleNutribotConfig.mjs` (`buildConfirmButtons`)
+- Test: `tests/unit/adapters/nutribot/nutribotInputRouter.voice.test.mjs`
+
+`handleText` (lines 50–82) already branches on `state?.activeFlow === 'scale_describe' && pendingLogUuid` → `LogScaleFoodFromText`. `handleVoice` has **no** state check, so every voice note becomes a new food log. Mirror the text branch: transcribe first, then route the transcript through `LogScaleFoodFromText` when the flow state says `scale_describe`.
+
+This is the entirety of the voice memo work — transcription is already wired end to end.
+
+Then add a **Memo** button to `buildConfirmButtons` that sets `activeFlow = 'scale_describe'` for the log.
+
+Tests: a voice note with `activeFlow: 'scale_describe'` reaches `LogScaleFoodFromText`, not `LogFoodFromVoice`; without that state it still reaches `LogFoodFromVoice`.
+
+```bash
+git commit -m "feat(nutribot): route voice memos through the scale-describe flow"
+```
+
+---
+
+## Task 9: QRSheetRenderer — pure layout + golden test
+
+**Files:**
+- Create: `backend/src/1_rendering/pdf/QRSheetRenderer.mjs`
+- Test: `tests/unit/rendering/qrSheetLayout.test.mjs`
+
+pdfkit sets `CreationDate: new Date()` and derives the trailer `/ID` from an md5 over the info dict, so PDF output is **never byte-stable** — a characterization test on `catalog.mjs` would pin nothing. Instead extract the tiling math as a pure function and golden-test that.
+
+```javascript
+export function layoutSections(sections, page = { width: 612, height: 792, margin: 36, gap: 8 })
+// → [{ page, section, index, x, y, width, height }]
+```
+
+Test: two sections of differing `cols`/`rows` place cells at exact expected coordinates; overflow spills to page 2; an empty section contributes nothing.
+
+The PDF-emitting wrapper around it stays thin and untested — that is an honest boundary, not an oversight.
+
+```bash
+git commit -m "feat(rendering): pure section-grid layout for QR sheets"
+```
+
+---
+
+## Task 10: Rewrite catalog.mjs onto the shared layout
+
+**Files:**
+- Modify: `backend/src/4_api/v1/routers/catalog.mjs:107-152`
+
+Replace the hardcoded `COLS = 3, ROWS = 5` loop with a `layoutSections` call. Behaviour is preserved by construction, not by test — verify by generating one catalog PDF before and after and comparing them visually. Say so plainly in the commit; do not claim test coverage this refactor doesn't have.
+
+```bash
+git commit -m "refactor(catalog): tile via the shared layoutSections helper"
+```
+
+---
+
+## Task 11: Sheet generation endpoint
+
+**Files:**
+- Create: `backend/src/4_api/v1/routers/nutritionSheet.mjs`
+- Modify: `backend/src/app.mjs` (register `v1Routers['nutrition-sheet']`)
+
+`GET /api/v1/nutrition-sheet` → PDF. Builds codes via `encodeDensity` / `encodeContainer` / `RESET_CODE` from `ScanVocabulary` — never string-concatenated locally — renders each through `createQRCodeRenderer()` **in process** (no internal HTTP; that indirection in `catalog.mjs` exists for content lookups we don't need), tiles via `layoutSections`, and stamps a config version in the page footer so a sheet on the fridge can be matched to the config that produced it.
+
+```bash
+git commit -m "feat(api): printable nutrition scan sheet endpoint"
+```
+
+---
+
+## Task 12: Docs
+
+**Files:**
+- Modify: `_extensions/food-scale-relay/README.md`
+- Modify: `docs/reference/` — whichever nutribot/nutrition reference doc exists
+
+Document the scan grammar, the buffer window, the accept rule (D4), the restart-after-config-edit requirement, and the known gaps below.
+
+```bash
+git commit -m "docs(food-scale-relay): scan-enriched logging flow"
+```
+
+---
+
+## Known Gaps — do not silently "fix" these
+
+- **Backend restart** loses the in-memory buffer with no signal, and the bridge relearns the current load as baseline, so food already on the scale never posts. Accepted; documented.
+- **Config is startup-cached** — every container-weight edit needs a restart.
+- **Single-user attribution** — the bridge is wired to the head of household; every scan-enriched entry attributes to them regardless of who is cooking. Chosen.
+- **UPC at the fridge does not work** — the scanner is `route: content`, so a product barcode falls through to content dispatch. `LogFoodFromUPC` exists and works; wiring it is a separate feature, deliberately out of scope.
+- **Print legibility is untested** — print one page and try scanning it off the fridge door before laminating.
+- **25 containers** renders ~9 keyboard rows in `buildContainerKeyboard`. Usability, not correctness.
