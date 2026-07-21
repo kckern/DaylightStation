@@ -4,6 +4,12 @@ import { DaylightMediaPath } from '@/lib/api.mjs';
 import { useRenderProfiler } from '@/hooks/fitness/useRenderProfiler.js';
 import getLogger from '@/lib/logging/Logger.js';
 import './FitnessChart.scss';
+
+/**
+ * Shared empty array for RaceChartSvg fallbacks. A fresh `[]` per render would
+ * defeat RaceChartSvg's React.memo shallow compare — see the note on it.
+ */
+const EMPTY_ARRAY = Object.freeze([]);
 import {
 	ZONE_COLOR_MAP,
 	buildBeatsSeries,
@@ -16,6 +22,8 @@ import { LayoutManager } from './layout';
 import { compareLegendEntries } from './layout/utils/sort.js';
 import { resolveTieFan } from './layout/utils/tieFan.js';
 import { createChartDataSource } from './sessionDataAdapter.js';
+import { computeScaleBasisValue } from './logScaleBasis.js';
+import { useGovernanceExemptions } from '@/hooks/fitness/useGovernanceExemptions.js';
 import { computeRaceBands, computeSeamLines, computeChallengeMarkers, computeVideoMarkers, withBadgeXs, snapChallengeEndsToZoneTicks } from '../FitnessSessionDetailWidget/timelineOverlay.js';
 import { resolveSessionStartMs } from '../FitnessSessionDetailWidget/sessionDetailUtils.js';
 import { getChallengeMarkerColor } from '@/modules/Fitness/lib/activities/challengeTypeRegistry.js';
@@ -571,7 +579,20 @@ const useRaceChartWithHistory = (roster, getSeries, timebase, historicalParticip
 // NOTE: Avatar/badge positioning is now handled by LayoutManager
 // See: layout/LayoutManager.js for collision resolution, clustering, and connector generation
 
-const RaceChartSvg = ({ paths, avatars, badges, connectors = [], xTicks, yTicks, width, height, focusedUserId, overlay = null }) => (
+/**
+ * PERF (2026-07-21): the chart re-renders at ~12Hz because `participantRoster`'s
+ * identity is keyed on live heart rate, so any ≥1bpm change from any rider
+ * invalidates it. The coin race itself only advances on the 5s tick, so the SVG
+ * subtree was being reconciled ~60x more often than its data changes — which is
+ * what pinned the garage kiosk's page render to 12fps for a whole session.
+ *
+ * Every prop below is memo-backed (`paths`, the `{avatars,badges,connectors}`
+ * memo, `xTicks`/`yTicks`, `raceOverlay`), so a shallow compare bails out on the
+ * HR-only renders and reconciles only when chart data actually moves. Keep it
+ * that way: passing a freshly-built array/object here silently restores the
+ * 12Hz reconcile.
+ */
+const RaceChartSvgBase = ({ paths, avatars, badges, connectors = EMPTY_ARRAY, xTicks, yTicks, width, height, focusedUserId, overlay = null }) => (
 	<svg
 		className="race-chart__svg"
 		viewBox={`0 0 ${width} ${height}`}
@@ -823,8 +844,13 @@ const RaceChartSvg = ({ paths, avatars, badges, connectors = [], xTicks, yTicks,
 	</svg>
 );
 
+const RaceChartSvg = React.memo(RaceChartSvgBase);
+RaceChartSvg.displayName = 'RaceChartSvg';
+
 const FitnessChart = ({ mode, onClose, config, onMount, sessionData }) => {
 	useRenderProfiler('FitnessChart');
+	// Exempt participants are excluded from the y-scale basis (logScaleBasis.js).
+	const exemptions = useGovernanceExemptions();
 	const {
 		participants,
 		historicalParticipants,
@@ -1069,16 +1095,13 @@ const FitnessChart = ({ mode, onClose, config, onMount, sessionData }) => {
 		return Math.max(0, min);
 	}, [presentEntries, absentEntries, minDataValue]);
 
-	const lowestValue = useMemo(() => {
-		let min = Number.POSITIVE_INFINITY;
-		allEntries.forEach((entry) => {
-			if (Number.isFinite(entry.lastValue)) {
-				if (entry.lastValue < min) min = entry.lastValue;
-			}
-		});
-		if (min === Number.POSITIVE_INFINITY) return Math.max(0, minDataValue);
-		return Math.max(0, min);
-	}, [allEntries, minDataValue]);
+	// Basis for the log/power curve. Exempt participants (governance.exemptions)
+	// are drawn but must NOT define the scale — a late-joining exempt rider near
+	// zero would otherwise flatten the whole field. See logScaleBasis.js.
+	const lowestValue = useMemo(
+		() => computeScaleBasisValue(allEntries, exemptions, minDataValue),
+		[allEntries, exemptions, minDataValue]
+	);
 
 	const scaleY = useMemo(() => {
 		const domainMin = Math.min(minAxisValue, paddedMaxValue);
@@ -1327,12 +1350,14 @@ const FitnessChart = ({ mode, onClose, config, onMount, sessionData }) => {
 		}
 	}, [hasData, paths, avatars, badges, connectors, xTicks, yTicks, leaderValue]);
 
-	const displayPaths = hasData ? paths : persisted?.paths || [];
-	const displayAvatars = hasData ? avatars : persisted?.avatars || [];
-	const displayBadges = hasData ? badges : persisted?.badges || [];
-	const displayConnectors = hasData ? connectors : persisted?.connectors || [];
-	const displayXTicks = (hasData ? xTicks : persisted?.xTicks || xTicks) || [];
-	const displayYTicks = (hasData ? yTicks : persisted?.yTicks || yTicks) || [];
+	// EMPTY_ARRAY (not a fresh []) so these stay referentially stable and don't
+	// defeat RaceChartSvg's React.memo on the persisted/history path.
+	const displayPaths = hasData ? paths : persisted?.paths || EMPTY_ARRAY;
+	const displayAvatars = hasData ? avatars : persisted?.avatars || EMPTY_ARRAY;
+	const displayBadges = hasData ? badges : persisted?.badges || EMPTY_ARRAY;
+	const displayConnectors = hasData ? connectors : persisted?.connectors || EMPTY_ARRAY;
+	const displayXTicks = (hasData ? xTicks : persisted?.xTicks || xTicks) || EMPTY_ARRAY;
+	const displayYTicks = (hasData ? yTicks : persisted?.yTicks || yTicks) || EMPTY_ARRAY;
 
 	const filterEntries = useMemo(() => {
 		if (allEntries.length <= 1) return [];
