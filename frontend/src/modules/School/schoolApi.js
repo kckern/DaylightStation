@@ -6,10 +6,10 @@
 const BASE = '/api/v1/school';
 
 async function req(path, body) {
-  const opts = body === undefined
-    ? { method: 'GET' }
-    : { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) };
   try {
+    const opts = body === undefined
+      ? { method: 'GET' }
+      : { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) };
     const r = await fetch(BASE + path, opts);
     const data = await r.json().catch(() => null);
     return { ok: r.ok, status: r.status, data };
@@ -23,7 +23,7 @@ export const schoolApi = {
   banks: (audience) => req(`/banks${audience ? `?audience=${encodeURIComponent(audience)}` : ''}`),
   bank: (id) => req(`/banks/${encodeURIComponent(id)}`),
   openSession: ({ userId = null, bankId, mode }) => req('/sessions', { userId, bankId, mode }),
-  answer: (sessionId, body) => req(`/sessions/${encodeURIComponent(sessionId)}/answer`, body),
+  answer: (sessionId, body = {}) => req(`/sessions/${encodeURIComponent(sessionId)}/answer`, body),
   results: (userId, bankId) => req(`/users/${encodeURIComponent(userId)}/results${bankId ? `?bankId=${encodeURIComponent(bankId)}` : ''}`),
 };
 
