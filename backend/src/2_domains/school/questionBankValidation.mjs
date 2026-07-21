@@ -19,12 +19,12 @@ export function validateQuestionBank(raw) {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
     return { ok: false, errors: ['bank must be a mapping'] };
   }
-  if (!raw.id || typeof raw.id !== 'string') errors.push('id is required');
-  if (!raw.title || typeof raw.title !== 'string') errors.push('title is required');
+  if (!isNonEmptyString(raw.id)) errors.push('id is required');
+  if (!isNonEmptyString(raw.title)) errors.push('title is required');
   const audience = raw.audience === undefined || raw.audience === null ? 'assigned' : raw.audience;
   if (!AUDIENCES.has(audience)) errors.push(`audience must be generic|assigned, got: ${raw.audience}`);
   let topics = [];
-  if (raw.topics !== undefined) {
+  if (raw.topics !== undefined && raw.topics !== null) {
     if (!Array.isArray(raw.topics) || !raw.topics.every((t) => typeof t === 'string')) {
       errors.push('topics must be an array of strings');
     } else {
@@ -43,7 +43,7 @@ export function validateQuestionBank(raw) {
     else if (seen.has(item.id)) errors.push(`${at}: duplicate id "${item.id}"`);
     else seen.add(item.id);
     if (!ITEM_TYPES.has(item.type)) { errors.push(`${at}: unknown type "${item.type}"`); return; }
-    if (!item.prompt || typeof item.prompt !== 'string') errors.push(`${at}: prompt is required`);
+    if (!isNonEmptyString(item.prompt)) errors.push(`${at}: prompt is required`);
     if (item.type === 'multiple_choice') {
       if (!Array.isArray(item.choices) || item.choices.length < 2) {
         errors.push(`${at}: choices must have >= 2 entries`);
