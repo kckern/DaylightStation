@@ -13,6 +13,7 @@ import {
   validateCorpus, indexBySeq, buildDayQueue, summarizeQueue,
   shouldRollDay, chainFor, rungById, resolveRole, accuracy,
 } from '#domains/school/language/index.mjs';
+import { RUNG_IDS } from '#domains/school/language/ladder.mjs';
 import { GuestForbiddenError } from '#domains/school/errors.mjs';
 import { ValidationError, EntityNotFoundError } from '#domains/core/errors/index.mjs';
 
@@ -20,6 +21,9 @@ const DEFAULT_DAILY_LIMIT = 5;
 const MIN_DAILY_LIMIT = 1;
 const MAX_DAILY_LIMIT = 100;
 const DEFAULT_BOUNDARY_HOUR = 4;
+/** Untouched for this long and the program stops claiming to be active. */
+const IDLE_AFTER_DAYS = 14;
+const TREND_BUCKETS = 12;
 
 /**
  * Local UTC offset for an instant, in minutes.
@@ -379,6 +383,138 @@ export class LanguageStudyService {
         .sort((a, b) => b[0] - a[0])
         .map(([day, items]) => ({ day, items })),
     };
+  }
+
+  // -- program report (IProgramReporter) -----------------------------------
+
+  get id() { return 'language'; }
+
+  get label() { return 'Language study'; }
+
+  /**
+   * One report per course this learner has touched (design: program interface).
+   *
+   * Reported for the FULL ladder rather than a device-filtered one: the board
+   * answers "what is next for this learner", which is not a property of
+   * whichever panel happens to be asking. Device filtering belongs to the
+   * drill, not the summary.
+   *
+   * Never throws — the aggregate view calls every program, and one failure
+   * must not blank the board.
+   */
+  summarize({ userId }) {
+    if (!userId) return [];
+    return this.#ds.listCorpusIds()
+      .map((corpusId) => {
+        try {
+          return this.#summarizeCourse(userId, corpusId);
+        } catch (err) {
+          this.#logger.error?.('school.language.summarize-failed', {
+            userId, corpus: corpusId, error: err.message,
+          });
+          return null;
+        }
+      })
+      .filter(Boolean);
+  }
+
+  #summarizeCourse(userId, corpusId) {
+    const corpus = this.#loadCorpus(corpusId);
+    if (!corpus) return null;
+
+    const log = this.#ds.readAllEvents(userId, corpusId);
+    if (log.length === 0) return null;   // never touched — not a row on the board
+
+    const progress = this.#readProgress(userId, corpusId);
+    const queue = buildDayQueue({
+      log,
+      day: progress.day,
+      dailyLimit: progress.dailyLimit,
+      corpusSize: corpus.size,
+      capabilities: { microphone: true, textInput: Object.values(corpus.languages) },
+      languages: corpus.languages,
+      playable: corpus.playable,
+    });
+
+    const touched = new Set(log.map((e) => Number(e.seq)).filter(Number.isFinite));
+    const retired = new Set(
+      [...touched].filter((seq) => RUNG_IDS.every(
+        (rung) => log.some((e) => Number(e.seq) === seq && e.rung === rung),
+      )),
+    );
+
+    const scored = log.filter((e) => typeof e.accuracy === 'number');
+    const recordings = log.filter((e) => e.rung === 'recording').length;
+    const outstanding = queue.filter((e) => !e.done);
+
+    const lastActivity = progress.lastActivity
+      ?? log.reduce((max, e) => (String(e.at) > max ? String(e.at) : max), '');
+    const idleMs = this.#now() - Date.parse(lastActivity || 0);
+    const state = retired.size >= corpus.playable.size ? 'complete'
+      : idleMs > IDLE_AFTER_DAYS * 86400000 ? 'idle'
+        : 'active';
+
+    const metrics = [
+      {
+        id: 'sentences', kind: 'progress', label: 'Sentences started',
+        value: touched.size, total: corpus.playable.size, unit: 'sentences',
+      },
+      { id: 'day', kind: 'streak', label: 'Study day', value: progress.day, unit: 'days' },
+      { id: 'recordings', kind: 'count', label: 'Recordings', value: recordings, unit: 'recordings' },
+    ];
+    if (scored.length) {
+      metrics.push({
+        id: 'accuracy', kind: 'score', label: 'Typing accuracy',
+        value: scored.reduce((a, e) => a + e.accuracy, 0) / scored.length,
+      });
+      const trend = this.#accuracyTrend(scored);
+      if (trend.length > 1) {
+        metrics.push({ id: 'accuracy-trend', kind: 'trend', label: 'Accuracy over time', points: trend });
+      }
+    }
+
+    return {
+      program: this.id,
+      label: corpus.label,
+      userId,
+      state,
+      lastActivity: lastActivity || null,
+      headline: `Day ${progress.day} · ${progress.dailyLimit} new a day`,
+      next: outstanding.length
+        ? {
+          label: `${outstanding.length} to do`,
+          detail: this.#describeOutstanding(outstanding),
+          blocked: false,
+        }
+        : { label: 'Ready for the next day', detail: null, blocked: false },
+      metrics,
+    };
+  }
+
+  /** Mean accuracy per study day, thinned to a readable number of points. */
+  #accuracyTrend(scored) {
+    const byDay = new Map();
+    for (const event of scored) {
+      const day = Number(event.day);
+      if (!Number.isFinite(day)) continue;
+      if (!byDay.has(day)) byDay.set(day, []);
+      byDay.get(day).push(event.accuracy);
+    }
+    const days = [...byDay.entries()].sort((a, b) => a[0] - b[0]);
+    const step = Math.max(1, Math.ceil(days.length / TREND_BUCKETS));
+    return days
+      .filter((_, i) => i % step === 0)
+      .map(([day, values]) => ({
+        at: `Day ${day}`,
+        value: values.reduce((a, v) => a + v, 0) / values.length,
+      }));
+  }
+
+  #describeOutstanding(outstanding) {
+    const counts = outstanding.reduce((acc, e) => ({ ...acc, [e.rung]: (acc[e.rung] ?? 0) + 1 }), {});
+    return RUNG_IDS.filter((r) => counts[r])
+      .map((r) => `${counts[r]} ${r}`)
+      .join(', ');
   }
 
   resolveAudioPath(corpusId, seq, language) {

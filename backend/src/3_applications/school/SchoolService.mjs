@@ -164,6 +164,60 @@ export class SchoolService {
     }
     return [...byBank.values()];
   }
+
+  // -- program report (IProgramReporter) -----------------------------------
+
+  get id() { return 'quizzes'; }
+
+  get label() { return 'Quizzes & flashcards'; }
+
+  /**
+   * Quiz and flashcard standing for one learner.
+   *
+   * Emits no `next`, and that is the contract working as intended rather than
+   * a gap: nothing here assigns work, so there is no honest next step to name.
+   * A program reports what it truthfully has — inventing a "next" would put a
+   * suggestion on the board indistinguishable from a real assignment.
+   *
+   * Quiz and flashcard tallies stay separate for the same reason they always
+   * have: one is server-graded evidence, the other a self-report, and a merged
+   * score would silently launder the second into the first.
+   */
+  summarize({ userId }) {
+    if (!userId) return [];
+    const attempts = this.#ds.readAllAttempts(userId) || [];
+    if (attempts.length === 0) return [];
+
+    const graded = attempts.filter((a) => a.mode === 'quiz');
+    const drilled = attempts.filter((a) => a.mode === 'flashcard');
+    const lastActivity = attempts.reduce((max, a) => (String(a.at) > max ? String(a.at) : max), '');
+    const banks = new Set(attempts.map((a) => a.bankId).filter(Boolean));
+
+    const metrics = [
+      { id: 'answered', kind: 'count', label: 'Questions answered', value: graded.length, unit: 'questions' },
+    ];
+    if (graded.length) {
+      metrics.push({
+        id: 'accuracy', kind: 'score', label: 'Quiz accuracy',
+        value: graded.filter((a) => a.correct).length / graded.length,
+      });
+    }
+    if (drilled.length) {
+      metrics.push({ id: 'drilled', kind: 'count', label: 'Cards drilled', value: drilled.length, unit: 'cards' });
+    }
+
+    const idleMs = this.#now() - Date.parse(lastActivity || 0);
+    return [{
+      program: this.id,
+      label: this.label,
+      userId,
+      state: idleMs > 14 * 86400000 ? 'idle' : 'active',
+      lastActivity: lastActivity || null,
+      headline: `${banks.size} ${banks.size === 1 ? 'set' : 'sets'} attempted`,
+      next: null,
+      metrics,
+    }];
+  }
 }
 
 export default SchoolService;
