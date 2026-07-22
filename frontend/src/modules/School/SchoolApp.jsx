@@ -13,17 +13,41 @@ import BankBrowser from './browse/BankBrowser.jsx';
 import QuizRunner from './quiz/QuizRunner.jsx';
 import FlashcardRunner from './flashcards/FlashcardRunner.jsx';
 import SectionGrid from './home/SectionGrid.jsx';
-import { SECTIONS } from './home/sections.js';
+import { SECTIONS, sectionsFromCatalog } from './home/sections.js';
+import MaterialsSection from './materials/MaterialsSection.jsx';
 import { schoolApi } from './schoolApi.js';
 import { schoolLog } from './schoolLog.js';
 import './School.scss';
 
 function SchoolShell({ clear }) {
   const { status, roster, currentUser, isGuest, pickerOpen, openPicker, claim, continueAsGuest } = useSchoolProfile();
-  const [section, setSection] = useState(null); // a SECTIONS id, or null = home grid
+  const [section, setSection] = useState(null); // a sections id, or null = home grid
   const [active, setActive] = useState(null);   // {bank, mode} — only ever set within 'banks'
   const [pending, setPending] = useState(null); // {bankSummary, mode} awaiting a claim
   const [notice, setNotice] = useState(null);
+  const [sections, setSections] = useState(SECTIONS); // built-ins, + catalog sections once fetched
+  const [materials, setMaterials] = useState([]);      // full catalog materials list, unfiltered
+
+  // Fetch the materials catalog once the profile roster is ready, so the
+  // catalog-driven category tiles (Courses/Reference/Listening) join the
+  // home grid alongside the built-ins. A failure (network, non-ok, or the
+  // materials config not yet shipped -> {sections:[],materials:[]}) simply
+  // leaves the built-ins as the whole grid -- the panel must never break on
+  // a missing/failed catalog.
+  useEffect(() => {
+    if (status !== 'ready') return;
+    let alive = true;
+    schoolApi.materials().then(({ ok, data }) => {
+      if (!alive) return;
+      if (ok && data) {
+        setSections(sectionsFromCatalog(data.sections));
+        setMaterials(Array.isArray(data.materials) ? data.materials : []);
+      } else {
+        schoolLog.materials('catalog-failed', { ok });
+      }
+    });
+    return () => { alive = false; };
+  }, [status]);
   // Set alongside the notice, in the same synchronous pass as the
   // continueAsGuest() that produces it (see onDismiss) -- so the
   // identity-change effect below, which runs on that very transition, knows
@@ -88,7 +112,8 @@ function SchoolShell({ clear }) {
     setNotice(null);
   }, [currentUser, isGuest]);
 
-  const sectionDef = section ? SECTIONS.find((s) => s.id === section) : null;
+  const sectionDef = section ? sections.find((s) => s.id === section) : null;
+  const category = section?.startsWith('cat:') ? section.slice(4) : null;
 
   if (status !== 'ready') return <div className="school-app school-app--loading">Loading…</div>;
   return (
@@ -118,7 +143,7 @@ function SchoolShell({ clear }) {
         </button>
       </header>
       <main className="school-app__body">
-        {!section && <SectionGrid sections={SECTIONS} onOpen={openSection} />}
+        {!section && <SectionGrid sections={sections} onOpen={openSection} />}
         {/* Only an EXPLICIT guest (continueAsGuest()) is restricted to the
             generic catalogue. An unclaimed child has not declined identity --
             they simply have not picked yet -- so they see everything and get
@@ -128,6 +153,12 @@ function SchoolShell({ clear }) {
         {section === 'banks' && !active && <BankBrowser guestOnly={isGuest} onLaunch={onLaunch} notice={notice} />}
         {active?.mode === 'quiz' && <QuizRunner bank={active.bank} onExit={() => setActive(null)} />}
         {active?.mode === 'flashcard' && <FlashcardRunner bank={active.bank} onExit={() => setActive(null)} />}
+        {category && (
+          <MaterialsSection
+            materials={materials.filter((m) => m.category === category)}
+            sectionLabel={sectionDef?.label}
+          />
+        )}
       </main>
       <ProfilePicker open={pickerOpen} users={roster} activeId={currentUser?.id} onPick={onPick} onDismiss={onDismiss} timeoutMs={30000} title="Who's here?" />
     </div>

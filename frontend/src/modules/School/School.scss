@@ -101,3 +101,62 @@
   &__prompt { font-size: 1.4rem; margin: 0; }
   &__answer { font-size: 1.2rem; color: var(--school-accent); margin: 0; }
 }
+
+// --- materials catalog grid (spec §2b/§3) ---
+.school-materials {
+  &--empty { display: flex; align-items: center; justify-content: center; height: 100%; color: var(--school-muted); }
+  &__grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 1rem; }
+  &__tile {
+    display: flex; flex-direction: column; align-items: stretch; gap: 0.5rem;
+    min-height: 64px; padding: 0; text-align: left; overflow: hidden;
+    border: 1px solid var(--school-border); border-radius: 12px;
+    background: var(--school-surface); color: var(--school-fg); cursor: pointer;
+  }
+  &__poster { width: 100%; aspect-ratio: 2 / 3; object-fit: cover; background: var(--school-surface-2); }
+  &__poster--placeholder {
+    display: flex; align-items: center; justify-content: center; padding: 0.75rem;
+    text-align: center; font-weight: 700; color: var(--school-muted);
+  }
+  &__title { margin: 0 0.75rem; font-size: 1.05rem; }
+  &__meta { margin: 0 0.75rem 0.75rem; color: var(--school-muted); font-size: 0.9rem; }
+}
+
+// --- material detail: unit list (spec §2b/§5/§6) ---
+.school-material-detail {
+  display: flex; flex-direction: column; gap: 0.75rem; max-width: 720px; margin: 0 auto;
+  &__back {
+    align-self: flex-start; min-height: 64px; padding: 0 1rem;
+    border: none; background: transparent; color: var(--school-fg); font-size: 1.1rem; cursor: pointer;
+  }
+  &__title { margin: 0; font-size: 1.3rem; }
+  &__notice { padding: 0.85rem 1rem; border-radius: 12px; background: var(--school-warn); color: #241a05; font-weight: 700; }
+  &__loading, &__empty { color: var(--school-muted); }
+  &__group-title { margin: 1rem 0 0.25rem; color: var(--school-muted); font-size: 1rem; }
+  &__units { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.5rem; }
+  &__unit {
+    width: 100%; min-height: 64px; display: flex; align-items: center; gap: 0.75rem;
+    padding: 0.5rem 1rem; border: 1px solid var(--school-border); border-radius: 12px;
+    background: var(--school-surface-2); color: var(--school-fg); font-size: 1rem; text-align: left; cursor: pointer;
+    &--current { border-color: var(--school-accent); }
+    &--locked { cursor: default; opacity: 0.55; }
+  }
+  &__unit-index { flex: 0 0 auto; color: var(--school-muted); min-width: 1.5rem; }
+  &__unit-body { flex: 1; display: flex; flex-direction: column; gap: 0.15rem; }
+  &__unit-title { font-size: 1rem; }
+  &__unit-lockreason { color: var(--school-muted); font-size: 0.85rem; }
+  &__unit-duration { flex: 0 0 auto; color: var(--school-muted); font-size: 0.9rem; }
+  &__unit-done { flex: 0 0 auto; color: var(--school-accent); font-weight: 700; }
+}
+
+.school-back-chevron { flex: 0 0 auto; vertical-align: middle; margin-right: 0.4rem; }
+
+// --- materials player (spec §2b/§6): shared Player wrap + quiz handoff ---
+.school-material-player {
+  display: flex; flex-direction: column; gap: 0.75rem; height: 100%;
+  &__back {
+    align-self: flex-start; min-height: 64px; padding: 0 1rem;
+    border: none; background: transparent; color: var(--school-fg); font-size: 1.1rem; cursor: pointer;
+  }
+  &__stage { flex: 1; min-height: 0; border-radius: 12px; overflow: hidden; background: #000; }
+  &__loading, &__placeholder { color: var(--school-muted); }
+}
