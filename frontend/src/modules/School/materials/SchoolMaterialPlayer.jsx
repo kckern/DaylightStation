@@ -11,7 +11,10 @@ export default function SchoolMaterialPlayer({ material, unit, userId, onExit })
   return (
     <div className="school-material-player" data-user-id={userId ?? ''}>
       <button type="button" className="school-material-player__back" onClick={onExit}>
-        ‹ {material?.title}
+        <svg className="school-back-chevron" viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" focusable="false">
+          <path d="M14.5 5.5 8 12l6.5 6.5" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+        {material?.title}
       </button>
       <p className="school-material-player__loading">Loading player… {unit?.title}</p>
     </div>

@@ -57,7 +57,10 @@ export default function MaterialDetail({ material, userId, onBack, onPlay, notic
   return (
     <div className="school-material-detail">
       <button type="button" className="school-material-detail__back" onClick={onBack}>
-        ‹ All {sectionLabel}
+        <svg className="school-back-chevron" viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" focusable="false">
+          <path d="M14.5 5.5 8 12l6.5 6.5" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+        All {sectionLabel}
       </button>
       <h2 className="school-material-detail__title">{material.title}</h2>
       {notice && <div className="school-material-detail__notice">{notice}</div>}

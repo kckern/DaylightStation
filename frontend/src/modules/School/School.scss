@@ -148,6 +148,8 @@
   &__unit-done { flex: 0 0 auto; color: var(--school-accent); font-weight: 700; }
 }
 
+.school-back-chevron { flex: 0 0 auto; vertical-align: middle; margin-right: 0.4rem; }
+
 // --- materials player: placeholder chrome (Task 7 replaces the internals) ---
 .school-material-player {
   display: flex; flex-direction: column; gap: 0.75rem;
