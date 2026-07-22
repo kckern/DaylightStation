@@ -6,6 +6,7 @@ import {
   CHORD_QUALITIES,
   generateChordCard,
   evaluateChordMatch,
+  chordMissReason,
   rootPositionVoicing,
   resolveStartLevel,
 } from './flashcardEngine.js';
@@ -134,6 +135,39 @@ describe('generateChordCard', () => {
       prev = card;
     }
   });
+
+  it('restricts roots to the level root list (note names)', () => {
+    for (let i = 0; i < 40; i++) {
+      const card = generateChordCard(['major', 'minor'], null, ['C', 'F', 'G']);
+      expect([0, 5, 7]).toContain(card.root);
+    }
+  });
+
+  it('accepts flat root names', () => {
+    for (let i = 0; i < 20; i++) {
+      const card = generateChordCard(['major'], null, ['Bb', 'Eb']);
+      expect([10, 3]).toContain(card.root);
+    }
+  });
+
+  it('does not hang when only one (root, quality) combo exists', () => {
+    const prev = generateChordCard(['major'], null, ['C']);
+    const card = generateChordCard(['major'], prev, ['C']);
+    expect(card.root).toBe(0);
+    expect(card.quality).toBe('major');
+  });
+
+  it('includes ninth qualities with 5-note templates', () => {
+    expect(CHORD_QUALITIES.dominant9.intervals).toEqual([0, 2, 4, 7, 10]);
+    expect(CHORD_QUALITIES.major9.intervals).toEqual([0, 2, 4, 7, 11]);
+    expect(CHORD_QUALITIES.minor9.intervals).toEqual([0, 2, 3, 7, 10]);
+  });
+
+  it('carries a spelled-out long label', () => {
+    const card = generateChordCard(['dominant7'], null, ['D']);
+    expect(card.label).toBe('D7');
+    expect(card.longLabel).toBe('D dominant 7th');
+  });
 });
 
 // ─── evaluateChordMatch ─────────────────────────────────────────
@@ -178,6 +212,11 @@ describe('evaluateChordMatch', () => {
   it('partial for an incomplete subset of chord tones with no extras', () => {
     expect(evaluateChordMatch(makeNotes(60), cMajor)).toBe('partial');
     expect(evaluateChordMatch(makeNotes(60, 67), cMajor)).toBe('partial');
+  });
+
+  it('explains a miss as wrong-note or wrong-bass', () => {
+    expect(chordMissReason(makeNotes(60, 64, 66), cMajor)).toBe('wrong-note');
+    expect(chordMissReason(makeNotes(52, 60, 67), cMajor)).toBe('wrong-bass');
   });
 });
 
