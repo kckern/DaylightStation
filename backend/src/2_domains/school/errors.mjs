@@ -27,3 +27,24 @@ export class SessionGoneError extends Error {
     this.details = details;
   }
 }
+
+/**
+ * The physical presence gate refused this work → HTTP 423 (Locked).
+ *
+ * Its own type, carrying the resolved gate, because the frontend has to tell
+ * "gate closed" apart from "not signed in" and "session expired" in order to
+ * render a remedy screen rather than a toast. Reusing GuestForbiddenError left
+ * it string-matching an error message.
+ *
+ * @class GateClosedError
+ * @extends Error
+ */
+export class GateClosedError extends Error {
+  constructor(message, { level, missing = [], stale = false } = {}) {
+    super(message);
+    this.name = 'GateClosedError';
+    this.level = level;
+    this.missing = missing;
+    this.stale = stale;
+  }
+}

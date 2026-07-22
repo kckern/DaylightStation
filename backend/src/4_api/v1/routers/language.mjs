@@ -6,7 +6,7 @@
 import express from 'express';
 import fs from 'fs';
 import path from 'path';
-import { GuestForbiddenError } from '#domains/school/errors.mjs';
+import { GuestForbiddenError, GateClosedError } from '#domains/school/errors.mjs';
 import { ValidationError, EntityNotFoundError } from '#domains/core/errors/index.mjs';
 
 const AUDIO_CACHE = 'public, max-age=31536000, immutable';
@@ -57,6 +57,13 @@ export function createLanguageRouter({ languageStudyService, logger = console })
     Promise.resolve()
       .then(() => fn(req, res))
       .catch((err) => {
+        // 423 Locked, with the resolved gate, so the SPA can render a remedy
+        // screen instead of string-matching a 403 meant for identity.
+        if (err instanceof GateClosedError) {
+          return res.status(423).json({
+            error: err.message, gate: { level: err.level, missing: err.missing, stale: err.stale },
+          });
+        }
         if (err instanceof GuestForbiddenError) return res.status(403).json({ error: err.message });
         if (err instanceof EntityNotFoundError) return res.status(404).json({ error: err.message });
         if (err instanceof ValidationError) return res.status(400).json({ error: err.message });
@@ -79,6 +86,7 @@ export function createLanguageRouter({ languageStudyService, logger = console })
     const { corpus, seq, rung, given = null } = req.body || {};
     res.json(languageStudyService.logAttempt({
       userId: req.params.userId, corpusId: corpus, seq, rung, given,
+      capabilities: readCapabilities(req.query),
     }));
   }));
 
