@@ -166,37 +166,60 @@ describe('identifyChord — tolerant voicings (dropped 5th, v2)', () => {
 });
 
 describe('identifyChord — broadened vocabulary (v2)', () => {
-  // A "sixth" chord is a minor 7th from its own 6th — [0,4,7,9] and [0,3,7,10]
-  // describe the SAME pitch-class set from different roots, always. We read that
-  // set as the minor 7th regardless of bass, so one set has exactly one name.
-  it('C-E-G-A reads as A minor 7 (not C 6)', () => {
+  // A sixth chord shares its pitch-class set with a minor 7th rooted a minor 3rd
+  // below ([0,4,7,9] vs [0,3,7,10]). That ambiguity is resolved the same way this
+  // module resolves sus (C-D-G is "C sus2" or "G sus4") and diminished 7ths:
+  // BY THE BASS. Root position wins, so the player's own voicing picks the name.
+  it('C6 — C in the bass reads as the sixth', () => {
     const r = identifyChord([C4, E4, G4, A4]);
+    expect(r.quality).toBe('sixth');
+    expect(r.displayName).toBe('C 6');
+  });
+
+  it('the same notes with A in the bass read as A minor 7', () => {
+    const r = identifyChord([A4, C4 + 12, E4 + 12, G4 + 12]);
     expect(r.quality).toBe('minor7');
-    expect(r.displayName).toBe('A minor 7 / C');
+    expect(r.displayName).toBe('A minor 7');
   });
 
-  it('F-A-C-D reads as D minor 7 over F (not F 6)', () => {
-    const r = identifyChord([F4, A4, C4 + 12, D4 + 12]);
-    expect(r.quality).toBe('minor7');
-    expect(r.displayName).toBe('D minor 7 / F');
-  });
-
-  it('the minor-7 reading holds from every bass note of the set', () => {
-    expect(identifyChord([D4, F4, A4, C4 + 12]).displayName).toBe('D minor 7');
-    expect(identifyChord([A4, C4 + 12, D4 + 12, F4 + 12]).displayName).toBe('D minor 7 / A');
-    expect(identifyChord([C4 + 12, D4 + 12, F4 + 12, A4 + 12]).displayName).toBe('D minor 7 / C');
-  });
-
-  it('minor 6 likewise reads as minor 7 flat 5', () => {
+  it('C minor 6 — C in the bass reads as the minor sixth', () => {
     const r = identifyChord([C4, Eb4, G4, A4]);
-    expect(r.quality).toBe('minor7b5');
-    expect(r.displayName).toBe('A minor 7 ♭5 / C');
+    expect(r.quality).toBe('minor6');
+    expect(r.displayName).toBe('C minor 6');
   });
 
-  it('6/9 survives — it has no minor-7 equivalent in the vocabulary', () => {
+  it('6/9 keeps its own name', () => {
     const r = identifyChord([C4, D4, E4, G4, A4]);
     expect(r.quality).toBe('six9');
     expect(r.displayName).toBe('C 6/9');
+  });
+});
+
+// The bass is ALWAYS accounted for. A reading whose chord tones don't contain the
+// sounding bass note is a worse reading than one that does, and if such a reading
+// still wins it must SAY so with a slash — never present itself as root position.
+describe('identifyChord — the bass is never silently dropped', () => {
+  it('prefers a reading that explains the bass over one that does not', () => {
+    // C-C#-E-A: readable as A major (A C# E) with an unexplained C in the bass,
+    // or as C6 (C E G A, missing the 5th) with an unexplained C#. The C6 reading
+    // accounts for the bass, so it wins — and "A major" would be a lie here.
+    const r = identifyChord([C4, C4 + 1, E4, A4]);
+    expect(r.displayName).not.toBe('A major');
+    expect(r.notePitchClasses).toContain(r.bassPitchClass);
+  });
+
+  it('finds the reading that accounts for an unusual bass', () => {
+    // D + A C# E. Read from A this is an exact "add4" (A C# D E) — the D that
+    // looks like a foreign bass is really the added 4th. Preferring the reading
+    // that explains the bass is what surfaces that.
+    const r = identifyChord([D4, A4, C4 + 13, E4 + 12]);
+    expect(r.quality).toBe('add4');
+    expect(r.displayName).toBe('A add4 / D');
+  });
+
+  it('always slashes when the bass is not the root', () => {
+    expect(identifyChord([D4, A4, C4 + 13, E4 + 12]).displayName).toMatch(/ \/ D$/);
+    expect(identifyChord([E4, G4, C4 + 12]).displayName).toMatch(/ \/ E$/);
   });
 
   it('C add9', () => {
