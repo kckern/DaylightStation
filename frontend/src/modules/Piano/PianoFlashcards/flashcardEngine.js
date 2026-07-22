@@ -61,38 +61,67 @@ export function evaluateMatch(activeNotes, targetPitches) {
 /**
  * Chord qualities available to chord-spelling levels. Interval templates match
  * theory/chordNaming.js; suffixes follow its sharp-root symbol convention.
+ * longName is the spelled-out form shown under the tab-style symbol.
  */
 export const CHORD_QUALITIES = {
-  major:      { intervals: [0, 4, 7],     suffix: '' },
-  minor:      { intervals: [0, 3, 7],     suffix: 'm' },
-  diminished: { intervals: [0, 3, 6],     suffix: '°' },
-  augmented:  { intervals: [0, 4, 8],     suffix: '+' },
-  sus2:       { intervals: [0, 2, 7],     suffix: 'sus2' },
-  sus4:       { intervals: [0, 5, 7],     suffix: 'sus4' },
-  dominant7:  { intervals: [0, 4, 7, 10], suffix: '7' },
-  major7:     { intervals: [0, 4, 7, 11], suffix: 'maj7' },
-  minor7:     { intervals: [0, 3, 7, 10], suffix: 'm7' },
+  major:      { intervals: [0, 4, 7],        suffix: '',     longName: 'major' },
+  minor:      { intervals: [0, 3, 7],        suffix: 'm',    longName: 'minor' },
+  diminished: { intervals: [0, 3, 6],        suffix: '°',    longName: 'diminished' },
+  augmented:  { intervals: [0, 4, 8],        suffix: '+',    longName: 'augmented' },
+  sus2:       { intervals: [0, 2, 7],        suffix: 'sus2', longName: 'suspended 2nd' },
+  sus4:       { intervals: [0, 5, 7],        suffix: 'sus4', longName: 'suspended 4th' },
+  dominant7:  { intervals: [0, 4, 7, 10],    suffix: '7',    longName: 'dominant 7th' },
+  major7:     { intervals: [0, 4, 7, 11],    suffix: 'maj7', longName: 'major 7th' },
+  minor7:     { intervals: [0, 3, 7, 10],    suffix: 'm7',   longName: 'minor 7th' },
+  dominant9:  { intervals: [0, 2, 4, 7, 10], suffix: '9',    longName: 'dominant 9th' },
+  major9:     { intervals: [0, 2, 4, 7, 11], suffix: 'maj9', longName: 'major 9th' },
+  minor9:     { intervals: [0, 2, 3, 7, 10], suffix: 'm9',   longName: 'minor 9th' },
 };
 
+// Root-name lookup: sharp names from the theory module plus flat aliases, so
+// piano.yml levels can say roots: [Bb, Eb] as naturally as [A#, D#].
+const ROOT_NAME_TO_PC = Object.fromEntries([
+  ...PITCH_CLASS_NAMES.map((n, pc) => [n, pc]),
+  ['Db', 1], ['Eb', 3], ['Gb', 6], ['Ab', 8], ['Bb', 10],
+]);
+
+const ALL_ROOTS = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11];
+
+/** Parse a level's roots list (note names or pitch-class numbers) → pitch classes. */
+function parseRoots(roots) {
+  const parsed = (roots ?? [])
+    .map(r => (typeof r === 'number' ? ((r % 12) + 12) % 12 : ROOT_NAME_TO_PC[r]))
+    .filter(pc => pc !== undefined);
+  return parsed.length ? parsed : ALL_ROOTS;
+}
+
 /**
- * Generate a chord-spelling card: a random root (0–11) + a random quality from
- * the level's allowed list, never the exact same (root, quality) as prevCard.
+ * Generate a chord-spelling card: a random root from the level's root list + a
+ * random quality from its allowed list, never the exact same (root, quality)
+ * as prevCard unless that is the only combination available.
  *
  * @param {string[]} qualities - allowed CHORD_QUALITIES keys
  * @param {{root: number, quality: string}|null} [prevCard]
- * @returns {{type: 'chord', root: number, rootName: string, quality: string, suffix: string, label: string, pitchClasses: Set<number>}}
+ * @param {Array<string|number>|null} [roots] - allowed roots (note names or 0–11); omit for all 12
+ * @returns {{type: 'chord', root: number, rootName: string, quality: string, suffix: string, label: string, longLabel: string, pitchClasses: Set<number>}}
  */
-export function generateChordCard(qualities, prevCard = null) {
+export function generateChordCard(qualities, prevCard = null, roots = null) {
   const allowed = (qualities ?? []).filter(q => CHORD_QUALITIES[q]);
   const pool = allowed.length ? allowed : ['major'];
+  const rootPool = parseRoots(roots);
 
   let root, quality;
+  let attempts = 0;
   do {
-    root = Math.floor(Math.random() * 12);
+    root = rootPool[Math.floor(Math.random() * rootPool.length)];
     quality = pool[Math.floor(Math.random() * pool.length)];
-  } while (prevCard && root === prevCard.root && quality === prevCard.quality);
+    attempts++;
+  } while (
+    prevCard && root === prevCard.root && quality === prevCard.quality
+    && rootPool.length * pool.length > 1 && attempts < 24
+  );
 
-  const { intervals, suffix } = CHORD_QUALITIES[quality];
+  const { intervals, suffix, longName } = CHORD_QUALITIES[quality];
   const rootName = PITCH_CLASS_NAMES[root];
 
   return {
@@ -102,8 +131,23 @@ export function generateChordCard(qualities, prevCard = null) {
     quality,
     suffix,
     label: `${rootName}${suffix}`,
+    longLabel: `${rootName} ${longName}`,
     pitchClasses: new Set(intervals.map(iv => (root + iv) % 12)),
   };
+}
+
+/**
+ * Classify why a chord attempt evaluated 'wrong' — for telemetry.
+ *
+ * @param {Map<number, object>} activeNotes
+ * @param {{root: number, pitchClasses: Set<number>}} card
+ * @returns {'wrong-note'|'wrong-bass'}
+ */
+export function chordMissReason(activeNotes, card) {
+  for (const [note] of activeNotes) {
+    if (!card.pitchClasses.has(((note % 12) + 12) % 12)) return 'wrong-note';
+  }
+  return 'wrong-bass';
 }
 
 /**
