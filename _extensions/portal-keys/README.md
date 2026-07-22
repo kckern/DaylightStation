@@ -6,6 +6,9 @@ Repurposes the Facebook Portal 10" panel's **volume buttons** for the DaylightSt
 - `VOLUME_DOWN` double-press → sleep the display via FKB REST
 - any volume key while asleep → wake the display, volume unchanged
 
+It also **auto-dismisses Portal's swipe-up Control Center** (volume/brightness/bluetooth) — see
+[Control Center suppression](#control-center-suppression).
+
 Package `net.kckern.portalkeys`. Control plane on `:8771` (piano-bridge uses `:8770`).
 
 ---
@@ -88,6 +91,71 @@ same reason (that's Android's 3-second accessibility shortcut).
 ### 3. Display off ⇒ no network
 
 See the warning at the top.
+
+---
+
+## Control Center suppression
+
+Swiping up from the bottom edge opens Portal's Control Center (volume / brightness / bluetooth),
+which on a kiosk is never wanted. The service closes it the moment it opens.
+
+Toggle (default **on**; unlike `screenToggleEnabled` a wrong value here cannot strand the panel):
+
+```bash
+node _extensions/portal-keys/pkctl.mjs config set blockControlCenter false
+```
+
+### It cannot be stopped from opening — don't re-run this list
+
+All measured on hardware 2026-07-21 against `com.facebook.alohaapps.controlcenter`:
+
+| Attempt | Result |
+|---|---|
+| `pm disable-user` + force-stop | Sets `enabled=3`, but the package is `SYSTEM PERSISTENT` so the system restarts it. **Verified across a full reboot** — both windows returned. |
+| `pm disable` (full) | `SecurityException: Shell cannot change component state` |
+| `pm suspend` | `SecurityException: needs SUSPEND_APPS` |
+| `appops SYSTEM_ALERT_WINDOW deny` | Applied cleanly, did nothing — a `PRIVILEGED SYSTEM` app drawing `ty=KEYGUARD_DIALOG` is exempt |
+| A toggle in `settings` global/secure/system | No such key exists |
+| An overlay of our own | Its gesture strip sits at `mBaseLayer=201000`, above anything a non-system app can draw |
+
+Device owner (`dpm set-device-owner`) was not tried: it requires no other accounts on the device,
+i.e. a factory reset of a working panel, and would likely not reach a custom Facebook component
+anyway.
+
+### How the dismissal works
+
+**Detection is by geometry, not package** — accessibility reports these windows with `title=null`
+and no package attribution, so there is nothing to match by name. What is unambiguous is the shape
+change: closed, the panel parks a 984×25 gesture strip on the bottom edge
+(`Rect(148,775 - 1132,800)` at 1280×800); open, it becomes a full-screen `TYPE_SYSTEM` window. The
+threshold is a loose ≥80% of each axis so a rotation or resolution change doesn't quietly stop
+matching.
+
+**Dismissal is a synthetic swipe, not BACK.** `performGlobalAction(GLOBAL_ACTION_BACK)` does *not*
+close it — the panel is `NOT_FOCUSABLE`, so the accessibility BACK routes to the focused window
+(Fully) instead. That scored **0/5** even with six retries, while a real injected
+`input keyevent BACK` closed it every time; accessibility cannot inject key events, so that route
+is unavailable. `dispatchGesture` with a downward swipe — the panel's own dismiss gesture — scored
+**5/5**, and **3/3 again after a reboot**. A tap outside also closes it (`WATCH_OUTSIDE_TOUCH`) but
+was rejected: once the panel is gone, that tap lands on whatever the SPA is showing.
+
+**Timing matters.** Firing the instant the panel is detected dismisses nothing — the event arrives
+mid-animation and the gesture is dropped, and since the panel then sits open no further
+`TYPE_WINDOWS_CHANGED` arrives to retry. So the service waits 400 ms, then verifies and retries up
+to 6 times before giving up.
+
+Three config flags move together in `accessibility_service_config.xml` and dropping any one makes
+the dismissal silently never fire: `typeWindowsChanged` (the panel is `NOT_FOCUSABLE`, so
+`typeWindowStateChanged` never arrives), `flagRetrieveInteractiveWindows` (`getWindows()` returns
+empty without it, and Android refuses the flag unless `canRetrieveWindowContent` is true), and
+`canPerformGestures`. Confirm all of them landed with:
+
+```bash
+adb shell dumpsys accessibility | grep 'Portal Keys'
+# want capabilities=41  = window content (1) + filter key events (8) + perform gestures (32)
+```
+
+A `capabilities` value missing 8 means the volume keys have silently stopped working.
 
 ---
 

@@ -174,6 +174,16 @@ public class ControlServer extends NanoWSD {
         long uptime = connectedAt > 0 ? (System.currentTimeMillis() - connectedAt) / 1000 : 0;
         int wsCount = sockets.size();
         return "{"
+                // Identity FIRST. :8771 (portal-keys) and :8770 (piano-bridge) return
+                // similar-shaped JSON, and a bare status blob gives no way to tell which
+                // panel answered — easy to read the Portal's state and act on the piano
+                // tablet, or vice versa. Never remove these.
+                + "\"app\":\"portal-keys\","
+                + "\"package\":\"" + Json.escape(BuildConfig.APPLICATION_ID) + "\","
+                + "\"version\":\"" + Json.escape(BuildConfig.VERSION_NAME) + "\","
+                + "\"versionCode\":" + BuildConfig.VERSION_CODE + ","
+                + "\"deviceModel\":\"" + Json.escape(android.os.Build.MODEL) + "\","
+                + "\"androidVersion\":\"" + Json.escape(android.os.Build.VERSION.RELEASE) + "\","
                 + "\"serviceBound\":" + statusProvider.isServiceBound() + ","
                 + "\"uptimeSeconds\":" + uptime + ","
                 + "\"keysSeen\":" + statusProvider.keysSeen() + ","

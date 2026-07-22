@@ -5,6 +5,8 @@
 >
 > **Requirements (the whole programme):** [`docs/superpowers/specs/2026-07-21-portal-homeschool-requirements.md`](../../superpowers/specs/2026-07-21-portal-homeschool-requirements.md)
 >
+> **Roadmap (candidate future work, categorized):** [`docs/roadmap/2026-07-21-school-module-roadmap.md`](../../roadmap/2026-07-21-school-module-roadmap.md)
+>
 > This is the durable map of the School subsystem: what runs today, what is
 > designed but unbuilt, and the decisions behind both.
 

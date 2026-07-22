@@ -166,10 +166,37 @@ describe('identifyChord — tolerant voicings (dropped 5th, v2)', () => {
 });
 
 describe('identifyChord — broadened vocabulary (v2)', () => {
-  it('C6 (major sixth)', () => {
+  // A "sixth" chord is a minor 7th from its own 6th — [0,4,7,9] and [0,3,7,10]
+  // describe the SAME pitch-class set from different roots, always. We read that
+  // set as the minor 7th regardless of bass, so one set has exactly one name.
+  it('C-E-G-A reads as A minor 7 (not C 6)', () => {
     const r = identifyChord([C4, E4, G4, A4]);
-    expect(r.quality).toBe('sixth');
-    expect(r.displayName).toBe('C 6');
+    expect(r.quality).toBe('minor7');
+    expect(r.displayName).toBe('A minor 7 / C');
+  });
+
+  it('F-A-C-D reads as D minor 7 over F (not F 6)', () => {
+    const r = identifyChord([F4, A4, C4 + 12, D4 + 12]);
+    expect(r.quality).toBe('minor7');
+    expect(r.displayName).toBe('D minor 7 / F');
+  });
+
+  it('the minor-7 reading holds from every bass note of the set', () => {
+    expect(identifyChord([D4, F4, A4, C4 + 12]).displayName).toBe('D minor 7');
+    expect(identifyChord([A4, C4 + 12, D4 + 12, F4 + 12]).displayName).toBe('D minor 7 / A');
+    expect(identifyChord([C4 + 12, D4 + 12, F4 + 12, A4 + 12]).displayName).toBe('D minor 7 / C');
+  });
+
+  it('minor 6 likewise reads as minor 7 flat 5', () => {
+    const r = identifyChord([C4, Eb4, G4, A4]);
+    expect(r.quality).toBe('minor7b5');
+    expect(r.displayName).toBe('A minor 7 ♭5 / C');
+  });
+
+  it('6/9 survives — it has no minor-7 equivalent in the vocabulary', () => {
+    const r = identifyChord([C4, D4, E4, G4, A4]);
+    expect(r.quality).toBe('six9');
+    expect(r.displayName).toBe('C 6/9');
   });
 
   it('C add9', () => {
