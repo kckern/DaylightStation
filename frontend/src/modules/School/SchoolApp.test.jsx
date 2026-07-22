@@ -31,15 +31,51 @@ function cardFor(title) {
   return screen.getByText(title).closest('.school-browse__card');
 }
 
+// The home grid is now the landing surface; every bank-flow test enters the
+// banks section first.
+async function openBanks() {
+  fireEvent.click(await screen.findByRole('button', { name: /quizzes & flashcards/i }));
+}
+
+describe('SchoolApp home', () => {
+  it('lands on the section grid and fetches no banks until the section opens', async () => {
+    render(<SchoolApp clear={() => {}} />);
+    expect(await screen.findByRole('button', { name: /quizzes & flashcards/i })).toBeInTheDocument();
+    expect(banksMock).not.toHaveBeenCalled();
+    await openBanks();
+    expect(await screen.findByText('Caps')).toBeInTheDocument();
+  });
+
+  it('back from the bank list returns to the home grid', async () => {
+    render(<SchoolApp clear={() => {}} />);
+    await openBanks();
+    await screen.findByText('Caps');
+    fireEvent.click(screen.getByRole('button', { name: /back to home/i }));
+    expect(await screen.findByRole('button', { name: /quizzes & flashcards/i })).toBeInTheDocument();
+    expect(screen.queryByText('Caps')).toBeNull();
+  });
+
+  it('home shows Exit school only when a clear prop exists', async () => {
+    const { unmount } = render(<SchoolApp clear={() => {}} />);
+    expect(await screen.findByRole('button', { name: /exit school/i })).toBeInTheDocument();
+    unmount();
+    render(<SchoolApp />);
+    expect(await screen.findByRole('button', { name: /quizzes & flashcards/i })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /exit school/i })).toBeNull();
+  });
+});
+
 describe('SchoolApp', () => {
   it('unclaimed browser sees both an assigned and a generic bank (gate loosened)', async () => {
     render(<SchoolApp clear={() => {}} />);
+    await openBanks();
     expect(await screen.findByText('Caps')).toBeInTheDocument();
     expect(screen.getByText('Animals')).toBeInTheDocument();
   });
 
   it('unclaimed: launching an assigned bank opens the picker; picking a profile proceeds into the runner', async () => {
     render(<SchoolApp clear={() => {}} />);
+    await openBanks();
     await screen.findByText('Caps');
     fireEvent.click(within(cardFor('Caps')).getByRole('button', { name: /quiz/i }));
     expect(await screen.findByRole('dialog')).toBeInTheDocument(); // ProfilePicker
@@ -49,6 +85,7 @@ describe('SchoolApp', () => {
 
   it('unclaimed: launching an assigned bank then dismissing the picker refuses it, does not enter the runner, and narrows the list to generic', async () => {
     render(<SchoolApp clear={() => {}} />);
+    await openBanks();
     await screen.findByText('Caps');
     fireEvent.click(within(cardFor('Caps')).getByRole('button', { name: /quiz/i }));
     await screen.findByRole('dialog');
@@ -64,6 +101,7 @@ describe('SchoolApp', () => {
 
   it('unclaimed: launching a generic bank then dismissing the picker proceeds as guest into the runner', async () => {
     render(<SchoolApp clear={() => {}} />);
+    await openBanks();
     await screen.findByText('Animals');
     fireEvent.click(within(cardFor('Animals')).getByRole('button', { name: /quiz/i }));
     await screen.findByRole('dialog');

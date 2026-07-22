@@ -20,6 +20,7 @@ export const schoolLog = {
   answer:  (detail, data) => emit('answer', detail, data, 'debug'),   // graded
   answerError: (detail, data) => emit('answer', detail, data, 'error'), // record-failed
   bank:    (detail, data) => emit('bank', detail, data, 'warn'),
+  nav:     (detail, data) => emit('nav', detail, data),               // section | home
 };
 
 export default schoolLog;

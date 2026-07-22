@@ -59,4 +59,14 @@ describe('schoolLog', () => {
     schoolLog.bank('invalid', { bankId: 'b1' });
     expect(warn).toHaveBeenCalledWith('school.bank.invalid', expect.objectContaining({ bankId: 'b1' }));
   });
+
+  it('emits school.nav.section at info', () => {
+    schoolLog.nav('section', { section: 'banks' });
+    expect(info).toHaveBeenCalledWith('school.nav.section', expect.objectContaining({ section: 'banks' }));
+  });
+
+  it('emits school.nav.home at info', () => {
+    schoolLog.nav('home', {});
+    expect(info).toHaveBeenCalledWith('school.nav.home', expect.any(Object));
+  });
 });

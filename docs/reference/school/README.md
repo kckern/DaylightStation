@@ -96,6 +96,20 @@ never a recorded attempt — those are already on disk.
 
 **Design spec:** [`2026-07-21-school-identity-quiz-design.md`](../../superpowers/specs/2026-07-21-school-identity-quiz-design.md)
 
+### The home shell
+
+School's landing surface is a **section grid** — the app owns its own top-level
+navigation. Sections come from two places: built-ins (Quizzes & Flashcards
+today; Games and Writing when their sub-projects land) and, once the materials
+framework ships, one section per material category. A tile never points at an
+absent endpoint.
+
+Back steps one navigation level: runner → bank list → home → exit. The exit
+control only exists when School is mounted as an app; on the Portal, where
+School is the screen, home is the root and no exit affordance renders.
+
+**Design spec:** [`2026-07-22-school-materials-framework-design.md`](../../superpowers/specs/2026-07-22-school-materials-framework-design.md) §8
+
 ---
 
 ## 3. Specced, not built
@@ -104,7 +118,7 @@ No code exists for anything in this section. Each links its spec.
 
 | Sub-project | Spec | Shape |
 |---|---|---|
-| **Video courses** (+ learning log) | [`2026-07-21-school-courses-design.md`](../../superpowers/specs/2026-07-21-school-courses-design.md) | Plex-backed courses modelled on the Piano Kiosk's Videos mode, including the sequential lock. A spoken learning log reusing `modules/VoiceCapture/` and `POST /api/v1/ai/transcribe` |
+| **Materials framework** (courses, reference, listening) | [`2026-07-22-school-materials-framework-design.md`](../../superpowers/specs/2026-07-22-school-materials-framework-design.md) | Source adapters (Plex shows, Plex albums, readalong) normalised to materials with units; closed pedagogy categories; gate steps (`[readalong, quiz]`). Supersedes the video-courses spec |
 | **Writing assignments** | [`2026-07-21-school-writing-assignments-design.md`](../../superpowers/specs/2026-07-21-school-writing-assignments-design.md) | TipTap, light rich text, no spell check. Bluetooth keyboard |
 | **Typing tutor** | [`2026-07-21-school-typing-tutor-design.md`](../../superpowers/specs/2026-07-21-school-typing-tutor-design.md) | Drill (curriculum) + arcade, modelled on `PianoSpaceInvaders`' pure-engine split. No npm dependency |
 | Curriculum / assignments | — | Not yet designed |
@@ -161,8 +175,11 @@ No code exists for anything in this section. Each links its spec.
 - Piano's `completion_threshold_percent` / `engagement_timeout_seconds` are
   deliberately **absent** from that file. Copying them would silently
   reinstate the watch-plus-presence completion model that School rejected.
-- The old Portal menu list was deleted. Music, Ambient, Art and Webcam are
-  currently unreachable from the panel and want a home inside School.
+- The old Portal menu list was deleted; the School home grid is the panel's
+  navigation now. Music and Art return as material *sources* when the
+  materials framework lands (they are curricular; they get no top-level
+  section of their own). Ambient and Webcam are screen-level utilities for
+  the TouchChrome lane, not School sections — still unwired.
 - Screen-framework features survive the single-widget layout — the doorbell
   subscription, PiP, casting, software volume and `portalKeys` are all
   screen-level. Casting in particular works because `ScreenActionHandler`
