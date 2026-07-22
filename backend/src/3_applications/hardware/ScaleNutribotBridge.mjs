@@ -86,11 +86,13 @@ export function createScaleNutribotBridge({
       userId, conversationId, grams, unit: 'g', scaleId,
       composition: compositionOf(scaleId),
     });
-  const editInPlace = (grams, scaleId, live) =>
+  // `notice` is a TRANSIENT, one-shot line for the prompt (e.g. a refused scan).
+  // It rides the call and is never stored, so the next render is clean again.
+  const editInPlace = (grams, scaleId, live, notice = null) =>
     nutribotContainer.getLogFoodFromScale().execute({
       userId, conversationId, grams, unit: 'g', scaleId,
       existingLogUuid: live.logUuid, messageId: live.messageId,
-      composition: compositionOf(scaleId),
+      composition: compositionOf(scaleId), notice,
     });
   const retract = async (live) => {
     const uc = nutribotContainer.getRetractScaleLog?.();
@@ -200,18 +202,35 @@ export function createScaleNutribotBridge({
    * `s.live` stays bridge-internal: the scan handler asks for a refresh rather
    * than reaching into the map, so the single-live invariant keeps one owner.
    *
+   * Takes the SAME per-scale `inflight` lock as `onPayload`, and DROPS the
+   * refresh when the scale is busy rather than queuing behind it. Scanning while
+   * the scale settles is the normal interaction, and going straight to
+   * `editInPlace` raced: it could edit a message `post()` had just retracted,
+   * which Telegram answers with a 400 and the user sees no ACK at all. Dropping
+   * loses nothing — the buffer was already written by the time we get here, so
+   * the in-flight weight edit reads it and renders the new state anyway. A
+   * dropped refresh is expected traffic, not a fault, hence debug.
+   *
    * @param {string} scaleId
+   * @param {string|null} [notice] one-shot warning line for this render only
    * @returns {Promise<boolean>} whether a live prompt was refreshed
    */
-  const refreshPrompt = async (scaleId) => {
+  const refreshPrompt = async (scaleId, notice = null) => {
     const s = scales.get(scaleId);
     if (!s?.live) return false;
+    if (inflight.has(scaleId)) {
+      logger.debug?.('scaleNutribot.refresh.dropped', { scaleId, reason: 'inflight' });
+      return false;
+    }
+    inflight.add(scaleId);
     try {
-      const res = await editInPlace(s.live.grams, scaleId, s.live);
+      const res = await editInPlace(s.live.grams, scaleId, s.live, notice);
       return Boolean(res?.edited);
     } catch (err) {
       logger.warn?.('scaleNutribot.refresh.failed', { scaleId, error: err.message });
       return false;
+    } finally {
+      inflight.delete(scaleId);
     }
   };
 
