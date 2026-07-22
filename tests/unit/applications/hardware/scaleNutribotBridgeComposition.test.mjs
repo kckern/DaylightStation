@@ -123,11 +123,21 @@ describe('ScaleNutribotBridge → CompositionStore', () => {
     expect(store.ends).toEqual(['kitchen']);
   });
 
-  it('works with no compositionStore injected', async () => {
+  // The buffer is OPTIONAL — the prompt flow works on its own and is what the
+  // user is looking at. This asserts the prompt is still posted (with an explicit
+  // null composition) rather than merely that nothing threw: `emit` returns
+  // undefined and `onPayload` swallows its own errors, so a "did not throw"
+  // assertion here would pass even if the bridge did nothing at all.
+  it('still posts prompts, with a null composition, when no store is injected', async () => {
     build({});
-    emit(480); await flush();
-    emit(600); await flush();
-    await expect(Promise.resolve(emit(480))).resolves.not.toThrow();
+    emit(480); await flush();          // learn the resting baseline
+    emit(600); await flush();          // placement → prompt posted
+
+    expect(execute).toHaveBeenCalledTimes(1);
+    expect(execute.mock.calls[0][0]).toMatchObject({ grams: 600, composition: null });
+
+    emit(480); await flush();          // removed — nothing to end, still no throw
+    expect(execute).toHaveBeenCalledTimes(1);
   });
 
   it('passes the composition snapshot through on create and on edit', async () => {
@@ -202,5 +212,68 @@ describe('ScaleNutribotBridge.refreshPrompt', () => {
     execute.mockRejectedValueOnce(new Error('telegram down'));
 
     await expect(bridge.refreshPrompt('kitchen')).resolves.toBe(false);
+  });
+
+  // Scanning while the scale is still settling is the NORMAL interaction, and it
+  // used to race: `onPayload` serialises per scale with `inflight`, but
+  // refreshPrompt went straight to editInPlace, so a scan could edit a message
+  // `post()` had just retracted — Telegram 400, and no ACK at all. Dropping the
+  // refresh is safe because the buffer is already updated: the in-flight weight
+  // edit reads it and renders the new state anyway.
+  it('drops the refresh (returns false, no edit) while the scale is inflight', async () => {
+    const bridge = build({ compositionStore: store });
+    emit(480); await flush();
+    emit(600); await flush();          // prompt live at 600 g
+    execute.mockClear();
+
+    let release;
+    const gate = new Promise((r) => { release = r; });
+    execute.mockImplementationOnce(async (input) => {
+      await gate;
+      return { success: true, logUuid: input.existingLogUuid, messageId: 'm1', stage: 'density', edited: true };
+    });
+
+    emit(700);                          // weight edit starts and parks on the gate
+    await flush();
+
+    await expect(bridge.refreshPrompt('kitchen')).resolves.toBe(false);
+    expect(execute).toHaveBeenCalledTimes(1);   // the weight edit only — no racing edit
+
+    release(); await flush();
+  });
+
+  it('refreshes again normally once the scale is no longer inflight', async () => {
+    const bridge = build({ compositionStore: store });
+    emit(480); await flush();
+    emit(600); await flush();
+    emit(700); await flush();          // completes, releases the lock
+    execute.mockClear();
+
+    await expect(bridge.refreshPrompt('kitchen')).resolves.toBe(true);
+    expect(execute).toHaveBeenCalledTimes(1);
+  });
+
+  it('forwards a transient notice to the prompt render', async () => {
+    const bridge = build({ compositionStore: store });
+    emit(480); await flush();
+    emit(600); await flush();
+    execute.mockClear();
+
+    await bridge.refreshPrompt('kitchen', 'unknown container "teapot" — not tared');
+    expect(execute.mock.calls[0][0].notice).toBe('unknown container "teapot" — not tared');
+  });
+
+  it('sends no notice when none is given, so it cannot leak into the next render', async () => {
+    const bridge = build({ compositionStore: store });
+    emit(480); await flush();
+    emit(600); await flush();
+    execute.mockClear();
+
+    await bridge.refreshPrompt('kitchen', 'transient warning');
+    await bridge.refreshPrompt('kitchen');
+    expect(execute.mock.calls[1][0].notice ?? null).toBe(null);
+
+    emit(700); await flush();          // a weight change re-renders clean too
+    expect(execute.mock.calls[2][0].notice ?? null).toBe(null);
   });
 });

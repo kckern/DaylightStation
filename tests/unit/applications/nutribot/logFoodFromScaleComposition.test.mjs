@@ -1,9 +1,18 @@
 import { describe, it, expect } from 'vitest';
 import { buildScalePromptText } from '#apps/nutribot/usecases/LogFoodFromScale.mjs';
 
+const MUG_CFG = { containers: { items: [{ id: 'mug', label: 'Mug', emoji: '☕', grams: 350 }] } };
+const DENSITY_CFG = {
+  containers: { items: [{ id: 'mug', label: 'Mug', emoji: '☕', grams: 350 }] },
+  densityLevels: [
+    { level: 4, label: 'Mixed', emoji: '🍛', kcal_per_g: 1.4 },
+    { level: 9, label: 'Oil', emoji: '🫒', kcal_per_g: 8.5 },
+  ],
+};
+
 describe('buildScalePromptText', () => {
   it('shows gross only when nothing is tared', () => {
-    const text = buildScalePromptText({ gross: 420, composition: { container: null } }, { items: [] });
+    const text = buildScalePromptText({ gross: 420, composition: { container: null } }, { containers: { items: [] } });
     expect(text).toContain('420');
     expect(text).not.toMatch(/net/i);
   });
@@ -14,20 +23,14 @@ describe('buildScalePromptText', () => {
   });
 
   it('names the container and shows the net once a tare is scanned', () => {
-    const text = buildScalePromptText(
-      { gross: 420, composition: { container: 'mug' } },
-      { items: [{ id: 'mug', label: 'Mug', emoji: '☕', grams: 350 }] },
-    );
+    const text = buildScalePromptText({ gross: 420, composition: { container: 'mug' } }, MUG_CFG);
     expect(text).toContain('☕ Mug');
     expect(text).toContain('350');
     expect(text).toMatch(/70\s*g/); // 420 gross - 350 tare
   });
 
   it('refuses the tare (rather than reporting 0 or a negative) when it outweighs the gross', () => {
-    const text = buildScalePromptText(
-      { gross: 100, composition: { container: 'mug' } },
-      { items: [{ id: 'mug', label: 'Mug', emoji: '☕', grams: 350 }] },
-    );
+    const text = buildScalePromptText({ gross: 100, composition: { container: 'mug' } }, MUG_CFG);
     // A 0 g net is unstorable (FoodItem requires grams > 0) and would read as a
     // silent 0 kcal entry, so the tare is refused and said so out loud.
     expect(text).not.toMatch(/-\d/);
@@ -38,7 +41,7 @@ describe('buildScalePromptText', () => {
   it('flags a container that is no longer in config rather than dropping it', () => {
     const text = buildScalePromptText(
       { gross: 420, composition: { container: 'teapot' } },
-      { items: [] },
+      { containers: { items: [] } },
     );
     expect(text).toMatch(/unknown container/i);
     expect(text).toContain('teapot');
@@ -47,10 +50,84 @@ describe('buildScalePromptText', () => {
   it('falls back to the container id when it carries no label', () => {
     const text = buildScalePromptText(
       { gross: 420, composition: { container: 'jar' } },
-      { items: [{ id: 'jar', grams: 200 }] },
+      { containers: { items: [{ id: 'jar', grams: 200 }] } },
     );
     expect(text).toContain('jar');
     expect(text).toContain('= 220 g net');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// DENSITY rendering. A `dl:` scan used to change nothing on the prompt, so the
+// edit produced byte-identical text, Telegram answered 400 "message is not
+// modified", and the bridge logged it as a successful edit. Density is the slot
+// that gates auto-accept — it is the one thing that MUST be visible.
+// ---------------------------------------------------------------------------
+describe('buildScalePromptText — density', () => {
+  it('names the scanned density level and its kcal/g', () => {
+    const text = buildScalePromptText({ gross: 340, composition: { density: 4 } }, DENSITY_CFG);
+    expect(text).toContain('🍛 Mixed');
+    expect(text).toContain('1.4 kcal/g');
+  });
+
+  it('renders DIFFERENT text than the same weight before the dl: scan', () => {
+    const before = buildScalePromptText({ gross: 340, composition: {} }, DENSITY_CFG);
+    const after = buildScalePromptText({ gross: 340, composition: { density: 4 } }, DENSITY_CFG);
+    expect(after).not.toBe(before); // else Telegram rejects the edit as unmodified
+  });
+
+  it('renders density alongside a container tare', () => {
+    const text = buildScalePromptText({ gross: 420, composition: { container: 'mug', density: 4 } }, DENSITY_CFG);
+    expect(text).toContain('☕ Mug');
+    expect(text).toContain('= 70 g net');
+    expect(text).toContain('🍛 Mixed');
+  });
+
+  it('stays byte-identical to the legacy prompt with no container and no density', () => {
+    expect(buildScalePromptText({ gross: 340, composition: {} }, DENSITY_CFG)).toBe('⚖️ 340 g');
+  });
+
+  it('omits the line for a density level absent from the table', () => {
+    const text = buildScalePromptText({ gross: 340, composition: { density: 7 } }, DENSITY_CFG);
+    expect(text).toBe('⚖️ 340 g');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// TRANSIENT NOTICE. A refused scan (`ct:teapot`) never reaches the buffer, so
+// there is nothing in the composition to render — the user saw NOTHING, which
+// is the exact silent failure the ACK exists to prevent. The notice is carried
+// as an argument, not stored, so it cannot leak into the next render.
+// ---------------------------------------------------------------------------
+describe('buildScalePromptText — transient notice', () => {
+  it('renders the notice as a warning line', () => {
+    const text = buildScalePromptText(
+      { gross: 340, composition: {}, notice: 'unknown container "teapot" — not tared' },
+      DENSITY_CFG,
+    );
+    expect(text).toContain('⚠️');
+    expect(text).toContain('teapot');
+    expect(text).toContain('not tared');
+  });
+
+  it('does NOT persist into a later render of the same composition', () => {
+    const composition = {};
+    const noticed = buildScalePromptText({ gross: 340, composition, notice: 'unknown container "teapot" — not tared' }, DENSITY_CFG);
+    const next = buildScalePromptText({ gross: 340, composition }, DENSITY_CFG);
+    expect(noticed).toContain('teapot');
+    expect(next).toBe('⚖️ 340 g');       // the weight-change render is clean again
+    expect(composition).toEqual({});      // and nothing was written to the buffer
+  });
+
+  it('keeps the weight and any tare visible above the notice', () => {
+    const text = buildScalePromptText(
+      { gross: 420, composition: { container: 'mug' }, notice: 'unknown density level 7 — not set' },
+      DENSITY_CFG,
+    );
+    const lines = text.split('\n');
+    expect(lines[0]).toContain('420');
+    expect(lines[lines.length - 1]).toMatch(/^⚠️/);
+    expect(text).toContain('= 70 g net');
   });
 });
 
