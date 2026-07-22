@@ -57,6 +57,9 @@ export class GetMaterialCatalog {
       source: entry.source,
       medium: entry.medium ?? material.medium,
       category,
+      // School subject shelf (reading|civilization|…) — config-declared per
+      // source, unvalidated here: the frontend routes unknowns to Library.
+      subject: entry.subject ?? null,
     };
   }
 
