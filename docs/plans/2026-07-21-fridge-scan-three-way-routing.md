@@ -151,10 +151,16 @@ git commit -m "fix(nutrition): carry density macros through config normalization
 
 ## Task 2: Config validator
 
-A bad table must fail at startup with a pointable message, not at 6pm at the fridge.
+A bad table must fail with a pointable message, not at 6pm at the fridge.
+
+> **Amended during execution (Task 1 finding).** `DEFAULT_DENSITY_LEVELS` carries no `macros` on any of its nine rows, and the live `scales.yml` has no `nutribot:` block — so the defaults are what actually load today. A validator that throws on missing macros, called at startup (Task 4), would therefore refuse to boot the entire backend over a nutrition table. Two consequences, both handled here:
+>
+> - **The default table must be valid on its own** — it exists so the feature works before the real YAML is authored, and a fallback that cannot pass validation is not a fallback. Add a `macros` split to all nine rows.
+> - **Startup validation must fail soft** — see Task 4. A malformed household YAML disables nutriscan and logs loudly; it does not take down media, fitness, and everything else. Loud beats fatal when the blast radius is the whole station.
 
 **Files:**
 - Create: `backend/src/3_applications/nutribot/lib/validateScanConfig.mjs`
+- Modify: `backend/src/3_applications/nutribot/lib/scaleNutribotConfig.mjs` (macros on `DEFAULT_DENSITY_LEVELS`)
 - Test: `tests/unit/applications/nutribot/validateScanConfig.test.mjs`
 
 **Step 1: Write the failing test**
@@ -468,11 +474,22 @@ Before `createBarcodeRelay({`, alongside where `nutribotServices` is already in 
   const scanVocabConfig = normalizeScaleNutribotConfig(
     configService.getHouseholdAppConfig(householdId, 'scales') || {},
   );
-  validateScanConfig(scanVocabConfig);
-  const applyScanToComposition = new ApplyScanToComposition({
-    store: compositionStore,
-    config: scanVocabConfig,
-  });
+
+  // Fail SOFT, not fatal. A malformed nutriscan table must not keep the whole
+  // station from booting — media, fitness and the rest have nothing to do with
+  // it. Disable nutriscan, log loudly, let UPC scanning carry on.
+  let applyScanToComposition = null;
+  try {
+    validateScanConfig(scanVocabConfig);
+    applyScanToComposition = new ApplyScanToComposition({
+      store: compositionStore,
+      config: scanVocabConfig,
+    });
+  } catch (err) {
+    rootLogger.error('nutriscan.config.invalid', {
+      error: err.message, code: err.code, hint: 'fix the nutribot block in scales.yml',
+    });
+  }
 ```
 
 `compositionStore` must be the SAME instance the scale bridge uses. If `createScaleNutribotBridge` currently builds its own, hoist it to a shared `const` above both call sites. Two stores means a scanned density never meets its weight, and the buffer silently never completes.
@@ -487,7 +504,7 @@ Inside `if (route === 'nutribot') {`, as the first statements:
         // are digit-only and can never match <prefix>:<rest>, so ordering this
         // ahead of the UPC lookup cannot shadow a product scan.
         const scaleId = relayCfg.scale_id || null;
-        if (scaleId) {
+        if (scaleId && applyScanToComposition) {
           const outcome = applyScanToComposition.execute({ scaleId, code: relay.code });
           if (outcome.handled) {
             barcodeLogger?.info?.('barcode_relay.nutriscan', {
@@ -687,6 +704,28 @@ git add backend/src/3_applications/nutribot/usecases/LogFoodFromScale.mjs \
         tests/unit/applications/nutribot/logFoodFromScaleComposition.test.mjs
 git commit -m "feat(nutrition): ACK scanned tare on the live scale prompt"
 ```
+
+---
+
+## Task 5b: Align the Telegram button path with the QR path
+
+> **Added during execution (Task 3 finding).** `SelectScaleContainer.mjs` handles the Telegram container *keyboard*. On an unknown container id it logs `selectContainer.unknownContainer` and then proceeds with `net = gross` — the silent un-tared weight that D2 exists to prevent, saved straight to the log.
+>
+> This predates the plan; Task 3 did not introduce it. But after Task 3 the two paths to the same outcome disagree — scan `ct:teapot` and it refuses, tap a stale button for the same container and it silently under-tares. One tare feature cannot have two answers for a missing container.
+
+**Files:**
+- Modify: `backend/src/3_applications/nutribot/usecases/SelectScaleContainer.mjs`
+- Test: `tests/unit/applications/nutribot/selectScaleContainer.test.mjs`
+
+**Step 1:** Write a failing test asserting that an unknown container id does NOT save a log with `net === gross`, and instead surfaces the same `UNKNOWN_CONTAINER` refusal the QR path returns.
+
+**Step 2:** Run it, verify it fails against the current silent-fallthrough behavior.
+
+**Step 3:** Make the refusal path match `ApplyScanToComposition` — no tare applied, no log saved, user-visible message naming the missing id.
+
+**Step 4:** Run the suite. A stale-button regression here is plausible; if an existing test asserts the `net = gross` fallback, read it carefully before changing it and report what it was protecting rather than deleting it.
+
+**Step 5:** Commit.
 
 ---
 
