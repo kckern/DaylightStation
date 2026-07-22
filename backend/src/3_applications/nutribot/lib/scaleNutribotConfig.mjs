@@ -83,9 +83,15 @@ export function normalizeScaleNutribotConfig(raw = {}) {
   };
 }
 
+// Tolerant of a nullish level and of a config with no table: it is called on the
+// render path, where "no density selected yet" is the normal case and must not
+// be confused with level 0 (`Number(null) === 0`), and a partial config must
+// degrade to "no density line" rather than throw mid-prompt.
 export function densityForLevel(cfg, level) {
+  if (level === null || level === undefined || level === '') return null;
   const n = Number(level);
-  return cfg.densityLevels.find((l) => l.level === n) || null;
+  if (!Number.isFinite(n)) return null;
+  return (cfg?.densityLevels || []).find((l) => l.level === n) || null;
 }
 
 function chunk(arr, size) {

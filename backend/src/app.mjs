@@ -153,6 +153,7 @@ import { createScaleNutribotBridge } from '#apps/hardware/ScaleNutribotBridge.mj
 import { CompositionStore } from '#apps/nutribot/CompositionStore.mjs';
 import { ApplyScanToComposition } from '#apps/nutribot/usecases/ApplyScanToComposition.mjs';
 import { validateScanConfig } from '#apps/nutribot/lib/validateScanConfig.mjs';
+import { routeNutribotScan, nutriscanRefusalNotice } from '#apps/nutribot/lib/routeNutribotScan.mjs';
 import { normalizeScaleNutribotConfig } from '#apps/nutribot/lib/scaleNutribotConfig.mjs';
 import { createBarcodeRelay } from '#apps/hardware/barcodeRelay.mjs';
 import { createFingerprintProfileWriter } from '#apps/fitness/fingerprintProfileWriter.mjs';
@@ -2454,6 +2455,15 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   // after startup — so we bind the reference instead.
   let scaleNutribotBridge = null;
 
+  // Conditions that are decided once at startup but observed once per scan.
+  // Reported at warn the FIRST time each is hit, at debug thereafter — see the
+  // `swallow` branch in onScan. Deliberately not a general rate limiter.
+  const nutriscanWarned = new Set();
+  const NUTRISCAN_SWALLOW_EVENT = {
+    'nutriscan-disabled': 'barcode_relay.nutriscan.config_disabled',
+    'no-scale-id': 'barcode_relay.nutriscan.no_scale_id',
+  };
+
   // Trigger dispatch (NFC modality source: apps/nfc/config.yml; barcode modality
   // shares this same dispatch core — see the barcode-relay wiring just below).
   const { router: triggerRouter, triggerDispatchService } = createTriggerApiRouter({
@@ -2492,24 +2502,46 @@ export async function createApp({ server, logger, configPaths, configExists, ena
       if (route === 'nutribot') {
         // Namespace-first: dl:/ct:/rs: belong to the fridge sheet. Real UPC/EAN
         // are digit-only and can never match <prefix>:<rest>, so ordering this
-        // ahead of the UPC lookup cannot shadow a product scan.
+        // ahead of the UPC lookup cannot shadow a product scan. The DECISION
+        // lives in routeNutribotScan (pure, unit-tested) — this branch only acts
+        // on it, because the version inlined here had an untestable hole: with
+        // nutriscan disabled it fell through and UPC-looked-up `dl:4`.
         const scaleId = relayCfg.scale_id || null;
-        if (scaleId && applyScanToComposition) {
-          const outcome = applyScanToComposition.execute({ scaleId, code: relay.code });
-          if (outcome.handled) {
-            barcodeLogger?.info?.('barcode_relay.nutriscan', {
-              device: relay.device, scaleId, kind: outcome.kind, ok: outcome.ok !== false,
-              error: outcome.error || null,
+        const decision = routeNutribotScan({ scaleId, code: relay.code, apply: applyScanToComposition });
+
+        if (decision.action === 'nutriscan') {
+          const { outcome } = decision;
+          const refused = outcome.ok === false;
+          barcodeLogger?.info?.('barcode_relay.nutriscan', {
+            device: relay.device, scaleId, kind: outcome.kind, ok: !refused,
+            error: outcome.error || null,
+          });
+          // ACK on the message the user is already looking at — INCLUDING a
+          // refusal, which writes nothing to the buffer and so would otherwise
+          // render as no change whatsoever. That silent failure is precisely
+          // what the ACK exists to prevent, so the reason rides along as a
+          // transient notice. Fire-and-forget: a failed edit must not swallow a
+          // scan that already landed in the buffer.
+          const notice = refused ? nutriscanRefusalNotice(outcome) : null;
+          scaleNutribotBridge?.refreshPrompt?.(scaleId, notice)?.catch?.(() => {});
+          return;
+        }
+
+        if (decision.action === 'swallow') {
+          // A fridge-sheet code with nowhere to go. Both reasons are decided at
+          // STARTUP (a broken scales.yml, or a reader deliberately configured
+          // without a scale), so they are reported once and then demoted —
+          // warning per scan buried the log without adding information.
+          const event = NUTRISCAN_SWALLOW_EVENT[decision.reason] || 'barcode_relay.nutriscan.unavailable';
+          if (nutriscanWarned.has(decision.reason)) {
+            barcodeLogger?.debug?.(event, { device: relay.device, code: relay.code });
+          } else {
+            nutriscanWarned.add(decision.reason);
+            barcodeLogger?.warn?.(event, {
+              device: relay.device, code: relay.code, hint: 'further occurrences log at debug',
             });
-            // ACK on the message the user is already looking at. Fire-and-forget:
-            // a failed edit must not swallow a scan that already landed in the buffer.
-            if (outcome.ok !== false) {
-              scaleNutribotBridge?.refreshPrompt?.(scaleId)?.catch?.(() => {});
-            }
-            return;
           }
-        } else if (!scaleId) {
-          barcodeLogger?.warn?.('barcode_relay.nutriscan.no_scale_id', { device: relay.device });
+          return;
         }
 
         const userId = relayCfg.nutribot?.user_id || barcodeRelayConfig.nutribot?.user_id || configService.getHeadOfHousehold?.() || null;

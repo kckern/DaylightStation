@@ -11,7 +11,7 @@
 
 import { NutriLog } from '#domains/nutrition/entities/NutriLog.mjs';
 import { computeNet } from '#domains/nutrition/index.mjs';
-import { buildDensityKeyboard, densityPromptText } from '../lib/scaleNutribotConfig.mjs';
+import { buildDensityKeyboard, densityForLevel, densityPromptText } from '../lib/scaleNutribotConfig.mjs';
 
 /**
  * Resolve a scanned container id against the table and apply its tare.
@@ -71,39 +71,68 @@ export function resolveScaleNet({ gross, composition = {} }, containers = { item
 /**
  * Prompt body for a live scale placement. PURE — no store access, no I/O.
  *
- * With no container in the buffer this is byte-identical to the legacy
- * `densityPromptText(gross)` (`⚖️ <n> g`), so an untared prompt is unchanged.
- * Once a `ct:` scan lands, the container is NAMED on the message the user is
- * already looking at — that ACK is the only way to tell a tare that registered
- * from one that didn't. An id no longer in config renders a visible warning
- * rather than nothing, for the same reason.
+ * With no container, no density and no notice this is byte-identical to the
+ * legacy `densityPromptText(gross)` (`⚖️ <n> g`), so an untouched prompt is
+ * unchanged and the Jest suite that pins that string still passes.
+ *
+ * Everything else here exists because a scan that changes nothing VISIBLE is
+ * indistinguishable from a scan that never arrived:
+ *   • CONTAINER — a `ct:` scan names the tare on the message the user is already
+ *     looking at. That ACK is the only way to tell a tare that registered from
+ *     one that didn't.
+ *   • DENSITY — a `dl:` scan used to render nothing at all, so the edit produced
+ *     byte-identical text, Telegram answered 400 "message is not modified", and
+ *     the bridge logged that as a successful edit. Density gates auto-accept; it
+ *     is the last thing that should be invisible.
+ *   • NOTICE — a transient, caller-supplied warning for a scan that was REFUSED
+ *     and therefore never reached the buffer (`ct:teapot`). There is nothing in
+ *     the composition to render from, so the reason is passed in instead. It is
+ *     an argument and never stored, which is what makes it one-shot: the next
+ *     render — a weight change, say — is clean again.
+ *
+ * A container id that IS in the buffer but has since been dropped from config
+ * renders through that same notice line, so there is one `⚠️` mechanism rather
+ * than two ways to say the same thing.
  *
  * `resolution` is the caller's ALREADY-COMPUTED `resolveScaleNet` result. The
  * caller passes the very object it persisted from, so the rendered net and the
  * stored net are the same number by construction. Recomputing here (it defaults
  * to the same call for pure-render callers) is the bug this fix removed.
  *
- * @param {{ gross: number, composition?: object }} args
- * @param {{ items?: Array<{id:string,label?:string,emoji?:string,grams:number}> }} containers
+ * @param {{ gross: number, composition?: object, notice?: string|null }} args
+ * @param {{ containers?: {items?: Array}, densityLevels?: Array }} [config] normalized scan config
  * @param {ReturnType<typeof resolveScaleNet>} [resolution]
  * @returns {string}
  */
-export function buildScalePromptText({ gross, composition = {} }, containers = { items: [] }, resolution = null) {
+export function buildScalePromptText({ gross, composition = {}, notice = null }, config = {}, resolution = null) {
+  const containers = config?.containers || { items: [] };
   const r = resolution || resolveScaleNet({ gross, composition }, containers);
   const lines = [densityPromptText(gross)];
 
-  if (r.unknownId) {
-    lines.push(`⚠️ unknown container "${r.unknownId}" — not tared`);
-  } else if (r.error) {
-    lines.push(`⚠️ container "${r.container?.id}" has no usable weight — not tared`);
+  // One transient warning line, whatever its source.
+  let warning = notice || null;
+
+  if (r.error) {
+    warning = warning || `container "${r.container?.id}" has no usable weight — not tared`;
   } else if (r.refused) {
     const name = r.container.label || r.container.id;
-    lines.push(`⚠️ ${name} (${r.container.grams} g) is not lighter than the reading — not tared`);
+    warning = warning || `${name} (${r.container.grams} g) is not lighter than the reading — not tared`;
+  } else if (r.unknownId) {
+    // Stored, then removed from config between the scan and this render.
+    warning = warning || `unknown container "${r.unknownId}" — not tared`;
   } else if (r.container) {
     lines[0] = `⚖️ ${gross} g gross`;
     lines.push(`➖ ${r.container.emoji || ''} ${r.container.label || r.container.id} (${r.container.grams} g)`.trim());
     lines.push(`= ${r.net} g net`);
   }
+
+  // A level absent from the table renders nothing rather than a half-line —
+  // ApplyScanToComposition refuses those at scan time, so reaching here means
+  // the table changed under a buffered selection.
+  const level = densityForLevel(config, composition?.density);
+  if (level) lines.push(`${level.emoji} ${level.label} (${level.kcal_per_g} kcal/g)`);
+
+  if (warning) lines.push(`⚠️ ${warning}`);
 
   return lines.join('\n');
 }
@@ -131,7 +160,7 @@ export class LogFoodFromScale {
   }
 
   async execute(input) {
-    const { userId, conversationId, grams, unit, scaleId, existingLogUuid, messageId, composition } = input;
+    const { userId, conversationId, grams, unit, scaleId, existingLogUuid, messageId, composition, notice = null } = input;
     const gross = Math.round(Number(grams));
     if (!Number.isFinite(gross) || gross <= 0) {
       this.#logger.warn?.('logScale.badGrams', { scaleId, grams });
@@ -167,7 +196,7 @@ export class LogFoodFromScale {
         await this.#foodLogStore.save(updated);
         const choices = buildDensityKeyboard(cfg, this.#encodeCallback, existingLogUuid);
         try {
-          const editText = buildScalePromptText({ gross, composition }, cfg?.containers, resolution);
+          const editText = buildScalePromptText({ gross, composition, notice }, cfg, resolution);
           await this.#messagingGateway.updateMessage(conversationId, messageId, { text: editText, choices, inline: true });
         } catch (e) {
           this.#logger.warn?.('logScale.editFailed', { error: e.message });
@@ -192,7 +221,7 @@ export class LogFoodFromScale {
     });
     await this.#foodLogStore.save(nutriLog);
 
-    const text = buildScalePromptText({ gross, composition }, cfg?.containers, resolution);
+    const text = buildScalePromptText({ gross, composition, notice }, cfg, resolution);
     const choices = buildDensityKeyboard(cfg, this.#encodeCallback, nutriLog.id);
     if (this.#conversationStateStore) {
       await this.#conversationStateStore.set(conversationId, {
