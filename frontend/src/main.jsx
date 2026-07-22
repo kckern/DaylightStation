@@ -94,6 +94,13 @@ const TVRedirect = () => {
   return <Navigate to={`/screen/living-room${search}`} replace />;
 };
 
+// /school/<deep-path> → /app/school/<deep-path>, keeping School's own
+// segments (subject/…, library/…, material/…) intact through the redirect.
+const SchoolDeepLinkRedirect = () => {
+  const { pathname, search } = useLocation();
+  return <Navigate to={`/app${pathname}${search}`} replace />;
+};
+
 // Standalone /app/:appId route — renders a registered app directly without the TV shell.
 // Used for testing and direct linking to specific apps (e.g. /app/weekly-review).
 const AppDirectRoute = () => {
@@ -156,8 +163,12 @@ ReactDOM.createRoot(document.getElementById('root')).render(
         <Route path="/office/*" element={<OfficeRedirect />} />
         <Route path="/budget" element={<FinanceApp />} />
         <Route path="/finances" element={<FinanceApp />} />
-        {/* /school — first-class URL for the School app; AppDirectRoute serves it. */}
+        {/* /school — first-class URL for the School app; AppDirectRoute serves it.
+            The splat carries School's own deep-link segments (subject/…,
+            library, material/…), which SchoolApp parses itself. */}
         <Route path="/school" element={<Navigate to="/app/school" replace />} />
+        <Route path="/school/*" element={<SchoolDeepLinkRedirect />} />
+        <Route path="/app/:appId/*" element={<AppDirectRoute />} />
         <Route path="/app/:appId" element={<AppDirectRoute />} />
         <Route path="/tv/*" element={<TVRedirect />} />
         <Route path="/tv" element={<TVRedirect />} />
