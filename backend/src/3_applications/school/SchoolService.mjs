@@ -196,6 +196,8 @@ export class SchoolService {
     const metrics = [
       { id: 'answered', kind: 'count', label: 'Questions answered', value: graded.length, unit: 'questions' },
     ];
+    // Accuracy stays parent-only by default (see reporting.mjs): side by side
+    // with a sibling's on a hallway panel it is a public ranking.
     if (graded.length) {
       metrics.push({
         id: 'accuracy', kind: 'score', label: 'Quiz accuracy',
@@ -209,6 +211,7 @@ export class SchoolService {
     const idleMs = this.#now() - Date.parse(lastActivity || 0);
     return [{
       program: this.id,
+      instanceId: 'banks',
       label: this.label,
       userId,
       state: idleMs > 14 * 86400000 ? 'idle' : 'active',

@@ -1,11 +1,16 @@
 /**
- * School home — the section grid (spec §8). The app's own top-level
- * navigation: SchoolShell renders this when no section is open. Pure
- * presentation; navigation state lives in the shell.
+ * The browse shelves — DEMOTED from the front door.
+ *
+ * This used to be the whole home screen, which made a wall of category nouns
+ * the first thing a child saw. It is now the fallback below their actual next
+ * step, and `compact` shrinks it further while work is outstanding: the same
+ * shelves, quieter, growing to full size once the day's set is cleared.
+ *
+ * Pure presentation; navigation state lives in the shell.
  */
-export default function SectionGrid({ sections, onOpen }) {
+export default function SectionGrid({ sections, onOpen, compact = false }) {
   return (
-    <div className="school-home">
+    <div className={`school-browse-grid${compact ? ' is-compact' : ''}`}>
       <div className="school-home__grid">
         {sections.map((s) => (
           <button

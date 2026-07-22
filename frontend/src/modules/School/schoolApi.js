@@ -26,7 +26,15 @@ export const schoolApi = {
   answer: (sessionId, body = {}) => req(`/sessions/${encodeURIComponent(sessionId)}/answer`, body),
   results: (userId, bankId) => req(`/users/${encodeURIComponent(userId)}/results${bankId ? `?bankId=${encodeURIComponent(bankId)}` : ''}`),
   materials: () => req('/materials'),
-  report: (userId) => req(`/report${userId ? `?userId=${encodeURIComponent(userId)}` : ''}`),
+  // `audience` filters metrics SERVER-SIDE: a learner request never receives
+  // parent instrumentation, so a child's device cannot render it by accident.
+  report: (userId, audience) => {
+    const p = new URLSearchParams();
+    if (userId) p.set('userId', userId);
+    if (audience) p.set('audience', audience);
+    const qs = p.toString();
+    return req(`/report${qs ? `?${qs}` : ''}`);
+  },
   materialUnits: (materialId, userId) => req(`/materials/${encodeURIComponent(materialId)}/units${userId ? `?userId=${encodeURIComponent(userId)}` : ''}`),
   unitProgress: (materialId, unitId, body = {}) => req(`/materials/${encodeURIComponent(materialId)}/units/${encodeURIComponent(unitId)}/progress`, body, 'PUT'),
 };

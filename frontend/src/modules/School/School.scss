@@ -240,3 +240,80 @@
   &__bar-fill { height: 100%; background: var(--school-accent); }
   &__spark { width: 120px; height: 28px; color: var(--school-accent); }
 }
+
+// --- learner home: what to do next, not what content exists -----------------
+// Obligation first at high weight, browse second at low weight — and the two
+// SWAP when the day's set is cleared. No animation (kiosk WebView).
+.school-home {
+  display: flex; flex-direction: column; gap: 1.25rem; height: 100%;
+
+  &__hello { display: flex; align-items: center; gap: 0.75rem; }
+  &__greeting { margin: 0; font-size: 1.6rem; font-weight: 800; flex: 1; }
+  &__switch, &__claim {
+    min-height: 56px; padding: 0 1rem;
+    border: 1px solid var(--school-border); border-radius: 12px;
+    background: var(--school-surface-2); color: var(--school-fg);
+    font-size: 1rem; cursor: pointer;
+  }
+  &__claim {
+    align-self: center; min-height: 72px; padding: 0 2rem;
+    background: var(--school-accent); color: var(--school-accent-ink);
+    border-color: transparent; font-size: 1.2rem; font-weight: 700;
+  }
+  &--unclaimed { align-items: center; justify-content: center; text-align: center; }
+
+  &__status { color: var(--school-muted); }
+  &__heading {
+    margin: 0 0 0.5rem; font-size: 0.9rem; color: var(--school-muted);
+    text-transform: uppercase; letter-spacing: 0.06em;
+  }
+
+  // The primary card owns the screen while there is work to do.
+  &__primary { flex: 0 0 auto; }
+  &__secondary-cards { display: flex; gap: 0.75rem; flex-wrap: wrap; }
+
+  &__done { text-align: center; padding: 1rem 0; }
+  &__done-mark { margin: 0; font-size: 1.6rem; font-weight: 800; color: var(--school-accent); }
+  &__done-sub { margin: 0.25rem 0 0; color: var(--school-muted); }
+
+  // Browse takes what is left, and only fills the screen once work is done.
+  &__explore { flex: 1; min-height: 0; overflow: auto; }
+  &.is-free &__explore { flex: 1; }
+}
+
+.school-next {
+  display: flex; flex-direction: column; align-items: flex-start; gap: 0.4rem;
+  width: 100%; text-align: left; cursor: pointer;
+  border: none; border-radius: 16px;
+  background: var(--school-surface); color: var(--school-fg);
+
+  &--primary {
+    padding: 1.75rem;
+    background: var(--school-accent); color: var(--school-accent-ink);
+  }
+  &--secondary { flex: 1 1 16rem; min-height: 96px; padding: 1rem; }
+
+  // A blocked card still shows its remedy AS the action, so it is never a wall
+  // without a sign. Warn, not danger: it is a detour, not a failure.
+  &.is-blocked { background: var(--school-warn); color: #241a05; }
+  &:disabled { opacity: 0.6; cursor: default; }
+
+  &__course { font-size: 1rem; opacity: 0.85; }
+  &__action { font-size: 1.5rem; font-weight: 800; line-height: 1.25; }
+  &--secondary &__action { font-size: 1.15rem; font-weight: 700; }
+  &__detail { font-size: 1rem; opacity: 0.85; }
+
+  &__bar {
+    display: block; width: 100%; height: 10px; margin-top: 0.5rem;
+    border-radius: 999px; background: rgba(0, 0, 0, 0.18); overflow: hidden;
+  }
+  &__bar-fill { display: block; height: 100%; background: currentColor; }
+  &__count { font-size: 0.95rem; opacity: 0.85; }
+}
+
+// Demoted while work is outstanding; full size once it is done.
+.school-browse-grid {
+  &.is-compact .school-home__grid { gap: 0.5rem; }
+  &.is-compact .school-home__tile { min-height: 84px; padding: 0.75rem; }
+  &.is-compact .school-home__hint { display: none; }
+}

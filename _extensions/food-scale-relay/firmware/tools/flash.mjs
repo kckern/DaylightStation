@@ -37,5 +37,10 @@ const run = (cmd, args, opts = {}) => {
 };
 
 run('node', ['tools/gen-config.mjs', src, ...(scaleId ? [scaleId] : [])]);
-run('pio', ['run', '-e', 'm5-atom', '-t', 'upload', '--upload-port', port]);
+// m5-atom-idf5, not m5-atom. src/idf_component.yml declares `idf: '>=5.1'`, and
+// the m5-atom env pins espressif32@6.5.0 (IDF 4.4.6) -- so that env cannot
+// resolve dependencies at all and fails before compiling a single file
+// ("Because project depends on idf (>=5.1) ... version solving failed").
+// This pointed at the broken env, so the documented flash path did not work.
+run('pio', ['run', '-e', 'm5-atom-idf5', '-t', 'upload', '--upload-port', port]);
 console.log(`\n[flash] done → ${port}`);

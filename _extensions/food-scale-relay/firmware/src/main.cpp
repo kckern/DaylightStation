@@ -13,6 +13,7 @@
 
 #include <Arduino.h>
 #include <WiFi.h>
+#include <ESPmDNS.h>
 #include <WebServer.h>
 #include <WebSocketsClient.h>
 #include <ArduinoJson.h>
@@ -46,16 +47,35 @@ static uint32_t g_wsRetries = 0;       // failed reconnects since that drop
 static uint32_t g_wsDropCount = 0;     // real drops since boot (not retries)
 static WebServer http(80);
 
-struct RecentLog { uint32_t ms; char text[128]; };
-static RecentLog g_recentLogs[24];
+// Ring sized 48: at 128 B of text per slot this is ~6 KB on a chip with 520 KB,
+// and the extra depth is what lets a barcode/auth event survive a quiet night.
+#define RECENT_LOG_MAX 48
+struct RecentLog { uint32_t ms; uint16_t repeat; char text[128]; };
+static RecentLog g_recentLogs[RECENT_LOG_MAX];
 static uint8_t g_recentLogNext = 0;
 static uint8_t g_recentLogCount = 0;
 static void relayLogLine(const char* text) {
+  // Coalesce consecutive duplicates rather than consuming a slot each time.
+  // The BLE scan watchdog fires every ~45 s whenever the scale is switched off,
+  // which is most of the day. Observed on the live unit: all 24 slots holding
+  // that one line, so every Classic-BT auth/ACL event -- the only evidence of a
+  // scanner that is trying and failing -- was evicted within ~18 minutes. A
+  // repeat counter keeps the flood visible AS a flood without hiding anything.
+  if (g_recentLogCount) {
+    uint8_t newest = (uint8_t)((g_recentLogNext + RECENT_LOG_MAX - 1) % RECENT_LOG_MAX);
+    if (strncmp(g_recentLogs[newest].text, text, sizeof(g_recentLogs[0].text)) == 0) {
+      if (g_recentLogs[newest].repeat < 0xFFFF) g_recentLogs[newest].repeat++;
+      g_recentLogs[newest].ms = millis();   // age tracks the LATEST occurrence
+      Serial.println(text);
+      return;
+    }
+  }
   strncpy(g_recentLogs[g_recentLogNext].text, text, sizeof(g_recentLogs[0].text)-1);
   g_recentLogs[g_recentLogNext].text[sizeof(g_recentLogs[0].text)-1] = 0;
   g_recentLogs[g_recentLogNext].ms = millis();
-  g_recentLogNext = (g_recentLogNext + 1) % 24;
-  if (g_recentLogCount < 24) g_recentLogCount++;
+  g_recentLogs[g_recentLogNext].repeat = 1;
+  g_recentLogNext = (g_recentLogNext + 1) % RECENT_LOG_MAX;
+  if (g_recentLogCount < RECENT_LOG_MAX) g_recentLogCount++;
   Serial.println(text);
 }
 static void relayLogf(const char* fmt, ...) {
@@ -108,6 +128,21 @@ static uint32_t g_sppHandle = 0;
 static uint32_t g_classicOpenCount = 0;
 static uint32_t g_classicCloseCount = 0;
 static char g_classicLastEvent[64] = "";
+static uint32_t g_classicLastEventMs = 0;
+// Durable GAP evidence. open/close above only count SUCCESSFUL SPP sessions, so
+// a scanner that pages us and then fails to establish leaves them at zero --
+// byte-identical to a scanner switched off in a drawer. These counters are the
+// discriminator, and unlike the log ring they cannot be evicted:
+//   acl_conn_count > 0 && open_count == 0  -> in range, reaching us, failing
+//   acl_conn_count == 0                    -> not reaching us at all
+static uint32_t g_aclConnCount = 0;
+static uint32_t g_aclDisconnCount = 0;
+static int32_t  g_lastAclReason = -1;
+static uint32_t g_lastAclMs = 0;
+static uint32_t g_authAttemptCount = 0;
+static uint32_t g_authFailCount = 0;
+static int32_t  g_lastAuthStatus = -1;
+static uint32_t g_lastAuthMs = 0;
 // SPP delivers raw decoded barcode bytes (not HID keyboard reports), copied out
 // of the Bluedroid task via a queue and reassembled in loop().
 struct RawRep { uint16_t handle; uint8_t len; uint8_t d[64]; };
@@ -279,6 +314,7 @@ static void sppCB(esp_spp_cb_event_t event, esp_spp_cb_param_t* p) {
                 (int)p->start.scn, (int)p->start.status);
       g_sppInitialized = p->start.status == ESP_SPP_SUCCESS;
       snprintf(g_classicLastEvent, sizeof(g_classicLastEvent), "listening scn=%d", (int)p->start.scn);
+      g_classicLastEventMs = millis();
       break;
     case ESP_SPP_SRV_OPEN_EVT:
       g_barcodeConnected = p->srv_open.status == ESP_SPP_SUCCESS;
@@ -290,6 +326,7 @@ static void sppCB(esp_spp_cb_event_t event, esp_spp_cb_param_t* p) {
         g_classicOpenCount++;
         snprintf(g_classicLastEvent, sizeof(g_classicLastEvent), "open handle=%lu",
                  (unsigned long)p->srv_open.handle);
+      g_classicLastEventMs = millis();
         flashLed(CRGB::Green, 200);
       }
       break;
@@ -307,6 +344,7 @@ static void sppCB(esp_spp_cb_event_t event, esp_spp_cb_param_t* p) {
       g_sppHandle = 0;
       g_classicCloseCount++;
       snprintf(g_classicLastEvent, sizeof(g_classicLastEvent), "closed status=%d", (int)p->close.status);
+      g_classicLastEventMs = millis();
       break;
     default:
       relayLogf("[classic-spp] event %d", (int)event);
@@ -316,10 +354,21 @@ static void sppCB(esp_spp_cb_event_t event, esp_spp_cb_param_t* p) {
 
 static void classicGapCB(esp_bt_gap_cb_event_t event, esp_bt_gap_cb_param_t* p) {
   if (event == ESP_BT_GAP_AUTH_CMPL_EVT) {
+    g_authAttemptCount++;
+    g_lastAuthStatus = (int32_t)p->auth_cmpl.stat;
+    g_lastAuthMs = millis();
+    if (p->auth_cmpl.stat != ESP_BT_STATUS_SUCCESS) g_authFailCount++;
     relayLogf("[classic-spp] auth status=%d", (int)p->auth_cmpl.stat);
   } else if (event == ESP_BT_GAP_ACL_CONN_CMPL_STAT_EVT) {
+    // The scanner reached us. This fires even when SPP never establishes, which
+    // is precisely the "beeping and squawking" case.
+    g_aclConnCount++;
+    g_lastAclMs = millis();
     relayLogf("[classic-spp] ACL up stat=%d", (int)p->acl_conn_cmpl_stat.stat);
   } else if (event == ESP_BT_GAP_ACL_DISCONN_CMPL_STAT_EVT) {
+    g_aclDisconnCount++;
+    g_lastAclReason = (int32_t)p->acl_disconn_cmpl_stat.reason;
+    g_lastAclMs = millis();
     relayLogf("[classic-spp] ACL down reason=%d", (int)p->acl_disconn_cmpl_stat.reason);
   } else if (event == ESP_BT_GAP_MODE_CHG_EVT) {
     // sniff/active transitions — debug-level noise, skip
@@ -586,6 +635,17 @@ static void handleStatus() {
   barcode["open_count"] = g_classicOpenCount;
   barcode["close_count"] = g_classicCloseCount;
   if (g_classicLastEvent[0]) barcode["last_event"] = g_classicLastEvent;
+  if (g_classicLastEventMs) barcode["last_event_age_s"] = (uint32_t)((millis()-g_classicLastEventMs)/1000);
+  // Attempt evidence — see the declarations above for why open_count alone
+  // cannot tell "switched off" from "trying and failing".
+  barcode["acl_conn_count"] = g_aclConnCount;
+  barcode["acl_disconn_count"] = g_aclDisconnCount;
+  if (g_lastAclReason >= 0) barcode["last_acl_reason"] = g_lastAclReason;
+  if (g_lastAclMs) barcode["last_acl_age_s"] = (uint32_t)((millis()-g_lastAclMs)/1000);
+  barcode["auth_attempt_count"] = g_authAttemptCount;
+  barcode["auth_fail_count"] = g_authFailCount;
+  if (g_lastAuthStatus >= 0) barcode["last_auth_status"] = g_lastAuthStatus;
+  if (g_lastAuthMs) barcode["last_auth_age_s"] = (uint32_t)((millis()-g_lastAuthMs)/1000);
   barcode["bonds"] = esp_bt_gap_get_bond_device_num();
   // What the scanner's pairing bar code must encode (PRG p.4-25: <Fnc3>B+addr).
   const uint8_t* btMac = esp_bt_dev_get_address();
@@ -616,12 +676,13 @@ static void handleStatus() {
   if (g_lastButtonMs) { button["last_press"] = g_lastButton; button["last_press_age_s"] = (uint32_t)((millis()-g_lastButtonMs)/1000); }
 
   JsonArray logs = doc["recent_logs"].to<JsonArray>();
-  uint8_t start = (g_recentLogNext + 24 - g_recentLogCount) % 24;
+  uint8_t start = (uint8_t)((g_recentLogNext + RECENT_LOG_MAX - g_recentLogCount) % RECENT_LOG_MAX);
   for (uint8_t i=0; i<g_recentLogCount; i++) {
-    const RecentLog& entry = g_recentLogs[(start+i)%24];
+    const RecentLog& entry = g_recentLogs[(start+i)%RECENT_LOG_MAX];
     JsonObject item = logs.add<JsonObject>();
-    item["age_s"] = (uint32_t)((millis()-entry.ms)/1000);
+    item["age_s"] = (uint32_t)((millis()-entry.ms)/1000);   // age of the LATEST occurrence
     item["message"] = entry.text;
+    if (entry.repeat > 1) item["repeat"] = entry.repeat;
   }
 
   String out; serializeJsonPretty(doc, out);
@@ -686,6 +747,18 @@ void setup() {
   uint32_t t0 = millis();
   while (WiFi.status() != WL_CONNECTED && millis() - t0 < 20000) { delay(300); }
   relayLogf("[wifi] %s", WiFi.status() == WL_CONNECTED ? WiFi.localIP().toString().c_str() : "FAILED (will retry)");
+
+  // mDNS: <scale_id>.local. The IP is a DHCP lease with no reservation, and it
+  // previously lived only as prose in a README -- a lease change silently broke
+  // every tool pointed at it. Same pattern as the ir-blaster firmware.
+  if (WiFi.status() == WL_CONNECTED) {
+    if (MDNS.begin(SCALE_ID)) {
+      MDNS.addService("http", "tcp", 80);
+      relayLogf("[mdns] %s.local", SCALE_ID);
+    } else {
+      relayLogLine("[mdns] begin FAILED (IP still works)");
+    }
+  }
 
   webSocket.begin(WS_HOST, WS_PORT, WS_PATH);
   webSocket.onEvent(wsEvent);

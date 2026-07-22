@@ -450,16 +450,30 @@ export class LanguageStudyService {
     const lastActivity = progress.lastActivity
       ?? log.reduce((max, e) => (String(e.at) > max ? String(e.at) : max), '');
     const idleMs = this.#now() - Date.parse(lastActivity || 0);
+    // `satisfied` rather than `idle` when today's set is cleared: a learner who
+    // did everything asked must not be told they are paused.
     const state = retired.size >= corpus.playable.size ? 'complete'
-      : idleMs > IDLE_AFTER_DAYS * 86400000 ? 'idle'
-        : 'active';
+      : outstanding.length === 0 ? 'satisfied'
+        : idleMs > IDLE_AFTER_DAYS * 86400000 ? 'idle'
+          : 'active';
 
+    const done = queue.length - outstanding.length;
     const metrics = [
+      // TODAY's bounded set — the number a learner can actually move, and the
+      // one that belongs on their own surface.
       {
-        id: 'sentences', kind: 'progress', label: 'Sentences started',
+        id: 'today', kind: 'progress', label: 'Today', scope: 'today',
+        value: done, total: Math.max(queue.length, 1), unit: 'sentences',
+        audience: 'learner',
+      },
+      // The lifetime figure is real, and useless to a child: a bar at 20% that
+      // will not visibly move for a year says "you are nowhere".
+      {
+        id: 'sentences', kind: 'progress', label: 'Sentences started', scope: 'total',
         value: touched.size, total: corpus.playable.size, unit: 'sentences',
       },
-      { id: 'day', kind: 'streak', label: 'Study day', value: progress.day, unit: 'days' },
+      // An odometer, not a fuse — it only advances, so it is safe to show.
+      { id: 'day', kind: 'count', label: 'Study day', value: progress.day, unit: 'days', audience: 'learner' },
       { id: 'recordings', kind: 'count', label: 'Recordings', value: recordings, unit: 'recordings' },
     ];
     if (scored.length) {
@@ -475,6 +489,7 @@ export class LanguageStudyService {
 
     return {
       program: this.id,
+      instanceId: corpus.id,
       label: corpus.label,
       userId,
       state,
@@ -482,11 +497,12 @@ export class LanguageStudyService {
       headline: `Day ${progress.day} · ${progress.dailyLimit} new a day`,
       next: outstanding.length
         ? {
-          label: `${outstanding.length} to do`,
+          label: `${outstanding.length} sentences today`,
           detail: this.#describeOutstanding(outstanding),
+          estimate: { count: outstanding.length, unit: 'sentences' },
           blocked: false,
         }
-        : { label: 'Ready for the next day', detail: null, blocked: false },
+        : { label: 'Done for today', detail: 'Come back tomorrow for the next set', blocked: false },
       metrics,
     };
   }

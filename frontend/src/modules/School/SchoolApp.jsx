@@ -13,6 +13,7 @@ import BankBrowser from './browse/BankBrowser.jsx';
 import QuizRunner from './quiz/QuizRunner.jsx';
 import FlashcardRunner from './flashcards/FlashcardRunner.jsx';
 import SectionGrid from './home/SectionGrid.jsx';
+import LearnerHome from './home/LearnerHome.jsx';
 import { SECTIONS, sectionsFromCatalog } from './home/sections.js';
 import MaterialsSection from './materials/MaterialsSection.jsx';
 import GlossikaProgram from './Programs/Glossika/GlossikaProgram.jsx';
@@ -149,7 +150,28 @@ function SchoolShell({ clear }) {
         </button>
       </header>
       <main className="school-app__body">
-        {!section && <SectionGrid sections={sections} onOpen={openSection} />}
+        {/* Claimed: a home built around this learner's next step. Unclaimed:
+            the roster itself is the front door — tapping your own face is the
+            entry gesture, and a personal dashboard for nobody is meaningless.
+            An explicit guest still browses, which is the pre-existing rule
+            that browsing never prompts. */}
+        {!section && currentUser && (
+          <LearnerHome
+            user={currentUser}
+            sections={sections}
+            onOpen={openSection}
+            onSwitchProfile={openPicker}
+          />
+        )}
+        {!section && !currentUser && (
+          <div className="school-home school-home--unclaimed">
+            <h2 className="school-home__greeting">Who&apos;s here?</h2>
+            <button type="button" className="school-home__claim" onClick={openPicker}>
+              Choose your face
+            </button>
+            <SectionGrid sections={sections} onOpen={openSection} compact />
+          </div>
+        )}
         {/* Only an EXPLICIT guest (continueAsGuest()) is restricted to the
             generic catalogue. An unclaimed child has not declined identity --
             they simply have not picked yet -- so they see everything and get

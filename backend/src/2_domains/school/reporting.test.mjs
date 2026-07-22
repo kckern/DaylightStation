@@ -8,7 +8,8 @@
  */
 import { describe, it, expect, vi } from 'vitest';
 import {
-  METRIC_KIND_IDS, PROGRAM_STATES, normalizeMetric, normalizeReport, compareReports,
+  METRIC_KIND_IDS, PROGRAM_STATES, normalizeMetric, normalizeReport,
+  compareReports, compareForLearner, metricsFor,
 } from './reporting.mjs';
 
 const logger = () => ({ warn: vi.fn(), error: vi.fn() });
@@ -85,6 +86,14 @@ describe('normalizeReport', () => {
     expect(out.metrics).toHaveLength(1);
   });
 
+  it('carries an instanceId so the home can OPEN what it recommends', () => {
+    // program alone cannot identify the row — a learner may study two
+    // languages — so "what is next" would be unactionable without it.
+    expect(normalizeReport({ ...base, instanceId: 'glossika-korean' }).instanceId)
+      .toBe('glossika-korean');
+    expect(normalizeReport(base).instanceId).toBeNull();
+  });
+
   it('rejects a report with no program id', () => {
     expect(normalizeReport({ label: 'x' })).toBeNull();
     expect(normalizeReport(null)).toBeNull();
@@ -126,6 +135,83 @@ describe('normalizeReport', () => {
     }, { logger: logger() });
     expect(out.metrics).toHaveLength(1);
     expect(out.metrics[0].kind).toBe('count');
+  });
+});
+
+describe('audience filtering', () => {
+  const metrics = [
+    normalizeMetric({ kind: 'progress', value: 3, total: 12, scope: 'today', audience: 'learner' }),
+    normalizeMetric({ kind: 'count', value: 9 }),
+    normalizeMetric({ kind: 'score', value: 0.7 }),
+    normalizeMetric({ kind: 'streak', value: 40 }),
+  ];
+
+  it('keeps score and streak away from a child', () => {
+    // A percentage beside a sibling's on a hallway panel is a public ranking;
+    // a streak on a shared device breaks for reasons the child cannot control.
+    const kinds = metricsFor(metrics, 'learner').map((m) => m.kind);
+    expect(kinds).toContain('progress');
+    expect(kinds).toContain('count');
+    expect(kinds).not.toContain('score');
+    expect(kinds).not.toContain('streak');
+  });
+
+  it('shows a parent EVERYTHING, including the child-safe metrics', () => {
+    expect(metricsFor(metrics, 'parent')).toHaveLength(4);
+  });
+
+  it('treats whole-corpus progress as parent instrumentation', () => {
+    // A bar at 3% that will not move for a year tells a child they are nowhere.
+    const total = normalizeMetric({ kind: 'progress', value: 130, total: 4143, scope: 'total' });
+    expect(total.audience).toBe('parent');
+    const today = normalizeMetric({ kind: 'progress', value: 3, total: 12, scope: 'today' });
+    expect(today.audience).toBe('both');
+  });
+
+  it('defaults score, streak, trend and duration to parent-only', () => {
+    for (const kind of ['score', 'streak', 'trend', 'duration']) {
+      const m = normalizeMetric({ kind, value: 0.5, ms: 1, points: [{ at: 'a', value: 1 }] });
+      expect(m.audience).toBe('parent');
+    }
+  });
+});
+
+describe('the learner ordering', () => {
+  const r = (state) => ({ state, lastActivity: null });
+
+  it('leads with what a child can DO, not with what is stuck', () => {
+    // The parent board leads with blocked because triage is the job. Greeting
+    // a seven-year-old with a wall they cannot pass teaches avoidance.
+    const sorted = [r('blocked'), r('satisfied'), r('active')].sort(compareForLearner);
+    expect(sorted.map((x) => x.state)).toEqual(['active', 'blocked', 'satisfied']);
+  });
+
+  it('still ranks blocked ahead of finished work — it is visible, just not first', () => {
+    const sorted = [r('complete'), r('blocked')].sort(compareForLearner);
+    expect(sorted[0].state).toBe('blocked');
+  });
+});
+
+describe('done for today', () => {
+  it('is its own state, not idle', () => {
+    // A child who did everything asked must not read "Paused".
+    expect(PROGRAM_STATES).toContain('satisfied');
+    expect(normalizeReport({ program: 'p', state: 'satisfied' }).state).toBe('satisfied');
+  });
+});
+
+describe('effort estimate', () => {
+  it('carries a structured count so a young reader need not parse prose', () => {
+    const out = normalizeReport({
+      program: 'p',
+      next: { label: 'Continue', estimate: { count: 12, unit: 'sentences' } },
+    });
+    expect(out.next.estimate).toEqual({ count: 12, unit: 'sentences' });
+  });
+
+  it('omits a malformed estimate rather than showing NaN', () => {
+    const out = normalizeReport({ program: 'p', next: { label: 'x', estimate: { unit: 'y' } } });
+    expect(out.next.estimate).toBeNull();
   });
 });
 
