@@ -59,6 +59,9 @@ public class ControlServer extends NanoWSD {
         String readLogcat(int lines);
     }
 
+    public BtDiag btDiag;
+    public PresenceReporter presence;
+
     public ControlServer(EventLog eventLog, Config config, StatusProvider statusProvider) {
         super(PORT);
         this.eventLog = eventLog;
@@ -143,6 +146,19 @@ public class ControlServer extends NanoWSD {
         String uri = session.getUri();
         try {
             if ("/status".equals(uri)) return json(status());
+            // Hardware truth, asked of the radio rather than inferred from
+            // feature flags that disagreed with each other.
+            if ("/btdiag".equals(uri)) return json(btDiag == null ? "{}" : btDiag.snapshot());
+            if ("/btscan".equals(uri)) {
+                if (btDiag == null) return json("{}");
+                int ms = 15000;
+                try {
+                    String v = session.getParms().get("ms");
+                    if (v != null) ms = Math.max(1000, Math.min(60000, Integer.parseInt(v)));
+                } catch (NumberFormatException ignored) {}
+                return json(btDiag.scanLe(ms));
+            }
+            if ("/presence".equals(uri)) return json(presence == null ? "{}" : presence.toJson());
             if ("/log".equals(uri))    return json(eventLog.toJsonArray());
             if ("/config".equals(uri)) return json(handleConfig(session));
             // ADB-free deploy + diagnosis — see SelfUpdater for why these exist.
@@ -216,6 +232,19 @@ public class ControlServer extends NanoWSD {
             } catch (NumberFormatException e) {
                 return "{\"error\":\"doublePressMs must be an integer\"}";
             }
+        } else if (Config.KEY_GATE_HEARTBEAT_MS.equals(key)) {
+            try {
+                int ms = Integer.parseInt(value);
+                if (ms < 5000 || ms > 600000) {
+                    return "{\"error\":\"gateHeartbeatMs out of range (5000-600000)\"}";
+                }
+                config.setInt(key, ms);
+            } catch (NumberFormatException e) {
+                return "{\"error\":\"gateHeartbeatMs must be an integer\"}";
+            }
+        } else if (Config.KEY_GATE_ENDPOINT.equals(key) || Config.KEY_GATE_TOKEN.equals(key)) {
+            // Empty IS meaningful here: it disables reporting.
+            config.setString(key, value == null ? "" : value);
         } else if (Config.KEY_FKB_HOST.equals(key) || Config.KEY_FKB_PASSWORD.equals(key)) {
             if (value == null || value.isEmpty()) {
                 return "{\"error\":\"refusing to set " + Json.escape(key) + " to empty\"}";

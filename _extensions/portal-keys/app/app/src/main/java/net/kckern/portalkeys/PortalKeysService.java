@@ -45,6 +45,8 @@ public class PortalKeysService extends AccessibilityService
     private Config config;
     private FkbClient fkb;
     private EventLog eventLog;
+    private BtDiag btDiag;
+    private PresenceReporter presenceReporter;
     private ControlServer server;
 
     /** FKB REST calls must never run on the input-dispatch thread. */
@@ -85,6 +87,11 @@ public class PortalKeysService extends AccessibilityService
         ui = new Handler(android.os.Looper.getMainLooper());
 
         server = new ControlServer(eventLog, config, this);
+        btDiag = new BtDiag(this, eventLog);
+        server.btDiag = btDiag;
+        presenceReporter = new PresenceReporter(this, config, eventLog);
+        server.presence = presenceReporter;
+        presenceReporter.start();
         try {
             // timeout 0 = no socket read timeout. A finite one makes NanoWSD throw
             // "Read timed out" on every idle client every N seconds, churning threads

@@ -25,6 +25,12 @@ public class Config {
     public static final String KEY_CONSUME_VOLUME = "consumeVolume";
     public static final String KEY_DOUBLE_PRESS_MS = "doublePressMs";
     public static final String KEY_BLOCK_CONTROL_CENTER = "blockControlCenter";
+    // Presence gate. NOTE: deliberately NO device list here — the backend owns
+    // which devices matter and what their absence means. Two copies of that
+    // list is how a replaced headset strands the gate.
+    public static final String KEY_GATE_ENDPOINT = "gateEndpoint";
+    public static final String KEY_GATE_TOKEN = "gateToken";
+    public static final String KEY_GATE_HEARTBEAT_MS = "gateHeartbeatMs";
 
     private final SharedPreferences prefs;
 
@@ -100,6 +106,14 @@ public class Config {
         prefs.edit().putBoolean(key, value).apply();
     }
 
+    /** Backend presence endpoint. Empty = reporting disabled. */
+    public String gateEndpoint() { return prefs.getString(KEY_GATE_ENDPOINT, ""); }
+
+    public String gateToken() { return prefs.getString(KEY_GATE_TOKEN, ""); }
+
+    /** Heartbeat cadence. The backend's TTL must exceed this or the gate flaps. */
+    public int gateHeartbeatMs() { return prefs.getInt(KEY_GATE_HEARTBEAT_MS, 60000); }
+
     /** Redacted view for pkctl status — never emits the password. */
     public String toJsonRedacted() {
         return "{"
@@ -108,7 +122,10 @@ public class Config {
                 + "\"screenToggleEnabled\":" + screenToggleEnabled() + ","
                 + "\"consumeVolume\":" + consumeVolume() + ","
                 + "\"doublePressMs\":" + doublePressMs() + ","
-                + "\"blockControlCenter\":" + blockControlCenter()
+                + "\"blockControlCenter\":" + blockControlCenter() + ","
+                + "\"gateEndpoint\":\"" + Json.escape(gateEndpoint()) + "\","
+                + "\"gateTokenSet\":" + (!gateToken().isEmpty()) + ","
+                + "\"gateHeartbeatMs\":" + gateHeartbeatMs()
                 + "}";
     }
 }
