@@ -1,18 +1,24 @@
 /**
- * LaserPrinterAdapter — network laser printer control over IPP (AirPrint
- * class; verified against the kitchen Brother HL-L2460DW). Dumb transport
- * only: it pushes a ready-made PDF and reports printer state. Page quotas,
- * approval flows, and who-may-print policy belong in the application layer
- * (ddd-reference: adapters translate, they do not decide).
+ * LaserPrinterAdapter — network laser printer control for the kitchen Brother
+ * HL-L2460DW. Dumb transport only: pushes a ready-made PDF and reports printer
+ * state. Page quotas, approval flows, and who-may-print policy belong in the
+ * application layer (ddd-reference: adapters translate, they do not decide).
  *
- * Protocol: raw IPP/1.1 over HTTP POST (application/ipp) via global fetch —
- * no CUPS, no npm printing deps. See ./ipp.mjs for the wire format.
+ * Two protocols, each for what it does best:
+ *  - STATUS/PING over IPP/1.1 (HTTP POST application/ipp, port 631) — clean
+ *    structured Get-Printer-Attributes.
+ *  - PRINTING over raw JetDirect (port 9100) — this Brother's IPP does NOT
+ *    accept a PDF: it advertises only image/urf + image/pwg-raster + generic
+ *    octet-stream, rejects `application/pdf` (0x040a) and hangs on an
+ *    octet-stream PDF (its auto-detect can't parse PDF). Port 9100 with the
+ *    printer's built-in PDF Direct Print renders the PDF as-is. No CUPS, no
+ *    client-side rasterization, no npm printing deps.
  *
  * @module adapters/hardware/laser-printer
  */
 import { createConnection } from 'net';
 import { InfrastructureError } from '#system/utils/errors/index.mjs';
-import { OPS, encodeRequest, baseAttrs, printJobAttrs, decodeResponse } from './ipp.mjs';
+import { OPS, encodeRequest, baseAttrs, decodeResponse } from './ipp.mjs';
 
 /** IPP printer-state enum (RFC 8011 §5.4.11). */
 const PRINTER_STATE = { 3: 'idle', 4: 'processing', 5: 'stopped' };
@@ -20,15 +26,17 @@ const PRINTER_STATE = { 3: 'idle', 4: 'processing', 5: 'stopped' };
 /**
  * @typedef {Object} LaserPrinterConfig
  * @property {string} host - printer IP or hostname
- * @property {number} [port=631] - IPP port
+ * @property {number} [port=631] - IPP port (status/ping)
+ * @property {number} [rawPort=9100] - JetDirect port (printing)
  * @property {string} [path='/ipp/print'] - IPP endpoint path (AirPrint default)
- * @property {number} [timeout=15000] - request timeout in ms
+ * @property {number} [timeout=15000] - IPP request timeout in ms
+ * @property {number} [printTimeout=60000] - raw print send timeout in ms
  */
 export class LaserPrinterAdapter {
-  #host; #port; #path; #timeout; #logger;
+  #host; #port; #rawPort; #path; #timeout; #printTimeout; #logger;
   #requestId = 0;
 
-  constructor({ host, port = 631, path = '/ipp/print', timeout = 15000, logger = console } = {}) {
+  constructor({ host, port = 631, rawPort = 9100, path = '/ipp/print', timeout = 15000, printTimeout = 60000, logger = console } = {}) {
     if (!host) {
       throw new InfrastructureError('LaserPrinterAdapter requires host', {
         code: 'MISSING_DEPENDENCY', dependency: 'host',
@@ -36,22 +44,26 @@ export class LaserPrinterAdapter {
     }
     this.#host = host;
     this.#port = port;
+    this.#rawPort = rawPort;
     this.#path = path.startsWith('/') ? path : `/${path}`;
     this.#timeout = timeout;
+    // Port 9100 is single-session: a print in progress holds the socket, so a
+    // fresh job's connect can wait. Generous timeout covers warm-up + render.
+    this.#printTimeout = printTimeout;
     this.#logger = logger;
   }
 
   get printerUri() { return `ipp://${this.#host}:${this.#port}${this.#path}`; }
   #httpUrl() { return `http://${this.#host}:${this.#port}${this.#path}`; }
 
-  async #ipp(operation, attrs, document = null) {
+  async #ipp(operation, attrs, document = null, timeoutMs = this.#timeout) {
     this.#requestId = (this.#requestId % 0x7fffffff) + 1;
     const body = encodeRequest(operation, attrs, document, this.#requestId);
     const res = await fetch(this.#httpUrl(), {
       method: 'POST',
       headers: { 'Content-Type': 'application/ipp' },
       body,
-      signal: AbortSignal.timeout(this.#timeout),
+      signal: AbortSignal.timeout(timeoutMs),
     });
     if (!res.ok) {
       throw new InfrastructureError(`printer HTTP ${res.status}`, {
@@ -62,36 +74,52 @@ export class LaserPrinterAdapter {
   }
 
   /**
-   * Submit a PDF as one print job.
+   * Print a PDF via raw JetDirect (port 9100). The Brother's PDF Direct Print
+   * renders the bytes as-is; copies are sent as N concatenated documents
+   * (JetDirect has no copies attribute). Resolves once every byte is flushed
+   * and the socket closes cleanly — port 9100 is fire-and-forget, so there is
+   * no per-job ack; a stream/connect failure is the only failure signal.
    *
    * @param {Buffer} pdf - complete PDF bytes
    * @param {Object} [opts]
-   * @param {string} [opts.jobName='daylight-print'] - shows in the printer's job log
-   * @param {string} [opts.user='daylight'] - requesting-user-name (attribution, not auth)
+   * @param {string} [opts.jobName='daylight-print'] - for our own logging (9100 carries no metadata)
+   * @param {string} [opts.user='daylight'] - for our own logging
    * @param {number} [opts.copies=1]
-   * @returns {Promise<{ok:boolean, statusCode:number, jobId:?number}>}
-   * @throws {InfrastructureError} on transport failure or IPP rejection
+   * @returns {Promise<{ok:boolean, bytes:number, copies:number}>}
+   * @throws {InfrastructureError} on transport failure
    */
-  async printPdf(pdf, { jobName = 'daylight-print', user = 'daylight', copies = 1 } = {}) {
+  printPdf(pdf, { jobName = 'daylight-print', user = 'daylight', copies = 1 } = {}) {
     if (!Buffer.isBuffer(pdf) || pdf.length === 0) {
-      throw new InfrastructureError('printPdf requires non-empty PDF buffer', { code: 'INVALID_DOCUMENT' });
+      return Promise.reject(new InfrastructureError('printPdf requires non-empty PDF buffer', { code: 'INVALID_DOCUMENT' }));
     }
     if (pdf.subarray(0, 5).toString('latin1') !== '%PDF-') {
-      throw new InfrastructureError('document is not a PDF', { code: 'INVALID_DOCUMENT' });
+      return Promise.reject(new InfrastructureError('document is not a PDF', { code: 'INVALID_DOCUMENT' }));
     }
-    const { ok, statusCode, attrs } = await this.#ipp(
-      OPS.PRINT_JOB,
-      printJobAttrs(this.printerUri, { user, jobName, copies }),
-      pdf,
-    );
-    if (!ok) {
-      throw new InfrastructureError(`printer rejected job (ipp status 0x${statusCode.toString(16)})`, {
-        code: 'PRINT_JOB_REJECTED', host: this.#host, statusCode,
-      });
-    }
-    const jobId = attrs['job-id']?.[0] ?? null;
-    this.#logger.info?.('laser-printer.job-submitted', { host: this.#host, jobName, user, copies, jobId });
-    return { ok, statusCode, jobId };
+    const nCopies = Math.max(1, Math.floor(copies));
+    const payload = nCopies === 1 ? pdf : Buffer.concat(Array.from({ length: nCopies }, () => pdf));
+
+    return new Promise((resolve, reject) => {
+      const sock = createConnection({ host: this.#host, port: this.#rawPort, timeout: this.#printTimeout });
+      let settled = false;
+      const done = () => {
+        if (settled) return; settled = true;
+        this.#logger.info?.('laser-printer.job-sent', { host: this.#host, port: this.#rawPort, jobName, user, copies: nCopies, bytes: payload.length });
+        resolve({ ok: true, bytes: payload.length, copies: nCopies });
+      };
+      const fail = (msg) => {
+        if (settled) return; settled = true;
+        sock.destroy();
+        reject(new InfrastructureError(`raw print failed: ${msg}`, { code: 'PRINT_SEND_FAILED', host: this.#host, port: this.#rawPort }));
+      };
+      // JetDirect is fire-and-forget and often leaves ITS half of the socket
+      // open after receiving a job — so waiting for 'close' can hang until the
+      // idle timeout even though the job printed. The real success signal is
+      // "our bytes are flushed and our FIN is sent": sock.end(data, cb) fires
+      // cb exactly then. We resolve there and don't wait on the printer.
+      sock.once('connect', () => sock.end(payload, done));
+      sock.once('timeout', () => fail('timeout (printer busy or unreachable)'));
+      sock.once('error', (e) => fail(e.message));
+    });
   }
 
   /**
