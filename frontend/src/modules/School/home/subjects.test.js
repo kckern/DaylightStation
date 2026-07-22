@@ -2,22 +2,24 @@ import { describe, it, expect } from 'vitest';
 import { SUBJECTS, groupBySubject } from './subjects.js';
 
 describe('SUBJECTS', () => {
-  it('is the six agreed shelves in order', () => {
+  it('is the nine agreed shelves in grid order', () => {
     expect(SUBJECTS.map((s) => s.id)).toEqual([
-      'reading', 'civilization', 'language', 'math', 'science', 'writing',
+      'english', 'literature', 'writing',
+      'math', 'science', 'skills',
+      'history', 'geography', 'language',
     ]);
   });
 });
 
 describe('groupBySubject', () => {
   const materials = [
-    { id: 'm1', label: 'Shakespeare Tales', category: 'course', subject: 'reading' },
+    { id: 'm1', label: 'Shakespeare Tales', category: 'course', subject: 'literature' },
     { id: 'm2', label: 'I Survived', category: 'listening', subject: null },
-    { id: 'm3', label: 'Atlas', category: 'reference', subject: 'civilization' },
+    { id: 'm3', label: 'Atlas', category: 'reference', subject: 'geography' },
     { id: 'm4', label: 'Art Lessons', category: 'course', subject: 'bogus-subject' },
   ];
   const banks = [
-    { id: 'b1', title: 'US State Capitals', subject: 'civilization' },
+    { id: 'b1', title: 'US State Capitals', subject: 'geography' },
     { id: 'b2', title: 'Times Tables', subject: 'math' },
     { id: 'b3', title: 'Party Trivia', subject: null },
   ];
@@ -28,14 +30,14 @@ describe('groupBySubject', () => {
   const grouped = groupBySubject({ materials, banks, courses });
 
   it('routes subject-tagged materials and banks to their shelf', () => {
-    expect(grouped.bySubject.reading.materials.map((m) => m.id)).toEqual(['m1']);
-    expect(grouped.bySubject.civilization.banks.map((b) => b.id)).toEqual(['b1']);
+    expect(grouped.bySubject.literature.materials.map((m) => m.id)).toEqual(['m1']);
+    expect(grouped.bySubject.geography.banks.map((b) => b.id)).toEqual(['b1']);
     expect(grouped.bySubject.math.banks.map((b) => b.id)).toEqual(['b2']);
   });
 
   it('reference-category material goes to the Library even when subject-tagged', () => {
     expect(grouped.library.materials.map((m) => m.id)).toContain('m3');
-    expect(grouped.bySubject.civilization.materials).toEqual([]);
+    expect(grouped.bySubject.geography.materials).toEqual([]);
   });
 
   it('untagged or unknown-subject content lands in the Library', () => {
@@ -54,7 +56,7 @@ describe('groupBySubject', () => {
   });
 
   it('flags which subjects have any content', () => {
-    expect(grouped.bySubject.reading.empty).toBeUndefined(); // no such field — use helper
+    expect(grouped.bySubject.english.empty).toBeUndefined(); // no such field — use helper
     expect(grouped.bySubject.writing.materials.length + grouped.bySubject.writing.banks.length + grouped.bySubject.writing.courses.length).toBe(0);
   });
 });
