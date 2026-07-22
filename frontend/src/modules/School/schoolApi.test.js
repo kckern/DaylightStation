@@ -39,4 +39,28 @@ describe('schoolApi', () => {
     const [, opts] = fetchMock.mock.calls.at(-1);
     expect(opts.method).toBe('POST');
   });
+
+  it('materials() GETs the catalog', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ sections: [], materials: [] }), { status: 200 })));
+    expect(await schoolApi.materials()).toEqual({ ok: true, status: 200, data: { sections: [], materials: [] } });
+    expect(fetch).toHaveBeenCalledWith('/api/v1/school/materials', expect.any(Object));
+  });
+
+  it('materialUnits() GETs units, with and without a userId', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response('{}', { status: 200 })));
+    await schoolApi.materialUnits('plex:1');
+    expect(fetch).toHaveBeenCalledWith('/api/v1/school/materials/plex%3A1/units', expect.any(Object));
+    await schoolApi.materialUnits('plex:1', 'kid1');
+    expect(fetch).toHaveBeenCalledWith('/api/v1/school/materials/plex%3A1/units?userId=kid1', expect.any(Object));
+  });
+
+  it('unitProgress() PUTs the progress body', async () => {
+    const fetchMock = vi.fn(async () => new Response('{}', { status: 200 }));
+    vi.stubGlobal('fetch', fetchMock);
+    await schoolApi.unitProgress('plex:1', 'plex:2', { userId: 'kid1', percent: 50, playhead: 30, durationMs: 60000 });
+    const [url, opts] = fetchMock.mock.calls.at(-1);
+    expect(url).toBe('/api/v1/school/materials/plex%3A1/units/plex%3A2/progress');
+    expect(opts.method).toBe('PUT');
+    expect(JSON.parse(opts.body)).toEqual({ userId: 'kid1', percent: 50, playhead: 30, durationMs: 60000 });
+  });
 });

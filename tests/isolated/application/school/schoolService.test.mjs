@@ -11,6 +11,10 @@ const BANKS = {
     { id: 'a1', type: 'multiple_choice', prompt: 'Dog?', answer: 'Mammal', choices: ['Mammal', 'Bird'] },
   ] },
   'broken': { id: 'broken', title: 'Broken', items: [] }, // invalid: empty items
+  'unit-quiz': {
+    id: 'unit-quiz', title: 'Unit Quiz', audience: 'assigned', unit: 'plex:619778-3',
+    items: [{ id: 'u1', type: 'multiple_choice', prompt: 'Q?', answer: 'A', choices: ['A', 'B'] }],
+  },
 };
 
 let ds, svc, clock, warned;
@@ -34,12 +38,18 @@ beforeEach(() => {
 describe('banks', () => {
   it('lists only valid banks, with itemCount; invalid bank warns and is skipped', () => {
     const list = svc.listBanks();
-    expect(list.map((b) => b.id).sort()).toEqual(['animals', 'caps']);
+    expect(list.map((b) => b.id).sort()).toEqual(['animals', 'caps', 'unit-quiz']);
     expect(list.find((b) => b.id === 'caps').itemCount).toBe(2);
     expect(warned).toContain('school.bank.invalid');
   });
   it('audience filter', () => {
     expect(svc.listBanks({ audience: 'generic' }).map((b) => b.id)).toEqual(['animals']);
+  });
+  it('carries a bank\'s unit backlink through to listBanks() output (buildBankIndex needs this to find gates)', () => {
+    const list = svc.listBanks();
+    expect(list.find((b) => b.id === 'unit-quiz').unit).toBe('plex:619778-3');
+    // A bank with no unit backlink carries an undefined unit, not a dropped field.
+    expect(list.find((b) => b.id === 'caps').unit).toBeUndefined();
   });
   it('getBank throws EntityNotFoundError for unknown and for invalid banks', () => {
     expect(() => svc.getBank('nope')).toThrow();

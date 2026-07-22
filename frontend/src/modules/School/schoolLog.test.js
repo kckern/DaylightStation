@@ -69,4 +69,14 @@ describe('schoolLog', () => {
     schoolLog.nav('home', {});
     expect(info).toHaveBeenCalledWith('school.nav.home', expect.any(Object));
   });
+
+  it('emits school.materials.catalog-failed at info', () => {
+    schoolLog.materials('catalog-failed', { status: 500 });
+    expect(info).toHaveBeenCalledWith('school.materials.catalog-failed', expect.objectContaining({ status: 500 }));
+  });
+
+  it('emits school.materials.<detail> at error via materialsError', () => {
+    schoolLog.materialsError('record-failed', { unitId: 'u1' });
+    expect(error).toHaveBeenCalledWith('school.materials.record-failed', expect.objectContaining({ unitId: 'u1' }));
+  });
 });
