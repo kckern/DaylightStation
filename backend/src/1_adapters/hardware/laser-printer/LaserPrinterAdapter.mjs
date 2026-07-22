@@ -103,6 +103,13 @@ export class LaserPrinterAdapter {
       let settled = false;
       const done = () => {
         if (settled) return; settled = true;
+        // Fully tear the socket down — do NOT linger in FIN-WAIT-2. JetDirect
+        // often never sends its own FIN, so a half-closed socket would sit
+        // open holding the printer's SINGLE 9100 session and wedge the NEXT
+        // print (and keep a short-lived Node process from exiting). We already
+        // have confirmation the bytes flushed, so destroying now is safe and
+        // releases the port immediately.
+        sock.destroy();
         this.#logger.info?.('laser-printer.job-sent', { host: this.#host, port: this.#rawPort, jobName, user, copies: nCopies, bytes: payload.length });
         resolve({ ok: true, bytes: payload.length, copies: nCopies });
       };
@@ -115,7 +122,8 @@ export class LaserPrinterAdapter {
       // open after receiving a job — so waiting for 'close' can hang until the
       // idle timeout even though the job printed. The real success signal is
       // "our bytes are flushed and our FIN is sent": sock.end(data, cb) fires
-      // cb exactly then. We resolve there and don't wait on the printer.
+      // cb exactly then. We resolve (and destroy) there and don't wait on the
+      // printer to close its half.
       sock.once('connect', () => sock.end(payload, done));
       sock.once('timeout', () => fail('timeout (printer busy or unreachable)'));
       sock.once('error', (e) => fail(e.message));
