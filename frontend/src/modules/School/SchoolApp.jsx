@@ -171,7 +171,7 @@ function SchoolShell({ clear }) {
           <GlossikaProgram
             userId={currentUser?.id || null}
             corpusId={courseId}
-            onExit={goHome}
+            onSignIn={openPicker}
           />
         )}
       </main>

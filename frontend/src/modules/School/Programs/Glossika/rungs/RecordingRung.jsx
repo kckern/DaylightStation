@@ -15,7 +15,7 @@ import { languageLog } from '../languageLog.js';
  * This rung only exists when a microphone was detected. It is never rendered
  * as a dead control — the queue simply omits it on a device without one.
  */
-export default function RecordingRung({ entry, audioUrl, onComplete, saving }) {
+export default function RecordingRung({ entry, audioUrl, onComplete, saving, onDisableMicrophone }) {
   const [phase, setPhase] = useState('idle'); // idle | prompting | recording | review
   const [error, setError] = useState(null);
   const [takeUrl, setTakeUrl] = useState(null);
@@ -55,7 +55,12 @@ export default function RecordingRung({ entry, audioUrl, onComplete, saving }) {
       languageLog.capture('start', { seq: entry.seq });
     } catch (err) {
       languageLog.captureError('denied', { seq: entry.seq, error: err?.message });
-      setError('Microphone unavailable. Skip this one or check permissions.');
+      // The old copy told the learner to "skip this one" — and no skip existed
+      // anywhere in this component, so a denied mic stranded the recording
+      // badge forever pointing at a control that was never built. The real
+      // escape hatch is the ladder's own: drop the rung from this device and
+      // sentences graduate across the gap.
+      setError('The microphone is unavailable on this device.');
       setPhase('idle');
     }
   }, [entry.seq]);
@@ -100,7 +105,16 @@ export default function RecordingRung({ entry, audioUrl, onComplete, saving }) {
       {blocked && (
         <p className="lang-rung__notice" role="alert">Audio was blocked — tap Play again.</p>
       )}
-      {error && <p className="lang-rung__notice" role="alert">{error}</p>}
+      {error && (
+        <div className="lang-rung__notice" role="alert">
+          <p>{error}</p>
+          {onDisableMicrophone && (
+            <button type="button" className="lang-btn" onClick={onDisableMicrophone}>
+              Skip recording on this device
+            </button>
+          )}
+        </div>
+      )}
 
       <div className="lang-rung__controls">
         {phase === 'idle' && (

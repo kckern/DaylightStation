@@ -1,7 +1,29 @@
 // Glossika.scss — the language-study program, inside the School kiosk shell.
+//
 // Inherits School's tokens (--school-*) rather than defining a second palette;
-// this mounts inside .school-app and must not look like a different app.
+// this mounts inside .school-app and must not look like a different app. That
+// includes matching its 12px radius and its 64px touch floor.
+//
 // No animation: the kiosk WebView drops frames under transitions/keyframes.
+// Nothing below needs any — every emphasis decision here is colour, size,
+// weight or position.
+//
+// FOUR type sizes, deliberately. An earlier pass had twelve, four of them
+// within 1.6px of each other, which is a scale nobody chose.
+//   0.9   meta / hints
+//   1.05  body, controls
+//   1.35  the source sentence
+//   2.1   the target sentence — the reason this screen exists
+$meta: 0.9rem;
+$body: 1.05rem;
+$source: 1.35rem;
+$target: 2.1rem;
+
+// Weight is emphasis, so it is spent, not sprinkled. Controls and statuses
+// carry none; only the target line and active states do.
+$radius: 12px;
+$touch: 64px;
+$touch-min: 56px;
 
 .lang-program {
   display: flex; flex-direction: column;
@@ -10,21 +32,18 @@
 
   &--loading, &--error, &--guest {
     align-items: center; justify-content: center;
-    height: 100%; gap: 0.75rem;
+    height: 100%; gap: 1rem;
     color: var(--school-muted); text-align: center;
   }
+  &__guest-copy { margin: 0; font-size: $body; }
 
-  &__header { display: flex; align-items: center; gap: 0.75rem; }
-  &__back {
-    min-width: 56px; min-height: 56px;
-    border: none; background: transparent;
-    color: var(--school-fg); font-size: 1.8rem; cursor: pointer;
-  }
-  &__title { flex: 1; margin: 0; font-size: 1.3rem; font-weight: 800; }
-  &__day { color: var(--school-muted); font-weight: 600; margin-left: 0.5rem; }
+  // The School shell already renders the course title and a back chevron
+  // directly above this. All that belongs here is the day and its two menus.
+  &__header { display: flex; align-items: center; gap: 0.5rem; }
+  &__day { flex: 1; margin: 0; font-size: $body; color: var(--school-muted); }
 
   &__progress {
-    position: relative; height: 28px;
+    position: relative; height: 24px;
     border-radius: 999px; overflow: hidden;
     background: var(--school-surface-2);
   }
@@ -32,153 +51,199 @@
   &__progress-label {
     position: absolute; inset: 0;
     display: flex; align-items: center; justify-content: center;
-    font-size: 0.85rem; font-weight: 700; color: var(--school-fg);
+    font-size: $meta; color: var(--school-fg);
   }
 
   &__tabs { display: flex; gap: 0.5rem; flex-wrap: wrap; }
 
   &__notice {
-    margin: 0; padding: 0.85rem 1rem; border-radius: 12px;
+    margin: 0; padding: 0.85rem 1rem; border-radius: $radius;
     background: var(--school-warn); color: #241a05; font-weight: 700;
   }
 
-  &__body { flex: 1; overflow: auto; }
+  // min-height: 0 so this is the only scroller — the host body wraps it and
+  // two nested overflow:auto containers is the double-scroll trap on touch.
+  &__body { flex: 1; min-height: 0; overflow: auto; }
 
   &__complete {
     display: flex; flex-direction: column; align-items: center; justify-content: center;
-    gap: 1rem; height: 100%; color: var(--school-muted);
+    gap: 1rem; min-height: 100%;
   }
-
-  // Text input can only be declared, never detected — this row is where a
-  // device says what it can do. Deliberately small and out of the way.
-  &__capabilities {
-    display: flex; align-items: center; gap: 0.4rem;
-    padding-top: 0.5rem;
-    border-top: 1px solid var(--school-border);
-    font-size: 0.8rem; color: var(--school-muted);
-  }
-  &__caps-label { margin-right: 0.25rem; }
 }
 
+// --- tabs: navigation. The ONLY pill in this program. -----------------------
 .lang-tab {
   position: relative;
-  min-height: 52px; padding: 0 1.1rem;
+  min-height: $touch-min; padding: 0 1.1rem;
   border: 1px solid var(--school-border); border-radius: 999px;
   background: var(--school-surface); color: var(--school-fg);
-  font-size: 0.95rem; font-weight: 700; cursor: pointer;
+  font-size: $body; cursor: pointer;
 
-  &.is-active { background: var(--school-accent); color: var(--school-accent-ink); border-color: transparent; }
+  &.is-active { background: var(--school-accent); color: var(--school-accent-ink); border-color: transparent; font-weight: 700; }
   &__badge {
     margin-left: 0.5rem; padding: 0.1rem 0.45rem;
     border-radius: 999px; background: var(--school-surface-2);
-    font-size: 0.75rem;
+    font-size: $meta;
   }
   &.is-active &__badge { background: rgba(0, 0, 0, 0.2); }
 }
 
-.lang-chip {
-  min-height: 34px; padding: 0 0.7rem;
-  border: 1px solid var(--school-border); border-radius: 999px;
-  background: var(--school-surface); color: var(--school-muted);
-  font-size: 0.78rem; font-weight: 700; cursor: pointer;
-
-  &.is-on { background: var(--school-accent); color: var(--school-accent-ink); border-color: transparent; }
-}
-
 .lang-btn {
-  min-height: 64px; padding: 0 1.6rem;
-  border: 1px solid var(--school-border); border-radius: 14px;
+  min-height: $touch; padding: 0 1.6rem;
+  border: 1px solid var(--school-border); border-radius: $radius;
   background: var(--school-surface-2); color: var(--school-fg);
-  font-size: 1.05rem; font-weight: 700; cursor: pointer;
+  font-size: $body; cursor: pointer;
 
-  &--primary { background: var(--school-accent); color: var(--school-accent-ink); border-color: transparent; }
-  &--recording { background: var(--school-danger); color: #fff; border-color: transparent; }
+  &--primary { background: var(--school-accent); color: var(--school-accent-ink); border-color: transparent; font-weight: 700; }
+  &--recording { background: var(--school-danger); color: #fff; border-color: transparent; font-weight: 700; }
   &:disabled { opacity: 0.5; cursor: default; }
 }
 
-// --- rungs ---
+// --- popover: one dismissal behaviour for both menus ------------------------
+.lang-popover {
+  position: relative;
+
+  &__trigger {
+    min-height: $touch-min; padding: 0 1rem;
+    border: 1px solid var(--school-border); border-radius: $radius;
+    background: var(--school-surface-2); color: var(--school-fg);
+    font-size: $meta; cursor: pointer;
+  }
+  // Covers the viewport so any tap outside closes the menu. On a device with
+  // no Escape key this is the only dismissal there is.
+  &__backdrop {
+    position: fixed; inset: 0; z-index: 20;
+    border: none; background: transparent; cursor: default;
+  }
+  &__panel {
+    position: absolute; top: calc(100% + 0.35rem); z-index: 21;
+    max-height: 60vh; overflow: auto;
+    border: 1px solid var(--school-border); border-radius: $radius;
+    background: var(--school-surface-2);
+    &--right { right: 0; }
+    &--left { left: 0; }
+  }
+}
+
+.lang-menu {
+  margin: 0; padding: 0.35rem; list-style: none;
+
+  &__item {
+    display: block; width: 100%; min-height: $touch-min; padding: 0 2rem;
+    border: none; border-radius: 8px;
+    background: transparent; color: var(--school-fg);
+    font-size: $body; text-align: center; cursor: pointer;
+
+    &.is-selected { background: var(--school-accent); color: var(--school-accent-ink); font-weight: 700; }
+  }
+}
+
+// --- device settings: toggles, NOT navigation -------------------------------
+// Deliberately unlike .lang-tab. These reshape tomorrow's queue rather than
+// changing the view, and when the two shared a pill treatment there was no way
+// to tell "KR" from "Dictation".
+.lang-settings {
+  padding: 0.5rem; min-width: 260px;
+
+  &__title {
+    margin: 0.25rem 0.5rem 0.5rem; font-size: $meta;
+    color: var(--school-muted);
+  }
+  &__row {
+    display: flex; align-items: center; gap: 0.6rem;
+    width: 100%; min-height: $touch-min; padding: 0 0.6rem;
+    border: none; border-radius: 8px;
+    background: transparent; color: var(--school-fg);
+    font-size: $body; text-align: left; cursor: pointer;
+
+    &.is-on { background: var(--school-surface); }
+  }
+  &__state {
+    flex: 0 0 1.25rem; text-align: center;
+    color: var(--school-accent); font-weight: 700;
+  }
+  &__text { display: flex; flex-direction: column; }
+  &__label { color: var(--school-fg); }
+  &__hint { font-size: $meta; color: var(--school-muted); }
+  &__note {
+    margin: 0.5rem 0.6rem 0.25rem; font-size: $meta;
+    color: var(--school-muted);
+  }
+}
+
+// --- rungs ------------------------------------------------------------------
 .lang-rung {
   display: flex; flex-direction: column; align-items: center;
-  gap: 1rem; padding: 1.5rem 1rem; text-align: center;
+  // Centred vertically so the drill does not sit in a different place than the
+  // day-complete state, which made the screen appear to jump between them.
+  justify-content: center;
+  min-height: 100%; gap: 1rem; padding: 1.5rem 1rem; text-align: center;
 
-  &__source { margin: 0; font-size: 1.35rem; color: var(--school-muted); }
-  // The target line is the one being learned — largest, and unhyphenated so a
-  // Hangul sentence never breaks mid-syllable.
-  &__target { margin: 0; font-size: 2.1rem; font-weight: 700; line-height: 1.35; word-break: keep-all; }
-
-  // Follows the audio: whichever line is sounding right now.
+  // The two sentences are one unit; controls are another. Uniform spacing is
+  // spacing as default rather than as a decision.
+  &__source { margin: 0 0 -0.5rem; font-size: $source; color: var(--school-muted); }
+  &__target {
+    margin: 0; font-size: $target; font-weight: 700; line-height: 1.35;
+    // Hangul must not break mid-syllable.
+    word-break: keep-all;
+  }
   .is-sounding { color: var(--school-accent); }
 
-  &__label { font-size: 0.95rem; color: var(--school-muted); }
+  &__label { font-size: $body; color: var(--school-muted); }
   &__input {
-    width: min(100%, 720px); min-height: 64px; padding: 0 1rem;
-    border: 1px solid var(--school-border); border-radius: 12px;
+    width: min(100%, 720px); min-height: $touch; padding: 0 1rem;
+    border: 1px solid var(--school-border); border-radius: $radius;
     background: var(--school-surface); color: var(--school-fg);
     font-size: 1.6rem; text-align: center;
 
     &:focus { outline: 2px solid var(--school-accent); outline-offset: 2px; }
   }
-  &__hint { margin: 0; font-size: 0.8rem; color: var(--school-muted); }
-  &__notice { margin: 0; color: var(--school-warn); font-weight: 700; }
-  &__status, &__saved { color: var(--school-muted); font-weight: 700; }
-  &__controls { display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap; justify-content: center; }
+  &__hint { margin: 0; font-size: $meta; color: var(--school-muted); }
+
+  &__notice {
+    display: flex; flex-direction: column; align-items: center; gap: 0.75rem;
+    margin: 0; padding: 0.85rem 1rem; border-radius: $radius;
+    background: var(--school-warn); color: #241a05;
+    p { margin: 0; }
+  }
+
+  &__status { color: var(--school-muted); }
+  // Completing a sentence is the one moment worth affirming; it used to render
+  // in the same grey as a keyboard hint.
+  &__saved { color: var(--school-accent); font-weight: 700; }
+  &__controls { display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap; justify-content: center; margin-top: 0.5rem; }
   &__playback { max-width: 100%; }
 }
 
-// --- review ---
+// --- review -----------------------------------------------------------------
 .lang-review {
   display: flex; flex-direction: column; gap: 1.5rem;
 
   &__status { color: var(--school-muted); text-align: center; padding: 2rem 0; }
-  &__day-title { margin: 0 0 0.5rem; font-size: 1.1rem; color: var(--school-muted); }
+  &__day-title { margin: 0 0 0.5rem; font-size: $body; color: var(--school-muted); }
   &__list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.5rem; }
 
   &__item {
     display: flex; flex-direction: column; gap: 0.35rem;
     padding: 0.75rem 1rem;
-    border: 1px solid var(--school-border); border-radius: 12px;
-    background: var(--school-surface);
+    border-radius: $radius; background: var(--school-surface);
   }
-  &__rung { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--school-muted); }
-  &__sentence { font-size: 1.05rem; }
-  &__score { font-size: 0.8rem; color: var(--school-muted); }
-  &__missing { font-size: 0.8rem; color: var(--school-warn); }
+  &__rung { font-size: $meta; text-transform: uppercase; letter-spacing: 0.05em; color: var(--school-muted); }
+  &__sentence { font-size: $body; }
+  &__score { font-size: $meta; color: var(--school-fg); }
+  &__missing { font-size: $meta; color: var(--school-warn); }
 }
 
-// Diff colouring is the point of the review surface — what was typed against
-// what was expected. Underline/strikethrough carry the meaning too, so it
-// still reads without colour vision.
+// The diff is the point of the review surface, so it is weighted for the
+// lesson rather than for symmetry. `removed` = what the learner FAILED to
+// produce — that is the thing to study, and it previously rendered in the
+// quietest grey on the surface while their stray characters got danger red.
+// Strikethrough and underline carry the same information without colour, so
+// this still reads without colour vision.
 .lang-diff {
-  font-size: 1.25rem; word-break: keep-all;
+  font-size: $source; word-break: keep-all;
 
   &__same { color: var(--school-fg); }
   &__added { color: var(--school-danger); text-decoration: underline; }
-  &__removed { color: var(--school-muted); text-decoration: line-through; }
-}
-
-// --- pacing ---
-.lang-pacing {
-  position: relative;
-
-  &__button {
-    min-height: 56px; padding: 0 1rem;
-    border: 1px solid var(--school-border); border-radius: 999px;
-    background: var(--school-surface-2); color: var(--school-fg);
-    font-size: 0.95rem; font-weight: 700; cursor: pointer;
-  }
-  &__menu {
-    position: absolute; right: 0; top: calc(100% + 0.35rem); z-index: 10;
-    margin: 0; padding: 0.35rem; list-style: none;
-    max-height: 320px; overflow: auto;
-    border: 1px solid var(--school-border); border-radius: 12px;
-    background: var(--school-surface-2);
-  }
-  &__option {
-    display: block; width: 100%; min-height: 48px; padding: 0 1.5rem;
-    border: none; border-radius: 8px;
-    background: transparent; color: var(--school-fg);
-    font-size: 1rem; text-align: center; cursor: pointer;
-
-    &.is-selected { background: var(--school-accent); color: var(--school-accent-ink); }
-  }
+  &__removed { color: var(--school-warn); text-decoration: line-through; }
 }

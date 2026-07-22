@@ -18,7 +18,7 @@ import { languageLog } from '../languageLog.js';
  * Tab replays the clip. That was the 2016 shortcut and it matters: a learner
  * mid-word should not have to leave the field to hear the sentence again.
  */
-export default function TypedRung({ entry, audioUrl, nextEntry, onComplete, saving }) {
+export default function TypedRung({ entry, audioUrl, nextEntry, onComplete, saving, showShortcuts = false }) {
   const [value, setValue] = useState('');
   const [played, setPlayed] = useState(false);
   const inputRef = useRef(null);
@@ -70,7 +70,13 @@ export default function TypedRung({ entry, audioUrl, nextEntry, onComplete, savi
   return (
     <div className={`lang-rung lang-rung--${entry.rung}`}>
       <div className="lang-rung__controls">
-        <button type="button" className="lang-btn lang-btn--primary" onClick={play}>
+        {/* Play leads until it has been used; after that Submit is the only
+            primary, so the screen always answers "what do I do next" once. */}
+        <button
+          type="button"
+          className={`lang-btn${played ? '' : ' lang-btn--primary'}`}
+          onClick={play}
+        >
           {played ? 'Play again' : 'Play'}
         </button>
       </div>
@@ -102,7 +108,10 @@ export default function TypedRung({ entry, audioUrl, nextEntry, onComplete, savi
         onKeyDown={onKeyDown}
         disabled={saving}
       />
-      <p className="lang-rung__hint">Tab replays · Enter submits</p>
+      {/* Only where those keys exist. A touch panel may have a Hangul IME on
+          its on-screen keyboard and no Tab key at all, and instructions for
+          absent hardware are worse than no instructions. */}
+      {showShortcuts && <p className="lang-rung__hint">Tab replays · Enter submits</p>}
 
       <div className="lang-rung__controls">
         <button

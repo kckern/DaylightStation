@@ -7,6 +7,7 @@ import TypedRung from './rungs/TypedRung.jsx';
 import RecordingRung from './rungs/RecordingRung.jsx';
 import ReviewPanel from './ReviewPanel.jsx';
 import PacingControl from './PacingControl.jsx';
+import DeviceSettings from './DeviceSettings.jsx';
 import './Glossika.scss';
 
 const RUNG_LABELS = {
@@ -28,16 +29,21 @@ const RUNG_LABELS = {
  * Requires an identified learner. A guest produces no records, so the program
  * shows a sign-in prompt rather than a drill that silently discards work.
  */
-export default function GlossikaProgram({ userId, corpusId = 'glossika-korean', onExit }) {
+export default function GlossikaProgram({ userId, corpusId = 'glossika-korean', onSignIn }) {
   const [day, setDay] = useState(null);
   const [status, setStatus] = useState('loading'); // loading | ready | error | empty
   const [activeRung, setActiveRung] = useState(null);
   const [saving, setSaving] = useState(false);
   const [notice, setNotice] = useState(null);
   const [tab, setTab] = useState('study'); // study | review
+  // Sticky for the sitting: the first Play is what grants browser audio
+  // activation, and everything after it can run hands-free.
+  const [armed, setArmed] = useState(false);
 
   const languages = day?.corpus?.languages;
-  const { capabilities, ready: capsReady, update, toggleLanguage } = useCapabilities(corpusId, languages);
+  const {
+    capabilities, ready: capsReady, toggleLanguage, toggleMicrophone, hasHardwareKeyboard,
+  } = useCapabilities(corpusId, languages);
 
   const load = useCallback(async () => {
     if (!userId) return;
@@ -150,10 +156,17 @@ export default function GlossikaProgram({ userId, corpusId = 'glossika-korean', 
     }
   }, [userId, corpusId, load]);
 
+  // A guest is stopped, but never stranded: the picker lives one level up and
+  // was previously reachable only by knowing the header chip was tappable.
   if (!userId) {
     return (
       <div className="lang-program lang-program--guest">
-        <p>Sign in to study — a guest&apos;s work isn&apos;t saved.</p>
+        <p className="lang-program__guest-copy">Sign in to study — a guest&apos;s work isn&apos;t saved.</p>
+        {onSignIn && (
+          <button type="button" className="lang-btn lang-btn--primary" onClick={onSignIn}>
+            Sign in
+          </button>
+        )}
       </div>
     );
   }
@@ -173,14 +186,19 @@ export default function GlossikaProgram({ userId, corpusId = 'glossika-korean', 
 
   return (
     <div className="lang-program">
+      {/* No back control and no course title here: the School shell already
+          renders both above this component, and the first pass stacked a
+          second chevron with the same destination directly beneath the
+          first. */}
       <header className="lang-program__header">
-        {onExit && (
-          <button type="button" className="lang-program__back" onClick={onExit} aria-label="Back">‹</button>
-        )}
-        <h2 className="lang-program__title">
-          {day?.corpus?.label} <span className="lang-program__day">Day {day?.day}</span>
-        </h2>
+        <h2 className="lang-program__day">Day {day?.day}</h2>
         <PacingControl value={day?.dailyLimit} onChange={onPacing} />
+        <DeviceSettings
+          languages={languages}
+          capabilities={capabilities}
+          onToggleLanguage={toggleLanguage}
+          onToggleMic={toggleMicrophone}
+        />
       </header>
 
       <div className="lang-program__progress" role="progressbar" aria-valuenow={percent} aria-valuemin={0} aria-valuemax={100}>
@@ -231,6 +249,8 @@ export default function GlossikaProgram({ userId, corpusId = 'glossika-korean', 
             key={`${entry.rung}-${entry.seq}`}
             entry={entry} nextEntry={nextEntry} audioUrl={audioUrl}
             onComplete={onComplete} saving={saving}
+            autoStart={armed}
+            onActivate={() => setArmed(true)}
           />
         )}
         {tab === 'study' && !allDone && entry && (entry.rung === 'dictation' || entry.rung === 'interpretation') && (
@@ -238,6 +258,7 @@ export default function GlossikaProgram({ userId, corpusId = 'glossika-korean', 
             key={`${entry.rung}-${entry.seq}`}
             entry={entry} nextEntry={nextEntry} audioUrl={audioUrl}
             onComplete={onComplete} saving={saving}
+            showShortcuts={hasHardwareKeyboard}
           />
         )}
         {tab === 'study' && !allDone && entry && entry.rung === 'recording' && (
@@ -245,32 +266,11 @@ export default function GlossikaProgram({ userId, corpusId = 'glossika-korean', 
             key={`${entry.rung}-${entry.seq}`}
             entry={entry} audioUrl={audioUrl}
             onComplete={onComplete} saving={saving}
+            onDisableMicrophone={toggleMicrophone}
           />
         )}
       </main>
 
-      {/* Text input cannot be detected, only declared (see useCapabilities).
-          This is where a device says what it can actually do. */}
-      <footer className="lang-program__capabilities">
-        <span className="lang-program__caps-label">This device can type:</span>
-        {languages && [languages.source, languages.target].map((code) => (
-          <button
-            key={code}
-            type="button"
-            className={`lang-chip${capabilities.textInput.includes(code) ? ' is-on' : ''}`}
-            onClick={() => toggleLanguage(code)}
-          >
-            {code}
-          </button>
-        ))}
-        <button
-          type="button"
-          className={`lang-chip${capabilities.microphone ? ' is-on' : ''}`}
-          onClick={() => update({ microphone: !capabilities.microphone })}
-        >
-          mic
-        </button>
-      </footer>
     </div>
   );
 }
