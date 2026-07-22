@@ -12,6 +12,39 @@
 import { NutriLog } from '#domains/nutrition/entities/NutriLog.mjs';
 import { buildDensityKeyboard, densityPromptText } from '../lib/scaleNutribotConfig.mjs';
 
+/**
+ * Prompt body for a live scale placement. PURE — no store access, no I/O.
+ *
+ * With no container in the buffer this is byte-identical to the legacy
+ * `densityPromptText(gross)` (`⚖️ <n> g`), so an untared prompt is unchanged.
+ * Once a `ct:` scan lands, the container is NAMED on the message the user is
+ * already looking at — that ACK is the only way to tell a tare that registered
+ * from one that didn't. An id no longer in config renders a visible warning
+ * rather than nothing, for the same reason.
+ *
+ * @param {{ gross: number, composition?: object }} args
+ * @param {{ items?: Array<{id:string,label?:string,emoji?:string,grams:number}> }} containers
+ * @returns {string}
+ */
+export function buildScalePromptText({ gross, composition = {} }, containers = { items: [] }) {
+  const lines = [densityPromptText(gross)];
+
+  const containerId = composition?.container;
+  if (containerId) {
+    const item = (containers?.items || []).find((c) => c.id === containerId);
+    if (item) {
+      const net = Math.max(0, gross - item.grams);
+      lines[0] = `⚖️ ${gross} g gross`;
+      lines.push(`➖ ${item.emoji || ''} ${item.label || item.id} (${item.grams} g)`.trim());
+      lines.push(`= ${net} g net`);
+    } else {
+      lines.push(`⚠️ unknown container "${containerId}" — not tared`);
+    }
+  }
+
+  return lines.join('\n');
+}
+
 export class LogFoodFromScale {
   #messagingGateway; #foodLogStore; #conversationStateStore; #scaleConfig; #config; #logger; #encodeCallback;
 
@@ -35,7 +68,7 @@ export class LogFoodFromScale {
   }
 
   async execute(input) {
-    const { userId, conversationId, grams, unit, scaleId, existingLogUuid, messageId } = input;
+    const { userId, conversationId, grams, unit, scaleId, existingLogUuid, messageId, composition } = input;
     const gross = Math.round(Number(grams));
     if (!Number.isFinite(gross) || gross <= 0) {
       this.#logger.warn?.('logScale.badGrams', { scaleId, grams });
@@ -56,7 +89,8 @@ export class LogFoodFromScale {
         await this.#foodLogStore.save(updated);
         const choices = buildDensityKeyboard(cfg, this.#encodeCallback, existingLogUuid);
         try {
-          await this.#messagingGateway.updateMessage(conversationId, messageId, { text: densityPromptText(gross), choices, inline: true });
+          const editText = buildScalePromptText({ gross, composition }, cfg?.containers);
+          await this.#messagingGateway.updateMessage(conversationId, messageId, { text: editText, choices, inline: true });
         } catch (e) {
           this.#logger.warn?.('logScale.editFailed', { error: e.message });
         }
@@ -79,7 +113,7 @@ export class LogFoodFromScale {
     });
     await this.#foodLogStore.save(nutriLog);
 
-    const text = densityPromptText(gross);
+    const text = buildScalePromptText({ gross, composition }, cfg?.containers);
     const choices = buildDensityKeyboard(cfg, this.#encodeCallback, nutriLog.id);
     if (this.#conversationStateStore) {
       await this.#conversationStateStore.set(conversationId, {

@@ -47,13 +47,14 @@ function makeFakeStore() {
 }
 
 describe('ScaleNutribotBridge → CompositionStore', () => {
-  let bus; let store;
+  let bus; let store; let execute;
   const emit = (grams, stable = true) => bus.emit('food-scale', { id: 'kitchen', grams, stable, unit: 'g' });
 
   function build({ compositionStore } = {}) {
     const m = makeContainer();
     bus = makeBus();
-    createScaleNutribotBridge({
+    execute = m.execute;
+    return createScaleNutribotBridge({
       eventBus: bus,
       nutribotContainer: m.container,
       userId: 'test-user',
@@ -127,5 +128,79 @@ describe('ScaleNutribotBridge → CompositionStore', () => {
     emit(480); await flush();
     emit(600); await flush();
     await expect(Promise.resolve(emit(480))).resolves.not.toThrow();
+  });
+
+  it('passes the composition snapshot through on create and on edit', async () => {
+    store.read = () => ({ grams: 600, unit: 'g', density: 4, container: 'mug', complete: true, active: true });
+    build({ compositionStore: store });
+    emit(480); await flush();
+    emit(600); await flush();          // create
+    emit(650); await flush();          // edit in place
+
+    expect(execute.mock.calls[0][0].composition).toMatchObject({ container: 'mug', density: 4 });
+    expect(execute.mock.calls[1][0].composition).toMatchObject({ container: 'mug', density: 4 });
+  });
+});
+
+describe('ScaleNutribotBridge.refreshPrompt', () => {
+  let bus; let store; let execute;
+
+  const emit = (grams, stable = true) => bus.emit('food-scale', { id: 'kitchen', grams, stable, unit: 'g' });
+
+  function build({ compositionStore } = {}) {
+    const m = makeContainer();
+    bus = makeBus();
+    execute = m.execute;
+    return createScaleNutribotBridge({
+      eventBus: bus,
+      nutribotContainer: m.container,
+      userId: 'test-user',
+      conversationId: 'telegram:b1_c2',
+      scaleConfig: normalizeScaleNutribotConfig({}),
+      logger,
+      now: () => 1_000_000,
+      compositionStore,
+    });
+  }
+
+  beforeEach(() => { store = makeFakeStore(); });
+
+  it('is exposed on the object the bridge returns', () => {
+    const bridge = build({ compositionStore: store });
+    expect(typeof bridge.refreshPrompt).toBe('function');
+    expect(typeof bridge.dispose).toBe('function');
+  });
+
+  it('returns false and does not throw when nothing is live', async () => {
+    const bridge = build({ compositionStore: store });
+    await expect(bridge.refreshPrompt('kitchen')).resolves.toBe(false);
+    await expect(bridge.refreshPrompt('nonexistent-scale')).resolves.toBe(false);
+    expect(execute).not.toHaveBeenCalled();
+  });
+
+  it('re-renders the live prompt in place with the current composition', async () => {
+    const bridge = build({ compositionStore: store });
+    emit(480); await flush();
+    emit(600); await flush();          // prompt is live at 600 g
+    execute.mockClear();
+
+    store.read = () => ({ grams: 600, unit: 'g', density: null, container: 'mug', complete: false, active: true });
+    await expect(bridge.refreshPrompt('kitchen')).resolves.toBe(true);
+
+    expect(execute).toHaveBeenCalledTimes(1);
+    const arg = execute.mock.calls[0][0];
+    expect(arg.grams).toBe(600);                       // same weight — only composition changed
+    expect(arg.existingLogUuid).toBe('l1');
+    expect(arg.messageId).toBe('m1');
+    expect(arg.composition).toMatchObject({ container: 'mug' });
+  });
+
+  it('returns false rather than throwing when the edit blows up', async () => {
+    const bridge = build({ compositionStore: store });
+    emit(480); await flush();
+    emit(600); await flush();
+    execute.mockRejectedValueOnce(new Error('telegram down'));
+
+    await expect(bridge.refreshPrompt('kitchen')).resolves.toBe(false);
   });
 });

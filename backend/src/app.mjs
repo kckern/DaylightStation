@@ -2349,6 +2349,13 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     });
   }
 
+  // Late-bound: the scan handler below needs the scale bridge to ACK a tare on the
+  // live prompt, but the bridge is constructed much further down, conditionally on
+  // the head-of-household and bot id resolving. Hoisting that block would change
+  // startup ordering for a dependency the closure only touches on a scan — long
+  // after startup — so we bind the reference instead.
+  let scaleNutribotBridge = null;
+
   // Trigger dispatch (NFC modality source: apps/nfc/config.yml; barcode modality
   // shares this same dispatch core — see the barcode-relay wiring just below).
   const { router: triggerRouter, triggerDispatchService } = createTriggerApiRouter({
@@ -2396,6 +2403,11 @@ export async function createApp({ server, logger, configPaths, configExists, ena
               device: relay.device, scaleId, kind: outcome.kind, ok: outcome.ok !== false,
               error: outcome.error || null,
             });
+            // ACK on the message the user is already looking at. Fire-and-forget:
+            // a failed edit must not swallow a scan that already landed in the buffer.
+            if (outcome.ok !== false) {
+              scaleNutribotBridge?.refreshPrompt?.(scaleId)?.catch?.(() => {});
+            }
             return;
           }
         } else if (!scaleId) {
@@ -2609,7 +2621,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
       : null;
     const scaleBotId = systemBots.nutribot?.telegram?.bot_id || '';
     if (scaleHeadPlatformId && scaleBotId) {
-      createScaleNutribotBridge({
+      scaleNutribotBridge = createScaleNutribotBridge({
         eventBus,
         nutribotContainer: nutribotServices.nutribotContainer,
         userId: scaleHeadUser,
