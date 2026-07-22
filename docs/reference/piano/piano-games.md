@@ -289,10 +289,14 @@ Untimed note-reading trainer with two card types: **staff cards** (notes shown o
 ```
 PianoFlashcards
 ├── ActionStaff            (staff cards — large centered card showing target note(s))
-├── ChordCard              (chord cards — large chord symbol face)
+├── ChordCard              (chord cards — live grand staff + chord symbol + spelled-out name)
+│   └── ChordStaffRenderer (shared MusicNotation — renders currently-held notes)
+├── LevelPicker            (modal level menu, opened from the level block)
 ├── AttemptHistory         (green/red dots + accuracy %)
 └── PianoKeyboard          (visual keyboard with highlighted targets)
 ```
+
+The chord card face has three stacked elements: a grand staff that starts **empty** and live-renders whatever the player is holding, the tab-style symbol big (`Dm`), and the spelled-out name small and light ("D minor").
 
 ### File Inventory
 
@@ -304,7 +308,9 @@ PianoFlashcards
 | `PianoFlashcards/flashcardEngine.js` | Pure functions: card generation, match evaluation (staff + chord), start-level resolution |
 | `PianoFlashcards/flashcardEngine.test.js` | Vitest tests for engine functions |
 | `PianoFlashcards/components/AttemptHistory.jsx` | Rolling attempt dots + accuracy display |
-| `PianoFlashcards/components/ChordCard.jsx` | Chord-symbol card face (root + quality suffix) |
+| `PianoFlashcards/components/ChordCard.jsx` | Chord card face: live staff + symbol + long name |
+| `PianoFlashcards/components/LevelPicker.jsx` | Modal level menu (jump to any level) |
+| `PianoFlashcards/useFlashcardGame.test.js` | Hook tests: rearm guard, wrong-bass miss, level select |
 
 PianoFlashcards uses `useAutoGameLifecycle` for mount auto-start and auto-deactivate on completion.
 
@@ -325,15 +331,21 @@ IDLE ──[startGame()]──▶ PLAYING ──[level 8 threshold]──▶ COM
 - `accuracy` — percentage from last 20 attempts
 - `startGame()`, `deactivate()`
 
-### Per-User Start Level
+### Per-User Start Level & Level Picker
 
-`games.flashcards.user_start_levels` in `piano.yml` maps a kiosk user id to a level **name**; that user's game starts (and resets) at that level instead of level 0. Unknown users, missing maps, or unmatched names fall back to level 0. The kiosk's `GameHost` passes `currentUser` from the piano user context; mounts without the context (visualizer overlay) get default levels.
+Start-level resolution, highest priority first:
+
+1. **Saved preference** — the level last picked in the in-game level menu, stored per-user (`flashcardsLevel` in the piano preferences blob, `PUT /api/v1/piano/users/:id/preferences`).
+2. **`games.flashcards.user_start_levels`** in `piano.yml` — maps a kiosk user id to a level **name**.
+3. Level 0.
+
+Tapping the level block (left stats column) opens the **LevelPicker** — a modal listing every level (Notes and Chords alike); anyone can jump anywhere. Picking a level resets the score, deals a fresh card, and saves the choice as that user's new starting level. The kiosk's `GameHost` passes `currentUser` from the piano user context; mounts without the context (visualizer overlay) get default levels and no persistence.
 
 ```yaml
 games:
   flashcards:
     user_start_levels:
-      kckern: "Major Chords"
+      kckern: "Just C"
 ```
 
 ### Match Evaluation
@@ -357,7 +369,11 @@ Chord-spelling cards (`evaluateChordMatch` — octave-free, root-sensitive):
 
 On a chord-card hit the keyboard highlights a root-position voicing near C4 (`rootPositionVoicing`). Chord tolerance: players can roll chords (press notes sequentially while holding); the match stays `partial` until complete.
 
-### 17 Difficulty Levels
+**Carryover guard (`awaitRelease`):** a freshly dealt card is not judged until all notes are released. Without this, holding a correct chord through the 400ms advance would instantly fail the next card against the previous card's notes.
+
+**Telemetry:** `card-shown`, `card-hit` (with `held` + `firstTry`), and `card-miss` (with `held` + `reason: wrong-note | wrong-bass`) are all `info`-level and ship to the backend, alongside `game-started {startLevel}`, `level-select`, `level-advance`, and `game-complete`.
+
+### 18 Difficulty Levels
 
 Staff-reading ladder (levels 0–8):
 
@@ -373,26 +389,28 @@ Staff-reading ladder (levels 0–8):
 | 7 | Triad | C4-C5 | Chromatic | 240 |
 | 8 | Triad | C3-C6 | Chromatic | 260 |
 
-Chord-spelling ladder (levels 9–16, `card_type: chord`, all 12 roots, sharp-spelled):
+Chord-spelling ladder (levels 9–17, `card_type: chord`). Difficulty ramps by **which roots are in play** — qualities stay mixed within every level so no level drills a single chord shape. Each level declares `roots:` (note names, sharps or flats; omitted = all 12) and `qualities:`:
 
-| Level | Name | Qualities | Score to advance |
-|-------|------|-----------|-----------------|
-| 9 | Major Chords | major | 140 |
-| 10 | Minor Chords | minor | 160 |
-| 11 | Major vs Minor | major, minor | 180 |
-| 12 | Sus Chords | sus2, sus4 | 180 |
-| 13 | Dim & Aug | diminished, augmented | 200 |
-| 14 | Dominant 7ths | dominant7 | 200 |
-| 15 | Major & Minor 7ths | major7, minor7 | 220 |
-| 16 | Jazz Mix | all nine qualities | 260 |
+| Level | Name | Roots | Qualities | Score to advance |
+|-------|------|-------|-----------|-----------------|
+| 9 | Just C | C | major, minor, 7 | 100 |
+| 10 | C F G | C, F, G | major, minor, 7 | 120 |
+| 11 | Around the Campfire | C, F, G, D, A | + sus2, sus4 | 140 |
+| 12 | White Roots | all naturals | major, minor, 7, sus2, sus4 | 160 |
+| 13 | Shady Characters | all naturals | + diminished, augmented | 180 |
+| 14 | Sevenths Deepen | all naturals | + maj7, m7 | 200 |
+| 15 | Black Keys | C# D# F# G# A# | major, minor, 7 | 200 |
+| 16 | Full Palette | all 12 | maj/min/dim/aug/sus/7ths | 220 |
+| 17 | Ninths & Beyond | all 12 | + 9, maj9, m9 | 240 |
 
-Quality vocabulary (`CHORD_QUALITIES`): major ``, minor `m`, diminished `°`, augmented `+`, sus2/sus4, dominant7 `7`, major7 `maj7`, minor7 `m7` — interval templates match `theory/chordNaming.js`.
+Quality vocabulary (`CHORD_QUALITIES`): major ``, minor `m`, diminished `°`, augmented `+`, sus2/sus4, dominant7 `7`, major7 `maj7`, minor7 `m7`, dominant9 `9`, major9 `maj9`, minor9 `m9` — interval templates match `theory/chordNaming.js`; each also carries a spelled-out `longName` ("dominant 7th") for the card's small line.
 
 ### Testing
 
 | File | Framework | Coverage |
 |------|-----------|----------|
-| `flashcardEngine.test.js` | Vitest | 29 tests: card generation (staff + chord), match evaluation (both types), voicing, start-level resolution |
+| `flashcardEngine.test.js` | Vitest | 35 tests: card generation (staff + chord, roots filter), match evaluation (both types), miss reasons, voicing, start-level resolution |
+| `useFlashcardGame.test.js` | Vitest | 5 tests: per-user start, scoring, wrong-bass miss, carryover rearm guard, level select |
 
 ---
 
