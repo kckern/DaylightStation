@@ -72,6 +72,139 @@ describe('school router status mapping', () => {
   });
 });
 
+describe('school router: materials framework', () => {
+  describe('with materials use-cases wired', () => {
+    let matServer, matBase, unitsCalls, progressCalls;
+
+    beforeAll(async () => {
+      unitsCalls = [];
+      progressCalls = [];
+      const getMaterialCatalog = {
+        execute: async () => ({
+          sections: [{ category: 'course', label: 'Courses' }],
+          materials: [{ id: 'plex:1', title: 'Shakespeare', category: 'course' }],
+        }),
+      };
+      const getMaterialUnits = {
+        execute: async ({ materialId, userId }) => {
+          unitsCalls.push({ materialId, userId });
+          if (materialId === 'plex:missing') throw new EntityNotFoundError('material', materialId);
+          return { material: { id: materialId }, units: [{ id: 'plex:u1', completed: false }] };
+        },
+      };
+      const materialProgressStore = {
+        record: (args) => { progressCalls.push(args); return { ...args }; },
+      };
+
+      const app = express();
+      app.use(express.json());
+      app.use('/api/v1/school', createSchoolRouter({
+        schoolService: svc,
+        getMaterialCatalog,
+        getMaterialUnits,
+        materialProgressStore,
+        logger: { error: () => {}, warn: () => {} },
+      }));
+      await new Promise((res) => { matServer = app.listen(0, res); });
+      matBase = `http://127.0.0.1:${matServer.address().port}/api/v1/school`;
+    });
+    afterAll(() => new Promise((res) => matServer.close(res)));
+
+    it('GET /materials 200s with the catalog shape', async () => {
+      const r = await fetch(`${matBase}/materials`);
+      expect(r.status).toBe(200);
+      expect(await r.json()).toEqual({
+        sections: [{ category: 'course', label: 'Courses' }],
+        materials: [{ id: 'plex:1', title: 'Shakespeare', category: 'course' }],
+      });
+    });
+
+    it('GET /materials/:id/units?userId= passes materialId+userId through and returns the shape', async () => {
+      const r = await fetch(`${matBase}/materials/plex:1/units?userId=kid1`);
+      expect(r.status).toBe(200);
+      expect(await r.json()).toEqual({ material: { id: 'plex:1' }, units: [{ id: 'plex:u1', completed: false }] });
+      expect(unitsCalls).toContainEqual({ materialId: 'plex:1', userId: 'kid1' });
+    });
+
+    it('GET /materials/:id/units without userId passes userId:undefined', async () => {
+      await fetch(`${matBase}/materials/plex:1/units`);
+      expect(unitsCalls).toContainEqual({ materialId: 'plex:1', userId: undefined });
+    });
+
+    it('GET /materials/:id/units 404s on an unknown materialId', async () => {
+      const r = await fetch(`${matBase}/materials/plex:missing/units`);
+      expect(r.status).toBe(404);
+    });
+
+    it('PUT progress with a userId writes via the store and returns {ok:true}', async () => {
+      const r = await fetch(`${matBase}/materials/plex:1/units/plex:u1/progress`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: 'kid1', percent: 50, playhead: 30, durationMs: 60000 }),
+      });
+      expect(r.status).toBe(200);
+      expect(await r.json()).toEqual({ ok: true });
+      expect(progressCalls).toContainEqual({ userId: 'kid1', plexId: 'plex:u1', percent: 50, seconds: 30, duration: 60 });
+    });
+
+    it('PUT progress without a userId (guest) does not write, returns recorded:false', async () => {
+      const before = progressCalls.length;
+      const r = await fetch(`${matBase}/materials/plex:1/units/plex:u1/progress`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ percent: 50, playhead: 30, durationMs: 60000 }),
+      });
+      expect(r.status).toBe(200);
+      expect(await r.json()).toEqual({ ok: true, recorded: false });
+      expect(progressCalls.length).toBe(before);
+    });
+  });
+
+  describe('with no materials config wired (getMaterialCatalog/getMaterialUnits absent)', () => {
+    let noConfigServer, noConfigBase, warnEvents;
+
+    beforeAll(async () => {
+      warnEvents = [];
+      const app = express();
+      app.use(express.json());
+      app.use('/api/v1/school', createSchoolRouter({
+        schoolService: svc,
+        logger: { error: () => {}, warn: (event) => warnEvents.push(event) },
+      }));
+      await new Promise((res) => { noConfigServer = app.listen(0, res); });
+      noConfigBase = `http://127.0.0.1:${noConfigServer.address().port}/api/v1/school`;
+    });
+    afterAll(() => new Promise((res) => noConfigServer.close(res)));
+
+    it('GET /materials serves an empty catalog and warns school.materials.config-missing ONCE across repeated requests', async () => {
+      const r1 = await fetch(`${noConfigBase}/materials`);
+      expect(r1.status).toBe(200);
+      expect(await r1.json()).toEqual({ sections: [], materials: [] });
+
+      const r2 = await fetch(`${noConfigBase}/materials`);
+      expect(r2.status).toBe(200);
+      expect(await r2.json()).toEqual({ sections: [], materials: [] });
+
+      expect(warnEvents.filter((e) => e === 'school.materials.config-missing')).toHaveLength(1);
+    });
+
+    it('GET /materials/:id/units 404s (no use-case wired)', async () => {
+      const r = await fetch(`${noConfigBase}/materials/plex:1/units`);
+      expect(r.status).toBe(404);
+    });
+
+    it('PUT progress with a userId but no store returns recorded:false, does not throw', async () => {
+      const r = await fetch(`${noConfigBase}/materials/plex:1/units/plex:u1/progress`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: 'kid1', percent: 50, playhead: 30, durationMs: 60000 }),
+      });
+      expect(r.status).toBe(200);
+      expect(await r.json()).toEqual({ ok: true, recorded: false });
+    });
+  });
+});
+
 describe('school router: attempt append failure (PersistenceError) -> 500', () => {
   let persistServer, persistBase;
   const persistSvc = {
