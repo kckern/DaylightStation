@@ -1,7 +1,12 @@
 # School (Portal Homeschool) — Reference
 
-> **Status:** Sub-project 1 is built and deployed. Everything else is **specced
-> only — no implementation exists.** Each section below says which it is.
+> **Status:** Built and deployed — identity + quizzes/flashcards, the subject
+> wall home (nine paired subjects, 3×3), the materials framework (video/audio
+> courses with quiz gates, quiz-on-demand, the FitnessShow-style unit browser),
+> the program report interface, language study (Glossika ladder), and
+> **printing** (worksheets on the kitchen laser printer). Writing, typing, the
+> parent reassignment UI, and reading (PDF/EPUB) remain **specced only** —
+> section 3. Each section below says which it is.
 >
 > **Requirements (the whole programme):** [`docs/superpowers/specs/2026-07-21-portal-homeschool-requirements.md`](../../superpowers/specs/2026-07-21-portal-homeschool-requirements.md)
 >
@@ -106,9 +111,12 @@ Science & Nature, Life & Skills, History & Geography, Scripture & Gospel,
 Art & Music — in a 3×3 grid on the left two-thirds, each tile carrying an
 inline-SVG shelf icon (`home/icons/`, household SVG Repo set), and a
 meta rail on the right third holding the **student panel** (identity, up-next
-action, latest score, done-for-today flip; tap = the full progress board) and
-the **Library**. One home serves claimed and unclaimed visitors alike — the
-student panel is itself the claim affordance.
+action, latest score, done-for-today flip; tap = the full progress board), the
+**Library**, and **Print** (worksheets, see Printing below). One home serves
+claimed and unclaimed visitors alike — the student panel is itself the claim
+affordance; when nobody is claimed it shows the household's **kid faces**
+(roster filtered to under-18) as one-tap claim targets rather than a picker
+button.
 
 Subjects are the top level; the second level inside each subject is instances
 of **reusable content frameworks** — a custom program (Glossika), Plex
@@ -319,6 +327,111 @@ supplier is an adapter.
 
 **Design spec:** [`2026-07-21-glossika-program-design.md`](../../_wip/plans/2026-07-21-glossika-program-design.md)
 
+### Printing (worksheets on the kitchen laser printer)
+
+A child finds a worksheet in School and prints it themselves on the household
+laser printer. The whole feature exists to make that self-service *without*
+becoming a way to print a ream of paper unattended — so a **rolling page quota
+with grown-up approval** is the spine, not an afterthought.
+
+**The quota decides three ways** (`evaluatePrintQuota`, pure domain). Over a
+rolling window (default **5 pages / 60 min**), a request is:
+
+- **allowed** — within budget: prints immediately and logs the pages;
+- **needs approval** — would exceed the budget: prints *nothing*, files a
+  pending request for a grown-up;
+- **denied** — a single job over the per-job hard cap (default 20 pages):
+  refused outright, because approval is for "a bit much", not "the whole book".
+
+The window is a strict rolling sum of the child's own recent jobs; a job
+exactly `windowMinutes` old has aged out. `remaining` is budget-minus-used
+*before* the request, which is what the on-screen banner shows.
+
+**A printable resolves to a PDF two ways** (config-declared in `school.yml`
+`printables:`):
+
+- `type: bank` — an existing quiz bank rendered as a **worksheet PDF**
+  (`WorksheetRenderer`, pdfkit). The same bank that drives an on-screen quiz
+  becomes paper: numbered questions, lettered multiple-choice options, ruled
+  lines for short-answer/cloze, two columns for matching. **Answers are never
+  printed** — it is the worksheet, not the key (the on-screen quiz is still
+  where grading happens).
+- `type: pdf` — a file from `data/household/content/worksheets/`.
+
+Page count is resolved per printable (rendered for a bank, sniffed from the PDF
+for a file) so the picker can show it and the quota can price it.
+
+**Approval is adult-only and never self-served.** An over-budget request
+becomes a pending entry; a **grown-up** (roster member ≥ 18 by `birthyear`)
+approves or denies it. Approve re-renders and prints the job and logs it with
+`approvedBy`; deny drops it, printing nothing. A child cannot approve their own
+print — the check is in the service, and the frontend only shows the approvals
+panel to an adult. The pending queue is one household list; a future Telegram
+hook can approve from the same API without a frontend.
+
+**A guest cannot print** — no identity, no attribution, nothing to meter. The
+button tells them to sign in and the service also rejects a guest request.
+
+**Transport: raw JetDirect (port 9100), not IPP.** The kitchen Brother
+HL-L2460DW's IPP does **not** accept a PDF — it advertises only `image/urf` +
+`image/pwg-raster` + generic `application/octet-stream`, rejects
+`application/pdf` (IPP status `0x040a`) and hangs on an octet-stream PDF (its
+auto-detect can't parse PDF). Its built-in **PDF Direct Print on port 9100**
+renders the PDF as-is. So `LaserPrinterAdapter.printPdf` streams over 9100 and
+resolves on *flush* (JetDirect is fire-and-forget and often leaves its half of
+the socket open after receiving a job — waiting on socket `close` hangs until
+the idle timeout even though the job printed). IPP (port 631) is retained for
+`getStatus`/`ping` only, where its structured Get-Printer-Attributes is clean.
+No CUPS, no client-side rasterization, no npm printing dependency.
+
+The adapter is **dumb transport** — it pushes bytes and reports state. Every
+policy decision (quota, approval, who-may-print) lives in `PrintService`, per
+the layer rules. The printer host defaults to the `kitchen-printer` entry in
+`devices.yml`; `school.yml` `printing:` need only opt in and can override
+limits.
+
+| Layer | Path |
+|---|---|
+| Domain (pure) | `backend/src/2_domains/school/printing.mjs` — the quota policy |
+| Rendering | `backend/src/1_rendering/school/WorksheetRenderer.mjs` — bank → worksheet PDF |
+| Adapter | `backend/src/1_adapters/hardware/laser-printer/` — `LaserPrinterAdapter` (raw 9100) + `ipp.mjs` (status codec) |
+| Application | `backend/src/3_applications/school/PrintService.mjs` — resolve → quota → print/pend, approve/deny |
+| Persistence | `YamlSchoolDatastore` — `readPrintLog`/`appendPrintLog`, `readPrintPending`/`savePrintPending` |
+| API | `backend/src/4_api/v1/routers/school.mjs` → `/api/v1/school/print/*` |
+| Frontend | `frontend/src/modules/School/print/PrintCenter.jsx` (rail tile + `…/print` deep link) |
+| Print log | `data/apps/school/print-log.yml` (append-only; feeds the quota) |
+| Pending queue | `data/apps/school/print-pending.yml` |
+| Worksheet files | `data/household/content/worksheets/*.pdf` (for `type: pdf`) |
+| Device | `data/household/config/devices.yml` → `kitchen-printer` (Brother HL-L2460DW) |
+| Config | `data/household/config/school.yml` → `printing:` + `printables:` |
+
+**API:** `GET /print/printables` (with resolved page counts), `GET
+/print/quota?userId=`, `POST /print/request` `{userId, printableId, copies}` →
+`{decision: printed|approval|deny, …}`, `GET /print/pending`, `POST
+/print/:requestId/approve` `{approver}`, `POST /print/:requestId/deny`.
+
+**Config** (`school.yml`):
+
+```yaml
+printing:              # optional; omitting host defaults to the kitchen-printer device
+  windowMinutes: 60
+  pagesPerWindow: 5    # pages a child may print unattended per window
+  maxPagesPerJob: 20   # hard ceiling on one job (approval cannot bypass it)
+printables:
+  - id: state-capitals
+    label: US State Capitals
+    type: bank
+    bankId: us-state-capitals   # a TOP-LEVEL bank id under data/content/quizzes/
+    subject: history
+```
+
+Boot-cached like the rest of `school.yml`; edits need a container restart.
+
+**Explicitly not built** (named deferrals): duplex/paper-size selection (jobs
+print single-sided default), a print history surface for parents (the log
+exists; nothing renders it), and Telegram approval (the pending API is ready
+for it, no bot hook is wired).
+
 ---
 
 ## 3. Specced, not built
@@ -397,3 +510,19 @@ No code exists for anything in this section. Each links its spec.
   MediaRecorder implementation that predates and ignores
   `modules/VoiceCapture/`. Pre-existing debt; School uses the shared module and
   adds no new fragmentation.
+- **The kitchen laser printer prints over raw port 9100, NOT IPP.** The Brother
+  HL-L2460DW rejects `application/pdf` via IPP (`0x040a`) and hangs on an
+  octet-stream PDF; only its raw JetDirect PDF Direct Print renders a PDF. Do
+  not "fix" the adapter to POST PDFs over IPP — it was tried and does not work.
+  IPP is used for status only. See Printing → Transport.
+- **Raw 9100 is single-session.** A print in progress (or a leaked half-open
+  client socket) holds the port and blocks new connections, while IPP status
+  keeps reporting the printer `idle` — the two ports are independent. A wedged
+  9100 clears on the printer's own TCP idle timeout. `printPdf` resolves on
+  flush, not on the printer closing the socket, precisely so a fire-and-forget
+  job doesn't hang on that.
+- **Bank ids for printables must be top-level.** `readBankRaw` forbids `/` in a
+  bank id and `listYamlFiles` is non-recursive, so only `*.yml` directly under
+  `data/content/quizzes/` (e.g. `us-state-capitals`) resolve as a printable
+  `bankId`. Nested banks (`math/…`, `civ/…`) are reachable only via a material
+  unit's `unit:` backlink, not by path id.
