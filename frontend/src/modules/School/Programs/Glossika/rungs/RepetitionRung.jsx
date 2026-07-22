@@ -14,9 +14,15 @@ import { languageLog } from '../languageLog.js';
  * This is the only rung with no input requirement, which is why new sentences
  * enter here and why it is the one rung a bare touch panel can always run.
  */
-export default function RepetitionRung({ entry, audioUrl, nextEntry, onComplete, saving }) {
+export default function RepetitionRung({
+  entry, audioUrl, nextEntry, onComplete, saving, autoStart = false, onActivate,
+}) {
   const [phase, setPhase] = useState('idle'); // idle | playing | done
   const [highlight, setHighlight] = useState(null);
+  // Set when the learner stops on purpose. Without it, Stop would return the
+  // rung to `idle` and the auto-advance effect would restart it 350ms later —
+  // a stop button that does not stop.
+  const [halted, setHalted] = useState(false);
 
   const handleEnd = useCallback(() => {
     setPhase('done');
@@ -29,6 +35,7 @@ export default function RepetitionRung({ entry, audioUrl, nextEntry, onComplete,
 
   useEffect(() => {
     setPhase('idle');
+    setHalted(false);
     setHighlight(null);
     languageLog.rung('enter', { rung: 'repetition', seq: entry.seq });
     return () => stop();
@@ -49,8 +56,21 @@ export default function RepetitionRung({ entry, audioUrl, nextEntry, onComplete,
 
   const start = useCallback(() => {
     setPhase('playing');
+    setHalted(false);
+    onActivate?.();
     playSequence(clipsFor(entry, audioUrl));
-  }, [entry, audioUrl, playSequence]);
+  }, [entry, audioUrl, playSequence, onActivate]);
+
+  // Once the learner has tapped Play once, the rest of the set runs hands-free.
+  // The first pass demanded a tap per sentence — twenty sentences, twenty taps
+  // — placed in exactly the gap the audio preloading exists to remove. The
+  // first tap is still required and still real: it is what grants the browser
+  // activation that makes any of this audible.
+  useEffect(() => {
+    if (!autoStart || halted || phase !== 'idle') return undefined;
+    const id = window.setTimeout(start, 350);
+    return () => window.clearTimeout(id);
+  }, [autoStart, halted, phase, start]);
 
   const sourceLang = entry.prompt?.[0]?.language;
   const targetLang = entry.prompt?.find((p) => p.role === 'target')?.language;
@@ -71,13 +91,18 @@ export default function RepetitionRung({ entry, audioUrl, nextEntry, onComplete,
       )}
 
       <div className="lang-rung__controls">
-        {phase === 'idle' && (
+        {phase === 'idle' && (!autoStart || halted) && (
           <button type="button" className="lang-btn lang-btn--primary" onClick={start}>
             Play
           </button>
         )}
+        {phase === 'idle' && autoStart && !halted && <span className="lang-rung__status">Next…</span>}
         {phase === 'playing' && (
-          <button type="button" className="lang-btn" onClick={() => { stop(); setPhase('idle'); }}>
+          <button
+            type="button"
+            className="lang-btn"
+            onClick={() => { stop(); setHalted(true); setPhase('idle'); }}
+          >
             Stop
           </button>
         )}

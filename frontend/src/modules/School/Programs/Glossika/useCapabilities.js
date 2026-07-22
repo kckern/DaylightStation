@@ -123,7 +123,18 @@ export function useCapabilities(corpusId, languages) {
 
   const capabilities = useMemo(() => ({ microphone, textInput }), [microphone, textInput]);
 
-  return { capabilities, ready, update, toggleLanguage };
+  const toggleMicrophone = useCallback(() => {
+    update({ microphone: !microphone });
+  }, [microphone, update]);
+
+  // Whether keyboard SHORTCUTS are worth mentioning — distinct from whether a
+  // script can be typed. A touch panel may well have a Hangul IME on its
+  // on-screen keyboard while having no Tab or Enter key at all, so telling
+  // that learner "Tab replays · Enter submits" is instructions for hardware
+  // they do not have.
+  const hasHardwareKeyboard = useMemo(() => guessHasKeyboard(), []);
+
+  return { capabilities, ready, update, toggleLanguage, toggleMicrophone, hasHardwareKeyboard };
 }
 
 export default useCapabilities;

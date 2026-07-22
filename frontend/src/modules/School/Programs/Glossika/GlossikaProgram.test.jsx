@@ -140,6 +140,30 @@ describe('repetition', () => {
   });
 });
 
+describe('repetition auto-advance', () => {
+  it('requires the first tap, then runs hands-free', async () => {
+    // The first tap is real — it grants the browser audio activation. What it
+    // must not be is a tap per sentence, twenty times a sitting.
+    dayMock.mockResolvedValue(dayPayload({ queue: [entry(1, 'repetition')] }));
+    logMock.mockResolvedValue({ ok: true, status: 200, data: {} });
+    render(<GlossikaProgram userId="kckern" corpusId="glossika-korean" />);
+
+    fireEvent.click(await screen.findByText('Play'));
+    // Armed now: a later sentence shows the hands-free state, not a Play button.
+    await waitFor(() => expect(screen.queryByText('Play')).toBeNull());
+  });
+
+  it('Stop actually stops — it does not immediately re-arm', async () => {
+    dayMock.mockResolvedValue(dayPayload({ queue: [entry(1, 'repetition')] }));
+    render(<GlossikaProgram userId="kckern" corpusId="glossika-korean" />);
+    fireEvent.click(await screen.findByText('Play'));
+    fireEvent.click(await screen.findByText('Stop'));
+    // Back to a deliberate Play, not the auto-advance countdown.
+    expect(await screen.findByText('Play')).toBeTruthy();
+    expect(screen.queryByText('Next…')).toBeNull();
+  });
+});
+
 describe('typed rungs', () => {
   it('hides the sentence during dictation — recalling it IS the task', async () => {
     dayMock.mockResolvedValue(dayPayload({ chain: ['dictation'], queue: [entry(1, 'dictation')] }));
@@ -210,6 +234,68 @@ describe('day rollover', () => {
   });
 });
 
+describe('dismissal and dead ends', () => {
+  it('closes the pacing menu when tapped away — the only escape on a touch panel', async () => {
+    dayMock.mockResolvedValue(dayPayload({ queue: [entry(1, 'repetition')] }));
+    render(<GlossikaProgram userId="kckern" corpusId="glossika-korean" />);
+    fireEvent.click(await screen.findByText('5 / day'));
+    expect(screen.getByRole('menuitemradio', { name: '20' })).toBeTruthy();
+    fireEvent.click(screen.getByLabelText('Close menu'));
+    expect(screen.queryByRole('menuitemradio', { name: '20' })).toBeNull();
+  });
+
+  it('gives a guest a way forward instead of a sentence of text', async () => {
+    const onSignIn = vi.fn();
+    render(<GlossikaProgram userId={null} corpusId="glossika-korean" onSignIn={onSignIn} />);
+    fireEvent.click(await screen.findByText('Sign in'));
+    expect(onSignIn).toHaveBeenCalled();
+  });
+
+  it('does not render its own back control — the School shell already has one', async () => {
+    dayMock.mockResolvedValue(dayPayload({ queue: [entry(1, 'repetition')] }));
+    render(<GlossikaProgram userId="kckern" corpusId="glossika-korean" />);
+    await screen.findByText('English 1');
+    expect(screen.queryByLabelText('Back')).toBeNull();
+  });
+
+  it('hides keyboard shortcuts on a touch panel, shows them on a desktop', async () => {
+    // Driven explicitly rather than trusting the test environment's ambient
+    // matchMedia: the whole point is that the Portal and a laptop differ.
+    const setPointer = (fine) => {
+      window.matchMedia = (q) => ({
+        matches: q.includes('pointer: fine') ? fine : false,
+        media: q, addListener() {}, removeListener() {},
+        addEventListener() {}, removeEventListener() {},
+      });
+    };
+    dayMock.mockResolvedValue(dayPayload({ chain: ['dictation'], queue: [entry(1, 'dictation')] }));
+
+    setPointer(false);
+    const touch = render(<GlossikaProgram userId="kckern" corpusId="glossika-korean" />);
+    await screen.findByLabelText(/Type what you hear/i);
+    expect(screen.queryByText(/Tab replays/)).toBeNull();
+    touch.unmount();
+
+    setPointer(true);
+    window.localStorage.clear();
+    render(<GlossikaProgram userId="kckern" corpusId="glossika-korean" />);
+    await screen.findByLabelText(/Type what you hear/i);
+    expect(screen.getByText(/Tab replays/)).toBeTruthy();
+  });
+
+  it('keeps device capabilities out of the drill surface', async () => {
+    // They used to sit as 34px chips on the bottom edge — inside the Portal's
+    // swipe-up zone. They now live behind a deliberate affordance.
+    dayMock.mockResolvedValue(dayPayload({ queue: [entry(1, 'repetition')] }));
+    render(<GlossikaProgram userId="kckern" corpusId="glossika-korean" />);
+    await screen.findByText('English 1');
+    expect(screen.queryByText('This device can type:')).toBeNull();
+    fireEvent.click(screen.getByText('Device'));
+    expect(screen.getByText('KR keyboard')).toBeTruthy();
+    expect(screen.getByText('Microphone')).toBeTruthy();
+  });
+});
+
 describe('pacing', () => {
   it('changes the daily intake', async () => {
     dayMock.mockResolvedValue(dayPayload({ queue: [entry(1, 'repetition')], dailyLimit: 5 }));
@@ -217,7 +303,7 @@ describe('pacing', () => {
     render(<GlossikaProgram userId="kckern" corpusId="glossika-korean" />);
 
     fireEvent.click(await screen.findByText('5 / day'));
-    fireEvent.click(screen.getByRole('option', { name: '20' }));
+    fireEvent.click(screen.getByRole('menuitemradio', { name: '20' }));
     await waitFor(() => expect(pacingMock).toHaveBeenCalledWith('kckern', 'glossika-korean', 20));
   });
 });
