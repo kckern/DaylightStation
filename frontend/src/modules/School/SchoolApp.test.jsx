@@ -93,11 +93,11 @@ async function tapMaterial(title) {
 describe('SchoolApp home — the subject wall', () => {
   it('renders all nine subjects; empty shelves are greyed, not hidden', async () => {
     render(<SchoolApp clear={() => {}} />);
-    for (const label of ['English', 'Literature', 'Writing', 'Math & Money', 'Science', 'Skills', 'History', 'Geography', 'Language']) {
+    for (const label of ['English & Literature', 'Writing & Typing', 'Language & Culture', 'Math & Money', 'Science & Nature', 'Life & Skills', 'History & Geography', 'Scripture & Gospel', 'Art & Music']) {
       expect(await screen.findByText(label)).toBeInTheDocument();
     }
     // Empty catalog: every subject is disabled and explains itself.
-    const science = screen.getByText('Science').closest('button');
+    const science = screen.getByText('Science & Nature').closest('button');
     expect(science).toBeDisabled();
     expect(within(science).getByText('Nothing here yet')).toBeInTheDocument();
   });
@@ -105,7 +105,7 @@ describe('SchoolApp home — the subject wall', () => {
   it('a subject with shelved content is enabled and opens its page', async () => {
     materialsMock.mockResolvedValue(SAMPLE_CATALOG);
     render(<SchoolApp clear={() => {}} />);
-    const science = (await screen.findByText('Science')).closest('button');
+    const science = (await screen.findByText('Science & Nature')).closest('button');
     await waitFor(() => expect(science).not.toBeDisabled());
     fireEvent.click(science);
     expect((await screen.findAllByText('Bill Nye')).length).toBeGreaterThan(0);
@@ -126,7 +126,7 @@ describe('SchoolApp home — the subject wall', () => {
     await openLibrary();
     await screen.findByText('Caps');
     fireEvent.click(screen.getByRole('button', { name: /back to home/i }));
-    expect(await screen.findByText('Geography')).toBeInTheDocument();
+    expect(await screen.findByText('History & Geography')).toBeInTheDocument();
     expect(screen.queryByText('Caps')).toBeNull();
   });
 
@@ -142,7 +142,7 @@ describe('SchoolApp home — the subject wall', () => {
     expect(await screen.findByRole('button', { name: /exit school/i })).toBeInTheDocument();
     unmount();
     render(<SchoolApp />);
-    expect(await screen.findByText('Geography')).toBeInTheDocument();
+    expect(await screen.findByText('History & Geography')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /exit school/i })).toBeNull();
   });
 });
@@ -150,7 +150,7 @@ describe('SchoolApp home — the subject wall', () => {
 describe('language courses', () => {
   it('no ingested corpus leaves the Language shelf greyed — a tile never points at an absent endpoint', async () => {
     render(<SchoolApp clear={() => {}} />);
-    const language = (await screen.findByText('Language')).closest('button');
+    const language = (await screen.findByText('Language & Culture')).closest('button');
     await waitFor(() => expect(language).toBeDisabled());
     expect(screen.queryByText('Glossika Korean')).toBeNull();
   });
@@ -161,7 +161,7 @@ describe('language courses', () => {
       data: [{ id: 'glossika-korean', label: 'Glossika Korean', languages: { source: 'EN', target: 'KR' }, size: 3000 }],
     });
     render(<SchoolApp clear={() => {}} />);
-    const language = (await screen.findByText('Language')).closest('button');
+    const language = (await screen.findByText('Language & Culture')).closest('button');
     await waitFor(() => expect(language).not.toBeDisabled());
     fireEvent.click(language);
     expect(await screen.findByText('Glossika Korean')).toBeTruthy();
@@ -171,7 +171,7 @@ describe('language courses', () => {
   it('still builds the wall when the course listing fails', async () => {
     coursesMock.mockResolvedValue({ ok: false, status: 500, data: null });
     render(<SchoolApp clear={() => {}} />);
-    expect(await screen.findByText('Geography')).toBeInTheDocument();
+    expect(await screen.findByText('History & Geography')).toBeInTheDocument();
   });
 });
 

@@ -7,11 +7,11 @@
  * curriculum shape, not a data artifact — a new shelf is a curriculum
  * decision, not a config edit.
  *
- * Boundaries that look close but aren't: `english` is the SKILL of our
- * language (vocab, grammar, reading fluency), `literature` is the WORKS
- * (canon, regardless of medium), `writing` is composition, `language` is
- * foreign languages. A book shelved because it's at the child's level is
- * English; shelved because everyone should know it, Literature.
+ * Every shelf is a PAIR (X & Y) — one tile, two allied strands. Boundaries
+ * that look close but aren't: `english` is our language and its works (vocab,
+ * grammar, reading fluency, the canon), `writing` is composition plus the
+ * portal's typing rungs, `language` is foreign languages, `arts` is fine arts
+ * (draw/sing/play) where `skills` is hands-on practical life (cook/make/do).
  *
  * `subject` is deliberately a different field from banks' free-form `topics`
  * tags ([geography, us-states]) — one is a curriculum shelf, the other is
@@ -19,15 +19,15 @@
  */
 
 export const SUBJECTS = [
-  { id: 'english', label: 'English', hint: 'Vocabulary, grammar, and reading' },
-  { id: 'literature', label: 'Literature', hint: 'Great stories and classics' },
-  { id: 'writing', label: 'Writing', hint: 'Put it in your own words' },
+  { id: 'english', label: 'English & Literature', hint: 'Reading, grammar, and great books' },
+  { id: 'writing', label: 'Writing & Typing', hint: 'Put it in your own words' },
+  { id: 'language', label: 'Language & Culture', hint: 'Hear it, say it, write it' },
   { id: 'math', label: 'Math & Money', hint: 'Numbers, patterns, and money' },
-  { id: 'science', label: 'Science', hint: 'How the world works' },
-  { id: 'skills', label: 'Skills', hint: 'Hands-on — art, cooking, making' },
-  { id: 'history', label: 'History', hint: 'People and the past' },
-  { id: 'geography', label: 'Geography', hint: 'Places, maps, and the world' },
-  { id: 'language', label: 'Language', hint: 'Hear it, say it, write it' },
+  { id: 'science', label: 'Science & Nature', hint: 'How the world and nature work' },
+  { id: 'skills', label: 'Life & Skills', hint: 'Hands-on — cooking, making, life' },
+  { id: 'history', label: 'History & Geography', hint: 'People, places, and the past' },
+  { id: 'scripture', label: 'Scripture & Gospel', hint: 'Scriptures, stories, and faith' },
+  { id: 'arts', label: 'Art & Music', hint: 'Draw, paint, sing, and play' },
 ];
 
 const SUBJECT_IDS = new Set(SUBJECTS.map((s) => s.id));

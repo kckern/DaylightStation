@@ -100,10 +100,11 @@ never a recorded attempt — those are already on disk.
 
 ### The home shell
 
-School's landing surface is the **subject wall**: nine fixed subjects —
-English, Literature, Writing, Math & Money, Science, Skills, History,
-Geography, Language — in a 3×3 grid on the left two-thirds, each tile carrying
-an inline-SVG shelf icon (`home/icons/`, Solar Bold set), and a
+School's landing surface is the **subject wall**: nine fixed paired subjects —
+English & Literature, Writing & Typing, Language & Culture, Math & Money,
+Science & Nature, Life & Skills, History & Geography, Scripture & Gospel,
+Art & Music — in a 3×3 grid on the left two-thirds, each tile carrying an
+inline-SVG shelf icon (`home/icons/`, household SVG Repo set), and a
 meta rail on the right third holding the **student panel** (identity, up-next
 action, latest score, done-for-today flip; tap = the full progress board) and
 the **Library**. One home serves claimed and unclaimed visitors alike — the
