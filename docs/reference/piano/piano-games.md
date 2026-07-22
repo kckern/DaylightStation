@@ -282,13 +282,14 @@ Two-layer SVG approach for full-width staff lines:
 
 ## Piano Flashcards
 
-Untimed note-reading trainer. Shows notes on a staff; player presses the matching MIDI key(s). Progressive difficulty mirrors the Tetris level structure.
+Untimed note-reading trainer with two card types: **staff cards** (notes shown on a staff; player presses the matching MIDI keys) and **chord-spelling cards** (card shows a chord symbol like `Dm` or `G7`; player plays the notes that spell it). Progressive difficulty mirrors the Tetris level structure.
 
 ### Component Tree
 
 ```
 PianoFlashcards
-├── ActionStaff            (shared — large centered card showing target note(s))
+├── ActionStaff            (staff cards — large centered card showing target note(s))
+├── ChordCard              (chord cards — large chord symbol face)
 ├── AttemptHistory         (green/red dots + accuracy %)
 └── PianoKeyboard          (visual keyboard with highlighted targets)
 ```
@@ -300,9 +301,10 @@ PianoFlashcards
 | `PianoFlashcards/PianoFlashcards.jsx` | Main layout: 3-column (stats | card | history) + keyboard |
 | `PianoFlashcards/PianoFlashcards.scss` | Layout styles and animations |
 | `PianoFlashcards/useFlashcardGame.js` | Game state machine: phase, score, level, card lifecycle |
-| `PianoFlashcards/flashcardEngine.js` | Pure functions: card generation, match evaluation |
+| `PianoFlashcards/flashcardEngine.js` | Pure functions: card generation, match evaluation (staff + chord), start-level resolution |
 | `PianoFlashcards/flashcardEngine.test.js` | Vitest tests for engine functions |
 | `PianoFlashcards/components/AttemptHistory.jsx` | Rolling attempt dots + accuracy display |
+| `PianoFlashcards/components/ChordCard.jsx` | Chord-symbol card face (root + quality suffix) |
 
 PianoFlashcards uses `useAutoGameLifecycle` for mount auto-start and auto-deactivate on completion.
 
@@ -314,16 +316,29 @@ IDLE ──[startGame()]──▶ PLAYING ──[level 8 threshold]──▶ COM
  └──────────────────────[5s display]─────────────────────────┘
 ```
 
-**`useFlashcardGame` returns:**
+**`useFlashcardGame(activeNotes, config, currentUser)` returns:**
 - `phase` — `IDLE | PLAYING | COMPLETE`
 - `level`, `score`, `scoreNeeded`, `levelConfig`
-- `currentCard` — `{ pitches: number[] }`
+- `currentCard` — staff: `{ pitches: number[] }`; chord: `{ type: 'chord', root, rootName, quality, suffix, label, pitchClasses }`
 - `cardStatus` — `null | 'hit' | 'miss'`
 - `attempts` — `[{ hit: boolean }]` rolling history
 - `accuracy` — percentage from last 20 attempts
 - `startGame()`, `deactivate()`
 
+### Per-User Start Level
+
+`games.flashcards.user_start_levels` in `piano.yml` maps a kiosk user id to a level **name**; that user's game starts (and resets) at that level instead of level 0. Unknown users, missing maps, or unmatched names fall back to level 0. The kiosk's `GameHost` passes `currentUser` from the piano user context; mounts without the context (visualizer overlay) get default levels.
+
+```yaml
+games:
+  flashcards:
+    user_start_levels:
+      kckern: "Major Chords"
+```
+
 ### Match Evaluation
+
+Staff cards (`evaluateMatch` — exact pitches):
 
 | Result | Condition | Effect |
 |--------|-----------|--------|
@@ -332,9 +347,19 @@ IDLE ──[startGame()]──▶ PLAYING ──[level 8 threshold]──▶ COM
 | `partial` | Some targets held, no wrong notes | No feedback — player is rolling a chord |
 | `idle` | No notes pressed | No feedback |
 
-Chord tolerance: players can roll chords (press notes sequentially while holding). As long as only target notes are pressed, the match stays `partial` until all notes are held.
+Chord-spelling cards (`evaluateChordMatch` — octave-free, root-sensitive):
 
-### 9 Difficulty Levels
+| Result | Condition |
+|--------|-----------|
+| `correct` | Held pitch classes exactly equal the chord's tones (doubling OK, no extras) AND the lowest held note is the root |
+| `wrong` | Any non-chord-tone held, or a complete chord over the wrong bass (`Cm/Eb` is not `Cm`) |
+| `partial` | Proper subset of chord tones, no extras |
+
+On a chord-card hit the keyboard highlights a root-position voicing near C4 (`rootPositionVoicing`). Chord tolerance: players can roll chords (press notes sequentially while holding); the match stays `partial` until complete.
+
+### 17 Difficulty Levels
+
+Staff-reading ladder (levels 0–8):
 
 | Level | Complexity | Range | Keys | Score to advance |
 |-------|-----------|-------|------|-----------------|
@@ -348,13 +373,26 @@ Chord tolerance: players can roll chords (press notes sequentially while holding
 | 7 | Triad | C4-C5 | Chromatic | 240 |
 | 8 | Triad | C3-C6 | Chromatic | 260 |
 
-Each complexity tier ramps: white narrow → chromatic narrow → chromatic wide. One new concept per level.
+Chord-spelling ladder (levels 9–16, `card_type: chord`, all 12 roots, sharp-spelled):
+
+| Level | Name | Qualities | Score to advance |
+|-------|------|-----------|-----------------|
+| 9 | Major Chords | major | 140 |
+| 10 | Minor Chords | minor | 160 |
+| 11 | Major vs Minor | major, minor | 180 |
+| 12 | Sus Chords | sus2, sus4 | 180 |
+| 13 | Dim & Aug | diminished, augmented | 200 |
+| 14 | Dominant 7ths | dominant7 | 200 |
+| 15 | Major & Minor 7ths | major7, minor7 | 220 |
+| 16 | Jazz Mix | all nine qualities | 260 |
+
+Quality vocabulary (`CHORD_QUALITIES`): major ``, minor `m`, diminished `°`, augmented `+`, sus2/sus4, dominant7 `7`, major7 `maj7`, minor7 `m7` — interval templates match `theory/chordNaming.js`.
 
 ### Testing
 
 | File | Framework | Coverage |
 |------|-----------|----------|
-| `flashcardEngine.test.js` | Vitest | 14 tests: card generation, match evaluation |
+| `flashcardEngine.test.js` | Vitest | 29 tests: card generation (staff + chord), match evaluation (both types), voicing, start-level resolution |
 
 ---
 

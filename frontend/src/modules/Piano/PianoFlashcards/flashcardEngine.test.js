@@ -1,6 +1,14 @@
 import { describe, it, expect } from 'vitest';
 import { isWhiteKey } from '../noteUtils.js';
-import { generateCardPitches, evaluateMatch } from './flashcardEngine.js';
+import {
+  generateCardPitches,
+  evaluateMatch,
+  CHORD_QUALITIES,
+  generateChordCard,
+  evaluateChordMatch,
+  rootPositionVoicing,
+  resolveStartLevel,
+} from './flashcardEngine.js';
 
 // ─── generateCardPitches ────────────────────────────────────────
 
@@ -87,5 +95,123 @@ describe('evaluateMatch', () => {
     expect(evaluateMatch(null, [60])).toBe('idle');
     expect(evaluateMatch(new Map(), [])).toBe('idle');
     expect(evaluateMatch(new Map(), null)).toBe('idle');
+  });
+});
+
+// ─── generateChordCard ──────────────────────────────────────────
+
+describe('generateChordCard', () => {
+  it('returns a chord card with quality from the allowed list', () => {
+    for (let i = 0; i < 30; i++) {
+      const card = generateChordCard(['major', 'minor7']);
+      expect(card.type).toBe('chord');
+      expect(['major', 'minor7']).toContain(card.quality);
+      expect(card.root).toBeGreaterThanOrEqual(0);
+      expect(card.root).toBeLessThanOrEqual(11);
+    }
+  });
+
+  it('pitch classes are the quality template transposed to the root', () => {
+    for (let i = 0; i < 30; i++) {
+      const card = generateChordCard(['dominant7']);
+      const expected = CHORD_QUALITIES.dominant7.intervals.map(iv => (card.root + iv) % 12);
+      expect([...card.pitchClasses].sort((a, b) => a - b)).toEqual([...expected].sort((a, b) => a - b));
+    }
+  });
+
+  it('builds display labels from sharp root name + quality suffix', () => {
+    for (let i = 0; i < 30; i++) {
+      const card = generateChordCard(['minor']);
+      expect(card.label).toBe(`${card.rootName}m`);
+    }
+  });
+
+  it('never repeats the exact previous (root, quality) card', () => {
+    let prev = generateChordCard(['major']);
+    for (let i = 0; i < 50; i++) {
+      const card = generateChordCard(['major'], prev);
+      expect(card.root === prev.root && card.quality === prev.quality).toBe(false);
+      prev = card;
+    }
+  });
+});
+
+// ─── evaluateChordMatch ─────────────────────────────────────────
+
+describe('evaluateChordMatch', () => {
+  const makeNotes = (...notes) => new Map(notes.map(n => [n, { velocity: 100, timestamp: 0 }]));
+  const cMajor = { type: 'chord', root: 0, quality: 'major', pitchClasses: new Set([0, 4, 7]) };
+  const cMinor = { type: 'chord', root: 0, quality: 'minor', pitchClasses: new Set([0, 3, 7]) };
+
+  it('returns idle for empty/null input', () => {
+    expect(evaluateChordMatch(new Map(), cMajor)).toBe('idle');
+    expect(evaluateChordMatch(null, cMajor)).toBe('idle');
+    expect(evaluateChordMatch(makeNotes(60), null)).toBe('idle');
+  });
+
+  it('correct for root-position C major at any octave', () => {
+    expect(evaluateChordMatch(makeNotes(60, 64, 67), cMajor)).toBe('correct');
+    expect(evaluateChordMatch(makeNotes(48, 52, 55), cMajor)).toBe('correct');
+  });
+
+  it('correct with doubled tones as long as bass is the root', () => {
+    expect(evaluateChordMatch(makeNotes(48, 60, 64, 67, 72), cMajor)).toBe('correct');
+  });
+
+  it('correct for open voicings when bass is the root', () => {
+    // C2 bass, chord tones spread above
+    expect(evaluateChordMatch(makeNotes(36, 55, 64, 72), cMajor)).toBe('correct');
+  });
+
+  it('wrong when complete but bass is not the root (Cm/Eb is not Cm)', () => {
+    // Eb3 in the bass under C4 + G4 — all tones of Cm present, bass = Eb
+    expect(evaluateChordMatch(makeNotes(51, 60, 67), cMinor)).toBe('wrong');
+    // First inversion C major: E in the bass
+    expect(evaluateChordMatch(makeNotes(52, 60, 67), cMajor)).toBe('wrong');
+  });
+
+  it('wrong when any non-chord-tone is held', () => {
+    expect(evaluateChordMatch(makeNotes(60, 64, 66), cMajor)).toBe('wrong');
+    expect(evaluateChordMatch(makeNotes(60, 64, 67, 70), cMajor)).toBe('wrong');
+  });
+
+  it('partial for an incomplete subset of chord tones with no extras', () => {
+    expect(evaluateChordMatch(makeNotes(60), cMajor)).toBe('partial');
+    expect(evaluateChordMatch(makeNotes(60, 67), cMajor)).toBe('partial');
+  });
+});
+
+// ─── rootPositionVoicing ────────────────────────────────────────
+
+describe('rootPositionVoicing', () => {
+  it('voices C major in root position from C4', () => {
+    const card = { root: 0, quality: 'major' };
+    expect(rootPositionVoicing(card)).toEqual([60, 64, 67]);
+  });
+
+  it('voices A minor 7 from A4', () => {
+    const card = { root: 9, quality: 'minor7' };
+    expect(rootPositionVoicing(card)).toEqual([69, 72, 76, 79]);
+  });
+});
+
+// ─── resolveStartLevel ──────────────────────────────────────────
+
+describe('resolveStartLevel', () => {
+  const levels = [
+    { name: 'White Keys' },
+    { name: 'All Keys' },
+    { name: 'Major Chords' },
+  ];
+
+  it('resolves a named start level for a known user', () => {
+    expect(resolveStartLevel(levels, { kckern: 'Major Chords' }, 'kckern')).toBe(2);
+  });
+
+  it('falls back to 0 for unknown users, missing maps, or unknown level names', () => {
+    expect(resolveStartLevel(levels, { kckern: 'Major Chords' }, 'milo')).toBe(0);
+    expect(resolveStartLevel(levels, { kckern: 'Major Chords' }, null)).toBe(0);
+    expect(resolveStartLevel(levels, undefined, 'kckern')).toBe(0);
+    expect(resolveStartLevel(levels, { kckern: 'No Such Level' }, 'kckern')).toBe(0);
   });
 });
