@@ -15,10 +15,26 @@
 
 export const GATE_LEVELS = ['open', 'hindered', 'disabled'];
 
-/** Absent → what. A role with no entry here cannot gate anything. */
+/** Default severity per role. A device entry may override it. */
 export const ROLE_SEVERITY = {
   headset: 'disabled',
   keyboard: 'hindered',
+};
+
+/**
+ * How long a device must be CONTINUOUSLY absent before it counts, per role.
+ *
+ * Per role because the failure that will actually bite is idle sleep, not
+ * flapping: a Bluetooth HID keyboard drops its link after minutes idle and
+ * reconnects on keypress, so a child doing twenty minutes of audio rungs has
+ * an idle keyboard that looks exactly like a confiscated one. A headset's
+ * absence is meaningful much faster.
+ *
+ * MEASURED, not guessed — see the design doc. Adjust from observed hardware.
+ */
+export const ROLE_GRACE_MS = {
+  headset: 30 * 1000,
+  keyboard: 10 * 60 * 1000,
 };
 
 const SEVERITY_RANK = { open: 0, hindered: 1, disabled: 2 };
@@ -65,21 +81,35 @@ export function resolveGate({ presence, now, required = [], ttlMs = DEFAULT_TTL_
     };
   }
 
-  const connected = new Set(
+  // The APK reports RAW state plus how long it has held, and the backend
+  // debounces — because grace is per role and only the backend knows roles.
+  // Having the APK debounce would have meant shipping it the device list, i.e.
+  // two sources of truth for the same fact.
+  const byMac = new Map(
     (presence.devices || [])
-      .filter((d) => d?.connected === true && d.mac)
-      .map((d) => String(d.mac).toUpperCase()),
+      .filter((d) => d?.mac)
+      .map((d) => [String(d.mac).toUpperCase(), d]),
   );
 
   const missing = [];
   let level = 'open';
   for (const req of required) {
-    if (!req?.mac || connected.has(String(req.mac).toUpperCase())) continue;
-    const severity = ROLE_SEVERITY[req.role];
-    // An unrecognised role cannot gate. Failing closed on a config typo would
-    // brick the panel for a spelling mistake.
-    if (!severity) continue;
-    missing.push(req.role);
+    if (!req?.mac) continue;
+    const severity = req.absent || ROLE_SEVERITY[req.role];
+    // An unrecognised role with no explicit severity cannot gate. Failing
+    // closed on a config typo would brick the panel for a spelling mistake.
+    if (!severity || !SEVERITY_RANK[severity]) continue;
+
+    const seen = byMac.get(String(req.mac).toUpperCase());
+    if (seen?.connected === true) continue;
+
+    // Absent, but not yet for long enough to mean anything. `sinceMs` is how
+    // long the CURRENT state has held, reported by the APK.
+    const grace = req.grace_ms ?? ROLE_GRACE_MS[req.role] ?? 0;
+    const heldFor = Number(seen?.sinceMs);
+    if (seen && Number.isFinite(heldFor) && heldFor < grace) continue;
+
+    missing.push(req.role || req.mac);
     if (SEVERITY_RANK[severity] > SEVERITY_RANK[level]) level = severity;
   }
 
