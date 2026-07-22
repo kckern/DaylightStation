@@ -87,10 +87,16 @@ export function baseAttrs(printerUri, user) {
   ];
 }
 
-export function printJobAttrs(printerUri, { user, jobName, copies }) {
+export function printJobAttrs(printerUri, { user, jobName, copies, documentFormat = 'application/octet-stream' }) {
   const attrs = baseAttrs(printerUri, user);
   attrs.push({ tag: TAGS.NAME, name: 'job-name', value: jobName });
-  attrs.push({ tag: TAGS.MIME_TYPE, name: 'document-format', value: 'application/pdf' });
+  // `application/octet-stream` = let the printer auto-detect from the bytes.
+  // Many AirPrint/IPP-Everywhere printers (e.g. Brother HL-L2460DW) do NOT
+  // advertise `application/pdf` in document-format-supported and reject an
+  // explicit PDF format with 0x040a (document-format-not-supported), even
+  // though their firmware happily renders a PDF once it sniffs the %PDF
+  // header. octet-stream is the universal, always-supported default.
+  attrs.push({ tag: TAGS.MIME_TYPE, name: 'document-format', value: documentFormat });
   if (copies && copies > 1) {
     // copies is a JOB attribute, but Brother/AirPrint accept it in the
     // operation group for Print-Job; keep 1-copy jobs attribute-free.

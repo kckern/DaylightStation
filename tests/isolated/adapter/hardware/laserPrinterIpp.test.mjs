@@ -20,6 +20,12 @@ describe('IPP encodeRequest', () => {
     expect(end).toBeGreaterThan(8);
   });
 
+  it('declares octet-stream document-format by default (printer auto-detects the PDF)', () => {
+    const buf = encodeRequest(OPS.PRINT_JOB, printJobAttrs('ipp://p/ipp/print', { user: 'u', jobName: 'j' }));
+    expect(buf.includes('application/octet-stream')).toBe(true);
+    expect(buf.includes('application/pdf')).toBe(false);
+  });
+
   it('single-copy jobs carry no copies attribute; multi-copy jobs do', () => {
     const one = encodeRequest(OPS.PRINT_JOB, printJobAttrs('ipp://p/ipp/print', { user: 'u', jobName: 'j', copies: 1 }));
     const three = encodeRequest(OPS.PRINT_JOB, printJobAttrs('ipp://p/ipp/print', { user: 'u', jobName: 'j', copies: 3 }));
