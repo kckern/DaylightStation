@@ -26,6 +26,14 @@ export default function MaterialsSection({ materials, sectionLabel }) {
   const [detailMaterial, setDetailMaterial] = useState(null); // null = grid
   const [playing, setPlaying] = useState(null); // {material, unit} | null
   const [notice, setNotice] = useState(null);
+  // Bumped whenever the player exits with {refetch:true} (lock state may
+  // have changed — a completed unit can unlock the next one). Keying
+  // MaterialDetail on it forces a fresh mount -> fresh units fetch,
+  // independent of whether the playing/detail toggle happens to remount it
+  // anyway (it does today via the conditional-return branch swap below, but
+  // this makes the refetch contract explicit and test-provable rather than
+  // an accident of the current render shape).
+  const [detailKey, setDetailKey] = useState(0);
   // A tap that triggered the picker, awaiting claim/dismiss -- ref (not
   // state) because it's read/cleared from the identity-change effect below,
   // the same pending-launch shape SchoolShell uses for banks.
@@ -70,13 +78,18 @@ export default function MaterialsSection({ materials, sectionLabel }) {
     setPlaying({ material: detailMaterial, unit });
   }, [detailMaterial, currentUser, isGuest, openPicker]);
 
+  const onPlayerExit = useCallback((opts) => {
+    if (opts?.refetch) setDetailKey((k) => k + 1);
+    setPlaying(null);
+  }, []);
+
   if (playing) {
     return (
       <SchoolMaterialPlayer
         material={playing.material}
         unit={playing.unit}
         userId={currentUser?.id}
-        onExit={() => setPlaying(null)}
+        onExit={onPlayerExit}
       />
     );
   }
@@ -84,6 +97,7 @@ export default function MaterialsSection({ materials, sectionLabel }) {
   if (detailMaterial) {
     return (
       <MaterialDetail
+        key={detailKey}
         material={detailMaterial}
         userId={currentUser?.id}
         onBack={backToGrid}

@@ -5,6 +5,7 @@ import SchoolApp from './SchoolApp.jsx';
 const banksMock = vi.fn();
 const materialsMock = vi.fn();
 const materialUnitsMock = vi.fn();
+const unitProgressMock = vi.fn();
 vi.mock('./schoolApi.js', () => ({
   schoolApi: {
     roster: vi.fn(async () => ({ ok: true, status: 200, data: [{ id: 'kid1', name: 'Alpha' }] })),
@@ -14,7 +15,15 @@ vi.mock('./schoolApi.js', () => ({
     answer: vi.fn(async () => ({ ok: true, status: 200, data: { correct: true, expected: 'Olympia', attemptId: 'att_1' } })),
     materials: (...a) => materialsMock(...a),
     materialUnits: (...a) => materialUnitsMock(...a),
+    unitProgress: (...a) => unitProgressMock(...a),
   },
+}));
+
+// SchoolMaterialPlayer wraps the real, heavy shared Player (lazy-imported) —
+// stub it the same way MediaApp.test.jsx does, so materials-flow tests never
+// pay for (or depend on) real playback engine internals.
+vi.mock('../Player/Player.jsx', () => ({
+  default: ({ play }) => <div data-testid="player-stub">Player: {play?.contentId ?? 'none'}</div>,
 }));
 
 const EMPTY_CATALOG = { ok: true, status: 200, data: { sections: [], materials: [] } };
@@ -193,7 +202,7 @@ describe('SchoolApp materials sections', () => {
     fireEvent.click(await screen.findByText('Air'));
     expect(await screen.findByRole('dialog')).toBeInTheDocument();
     fireEvent.click(screen.getByText('Alpha'));
-    expect(await screen.findByText(/loading player/i)).toBeInTheDocument();
+    expect(await screen.findByTestId('player-stub')).toHaveTextContent('plex:10');
   });
 
   it('unclaimed: dismissing the picker on a course unit refuses it (notice, no player)', async () => {
@@ -209,7 +218,7 @@ describe('SchoolApp materials sections', () => {
     await screen.findByRole('dialog');
     fireEvent.click(screen.getByLabelText(/close/i));
     expect(await screen.findByText(/sign in for courses/i)).toBeInTheDocument();
-    expect(screen.queryByText(/loading player/i)).toBeNull();
+    expect(screen.queryByTestId('player-stub')).toBeNull();
   });
 
   it('explicit guest tapping a course unit gets the notice directly, no picker', async () => {
@@ -241,7 +250,28 @@ describe('SchoolApp materials sections', () => {
     await openListening();
     await tapMaterial('Story Time');
     fireEvent.click(await screen.findByText('Chapter 1'));
-    expect(await screen.findByText(/loading player/i)).toBeInTheDocument();
+    expect(await screen.findByTestId('player-stub')).toHaveTextContent('plex:20');
     expect(screen.queryByRole('dialog')).toBeNull();
+  });
+
+  it('exiting the player refetches the unit list (lock state may have changed)', async () => {
+    materialsMock.mockResolvedValue(SAMPLE_CATALOG);
+    materialUnitsMock.mockResolvedValue({
+      ok: true, status: 200,
+      data: { material: SAMPLE_CATALOG.data.materials[1], units: [{ id: 'plex:20', index: 1, title: 'Chapter 1', durationMs: null, group: null, percent: 0, playhead: 0, completed: false, locked: false, current: true, lockReason: null, quiz: null }] },
+    });
+    render(<SchoolApp clear={() => {}} />);
+    await openListening();
+    await tapMaterial('Story Time');
+    await waitFor(() => expect(materialUnitsMock).toHaveBeenCalledTimes(1));
+    fireEvent.click(await screen.findByText('Chapter 1'));
+    await screen.findByTestId('player-stub');
+
+    // The material player's own exit row (its back button, carrying the
+    // material title) is the "child leaves mid-play" affordance — it must
+    // flow back to the detail view AND force a fresh units fetch.
+    fireEvent.click(screen.getByRole('button', { name: /Story Time/i }));
+    expect(await screen.findByText('Chapter 1')).toBeInTheDocument();
+    await waitFor(() => expect(materialUnitsMock).toHaveBeenCalledTimes(2));
   });
 });
