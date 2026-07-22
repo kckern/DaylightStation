@@ -246,6 +246,8 @@ import { createLanguageRouter } from './4_api/v1/routers/language.mjs';
 import { LanguageStudyService } from './3_applications/school/LanguageStudyService.mjs';
 import { YamlLanguageStudyDatastore } from './1_adapters/persistence/yaml/YamlLanguageStudyDatastore.mjs';
 import { GetSchoolReport } from './3_applications/school/GetSchoolReport.mjs';
+import { PresenceStore } from './1_adapters/devices/PresenceStore.mjs';
+import { resolveGate } from './2_domains/school/accessGate.mjs';
 import { GetMaterialCatalog } from './3_applications/school/GetMaterialCatalog.mjs';
 import { GetMaterialUnits, buildBankIndex } from './3_applications/school/GetMaterialUnits.mjs';
 import { PlexAlbumSource } from './3_applications/school/sources/PlexAlbumSource.mjs';
@@ -2077,9 +2079,27 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   // progress + append-only log under data/users/{id}/apps/school/language/,
   // audio + recordings on the media mount. The timezone is passed rather than
   // a fixed offset so the 4am study-day boundary survives DST.
+  // In memory by design: a restart loses presence, which the gate resolves to
+  // `hindered` (the safe direction), and the next APK heartbeat restores it.
+  const presenceStore = new PresenceStore({
+    logger: rootLogger.child({ module: 'device-presence' })
+  });
+
+  // Physical parental gate: the Portal APK reports Bluetooth presence, and
+  // School obeys. Required devices come from school.yml `gate.devices`; with
+  // none configured the gate resolves open, so a household that has not opted
+  // in is never locked out. Failure direction is "cannot confirm -> hindered"
+  // (see 2_domains/school/accessGate.mjs).
+  const schoolGateConfig = configService.getHouseholdAppConfig(null, 'school')?.gate || null;
   const languageStudyService = new LanguageStudyService({
     datastore: new YamlLanguageStudyDatastore({ configService }),
     timezone: configService.getTimezone?.() || null,
+    readGate: () => resolveGate({
+      presence: presenceStore.get(schoolGateConfig?.device_id || 'portal'),
+      now: Date.now(),
+      required: schoolGateConfig?.devices || [],
+      ttlMs: schoolGateConfig?.ttl_ms || undefined,
+    }),
     logger: rootLogger.child({ module: 'school-language' })
   });
   // Aggregate report across programs. Each program implements IProgramReporter;
@@ -2434,6 +2454,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   });
 
   v1Routers.device = createDeviceApiRouter({
+    presenceStore,
     deviceServices,
     wakeAndLoadService,
     sessionControlService,

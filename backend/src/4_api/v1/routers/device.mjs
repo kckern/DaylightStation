@@ -114,6 +114,7 @@ export function createDeviceRouter(config) {
     loadFile,
     pianoMidiWakeService,
     screenOverrideService,
+    presenceStore = null,
     logger = console,
   } = config;
 
@@ -204,6 +205,26 @@ export function createDeviceRouter(config) {
    *   - force?: boolean   — relaunch even when already foreground-healthy
    *   - deviceId?: string — target a single device; otherwise heal all eligible
    */
+  // ── Bluetooth presence (the physical parental gate) ─────────────────────
+  // The Portal APK reports which configured devices are connected. The value
+  // is DEBOUNCED by the APK — it owns the grace window because it is the only
+  // party that sees the raw ACL events. See
+  // docs/_wip/plans/2026-07-22-portal-presence-gate-design.md
+  router.post('/:deviceId/presence', (req, res) => {
+    if (!presenceStore) return res.status(503).json({ error: 'presence not configured' });
+    const { at, devices } = req.body || {};
+    if (!Array.isArray(devices)) {
+      return res.status(400).json({ error: 'devices must be an array' });
+    }
+    const entry = presenceStore.record(req.params.deviceId, { at, devices });
+    return res.json({ ok: true, at: entry.at, count: entry.devices.length });
+  });
+
+  router.get('/:deviceId/presence', (req, res) => {
+    if (!presenceStore) return res.status(503).json({ error: 'presence not configured' });
+    return res.json(presenceStore.get(req.params.deviceId) ?? { at: null, devices: [] });
+  });
+
   router.post('/audio-bridge/heal', asyncHandler(async (req, res) => {
     const force = !!req.body?.force;
     // Either a single explicit target or every device. We do NOT pre-filter

@@ -26,6 +26,7 @@ export function createDeviceApiRouter(config) {
   } = config;
 
   return createDeviceRouter({
+    presenceStore: config.presenceStore ?? null,
     deviceService: deviceServices.deviceService,
     wakeAndLoadService,
     sessionControlService,
