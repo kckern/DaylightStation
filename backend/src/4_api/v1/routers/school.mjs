@@ -44,6 +44,17 @@ export function createSchoolRouter({
     res.json(schoolService.getResults(req.params.userId, { bankId: req.query.bankId }));
   }));
 
+  // Quiz requests — the on-demand authoring backlog. POST records a child's
+  // interest in a quiz for a bankless unit; GET lists the backlog (optionally
+  // per material) for the requested-state UI and for whoever authors banks.
+  router.post('/quiz-requests', wrap((req, res) => {
+    const { userId = null, unitId, materialId, unitTitle = null, materialTitle = null } = req.body || {};
+    res.json(schoolService.requestQuiz({ userId, unitId, materialId, unitTitle, materialTitle }));
+  }));
+  router.get('/quiz-requests', wrap((req, res) => {
+    res.json(schoolService.listQuizRequests({ materialId: req.query.materialId || null }));
+  }));
+
   // Materials framework (catalog + per-unit progress/quiz gates). The panel
   // must never 500 before materials.yml config ships — a missing config block
   // (getMaterialCatalog not wired) serves an empty catalog and logs once,

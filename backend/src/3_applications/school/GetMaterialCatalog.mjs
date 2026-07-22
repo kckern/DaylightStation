@@ -57,9 +57,12 @@ export class GetMaterialCatalog {
       source: entry.source,
       medium: entry.medium ?? material.medium,
       category,
-      // School subject shelf (reading|civilization|…) — config-declared per
-      // source, unvalidated here: the frontend routes unknowns to Library.
-      subject: entry.subject ?? null,
+      // School subject shelf — config-declared per source, unvalidated here:
+      // the frontend routes unknowns to Library. `subject_overrides` maps a
+      // material id to its own shelf, for mixed-subject roots (one Plex
+      // collection holding a money show and a science show); the source-level
+      // `subject` remains the default for everything unlisted.
+      subject: entry.subject_overrides?.[material.id] ?? entry.subject ?? null,
     };
   }
 
