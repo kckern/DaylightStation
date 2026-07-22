@@ -46,7 +46,7 @@ export class SchoolService {
       .map((id) => this.#loadBank(id))
       .filter(Boolean)
       .filter((b) => !audience || b.audience === audience)
-      .map((b) => ({ id: b.id, title: b.title, audience: b.audience, topics: b.topics, itemCount: b.items.length }));
+      .map((b) => ({ id: b.id, title: b.title, audience: b.audience, topics: b.topics, itemCount: b.items.length, unit: b.unit }));
   }
 
   getBank(bankId) {

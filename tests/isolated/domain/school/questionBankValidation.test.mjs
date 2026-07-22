@@ -24,6 +24,24 @@ describe('validateQuestionBank', () => {
     expect(r.ok).toBe(true);
     expect(r.bank.topics).toEqual([]);
   });
+  it('carries unit and readalong through when present (spec §5 backlinks)', () => {
+    const r = validateQuestionBank(bank({ unit: 'plex:619845', readalong: 'talk:abc' }));
+    expect(r.ok).toBe(true);
+    expect(r.bank.unit).toBe('plex:619845');
+    expect(r.bank.readalong).toBe('talk:abc');
+  });
+  it('unit and readalong are optional and absent from the returned bank when omitted', () => {
+    const r = validateQuestionBank(bank());
+    expect(r.ok).toBe(true);
+    expect(r.bank.unit).toBeUndefined();
+    expect(r.bank.readalong).toBeUndefined();
+  });
+  it('treats a null unit/readalong (YAML key with no value) the same as absent', () => {
+    const r = validateQuestionBank(bank({ unit: null, readalong: null }));
+    expect(r.ok).toBe(true);
+    expect(r.bank.unit).toBeUndefined();
+    expect(r.bank.readalong).toBeUndefined();
+  });
   it('finding 1: a single long run of underscores counts as exactly one blank', () => {
     const r = validateQuestionBank(bank({ items: [
       { id: 'q1', type: 'cloze', prompt: 'The capital is ________.', answer: 'Olympia' },
@@ -39,6 +57,16 @@ describe('validateQuestionBank', () => {
     const r = validateQuestionBank(bank({ items: [mc({ answer: '' })] }));
     expect(r.ok).toBe(false);
     expect(r.errors).toContain('items[0]: answer must be a non-empty string');
+  });
+  it('rejects a non-string unit, naming the field', () => {
+    const r = validateQuestionBank(bank({ unit: 42 }));
+    expect(r.ok).toBe(false);
+    expect(r.errors).toContain('unit must be a non-empty string');
+  });
+  it('rejects a non-string readalong, naming the field', () => {
+    const r = validateQuestionBank(bank({ readalong: { fake: 1 } }));
+    expect(r.ok).toBe(false);
+    expect(r.errors).toContain('readalong must be a non-empty string');
   });
   it.each([
     ['missing id', bank({ id: undefined })],
@@ -74,6 +102,11 @@ describe('validateQuestionBank', () => {
     ['bank id is whitespace-only', bank({ id: '   ' })],
     ['bank title is whitespace-only', bank({ title: '   ' })],
     ['item prompt is whitespace-only', bank({ items: [mc({ prompt: '   ' })] })],
+    // spec §5: unit/readalong backlinks, when present, must be non-empty strings
+    ['unit is not a string', bank({ unit: 42 })],
+    ['unit is a whitespace-only string', bank({ unit: '   ' })],
+    ['readalong is not a string', bank({ readalong: { fake: 1 } })],
+    ['readalong is a whitespace-only string', bank({ readalong: '   ' })],
   ])('rejects: %s', (_label, raw) => {
     const r = validateQuestionBank(raw);
     expect(r.ok).toBe(false);

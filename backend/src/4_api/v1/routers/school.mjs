@@ -6,8 +6,15 @@ import express from 'express';
 import { GuestForbiddenError, SessionGoneError } from '#domains/school/errors.mjs';
 import { ValidationError, EntityNotFoundError } from '#domains/core/errors/index.mjs';
 
-export function createSchoolRouter({ schoolService, logger = console }) {
+export function createSchoolRouter({
+  schoolService,
+  getMaterialCatalog = null,
+  getMaterialUnits = null,
+  materialProgressStore = null,
+  logger = console,
+}) {
   const router = express.Router();
+  let warnedMaterialsConfigMissing = false;
   const wrap = (fn) => (req, res) => {
     Promise.resolve()
       .then(() => fn(req, res))
@@ -35,6 +42,41 @@ export function createSchoolRouter({ schoolService, logger = console }) {
   router.get('/users/:userId/results', wrap((req, res) => {
     res.json(schoolService.getResults(req.params.userId, { bankId: req.query.bankId }));
   }));
+
+  // Materials framework (catalog + per-unit progress/quiz gates). The panel
+  // must never 500 before materials.yml config ships — a missing config block
+  // (getMaterialCatalog not wired) serves an empty catalog and logs once,
+  // not per request.
+  router.get('/materials', wrap(async (req, res) => {
+    if (!getMaterialCatalog) {
+      if (!warnedMaterialsConfigMissing) {
+        warnedMaterialsConfigMissing = true;
+        logger.warn?.('school.materials.config-missing');
+      }
+      return res.json({ sections: [], materials: [] });
+    }
+    res.json(await getMaterialCatalog.execute());
+  }));
+
+  router.get('/materials/:materialId/units', wrap(async (req, res) => {
+    if (!getMaterialUnits) throw new EntityNotFoundError('material', req.params.materialId);
+    const userId = req.query.userId || undefined;
+    res.json(await getMaterialUnits.execute({ materialId: req.params.materialId, userId }));
+  }));
+
+  router.put('/materials/:materialId/units/:unitId/progress', wrap((req, res) => {
+    const { userId, percent, playhead, durationMs } = req.body || {};
+    if (!userId || !materialProgressStore) return res.json({ ok: true, recorded: false });
+    materialProgressStore.record({
+      userId,
+      plexId: req.params.unitId,
+      percent,
+      seconds: playhead,
+      duration: durationMs != null ? durationMs / 1000 : undefined,
+    });
+    return res.json({ ok: true });
+  }));
+
   return router;
 }
 
