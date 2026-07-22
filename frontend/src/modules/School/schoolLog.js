@@ -21,6 +21,8 @@ export const schoolLog = {
   answerError: (detail, data) => emit('answer', detail, data, 'error'), // record-failed
   bank:    (detail, data) => emit('bank', detail, data, 'warn'),
   nav:     (detail, data) => emit('nav', detail, data),               // section | home
+  materials: (detail, data) => emit('materials', detail, data),       // catalog-failed
+  materialsError: (detail, data) => emit('materials', detail, data, 'error'),
 };
 
 export default schoolLog;
