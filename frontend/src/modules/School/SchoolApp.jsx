@@ -5,17 +5,17 @@
  * unclaimed opens the ProfilePicker with the launch pending (spec §6 — claim
  * prompt on tracked work; browsing never prompts).
  */
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import ProfilePicker from '../../lib/identity/ProfilePicker.jsx';
 import ProfileAvatar from '../../lib/identity/ProfileAvatar.jsx';
 import { SchoolProfileProvider, useSchoolProfile } from './identity/SchoolProfileContext.jsx';
 import BankBrowser from './browse/BankBrowser.jsx';
 import QuizRunner from './quiz/QuizRunner.jsx';
 import FlashcardRunner from './flashcards/FlashcardRunner.jsx';
-import SectionGrid from './home/SectionGrid.jsx';
-import LearnerHome from './home/LearnerHome.jsx';
-import { SECTIONS, sectionsFromCatalog } from './home/sections.js';
-import MaterialsSection from './materials/MaterialsSection.jsx';
+import SchoolHome from './home/SchoolHome.jsx';
+import SubjectPage from './home/SubjectPage.jsx';
+import LibraryPage from './home/LibraryPage.jsx';
+import { groupBySubject, subjectLabel } from './home/subjects.js';
 import GlossikaProgram from './Programs/Glossika/GlossikaProgram.jsx';
 import ReportPanel from './report/ReportPanel.jsx';
 import { languageApi } from './Programs/Glossika/languageApi.js';
@@ -29,31 +29,33 @@ function SchoolShell({ clear }) {
   const [active, setActive] = useState(null);   // {bank, mode} — only ever set within 'banks'
   const [pending, setPending] = useState(null); // {bankSummary, mode} awaiting a claim
   const [notice, setNotice] = useState(null);
-  const [sections, setSections] = useState(SECTIONS); // built-ins, + catalog sections once fetched
-  const [materials, setMaterials] = useState([]);      // full catalog materials list, unfiltered
+  const [materials, setMaterials] = useState([]); // full catalog materials list, unfiltered
+  const [courses, setCourses] = useState([]);     // language courses (Glossika)
+  const [banks, setBanks] = useState([]);         // bank summaries, for shelving + titles
 
-  // Fetch the materials catalog once the profile roster is ready, so the
-  // catalog-driven category tiles (Courses/Reference/Listening) join the
-  // home grid alongside the built-ins. A failure (network, non-ok, or the
-  // materials config not yet shipped -> {sections:[],materials:[]}) simply
-  // leaves the built-ins as the whole grid -- the panel must never break on
-  // a missing/failed catalog.
+  // Fetch all three catalogues once the profile roster is ready — the home's
+  // subject shelves are grouped from whatever actually resolved. Any one
+  // failing simply leaves its content absent (an emptier shelf), never a
+  // broken panel: the home must render on a dead catalog.
   useEffect(() => {
     if (status !== 'ready') return;
     let alive = true;
-    // Both catalogues are fetched together so the grid is built once, from
-    // whatever actually resolved. Either failing leaves its tiles absent
-    // rather than breaking the panel.
-    Promise.all([schoolApi.materials(), languageApi.courses()]).then(([mat, lang]) => {
+    Promise.all([schoolApi.materials(), languageApi.courses(), schoolApi.banks()]).then(([mat, lang, bnk]) => {
       if (!alive) return;
-      const catalogSections = mat.ok && mat.data ? mat.data.sections : [];
-      const languageCourses = lang.ok && Array.isArray(lang.data) ? lang.data : [];
       if (!mat.ok || !mat.data) schoolLog.materials('catalog-failed', { ok: mat.ok });
-      setSections(sectionsFromCatalog(catalogSections, languageCourses));
       setMaterials(mat.ok && Array.isArray(mat.data?.materials) ? mat.data.materials : []);
+      setCourses(lang.ok && Array.isArray(lang.data) ? lang.data : []);
+      setBanks(bnk.ok && Array.isArray(bnk.data) ? bnk.data : []);
     });
     return () => { alive = false; };
   }, [status]);
+
+  // The six shelves + the Library, from the three catalogues.
+  const grouped = useMemo(
+    () => groupBySubject({ materials, banks, courses }),
+    [materials, banks, courses],
+  );
+  const bankTitles = useMemo(() => new Map(banks.map((b) => [b.id, b.title])), [banks]);
   // Set alongside the notice, in the same synchronous pass as the
   // continueAsGuest() that produces it (see onDismiss) -- so the
   // identity-change effect below, which runs on that very transition, knows
@@ -118,9 +120,15 @@ function SchoolShell({ clear }) {
     setNotice(null);
   }, [currentUser, isGuest]);
 
-  const sectionDef = section ? sections.find((s) => s.id === section) : null;
-  const category = section?.startsWith('cat:') ? section.slice(4) : null;
+  const subjectId = section?.startsWith('subject:') ? section.slice(8) : null;
   const courseId = section?.startsWith('lang:') ? section.slice(5) : null;
+  const sectionLabel = !section ? null
+    : subjectId ? subjectLabel(subjectId)
+      : section === 'library' ? 'Library'
+        : section === 'progress' ? 'My Progress'
+          : section === 'banks' ? 'Practice'
+            : courseId ? (courses.find((c) => c.id === courseId)?.label ?? 'Language')
+              : section;
 
   if (status !== 'ready') return <div className="school-app school-app--loading">Loading…</div>;
   return (
@@ -146,9 +154,8 @@ function SchoolShell({ clear }) {
             greeting; LearnerHome used to render a second avatar + name + "Not
             you?" immediately below this one saying the same thing. */}
         <h1 className="school-app__title">
-          {sectionDef ? sectionDef.label
-            : currentUser ? `Hi ${String(currentUser.name).split(' ')[0]}`
-              : 'School'}
+          {sectionLabel
+            ?? (currentUser ? `Hi ${String(currentUser.name).split(' ')[0]}` : 'School')}
         </h1>
         <button type="button" className="school-app__chip" onClick={openPicker}>
           {currentUser
@@ -157,27 +164,12 @@ function SchoolShell({ clear }) {
         </button>
       </header>
       <main className="school-app__body">
-        {/* Claimed: a home built around this learner's next step. Unclaimed:
-            the roster itself is the front door — tapping your own face is the
-            entry gesture, and a personal dashboard for nobody is meaningless.
-            An explicit guest still browses, which is the pre-existing rule
-            that browsing never prompts. */}
-        {!section && currentUser && (
-          <LearnerHome
-            user={currentUser}
-            sections={sections}
-            onOpen={openSection}
-            onSwitchProfile={openPicker}
-          />
-        )}
-        {!section && !currentUser && (
-          <div className="school-home school-home--unclaimed">
-            <h2 className="school-home__greeting">Who&apos;s here?</h2>
-            <button type="button" className="school-home__claim" onClick={openPicker}>
-              Choose your face
-            </button>
-            <SectionGrid sections={sections} onOpen={openSection} compact />
-          </div>
+        {/* One home for claimed and unclaimed alike: the subject shelves are
+            the same wall either way, and the student panel itself carries the
+            claim affordance when nobody has tapped in. An explicit guest still
+            browses — the pre-existing rule that browsing never prompts. */}
+        {!section && (
+          <SchoolHome grouped={grouped} onOpen={openSection} bankTitles={bankTitles} />
         )}
         {/* Only an EXPLICIT guest (continueAsGuest()) is restricted to the
             generic catalogue. An unclaimed child has not declined identity --
@@ -189,14 +181,26 @@ function SchoolShell({ clear }) {
             whole household. Both scopes are the same endpoint, filtered. */}
         {section === 'progress' && <ReportPanel userId={currentUser?.id || null} />}
         {section === 'banks' && !active && <BankBrowser guestOnly={isGuest} onLaunch={onLaunch} notice={notice} />}
-        {active?.mode === 'quiz' && <QuizRunner bank={active.bank} onExit={() => setActive(null)} />}
-        {active?.mode === 'flashcard' && <FlashcardRunner bank={active.bank} onExit={() => setActive(null)} />}
-        {category && (
-          <MaterialsSection
-            materials={materials.filter((m) => m.category === category)}
-            sectionLabel={sectionDef?.label}
+        {subjectId && !active && (
+          <SubjectPage
+            subjectId={subjectId}
+            shelf={grouped.bySubject[subjectId]}
+            guestOnly={isGuest}
+            onLaunch={onLaunch}
+            notice={notice}
+            onOpen={openSection}
           />
         )}
+        {section === 'library' && !active && (
+          <LibraryPage
+            library={grouped.library}
+            guestOnly={isGuest}
+            onLaunch={onLaunch}
+            notice={notice}
+          />
+        )}
+        {active?.mode === 'quiz' && <QuizRunner bank={active.bank} onExit={() => setActive(null)} />}
+        {active?.mode === 'flashcard' && <FlashcardRunner bank={active.bank} onExit={() => setActive(null)} />}
         {/* Language study needs a claimed identity: every rung produces a
             record, and a guest's work is discarded. The program itself shows
             the sign-in prompt rather than drilling into a void. */}

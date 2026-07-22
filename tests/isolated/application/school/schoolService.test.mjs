@@ -61,21 +61,17 @@ describe('banks', () => {
 });
 
 describe('getRoster', () => {
-  it('falls back to username when display_name is absent, passes through group_label, and sorts by name', () => {
+  it('is the household roster in household order — one order, shared with every other picker', () => {
+    const householdRoster = [
+      { id: 'zed', name: 'Zed', group_label: 'kids' },
+      { id: 'abby', name: 'Abby', group_label: 'parents' },
+    ];
     const userService = {
       getProfile: () => null,
-      getAllProfiles: () => new Map([
-        ['zed', { username: 'zed', display_name: 'Zed', group_label: 'kids' }],
-        ['nodisplay', { username: 'nodisplay' }],
-        ['abby', { username: 'abby', display_name: 'Abby', group_label: 'parents' }],
-      ]),
+      getHouseholdRoster: () => householdRoster,
     };
     const roster = new SchoolService({ datastore: ds, userService, now: () => clock.t }).getRoster();
-    expect(roster).toEqual([
-      { id: 'abby', name: 'Abby', group_label: 'parents' },
-      { id: 'nodisplay', name: 'nodisplay', group_label: undefined },
-      { id: 'zed', name: 'Zed', group_label: 'kids' },
-    ]);
+    expect(roster).toEqual(householdRoster); // order preserved, not re-sorted
   });
 });
 
