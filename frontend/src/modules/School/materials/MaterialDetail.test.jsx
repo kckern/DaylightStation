@@ -76,7 +76,7 @@ describe('MaterialDetail', () => {
     expect(onPlay).toHaveBeenCalledWith(expect.objectContaining({ id: 'plex:10' }));
   });
 
-  it('renders a "‹ All <sectionLabel>" back row that calls onBack', async () => {
+  it('renders an "All <sectionLabel>" back row that calls onBack', async () => {
     materialUnitsMock.mockResolvedValue({ ok: true, status: 200, data: { material, units: [] } });
     const onBack = vi.fn();
     render(<MaterialDetail material={material} userId="kid1" onBack={onBack} onPlay={() => {}} notice={null} sectionLabel="Courses" />);
