@@ -115,6 +115,7 @@ export function createDeviceRouter(config) {
     pianoMidiWakeService,
     screenOverrideService,
     presenceStore = null,
+    readGate = null,
     logger = console,
   } = config;
 
@@ -212,17 +213,27 @@ export function createDeviceRouter(config) {
   // docs/_wip/plans/2026-07-22-portal-presence-gate-design.md
   router.post('/:deviceId/presence', (req, res) => {
     if (!presenceStore) return res.status(503).json({ error: 'presence not configured' });
-    const { at, devices } = req.body || {};
-    if (!Array.isArray(devices)) {
+    const body = req.body || {};
+    if (!Array.isArray(body.devices)) {
       return res.status(400).json({ error: 'devices must be an array' });
     }
-    const entry = presenceStore.record(req.params.deviceId, { at, devices });
-    return res.json({ ok: true, at: entry.at, count: entry.devices.length });
+    // Forward the WHOLE report. Destructuring `{at, devices}` here silently
+    // dropped seq/uptimeMs/version/heartbeatMs, which disabled replay
+    // rejection entirely — the store never saw a sequence to compare.
+    const entry = presenceStore.record(req.params.deviceId, body);
+    if (!entry) return res.status(403).json({ error: 'device not allowed' });
+    return res.json({ ok: true, receivedAt: entry.receivedAt, seq: entry.seq, count: entry.devices.length });
   });
 
   router.get('/:deviceId/presence', (req, res) => {
     if (!presenceStore) return res.status(503).json({ error: 'presence not configured' });
-    return res.json(presenceStore.get(req.params.deviceId) ?? { at: null, devices: [] });
+    return res.json({
+      presence: presenceStore.get(req.params.deviceId) ?? { receivedAt: null, devices: [] },
+      // Recent transitions answer "why did it lock" after the fact, which a
+      // last-value-only store never could.
+      transitions: presenceStore.history(req.params.deviceId),
+      gate: readGate ? readGate() : null,
+    });
   });
 
   router.post('/audio-bridge/heal', asyncHandler(async (req, res) => {

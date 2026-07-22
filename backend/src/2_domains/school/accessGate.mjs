@@ -49,7 +49,12 @@ export function resolveGate({ presence, now, required = [], ttlMs = DEFAULT_TTL_
     return { level: 'open', reason: 'no-gate-configured', missing: [], stale: false };
   }
 
-  const at = presence?.at ? Date.parse(presence.at) : NaN;
+  // `receivedAt` is stamped by the backend when the report ARRIVES. The
+  // client's own `at` is kept for skew diagnostics and is deliberately NOT
+  // trusted here: a panel with a slow clock would be permanently stale with
+  // every device connected, and a single POST carrying `at` far in the future
+  // would hold the gate open indefinitely — a one-line bypass.
+  const at = Number.isFinite(presence?.receivedAt) ? presence.receivedAt : NaN;
   const stale = !Number.isFinite(at) || (now - at) > ttlMs;
   if (stale) {
     return {
@@ -113,7 +118,37 @@ export function capabilitiesUnder(gate, claimed = {}) {
   return { microphone: claimed.microphone === true, textInput: [] };
 }
 
-/** Tracked work requires an open gate; browsing and listening do not. */
+/**
+ * Whether a SPECIFIC rung may be recorded under this gate.
+ *
+ * Per-rung, not per-level. An earlier version refused every attempt unless the
+ * gate was fully open, which broke the feature's own promise: a missing
+ * keyboard is supposed to drop the typing rungs and leave audio work running,
+ * and instead the child was shown a repetition drill, did it, and was told to
+ * "connect the keyboard" for a rung that needs no keyboard. The queue and the
+ * recorder have to agree about what is doable, and the queue is right.
+ *
+ * `disabled` and `stale` still refuse everything. Disabled means the drill
+ * genuinely cannot run; stale means we do not know what is connected, and
+ * guessing generously is how a gate stops being a gate.
+ *
+ * @param {object} gate
+ * @param {object|null} requirement - from ladder.requirementFor(rung, languages)
+ * @param {object} claimed - the device's claimed capabilities
+ */
+export function allowsRung(gate, requirement, claimed = {}) {
+  if (gate.level === 'disabled' || gate.stale) return false;
+  if (gate.level === 'open') return true;
+  const allowed = capabilitiesUnder(gate, claimed);
+  if (requirement === null || requirement === undefined) return true;
+  if (requirement.kind === 'microphone') return allowed.microphone === true;
+  if (requirement.kind === 'textInput') {
+    return Array.isArray(allowed.textInput) && allowed.textInput.includes(requirement.language);
+  }
+  return false;
+}
+
+/** Whether ANY tracked work is possible. Used for the whole-screen states. */
 export function allowsTrackedWork(gate) {
-  return gate.level === 'open';
+  return gate.level !== 'disabled' && !gate.stale;
 }

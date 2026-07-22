@@ -14,8 +14,9 @@ import {
   shouldRollDay, chainFor, rungById, resolveRole, accuracy,
 } from '#domains/school/language/index.mjs';
 import { RUNG_IDS } from '#domains/school/language/ladder.mjs';
-import { resolveGate, capabilitiesUnder, allowsTrackedWork, gateMessage } from '#domains/school/accessGate.mjs';
-import { GuestForbiddenError } from '#domains/school/errors.mjs';
+import { resolveGate, capabilitiesUnder, allowsRung, gateMessage } from '#domains/school/accessGate.mjs';
+import { requirementFor } from '#domains/school/language/ladder.mjs';
+import { GuestForbiddenError, GateClosedError } from '#domains/school/errors.mjs';
 import { ValidationError, EntityNotFoundError } from '#domains/core/errors/index.mjs';
 
 const DEFAULT_DAILY_LIMIT = 5;
@@ -76,6 +77,12 @@ export class LanguageStudyService {
     this.#timezone = timezone;
     this.#boundaryHour = boundaryHour;
     this.#readGate = readGate;
+  }
+
+  /** The resolved gate, for diagnosis. */
+  describeGate() {
+    const gate = this.#gate();
+    return { ...gate, message: gateMessage(gate) };
   }
 
   /** The physical gate, or an open one when no gate is wired. */
@@ -245,19 +252,20 @@ export class LanguageStudyService {
    * otherwise; accuracy is computed for text responses but **gates nothing**
    * (design §3) — it exists for the learner's own diff on the Review surface.
    */
-  logAttempt({ userId, corpusId, seq, rung, given = null, source = null }) {
+  logAttempt({ userId, corpusId, seq, rung, given = null, source = null, capabilities = {} }) {
     this.#requireUser(userId);
-    // Tracked work is refused unless the gate is fully open. Browsing and
-    // listening stay available while hindered — a Bluetooth glitch should cost
-    // the lesson, not the panel.
-    const gate = this.#gate();
-    if (!allowsTrackedWork(gate)) {
-      throw new GuestForbiddenError(gateMessage(gate) || 'Study is unavailable right now');
-    }
     const corpus = this.#requireCorpus(corpusId);
 
     const rungDef = rungById(rung);
     if (!rungDef) throw new ValidationError(`unknown rung: ${rung}`, { field: 'rung', value: rung });
+
+    // Gated PER RUNG, so the recorder agrees with the queue. A missing keyboard
+    // must not refuse a repetition drill the queue just offered — that was the
+    // shape of the bug this replaces.
+    const gate = this.#gate();
+    if (!allowsRung(gate, requirementFor(rungDef, corpus.languages), capabilities)) {
+      throw new GateClosedError(gateMessage(gate) || 'That is unavailable right now', gate);
+    }
 
     const sentence = corpus.index.get(Number(seq));
     if (!sentence) throw new EntityNotFoundError('sentence', `${corpusId}#${seq}`);
