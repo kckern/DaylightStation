@@ -3,6 +3,7 @@
 // reading, then advance to the density stage (edit the message into the density
 // keyboard + arm the describe path).
 
+import { resolveScaleNet } from './LogFoodFromScale.mjs';
 import {
   buildDensityKeyboard, densityPromptText,
   buildContainerKeyboard, containerPromptText,
@@ -52,21 +53,23 @@ export class SelectScaleContainer {
       return { success: true, shown: true };
     }
 
+    // Same resolver as the scan path (LogFoodFromScale), so a button tap and a
+    // `ct:` scan can never produce different nets for the same gross + container.
+    // It also owns the "tare is not lighter than the reading" refusal this path
+    // has always had, so the rule is stated once rather than in two places.
+    const r = resolveScaleNet({ gross, composition: { container: containerId } }, this.#scaleConfig.containers);
     let net = gross;
     let containerId2 = null, containerGrams = 0;
-    if (containerId && containerId !== 'none') {
-      const c = this.#scaleConfig.containers.items.find((x) => x.id === containerId);
-      if (c) {
-        if (c.grams >= gross) {
-          this.#logger.warn?.('selectContainer.tooHeavy', { logUuid, container: c.id, containerGrams: c.grams, gross });
-        } else {
-          net = Math.max(1, gross - c.grams);
-          containerId2 = c.id;
-          containerGrams = c.grams;
-        }
-      } else {
-        this.#logger.warn?.('selectContainer.unknownContainer', { logUuid, containerId });
-      }
+    if (r.unknownId) {
+      this.#logger.warn?.('selectContainer.unknownContainer', { logUuid, containerId });
+    } else if (r.error) {
+      this.#logger.warn?.('selectContainer.badContainer', { logUuid, container: r.container?.id, error: r.error.message });
+    } else if (r.refused) {
+      this.#logger.warn?.('selectContainer.tooHeavy', { logUuid, container: r.container.id, containerGrams: r.container.grams, gross });
+    } else if (r.container) {
+      net = r.net;
+      containerId2 = r.container.id;
+      containerGrams = r.container.grams;
     }
 
     const updatedItem = { ...item0, grams: net };

@@ -15,16 +15,21 @@ export const DEFAULT_CONTAINERS = {
   ],
 };
 
+// `macros` are PERCENT OF CALORIES and must sum to 100 (ScanNutritionService
+// derives grams from them; validateScanConfig asserts the sum). These splits are
+// a WORKING FALLBACK — hand-estimated to be plausible for what each tier
+// describes, not measured. Replace them with real figures in the `nutribot:`
+// block of scales.yml when the table is tuned against actual foods.
 export const DEFAULT_DENSITY_LEVELS = [
-  { level: 1, label: 'Watery', emoji: '🥬', kcal_per_g: 0.2, hint: 'broth, greens' },
-  { level: 2, label: 'Light', emoji: '🥗', kcal_per_g: 0.6, hint: 'salad, fruit' },
-  { level: 3, label: 'Lean', emoji: '🍲', kcal_per_g: 1.0, hint: 'soup, lean meat' },
-  { level: 4, label: 'Mixed', emoji: '🍛', kcal_per_g: 1.4, hint: 'rice + veg + protein' },
-  { level: 5, label: 'Hearty', emoji: '🍝', kcal_per_g: 1.9, hint: 'pasta, casserole' },
-  { level: 6, label: 'Heavy', emoji: '🍕', kcal_per_g: 2.6, hint: 'pizza, fried' },
-  { level: 7, label: 'Rich', emoji: '🧀', kcal_per_g: 3.8, hint: 'cheese, creamy' },
-  { level: 8, label: 'Thick', emoji: '🥜', kcal_per_g: 6.0, hint: 'nuts, nut butter' },
-  { level: 9, label: 'Oil', emoji: '🫒', kcal_per_g: 8.5, hint: 'oil, butter' },
+  { level: 1, label: 'Watery', emoji: '🥬', kcal_per_g: 0.2, hint: 'broth, greens', macros: { fat_pct: 10, carb_pct: 60, protein_pct: 30 } },
+  { level: 2, label: 'Light', emoji: '🥗', kcal_per_g: 0.6, hint: 'salad, fruit', macros: { fat_pct: 15, carb_pct: 70, protein_pct: 15 } },
+  { level: 3, label: 'Lean', emoji: '🍲', kcal_per_g: 1.0, hint: 'soup, lean meat', macros: { fat_pct: 20, carb_pct: 45, protein_pct: 35 } },
+  { level: 4, label: 'Mixed', emoji: '🍛', kcal_per_g: 1.4, hint: 'rice + veg + protein', macros: { fat_pct: 25, carb_pct: 50, protein_pct: 25 } },
+  { level: 5, label: 'Hearty', emoji: '🍝', kcal_per_g: 1.9, hint: 'pasta, casserole', macros: { fat_pct: 30, carb_pct: 50, protein_pct: 20 } },
+  { level: 6, label: 'Heavy', emoji: '🍕', kcal_per_g: 2.6, hint: 'pizza, fried', macros: { fat_pct: 40, carb_pct: 45, protein_pct: 15 } },
+  { level: 7, label: 'Rich', emoji: '🧀', kcal_per_g: 3.8, hint: 'cheese, creamy', macros: { fat_pct: 65, carb_pct: 15, protein_pct: 20 } },
+  { level: 8, label: 'Thick', emoji: '🥜', kcal_per_g: 6.0, hint: 'nuts, nut butter', macros: { fat_pct: 75, carb_pct: 15, protein_pct: 10 } },
+  { level: 9, label: 'Oil', emoji: '🫒', kcal_per_g: 8.5, hint: 'oil, butter', macros: { fat_pct: 100, carb_pct: 0, protein_pct: 0 } },
 ];
 
 const num = (v, fallback) => (Number.isFinite(Number(v)) ? Number(v) : fallback);
@@ -41,7 +46,22 @@ export function normalizeScaleNutribotConfig(raw = {}) {
   const densityLevels = Array.isArray(nb.density_levels) && nb.density_levels.length
     ? nb.density_levels
         .filter((l) => l && Number.isFinite(Number(l.level)) && Number.isFinite(Number(l.kcal_per_g)))
-        .map((l) => ({ level: Number(l.level), label: l.label || `L${l.level}`, emoji: l.emoji || '🍽', kcal_per_g: Number(l.kcal_per_g), hint: l.hint || '' }))
+        .map((l) => {
+          const out = {
+            level: Number(l.level),
+            label: l.label || `L${l.level}`,
+            emoji: l.emoji || '🍽',
+            kcal_per_g: Number(l.kcal_per_g),
+            hint: l.hint || '',
+          };
+          // Passed through untouched. `computeNutrition` (ScanNutritionService)
+          // validates these when a density level is applied, and treats a blank
+          // macros (throws) differently from a blank per_100g (tolerated).
+          // Defaulting either here would mask a bad table.
+          if (l.macros !== undefined) out.macros = l.macros;
+          if (l.per_100g !== undefined) out.per_100g = l.per_100g;
+          return out;
+        })
     : DEFAULT_DENSITY_LEVELS;
 
   return {
