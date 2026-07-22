@@ -127,6 +127,46 @@ describe('capability degradation', () => {
   });
 });
 
+describe('undated legacy evidence', () => {
+  // The 2016 database is gone, so imported recordings carry no `day` — and
+  // fabricating one would put fiction in an append-only evidence log. They
+  // must still count, or the whole legacy import is inert and the learner is
+  // silently sent back to sentence 1.
+  const legacy = (seq) => ({ seq, rung: 'recording', source: 'legacy-2017' });
+
+  it('counts an undated event as cleared before any real day', () => {
+    const queue = build({ log: [legacy(1)], day: 1, dailyLimit: 0 });
+    expect(queue).toEqual([{ seq: 1, rung: 'interpretation', done: false }]);
+  });
+
+  it('does NOT re-admit a legacy sentence as new material', () => {
+    // It already climbed rep -> dict -> rec in 2016. Offering it as brand-new
+    // repetition would both duplicate it in the queue and lose the progress
+    // the import exists to restore.
+    const queue = build({ log: [legacy(1)], day: 1, dailyLimit: 3 });
+    expect(queue.filter((e) => e.seq === 1)).toEqual([
+      { seq: 1, rung: 'interpretation', done: false },
+    ]);
+    expect(queue.filter((e) => e.rung === 'repetition').map((e) => e.seq)).toEqual([2, 3, 4]);
+  });
+
+  it('retires a legacy sentence once its final rung is cleared', () => {
+    const queue = build({
+      log: [legacy(1), ev(1, 'interpretation', 1)], day: 2, dailyLimit: 0,
+    });
+    expect(queue).toEqual([]);
+  });
+
+  it('places a whole legacy import at the right rung without duplicates', () => {
+    const log = [1, 2, 3, 4, 5].map(legacy);
+    const queue = build({ log, day: 1, dailyLimit: 2, corpusSize: 100 });
+    const seqs = queue.map((e) => e.seq);
+    expect(new Set(seqs).size).toBe(seqs.length); // no sentence appears twice
+    expect(queue.filter((e) => e.rung === 'interpretation').map((e) => e.seq)).toEqual([1, 2, 3, 4, 5]);
+    expect(queue.filter((e) => e.rung === 'repetition').map((e) => e.seq)).toEqual([6, 7]);
+  });
+});
+
 describe('malformed log entries', () => {
   it('ignores events it cannot place rather than corrupting the queue', () => {
     const log = [null, {}, { seq: 'x', rung: 'repetition', day: 1 }, ev(1, 'repetition', 1)];

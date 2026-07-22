@@ -22,23 +22,39 @@ import { chainFor, graduationEdges } from './ladder.mjs';
  */
 
 /**
- * Index the log by rung → Map(seq → earliest day it was cleared on).
+ * Study days are 1-based, so 0 is "cleared before any day this system counted".
+ *
+ * Imported 2016 evidence has no day number — that database is gone, and the
+ * import deliberately records no `day` rather than inventing one, because a
+ * fabricated day is fiction in an append-only evidence log. Undated evidence is
+ * still evidence: it dates from before day 1 by definition, and 0 orders
+ * correctly against every real day.
+ */
+const UNDATED = 0;
+
+/**
+ * Index the log by rung → Map(seq → earliest day it was cleared on), plus the
+ * set of every sequence that has been touched at all.
+ *
  * Earliest wins: a rung re-done later (a retry, a reassignment) must not push
  * the sentence's graduation date forward and silently stall the ladder.
  */
 function clearedIndex(log) {
   const byRung = new Map();
+  const everSeen = new Set();
   for (const event of log) {
     if (!event || event.seq == null || !event.rung) continue;
     const seq = Number(event.seq);
-    const day = Number(event.day);
-    if (!Number.isFinite(seq) || !Number.isFinite(day)) continue;
+    if (!Number.isFinite(seq)) continue;
+    const rawDay = Number(event.day);
+    const day = Number.isFinite(rawDay) ? rawDay : UNDATED;
+    everSeen.add(seq);
     if (!byRung.has(event.rung)) byRung.set(event.rung, new Map());
     const seqs = byRung.get(event.rung);
     const prior = seqs.get(seq);
     if (prior === undefined || day < prior) seqs.set(seq, day);
   }
-  return byRung;
+  return { byRung, everSeen };
 }
 
 /**
@@ -59,7 +75,7 @@ function clearedIndex(log) {
  * @returns {Array<{seq: number, rung: string, done: boolean}>}
  */
 export function buildDayQueue({ log = [], day, dailyLimit, corpusSize, capabilities = {}, languages }) {
-  const cleared = clearedIndex(log);
+  const { byRung: cleared, everSeen } = clearedIndex(log);
   const chain = chainFor(capabilities, languages);
   if (chain.length === 0) return [];
 
@@ -78,13 +94,19 @@ export function buildDayQueue({ log = [], day, dailyLimit, corpusSize, capabilit
   enteredToday.sort((a, b) => a - b);
   for (const seq of enteredToday) queue.push({ seq, rung: entryRung, done: true });
 
-  // Scan in sequence order and take the first untouched sentences. Scanning
+  // Scan in sequence order and take the first UNTOUCHED sentences. Scanning
   // (rather than the original's `max(seq) + 1`) means a gap left by a skipped
   // or reassigned sentence gets picked up later instead of being stranded
   // behind the high-water mark forever.
+  //
+  // Untouched means no event at ANY rung, not merely none at the entry rung.
+  // Imported 2016 evidence is a `recording` with no `repetition` behind it —
+  // that sentence climbed three rungs years ago, and admitting it as new
+  // material would both duplicate it (it is already due at the next rung) and
+  // throw away the progress the import exists to restore.
   let admitted = enteredToday.length;
   for (let seq = 1; seq <= corpusSize && admitted < dailyLimit; seq += 1) {
-    if (entryCleared.has(seq)) continue;
+    if (everSeen.has(seq)) continue;
     queue.push({ seq, rung: entryRung, done: false });
     admitted += 1;
   }
