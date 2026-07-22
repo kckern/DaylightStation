@@ -16,14 +16,16 @@
 #define READER_ID      "study-scantron"
 #define BUS_TOPIC      "scantron"
 
-// --- RS-232 UART (VALUES BELOW ARE UNVERIFIED PLACEHOLDERS) ---
-// Baud/parity/framing of the OMR 1200 are unknown until sniffed on hardware.
-// Start in raw-passthrough sniff mode and confirm before trusting decode.
+// --- RS-232 UART (VERIFIED 2026-07-21 against the real OMR-1100) ---
+// Confirmed by live interrogation AND by the operator manual: the reader's
+// power-up default is 9600 baud, 7 data bits, EVEN parity, 1 stop bit.
+// Do not "fix" this to 8N1 — 8N1 yields silence, not garbage.
 #define UART_RX_PIN    22     // ATOM base RX  <- VERIFY against M5 ATOMIC RS232 base pinout
-#define UART_TX_PIN    19     // ATOM base TX  <- VERIFY (unused if scanner is send-only)
-#define UART_BAUD      9600   // GUESS — sniff the real rate first (try 1200/2400/9600)
-#define UART_CONFIG    SERIAL_8N1  // GUESS — could be 7E1 on vintage OMR gear
+#define UART_TX_PIN    19     // ATOM base TX  <- REQUIRED: the mode download goes out on TX
+#define UART_BAUD      9600
+#define UART_CONFIG    SERIAL_7E1
 
 // Sniff mode: forward every received byte to the bus as {"type":"raw"} instead
-// of attempting to decode sheet answers. Use this during protocol discovery.
-#define SNIFF_MODE     1
+// of decoding. The protocol is now known, so decode is the default; set to 1
+// only when investigating a new form or a suspected framing change.
+#define SNIFF_MODE     0
