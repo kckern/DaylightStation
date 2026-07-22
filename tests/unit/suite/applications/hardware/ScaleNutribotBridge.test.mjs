@@ -87,14 +87,39 @@ describe('ScaleNutribotBridge (gated: supersede, force, suspicion, sweep)', () =
     expect(retract).not.toHaveBeenCalled(); // answered log is kept, never retracted
   });
 
-  it('sweeps the unanswered prompt when the pan empties (session end)', async () => {
+  it('KEEPS the unanswered prompt when the pan empties, superseding it only on the next placement', async () => {
+    // This asserted the opposite until 2026-07-22: session end swept the prompt.
+    // In production a 95 g item posted a prompt at 09:43:04 and it was deleted at
+    // 09:43:20 -- because the item had been lifted off the pan. Set it down, read
+    // it, pick it up is how a kitchen scale is used, so the old rule meant you had
+    // to tap a density while the food was still sitting there or lose the prompt.
     emit(480); await flush();
     emit(680); await flush();          // create l1 (unanswered)
     emit(482); await flush();          // back near baseline → session end
-    expect(retract).toHaveBeenCalledTimes(1);
-    expect(retract.mock.calls[0][0]).toMatchObject({ logUuid: 'l1' });
-    emit(690); await flush();          // new session → fresh create
+
+    expect(retract).not.toHaveBeenCalled();   // survives; still answerable
+
+    emit(690); await flush();          // a NEW placement supersedes it
     expect(createCalls()).toHaveLength(2);
+    expect(retract).toHaveBeenCalledTimes(1); // superseded by post(), not swept by session end
+    expect(retract.mock.calls[0][0]).toMatchObject({ logUuid: 'l1' });
+  });
+
+  it('does not let a suppressed placement repaint a closed prompt', async () => {
+    // The closed flag exists for this: the LOADING branch returns early on a live
+    // prompt, so without it a placement that the storage-band filter would suppress
+    // would still edit-in-place and repaint the pending prompt with the put-away
+    // weight -- the exact phantom that filter exists to keep out of nutribot.
+    build({ storage_weight_g: 430, storage_tolerance_g: 15 });
+    emit(0); await flush();            // baseline 0
+    emit(200); await flush();          // real placement → create l1 (unanswered)
+    emit(2); await flush();            // session end → l1 closed, NOT retracted
+    const editsBefore = editCalls().length;
+
+    emit(438); await flush();          // in the storage band 430±15 → suppressed
+    expect(createCalls()).toHaveLength(1);            // no new prompt
+    expect(editCalls().length).toBe(editsBefore);     // and l1 was not repainted
+    expect(retract).not.toHaveBeenCalled();           // nor swept
   });
 
   it('suppresses a value inside the storage band (no post)', async () => {

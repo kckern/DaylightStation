@@ -159,7 +159,34 @@ export function createScaleNutribotBridge({
     try {
       // SESSION END: back near/below the resting load ⇒ removed / tare / jostle.
       if (rise <= baselineTolG) {
-        if (s.live) { await retract(s.live); s.live = null; } // sweep unanswered slop
+        // DO NOT retract the live prompt here.
+        //
+        // This used to "sweep unanswered slop" the moment the pan returned to
+        // baseline. Observed in production 2026-07-22: a 95 g item posted a
+        // prompt at 09:43:04 and it was deleted at 09:43:20 -- sixteen seconds
+        // later -- because the item had been lifted off. That is the ordinary
+        // way to use a kitchen scale: set it down, read it, pick it up. Under
+        // the old rule you had to tap a density while the food was still on the
+        // pan or the prompt evaporated, which made the feature unusable.
+        //
+        // There was never much slop to sweep: a prompt is only posted AFTER the
+        // min_grams floor and the suspicion filter, so by construction it
+        // already represents a real settled weight worth answering.
+        //
+        // The single-live invariant is unaffected -- `post()` still retracts any
+        // prior live prompt before posting a new one, so weighing a second item
+        // supersedes the first exactly as before. The only behaviour change is
+        // that a prompt now survives the food being removed.
+        //
+        // CLOSED, not cleared. The prompt stays answerable but stops being the
+        // target of edit-in-place: the LOADING branch below returns early on a
+        // live prompt, which would let the NEXT placement hijack this message
+        // before the suspicion filter ever ran -- so putting the scale away in
+        // its storage band would silently repaint this prompt with the storage
+        // weight. Marking it closed sends the next placement down the normal
+        // floor/suspicion path, where post() supersedes this one properly.
+        if (s.live) s.live.closed = true;
+        if (s.placed) { s.placed = false; bufferEndPlacement(id); }
         // CROSSING only — `rise <= baselineTolG` is also true on every at-rest
         // heartbeat, and consuming the buffer on those would eat a scan made
         // before the food is set down.
@@ -175,8 +202,10 @@ export function createScaleNutribotBridge({
 
       if (grams < minGrams) return;         // floor guard
 
-      // LOADING: one live prompt follows the weight (edit in place).
-      if (s.live) {
+      // LOADING: one live prompt follows the weight (edit in place). Only a
+      // prompt belonging to THIS placement may be followed — a closed one is a
+      // past placement still awaiting an answer and must not be repainted.
+      if (s.live && !s.live.closed) {
         if (Math.abs(grams - s.live.grams) < dedupDeltaG) return; // same held value
         const res = await editInPlace(grams, id, s.live);
         if (res?.edited) { s.live.grams = grams; bufferWeight(id, grams); return; }  // still unanswered → followed
