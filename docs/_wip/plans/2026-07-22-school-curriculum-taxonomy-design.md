@@ -45,12 +45,21 @@ not missing features — so the fix was a data rewrite, not new code.
 standalone. They fire after their track. This also sidesteps the flat
 `BankBrowser` grid, which would otherwise have to render 379 items.
 
-**`school.yml` is the source of truth** for organisation — taxonomy, pedagogy,
-and enrolment. Per-work detail drills down into
-`{dataDir}/household/config/curriculum/{slug}.yml` rather than bloating it.
+**`school.yml` is the source of truth** for pedagogy and enrolment. Per-work
+detail drills down into `{dataDir}/household/config/curriculum/{slug}.yml`
+rather than bloating it.
 
-**Two-tier taxonomy: subject → strand.** A third tier stops being navigable on a
-kiosk used by a five-year-old.
+**The subject taxonomy is NOT config.** An earlier draft of this design put a
+`subjects:` block with `subject → strand` nesting into `school.yml`. That was
+written against a tree that predated the subject-wall commit by a few hours,
+and it contradicted a decision made deliberately there: the six shelves are
+fixed in `home/subjects.js` because "a new shelf is a curriculum decision, not
+a config edit". The draft was withdrawn.
+
+The same commit settles the second tier: it is *instances of content
+frameworks*, not a sub-taxonomy. So "history" and "literature" are not shelves
+— they are two materials sitting side by side on the Civilization shelf. The
+`strand:` key from the draft was removed.
 
 **Enrolment lives in `school.yml`, not in profiles.** Levels list their
 students, rather than each `profile.yml` naming its level. The whole roster is
@@ -69,15 +78,11 @@ second source of truth, free to drift.
 
 ## Config model
 
-`school.yml` gains three blocks alongside the existing `materials`:
+`school.yml` gains one block alongside the existing `materials`:
 
-- `subjects:` — the taxonomy. Each subject has a `label` and optional `strands`.
-  Defining it in config means adding a subject is not a code change. A source
-  naming an undeclared subject or strand falls back to the Library and logs a
-  warning naming the source — the same fail-closed-but-loudly rule as `category`.
 - `levels:` — each level has a `label` and a `students` list of user ids.
-- `materials.sources[]` gains `subject`, `strand`, and `curriculum` (the
-  drill-down file slug).
+- `materials.sources[]` gains `curriculum` (the drill-down file slug),
+  alongside the `subject` the subject-wall commit already reads.
 
 Drill-down files carry `label` and an ordered `works` list. Each work has a Plex
 album id, a title, its authored quiz count, and an optional `levels` list.
@@ -85,18 +90,25 @@ album id, a title, its authored quiz count, and an optional `levels` list.
 **Absence never hides.** A source or work with no `levels` is open to every
 level; a student in no level sees everything unrestricted.
 
-## Code changes required
+## Code changes
 
-Three roughly independent pieces. None are started.
+**Done — bank `subject` passthrough.** The subject-wall design has both
+materials sources *and bank YAMLs* declare `subject:`. Only the first half
+worked. `questionBankValidation` returned `{id, title, audience, topics, items,
+unit, readalong}` — no `subject` — so `SchoolService.listBanks`'s
+`subject: b.subject ?? null` was always null and every bank fell through to the
+Library regardless of its YAML. Verified before the fix: `0 / 380` banks
+reported a subject, including one whose YAML declared `subject: civilization`.
 
-1. **Read the taxonomy.** `GetMaterialCatalog.execute()` currently returns
-   `sections` filtered from a category-ordered constant. It must instead emit
-   subject sections with nested strands, validating each source's `subject`/
-   `strand` against the declared taxonomy and failing closed to the Library.
-   `home/sections.js` and `SchoolApp.jsx`'s section-id parsing follow.
-2. **Read the drill-down.** Load `curriculum/{slug}.yml` for sources that name
+The value is deliberately not validated against the six known subjects. The
+frontend already routes an unknown shelf to the Library, so a typo costs a
+misplaced tile; rejecting the bank here would cost the whole quiz.
+
+**Not started — the remaining two pieces:**
+
+1. **Read the drill-down.** Load `curriculum/{slug}.yml` for sources that name
    one; use it to order works and to carry per-work `levels`.
-3. **Enforce levels.** Resolve a student's level by searching `levels[].students`
+2. **Enforce levels.** Resolve a student's level by searching `levels[].students`
    for their user id, then filter catalog and works. Log every exclusion.
 
 ## Risks and follow-ups
@@ -113,3 +125,9 @@ Three roughly independent pieces. None are started.
   re-reading every bank YAML. Deliberate, to inherit `listBanks()`'s no-cache
   freshness. At 379 banks this is worth measuring before it becomes 1000.
 - Level assignments are all commented out, so nothing is narrowed yet.
+- **This design was drafted against a stale checkout.** Local `main` was behind
+  the deployed homeserver tree, and the subject-wall commit landed mid-design,
+  invalidating a section of it. `CLAUDE.local.md` prescribes a sync check before
+  starting work precisely for this; it was skipped. The wasted work was config
+  only, but the same slip against code would have produced a duplicate
+  implementation.
