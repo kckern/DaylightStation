@@ -237,6 +237,11 @@ import { buzzersToSelectors, makeBuzzerSelectHandler } from './3_applications/ga
 import { createSchoolRouter } from './4_api/v1/routers/school.mjs';
 import { SchoolService } from './3_applications/school/SchoolService.mjs';
 import { YamlSchoolDatastore } from './1_adapters/persistence/yaml/YamlSchoolDatastore.mjs';
+import { GetMaterialCatalog } from './3_applications/school/GetMaterialCatalog.mjs';
+import { GetMaterialUnits, buildBankIndex } from './3_applications/school/GetMaterialUnits.mjs';
+import { PlexAlbumSource } from './3_applications/school/sources/PlexAlbumSource.mjs';
+import { PlexShowSource } from './3_applications/school/sources/PlexShowSource.mjs';
+import { UserVideoProgressStore as SchoolUserVideoProgressStore } from './3_applications/piano/UserVideoProgressStore.mjs';
 import { createContentFilterRouter } from './4_api/v1/routers/contentFilter.mjs';
 import { FeedbackService } from './3_applications/common/feedback/FeedbackService.mjs';
 import { NotificationConfigService } from './3_applications/notification/NotificationConfigService.mjs';
@@ -1510,16 +1515,9 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     logger: rootLogger.child({ module: 'gameshow-api' }),
   });
 
-  // School (portal homeschool): banks from data/content/quizzes/, per-user
-  // append-only attempt log under data/users/{id}/apps/school/attempts/.
-  v1Routers.school = createSchoolRouter({
-    schoolService: new SchoolService({
-      datastore: new YamlSchoolDatastore({ configService }),
-      userService,
-      logger: rootLogger.child({ module: 'school' }),
-    }),
-    logger: rootLogger.child({ module: 'school-api' }),
-  });
+  // School router (banks/sessions + materials framework) is constructed below,
+  // after fitnessPlayableService exists (PlexShowSource reuses it rather than
+  // standing up a second Plex-episode path — see that block for the full wiring).
 
   // Content-filter cascade (EDL + profile + override) for the Player's
   // useContentFilter hook. Reads data/household/shared/content-filter/.
@@ -1971,6 +1969,86 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   v1Routers.piano = createPianoRouter({
     pianoContainer,
     logger: rootLogger.child({ module: 'piano-api' })
+  });
+
+  // School (portal homeschool): banks from data/content/quizzes/, per-user
+  // append-only attempt log under data/users/{id}/apps/school/attempts/, plus
+  // the materials framework (catalog + per-unit progress/quiz gates). Wired
+  // here (after fitnessPlayableService/pianoContainer above) because
+  // PlexShowSource reuses the already-constructed fitnessPlayableService's
+  // getPlayableEpisodes rather than standing up a second one.
+  const schoolDatastore = new YamlSchoolDatastore({ configService });
+  const schoolService = new SchoolService({
+    datastore: schoolDatastore,
+    userService,
+    logger: rootLogger.child({ module: 'school' })
+  });
+  // Dumb playhead/percent/duration store only (spec §6) — School never reads
+  // its threshold/engaged/completedAt fields, unlike Piano's own instance.
+  const schoolMaterialProgressStore = new SchoolUserVideoProgressStore({
+    configService,
+    app: 'school',
+    filename: 'material-progress',
+    logger: rootLogger.child({ module: 'school-materials' })
+  });
+
+  const schoolMaterialsConfig = configService.getHouseholdAppConfig(null, 'school')?.materials || null;
+  let getMaterialCatalog = null;
+  let getMaterialUnits = null;
+  if (schoolMaterialsConfig) {
+    // PlexAlbumSource/PlexShowSource want the raw Plex
+    // `/library/metadata/{id}/children` response (ratingKey/title/thumb/
+    // leafCount/duration/index/parentTitle/parentThumb) — NOT the normalized
+    // ListableItem[] PlexAdapter#getList returns. Adapt over the already
+    // -registered PlexAdapter instance's public `.client` (PlexClient) rather
+    // than instantiating a second PlexAdapter.
+    const schoolPlexAdapter = contentRegistry?.get('plex') || null;
+    const schoolPlexClient = {
+      children: async (ratingKey) => {
+        if (!schoolPlexAdapter?.client) return [];
+        const data = await schoolPlexAdapter.client.getContainer(`/library/metadata/${ratingKey}/children`);
+        return data?.MediaContainer?.Metadata || [];
+      }
+    };
+    const schoolMaterialSources = {
+      'plex-album': new PlexAlbumSource({
+        plexClient: schoolPlexClient,
+        logger: rootLogger.child({ module: 'school-materials' })
+      }),
+      'plex-show': new PlexShowSource({
+        fitnessPlayableService,
+        plexClient: schoolPlexClient,
+        logger: rootLogger.child({ module: 'school-materials' }),
+        householdId
+      })
+    };
+    getMaterialCatalog = new GetMaterialCatalog({
+      sources: schoolMaterialSources,
+      config: schoolMaterialsConfig,
+      logger: rootLogger.child({ module: 'school-materials' })
+    });
+    // Rebuilt from schoolService.listBanks() (cheap YAML-directory read, no
+    // cache of its own) on every lookup rather than once at boot, so a newly
+    // authored gating bank takes effect without a restart — matching
+    // listBanks()'s own no-cache behaviour.
+    const schoolMaterialBankIndex = { byUnit: (unitId) => buildBankIndex(schoolService.listBanks()).byUnit(unitId) };
+    getMaterialUnits = new GetMaterialUnits({
+      catalog: getMaterialCatalog,
+      sources: schoolMaterialSources,
+      config: schoolMaterialsConfig,
+      progressStore: schoolMaterialProgressStore,
+      bankIndex: schoolMaterialBankIndex,
+      attemptsReader: { read: (userId) => schoolDatastore.readAllAttempts(userId) },
+      logger: rootLogger.child({ module: 'school-materials' })
+    });
+  }
+
+  v1Routers.school = createSchoolRouter({
+    schoolService,
+    getMaterialCatalog,
+    getMaterialUnits,
+    materialProgressStore: schoolMaterialProgressStore,
+    logger: rootLogger.child({ module: 'school-api' })
   });
 
   // Strava webhook enrichment (provider-agnostic webhook, Strava adapter)
