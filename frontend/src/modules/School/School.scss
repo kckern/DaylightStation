@@ -267,9 +267,9 @@
   }
 
   &__subject {
-    display: flex; flex-direction: column; align-items: flex-start;
-    justify-content: center; gap: 0.35rem;
-    padding: 1rem 1.25rem; text-align: left;
+    display: flex; flex-direction: column; align-items: center;
+    justify-content: center; gap: 0.45rem;
+    padding: 1rem 1.25rem; text-align: center;
     border: 1px solid var(--school-border); border-radius: 14px;
     background: var(--school-surface); color: var(--school-fg); cursor: pointer;
 
@@ -278,9 +278,11 @@
     &.is-empty { opacity: 0.45; cursor: default; }
   }
 
-  &__subject-icon { font-size: 1.6rem; line-height: 1; color: var(--school-accent); }
-  &__subject-label { margin: 0; font-size: 1.35rem; font-weight: 800; }
-  &__subject-hint { margin: 0; color: var(--school-muted); font-size: 0.95rem; }
+  // Prominent and monochrome: the icon is the tile's identity, in the same
+  // white as the label — no accent chrome on the wall.
+  &__subject-icon { font-size: 3rem; line-height: 1; color: var(--school-fg); }
+  &__subject-label { margin: 0; font-size: 1.25rem; font-weight: 800; }
+  &__subject-hint { margin: 0; color: var(--school-muted); font-size: 0.9rem; }
 
   &__rail { display: flex; flex-direction: column; gap: 0.85rem; min-height: 0; }
 
@@ -303,10 +305,26 @@
   }
 
   &__ask { margin: 0; font-size: 1.3rem; font-weight: 800; }
+
+  // The unclaimed panel's face row: every roster face, tap-to-claim. 2-up
+  // fits four kids on the 1280x800 panel without scrolling the rail.
+  &__faces {
+    display: grid; grid-template-columns: repeat(2, 1fr); gap: 0.75rem;
+    width: 100%;
+  }
+  &__face {
+    display: flex; flex-direction: column; align-items: center; gap: 0.4rem;
+    padding: 0.85rem 0.5rem;
+    border: 1px solid var(--school-border); border-radius: 12px;
+    background: var(--school-surface-2); color: var(--school-fg);
+    font-size: 1rem; font-weight: 700; cursor: pointer;
+    .piano-avatar { width: 4rem; height: 4rem; }
+  }
+
   &__claim {
     min-height: 64px; padding: 0 1.5rem;
-    border: none; border-radius: 12px;
-    background: var(--school-accent); color: var(--school-accent-ink);
+    border: 1px solid var(--school-border); border-radius: 12px;
+    background: var(--school-surface-2); color: var(--school-fg);
     font-size: 1.05rem; font-weight: 700; cursor: pointer;
   }
 
@@ -318,11 +336,13 @@
   &__name { font-size: 1.15rem; font-weight: 800; flex: 1; }
   &__more { color: var(--school-muted); font-size: 0.9rem; }
 
+  // Neutral, not green: the home rail carries no accent chrome; the button's
+  // size and position already say "this is the action".
   &__next {
     display: flex; flex-direction: column; align-items: flex-start; gap: 0.35rem;
     padding: 1rem; text-align: left;
-    border: none; border-radius: 12px;
-    background: var(--school-accent); color: var(--school-accent-ink); cursor: pointer;
+    border: 1px solid var(--school-border); border-radius: 12px;
+    background: var(--school-surface-2); color: var(--school-fg); cursor: pointer;
 
     // Blocked shows its remedy AS the action — a detour, not a failure.
     &.is-blocked { background: var(--school-warn); color: #241a05; }
@@ -335,9 +355,9 @@
 
   &__done {
     padding: 0.85rem 1rem; border-radius: 12px;
-    background: var(--school-surface-2); border-left: 4px solid var(--school-accent);
+    background: var(--school-surface-2); border-left: 4px solid var(--school-fg);
   }
-  &__done-mark { margin: 0; font-size: 1.1rem; font-weight: 700; color: var(--school-accent); }
+  &__done-mark { margin: 0; font-size: 1.1rem; font-weight: 700; color: var(--school-fg); }
   &__done-sub { margin: 0; color: var(--school-muted); font-size: 0.9rem; }
 
   &__facts {

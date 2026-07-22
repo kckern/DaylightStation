@@ -96,10 +96,15 @@ describe('SchoolApp home — the subject wall', () => {
     for (const label of ['English & Literature', 'Writing & Typing', 'Language & Culture', 'Math & Money', 'Science & Nature', 'Life & Skills', 'History & Geography', 'Scripture & Gospel', 'Art & Music']) {
       expect(await screen.findByText(label)).toBeInTheDocument();
     }
-    // Empty catalog: every subject is disabled and explains itself.
+    // Empty catalog: the shelf is disabled but keeps its own subtitle — a
+    // greyed tile already says "not yet"; no apology copy.
     const science = screen.getByText('Science & Nature').closest('button');
     expect(science).toBeDisabled();
-    expect(within(science).getByText('Nothing here yet')).toBeInTheDocument();
+    expect(within(science).getByText('How the world and nature work')).toBeInTheDocument();
+    // Unclaimed: no header sign-in chip — the panel's face row is the claim
+    // affordance (their face appears there instead).
+    expect(screen.queryByText('Tap to sign in')).toBeNull();
+    expect(screen.getByRole('button', { name: /Alpha/ })).toBeInTheDocument();
   });
 
   it('a subject with shelved content is enabled and opens its page', async () => {
@@ -130,11 +135,11 @@ describe('SchoolApp home — the subject wall', () => {
     expect(screen.queryByText('Caps')).toBeNull();
   });
 
-  it('unclaimed, the student panel is the claim affordance', async () => {
+  it('unclaimed, tapping a face in the student panel claims directly', async () => {
     render(<SchoolApp clear={() => {}} />);
     expect(await screen.findByText(/who's learning\?/i)).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: /choose your face/i }));
-    expect(await screen.findByRole('dialog')).toBeInTheDocument();
+    fireEvent.click(await screen.findByRole('button', { name: /Alpha/ }));
+    expect(await screen.findByText('Hi Alpha')).toBeInTheDocument(); // header greeting = claimed
   });
 
   it('home shows Exit school only when a clear prop exists', async () => {
@@ -260,15 +265,17 @@ describe('SchoolApp materials flows', () => {
       data: { material: SAMPLE_CATALOG.data.materials[0], units: [{ id: 'plex:10', index: 1, title: 'Air', durationMs: null, group: null, percent: 0, playhead: 0, completed: false, locked: false, current: true, lockReason: null, quiz: null }] },
     });
     render(<SchoolApp clear={() => {}} />);
-    // Become an explicit guest first via the header chip's picker.
-    fireEvent.click(await screen.findByRole('button', { name: /tap to sign in/i }));
-    fireEvent.click(await screen.findByLabelText(/close/i));
-    await screen.findByRole('button', { name: /^guest$/i }); // header chip; the student panel has its own guest button
-
+    // The header has no sign-in chip anymore: guesthood arises from waving
+    // off the picker when tracked work asks who's there.
     await openSubject(/science/i);
     await tapMaterial('Bill Nye');
     fireEvent.click(await screen.findByText('Air'));
+    expect(await screen.findByRole('dialog')).toBeInTheDocument();
+    fireEvent.click(await screen.findByLabelText(/close/i));
+    // The dismissed launch proceeds as guest and hits the course gate: the
+    // notice appears, the guest chip shows, and the picker does not return.
     expect(await screen.findByText(/sign in for courses/i)).toBeInTheDocument();
+    await screen.findByRole('button', { name: /^guest$/i });
     expect(screen.queryByRole('dialog')).toBeNull();
   });
 
