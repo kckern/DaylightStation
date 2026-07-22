@@ -41,7 +41,21 @@ export function normalizeScaleNutribotConfig(raw = {}) {
   const densityLevels = Array.isArray(nb.density_levels) && nb.density_levels.length
     ? nb.density_levels
         .filter((l) => l && Number.isFinite(Number(l.level)) && Number.isFinite(Number(l.kcal_per_g)))
-        .map((l) => ({ level: Number(l.level), label: l.label || `L${l.level}`, emoji: l.emoji || '🍽', kcal_per_g: Number(l.kcal_per_g), hint: l.hint || '' }))
+        .map((l) => {
+          const out = {
+            level: Number(l.level),
+            label: l.label || `L${l.level}`,
+            emoji: l.emoji || '🍽',
+            kcal_per_g: Number(l.kcal_per_g),
+            hint: l.hint || '',
+          };
+          // Passed through untouched: ScanNutritionService validates these and
+          // treats a blank macros (throws) differently from a blank per_100g
+          // (tolerated). Defaulting either here would mask a bad table.
+          if (l.macros !== undefined) out.macros = l.macros;
+          if (l.per_100g !== undefined) out.per_100g = l.per_100g;
+          return out;
+        })
     : DEFAULT_DENSITY_LEVELS;
 
   return {
