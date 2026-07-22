@@ -242,6 +242,9 @@ import { buzzersToSelectors, makeBuzzerSelectHandler } from './3_applications/ga
 import { createSchoolRouter } from './4_api/v1/routers/school.mjs';
 import { SchoolService } from './3_applications/school/SchoolService.mjs';
 import { YamlSchoolDatastore } from './1_adapters/persistence/yaml/YamlSchoolDatastore.mjs';
+import { createLanguageRouter } from './4_api/v1/routers/language.mjs';
+import { LanguageStudyService } from './3_applications/school/LanguageStudyService.mjs';
+import { YamlLanguageStudyDatastore } from './1_adapters/persistence/yaml/YamlLanguageStudyDatastore.mjs';
 import { GetMaterialCatalog } from './3_applications/school/GetMaterialCatalog.mjs';
 import { GetMaterialUnits, buildBankIndex } from './3_applications/school/GetMaterialUnits.mjs';
 import { PlexAlbumSource } from './3_applications/school/sources/PlexAlbumSource.mjs';
@@ -2075,6 +2078,21 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     materialProgressStore: schoolMaterialProgressStore,
     logger: rootLogger.child({ module: 'school-api' })
   });
+
+  // Language study (the sentence ladder) mounts UNDER school as
+  // /api/v1/school/language. Corpora live in data/content/language/, per-user
+  // progress + append-only log under data/users/{id}/apps/school/language/,
+  // audio + recordings on the media mount. The timezone is passed rather than
+  // a fixed offset so the 4am study-day boundary survives DST.
+  const languageStudyService = new LanguageStudyService({
+    datastore: new YamlLanguageStudyDatastore({ configService }),
+    timezone: configService.getTimezone?.() || null,
+    logger: rootLogger.child({ module: 'school-language' })
+  });
+  v1Routers.school.use('/language', createLanguageRouter({
+    languageStudyService,
+    logger: rootLogger.child({ module: 'school-language-api' })
+  }));
 
   // Strava webhook enrichment (provider-agnostic webhook, Strava adapter)
   let providerWebhookAdapters = {};

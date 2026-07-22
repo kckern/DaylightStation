@@ -15,6 +15,8 @@ import FlashcardRunner from './flashcards/FlashcardRunner.jsx';
 import SectionGrid from './home/SectionGrid.jsx';
 import { SECTIONS, sectionsFromCatalog } from './home/sections.js';
 import MaterialsSection from './materials/MaterialsSection.jsx';
+import GlossikaProgram from './Programs/Glossika/GlossikaProgram.jsx';
+import { languageApi } from './Programs/Glossika/languageApi.js';
 import { schoolApi } from './schoolApi.js';
 import { schoolLog } from './schoolLog.js';
 import './School.scss';
@@ -37,14 +39,16 @@ function SchoolShell({ clear }) {
   useEffect(() => {
     if (status !== 'ready') return;
     let alive = true;
-    schoolApi.materials().then(({ ok, data }) => {
+    // Both catalogues are fetched together so the grid is built once, from
+    // whatever actually resolved. Either failing leaves its tiles absent
+    // rather than breaking the panel.
+    Promise.all([schoolApi.materials(), languageApi.courses()]).then(([mat, lang]) => {
       if (!alive) return;
-      if (ok && data) {
-        setSections(sectionsFromCatalog(data.sections));
-        setMaterials(Array.isArray(data.materials) ? data.materials : []);
-      } else {
-        schoolLog.materials('catalog-failed', { ok });
-      }
+      const catalogSections = mat.ok && mat.data ? mat.data.sections : [];
+      const languageCourses = lang.ok && Array.isArray(lang.data) ? lang.data : [];
+      if (!mat.ok || !mat.data) schoolLog.materials('catalog-failed', { ok: mat.ok });
+      setSections(sectionsFromCatalog(catalogSections, languageCourses));
+      setMaterials(mat.ok && Array.isArray(mat.data?.materials) ? mat.data.materials : []);
     });
     return () => { alive = false; };
   }, [status]);
@@ -114,6 +118,7 @@ function SchoolShell({ clear }) {
 
   const sectionDef = section ? sections.find((s) => s.id === section) : null;
   const category = section?.startsWith('cat:') ? section.slice(4) : null;
+  const courseId = section?.startsWith('lang:') ? section.slice(5) : null;
 
   if (status !== 'ready') return <div className="school-app school-app--loading">Loading…</div>;
   return (
@@ -157,6 +162,16 @@ function SchoolShell({ clear }) {
           <MaterialsSection
             materials={materials.filter((m) => m.category === category)}
             sectionLabel={sectionDef?.label}
+          />
+        )}
+        {/* Language study needs a claimed identity: every rung produces a
+            record, and a guest's work is discarded. The program itself shows
+            the sign-in prompt rather than drilling into a void. */}
+        {courseId && (
+          <GlossikaProgram
+            userId={currentUser?.id || null}
+            corpusId={courseId}
+            onExit={goHome}
           />
         )}
       </main>

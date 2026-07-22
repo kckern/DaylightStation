@@ -20,16 +20,27 @@ const CATEGORY_HINTS = {
 
 /**
  * Builds the full home grid: built-in sections first, then one tile per
- * catalog section (`GET /api/v1/school/materials`'s `sections` array).
+ * catalog section (`GET /api/v1/school/materials`'s `sections` array), then
+ * one per language course (`GET /api/v1/school/language/courses`).
+ *
+ * Language courses are data-driven for the same reason a tile never points at
+ * an absent endpoint: the corpus is a file on the media mount, and until it is
+ * ingested there is no course to open. An empty list simply adds no tiles.
  *
  * @param {Array<{category:string,label:string}>} catalogSections
+ * @param {Array<{id:string,label:string,languages?:{source:string,target:string}}>} [courses]
  * @returns {Array<{id:string,label:string,hint?:string}>}
  */
-export function sectionsFromCatalog(catalogSections) {
+export function sectionsFromCatalog(catalogSections, courses) {
   const mapped = (catalogSections || []).map((s) => ({
     id: `cat:${s.category}`,
     label: s.label,
     hint: CATEGORY_HINTS[s.category],
   }));
-  return [...SECTIONS, ...mapped];
+  const language = (courses || []).map((c) => ({
+    id: `lang:${c.id}`,
+    label: c.label,
+    hint: c.languages ? `${c.languages.source} → ${c.languages.target}` : undefined,
+  }));
+  return [...SECTIONS, ...mapped, ...language];
 }
