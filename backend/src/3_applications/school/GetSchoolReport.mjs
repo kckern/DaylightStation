@@ -1,4 +1,6 @@
-import { normalizeReport, compareReports } from '#domains/school/reporting.mjs';
+import {
+  normalizeReport, compareReports, compareForLearner, metricsFor,
+} from '#domains/school/reporting.mjs';
 
 /**
  * The aggregate view: every program × every learner, in one shape.
@@ -32,9 +34,13 @@ export class GetSchoolReport {
   /**
    * @param {object} [args]
    * @param {string} [args.userId] - one learner; omit for the whole household.
+   * @param {'learner'|'parent'} [args.audience] - filters metrics AT THE
+   *        SOURCE. A learner-scoped request never receives parent
+   *        instrumentation over the wire, so a child's device cannot render a
+   *        sibling comparison even by accident.
    * @returns {Promise<{learners: Array}>}
    */
-  async execute({ userId = null } = {}) {
+  async execute({ userId = null, audience = 'parent' } = {}) {
     const roster = this.#roster();
     const learners = userId ? roster.filter((l) => l.id === userId) : roster;
 
@@ -49,7 +55,9 @@ export class GetSchoolReport {
           const raw = await reporter.summarize({ userId: learner.id });
           for (const report of (Array.isArray(raw) ? raw : [])) {
             const normalized = normalizeReport(report, { logger: this.#logger });
-            if (normalized) reports.push(normalized);
+            if (normalized) {
+              reports.push({ ...normalized, metrics: metricsFor(normalized.metrics, audience) });
+            }
           }
         } catch (err) {
           this.#logger.error?.('school.report.reporter-failed', {
@@ -58,14 +66,19 @@ export class GetSchoolReport {
         }
       }
 
-      reports.sort(compareReports);
+      // A child's home leads with what they can DO; a parent's board leads
+      // with what is stuck. Same data, different question.
+      reports.sort(audience === 'learner' ? compareForLearner : compareReports);
       return {
         ...learner,
         reports,
-        // Cheap top-line answers so the household view does not have to
-        // re-derive them per card.
-        needsAttention: reports.some((r) => r.state === 'blocked'),
-        active: reports.filter((r) => r.state === 'active').length,
+        // Triage flags are for the parent board only. On a child's surface a
+        // "needs attention" badge beside their own name is a red mark in a
+        // hallway, not a prompt.
+        ...(audience === 'learner' ? {} : {
+          needsAttention: reports.some((r) => r.state === 'blocked'),
+          active: reports.filter((r) => r.state === 'active').length,
+        }),
       };
     }));
 

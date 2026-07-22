@@ -52,7 +52,10 @@ export function createSchoolRouter({
   // Omit userId for the household board; pass it for one learner's own view.
   router.get('/report', wrap(async (req, res) => {
     if (!getSchoolReport) return res.json({ learners: [] });
-    res.json(await getSchoolReport.execute({ userId: req.query.userId || null }));
+    res.json(await getSchoolReport.execute({
+      userId: req.query.userId || null,
+      audience: req.query.audience === 'learner' ? 'learner' : 'parent',
+    }));
   }));
 
   router.get('/materials', wrap(async (req, res) => {
