@@ -12,6 +12,7 @@ export function createSchoolRouter({
   getMaterialUnits = null,
   materialProgressStore = null,
   getSchoolReport = null,
+  printService = null,
   logger = console,
 }) {
   const router = express.Router();
@@ -53,6 +54,33 @@ export function createSchoolRouter({
   }));
   router.get('/quiz-requests', wrap((req, res) => {
     res.json(schoolService.listQuizRequests({ materialId: req.query.materialId || null }));
+  }));
+
+  // Printing — a child prints their own worksheets, quota-gated with grown-up
+  // approval over the limit. A missing printService (no printer/printables
+  // configured) serves empty/inert rather than 500ing the whole app.
+  router.get('/print/printables', wrap(async (req, res) => {
+    res.json(printService ? await printService.listPrintables() : []);
+  }));
+  router.get('/print/quota', wrap((req, res) => {
+    if (!printService || !req.query.userId) return res.json(null);
+    res.json(printService.getQuota(req.query.userId));
+  }));
+  router.post('/print/request', wrap(async (req, res) => {
+    if (!printService) throw new EntityNotFoundError('printing', 'not configured');
+    const { userId = null, printableId, copies = 1 } = req.body || {};
+    res.json(await printService.requestPrint({ userId, printableId, copies }));
+  }));
+  router.get('/print/pending', wrap((req, res) => {
+    res.json(printService ? printService.listPending() : []);
+  }));
+  router.post('/print/:requestId/approve', wrap(async (req, res) => {
+    if (!printService) throw new EntityNotFoundError('printing', 'not configured');
+    res.json(await printService.approve({ requestId: req.params.requestId, approver: req.body?.approver }));
+  }));
+  router.post('/print/:requestId/deny', wrap(async (req, res) => {
+    if (!printService) throw new EntityNotFoundError('printing', 'not configured');
+    res.json(await printService.deny({ requestId: req.params.requestId, approver: req.body?.approver }));
   }));
 
   // Materials framework (catalog + per-unit progress/quiz gates). The panel

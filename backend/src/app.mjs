@@ -115,6 +115,7 @@ import { UPCGateway } from '#adapters/nutribot/UPCGateway.mjs';
 
 // Thermal printer registry (multi-printer support)
 import { ThermalPrinterAdapter, ThermalPrinterRegistry } from '#adapters/hardware/thermal-printer/index.mjs';
+import { LaserPrinterAdapter } from '#adapters/hardware/laser-printer/index.mjs';
 
 // Command-handler liveness (Task 8: gates WS-first warm-switch in WakeAndLoadService)
 import { CommandHandlerLivenessService } from '#apps/devices/services/CommandHandlerLivenessService.mjs';
@@ -251,6 +252,8 @@ import { GetMaterialUnits, buildBankIndex } from './3_applications/school/GetMat
 import { PlexAlbumSource } from './3_applications/school/sources/PlexAlbumSource.mjs';
 import { PlexShowSource } from './3_applications/school/sources/PlexShowSource.mjs';
 import { UserVideoProgressStore as SchoolUserVideoProgressStore } from './3_applications/piano/UserVideoProgressStore.mjs';
+import { PrintService } from './3_applications/school/PrintService.mjs';
+import { renderBankWorksheet } from './1_rendering/school/WorksheetRenderer.mjs';
 import { createContentFilterRouter } from './4_api/v1/routers/contentFilter.mjs';
 import { FeedbackService } from './3_applications/common/feedback/FeedbackService.mjs';
 import { NotificationConfigService } from './3_applications/notification/NotificationConfigService.mjs';
@@ -2090,12 +2093,52 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     logger: rootLogger.child({ module: 'school-report' })
   });
 
+  // Printing (worksheets → kitchen laser printer). Wired only when the school
+  // config declares a `printer` host — no printer, no print feature (the
+  // router serves inert). The printer host defaults to the `kitchen-printer`
+  // device entry so config need only opt in.
+  const schoolFullConfig = configService.getHouseholdAppConfig(null, 'school') || {};
+  let schoolPrintService = null;
+  const printerHost = schoolFullConfig.printing?.host
+    || configService.getDeviceConfig?.('kitchen-printer')?.host
+    || null;
+  if (printerHost && (schoolFullConfig.printables?.length || schoolFullConfig.printing)) {
+    const laserPrinter = new LaserPrinterAdapter({
+      host: printerHost,
+      port: schoolFullConfig.printing?.port || 631,
+      path: schoolFullConfig.printing?.path || '/ipp/print',
+      logger: rootLogger.child({ module: 'school-print' })
+    });
+    schoolPrintService = new PrintService({
+      config: schoolFullConfig,
+      datastore: schoolDatastore,
+      printerAdapter: laserPrinter,
+      worksheetRenderer: { renderBankWorksheet },
+      // getBank throws on miss; PrintService wants null-on-miss.
+      bankReader: { getBank: (id) => { try { return schoolService.getBank(id); } catch { return null; } } },
+      pdfReader: {
+        read: (file) => {
+          const p = path.join(configService.getDataDir(), 'household', 'content', 'worksheets', path.basename(String(file)));
+          if (!fs.existsSync(p)) return null;
+          const pdf = fs.readFileSync(p);
+          // Cheap page count: number of "/Type /Page" occurrences (not /Pages).
+          const pageCount = (pdf.toString('latin1').match(/\/Type\s*\/Page[^s]/g) || []).length || 1;
+          return { pdf, pageCount };
+        }
+      },
+      userService,
+      logger: rootLogger.child({ module: 'school-print' })
+    });
+    rootLogger.child({ module: 'school-print' }).info?.('school.print.ready', { host: printerHost, printables: schoolFullConfig.printables?.length || 0 });
+  }
+
   v1Routers.school = createSchoolRouter({
     schoolService,
     getMaterialCatalog,
     getMaterialUnits,
     materialProgressStore: schoolMaterialProgressStore,
     getSchoolReport,
+    printService: schoolPrintService,
     logger: rootLogger.child({ module: 'school-api' })
   });
 

@@ -359,6 +359,60 @@
   }
 }
 
+// --- print center: worksheet grid + quota + parent approvals ----------------
+.school-print {
+  display: flex; flex-direction: column; gap: 1rem;
+  &__quota {
+    display: flex; align-items: baseline; gap: 0.5rem;
+    padding: 0.85rem 1rem; border-radius: 12px;
+    background: var(--school-surface-2); border: 1px solid var(--school-border);
+  }
+  &__quota-count { font-size: 1.5rem; font-weight: 800; color: var(--school-fg); }
+  &__quota-label { color: var(--school-muted); font-size: 0.95rem; }
+  &__muted { color: var(--school-muted); }
+  &__flash {
+    padding: 0.85rem 1rem; border-radius: 12px; font-weight: 700;
+    &--ok { background: var(--school-surface-2); border-left: 4px solid var(--school-fg); color: var(--school-fg); }
+    &--wait { background: var(--school-warn); color: #241a05; }
+    &--error { background: var(--school-danger); color: #fff; }
+  }
+  &__grid {
+    list-style: none; margin: 0; padding: 0;
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 0.85rem;
+  }
+  &__card {
+    width: 100%; display: flex; align-items: center; gap: 0.75rem;
+    padding: 1rem; border: 1px solid var(--school-border); border-radius: 14px;
+    background: var(--school-surface); color: var(--school-fg); text-align: left; cursor: pointer;
+    &:disabled { opacity: 0.6; cursor: default; }
+  }
+  &__card-icon { font-size: 1.8rem; flex: 0 0 auto; }
+  &__card-body { flex: 1; display: flex; flex-direction: column; gap: 0.2rem; }
+  &__card-label { font-size: 1.1rem; font-weight: 800; }
+  &__card-meta { color: var(--school-muted); font-size: 0.9rem; }
+  &__card-action {
+    flex: 0 0 auto; padding: 0.4rem 0.9rem; border-radius: 10px;
+    border: 1px solid var(--school-fg); font-weight: 700; font-size: 0.95rem;
+  }
+  &__approvals { display: flex; flex-direction: column; gap: 0.6rem; margin-top: 0.5rem; }
+  &__approvals-heading { margin: 0; font-size: 1.15rem; font-weight: 800; }
+  &__approvals-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.6rem; }
+  &__approval {
+    display: flex; align-items: center; gap: 0.75rem;
+    padding: 0.85rem 1rem; border-radius: 12px;
+    background: var(--school-surface-2); border: 1px solid var(--school-border);
+  }
+  &__approval-text { flex: 1; }
+  &__approval-actions { flex: 0 0 auto; display: flex; gap: 0.5rem; }
+  &__approve, &__deny {
+    min-height: 48px; padding: 0 1.1rem; border-radius: 10px; font-weight: 700; cursor: pointer;
+    border: 1px solid var(--school-border); background: var(--school-surface); color: var(--school-fg);
+    &:disabled { opacity: 0.5; cursor: default; }
+  }
+  &__approve { border-color: var(--school-fg); }
+  &__deny { color: var(--school-muted); }
+}
+
 // --- the student panel: identity + up-next + facts --------------------------
 .school-rail {
   &__student {
