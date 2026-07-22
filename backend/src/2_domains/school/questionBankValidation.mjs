@@ -43,6 +43,14 @@ export function validateQuestionBank(raw) {
     if (!isNonEmptyString(raw.readalong)) errors.push('readalong must be a non-empty string');
     else readalong = raw.readalong;
   }
+  // Subject-wall shelf. Deliberately NOT checked against the six known
+  // subjects: the frontend routes an unknown shelf to the Library, so a typo
+  // costs a misplaced tile, whereas rejecting here would cost the whole quiz.
+  let subject;
+  if (raw.subject !== undefined && raw.subject !== null) {
+    if (!isNonEmptyString(raw.subject)) errors.push('subject must be a non-empty string');
+    else subject = raw.subject;
+  }
   if (!Array.isArray(raw.items) || raw.items.length === 0) {
     errors.push('items must be a non-empty array');
     return { ok: false, errors };
@@ -91,5 +99,5 @@ export function validateQuestionBank(raw) {
     }
   });
   if (errors.length) return { ok: false, errors };
-  return { ok: true, bank: { id: raw.id, title: raw.title, audience, topics, items: raw.items, unit, readalong } };
+  return { ok: true, bank: { id: raw.id, title: raw.title, audience, topics, subject, items: raw.items, unit, readalong } };
 }
