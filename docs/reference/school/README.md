@@ -184,10 +184,26 @@ pacing knob is new-sentences-per-day.
   chain and sentences **graduate across the gap** — it is never rendered as a
   dead input. Script availability cannot be detected by any web API, so it is
   declared per device and defaults to assuming nothing.
-- **Legacy import.** The 2016 MySQL database is gone; 519 surviving voice
-  recordings (94 KC, 425 Elizabeth) are imported with backfilled `recording`
-  events marked `source: legacy-2017`. Because the queue is derived, those
-  events place each learner exactly where they left off.
+- **Legacy import from the recovered database.** The 2016–2020 MySQL dump
+  survived (`dbbackup/2020-12-01/glossika.gz`) and carries the whole history:
+  **5,348 events across all four rungs**, real day numbers (KC 1–59, Elizabeth
+  1–119), and **2,655 typed answers**, all scored on import so the Review diff
+  has something to compare against. `import-db` supersedes the earlier
+  mtime-based reconstruction, which could only recover 519 undated recordings.
+  Because the queue is derived, both learners resume at their exact 2019/2020
+  positions.
+- **Two sources, one corpus.** Seq 1–3000 are the commercial course read by
+  native speakers; 3001–4143 came from a later wordbook import whose audio was
+  **TTS**. Each sentence records its `origin`. They share one corpus because
+  the 2016 app drove both up a single ladder with one sequence and one day
+  counter — splitting them would invent a division the history never had.
+- **A sentence with no audio is history, not work.** 818 have no recording;
+  every rung's prompt is audio, so `buildDayQueue` takes a `playable` set and
+  never queues them — while still counting them as studied, so they are not
+  re-admitted as new material either.
+- **Re-run ownership is `source`.** An event carrying a source marker is
+  imported evidence and may be replaced by a later import; an event with no
+  source is live study and is always preserved.
 
 **Glossika is a vendor, not domain vocabulary** — the 2016 app already drove
 Naver Wordbook sentences up the same ladder. The pedagogy is the domain; the
@@ -200,7 +216,8 @@ supplier is an adapter.
 | Application | `backend/src/3_applications/school/LanguageStudyService.mjs` |
 | API | `backend/src/4_api/v1/routers/language.mjs` → `/api/v1/school/language` |
 | Frontend | `frontend/src/modules/School/Programs/Glossika/` |
-| Ingest CLI | `cli/glossika.cli.mjs` |
+| Legacy dump reader | `backend/src/1_adapters/glossika/LegacyDumpReader.mjs` |
+| Ingest CLI | `cli/glossika.cli.mjs` (`import-db` is authoritative) |
 | Corpus | `data/content/language/{corpusId}.yml` |
 | Per-user | `data/users/{id}/apps/school/language/{corpusId}/` (progress + append-only log) |
 | Media | `media/apps/school/language/{corpusId}/` (audio + per-user recordings) |

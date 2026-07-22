@@ -52,6 +52,10 @@ import fs from 'node:fs/promises';
 import yaml from 'js-yaml';
 
 import { initConfigService, configService } from '#system/config/index.mjs';
+import {
+  readSentences, readLearners, readAttempts,
+} from '#adapters/glossika/LegacyDumpReader.mjs';
+import { accuracy, rungById, resolveRole } from '#domains/school/language/index.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 dotenv.config({ path: join(__dirname, '..', '.env') });
@@ -102,7 +106,10 @@ const LEGACY_SOURCE = 'legacy-2017';
 // ---------------------------------------------------------------------------
 
 function parseArgs(argv) {
-  const opts = { _: [], src: SRC_DEFAULT, corpus: CORPUS_DEFAULT, dryRun: false, help: false };
+  const opts = {
+    _: [], src: SRC_DEFAULT, dump: process.env.GLOSSIKA_DUMP || null,
+    corpus: CORPUS_DEFAULT, dryRun: false, help: false,
+  };
   const args = argv.slice(2);
   for (let i = 0; i < args.length; i++) {
     const a = args[i];
@@ -111,6 +118,7 @@ function parseArgs(argv) {
       case '-h': opts.help = true; break;
       case '--dry-run': opts.dryRun = true; break;
       case '--src': opts.src = args[++i]; break;
+      case '--dump': opts.dump = args[++i]; break;
       case '--corpus': opts.corpus = args[++i]; break;
       default:
         if (a.startsWith('--')) throw new Error(`Unknown flag: ${a}`);
@@ -127,6 +135,11 @@ Usage:
   glossika.cli.mjs ingest-audio   [--src path] [--corpus glossika-korean] [--dry-run]
   glossika.cli.mjs import-legacy  [--src path] [--corpus glossika-korean] [--dry-run]
   glossika.cli.mjs all            [--src path] [--corpus glossika-korean] [--dry-run]
+  glossika.cli.mjs import-db      --dump path/to/glossika.sql [--corpus id] [--dry-run]
+
+import-db rebuilds corpus + study log + pacing from the recovered 2016-2020
+MySQL dump. It supersedes ingest-corpus and import-legacy, which could only
+reconstruct recordings from file mtimes.
 
 The source archive root must be given as --src or GLOSSIKA_SRC. It is the
 folder holding data.csv, mp3/ and audio/ from the 2016 app.
@@ -229,6 +242,8 @@ function paths(corpusId) {
     recordingsDir: join(mediaDir, ...audioBase.split('/'), 'recordings'),
     userLogDir: (userId) =>
       join(dataDir, 'users', userId, 'apps', 'school', 'language', corpusId, 'log'),
+    userProgress: (userId) =>
+      join(dataDir, 'users', userId, 'apps', 'school', 'language', corpusId, 'progress.yml'),
   };
 }
 
@@ -451,6 +466,145 @@ async function cmdImportLegacy(opts) {
 }
 
 // ---------------------------------------------------------------------------
+// import-db — the recovered 2016-2020 MySQL dump
+// ---------------------------------------------------------------------------
+
+/**
+ * Rebuild corpus, study log and pacing from the recovered database dump.
+ *
+ * This SUPERSEDES `ingest-corpus` + `import-legacy`, which between them could
+ * only reconstruct recording events from file mtimes — no day numbers, no
+ * typed answers, and only the rung that happened to leave a file behind. The
+ * dump carries the whole history, so it is the authoritative source whenever
+ * it is available.
+ *
+ * Log shards are REPLACED, not appended: re-running must converge on the dump
+ * rather than accumulate copies of it.
+ *
+ * The ownership rule is `source`. An event CARRYING a source marker is
+ * imported evidence and belongs to whichever import produced it, so this
+ * command may replace it — including the older `legacy-2017` events that were
+ * reconstructed from file mtimes before the dump surfaced, which this
+ * supersedes and which would otherwise survive as duplicates of their own
+ * better-dated selves. An event with NO source is live study a learner did
+ * here, and is always preserved.
+ */
+async function cmdImportDb(opts) {
+  const spec = corpusSpec(opts.corpus);
+  const p = paths(opts.corpus);
+  const sql = await fs.readFile(opts.dump, 'utf8');
+
+  const userMap = Object.fromEntries(spec.legacyUsers.map((u) => [u.folder, u.userId]));
+
+  // Whether a sentence can be drilled is a fact about the media tree, not the
+  // dump — so it is measured here rather than assumed.
+  const audioNames = new Set(await fs.readdir(p.audioDir).catch(() => []));
+  const target = spec.languages.target;
+  const hasAudio = (seq) => audioNames.has(`${pad4(seq)}-${target}.mp3`);
+
+  const sentences = readSentences(sql, spec.languages, hasAudio);
+  assertEncoding(sentences, spec);
+
+  const withAudio = sentences.filter((s) => s.audio).length;
+  const byOrigin = sentences.reduce((acc, s) => ({ ...acc, [s.origin]: (acc[s.origin] ?? 0) + 1 }), {});
+
+  await writeYaml(p.corpus, {
+    id: opts.corpus,
+    label: spec.label,
+    languages: spec.languages,
+    audio_base: p.audioBase,
+    sentences: sentences.map((s) => ({
+      seq: s.seq,
+      text: s.text,
+      origin: s.origin,
+      // Only annotate the exception; an ordinary corpus stays unannotated.
+      ...(s.audio ? {} : { audio: false }),
+    })),
+  }, opts);
+
+  log(`corpus  ${opts.dryRun ? '[dry-run] ' : ''}${sentences.length} sentences ` +
+      `(${withAudio} drillable, ${sentences.length - withAudio} without audio)`);
+  log(`        origin: ${Object.entries(byOrigin).map(([k, v]) => `${k}=${v}`).join(' ')}`);
+  log(`        → ${p.corpus}`);
+
+  const learners = readLearners(sql, userMap);
+  const { byUser: attempts, skipped } = readAttempts(sql, userMap);
+  const summary = [];
+
+  const dropped = Object.entries(skipped).filter(([, n]) => n > 0);
+  if (dropped.length) {
+    log(`skipped ${dropped.map(([k, n]) => `${k}=${n}`).join(' ')}`);
+    log('        (the 2016 app could POST a repetition with no sentence attached)');
+  }
+
+  // Score the recovered answers now, the same way a live attempt is scored.
+  // Without `expected` the Review surface has nothing to diff against, and the
+  // recovered text — the single most valuable thing in the dump — would render
+  // as an unexplained string. Scoring gates nothing here either; it is for the
+  // learner looking back at what they actually wrote.
+  const byIndex = new Map(sentences.map((x) => [x.seq, x]));
+  const scoreEvent = (event) => {
+    if (!event.given) return event;
+    const def = rungById(event.rung);
+    if (def?.response?.modality !== 'text') return event;
+    const language = resolveRole(def.response.role, spec.languages);
+    const expected = byIndex.get(event.seq)?.text?.[language];
+    if (!expected) return event;
+    return { ...event, expected, language, accuracy: accuracy(event.given, expected) };
+  };
+
+  for (const learner of learners) {
+    const events = (attempts[learner.userId] ?? []).map(scoreEvent);
+    const logDir = p.userLogDir(learner.userId);
+
+    // Preserve anything studied since the import; replace what the dump owns.
+    const existing = new Map();
+    for (const file of await fs.readdir(logDir).catch(() => [])) {
+      if (!/^\d{4}-\d{2}-\d{2}\.yml$/.test(file)) continue;
+      const kept = ((await readYaml(join(logDir, file))) ?? []).filter((e) => !e?.source);
+      if (kept.length) existing.set(file.replace(/\.yml$/, ''), kept);
+      else if (!opts.dryRun) await fs.rm(join(logDir, file));
+    }
+
+    const shards = new Map(existing);
+    for (const event of events) {
+      const key = event.at.slice(0, 10);
+      if (!shards.has(key)) shards.set(key, []);
+      shards.get(key).push(event);
+    }
+    for (const [key, list] of shards) {
+      list.sort((a, b) => String(a.at).localeCompare(String(b.at)));
+      await writeYaml(join(logDir, `${key}.yml`), list, opts);
+    }
+
+    const days = events.map((e) => e.day).filter(Number.isInteger);
+    const maxDay = days.length ? Math.max(...days) : 1;
+    const lastAt = events.length ? events[events.length - 1].at : null;
+
+    await writeYaml(p.userProgress(learner.userId), {
+      corpus: opts.corpus,
+      day: maxDay,
+      daily_limit: learner.dailyLimit ?? 5,
+      last_activity: lastAt,
+    }, opts);
+
+    const rungs = events.reduce((acc, e) => ({ ...acc, [e.rung]: (acc[e.rung] ?? 0) + 1 }), {});
+    log(`learner ${opts.dryRun ? '[dry-run] ' : ''}${learner.userId} (was "${learner.legacyUser}")`);
+    log(`        events=${events.length} shards=${shards.size} day=${maxDay} limit=${learner.dailyLimit}`);
+    log(`        ${Object.entries(rungs).map(([k, v]) => `${k}=${v}`).join(' ')}`);
+    const scored = events.filter((e) => typeof e.accuracy === 'number');
+    const mean = scored.length
+      ? (scored.reduce((a, e) => a + e.accuracy, 0) / scored.length) : 0;
+    log(`        typed answers recovered: ${events.filter((e) => e.given).length}` +
+        ` (scored ${scored.length}, mean accuracy ${(mean * 100).toFixed(1)}%)`);
+    log(`        last studied: ${lastAt}`);
+
+    summary.push({ userId: learner.userId, events: events.length, day: maxDay });
+  }
+  return summary;
+}
+
+// ---------------------------------------------------------------------------
 // Main
 // ---------------------------------------------------------------------------
 
@@ -466,6 +620,20 @@ async function main() {
   if (!baseDir) { console.error('ERROR: DAYLIGHT_BASE_PATH not set in .env'); process.exit(1); }
   await initConfigService(join(baseDir, 'data'));
 
+  if (cmd === 'import-db') {
+    if (!opts.dump) {
+      console.error('ERROR: no database dump. Pass --dump <path> or set GLOSSIKA_DUMP.');
+      console.error('       It is the uncompressed glossika.sql from the dbbackup archive.');
+      process.exit(1);
+    }
+    if (!(await statOrNull(opts.dump))?.isFile()) {
+      console.error(`ERROR: dump not found: ${opts.dump}`); process.exit(1);
+    }
+    await cmdImportDb(opts);
+    log(`\nDONE`);
+    return;
+  }
+
   if (!opts.src) {
     console.error('ERROR: no source archive. Pass --src <path> or set GLOSSIKA_SRC.');
     console.error('       It is the folder holding data.csv, mp3/ and audio/ from the 2016 app.');
@@ -479,6 +647,7 @@ async function main() {
     case 'ingest-corpus': await cmdIngestCorpus(opts); break;
     case 'ingest-audio':  await cmdIngestAudio(opts);  break;
     case 'import-legacy': await cmdImportLegacy(opts); break;
+    case 'import-db':     await cmdImportDb(opts);     break;
     case 'all':
       await cmdIngestCorpus(opts);
       await cmdIngestAudio(opts);

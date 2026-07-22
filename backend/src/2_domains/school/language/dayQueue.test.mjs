@@ -167,6 +167,38 @@ describe('undated legacy evidence', () => {
   });
 });
 
+describe('sentences with no audio', () => {
+  // The recovered corpus carries 818 sentences that never had their audio
+  // split. Every rung's prompt plays audio, so they cannot be drilled — but
+  // they were genuinely studied in 2017 and must survive as history.
+  const playable = new Set([1, 2, 5, 6, 7]);
+
+  it('never admits an unplayable sentence as new material', () => {
+    const queue = build({ dailyLimit: 3, playable });
+    expect(queue.map((e) => e.seq)).toEqual([1, 2, 5]);
+  });
+
+  it('never queues an unplayable sentence as a graduate', () => {
+    // seq 3 was studied years ago but has no audio; promoting it would put a
+    // silent, uncompletable card in front of the learner.
+    const log = [ev(3, 'repetition', 1), ev(5, 'repetition', 1)];
+    const queue = build({ log, day: 2, dailyLimit: 0, playable });
+    expect(queue).toEqual([{ seq: 5, rung: 'dictation', done: false }]);
+  });
+
+  it('still counts unplayable history when admitting new material', () => {
+    // seq 3 is studied-but-unplayable: it must not reappear as new material
+    // either, even though it can never be queued.
+    const log = [ev(3, 'repetition', 1)];
+    const queue = build({ log, day: 2, dailyLimit: 2, playable: new Set([1, 2, 3]) });
+    expect(queue.filter((e) => e.rung === 'repetition').map((e) => e.seq)).toEqual([1, 2]);
+  });
+
+  it('treats an absent playable set as "everything is playable"', () => {
+    expect(build({ dailyLimit: 2 }).map((e) => e.seq)).toEqual([1, 2]);
+  });
+});
+
 describe('malformed log entries', () => {
   it('ignores events it cannot place rather than corrupting the queue', () => {
     const log = [null, {}, { seq: 'x', rung: 'repetition', day: 1 }, ev(1, 'repetition', 1)];

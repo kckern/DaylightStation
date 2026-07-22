@@ -74,8 +74,17 @@ export function validateCorpus(raw) {
 
   if (errors.length) return { ok: false, errors };
 
+  // `audio: false` marks a sentence that exists in the corpus but never had
+  // its recording split. It is real study material historically — the log may
+  // well reference it — but it cannot be DRILLED, because every rung's prompt
+  // is audio. Absent flag means audio is present, so an ordinary corpus needs
+  // no annotation at all.
   const sentences = raw.sentences
-    .map((s) => ({ seq: Number(s.seq), text: { ...s.text } }))
+    .map((s) => ({
+      seq: Number(s.seq),
+      text: { ...s.text },
+      audio: s.audio !== false,
+    }))
     .sort((a, b) => a.seq - b.seq);
 
   return {
@@ -90,6 +99,8 @@ export function validateCorpus(raw) {
       // is the ceiling — not the count, which would strand the tail whenever
       // the corpus has gaps.
       size: sentences[sentences.length - 1].seq,
+      // Precomputed once so the queue builder never re-scans the corpus.
+      playable: new Set(sentences.filter((s) => s.audio).map((s) => s.seq)),
     },
   };
 }

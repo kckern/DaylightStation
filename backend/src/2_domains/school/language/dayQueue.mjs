@@ -24,11 +24,12 @@ import { chainFor, graduationEdges } from './ladder.mjs';
 /**
  * Study days are 1-based, so 0 is "cleared before any day this system counted".
  *
- * Imported 2016 evidence has no day number — that database is gone, and the
- * import deliberately records no `day` rather than inventing one, because a
- * fabricated day is fiction in an append-only evidence log. Undated evidence is
- * still evidence: it dates from before day 1 by definition, and 0 orders
- * correctly against every real day.
+ * The 2016 database was recovered, so imported evidence normally carries its
+ * real day. This remains the floor for any event that does not: an import from
+ * a source without day numbers records none rather than inventing one, because
+ * a fabricated day is fiction in an append-only evidence log. Undated evidence
+ * is still evidence — it predates day 1 by definition, and 0 orders correctly
+ * against every real day.
  */
 const UNDATED = 0;
 
@@ -72,9 +73,16 @@ function clearedIndex(log) {
  * @param {number}   args.corpusSize   highest sequence number available
  * @param {object}   [args.capabilities] {microphone, textInput[]} — filters the ladder
  * @param {{source: string, target: string}} args.languages - the corpus role binding
+ * @param {Set<number>} [args.playable] - sequences that have audio; omit for "all".
+ *        A rung's prompt is audio, so a sentence without it cannot be drilled —
+ *        but it may still appear in the log as genuine past study, so it is
+ *        excluded from the QUEUE without being forgotten as HISTORY.
  * @returns {Array<{seq: number, rung: string, done: boolean}>}
  */
-export function buildDayQueue({ log = [], day, dailyLimit, corpusSize, capabilities = {}, languages }) {
+export function buildDayQueue({
+  log = [], day, dailyLimit, corpusSize, capabilities = {}, languages, playable = null,
+}) {
+  const canDrill = (seq) => playable === null || playable.has(seq);
   const { byRung: cleared, everSeen } = clearedIndex(log);
   const chain = chainFor(capabilities, languages);
   if (chain.length === 0) return [];
@@ -107,6 +115,7 @@ export function buildDayQueue({ log = [], day, dailyLimit, corpusSize, capabilit
   let admitted = enteredToday.length;
   for (let seq = 1; seq <= corpusSize && admitted < dailyLimit; seq += 1) {
     if (everSeen.has(seq)) continue;
+    if (!canDrill(seq)) continue;
     queue.push({ seq, rung: entryRung, done: false });
     admitted += 1;
   }
@@ -118,6 +127,7 @@ export function buildDayQueue({ log = [], day, dailyLimit, corpusSize, capabilit
     const due = [];
     for (const [seq, clearedOn] of fromCleared) {
       if (clearedOn >= day) continue;            // cleared today — not yet due
+      if (!canDrill(seq)) continue;              // no audio: history, not work
       const graduatedOn = toCleared.get(seq);
       if (graduatedOn === undefined) due.push({ seq, done: false });
       else if (graduatedOn === day) due.push({ seq, done: true });

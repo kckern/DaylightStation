@@ -1,6 +1,7 @@
 # Glossika Program — Design
 
-> **Status:** design agreed 2026-07-21, implementation in progress.
+> **Status:** built and verified 2026-07-22. Legacy import revised after the
+> 2016–2020 database dump was recovered (§6).
 > Revives the 2016–2017 `korean.kckern.info` sentence-drill app
 > (see `LifeArchive/Vol 0/projects/0 Software/2016-glossika.yml`) as a School
 > program at `frontend/src/modules/School/Programs/Glossika/`.
@@ -68,7 +69,7 @@ unit always names what to do": the kiosk must not dead-end.
 
 ### Corpus — shared, read-only
 
-`data/content/glossika/korean.yml`
+`data/content/language/glossika-korean.yml`
 
 ```yaml
 id: glossika-korean
@@ -77,7 +78,7 @@ label: Glossika Korean
 languages:
   source: EN
   target: KR
-audio_base: apps/school/glossika/korean
+audio_base: apps/school/language/glossika-korean
 sentences:
   - seq: 1
     text:
@@ -89,8 +90,9 @@ Sentence text is keyed **by language code**, not by fixed `en:`/`kr:` fields,
 so the corpus shape is identical for every language pair and the domain reads
 it as `text[resolveRole('target', languages)]`.
 
-3000 sentences, ingested from the 2016 `data.csv` (clean TSV, verified no
-mojibake). Boot-cached like every other content file.
+4143 sentences, ingested from the recovered 2016–2020 database dump (§6).
+Boot-cached like every other content file. A sentence carries `origin`
+(`glossika` | `naver-tts`) and, when its audio was never split, `audio: false`.
 
 > The 2016 `Rawtext` PDF dump also carries romanization and IPA per sentence,
 > but is mojibake-encoded and interleaved with page-number noise. **Not
@@ -98,20 +100,21 @@ mojibake). Boot-cached like every other content file.
 
 ### Audio — shared, read-only
 
-`media/apps/school/glossika/korean/{NNNN}-EN.mp3`
-`media/apps/school/glossika/korean/{NNNN}-KR.mp3`
+`media/apps/school/language/glossika-korean/{NNNN}-EN.mp3`
+`media/apps/school/language/glossika-korean/{NNNN}-KR.mp3`
 
-3325 contiguous pairs, verified complete with no gaps. Served through the
+3325 contiguous pairs covering seq 1–3325; the remaining 818 corpus sentences
+have no audio and are history-only. Served through the
 School router by `(course, seq, lang)` slug — never by raw path — matching the
 emulator's "address media by safe slugs, resolve real filenames server-side"
 rule.
 
 ### Per-user progress — mutable, small
 
-`data/users/{userId}/apps/school/glossika/progress.yml`
+`data/users/{userId}/apps/school/language/{corpusId}/progress.yml`
 
 ```yaml
-course: korean
+corpus: glossika-korean
 day: 42
 daily_limit: 5
 last_activity: 2026-07-21T09:15:03Z
@@ -121,7 +124,7 @@ The **only** mutable per-user store. It holds pacing state, never evidence.
 
 ### Per-user attempt log — append-only, date-sharded
 
-`data/users/{userId}/apps/school/glossika/log/{YYYY-MM-DD}.yml`
+`data/users/{userId}/apps/school/language/{corpusId}/log/{YYYY-MM-DD}.yml`
 
 ```yaml
 - at: 2026-07-21T09:15:03Z
@@ -151,7 +154,7 @@ parent's later reassignment move the evidence and the pacing together.
 
 ### Recordings
 
-`media/apps/school/glossika/recordings/{userId}/{NNNN}-KR.{ext}`
+`media/apps/school/language/{corpusId}/recordings/{userId}/{NNNN}-{LANG}.{ext}`
 
 The recording rung writes the file, then appends its log event. A recording
 whose log event is missing is treated as **not done** — evidence is the log,
@@ -161,19 +164,23 @@ never the filesystem.
 
 ## 3. Ladder rules (pure domain)
 
-`backend/src/2_domains/school/glossika/`
+`backend/src/2_domains/school/language/`
 
 ```
-ladder.mjs     RUNGS, chainFor(capabilities), nextRung(rung, capabilities)
-dayQueue.mjs   buildDayQueue({ log, day, dailyLimit, corpusSize, capabilities })
-dictation.mjs  accuracy(given, expected) — normalized char-level similarity
-rollover.mjs   shouldRollDay({ queue, lastActivity, now, boundaryHour })
+ladder.mjs         RUNGS over roles, chainFor(capabilities, languages)
+dayQueue.mjs       buildDayQueue({ log, day, dailyLimit, corpusSize,
+                                   capabilities, languages, playable })
+transcription.mjs  accuracy(given, expected) — normalized char-level similarity
+rollover.mjs       shouldRollDay({ queue, lastActivity, now, boundaryHour })
+corpus.mjs         validateCorpus(raw) — strict, fails the whole file
 ```
 
 **Queue construction** (`buildDayQueue`), all derived from the log:
 
-1. `newcomers` — the next `dailyLimit` sequences never logged at `repetition`,
-   in sequence order. Capped by `corpusSize`.
+1. `newcomers` — the next `dailyLimit` sequences never logged at ANY rung, in
+   sequence order, skipping anything without audio. Capped by `corpusSize`.
+   (Checking only the entry rung would re-admit imported sentences whose first
+   surviving evidence is further up the ladder.)
 2. `graduates` — for each adjacent pair `(k, k+1)` in the capability-filtered
    chain: every seq logged at `k` but never at `k+1`.
 3. Queue = newcomers + graduates, each entry `{ seq, rung }`.
@@ -218,13 +225,15 @@ wider than `shadowing` (only rung 1 shadows), narrower than `drill`.
 | Application | `backend/src/3_applications/school/LanguageStudyService.mjs` | orchestration |
 | API | `backend/src/4_api/v1/routers/language.mjs` → `/api/v1/school/language` | HTTP shell |
 | Frontend | `frontend/src/modules/School/Programs/Glossika/` | the Glossika *course* as a School program |
-| Corpus | `data/content/glossika/korean.yml` | vendor asset, vendor-named |
-| Audio | `media/apps/school/glossika/` | vendor asset, vendor-named |
+| Corpus | `data/content/language/{corpusId}.yml` | content type, id as filename |
+| Audio | `media/apps/school/language/{corpusId}/` | corpus-scoped, multi-course ready |
 | Ingest CLI | `cli/glossika.cli.mjs` | vendor ingest |
 
-Code layers are vendor-free; **asset paths stay vendor-named** because that is
-what the assets honestly are. A second source (Naver, or a different Glossika
-language) adds an adapter and a corpus file, and touches no domain code.
+Code layers are vendor-free; asset paths are **corpus-scoped**, so a learner
+studying two courses can never have their counters, logs or recordings collide.
+A second source adds an adapter and a corpus file and touches no domain code —
+which is not hypothetical: this corpus already carries two, the commercial
+course and the wordbook import, distinguished only by each sentence's `origin`.
 
 > `school` was missing from the domain-level table in
 > `docs/reference/core/layers-of-abstraction/ddd-reference.md` despite the
@@ -278,22 +287,56 @@ failure.
 
 ---
 
-## 6. Legacy import (decided 2026-07-21)
+## 6. Legacy import (revised 2026-07-22 — the database was recovered)
 
-The 2016 MySQL database is **gone** — dictation and interpretation text did not
-survive. What survives on disk is 519 voice recordings:
+> An earlier revision of this document stated the 2016 MySQL database was gone
+> and that only voice recordings survived. **That was wrong.** A dump exists at
+> `dbbackup/2020-12-01/glossika.gz`, and it carries the entire study history.
 
-- `korean/audio/kckern/` — 94 files → household user `kckern`
-- `korean/audio/ekern/` — 425 files → household user `elizabeth`
+**`import-db` is the authoritative import.** It supersedes `ingest-corpus` +
+`import-legacy`, which between them could only reconstruct `recording` events
+from file mtimes — no day numbers, no typed answers, and only the one rung that
+happened to leave a file behind.
 
-`cli/glossika.cli.mjs import-legacy` copies them into the per-user recording
-store and backfills one `recording` log event each, dated from file mtime
-(2016-12 – 2017-01). Because the queue is derived, those backfilled events
-place each user exactly where they left off: a sentence with a legacy
-`recording` event graduates to `interpretation`, and everything below the
-high-water mark is correctly treated as done.
+What the dump restores:
 
-Imported events carry `source: legacy-2017` so a later audit can tell recovered
+| | mtime reconstruction | recovered dump |
+|---|---|---|
+| Events | 519, recordings only | **5,348**, all four rungs |
+| Day numbers | none | **real** — KC 1–59, Elizabeth 1–119 |
+| Typed answers | lost | **2,655**, all scored on import |
+| Sentences | 3,000 | **4,143** |
+| Span | inferred | KC 2017-10→2019-12, Elizabeth 2016-12→2020-01 |
+
+Reading it lives in `1_adapters/glossika/LegacyDumpReader.mjs` — an
+anti-corruption layer that is the only code aware of the old vocabulary
+(`action`→rung, `data`→given, `val`→target text, `ekern`→`elizabeth`).
+
+**Two sources, one corpus.** Sequences 1–3000 are the commercial course read by
+native speakers; 3001–4143 were appended by the original `import.php` from a
+scraped wordbook whose audio was **TTS**. Each sentence records its `origin`,
+because the two do not sound alike and only the TTS half is regenerable — which
+also explains why 818 sentences have no audio at all. They stay in ONE corpus
+deliberately: the 2016 app drove both up a single ladder with one continuous
+sequence and one day counter, so splitting them now would invent a division the
+study history never had.
+
+**A sentence with no audio can be history but not work.** Every rung's prompt
+is audio, so `buildDayQueue` takes a `playable` set and never queues an
+unplayable sentence — while still counting it as studied, so it is not
+re-admitted as new material either.
+
+**Ownership on re-run is `source`.** An event carrying a source marker is
+imported evidence and may be replaced by a later import; an event with no
+source is live study done here and is always preserved. That rule is what lets
+`import-db` clear the superseded `legacy-2017` events rather than leaving them
+as duplicates of their own better-dated selves.
+
+**Skips are counted, never silent.** 18 rows carry an empty `sentence_id` — the
+2016 app's `loadSeq` could yield null and still POST. They are genuinely
+unusable, and reported rather than dropped quietly.
+
+Imported events carry `source: legacy-db` so an audit can always tell recovered
 evidence from live evidence.
 
 ---
@@ -304,6 +347,10 @@ Named deferrals, not gaps:
 
 - **Romanization / IPA** — present in `Rawtext` but mojibake-encoded; no rung
   needs it yet.
+- **Regenerating the missing TTS audio** for the 818 audio-less sentences.
+  They are wordbook vocabulary whose audio was synthesised in the first place,
+  so it is reproducible — but nothing depends on it, and they remain fully
+  intact as history meanwhile.
 - **The "Reader" companion** (`kckern.info/korean/articles/`) — a separate
   reading-comprehension surface; out of scope.
 - **Speech scoring on recordings.** The 2016 app never scored them either; a
