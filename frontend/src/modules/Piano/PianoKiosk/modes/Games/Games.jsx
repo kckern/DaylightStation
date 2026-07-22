@@ -1,9 +1,10 @@
-import { useMemo, Suspense } from 'react';
+import { useMemo, useContext, Suspense } from 'react';
 import { Routes, Route, useNavigate, useParams } from 'react-router-dom';
 import getLogger from '../../../../../lib/logging/Logger.js';
 import { getGameIds, getGameEntry } from '../../../gameRegistry.js';
 import { usePianoMidi, usePianoMidiNotes } from '../../PianoMidiContext.jsx';
 import { usePianoKioskConfig } from '../../PianoConfig.jsx';
+import PianoUserContext from '../../PianoUserContext.jsx';
 import { usePianoBreadcrumb } from '../../PianoBreadcrumbContext.jsx';
 import PianoTile from '../../PianoTile.jsx';
 import { balancedColumns } from '../../tileGridLayout.js';
@@ -88,6 +89,9 @@ function GameHost() {
   const { pressNote, releaseNote } = usePianoMidi();
   const { activeNotes, noteHistory } = usePianoMidiNotes();
   const { config } = usePianoKioskConfig();
+  // Optional like PianoUserChip — games fall back to no user (default levels)
+  // when mounted outside the kiosk's PianoUserProvider.
+  const currentUser = useContext(PianoUserContext)?.currentUser ?? null;
   const entry = getGameEntry(gameId);
 
   // Current location in the header breadcrumb (Games › this game). The breadcrumb
@@ -115,6 +119,7 @@ function GameHost() {
           activeNotes={activeNotes}
           noteHistory={noteHistory}
           gameConfig={config.games?.[gameId]}
+          currentUser={currentUser}
           onDeactivate={exit}
           onNoteOn={pressNote}
           onNoteOff={releaseNote}

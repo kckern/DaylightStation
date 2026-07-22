@@ -5,8 +5,13 @@ import { ActionStaff } from '../components/ActionStaff.jsx';
 import { useFlashcardGame } from './useFlashcardGame.js';
 import { useAutoGameLifecycle } from '../useAutoGameLifecycle.js';
 import { AttemptHistory } from './components/AttemptHistory.jsx';
+import { ChordCard } from './components/ChordCard.jsx';
 import { computeKeyboardRange } from '../noteUtils.js';
+import { rootPositionVoicing } from './flashcardEngine.js';
 import './PianoFlashcards.scss';
+
+// Chord-spelling levels have no note_range (any octave counts) — show C3–C6.
+const CHORD_LEVEL_RANGE = [48, 84];
 
 /**
  * Piano Flashcards — untimed note-reading trainer.
@@ -15,32 +20,52 @@ import './PianoFlashcards.scss';
  * @param {Map} props.activeNotes - live MIDI note state
  * @param {Object} props.gameConfig - games.flashcards from piano.yml
  * @param {function} props.onDeactivate - called to exit the game
+ * @param {string|null} [props.currentUser] - kiosk user id, for user_start_levels
  */
-export function PianoFlashcards({ activeNotes, gameConfig, onDeactivate, onNoteOn, onNoteOff }) {
+export function PianoFlashcards({ activeNotes, gameConfig, onDeactivate, onNoteOn, onNoteOff, currentUser = null }) {
   const logger = useMemo(() => getChildLogger({ component: 'piano-flashcards' }), []);
 
-  const game = useFlashcardGame(activeNotes, gameConfig);
+  const game = useFlashcardGame(activeNotes, gameConfig, currentUser);
   useAutoGameLifecycle(game.phase, game.startGame, onDeactivate, logger, 'flashcards');
+
+  const isChordLevel = game.levelConfig?.card_type === 'chord';
 
   // Keyboard range from current level config
   const { startNote, endNote } = useMemo(
-    () => computeKeyboardRange(game.levelConfig?.note_range ?? null),
-    [game.levelConfig]
+    () => computeKeyboardRange(
+      game.levelConfig?.note_range ?? (isChordLevel ? CHORD_LEVEL_RANGE : null)
+    ),
+    [game.levelConfig, isChordLevel]
   );
 
-  // Target pitches for keyboard highlighting (only show after correct answer)
+  // Target pitches for keyboard highlighting (only show after correct answer).
+  // Chord cards have no fixed pitches — show a root-position voicing near C4.
   const targetNotes = useMemo(() => {
-    if (!game.currentCard?.pitches || game.cardStatus !== 'hit') return null;
-    return new Set(game.currentCard.pitches);
+    if (!game.currentCard || game.cardStatus !== 'hit') return null;
+    if (game.currentCard.type === 'chord') {
+      return new Set(rootPositionVoicing(game.currentCard));
+    }
+    return game.currentCard.pitches ? new Set(game.currentCard.pitches) : null;
   }, [game.currentCard, game.cardStatus]);
 
   // Wrong notes for keyboard flash
   const wrongNotes = useMemo(() => {
     if (game.cardStatus !== 'miss' || !activeNotes || !game.currentCard) return null;
-    const targetSet = new Set(game.currentCard.pitches);
     const wrong = new Set();
-    for (const [note] of activeNotes) {
-      if (!targetSet.has(note)) wrong.add(note);
+    if (game.currentCard.type === 'chord') {
+      let bass = null;
+      for (const [note] of activeNotes) {
+        if (!game.currentCard.pitchClasses.has(((note % 12) + 12) % 12)) wrong.add(note);
+        if (bass === null || note < bass) bass = note;
+      }
+      // Complete chord over the wrong bass (Cm/Eb): no non-chord-tone to flash,
+      // so flash the offending bass note itself.
+      if (wrong.size === 0 && bass !== null) wrong.add(bass);
+    } else {
+      const targetSet = new Set(game.currentCard.pitches);
+      for (const [note] of activeNotes) {
+        if (!targetSet.has(note)) wrong.add(note);
+      }
     }
     return wrong.size > 0 ? wrong : null;
   }, [game.cardStatus, activeNotes, game.currentCard]);
@@ -82,11 +107,15 @@ export function PianoFlashcards({ activeNotes, gameConfig, onDeactivate, onNoteO
               game.cardStatus === 'hit' && 'piano-flashcards__card--hit',
               game.cardStatus === 'miss' && 'piano-flashcards__card--miss',
             ].filter(Boolean).join(' ')}>
-              <ActionStaff
-                targetPitches={game.currentCard.pitches}
-                matched={game.cardStatus === 'hit'}
-                activeNotes={activeNotes}
-              />
+              {game.currentCard.type === 'chord' ? (
+                <ChordCard card={game.currentCard} />
+              ) : (
+                <ActionStaff
+                  targetPitches={game.currentCard.pitches}
+                  matched={game.cardStatus === 'hit'}
+                  activeNotes={activeNotes}
+                />
+              )}
             </div>
           )}
 
