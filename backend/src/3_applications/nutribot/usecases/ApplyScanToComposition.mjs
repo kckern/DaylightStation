@@ -51,9 +51,9 @@ export class ApplyScanToComposition {
     }
 
     if (parsed.kind === 'density') {
-      // Parsing only proves the level is inside the grammar. A gap in the config
-      // table would otherwise reach ScanNutritionService as MALFORMED_DENSITY_LEVEL,
-      // which means "fix the YAML" — not something to learn at the fridge.
+      // Parsing only proves the level is inside the grammar; the level still has
+      // to exist in the config table. Rejecting here keeps a gap in the table from
+      // becoming a "fix the YAML" error discovered at the fridge.
       const row = densityForLevel(this.#config, parsed.level);
       if (!row) {
         this.#logger.warn?.('applyScan.unknownDensityLevel', { scaleId, level: parsed.level });
@@ -65,9 +65,10 @@ export class ApplyScanToComposition {
       return { handled: true, ok: true, kind: 'density', level: parsed.level, label: row.label, emoji: row.emoji };
     }
 
-    // container — an unknown id must NOT reach the store: computeNet reads a
-    // missing container as "no tare" and returns a silently un-tared weight that
-    // then auto-accepts. A renamed id has to be visible.
+    // container — an unknown id must NOT reach the store. `resolveScaleNet` would
+    // find no matching row and fall back to the un-tared gross; it does flag that
+    // on the prompt, but a renamed id is better caught at scan time than argued
+    // about later on the message.
     const item = (this.#config.containers?.items || []).find((c) => c.id === parsed.id);
     if (!item) {
       this.#logger.warn?.('applyScan.unknownContainer', { scaleId, id: parsed.id });

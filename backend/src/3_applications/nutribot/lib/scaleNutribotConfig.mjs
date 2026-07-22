@@ -54,9 +54,10 @@ export function normalizeScaleNutribotConfig(raw = {}) {
             kcal_per_g: Number(l.kcal_per_g),
             hint: l.hint || '',
           };
-          // Passed through untouched: ScanNutritionService validates these and
-          // treats a blank macros (throws) differently from a blank per_100g
-          // (tolerated). Defaulting either here would mask a bad table.
+          // Passed through untouched. `computeNutrition` (ScanNutritionService)
+          // validates these when a density level is applied, and treats a blank
+          // macros (throws) differently from a blank per_100g (tolerated).
+          // Defaulting either here would mask a bad table.
           if (l.macros !== undefined) out.macros = l.macros;
           if (l.per_100g !== undefined) out.per_100g = l.per_100g;
           return out;

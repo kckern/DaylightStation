@@ -336,6 +336,20 @@ export function validateNutriLog(log) {
         originalText: log.metadata?.originalText,
         aiModel: log.metadata?.aiModel,
         processingTimeMs: log.metadata?.processingTimeMs,
+        // Scale-path provenance. This whitelist is what actually reaches YAML
+        // (`save()` stores `toJSON()`), so a key omitted here is DROPPED, not
+        // merely unvalidated. These four were being silently discarded:
+        //   - grossGrams is the raw scale reading. `items[0].grams` holds the
+        //     NET, so without this the untared measurement is unrecoverable and
+        //     SelectScaleContainer — which recovers gross from here — would
+        //     re-subtract the tare from an already-net weight.
+        //   - containerId/densityLevel are how LogFoodFromScale#isUntouched
+        //     tells a pending prompt from one the user has already answered.
+        scaleId: log.metadata?.scaleId,
+        grossGrams: log.metadata?.grossGrams,
+        containerId: log.metadata?.containerId,
+        containerGrams: log.metadata?.containerGrams,
+        densityLevel: log.metadata?.densityLevel,
       },
       timezone: log.timezone || log.metadata?.timezone || 'America/Los_Angeles',
       createdAt: log.createdAt,
