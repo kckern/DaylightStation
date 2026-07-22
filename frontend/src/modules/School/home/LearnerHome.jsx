@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useState } from 'react';
-import ProfileAvatar from '../../../lib/identity/ProfileAvatar.jsx';
 import { schoolApi } from '../schoolApi.js';
 import { schoolLog } from '../schoolLog.js';
 import { sectionForReport } from '../programs.js';
@@ -23,10 +22,6 @@ import SectionGrid from './SectionGrid.jsx';
  * is filtered server-side and never reaches this component to be rendered by
  * accident.
  */
-
-function greeting(name) {
-  return name ? `Hi ${name.split(' ')[0]}` : 'Hi';
-}
 
 /**
  * The one card that answers "what do I do now". Sized, because a child weighs
@@ -87,7 +82,7 @@ function SecondaryCard({ report, onOpen }) {
   );
 }
 
-export default function LearnerHome({ user, sections, onOpen, onSwitchProfile }) {
+export default function LearnerHome({ user, sections, onOpen }) {
   const [reports, setReports] = useState(null);
   const [status, setStatus] = useState('loading');
 
@@ -119,18 +114,16 @@ export default function LearnerHome({ user, sections, onOpen, onSwitchProfile })
   const [primary, ...secondary] = actionable;
   const allDone = status === 'ready' && actionable.length === 0 && (reports ?? []).length > 0;
 
+  // Anything already offered as a card is removed from the shelves. Otherwise
+  // the same course is both the headline action and an anonymous tile three
+  // inches below it, which reads as two different things.
+  const shelves = useMemo(() => {
+    const surfaced = new Set(actionable.map((r) => sectionForReport(r)).filter(Boolean));
+    return (sections ?? []).filter((s) => !surfaced.has(s.id));
+  }, [sections, actionable]);
+
   return (
     <div className={`school-home${allDone ? ' is-free' : ''}`}>
-      <header className="school-home__hello">
-        <ProfileAvatar id={user.id} name={user.name} />
-        <h2 className="school-home__greeting">{greeting(user.name)}</h2>
-        {onSwitchProfile && (
-          <button type="button" className="school-home__switch" onClick={onSwitchProfile}>
-            Not you?
-          </button>
-        )}
-      </header>
-
       {status === 'loading' && <p className="school-home__status">Loading…</p>}
 
       {primary && (
@@ -161,10 +154,28 @@ export default function LearnerHome({ user, sections, onOpen, onSwitchProfile })
         </section>
       )}
 
+      {/* "Or explore" only makes sense when there is something to explore
+          INSTEAD of. With nothing above it, the shelves are the offer, so they
+          are named as one and keep their descriptions. */}
       <section className="school-home__explore">
-        <h3 className="school-home__heading">{allDone ? 'Explore' : 'Or explore'}</h3>
-        <SectionGrid sections={sections} onOpen={onOpen} compact={!allDone} />
+        <h3 className="school-home__heading">
+          {primary ? 'Or explore' : allDone ? 'Explore' : 'Have a look around'}
+        </h3>
+        <SectionGrid sections={shelves} onOpen={onOpen} compact={Boolean(primary)} />
       </section>
+
+      {/* The cross-learner board is for whoever supervises, and `group_label`
+          is how the household already marks them (Mom/Dad). A child never sees
+          the entry point, so they never see themselves ranked beside a sibling. */}
+      {user.group_label && (
+        <button
+          type="button"
+          className="school-home__family"
+          onClick={() => onOpen('progress')}
+        >
+          Family progress
+        </button>
+      )}
     </div>
   );
 }

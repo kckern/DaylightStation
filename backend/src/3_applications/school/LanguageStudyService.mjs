@@ -423,7 +423,29 @@ export class LanguageStudyService {
     if (!corpus) return null;
 
     const log = this.#ds.readAllEvents(userId, corpusId);
-    if (log.length === 0) return null;   // never touched — not a row on the board
+    if (log.length === 0) {
+      // Never touched. This used to return null, which meant a brand-new
+      // learner's home had nothing on it at all — the one child who most needs
+      // a way in got the emptiest screen. A course they have not started is an
+      // invitation, and `not-started` is exactly the state for it.
+      const progress = this.#readProgress(userId, corpusId);
+      return {
+        program: this.id,
+        instanceId: corpus.id,
+        label: corpus.label,
+        userId,
+        state: 'not-started',
+        lastActivity: null,
+        headline: `${corpus.languages.source} to ${corpus.languages.target}`,
+        next: {
+          label: 'Start here',
+          detail: `${progress.dailyLimit} sentences a day`,
+          estimate: { count: progress.dailyLimit, unit: 'sentences' },
+          blocked: false,
+        },
+        metrics: [],
+      };
+    }
 
     const progress = this.#readProgress(userId, corpusId);
     const queue = buildDayQueue({

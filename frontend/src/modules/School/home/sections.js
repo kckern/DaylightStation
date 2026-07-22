@@ -5,9 +5,13 @@
  * Games/Writing as their sub-projects land — a tile must never point at an
  * absent endpoint.
  */
+// `progress` is deliberately ABSENT. It is the cross-learner board — parent
+// instrumentation — and its own hint was written in the third person ("who is
+// studying what"). A child's progress surface is their home card, not a tile
+// that shows them beside their siblings. Adults reach it from their own home
+// (see LearnerHome); the section id still routes, it just is not on the wall.
 export const SECTIONS = [
-  { id: 'banks', label: 'Quizzes & Flashcards', hint: 'Practice sets and tests' },
-  { id: 'progress', label: 'Progress', hint: 'Who is studying what, and what is next' },
+  { id: 'banks', label: 'Practice', hint: 'Quizzes and flashcards' },
 ];
 
 // Hints for catalog-driven category sections (spec §2b). A category with no
@@ -38,10 +42,12 @@ export function sectionsFromCatalog(catalogSections, courses) {
     label: s.label,
     hint: CATEGORY_HINTS[s.category],
   }));
+  // No `EN → KR` hint: language codes are a config field, and a six-year-old
+  // cannot parse an arrow between two two-letter codes on a wall panel.
   const language = (courses || []).map((c) => ({
     id: `lang:${c.id}`,
     label: c.label,
-    hint: c.languages ? `${c.languages.source} → ${c.languages.target}` : undefined,
+    hint: 'Listen, say it, write it',
   }));
   return [...SECTIONS, ...mapped, ...language];
 }

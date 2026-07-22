@@ -82,8 +82,15 @@ export class GetSchoolReport {
     }));
 
     // A learner studying nothing is not a row worth rendering on the household
-    // board; asked for explicitly by id, they still get their (empty) row.
-    return { learners: userId ? rows : rows.filter((r) => r.reports.length > 0) };
+    // board — and "not-started" invitations do not count as studying, or every
+    // available course would make every child look active. Asked for
+    // explicitly by id (a learner's own home), they get their row regardless,
+    // invitations included: that is how a new child finds a way in.
+    return {
+      learners: userId
+        ? rows
+        : rows.filter((r) => r.reports.some((x) => x.state !== 'not-started')),
+    };
   }
 }
 
