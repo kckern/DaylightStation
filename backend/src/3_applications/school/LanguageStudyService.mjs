@@ -14,6 +14,7 @@ import {
   shouldRollDay, chainFor, rungById, resolveRole, accuracy,
 } from '#domains/school/language/index.mjs';
 import { RUNG_IDS } from '#domains/school/language/ladder.mjs';
+import { resolveGate, capabilitiesUnder, allowsTrackedWork, gateMessage } from '#domains/school/accessGate.mjs';
 import { GuestForbiddenError } from '#domains/school/errors.mjs';
 import { ValidationError, EntityNotFoundError } from '#domains/core/errors/index.mjs';
 
@@ -56,7 +57,7 @@ function offsetMinutesFor(timezone, epochMs) {
 }
 
 export class LanguageStudyService {
-  #ds; #logger; #now; #timezone; #boundaryHour;
+  #ds; #logger; #now; #timezone; #boundaryHour; #readGate;
   #corpusCache = new Map();
 
   constructor({
@@ -65,12 +66,22 @@ export class LanguageStudyService {
     now = () => Date.now(),
     timezone = null,
     boundaryHour = DEFAULT_BOUNDARY_HOUR,
+    // Optional: without it the gate is simply open, so an unconfigured
+    // household is never locked out by a feature it did not ask for.
+    readGate = null,
   }) {
     this.#ds = datastore;
     this.#logger = logger;
     this.#now = now;
     this.#timezone = timezone;
     this.#boundaryHour = boundaryHour;
+    this.#readGate = readGate;
+  }
+
+  /** The physical gate, or an open one when no gate is wired. */
+  #gate() {
+    if (!this.#readGate) return resolveGate({ presence: null, now: this.#now(), required: [] });
+    return this.#readGate();
   }
 
   #offsetMinutes(at) {
@@ -166,12 +177,17 @@ export class LanguageStudyService {
     const progress = this.#readProgress(userId, corpusId);
     const log = this.#ds.readAllEvents(userId, corpusId);
 
+    // The client DECLARES what it can do; the gate KNOWS. A keyboard absent at
+    // a known MAC is a fact, and it wins over a stored localStorage claim.
+    const gate = this.#gate();
+    const allowed = capabilitiesUnder(gate, capabilities);
+
     const queue = buildDayQueue({
       log,
       day: progress.day,
       dailyLimit: progress.dailyLimit,
       corpusSize: corpus.size,
-      capabilities,
+      capabilities: allowed,
       languages: corpus.languages,
       playable: corpus.playable,
     });
@@ -189,7 +205,8 @@ export class LanguageStudyService {
       corpus: { id: corpus.id, label: corpus.label, languages: corpus.languages, size: corpus.size },
       day: progress.day,
       dailyLimit: progress.dailyLimit,
-      chain: chainFor(capabilities, corpus.languages),
+      chain: chainFor(allowed, corpus.languages),
+      gate: { level: gate.level, message: gateMessage(gate), missing: gate.missing },
       queue: queue.map((entry) => this.#decorate(entry, corpus)),
       summary: summarizeQueue(queue),
       rollover: roll,
@@ -230,6 +247,13 @@ export class LanguageStudyService {
    */
   logAttempt({ userId, corpusId, seq, rung, given = null, source = null }) {
     this.#requireUser(userId);
+    // Tracked work is refused unless the gate is fully open. Browsing and
+    // listening stay available while hindered — a Bluetooth glitch should cost
+    // the lesson, not the panel.
+    const gate = this.#gate();
+    if (!allowsTrackedWork(gate)) {
+      throw new GuestForbiddenError(gateMessage(gate) || 'Study is unavailable right now');
+    }
     const corpus = this.#requireCorpus(corpusId);
 
     const rungDef = rungById(rung);
