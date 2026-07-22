@@ -1,8 +1,9 @@
 /**
  * School app root (registered as 'school' in appRegistry; AppContainer passes
- * {clear}). Owns the picker-flow: launching tracked work while unclaimed opens
- * the ProfilePicker with the launch pending (spec §6 — claim prompt on
- * tracked work; browsing never prompts).
+ * {clear}). Owns two navigation levels: the home section grid (spec §8), and
+ * — inside the banks section — the picker-flow: launching tracked work while
+ * unclaimed opens the ProfilePicker with the launch pending (spec §6 — claim
+ * prompt on tracked work; browsing never prompts).
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
 import ProfilePicker from '../../lib/identity/ProfilePicker.jsx';
@@ -11,12 +12,16 @@ import { SchoolProfileProvider, useSchoolProfile } from './identity/SchoolProfil
 import BankBrowser from './browse/BankBrowser.jsx';
 import QuizRunner from './quiz/QuizRunner.jsx';
 import FlashcardRunner from './flashcards/FlashcardRunner.jsx';
+import SectionGrid from './home/SectionGrid.jsx';
+import { SECTIONS } from './home/sections.js';
 import { schoolApi } from './schoolApi.js';
+import { schoolLog } from './schoolLog.js';
 import './School.scss';
 
 function SchoolShell({ clear }) {
   const { status, roster, currentUser, isGuest, pickerOpen, openPicker, claim, continueAsGuest } = useSchoolProfile();
-  const [active, setActive] = useState(null);   // {bank, mode}
+  const [section, setSection] = useState(null); // a SECTIONS id, or null = home grid
+  const [active, setActive] = useState(null);   // {bank, mode} — only ever set within 'banks'
   const [pending, setPending] = useState(null); // {bankSummary, mode} awaiting a claim
   const [notice, setNotice] = useState(null);
   // Set alongside the notice, in the same synchronous pass as the
@@ -58,6 +63,19 @@ function SchoolShell({ clear }) {
     if (pending) { start(pending.bankSummary, pending.mode, true); setPending(null); }
   }, [continueAsGuest, pending, start]);
 
+  const openSection = useCallback((id) => {
+    setSection(id);
+    schoolLog.nav('section', { section: id });
+  }, []);
+
+  // Going home also clears any guest-refusal notice: the notice belongs to
+  // the section visit that produced it and must not greet the next visit.
+  const goHome = useCallback(() => {
+    setSection(null);
+    setNotice(null);
+    schoolLog.nav('home', {});
+  }, []);
+
   // A guest-refusal notice is only ever relevant to the identity that
   // triggered it. If the child then signs in (or otherwise changes identity,
   // e.g. via the header chip alone, with no pending launch involved) a stale
@@ -70,27 +88,29 @@ function SchoolShell({ clear }) {
     setNotice(null);
   }, [currentUser, isGuest]);
 
+  const sectionDef = section ? SECTIONS.find((s) => s.id === section) : null;
+
   if (status !== 'ready') return <div className="school-app school-app--loading">Loading…</div>;
   return (
     <div className="school-app">
       <header className="school-app__header">
-        {/* Back has two meanings, and on the Portal it sometimes has none.
-            Inside a running bank it steps back to the list. Otherwise it exits
-            the app -- but when School IS the screen (mounted as the `school`
-            widget, the Portal's whole purpose) there is nowhere to exit TO, so
-            `clear` is absent and the control is omitted entirely rather than
+        {/* Back steps one navigation level: runner -> bank list -> home ->
+            exit. The last hop only exists when School is mounted as an app
+            (AppContainer passes `clear`); when School IS the screen (the
+            `school` widget — the Portal's whole purpose) there is nowhere to
+            exit TO, so at home the control is omitted entirely rather than
             rendering a dead button on a touch-only panel. */}
-        {(active || clear) && (
+        {(active || section || clear) && (
           <button
             type="button"
             className="school-app__back"
-            aria-label={active ? 'Back to bank list' : 'Exit school'}
-            onClick={() => (active ? setActive(null) : clear())}
+            aria-label={active ? 'Back to bank list' : section ? 'Back to home' : 'Exit school'}
+            onClick={() => (active ? setActive(null) : section ? goHome() : clear())}
           >
             ‹
           </button>
         )}
-        <h1 className="school-app__title">School</h1>
+        <h1 className="school-app__title">{sectionDef ? sectionDef.label : 'School'}</h1>
         <button type="button" className="school-app__chip" onClick={openPicker}>
           {currentUser
             ? (<><ProfileAvatar id={currentUser.id} name={currentUser.name} /><span>{currentUser.name}</span></>)
@@ -98,13 +118,14 @@ function SchoolShell({ clear }) {
         </button>
       </header>
       <main className="school-app__body">
+        {!section && <SectionGrid sections={SECTIONS} onOpen={openSection} />}
         {/* Only an EXPLICIT guest (continueAsGuest()) is restricted to the
             generic catalogue. An unclaimed child has not declined identity --
             they simply have not picked yet -- so they see everything and get
             prompted only when they try to launch tracked work (onLaunch
-            below). Bank reads are ungated by design; real enforcement is
+            above). Bank reads are ungated by design; real enforcement is
             server-side at session open (403 for guest vs an assigned bank). */}
-        {!active && <BankBrowser guestOnly={isGuest} onLaunch={onLaunch} notice={notice} />}
+        {section === 'banks' && !active && <BankBrowser guestOnly={isGuest} onLaunch={onLaunch} notice={notice} />}
         {active?.mode === 'quiz' && <QuizRunner bank={active.bank} onExit={() => setActive(null)} />}
         {active?.mode === 'flashcard' && <FlashcardRunner bank={active.bank} onExit={() => setActive(null)} />}
       </main>
