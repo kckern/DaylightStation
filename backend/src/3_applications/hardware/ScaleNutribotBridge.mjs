@@ -16,12 +16,25 @@
 //
 // Weights NEVER expire. Reported weight is always GROSS. `now` is injected for testable
 // window math; session end is event-driven (no wall-clock timers).
+//
+// COMPOSITION BUFFER (optional `compositionStore`): the scale half of scan-enriched
+// logging. A weight and a `dl:`/`ct:` scan may arrive in either order, so both write the
+// same per-scale buffer and it completes whenever the second one lands.
+//   • setWeight fires only where a prompt is POSTED or EDITED — i.e. a qualifying
+//     placement. Every settled frame would include the 0.5 Hz at-rest heartbeat, and
+//     since setWeight refreshes the store's rolling window the buffer would then never
+//     expire (CompositionStore, "The window refresh set EXCLUDES raw scale frames").
+//   • endPlacement fires on the placed→at-rest CROSSING, tracked by `s.placed`. It is
+//     unconditional in the way that matters — a placement suppressed by the suspicion
+//     filter or the min-grams floor still ends, so its scans cannot be inherited by the
+//     next food — but it must NOT fire per at-rest frame, or a scan made before the food
+//     is set down is consumed within ~2s and scan-first becomes impossible.
 
 const DEFAULT_TOPICS = ['food-scale'];
 
 export function createScaleNutribotBridge({
   eventBus, nutribotContainer, userId, conversationId, scaleConfig, topics,
-  logger = console, now = () => Date.now(),
+  logger = console, now = () => Date.now(), compositionStore = null,
 }) {
   if (!eventBus?.subscribe) throw new Error('createScaleNutribotBridge: eventBus with subscribe required');
   if (!nutribotContainer?.getLogFoodFromScale) throw new Error('createScaleNutribotBridge: nutribotContainer required');
@@ -37,13 +50,26 @@ export function createScaleNutribotBridge({
   const heavyG = scaleConfig?.heavyG ?? 300;
   const forceTolG = scaleConfig?.forceToleranceG ?? 10;
 
-  const scales = new Map();   // id -> { baseline, lastGrams, live, postTimes[] }
+  const scales = new Map();   // id -> { baseline, lastGrams, live, postTimes[], placed }
   const inflight = new Set();
 
   const stateFor = (id) => {
     let s = scales.get(id);
-    if (!s) { s = { baseline: null, lastGrams: null, live: null, postTimes: [] }; scales.set(id, s); }
+    if (!s) { s = { baseline: null, lastGrams: null, live: null, postTimes: [], placed: false }; scales.set(id, s); }
     return s;
+  };
+
+  // Buffer writes are best-effort: a store failure must never break the prompt flow,
+  // which works on its own and is what the user is looking at.
+  const bufferWeight = (id, grams) => {
+    if (!compositionStore) return;
+    try { compositionStore.setWeight(id, { grams, unit: 'g' }); }
+    catch (err) { logger.warn?.('scaleNutribot.composition.setWeight.failed', { id, grams, error: err.message }); }
+  };
+  const bufferEndPlacement = (id) => {
+    if (!compositionStore) return;
+    try { compositionStore.endPlacement(id); }
+    catch (err) { logger.warn?.('scaleNutribot.composition.endPlacement.failed', { id, error: err.message }); }
   };
 
   const create = (grams, scaleId) =>
@@ -67,6 +93,7 @@ export function createScaleNutribotBridge({
     if (res?.success && res.logUuid) {
       s.live = { logUuid: res.logUuid, messageId: res.messageId || null, grams };
       s.postTimes.push(now());
+      bufferWeight(id, grams);
       logger.info?.('scaleNutribot.pushed', { id, grams, reason });
     }
     return res;
@@ -94,7 +121,7 @@ export function createScaleNutribotBridge({
       try {
         if (s.live && Math.abs(g - s.live.grams) <= forceTolG) {
           const res = await editInPlace(g, id, s.live);
-          if (res?.edited) { s.live.grams = g; return; }   // already handled → no duplicate
+          if (res?.edited) { s.live.grams = g; bufferWeight(id, g); return; }   // already handled → no duplicate
           if (res?.touched) s.live = null;                 // answered → post fresh below
         }
         await post(id, s, g, 'button');
@@ -118,9 +145,18 @@ export function createScaleNutribotBridge({
       // SESSION END: back near/below the resting load ⇒ removed / tare / jostle.
       if (rise <= baselineTolG) {
         if (s.live) { await retract(s.live); s.live = null; } // sweep unanswered slop
+        // CROSSING only — `rise <= baselineTolG` is also true on every at-rest
+        // heartbeat, and consuming the buffer on those would eat a scan made
+        // before the food is set down.
+        if (s.placed) { s.placed = false; bufferEndPlacement(id); }
         s.baseline = grams;
         return;
       }
+
+      // Something is on the scale. Set before the floor/suspicion guards so a
+      // placement they suppress still ENDS — otherwise its scans survive and the
+      // next food inherits a density and tare that belong to nothing.
+      s.placed = true;
 
       if (grams < minGrams) return;         // floor guard
 
@@ -128,7 +164,7 @@ export function createScaleNutribotBridge({
       if (s.live) {
         if (Math.abs(grams - s.live.grams) < dedupDeltaG) return; // same held value
         const res = await editInPlace(grams, id, s.live);
-        if (res?.edited) { s.live.grams = grams; return; }  // still unanswered → followed
+        if (res?.edited) { s.live.grams = grams; bufferWeight(id, grams); return; }  // still unanswered → followed
         if (res?.touched) s.live = null;                    // answered → fall to new placement
         else return;                                        // dispatch failed → bail
       }
