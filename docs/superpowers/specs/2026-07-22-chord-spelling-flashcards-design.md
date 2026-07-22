@@ -90,3 +90,24 @@ All 12 roots, sharp-spelled (matches `theory/chordNaming.js` convention). Symbol
 ## Out of scope (YAGNI)
 
 Persistent per-user progress, inversion-required levels, flat spellings.
+
+## Revision 2 (2026-07-22, after first live session)
+
+Feedback from the first real attempt drove five changes:
+
+1. **Root-based ladder** replaces the quality-partitioned one. Partitioning by
+   chord type meant drilling one shape per level; now difficulty ramps by which
+   ROOTS are in play (Just C → C F G → … → all 12) with qualities mixed within
+   every level. Levels declare `roots:` (note names; omitted = all 12). Ninth
+   qualities (9, maj9, m9) added to the vocabulary.
+2. **Carryover guard (`awaitRelease`)** — a new card is not judged until all
+   notes are released. Fixes the false red flash: holding the correct chord
+   through the 400ms advance failed the next card against the old notes.
+3. **Card face redesign** — a grand staff (`ChordStaffRenderer`) that starts
+   empty and live-renders held notes, the tab-style symbol big (`Dm`), and the
+   spelled-out name small and light ("D minor", via `longName`).
+4. **Level picker** — the level block opens a modal listing all levels; picking
+   one resets score, deals a fresh card, and persists per-user
+   (`flashcardsLevel` preference, which outranks `user_start_levels`).
+5. **Telemetry to info** — `card-shown` / `card-hit` / `card-miss` now ship to
+   the backend with `held` notes and a miss `reason` (wrong-note | wrong-bass).

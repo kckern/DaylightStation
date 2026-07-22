@@ -1,11 +1,13 @@
-import { useMemo } from 'react';
+import { useMemo, useState, useEffect, useRef } from 'react';
 import { getChildLogger } from '../../../lib/logging/singleton.js';
+import { DaylightAPI } from '../../../lib/api.mjs';
 import { PianoKeyboard } from '../components/PianoKeyboard';
 import { ActionStaff } from '../components/ActionStaff.jsx';
 import { useFlashcardGame } from './useFlashcardGame.js';
 import { useAutoGameLifecycle } from '../useAutoGameLifecycle.js';
 import { AttemptHistory } from './components/AttemptHistory.jsx';
 import { ChordCard } from './components/ChordCard.jsx';
+import { LevelPicker } from './components/LevelPicker.jsx';
 import { computeKeyboardRange } from '../noteUtils.js';
 import { rootPositionVoicing } from './flashcardEngine.js';
 import './PianoFlashcards.scss';
@@ -27,6 +29,46 @@ export function PianoFlashcards({ activeNotes, gameConfig, onDeactivate, onNoteO
 
   const game = useFlashcardGame(activeNotes, gameConfig, currentUser);
   useAutoGameLifecycle(game.phase, game.startGame, onDeactivate, logger, 'flashcards');
+
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const levels = gameConfig?.levels ?? [];
+
+  // A previously picked level (saved per-user preference) overrides the
+  // configured start — applied once, and only while the game is still fresh.
+  const prefAppliedRef = useRef(false);
+  useEffect(() => {
+    if (!currentUser || prefAppliedRef.current) return undefined;
+    let cancelled = false;
+    DaylightAPI(`api/v1/piano/users/${currentUser}/preferences`)
+      .then((prefs) => {
+        if (cancelled || prefAppliedRef.current) return;
+        prefAppliedRef.current = true;
+        const name = prefs?.flashcardsLevel;
+        if (!name) return;
+        const idx = levels.findIndex(l => l?.name === name);
+        if (idx >= 0 && idx !== game.level && game.score === 0 && game.attempts.length === 0) {
+          logger.info('flashcards.pref-level-applied', { user: currentUser, level: name });
+          game.selectLevel(idx);
+        }
+      })
+      .catch(() => { prefAppliedRef.current = true; });
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps — one-shot pref load
+  }, [currentUser]);
+
+  const handleLevelSelect = (idx) => {
+    setPickerOpen(false);
+    if (idx === game.level) return;
+    game.selectLevel(idx);
+    prefAppliedRef.current = true;
+    if (currentUser && levels[idx]?.name) {
+      DaylightAPI(
+        `api/v1/piano/users/${currentUser}/preferences`,
+        { flashcardsLevel: levels[idx].name },
+        'PUT',
+      ).catch((e) => logger.warn('flashcards.pref-save-fail', { error: e?.message }));
+    }
+  };
 
   const isChordLevel = game.levelConfig?.card_type === 'chord';
 
@@ -83,10 +125,14 @@ export function PianoFlashcards({ activeNotes, gameConfig, onDeactivate, onNoteO
       <div className="piano-flashcards__play-area">
         {/* Left column: level info + score */}
         <div className="piano-flashcards__stats-left">
-          <div className="piano-flashcards__level">
+          <button
+            type="button"
+            className="piano-flashcards__level piano-flashcards__level--button"
+            onClick={() => setPickerOpen(true)}
+          >
             <div className="piano-flashcards__level-num">Level {game.level + 1}</div>
             <div className="piano-flashcards__level-name">{levelLabel}</div>
-          </div>
+          </button>
           <div className="piano-flashcards__score-block">
             <div className="piano-flashcards__score-value">{game.score}</div>
             <div className="piano-flashcards__score-label">/ {game.scoreNeeded}</div>
@@ -108,7 +154,7 @@ export function PianoFlashcards({ activeNotes, gameConfig, onDeactivate, onNoteO
               game.cardStatus === 'miss' && 'piano-flashcards__card--miss',
             ].filter(Boolean).join(' ')}>
               {game.currentCard.type === 'chord' ? (
-                <ChordCard card={game.currentCard} />
+                <ChordCard card={game.currentCard} activeNotes={activeNotes} />
               ) : (
                 <ActionStaff
                   targetPitches={game.currentCard.pitches}
@@ -132,6 +178,15 @@ export function PianoFlashcards({ activeNotes, gameConfig, onDeactivate, onNoteO
           <AttemptHistory attempts={game.attempts} accuracy={game.accuracy} />
         </div>
       </div>
+
+      {pickerOpen && (
+        <LevelPicker
+          levels={levels}
+          currentLevel={game.level}
+          onSelect={handleLevelSelect}
+          onClose={() => setPickerOpen(false)}
+        />
+      )}
 
       <div className="piano-flashcards__keyboard">
         <PianoKeyboard
