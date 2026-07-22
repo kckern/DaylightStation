@@ -157,11 +157,17 @@ function SchoolShell({ clear }) {
           {sectionLabel
             ?? (currentUser ? `Hi ${String(currentUser.name).split(' ')[0]}` : 'School')}
         </h1>
-        <button type="button" className="school-app__chip" onClick={openPicker}>
-          {currentUser
-            ? (<><ProfileAvatar id={currentUser.id} name={currentUser.name} /><span>{currentUser.name}</span></>)
-            : <span>{isGuest ? 'Guest' : 'Tap to sign in'}</span>}
-        </button>
+        {/* No sign-in chip for the unclaimed: the student panel's face row is
+            the claim affordance, so an extra header CTA was noise. The chip
+            only appears once there IS an identity to show (or a guest to
+            un-guest). */}
+        {(currentUser || isGuest) && (
+          <button type="button" className="school-app__chip" onClick={openPicker}>
+            {currentUser
+              ? (<><ProfileAvatar id={currentUser.id} name={currentUser.name} /><span>{currentUser.name}</span></>)
+              : <span>Guest</span>}
+          </button>
+        )}
       </header>
       <main className="school-app__body">
         {/* One home for claimed and unclaimed alike: the subject shelves are
