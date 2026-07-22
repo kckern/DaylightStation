@@ -110,6 +110,42 @@ School is the screen, home is the root and no exit affordance renders.
 
 **Design spec:** [`2026-07-22-school-materials-framework-design.md`](../../superpowers/specs/2026-07-22-school-materials-framework-design.md) §8
 
+### The materials framework
+
+Plex-backed material — video courses, audio plays, freestyle audiobooks — is
+normalised into one model: a **material** with ordered **units**. Where content
+lives is a *source* (`plex-show` for collection→show→season→episode, `plex-album`
+for artist→album→track); how it behaves is a *category* (`course` sequenced,
+quiz-gated, credited; `reference` free browse; `listening` records "finished",
+earns nothing). Categories are a **closed set in code**; config only selects one
+per source, and an unknown name fails closed to `reference` with a loud warning.
+
+A quiz bank gains an optional `unit:` backlink to the Plex item it gates. Within
+a sequential material, every unit after the first incomplete one is locked, and
+a locked unit always names what to do (`Pass the quiz for “…” first`). A unit
+with no bank has no gate — the escape hatch that lets quizzes be authored
+incrementally. Completion is comprehension-based: `played` (≥ the configured
+percent) AND the gate, derived fresh on every read from the progress store and
+the attempt log — never stored as a flag, so reassignment keeps working.
+
+Per-child playhead/percent lives at
+`data/users/{id}/apps/school/material-progress.yml` via the shared progress
+store (parameterised, Piano untouched); School reads raw playhead/percent only
+and computes its own completion. The home grid grows one section per category
+present in config; grid → detail → player, with the player wrapping the shared
+Player from the consumer side and handing off to the quiz on unit end.
+
+**Explicitly not built** (named deferrals, not gaps): the video forward-clamp
+(the quiz gate is the enforcement; clamp is anti-skip UX), the readalong source
+and readalong gate-step UI (banks may carry `readalong:` — validated and
+preserved — but no configured content uses it; a gate runner meeting one treats
+it as unsatisfied and warns), and coin/curriculum *consumption* of completion
+(sub-projects 4 and 6 read what this framework records).
+
+**Config:** `data/household/config/school.yml` `materials:` block — sources
+(label, source, root, medium, category) plus `completion_threshold_percent` and
+`quiz_pass_percent`. Boot-cached; config edits need a container restart.
+
 ---
 
 ## 3. Specced, not built
@@ -118,7 +154,6 @@ No code exists for anything in this section. Each links its spec.
 
 | Sub-project | Spec | Shape |
 |---|---|---|
-| **Materials framework** (courses, reference, listening) | [`2026-07-22-school-materials-framework-design.md`](../../superpowers/specs/2026-07-22-school-materials-framework-design.md) | Source adapters (Plex shows, Plex albums, readalong) normalised to materials with units; closed pedagogy categories; gate steps (`[readalong, quiz]`). Supersedes the video-courses spec |
 | **Writing assignments** | [`2026-07-21-school-writing-assignments-design.md`](../../superpowers/specs/2026-07-21-school-writing-assignments-design.md) | TipTap, light rich text, no spell check. Bluetooth keyboard |
 | **Typing tutor** | [`2026-07-21-school-typing-tutor-design.md`](../../superpowers/specs/2026-07-21-school-typing-tutor-design.md) | Drill (curriculum) + arcade, modelled on `PianoSpaceInvaders`' pure-engine split. No npm dependency |
 | Curriculum / assignments | — | Not yet designed |
@@ -169,9 +204,10 @@ No code exists for anything in this section. Each links its spec.
 
 ## 5. Gotchas
 
-- **`data/household/config/school.yml` carries a `courses:` block that nothing
-  reads.** It is staged for the unbuilt courses work — two Plex collections
-  from the Lectures library. It is not dead config; it is early config.
+- **`data/household/config/school.yml`'s `materials:` block is live config** —
+  the materials framework reads it at boot. The old staged `courses:` block is
+  retired. A missing `materials:` block degrades to an empty catalog with a
+  single logged warning, never a 500.
 - Piano's `completion_threshold_percent` / `engagement_timeout_seconds` are
   deliberately **absent** from that file. Copying them would silently
   reinstate the watch-plus-presence completion model that School rejected.
