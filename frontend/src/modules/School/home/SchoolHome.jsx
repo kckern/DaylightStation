@@ -1,9 +1,10 @@
 import { SUBJECTS, subjectHasContent } from './subjects.js';
 import StudentPanel from './StudentPanel.jsx';
+import Icon from './icons/Icon.jsx';
 
 /**
- * The School front door: six subject shelves on the left two-thirds, the meta
- * rail (student panel + Library) on the right third. Subjects are how a
+ * The School front door: nine subject shelves (3×3) on the left two-thirds,
+ * the meta rail (student panel + Library) on the right third. Subjects are how a
  * family thinks about school; the rail is how a learner thinks about
  * themselves. Rendered for claimed AND unclaimed visitors — the panel itself
  * carries the claim affordance, so one home serves both.
@@ -28,6 +29,7 @@ export default function SchoolHome({ grouped, onOpen, bankTitles }) {
               onClick={has ? () => onOpen(`subject:${s.id}`) : undefined}
               disabled={!has}
             >
+              <Icon name={s.id} className="school-home2__subject-icon" />
               <h3 className="school-home2__subject-label">{s.label}</h3>
               <p className="school-home2__subject-hint">{has ? s.hint : 'Nothing here yet'}</p>
             </button>

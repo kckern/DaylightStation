@@ -50,7 +50,7 @@ function SchoolShell({ clear }) {
     return () => { alive = false; };
   }, [status]);
 
-  // The six shelves + the Library, from the three catalogues.
+  // The nine shelves + the Library, from the three catalogues.
   const grouped = useMemo(
     () => groupBySubject({ materials, banks, courses }),
     [materials, banks, courses],

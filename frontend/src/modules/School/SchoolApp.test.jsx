@@ -91,9 +91,9 @@ async function tapMaterial(title) {
 }
 
 describe('SchoolApp home — the subject wall', () => {
-  it('renders all six subjects; empty shelves are greyed, not hidden', async () => {
+  it('renders all nine subjects; empty shelves are greyed, not hidden', async () => {
     render(<SchoolApp clear={() => {}} />);
-    for (const label of ['Reading', 'Civilization', 'Language', 'Math', 'Science', 'Writing']) {
+    for (const label of ['English', 'Literature', 'Writing', 'Math & Money', 'Science', 'Skills', 'History', 'Geography', 'Language']) {
       expect(await screen.findByText(label)).toBeInTheDocument();
     }
     // Empty catalog: every subject is disabled and explains itself.
@@ -126,7 +126,7 @@ describe('SchoolApp home — the subject wall', () => {
     await openLibrary();
     await screen.findByText('Caps');
     fireEvent.click(screen.getByRole('button', { name: /back to home/i }));
-    expect(await screen.findByText('Civilization')).toBeInTheDocument();
+    expect(await screen.findByText('Geography')).toBeInTheDocument();
     expect(screen.queryByText('Caps')).toBeNull();
   });
 
@@ -142,7 +142,7 @@ describe('SchoolApp home — the subject wall', () => {
     expect(await screen.findByRole('button', { name: /exit school/i })).toBeInTheDocument();
     unmount();
     render(<SchoolApp />);
-    expect(await screen.findByText('Civilization')).toBeInTheDocument();
+    expect(await screen.findByText('Geography')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /exit school/i })).toBeNull();
   });
 });
@@ -171,7 +171,7 @@ describe('language courses', () => {
   it('still builds the wall when the course listing fails', async () => {
     coursesMock.mockResolvedValue({ ok: false, status: 500, data: null });
     render(<SchoolApp clear={() => {}} />);
-    expect(await screen.findByText('Civilization')).toBeInTheDocument();
+    expect(await screen.findByText('Geography')).toBeInTheDocument();
   });
 });
 
