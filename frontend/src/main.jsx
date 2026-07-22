@@ -156,6 +156,8 @@ ReactDOM.createRoot(document.getElementById('root')).render(
         <Route path="/office/*" element={<OfficeRedirect />} />
         <Route path="/budget" element={<FinanceApp />} />
         <Route path="/finances" element={<FinanceApp />} />
+        {/* /school — first-class URL for the School app; AppDirectRoute serves it. */}
+        <Route path="/school" element={<Navigate to="/app/school" replace />} />
         <Route path="/app/:appId" element={<AppDirectRoute />} />
         <Route path="/tv/*" element={<TVRedirect />} />
         <Route path="/tv" element={<TVRedirect />} />
