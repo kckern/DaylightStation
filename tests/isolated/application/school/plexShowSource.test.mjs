@@ -56,10 +56,14 @@ function twoSeasonShow() {
 
 describe('PlexShowSource.listMaterials', () => {
   it('maps shows (children of a collection) to Material[] with no units', async () => {
+    // `thumb` is given already-proxied here, matching the plexClient contract
+    // documented on PlexShowSource's constructor: the real app.mjs
+    // `schoolPlexClient` seam rewrites Plex's raw `/library/metadata/...`
+    // paths to the app's image proxy before this source ever sees them.
     const plexClient = {
       children: async () => [
-        { ratingKey: '70001', title: 'Shakespeare Tales', thumb: '/library/metadata/70001/thumb/1', leafCount: 5, type: 'show' },
-        { ratingKey: '70002', title: 'Art Lessons', thumb: '/library/metadata/70002/thumb/1', leafCount: 12, type: 'show' },
+        { ratingKey: '70001', title: 'Shakespeare Tales', thumb: '/api/v1/proxy/plex/library/metadata/70001/thumb/1', leafCount: 5, type: 'show' },
+        { ratingKey: '70002', title: 'Art Lessons', thumb: '/api/v1/proxy/plex/library/metadata/70002/thumb/1', leafCount: 12, type: 'show' },
       ],
     };
     const source = new PlexShowSource({ plexClient, fitnessPlayableService: { getPlayableEpisodes: async () => { throw new Error('not called'); } } });
@@ -67,10 +71,16 @@ describe('PlexShowSource.listMaterials', () => {
     const materials = await source.listMaterials('60000');
 
     expect(materials).toEqual([
-      { id: 'plex:70001', title: 'Shakespeare Tales', poster: '/library/metadata/70001/thumb/1', source: 'plex-show', medium: 'video', durationMs: null, unitCount: 5 },
-      { id: 'plex:70002', title: 'Art Lessons', poster: '/library/metadata/70002/thumb/1', source: 'plex-show', medium: 'video', durationMs: null, unitCount: 12 },
+      { id: 'plex:70001', title: 'Shakespeare Tales', poster: '/api/v1/proxy/plex/library/metadata/70001/thumb/1', source: 'plex-show', medium: 'video', durationMs: null, unitCount: 5 },
+      { id: 'plex:70002', title: 'Art Lessons', poster: '/api/v1/proxy/plex/library/metadata/70002/thumb/1', source: 'plex-show', medium: 'video', durationMs: null, unitCount: 12 },
     ]);
-    for (const m of materials) expect(m.units).toBeUndefined();
+    for (const m of materials) {
+      expect(m.units).toBeUndefined();
+      // Catches the poster-unproxied regression: this source must pass the
+      // already-proxied plexClient poster through untouched, never a raw
+      // `/library/metadata/...` Plex path the frontend can't load.
+      expect(m.poster.startsWith('/api/v1/proxy/plex')).toBe(true);
+    }
   });
 
   it('passes the bare rating key to plexClient.children, stripping a plex: prefix if given', async () => {

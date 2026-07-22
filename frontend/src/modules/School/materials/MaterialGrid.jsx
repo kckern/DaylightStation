@@ -4,8 +4,12 @@
  * and a null-safe "N parts · ~M min" meta line. Tap -> detail.
  *
  * Poster src is used exactly as the API sends it, unprefixed: `poster` is
- * already the app-proxied Plex-relative path (or `null`), the same contract
- * Piano's CourseTile renders directly (`modules/Piano/PianoKiosk/modes/Videos/CourseTile.jsx`).
+ * already the app-proxied path (e.g. `/api/v1/proxy/plex/library/metadata/...`),
+ * never a raw Plex path. The rewrite happens once, backend-side, at the
+ * `schoolPlexClient` wiring seam in `backend/src/app.mjs` (PlexAdapter's
+ * `proxyPath`) — every material source downstream inherits already-proxied
+ * `thumb`/`parentThumb` values, the same contract Piano's CourseTile renders
+ * directly (`modules/Piano/PianoKiosk/modes/Videos/CourseTile.jsx`).
  */
 function formatMeta(material) {
   const parts = [];
