@@ -100,8 +100,10 @@ never a recorded attempt — those are already on disk.
 
 ### The home shell
 
-School's landing surface is the **subject wall**: six fixed subjects — Reading,
-Civilization, Language, Math, Science, Writing — on the left two-thirds, and a
+School's landing surface is the **subject wall**: nine fixed subjects —
+English, Literature, Writing, Math & Money, Science, Skills, History,
+Geography, Language — in a 3×3 grid on the left two-thirds, each tile carrying
+an inline-SVG shelf icon (`home/icons/`, Solar Bold set), and a
 meta rail on the right third holding the **student panel** (identity, up-next
 action, latest score, done-for-today flip; tap = the full progress board) and
 the **Library**. One home serves claimed and unclaimed visitors alike — the
@@ -121,7 +123,7 @@ Back steps one navigation level: runner → shelf → home → exit. The exit
 control only exists when School is mounted as an app; on the Portal, where
 School is the screen, home is the root and no exit affordance renders.
 
-**Design specs:** [`2026-07-22-school-home-topics-redesign-design.md`](../../superpowers/specs/2026-07-22-school-home-topics-redesign-design.md), [`2026-07-22-school-materials-framework-design.md`](../../superpowers/specs/2026-07-22-school-materials-framework-design.md) §8
+**Design specs:** [`2026-07-22-school-nine-subjects-design.md`](../../superpowers/specs/2026-07-22-school-nine-subjects-design.md), [`2026-07-22-school-home-topics-redesign-design.md`](../../superpowers/specs/2026-07-22-school-home-topics-redesign-design.md), [`2026-07-22-school-materials-framework-design.md`](../../superpowers/specs/2026-07-22-school-materials-framework-design.md) §8
 
 ### The materials framework
 
