@@ -169,6 +169,7 @@ export class LanguageStudyService {
       corpusSize: corpus.size,
       capabilities,
       languages: corpus.languages,
+      playable: corpus.playable,
     });
 
     const now = this.#now();
@@ -325,6 +326,7 @@ export class LanguageStudyService {
       corpusSize: corpus.size,
       capabilities,
       languages: corpus.languages,
+      playable: corpus.playable,
     });
 
     const now = this.#now();
