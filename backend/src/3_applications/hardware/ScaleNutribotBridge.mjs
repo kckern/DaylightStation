@@ -72,12 +72,25 @@ export function createScaleNutribotBridge({
     catch (err) { logger.warn?.('scaleNutribot.composition.endPlacement.failed', { id, error: err.message }); }
   };
 
+  // Snapshot of what has been scanned for this scale, handed to the use case so the
+  // prompt can ACK a tare. Read-only and best-effort: a store failure must not break
+  // the prompt, which works on its own.
+  const compositionOf = (scaleId) => {
+    if (!compositionStore?.read) return null;
+    try { return compositionStore.read(scaleId); }
+    catch (err) { logger.warn?.('scaleNutribot.composition.read.failed', { scaleId, error: err.message }); return null; }
+  };
+
   const create = (grams, scaleId) =>
-    nutribotContainer.getLogFoodFromScale().execute({ userId, conversationId, grams, unit: 'g', scaleId });
+    nutribotContainer.getLogFoodFromScale().execute({
+      userId, conversationId, grams, unit: 'g', scaleId,
+      composition: compositionOf(scaleId),
+    });
   const editInPlace = (grams, scaleId, live) =>
     nutribotContainer.getLogFoodFromScale().execute({
       userId, conversationId, grams, unit: 'g', scaleId,
       existingLogUuid: live.logUuid, messageId: live.messageId,
+      composition: compositionOf(scaleId),
     });
   const retract = async (live) => {
     const uc = nutribotContainer.getRetractScaleLog?.();
@@ -179,13 +192,36 @@ export function createScaleNutribotBridge({
     } finally { inflight.delete(id); }
   };
 
+  /**
+   * Re-render the live prompt for a scale after its composition changed
+   * (a `ct:` or `dl:` scan). No-op when nothing is live — the buffer keeps the
+   * selection and the next prompt renders it.
+   *
+   * `s.live` stays bridge-internal: the scan handler asks for a refresh rather
+   * than reaching into the map, so the single-live invariant keeps one owner.
+   *
+   * @param {string} scaleId
+   * @returns {Promise<boolean>} whether a live prompt was refreshed
+   */
+  const refreshPrompt = async (scaleId) => {
+    const s = scales.get(scaleId);
+    if (!s?.live) return false;
+    try {
+      const res = await editInPlace(s.live.grams, scaleId, s.live);
+      return Boolean(res?.edited);
+    } catch (err) {
+      logger.warn?.('scaleNutribot.refresh.failed', { scaleId, error: err.message });
+      return false;
+    }
+  };
+
   const unsubs = (topics && topics.length ? topics : DEFAULT_TOPICS).map((t) => eventBus.subscribe(t, onPayload));
   logger.info?.('scaleNutribot.bridge.ready', {
     conversationId, userId, minGrams, baselineTolG, placementDeltaG, dedupDeltaG,
     storageWeightG, storageTolG, stormMinPushes, heavyG, forceTolG, topics: topics || DEFAULT_TOPICS,
   });
 
-  return { dispose: () => { for (const u of unsubs) { try { u?.(); } catch { /* noop */ } } } };
+  return { refreshPrompt, dispose: () => { for (const u of unsubs) { try { u?.(); } catch { /* noop */ } } } };
 }
 
 export default createScaleNutribotBridge;
