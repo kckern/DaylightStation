@@ -84,14 +84,20 @@ export default function StudentPanel({ onOpen, bankTitles }) {
   if (!currentUser) {
     // The faces ARE the claim affordance: one tap on your own face, no
     // intermediate picker. (Guests included — a guest claiming a face is
-    // just signing in.) Roster-fetch failure leaves no faces, so keep the
-    // picker button as the fallback affordance rather than a dead panel.
+    // just signing in.) Only the kids: parents claim through the picker
+    // (launch prompt), not the panel. Missing birthyear fails open — a kid
+    // must never vanish from the wall over absent data. Roster-fetch
+    // failure leaves no faces, so keep the picker button as the fallback
+    // affordance rather than a dead panel.
+    const kids = roster.filter(
+      (u) => !u.birthyear || new Date().getFullYear() - u.birthyear < 18,
+    );
     return (
       <section className="school-rail__student school-rail__student--unclaimed">
         <p className="school-rail__ask">Who&apos;s learning?</p>
-        {roster.length ? (
+        {kids.length ? (
           <div className="school-rail__faces">
-            {roster.map((u) => (
+            {kids.map((u) => (
               <button
                 key={u.id}
                 type="button"

@@ -8,7 +8,7 @@ const materialUnitsMock = vi.fn();
 const unitProgressMock = vi.fn();
 vi.mock('./schoolApi.js', () => ({
   schoolApi: {
-    roster: vi.fn(async () => ({ ok: true, status: 200, data: [{ id: 'kid1', name: 'Alpha' }] })),
+    roster: vi.fn(async () => ({ ok: true, status: 200, data: [{ id: 'kid1', name: 'Alpha', birthyear: 2016 }, { id: 'dad1', name: 'Papa', birthyear: 1984 }] })),
     banks: (...a) => banksMock(...a),
     bank: vi.fn(async (id) => ({ ok: true, status: 200, data: { id, title: 'Caps', audience: 'assigned', items: [{ id: 'q1', type: 'multiple_choice', prompt: 'WA?', answer: 'Olympia', choices: ['Seattle', 'Olympia'] }] } })),
     openSession: vi.fn(async () => ({ ok: true, status: 200, data: { sessionId: 'ses_1' } })),
@@ -102,9 +102,11 @@ describe('SchoolApp home — the subject wall', () => {
     expect(science).toBeDisabled();
     expect(within(science).getByText('How the world and nature work')).toBeInTheDocument();
     // Unclaimed: no header sign-in chip — the panel's face row is the claim
-    // affordance (their face appears there instead).
+    // affordance (their face appears there instead). Kids only: adults claim
+    // via the launch-prompt picker, not the panel.
     expect(screen.queryByText('Tap to sign in')).toBeNull();
     expect(screen.getByRole('button', { name: /Alpha/ })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Papa/ })).toBeNull();
   });
 
   it('a subject with shelved content is enabled and opens its page', async () => {
