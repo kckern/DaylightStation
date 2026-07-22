@@ -148,6 +148,65 @@ it as unsatisfied and warns), and coin/curriculum *consumption* of completion
 (label, source, root, medium, category) plus `completion_threshold_percent` and
 `quiz_pass_percent`. Boot-cached; config edits need a container restart.
 
+### Language study (the sentence ladder)
+
+A revival of KC's 2016–2017 `korean.kckern.info` drill app, rebuilt as a School
+program. Each sentence climbs a **four-rung ladder, one rung per day**:
+`repetition` (shadow it) → `dictation` (type the target) → `recording` (say it)
+→ `interpretation` (type the meaning). A day's work is *N brand-new sentences*
+plus *everything that cleared rung k yesterday and not yet rung k+1*.
+
+Deliberately **not** SM-2: no ease factors, no intervals, nothing grades. A
+sentence is seen four times, in four cognitive modes, on four days. The only
+pacing knob is new-sentences-per-day.
+
+- **The queue is derived from the attempt log on every read, never stored.**
+  This is the fix for the failure that killed the original: the queue lived in
+  a `user_queue` table, a server migration lost the writes, and a real user's
+  progress silently froze for weeks. Derived state cannot desynchronise from
+  its own evidence.
+- **A study day runs 4am→4am**, not midnight→midnight, so a session past
+  midnight is the same day. Rollover needs the queue complete *and* the
+  boundary passed — finishing early must not hand out tomorrow's sentences,
+  because the spacing is the method.
+- **Transcription accuracy is recorded but gates nothing.** A wrong dictation
+  still graduates; the diff is for the learner's review. Consistent with "No
+  second gate anywhere".
+- **Rungs are defined over roles, not languages.** `source` is the language the
+  learner has, `target` the one being acquired; the corpus binds them
+  (`source: EN, target: KR`) and sentence text is keyed by language code. A
+  Spanish course, or a reversed course, is a corpus file plus an adapter — no
+  domain change.
+- **Capability filtering, per language.** `textInput` is a list of language
+  codes rather than a boolean, because `dictation` needs a target-script IME
+  while `interpretation` needs only the source script; a US keyboard satisfies
+  one and not the other. A rung the device cannot perform is removed from the
+  chain and sentences **graduate across the gap** — it is never rendered as a
+  dead input. Script availability cannot be detected by any web API, so it is
+  declared per device and defaults to assuming nothing.
+- **Legacy import.** The 2016 MySQL database is gone; 519 surviving voice
+  recordings (94 KC, 425 Elizabeth) are imported with backfilled `recording`
+  events marked `source: legacy-2017`. Because the queue is derived, those
+  events place each learner exactly where they left off.
+
+**Glossika is a vendor, not domain vocabulary** — the 2016 app already drove
+Naver Wordbook sentences up the same ladder. The pedagogy is the domain; the
+supplier is an adapter.
+
+| Layer | Path |
+|---|---|
+| Domain (pure) | `backend/src/2_domains/school/language/` |
+| Persistence | `backend/src/1_adapters/persistence/yaml/YamlLanguageStudyDatastore.mjs` |
+| Application | `backend/src/3_applications/school/LanguageStudyService.mjs` |
+| API | `backend/src/4_api/v1/routers/language.mjs` → `/api/v1/school/language` |
+| Frontend | `frontend/src/modules/School/Programs/Glossika/` |
+| Ingest CLI | `cli/glossika.cli.mjs` |
+| Corpus | `data/content/language/{corpusId}.yml` |
+| Per-user | `data/users/{id}/apps/school/language/{corpusId}/` (progress + append-only log) |
+| Media | `media/apps/school/language/{corpusId}/` (audio + per-user recordings) |
+
+**Design spec:** [`2026-07-21-glossika-program-design.md`](../../_wip/plans/2026-07-21-glossika-program-design.md)
+
 ---
 
 ## 3. Specced, not built

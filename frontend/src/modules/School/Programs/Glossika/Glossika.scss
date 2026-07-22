@@ -1,0 +1,184 @@
+// Glossika.scss — the language-study program, inside the School kiosk shell.
+// Inherits School's tokens (--school-*) rather than defining a second palette;
+// this mounts inside .school-app and must not look like a different app.
+// No animation: the kiosk WebView drops frames under transitions/keyframes.
+
+.lang-program {
+  display: flex; flex-direction: column;
+  height: 100%; gap: 0.75rem;
+  color: var(--school-fg);
+
+  &--loading, &--error, &--guest {
+    align-items: center; justify-content: center;
+    height: 100%; gap: 0.75rem;
+    color: var(--school-muted); text-align: center;
+  }
+
+  &__header { display: flex; align-items: center; gap: 0.75rem; }
+  &__back {
+    min-width: 56px; min-height: 56px;
+    border: none; background: transparent;
+    color: var(--school-fg); font-size: 1.8rem; cursor: pointer;
+  }
+  &__title { flex: 1; margin: 0; font-size: 1.3rem; font-weight: 800; }
+  &__day { color: var(--school-muted); font-weight: 600; margin-left: 0.5rem; }
+
+  &__progress {
+    position: relative; height: 28px;
+    border-radius: 999px; overflow: hidden;
+    background: var(--school-surface-2);
+  }
+  &__progress-bar { height: 100%; background: var(--school-accent); }
+  &__progress-label {
+    position: absolute; inset: 0;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 0.85rem; font-weight: 700; color: var(--school-fg);
+  }
+
+  &__tabs { display: flex; gap: 0.5rem; flex-wrap: wrap; }
+
+  &__notice {
+    margin: 0; padding: 0.85rem 1rem; border-radius: 12px;
+    background: var(--school-warn); color: #241a05; font-weight: 700;
+  }
+
+  &__body { flex: 1; overflow: auto; }
+
+  &__complete {
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 1rem; height: 100%; color: var(--school-muted);
+  }
+
+  // Text input can only be declared, never detected — this row is where a
+  // device says what it can do. Deliberately small and out of the way.
+  &__capabilities {
+    display: flex; align-items: center; gap: 0.4rem;
+    padding-top: 0.5rem;
+    border-top: 1px solid var(--school-border);
+    font-size: 0.8rem; color: var(--school-muted);
+  }
+  &__caps-label { margin-right: 0.25rem; }
+}
+
+.lang-tab {
+  position: relative;
+  min-height: 52px; padding: 0 1.1rem;
+  border: 1px solid var(--school-border); border-radius: 999px;
+  background: var(--school-surface); color: var(--school-fg);
+  font-size: 0.95rem; font-weight: 700; cursor: pointer;
+
+  &.is-active { background: var(--school-accent); color: var(--school-accent-ink); border-color: transparent; }
+  &__badge {
+    margin-left: 0.5rem; padding: 0.1rem 0.45rem;
+    border-radius: 999px; background: var(--school-surface-2);
+    font-size: 0.75rem;
+  }
+  &.is-active &__badge { background: rgba(0, 0, 0, 0.2); }
+}
+
+.lang-chip {
+  min-height: 34px; padding: 0 0.7rem;
+  border: 1px solid var(--school-border); border-radius: 999px;
+  background: var(--school-surface); color: var(--school-muted);
+  font-size: 0.78rem; font-weight: 700; cursor: pointer;
+
+  &.is-on { background: var(--school-accent); color: var(--school-accent-ink); border-color: transparent; }
+}
+
+.lang-btn {
+  min-height: 64px; padding: 0 1.6rem;
+  border: 1px solid var(--school-border); border-radius: 14px;
+  background: var(--school-surface-2); color: var(--school-fg);
+  font-size: 1.05rem; font-weight: 700; cursor: pointer;
+
+  &--primary { background: var(--school-accent); color: var(--school-accent-ink); border-color: transparent; }
+  &--recording { background: var(--school-danger); color: #fff; border-color: transparent; }
+  &:disabled { opacity: 0.5; cursor: default; }
+}
+
+// --- rungs ---
+.lang-rung {
+  display: flex; flex-direction: column; align-items: center;
+  gap: 1rem; padding: 1.5rem 1rem; text-align: center;
+
+  &__source { margin: 0; font-size: 1.35rem; color: var(--school-muted); }
+  // The target line is the one being learned — largest, and unhyphenated so a
+  // Hangul sentence never breaks mid-syllable.
+  &__target { margin: 0; font-size: 2.1rem; font-weight: 700; line-height: 1.35; word-break: keep-all; }
+
+  // Follows the audio: whichever line is sounding right now.
+  .is-sounding { color: var(--school-accent); }
+
+  &__label { font-size: 0.95rem; color: var(--school-muted); }
+  &__input {
+    width: min(100%, 720px); min-height: 64px; padding: 0 1rem;
+    border: 1px solid var(--school-border); border-radius: 12px;
+    background: var(--school-surface); color: var(--school-fg);
+    font-size: 1.6rem; text-align: center;
+
+    &:focus { outline: 2px solid var(--school-accent); outline-offset: 2px; }
+  }
+  &__hint { margin: 0; font-size: 0.8rem; color: var(--school-muted); }
+  &__notice { margin: 0; color: var(--school-warn); font-weight: 700; }
+  &__status, &__saved { color: var(--school-muted); font-weight: 700; }
+  &__controls { display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap; justify-content: center; }
+  &__playback { max-width: 100%; }
+}
+
+// --- review ---
+.lang-review {
+  display: flex; flex-direction: column; gap: 1.5rem;
+
+  &__status { color: var(--school-muted); text-align: center; padding: 2rem 0; }
+  &__day-title { margin: 0 0 0.5rem; font-size: 1.1rem; color: var(--school-muted); }
+  &__list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.5rem; }
+
+  &__item {
+    display: flex; flex-direction: column; gap: 0.35rem;
+    padding: 0.75rem 1rem;
+    border: 1px solid var(--school-border); border-radius: 12px;
+    background: var(--school-surface);
+  }
+  &__rung { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--school-muted); }
+  &__sentence { font-size: 1.05rem; }
+  &__score { font-size: 0.8rem; color: var(--school-muted); }
+  &__missing { font-size: 0.8rem; color: var(--school-warn); }
+}
+
+// Diff colouring is the point of the review surface — what was typed against
+// what was expected. Underline/strikethrough carry the meaning too, so it
+// still reads without colour vision.
+.lang-diff {
+  font-size: 1.25rem; word-break: keep-all;
+
+  &__same { color: var(--school-fg); }
+  &__added { color: var(--school-danger); text-decoration: underline; }
+  &__removed { color: var(--school-muted); text-decoration: line-through; }
+}
+
+// --- pacing ---
+.lang-pacing {
+  position: relative;
+
+  &__button {
+    min-height: 56px; padding: 0 1rem;
+    border: 1px solid var(--school-border); border-radius: 999px;
+    background: var(--school-surface-2); color: var(--school-fg);
+    font-size: 0.95rem; font-weight: 700; cursor: pointer;
+  }
+  &__menu {
+    position: absolute; right: 0; top: calc(100% + 0.35rem); z-index: 10;
+    margin: 0; padding: 0.35rem; list-style: none;
+    max-height: 320px; overflow: auto;
+    border: 1px solid var(--school-border); border-radius: 12px;
+    background: var(--school-surface-2);
+  }
+  &__option {
+    display: block; width: 100%; min-height: 48px; padding: 0 1.5rem;
+    border: none; border-radius: 8px;
+    background: transparent; color: var(--school-fg);
+    font-size: 1rem; text-align: center; cursor: pointer;
+
+    &.is-selected { background: var(--school-accent); color: var(--school-accent-ink); }
+  }
+}

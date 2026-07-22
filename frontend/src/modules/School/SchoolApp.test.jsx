@@ -19,6 +19,16 @@ vi.mock('./schoolApi.js', () => ({
   },
 }));
 
+const coursesMock = vi.fn();
+vi.mock('./Programs/Glossika/languageApi.js', () => ({
+  languageApi: {
+    courses: (...a) => coursesMock(...a),
+    day: vi.fn(async () => ({ ok: true, status: 200, data: null })),
+    log: vi.fn(), roll: vi.fn(), pacing: vi.fn(), history: vi.fn(), recording: vi.fn(),
+    audioUrl: () => '', recordingUrl: () => '',
+  },
+}));
+
 // SchoolMaterialPlayer wraps the real, heavy shared Player (lazy-imported) —
 // stub it the same way MediaApp.test.jsx does, so materials-flow tests never
 // pay for (or depend on) real playback engine internals.
@@ -49,6 +59,31 @@ beforeEach(() => {
   }));
   materialsMock.mockReset().mockResolvedValue(EMPTY_CATALOG);
   materialUnitsMock.mockReset().mockResolvedValue({ ok: true, status: 200, data: { material: {}, units: [] } });
+  coursesMock.mockReset().mockResolvedValue({ ok: true, status: 200, data: [] });
+});
+
+describe('language courses on the home grid', () => {
+  it('adds no tile when no corpus is ingested — a tile never points at an absent endpoint', async () => {
+    render(<SchoolApp />);
+    await screen.findByText('Quizzes & Flashcards');
+    expect(screen.queryByText('Glossika Korean')).toBeNull();
+  });
+
+  it('adds one tile per course, labelled with its language pair', async () => {
+    coursesMock.mockResolvedValue({
+      ok: true, status: 200,
+      data: [{ id: 'glossika-korean', label: 'Glossika Korean', languages: { source: 'EN', target: 'KR' }, size: 3000 }],
+    });
+    render(<SchoolApp />);
+    expect(await screen.findByText('Glossika Korean')).toBeTruthy();
+    expect(screen.getByText('EN → KR')).toBeTruthy();
+  });
+
+  it('still builds the grid when the course listing fails', async () => {
+    coursesMock.mockResolvedValue({ ok: false, status: 500, data: null });
+    render(<SchoolApp />);
+    expect(await screen.findByText('Quizzes & Flashcards')).toBeTruthy();
+  });
 });
 
 // Both bank cards render the title as an <h3>; find the card wrapper so we can

@@ -100,7 +100,7 @@ The table below assigns **every** domain folder in `2_domains/` a level (Decisio
 |-------|----------------|
 | **0 — Foundation** | `core` |
 | **1 — Shared** | `content`, `common`, `messaging`, `notification`, `scheduling`, `entropy` |
-| **2 — Features** | `ambient`, `art`, `barcode`, `concierge`, `cost`, `feed`, `finance`, `fitness`, `gratitude`, `home-automation`, `journaling`, `lifeplan`, `livestream`, `media`, `nutrition`, `playback-hub`, `trigger` |
+| **2 — Features** | `ambient`, `art`, `barcode`, `concierge`, `cost`, `feed`, `finance`, `fitness`, `gratitude`, `home-automation`, `journaling`, `lifeplan`, `livestream`, `media`, `nutrition`, `playback-hub`, `school`, `trigger` |
 | **3 — Aggregators** | `health`, `journalist`, `lifelog`, `weekly-review` |
 
 ---
