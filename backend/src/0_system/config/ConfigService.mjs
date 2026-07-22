@@ -90,8 +90,15 @@ export class ConfigService {
     return this.#config.households?.[hid]?.head ?? null;
   }
 
-  getHouseholdUsers(householdId) {
-    return this.#config.households?.[householdId]?.users ?? [];
+  /**
+   * The household roster, in declared order — the single source of truth for
+   * membership AND ordering. Defaults the household id like every sibling
+   * accessor here; it previously did not, so calling it with no argument
+   * silently returned an empty roster rather than the default household's.
+   */
+  getHouseholdUsers(householdId = null) {
+    const hid = householdId ?? this.getDefaultHouseholdId();
+    return this.#config.households?.[hid]?.users ?? [];
   }
 
   getHouseholdTimezone(householdId) {

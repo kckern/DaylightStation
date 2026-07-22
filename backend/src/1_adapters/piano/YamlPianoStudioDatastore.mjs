@@ -9,7 +9,7 @@
  *   - Always-on MIDI history (.mid)    <householdDataDir>/history/piano/{userId}/{date}/{takeId}.mid
  *   - Effect-audit clips + manifest    <mediaDir>/logs/piano/effect-audit/{runId}/…
  *   - Loop-library manifest            <mediaDir>/midi (walked + baked by getManifest)
- *   - Roster                           household piano config users.primary (hydrated)
+ *   - Roster                           household.yml users (household order, hydrated)
  *
  * Path building is done from an injected `configService` (getUserDir/getMediaDir/
  * getHouseholdPath/getUserProfile/getHouseholdAppConfig) — the service is passed in,
@@ -77,14 +77,27 @@ export class YamlPianoStudioDatastore {
   }
 
   // ── Roster ──────────────────────────────────────────────────────────────────
+  /**
+   * The household roster, in household order.
+   *
+   * Reads `household.yml → users` rather than restating it. `piano.yml →
+   * users.primary` used to carry its own copy of the same six names in the
+   * same order — a second source of truth that School then disagreed with,
+   * producing two pickers whose faces sat in different places. An app that
+   * genuinely serves a subset passes `only`; it must not restate the order.
+   */
   getRoster() {
-    const cfg = this.getPianoConfig();
-    const primary = Array.isArray(cfg.users?.primary) ? cfg.users.primary : [];
-    const hydrated = this.#userService
-      ? this.#userService.hydrateUsers(primary)
-      : primary
-          .map((id) => { const p = this.#configService.getUserProfile(id); return p ? { id, name: p.display_name || p.username || id, group_label: p.group_label } : { id, name: id }; });
-    return hydrated.map((u) => ({ id: u.id, name: u.name, group_label: u.group_label || null }));
+    if (this.#userService) return this.#userService.getHouseholdRoster();
+    // No UserService (tests, partial wiring): read the same household list
+    // directly rather than falling back to a different one.
+    const ordered = this.#configService.getHouseholdUsers?.() || [];
+    return ordered
+      .map((id) => {
+        const p = this.#configService.getUserProfile(String(id));
+        return p
+          ? { id: String(id), name: p.display_name || p.username || String(id), group_label: p.group_label || null }
+          : { id: String(id), name: String(id), group_label: null };
+      });
   }
 
   // ── Studio takes (per-user) ───────────────────────────────────────────────────

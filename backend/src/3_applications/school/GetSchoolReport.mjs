@@ -24,11 +24,10 @@ export class GetSchoolReport {
     this.#logger = logger;
   }
 
+  /** Household order — the same list every picker and board in the house uses. */
   #roster() {
-    const profiles = [...this.#userService.getAllProfiles().values()];
-    return profiles
-      .map((p) => ({ id: p.username, name: p.display_name || p.username }))
-      .sort((a, b) => a.name.localeCompare(b.name));
+    return this.#userService.getHouseholdRoster()
+      .map((u) => ({ id: u.id, name: u.name }));
   }
 
   /**

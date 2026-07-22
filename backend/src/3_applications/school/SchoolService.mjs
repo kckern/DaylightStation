@@ -23,11 +23,17 @@ export class SchoolService {
     this.#now = now;
   }
 
+  /**
+   * The household roster, in household order.
+   *
+   * Previously this sorted by `display_name` while the picker rendered
+   * `group_label`, so the order was computed from strings nobody could see —
+   * "Elizabeth" and "KC Kern" sorting into positions labelled "Mom" and "Dad".
+   * It looked random because it was sorted on invisible keys, and it disagreed
+   * with every other picker in the house.
+   */
   getRoster() {
-    const profiles = [...this.#userService.getAllProfiles().values()];
-    return profiles
-      .map((p) => ({ id: p.username, name: p.display_name || p.username, group_label: p.group_label }))
-      .sort((a, b) => a.name.localeCompare(b.name));
+    return this.#userService.getHouseholdRoster();
   }
 
   #loadBank(bankId) {

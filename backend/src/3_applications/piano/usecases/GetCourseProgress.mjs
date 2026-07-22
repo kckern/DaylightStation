@@ -45,9 +45,9 @@ export class GetCourseProgress {
     const maxAvatars = overlay.max_avatars ?? 4;
     const referenceUnits = videos.reference_units || [];
 
-    const primary = Array.isArray(pianoConfig.users?.primary) ? pianoConfig.users.primary : [];
-    const roster = primary
-      .map((id) => { const p = this.#configService.getUserProfile(id); return p ? { id, name: p.name } : null; })
+    // Household order, from household.yml — not a restatement in piano.yml.
+    const roster = (this.#configService.getHouseholdUsers?.() || [])
+      .map((id) => { const p = this.#configService.getUserProfile(String(id)); return p ? { id: String(id), name: p.name } : null; })
       .filter(Boolean);
     const now = new Date();
 
