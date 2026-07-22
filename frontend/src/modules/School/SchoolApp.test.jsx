@@ -16,6 +16,8 @@ vi.mock('./schoolApi.js', () => ({
     materials: (...a) => materialsMock(...a),
     materialUnits: (...a) => materialUnitsMock(...a),
     unitProgress: (...a) => unitProgressMock(...a),
+    quizRequests: vi.fn(async () => ({ ok: true, status: 200, data: [] })),
+    requestQuiz: vi.fn(async () => ({ ok: true, status: 200, data: { requested: true, duplicate: false } })),
     report: vi.fn(async () => ({ ok: true, status: 200, data: { learners: [{ id: 'kid1', name: 'Alpha', reports: [] }] } })),
     results: vi.fn(async () => ({ ok: true, status: 200, data: [] })),
   },

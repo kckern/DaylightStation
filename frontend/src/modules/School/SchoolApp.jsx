@@ -23,9 +23,52 @@ import { schoolApi } from './schoolApi.js';
 import { schoolLog } from './schoolLog.js';
 import './School.scss';
 
+/**
+ * Deep-link URL model (only active when the pathname contains /school —
+ * mounted as the Portal screen widget there is no /school URL to own):
+ *   /school | /app/school                    -> home
+ *   .../subject/<id>[/material/<mid>]        -> subject shelf (opt. detail)
+ *   .../library[/material/<mid>]             -> Library (opt. detail)
+ *   .../progress | .../practice              -> report | banks
+ *   .../lang/<courseId>                      -> language program
+ */
+function schoolUrlBase() {
+  const m = window.location.pathname.match(/^(.*?\/(?:app\/)?school)(?:\/|$)/);
+  return m ? m[1] : null;
+}
+
+function parseSchoolPath(urlBase) {
+  if (!urlBase) return { section: null, materialId: null };
+  const seg = window.location.pathname.slice(urlBase.length).split('/').filter(Boolean).map(decodeURIComponent);
+  if (!seg.length) return { section: null, materialId: null };
+  if (seg[0] === 'subject' && seg[1]) {
+    return { section: `subject:${seg[1]}`, materialId: seg[2] === 'material' ? (seg[3] ?? null) : null };
+  }
+  if (seg[0] === 'library') return { section: 'library', materialId: seg[1] === 'material' ? (seg[2] ?? null) : null };
+  if (seg[0] === 'progress') return { section: 'progress', materialId: null };
+  if (seg[0] === 'practice') return { section: 'banks', materialId: null };
+  if (seg[0] === 'lang' && seg[1]) return { section: `lang:${seg[1]}`, materialId: null };
+  return { section: null, materialId: null };
+}
+
+function schoolPathFor(urlBase, section) {
+  if (section === null) return urlBase;
+  if (section.startsWith('subject:')) return `${urlBase}/subject/${encodeURIComponent(section.slice(8))}`;
+  if (section === 'library') return `${urlBase}/library`;
+  if (section === 'progress') return `${urlBase}/progress`;
+  if (section === 'banks') return `${urlBase}/practice`;
+  if (section.startsWith('lang:')) return `${urlBase}/lang/${encodeURIComponent(section.slice(5))}`;
+  return urlBase;
+}
+
 function SchoolShell({ clear }) {
   const { status, roster, currentUser, isGuest, pickerOpen, openPicker, claim, continueAsGuest } = useSchoolProfile();
-  const [section, setSection] = useState(null); // a sections id, or null = home grid
+  const urlBase = useMemo(schoolUrlBase, []);
+  const initialLink = useMemo(() => parseSchoolPath(urlBase), [urlBase]);
+  const [section, setSection] = useState(initialLink.section); // a sections id, or null = home grid
+  // One-shot: the material detail a deep link asked for; consumed by
+  // MaterialsSection on mount, cleared on any in-app navigation.
+  const [deepMaterialId, setDeepMaterialId] = useState(initialLink.materialId);
   const [active, setActive] = useState(null);   // {bank, mode} — only ever set within 'banks'
   const [pending, setPending] = useState(null); // {bankSummary, mode} awaiting a claim
   const [notice, setNotice] = useState(null);
@@ -95,18 +138,41 @@ function SchoolShell({ clear }) {
     if (pending) { start(pending.bankSummary, pending.mode, true); setPending(null); }
   }, [continueAsGuest, pending, start]);
 
+  const syncUrl = useCallback((id) => {
+    if (!urlBase) return;
+    const path = schoolPathFor(urlBase, id);
+    if (window.location.pathname !== path) window.history.pushState({}, '', path);
+  }, [urlBase]);
+
   const openSection = useCallback((id) => {
     setSection(id);
+    setDeepMaterialId(null);
+    syncUrl(id);
     schoolLog.nav('section', { section: id });
-  }, []);
+  }, [syncUrl]);
 
   // Going home also clears any guest-refusal notice: the notice belongs to
   // the section visit that produced it and must not greet the next visit.
   const goHome = useCallback(() => {
     setSection(null);
     setNotice(null);
+    setDeepMaterialId(null);
+    syncUrl(null);
     schoolLog.nav('home', {});
-  }, []);
+  }, [syncUrl]);
+
+  // Browser back/forward re-parse the URL — the address bar and the shell
+  // never disagree.
+  useEffect(() => {
+    if (!urlBase) return undefined;
+    const onPop = () => {
+      const link = parseSchoolPath(urlBase);
+      setSection(link.section);
+      setDeepMaterialId(link.materialId);
+    };
+    window.addEventListener('popstate', onPop);
+    return () => window.removeEventListener('popstate', onPop);
+  }, [urlBase]);
 
   // A guest-refusal notice is only ever relevant to the identity that
   // triggered it. If the child then signs in (or otherwise changes identity,
@@ -195,6 +261,7 @@ function SchoolShell({ clear }) {
             onLaunch={onLaunch}
             notice={notice}
             onOpen={openSection}
+            initialMaterialId={deepMaterialId}
           />
         )}
         {section === 'library' && !active && (
@@ -203,6 +270,7 @@ function SchoolShell({ clear }) {
             guestOnly={isGuest}
             onLaunch={onLaunch}
             notice={notice}
+            initialMaterialId={deepMaterialId}
           />
         )}
         {active?.mode === 'quiz' && <QuizRunner bank={active.bank} onExit={() => setActive(null)} />}
