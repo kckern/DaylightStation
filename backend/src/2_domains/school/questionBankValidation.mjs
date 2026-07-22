@@ -31,6 +31,18 @@ export function validateQuestionBank(raw) {
       topics = raw.topics;
     }
   }
+  // spec §5: unit/readalong backlinks are optional; when present, non-empty strings.
+  // No further validation — a bank does not know whether the id/path resolves.
+  let unit;
+  if (raw.unit !== undefined && raw.unit !== null) {
+    if (!isNonEmptyString(raw.unit)) errors.push('unit must be a non-empty string');
+    else unit = raw.unit;
+  }
+  let readalong;
+  if (raw.readalong !== undefined && raw.readalong !== null) {
+    if (!isNonEmptyString(raw.readalong)) errors.push('readalong must be a non-empty string');
+    else readalong = raw.readalong;
+  }
   if (!Array.isArray(raw.items) || raw.items.length === 0) {
     errors.push('items must be a non-empty array');
     return { ok: false, errors };
@@ -79,5 +91,5 @@ export function validateQuestionBank(raw) {
     }
   });
   if (errors.length) return { ok: false, errors };
-  return { ok: true, bank: { id: raw.id, title: raw.title, audience, topics, items: raw.items } };
+  return { ok: true, bank: { id: raw.id, title: raw.title, audience, topics, items: raw.items, unit, readalong } };
 }

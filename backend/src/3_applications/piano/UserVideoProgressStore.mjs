@@ -10,21 +10,31 @@ import { loadYaml, saveYaml } from '#system/utils/FileIO.mjs';
  * true for the session's lifetime of that entry. completedAt is stamped once
  * and never cleared (a later rewatch from the start can't revert completion).
  *
- * Storage: data/users/{userId}/apps/piano/video-progress.yml, keyed by plex:{id}.
+ * Storage: data/users/{userId}/apps/{app}/{filename}.yml, keyed by plex:{id}.
+ * `app`/`filename` default to 'piano'/'video-progress' so Piano's behaviour is
+ * unchanged. School consumers construct with { app: 'school', filename:
+ * 'material-progress' } and must treat this store as a dumb playhead/percent/
+ * duration store only — the threshold/engaged/completedAt machinery below is
+ * Piano policy and stays INERT for School (spec §6); School completion is
+ * computed entirely in 2_domains/school/materialPolicy.mjs.
  */
 export class UserVideoProgressStore {
   #configService;
   #logger;
+  #app;
+  #filename;
 
-  constructor({ configService, logger = console }) {
+  constructor({ configService, logger = console, app = 'piano', filename = 'video-progress' }) {
     this.#configService = configService;
     this.#logger = logger;
+    this.#app = app;
+    this.#filename = filename;
   }
 
-  // Returns the user's piano dir, or null if the user is unknown.
+  // Returns the user's app dir, or null if the user is unknown.
   #userDir(userId) {
     if (!userId || !this.#configService.getUserProfile?.(userId)) return null;
-    return path.join(this.#configService.getUserDir(userId), 'apps', 'piano');
+    return path.join(this.#configService.getUserDir(userId), 'apps', this.#app);
   }
 
   #threshold() {
@@ -52,7 +62,7 @@ export class UserVideoProgressStore {
 
     const key = this.#keyFor(plexId);
     const threshold = this.#threshold();
-    const progress = loadYaml(path.join(dir, 'video-progress')) || {};
+    const progress = loadYaml(path.join(dir, this.#filename)) || {};
     const existing = progress[key] || {};
 
     const wasCompleted = !!existing.completedAt;
@@ -74,7 +84,7 @@ export class UserVideoProgressStore {
     delete entry.engagementCount;
 
     progress[key] = entry;
-    saveYaml(path.join(dir, 'video-progress'), progress);
+    saveYaml(path.join(dir, this.#filename), progress);
     this.#logger.info?.('piano.video-progress.record', {
       userId, key, percent: normalizedPercent, engaged: nowEngaged, completed: !!completedAt,
     });
@@ -95,7 +105,7 @@ export class UserVideoProgressStore {
     const dir = this.#userDir(userId);
     if (!dir) return items;
 
-    const progress = loadYaml(path.join(dir, 'video-progress')) || {};
+    const progress = loadYaml(path.join(dir, this.#filename)) || {};
     const threshold = this.#threshold();
 
     return items.map((item) => {
@@ -125,7 +135,7 @@ export class UserVideoProgressStore {
     const dir = this.#userDir(userId);
     if (!dir || total === 0) return { completed: 0, total, lastPlayedAt: null };
 
-    const progress = loadYaml(path.join(dir, 'video-progress')) || {};
+    const progress = loadYaml(path.join(dir, this.#filename)) || {};
     const threshold = this.#threshold();
     let completed = 0;
     let lastPlayedAt = null;
