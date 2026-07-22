@@ -32,10 +32,31 @@
     border-bottom: 1px solid var(--school-border);
     background: var(--school-surface);
   }
-  &__back { min-width: 64px; min-height: 64px; border: none; background: transparent; color: var(--school-fg); font-size: 1.8rem; cursor: pointer; }
-  &__title { flex: 1; margin: 0; font-size: 1.4rem; font-weight: 800; }
+  // Breadcrumb trail: fixed apple home anchor on the left, then the crumbs.
+  // The apple always returns to the subject wall; ancestor crumbs are buttons,
+  // the current (deepest) crumb is plain text. Modelled on piano-chrome.
+  &__crumbs {
+    flex: 1 1 auto; min-width: 0;
+    display: flex; align-items: center; gap: 0.4rem;
+    overflow: hidden;
+  }
+  &__home {
+    flex: 0 0 auto; min-width: 56px; min-height: 56px;
+    display: flex; align-items: center; justify-content: center;
+    border: none; background: transparent; color: var(--school-fg);
+    font-size: 1.9rem; cursor: pointer;
+  }
+  &__crumb-sep { flex: 0 0 auto; color: var(--school-muted); font-size: 1.1rem; }
+  &__crumb {
+    flex: 0 1 auto; min-width: 0;
+    border: none; background: transparent; padding: 0.2rem 0.15rem;
+    color: var(--school-muted); font-size: 1.15rem; font-weight: 700;
+    cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    &--current { color: var(--school-fg); }
+  }
+  button.school-app__crumb:hover { color: var(--school-fg); }
   &__chip {
-    margin-left: auto; min-height: 64px;
+    flex: 0 0 auto; margin-left: auto; min-height: 56px;
     display: flex; align-items: center; gap: 0.6rem;
     padding: 0 1rem; border: 1px solid var(--school-border); border-radius: 999px;
     background: var(--school-surface-2); color: var(--school-fg); font-size: 1rem; cursor: pointer;

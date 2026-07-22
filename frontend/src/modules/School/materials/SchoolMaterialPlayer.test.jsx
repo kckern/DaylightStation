@@ -100,13 +100,17 @@ describe('SchoolMaterialPlayer', () => {
     await waitFor(() => expect(unitProgressMock).toHaveBeenCalledTimes(2));
   });
 
-  it('the visible exit row flushes progress and exits with {refetch:true}, without any quiz handoff', async () => {
-    const onExit = vi.fn();
-    render(<SchoolMaterialPlayer material={material} unit={unitWithQuiz} userId="kid1" onExit={onExit} />);
+  it('leaving via the header breadcrumb (unmount) flushes progress but does NOT hand off to the quiz', async () => {
+    // The player no longer renders its own back row — navigation is the app
+    // header breadcrumb, which unmounts the player. Unmounting must flush the
+    // final progress write, and (unlike a natural end) must never trigger the
+    // quiz handoff.
+    const { unmount } = render(<SchoolMaterialPlayer material={material} unit={unitWithQuiz} userId="kid1" onExit={() => {}} />);
     await findPlayer();
     fireEvent.click(screen.getByText('tick'));
-    fireEvent.click(screen.getByRole('button', { name: /Bill Nye/i }));
-    expect(onExit).toHaveBeenCalledWith({ refetch: true });
+    await waitFor(() => expect(unitProgressMock).toHaveBeenCalledTimes(1));
+    unmount();
+    await waitFor(() => expect(unitProgressMock).toHaveBeenCalledTimes(2)); // unmount flush
     expect(bankMock).not.toHaveBeenCalled();
     expect(screen.queryByTestId('quiz-runner')).toBeNull();
   });

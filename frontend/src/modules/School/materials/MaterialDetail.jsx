@@ -105,12 +105,8 @@ export default function MaterialDetail({ material, userId, onBack, onPlay, notic
 
   return (
     <div className="school-material-detail">
-      <button type="button" className="school-material-detail__back" onClick={onBack}>
-        <svg className="school-back-chevron" viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" focusable="false">
-          <path d="M14.5 5.5 8 12l6.5 6.5" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
-        </svg>
-        All {sectionLabel}
-      </button>
+      {/* No back row here — the app header's breadcrumb (…› section › this
+          material) is the navigation. */}
       {notice && <div className="school-material-detail__notice">{notice}</div>}
       <div className="school-material-detail__layout">
         <aside className="school-material-detail__info">

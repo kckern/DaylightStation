@@ -5,7 +5,7 @@
  * unclaimed opens the ProfilePicker with the launch pending (spec §6 — claim
  * prompt on tracked work; browsing never prompts).
  */
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import ProfilePicker from '../../lib/identity/ProfilePicker.jsx';
 import ProfileAvatar from '../../lib/identity/ProfileAvatar.jsx';
 import { SchoolProfileProvider, useSchoolProfile } from './identity/SchoolProfileContext.jsx';
@@ -16,6 +16,8 @@ import SchoolHome from './home/SchoolHome.jsx';
 import SubjectPage from './home/SubjectPage.jsx';
 import LibraryPage from './home/LibraryPage.jsx';
 import PrintCenter from './print/PrintCenter.jsx';
+import Icon from './home/icons/Icon.jsx';
+import { SchoolBreadcrumbProvider, useSchoolBreadcrumbBar } from './SchoolBreadcrumbContext.jsx';
 import { groupBySubject, subjectLabel } from './home/subjects.js';
 import GlossikaProgram from './Programs/Glossika/GlossikaProgram.jsx';
 import ReportPanel from './report/ReportPanel.jsx';
@@ -66,6 +68,7 @@ function schoolPathFor(urlBase, section) {
 
 function SchoolShell({ clear }) {
   const { status, roster, currentUser, isGuest, pickerOpen, openPicker, claim, continueAsGuest } = useSchoolProfile();
+  const { crumbs: extraCrumbs } = useSchoolBreadcrumbBar();
   const urlBase = useMemo(schoolUrlBase, []);
   const initialLink = useMemo(() => parseSchoolPath(urlBase), [urlBase]);
   const [section, setSection] = useState(initialLink.section); // a sections id, or null = home grid
@@ -158,6 +161,7 @@ function SchoolShell({ clear }) {
   // the section visit that produced it and must not greet the next visit.
   const goHome = useCallback(() => {
     setSection(null);
+    setActive(null);
     setNotice(null);
     setDeepMaterialId(null);
     syncUrl(null);
@@ -200,33 +204,46 @@ function SchoolShell({ clear }) {
               : courseId ? (courses.find((c) => c.id === courseId)?.label ?? 'Language')
                 : section;
 
+  // The header trail past the apple home anchor. Deep material routes publish
+  // their own full sub-trail (section crumb → material → unit, each with its
+  // own handler) via the breadcrumb bus; when none is published, the trail is
+  // just the current section as a non-navigable current crumb.
+  const breadcrumbTrail = extraCrumbs && extraCrumbs.length
+    ? extraCrumbs
+    : (section ? [{ label: sectionLabel }] : []);
+
   if (status !== 'ready') return <div className="school-app school-app--loading">Loading…</div>;
   return (
     <div className="school-app">
       <header className="school-app__header">
-        {/* Back steps one navigation level: runner -> bank list -> home ->
-            exit. The last hop only exists when School is mounted as an app
-            (AppContainer passes `clear`); when School IS the screen (the
-            `school` widget — the Portal's whole purpose) there is nowhere to
-            exit TO, so at home the control is omitted entirely rather than
-            rendering a dead button on a touch-only panel. */}
-        {(active || section || clear) && (
+        {/* Breadcrumb model (Piano-style): a fixed home anchor on the left,
+            then the trail. The apple always returns to the subject wall from
+            any depth; intermediate crumbs (section, material, unit) are the
+            in-between navigation and are published by the deep routes
+            themselves rather than each inventing its own back header. */}
+        <nav className="school-app__crumbs" aria-label="Breadcrumb">
           <button
             type="button"
-            className="school-app__back"
-            aria-label={active ? 'Back to bank list' : section ? 'Back to home' : 'Exit school'}
-            onClick={() => (active ? setActive(null) : section ? goHome() : clear())}
+            className="school-app__home"
+            onClick={() => (section || active ? goHome() : (clear ? clear() : undefined))}
+            aria-label={section || active ? 'Home' : 'School'}
           >
-            ‹
+            <Icon name="apple" />
           </button>
-        )}
-        {/* One identity row, not two. On the learner's home the title IS the
-            greeting; LearnerHome used to render a second avatar + name + "Not
-            you?" immediately below this one saying the same thing. */}
-        <h1 className="school-app__title">
-          {sectionLabel
-            ?? (currentUser ? `Hi ${String(currentUser.name).split(' ')[0]}` : 'School')}
-        </h1>
+          {breadcrumbTrail.map((c, i) => {
+            const isLast = i === breadcrumbTrail.length - 1;
+            return (
+              <Fragment key={`${c.label}-${i}`}>
+                <span className="school-app__crumb-sep" aria-hidden>›</span>
+                {!isLast && c.onClick ? (
+                  <button type="button" className="school-app__crumb" onClick={c.onClick}>{c.label}</button>
+                ) : (
+                  <span className={`school-app__crumb${isLast ? ' school-app__crumb--current' : ''}`}>{c.label}</span>
+                )}
+              </Fragment>
+            );
+          })}
+        </nav>
         {/* No sign-in chip for the unclaimed: the student panel's face row is
             the claim affordance, so an extra header CTA was noise. The chip
             only appears once there IS an identity to show (or a guest to
@@ -305,7 +322,9 @@ function SchoolShell({ clear }) {
 export default function SchoolApp({ clear }) {
   return (
     <SchoolProfileProvider>
-      <SchoolShell clear={clear} />
+      <SchoolBreadcrumbProvider>
+        <SchoolShell clear={clear} />
+      </SchoolBreadcrumbProvider>
     </SchoolProfileProvider>
   );
 }

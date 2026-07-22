@@ -130,29 +130,49 @@ describe('SchoolApp home — the subject wall', () => {
     expect(screen.queryByText('Bill Nye')).toBeNull(); // shelved under Science
   });
 
-  it('back from the Library returns to the subject wall', async () => {
+  it('the apple home crumb returns from the Library to the subject wall', async () => {
     render(<SchoolApp clear={() => {}} />);
     await openLibrary();
     await screen.findByText('Caps');
-    fireEvent.click(screen.getByRole('button', { name: /back to home/i }));
+    // In a section the home anchor is labelled "Home"; tapping it goes home.
+    fireEvent.click(screen.getByRole('button', { name: /^home$/i }));
     expect(await screen.findByText('History & Geography')).toBeInTheDocument();
     expect(screen.queryByText('Caps')).toBeNull();
+  });
+
+  it('the Library breadcrumb reads "apple › Library" while inside it', async () => {
+    render(<SchoolApp clear={() => {}} />);
+    await openLibrary();
+    await screen.findByText('Caps');
+    // The section crumb is the current (deepest) crumb; no back row exists.
+    expect(screen.getByText('Library')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^home$/i })).toBeInTheDocument();
   });
 
   it('unclaimed, tapping a face in the student panel claims directly', async () => {
     render(<SchoolApp clear={() => {}} />);
     expect(await screen.findByText(/who's learning\?/i)).toBeInTheDocument();
     fireEvent.click(await screen.findByRole('button', { name: /Alpha/ }));
-    expect(await screen.findByText('Hi Alpha')).toBeInTheDocument(); // header greeting = claimed
+    // Claimed: the "who's learning?" prompt is gone and the header identity
+    // chip now shows the name (the old "Hi <name>" title greeting is retired).
+    await waitFor(() => expect(screen.queryByText(/who's learning\?/i)).toBeNull());
+    expect(screen.getByRole('button', { name: /Alpha/ })).toBeInTheDocument(); // header chip
   });
 
-  it('home shows Exit school only when a clear prop exists', async () => {
-    const { unmount } = render(<SchoolApp clear={() => {}} />);
-    expect(await screen.findByRole('button', { name: /exit school/i })).toBeInTheDocument();
+  it('the apple home anchor exits (calls clear) at home only when a clear prop exists', async () => {
+    const clear = vi.fn();
+    const { unmount } = render(<SchoolApp clear={clear} />);
+    await screen.findByText('History & Geography');
+    // At home the anchor is labelled "School" and triggers the app exit.
+    fireEvent.click(screen.getByRole('button', { name: /^school$/i }));
+    expect(clear).toHaveBeenCalled();
     unmount();
+    // No clear prop (the Portal): the anchor is still there but home is the
+    // root, so tapping it is an inert no-op (must not throw).
     render(<SchoolApp />);
     expect(await screen.findByText('History & Geography')).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: /exit school/i })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: /^school$/i }));
+    expect(await screen.findByText('History & Geography')).toBeInTheDocument();
   });
 });
 
