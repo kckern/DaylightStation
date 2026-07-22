@@ -54,6 +54,19 @@
   }
 }
 
+// --- home section grid ---
+.school-home {
+  &__grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 1rem; }
+  &__tile {
+    display: flex; flex-direction: column; align-items: flex-start; gap: 0.5rem;
+    min-height: 140px; padding: 1.5rem; text-align: left;
+    border: 1px solid var(--school-border); border-radius: 12px;
+    background: var(--school-surface); color: var(--school-fg); cursor: pointer;
+  }
+  &__label { margin: 0; font-size: 1.3rem; font-weight: 800; }
+  &__hint { margin: 0; color: var(--school-muted); font-size: 1rem; }
+}
+
 // --- quiz / flashcard items ---
 .school-item {
   display: flex; flex-direction: column; gap: 1rem;
