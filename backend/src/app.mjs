@@ -151,6 +151,9 @@ import { initManageService } from '#apps/fitness/manageService.mjs';
 import { createFoodScaleRelay } from '#apps/hardware/foodScaleRelay.mjs';
 import { createScaleNutribotBridge } from '#apps/hardware/ScaleNutribotBridge.mjs';
 import { CompositionStore } from '#apps/nutribot/CompositionStore.mjs';
+import { ApplyScanToComposition } from '#apps/nutribot/usecases/ApplyScanToComposition.mjs';
+import { validateScanConfig } from '#apps/nutribot/lib/validateScanConfig.mjs';
+import { normalizeScaleNutribotConfig } from '#apps/nutribot/lib/scaleNutribotConfig.mjs';
 import { createBarcodeRelay } from '#apps/hardware/barcodeRelay.mjs';
 import { createFingerprintProfileWriter } from '#apps/fitness/fingerprintProfileWriter.mjs';
 import { YamlUserProfileDatastore } from '#adapters/persistence/yaml/YamlUserProfileDatastore.mjs';
@@ -2325,6 +2328,27 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   // scales config carries no composition-window knob today.
   const compositionStore = new CompositionStore({ now: () => Date.now() });
 
+  const scanVocabConfig = normalizeScaleNutribotConfig(
+    configService.getHouseholdAppConfig(householdId, 'scales') || {},
+  );
+
+  // Fail SOFT, not fatal. A malformed nutriscan table must not keep the whole
+  // station from booting — media, fitness and the rest have nothing to do with
+  // it. Disable nutriscan, log loudly, let UPC scanning carry on.
+  let applyScanToComposition = null;
+  try {
+    validateScanConfig(scanVocabConfig);
+    applyScanToComposition = new ApplyScanToComposition({
+      store: compositionStore,
+      config: scanVocabConfig,
+      logger: rootLogger.child({ module: 'nutriscan' }),
+    });
+  } catch (err) {
+    rootLogger.error('nutriscan.config.invalid', {
+      error: err.message, code: err.code, hint: 'fix the nutribot block in scales.yml',
+    });
+  }
+
   // Trigger dispatch (NFC modality source: apps/nfc/config.yml; barcode modality
   // shares this same dispatch core — see the barcode-relay wiring just below).
   const { router: triggerRouter, triggerDispatchService } = createTriggerApiRouter({
@@ -2361,6 +2385,23 @@ export async function createApp({ server, logger, configPaths, configExists, ena
       const route = relay.route || relayCfg.route || 'content';
 
       if (route === 'nutribot') {
+        // Namespace-first: dl:/ct:/rs: belong to the fridge sheet. Real UPC/EAN
+        // are digit-only and can never match <prefix>:<rest>, so ordering this
+        // ahead of the UPC lookup cannot shadow a product scan.
+        const scaleId = relayCfg.scale_id || null;
+        if (scaleId && applyScanToComposition) {
+          const outcome = applyScanToComposition.execute({ scaleId, code: relay.code });
+          if (outcome.handled) {
+            barcodeLogger?.info?.('barcode_relay.nutriscan', {
+              device: relay.device, scaleId, kind: outcome.kind, ok: outcome.ok !== false,
+              error: outcome.error || null,
+            });
+            return;
+          }
+        } else if (!scaleId) {
+          barcodeLogger?.warn?.('barcode_relay.nutriscan.no_scale_id', { device: relay.device });
+        }
+
         const userId = relayCfg.nutribot?.user_id || barcodeRelayConfig.nutribot?.user_id || configService.getHeadOfHousehold?.() || null;
 
         if (!userId) {
