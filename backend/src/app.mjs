@@ -150,6 +150,7 @@ import { initUnlockService } from '#apps/fitness/unlockService.mjs';
 import { initManageService } from '#apps/fitness/manageService.mjs';
 import { createFoodScaleRelay } from '#apps/hardware/foodScaleRelay.mjs';
 import { createScaleNutribotBridge } from '#apps/hardware/ScaleNutribotBridge.mjs';
+import { CompositionStore } from '#apps/nutribot/CompositionStore.mjs';
 import { createBarcodeRelay } from '#apps/hardware/barcodeRelay.mjs';
 import { createFingerprintProfileWriter } from '#apps/fitness/fingerprintProfileWriter.mjs';
 import { YamlUserProfileDatastore } from '#adapters/persistence/yaml/YamlUserProfileDatastore.mjs';
@@ -2316,6 +2317,14 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   const barcodeRelayConfig = configService.getHouseholdAppConfig(householdId, 'barcode-relay') || {};
   const barcodeRelayInstances = barcodeRelayConfig.relays || {};
 
+  // Scan-enriched food logging: ONE buffer, shared by the scale bridge (which writes
+  // weights) and the fridge-sheet scan handler (which writes density/tare). Constructed
+  // here because both call sites are below and both must hold the SAME instance — two
+  // stores means a scanned density never meets its weight, the entry never completes,
+  // and nothing anywhere reports an error. Window is the store's own default; the
+  // scales config carries no composition-window knob today.
+  const compositionStore = new CompositionStore({ now: () => Date.now() });
+
   // Trigger dispatch (NFC modality source: apps/nfc/config.yml; barcode modality
   // shares this same dispatch core — see the barcode-relay wiring just below).
   const { router: triggerRouter, triggerDispatchService } = createTriggerApiRouter({
@@ -2565,6 +2574,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
         userId: scaleHeadUser,
         conversationId: `telegram:b${scaleBotId}_c${scaleHeadPlatformId}`,
         scaleConfig: nutribotServices.scaleConfig,
+        compositionStore,
         logger: rootLogger.child({ module: 'scale-nutribot-bridge' }),
       });
     } else {
