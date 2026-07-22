@@ -1,6 +1,7 @@
 # School — Materials Framework (re-plan of sub-project 2)
 
-**Status:** Design spec. Supersedes `2026-07-21-school-courses-design.md`.
+**Status:** Design spec, revised after adversarial review. Supersedes
+`2026-07-21-school-courses-design.md`.
 **Date:** 2026-07-22
 **Requirements:** [`2026-07-21-portal-homeschool-requirements.md`](2026-07-21-portal-homeschool-requirements.md)
 
@@ -75,7 +76,7 @@ Material {
 Unit {
   id           // 'plex:619845'
   index        // 1-based position within the material
-  title        // 'Hamlet 1: ...'
+  title        // 'Hamlet 1: The Ghost of the King'
   duration     // ms, null for untimed text
   group        // 'Unit 3' for season-grouped video; null when flat (audio tracks)
   medium       // usually inherits from the material; may differ (see §5)
@@ -95,33 +96,61 @@ sequencing is defined per material and nothing sequences the catalog.
 
 ---
 
-## 3. Config
+## 3. Categories are closed; config selects, it does not assemble
+
+**Revised after review.** An earlier draft let `school.yml` assemble categories
+from free-form knobs (`sequential`, `gate`, `completion`, `credit`). That was
+wrong on two counts: the knobs are not orthogonal, and roughly half the
+expressible combinations are broken. The clearest failure: `sequential: true`
+with a `completion` that can never be satisfied locks every unit after the first
+**forever**, on an unattended kiosk, silently.
+
+Pedagogy is therefore a **closed set defined in code**, in
+`2_domains/school/categories.mjs`:
+
+```javascript
+export const CATEGORIES = {
+  // Sequenced, gated, credited. Shakespeare Tales, Art Lessons.
+  course: {
+    sequential: true,
+    gated: true,                      // an unsatisfied gate locks the next unit
+    completion: ['played', 'gate'],   // ALL listed conditions must hold
+    credit: { coins: true, curriculum: true }
+  },
+  // Look-it-up material. Cliff notes. Resume works; nothing is recorded.
+  reference: {
+    sequential: false,
+    gated: false,
+    completion: [],
+    credit: { coins: false, curriculum: false }
+  },
+  // Freestyle listening (retires R9). Records "finished", earns nothing.
+  listening: {
+    sequential: false,
+    gated: false,
+    completion: ['played'],
+    credit: { coins: false, curriculum: false }
+  }
+};
+```
+
+This is deliberately *less* configurable than the first draft, and costs nothing
+real. The configurability that matters — which Plex roots are material, what
+medium, which pedagogy each gets, and the pass marks — is all still config. Only
+*inventing a new pedagogy shape* is now a code change, and there are three,
+all stable. A fourth gets promoted when there is a real case to design against.
+
+It also removes an entire class of failure rather than validating against it: a
+broken combination becomes **inexpressible** instead of rejected, so there is no
+validator to keep correct and no "config is incoherent" boot path to design for
+a panel with no keyboard.
+
+### Config
 
 Replaces the `courses:` block in `data/household/config/school.yml`.
 
 ```yaml
 materials:
-  # ---- Categories: pedagogy, reusable across sources --------------------
-  categories:
-    course:
-      sequential: true
-      gate: quiz               # next unit locked until this one's gate passes
-      completion: [played, gate]
-      credit: { coins: true, curriculum: true }
-
-    reference:                 # Cliff notes, look-it-up material
-      sequential: false
-      gate: none
-      completion: []           # nothing to complete; resume still works
-      credit: { coins: false, curriculum: false }
-
-    listening:                 # freestyle audiobooks (retires R9)
-      sequential: false
-      gate: none
-      completion: [played]     # records "finished", earns nothing
-      credit: { coins: false, curriculum: false }
-
-  # ---- Sources: where material comes from and its shape -----------------
   sources:
     - label: Shakespeare Tales
       source: plex-album
@@ -147,25 +176,25 @@ materials:
       medium: audio
       category: listening
 
-  # ---- Thresholds -------------------------------------------------------
+  # Scalars stay tunable. Neither can produce a locked-forever material:
+  # a badly-chosen value is annoying and recoverable, not silent and permanent.
   completion_threshold_percent: 90   # bar for `played`
-  quiz_pass_percent: 80              # bar for a quiz gate (see §6)
+  quiz_pass_percent: 80              # bar for a quiz step (see §5)
 ```
 
-### Config rules
+### Fail-closed, but loudly
 
-- **`category` is required per source in practice but fail-closed in code.** An
-  omitted or unknown `category` resolves to `reference` — no gate, no credit.
-  Per the subsystem's convention 7, a config slip must make material *inert*,
-  never accidentally pay coins and never silently lock a child out. Both failure
-  directions are safe this way.
-- **`sequential` moves from a Plex label to the category.** The old spec keyed it
-  off a per-course Plex label copied from `piano.yml`. Labelling 16 Shakespeare
-  albums by hand is busywork expressing a rule that holds for the whole source.
-  A per-material Plex label remains supported as an *override*, for a source
-  with mixed pedagogy.
-- **Categories are open.** Adding one is a config entry plus a home section
-  (§8) — not a code change.
+An omitted or unrecognised `category` resolves to `reference` — no gate, no
+credit. A config slip makes material *inert*: it never pays coins and never
+locks a child out, which are the two failure directions that matter.
+
+**It must also log a warning at config load naming the source and the
+unrecognised value.** Silent fallback would violate this subsystem's convention
+6 ("Failures are never silent") and is a genuinely expensive failure: a typo'd
+`category: coures` serves a whole course ungated and uncredited, and the quiz
+evidence never collected cannot be reconstructed when the typo is found weeks
+later. The precedent is `questionBankValidation.mjs`, which fails loudly with an
+errors list.
 
 ---
 
@@ -187,16 +216,28 @@ MaterialSource {
 | `plex-album` | artist → album → track | album | track (`group` = null) | audio |
 | `readalong` | config list → entry | entry | section/chapter | text |
 
-`plex-show` keeps consuming `FitnessPlayableService.getPlayableEpisodes(showId)`
-— generic despite its folder, and already the source of ordering, watch state,
-resume and transcoding. `plex-album` walks
-`library/metadata/{id}/children` twice (artist → albums → tracks); verified
-2026-07-22 against `619778`, which returns 16 albums, and `619862`, which
-returns 5 ordered tracks carrying `index`, `title` and `duration`.
+`plex-album` walks `library/metadata/{id}/children` twice (artist → albums →
+tracks); verified 2026-07-22 against `619778`, which returns 16 albums, and
+`619862`, which returns 5 ordered tracks carrying `index`, `title` and
+`duration`.
 
-**Adding a medium is one adapter, not a rewrite.** Nothing downstream — lock
-math, gates, progress, credit, UI shell — reads `source` or `medium` except to
-choose a player chrome.
+### `plex-show` reuses `getPlayableEpisodes` — but discards its watch fields
+
+`FitnessPlayableService.getPlayableEpisodes(showId)` exists
+(`FitnessPlayableService.mjs:47`) and is show-agnostic, and School reuses it for
+**ordering, episode metadata, resume points and transcoding**.
+
+**School must ignore its `isWatched` / watch-state output entirely.** That field
+mixes a fitness-specific classifier with Plex's `viewCount`
+(`FitnessPlayableService.mjs:169–181`), and Plex watch state is per *account*,
+not per child — one child finishing an episode would flag it watched for every
+child in the household. Piano already avoids this by layering per-user `enrich()`
+on top and ignoring the global fields for per-user decisions; School does the
+same. Per-child state comes only from the progress store (§6).
+
+The previous draft described this service as giving "ordering, watch state,
+resume," which would have walked an implementer straight into cross-child
+contamination.
 
 ### Single-unit materials
 
@@ -207,17 +248,14 @@ hierarchy as Shakespeare, same adapter — the difference is arity, not shape.
 This needs no special case, and that is the point:
 
 - **Sequencing is vacuously true.** One unit means nothing follows it to lock.
-  `sequential` stays harmless rather than wrong.
 - **The gate lands at the end, not the middle.** Gates fire *between* units; with
   one unit there is nothing between. A bank linked to that unit becomes an
   end-of-book quiz, which is the correct and only available granularity for a
   single audio file.
-- **`completion: [played, gate]` still reads naturally**: finish the book, pass
-  the quiz.
+- **`completion: ['played','gate']` still reads naturally**: finish the book,
+  pass the quiz.
 
-Which category suits it is a config decision, not a code one — `listening` for
-free enjoyment, `course` for credited work. That choice being a one-line edit is
-the framework earning its keep.
+Which category suits it is a config decision, not a code one.
 
 **Forward compatibility, not built now.** If per-chapter gating of a single file
 is ever wanted, the extension is virtual units: a source emits several `Unit`s
@@ -226,11 +264,12 @@ unchanged because it only ever sees ordered units. Deliberately deferred — it
 requires hand-authoring timecodes for every book, and nothing today needs it.
 Do not add `start`/`end` to `Unit` until a real case exists.
 
-### Implementation gotcha: album duration is 0
+### Implementation gotcha: albums carry no duration
 
-Plex reports `duration: 0` on these album entries; only the *tracks* carry real
-durations. A `plex-album` adapter must **sum its tracks' durations** rather than
-trust the album's, or every material in the catalog renders as "0 min".
+The album entries under `619778` carry **no `duration` attribute at all**
+(verified 2026-07-22); only their tracks do. A `plex-album` adapter must **sum
+its tracks' durations** rather than read the album's, or every material in the
+catalog renders as "0 min".
 
 ### Deferred, deliberately
 
@@ -243,95 +282,142 @@ both stubs today).
 
 ## 5. Gates
 
-A gate is what must be satisfied before the next unit unlocks. It is pluggable
-for the same reason sources are.
+A gate is what must be satisfied before the next unit unlocks. **Whether a
+category gates at all** is the category's `gated` flag (§3). **What the gate
+consists of** is declared per unit, by its bank.
 
-| `gate` | Satisfied by | Strength |
-|---|---|---|
-| `quiz` | A linked bank scored `>= quiz_pass_percent` | Comprehension |
-| `readalong` | Reaching the end of a linked readalong | **Exposure only** |
-| `none` | Nothing — units never lock | — |
+### A gate is a sequence of steps, not a type
 
-### Quiz gates are discovered, not configured
+An earlier draft made `readalong` and `quiz` alternative gate *types*. That was
+a category error: a readalong is a **presentation** step, a quiz is an
+**assessment** step. They compose.
 
-A question bank carries an optional backlink, as the previous spec decided:
+```
+[]                  no bank for this unit → no gate (see below)
+[quiz]              answer questions
+[readalong]         read it — exposure only, see the caveat below
+[readalong, quiz]   read it, then prove you understood it
+```
+
+### Steps are declared in the bank
+
+The bank already backlinks to the unit it gates. It gains one more optional
+field, so a single authored file per unit carries both the reading and the
+assessment:
 
 ```yaml
 id: hamlet-act-1-quiz
 title: Hamlet — Act 1
-unit: plex:619845          # the unit this quiz gates
+unit: plex:619845          # the unit this gates
+readalong: talk:...        # OPTIONAL — read this before the questions
 audience: assigned
 items: [...]
 ```
 
-**Renamed `lecture:` → `unit:`** to match the generalised model. This is free —
-courses were never built, so no bank in the data volume carries the old key.
+Steps are derived, not configured: `readalong` present → a readalong step;
+`items` non-empty → a quiz step. Both → both, in that order. This keeps gate
+composition entirely data-driven per unit and out of the category table, which
+is what stops the combinatorics from coming back.
 
-`questionBankValidation.mjs` gains: `unit` optional; when present, a non-empty
-string. No further validation — a bank does not know whether that Plex id
-exists, and should not.
+**Renamed `lecture:` → `unit:`** to match the generalised model. Verified free:
+the data volume holds one bank (`us-state-capitals.yml`) and it carries no
+`lecture:` key.
 
-**A unit with no bank has no gate**, and this is not an error. It is the escape
-hatch that keeps a material usable while its quizzes are still being written —
-essential when Shakespeare alone implies 16 plays × ~5 acts ≈ 80 banks, authored
-incrementally. Ship Hamlet with acts 1–2 quizzed and the rest ungated.
+### Validation must also *return* the new fields
 
-### Readalong gates are declared
+`questionBankValidation.mjs` ends by returning a **whitelist**:
+`{ id, title, audience, topics, items }` (line 82). Adding `unit` and
+`readalong` to the validation rules is necessary but **not sufficient** — they
+must also be added to the returned bank, or gate discovery reads fields that
+were validated and then silently thrown away.
 
-Readalong material is not a file School owns, so there is no backlink to hang.
-Declared on the source instead, as an entry gate applied before the first unit
-of every material from it:
+Rules: `unit` and `readalong` optional; when present, non-empty strings. No
+further validation — a bank does not know whether that Plex id or readalong path
+resolves, and should not.
 
-```yaml
-    - label: Shakespeare Tales
-      source: plex-album
-      root: plex:619778
-      medium: audio
-      category: course
-      entry_gate: { type: readalong, ref: 'talk:how-to-read-shakespeare' }
-```
+### A unit with no bank has no gate
 
-(`ref` above is **illustrative** — no such readalong exists yet. A real entry
-gate names existing readalong content, e.g. a `scripture:` or `talk:` id the
-`/api/v1/info/{path}` endpoint already resolves.)
+Not an error. It is the escape hatch that keeps a material usable while its
+quizzes are still being written — essential when Shakespeare alone implies 16
+plays × ~5 acts ≈ 80 banks, authored incrementally. Ship Hamlet with acts 1–2
+quizzed and the rest ungated.
 
-This satisfies R10 ("inject a prerequisite before content unlocks — e.g. read a
-scripture") and R10.2 (reuse the scroller, don't invent a parallel
-presentation): the gate renders `ReadalongScroller`, which already handles
-verses, paragraphs, poetry, optional video and ambient audio.
+### Readalong steps: two hard constraints
 
-A per-unit readalong gate is **not** supported in this slice. The common case is
-"read this before starting," and a per-unit form would require the mapping table
-the quiz design explicitly rejected. Revisit only with a real case.
+**1. A readalong step proves exposure, not comprehension.** `ContentScroller`
+derives scroll position from the main media element's clock
+(`ContentScroller.jsx:150–154`, fed from `mainEl.currentTime` at :225), so
+"reached the end" is close to the presence signal R2.5 explicitly rejected for
+video. It is still worth having — forced exposure is a real pedagogical tool,
+and R10 asks for exactly it — but `[readalong]` alone must not be treated as
+equivalent to a quiz pass. This is precisely why the user-facing composition
+`[readalong, quiz]` exists: it upgrades exposure to comprehension.
 
-### A readalong gate is honestly weaker
+**2. A text-only readalong has no end signal, and would lock the unit forever.**
+Verified: the only completion signal is `handleEnded`, fired by the media
+element's `onEnded` (`ContentScroller.jsx:325–327, 418, 469`). The
+`useEndOfContentWatchdog` fallback at :333–338 is `enabled: !!isVideo` and keyed
+to `mediaRef`, so it is a stuck-DASH watchdog, **not** a no-media fallback. With
+no main media there is no clock, no scroll, and no `ended`.
 
-`ContentScroller` auto-scrolls, so "reached the end" is close to the
-presence signal R2.5 explicitly rejected for video — it proves a body was in the
-room, not comprehension. It is still worth having; forced exposure is a real
-pedagogical tool. But it must not be treated as equivalent to a quiz pass, which
-is why **`credit` is a category decision and not implied by passing a gate.** A
-category that gates on readalong alone and pays coins is expressible, and is a
-choice made in the open rather than a property smuggled in by the gate type.
+Therefore: **a readalong step with no main media is satisfied by an explicit
+"Done reading" tap.** Weaker still, and deliberately visible as such. A readalong
+step that carries narration keeps the `ended` signal. An implementation that
+assumes `ended` will always arrive produces exactly the permanently-locked
+material this design elsewhere works hard to prevent.
+
+### Gate satisfaction is derived where it can be, stored where it cannot
+
+- **Quiz steps** are derived by folding the attempt log, grouped by `sessionId`
+  — never stored as a flag. The log stays the source of truth, so reassigning
+  attempts (R6.5) moves the pass with them automatically.
+- **Readalong steps** have no attempt log, so satisfaction is a recorded event:
+  per child, per unit, once, written alongside unit progress (§6) and carrying
+  `attributedTo` like every other School record, so it is reassignable too.
 
 ---
 
 ## 6. Progress, completion and credit
 
-### Storage
+### Storage — and what the existing store does *not* give us
 
-`UserVideoProgressStore` is hardcoded to `data/users/{id}/apps/piano/` and
-`getHouseholdAppConfig(null, 'piano')`. **Parameterise it by app name and
-filename** rather than copying it — one store, two consumers, so a fix reaches
-both. School writes `data/users/{id}/apps/school/material-progress.yml`.
+**Corrected after review.** An earlier draft claimed "only the video-flavoured
+*name* was wrong" about `UserVideoProgressStore`. That is false. The store bakes
+in Piano's completion **policy**, not just its naming:
 
-An audio track's `playhead`/`percent`/`duration` is the same shape as a video's,
-so no new store is needed for the audio case — only the video-flavoured *name*
-was wrong.
+| Piano-specific behaviour | Where |
+|---|---|
+| Path hardcoded to `apps/piano` | `UserVideoProgressStore.mjs:27` |
+| Filename hardcoded to `video-progress` | `:~55` (`loadYaml(path.join(dir,'video-progress'))`) |
+| Threshold read from `getHouseholdAppConfig(null,'piano').videos.completion_threshold_percent` | `:31–32` |
+| `completedAt` stamped only when `percent >= threshold && engaged` | `:59–62` |
+| `userWatched` / `summarize()` recompute that same engaged-AND-threshold rule | `:105`, `:137` |
 
-**Piano's behaviour must be unchanged**: the app name defaults to `piano`, the
-filename to `video-progress.yml`, and Piano's existing tests must pass
-untouched. That is the completion gate for this task.
+School has no `engaged` signal — R2.5 replaced it with comprehension
+deliberately. So if School consumed this store's completion machinery as-is:
+`completedAt` would **never** stamp, `userWatched` would be **permanently
+false**, and the threshold lookup would resolve `school.yml → videos.…`, which
+does not exist, silently falling back to a hardcoded 90.
+
+**Decision: School uses this store as a dumb playhead/percent store only.**
+
+- Parameterise **app name and filename**. School writes
+  `data/users/{id}/apps/school/material-progress.yml`.
+- School reads only `playhead`, `percent`, `duration`, `lastPlayed`.
+- **`completedAt`, `engaged`, `userWatched` and `summarize()` are INERT for
+  School** and must not be read. All School completion is computed in
+  `2_domains/school/materialPolicy.mjs` from percent + gate state.
+
+An audio track's playhead/percent/duration is the same shape as a video's, so no
+new store is needed for the audio case — but the completion *rule* was never
+reusable, and pretending otherwise was the single riskiest error in the previous
+draft.
+
+**Piano's behaviour must be unchanged**: app name defaults to `piano`, filename
+to `video-progress.yml`, and Piano's existing tests must pass untouched. That is
+a necessary completion gate for this task but not a sufficient one — it does not
+catch School accidentally consuming the piano-flavoured `userWatched`. Add a
+test asserting School's policy ignores it.
 
 ### Completion
 
@@ -340,15 +426,10 @@ untouched. That is the completion gate for this task.
 | Value | Holds when |
 |---|---|
 | `played` | `percent >= completion_threshold_percent` |
-| `gate` | The unit's gate is satisfied (or it has none) |
+| `gate` | Every gate step for the unit is satisfied (or it has none) |
 
-`[]` records no completion at all. `[played, gate]` is the `course` default and
-preserves R2.5 exactly: watch percentage alone never completes a unit.
-
-"Gate satisfied" for a quiz is derived by **folding the attempt log**, grouped by
-`sessionId` — never stored as a separate flag. The log stays the source of
-truth, so a reassignment of attempts (R6.5) moves the pass along with them
-automatically.
+`[]` records no completion at all. `['played','gate']` is `course` and preserves
+R2.5 exactly: watch percentage alone never completes a unit.
 
 ### Locking
 
@@ -356,24 +437,27 @@ When the category is `sequential`, units are ordered by `index` and every unit
 after the first **incomplete** one is locked: disabled, greyed, padlock overlay,
 click is a no-op. The first incomplete unit is the current one.
 
-**A locked unit always states why**, naming the gate to satisfy. A silent lock is
+**A locked unit always states why**, naming the step to satisfy. A silent lock is
 the real trap. Retakes are unlimited and the pass bar is 80 rather than 100 —
 the three mitigations the previous spec identified for dead-end risk on an
 unattended kiosk, all retained.
 
 ### Credit
 
-`credit` is where R8 (economy) and R6 (curriculum) attach — the reason they are
-config rather than code is that neither sub-project should have to modify the
-materials framework when it lands.
+`credit` is where R8 (economy) and R6 (curriculum) attach.
 
-- `credit.coins: true` → on unit completion, call the existing
-  `EconomyService` earn path. Its per-ref replay guard and daily caps apply
-  unchanged; no parallel currency logic (R8.2, non-goal 3).
-- `credit.curriculum: true` → the completion is emitted as an attributable
-  event eligible for curriculum progress. Until sub-project 4 exists, nothing
-  consumes it; the event is still written, because R6.5 requires the evidence to
-  exist before anything aggregates it.
+- `credit.coins` → on unit completion, call the existing `EconomyService` earn
+  path. Its per-ref replay guard and daily caps apply unchanged; no parallel
+  currency logic (R8.2, non-goal 3).
+- `credit.curriculum` → the completion is emitted as an attributable event.
+  Until sub-project 4 exists nothing consumes it; the event is still written,
+  because R6.5 requires the evidence to exist before anything aggregates it.
+
+**Unresolved tension, see OPEN-C.** Quiz passes are *derived* from the attempt
+log so reassignment moves them automatically — but a curriculum completion event
+is *written* at completion time and does not move when the underlying attempts
+are reassigned. This is the same class of problem OPEN-9 already tracks for
+coins.
 
 ---
 
@@ -392,10 +476,11 @@ consumer side only. **`modules/Player` and `lib/Player` are never modified**
 | `audio` | Audio player: art, unit title, scrub, resume |
 | `text` | `ReadalongScroller` |
 
-On a unit ending, if a quiz gate exists, the chrome hands off to `QuizRunner`
-— already built and shipped in slice 1. Skipping the quiz is allowed; the unit
-stays incomplete, and in a sequential material the next unit stays locked. That
-is the mastery rule doing its job, not an error state.
+On a unit ending, if a gate exists, the chrome runs its steps in order —
+`ReadalongScroller` then `QuizRunner`, either or both. `QuizRunner` is already
+built and shipped in slice 1. Skipping is allowed; the unit stays incomplete,
+and in a sequential material the next unit stays locked. That is the mastery
+rule doing its job, not an error state.
 
 ---
 
@@ -403,22 +488,26 @@ is the mastery rule doing its job, not an error state.
 
 The gap that motivated this whole re-plan: **§5 of the requirements listed ten
 sub-projects and none of them owned the surface they mount on.** Slice 1 shipped
-and hardcoded `BankBrowser` as the entire body of `SchoolApp`, because there was
+and hardcoded `BankBrowser` as the entire body of `SchoolApp`
+(`SchoolApp.jsx:107`, branching on `active?.mode` at :108–109), because there was
 nowhere else to put it. Deleting the old Portal menu then stranded everything
 else with no route in.
 
 The home is a **section grid**. Sections come from two places:
 
-1. **One per category present in config** — Courses, Reference, Listening. This
-   is why category earns its keep twice: it decides both what material *does*
-   and where a child *finds* it. Adding a category adds a section.
+1. **One per category present in config** — Courses, Reference, Listening.
 2. **Built-in sections** for non-material work — Quizzes & Flashcards (slice 1,
    already built), and later Games and Writing.
 
-Decided (2026-07-21, this conversation): the home is a **tool menu now, worklist
-later**. When curriculum (sub-project 4) lands, an "assigned to you" band appears
-*above* the grid and the sections remain as free browse. This keeps the home
-independent of the largest unbuilt sub-project instead of blocking on it.
+**Scope of 2a before 2b lands.** Category sections read material endpoints that
+do not exist until 2b. 2a therefore ships the **built-in sections only**, with
+category sections appearing as 2b delivers them. 2a must not render tiles
+pointing at absent endpoints.
+
+Decided (2026-07-21): the home is a **tool menu now, worklist later**. When
+curriculum (sub-project 4) lands, an "assigned to you" band appears *above* the
+grid and the sections remain as free browse. This keeps the home independent of
+the largest unbuilt sub-project instead of blocking on it.
 
 Also decided: **Games means educational games only** — the typing tutor arcade
 and drills. `routes.games` in `portal.yml`, which points at
@@ -428,30 +517,33 @@ deleted.
 And: **Music and Art come inside School; Ambient and Webcam stay screen-level.**
 Music and Art are curricular — the staged collection is literally "Art Lessons",
 and Plex carries Music Appreciation — so they enter as *sources*, appearing
-within whichever category section their pedagogy implies (Art Lessons under
-Courses; music-for-listening under Listening). They are deliberately **not**
-their own top-level sections, because sections come from categories and a
-per-subject section would reintroduce the subject-keyed menu this design
+within whichever category section their pedagogy implies. They are deliberately
+**not** their own top-level sections, because sections come from categories and
+a per-subject section would reintroduce the subject-keyed menu this design
 replaces. Ambient and Webcam are screen-level utilities reachable from the
 TouchChrome lane — not schoolwork in a homeschool menu.
-
-`SchoolApp` currently branches on `active?.mode`. It grows a section route above
-that; `BankBrowser` becomes one section's body rather than the app's whole body.
 
 ---
 
 ## 9. Where it lives
 
+**Corrected after review.** Source adapters consume
+`FitnessPlayableService`, a concrete `3_applications` service.
+`docs/reference/core/layers-of-abstraction/ddd-reference.md:45` permits
+`1_adapters → 3_applications` **ports only**, so sources cannot live in
+`1_adapters`. They live in the application layer, matching the existing
+precedent where Piano consumes the service via injection.
+
 | Layer | Path | Role |
 |---|---|---|
 | Domain | `2_domains/school/materialPolicy.mjs` | Pure: order units, first-incomplete, locked set, completion fold |
-| Domain | `2_domains/school/categories.mjs` | Category resolution + fail-closed default |
-| Adapter | `1_adapters/school/sources/PlexShowSource.mjs` | collection → show → season → episode |
-| Adapter | `1_adapters/school/sources/PlexAlbumSource.mjs` | artist → album → track |
-| Adapter | `1_adapters/school/sources/ReadalongSource.mjs` | config list → entry |
+| Domain | `2_domains/school/categories.mjs` | The closed category table + fail-closed resolution |
+| Application | `3_applications/school/sources/PlexShowSource.mjs` | collection → show → season → episode |
+| Application | `3_applications/school/sources/PlexAlbumSource.mjs` | artist → album → track |
+| Application | `3_applications/school/sources/ReadalongSource.mjs` | config list → entry |
 | Application | `3_applications/school/GetMaterialCatalog.mjs` | Catalog grid for a category |
 | Application | `3_applications/school/GetMaterialUnits.mjs` | Units + per-user progress + lock state |
-| Application | `3_applications/piano/UserVideoProgressStore.mjs` | **Modified**: app + filename parameterised |
+| Application | `3_applications/piano/UserVideoProgressStore.mjs` | **Modified**: app + filename parameterised (§6) |
 | API | `4_api/v1/routers/school.mjs` | `GET /materials?category=`, `GET /materials/:id/units?userId=` |
 | Frontend | `modules/School/materials/MaterialGrid.jsx` | Catalog tiles per source |
 | Frontend | `modules/School/materials/MaterialDetail.jsx` | Units, lock/current rendering, why-locked |
@@ -476,14 +568,13 @@ Replaces §5 of the requirements doc.
 | 8 | Android launch touch affordances (R11.4) | XS | — | Independent; do any time |
 | 9 | Writing assignments (TipTap) | M | 1, 2a | Spec exists |
 | 10 | Typing tutor (drill + arcade) | M | 1, 2a | Spec exists; this is "Games" |
-| ~~7~~ | ~~Content gates~~ | — | — | **Absorbed into 2b** as `gate: readalong` |
-| ~~R9~~ | ~~Freestyle content~~ | — | — | **Absorbed into 2b** as a category |
+| ~~7~~ | ~~Content gates~~ | — | — | **Absorbed into 2b** as a `readalong` gate step |
+| ~~R9~~ | ~~Freestyle content~~ | — | — | **Absorbed into 2b** as the `listening` category |
 
 **Why 2a before 2b.** The home is small and unblocks a panel that is currently a
 dead end — the only interactive elements on `/screens/portal` today are one
-bank's Quiz/Cards buttons and a chrome Back that returns to a screen the child
-is already on. It also gives 2b, 9 and 10 a real surface to mount into rather
-than each inventing one.
+bank's Quiz/Cards buttons and a chrome Back that returns to the screen the child
+is already on. It also gives 2b, 9 and 10 a real surface to mount into.
 
 **Shakespeare is 2b's proving ground, not a follow-on.** Building the framework
 against video alone would reproduce the exact assumption this re-plan exists to
@@ -497,11 +588,15 @@ unverified.
 - **OPEN-A — Bank authoring at volume.** Shakespeare implies ~80 banks. The
   ungated-by-default escape hatch (§5) makes incremental authoring safe, but
   whether to assist generation — there is a `POST /api/v1/ai/transcribe`
-  endpoint and the tracks are narrated audio — is undecided and out of scope
-  here.
-- **OPEN-B — Per-unit readalong gates.** Deferred (§5). Revisit with a real case.
-- **OPEN-3, OPEN-7, OPEN-9, OPEN-10** from the requirements doc are unchanged
-  and still open.
+  endpoint and the tracks are narrated audio — is undecided and out of scope.
+- **OPEN-B — Per-chapter gating of single-file material.** Deferred (§4).
+  Revisit with a real case.
+- **OPEN-C — Reassignment and written completion events.** Quiz passes are
+  derived and move automatically; `credit.curriculum` completion events are
+  written and do not. Either the event carries enough provenance to be
+  re-derived or invalidated, or reassignment must move it too. Same class as
+  OPEN-9 (coins). Decide before sub-project 4.
+- **OPEN-3, OPEN-7, OPEN-9, OPEN-10** from the requirements doc are unchanged.
 
 ---
 
@@ -510,6 +605,24 @@ unverified.
 - Editing `modules/Player` or `lib/Player`. School wraps from the consumer side.
 - A parallel currency, progress or content-adapter system where one exists.
 - Emulator/arcade games in School (§8).
-- Migrating Piano to this framework. Piano's course code stays as it is; the
-  only shared file touched is `UserVideoProgressStore`, whose existing behaviour
-  is preserved by default.
+- Migrating Piano to this framework. Piano's course code stays as it is.
+
+**Named honestly:** this leaves Piano's lock math ("linear scan, first
+unwatched") and School's `materialPolicy.mjs` ("linear scan, first incomplete")
+as near-duplicate pure functions in perpetuity, and `UserVideoProgressStore` is
+the only file both touch. That duplication is accepted: the completion semantics
+genuinely differ (engaged-and-watched vs gate-satisfied), and coupling a live,
+historically fragile kiosk to a new framework to save ~50 lines of pure policy is
+a bad trade. Convention 3 survives — neither module imports from the other's
+tree.
+
+---
+
+## 13. Upstream correction
+
+`2026-07-21-portal-homeschool-requirements.md` §4 states that
+`UserVideoProgressStore` stores at `data/users/{id}/apps/{app}/video-progress.yml`
+and that "the app segment is a parameter." **It is not** — `apps/piano` is
+hardcoded at `UserVideoProgressStore.mjs:27`, as is the filename. That row
+should be corrected when the requirements doc is next touched, so the two
+documents stop disagreeing.
