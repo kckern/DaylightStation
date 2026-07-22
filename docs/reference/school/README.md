@@ -100,17 +100,28 @@ never a recorded attempt — those are already on disk.
 
 ### The home shell
 
-School's landing surface is a **section grid** — the app owns its own top-level
-navigation. Sections come from two places: built-ins (Quizzes & Flashcards
-today; Games and Writing when their sub-projects land) and, once the materials
-framework ships, one section per material category. A tile never points at an
-absent endpoint.
+School's landing surface is the **subject wall**: six fixed subjects — Reading,
+Civilization, Language, Math, Science, Writing — on the left two-thirds, and a
+meta rail on the right third holding the **student panel** (identity, up-next
+action, latest score, done-for-today flip; tap = the full progress board) and
+the **Library**. One home serves claimed and unclaimed visitors alike — the
+student panel is itself the claim affordance.
 
-Back steps one navigation level: runner → bank list → home → exit. The exit
+Subjects are the top level; the second level inside each subject is instances
+of **reusable content frameworks** — a custom program (Glossika), Plex
+materials with quiz gates, quiz/flashcard banks — and one framework class can
+appear under any subject. Shelving is config-driven via a `subject:` field on
+materials sources (`school.yml`) and bank YAMLs (distinct from banks'
+free-form `topics` tags); language courses shelve under Language
+automatically. Untagged and `reference` content lands in the Library, whose
+Practice group holds untagged banks. An empty shelf renders greyed, not
+hidden. A tile never points at an absent endpoint.
+
+Back steps one navigation level: runner → shelf → home → exit. The exit
 control only exists when School is mounted as an app; on the Portal, where
 School is the screen, home is the root and no exit affordance renders.
 
-**Design spec:** [`2026-07-22-school-materials-framework-design.md`](../../superpowers/specs/2026-07-22-school-materials-framework-design.md) §8
+**Design specs:** [`2026-07-22-school-home-topics-redesign-design.md`](../../superpowers/specs/2026-07-22-school-home-topics-redesign-design.md), [`2026-07-22-school-materials-framework-design.md`](../../superpowers/specs/2026-07-22-school-materials-framework-design.md) §8
 
 ### The materials framework
 

@@ -252,98 +252,108 @@
   &__spark { width: 120px; height: 28px; color: var(--school-accent); }
 }
 
-// --- learner home: what to do next, not what content exists -----------------
-// Obligation first at high weight, browse second at low weight — and the two
-// SWAP when the day's set is cleared. No animation (kiosk WebView).
-//
-// Carries no identity row of its own: the shell header above already renders
-// the greeting and the profile chip, and having both produced two stacked rows
-// saying the same thing.
-.school-home {
-  display: flex; flex-direction: column; gap: 1.25rem;
-  // The shell body is the scroller; this must FILL it rather than collapsing
-  // to its content and leaving the bottom half of an 800px panel empty.
+// --- the home: subject shelves left, meta rail right -----------------------
+// Six fixed subjects (2 cols x 3 rows) on the left two-thirds; the student
+// panel and Library on the right third. One home for claimed and unclaimed —
+// the panel carries the claim affordance. No animation (kiosk WebView).
+.school-home2 {
+  display: grid; grid-template-columns: 2fr 1fr; gap: 1rem;
   min-height: 100%;
 
-  &__status { color: var(--school-muted); }
-  &__heading {
-    margin: 0 0 0.5rem; font-size: 0.85rem; color: var(--school-muted);
-    text-transform: uppercase; letter-spacing: 0.06em;
+  &__subjects {
+    display: grid; gap: 0.85rem;
+    grid-template-columns: repeat(2, 1fr);
+    grid-auto-rows: 1fr;
   }
 
-  &__primary { flex: 0 0 auto; }
-  &__secondary-cards { display: flex; gap: 0.75rem; flex-wrap: wrap; }
+  &__subject {
+    display: flex; flex-direction: column; align-items: flex-start;
+    justify-content: center; gap: 0.35rem;
+    padding: 1rem 1.25rem; text-align: left;
+    border: 1px solid var(--school-border); border-radius: 14px;
+    background: var(--school-surface); color: var(--school-fg); cursor: pointer;
 
-  // A status line, not a trophy. It marks the transition and then gets out of
-  // the way so the released shelves are what the eye lands on.
-  &__done {
-    display: flex; align-items: baseline; gap: 0.6rem;
-    padding: 0.85rem 1rem; border-radius: 12px;
-    background: var(--school-surface); border-left: 4px solid var(--school-accent);
-  }
-  &__done-mark { margin: 0; font-size: 1.15rem; font-weight: 700; color: var(--school-accent); }
-  &__done-sub { margin: 0; color: var(--school-muted); font-size: 0.95rem; }
-
-  // Sized to its content, NOT flex:1. Claiming the slack pushed everything
-  // after it to the floor of an 800px panel, stranding the last control alone
-  // at the bottom of a void. Content stacks from the top; leftover space is
-  // just leftover space.
-  &__explore { flex: 0 0 auto; }
-
-  // Adults only (group_label). Quiet, and directly under the shelves rather
-  // than pinned to the bottom edge — it is a supervision tool, not something
-  // to put in front of the person being supervised.
-  &__family {
-    align-self: flex-start; min-height: 56px; padding: 0 1rem;
-    border: 1px solid var(--school-border); border-radius: 12px;
-    background: transparent; color: var(--school-muted);
-    font-size: 0.95rem; cursor: pointer;
+    // Greyed, not hidden: the curriculum's shape stays visible even where
+    // nothing is shelved yet (the registry convention).
+    &.is-empty { opacity: 0.45; cursor: default; }
   }
 
-  // Unclaimed: the roster is the front door.
-  &--unclaimed { align-items: center; justify-content: center; text-align: center; gap: 1.5rem; }
-  &__greeting { margin: 0; font-size: 1.8rem; font-weight: 800; }
+  &__subject-label { margin: 0; font-size: 1.35rem; font-weight: 800; }
+  &__subject-hint { margin: 0; color: var(--school-muted); font-size: 0.95rem; }
+
+  &__rail { display: flex; flex-direction: column; gap: 0.85rem; min-height: 0; }
+
+  &__library {
+    display: flex; flex-direction: column; align-items: flex-start; gap: 0.35rem;
+    padding: 1rem 1.25rem; text-align: left;
+    border: 1px solid var(--school-border); border-radius: 14px;
+    background: var(--school-surface-2); color: var(--school-fg); cursor: pointer;
+  }
+}
+
+// --- the student panel: identity + up-next + facts --------------------------
+.school-rail {
+  &__student {
+    flex: 1; display: flex; flex-direction: column; gap: 0.75rem;
+    padding: 1rem; border: 1px solid var(--school-border); border-radius: 14px;
+    background: var(--school-surface);
+
+    &--unclaimed { align-items: center; justify-content: center; text-align: center; }
+  }
+
+  &__ask { margin: 0; font-size: 1.3rem; font-weight: 800; }
   &__claim {
-    min-height: 72px; padding: 0 2rem;
+    min-height: 64px; padding: 0 1.5rem;
     border: none; border-radius: 12px;
     background: var(--school-accent); color: var(--school-accent-ink);
-    font-size: 1.2rem; font-weight: 700; cursor: pointer;
+    font-size: 1.05rem; font-weight: 700; cursor: pointer;
+  }
+
+  &__identity {
+    display: flex; align-items: center; gap: 0.6rem;
+    padding: 0.25rem 0; border: none; background: transparent;
+    color: var(--school-fg); cursor: pointer; text-align: left;
+  }
+  &__name { font-size: 1.15rem; font-weight: 800; flex: 1; }
+  &__more { color: var(--school-muted); font-size: 0.9rem; }
+
+  &__next {
+    display: flex; flex-direction: column; align-items: flex-start; gap: 0.35rem;
+    padding: 1rem; text-align: left;
+    border: none; border-radius: 12px;
+    background: var(--school-accent); color: var(--school-accent-ink); cursor: pointer;
+
+    // Blocked shows its remedy AS the action — a detour, not a failure.
+    &.is-blocked { background: var(--school-warn); color: #241a05; }
+    &:disabled { opacity: 0.6; cursor: default; }
+  }
+  &__next-tag { font-size: 0.8rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; opacity: 0.75; }
+  &__next-course { font-size: 0.95rem; opacity: 0.85; }
+  &__next-action { font-size: 1.25rem; font-weight: 800; line-height: 1.25; }
+  &__next-count { font-size: 0.9rem; opacity: 0.85; }
+
+  &__done {
+    padding: 0.85rem 1rem; border-radius: 12px;
+    background: var(--school-surface-2); border-left: 4px solid var(--school-accent);
+  }
+  &__done-mark { margin: 0; font-size: 1.1rem; font-weight: 700; color: var(--school-accent); }
+  &__done-sub { margin: 0; color: var(--school-muted); font-size: 0.9rem; }
+
+  &__facts {
+    display: flex; flex-direction: column; gap: 0.25rem; margin-top: auto;
+    color: var(--school-muted); font-size: 0.9rem;
   }
 }
 
-.school-next {
-  display: flex; flex-direction: column; align-items: flex-start; gap: 0.4rem;
-  width: 100%; text-align: left; cursor: pointer;
-  border: none; border-radius: 16px;
-  background: var(--school-surface); color: var(--school-fg);
+// --- subject / library pages -------------------------------------------------
+.school-subject {
+  display: flex; flex-direction: column; gap: 1.5rem;
 
-  &--primary {
-    padding: 1.75rem;
-    background: var(--school-accent); color: var(--school-accent-ink);
+  &--empty { align-items: center; justify-content: center; min-height: 60%; color: var(--school-muted); }
+
+  &__group { display: flex; flex-direction: column; gap: 0.5rem; }
+  &__heading {
+    margin: 0; font-size: 0.85rem; color: var(--school-muted);
+    text-transform: uppercase; letter-spacing: 0.06em;
   }
-  &--secondary { flex: 1 1 16rem; min-height: 96px; padding: 1rem; }
-
-  // A blocked card still shows its remedy AS the action, so it is never a wall
-  // without a sign. Warn, not danger: it is a detour, not a failure.
-  &.is-blocked { background: var(--school-warn); color: #241a05; }
-  &:disabled { opacity: 0.6; cursor: default; }
-
-  &__course { font-size: 1rem; opacity: 0.85; }
-  &__action { font-size: 1.5rem; font-weight: 800; line-height: 1.25; }
-  &--secondary &__action { font-size: 1.15rem; font-weight: 700; }
-  &__detail { font-size: 1rem; opacity: 0.85; }
-
-  &__bar {
-    display: block; width: 100%; height: 10px; margin-top: 0.5rem;
-    border-radius: 999px; background: rgba(0, 0, 0, 0.18); overflow: hidden;
-  }
-  &__bar-fill { display: block; height: 100%; background: currentColor; }
-  &__count { font-size: 0.95rem; opacity: 0.85; }
-}
-
-// Demoted while work is outstanding; full size once it is done.
-.school-browse-grid {
-  &.is-compact .school-home__grid { gap: 0.5rem; }
-  &.is-compact .school-home__tile { min-height: 84px; padding: 0.75rem; }
-  &.is-compact .school-home__hint { display: none; }
 }

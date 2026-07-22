@@ -1,8 +1,14 @@
-/** Grid of banks. Each card offers Quiz and Cards. Guests get generic only. */
+/**
+ * Grid of banks. Each card offers Quiz and Cards. Guests get generic only.
+ *
+ * `subjectFilter` narrows by curriculum shelf: undefined = all banks (the
+ * original behavior), a subject id = only that shelf, null = untagged only
+ * (the Library's Practice group).
+ */
 import { useEffect, useRef, useState } from 'react';
 import { schoolApi } from '../schoolApi.js';
 
-export default function BankBrowser({ guestOnly, onLaunch, notice }) {
+export default function BankBrowser({ guestOnly, onLaunch, notice, subjectFilter }) {
   const [banks, setBanks] = useState(null);
   useEffect(() => {
     let alive = true;
@@ -30,7 +36,10 @@ export default function BankBrowser({ guestOnly, onLaunch, notice }) {
   };
 
   if (banks === null) return <div className="school-browse school-browse--loading">Loading…</div>;
-  if (banks.length === 0) {
+  const visible = subjectFilter === undefined
+    ? banks
+    : banks.filter((b) => (subjectFilter === null ? !b.subject : b.subject === subjectFilter));
+  if (visible.length === 0) {
     return (
       <div className="school-browse school-browse--empty">
         <p>No quizzes yet.</p>
@@ -42,7 +51,7 @@ export default function BankBrowser({ guestOnly, onLaunch, notice }) {
     <div className="school-browse">
       {notice && <div className="school-browse__notice">{notice}</div>}
       <div className="school-browse__grid">
-        {banks.map((b) => (
+        {visible.map((b) => (
           <div key={b.id} className="school-browse__card">
             <h3 className="school-browse__title">{b.title}</h3>
             <p className="school-browse__meta">{b.itemCount} items{b.audience === 'generic' ? ' · anyone' : ''}</p>
