@@ -48,18 +48,17 @@ const TEMPLATES = [
   { quality: 'augmented7',   intervals: [0, 4, 8, 10],    label: '7 ♯5' },
   { quality: 'dominant7b5',  intervals: [0, 4, 6, 10],    label: '7 ♭5' },
   { quality: 'dominant7sus4', intervals: [0, 5, 7, 10],   label: '7 sus4' },
-  // ── sixths: DELIBERATELY ABSENT ─────────────────────────────────────────────
-  // A sixth chord is a minor 7th read from its own 6th — the two templates
-  // describe the SAME pitch-class set from different roots, ALWAYS:
-  //     sixth  [0,4,7,9] == minor7   [0,3,7,10] rooted a minor 3rd below
-  //     minor6 [0,3,7,9] == minor7b5 [0,3,6,10] rooted a minor 3rd below
-  // Keeping both made the name depend on which reading happened to be in root
-  // position, so C-E-G-A named "C 6" but the same set over F named "F 6" instead
-  // of the D minor 7 a player would call it. We resolve the ambiguity ONE way:
-  // the minor-7 reading always wins, and the bass shows up as a slash.
-  //     C-E-G-A -> "A minor 7 / C"      F-A-C-D -> "D minor 7 / F"
-  // Cost, accepted knowingly: "C 6" and "C minor 6" are no longer producible
-  // names. 6/9 is unaffected — it has no minor-7 equivalent in this vocabulary.
+  // ── sixths ────────────────────────────────────────────────────────────────
+  // These share a pitch-class set with a minor 7th rooted a minor 3rd below:
+  //     sixth  [0,4,7,9] == minor7   [0,3,7,10]
+  //     minor6 [0,3,7,9] == minor7b5 [0,3,6,10]
+  // That is NOT a reason to drop them. This module resolves shared sets by the
+  // BASS everywhere — C-D-G is "C sus2" or "G sus4"; a diminished 7th has four
+  // names depending on which tone is lowest — and sixths follow the same rule.
+  // C-E-G-A over C is "C 6"; the same notes over A are "A minor 7". Both are
+  // what a player would call them, and root position (pickBest) decides.
+  { quality: 'sixth',        intervals: [0, 4, 7, 9],     label: '6' },
+  { quality: 'minor6',       intervals: [0, 3, 7, 9],     label: 'minor 6' },
   // ── added tone ──────────────────────────────────────────────────────────────
   { quality: 'add9',         intervals: [0, 2, 4, 7],     label: 'add9' },
   { quality: 'minorAdd9',    intervals: [0, 2, 3, 7],     label: 'minor add9' },
@@ -86,12 +85,15 @@ const TEMPLATES = [
 /**
  * Position of `bassPc` within the chord's stacked tones (root + intervals),
  * used as the inversion index. Root position = 0; next chord tone up = 1; etc.
- * A bass that is not a chord tone reports 0 (root position, no slash).
+ *
+ * Returns -1 when the bass is NOT a chord tone. That case must not be reported
+ * as 0: claiming root position for a bass the chord cannot explain is a lie, and
+ * it used to let a reading that ignored the bass outrank one that accounted for
+ * it (C-C#-E-A named "A major", a name containing neither the C nor the C#).
  */
 function inversionOf(root, template, bassPc) {
   const tones = template.intervals.map((iv) => mod12(root + iv));
-  const idx = tones.indexOf(mod12(bassPc));
-  return idx < 0 ? 0 : idx;
+  return tones.indexOf(mod12(bassPc));
 }
 
 /** Score one (root, template) reading of `relSet` (intervals present above root). */
@@ -114,10 +116,12 @@ function evaluate(root, template, relSet, bassPc) {
     if (!missingOnlyFifth || missing > 1) return null; // only the P5 may be absent
     if (extra > 1) return null;                // at most one unexplained note
   }
+  const inversion = inversionOf(root, template, bassPc);
   return {
     root,
     template,
-    inversion: inversionOf(root, template, bassPc),
+    inversion,
+    explainsBass: inversion >= 0,
     matched,
     missing,
     extra,
@@ -125,11 +129,14 @@ function evaluate(root, template, relSet, bassPc) {
   };
 }
 
-/** Best reading of a candidate list: root position, then lowest inversion, then
- *  most tones present, then fewest unexplained, then the simplest chord. */
+/** Best reading of a candidate list: accounts for the bass FIRST (a reading that
+ *  can't explain the sounding bass note is always worse than one that can), then
+ *  root position, then lowest inversion, then most tones present, then fewest
+ *  unexplained, then the simplest chord. */
 function pickBest(candidates) {
   return candidates.sort((a, b) => (
-    (b.rootPosition - a.rootPosition)
+    (b.explainsBass - a.explainsBass)
+    || (b.rootPosition - a.rootPosition)
     || (a.inversion - b.inversion)
     || (b.matched - a.matched)
     || (a.extra - b.extra)
@@ -186,7 +193,9 @@ export function identifyChord(midiNotes) {
   let displayName = best.template.quality === 'power'
     ? `${rootName}5`
     : `${rootName} ${best.template.label}`;
-  if (best.inversion > 0) displayName += ` / ${PITCH_CLASS_NAMES[bassPc]}`;
+  // Slash whenever the bass isn't the root — that covers real inversions AND a
+  // bass the chord has no tone for (which must never read as root position).
+  if (mod12(bassPc) !== best.root) displayName += ` / ${PITCH_CLASS_NAMES[bassPc]}`;
 
   return {
     root: best.root,
