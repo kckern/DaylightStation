@@ -71,6 +71,28 @@ describe('annotateLocks', () => {
     expect(result[4].lockReason).toBe('Pass the quiz for “Act 3” first');
   });
 
+  it('missing-quiz variant: current unit watched but bankless (needsQuiz) -> reason asks for the quiz', () => {
+    const completedFlags = [true, true, false, false, false];
+    const gateInfo = units.map((u, i) => (i === 2
+      ? { hasQuiz: false, gateSatisfied: false, needsQuiz: true, played: true }
+      : { hasQuiz: false, gateSatisfied: true }));
+    const result = annotateLocks(units, completedFlags, CATEGORIES.course, gateInfo);
+
+    expect(result[2]).toEqual({ locked: false, current: true, lockReason: null });
+    expect(result[3].lockReason).toBe('“Act 3” is waiting for its quiz — request one to move on');
+    expect(result[4].lockReason).toBe('“Act 3” is waiting for its quiz — request one to move on');
+  });
+
+  it('missing-quiz but UNwatched current unit -> reason is still "finish it" (watching is the first blocker)', () => {
+    const completedFlags = [true, true, false, false, false];
+    const gateInfo = units.map((u, i) => (i === 2
+      ? { hasQuiz: false, gateSatisfied: false, needsQuiz: true, played: false }
+      : { hasQuiz: false, gateSatisfied: true }));
+    const result = annotateLocks(units, completedFlags, CATEGORIES.course, gateInfo);
+
+    expect(result[3].lockReason).toBe('Finish “Act 3” first');
+  });
+
   it('single-unit material never locks, whether complete or not', () => {
     const one = orderUnits([{ id: 'solo', index: 0, title: 'I Survived' }]);
     const gateInfo = [{ hasQuiz: true, gateSatisfied: false }];

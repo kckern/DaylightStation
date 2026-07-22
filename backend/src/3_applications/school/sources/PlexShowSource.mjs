@@ -105,6 +105,11 @@ export class PlexShowSource {
       title: item.title,
       durationMs: item.duration != null ? item.duration * 1000 : null, // seconds -> ms (PlexAdapter.mjs:858)
       group: item.metadata?.parentTitle ?? null, // season title, for episode items
+      // Episode thumbnail for the unit grid. `item.thumbnail` is already
+      // app-proxied by PlexAdapter (episode→season→show fallback chain,
+      // PlexAdapter.mjs:847-849 — do not prefix it again). Still no
+      // watch-state fields — the allow-list holds.
+      thumb: item.thumbnail ?? null,
     }));
 
     const durationMs = units.reduce((sum, u) => sum + (u.durationMs ?? 0), 0);

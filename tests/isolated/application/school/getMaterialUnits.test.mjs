@@ -160,6 +160,32 @@ describe('GetMaterialUnits.execute — quiz-gated (course) material', () => {
   });
 });
 
+describe('GetMaterialUnits.execute — course unit with NO authored quiz (needsQuiz)', () => {
+  it('fully watched but bankless: incomplete, successors locked with the request-a-quiz reason', async () => {
+    const material = { id: 'plex:489954', title: 'Cash Course', category: 'course' };
+    const full = { ...material, units: makeUnits() };
+    const catalog = makeCatalog(material);
+    const sources = makeSources(full);
+    const bankIndex = buildBankIndex([]); // nothing authored yet
+    const progressStore = makeProgressStore({
+      'plex:u1': { percent: 100, playhead: 60000 },
+      'plex:u2': { percent: 0, playhead: 0 },
+      'plex:u3': { percent: 0, playhead: 0 },
+    });
+    const attemptsReader = { read: () => [] };
+
+    const useCase = new GetMaterialUnits({ catalog, sources, config: CONFIG, progressStore, bankIndex, attemptsReader, logger });
+    const { units } = await useCase.execute({ materialId: material.id, userId: 'kid1' });
+
+    expect(units[0].completed).toBe(false); // watched, but the gate is unmet in principle
+    expect(units[0].needsQuiz).toBe(true);
+    expect(units[0].quiz).toBeNull();
+    expect(units[0].current).toBe(true);
+    expect(units[1].locked).toBe(true);
+    expect(units[1].lockReason).toMatch(/waiting for its quiz/);
+  });
+});
+
 describe('GetMaterialUnits.execute — reference material', () => {
   it('is never locked and never completed, regardless of percent or gates', async () => {
     const material = { id: 'plex:cliffnotes-1', title: 'Cliff Notes: Hamlet', category: 'reference' };

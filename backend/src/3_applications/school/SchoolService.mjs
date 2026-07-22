@@ -36,6 +36,38 @@ export class SchoolService {
     return this.#userService.getHouseholdRoster();
   }
 
+  /**
+   * Record a child's request for a quiz on a unit that has none (quizzes are
+   * authored on demand — the request list is the authoring backlog). Guests
+   * cannot request: there is nobody to attribute the interest to. One request
+   * per (user, unit); a repeat is acknowledged, not duplicated.
+   */
+  requestQuiz({ userId = null, unitId, materialId, unitTitle = null, materialTitle = null }) {
+    if (!userId) throw new GuestForbiddenError('Sign in to request a quiz');
+    if (!this.getRoster().some((u) => u.id === userId)) {
+      throw new ValidationError(`unknown user: ${userId}`);
+    }
+    if (!unitId || !materialId) throw new ValidationError('unitId and materialId are required');
+
+    const list = this.#ds.readQuizRequests();
+    if (list.some((r) => r.unitId === unitId && r.userId === userId)) {
+      return { requested: true, duplicate: true };
+    }
+    const entry = {
+      at: new Date(this.#now()).toISOString(),
+      userId, unitId, materialId, unitTitle, materialTitle,
+    };
+    this.#ds.saveQuizRequests([...list, entry]);
+    this.#logger.info?.('school.quiz.requested', entry);
+    return { requested: true, duplicate: false };
+  }
+
+  /** The request backlog, optionally scoped to one material. */
+  listQuizRequests({ materialId = null } = {}) {
+    const list = this.#ds.readQuizRequests();
+    return materialId ? list.filter((r) => r.materialId === materialId) : list;
+  }
+
   #loadBank(bankId) {
     const raw = this.#ds.readBankRaw(bankId);
     if (!raw) return null;

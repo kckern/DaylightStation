@@ -152,7 +152,7 @@ describe('PlexShowSource.getMaterial', () => {
       expect(unit).not.toHaveProperty('playhead');
       expect(unit).not.toHaveProperty('completedAt');
       expect(unit).not.toHaveProperty('lastPlayed');
-      expect(Object.keys(unit).sort()).toEqual(['durationMs', 'group', 'id', 'index', 'title']);
+      expect(Object.keys(unit).sort()).toEqual(['durationMs', 'group', 'id', 'index', 'thumb', 'title']);
     }
   });
 
