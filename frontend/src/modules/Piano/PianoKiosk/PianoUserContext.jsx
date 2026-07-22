@@ -6,7 +6,7 @@ import { resolveProfile } from './pianoUser.js';
 /**
  * Piano roster + current player.
  *
- * The piano kiosk has a roster (piano.yml → users.primary). Whoever is sitting
+ * The piano kiosk has a roster (household.yml → users). Whoever is sitting
  * down picks themselves; their recordings, lesson progress, and preferences are
  * all scoped to that user on the backend. The selection persists per piano (so a
  * given kiosk remembers who used it last) and defaults to the first on the roster.

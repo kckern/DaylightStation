@@ -168,14 +168,98 @@ static int  g_lastSentGrams = INT32_MIN;
 static bool g_lastSentStable = false;
 static uint32_t g_lastSentMs = 0;
 
+// ---- durability / hysteresis -------------------------------------------
+// Which settled readings are worth PERSISTING, as opposed to streaming.
+//
+// The live stream is intentionally chatty (EMIT_MIN_DELTA_G=1 plus a 10 s
+// heartbeat) because the nutribot prompt follows the weight up in real time.
+// Persistence wants the opposite: one event per real placement. That filter
+// used to live only backend-side (persistence.emptyThresholdG / dedupDeltaG in
+// scales.yml), which is why a pan resting at 4 g yields dozens of emissions and
+// exactly one history row.
+//
+// Keeping the filter only on the backend is what made the relay fragile: with
+// no on-device notion of "durable", a WS outage could only queue raw emissions
+// -- six identical heartbeats for one cup -- or nothing at all. Deciding
+// durability here means the outage queue holds one event per placement.
+//
+// Defaults mirror config.example.yml. They are #ifndef so a future
+// gen-config.mjs can promote them to the scales.yml SSOT without touching this.
+#ifndef EMPTY_THRESHOLD_G
+#define EMPTY_THRESHOLD_G 2      // at/below this the pan counts as empty
+#endif
+#ifndef DEDUP_DELTA_G
+#define DEDUP_DELTA_G 2          // min change from the last durable value
+#endif
+static int  g_lastDurableGrams = INT32_MIN;
+static bool g_panEmpty = true;
+
+/**
+ * Classify a reading, updating hysteresis state. Called for EVERY settled
+ * reading regardless of link state -- if it only ran while the socket was down
+ * the baseline would be stale the moment an outage began.
+ */
+static bool markDurable(int grams, bool stable) {
+  if (!stable) return false;                 // mid-placement noise is never durable
+  if (grams <= EMPTY_THRESHOLD_G) {
+    // Emit the empty TRANSITION once: it ends a placement backend-side. Emitting
+    // every resting frame would be the heartbeat problem in a new costume.
+    bool transition = !g_panEmpty;
+    g_panEmpty = true;
+    g_lastDurableGrams = INT32_MIN;
+    return transition;
+  }
+  if (g_panEmpty || g_lastDurableGrams == INT32_MIN ||
+      abs(grams - g_lastDurableGrams) >= DEDUP_DELTA_G) {
+    g_panEmpty = false;
+    g_lastDurableGrams = grams;
+    return true;
+  }
+  return false;
+}
+
 static const char* unitStr(uint8_t u) {
   switch (u) { case 0x00: return "g"; case 0x02: return "ml"; default: return "?"; }
 }
 
+// ---- durable event queue (scale settled + button) -----------------------
+// Barcode scans already survive a WS outage via g_pending/queueScan. Scale
+// readings and button presses did NOT: sendReading/sendButton returned early on
+// !wsConnected, so the event was dropped with no queue, no counter, and no log
+// line -- the relayLogf sat AFTER the early return. Worse, flashLed fired
+// BEFORE it, so the LED blinked "sent" for something that never left the chip.
+//
+// TTL is the one asymmetry with scans. A late scan is harmless -- a UPC means
+// the same thing five minutes on. A late WEIGHT is actively wrong: the bridge
+// would read it as a fresh placement and prompt for food already eaten. So a
+// reading past its TTL is discarded and counted rather than replayed.
+#define PENDING_EVENT_MAX  16
+#define PENDING_EVENT_TTL_MS 120000UL     // 2 min; past this a weight is a lie
+#define PEV_READING 0
+#define PEV_BUTTON  1
+struct PendingEvent { uint8_t kind; int32_t grams; uint8_t unit; char press[12]; uint32_t ms; };
+static PendingEvent g_pev[PENDING_EVENT_MAX];
+static uint8_t  g_pevHead = 0;
+static uint8_t  g_pevCount = 0;
+static uint32_t g_pevDropped = 0;      // lost to queue overflow
+static uint32_t g_pevExpired = 0;      // dropped by TTL on flush
+static uint32_t g_droppedReadings = 0; // settled-but-not-durable, lost offline
+static uint32_t g_droppedButtons = 0;  // should stay 0; buttons always queue
+
+static void queueEvent(const PendingEvent& e) {
+  if (g_pevCount == PENDING_EVENT_MAX) {
+    g_pevHead = (g_pevHead + 1) % PENDING_EVENT_MAX;   // drop OLDEST: staler is worth less
+    g_pevCount--;
+    g_pevDropped++;
+  }
+  g_pev[(g_pevHead + g_pevCount) % PENDING_EVENT_MAX] = e;
+  g_pevCount++;
+}
+
 // ---- send helpers -------------------------------------------------------
-static void sendReading(int grams, bool stable, uint8_t unit) {
-  flashLed(CRGB::Green);
-  if (!wsConnected) return;
+/** Wire-format a reading. `capturedMs` is capture time, not send time. */
+static bool txReading(int grams, bool stable, uint8_t unit, uint32_t capturedMs) {
+  if (!wsConnected) return false;
   JsonDocument doc;
   doc["source"] = "food-scale-relay";
   doc["type"]   = "scale";
@@ -183,26 +267,66 @@ static void sendReading(int grams, bool stable, uint8_t unit) {
   doc["grams"]  = grams;
   doc["stable"] = stable;
   doc["unit"]   = unitStr(unit);
-  doc["ts"]     = (uint32_t)millis();
+  doc["ts"]     = capturedMs;
+  uint32_t delayed = millis() - capturedMs;
+  if (delayed > 1000) doc["delayed_ms"] = delayed;   // present only if it waited
   String out; serializeJson(doc, out);
-  webSocket.sendTXT(out);
+  return webSocket.sendTXT(out);
+}
+
+static void sendReading(int grams, bool stable, uint8_t unit, bool durable) {
+  if (!wsConnected) {
+    // Offline. Persist only what a placement actually means; the live stream is
+    // worthless once stale. LED tells the truth: amber = held, red = dropped.
+    if (durable) {
+      PendingEvent e{}; e.kind = PEV_READING; e.grams = grams; e.unit = unit; e.ms = millis();
+      queueEvent(e);
+      relayLogf("[scale] OFFLINE queued %d g (%u held)", grams, (unsigned)g_pevCount);
+      flashLed(CRGB::Orange);
+    } else {
+      g_droppedReadings++;
+      flashLed(CRGB::Red, 30);
+    }
+    return;
+  }
+  txReading(grams, stable, unit, millis());
+  flashLed(CRGB::Green);
   relayLogf("[scale] %d g %s unit=%s", grams, stable ? "stable" : "changing", unitStr(unit));
   g_lastSentGrams = grams; g_lastSentStable = stable; g_lastSentMs = millis();
 }
 
-static void sendButton(const char* press) {
-  flashLed(CRGB::Purple);
-  if (!wsConnected) return;
+static bool txButton(const char* press, uint32_t capturedMs) {
+  if (!wsConnected) return false;
   JsonDocument doc;
   doc["source"] = "food-scale-relay";
   doc["type"]   = "button";
   doc["id"]     = SCALE_ID;
   doc["press"]  = press;
-  doc["ts"]     = (uint32_t)millis();
+  doc["ts"]     = capturedMs;
+  uint32_t delayed = millis() - capturedMs;
+  if (delayed > 1000) doc["delayed_ms"] = delayed;
   String out; serializeJson(doc, out);
-  webSocket.sendTXT(out);
+  return webSocket.sendTXT(out);
+}
+
+static void sendButton(const char* press) {
+  // Buttons queue UNCONDITIONALLY and are exempt from the reading TTL. The
+  // button is the force-capture -- a deliberate "log this now", used precisely
+  // when the auto heuristic would miss the measurement. Dropping one silently
+  // (which is what the old early return did, behind a purple "sent" flash) is
+  // the worst failure this relay had.
   strncpy(g_lastButton, press, sizeof(g_lastButton)-1); g_lastButton[sizeof(g_lastButton)-1]=0;
   g_lastButtonMs = millis();
+  if (!wsConnected) {
+    PendingEvent e{}; e.kind = PEV_BUTTON; e.ms = millis();
+    strncpy(e.press, press, sizeof(e.press)-1);
+    queueEvent(e);
+    relayLogf("[btn] OFFLINE queued %s (%u held)", press, (unsigned)g_pevCount);
+    flashLed(CRGB::Orange);
+    return;
+  }
+  txButton(press, millis());
+  flashLed(CRGB::Purple);
   relayLogf("[btn] %s", press);
 }
 
@@ -289,6 +413,36 @@ static void flushPendingScans() {
               (unsigned long)((millis() - p.ms) / 1000));
     g_pendingHead = (g_pendingHead + 1) % PENDING_SCAN_MAX;
     g_pendingCount--;
+  }
+}
+
+static void flushPendingEvents() {
+  while (g_pevCount && wsConnected) {
+    PendingEvent& e = g_pev[g_pevHead];
+    uint32_t lateMs = millis() - e.ms;
+
+    // Readings expire; buttons never do. Replaying a two-minute-old weight would
+    // post a prompt for food already eaten -- a wrong entry is worse than a
+    // missing one. A button is a human decision and stays valid.
+    if (e.kind == PEV_READING && lateMs > PENDING_EVENT_TTL_MS) {
+      relayLogf("[scale] dropped stale queued %ld g (%lus late)",
+                (long)e.grams, (unsigned long)(lateMs / 1000));
+      g_pevExpired++;
+      g_pevHead = (g_pevHead + 1) % PENDING_EVENT_MAX;
+      g_pevCount--;
+      continue;
+    }
+
+    bool sent = (e.kind == PEV_BUTTON) ? txButton(e.press, e.ms)
+                                       : txReading(e.grams, true, e.unit, e.ms);
+    if (!sent) break;                     // socket refused — keep it queued
+    if (e.kind == PEV_BUTTON) {
+      relayLogf("[btn] flushed queued %s (%lus late)", e.press, (unsigned long)(lateMs / 1000));
+    } else {
+      relayLogf("[scale] flushed queued %ld g (%lus late)", (long)e.grams, (unsigned long)(lateMs / 1000));
+    }
+    g_pevHead = (g_pevHead + 1) % PENDING_EVENT_MAX;
+    g_pevCount--;
   }
 }
 
@@ -621,6 +775,15 @@ static void handleStatus() {
   // and looks identical to "the scale is switched off".
   scale["scan_enabled"] = g_bleScanEnabled;
   scale["scan_active"] = g_scanActive;
+  // Offline durability. Previously a weight or a button press during a WS outage
+  // vanished with no counter and no log line, behind a green "sent" LED.
+  scale["pending_events"] = g_pevCount;
+  scale["queue_dropped"] = g_pevDropped;      // overflowed the 16-slot queue
+  scale["queue_expired"] = g_pevExpired;      // past TTL on flush; a late weight lies
+  scale["dropped_readings"] = g_droppedReadings;  // non-durable, lost offline (expected)
+  scale["dropped_buttons"] = g_droppedButtons;    // should always be 0
+  scale["pan_empty"] = g_panEmpty;
+  if (g_lastDurableGrams != INT32_MIN) scale["last_durable_g"] = g_lastDurableGrams;
   if (g_scanActive) scale["scan_age_s"] = (uint32_t)((millis() - g_scanStartedMs) / 1000);
 
   JsonObject barcode = doc["barcode"].to<JsonObject>();
@@ -829,7 +992,7 @@ void setup() {
     uint8_t unit = unitArg == "ml" ? 0x02 : 0x00;
     // Emit directly rather than faking the notify state: this deliberately
     // bypasses the g_bleConnected gate so it works with no scale present.
-    sendReading(grams, stable, unit);
+    sendReading(grams, stable, unit, markDurable(grams, stable));
     char out[96];
     snprintf(out, sizeof(out), "{\"ok\":true,\"simulated\":\"scale\",\"grams\":%d,\"stable\":%s}",
              grams, stable ? "true" : "false");
@@ -914,6 +1077,7 @@ void loop() {
   // Drain anything buffered during an outage, oldest first.
   if (g_pendingCount && wsConnected) flushPendingScans();
 #endif
+  if (g_pevCount && wsConnected) flushPendingEvents();
 
   // Emit decoded readings: on meaningful change / stable-flag flip / heartbeat.
   // Gated on a live BLE link: g_haveReading latches, so without this the
@@ -925,7 +1089,10 @@ void loop() {
     bool changed   = abs(grams - g_lastSentGrams) >= EMIT_MIN_DELTA_G;
     bool flip      = stable != g_lastSentStable;
     bool heartbeat = millis() - g_lastSentMs >= HEARTBEAT_MS;
-    if (changed || flip || heartbeat) sendReading(grams, stable, unit);
+    // markDurable runs on EVERY settled reading, not only when we transmit, so
+    // the hysteresis baseline cannot go stale while the socket is healthy.
+    bool durable   = markDurable(grams, stable);
+    if (changed || flip || heartbeat || durable) sendReading(grams, stable, unit, durable);
   }
 
 }

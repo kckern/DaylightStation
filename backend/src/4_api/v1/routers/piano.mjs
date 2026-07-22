@@ -6,7 +6,7 @@ import { musicXmlToNotes } from '#shared/music/musicXmlToNotes.mjs';
 /**
  * Piano kiosk API.
  *
- * Per-user, not per-device: the piano has a roster (piano.yml → users.primary,
+ * Per-user, not per-device: the piano has a roster (household.yml → users,
  * mirroring fitness) and each player gets their own recordings, lesson progress,
  * and preferences under data/users/{id}/apps/piano/. The browser owns Web-MIDI;
  * this layer is plain CRUD.

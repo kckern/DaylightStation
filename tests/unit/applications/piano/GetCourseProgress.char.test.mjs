@@ -19,8 +19,12 @@ const recentA = iso(1 * DAY);   // most recent
 const recentB = iso(2 * DAY);   // recent, older than A
 const stale = iso(30 * DAY);    // outside the 7-day window
 
+// The roster now comes from the HOUSEHOLD, not from piano.yml — one ordered
+// list that every picker and overlay in the house shares. Piano restating it
+// as `users.primary` was the second source of truth that let School drift.
+const householdUsers = ['alice', 'bob', 'carol'];
+
 const pianoConfig = {
-  users: { primary: ['alice', 'bob', 'carol'] },
   videos: {
     sequential_labels: ['Sequential'],
     progress_overlay: { recency_days: 7, min_completed: 1, max_avatars: 2 },
@@ -36,6 +40,7 @@ const profiles = {
 
 const configService = {
   getHouseholdAppConfig: () => pianoConfig,
+  getHouseholdUsers: () => householdUsers,
   getUserProfile: (id) => profiles[id] || null,
 };
 

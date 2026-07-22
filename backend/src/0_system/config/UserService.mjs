@@ -41,6 +41,48 @@ export class UserService {
   }
 
   /**
+   * The household roster, in household order — the SINGLE source of truth for
+   * both who is in the household and what order they appear in.
+   *
+   * The order lives in `household.yml → users` because it is a fact about the
+   * family, not about any one app. Every picker in the system must agree: a
+   * child learns where their own face is and reaches for that position, so two
+   * apps disagreeing is not a cosmetic difference, it is a misclick.
+   *
+   * Apps that serve a SUBSET (fitness, say) filter this list rather than
+   * restating it — filtering preserves the household order for free, whereas a
+   * second list silently redefines it. That is exactly how Piano and School
+   * drifted: Piano restated the roster as `piano.yml → users.primary` and
+   * School re-derived it alphabetically from display names it never rendered.
+   *
+   * @param {string|null} [householdId]
+   * @param {{only?: string[]}} [opts] - restrict to these usernames, in
+   *        household order. Unknown names are dropped, not appended.
+   * @returns {Array<object>} hydrated profiles, household order
+   */
+  getHouseholdRoster(householdId = null, { only = null } = {}) {
+    const ordered = this.#configService.getHouseholdUsers(householdId) || [];
+    const allow = only ? new Set(only.map(String)) : null;
+    return ordered
+      .map((entry) => (typeof entry === 'object' && entry !== null ? entry.id ?? entry.name : entry))
+      .filter((id) => id && (!allow || allow.has(String(id))))
+      .map((id) => {
+        const profile = this.getProfile(String(id));
+        if (!profile) {
+          logger.warn('user.roster_profile_missing', { username: id });
+          return null;
+        }
+        return {
+          id: profile.username ?? String(id),
+          name: profile.display_name || profile.username || String(id),
+          group_label: profile.group_label ?? null,
+          birthyear: profile.birthyear ?? null,
+        };
+      })
+      .filter(Boolean);
+  }
+
+  /**
    * Hydrate a list of user IDs into full user objects
    * Combines profile data with any inline data provided
    *
