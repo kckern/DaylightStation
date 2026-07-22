@@ -18,15 +18,15 @@ backend:
 
 scanners:
   study-scantron:
-    label: "Study OMR 1200"
+    label: "Study OMR-1100"
     device:
       board: m5-atom-lite            # ESP32-PICO-D4; button GPIO39, RGB GPIO27
     serial:
-      # ⚠️ ALL UNVERIFIED until sniffed on the real OMR 1200. Start in sniff mode,
-      # watch the `raw` bus messages while feeding sheets, then lock these in.
-      baud: 9600                     # GUESS — try 1200 / 2400 / 9600
-      framing: "8N1"                 # GUESS — vintage OMR gear is often 7E1
+      # VERIFIED 2026-07-21 on the real OMR-1100 (fw 1.04) and confirmed by the
+      # operator manual. 8N1 produces SILENCE, not garbage — don't "correct" it.
+      baud: 9600
+      framing: "7E1"                 # 7 data bits, EVEN parity, 1 stop
       rx_pin: 22                     # ATOM base UART RX <- VERIFY vs M5 ATOMIC RS232 base pinout
-      tx_pin: 19                     # ATOM base UART TX <- VERIFY (unused if scanner is send-only)
-    sniff_mode: true                 # forward raw hex to the bus (protocol discovery)
+      tx_pin: 19                     # ATOM base UART TX <- REQUIRED (mode download is sent on TX)
+    sniff_mode: false                # decode sheets; set true only to re-investigate framing
     topic: scantron

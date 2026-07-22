@@ -1,28 +1,85 @@
 # scantron-relay — OMR bubble-sheet reader → DaylightStation event bus
 
-> **Status: scaffold — hardware chosen, protocol not yet captured.** The RS-232
-> transport is fixed (below); the **serial frame format is TBD** until captured
-> on the real scanner. Per `feedback_dont_assert_unverified_device_facts`, don't
-> write byte meanings here until they're measured on hardware.
+> **Status (2026-07-21): protocol SOLVED and verified on hardware — cards decode
+> correctly.** The reader is a **Chatsworth Data OMR-1100** (firmware
+> `Version 1.04, Wed Oct 2 1996`). Link is **9600 7E1**, and a conversion mode
+> must be downloaded before the reader emits anything at all. Vendor manuals are
+> archived in [`docs/recovered/`](./docs/recovered/). The ESP32 relay and the
+> backend dispatch are **not yet built**.
+>
+> **System reference — protocol, card spec, troubleshooting, and where to buy
+> cards — is `docs/reference/scantron/README.md` in the main repo docs; that doc
+> is authoritative.** This README covers building and flashing the relay.
+> Remaining work: `docs/_wip/plans/2026-07-21-scantron-relay-bringup.md`.
 
 An **M5Stack ATOM Lite** (ESP32-PICO-D4) taps the **RS-232 serial output** of a
-**Chatsworth Data OMR 1200** optical-mark-recognition (bubble-sheet / scantron)
+**Chatsworth Data OMR-1100** optical-mark-recognition (bubble-sheet / scantron)
 reader and streams decoded sheet results over **WebSocket** to the
 DaylightStation backend event bus (`/ws`). The backend re-broadcasts a
 `scantron` topic and persists completed reads.
 
-Same family as [`barcode-relay`](../barcode-relay/) and
+Same family as [`barcode-relay`](../content-barcode-relay/) and
 [`food-scale-relay`](../food-scale-relay/): **firmware only**, no host daemon,
 config-driven from the household SSOT — nothing hardcoded. Unlike those, the
 transport is plain **RS-232 serial** — no BLE bonding, no proprietary GATT — so
 it sidesteps the decode-transport wall that stalled barcode-relay.
 
 ```
-OMR 1200 ──DB9 RS-232──▶ MAX232 base ──TTL UART──▶ ATOM Lite ──WS /ws──▶ backend event bus
+OMR-1100 ──DB9 RS-232──▶ MAX232 base ──TTL UART──▶ ATOM Lite ──WS /ws──▶ backend event bus
                                                         │                     │ broadcast('scantron')
                                                         └─────────────────────┘   ├─▶ apps (live)
                                                                                    └─▶ history/scantron/<reader-id>/
 ```
+
+## The reader is READ-ONLY
+
+The OMR-1100 detects marks and ships them out the serial port. It does **not**
+print, imprint, endorse, score, or grade — there is no printer or marking
+mechanism in the unit. **All scoring is our job**, downstream in the backend.
+
+> The datasheet's "**Graded** index fiber read head" is an optics term
+> (graded-index optical fiber) and has nothing to do with grading tests. Don't
+> let it mislead you into expecting scoring support.
+
+Design consequence: the answer key lives in DaylightStation, not on the sheet or
+in the reader. The firmware emits *which positions were marked*; the backend
+maps positions → answers → score.
+
+## Form factor — 3-1/4" wide, and that's non-negotiable
+
+| | |
+|---|---|
+| **Form width** | **3-1/4"** (fixed) |
+| **Form length** | 5" to 14" |
+| **Scan area** | up to **12 × 105 mark positions** (body text says up to 126 rows) |
+| **Paper weight** | 18–100 lb (.004"–.010") |
+| **Sides read** | one (single-sided head) |
+
+**Standard Scantron forms do NOT fit.** The 882-E and its relatives are 4.25" or
+8.5" wide; the transport takes 3-1/4". We print our own forms.
+
+The datasheet's sanctioned pattern for full-size sheets:
+
+> Input forms may also be part of a larger 8 1/2" x 11" sheet using a
+> perforation at 3 1/4" to separate the input portion of the sheet from the Text
+> portion.
+
+i.e. questions/text on the big portion, a 3-1/4" answer strip perforated off to
+feed the reader.
+
+### ⚠️ Which optical variant do we have? (blocks form design)
+
+The OMR-1100 shipped in two styles, and this constrains printing more than paper
+size does:
+
+| Variant | Reads | Background printing |
+|---|---|---|
+| **Infra Red** | #2 pencil, punched slots, pre-printed marks — **no pen** | any color |
+| **Visible Red** | pencil **+ blue/black ballpoint and felt tip**, punched, pre-printed | **must be "warm red"** dropout ink |
+
+If ours is Visible Red, every form must use warm-red dropout or the reader will
+read our own gridlines as marks. **Determine this before designing any form** —
+see Step 0b in the bring-up checklist.
 
 ## Hardware
 
@@ -30,26 +87,60 @@ OMR 1200 ──DB9 RS-232──▶ MAX232 base ──TTL UART──▶ ATOM Lite
 |------|------|
 | **M5Stack ATOM Lite** (ESP32-PICO-D4) | relay MCU — WiFi + WS client (same board as food-scale-relay / barcode-relay) |
 | **M5Stack ATOMIC RS232 base** (MAX232) | TTL ↔ RS-232 level shifter, clips onto the ATOM |
-| **DB9 male screw-terminal breakout** | solderless tap of the OMR 1200's serial pins |
-| **Chatsworth Data OMR 1200** | the bubble-sheet scanner (serial output source) |
+| **DB9 male screw-terminal breakout** | solderless tap of the OMR-1100's serial pins |
+| **Chatsworth Data OMR-1100** | the bubble-sheet scanner (serial output source) |
 
 > An ATOMS3 Lite (ESP32-S3) also works but forks you onto a second toolchain for
 > no benefit — this relay needs only one UART + WiFi. Stick with the ATOM Lite.
 
-## Serial protocol (TBD — capture first)
+> **A USB-serial adapter is NOT a viable sniffer on the Apple-silicon Mac.** The
+> on-hand Keyspan USA-19H (VID `0x06cd`/PID `0x0121`) enumerates on USB but
+> creates no `/dev/cu.*` — it predates USB-CDC and its vendor kext was never
+> ported to DriverKit. Use the ATOM in sniff mode as the capture device, or an
+> FTDI/CP2102/CH340 adapter (a CH34x dext is already installed on that Mac).
 
-- **Transport:** RS-232, DB9. Baud / parity / framing **unknown** — sniff with a
-  USB-serial adapter + `pio device monitor` (or a logic analyzer) before coding.
-  OMR-1200-era readers commonly default to low baud (1200/9600, 7E1 or 8N1);
-  **verify, don't assume.**
-- **Frame format:** _TBD_ once captured. Record real bytes → document here.
-- Design write-up will live at `docs/_wip/plans/YYYY-MM-DD-scantron-relay-design.md`.
+## Serial protocol — SOLVED ✅ (verified on hardware 2026-07-21)
 
-## Messages sent to the bus (proposed)
+Unit: **OMR-1100, firmware "Version 1.04, Wed Oct 2 1996"**. Vendor manuals and
+DOS utilities recovered from the Wayback Machine and archived in
+[`docs/recovered/`](docs/recovered/) — `OMR1100Manual.pdf`,
+`OMR1100commandsB.pdf` (factory command set), `omr1102_techmanual.pdf` (48pp,
+the richest: download commands, Appendix A card/strobe spec, Hollerith + binary
+tables).
+
+- **Link: 9600 baud, 7 data bits, EVEN parity, 1 stop (7E1).** Power-up default,
+  confirmed by manual *and* by live query. **8N1 gives silence, not garbage** —
+  do not "correct" it.
+- **Command framing:**
+  - download: `0x12 <cmd> 0x12 'E'` (Ctrl-R, cmd, Ctrl-R, "E")
+  - factory/read-only: `0x12 ESC <cmd> 0x12 'E'`
+  - ack `G`+CR on success; `…?`+CR on rejection
+- **⚠️ Conversion modes are VOLATILE.** A freshly powered reader has *no* mode
+  loaded, so it transports cards and emits **nothing at all**. The host must
+  download one first. This was the entire cause of the long "reader scans but
+  sends zero bytes" hunt. Firmware sends `I00` (Binary-to-ASCII, all columns) at
+  boot and re-arms every 60 s while idle, so it self-heals if the reader is
+  power-cycled on its own.
+- **Record format (mode `I00`):** two bytes per column, CR-terminated. Bit 5
+  (`0x20`) is forced high so every byte is printable; a blank column is
+  `0x20 0x20`.
+  - byte 1: `0x01`=row12 `0x02`=row11 `0x04`=row0 `0x08`=row1 `0x10`=row2 `0x40`=row3
+  - byte 2: `0x01`=row4 `0x02`=row5 `0x04`=row6 `0x08`=row7 `0x10`=row8 `0x40`=row9
+  - Rows are Hollerith, far edge → strobe edge; **row 9 is nearest the timing track**.
+- Read-only queries worth knowing: `GETCONFIG` (baud/flags/timing/parity/
+  threshold), `GETTBLS`, `S` (status byte), `V` (version).
+- **Never** send `SETBAUD` / `SETFLAGS` / `SETPARITY` / `SETTHRESH` / `SETDECAY` /
+  `SETTMCH` / `PROGRAM` / `SETFACTORY` casually — they write EEPROM.
+
+## Messages sent to the bus
 
 ```json
-{"source":"scantron-relay","type":"sheet","id":"<reader-id>","answers":["A","C","B"],"ts":123}
+{"source":"scantron-relay","type":"sheet","id":"<reader-id>","columns":39,"markedColumns":37,"marks":[2048,1024,512]}
 ```
+
+`marks[]` is one 12-bit mask per column in physical top-to-bottom order:
+bit 0 = row 12 (far edge) … bit 11 = row 9 (strobe edge). Mapping columns to
+questions/answers is form-specific and belongs in the backend, not the relay.
 
 Backend dispatch (to be added at
 `backend/src/3_applications/hardware/scantronRelay.mjs`, wired in `app.mjs`)
@@ -71,28 +162,35 @@ pio run -e m5-atom -t upload --upload-port /dev/cu.usbserial-XXXX
 pio device monitor -b 115200        # watch bytes; first goal is a `raw` capture
 ```
 
-## Bring-up checklist (do this the day the hardware arrives)
+## Bring-up checklist
 
-Work top to bottom. The risk in this project is **not** the electronics (those
-are a copy of the other two relays) — it's concentrated in steps 0–2: *what the
-OMR 1200 actually emits, and at what serial settings.* Everything from step 3 on
-is a solved problem. Don't skip step 0.
+Work top to bottom. The electronics are a copy of the other two relays; the
+remaining risk is concentrated in *what the OMR-1100 emits and at what serial
+settings.*
 
-### Step 0 — Decide the mode question FIRST (before wiring anything)
+### Step 0 — Mode question: RESOLVED ✅
 
-Vintage OMR readers come in two flavors, and only one of them is viable here:
+Earlier versions of this doc worried the reader might be a dumb scan head
+streaming undecoded mark-timing to proprietary DOS software — the same
+proprietary-transport wall that stalled barcode-relay. **The datasheet settles
+it:** Data Output is *ASCII character / binary / download mask*, and the reader
+"detect[s] marks … and transfer[s] the data to a computer … for processing by
+application software." It decodes on-board. Proceed.
 
-- ✅ **Standalone / "data" mode** — the reader decodes marks itself and emits
-  **ASCII records** (form id + answer string) over serial. Plug in, sniff, win.
-- ❌ **Host-driven mode** — the reader is a dumb scan head that streams raw,
-  undocumented mark-timing to *proprietary DOS/Windows software* that does the
-  decoding. Tapping the serial line gets a meaningless binary firehose. This is
-  the same "proprietary transport" wall that stalled [`barcode-relay`](../barcode-relay/).
+### Step 0b — Identify the optical variant (do before designing forms)
 
-**How to tell:** power the reader up on its own, feed a marked sheet, and watch
-the serial line (step 3 sniffer). Clean ASCII you can read = standalone. If it's
-silent or pure binary noise, check the OMR 1200's front-panel/DIP config for an
-"output format" or "transmit" mode before concluding it's host-only.
+Cheapest signals first:
+
+1. **Model/serial label** on the chassis or underside — the variant may be in
+   the part number.
+2. **Power it on and look into the read slot.** Visible Red glows obviously red.
+   An IR head looks dark or faintly dull-red. Cross-check with a phone camera:
+   many sensors render IR emitters as pale violet/white that the eye can't see.
+3. **The bundled test cards / sample forms.** Warm-red background printing is a
+   strong tell for a Visible Red unit; any other background color implies IR.
+4. **Definitive (needs the chain working):** mark one form with #2 pencil and
+   another with blue ballpoint. Pen reads → Visible Red. Pen ignored but pencil
+   read → Infra Red.
 
 ### Step 1 — Physical RS-232 (the ±12V gotcha)
 
@@ -108,42 +206,65 @@ silent or pure binary noise, check the OMR 1200's front-panel/DIP config for an
 - **Handshake stall:** some devices won't transmit until they see a ready host.
   If silent after the swap, jumper **DTR↔DSR (pins 4↔6)** and **RTS↔CTS
   (pins 7↔8)** on the breakout to fake it.
-- Do **not** back-power the scanner from the ATOM — the OMR 1200 is mains-powered
-  separately.
+- Do **not** back-power the scanner from the ATOM — the OMR-1100 has its own
+  external mains PSU.
+- The unit shipped with a **serial data cable (Mac or PC)** — check the box
+  before wiring from scratch; a known-good cable removes one variable.
 
-### Step 2 — Find the serial parameters (baud sweep)
+### Step 2 — Serial parameters: RESOLVED ✅
 
-Unknown and undocumented. Firmware ships in **sniff mode** (`SNIFF_MODE=1`), so
-it forwards every received byte to the bus as `{"type":"raw","hex":...}`. Sweep
-until the hex decodes to sensible ASCII:
+**9600 / 7E1.** See *Serial protocol* above. No sweep needed; a wrong framing
+here produces silence rather than garbage, which is why this cost a whole
+session. `tools/omr-query.py` re-verifies against live hardware at any time.
 
-- **Baud:** try `1200, 2400, 4800, 9600` (vintage gear is usually slow).
-- **Framing:** try `8N1` then **`7E1`** (7-bit even parity is common on old gear).
-- Edit `serial.baud` / `serial.framing` in `scantrons.yml`, re-flash, feed a
-  sheet, read the `raw` bus messages. Wrong settings → garbage/framing errors;
-  right settings → readable records.
+### Step 3 — Capture real frames: DONE ✅
 
-### Step 3 — Capture real frames
+`tools/omr-listen.py` downloads mode `I00` and streams every byte to disk
+(Ctrl-C safe at any moment — never buffer a capture in RAM). `tools/omr-decode.py`
+renders a capture as a mark grid.
 
-With clean ASCII flowing, feed several *known* sheets (all-A, all-B, a mixed
-answer key you filled by hand) and record the raw output for each. This is your
-Rosetta Stone — it maps bytes → marks. Save captures to
-`docs/_wip/scantron-captures/` and document the frame layout in **Serial protocol**
-above (delimiters, field order, form-id position, checksum if any).
+First successful read, 2026-07-21 — the generated test strip, 39 columns, all 36
+designed marks correct:
 
-### Step 4 — Write the decoder & flip out of sniff mode
+```
+      123456789012345678901234567890123456789
+   12 ...........#...........#...........#..#
+   11 ..........#...........#...........#...#
+    0 .........#...........#...........#....#
+  ... (walking diagonal, 3 cycles) ...
+    9 #...........#...........#.............#
+```
 
-- Implement `handleFrame()` in `firmware/src/main.cpp` to parse a captured frame
-  into `{type:"sheet", answers:[...]}`.
-- Set `sniff_mode: false` in `scantrons.yml`, re-flash.
-- Tune `FRAME_IDLE_MS` (or switch to a real CR/LF/STX-ETX delimiter) once you
-  know the record boundary.
+The trailing all-channel column is the printed cut-line border of the test
+strip, not data.
 
-### Step 5 — Backend dispatch
+### Step 3b — Making cards the reader will accept
+
+**A Scantron-compatible form is not a Chatsworth form.** A ScanRite 815-E was
+transported happily and read as nothing: the strobe geometry has to match
+Appendix A of `omr1102_techmanual.pdf`, not merely look like a bubble sheet.
+
+`tools/gen-test-strip.py` emits a spec-exact printable strip
+(`docs/omr1100-test-strip.pdf`) — 3.25" wide, black ticks 0.125"×0.060" flush to
+the strobe edge on 0.250" centers, first tick 0.375" from the leading edge, 12
+rows on 0.250" centerlines, plus a walking-diagonal pattern whose decode is
+self-evident. **Print at 100% / Actual Size** and cut on the outline. This is
+also the starting point for designing real household forms.
+
+### Step 4 — Decoder: DONE ✅
+
+`handleFrame()` in `firmware/src/main.cpp` decodes `I00` records into 12-bit
+column masks; `SNIFF_MODE` defaults to 0. CR is the frame boundary (the idle
+timeout is only a truncation backstop). Command acks (`G`) and error echoes
+(`…?`) are filtered off the data path.
+
+### Step 5 — Backend dispatch + scoring
 
 Add `backend/src/3_applications/hardware/scantronRelay.mjs` (mirror
 `foodScaleRelay.mjs`), wire it in `app.mjs`, re-broadcast on `scantron`, persist
-completed reads under `household/history/scantron/<reader-id>/`.
+completed reads under `household/history/scantron/<reader-id>/`. **Scoring lives
+here** — the reader only reports marks (see "read-only" above), so the answer
+key and grading logic are backend concerns.
 
 ### Status LED (onboard SK6812, GPIO27)
 
@@ -160,3 +281,8 @@ completed reads under `household/history/scantron/<reader-id>/`.
 Keyed by reader id (plural, so a second reader is just another key + another
 ATOM). Holds Wi-Fi creds, backend host/port, and per-reader target + decode
 params. The generated `firmware/include/config.h` will be gitignored.
+
+## Reference
+
+- [OMR-1100 datasheet extract](./OMR-1100-datasheet.md) — full transcribed specs
+  and provenance.
