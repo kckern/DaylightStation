@@ -13,8 +13,9 @@
  * (listening, reference, ...) are never gated -- they play with whatever
  * identity is (or isn't) current.
  */
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSchoolProfile } from '../identity/SchoolProfileContext.jsx';
+import { useSchoolBreadcrumb } from '../SchoolBreadcrumbContext.jsx';
 import MaterialGrid from './MaterialGrid.jsx';
 import MaterialDetail from './MaterialDetail.jsx';
 import SchoolMaterialPlayer from './SchoolMaterialPlayer.jsx';
@@ -91,6 +92,30 @@ export default function MaterialsSection({ materials, sectionLabel, initialMater
     if (opts?.refetch) setDetailKey((k) => k + 1);
     setPlaying(null);
   }, []);
+
+  // Publish this subtree's breadcrumb trail (past the apple home anchor) so the
+  // header renders it — grid → detail → player each add a crumb instead of
+  // owning a back header. The section crumb returns to this grid; the material
+  // crumb (in the player) returns to the detail. `sectionLabel` names the
+  // shelf/section this grid belongs to (passed by SubjectPage/LibraryPage).
+  const backToDetail = useCallback(() => setPlaying(null), []);
+  const trail = useMemo(() => {
+    if (playing) {
+      return [
+        { label: sectionLabel, onClick: backToGrid },
+        { label: playing.material.title, onClick: backToDetail },
+        { label: playing.unit.title },
+      ];
+    }
+    if (detailMaterial) {
+      return [
+        { label: sectionLabel, onClick: backToGrid },
+        { label: detailMaterial.title },
+      ];
+    }
+    return []; // at the grid: the header shows the plain section crumb itself
+  }, [playing, detailMaterial, sectionLabel, backToGrid, backToDetail]);
+  useSchoolBreadcrumb(trail);
 
   if (playing) {
     return (

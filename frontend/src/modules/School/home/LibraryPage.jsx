@@ -12,7 +12,7 @@ export default function LibraryPage({ library, guestOnly, onLaunch, notice, init
     <div className="school-subject school-subject--library">
       {library.materials.length > 0 && (
         <section className="school-subject__group">
-          <MaterialsSection materials={library.materials} initialMaterialId={initialMaterialId} />
+          <MaterialsSection materials={library.materials} initialMaterialId={initialMaterialId} sectionLabel="Library" />
         </section>
       )}
       <section className="school-subject__group">

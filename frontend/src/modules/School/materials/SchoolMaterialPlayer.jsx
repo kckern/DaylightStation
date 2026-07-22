@@ -59,14 +59,6 @@ class SchoolPlayerBoundary extends Component {
   }
 }
 
-function BackChevron() {
-  return (
-    <svg className="school-back-chevron" viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" focusable="false">
-      <path d="M14.5 5.5 8 12l6.5 6.5" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
-  );
-}
-
 export default function SchoolMaterialPlayer({ material, unit, userId, onExit }) {
   const materialId = material?.id;
   const unitId = unit?.id;
@@ -145,10 +137,7 @@ export default function SchoolMaterialPlayer({ material, unit, userId, onExit })
   if (!contentId) {
     return (
       <div className="school-material-player">
-        <button type="button" className="school-material-player__back" onClick={exitToDetail}>
-          <BackChevron />
-          {material?.title}
-        </button>
+        {/* Navigation is the header breadcrumb (…› material › unit). */}
         <p className="school-material-player__placeholder">This item can&apos;t be played.</p>
       </div>
     );
@@ -156,10 +145,6 @@ export default function SchoolMaterialPlayer({ material, unit, userId, onExit })
 
   return (
     <div className="school-material-player">
-      <button type="button" className="school-material-player__back" onClick={exitToDetail}>
-        <BackChevron />
-        {material?.title}
-      </button>
       <div className="school-material-player__stage">
         <SchoolPlayerBoundary onBack={exitToDetail}>
           <Suspense fallback={<p className="school-material-player__loading">Loading player…</p>}>

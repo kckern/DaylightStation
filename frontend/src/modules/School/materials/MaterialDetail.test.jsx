@@ -85,13 +85,11 @@ describe('MaterialDetail', () => {
     expect(onPlay).toHaveBeenCalledWith(expect.objectContaining({ id: 'plex:10' }));
   });
 
-  it('renders an "All <sectionLabel>" back row that calls onBack', async () => {
+  it('renders no back row of its own — navigation is the app header breadcrumb', async () => {
     materialUnitsMock.mockResolvedValue({ ok: true, status: 200, data: { material, units: [] } });
-    const onBack = vi.fn();
-    render(<MaterialDetail material={material} userId="kid1" onBack={onBack} onPlay={() => {}} notice={null} sectionLabel="Courses" />);
-    const back = await screen.findByText(/all courses/i);
-    fireEvent.click(back);
-    expect(onBack).toHaveBeenCalled();
+    render(<MaterialDetail material={material} userId="kid1" onBack={() => {}} onPlay={() => {}} notice={null} sectionLabel="Courses" />);
+    await screen.findByText(/no units yet/i);
+    expect(screen.queryByText(/all courses/i)).toBeNull();
   });
 
   it('renders the guest/course sign-in notice when the parent passes one', async () => {

@@ -1,5 +1,6 @@
 import MaterialsSection from '../materials/MaterialsSection.jsx';
 import BankBrowser from '../browse/BankBrowser.jsx';
+import { subjectLabel } from './subjects.js';
 
 /**
  * One subject's shelf: language courses (tiles into the language program),
@@ -39,7 +40,7 @@ export default function SubjectPage({ subjectId, shelf, guestOnly, onLaunch, not
 
       {shelf.materials.length > 0 && (
         <section className="school-subject__group">
-          <MaterialsSection materials={shelf.materials} initialMaterialId={initialMaterialId} />
+          <MaterialsSection materials={shelf.materials} initialMaterialId={initialMaterialId} sectionLabel={subjectLabel(subjectId)} />
         </section>
       )}
 
