@@ -24,6 +24,7 @@ public class Config {
     public static final String KEY_SCREEN_TOGGLE_ENABLED = "screenToggleEnabled";
     public static final String KEY_CONSUME_VOLUME = "consumeVolume";
     public static final String KEY_DOUBLE_PRESS_MS = "doublePressMs";
+    public static final String KEY_BLOCK_CONTROL_CENTER = "blockControlCenter";
 
     private final SharedPreferences prefs;
 
@@ -72,6 +73,21 @@ public class Config {
         return prefs.getInt(KEY_DOUBLE_PRESS_MS, 450);
     }
 
+    /**
+     * Auto-dismiss Portal's swipe-up Control Center (volume/brightness/bluetooth).
+     *
+     * There is no way to stop it opening — see PortalKeysService.onAccessibilityEvent for
+     * everything that was ruled out on hardware. All we can do is close it the instant it
+     * appears. Defaults TRUE: on a kiosk the panel is never wanted, and unlike
+     * screenToggleEnabled a wrong value here cannot strand the panel.
+     *
+     * Escape hatch, no reinstall:
+     *   node _extensions/portal-keys/pkctl.mjs config set blockControlCenter false
+     */
+    public boolean blockControlCenter() {
+        return prefs.getBoolean(KEY_BLOCK_CONTROL_CENTER, true);
+    }
+
     public void setInt(String key, int value) {
         prefs.edit().putInt(key, value).apply();
     }
@@ -91,7 +107,8 @@ public class Config {
                 + "\"fkbPasswordSet\":" + (!fkbPassword().isEmpty()) + ","
                 + "\"screenToggleEnabled\":" + screenToggleEnabled() + ","
                 + "\"consumeVolume\":" + consumeVolume() + ","
-                + "\"doublePressMs\":" + doublePressMs()
+                + "\"doublePressMs\":" + doublePressMs() + ","
+                + "\"blockControlCenter\":" + blockControlCenter()
                 + "}";
     }
 }

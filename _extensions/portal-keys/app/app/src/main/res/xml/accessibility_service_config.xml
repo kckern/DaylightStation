@@ -4,14 +4,23 @@
      yields a service that binds fine but never receives onKeyEvent — with no error
      anywhere. Both are load-bearing.
 
-     accessibilityEventTypes is deliberately typeAllMask-free: this service does not
-     want UI events, only keys. canRetrieveWindowContent stays false so the service
-     never gains screen-content access it has no use for. -->
+     typeWindowsChanged + flagRetrieveInteractiveWindows exist ONLY to auto-dismiss
+     Portal's swipe-up Control Center. MEASURED 2026-07-21: that panel is NOT_FOCUSABLE
+     (ty=KEYGUARD_DIALOG), so it never fires typeWindowStateChanged — typeWindowsChanged is
+     the only event that reports it. getWindows() returns an empty list without
+     flagRetrieveInteractiveWindows, and Android refuses that flag unless
+     canRetrieveWindowContent is true, which is why that flipped from false. All three move
+     together; drop any one and the dismissal silently never fires.
+     See PortalKeysService.onAccessibilityEvent.
+
+     canRetrieveWindowContent grants the ability to read screen content. This service reads
+     only window bounds and types from getWindows() and never walks a node tree. -->
 <accessibility-service xmlns:android="http://schemas.android.com/apk/res/android"
     android:description="@string/accessibility_service_description"
-    android:accessibilityEventTypes=""
+    android:accessibilityEventTypes="typeWindowsChanged"
     android:accessibilityFeedbackType="feedbackGeneric"
     android:canRequestFilterKeyEvents="true"
-    android:accessibilityFlags="flagRequestFilterKeyEvents"
-    android:canRetrieveWindowContent="false"
+    android:accessibilityFlags="flagRequestFilterKeyEvents|flagRetrieveInteractiveWindows"
+    android:canRetrieveWindowContent="true"
+    android:canPerformGestures="true"
     android:notificationTimeout="0" />

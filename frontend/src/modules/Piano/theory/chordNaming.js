@@ -48,9 +48,18 @@ const TEMPLATES = [
   { quality: 'augmented7',   intervals: [0, 4, 8, 10],    label: '7 ♯5' },
   { quality: 'dominant7b5',  intervals: [0, 4, 6, 10],    label: '7 ♭5' },
   { quality: 'dominant7sus4', intervals: [0, 5, 7, 10],   label: '7 sus4' },
-  // ── sixths ────────────────────────────────────────────────────────────────
-  { quality: 'sixth',        intervals: [0, 4, 7, 9],     label: '6' },
-  { quality: 'minor6',       intervals: [0, 3, 7, 9],     label: 'minor 6' },
+  // ── sixths: DELIBERATELY ABSENT ─────────────────────────────────────────────
+  // A sixth chord is a minor 7th read from its own 6th — the two templates
+  // describe the SAME pitch-class set from different roots, ALWAYS:
+  //     sixth  [0,4,7,9] == minor7   [0,3,7,10] rooted a minor 3rd below
+  //     minor6 [0,3,7,9] == minor7b5 [0,3,6,10] rooted a minor 3rd below
+  // Keeping both made the name depend on which reading happened to be in root
+  // position, so C-E-G-A named "C 6" but the same set over F named "F 6" instead
+  // of the D minor 7 a player would call it. We resolve the ambiguity ONE way:
+  // the minor-7 reading always wins, and the bass shows up as a slash.
+  //     C-E-G-A -> "A minor 7 / C"      F-A-C-D -> "D minor 7 / F"
+  // Cost, accepted knowingly: "C 6" and "C minor 6" are no longer producible
+  // names. 6/9 is unaffected — it has no minor-7 equivalent in this vocabulary.
   // ── added tone ──────────────────────────────────────────────────────────────
   { quality: 'add9',         intervals: [0, 2, 4, 7],     label: 'add9' },
   { quality: 'minorAdd9',    intervals: [0, 2, 3, 7],     label: 'minor add9' },

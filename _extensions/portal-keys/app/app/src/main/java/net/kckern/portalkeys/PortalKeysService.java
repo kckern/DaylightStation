@@ -8,8 +8,10 @@ import android.os.PowerManager;
 import android.util.Log;
 import android.view.KeyEvent;
 import android.view.accessibility.AccessibilityEvent;
+import android.view.accessibility.AccessibilityWindowInfo;
 
 import java.io.IOException;
+import java.util.List;
 
 /**
  * Repurposes the Portal's volume buttons for the DaylightStation kiosk.
@@ -55,6 +57,16 @@ public class PortalKeysService extends AccessibilityService
     private volatile boolean bound = false;
     private volatile long connectedAt = 0;
     private volatile int keysSeen = 0;
+    private volatile int dismissals = 0;
+
+    /** Control Center dismissal timing — see scheduleDismiss. */
+    private static final long DISMISS_DEBOUNCE_MS = 800;
+    private static final long DISMISS_SETTLE_MS = 400;   // let the open animation finish
+    private static final int  MAX_DISMISS_ATTEMPTS = 6;  // ~2.4s of trying, then give up
+    private long lastDismissAt = 0;
+
+    /** Dismissal retries run on the main looper, never on input dispatch. */
+    private Handler ui;
 
     // ── Lifecycle ────────────────────────────────────────────────────────────
 
@@ -70,6 +82,7 @@ public class PortalKeysService extends AccessibilityService
         workerThread = new HandlerThread("portalkeys-worker");
         workerThread.start();
         worker = new Handler(workerThread.getLooper());
+        ui = new Handler(android.os.Looper.getMainLooper());
 
         server = new ControlServer(eventLog, config, this);
         try {
@@ -231,8 +244,146 @@ public class PortalKeysService extends AccessibilityService
         }
     }
 
+    // ── Control Center suppression ───────────────────────────────────────────
+
+    /**
+     * Auto-dismiss Portal's swipe-up Control Center (volume / brightness / bluetooth).
+     *
+     * It CANNOT be prevented from opening. Everything else was tried on hardware first
+     * (2026-07-21) and every one failed — recorded here so nobody re-runs the list:
+     *
+     *   pm disable-user + force-stop  → package goes enabled=3, but com.facebook.alohaapps
+     *                                   .controlcenter is flagged SYSTEM PERSISTENT, so the
+     *                                   system restarts it. Verified across a full reboot:
+     *                                   both windows came back.
+     *   pm disable (full)             → SecurityException, shell cannot change component
+     *                                   state for this package.
+     *   pm suspend                    → SecurityException, needs SUSPEND_APPS.
+     *   appops SYSTEM_ALERT_WINDOW deny → applied cleanly and did nothing; a PRIVILEGED
+     *                                   SYSTEM app drawing ty=KEYGUARD_DIALOG is exempt.
+     *   settings global/secure/system → no Portal-side toggle exists for it.
+     *   an overlay of our own          → its gesture strip sits at mBaseLayer=201000, above
+     *                                   anything a non-system app can draw.
+     *
+     * So we close it the instant it opens. GLOBAL_ACTION_BACK is verified to dismiss it.
+     *
+     * DETECTION, and why it is by geometry rather than package: accessibility reports these
+     * windows with title=null and no package attribution, so there is nothing to match on
+     * by name. What is unambiguous is the shape change — closed, the panel parks a 984x25
+     * gesture strip on the bottom edge (Rect(148,775 - 1132,800) at 1280x800); open, it
+     * becomes a full-screen TYPE_SYSTEM window. A TYPE_SYSTEM window covering most of the
+     * display is the signal.
+     *
+     * The threshold is deliberately loose (>=80% of each axis) so a resolution or rotation
+     * change does not quietly stop matching.
+     */
+    @Override
+    public void onAccessibilityEvent(AccessibilityEvent event) {
+        if (event == null || event.getEventType() != AccessibilityEvent.TYPE_WINDOWS_CHANGED) return;
+        if (!config.blockControlCenter()) return;
+        if (!controlCenterIsOpen()) return;
+
+        // Debounce: TYPE_WINDOWS_CHANGED fires repeatedly through the open animation.
+        long now = System.currentTimeMillis();
+        if (now - lastDismissAt < DISMISS_DEBOUNCE_MS) return;
+        lastDismissAt = now;
+
+        scheduleDismiss(1);
+    }
+
+    /**
+     * Send BACK, confirm it landed, retry if it did not.
+     *
+     * MEASURED 2026-07-21, and the reason this is not a single performGlobalAction: firing
+     * BACK the moment the panel is detected dismisses NOTHING. The event arrives while the
+     * panel is still animating open, the system drops the BACK, and because the panel then
+     * sits there open no further TYPE_WINDOWS_CHANGED arrives to trigger a second attempt —
+     * so it stays open forever. A 5-swipe run scored 0/5 that way while a manual BACK
+     * against the settled panel closed it every time.
+     *
+     * Hence: wait out the animation, then verify and retry. Attempts are bounded so a
+     * genuinely stuck panel cannot turn into an endless BACK loop landing in the SPA.
+     */
+    private void scheduleDismiss(final int attempt) {
+        if (attempt > MAX_DISMISS_ATTEMPTS) {
+            eventLog.add("control-center-dismiss-gave-up attempts=" + MAX_DISMISS_ATTEMPTS);
+            Log.w(TAG, "control-center: gave up after " + MAX_DISMISS_ATTEMPTS + " attempts");
+            return;
+        }
+        ui.postDelayed(new Runnable() {
+            @Override public void run() {
+                if (!config.blockControlCenter()) return;
+                if (!controlCenterIsOpen()) {
+                    if (attempt > 1) {
+                        dismissals++;
+                        eventLog.add("control-center-dismissed attempts=" + (attempt - 1));
+                        Log.i(TAG, "control-center-dismissed after " + (attempt - 1) + " attempt(s)");
+                    }
+                    return;
+                }
+                swipeClosed();
+                lastDismissAt = System.currentTimeMillis();
+                scheduleDismiss(attempt + 1);
+            }
+        }, DISMISS_SETTLE_MS);
+    }
+
+    /**
+     * Push the panel back down with a synthetic downward swipe.
+     *
+     * MEASURED 2026-07-21, in this order — the mechanism matters more than it looks:
+     *   performGlobalAction(GLOBAL_ACTION_BACK) → does NOT close it. The panel is
+     *     NOT_FOCUSABLE, so the accessibility BACK is routed to the focused window (Fully)
+     *     rather than the panel. Six retries scored 0/5, while `input keyevent BACK` — a
+     *     real injected key — closed it every time. Accessibility cannot inject key events,
+     *     so that route is closed to us.
+     *   dispatchGesture swipe-down → closes it. This is the panel's own dismiss gesture.
+     *   a tap outside the panel → also closes it (WATCH_OUTSIDE_TOUCH), but rejected: once
+     *     the panel is gone that tap can land on whatever the SPA is showing. A swipe
+     *     starting mid-panel cannot misfire that way.
+     *
+     * Requires canPerformGestures="true" in accessibility_service_config.
+     */
+    private void swipeClosed() {
+        android.view.WindowManager wm =
+                (android.view.WindowManager) getSystemService(Context.WINDOW_SERVICE);
+        if (wm == null) return;
+        android.graphics.Point size = new android.graphics.Point();
+        wm.getDefaultDisplay().getRealSize(size);
+
+        android.graphics.Path path = new android.graphics.Path();
+        path.moveTo(size.x / 2f, size.y * 0.25f);
+        path.lineTo(size.x / 2f, size.y * 0.98f);
+
+        android.accessibilityservice.GestureDescription gesture =
+                new android.accessibilityservice.GestureDescription.Builder()
+                        .addStroke(new android.accessibilityservice.GestureDescription
+                                .StrokeDescription(path, 0, 250))
+                        .build();
+        dispatchGesture(gesture, null, null);
+    }
+
+    /** True when a TYPE_SYSTEM window covers most of the display. */
+    private boolean controlCenterIsOpen() {
+        android.view.WindowManager wm =
+                (android.view.WindowManager) getSystemService(Context.WINDOW_SERVICE);
+        if (wm == null) return false;
+        android.graphics.Point size = new android.graphics.Point();
+        wm.getDefaultDisplay().getRealSize(size);
+        if (size.x <= 0 || size.y <= 0) return false;
+
+        List<AccessibilityWindowInfo> windows = getWindows();
+        if (windows == null) return false;
+        android.graphics.Rect bounds = new android.graphics.Rect();
+        for (AccessibilityWindowInfo w : windows) {
+            if (w == null || w.getType() != AccessibilityWindowInfo.TYPE_SYSTEM) continue;
+            w.getBoundsInScreen(bounds);
+            if (bounds.width() >= size.x * 0.8 && bounds.height() >= size.y * 0.8) return true;
+        }
+        return false;
+    }
+
     // ── Unused AccessibilityService surface ──────────────────────────────────
 
-    @Override public void onAccessibilityEvent(AccessibilityEvent event) { /* keys only */ }
     @Override public void onInterrupt() { Log.w(TAG, "on-interrupt"); }
 }
