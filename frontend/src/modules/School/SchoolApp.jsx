@@ -142,7 +142,14 @@ function SchoolShell({ clear }) {
             ‹
           </button>
         )}
-        <h1 className="school-app__title">{sectionDef ? sectionDef.label : 'School'}</h1>
+        {/* One identity row, not two. On the learner's home the title IS the
+            greeting; LearnerHome used to render a second avatar + name + "Not
+            you?" immediately below this one saying the same thing. */}
+        <h1 className="school-app__title">
+          {sectionDef ? sectionDef.label
+            : currentUser ? `Hi ${String(currentUser.name).split(' ')[0]}`
+              : 'School'}
+        </h1>
         <button type="button" className="school-app__chip" onClick={openPicker}>
           {currentUser
             ? (<><ProfileAvatar id={currentUser.id} name={currentUser.name} /><span>{currentUser.name}</span></>)

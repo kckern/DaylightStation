@@ -65,7 +65,7 @@ beforeEach(() => {
 describe('language courses on the home grid', () => {
   it('adds no tile when no corpus is ingested — a tile never points at an absent endpoint', async () => {
     render(<SchoolApp />);
-    await screen.findByText('Quizzes & Flashcards');
+    await screen.findByText('Practice');
     expect(screen.queryByText('Glossika Korean')).toBeNull();
   });
 
@@ -76,13 +76,13 @@ describe('language courses on the home grid', () => {
     });
     render(<SchoolApp />);
     expect(await screen.findByText('Glossika Korean')).toBeTruthy();
-    expect(screen.getByText('EN → KR')).toBeTruthy();
+    expect(screen.getByText('Listen, say it, write it')).toBeTruthy();
   });
 
   it('still builds the grid when the course listing fails', async () => {
     coursesMock.mockResolvedValue({ ok: false, status: 500, data: null });
     render(<SchoolApp />);
-    expect(await screen.findByText('Quizzes & Flashcards')).toBeTruthy();
+    expect(await screen.findByText('Practice')).toBeTruthy();
   });
 });
 
@@ -97,13 +97,13 @@ function cardFor(title) {
 // The home grid is now the landing surface; every bank-flow test enters the
 // banks section first.
 async function openBanks() {
-  fireEvent.click(await screen.findByRole('button', { name: /quizzes & flashcards/i }));
+  fireEvent.click(await screen.findByRole('button', { name: /practice/i }));
 }
 
 describe('SchoolApp home', () => {
   it('lands on the section grid and fetches no banks until the section opens', async () => {
     render(<SchoolApp clear={() => {}} />);
-    expect(await screen.findByRole('button', { name: /quizzes & flashcards/i })).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: /practice/i })).toBeInTheDocument();
     expect(banksMock).not.toHaveBeenCalled();
     await openBanks();
     expect(await screen.findByText('Caps')).toBeInTheDocument();
@@ -114,7 +114,7 @@ describe('SchoolApp home', () => {
     await openBanks();
     await screen.findByText('Caps');
     fireEvent.click(screen.getByRole('button', { name: /back to home/i }));
-    expect(await screen.findByRole('button', { name: /quizzes & flashcards/i })).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: /practice/i })).toBeInTheDocument();
     expect(screen.queryByText('Caps')).toBeNull();
   });
 
@@ -123,7 +123,7 @@ describe('SchoolApp home', () => {
     expect(await screen.findByRole('button', { name: /exit school/i })).toBeInTheDocument();
     unmount();
     render(<SchoolApp />);
-    expect(await screen.findByRole('button', { name: /quizzes & flashcards/i })).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: /practice/i })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /exit school/i })).toBeNull();
   });
 });
@@ -194,7 +194,7 @@ describe('SchoolApp materials sections', () => {
   it('a fetched catalog adds category tiles after the built-in sections', async () => {
     materialsMock.mockResolvedValue(SAMPLE_CATALOG);
     render(<SchoolApp clear={() => {}} />);
-    expect(await screen.findByRole('button', { name: /quizzes & flashcards/i })).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: /practice/i })).toBeInTheDocument();
     expect(await screen.findByRole('button', { name: /^courses/i })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /^listening/i })).toBeInTheDocument();
   });
@@ -202,9 +202,9 @@ describe('SchoolApp materials sections', () => {
   it('a catalog fetch failure leaves only the built-in sections', async () => {
     materialsMock.mockResolvedValue({ ok: false, status: 500, data: null });
     render(<SchoolApp clear={() => {}} />);
-    expect(await screen.findByRole('button', { name: /quizzes & flashcards/i })).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: /practice/i })).toBeInTheDocument();
     // give the failed fetch a tick to resolve before asserting absence
-    await screen.findByRole('button', { name: /quizzes & flashcards/i });
+    await screen.findByRole('button', { name: /practice/i });
     expect(screen.queryByRole('button', { name: /^courses/i })).toBeNull();
   });
 

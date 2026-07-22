@@ -14,7 +14,12 @@
   --school-danger: #e05a4f;
   --school-warn: #e0a83a;
 
-  width: 100%; height: 100%;
+  width: 100%;
+  // 100dvh, not 100%: nothing above this sets a height (body is auto), so
+  // `height: 100%` collapsed the whole app to its content and left the bottom
+  // of an 800px panel black. Same reason and same fix as Admin.scss — a fixed
+  // height is also what makes the body's overflow-y actually engage.
+  height: 100dvh;
   display: flex; flex-direction: column;
   background: var(--school-bg); color: var(--school-fg);
 
@@ -54,17 +59,23 @@
   }
 }
 
-// --- home section grid ---
+// --- browse shelves (the tiles) ---
+// These were 140px slabs of mostly empty space with the text pinned to the top
+// corner. Sized to their content now, and they are shelves rather than the
+// front door, so they do not need to shout.
 .school-home {
-  &__grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 1rem; }
+  &__grid {
+    display: grid; gap: 0.75rem;
+    grid-template-columns: repeat(auto-fill, minmax(min(100%, 260px), 1fr));
+  }
   &__tile {
-    display: flex; flex-direction: column; align-items: flex-start; gap: 0.5rem;
-    min-height: 140px; padding: 1.5rem; text-align: left;
+    display: flex; flex-direction: column; align-items: flex-start; gap: 0.2rem;
+    min-height: 96px; padding: 1rem 1.15rem; text-align: left;
     border: 1px solid var(--school-border); border-radius: 12px;
     background: var(--school-surface); color: var(--school-fg); cursor: pointer;
   }
-  &__label { margin: 0; font-size: 1.3rem; font-weight: 800; }
-  &__hint { margin: 0; color: var(--school-muted); font-size: 1rem; }
+  &__label { margin: 0; font-size: 1.1rem; font-weight: 700; }
+  &__hint { margin: 0; color: var(--school-muted); font-size: 0.95rem; }
 }
 
 // --- quiz / flashcard items ---
@@ -244,41 +255,60 @@
 // --- learner home: what to do next, not what content exists -----------------
 // Obligation first at high weight, browse second at low weight — and the two
 // SWAP when the day's set is cleared. No animation (kiosk WebView).
+//
+// Carries no identity row of its own: the shell header above already renders
+// the greeting and the profile chip, and having both produced two stacked rows
+// saying the same thing.
 .school-home {
-  display: flex; flex-direction: column; gap: 1.25rem; height: 100%;
-
-  &__hello { display: flex; align-items: center; gap: 0.75rem; }
-  &__greeting { margin: 0; font-size: 1.6rem; font-weight: 800; flex: 1; }
-  &__switch, &__claim {
-    min-height: 56px; padding: 0 1rem;
-    border: 1px solid var(--school-border); border-radius: 12px;
-    background: var(--school-surface-2); color: var(--school-fg);
-    font-size: 1rem; cursor: pointer;
-  }
-  &__claim {
-    align-self: center; min-height: 72px; padding: 0 2rem;
-    background: var(--school-accent); color: var(--school-accent-ink);
-    border-color: transparent; font-size: 1.2rem; font-weight: 700;
-  }
-  &--unclaimed { align-items: center; justify-content: center; text-align: center; }
+  display: flex; flex-direction: column; gap: 1.25rem;
+  // The shell body is the scroller; this must FILL it rather than collapsing
+  // to its content and leaving the bottom half of an 800px panel empty.
+  min-height: 100%;
 
   &__status { color: var(--school-muted); }
   &__heading {
-    margin: 0 0 0.5rem; font-size: 0.9rem; color: var(--school-muted);
+    margin: 0 0 0.5rem; font-size: 0.85rem; color: var(--school-muted);
     text-transform: uppercase; letter-spacing: 0.06em;
   }
 
-  // The primary card owns the screen while there is work to do.
   &__primary { flex: 0 0 auto; }
   &__secondary-cards { display: flex; gap: 0.75rem; flex-wrap: wrap; }
 
-  &__done { text-align: center; padding: 1rem 0; }
-  &__done-mark { margin: 0; font-size: 1.6rem; font-weight: 800; color: var(--school-accent); }
-  &__done-sub { margin: 0.25rem 0 0; color: var(--school-muted); }
+  // A status line, not a trophy. It marks the transition and then gets out of
+  // the way so the released shelves are what the eye lands on.
+  &__done {
+    display: flex; align-items: baseline; gap: 0.6rem;
+    padding: 0.85rem 1rem; border-radius: 12px;
+    background: var(--school-surface); border-left: 4px solid var(--school-accent);
+  }
+  &__done-mark { margin: 0; font-size: 1.15rem; font-weight: 700; color: var(--school-accent); }
+  &__done-sub { margin: 0; color: var(--school-muted); font-size: 0.95rem; }
 
-  // Browse takes what is left, and only fills the screen once work is done.
-  &__explore { flex: 1; min-height: 0; overflow: auto; }
-  &.is-free &__explore { flex: 1; }
+  // Sized to its content, NOT flex:1. Claiming the slack pushed everything
+  // after it to the floor of an 800px panel, stranding the last control alone
+  // at the bottom of a void. Content stacks from the top; leftover space is
+  // just leftover space.
+  &__explore { flex: 0 0 auto; }
+
+  // Adults only (group_label). Quiet, and directly under the shelves rather
+  // than pinned to the bottom edge — it is a supervision tool, not something
+  // to put in front of the person being supervised.
+  &__family {
+    align-self: flex-start; min-height: 56px; padding: 0 1rem;
+    border: 1px solid var(--school-border); border-radius: 12px;
+    background: transparent; color: var(--school-muted);
+    font-size: 0.95rem; cursor: pointer;
+  }
+
+  // Unclaimed: the roster is the front door.
+  &--unclaimed { align-items: center; justify-content: center; text-align: center; gap: 1.5rem; }
+  &__greeting { margin: 0; font-size: 1.8rem; font-weight: 800; }
+  &__claim {
+    min-height: 72px; padding: 0 2rem;
+    border: none; border-radius: 12px;
+    background: var(--school-accent); color: var(--school-accent-ink);
+    font-size: 1.2rem; font-weight: 700; cursor: pointer;
+  }
 }
 
 .school-next {
