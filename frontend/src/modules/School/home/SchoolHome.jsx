@@ -46,6 +46,10 @@ export default function SchoolHome({ grouped, onOpen, bankTitles }) {
             Reference and browsing{libraryCount ? ` · ${libraryCount}` : ''}
           </p>
         </button>
+        <button type="button" className="school-home2__library" onClick={() => onOpen('print')}>
+          <h3 className="school-home2__subject-label">Print 🖨️</h3>
+          <p className="school-home2__subject-hint">Worksheets you can print</p>
+        </button>
       </aside>
     </div>
   );

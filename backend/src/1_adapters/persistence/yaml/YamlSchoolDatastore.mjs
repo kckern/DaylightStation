@@ -47,6 +47,31 @@ export class YamlSchoolDatastore {
     return list;
   }
 
+  // Printing: an append-only log of completed jobs (feeds the rolling quota)
+  // and a pending queue of jobs awaiting a grown-up's approval. Both are one
+  // household-wide list under apps/school (attribution is the per-entry
+  // userId), same shape as quiz-requests.
+  #printLogPath() { return path.join(this.#configService.getDataDir(), 'apps', 'school', 'print-log'); }
+  #printPendingPath() { return path.join(this.#configService.getDataDir(), 'apps', 'school', 'print-pending'); }
+
+  readPrintLog() { return loadYamlSafe(this.#printLogPath()) || []; }
+
+  appendPrintLog(entry) {
+    ensureDir(path.dirname(this.#printLogPath()));
+    const list = this.readPrintLog();
+    list.push(entry);
+    saveYaml(this.#printLogPath(), list, { noRefs: true });
+    return entry;
+  }
+
+  readPrintPending() { return loadYamlSafe(this.#printPendingPath()) || []; }
+
+  savePrintPending(list) {
+    ensureDir(path.dirname(this.#printPendingPath()));
+    saveYaml(this.#printPendingPath(), list, { noRefs: true });
+    return list;
+  }
+
   listBankIds() {
     return listYamlFiles(this.#banksDir()).sort();
   }

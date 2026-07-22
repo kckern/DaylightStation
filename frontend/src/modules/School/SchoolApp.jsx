@@ -15,6 +15,7 @@ import FlashcardRunner from './flashcards/FlashcardRunner.jsx';
 import SchoolHome from './home/SchoolHome.jsx';
 import SubjectPage from './home/SubjectPage.jsx';
 import LibraryPage from './home/LibraryPage.jsx';
+import PrintCenter from './print/PrintCenter.jsx';
 import { groupBySubject, subjectLabel } from './home/subjects.js';
 import GlossikaProgram from './Programs/Glossika/GlossikaProgram.jsx';
 import ReportPanel from './report/ReportPanel.jsx';
@@ -47,6 +48,7 @@ function parseSchoolPath(urlBase) {
   if (seg[0] === 'library') return { section: 'library', materialId: seg[1] === 'material' ? (seg[2] ?? null) : null };
   if (seg[0] === 'progress') return { section: 'progress', materialId: null };
   if (seg[0] === 'practice') return { section: 'banks', materialId: null };
+  if (seg[0] === 'print') return { section: 'print', materialId: null };
   if (seg[0] === 'lang' && seg[1]) return { section: `lang:${seg[1]}`, materialId: null };
   return { section: null, materialId: null };
 }
@@ -57,6 +59,7 @@ function schoolPathFor(urlBase, section) {
   if (section === 'library') return `${urlBase}/library`;
   if (section === 'progress') return `${urlBase}/progress`;
   if (section === 'banks') return `${urlBase}/practice`;
+  if (section === 'print') return `${urlBase}/print`;
   if (section.startsWith('lang:')) return `${urlBase}/lang/${encodeURIComponent(section.slice(5))}`;
   return urlBase;
 }
@@ -193,8 +196,9 @@ function SchoolShell({ clear }) {
       : section === 'library' ? 'Library'
         : section === 'progress' ? 'My Progress'
           : section === 'banks' ? 'Practice'
-            : courseId ? (courses.find((c) => c.id === courseId)?.label ?? 'Language')
-              : section;
+            : section === 'print' ? 'Print'
+              : courseId ? (courses.find((c) => c.id === courseId)?.label ?? 'Language')
+                : section;
 
   if (status !== 'ready') return <div className="school-app school-app--loading">Loading…</div>;
   return (
@@ -252,6 +256,7 @@ function SchoolShell({ clear }) {
         {/* Opens on the signed-in learner when there is one, otherwise the
             whole household. Both scopes are the same endpoint, filtered. */}
         {section === 'progress' && <ReportPanel userId={currentUser?.id || null} />}
+        {section === 'print' && <PrintCenter />}
         {section === 'banks' && !active && <BankBrowser guestOnly={isGuest} onLaunch={onLaunch} notice={notice} />}
         {subjectId && !active && (
           <SubjectPage

@@ -23,6 +23,7 @@ export const schoolLog = {
   nav:     (detail, data) => emit('nav', detail, data),               // section | home
   materials: (detail, data) => emit('materials', detail, data),       // catalog-failed
   materialsError: (detail, data) => emit('materials', detail, data, 'error'),
+  print:   (detail, data) => emit('print', detail, data),             // requested | printed | approval | approve | deny
 };
 
 export default schoolLog;
