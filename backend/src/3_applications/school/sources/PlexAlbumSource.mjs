@@ -33,7 +33,11 @@ export class PlexAlbumSource {
 
   /**
    * @param {Object} deps
-   * @param {{children:function(string):Promise<Object[]>}} deps.plexClient
+   * @param {{children:function(string):Promise<Object[]>}} deps.plexClient - Contract:
+   *   `children()` results' `thumb`/`parentThumb` fields must already be
+   *   app-proxied (the real wiring in app.mjs's `schoolPlexClient` seam
+   *   rewrites Plex's raw `/library/metadata/...` paths before this source
+   *   ever sees them). This source passes `poster` straight through unmodified.
    * @param {Object} [deps.logger]
    */
   constructor({ plexClient, logger = console }) {

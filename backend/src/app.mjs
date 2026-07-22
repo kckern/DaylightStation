@@ -2007,7 +2007,27 @@ export async function createApp({ server, logger, configPaths, configExists, ena
       children: async (ratingKey) => {
         if (!schoolPlexAdapter?.client) return [];
         const data = await schoolPlexAdapter.client.getContainer(`/library/metadata/${ratingKey}/children`);
-        return data?.MediaContainer?.Metadata || [];
+        const items = data?.MediaContainer?.Metadata || [];
+        // Plex hands back raw, unproxied paths (e.g.
+        // `/library/metadata/{id}/thumb/{n}`) for `thumb`/`parentThumb`. The
+        // frontend can only load Plex images through the app's image proxy —
+        // everywhere else PlexAdapter emits a thumbnail it prefixes it with
+        // its own `proxyPath` (PlexAdapter.mjs, e.g. ~line 849). Do the same
+        // rewrite here, once, at this seam, so PlexAlbumSource/PlexShowSource
+        // (and anything downstream) can treat `thumb`/`parentThumb` as
+        // already-proxied — see the `plexClient` contract note on both
+        // sources' constructors.
+        const proxyPath = schoolPlexAdapter.proxyPath;
+        return items.map((item) => {
+          const rewritten = { ...item };
+          if (typeof rewritten.thumb === 'string' && rewritten.thumb.startsWith('/')) {
+            rewritten.thumb = `${proxyPath}${rewritten.thumb}`;
+          }
+          if (typeof rewritten.parentThumb === 'string' && rewritten.parentThumb.startsWith('/')) {
+            rewritten.parentThumb = `${proxyPath}${rewritten.parentThumb}`;
+          }
+          return rewritten;
+        });
       }
     };
     const schoolMaterialSources = {

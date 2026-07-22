@@ -52,7 +52,14 @@ export class PlexShowSource {
   /**
    * @param {Object} deps
    * @param {{getPlayableEpisodes:function(string, ?string):Promise<Object>}} deps.fitnessPlayableService
-   * @param {{children:function(string):Promise<Object[]>}} deps.plexClient
+   * @param {{children:function(string):Promise<Object[]>}} deps.plexClient - Contract:
+   *   `children()` results' `thumb` field must already be app-proxied (the
+   *   real wiring in app.mjs's `schoolPlexClient` seam rewrites Plex's raw
+   *   `/library/metadata/...` paths before this source ever sees them). This
+   *   source passes `poster` straight through unmodified. `getMaterial`'s
+   *   poster instead comes from `fitnessPlayableService`'s `info.image`,
+   *   which is independently already-proxied by PlexAdapter — do not prefix
+   *   it again here.
    * @param {Object} [deps.logger]
    * @param {?string} [deps.householdId]
    */
