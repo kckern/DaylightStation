@@ -216,10 +216,11 @@ export class CompositionStore {
   /**
    * Record a scanned container/tare id. Refreshes the window.
    *
-   * An unknown-but-well-formed id is NOT caught here or by `Composition` — a
-   * container missing from the table resolves to `undefined`, and `computeNet`
-   * reads an absent container as "no tare" and returns silently. Whoever resolves
-   * ids against the container table has to reject the miss explicitly.
+   * An unknown-but-well-formed id is NOT caught here or by `Composition`. The
+   * rejection happens at the two places that resolve ids against the container
+   * table: `ApplyScanToComposition` refuses to store a miss, and `resolveScaleNet`
+   * (LogFoodFromScale) surfaces one that got stored anyway as a visible "unknown
+   * container" warning on the prompt rather than a silently un-tared weight.
    *
    * @param {string} scaleId
    * @param {string} containerId
