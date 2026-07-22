@@ -7,6 +7,7 @@
  */
 export const SECTIONS = [
   { id: 'banks', label: 'Quizzes & Flashcards', hint: 'Practice sets and tests' },
+  { id: 'progress', label: 'Progress', hint: 'Who is studying what, and what is next' },
 ];
 
 // Hints for catalog-driven category sections (spec §2b). A category with no

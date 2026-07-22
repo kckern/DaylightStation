@@ -11,6 +11,7 @@ export function createSchoolRouter({
   getMaterialCatalog = null,
   getMaterialUnits = null,
   materialProgressStore = null,
+  getSchoolReport = null,
   logger = console,
 }) {
   const router = express.Router();
@@ -47,6 +48,13 @@ export function createSchoolRouter({
   // must never 500 before materials.yml config ships — a missing config block
   // (getMaterialCatalog not wired) serves an empty catalog and logs once,
   // not per request.
+  // Aggregate program report — every program x every learner in one shape.
+  // Omit userId for the household board; pass it for one learner's own view.
+  router.get('/report', wrap(async (req, res) => {
+    if (!getSchoolReport) return res.json({ learners: [] });
+    res.json(await getSchoolReport.execute({ userId: req.query.userId || null }));
+  }));
+
   router.get('/materials', wrap(async (req, res) => {
     if (!getMaterialCatalog) {
       if (!warnedMaterialsConfigMissing) {

@@ -16,6 +16,7 @@ import SectionGrid from './home/SectionGrid.jsx';
 import { SECTIONS, sectionsFromCatalog } from './home/sections.js';
 import MaterialsSection from './materials/MaterialsSection.jsx';
 import GlossikaProgram from './Programs/Glossika/GlossikaProgram.jsx';
+import ReportPanel from './report/ReportPanel.jsx';
 import { languageApi } from './Programs/Glossika/languageApi.js';
 import { schoolApi } from './schoolApi.js';
 import { schoolLog } from './schoolLog.js';
@@ -155,6 +156,9 @@ function SchoolShell({ clear }) {
             prompted only when they try to launch tracked work (onLaunch
             above). Bank reads are ungated by design; real enforcement is
             server-side at session open (403 for guest vs an assigned bank). */}
+        {/* Opens on the signed-in learner when there is one, otherwise the
+            whole household. Both scopes are the same endpoint, filtered. */}
+        {section === 'progress' && <ReportPanel userId={currentUser?.id || null} />}
         {section === 'banks' && !active && <BankBrowser guestOnly={isGuest} onLaunch={onLaunch} notice={notice} />}
         {active?.mode === 'quiz' && <QuizRunner bank={active.bank} onExit={() => setActive(null)} />}
         {active?.mode === 'flashcard' && <FlashcardRunner bank={active.bank} onExit={() => setActive(null)} />}

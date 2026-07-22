@@ -148,6 +148,63 @@ it as unsatisfied and warns), and coin/curriculum *consumption* of completion
 (label, source, root, medium, category) plus `completion_threshold_percent` and
 `quiz_pass_percent`. Boot-cached; config edits need a container restart.
 
+### The program report interface
+
+Every program answers the same four questions about a learner — **who has been
+studying, how far along, how they are doing, what is next** — so the parent app
+can build one board across all of them without knowing what any of them does.
+
+A program implements `IProgramReporter`
+(`3_applications/school/ports/IProgramReporter.mjs`): an `id`, a `label`, and
+`summarize({ userId })` returning zero or more reports. It returns an ARRAY
+because one program may run several courses for the same learner.
+
+Metric kinds are a **closed set in code** (`2_domains/school/reporting.mjs`),
+the same posture as `categories.mjs`: config selects from it, nothing invents a
+new one. A program cannot emit a shape the parent has no renderer for, because
+the shape does not exist. Adding a seventh kind is a code change in one file
+plus one branch in `MetricTile` — deliberately not config.
+
+| kind | payload | answers |
+|---|---|---|
+| `progress` | `value, total, unit` | how far along |
+| `count` | `value, unit` | what you've done |
+| `score` | `value` (0–1 ratio) | how well |
+| `streak` | `value, unit` | consistency |
+| `trend` | `points[{at,value}]` | direction |
+| `duration` | `ms` | time spent |
+
+A program emits whichever apply. A language course has a streak; a writing
+assignment has a word count; **neither is obliged to pretend it has the other,
+and `metrics: []` with `next: null` is a valid report.** Quizzes emit no `next`
+precisely because nothing there assigns work — inventing one would put a
+suggestion on the board indistinguishable from a real assignment.
+
+Rules the contract holds to, each inherited from a decision School already made:
+
+- **Derived on every read, never stored** — so a reassignment moves the
+  evidence and the statistics together.
+- **A blocked `next` always names the remedy.** A blocked step that omits one
+  is surfaced *and* logged rather than dropped, because a silent lock is the
+  real trap. This is the materials framework's quiz gate, generalised.
+- **One failing program never blanks the board.** Each reporter is called in
+  its own try; a malformed metric is dropped while its siblings survive.
+- **A guest produces no report at all.**
+
+Ordering answers "who needs attention" top-down: blocked, then active, then
+idle, then not-started, then complete; most recently touched first within each.
+
+| Layer | Path |
+|---|---|
+| Contract (pure) | `backend/src/2_domains/school/reporting.mjs` |
+| Port | `backend/src/3_applications/school/ports/IProgramReporter.mjs` |
+| Aggregate use case | `backend/src/3_applications/school/GetSchoolReport.mjs` |
+| API | `GET /api/v1/school/report[?userId=]` |
+| Frontend | `frontend/src/modules/School/report/` |
+
+Registering a program means adding it to the `reporters` array in the
+composition root. `GetSchoolReport` gains no branch.
+
 ### Language study (the sentence ladder)
 
 A revival of KC's 2016–2017 `korean.kckern.info` drill app, rebuilt as a School

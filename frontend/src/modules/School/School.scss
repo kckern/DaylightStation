@@ -160,3 +160,83 @@
   &__stage { flex: 1; min-height: 0; border-radius: 12px; overflow: hidden; background: #000; }
   &__loading, &__placeholder { color: var(--school-muted); }
 }
+
+// --- program report: every program x every learner, one shape ---------------
+// Renders purely from the closed report contract, so nothing here is specific
+// to quizzes, courses or the sentence ladder. No animation (kiosk WebView).
+.school-report {
+  display: flex; flex-direction: column; gap: 1.5rem;
+
+  &__status { color: var(--school-muted); text-align: center; padding: 2rem 0; }
+  &__all {
+    align-self: flex-start; min-height: 56px; padding: 0 1rem;
+    border: 1px solid var(--school-border); border-radius: 12px;
+    background: var(--school-surface-2); color: var(--school-fg);
+    font-size: 1rem; cursor: pointer;
+  }
+
+  &__learner-head { display: flex; align-items: center; gap: 0.75rem; margin-bottom: 0.5rem; }
+  &__learner-name {
+    min-height: 56px; padding: 0 0.5rem;
+    border: none; background: transparent; color: var(--school-fg);
+    font-size: 1.2rem; font-weight: 800; cursor: pointer;
+  }
+  &__flag {
+    padding: 0.2rem 0.6rem; border-radius: 999px;
+    background: var(--school-warn); color: #241a05;
+    font-size: 0.9rem; font-weight: 700;
+  }
+
+  // Cards flow; each is its own program row. min() keeps a single card from
+  // stretching the full 1280px and stranding its content on the left.
+  &__cards {
+    display: grid; gap: 0.75rem;
+    grid-template-columns: repeat(auto-fill, minmax(min(100%, 320px), 1fr));
+  }
+  &__card {
+    display: flex; flex-direction: column; gap: 0.5rem;
+    padding: 1rem; border-radius: 12px;
+    background: var(--school-surface);
+    // Only a blocked program earns a coloured edge; everything else stays
+    // quiet so "needs attention" means something.
+    border-left: 4px solid transparent;
+    &.is-blocked { border-left-color: var(--school-warn); }
+    &.is-active  { border-left-color: var(--school-accent); }
+  }
+  &__card-head { display: flex; align-items: baseline; justify-content: space-between; gap: 0.5rem; }
+  &__program { margin: 0; font-size: 1.05rem; font-weight: 700; }
+  &__state { font-size: 0.9rem; color: var(--school-muted); }
+  &__state.is-blocked { color: var(--school-warn); }
+  &__headline { margin: 0; font-size: 0.9rem; color: var(--school-muted); }
+
+  // The field the whole view exists for, so it is the loudest thing here.
+  &__next {
+    display: flex; flex-direction: column; gap: 0.15rem;
+    margin: 0.25rem 0 0; padding: 0.6rem 0.75rem;
+    border-radius: 8px; background: var(--school-surface-2);
+    &.is-blocked { background: var(--school-warn); color: #241a05; }
+  }
+  &__next-label { font-size: 1.05rem; font-weight: 700; }
+  &__next-detail { font-size: 0.9rem; color: var(--school-muted); }
+  &__next.is-blocked &__next-detail { color: #241a05; }
+
+  &__metrics { display: flex; flex-wrap: wrap; gap: 0.75rem 1.25rem; margin-top: 0.25rem; }
+  &__seen { margin: 0; font-size: 0.9rem; color: var(--school-muted); }
+}
+
+.school-metric {
+  display: flex; flex-direction: column; gap: 0.2rem; min-width: 7rem;
+
+  &__label { font-size: 0.9rem; color: var(--school-muted); }
+  &__value { font-size: 1.05rem; }
+  &__value--figure { font-size: 1.35rem; font-weight: 700; }
+  &__unit { font-size: 0.9rem; font-weight: 400; color: var(--school-muted); }
+  &__unknown { color: var(--school-muted); }
+
+  &__bar {
+    width: 100%; min-width: 9rem; height: 8px;
+    border-radius: 999px; overflow: hidden; background: var(--school-surface-2);
+  }
+  &__bar-fill { height: 100%; background: var(--school-accent); }
+  &__spark { width: 120px; height: 28px; color: var(--school-accent); }
+}
