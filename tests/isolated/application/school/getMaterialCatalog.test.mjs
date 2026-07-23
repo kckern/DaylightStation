@@ -159,6 +159,61 @@ describe('GetMaterialCatalog.execute', () => {
   });
 });
 
+describe('GetMaterialCatalog label-native shelving + grade ceiling', () => {
+  it('shelves a material by its OWN subject when the source entry declares none', async () => {
+    const sources = {
+      'plex-label': { listMaterials: async () => [material('plex:s1', { subject: 'science', minGrade: 'lower' })] },
+    };
+    const config = {
+      sources: [{ label: 'Curated', source: 'plex-label', root: '17', category: 'reference' }],
+      completion_threshold_percent: 90, quiz_pass_percent: 80,
+    };
+    const { materials } = await new GetMaterialCatalog({ sources, config, logger }).execute();
+    expect(materials[0].subject).toBe('science');
+  });
+
+  it('a source entry subject still overrides the material label (config wins)', async () => {
+    const sources = {
+      'plex-label': { listMaterials: async () => [material('plex:s1', { subject: 'science' })] },
+    };
+    const config = {
+      sources: [{ label: 'Forced', source: 'plex-label', root: '17', subject: 'history', category: 'reference' }],
+      completion_threshold_percent: 90, quiz_pass_percent: 80,
+    };
+    const { materials } = await new GetMaterialCatalog({ sources, config, logger }).execute();
+    expect(materials[0].subject).toBe('history');
+  });
+
+  it('drops materials whose min-grade exceeds the household visibleGradeCeiling', async () => {
+    const sources = {
+      'plex-label': { listMaterials: async () => [
+        material('plex:low', { subject: 'math', minGrade: 'lower' }),
+        material('plex:high', { subject: 'math', minGrade: 'high' }),
+        material('plex:open', { subject: 'math', minGrade: null }),
+      ] },
+    };
+    const config = {
+      sources: [{ label: 'Curated', source: 'plex-label', root: '17', category: 'reference' }],
+      visibleGradeCeiling: 'upper',
+      completion_threshold_percent: 90, quiz_pass_percent: 80,
+    };
+    const { materials } = await new GetMaterialCatalog({ sources, config, logger }).execute();
+    expect(materials.map((m) => m.id)).toEqual(['plex:low', 'plex:open']);
+  });
+
+  it('with no ceiling configured, shows everything including ap-level content', async () => {
+    const sources = {
+      'plex-label': { listMaterials: async () => [material('plex:ap', { subject: 'math', minGrade: 'ap' })] },
+    };
+    const config = {
+      sources: [{ label: 'Curated', source: 'plex-label', root: '17', category: 'reference' }],
+      completion_threshold_percent: 90, quiz_pass_percent: 80,
+    };
+    const { materials } = await new GetMaterialCatalog({ sources, config, logger }).execute();
+    expect(materials).toHaveLength(1);
+  });
+});
+
 describe('GetMaterialCatalog.findMaterial', () => {
   it('finds a material by id by walking configured roots (cached listMaterials)', async () => {
     const sources = {

@@ -15,6 +15,7 @@
  * default (the only place in this module a wall clock is read).
  */
 import { resolveCategory } from '#domains/school/index.mjs';
+import { isVisibleAtCeiling } from '#domains/school/grades.mjs';
 
 const SECTION_ORDER = [
   { category: 'course', label: 'Courses' },
@@ -67,7 +68,9 @@ export class GetMaterialCatalog {
       // material id to its own shelf, for mixed-subject roots (one Plex
       // collection holding a money show and a science show); the source-level
       // `subject` remains the default for everything unlisted.
-      subject: entry.subject_overrides?.[material.id] ?? entry.subject ?? null,
+      // A `plex-label` material carries its own `subject` label; used only when
+      // config declares no shelf, so an explicit config subject still wins.
+      subject: entry.subject_overrides?.[material.id] ?? entry.subject ?? material.subject ?? null,
     };
   }
 
@@ -104,6 +107,10 @@ export class GetMaterialCatalog {
       }
       for (const material of raw) {
         const stamped = this.#stamp(material, entry);
+        // Household grade ceiling: a material labelled above the household's
+        // current level stays authored-but-dormant (grades.mjs). Absence of a
+        // min-grade, or of a ceiling, never hides.
+        if (!isVisibleAtCeiling(stamped.minGrade ?? null, this.#config.visibleGradeCeiling ?? null)) continue;
         materials.push(stamped);
         categoriesPresent.add(stamped.category);
       }
