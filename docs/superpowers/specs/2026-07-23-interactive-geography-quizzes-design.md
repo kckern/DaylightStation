@@ -10,6 +10,15 @@ unclaimed-identity launch via `onLaunch` + drill runner-mount branch + full
 (§Integration/§2), stable choice shuffle (§2))
 **Author:** KC Kern + Claude
 
+> **Amendment (2026-07-23, post-plan):** the clickable interaction is a
+> **generic clickable *asset***, not a "map". Throughout this spec, read
+> `map_click` → **`region_click`**, `ClickableMap` → **`ClickableAsset`** (a
+> reusable renderer under `quiz/clickable/`), and the item field `map` →
+> **`asset`** (an asset id supplied by data). A US map is one instance; the
+> code hardcodes no instance name. The implementation plan
+> (`docs/superpowers/plans/2026-07-23-interactive-geography-quizzes.md`) is the
+> authority on these names.
+
 ## Goal
 
 Build a **reusable interactive-quiz framework** by extending the existing School
