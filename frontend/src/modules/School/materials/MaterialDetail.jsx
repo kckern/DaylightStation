@@ -181,15 +181,17 @@ export default function MaterialDetail({ material, userId, onBack, onPlay, notic
               partial, hollow not-started). No "N of M done", no per-lock note. */}
           {units.length > 0 && (
             <div className="school-material-detail__progress">
-              <div className="school-material-detail__progress-bar">
-                <span
-                  className="school-material-detail__progress-fill"
-                  style={{ width: `${Math.round((doneCount / units.length) * 100)}%` }}
-                />
+              <div className="school-material-detail__progress-top">
+                <div className="school-material-detail__progress-bar">
+                  <span
+                    className="school-material-detail__progress-fill"
+                    style={{ width: `${Math.round((doneCount / units.length) * 100)}%` }}
+                  />
+                </div>
+                <span className="school-material-detail__progress-pct">
+                  {Math.round((doneCount / units.length) * 100)}%
+                </span>
               </div>
-              <span className="school-material-detail__progress-pct">
-                {Math.round((doneCount / units.length) * 100)}%
-              </span>
               <ul className="school-material-detail__dots" aria-hidden="true">
                 {units.map((u) => (
                   <li
