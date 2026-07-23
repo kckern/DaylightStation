@@ -785,4 +785,36 @@
     }
     .school-tile__app-open { flex: 0 0 auto; color: var(--school-muted); font-weight: 700; font-size: 0.9rem; }
   }
+
+  // --- deck: card-stack motif (static offset borders, no animation) ---
+  // The card body does not navigate — only the two action buttons act — so
+  // this variant skips the shared &__button entirely.
+  &--deck {
+    .school-tile__stack {
+      position: relative; flex: 1; min-height: 120px;
+      // Two static borders behind the card read as a stack. No animation.
+      &::before, &::after {
+        content: ''; position: absolute; left: 0; right: 0; border-radius: 12px;
+        border: 1px solid var(--school-border); background: var(--school-surface);
+      }
+      &::before { top: 8px; left: 6px; right: -6px; bottom: -8px; z-index: 0; }
+      &::after { top: 4px; left: 3px; right: -3px; bottom: -4px; z-index: 1; }
+    }
+    .school-tile__card {
+      position: relative; z-index: 2;
+      display: flex; flex-direction: column; gap: 0.5rem;
+      min-height: 120px; padding: 1rem;
+      border: 1px solid var(--school-border); border-radius: 12px;
+      background: var(--school-surface); color: var(--school-fg);
+    }
+    .school-tile__title { margin: 0; font-size: 1rem; -webkit-line-clamp: 2; display: -webkit-box; -webkit-box-orient: vertical; overflow: hidden; }
+    .school-tile__meta { margin: 0; color: var(--school-muted); font-size: 0.85rem; }
+    .school-tile__deck-actions {
+      display: flex; gap: 0.5rem; margin-top: auto;
+      button {
+        flex: 1; min-height: 64px; border: 1px solid var(--kind-deck); border-radius: 12px;
+        background: transparent; color: var(--kind-deck); font-size: 1rem; font-weight: 700; cursor: pointer;
+      }
+    }
+  }
 }
