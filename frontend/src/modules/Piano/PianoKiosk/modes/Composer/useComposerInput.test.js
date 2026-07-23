@@ -2,6 +2,7 @@ import { describe, it, expect, vi } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
 import { mapKey, useComposerInput, KEY_LEGEND } from './useComposerInput.js';
 import { makeEmptyScore, initEditor } from './model/index.js';
+import { intern, KIND, __resetRecorder, __snapshotForTest } from '../../../../../lib/logging/inputRecorder.js';
 
 describe('mapKey (numpad)', () => {
   it('maps duration + arm + rest + delete codes', () => {
@@ -129,6 +130,37 @@ describe('useComposerInput MIDI entry', () => {
     act(() => { window.dispatchEvent(new KeyboardEvent('keydown', { code: 'Numpad4' })); });
     act(() => { midiFn({ type: 'note_on', note: 62, velocity: 80 }); });
     expect(state.score.parts[0].measures[0].notes.length).toBe(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Task 5 — input telemetry into the zero-alloc recorder ring, ALONGSIDE the
+// existing semantic logs. A mapped numpad keydown lands a KEY row; a model
+// mutation (here: the armed MIDI note insert) lands an EDIT row. These feed the
+// backend .jsonl trace the session logger persists.
+// ---------------------------------------------------------------------------
+describe('useComposerInput recorder capture', () => {
+  it('records a KEY row for a mapped numpad keydown', () => {
+    const setEditorState = vi.fn();
+    renderHook(() => useComposerInput({ setEditorState, subscribe: () => () => {} }));
+    __resetRecorder();
+    act(() => { window.dispatchEvent(new KeyboardEvent('keydown', { code: 'Numpad5' })); });
+    const hit = __snapshotForTest().records.some((r) => r.kind === KIND.KEY && r.a === intern('Numpad5'));
+    expect(hit).toBe(true);
+  });
+
+  it('records an EDIT insert-note row (with the midi note) for an armed MIDI note-on', () => {
+    let state = initEditor(makeEmptyScore());
+    const setEditorState = vi.fn((fn) => { state = typeof fn === 'function' ? fn(state) : fn; });
+    let midiFn;
+    renderHook(() => useComposerInput({ setEditorState, subscribe: (fn) => { midiFn = fn; return () => {}; } }));
+    act(() => { window.dispatchEvent(new KeyboardEvent('keydown', { code: 'Numpad4' })); }); // arm Write
+    __resetRecorder(); // isolate the note-on's records from the arm keydown's
+    act(() => { midiFn({ type: 'note_on', note: 67, velocity: 80 }); });
+    const hit = __snapshotForTest().records.some(
+      (r) => r.kind === KIND.EDIT && r.a === intern('insert-note') && r.b === 67,
+    );
+    expect(hit).toBe(true);
   });
 });
 
