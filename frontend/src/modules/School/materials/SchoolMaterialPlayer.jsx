@@ -186,6 +186,19 @@ export default function SchoolMaterialPlayer({ material, unit, userId, onExit, o
     return () => clearTimeout(t);
   }, [contentId, material?.medium]);
 
+  // Mouse activity keeps the video chrome up: any movement over the stage
+  // reveals it and re-arms the idle timer, so the bar never vanishes as you move
+  // toward it (the old bug — only taps revealed, so an in-flight idle timer hid
+  // it mid-approach). Throttled to ~4×/s. Declared BEFORE the early returns
+  // below so the hook order stays stable across renders.
+  const lastMoveRef = useRef(0);
+  const onStageMove = useCallback(() => {
+    const now = Date.now();
+    if (now - lastMoveRef.current < 250) return;
+    lastMoveRef.current = now;
+    chrome.reveal();
+  }, [chrome]);
+
   if (quizBank) {
     return <QuizRunner bank={quizBank} onExit={exitToDetail} />;
   }
@@ -235,7 +248,7 @@ export default function SchoolMaterialPlayer({ material, unit, userId, onExit, o
   // stage, with the chrome as a TAP-SUMMONED overlay that auto-hides.
   return (
     <div className={`school-material-player school-material-player--${isAudio ? 'audio' : 'video'}`}>
-      <div className="school-material-player__stage">
+      <div className="school-material-player__stage" onMouseMove={isAudio ? undefined : onStageMove}>
         <SchoolPlayerBoundary onBack={exitToDetail}>
           <Suspense fallback={<p className="school-material-player__loading">Loading player…</p>}>
             {playerEl}

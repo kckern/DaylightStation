@@ -23,7 +23,7 @@ import SchoolMaterialPlayer from './SchoolMaterialPlayer.jsx';
 
 const COURSE_NOTICE = 'Sign in for courses — guests get the listening shelf.';
 
-export default function MaterialsSection({ materials, sectionLabel, initialMaterialPath = [], onMaterialNav }) {
+export default function MaterialsSection({ materials, sectionLabel, initialMaterialPath = [], onMaterialNav, renderCatalog }) {
   const { currentUser, isGuest, openPicker } = useSchoolProfile();
   // Three levels below the grid for an audio anthology (collection → work →
   // chapter); a video show or a plain material skips the collection level.
@@ -220,5 +220,10 @@ export default function MaterialsSection({ materials, sectionLabel, initialMater
     return <CollectionDetail collection={collection} onOpenWork={openWork} initialWorkId={initialWorkId} />;
   }
 
-  return <MaterialGrid materials={materials} onSelect={openDetail} />;
+  // The catalog (grid) layer is a render-prop so a parent can supply a grouped
+  // layout; default is the flat MaterialGrid. Everything above this line — the
+  // player/collection/detail branches — is unchanged, so opening a detail
+  // still REPLACES the catalog entirely (the hierarchy fix).
+  const catalog = renderCatalog ?? ((props) => <MaterialGrid materials={materials} onSelect={props.onSelect} />);
+  return catalog({ onSelect: openDetail });
 }
