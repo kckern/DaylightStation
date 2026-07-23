@@ -57,6 +57,11 @@ export class GetMaterialCatalog {
       source: entry.source,
       medium: entry.medium ?? material.medium,
       category,
+      kind: material.kind ?? 'material',
+      // A collection's own name is the configured source `label` (a Plex
+      // parentTitle is unreliable for a manually-built collection); works and
+      // plain materials keep their Plex title.
+      title: material.kind === 'collection' ? (entry.label ?? material.title) : material.title,
       // School subject shelf — config-declared per source, unvalidated here:
       // the frontend routes unknowns to Library. `subject_overrides` maps a
       // material id to its own shelf, for mixed-subject roots (one Plex
@@ -64,6 +69,22 @@ export class GetMaterialCatalog {
       // `subject` remains the default for everything unlisted.
       subject: entry.subject_overrides?.[material.id] ?? entry.subject ?? null,
     };
+  }
+
+  /**
+   * A collection's works (albums), stamped with the collection's category/
+   * subject so a work inherits the anthology's pedagogy (quiz gating, credit).
+   * Only `plex-album` sources have works; anything else returns [].
+   *
+   * @param {string} collectionId - the collection material id (its Plex root)
+   * @returns {Promise<Array>} stamped work materials, or [] if not a collection
+   */
+  async listWorks(collectionId) {
+    const entry = this.#config.sources.find((e) => `plex:${String(e.root).replace(/^plex:/, '')}` === collectionId);
+    const adapter = entry && this.#sources[entry.source];
+    if (!entry || !adapter?.listWorks) return [];
+    const works = await adapter.listWorks(entry.root);
+    return works.map((w) => this.#stamp(w, entry));
   }
 
   /**
@@ -100,6 +121,7 @@ export class GetMaterialCatalog {
    * @returns {Promise<{entry:object, material:object}|null>}
    */
   async findMaterial(materialId) {
+    // Top-level items first (a plex-show's shows, a plex-album's collection).
     for (const entry of this.#config.sources) {
       let raw;
       try {
@@ -110,6 +132,20 @@ export class GetMaterialCatalog {
       }
       const hit = raw.find((m) => m.id === materialId);
       if (hit) return { entry, material: this.#stamp(hit, entry) };
+    }
+    // Then a work INSIDE a collection — `listMaterials` returns the collection,
+    // not its works, so a work (album) id is resolved one level down. It
+    // inherits its collection source's entry (category, subject) via #stamp.
+    for (const entry of this.#config.sources) {
+      const adapter = this.#sources[entry.source];
+      if (!adapter?.listWorks) continue;
+      try {
+        const works = await adapter.listWorks(entry.root);
+        const hit = works.find((w) => w.id === materialId);
+        if (hit) return { entry, material: this.#stamp(hit, entry) };
+      } catch (err) {
+        this.#logger.error?.('school.materials.works-failed', { source: entry.label, root: entry.root, error: err.message });
+      }
     }
     return null;
   }

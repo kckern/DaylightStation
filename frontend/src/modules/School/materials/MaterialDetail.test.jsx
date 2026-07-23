@@ -123,6 +123,33 @@ describe('MaterialDetail', () => {
     expect(await screen.findByRole('button', { name: /quiz requested/i })).toBeDisabled();
   });
 
+  it('audio material renders chapters as a list (no thumbnails), locked ones inert with their reason', async () => {
+    const audio = { id: 'plex:685120', title: 'Hamlet', category: 'course', medium: 'audio', poster: '/p/h' };
+    materialUnitsMock.mockResolvedValue({
+      ok: true, status: 200,
+      data: {
+        material: audio,
+        units: [
+          { id: 'plex:1', index: 1, title: 'Chapter 1', durationMs: 5 * 60000, group: null, percent: 0, playhead: 0, completed: false, locked: false, current: true, lockReason: null, quiz: null, needsQuiz: false },
+          { id: 'plex:2', index: 2, title: 'Chapter 2', durationMs: 6 * 60000, group: null, percent: 0, playhead: 0, completed: false, locked: true, current: false, lockReason: 'Pass the quiz for “Chapter 1” first', quiz: null, needsQuiz: false },
+        ],
+      },
+    });
+    const onPlay = vi.fn();
+    render(<MaterialDetail material={audio} userId="kid1" onBack={() => {}} onPlay={onPlay} notice={null} sectionLabel="Shakespeare Tales" />);
+    await screen.findByText('Chapter 1');
+    // No episode thumbnails in the audio list.
+    expect(document.querySelector('.school-material-detail__thumb')).toBeNull();
+    expect(document.querySelector('.school-material-detail__chapters')).not.toBeNull();
+    // Locked chapter shows its reason and does not launch on tap.
+    expect(screen.getAllByText(/Pass the quiz/).length).toBeGreaterThan(0);
+    fireEvent.click(screen.getByText('Chapter 2').closest('button'));
+    expect(onPlay).not.toHaveBeenCalled();
+    // The current (unlocked) chapter launches.
+    fireEvent.click(screen.getByText('Chapter 1').closest('button'));
+    expect(onPlay).toHaveBeenCalledWith(expect.objectContaining({ id: 'plex:1' }));
+  });
+
   it('a guest sees the needsQuiz explanation but no request button', async () => {
     materialUnitsMock.mockResolvedValue({
       ok: true, status: 200,

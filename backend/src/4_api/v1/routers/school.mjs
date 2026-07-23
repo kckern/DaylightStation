@@ -108,6 +108,13 @@ export function createSchoolRouter({
     res.json(await getMaterialCatalog.execute());
   }));
 
+  // A collection's works (albums), for the collection browser. Empty for a
+  // non-collection material, so the frontend can call it unconditionally.
+  router.get('/materials/:materialId/works', wrap(async (req, res) => {
+    if (!getMaterialCatalog?.listWorks) return res.json([]);
+    res.json(await getMaterialCatalog.listWorks(req.params.materialId));
+  }));
+
   router.get('/materials/:materialId/units', wrap(async (req, res) => {
     if (!getMaterialUnits) throw new EntityNotFoundError('material', req.params.materialId);
     const userId = req.query.userId || undefined;

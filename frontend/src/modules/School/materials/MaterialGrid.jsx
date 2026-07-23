@@ -12,6 +12,9 @@
  * directly (`modules/Piano/PianoKiosk/modes/Videos/CourseTile.jsx`).
  */
 function formatMeta(material) {
+  if (material.kind === 'collection') {
+    return material.unitCount != null ? `${material.unitCount} works` : '';
+  }
   const parts = [];
   if (material.unitCount != null) parts.push(`${material.unitCount} parts`);
   if (material.durationMs != null) parts.push(`~${Math.max(1, Math.round(material.durationMs / 60000))} min`);
@@ -26,16 +29,20 @@ export default function MaterialGrid({ materials, onSelect }) {
       </div>
     );
   }
+  // An audio anthology is a `collection` tile — square, not a portrait poster,
+  // because it's an abstract shelf of works, not a single cover.
+  const anySquare = materials.some((m) => m.kind === 'collection');
   return (
     <div className="school-materials">
-      <div className="school-materials__grid">
+      <div className={`school-materials__grid${anySquare ? ' school-materials__grid--square' : ''}`}>
         {materials.map((m) => {
           const meta = formatMeta(m);
+          const square = m.kind === 'collection';
           return (
             <button
               key={m.id}
               type="button"
-              className="school-materials__tile"
+              className={`school-materials__tile${square ? ' school-materials__tile--square' : ''}`}
               onClick={() => onSelect(m)}
             >
               {m.poster ? (

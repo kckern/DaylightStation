@@ -151,6 +151,14 @@
   }
   &__title { margin: 0 0.75rem; font-size: 1.05rem; }
   &__meta { margin: 0 0.75rem 0.75rem; color: var(--school-muted); font-size: 0.9rem; }
+
+  // Square tiles for anthologies (collection) and their works — an abstract
+  // shelf, not a single cover — smaller than the portrait poster grid.
+  &__grid--square {
+    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+    list-style: none; margin: 0; padding: 0;
+  }
+  &__tile--square .school-materials__poster { aspect-ratio: 1 / 1; }
 }
 
 // --- material detail: unit list (spec §2b/§5/§6) ---
@@ -243,6 +251,36 @@
   }
   &__unit-title { font-size: 0.95rem; line-height: 1.3; }
   &__unit-index { color: var(--school-muted); font-weight: 700; margin-right: 0.45rem; }
+
+  // Audio chapters: no thumbnails, so a two-column list that fills the panel's
+  // vertical space (few chapters stretch to fill via the auto-rows). Locked
+  // rows are inert and greyed; the current row is outlined.
+  &__units-panel { display: flex; flex-direction: column; min-height: 100%; }
+  &__chapters {
+    list-style: none; margin: 0; padding: 0; flex: 1;
+    display: grid; grid-template-columns: repeat(2, 1fr);
+    grid-auto-rows: minmax(56px, 1fr); gap: 0.6rem;
+    li { display: flex; }
+  }
+  &__chapter {
+    flex: 1; width: 100%; display: flex; align-items: center; gap: 0.75rem;
+    padding: 0.6rem 0.9rem; text-align: left;
+    border: 1px solid var(--school-border); border-radius: 10px;
+    background: var(--school-surface-2); color: var(--school-fg); font-size: 1rem; cursor: pointer;
+    &.is-current { outline: 2px solid var(--school-fg); outline-offset: -2px; }
+    &.is-locked { opacity: 0.5; cursor: default; }
+    &.is-done { color: var(--school-muted); }
+  }
+  &__chapter-index {
+    flex: 0 0 auto; min-width: 1.75rem; height: 1.75rem;
+    display: flex; align-items: center; justify-content: center;
+    border-radius: 50%; background: var(--school-surface);
+    color: var(--school-muted); font-weight: 800; font-size: 0.9rem;
+  }
+  &__chapter-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 0.15rem; }
+  &__chapter-title { font-size: 1rem; font-weight: 700; line-height: 1.25; }
+  &__chapter-lockreason { color: var(--school-muted); font-size: 0.82rem; font-style: italic; }
+  &__chapter-status { flex: 0 0 auto; color: var(--school-muted); font-size: 0.85rem; display: flex; align-items: center; }
 }
 
 .school-back-chevron { flex: 0 0 auto; vertical-align: middle; margin-right: 0.4rem; }
