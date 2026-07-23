@@ -196,6 +196,7 @@ export default function MaterialsSection({ materials, sectionLabel, initialMater
         unit={playing.unit}
         userId={currentUser?.id}
         onExit={onPlayerExit}
+        onNavigate={(u) => setPlaying({ material: playing.material, unit: u })}
       />
     );
   }

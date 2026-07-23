@@ -329,12 +329,15 @@ describe('SchoolApp materials flows', () => {
     await waitFor(() => expect(materialUnitsMock).toHaveBeenCalledTimes(1));
     fireEvent.click(await screen.findByText('Chapter 1'));
     await screen.findByTestId('player-stub');
+    // The player fetches sibling units for its prev/next-chapter controls, so
+    // the exact call count is incidental — capture it, then assert it rises.
+    await waitFor(() => expect(materialUnitsMock.mock.calls.length).toBeGreaterThanOrEqual(2));
+    const before = materialUnitsMock.mock.calls.length;
 
-    // The material player's own exit row (its back button, carrying the
-    // material title) is the "child leaves mid-play" affordance — it must
-    // flow back to the detail view AND force a fresh units fetch.
+    // Leaving mid-play via the header breadcrumb material crumb flows back to
+    // the detail view AND forces a fresh units fetch (lock state may differ).
     fireEvent.click(screen.getByRole('button', { name: /Story Time/i }));
     expect(await screen.findByText('Chapter 1')).toBeInTheDocument();
-    await waitFor(() => expect(materialUnitsMock).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(materialUnitsMock.mock.calls.length).toBeGreaterThan(before));
   });
 });

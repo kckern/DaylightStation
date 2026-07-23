@@ -8,6 +8,7 @@ vi.mock('../schoolApi.js', () => ({
   schoolApi: {
     unitProgress: (...a) => unitProgressMock(...a),
     bank: (...a) => bankMock(...a),
+    materialUnits: vi.fn(async () => ({ ok: true, status: 200, data: { units: [] } })),
   },
 }));
 
