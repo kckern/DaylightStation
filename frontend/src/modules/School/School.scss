@@ -2,6 +2,18 @@
 // touch-only). Local tokens ONLY: identity.scss owns its own --piano-*
 // fallbacks, so nothing here redefines those. No animation — the kiosk
 // WebView drops frames under transitions/keyframes.
+// Inside the screen framework the app is a widget in a fixed-resolution
+// `.screen-root` box (e.g. the Portal's 1280x800). There `height: 100dvh`
+// measures the VIEWPORT, not that box, so the app's bottom ran past the
+// screen-root baseline whenever the two differ (letterboxing / scaling). As a
+// flex child of the column-flex `.screen-widget`, fill the parent's height
+// instead — the app's baseline then coincides with screen-root's and never
+// overshoots it. The standalone `/app/school` route (no `.screen-root`
+// ancestor) keeps the 100dvh rule below.
+.screen-root .school-app {
+  height: auto; min-height: 0; flex: 1 1 auto; align-self: stretch;
+}
+
 .school-app {
   --school-bg: #16161b;
   --school-surface: #1f1f26;
@@ -231,8 +243,24 @@
     .school-materials__meta { font-size: 0.82rem; }
   }
   &__title { margin: 0; font-size: 1.35rem; font-weight: 800; }
-  &__progress-line { margin: 0; color: var(--school-muted); font-size: 0.95rem; }
-  &__lock-note { margin: 0; color: var(--school-muted); font-size: 0.9rem; font-style: italic; }
+
+  // Progress: a % bar, then one dot per unit (hollow = not started, amber =
+  // partial, green = done). No "N of M done" line, no per-unit lock note.
+  &__progress { display: flex; flex-direction: column; align-items: stretch; gap: 0.45rem; }
+  &__progress-bar {
+    position: relative; width: 100%; height: 8px; border-radius: 999px;
+    background: var(--school-surface-2); overflow: hidden;
+  }
+  &__progress-fill { position: absolute; inset: 0 auto 0 0; background: var(--school-accent); border-radius: 999px; }
+  &__progress-pct { align-self: center; font-size: 0.95rem; font-weight: 800; color: var(--school-fg); }
+  &__dots { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 0.35rem; }
+  &__dot {
+    width: 13px; height: 13px; border-radius: 999px;
+    border: 2px solid var(--school-muted); background: transparent;
+    &.is-done { background: var(--school-accent); border-color: var(--school-accent); }
+    &.is-partial { background: var(--school-warn); border-color: var(--school-warn); }
+  }
+  &__summary { margin: 0.15rem 0 0; color: var(--school-muted); font-size: 0.9rem; line-height: 1.4; }
 
   &__quiz-request {
     display: flex; flex-direction: column; gap: 0.5rem;
@@ -405,9 +433,16 @@
   }
   &--audio .school-chrome__bar { background: var(--school-surface-2); }
   &__progress { position: absolute; left: 0; top: 0; bottom: 0; background: var(--school-fg); }
+  // Video only: the progress numbers float centered just above the seek bar.
+  &__time-float {
+    display: flex; justify-content: center; padding: 0 1rem 0.35rem;
+    text-shadow: 0 1px 3px rgba(0,0,0,0.6);
+  }
   &__row { display: flex; align-items: center; gap: 0.4rem; padding: 0.6rem 1rem 0.9rem; }
   &__time { flex: 0 0 auto; color: rgba(255,255,255,0.85); font-size: 0.9rem; font-variant-numeric: tabular-nums; }
   &--audio .school-chrome__time { color: var(--school-muted); }
+  // The X exit sits at the far right of the video control row.
+  &__btn--exit { font-size: 1.25rem; }
   &__spacer { flex: 1; }
   &__btn {
     flex: 0 0 auto; min-width: 48px; min-height: 48px;
@@ -554,6 +589,20 @@
     // to grow (which is what forced the scroll). Prominent, not dominating.
     svg { width: auto; height: 100%; max-height: 5.5rem; max-width: 100%; }
   }
+  // A splash of colour per slot: off-white / pastel / sun-washed tints so the
+  // wall reads as nine distinct subjects at a glance. The SVGs fill with
+  // currentColor, so tinting the icon element is enough (order follows
+  // subjects.js: english, writing, math, history, scripture, science,
+  // language, skills, arts).
+  &__subject:nth-child(1) &__subject-icon { color: #f6b8c4; } // english — pink
+  &__subject:nth-child(2) &__subject-icon { color: #f7cba4; } // writing — peach
+  &__subject:nth-child(3) &__subject-icon { color: #f2e2a6; } // math — butter
+  &__subject:nth-child(4) &__subject-icon { color: #cfe0a8; } // history — sage
+  &__subject:nth-child(5) &__subject-icon { color: #b8e3c9; } // scripture — mint
+  &__subject:nth-child(6) &__subject-icon { color: #aed4f0; } // science — sky
+  &__subject:nth-child(7) &__subject-icon { color: #cdbde9; } // language — lavender
+  &__subject:nth-child(8) &__subject-icon { color: #f4bfa8; } // skills — coral
+  &__subject:nth-child(9) &__subject-icon { color: #eec0dc; } // arts — blush
   &__subject-label { margin: 0; font-size: 1.25rem; font-weight: 800; }
   &__subject-hint { margin: 0; color: var(--school-muted); font-size: 0.9rem; }
 

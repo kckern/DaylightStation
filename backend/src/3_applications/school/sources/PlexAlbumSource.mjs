@@ -89,6 +89,7 @@ export class PlexAlbumSource {
       id: `plex:${album.ratingKey}`,
       title: album.title,
       poster: album.thumb ?? null,
+      summary: album.summary ?? null, // Plex description, shown under the detail poster
       source: SOURCE,
       medium: MEDIUM,
       kind: 'work',

@@ -26,7 +26,7 @@ const fmt = (s) => {
 export default function SchoolPlayerChrome({
   variant = 'audio',
   isPlaying, currentTime, duration, volume,
-  onToggle, onSeek, onSkip, onPrev, onNext, onSetVolume,
+  onToggle, onSeek, onSkip, onPrev, onNext, onSetVolume, onExit,
   hasPrev = false, hasNext = false,
   onActivity,
 }) {
@@ -34,6 +34,7 @@ export default function SchoolPlayerChrome({
   const [volOpen, setVolOpen] = useState(false);
   const dur = duration > 0 ? duration : 0;
   const pct = dur ? Math.min(100, (currentTime / dur) * 100) : 0;
+  const isVideo = variant === 'video';
 
   const seekFromEvent = (e) => {
     onActivity?.();
@@ -44,45 +45,72 @@ export default function SchoolPlayerChrome({
     onSeek(Math.max(0, Math.min(dur, (x / rect.width) * dur)));
   };
 
-  const act = (fn) => (e) => { e.stopPropagation(); onActivity?.(); fn(); };
+  const act = (fn) => (e) => { e.stopPropagation(); onActivity?.(); fn?.(); };
+
+  const transport = (
+    <>
+      <button type="button" className="school-chrome__btn" onClick={act(onPrev)} disabled={!hasPrev} aria-label="Restart, or previous chapter"><Icon name="prev" /></button>
+      <button type="button" className="school-chrome__btn" onClick={act(() => onSkip(-15))} aria-label="Back 15 seconds"><Icon name="rewind" /></button>
+      <button type="button" className="school-chrome__btn school-chrome__btn--play" onClick={act(onToggle)} aria-label={isPlaying ? 'Pause' : 'Play'}>
+        <Icon name={isPlaying ? 'pause' : 'play'} />
+      </button>
+      <button type="button" className="school-chrome__btn" onClick={act(() => onSkip(15))} aria-label="Forward 15 seconds"><Icon name="forward" /></button>
+      <button type="button" className="school-chrome__btn" onClick={act(onNext)} disabled={!hasNext} aria-label="Next chapter"><Icon name="next" /></button>
+    </>
+  );
+
+  const volumeControl = (
+    <div className="school-chrome__volume">
+      <button type="button" className={`school-chrome__btn${volOpen ? ' is-on' : ''}`} onClick={act(() => setVolOpen((o) => !o))} aria-label="Volume">
+        <Icon name={volume === 0 ? 'volume-mute' : 'volume'} />
+      </button>
+      {volOpen && (
+        <div className="school-chrome__volume-pop" onPointerDown={(e) => e.stopPropagation()}>
+          {[0, 0.25, 0.5, 0.75, 1].map((v) => (
+            <button
+              key={v}
+              type="button"
+              className={`school-chrome__vol-step${Math.abs(volume - v) < 0.13 ? ' is-active' : ''}`}
+              onClick={act(() => onSetVolume(v))}
+              aria-label={`Volume ${Math.round(v * 100)} percent`}
+            >
+              {Math.round(v * 100)}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+
+  const timeLabel = <span className="school-chrome__time">{fmt(currentTime)} / {fmt(dur)}</span>;
 
   return (
     <div className={`school-chrome school-chrome--${variant}`} onPointerDown={() => onActivity?.()}>
+      {/* Video: progress numbers ride centered just above the seek bar. Audio
+          keeps its numbers inline at the left of the control row (below). */}
+      {isVideo && <div className="school-chrome__time-float">{timeLabel}</div>}
       <div className="school-chrome__bar" ref={barRef} onPointerDown={seekFromEvent}>
         <div className="school-chrome__progress" style={{ width: `${pct}%` }} />
       </div>
-      <div className="school-chrome__row">
-        <span className="school-chrome__time">{fmt(currentTime)} / {fmt(dur)}</span>
-        <div className="school-chrome__spacer" />
-        <button type="button" className="school-chrome__btn" onClick={act(onPrev)} disabled={!hasPrev} aria-label="Restart, or previous chapter"><Icon name="prev" /></button>
-        <button type="button" className="school-chrome__btn" onClick={act(() => onSkip(-15))} aria-label="Back 15 seconds"><Icon name="rewind" /></button>
-        <button type="button" className="school-chrome__btn school-chrome__btn--play" onClick={act(onToggle)} aria-label={isPlaying ? 'Pause' : 'Play'}>
-          <Icon name={isPlaying ? 'pause' : 'play'} />
-        </button>
-        <button type="button" className="school-chrome__btn" onClick={act(() => onSkip(15))} aria-label="Forward 15 seconds"><Icon name="forward" /></button>
-        <button type="button" className="school-chrome__btn" onClick={act(onNext)} disabled={!hasNext} aria-label="Next chapter"><Icon name="next" /></button>
-        <div className="school-chrome__spacer" />
-        <div className="school-chrome__volume">
-          <button type="button" className={`school-chrome__btn${volOpen ? ' is-on' : ''}`} onClick={act(() => setVolOpen((o) => !o))} aria-label="Volume">
-            <Icon name={volume === 0 ? 'volume-mute' : 'volume'} />
-          </button>
-          {volOpen && (
-            <div className="school-chrome__volume-pop" onPointerDown={(e) => e.stopPropagation()}>
-              {[0, 0.25, 0.5, 0.75, 1].map((v) => (
-                <button
-                  key={v}
-                  type="button"
-                  className={`school-chrome__vol-step${Math.abs(volume - v) < 0.13 ? ' is-active' : ''}`}
-                  onClick={act(() => onSetVolume(v))}
-                  aria-label={`Volume ${Math.round(v * 100)} percent`}
-                >
-                  {Math.round(v * 100)}
-                </button>
-              ))}
-            </div>
-          )}
+      {isVideo ? (
+        // Video: volume bottom-left · transport centered · X exit bottom-right.
+        <div className="school-chrome__row">
+          {volumeControl}
+          <div className="school-chrome__spacer" />
+          {transport}
+          <div className="school-chrome__spacer" />
+          <button type="button" className="school-chrome__btn school-chrome__btn--exit" onClick={act(onExit)} aria-label="Exit"><Icon name="close" /></button>
         </div>
-      </div>
+      ) : (
+        // Audio (persistent bar): time · transport · volume, unchanged.
+        <div className="school-chrome__row">
+          {timeLabel}
+          <div className="school-chrome__spacer" />
+          {transport}
+          <div className="school-chrome__spacer" />
+          {volumeControl}
+        </div>
+      )}
     </div>
   );
 }

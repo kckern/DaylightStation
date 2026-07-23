@@ -279,7 +279,7 @@ export default function SchoolMaterialPlayer({ material, unit, userId, onExit, o
               />
             </div>
             <div className="school-material-player__overlay-chrome">
-              <SchoolPlayerChrome variant="video" {...chromeProps} onActivity={chrome.reveal} />
+              <SchoolPlayerChrome variant="video" {...chromeProps} onExit={exitToDetail} onActivity={chrome.reveal} />
             </div>
           </div>
         )}

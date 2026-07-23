@@ -417,6 +417,24 @@ class PlexCLI {
     }
 
     /**
+     * Upload a poster image file and set it as the item's current poster.
+     * Plex's `POST .../posters` with a raw image body both adds the image to the
+     * item's poster list and selects it — no separate "select" call needed.
+     *
+     * @param {string} plexId - Plex rating key
+     * @param {Buffer} imageBuffer - Raw image bytes
+     * @param {string} [contentType='image/jpeg']
+     */
+    async uploadPoster(plexId, imageBuffer, contentType = 'image/jpeg') {
+        const url = `${this.baseUrl}/library/metadata/${plexId}/posters?X-Plex-Token=${this.token}`;
+        await axios.post(url, imageBuffer, {
+            headers: { 'Content-Type': contentType },
+            maxBodyLength: Infinity,
+            maxContentLength: Infinity
+        });
+    }
+
+    /**
      * Update metadata fields on a Plex item.
      * Builds Plex's `field.value=...` (and optional `field.locked=1`) params and PUTs them.
      *
@@ -938,6 +956,84 @@ async function cmdCollection(plex, sub, rest) {
     }
 }
 
+const CONTENT_TYPE_BY_EXT = { '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.png': 'image/png' };
+
+function contentTypeFor(filePath) {
+    const ext = String(filePath).toLowerCase().slice(String(filePath).lastIndexOf('.'));
+    return CONTENT_TYPE_BY_EXT[ext] || 'image/jpeg';
+}
+
+async function uploadOnePoster(plex, id, filePath, { dryRun = false } = {}) {
+    if (!existsSync(filePath)) throw new Error(`File not found: ${filePath}`);
+    if (dryRun) return;
+    const buffer = readFileSync(filePath);
+    await plex.uploadPoster(id, buffer, contentTypeFor(filePath));
+}
+
+async function cmdPoster(plex, sub, rest) {
+    switch (sub) {
+        case 'set': {
+            const id = rest[0];
+            const filePath = rest[1];
+            if (!id || !filePath) { console.error('Usage: plex poster set <id> <file>'); process.exit(1); }
+            if (flags.dryRun) {
+                console.log(`[dry-run] Would upload ${filePath} as poster for ${id}`);
+                return;
+            }
+            await uploadOnePoster(plex, id, filePath);
+            console.log(`\n✓ Uploaded poster for ${id}: ${filePath}`);
+            break;
+        }
+
+        case 'set-from-yaml':
+        case 'yaml': {
+            const yamlPath = rest[0] || flags.fromYaml;
+            if (!yamlPath) {
+                console.error('Usage: plex poster set-from-yaml <path/to/manifest.yml> [--dry-run]');
+                console.error('\nManifest format:');
+                console.error('  posters:');
+                console.error('    - id: 685550');
+                console.error('      file: /path/to/poster.jpg');
+                process.exit(1);
+            }
+            if (!existsSync(yamlPath)) { console.error(`File not found: ${yamlPath}`); process.exit(1); }
+
+            const manifest = yaml.load(readFileSync(yamlPath, 'utf8'));
+            const entries = Array.isArray(manifest?.posters) ? manifest.posters : [];
+            if (entries.length === 0) { console.error('Manifest must have a `posters:` array'); process.exit(1); }
+
+            console.log(`\nLoaded ${entries.length} poster entries from ${yamlPath}`);
+            if (flags.dryRun) console.log('Mode: dry-run (no uploads)');
+
+            let uploaded = 0;
+            const errors = [];
+            for (const entry of entries) {
+                if (!entry?.id || !entry?.file) {
+                    console.warn(`  ⚠️  Skipping entry missing id/file: ${JSON.stringify(entry)}`);
+                    continue;
+                }
+                try {
+                    await uploadOnePoster(plex, entry.id, entry.file, { dryRun: flags.dryRun });
+                    const prefix = flags.dryRun ? '  [dry]' : '  ✓';
+                    console.log(`${prefix} ${entry.id}: ${entry.file}`);
+                    uploaded++;
+                } catch (err) {
+                    console.error(`  ✗ ${entry.id}: ${err.message}`);
+                    errors.push({ id: entry.id, error: err.message });
+                }
+            }
+            console.log(`\n${uploaded} uploaded, ${errors.length} errors`);
+            if (errors.length > 0) process.exit(1);
+            break;
+        }
+
+        default:
+            console.error(`Unknown poster subcommand: ${sub || '(none)'}`);
+            console.error('Valid: set, set-from-yaml');
+            process.exit(1);
+    }
+}
+
 function showHelp() {
     console.log(`
 Plex CLI - Search, verify, and edit Plex library items
@@ -953,6 +1049,7 @@ Commands:
   set <id>                 Update metadata for a single item
   set-from-yaml <file>     Bulk-update metadata from a YAML manifest
   collection <subcommand>  Manage collections (see below)
+  poster <subcommand>      Upload poster images (see below)
 
 Collection subcommands:
   collection list [--section <id>]        List collections (all sections, or one)
@@ -962,6 +1059,10 @@ Collection subcommands:
   collection add <id> <itemId> [...]      Add item(s) to a collection
   collection remove <id> <itemId> [...]   Remove item(s) from a collection
   collection delete <id>                  Delete a collection (media is untouched)
+
+Poster subcommands:
+  poster set <id> <file>                  Upload one image and set it as the item's poster
+  poster set-from-yaml <file>             Bulk-upload from a manifest ({posters: [{id, file}, ...]})
 
 Options:
   --json                   Output as JSON
@@ -1004,6 +1105,8 @@ Examples:
   node plex.cli.mjs collection add 675686 379729 376471
   node plex.cli.mjs collection remove 675686 243200
   node plex.cli.mjs collection delete 675687
+  node plex.cli.mjs poster set 685550 /path/to/poster.jpg
+  node plex.cli.mjs poster set-from-yaml data/_drafts/khan-posters.yml
 `);
 }
 
@@ -1054,6 +1157,10 @@ async function main() {
             case 'col':
             case 'coll':
                 await cmdCollection(plex, commandArgs[0], commandArgs.slice(1));
+                break;
+
+            case 'poster':
+                await cmdPoster(plex, commandArgs[0], commandArgs.slice(1));
                 break;
 
             default:

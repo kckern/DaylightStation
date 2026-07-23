@@ -82,6 +82,7 @@ export class PlexShowSource {
       id: `plex:${show.ratingKey}`,
       title: show.title,
       poster: show.thumb ?? null,
+      summary: show.summary ?? null, // Plex description, shown under the detail poster
       source: SOURCE,
       medium: MEDIUM,
       durationMs: null, // no per-show duration attribute in Plex, same gotcha shape as plex-album
