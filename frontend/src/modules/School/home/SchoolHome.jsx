@@ -1,16 +1,19 @@
 import { SUBJECTS, subjectHasContent } from './subjects.js';
 import StudentPanel from './StudentPanel.jsx';
+import Icon from './icons/Icon.jsx';
 
 /**
- * The School front door: six subject shelves on the left two-thirds, the meta
- * rail (student panel + Library) on the right third. Subjects are how a
+ * The School front door: nine subject shelves (3×3) on the left two-thirds,
+ * the meta rail (student panel + Library) on the right third. Subjects are how a
  * family thinks about school; the rail is how a learner thinks about
  * themselves. Rendered for claimed AND unclaimed visitors — the panel itself
  * carries the claim affordance, so one home serves both.
  *
  * An empty shelf renders greyed rather than hidden (the Piano/registry
  * convention): the shape of the whole curriculum stays visible instead of the
- * wall pretending that what exists is all there is.
+ * wall pretending that what exists is all there is. The subtitle is always
+ * the subject's own hint — a greyed tile already says "not yet" visually;
+ * repeating it in words made the wall read like a list of apologies.
  */
 export default function SchoolHome({ grouped, onOpen, bankTitles }) {
   const libraryCount = grouped.library.materials.length + grouped.library.banks.length;
@@ -28,8 +31,9 @@ export default function SchoolHome({ grouped, onOpen, bankTitles }) {
               onClick={has ? () => onOpen(`subject:${s.id}`) : undefined}
               disabled={!has}
             >
+              <Icon name={s.id} className="school-home2__subject-icon" />
               <h3 className="school-home2__subject-label">{s.label}</h3>
-              <p className="school-home2__subject-hint">{has ? s.hint : 'Nothing here yet'}</p>
+              <p className="school-home2__subject-hint">{s.hint}</p>
             </button>
           );
         })}

@@ -46,10 +46,16 @@ export function unitCompleted({ percent, gateSatisfied }, categoryDef, { complet
  * nothing ever locks (spec §4 arity). All units complete -> nothing locked,
  * nothing current.
  *
+ * Lock reasons, in blocker order: an unwatched current unit is "finish it";
+ * a watched one with an unpassed quiz is "pass it"; a watched one whose gate
+ * exists only in principle (`needsQuiz` — a gated category with no bank
+ * authored yet) says the quiz is wanted, which is the request-a-quiz
+ * affordance's other half (spec: quizzes are authored on demand).
+ *
  * @param {Array<{title:string}>} orderedUnits - output of orderUnits
  * @param {boolean[]} completedFlags - parallel to orderedUnits
  * @param {object} categoryDef - a CATEGORIES entry
- * @param {Array<{hasQuiz:boolean, gateSatisfied:boolean}>} gateInfo - parallel to orderedUnits
+ * @param {Array<{hasQuiz:boolean, gateSatisfied:boolean, needsQuiz?:boolean, played?:boolean}>} gateInfo - parallel to orderedUnits
  * @returns {Array<{locked:boolean, current:boolean, lockReason:?string}>}
  */
 export function annotateLocks(orderedUnits, completedFlags, categoryDef, gateInfo = []) {
@@ -62,9 +68,15 @@ export function annotateLocks(orderedUnits, completedFlags, categoryDef, gateInf
 
   const currentUnit = orderedUnits[firstIncompleteIndex];
   const currentGate = gateInfo[firstIncompleteIndex] || { hasQuiz: false, gateSatisfied: true };
-  const lockReason = currentGate.hasQuiz && !currentGate.gateSatisfied
-    ? `Pass the quiz for “${currentUnit.title}” first`
-    : `Finish “${currentUnit.title}” first`;
+  const lockReason = (() => {
+    if (currentGate.needsQuiz && currentGate.played) {
+      return `“${currentUnit.title}” is waiting for its quiz — request one to move on`;
+    }
+    if (currentGate.hasQuiz && !currentGate.gateSatisfied && currentGate.played !== false) {
+      return `Pass the quiz for “${currentUnit.title}” first`;
+    }
+    return `Finish “${currentUnit.title}” first`;
+  })();
 
   return orderedUnits.map((unit, i) => {
     if (i < firstIncompleteIndex) return { locked: false, current: false, lockReason: null };

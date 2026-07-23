@@ -36,6 +36,8 @@ export const schoolApi = {
     return req(`/report${qs ? `?${qs}` : ''}`);
   },
   materialUnits: (materialId, userId) => req(`/materials/${encodeURIComponent(materialId)}/units${userId ? `?userId=${encodeURIComponent(userId)}` : ''}`),
+  quizRequests: (materialId) => req(`/quiz-requests${materialId ? `?materialId=${encodeURIComponent(materialId)}` : ''}`),
+  requestQuiz: (body) => req('/quiz-requests', body),
   unitProgress: (materialId, unitId, body = {}) => req(`/materials/${encodeURIComponent(materialId)}/units/${encodeURIComponent(unitId)}/progress`, body, 'PUT'),
 };
 

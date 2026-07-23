@@ -21,9 +21,18 @@ import SchoolMaterialPlayer from './SchoolMaterialPlayer.jsx';
 
 const COURSE_NOTICE = 'Sign in for courses — guests get the listening shelf.';
 
-export default function MaterialsSection({ materials, sectionLabel }) {
+export default function MaterialsSection({ materials, sectionLabel, initialMaterialId = null }) {
   const { currentUser, isGuest, openPicker } = useSchoolProfile();
   const [detailMaterial, setDetailMaterial] = useState(null); // null = grid
+
+  // Deep link: open straight onto the requested material's detail once the
+  // catalog row exists. One-shot — in-app navigation after that wins.
+  const consumedDeepLinkRef = useRef(false);
+  useEffect(() => {
+    if (!initialMaterialId || consumedDeepLinkRef.current) return;
+    const m = materials.find((x) => x.id === initialMaterialId);
+    if (m) { consumedDeepLinkRef.current = true; setDetailMaterial(m); }
+  }, [initialMaterialId, materials]);
   const [playing, setPlaying] = useState(null); // {material, unit} | null
   const [notice, setNotice] = useState(null);
   // Bumped whenever the player exits with {refetch:true} (lock state may
