@@ -5,7 +5,7 @@ describe('SUBJECTS', () => {
   it('is the nine agreed paired shelves in grid order', () => {
     expect(SUBJECTS.map((s) => s.id)).toEqual([
       'english', 'writing', 'math',
-      'science', 'scripture', 'history',
+      'history', 'scripture', 'science',
       'language', 'skills', 'arts',
     ]);
   });

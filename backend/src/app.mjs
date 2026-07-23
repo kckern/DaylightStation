@@ -251,6 +251,7 @@ import { PresenceStore } from './1_adapters/devices/PresenceStore.mjs';
 import { resolveGate, ROLE_SEVERITY } from './2_domains/school/accessGate.mjs';
 import { GetMaterialCatalog } from './3_applications/school/GetMaterialCatalog.mjs';
 import { GetMaterialUnits, buildBankIndex } from './3_applications/school/GetMaterialUnits.mjs';
+import { GetMaterialProgressSummary } from './3_applications/school/GetMaterialProgressSummary.mjs';
 import { PlexAlbumSource } from './3_applications/school/sources/PlexAlbumSource.mjs';
 import { PlexShowSource } from './3_applications/school/sources/PlexShowSource.mjs';
 import { PlexLabelSource } from './3_applications/school/sources/PlexLabelSource.mjs';
@@ -2010,6 +2011,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   const schoolMaterialsConfig = configService.getHouseholdAppConfig(null, 'school')?.materials || null;
   let getMaterialCatalog = null;
   let getMaterialUnits = null;
+  let getMaterialProgressSummary = null;
   if (schoolMaterialsConfig) {
     // PlexAlbumSource/PlexShowSource want the raw Plex
     // `/library/metadata/{id}/children` response (ratingKey/title/thumb/
@@ -2120,6 +2122,12 @@ export async function createApp({ server, logger, configPaths, configExists, ena
       attemptsReader: { read: (userId) => schoolDatastore.readAllAttempts(userId) },
       logger: rootLogger.child({ module: 'school-materials' })
     });
+    getMaterialProgressSummary = new GetMaterialProgressSummary({
+      catalog: getMaterialCatalog,
+      getMaterialUnits,
+      progressStore: schoolMaterialProgressStore,
+      logger: rootLogger.child({ module: 'school-materials' })
+    });
   }
 
   // Language study (the sentence ladder) mounts UNDER school as
@@ -2224,6 +2232,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     schoolService,
     getMaterialCatalog,
     getMaterialUnits,
+    getMaterialProgressSummary,
     materialProgressStore: schoolMaterialProgressStore,
     getSchoolReport,
     printService: schoolPrintService,
