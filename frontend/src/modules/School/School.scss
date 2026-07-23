@@ -321,14 +321,18 @@
   }
   // Video: the chrome floats over the video at the bottom of the stage,
   // summoned by a tap and auto-hiding. No persistent bar — the video fills.
+  // `translateZ(0)` forces its own compositor layer so it paints ABOVE the
+  // GPU-promoted <video> (which otherwise covers z-index'd siblings).
   &__overlay {
-    position: absolute; left: 0; right: 0; bottom: 0; z-index: 2;
-    background: linear-gradient(to top, rgba(0,0,0,0.75), rgba(0,0,0,0));
-    padding-top: 2rem;
+    position: absolute; left: 0; right: 0; bottom: 0; z-index: 20;
+    transform: translateZ(0);
+    background: linear-gradient(to top, rgba(0,0,0,0.85), rgba(0,0,0,0));
+    padding-top: 2.5rem;
   }
-  // Audio: the AudioPlayer's own progress bar is redundant with our chrome's,
-  // so hide it; our chrome bar sits below the cover as the transport.
-  &--audio .audio-player .progress-bar { display: none; }
+  // Audio: the AudioPlayer's own progress bar + info footer are redundant with
+  // our chrome, so hide them; our chrome bar is the single transport surface.
+  &--audio .audio-player .progress-bar,
+  &--audio .audio-player .audio-timing { display: none; }
 }
 
 // --- player chrome: transport bar (audio) / tap overlay (video) -------------

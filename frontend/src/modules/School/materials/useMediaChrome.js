@@ -14,6 +14,7 @@
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
 import usePlayerController from '../../Player/usePlayerController.js';
+import { schoolLog } from '../schoolLog.js';
 
 export default function useMediaChrome(playerRef, { autoHide = false, idleMs = 3500 } = {}) {
   const ctrl = usePlayerController(playerRef);
@@ -24,14 +25,17 @@ export default function useMediaChrome(playerRef, { autoHide = false, idleMs = 3
   const [mediaEl, setMediaEl] = useState(null);
 
   // Resolve the media element once the Player mounts it (poll briefly — the
-  // element appears a tick or two after the lazy Player renders).
+  // element appears a tick or two after the lazy Player renders). Telemetry
+  // logs whether it resolved (and after how many frames) or timed out, so a
+  // "chrome has no media to drive" failure is visible in the logs.
   useEffect(() => {
     let raf;
     let tries = 0;
     const find = () => {
       const el = ctrl.getMediaEl();
-      if (el) { setMediaEl(el); return; }
+      if (el) { setMediaEl(el); schoolLog.player('media-resolved', { frames: tries, tag: el.tagName }); return; }
       if (tries++ < 120) raf = requestAnimationFrame(find); // ~2s of frames
+      else schoolLog.player('media-unresolved', { frames: tries });
     };
     find();
     return () => cancelAnimationFrame(raf);
@@ -89,6 +93,9 @@ export default function useMediaChrome(playerRef, { autoHide = false, idleMs = 3
   const reveal = useCallback(() => { setVisible(true); arm(); }, [arm]);
   useEffect(() => { arm(); return () => timer.current && clearTimeout(timer.current); }, [arm]);
   useEffect(() => { if (!autoHide || !isPlaying) setVisible(true); }, [autoHide, isPlaying]);
+  // Log video-chrome visibility flips (helps confirm tap-to-reveal + auto-hide
+  // on the real device, where the overlay must appear over the video on tap).
+  useEffect(() => { if (autoHide) schoolLog.player('chrome-visibility', { visible, isPlaying }); }, [autoHide, visible, isPlaying]);
 
   return { isPlaying, currentTime, duration, volume, toggle, seek, skip, restart, setVolume, visible, reveal };
 }

@@ -29,7 +29,7 @@
  * bank-fetch failure never stands the child up on a dead screen — it falls
  * back to the same return-to-detail exit.
  */
-import { Component, Suspense, lazy, useCallback, useEffect, useRef, useState } from 'react';
+import { Component, Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { schoolApi } from '../schoolApi.js';
 import { schoolLog } from '../schoolLog.js';
 import QuizRunner from '../quiz/QuizRunner.jsx';
@@ -150,6 +150,36 @@ export default function SchoolMaterialPlayer({ material, unit, userId, onExit, o
     setQuizBank(data);
   }, [commitProgress, unit, exitToDetail]);
 
+  // THE critical fix (mirrors PianoVideoPlayer): memoize the heavy Player
+  // element so the chrome's high-frequency re-renders (a setState every
+  // `timeupdate`, ~4×/s) DON'T recreate it. Recreating it remounted the media
+  // — which is what produced the DUPLICATE/lingering audio and the jank. It
+  // changes only when the actual content or medium changes; the closures are
+  // useCallback-stable. `play` is memoized alongside so its identity is stable.
+  const playObj = useMemo(
+    () => ({ contentId, shader: isAudio ? 'minimal' : 'focused' }),
+    [contentId, isAudio],
+  );
+  const playerEl = useMemo(
+    () => <Player ref={playerRef} play={playObj} clear={handleEnded} onProgress={handleProgress} />,
+    [playObj, handleEnded, handleProgress],
+  );
+
+  // Telemetry: count the audio/video elements actually in the DOM a moment
+  // after mount, so a duplicate-media regression is visible in the logs
+  // (mediaEls > 1 == the bug the memoization above prevents).
+  useEffect(() => {
+    if (!contentId) return undefined;
+    const t = setTimeout(() => {
+      schoolLog.materials('player-media-audit', {
+        medium: material?.medium,
+        audioEls: document.querySelectorAll('audio').length,
+        videoEls: document.querySelectorAll('video').length,
+      });
+    }, 2500);
+    return () => clearTimeout(t);
+  }, [contentId, material?.medium]);
+
   if (quizBank) {
     return <QuizRunner bank={quizBank} onExit={exitToDetail} />;
   }
@@ -191,12 +221,7 @@ export default function SchoolMaterialPlayer({ material, unit, userId, onExit, o
       >
         <SchoolPlayerBoundary onBack={exitToDetail}>
           <Suspense fallback={<p className="school-material-player__loading">Loading player…</p>}>
-            <Player
-              ref={playerRef}
-              play={{ contentId, shader: isAudio ? 'minimal' : 'focused' }}
-              clear={handleEnded}
-              onProgress={handleProgress}
-            />
+            {playerEl}
           </Suspense>
         </SchoolPlayerBoundary>
         {!isAudio && chrome.visible && (
