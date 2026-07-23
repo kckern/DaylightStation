@@ -55,4 +55,14 @@ describe('record -> encode -> decode round trip', () => {
     // and a totals helper: drops must be observable in replay
     expect(totalDropped([{ b: [], dropped: 4 }, { b: [], dropped: 1 }])).toBe(5);
   });
+
+  it('decodes KEY and EDIT events interned after the header (production order)', () => {
+    __resetRecorder();
+    const header = buildHeader({ session: 's', score: 'x', ctx: {} });
+    record(KIND.KEY, intern('Numpad5'), intern('duration'), 0, 0);
+    record(KIND.EDIT, intern('insert-note'), 60, 3, intern('quarter'));
+    const events = decodeEvents(header, [encodeBatch()]);
+    expect(events[0]).toMatchObject({ event: 'key', code: 'Numpad5', intent: 'duration' });
+    expect(events[1]).toMatchObject({ event: 'edit', editType: 'insert-note', note: 60, measure: 3, duration: 'quarter' });
+  });
 });

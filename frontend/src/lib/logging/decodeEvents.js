@@ -54,6 +54,10 @@ function decodeRow(row, kinds, strings) {
       return { t, event, control: internedString(strings, a), step: c };
     case 'render':
       return { t, event, component: internedString(strings, a), nodes: b };
+    case 'key':
+      return { t, event, code: internedString(strings, a), intent: internedString(strings, b) };
+    case 'edit':
+      return { t, event, editType: internedString(strings, a), note: b, measure: c, duration: internedString(strings, row[5]) };
     default:
       return { t, event, a, b, c, d: row[5] };
   }
