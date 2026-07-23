@@ -162,6 +162,26 @@ describe('useComposerInput recorder capture', () => {
     );
     expect(hit).toBe(true);
   });
+
+  // The bar a note lands in IS the feature ("insert-note C4 quarter @bar3").
+  // recordEdit used to hardcode measure 0, so every EDIT row falsely claimed
+  // bar 1. The caret measure is threaded in via caretMeasureRef so the MIDI
+  // callback reads the LIVE caret, not a stale closure.
+  it('carries the caret measure into the insert-note EDIT row (slot c)', () => {
+    let state = initEditor(makeEmptyScore());
+    const setEditorState = vi.fn((fn) => { state = typeof fn === 'function' ? fn(state) : fn; });
+    let midiFn;
+    const caretMeasureRef = { current: 2 }; // caret parked on the third bar
+    renderHook(() => useComposerInput({ setEditorState, subscribe: (fn) => { midiFn = fn; return () => {}; }, caretMeasureRef }));
+    act(() => { window.dispatchEvent(new KeyboardEvent('keydown', { code: 'Numpad4' })); }); // arm Write
+    __resetRecorder();
+    act(() => { midiFn({ type: 'note_on', note: 67, velocity: 80 }); });
+    const row = __snapshotForTest().records.find(
+      (r) => r.kind === KIND.EDIT && r.a === intern('insert-note'),
+    );
+    expect(row).toBeTruthy();
+    expect(row.c).toBe(2);
+  });
 });
 
 describe('useComposerInput transport key', () => {

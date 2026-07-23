@@ -44,7 +44,7 @@ import {
 import { CARET_GAP, CARET_WIDTH, MEASURE_START_UNITS } from './CaretLayer.jsx';
 import { WET_ADVANCE_UNITS, WET_RX_UNITS } from './PendingLayer.jsx';
 import { makeEmptyScore, makeNote } from './model/index.js';
-import { __resetRecorder, __snapshotForTest, KIND } from '../../../../../lib/logging/inputRecorder.js';
+import { __resetRecorder, __snapshotForTest, intern, KIND } from '../../../../../lib/logging/inputRecorder.js';
 
 /** Arm note entry (numpad 4) and play `n` middle-C note-ons. */
 function playNotes(n) {
@@ -117,6 +117,21 @@ describe('EditorSurface — toolbar tap telemetry', () => {
     __resetRecorder();
     act(() => { fireEvent.click(screen.getByRole('button', { name: /how to write music/i })); });
     expect(__snapshotForTest().records.some((r) => r.kind === KIND.UI_INTENT)).toBe(true);
+  });
+
+  // F1: an undo EDIT row must carry the caret's LIVE measure, not a hardcoded 0.
+  // Four quarter notes fill one 4/4 bar, advancing the caret into measure 1;
+  // the undo record must reflect that bar.
+  it('records the caret measure on an undo EDIT row', () => {
+    render(<EditorSurface initialScore={makeEmptyScore()} songId="x" initialRevision={1} save={vi.fn()} config={{}} />);
+    playNotes(4); // fills bar 0 → caret advances to measureIdx 1
+    __resetRecorder();
+    act(() => { fireEvent.click(screen.getByRole('button', { name: /undo/i })); });
+    const undoRow = __snapshotForTest().records.find(
+      (r) => r.kind === KIND.EDIT && r.a === intern('undo'),
+    );
+    expect(undoRow).toBeTruthy();
+    expect(undoRow.c).toBe(1);
   });
 });
 
