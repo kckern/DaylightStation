@@ -5,13 +5,23 @@
 import getLogger from './Logger.js';
 
 /**
- * Pure gate for input-telemetry SHIPPING. True when any of the supported config
- * shapes opts in — top-level, composer-nested, or sheetmusic-nested.
+ * Pure gate for input-telemetry SHIPPING, scoped to ONE mode. True when the
+ * top-level flag opts in (`config.inputTelemetry.enabled`) OR the flag nested
+ * under THIS mode does (`config[mode].inputTelemetry.enabled`).
+ *
+ * The `mode` param is what keeps Composer's opt-in from arming SheetMusic (and
+ * vice-versa): SheetMusic's ScorePlayer passes the FULL piano config with
+ * mode 'sheetmusic', while Composer's EditorSurface passes only its `.composer`
+ * subtree with mode 'composer'. Without the mode scope, a single
+ * `composer.inputTelemetry` in piano.yml matched both call sites and shipped
+ * SheetMusic unasked.
+ *
+ * @param {object} config the config object handed to the mode (full piano
+ *   config for SheetMusic, the `.composer` subtree for Composer).
+ * @param {string} mode which mode is asking — 'composer' or 'sheetmusic'.
  */
-export function inputTelemetryEnabled(config) {
-  return !!(config?.inputTelemetry?.enabled
-    || config?.composer?.inputTelemetry?.enabled
-    || config?.sheetmusic?.inputTelemetry?.enabled);
+export function inputTelemetryEnabled(config, mode) {
+  return !!(config?.inputTelemetry?.enabled || (mode && config?.[mode]?.inputTelemetry?.enabled));
 }
 
 /**
