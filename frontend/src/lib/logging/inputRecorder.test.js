@@ -51,6 +51,13 @@ describe('encode', () => {
     expect(h.strings).toContain('loop-toggle');
     expect(h.h).toBe(1);
   });
+  it('header carries a t0 perf/wall anchor', () => {
+    __resetRecorder();
+    const h = buildHeader({ session: 's', score: 'x', ctx: { user: 'u' } });
+    expect(h.ctx.user).toBe('u');
+    expect(typeof h.ctx.t0.perf).toBe('number');
+    expect(typeof h.ctx.t0.wall).toBe('number');
+  });
 });
 
 import { record as recordFn } from './inputRecorder.js';

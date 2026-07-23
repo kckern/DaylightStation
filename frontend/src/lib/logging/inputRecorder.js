@@ -46,7 +46,11 @@ export function encodeBatch() {
   return drained;
 }
 export function buildHeader({ session, score, ctx }) {
-  return { h: 1, session, score, ctx, kinds: { ...KIND_NAME }, strings: internList.slice() };
+  const t0 = {
+    perf: (typeof performance !== 'undefined' && performance.now ? performance.now() : Date.now()),
+    wall: Date.now(),
+  };
+  return { h: 1, session, score, ctx: { ...(ctx || {}), t0 }, kinds: { ...KIND_NAME }, strings: internList.slice() };
 }
 let drainTimer = null;
 let sendFn = null;
