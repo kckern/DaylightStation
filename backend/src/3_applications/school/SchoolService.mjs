@@ -11,10 +11,17 @@ import { shortId } from '#domains/core/utils/id.mjs';
 
 const SESSION_TTL_MS = 2 * 60 * 60 * 1000;
 const MODES = new Set(['quiz', 'flashcard']);
+// The household has 4600+ bank files; even summarising them is 4600 synchronous
+// file reads (~10s) — and the gating bank index rebuilds via listBanks() on
+// EVERY unit lookup, so a 44-chapter material scanned them 44 times. Cache the
+// small summaries (id/title/subject/unit/count — NOT the question items) briefly
+// so a render, and every gating lookup within it, reuses one scan.
+const BANK_SUMMARY_TTL_MS = 300_000; // 10 min? banks change rarely; 5 min keeps it warm through use gaps
 
 export class SchoolService {
   #ds; #userService; #logger; #now;
   #sessions = new Map(); // sessionId -> {id, userId|null, bankId, mode, bank, startedAt, lastActiveAt}
+  #bankSummaries = null; // { at: number, list: Array<summary> }
 
   constructor({ datastore, userService, logger = console, now = () => Date.now() }) {
     this.#ds = datastore;
@@ -84,15 +91,24 @@ export class SchoolService {
   // synchronous work blocking the event loop on each home load; the list never
   // renders items, so it never needed them validated. Full validation still
   // happens when a bank is actually opened (getBank -> #loadBank).
-  listBanks({ audience } = {}) {
-    return this.#ds.listBankIds()
+  // All bank summaries (header only), cached briefly so the 4600-file scan runs
+  // at most once per TTL rather than on every render and every gating lookup.
+  #allBankSummaries() {
+    const now = this.#now();
+    if (this.#bankSummaries && (now - this.#bankSummaries.at) < BANK_SUMMARY_TTL_MS) return this.#bankSummaries.list;
+    const list = this.#ds.listBankIds()
       .map((id) => {
         const raw = this.#ds.readBankRaw(id);
         const s = raw ? summarizeQuestionBank(raw) : null;
         return s ? { ...s, id: s.id ?? id, subject: s.subject ?? null } : null;
       })
-      .filter(Boolean)
-      .filter((b) => !audience || b.audience === audience);
+      .filter(Boolean);
+    this.#bankSummaries = { at: now, list };
+    return list;
+  }
+
+  listBanks({ audience } = {}) {
+    return this.#allBankSummaries().filter((b) => !audience || b.audience === audience);
   }
 
   getBank(bankId) {
