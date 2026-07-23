@@ -21,12 +21,14 @@
 #include <FastLED.h>
 #include <Preferences.h>
 #include "config.h"
+#include "esp_log.h"
 #if BARCODE_ENABLED
 extern "C" {
 #include "esp_spp_api.h"
 #include "esp_gap_bt_api.h"
 #include "esp_bt_device.h"
 #include "esp_coexist.h"
+#include "esp_sdp_api.h"
 }
 #endif
 
@@ -82,6 +84,67 @@ static void relayLogLine(const char* text) {
 static void relayLogf(const char* fmt, ...) {
   char text[128]; va_list ap; va_start(ap, fmt); vsnprintf(text, sizeof(text), fmt, ap); va_end(ap);
   relayLogLine(text);
+}
+
+// ---- Bluedroid stack trace capture --------------------------------------
+// Everything between "ACL up" and the scanner hanging up ~1 s later happens
+// inside Bluedroid -- SDP query, RFCOMM connect, security negotiation -- and
+// none of it reaches the GAP callbacks. It goes to the stack's own ESP_LOG tags,
+// i.e. the serial console, which is precisely what is NOT attached once the unit
+// is in the kitchen. 22 consecutive failures were diagnosed blind for exactly
+// this reason. Mirror those lines into a ring that /barcode/trace serves.
+//
+// Two properties make it usable:
+//  - Capture is ARMED only between ACL up and ACL down. Bluedroid at DEBUG is a
+//    firehose; outside that ~1 s window it is noise that would evict the window.
+//  - The ring FREEZES on the first attempt that fails, so the scanner's own
+//    ~3 s retry loop cannot overwrite the evidence before anyone reads it.
+// While armed the hook does NOT forward to the original vprintf: UART at
+// 115200 baud cannot absorb SDP-level debug without stalling the BT task, and a
+// probe that changes the timing of the thing it measures is worth nothing.
+// Sized against DRAM, which this build already runs at ~85%: 160 x 132 B is
+// ~21 KB and leaves headroom. SDP at VERBOSE is chattier than at DEBUG, so if a
+// window still overflows the ring, narrow it with /barcode/tracefilter rather
+// than growing this -- there is no DRAM left to grow into.
+#define TRACE_LOG_MAX 160
+struct TraceLine { uint32_t ms; char text[132]; };
+static TraceLine g_traceLogs[TRACE_LOG_MAX];
+static uint16_t g_traceNext = 0;
+static uint16_t g_traceCount = 0;
+static volatile bool g_traceArmed = false;
+static volatile bool g_traceFrozen = false;
+static portMUX_TYPE g_traceMux = portMUX_INITIALIZER_UNLOCKED;
+static vprintf_like_t g_prevVprintf = nullptr;
+// Substring the line must contain to be kept; empty = keep everything. Runtime
+// so a firehose can be narrowed to e.g. "BT_SDP" over HTTP, not over USB.
+static char g_traceFilter[24] = "";
+
+static int traceVprintf(const char* fmt, va_list ap) {
+  if (!g_traceArmed || g_traceFrozen)
+    return g_prevVprintf ? g_prevVprintf(fmt, ap) : 0;
+  char line[sizeof(g_traceLogs[0].text)];
+  va_list copy; va_copy(copy, ap);
+  int n = vsnprintf(line, sizeof(line), fmt, copy);
+  va_end(copy);
+  if (n <= 0) return n;
+  if (g_traceFilter[0] && !strstr(line, g_traceFilter)) return n;
+  size_t len = strnlen(line, sizeof(line));
+  while (len && (line[len-1] == '\n' || line[len-1] == '\r')) line[--len] = 0;
+  if (!len) return n;
+  portENTER_CRITICAL(&g_traceMux);
+  g_traceLogs[g_traceNext].ms = millis();
+  memcpy(g_traceLogs[g_traceNext].text, line, len + 1);
+  g_traceNext = (uint16_t)((g_traceNext + 1) % TRACE_LOG_MAX);
+  if (g_traceCount < TRACE_LOG_MAX) g_traceCount++;
+  portEXIT_CRITICAL(&g_traceMux);
+  return n;   // swallowed deliberately: see the note above about UART timing
+}
+
+static void traceClear() {
+  portENTER_CRITICAL(&g_traceMux);
+  g_traceNext = 0; g_traceCount = 0;
+  portEXIT_CRITICAL(&g_traceMux);
+  g_traceFrozen = false;
 }
 
 // ---- BLE state ----------------------------------------------------------
@@ -168,6 +231,25 @@ static uint8_t  g_profile      = 0;      // index into the escalation ladder
 static uint32_t g_failStreak   = 0;      // ACL up -> down without an SPP open
 static uint32_t g_aclUpNoOpenMs = 0;     // set on ACL up, cleared on SPP open
 static Preferences g_prefs;
+
+// The rest of what an SPP master can see and judge us on, all runtime-settable
+// for the same reason. The scanner tears the ACL down before authentication is
+// ever attempted (auth_attempt_count stayed 0 across 22 failures and all three
+// rungs of the ladder), so whatever it dislikes is decided from SDP and the
+// inquiry-level identity, not from security. These are the remaining inputs:
+//   - Class of Device: what kind of thing we claim to be. Bluedroid's default is
+//     uncategorized; a master looking for a serial peer may want a Computer CoD.
+//   - Device name / SDP service name: some masters match on the string.
+//   - RFCOMM channel: 0 lets the stack assign (lands on 1). A master that has a
+//     channel hard-coded would need it pinned.
+#define BT_NAME_MAX 32
+static char     g_btName[BT_NAME_MAX]  = BARCODE_HOST_NAME;
+static char     g_srvName[BT_NAME_MAX] = "DaylightScan";
+static uint8_t  g_sppScn       = 0;      // 0 = let the stack choose
+static uint32_t g_classicCod   = 0;      // 0 = leave Bluedroid's default alone
+static bool     g_dipEnabled   = false;  // publish a Device Identification record
+static uint16_t g_dipVendor    = 0x0501; // Zebra Technologies, BT-assigned
+static uint16_t g_dipProduct   = 0x0001;
 
 // Suppress the BLE scale scan while Classic is doing anything. A continuous BLE
 // scan starving Classic on this shared antenna is not a theory: a20f1bac0 records
@@ -489,6 +571,13 @@ static void saveClassicPrefs() {
   g_prefs.putUChar("iocap", g_ioCap);
   g_prefs.putBool("auto", g_autoEscalate);
   g_prefs.putUChar("profile", g_profile);
+  g_prefs.putUChar("scn", g_sppScn);
+  g_prefs.putUInt("cod", g_classicCod);
+  g_prefs.putString("btname", g_btName);
+  g_prefs.putString("srvname", g_srvName);
+  g_prefs.putBool("dip", g_dipEnabled);
+  g_prefs.putUShort("dipvid", g_dipVendor);
+  g_prefs.putUShort("dippid", g_dipProduct);
   g_prefs.end();
 }
 
@@ -498,7 +587,69 @@ static void loadClassicPrefs() {
   g_ioCap        = g_prefs.getUChar("iocap", IOCAP_UNSET);
   g_autoEscalate = g_prefs.getBool("auto", true);
   g_profile      = g_prefs.getUChar("profile", 0);
+  g_sppScn       = g_prefs.getUChar("scn", 0);
+  g_classicCod   = g_prefs.getUInt("cod", 0);
+  g_dipEnabled   = g_prefs.getBool("dip", false);
+  g_dipVendor    = g_prefs.getUShort("dipvid", 0x0501);
+  g_dipProduct   = g_prefs.getUShort("dippid", 0x0001);
+  String n = g_prefs.getString("btname", BARCODE_HOST_NAME);
+  String s = g_prefs.getString("srvname", "DaylightScan");
+  strncpy(g_btName,  n.c_str(), sizeof(g_btName)  - 1); g_btName[sizeof(g_btName)  - 1] = 0;
+  strncpy(g_srvName, s.c_str(), sizeof(g_srvName) - 1); g_srvName[sizeof(g_srvName) - 1] = 0;
   g_prefs.end();
+}
+
+// Class of Device is advertised in the inquiry/extended-inquiry response and is
+// the one piece of identity a master sees before it ever opens L2CAP. Applied
+// only when explicitly set, so the default path stays byte-identical to the
+// configuration that opened cleanly on 2026-07-21.
+// Device Identification Profile record. A master that asks "what are you?" and
+// gets an empty answer is one of the few remaining explanations for a 30-byte
+// SDP reply followed by an immediate hang-up, and publishing a DI record is the
+// only fix for it. Off by default -- it changes what we advertise, so it stays
+// opt-in until the VERBOSE trace says the scanner actually asks for it.
+static bool     g_sdpCommonUp = false;
+
+static void sdpCommonCB(esp_sdp_cb_event_t event, esp_sdp_cb_param_t* p) {
+  relayLogf("[classic-sdp] event %d", (int)event);
+}
+
+// Created once per boot on purpose. esp_sdp_create_record() returns its handle
+// asynchronously and nothing here stores it, so a second call would ADD a second
+// DI record rather than replace the first -- two contradictory records in the SDP
+// database, contaminating the very experiment this knob exists for. Changing
+// vid/pid therefore takes a reboot, which /reboot now makes a one-liner.
+static bool g_dipCreated = false;
+
+static void applyDipRecord() {
+  if (!g_dipEnabled) return;
+  if (g_dipCreated) { relayLogLine("[classic-sdp] DI record already published — reboot to change"); return; }
+  if (!g_sdpCommonUp) {
+    esp_sdp_register_callback(sdpCommonCB);
+    if (esp_sdp_init() != ESP_OK) { relayLogLine("[classic-sdp] init failed"); return; }
+    g_sdpCommonUp = true;
+  }
+  esp_bluetooth_sdp_dip_record_t dip = {};
+  dip.hdr.type         = ESP_SDP_TYPE_DIP_SERVER;
+  dip.vendor           = g_dipVendor;
+  dip.vendor_id_source = ESP_SDP_VENDOR_ID_SRC_BT;
+  dip.product          = g_dipProduct;
+  dip.version          = 0x0100;
+  dip.primary_record   = true;
+  esp_err_t rc = esp_sdp_create_record((esp_bluetooth_sdp_record_t*)&dip);
+  if (rc == ESP_OK) g_dipCreated = true;
+  relayLogf("[classic-sdp] DI record vid=0x%04x pid=0x%04x rc=%d",
+            (unsigned)g_dipVendor, (unsigned)g_dipProduct, (int)rc);
+}
+
+static void applyClassicCod() {
+  if (!g_classicCod) return;
+  esp_bt_cod_t cod = {};
+  cod.major   = (g_classicCod >> 8) & 0x1F;
+  cod.minor   = (g_classicCod >> 2) & 0x3F;
+  cod.service = (g_classicCod >> 13) & 0x7FF;
+  esp_err_t rc = esp_bt_gap_set_cod(cod, ESP_BT_SET_COD_ALL);
+  relayLogf("[classic-spp] cod=0x%06lx rc=%d", (unsigned long)g_classicCod, (int)rc);
 }
 
 // Declaring an IO capability is what decides the SSP association model. Left
@@ -515,9 +666,11 @@ static void applyIoCap() {
 static void restartSppServer(const char* why) {
   esp_spp_stop_srv();
   applyIoCap();
-  esp_err_t rc = esp_spp_start_srv(g_sppSecMask, ESP_SPP_ROLE_SLAVE, 0, "DaylightScan");
-  relayLogf("[classic-spp] server restart (%s) sec=0x%04x iocap=%d rc=%d",
-            why, (unsigned)g_sppSecMask, (int)g_ioCap, (int)rc);
+  applyClassicCod();
+  esp_bt_gap_set_device_name(g_btName);
+  esp_err_t rc = esp_spp_start_srv(g_sppSecMask, ESP_SPP_ROLE_SLAVE, g_sppScn, g_srvName);
+  relayLogf("[classic-spp] server restart (%s) sec=0x%04x iocap=%d scn=%d name=\"%s\" rc=%d",
+            why, (unsigned)g_sppSecMask, (int)g_ioCap, (int)g_sppScn, g_srvName, (int)rc);
 }
 
 // Escalation ladder, walked automatically when the scanner keeps reaching us and
@@ -568,8 +721,9 @@ static void sppCB(esp_spp_cb_event_t event, esp_spp_cb_param_t* p) {
       // Be discoverable *and* connectable: the scanner needs to reach us on its
       // own schedule. The pairing bar code already tells it our address, so
       // discovery is only a convenience for bring-up.
-      esp_bt_gap_set_device_name(BARCODE_HOST_NAME);
+      esp_bt_gap_set_device_name(g_btName);
       esp_bt_gap_set_scan_mode(ESP_BT_CONNECTABLE, ESP_BT_GENERAL_DISCOVERABLE);
+      applyClassicCod();
       // Security comes from the persisted profile, not a literal. SEC_AUTHENTICATE
       // on its own was tried once and was strictly worse — the stack refused the
       // incoming connection before GAP even reported the ACL (scanner beeps
@@ -578,7 +732,8 @@ static void sppCB(esp_spp_cb_event_t event, esp_spp_cb_param_t* p) {
       // Works; it says nothing about authenticated pairing done properly, which
       // is what profile 2 is for.
       applyIoCap();
-      esp_spp_start_srv(g_sppSecMask, ESP_SPP_ROLE_SLAVE, 0, "DaylightScan");
+      applyDipRecord();
+      esp_spp_start_srv(g_sppSecMask, ESP_SPP_ROLE_SLAVE, g_sppScn, g_srvName);
       break;
     case ESP_SPP_START_EVT:
       relayLogf("[classic-spp] server listening scn=%d status=%d",
@@ -600,6 +755,11 @@ static void sppCB(esp_spp_cb_event_t event, esp_spp_cb_param_t* p) {
         g_failStreak = 0;
         g_aclUpNoOpenMs = 0;
         g_classicHoldUntilMs = millis() + CLASSIC_RADIO_HOLD_MS;
+        // Disarm on success. Arming lasts from ACL up to ACL down, which on a
+        // healthy link is the whole session -- hours of every component's
+        // esp_log output swallowed by the hook instead of reaching serial. The
+        // window worth capturing ends the moment SPP opens.
+        g_traceArmed = false;
         snprintf(g_classicLastEvent, sizeof(g_classicLastEvent), "open handle=%lu",
                  (unsigned long)p->srv_open.handle);
       g_classicLastEventMs = millis();
@@ -644,19 +804,35 @@ static void classicGapCB(esp_bt_gap_cb_event_t event, esp_bt_gap_cb_param_t* p) 
     // continuous BLE scan is documented to wreck.
     g_classicHoldUntilMs = millis() + CLASSIC_RADIO_HOLD_MS;
     g_aclUpNoOpenMs = millis();
-    relayLogf("[classic-spp] ACL up stat=%d", (int)p->acl_conn_cmpl_stat.stat);
+    // Arm the stack trace: from here until the ACL drops is the entire window
+    // that has never been observed. Nothing else in this firmware can see it.
+    if (!g_traceFrozen) g_traceArmed = true;
+    const uint8_t* b = p->acl_conn_cmpl_stat.bda;
+    relayLogf("[classic-spp] ACL up stat=%d peer=%02X:%02X:%02X:%02X:%02X:%02X",
+              (int)p->acl_conn_cmpl_stat.stat, b[0], b[1], b[2], b[3], b[4], b[5]);
   } else if (event == ESP_BT_GAP_ACL_DISCONN_CMPL_STAT_EVT) {
     g_aclDisconnCount++;
     g_lastAclReason = (int32_t)p->acl_disconn_cmpl_stat.reason;
     g_lastAclMs = millis();
     // reason 275 = ESP_BT_STATUS_BASE_FOR_HCI_ERR(0x100) + 0x13, i.e. HCI
     // "remote user terminated" — the scanner hung up on us.
-    relayLogf("[classic-spp] ACL down reason=%d%s", (int)p->acl_disconn_cmpl_stat.reason,
-              p->acl_disconn_cmpl_stat.reason == 275 ? " (remote hung up)" : "");
+    const uint8_t* b = p->acl_disconn_cmpl_stat.bda;
+    relayLogf("[classic-spp] ACL down reason=%d%s peer=%02X:%02X:%02X:%02X:%02X:%02X",
+              (int)p->acl_disconn_cmpl_stat.reason,
+              p->acl_disconn_cmpl_stat.reason == 275 ? " (remote hung up)" : "",
+              b[0], b[1], b[2], b[3], b[4], b[5]);
     // Only count it as a failure if the ACL never became an SPP session. A drop
     // AFTER a good open is a different disease (supervision timeout / range) and
     // must not push us up the security ladder.
-    if (g_aclUpNoOpenMs && !g_barcodeConnected) { g_aclUpNoOpenMs = 0; noteClassicFailure(); }
+    if (g_aclUpNoOpenMs && !g_barcodeConnected) {
+      g_aclUpNoOpenMs = 0;
+      // Freeze the ring on the FIRST failure. The scanner retries every ~3 s, so
+      // without this the window that matters is overwritten long before anyone
+      // gets to /barcode/trace.
+      if (g_traceArmed && g_traceCount) g_traceFrozen = true;
+      noteClassicFailure();
+    }
+    g_traceArmed = false;
   } else if (event == ESP_BT_GAP_MODE_CHG_EVT) {
     // sniff/active transitions — debug-level noise, skip
   } else if (event == ESP_BT_GAP_KEY_NOTIF_EVT) {
@@ -710,6 +886,21 @@ static void logClassicIdentity() {
 static void initClassicSpp() {
   relayLogLine("[classic-spp] init begin");
   loadClassicPrefs();
+  g_prevVprintf = esp_log_set_vprintf(traceVprintf);
+  // esp_log_write() checks esp_log_is_tag_loggable() BEFORE it calls the vprintf
+  // hook (components/log/src/log.c:41-43), so the hook only ever sees lines that
+  // already passed the RUNTIME tag level. That level defaults to
+  // CONFIG_LOG_DEFAULT_LEVEL, which is 3 (INFO) in this build -- which is why the
+  // 2026-07-22 captures contained no DEBUG lines despite the Kconfig trace levels
+  // being raised. Raising the compile-time ceiling alone is not sufficient.
+  //
+  // What this unlocks is L2CAP/BTM/RFCOMM DEBUG -- notably which PSM the incoming
+  // channel is on. It does NOT unlock the SDP request UUID or the record we
+  // return: sdp_server.c has exactly one SDP_TRACE_DEBUG and it is commented out
+  // in the vendor source, so there is no server-side SDP payload logging to
+  // enable. Do not expect it here.
+  for (const char* tag : { "BT_SDP", "BT_RFCOMM", "BT_L2CAP", "BT_BTM", "BT_APPL" })
+    esp_log_level_set(tag, ESP_LOG_DEBUG);
   relayLogf("[classic-spp] profile=%d sec=0x%04x iocap=%d auto=%d",
             (int)g_profile, (unsigned)g_sppSecMask, (int)g_ioCap, (int)g_autoEscalate);
   // A fixed PIN matching the DS6878 factory default, kept as the legacy-pairing
@@ -822,11 +1013,25 @@ static bool g_bleScanEnabled = true;
 static uint32_t g_scanStartedMs = 0;
 static uint32_t g_scanIdleSinceMs = 0;
 
-// True while Classic owns the radio — an SPP session is live, or an ACL event
-// happened recently enough that pairing may still be in flight.
+// True while Classic owns the radio — an ACL event happened recently enough that
+// pairing may still be in flight.
+//
+// An established SPP session no longer counts. It used to: `g_barcodeConnected`
+// returned true here for the entire session, which was harmless only because the
+// session never survived. Once the scanner actually stayed connected (2026-07-22,
+// after a scanner factory reset fixed the bonding failure) it became a hard
+// conflict — startScan() and serviceScanWatchdog() both gate on this, so a
+// connected scanner suppressed the scale scan permanently. The kitchen scale
+// powers itself off between uses and must be re-discovered by scanning, so that
+// meant the scale half of the relay could never come back.
+//
+// Holding the antenna through the ACL/pairing window is kept: that is the window
+// a20f1bac0 and 5c753d6c7 recorded BLE scanning wrecking. Holding it for hours
+// afterwards was a workaround for a pairing failure that has since been fixed at
+// its actual source, and the bond now persists in NVS, so a link that does drop
+// re-establishes without operator involvement.
 static bool classicHoldsRadio() {
 #if BARCODE_ENABLED
-  if (g_barcodeConnected) return true;
   if (g_classicHoldUntilMs && (int32_t)(g_classicHoldUntilMs - millis()) > 0) return true;
 #endif
   return false;
@@ -1022,6 +1227,15 @@ static void handleStatus() {
   barcode["profile"] = g_profile;
   char secHex[10]; snprintf(secHex, sizeof(secHex), "0x%04x", (unsigned)g_sppSecMask);
   barcode["sec_mask"] = secHex;
+  // Whether the failure window was actually captured — the first thing to check
+  // before reading /barcode/trace.
+  barcode["trace_frozen"] = g_traceFrozen;
+  barcode["trace_lines"] = g_traceCount;
+  barcode["bt_name"] = g_btName;
+  barcode["srv_name"] = g_srvName;
+  barcode["scn"] = g_sppScn;
+  char codHex[12]; snprintf(codHex, sizeof(codHex), "0x%06lx", (unsigned long)g_classicCod);
+  barcode["cod"] = codHex;
   barcode["iocap"] = g_ioCap;                 // 255 = stack default, never set
   barcode["auto_escalate"] = g_autoEscalate;
   barcode["fail_streak"] = g_failStreak;
@@ -1237,6 +1451,120 @@ void setup() {
     if (http.hasArg("on")) { g_autoEscalate = http.arg("on") != "0"; saveClassicPrefs(); }
     http.send(200, "application/json",
       g_autoEscalate ? "{\"ok\":true,\"auto\":true}" : "{\"ok\":true,\"auto\":false}");
+  });
+  // The Bluedroid trace of the last failed attempt: SDP, RFCOMM, L2CAP and BTM
+  // for the ~1 s between ACL up and the scanner hanging up. ?clear=1 releases
+  // the freeze so the next attempt is captured.
+  http.on("/barcode/trace", [](){
+    if (http.hasArg("clear")) { traceClear(); http.send(200, "application/json", "{\"ok\":true,\"cleared\":true}"); return; }
+    String out = "{\"frozen\":";
+    out += g_traceFrozen ? "true" : "false";
+    out += ",\"count\":"; out += g_traceCount;
+    out += ",\"lines\":[";
+    portENTER_CRITICAL(&g_traceMux);
+    uint16_t count = g_traceCount, next = g_traceNext;
+    portEXIT_CRITICAL(&g_traceMux);
+    uint16_t start = (uint16_t)((next + TRACE_LOG_MAX - count) % TRACE_LOG_MAX);
+    for (uint16_t i = 0; i < count; i++) {
+      TraceLine& t = g_traceLogs[(start + i) % TRACE_LOG_MAX];
+      if (i) out += ",";
+      out += "{\"ms\":"; out += t.ms; out += ",\"t\":\"";
+      for (const char* c = t.text; *c; c++) {          // minimal JSON escaping
+        if (*c == '"' || *c == '\\') { out += '\\'; out += *c; }
+        else if ((uint8_t)*c >= 0x20) out += *c;
+      }
+      out += "\"}";
+    }
+    out += "]}";
+    http.send(200, "application/json", out);
+  });
+  // Identity knobs — what an SPP master can inspect before security is ever
+  // negotiated, which is the only phase this scanner actually reaches.
+  //   /barcode/cod?v=0x0020C     Class of Device (0 = stack default)
+  //   /barcode/name?v=Foo        Bluetooth device name
+  //   /barcode/srvname?v=Bar     SDP service name of the SPP record
+  //   /barcode/scn?v=1           RFCOMM channel (0 = stack assigns)
+  http.on("/barcode/cod", [](){
+    if (http.hasArg("v")) {
+      g_classicCod = (uint32_t)strtoul(http.arg("v").c_str(), nullptr, 0);
+      saveClassicPrefs();
+      applyClassicCod();
+    }
+    char out[80];
+    snprintf(out, sizeof(out), "{\"ok\":true,\"cod\":\"0x%06lx\"}", (unsigned long)g_classicCod);
+    http.send(200, "application/json", out);
+  });
+  http.on("/barcode/name", [](){
+    if (http.hasArg("v")) {
+      strncpy(g_btName, http.arg("v").c_str(), sizeof(g_btName) - 1);
+      g_btName[sizeof(g_btName) - 1] = 0;
+      saveClassicPrefs();
+      esp_bt_gap_set_device_name(g_btName);
+    }
+    char out[96];
+    snprintf(out, sizeof(out), "{\"ok\":true,\"name\":\"%s\"}", g_btName);
+    http.send(200, "application/json", out);
+  });
+  http.on("/barcode/srvname", [](){
+    if (http.hasArg("v")) {
+      strncpy(g_srvName, http.arg("v").c_str(), sizeof(g_srvName) - 1);
+      g_srvName[sizeof(g_srvName) - 1] = 0;
+      saveClassicPrefs();
+      restartSppServer("http srvname");
+    }
+    char out[96];
+    snprintf(out, sizeof(out), "{\"ok\":true,\"srvname\":\"%s\"}", g_srvName);
+    http.send(200, "application/json", out);
+  });
+  // Narrow the trace when VERBOSE floods the ring, e.g. ?v=BT_SDP. Empty clears.
+  http.on("/barcode/tracefilter", [](){
+    if (http.hasArg("v")) {
+      strncpy(g_traceFilter, http.arg("v").c_str(), sizeof(g_traceFilter) - 1);
+      g_traceFilter[sizeof(g_traceFilter) - 1] = 0;
+    }
+    char out[80];
+    snprintf(out, sizeof(out), "{\"ok\":true,\"filter\":\"%s\"}", g_traceFilter);
+    http.send(200, "application/json", out);
+  });
+  // Publish a Device Identification record: /barcode/dip?on=1[&vid=0x0501&pid=0x1]
+  http.on("/barcode/dip", [](){
+    if (http.hasArg("vid")) g_dipVendor  = (uint16_t)strtoul(http.arg("vid").c_str(), nullptr, 0);
+    if (http.hasArg("pid")) g_dipProduct = (uint16_t)strtoul(http.arg("pid").c_str(), nullptr, 0);
+    if (http.hasArg("on")) {
+      g_dipEnabled = http.arg("on") != "0";
+      saveClassicPrefs();
+      applyDipRecord();
+    }
+    char out[112];
+    snprintf(out, sizeof(out), "{\"ok\":true,\"dip\":%s,\"vid\":\"0x%04x\",\"pid\":\"0x%04x\"}",
+             g_dipEnabled ? "true" : "false", (unsigned)g_dipVendor, (unsigned)g_dipProduct);
+    http.send(200, "application/json", out);
+  });
+  http.on("/barcode/scn", [](){
+    if (http.hasArg("v")) {
+      // Validate BEFORE persisting. An out-of-range SCN makes esp_spp_start_srv
+      // fail asynchronously, so without this the HTTP reply says ok:true while
+      // the scanner-facing server is down -- and the bad value survives reboot.
+      long v = http.arg("v").toInt();
+      if (v < 0 || v > 30) {
+        http.send(400, "application/json", "{\"ok\":false,\"error\":\"scn must be 0 (auto) or 1-30\"}");
+        return;
+      }
+      g_sppScn = (uint8_t)v;
+      saveClassicPrefs();
+      restartSppServer("http scn");
+    }
+    char out[64];
+    snprintf(out, sizeof(out), "{\"ok\":true,\"scn\":%d}", (int)g_sppScn);
+    http.send(200, "application/json", out);
+  });
+  // Remote reboot. Its absence is why a duplicated SDP record or a wedged stack
+  // meant a walk to the kitchen with a USB cable; several knobs (DI record,
+  // Class of Device) only fully reset at boot.
+  http.on("/reboot", [](){
+    http.send(200, "application/json", "{\"ok\":true,\"action\":\"reboot\"}");
+    delay(150);                      // let the response flush before the reset
+    ESP.restart();
   });
   http.on("/barcode/repair", [](){
     classicRepairGesture();

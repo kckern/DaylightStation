@@ -13,3 +13,34 @@ CONFIG_COMPILER_OPTIMIZATION_SIZE=y
 CONFIG_MBEDTLS_PSK_MODES=y
 CONFIG_MBEDTLS_KEY_EXCHANGE_PSK=y
 CONFIG_BT_SPP_ENABLED=y
+
+# Bluedroid trace levels. Default is WARNING (2), which compiles out every SDP,
+# RFCOMM and L2CAP line — the entire ~1 s between the scanner's ACL coming up
+# and it hanging up. That window was diagnosed blind through 22 consecutive
+# failures because this output did not exist in the binary. DEBUG (5) makes it
+# exist; traceVprintf() in main.cpp captures it into /barcode/trace only while a
+# connection attempt is live, and keeps it off the UART so the extra volume
+# cannot distort the timing of the thing being measured.
+# SDP and RFCOMM at VERBOSE (6), not DEBUG: the 2026-07-22 capture showed the
+# scanner opening exactly one L2CAP channel at the SDP MTU, taking a 30-byte
+# answer, and hanging up -- an SDP-phase rejection. DEBUG logs that the exchange
+# happened; only VERBOSE logs the request UUID and the record we return, which is
+# the one fact that decides what to change. RFCOMM is raised too because it costs
+# nothing while RFCOMM is never reached, and would matter the moment it is.
+CONFIG_BT_LOG_SDP_TRACE_LEVEL_VERBOSE=y
+CONFIG_BT_LOG_SDP_TRACE_LEVEL=6
+CONFIG_BT_LOG_RFCOMM_TRACE_LEVEL_VERBOSE=y
+CONFIG_BT_LOG_RFCOMM_TRACE_LEVEL=6
+
+# The common SDP API (esp_sdp_api.h). Not needed to diagnose, but it is what
+# would let a missing service record be published over HTTP instead of over USB.
+# Enabled now precisely so that outcome does not cost another cable trip.
+CONFIG_BT_SDP_COMMON_ENABLED=y
+CONFIG_BT_LOG_L2CAP_TRACE_LEVEL_DEBUG=y
+CONFIG_BT_LOG_L2CAP_TRACE_LEVEL=5
+CONFIG_BT_LOG_BTM_TRACE_LEVEL_DEBUG=y
+CONFIG_BT_LOG_BTM_TRACE_LEVEL=5
+CONFIG_BT_LOG_APPL_TRACE_LEVEL_DEBUG=y
+CONFIG_BT_LOG_APPL_TRACE_LEVEL=5
+CONFIG_LOG_MAXIMUM_LEVEL_DEBUG=y
+CONFIG_LOG_MAXIMUM_LEVEL=4
