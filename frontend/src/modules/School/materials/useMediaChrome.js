@@ -25,21 +25,23 @@ export default function useMediaChrome(playerRef, { autoHide = false, idleMs = 3
   const [mediaEl, setMediaEl] = useState(null);
 
   // Resolve the media element once the Player mounts it (poll briefly — the
-  // element appears a tick or two after the lazy Player renders). Telemetry
-  // logs whether it resolved (and after how many frames) or timed out, so a
-  // "chrome has no media to drive" failure is visible in the logs.
+  // element appears a tick or two after the lazy Player renders). Depends on
+  // the STABLE `playerRef`, not `ctrl` (usePlayerController returns a fresh
+  // object every render, which would re-run this — and its telemetry — on
+  // every timeupdate). Telemetry logs whether it resolved (and after how many
+  // frames) or timed out, so a "chrome has no media to drive" failure shows.
   useEffect(() => {
     let raf;
     let tries = 0;
     const find = () => {
-      const el = ctrl.getMediaEl();
+      const el = playerRef?.current?.getMediaElement?.() || null;
       if (el) { setMediaEl(el); schoolLog.player('media-resolved', { frames: tries, tag: el.tagName }); return; }
       if (tries++ < 120) raf = requestAnimationFrame(find); // ~2s of frames
       else schoolLog.player('media-unresolved', { frames: tries });
     };
     find();
     return () => cancelAnimationFrame(raf);
-  }, [ctrl]);
+  }, [playerRef]);
 
   // Mirror element state into React for the chrome (Piano's mirror pattern).
   useEffect(() => {
