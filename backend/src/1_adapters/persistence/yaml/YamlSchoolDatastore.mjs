@@ -1,7 +1,7 @@
 /**
  * YAML persistence for the school app. Dumb storage only — no grading, no
  * policy (see SchoolService). Mirrors YamlEconomyDatastore's layout:
- *   banks:         <dataDir>/content/quizzes/{bankId}.yml
+ *   banks:         <dataDir>/content/quizzes/{bankId}.yml  (bankId may be a nested path)
  *   attempts:      <userDir>/apps/school/attempts/{YYYY-MM-DD}.yml  (append-only)
  *   quiz requests: <dataDir>/apps/school/quiz-requests.yml  (one household list —
  *                  NOT under content/quizzes, where listBankIds would sweep it up)
@@ -11,7 +11,10 @@ import fs from 'fs';
 import { loadYamlSafe, saveYaml, ensureDir, listYamlFiles } from '#system/utils/FileIO.mjs';
 import { InfrastructureError } from '#system/utils/errors/index.mjs';
 
-const BANK_ID_RE = /^[a-z0-9][a-z0-9_-]*$/i;
+// Bank ids may be nested paths ("i-survived/01-titanic-1912/01-two-am-on-deck") so the
+// bank tree can be browsed as folders. Every segment must start alphanumeric, which is
+// what keeps traversal out: ".." and hidden names cannot match, nor can a leading "/".
+const BANK_ID_RE = /^[a-z0-9][a-z0-9_-]*(\/[a-z0-9][a-z0-9_-]*)*$/i;
 const DAY_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 export class YamlSchoolDatastore {
@@ -73,7 +76,7 @@ export class YamlSchoolDatastore {
   }
 
   listBankIds() {
-    return listYamlFiles(this.#banksDir()).sort();
+    return listYamlFiles(this.#banksDir(), { recursive: true }).sort();
   }
 
   readBankRaw(bankId) {

@@ -42,6 +42,33 @@ describe('validateQuestionBank', () => {
     expect(r.bank.unit).toBeUndefined();
     expect(r.bank.readalong).toBeUndefined();
   });
+  // The subject-wall design (2026-07-22-school-home-topics-redesign) has bank
+  // YAMLs declare `subject:` to shelve themselves. SchoolService.listBanks
+  // projects `b.subject`, but this validator dropped the key, so every bank
+  // reported subject: null and fell through to the Library — the bank half of
+  // the design was inert. Shelf membership is NOT validated against the six
+  // known subjects here: the frontend already routes unknowns to the Library,
+  // and rejecting the whole bank would turn a shelving typo into a missing quiz.
+  it('carries subject through when present (subject-wall shelving)', () => {
+    const r = validateQuestionBank(bank({ subject: 'civilization' }));
+    expect(r.ok).toBe(true);
+    expect(r.bank.subject).toBe('civilization');
+  });
+  it('subject is optional and absent from the returned bank when omitted', () => {
+    const r = validateQuestionBank(bank());
+    expect(r.ok).toBe(true);
+    expect(r.bank.subject).toBeUndefined();
+  });
+  it('treats a null subject (YAML `subject:` with no value) the same as absent', () => {
+    const r = validateQuestionBank(bank({ subject: null }));
+    expect(r.ok).toBe(true);
+    expect(r.bank.subject).toBeUndefined();
+  });
+  it('rejects a non-string subject, naming the field', () => {
+    const r = validateQuestionBank(bank({ subject: { fake: 1 } }));
+    expect(r.ok).toBe(false);
+    expect(r.errors.join(' ')).toMatch(/subject/);
+  });
   it('finding 1: a single long run of underscores counts as exactly one blank', () => {
     const r = validateQuestionBank(bank({ items: [
       { id: 'q1', type: 'cloze', prompt: 'The capital is ________.', answer: 'Olympia' },
