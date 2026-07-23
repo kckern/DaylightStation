@@ -43,9 +43,13 @@ function decodeRow(row, kinds, strings) {
     case 'tap':
       return { t, event, control: internedString(strings, a), latencyMs: b };
     case 'touch.start':
-    case 'touch.move':
     case 'touch.end':
       return { t, event, x: a, y: b };
+    case 'touch.move':
+      // Moves are replayed in a burst at pointerup, so record-time `t` is nearly
+      // identical across a gesture. Slot c carries each sample's ORIGINAL time
+      // (ms, page-relative) — the real time axis for velocity/shape.
+      return { t, event, x: a, y: b, sampleT: c };
     case 'ui.intent':
       return { t, event, control: internedString(strings, a), step: c };
     case 'render':
