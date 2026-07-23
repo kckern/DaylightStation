@@ -10,7 +10,12 @@
  * `proxyPath`) — every material source downstream inherits already-proxied
  * `thumb`/`parentThumb` values, the same contract Piano's CourseTile renders
  * directly (`modules/Piano/PianoKiosk/modes/Videos/CourseTile.jsx`).
+ *
+ * That path is the ORIGINAL though, whatever resolution the poster happens to
+ * ship at, so it goes through sizedPlexImage() to be resampled server-side to
+ * the tile's box — see plexImage.js for why the browser must not do it.
  */
+import { sizedPlexImage, ART_BOX } from '../plexImage.js';
 function formatMeta(material) {
   if (material.kind === 'collection') {
     return material.unitCount != null ? `${material.unitCount} works` : '';
@@ -47,7 +52,7 @@ export default function MaterialGrid({ materials, onSelect }) {
             >
               {m.poster ? (
                 <img
-                  src={m.poster}
+                  src={sizedPlexImage(m.poster, ...(square ? ART_BOX.gridSquare : ART_BOX.gridPoster))}
                   alt={m.title}
                   loading="lazy"
                   decoding="async"
