@@ -19,14 +19,17 @@
  */
 
 export const SUBJECTS = [
+  // Row-major on the 3×3 wall. Anchors (per household layout): Math & Money
+  // top-right, Scripture & Gospel dead centre, Language & Culture bottom-left,
+  // Life & Skills bottom-centre; the rest fill the remaining cells.
   { id: 'english', label: 'English & Literature', hint: 'Reading, grammar, and great books' },
   { id: 'writing', label: 'Writing & Typing', hint: 'Put it in your own words' },
-  { id: 'language', label: 'Language & Culture', hint: 'Hear it, say it, write it' },
   { id: 'math', label: 'Math & Money', hint: 'Numbers, patterns, and money' },
   { id: 'science', label: 'Science & Nature', hint: 'How the world and nature work' },
-  { id: 'skills', label: 'Life & Skills', hint: 'Hands-on — cooking, making, life' },
-  { id: 'history', label: 'History & Geography', hint: 'People, places, and the past' },
   { id: 'scripture', label: 'Scripture & Gospel', hint: 'Scriptures, stories, and faith' },
+  { id: 'history', label: 'History & Geography', hint: 'People, places, and the past' },
+  { id: 'language', label: 'Language & Culture', hint: 'Hear it, say it, write it' },
+  { id: 'skills', label: 'Life & Skills', hint: 'Hands-on — cooking, making, life' },
   { id: 'arts', label: 'Art & Music', hint: 'Draw, paint, sing, and play' },
 ];
 

@@ -4,9 +4,9 @@ import { SUBJECTS, groupBySubject } from './subjects.js';
 describe('SUBJECTS', () => {
   it('is the nine agreed paired shelves in grid order', () => {
     expect(SUBJECTS.map((s) => s.id)).toEqual([
-      'english', 'writing', 'language',
-      'math', 'science', 'skills',
-      'history', 'scripture', 'arts',
+      'english', 'writing', 'math',
+      'science', 'scripture', 'history',
+      'language', 'skills', 'arts',
     ]);
   });
 });
