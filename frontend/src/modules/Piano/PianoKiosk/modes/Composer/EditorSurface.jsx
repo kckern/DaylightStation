@@ -18,6 +18,8 @@ import { useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import { MusicXmlRenderer } from '../../../../MusicNotation/renderers/MusicXmlRenderer.jsx';
 import { usePianoMidi } from '../../PianoMidiContext.jsx';
 import getLogger from '../../../../../lib/logging/Logger.js';
+import { record } from '../../../../../lib/logging/inputRecorder.js';
+import { midiToRecord } from '../SheetMusic/midiTap.js';
 import { initEditor, serializeFromEditor, undo, redo, makeRest } from './model/index.js';
 import { useComposerInput } from './useComposerInput.js';
 import { useAutosave } from './useAutosave.js';
@@ -317,7 +319,7 @@ export function EditorSurface({ initialScore, songId = null, initialRevision = 1
   const [layout, setLayout] = useState({ steps: [], staves: [] });
   const [helpOpen, setHelpOpen] = useState(false);
   const { steps, staves } = layout;
-  const { subscribe, sendNoteAt, sendNoteOffAt, sendPanic } = usePianoMidi();
+  const { subscribe, subscribeRaw, sendNoteAt, sendNoteOffAt, sendPanic } = usePianoMidi();
   // See DEFAULT_ZOOM: this single value drives the engrave AND every caret term
   // that is measured in fixed pixels. They must not diverge.
   const zoom = config.zoom ?? DEFAULT_ZOOM;
@@ -469,6 +471,18 @@ export function EditorSurface({ initialScore, songId = null, initialRevision = 1
       flushRef.current?.(); // autosave-on-exit
     };
   }, [logger]); // eslint-disable-line react-hooks/exhaustive-deps -- mount-once lifecycle log
+
+  // Raw-input telemetry: mirror the FULL-fidelity MIDI byte stream (note-on/off,
+  // sustain, CC) into the zero-alloc recorder ring, independent of the editor's
+  // parsed `subscribe` (which only relays note-ons for armed entry). Reuses
+  // SheetMusic's pure midiToRecord classifier. Always on — recording is cheap and
+  // shipping is gated elsewhere. emitRaw wraps bytes as { data, time }, so the
+  // listener reads evt?.data (NOT the bare byte array).
+  useEffect(() => {
+    if (!subscribeRaw) return undefined;
+    const off = subscribeRaw((evt) => { const r = midiToRecord(evt?.data); if (r) record(r.kind, r.a, r.b, 0, 0); });
+    return off;
+  }, [subscribeRaw]);
 
   // TWO RENDER PLANES (spec §2.1). OSMD engraves the SETTLED score only; notes
   // entered since then paint instantly as wet ink and dry at the next settle.
