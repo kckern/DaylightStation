@@ -41,6 +41,28 @@ describe('GetMaterialCatalog.execute', () => {
     expect(result.materials.find((m) => m.id === 'plex:685094-s1').medium).toBe('video');
   });
 
+  it('a hanging source times out and is skipped (fail-soft), returning the other sources', async () => {
+    const sources = {
+      'plex-album': { listMaterials: async () => [material('plex:ok1')] },
+      'plex-label': { listMaterials: () => new Promise(() => {}) }, // never resolves (Plex stall)
+    };
+    const config = {
+      sources: [
+        { label: 'Good', source: 'plex-album', root: '1', medium: 'audio', category: 'listening' },
+        { label: 'Hangs', source: 'plex-label', root: '99', medium: 'video', category: 'course' },
+      ],
+      completion_threshold_percent: 90,
+      quiz_pass_percent: 80,
+    };
+    const catalog = new GetMaterialCatalog({ sources, config, logger, sourceTimeoutMs: 20 });
+
+    const result = await catalog.execute();
+
+    // The stalled source contributes nothing; the good one still resolves.
+    expect(result.materials.map((m) => m.id)).toEqual(['plex:ok1']);
+    expect(errors.some((e) => e.event === 'school.materials.source-failed' && /timed out/.test(e.data.error))).toBe(true);
+  });
+
   it('sections only include categories present among configured sources, in fixed order course, reference, listening', async () => {
     const sources = {
       'plex-album': { listMaterials: async () => [material('plex:a1')] },
