@@ -55,3 +55,29 @@ describe('PlexLabelSource.listMaterials', () => {
     expect(math.unitCount).toBe(12);
   });
 });
+
+describe('PlexLabelSource.getMaterial', () => {
+  function dispatchSource(itemType) {
+    return new PlexLabelSource({
+      plexClient: { listLabeled: async () => [], itemType: async () => itemType },
+      videoSource: { getMaterial: async (id) => ({ id, source: 'plex-show', medium: 'video', units: [{ id: 'ep1' }] }) },
+      audioSource: { getMaterial: async (id) => ({ id, source: 'plex-album', medium: 'audio', units: [{ id: 'trk1' }] }) },
+      logger: { warn() {}, error() {} },
+    });
+  }
+
+  it('expands a season/show via the video source', async () => {
+    const m = await dispatchSource('season').getMaterial('plex:100');
+    expect(m.units).toEqual([{ id: 'ep1' }]);
+  });
+
+  it('expands an album via the audio source', async () => {
+    const m = await dispatchSource('album').getMaterial('plex:200');
+    expect(m.units).toEqual([{ id: 'trk1' }]);
+  });
+
+  it('reports its own source name, not the delegate\'s', async () => {
+    const m = await dispatchSource('season').getMaterial('plex:100');
+    expect(m.source).toBe('plex-label');
+  });
+});
