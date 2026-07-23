@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Extend the School quiz framework with two interactive item types (`map_click`, `asset_choice`), a server-side geography dataset + synth-on-read bank generator, and a graded-and-resurfacing `GeoQuizRunner`, proven with US state locations, US capitals, and world flags.
+**Goal:** Extend the School quiz framework with two interactive item types (`region_click`, `asset_choice`), a server-side geography dataset + synth-on-read bank generator, and a graded-and-resurfacing `GeoQuizRunner`, proven with US state locations, US capitals, and world flags.
 
-**Architecture:** New item types register into the existing `{item, onSubmit, verdict}` contract and grade by strict `===` server-side. Geography banks are synthesized in `SchoolService` from a bundled dataset + deck recipes, addressed by colon-prefixed `geo:` ids, and kept out of the file-bank listing. A new `drill` session mode grades like `quiz` but records into its own reporting lane. The frontend adds a `ClickableMap`, a flag-asset resolver, a shared `useGradedSession` hook, `GeoQuizRunner`, and a `GeographyGrid` reached from an app tile on the "History & Geography" subject shelf.
+**Architecture:** New item types register into the existing `{item, onSubmit, verdict}` contract and grade by strict `===` server-side. Both are **asset-agnostic and instance-name-free**: `region_click` renders any registered clickable SVG *asset* (a US map is just one instance — an anatomy diagram or keyboard would be another) and `asset_choice` picks among any images. Geography banks are synthesized in `SchoolService` from a bundled dataset + deck recipes, addressed by colon-prefixed `geo:` ids, and kept out of the file-bank listing. A new `drill` session mode grades like `quiz` but records into its own reporting lane. The frontend adds a reusable `ClickableAsset`, a flag-asset resolver, a shared `useGradedSession` hook, `GeoQuizRunner`, and a `GeographyGrid` reached from an app tile on the "History & Geography" subject shelf.
 
 **Tech Stack:** Node ESM backend (DDD layers `0_system`…`4_api`), React/JSX frontend, SCSS, vitest + @testing-library/react (happy-dom env `tests/_infrastructure/frontend-env.mjs`), lipis/flag-icons (MIT) flag SVGs, a public-domain US states SVG.
 
@@ -12,7 +12,8 @@
 
 ## Global Constraints
 
-- **Strict equality grading.** `map_click` and `asset_choice` grade with `given === item.answer` (values are machine ids), never the `norm()` path.
+- **No hardcoded instance names.** The clickable interaction is a *clickable asset*, not a "map". Do NOT bake `map`/`us-states` into type names, component names, props, or fields. The type is `region_click`, the component is `ClickableAsset`, the item field is `asset` (an asset id supplied by data). A geography map is one instance; the code must read as reusable for any clickable SVG asset (anatomy diagram, keyboard, etc.).
+- **Strict equality grading.** `region_click` and `asset_choice` grade with `given === item.answer` (values are machine ids), never the `norm()` path.
 - **`givenShapeError` needs NO change** — both new types submit a non-empty string `given`, already covered by its default branch. Do not add branches to it.
 - **Geography banks use `audience: 'generic'`** (not per-student assigned; also satisfies the guest guard).
 - **Geography banks are addressed only by fixed `geo:{deckId}` id.** They are NEVER stamped with a `subject` and NEVER included in `warmBanks`/`listBanks` (that would shelve them into the Library and double the entry point).
@@ -31,7 +32,7 @@
 **Backend**
 - `backend/src/2_domains/school/geography/distractors.mjs` — pure seeded distractor sampler (mulberry32 + string hash).
 - `backend/src/2_domains/school/geography/generateGeoBank.mjs` — pure `(recipe, entities) → raw bank`.
-- `backend/src/2_domains/school/grading.mjs` *(modify)* — `map_click`, `asset_choice` grading branches.
+- `backend/src/2_domains/school/grading.mjs` *(modify)* — `region_click`, `asset_choice` grading branches.
 - `backend/src/2_domains/school/questionBankValidation.mjs` *(modify)* — `ITEM_TYPES` + new-shape validation.
 - `backend/src/3_applications/school/ports/IBankSource.mjs` — port doc (`resolve`, `listDeckSummaries`).
 - `backend/src/3_applications/school/sources/GeographyBankSource.mjs` — loads dataset+recipes, memoized resolve.
@@ -43,9 +44,9 @@
 - `backend/src/app.mjs` *(modify)* — construct + inject `GeographyBankSource`.
 
 **Frontend** (`frontend/src/modules/School/`)
-- `geography/ClickableMap.jsx` + `geography/maps/us-states.svg` — inline SVG map, `data-region-id` clicks.
+- `quiz/clickable/ClickableAsset.jsx` + `quiz/clickable/assets/us-states.svg` — reusable clickable SVG asset renderer, `data-region-id` clicks (asset-agnostic; geography supplies `us-states` as one instance).
 - `geography/flags.js` + `geography/flags/*.svg` — iso→lazy flag url resolver + assets.
-- `quiz/items/MapClickItem.jsx`, `quiz/items/AssetChoiceItem.jsx` — new item components.
+- `quiz/items/RegionClickItem.jsx`, `quiz/items/AssetChoiceItem.jsx` — new item components.
 - `geography/useGradedSession.js` — shared session plumbing (new; GeoQuizRunner only).
 - `geography/GeoQuizRunner.jsx` — graded + resurfacing runner.
 - `geography/GeographyGrid.jsx` — topic grid.
@@ -53,14 +54,14 @@
 - `SchoolApp.jsx` *(modify)* — `geography` section wiring + `drill` runner mount.
 - `schoolApi.js` *(modify)* — `geoDecks()`.
 - `home/icons/svg/{geography,states,capitals,flags,countries}.svg` + `home/icons/MANIFEST.md` *(modify)* — placeholder icons.
-- `School.scss` *(modify)* — map, flag-grid, geography-grid styles.
+- `School.scss` *(modify)* — clickable-asset, flag-grid, geography-grid styles.
 
 **Docs**
 - `docs/reference/school/README.md` *(modify)* — geography quiz framework section.
 
 ---
 
-## Task 1: Grading + validation for `map_click` and `asset_choice`
+## Task 1: Grading + validation for `region_click` and `asset_choice`
 
 **Files:**
 - Modify: `backend/src/2_domains/school/grading.mjs`
@@ -70,8 +71,8 @@
 
 **Interfaces:**
 - Consumes: existing `gradeAnswer(item, given)`, `givenShapeError(item, given)`, `validateQuestionBank(raw)`.
-- Produces: `gradeAnswer` handles `map_click` (`{correct: given===item.answer, expected: item.answer}`) and `asset_choice` (same). `validateQuestionBank` accepts the two new shapes. Item shapes:
-  - `map_click`: `{ id, type:'map_click', prompt, map, answer }` (all non-empty strings).
+- Produces: `gradeAnswer` handles `region_click` (`{correct: given===item.answer, expected: item.answer}`) and `asset_choice` (same). `validateQuestionBank` accepts the two new shapes. Item shapes:
+  - `region_click`: `{ id, type:'region_click', prompt, asset, answer }` (all non-empty strings; `asset` is a clickable-asset id, `answer` a region id).
   - `asset_choice`: `{ id, type:'asset_choice', prompt, promptImage?, choices:[{value, label?, image?}], answer }`.
 
 - [ ] **Step 1: Write the failing grading test**
@@ -81,8 +82,8 @@ Create `backend/src/2_domains/school/grading.test.mjs`:
 import { describe, it, expect } from 'vitest';
 import { gradeAnswer, givenShapeError } from './grading.mjs';
 
-describe('gradeAnswer map_click', () => {
-  const item = { id: 'g', type: 'map_click', prompt: 'Click Nevada', map: 'us-states', answer: 'NV' };
+describe('gradeAnswer region_click', () => {
+  const item = { id: 'g', type: 'region_click', prompt: 'Click Nevada', asset: 'us-states', answer: 'NV' };
   it('grades a correct region click', () => {
     expect(gradeAnswer(item, 'NV')).toEqual({ correct: true, expected: 'NV' });
   });
@@ -104,8 +105,8 @@ describe('gradeAnswer asset_choice', () => {
 });
 
 describe('givenShapeError covers the new types via its default branch', () => {
-  it('rejects empty given for map_click without a dedicated branch', () => {
-    const item = { id: 'g', type: 'map_click', prompt: 'p', map: 'us-states', answer: 'NV' };
+  it('rejects empty given for region_click without a dedicated branch', () => {
+    const item = { id: 'g', type: 'region_click', prompt: 'p', asset: 'us-states', answer: 'NV' };
     expect(givenShapeError(item, '')).toMatch(/non-empty string/);
     expect(givenShapeError(item, 'NV')).toBeNull();
   });
@@ -115,13 +116,13 @@ describe('givenShapeError covers the new types via its default branch', () => {
 - [ ] **Step 2: Run it to verify it fails**
 
 Run: `npx vitest run backend/src/2_domains/school/grading.test.mjs`
-Expected: FAIL — `gradeAnswer: unrecognised item.type "map_click"`.
+Expected: FAIL — `gradeAnswer: unrecognised item.type "region_click"`.
 
 - [ ] **Step 3: Add the grading branches**
 
 In `backend/src/2_domains/school/grading.mjs`, add before the final `throw`:
 ```javascript
-  if (item.type === 'map_click' || item.type === 'asset_choice') {
+  if (item.type === 'region_click' || item.type === 'asset_choice') {
     // Values are machine-generated ids (region codes / choice values), never
     // free text — strict equality, no normalization (see multiple_choice).
     return { correct: given === item.answer, expected: item.answer };
@@ -143,17 +144,17 @@ import { validateQuestionBank } from './questionBankValidation.mjs';
 
 const base = { id: 'b', title: 'T', audience: 'generic' };
 
-describe('validateQuestionBank map_click', () => {
-  it('accepts a valid map_click item', () => {
+describe('validateQuestionBank region_click', () => {
+  it('accepts a valid region_click item', () => {
     const r = validateQuestionBank({ ...base, items: [
-      { id: 'i1', type: 'map_click', prompt: 'Click Nevada', map: 'us-states', answer: 'NV' }] });
+      { id: 'i1', type: 'region_click', prompt: 'Click Nevada', asset: 'us-states', answer: 'NV' }] });
     expect(r.ok).toBe(true);
   });
-  it('rejects missing map and empty answer', () => {
+  it('rejects missing asset and empty answer', () => {
     const r = validateQuestionBank({ ...base, items: [
-      { id: 'i1', type: 'map_click', prompt: 'p', answer: '' }] });
+      { id: 'i1', type: 'region_click', prompt: 'p', answer: '' }] });
     expect(r.ok).toBe(false);
-    expect(r.errors.join(' ')).toMatch(/map/);
+    expect(r.errors.join(' ')).toMatch(/asset/);
     expect(r.errors.join(' ')).toMatch(/answer/);
   });
 });
@@ -181,13 +182,13 @@ describe('validateQuestionBank asset_choice', () => {
 - [ ] **Step 6: Run it to verify it fails**
 
 Run: `npx vitest run backend/src/2_domains/school/questionBankValidation.test.mjs`
-Expected: FAIL — `unknown type "map_click"`.
+Expected: FAIL — `unknown type "region_click"`.
 
 - [ ] **Step 7: Add validation**
 
 In `questionBankValidation.mjs`, extend `ITEM_TYPES`:
 ```javascript
-const ITEM_TYPES = new Set(['multiple_choice', 'short_answer', 'cloze', 'matching', 'map_click', 'asset_choice']);
+const ITEM_TYPES = new Set(['multiple_choice', 'short_answer', 'cloze', 'matching', 'region_click', 'asset_choice']);
 ```
 Add a helper near `isNonEmptyString`:
 ```javascript
@@ -196,8 +197,8 @@ const isImageSpec = (v) => v && typeof v === 'object' && !Array.isArray(v)
 ```
 Inside the `raw.items.forEach` loop, after the existing `matching` block, add:
 ```javascript
-    if (item.type === 'map_click') {
-      if (!isNonEmptyString(item.map)) errors.push(`${at}: map is required`);
+    if (item.type === 'region_click') {
+      if (!isNonEmptyString(item.asset)) errors.push(`${at}: asset is required`);
       if (!isNonEmptyString(item.answer)) errors.push(`${at}: answer is required`);
     }
     if (item.type === 'asset_choice') {
@@ -222,7 +223,7 @@ Inside the `raw.items.forEach` loop, after the existing `matching` block, add:
       }
     }
 ```
-Also add the two new types to the passthrough `bank.items` — no change needed there (items are passed through whole). The `map_click`/`asset_choice` items also need the generic `prompt` check, which the existing `if (!isNonEmptyString(item.prompt))` already enforces.
+Also add the two new types to the passthrough `bank.items` — no change needed there (items are passed through whole). The `region_click`/`asset_choice` items also need the generic `prompt` check, which the existing `if (!isNonEmptyString(item.prompt))` already enforces.
 
 - [ ] **Step 8: Run both tests to verify they pass**
 
@@ -232,7 +233,7 @@ Expected: PASS.
 - [ ] **Step 9: Commit**
 ```bash
 git add backend/src/2_domains/school/grading.mjs backend/src/2_domains/school/questionBankValidation.mjs backend/src/2_domains/school/grading.test.mjs backend/src/2_domains/school/questionBankValidation.test.mjs
-git commit -m "feat(school): grade + validate map_click and asset_choice item types"
+git commit -m "feat(school): grade + validate region_click and asset_choice item types"
 ```
 
 ---
@@ -349,7 +350,7 @@ git commit -m "feat(school): deterministic seeded distractor sampler for geo ban
 
 **Interfaces:**
 - Consumes: `sampleDistractors` (Task 2), `validateQuestionBank` (Task 1).
-- Produces: `generateGeoBank({ recipe, entities }) → rawBank` where `rawBank` is `{ id:'geo:{deckId}', title, audience:'generic', items:[…] }`. `recipe` fields: `{ deckId, title, itemType, prompt (template with {name}), answerField, distractorField?, map?, promptImage?, choiceLabelField?, distractorCount? }`. `entities` is an array of `{ id, name, capital, region_id?, iso? }`.
+- Produces: `generateGeoBank({ recipe, entities }) → rawBank` where `rawBank` is `{ id:'geo:{deckId}', title, audience:'generic', items:[…] }`. `recipe` fields: `{ deckId, title, itemType, prompt (template with {name}), answerField, distractorField?, asset?, promptImage?, choiceLabelField?, distractorCount? }`. `entities` is an array of `{ id, name, capital, region_id?, iso? }`.
 
 - [ ] **Step 1: Write `us-states.yml`** (all 50 states)
 
@@ -470,8 +471,8 @@ Create `backend/src/3_applications/school/sources/geography/decks.yml`:
 - deckId: us-state-locations
   title: US State Locations
   entities: us-states
-  itemType: map_click
-  map: us-states
+  itemType: region_click
+  asset: us-states
   prompt: "Click {name}"
   answerField: region_id
   available: true
@@ -498,8 +499,8 @@ Create `backend/src/3_applications/school/sources/geography/decks.yml`:
 - deckId: country-locations
   title: Country Locations
   entities: world
-  itemType: map_click
-  map: world
+  itemType: region_click
+  asset: world
   prompt: "Click {name}"
   answerField: id
   available: false
@@ -535,15 +536,15 @@ const world = [
   { id: 'ES', name: 'Spain', capital: 'Madrid', iso: 'ES' },
 ];
 
-it('map_click deck: one item per entity, stable ids, valid bank', () => {
-  const recipe = { deckId: 'us-state-locations', title: 'Loc', itemType: 'map_click',
-    map: 'us-states', prompt: 'Click {name}', answerField: 'region_id', available: true };
+it('region_click deck: one item per entity, stable ids, valid bank', () => {
+  const recipe = { deckId: 'us-state-locations', title: 'Loc', itemType: 'region_click',
+    asset: 'us-states', prompt: 'Click {name}', answerField: 'region_id', available: true };
   const bank = generateGeoBank({ recipe, entities: states });
   expect(bank.id).toBe('geo:us-state-locations');
   expect(bank.audience).toBe('generic');
   expect(bank.items).toHaveLength(4);
-  expect(bank.items[0]).toMatchObject({ id: 'geo:us-state-locations:NV', type: 'map_click',
-    prompt: 'Click Nevada', map: 'us-states', answer: 'NV' });
+  expect(bank.items[0]).toMatchObject({ id: 'geo:us-state-locations:NV', type: 'region_click',
+    prompt: 'Click Nevada', asset: 'us-states', answer: 'NV' });
   expect(validateQuestionBank(bank).ok).toBe(true);
 });
 
@@ -607,8 +608,8 @@ export function generateGeoBank({ recipe, entities }) {
     const prompt = fill(recipe.prompt, e);
     const answer = String(e[recipe.answerField]);
 
-    if (recipe.itemType === 'map_click') {
-      return { id, type: 'map_click', prompt, map: recipe.map, answer };
+    if (recipe.itemType === 'region_click') {
+      return { id, type: 'region_click', prompt, asset: recipe.asset, answer };
     }
 
     const count = recipe.distractorCount ?? 3;
@@ -1167,34 +1168,35 @@ git commit -m "feat(school): wire GeographyBankSource + GET /geography/decks + s
 
 ---
 
-## Task 8: ClickableMap + preprocessed US states SVG
+## Task 8: ClickableAsset (reusable) + one clickable-asset instance (US states SVG)
 
 **Files:**
-- Create: `frontend/src/modules/School/geography/maps/us-states.svg`
-- Create: `frontend/src/modules/School/geography/maps/README.md` (source + license)
-- Create: `frontend/src/modules/School/geography/prepareMap.mjs` (one-time prep script)
-- Create: `frontend/src/modules/School/geography/ClickableMap.jsx`
-- Test: `frontend/src/modules/School/geography/ClickableMap.test.jsx`
+- Create: `frontend/src/modules/School/quiz/clickable/assets/us-states.svg`
+- Create: `frontend/src/modules/School/quiz/clickable/assets/README.md` (source + license, per asset)
+- Create: `frontend/src/modules/School/quiz/clickable/prepare-us-states.mjs` (one-time prep script for this instance)
+- Create: `frontend/src/modules/School/quiz/clickable/ClickableAsset.jsx`
+- Test: `frontend/src/modules/School/quiz/clickable/ClickableAsset.test.jsx`
 
 **Interfaces:**
-- Produces: `<ClickableMap map="us-states" value={string|null} verdict={object|null} expected={string|null} onPick={fn} />`. Regions carry `data-region-id`; a click/Enter on a region calls `onPick(regionId)` once until `verdict` is set. On `verdict`, the picked region gets `is-right`/`is-wrong`, and `expected` always gets `is-expected`.
+- Produces: `<ClickableAsset asset="us-states" value={string|null} verdict={object|null} expected={string|null} onPick={fn} />`. **Asset-agnostic** — `asset` names any registered clickable SVG in `./assets/`; a US map is one instance. Regions carry `data-region-id`; a click/Enter on a region calls `onPick(regionId)` once until `verdict` is set. On `verdict`, the picked region gets `is-right`/`is-wrong`, and `expected` always gets `is-expected`.
 
-- [ ] **Step 1: Obtain and prepare the map asset**
+- [ ] **Step 1: Obtain and prepare one clickable-asset instance (US states)**
 
-Download a public-domain US states SVG whose paths carry state postal-code ids (e.g. Wikimedia "Blank US Map (states only)" or an equivalent CC0 `us-states.svg`). Save the raw file, record its exact source URL + license in `maps/README.md`. Then write `prepareMap.mjs` to normalize it (this is a build-time transform, not runtime):
+Download a public-domain US states SVG whose paths carry state postal-code ids (e.g. Wikimedia "Blank US Map (states only)" or an equivalent CC0 `us-states.svg`). Save the raw file, record its exact source URL + license in `assets/README.md`. Then write `prepare-us-states.mjs` (instance-specific tooling — the reusable component stays generic) to normalize it (build-time, not runtime):
 ```javascript
 /**
- * One-time prep: normalize a raw US-states SVG into the app asset.
+ * One-time prep for the us-states clickable asset. Instance-specific tooling;
+ * the ClickableAsset component itself is generic.
  *  - rename each state path's `id`/`class` postal code to `data-region-id`
  *  - group multi-path states so every path of a state shares the id
  *  - append tappable callout pucks for small states (offset leader-tabs)
- * Usage: node prepareMap.mjs raw-us.svg us-states.svg
+ * Usage: node prepare-us-states.mjs raw-us.svg us-states.svg
  */
 import fs from 'node:fs';
 
 const SMALL = ['RI', 'DE', 'DC', 'CT', 'NJ', 'MD', 'MA', 'NH', 'VT'];
 // Callout anchor points (x,y in the SVG's viewBox) placed to the right/NE of
-// the map outline, one row per small state — tuned against the chosen asset.
+// the outline, one row per small state — tuned against the chosen asset.
 const CALLOUTS = { RI: [935, 205], CT: [915, 195], NJ: [905, 250], DE: [900, 280],
   MD: [890, 300], DC: [905, 315], MA: [940, 175], NH: [925, 150], VT: [905, 150] };
 
@@ -1202,28 +1204,28 @@ const raw = fs.readFileSync(process.argv[2], 'utf8');
 let out = raw.replace(/\b(?:id|class)="([A-Z]{2})"/g, 'data-region-id="$1"');
 const pucks = SMALL.map((id) => {
   const [x, y] = CALLOUTS[id];
-  return `<g class="school-map__callout" data-region-id="${id}" tabindex="0" role="button" aria-label="${id}">`
+  return `<g class="school-clickable__callout" data-region-id="${id}" tabindex="0" role="button" aria-label="${id}">`
     + `<rect x="${x}" y="${y}" width="22" height="14" rx="3"/>`
     + `<text x="${x + 11}" y="${y + 11}" text-anchor="middle">${id}</text></g>`;
 }).join('');
 out = out.replace('</svg>', `${pucks}</svg>`);
 fs.writeFileSync(process.argv[3], out);
 ```
-Run it: `node frontend/src/modules/School/geography/prepareMap.mjs raw-us.svg frontend/src/modules/School/geography/maps/us-states.svg`. Verify every state postal code appears as a `data-region-id` and small-state pucks exist:
-`grep -o 'data-region-id="[A-Z][A-Z]"' frontend/src/modules/School/geography/maps/us-states.svg | sort -u | wc -l` → expect `50`.
+Run it: `node frontend/src/modules/School/quiz/clickable/prepare-us-states.mjs raw-us.svg frontend/src/modules/School/quiz/clickable/assets/us-states.svg`. Verify every state postal code appears as a `data-region-id` and small-state pucks exist:
+`grep -o 'data-region-id="[A-Z][A-Z]"' frontend/src/modules/School/quiz/clickable/assets/us-states.svg | sort -u | wc -l` → expect `50`.
 
 - [ ] **Step 2: Write the failing test**
 
-Create `frontend/src/modules/School/geography/ClickableMap.test.jsx`:
+Create `frontend/src/modules/School/quiz/clickable/ClickableAsset.test.jsx`:
 ```javascript
 import { describe, it, expect, vi } from 'vitest';
 import { render, fireEvent } from '@testing-library/react';
-import ClickableMap from './ClickableMap.jsx';
+import ClickableAsset from './ClickableAsset.jsx';
 
-describe('ClickableMap', () => {
+describe('ClickableAsset', () => {
   it('calls onPick with the clicked region id', () => {
     const onPick = vi.fn();
-    const { container } = render(<ClickableMap map="us-states" value={null} verdict={null} expected={null} onPick={onPick} />);
+    const { container } = render(<ClickableAsset asset="us-states" value={null} verdict={null} expected={null} onPick={onPick} />);
     const nv = container.querySelector('[data-region-id="NV"]');
     expect(nv).toBeTruthy();
     fireEvent.click(nv);
@@ -1231,19 +1233,19 @@ describe('ClickableMap', () => {
   });
   it('is inert once a verdict exists', () => {
     const onPick = vi.fn();
-    const { container } = render(<ClickableMap map="us-states" value="CA" verdict={{ correct: false, expected: 'NV' }} expected="NV" onPick={onPick} />);
+    const { container } = render(<ClickableAsset asset="us-states" value="CA" verdict={{ correct: false, expected: 'NV' }} expected="NV" onPick={onPick} />);
     fireEvent.click(container.querySelector('[data-region-id="TX"]'));
     expect(onPick).not.toHaveBeenCalled();
   });
   it('marks expected and picked regions on a verdict', () => {
-    const { container } = render(<ClickableMap map="us-states" value="CA" verdict={{ correct: false, expected: 'NV' }} expected="NV" onPick={() => {}} />);
+    const { container } = render(<ClickableAsset asset="us-states" value="CA" verdict={{ correct: false, expected: 'NV' }} expected="NV" onPick={() => {}} />);
     expect(container.querySelector('[data-region-id="NV"]').classList.contains('is-expected')).toBe(true);
     expect(container.querySelector('[data-region-id="CA"]').classList.contains('is-wrong')).toBe(true);
   });
   it('small-state callout puck is clickable', () => {
     const onPick = vi.fn();
-    const { container } = render(<ClickableMap map="us-states" value={null} verdict={null} expected={null} onPick={onPick} />);
-    fireEvent.click(container.querySelector('.school-map__callout[data-region-id="RI"]'));
+    const { container } = render(<ClickableAsset asset="us-states" value={null} verdict={null} expected={null} onPick={onPick} />);
+    fireEvent.click(container.querySelector('.school-clickable__callout[data-region-id="RI"]'));
     expect(onPick).toHaveBeenCalledWith('RI');
   });
 });
@@ -1251,33 +1253,34 @@ describe('ClickableMap', () => {
 
 - [ ] **Step 3: Run to verify it fails**
 
-Run: `npx vitest run frontend/src/modules/School/geography/ClickableMap.test.jsx`
+Run: `npx vitest run frontend/src/modules/School/quiz/clickable/ClickableAsset.test.jsx`
 Expected: FAIL — cannot find module.
 
-- [ ] **Step 4: Implement ClickableMap**
+- [ ] **Step 4: Implement ClickableAsset**
 
-Create `frontend/src/modules/School/geography/ClickableMap.jsx`:
+Create `frontend/src/modules/School/quiz/clickable/ClickableAsset.jsx`:
 ```javascript
 /**
- * Inline SVG map with clickable regions. Regions (and small-state callout
- * pucks) carry `data-region-id`; a click or Enter/Space resolves the id and
- * calls onPick once until a verdict lands. On verdict, the picked region is
- * marked right/wrong and the expected region is always highlighted — a miss
- * teaches location. Delegated listener (one handler for the whole SVG) so it
- * works regardless of how many paths a state has.
+ * Reusable clickable SVG asset. NOT map-specific — `asset` names any SVG in
+ * ./assets/ (a US map, an anatomy diagram, a keyboard…). Regions (and any
+ * callout pucks) carry `data-region-id`; a click or Enter/Space resolves the
+ * id and calls onPick once until a verdict lands. On verdict, the picked
+ * region is marked right/wrong and the expected region is always highlighted.
+ * Delegated listener (one handler for the whole SVG) so it works regardless of
+ * how many paths a region has.
  */
 import { useEffect, useMemo, useRef } from 'react';
-import getLogger from '../../../lib/logging/Logger.js';
+import getLogger from '../../../../lib/logging/Logger.js';
 
-const MAPS = import.meta.glob('./maps/*.svg', { eager: true, query: '?raw', import: 'default' });
-const svgFor = (map) => MAPS[`./maps/${map}.svg`] || null;
+const ASSETS = import.meta.glob('./assets/*.svg', { eager: true, query: '?raw', import: 'default' });
+const svgFor = (asset) => ASSETS[`./assets/${asset}.svg`] || null;
 
 let _logger;
-const logger = () => (_logger || (_logger = getLogger().child({ component: 'clickable-map' })));
+const logger = () => (_logger || (_logger = getLogger().child({ component: 'clickable-asset' })));
 
-export default function ClickableMap({ map, value, verdict, expected, onPick }) {
+export default function ClickableAsset({ asset, value, verdict, expected, onPick }) {
   const ref = useRef(null);
-  const svg = useMemo(() => svgFor(map), [map]);
+  const svg = useMemo(() => svgFor(asset), [asset]);
   const locked = !!verdict;
 
   // Apply verdict/selection classes imperatively (the SVG is injected HTML).
@@ -1300,15 +1303,15 @@ export default function ClickableMap({ map, value, verdict, expected, onPick }) 
     if (e.type === 'keydown' && e.key !== 'Enter' && e.key !== ' ') return;
     e.preventDefault();
     const id = target.getAttribute('data-region-id');
-    logger().debug('region-pick', { map, id });
+    logger().debug('region-pick', { asset, id });
     onPick(id);
   };
 
-  if (!svg) { logger().warn('map-missing', { map }); return null; }
+  if (!svg) { logger().warn('asset-missing', { asset }); return null; }
   return (
     <div
       ref={ref}
-      className={`school-map school-map--${map}${locked ? ' is-locked' : ''}`}
+      className={`school-clickable school-clickable--${asset}${locked ? ' is-locked' : ''}`}
       onClick={handle}
       onKeyDown={handle}
       // eslint-disable-next-line react/no-danger
@@ -1320,14 +1323,14 @@ export default function ClickableMap({ map, value, verdict, expected, onPick }) 
 
 - [ ] **Step 5: Run to verify it passes**
 
-Run: `npx vitest run frontend/src/modules/School/geography/ClickableMap.test.jsx`
+Run: `npx vitest run frontend/src/modules/School/quiz/clickable/ClickableAsset.test.jsx`
 Expected: PASS.
 
-- [ ] **Step 6: Add map styles**
+- [ ] **Step 6: Add clickable-asset styles**
 
 In `frontend/src/modules/School/School.scss`, add:
 ```scss
-.school-map {
+.school-clickable {
   width: 100%;
   svg { width: 100%; height: auto; display: block; }
   [data-region-id] { fill: var(--school-surface-2); stroke: var(--school-border); stroke-width: 0.5; cursor: pointer; transition: fill 0.12s; }
@@ -1347,8 +1350,8 @@ In `frontend/src/modules/School/School.scss`, add:
 
 - [ ] **Step 7: Commit**
 ```bash
-git add frontend/src/modules/School/geography/maps/ frontend/src/modules/School/geography/prepareMap.mjs frontend/src/modules/School/geography/ClickableMap.jsx frontend/src/modules/School/geography/ClickableMap.test.jsx frontend/src/modules/School/School.scss
-git commit -m "feat(school): ClickableMap + preprocessed US states SVG with small-state callouts"
+git add frontend/src/modules/School/quiz/clickable/ frontend/src/modules/School/School.scss
+git commit -m "feat(school): reusable ClickableAsset + US-states clickable asset instance"
 ```
 
 ---
@@ -1435,29 +1438,29 @@ git commit -m "feat(school): flag asset resolver (lipis/flag-icons MIT, lazy ?ur
 
 ---
 
-## Task 10: MapClickItem component
+## Task 10: RegionClickItem component
 
 **Files:**
-- Create: `frontend/src/modules/School/quiz/items/MapClickItem.jsx`
-- Test: `frontend/src/modules/School/quiz/items/MapClickItem.test.jsx`
+- Create: `frontend/src/modules/School/quiz/items/RegionClickItem.jsx`
+- Test: `frontend/src/modules/School/quiz/items/RegionClickItem.test.jsx`
 
 **Interfaces:**
-- Consumes: `ClickableMap` (Task 8).
-- Produces: `<MapClickItem item={{type:'map_click', prompt, map, answer}} onSubmit={fn} verdict={obj|null} />` — shares the `{item, onSubmit, verdict}` contract; submits the picked region id once (guarded by `submittedRef`).
+- Consumes: `ClickableAsset` (Task 8).
+- Produces: `<RegionClickItem item={{type:'region_click', prompt, asset, answer}} onSubmit={fn} verdict={obj|null} />` — shares the `{item, onSubmit, verdict}` contract; submits the picked region id once (guarded by `submittedRef`).
 
 - [ ] **Step 1: Write the failing test**
 
-Create `frontend/src/modules/School/quiz/items/MapClickItem.test.jsx`:
+Create `frontend/src/modules/School/quiz/items/RegionClickItem.test.jsx`:
 ```javascript
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
-import MapClickItem from './MapClickItem.jsx';
+import RegionClickItem from './RegionClickItem.jsx';
 
-const item = { id: 'q', type: 'map_click', prompt: 'Click Nevada', map: 'us-states', answer: 'NV' };
+const item = { id: 'q', type: 'region_click', prompt: 'Click Nevada', asset: 'us-states', answer: 'NV' };
 
 it('renders the prompt and submits the clicked region once', () => {
   const onSubmit = vi.fn();
-  const { container } = render(<MapClickItem item={item} onSubmit={onSubmit} verdict={null} />);
+  const { container } = render(<RegionClickItem item={item} onSubmit={onSubmit} verdict={null} />);
   expect(screen.getByText('Click Nevada')).toBeInTheDocument();
   const nv = container.querySelector('[data-region-id="NV"]');
   fireEvent.click(nv);
@@ -1468,7 +1471,7 @@ it('renders the prompt and submits the clicked region once', () => {
 
 it('goes inert after a verdict', () => {
   const onSubmit = vi.fn();
-  const { container } = render(<MapClickItem item={item} onSubmit={onSubmit} verdict={{ correct: true, expected: 'NV' }} />);
+  const { container } = render(<RegionClickItem item={item} onSubmit={onSubmit} verdict={{ correct: true, expected: 'NV' }} />);
   fireEvent.click(container.querySelector('[data-region-id="CA"]'));
   expect(onSubmit).not.toHaveBeenCalled();
 });
@@ -1476,19 +1479,19 @@ it('goes inert after a verdict', () => {
 
 - [ ] **Step 2: Run to verify it fails**
 
-Run: `npx vitest run frontend/src/modules/School/quiz/items/MapClickItem.test.jsx`
+Run: `npx vitest run frontend/src/modules/School/quiz/items/RegionClickItem.test.jsx`
 Expected: FAIL — cannot find module.
 
 - [ ] **Step 3: Implement**
 
-Create `frontend/src/modules/School/quiz/items/MapClickItem.jsx`:
+Create `frontend/src/modules/School/quiz/items/RegionClickItem.jsx`:
 ```javascript
-/** Map-click item: prompt + a ClickableMap. Submits the picked region id
+/** Region-click item: prompt + a ClickableAsset. Submits the picked region id
  *  once (submittedRef guards a double-tap before verdict arrives). */
 import { useEffect, useRef, useState } from 'react';
-import ClickableMap from '../../geography/ClickableMap.jsx';
+import ClickableAsset from '../clickable/ClickableAsset.jsx';
 
-export default function MapClickItem({ item, onSubmit, verdict }) {
+export default function RegionClickItem({ item, onSubmit, verdict }) {
   const submittedRef = useRef(false);
   const [picked, setPicked] = useState(null);
   useEffect(() => { submittedRef.current = false; setPicked(null); }, [item.id]);
@@ -1499,9 +1502,9 @@ export default function MapClickItem({ item, onSubmit, verdict }) {
     onSubmit(regionId);
   };
   return (
-    <div className="school-item school-item--map">
+    <div className="school-item school-item--region">
       <p className="school-item__prompt">{item.prompt}</p>
-      <ClickableMap map={item.map} value={picked} verdict={verdict}
+      <ClickableAsset asset={item.asset} value={picked} verdict={verdict}
         expected={verdict?.expected ?? null} onPick={onPick} />
     </div>
   );
@@ -1510,13 +1513,13 @@ export default function MapClickItem({ item, onSubmit, verdict }) {
 
 - [ ] **Step 4: Run to verify it passes**
 
-Run: `npx vitest run frontend/src/modules/School/quiz/items/MapClickItem.test.jsx`
+Run: `npx vitest run frontend/src/modules/School/quiz/items/RegionClickItem.test.jsx`
 Expected: PASS.
 
 - [ ] **Step 5: Commit**
 ```bash
-git add frontend/src/modules/School/quiz/items/MapClickItem.jsx frontend/src/modules/School/quiz/items/MapClickItem.test.jsx
-git commit -m "feat(school): MapClickItem component"
+git add frontend/src/modules/School/quiz/items/RegionClickItem.jsx frontend/src/modules/School/quiz/items/RegionClickItem.test.jsx
+git commit -m "feat(school): RegionClickItem component"
 ```
 
 ---
@@ -1810,7 +1813,7 @@ git commit -m "feat(school): useGradedSession hook (GeoQuizRunner only)"
 - Test: `frontend/src/modules/School/geography/GeoQuizRunner.test.jsx`
 
 **Interfaces:**
-- Consumes: `useGradedSession` (Task 12), `MapClickItem` (Task 10), `AssetChoiceItem` (Task 11), `MultipleChoiceItem` (existing).
+- Consumes: `useGradedSession` (Task 12), `RegionClickItem` (Task 10), `AssetChoiceItem` (Task 11), `MultipleChoiceItem` (existing).
 - Produces: `<GeoQuizRunner bank={bank} onExit={fn} />`. Renders items from a live queue; correct → drop; wrong → show correct answer then requeue; unrecorded → requeue as not-mastered (no verdict flash); ends on empty queue with `Mastered N/N · first try k`.
 
 - [ ] **Step 1: Write the failing test**
@@ -1880,12 +1883,12 @@ Create `frontend/src/modules/School/geography/GeoQuizRunner.jsx`:
  */
 import { useMemo, useRef, useState } from 'react';
 import { useGradedSession } from './useGradedSession.js';
-import MapClickItem from '../quiz/items/MapClickItem.jsx';
+import RegionClickItem from '../quiz/items/RegionClickItem.jsx';
 import AssetChoiceItem from '../quiz/items/AssetChoiceItem.jsx';
 import MultipleChoiceItem from '../quiz/items/MultipleChoiceItem.jsx';
 
 const ITEM_COMPONENTS = {
-  map_click: MapClickItem,
+  region_click: RegionClickItem,
   asset_choice: AssetChoiceItem,
   multiple_choice: MultipleChoiceItem,
 };
@@ -1998,8 +2001,8 @@ import { schoolApi } from '../schoolApi.js';
 
 beforeEach(() => {
   schoolApi.geoDecks.mockResolvedValue({ ok: true, data: { decks: [
-    { deckId: 'us-state-locations', bankId: 'geo:us-state-locations', title: 'US State Locations', itemType: 'map_click', available: true },
-    { deckId: 'country-locations', bankId: 'geo:country-locations', title: 'Country Locations', itemType: 'map_click', available: false },
+    { deckId: 'us-state-locations', bankId: 'geo:us-state-locations', title: 'US State Locations', itemType: 'region_click', available: true },
+    { deckId: 'country-locations', bankId: 'geo:country-locations', title: 'Country Locations', itemType: 'region_click', available: false },
   ] } });
 });
 
@@ -2277,7 +2280,7 @@ git commit -m "feat(school): geography subject tile + section + drill runner mou
 
 - [ ] **Step 1: Add a "Geography / interactive quizzes" section**
 
-Document, in the present tense (endstate, no class-name churn per repo doc policy): the two interactive item types and their grading; the geography dataset + recipes + generator; the synth-on-read `geo:` bank seam in `SchoolService` (kept out of `listBanks`); the `drill` mode + dedicated reporting lane; the `GET /geography/decks` endpoint; how to add a new geography deck (a dataset row + a `decks.yml` recipe line); and how to reuse the framework for a non-geography interactive quiz (new SVG + dataset for `ClickableMap`, or images for `asset_choice`).
+Document, in the present tense (endstate, no class-name churn per repo doc policy): the two interactive item types and their grading; the geography dataset + recipes + generator; the synth-on-read `geo:` bank seam in `SchoolService` (kept out of `listBanks`); the `drill` mode + dedicated reporting lane; the `GET /geography/decks` endpoint; how to add a new geography deck (a dataset row + a `decks.yml` recipe line); and how to reuse the framework for a non-geography interactive quiz (new SVG + dataset for `ClickableAsset`, or images for `asset_choice`).
 
 - [ ] **Step 2: Update the docs marker (if the repo uses it)**
 ```bash
@@ -2296,7 +2299,7 @@ git commit -m "docs(school): document the interactive geography quiz framework"
 
 - [ ] Full backend school suite: `npx vitest run backend/src/2_domains/school backend/src/3_applications/school backend/src/4_api/v1/routers/school.geo.test.mjs` → all PASS.
 - [ ] Full frontend school suite: `npx vitest run frontend/src/modules/School` → all PASS.
-- [ ] Build + deploy (respect the CLAUDE.local.md deploy gate — never redeploy during an active fitness session or a playing Player video), then smoke-test on device: open `/screens/portal` → History & Geography → Geography → each of the three decks; verify a map click, a capital MC, and a flag pick each grade and the summary renders.
+- [ ] Build + deploy (respect the CLAUDE.local.md deploy gate — never redeploy during an active fitness session or a playing Player video), then smoke-test on device: open `/screens/portal` → History & Geography → Geography → each of the three decks; verify a region click (US map), a capital MC, and a flag pick each grade and the summary renders.
 - [ ] Confirm geo banks are absent from the Library and the general Practice bank list.
 
 ---
@@ -2304,7 +2307,7 @@ git commit -m "docs(school): document the interactive geography quiz framework"
 ## Self-Review (against the spec)
 
 **Spec coverage:**
-- New item types (grade+validate) → Task 1. Distractors → Task 2. Dataset/recipes/generator → Task 3. Bank source → Task 4. Service seam → Task 5. Drill mode + lane → Task 6. Endpoint/wiring/API → Task 7. ClickableMap+map → Task 8. Flags → Task 9. Items → Tasks 10-11. Hook → Task 12. Runner → Task 13. Grid → Task 14. Icons → Task 15. Nav → Task 16. Docs → Task 17. All spec sections mapped.
+- New item types (grade+validate) → Task 1. Distractors → Task 2. Dataset/recipes/generator → Task 3. Bank source → Task 4. Service seam → Task 5. Drill mode + lane → Task 6. Endpoint/wiring/API → Task 7. ClickableAsset + US-states instance → Task 8. Flags → Task 9. Items → Tasks 10-11. Hook → Task 12. Runner → Task 13. Grid → Task 14. Icons → Task 15. Nav → Task 16. Docs → Task 17. All spec sections mapped.
 - Global constraints (strict `===`, no `givenShapeError` change, generic audience, geo out of listBanks, drill never in quiz lane, onLaunch identity gate, hook GeoQuizRunner-only, stable shuffle, committed MIT assets) each appear as an explicit step or constraint.
 
 **Type consistency:** `resolve`/`listDeckSummaries` (Tasks 4/5/7), `useGradedSession({bank,mode,onExit})→{sessionId,submit,status}` (Tasks 12/13), item contract `{item,onSubmit,verdict}` (Tasks 10/11/13), `onLaunch({id,title},'drill')` (Tasks 14/16) match across tasks. Deck summary shape `{deckId,bankId,title,itemType,available}` consistent (Tasks 4/7/14).
