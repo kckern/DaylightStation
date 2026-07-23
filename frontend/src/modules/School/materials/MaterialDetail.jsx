@@ -130,6 +130,36 @@ export default function MaterialDetail({ material, userId, onBack, onPlay, notic
   const doneCount = units?.filter((u) => u.completed).length ?? 0;
   const isAudio = material.medium === 'audio';
 
+  // Balanced dot rows. CSS wrap fills each row to the brim and leaves the
+  // remainder alone (e.g. 13 dots → 10 + 3); measure how many fit, then divide
+  // the total evenly across the rows actually needed (ceil(total / rows) per
+  // row) and clamp the container to exactly that width. One row that fits stays
+  // a single centered row; wrapping yields rows of near-equal length.
+  const dotsRef = useRef(null);
+  const [dotsWidth, setDotsWidth] = useState(null);
+  useEffect(() => {
+    const ul = dotsRef.current;
+    if (!ul || !units || units.length === 0) { setDotsWidth(null); return undefined; }
+    const parent = ul.parentElement;
+    const compute = () => {
+      const first = ul.querySelector('li');
+      if (!first || !parent) return;
+      const gap = parseFloat(getComputedStyle(ul).columnGap || getComputedStyle(ul).gap) || 4;
+      const unit = first.offsetWidth + gap;
+      const avail = parent.clientWidth;
+      if (!unit || !avail) return;
+      const maxPerRow = Math.max(1, Math.floor((avail + gap) / unit));
+      const rows = Math.ceil(units.length / maxPerRow);
+      const perRow = Math.ceil(units.length / rows);
+      setDotsWidth(perRow * unit - gap);
+    };
+    compute();
+    if (typeof ResizeObserver === 'undefined' || !parent) return undefined;
+    const ro = new ResizeObserver(compute);
+    ro.observe(parent);
+    return () => ro.disconnect();
+  }, [units]);
+
   // Deep-link restore: once units resolve, auto-play the unit the URL named,
   // but only if it's unlocked (never auto-launch a locked chapter). One-shot.
   const consumedUnitRef = useRef(null);
@@ -192,7 +222,12 @@ export default function MaterialDetail({ material, userId, onBack, onPlay, notic
                   {Math.round((doneCount / units.length) * 100)}%
                 </span>
               </div>
-              <ul className="school-material-detail__dots" aria-hidden="true">
+              <ul
+                ref={dotsRef}
+                className="school-material-detail__dots"
+                style={dotsWidth ? { width: `${dotsWidth}px` } : undefined}
+                aria-hidden="true"
+              >
                 {units.map((u) => (
                   <li
                     key={u.id}
