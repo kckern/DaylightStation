@@ -19,6 +19,7 @@
 #include <ArduinoJson.h>
 #include <BLEDevice.h>
 #include <FastLED.h>
+#include <Preferences.h>
 #include "config.h"
 #if BARCODE_ENABLED
 extern "C" {
@@ -89,6 +90,9 @@ static volatile bool g_doConnect = false;
 static bool g_bleConnected = false;
 static BLEClient* g_client = nullptr;
 static bool g_scanActive = false;
+// When the scale was last seen. Nonzero at boot because there is no scale yet;
+// drives the scan backoff so an absent scale stops monopolising the antenna.
+static uint32_t g_scaleAbsentSinceMs = 1;
 
 #if BARCODE_ENABLED
 // ---- Classic Bluetooth SPP acceptor -------------------------------------
@@ -143,6 +147,37 @@ static uint32_t g_authAttemptCount = 0;
 static uint32_t g_authFailCount = 0;
 static int32_t  g_lastAuthStatus = -1;
 static uint32_t g_lastAuthMs = 0;
+
+// ---- runtime-tunable Classic pairing profile ----------------------------
+// This board lives in a kitchen. Every reflash costs a walk, a USB cable and a
+// disassembly, so a wrong guess about pairing must be correctable over HTTP
+// rather than over USB. Everything that governs how the SPP link authenticates
+// is therefore a runtime knob persisted in NVS, not a compile-time constant.
+//
+// Defaults reproduce the configuration that DEMONSTRABLY WORKED on 2026-07-21
+// (commit 5c753d6c7: "paired and opened cleanly", opens 2->9 across a soak):
+// ESP_SPP_SEC_NONE with no IO capability declared at all, i.e. Just Works.
+// IOCAP_UNSET means "never call esp_bt_gap_set_security_param" — declaring an
+// IO capability, even NoInputNoOutput, is a behaviour change from that proven
+// state, so it must be opt-in.
+#define IOCAP_UNSET 0xFF
+static uint16_t g_sppSecMask   = ESP_SPP_SEC_NONE;
+static uint8_t  g_ioCap        = IOCAP_UNSET;
+static bool     g_autoEscalate = true;
+static uint8_t  g_profile      = 0;      // index into the escalation ladder
+static uint32_t g_failStreak   = 0;      // ACL up -> down without an SPP open
+static uint32_t g_aclUpNoOpenMs = 0;     // set on ACL up, cleared on SPP open
+static Preferences g_prefs;
+
+// Suppress the BLE scale scan while Classic is doing anything. A continuous BLE
+// scan starving Classic on this shared antenna is not a theory: a20f1bac0 records
+// the scanner's connection attempts not landing at all until the scan was
+// switched off, and 5c753d6c7 records the established link dying at ~3 s with
+// ACL reason 0x08 (supervision timeout) under BLE+WiFi traffic. Pairing is the
+// most timing-sensitive moment there is, so the radio is handed to Classic for a
+// window after every ACL event.
+#define CLASSIC_RADIO_HOLD_MS 30000UL
+static uint32_t g_classicHoldUntilMs = 0;
 // SPP delivers raw decoded barcode bytes (not HID keyboard reports), copied out
 // of the Bluedroid task via a queue and reassembled in loop().
 struct RawRep { uint16_t handle; uint8_t len; uint8_t d[64]; };
@@ -446,6 +481,85 @@ static void flushPendingEvents() {
   }
 }
 
+static void classicUnbond();   // defined below; the escalation ladder needs it
+
+static void saveClassicPrefs() {
+  g_prefs.begin("relay", false);
+  g_prefs.putUShort("sec", g_sppSecMask);
+  g_prefs.putUChar("iocap", g_ioCap);
+  g_prefs.putBool("auto", g_autoEscalate);
+  g_prefs.putUChar("profile", g_profile);
+  g_prefs.end();
+}
+
+static void loadClassicPrefs() {
+  g_prefs.begin("relay", true);
+  g_sppSecMask   = g_prefs.getUShort("sec", ESP_SPP_SEC_NONE);
+  g_ioCap        = g_prefs.getUChar("iocap", IOCAP_UNSET);
+  g_autoEscalate = g_prefs.getBool("auto", true);
+  g_profile      = g_prefs.getUChar("profile", 0);
+  g_prefs.end();
+}
+
+// Declaring an IO capability is what decides the SSP association model. Left
+// unset we inherit Bluedroid's default, which is the state that paired fine.
+static void applyIoCap() {
+  if (g_ioCap == IOCAP_UNSET) { relayLogLine("[classic-spp] iocap: unset (stack default)"); return; }
+  esp_bt_io_cap_t cap = (esp_bt_io_cap_t)g_ioCap;
+  esp_err_t rc = esp_bt_gap_set_security_param(ESP_BT_SP_IOCAP_MODE, &cap, sizeof(cap));
+  relayLogf("[classic-spp] iocap=%d rc=%d", (int)g_ioCap, (int)rc);
+}
+
+// The security mask is fixed at esp_spp_start_srv() time, so changing it means
+// bouncing the server. That is the whole reason /barcode/sec can exist.
+static void restartSppServer(const char* why) {
+  esp_spp_stop_srv();
+  applyIoCap();
+  esp_err_t rc = esp_spp_start_srv(g_sppSecMask, ESP_SPP_ROLE_SLAVE, 0, "DaylightScan");
+  relayLogf("[classic-spp] server restart (%s) sec=0x%04x iocap=%d rc=%d",
+            why, (unsigned)g_sppSecMask, (int)g_ioCap, (int)rc);
+}
+
+// Escalation ladder, walked automatically when the scanner keeps reaching us and
+// keeps hanging up. Each rung is a real hypothesis about why:
+//   0 - Just Works, no IO cap declared      (proven working 2026-07-21)
+//   1 - Just Works, IO cap explicitly None  (in case the stack default drifted)
+//   2 - Authenticated + encrypted, DisplayOnly -> SSP Passkey Entry. Needs an
+//       operator to key 6 digits within ~30 s, so it is the LAST rung, not the
+//       first: main.cpp:108-115 records that ceremony expiring 4 times out of 4.
+static void applyProfile(uint8_t profile, const char* why) {
+  g_profile = profile;
+  switch (profile) {
+    case 0: g_sppSecMask = ESP_SPP_SEC_NONE; g_ioCap = IOCAP_UNSET; break;
+    case 1: g_sppSecMask = ESP_SPP_SEC_NONE; g_ioCap = ESP_BT_IO_CAP_NONE; break;
+    default:
+      g_profile = 2;
+      g_sppSecMask = ESP_SPP_SEC_AUTHENTICATE | ESP_SPP_SEC_ENCRYPT;
+      g_ioCap = ESP_BT_IO_CAP_OUT;
+      break;
+  }
+  saveClassicPrefs();
+  restartSppServer(why);
+}
+
+// One failed cycle = the scanner paged us, the ACL came up, and it hung up
+// without SPP ever opening. Three of those is not noise.
+static void noteClassicFailure() {
+  g_failStreak++;
+  relayLogf("[classic-spp] fail streak %lu (profile %d)",
+            (unsigned long)g_failStreak, (int)g_profile);
+  if (!g_autoEscalate) return;
+  // A stale link key on OUR side looks exactly like this, and costs nothing to
+  // rule out before touching the security profile.
+  if (g_failStreak == 3) {
+    relayLogLine("[classic-spp] auto: clearing bonds (stale link key suspected)");
+    classicUnbond();
+    return;
+  }
+  if (g_failStreak == 6 && g_profile < 1) { applyProfile(1, "auto-escalate"); return; }
+  if (g_failStreak == 9 && g_profile < 2) { applyProfile(2, "auto-escalate"); return; }
+}
+
 static void sppCB(esp_spp_cb_event_t event, esp_spp_cb_param_t* p) {
   switch (event) {
     case ESP_SPP_INIT_EVT:
@@ -456,12 +570,15 @@ static void sppCB(esp_spp_cb_event_t event, esp_spp_cb_param_t* p) {
       // discovery is only a convenience for bring-up.
       esp_bt_gap_set_device_name(BARCODE_HOST_NAME);
       esp_bt_gap_set_scan_mode(ESP_BT_CONNECTABLE, ESP_BT_GENERAL_DISCOVERABLE);
-      // SEC_NONE. SEC_AUTHENTICATE was tried and is strictly worse: with it the
-      // stack refuses the incoming connection before GAP even reports the ACL
-      // (scanner beeps "connection rejected by remote device", PRG Table 2-1),
-      // whereas SEC_NONE at least gets ACL up stat=0 before the scanner hangs
-      // up with reason 0x13.
-      esp_spp_start_srv(ESP_SPP_SEC_NONE, ESP_SPP_ROLE_SLAVE, 0, "DaylightScan");
+      // Security comes from the persisted profile, not a literal. SEC_AUTHENTICATE
+      // on its own was tried once and was strictly worse — the stack refused the
+      // incoming connection before GAP even reported the ACL (scanner beeps
+      // "connection rejected by remote device", PRG Table 2-1). That experiment
+      // ran with NO IO capability declared, so it could only ever resolve to Just
+      // Works; it says nothing about authenticated pairing done properly, which
+      // is what profile 2 is for.
+      applyIoCap();
+      esp_spp_start_srv(g_sppSecMask, ESP_SPP_ROLE_SLAVE, 0, "DaylightScan");
       break;
     case ESP_SPP_START_EVT:
       relayLogf("[classic-spp] server listening scn=%d status=%d",
@@ -478,6 +595,11 @@ static void sppCB(esp_spp_cb_event_t event, esp_spp_cb_param_t* p) {
                 (int)p->srv_open.status, (unsigned long)p->srv_open.handle);
       if (g_barcodeConnected) {
         g_classicOpenCount++;
+        // The link opened: whatever profile we are on is right. Stop climbing the
+        // ladder and hold the radio for Classic while the session is live.
+        g_failStreak = 0;
+        g_aclUpNoOpenMs = 0;
+        g_classicHoldUntilMs = millis() + CLASSIC_RADIO_HOLD_MS;
         snprintf(g_classicLastEvent, sizeof(g_classicLastEvent), "open handle=%lu",
                  (unsigned long)p->srv_open.handle);
       g_classicLastEventMs = millis();
@@ -518,12 +640,23 @@ static void classicGapCB(esp_bt_gap_cb_event_t event, esp_bt_gap_cb_param_t* p) 
     // is precisely the "beeping and squawking" case.
     g_aclConnCount++;
     g_lastAclMs = millis();
+    // Hand the radio to Classic: from here to SPP open is the window that a
+    // continuous BLE scan is documented to wreck.
+    g_classicHoldUntilMs = millis() + CLASSIC_RADIO_HOLD_MS;
+    g_aclUpNoOpenMs = millis();
     relayLogf("[classic-spp] ACL up stat=%d", (int)p->acl_conn_cmpl_stat.stat);
   } else if (event == ESP_BT_GAP_ACL_DISCONN_CMPL_STAT_EVT) {
     g_aclDisconnCount++;
     g_lastAclReason = (int32_t)p->acl_disconn_cmpl_stat.reason;
     g_lastAclMs = millis();
-    relayLogf("[classic-spp] ACL down reason=%d", (int)p->acl_disconn_cmpl_stat.reason);
+    // reason 275 = ESP_BT_STATUS_BASE_FOR_HCI_ERR(0x100) + 0x13, i.e. HCI
+    // "remote user terminated" — the scanner hung up on us.
+    relayLogf("[classic-spp] ACL down reason=%d%s", (int)p->acl_disconn_cmpl_stat.reason,
+              p->acl_disconn_cmpl_stat.reason == 275 ? " (remote hung up)" : "");
+    // Only count it as a failure if the ACL never became an SPP session. A drop
+    // AFTER a good open is a different disease (supervision timeout / range) and
+    // must not push us up the security ladder.
+    if (g_aclUpNoOpenMs && !g_barcodeConnected) { g_aclUpNoOpenMs = 0; noteClassicFailure(); }
   } else if (event == ESP_BT_GAP_MODE_CHG_EVT) {
     // sniff/active transitions — debug-level noise, skip
   } else if (event == ESP_BT_GAP_KEY_NOTIF_EVT) {
@@ -576,8 +709,19 @@ static void logClassicIdentity() {
 
 static void initClassicSpp() {
   relayLogLine("[classic-spp] init begin");
-  // Legacy pairing only (CONFIG_BT_SSP_ENABLED off): a fixed PIN matching the
-  // DS6878 factory default means an unattended bond with no operator step.
+  loadClassicPrefs();
+  relayLogf("[classic-spp] profile=%d sec=0x%04x iocap=%d auto=%d",
+            (int)g_profile, (unsigned)g_sppSecMask, (int)g_ioCap, (int)g_autoEscalate);
+  // A fixed PIN matching the DS6878 factory default, kept as the legacy-pairing
+  // fallback for the case where the scanner declines SSP entirely.
+  //
+  // NOTE: an earlier version of this comment claimed "CONFIG_BT_SSP_ENABLED off"
+  // and concluded legacy pairing was the only path. That was wrong twice over:
+  // the symbol does not exist in ESP-IDF 5.x at all (SSP is a runtime flag on
+  // esp_bluedroid_init_with_cfg(), default true — see the note at the top of the
+  // Classic section), and the sdkconfig it was read from is not the one this
+  // environment builds. SSP is live; if it ever needs disabling, that is done by
+  // taking over Bluedroid startup with .ssp_en = false, not by editing a Kconfig.
   esp_bt_pin_type_t pinType = ESP_BT_PIN_TYPE_FIXED;
   esp_bt_pin_code_t pin = {'1', '2', '3', '4', '5'};
   esp_bt_gap_set_pin(pinType, 5, pin);
@@ -631,7 +775,11 @@ class ScanCallbacks : public BLEAdvertisedDeviceCallbacks {
 class ClientCallbacks : public BLEClientCallbacks {
   void onConnect(BLEClient*) override {}
   void onDisconnect(BLEClient* c) override {
-    if (c == g_client) { relayLogLine("[ble] scale disconnected"); g_bleConnected=false; g_client=nullptr; }
+    if (c == g_client) {
+      relayLogLine("[ble] scale disconnected");
+      g_bleConnected=false; g_client=nullptr;
+      g_scaleAbsentSinceMs = millis() ? millis() : 1;   // starts the backoff clock
+    }
   }
 };
 static ClientCallbacks g_clientCb;
@@ -660,6 +808,7 @@ static bool connectToScale() {
   }
   relayLogLine("[ble] subscribed to scale");
   g_bleConnected = true;
+  g_scaleAbsentSinceMs = 0;      // present again: leave backoff
   return true;
 }
 
@@ -671,9 +820,20 @@ static bool connectToScale() {
 static bool g_bleScanEnabled = true;
 
 static uint32_t g_scanStartedMs = 0;
+static uint32_t g_scanIdleSinceMs = 0;
+
+// True while Classic owns the radio — an SPP session is live, or an ACL event
+// happened recently enough that pairing may still be in flight.
+static bool classicHoldsRadio() {
+#if BARCODE_ENABLED
+  if (g_barcodeConnected) return true;
+  if (g_classicHoldUntilMs && (int32_t)(g_classicHoldUntilMs - millis()) > 0) return true;
+#endif
+  return false;
+}
 
 static void startScan() {
-  if (g_scanActive || !g_bleScanEnabled) return;
+  if (g_scanActive || !g_bleScanEnabled || classicHoldsRadio()) return;
   BLEScan* scan = BLEDevice::getScan();
   scan->setAdvertisedDeviceCallbacks(new ScanCallbacks());
   scan->setActiveScan(true);
@@ -697,13 +857,54 @@ static void startScan() {
 // when the scan was toggled off/on by hand. Restart it periodically while we
 // have no scale, which costs nothing when the scan is genuinely healthy.
 #define SCAN_RESTART_MS 45000
+// After this long with no scale in sight, stop hammering the radio. The scale is
+// routinely switched off for hours; the old code restarted a continuous scan
+// every 45 s forever, which produced 300+ restarts in one observed 3.8 h stretch
+// and is exactly the contention the Classic link cannot survive. Once we are in
+// backoff, scan in short bursts instead.
+#define SCALE_ABSENT_BACKOFF_MS   180000UL   // 3 min of absence -> back off
+#define SCAN_BURST_MS              10000UL   // listen this long...
+#define SCAN_BACKOFF_PERIOD_MS     60000UL   // ...once per this long
 static void serviceScanWatchdog() {
   if (!g_bleScanEnabled || g_bleConnected || g_doConnect) return;
-  if (!g_scanActive || millis() - g_scanStartedMs < SCAN_RESTART_MS) return;
-  relayLogLine("[ble] scan watchdog — restarting a stalled scan");
-  BLEDevice::getScan()->stop();
-  g_scanActive = false;
-  startScan();
+  uint32_t now = millis();
+
+  // Classic first, always. Yield the antenna rather than compete for it.
+  if (classicHoldsRadio()) {
+    if (g_scanActive) {
+      BLEDevice::getScan()->stop();
+      g_scanActive = false;
+      g_scanIdleSinceMs = now;
+      relayLogLine("[ble] scan paused — Classic has the radio");
+    }
+    return;
+  }
+
+  bool longAbsent = g_scaleAbsentSinceMs && (now - g_scaleAbsentSinceMs > SCALE_ABSENT_BACKOFF_MS);
+
+  if (!longAbsent) {
+    // Scale recently present: keep the responsive continuous scan, with the
+    // stall watchdog that a duration-0 Bluedroid scan needs.
+    if (!g_scanActive) { startScan(); return; }
+    if (now - g_scanStartedMs < SCAN_RESTART_MS) return;
+    relayLogLine("[ble] scan watchdog — restarting a stalled scan");
+    BLEDevice::getScan()->stop();
+    g_scanActive = false;
+    startScan();
+    return;
+  }
+
+  // Backoff duty cycle. Logged once per transition, not once per restart, so the
+  // 48-entry ring keeps holding Classic diagnostics instead of scan chatter.
+  if (g_scanActive) {
+    if (now - g_scanStartedMs >= SCAN_BURST_MS) {
+      BLEDevice::getScan()->stop();
+      g_scanActive = false;
+      g_scanIdleSinceMs = now;
+    }
+  } else if (now - g_scanIdleSinceMs >= SCAN_BACKOFF_PERIOD_MS) {
+    startScan();
+  }
 }
 
 // ---- WebSocket events ---------------------------------------------------
@@ -775,6 +976,12 @@ static void handleStatus() {
   // and looks identical to "the scale is switched off".
   scale["scan_enabled"] = g_bleScanEnabled;
   scale["scan_active"] = g_scanActive;
+  // Backoff state: an absent scale must stop monopolising the shared antenna.
+  if (g_scaleAbsentSinceMs) {
+    uint32_t absent = (millis() - g_scaleAbsentSinceMs) / 1000;
+    scale["absent_s"] = absent;
+    scale["scan_backoff"] = (millis() - g_scaleAbsentSinceMs) > SCALE_ABSENT_BACKOFF_MS;
+  }
   // Offline durability. Previously a weight or a button press during a WS outage
   // vanished with no counter and no log line, behind a green "sent" LED.
   scale["pending_events"] = g_pevCount;
@@ -810,6 +1017,15 @@ static void handleStatus() {
   if (g_lastAuthStatus >= 0) barcode["last_auth_status"] = g_lastAuthStatus;
   if (g_lastAuthMs) barcode["last_auth_age_s"] = (uint32_t)((millis()-g_lastAuthMs)/1000);
   barcode["bonds"] = esp_bt_gap_get_bond_device_num();
+  // Pairing profile — what we are currently asking of the scanner, and how many
+  // times in a row it has reached us and hung up without opening SPP.
+  barcode["profile"] = g_profile;
+  char secHex[10]; snprintf(secHex, sizeof(secHex), "0x%04x", (unsigned)g_sppSecMask);
+  barcode["sec_mask"] = secHex;
+  barcode["iocap"] = g_ioCap;                 // 255 = stack default, never set
+  barcode["auto_escalate"] = g_autoEscalate;
+  barcode["fail_streak"] = g_failStreak;
+  barcode["radio_held"] = classicHoldsRadio();
   // What the scanner's pairing bar code must encode (PRG p.4-25: <Fnc3>B+addr).
   const uint8_t* btMac = esp_bt_dev_get_address();
   if (btMac) {
@@ -854,16 +1070,48 @@ static void handleStatus() {
 }
 
 // ---- button (GPIO39, active-low) ----------------------------------------
+// Physical re-pair gesture: hold ~3 s. This is the only control that works with
+// nobody at a keyboard, so it does the whole ceremony — clear our half of the
+// bond (an asymmetric link key is indistinguishable from a rejection), drop back
+// to the pairing profile that is known to have worked, and hand the radio to
+// Classic so the scanner's next attempt lands in a quiet band.
+#define BTN_REPAIR_MS 3000UL
+static void classicRepairGesture() {
+#if BARCODE_ENABLED
+  relayLogLine("[classic-spp] REPAIR gesture — unbond, reset profile, quiet radio");
+  classicUnbond();
+  g_failStreak = 0;
+  applyProfile(0, "button repair");
+  g_classicHoldUntilMs = millis() + 120000UL;   // 2 min with the antenna to itself
+  if (g_scanActive) { BLEDevice::getScan()->stop(); g_scanActive = false; }
+  for (int i = 0; i < 3; i++) { setLed(CRGB::White); delay(120); setLed(CRGB::Black); delay(120); }
+#endif
+}
+
 static bool     g_btnDown = false;
 static uint32_t g_btnDownMs = 0;
+static bool     g_btnRepairArmed = false;
 static void serviceButton() {
   bool down = digitalRead(BTN_PIN) == LOW;
   uint32_t now = millis();
-  if (down && !g_btnDown) { g_btnDown = true; g_btnDownMs = now; }
+  if (down && !g_btnDown) { g_btnDown = true; g_btnDownMs = now; g_btnRepairArmed = false; }
+  else if (down && g_btnDown) {
+    // Light up white once the hold is long enough to count, so the gesture is
+    // confirmable without a screen: let go while it is white and it fires.
+    if (!g_btnRepairArmed && now - g_btnDownMs >= BTN_REPAIR_MS) {
+      g_btnRepairArmed = true;
+      setLed(CRGB::White);
+    }
+  }
   else if (!down && g_btnDown) {
     g_btnDown = false;
     uint32_t held = now - g_btnDownMs;
     if (held < 40) return; // debounce
+    if (held >= BTN_REPAIR_MS) {          // re-pair, NOT a food-log press
+      g_btnRepairArmed = false;
+      classicRepairGesture();
+      return;
+    }
     sendButton(held >= 800 ? "long" : "short");
     setLed(CRGB::Purple); delay(60);
   }
@@ -949,6 +1197,50 @@ void setup() {
   http.on("/barcode/unbond", [](){           // forget link keys, force fresh pairing
     classicUnbond();
     http.send(200, "application/json", "{\"ok\":true,\"action\":\"unbond\"}");
+  });
+  // Pairing profile control. These exist so that being wrong about SSP costs an
+  // HTTP call instead of a trip to the kitchen with a USB cable.
+  //   /barcode/profile?n=0|1|2   0 = Just Works (proven), 1 = explicit NoIO,
+  //                              2 = authenticated + encrypted (Passkey Entry)
+  //   /barcode/sec?mask=0x0036   raw override of the SPP security mask
+  //   /barcode/iocap?cap=0|1|2|3|255   255 = leave the stack default alone
+  //   /barcode/auto?on=0|1       stop/start automatic escalation
+  //   /barcode/repair            the button gesture, over HTTP
+  http.on("/barcode/profile", [](){
+    if (http.hasArg("n")) applyProfile((uint8_t)http.arg("n").toInt(), "http");
+    char out[160];
+    snprintf(out, sizeof(out), "{\"ok\":true,\"profile\":%d,\"sec\":\"0x%04x\",\"iocap\":%d}",
+             (int)g_profile, (unsigned)g_sppSecMask, (int)g_ioCap);
+    http.send(200, "application/json", out);
+  });
+  http.on("/barcode/sec", [](){
+    if (http.hasArg("mask")) {
+      g_sppSecMask = (uint16_t)strtoul(http.arg("mask").c_str(), nullptr, 0);
+      saveClassicPrefs();
+      restartSppServer("http sec");
+    }
+    char out[96];
+    snprintf(out, sizeof(out), "{\"ok\":true,\"sec\":\"0x%04x\"}", (unsigned)g_sppSecMask);
+    http.send(200, "application/json", out);
+  });
+  http.on("/barcode/iocap", [](){
+    if (http.hasArg("cap")) {
+      g_ioCap = (uint8_t)http.arg("cap").toInt();
+      saveClassicPrefs();
+      restartSppServer("http iocap");
+    }
+    char out[96];
+    snprintf(out, sizeof(out), "{\"ok\":true,\"iocap\":%d}", (int)g_ioCap);
+    http.send(200, "application/json", out);
+  });
+  http.on("/barcode/auto", [](){
+    if (http.hasArg("on")) { g_autoEscalate = http.arg("on") != "0"; saveClassicPrefs(); }
+    http.send(200, "application/json",
+      g_autoEscalate ? "{\"ok\":true,\"auto\":true}" : "{\"ok\":true,\"auto\":false}");
+  });
+  http.on("/barcode/repair", [](){
+    classicRepairGesture();
+    http.send(200, "application/json", "{\"ok\":true,\"action\":\"repair\"}");
   });
   http.on("/ble/scan", [](){                 // ?on=0|1 — silence the radio to test coexistence
     if (http.hasArg("on")) {
