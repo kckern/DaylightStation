@@ -253,6 +253,7 @@ import { GetMaterialCatalog } from './3_applications/school/GetMaterialCatalog.m
 import { GetMaterialUnits, buildBankIndex } from './3_applications/school/GetMaterialUnits.mjs';
 import { PlexAlbumSource } from './3_applications/school/sources/PlexAlbumSource.mjs';
 import { PlexShowSource } from './3_applications/school/sources/PlexShowSource.mjs';
+import { PlexLabelSource } from './3_applications/school/sources/PlexLabelSource.mjs';
 import { UserVideoProgressStore as SchoolUserVideoProgressStore } from './3_applications/piano/UserVideoProgressStore.mjs';
 import { PrintService } from './3_applications/school/PrintService.mjs';
 import { renderBankWorksheet } from './1_rendering/school/WorksheetRenderer.mjs';
@@ -2042,6 +2043,33 @@ export async function createApp({ server, logger, configPaths, configExists, ena
           }
           return rewritten;
         });
+      },
+      // PlexLabelSource seam: the `school:on` items of a section, each returned
+      // WITH its `Label` array. Plex's section-by-label listing omits labels,
+      // so this resolves the label id, collects the curated rating keys across
+      // the material types (show/season/album), then does ONE batch
+      // `/library/metadata/{ids}` fetch — which does carry `Label`. Thumbs are
+      // proxy-rewritten here, same contract as `children`.
+      listLabeled: async (sectionId) => {
+        if (!schoolPlexAdapter?.client) return [];
+        const labelDir = await schoolPlexAdapter.client.getContainer(`/library/sections/${sectionId}/label`);
+        const onLabel = (labelDir?.MediaContainer?.Directory || []).find((d) => /^school:on$/i.test(d.title || ''));
+        if (!onLabel) return [];
+        const ids = [];
+        for (const type of [2, 3, 9]) { // show, season, album — the material-level types
+          const listed = await schoolPlexAdapter.client.getContainer(`/library/sections/${sectionId}/all?type=${type}&label=${onLabel.key}`);
+          for (const it of (listed?.MediaContainer?.Metadata || [])) ids.push(it.ratingKey);
+        }
+        if (!ids.length) return [];
+        const meta = await schoolPlexAdapter.client.getContainer(`/library/metadata/${ids.join(',')}`);
+        const proxyPath = schoolPlexAdapter.proxyPath;
+        return (meta?.MediaContainer?.Metadata || []).map((item) => {
+          const rewritten = { ...item };
+          if (typeof rewritten.thumb === 'string' && rewritten.thumb.startsWith('/')) {
+            rewritten.thumb = `${proxyPath}${rewritten.thumb}`;
+          }
+          return rewritten;
+        });
       }
     };
     const schoolMaterialSources = {
@@ -2054,6 +2082,10 @@ export async function createApp({ server, logger, configPaths, configExists, ena
         plexClient: schoolPlexClient,
         logger: rootLogger.child({ module: 'school-materials' }),
         householdId
+      }),
+      'plex-label': new PlexLabelSource({
+        plexClient: schoolPlexClient,
+        logger: rootLogger.child({ module: 'school-materials' })
       })
     };
     getMaterialCatalog = new GetMaterialCatalog({
