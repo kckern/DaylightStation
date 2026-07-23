@@ -1,8 +1,12 @@
+import { useEffect, useState } from 'react';
 import MaterialsSection from '../materials/MaterialsSection.jsx';
 import ContinueRail from './ContinueRail.jsx';
 import KindSection from './KindSection.jsx';
 import { KINDS, groupByKind } from './kinds.js';
 import { subjectLabel } from './subjects.js';
+import { useSchoolProfile } from '../identity/SchoolProfileContext.jsx';
+import { schoolApi } from '../schoolApi.js';
+import { rankWithin, gradeFromBirthyear } from './ranking.js';
 
 /**
  * One subject's shelf, redesigned around the four content KINDS (Watch /
@@ -24,6 +28,31 @@ const SUBJECT_PROGRAMS = {
 };
 
 export default function SubjectPage({ subjectId, shelf, guestOnly, onLaunch, notice, onOpen, initialMaterialPath = [], onMaterialNav }) {
+  // SubjectPage owns the per-subject progress fetch (rather than each consumer
+  // fetching its own copy) because `materialProgress` fans out a Plex read per
+  // material on the backend — expensive. The fetched list feeds BOTH the
+  // ranking below AND is handed to ContinueRail as a prop so it does not
+  // self-fetch (one fetch per subject open, not two).
+  const { currentUser } = useSchoolProfile();
+  const userId = currentUser?.id ?? null;
+  const [progress, setProgress] = useState(null); // null = not loaded yet
+
+  useEffect(() => {
+    let alive = true;
+    if (!userId) { setProgress([]); return () => { alive = false; }; }
+    setProgress(null);
+    schoolApi.materialProgress(userId, subjectId).then(({ ok, data }) => {
+      if (!alive) return;
+      setProgress(ok && Array.isArray(data) ? data : []);
+    });
+    return () => { alive = false; };
+  }, [userId, subjectId]);
+
+  const studentGrade = currentUser?.birthyear
+    ? gradeFromBirthyear(currentUser.birthyear, new Date().getFullYear())
+    : null;
+  const progressList = progress ?? [];
+
   const programs = SUBJECT_PROGRAMS[subjectId] ?? [];
   const grouped = groupByKind({ shelf, programs });
   // Guests only see generic decks (preserve BankBrowser's guest rule).
@@ -61,13 +90,13 @@ export default function SubjectPage({ subjectId, shelf, guestOnly, onLaunch, not
       sectionLabel={subjectLabel(subjectId)}
       renderCatalog={({ onSelect }) => (
         <div className="school-subject">
-          <ContinueRail subjectId={subjectId} materials={shelf.materials} onOpen={onSelect} />
+          <ContinueRail subjectId={subjectId} materials={shelf.materials} onOpen={onSelect} progress={progressList} />
           {notice && <div className="school-subject__notice">{notice}</div>}
           {KINDS.map((kind) => (
             <KindSection
               key={kind.id}
               kind={kind}
-              items={grouped[kind.id]}
+              items={rankWithin(grouped[kind.id], { progress: progressList, studentGrade })}
               Tile={kind.Tile}
               onOpen={openFor(kind.id, onSelect)}
             />
