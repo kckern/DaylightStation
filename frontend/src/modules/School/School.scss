@@ -22,11 +22,22 @@
   height: 100dvh;
   display: flex; flex-direction: column;
   background: var(--school-bg); color: var(--school-fg);
+  // Chrome paints a translucent box over ANY interactive element the moment a
+  // finger lands on it — over tiles, crumbs and transport buttons alike. It
+  // fires before (and regardless of) our own :active styling, so on the panel
+  // every tap flashed blue. The property inherits, so declaring it here covers
+  // the whole app; each control's :active state is the press feedback.
+  -webkit-tap-highlight-color: transparent;
 
   &--loading { align-items: center; justify-content: center; color: var(--school-muted); }
 
+  // 80px is measured, not chosen for looks: the Portal is 1280x800 and the
+  // header is the only chrome left (the screen framework's touch lane is not
+  // drawn under this app), so the body below it IS the video stage. 800 - 80
+  // = 720 == exactly 16:9 at 1280 wide. Change this and 16:9 material starts
+  // letterboxing again — keep the two numbers in step.
   &__header {
-    flex: 0 0 64px;
+    flex: 0 0 80px;
     display: flex; align-items: center; gap: 0.75rem;
     padding: 0 1rem;
     border-bottom: 1px solid var(--school-border);
@@ -351,7 +362,7 @@
   &__zone {
     flex: 1; min-width: 0; padding: 0;
     border: none; background: transparent; color: transparent;
-    cursor: pointer; -webkit-tap-highlight-color: transparent;
+    cursor: pointer; // tap highlight already killed at .school-app
     // The only feedback a bare zone can give that the tap landed.
     &:active { background: rgba(255,255,255,0.07); }
   }
