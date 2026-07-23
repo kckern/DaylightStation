@@ -83,6 +83,17 @@ describe('drain lifecycle', () => {
     expect(sent[sent.length - 1].b).toHaveLength(1);
     vi.useRealTimers();
   });
+  it('does not throw when an idle tick fires after stop', () => {
+    vi.useFakeTimers();
+    let cb; globalThis.requestIdleCallback = (fn) => { cb = fn; }; // capture, don't run
+    startRecorder({ session: 's', score: 'x', ctx: {}, send: () => {}, flushMs: 1000 });
+    record(KIND.TAP, 1, 0, 0, 0);
+    vi.advanceTimersByTime(1000); // schedules the idle cb (captured, not run)
+    stopRecorder();               // nulls sendFn
+    record(KIND.RENDER, 0, 1, 0, 0); // always-on recording continues -> ring non-empty
+    expect(() => cb && cb()).not.toThrow(); // the deferred tick must be safe
+    delete globalThis.requestIdleCallback; vi.useRealTimers();
+  });
   it('does not send an empty batch', () => {
     vi.useFakeTimers();
     const sent = [];
