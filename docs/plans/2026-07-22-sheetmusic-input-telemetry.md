@@ -862,15 +862,15 @@ Then in `ScorePlayer.jsx`, in an effect that already has `subscribeRaw`:
 
 ```js
 useEffect(() => {
-  const off = subscribeRaw((evt) => {
-    const r = midiToRecord(evt.data ?? evt);
+  // Verified: emitRaw(event.data) — the listener receives the raw byte array
+  // directly (useWebMidiBLE.js:184), NOT a wrapping event object.
+  const off = subscribeRaw((bytes) => {
+    const r = midiToRecord(bytes);
     if (r) record(r.kind, r.a, r.b, stepRef.current ?? 0, 0);
   });
   return off;
 }, [subscribeRaw]);
 ```
-
-(`subscribeRaw`'s listener receives whatever `emitRaw` passes — confirm it's the byte array `event.data`; adapt `evt.data ?? evt` accordingly during implementation.)
 
 **Step 4: Run test to verify it passes**
 
