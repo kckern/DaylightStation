@@ -33,6 +33,16 @@ export function buildBankIndex(banks) {
   return { byUnit: (unitId) => map.get(unitId) || null };
 }
 
+// Fetching a material's units from Plex (episodes/chapters) occasionally stalls
+// on a specific item — a single show could hang the request for 70s+, leaving
+// the detail's chapter tiles stuck on their loading skeletons forever. Bound
+// each fetch so a stall fails fast (the detail then shows a retry, not an
+// endless skeleton); cache the expensive result so a load, once it succeeds, is
+// instant for everyone; coalesce concurrent fetches so the frontend's retries
+// don't stampede the stall.
+const MATERIAL_TIMEOUT_MS = 20_000;
+const MATERIAL_TTL_MS = 300_000; // units rarely change; progress is folded fresh each call
+
 export class GetMaterialUnits {
   #catalog;
   #sources;
@@ -41,8 +51,11 @@ export class GetMaterialUnits {
   #bankIndex;
   #attemptsReader;
   #logger;
+  #materialTimeoutMs;
+  #materialCache = new Map(); // materialId -> { full, at }
+  #materialInflight = new Map(); // materialId -> Promise
 
-  constructor({ catalog, sources, config, progressStore, bankIndex, attemptsReader, logger = console }) {
+  constructor({ catalog, sources, config, progressStore, bankIndex, attemptsReader, logger = console, materialTimeoutMs = MATERIAL_TIMEOUT_MS }) {
     this.#catalog = catalog;
     this.#sources = sources;
     this.#config = config;
@@ -50,6 +63,39 @@ export class GetMaterialUnits {
     this.#bankIndex = bankIndex;
     this.#attemptsReader = attemptsReader;
     this.#logger = logger;
+    this.#materialTimeoutMs = materialTimeoutMs;
+  }
+
+  #withTimeout(promise, ms, materialId) {
+    let t;
+    const timeout = new Promise((_, reject) => {
+      t = setTimeout(() => reject(new Error(`getMaterial("${materialId}") timed out after ${ms}ms`)), ms);
+    });
+    return Promise.race([promise, timeout]).finally(() => clearTimeout(t));
+  }
+
+  // The expensive part: pull the material + its raw units from the source
+  // (Plex). Cached per material, deduped while in flight, and bounded so a Plex
+  // stall rejects instead of hanging. Progress/lock state is NOT cached here —
+  // it is folded fresh from the store on every execute() call.
+  async #fetchFull(adapter, materialId) {
+    const cached = this.#materialCache.get(materialId);
+    if (cached && (Date.now() - cached.at) < MATERIAL_TTL_MS) return cached.full;
+
+    // One real fetch per material, shared by all concurrent callers. It caches
+    // on completion INDEPENDENT of any caller's timeout — so even a very slow
+    // Plex response still warms the cache, and the user's next "Try again" then
+    // loads instantly rather than racing the same stall forever.
+    let real = this.#materialInflight.get(materialId);
+    if (!real) {
+      real = adapter.getMaterial(materialId)
+        .then((full) => { this.#materialCache.set(materialId, { full, at: Date.now() }); return full; })
+        .finally(() => this.#materialInflight.delete(materialId));
+      this.#materialInflight.set(materialId, real);
+    }
+    // Each caller bounds its OWN wait so a stall fails THIS request fast (the
+    // detail shows a retry) without cancelling the shared, cache-warming fetch.
+    return this.#withTimeout(real, this.#materialTimeoutMs, materialId);
   }
 
   /**
@@ -64,7 +110,7 @@ export class GetMaterialUnits {
     const { def: categoryDef } = resolveCategory(catalogMaterial.category, { logger: this.#logger, sourceLabel: entry.label });
 
     const adapter = this.#sources[entry.source];
-    const full = await adapter.getMaterial(materialId);
+    const full = await this.#fetchFull(adapter, materialId);
     const ordered = orderUnits(full.units);
 
     const enriched = this.#progressStore.enrich(ordered, userId);
