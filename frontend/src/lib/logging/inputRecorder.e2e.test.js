@@ -65,4 +65,32 @@ describe('record -> encode -> decode round trip', () => {
     expect(events[0]).toMatchObject({ event: 'key', code: 'Numpad5', intent: 'duration' });
     expect(events[1]).toMatchObject({ event: 'edit', editType: 'insert-note', note: 60, measure: 3, duration: 'quarter' });
   });
+
+  it('round-trips a realistic Composer session with wall-clock alignment', () => {
+    __resetRecorder();
+    const header = buildHeader({ session: 's', score: 'draft', ctx: { user: 'u' } });
+    // production order: intern names AFTER the header
+    record(KIND.KEY, intern('Numpad5'), intern('duration'), 0, 0);
+    record(KIND.EDIT, intern('duration'), 0, 0, intern('quarter'));
+    record(KIND.MIDI_ON, 60, 88, 0, 0);
+    record(KIND.EDIT, intern('insert-note'), 60, 0, intern('quarter'));
+    record(KIND.UI_INTENT, intern('undo'), 0, 0, 0);
+    record(KIND.EDIT, intern('undo'), 0, 0, 0);
+    const batch = encodeBatch();
+    const events = decodeEvents(header, [batch]);
+
+    expect(events.map(e => e.event)).toEqual(['key','edit','midi.on','edit','ui.intent','edit']);
+    expect(events[0]).toMatchObject({ code: 'Numpad5', intent: 'duration' });
+    expect(events[1]).toMatchObject({ editType: 'duration', duration: 'quarter' });
+    expect(events[2]).toMatchObject({ note: 60, velocity: 88 });
+    expect(events[3]).toMatchObject({ editType: 'insert-note', note: 60, duration: 'quarter' });
+    expect(events[5]).toMatchObject({ editType: 'undo' });
+
+    // wall-clock alignment: t0 maps each record's perf-time t to wall-clock
+    const { perf, wall } = header.ctx.t0;
+    const toWall = (t) => wall + (t - perf);
+    const walls = events.map(e => toWall(e.t));
+    expect(walls.every(Number.isFinite)).toBe(true);
+    for (let i = 1; i < walls.length; i++) expect(walls[i]).toBeGreaterThanOrEqual(walls[i-1]);
+  });
 });
