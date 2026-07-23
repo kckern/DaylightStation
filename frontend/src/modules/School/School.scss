@@ -27,11 +27,22 @@
   height: 100dvh;
   display: flex; flex-direction: column;
   background: var(--school-bg); color: var(--school-fg);
+  // Chrome paints a translucent box over ANY interactive element the moment a
+  // finger lands on it — over tiles, crumbs and transport buttons alike. It
+  // fires before (and regardless of) our own :active styling, so on the panel
+  // every tap flashed blue. The property inherits, so declaring it here covers
+  // the whole app; each control's :active state is the press feedback.
+  -webkit-tap-highlight-color: transparent;
 
   &--loading { align-items: center; justify-content: center; color: var(--school-muted); }
 
+  // 80px is measured, not chosen for looks: the Portal is 1280x800 and the
+  // header is the only chrome left (the screen framework's touch lane is not
+  // drawn under this app), so the body below it IS the video stage. 800 - 80
+  // = 720 == exactly 16:9 at 1280 wide. Change this and 16:9 material starts
+  // letterboxing again — keep the two numbers in step.
   &__header {
-    flex: 0 0 64px;
+    flex: 0 0 80px;
     display: flex; align-items: center; gap: 0.75rem;
     padding: 0 1rem;
     border-bottom: 1px solid var(--school-border);
@@ -343,13 +354,27 @@
   }
   // Video: a full-stage overlay ABOVE the video (translateZ(0) forces its own
   // compositor layer so it paints over the GPU-promoted <video>, which
-  // otherwise covers z-index'd siblings). It ALWAYS captures taps (tap toggles
-  // the controls); the control bar itself fades in/out at the bottom.
+  // otherwise covers z-index'd siblings). It ALWAYS captures taps; the control
+  // bar fades in/out at the bottom while the tap zones stay live underneath.
   &__overlay {
     position: absolute; inset: 0; z-index: 50; transform: translateZ(0);
     display: flex; flex-direction: column; justify-content: flex-end;
   }
+  // Rewind | play-pause | forward, in equal thirds across the WHOLE stage —
+  // absolute, not a flex row above the bar, so the bottom strip is a live
+  // zone too once the bar has faded out (pointer-events:none below).
+  &__zones { position: absolute; inset: 0; display: flex; }
+  &__zone {
+    flex: 1; min-width: 0; padding: 0;
+    border: none; background: transparent; color: transparent;
+    cursor: pointer; // tap highlight already killed at .school-app
+    // The only feedback a bare zone can give that the tap landed.
+    &:active { background: rgba(255,255,255,0.07); }
+  }
+  // position:relative keeps the bar painting ABOVE the absolute zones (equal
+  // stacking, later sibling wins) so its own buttons get the tap first.
   &__overlay-chrome {
+    position: relative;
     background: linear-gradient(to top, rgba(0,0,0,0.9), rgba(0,0,0,0));
     padding-top: 3rem;
     transition: opacity 0.15s;

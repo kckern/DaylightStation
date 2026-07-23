@@ -10,6 +10,7 @@
  */
 import { useEffect, useRef, useState } from 'react';
 import { schoolApi } from '../schoolApi.js';
+import { sizedPlexImage, ART_BOX } from '../plexImage.js';
 
 export default function CollectionDetail({ collection, onOpenWork, initialWorkId = null }) {
   const [works, setWorks] = useState(null);
@@ -54,7 +55,7 @@ export default function CollectionDetail({ collection, onOpenWork, initialWorkId
       <div className="school-material-detail__layout">
         <aside className="school-material-detail__info">
           {collection.poster && (
-            <img className="school-material-detail__poster" src={collection.poster} alt="" />
+            <img className="school-material-detail__poster" src={sizedPlexImage(collection.poster, ...ART_BOX.detailPoster)} alt="" />
           )}
           {/* No title here — the header breadcrumb already names this collection. */}
           <p className="school-material-detail__progress-line">
@@ -71,7 +72,7 @@ export default function CollectionDetail({ collection, onOpenWork, initialWorkId
                 <li key={w.id}>
                   <button type="button" className="school-materials__tile school-materials__tile--square" onClick={() => onOpenWork(w)}>
                     {w.poster ? (
-                      <img className="school-materials__poster" src={w.poster} alt="" loading="lazy" decoding="async" />
+                      <img className="school-materials__poster" src={sizedPlexImage(w.poster, ...ART_BOX.gridSquare)} alt="" loading="lazy" decoding="async" />
                     ) : (
                       <div className="school-materials__poster school-materials__poster--placeholder"><span>{w.title}</span></div>
                     )}

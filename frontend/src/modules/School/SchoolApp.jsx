@@ -253,6 +253,19 @@ function SchoolShell({ clear }) {
                 : courseId ? (courses.find((c) => c.id === courseId)?.label ?? 'Language')
                   : section;
 
+  // The apple is the one fixed control in the header, so it carries the one
+  // thing the Portal otherwise has no affordance for. From any depth it goes
+  // home; AT home it reloads the page — the panel is a kiosk with no address
+  // bar and no browser chrome, so this is the only way to pick up a deploy or
+  // shake off a wedged view from inside the app. Mounted as an app (with
+  // `clear`) it still exits instead: there is something behind it to exit to.
+  const onApple = useCallback(() => {
+    if (section || active) { goHome(); return; }
+    if (clear) { clear(); return; }
+    schoolLog.nav('reload', {});
+    window.location.reload();
+  }, [section, active, clear, goHome]);
+
   // The header trail past the apple home anchor. Deep material routes publish
   // their own full sub-trail (section crumb → material → unit, each with its
   // own handler) via the breadcrumb bus; when none is published, the trail is
@@ -274,8 +287,8 @@ function SchoolShell({ clear }) {
           <button
             type="button"
             className="school-app__home"
-            onClick={() => (section || active ? goHome() : (clear ? clear() : undefined))}
-            aria-label={section || active ? 'Home' : 'School'}
+            onClick={onApple}
+            aria-label={section || active ? 'Home' : (clear ? 'School' : 'Refresh')}
           >
             <Icon name="apple" />
           </button>
