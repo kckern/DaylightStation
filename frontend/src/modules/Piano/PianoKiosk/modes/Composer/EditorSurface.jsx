@@ -304,8 +304,15 @@ function TitleControl({ title, onRename, logger }) {
   );
 }
 
-export function EditorSurface({ initialScore, songId = null, initialRevision = 1, save, create, title, onRename, onMaterialized, onSongs, config = {} }) {
-  const logger = useMemo(() => getLogger().child({ component: 'composer-editor' }), []);
+export function EditorSurface({ initialScore, songId = null, initialRevision = 1, save, create, title, onRename, onMaterialized, onSongs, config = {}, logger: loggerProp }) {
+  // Derive the editor's `composer-editor` child from the mode logger when hosted
+  // by Composer (so its events inherit app + sessionLog routing), and fall back
+  // to a bare root child when mounted standalone (the verification harnesses and
+  // several tests do exactly that).
+  const logger = useMemo(
+    () => (loggerProp ? loggerProp.child({ component: 'composer-editor' }) : getLogger().child({ component: 'composer-editor' })),
+    [loggerProp],
+  );
   const [editorState, setEditorState] = useState(() => initEditor(initialScore));
   const [layout, setLayout] = useState({ steps: [], staves: [] });
   const [helpOpen, setHelpOpen] = useState(false);
