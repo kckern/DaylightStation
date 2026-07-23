@@ -16,7 +16,15 @@ export function record(k, s0 = 0, s1 = 0, s2 = 0, s3 = 0) {
   if (count < CAPACITY) count += 1;
   else dropped += 1;
 }
-export function __resetRecorder() { head = 0; count = 0; dropped = 0; }
+const internMap = new Map();
+const internList = [];
+export function intern(str) {
+  let id = internMap.get(str);
+  if (id === undefined) { id = internList.length; internList.push(str); internMap.set(str, id); }
+  return id;
+}
+export function __internTableForTest() { return internList.slice(); }
+export function __resetRecorder() { head = 0; count = 0; dropped = 0; internMap.clear(); internList.length = 0; }
 export function __snapshotForTest() {
   const records = [];
   const start = count < CAPACITY ? 0 : head;
