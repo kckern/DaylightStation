@@ -18,7 +18,7 @@
  * (POST /quiz-requests); the button then reads as requested. Guests see the
  * explanation but no button (nothing to attribute a request to).
  */
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { schoolApi } from '../schoolApi.js';
 import { schoolLog } from '../schoolLog.js';
 
@@ -60,7 +60,7 @@ const CheckGlyph = () => (
   </svg>
 );
 
-export default function MaterialDetail({ material, userId, onBack, onPlay, notice, sectionLabel }) {
+export default function MaterialDetail({ material, userId, onBack, onPlay, notice, sectionLabel, initialUnitId = null }) {
   const [units, setUnits] = useState(null);
   const [requestedUnitIds, setRequestedUnitIds] = useState(() => new Set());
   const [requesting, setRequesting] = useState(false);
@@ -83,6 +83,16 @@ export default function MaterialDetail({ material, userId, onBack, onPlay, notic
   const current = units?.find((u) => u.current) ?? null;
   const doneCount = units?.filter((u) => u.completed).length ?? 0;
   const isAudio = material.medium === 'audio';
+
+  // Deep-link restore: once units resolve, auto-play the unit the URL named,
+  // but only if it's unlocked (never auto-launch a locked chapter). One-shot.
+  const consumedUnitRef = useRef(null);
+  useEffect(() => {
+    if (!initialUnitId || !units || consumedUnitRef.current === initialUnitId) return;
+    const u = units.find((x) => x.id === initialUnitId);
+    if (u && !u.locked) { consumedUnitRef.current = initialUnitId; onPlay(u); }
+    else if (u) { consumedUnitRef.current = initialUnitId; } // locked — don't loop, just don't play
+  }, [initialUnitId, units, onPlay]);
 
   const requestQuiz = useCallback(async (unit) => {
     if (!userId || requesting) return;

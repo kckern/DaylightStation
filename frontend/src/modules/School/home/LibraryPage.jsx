@@ -7,12 +7,12 @@ import BankBrowser from '../browse/BankBrowser.jsx';
  * generic banks appear here as the Practice group (`subjectFilter={null}` =
  * untagged only).
  */
-export default function LibraryPage({ library, guestOnly, onLaunch, notice, initialMaterialId = null }) {
+export default function LibraryPage({ library, guestOnly, onLaunch, notice, initialMaterialPath = [], onMaterialNav }) {
   return (
     <div className="school-subject school-subject--library">
       {library.materials.length > 0 && (
         <section className="school-subject__group">
-          <MaterialsSection materials={library.materials} initialMaterialId={initialMaterialId} sectionLabel="Library" />
+          <MaterialsSection materials={library.materials} initialMaterialPath={initialMaterialPath} onMaterialNav={onMaterialNav} sectionLabel="Library" />
         </section>
       )}
       <section className="school-subject__group">
