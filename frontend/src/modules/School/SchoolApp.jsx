@@ -119,6 +119,11 @@ function SchoolShell({ clear }) {
   const [materials, setMaterials] = useState([]); // full catalog materials list, unfiltered
   const [courses, setCourses] = useState([]);     // language courses (Glossika)
   const [banks, setBanks] = useState([]);         // bank summaries, for shelving + titles
+  // The catalog fetch is Plex-backed and can be SLOW on a cold cache (first open
+  // after a redeploy fans out to every source). Track whether it has resolved so
+  // a subject shelf can show a skeleton during the load rather than the empty
+  // state, which otherwise reads as "stuck/broken" while it's legitimately loading.
+  const [catalogLoaded, setCatalogLoaded] = useState(false);
 
   // Fetch all three catalogues once the profile roster is ready — the home's
   // subject shelves are grouped from whatever actually resolved. Any one
@@ -133,6 +138,7 @@ function SchoolShell({ clear }) {
       setMaterials(mat.ok && Array.isArray(mat.data?.materials) ? mat.data.materials : []);
       setCourses(lang.ok && Array.isArray(lang.data) ? lang.data : []);
       setBanks(bnk.ok && Array.isArray(bnk.data) ? bnk.data : []);
+      setCatalogLoaded(true);
     });
     return () => { alive = false; };
   }, [status]);
@@ -348,6 +354,7 @@ function SchoolShell({ clear }) {
             onOpen={openSection}
             initialMaterialPath={materialPath}
             onMaterialNav={onMaterialNav}
+            catalogLoading={!catalogLoaded}
           />
         )}
         {section === 'library' && !active && (
