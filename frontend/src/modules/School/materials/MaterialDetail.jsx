@@ -101,7 +101,11 @@ export default function MaterialDetail({ material, userId, onBack, onPlay, notic
     }
   }, [userId, requesting, material.id, material.title]);
 
-  const showRequestPanel = Boolean(current?.needsQuiz);
+  // Only offer the quiz request AFTER the current unit has actually been
+  // played — requesting a quiz for something you haven't watched/listened to
+  // yet is premature. Before that, the unit just plays; the request affordance
+  // (and the "waiting for its quiz" lock) appear once it's complete.
+  const showRequestPanel = Boolean(current?.needsQuiz && current?.played);
   const currentRequested = current ? requestedUnitIds.has(current.id) : false;
 
   return (

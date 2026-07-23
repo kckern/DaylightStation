@@ -104,6 +104,7 @@ export class GetMaterialUnits {
       percent: r.percent,
       playhead: r.playhead,
       completed: r.completed,
+      played: r.gateInfo.played, // watched to the completion threshold (drives the request-a-quiz affordance)
       locked: locks[i].locked,
       current: locks[i].current,
       lockReason: locks[i].lockReason,

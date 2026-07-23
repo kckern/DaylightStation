@@ -174,8 +174,10 @@
   &__notice { padding: 0.85rem 1rem; border-radius: 12px; background: var(--school-warn); color: #241a05; font-weight: 700; }
   &__loading, &__empty { color: var(--school-muted); }
 
+  // Poster column is sized to the poster (not a wide 1fr) so it doesn't leave a
+  // big gap before the works/chapters; the content takes the rest.
   &__layout {
-    display: grid; grid-template-columns: minmax(200px, 1fr) 3fr; gap: 1.25rem;
+    display: grid; grid-template-columns: minmax(180px, 230px) 1fr; gap: 1.25rem;
     align-items: start;
   }
 
@@ -184,8 +186,25 @@
     position: sticky; top: 0;
   }
   &__poster {
-    width: 100%; max-width: 260px; border-radius: 14px;
+    width: 100%; border-radius: 14px;
     border: 1px solid var(--school-border);
+  }
+
+  // Works browser grid (a collection's plays/books): four per row, uniform
+  // tile height with the title clamped to two lines so a long name doesn't
+  // grow one tile taller than its neighbours. Bottom padding keeps the last
+  // row clear of the scroll edge.
+  &__works {
+    list-style: none; margin: 0; padding: 0 0 1.5rem;
+    display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.85rem;
+    li { display: flex; }
+    .school-materials__tile { flex: 1; }
+    .school-materials__title {
+      font-size: 0.95rem; line-height: 1.25; min-height: 2.4em;
+      display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+      overflow: hidden;
+    }
+    .school-materials__meta { font-size: 0.82rem; }
   }
   &__title { margin: 0; font-size: 1.35rem; font-weight: 800; }
   &__progress-line { margin: 0; color: var(--school-muted); font-size: 0.95rem; }
@@ -286,14 +305,20 @@
 .school-back-chevron { flex: 0 0 auto; vertical-align: middle; margin-right: 0.4rem; }
 
 // --- materials player (spec §2b/§6): shared Player wrap + quiz handoff ---
+// The shared Player measures its container on mount and fills it 100%. Nested
+// inline in a subject page (auto-height wrappers), that container measured 0 —
+// the Player rendered into a zero-height box, so audio played but nothing (no
+// video frame, no progress bar, no controls) was visible. A FIXED overlay
+// below the 64px header gives the Player a definite viewport size to fill,
+// while the header breadcrumb (…› material › unit) stays visible for back-nav.
 .school-material-player {
-  display: flex; flex-direction: column; gap: 0.75rem; height: 100%;
-  &__back {
-    align-self: flex-start; min-height: 64px; padding: 0 1rem;
-    border: none; background: transparent; color: var(--school-fg); font-size: 1.1rem; cursor: pointer;
+  position: fixed; inset: 64px 0 0 0; z-index: 40;
+  display: flex; flex-direction: column; background: #000;
+  &__stage { flex: 1; min-height: 0; overflow: hidden; background: #000; }
+  &__loading, &__placeholder {
+    flex: 1; display: flex; align-items: center; justify-content: center;
+    color: var(--school-muted); padding: 1rem;
   }
-  &__stage { flex: 1; min-height: 0; border-radius: 12px; overflow: hidden; background: #000; }
-  &__loading, &__placeholder { color: var(--school-muted); }
 }
 
 // --- program report: every program x every learner, one shape ---------------

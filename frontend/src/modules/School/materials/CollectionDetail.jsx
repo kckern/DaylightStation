@@ -44,7 +44,7 @@ export default function CollectionDetail({ collection, onOpenWork }) {
             <div className="school-material-detail__empty">Nothing here yet.</div>
           )}
           {works !== null && works.length > 0 && (
-            <ul className="school-materials__grid school-materials__grid--square">
+            <ul className="school-material-detail__works">
               {works.map((w) => (
                 <li key={w.id}>
                   <button type="button" className="school-materials__tile school-materials__tile--square" onClick={() => onOpenWork(w)}>
