@@ -1,0 +1,50 @@
+- { id: AL, name: Alabama, capital: Montgomery, region_id: AL }
+- { id: AK, name: Alaska, capital: Juneau, region_id: AK }
+- { id: AZ, name: Arizona, capital: Phoenix, region_id: AZ }
+- { id: AR, name: Arkansas, capital: Little Rock, region_id: AR }
+- { id: CA, name: California, capital: Sacramento, region_id: CA }
+- { id: CO, name: Colorado, capital: Denver, region_id: CO }
+- { id: CT, name: Connecticut, capital: Hartford, region_id: CT }
+- { id: DE, name: Delaware, capital: Dover, region_id: DE }
+- { id: FL, name: Florida, capital: Tallahassee, region_id: FL }
+- { id: GA, name: Georgia, capital: Atlanta, region_id: GA }
+- { id: HI, name: Hawaii, capital: Honolulu, region_id: HI }
+- { id: ID, name: Idaho, capital: Boise, region_id: ID }
+- { id: IL, name: Illinois, capital: Springfield, region_id: IL }
+- { id: IN, name: Indiana, capital: Indianapolis, region_id: IN }
+- { id: IA, name: Iowa, capital: Des Moines, region_id: IA }
+- { id: KS, name: Kansas, capital: Topeka, region_id: KS }
+- { id: KY, name: Kentucky, capital: Frankfort, region_id: KY }
+- { id: LA, name: Louisiana, capital: Baton Rouge, region_id: LA }
+- { id: ME, name: Maine, capital: Augusta, region_id: ME }
+- { id: MD, name: Maryland, capital: Annapolis, region_id: MD }
+- { id: MA, name: Massachusetts, capital: Boston, region_id: MA }
+- { id: MI, name: Michigan, capital: Lansing, region_id: MI }
+- { id: MN, name: Minnesota, capital: Saint Paul, region_id: MN }
+- { id: MS, name: Mississippi, capital: Jackson, region_id: MS }
+- { id: MO, name: Missouri, capital: Jefferson City, region_id: MO }
+- { id: MT, name: Montana, capital: Helena, region_id: MT }
+- { id: NE, name: Nebraska, capital: Lincoln, region_id: NE }
+- { id: NV, name: Nevada, capital: Carson City, region_id: NV }
+- { id: NH, name: New Hampshire, capital: Concord, region_id: NH }
+- { id: NJ, name: New Jersey, capital: Trenton, region_id: NJ }
+- { id: NM, name: New Mexico, capital: Santa Fe, region_id: NM }
+- { id: NY, name: New York, capital: Albany, region_id: NY }
+- { id: NC, name: North Carolina, capital: Raleigh, region_id: NC }
+- { id: ND, name: North Dakota, capital: Bismarck, region_id: ND }
+- { id: OH, name: Ohio, capital: Columbus, region_id: OH }
+- { id: OK, name: Oklahoma, capital: Oklahoma City, region_id: OK }
+- { id: OR, name: Oregon, capital: Salem, region_id: OR }
+- { id: PA, name: Pennsylvania, capital: Harrisburg, region_id: PA }
+- { id: RI, name: Rhode Island, capital: Providence, region_id: RI }
+- { id: SC, name: South Carolina, capital: Columbia, region_id: SC }
+- { id: SD, name: South Dakota, capital: Pierre, region_id: SD }
+- { id: TN, name: Tennessee, capital: Nashville, region_id: TN }
+- { id: TX, name: Texas, capital: Austin, region_id: TX }
+- { id: UT, name: Utah, capital: Salt Lake City, region_id: UT }
+- { id: VT, name: Vermont, capital: Montpelier, region_id: VT }
+- { id: VA, name: Virginia, capital: Richmond, region_id: VA }
+- { id: WA, name: Washington, capital: Olympia, region_id: WA }
+- { id: WV, name: West Virginia, capital: Charleston, region_id: WV }
+- { id: WI, name: Wisconsin, capital: Madison, region_id: WI }
+- { id: WY, name: Wyoming, capital: Cheyenne, region_id: WY }
