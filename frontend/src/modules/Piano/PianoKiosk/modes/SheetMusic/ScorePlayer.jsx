@@ -27,7 +27,7 @@ import { isRisingEdge } from './pedalEdge.js';
 import { midiToRecord } from './midiTap.js';
 import { record, intern, KIND, startRecorder, stopRecorder } from '../../../../../lib/logging/inputRecorder.js';
 import { coalesce } from '../../../../../lib/logging/gestureCoalescer.js';
-import getLogger from '../../../../../lib/logging/Logger.js';
+import { inputTelemetryEnabled, makeInputSender } from '../../../../../lib/logging/inputTelemetryGate.js';
 import { keyLabel } from './keyLabel.js';
 import ScoreTransportBar from './ScoreTransportBar.jsx';
 import NoteHighlightLayer from './NoteHighlightLayer.jsx';
@@ -55,25 +55,6 @@ import { nearestEvent, SELECT_MAX_DIST } from './nearestEvent.js';
  * over the cursor overlay; logs-only timing telemetry flows through
  * {@link useScoreTelemetry}.
  */
-/**
- * Pure gate for input-telemetry SHIPPING. Recording into the ring is always on
- * (cheap); draining batches to the backend is enabled only when the household
- * piano config opts in. Extracted so the gate is unit-testable in isolation.
- */
-export function inputTelemetryEnabled(config) { return !!config?.inputTelemetry?.enabled; }
-
-/**
- * Build the recorder's send() — routes each batch/header through the shared logger
- * on the 'input' channel (NO sessionLog), so the backend's .events transport writes
- * it. Exactly ONE logger.info() per call ⇒ one websocket event ⇒ one backend write
- * per drain (never one-per-record — that would regress write frequency badly).
- */
-export function makeInputSender() {
-  return (payload) => getLogger().info(payload.h ? 'input.header' : 'input.batch', payload, {
-    context: { app: 'piano-sheetmusic', channel: 'input' },
-  });
-}
-
 export default function ScorePlayer({ score: scoreMeta }) {
   const { subscribe, subscribeRaw, releaseNote, sendNoteAt, sendNoteOffAt, sendPanic } = usePianoMidi();
   const { setPlaying: setGlobalPlaying } = usePianoPlayback();
@@ -707,7 +688,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
   const startInputRec = useCallback(() => {
     const session = new Date().toISOString();
     inputSessionRef.current = session;
-    startRecorder({ session, score: scoreMeta.id, ctx: { user: config?.user?.id }, send: makeInputSender(), flushMs: 1000 });
+    startRecorder({ session, score: scoreMeta.id, ctx: { user: config?.user?.id }, send: makeInputSender('piano-sheetmusic'), flushMs: 1000 });
   }, [scoreMeta.id, config]);
   const stopInputRec = useCallback(() => { stopRecorder(); inputSessionRef.current = null; }, []);
 

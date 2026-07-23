@@ -71,7 +71,8 @@ vi.mock('../../../../MusicNotation/renderers/MusicXmlRenderer.jsx', async () => 
   };
 });
 
-import ScorePlayer, { inputTelemetryEnabled } from './ScorePlayer.jsx';
+import ScorePlayer from './ScorePlayer.jsx';
+import { inputTelemetryEnabled, makeInputSender } from '../../../../../lib/logging/inputTelemetryGate.js';
 
 const renderPlayer = () =>
   render(<MemoryRouter><ScorePlayer score={{ id: 'files:t.musicxml', title: 'T', musicXml: '<score/>' }} /></MemoryRouter>);
@@ -128,8 +129,7 @@ describe('makeInputSender — one event per batch', () => {
   it('emits exactly one logger.info per call, on the input channel with no sessionLog', async () => {
     const Logger = await import('../../../../../lib/logging/Logger.js');
     const info = vi.spyOn(Logger.default(), 'info').mockImplementation(() => {});
-    const { makeInputSender } = await import('./ScorePlayer.jsx');
-    const send = makeInputSender();
+    const send = makeInputSender('piano-sheetmusic');
     send({ h: 1, session: 's', score: 'x' }); // header
     send({ b: [[0, 1, 60, 80, 0, 0]] });      // batch
     expect(info).toHaveBeenCalledTimes(2);
