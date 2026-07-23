@@ -22,6 +22,7 @@ export class SchoolService {
   #ds; #userService; #logger; #now;
   #sessions = new Map(); // sessionId -> {id, userId|null, bankId, mode, bank, startedAt, lastActiveAt}
   #bankSummaries = null; // { at: number, list: Array<summary> }
+  #warming = null; // in-flight warmBanks() promise (dedupe)
 
   constructor({ datastore, userService, logger = console, now = () => Date.now() }) {
     this.#ds = datastore;
@@ -91,24 +92,40 @@ export class SchoolService {
   // synchronous work blocking the event loop on each home load; the list never
   // renders items, so it never needed them validated. Full validation still
   // happens when a bank is actually opened (getBank -> #loadBank).
-  // All bank summaries (header only), cached briefly so the 4600-file scan runs
-  // at most once per TTL rather than on every render and every gating lookup.
-  #allBankSummaries() {
-    const now = this.#now();
-    if (this.#bankSummaries && (now - this.#bankSummaries.at) < BANK_SUMMARY_TTL_MS) return this.#bankSummaries.list;
-    const list = this.#ds.listBankIds()
-      .map((id) => {
-        const raw = this.#ds.readBankRaw(id);
-        const s = raw ? summarizeQuestionBank(raw) : null;
-        return s ? { ...s, id: s.id ?? id, subject: s.subject ?? null } : null;
-      })
-      .filter(Boolean);
-    this.#bankSummaries = { at: now, list };
-    return list;
+  #bankSummariesFresh() {
+    return this.#bankSummaries && (this.#now() - this.#bankSummaries.at) < BANK_SUMMARY_TTL_MS;
   }
 
+  // Populate the summary cache via the datastore's ASYNC bulk read — off the
+  // main thread, so warming (boot pre-warm, background refresh, or a cold
+  // /banks request) never freezes the event loop like the old sync scan did.
+  // Deduped: concurrent callers share one scan.
+  async warmBanks({ force = false } = {}) {
+    if (!force && this.#bankSummariesFresh()) return this.#bankSummaries.list;
+    if (this.#warming) return this.#warming;
+    this.#warming = (async () => {
+      const raws = await this.#ds.readAllBankRaws();
+      const list = raws
+        .map(({ id, raw }) => {
+          const s = raw ? summarizeQuestionBank(raw) : null;
+          return s ? { ...s, id: s.id ?? id, subject: s.subject ?? null } : null;
+        })
+        .filter(Boolean);
+      this.#bankSummaries = { at: this.#now(), list };
+      return list;
+    })().finally(() => { this.#warming = null; });
+    return this.#warming;
+  }
+
+  // SYNC read of the cached summaries — never scans files itself (that would
+  // block the event loop). If the cache is missing/stale it kicks an async
+  // refresh and serves what it has (empty on the very first call, until the
+  // boot pre-warm lands). Callers that need the full list on a cold cache
+  // (the /banks route) await warmBanks() first.
   listBanks({ audience } = {}) {
-    return this.#allBankSummaries().filter((b) => !audience || b.audience === audience);
+    if (!this.#bankSummariesFresh()) this.warmBanks().catch(() => {});
+    const list = this.#bankSummaries?.list ?? [];
+    return audience ? list.filter((b) => b.audience === audience) : list;
   }
 
   getBank(bankId) {
