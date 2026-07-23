@@ -747,10 +747,14 @@
 // wide "large collection" shelf caps to one row (+ See more), so nothing floods.
 .school-shelves {
   flex: 1 1 auto; min-height: 0; overflow: auto;
-  display: flex; flex-direction: column; gap: 1.25rem;
+  display: flex; flex-direction: column; gap: 1.5rem;
+  // Centre the bands in the fold so a sparse subject sits in the middle rather
+  // than pinned top-left; `safe` falls back to top-align when content overflows
+  // (dense subjects) so nothing scrolls out of reach.
+  justify-content: safe center;
 }
-// Narrow shelves pack left and wrap; a wide shelf owns its band.
-.school-shelf-band { display: flex; flex-wrap: wrap; gap: 1.25rem 1.75rem; align-items: flex-start; }
+// Narrow shelves centre in their band and wrap; a wide shelf owns its band.
+.school-shelf-band { display: flex; flex-wrap: wrap; gap: 1.5rem 1.75rem; align-items: flex-start; justify-content: safe center; }
 
 .school-shelf {
   min-width: 0; display: flex; flex-direction: column; gap: 0.5rem;
@@ -772,11 +776,11 @@
   &__grid { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.75rem; }
 
   // Poster shelves.
-  // Narrow (few items): one content-width row of fixed-size aspect-correct
-  // tiles, packed left. Posters can't grow to fill (2:3 → too tall), so a
-  // sparse shelf simply leaves space to its right rather than a mid gap.
+  // Narrow (few items): one row of aspect-correct tiles whose width comes from
+  // the band (`--tile-w`, computed to fill the fold), so a sparse subject uses
+  // big tiles instead of leaving most of the space empty.
   &--video &__grid, &--audio &__grid {
-    grid-auto-flow: column; grid-auto-columns: 160px;
+    grid-auto-flow: column; grid-auto-columns: var(--tile-w, 160px);
   }
   // Wide (large collection): one capped row stretched across the full band.
   &--video.is-wide:not(.is-expanded) &__grid,

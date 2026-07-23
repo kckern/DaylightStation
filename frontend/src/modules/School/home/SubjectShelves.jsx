@@ -45,17 +45,36 @@ function KindShelf({ shelf }) {
   );
 }
 
+// Narrow (non-flood) poster tiles grow to fill the band width so a sparse
+// subject uses the space instead of leaving 3/4 empty: width = availWidth /
+// poster-count, clamped so a lone item isn't absurd and a 2:3 poster never
+// grows taller than the fold. Wide (flood) bands keep their compact tiles.
+const AVAIL = 1200; // ~body inner width
+const MIN_TILE = 180;
+const MAX_TILE = 300; // 2:3 → 450px tall, fits the ~680px fold with margin
+function bandTileWidth(band) {
+  if (band.shelves.some((s) => s.wide)) return null;
+  const posters = band.shelves
+    .filter((s) => s.kindId === 'video' || s.kindId === 'audio')
+    .reduce((n, s) => n + Math.min(s.items.length, s.cap), 0);
+  if (posters === 0) return null;
+  return Math.max(MIN_TILE, Math.min(MAX_TILE, Math.floor(AVAIL / posters)));
+}
+
 export default function SubjectShelves({ shelves }) {
   const present = shelves.filter((s) => s.items.length > 0);
   const bands = planBands(present);
   return (
     <div className="school-shelves">
-      {bands.map((band, i) => (
-        // eslint-disable-next-line react/no-array-index-key
-        <div className="school-shelf-band" key={i}>
-          {band.shelves.map((s) => <KindShelf key={s.kindId} shelf={s} />)}
-        </div>
-      ))}
+      {bands.map((band, i) => {
+        const w = bandTileWidth(band);
+        return (
+          // eslint-disable-next-line react/no-array-index-key
+          <div className="school-shelf-band" key={i} style={w ? { '--tile-w': `${w}px` } : undefined}>
+            {band.shelves.map((s) => <KindShelf key={s.kindId} shelf={s} />)}
+          </div>
+        );
+      })}
     </div>
   );
 }
