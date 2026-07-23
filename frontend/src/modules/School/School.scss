@@ -698,6 +698,7 @@
     margin: 0; font-size: 0.85rem; color: var(--school-muted);
     text-transform: uppercase; letter-spacing: 0.06em;
   }
+  &__notice { padding: 0.85rem 1rem; border-radius: 12px; background: var(--school-warn); color: #241a05; font-weight: 700; }
 }
 
 // --- kind section (sticky headers over grid) --------------------------------
