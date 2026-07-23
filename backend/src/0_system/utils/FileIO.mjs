@@ -94,17 +94,41 @@ export function loadYamlSafe(basePath) {
  * @param {Object} options
  * @param {boolean} options.stripExtension - If true, return filenames without extension (default: true)
  * @param {boolean} options.excludeHidden - If true, exclude files starting with ._ (default: true)
+ * @param {boolean} options.recursive - If true, also descend into subdirectories and return
+ *   POSIX-style relative paths ("book/chapter"). Off by default: every existing caller
+ *   treats the result as a flat list of ids.
  * @returns {string[]} Array of filenames
  */
 export function listYamlFiles(dirPath, options = {}) {
-  const { stripExtension = true, excludeHidden = true } = options;
+  const { stripExtension = true, excludeHidden = true, recursive = false } = options;
 
   if (!fs.existsSync(dirPath)) return [];
 
-  const files = fs.readdirSync(dirPath).filter(f => {
-    if (excludeHidden && f.startsWith('._')) return false;
-    return f.endsWith('.yml') || f.endsWith('.yaml');
-  });
+  const isYaml = (f) => f.endsWith('.yml') || f.endsWith('.yaml');
+  const hidden = (f) => f.startsWith('._') || f.startsWith('.');
+
+  const walk = (dir, prefix) => {
+    const out = [];
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      if (excludeHidden && hidden(entry.name)) continue;
+      const rel = prefix ? `${prefix}/${entry.name}` : entry.name;
+      if (entry.isDirectory()) {
+        if (recursive) out.push(...walk(path.join(dir, entry.name), rel));
+      } else if (isYaml(entry.name)) {
+        out.push(rel);
+      }
+    }
+    return out;
+  };
+
+  // Preserve the original (non-recursive) behaviour exactly: hidden-file filtering
+  // there only ever excluded the "._" AppleDouble prefix.
+  const files = recursive
+    ? walk(dirPath, '')
+    : fs.readdirSync(dirPath).filter(f => {
+      if (excludeHidden && f.startsWith('._')) return false;
+      return isYaml(f);
+    });
 
   if (!stripExtension) return files;
 

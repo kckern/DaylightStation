@@ -18,6 +18,18 @@
          REQUEST_INSTALL_PACKAGES → POST /update installs a new APK from a URL.
          READ_LOGS                → GET /logcat returns our own log lines, so a failure
                                     can be diagnosed without a shell. -->
+    <!-- BLUETOOTH / BLUETOOTH_ADMIN are INSTALL-TIME on API 28 (this panel is
+         Android 9), so there is no runtime grant and nothing to re-approve after
+         a reboot. BLUETOOTH_CONNECT (Android 12) does not apply at targetSdk 28.
+
+         ACCESS_COARSE_LOCATION is required for BLE SCANNING on API 23-28 — a
+         scan silently returns zero results without it, which is exactly the
+         symptom being diagnosed here. It is NOT needed to read connected
+         devices or bonded devices, only to discover new ones. -->
+    <uses-permission android:name="android.permission.BLUETOOTH" />
+    <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" />
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
     <uses-permission android:name="android.permission.READ_LOGS" />
 

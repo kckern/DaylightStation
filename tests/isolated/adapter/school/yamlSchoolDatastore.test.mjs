@@ -89,4 +89,38 @@ describe('banks', () => {
     fs.writeFileSync(path.join(dir, '._caps.yml'), 'garbage-not-yaml-safe-content');
     expect(ds.listBankIds()).toEqual(['caps']);
   });
+
+  // The audiobook banks are foldered by series/work so the tree stays browsable
+  // instead of being one flat dump of several hundred files.
+  it('lists nested banks by relative path and reads one back', () => {
+    const dir = path.join(tmp, 'content', 'quizzes', 'i-survived', '01-titanic-1912');
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, '01-two-am-on-deck.yml'), 'id: i-survived/01-titanic-1912/01-two-am-on-deck\ntitle: Two AM on Deck\nitems:\n  - id: q1\n');
+    expect(ds.listBankIds()).toEqual(['i-survived/01-titanic-1912/01-two-am-on-deck']);
+    expect(ds.readBankRaw('i-survived/01-titanic-1912/01-two-am-on-deck'))
+      .toMatchObject({ title: 'Two AM on Deck' });
+  });
+  it('mixes flat and nested banks in one sorted listing', () => {
+    const root = path.join(tmp, 'content', 'quizzes');
+    fs.mkdirSync(path.join(root, 'shakespeare-tales', 'hamlet'), { recursive: true });
+    fs.writeFileSync(path.join(root, 'caps.yml'), 'id: caps\ntitle: Caps\nitems:\n  - id: q1\n');
+    fs.writeFileSync(path.join(root, 'shakespeare-tales', 'hamlet', '01-the-ghost.yml'), 'id: x\ntitle: Ghost\nitems:\n  - id: q1\n');
+    expect(ds.listBankIds()).toEqual(['caps', 'shakespeare-tales/hamlet/01-the-ghost']);
+  });
+  it('a nested id cannot be used to climb out of the banks directory', () => {
+    const root = path.join(tmp, 'content', 'quizzes');
+    fs.mkdirSync(root, { recursive: true });
+    fs.writeFileSync(path.join(tmp, 'content', 'secrets.yml'), 'id: secrets\ntitle: Secret\nitems:\n  - id: q1\n');
+    expect(ds.readBankRaw('../secrets')).toBe(null);
+    expect(ds.readBankRaw('i-survived/../../secrets')).toBe(null);
+    expect(ds.readBankRaw('/etc/passwd')).toBe(null);
+    expect(ds.readBankRaw('i-survived/./secrets')).toBe(null);
+  });
+  it('skips dot-directories when walking the bank tree', () => {
+    const root = path.join(tmp, 'content', 'quizzes');
+    fs.mkdirSync(path.join(root, '.trash'), { recursive: true });
+    fs.writeFileSync(path.join(root, 'caps.yml'), 'id: caps\ntitle: Caps\nitems:\n  - id: q1\n');
+    fs.writeFileSync(path.join(root, '.trash', 'old.yml'), 'id: old\ntitle: Old\nitems:\n  - id: q1\n');
+    expect(ds.listBankIds()).toEqual(['caps']);
+  });
 });
