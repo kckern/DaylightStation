@@ -6,6 +6,14 @@
 
 import { getDispatcher, isLoggingInitialized } from './dispatcher.mjs';
 import { getSessionFileTransport } from './transports/sessionFile.mjs';
+import { getSessionEventsFileTransport } from './transports/sessionEventsFile.mjs';
+
+/**
+ * Predicate: is this a full-fidelity input-telemetry event?
+ * Input-channel events bypass the semantic dispatcher and session-file entirely,
+ * routing straight to the .events stream transport.
+ */
+export function isInputChannel(event) { return event?.context?.channel === 'input'; }
 
 // Local timestamp (same shape as dispatcher's: ISO without trailing Z = local time).
 // Mirrors dispatcher.getLocalTimestamp to avoid an import cycle.
@@ -34,6 +42,15 @@ export function ingestFrontendLogs(payload, clientMeta = {}) {
   for (const event of events) {
     const normalized = normalizeEvent(event, clientMeta);
     if (normalized) {
+      // Input-channel telemetry bypasses the semantic pipeline (dispatcher +
+      // session-file) and routes straight to the .events stream transport.
+      if (isInputChannel(normalized)) {
+        const eft = getSessionEventsFileTransport();
+        if (eft) eft.write(normalized);
+        processed++;
+        continue;
+      }
+
       dispatcher.dispatch(normalized);
 
       // Write to session file if sessionLog flag is set
