@@ -156,6 +156,17 @@ describe('ScorePlayer — raw MIDI recorder capture (Task 11)', () => {
   });
 });
 
+describe('ScorePlayer — UI-intent capture (Task 12)', () => {
+  it('records a UI_INTENT in the ring when a control is used (mode change)', () => {
+    renderPlayer(); // opens in Listen
+    __resetRecorder();
+    act(() => { screen.getByText('Learn').click(); }); // mode change → tapIntent('mode')
+    const hit = __snapshotForTest().records.some((r) => r.kind === KIND.UI_INTENT);
+    expect(hit).toBe(true);
+    cleanup();
+  });
+});
+
 describe('ScorePlayer — default mode', () => {
   it('opens in Listen (defaultMode), not Learn (J2)', () => {
     renderPlayer();
