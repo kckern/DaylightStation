@@ -68,7 +68,7 @@ export function DetailSkeleton({ audio = false }) {
   return (
     <div className="school-material-detail__layout school-skel" aria-hidden="true">
       <aside className="school-material-detail__info">
-        <div className="school-skel__poster" />
+        <div className={`school-skel__poster${audio ? ' school-skel__poster--square' : ''}`} />
         <div className="school-skel__line school-skel__line--sm" />
       </aside>
       <div className="school-material-detail__units-panel">
@@ -174,7 +174,7 @@ export default function MaterialDetail({ material, userId, onBack, onPlay, notic
       <div className="school-material-detail__layout">
         <aside className="school-material-detail__info">
           {material.poster && (
-            <img className="school-material-detail__poster" src={sizedPlexImage(material.poster, ...ART_BOX.detailPoster)} alt="" />
+            <img className={`school-material-detail__poster${isAudio ? ' school-material-detail__poster--square' : ''}`} src={sizedPlexImage(material.poster, ...ART_BOX.detailPoster)} alt="" />
           )}
           {/* No title here — the header breadcrumb already names this material.
               Progress: a % bar, then one dot per unit (green done, amber
