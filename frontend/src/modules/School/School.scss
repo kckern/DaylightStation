@@ -264,8 +264,13 @@
   // Tight dots, capped in height so a 40-chapter course scrolls its dot grid
   // instead of pushing the poster/description off the page.
   &__dots {
-    list-style: none; margin: 0; padding: 0;
-    display: flex; flex-wrap: wrap; gap: 4px;
+    list-style: none; padding: 0;
+    display: flex; flex-wrap: wrap; gap: 4px; justify-content: center;
+    // The width is set inline by the balancing pass (see MaterialDetail) to the
+    // exact span of one balanced row, and margin:auto centers that block.
+    // fit-content is the pre-measure fallback: shrinks to the dots' width so a
+    // short row is centered even before JS runs.
+    width: fit-content; max-width: 100%; margin: 0 auto;
     max-height: 4.5rem; overflow-y: auto;
   }
   &__dot {
