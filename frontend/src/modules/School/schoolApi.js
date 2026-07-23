@@ -22,6 +22,7 @@ export const schoolApi = {
   roster: () => req('/roster'),
   banks: (audience) => req(`/banks${audience ? `?audience=${encodeURIComponent(audience)}` : ''}`),
   bank: (id) => req(`/banks/${encodeURIComponent(id)}`),
+  geoDecks: () => req('/geography/decks'),
   openSession: ({ userId = null, bankId, mode }) => req('/sessions', { userId, bankId, mode }),
   answer: (sessionId, body = {}) => req(`/sessions/${encodeURIComponent(sessionId)}/answer`, body),
   results: (userId, bankId) => req(`/users/${encodeURIComponent(userId)}/results${bankId ? `?bankId=${encodeURIComponent(bankId)}` : ''}`),
