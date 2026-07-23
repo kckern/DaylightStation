@@ -746,4 +746,21 @@
     }
     .school-tile__progress { display: block; height: 4px; margin: 0 0.75rem 0.6rem; }
   }
+
+  // --- audio: square art + headphones chip + works/chapters meta ---
+  &--audio {
+    .school-tile__poster-wrap { position: relative; }
+    .school-tile__poster { display: block; width: 100%; aspect-ratio: 1 / 1; object-fit: cover; background: var(--school-surface-2); }
+    .school-tile__poster--placeholder {
+      display: flex; align-items: center; justify-content: center; padding: 0.75rem;
+      text-align: center; font-weight: 700; color: var(--school-muted);
+    }
+    .school-tile__chip {
+      position: absolute; top: 0.5rem; right: 0.5rem;
+      display: flex; align-items: center; justify-content: center;
+      width: 2rem; height: 2rem; border-radius: 999px;
+      background: var(--school-surface); box-shadow: 0 0 0 1px var(--school-border);
+    }
+    .school-tile__meta { margin: -0.25rem 0.75rem 0.75rem; color: var(--school-muted); font-size: 0.85rem; }
+  }
 }
