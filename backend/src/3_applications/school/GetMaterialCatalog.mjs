@@ -24,19 +24,35 @@ const SECTION_ORDER = [
 ];
 
 const TTL_MS = 60_000;
+// A single Plex `listMaterials` occasionally stalls (Plex busy / TCP keepalive).
+// With no bound, the whole catalog build hangs — blocking the event loop and
+// failing every subject page. Cap each source so a stall rejects and the source
+// is skipped (fail-soft, already handled per-source) instead of hanging the app.
+const SOURCE_TIMEOUT_MS = 8_000;
 
 export class GetMaterialCatalog {
   #sources;
   #config;
   #logger;
   #now;
+  #sourceTimeoutMs;
   #cache = new Map(); // root -> { materials: Material[]<no category>, at: number }
+  #inflight = new Map(); // root -> Promise, so a stampede doesn't fan out N cold builds
 
-  constructor({ sources, config, logger = console, now = () => Date.now() }) {
+  constructor({ sources, config, logger = console, now = () => Date.now(), sourceTimeoutMs = SOURCE_TIMEOUT_MS }) {
     this.#sources = sources;
     this.#config = config;
     this.#logger = logger;
     this.#now = now;
+    this.#sourceTimeoutMs = sourceTimeoutMs;
+  }
+
+  #withTimeout(promise, ms, label) {
+    let t;
+    const timeout = new Promise((_, reject) => {
+      t = setTimeout(() => reject(new Error(`listMaterials("${label}") timed out after ${ms}ms`)), ms);
+    });
+    return Promise.race([promise, timeout]).finally(() => clearTimeout(t));
   }
 
   async #listMaterialsCached(entry) {
@@ -44,11 +60,22 @@ export class GetMaterialCatalog {
     const nowTs = this.#now();
     if (cached && nowTs - cached.at < TTL_MS) return cached.materials;
 
+    // Coalesce concurrent cold fetches for the same root — one build, many
+    // awaiters — so a stampede of subject opens doesn't multiply the fan-out.
+    const existing = this.#inflight.get(entry.root);
+    if (existing) return existing;
+
     const adapter = this.#sources[entry.source];
     if (!adapter) throw new Error(`no source adapter registered for "${entry.source}"`);
-    const materials = await adapter.listMaterials(entry.root);
-    this.#cache.set(entry.root, { materials, at: nowTs });
-    return materials;
+
+    const p = this.#withTimeout(adapter.listMaterials(entry.root), this.#sourceTimeoutMs, entry.label)
+      .then((materials) => {
+        this.#cache.set(entry.root, { materials, at: this.#now() });
+        return materials;
+      })
+      .finally(() => this.#inflight.delete(entry.root));
+    this.#inflight.set(entry.root, p);
+    return p;
   }
 
   #stamp(material, entry) {
@@ -97,14 +124,20 @@ export class GetMaterialCatalog {
     const materials = [];
     const categoriesPresent = new Set();
 
-    for (const entry of this.#config.sources) {
-      let raw;
+    // Fetch sources in PARALLEL (order preserved) so a single slow/timed-out
+    // source bounds the whole build to ~one source-timeout rather than the sum
+    // of every source. Each source still fail-soft: a throw/timeout logs and
+    // contributes nothing, never blanking the rest of the catalog.
+    const perSource = await Promise.all(this.#config.sources.map(async (entry) => {
       try {
-        raw = await this.#listMaterialsCached(entry);
+        return { entry, raw: await this.#listMaterialsCached(entry) };
       } catch (err) {
         this.#logger.error?.('school.materials.source-failed', { source: entry.label, root: entry.root, error: err.message });
-        continue;
+        return { entry, raw: [] };
       }
+    }));
+
+    for (const { entry, raw } of perSource) {
       for (const material of raw) {
         const stamped = this.#stamp(material, entry);
         // Household grade ceiling: a material labelled above the household's
