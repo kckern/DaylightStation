@@ -111,7 +111,7 @@ describe('MaterialDetail', () => {
       data: {
         material,
         units: [
-          { id: 'plex:10', index: 1, title: 'Budgets', durationMs: null, group: null, percent: 100, playhead: 0, completed: false, locked: false, current: true, lockReason: null, quiz: null, needsQuiz: true },
+          { id: 'plex:10', index: 1, title: 'Budgets', durationMs: null, group: null, percent: 100, playhead: 0, completed: false, locked: false, current: true, lockReason: null, quiz: null, needsQuiz: true, played: true },
           { id: 'plex:11', index: 2, title: 'Saving', durationMs: null, group: null, percent: 0, playhead: 0, completed: false, locked: true, current: false, lockReason: '“Budgets” is waiting for its quiz — request one to move on', quiz: null, needsQuiz: false },
         ],
       },
@@ -156,7 +156,7 @@ describe('MaterialDetail', () => {
       data: {
         material,
         units: [
-          { id: 'plex:10', index: 1, title: 'Budgets', durationMs: null, group: null, percent: 100, playhead: 0, completed: false, locked: false, current: true, lockReason: null, quiz: null, needsQuiz: true },
+          { id: 'plex:10', index: 1, title: 'Budgets', durationMs: null, group: null, percent: 100, playhead: 0, completed: false, locked: false, current: true, lockReason: null, quiz: null, needsQuiz: true, played: true },
         ],
       },
     });
