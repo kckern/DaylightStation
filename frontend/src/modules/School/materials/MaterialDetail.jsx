@@ -88,22 +88,28 @@ export function DetailSkeleton({ audio = false }) {
 
 export default function MaterialDetail({ material, userId, onBack, onPlay, notice, sectionLabel, initialUnitId = null }) {
   const [units, setUnits] = useState(null);
+  const [loadError, setLoadError] = useState(false); // units fetch failed/timed out (vs genuinely empty)
+  const [reloadKey, setReloadKey] = useState(0);
   const [requestedUnitIds, setRequestedUnitIds] = useState(() => new Set());
   const [requesting, setRequesting] = useState(false);
 
   useEffect(() => {
     let alive = true;
     setUnits(null);
+    setLoadError(false);
     schoolApi.materialUnits(material.id, userId).then(({ ok, data }) => {
       if (!alive) return;
-      setUnits(ok && Array.isArray(data?.units) ? data.units : []);
+      // A failed/timed-out fetch is NOT an empty material — flag it so we show
+      // a retry rather than a bare skeleton (forever) or a misleading "no units".
+      if (!ok) { setLoadError(true); setUnits([]); return; }
+      setUnits(Array.isArray(data?.units) ? data.units : []);
     });
     schoolApi.quizRequests(material.id).then(({ ok, data }) => {
       if (!alive || !ok || !Array.isArray(data)) return;
       setRequestedUnitIds(new Set(data.map((r) => r.unitId)));
     });
     return () => { alive = false; };
-  }, [material.id, userId]);
+  }, [material.id, userId, reloadKey]);
 
   const groups = units ? groupUnits(units) : [];
   const current = units?.find((u) => u.current) ?? null;
@@ -190,7 +196,19 @@ export default function MaterialDetail({ material, userId, onBack, onPlay, notic
           )}
         </aside>
         <div className="school-material-detail__units-panel">
-          {units.length === 0 && (
+          {units.length === 0 && loadError && (
+            <div className="school-material-detail__empty">
+              <p>Couldn’t load the chapters — the media server was slow to respond.</p>
+              <button
+                type="button"
+                className="school-material-detail__retry"
+                onClick={() => setReloadKey((k) => k + 1)}
+              >
+                Try again
+              </button>
+            </div>
+          )}
+          {units.length === 0 && !loadError && (
             <div className="school-material-detail__empty">No units yet.</div>
           )}
           {/* Audio chapters have no thumbnails, so a video-style poster grid
