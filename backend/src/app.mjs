@@ -2108,6 +2108,13 @@ export async function createApp({ server, logger, configPaths, configExists, ena
       config: schoolMaterialsConfig,
       logger: rootLogger.child({ module: 'school-materials' })
     });
+    // Pre-warm the catalog in the background at boot so the first subject-open
+    // after a (cache-clearing) redeploy hits a warm cache instead of paying the
+    // full Plex fan-out. Fire-and-forget — never blocks startup, and a failure
+    // just means the first real request rebuilds it.
+    getMaterialCatalog.execute()
+      .then((c) => rootLogger.child({ module: 'school-materials' }).info?.('school.materials.prewarmed', { count: c?.materials?.length ?? 0 }))
+      .catch((err) => rootLogger.child({ module: 'school-materials' }).warn?.('school.materials.prewarm-failed', { error: err.message }));
     // Rebuilt from schoolService.listBanks() (cheap YAML-directory read, no
     // cache of its own) on every lookup rather than once at boot, so a newly
     // authored gating bank takes effect without a restart — matching
