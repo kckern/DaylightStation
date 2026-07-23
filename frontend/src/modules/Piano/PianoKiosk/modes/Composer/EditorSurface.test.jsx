@@ -95,6 +95,31 @@ describe('EditorSurface — raw MIDI recorder capture', () => {
   });
 });
 
+// ---------------------------------------------------------------------------
+// Task 7 — toolbar tap capture. Every toolbar handler records a UI_INTENT into
+// the recorder ring (and, on the next frame, an input→paint TAP), so touch
+// latency on the kiosk is measurable the way MIDI/gesture input already is.
+// ---------------------------------------------------------------------------
+describe('EditorSurface — toolbar tap telemetry', () => {
+  beforeEach(() => { engraves.length = 0; midiHandler = null; layoutToPublish = null; });
+
+  it('records a UI_INTENT when a toolbar control is tapped (Undo)', () => {
+    render(<EditorSurface initialScore={makeEmptyScore()} songId="x" initialRevision={1} save={vi.fn()} config={{}} />);
+    // Play a note so Undo is enabled, then clear the ring so only the tap shows.
+    playNotes(1);
+    __resetRecorder();
+    act(() => { fireEvent.click(screen.getByRole('button', { name: /undo/i })); });
+    expect(__snapshotForTest().records.some((r) => r.kind === KIND.UI_INTENT)).toBe(true);
+  });
+
+  it('records a UI_INTENT when the help toggle is tapped', () => {
+    render(<EditorSurface initialScore={makeEmptyScore()} songId="x" initialRevision={1} save={vi.fn()} config={{}} />);
+    __resetRecorder();
+    act(() => { fireEvent.click(screen.getByRole('button', { name: /how to write music/i })); });
+    expect(__snapshotForTest().records.some((r) => r.kind === KIND.UI_INTENT)).toBe(true);
+  });
+});
+
 describe('caretStepIndex', () => {
   it('counts a chord (multiple notes, one onset) as a SINGLE engraved step, not one step per note', () => {
     // Measure 0: a 2-note chord (C4 onset + E4 chord-continuation) followed by

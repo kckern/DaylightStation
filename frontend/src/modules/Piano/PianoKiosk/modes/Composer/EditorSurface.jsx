@@ -18,7 +18,7 @@ import { useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import { MusicXmlRenderer } from '../../../../MusicNotation/renderers/MusicXmlRenderer.jsx';
 import { usePianoMidi } from '../../PianoMidiContext.jsx';
 import getLogger from '../../../../../lib/logging/Logger.js';
-import { record } from '../../../../../lib/logging/inputRecorder.js';
+import { record, intern, KIND } from '../../../../../lib/logging/inputRecorder.js';
 import { midiToRecord } from '../SheetMusic/midiTap.js';
 import { initEditor, serializeFromEditor, undo, redo, makeRest } from './model/index.js';
 import { useComposerInput } from './useComposerInput.js';
@@ -247,7 +247,7 @@ export function serializeForDisplay(editorState, minBars = DISPLAY_MIN_BARS) {
  * "is this actually different from what's on disk?" to useAutosave, which is
  * the layer that knows what was persisted.
  */
-function TitleControl({ title, onRename, logger }) {
+function TitleControl({ title, onRename, logger, onTap }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState('');
   const doneRef = useRef(false);
@@ -256,8 +256,9 @@ function TitleControl({ title, onRename, logger }) {
     setDraft(title || '');
     doneRef.current = false;
     setEditing(true);
+    onTap?.('title');
     logger.debug('composer.title.edit-start', { named: !!title });
-  }, [title, logger]);
+  }, [title, logger, onTap]);
 
   const commit = useCallback(() => {
     if (doneRef.current) return;
@@ -315,6 +316,17 @@ export function EditorSurface({ initialScore, songId = null, initialRevision = 1
     () => (loggerProp ? loggerProp.child({ component: 'composer-editor' }) : getLogger().child({ component: 'composer-editor' })),
     [loggerProp],
   );
+  // UI-intent + input→paint tap for toolbar controls (mirrors SheetMusic's
+  // ScorePlayer.tapIntent). Records the intent immediately, then the input→paint
+  // latency for the same control on the next frame. The editor has no cursor step
+  // to tag, so slot c is 0. intern caches the control name, so repeats are cheap.
+  const tapIntent = useCallback((name) => {
+    const id = intern(name);
+    record(KIND.UI_INTENT, id, 0, 0, 0);
+    const t0 = performance.now();
+    requestAnimationFrame(() => record(KIND.TAP, id, Math.round(performance.now() - t0), 0, 0));
+  }, []);
+
   const [editorState, setEditorState] = useState(() => initEditor(initialScore));
   const [layout, setLayout] = useState({ steps: [], staves: [] });
   const [helpOpen, setHelpOpen] = useState(false);
@@ -391,6 +403,7 @@ export function EditorSurface({ initialScore, songId = null, initialRevision = 1
   playingRef.current = transport.playing;
 
   const togglePlay = useCallback(() => {
+    tapIntent('play'); // capture the transport tap on both the play and pause edges
     if (playingRef.current) {
       transportRef.current?.pause();
       silenceScheduled();
@@ -398,7 +411,7 @@ export function EditorSurface({ initialScore, songId = null, initialRevision = 1
       return;
     }
     setPlaySpec({ score: editorState.score, startAtMeasure: editorState.caret.measureIdx });
-  }, [editorState.score, editorState.caret.measureIdx, silenceScheduled, logger]);
+  }, [editorState.score, editorState.caret.measureIdx, silenceScheduled, logger, tapIntent]);
 
   // Start on the render AFTER the snapshot lands, because useScoreTransport reads
   // its timeline from the props of the current render — calling play() inside
@@ -590,21 +603,26 @@ export function EditorSurface({ initialScore, songId = null, initialRevision = 1
   const doUndo = useCallback(() => {
     if (!canUndo) return;
     logger.info('composer.editor.undo', { remainingPast: (editorState.history?.past?.length || 1) - 1 });
+    record(KIND.EDIT, intern('undo'), 0, 0, 0);
+    tapIntent('undo');
     setEditorState((s) => undo(s));
-  }, [canUndo, editorState, logger]);
+  }, [canUndo, editorState, logger, tapIntent]);
   const doRedo = useCallback(() => {
     if (!canRedo) return;
     logger.info('composer.editor.redo', { remainingFuture: (editorState.history?.future?.length || 1) - 1 });
+    record(KIND.EDIT, intern('redo'), 0, 0, 0);
+    tapIntent('redo');
     setEditorState((s) => redo(s));
-  }, [canRedo, editorState, logger]);
+  }, [canRedo, editorState, logger, tapIntent]);
   const statusLabel = STATUS_LABEL[status] || '';
 
   // The help panel's open state used to live in the deleted bottom bar. It sits
   // here now for the same reason it sat there: nothing outside the toolbar that
   // owns the toggle needs to know the reference sheet is showing.
   const toggleHelp = useCallback(() => {
+    tapIntent('help');
     setHelpOpen((v) => { logger.info('composer.help.toggle', { open: !v }); return !v; });
-  }, [logger]);
+  }, [logger, tapIntent]);
   const closeHelp = useCallback(() => {
     logger.info('composer.help.toggle', { open: false });
     setHelpOpen(false);
@@ -622,7 +640,7 @@ export function EditorSurface({ initialScore, songId = null, initialRevision = 1
             the title alone) and reads better anyway: "Saved" is a fact about
             the thing the title names. */}
         <div className="composer-toolbar__doc">
-          <TitleControl title={title} onRename={onRename} logger={logger} />
+          <TitleControl title={title} onRename={onRename} logger={logger} onTap={tapIntent} />
           <span className={`composer-toolbar__status is-${status}`} aria-live="polite">{statusLabel}</span>
         </div>
         <div className="composer-toolbar__history">
@@ -632,7 +650,7 @@ export function EditorSurface({ initialScore, songId = null, initialRevision = 1
           <button type="button" onClick={doUndo} disabled={!canUndo} aria-label="Undo" title="Undo"><IconUndo size={24} /></button>
           <button type="button" onClick={doRedo} disabled={!canRedo} aria-label="Redo" title="Redo"><IconRedo size={24} /></button>
         </div>
-        <DurationPalette hud={hud} setDuration={setDuration} toggleDot={toggleDot} toggleArm={toggleArm} addRest={addRest} deleteBack={deleteBack} />
+        <DurationPalette hud={hud} setDuration={setDuration} toggleDot={toggleDot} toggleArm={toggleArm} addRest={addRest} deleteBack={deleteBack} onTap={tapIntent} />
         {/* The mode's transport. Deliberately NOT next to the Write toggle: the
             audit found a kid tapping the most play-looking control (then named
             "Play") and hearing nothing, because it only armed note entry.
@@ -661,7 +679,7 @@ export function EditorSurface({ initialScore, songId = null, initialRevision = 1
             <button
               type="button"
               className="composer-toolbar__nav-btn"
-              onClick={() => { logger.debug('composer.nav.songs', {}); onSongs(); }}
+              onClick={() => { logger.debug('composer.nav.songs', {}); tapIntent('songs'); onSongs(); }}
               aria-label="Your songs"
               title="Your saved songs"
             >
