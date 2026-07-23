@@ -86,3 +86,6 @@ Unchanged from SheetMusic: `media/logs/piano-composer/{ts}.events` (+ sibling `.
 
 - Replay viewer: extend the (still-unbuilt) SheetMusic viewer to render `key`/`edit` lanes.
 - Per-session `seq` on batches (transport-loss visibility) — still deferred.
+- **Retention mismatch** (review F5): the semantic `.jsonl` is pruned at 3 days (`sessionFile.mjs` global `maxAgeDays:3`) while the `.events` sibling lives 30. Edits now live in `.events` (the `EDIT` kind), so the `.jsonl` is supplementary rich detail — but an aged (>3d) session loses that half. Fix would be per-app retention on `sessionFile` (as `sessionEventsFile` already has) or a 30-day bump for `piano-composer`.
+- **`session-log.start` from render phase** (review F6): `child({sessionLog})` auto-emits inside a `useMemo` (Composer.jsx), so a future `<StrictMode>` adoption could double-open the file. Pre-existing pattern (`useScoreTelemetry` does the same). Move the emit to a mount effect if StrictMode is adopted.
+- **Manual `__INPUT_REC__.start()` not stopped on unmount** (review F7): the kill-switch lever's manual start isn't torn down by the unmount cleanup (only the config-gated start is). Operator-only; pre-existing ScorePlayer pattern.
