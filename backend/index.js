@@ -25,7 +25,7 @@ process.on('unhandledRejection', (reason) => {
 import { initConfigService, ConfigValidationError, configService } from '#system/config/index.mjs';
 import { hydrateProcessEnvFromConfigs, loadLoggingConfig, resolveLoggerLevel, getLoggingTags, resolveLogglyToken } from '#system/logging/config.mjs';
 import { initializeLogging } from '#system/logging/dispatcher.mjs';
-import { createConsoleTransport, createFileTransport, createLogglyTransport, initSessionFileTransport } from '#system/logging/transports/index.mjs';
+import { createConsoleTransport, createFileTransport, createLogglyTransport, initSessionFileTransport, initSessionEventsFileTransport } from '#system/logging/transports/index.mjs';
 import { createLogger } from '#system/logging/logger.mjs';
 
 const __dirname = path.dirname(new URL(import.meta.url).pathname);
@@ -120,6 +120,13 @@ async function main() {
   initSessionFileTransport({
     baseDir: join(mediaDir, 'logs'),
     maxAgeDays: 3
+  });
+
+  // Session events file transport - stream-writes full-fidelity input telemetry
+  // (channel:'input') to per-app .events files under media/logs/
+  initSessionEventsFileTransport({
+    baseDir: join(mediaDir, 'logs'),
+    maxAgeDays: 30
   });
 
   const logger = createLogger({
