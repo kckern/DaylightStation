@@ -51,10 +51,17 @@ export function buildHeader({ session, score, ctx }) {
 let drainTimer = null;
 let sendFn = null;
 export function startRecorder({ session, score, ctx = {}, send, flushMs = 1000 }) {
+  // Clear any prior interval first: start can be called twice (config lifecycle +
+  // window.__INPUT_REC__.start), and a leaked interval would keep ticking after the
+  // next stop and throw every second (sendFn nulled) → kiosk watchdog trips.
+  if (drainTimer) { clearInterval(drainTimer); drainTimer = null; }
   __resetRecorder();
   sendFn = send;
   sendFn(buildHeader({ session, score, ctx }));
-  const tick = () => { const batch = encodeBatch(); if (batch.b.length > 0) sendFn(batch); };
+  // Guard: the drain is deferred via requestIdleCallback and can fire up to ~1s
+  // after stopRecorder() nulled sendFn (recording is always-on and keeps feeding
+  // the ring), so a bare sendFn(batch) would throw. Skip when stopped.
+  const tick = () => { if (!sendFn) return; const batch = encodeBatch(); if (batch.b.length > 0) sendFn(batch); };
   const scheduled = () => {
     if (typeof requestIdleCallback === 'function') requestIdleCallback(tick, { timeout: flushMs });
     else tick();
