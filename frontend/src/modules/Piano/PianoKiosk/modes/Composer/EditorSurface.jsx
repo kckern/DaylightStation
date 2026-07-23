@@ -528,7 +528,7 @@ export function EditorSurface({ initialScore, songId = null, initialRevision = 1
   // Config-gated auto lifecycle: ship input telemetry for this song only when the
   // household config opts in. Re-arms on a song change; stops on unmount/disable.
   useEffect(() => {
-    if (!inputTelemetryEnabled(config)) return undefined;
+    if (!inputTelemetryEnabled(config, 'composer')) return undefined;
     startInputRec();
     return () => stopInputRec();
   }, [songId, config, startInputRec, stopInputRec]);

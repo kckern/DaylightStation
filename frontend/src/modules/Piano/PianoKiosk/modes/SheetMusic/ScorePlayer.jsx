@@ -707,7 +707,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
   // Config-gated auto lifecycle: ship input telemetry for this score only when the
   // household config opts in. Re-arms on a score change; stops on unmount/disable.
   useEffect(() => {
-    if (!inputTelemetryEnabled(config)) return undefined;
+    if (!inputTelemetryEnabled(config, 'sheetmusic')) return undefined;
     startInputRec();
     return () => stopInputRec();
   }, [scoreMeta.id, config, startInputRec, stopInputRec]);
