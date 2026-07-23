@@ -63,8 +63,20 @@ function decodeRow(row, kinds, strings) {
  */
 export function decodeEvents(header, batches) {
   const kinds = (header && header.kinds) || {};
-  const strings = (header && header.strings) || [];
   const list = Array.isArray(batches) ? batches : [];
+  // Strings can be interned AFTER the header ships (the recorder starts the header
+  // before any control/component name is seen), so each batch carries the current
+  // string table. Build the union: header first, then every batch's table wins /
+  // accumulates by intern id, so a name is resolvable regardless of when it landed.
+  const strings = [];
+  const merge = (table) => {
+    if (!Array.isArray(table)) return;
+    for (let i = 0; i < table.length; i++) {
+      if (table[i] !== undefined) strings[i] = table[i];
+    }
+  };
+  merge(header && header.strings);
+  for (const batch of list) merge(batch && batch.strings);
   const out = [];
   for (const batch of list) {
     const rows = batch && Array.isArray(batch.b) ? batch.b : [];
