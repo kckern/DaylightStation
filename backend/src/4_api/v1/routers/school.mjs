@@ -10,6 +10,7 @@ export function createSchoolRouter({
   schoolService,
   getMaterialCatalog = null,
   getMaterialUnits = null,
+  getMaterialProgressSummary = null,
   materialProgressStore = null,
   getSchoolReport = null,
   printService = null,
@@ -119,6 +120,14 @@ export function createSchoolRouter({
     if (!getMaterialUnits) throw new EntityNotFoundError('material', req.params.materialId);
     const userId = req.query.userId || undefined;
     res.json(await getMaterialUnits.execute({ materialId: req.params.materialId, userId }));
+  }));
+
+  // Continue-rail data: the signed-in user's in-progress materials (newest
+  // first). Not wired (no materials config) → empty rail, never an error.
+  router.get('/users/:userId/material-progress', wrap(async (req, res) => {
+    if (!getMaterialProgressSummary) return res.json([]);
+    const subject = req.query.subject || undefined;
+    res.json(await getMaterialProgressSummary.execute({ userId: req.params.userId, subject }));
   }));
 
   router.put('/materials/:materialId/units/:unitId/progress', wrap((req, res) => {
