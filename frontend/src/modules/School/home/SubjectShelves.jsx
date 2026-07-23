@@ -46,10 +46,16 @@ function KindShelf({ shelf }) {
 }
 
 // Narrow (non-flood) poster tiles grow to fill the band width so a sparse
-// subject uses the space instead of leaving 3/4 empty: width = availWidth /
-// poster-count, clamped so a lone item isn't absurd and a 2:3 poster never
-// grows taller than the fold. Wide (flood) bands keep their compact tiles.
-const AVAIL = 1200; // ~body inner width
+// subject uses the space instead of leaving 3/4 empty: width = (availWidth −
+// gaps − list-shelf widths) / poster-count, clamped so a lone item isn't absurd
+// and a 2:3 poster never grows taller than the fold. Gaps ARE subtracted so
+// every shelf in the band stays on ONE row (else e.g. History's audio shelf
+// wrapped below the video row and dropped under the fold). Wide (flood) bands
+// keep their compact tiles.
+const AVAIL = 1220; // ~body inner width, slightly conservative
+const TILE_GAP = 12; // .school-shelf__grid gap (0.75rem)
+const SHELF_GAP = 28; // band column gap (1.75rem)
+const LIST_W = 320; // apps/decks fixed-width column
 const MIN_TILE = 180;
 const MAX_TILE = 300; // 2:3 → 450px tall, fits the ~680px fold with margin
 function bandTileWidth(band) {
@@ -58,7 +64,10 @@ function bandTileWidth(band) {
     .filter((s) => s.kindId === 'video' || s.kindId === 'audio')
     .reduce((n, s) => n + Math.min(s.items.length, s.cap), 0);
   if (posters === 0) return null;
-  return Math.max(MIN_TILE, Math.min(MAX_TILE, Math.floor(AVAIL / posters)));
+  const listCols = band.shelves.filter((s) => s.kindId === 'apps' || s.kindId === 'decks').length;
+  const gaps = Math.max(0, posters - 1) * TILE_GAP + Math.max(0, band.shelves.length - 1) * SHELF_GAP;
+  const avail = AVAIL - listCols * LIST_W - gaps;
+  return Math.max(MIN_TILE, Math.min(MAX_TILE, Math.floor(avail / posters)));
 }
 
 export default function SubjectShelves({ shelves }) {
