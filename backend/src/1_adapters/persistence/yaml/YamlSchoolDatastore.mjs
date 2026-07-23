@@ -1,8 +1,10 @@
 /**
  * YAML persistence for the school app. Dumb storage only — no grading, no
  * policy (see SchoolService). Mirrors YamlEconomyDatastore's layout:
- *   banks:    <dataDir>/content/quizzes/{bankId}.yml   (bankId may be a nested path)
- *   attempts: <userDir>/apps/school/attempts/{YYYY-MM-DD}.yml  (append-only)
+ *   banks:         <dataDir>/content/quizzes/{bankId}.yml  (bankId may be a nested path)
+ *   attempts:      <userDir>/apps/school/attempts/{YYYY-MM-DD}.yml  (append-only)
+ *   quiz requests: <dataDir>/apps/school/quiz-requests.yml  (one household list —
+ *                  NOT under content/quizzes, where listBankIds would sweep it up)
  */
 import path from 'path';
 import fs from 'fs';
@@ -32,6 +34,20 @@ export class YamlSchoolDatastore {
   #attemptsDir(userId) {
     if (!this.#configService.getUserProfile?.(userId)) return null;
     return path.join(this.#configService.getUserDir(userId), 'apps', 'school', 'attempts');
+  }
+
+  #quizRequestsPath() {
+    return path.join(this.#configService.getDataDir(), 'apps', 'school', 'quiz-requests');
+  }
+
+  readQuizRequests() {
+    return loadYamlSafe(this.#quizRequestsPath()) || [];
+  }
+
+  saveQuizRequests(list) {
+    ensureDir(path.dirname(this.#quizRequestsPath()));
+    saveYaml(this.#quizRequestsPath(), list, { noRefs: true });
+    return list;
   }
 
   listBankIds() {

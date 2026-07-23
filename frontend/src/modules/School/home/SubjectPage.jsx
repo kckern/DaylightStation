@@ -7,7 +7,7 @@ import BankBrowser from '../browse/BankBrowser.jsx';
  * practice banks (BankBrowser filtered to this subject). Groups only render
  * when they have content; a wholly empty shelf explains itself.
  */
-export default function SubjectPage({ subjectId, shelf, guestOnly, onLaunch, notice, onOpen }) {
+export default function SubjectPage({ subjectId, shelf, guestOnly, onLaunch, notice, onOpen, initialMaterialId = null }) {
   const empty = !shelf
     || (!shelf.materials.length && !shelf.banks.length && !shelf.courses.length);
   if (empty) {
@@ -39,7 +39,7 @@ export default function SubjectPage({ subjectId, shelf, guestOnly, onLaunch, not
 
       {shelf.materials.length > 0 && (
         <section className="school-subject__group">
-          <MaterialsSection materials={shelf.materials} />
+          <MaterialsSection materials={shelf.materials} initialMaterialId={initialMaterialId} />
         </section>
       )}
 

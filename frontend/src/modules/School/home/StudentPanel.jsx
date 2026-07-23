@@ -60,7 +60,7 @@ function relativeDay(iso) {
 }
 
 export default function StudentPanel({ onOpen, bankTitles }) {
-  const { currentUser, isGuest, openPicker } = useSchoolProfile();
+  const { currentUser, openPicker, roster, claim } = useSchoolProfile();
   const [reports, setReports] = useState(null);
   const [results, setResults] = useState(null);
 
@@ -82,12 +82,38 @@ export default function StudentPanel({ onOpen, bankTitles }) {
   const score = useMemo(() => deriveLatestScore(results, bankTitles), [results, bankTitles]);
 
   if (!currentUser) {
+    // The faces ARE the claim affordance: one tap on your own face, no
+    // intermediate picker. (Guests included — a guest claiming a face is
+    // just signing in.) Only the kids: parents claim through the picker
+    // (launch prompt), not the panel. Missing birthyear fails open — a kid
+    // must never vanish from the wall over absent data. Roster-fetch
+    // failure leaves no faces, so keep the picker button as the fallback
+    // affordance rather than a dead panel.
+    const kids = roster.filter(
+      (u) => !u.birthyear || new Date().getFullYear() - u.birthyear < 18,
+    );
     return (
       <section className="school-rail__student school-rail__student--unclaimed">
         <p className="school-rail__ask">Who&apos;s learning?</p>
-        <button type="button" className="school-rail__claim" onClick={openPicker}>
-          {isGuest ? 'Guest — tap to sign in' : 'Choose your face'}
-        </button>
+        {kids.length ? (
+          <div className="school-rail__faces">
+            {kids.map((u) => (
+              <button
+                key={u.id}
+                type="button"
+                className="school-rail__face"
+                onClick={() => claim(u.id)}
+              >
+                <ProfileAvatar id={u.id} name={u.name} />
+                <span>{String(u.name).split(' ')[0]}</span>
+              </button>
+            ))}
+          </div>
+        ) : (
+          <button type="button" className="school-rail__claim" onClick={openPicker}>
+            Choose your face
+          </button>
+        )}
       </section>
     );
   }

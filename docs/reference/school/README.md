@@ -100,8 +100,11 @@ never a recorded attempt — those are already on disk.
 
 ### The home shell
 
-School's landing surface is the **subject wall**: six fixed subjects — Reading,
-Civilization, Language, Math, Science, Writing — on the left two-thirds, and a
+School's landing surface is the **subject wall**: nine fixed paired subjects —
+English & Literature, Writing & Typing, Language & Culture, Math & Money,
+Science & Nature, Life & Skills, History & Geography, Scripture & Gospel,
+Art & Music — in a 3×3 grid on the left two-thirds, each tile carrying an
+inline-SVG shelf icon (`home/icons/`, household SVG Repo set), and a
 meta rail on the right third holding the **student panel** (identity, up-next
 action, latest score, done-for-today flip; tap = the full progress board) and
 the **Library**. One home serves claimed and unclaimed visitors alike — the
@@ -113,15 +116,39 @@ materials with quiz gates, quiz/flashcard banks — and one framework class can
 appear under any subject. Shelving is config-driven via a `subject:` field on
 materials sources (`school.yml`) and bank YAMLs (distinct from banks'
 free-form `topics` tags); language courses shelve under Language
-automatically. Untagged and `reference` content lands in the Library, whose
-Practice group holds untagged banks. An empty shelf renders greyed, not
-hidden. A tile never points at an absent endpoint.
+automatically. A source may carry `subject_overrides` (a `material-id →
+subject` map) for a mixed-subject Plex collection — one root holding a money
+show and a science show — so each show lands on its own shelf. Untagged and
+`reference` content lands in the Library, whose Practice group holds untagged
+banks. An empty shelf renders greyed, not hidden. A tile never points at an
+absent endpoint.
+
+**Deep links.** Under `/school` (or `/app/school`) the URL tracks the
+navigation level: `…/subject/<id>`, `…/subject/<id>/material/<materialId>`,
+`…/library`, `…/library/material/<materialId>`, `…/progress`, `…/practice`,
+`…/lang/<courseId>`. Opening a material URL lands straight on its unit
+browser; browser back/forward re-parse the URL. Mounted as the Portal screen
+widget there is no `/school` URL, so deep-linking is inert (home is the root).
+
+**Video course browser.** A material's units render FitnessShow-style —
+poster + context on the left, a thumbnail unit grid on the right — not a flat
+list. Units carry a proxied episode `thumb`; completed units show a check,
+locked ones a lock overlay, in-progress ones a resume bar.
+
+**Quizzes on demand.** A `course` unit with no authored quiz bank does NOT
+auto-satisfy its gate: the child can watch it, but the next unit stays locked
+("… is waiting for its quiz — request one to move on"). The current unit's
+info panel then offers **Request a quiz** — a signed-in child taps once to add
+the unit to the authoring backlog (`POST /quiz-requests`; household list at
+`data/apps/school/quiz-requests.yml`). Guests see the explanation but cannot
+request. Authoring a bank bound to that unit (`unit: plex:<key>`) restores the
+normal watch-then-quiz gate immediately.
 
 Back steps one navigation level: runner → shelf → home → exit. The exit
 control only exists when School is mounted as an app; on the Portal, where
 School is the screen, home is the root and no exit affordance renders.
 
-**Design specs:** [`2026-07-22-school-home-topics-redesign-design.md`](../../superpowers/specs/2026-07-22-school-home-topics-redesign-design.md), [`2026-07-22-school-materials-framework-design.md`](../../superpowers/specs/2026-07-22-school-materials-framework-design.md) §8
+**Design specs:** [`2026-07-22-school-nine-subjects-design.md`](../../superpowers/specs/2026-07-22-school-nine-subjects-design.md), [`2026-07-22-school-home-topics-redesign-design.md`](../../superpowers/specs/2026-07-22-school-home-topics-redesign-design.md), [`2026-07-22-school-materials-framework-design.md`](../../superpowers/specs/2026-07-22-school-materials-framework-design.md) §8
 
 ### The materials framework
 

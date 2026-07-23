@@ -75,16 +75,23 @@ export class GetMaterialUnits {
       const bank = this.#bankIndex.byUnit(unit.id);
       const percent = enriched[i]?.userPercent ?? null;
       const playhead = enriched[i]?.userPlayhead ?? null;
+      // A gated (course) unit with NO bank does not auto-satisfy its gate:
+      // the gate exists in principle, the quiz just hasn't been authored yet
+      // (quizzes are made on demand — see the request-a-quiz affordance).
+      // Watching stays open; moving on waits for the quiz. Ungated categories
+      // are unaffected (their completion never consults the gate).
       const gateSatisfied = bank
         ? (userId != null && quizSessionPassed(attempts, { bankId: bank.bankId, itemCount: bank.itemCount, passPercent: this.#config.quiz_pass_percent }))
-        : true;
+        : !categoryDef.gated;
+      const needsQuiz = Boolean(categoryDef.gated && !bank);
+      const played = (percent ?? 0) >= this.#config.completion_threshold_percent;
       const completed = unitCompleted({ percent: percent ?? 0, gateSatisfied }, categoryDef, {
         completionThresholdPercent: this.#config.completion_threshold_percent,
       });
       return {
-        unit, percent, playhead, completed,
+        unit, percent, playhead, completed, needsQuiz,
         quiz: bank ? { bankId: bank.bankId } : null,
-        gateInfo: { hasQuiz: !!bank, gateSatisfied },
+        gateInfo: { hasQuiz: !!bank, gateSatisfied, needsQuiz, played },
       };
     });
 
@@ -101,6 +108,7 @@ export class GetMaterialUnits {
       current: locks[i].current,
       lockReason: locks[i].lockReason,
       quiz: r.quiz,
+      needsQuiz: r.needsQuiz,
     }));
 
     const material = { ...full, category: catalogMaterial.category };

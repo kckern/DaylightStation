@@ -3,14 +3,22 @@ import { render, screen, fireEvent } from '@testing-library/react';
 import MaterialDetail from './MaterialDetail.jsx';
 
 const materialUnitsMock = vi.fn();
+const quizRequestsMock = vi.fn();
+const requestQuizMock = vi.fn();
 vi.mock('../schoolApi.js', () => ({
-  schoolApi: { materialUnits: (...a) => materialUnitsMock(...a) },
+  schoolApi: {
+    materialUnits: (...a) => materialUnitsMock(...a),
+    quizRequests: (...a) => quizRequestsMock(...a),
+    requestQuiz: (...a) => requestQuizMock(...a),
+  },
 }));
 
 const material = { id: 'plex:1', title: 'Bill Nye', category: 'course' };
 
 beforeEach(() => {
   materialUnitsMock.mockReset();
+  quizRequestsMock.mockReset().mockResolvedValue({ ok: true, status: 200, data: [] });
+  requestQuizMock.mockReset().mockResolvedValue({ ok: true, status: 200, data: { requested: true, duplicate: false } });
 });
 
 describe('MaterialDetail', () => {
@@ -29,8 +37,9 @@ describe('MaterialDetail', () => {
     expect(materialUnitsMock).toHaveBeenCalledWith('plex:1', 'kid1');
     expect(await screen.findByText('Air')).toBeInTheDocument();
     expect(screen.getByText('Water')).toBeInTheDocument();
-    expect(screen.getByText('~20 min')).toBeInTheDocument();
-    expect(screen.getByText('Done')).toBeInTheDocument();
+    expect(screen.getByText('20 min')).toBeInTheDocument();
+    // completed units carry the done modifier (check badge, not text)
+    expect(screen.getByText('Air').closest('button').className).toMatch(/--done/);
     // no group headers in a flat list
     expect(screen.queryByRole('heading', { level: 3 })).toBeNull();
   });
@@ -96,5 +105,39 @@ describe('MaterialDetail', () => {
     render(<MaterialDetail material={material} userId="kid1" onBack={() => {}} onPlay={() => {}} notice={null} sectionLabel="Courses" />);
     expect(screen.getByText(/loading/i)).toBeInTheDocument();
     expect(await screen.findByText(/no units yet/i)).toBeInTheDocument();
+  });
+
+  it('a needsQuiz current unit shows the request affordance; tapping it records the request and flips to requested', async () => {
+    materialUnitsMock.mockResolvedValue({
+      ok: true, status: 200,
+      data: {
+        material,
+        units: [
+          { id: 'plex:10', index: 1, title: 'Budgets', durationMs: null, group: null, percent: 100, playhead: 0, completed: false, locked: false, current: true, lockReason: null, quiz: null, needsQuiz: true },
+          { id: 'plex:11', index: 2, title: 'Saving', durationMs: null, group: null, percent: 0, playhead: 0, completed: false, locked: true, current: false, lockReason: '“Budgets” is waiting for its quiz — request one to move on', quiz: null, needsQuiz: false },
+        ],
+      },
+    });
+    render(<MaterialDetail material={material} userId="kid1" onBack={() => {}} onPlay={() => {}} notice={null} sectionLabel="Courses" />);
+    const btn = await screen.findByRole('button', { name: /request a quiz/i });
+    fireEvent.click(btn);
+    expect(requestQuizMock).toHaveBeenCalledWith(expect.objectContaining({ userId: 'kid1', unitId: 'plex:10', materialId: 'plex:1' }));
+    expect(await screen.findByRole('button', { name: /quiz requested/i })).toBeDisabled();
+  });
+
+  it('a guest sees the needsQuiz explanation but no request button', async () => {
+    materialUnitsMock.mockResolvedValue({
+      ok: true, status: 200,
+      data: {
+        material,
+        units: [
+          { id: 'plex:10', index: 1, title: 'Budgets', durationMs: null, group: null, percent: 100, playhead: 0, completed: false, locked: false, current: true, lockReason: null, quiz: null, needsQuiz: true },
+        ],
+      },
+    });
+    render(<MaterialDetail material={material} userId={undefined} onBack={() => {}} onPlay={() => {}} notice={null} sectionLabel="Courses" />);
+    expect(await screen.findByText(/doesn't have a quiz yet/i)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /request a quiz/i })).toBeNull();
+    expect(screen.getByText(/sign in to request one/i)).toBeInTheDocument();
   });
 });

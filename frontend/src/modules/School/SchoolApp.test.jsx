@@ -8,7 +8,7 @@ const materialUnitsMock = vi.fn();
 const unitProgressMock = vi.fn();
 vi.mock('./schoolApi.js', () => ({
   schoolApi: {
-    roster: vi.fn(async () => ({ ok: true, status: 200, data: [{ id: 'kid1', name: 'Alpha' }] })),
+    roster: vi.fn(async () => ({ ok: true, status: 200, data: [{ id: 'kid1', name: 'Alpha', birthyear: 2016 }, { id: 'dad1', name: 'Papa', birthyear: 1984 }] })),
     banks: (...a) => banksMock(...a),
     bank: vi.fn(async (id) => ({ ok: true, status: 200, data: { id, title: 'Caps', audience: 'assigned', items: [{ id: 'q1', type: 'multiple_choice', prompt: 'WA?', answer: 'Olympia', choices: ['Seattle', 'Olympia'] }] } })),
     openSession: vi.fn(async () => ({ ok: true, status: 200, data: { sessionId: 'ses_1' } })),
@@ -16,6 +16,8 @@ vi.mock('./schoolApi.js', () => ({
     materials: (...a) => materialsMock(...a),
     materialUnits: (...a) => materialUnitsMock(...a),
     unitProgress: (...a) => unitProgressMock(...a),
+    quizRequests: vi.fn(async () => ({ ok: true, status: 200, data: [] })),
+    requestQuiz: vi.fn(async () => ({ ok: true, status: 200, data: { requested: true, duplicate: false } })),
     report: vi.fn(async () => ({ ok: true, status: 200, data: { learners: [{ id: 'kid1', name: 'Alpha', reports: [] }] } })),
     results: vi.fn(async () => ({ ok: true, status: 200, data: [] })),
   },
@@ -91,21 +93,28 @@ async function tapMaterial(title) {
 }
 
 describe('SchoolApp home — the subject wall', () => {
-  it('renders all six subjects; empty shelves are greyed, not hidden', async () => {
+  it('renders all nine subjects; empty shelves are greyed, not hidden', async () => {
     render(<SchoolApp clear={() => {}} />);
-    for (const label of ['Reading', 'Civilization', 'Language', 'Math', 'Science', 'Writing']) {
+    for (const label of ['English & Literature', 'Writing & Typing', 'Language & Culture', 'Math & Money', 'Science & Nature', 'Life & Skills', 'History & Geography', 'Scripture & Gospel', 'Art & Music']) {
       expect(await screen.findByText(label)).toBeInTheDocument();
     }
-    // Empty catalog: every subject is disabled and explains itself.
-    const science = screen.getByText('Science').closest('button');
+    // Empty catalog: the shelf is disabled but keeps its own subtitle — a
+    // greyed tile already says "not yet"; no apology copy.
+    const science = screen.getByText('Science & Nature').closest('button');
     expect(science).toBeDisabled();
-    expect(within(science).getByText('Nothing here yet')).toBeInTheDocument();
+    expect(within(science).getByText('How the world and nature work')).toBeInTheDocument();
+    // Unclaimed: no header sign-in chip — the panel's face row is the claim
+    // affordance (their face appears there instead). Kids only: adults claim
+    // via the launch-prompt picker, not the panel.
+    expect(screen.queryByText('Tap to sign in')).toBeNull();
+    expect(screen.getByRole('button', { name: /Alpha/ })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Papa/ })).toBeNull();
   });
 
   it('a subject with shelved content is enabled and opens its page', async () => {
     materialsMock.mockResolvedValue(SAMPLE_CATALOG);
     render(<SchoolApp clear={() => {}} />);
-    const science = (await screen.findByText('Science')).closest('button');
+    const science = (await screen.findByText('Science & Nature')).closest('button');
     await waitFor(() => expect(science).not.toBeDisabled());
     fireEvent.click(science);
     expect((await screen.findAllByText('Bill Nye')).length).toBeGreaterThan(0);
@@ -126,15 +135,15 @@ describe('SchoolApp home — the subject wall', () => {
     await openLibrary();
     await screen.findByText('Caps');
     fireEvent.click(screen.getByRole('button', { name: /back to home/i }));
-    expect(await screen.findByText('Civilization')).toBeInTheDocument();
+    expect(await screen.findByText('History & Geography')).toBeInTheDocument();
     expect(screen.queryByText('Caps')).toBeNull();
   });
 
-  it('unclaimed, the student panel is the claim affordance', async () => {
+  it('unclaimed, tapping a face in the student panel claims directly', async () => {
     render(<SchoolApp clear={() => {}} />);
     expect(await screen.findByText(/who's learning\?/i)).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: /choose your face/i }));
-    expect(await screen.findByRole('dialog')).toBeInTheDocument();
+    fireEvent.click(await screen.findByRole('button', { name: /Alpha/ }));
+    expect(await screen.findByText('Hi Alpha')).toBeInTheDocument(); // header greeting = claimed
   });
 
   it('home shows Exit school only when a clear prop exists', async () => {
@@ -142,7 +151,7 @@ describe('SchoolApp home — the subject wall', () => {
     expect(await screen.findByRole('button', { name: /exit school/i })).toBeInTheDocument();
     unmount();
     render(<SchoolApp />);
-    expect(await screen.findByText('Civilization')).toBeInTheDocument();
+    expect(await screen.findByText('History & Geography')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /exit school/i })).toBeNull();
   });
 });
@@ -150,7 +159,7 @@ describe('SchoolApp home — the subject wall', () => {
 describe('language courses', () => {
   it('no ingested corpus leaves the Language shelf greyed — a tile never points at an absent endpoint', async () => {
     render(<SchoolApp clear={() => {}} />);
-    const language = (await screen.findByText('Language')).closest('button');
+    const language = (await screen.findByText('Language & Culture')).closest('button');
     await waitFor(() => expect(language).toBeDisabled());
     expect(screen.queryByText('Glossika Korean')).toBeNull();
   });
@@ -161,7 +170,7 @@ describe('language courses', () => {
       data: [{ id: 'glossika-korean', label: 'Glossika Korean', languages: { source: 'EN', target: 'KR' }, size: 3000 }],
     });
     render(<SchoolApp clear={() => {}} />);
-    const language = (await screen.findByText('Language')).closest('button');
+    const language = (await screen.findByText('Language & Culture')).closest('button');
     await waitFor(() => expect(language).not.toBeDisabled());
     fireEvent.click(language);
     expect(await screen.findByText('Glossika Korean')).toBeTruthy();
@@ -171,7 +180,7 @@ describe('language courses', () => {
   it('still builds the wall when the course listing fails', async () => {
     coursesMock.mockResolvedValue({ ok: false, status: 500, data: null });
     render(<SchoolApp clear={() => {}} />);
-    expect(await screen.findByText('Civilization')).toBeInTheDocument();
+    expect(await screen.findByText('History & Geography')).toBeInTheDocument();
   });
 });
 
@@ -260,15 +269,17 @@ describe('SchoolApp materials flows', () => {
       data: { material: SAMPLE_CATALOG.data.materials[0], units: [{ id: 'plex:10', index: 1, title: 'Air', durationMs: null, group: null, percent: 0, playhead: 0, completed: false, locked: false, current: true, lockReason: null, quiz: null }] },
     });
     render(<SchoolApp clear={() => {}} />);
-    // Become an explicit guest first via the header chip's picker.
-    fireEvent.click(await screen.findByRole('button', { name: /tap to sign in/i }));
-    fireEvent.click(await screen.findByLabelText(/close/i));
-    await screen.findByRole('button', { name: /^guest$/i }); // header chip; the student panel has its own guest button
-
+    // The header has no sign-in chip anymore: guesthood arises from waving
+    // off the picker when tracked work asks who's there.
     await openSubject(/science/i);
     await tapMaterial('Bill Nye');
     fireEvent.click(await screen.findByText('Air'));
+    expect(await screen.findByRole('dialog')).toBeInTheDocument();
+    fireEvent.click(await screen.findByLabelText(/close/i));
+    // The dismissed launch proceeds as guest and hits the course gate: the
+    // notice appears, the guest chip shows, and the picker does not return.
     expect(await screen.findByText(/sign in for courses/i)).toBeInTheDocument();
+    await screen.findByRole('button', { name: /^guest$/i });
     expect(screen.queryByRole('dialog')).toBeNull();
   });
 
