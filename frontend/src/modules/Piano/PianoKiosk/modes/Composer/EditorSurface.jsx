@@ -18,7 +18,8 @@ import { useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import { MusicXmlRenderer } from '../../../../MusicNotation/renderers/MusicXmlRenderer.jsx';
 import { usePianoMidi } from '../../PianoMidiContext.jsx';
 import getLogger from '../../../../../lib/logging/Logger.js';
-import { record, intern, KIND } from '../../../../../lib/logging/inputRecorder.js';
+import { record, intern, KIND, startRecorder, stopRecorder } from '../../../../../lib/logging/inputRecorder.js';
+import { inputTelemetryEnabled, makeInputSender } from '../../../../../lib/logging/inputTelemetryGate.js';
 import { midiToRecord } from '../SheetMusic/midiTap.js';
 import { initEditor, serializeFromEditor, undo, redo, makeRest } from './model/index.js';
 import { useComposerInput } from './useComposerInput.js';
@@ -496,6 +497,41 @@ export function EditorSurface({ initialScore, songId = null, initialRevision = 1
     const off = subscribeRaw((evt) => { const r = midiToRecord(evt?.data); if (r) record(r.kind, r.a, r.b, 0, 0); });
     return off;
   }, [subscribeRaw]);
+
+  // ── Input-telemetry recorder lifecycle (config-gated shipping) ────────────────
+  // The ring records unconditionally (raw MIDI above, toolbar taps via tapIntent);
+  // this only controls DRAINING it to the backend. start/stop are shared by the
+  // config-gated auto lifecycle and the window.__INPUT_REC__ kill switch, so the
+  // manual lever and the config path use the same one-event-per-batch sender.
+  // Copied from SheetMusic's ScorePlayer with composer-specific args: the
+  // piano-composer app tag, a draft-safe score id, and this file's `config` prop.
+  const inputSessionRef = useRef(null);
+  const startInputRec = useCallback(() => {
+    const session = new Date().toISOString();
+    inputSessionRef.current = session;
+    startRecorder({ session, score: songId ?? 'draft', ctx: { user: config?.user?.id }, send: makeInputSender('piano-composer'), flushMs: 1000 });
+  }, [songId, config]);
+  const stopInputRec = useCallback(() => { stopRecorder(); inputSessionRef.current = null; }, []);
+
+  // Kill switch: a deploy-free off/on lever, installed regardless of config so the
+  // recorder can be started/stopped from the console even when shipping is off.
+  useEffect(() => {
+    if (typeof window === 'undefined') return undefined;
+    window.__INPUT_REC__ = {
+      start: startInputRec,
+      stop: stopInputRec,
+      status: () => ({ enabled: inputSessionRef.current != null, session: inputSessionRef.current }),
+    };
+    return () => { if (window.__INPUT_REC__) window.__INPUT_REC__ = undefined; };
+  }, [startInputRec, stopInputRec]);
+
+  // Config-gated auto lifecycle: ship input telemetry for this song only when the
+  // household config opts in. Re-arms on a song change; stops on unmount/disable.
+  useEffect(() => {
+    if (!inputTelemetryEnabled(config)) return undefined;
+    startInputRec();
+    return () => stopInputRec();
+  }, [songId, config, startInputRec, stopInputRec]);
 
   // TWO RENDER PLANES (spec §2.1). OSMD engraves the SETTLED score only; notes
   // entered since then paint instantly as wet ink and dry at the next settle.
