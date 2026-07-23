@@ -1,7 +1,13 @@
 # Interactive Geography Quizzes — Design Spec
 
 **Date:** 2026-07-23
-**Status:** Approved for planning (revised after stern review)
+**Status:** Approved for planning (revised after two stern-review passes; second
+pass returned "ready to plan, no blockers" — its five should-fixes are folded in
+here: drill empty-default lane + `deriveLatestScore` exclusion (§5),
+unclaimed-identity launch via `onLaunch` + drill runner-mount branch + full
+`SchoolApp` wiring (§6), `useGradedSession` scoped to `GeoQuizRunner` only (§4),
+`available` deck flag + memoized `resolve` + thin `listDeckSummaries` endpoint
+(§Integration/§2), stable choice shuffle (§2))
 **Author:** KC Kern + Claude
 
 ## Goal
@@ -102,7 +108,13 @@ Geography banks are **synthesized in `SchoolService`**, addressed by colon-prefi
   Library and the double-entry-point bug. The **topic grid** gets its deck list
   from a new endpoint `GET /geography/decks` (served from
   `GeographyBankSource.listDeckSummaries()`), and opens each deck by its fixed
-  `geo:{deckId}` id via the normal `openSession`.
+  `geo:{deckId}` id via the normal `openSession`. The router
+  (`school.mjs`, injected-deps style) calls a thin
+  `schoolService.listDeckSummaries()` that aggregates over `bankSources` (keeps
+  the router thin, matches house style); `schoolApi.js` gains a `geoDecks()`
+  method. (A geography-named endpoint fronting a generic `IBankSource` port is a
+  mild smell — acceptable for MVP; a future generalized `/decks` is the
+  reusability path for non-geography interactive decks.)
 - No `2_domains`→`3_applications` or `1_adapters`→`3_applications` inversion: the
   generator is a pure `2_domains` function; the source is `3_applications`; the
   service injects the source. Dependencies point inward only.
@@ -111,9 +123,10 @@ Geography banks are **synthesized in `SchoolService`**, addressed by colon-prefi
 
 ### 1. New item types
 
-Added to `ITEM_TYPES`, `gradeAnswer`, `givenShapeError`, `validateQuestionBank`.
-Both grade by **strict `===`** (values are machine-generated ids, never free
-text).
+Added to `ITEM_TYPES`, `gradeAnswer`, and `validateQuestionBank`. **`givenShapeError`
+needs NO change** — both new types submit a non-empty string `given`, already
+covered by its default branch (the plan must not invent work here). Both grade by
+**strict `===`** (values are machine-generated ids, never free text).
 
 #### `map_click`
 ```yaml
@@ -173,21 +186,29 @@ for that state (US postal code).
 
 **Deck recipes** (`decks.yml`) — declare which banks exist and how each is built
 (`deckId`, `title`, `entities`, `itemType`, prompt template, `answerField`,
-`distractorField`, optional `map`/`promptImage`). One item per entity; stable id
-`geo:{deckId}:{entityId}`.
+`distractorField`, optional `map`/`promptImage`, and an **`available` flag** —
+`false` renders a greyed "coming soon" tile). One item per entity; stable id
+`geo:{deckId}:{entityId}`. `listDeckSummaries` returns unavailable decks (for the
+grey tiles); `resolve` **refuses to open** an unavailable deck (null → 404).
 
 **Distractors** (`distractors.mjs`, pure, deterministic): sampled from the same
 entity pool via a **named seeded PRNG** — a string hash of `deckId+entityId`
 seeding `mulberry32` (no `Math.random`; identical output every run, so the
 generator is testable). N distractors + the answer. **Order is deterministic in
 the generated bank, but the client presentation-shuffles choice order at render**
-(order is not graded) so drill doesn't teach "France is always button 2".
+(order is not graded) so drill doesn't teach "France is always button 2". **The
+shuffle must be stable per item render — memoized on `item.id`** — or the
+verdict re-render reshuffles the buttons under the child's finger (a test pins
+this).
 
 **`GeographyBankSource`**: `resolve('geo:{deckId}')` → build the bank from
-dataset+recipe on demand; `audience: 'generic'` (geography is not per-student
-assigned — this also satisfies `openSession`'s guest guard, which only blocks
-guests from non-generic banks). A test asserts every generated deck passes
-`validateQuestionBank`.
+dataset+recipe; **memoized per deck** (dataset is static per-process, so
+synthesize+validate once, not on every `openSession`). `audience: 'generic'`
+(geography is not per-student assigned — this also satisfies `openSession`'s
+guest guard, which only blocks guests from non-generic banks). A test asserts
+every generated deck passes `validateQuestionBank`. Note: `#loadBank`'s
+invalid-bank warning logs `file: ${bankId}.yml` — reword so a synthesized bank
+isn't reported as a missing file.
 
 ### 3. Frontend rendering
 
@@ -225,10 +246,15 @@ contract with the `submittedRef` double-tap guard and verdict styling mirroring
   since there is none), surface the unrecorded banner, and keep the session
   going. Never strand, never silently drop, never count as mastered.
 - Ends when the queue empties → `Mastered {N}/{N} · first try {k}`.
-- **Shared plumbing via a new `useGradedSession` hook** (extracted from the
-  QuizRunner/FlashcardRunner duplication: single-open gate on `status==='ready'`,
-  identity pin, synchronous `abandonedRef`, `410 → onExit`, unrecorded state).
-  Deliberately extracted rather than copied a third time.
+- **Shared plumbing via a new `useGradedSession` hook** (single-open gate on
+  `status==='ready'`, identity pin, synchronous `abandonedRef`, `410 → onExit`,
+  unrecorded state). **The hook is NEW code consumed by `GeoQuizRunner` ONLY.
+  QuizRunner and FlashcardRunner are NOT migrated in this plan** — their plumbing
+  is subtly non-identical (QuizRunner halts on unrecorded with a `verdict`;
+  FlashcardRunner proceeds locally; per-item `submittedRef` vs runner-level
+  `gradingRef`) and the files document hard-won identity-pin/in-flight-abandon
+  races. Migrating them is an explicit follow-on gated by their existing tests,
+  not engine surgery inside a content feature.
 - Runner's `ITEM_COMPONENTS` = the two new interactive types + reused
   `multiple_choice` (capitals).
 
@@ -247,21 +273,48 @@ Adding `drill` is **not** one line. Every surface, enumerated:
   (`GET /users/:userId/results`); noted for any consumer.
 - `summarize`: add a `drilled-geo` (or per-lane) metric from `mode==='drill'`
   attempts; do not fold into the existing quiz/flashcard counts.
+- `getResults` **empty-default object** (`SchoolService.mjs:242`, the
+  no-attempts / `byBank.get(bankId) || {…}` fallback) is hardcoded to
+  `{quiz, flashcard, items}` — **add `drill` here too**, or populated rows carry
+  a `drill` lane while empty rows don't (inconsistent shape).
+- **Frontend results consumer** `StudentPanel.deriveLatestScore`
+  (`StudentPanel.jsx:42`) iterates `['quiz','flashcard']`. **Decision: drill is
+  EXCLUDED from `deriveLatestScore`** (geography drill is practice, not a "latest
+  score"), stated so no one silently adds `'drill'` and then hits an undefined
+  title (geo banks aren't in `bankTitles`). `summarize`'s headline
+  `banks = new Set(attempts.map(a.bankId))` will count geo decks in "N sets
+  attempted" — acceptable, noted.
 - **Untouched by design:** `materialPolicy.quizSessionPassed` stays `mode==='quiz'`
   only — the R2.5 completion gate must not see drill. This is the reason drill
-  gets its own lane.
+  gets its own lane. `attempt.createAttempt` passes `mode` through unvalidated
+  (no change); `grades.mjs`, `reporting.mjs`, `GetSchoolReport` don't branch on
+  mode (no change).
 
 ### 6. Navigation + placeholder icons (rewritten against current home)
 
 - **`SubjectPage` `SUBJECT_PROGRAMS.history`** gains a `geography` entry
   (`{ id:'geography', label:'Geography', hint:'…', section:'geography' }`) — an
   app tile on the "History & Geography" shelf, the same mechanism Typing uses.
-- **New `geography` section**: needs handling in `SchoolApp.jsx`'s section switch
-  and `schoolUrl` parsing (both explicitly in scope — not free). The section
-  renders a **topic grid** (from `GET /geography/decks`): *State Locations, State
-  Capitals, World Flags* enabled; *Country Locations, State Flags, World Capitals*
-  greyed "coming soon" (recipes marked unavailable).
-- Each topic tile opens its `geo:{deckId}` bank in `GeoQuizRunner`.
+- **New `geography` section** — full wiring, all in `SchoolApp.jsx` (there is **no
+  `schoolUrl.js` module** — `parseSchoolPath`/`sectionPathFor` live at
+  `SchoolApp.jsx:69-103`; `schoolUrl.test.js` tests them there):
+  - `parseSchoolPath`/`sectionPathFor` learn the `geography` section (deep-link
+    round-trip; the existing `schoolUrl.test.js` gets cases).
+  - the section switch renders the **topic grid** (from `GET /geography/decks`).
+  - `sectionLabel` (`SchoolApp.jsx:255`) gets a `geography` case (else the
+    breadcrumb reads raw lowercase "geography").
+  - **Runner mount:** the mounts are hardcoded `active?.mode === 'quiz'` /
+    `'flashcard'` branches (`SchoolApp.jsx:373-374`). Add a **`active?.mode ===
+    'drill'` → `GeoQuizRunner`** branch (the geography grid sets
+    `active = {bank, mode:'drill'}` through the same `start`/`onLaunch` path).
+- **Topic grid must launch through `onLaunch` (`SchoolApp.jsx:175`), NOT open a
+  session directly.** `onLaunch` gates on `!currentUser && !isGuest` → `setPending`
+  + `openPicker` (the pending-launch/ProfilePicker convention). **Skipping it is
+  the silent-data-loss trap:** an *unclaimed* child (≠ guest — see the comment at
+  `SchoolApp.jsx:338`) would otherwise run a full 50-item drill with
+  `userId:null` and **zero attempts recorded**. Guests are legitimately allowed
+  (generic audience), but unclaimed must be prompted to pick first. The grid tile
+  calls `onLaunch(deckSummary, 'drill')`.
 - **Geography banks are NOT stamped with a `subject`** (would shelve to Library +
   duplicate the entry point). They are reached only by fixed id from the grid.
 - **Placeholder SVG icons** added to `home/icons/svg/`: `geography.svg`,
