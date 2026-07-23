@@ -12,6 +12,14 @@ describe('school subject icons', () => {
     }
   });
 
+  it('has an inline SVG for each content-kind glyph', () => {
+    for (const name of ['kind-video', 'kind-audio', 'kind-app', 'kind-deck']) {
+      const { container, unmount } = render(<Icon name={name} />);
+      expect(container.querySelector('svg'), `icon for ${name}`).not.toBeNull();
+      unmount();
+    }
+  });
+
   it('renders nothing for an unknown name', () => {
     const { container } = render(<Icon name="not-a-subject" />);
     expect(container.firstChild).toBeNull();
