@@ -2070,21 +2070,34 @@ export async function createApp({ server, logger, configPaths, configExists, ena
           }
           return rewritten;
         });
+      },
+      // PlexLabelSource.getMaterial dispatches by Plex type (album→audio,
+      // else video). One lightweight metadata read.
+      itemType: async (id) => {
+        if (!schoolPlexAdapter?.client) return null;
+        const rk = String(id).replace(/^plex:/, '');
+        const data = await schoolPlexAdapter.client.getContainer(`/library/metadata/${rk}`);
+        return data?.MediaContainer?.Metadata?.[0]?.type ?? null;
       }
     };
+    const plexAlbumSource = new PlexAlbumSource({
+      plexClient: schoolPlexClient,
+      logger: rootLogger.child({ module: 'school-materials' })
+    });
+    const plexShowSource = new PlexShowSource({
+      fitnessPlayableService,
+      plexClient: schoolPlexClient,
+      logger: rootLogger.child({ module: 'school-materials' }),
+      householdId
+    });
     const schoolMaterialSources = {
-      'plex-album': new PlexAlbumSource({
-        plexClient: schoolPlexClient,
-        logger: rootLogger.child({ module: 'school-materials' })
-      }),
-      'plex-show': new PlexShowSource({
-        fitnessPlayableService,
-        plexClient: schoolPlexClient,
-        logger: rootLogger.child({ module: 'school-materials' }),
-        householdId
-      }),
+      'plex-album': plexAlbumSource,
+      'plex-show': plexShowSource,
+      // Label-native curation: expansion delegated to the show/album sources by type.
       'plex-label': new PlexLabelSource({
         plexClient: schoolPlexClient,
+        videoSource: plexShowSource,
+        audioSource: plexAlbumSource,
         logger: rootLogger.child({ module: 'school-materials' })
       })
     };

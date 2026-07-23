@@ -38,10 +38,20 @@ function subjectFromLabels(labelTags) {
 
 export class PlexLabelSource {
   #plexClient;
+  #videoSource;
+  #audioSource;
   #logger;
 
-  constructor({ plexClient, logger = console }) {
+  /**
+   * @param {Object} deps
+   * @param {{listLabeled:function, itemType:function}} deps.plexClient
+   * @param {{getMaterial:function}} [deps.videoSource] - PlexShowSource, expands shows/seasons
+   * @param {{getMaterial:function}} [deps.audioSource] - PlexAlbumSource, expands albums
+   */
+  constructor({ plexClient, videoSource = null, audioSource = null, logger = console }) {
     this.#plexClient = plexClient;
+    this.#videoSource = videoSource;
+    this.#audioSource = audioSource;
     this.#logger = logger;
   }
 
@@ -68,6 +78,23 @@ export class PlexLabelSource {
       });
     }
     return materials;
+  }
+
+  /**
+   * Expand a labelled material into playable units. A `plex-label` material is
+   * a Plex show/season (video) or album (audio); expansion is delegated to the
+   * matching existing source (PlexShowSource / PlexAlbumSource) rather than
+   * re-implemented, dispatched by the item's Plex type. The returned material's
+   * `source` is normalised back to `plex-label`.
+   *
+   * @param {string} materialPlexId - `plex:<ratingKey>` or bare rating key
+   */
+  async getMaterial(materialPlexId) {
+    const type = await this.#plexClient.itemType(materialPlexId);
+    const delegate = type === 'album' ? this.#audioSource : this.#videoSource;
+    if (!delegate) throw new Error(`plex-label: no ${type === 'album' ? 'audio' : 'video'} source to expand ${materialPlexId}`);
+    const full = await delegate.getMaterial(materialPlexId);
+    return { ...full, source: SOURCE };
   }
 }
 
