@@ -83,7 +83,7 @@ export function useScoreTelemetry({ id }) {
     follow.current = [];
   }, [logger]);
 
-  return { startSession, logLoad, logLoadFailed, recordFire, recordSchedule, flushPlayback, recordFollowHit, flushFollow, logMeasureGrade, logRunSummary, logFocus, logTranspose, logMode };
+  return { logger, startSession, logLoad, logLoadFailed, recordFire, recordSchedule, flushPlayback, recordFollowHit, flushFollow, logMeasureGrade, logRunSummary, logFocus, logTranspose, logMode };
 }
 
 function pct(arr, pred) { return arr.length ? Math.round((arr.filter(pred).length / arr.length) * 100) : 0; }
