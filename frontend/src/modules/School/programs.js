@@ -47,9 +47,9 @@ export const PROGRAMS = {
   },
   typing: {
     label: 'Typing',
-    blurb: 'Coming soon',
-    available: false,
-    sectionFor: () => null,
+    blurb: 'Learn to touch-type',
+    available: true, // barebones drill (Writing & Typing shelf); no report yet
+    sectionFor: () => 'typing',
   },
 };
 

@@ -24,6 +24,7 @@ export const schoolLog = {
   materials: (detail, data) => emit('materials', detail, data),       // catalog-failed
   materialsError: (detail, data) => emit('materials', detail, data, 'error'),
   print:   (detail, data) => emit('print', detail, data),             // requested | printed | approval | approve | deny
+  typing:  (detail, data) => emit('typing', detail, data, 'debug'),   // line-done
 };
 
 export default schoolLog;
