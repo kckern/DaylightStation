@@ -92,12 +92,10 @@ export default function useMediaChrome(playerRef, { autoHide = false, idleMs = 3
     if (timer.current) clearTimeout(timer.current);
     if (autoHide && isPlaying) timer.current = setTimeout(() => setVisible(false), idleMs);
   }, [autoHide, isPlaying, idleMs]);
+  // `reveal` is the only way the bar comes back: the video's tap zones each
+  // call it alongside their transport command, so a tap always both acts and
+  // shows what it did. Nothing hides it explicitly — idle does.
   const reveal = useCallback(() => { setVisible(true); arm(); }, [arm]);
-  const hide = useCallback(() => { if (timer.current) clearTimeout(timer.current); setVisible(false); }, []);
-  const toggleControls = useCallback(() => setVisible((v) => {
-    if (v) { if (timer.current) clearTimeout(timer.current); return false; }
-    return true;
-  }), []);
   // Re-arm the auto-hide whenever it becomes visible while playing.
   useEffect(() => { if (visible) arm(); return () => timer.current && clearTimeout(timer.current); }, [visible, arm]);
   useEffect(() => { if (!autoHide || !isPlaying) setVisible(true); }, [autoHide, isPlaying]);
@@ -108,6 +106,6 @@ export default function useMediaChrome(playerRef, { autoHide = false, idleMs = 3
   return {
     isPlaying, currentTime, duration, volume,
     toggle, seek, skip, restart, setVolume,
-    visible, reveal, hide, toggleControls,
+    visible, reveal,
   };
 }
