@@ -441,8 +441,13 @@ export function EditorSurface({ initialScore, songId = null, initialRevision = 1
   // context, which outlives this component.
   useEffect(() => () => { transportRef.current?.stop(); silenceScheduled(); }, [silenceScheduled]);
 
+  // The caret's live measure, mirrored to a ref so useComposerInput's MIDI
+  // callback (registered once) tags each EDIT row with the bar the note landed
+  // in, reading the CURRENT caret rather than a stale mount-time closure.
+  const caretMeasureRef = useRef(editorState.caret.measureIdx);
+  caretMeasureRef.current = editorState.caret.measureIdx;
   const { hud, setDuration, toggleDot, toggleArm, addRest, deleteBack } = useComposerInput({
-    setEditorState, subscribe, logger, onTogglePlay: togglePlay, playing: transport.playing,
+    setEditorState, subscribe, logger, onTogglePlay: togglePlay, playing: transport.playing, caretMeasureRef,
   });
   // Autosave consumes the LIVE editorState, never settledScore: the two-plane
   // split below is a RENDER concern, and persistence must never wait on an
@@ -639,14 +644,14 @@ export function EditorSurface({ initialScore, songId = null, initialRevision = 1
   const doUndo = useCallback(() => {
     if (!canUndo) return;
     logger.info('composer.editor.undo', { remainingPast: (editorState.history?.past?.length || 1) - 1 });
-    record(KIND.EDIT, intern('undo'), 0, 0, 0);
+    record(KIND.EDIT, intern('undo'), 0, editorState.caret.measureIdx, 0);
     tapIntent('undo');
     setEditorState((s) => undo(s));
   }, [canUndo, editorState, logger, tapIntent]);
   const doRedo = useCallback(() => {
     if (!canRedo) return;
     logger.info('composer.editor.redo', { remainingFuture: (editorState.history?.future?.length || 1) - 1 });
-    record(KIND.EDIT, intern('redo'), 0, 0, 0);
+    record(KIND.EDIT, intern('redo'), 0, editorState.caret.measureIdx, 0);
     tapIntent('redo');
     setEditorState((s) => redo(s));
   }, [canRedo, editorState, logger, tapIntent]);

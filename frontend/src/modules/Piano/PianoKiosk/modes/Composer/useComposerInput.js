@@ -110,7 +110,7 @@ export function mapKey(code) {
  * @param {boolean} [playing] whether score playback is currently running. Gates
  *   armed note entry; see the echo guard on the MIDI subscription below.
  */
-export function useComposerInput({ setEditorState, subscribe, logger, onTogglePlay, playing = false }) {
+export function useComposerInput({ setEditorState, subscribe, logger, onTogglePlay, playing = false, caretMeasureRef }) {
   // Reuse the parent's child logger when given (keeps one `composer-editor`
   // context); fall back to a `composer-input` child so the hook is still
   // observable when used standalone (and in tests).
@@ -137,14 +137,19 @@ export function useComposerInput({ setEditorState, subscribe, logger, onTogglePl
   // measure, duration) pushed into the zero-alloc input-recorder ring ALONGSIDE
   // the semantic log below. The ring feeds the backend .jsonl trace; the logs
   // stay for human-readable diagnostics. `type`/`duration` are interned strings.
-  const recordEdit = (type, note = 0, measure = 0, duration = '') =>
+  //
+  // `measure` defaults to the LIVE caret measure (read from the ref each call,
+  // NOT captured at hook-mount) so an EDIT row carries the bar the note landed
+  // in — the "@bar3" correlation the trace exists for. Callers may still pass an
+  // explicit measure; the ref is optional so the hook works standalone.
+  const recordEdit = (type, note = 0, measure = caretMeasureRef?.current ?? 0, duration = '') =>
     record(KIND.EDIT, intern(type), note | 0, measure | 0, intern(duration));
 
   const setDuration = useCallback((type) => { sticky.current = { ...sticky.current, type }; sync(); recordEdit('duration', 0, 0, type); log.info('composer.input.duration', { type }); }, [log]);
   const toggleDot = useCallback(() => { sticky.current = { ...sticky.current, dots: sticky.current.dots ? 0 : 1 }; sync(); recordEdit('dot'); log.info('composer.input.dot', { dots: sticky.current.dots }); }, [log]);
   const toggleArm = useCallback(() => { armedRef.current = !armedRef.current; sync(); recordEdit('arm'); log.info('composer.input.arm', { armed: armedRef.current }); }, [log]);
   const addRest = useCallback(() => {
-    recordEdit('insert-rest', 0, 0, sticky.current.type);
+    recordEdit('insert-rest', 0, undefined, sticky.current.type); // measure ← live caret
     log.info('composer.input.rest', { duration: sticky.current.type, dots: sticky.current.dots });
     setEditorState((s) => applyCommand(s, insertRest, { ...sticky.current }));
   }, [setEditorState, log]);
@@ -231,7 +236,7 @@ export function useComposerInput({ setEditorState, subscribe, logger, onTogglePl
         duration: sticky.current.type,
         dots: sticky.current.dots,
       }, { maxPerMinute: 120, aggregate: true });
-      recordEdit('insert-note', evt.note, 0, sticky.current.type);
+      recordEdit('insert-note', evt.note, undefined, sticky.current.type); // measure ← live caret
       setEditorState((s) => applyCommand(s, insertNote, pitch, { ...sticky.current }));
     });
     return () => { log.debug('composer.input.midi-unsubscribed', {}); if (unsub) unsub(); };
