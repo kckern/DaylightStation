@@ -62,7 +62,10 @@
     background: var(--school-surface-2); color: var(--school-fg); font-size: 1rem; cursor: pointer;
     .piano-avatar { width: 2rem; height: 2rem; }
   }
-  &__body { flex: 1; overflow: auto; padding: 1rem; }
+  // Positioned so a full-bleed takeover (the material player) can fill THIS
+  // body via position:absolute — staying inside the screen-framework's
+  // fixed-resolution screen-root instead of escaping to the viewport.
+  &__body { position: relative; flex: 1; overflow: auto; padding: 1rem; }
 }
 
 // --- bank browser ---
@@ -302,22 +305,96 @@
   &__chapter-status { flex: 0 0 auto; color: var(--school-muted); font-size: 0.85rem; display: flex; align-items: center; }
 }
 
+// Loading skeleton for the show/program level — static dimmed blocks that
+// mirror the poster + grid/list layout (no keyframe animation; the kiosk
+// WebView drops frames under animation, and a subtle 2-tone is enough to read
+// as "loading").
+.school-skel {
+  &__poster { width: 100%; aspect-ratio: 2 / 3; max-width: 230px; border-radius: 14px; background: var(--school-surface-2); }
+  &__line { height: 0.9rem; border-radius: 6px; background: var(--school-surface-2); }
+  &__line--sm { width: 45%; }
+  &__tile { display: block; width: 100%; aspect-ratio: 16 / 9; border-radius: 10px; background: var(--school-surface-2); }
+  &__chapter { display: block; flex: 1; min-height: 56px; border-radius: 10px; background: var(--school-surface-2); }
+}
+
 .school-back-chevron { flex: 0 0 auto; vertical-align: middle; margin-right: 0.4rem; }
 
 // --- materials player (spec §2b/§6): shared Player wrap + quiz handoff ---
 // The shared Player measures its container on mount and fills it 100%. Nested
 // inline in a subject page (auto-height wrappers), that container measured 0 —
 // the Player rendered into a zero-height box, so audio played but nothing (no
-// video frame, no progress bar, no controls) was visible. A FIXED overlay
-// below the 64px header gives the Player a definite viewport size to fill,
-// while the header breadcrumb (…› material › unit) stays visible for back-nav.
+// video frame, no progress bar, no controls) was visible. Filling the school
+// body via position:absolute gives the Player a definite size AND keeps it
+// inside the screen-framework's fixed-resolution screen-root (a fixed overlay
+// would escape to the viewport and ignore the centered screen bounds). The
+// header breadcrumb sits above the body, so it stays visible for back-nav.
 .school-material-player {
-  position: fixed; inset: 64px 0 0 0; z-index: 40;
+  position: absolute; inset: 0; z-index: 40;
   display: flex; flex-direction: column; background: #000;
-  &__stage { flex: 1; min-height: 0; overflow: hidden; background: #000; }
+  &__stage { position: relative; flex: 1; min-height: 0; overflow: hidden; background: #000; }
   &__loading, &__placeholder {
     flex: 1; display: flex; align-items: center; justify-content: center;
     color: var(--school-muted); padding: 1rem;
+  }
+  // Video: a full-stage overlay ABOVE the video (translateZ(0) forces its own
+  // compositor layer so it paints over the GPU-promoted <video>, which
+  // otherwise covers z-index'd siblings). It ALWAYS captures taps (tap toggles
+  // the controls); the control bar itself fades in/out at the bottom.
+  &__overlay {
+    position: absolute; inset: 0; z-index: 50; transform: translateZ(0);
+    display: flex; flex-direction: column; justify-content: flex-end;
+  }
+  &__overlay-chrome {
+    background: linear-gradient(to top, rgba(0,0,0,0.9), rgba(0,0,0,0));
+    padding-top: 3rem;
+    transition: opacity 0.15s;
+  }
+  &__overlay.is-hidden &__overlay-chrome { opacity: 0; pointer-events: none; }
+  // We supply the whole transport; hide the shared Player's own chrome so it
+  // isn't a second, partial progress bar underneath ours.
+  .audio-player .progress-bar, .audio-player .audio-timing,
+  .video-player .progress-bar, & .player .progress-bar { display: none; }
+}
+
+// --- player chrome: transport bar (audio) / tap overlay (video) -------------
+// The progress bar spans the FULL width (edge to edge); the button row is
+// padded. Used for both the persistent audio bar and the video tap overlay.
+.school-chrome {
+  display: flex; flex-direction: column; gap: 0;
+  &--audio {
+    background: var(--school-surface); border-top: 1px solid var(--school-border);
+  }
+  &__bar {
+    position: relative; height: 10px; border-radius: 0;
+    background: rgba(255,255,255,0.25); cursor: pointer;
+  }
+  &--audio .school-chrome__bar { background: var(--school-surface-2); }
+  &__progress { position: absolute; left: 0; top: 0; bottom: 0; background: var(--school-fg); }
+  &__row { display: flex; align-items: center; gap: 0.4rem; padding: 0.6rem 1rem 0.9rem; }
+  &__time { flex: 0 0 auto; color: rgba(255,255,255,0.85); font-size: 0.9rem; font-variant-numeric: tabular-nums; }
+  &--audio .school-chrome__time { color: var(--school-muted); }
+  &__spacer { flex: 1; }
+  &__btn {
+    flex: 0 0 auto; min-width: 48px; min-height: 48px;
+    display: flex; align-items: center; justify-content: center;
+    border: none; background: transparent; color: #fff; font-size: 1.35rem; cursor: pointer;
+    border-radius: 10px;
+    &:disabled { opacity: 0.35; cursor: default; }
+    &.is-on { color: var(--school-fg); background: rgba(255,255,255,0.15); }
+  }
+  &--audio .school-chrome__btn { color: var(--school-fg); }
+  &__btn--play { font-size: 1.7rem; min-width: 56px; min-height: 56px; }
+  &__volume { position: relative; flex: 0 0 auto; }
+  &__volume-pop {
+    position: absolute; bottom: calc(100% + 6px); right: 0;
+    display: flex; gap: 0.25rem; padding: 0.35rem;
+    background: var(--school-surface-2); border: 1px solid var(--school-border); border-radius: 10px;
+  }
+  &__vol-step {
+    min-width: 40px; min-height: 40px; border-radius: 8px;
+    border: 1px solid var(--school-border); background: var(--school-surface); color: var(--school-fg);
+    font-size: 0.85rem; font-weight: 700; cursor: pointer;
+    &.is-active { border-color: var(--school-fg); background: var(--school-fg); color: var(--school-bg); }
   }
 }
 

@@ -24,9 +24,9 @@ describe('CATEGORIES', () => {
     });
   });
 
-  it('listening: not sequential, not gated, completion requires played only, no credit', () => {
+  it('listening: SEQUENTIAL (watch in order) but not gated, completion played only, no credit', () => {
     expect(CATEGORIES.listening).toEqual({
-      sequential: false,
+      sequential: true,
       gated: false,
       completion: ['played'],
       credit: { coins: false, curriculum: false },

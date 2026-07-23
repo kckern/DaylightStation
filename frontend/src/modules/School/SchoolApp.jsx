@@ -28,36 +28,60 @@ import { schoolLog } from './schoolLog.js';
 import './School.scss';
 
 /**
- * Deep-link URL model (only active when the pathname contains /school —
- * mounted as the Portal screen widget there is no /school URL to own):
- *   /school | /app/school                    -> home
- *   .../subject/<id>[/material/<mid>]        -> subject shelf (opt. detail)
- *   .../library[/material/<mid>]             -> Library (opt. detail)
- *   .../progress | .../practice              -> report | banks
- *   .../lang/<courseId>                      -> language program
+ * Deep-link URL model. Active for the standalone app mount (/school,
+ * /app/school) AND the Portal screen mount (/screen(s)/<id>) — the base is
+ * whatever prefix schoolUrlBase() resolves. The URL matches the breadcrumb all
+ * the way down; the materials chain past a subject/library section is the raw
+ * id trail, so a leaf deep-links straight to a playing track:
+ *   <base>                                        -> home
+ *   <base>/subject/<id>                           -> subject shelf
+ *   <base>/subject/<id>/<collectionId>            -> a collection's works
+ *   <base>/subject/<id>/<collectionId>/<workId>   -> a work's chapters
+ *   <base>/subject/<id>/<collectionId>/<workId>/<trackId>  -> playing a track
+ *   <base>/subject/<id>/<showId>/<episodeId>      -> playing a video episode
+ *   <base>/library[/…chain]                       -> Library (same chain rules)
+ *   <base>/progress | /practice | /print | /typing | /lang/<courseId>
  */
 function schoolUrlBase() {
-  const m = window.location.pathname.match(/^(.*?\/(?:app\/)?school)(?:\/|$)/);
-  return m ? m[1] : null;
+  const path = window.location.pathname;
+  // Standalone app mount: /school or /app/school.
+  const app = path.match(/^(.*?\/(?:app\/)?school)(?:\/|$)/);
+  if (app) return app[1];
+  // Screen-framework mount (the Portal): the base is /screen(s)/<screenId> and
+  // School's deep segments follow it. This runs only inside a mounted School,
+  // and School is only ever a screen's widget on the Portal — so matching any
+  // /screen(s)/<id> here is safe (a non-School screen never mounts School).
+  const screen = path.match(/^(\/screens?\/[^/]+)(?:\/|$)/);
+  if (screen) return screen[1];
+  return null;
 }
 
-function parseSchoolPath(urlBase) {
-  if (!urlBase) return { section: null, materialId: null };
+// Everything after a `subject/<id>` or `library` section is the MATERIALS
+// CHAIN — the raw id segments the breadcrumb descends through (collection →
+// work → track, or show → episode). So the URL matches the breadcrumb all the
+// way down, and a leaf like `…/483194/483214/483215` deep-links straight to a
+// playing track. The `plex:` source prefix is dropped in the URL (it's the
+// default) and re-added when reading a bare id; a non-plex id keeps its own
+// `prefix:` so it round-trips unchanged.
+const stripSource = (id) => String(id).replace(/^plex:/, '');
+const restoreSource = (seg) => (seg.includes(':') ? seg : `plex:${seg}`);
+
+export function parseSchoolPath(urlBase) {
+  const empty = { section: null, materialPath: [] };
+  if (!urlBase) return empty;
   const seg = window.location.pathname.slice(urlBase.length).split('/').filter(Boolean).map(decodeURIComponent);
-  if (!seg.length) return { section: null, materialId: null };
-  if (seg[0] === 'subject' && seg[1]) {
-    return { section: `subject:${seg[1]}`, materialId: seg[2] === 'material' ? (seg[3] ?? null) : null };
-  }
-  if (seg[0] === 'library') return { section: 'library', materialId: seg[1] === 'material' ? (seg[2] ?? null) : null };
-  if (seg[0] === 'progress') return { section: 'progress', materialId: null };
-  if (seg[0] === 'practice') return { section: 'banks', materialId: null };
-  if (seg[0] === 'print') return { section: 'print', materialId: null };
-  if (seg[0] === 'typing') return { section: 'typing', materialId: null };
-  if (seg[0] === 'lang' && seg[1]) return { section: `lang:${seg[1]}`, materialId: null };
-  return { section: null, materialId: null };
+  if (!seg.length) return empty;
+  if (seg[0] === 'subject' && seg[1]) return { section: `subject:${seg[1]}`, materialPath: seg.slice(2).map(restoreSource) };
+  if (seg[0] === 'library') return { section: 'library', materialPath: seg.slice(1).map(restoreSource) };
+  if (seg[0] === 'progress') return { section: 'progress', materialPath: [] };
+  if (seg[0] === 'practice') return { section: 'banks', materialPath: [] };
+  if (seg[0] === 'print') return { section: 'print', materialPath: [] };
+  if (seg[0] === 'typing') return { section: 'typing', materialPath: [] };
+  if (seg[0] === 'lang' && seg[1]) return { section: `lang:${seg[1]}`, materialPath: [] };
+  return empty;
 }
 
-function schoolPathFor(urlBase, section) {
+function sectionPathFor(urlBase, section) {
   if (section === null) return urlBase;
   if (section.startsWith('subject:')) return `${urlBase}/subject/${encodeURIComponent(section.slice(8))}`;
   if (section === 'library') return `${urlBase}/library`;
@@ -69,15 +93,26 @@ function schoolPathFor(urlBase, section) {
   return urlBase;
 }
 
+// Full path = the section path + the materials chain (subject/library only),
+// with the `plex:` prefix dropped from each id so the URL stays clean.
+export function schoolPathFor(urlBase, section, materialPath = []) {
+  const base = sectionPathFor(urlBase, section);
+  const carriesChain = section && (section.startsWith('subject:') || section === 'library');
+  if (!carriesChain || !materialPath.length) return base;
+  return `${base}/${materialPath.map((id) => encodeURIComponent(stripSource(id))).join('/')}`;
+}
+
 function SchoolShell({ clear }) {
   const { status, roster, currentUser, isGuest, pickerOpen, openPicker, claim, continueAsGuest } = useSchoolProfile();
   const { crumbs: extraCrumbs } = useSchoolBreadcrumbBar();
   const urlBase = useMemo(schoolUrlBase, []);
   const initialLink = useMemo(() => parseSchoolPath(urlBase), [urlBase]);
   const [section, setSection] = useState(initialLink.section); // a sections id, or null = home grid
-  // One-shot: the material detail a deep link asked for; consumed by
-  // MaterialsSection on mount, cleared on any in-app navigation.
-  const [deepMaterialId, setDeepMaterialId] = useState(initialLink.materialId);
+  // The materials chain below the section (collection → work → track ids). It
+  // is both the DEEP-LINK input MaterialsSection restores from on entry and the
+  // live nav state it reports back so the URL stays in lock-step with the
+  // breadcrumb all the way down to a playing track.
+  const [materialPath, setMaterialPath] = useState(initialLink.materialPath);
   const [active, setActive] = useState(null);   // {bank, mode} — only ever set within 'banks'
   const [pending, setPending] = useState(null); // {bankSummary, mode} awaiting a claim
   const [notice, setNotice] = useState(null);
@@ -147,16 +182,16 @@ function SchoolShell({ clear }) {
     if (pending) { start(pending.bankSummary, pending.mode, true); setPending(null); }
   }, [continueAsGuest, pending, start]);
 
-  const syncUrl = useCallback((id) => {
+  const syncUrl = useCallback((sec, chain = []) => {
     if (!urlBase) return;
-    const path = schoolPathFor(urlBase, id);
+    const path = schoolPathFor(urlBase, sec, chain);
     if (window.location.pathname !== path) window.history.pushState({}, '', path);
   }, [urlBase]);
 
   const openSection = useCallback((id) => {
     setSection(id);
-    setDeepMaterialId(null);
-    syncUrl(id);
+    setMaterialPath([]);
+    syncUrl(id, []);
     schoolLog.nav('section', { section: id });
   }, [syncUrl]);
 
@@ -166,19 +201,29 @@ function SchoolShell({ clear }) {
     setSection(null);
     setActive(null);
     setNotice(null);
-    setDeepMaterialId(null);
-    syncUrl(null);
+    setMaterialPath([]);
+    syncUrl(null, []);
     schoolLog.nav('home', {});
   }, [syncUrl]);
 
+  // MaterialsSection reports its live nav chain (collection → work → track ids)
+  // here so the URL tracks the breadcrumb all the way down to a playing track.
+  const onMaterialNav = useCallback((chain) => {
+    const next = Array.isArray(chain) ? chain.filter(Boolean) : [];
+    setMaterialPath(next);
+    // syncUrl reads `section` from closure; it's stable while a MaterialsSection
+    // is mounted (you can't change section without unmounting it).
+    setSection((sec) => { syncUrl(sec, next); return sec; });
+  }, [syncUrl]);
+
   // Browser back/forward re-parse the URL — the address bar and the shell
-  // never disagree.
+  // never disagree, at any depth.
   useEffect(() => {
     if (!urlBase) return undefined;
     const onPop = () => {
       const link = parseSchoolPath(urlBase);
       setSection(link.section);
-      setDeepMaterialId(link.materialId);
+      setMaterialPath(link.materialPath);
     };
     window.addEventListener('popstate', onPop);
     return () => window.removeEventListener('popstate', onPop);
@@ -288,7 +333,8 @@ function SchoolShell({ clear }) {
             onLaunch={onLaunch}
             notice={notice}
             onOpen={openSection}
-            initialMaterialId={deepMaterialId}
+            initialMaterialPath={materialPath}
+            onMaterialNav={onMaterialNav}
           />
         )}
         {section === 'library' && !active && (
@@ -297,7 +343,8 @@ function SchoolShell({ clear }) {
             guestOnly={isGuest}
             onLaunch={onLaunch}
             notice={notice}
-            initialMaterialId={deepMaterialId}
+            initialMaterialPath={materialPath}
+            onMaterialNav={onMaterialNav}
           />
         )}
         {active?.mode === 'quiz' && <QuizRunner bank={active.bank} onExit={() => setActive(null)} />}

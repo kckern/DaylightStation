@@ -25,6 +25,7 @@ export const schoolLog = {
   materialsError: (detail, data) => emit('materials', detail, data, 'error'),
   print:   (detail, data) => emit('print', detail, data),             // requested | printed | approval | approve | deny
   typing:  (detail, data) => emit('typing', detail, data, 'debug'),   // line-done
+  player:  (detail, data) => emit('player', detail, data),            // media-resolved | media-unresolved | chrome-visibility
 };
 
 export default schoolLog;

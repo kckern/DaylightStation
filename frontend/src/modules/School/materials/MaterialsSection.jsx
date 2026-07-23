@@ -23,25 +23,19 @@ import SchoolMaterialPlayer from './SchoolMaterialPlayer.jsx';
 
 const COURSE_NOTICE = 'Sign in for courses — guests get the listening shelf.';
 
-export default function MaterialsSection({ materials, sectionLabel, initialMaterialId = null }) {
+export default function MaterialsSection({ materials, sectionLabel, initialMaterialPath = [], onMaterialNav }) {
   const { currentUser, isGuest, openPicker } = useSchoolProfile();
   // Three levels below the grid for an audio anthology (collection → work →
   // chapter); a video show or a plain material skips the collection level.
   const [collection, setCollection] = useState(null); // opened collection material | null
   const [detailMaterial, setDetailMaterial] = useState(null); // a work or plain material | null
-
-  // Deep link: open straight onto the requested material's detail once the
-  // catalog row exists. One-shot — in-app navigation after that wins.
-  const consumedDeepLinkRef = useRef(false);
-  useEffect(() => {
-    if (!initialMaterialId || consumedDeepLinkRef.current) return;
-    const m = materials.find((x) => x.id === initialMaterialId);
-    if (m) {
-      consumedDeepLinkRef.current = true;
-      if (m.kind === 'collection') setCollection(m); else setDetailMaterial(m);
-    }
-  }, [initialMaterialId, materials]);
   const [playing, setPlaying] = useState(null); // {material, unit} | null
+
+  // The deep chain the URL asked for (collection → work → track ids). It seeds
+  // the top level here and hands the deeper ids to the children as one-shots
+  // (CollectionDetail auto-opens the work, MaterialDetail auto-plays the track)
+  // so a leaf URL restores all the way down to a playing track.
+  const [restoreChain, setRestoreChain] = useState(initialMaterialPath);
   const [notice, setNotice] = useState(null);
   // Bumped whenever the player exits with {refetch:true} (lock state may
   // have changed — a completed unit can unlock the next one). Keying
@@ -117,6 +111,60 @@ export default function MaterialsSection({ materials, sectionLabel, initialMater
     setPlaying(null);
   }, []);
 
+  // The live id chain (collection → work/material → unit), the source of both
+  // the breadcrumb depth and the URL. Filtered so a video show (no collection)
+  // is [show, unit] and an audio track is [collection, work, track].
+  const chain = useMemo(() => {
+    if (playing) return [collection?.id, playing.material.id, playing.unit.id].filter(Boolean);
+    if (detailMaterial) return [collection?.id, detailMaterial.id].filter(Boolean);
+    if (collection) return [collection.id];
+    return [];
+  }, [collection, detailMaterial, playing]);
+
+  // Report nav changes UP so the URL tracks the breadcrumb to the leaf. Guarded
+  // on the joined key so it fires once per real change (and our own report,
+  // which round-trips back as initialMaterialPath, is recognised as "already
+  // there" by the restore effect below — no loop).
+  const lastReportedRef = useRef(chain.join('/'));
+  useEffect(() => {
+    const key = chain.join('/');
+    if (lastReportedRef.current === key) return;
+    lastReportedRef.current = key;
+    onMaterialNav?.(chain);
+  }, [chain, onMaterialNav]);
+
+  // Restore from a deep link, and reconcile on browser back/forward. Resolves
+  // the top level here (find id1 in the catalog); the children consume the
+  // deeper ids. Skips when the incoming path already equals the live chain
+  // (i.e. it IS our own just-reported nav) so it never fights manual navigation.
+  const restoreKeyRef = useRef(null);
+  useEffect(() => {
+    const key = (initialMaterialPath || []).join('/');
+    if (key === chain.join('/')) { restoreKeyRef.current = key; return; }
+    if (restoreKeyRef.current === key) return;
+    restoreKeyRef.current = key;
+    setRestoreChain(initialMaterialPath || []);
+    setPlaying(null);
+    const id1 = (initialMaterialPath || [])[0];
+    const m = id1 ? materials.find((x) => x.id === id1) : null;
+    if (!m) { setCollection(null); setDetailMaterial(null); return; }
+    if (m.kind === 'collection') { setCollection(m); setDetailMaterial(null); }
+    else { setCollection(null); setDetailMaterial(m); }
+    // `chain` intentionally omitted: this reacts to URL changes only, not to
+    // our own navigation (which updates chain and would re-enter needlessly).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialMaterialPath, materials]);
+
+  // The deeper ids handed to the children as one-shots, only when they match
+  // the level currently open (so a stale restore id never auto-opens the wrong
+  // work/track after manual navigation).
+  const initialWorkId = collection && restoreChain[0] === collection.id ? (restoreChain[1] ?? null) : null;
+  const initialUnitId = detailMaterial
+    ? (collection
+        ? (restoreChain[0] === collection.id && restoreChain[1] === detailMaterial.id ? (restoreChain[2] ?? null) : null)
+        : (restoreChain[0] === detailMaterial.id ? (restoreChain[1] ?? null) : null))
+    : null;
+
   // Publish this subtree's breadcrumb trail (past the apple home anchor) so the
   // header renders it — grid → [collection] → detail → player each add a crumb
   // instead of owning a back header. Each ancestor crumb carries the handler
@@ -148,6 +196,7 @@ export default function MaterialsSection({ materials, sectionLabel, initialMater
         unit={playing.unit}
         userId={currentUser?.id}
         onExit={onPlayerExit}
+        onNavigate={(u) => setPlaying({ material: playing.material, unit: u })}
       />
     );
   }
@@ -162,12 +211,13 @@ export default function MaterialsSection({ materials, sectionLabel, initialMater
         onPlay={onPlay}
         notice={notice}
         sectionLabel={collection ? collection.title : sectionLabel}
+        initialUnitId={initialUnitId}
       />
     );
   }
 
   if (collection) {
-    return <CollectionDetail collection={collection} onOpenWork={openWork} />;
+    return <CollectionDetail collection={collection} onOpenWork={openWork} initialWorkId={initialWorkId} />;
   }
 
   return <MaterialGrid materials={materials} onSelect={openDetail} />;

@@ -8,6 +8,7 @@ vi.mock('../schoolApi.js', () => ({
   schoolApi: {
     unitProgress: (...a) => unitProgressMock(...a),
     bank: (...a) => bankMock(...a),
+    materialUnits: vi.fn(async () => ({ ok: true, status: 200, data: { units: [] } })),
   },
 }));
 
@@ -17,6 +18,7 @@ vi.mock('../schoolLog.js', () => ({
   schoolLog: {
     materials: (...a) => materialsMock(...a),
     materialsError: (...a) => materialsErrorMock(...a),
+    player: vi.fn(),
   },
 }));
 

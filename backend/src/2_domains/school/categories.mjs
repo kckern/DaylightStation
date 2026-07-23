@@ -21,9 +21,13 @@ export const CATEGORIES = {
     completion: [],
     credit: { coins: false, curriculum: false }
   },
-  // Freestyle listening (retires R9). Records "finished", earns nothing.
+  // In-order listening/watching. Records "finished", earns nothing, but plays
+  // SEQUENTIALLY by default — every episode after the first is locked until the
+  // previous is watched (no quiz gate, unlike `course`). This is the sensible
+  // default for a show/program (a Bible video series, an audiobook): don't skip
+  // ahead. `reference` remains the free-browse escape hatch.
   listening: {
-    sequential: false,
+    sequential: true,
     gated: false,
     completion: ['played'],
     credit: { coins: false, curriculum: false }

@@ -8,10 +8,10 @@
  * Purely presentational — MaterialsSection owns the selection and the
  * breadcrumb; this component only fetches and renders the works.
  */
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { schoolApi } from '../schoolApi.js';
 
-export default function CollectionDetail({ collection, onOpenWork }) {
+export default function CollectionDetail({ collection, onOpenWork, initialWorkId = null }) {
   const [works, setWorks] = useState(null);
 
   useEffect(() => {
@@ -24,6 +24,31 @@ export default function CollectionDetail({ collection, onOpenWork }) {
     return () => { alive = false; };
   }, [collection.id]);
 
+  // Deep-link restore: once the works resolve, auto-open the one the URL named
+  // (one-shot per requested id) so a leaf URL descends past the works browser.
+  const consumedRef = useRef(null);
+  useEffect(() => {
+    if (!initialWorkId || !works || consumedRef.current === initialWorkId) return;
+    const w = works.find((x) => x.id === initialWorkId);
+    if (w) { consumedRef.current = initialWorkId; onOpenWork(w); }
+  }, [initialWorkId, works, onOpenWork]);
+
+  if (works === null) {
+    return (
+      <div className="school-material-detail">
+        <div className="school-material-detail__layout school-skel" aria-hidden="true">
+          <aside className="school-material-detail__info">
+            <div className="school-skel__poster" />
+            <div className="school-skel__line school-skel__line--sm" />
+          </aside>
+          <ul className="school-material-detail__works">
+            {Array.from({ length: 8 }).map((_, i) => <li key={i}><span className="school-skel__tile" /></li>)}
+          </ul>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="school-material-detail">
       <div className="school-material-detail__layout">
@@ -31,16 +56,13 @@ export default function CollectionDetail({ collection, onOpenWork }) {
           {collection.poster && (
             <img className="school-material-detail__poster" src={collection.poster} alt="" />
           )}
-          <h2 className="school-material-detail__title">{collection.title}</h2>
-          {works !== null && (
-            <p className="school-material-detail__progress-line">
-              {works.length} {works.length === 1 ? 'work' : 'works'}
-            </p>
-          )}
+          {/* No title here — the header breadcrumb already names this collection. */}
+          <p className="school-material-detail__progress-line">
+            {works.length} {works.length === 1 ? 'work' : 'works'}
+          </p>
         </aside>
         <div className="school-material-detail__units-panel">
-          {works === null && <div className="school-material-detail__loading">Loading…</div>}
-          {works !== null && works.length === 0 && (
+          {works.length === 0 && (
             <div className="school-material-detail__empty">Nothing here yet.</div>
           )}
           {works !== null && works.length > 0 && (
