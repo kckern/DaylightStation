@@ -314,10 +314,61 @@
 .school-material-player {
   position: fixed; inset: 64px 0 0 0; z-index: 40;
   display: flex; flex-direction: column; background: #000;
-  &__stage { flex: 1; min-height: 0; overflow: hidden; background: #000; }
+  &__stage { position: relative; flex: 1; min-height: 0; overflow: hidden; background: #000; }
   &__loading, &__placeholder {
     flex: 1; display: flex; align-items: center; justify-content: center;
     color: var(--school-muted); padding: 1rem;
+  }
+  // Video: the chrome floats over the video at the bottom of the stage,
+  // summoned by a tap and auto-hiding. No persistent bar — the video fills.
+  &__overlay {
+    position: absolute; left: 0; right: 0; bottom: 0; z-index: 2;
+    background: linear-gradient(to top, rgba(0,0,0,0.75), rgba(0,0,0,0));
+    padding-top: 2rem;
+  }
+  // Audio: the AudioPlayer's own progress bar is redundant with our chrome's,
+  // so hide it; our chrome bar sits below the cover as the transport.
+  &--audio .audio-player .progress-bar { display: none; }
+}
+
+// --- player chrome: transport bar (audio) / tap overlay (video) -------------
+.school-chrome {
+  display: flex; flex-direction: column; gap: 0.5rem;
+  padding: 0.75rem 1rem 1rem;
+  &--audio {
+    background: var(--school-surface); border-top: 1px solid var(--school-border);
+  }
+  &__bar {
+    position: relative; height: 8px; border-radius: 999px;
+    background: rgba(255,255,255,0.22); cursor: pointer;
+  }
+  &--audio .school-chrome__bar { background: var(--school-surface-2); }
+  &__progress { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 999px; background: var(--school-fg); }
+  &__row { display: flex; align-items: center; gap: 0.4rem; }
+  &__time { flex: 0 0 auto; color: rgba(255,255,255,0.85); font-size: 0.9rem; font-variant-numeric: tabular-nums; }
+  &--audio .school-chrome__time { color: var(--school-muted); }
+  &__spacer { flex: 1; }
+  &__btn {
+    flex: 0 0 auto; min-width: 48px; min-height: 48px;
+    display: flex; align-items: center; justify-content: center;
+    border: none; background: transparent; color: #fff; font-size: 1.35rem; cursor: pointer;
+    border-radius: 10px;
+    &:disabled { opacity: 0.35; cursor: default; }
+    &.is-on { color: var(--school-fg); background: rgba(255,255,255,0.15); }
+  }
+  &--audio .school-chrome__btn { color: var(--school-fg); }
+  &__btn--play { font-size: 1.7rem; min-width: 56px; min-height: 56px; }
+  &__volume { position: relative; flex: 0 0 auto; }
+  &__volume-pop {
+    position: absolute; bottom: calc(100% + 6px); right: 0;
+    display: flex; gap: 0.25rem; padding: 0.35rem;
+    background: var(--school-surface-2); border: 1px solid var(--school-border); border-radius: 10px;
+  }
+  &__vol-step {
+    min-width: 40px; min-height: 40px; border-radius: 8px;
+    border: 1px solid var(--school-border); background: var(--school-surface); color: var(--school-fg);
+    font-size: 0.85rem; font-weight: 700; cursor: pointer;
+    &.is-active { border-color: var(--school-fg); background: var(--school-fg); color: var(--school-bg); }
   }
 }
 
