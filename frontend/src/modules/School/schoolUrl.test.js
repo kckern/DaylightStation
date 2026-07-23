@@ -15,16 +15,21 @@ describe('parseSchoolPath — full materials chain', () => {
     expect(parseSchoolPath(BASE)).toEqual({ section: 'subject:history', materialPath: [] });
   });
 
-  it('parses the full collection → work → track chain to the leaf', () => {
-    at(`${BASE}/subject/history/plex:483194/plex:483214/plex:483215`);
+  it('parses a bare collection → work → track chain, assuming plex: per segment', () => {
+    at(`${BASE}/subject/history/483194/483214/483215`);
     expect(parseSchoolPath(BASE)).toEqual({
       section: 'subject:history',
       materialPath: ['plex:483194', 'plex:483214', 'plex:483215'],
     });
   });
 
+  it('a non-plex prefixed id keeps its own prefix (round-trips unchanged)', () => {
+    at(`${BASE}/subject/history/local:abc`);
+    expect(parseSchoolPath(BASE)).toEqual({ section: 'subject:history', materialPath: ['local:abc'] });
+  });
+
   it('parses a library chain', () => {
-    at(`${BASE}/library/plex:1/plex:2`);
+    at(`${BASE}/library/1/2`);
     expect(parseSchoolPath(BASE)).toEqual({ section: 'library', materialPath: ['plex:1', 'plex:2'] });
   });
 
@@ -36,7 +41,7 @@ describe('parseSchoolPath — full materials chain', () => {
   });
 
   it('works under the /app/school base too', () => {
-    at('/app/school/subject/math/plex:489954/plex:489956');
+    at('/app/school/subject/math/489954/489956');
     expect(parseSchoolPath('/app/school')).toEqual({
       section: 'subject:math',
       materialPath: ['plex:489954', 'plex:489956'],
@@ -45,9 +50,9 @@ describe('parseSchoolPath — full materials chain', () => {
 });
 
 describe('schoolPathFor — round-trips the chain', () => {
-  it('composes section + chain', () => {
+  it('composes section + chain with bare ids (plex: stripped)', () => {
     expect(schoolPathFor(BASE, 'subject:history', ['plex:483194', 'plex:483214', 'plex:483215']))
-      .toBe(`${BASE}/subject/history/plex%3A483194/plex%3A483214/plex%3A483215`);
+      .toBe(`${BASE}/subject/history/483194/483214/483215`);
   });
 
   it('a section with no chain is just the section path', () => {
