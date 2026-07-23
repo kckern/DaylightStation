@@ -93,11 +93,21 @@ export default function useMediaChrome(playerRef, { autoHide = false, idleMs = 3
     if (autoHide && isPlaying) timer.current = setTimeout(() => setVisible(false), idleMs);
   }, [autoHide, isPlaying, idleMs]);
   const reveal = useCallback(() => { setVisible(true); arm(); }, [arm]);
-  useEffect(() => { arm(); return () => timer.current && clearTimeout(timer.current); }, [arm]);
+  const hide = useCallback(() => { if (timer.current) clearTimeout(timer.current); setVisible(false); }, []);
+  const toggleControls = useCallback(() => setVisible((v) => {
+    if (v) { if (timer.current) clearTimeout(timer.current); return false; }
+    return true;
+  }), []);
+  // Re-arm the auto-hide whenever it becomes visible while playing.
+  useEffect(() => { if (visible) arm(); return () => timer.current && clearTimeout(timer.current); }, [visible, arm]);
   useEffect(() => { if (!autoHide || !isPlaying) setVisible(true); }, [autoHide, isPlaying]);
   // Log video-chrome visibility flips (helps confirm tap-to-reveal + auto-hide
   // on the real device, where the overlay must appear over the video on tap).
   useEffect(() => { if (autoHide) schoolLog.player('chrome-visibility', { visible, isPlaying }); }, [autoHide, visible, isPlaying]);
 
-  return { isPlaying, currentTime, duration, volume, toggle, seek, skip, restart, setVolume, visible, reveal };
+  return {
+    isPlaying, currentTime, duration, volume,
+    toggle, seek, skip, restart, setVolume,
+    visible, reveal, hide, toggleControls,
+  };
 }

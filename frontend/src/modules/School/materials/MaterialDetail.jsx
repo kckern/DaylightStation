@@ -60,6 +60,31 @@ const CheckGlyph = () => (
   </svg>
 );
 
+// Loading skeleton mirroring the eventual layout (poster left, unit grid or
+// chapter list right) so the load reads as "content is coming", not "empty".
+// Static blocks (no keyframe animation — the kiosk WebView drops frames).
+export function DetailSkeleton({ audio = false }) {
+  return (
+    <div className="school-material-detail__layout school-skel" aria-hidden="true">
+      <aside className="school-material-detail__info">
+        <div className="school-skel__poster" />
+        <div className="school-skel__line school-skel__line--sm" />
+      </aside>
+      <div className="school-material-detail__units-panel">
+        {audio ? (
+          <ul className="school-material-detail__chapters">
+            {Array.from({ length: 6 }).map((_, i) => <li key={i}><span className="school-skel__chapter" /></li>)}
+          </ul>
+        ) : (
+          <ul className="school-material-detail__units">
+            {Array.from({ length: 8 }).map((_, i) => <li key={i}><span className="school-skel__tile" /></li>)}
+          </ul>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export default function MaterialDetail({ material, userId, onBack, onPlay, notice, sectionLabel, initialUnitId = null }) {
   const [units, setUnits] = useState(null);
   const [requestedUnitIds, setRequestedUnitIds] = useState(() => new Set());
@@ -123,12 +148,14 @@ export default function MaterialDetail({ material, userId, onBack, onPlay, notic
       {/* No back row here — the app header's breadcrumb (…› section › this
           material) is the navigation. */}
       {notice && <div className="school-material-detail__notice">{notice}</div>}
+      {units === null && <DetailSkeleton audio={isAudio} />}
+      {units !== null && (
       <div className="school-material-detail__layout">
         <aside className="school-material-detail__info">
           {material.poster && (
             <img className="school-material-detail__poster" src={material.poster} alt="" />
           )}
-          <h2 className="school-material-detail__title">{material.title}</h2>
+          {/* No title here — the header breadcrumb already names this material. */}
           {units !== null && units.length > 0 && (
             <p className="school-material-detail__progress-line">
               {doneCount} of {units.length} done
@@ -162,8 +189,7 @@ export default function MaterialDetail({ material, userId, onBack, onPlay, notic
           )}
         </aside>
         <div className="school-material-detail__units-panel">
-          {units === null && <div className="school-material-detail__loading">Loading…</div>}
-          {units !== null && units.length === 0 && (
+          {units.length === 0 && (
             <div className="school-material-detail__empty">No units yet.</div>
           )}
           {/* Audio chapters have no thumbnails, so a video-style poster grid
@@ -251,6 +277,7 @@ export default function MaterialDetail({ material, userId, onBack, onPlay, notic
           ))}
         </div>
       </div>
+      )}
     </div>
   );
 }
