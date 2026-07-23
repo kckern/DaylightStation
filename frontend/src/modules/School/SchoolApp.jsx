@@ -16,6 +16,7 @@ import SchoolHome from './home/SchoolHome.jsx';
 import SubjectPage from './home/SubjectPage.jsx';
 import LibraryPage from './home/LibraryPage.jsx';
 import PrintCenter from './print/PrintCenter.jsx';
+import TypingTutor from './Typing/TypingTutor.jsx';
 import Icon from './home/icons/Icon.jsx';
 import { SchoolBreadcrumbProvider, useSchoolBreadcrumbBar } from './SchoolBreadcrumbContext.jsx';
 import { groupBySubject, subjectLabel } from './home/subjects.js';
@@ -51,6 +52,7 @@ function parseSchoolPath(urlBase) {
   if (seg[0] === 'progress') return { section: 'progress', materialId: null };
   if (seg[0] === 'practice') return { section: 'banks', materialId: null };
   if (seg[0] === 'print') return { section: 'print', materialId: null };
+  if (seg[0] === 'typing') return { section: 'typing', materialId: null };
   if (seg[0] === 'lang' && seg[1]) return { section: `lang:${seg[1]}`, materialId: null };
   return { section: null, materialId: null };
 }
@@ -62,6 +64,7 @@ function schoolPathFor(urlBase, section) {
   if (section === 'progress') return `${urlBase}/progress`;
   if (section === 'banks') return `${urlBase}/practice`;
   if (section === 'print') return `${urlBase}/print`;
+  if (section === 'typing') return `${urlBase}/typing`;
   if (section.startsWith('lang:')) return `${urlBase}/lang/${encodeURIComponent(section.slice(5))}`;
   return urlBase;
 }
@@ -201,8 +204,9 @@ function SchoolShell({ clear }) {
         : section === 'progress' ? 'My Progress'
           : section === 'banks' ? 'Practice'
             : section === 'print' ? 'Print'
-              : courseId ? (courses.find((c) => c.id === courseId)?.label ?? 'Language')
-                : section;
+              : section === 'typing' ? 'Typing'
+                : courseId ? (courses.find((c) => c.id === courseId)?.label ?? 'Language')
+                  : section;
 
   // The header trail past the apple home anchor. Deep material routes publish
   // their own full sub-trail (section crumb → material → unit, each with its
@@ -274,6 +278,7 @@ function SchoolShell({ clear }) {
             whole household. Both scopes are the same endpoint, filtered. */}
         {section === 'progress' && <ReportPanel userId={currentUser?.id || null} />}
         {section === 'print' && <PrintCenter />}
+        {section === 'typing' && <TypingTutor />}
         {section === 'banks' && !active && <BankBrowser guestOnly={isGuest} onLaunch={onLaunch} notice={notice} />}
         {subjectId && !active && (
           <SubjectPage

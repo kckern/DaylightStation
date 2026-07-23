@@ -8,9 +8,18 @@ import { subjectLabel } from './subjects.js';
  * practice banks (BankBrowser filtered to this subject). Groups only render
  * when they have content; a wholly empty shelf explains itself.
  */
+// Built-in program launchers per subject — first-class School programs that
+// aren't Plex/bank content (a typing drill, a writing surface later). Each
+// opens a top-level section. Kept here (a frontend routing concern) rather
+// than in the content pipeline, the same split PROGRAMS makes.
+const SUBJECT_PROGRAMS = {
+  writing: [{ id: 'typing', label: 'Typing', hint: 'Learn to touch-type', section: 'typing' }],
+};
+
 export default function SubjectPage({ subjectId, shelf, guestOnly, onLaunch, notice, onOpen, initialMaterialId = null }) {
-  const empty = !shelf
-    || (!shelf.materials.length && !shelf.banks.length && !shelf.courses.length);
+  const programs = SUBJECT_PROGRAMS[subjectId] ?? [];
+  const empty = programs.length === 0 && (!shelf
+    || (!shelf.materials.length && !shelf.banks.length && !shelf.courses.length));
   if (empty) {
     return (
       <div className="school-subject school-subject--empty">
@@ -20,7 +29,24 @@ export default function SubjectPage({ subjectId, shelf, guestOnly, onLaunch, not
   }
   return (
     <div className="school-subject">
-      {shelf.courses.length > 0 && (
+      {programs.length > 0 && (
+        <section className="school-subject__group">
+          <div className="school-home__grid">
+            {programs.map((prog) => (
+              <button
+                key={prog.id}
+                type="button"
+                className="school-home__tile"
+                onClick={() => onOpen(prog.section)}
+              >
+                <h3 className="school-home__label">{prog.label}</h3>
+                <p className="school-home__hint">{prog.hint}</p>
+              </button>
+            ))}
+          </div>
+        </section>
+      )}
+      {shelf?.courses?.length > 0 && (
         <section className="school-subject__group">
           <div className="school-home__grid">
             {shelf.courses.map((c) => (
