@@ -135,6 +135,16 @@ describe('SubjectPage', () => {
       .map((h) => h.textContent);
     expect(titles.indexOf('Second Video')).toBeLessThan(titles.indexOf('Big History'));
 
+    // The started video carries its per-user percent (joined onto the item
+    // before ranking), so its tile renders the progress underline. (The title
+    // renders in both the poster placeholder and the <h3>, so locate the tile
+    // via its heading to stay unambiguous.)
+    const startedHeading = within(watchSection)
+      .getAllByRole('heading', { level: 3 })
+      .find((h) => h.textContent === 'Second Video');
+    const startedTile = startedHeading.closest('.school-tile');
+    expect(startedTile.querySelector('.school-tile__progress')).not.toBeNull();
+
     // One fetch, not two: SubjectPage owns the progress fetch and hands it to
     // ContinueRail as a prop, so ContinueRail must not self-fetch on top.
     expect(schoolApi.materialProgress).toHaveBeenCalledTimes(1);

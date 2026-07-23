@@ -52,6 +52,14 @@ export default function SubjectPage({ subjectId, shelf, guestOnly, onLaunch, not
     ? gradeFromBirthyear(currentUser.birthyear, new Date().getFullYear())
     : null;
   const progressList = progress ?? [];
+  // Join per-user progress onto the matching material (progress.materialId ===
+  // item.id) so Watch/Listen tiles can render their percent underline. Only
+  // video/audio items match a progress row; apps/decks pass through untouched.
+  const progressById = new Map(progressList.map((p) => [p.materialId, p]));
+  const withProgress = (items) => items.map((it) => {
+    const p = progressById.get(it.id);
+    return p ? { ...it, percent: p.percent } : it;
+  });
 
   const programs = SUBJECT_PROGRAMS[subjectId] ?? [];
   const grouped = groupByKind({ shelf, programs });
@@ -96,7 +104,7 @@ export default function SubjectPage({ subjectId, shelf, guestOnly, onLaunch, not
             <KindSection
               key={kind.id}
               kind={kind}
-              items={rankWithin(grouped[kind.id], { progress: progressList, studentGrade })}
+              items={rankWithin(withProgress(grouped[kind.id]), { progress: progressList, studentGrade })}
               Tile={kind.Tile}
               onOpen={openFor(kind.id, onSelect)}
             />
