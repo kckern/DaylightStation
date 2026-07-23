@@ -36,11 +36,15 @@ beforeEach(() => {
 });
 
 describe('banks', () => {
-  it('lists only valid banks, with itemCount; invalid bank warns and is skipped', () => {
+  it('lists structurally-present banks with itemCount; a bank with no items is skipped', () => {
     const list = svc.listBanks();
     expect(list.map((b) => b.id).sort()).toEqual(['animals', 'caps', 'unit-quiz']);
     expect(list.find((b) => b.id === 'caps').itemCount).toBe(2);
-    expect(warned).toContain('school.bank.invalid');
+    // Listing summarises headers only — it does NOT validate item content (that
+    // happens on open, in getBank), so it doesn't read/validate/LOG every
+    // question of every bank on each render. With 4600+ banks that per-item
+    // work (and its warning spam) was ~5s of event-loop-blocking waste per call.
+    expect(warned).not.toContain('school.bank.invalid');
   });
   it('audience filter', () => {
     expect(svc.listBanks({ audience: 'generic' }).map((b) => b.id)).toEqual(['animals']);

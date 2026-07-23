@@ -101,3 +101,33 @@ export function validateQuestionBank(raw) {
   if (errors.length) return { ok: false, errors };
   return { ok: true, bank: { id: raw.id, title: raw.title, audience, topics, subject, items: raw.items, unit, readalong } };
 }
+
+/**
+ * Cheap summary for LISTING/shelving a bank — its header fields + item count,
+ * WITHOUT the per-item validation loop above (the expensive part: thousands of
+ * question checks across every bank, ~5s that blocks the event loop). Listing
+ * doesn't render items, so it doesn't need them validated; full validation
+ * happens only when a bank is actually opened (validateQuestionBank, via
+ * getBank). Returns null for a bank missing the essentials that even a tile
+ * needs (id/title, a non-empty items array, a legible audience).
+ *
+ * @param {*} raw - parsed bank YAML
+ * @returns {{id, title, audience, topics, subject, itemCount, unit}|null}
+ */
+export function summarizeQuestionBank(raw) {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+  if (!isNonEmptyString(raw.id) || !isNonEmptyString(raw.title)) return null;
+  if (!Array.isArray(raw.items) || raw.items.length === 0) return null;
+  const audience = raw.audience === undefined || raw.audience === null ? 'assigned' : raw.audience;
+  if (!AUDIENCES.has(audience)) return null;
+  const topics = Array.isArray(raw.topics) && raw.topics.every((t) => typeof t === 'string') ? raw.topics : [];
+  return {
+    id: raw.id,
+    title: raw.title,
+    audience,
+    topics,
+    subject: isNonEmptyString(raw.subject) ? raw.subject : null,
+    itemCount: raw.items.length,
+    unit: isNonEmptyString(raw.unit) ? raw.unit : undefined,
+  };
+}

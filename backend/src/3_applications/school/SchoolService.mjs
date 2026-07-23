@@ -4,25 +4,17 @@
  * thin shell. Sessions are IN MEMORY by design — a restart costs the remainder
  * of one sitting, never a recorded attempt (those are already on disk).
  */
-import { validateQuestionBank, gradeAnswer, givenShapeError, createAttempt, GuestForbiddenError, SessionGoneError } from '#domains/school/index.mjs';
+import { validateQuestionBank, summarizeQuestionBank, gradeAnswer, givenShapeError, createAttempt, GuestForbiddenError, SessionGoneError } from '#domains/school/index.mjs';
 import { ValidationError, EntityNotFoundError } from '#domains/core/errors/index.mjs';
 import { PersistenceError } from '#system/utils/errors/index.mjs';
 import { shortId } from '#domains/core/utils/id.mjs';
 
 const SESSION_TTL_MS = 2 * 60 * 60 * 1000;
 const MODES = new Set(['quiz', 'flashcard']);
-// listBanks() reads + parses + validates EVERY bank YAML (hundreds of files) —
-// ~5s of synchronous work that blocks the whole event loop, called on every
-// home load and every gating-bank lookup. Cache the loaded set briefly: a
-// newly-authored bank still appears within the TTL (no restart needed), but the
-// wall no longer stalls for seconds and async work (Plex fetches, the health
-// probe) isn't starved behind it.
-const BANKS_TTL_MS = 30_000;
 
 export class SchoolService {
   #ds; #userService; #logger; #now;
   #sessions = new Map(); // sessionId -> {id, userId|null, bankId, mode, bank, startedAt, lastActiveAt}
-  #banksCache = null; // { at: number, banks: Array<loadedBank> }
 
   constructor({ datastore, userService, logger = console, now = () => Date.now() }) {
     this.#ds = datastore;
@@ -87,20 +79,20 @@ export class SchoolService {
     return r.bank;
   }
 
-  // All valid banks, loaded + validated once per TTL. The expensive read/parse/
-  // validate of every bank file happens on a cache miss only.
-  #allBanks() {
-    const now = this.#now();
-    if (this.#banksCache && (now - this.#banksCache.at) < BANKS_TTL_MS) return this.#banksCache.banks;
-    const banks = this.#ds.listBankIds().map((id) => this.#loadBank(id)).filter(Boolean);
-    this.#banksCache = { at: now, banks };
-    return banks;
-  }
-
+  // Listing/shelving reads each bank's HEADER only (summarizeQuestionBank) — no
+  // per-item validation. That per-item loop across every bank was ~5s of
+  // synchronous work blocking the event loop on each home load; the list never
+  // renders items, so it never needed them validated. Full validation still
+  // happens when a bank is actually opened (getBank -> #loadBank).
   listBanks({ audience } = {}) {
-    return this.#allBanks()
-      .filter((b) => !audience || b.audience === audience)
-      .map((b) => ({ id: b.id, title: b.title, audience: b.audience, topics: b.topics, subject: b.subject ?? null, itemCount: b.items.length, unit: b.unit }));
+    return this.#ds.listBankIds()
+      .map((id) => {
+        const raw = this.#ds.readBankRaw(id);
+        const s = raw ? summarizeQuestionBank(raw) : null;
+        return s ? { ...s, id: s.id ?? id, subject: s.subject ?? null } : null;
+      })
+      .filter(Boolean)
+      .filter((b) => !audience || b.audience === audience);
   }
 
   getBank(bankId) {
