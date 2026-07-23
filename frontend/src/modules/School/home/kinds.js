@@ -1,12 +1,17 @@
+import VideoCourseTile from './tiles/VideoCourseTile.jsx';
+import AudioCourseTile from './tiles/AudioCourseTile.jsx';
+import AppTile from './tiles/AppTile.jsx';
+import DeckTile from './tiles/DeckTile.jsx';
+
 // The four content kinds a subject's shelf is partitioned into, in the order
 // they render after the Continue rail. `verb` is the section header; `icon` is
-// the glyph name (Phase 0); `token` maps to a `--kind-*` colour. The per-kind
-// `Tile` component is added in Phase 3 (Task 3.5).
+// the glyph name (Phase 0); `token` maps to a `--kind-*` colour; `Tile` is the
+// per-kind presentational tile component KindSection renders per item.
 export const KINDS = [
-  { id: 'video', verb: 'Watch', descriptor: 'Video courses', icon: 'kind-video', token: 'video' },
-  { id: 'audio', verb: 'Listen', descriptor: 'Audio courses', icon: 'kind-audio', token: 'audio' },
-  { id: 'apps', verb: 'Apps', descriptor: 'Play & practice', icon: 'kind-app', token: 'app' },
-  { id: 'decks', verb: 'Practice', descriptor: 'Quizzes & flashcards', icon: 'kind-deck', token: 'deck' },
+  { id: 'video', verb: 'Watch', descriptor: 'Video courses', icon: 'kind-video', token: 'video', Tile: VideoCourseTile },
+  { id: 'audio', verb: 'Listen', descriptor: 'Audio courses', icon: 'kind-audio', token: 'audio', Tile: AudioCourseTile },
+  { id: 'apps', verb: 'Apps', descriptor: 'Play & practice', icon: 'kind-app', token: 'app', Tile: AppTile },
+  { id: 'decks', verb: 'Practice', descriptor: 'Quizzes & flashcards', icon: 'kind-deck', token: 'deck', Tile: DeckTile },
 ];
 
 // Partition a subject shelf (materials/banks/courses) + first-class programs
