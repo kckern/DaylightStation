@@ -63,7 +63,7 @@ describe('MaterialDetail', () => {
     expect(screen.queryByText('Season 2')).toBeNull();
   });
 
-  it('a locked unit tap is a no-op and shows its lockReason; an unlocked/current tap calls onPlay', async () => {
+  it('a locked unit tap is a no-op (button disabled); an unlocked/current tap calls onPlay', async () => {
     materialUnitsMock.mockResolvedValue({
       ok: true, status: 200,
       data: {
@@ -78,7 +78,9 @@ describe('MaterialDetail', () => {
     render(<MaterialDetail material={material} userId="kid1" onBack={() => {}} onPlay={onPlay} notice={null} sectionLabel="Courses" />);
     await screen.findByText('Ep 1');
 
-    expect(screen.getByText('Finish Ep 1 first')).toBeInTheDocument();
+    // The left-rail "Finish X first" lock note was removed by design — the
+    // locked state now shows only as the disabled unit button + lock glyph.
+    expect(screen.queryByText('Finish Ep 1 first')).toBeNull();
     const lockedBtn = screen.getByText('Ep 2').closest('button');
     expect(lockedBtn).toBeDisabled();
     fireEvent.click(lockedBtn);

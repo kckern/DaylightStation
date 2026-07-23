@@ -69,6 +69,7 @@ export class PlexLabelSource {
         id: `plex:${item.ratingKey}`,
         title: item.title,
         poster: item.thumb ?? null,
+        summary: item.summary ?? null, // Plex description, shown under the detail poster
         source: SOURCE,
         medium: item.type === 'album' ? 'audio' : 'video',
         durationMs: null,

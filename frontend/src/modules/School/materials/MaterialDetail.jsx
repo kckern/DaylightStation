@@ -78,7 +78,7 @@ export function DetailSkeleton({ audio = false }) {
           </ul>
         ) : (
           <ul className="school-material-detail__units">
-            {Array.from({ length: 8 }).map((_, i) => <li key={i}><span className="school-skel__tile" /></li>)}
+            {Array.from({ length: 16 }).map((_, i) => <li key={i}><span className="school-skel__tile" /></li>)}
           </ul>
         )}
       </div>
@@ -176,18 +176,34 @@ export default function MaterialDetail({ material, userId, onBack, onPlay, notic
           {material.poster && (
             <img className="school-material-detail__poster" src={sizedPlexImage(material.poster, ...ART_BOX.detailPoster)} alt="" />
           )}
-          {/* No title here — the header breadcrumb already names this material. */}
-          {units !== null && units.length > 0 && (
-            <p className="school-material-detail__progress-line">
-              {doneCount} of {units.length} done
-            </p>
+          {/* No title here — the header breadcrumb already names this material.
+              Progress: a % bar, then one dot per unit (green done, amber
+              partial, hollow not-started). No "N of M done", no per-lock note. */}
+          {units.length > 0 && (
+            <div className="school-material-detail__progress">
+              <div className="school-material-detail__progress-bar">
+                <span
+                  className="school-material-detail__progress-fill"
+                  style={{ width: `${Math.round((doneCount / units.length) * 100)}%` }}
+                />
+              </div>
+              <span className="school-material-detail__progress-pct">
+                {Math.round((doneCount / units.length) * 100)}%
+              </span>
+              <ul className="school-material-detail__dots" aria-hidden="true">
+                {units.map((u) => (
+                  <li
+                    key={u.id}
+                    className={`school-material-detail__dot${
+                      u.completed ? ' is-done' : (u.percent ?? 0) > 0 ? ' is-partial' : ''
+                    }`}
+                  />
+                ))}
+              </ul>
+            </div>
           )}
-          {/* One blocker line, not one per locked card: every locked unit
-              carries the same reason (the current unit's obligation). */}
-          {units?.find((u) => u.locked)?.lockReason && (
-            <p className="school-material-detail__lock-note">
-              {units.find((u) => u.locked).lockReason}
-            </p>
+          {material.summary && (
+            <p className="school-material-detail__summary">{material.summary}</p>
           )}
           {showRequestPanel && (
             <div className="school-material-detail__quiz-request">
