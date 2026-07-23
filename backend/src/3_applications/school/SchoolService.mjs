@@ -10,7 +10,7 @@ import { PersistenceError } from '#system/utils/errors/index.mjs';
 import { shortId } from '#domains/core/utils/id.mjs';
 
 const SESSION_TTL_MS = 2 * 60 * 60 * 1000;
-const MODES = new Set(['quiz', 'flashcard']);
+const MODES = new Set(['quiz', 'flashcard', 'drill']);
 // The household has 4600+ bank files; even summarising them is 4600 synchronous
 // file reads (~10s) — and the gating bank index rebuilds via listBanks() on
 // EVERY unit lookup, so a 44-chapter material scanned them 44 times. Cache the
@@ -169,7 +169,7 @@ export class SchoolService {
 
   openSession({ userId = null, bankId, mode }) {
     this.#sweepExpired();
-    if (!MODES.has(mode)) throw new ValidationError(`mode must be quiz|flashcard, got: ${mode}`);
+    if (!MODES.has(mode)) throw new ValidationError(`mode must be quiz|flashcard|drill, got: ${mode}`);
     if (userId != null && !this.#userService.getProfile(userId)) throw new ValidationError(`unknown user: ${userId}`);
     const bank = this.getBank(bankId); // throws EntityNotFoundError
     if (userId == null && bank.audience !== 'generic') {
@@ -198,7 +198,7 @@ export class SchoolService {
     if (!item) throw new ValidationError(`unknown item: ${itemId}`);
 
     let correct, expected, recordedGiven;
-    if (s.mode === 'quiz') {
+    if (s.mode === 'quiz' || s.mode === 'drill') {
       if (selfGrade !== undefined) throw new ValidationError('selfGrade is not accepted on a quiz session');
       const shapeErr = givenShapeError(item, given);
       if (shapeErr) throw new ValidationError(shapeErr);
@@ -231,7 +231,7 @@ export class SchoolService {
       }
       attemptId = attempt.id;
     }
-    return s.mode === 'quiz' ? { correct, expected, attemptId } : { attemptId };
+    return (s.mode === 'quiz' || s.mode === 'drill') ? { correct, expected, attemptId } : { attemptId };
   }
 
   getResults(userId, { bankId } = {}) {
@@ -241,10 +241,13 @@ export class SchoolService {
     for (const a of all) {
       if (bankId && a.bankId !== bankId) continue;
       if (!byBank.has(a.bankId)) {
-        byBank.set(a.bankId, { bankId: a.bankId, quiz: { attempts: 0, correct: 0, lastAt: null }, flashcard: { attempts: 0, correct: 0, lastAt: null }, items: {} });
+        byBank.set(a.bankId, { bankId: a.bankId,
+          quiz: { attempts: 0, correct: 0, lastAt: null },
+          flashcard: { attempts: 0, correct: 0, lastAt: null },
+          drill: { attempts: 0, correct: 0, lastAt: null }, items: {} });
       }
       const b = byBank.get(a.bankId);
-      const lane = a.mode === 'flashcard' ? b.flashcard : b.quiz; // never merged (spec §5)
+      const lane = a.mode === 'flashcard' ? b.flashcard : a.mode === 'drill' ? b.drill : b.quiz; // never merged (spec §5)
       lane.attempts += 1;
       if (a.correct) lane.correct += 1;
       lane.lastAt = a.at;
@@ -256,7 +259,10 @@ export class SchoolService {
       }
     }
     if (bankId) {
-      return byBank.get(bankId) || { bankId, quiz: { attempts: 0, correct: 0, lastAt: null }, flashcard: { attempts: 0, correct: 0, lastAt: null }, items: {} };
+      return byBank.get(bankId) || { bankId,
+        quiz: { attempts: 0, correct: 0, lastAt: null },
+        flashcard: { attempts: 0, correct: 0, lastAt: null },
+        drill: { attempts: 0, correct: 0, lastAt: null }, items: {} };
     }
     return [...byBank.values()];
   }
@@ -285,7 +291,8 @@ export class SchoolService {
     if (attempts.length === 0) return [];
 
     const graded = attempts.filter((a) => a.mode === 'quiz');
-    const drilled = attempts.filter((a) => a.mode === 'flashcard');
+    const drilledCards = attempts.filter((a) => a.mode === 'flashcard');
+    const drilledGeo = attempts.filter((a) => a.mode === 'drill');
     const lastActivity = attempts.reduce((max, a) => (String(a.at) > max ? String(a.at) : max), '');
     const banks = new Set(attempts.map((a) => a.bankId).filter(Boolean));
 
@@ -300,8 +307,11 @@ export class SchoolService {
         value: graded.filter((a) => a.correct).length / graded.length,
       });
     }
-    if (drilled.length) {
-      metrics.push({ id: 'drilled', kind: 'count', label: 'Cards drilled', value: drilled.length, unit: 'cards' });
+    if (drilledCards.length) {
+      metrics.push({ id: 'drilled', kind: 'count', label: 'Cards drilled', value: drilledCards.length, unit: 'cards' });
+    }
+    if (drilledGeo.length) {
+      metrics.push({ id: 'drilled-geo', kind: 'count', label: 'Geography drilled', value: drilledGeo.length, unit: 'questions' });
     }
 
     const idleMs = this.#now() - Date.parse(lastActivity || 0);
