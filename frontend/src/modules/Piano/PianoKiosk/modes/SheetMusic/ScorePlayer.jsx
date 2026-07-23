@@ -25,8 +25,9 @@ import { worstSpan } from './worstSpan.js';
 import { loadScoreSettings, saveScoreSettings } from './scoreSettings.js';
 import { isRisingEdge } from './pedalEdge.js';
 import { midiToRecord } from './midiTap.js';
-import { record, intern, KIND } from '../../../../../lib/logging/inputRecorder.js';
+import { record, intern, KIND, startRecorder, stopRecorder } from '../../../../../lib/logging/inputRecorder.js';
 import { coalesce } from '../../../../../lib/logging/gestureCoalescer.js';
+import getLogger from '../../../../../lib/logging/Logger.js';
 import { keyLabel } from './keyLabel.js';
 import ScoreTransportBar from './ScoreTransportBar.jsx';
 import NoteHighlightLayer from './NoteHighlightLayer.jsx';
@@ -54,6 +55,25 @@ import { nearestEvent, SELECT_MAX_DIST } from './nearestEvent.js';
  * over the cursor overlay; logs-only timing telemetry flows through
  * {@link useScoreTelemetry}.
  */
+/**
+ * Pure gate for input-telemetry SHIPPING. Recording into the ring is always on
+ * (cheap); draining batches to the backend is enabled only when the household
+ * piano config opts in. Extracted so the gate is unit-testable in isolation.
+ */
+export function inputTelemetryEnabled(config) { return !!config?.inputTelemetry?.enabled; }
+
+/**
+ * Build the recorder's send() — routes each batch/header through the shared logger
+ * on the 'input' channel (NO sessionLog), so the backend's .events transport writes
+ * it. Exactly ONE logger.info() per call ⇒ one websocket event ⇒ one backend write
+ * per drain (never one-per-record — that would regress write frequency badly).
+ */
+export function makeInputSender() {
+  return (payload) => getLogger().info(payload.h ? 'input.header' : 'input.batch', payload, {
+    context: { app: 'piano-sheetmusic', channel: 'input' },
+  });
+}
+
 export default function ScorePlayer({ score: scoreMeta }) {
   const { subscribe, subscribeRaw, releaseNote, sendNoteAt, sendNoteOffAt, sendPanic } = usePianoMidi();
   const { setPlaying: setGlobalPlaying } = usePianoPlayback();
@@ -662,6 +682,39 @@ export default function ScorePlayer({ score: scoreMeta }) {
       el.removeEventListener('pointerup', onUp);
     };
   }, []);
+
+  // ── Input-telemetry recorder lifecycle (config-gated shipping) ────────────────
+  // The ring records unconditionally (above); this only controls DRAINING it to the
+  // backend. start/stop are shared by the config-gated auto lifecycle and the
+  // window.__INPUT_REC__ kill switch, so the manual lever and the config path use
+  // the same one-event-per-batch sender.
+  const inputSessionRef = useRef(null);
+  const startInputRec = useCallback(() => {
+    const session = new Date().toISOString();
+    inputSessionRef.current = session;
+    startRecorder({ session, score: scoreMeta.id, ctx: { user: config?.user?.id }, send: makeInputSender(), flushMs: 1000 });
+  }, [scoreMeta.id, config]);
+  const stopInputRec = useCallback(() => { stopRecorder(); inputSessionRef.current = null; }, []);
+
+  // Kill switch: a deploy-free off/on lever, installed regardless of config so the
+  // recorder can be started/stopped from the console even when shipping is off.
+  useEffect(() => {
+    if (typeof window === 'undefined') return undefined;
+    window.__INPUT_REC__ = {
+      start: startInputRec,
+      stop: stopInputRec,
+      status: () => ({ enabled: inputSessionRef.current != null, session: inputSessionRef.current }),
+    };
+    return () => { if (window.__INPUT_REC__) window.__INPUT_REC__ = undefined; };
+  }, [startInputRec, stopInputRec]);
+
+  // Config-gated auto lifecycle: ship input telemetry for this score only when the
+  // household config opts in. Re-arms on a score change; stops on unmount/disable.
+  useEffect(() => {
+    if (!inputTelemetryEnabled(config)) return undefined;
+    startInputRec();
+    return () => stopInputRec();
+  }, [scoreMeta.id, config, startInputRec, stopInputRec]);
 
   // Perform mode: config-defined pedals turn the page — advancePedalCC forward,
   // backPedalCC back — rising edge ONLY, since continuous/half pedals stream many
