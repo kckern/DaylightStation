@@ -98,10 +98,10 @@ describe('MaterialDetail', () => {
     expect(await screen.findByText(/sign in for courses/i)).toBeInTheDocument();
   });
 
-  it('renders an empty state and a loading state', async () => {
+  it('shows a loading skeleton before units resolve, then the empty state', async () => {
     materialUnitsMock.mockResolvedValue({ ok: true, status: 200, data: { material, units: [] } });
-    render(<MaterialDetail material={material} userId="kid1" onBack={() => {}} onPlay={() => {}} notice={null} sectionLabel="Courses" />);
-    expect(screen.getByText(/loading/i)).toBeInTheDocument();
+    const { container } = render(<MaterialDetail material={material} userId="kid1" onBack={() => {}} onPlay={() => {}} notice={null} sectionLabel="Courses" />);
+    expect(container.querySelector('.school-skel')).not.toBeNull(); // skeleton, not "Loading…" text
     expect(await screen.findByText(/no units yet/i)).toBeInTheDocument();
   });
 

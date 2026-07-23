@@ -16,7 +16,7 @@ const SUBJECT_PROGRAMS = {
   writing: [{ id: 'typing', label: 'Typing', hint: 'Learn to touch-type', section: 'typing' }],
 };
 
-export default function SubjectPage({ subjectId, shelf, guestOnly, onLaunch, notice, onOpen, initialMaterialId = null }) {
+export default function SubjectPage({ subjectId, shelf, guestOnly, onLaunch, notice, onOpen, initialMaterialPath = [], onMaterialNav }) {
   const programs = SUBJECT_PROGRAMS[subjectId] ?? [];
   const empty = programs.length === 0 && (!shelf
     || (!shelf.materials.length && !shelf.banks.length && !shelf.courses.length));
@@ -66,7 +66,7 @@ export default function SubjectPage({ subjectId, shelf, guestOnly, onLaunch, not
 
       {shelf.materials.length > 0 && (
         <section className="school-subject__group">
-          <MaterialsSection materials={shelf.materials} initialMaterialId={initialMaterialId} sectionLabel={subjectLabel(subjectId)} />
+          <MaterialsSection materials={shelf.materials} initialMaterialPath={initialMaterialPath} onMaterialNav={onMaterialNav} sectionLabel={subjectLabel(subjectId)} />
         </section>
       )}
 
