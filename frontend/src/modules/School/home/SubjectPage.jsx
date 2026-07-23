@@ -1,4 +1,5 @@
 import MaterialsSection from '../materials/MaterialsSection.jsx';
+import ContinueRail from './ContinueRail.jsx';
 import KindSection from './KindSection.jsx';
 import { KINDS, groupByKind } from './kinds.js';
 import { subjectLabel } from './subjects.js';
@@ -60,6 +61,7 @@ export default function SubjectPage({ subjectId, shelf, guestOnly, onLaunch, not
       sectionLabel={subjectLabel(subjectId)}
       renderCatalog={({ onSelect }) => (
         <div className="school-subject">
+          <ContinueRail subjectId={subjectId} materials={shelf.materials} onOpen={onSelect} />
           {notice && <div className="school-subject__notice">{notice}</div>}
           {KINDS.map((kind) => (
             <KindSection

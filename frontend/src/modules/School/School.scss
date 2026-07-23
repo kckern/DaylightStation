@@ -17,6 +17,7 @@
   --kind-audio: #b085e6;  // violet — listen
   --kind-app:   #3fbfae;  // teal — do
   --kind-deck:  #d9a441;  // gold — practice
+  --kind-continue: #3fa45b;  // green — continue rail
 
   width: 100%;
   // 100dvh, not 100%: nothing above this sets a height (body is auto), so
@@ -699,6 +700,45 @@
     text-transform: uppercase; letter-spacing: 0.06em;
   }
   &__notice { padding: 0.85rem 1rem; border-radius: 12px; background: var(--school-warn); color: #241a05; font-weight: 700; }
+}
+
+// --- continue rail: claimed student's in-progress materials for this shelf --
+// Bordered/tinted section with a green accent, vertical stack of row cards
+// (thumb + text), thin progress track per row. No animation.
+.school-continue {
+  border: 1px solid var(--kind-continue); border-radius: 12px;
+  padding: 0.85rem 1rem; background: var(--school-surface);
+
+  &__head {
+    margin: 0 0 0.6rem; display: flex; align-items: center; gap: 0.5rem;
+    font-size: 1rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.04em;
+    color: var(--kind-continue);
+  }
+  &__list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.5rem; }
+  &__item { display: flex; }
+  &__button {
+    display: grid; grid-template-columns: auto 1fr; align-items: center; gap: 0.75rem;
+    flex: 1; min-height: 56px; padding: 0.4rem; text-align: left;
+    border: 1px solid var(--school-border); border-radius: 10px;
+    background: var(--school-surface-2); color: var(--school-fg); cursor: pointer;
+  }
+  &__thumb-wrap { flex: 0 0 auto; }
+  &__thumb {
+    display: block; width: 64px; height: 40px; border-radius: 6px;
+    object-fit: cover; background: var(--school-surface);
+    &--placeholder { background: var(--school-surface); }
+  }
+  &__text { min-width: 0; display: flex; flex-direction: column; gap: 0.2rem; }
+  &__title {
+    font-size: 0.95rem; font-weight: 700;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  &__next {
+    display: flex; align-items: center; gap: 0.3rem;
+    color: var(--school-muted); font-size: 0.8rem;
+  }
+  &__bar { display: block; height: 4px; border-radius: 999px; background: var(--school-border); overflow: hidden; }
+  &__bar-fill { display: block; height: 100%; }
 }
 
 // --- kind section (sticky headers over grid) --------------------------------

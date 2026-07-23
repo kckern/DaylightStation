@@ -21,6 +21,7 @@ export const schoolLog = {
   answerError: (detail, data) => emit('answer', detail, data, 'error'), // record-failed
   bank:    (detail, data) => emit('bank', detail, data, 'warn'),
   nav:     (detail, data) => emit('nav', detail, data),               // section | home
+  home:    (detail, data) => emit('home', detail, data),               // continue-rail | continue-fetch-failed
   materials: (detail, data) => emit('materials', detail, data),       // catalog-failed
   materialsError: (detail, data) => emit('materials', detail, data, 'error'),
   print:   (detail, data) => emit('print', detail, data),             // requested | printed | approval | approve | deny

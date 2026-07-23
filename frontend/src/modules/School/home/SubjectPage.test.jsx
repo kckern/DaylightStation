@@ -10,6 +10,7 @@ vi.mock('../schoolApi.js', () => ({
   schoolApi: {
     materialUnits: vi.fn(async () => ({ ok: true, status: 200, data: { units: [] } })),
     quizRequests: vi.fn(async () => ({ ok: true, status: 200, data: [] })),
+    materialProgress: vi.fn(async () => ({ ok: true, status: 200, data: [] })),
   },
 }));
 
