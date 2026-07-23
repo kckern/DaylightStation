@@ -663,26 +663,38 @@ export default function ScorePlayer({ score: scoreMeta }) {
     const el = scrollRef.current;
     if (!el) return undefined;
     let samples = [];
+    let active = false; // true only between pointerdown and its up/cancel
     const onDown = (e) => {
-      record(KIND.TOUCH_START, e.clientX | 0, e.clientY | 0, 0, 0);
+      active = true;
       samples = [];
+      record(KIND.TOUCH_START, e.clientX | 0, e.clientY | 0, 0, 0);
     };
-    const onMove = (e) => { samples.push({ t: performance.now(), x: e.clientX | 0, y: e.clientY | 0 }); };
-    const onUp = (e) => {
+    const onMove = (e) => {
+      if (!active) return; // ignore hover/stray moves between gestures (hover-capable pointers)
+      samples.push({ t: performance.now(), x: e.clientX | 0, y: e.clientY | 0 });
+    };
+    // Shared flush for BOTH pointerup and pointercancel: a native touch-scroll ends
+    // with pointercancel (NOT pointerup), so without this a scroll would record only
+    // a TOUCH_START and leak its samples into the next gesture.
+    const flush = (e) => {
+      if (!active) return;
+      active = false;
       // Slot c carries the sample's ORIGINAL time (ms, page-relative). record()
       // stamps its own `t` at replay time, so without this the whole gesture would
-      // collapse onto the pointerup timestamp and lose its time axis.
+      // collapse onto the flush timestamp and lose its time axis.
       for (const s of coalesce(samples, { frameMs: 16 })) record(KIND.TOUCH_MOVE, s.x | 0, s.y | 0, Math.round(s.t), 0);
       samples = [];
       record(KIND.TOUCH_END, e.clientX | 0, e.clientY | 0, 0, 0);
     };
     el.addEventListener('pointerdown', onDown, { passive: true });
     el.addEventListener('pointermove', onMove, { passive: true });
-    el.addEventListener('pointerup', onUp, { passive: true });
+    el.addEventListener('pointerup', flush, { passive: true });
+    el.addEventListener('pointercancel', flush, { passive: true });
     return () => {
       el.removeEventListener('pointerdown', onDown);
       el.removeEventListener('pointermove', onMove);
-      el.removeEventListener('pointerup', onUp);
+      el.removeEventListener('pointerup', flush);
+      el.removeEventListener('pointercancel', flush);
     };
   }, []);
 

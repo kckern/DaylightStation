@@ -167,6 +167,45 @@ describe('ScorePlayer — UI-intent capture (Task 12)', () => {
   });
 });
 
+describe('ScorePlayer — touch gesture flush (pointercancel + active guard)', () => {
+  // jsdom lacks PointerEvent, but listeners route by type string, so a MouseEvent
+  // named 'pointer*' fires them and carries clientX/clientY.
+  const pe = (type, x, y) => new MouseEvent(type, { clientX: x, clientY: y, bubbles: true });
+
+  it('flushes the gesture on pointercancel (native scroll ends with cancel, not up)', () => {
+    renderPlayer();
+    const scroll = document.querySelector('.piano-score-player__scroll');
+    __resetRecorder();
+    scroll.dispatchEvent(pe('pointerdown', 10, 20));
+    scroll.dispatchEvent(pe('pointermove', 12, 50));
+    scroll.dispatchEvent(pe('pointermove', 14, 90));
+    scroll.dispatchEvent(pe('pointercancel', 14, 100)); // scroll cancels — must still flush
+    const recs = __snapshotForTest().records;
+    expect(recs.some((r) => r.kind === KIND.TOUCH_START)).toBe(true);
+    expect(recs.some((r) => r.kind === KIND.TOUCH_MOVE)).toBe(true);
+    expect(recs.some((r) => r.kind === KIND.TOUCH_END)).toBe(true); // FAILS today (no cancel listener)
+    cleanup();
+  });
+
+  it('guards stray moves so a prior gesture cannot leak into a later flush', () => {
+    renderPlayer();
+    const scroll = document.querySelector('.piano-score-player__scroll');
+    scroll.dispatchEvent(pe('pointerdown', 10, 20));
+    scroll.dispatchEvent(pe('pointermove', 10, 60)); // this sample belongs to the cancelled gesture
+    scroll.dispatchEvent(pe('pointercancel', 10, 100));
+    __resetRecorder(); // clear the ring: nothing recorded AFTER this may reference the old gesture
+    scroll.dispatchEvent(pe('pointermove', 500, 500)); // stray hover, no active gesture
+    scroll.dispatchEvent(pe('pointermove', 600, 600));
+    scroll.dispatchEvent(pe('pointerup', 700, 700)); // a flush with no preceding down
+    const moves = __snapshotForTest().records.filter((r) => r.kind === KIND.TOUCH_MOVE);
+    // New code: cancel already flushed + cleared, and inactive moves are ignored,
+    // so this flush emits nothing. Old code: the y=60 sample (and strays) leak here.
+    expect(moves.length).toBe(0); // FAILS today (leaked samples)
+    expect(moves.some((r) => r.b === 60)).toBe(false);
+    cleanup();
+  });
+});
+
 describe('ScorePlayer — default mode', () => {
   it('opens in Listen (defaultMode), not Learn (J2)', () => {
     renderPlayer();
