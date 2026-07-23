@@ -7,6 +7,10 @@
  *    foreign-content parser mishandles a raw <style> element injected via
  *    dangerouslySetInnerHTML, silently swallowing it AND every sibling that
  *    follows (verified — all 50+ state paths vanish from the parsed DOM).
+ *  - remove the raw asset's DC marker <circle class="... dccircle dc">: it has
+ *    no data-region-id (clicks on it resolve to nothing) and, with the <style>
+ *    block gone, renders unstyled as a stray solid black dot on DC — a fake
+ *    affordance for a region this states deck never quizzes.
  *  - tag each state fill path (class="xx", 2 lowercase letters) with data-region-id="XX"
  *  - append tappable callout pucks for the small NE states (offset leader-tabs)
  * Usage: node prepare-us-states.mjs <raw.svg> <out.svg>
@@ -19,6 +23,7 @@ const CALLOUTS = { NH: [925, 95], VT: [925, 118], MA: [935, 165], RI: [935, 188]
 
 let svg = fs.readFileSync(process.argv[2], 'utf8');
 svg = svg.replace(/<style[^>]*>[\s\S]*?<\/style>/, '');
+svg = svg.replace(/<circle\b[^>]*\bdccircle\b[^>]*>(?:\s*<\/circle>)?/g, '');
 svg = svg.replace(/<svg ([^>]*?)>/, (m, attrs) => (attrs.includes('viewBox') ? m : `<svg ${attrs} viewBox="0 0 959 593">`));
 svg = svg.replace(/class="([a-z]{2})"/g, (m, code) => `class="${code}" data-region-id="${code.toUpperCase()}"`);
 const pucks = Object.entries(CALLOUTS).map(([id, [x, y]]) =>
