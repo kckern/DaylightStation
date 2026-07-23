@@ -15,6 +15,9 @@ describe('KINDS', () => {
   it('is the four kinds in section order after Continue', () => {
     expect(KINDS.map((k) => k.id)).toEqual(['video', 'audio', 'apps', 'decks']);
   });
+  it('each kind carries a Tile component', () => {
+    KINDS.forEach((k) => expect(typeof k.Tile).toBe('function'));
+  });
 });
 
 describe('groupByKind', () => {
