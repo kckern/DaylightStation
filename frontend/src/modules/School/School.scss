@@ -524,8 +524,8 @@
 
   &__subject {
     display: flex; flex-direction: column; align-items: center;
-    justify-content: center; gap: 0.45rem;
-    padding: 1rem 1.25rem; text-align: center;
+    justify-content: center; gap: 0.5rem;
+    padding: 1.25rem; text-align: center;
     border: 1px solid var(--school-border); border-radius: 14px;
     background: var(--school-surface); color: var(--school-fg); cursor: pointer;
 
@@ -534,9 +534,17 @@
     &.is-empty { opacity: 0.45; cursor: default; }
   }
 
-  // Prominent and monochrome: the icon is the tile's identity, in the same
-  // white as the label — no accent chrome on the wall.
-  &__subject-icon { font-size: 3rem; line-height: 1; color: var(--school-fg); }
+  // Prominent and monochrome: the icon IS the tile's identity, so let it grow
+  // to fill the space left after the label/hint, bounded only by the tile's own
+  // ~1.25rem padding. The subject SVGs ship at an intrinsic `1em`; override that
+  // so the glyph scales to the icon area (default preserveAspectRatio keeps it
+  // undistorted). Scoped to the wall — small chip `.school-icon`s are untouched.
+  &__subject-icon {
+    flex: 1 1 auto; min-height: 0; width: 100%;
+    display: flex; align-items: center; justify-content: center;
+    line-height: 1; color: var(--school-fg);
+    svg { width: 100%; height: 100%; max-height: 100%; }
+  }
   &__subject-label { margin: 0; font-size: 1.25rem; font-weight: 800; }
   &__subject-hint { margin: 0; color: var(--school-muted); font-size: 0.9rem; }
 
