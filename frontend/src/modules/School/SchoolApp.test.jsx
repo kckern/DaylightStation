@@ -20,6 +20,7 @@ vi.mock('./schoolApi.js', () => ({
     requestQuiz: vi.fn(async () => ({ ok: true, status: 200, data: { requested: true, duplicate: false } })),
     report: vi.fn(async () => ({ ok: true, status: 200, data: { learners: [{ id: 'kid1', name: 'Alpha', reports: [] }] } })),
     results: vi.fn(async () => ({ ok: true, status: 200, data: [] })),
+    materialProgress: vi.fn(async () => ({ ok: true, status: 200, data: [] })),
   },
 }));
 
