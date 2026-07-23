@@ -1,0 +1,6 @@
+.pio/
+include/config.h
+sdkconfig.*
+!sdkconfig.defaults
+managed_components/
+dependencies.lock

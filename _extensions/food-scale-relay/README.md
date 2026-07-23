@@ -125,16 +125,32 @@ Ops without a USB cable. Base `http://<atom-ip>/`.
 
 ## Radio arbitration
 
-One antenna, three consumers (WiFi, BLE scale, Classic scanner). `classicHoldsRadio()`
-hands it to Classic for `CLASSIC_RADIO_HOLD_MS` after every ACL event, and the BLE
-scale scan pauses for that window — pairing is the timing-sensitive phase and a
-continuous BLE scan has been observed wrecking it.
+One antenna, three consumers (WiFi, BLE scale, Classic scanner). This is the most
+fragile part of the firmware and both extremes are known-broken — the settings
+below are a measured middle, not a preference.
 
-An **established** SPP session deliberately does *not* hold the radio. It used to,
-which was invisible while the link never survived; once the scanner stayed
-connected it suppressed the scale scan permanently, and since the scale powers
-itself off between uses and must be re-discovered by scanning, that killed the
-scale half of the relay. Don't reinstate it.
+**During pairing — Classic gets the antenna outright.** `classicHoldsRadio()`
+yields it for `CLASSIC_RADIO_HOLD_MS` (30 s) after every ACL event and the scale
+scan stops dead. Pairing is the timing-sensitive phase; a20f1bac0 recorded the
+scanner's connection attempts not landing *at all* until BLE scanning was off.
+
+**During an established SPP session — the scan is duty-cycled, never continuous
+and never stopped.** Both failure modes have been observed on this hardware:
+
+| Setting | Failure |
+|---|---|
+| Hold the radio for the whole SPP session | Scale scan suppressed permanently. The scale powers itself off between uses and must be re-discovered by scanning, so the scale half of the relay dies. |
+| Let a continuous scan run during the session | The SPP link dies with HCI `0x08` (supervision timeout) within ~2 min, re-pages, and repeats — the scanner beeps on every drop. Same fault as 5c753d6c7. |
+
+So while `g_barcodeConnected` is set, `serviceScanWatchdog()` forces the burst duty
+cycle — `SCAN_BURST_CLASSIC_MS` (3 s) of scanning per `SCAN_PERIOD_CLASSIC_MS`
+(20 s) — regardless of how recently the scale was seen. Classic gets 17 s of clean
+air at a time; a scale just switched on is found within ~20 s. Continuous scanning
+is used only when no scanner is connected.
+
+Note the scan is *already* low duty at the controller level (30/400 = 7.5%, set in
+`startScan()`). That was not sufficient on its own — 7.5% applied continuously
+still timed the link out. The gap between bursts is what the Classic link needs.
 
 ## Build & flash
 
@@ -163,13 +179,20 @@ IDF 4.4 build, kept but stale — it has none of the Classic SPP work.
 Event-only lighting: the LED stays dark during idle/connection monitoring and
 briefly flashes when a scale reading, button press, or barcode scan is emitted.
 
-| Color | Meaning |
-|-------|---------|
-| red | no Wi-Fi |
-| blue | Wi-Fi ok, no scale |
-| amber | scale ok, no event bus |
-| green | streaming |
+| Colour | Meaning |
+|--------|---------|
+| dark | normal — the LED only lights on events |
+| green flash | scale reading sent to the bus |
+| blue flash | barcode scan received and sent |
 | purple flash | button press sent |
+| amber flash | event bus down — reading/press **queued** for later delivery |
+| red flash | event bus down and the event was **dropped** (not durable) |
+| white, solid while held | 3 s button hold armed; release now to fire the pairing repair |
+| white, 3 blinks | pairing repair fired — bond cleared, profile reset, radio quieted |
+
+The button: a quick press logs the current weight; a 3 s hold clears the Classic
+BT bond and forces a re-pair. Given the pairing history above, treat the hold as
+a destructive operation — it means fetching the bar codes again.
 
 ## Config — `data/household/config/scales.yml`
 
