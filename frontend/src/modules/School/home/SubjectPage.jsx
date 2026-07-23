@@ -26,7 +26,7 @@ const SUBJECT_PROGRAMS = {
   writing: [{ id: 'typing', label: 'Typing', hint: 'Learn to touch-type', section: 'typing' }],
 };
 
-export default function SubjectPage({ subjectId, shelf, guestOnly, onLaunch, notice, onOpen, initialMaterialPath = [], onMaterialNav }) {
+export default function SubjectPage({ subjectId, shelf, guestOnly, onLaunch, notice, onOpen, initialMaterialPath = [], onMaterialNav, catalogLoading = false }) {
   // SubjectPage owns the per-subject progress fetch because `materialProgress`
   // fans out a Plex read per material on the backend — expensive. The fetched
   // list feeds the ranking (started work floats to the front of its shelf) and
@@ -70,6 +70,18 @@ export default function SubjectPage({ subjectId, shelf, guestOnly, onLaunch, not
   grouped.apps = grouped.apps.map((item) => (item.hint ? item : { ...item, hint: 'Listen, say it, write it' }));
 
   const anyContent = KINDS.some((k) => grouped[k.id].length > 0);
+  // The catalog is Plex-backed and slow on a cold cache (first open after a
+  // redeploy). While it's still loading, show a skeleton row — NOT the empty
+  // state, which reads as "stuck/broken" during a legitimate load.
+  if (!anyContent && catalogLoading) {
+    return (
+      <div className="school-subject school-subject--loading" aria-hidden="true">
+        <div className="school-shelf-band">
+          {[0, 1, 2, 3].map((i) => <span key={i} className="school-skel__poster" />)}
+        </div>
+      </div>
+    );
+  }
   if (!anyContent) {
     return (
       <div className="school-subject school-subject--empty">
