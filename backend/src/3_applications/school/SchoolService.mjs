@@ -19,16 +19,17 @@ const MODES = new Set(['quiz', 'flashcard']);
 const BANK_SUMMARY_TTL_MS = 300_000; // 10 min? banks change rarely; 5 min keeps it warm through use gaps
 
 export class SchoolService {
-  #ds; #userService; #logger; #now;
+  #ds; #userService; #logger; #now; #bankSources;
   #sessions = new Map(); // sessionId -> {id, userId|null, bankId, mode, bank, startedAt, lastActiveAt}
   #bankSummaries = null; // { at: number, list: Array<summary> }
   #warming = null; // in-flight warmBanks() promise (dedupe)
 
-  constructor({ datastore, userService, logger = console, now = () => Date.now() }) {
+  constructor({ datastore, userService, logger = console, now = () => Date.now(), bankSources = [] }) {
     this.#ds = datastore;
     this.#userService = userService;
     this.#logger = logger;
     this.#now = now;
+    this.#bankSources = bankSources;
   }
 
   /**
@@ -77,6 +78,17 @@ export class SchoolService {
   }
 
   #loadBank(bankId) {
+    for (const source of this.#bankSources) {
+      const synth = source.resolve(bankId);
+      if (synth) {
+        const r = validateQuestionBank(synth);
+        if (!r.ok) {
+          this.#logger.warn?.('school.bank.invalid', { bankId, synthesized: true, reason: r.errors.join('; ') });
+          return null;
+        }
+        return r.bank;
+      }
+    }
     const raw = this.#ds.readBankRaw(bankId);
     if (!raw) return null;
     const r = validateQuestionBank(raw);
@@ -85,6 +97,11 @@ export class SchoolService {
       return null;
     }
     return r.bank;
+  }
+
+  /** Virtual decks from injected bank sources (e.g. geography topic grid). */
+  listDeckSummaries() {
+    return this.#bankSources.flatMap((s) => s.listDeckSummaries());
   }
 
   // Listing/shelving reads each bank's HEADER only (summarizeQuestionBank) — no
