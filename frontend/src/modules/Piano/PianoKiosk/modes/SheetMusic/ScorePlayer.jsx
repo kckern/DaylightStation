@@ -24,6 +24,8 @@ import { tallyGrades } from './gradeTally.js';
 import { worstSpan } from './worstSpan.js';
 import { loadScoreSettings, saveScoreSettings } from './scoreSettings.js';
 import { isRisingEdge } from './pedalEdge.js';
+import { midiToRecord } from './midiTap.js';
+import { record } from '../../../../../lib/logging/inputRecorder.js';
 import { keyLabel } from './keyLabel.js';
 import ScoreTransportBar from './ScoreTransportBar.jsx';
 import NoteHighlightLayer from './NoteHighlightLayer.jsx';
@@ -605,6 +607,18 @@ export default function ScorePlayer({ score: scoreMeta }) {
     el.scrollBy({ [horiz ? 'left' : 'top']: amount, behavior: 'smooth' });
     logger.info('score.perform.pageturn', { dir });
   }, [flow, logger]);
+
+  // Raw-input telemetry: mirror every raw MIDI message into the zero-alloc input
+  // recorder ring buffer (notes, sustain, CC), tagged with the current cursor
+  // step. Always on — recording is cheap and shipping is gated elsewhere
+  // (startRecorder/drain). subscribeRaw delivers the byte array directly.
+  useEffect(() => {
+    const off = subscribeRaw((bytes) => {
+      const r = midiToRecord(bytes);
+      if (r) record(r.kind, r.a, r.b, stepRef.current ?? 0, 0);
+    });
+    return off;
+  }, [subscribeRaw]);
 
   // Perform mode: config-defined pedals turn the page — advancePedalCC forward,
   // backPedalCC back — rising edge ONLY, since continuous/half pedals stream many
