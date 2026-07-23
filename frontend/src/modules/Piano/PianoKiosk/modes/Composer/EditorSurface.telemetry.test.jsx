@@ -67,6 +67,11 @@ describe('EditorSurface — recorder gate (Task 8)', () => {
     expect(typeof arg.session).toBe('string');
   });
 
+  it('carries the active piano user into the recorder header ctx', () => {
+    render(<EditorSurface initialScore={makeEmptyScore()} songId="files:s.musicxml" initialRevision={1} save={vi.fn()} config={{ inputTelemetry: { enabled: true } }} user="user-2" />);
+    expect(rec.startRecorder.mock.calls[0][0].ctx).toEqual({ user: 'user-2' });
+  });
+
   it('records a draft score id when there is no songId yet', () => {
     render(<EditorSurface initialScore={makeEmptyScore()} songId={null} initialRevision={1} save={vi.fn()} config={{ inputTelemetry: { enabled: true } }} />);
     expect(rec.startRecorder.mock.calls[0][0].score).toBe('draft');

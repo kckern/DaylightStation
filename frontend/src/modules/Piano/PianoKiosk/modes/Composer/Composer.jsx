@@ -131,6 +131,7 @@ export function Composer() {
           onMaterialized={onMaterialized}
           onSongs={showGallery}
           config={config.composer || {}}
+          user={currentUser}
           logger={logger}
         />
       )}
