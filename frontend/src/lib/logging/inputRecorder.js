@@ -48,6 +48,25 @@ export function encodeBatch() {
 export function buildHeader({ session, score, ctx }) {
   return { h: 1, session, score, ctx, kinds: { ...KIND_NAME }, strings: internList.slice() };
 }
+let drainTimer = null;
+let sendFn = null;
+export function startRecorder({ session, score, ctx = {}, send, flushMs = 1000 }) {
+  __resetRecorder();
+  sendFn = send;
+  sendFn(buildHeader({ session, score, ctx }));
+  const tick = () => { const batch = encodeBatch(); if (batch.b.length > 0) sendFn(batch); };
+  const scheduled = () => {
+    if (typeof requestIdleCallback === 'function') requestIdleCallback(tick, { timeout: flushMs });
+    else tick();
+  };
+  drainTimer = setInterval(scheduled, flushMs);
+  if (drainTimer && typeof drainTimer.unref === 'function') drainTimer.unref();
+}
+export function stopRecorder() {
+  if (drainTimer) { clearInterval(drainTimer); drainTimer = null; }
+  if (sendFn) { const batch = encodeBatch(); if (batch.b.length > 0) sendFn(batch); }
+  sendFn = null;
+}
 export function __resetRecorder() { head = 0; count = 0; dropped = 0; internMap.clear(); internList.length = 0; }
 export function __snapshotForTest() {
   const records = [];
