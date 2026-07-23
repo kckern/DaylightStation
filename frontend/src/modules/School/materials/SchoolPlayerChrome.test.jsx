@@ -4,7 +4,7 @@ import SchoolPlayerChrome from './SchoolPlayerChrome.jsx';
 
 const base = {
   isPlaying: false, currentTime: 30, duration: 120, volume: 1,
-  onToggle: vi.fn(), onSeek: vi.fn(), onSkip: vi.fn(), onRestart: vi.fn(),
+  onToggle: vi.fn(), onSeek: vi.fn(), onSkip: vi.fn(),
   onPrev: vi.fn(), onNext: vi.fn(), onSetVolume: vi.fn(),
 };
 
@@ -17,24 +17,29 @@ describe('SchoolPlayerChrome', () => {
     expect(screen.getByRole('button', { name: /pause/i })).toBeInTheDocument();
   });
 
-  it('play, skip, restart, prev/next call their handlers', () => {
-    const p = { ...base, onToggle: vi.fn(), onSkip: vi.fn(), onRestart: vi.fn(), onPrev: vi.fn(), onNext: vi.fn(), hasPrev: true, hasNext: true };
+  it('play, skip, prev/next call their handlers', () => {
+    const p = { ...base, onToggle: vi.fn(), onSkip: vi.fn(), onPrev: vi.fn(), onNext: vi.fn(), hasPrev: true, hasNext: true };
     render(<SchoolPlayerChrome {...p} />);
     fireEvent.click(screen.getByRole('button', { name: /play/i }));
     fireEvent.click(screen.getByRole('button', { name: /forward 15/i }));
-    fireEvent.click(screen.getByRole('button', { name: /restart/i }));
-    fireEvent.click(screen.getByRole('button', { name: /previous chapter/i }));
+    fireEvent.click(screen.getByRole('button', { name: /restart, or previous/i }));
     fireEvent.click(screen.getByRole('button', { name: /next chapter/i }));
     expect(p.onToggle).toHaveBeenCalled();
     expect(p.onSkip).toHaveBeenCalledWith(15);
-    expect(p.onRestart).toHaveBeenCalled();
     expect(p.onPrev).toHaveBeenCalled();
     expect(p.onNext).toHaveBeenCalled();
   });
 
+  // Restart folded INTO prev (SchoolMaterialPlayer decides which it means), so
+  // there is no separate recycle control to press by mistake.
+  it('has no standalone restart control', () => {
+    render(<SchoolPlayerChrome {...base} hasPrev hasNext />);
+    expect(screen.queryByRole('button', { name: /^restart$/i })).toBeNull();
+  });
+
   it('prev/next are disabled at the ends', () => {
     render(<SchoolPlayerChrome {...base} hasPrev={false} hasNext={false} />);
-    expect(screen.getByRole('button', { name: /previous chapter/i })).toBeDisabled();
+    expect(screen.getByRole('button', { name: /restart, or previous/i })).toBeDisabled();
     expect(screen.getByRole('button', { name: /next chapter/i })).toBeDisabled();
   });
 

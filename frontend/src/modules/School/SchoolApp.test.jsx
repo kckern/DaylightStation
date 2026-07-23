@@ -168,12 +168,14 @@ describe('SchoolApp home — the subject wall', () => {
     fireEvent.click(screen.getByRole('button', { name: /^school$/i }));
     expect(clear).toHaveBeenCalled();
     unmount();
-    // No clear prop (the Portal): the anchor is still there but home is the
-    // root, so tapping it is an inert no-op (must not throw).
+    // No clear prop (the Portal): home IS the root, so the anchor becomes the
+    // kiosk's only refresh affordance — there is no address bar behind it.
+    const reload = vi.fn();
+    vi.spyOn(window, 'location', 'get').mockReturnValue({ ...window.location, pathname: '/', reload });
     render(<SchoolApp />);
     expect(await screen.findByText('History & Geography')).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: /^school$/i }));
-    expect(await screen.findByText('History & Geography')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /^refresh$/i }));
+    expect(reload).toHaveBeenCalled();
   });
 });
 

@@ -500,12 +500,20 @@ No code exists for anything in this section. Each links its spec.
 - The old Portal menu list was deleted; the School home grid is the panel's
   navigation now. Music and Art return as material *sources* when the
   materials framework lands (they are curricular; they get no top-level
-  section of their own). Ambient and Webcam are screen-level utilities for
-  the TouchChrome lane, not School sections — still unwired.
+  section of their own). Ambient and Webcam are screen-level utilities, not
+  School sections — still unwired.
+- **The TouchChrome lane is content-only.** It is drawn when something sits
+  over the screen's own layout (a cast overlay, anything on the nav stack) and
+  is absent while the Portal shows the School app — which has its own header,
+  back-navigation and transport, and needs the full 800px for 16:9 video. The
+  School header's apple is the app's own home/refresh control: home from any
+  depth, and a page reload once you are already home (the kiosk has no address
+  bar). See `screen-framework/overlays/ScreenOverlayProvider.jsx`.
 - Screen-framework features survive the single-widget layout — the doorbell
   subscription, PiP, casting, software volume and `portalKeys` are all
   screen-level. Casting in particular works because `ScreenActionHandler`
-  mounts content via `showOverlay()` and does not need a menu widget present.
+  mounts content via `showOverlay()` and does not need a menu widget present
+  (and it brings the lane back with it, so a cast is never a dead end).
 - `Fitness/player/panels/hooks/useVoiceMemoRecorder.js` is a second
   MediaRecorder implementation that predates and ignores
   `modules/VoiceCapture/`. Pre-existing debt; School uses the shared module and

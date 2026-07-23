@@ -4,11 +4,12 @@ import SchoolMaterialPlayer from './SchoolMaterialPlayer.jsx';
 
 const unitProgressMock = vi.fn();
 const bankMock = vi.fn();
+const materialUnitsMock = vi.fn();
 vi.mock('../schoolApi.js', () => ({
   schoolApi: {
     unitProgress: (...a) => unitProgressMock(...a),
     bank: (...a) => bankMock(...a),
-    materialUnits: vi.fn(async () => ({ ok: true, status: 200, data: { units: [] } })),
+    materialUnits: (...a) => materialUnitsMock(...a),
   },
 }));
 
@@ -24,16 +25,39 @@ vi.mock('../schoolLog.js', () => ({
 
 // Stand in for the shared Player: exposes buttons the test can tap to fire
 // the two signals SchoolMaterialPlayer wires — onProgress (timeupdate tick)
-// and clear() (the single natural-end/exit signal, same as PianoVideoPlayer).
-vi.mock('../../Player/Player.jsx', () => ({
-  default: ({ play, clear, onProgress }) => (
-    <div data-testid="player-stub">
-      <span data-testid="content-id">{play?.contentId}</span>
-      <button type="button" onClick={() => onProgress({ currentTime: 5, duration: 100, percent: '5.0' })}>tick</button>
-      <button type="button" onClick={() => clear()}>simulate-end</button>
-    </div>
-  ),
-}));
+// and clear() (the single natural-end/exit signal, same as PianoVideoPlayer) —
+// plus the imperative ref API useMediaChrome drives the transport through.
+// A real <video> element backs it so the chrome's timeupdate mirroring works.
+let fakeMedia = null;
+const toggleMock = vi.fn();
+function playerApi() {
+  return {
+    getMediaElement: () => fakeMedia,
+    getCurrentTime: () => fakeMedia?.currentTime || 0,
+    getDuration: () => 0,
+    toggle: toggleMock,
+    seek: (t) => {
+      if (!fakeMedia) return;
+      fakeMedia.currentTime = t;
+      fakeMedia.dispatchEvent(new Event('timeupdate'));
+    },
+  };
+}
+vi.mock('../../Player/Player.jsx', async () => {
+  const { forwardRef, useImperativeHandle } = await import('react');
+  return {
+    default: forwardRef(({ play, clear, onProgress }, ref) => {
+      useImperativeHandle(ref, () => playerApi(), []);
+      return (
+        <div data-testid="player-stub">
+          <span data-testid="content-id">{play?.contentId}</span>
+          <button type="button" onClick={() => onProgress({ currentTime: 5, duration: 100, percent: '5.0' })}>tick</button>
+          <button type="button" onClick={() => clear()}>simulate-end</button>
+        </div>
+      );
+    }),
+  };
+});
 
 vi.mock('../quiz/QuizRunner.jsx', () => ({
   default: ({ bank, onExit }) => (
@@ -51,8 +75,11 @@ const unitWithQuiz = { id: 'plex:10', title: 'Air', quiz: { bankId: 'bank_1' } }
 beforeEach(() => {
   unitProgressMock.mockReset().mockResolvedValue({ ok: true, status: 200, data: { ok: true } });
   bankMock.mockReset().mockResolvedValue({ ok: true, status: 200, data: { id: 'bank_1', title: 'Air Quiz', items: [] } });
+  materialUnitsMock.mockReset().mockResolvedValue({ ok: true, status: 200, data: { units: [] } });
   materialsMock.mockReset();
   materialsErrorMock.mockReset();
+  toggleMock.mockReset();
+  fakeMedia = document.createElement('video');
 });
 
 async function findPlayer() {
@@ -138,6 +165,80 @@ describe('SchoolMaterialPlayer', () => {
 
     fireEvent.click(screen.getByText('quiz-done'));
     expect(onExit).toHaveBeenCalledWith({ refetch: true });
+  });
+
+  // --- video tap zones: rewind | play-pause | forward, in equal thirds ------
+  describe('video tap zones', () => {
+    const zones = (container) => [...container.querySelectorAll('.school-material-player__zone')];
+
+    it('splits the video into three zones (none of them for audio)', async () => {
+      const { container, rerender } = render(<SchoolMaterialPlayer material={material} unit={unit} userId="kid1" onExit={() => {}} />);
+      await findPlayer();
+      expect(zones(container).map((z) => z.getAttribute('aria-label')))
+        .toEqual(['Back 15 seconds', 'Play', 'Forward 15 seconds']);
+
+      rerender(<SchoolMaterialPlayer material={{ ...material, medium: 'audio' }} unit={unit} userId="kid1" onExit={() => {}} />);
+      expect(zones(container)).toHaveLength(0);
+    });
+
+    it('the middle zone toggles playback; the side zones seek ∓15s', async () => {
+      const { container } = render(<SchoolMaterialPlayer material={material} unit={unit} userId="kid1" onExit={() => {}} />);
+      await findPlayer();
+      const [rew, mid, fwd] = zones(container);
+
+      fireEvent.click(mid);
+      expect(toggleMock).toHaveBeenCalledTimes(1);
+
+      fireEvent.click(fwd);
+      expect(fakeMedia.currentTime).toBe(15);
+      fireEvent.click(fwd);
+      expect(fakeMedia.currentTime).toBe(30);
+      fireEvent.click(rew);
+      expect(fakeMedia.currentTime).toBe(15);
+      // Never past the start, however many taps.
+      fireEvent.click(rew);
+      fireEvent.click(rew);
+      expect(fakeMedia.currentTime).toBe(0);
+    });
+  });
+
+  // --- prev = restart, then previous unit (the CD-player button) ------------
+  describe('the leftmost transport button', () => {
+    const prevUnit = { id: 'plex:9', title: 'Water', quiz: null };
+    const prevBtn = () => screen.getByRole('button', { name: /restart, or previous/i });
+
+    beforeEach(() => {
+      materialUnitsMock.mockResolvedValue({ ok: true, status: 200, data: { units: [prevUnit, unit] } });
+    });
+
+    it('steps to the previous unit when already at the start', async () => {
+      const onNavigate = vi.fn();
+      render(<SchoolMaterialPlayer material={material} unit={unit} userId="kid1" onExit={() => {}} onNavigate={onNavigate} />);
+      await findPlayer();
+      await waitFor(() => expect(prevBtn()).not.toBeDisabled());
+      fireEvent.click(prevBtn());
+      expect(onNavigate).toHaveBeenCalledWith(prevUnit);
+    });
+
+    it('restarts (and does NOT navigate) once past the restart window', async () => {
+      const onNavigate = vi.fn();
+      const { container } = render(<SchoolMaterialPlayer material={material} unit={unit} userId="kid1" onExit={() => {}} onNavigate={onNavigate} />);
+      await findPlayer();
+      const fwd = container.querySelectorAll('.school-material-player__zone')[2];
+      fireEvent.click(fwd); // 15s in — past the 10s window
+      fireEvent.click(prevBtn());
+      expect(onNavigate).not.toHaveBeenCalled();
+      expect(fakeMedia.currentTime).toBe(0);
+    });
+
+    it('is enabled on the FIRST unit once playing, because restart is still available', async () => {
+      materialUnitsMock.mockResolvedValue({ ok: true, status: 200, data: { units: [unit] } });
+      const { container } = render(<SchoolMaterialPlayer material={material} unit={unit} userId="kid1" onExit={() => {}} />);
+      await findPlayer();
+      expect(prevBtn()).toBeDisabled(); // at 0:00 with nothing before it
+      fireEvent.click(container.querySelectorAll('.school-material-player__zone')[2]);
+      expect(prevBtn()).not.toBeDisabled();
+    });
   });
 
   it('a bank-fetch failure logs an error and exits (never strands the child)', async () => {

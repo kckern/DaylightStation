@@ -40,6 +40,12 @@ import SchoolPlayerChrome from './SchoolPlayerChrome.jsx';
 const Player = lazy(() => import('../../Player/Player.jsx'));
 
 const PROGRESS_THROTTLE_MS = 10000;
+// CD-player rule for the leftmost transport button: past this point into the
+// unit it restarts; at the very start it steps back to the previous unit.
+const RESTART_WINDOW_S = 10;
+// Tap-zone seek step. Same interval as the chrome's ∓15s buttons — the zones
+// ARE those buttons, made the size of a third of the screen.
+const TAP_SKIP_S = 15;
 
 /** Error boundary so a Player crash drops back to the detail view, not a blank panel. */
 class SchoolPlayerBoundary extends Component {
@@ -193,6 +199,16 @@ export default function SchoolMaterialPlayer({ material, unit, userId, onExit, o
     );
   }
 
+  // One button, two jobs (the CD-player convention): once you're past
+  // RESTART_WINDOW_S it takes you back to the start of THIS unit; tap it again
+  // (now at 0:00) and it steps to the previous one. So it's enabled whenever
+  // either job is available.
+  const atStart = chrome.currentTime <= RESTART_WINDOW_S;
+  const onPrev = () => {
+    if (!atStart) { chrome.restart(); return; }
+    if (prevUnit) onNavigate?.(prevUnit);
+  };
+
   // Shared control props for the chrome (audio bar or video overlay).
   const chromeProps = {
     isPlaying: chrome.isPlaying,
@@ -202,13 +218,17 @@ export default function SchoolMaterialPlayer({ material, unit, userId, onExit, o
     onToggle: chrome.toggle,
     onSeek: chrome.seek,
     onSkip: chrome.skip,
-    onRestart: chrome.restart,
     onSetVolume: chrome.setVolume,
-    onPrev: () => prevUnit && onNavigate?.(prevUnit),
+    onPrev,
     onNext: () => nextUnit && !nextUnit.locked && onNavigate?.(nextUnit),
-    hasPrev: Boolean(prevUnit),
+    hasPrev: !atStart || Boolean(prevUnit),
     hasNext: Boolean(nextUnit && !nextUnit.locked),
   };
+
+  // A video tap acts where it lands: rewind | play/pause | forward, in thirds.
+  // Every zone also reveals the chrome, so one tap both does the thing and
+  // shows the state it changed (the bar re-hides itself on idle while playing).
+  const zoneTap = (fn) => () => { chrome.reveal(); fn(); };
 
   // Audio: minimal shader (cover art) + a PERSISTENT chrome bar below.
   // Video: focused shader (Player suppresses its own overlays) filling the
@@ -221,15 +241,31 @@ export default function SchoolMaterialPlayer({ material, unit, userId, onExit, o
             {playerEl}
           </Suspense>
         </SchoolPlayerBoundary>
-        {/* Video: a full-stage overlay ALWAYS on top of the video. A tap on the
-            video area toggles the control bar; taps on the buttons themselves
-            stop-propagate so they act without hiding the bar. */}
+        {/* Video: a full-stage overlay ALWAYS on top of the video, holding the
+            three tap zones and, above them, the fading control bar. The zones
+            are real <button>s — which is also what keeps a tap here from being
+            read a second time as the screen framework's surface play/pause
+            gesture (its TAP_EXEMPT_SELECTOR exempts buttons). */}
         {!isAudio && (
-          <div
-            className={`school-material-player__overlay${chrome.visible ? ' is-visible' : ' is-hidden'}`}
-            onPointerDown={chrome.toggleControls}
-          >
-            <div className="school-material-player__overlay-chrome" onPointerDown={(e) => e.stopPropagation()}>
+          <div className={`school-material-player__overlay${chrome.visible ? ' is-visible' : ' is-hidden'}`}>
+            <div className="school-material-player__zones">
+              <button
+                type="button" className="school-material-player__zone"
+                aria-label={`Back ${TAP_SKIP_S} seconds`}
+                onClick={zoneTap(() => chrome.skip(-TAP_SKIP_S))}
+              />
+              <button
+                type="button" className="school-material-player__zone"
+                aria-label={chrome.isPlaying ? 'Pause' : 'Play'}
+                onClick={zoneTap(chrome.toggle)}
+              />
+              <button
+                type="button" className="school-material-player__zone"
+                aria-label={`Forward ${TAP_SKIP_S} seconds`}
+                onClick={zoneTap(() => chrome.skip(TAP_SKIP_S))}
+              />
+            </div>
+            <div className="school-material-player__overlay-chrome">
               <SchoolPlayerChrome variant="video" {...chromeProps} onActivity={chrome.reveal} />
             </div>
           </div>

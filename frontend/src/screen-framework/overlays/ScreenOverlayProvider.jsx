@@ -43,14 +43,23 @@ const TAP_EXEMPT_SELECTOR = [
 ].join(',');
 
 // Shell layout for touch screens: a content box that doubles as a play/pause
-// tap target, above the persistent control lane.
+// tap target, above the control lane.
+//
+// The lane is CONTENT-ONLY (`showChrome`): it appears once something sits over
+// the screen's own layout -- a fullscreen overlay (a cast) or anything on the
+// nav stack (menu, player) -- and is absent while the screen shows nothing but
+// its bare layout. There is no "back" to offer there, and the Portal's layout
+// is the School app, which carries its own header, back-navigation and
+// transport; a second bar under it stole 80px of an 800px panel and
+// letterboxed 16:9 video for navigation the app already offered. A screen
+// whose layout has no way back of its own must not rely on this lane.
 //
 // The surface gesture is armed ONLY in 'media' mode. In 'back' mode the user is
 // browsing, and media:playback {command:'toggle'} is translated by
 // ScreenActionHandler into a synthetic Enter keydown -- which on a menu
 // activates the highlighted item. An always-armed surface would turn any stray
 // tap on menu whitespace into "launch whatever is selected".
-function TouchShellLayout({ mode, children }) {
+function TouchShellLayout({ mode, showChrome, children }) {
   const isMedia = mode === 'media';
 
   const handleSurfaceTap = useCallback((event) => {
@@ -69,7 +78,7 @@ function TouchShellLayout({ mode, children }) {
       >
         {children}
       </div>
-      <TouchChrome mode={mode} />
+      {showChrome && <TouchChrome mode={mode} />}
     </div>
   );
 }
@@ -79,10 +88,14 @@ function TouchShellLayout({ mode, children }) {
 // true (see TouchShell below), so calling the throwing accessor here is
 // safe -- and it is called unconditionally within this component, satisfying
 // the rules of hooks.
-function NavAwareTouchShell({ overlayChrome, children }) {
+function NavAwareTouchShell({ overlayChrome, hasOverlay, children }) {
   const { currentContent } = useMenuNavigationContext();
   const mode = (overlayChrome === 'media' || isNavStackContent(currentContent)) ? 'media' : 'back';
-  return <TouchShellLayout mode={mode}>{children}</TouchShellLayout>;
+  return (
+    <TouchShellLayout mode={mode} showChrome={hasOverlay || !!currentContent}>
+      {children}
+    </TouchShellLayout>
+  );
 }
 
 // Screen-level touch shell. Mode considers BOTH content paths: a showOverlay()
@@ -93,13 +106,17 @@ function NavAwareTouchShell({ overlayChrome, children }) {
 // the two can never disagree.
 // useHasMenuNavigationContext() is always called (never throws), and only
 // gates which child renders -- it does not gate a hook call itself.
-function TouchShell({ overlayChrome, children }) {
+function TouchShell({ overlayChrome, hasOverlay, children }) {
   const hasNavContext = useHasMenuNavigationContext();
   if (hasNavContext) {
-    return <NavAwareTouchShell overlayChrome={overlayChrome}>{children}</NavAwareTouchShell>;
+    return (
+      <NavAwareTouchShell overlayChrome={overlayChrome} hasOverlay={hasOverlay}>
+        {children}
+      </NavAwareTouchShell>
+    );
   }
   return (
-    <TouchShellLayout mode={overlayChrome === 'media' ? 'media' : 'back'}>
+    <TouchShellLayout mode={overlayChrome === 'media' ? 'media' : 'back'} showChrome={hasOverlay}>
       {children}
     </TouchShellLayout>
   );
@@ -207,11 +224,12 @@ export function ScreenOverlayProvider({ children, inputType = null }) {
   return (
     <ScreenOverlayContext.Provider value={{ showOverlay, dismissOverlay, hasOverlay, registerEscapeInterceptor, unregisterEscapeInterceptor, escapeInterceptorRef }}>
       {inputType === 'touch' ? (
-        // Touch screens get a reserved control lane wrapping EVERYTHING, not just
-        // a fullscreen overlay: MenuStack pushes the Player straight onto the nav
-        // stack (no showOverlay call at all), so the lane has to sit above the
-        // whole screen to guarantee a touch user always has a way back.
-        <TouchShell overlayChrome={fullscreen?.chrome}>
+        // Touch screens get the shell wrapping EVERYTHING, not just a fullscreen
+        // overlay: MenuStack pushes the Player straight onto the nav stack (no
+        // showOverlay call at all), so the lane has to sit above the whole screen
+        // to guarantee a touch user always has a way back OUT OF CONTENT. It is
+        // not drawn while the screen shows its own layout — see TouchShellLayout.
+        <TouchShell overlayChrome={fullscreen?.chrome} hasOverlay={hasOverlay}>
           {content}
         </TouchShell>
       ) : (

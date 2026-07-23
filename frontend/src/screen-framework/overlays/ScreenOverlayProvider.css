@@ -80,6 +80,12 @@
   flex: 1 1 auto;
   display: flex;
   flex-direction: column;
+  /* Chrome's default tap highlight paints a translucent box over every
+     interactive element on touch, before any :active styling of our own gets a
+     say. Killed at the shell root (the property inherits) so it is gone for
+     everything a finger can reach on a touch screen — the app in the layout
+     AND anything cast over it. Press feedback is each control's :active. */
+  -webkit-tap-highlight-color: transparent;
 }
 
 .screen-overlay--touch-content {

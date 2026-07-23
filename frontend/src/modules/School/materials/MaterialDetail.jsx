@@ -21,6 +21,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { schoolApi } from '../schoolApi.js';
 import { schoolLog } from '../schoolLog.js';
+import { sizedPlexImage, ART_BOX } from '../plexImage.js';
 
 function formatMinutes(durationMs) {
   if (durationMs == null) return null;
@@ -153,7 +154,7 @@ export default function MaterialDetail({ material, userId, onBack, onPlay, notic
       <div className="school-material-detail__layout">
         <aside className="school-material-detail__info">
           {material.poster && (
-            <img className="school-material-detail__poster" src={material.poster} alt="" />
+            <img className="school-material-detail__poster" src={sizedPlexImage(material.poster, ...ART_BOX.detailPoster)} alt="" />
           )}
           {/* No title here — the header breadcrumb already names this material. */}
           {units !== null && units.length > 0 && (
@@ -248,7 +249,7 @@ export default function MaterialDetail({ material, userId, onBack, onPlay, notic
                       >
                         <span className="school-material-detail__thumb">
                           {u.thumb
-                            ? <img src={u.thumb} alt="" loading="lazy" />
+                            ? <img src={sizedPlexImage(u.thumb, ...ART_BOX.unitThumb)} alt="" loading="lazy" decoding="async" />
                             : <span className="school-material-detail__thumb-fallback">{u.index}</span>}
                           {u.locked && (
                             <span className="school-material-detail__thumb-lock"><LockGlyph /></span>
