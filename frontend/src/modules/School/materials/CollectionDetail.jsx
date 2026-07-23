@@ -8,10 +8,10 @@
  * Purely presentational — MaterialsSection owns the selection and the
  * breadcrumb; this component only fetches and renders the works.
  */
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { schoolApi } from '../schoolApi.js';
 
-export default function CollectionDetail({ collection, onOpenWork }) {
+export default function CollectionDetail({ collection, onOpenWork, initialWorkId = null }) {
   const [works, setWorks] = useState(null);
 
   useEffect(() => {
@@ -23,6 +23,15 @@ export default function CollectionDetail({ collection, onOpenWork }) {
     });
     return () => { alive = false; };
   }, [collection.id]);
+
+  // Deep-link restore: once the works resolve, auto-open the one the URL named
+  // (one-shot per requested id) so a leaf URL descends past the works browser.
+  const consumedRef = useRef(null);
+  useEffect(() => {
+    if (!initialWorkId || !works || consumedRef.current === initialWorkId) return;
+    const w = works.find((x) => x.id === initialWorkId);
+    if (w) { consumedRef.current = initialWorkId; onOpenWork(w); }
+  }, [initialWorkId, works, onOpenWork]);
 
   return (
     <div className="school-material-detail">
