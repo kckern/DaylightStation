@@ -32,7 +32,12 @@ export function createSchoolRouter({
   };
 
   router.get('/roster', wrap((req, res) => res.json(schoolService.getRoster())));
-  router.get('/banks', wrap((req, res) => res.json(schoolService.listBanks({ audience: req.query.audience }))));
+  // Await the (async, off-thread) warm so a cold cache returns the full list
+  // rather than empty — without ever blocking the event loop on the file scan.
+  router.get('/banks', wrap(async (req, res) => {
+    await schoolService.warmBanks();
+    res.json(schoolService.listBanks({ audience: req.query.audience }));
+  }));
   router.get('/banks/:bankId', wrap((req, res) => res.json(schoolService.getBank(req.params.bankId))));
   router.post('/sessions', wrap((req, res) => {
     const { userId = null, bankId, mode } = req.body || {};
