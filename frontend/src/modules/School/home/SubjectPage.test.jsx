@@ -42,7 +42,7 @@ beforeEach(() => {
 });
 
 describe('SubjectPage', () => {
-  it('renders grouped KindSections (Watch/Listen/Apps/Practice) with the mixed shelf items', async () => {
+  it('renders the packed kind shelves (Watch/Listen/Apps/Practice) with the mixed shelf items', async () => {
     render(
       <SubjectPage
         subjectId="writing"
@@ -145,8 +145,8 @@ describe('SubjectPage', () => {
     const startedTile = startedHeading.closest('.school-tile');
     expect(startedTile.querySelector('.school-tile__progress')).not.toBeNull();
 
-    // One fetch, not two: SubjectPage owns the progress fetch and hands it to
-    // ContinueRail as a prop, so ContinueRail must not self-fetch on top.
+    // One fetch per subject open: SubjectPage owns the progress fetch (used for
+    // ranking + the tiles' progress underline), so nothing refetches on top.
     expect(schoolApi.materialProgress).toHaveBeenCalledTimes(1);
   });
 
