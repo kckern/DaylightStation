@@ -18,3 +18,16 @@ describe('inputRecorder ring buffer', () => {
     expect(snap.records[snap.records.length - 1].a).toBe(CAPACITY + 4);
   });
 });
+
+import { intern, __internTableForTest } from './inputRecorder.js';
+describe('string intern table', () => {
+  beforeEach(() => __resetRecorder());
+  it('returns stable ids and is idempotent', () => {
+    const a1 = intern('loop-toggle');
+    const a2 = intern('loop-toggle');
+    const b1 = intern('tempo-');
+    expect(a1).toBe(a2);
+    expect(b1).not.toBe(a1);
+    expect(__internTableForTest()[a1]).toBe('loop-toggle');
+  });
+});
