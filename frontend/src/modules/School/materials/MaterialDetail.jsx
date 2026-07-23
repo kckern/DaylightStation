@@ -227,7 +227,8 @@ export default function MaterialDetail({ material, userId, onBack, onPlay, notic
           )}
           {units !== null && units.length > 0 && !isAudio && groups.map((g, gi) => (
             <div key={g.group ?? `_flat_${gi}`} className="school-material-detail__group">
-              {g.group && <h3 className="school-material-detail__group-title">{g.group}</h3>}
+              {/* No season/group heading — it duplicates what the header
+                  breadcrumb already conveys and just adds noise. */}
               <ul className="school-material-detail__units">
                 {g.units.map((u) => {
                   const minutes = formatMinutes(u.durationMs);

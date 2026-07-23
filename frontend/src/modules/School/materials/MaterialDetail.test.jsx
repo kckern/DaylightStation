@@ -44,7 +44,7 @@ describe('MaterialDetail', () => {
     expect(screen.queryByRole('heading', { level: 3 })).toBeNull();
   });
 
-  it('groups units under a header row per distinct group', async () => {
+  it('renders grouped units WITHOUT a season/group heading (heading dropped as redundant)', async () => {
     materialUnitsMock.mockResolvedValue({
       ok: true, status: 200,
       data: {
@@ -56,8 +56,11 @@ describe('MaterialDetail', () => {
       },
     });
     render(<MaterialDetail material={material} userId="kid1" onBack={() => {}} onPlay={() => {}} notice={null} sectionLabel="Courses" />);
-    expect(await screen.findByText('Season 1')).toBeInTheDocument();
-    expect(screen.getByText('Season 2')).toBeInTheDocument();
+    expect(await screen.findByText('Ep 1')).toBeInTheDocument();
+    expect(screen.getByText('Ep 2')).toBeInTheDocument();
+    // The season/group heading no longer renders (the breadcrumb carries that context).
+    expect(screen.queryByText('Season 1')).toBeNull();
+    expect(screen.queryByText('Season 2')).toBeNull();
   });
 
   it('a locked unit tap is a no-op and shows its lockReason; an unlocked/current tap calls onPlay', async () => {
