@@ -35,6 +35,7 @@ export const schoolApi = {
     const qs = p.toString();
     return req(`/report${qs ? `?${qs}` : ''}`);
   },
+  materialWorks: (materialId) => req(`/materials/${encodeURIComponent(materialId)}/works`),
   materialUnits: (materialId, userId) => req(`/materials/${encodeURIComponent(materialId)}/units${userId ? `?userId=${encodeURIComponent(userId)}` : ''}`),
   quizRequests: (materialId) => req(`/quiz-requests${materialId ? `?materialId=${encodeURIComponent(materialId)}` : ''}`),
   requestQuiz: (body) => req('/quiz-requests', body),

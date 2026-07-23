@@ -45,4 +45,12 @@ describe('MaterialGrid', () => {
     render(<MaterialGrid materials={[]} onSelect={() => {}} />);
     expect(screen.getByText(/nothing here yet/i)).toBeInTheDocument();
   });
+
+  it('renders a collection as a square tile with a "N works" meta', () => {
+    const collection = { id: 'plex:619778', title: 'Shakespeare Tales', poster: '/api/v1/display/plex/c', kind: 'collection', unitCount: 16 };
+    render(<MaterialGrid materials={[collection]} onSelect={() => {}} />);
+    const tile = screen.getByText('Shakespeare Tales').closest('button');
+    expect(tile.className).toMatch(/--square/);
+    expect(screen.getByText('16 works')).toBeInTheDocument();
+  });
 });

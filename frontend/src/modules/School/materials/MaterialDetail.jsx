@@ -82,6 +82,7 @@ export default function MaterialDetail({ material, userId, onBack, onPlay, notic
   const groups = units ? groupUnits(units) : [];
   const current = units?.find((u) => u.current) ?? null;
   const doneCount = units?.filter((u) => u.completed).length ?? 0;
+  const isAudio = material.medium === 'audio';
 
   const requestQuiz = useCallback(async (unit) => {
     if (!userId || requesting) return;
@@ -151,7 +152,40 @@ export default function MaterialDetail({ material, userId, onBack, onPlay, notic
           {units !== null && units.length === 0 && (
             <div className="school-material-detail__empty">No units yet.</div>
           )}
-          {units !== null && units.length > 0 && groups.map((g, gi) => (
+          {/* Audio chapters have no thumbnails, so a video-style poster grid
+              would be a wall of index tiles. They render as a two-column list
+              that fills the vertical space (few chapters stretch to fill).
+              Locked chapters are inert and wear their lock reason. */}
+          {units !== null && units.length > 0 && isAudio && (
+            <ul className="school-material-detail__chapters">
+              {units.map((u) => {
+                const minutes = formatMinutes(u.durationMs);
+                const cls = [
+                  'school-material-detail__chapter',
+                  u.current ? 'is-current' : '',
+                  u.locked ? 'is-locked' : '',
+                  u.completed ? 'is-done' : '',
+                ].filter(Boolean).join(' ');
+                return (
+                  <li key={u.id}>
+                    <button type="button" className={cls} disabled={u.locked} onClick={() => { if (!u.locked) onPlay(u); }}>
+                      <span className="school-material-detail__chapter-index">{u.index}</span>
+                      <span className="school-material-detail__chapter-body">
+                        <span className="school-material-detail__chapter-title">{u.title}</span>
+                        {u.locked && u.lockReason && (
+                          <span className="school-material-detail__chapter-lockreason">{u.lockReason}</span>
+                        )}
+                      </span>
+                      <span className="school-material-detail__chapter-status">
+                        {u.locked ? <LockGlyph /> : u.completed ? <CheckGlyph /> : (minutes || null)}
+                      </span>
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+          {units !== null && units.length > 0 && !isAudio && groups.map((g, gi) => (
             <div key={g.group ?? `_flat_${gi}`} className="school-material-detail__group">
               {g.group && <h3 className="school-material-detail__group-title">{g.group}</h3>}
               <ul className="school-material-detail__units">

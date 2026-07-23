@@ -1,20 +1,26 @@
 /**
- * PlexAlbumSource - Plex artist -> album -> track hierarchy as School
- * materials (spec §4, `plex-album` row).
+ * PlexAlbumSource - Plex collection -> album(work) -> track(chapter) hierarchy
+ * as School materials (spec §4, `plex-album` row).
  *
- * `plexClient.children(ratingKey)` is the only collaborator call — the
- * constructor-injected seam onto Plex's `/library/metadata/{id}/children`
- * endpoint (Task 5 wires the real adapter). `listMaterials` walks one level
- * (artist -> albums); `getMaterial` walks the next (album -> tracks) and
- * derives the album's own title/poster from a track's `parentTitle` /
- * `parentThumb` — Plex track metadata always carries its parent (album)
- * fields, so no second fetch is needed.
+ * An audio anthology (Shakespeare Tales, I Survived) is one **collection** with
+ * many **works** (plays/books), each a run of ordered **chapters**. The
+ * taxonomy is three levels, so the source exposes three walks over the single
+ * `plexClient.children(ratingKey)` seam:
  *
- * Gotcha (spec §4, verified 2026-07-22 against Plex artist `619778`): album
- * entries carry NO `duration` attribute at all — only their tracks do.
- * `getMaterial` therefore sums the mapped units' `durationMs` instead of
- * reading the album's own field; `listMaterials` (which only sees the album,
- * never its tracks) always reports `durationMs: null`.
+ *   listMaterials(root)  -> ONE collection material (kind:'collection'); the
+ *                           shelf shows the anthology as a single tile, not
+ *                           one tile per work.
+ *   listWorks(root)      -> the works (albums), for the collection browser.
+ *   getMaterial(workId)  -> a work's chapters (tracks) as ordered units, the
+ *                           audio equivalent of a show's episodes.
+ *
+ * `getMaterial` derives the work's own title/poster from a track's
+ * `parentTitle`/`parentThumb` (Plex track metadata always carries its parent
+ * (album) fields, so no second fetch is needed).
+ *
+ * Gotcha (spec §4, verified 2026-07-22 against Plex `619778`): album entries
+ * carry NO `duration` attribute — only their tracks do. `getMaterial` sums the
+ * mapped units' `durationMs`; the list walks report `durationMs: null`.
  *
  * Category is NOT stamped here — that is the catalog use-case's job (spec §3).
  */
@@ -46,13 +52,38 @@ export class PlexAlbumSource {
   }
 
   /**
-   * Artist -> albums. No units (spec §4: `listMaterials` is for the catalog
-   * grid only).
+   * Collection -> ONE collection material. The shelf shows the anthology as a
+   * single tile; its works are fetched on drill-in via `listWorks`. Title/
+   * poster come from a child album's `parentTitle`/`parentThumb` (the
+   * collection's own fields), with a fallback to the first album's fields; the
+   * catalog additionally prefers the configured source `label` for the title.
    *
-   * @param {string} rootPlexId - artist rating key (bare or `plex:`-prefixed)
-   * @returns {Promise<Array<{id:string, title:string, poster:?string, source:string, medium:string, durationMs:null, unitCount:?number}>>}
+   * @param {string} rootPlexId - collection rating key (bare or `plex:`-prefixed)
+   * @returns {Promise<Array<{id:string, title:?string, poster:?string, source:string, medium:string, kind:string, durationMs:null, unitCount:number}>>}
    */
   async listMaterials(rootPlexId) {
+    const root = stripPrefix(rootPlexId);
+    const albums = await this.#plexClient.children(root);
+    const first = albums[0] || {};
+    return [{
+      id: `plex:${root}`,
+      title: first.parentTitle ?? null,
+      poster: first.parentThumb ?? first.thumb ?? null,
+      source: SOURCE,
+      medium: MEDIUM,
+      kind: 'collection',
+      durationMs: null,
+      unitCount: albums.length,
+    }];
+  }
+
+  /**
+   * Collection -> works (albums). The collection browser's grid.
+   *
+   * @param {string} rootPlexId - collection rating key (bare or `plex:`-prefixed)
+   * @returns {Promise<Array<{id:string, title:string, poster:?string, source:string, medium:string, kind:string, durationMs:null, unitCount:?number}>>}
+   */
+  async listWorks(rootPlexId) {
     const albums = await this.#plexClient.children(stripPrefix(rootPlexId));
     return albums.map((album) => ({
       id: `plex:${album.ratingKey}`,
@@ -60,6 +91,7 @@ export class PlexAlbumSource {
       poster: album.thumb ?? null,
       source: SOURCE,
       medium: MEDIUM,
+      kind: 'work',
       durationMs: null, // spec §4 gotcha: Plex albums carry no duration attribute
       unitCount: album.leafCount ?? null,
     }));

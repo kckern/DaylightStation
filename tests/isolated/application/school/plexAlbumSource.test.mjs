@@ -17,6 +17,8 @@ function sixteenAlbums() {
     ratingKey: String(619800 + i),
     title: `Tale ${i + 1}`,
     thumb: `${PROXY}/library/metadata/${619800 + i}/thumb/1`,
+    parentTitle: 'Shakespeare Tales',
+    parentThumb: `${PROXY}/library/metadata/619778/thumb/1`,
     leafCount: 3,
     type: 'album',
   }));
@@ -40,31 +42,25 @@ function oneTrackAlbum() {
   ];
 }
 
-describe('PlexAlbumSource.listMaterials', () => {
-  it('maps a 16-album artist to Material[] with no units', async () => {
+describe('PlexAlbumSource.listMaterials (collection)', () => {
+  it('maps a 16-album collection to ONE collection material, not 16', async () => {
     const plexClient = { children: async () => sixteenAlbums() };
     const source = new PlexAlbumSource({ plexClient, logger: { warn() {}, error() {} } });
 
     const materials = await source.listMaterials('619778');
 
-    expect(materials).toHaveLength(16);
+    expect(materials).toHaveLength(1);
     expect(materials[0]).toEqual({
-      id: 'plex:619800',
-      title: 'Tale 1',
-      poster: `${PROXY}/library/metadata/619800/thumb/1`,
+      id: 'plex:619778',
+      title: 'Shakespeare Tales', // from a child's parentTitle
+      poster: `${PROXY}/library/metadata/619778/thumb/1`, // from a child's parentThumb
       source: 'plex-album',
       medium: 'audio',
+      kind: 'collection',
       durationMs: null,
-      unitCount: 3,
+      unitCount: 16, // number of works
     });
-    for (const m of materials) {
-      expect(m.units).toBeUndefined();
-      expect(m.durationMs).toBeNull(); // spec §4: albums carry no duration; never guessed at list level
-      // Catches the poster-unproxied regression: this source must pass the
-      // already-proxied plexClient poster through untouched, never a raw
-      // `/library/metadata/...` Plex path the frontend can't load.
-      expect(m.poster.startsWith(PROXY)).toBe(true);
-    }
+    expect(materials[0].poster.startsWith(PROXY)).toBe(true);
   });
 
   it('passes the bare rating key to plexClient.children, stripping a plex: prefix if given', async () => {
@@ -77,14 +73,46 @@ describe('PlexAlbumSource.listMaterials', () => {
     expect(seen).toBe('619778');
   });
 
-  it('falls back to null poster when a child has no thumb, and null unitCount when it has no leafCount', async () => {
+  it('an empty collection resolves to one material with null title/poster and 0 works', async () => {
+    const plexClient = { children: async () => [] };
+    const source = new PlexAlbumSource({ plexClient });
+
+    const [material] = await source.listMaterials('619778');
+
+    expect(material.title).toBeNull();
+    expect(material.poster).toBeNull();
+    expect(material.unitCount).toBe(0);
+  });
+});
+
+describe('PlexAlbumSource.listWorks', () => {
+  it('maps the collection children to work materials (the drill-in grid)', async () => {
+    const plexClient = { children: async () => sixteenAlbums() };
+    const source = new PlexAlbumSource({ plexClient });
+
+    const works = await source.listWorks('619778');
+
+    expect(works).toHaveLength(16);
+    expect(works[0]).toEqual({
+      id: 'plex:619800',
+      title: 'Tale 1',
+      poster: `${PROXY}/library/metadata/619800/thumb/1`,
+      source: 'plex-album',
+      medium: 'audio',
+      kind: 'work',
+      durationMs: null,
+      unitCount: 3,
+    });
+  });
+
+  it('falls back to null poster/unitCount when a work has no thumb/leafCount', async () => {
     const plexClient = { children: async () => [{ ratingKey: '1', title: 'No Art', type: 'album' }] };
     const source = new PlexAlbumSource({ plexClient });
 
-    const [material] = await source.listMaterials('artist1');
+    const [work] = await source.listWorks('619778');
 
-    expect(material.poster).toBeNull();
-    expect(material.unitCount).toBeNull();
+    expect(work.poster).toBeNull();
+    expect(work.unitCount).toBeNull();
   });
 });
 
