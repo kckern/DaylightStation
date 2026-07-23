@@ -6,7 +6,7 @@ import DeckTile from './tiles/DeckTile.jsx';
 // The four content kinds a subject's shelf is partitioned into, in the order
 // they render after the Continue rail. `verb` is the section header; `icon` is
 // the glyph name (Phase 0); `token` maps to a `--kind-*` colour; `Tile` is the
-// per-kind presentational tile component KindSection renders per item.
+// per-kind presentational tile component SubjectShelves renders per item.
 export const KINDS = [
   { id: 'video', verb: 'Watch', descriptor: 'Video courses', icon: 'kind-video', token: 'video', Tile: VideoCourseTile },
   { id: 'audio', verb: 'Listen', descriptor: 'Audio courses', icon: 'kind-audio', token: 'audio', Tile: AudioCourseTile },
