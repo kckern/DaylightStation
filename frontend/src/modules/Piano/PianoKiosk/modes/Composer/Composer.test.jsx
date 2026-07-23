@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen, waitFor, fireEvent } from '@testing-library/react';
+import getLogger, { getRecentEvents } from '../../../../../lib/logging/Logger.js';
 
 // Mock the piano contexts + api so the mode renders headless.
 vi.mock('../../PianoConfig.jsx', () => ({ usePianoKioskConfig: () => ({ config: { composer: {} } }) }));
@@ -43,6 +44,43 @@ describe('Composer mode', () => {
     await waitFor(() => expect(container.querySelector('.composer-editor')).toBeInTheDocument());
     expect(container.querySelector('.composer-bar')).toBeNull();
     expect(container.querySelector('.composer-toolbar')).toContainElement(screen.getByRole('button', { name: /your songs/i }));
+  });
+
+  // Task 4: the mode logger routes composer telemetry to a persisted session
+  // log. Spy on getLogger().child() (the REAL logger, not mocked) to capture the
+  // context the mode logger is created with — it must carry app + sessionLog so
+  // the backend sessionFile transport files its events under piano-composer.
+  it('creates its mode logger with a session-logged piano-composer context', async () => {
+    const root = getLogger();
+    const origChild = root.child.bind(root);
+    const ctxs = [];
+    const spy = vi.spyOn(root, 'child').mockImplementation((ctx) => { ctxs.push(ctx); return origChild(ctx); });
+    try {
+      render(<Composer />);
+      await waitFor(() => expect(document.querySelector('.composer-editor')).toBeInTheDocument());
+      // Some getLogger().child() call must carry sessionLog routing…
+      const sessionCtx = ctxs.find((c) => c && c.sessionLog);
+      expect(sessionCtx, 'no getLogger().child() carried sessionLog').toBeTruthy();
+      // …and it is the composer mode logger, tagged for the piano-composer app.
+      expect(sessionCtx).toMatchObject({ app: 'piano-composer', sessionLog: true });
+      expect(sessionCtx.component).toBe('composer');
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  // A session-log.start fires for the piano-composer app on mount, so the
+  // backend opens a session file to receive the mode's events.
+  it('opens a piano-composer session on mount', async () => {
+    const before = getRecentEvents(500).filter(
+      (e) => e.event === 'session-log.start' && e.context?.app === 'piano-composer'
+    ).length;
+    render(<Composer />);
+    await waitFor(() => expect(document.querySelector('.composer-editor')).toBeInTheDocument());
+    const after = getRecentEvents(500).filter(
+      (e) => e.event === 'session-log.start' && e.context?.app === 'piano-composer'
+    ).length;
+    expect(after).toBeGreaterThan(before);
   });
 
   // Round trip: editor → gallery → back to a fresh blank staff. With the bar

@@ -18,6 +18,9 @@ import { useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import { MusicXmlRenderer } from '../../../../MusicNotation/renderers/MusicXmlRenderer.jsx';
 import { usePianoMidi } from '../../PianoMidiContext.jsx';
 import getLogger from '../../../../../lib/logging/Logger.js';
+import { record, intern, KIND, startRecorder, stopRecorder } from '../../../../../lib/logging/inputRecorder.js';
+import { inputTelemetryEnabled, makeInputSender } from '../../../../../lib/logging/inputTelemetryGate.js';
+import { midiToRecord } from '../SheetMusic/midiTap.js';
 import { initEditor, serializeFromEditor, undo, redo, makeRest } from './model/index.js';
 import { useComposerInput } from './useComposerInput.js';
 import { useAutosave } from './useAutosave.js';
@@ -245,7 +248,7 @@ export function serializeForDisplay(editorState, minBars = DISPLAY_MIN_BARS) {
  * "is this actually different from what's on disk?" to useAutosave, which is
  * the layer that knows what was persisted.
  */
-function TitleControl({ title, onRename, logger }) {
+function TitleControl({ title, onRename, logger, onTap }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState('');
   const doneRef = useRef(false);
@@ -254,8 +257,9 @@ function TitleControl({ title, onRename, logger }) {
     setDraft(title || '');
     doneRef.current = false;
     setEditing(true);
+    onTap?.('title');
     logger.debug('composer.title.edit-start', { named: !!title });
-  }, [title, logger]);
+  }, [title, logger, onTap]);
 
   const commit = useCallback(() => {
     if (doneRef.current) return;
@@ -304,13 +308,31 @@ function TitleControl({ title, onRename, logger }) {
   );
 }
 
-export function EditorSurface({ initialScore, songId = null, initialRevision = 1, save, create, title, onRename, onMaterialized, onSongs, config = {} }) {
-  const logger = useMemo(() => getLogger().child({ component: 'composer-editor' }), []);
+export function EditorSurface({ initialScore, songId = null, initialRevision = 1, save, create, title, onRename, onMaterialized, onSongs, config = {}, user, logger: loggerProp }) {
+  // Derive the editor's `composer-editor` child from the mode logger when hosted
+  // by Composer (so its events inherit app + sessionLog routing), and fall back
+  // to a bare root child when mounted standalone (the verification harnesses and
+  // several tests do exactly that).
+  const logger = useMemo(
+    () => (loggerProp ? loggerProp.child({ component: 'composer-editor' }) : getLogger().child({ component: 'composer-editor' })),
+    [loggerProp],
+  );
+  // UI-intent + input→paint tap for toolbar controls (mirrors SheetMusic's
+  // ScorePlayer.tapIntent). Records the intent immediately, then the input→paint
+  // latency for the same control on the next frame. The editor has no cursor step
+  // to tag, so slot c is 0. intern caches the control name, so repeats are cheap.
+  const tapIntent = useCallback((name) => {
+    const id = intern(name);
+    record(KIND.UI_INTENT, id, 0, 0, 0);
+    const t0 = performance.now();
+    requestAnimationFrame(() => record(KIND.TAP, id, Math.round(performance.now() - t0), 0, 0));
+  }, []);
+
   const [editorState, setEditorState] = useState(() => initEditor(initialScore));
   const [layout, setLayout] = useState({ steps: [], staves: [] });
   const [helpOpen, setHelpOpen] = useState(false);
   const { steps, staves } = layout;
-  const { subscribe, sendNoteAt, sendNoteOffAt, sendPanic } = usePianoMidi();
+  const { subscribe, subscribeRaw, sendNoteAt, sendNoteOffAt, sendPanic } = usePianoMidi();
   // See DEFAULT_ZOOM: this single value drives the engrave AND every caret term
   // that is measured in fixed pixels. They must not diverge.
   const zoom = config.zoom ?? DEFAULT_ZOOM;
@@ -382,6 +404,7 @@ export function EditorSurface({ initialScore, songId = null, initialRevision = 1
   playingRef.current = transport.playing;
 
   const togglePlay = useCallback(() => {
+    tapIntent('play'); // capture the transport tap on both the play and pause edges
     if (playingRef.current) {
       transportRef.current?.pause();
       silenceScheduled();
@@ -389,7 +412,7 @@ export function EditorSurface({ initialScore, songId = null, initialRevision = 1
       return;
     }
     setPlaySpec({ score: editorState.score, startAtMeasure: editorState.caret.measureIdx });
-  }, [editorState.score, editorState.caret.measureIdx, silenceScheduled, logger]);
+  }, [editorState.score, editorState.caret.measureIdx, silenceScheduled, logger, tapIntent]);
 
   // Start on the render AFTER the snapshot lands, because useScoreTransport reads
   // its timeline from the props of the current render — calling play() inside
@@ -418,8 +441,13 @@ export function EditorSurface({ initialScore, songId = null, initialRevision = 1
   // context, which outlives this component.
   useEffect(() => () => { transportRef.current?.stop(); silenceScheduled(); }, [silenceScheduled]);
 
+  // The caret's live measure, mirrored to a ref so useComposerInput's MIDI
+  // callback (registered once) tags each EDIT row with the bar the note landed
+  // in, reading the CURRENT caret rather than a stale mount-time closure.
+  const caretMeasureRef = useRef(editorState.caret.measureIdx);
+  caretMeasureRef.current = editorState.caret.measureIdx;
   const { hud, setDuration, toggleDot, toggleArm, addRest, deleteBack } = useComposerInput({
-    setEditorState, subscribe, logger, onTogglePlay: togglePlay, playing: transport.playing,
+    setEditorState, subscribe, logger, onTogglePlay: togglePlay, playing: transport.playing, caretMeasureRef,
   });
   // Autosave consumes the LIVE editorState, never settledScore: the two-plane
   // split below is a RENDER concern, and persistence must never wait on an
@@ -462,6 +490,56 @@ export function EditorSurface({ initialScore, songId = null, initialRevision = 1
       flushRef.current?.(); // autosave-on-exit
     };
   }, [logger]); // eslint-disable-line react-hooks/exhaustive-deps -- mount-once lifecycle log
+
+  // Raw-input telemetry: mirror the FULL-fidelity MIDI byte stream (note-on/off,
+  // sustain, CC) into the zero-alloc recorder ring, independent of the editor's
+  // parsed `subscribe` (which only relays note-ons for armed entry). Reuses
+  // SheetMusic's pure midiToRecord classifier. Always on — recording is cheap and
+  // shipping is gated elsewhere. emitRaw wraps bytes as { data, time }, so the
+  // listener reads evt?.data (NOT the bare byte array).
+  useEffect(() => {
+    if (!subscribeRaw) return undefined;
+    const off = subscribeRaw((evt) => { const r = midiToRecord(evt?.data); if (r) record(r.kind, r.a, r.b, 0, 0); });
+    return off;
+  }, [subscribeRaw]);
+
+  // ── Input-telemetry recorder lifecycle (config-gated shipping) ────────────────
+  // The ring records unconditionally (raw MIDI above, toolbar taps via tapIntent);
+  // this only controls DRAINING it to the backend. start/stop are shared by the
+  // config-gated auto lifecycle and the window.__INPUT_REC__ kill switch, so the
+  // manual lever and the config path use the same one-event-per-batch sender.
+  // Copied from SheetMusic's ScorePlayer with composer-specific args: the
+  // piano-composer app tag, a draft-safe score id, and this file's `config` prop.
+  const inputSessionRef = useRef(null);
+  const startInputRec = useCallback(() => {
+    const session = new Date().toISOString();
+    inputSessionRef.current = session;
+    // `user` is the active piano player, threaded from Composer (usePianoUser).
+    // The old `config?.user?.id` was always undefined — `config` here is the
+    // `.composer` subtree, which carries no user.
+    startRecorder({ session, score: songId ?? 'draft', ctx: { user }, send: makeInputSender('piano-composer'), flushMs: 1000 });
+  }, [songId, config, user]);
+  const stopInputRec = useCallback(() => { stopRecorder(); inputSessionRef.current = null; }, []);
+
+  // Kill switch: a deploy-free off/on lever, installed regardless of config so the
+  // recorder can be started/stopped from the console even when shipping is off.
+  useEffect(() => {
+    if (typeof window === 'undefined') return undefined;
+    window.__INPUT_REC__ = {
+      start: startInputRec,
+      stop: stopInputRec,
+      status: () => ({ enabled: inputSessionRef.current != null, session: inputSessionRef.current }),
+    };
+    return () => { if (window.__INPUT_REC__) window.__INPUT_REC__ = undefined; };
+  }, [startInputRec, stopInputRec]);
+
+  // Config-gated auto lifecycle: ship input telemetry for this song only when the
+  // household config opts in. Re-arms on a song change; stops on unmount/disable.
+  useEffect(() => {
+    if (!inputTelemetryEnabled(config, 'composer')) return undefined;
+    startInputRec();
+    return () => stopInputRec();
+  }, [songId, config, startInputRec, stopInputRec]);
 
   // TWO RENDER PLANES (spec §2.1). OSMD engraves the SETTLED score only; notes
   // entered since then paint instantly as wet ink and dry at the next settle.
@@ -569,21 +647,26 @@ export function EditorSurface({ initialScore, songId = null, initialRevision = 1
   const doUndo = useCallback(() => {
     if (!canUndo) return;
     logger.info('composer.editor.undo', { remainingPast: (editorState.history?.past?.length || 1) - 1 });
+    record(KIND.EDIT, intern('undo'), 0, editorState.caret.measureIdx, intern('')); // d slot: interned '', not raw 0 (decodes to strings[0] garbage)
+    tapIntent('undo');
     setEditorState((s) => undo(s));
-  }, [canUndo, editorState, logger]);
+  }, [canUndo, editorState, logger, tapIntent]);
   const doRedo = useCallback(() => {
     if (!canRedo) return;
     logger.info('composer.editor.redo', { remainingFuture: (editorState.history?.future?.length || 1) - 1 });
+    record(KIND.EDIT, intern('redo'), 0, editorState.caret.measureIdx, intern('')); // d slot: interned '', not raw 0 (decodes to strings[0] garbage)
+    tapIntent('redo');
     setEditorState((s) => redo(s));
-  }, [canRedo, editorState, logger]);
+  }, [canRedo, editorState, logger, tapIntent]);
   const statusLabel = STATUS_LABEL[status] || '';
 
   // The help panel's open state used to live in the deleted bottom bar. It sits
   // here now for the same reason it sat there: nothing outside the toolbar that
   // owns the toggle needs to know the reference sheet is showing.
   const toggleHelp = useCallback(() => {
+    tapIntent('help');
     setHelpOpen((v) => { logger.info('composer.help.toggle', { open: !v }); return !v; });
-  }, [logger]);
+  }, [logger, tapIntent]);
   const closeHelp = useCallback(() => {
     logger.info('composer.help.toggle', { open: false });
     setHelpOpen(false);
@@ -601,7 +684,7 @@ export function EditorSurface({ initialScore, songId = null, initialRevision = 1
             the title alone) and reads better anyway: "Saved" is a fact about
             the thing the title names. */}
         <div className="composer-toolbar__doc">
-          <TitleControl title={title} onRename={onRename} logger={logger} />
+          <TitleControl title={title} onRename={onRename} logger={logger} onTap={tapIntent} />
           <span className={`composer-toolbar__status is-${status}`} aria-live="polite">{statusLabel}</span>
         </div>
         <div className="composer-toolbar__history">
@@ -611,7 +694,7 @@ export function EditorSurface({ initialScore, songId = null, initialRevision = 1
           <button type="button" onClick={doUndo} disabled={!canUndo} aria-label="Undo" title="Undo"><IconUndo size={24} /></button>
           <button type="button" onClick={doRedo} disabled={!canRedo} aria-label="Redo" title="Redo"><IconRedo size={24} /></button>
         </div>
-        <DurationPalette hud={hud} setDuration={setDuration} toggleDot={toggleDot} toggleArm={toggleArm} addRest={addRest} deleteBack={deleteBack} />
+        <DurationPalette hud={hud} setDuration={setDuration} toggleDot={toggleDot} toggleArm={toggleArm} addRest={addRest} deleteBack={deleteBack} onTap={tapIntent} />
         {/* The mode's transport. Deliberately NOT next to the Write toggle: the
             audit found a kid tapping the most play-looking control (then named
             "Play") and hearing nothing, because it only armed note entry.
@@ -640,7 +723,7 @@ export function EditorSurface({ initialScore, songId = null, initialRevision = 1
             <button
               type="button"
               className="composer-toolbar__nav-btn"
-              onClick={() => { logger.debug('composer.nav.songs', {}); onSongs(); }}
+              onClick={() => { logger.debug('composer.nav.songs', {}); tapIntent('songs'); onSongs(); }}
               aria-label="Your songs"
               title="Your saved songs"
             >
