@@ -644,14 +644,14 @@ export function EditorSurface({ initialScore, songId = null, initialRevision = 1
   const doUndo = useCallback(() => {
     if (!canUndo) return;
     logger.info('composer.editor.undo', { remainingPast: (editorState.history?.past?.length || 1) - 1 });
-    record(KIND.EDIT, intern('undo'), 0, editorState.caret.measureIdx, 0);
+    record(KIND.EDIT, intern('undo'), 0, editorState.caret.measureIdx, intern('')); // d slot: interned '', not raw 0 (decodes to strings[0] garbage)
     tapIntent('undo');
     setEditorState((s) => undo(s));
   }, [canUndo, editorState, logger, tapIntent]);
   const doRedo = useCallback(() => {
     if (!canRedo) return;
     logger.info('composer.editor.redo', { remainingFuture: (editorState.history?.future?.length || 1) - 1 });
-    record(KIND.EDIT, intern('redo'), 0, editorState.caret.measureIdx, 0);
+    record(KIND.EDIT, intern('redo'), 0, editorState.caret.measureIdx, intern('')); // d slot: interned '', not raw 0 (decodes to strings[0] garbage)
     tapIntent('redo');
     setEditorState((s) => redo(s));
   }, [canRedo, editorState, logger, tapIntent]);

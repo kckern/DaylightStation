@@ -75,7 +75,7 @@ describe('record -> encode -> decode round trip', () => {
     record(KIND.MIDI_ON, 60, 88, 0, 0);
     record(KIND.EDIT, intern('insert-note'), 60, 0, intern('quarter'));
     record(KIND.UI_INTENT, intern('undo'), 0, 0, 0);
-    record(KIND.EDIT, intern('undo'), 0, 0, 0);
+    record(KIND.EDIT, intern('undo'), 0, 0, intern('')); // d slot = interned '', not raw 0
     const batch = encodeBatch();
     const events = decodeEvents(header, [batch]);
 
@@ -84,7 +84,10 @@ describe('record -> encode -> decode round trip', () => {
     expect(events[1]).toMatchObject({ editType: 'duration', duration: 'quarter' });
     expect(events[2]).toMatchObject({ note: 60, velocity: 88 });
     expect(events[3]).toMatchObject({ editType: 'insert-note', note: 60, duration: 'quarter' });
-    expect(events[5]).toMatchObject({ editType: 'undo' });
+    // The undo row's duration slot must decode to '' (no duration), NOT a
+    // garbage interned string. A raw 0 in slot d decodes to strings[0] — here
+    // 'Numpad5', the first string interned — so the d slot must carry intern('').
+    expect(events[5]).toMatchObject({ editType: 'undo', duration: '' });
 
     // wall-clock alignment: t0 maps each record's perf-time t to wall-clock
     const { perf, wall } = header.ctx.t0;
