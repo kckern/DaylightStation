@@ -31,3 +31,24 @@ describe('string intern table', () => {
     expect(__internTableForTest()[a1]).toBe('loop-toggle');
   });
 });
+
+import { KIND, encodeBatch, buildHeader } from './inputRecorder.js';
+describe('encode', () => {
+  beforeEach(() => __resetRecorder());
+  it('drains records into a numeric batch and clears drop count', () => {
+    record(KIND.MIDI_ON, 72, 88, 112, 0);
+    record(KIND.MIDI_OFF, 72, 0, 0, 0);
+    const batch = encodeBatch();
+    expect(batch.b).toHaveLength(2);
+    expect(batch.b[0].slice(1)).toEqual([KIND.MIDI_ON, 72, 88, 112, 0]);
+    expect(batch.dropped).toBe(0);
+    expect(encodeBatch().b).toHaveLength(0);
+  });
+  it('header maps kind ids to names and includes interned strings', () => {
+    intern('loop-toggle');
+    const h = buildHeader({ session: 's1', score: 'x.mxl', ctx: {} });
+    expect(h.kinds[String(KIND.MIDI_ON)]).toBe('midi.on');
+    expect(h.strings).toContain('loop-toggle');
+    expect(h.h).toBe(1);
+  });
+});

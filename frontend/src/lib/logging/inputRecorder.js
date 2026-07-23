@@ -24,6 +24,30 @@ export function intern(str) {
   return id;
 }
 export function __internTableForTest() { return internList.slice(); }
+export const KIND = Object.freeze({
+  MIDI_ON: 1, MIDI_OFF: 2, SUSTAIN: 3, CC: 4,
+  TAP: 5, TOUCH_START: 6, TOUCH_MOVE: 7, TOUCH_END: 8,
+  UI_INTENT: 9, RENDER: 10,
+});
+const KIND_NAME = {
+  1: 'midi.on', 2: 'midi.off', 3: 'sustain', 4: 'cc',
+  5: 'tap', 6: 'touch.start', 7: 'touch.move', 8: 'touch.end',
+  9: 'ui.intent', 10: 'render',
+};
+export function encodeBatch() {
+  const out = [];
+  const start = count < CAPACITY ? 0 : head;
+  for (let n = 0; n < count; n++) {
+    const i = (start + n) % CAPACITY;
+    out.push([t[i], kind[i], a[i], b[i], c[i], d[i]]);
+  }
+  const drained = { b: out, dropped };
+  head = 0; count = 0; dropped = 0;
+  return drained;
+}
+export function buildHeader({ session, score, ctx }) {
+  return { h: 1, session, score, ctx, kinds: { ...KIND_NAME }, strings: internList.slice() };
+}
 export function __resetRecorder() { head = 0; count = 0; dropped = 0; internMap.clear(); internList.length = 0; }
 export function __snapshotForTest() {
   const records = [];
