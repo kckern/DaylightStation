@@ -6,10 +6,14 @@ import { useEffect } from 'react';
 // spy on the OUTBOUND send API the transport drives (playback goes out through
 // these three; nothing else in the editor sends MIDI).
 let midiHandler = null;
+// Task 6: the RAW MIDI subscriber (full-fidelity bytes incl. note-off/sustain),
+// captured so a test can push a wrapped { data } event straight at the recorder tap.
+let rawHandler = null;
 const midiOut = { sendNoteAt: vi.fn(), sendNoteOffAt: vi.fn(), sendPanic: vi.fn() };
 vi.mock('../../PianoMidiContext.jsx', () => ({
   usePianoMidi: () => ({
     subscribe: (fn) => { midiHandler = fn; return () => { midiHandler = null; }; },
+    subscribeRaw: (fn) => { rawHandler = fn; return () => { rawHandler = null; }; },
     ...midiOut,
   }),
 }));
@@ -40,6 +44,7 @@ import {
 import { CARET_GAP, CARET_WIDTH, MEASURE_START_UNITS } from './CaretLayer.jsx';
 import { WET_ADVANCE_UNITS, WET_RX_UNITS } from './PendingLayer.jsx';
 import { makeEmptyScore, makeNote } from './model/index.js';
+import { __resetRecorder, __snapshotForTest, KIND } from '../../../../../lib/logging/inputRecorder.js';
 
 /** Arm note entry (numpad 4) and play `n` middle-C note-ons. */
 function playNotes(n) {
@@ -67,6 +72,26 @@ describe('EditorSurface', () => {
     fireEvent.click(half);
     expect(half).toHaveAttribute('aria-pressed', 'true');
     expect(screen.getByRole('button', { name: /quarter note \(numpad 5\)/i })).toHaveAttribute('aria-pressed', 'false');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Task 6 — raw MIDI capture. Independent of the editor's PARSED `subscribe`
+// (which only carries note-ons for score entry), a subscribeRaw tap mirrors the
+// full-fidelity byte stream — note-off, sustain, CC — into the recorder ring,
+// reusing SheetMusic's pure midiToRecord classifier. Always on; shipping is
+// gated elsewhere.
+// ---------------------------------------------------------------------------
+describe('EditorSurface — raw MIDI recorder capture', () => {
+  it('records a MIDI_ON from the wrapped subscribeRaw event ({ data })', () => {
+    rawHandler = null;
+    render(<EditorSurface initialScore={makeEmptyScore()} songId="x" initialRevision={1} save={vi.fn()} config={{}} />);
+    expect(rawHandler).toBeTypeOf('function'); // the effect subscribed to raw MIDI
+    __resetRecorder();
+    // emitRaw wraps bytes as { data, time }; the tap reads evt.data, not the bytes.
+    act(() => { rawHandler({ data: [0x90, 72, 88], time: 0 }); });
+    const hit = __snapshotForTest().records.some((r) => r.kind === KIND.MIDI_ON && r.a === 72 && r.b === 88);
+    expect(hit).toBe(true);
   });
 });
 
