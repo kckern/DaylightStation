@@ -308,7 +308,7 @@ function TitleControl({ title, onRename, logger, onTap }) {
   );
 }
 
-export function EditorSurface({ initialScore, songId = null, initialRevision = 1, save, create, title, onRename, onMaterialized, onSongs, config = {}, logger: loggerProp }) {
+export function EditorSurface({ initialScore, songId = null, initialRevision = 1, save, create, title, onRename, onMaterialized, onSongs, config = {}, user, logger: loggerProp }) {
   // Derive the editor's `composer-editor` child from the mode logger when hosted
   // by Composer (so its events inherit app + sessionLog routing), and fall back
   // to a bare root child when mounted standalone (the verification harnesses and
@@ -514,8 +514,11 @@ export function EditorSurface({ initialScore, songId = null, initialRevision = 1
   const startInputRec = useCallback(() => {
     const session = new Date().toISOString();
     inputSessionRef.current = session;
-    startRecorder({ session, score: songId ?? 'draft', ctx: { user: config?.user?.id }, send: makeInputSender('piano-composer'), flushMs: 1000 });
-  }, [songId, config]);
+    // `user` is the active piano player, threaded from Composer (usePianoUser).
+    // The old `config?.user?.id` was always undefined — `config` here is the
+    // `.composer` subtree, which carries no user.
+    startRecorder({ session, score: songId ?? 'draft', ctx: { user }, send: makeInputSender('piano-composer'), flushMs: 1000 });
+  }, [songId, config, user]);
   const stopInputRec = useCallback(() => { stopRecorder(); inputSessionRef.current = null; }, []);
 
   // Kill switch: a deploy-free off/on lever, installed regardless of config so the
