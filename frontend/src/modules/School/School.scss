@@ -598,11 +598,11 @@
   &__subject:nth-child(2) &__subject-icon { color: #f7cba4; } // writing — peach
   &__subject:nth-child(3) &__subject-icon { color: #f2e2a6; } // math — butter
   &__subject:nth-child(4) &__subject-icon { color: #cfe0a8; } // history — sage
-  &__subject:nth-child(5) &__subject-icon { color: #b8e3c9; } // scripture — mint
+  &__subject:nth-child(5) &__subject-icon { color: #ffffff; } // scripture — white (center)
   &__subject:nth-child(6) &__subject-icon { color: #aed4f0; } // science — sky
-  &__subject:nth-child(7) &__subject-icon { color: #cdbde9; } // language — lavender
-  &__subject:nth-child(8) &__subject-icon { color: #f4bfa8; } // skills — coral
-  &__subject:nth-child(9) &__subject-icon { color: #eec0dc; } // arts — blush
+  &__subject:nth-child(7) &__subject-icon { color: #86d5c8; } // language — teal
+  &__subject:nth-child(8) &__subject-icon { color: #93d9a8; } // skills — green
+  &__subject:nth-child(9) &__subject-icon { color: #cdbde9; } // arts — lavender
   &__subject-label { margin: 0; font-size: 1.25rem; font-weight: 800; }
   &__subject-hint { margin: 0; color: var(--school-muted); font-size: 0.9rem; }
 
