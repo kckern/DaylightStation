@@ -46,6 +46,10 @@ Extend `KIND` + `KIND_NAME` (append only — existing ids 1–10 unchanged):
 
 `buildHeader` currently ships `ctx` verbatim. Edit-correlation needs `.events` (perf-clock `t`) to align with the semantic `.jsonl` (ISO wall-clock). Add to the header a `t0` pair — `{ perf: performance.now(), wall: Date.now() }` — captured at `startRecorder`, so a decoder maps any record `t` to wall-clock: `wall = t0.wall + (t − t0.perf)`. (This is SheetMusic design "Open follow-up" #2, promoted because it is load-bearing here.) `Date.now()` is off-hot-path (once per session start), which is allowed.
 
+### 2b. Logger double-emit fix (found during build)
+
+`Logger.child(ctx)`'s derived-child closure is `child({ ...parentContext, ...childContext, ...ctx })`, and the auto-start is gated on `if (childContext.sessionLog)`. So a child derived from a `sessionLog` logger inherits `sessionLog:true` in its merged context and **re-emits `session-log.start`**. For Composer, `EditorSurface` derives a `composer-editor` child from the mode's session logger → a second start. Since `sessionFile.mjs` opens a new fd per start and the filename strips sub-second precision, two starts either duplicate a line + leak an fd (same second) or **split the session across two files** (cross second) — which breaks `.events`↔`.jsonl` alignment, the core of this feature. Fix `Logger.js` to auto-emit only when `sessionLog` is **newly introduced** by the child, not inherited (thread a `parentHasSessionLog` flag). Directly-created `sessionLog` children (e.g. `useScoreTelemetry`) still emit exactly once; SheetMusic is unaffected (its logger is used directly, not re-derived).
+
 ### 3. Composer session-logged child (persists the existing semantic stream)
 
 Create ONE session-logged child in `Composer.jsx`:
