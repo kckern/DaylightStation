@@ -41,7 +41,7 @@ export function encodeBatch() {
     const i = (start + n) % CAPACITY;
     out.push([t[i], kind[i], a[i], b[i], c[i], d[i]]);
   }
-  const drained = { b: out, dropped };
+  const drained = { b: out, dropped, strings: internList.slice() };
   head = 0; count = 0; dropped = 0;
   return drained;
 }
