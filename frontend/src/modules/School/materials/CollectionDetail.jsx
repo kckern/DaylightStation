@@ -33,6 +33,22 @@ export default function CollectionDetail({ collection, onOpenWork, initialWorkId
     if (w) { consumedRef.current = initialWorkId; onOpenWork(w); }
   }, [initialWorkId, works, onOpenWork]);
 
+  if (works === null) {
+    return (
+      <div className="school-material-detail">
+        <div className="school-material-detail__layout school-skel" aria-hidden="true">
+          <aside className="school-material-detail__info">
+            <div className="school-skel__poster" />
+            <div className="school-skel__line school-skel__line--sm" />
+          </aside>
+          <ul className="school-material-detail__works">
+            {Array.from({ length: 8 }).map((_, i) => <li key={i}><span className="school-skel__tile" /></li>)}
+          </ul>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="school-material-detail">
       <div className="school-material-detail__layout">
@@ -40,16 +56,13 @@ export default function CollectionDetail({ collection, onOpenWork, initialWorkId
           {collection.poster && (
             <img className="school-material-detail__poster" src={collection.poster} alt="" />
           )}
-          <h2 className="school-material-detail__title">{collection.title}</h2>
-          {works !== null && (
-            <p className="school-material-detail__progress-line">
-              {works.length} {works.length === 1 ? 'work' : 'works'}
-            </p>
-          )}
+          {/* No title here — the header breadcrumb already names this collection. */}
+          <p className="school-material-detail__progress-line">
+            {works.length} {works.length === 1 ? 'work' : 'works'}
+          </p>
         </aside>
         <div className="school-material-detail__units-panel">
-          {works === null && <div className="school-material-detail__loading">Loading…</div>}
-          {works !== null && works.length === 0 && (
+          {works.length === 0 && (
             <div className="school-material-detail__empty">Nothing here yet.</div>
           )}
           {works !== null && works.length > 0 && (

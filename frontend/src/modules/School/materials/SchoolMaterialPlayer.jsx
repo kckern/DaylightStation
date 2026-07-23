@@ -215,18 +215,23 @@ export default function SchoolMaterialPlayer({ material, unit, userId, onExit, o
   // stage, with the chrome as a TAP-SUMMONED overlay that auto-hides.
   return (
     <div className={`school-material-player school-material-player--${isAudio ? 'audio' : 'video'}`}>
-      <div
-        className="school-material-player__stage"
-        onPointerDown={isAudio ? undefined : chrome.reveal}
-      >
+      <div className="school-material-player__stage">
         <SchoolPlayerBoundary onBack={exitToDetail}>
           <Suspense fallback={<p className="school-material-player__loading">Loading player…</p>}>
             {playerEl}
           </Suspense>
         </SchoolPlayerBoundary>
-        {!isAudio && chrome.visible && (
-          <div className="school-material-player__overlay">
-            <SchoolPlayerChrome variant="video" {...chromeProps} onActivity={chrome.reveal} />
+        {/* Video: a full-stage overlay ALWAYS on top of the video. A tap on the
+            video area toggles the control bar; taps on the buttons themselves
+            stop-propagate so they act without hiding the bar. */}
+        {!isAudio && (
+          <div
+            className={`school-material-player__overlay${chrome.visible ? ' is-visible' : ' is-hidden'}`}
+            onPointerDown={chrome.toggleControls}
+          >
+            <div className="school-material-player__overlay-chrome" onPointerDown={(e) => e.stopPropagation()}>
+              <SchoolPlayerChrome variant="video" {...chromeProps} onActivity={chrome.reveal} />
+            </div>
           </div>
         )}
       </div>
