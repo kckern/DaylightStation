@@ -2,7 +2,11 @@
  * SchoolPlayerChrome — the transport control bar for the School player. One
  * component, two dresses: a persistent bar under the audio cover, and a
  * tap-summoned overlay on the video. The controls are the same either way —
- * seekable progress, restart, ∓15s, prev/next chapter, play/pause, volume.
+ * seekable progress, ∓15s, prev/next chapter, play/pause, volume.
+ *
+ * There is no separate restart control: `onPrev` is the CD-player button —
+ * back to the start of this track, and only to the previous track when you are
+ * already at the start (the threshold lives in SchoolMaterialPlayer).
  *
  * Purely presentational: all state and commands come from useMediaChrome (via
  * SchoolMaterialPlayer). Icons are the School inline-SVG set.
@@ -22,7 +26,7 @@ const fmt = (s) => {
 export default function SchoolPlayerChrome({
   variant = 'audio',
   isPlaying, currentTime, duration, volume,
-  onToggle, onSeek, onSkip, onRestart, onPrev, onNext, onSetVolume,
+  onToggle, onSeek, onSkip, onPrev, onNext, onSetVolume,
   hasPrev = false, hasNext = false,
   onActivity,
 }) {
@@ -50,7 +54,7 @@ export default function SchoolPlayerChrome({
       <div className="school-chrome__row">
         <span className="school-chrome__time">{fmt(currentTime)} / {fmt(dur)}</span>
         <div className="school-chrome__spacer" />
-        <button type="button" className="school-chrome__btn" onClick={act(onPrev)} disabled={!hasPrev} aria-label="Previous chapter"><Icon name="prev" /></button>
+        <button type="button" className="school-chrome__btn" onClick={act(onPrev)} disabled={!hasPrev} aria-label="Restart, or previous chapter"><Icon name="prev" /></button>
         <button type="button" className="school-chrome__btn" onClick={act(() => onSkip(-15))} aria-label="Back 15 seconds"><Icon name="rewind" /></button>
         <button type="button" className="school-chrome__btn school-chrome__btn--play" onClick={act(onToggle)} aria-label={isPlaying ? 'Pause' : 'Play'}>
           <Icon name={isPlaying ? 'pause' : 'play'} />
@@ -58,7 +62,6 @@ export default function SchoolPlayerChrome({
         <button type="button" className="school-chrome__btn" onClick={act(() => onSkip(15))} aria-label="Forward 15 seconds"><Icon name="forward" /></button>
         <button type="button" className="school-chrome__btn" onClick={act(onNext)} disabled={!hasNext} aria-label="Next chapter"><Icon name="next" /></button>
         <div className="school-chrome__spacer" />
-        <button type="button" className="school-chrome__btn" onClick={act(onRestart)} aria-label="Restart"><Icon name="restart" /></button>
         <div className="school-chrome__volume">
           <button type="button" className={`school-chrome__btn${volOpen ? ' is-on' : ''}`} onClick={act(() => setVolOpen((o) => !o))} aria-label="Volume">
             <Icon name={volume === 0 ? 'volume-mute' : 'volume'} />

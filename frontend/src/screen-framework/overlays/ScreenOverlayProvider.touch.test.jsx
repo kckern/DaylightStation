@@ -65,18 +65,23 @@ describe('ScreenOverlayProvider touch chrome', () => {
     expect(screen.getByTestId('touch-chrome-playpause')).toBeInTheDocument();
   });
 
-  // Core behavioural change: the lane is screen-level now, not overlay-only.
-  // A touch screen with nothing showing (no overlay, no nav content) still
-  // gets the Back button -- there is no state in which a touch user is
-  // stranded without any way back.
-  it('renders the lane with Back chrome on a touch screen even with no overlay and no nav context', () => {
-    renderWith('touch');
-    expect(screen.getByTestId('touch-chrome-back')).toBeInTheDocument();
+  // The lane is CONTENT-only: with nothing over the screen's own layout there
+  // is nothing to get back OUT of, and the layout (the Portal's School app)
+  // owns its own header and back-navigation. Drawing the lane there only cost
+  // 80px of an 800px panel and letterboxed 16:9 video.
+  it('draws no lane on a touch screen with no overlay and no nav content', () => {
+    const { container } = renderWith('touch');
+    expect(screen.queryByTestId('touch-chrome-back')).toBeNull();
+    // The shell itself still wraps the screen — only the lane is absent.
+    expect(container.querySelector('.screen-overlay--touch-content')).toBeInTheDocument();
   });
 
-  it('shows back-only mode (no transport) on a touch screen with no overlay', () => {
+  it('draws the lane again as soon as an overlay covers the layout', () => {
     renderWith('touch');
-    expect(screen.queryByTestId('touch-chrome-playpause')).toBeNull();
+    act(() => { api.showOverlay(Dummy, {}); });
+    expect(screen.getByTestId('touch-chrome-back')).toBeInTheDocument();
+    act(() => { api.dismissOverlay('fullscreen'); });
+    expect(screen.queryByTestId('touch-chrome-back')).toBeNull();
   });
 
   // Regression case this task exists to fix: MenuStack pushes the Player onto
