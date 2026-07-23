@@ -9,10 +9,12 @@
  * empty/whitespace value that slips through is a live UI crash or a silently
  * unanswerable question.
  */
-const ITEM_TYPES = new Set(['multiple_choice', 'short_answer', 'cloze', 'matching']);
+const ITEM_TYPES = new Set(['multiple_choice', 'short_answer', 'cloze', 'matching', 'region_click', 'asset_choice']);
 const AUDIENCES = new Set(['generic', 'assigned']);
 
 const isNonEmptyString = (v) => typeof v === 'string' && v.trim().length > 0;
+const isImageSpec = (v) => v && typeof v === 'object' && !Array.isArray(v)
+  && Object.values(v).every((x) => isNonEmptyString(x));
 
 export function validateQuestionBank(raw) {
   const errors = [];
@@ -95,6 +97,31 @@ export function validateQuestionBank(raw) {
         }
         if (new Set(lefts).size !== lefts.length) errors.push(`${at}: left values must be unique`);
         if (new Set(rights).size !== rights.length) errors.push(`${at}: right values must be unique`);
+      }
+    }
+    if (item.type === 'region_click') {
+      if (!isNonEmptyString(item.asset)) errors.push(`${at}: asset is required`);
+      if (!isNonEmptyString(item.answer)) errors.push(`${at}: answer is required`);
+    }
+    if (item.type === 'asset_choice') {
+      if (item.promptImage !== undefined && !isImageSpec(item.promptImage)) {
+        errors.push(`${at}: promptImage must be a mapping of non-empty strings`);
+      }
+      if (!Array.isArray(item.choices) || item.choices.length < 2) {
+        errors.push(`${at}: choices must have >= 2 entries`);
+      } else {
+        const values = item.choices.map((c) => c?.value);
+        if (values.some((v) => !isNonEmptyString(v))) errors.push(`${at}: every choice needs a value`);
+        if (new Set(values).size !== values.length) errors.push(`${at}: choice values must be unique`);
+        item.choices.forEach((c, ci) => {
+          const hasLabel = isNonEmptyString(c?.label);
+          const hasImage = c?.image !== undefined && isImageSpec(c.image);
+          if (!hasLabel && !hasImage) errors.push(`${at}.choices[${ci}]: needs a label or an image`);
+          if (c?.label !== undefined && !hasLabel) errors.push(`${at}.choices[${ci}]: label must be a non-empty string`);
+          if (c?.image !== undefined && !hasImage) errors.push(`${at}.choices[${ci}]: image must be a mapping of non-empty strings`);
+        });
+        if (!isNonEmptyString(item.answer)) errors.push(`${at}: answer is required`);
+        else if (!values.includes(item.answer)) errors.push(`${at}: answer must appear in choice values`);
       }
     }
   });
