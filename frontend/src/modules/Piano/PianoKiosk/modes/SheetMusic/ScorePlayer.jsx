@@ -669,7 +669,10 @@ export default function ScorePlayer({ score: scoreMeta }) {
     };
     const onMove = (e) => { samples.push({ t: performance.now(), x: e.clientX | 0, y: e.clientY | 0 }); };
     const onUp = (e) => {
-      for (const s of coalesce(samples, { frameMs: 16 })) record(KIND.TOUCH_MOVE, s.x | 0, s.y | 0, 0, 0);
+      // Slot c carries the sample's ORIGINAL time (ms, page-relative). record()
+      // stamps its own `t` at replay time, so without this the whole gesture would
+      // collapse onto the pointerup timestamp and lose its time axis.
+      for (const s of coalesce(samples, { frameMs: 16 })) record(KIND.TOUCH_MOVE, s.x | 0, s.y | 0, Math.round(s.t), 0);
       samples = [];
       record(KIND.TOUCH_END, e.clientX | 0, e.clientY | 0, 0, 0);
     };
