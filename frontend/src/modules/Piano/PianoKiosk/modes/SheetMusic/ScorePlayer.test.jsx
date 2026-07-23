@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, act, cleanup, fireEvent } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
+import getLogger from '../../../../../lib/logging/Logger.js';
 
 // Shared holders (hoisted so the vi.mock factories can see them).
 const h = vi.hoisted(() => ({
@@ -107,6 +108,39 @@ beforeEach(() => {
 
 // Scores now open in Listen (default). The Learn tests select Learn first.
 const enterLearn = () => act(() => { screen.getByText('Learn').click(); });
+
+describe('ScorePlayer — intent-event session-log routing (Task 10)', () => {
+  it('emits intent events through the session-logged logger (app + sessionLog context)', () => {
+    // Spy on the root logger's child() so we can see which child logger each
+    // intent event is emitted through, and with what context. getLogger is the
+    // REAL logger here (not mocked), so children are created for real.
+    const root = getLogger();
+    const origChild = root.child.bind(root);
+    const children = []; // [{ ctx, events: [] }]
+    const spy = vi.spyOn(root, 'child').mockImplementation((ctx) => {
+      const c = origChild(ctx);
+      const rec = { ctx, events: [] };
+      children.push(rec);
+      for (const lvl of ['info', 'warn', 'debug', 'error']) {
+        const orig = c[lvl].bind(c);
+        c[lvl] = (ev, data, opts) => { rec.events.push(ev); return orig(ev, data, opts); };
+      }
+      return c;
+    });
+    try {
+      renderPlayer(); // opens in Listen
+      // Claim a part → fires score.listen.mypart, an intent event.
+      act(() => { fireEvent.click(screen.getByRole('radio', { name: 'RH' })); });
+      const emitter = children.find((r) => r.events.includes('score.listen.mypart'));
+      expect(emitter).toBeTruthy(); // some child emitted it
+      // …and that child must carry session-log routing, so the event persists.
+      expect(emitter.ctx).toMatchObject({ sessionLog: true, app: 'piano-sheetmusic' });
+    } finally {
+      spy.mockRestore();
+      cleanup();
+    }
+  });
+});
 
 describe('ScorePlayer — default mode', () => {
   it('opens in Listen (defaultMode), not Learn (J2)', () => {

@@ -1,5 +1,4 @@
 import { useMemo, useState, useRef, useEffect, useCallback } from 'react';
-import getLogger from '../../../../../lib/logging/Logger.js';
 import { parseMusicXml } from '../../../../MusicNotation/parseMusicXml.js';
 import { MusicXmlRenderer } from '../../../../MusicNotation/renderers/MusicXmlRenderer.jsx';
 import LiveKeyboard from '../../LiveKeyboard.jsx';
@@ -53,7 +52,6 @@ import { nearestEvent, SELECT_MAX_DIST } from './nearestEvent.js';
  * {@link useScoreTelemetry}.
  */
 export default function ScorePlayer({ score: scoreMeta }) {
-  const logger = useMemo(() => getLogger().child({ component: 'piano-score-player' }), []);
   const { subscribe, subscribeRaw, releaseNote, sendNoteAt, sendNoteOffAt, sendPanic } = usePianoMidi();
   const { setPlaying: setGlobalPlaying } = usePianoPlayback();
   const { config } = usePianoKioskConfig();
@@ -63,7 +61,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
   // holding the returned object: the object identity is fresh every render, and
   // the renderer's engrave effect depends on `onReady` — a churning identity
   // would re-fire onLayout/onReady endlessly (infinite re-engrave loop).
-  const { startSession, logLoad, recordFire, recordSchedule, flushPlayback, recordFollowHit, flushFollow, logMeasureGrade, logRunSummary, logFocus, logTranspose, logMode } = useScoreTelemetry({ id: scoreMeta.id });
+  const { logger, startSession, logLoad, recordFire, recordSchedule, flushPlayback, recordFollowHit, flushFollow, logMeasureGrade, logRunSummary, logFocus, logTranspose, logMode } = useScoreTelemetry({ id: scoreMeta.id });
 
   const parsed = useMemo(() => { try { return parseMusicXml(scoreMeta.musicXml); } catch { return null; } }, [scoreMeta.musicXml]);
   const tempo = parsed?.tempo || 90;
