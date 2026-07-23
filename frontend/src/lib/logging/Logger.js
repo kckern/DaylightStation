@@ -196,7 +196,7 @@ const emitSampled = (eventName, data = {}, options = {}, emitContext) => {
 /**
  * Create a child logger with additional context
  */
-const child = (childContext = {}) => {
+const child = (childContext = {}, parentHasSessionLog = false) => {
   const parentContext = { ...config.context };
   const childLogger = {
     log: (level, eventName, data, opts) => emit(level, eventName, data, { ...opts, context: { ...parentContext, ...childContext, ...(opts?.context || {}) } }),
@@ -205,11 +205,16 @@ const child = (childContext = {}) => {
     warn: (eventName, data, opts) => emit('warn', eventName, data, { ...opts, context: { ...parentContext, ...childContext, ...(opts?.context || {}) } }),
     error: (eventName, data, opts) => emit('error', eventName, data, { ...opts, context: { ...parentContext, ...childContext, ...(opts?.context || {}) } }),
     sampled: (eventName, data, opts) => emitSampled(eventName, data, opts, { ...parentContext, ...childContext }),
-    child: (ctx) => child({ ...parentContext, ...childContext, ...ctx })
+    // Thread whether sessionLog is ALREADY on down the chain: a child derived from
+    // a sessionLog logger inherits sessionLog in its merged childContext, but it did
+    // not freshly turn it on — so it must not re-emit session-log.start.
+    child: (ctx) => child({ ...parentContext, ...childContext, ...ctx }, parentHasSessionLog || !!childContext.sessionLog)
   };
 
-  // Auto-emit session start signal for session-logged apps
-  if (childContext.sessionLog) {
+  // Auto-emit session start ONLY when THIS child freshly turns sessionLog on — not
+  // when it merely inherited it from a sessionLog parent (which would double-open
+  // the backend session file, fragmenting the run log).
+  if (childContext.sessionLog && !parentHasSessionLog) {
     childLogger.info('session-log.start', { app: childContext.app || parentContext.app });
   }
 

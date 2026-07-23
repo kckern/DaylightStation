@@ -27,12 +27,12 @@ export function __internTableForTest() { return internList.slice(); }
 export const KIND = Object.freeze({
   MIDI_ON: 1, MIDI_OFF: 2, SUSTAIN: 3, CC: 4,
   TAP: 5, TOUCH_START: 6, TOUCH_MOVE: 7, TOUCH_END: 8,
-  UI_INTENT: 9, RENDER: 10,
+  UI_INTENT: 9, RENDER: 10, KEY: 11, EDIT: 12,
 });
 const KIND_NAME = {
   1: 'midi.on', 2: 'midi.off', 3: 'sustain', 4: 'cc',
   5: 'tap', 6: 'touch.start', 7: 'touch.move', 8: 'touch.end',
-  9: 'ui.intent', 10: 'render',
+  9: 'ui.intent', 10: 'render', 11: 'key', 12: 'edit',
 };
 export function encodeBatch() {
   const out = [];
@@ -46,7 +46,11 @@ export function encodeBatch() {
   return drained;
 }
 export function buildHeader({ session, score, ctx }) {
-  return { h: 1, session, score, ctx, kinds: { ...KIND_NAME }, strings: internList.slice() };
+  const t0 = {
+    perf: (typeof performance !== 'undefined' && performance.now ? performance.now() : Date.now()),
+    wall: Date.now(),
+  };
+  return { h: 1, session, score, ctx: { ...(ctx || {}), t0 }, kinds: { ...KIND_NAME }, strings: internList.slice() };
 }
 let drainTimer = null;
 let sendFn = null;
