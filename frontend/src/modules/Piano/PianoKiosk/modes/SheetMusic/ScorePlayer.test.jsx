@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, act, cleanup, fireEvent } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import getLogger from '../../../../../lib/logging/Logger.js';
+import { __resetRecorder, __snapshotForTest, KIND } from '../../../../../lib/logging/inputRecorder.js';
 
 // Shared holders (hoisted so the vi.mock factories can see them).
 const h = vi.hoisted(() => ({
@@ -139,6 +140,19 @@ describe('ScorePlayer — intent-event session-log routing (Task 10)', () => {
       spy.mockRestore();
       cleanup();
     }
+  });
+});
+
+describe('ScorePlayer — raw MIDI recorder capture (Task 11)', () => {
+  it('records raw MIDI from the wrapped subscribeRaw event ({data, time})', () => {
+    renderPlayer(); // default (Listen) mode → only the recorder subscribes (Perform effect is inactive)
+    __resetRecorder();
+    // The REAL emitRaw wraps bytes: fn({ data: <byteArray>, time }). Feed the
+    // recorder callback that exact shape.
+    act(() => { h.rawCb?.({ data: [0x90, 72, 88], time: 0 }); });
+    const hit = __snapshotForTest().records.some((r) => r.kind === KIND.MIDI_ON && r.a === 72 && r.b === 88);
+    expect(hit).toBe(true);
+    cleanup();
   });
 });
 

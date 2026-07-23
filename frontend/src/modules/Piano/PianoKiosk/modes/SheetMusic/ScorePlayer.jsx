@@ -613,8 +613,9 @@ export default function ScorePlayer({ score: scoreMeta }) {
   // step. Always on — recording is cheap and shipping is gated elsewhere
   // (startRecorder/drain). subscribeRaw delivers the byte array directly.
   useEffect(() => {
-    const off = subscribeRaw((bytes) => {
-      const r = midiToRecord(bytes);
+    const off = subscribeRaw((evt) => {
+      // emitRaw wraps the bytes: listeners receive { data: <byteArray>, time }.
+      const r = midiToRecord(evt?.data);
       if (r) record(r.kind, r.a, r.b, stepRef.current ?? 0, 0);
     });
     return off;
