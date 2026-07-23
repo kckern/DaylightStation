@@ -61,15 +61,18 @@ export default function SubjectPage({ subjectId, shelf, guestOnly, onLaunch, not
 
   const programs = SUBJECT_PROGRAMS[subjectId] ?? [];
   const grouped = groupByKind({ shelf, programs });
-  // Guests only see generic decks (preserve BankBrowser's guest rule).
-  if (guestOnly) grouped.decks = grouped.decks.filter((b) => b.audience === 'generic');
   // Language courses (the only `apps` entries besides subject programs) carry
   // no `hint` of their own -- AppTile's blurb falls back to it, so give them
   // the same default blurb the old hard-coded course tile always showed.
   // Programs (e.g. typing) already set their own `hint` and pass through.
   grouped.apps = grouped.apps.map((item) => (item.hint ? item : { ...item, hint: 'Listen, say it, write it' }));
 
-  const anyContent = KINDS.some((k) => grouped[k.id].length > 0);
+  // Quizzes/flashcards (the `decks` kind) are NOT browsable on a subject page —
+  // a quiz exists only as the interstitial shown after finishing the video unit
+  // it's attached to (the gating bank index, backend-side). So the subject wall
+  // shows only Watch / Listen / Apps.
+  const shelfKinds = KINDS.filter((k) => k.id !== 'decks');
+  const anyContent = shelfKinds.some((k) => grouped[k.id].length > 0);
   // The catalog is Plex-backed and slow on a cold cache (first open after a
   // redeploy). While it's still loading, show a skeleton row — NOT the empty
   // state, which reads as "stuck/broken" during a legitimate load.
@@ -108,7 +111,8 @@ export default function SubjectPage({ subjectId, shelf, guestOnly, onLaunch, not
       sectionLabel={subjectLabel(subjectId)}
       renderCatalog={({ onSelect }) => {
         // One shelf per kind (ranked, progress-joined); the packer bands them.
-        const shelves = KINDS.map((kind) => ({
+        // Decks (quizzes) are excluded — they're interstitials, not shelf content.
+        const shelves = shelfKinds.map((kind) => ({
           kindId: kind.id,
           verb: kind.verb,
           icon: kind.icon,

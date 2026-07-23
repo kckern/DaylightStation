@@ -42,7 +42,7 @@ beforeEach(() => {
 });
 
 describe('SubjectPage', () => {
-  it('renders the packed kind shelves (Watch/Listen/Apps/Practice) with the mixed shelf items', async () => {
+  it('renders Watch/Listen/Apps shelves — but NOT Practice (quizzes are interstitials, not shelf content)', async () => {
     render(
       <SubjectPage
         subjectId="writing"
@@ -58,14 +58,15 @@ describe('SubjectPage', () => {
     expect(screen.getByText('Watch')).toBeInTheDocument();
     expect(screen.getByText('Listen')).toBeInTheDocument();
     expect(screen.getByText('Apps')).toBeInTheDocument();
-    expect(screen.getByText('Practice')).toBeInTheDocument();
+    // Decks/quizzes are excluded from subject pages — no Practice shelf, no bank tile.
+    expect(screen.queryByText('Practice')).not.toBeInTheDocument();
+    expect(screen.queryByText('US States')).not.toBeInTheDocument();
 
     // Video/audio tiles without a poster render a text placeholder AND the
     // clamped title, so the title text appears twice — assert presence, not
     // uniqueness.
     expect(screen.getAllByText('Big History').length).toBeGreaterThan(0);
     expect(screen.getAllByText('I Survived').length).toBeGreaterThan(0);
-    expect(screen.getByText('US States')).toBeInTheDocument();
     // writing's built-in program (typing) plus the language course, both Apps.
     expect(screen.getByText('Typing')).toBeInTheDocument();
     expect(screen.getByText('Glossika Korean')).toBeInTheDocument();
