@@ -65,3 +65,31 @@ describe('hot-path allocation guard', () => {
     expect(src).not.toMatch(/[=(,]\s*[[{]/);
   });
 });
+
+import { startRecorder, stopRecorder } from './inputRecorder.js';
+import { vi } from 'vitest';
+describe('drain lifecycle', () => {
+  beforeEach(() => __resetRecorder());
+  it('sends header once, then flushes batches, then a final flush on stop', () => {
+    vi.useFakeTimers();
+    const sent = [];
+    startRecorder({ session: 's1', score: 'x.mxl', ctx: {}, send: (m) => sent.push(m), flushMs: 1000 });
+    expect(sent[0].h).toBe(1);
+    record(KIND.TAP, 1, 2, 0, 0);
+    vi.advanceTimersByTime(1000);
+    expect(sent[1].b).toHaveLength(1);
+    record(KIND.TAP, 3, 4, 0, 0);
+    stopRecorder();
+    expect(sent[sent.length - 1].b).toHaveLength(1);
+    vi.useRealTimers();
+  });
+  it('does not send an empty batch', () => {
+    vi.useFakeTimers();
+    const sent = [];
+    startRecorder({ session: 's1', score: 'x.mxl', ctx: {}, send: (m) => sent.push(m), flushMs: 1000 });
+    vi.advanceTimersByTime(3000);
+    expect(sent.filter((m) => Array.isArray(m.b) && m.b.length === 0)).toHaveLength(0);
+    stopRecorder();
+    vi.useRealTimers();
+  });
+});
