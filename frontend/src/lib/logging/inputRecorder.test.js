@@ -52,3 +52,16 @@ describe('encode', () => {
     expect(h.h).toBe(1);
   });
 });
+
+import { record as recordFn } from './inputRecorder.js';
+describe('hot-path allocation guard', () => {
+  it('record() source contains no allocating constructs', () => {
+    const src = recordFn.toString();
+    expect(src).not.toMatch(/JSON\./);
+    expect(src).not.toMatch(/\bnew\s/);
+    expect(src).not.toMatch(/\.push\(/);
+    // Object/array literals appear after =, (, comma, or return — but bare
+    // typed-array indexing (t[i]) legitimately uses `[`, so anchor on those.
+    expect(src).not.toMatch(/[=(,]\s*[[{]/);
+  });
+});
