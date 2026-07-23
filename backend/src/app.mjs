@@ -255,6 +255,7 @@ import { GetMaterialProgressSummary } from './3_applications/school/GetMaterialP
 import { PlexAlbumSource } from './3_applications/school/sources/PlexAlbumSource.mjs';
 import { PlexShowSource } from './3_applications/school/sources/PlexShowSource.mjs';
 import { PlexLabelSource } from './3_applications/school/sources/PlexLabelSource.mjs';
+import { GeographyBankSource } from '#apps/school/sources/GeographyBankSource.mjs';
 import { UserVideoProgressStore as SchoolUserVideoProgressStore } from './3_applications/piano/UserVideoProgressStore.mjs';
 import { PrintService } from './3_applications/school/PrintService.mjs';
 import { renderBankWorksheet } from './1_rendering/school/WorksheetRenderer.mjs';
@@ -1997,7 +1998,8 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   const schoolService = new SchoolService({
     datastore: schoolDatastore,
     userService,
-    logger: rootLogger.child({ module: 'school' })
+    logger: rootLogger.child({ module: 'school' }),
+    bankSources: [new GeographyBankSource()]
   });
   // Dumb playhead/percent/duration store only (spec §6) — School never reads
   // its threshold/engaged/completedAt fields, unlike Piano's own instance.
