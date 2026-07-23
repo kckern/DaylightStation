@@ -1010,3 +1010,7 @@
     text { fill: var(--school-text); font-size: 10px; font-weight: 700; }
   }
 }
+
+.school-item__prompt-image { display: flex; justify-content: center; margin: 0.5rem 0; }
+.school-choice__flag { width: 96px; height: 72px; object-fit: contain; border: 1px solid var(--school-border); border-radius: 6px; }
+.school-item__choices--asset { display: grid; grid-template-columns: repeat(2, 1fr); gap: 0.6rem; }
