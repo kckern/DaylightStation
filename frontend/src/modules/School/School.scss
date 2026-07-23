@@ -246,21 +246,29 @@
 
   // Progress: a % bar, then one dot per unit (hollow = not started, amber =
   // partial, green = done). No "N of M done" line, no per-unit lock note.
-  &__progress { display: flex; flex-direction: column; align-items: stretch; gap: 0.45rem; }
+  &__progress { display: flex; flex-direction: column; gap: 0.4rem; }
+  // Bar and % share one row; the bar flexes, the % sits at its right.
+  &__progress-top { display: flex; align-items: center; gap: 0.5rem; }
   &__progress-bar {
-    position: relative; width: 100%; height: 8px; border-radius: 999px;
+    position: relative; flex: 1 1 auto; height: 7px; border-radius: 999px;
     background: var(--school-surface-2); overflow: hidden;
   }
   &__progress-fill { position: absolute; inset: 0 auto 0 0; background: var(--school-accent); border-radius: 999px; }
-  &__progress-pct { align-self: center; font-size: 0.95rem; font-weight: 800; color: var(--school-fg); }
-  &__dots { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 0.35rem; }
+  &__progress-pct { flex: 0 0 auto; font-size: 0.8rem; font-weight: 800; color: var(--school-fg); }
+  // Tight dots, capped in height so a 40-chapter course scrolls its dot grid
+  // instead of pushing the poster/description off the page.
+  &__dots {
+    list-style: none; margin: 0; padding: 0;
+    display: flex; flex-wrap: wrap; gap: 4px;
+    max-height: 4.5rem; overflow-y: auto;
+  }
   &__dot {
-    width: 13px; height: 13px; border-radius: 999px;
-    border: 2px solid var(--school-muted); background: transparent;
+    width: 9px; height: 9px; border-radius: 999px;
+    border: 1.5px solid var(--school-muted); background: transparent;
     &.is-done { background: var(--school-accent); border-color: var(--school-accent); }
     &.is-partial { background: var(--school-warn); border-color: var(--school-warn); }
   }
-  &__summary { margin: 0.15rem 0 0; color: var(--school-muted); font-size: 0.9rem; line-height: 1.4; }
+  &__summary { margin: 0.15rem 0 0; color: var(--school-muted); font-size: 0.78rem; line-height: 1; }
 
   &__quiz-request {
     display: flex; flex-direction: column; gap: 0.5rem;
