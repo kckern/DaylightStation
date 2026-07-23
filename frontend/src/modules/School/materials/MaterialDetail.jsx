@@ -130,28 +130,38 @@ export default function MaterialDetail({ material, userId, onBack, onPlay, notic
   const doneCount = units?.filter((u) => u.completed).length ?? 0;
   const isAudio = material.medium === 'audio';
 
-  // Balanced dot rows. CSS wrap fills each row to the brim and leaves the
-  // remainder alone (e.g. 13 dots → 10 + 3); measure how many fit, then divide
-  // the total evenly across the rows actually needed (ceil(total / rows) per
-  // row) and clamp the container to exactly that width. One row that fits stays
-  // a single centered row; wrapping yields rows of near-equal length.
+  // Balanced dot rows that shrink to fit — never scroll. CSS wrap fills each
+  // row to the brim and strands the remainder (13 dots → 10 + 3); instead pick
+  // the LARGEST dot+gap whose balanced rows all fit inside the max-height, then
+  // divide the total evenly across the rows needed (ceil(total/rows) per row)
+  // and clamp the container to that width. One row that fits stays a single
+  // centered row; many dots shrink rather than overflow.
   const dotsRef = useRef(null);
-  const [dotsWidth, setDotsWidth] = useState(null);
+  const [dotsLayout, setDotsLayout] = useState(null);
   useEffect(() => {
     const ul = dotsRef.current;
-    if (!ul || !units || units.length === 0) { setDotsWidth(null); return undefined; }
+    if (!ul || !units || units.length === 0) { setDotsLayout(null); return undefined; }
     const parent = ul.parentElement;
+    const N = units.length;
     const compute = () => {
-      const first = ul.querySelector('li');
-      if (!first || !parent) return;
-      const gap = parseFloat(getComputedStyle(ul).columnGap || getComputedStyle(ul).gap) || 4;
-      const unit = first.offsetWidth + gap;
+      if (!parent) return;
       const avail = parent.clientWidth;
-      if (!unit || !avail) return;
-      const maxPerRow = Math.max(1, Math.floor((avail + gap) / unit));
-      const rows = Math.ceil(units.length / maxPerRow);
-      const perRow = Math.ceil(units.length / rows);
-      setDotsWidth(perRow * unit - gap);
+      const maxH = parseFloat(getComputedStyle(ul).maxHeight) || 72;
+      if (!avail) return;
+      const MAX_DOT = 9;
+      const MIN_DOT = 3;
+      const gapFor = (d) => Math.max(2, Math.round(d * 0.45));
+      let pick = null;
+      for (let d = MAX_DOT; d >= MIN_DOT; d -= 1) {
+        const g = gapFor(d);
+        const perRow = Math.max(1, Math.floor((avail + g) / (d + g)));
+        const rows = Math.ceil(N / perRow);
+        const height = rows * d + (rows - 1) * g;
+        if (height <= maxH || d === MIN_DOT) { pick = { d, g, rows }; break; }
+      }
+      const { d, g, rows } = pick;
+      const perRow = Math.ceil(N / rows); // balance: even count per row
+      setDotsLayout({ width: perRow * (d + g) - g, dot: d, gap: g, border: d >= 7 ? 1.5 : 1 });
     };
     compute();
     if (typeof ResizeObserver === 'undefined' || !parent) return undefined;
@@ -225,7 +235,12 @@ export default function MaterialDetail({ material, userId, onBack, onPlay, notic
               <ul
                 ref={dotsRef}
                 className="school-material-detail__dots"
-                style={dotsWidth ? { width: `${dotsWidth}px` } : undefined}
+                style={dotsLayout ? {
+                  width: `${dotsLayout.width}px`,
+                  gap: `${dotsLayout.gap}px`,
+                  '--dot-size': `${dotsLayout.dot}px`,
+                  '--dot-border': `${dotsLayout.border}px`,
+                } : undefined}
                 aria-hidden="true"
               >
                 {units.map((u) => (
