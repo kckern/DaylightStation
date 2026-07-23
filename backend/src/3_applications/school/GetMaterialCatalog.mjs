@@ -23,12 +23,18 @@ const SECTION_ORDER = [
   { category: 'listening', label: 'Listening' },
 ];
 
-const TTL_MS = 60_000;
+// Keep the catalog warm well past a single subject visit so users rarely pay a
+// cold rebuild (the homeschool catalog changes rarely — minutes of staleness is
+// fine). Combined with a boot pre-warm (app.mjs), a redeploy no longer strands
+// the first visitor on a cold, slow build.
+const TTL_MS = 600_000; // 10 min
 // A single Plex `listMaterials` occasionally stalls (Plex busy / TCP keepalive).
-// With no bound, the whole catalog build hangs — blocking the event loop and
-// failing every subject page. Cap each source so a stall rejects and the source
-// is skipped (fail-soft, already handled per-source) instead of hanging the app.
-const SOURCE_TIMEOUT_MS = 8_000;
+// With no bound, the whole catalog build hangs — blocking the app. Cap each
+// source so a true stall rejects and the source is skipped (fail-soft). The cap
+// must be generous: the plex-label source makes several Plex calls and is slow
+// but VALID, so too-short a bound wrongly drops whole subjects (scripture went
+// empty at 8s). 25s covers a slow-but-working source while still bounding a hang.
+const SOURCE_TIMEOUT_MS = 25_000;
 
 export class GetMaterialCatalog {
   #sources;

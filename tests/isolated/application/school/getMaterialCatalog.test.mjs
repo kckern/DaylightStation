@@ -155,7 +155,7 @@ describe('GetMaterialCatalog.execute', () => {
     expect(errors[0].data.source).toBe('Broken Source');
   });
 
-  it('caches listMaterials per root for 60s; a second execute within the window does not re-call it', async () => {
+  it('caches listMaterials per root for 10min; a second execute within the window does not re-call it', async () => {
     let calls = 0;
     const sources = {
       'plex-album': { listMaterials: async () => { calls += 1; return [material('plex:a1')]; } },
@@ -171,11 +171,11 @@ describe('GetMaterialCatalog.execute', () => {
     await catalog.execute();
     expect(calls).toBe(1);
 
-    clock = 59_000; // 59s later, still within TTL
+    clock = 590_000; // 9m50s later, still within TTL
     await catalog.execute();
     expect(calls).toBe(1);
 
-    clock = 61_000; // 61s later, past TTL
+    clock = 601_000; // 10m1s later, past TTL
     await catalog.execute();
     expect(calls).toBe(2);
   });
