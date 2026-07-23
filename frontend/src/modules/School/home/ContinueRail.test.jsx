@@ -88,4 +88,19 @@ describe('ContinueRail', () => {
     });
     expect(screen.queryByText('Continue')).not.toBeInTheDocument();
   });
+
+  it('uses a parent-supplied progress prop and does not self-fetch', async () => {
+    render(
+      <ContinueRail
+        subjectId="science"
+        materials={materials}
+        onOpen={vi.fn()}
+        progress={[progressData[0]]}
+      />
+    );
+
+    expect(await screen.findByText('Continue')).toBeInTheDocument();
+    expect(screen.getByText('Bill Nye')).toBeInTheDocument();
+    expect(schoolApi.materialProgress).not.toHaveBeenCalled();
+  });
 });

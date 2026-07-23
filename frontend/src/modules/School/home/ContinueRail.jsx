@@ -10,24 +10,29 @@ import { useSchoolProfile } from '../identity/SchoolProfileContext.jsx';
 import { schoolApi } from '../schoolApi.js';
 import { schoolLog } from '../schoolLog.js';
 
-export default function ContinueRail({ subjectId, materials, onOpen }) {
+export default function ContinueRail({ subjectId, materials, onOpen, progress: progressProp }) {
   const { currentUser } = useSchoolProfile();
   const userId = currentUser?.id ?? null;
-  const [rows, setRows] = useState(null); // null = not-loaded/idle
+  const [fetched, setFetched] = useState(null); // null = not-loaded/idle
 
   useEffect(() => {
+    if (progressProp !== undefined) return undefined; // parent supplies it: no self-fetch
     let alive = true;
     if (!userId) {
-      setRows([]); // guest/unclaimed: no rail, no fetch
+      setFetched([]); // guest/unclaimed: no rail, no fetch
       return undefined;
     }
     schoolApi.materialProgress(userId, subjectId).then(({ ok, data }) => {
       if (!alive) return;
       if (!ok) schoolLog.home('continue-fetch-failed', { subject: subjectId });
-      setRows(ok && Array.isArray(data) ? data : []);
+      setFetched(ok && Array.isArray(data) ? data : []);
     });
     return () => { alive = false; };
-  }, [userId, subjectId]);
+  }, [userId, subjectId, progressProp]);
+
+  // Guest/unclaimed still hides the rail regardless of a supplied `progress`
+  // prop — there's no claimed identity to "continue" as.
+  const rows = progressProp !== undefined ? (userId ? progressProp : []) : fetched;
 
   const list = useMemo(() => {
     if (!rows) return [];

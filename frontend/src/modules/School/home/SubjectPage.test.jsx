@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render, screen, within, waitFor } from '@testing-library/react';
 import SubjectPage from './SubjectPage.jsx';
+import { schoolApi } from '../schoolApi.js';
 
 // Same mock shapes as MaterialsSection.renderprop.test.jsx (materials/) — this
 // test renders the REAL MaterialsSection (via the real SubjectPage) so opening
@@ -41,7 +42,7 @@ beforeEach(() => {
 });
 
 describe('SubjectPage', () => {
-  it('renders grouped KindSections (Watch/Listen/Apps/Practice) with the mixed shelf items', () => {
+  it('renders grouped KindSections (Watch/Listen/Apps/Practice) with the mixed shelf items', async () => {
     render(
       <SubjectPage
         subjectId="writing"
@@ -51,6 +52,9 @@ describe('SubjectPage', () => {
         onMaterialNav={vi.fn()}
       />
     );
+    // Let the (empty) progress fetch resolve so the ranking re-render settles
+    // before asserting, since SubjectPage now owns that fetch.
+    await screen.findByText('Watch');
     expect(screen.getByText('Watch')).toBeInTheDocument();
     expect(screen.getByText('Listen')).toBeInTheDocument();
     expect(screen.getByText('Apps')).toBeInTheDocument();
@@ -84,6 +88,56 @@ describe('SubjectPage', () => {
     expect(screen.queryByText('Practice')).not.toBeInTheDocument();
     expect(screen.queryByText('Watch')).not.toBeInTheDocument();
     expect(screen.queryByText('Listen')).not.toBeInTheDocument();
+  });
+
+  it('floats a started video above a fresh one within the Watch section (rankWithin applied)', async () => {
+    const rankingShelf = {
+      ...shelf,
+      materials: [
+        ...shelf.materials,
+        { id: 'plex:v2', title: 'Second Video', medium: 'video', category: 'course' },
+      ],
+    };
+    // Clear call history from earlier tests in this file (no per-test mock
+    // reset here) so the call-count assertion below reflects only this render.
+    schoolApi.materialProgress.mockClear();
+    schoolApi.materialProgress.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      data: [
+        {
+          materialId: 'plex:v2',
+          unitsDone: 1,
+          unitTotal: 3,
+          lastActivity: '2026-07-20T10:00:00Z',
+          percent: 33,
+        },
+      ],
+    });
+
+    render(
+      <SubjectPage
+        subjectId="writing"
+        shelf={rankingShelf}
+        onLaunch={vi.fn()}
+        onOpen={vi.fn()}
+        onMaterialNav={vi.fn()}
+      />
+    );
+
+    const watchHeading = await screen.findByText('Watch');
+    const watchSection = watchHeading.closest('section');
+    await waitFor(() => {
+      expect(within(watchSection).getAllByRole('heading', { level: 3 })).toHaveLength(2);
+    });
+    const titles = within(watchSection)
+      .getAllByRole('heading', { level: 3 })
+      .map((h) => h.textContent);
+    expect(titles.indexOf('Second Video')).toBeLessThan(titles.indexOf('Big History'));
+
+    // One fetch, not two: SubjectPage owns the progress fetch and hands it to
+    // ContinueRail as a prop, so ContinueRail must not self-fetch on top.
+    expect(schoolApi.materialProgress).toHaveBeenCalledTimes(1);
   });
 
   it('renders "Nothing on this shelf yet." for a wholly empty shelf with no program', () => {
