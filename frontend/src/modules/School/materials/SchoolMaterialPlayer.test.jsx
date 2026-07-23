@@ -18,6 +18,7 @@ vi.mock('../schoolLog.js', () => ({
   schoolLog: {
     materials: (...a) => materialsMock(...a),
     materialsError: (...a) => materialsErrorMock(...a),
+    player: vi.fn(),
   },
 }));
 
