@@ -763,4 +763,26 @@
     }
     .school-tile__meta { margin: -0.25rem 0.75rem 0.75rem; color: var(--school-muted); font-size: 0.85rem; }
   }
+
+  // --- app: wide banner row, not a poster grid tile ---
+  &--app {
+    grid-column: 1 / -1;
+
+    .school-tile__button {
+      flex-direction: row; align-items: center; gap: 0.85rem;
+      min-height: 84px; padding: 0 1rem 0 0;
+    }
+    .school-tile__edge { flex: 0 0 6px; align-self: stretch; }
+    .school-tile__app-icon { flex: 0 0 auto; font-size: 1.6rem; line-height: 1; }
+    .school-tile__app-body { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 0.15rem; }
+    .school-tile__app-label {
+      font-size: 1.05rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.03em;
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+    .school-tile__app-blurb {
+      color: var(--school-muted); font-size: 0.9rem;
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+    .school-tile__app-open { flex: 0 0 auto; color: var(--school-muted); font-weight: 700; font-size: 0.9rem; }
+  }
 }
