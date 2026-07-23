@@ -59,15 +59,20 @@ function schoolUrlBase() {
 // Everything after a `subject/<id>` or `library` section is the MATERIALS
 // CHAIN — the raw id segments the breadcrumb descends through (collection →
 // work → track, or show → episode). So the URL matches the breadcrumb all the
-// way down, and a leaf like `…/plex:483194/plex:483214/plex:483215` deep-links
-// straight to a playing track. Ids (`plex:<key>`) are valid path segments.
+// way down, and a leaf like `…/483194/483214/483215` deep-links straight to a
+// playing track. The `plex:` source prefix is dropped in the URL (it's the
+// default) and re-added when reading a bare id; a non-plex id keeps its own
+// `prefix:` so it round-trips unchanged.
+const stripSource = (id) => String(id).replace(/^plex:/, '');
+const restoreSource = (seg) => (seg.includes(':') ? seg : `plex:${seg}`);
+
 export function parseSchoolPath(urlBase) {
   const empty = { section: null, materialPath: [] };
   if (!urlBase) return empty;
   const seg = window.location.pathname.slice(urlBase.length).split('/').filter(Boolean).map(decodeURIComponent);
   if (!seg.length) return empty;
-  if (seg[0] === 'subject' && seg[1]) return { section: `subject:${seg[1]}`, materialPath: seg.slice(2) };
-  if (seg[0] === 'library') return { section: 'library', materialPath: seg.slice(1) };
+  if (seg[0] === 'subject' && seg[1]) return { section: `subject:${seg[1]}`, materialPath: seg.slice(2).map(restoreSource) };
+  if (seg[0] === 'library') return { section: 'library', materialPath: seg.slice(1).map(restoreSource) };
   if (seg[0] === 'progress') return { section: 'progress', materialPath: [] };
   if (seg[0] === 'practice') return { section: 'banks', materialPath: [] };
   if (seg[0] === 'print') return { section: 'print', materialPath: [] };
@@ -88,12 +93,13 @@ function sectionPathFor(urlBase, section) {
   return urlBase;
 }
 
-// Full path = the section path + the materials chain (subject/library only).
+// Full path = the section path + the materials chain (subject/library only),
+// with the `plex:` prefix dropped from each id so the URL stays clean.
 export function schoolPathFor(urlBase, section, materialPath = []) {
   const base = sectionPathFor(urlBase, section);
   const carriesChain = section && (section.startsWith('subject:') || section === 'library');
   if (!carriesChain || !materialPath.length) return base;
-  return `${base}/${materialPath.map(encodeURIComponent).join('/')}`;
+  return `${base}/${materialPath.map((id) => encodeURIComponent(stripSource(id))).join('/')}`;
 }
 
 function SchoolShell({ clear }) {
