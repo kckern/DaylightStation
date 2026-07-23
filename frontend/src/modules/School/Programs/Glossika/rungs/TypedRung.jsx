@@ -29,9 +29,13 @@ export default function TypedRung({ entry, audioUrl, nextEntry, onComplete, savi
   const promptLang = entry.prompt?.[0]?.language;
   const isDictation = entry.rung === 'dictation';
 
+  // NOTE: do NOT reset `value`/`played` here. This component is remounted per
+  // entry via `key={rung-seq}` (in GlossikaProgram), so each entry already
+  // starts with fresh state. A `setValue('')` in this effect is not only
+  // redundant — it RACES: the parent's caps/day load cascade can defer this
+  // passive effect until after the learner has begun typing, and it then wipes
+  // their input. Keep only the per-entry enter log and the audio-stop cleanup.
   useEffect(() => {
-    setValue('');
-    setPlayed(false);
     languageLog.rung('enter', { rung: entry.rung, seq: entry.seq });
     return () => stop();
   }, [entry.seq, entry.rung, stop]);

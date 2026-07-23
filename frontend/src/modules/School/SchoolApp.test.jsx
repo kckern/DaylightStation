@@ -76,7 +76,15 @@ async function openLibrary() {
 }
 
 async function openSubject(name) {
-  fireEvent.click(await screen.findByRole('button', { name }));
+  // A subject tile is greyed and DISABLED until the catalog resolves (the
+  // registry convention — the wall shows the whole curriculum's shape, greyed,
+  // before content loads). `findByRole` returns the tile the instant it exists,
+  // which is while it is still disabled, and `fireEvent.click` on a disabled
+  // button is a no-op — so clicking too early silently fails to navigate. Wait
+  // for the tile to enable (catalog loaded) before tapping.
+  const btn = await screen.findByRole('button', { name });
+  await waitFor(() => expect(btn).toBeEnabled());
+  fireEvent.click(btn);
 }
 
 // Both bank cards render the title as an <h3>; find the card wrapper so we can
