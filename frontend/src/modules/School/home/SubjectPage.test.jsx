@@ -162,4 +162,19 @@ describe('SubjectPage', () => {
     );
     expect(screen.getByText('Nothing on this shelf yet.')).toBeInTheDocument();
   });
+
+  it('shows a loading skeleton (not the empty state) while the catalog is still fetching', () => {
+    const { container } = render(
+      <SubjectPage
+        subjectId="math"
+        shelf={{ materials: [], banks: [], courses: [] }}
+        onLaunch={vi.fn()}
+        onOpen={vi.fn()}
+        onMaterialNav={vi.fn()}
+        catalogLoading
+      />
+    );
+    expect(container.querySelector('.school-skel__poster')).not.toBeNull();
+    expect(screen.queryByText('Nothing on this shelf yet.')).toBeNull();
+  });
 });
