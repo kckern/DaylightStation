@@ -221,10 +221,16 @@
     display: flex; flex-direction: column; gap: 0.6rem;
     position: sticky; top: 0;
   }
+  // Reserve the poster box BEFORE the image loads so the rail never reflows on
+  // load (no "rug-pull"). Video/course posters are portrait 2:3 (same as the
+  // shelf tiles and the actual Plex art); audio covers are square. object-fit
+  // keeps the image undistorted inside the reserved box.
   &__poster {
-    width: 100%; border-radius: 14px;
-    border: 1px solid var(--school-border);
+    display: block; width: 100%; aspect-ratio: 2 / 3; object-fit: cover; object-position: center top;
+    border-radius: 14px; border: 1px solid var(--school-border);
+    background: var(--school-surface-2);
   }
+  &__poster--square { aspect-ratio: 1 / 1; }
 
   // Works browser grid (a collection's plays/books): four per row, uniform
   // tile height with the title clamped to two lines so a long name doesn't
@@ -368,6 +374,7 @@
 // as "loading").
 .school-skel {
   &__poster { width: 100%; aspect-ratio: 2 / 3; max-width: 230px; border-radius: 14px; background: var(--school-surface-2); }
+  &__poster--square { aspect-ratio: 1 / 1; } // audio detail: match the square cover so skeleton→loaded doesn't shift
   &__line { height: 0.9rem; border-radius: 6px; background: var(--school-surface-2); }
   &__line--sm { width: 45%; }
   &__tile { display: block; width: 100%; aspect-ratio: 16 / 9; border-radius: 10px; background: var(--school-surface-2); }
