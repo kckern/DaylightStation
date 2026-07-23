@@ -158,7 +158,16 @@ export class GetMaterialUnits {
       needsQuiz: r.needsQuiz,
     }));
 
-    const material = { ...full, category: catalogMaterial.category };
+    // Title/poster fall back to the (already-proxied) catalog material: the
+    // plex-show source now returns them null (it fetches episodes directly and
+    // no longer resolves the show's own metadata), and the catalog already
+    // carries a proxied poster + title for the detail header.
+    const material = {
+      ...full,
+      title: full.title ?? catalogMaterial.title ?? null,
+      poster: full.poster ?? catalogMaterial.poster ?? null,
+      category: catalogMaterial.category,
+    };
     return { material, units };
   }
 }
