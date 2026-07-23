@@ -36,7 +36,17 @@ let server, base;
 beforeAll(async () => {
   const app = express();
   app.use(express.json());
-  app.use('/api/v1/school', createSchoolRouter({ schoolService: svc, logger: { error: () => {} } }));
+  app.use('/api/v1/school', createSchoolRouter({
+    schoolService: svc,
+    getMaterialProgressSummary: {
+      execute: async ({ userId, subject }) => (
+        userId === 'kid1'
+          ? [{ materialId: 'plex:v1', unitsDone: 1, unitTotal: 2, nextUnitId: 'plex:u2', nextUnitTitle: 'Water', percent: 50, lastActivity: '2026-07-20T10:00:00Z', _subject: subject ?? null }]
+          : []
+      ),
+    },
+    logger: { error: () => {} },
+  }));
   await new Promise((res) => { server = app.listen(0, res); });
   base = `http://127.0.0.1:${server.address().port}/api/v1/school`;
 });
@@ -69,6 +79,32 @@ describe('school router status mapping', () => {
     const ok = await post('/sessions/ses_1/answer', { itemId: 'q1', given: 'x' });
     expect(ok.status).toBe(200);
     expect(await ok.json()).toMatchObject({ correct: true, attemptId: 'att_1' });
+  });
+});
+
+describe('school router: material-progress summary', () => {
+  it('GET /users/:userId/material-progress returns the summary and forwards ?subject', async () => {
+    const r = await fetch(`${base}/users/kid1/material-progress?subject=science`);
+    expect(r.status).toBe(200);
+    const body = await r.json();
+    expect(body).toHaveLength(1);
+    expect(body[0].materialId).toBe('plex:v1');
+    expect(body[0]._subject).toBe('science'); // proves req.query.subject was forwarded
+  });
+  it('GET /users/:userId/material-progress → [] for a user with no progress', async () => {
+    const r = await fetch(`${base}/users/nobody/material-progress`);
+    expect(r.status).toBe(200);
+    expect(await r.json()).toEqual([]);
+  });
+  it('GET material-progress serves [] when the use-case is not wired', async () => {
+    const app2 = express(); app2.use(express.json());
+    app2.use('/api/v1/school', createSchoolRouter({ schoolService: svc, logger: { error: () => {} } }));
+    const srv = await new Promise((res) => { const s = app2.listen(0, () => res(s)); });
+    try {
+      const r = await fetch(`http://127.0.0.1:${srv.address().port}/api/v1/school/users/kid1/material-progress`);
+      expect(r.status).toBe(200);
+      expect(await r.json()).toEqual([]);
+    } finally { await new Promise((res) => srv.close(res)); }
   });
 });
 

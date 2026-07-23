@@ -37,6 +37,7 @@ export const schoolApi = {
   },
   materialWorks: (materialId) => req(`/materials/${encodeURIComponent(materialId)}/works`),
   materialUnits: (materialId, userId) => req(`/materials/${encodeURIComponent(materialId)}/units${userId ? `?userId=${encodeURIComponent(userId)}` : ''}`),
+  materialProgress: (userId, subject) => req(`/users/${encodeURIComponent(userId)}/material-progress${subject ? `?subject=${encodeURIComponent(subject)}` : ''}`),
   quizRequests: (materialId) => req(`/quiz-requests${materialId ? `?materialId=${encodeURIComponent(materialId)}` : ''}`),
   requestQuiz: (body) => req('/quiz-requests', body),
   printables: () => req('/print/printables'),
