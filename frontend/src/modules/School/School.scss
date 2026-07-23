@@ -514,18 +514,20 @@
 // carries the claim affordance. No animation (kiosk WebView).
 .school-home2 {
   display: grid; grid-template-columns: 2fr 1fr; gap: 1rem;
-  min-height: 100%;
+  // Fixed, no-scroll view: the 3×3 wall is a fixed panel, so bound it to the
+  // body height and clip — never let the icons grow it into a scroll.
+  height: 100%; min-height: 0; overflow: hidden;
 
   &__subjects {
     display: grid; gap: 0.85rem;
     grid-template-columns: repeat(3, 1fr);
-    grid-auto-rows: 1fr;
+    grid-auto-rows: 1fr; min-height: 0;
   }
 
   &__subject {
     display: flex; flex-direction: column; align-items: center;
     justify-content: center; gap: 0.5rem;
-    padding: 1.25rem; text-align: center;
+    padding: 1.25rem; text-align: center; overflow: hidden; min-height: 0;
     border: 1px solid var(--school-border); border-radius: 14px;
     background: var(--school-surface); color: var(--school-fg); cursor: pointer;
 
@@ -543,7 +545,9 @@
     flex: 1 1 auto; min-height: 0; width: 100%;
     display: flex; align-items: center; justify-content: center;
     line-height: 1; color: var(--school-fg);
-    svg { width: 100%; height: 100%; max-height: 100%; }
+    // Fill the space the tile leaves, but capped so a row of tiles never needs
+    // to grow (which is what forced the scroll). Prominent, not dominating.
+    svg { width: auto; height: 100%; max-height: 5.5rem; max-width: 100%; }
   }
   &__subject-label { margin: 0; font-size: 1.25rem; font-weight: 800; }
   &__subject-hint { margin: 0; color: var(--school-muted); font-size: 0.9rem; }
@@ -723,7 +727,8 @@
 
 // --- subject / library pages -------------------------------------------------
 .school-subject {
-  display: flex; flex-direction: column; gap: 1.5rem;
+  display: flex; flex-direction: column; gap: 1rem;
+  height: 100%; min-height: 0;
 
   &--empty { align-items: center; justify-content: center; min-height: 60%; color: var(--school-muted); }
 
@@ -733,6 +738,60 @@
     text-transform: uppercase; letter-spacing: 0.06em;
   }
   &__notice { padding: 0.85rem 1rem; border-radius: 12px; background: var(--school-warn); color: #241a05; font-weight: 700; }
+}
+
+// --- subject shelves: content-aware shelf packing (shelfLayout.js) -----------
+// Bands stack vertically; a band is a flex row of one wide shelf, or several
+// narrow shelves sharing the width in proportion to their item counts. Aspect
+// ratios are the tiles' own (video 2:3, audio 1:1). Scroll is allowed but a
+// wide "large collection" shelf caps to one row (+ See more), so nothing floods.
+.school-shelves {
+  flex: 1 1 auto; min-height: 0; overflow: auto;
+  display: flex; flex-direction: column; gap: 1.25rem;
+}
+// Narrow shelves pack left and wrap; a wide shelf owns its band.
+.school-shelf-band { display: flex; flex-wrap: wrap; gap: 1.25rem 1.75rem; align-items: flex-start; }
+
+.school-shelf {
+  min-width: 0; display: flex; flex-direction: column; gap: 0.5rem;
+  &.is-wide { flex: 1 1 100%; }
+  // Narrow shelves size to their content (one row of tiles) and sit next to
+  // each other; posters can't grow to fill width (2:3 would grow too tall), so
+  // leftover space stays to the right rather than as a gap between shelves.
+  &.is-narrow { flex: 0 1 auto; }
+
+  &__head { display: flex; align-items: center; gap: 0.5rem; }
+  &__icon { font-size: 1.3rem; line-height: 1; }
+  &__verb { margin: 0; font-size: 1.05rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.04em; }
+  &__count { color: var(--school-muted); font-size: 0.9rem; }
+  &__more {
+    margin-left: auto; border: none; background: transparent;
+    color: var(--school-accent); font-weight: 700; font-size: 0.9rem; cursor: pointer;
+  }
+
+  &__grid { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.75rem; }
+
+  // Poster shelves.
+  // Narrow (few items): one content-width row of fixed-size aspect-correct
+  // tiles, packed left. Posters can't grow to fill (2:3 → too tall), so a
+  // sparse shelf simply leaves space to its right rather than a mid gap.
+  &--video &__grid, &--audio &__grid {
+    grid-auto-flow: column; grid-auto-columns: 160px;
+  }
+  // Wide (large collection): one capped row stretched across the full band.
+  &--video.is-wide:not(.is-expanded) &__grid,
+  &--audio.is-wide:not(.is-expanded) &__grid {
+    grid-auto-columns: minmax(130px, 1fr);
+  }
+  // Wide + expanded ("See more"): wrap every tile into a full-width grid.
+  &--video.is-wide.is-expanded &__grid,
+  &--audio.is-wide.is-expanded &__grid {
+    grid-auto-flow: row; grid-auto-columns: auto;
+    grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+  }
+  // App / deck shelves: a fixed-width column of banners / cards.
+  &--apps.is-narrow, &--decks.is-narrow { width: 320px; }
+  &--apps &__grid, &--decks &__grid { grid-template-columns: 1fr; }
 }
 
 // --- continue rail: claimed student's in-progress materials for this shelf --

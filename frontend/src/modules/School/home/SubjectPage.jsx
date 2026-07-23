@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react';
 import MaterialsSection from '../materials/MaterialsSection.jsx';
-import ContinueRail from './ContinueRail.jsx';
-import KindSection from './KindSection.jsx';
+import SubjectShelves from './SubjectShelves.jsx';
 import { KINDS, groupByKind } from './kinds.js';
 import { subjectLabel } from './subjects.js';
 import { useSchoolProfile } from '../identity/SchoolProfileContext.jsx';
@@ -28,11 +27,10 @@ const SUBJECT_PROGRAMS = {
 };
 
 export default function SubjectPage({ subjectId, shelf, guestOnly, onLaunch, notice, onOpen, initialMaterialPath = [], onMaterialNav }) {
-  // SubjectPage owns the per-subject progress fetch (rather than each consumer
-  // fetching its own copy) because `materialProgress` fans out a Plex read per
-  // material on the backend — expensive. The fetched list feeds BOTH the
-  // ranking below AND is handed to ContinueRail as a prop so it does not
-  // self-fetch (one fetch per subject open, not two).
+  // SubjectPage owns the per-subject progress fetch because `materialProgress`
+  // fans out a Plex read per material on the backend — expensive. The fetched
+  // list feeds the ranking (started work floats to the front of its shelf) and
+  // the tiles' progress underline. One fetch per subject open.
   const { currentUser } = useSchoolProfile();
   const userId = currentUser?.id ?? null;
   const [progress, setProgress] = useState(null); // null = not loaded yet
@@ -96,21 +94,24 @@ export default function SubjectPage({ subjectId, shelf, guestOnly, onLaunch, not
       initialMaterialPath={initialMaterialPath}
       onMaterialNav={onMaterialNav}
       sectionLabel={subjectLabel(subjectId)}
-      renderCatalog={({ onSelect }) => (
-        <div className="school-subject">
-          <ContinueRail subjectId={subjectId} materials={shelf.materials} onOpen={onSelect} progress={progressList} />
-          {notice && <div className="school-subject__notice">{notice}</div>}
-          {KINDS.map((kind) => (
-            <KindSection
-              key={kind.id}
-              kind={kind}
-              items={rankWithin(withProgress(grouped[kind.id]), { progress: progressList, studentGrade })}
-              Tile={kind.Tile}
-              onOpen={openFor(kind.id, onSelect)}
-            />
-          ))}
-        </div>
-      )}
+      renderCatalog={({ onSelect }) => {
+        // One shelf per kind (ranked, progress-joined); the packer bands them.
+        const shelves = KINDS.map((kind) => ({
+          kindId: kind.id,
+          verb: kind.verb,
+          icon: kind.icon,
+          token: kind.token,
+          Tile: kind.Tile,
+          items: rankWithin(withProgress(grouped[kind.id]), { progress: progressList, studentGrade }),
+          onOpen: openFor(kind.id, onSelect),
+        }));
+        return (
+          <div className="school-subject">
+            {notice && <div className="school-subject__notice">{notice}</div>}
+            <SubjectShelves shelves={shelves} />
+          </div>
+        );
+      }}
     />
   );
 }
