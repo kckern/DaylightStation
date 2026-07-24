@@ -125,20 +125,23 @@ function SchoolShell({ clear }) {
   // state, which otherwise reads as "stuck/broken" while it's legitimately loading.
   const [catalogLoaded, setCatalogLoaded] = useState(false);
 
-  // Fetch all three catalogues once the profile roster is ready — the home's
-  // subject shelves are grouped from whatever actually resolved. Any one
-  // failing simply leaves its content absent (an emptier shelf), never a
-  // broken panel: the home must render on a dead catalog.
+  // Un-grey the subject wall on materials + courses — the fast catalogues — and
+  // do NOT block that render on the bank catalogue (thousands of files). Banks
+  // load independently and fill the Practice shelves when ready; a subject that
+  // has only banks simply un-greys a beat later. Any fetch failing just leaves
+  // its content absent, never a broken panel.
   useEffect(() => {
     if (status !== 'ready') return;
     let alive = true;
-    Promise.all([schoolApi.materials(), languageApi.courses(), schoolApi.banks()]).then(([mat, lang, bnk]) => {
+    Promise.all([schoolApi.materials(), languageApi.courses()]).then(([mat, lang]) => {
       if (!alive) return;
       if (!mat.ok || !mat.data) schoolLog.materials('catalog-failed', { ok: mat.ok });
       setMaterials(mat.ok && Array.isArray(mat.data?.materials) ? mat.data.materials : []);
       setCourses(lang.ok && Array.isArray(lang.data) ? lang.data : []);
-      setBanks(bnk.ok && Array.isArray(bnk.data) ? bnk.data : []);
       setCatalogLoaded(true);
+    });
+    schoolApi.banks().then(({ ok, data }) => {
+      if (alive) setBanks(ok && Array.isArray(data) ? data : []);
     });
     return () => { alive = false; };
   }, [status]);

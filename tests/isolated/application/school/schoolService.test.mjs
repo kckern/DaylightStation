@@ -25,6 +25,7 @@ beforeEach(() => {
     appended: [],
     listBankIds: () => Object.keys(BANKS),
     readBankRaw: (id) => BANKS[id] || null,
+    readAllBankRaws: async () => Object.keys(BANKS).map((id) => ({ id, raw: BANKS[id] })),
     appendAttempt: (userId, a) => { ds.appended.push({ userId, ...a }); return a; },
     readAllAttempts: () => [],
   };
@@ -36,16 +37,23 @@ beforeEach(() => {
 });
 
 describe('banks', () => {
-  it('lists only valid banks, with itemCount; invalid bank warns and is skipped', () => {
+  it('lists structurally-present banks with itemCount; a bank with no items is skipped', async () => {
+    await svc.warmBanks(); // populate the cache (async, off-thread scan)
     const list = svc.listBanks();
     expect(list.map((b) => b.id).sort()).toEqual(['animals', 'caps', 'unit-quiz']);
     expect(list.find((b) => b.id === 'caps').itemCount).toBe(2);
-    expect(warned).toContain('school.bank.invalid');
+    // Listing summarises headers only — it does NOT validate item content (that
+    // happens on open, in getBank), so it doesn't read/validate/LOG every
+    // question of every bank on each render. With 4600+ banks that per-item
+    // work (and its warning spam) was ~5s of event-loop-blocking waste per call.
+    expect(warned).not.toContain('school.bank.invalid');
   });
-  it('audience filter', () => {
+  it('audience filter', async () => {
+    await svc.warmBanks();
     expect(svc.listBanks({ audience: 'generic' }).map((b) => b.id)).toEqual(['animals']);
   });
-  it('carries a bank\'s unit backlink through to listBanks() output (buildBankIndex needs this to find gates)', () => {
+  it('carries a bank\'s unit backlink through to listBanks() output (buildBankIndex needs this to find gates)', async () => {
+    await svc.warmBanks();
     const list = svc.listBanks();
     expect(list.find((b) => b.id === 'unit-quiz').unit).toBe('plex:619778-3');
     // A bank with no unit backlink carries an undefined unit, not a dropped field.

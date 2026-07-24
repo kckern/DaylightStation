@@ -16,6 +16,7 @@ import { PersistenceError } from '#system/utils/errors/index.mjs';
 
 const svc = {
   getRoster: () => [{ id: 'kid1', name: 'KID1' }],
+  warmBanks: async () => {},
   listBanks: ({ audience } = {}) => (audience === 'generic' ? [{ id: 'animals' }] : [{ id: 'animals' }, { id: 'caps' }]),
   getBank: (id) => { if (id !== 'caps') throw new EntityNotFoundError('nope'); return { id: 'caps', items: [] }; },
   openSession: ({ userId, bankId }) => {

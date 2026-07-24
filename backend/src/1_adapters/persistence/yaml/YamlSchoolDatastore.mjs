@@ -8,6 +8,7 @@
  */
 import path from 'path';
 import fs from 'fs';
+import yaml from 'js-yaml';
 import { loadYamlSafe, saveYaml, ensureDir, listYamlFiles } from '#system/utils/FileIO.mjs';
 import { InfrastructureError } from '#system/utils/errors/index.mjs';
 
@@ -82,6 +83,33 @@ export class YamlSchoolDatastore {
   readBankRaw(bankId) {
     if (!BANK_ID_RE.test(String(bankId))) return null;
     return loadYamlSafe(path.join(this.#banksDir(), String(bankId)));
+  }
+
+  /**
+   * Read every bank's raw YAML ASYNCHRONOUSLY, in bounded-concurrency batches,
+   * so the 4600-file scan runs off the main thread (libuv threadpool) instead
+   * of blocking the event loop for ~8-10s. Returns [{ id, raw }] (raw null on a
+   * parse/read miss). Parsing is sync per file but tiny; batching keeps the
+   * per-tick CPU burst small too.
+   */
+  async readAllBankRaws({ batch = 200 } = {}) {
+    const ids = this.listBankIds();
+    const dir = this.#banksDir();
+    const out = [];
+    for (let i = 0; i < ids.length; i += batch) {
+      const slice = ids.slice(i, i + batch);
+      // eslint-disable-next-line no-await-in-loop
+      const chunk = await Promise.all(slice.map(async (id) => {
+        try {
+          const text = await fs.promises.readFile(path.join(dir, `${id}.yml`), 'utf8');
+          return { id, raw: yaml.load(text) };
+        } catch {
+          return { id, raw: null };
+        }
+      }));
+      out.push(...chunk);
+    }
+    return out;
   }
 
   appendAttempt(userId, attempt) {

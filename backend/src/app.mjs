@@ -2108,6 +2108,21 @@ export async function createApp({ server, logger, configPaths, configExists, ena
       config: schoolMaterialsConfig,
       logger: rootLogger.child({ module: 'school-materials' })
     });
+    // Pre-warm the catalog in the background at boot so the first subject-open
+    // after a (cache-clearing) redeploy hits a warm cache instead of paying the
+    // full Plex fan-out. Fire-and-forget — never blocks startup, and a failure
+    // just means the first real request rebuilds it.
+    getMaterialCatalog.execute()
+      .then((c) => rootLogger.child({ module: 'school-materials' }).info?.('school.materials.prewarmed', { count: c?.materials?.length ?? 0 }))
+      .catch((err) => rootLogger.child({ module: 'school-materials' }).warn?.('school.materials.prewarm-failed', { error: err.message }));
+    // Pre-warm the bank summaries too (the 4600-file scan), ASYNC so it never
+    // blocks boot/the event loop, and keep them warm on a background interval so
+    // a home load / gating lookup always hits the cache instead of a cold scan.
+    const warmSchoolBanks = () => schoolService.warmBanks({ force: true })
+      .then((list) => rootLogger.child({ module: 'school-materials' }).info?.('school.banks.prewarmed', { count: list.length }))
+      .catch((err) => rootLogger.child({ module: 'school-materials' }).warn?.('school.banks.prewarm-failed', { error: err.message }));
+    warmSchoolBanks();
+    setInterval(warmSchoolBanks, 4 * 60 * 1000).unref(); // force a refresh before the 5-min TTL lapses, so requests always hit a warm cache
     // Rebuilt from schoolService.listBanks() (cheap YAML-directory read, no
     // cache of its own) on every lookup rather than once at boot, so a newly
     // authored gating bank takes effect without a restart — matching
