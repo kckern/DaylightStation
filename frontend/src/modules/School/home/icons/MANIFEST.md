@@ -20,3 +20,8 @@ needed.
 | history | History & Geography | `svg/history.svg` | globe-stand |
 | scripture | Scripture & Gospel | `svg/scripture.svg` | sunlight |
 | arts | Art & Music | `svg/arts.svg` | art-palette |
+| geography | Geography | `svg/geography.svg` | placeholder line-art (globe) — swap later |
+| states | Geography | `svg/states.svg` | placeholder line-art (map grid) — swap later |
+| capitals | Geography | `svg/capitals.svg` | placeholder line-art (star) — swap later |
+| flags | Geography | `svg/flags.svg` | placeholder line-art (flag) — swap later |
+| countries | Geography | `svg/countries.svg` | placeholder line-art (globe+pin) — swap later |

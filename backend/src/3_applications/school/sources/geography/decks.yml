@@ -1,0 +1,45 @@
+- deckId: us-state-locations
+  title: US State Locations
+  entities: us-states
+  itemType: region_click
+  asset: us-states
+  prompt: "Click {name}"
+  answerField: region_id
+  available: true
+- deckId: us-state-capitals
+  title: US State Capitals
+  entities: us-states
+  itemType: multiple_choice
+  prompt: "What is the capital of {name}?"
+  answerField: capital
+  distractorField: capital
+  distractorCount: 3
+  available: true
+- deckId: world-flags
+  title: World Flags
+  entities: world
+  itemType: asset_choice
+  prompt: "Whose flag is this?"
+  promptImage: { kind: flag, isoField: iso }
+  answerField: id
+  choiceLabelField: name
+  distractorField: id
+  distractorCount: 3
+  available: true
+- deckId: country-locations
+  title: Country Locations
+  entities: world
+  itemType: region_click
+  asset: world
+  prompt: "Click {name}"
+  answerField: id
+  available: false
+- deckId: world-capitals
+  title: World Capitals
+  entities: world
+  itemType: multiple_choice
+  prompt: "What is the capital of {name}?"
+  answerField: capital
+  distractorField: capital
+  distractorCount: 3
+  available: false

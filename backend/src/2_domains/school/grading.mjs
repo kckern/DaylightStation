@@ -40,5 +40,10 @@ export function gradeAnswer(item, given) {
       && given.every((p) => want.has(p.left) && want.get(p.left) === p.right);
     return { correct, expected: item.pairs };
   }
+  if (item.type === 'region_click' || item.type === 'asset_choice') {
+    // Values are machine-generated ids (region codes / choice values), never
+    // free text — strict equality, no normalization (see multiple_choice).
+    return { correct: given === item.answer, expected: item.answer };
+  }
   throw new Error(`gradeAnswer: unrecognised item.type "${item.type}"`);
 }
