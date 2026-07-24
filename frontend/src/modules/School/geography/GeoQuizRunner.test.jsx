@@ -41,4 +41,18 @@ it('requeues an unrecorded answer as not-mastered (no crash, no mastery)', async
   render(<GeoQuizRunner bank={bank} onExit={() => {}} />);
   fireEvent.click(await screen.findByRole('button', { name: 'Carson City' }));
   expect(await screen.findByTestId('unrecorded')).toBeInTheDocument();
+  fireEvent.click(await screen.findByRole('button', { name: 'Next' }));
+
+  // i1 was requeued (not mastered) behind i2 - answer i2 correctly first.
+  fireEvent.click(await screen.findByRole('button', { name: 'Salem' }));
+  fireEvent.click(await screen.findByRole('button', { name: 'Next' }));
+
+  // i1 resurfaces - still not mastered, no summary yet.
+  expect(await screen.findByText('Capital of Nevada?')).toBeInTheDocument();
+  expect(screen.queryByTestId('geo-summary')).toBeNull();
+
+  // Now answer i1 correctly (mock default is correct:true) - only then is mastery reached.
+  fireEvent.click(await screen.findByRole('button', { name: 'Carson City' }));
+  fireEvent.click(await screen.findByRole('button', { name: 'Next' }));
+  expect(await screen.findByTestId('geo-summary')).toHaveTextContent('Mastered 2 / 2');
 });
