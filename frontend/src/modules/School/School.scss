@@ -463,6 +463,8 @@
   &__row { display: flex; align-items: center; gap: 0.4rem; padding: 0.6rem 1rem 0.9rem; }
   &__time { flex: 0 0 auto; color: rgba(255,255,255,0.85); font-size: 0.9rem; font-variant-numeric: tabular-nums; }
   &--audio .school-chrome__time { color: var(--school-muted); }
+  // On the light audio bar the video's dark text-shadow reads as grime; drop it.
+  &--audio .school-chrome__time-float { text-shadow: none; }
   // The X exit sits at the far right of the video control row.
   &__btn--exit { font-size: 1.25rem; }
   &__spacer { flex: 1; }
