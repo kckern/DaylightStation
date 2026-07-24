@@ -4,7 +4,7 @@
  * end; unrecorded (record failed, grade unknown) -> requeue as not-mastered
  * with an inline banner, never strand. Ends when the queue empties.
  */
-import { useMemo, useRef, useState } from 'react';
+import { useRef, useState } from 'react';
 import { useGradedSession } from './useGradedSession.js';
 import RegionClickItem from '../quiz/items/RegionClickItem.jsx';
 import AssetChoiceItem from '../quiz/items/AssetChoiceItem.jsx';
