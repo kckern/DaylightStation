@@ -39,6 +39,9 @@ export function createSchoolRouter({
     res.json(schoolService.listBanks({ audience: req.query.audience }));
   }));
   router.get('/banks/:bankId', wrap((req, res) => res.json(schoolService.getBank(req.params.bankId))));
+  router.get('/geography/decks', wrap((req, res) => {
+    res.json({ decks: schoolService.listDeckSummaries() });
+  }));
   router.post('/sessions', wrap((req, res) => {
     const { userId = null, bankId, mode } = req.body || {};
     res.json(schoolService.openSession({ userId, bankId, mode }));

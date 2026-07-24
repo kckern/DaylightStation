@@ -993,3 +993,32 @@
     }
   }
 }
+
+.school-clickable {
+  width: 100%;
+  svg { width: 100%; height: auto; display: block; }
+  [data-region-id] { fill: var(--school-surface-2); stroke: var(--school-border); stroke-width: 0.5; cursor: pointer; transition: fill 0.12s; }
+  &:not(.is-locked) [data-region-id]:hover { fill: var(--school-accent-weak, #cfe0a8); }
+  [data-region-id].is-selected { fill: var(--school-accent); }
+  [data-region-id].is-right { fill: var(--school-accent); }
+  [data-region-id].is-wrong { fill: var(--school-warn); }
+  [data-region-id].is-expected { stroke: var(--school-accent); stroke-width: 2; }
+  &.is-locked [data-region-id] { cursor: default; }
+  &__callout {
+    cursor: pointer;
+    rect { fill: var(--school-surface-2); stroke: var(--school-border); }
+    text { fill: var(--school-text); font-size: 10px; font-weight: 700; }
+  }
+}
+
+.school-item__prompt-image { display: flex; justify-content: center; margin: 0.5rem 0; }
+.school-choice__flag { width: 96px; height: 72px; object-fit: contain; border: 1px solid var(--school-border); border-radius: 6px; }
+.school-item__choices--asset { display: grid; grid-template-columns: repeat(2, 1fr); gap: 0.6rem; }
+
+.school-geo-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 1rem; padding: 1rem; }
+.school-geo-tile { display: flex; flex-direction: column; align-items: center; gap: 0.5rem; padding: 1.25rem 1rem; border: 1px solid var(--school-border); border-radius: 14px; background: var(--school-surface); color: var(--school-text); cursor: pointer;
+  &__icon { font-size: 2.5rem; }
+  &__label { font-weight: 700; text-align: center; }
+  &--soon { opacity: 0.5; cursor: default; }
+  &__soon { font-size: 0.7rem; color: var(--school-muted); }
+}

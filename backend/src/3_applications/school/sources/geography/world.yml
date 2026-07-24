@@ -1,0 +1,50 @@
+- { id: US, name: United States, capital: Washington, iso: US }
+- { id: CA, name: Canada, capital: Ottawa, iso: CA }
+- { id: MX, name: Mexico, capital: Mexico City, iso: MX }
+- { id: BR, name: Brazil, capital: Brasília, iso: BR }
+- { id: AR, name: Argentina, capital: Buenos Aires, iso: AR }
+- { id: CL, name: Chile, capital: Santiago, iso: CL }
+- { id: CO, name: Colombia, capital: Bogotá, iso: CO }
+- { id: PE, name: Peru, capital: Lima, iso: PE }
+- { id: CU, name: Cuba, capital: Havana, iso: CU }
+- { id: GB, name: United Kingdom, capital: London, iso: GB }
+- { id: IE, name: Ireland, capital: Dublin, iso: IE }
+- { id: FR, name: France, capital: Paris, iso: FR }
+- { id: DE, name: Germany, capital: Berlin, iso: DE }
+- { id: IT, name: Italy, capital: Rome, iso: IT }
+- { id: ES, name: Spain, capital: Madrid, iso: ES }
+- { id: PT, name: Portugal, capital: Lisbon, iso: PT }
+- { id: NL, name: Netherlands, capital: Amsterdam, iso: NL }
+- { id: BE, name: Belgium, capital: Brussels, iso: BE }
+- { id: CH, name: Switzerland, capital: Bern, iso: CH }
+- { id: AT, name: Austria, capital: Vienna, iso: AT }
+- { id: SE, name: Sweden, capital: Stockholm, iso: SE }
+- { id: NO, name: Norway, capital: Oslo, iso: NO }
+- { id: DK, name: Denmark, capital: Copenhagen, iso: DK }
+- { id: FI, name: Finland, capital: Helsinki, iso: FI }
+- { id: PL, name: Poland, capital: Warsaw, iso: PL }
+- { id: GR, name: Greece, capital: Athens, iso: GR }
+- { id: RU, name: Russia, capital: Moscow, iso: RU }
+- { id: UA, name: Ukraine, capital: Kyiv, iso: UA }
+- { id: TR, name: Turkey, capital: Ankara, iso: TR }
+- { id: EG, name: Egypt, capital: Cairo, iso: EG }
+- { id: MA, name: Morocco, capital: Rabat, iso: MA }
+- { id: ZA, name: South Africa, capital: Pretoria, iso: ZA }
+- { id: NG, name: Nigeria, capital: Abuja, iso: NG }
+- { id: KE, name: Kenya, capital: Nairobi, iso: KE }
+- { id: CN, name: China, capital: Beijing, iso: CN }
+- { id: JP, name: Japan, capital: Tokyo, iso: JP }
+- { id: KR, name: South Korea, capital: Seoul, iso: KR }
+- { id: IN, name: India, capital: New Delhi, iso: IN }
+- { id: TH, name: Thailand, capital: Bangkok, iso: TH }
+- { id: VN, name: Vietnam, capital: Hanoi, iso: VN }
+- { id: ID, name: Indonesia, capital: Jakarta, iso: ID }
+- { id: PH, name: Philippines, capital: Manila, iso: PH }
+- { id: SA, name: Saudi Arabia, capital: Riyadh, iso: SA }
+- { id: AE, name: United Arab Emirates, capital: Abu Dhabi, iso: AE }
+- { id: IL, name: Israel, capital: Jerusalem, iso: IL }
+- { id: IR, name: Iran, capital: Tehran, iso: IR }
+- { id: PK, name: Pakistan, capital: Islamabad, iso: PK }
+- { id: BD, name: Bangladesh, capital: Dhaka, iso: BD }
+- { id: AU, name: Australia, capital: Canberra, iso: AU }
+- { id: NZ, name: New Zealand, capital: Wellington, iso: NZ }

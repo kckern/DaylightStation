@@ -3,8 +3,10 @@
 > **Status:** Built and deployed — identity + quizzes/flashcards, the subject
 > wall home (nine paired subjects, 3×3), the materials framework (video/audio
 > courses with quiz gates, quiz-on-demand, the FitnessShow-style unit browser),
-> the program report interface, language study (Glossika ladder), and
-> **printing** (worksheets on the kitchen laser printer). Writing, typing, the
+> the program report interface, language study (Glossika ladder),
+> **printing** (worksheets on the kitchen laser printer), and interactive
+> geography quizzes (click-a-region and image-choice item types, a
+> generated-content deck pipeline, a resurfacing drill mode). Writing, typing, the
 > parent reassignment UI, and reading (PDF/EPUB) remain **specced only** —
 > section 3. Each section below says which it is.
 >
@@ -326,6 +328,103 @@ supplier is an adapter.
 | Media | `media/apps/school/language/{corpusId}/` (audio + per-user recordings) |
 
 **Design spec:** [`2026-07-21-glossika-program-design.md`](../../_wip/plans/2026-07-21-glossika-program-design.md)
+
+### Geography / interactive quizzes
+
+Two item types extend the quiz engine beyond text answers: **click a region of
+an image** and **pick among images**. Both are built asset-agnostic — nothing
+map-specific lives in the engine, only in the content that configures it.
+
+- `region_click` — click a region of a **clickable asset**: any SVG whose
+  regions carry a stable region id. A US states map is the shipped instance;
+  the renderer imposes no map-specific code, so a different clickable SVG (a
+  diagram, a keyboard) is a new asset, not new engine work.
+- `asset_choice` — pick among choices that each carry a label, an image, or
+  both. World flags are the shipped instance (an image prompt, text choices);
+  the reverse shape (text prompt, image choices) is the same item type.
+
+Both grade by **strict `===`** against the item's `answer` — no
+normalization, unlike short-answer/cloze, because the value is a
+machine-generated id (a region code, an ISO code), never free text a child
+might mistype.
+
+**The content pipeline is generation, not per-question authoring.** A small,
+hand-maintained **dataset** (US states: postal code, name, capital, region id;
+a curated set of world countries: ISO code, name, capital) is the single
+source of truth. A **deck recipe** — one row per deck: id, title, which
+dataset entities to draw from, item type, prompt template, which field is the
+answer, which field seeds distractors — declares which decks exist. A pure
+**generator** turns one recipe plus its entities into a full question bank:
+one item per entity, deterministic (seeded) distractors so the same deck
+regenerates identically every time, stable item ids. A **bank source**
+synthesizes each deck's bank on first read and caches it, addressed by a
+colon-prefixed `geo:{deckId}` id (e.g. `geo:us-state-capitals`). The quiz
+service tries registered bank sources before its normal on-disk bank lookup,
+so a `geo:` id never touches the file datastore. Geography banks are
+**excluded from the general bank listing** — the subject shelves, the
+Library, Practice — so they never shelve as a stray content item; they are
+reached only through the Geography topic grid, by their fixed id.
+
+**`drill` is a third session mode**, alongside `quiz` and `flashcard`: it
+grades server-side immediately like `quiz` (each answer returns
+correct/expected) but **resurfaces missed items** like a flashcard drill, and
+records into its **own reporting lane** — never the `quiz` lane. This
+matters because quiz completion gates course progression; a drill that
+converges every score toward 100% by resurfacing would corrupt that signal if
+it landed in the same lane as one-pass quizzes. Drill attempts count toward
+"sets attempted" headline stats but are excluded from a student's
+latest-score summary — drill is practice, not an assessment.
+
+**The Geography topic grid** is an app tile on the **History & Geography**
+subject shelf — the same mechanism the Typing tile uses to sit on Writing &
+Typing — not a fixed top-level subject of its own. Opening it fetches the
+deck list from a decks endpoint and renders one tile per deck; a deck with no
+shipped content yet renders greyed and unclickable rather than being hidden
+(same "an empty shelf renders greyed, not hidden" rule as the subject wall).
+Launching a deck goes through the same identity-claim gate as the rest of
+School — an unclaimed child is prompted to pick a profile first, so a drill
+is never recorded against nobody.
+
+The drill itself runs in a graded, resurfacing runner: each answer grades
+immediately; a miss flashes the correct answer (the map highlights the right
+region; the flag choice highlights the true match) and requeues the item; a
+correct answer drops it. The session ends with a mastery summary. An
+unrecorded answer (a transient save failure) is never silently dropped or
+counted as mastered — it requeues as not-yet-mastered and a banner surfaces
+the failure, the same "failures are never silent" rule the rest of School
+holds to.
+
+**Adding a new geography deck is content, not engine work:** add a row to the
+dataset (or reuse an existing one) and one recipe line — deck id, title,
+entity source, item type, prompt template, answer/distractor fields. No code
+change.
+
+**Reusing the framework for a non-geography interactive quiz is the same
+shape.** For a region-click quiz: a new clickable SVG asset (each region
+tagged with a stable region id) plus a small dataset naming each region and
+its answer. For a choice-among-images quiz: new images plus a dataset naming
+each choice's value and label. Neither touches grading, validation, the
+runner, session plumbing, or reporting — only the shipped geography *decks*
+are geography-specific; the item types, the clickable-asset renderer, and the
+choice renderer are not.
+
+| Layer | Path |
+|---|---|
+| Domain (pure) | `backend/src/2_domains/school/grading.mjs`, `questionBankValidation.mjs` — `region_click`/`asset_choice` grade + validate |
+| Domain (pure) | `backend/src/2_domains/school/geography/` — bank generator, seeded distractor sampler |
+| Application | `backend/src/3_applications/school/sources/GeographyBankSource.mjs` — synth-on-read, memoized per deck |
+| Application | `backend/src/3_applications/school/ports/IBankSource.mjs` — the bank-source port `SchoolService` dispatches through |
+| Content | `backend/src/3_applications/school/sources/geography/` — `us-states.yml`, `world.yml`, `decks.yml` |
+| API | `GET /api/v1/school/geography/decks` (`backend/src/4_api/v1/routers/school.mjs`) |
+| Frontend renderers | `frontend/src/modules/School/quiz/clickable/ClickableAsset.jsx` (+ `assets/`), `frontend/src/modules/School/quiz/items/RegionClickItem.jsx`, `AssetChoiceItem.jsx` |
+| Frontend flag assets | `frontend/src/modules/School/geography/flags.js` (+ `flags/`) |
+| Frontend geography module | `frontend/src/modules/School/geography/` — `GeographyGrid.jsx` (topic grid), `GeoQuizRunner.jsx` (graded, resurfacing runner), `useGradedSession.js` (shared session plumbing, `GeoQuizRunner`-only) |
+
+Asset licenses are recorded next to the assets themselves (the clickable
+US-states SVG and the flag set each carry a source + license note in their own
+folder).
+
+**Design spec:** [`2026-07-23-interactive-geography-quizzes-design.md`](../../superpowers/specs/2026-07-23-interactive-geography-quizzes-design.md)
 
 ### Printing (worksheets on the kitchen laser printer)
 
