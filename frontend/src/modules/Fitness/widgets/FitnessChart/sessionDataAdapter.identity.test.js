@@ -38,6 +38,28 @@ describe('sessionDataAdapter — display names', () => {
     expect(roster[0].name).toBe('Rider A');
   });
 
+  it('uses the relational label in a family scene (labeled adult + unlabeled kids)', () => {
+    const session = {
+      participants: {
+        testuser: { display_name: 'testuser' }, // groupLabel "Dad"
+        'rider-a': { display_name: 'rider-a' }, // no label — a "kid"
+      },
+      timeline: emptyTimeline,
+    };
+    const { roster } = createChartDataSource(session, { configuredUsers: CONFIGURED_USERS });
+    expect(roster.find(r => r.id === 'testuser').name).toBe('Dad');
+    expect(roster.find(r => r.id === 'rider-a').name).toBe('Rider A');
+  });
+
+  it('uses the full name when the labeled adult rides alone (not a family scene)', () => {
+    const session = {
+      participants: { testuser: { display_name: 'testuser' } },
+      timeline: emptyTimeline,
+    };
+    const { roster } = createChartDataSource(session, { configuredUsers: CONFIGURED_USERS });
+    expect(roster[0].name).toBe('Test User');
+  });
+
   it('keeps a real stored display_name when the user is not in the configured list', () => {
     const session = {
       participants: { visitor: { display_name: 'Visiting Relative' } },

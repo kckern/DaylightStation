@@ -1,6 +1,7 @@
 import { DaylightMediaPath } from '@/lib/api.mjs';
 import { getZoneColor } from '@/modules/Fitness/domain';
 import { lookupUserName } from '@/modules/Fitness/player/overlays/lookupUserName.js';
+import { hasFamilyContext } from '@/lib/userDisplayName.js';
 import { genericGuestImageId, isGenericGuestProfileId } from '@/modules/Fitness/lib/guestPlaceholders.js';
 
 /**
@@ -32,20 +33,37 @@ function guestAgeClass(guestProfile) {
 }
 
 /**
+ * A slug's configured relational label ("Dad"), or '' if none. Used to derive
+ * the family-scene flag from the roster.
+ *
+ * @returns {string}
+ */
+function lookupGroupLabel(configuredUsers, userId) {
+  const list = Array.isArray(configuredUsers) ? configuredUsers : [];
+  const target = String(userId).toLowerCase();
+  const match = list.find((u) => u && u.id != null && String(u.id).toLowerCase() === target);
+  return (match?.groupLabel || match?.group_label || '').toString().trim();
+}
+
+/**
  * Resolve a roster row's display name.
  *
  * Sessions persist `participants.<slug>.display_name` as the bare slug for most
  * riders (`kckern: display_name: kckern`), so the stored value is only useful
  * when it differs from the slug. Precedence:
- *   1. configured users SSOT  — the only source of a real name ("KC Kern")
+ *   1. configured users SSOT  — the only source of a real name ("KC Kern"), and
+ *      of the relational label ("Dad") when this is a family scene
  *   2. stored display_name    — when it's a real name, not an echo of the slug
  *   3. "Guest"                — anonymous guests, rather than "Guest_<id>"
  *   4. title-cased slug       — last resort, preserves the previous behavior
  *
+ * `preferGroupLabels` (a family scene — a labeled adult riding alongside the
+ * kids) makes step 1 return "Dad" instead of "KC Kern"; see hasFamilyContext.
+ *
  * @returns {string}
  */
-function resolveRosterName(userId, meta, configuredUsers, isGuest, guestProfile) {
-  const configured = lookupUserName(configuredUsers, userId);
+function resolveRosterName(userId, meta, configuredUsers, isGuest, guestProfile, preferGroupLabels) {
+  const configured = lookupUserName(configuredUsers, userId, { preferGroupLabels });
   if (configured && configured !== userId) return configured;
 
   const stored = (meta.displayName || meta.display_name || '').toString().trim();
@@ -131,17 +149,27 @@ export function createChartDataSource(session, { configuredUsers = [] } = {}) {
     ...Object.keys(timelineParticipants),
   ]);
 
+  const participantIds = [...allUserIds]
+    .filter(id => id !== 'global' && !id.startsWith('device:') && !id.startsWith('bike:'));
+
+  // Family scene? A relational label ("Dad") only reads well when the kids it's
+  // relative to are also riding. Derive it statically from this session's roster
+  // mapped to its configured group labels — the same rule the live overlay uses
+  // in real time via shouldPreferGroupLabels(devices).
+  const preferGroupLabels = hasFamilyContext(
+    participantIds.map(id => ({ groupLabel: lookupGroupLabel(configuredUsers, id) })),
+  );
+
   let roster;
   if (allUserIds.size > 0) {
-    roster = [...allUserIds]
-      .filter(id => id !== 'global' && !id.startsWith('device:') && !id.startsWith('bike:'))
+    roster = participantIds
       .map(userId => {
       const meta = participantsMeta[userId] || {};
       const guestProfile = meta.guest_profile || meta.guestProfile || null;
       // A `guest_*` slug is the reliable guest signal — sessions don't always
       // persist an `is_guest` flag alongside it.
       const isGuest = meta.is_guest || meta.isGuest || isGenericGuestProfileId(userId);
-      const displayName = resolveRosterName(userId, meta, configuredUsers, isGuest, guestProfile);
+      const displayName = resolveRosterName(userId, meta, configuredUsers, isGuest, guestProfile, preferGroupLabels);
       // Guests have no per-person avatar asset; point at the shared placeholder
       // tier instead of `/users/guest_<id>`, which 404s into a broken image.
       const avatarId = isGuest ? genericGuestImageId(guestAgeClass(guestProfile)) : userId;
