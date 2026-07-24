@@ -26,6 +26,10 @@
   distractorField: id
   distractorCount: 3
   available: true
+# Blocked: `region_click` needs `quiz/clickable/assets/world.svg`, which does not
+# exist yet (only us-states.svg is prepared). ClickableAsset renders nothing for a
+# missing asset, so this stays off until a world map is added — see that folder's
+# README for how us-states.svg was prepared.
 - deckId: country-locations
   title: Country Locations
   entities: world
@@ -42,4 +46,4 @@
   answerField: capital
   distractorField: capital
   distractorCount: 3
-  available: false
+  available: true
