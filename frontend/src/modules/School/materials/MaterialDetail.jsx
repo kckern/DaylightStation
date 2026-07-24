@@ -88,22 +88,42 @@ export function DetailSkeleton({ audio = false }) {
 
 export default function MaterialDetail({ material, userId, onBack, onPlay, notice, sectionLabel, initialUnitId = null }) {
   const [units, setUnits] = useState(null);
+  const [loadError, setLoadError] = useState(false); // units fetch failed/timed out (vs genuinely empty)
+  const [reloadKey, setReloadKey] = useState(0);
   const [requestedUnitIds, setRequestedUnitIds] = useState(() => new Set());
   const [requesting, setRequesting] = useState(false);
 
   useEffect(() => {
     let alive = true;
+    let settled = false;
     setUnits(null);
+    setLoadError(false);
+    // Hard client-side deadline: the units come from Plex and can stall for a
+    // long time (a big show, a Plex hiccup). Never leave the chapter tiles on
+    // their loading skeletons indefinitely — after 15s give up and show a retry,
+    // regardless of what the backend is doing. Retry re-fetches (and by then the
+    // server's own fetch may have completed and cached the result).
+    const deadline = setTimeout(() => {
+      if (!alive || settled) return;
+      settled = true;
+      setLoadError(true);
+      setUnits([]);
+    }, 15000);
     schoolApi.materialUnits(material.id, userId).then(({ ok, data }) => {
-      if (!alive) return;
-      setUnits(ok && Array.isArray(data?.units) ? data.units : []);
+      if (!alive || settled) return;
+      settled = true;
+      clearTimeout(deadline);
+      // A failed fetch is NOT an empty material — flag it so we show a retry
+      // rather than a bare skeleton (forever) or a misleading "no units".
+      if (!ok) { setLoadError(true); setUnits([]); return; }
+      setUnits(Array.isArray(data?.units) ? data.units : []);
     });
     schoolApi.quizRequests(material.id).then(({ ok, data }) => {
       if (!alive || !ok || !Array.isArray(data)) return;
       setRequestedUnitIds(new Set(data.map((r) => r.unitId)));
     });
-    return () => { alive = false; };
-  }, [material.id, userId]);
+    return () => { alive = false; clearTimeout(deadline); };
+  }, [material.id, userId, reloadKey]);
 
   const groups = units ? groupUnits(units) : [];
   const current = units?.find((u) => u.current) ?? null;
@@ -190,7 +210,19 @@ export default function MaterialDetail({ material, userId, onBack, onPlay, notic
           )}
         </aside>
         <div className="school-material-detail__units-panel">
-          {units.length === 0 && (
+          {units.length === 0 && loadError && (
+            <div className="school-material-detail__empty">
+              <p>Couldn’t load the chapters — the media server was slow to respond.</p>
+              <button
+                type="button"
+                className="school-material-detail__retry"
+                onClick={() => setReloadKey((k) => k + 1)}
+              >
+                Try again
+              </button>
+            </div>
+          )}
+          {units.length === 0 && !loadError && (
             <div className="school-material-detail__empty">No units yet.</div>
           )}
           {/* Audio chapters have no thumbnails, so a video-style poster grid

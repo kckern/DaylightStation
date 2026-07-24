@@ -4,17 +4,25 @@
  * thin shell. Sessions are IN MEMORY by design — a restart costs the remainder
  * of one sitting, never a recorded attempt (those are already on disk).
  */
-import { validateQuestionBank, gradeAnswer, givenShapeError, createAttempt, GuestForbiddenError, SessionGoneError } from '#domains/school/index.mjs';
+import { validateQuestionBank, summarizeQuestionBank, gradeAnswer, givenShapeError, createAttempt, GuestForbiddenError, SessionGoneError } from '#domains/school/index.mjs';
 import { ValidationError, EntityNotFoundError } from '#domains/core/errors/index.mjs';
 import { PersistenceError } from '#system/utils/errors/index.mjs';
 import { shortId } from '#domains/core/utils/id.mjs';
 
 const SESSION_TTL_MS = 2 * 60 * 60 * 1000;
 const MODES = new Set(['quiz', 'flashcard']);
+// The household has 4600+ bank files; even summarising them is 4600 synchronous
+// file reads (~10s) — and the gating bank index rebuilds via listBanks() on
+// EVERY unit lookup, so a 44-chapter material scanned them 44 times. Cache the
+// small summaries (id/title/subject/unit/count — NOT the question items) briefly
+// so a render, and every gating lookup within it, reuses one scan.
+const BANK_SUMMARY_TTL_MS = 300_000; // 10 min? banks change rarely; 5 min keeps it warm through use gaps
 
 export class SchoolService {
   #ds; #userService; #logger; #now;
   #sessions = new Map(); // sessionId -> {id, userId|null, bankId, mode, bank, startedAt, lastActiveAt}
+  #bankSummaries = null; // { at: number, list: Array<summary> }
+  #warming = null; // in-flight warmBanks() promise (dedupe)
 
   constructor({ datastore, userService, logger = console, now = () => Date.now() }) {
     this.#ds = datastore;
@@ -79,12 +87,45 @@ export class SchoolService {
     return r.bank;
   }
 
+  // Listing/shelving reads each bank's HEADER only (summarizeQuestionBank) — no
+  // per-item validation. That per-item loop across every bank was ~5s of
+  // synchronous work blocking the event loop on each home load; the list never
+  // renders items, so it never needed them validated. Full validation still
+  // happens when a bank is actually opened (getBank -> #loadBank).
+  #bankSummariesFresh() {
+    return this.#bankSummaries && (this.#now() - this.#bankSummaries.at) < BANK_SUMMARY_TTL_MS;
+  }
+
+  // Populate the summary cache via the datastore's ASYNC bulk read — off the
+  // main thread, so warming (boot pre-warm, background refresh, or a cold
+  // /banks request) never freezes the event loop like the old sync scan did.
+  // Deduped: concurrent callers share one scan.
+  async warmBanks({ force = false } = {}) {
+    if (!force && this.#bankSummariesFresh()) return this.#bankSummaries.list;
+    if (this.#warming) return this.#warming;
+    this.#warming = (async () => {
+      const raws = await this.#ds.readAllBankRaws();
+      const list = raws
+        .map(({ id, raw }) => {
+          const s = raw ? summarizeQuestionBank(raw) : null;
+          return s ? { ...s, id: s.id ?? id, subject: s.subject ?? null } : null;
+        })
+        .filter(Boolean);
+      this.#bankSummaries = { at: this.#now(), list };
+      return list;
+    })().finally(() => { this.#warming = null; });
+    return this.#warming;
+  }
+
+  // SYNC read of the cached summaries — never scans files itself (that would
+  // block the event loop). If the cache is missing/stale it kicks an async
+  // refresh and serves what it has (empty on the very first call, until the
+  // boot pre-warm lands). Callers that need the full list on a cold cache
+  // (the /banks route) await warmBanks() first.
   listBanks({ audience } = {}) {
-    return this.#ds.listBankIds()
-      .map((id) => this.#loadBank(id))
-      .filter(Boolean)
-      .filter((b) => !audience || b.audience === audience)
-      .map((b) => ({ id: b.id, title: b.title, audience: b.audience, topics: b.topics, subject: b.subject ?? null, itemCount: b.items.length, unit: b.unit }));
+    if (!this.#bankSummariesFresh()) this.warmBanks().catch(() => {});
+    const list = this.#bankSummaries?.list ?? [];
+    return audience ? list.filter((b) => b.audience === audience) : list;
   }
 
   getBank(bankId) {

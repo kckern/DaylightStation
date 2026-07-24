@@ -90,34 +90,47 @@ export class PlexShowSource {
   }
 
   /**
-   * Show -> episodes (across all seasons), via `getPlayableEpisodes`.
+   * Show -> episodes (across all seasons), fetched DIRECTLY via the `children`
+   * seam: a show's children are its seasons, each season's children are its
+   * episodes — two calls for a one-season show, parallel across seasons. This
+   * replaces the shared fitness `getPlayableEpisodes`, which resolves per-item
+   * (watch-state enrichment, container info, per-item getItem) and stalled a
+   * subject's chapter list for 70s+ on a large show. School discards watch
+   * state anyway, so the raw children carry everything the unit grid needs
+   * (id, title, ms duration, season title, proxied thumb).
    *
    * @param {string} materialPlexId - show rating key (bare or `plex:`-prefixed)
-   * @returns {Promise<{id:string, title:?string, poster:?string, source:string, medium:string, durationMs:number, unitCount:number, units:Array<{id:string, index:number, title:string, durationMs:?number, group:?string}>}>}
+   * @returns {Promise<{id:string, title:?string, poster:?string, source:string, medium:string, durationMs:number, unitCount:number, units:Array<{id:string, index:number, title:string, durationMs:?number, group:?string, thumb:?string}>}>}
    */
   async getMaterial(materialPlexId) {
     const showId = stripPrefix(materialPlexId);
-    const { info, items } = await this.#fitnessPlayableService.getPlayableEpisodes(showId, this.#householdId);
+    const topChildren = await this.#plexClient.children(showId);
+    const seasons = (topChildren || []).filter((c) => c.type === 'season');
+    // Multi-season: fetch each season's episodes (parallel). Flat show: the
+    // show's children ARE the episodes.
+    const episodeLists = seasons.length > 0
+      ? await Promise.all(seasons.map((s) => this.#plexClient.children(stripPrefix(s.ratingKey))))
+      : [topChildren || []];
+    const episodes = episodeLists.flat();
 
-    const units = items.map((item, i) => ({
-      id: String(item.id).startsWith('plex:') ? item.id : `plex:${item.id}`,
-      index: i + 1, // absolute position — NOT metadata.itemIndex, which restarts per season
-      title: item.title,
-      durationMs: item.duration != null ? item.duration * 1000 : null, // seconds -> ms (PlexAdapter.mjs:858)
-      group: item.metadata?.parentTitle ?? null, // season title, for episode items
-      // Episode thumbnail for the unit grid. `item.thumbnail` is already
-      // app-proxied by PlexAdapter (episode→season→show fallback chain,
-      // PlexAdapter.mjs:847-849 — do not prefix it again). Still no
-      // watch-state fields — the allow-list holds.
-      thumb: item.thumbnail ?? null,
+    const units = episodes.map((ep, i) => ({
+      id: `plex:${ep.ratingKey}`,
+      index: i + 1, // absolute position across seasons — NOT Plex's per-season index
+      title: ep.title,
+      durationMs: ep.duration != null ? Number(ep.duration) : null, // raw Plex duration is already ms
+      group: ep.parentTitle ?? null, // season title (episodes carry parentTitle)
+      thumb: ep.thumb ?? null, // already proxied by the children seam
     }));
 
     const durationMs = units.reduce((sum, u) => sum + (u.durationMs ?? 0), 0);
 
     return {
       id: `plex:${showId}`,
-      title: info?.title ?? null,
-      poster: info?.image ?? null,
+      // The show title rides on each episode as grandparentTitle; the poster is
+      // left to GetMaterialUnits, which fills it from the (already-proxied)
+      // catalog material rather than an unproxied grandparentThumb.
+      title: episodes[0]?.grandparentTitle ?? null,
+      poster: null,
       source: SOURCE,
       medium: MEDIUM,
       durationMs,

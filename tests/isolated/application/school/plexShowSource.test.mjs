@@ -15,42 +15,31 @@ import { PlexShowSource } from '#apps/school/sources/PlexShowSource.mjs';
 //     ContentQueryService#enrichWithWatchState merges in (percent, playhead,
 //     viewCount, lastPlayed, completedAt). School must discard all of these.
 
-function twoSeasonShow() {
-  return {
-    compoundId: 'plex:70001',
-    showId: '70001',
-    info: { key: '70001', title: 'Shakespeare Tales', image: '/api/v1/proxy/plex/library/metadata/70001/thumb/1', type: 'show' },
-    containerItem: null,
-    parents: null,
-    items: [
-      {
-        id: 'plex:70011', title: 'The Ghost of the King', duration: 1425, // seconds, per adapter conversion
-        metadata: { parentTitle: 'Season 1', parentIndex: 1, itemIndex: 1, viewCount: 1 },
-        isWatched: true, watchProgress: 100, watchSeconds: 1425, watchedDate: '2026-01-01',
-        percent: 100, playhead: 1425, completedAt: '2026-01-01', lastPlayed: '2026-01-01',
-      },
-      {
-        id: 'plex:70012', title: 'To Be or Not to Be', duration: 1380,
-        metadata: { parentTitle: 'Season 1', parentIndex: 1, itemIndex: 2 },
-        isWatched: false, watchProgress: 40, watchSeconds: 550, watchedDate: null,
-        percent: 40, playhead: 550,
-      },
-      {
-        id: 'plex:70013', title: 'A Play Within a Play', duration: 1500,
-        metadata: { parentTitle: 'Season 1', parentIndex: 1, itemIndex: 3 },
-        isWatched: false, watchProgress: 0, watchSeconds: 0, watchedDate: null,
-      },
-      {
-        id: 'plex:70021', title: 'The Balcony Scene', duration: 1200,
-        metadata: { parentTitle: 'Season 2', parentIndex: 2, itemIndex: 1 }, // per-season index restarts at 1
-        isWatched: false, watchProgress: 0, watchSeconds: 0, watchedDate: null,
-      },
-      {
-        id: 'plex:70022', title: 'The Tragic End', duration: 1350,
-        metadata: { parentTitle: 'Season 2', parentIndex: 2, itemIndex: 2 },
-        isWatched: false, watchProgress: 0, watchSeconds: 0, watchedDate: null,
-      },
+// getMaterial now fetches episodes DIRECTLY via the `children` seam (show ->
+// seasons -> episodes) instead of the shared fitness getPlayableEpisodes. Raw
+// Plex `/children` items carry: ratingKey, title, duration (MILLISECONDS),
+// parentTitle (season), grandparentTitle (show), and thumb (already proxied by
+// the app.mjs seam). Watch-state fields, if present, must be discarded.
+function twoSeasonClient() {
+  const seasons = [
+    { ratingKey: '7010', type: 'season', title: 'Season 1', index: 1 },
+    { ratingKey: '7020', type: 'season', title: 'Season 2', index: 2 },
+  ];
+  const eps = {
+    '7010': [
+      { ratingKey: '70011', title: 'The Ghost of the King', duration: 1425000, index: 1, type: 'episode', parentTitle: 'Season 1', grandparentTitle: 'Shakespeare Tales', thumb: '/api/v1/proxy/plex/library/metadata/70011/thumb/1', viewCount: 1, lastViewedAt: 123 },
+      { ratingKey: '70012', title: 'To Be or Not to Be', duration: 1380000, index: 2, type: 'episode', parentTitle: 'Season 1', grandparentTitle: 'Shakespeare Tales', thumb: null },
+      { ratingKey: '70013', title: 'A Play Within a Play', duration: 1500000, index: 3, type: 'episode', parentTitle: 'Season 1', grandparentTitle: 'Shakespeare Tales', thumb: null },
     ],
+    '7020': [
+      { ratingKey: '70021', title: 'The Balcony Scene', duration: 1200000, index: 1, type: 'episode', parentTitle: 'Season 2', grandparentTitle: 'Shakespeare Tales', thumb: null }, // per-season index restarts at 1
+      { ratingKey: '70022', title: 'The Tragic End', duration: 1350000, index: 2, type: 'episode', parentTitle: 'Season 2', grandparentTitle: 'Shakespeare Tales', thumb: null },
+    ],
+  };
+  const calls = [];
+  return {
+    calls,
+    children: async (id) => { calls.push(id); if (id === '70001') return seasons; return eps[id] || []; },
   };
 }
 
@@ -105,74 +94,74 @@ describe('PlexShowSource.listMaterials', () => {
 });
 
 describe('PlexShowSource.getMaterial', () => {
-  it('maps a 2-season show to units in absolute returned order, not per-season itemIndex', async () => {
-    const fitnessPlayableService = { getPlayableEpisodes: async () => twoSeasonShow() };
-    const source = new PlexShowSource({ fitnessPlayableService, plexClient: {} });
+  it('maps a 2-season show to units in absolute returned order, not per-season index', async () => {
+    const source = new PlexShowSource({ plexClient: twoSeasonClient() });
 
     const material = await source.getMaterial('70001');
 
     expect(material.id).toBe('plex:70001');
-    expect(material.title).toBe('Shakespeare Tales');
-    expect(material.poster).toBe('/api/v1/proxy/plex/library/metadata/70001/thumb/1');
+    expect(material.title).toBe('Shakespeare Tales'); // from episode grandparentTitle
     expect(material.source).toBe('plex-show');
     expect(material.medium).toBe('video');
     expect(material.unitCount).toBe(5);
 
-    expect(material.units.map((u) => u.index)).toEqual([1, 2, 3, 4, 5]); // absolute position, NOT metadata.itemIndex (which restarts per season)
+    expect(material.units.map((u) => u.index)).toEqual([1, 2, 3, 4, 5]); // absolute position across seasons, NOT Plex's per-season index
     expect(material.units.map((u) => u.group)).toEqual(['Season 1', 'Season 1', 'Season 1', 'Season 2', 'Season 2']);
     expect(material.units.map((u) => u.title)).toEqual([
       'The Ghost of the King', 'To Be or Not to Be', 'A Play Within a Play', 'The Balcony Scene', 'The Tragic End',
     ]);
+    expect(material.units.map((u) => u.id)).toEqual(['plex:70011', 'plex:70012', 'plex:70013', 'plex:70021', 'plex:70022']);
   });
 
-  it('converts durationMs from the seconds-valued duration field the adapter hands back', async () => {
-    const fitnessPlayableService = { getPlayableEpisodes: async () => twoSeasonShow() };
-    const source = new PlexShowSource({ fitnessPlayableService, plexClient: {} });
+  it('fetches episodes DIRECTLY via children (show -> seasons -> episodes), not per-item', async () => {
+    const client = twoSeasonClient();
+    const source = new PlexShowSource({ plexClient: client });
+
+    await source.getMaterial('plex:70001'); // strips the prefix
+
+    // Exactly: children(show) then children(each season) — 3 calls, no per-episode fetch.
+    expect(client.calls).toEqual(['70001', '7010', '7020']);
+  });
+
+  it('treats raw Plex duration as milliseconds (no seconds conversion)', async () => {
+    const source = new PlexShowSource({ plexClient: twoSeasonClient() });
 
     const material = await source.getMaterial('70001');
 
-    expect(material.units[0].durationMs).toBe(1425000); // 1425s * 1000
-    expect(material.durationMs).toBe((1425 + 1380 + 1500 + 1200 + 1350) * 1000);
+    expect(material.units[0].durationMs).toBe(1425000);
+    expect(material.durationMs).toBe(1425000 + 1380000 + 1500000 + 1200000 + 1350000);
   });
 
-  it('discards ALL watch-state fields — mapped units carry no isWatched/watched/viewCount/percent keys', async () => {
-    const fitnessPlayableService = { getPlayableEpisodes: async () => twoSeasonShow() };
-    const source = new PlexShowSource({ fitnessPlayableService, plexClient: {} });
+  it('a flat show (children are episodes, no seasons) resolves in one call', async () => {
+    const client = {
+      calls: [],
+      children: async (id) => {
+        client.calls.push(id);
+        return [
+          { ratingKey: '81', title: 'Ep One', duration: 600000, type: 'episode', parentTitle: 'Flat Show', grandparentTitle: 'Flat Show', thumb: null },
+          { ratingKey: '82', title: 'Ep Two', duration: 620000, type: 'episode', parentTitle: 'Flat Show', grandparentTitle: 'Flat Show', thumb: null },
+        ];
+      },
+    };
+    const source = new PlexShowSource({ plexClient: client });
+
+    const material = await source.getMaterial('80000');
+
+    expect(client.calls).toEqual(['80000']); // no season recursion
+    expect(material.units.map((u) => u.id)).toEqual(['plex:81', 'plex:82']);
+  });
+
+  it('discards ALL watch-state fields — mapped units carry only the allow-listed keys', async () => {
+    const source = new PlexShowSource({ plexClient: twoSeasonClient() });
 
     const material = await source.getMaterial('70001');
 
     for (const unit of material.units) {
-      expect(unit).not.toHaveProperty('isWatched');
-      expect(unit).not.toHaveProperty('watched');
       expect(unit).not.toHaveProperty('viewCount');
+      expect(unit).not.toHaveProperty('lastViewedAt');
+      expect(unit).not.toHaveProperty('isWatched');
       expect(unit).not.toHaveProperty('percent');
-      expect(unit).not.toHaveProperty('watchProgress');
-      expect(unit).not.toHaveProperty('watchSeconds');
-      expect(unit).not.toHaveProperty('watchedDate');
-      expect(unit).not.toHaveProperty('playhead');
-      expect(unit).not.toHaveProperty('completedAt');
-      expect(unit).not.toHaveProperty('lastPlayed');
       expect(Object.keys(unit).sort()).toEqual(['durationMs', 'group', 'id', 'index', 'thumb', 'title']);
     }
-  });
-
-  it('strips a plex: prefix on materialPlexId and forwards the bare showId + configured householdId to getPlayableEpisodes', async () => {
-    let seenArgs = null;
-    const fitnessPlayableService = { getPlayableEpisodes: async (...args) => { seenArgs = args; return twoSeasonShow(); } };
-    const source = new PlexShowSource({ fitnessPlayableService, plexClient: {}, householdId: 'hh1' });
-
-    await source.getMaterial('plex:70001');
-
-    expect(seenArgs).toEqual(['70001', 'hh1']);
-  });
-
-  it('defaults householdId to null when not configured', async () => {
-    let seenArgs = null;
-    const fitnessPlayableService = { getPlayableEpisodes: async (...args) => { seenArgs = args; return twoSeasonShow(); } };
-    const source = new PlexShowSource({ fitnessPlayableService, plexClient: {} });
-
-    await source.getMaterial('70001');
-
-    expect(seenArgs).toEqual(['70001', null]);
   });
 });
