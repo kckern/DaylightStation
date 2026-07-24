@@ -3,6 +3,10 @@ import { useFitnessContext } from '@/context/FitnessContext.jsx';
 import useModuleStorage from './useModuleStorage';
 import { ChartDataBuilder } from '@/modules/Fitness/domain';
 
+// Stable identity so consumers memoizing on `configuredUsers` don't rebuild
+// every render while the collections are still loading.
+const EMPTY_CONFIGURED_USERS = [];
+
 const useFitnessModule = (moduleId) => {
   const fitnessCtx = useFitnessContext();
   const storage = useModuleStorage(moduleId);
@@ -94,6 +98,9 @@ const useFitnessModule = (moduleId) => {
     userVitalsMap: fitnessCtx.userVitals,
     participantDisplayMap: fitnessCtx.participantDisplayMap,
     sessionParticipantsMeta: fitnessCtx.sessionParticipantsMeta,
+    // `userCollections.all` — slug -> { id, name, groupLabel } SSOT. Historical
+    // views need it to turn a persisted slug into a real name.
+    configuredUsers: fitnessCtx.userCollections?.all || EMPTY_CONFIGURED_USERS,
     userCurrentZones: fitnessCtx.userCurrentZones,
     // Historical participants (all users who have ever been in session, including those who left)
     // Fix 8: Use memoized value instead of calling getHistoricalParticipants() on each render

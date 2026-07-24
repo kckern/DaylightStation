@@ -1,5 +1,4 @@
 import { useMemo, useState, useRef, useEffect, useCallback } from 'react';
-import getLogger from '../../../../../lib/logging/Logger.js';
 import { parseMusicXml } from '../../../../MusicNotation/parseMusicXml.js';
 import { MusicXmlRenderer } from '../../../../MusicNotation/renderers/MusicXmlRenderer.jsx';
 import LiveKeyboard from '../../LiveKeyboard.jsx';
@@ -25,6 +24,10 @@ import { tallyGrades } from './gradeTally.js';
 import { worstSpan } from './worstSpan.js';
 import { loadScoreSettings, saveScoreSettings } from './scoreSettings.js';
 import { isRisingEdge } from './pedalEdge.js';
+import { midiToRecord } from './midiTap.js';
+import { record, intern, KIND, startRecorder, stopRecorder } from '../../../../../lib/logging/inputRecorder.js';
+import { coalesce } from '../../../../../lib/logging/gestureCoalescer.js';
+import { inputTelemetryEnabled, makeInputSender } from '../../../../../lib/logging/inputTelemetryGate.js';
 import { keyLabel } from './keyLabel.js';
 import ScoreTransportBar from './ScoreTransportBar.jsx';
 import NoteHighlightLayer from './NoteHighlightLayer.jsx';
@@ -53,7 +56,6 @@ import { nearestEvent, SELECT_MAX_DIST } from './nearestEvent.js';
  * {@link useScoreTelemetry}.
  */
 export default function ScorePlayer({ score: scoreMeta }) {
-  const logger = useMemo(() => getLogger().child({ component: 'piano-score-player' }), []);
   const { subscribe, subscribeRaw, releaseNote, sendNoteAt, sendNoteOffAt, sendPanic } = usePianoMidi();
   const { setPlaying: setGlobalPlaying } = usePianoPlayback();
   const { config } = usePianoKioskConfig();
@@ -63,7 +65,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
   // holding the returned object: the object identity is fresh every render, and
   // the renderer's engrave effect depends on `onReady` — a churning identity
   // would re-fire onLayout/onReady endlessly (infinite re-engrave loop).
-  const { startSession, logLoad, recordFire, recordSchedule, flushPlayback, recordFollowHit, flushFollow, logMeasureGrade, logRunSummary, logFocus, logTranspose, logMode } = useScoreTelemetry({ id: scoreMeta.id });
+  const { logger, startSession, logLoad, recordFire, recordSchedule, flushPlayback, recordFollowHit, flushFollow, logMeasureGrade, logRunSummary, logFocus, logTranspose, logMode } = useScoreTelemetry({ id: scoreMeta.id });
 
   const parsed = useMemo(() => { try { return parseMusicXml(scoreMeta.musicXml); } catch { return null; } }, [scoreMeta.musicXml]);
   const tempo = parsed?.tempo || 90;
@@ -598,6 +600,16 @@ export default function ScorePlayer({ score: scoreMeta }) {
     setPerfPage({ page: Math.floor(pos / viewport) + 1, pages: Math.max(1, Math.ceil(contentSize / viewport)) });
   }, [flow]);
 
+  // UI-intent + input→paint tap. Records the intent immediately (tagged with the
+  // current cursor step) and, on the next frame, the input→paint latency for the
+  // same control. intern caches the control name, so repeated calls are cheap.
+  const tapIntent = useCallback((name) => {
+    const id = intern(name);
+    record(KIND.UI_INTENT, id, 0, stepRef.current ?? 0, 0);
+    const t0 = performance.now();
+    requestAnimationFrame(() => record(KIND.TAP, id, Math.round(performance.now() - t0), 0, 0));
+  }, []);
+
   // Scroll the score by ~0.85 of a viewport (forward or back) along the flow axis.
   const pageBy = useCallback((dir) => {
     const el = scrollRef.current;
@@ -606,7 +618,99 @@ export default function ScorePlayer({ score: scoreMeta }) {
     const amount = (horiz ? el.clientWidth : el.clientHeight) * 0.85 * (dir === 'back' ? -1 : 1);
     el.scrollBy({ [horiz ? 'left' : 'top']: amount, behavior: 'smooth' });
     logger.info('score.perform.pageturn', { dir });
-  }, [flow, logger]);
+    tapIntent('pageturn');
+  }, [flow, logger, tapIntent]);
+
+  // Raw-input telemetry: mirror every raw MIDI message into the zero-alloc input
+  // recorder ring buffer (notes, sustain, CC), tagged with the current cursor
+  // step. Always on — recording is cheap and shipping is gated elsewhere
+  // (startRecorder/drain). emitRaw wraps the bytes as { data: <byteArray>, time },
+  // so the callback reads evt?.data (NOT a bare byte array).
+  useEffect(() => {
+    const off = subscribeRaw((evt) => {
+      // emitRaw wraps the bytes: listeners receive { data: <byteArray>, time }.
+      const r = midiToRecord(evt?.data);
+      if (r) record(r.kind, r.a, r.b, stepRef.current ?? 0, 0);
+    });
+    return off;
+  }, [subscribeRaw]);
+
+  // Touch-gesture telemetry: capture pointer gestures over the scroll surface into
+  // the recorder ring, coalesced to ≤1 sample/frame (gesture SHAPE, not every
+  // event). Listeners are PASSIVE — a non-passive touch listener blocks scroll
+  // compositing and would itself cause the jank we're measuring. Always on;
+  // shipping is gated in the recorder lifecycle (Task 13).
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return undefined;
+    let samples = [];
+    let active = false; // true only between pointerdown and its up/cancel
+    const onDown = (e) => {
+      active = true;
+      samples = [];
+      record(KIND.TOUCH_START, e.clientX | 0, e.clientY | 0, 0, 0);
+    };
+    const onMove = (e) => {
+      if (!active) return; // ignore hover/stray moves between gestures (hover-capable pointers)
+      samples.push({ t: performance.now(), x: e.clientX | 0, y: e.clientY | 0 });
+    };
+    // Shared flush for BOTH pointerup and pointercancel: a native touch-scroll ends
+    // with pointercancel (NOT pointerup), so without this a scroll would record only
+    // a TOUCH_START and leak its samples into the next gesture.
+    const flush = (e) => {
+      if (!active) return;
+      active = false;
+      // Slot c carries the sample's ORIGINAL time (ms, page-relative). record()
+      // stamps its own `t` at replay time, so without this the whole gesture would
+      // collapse onto the flush timestamp and lose its time axis.
+      for (const s of coalesce(samples, { frameMs: 16 })) record(KIND.TOUCH_MOVE, s.x | 0, s.y | 0, Math.round(s.t), 0);
+      samples = [];
+      record(KIND.TOUCH_END, e.clientX | 0, e.clientY | 0, 0, 0);
+    };
+    el.addEventListener('pointerdown', onDown, { passive: true });
+    el.addEventListener('pointermove', onMove, { passive: true });
+    el.addEventListener('pointerup', flush, { passive: true });
+    el.addEventListener('pointercancel', flush, { passive: true });
+    return () => {
+      el.removeEventListener('pointerdown', onDown);
+      el.removeEventListener('pointermove', onMove);
+      el.removeEventListener('pointerup', flush);
+      el.removeEventListener('pointercancel', flush);
+    };
+  }, []);
+
+  // ── Input-telemetry recorder lifecycle (config-gated shipping) ────────────────
+  // The ring records unconditionally (above); this only controls DRAINING it to the
+  // backend. start/stop are shared by the config-gated auto lifecycle and the
+  // window.__INPUT_REC__ kill switch, so the manual lever and the config path use
+  // the same one-event-per-batch sender.
+  const inputSessionRef = useRef(null);
+  const startInputRec = useCallback(() => {
+    const session = new Date().toISOString();
+    inputSessionRef.current = session;
+    startRecorder({ session, score: scoreMeta.id, ctx: { user: config?.user?.id }, send: makeInputSender('piano-sheetmusic'), flushMs: 1000 });
+  }, [scoreMeta.id, config]);
+  const stopInputRec = useCallback(() => { stopRecorder(); inputSessionRef.current = null; }, []);
+
+  // Kill switch: a deploy-free off/on lever, installed regardless of config so the
+  // recorder can be started/stopped from the console even when shipping is off.
+  useEffect(() => {
+    if (typeof window === 'undefined') return undefined;
+    window.__INPUT_REC__ = {
+      start: startInputRec,
+      stop: stopInputRec,
+      status: () => ({ enabled: inputSessionRef.current != null, session: inputSessionRef.current }),
+    };
+    return () => { if (window.__INPUT_REC__) window.__INPUT_REC__ = undefined; };
+  }, [startInputRec, stopInputRec]);
+
+  // Config-gated auto lifecycle: ship input telemetry for this score only when the
+  // household config opts in. Re-arms on a score change; stops on unmount/disable.
+  useEffect(() => {
+    if (!inputTelemetryEnabled(config, 'sheetmusic')) return undefined;
+    startInputRec();
+    return () => stopInputRec();
+  }, [scoreMeta.id, config, startInputRec, stopInputRec]);
 
   // Perform mode: config-defined pedals turn the page — advancePedalCC forward,
   // backPedalCC back — rising edge ONLY, since continuous/half pedals stream many
@@ -712,6 +816,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
     setStruck(() => new Set());
     lastAdvanceRef.current = performance.now();
     logFocus({ kind: focus.kind, inMeasure: focus.inMeasure, outMeasure: focus.outMeasure });
+    tapIntent('focus');
   }, [focus]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const onPickSection = useCallback((section) => {
@@ -766,7 +871,8 @@ export default function ScorePlayer({ score: scoreMeta }) {
     setSummaryOpen(false); setGrades({});
     setMode(id); // keyboard visibility follows the new mode automatically (M2)
     logMode({ mode: id });
-  }, [mode, flushPlaybackNow, flushFollowNow, transport, silenceScheduled, logMode, countIn, clearWrapDwell]);
+    tapIntent('mode');
+  }, [mode, flushPlaybackNow, flushFollowNow, transport, silenceScheduled, logMode, countIn, clearWrapDwell, tapIntent]);
 
   // Listen tempo: clamp to a sane playable range (0.25×–2×). Timeline rescales via
   // the playTimeline memo; the transport reads the new timings on its next tick.
@@ -797,7 +903,8 @@ export default function ScorePlayer({ score: scoreMeta }) {
     const clamped = Number.isFinite(n) ? Math.min(7, Math.max(-7, n)) : 0;
     setTranspose(clamped);
     logTranspose({ semitones: clamped });
-  }, [logTranspose, pauseForViewChange]);
+    tapIntent('transpose');
+  }, [logTranspose, pauseForViewChange, tapIntent]);
 
   // Zoom (Size) — pause a running transport before the re-engrave (H2).
   const onScaleStep = useCallback((v) => { pauseForViewChange(); setScale(v); }, [pauseForViewChange]);
@@ -865,6 +972,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
       if (mode === 'listen') silenceScheduled();
       flushPlaybackNow();
       logger.info('score.transport.pause', { step: stepRef.current });
+      tapIntent('transport-pause');
     } else {
       // A quick pause→resume must cancel the pending delayed panic — otherwise it
       // fires ~lookahead+60ms INTO the resumed run and cuts whatever's sounding.
@@ -886,11 +994,12 @@ export default function ScorePlayer({ score: scoreMeta }) {
         transport.seek((stepTimeline[startStep]?.t ?? 0) / tempoMult);
         transport.play();
         logger.info('score.transport.play', { step: startStep, mode, bpm: tempoMap[0]?.bpm, tempoMult });
+        tapIntent('transport-play');
       }
     }
     // NOTE: reads the live cursor via `stepRef.current` (mirrors `step`), NOT the
     // `step` closure — so `step` is deliberately OUT of the dep array.
-  }, [countIn, transport, mode, myStaves, silenceScheduled, flushPlaybackNow, logger, stepTimeline, tempoMap, tempoMult, parsed, clearWrapDwell]);
+  }, [countIn, transport, mode, myStaves, silenceScheduled, flushPlaybackNow, logger, stepTimeline, tempoMap, tempoMult, parsed, clearWrapDwell, tapIntent]);
 
   // Changing the Listen role map mid-flight invalidates the note timeline — pause,
   // flush, and silence so a stale schedule doesn't drone. Shared by the chip
@@ -914,8 +1023,9 @@ export default function ScorePlayer({ score: scoreMeta }) {
       if (activeParts[staff] && activeCount <= 1) return; // keep the last staff on
       setActiveParts((a) => ({ ...a, [staff]: !a[staff] }));
       logger.info('score.active-part', { staff, on: !activeParts[staff] });
+      tapIntent('active-part');
     }
-  }, [mode, myStaves, disruptListenPlayback, logger, activeParts, parts]);
+  }, [mode, myStaves, disruptListenPlayback, logger, activeParts, parts, tapIntent]);
 
   // Grand-staff (2 staves) fast path: a single segmented control instead of chips.
   // Learn/Polish → "Hands"; Listen → "My part". Value + handler map to activeParts
@@ -935,8 +1045,9 @@ export default function ScorePlayer({ score: scoreMeta }) {
       // Both/RH/LH → which staves you practice. Always ≥1 active (never deadlocks).
       setActiveParts({ 0: v !== 'lh', 1: v !== 'rh' });
       logger.info('score.hands', { value: v });
+      tapIntent('hands');
     }
-  }, [mode, disruptListenPlayback, logger]);
+  }, [mode, disruptListenPlayback, logger, tapIntent]);
 
   // ── Load timing (best-effort) ───────────────────────────────────────────────
   // Measured: fetch ms (from SheetMusic.jsx via score.fetchMs) + open→ready total

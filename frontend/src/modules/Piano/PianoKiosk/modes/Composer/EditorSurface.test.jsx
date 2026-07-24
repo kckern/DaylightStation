@@ -6,10 +6,14 @@ import { useEffect } from 'react';
 // spy on the OUTBOUND send API the transport drives (playback goes out through
 // these three; nothing else in the editor sends MIDI).
 let midiHandler = null;
+// Task 6: the RAW MIDI subscriber (full-fidelity bytes incl. note-off/sustain),
+// captured so a test can push a wrapped { data } event straight at the recorder tap.
+let rawHandler = null;
 const midiOut = { sendNoteAt: vi.fn(), sendNoteOffAt: vi.fn(), sendPanic: vi.fn() };
 vi.mock('../../PianoMidiContext.jsx', () => ({
   usePianoMidi: () => ({
     subscribe: (fn) => { midiHandler = fn; return () => { midiHandler = null; }; },
+    subscribeRaw: (fn) => { rawHandler = fn; return () => { rawHandler = null; }; },
     ...midiOut,
   }),
 }));
@@ -40,6 +44,7 @@ import {
 import { CARET_GAP, CARET_WIDTH, MEASURE_START_UNITS } from './CaretLayer.jsx';
 import { WET_ADVANCE_UNITS, WET_RX_UNITS } from './PendingLayer.jsx';
 import { makeEmptyScore, makeNote } from './model/index.js';
+import { __resetRecorder, __snapshotForTest, intern, KIND } from '../../../../../lib/logging/inputRecorder.js';
 
 /** Arm note entry (numpad 4) and play `n` middle-C note-ons. */
 function playNotes(n) {
@@ -67,6 +72,66 @@ describe('EditorSurface', () => {
     fireEvent.click(half);
     expect(half).toHaveAttribute('aria-pressed', 'true');
     expect(screen.getByRole('button', { name: /quarter note \(numpad 5\)/i })).toHaveAttribute('aria-pressed', 'false');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Task 6 — raw MIDI capture. Independent of the editor's PARSED `subscribe`
+// (which only carries note-ons for score entry), a subscribeRaw tap mirrors the
+// full-fidelity byte stream — note-off, sustain, CC — into the recorder ring,
+// reusing SheetMusic's pure midiToRecord classifier. Always on; shipping is
+// gated elsewhere.
+// ---------------------------------------------------------------------------
+describe('EditorSurface — raw MIDI recorder capture', () => {
+  it('records a MIDI_ON from the wrapped subscribeRaw event ({ data })', () => {
+    rawHandler = null;
+    render(<EditorSurface initialScore={makeEmptyScore()} songId="x" initialRevision={1} save={vi.fn()} config={{}} />);
+    expect(rawHandler).toBeTypeOf('function'); // the effect subscribed to raw MIDI
+    __resetRecorder();
+    // emitRaw wraps bytes as { data, time }; the tap reads evt.data, not the bytes.
+    act(() => { rawHandler({ data: [0x90, 72, 88], time: 0 }); });
+    const hit = __snapshotForTest().records.some((r) => r.kind === KIND.MIDI_ON && r.a === 72 && r.b === 88);
+    expect(hit).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Task 7 — toolbar tap capture. Every toolbar handler records a UI_INTENT into
+// the recorder ring (and, on the next frame, an input→paint TAP), so touch
+// latency on the kiosk is measurable the way MIDI/gesture input already is.
+// ---------------------------------------------------------------------------
+describe('EditorSurface — toolbar tap telemetry', () => {
+  beforeEach(() => { engraves.length = 0; midiHandler = null; layoutToPublish = null; });
+
+  it('records a UI_INTENT when a toolbar control is tapped (Undo)', () => {
+    render(<EditorSurface initialScore={makeEmptyScore()} songId="x" initialRevision={1} save={vi.fn()} config={{}} />);
+    // Play a note so Undo is enabled, then clear the ring so only the tap shows.
+    playNotes(1);
+    __resetRecorder();
+    act(() => { fireEvent.click(screen.getByRole('button', { name: /undo/i })); });
+    expect(__snapshotForTest().records.some((r) => r.kind === KIND.UI_INTENT)).toBe(true);
+  });
+
+  it('records a UI_INTENT when the help toggle is tapped', () => {
+    render(<EditorSurface initialScore={makeEmptyScore()} songId="x" initialRevision={1} save={vi.fn()} config={{}} />);
+    __resetRecorder();
+    act(() => { fireEvent.click(screen.getByRole('button', { name: /how to write music/i })); });
+    expect(__snapshotForTest().records.some((r) => r.kind === KIND.UI_INTENT)).toBe(true);
+  });
+
+  // F1: an undo EDIT row must carry the caret's LIVE measure, not a hardcoded 0.
+  // Four quarter notes fill one 4/4 bar, advancing the caret into measure 1;
+  // the undo record must reflect that bar.
+  it('records the caret measure on an undo EDIT row', () => {
+    render(<EditorSurface initialScore={makeEmptyScore()} songId="x" initialRevision={1} save={vi.fn()} config={{}} />);
+    playNotes(4); // fills bar 0 → caret advances to measureIdx 1
+    __resetRecorder();
+    act(() => { fireEvent.click(screen.getByRole('button', { name: /undo/i })); });
+    const undoRow = __snapshotForTest().records.find(
+      (r) => r.kind === KIND.EDIT && r.a === intern('undo'),
+    );
+    expect(undoRow).toBeTruthy();
+    expect(undoRow.c).toBe(1);
   });
 });
 

@@ -52,7 +52,7 @@ function NoteGlyph({ type }) {
 //   - ONE-SHOT ACTIONS (rest, delete) — fire and revert, never pressed-looking;
 //   - a GLOBAL TOGGLE (write) — its own state dot, since "is the piano writing?"
 //     is the one thing the kid must be able to read from across the room.
-export function DurationPalette({ hud, setDuration, toggleDot, toggleArm, addRest, deleteBack }) {
+export function DurationPalette({ hud, setDuration, toggleDot, toggleArm, addRest, deleteBack, onTap }) {
   const { type, dots, armed } = hud || {};
   return (
     <div className="composer-palette" role="group" aria-label="Note tools">
@@ -65,7 +65,7 @@ export function DurationPalette({ hud, setDuration, toggleDot, toggleArm, addRes
             aria-pressed={type === d.type}
             aria-label={`${d.label} note (numpad ${d.key})`}
             title={`${d.label} note · numpad ${d.key}`}
-            onClick={() => setDuration(d.type)}
+            onClick={() => { setDuration(d.type); onTap?.('duration-' + d.type); }}
           >
             <NoteGlyph type={d.type} />
             {/* KEYCAP, not a bare digit. Printed plain, "1 3 5 7 9" under
@@ -87,7 +87,7 @@ export function DurationPalette({ hud, setDuration, toggleDot, toggleArm, addRes
         aria-pressed={!!dots}
         aria-label="Dotted note (numpad .)"
         title="Dotted · numpad ."
-        onClick={toggleDot}
+        onClick={() => { toggleDot(); onTap?.('dot'); }}
       >
         <NoteGlyph type="quarter" />
         <IconDot size={13} className="composer-palette__aug-dot" />
@@ -98,7 +98,7 @@ export function DurationPalette({ hud, setDuration, toggleDot, toggleArm, addRes
         className="composer-palette__mod composer-palette__rest"
         aria-label="Add a rest (numpad 0)"
         title="Rest · numpad 0"
-        onClick={addRest}
+        onClick={() => { addRest(); onTap?.('rest'); }}
       >
         <IconQuarterRest size={24} />
         <span>Rest</span>
@@ -126,7 +126,7 @@ export function DurationPalette({ hud, setDuration, toggleDot, toggleArm, addRes
         className="composer-palette__mod composer-palette__delete"
         aria-label="Delete the last note (Backspace)"
         title="Delete the last note · Backspace"
-        onClick={deleteBack}
+        onClick={() => { deleteBack(); onTap?.('delete'); }}
       >
         <IconBackspace size={22} />
         <span>Delete</span>
@@ -145,7 +145,7 @@ export function DurationPalette({ hud, setDuration, toggleDot, toggleArm, addRes
         aria-pressed={!!armed}
         aria-label={armed ? 'Write is on — the piano writes notes here (numpad 4)' : 'Write is off — play freely (numpad 4)'}
         title="Write · numpad 4"
-        onClick={toggleArm}
+        onClick={() => { toggleArm(); onTap?.('write'); }}
       >
         <span className="composer-palette__arm-dot" aria-hidden="true" />
         Write
