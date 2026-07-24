@@ -284,7 +284,7 @@ export default function SchoolMaterialPlayer({ material, unit, userId, onExit, o
           </div>
         )}
       </div>
-      {isAudio && <SchoolPlayerChrome variant="audio" {...chromeProps} />}
+      {isAudio && <SchoolPlayerChrome variant="audio" {...chromeProps} onExit={exitToDetail} />}
     </div>
   );
 }

@@ -1,8 +1,12 @@
 /**
  * SchoolPlayerChrome — the transport control bar for the School player. One
- * component, two dresses: a persistent bar under the audio cover, and a
- * tap-summoned overlay on the video. The controls are the same either way —
- * seekable progress, ∓15s, prev/next chapter, play/pause, volume.
+ * component, one layout for both media: progress numbers centered above a
+ * seekable bar, then a control row of volume (left) · transport (centered) ·
+ * exit (right). Audio and video render identically; `variant` only swaps the
+ * colour treatment (a light persistent bar under the audio cover vs. white
+ * controls on the tap-summoned video overlay) — the persistent-vs-overlay
+ * container is the parent's job (SchoolMaterialPlayer), not this component's.
+ * Controls: seekable progress, ∓15s, prev/next chapter, play/pause, volume, exit.
  *
  * There is no separate restart control: `onPrev` is the CD-player button —
  * back to the start of this track, and only to the previous track when you are
@@ -34,7 +38,6 @@ export default function SchoolPlayerChrome({
   const [volOpen, setVolOpen] = useState(false);
   const dur = duration > 0 ? duration : 0;
   const pct = dur ? Math.min(100, (currentTime / dur) * 100) : 0;
-  const isVideo = variant === 'video';
 
   const seekFromEvent = (e) => {
     onActivity?.();
@@ -86,31 +89,19 @@ export default function SchoolPlayerChrome({
 
   return (
     <div className={`school-chrome school-chrome--${variant}`} onPointerDown={() => onActivity?.()}>
-      {/* Video: progress numbers ride centered just above the seek bar. Audio
-          keeps its numbers inline at the left of the control row (below). */}
-      {isVideo && <div className="school-chrome__time-float">{timeLabel}</div>}
+      {/* Progress numbers ride centered just above the seek bar (both media). */}
+      <div className="school-chrome__time-float">{timeLabel}</div>
       <div className="school-chrome__bar" ref={barRef} onPointerDown={seekFromEvent}>
         <div className="school-chrome__progress" style={{ width: `${pct}%` }} />
       </div>
-      {isVideo ? (
-        // Video: volume bottom-left · transport centered · X exit bottom-right.
-        <div className="school-chrome__row">
-          {volumeControl}
-          <div className="school-chrome__spacer" />
-          {transport}
-          <div className="school-chrome__spacer" />
-          <button type="button" className="school-chrome__btn school-chrome__btn--exit" onClick={act(onExit)} aria-label="Exit"><Icon name="close" /></button>
-        </div>
-      ) : (
-        // Audio (persistent bar): time · transport · volume, unchanged.
-        <div className="school-chrome__row">
-          {timeLabel}
-          <div className="school-chrome__spacer" />
-          {transport}
-          <div className="school-chrome__spacer" />
-          {volumeControl}
-        </div>
-      )}
+      {/* volume left · transport centered · exit right — one layout for both. */}
+      <div className="school-chrome__row">
+        {volumeControl}
+        <div className="school-chrome__spacer" />
+        {transport}
+        <div className="school-chrome__spacer" />
+        <button type="button" className="school-chrome__btn school-chrome__btn--exit" onClick={act(onExit)} aria-label="Exit"><Icon name="close" /></button>
+      </div>
     </div>
   );
 }
