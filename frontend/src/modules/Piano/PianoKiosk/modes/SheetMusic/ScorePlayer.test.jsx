@@ -1,6 +1,8 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, act, cleanup, fireEvent } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
+import getLogger from '../../../../../lib/logging/Logger.js';
+import { __resetRecorder, __snapshotForTest, KIND } from '../../../../../lib/logging/inputRecorder.js';
 
 // Shared holders (hoisted so the vi.mock factories can see them).
 const h = vi.hoisted(() => ({
@@ -107,6 +109,102 @@ beforeEach(() => {
 
 // Scores now open in Listen (default). The Learn tests select Learn first.
 const enterLearn = () => act(() => { screen.getByText('Learn').click(); });
+
+describe('ScorePlayer — intent-event session-log routing (Task 10)', () => {
+  it('emits intent events through the session-logged logger (app + sessionLog context)', () => {
+    // Spy on the root logger's child() so we can see which child logger each
+    // intent event is emitted through, and with what context. getLogger is the
+    // REAL logger here (not mocked), so children are created for real.
+    const root = getLogger();
+    const origChild = root.child.bind(root);
+    const children = []; // [{ ctx, events: [] }]
+    const spy = vi.spyOn(root, 'child').mockImplementation((ctx) => {
+      const c = origChild(ctx);
+      const rec = { ctx, events: [] };
+      children.push(rec);
+      for (const lvl of ['info', 'warn', 'debug', 'error']) {
+        const orig = c[lvl].bind(c);
+        c[lvl] = (ev, data, opts) => { rec.events.push(ev); return orig(ev, data, opts); };
+      }
+      return c;
+    });
+    try {
+      renderPlayer(); // opens in Listen
+      // Claim a part → fires score.listen.mypart, an intent event.
+      act(() => { fireEvent.click(screen.getByRole('radio', { name: 'RH' })); });
+      const emitter = children.find((r) => r.events.includes('score.listen.mypart'));
+      expect(emitter).toBeTruthy(); // some child emitted it
+      // …and that child must carry session-log routing, so the event persists.
+      expect(emitter.ctx).toMatchObject({ sessionLog: true, app: 'piano-sheetmusic' });
+    } finally {
+      spy.mockRestore();
+      cleanup();
+    }
+  });
+});
+
+describe('ScorePlayer — raw MIDI recorder capture (Task 11)', () => {
+  it('records raw MIDI from the wrapped subscribeRaw event ({data, time})', () => {
+    renderPlayer(); // default (Listen) mode → only the recorder subscribes (Perform effect is inactive)
+    __resetRecorder();
+    // The REAL emitRaw wraps bytes: fn({ data: <byteArray>, time }). Feed the
+    // recorder callback that exact shape.
+    act(() => { h.rawCb?.({ data: [0x90, 72, 88], time: 0 }); });
+    const hit = __snapshotForTest().records.some((r) => r.kind === KIND.MIDI_ON && r.a === 72 && r.b === 88);
+    expect(hit).toBe(true);
+    cleanup();
+  });
+});
+
+describe('ScorePlayer — UI-intent capture (Task 12)', () => {
+  it('records a UI_INTENT in the ring when a control is used (mode change)', () => {
+    renderPlayer(); // opens in Listen
+    __resetRecorder();
+    act(() => { screen.getByText('Learn').click(); }); // mode change → tapIntent('mode')
+    const hit = __snapshotForTest().records.some((r) => r.kind === KIND.UI_INTENT);
+    expect(hit).toBe(true);
+    cleanup();
+  });
+});
+
+describe('ScorePlayer — touch gesture flush (pointercancel + active guard)', () => {
+  // jsdom lacks PointerEvent, but listeners route by type string, so a MouseEvent
+  // named 'pointer*' fires them and carries clientX/clientY.
+  const pe = (type, x, y) => new MouseEvent(type, { clientX: x, clientY: y, bubbles: true });
+
+  it('flushes the gesture on pointercancel (native scroll ends with cancel, not up)', () => {
+    renderPlayer();
+    const scroll = document.querySelector('.piano-score-player__scroll');
+    __resetRecorder();
+    scroll.dispatchEvent(pe('pointerdown', 10, 20));
+    scroll.dispatchEvent(pe('pointermove', 12, 50));
+    scroll.dispatchEvent(pe('pointermove', 14, 90));
+    scroll.dispatchEvent(pe('pointercancel', 14, 100)); // scroll cancels — must still flush
+    const recs = __snapshotForTest().records;
+    expect(recs.some((r) => r.kind === KIND.TOUCH_START)).toBe(true);
+    expect(recs.some((r) => r.kind === KIND.TOUCH_MOVE)).toBe(true);
+    expect(recs.some((r) => r.kind === KIND.TOUCH_END)).toBe(true); // FAILS today (no cancel listener)
+    cleanup();
+  });
+
+  it('guards stray moves so a prior gesture cannot leak into a later flush', () => {
+    renderPlayer();
+    const scroll = document.querySelector('.piano-score-player__scroll');
+    scroll.dispatchEvent(pe('pointerdown', 10, 20));
+    scroll.dispatchEvent(pe('pointermove', 10, 60)); // this sample belongs to the cancelled gesture
+    scroll.dispatchEvent(pe('pointercancel', 10, 100));
+    __resetRecorder(); // clear the ring: nothing recorded AFTER this may reference the old gesture
+    scroll.dispatchEvent(pe('pointermove', 500, 500)); // stray hover, no active gesture
+    scroll.dispatchEvent(pe('pointermove', 600, 600));
+    scroll.dispatchEvent(pe('pointerup', 700, 700)); // a flush with no preceding down
+    const moves = __snapshotForTest().records.filter((r) => r.kind === KIND.TOUCH_MOVE);
+    // New code: cancel already flushed + cleared, and inactive moves are ignored,
+    // so this flush emits nothing. Old code: the y=60 sample (and strays) leak here.
+    expect(moves.length).toBe(0); // FAILS today (leaked samples)
+    expect(moves.some((r) => r.b === 60)).toBe(false);
+    cleanup();
+  });
+});
 
 describe('ScorePlayer — default mode', () => {
   it('opens in Listen (defaultMode), not Learn (J2)', () => {

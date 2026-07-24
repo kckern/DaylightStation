@@ -24,6 +24,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { applyCommand, insertNote, insertRest, deleteNote, deleteBeforeCaret, moveCaret } from './model/index.js';
 import { midiToPitch } from './model/editor.js';
 import getLogger from '../../../../../lib/logging/Logger.js';
+import { record, intern, KIND } from '../../../../../lib/logging/inputRecorder.js';
 
 const DURATION_KEYS = { Numpad1: '16th', Numpad3: 'eighth', Numpad5: 'quarter', Numpad7: 'half', Numpad9: 'whole' };
 
@@ -109,7 +110,7 @@ export function mapKey(code) {
  * @param {boolean} [playing] whether score playback is currently running. Gates
  *   armed note entry; see the echo guard on the MIDI subscription below.
  */
-export function useComposerInput({ setEditorState, subscribe, logger, onTogglePlay, playing = false }) {
+export function useComposerInput({ setEditorState, subscribe, logger, onTogglePlay, playing = false, caretMeasureRef }) {
   // Reuse the parent's child logger when given (keeps one `composer-editor`
   // context); fall back to a `composer-input` child so the hook is still
   // observable when used standalone (and in tests).
@@ -132,14 +133,28 @@ export function useComposerInput({ setEditorState, subscribe, logger, onTogglePl
   // useCallback'd setters below may safely close over the first render's copy.
   const sync = () => setHud({ ...sticky.current, armed: armedRef.current });
 
-  const setDuration = useCallback((type) => { sticky.current = { ...sticky.current, type }; sync(); log.info('composer.input.duration', { type }); }, [log]);
-  const toggleDot = useCallback(() => { sticky.current = { ...sticky.current, dots: sticky.current.dots ? 0 : 1 }; sync(); log.info('composer.input.dot', { dots: sticky.current.dots }); }, [log]);
-  const toggleArm = useCallback(() => { armedRef.current = !armedRef.current; sync(); log.info('composer.input.arm', { armed: armedRef.current }); }, [log]);
+  // Recorder tap for every model mutation — a compact EDIT row (type, note,
+  // measure, duration) pushed into the zero-alloc input-recorder ring ALONGSIDE
+  // the semantic log below. The ring feeds the backend .jsonl trace; the logs
+  // stay for human-readable diagnostics. `type`/`duration` are interned strings.
+  //
+  // `measure` defaults to the LIVE caret measure (read from the ref each call,
+  // NOT captured at hook-mount) so an EDIT row carries the bar the note landed
+  // in — the "@bar3" correlation the trace exists for. Callers may still pass an
+  // explicit measure; the ref is optional so the hook works standalone.
+  const recordEdit = (type, note = 0, measure = caretMeasureRef?.current ?? 0, duration = '') =>
+    record(KIND.EDIT, intern(type), note | 0, measure | 0, intern(duration));
+
+  const setDuration = useCallback((type) => { sticky.current = { ...sticky.current, type }; sync(); recordEdit('duration', 0, 0, type); log.info('composer.input.duration', { type }); }, [log]);
+  const toggleDot = useCallback(() => { sticky.current = { ...sticky.current, dots: sticky.current.dots ? 0 : 1 }; sync(); recordEdit('dot'); log.info('composer.input.dot', { dots: sticky.current.dots }); }, [log]);
+  const toggleArm = useCallback(() => { armedRef.current = !armedRef.current; sync(); recordEdit('arm'); log.info('composer.input.arm', { armed: armedRef.current }); }, [log]);
   const addRest = useCallback(() => {
+    recordEdit('insert-rest', 0, undefined, sticky.current.type); // measure ← live caret
     log.info('composer.input.rest', { duration: sticky.current.type, dots: sticky.current.dots });
     setEditorState((s) => applyCommand(s, insertRest, { ...sticky.current }));
   }, [setEditorState, log]);
   const deleteAtCaret = useCallback(() => {
+    recordEdit('delete');
     log.info('composer.input.delete', {});
     setEditorState((s) => applyCommand(s, deleteNote, s.caret));
   }, [setEditorState, log]);
@@ -147,6 +162,7 @@ export function useComposerInput({ setEditorState, subscribe, logger, onTogglePl
   // just entered. Distinct from deleteAtCaret, which needs the caret parked ON
   // an existing note to do anything.
   const deleteBack = useCallback(() => {
+    recordEdit('delete-back');
     log.info('composer.input.delete-back', {});
     setEditorState((s) => applyCommand(s, deleteBeforeCaret));
   }, [setEditorState, log]);
@@ -161,6 +177,13 @@ export function useComposerInput({ setEditorState, subscribe, logger, onTogglePl
       if (t?.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t?.tagName || '')) return;
       const m = mapKey(e.code);
       if (!m) return;
+      // Recorder tap: a KEY row (which physical key, which command kind) plus a
+      // rAF-deferred TAP row measuring keydown→next-frame latency — the same
+      // shape ScorePlayer records, for the numpad instead of on-screen controls.
+      const kid = intern(e.code), mkid = intern(m.kind);
+      record(KIND.KEY, kid, mkid, 0, 0);
+      const t0 = performance.now();
+      requestAnimationFrame(() => record(KIND.TAP, kid, Math.round(performance.now() - t0), 0, 0));
       e.preventDefault();
       switch (m.kind) {
         case 'duration': setDuration(m.type); break;
@@ -173,7 +196,7 @@ export function useComposerInput({ setEditorState, subscribe, logger, onTogglePl
         case 'deleteBack': deleteBack(); break;
         case 'deleteAt': deleteAtCaret(); break;
         // Caret navigation is high-frequency (held arrow key) — debug, not info.
-        case 'caret': log.debug('composer.input.caret', { where: m.where }); setEditorState((s) => applyCommand(s, moveCaret, m.where)); break;
+        case 'caret': recordEdit('caret'); log.debug('composer.input.caret', { where: m.where }); setEditorState((s) => applyCommand(s, moveCaret, m.where)); break;
         default: break;
       }
     };
@@ -213,6 +236,7 @@ export function useComposerInput({ setEditorState, subscribe, logger, onTogglePl
         duration: sticky.current.type,
         dots: sticky.current.dots,
       }, { maxPerMinute: 120, aggregate: true });
+      recordEdit('insert-note', evt.note, undefined, sticky.current.type); // measure ← live caret
       setEditorState((s) => applyCommand(s, insertNote, pitch, { ...sticky.current }));
     });
     return () => { log.debug('composer.input.midi-unsubscribed', {}); if (unsub) unsub(); };

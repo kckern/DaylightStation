@@ -5,8 +5,21 @@ import {
   readJankProbes,
   stopJankProbes,
 } from './jankProbes.js';
+import { __resetRecorder, __snapshotForTest, __internTableForTest, KIND } from './inputRecorder.js';
 
 afterEach(() => stopJankProbes());
+
+describe('reportRender → input recorder', () => {
+  it('records a RENDER event with the interned name and node count', () => {
+    __resetRecorder();
+    reportRender('Foo', { nodes: 3 });
+    const snap = __snapshotForTest();
+    const rec = snap.records.find((r) => r.kind === KIND.RENDER);
+    expect(rec).toBeTruthy();
+    expect(rec.b).toBe(3); // nodes land in slot b
+    expect(__internTableForTest()[rec.a]).toBe('Foo'); // interned name in slot a
+  });
+});
 
 describe('render registry', () => {
   it('returns null when nothing has reported', () => {

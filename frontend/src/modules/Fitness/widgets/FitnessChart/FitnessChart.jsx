@@ -35,6 +35,14 @@ import { niceTicks } from '@/modules/Fitness/lib/chartScale.js';
 
 const DEFAULT_CHART_WIDTH = 420;
 const DEFAULT_CHART_HEIGHT = 390;
+// Last-resort avatar when a participant's asset 404s (the backend answers a JSON
+// 404, which an <img> renders as a broken icon). Mirrors the fallbackSrc other
+// avatar surfaces already use.
+const FALLBACK_AVATAR_SRC = DaylightMediaPath('/static/img/users/user');
+const handleAvatarError = (event) => {
+	if (event.currentTarget.src.endsWith('/users/user')) return; // already fallen back
+	event.currentTarget.src = FALLBACK_AVATAR_SRC;
+};
 const AVATAR_RADIUS = 30;
 const ABSENT_BADGE_RADIUS = 10;
 const COIN_LABEL_GAP = 8;
@@ -861,7 +869,8 @@ const FitnessChart = ({ mode, onClose, config, onMount, sessionData }) => {
 		zoneConfig,       // Zone config for coin rate lookup (fixes sawtooth)
 		sessionId,        // Session ID for cache cleanup on session change
 		participantDisplayMap,     // SSoT for name/avatar/progress/zoneIndex per participant
-		sessionParticipantsMeta    // Persisted session meta (for offline hydration — Issue A)
+		sessionParticipantsMeta,   // Persisted session meta (for offline hydration — Issue A)
+		configuredUsers            // userCollections.all — slug -> real name, for historical rosters
 	} = useFitnessModule('fitness_chart');
 
 	// Historical mode: use static session data instead of live module data
@@ -871,8 +880,8 @@ const FitnessChart = ({ mode, onClose, config, onMount, sessionData }) => {
 		// otherwise check .session wrapper (but only if that wrapper has .timeline too)
 		const session = sessionData.timeline ? sessionData
 			: (sessionData.session?.timeline ? sessionData.session : sessionData);
-		return createChartDataSource(session);
-	}, [sessionData]);
+		return createChartDataSource(session, { configuredUsers });
+	}, [sessionData, configuredUsers]);
 	const isHistorical = !!staticSource;
 
 	// Choose data source: static (historical) or live (module)
@@ -1435,6 +1444,7 @@ const FitnessChart = ({ mode, onClose, config, onMount, sessionData }) => {
 								alt={entry.name}
 								className="race-chart__focus-filter-avatar"
 								style={{ borderColor: entry.color }}
+								onError={handleAvatarError}
 							/>
 							<span>{entry.name}</span>
 						</button>

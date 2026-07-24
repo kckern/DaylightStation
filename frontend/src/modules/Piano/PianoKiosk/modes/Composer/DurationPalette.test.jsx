@@ -152,6 +152,42 @@ describe('DurationPalette — the dot button', () => {
   });
 });
 
+// ---------------------------------------------------------------------------
+// Task 7 — toolbar tap telemetry. Each palette button fires an optional onTap
+// callback ALONGSIDE its existing setter, so EditorSurface can record the touch
+// intent (input→paint latency) without the palette knowing anything about the
+// recorder. The setter must still fire — onTap is purely additive.
+// ---------------------------------------------------------------------------
+describe('DurationPalette — tap telemetry (Task 7)', () => {
+  it('calls onTap with the duration control name alongside setDuration', () => {
+    const onTap = vi.fn();
+    const { props } = renderPalette({ onTap });
+    fireEvent.click(screen.getByRole('button', { name: /quarter note/i }));
+    expect(props.setDuration).toHaveBeenCalledWith('quarter');
+    expect(onTap).toHaveBeenCalledWith('duration-quarter');
+  });
+
+  it('taps dot, rest, write and delete without swallowing their existing handlers', () => {
+    const onTap = vi.fn();
+    const { props } = renderPalette({ onTap });
+    fireEvent.click(screen.getByRole('button', { name: /dotted note/i }));
+    fireEvent.click(screen.getByRole('button', { name: /add a rest/i }));
+    fireEvent.click(screen.getByRole('button', { name: /write is off/i }));
+    fireEvent.click(screen.getByRole('button', { name: /delete the last note/i }));
+    expect(props.toggleDot).toHaveBeenCalledTimes(1);
+    expect(props.addRest).toHaveBeenCalledTimes(1);
+    expect(props.toggleArm).toHaveBeenCalledTimes(1);
+    expect(props.deleteBack).toHaveBeenCalledTimes(1);
+    expect(onTap.mock.calls.map((c) => c[0])).toEqual(['dot', 'rest', 'write', 'delete']);
+  });
+
+  it('is safe when no onTap is provided (optional prop)', () => {
+    const { props } = renderPalette();
+    fireEvent.click(screen.getByRole('button', { name: /quarter note/i }));
+    expect(props.setDuration).toHaveBeenCalledWith('quarter');
+  });
+});
+
 describe('DurationPalette — numpad hints read as keycaps, not fingering', () => {
   it('wraps every duration digit in a keycap element rather than printing it bare', () => {
     const { container } = renderPalette();

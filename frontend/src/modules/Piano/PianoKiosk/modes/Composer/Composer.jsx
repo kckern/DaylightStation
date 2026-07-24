@@ -36,7 +36,11 @@ function makeDraft() {
 }
 
 export function Composer() {
-  const logger = useMemo(() => getLogger().child({ component: 'composer-mode' }), []);
+  // Session-logged mode logger: `sessionLog` routes every composer.* event to a
+  // persisted per-session .jsonl on the backend (sessionFile transport), filed
+  // under the `piano-composer` app. EditorSurface derives its own child from this
+  // (passed as a prop) so the editor's events land in the same session log.
+  const logger = useMemo(() => getLogger().child({ component: 'composer', app: 'piano-composer', sessionLog: true }), []);
   const { config } = usePianoKioskConfig();
   const { setCrumbs } = usePianoBreadcrumbBar();
   const { currentUser } = usePianoUser();
@@ -127,6 +131,8 @@ export function Composer() {
           onMaterialized={onMaterialized}
           onSongs={showGallery}
           config={config.composer || {}}
+          user={currentUser}
+          logger={logger}
         />
       )}
       {view === 'gallery' && (

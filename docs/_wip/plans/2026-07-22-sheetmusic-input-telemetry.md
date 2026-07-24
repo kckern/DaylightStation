@@ -51,21 +51,21 @@ Backed by parallel typed arrays, capacity 16,384 records (~640 KB, allocated onc
 | `Int32Array a,b,c,d` | payload slots — note/velocity, x/y, controlId, step, etc. |
 
 - One `record()` call = 6 array writes + an index bump. **No allocation → no GC pressure** during a chord flurry (GC pauses are the jank we're measuring, so the recorder must not create any).
-- Non-numeric values (control name, score id) go through a small **string-intern table** → integer id on the hot path; the id→string map ships once in the file header.
-- The buffer is a **ring**: at capacity it wraps and overwrites oldest, incrementing a `dropped` counter. **Drops are counted, never silent** — `dropped:N` ships in every batch so a lost stretch is visible in the data instead of looking like the user sat still.
+- Non-numeric values (control name, score id) go through a small **string-intern table** → integer id on the hot path; the id→string map **ships in every batch** (`batch.strings`), and the decoder unions them. (The header's copy is usually empty because `startRecorder` resets the table before sending the header — names are interned later, as controls are used — so per-batch strings are what actually make names decodable.)
+- The buffer is a **ring**: at capacity it wraps and overwrites oldest, incrementing a `dropped` counter surfaced in each `batch.dropped`. This counts records overwritten *before a drain read them* — at 16k capacity vs ≤1s of input it is ~always 0 in practice; it guards against a pathological input storm, not against transport loss (see below).
 
 ### 2. Drain — inside the recorder
 
 - Runs on a **1s timer wrapped in `requestIdleCallback`** (fallback: plain `setTimeout`), so the encode cost lands in idle time, not during playback.
 - Converts the numeric records since the last head into a compact batch, hands it to a buffering WS transport tagged `channel:'input'`, resets the write head.
-- If the WS is down, the ring keeps overwriting and the session records `dropped:N`. **Telemetry never blocks, never throws, never retries into a spiral.**
+- **Telemetry never blocks, never throws, never retries into a spiral.** Note a known gap: if the WS is down, loss happens at the *transport* layer (the ws-buffered queue sheds oldest at 500 with no counter), not in the recorder's `dropped`. Batches carry no sequence number yet, so transport-shed batches are not currently distinguishable from an idle user — a per-session `seq` is the follow-up that would close this (design "Open follow-ups").
 
 ### 3. Capture inventory — one tap point per source, no double-logging
 
 | Source | Tap point | Captures |
 |---|---|---|
 | **MIDI** | `useWebMidiBLE.js:153` `subscribeRaw` (fires before parse) | note-on **with velocity**, note-off, sustain-pedal CC (`:190` path), any other CC. Velocity + pedal = where "tentative playing" is visible; neither logged today. |
-| **Touch/pointer** | one delegated listener pair on the score container, `{ passive:true, capture:true }` | gesture start/move/end. **Passive is non-negotiable** — a non-passive touch listener blocks scroll compositing and would itself cause jank. Moves coalesced to ≤1/frame, assembled into a per-gesture polyline (start, path samples, end, fling velocity). |
+| **Touch/pointer** | `pointerdown/move/up/cancel` listeners on the score scroll container, `{ passive: true }` | gesture start/move/end. **Passive is non-negotiable** — a non-passive touch listener blocks scroll compositing and would itself cause jank. Because passive lets native scroll proceed, a scroll gesture ends in `pointercancel` (not `pointerup`), so both flush. Moves are coalesced to ≤1/frame and each carries its **original sample timestamp** (slot `c`), so velocity/shape are reconstructable at decode time (the recorder's own `t` is record-time, not sample-time). |
 | **UI intent** | each control handler (transport, loop, hands, tempo, mode, focus, page-turn) | **two records**: the semantic action + the raw tap that caused it. The gap between them is the responsiveness measurement. |
 | **Render correlation** | existing `reportRender` (`jankProbes.js:51`) also feeds `record(RENDER,…)` | which component committed after each input, so replay shows what repainted. |
 

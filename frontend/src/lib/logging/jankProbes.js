@@ -23,6 +23,8 @@
 // the delta since the previous one. All observers are feature-detected and never
 // throw — telemetry must never be the thing that breaks the render loop.
 
+import { record, intern, KIND } from './inputRecorder.js';
+
 let loopTimer = null;
 let loopExpectedMs = 250;
 let loopLastTs = 0;
@@ -53,6 +55,10 @@ export function reportRender(name, extra) {
   if (!r) { r = { count: 0, nodes: 0 }; renderReg.set(name, r); }
   r.count += 1;
   if (extra && typeof extra.nodes === 'number') r.nodes = extra.nodes;
+  // Mirror the commit into the zero-alloc input recorder ring so a render storm
+  // is attributable in the same timeline as MIDI / touch / UI-intent events.
+  // intern caches the name (no new string), so this stays allocation-light.
+  record(KIND.RENDER, intern(name), extra?.nodes | 0, 0, 0);
 }
 
 /** Read + reset the per-component render counters. Returns null when nothing reported. */
