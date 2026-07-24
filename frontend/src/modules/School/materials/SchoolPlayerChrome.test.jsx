@@ -51,6 +51,19 @@ describe('SchoolPlayerChrome', () => {
     expect(onSetVolume).toHaveBeenCalledWith(0.5);
   });
 
+  // Audio and video share ONE layout: time floats centered above the bar and
+  // both carry the X exit. (Audio used to inline the time and had no exit.)
+  it('renders the same layout for audio and video: floating time + exit button', () => {
+    const onExit = vi.fn();
+    const { container, rerender } = render(<SchoolPlayerChrome {...base} variant="audio" onExit={onExit} />);
+    expect(container.querySelector('.school-chrome__time-float')).toHaveTextContent('0:30 / 2:00');
+    fireEvent.click(screen.getByRole('button', { name: /^exit$/i }));
+    expect(onExit).toHaveBeenCalled();
+    rerender(<SchoolPlayerChrome {...base} variant="video" onExit={onExit} />);
+    expect(container.querySelector('.school-chrome__time-float')).toHaveTextContent('0:30 / 2:00');
+    expect(screen.getByRole('button', { name: /^exit$/i })).toBeInTheDocument();
+  });
+
   it('a bar tap seeks proportionally to the click position', () => {
     const onSeek = vi.fn();
     const { container } = render(<SchoolPlayerChrome {...base} onSeek={onSeek} />);
