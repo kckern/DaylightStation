@@ -178,4 +178,40 @@ export function selectPrimaryMedia(mediaEvents, config) {
   });
 }
 
+/**
+ * Same cascade as selectPrimaryMedia, but for the FLAT `summary.media` item
+ * shape (`{ contentId, title, mediaType, durationMs, labels, description }`)
+ * rather than timeline events (`{ data: { durationSeconds, ... } }`).
+ *
+ * The read path and the backfill both carry summary items — not events — and
+ * `summary.media[].durationMs` is the ACTUAL played time (`event.end - start`),
+ * which is the right signal for "what was the workout". A stored `primary: true`
+ * flag can be stale (written by pre-cascade code, e.g. an audio track or a brief
+ * bleed-over episode marked primary), so consumers re-derive with this rather
+ * than trusting the flag.
+ *
+ * @param {Array} mediaItems - summary.media objects
+ * @param {Object} [config] - same shape as selectPrimaryMedia's config
+ * @returns {Object|null} the chosen summary item (not a copy), or null
+ */
+export function selectPrimaryMediaSummary(mediaItems, config) {
+  if (!Array.isArray(mediaItems) || mediaItems.length === 0) return null;
+  const asEvents = mediaItems.map((m) => ({
+    __item: m,
+    data: {
+      contentId: m.contentId,
+      title: m.title,
+      description: m.description,
+      labels: m.labels,
+      // audio filtering keys off contentType==='track' || artist
+      contentType: m.mediaType === 'audio' ? 'track' : m.contentType,
+      artist: m.mediaType === 'audio' ? (m.artist || 'audio') : m.artist,
+      // cascade floors are in seconds; durationMs is the played span
+      durationSeconds: (m.durationMs || 0) / 1000,
+    },
+  }));
+  const picked = selectPrimaryMedia(asEvents, config);
+  return picked?.__item ?? null;
+}
+
 export default selectPrimaryMedia;

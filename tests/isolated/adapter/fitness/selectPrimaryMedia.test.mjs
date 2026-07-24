@@ -1,5 +1,5 @@
 // tests/isolated/adapter/fitness/selectPrimaryMedia.test.mjs
-import { selectPrimaryMedia, buildWarmupChecker } from '#domains/fitness/services/selectPrimaryMedia.mjs';
+import { selectPrimaryMedia, selectPrimaryMediaSummary, buildWarmupChecker } from '#domains/fitness/services/selectPrimaryMedia.mjs';
 
 // ─── Test data factories (event shape, matches backend timeline events) ───
 
@@ -230,5 +230,54 @@ describe('cascading fallback tiers (Plan 5)', () => {
       { type: 'media', data: { contentType: 'track', title: 'song', durationSeconds: 200, artist: 'X' } },
     ];
     expect(selectPrimaryMedia(audioOnly, defaultConfig)).toBeNull();
+  });
+});
+
+describe('selectPrimaryMediaSummary (flat summary.media shape)', () => {
+  // Operates on summary items: { title, mediaType, durationMs, labels, ... }.
+  // durationMs is the ACTUAL played span (event.end - start).
+
+  test('picks the workout over a brief bleed-over episode from the previous session', () => {
+    // Real case 20260718122955: Tuttle Twins played 75s (carryover), Dig Deeper 48min.
+    const items = [
+      { contentId: 'plex:665662', title: 'Bitcoin and the Beast', mediaType: 'video', durationMs: 74893, labels: ['kidsfun'] },
+      { contentId: 'plex:598200', title: 'Total Body Circuit', mediaType: 'video', durationMs: 2892554 },
+      { contentId: 'plex:140599', title: 'Stronger (Workout Mix)', mediaType: 'audio', durationMs: 6367 },
+    ];
+    expect(selectPrimaryMediaSummary(items).title).toBe('Total Body Circuit');
+  });
+
+  test('never returns audio as primary even when it played longest', () => {
+    // Real case 20260713063243: a workout-mix track was flagged primary over the LIIFT4 video.
+    const items = [
+      { contentId: 'plex:140621', title: 'Macarena (Workout Mix)', mediaType: 'audio', artist: 'Chani', durationMs: 209026 },
+      { contentId: 'plex:601994', title: 'Week 2 Day 2: Back/Biceps', mediaType: 'video', durationMs: 0, labels: ['nomusic'] },
+      { contentId: 'plex:140597', title: 'The Power (Workout Mix)', mediaType: 'audio', durationMs: 245919 },
+    ];
+    const picked = selectPrimaryMediaSummary(items);
+    expect(picked.mediaType).toBe('video');
+    expect(picked.title).toBe('Week 2 Day 2: Back/Biceps');
+  });
+
+  test('respects deprioritized labels — a real workout beats a longer KidsFun game', () => {
+    const items = [
+      { contentId: 'plex:1', title: 'Mario Kart World', mediaType: 'video', durationMs: 763000, labels: ['kidsfun'] },
+      { contentId: 'plex:2', title: 'Week 1 Day 2 - Lower Body', mediaType: 'video', durationMs: 675000 },
+    ];
+    const cfg = { deprioritized_labels: ['KidsFun'] };
+    expect(selectPrimaryMediaSummary(items, cfg).title).toBe('Week 1 Day 2 - Lower Body');
+  });
+
+  test('returns null when every item is audio', () => {
+    const items = [
+      { title: 'song a', mediaType: 'audio', artist: 'X', durationMs: 200000 },
+      { title: 'song b', mediaType: 'audio', artist: 'Y', durationMs: 100000 },
+    ];
+    expect(selectPrimaryMediaSummary(items)).toBeNull();
+  });
+
+  test('returns null / handles empty input', () => {
+    expect(selectPrimaryMediaSummary([])).toBeNull();
+    expect(selectPrimaryMediaSummary(null)).toBeNull();
   });
 });

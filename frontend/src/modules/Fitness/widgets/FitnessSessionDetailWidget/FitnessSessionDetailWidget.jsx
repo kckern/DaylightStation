@@ -13,6 +13,7 @@ import RouteMap from './RouteMap.jsx';
 import './FitnessSessionDetailWidget.scss';
 import { formatFitnessDate } from '@/modules/Fitness/lib/dateFormatter.js';
 import { getActivityDisplay, primaryActivity } from '@/modules/Fitness/lib/activities/fitnessActivityRegistry.jsx';
+import { selectPrimaryMedia, buildSelectionConfig } from '@/hooks/fitness/selectPrimaryMedia.js';
 import { mediaDisplayUrl, resolveSessionStartMs } from './sessionDetailUtils.js';
 import { deriveRecap } from './recapVideo.js';
 import { useSettledRecapPlay } from './recapPlayback.js';
@@ -198,7 +199,16 @@ export default function FitnessSessionDetailWidget({ sessionId }) {
   const header = useMemo(() => {
     if (!sessionData) return null;
     const summary = sessionData.summary || {};
-    const pm = Array.isArray(summary.media) ? summary.media.find(m => m.primary) || summary.media[0] : null;
+    // Re-derive primary rather than trusting the stored `primary` flag — old
+    // sessions carry a stale flag on the wrong item (a music track, or a brief
+    // bleed-over episode from the previous session). selectPrimaryMedia filters
+    // audio and keys on actual played time. Fall back to the flag, then media[0].
+    const mediaList = Array.isArray(summary.media) ? summary.media : null;
+    const pm = mediaList
+      ? (selectPrimaryMedia(mediaList, buildSelectionConfig(fitnessCtx?.plexConfig))
+        || mediaList.find(m => m.primary)
+        || mediaList[0])
+      : null;
     const session = sessionData.session || {};
 
     const dateStr = sessionData.date

@@ -23,7 +23,7 @@ import {
 import { ISessionDatastore } from '#apps/fitness/ports/ISessionDatastore.mjs';
 import { InfrastructureError } from '#system/utils/errors/index.mjs';
 import { ItemId } from '#domains/content/value-objects/ItemId.mjs';
-import { selectPrimaryMedia } from '#domains/fitness/services/selectPrimaryMedia.mjs';
+import { selectPrimaryMedia, selectPrimaryMediaSummary, buildSelectionConfig } from '#domains/fitness/services/selectPrimaryMedia.mjs';
 
 // ── Session list index (derived read cache) ──────────────────────────────
 // The /sessions?since=Nd and /suggestions endpoints build per-session summaries
@@ -296,6 +296,13 @@ export class YamlSessionDatastore extends ISessionDatastore {
 
     if (!dirExists(sessionsDir)) return [];
 
+    // Selection config (warmup / deprioritized labels) for re-deriving primary
+    // media below — must match what the frontend detail view uses so the list
+    // and detail agree. Best-effort: config-less selection still filters audio
+    // and keys on played time.
+    const fitnessCfg = this.configService.getHouseholdAppConfig?.(householdId, 'fitness');
+    const selectionConfig = buildSelectionConfig(fitnessCfg?.content || fitnessCfg?.plex);
+
     const baseNames = listYamlFiles(sessionsDir);
     const sessions = [];
 
@@ -333,7 +340,16 @@ export class YamlSessionDatastore extends ISessionDatastore {
       let media = null;
       const summaryMediaObjects = (summary?.media || []).filter(m => typeof m === 'object' && m !== null);
       if (summaryMediaObjects.length > 0) {
-        const primaryItem = summaryMediaObjects.find(m => m.primary);
+        // Re-derive primary from the played-time cascade rather than trusting a
+        // stored `primary` flag — old sessions carry stale flags on the wrong
+        // item (a bleed-over episode or a music track). Only correct a session
+        // that HAD a flag: when none was ever set (all-audio, or a degenerate
+        // title-less stub), keep the prior behavior and fall through to the
+        // timeline-event derivation below rather than inventing a primary.
+        const storedPrimary = summaryMediaObjects.find(m => m.primary);
+        const primaryItem = storedPrimary
+          ? (selectPrimaryMediaSummary(summaryMediaObjects, selectionConfig) || storedPrimary)
+          : null;
         const formatMedia = (m) => {
           const source = ItemId.extractSource(m.contentId);
           return {
