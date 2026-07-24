@@ -71,3 +71,13 @@ describe('schoolPathFor — round-trips the chain', () => {
     expect(parseSchoolPath(BASE)).toEqual({ section: 'subject:history', materialPath: chain });
   });
 });
+
+describe('geography section', () => {
+  it('builds the geography section path', () => {
+    expect(schoolPathFor(BASE, 'geography')).toBe(`${BASE}/geography`);
+  });
+  it('parses the geography section path', () => {
+    at(`${BASE}/geography`);
+    expect(parseSchoolPath(BASE).section).toBe('geography');
+  });
+});
