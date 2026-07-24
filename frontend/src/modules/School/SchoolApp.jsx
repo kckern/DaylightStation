@@ -17,6 +17,8 @@ import SubjectPage from './home/SubjectPage.jsx';
 import LibraryPage from './home/LibraryPage.jsx';
 import PrintCenter from './print/PrintCenter.jsx';
 import TypingTutor from './Typing/TypingTutor.jsx';
+import GeographyGrid from './geography/GeographyGrid.jsx';
+import GeoQuizRunner from './geography/GeoQuizRunner.jsx';
 import Icon from './home/icons/Icon.jsx';
 import { SchoolBreadcrumbProvider, useSchoolBreadcrumbBar } from './SchoolBreadcrumbContext.jsx';
 import { groupBySubject, subjectLabel } from './home/subjects.js';
@@ -77,6 +79,7 @@ export function parseSchoolPath(urlBase) {
   if (seg[0] === 'practice') return { section: 'banks', materialPath: [] };
   if (seg[0] === 'print') return { section: 'print', materialPath: [] };
   if (seg[0] === 'typing') return { section: 'typing', materialPath: [] };
+  if (seg[0] === 'geography') return { section: 'geography', materialPath: [] };
   if (seg[0] === 'lang' && seg[1]) return { section: `lang:${seg[1]}`, materialPath: [] };
   return empty;
 }
@@ -89,6 +92,7 @@ function sectionPathFor(urlBase, section) {
   if (section === 'banks') return `${urlBase}/practice`;
   if (section === 'print') return `${urlBase}/print`;
   if (section === 'typing') return `${urlBase}/typing`;
+  if (section === 'geography') return `${urlBase}/geography`;
   if (section.startsWith('lang:')) return `${urlBase}/lang/${encodeURIComponent(section.slice(5))}`;
   return urlBase;
 }
@@ -259,8 +263,9 @@ function SchoolShell({ clear }) {
           : section === 'banks' ? 'Practice'
             : section === 'print' ? 'Print'
               : section === 'typing' ? 'Typing'
-                : courseId ? (courses.find((c) => c.id === courseId)?.label ?? 'Language')
-                  : section;
+                : section === 'geography' ? 'Geography'
+                  : courseId ? (courses.find((c) => c.id === courseId)?.label ?? 'Language')
+                    : section;
 
   // The apple is the one fixed control in the header, so it carries the one
   // thing the Portal otherwise has no affordance for. From any depth it goes
@@ -346,6 +351,7 @@ function SchoolShell({ clear }) {
         {section === 'progress' && <ReportPanel userId={currentUser?.id || null} />}
         {section === 'print' && <PrintCenter />}
         {section === 'typing' && <TypingTutor />}
+        {section === 'geography' && !active && <GeographyGrid onLaunch={onLaunch} />}
         {section === 'banks' && !active && <BankBrowser guestOnly={isGuest} onLaunch={onLaunch} notice={notice} />}
         {subjectId && !active && (
           <SubjectPage
@@ -372,6 +378,7 @@ function SchoolShell({ clear }) {
         )}
         {active?.mode === 'quiz' && <QuizRunner bank={active.bank} onExit={() => setActive(null)} />}
         {active?.mode === 'flashcard' && <FlashcardRunner bank={active.bank} onExit={() => setActive(null)} />}
+        {active?.mode === 'drill' && <GeoQuizRunner bank={active.bank} onExit={() => setActive(null)} />}
         {/* Language study needs a claimed identity: every rung produces a
             record, and a guest's work is discarded. The program itself shows
             the sign-in prompt rather than drilling into a void. */}

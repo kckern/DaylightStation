@@ -24,6 +24,7 @@ import { rankWithin, gradeFromBirthyear } from './ranking.js';
 // than in the content pipeline, the same split PROGRAMS makes.
 const SUBJECT_PROGRAMS = {
   writing: [{ id: 'typing', label: 'Typing', hint: 'Learn to touch-type', section: 'typing' }],
+  history: [{ id: 'geography', label: 'Geography', hint: 'States, capitals, and flags', section: 'geography' }],
 };
 
 export default function SubjectPage({ subjectId, shelf, guestOnly, onLaunch, notice, onOpen, initialMaterialPath = [], onMaterialNav, catalogLoading = false }) {
