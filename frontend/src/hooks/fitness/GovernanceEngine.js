@@ -772,9 +772,17 @@ export class GovernanceEngine {
 
     const expiresAt = Number.isFinite(activeChallenge.expiresAt) ? activeChallenge.expiresAt : null;
     const startedAt = Number.isFinite(activeChallenge.startedAt) ? activeChallenge.startedAt : null;
-    const remainingSeconds = expiresAt != null
-      ? Math.max(0, Math.round((expiresAt - now) / 1000))
-      : null;
+    const paused = Boolean(activeChallenge.pausedAt);
+    // While paused, expiresAt is frozen at a stale absolute value — the real
+    // remaining time is banked in pausedRemainingMs (see the freeze-resume
+    // branch in evaluate()). Reading expiresAt - now here would keep counting
+    // down in real time against a stopped clock.
+    let remainingSeconds = null;
+    if (paused && Number.isFinite(activeChallenge.pausedRemainingMs)) {
+      remainingSeconds = Math.max(0, Math.round(activeChallenge.pausedRemainingMs / 1000));
+    } else if (expiresAt != null) {
+      remainingSeconds = Math.max(0, Math.round((expiresAt - now) / 1000));
+    }
     let totalSeconds = null;
     if (Number.isFinite(activeChallenge.timeLimitSeconds)) {
       totalSeconds = Math.max(1, Math.round(activeChallenge.timeLimitSeconds));
@@ -803,7 +811,7 @@ export class GovernanceEngine {
       startedAt,
       expiresAt,
       selectionLabel: activeChallenge.selectionLabel || null,
-      paused: Boolean(activeChallenge.pausedAt)
+      paused
     };
   }
 
