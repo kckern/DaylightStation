@@ -4,6 +4,7 @@ import ProfileAvatar from '../../../lib/identity/ProfileAvatar.jsx';
 import ProfilePicker from '../../../lib/identity/ProfilePicker.jsx';
 import { usePianoPlayback } from './PianoPlaybackContext.jsx';
 import { usePianoScreenOff } from './usePianoScreenOff.js';
+import { GUEST_PROFILE } from './pianoUser.js';
 import LockIcon from '@/modules/Fitness/player/overlays/LockIcon.jsx';
 
 /**
@@ -29,7 +30,6 @@ export default function PianoUserChip() {
   // renders nothing when there's no PianoUserProvider (e.g. isolated chrome tests).
   const ctx = useContext(PianoUserContext);
   if (!ctx) return null;
-  if (!ctx.currentProfile && !ctx.users.length) return null;
   return <PianoUserChipInner ctx={ctx} />;
 }
 
@@ -37,9 +37,12 @@ function PianoUserChipInner({ ctx }) {
   const { videoActive } = usePianoPlayback();
   const screenOff = usePianoScreenOff();
   const [open, setOpen] = useState(false);
-  const { users, currentProfile, currentUser, setCurrentUser } = ctx;
+  const { users, currentUser, setCurrentUser } = ctx;
 
-  const label = currentProfile?.group_label || currentProfile?.name || 'Choose player';
+  // The header must always show who's credited: no roster / no selection
+  // (fetch failed, still loading, dismissed prompt) reads as Guest, never blank.
+  const currentProfile = ctx.currentProfile || GUEST_PROFILE;
+  const label = currentProfile.group_label || currentProfile.name;
   const locked = !!videoActive;
 
   return (
@@ -51,9 +54,9 @@ function PianoUserChipInner({ ctx }) {
         disabled={locked}
         aria-disabled={locked}
         aria-label={locked ? 'Player locked during lesson' : 'Switch player'}
-        title={locked ? 'Finish the lesson to switch players' : (currentProfile?.name || 'Choose player')}
+        title={locked ? 'Finish the lesson to switch players' : currentProfile.name}
       >
-        <ProfileAvatar id={currentProfile?.id} name={currentProfile?.name} />
+        <ProfileAvatar id={currentProfile.id} name={currentProfile.name} />
         <span className="piano-chrome__username">{label}</span>
         {locked && <span className="piano-chrome__user-lock" aria-hidden="true"><LockIcon /></span>}
       </button>
