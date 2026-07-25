@@ -1874,6 +1874,11 @@ export class GovernanceEngine {
       }
     }
 
+    // Hard lock: the lock overlay owns the screen and the video is paused —
+    // no cue of any kind (zone or cycle) should sound underneath it. Cues
+    // resume once the phase leaves 'locked'.
+    if (this.phase === 'locked') return null;
+
     // Cycle challenges: map the snapshot's lifecycle edges + a health-based
     // hurry to cue triggers (shared duck/SFX engine; see challengeAudioCues.js).
     if (!challengeSnapshot) return null;
@@ -1896,6 +1901,9 @@ export class GovernanceEngine {
 
     const { id: challengeId, status, remainingSeconds, requiredCount, actualCount, missingUsers } = challengeSnapshot;
     const chId = challengeId || 'challenge';
+    // The challenge clock is frozen during a warning/lock collision — stage
+    // cues (start/hurry/complete) must not fire against a stopped clock.
+    if (challengeSnapshot.paused) return null;
     const satisfied = Number.isFinite(requiredCount) && Number.isFinite(actualCount)
       ? actualCount >= requiredCount
       : (Array.isArray(missingUsers) ? missingUsers.length === 0 : false);
