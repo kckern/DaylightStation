@@ -58,6 +58,7 @@ export default {
       '**/dist/**',
       '**/.{idea,git,cache,output,temp}/**',
       '**/.claude/worktrees/**',
+      '**/.claire/worktrees/**',
       '**/.worktrees/**',
     ],
   },
