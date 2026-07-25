@@ -174,4 +174,41 @@ describe('useGovernanceAudioDuck', () => {
     render(descriptor());
     expect(FakeAudio.instances[0].volume).toBe(1);
   });
+
+  it('does not replay a stage token after an interposed warning token (A → B → A)', () => {
+    const start = descriptor({ token: 'ch1:c_start', cueId: 'challenge_start', duckTo: 0.2 });
+    const { rerender } = render(start);
+    const sfx = FakeAudio.instances[0];
+    expect(sfx.playCalls).toBe(1);
+    rerender({ audioDuck: descriptor({ token: 'c_warn:5000', cueId: 'governance_warning', duckTo: 0.15 }) });
+    expect(sfx.playCalls).toBe(2);          // warning episode plays
+    rerender({ audioDuck: start });         // back to green: same stage token returns
+    expect(sfx.playCalls).toBe(2);          // no start-sound replay
+  });
+
+  it('does not replay after a token → null → same-token round trip (lock gap)', () => {
+    const start = descriptor({ token: 'ch1:c_start', cueId: 'challenge_start' });
+    const { rerender } = render(start);
+    const sfx = FakeAudio.instances[0];
+    rerender({ audioDuck: null });          // engine emits nothing while locked
+    rerender({ audioDuck: start });         // unlock: stage token returns
+    expect(sfx.playCalls).toBe(1);
+  });
+
+  it('still plays a genuinely new token after suppressed replays', () => {
+    const { rerender } = render(descriptor({ token: 'ch1:c_start', cueId: 'challenge_start' }));
+    const sfx = FakeAudio.instances[0];
+    rerender({ audioDuck: null });
+    rerender({ audioDuck: descriptor({ token: 'ch1:c_start', cueId: 'challenge_start' }) }); // suppressed
+    rerender({ audioDuck: descriptor({ token: 'ch1:c_hurry', cueId: 'challenge_hurry' }) }); // new stage
+    expect(sfx.playCalls).toBe(2);
+  });
+
+  it('warning episodes with distinct timestamps still replay (episode tokens stay unique)', () => {
+    const { rerender } = render(descriptor({ token: 'c_warn:5000', cueId: 'governance_warning' }));
+    const sfx = FakeAudio.instances[0];
+    rerender({ audioDuck: null });
+    rerender({ audioDuck: descriptor({ token: 'c_warn:9000', cueId: 'governance_warning' }) });
+    expect(sfx.playCalls).toBe(2);
+  });
 });
