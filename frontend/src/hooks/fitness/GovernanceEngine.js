@@ -1899,14 +1899,18 @@ export class GovernanceEngine {
       return emit(cue, token);
     }
 
-    const { id: challengeId, status, remainingSeconds, requiredCount, actualCount, missingUsers } = challengeSnapshot;
+    const { id: challengeId, status, remainingSeconds, requiredCount, actualCount, metUsers, missingUsers } = challengeSnapshot;
     const chId = challengeId || 'challenge';
     // The challenge clock is frozen during a warning/lock collision — stage
     // cues (start/hurry/complete) must not fire against a stopped clock.
     if (challengeSnapshot.paused) return null;
+    // A brand-new challenge has no summary yet (actualCount null, empty user
+    // lists) — that is "no data", not "satisfied". The list fallback therefore
+    // requires at least one met user alongside an empty missing list.
     const satisfied = Number.isFinite(requiredCount) && Number.isFinite(actualCount)
       ? actualCount >= requiredCount
-      : (Array.isArray(missingUsers) ? missingUsers.length === 0 : false);
+      : (Array.isArray(metUsers) && metUsers.length > 0
+        && Array.isArray(missingUsers) && missingUsers.length === 0);
 
     // Complete: the challenge has been satisfied or reached success.
     if (status === 'success' || satisfied) {

@@ -164,9 +164,19 @@ describe('GovernanceEngine — _computeAudioDuck', () => {
     expect(engine._computeAudioDuck(snapshot)).toBeNull();
   });
 
-  it('treats an empty missingUsers list (no counts) as satisfied → null', () => {
+  it('does not treat a missing summary (no counts, empty user lists) as satisfied — stage cues still apply', () => {
+    // First compose after challenge start: summary is null → actualCount null,
+    // metUsers [], missingUsers []. That is "no data yet", not "satisfied".
     const engine = makeEngine();
-    const snapshot = { id: 'ch1', status: 'pending', remainingSeconds: 8, requiredCount: null, actualCount: null, missingUsers: [] };
+    const snapshot = { id: 'ch1', status: 'pending', remainingSeconds: 8, requiredCount: null, actualCount: null, metUsers: [], missingUsers: [] };
+    expect(engine._computeAudioDuck(snapshot)).toMatchObject({ cueId: 'challenge_hurry', token: 'ch1:challenge_hurry' });
+  });
+
+  it('treats populated metUsers with empty missingUsers as satisfied (no counts)', () => {
+    const engine = makeEngine();
+    const snapshot = { id: 'ch1', status: 'pending', remainingSeconds: 8, requiredCount: null, actualCount: null, metUsers: ['alice'], missingUsers: [] };
+    // Only the hurry cue is configured in this suite; satisfied → looks for a
+    // challenge_complete cue → none → null (and crucially NOT the hurry cue).
     expect(engine._computeAudioDuck(snapshot)).toBeNull();
   });
 
@@ -259,6 +269,12 @@ describe('GovernanceEngine — audio cues: start / complete / warning triggers',
     engine._warningStartTime = 9000;
     const second = engine._computeAudioDuck(null);
     expect(first.token).not.toBe(second.token);
+  });
+
+  it('does not fire challenge_complete on the first snapshot of a new challenge (no summary yet)', () => {
+    const engine = makeEngine();
+    const duck = engine._computeAudioDuck({ id: 'ch1', status: 'pending', remainingSeconds: 40, requiredCount: null, actualCount: null, metUsers: [], missingUsers: [] });
+    expect(duck).toMatchObject({ cueId: 'c_start' }); // start, not the spurious complete
   });
 
   it('does not fire challenge_start when only a hurry cue is configured and we are before the window', () => {
