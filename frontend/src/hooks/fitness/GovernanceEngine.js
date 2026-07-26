@@ -772,9 +772,17 @@ export class GovernanceEngine {
 
     const expiresAt = Number.isFinite(activeChallenge.expiresAt) ? activeChallenge.expiresAt : null;
     const startedAt = Number.isFinite(activeChallenge.startedAt) ? activeChallenge.startedAt : null;
-    const remainingSeconds = expiresAt != null
-      ? Math.max(0, Math.round((expiresAt - now) / 1000))
-      : null;
+    const paused = Boolean(activeChallenge.pausedAt);
+    // While paused, expiresAt is frozen at a stale absolute value — the real
+    // remaining time is banked in pausedRemainingMs (see the freeze-resume
+    // branch in evaluate()). Reading expiresAt - now here would keep counting
+    // down in real time against a stopped clock.
+    let remainingSeconds = null;
+    if (paused && Number.isFinite(activeChallenge.pausedRemainingMs)) {
+      remainingSeconds = Math.max(0, Math.round(activeChallenge.pausedRemainingMs / 1000));
+    } else if (expiresAt != null) {
+      remainingSeconds = Math.max(0, Math.round((expiresAt - now) / 1000));
+    }
     let totalSeconds = null;
     if (Number.isFinite(activeChallenge.timeLimitSeconds)) {
       totalSeconds = Math.max(1, Math.round(activeChallenge.timeLimitSeconds));
@@ -803,7 +811,7 @@ export class GovernanceEngine {
       startedAt,
       expiresAt,
       selectionLabel: activeChallenge.selectionLabel || null,
-      paused: Boolean(activeChallenge.pausedAt)
+      paused
     };
   }
 
@@ -1866,6 +1874,11 @@ export class GovernanceEngine {
       }
     }
 
+    // Hard lock: the lock overlay owns the screen and the video is paused —
+    // no cue of any kind (zone or cycle) should sound underneath it. Cues
+    // resume once the phase leaves 'locked'.
+    if (this.phase === 'locked') return null;
+
     // Cycle challenges: map the snapshot's lifecycle edges + a health-based
     // hurry to cue triggers (shared duck/SFX engine; see challengeAudioCues.js).
     if (!challengeSnapshot) return null;
@@ -1886,11 +1899,18 @@ export class GovernanceEngine {
       return emit(cue, token);
     }
 
-    const { id: challengeId, status, remainingSeconds, requiredCount, actualCount, missingUsers } = challengeSnapshot;
+    const { id: challengeId, status, remainingSeconds, requiredCount, actualCount, metUsers, missingUsers } = challengeSnapshot;
     const chId = challengeId || 'challenge';
+    // The challenge clock is frozen during a warning/lock collision — stage
+    // cues (start/hurry/complete) must not fire against a stopped clock.
+    if (challengeSnapshot.paused) return null;
+    // A brand-new challenge has no summary yet (actualCount null, empty user
+    // lists) — that is "no data", not "satisfied". The list fallback therefore
+    // requires at least one met user alongside an empty missing list.
     const satisfied = Number.isFinite(requiredCount) && Number.isFinite(actualCount)
       ? actualCount >= requiredCount
-      : (Array.isArray(missingUsers) ? missingUsers.length === 0 : false);
+      : (Array.isArray(metUsers) && metUsers.length > 0
+        && Array.isArray(missingUsers) && missingUsers.length === 0);
 
     // Complete: the challenge has been satisfied or reached success.
     if (status === 'success' || satisfied) {
