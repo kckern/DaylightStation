@@ -47,6 +47,7 @@ assert_eq "1 50" "$(sanitize_resume "$m3u" 1 50)"  "pos within duration is kept 
 assert_eq "0 0" "$(sanitize_resume "$m3u" 0 4847)" "pos past short track resets pos to 0"
 assert_eq "1 0" "$(sanitize_resume "$m3u" 1 200)"  "pos past track 1 duration resets pos to 0"
 assert_eq "0 0" "$(sanitize_resume "$m3u" 0 75)"   "pos exactly at duration (EOF) resets pos to 0"
+assert_eq "0 0" "$(sanitize_resume "$m3u" 0 -0.000000)" "negative zero resume resets to 0"
 
 # --- sanitize_resume: out-of-range / invalid track index restarts at 0 0 ---
 assert_eq "0 0" "$(sanitize_resume "$m3u" 9 100)"   "track index past end restarts at 0 0"
