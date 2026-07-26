@@ -152,7 +152,9 @@ function stopSession(session, reason = 'stopped') {
  * GovernanceEngine emits an `audioDuck` descriptor, lifting the duck when the SFX
  * ends. Reacts to `audioDuck.token` ONLY — the engine rebuilds the descriptor
  * object every tick, so keying on the object would tear the session down each
- * tick (cutting the SFX and bouncing the volume).
+ * tick (cutting the SFX and bouncing the volume). Each distinct token plays at
+ * most once per mount (see firedTokensRef), so stable stage tokens survive
+ * warning/lock interruptions without replaying.
  *
  * @param {object} params
  * @param {{ setDuck:(m:number)=>void, volumeRef?:{current:number} }|null} params.videoVolume
@@ -163,10 +165,22 @@ export function useGovernanceAudioDuck({ videoVolume, audioDuck }) {
   useEffect(() => { latestRef.current = { videoVolume, audioDuck }; });
 
   const sessionRef = useRef(null);
+  // Every token that has ever started a session this mount. Warning/lock
+  // episodes interleave their own (timestamped, unique) tokens between a
+  // challenge's stable stage tokens; when a stage token comes back after the
+  // interruption it must not re-announce the stage. Episode-scoped cues stay
+  // replayable because their tokens embed a timestamp.
+  const firedTokensRef = useRef(new Set());
   const token = audioDuck?.token || null;
 
   useEffect(() => {
     if (!token) return;
+    if (firedTokensRef.current.has(token)) return;
+    firedTokensRef.current.add(token);
+    if (firedTokensRef.current.size > 200) {
+      // Bounded memory: drop the oldest entry (Sets iterate in insertion order).
+      firedTokensRef.current.delete(firedTokensRef.current.values().next().value);
+    }
     stopSession(sessionRef.current, 'superseded');
     sessionRef.current = startSession(latestRef.current);
   }, [token]);

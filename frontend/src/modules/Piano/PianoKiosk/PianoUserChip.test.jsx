@@ -75,6 +75,18 @@ describe('PianoUserChip', () => {
     expect(screenOff).toHaveBeenCalledTimes(1);
   });
 
+  // The chrome must ALWAYS show who's credited — a roster that fails to load
+  // (or hasn't loaded yet) falls back to a Guest chip, never an empty header.
+  it('renders a Guest chip when the roster is empty and nobody is selected', () => {
+    render(
+      <PianoUserContext.Provider value={{ users: [], currentProfile: null, currentUser: null, setCurrentUser }}>
+        <PianoUserChip />
+      </PianoUserContext.Provider>,
+    );
+    expect(screen.getByText('Guest')).toBeTruthy();
+    expect(screen.getByLabelText('Switch player')).toBeTruthy();
+  });
+
   it('locks switching while a video lecture is open', () => {
     playback.videoActive = true;
     renderChip();
