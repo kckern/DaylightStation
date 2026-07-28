@@ -64,14 +64,18 @@ export function useScoreEvaluator({
   // fires when currentMeasure changes, so the last measure the cursor never leaves
   // would otherwise never be graded (audit H1). Idempotent; no-op when disabled.
   const finalize = useCallback(() => {
-    if (!enabledRef.current || finalizedRef.current) return;
+    if (!enabledRef.current || finalizedRef.current) return undefined;
     finalizedRef.current = true;
     const m = currentMeasureRef.current;
     const expected = expectedForMeasureRef.current?.(m) || [];
-    if (expected.length === 0 && hitsRef.current.length === 0) return; // nothing to grade
+    if (expected.length === 0 && hitsRef.current.length === 0) return undefined; // nothing to grade
     const g = gradeMeasure({ expected, hits: hitsRef.current }, cfgRef.current || {});
-    onMeasureGradeRef.current?.({ measure: m, ...g });
+    const graded = { measure: m, ...g };
+    onMeasureGradeRef.current?.(graded);
     hitsRef.current = [];
+    // Returned so a caller opening the run summary in the SAME tick can fold this
+    // in: gradesRef is assigned during render, so it does not yet contain it.
+    return graded;
   }, []);
 
   // Buffer MIDI hits for the current measure. Subscribe once per enabled/subscribe.

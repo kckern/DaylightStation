@@ -383,7 +383,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
       flushPlaybackNow();
       // A Polish run that plays to the end must grade its final measure and show
       // the summary — the reward for finishing, not only for giving up (audit H1).
-      if (mode === 'polish') { finalizeRef.current?.(); openRunSummaryRef.current?.(); }
+      if (mode === 'polish') { openRunSummaryRef.current?.(finalizeRef.current?.()); }
       logger.info('score.transport.done', { mode, steps: events.length });
       // The run is OVER — put the cursor back where a run starts (the loop
       // in-point when one is active, else the top). Without this, `step` stays
@@ -493,9 +493,13 @@ export default function ScorePlayer({ score: scoreMeta }) {
   // Open the run summary + log the aggregate, using the shared tally (so the log
   // and the panel headline can't drift). Used by BOTH the silent-stop and the
   // completion path.
-  const openRunSummary = useCallback(() => {
+  const openRunSummary = useCallback((extra) => {
     setSummaryOpen(true);
-    const t = tallyGrades(gradesRef.current);
+    // `extra` is the measure finalize() just graded — gradesRef.current is a
+    // render-time snapshot and does not include it yet, so a summary opened in
+    // the same tick would under-count by one measure.
+    const all = extra ? { ...gradesRef.current, [extra.measure]: extra } : gradesRef.current;
+    const t = tallyGrades(all);
     logRunSummary({ greens: t.green, yellows: t.yellow, reds: t.red, overall: t.overall });
   }, [logRunSummary]);
   const onSilentStop = useCallback(() => {
@@ -1079,6 +1083,12 @@ export default function ScorePlayer({ score: scoreMeta }) {
     // A second tap during the count-in aborts it (never reaches the transport).
     if (countIn.active) { countIn.cancel(); logger.info('score.countin.cancel', { via: 'toggle' }); return; }
     if (transport.playing) {
+      // A paused Polish run is still a run: grade what was played and show the
+      // summary. Without this a user who works a passage and stops gets nothing
+      // at all — no grade, no summary, no reason to come back (audit: Polish).
+      // MUST run before transport.pause(): the evaluator's `enabled` is derived
+      // from transport.playing, and finalize early-returns once it goes false.
+      if (mode === 'polish') openRunSummaryRef.current?.(finalizeRef.current?.());
       transport.pause();
       if (mode === 'listen') silenceScheduled();
       flushPlaybackNow();

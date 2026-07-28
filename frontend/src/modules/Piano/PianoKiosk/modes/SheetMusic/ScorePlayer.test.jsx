@@ -606,6 +606,57 @@ describe('ScorePlayer — Polish mode (transport-driven)', () => {
     expect(emitted.filter(([ev]) => ev === 'score.polish.measure')).toEqual([]);
   });
 
+  it('pausing a Polish run grades the worked measure and summarizes it (Task 10)', async () => {
+    // A paused run is still a run. The field logs show users working a passage
+    // and stopping — and getting no grade, no summary, nothing. The tally must
+    // INCLUDE the measure finalize() just graded (gradesRef is a render-time
+    // snapshot, so a naive same-tick summary would report zero greens).
+    h.layoutExtras = THREE_MEASURES;
+    const emitted = captureLog();
+
+    renderPlayer();
+    screen.getByText('Polish').click();
+    await act(async () => {});
+    screen.getByRole('button', { name: 'Play' }).click();
+    await act(async () => {});
+    act(() => vi.advanceTimersByTime(4100)); // through the 4-beat @60 count-in
+    play(64); // measure 1's expected note
+    screen.getByRole('button', { name: 'Pause' }).click();
+    await act(async () => {});
+
+    expect(document.querySelector('.piano-score-run-summary')).not.toBeNull();
+    const summaries = emitted.filter(([ev]) => ev === 'score.polish.summary');
+    expect(summaries.length).toBe(1);
+    expect(summaries[0][1]).toMatchObject({ greens: 1, yellows: 0, reds: 0, overall: 'green' });
+  });
+
+  it('a second pause grades again — the finalize guard clears on resume (Task 10)', async () => {
+    h.layoutExtras = THREE_MEASURES;
+    const emitted = captureLog();
+
+    renderPlayer();
+    screen.getByText('Polish').click();
+    await act(async () => {});
+    screen.getByRole('button', { name: 'Play' }).click();
+    await act(async () => {});
+    act(() => vi.advanceTimersByTime(4100)); // count-in
+    play(64);
+    screen.getByRole('button', { name: 'Pause' }).click();
+    await act(async () => {});
+    // …pick it back up and work the same measure again.
+    screen.getByRole('button', { name: 'Play' }).click();
+    await act(async () => {});
+    act(() => vi.advanceTimersByTime(4100)); // second count-in
+    play(64);
+    screen.getByRole('button', { name: 'Pause' }).click();
+    await act(async () => {});
+
+    expect(emitted.filter(([ev]) => ev === 'score.polish.measure').length).toBe(2);
+    const summaries = emitted.filter(([ev]) => ev === 'score.polish.summary');
+    expect(summaries.length).toBe(2);
+    expect(summaries[1][1]).toMatchObject({ greens: 1, overall: 'green' });
+  });
+
 });
 
 describe('ScorePlayer — Listen mode', () => {
