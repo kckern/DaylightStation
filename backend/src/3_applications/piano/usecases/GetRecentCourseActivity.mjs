@@ -39,12 +39,14 @@ export class GetRecentCourseActivity {
       return this.#cache.result;
     }
 
+    let fetchFailed = false;
     const shows = [];
     for (const collectionId of this.#lessonCollectionIds()) {
       try {
         const children = await this.#plexClient.children(collectionId);
         for (const c of children || []) shows.push({ id: String(c.ratingKey), title: c.title || '', thumb: c.thumb || null });
       } catch (err) {
+        fetchFailed = true;
         this.#logger.warn?.('piano.activity.children_failed', { collectionId, error: err.message });
       }
     }
@@ -55,6 +57,7 @@ export class GetRecentCourseActivity {
         const playable = await this.#fitnessPlayableService.getPlayableEpisodes(show.id);
         perShowItems.set(show.id, playable?.items || []);
       } catch (err) {
+        fetchFailed = true;
         this.#logger.warn?.('piano.activity.playable_failed', { showId: show.id, error: err.message });
       }
     }
@@ -90,7 +93,14 @@ export class GetRecentCourseActivity {
     players.sort((a, b) => String(b.lastPlayedAt).localeCompare(String(a.lastPlayedAt)));
 
     const result = { players };
-    this.#cache = { key, at: Date.now(), result };
+    if (fetchFailed) {
+      // A transient Plex outage produced a degraded result — skip the cache
+      // write so the next request recomputes instead of pinning the blanked
+      // strip behind the mtime key for up to HARD_TTL_MS.
+      this.#logger.warn?.('piano.activity.cache_skipped', { players: players.length, shows: shows.length });
+    } else {
+      this.#cache = { key, at: Date.now(), result };
+    }
     this.#logger.info?.('piano.activity.computed', { players: players.length, shows: shows.length });
     return result;
   }
