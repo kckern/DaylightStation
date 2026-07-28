@@ -26,7 +26,7 @@
  * anything.
  */
 import { reduceSession, createEvent } from '#domains/school/sessions/sessionEvents.mjs';
-import { questionItemIds } from '#domains/school/documents/documentValidation.mjs';
+import { questionItemIds, questionPrompts } from '#domains/school/documents/documentValidation.mjs';
 
 export class GradeSubmission {
   #curriculum; #sessions; #reviewQueue; #grader; #bankReader; #grownUps; #clock; #logger;
@@ -139,6 +139,14 @@ export class GradeSubmission {
       bankItemIds.has(itemId) && !marked.has(itemId) && given !== undefined && given !== null && given !== ''
     ));
 
+    // A machine mark is recorded in the same durable verdict sheet a parent
+    // reads, so it carries the same two fields: what was asked, and how the
+    // unit says to mark it. Without them the record reads differently depending
+    // on who marked it.
+    const bankPrompts = new Map((bank?.items ?? []).map((i) => [i.id, i.prompt ?? null]));
+    const printedQuestions = questionPrompts(document);
+    const rubric = typeof unit?.review?.rubric === 'string' ? unit.review.rubric : null;
+
     const attemptIds = [...state.attemptIds];
     if (gradable.length) {
       const { sessionId: quizSessionId } = this.#grader.openSession({
@@ -151,7 +159,11 @@ export class GradeSubmission {
         if (result.attemptId) attemptIds.push(result.attemptId);
         machineMarks.push({
           sessionId, itemId, learnerId: state.learnerId, unitId: state.unitId,
-          reason: 'machine', given, prompt: null, enqueuedAt: nowIso,
+          reason: 'machine', given,
+          prompt: bankPrompts.get(itemId) ?? printedQuestions.get(itemId)?.prompt ?? null,
+          questionNumber: printedQuestions.get(itemId)?.number ?? null,
+          rubric,
+          enqueuedAt: nowIso,
           verdict: result.correct === true ? 'correct' : 'incorrect',
           gradedBy: 'engine', gradedAt: nowIso, attemptId: result.attemptId ?? null,
         });

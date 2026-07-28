@@ -93,6 +93,55 @@ export function questionItemIds(document) {
   return ids;
 }
 
+/**
+ * Markdown as a person reads it: one line, no emphasis marks, no heading hashes.
+ * A review screen shows this next to what the child wrote, so `**simplest
+ * form**` has to arrive as `simplest form`.
+ */
+function plainText(md) {
+  if (typeof md !== 'string') return '';
+  return md
+    .replace(/`{1,3}([^`]*)`{1,3}/g, '$1')
+    .replace(/[*_]{1,3}([^*_]+)[*_]{1,3}/g, '$1')
+    .replace(/^\s{0,3}#{1,6}\s+/gm, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+/**
+ * What each question on this sheet ASKS, keyed by itemId.
+ *
+ * The review queue used to be able to show a parent an itemId and the unit's
+ * whole-sheet rubric — the same sentence on every row — so six marked questions
+ * were indistinguishable. The printed wording is right here in the blocks.
+ *
+ * Only the question's own `rich_text` is used: a `math` block is the problem
+ * itself and would arrive as raw TeX, and the child is holding the paper. The
+ * NUMBER is carried for exactly that reason — it is how a parent finds the
+ * question on the sheet in their hand.
+ *
+ * @param {object} document
+ * @returns {Map<string, {number: number|null, prompt: string|null}>}
+ */
+export function questionPrompts(document) {
+  const out = new Map();
+  walkBlocks(document?.blocks, (block, _at, question) => {
+    if (block.type === 'question' && typeof block.itemId === 'string' && !out.has(block.itemId)) {
+      out.set(block.itemId, {
+        number: Number.isFinite(block.number) ? block.number : null,
+        prompt: null,
+      });
+    }
+    if (block.type !== 'rich_text' || !question || typeof question.itemId !== 'string') return;
+    const text = plainText(block.md);
+    if (!text) return;
+    const entry = out.get(question.itemId);
+    if (!entry) return;
+    entry.prompt = entry.prompt ? `${entry.prompt} ${text}` : text;
+  });
+  return out;
+}
+
 // Answers can hide anywhere, including inside a renderer-owned plot/geometry
 // spec, so this walk is over arbitrary values rather than the block tree. Paths
 // are reported in the same dotted notation as block errors ('' is the document

@@ -19,7 +19,7 @@ import {
 } from '#testlib/school/lifecycleFakes.mjs';
 import {
   rawUnits, rawDocuments, rawManifests, BANK_IDS, printedFormMap, correctBubbles,
-  fixtureBank, fixtureDocument, OMR_BANK_ID, MEDIA_BANK_ID, OMR_DOCUMENT_ID,
+  fixtureBank, fixtureDocument, fixtureUnit, OMR_BANK_ID, MEDIA_BANK_ID, OMR_DOCUMENT_ID,
   WORKSHEET_UNIT, WORKSHEET_DOCUMENT_ID, OMR_UNIT,
 } from '#testlib/school/lifecycleFixtures.mjs';
 
@@ -128,8 +128,9 @@ describe('SubmitPaperWork classification', () => {
     });
     expect(result.scorable).toEqual({});
     expect(result.review.map((r) => r.reason)).toEqual(written.map(() => 'free_response'));
-    // The prompt a parent sees IS the unit's own rubric, not a paraphrase.
-    expect(result.review[0].prompt).toContain('Mark each');
+    // The unit's own rubric rides along as the rubric — it is HOW to mark, and
+    // it is the same on every item, which is why it is not the prompt.
+    expect(result.review[0].rubric).toContain('Mark each');
   });
 
   it('carries the learner and unit into the queue so a parent knows whose work it is', async () => {
@@ -328,5 +329,78 @@ describe('who may mark a child\'s work', () => {
   it('cannot be built without a grown-up gate', () => {
     expect(() => new GradeSubmission({ curriculum: {}, sessions, reviewQueue, grader, clock: clock.now }))
       .toThrow(/grownUps/);
+  });
+});
+
+/**
+ * WHAT WAS ASKED, AND HOW TO MARK IT — two different things.
+ *
+ * Every review item used to carry the unit's whole-sheet rubric in a field
+ * called `prompt`. A parent grading six questions read the same sentence six
+ * times and could not tell which question they were marking. The question is on
+ * the bank item (and, for a sheet with no bank, printed in the document); the
+ * rubric is the unit's. Both belong on the item, under their own names.
+ */
+describe('a review item says which question it is', () => {
+  it('carries the BANK item\'s own prompt, different on every question', async () => {
+    await issued(OMR_UNIT);
+    const result = await submit.execute({ sessionId: SID, entries: {}, blank: PRINTED });
+
+    const prompts = Object.fromEntries(result.review.map((i) => [i.itemId, i.prompt]));
+    expect(prompts['u3-q1']).toBe(OMR_BANK.items.find((i) => i.id === 'u3-q1').prompt);
+    expect(new Set(Object.values(prompts)).size).toBe(PRINTED.length);
+  });
+
+  it('carries the question NUMBER, which is how a parent finds it on the paper', async () => {
+    await issued(OMR_UNIT);
+    const result = await submit.execute({ sessionId: SID, entries: {}, blank: PRINTED });
+    expect(result.review.map((i) => i.questionNumber)).toEqual([1, 2, 3, 4, 5, 6]);
+  });
+
+  it('keeps the unit\'s marking rubric as its own field, not as the prompt', async () => {
+    await issued(WORKSHEET_UNIT);
+    const printed = questionItemIds(fixtureDocument(WORKSHEET_DOCUMENT_ID));
+    const result = await submit.execute({ sessionId: SID, entries: {}, blank: printed });
+
+    const rubric = fixtureUnit(WORKSHEET_UNIT).review.rubric;
+    expect(result.review.every((i) => i.rubric === rubric)).toBe(true);
+    // ...and the prompt is the PRINTED question, which differs per item.
+    expect(result.review[0].prompt).toBe('Add. Write the result in simplest form.');
+    expect(new Set(result.review.map((i) => i.prompt)).size).toBeGreaterThan(1);
+  });
+
+  it('falls back to the PRINTED question when the bank has no wording, and to nothing when neither does', async () => {
+    await issued(OMR_UNIT);
+    // A bank whose items carry no prompt at all — the sheet is then the only
+    // place the question exists.
+    BANKS[OMR_BANK_ID] = {
+      ...fixtureBank(OMR_BANK_ID),
+      items: OMR_BANK.items.map(({ prompt, ...rest }) => rest),
+    };
+    try {
+      const result = await submit.execute({ sessionId: SID, entries: {}, blank: PRINTED });
+      const prompts = Object.fromEntries(result.review.map((i) => [i.itemId, i.prompt]));
+      // u3-q3 is printed with a stem; u3-q1 is a bare equation, so there is no
+      // wording to show and nothing is invented.
+      expect(prompts['u3-q3']).toBe('Which fraction is equivalent to the one below?');
+      expect(prompts['u3-q1']).toBeNull();
+      expect(result.review.every((i) => typeof i.questionNumber === 'number')).toBe(true);
+    } finally {
+      BANKS[OMR_BANK_ID] = OMR_BANK;
+    }
+  });
+
+  it('puts the same two fields on a MACHINE mark, so the record reads the same later', async () => {
+    await issued(OMR_UNIT);
+    await submit.execute({ sessionId: SID, entries: RIGHT });
+    await grade.execute({ sessionId: SID, entries: RIGHT });
+
+    const queue = await reviewQueue.listForSession(SID);
+    expect(queue).toHaveLength(PRINTED.length);
+    expect(queue[0]).toMatchObject({
+      reason: 'machine',
+      prompt: OMR_BANK.items.find((i) => i.id === queue[0].itemId).prompt,
+      questionNumber: 1,
+    });
   });
 });

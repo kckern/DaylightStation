@@ -10,10 +10,18 @@
  * Items are keyed by `(sessionId, itemId)`: enqueueing the same item twice is a
  * retry, not a second thing to mark.
  *
+ * `prompt` is WHAT WAS ASKED — the bank item's own question, or the wording
+ * printed on the sheet when there is no bank — and `rubric` is HOW THIS UNIT
+ * SAYS TO MARK IT, which is the same sentence for every item on a sheet. They
+ * were one field once, holding the rubric, and a parent grading six questions
+ * read the same line six times with nothing to tell them apart.
+ *
  * @typedef {{ sessionId: string, itemId: string, learnerId: string|null,
- *             unitId: string|null, reason: 'ambiguous'|'blank'|'free_response'|'unscorable',
- *             given: *, prompt: string|null, enqueuedAt: string,
- *             verdict: 'correct'|'incorrect'|null, gradedBy: string|null, gradedAt: string|null }} ReviewItem
+ *             unitId: string|null, reason: 'ambiguous'|'blank'|'free_response'|'unscorable'|'machine',
+ *             given: *, prompt: string|null, questionNumber: number|null,
+ *             rubric: string|null, enqueuedAt: string,
+ *             verdict: 'correct'|'incorrect'|null, gradedBy: string|null,
+ *             gradedAt: string|null }} ReviewItem
  */
 export class IReviewQueue {
   /**

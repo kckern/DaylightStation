@@ -17,16 +17,11 @@
  *  - **Optimism is banned.** An item leaves the list when the SERVER says it is
  *    resolved, never when the button is clicked.
  *
- * WHAT THIS SCREEN CANNOT SHOW, AND WHY (all backend gaps, not omissions here):
- *  - The unit's TITLE and OBJECTIVES are on the curriculum unit, and no HTTP
- *    route serves the lifecycle catalog. Only `unitId` is available.
- *  - The QUESTION PROMPT is on the bank item and is never copied onto the review
- *    item. The field named `prompt` actually holds the unit's whole-sheet marking
- *    RUBRIC, identical on every item of a sheet, so it is labelled as such below
- *    rather than passed off as the question.
- *  - A per-item NOTE has nowhere to go: `POST .../review/:itemId` reads only
- *    `{ verdict, gradedBy }` and `IReviewQueue.resolve` stores no comment. A note
- *    box here would throw the parent's words away, so there isn't one.
+ * TWO DIFFERENT THINGS, SHOWN AS TWO DIFFERENT THINGS. `prompt` is what the
+ * question ASKED — the bank item's own wording, or the sheet's — and it differs
+ * on every row. `rubric` is how the unit says to mark the sheet, and it is the
+ * same sentence on every row. They used to be one field holding the rubric, so a
+ * parent marking six questions read the same line six times.
  *
  * @module Admin/School/ReviewQueue
  */
@@ -260,17 +255,34 @@ export default function ReviewQueue() {
                 <Code>{item.unitId || 'unknown'}</Code>
                 <Text size="sm" c="dimmed">Question</Text>
                 <Code>{item.itemId}</Code>
+                {Number.isFinite(item.questionNumber) && (
+                  <Badge variant="outline" color="gray">Question {item.questionNumber}</Badge>
+                )}
               </Group>
 
               <Divider my="sm" />
 
-              <Text size="sm" fw={600} mb={4}>What they put down</Text>
+              {/* WHAT WAS ASKED comes first: a parent cannot mark an answer
+                  they cannot see the question for. It is the bank item's own
+                  wording (or the sheet's), so it differs on every row — unlike
+                  the rubric below, which is the same for the whole sheet. */}
+              <Text size="sm" fw={600} mb={4}>What was asked</Text>
+              {item.prompt ? (
+                <Text size="sm" className="school-admin__prompt">{item.prompt}</Text>
+              ) : (
+                <Text size="sm" c="dimmed" fs="italic">
+                  We do not have the wording of this question — it is
+                  {' '}<Code>{item.itemId}</Code>{Number.isFinite(item.questionNumber) ? `, question ${item.questionNumber} on the sheet.` : ' on the sheet.'}
+                </Text>
+              )}
+
+              <Text size="sm" fw={600} mt="sm" mb={4}>What they put down</Text>
               <SubmittedAnswer given={item.given} />
 
-              {item.prompt && (
+              {item.rubric && (
                 <>
                   <Text size="sm" fw={600} mt="sm" mb={4}>How this unit says to mark it</Text>
-                  <Text size="sm" c="dimmed" className="school-admin__rubric">{item.prompt}</Text>
+                  <Text size="sm" c="dimmed" className="school-admin__rubric">{item.rubric}</Text>
                 </>
               )}
 

@@ -40,7 +40,9 @@ const item = (over = {}) => ({
   unitId: 'math-fractions.03',
   reason: 'free_response',
   given: 'Because you flip the second fraction over',
-  prompt: 'Mark each working shown, not only the final number.',
+  prompt: 'Why do you turn the second fraction upside down when dividing?',
+  questionNumber: 3,
+  rubric: 'Mark each working shown, not only the final number.',
   enqueuedAt: '2026-07-27T10:00:00.000Z',
   verdict: null,
   gradedBy: null,
@@ -69,8 +71,41 @@ describe('ReviewQueue — showing the work', () => {
     expect(screen.getByText('math-fractions.03')).toBeInTheDocument();
     expect(screen.getByText('q3')).toBeInTheDocument();
     expect(screen.getByText('Because you flip the second fraction over')).toBeInTheDocument();
-    expect(screen.getByText(/Mark each working shown/)).toBeInTheDocument();
     expect(screen.getByText('Written answer')).toBeInTheDocument();
+  });
+
+  it('shows WHAT WAS ASKED and HOW TO MARK IT as two different things', async () => {
+    renderQueue();
+
+    // The question, under its own heading and with the number printed on the sheet.
+    expect(await screen.findByText(/Why do you turn the second fraction upside down/)).toBeInTheDocument();
+    expect(screen.getByText(/What was asked/i)).toBeInTheDocument();
+    expect(screen.getByText(/Question 3/)).toBeInTheDocument();
+    // The unit's rubric, which is the same on every item of the sheet.
+    expect(screen.getByText(/Mark each working shown/)).toBeInTheDocument();
+    expect(screen.getByText(/How this unit says to mark it/i)).toBeInTheDocument();
+  });
+
+  it('two questions off the same sheet read differently', async () => {
+    pendingReviewMock.mockResolvedValue({
+      items: [
+        item({ itemId: 'q3', prompt: 'What is 1/2 + 1/3?', questionNumber: 3 }),
+        item({ itemId: 'q4', prompt: 'What is 3/4 - 1/3?', questionNumber: 4 }),
+      ],
+    });
+    renderQueue();
+
+    expect(await screen.findByText('What is 1/2 + 1/3?')).toBeInTheDocument();
+    expect(screen.getByText('What is 3/4 - 1/3?')).toBeInTheDocument();
+  });
+
+  it('says the question text is missing rather than showing the rubric in its place', async () => {
+    pendingReviewMock.mockResolvedValue({ items: [item({ prompt: null, questionNumber: null })] });
+    renderQueue();
+
+    expect(await screen.findByText(/We do not have the wording of this question/i)).toBeInTheDocument();
+    // The rubric is still there, still labelled as the rubric.
+    expect(screen.getByText(/How this unit says to mark it/i)).toBeInTheDocument();
   });
 
   it('says so in words when the child wrote nothing, rather than showing an empty box', async () => {
