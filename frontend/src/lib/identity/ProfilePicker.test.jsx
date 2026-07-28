@@ -12,6 +12,8 @@ describe('ProfilePicker', () => {
     expect(screen.getByText('KC')).toBeTruthy();
     expect(screen.getByText('User_3')).toBeTruthy();
     expect(screen.queryByText('Guest')).toBeNull();
+    // Big faces request the larger server-resized variant, not the 96px default
+    expect(screen.getByAltText('KC').getAttribute('src')).toBe('/api/v1/static/img/users/kc?w=192');
   });
   it('tapping a face calls onPick with that id', () => {
     const onPick = vi.fn();
