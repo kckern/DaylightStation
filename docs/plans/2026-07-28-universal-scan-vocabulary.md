@@ -469,6 +469,16 @@ Expected: FAIL — module not found
  */
 import { parseScanCode } from '#domains/scan/ScanCode.mjs';
 
+// NOTE — the `this.#logger.x?.(...)` calls in this sketch are DEFECTIVE and were
+// corrected during implementation. `?.` guards that the method EXISTS, not that
+// it BEHAVES. An injected logger whose methods throw makes `dispatch` reject,
+// violating the never-falls-through invariant — and the worst path is a
+// SUCCESSFUL scan, where a throwing debug emit is caught by the handler's own
+// catch, whose error emit throws again and escapes. The default `console` masks
+// this because Node swallows console write errors; composition injects a real
+// structured logger, which does not. Route every log through one `emit()` helper
+// with its own try/catch. Do not copy this sketch's logging into Task 6.
+
 /** @typedef {{status:string, domain:string|null, message:string,
  *             physical:'worksheet'|'receipt'|'none', printed:boolean,
  *             effect:object|null}} Outcome */
