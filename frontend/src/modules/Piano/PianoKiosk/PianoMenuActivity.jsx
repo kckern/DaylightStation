@@ -65,7 +65,7 @@ export default function PianoMenuActivity({ onOpenCourse }) {
                   type="button"
                   key={c.courseId}
                   className="piano-menu-activity__course"
-                  onClick={() => onOpenCourse?.(c.courseId)}
+                  onClick={() => onOpenCourse?.(c.courseId, u.userId)}
                   title={`${u.name} — ${c.courseTitle}: ${c.completed}/${c.total}`}
                 >
                   {c.thumbnail ? (

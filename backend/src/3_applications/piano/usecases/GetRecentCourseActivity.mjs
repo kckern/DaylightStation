@@ -151,30 +151,36 @@ export class GetRecentCourseActivity {
         const items = excludeReferenceUnits(rawItems, show.id, referenceUnits);
         if (!items.length) continue;
         const enriched = this.#userVideoProgressStore.enrich(items, userId);
-        // Course-level aggregation + the player's most recent lecture (its
-        // unit is their "current module").
+        // Per-unit aggregation. The "current module" is the most recently
+        // active INCOMPLETE unit — a finished one-off unit (e.g. a single
+        // intro lecture played last) must not carry the day with 100% while
+        // the player is mid-way through a real module. Only when every
+        // touched unit is complete does the newest one (at 100%) show.
         let courseCompleted = 0;
-        let lastPlayedAt = null;
-        let currentUnitId = null;
+        let newestOverall = null;
+        const units = new Map(); // unitId -> { completed, total, lastPlayed }
         for (const it of enriched) {
-          if (it.userWatched) courseCompleted += 1;
+          const unitId = unitOf(it);
+          let rec = units.get(unitId);
+          if (!rec) { rec = { completed: 0, total: 0, lastPlayed: null }; units.set(unitId, rec); }
+          rec.total += 1;
+          if (it.userWatched) { rec.completed += 1; courseCompleted += 1; }
           const lp = it.userLastPlayedAt;
-          if (lp && (!lastPlayedAt || String(lp) > String(lastPlayedAt))) {
-            lastPlayedAt = lp;
-            currentUnitId = unitOf(it);
+          if (lp) {
+            if (!rec.lastPlayed || String(lp) > String(rec.lastPlayed)) rec.lastPlayed = lp;
+            if (!newestOverall || String(lp) > String(newestOverall)) newestOverall = lp;
           }
         }
-        if (!lastPlayedAt) continue;
-        // Module-scoped progress: percent through the CURRENT unit, not the
-        // whole program (motivating on multi-hundred-lecture courses). Flat
-        // single-unit courses degrade to whole-course numbers naturally.
-        const unitItems = enriched.filter((it) => unitOf(it) === currentUnitId);
-        const unitCompleted = unitItems.filter((it) => it.userWatched).length;
+        if (!newestOverall) continue;
+        const active = [...units.values()].filter((r) => r.lastPlayed);
+        const incomplete = active.filter((r) => r.completed < r.total);
+        const pool = incomplete.length ? incomplete : active;
+        const current = pool.reduce((a, b) => (String(b.lastPlayed) > String(a.lastPlayed) ? b : a));
         touched.push({
           show,
-          lastPlayedAt,
-          completed: unitCompleted,
-          total: unitItems.length,
+          lastPlayedAt: newestOverall,
+          completed: current.completed,
+          total: current.total,
           courseCompleted: enriched.length > 0 && courseCompleted >= enriched.length,
         });
       }

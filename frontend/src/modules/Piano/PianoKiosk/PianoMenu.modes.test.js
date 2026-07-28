@@ -17,6 +17,9 @@ vi.mock('./PianoConfig.jsx', () => ({
     config: { keyboard: { startNote: 21, endNote: 108 } },
   }),
 }));
+vi.mock('./PianoUserContext.jsx', () => ({
+  usePianoUser: () => ({ setCurrentUser: () => {} }),
+}));
 vi.mock('./PianoMidiContext.jsx', () => ({
   usePianoMidi: () => ({ pressNote: () => {}, releaseNote: () => {} }),
 }));
