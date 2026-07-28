@@ -11,9 +11,14 @@
  * A missing record is not an error. A child with no assignments gets an agenda
  * that says so, which is a better answer than a failure at the printer.
  *
+ * WRITES ARE ADULT-ONLY, and that is enforced by `SetAssignments`, not here.
+ * This port is dumb storage: it will write whatever record it is handed, which
+ * is precisely why nothing but the use case may call `put`.
+ *
  * @typedef {{ learnerId: string,
  *             courses: Array<string|{courseId: string, elective?: boolean}>,
  *             units: Array<string|{unitId: string, elective?: boolean}>,
+ *             assignedBy?: string|null,
  *             updatedAt?: string }} AssignmentRecord
  */
 export class IAssignmentStore {

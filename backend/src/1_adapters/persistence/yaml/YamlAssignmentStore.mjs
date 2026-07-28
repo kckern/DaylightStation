@@ -71,6 +71,10 @@ export class YamlAssignmentStore extends IAssignmentStore {
       learnerId,
       courses: Array.isArray(record.courses) ? record.courses : [],
       units: Array.isArray(record.units) ? record.units : [],
+      // WHO changed the plan. The write is adult-only (SetAssignments), and the
+      // record is the only place that fact survives — a plan that changed with
+      // nobody's name on it is a plan nobody can ask about.
+      assignedBy: typeof record.assignedBy === 'string' && record.assignedBy ? record.assignedBy : null,
       updatedAt: record.updatedAt ?? null,
     };
     const queued = this.#writeChain.then(async () => {

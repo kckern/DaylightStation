@@ -3,8 +3,12 @@
  *
  * Two properties matter more than the rest: reassignment is adults only, and the
  * screen writes PLANNER CONFIG and nothing else. The second is asserted by
- * pinning the exact call shape — `putAssignment` with courses and units, no
- * other API surface reachable.
+ * pinning the exact call shape — `putAssignment` with courses, units and the
+ * adult who made the change, no other API surface reachable.
+ *
+ * `assignedBy` is not decoration. The server refuses a planning write that does
+ * not name a grown-up on the roster, so a screen that stopped sending it would
+ * save nothing at all.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
@@ -128,6 +132,7 @@ describe('CurriculumPlanner — writing a plan', () => {
     await waitFor(() => expect(putAssignmentMock).toHaveBeenCalledWith('learner-two', {
       courses: [{ courseId: 'math-fractions', elective: true }],
       units: [{ unitId: 'art.01', elective: true }],
+      assignedBy: 'dad',
     }));
   });
 
@@ -147,6 +152,7 @@ describe('CurriculumPlanner — writing a plan', () => {
         { courseId: 'first-course', elective: false },
       ],
       units: [],
+      assignedBy: 'dad',
     }));
   });
 
@@ -160,6 +166,7 @@ describe('CurriculumPlanner — writing a plan', () => {
     await waitFor(() => expect(putAssignmentMock).toHaveBeenCalledWith('learner-two', {
       courses: [],
       units: [{ unitId: 'art.01', elective: true }],
+      assignedBy: 'dad',
     }));
   });
 

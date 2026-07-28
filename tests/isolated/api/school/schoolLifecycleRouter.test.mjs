@@ -35,6 +35,32 @@ const assignments = {
   put: async (record) => record,
 };
 
+/**
+ * The two parent-only writes are use cases now, not raw store calls, because the
+ * refusal has to survive the router being called directly. Stubbed here to their
+ * ERROR NAMES so this file keeps testing the one thing it is for — which outcome
+ * becomes which status — while `lifecycleParentWrites.test.mjs` wires the real
+ * ones and proves the refusal itself.
+ */
+const named = (name, message) => Object.assign(new Error(message), { name });
+
+const resolveReviewItem = {
+  execute: async ({ sessionId, itemId, verdict, gradedBy, note = null }) => {
+    if (gradedBy === 'kid1') throw named('GuestForbiddenError', 'Only a grown-up can sign off schoolwork');
+    if (verdict !== 'correct' && verdict !== 'incorrect') throw named('ValidationError', `verdict must be correct|incorrect, got: ${verdict}`);
+    if (itemId === 'ghost') throw named('EntityNotFoundError', `review-item not found: ${sessionId}/${itemId}`);
+    return { sessionId, itemId, verdict, gradedBy, note, gradedAt: '2026-07-27T09:00:00.000Z' };
+  },
+};
+
+const setAssignments = {
+  execute: async ({ learnerId, courses, units, assignedBy }) => {
+    if (assignedBy === 'kid1') throw named('GuestForbiddenError', 'Only a grown-up can change what a child is assigned');
+    if (!Array.isArray(courses) || !Array.isArray(units)) throw named('ValidationError', 'courses and units must be arrays');
+    return { learnerId, courses, units, assignedBy, updatedAt: '2026-07-27T09:00:00.000Z' };
+  },
+};
+
 const sessions = {
   listForLearner: async () => [{ sessionId: 'ses_1', state: 'issued' }],
   readEvents: async () => [{ type: 'created', seq: 1 }],
@@ -66,8 +92,9 @@ beforeAll(async () => {
     openRemediation: { execute: async ({ sessionId }) => ({ status: sessionId === 'ses_open' ? 'already_opened' : 'opened' }) },
     assignments,
     reviewQueue,
+    resolveReviewItem,
+    setAssignments,
     sessions,
-    clock: () => new Date('2026-07-27T09:00:00.000Z'),
     logger: silent,
   }));
   app.use(errorHandlerMiddleware({ logger: silent, shape: 'string' }));
@@ -200,24 +227,39 @@ describe('the parent surface', () => {
     expect(await r.json()).toMatchObject({ verdict: 'correct', gradedBy: 'parent', gradedAt: '2026-07-27T09:00:00.000Z' });
   });
 
+  it('passes a parent\'s note through to the use case', async () => {
+    const r = await post('/sessions/ses_1/review/q3', { verdict: 'incorrect', gradedBy: 'parent', note: 'Check the denominator.' });
+    expect(await r.json()).toMatchObject({ note: 'Check the denominator.' });
+  });
+
   it('400s a verdict outside the closed set', async () => {
-    expect((await post('/sessions/ses_1/review/q3', { verdict: 'maybe' })).status).toBe(400);
+    expect((await post('/sessions/ses_1/review/q3', { verdict: 'maybe', gradedBy: 'parent' })).status).toBe(400);
   });
 
   it('404s a verdict on an item nobody queued', async () => {
-    expect((await post('/sessions/ses_1/review/ghost', { verdict: 'correct' })).status).toBe(404);
+    expect((await post('/sessions/ses_1/review/ghost', { verdict: 'correct', gradedBy: 'parent' })).status).toBe(404);
+  });
+
+  it('403s a sign-off the use case refused, the same status the print path returns', async () => {
+    const r = await post('/sessions/ses_1/review/q3', { verdict: 'correct', gradedBy: 'kid1' });
+    expect(r.status).toBe(403);
+    expect((await r.json()).error).toMatch(/grown-up/i);
   });
 
   it('reads and writes assignments', async () => {
     expect((await fetch(`${base}/assignments`)).status).toBe(200);
     expect((await fetch(`${base}/assignments/kid1`)).status).toBe(200);
     expect((await fetch(`${base}/assignments/nobody`)).status).toBe(404);
-    const r = await put('/assignments/kid2', { courses: ['history'], units: [] });
-    expect(await r.json()).toMatchObject({ learnerId: 'kid2', courses: ['history'], updatedAt: '2026-07-27T09:00:00.000Z' });
+    const r = await put('/assignments/kid2', { courses: ['history'], units: [], assignedBy: 'parent' });
+    expect(await r.json()).toMatchObject({ learnerId: 'kid2', courses: ['history'], assignedBy: 'parent', updatedAt: '2026-07-27T09:00:00.000Z' });
   });
 
   it('400s an assignment that is not a pair of lists', async () => {
-    expect((await put('/assignments/kid2', { courses: 'history' })).status).toBe(400);
+    expect((await put('/assignments/kid2', { courses: 'history', assignedBy: 'parent' })).status).toBe(400);
+  });
+
+  it('403s a planning write the use case refused', async () => {
+    expect((await put('/assignments/kid2', { courses: [], units: [], assignedBy: 'kid1' })).status).toBe(403);
   });
 });
 

@@ -17,11 +17,13 @@
  *    remembered id that is now a child, or has left the roster, yields
  *    `canSignOff: false` — stale or tampered storage cannot buy authority.
  *
- * NOTE FOR ANYONE READING THIS AS A SECURITY BOUNDARY: it is not one. The API
- * accepts any `gradedBy` string without checking it against the roster (see
- * `POST /lifecycle/sessions/:id/review/:itemId`). This hook keeps a child from
- * marking their own work through the UI; it cannot keep anything from doing so
- * through curl.
+ * THIS IS NOT THE BOUNDARY — it is the affordance in front of it. The server
+ * applies the same rule in the application layer (`GrownUpGate`, over
+ * `#domains/school/people.mjs`): `POST /lifecycle/sessions/:id/review/:itemId`
+ * and `PUT /lifecycle/assignments/:learnerId` both check the id they are handed
+ * against the household roster and answer 403 for a child, an unknown id, or
+ * none at all. What this hook buys is a screen that does not offer a write it
+ * knows will be refused, and a name to attach when it is allowed.
  *
  * @module Admin/School/useGrader
  */
