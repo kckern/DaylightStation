@@ -14,6 +14,26 @@
  *   structural assertions and obvious in an image. Both spike-round-one bugs
  *   were of exactly this kind.
  *
+ * WHY THERE ARE TWO TOLERANCES
+ *   A whole-page budget has to be loose enough to absorb antialiasing jitter
+ *   across a corpus of prose, and 0.5% of a Letter page is a LOT of ink: adding
+ *   the QR symbol to the action box — turning an empty reserved box into a
+ *   scannable ticket — moved 0.33% of a page and failed nothing. Tightening the
+ *   page number instead would make every prose snapshot brittle, and the next
+ *   person to hit a flake would loosen it again.
+ *
+ *   So marks a MACHINE reads are held to their own, far tighter budget inside
+ *   their own small boxes (`MARK_MAX_DIFF_RATIO`), while prose keeps the page
+ *   budget (`MAX_DIFF_RATIO`). A bubble row is ~1.5% of a page; the QR box is
+ *   ~0.3%; a defect that is invisible as a fraction of a page is enormous as a
+ *   fraction of the box it happened in.
+ *
+ *   The boxes are DERIVED from what the renderer says it drew (`formMap` rows
+ *   and `codeMap` entries), padded generously so a mark that moved is compared
+ *   against its old position rather than following the box. That the renderer's
+ *   claims match the ink at all is a different question, and the optical suite
+ *   (`../optical.test.mjs`) is what answers it.
+ *
  * REGENERATING SNAPSHOTS
  *   UPDATE_GOLDEN=1 npx vitest run tests/isolated/rendering/school/golden/
  *   Regenerate ONLY after looking at the new pages. A snapshot updated to match
@@ -29,13 +49,12 @@
  */
 
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
-import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import yaml from 'js-yaml';
 
 import { createDocumentPdfRenderer } from '#rendering/school/documents/DocumentPdfRenderer.mjs';
+import { requirePdftoppm as requirePoppler, rasterizePdfPages } from '#testlib/school/rasterize.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const CORPUS_DIR = path.join(HERE, 'corpus');
@@ -44,8 +63,21 @@ const FIXTURE_DIR = path.join(HERE, '..', '..', '..', '..', '_fixtures', 'school
 
 /** Rasterization density. 150dpi is legible enough to judge and small enough to commit. */
 export const RENDER_DPI = 150;
-/** A page differing by more than this fraction of its pixels is a failure. */
+/**
+ * PROSE tier: a page differing by more than this fraction of its pixels fails.
+ * Loose on purpose — it has to absorb antialiasing across a whole corpus.
+ */
 export const MAX_DIFF_RATIO = 0.005;
+/**
+ * MACHINE-READ tier: inside a bubble row or a code box, this fraction. Five
+ * times tighter than the page, and applied to a box one or two orders of
+ * magnitude smaller, so a mark that moved or vanished cannot hide in a page's
+ * worth of pixels. Not zero: a poppler or freetype version bump legitimately
+ * re-shades edge pixels, and a gate that fails on that gets switched off.
+ */
+export const MARK_MAX_DIFF_RATIO = 0.001;
+/** Padding around a derived mark box, in points. */
+const MARK_REGION_PAD_PT = 6;
 /** Per-channel tolerance, to absorb nothing more than encoder rounding. */
 const CHANNEL_TOLERANCE = 8;
 
@@ -107,37 +139,61 @@ export async function renderCase(testCase) {
   return renderer.render(testCase.document(), options);
 }
 
-export function requirePdftoppm() {
-  try {
-    execFileSync('pdftoppm', ['-v'], { stdio: 'pipe' });
-  } catch (err) {
-    throw new Error(
-      'The School golden page suite needs poppler\'s `pdftoppm` to rasterize PDFs, and it is not '
-      + 'on PATH. Install it (macOS: `brew install poppler`; Debian/Ubuntu: `apt install '
-      + 'poppler-utils`) and re-run. This suite deliberately fails instead of skipping: a golden '
-      + `test that quietly passes is checking nothing. (${err.message})`,
-    );
-  }
-}
+export const requirePdftoppm = requirePoppler;
 
 /**
- * Rasterize a PDF buffer to one PNG buffer per page.
+ * Rasterize a PDF buffer to one PNG buffer per page, at golden density.
  * @returns {Buffer[]} page images in order
  */
 export function rasterizePages(pdf, name) {
-  requirePdftoppm();
-  const workDir = fs.mkdtempSync(path.join(os.tmpdir(), `school-golden-${name}-`));
-  try {
-    const pdfPath = path.join(workDir, `${name}.pdf`);
-    fs.writeFileSync(pdfPath, pdf);
-    execFileSync('pdftoppm', ['-png', '-r', String(RENDER_DPI), pdfPath, path.join(workDir, 'page')], { stdio: 'pipe' });
-    return fs.readdirSync(workDir)
-      .filter((file) => file.startsWith('page') && file.endsWith('.png'))
-      .sort()
-      .map((file) => fs.readFileSync(path.join(workDir, file)));
-  } finally {
-    fs.rmSync(workDir, { recursive: true, force: true });
+  return rasterizePdfPages(pdf, { dpi: RENDER_DPI, name });
+}
+
+/**
+ * The machine-read boxes on a rendered document, in points.
+ *
+ * One box per BUBBLE ROW rather than per bubble: a row is what the reader
+ * treats as a single column, the bubbles in it share a y, and a box that spans
+ * the row catches a bubble that slid sideways as well as one that vanished.
+ * One box per printed code, padded past its quiet zone.
+ *
+ * @param {{formMap: Object|null, codeMap: Array}} rendered
+ * @returns {Array<{name:string, page:number, xPt:number, yPt:number, widthPt:number, heightPt:number}>}
+ */
+export function markRegionsFor(rendered) {
+  const regions = [];
+  const rows = new Map();
+  for (const mark of rendered.formMap?.marks ?? []) {
+    const key = `${mark.page ?? 1}:${mark.yPt.toFixed(2)}`;
+    if (!rows.has(key)) rows.set(key, []);
+    rows.get(key).push(mark);
   }
+  for (const [key, marks] of rows) {
+    const page = marks[0].page ?? 1;
+    const radius = Math.max(...marks.map((m) => m.rPt));
+    const left = Math.min(...marks.map((m) => m.xPt)) - radius - MARK_REGION_PAD_PT;
+    const right = Math.max(...marks.map((m) => m.xPt)) + radius + MARK_REGION_PAD_PT;
+    const centreY = marks[0].yPt;
+    regions.push({
+      name: `bubble-row ${key} (${marks[0].itemId})`,
+      page,
+      xPt: left,
+      yPt: centreY - radius - MARK_REGION_PAD_PT,
+      widthPt: right - left,
+      heightPt: 2 * (radius + MARK_REGION_PAD_PT),
+    });
+  }
+  for (const code of rendered.codeMap ?? []) {
+    regions.push({
+      name: `code-box (${code.text})`,
+      page: code.page ?? 1,
+      xPt: code.xPt - MARK_REGION_PAD_PT,
+      yPt: code.yPt - MARK_REGION_PAD_PT,
+      widthPt: code.sizePt + 2 * MARK_REGION_PAD_PT,
+      heightPt: code.sizePt + 2 * MARK_REGION_PAD_PT,
+    });
+  }
+  return regions;
 }
 
 const snapshotPath = (name, pageNumber) => path.join(SNAPSHOT_DIR, `${name}-p${String(pageNumber).padStart(2, '0')}.png`);
@@ -168,12 +224,40 @@ async function writeDiffImage(actual, expected, target) {
   fs.writeFileSync(target, canvas.toBuffer('image/png'));
 }
 
+/** Fraction of differing pixels inside a pixel-space box (whole image when null). */
+function diffRatioIn(actual, expected, box) {
+  const x0 = box ? Math.max(0, Math.floor(box.x)) : 0;
+  const y0 = box ? Math.max(0, Math.floor(box.y)) : 0;
+  const x1 = box ? Math.min(actual.width, Math.ceil(box.x + box.width)) : actual.width;
+  const y1 = box ? Math.min(actual.height, Math.ceil(box.y + box.height)) : actual.height;
+  let differing = 0;
+  let total = 0;
+  for (let y = y0; y < y1; y += 1) {
+    for (let x = x0; x < x1; x += 1) {
+      const i = (y * actual.width + x) * 4;
+      total += 1;
+      if ([0, 1, 2].some((c) => Math.abs(actual.data[i + c] - expected.data[i + c]) > CHANNEL_TOLERANCE)) differing += 1;
+    }
+  }
+  return { differing, total, ratio: total ? differing / total : 0 };
+}
+
 /**
  * Compare one rendered page against its committed snapshot.
  *
+ * Two gates, deliberately: the whole page against the prose budget, and each
+ * machine-read box on this page against the much tighter mark budget. See the
+ * file header for why one number cannot serve both.
+ *
+ * @param {string} name
+ * @param {number} pageNumber
+ * @param {Buffer} png
+ * @param {Object} [options]
+ * @param {Array<Object>} [options.regions] - from `markRegionsFor`, all pages
+ * @param {number} [options.maxDiffRatio] - per-snapshot override of the prose budget
  * @returns {Promise<{ ok: boolean, reason?: string, diffRatio?: number, diffPath?: string }>}
  */
-export async function comparePage(name, pageNumber, png) {
+export async function comparePage(name, pageNumber, png, { regions = [], maxDiffRatio = MAX_DIFF_RATIO } = {}) {
   const target = snapshotPath(name, pageNumber);
   if (UPDATE_GOLDEN) {
     fs.mkdirSync(SNAPSHOT_DIR, { recursive: true });
@@ -193,12 +277,25 @@ export async function comparePage(name, pageNumber, png) {
     };
   }
 
-  let differing = 0;
-  for (let i = 0; i < actual.data.length; i += 4) {
-    if ([0, 1, 2].some((c) => Math.abs(actual.data[i + c] - expected.data[i + c]) > CHANNEL_TOLERANCE)) differing += 1;
+  const scale = RENDER_DPI / 72;
+  const problems = [];
+  const { ratio: diffRatio } = diffRatioIn(actual, expected, null);
+  if (diffRatio > maxDiffRatio) {
+    problems.push(`${(diffRatio * 100).toFixed(3)}% of the page differs (prose limit ${(maxDiffRatio * 100).toFixed(1)}%)`);
   }
-  const diffRatio = differing / (actual.width * actual.height);
-  if (diffRatio <= MAX_DIFF_RATIO) return { ok: true, diffRatio };
+  for (const region of regions.filter((r) => (r.page ?? 1) === pageNumber)) {
+    const box = {
+      x: region.xPt * scale, y: region.yPt * scale, width: region.widthPt * scale, height: region.heightPt * scale,
+    };
+    const { ratio, differing, total } = diffRatioIn(actual, expected, box);
+    if (ratio > MARK_MAX_DIFF_RATIO) {
+      problems.push(
+        `${region.name}: ${(ratio * 100).toFixed(3)}% of that box differs `
+        + `(${differing}/${total} px, machine-read limit ${(MARK_MAX_DIFF_RATIO * 100).toFixed(2)}%)`,
+      );
+    }
+  }
+  if (problems.length === 0) return { ok: true, diffRatio };
 
   const diffPath = target.replace(/\.png$/, '.diff.png');
   await writeDiffImage(actual, expected, diffPath);
@@ -206,7 +303,7 @@ export async function comparePage(name, pageNumber, png) {
     ok: false,
     diffRatio,
     diffPath,
-    reason: `${(diffRatio * 100).toFixed(3)}% of pixels differ (limit ${(MAX_DIFF_RATIO * 100).toFixed(1)}%); diff written to ${path.relative(process.cwd(), diffPath)}`,
+    reason: `${problems.join('; ')}; diff written to ${path.relative(process.cwd(), diffPath)}`,
   };
 }
 
