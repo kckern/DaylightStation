@@ -88,9 +88,11 @@ test('percent reflects the current module, not the whole program', async () => {
   const deps = makeDeps({ summaries: {} });
   // One show, two 2-lecture units; kc finished unit s1 and is 1-of-2 into s2
   // (course-wide that is 3/4 = 75%; the card must say 50% — the current module).
+  // parentId nests under item.metadata — the playable SERVICE shape (the HTTP
+  // router flattens it; the use case consumes the service directly).
   deps.fitnessPlayableService.getPlayableEpisodes = async () => ({ info: {}, items: [
-    { plex: 'e1', parentId: 's1' }, { plex: 'e2', parentId: 's1' },
-    { plex: 'e3', parentId: 's2' }, { plex: 'e4', parentId: 's2' },
+    { plex: 'e1', metadata: { parentId: 's1' } }, { plex: 'e2', metadata: { parentId: 's1' } },
+    { plex: 'e3', metadata: { parentId: 's2' } }, { plex: 'e4', metadata: { parentId: 's2' } },
   ] });
   deps.userVideoProgressStore.enrich = (items, userId) => (userId !== 'kc' ? items : items.map((it) => ({
     ...it,
