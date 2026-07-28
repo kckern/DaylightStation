@@ -10,7 +10,7 @@ import {
 } from '#testlib/school/lifecycleFakes.mjs';
 import {
   rawUnits, rawDocuments, rawManifests, BANK_IDS, omrFormMap,
-  WORKSHEET_UNIT, OMR_UNIT, MEDIA_UNIT,
+  WORKSHEET_UNIT, OMR_UNIT, MEDIA_UNIT, MIXED_UNIT,
 } from '#testlib/school/lifecycleFixtures.mjs';
 
 let clock, sessions, tokens, formMaps, renderer, printer, useCase;
@@ -67,6 +67,26 @@ describe('the happy path', () => {
     expect(Object.keys(result.tokens)).toEqual(['recovery']);
     expect(isSchoolToken(result.tokens.recovery)).toBe(true);
     expect(await tokens.get(result.tokens.recovery)).toMatchObject({ tokenClass: 'recovery', subject: { sessionId: SID } });
+  });
+
+  // A printed barcode that resolves to nothing is a dead end on an artifact a
+  // child is physically holding. `media_action` is a token class too, so the
+  // "play this again" box on a sheet gets a real ticket like any other.
+  it('mints for a media_action box as well, so no printed code is inert', async () => {
+    await openSession(MIXED_UNIT);
+    const result = await useCase.execute({ sessionId: SID });
+    expect(Object.keys(result.tokens).sort()).toEqual(['media_action', 'recovery']);
+    expect(await tokens.get(result.tokens.media_action)).toMatchObject({
+      tokenClass: 'media_action', subject: { sessionId: SID },
+    });
+  });
+
+  it('leaves an action naming no token class alone — not every box is a ticket', async () => {
+    await openSession();
+    const doc = rawDocuments().find((d) => d.id === 'fractions-02-worksheet');
+    expect(doc.blocks.some((b) => b.type === 'scan_action' && b.action === 'recovery')).toBe(true);
+    const result = await useCase.execute({ sessionId: SID });
+    expect(Object.keys(result.tokens)).toEqual(['recovery']);
   });
 
   it('hands the token VALUES to the renderer — minting is not a renderer concern', async () => {
@@ -178,13 +198,44 @@ describe('printer offline', () => {
     expect(sessions.derive(SID)).toMatchObject({ state: 'issued', lastFailure: null, issuedArtifacts: ['art_2'] });
   });
 
-  it('treats a renderer explosion the same way', async () => {
+  it('says the printer is not answering ONLY when that is what happened', async () => {
+    await openSession();
+    printer.setFault('offline');
+    const result = await useCase.execute({ sessionId: SID });
+    expect(result.message).toMatch(/printer/i);
+    expect(result.document.blocks[0].md).toMatch(/printer is not answering/i);
+  });
+
+  it('treats a renderer explosion as a retryable failure, without blaming the printer', async () => {
     await openSession();
     renderer.render = async () => { throw new Error('math too tall for the page'); };
     const result = await useCase.execute({ sessionId: SID });
-    expect(result.status).toBe('print_failed');
+    expect(result.status).toBe('render_failed');
     expect(sessions.derive(SID).lastFailure).toMatchObject({ stage: 'render', reason: 'math too tall for the page' });
     expect(printer.jobs).toEqual([]);
+    // The printer is fine. Saying otherwise sends a grown-up to the wrong box.
+    expect(result.message).not.toMatch(/printer/i);
+    expect(result.document.blocks[0].md).not.toMatch(/printer/i);
+  });
+
+  // A worksheet with an `asset` block and no resolvable artwork is the one
+  // render failure a retry can never clear on its own — the recovery ticket
+  // would fail identically forever. It gets its own words.
+  it('names a missing picture as a missing picture', async () => {
+    await openSession();
+    renderer.render = async () => {
+      const err = new Error("blocks[1]: asset 'school/math/fraction-strips' could not be resolved to artwork");
+      err.name = 'UnresolvedAssetError';
+      throw err;
+    };
+    const result = await useCase.execute({ sessionId: SID });
+    expect(result.status).toBe('render_failed');
+    expect(result.message).toMatch(/picture/i);
+    expect(result.message).not.toMatch(/printer/i);
+    expect(result.document.blocks[0].md).toMatch(/picture/i);
+    // Still a ticket: a grown-up fixes the artwork, the child scans and retries.
+    const action = result.document.blocks.find((b) => b.type === 'scan_action');
+    expect(await tokens.get(action.action)).toMatchObject({ tokenClass: 'recovery' });
   });
 });
 

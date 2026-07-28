@@ -99,7 +99,7 @@ export class ResolveScanAction {
       case 'identify': return this.#identify(record);
       case 'select_unit': return this.#start(sessionId, sessionState);
       case 'issue_document':
-      case 'recovery': return this.#print(sessionId, record.tokenClass);
+      case 'recovery': return this.#print(sessionId, record.tokenClass, sessionState);
       case 'media_action': return this.#play(sessionId);
       case 'remediation': return this.#retry(sessionId);
       default:
@@ -135,21 +135,8 @@ export class ResolveScanAction {
   async #start(sessionId, sessionState) {
     const unit = await this.#curriculum.getUnit(sessionState?.unitId);
     if (unit?.media) return this.#play(sessionId);
-    if (unit?.document) return this.#print(sessionId, 'select_unit');
-    if (unit?.bank) {
-      // A screen-only unit prints nothing but must still announce itself, or the
-      // child scans and watches nothing happen.
-      return this.#slip({
-        status: 'open_on_screen',
-        tokenClass: 'select_unit',
-        sessionId,
-        id: `screen-${sessionId}`,
-        headline: unit.title,
-        lines: ['Go to the school screen and start this one.'],
-        message: 'Start this one on the screen.',
-        effect: { unitId: unit.unitId, bank: unit.bank },
-      });
-    }
+    if (unit?.document) return this.#print(sessionId, 'select_unit', sessionState);
+    if (unit?.bank) return this.#onScreen(sessionId, unit, 'select_unit');
     return this.#slip({
       status: 'unavailable',
       tokenClass: 'select_unit',
@@ -161,7 +148,36 @@ export class ResolveScanAction {
     });
   }
 
-  async #print(sessionId, tokenClass) {
+  /**
+   * A screen-only unit prints nothing but must still announce itself, or the
+   * child scans and watches nothing happen.
+   */
+  async #onScreen(sessionId, unit, tokenClass) {
+    return this.#slip({
+      status: 'open_on_screen',
+      tokenClass,
+      sessionId,
+      id: `screen-${sessionId}`,
+      headline: unit.title,
+      lines: ['Go to the school screen and start this one.'],
+      message: 'Start this one on the screen.',
+      effect: { unitId: unit.unitId, bank: unit.bank },
+    });
+  }
+
+  /**
+   * Print the sheet — unless the unit does not have one.
+   *
+   * A media + bank unit reaches `media_completed`, whose reducer next action is
+   * `issue_document` because the reducer cannot see units. Sending that ticket
+   * straight to `IssueDocument` prints "There is no sheet to print for this
+   * one" and strands the child with the rest of the course behind it. The unit's
+   * composition is the only thing that knows better, and it is known here.
+   */
+  async #print(sessionId, tokenClass, sessionState = null) {
+    const unit = await this.#curriculum.getUnit(sessionState?.unitId);
+    if (unit && !unit.document && unit.bank) return this.#onScreen(sessionId, unit, tokenClass);
+
     const result = await this.#issue.execute({ sessionId });
     // A worksheet came out of the laser: that IS the physical response, and a
     // receipt beside it would be noise. Anything else needs explaining.
@@ -205,19 +221,22 @@ export class ResolveScanAction {
         physical: 'receipt', printed: printed.printed, message: opened.message, effect: null,
       };
     }
-    // The fresh sheet is the point of the retry ticket, so print it right away
-    // rather than sending the child back to their card for a second scan.
-    const issued = await this.#issue.execute({ sessionId: opened.newSessionId });
-    const printedSheet = issued.status === 'issued' || issued.status === 'reprinted';
-    const printed = printedSheet ? true : (await this.#receipts.print(issued.document)).printed;
+    // The fresh sheet is the point of the retry ticket, so hand it over right
+    // away rather than sending the child back to their card for a second scan.
+    // Routed through #print, so a unit whose second try happens on the screen
+    // says so instead of failing to find a sheet it never had.
+    const retryState = reduceSession(await this.#sessions.readEvents(opened.newSessionId));
+    const issued = await this.#print(opened.newSessionId, 'remediation', retryState);
+    const printedSheet = issued.physical === 'worksheet';
     return {
-      status: issued.status,
-      tokenClass: 'remediation',
+      ...issued,
       sessionId: opened.newSessionId,
-      physical: printedSheet ? 'worksheet' : 'receipt',
-      printed,
       message: printedSheet ? 'Printing a fresh sheet to try again.' : issued.message,
-      effect: { remediationOf: sessionId, variant: opened.variant, artifactId: issued.artifactId },
+      effect: {
+        ...(issued.effect ?? {}),
+        remediationOf: sessionId,
+        variant: opened.variant,
+      },
     };
   }
 

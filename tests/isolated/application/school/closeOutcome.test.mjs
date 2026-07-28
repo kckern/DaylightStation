@@ -140,7 +140,9 @@ describe('the reward guard', () => {
   it('pays once through the economy, keyed on the outcome id', async () => {
     await graded();
     const result = await close.execute({ sessionId: SID });
-    expect(economy.calls).toEqual([{ userId: 'kid1', action: 'school-unit-complete', source: 'school', ref: `out:${SID}` }]);
+    expect(economy.calls).toEqual([{
+      userId: 'kid1', action: 'school-unit-complete', source: 'school', ref: `out:${SID}`, amount: 5,
+    }]);
     expect(result.reward).toMatchObject({ amount: 5, txnId: 'txn_1', skipReason: null });
     expect(sessions.derive(SID).rewardTxn).toBe('txn_1');
   });
@@ -192,7 +194,21 @@ describe('the reward guard', () => {
       { sessionId: 'ses_b', unitId: WORKSHEET_UNIT },
     ] });
     const result = await close.execute({ sessionId: SID, signedOff: true });
-    expect(result.reward).toMatchObject({ amount: 5, txnId: 'txn_1' });
+    expect(result.reward).toMatchObject({ amount: 15, txnId: 'txn_1' });
+  });
+
+  // Unit 03 declares `reward: { amount: 15 }`. A unit field the ledger never
+  // sees is worse than no field: the curriculum says 15 and the child gets the
+  // config's default.
+  it('PAYS THE AMOUNT THE UNIT DECLARES, not the earn action default', async () => {
+    await graded({ unitId: OMR_UNIT, percent: 100, passedEarlier: [
+      { sessionId: 'ses_a', unitId: 'math-fractions.01' },
+      { sessionId: 'ses_b', unitId: WORKSHEET_UNIT },
+    ] });
+    const result = await close.execute({ sessionId: SID, signedOff: true });
+    expect(economy.calls[0].amount).toBe(15);
+    expect(result.reward.amount).toBe(15);
+    expect(sessions.derive(SID)).toMatchObject({ state: 'rewarded', terminal: true });
   });
 
   it('leaves an unsigned reward OPEN so a grown-up can still decide', async () => {
@@ -203,7 +219,7 @@ describe('the reward guard', () => {
     await close.execute({ sessionId: SID });
     expect(sessions.types(SID)).not.toContain('rewarded');
     const later = await close.execute({ sessionId: SID, signedOff: true });
-    expect(later.reward).toMatchObject({ amount: 5 });
+    expect(later.reward).toMatchObject({ amount: 15 });
   });
 
   it('settles the outcome even when the economy refuses the call', async () => {

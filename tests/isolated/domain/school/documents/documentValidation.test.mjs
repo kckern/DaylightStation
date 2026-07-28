@@ -315,6 +315,24 @@ describe('validateDocument: return value', () => {
     expect(validateDocument(doc({ seed: -1 })).document).toBeUndefined();
   });
 
+  // The header of every printed sheet is `document.title || document.id`. A
+  // normalisation that drops the title heads a child's worksheet with a slug.
+  it('carries the title through to the normalised document', () => {
+    const r = validateDocument(doc({ title: 'Adding and Subtracting Unlike Denominators' }));
+    expect(r.errors).toEqual([]);
+    expect(r.document.title).toBe('Adding and Subtracting Unlike Denominators');
+  });
+
+  it('omits title entirely when the source has none, rather than inventing one', () => {
+    const r = validateDocument(doc());
+    expect(Object.prototype.hasOwnProperty.call(r.document, 'title')).toBe(false);
+  });
+
+  it('rejects a title that is not a non-empty string', () => {
+    expect(errs(doc({ title: 42 }))).toContain('title must be a non-empty string when present');
+    expect(errs(doc({ title: '   ' }))).toContain('title must be a non-empty string when present');
+  });
+
   it('accumulates every failure rather than stopping at the first', () => {
     const r = validateDocument({ id: 'BAD', seed: -1, target: ['fax'], blocks: [{ type: 'html' }] });
     expect(r.errors).toEqual([

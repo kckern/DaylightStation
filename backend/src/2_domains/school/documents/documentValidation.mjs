@@ -123,6 +123,13 @@ export function validateDocument(raw) {
   }
   const errors = [];
   if (typeof raw.id !== 'string' || !ID_PATTERN.test(raw.id)) errors.push('id must match ^[a-z0-9][a-z0-9-]*$');
+  // Optional, because a receipt has no banner. But when it IS there it is what
+  // heads the printed sheet, so it has to survive normalisation — a dropped
+  // title prints the document's slug across the top of a child's worksheet.
+  const hasTitle = raw.title !== undefined && raw.title !== null;
+  if (hasTitle && (typeof raw.title !== 'string' || raw.title.trim().length === 0)) {
+    errors.push('title must be a non-empty string when present');
+  }
   // Regeneration is byte-identical from the seed, so a missing seed is not a
   // defaultable omission — a random fill-in would make the document
   // irreproducible after the fact.
@@ -170,14 +177,15 @@ export function validateDocument(raw) {
   }
 
   if (errors.length) return { errors };
-  return {
-    errors,
-    document: {
-      id: raw.id,
-      seed: raw.seed,
-      variant,
-      target: raw.target,
-      blocks: raw.blocks,
-    },
+  const document = {
+    id: raw.id,
+    seed: raw.seed,
+    variant,
+    target: raw.target,
+    blocks: raw.blocks,
   };
+  // Present only when authored: `document.title || document.id` is the header
+  // rule, and an empty-string key would defeat it as surely as a missing one.
+  if (hasTitle) document.title = raw.title;
+  return { errors, document };
 }

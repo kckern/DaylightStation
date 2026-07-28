@@ -9,7 +9,7 @@ import {
 } from '#testlib/school/lifecycleFakes.mjs';
 import {
   rawUnits, rawDocuments, rawManifests, BANK_IDS,
-  MEDIA_UNIT, WORKSHEET_UNIT, OMR_UNIT,
+  MEDIA_UNIT, WORKSHEET_UNIT, OMR_UNIT, MIXED_UNIT,
 } from '#testlib/school/lifecycleFixtures.mjs';
 
 let clock, catalog, curriculum, sessions, tokens, assignments, useCase;
@@ -139,6 +139,42 @@ describe('progression', () => {
     const second = await useCase.execute({ learnerId: 'kid1' });
     expect(second.offers.map((o) => o.unitId)).toEqual([WORKSHEET_UNIT]);
     expect(transcript(second.document)).toContain('print your sheet');
+  });
+
+  // Unit 01 is media + bank with NO document. The reducer cannot see units, so
+  // its `media_completed` next action is hardcoded "print the questions" —
+  // which offers a sheet that does not exist and dead-ends the whole course.
+  it('offers the ON-SCREEN quiz after the media of a bank-only unit', async () => {
+    const first = await useCase.execute({ learnerId: 'kid1' });
+    const sessionId = first.offers[0].sessionId;
+    for (const event of [
+      { type: 'media_dispatched', dispatchId: 'dsp_1', target: 'tv', contentId: 'plex:481203' },
+      { type: 'media_completed', verified: 'playhead' },
+    ]) {
+      await sessions.appendEvent(sessionId, { ...event, sessionId, at: clock.iso() });
+    }
+    const second = await useCase.execute({ learnerId: 'kid1' });
+    expect(offerFor(second, MEDIA_UNIT).label).toContain('answer on the screen');
+    expect(transcript(second.document)).not.toContain('print the questions');
+    // Still scannable: the line is what tells the child the quiz is open.
+    expect(offerFor(second, MEDIA_UNIT).token).toBeTruthy();
+  });
+
+  it('still offers the SHEET after the media of a unit that has one', async () => {
+    // Unit 04 is media + document: watching it releases a printed worksheet,
+    // and that wording must not change with the bank-only fix.
+    // An open session beats the sequence lock (planner rule), so watching unit
+    // 04's audio is enough to make it the offered work.
+    const sessionId = 'ses_mixed';
+    for (const event of [
+      { type: 'created', learnerId: 'kid1', unitId: MIXED_UNIT },
+      { type: 'media_dispatched', dispatchId: 'dsp_1', target: 'tv', contentId: 'plex:481203' },
+      { type: 'media_completed', verified: 'playhead' },
+    ]) {
+      await sessions.appendEvent(sessionId, { ...event, sessionId, at: clock.iso() });
+    }
+    const result = await useCase.execute({ learnerId: 'kid1' });
+    expect(offerFor(result, MIXED_UNIT).label).toContain('print the questions');
   });
 
   it('offers a mid-flight session the move its state actually allows', async () => {

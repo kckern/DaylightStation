@@ -43,7 +43,12 @@ const STATUS_BY_OUTCOME = Object.freeze({
   already_playing: 409,
   already_completed: 409,
   not_playing: 409,
+  // The printer is a device this route talks through, so its silence is a
+  // gateway failure. A document that could not be DRAWN is not — the request
+  // named content this server cannot turn into a sheet, which is 422, and
+  // reporting it as 502 would send an operator to the printer.
   print_failed: 502,
+  render_failed: 422,
   uncorrelated: 204,
 });
 

@@ -332,9 +332,11 @@ export class FakeEconomy {
     this.seq = 0;
   }
 
-  async earn(userId, { action, source, ref = null }) {
-    this.calls.push({ userId, action, source, ref });
+  /** Mirrors `EconomyService.earn`: an explicit `amount` overrides the policy's. */
+  async earn(userId, { action, source, ref = null, amount = null }) {
+    this.calls.push({ userId, action, source, ref, amount });
     if (this.throwOn) throw Object.assign(new Error(this.throwOn), { name: 'ValidationError' });
-    return { userId, earned: this.reward, capped: false, duplicate: false, txnId: `txn_${++this.seq}`, balance: this.reward };
+    const earned = Number.isInteger(amount) && amount > 0 ? amount : this.reward;
+    return { userId, earned, capped: false, duplicate: false, txnId: `txn_${++this.seq}`, balance: earned };
   }
 }

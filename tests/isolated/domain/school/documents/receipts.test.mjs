@@ -49,6 +49,32 @@ describe('agendaDocument', () => {
     expect(textOf(doc)).toContain('waiting on a grown-up');
   });
 
+  // A raw ISO timestamp is machine notation on a child's piece of paper.
+  it('prints the time a person can read, not an ISO timestamp', () => {
+    const text = textOf(agendaDocument({ learnerId: 'kid1', generatedAt: '2026-07-27T09:05:00.000Z', entries }));
+    expect(text).not.toContain('2026-07-27T09:05:00.000Z');
+    expect(text).toContain('Printed Mon 27 Jul, 9:05 am');
+  });
+
+  it('prints midnight and noon as a person says them', () => {
+    const at = (iso) => textOf(agendaDocument({ learnerId: 'kid1', generatedAt: iso, entries }));
+    expect(at('2026-07-27T00:00:00.000Z')).toContain('Printed Mon 27 Jul, 12:00 am');
+    expect(at('2026-07-27T12:30:00.000Z')).toContain('Printed Mon 27 Jul, 12:30 pm');
+    expect(at('2026-07-27T13:07:00.000Z')).toContain('Printed Mon 27 Jul, 1:07 pm');
+  });
+
+  it('renders the time in the timezone it was handed', () => {
+    const text = textOf(agendaDocument({
+      learnerId: 'kid1', generatedAt: '2026-07-27T09:05:00.000Z', timeZone: 'America/Denver', entries,
+    }));
+    expect(text).toContain('Printed Mon 27 Jul, 3:05 am');
+  });
+
+  it('says nothing at all rather than printing "Invalid Date"', () => {
+    expect(textOf(agendaDocument({ learnerId: 'kid1', generatedAt: 'yesterday', entries })))
+      .not.toMatch(/Printed/);
+  });
+
   it('derives a stable id from the learner', () => {
     expect(agendaDocument({ learnerId: 'KC_Kern' }).id).toBe('agenda-kc-kern');
   });

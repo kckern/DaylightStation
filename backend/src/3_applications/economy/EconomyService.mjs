@@ -55,7 +55,20 @@ export class EconomyService {
     return { userId, balance: wallet.balance };
   }
 
-  async earn(userId, { action, source, ref = null }) {
+  /**
+   * @param {string} userId
+   * @param {object} args
+   * @param {string} args.action - an `earn` action from the economy catalog
+   * @param {string} args.source
+   * @param {string|null} [args.ref] - idempotency key; a ref pays once per UTC day
+   * @param {number|null} [args.amount] - what THIS completion is worth, when the
+   *   caller's own policy says so (a school unit declares `reward.amount`).
+   *   Overrides the catalog's flat `reward`; still subject to `daily_cap`, which
+   *   is the household's ceiling and not the caller's to raise. A non-positive
+   *   or non-integer value is ignored rather than treated as "pay nothing" — a
+   *   miswired override must not silently zero a real reward.
+   */
+  async earn(userId, { action, source, ref = null, amount = null }) {
     this.#assertUser(userId);
     const config = this.#config();
     // Feature-off no-op: on an install with no economy policy at all (no
@@ -68,7 +81,8 @@ export class EconomyService {
     }
     const policy = resolvePolicy(config, userId, action);
     if (!policy || policy.type !== 'earn') throw new ValidationError(`unknown earn action: ${action}`);
-    const reward = policy.reward || 0;
+    const override = Number.isInteger(amount) && amount > 0 ? amount : null;
+    const reward = override ?? (policy.reward || 0);
     const cap = policy.daily_cap ?? Infinity;
     // NOTE: cap accounting is UTC-day (matches how txn.at is stamped). Blackout
     // windows are local-time; the split is intentional (see openSession).

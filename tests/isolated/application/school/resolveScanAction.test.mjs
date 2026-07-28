@@ -17,7 +17,7 @@ import {
 } from '#testlib/school/lifecycleFakes.mjs';
 import {
   rawUnits, rawDocuments, rawManifests, BANK_IDS,
-  MEDIA_UNIT, WORKSHEET_UNIT,
+  MEDIA_UNIT, WORKSHEET_UNIT, MIXED_UNIT,
 } from '#testlib/school/lifecycleFixtures.mjs';
 
 const TARGETS = [{ id: 'living-room-tv', label: 'the TV', child_selectable: true }];
@@ -157,6 +157,61 @@ describe('starting a unit', () => {
     expect(result).toMatchObject({ status: 'issued', physical: 'worksheet', printed: true });
     expect(laser.jobs).toHaveLength(1);
     expect(thermal.jobs).toEqual([]);
+  });
+});
+
+describe('a unit that finishes on the screen', () => {
+  /** Unit 01 is media + bank with NO document, watched through to the end. */
+  const watchedMediaUnit = async () => {
+    const sid = 'ses_m';
+    await sessions.appendEvent(sid, { type: 'created', at: clock.iso(), sessionId: sid, learnerId: 'kid1', unitId: MEDIA_UNIT });
+    await sessions.appendEvent(sid, {
+      type: 'media_dispatched', at: clock.iso(), sessionId: sid,
+      dispatchId: 'dsp_1', target: 'living-room-tv', contentId: 'plex:481203',
+    });
+    await sessions.appendEvent(sid, { type: 'media_completed', at: clock.iso(), sessionId: sid, verified: 'playhead' });
+    return sid;
+  };
+
+  // The reducer's `media_completed` next action is `issue_document`, so this is
+  // the ticket a real agenda hands over. It used to reach IssueDocument, find no
+  // document, and print "There is no sheet to print for this one" — a dead end
+  // with the whole rest of the course behind it.
+  it('an issue_document ticket on a bank-only unit opens the quiz instead of failing', async () => {
+    const sessionId = await watchedMediaUnit();
+    const record = mintToken({ tokenClass: 'issue_document', subject: { sessionId }, at: clock.iso(), rng });
+    await tokens.put(record);
+
+    const result = await resolve.execute({ code: record.token });
+    expect(result).toMatchObject({ status: 'open_on_screen', physical: 'receipt', printed: true });
+    expect(result.effect).toMatchObject({ unitId: MEDIA_UNIT, bank: 'fractions-01-quiz' });
+    expect(thermal.lastTranscript()).toMatch(/school screen/i);
+    expect(thermal.lastTranscript()).not.toMatch(/no sheet to print/i);
+    expect(laser.jobs).toEqual([]);
+  });
+
+  it('a unit that HAS a document still prints it after its media', async () => {
+    const sid = 'ses_x';
+    await sessions.appendEvent(sid, { type: 'created', at: clock.iso(), sessionId: sid, learnerId: 'kid1', unitId: MIXED_UNIT });
+    await sessions.appendEvent(sid, {
+      type: 'media_dispatched', at: clock.iso(), sessionId: sid,
+      dispatchId: 'dsp_2', target: 'living-room-tv', contentId: 'plex:481204',
+    });
+    await sessions.appendEvent(sid, { type: 'media_completed', at: clock.iso(), sessionId: sid, verified: 'playhead' });
+    const record = mintToken({ tokenClass: 'issue_document', subject: { sessionId: sid }, at: clock.iso(), rng });
+    await tokens.put(record);
+    const result = await resolve.execute({ code: record.token });
+    expect(result).toMatchObject({ status: 'issued', physical: 'worksheet' });
+    expect(laser.jobs).toHaveLength(1);
+  });
+
+  it('a recovery ticket on a bank-only unit does the same rather than failing to reprint', async () => {
+    const sessionId = await watchedMediaUnit();
+    const record = mintToken({ tokenClass: 'recovery', subject: { sessionId }, at: clock.iso(), rng });
+    await tokens.put(record);
+    const result = await resolve.execute({ code: record.token });
+    expect(result.status).toBe('open_on_screen');
+    expect(result.printed).toBe(true);
   });
 });
 
