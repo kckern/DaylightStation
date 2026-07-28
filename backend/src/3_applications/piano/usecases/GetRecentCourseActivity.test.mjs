@@ -58,6 +58,23 @@ test('lists each user recent lesson courses newest-first, sorted by player recen
   assert.equal(felix.lastPlayedAt, felix.courses[0].lastPlayedAt); // player recency = newest course
 });
 
+test('duplicate rows from the raw children container collapse to one course', async () => {
+  const deps = makeDeps({ summaries: {
+    kc: { 10: { completed: 1, total: 2, lastPlayedAt: '2026-07-26T00:00:00Z' } },
+  } });
+  // Mirror the live Plex quirk: the raw /children response lists the show twice.
+  deps.plexClient.children = async (key) => (String(key) === '100'
+    ? [
+      { ratingKey: '10', title: 'Course A', thumb: '/img/a' },
+      { ratingKey: '10', title: 'Course A', thumb: '/img/a' },
+    ]
+    : []);
+  const uc = new GetRecentCourseActivity(deps);
+  const { players } = await uc.execute();
+  assert.equal(players[0].courses.length, 1);
+  assert.equal(players[0].courses[0].courseId, 'plex:10');
+});
+
 test('caps each player at 4 course thumbnails, most recent kept', async () => {
   const deps = makeDeps({ summaries: {
     kc: {
