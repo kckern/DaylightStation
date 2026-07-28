@@ -2,6 +2,7 @@ import { useLayoutEffect } from 'react';
 
 const LIT = 'piano-note-lit'; // upcoming / expected note at the cursor
 const HIT = 'piano-note-hit'; // struck correctly (adds a glow)
+const PENDING = 'piano-note-pending'; // expected here, still outstanding (Learn)
 
 /**
  * NoteHighlightLayer — lights up the CURRENT step's active-staff noteheads by
@@ -21,8 +22,12 @@ const HIT = 'piano-note-hit'; // struck correctly (adds a glow)
  * @param {Object<number,boolean>} p.activeParts - { [staff]: on }
  * @param {Set<number>} [p.struck]  - midis struck at this step (→ hit glow)
  * @param {string} [p.accent] - light-up colour (matches the mode's cursor colour)
+ * @param {boolean} [p.showPending] - mark expected-but-unstruck noteheads. Learn
+ *   advances only when EVERY active-staff note of the step is struck; without
+ *   this the struck note lights green and the user has no way to see they still
+ *   owe the other hand (audit H3).
  */
-export default function NoteHighlightLayer({ step, activeParts = {}, struck, accent }) {
+export default function NoteHighlightLayer({ step, activeParts = {}, struck, accent, showPending = false }) {
   useLayoutEffect(() => {
     const lit = [];
     for (const note of step?.notes || []) {
@@ -30,16 +35,17 @@ export default function NoteHighlightLayer({ step, activeParts = {}, struck, acc
       if (!el || !activeParts[note.staff]) continue; // deactivated staff / no element
       el.classList.add(LIT);
       if (struck?.has(note.midi)) el.classList.add(HIT);
+      else if (showPending) el.classList.add(PENDING);
       if (accent) el.style.setProperty('--nh-color', accent);
       lit.push(el);
     }
     return () => {
       for (const el of lit) {
-        el.classList.remove(LIT, HIT);
+        el.classList.remove(LIT, HIT, PENDING);
         el.style.removeProperty('--nh-color');
       }
     };
-  }, [step, activeParts, struck, accent]);
+  }, [step, activeParts, struck, accent, showPending]);
 
   return null;
 }
