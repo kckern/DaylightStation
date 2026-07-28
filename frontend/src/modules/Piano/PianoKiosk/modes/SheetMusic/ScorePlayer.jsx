@@ -102,7 +102,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
   // LOOP is excluded on purpose — see scoreSettings.js (audit M1).
   const restored = useMemo(() => loadScoreSettings(scoreMeta.id), [scoreMeta.id]);
 
-  const [layout, setLayout] = useState({ events: [], notes: [], steps: [], measures: [], tempoEntries: [], width: 0, height: 0, flow: null, scale: null });
+  const [layout, setLayout] = useState({ events: [], notes: [], steps: [], measures: [], tempoEntries: [], width: 0, height: 0, flow: null, scale: null, transpose: null });
   const [step, setStep] = useState(0);
   const [mode, setMode] = useState(() => {
     const m = restored.mode;
@@ -167,12 +167,17 @@ export default function ScorePlayer({ score: scoreMeta }) {
   const current = events[step] || null;
   const onLayout = useCallback((res) => { setLayout(res); }, []);
 
-  // Overlay geometry must match what's on screen: after a zoom/flow change the
-  // sheet repaints immediately but extraction may be deferred (holdExtraction) —
-  // until onLayout catches up, cursor/notehead coords belong to the OLD engrave
-  // and must not be drawn. Null/undefined layout.flow/scale (pre-first-layout)
-  // are treated as fresh so the very first paint isn't hidden.
-  const layoutFresh = (!layout.flow || layout.flow === flow) && (layout.scale == null || layout.scale === scale);
+  // Overlay geometry must match what's on screen: after a zoom/flow/transpose
+  // change the sheet repaints immediately but extraction may be deferred
+  // (holdExtraction) — until onLayout catches up, cursor/notehead coords belong to
+  // the OLD engrave and must not be drawn. A TRANSPOSE counts as much as the other
+  // two: it re-engraves in a new KEY, so a resume taken before the new geometry
+  // lands performs the old key against the new sheet (audit H2). Null/undefined
+  // layout.flow/scale/transpose (pre-first-layout) are treated as fresh so the very
+  // first paint isn't hidden.
+  const layoutFresh = (!layout.flow || layout.flow === flow)
+    && (layout.scale == null || layout.scale === scale)
+    && (layout.transpose == null || layout.transpose === transpose);
 
   // ── Focus range (practice a section / custom loop) ────────────────────────────
   // Sections come from rehearsal marks (measure NUMBERS); `layout.measures` maps

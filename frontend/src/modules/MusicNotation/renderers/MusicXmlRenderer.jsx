@@ -30,7 +30,9 @@ function logger() {
  *   reading one: every bar drawn separately (no multi-measure-rest collapse) and
  *   systems stretched to the full width, so empty bars read as ruled paper. Off
  *   by default — only the Composer opts in. See osmdRender's applyManuscriptRules.
- * @param {(res:{width,height,events,notes,steps,tempoEntries}) => void} [onLayout]
+ * @param {(res:{width,height,events,notes,steps,tempoEntries,flow,scale,transpose}) => void} [onLayout]
+ *   — `flow`/`scale`/`transpose` report WHICH engrave the geometry belongs to, so
+ *   a consumer can tell a stale layout from a current one.
  * @param {(p:number) => void} [onProgress] - extraction progress fraction 0..1
  * @param {() => void} [onReady] - fired once geometry extraction completes and
  *   the play-along overlay can be armed (the sheet is already painted before this)
@@ -91,10 +93,13 @@ export function MusicXmlRenderer({ musicXml, width, flow = 'wrapped', scale = 1,
     // stale-guarded so a superseded render can never clobber the live one.
     const reportProgress = (p) => { if (!stale()) { setProgress(p); onProgress?.(p); } };
     const publish = (res, engWidth, engHeight, engFlow) => {
-      // `scale` (closed over from this effect run) lets the consumer detect a
-      // stale pre-zoom layout: after a zoom the sheet repaints immediately but a
-      // held extraction hasn't republished geometry yet, so overlays must wait.
-      onLayout?.({ ...res, width: engWidth, height: engHeight, flow: engFlow, scale });
+      // `scale` and `transpose` (closed over from this effect run) let the consumer
+      // detect a stale pre-zoom / pre-key-change layout: after a zoom or a transpose
+      // the sheet repaints immediately but a held extraction hasn't republished
+      // geometry yet, so overlays must wait. `transpose` matters as much as the
+      // other two — it is part of the cache key above and forces a full re-engrave,
+      // and without it the consumer resumed on the OLD key (audit H2).
+      onLayout?.({ ...res, width: engWidth, height: engHeight, flow: engFlow, scale, transpose });
       onReady?.(); // exactly once per successful extraction
     };
 
