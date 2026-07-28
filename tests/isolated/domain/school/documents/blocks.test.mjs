@@ -16,6 +16,9 @@ describe('BLOCK_TYPES', () => {
     expect(Object.isFrozen(BLOCK_TYPES)).toBe(true);
   });
 
+  // Tautological since BLOCK_TYPES is derived from the validator map — kept as
+  // executable documentation of the invariant, not as a regression guard. It
+  // would only regain teeth if the list were ever hand-maintained again.
   it('lists exactly the types that have a validator (no declared-but-unhandled type)', () => {
     BLOCK_TYPES.forEach((type) => {
       expect(validateBlock({ type })).not.toEqual({ errors: [`unknown block type: ${type}`] });
@@ -197,7 +200,11 @@ describe('validateBlock: cyclic trees', () => {
     expect(errs(q).length).toBeGreaterThan(0);
   });
 
-  it('reports a question reachable from itself through a sibling array', () => {
+  // Documentation, not a regression guard: validateBlock never traverses
+  // arbitrary properties, so a cycle hidden in one is unreachable by
+  // construction and no implementation change could make this throw. The real
+  // guard against that shape is the deep answer-key walk in documentValidation.
+  it('ignores a cycle hidden in a non-block property', () => {
     const q = { type: 'question', itemId: 'q1', number: 1, blocks: [] };
     q.blocks.push({ type: 'rich_text', md: 'x', extra: q });
     expect(() => validateBlock(q)).not.toThrow();
