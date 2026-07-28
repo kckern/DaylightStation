@@ -34,7 +34,7 @@ function makeDeps({ summaries }) {
   };
 }
 
-test('picks each user newest lesson course, sorted most recent first, skipping no-history users', async () => {
+test('lists each user recent lesson courses newest-first, sorted by player recency, skipping no-history users', async () => {
   const uc = new GetRecentCourseActivity(makeDeps({ summaries: {
     felix: {
       10: { completed: 1, total: 2, lastPlayedAt: '2026-07-20T00:00:00Z' },
@@ -44,12 +44,37 @@ test('picks each user newest lesson course, sorted most recent first, skipping n
   } }));
   const { players } = await uc.execute();
   assert.equal(players.length, 2);
-  assert.equal(players[0].userId, 'kc');                    // newest first
-  assert.equal(players[1].courseId, 'plex:11');             // felix's newest course
-  assert.equal(players[1].courseTitle, 'Course B');
-  assert.equal(players[1].completed, 2);
-  assert.equal(players[1].percent, 100);
-  assert.equal(players[0].name, 'KC');                      // display_name resolution
+  assert.equal(players[0].userId, 'kc');                        // newest player first
+  assert.equal(players[0].name, 'KC');                          // display_name resolution
+  assert.equal(players[0].lastPlayedAt, '2026-07-26T00:00:00Z');
+  assert.equal(players[0].courses.length, 1);
+  const felix = players[1];
+  assert.equal(felix.courses.length, 2);                        // both touched courses listed
+  assert.equal(felix.courses[0].courseId, 'plex:11');           // newest course first
+  assert.equal(felix.courses[0].courseTitle, 'Course B');
+  assert.equal(felix.courses[0].completed, 2);
+  assert.equal(felix.courses[0].percent, 100);
+  assert.equal(felix.courses[1].courseId, 'plex:10');
+  assert.equal(felix.lastPlayedAt, felix.courses[0].lastPlayedAt); // player recency = newest course
+});
+
+test('caps each player at 4 course thumbnails, most recent kept', async () => {
+  const deps = makeDeps({ summaries: {
+    kc: {
+      10: { completed: 1, total: 2, lastPlayedAt: '2026-07-21T00:00:00Z' },
+      11: { completed: 1, total: 2, lastPlayedAt: '2026-07-22T00:00:00Z' },
+      12: { completed: 1, total: 2, lastPlayedAt: '2026-07-23T00:00:00Z' },
+      13: { completed: 1, total: 2, lastPlayedAt: '2026-07-24T00:00:00Z' },
+      14: { completed: 1, total: 2, lastPlayedAt: '2026-07-20T00:00:00Z' }, // oldest — dropped
+    },
+  } });
+  deps.plexClient.children = async (key) => (String(key) === '100'
+    ? ['10', '11', '12', '13', '14'].map((k) => ({ ratingKey: k, title: `Course ${k}`, thumb: `/img/${k}` }))
+    : []);
+  const uc = new GetRecentCourseActivity(deps);
+  const { players } = await uc.execute();
+  assert.equal(players[0].courses.length, 4);
+  assert.deepEqual(players[0].courses.map((c) => c.courseId), ['plex:13', 'plex:12', 'plex:11', 'plex:10']);
 });
 
 test('appreciation collections are out of scope', async () => {

@@ -1,6 +1,7 @@
 /**
- * GetRecentCourseActivity — per-player most-recent lesson-course progress for
- * the kiosk menu activity strip (spec 2026-07-28-piano-menu-activity-strip).
+ * GetRecentCourseActivity — per-player recent lesson-course progress for the
+ * kiosk menu activity strip (spec 2026-07-28-piano-menu-activity-strip): each
+ * player's most recent courses (up to MAX_COURSES_PER_PLAYER), newest first.
  *
  * Scope: the FIRST group in piano.yml videos.collections (the Music Lessons
  * tab); legacy flat plexCollection when no groups exist. Results cached
@@ -8,6 +9,9 @@
  * Plex metadata drift) so menu loads never re-walk Plex when nothing changed.
  */
 const HARD_TTL_MS = 6 * 60 * 60 * 1000;
+// Thumbnails per player card on the menu strip — recent courses beyond this
+// are dropped (most-recent-first).
+const MAX_COURSES_PER_PLAYER = 4;
 
 export class GetRecentCourseActivity {
   #fitnessPlayableService; #userVideoProgressStore; #configService; #plexClient; #logger;
@@ -64,30 +68,32 @@ export class GetRecentCourseActivity {
 
     const players = [];
     for (const userId of roster) {
-      let best = null;
+      const touched = [];
       for (const show of shows) {
         const items = perShowItems.get(show.id);
         if (!items?.length) continue;
         const s = this.#userVideoProgressStore.summarize(items, userId);
         if (!s.lastPlayedAt) continue;
-        if (!best || String(s.lastPlayedAt) > String(best.lastPlayedAt)) {
-          best = { show, ...s };
-        }
+        touched.push({ show, ...s });
       }
-      if (!best) continue;
+      if (!touched.length) continue;
+      touched.sort((a, b) => String(b.lastPlayedAt).localeCompare(String(a.lastPlayedAt)));
+      const courses = touched.slice(0, MAX_COURSES_PER_PLAYER).map((e) => ({
+        courseId: `plex:${e.show.id}`,
+        courseTitle: e.show.title,
+        thumbnail: e.show.thumb,
+        completed: e.completed,
+        total: e.total,
+        percent: e.total > 0 && e.completed > 0
+          ? Math.max(1, Math.round((e.completed / e.total) * 100)) : 0,
+        lastPlayedAt: e.lastPlayedAt,
+      }));
       const p = this.#configService.getUserProfile(userId);
-      const percent = best.total > 0 && best.completed > 0
-        ? Math.max(1, Math.round((best.completed / best.total) * 100)) : 0;
       players.push({
         userId,
         name: p?.display_name || p?.username || userId,
-        courseId: `plex:${best.show.id}`,
-        courseTitle: best.show.title,
-        thumbnail: best.show.thumb,
-        completed: best.completed,
-        total: best.total,
-        percent,
-        lastPlayedAt: best.lastPlayedAt,
+        lastPlayedAt: courses[0].lastPlayedAt, // newest — drives ordering + staleness
+        courses,
       });
     }
     players.sort((a, b) => String(b.lastPlayedAt).localeCompare(String(a.lastPlayedAt)));

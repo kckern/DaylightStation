@@ -1249,43 +1249,72 @@
 
   &__card {
     display: inline-flex;
-    align-items: center;
-    gap: 0.6rem;
-    padding: 0.5rem 0.9rem;
-    border: 0;
+    align-items: flex-start;
+    gap: 0.55rem;
+    padding: 0.55rem 0.75rem;
     border-radius: var(--r-md, 0.75rem);
     background: rgba(255, 255, 255, 0.06);
     color: inherit;
-    cursor: pointer;
     &.is-stale { opacity: 0.45; filter: grayscale(0.55); }
   }
 
-  &__ring {
-    position: relative;
-    width: 2.6rem;
-    height: 2.6rem;
+  &__who {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.25rem;
     flex: 0 0 auto;
-    svg { position: absolute; inset: 0; width: 100%; height: 100%; }
-    &-track { fill: none; stroke: rgba(255, 255, 255, 0.28); stroke-width: 3.4; }
-    &-fill { fill: none; stroke: #4ade80; stroke-width: 3.4; stroke-linecap: round; }
 
-    // Explicit box, not `auto`: an absolutely-positioned replaced element
-    // (the avatar <img>) resolves width:auto to its INTRINSIC size and
-    // paints the full-resolution portrait over the page.
+    // Explicit box: the avatar <img> is a replaced element — never leave its
+    // size to auto/intrinsic resolution.
     .piano-avatar {
-      position: absolute;
-      top: 0.3rem;
-      left: 0.3rem;
-      width: calc(100% - 0.6rem);
-      height: calc(100% - 0.6rem);
+      width: 2.4rem;
+      height: 2.4rem;
       font-size: 0.7rem;
     }
   }
 
-  &__meta { display: flex; flex-direction: column; align-items: flex-start; line-height: 1.25; }
-  &__pct { font-weight: 700; font-variant-numeric: tabular-nums; }
-  &__course { font-size: 0.85rem; opacity: 0.85; max-width: 14rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  &__when { font-size: 0.72rem; opacity: 0.6; }
+  // One poster thumbnail per recent course, percent underneath. Tap target.
+  &__course {
+    display: inline-flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.2rem;
+    padding: 0;
+    border: 0;
+    background: none;
+    color: inherit;
+    cursor: pointer;
+  }
+
+  &__thumb {
+    width: 2.9rem;
+    height: 4.1rem; // 2:3 poster
+    object-fit: cover;
+    border-radius: 0.4rem;
+    display: block;
+
+    &--fallback {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      font-size: 0.55rem;
+      line-height: 1.15;
+      overflow: hidden;
+      background: rgba(255, 255, 255, 0.1);
+      padding: 0.15rem;
+    }
+  }
+
+  &__course-pct {
+    font-size: 0.72rem;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    color: #4ade80;
+  }
+
+  &__when { font-size: 0.66rem; opacity: 0.6; }
 }
 
 .piano-game-fullscreen {
