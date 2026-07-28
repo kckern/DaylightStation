@@ -43,6 +43,10 @@ import { nearestEvent, SELECT_MAX_DIST } from './nearestEvent.js';
 // is expressed as a MULTIPLE of it, so the two can never drift apart (audit H1).
 const TRANSPORT_TICK_MS = 100;
 
+// How long a guided loop-selection arm survives with no progress before it
+// expires (audit H4b).
+const SELECT_IDLE_MS = 15000;
+
 /**
  * ScorePlayer — interactive engraved score. Four modes:
  *  Learn   — full-hand tracking: the cursor advances only once every active-staff
@@ -105,6 +109,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
   // Guided measure-selection state machine (Loop → Select measures…):
   //   null | { stage: 'first' } | { stage: 'last', inMeasure } (audit J5/M3)
   const [selecting, setSelecting] = useState(null);
+  const [selectRejects, setSelectRejects] = useState(0);
   const [clickOn, setClickOn] = useState(() => restored.clickOn !== false); // Polish metronome — on unless turned off
   // Learn free-running metronome — explicit opt-in per session, NEVER persisted:
   // a walk-up user must not inherit a ticking room (audit M2).
@@ -793,7 +798,8 @@ export default function ScorePlayer({ score: scoreMeta }) {
     // NEAR a note (audit L3) — a margin tap is ignored, not committed.
     if (selecting) {
       const si = nearestEvent(events, e.clientX - r.left, e.clientY - r.top, SELECT_MAX_DIST * scale);
-      if (si < 0) return; // too far from any note — ignore
+      if (si < 0) { setSelectRejects((n) => n + 1); return; } // too far — say so, don't swallow it
+      setSelectRejects(0);
       const mi = measureIndexOfStep(si);
       if (selecting.stage === 'first') {
         setSelecting({ stage: 'last', inMeasure: mi });
@@ -864,8 +870,21 @@ export default function ScorePlayer({ score: scoreMeta }) {
   // Begin the guided two-tap measure selection (from Loop → Select measures…).
   const onStartSelect = useCallback(() => {
     setSelecting({ stage: 'first' });
+    setSelectRejects(0);
     logger.info('score.focus.select-start', {});
   }, [logger]);
+
+  // Arming must not outlive the user's intent. `selecting` gates the seek branch
+  // of onScoreClick, so a forgotten arm silently disables tap-to-seek — one user
+  // armed, played for 30s, tapped to seek and got a 10-measure loop (audit H4b).
+  useEffect(() => {
+    if (!selecting) return undefined;
+    const t = setTimeout(() => {
+      setSelecting(null);
+      logger.info('score.focus.select-timeout', { stage: selecting.stage });
+    }, SELECT_IDLE_MS);
+    return () => clearTimeout(t);
+  }, [selecting, logger]);
   const onCancelSelect = useCallback(() => setSelecting(null), []);
 
   const onClearFocus = useCallback(() => {
@@ -946,6 +965,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
   const onScaleStep = useCallback((v) => { pauseForViewChange(); setScale(v); }, [pauseForViewChange]);
 
   const reset = useCallback(() => {
+    setSelecting(null);     // Restart means the user is done arming a loop
     countIn.cancel();       // reset aborts a pending count-in
     clearWrapDwell();       // …and any pending loop-wrap dwell
     setLearnDone(false);    // fresh pass — close the completion card
@@ -1005,6 +1025,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
   }, [mode]);
 
   const toggleRun = useCallback(() => {
+    setSelecting(null); // starting/stopping a run means the user is done arming a loop
     clearWrapDwell(); // a manual play/pause overrides a pending loop-wrap dwell
     // A second tap during the count-in aborts it (never reaches the transport).
     if (countIn.active) { countIn.cancel(); logger.info('score.countin.cancel', { via: 'toggle' }); return; }
@@ -1206,7 +1227,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
           )}
         </MusicXmlRenderer>
         <CountInOverlay active={countIn.active} beat={countIn.beat} />
-        <SelectBanner stage={selecting?.stage} onCancel={onCancelSelect} />
+        <SelectBanner stage={selecting?.stage} rejects={selectRejects} onCancel={onCancelSelect} />
       </div>
 
       {keyboardVisible && (

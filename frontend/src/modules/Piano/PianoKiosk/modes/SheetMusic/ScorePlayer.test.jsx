@@ -892,12 +892,51 @@ describe('ScorePlayer — selection tap threshold (L3)', () => {
     act(() => { fireEvent.click(screen.getByRole('button', { name: /^loop/i })); });
     act(() => { fireEvent.click(screen.getByRole('button', { name: /select measures/i })); });
     const scroll = document.querySelector('.piano-score-player__scroll');
-    // A tap 800px right of the last note (margin) must NOT arm an in-point.
+    // A tap 800px right of the last note (margin) must NOT arm an in-point — and
+    // must SAY so rather than look like a dead screen (audit H4a).
     act(() => { fireEvent.click(scroll, { clientX: 960, clientY: 100 }); });
-    expect(screen.getByText(/tap the first measure/i)).toBeInTheDocument(); // still stage 'first'
+    expect(screen.getByText(/closer to a note/i)).toBeInTheDocument(); // still stage 'first'
     // A tap on a real note proceeds normally.
     act(() => { fireEvent.click(scroll, { clientX: 100, clientY: 100 }); });
     expect(screen.getByText(/now tap the last/i)).toBeInTheDocument();
+  });
+});
+
+describe('ScorePlayer — loop arming expires (H4b)', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.spyOn(performance, 'now').mockImplementation(() => Date.now());
+    vi.stubGlobal('requestAnimationFrame', (cb) => setTimeout(() => cb(Date.now()), 16));
+    vi.stubGlobal('cancelAnimationFrame', (id) => clearTimeout(id));
+    vi.setSystemTime(0);
+  });
+  afterEach(() => { cleanup(); vi.useRealTimers(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
+
+  it('drops a forgotten arm after the idle window, so a later tap seeks instead of looping', () => {
+    h.layoutExtras = {
+      steps: [
+        { onsetQuarter: 0, measure: 0, notes: [{ midi: 64, staff: 0, x: 100, top: 10, bottom: 200, width: 8 }] },
+        { onsetQuarter: 1, measure: 1, notes: [{ midi: 62, staff: 0, x: 160, top: 10, bottom: 200, width: 8 }] },
+      ],
+      measures: [
+        { index: 0, number: 1, firstStep: 0, lastStep: 0 },
+        { index: 1, number: 2, firstStep: 1, lastStep: 1 },
+      ],
+    };
+    renderPlayer();
+    act(() => { screen.getByText('Learn').click(); });
+    act(() => { fireEvent.click(screen.getByRole('button', { name: /^loop/i })); });
+    act(() => { fireEvent.click(screen.getByRole('button', { name: /select measures/i })); });
+    expect(screen.getByText(/tap the first measure/i)).toBeInTheDocument();
+
+    act(() => { vi.advanceTimersByTime(15001); }); // the user wandered off
+    expect(screen.queryByText(/tap the first measure/i)).toBeNull(); // banner gone — arming expired
+
+    // A tap now SEEKS (the whole point: arming was gating tap-to-seek).
+    const scroll = document.querySelector('.piano-score-player__scroll');
+    act(() => { fireEvent.click(scroll, { clientX: 160, clientY: 100 }); });
+    expect(screen.getByText('m 2 / 2')).toBeTruthy();
+    expect(screen.getByRole('button', { name: /^loop$/i })).toBeInTheDocument(); // and set no loop
   });
 });
 
