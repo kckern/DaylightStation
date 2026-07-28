@@ -31,20 +31,52 @@ describe('CourseTile', () => {
     expect(container.querySelector('.piano-cover-badge')).toBeNull();
   });
 
-  it('renders a progress overlay chip per qualifying user with completed/total', () => {
+  it('renders a progress-ring chip per qualifying user with a percent (full counts in the tooltip)', () => {
     const progress = {
       isSequential: true,
       total: 40,
       users: [
-        { id: 'user_2', name: 'User_2', completed: 12, total: 40 },
-        { id: 'user_3', name: 'User_3', completed: 8, total: 40 },
+        { id: 'user_2', name: 'User_2', completed: 12, total: 40, lastPlayedAt: new Date().toISOString() },
+        { id: 'user_3', name: 'User_3', completed: 8, total: 40, lastPlayedAt: new Date().toISOString() },
       ],
     };
     render(<CourseTile item={item} onSelect={() => {}} progress={progress} />);
     const overlay = document.querySelector('.piano-cover-progress');
     expect(overlay).toBeTruthy();
-    expect(overlay.textContent).toContain('12/40');
-    expect(overlay.textContent).toContain('8/40');
+    expect(overlay.textContent).toContain('30%');
+    expect(overlay.textContent).toContain('20%');
+    expect(overlay.textContent).not.toContain('12/40'); // denominator lives in the tooltip only
+    expect(screen.getByTitle('User_2: 12/40')).toBeTruthy();
+    const rings = overlay.querySelectorAll('.piano-cover-progress__ring-fill');
+    expect(rings).toHaveLength(2);
+    expect(rings[0].getAttribute('stroke-dasharray')).toBe('30 100');
+  });
+
+  it('dims a chip whose player has been idle beyond the fresh window', () => {
+    const old = new Date(Date.now() - 12 * 24 * 60 * 60 * 1000).toISOString();
+    const progress = {
+      isSequential: true,
+      total: 344,
+      users: [
+        { id: 'felix', name: 'Felix', completed: 32, total: 344, lastPlayedAt: old },
+        { id: 'soren', name: 'Soren', completed: 3, total: 344, lastPlayedAt: new Date().toISOString() },
+      ],
+    };
+    render(<CourseTile item={item} onSelect={() => {}} progress={progress} />);
+    const chips = document.querySelectorAll('.piano-cover-progress__chip');
+    expect(chips[0].className).toContain('is-stale');
+    expect(chips[0].getAttribute('title')).toContain('(resting)');
+    expect(chips[1].className).not.toContain('is-stale');
+  });
+
+  it('floors the percent at 1% once anything is completed', () => {
+    const progress = {
+      isSequential: true,
+      total: 344,
+      users: [{ id: 'soren', name: 'Soren', completed: 3, total: 344, lastPlayedAt: new Date().toISOString() }],
+    };
+    render(<CourseTile item={item} onSelect={() => {}} progress={progress} />);
+    expect(document.querySelector('.piano-cover-progress').textContent).toContain('1%');
   });
 
   it('renders no overlay when no users qualify', () => {

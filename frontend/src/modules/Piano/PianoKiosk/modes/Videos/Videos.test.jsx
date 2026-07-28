@@ -117,7 +117,9 @@ describe('Videos mode', () => {
     renderVideos('plex:440630');
     expect(await screen.findByTitle('Hoffman Academy')).toBeTruthy();
     expect(await screen.findByLabelText('Sequential course')).toBeTruthy();
-    expect(await screen.findByText('12/40')).toBeTruthy();
+    // Chip shows a completion ring + percent; the raw count lives in the tooltip.
+    expect(await screen.findByText('30%')).toBeTruthy();
+    expect(screen.getByTitle('User_2: 12/40')).toBeTruthy();
   });
 
   it('drills into a course via relative nav and lists its lectures', async () => {
