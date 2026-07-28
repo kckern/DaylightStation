@@ -1,3 +1,4 @@
+import fs from 'fs';
 import path from 'path';
 import { loadYaml, saveYaml } from '#system/utils/FileIO.mjs';
 
@@ -149,6 +150,13 @@ export class UserVideoProgressStore {
       if (up.lastPlayed && (!lastPlayedAt || up.lastPlayed > lastPlayedAt)) lastPlayedAt = up.lastPlayed;
     }
     return { completed, total, lastPlayedAt };
+  }
+
+  /** mtimeMs of the user's progress file — cache key material. 0 when absent. */
+  progressFileMtime(userId) {
+    const dir = this.#userDir(userId);
+    if (!dir) return 0;
+    try { return fs.statSync(path.join(dir, `${this.#filename}.yml`)).mtimeMs; } catch { return 0; }
   }
 
   // Convenience guard reused by routers.
