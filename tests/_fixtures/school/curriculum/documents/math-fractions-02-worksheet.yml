@@ -84,7 +84,9 @@ blocks:
           Rewrite both fractions with a common denominator, then write
           `<`, `>` or `=` in the box between them.
       - type: math
-        tex: '\frac{3}{5} \;\fbox{\phantom{X}}\; \frac{5}{8}'
+        # \fbox switches to text mode, where \phantom is invalid; \enclose{box}
+        # keeps the blank in math mode. Caught by the catalog render probe.
+        tex: '\frac{3}{5} \;\enclose{box}{\phantom{X}}\; \frac{5}{8}'
         display: true
       - type: answer_space
         minPt: 54
