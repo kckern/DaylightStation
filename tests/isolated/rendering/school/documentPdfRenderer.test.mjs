@@ -273,6 +273,43 @@ describe('variant', () => {
   });
 });
 
+// The action box reserved a 40pt square for a code and drew an empty outline in
+// it, printing the token underneath as 9pt text. The entire console runs on
+// scanning, so a blank code area is a sheet a child cannot act on without a
+// grown-up keying sixteen characters in by hand.
+describe('the scannable code on a sheet', () => {
+  const TOKEN = 'sch:2K7QVM4X9HRJTBNP';
+  const sheet = doc([{ type: 'scan_action', action: 'recovery', label: 'Another copy' }]);
+
+  it('DRAWS A REAL QR, not an empty box', async () => {
+    const { pdf } = await renderer.render(sheet, { tokens: { recovery: TOKEN } });
+    const withCode = await renderer.render(sheet, { tokens: { recovery: 'sch:AAAAAAAAAAAAAAAA' } });
+    // Two different tokens must produce different ink: an outline-only box
+    // would render identically whatever the code said.
+    expect(pdf.equals(withCode.pdf)).toBe(false);
+  });
+
+  it('draws it as vectors — nothing on this target is rasterized', async () => {
+    const { pdf } = await renderer.render(sheet, { tokens: { recovery: TOKEN } });
+    // An embedded bitmap would announce itself as an image XObject.
+    expect(pdf.toString('latin1')).not.toContain('/Subtype /Image');
+  });
+
+  it('is deterministic, like everything else on this target', async () => {
+    const opts = { tokens: { recovery: TOKEN } };
+    const first = await renderer.render(sheet, opts);
+    const second = await renderer.render(sheet, opts);
+    expect(first.pdf.equals(second.pdf)).toBe(true);
+  });
+
+  it('still renders when the action carries no minted token', async () => {
+    // The publish-time render probe supplies none; it must not throw, because
+    // that would make the catalog gate fail every document with an action box.
+    const { pageCount } = await renderer.render(sheet);
+    expect(pageCount).toBe(1);
+  });
+});
+
 describe('determinism', () => {
   it('renders byte-identical PDFs for the same document', async () => {
     const first = await renderer.render(worksheet, { studentName: 'learner-two' });

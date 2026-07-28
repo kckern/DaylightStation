@@ -134,6 +134,12 @@ export const documentPdfTheme = Object.freeze({
     codeSizePt: 9,
     codeAreaPt: 40,
     codeGapPt: 10,
+    // 'M' recovers ~15% — enough for a sheet that gets folded and carried
+    // around a house, without spending modules a 40pt square cannot spare.
+    qrErrorCorrection: 'M',
+    // The symbol's mandatory margin. A reader cannot find the finder patterns
+    // without it, and the dashed action border sits right beside this box.
+    qrQuietModules: 2,
     spacingClass: 'action',
   },
 
