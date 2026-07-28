@@ -136,3 +136,9 @@ dev.log*
 !/_extensions/content-barcode-relay/config.example.yml
 !/_extensions/ir-blaster/config.example.yml
 !/_extensions/piano/recorder/config.example.yml
+
+# Golden-test failure artifacts (regenerated on every failing run, never source)
+tests/isolated/rendering/school/golden/snapshots/*.diff.png
+
+# Agent scratch probes at repo root
+/_scratch/
