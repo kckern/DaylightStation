@@ -207,6 +207,48 @@ const bubbleGeometryScenario = async () => {
   expect(rendered.formMap.marks.length).toBeGreaterThan(0);
 };
 
+/**
+ * optical.test: the INK is where the form map says it is.
+ *
+ * Deliberately separate from `bubbleGeometryScenario`. That one catches a
+ * moved bubble only because a committed snapshot pins the recorded numbers —
+ * regenerate the snapshot and the defect is certified. This one measures the
+ * printed pixels, so it stays red no matter what any snapshot says.
+ */
+const opticalBubbleScenario = async () => {
+  const golden = await import('./../../rendering/school/golden/goldenHarness.mjs');
+  const optics = await import('#testlib/school/opticalHarness.mjs');
+  const testCase = golden.GOLDEN_CASES.find((c) => c.formMapSnapshot);
+  const rendered = await golden.renderCase(testCase);
+  const pageImages = await optics.rasterizeForOptics(rendered.pdf, 'sabotage-optical');
+  const { failures } = optics.checkPrintedMarks(pageImages, rendered.formMap);
+  // Joined rather than compared as an array: the failure TEXT is what names the
+  // defect, and the cases below match on it.
+  expect(failures.join('\n')).toBe('');
+};
+
+/** optical.test: the printed symbol decodes to the token that was handed over. */
+const opticalQrScenario = async () => {
+  const golden = await import('./../../rendering/school/golden/goldenHarness.mjs');
+  const optics = await import('#testlib/school/opticalHarness.mjs');
+  const token = 'sch:9F3KMNPQ2RSTUVWX';
+  const document = {
+    id: 'sabotage-code-doc',
+    seed: 1,
+    target: ['letter'],
+    blocks: [
+      { type: 'rich_text', md: 'Do the work, then scan below.' },
+      { type: 'scan_action', action: 'recovery', label: 'Scan for another copy' },
+    ],
+  };
+  const out = await golden.createGoldenRenderer().render(document, { tokens: { recovery: token } });
+  const pageImages = await optics.rasterizeForOptics(out.pdf, 'sabotage-qr');
+  const symbols = optics.decodePrintedCodes(pageImages).flatMap((d) => d.symbols);
+  expect(symbols).toHaveLength(1);
+  expect(symbols[0].text).toBe(token);
+  expect(symbols[0].text).toBe(out.codeMap[0].text);
+};
+
 /** documentValidation.test: an answer key anywhere in a document is refused. */
 const answerKeyScenario = async () => {
   const { validateDocument } = await import('#domains/school/documents/documentValidation.mjs');
@@ -255,6 +297,22 @@ const BUBBLE_CENTRE_IS_OFF_BY_3PT = {
   edits: [['        xPt: centreX,', '        xPt: centreX + 3,']],
 };
 
+const BUBBLE_IS_DRAWN_SMALLER_THAN_RECORDED = {
+  file: 'backend/src/1_rendering/school/documents/DocumentPdfRenderer.mjs',
+  specifier: '#rendering/school/documents/DocumentPdfRenderer.mjs',
+  edits: [['.circle(centreX, centreY, bubbleRadiusPt).stroke().restore();', '.circle(centreX, centreY, bubbleRadiusPt - 1).stroke().restore();']],
+};
+
+// The symbol prints one payload while `codeMap` reports another. Every existing
+// code assertion reads the report, so all of them stay green: the text is
+// unchanged, the module count is unchanged, the dark-module count is still
+// healthy. Only a decoder pointed at the ink can see it.
+const QR_ENCODES_A_DIFFERENT_TOKEN = {
+  file: 'backend/src/1_rendering/school/documents/DocumentPdfRenderer.mjs',
+  specifier: '#rendering/school/documents/DocumentPdfRenderer.mjs',
+  edits: [['QRCode.create(String(text), {', "QRCode.create(`${String(text)}Z`, {"]],
+};
+
 // The guard is stated TWICE — an early return in `#applyReward` and the
 // `existingRewardTxn` the pure `rewardDecision` is handed. Disabling only the
 // first proves nothing: the second still refuses, and the mutation survives.
@@ -279,7 +337,7 @@ const VALIDATOR_ALLOWS_AN_ANSWER_KEY = {
 
 // ---------------------------------------------------------------------------
 
-describe('the suite can fail: six real defects, injected into production code', () => {
+describe('the suite can fail: nine real defects, injected into production code', () => {
   it('1. OMR decode returns the bubble letter instead of the choice text', async () => {
     await clean(bubbleSheetScenario);
     const failure = await goesRed('omr-decode-returns-letter', () => withMutation(
@@ -310,6 +368,31 @@ describe('the suite can fail: six real defects, injected into production code', 
     await goesRed('bubble-centre-off-by-3pt', () => withMutation(
       BUBBLE_CENTRE_IS_OFF_BY_3PT, bubbleGeometryScenario,
     ));
+  }, SCENARIO_TIMEOUT);
+
+  it('4b. the same 3pt offset, caught by measuring the printed ink', async () => {
+    await clean(opticalBubbleScenario);
+    const failure = await goesRed('bubble-centre-off-by-3pt (optical)', () => withMutation(
+      BUBBLE_CENTRE_IS_OFF_BY_3PT, opticalBubbleScenario,
+    ));
+    // Named, so a pass here cannot come from some unrelated explosion.
+    expect(String(failure)).toMatch(/recorded centre/);
+  }, SCENARIO_TIMEOUT);
+
+  it('4c. bubbles are drawn 1pt smaller than the radius recorded for them', async () => {
+    await clean(opticalBubbleScenario);
+    const failure = await goesRed('bubble-radius-shrunk', () => withMutation(
+      BUBBLE_IS_DRAWN_SMALLER_THAN_RECORDED, opticalBubbleScenario,
+    ));
+    expect(String(failure)).toMatch(/recorded radius/);
+  }, SCENARIO_TIMEOUT);
+
+  it('3b. the QR encodes a different token than the one reported', async () => {
+    await clean(opticalQrScenario);
+    const failure = await goesRed('qr-encodes-a-different-token', () => withMutation(
+      QR_ENCODES_A_DIFFERENT_TOKEN, opticalQrScenario,
+    ));
+    expect(String(failure)).toMatch(/sch:9F3KMNPQ2RSTUVWXZ/);
   }, SCENARIO_TIMEOUT);
 
   it('5. the reward guard ignores an existing rewardTxn', async () => {

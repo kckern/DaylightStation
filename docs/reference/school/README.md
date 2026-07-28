@@ -586,6 +586,22 @@ one source. The block set is closed in code, the same posture as
   mandatory** and a fourth MathJax rule besides — see
   [the spike results](../../_wip/plans/2026-07-27-school-math-rendering-spike-results.md).
   Skipping any one produces silently wrong output, not an error.
+- **What was recorded is checked against what was printed.** The renderer writes
+  each bubble's geometry into the form map and the grader reads that same
+  record, so the two agree by construction and a drift between the record and
+  the ink is invisible to both. `tests/isolated/rendering/school/optical.test.mjs`
+  closes that: it rasterizes the real fixture at 300dpi, finds the bubbles by
+  detecting the holes ink encloses and fitting a circle to each rim at sub-pixel
+  resolution, and asserts every recorded centre and radius against the measured
+  one. The printed QR is decoded the same way — located by its finder patterns
+  and read module by module by a decoder that did not draw it
+  (`#testlib/school/qrDecode.mjs`), because `codeMap` is written by the draw
+  loop and cannot testify about itself. Both checks are proved able to fail by
+  named mutations in the sabotage suite.
+- **Golden pages carry two tolerances.** Prose gets a whole-page budget loose
+  enough to absorb antialiasing; bubble rows and code boxes get a budget five
+  times tighter applied to their own small boxes. One number could not do both:
+  adding the QR symbol at all moved 0.33% of a page and failed nothing.
 
 **Work sessions** — the durable record School lacked: append-only events per
 session under `data/apps/school/sessions/{date}/{sessionId}/events.yml`, with
