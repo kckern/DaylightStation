@@ -16,7 +16,7 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import {
   createLifecycleHarness, fixtureBank,
-  MEDIA_UNIT, WORKSHEET_UNIT, OMR_UNIT, DEFAULT_LEARNER, DEFAULT_GROWNUP,
+  MEDIA_UNIT, WORKSHEET_UNIT, OMR_UNIT, MIXED_UNIT, DEFAULT_LEARNER, DEFAULT_GROWNUP,
 } from '#testlib/school/lifecycleHarness.mjs';
 
 const ALL_RIGHT = (ids) => Object.fromEntries(ids.map((id) => [id, 'correct']));
@@ -592,6 +592,61 @@ describe('scenario 9 — a scan with nobody behind it', () => {
 // ---------------------------------------------------------------------------
 // the artifacts themselves
 // ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// every printed barcode does something
+// ---------------------------------------------------------------------------
+
+describe('no printed barcode is a no-op', () => {
+  /**
+   * The action blocks a sheet declares, paired with the token IssueDocument
+   * minted for each. A block whose `action` is not a token class gets no token
+   * and the renderer prints that literal string into the code area — a barcode
+   * on a real artifact a child is holding that scans to nothing.
+   */
+  const actionBlocksOf = (document) => (document.blocks ?? [])
+    .filter((b) => b.type === 'scan_action' || b.type === 'media_action');
+
+  it.each([
+    ['the worksheet', WORKSHEET_UNIT, /print your sheet/i],
+    ['the bubble sheet', OMR_UNIT, /print your sheet|print the questions/i],
+  ])('every action printed on %s resolves to something that prints', async (_label, unitId, offer) => {
+    await h.completeMediaUnit();
+    if (unitId === OMR_UNIT) await h.completeWorksheetUnit();
+    await h.scanCard();
+
+    const issued = await h.scanTokenMatching(offer);
+    expect(issued.status).toBe('issued');
+
+    const unit = await h.stores.curriculum.getUnit(unitId);
+    const document = await h.stores.curriculum.getDocument(unit.document);
+    const blocks = actionBlocksOf(document);
+    expect(blocks.length).toBeGreaterThan(0);
+
+    for (const block of blocks) {
+      // Minted, not a literal: the code area carries an opaque `sch:` value.
+      const token = issued.effect?.tokens?.[block.action] ?? null;
+      expect(token, `no token minted for ${block.type} '${block.action}'`).toMatch(/^sch:[2-9A-HJ-NP-Z]{16}$/);
+
+      // And scanning it does something a child can see happen.
+      const before = h.receiptTexts().length + h.printedPdfs().length;
+      const scanned = await h.scan(token);
+      expect(scanned.status).not.toBe('not_school');
+      expect(scanned.printed, `scanning ${block.label} printed nothing`).toBe(true);
+      expect(h.receiptTexts().length + h.printedPdfs().length).toBeGreaterThan(before);
+    }
+  });
+
+  it('the play box on a mixed unit is a real ticket, not the manifest id', async () => {
+    const unit = await h.stores.curriculum.getUnit(MIXED_UNIT);
+    const document = await h.stores.curriculum.getDocument(unit.document);
+    const play = actionBlocksOf(document).find((b) => b.type === 'media_action');
+    expect(play).toBeTruthy();
+    // The renderer draws `tokens[block.action]`, so the action has to be a name
+    // IssueDocument mints under — never a manifest id nothing can resolve.
+    expect(play.action).toBe('media_action');
+  });
+});
 
 describe('the artifacts a child is handed', () => {
   it('renders the agenda receipt on the real thermal target', async () => {

@@ -303,11 +303,25 @@ export function createDocumentPdfRenderer({
     }
   }
 
-  function drawFooter(out, { page, pageCount }) {
+  /**
+   * Which equivalent form of the sheet this is, as a letter a person can read
+   * off the page: form 1 is "Form B". Form 0 is UNMARKED — it is the ordinary
+   * sheet, and a worksheet that never gets retried should not grow a label just
+   * because retries are possible.
+   */
+  function formLabel(variant) {
+    if (!Number.isInteger(variant) || variant <= 0) return null;
+    // Past Z, the number itself: 26 forms of one worksheet is not a thing a
+    // curriculum authors, and "Form AA" would read as a typo.
+    return variant < 26 ? `Form ${String.fromCharCode(65 + variant)}` : `Form ${variant + 1}`;
+  }
+
+  function drawFooter(out, { page, pageCount, variant }) {
     const { sizePt, gapAbovePt } = theme.footer;
+    const form = formLabel(variant);
     setFont(out, 'regular', sizePt, 'muted');
     out.text(
-      `Page ${page} of ${pageCount}`,
+      form ? `Page ${page} of ${pageCount}  ·  ${form}` : `Page ${page} of ${pageCount}`,
       contentLeftPt,
       theme.page.heightPt - theme.page.marginPt + gapAbovePt,
       { width: contentRightPt - contentLeftPt, align: 'center', lineBreak: false },
@@ -400,7 +414,7 @@ export function createDocumentPdfRenderer({
         for (const fragment of page.fragments) {
           drawFragment(out, fragment, { page: index + 1, marks });
         }
-        drawFooter(out, { page: index + 1, pageCount: pages.length });
+        drawFooter(out, { page: index + 1, pageCount: pages.length, variant: document.variant ?? 0 });
       });
       out.end();
     });
@@ -423,11 +437,30 @@ export function createDocumentPdfRenderer({
    *   duplicated into the document.
    * @param {Object<string,string>} [options.tokens] - action value → already-minted
    *   token, drawn in the action box. Nothing is minted here.
+   * @param {number} [options.variant] - which equivalent form of the sheet this
+   *   is. Overrides `document.variant`; it reaches the footer ("Form B") and the
+   *   form map, so the artifact and its geometry both record WHICH sheet was
+   *   handed over. Anything that is not a non-negative integer is ignored.
+   *
+   *   DEFERRED: this renderer does not GENERATE equivalent problems — a retry
+   *   is the same questions under a new form letter. Real variant generation
+   *   needs a problem generator per question type and is its own piece of work;
+   *   until then the plumbing is honest about which form was issued, and the
+   *   e2e suite reports the sameness rather than hiding it.
    * @returns {Promise<{pdf: Buffer, pageCount: number, formMap: Object|null, isAnswerKey: boolean, keyItems: Array}>}
    */
-  async function render(document, {
+  async function render(source, {
     studentName = null, answers = null, answerKey = false, bank = null, tokens = null,
+    variant = null,
   } = {}) {
+    // The variant rides on the DOCUMENT, not just alongside it: the footer and
+    // the form map both derive from what was rendered, so a variant passed only
+    // in the options would be a variant the paper does not actually carry.
+    const asked = Number.isInteger(variant) && variant >= 0 ? variant : null;
+    const document = asked === null || asked === (source.variant ?? 0)
+      ? source
+      : { ...source, variant: asked };
+
     const resolvedAnswers = answers
       ?? (answerKey ? Object.fromEntries((bank?.items ?? [])
         .filter((item) => item.answer !== undefined)

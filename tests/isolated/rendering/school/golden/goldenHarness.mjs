@@ -85,6 +85,15 @@ export const GOLDEN_CASES = [
     name: 'fixture-04-worksheet',
     document: () => readYaml(path.join(FIXTURE_DIR, 'documents', 'math-fractions-04-worksheet.yml')),
   },
+  {
+    // The SECOND form of the same worksheet, as a retry hands it over. The only
+    // difference on the page is the footer's "Form B" — which is the point:
+    // that label is the whole record of which sheet a child was given, so it
+    // has to be legible, and a picture is the only thing that can check that.
+    name: 'fixture-02-worksheet-form-b',
+    document: () => readYaml(path.join(FIXTURE_DIR, 'documents', 'math-fractions-02-worksheet.yml')),
+    options: () => ({ variant: 1 }),
+  },
 ];
 
 /** Every case renders with the same injected deps, so a diff means a code change. */

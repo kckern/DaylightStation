@@ -16,8 +16,11 @@ blocks:
       anything. Then play them again one at a time and work each problem here.
       Show the fractions you used and write each result in simplest form.
 
+  # `action` names the TOKEN CLASS, not the manifest: what gets played comes
+  # from the unit's `media:` ref, and a manifest id printed here would have been
+  # a string no scan could resolve.
   - type: media_action
-    action: play:math-fractions-word-problems-audio
+    action: media_action
     label: Play the word problems
 
   - type: question
@@ -81,6 +84,15 @@ blocks:
         minPt: 108
         maxPt: 180
 
+  # The barcode on a printed sheet is a REAL ticket, so it names a token class
+  # from the closed set in `sessions/tokens.mjs` and `IssueDocument` mints it at
+  # issue time. `recovery` is the honest one here: it is actionable for as long
+  # as the work is open and it reprints THIS artifact (same id, same form map).
+  #
+  # Handing the sheet in is deliberately NOT a barcode — the session reducer
+  # gives `submit_work` a null tokenClass because a grown-up marks paper. On the
+  # OMR sheet a submit-by-scan would be worse than useless: it would advance the
+  # session to `submitted` and lock the mark reader out of its own sheet.
   - type: scan_action
-    action: scan-worksheet
-    label: Scan this page when every problem is finished
+    action: recovery
+    label: Scan this code if you need another copy of this sheet
