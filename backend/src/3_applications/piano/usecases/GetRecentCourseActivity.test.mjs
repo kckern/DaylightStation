@@ -2,12 +2,14 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { GetRecentCourseActivity } from './GetRecentCourseActivity.mjs';
 
-const PIANO_CFG = { videos: { collections: [
+let PIANO_CFG;
+const basePianoCfg = () => ({ videos: { collections: [
   { label: 'Music Lessons', plex: ['plex:100'] },
   { label: 'Music Appreciation', plex: ['plex:200'] },
-] } };
+] } });
 
 function makeDeps({ summaries }) {
+  PIANO_CFG = basePianoCfg();
   // summaries: { [userId]: { [showId]: { completed, total, lastPlayedAt } } }
   return {
     configService: {
@@ -34,11 +36,11 @@ function makeDeps({ summaries }) {
   };
 }
 
-test('lists each user recent lesson courses newest-first, sorted by player recency, skipping no-history users', async () => {
+test('default slot: incomplete courses by highest percent, 100% courses dropped', async () => {
   const uc = new GetRecentCourseActivity(makeDeps({ summaries: {
     felix: {
-      10: { completed: 1, total: 2, lastPlayedAt: '2026-07-20T00:00:00Z' },
-      11: { completed: 2, total: 2, lastPlayedAt: '2026-07-25T00:00:00Z' },
+      10: { completed: 1, total: 2, lastPlayedAt: '2026-07-20T00:00:00Z' },  // 50%
+      11: { completed: 2, total: 2, lastPlayedAt: '2026-07-25T00:00:00Z' },  // 100% — excluded
     },
     kc: { 10: { completed: 1, total: 2, lastPlayedAt: '2026-07-26T00:00:00Z' } },
   } }));
@@ -47,15 +49,60 @@ test('lists each user recent lesson courses newest-first, sorted by player recen
   assert.equal(players[0].userId, 'kc');                        // newest player first
   assert.equal(players[0].name, 'KC');                          // display_name resolution
   assert.equal(players[0].lastPlayedAt, '2026-07-26T00:00:00Z');
-  assert.equal(players[0].courses.length, 1);
   const felix = players[1];
-  assert.equal(felix.courses.length, 2);                        // both touched courses listed
-  assert.equal(felix.courses[0].courseId, 'plex:11');           // newest course first
-  assert.equal(felix.courses[0].courseTitle, 'Course B');
-  assert.equal(felix.courses[0].completed, 2);
-  assert.equal(felix.courses[0].percent, 100);
-  assert.equal(felix.courses[1].courseId, 'plex:10');
-  assert.equal(felix.lastPlayedAt, felix.courses[0].lastPlayedAt); // player recency = newest course
+  assert.equal(felix.courses.length, 1);                        // completed course dropped
+  assert.equal(felix.courses[0].courseId, 'plex:10');
+  assert.equal(felix.courses[0].percent, 50);
+  assert.equal(felix.lastPlayedAt, '2026-07-25T00:00:00Z');     // recency still counts the 100% course
+});
+
+test('default slot ranks by percent (highest first), not recency', async () => {
+  const deps = makeDeps({ summaries: {
+    kc: {
+      10: { completed: 1, total: 10, lastPlayedAt: '2026-07-26T00:00:00Z' }, // 10%, newest
+      11: { completed: 8, total: 10, lastPlayedAt: '2026-07-20T00:00:00Z' }, // 80%, older
+    },
+  } });
+  const uc = new GetRecentCourseActivity(deps);
+  const { players } = await uc.execute();
+  assert.deepEqual(players[0].courses.map((c) => c.courseId), ['plex:11', 'plex:10']);
+});
+
+test('menu_activity.slots config overrides the default (recent-courses)', async () => {
+  const deps = makeDeps({ summaries: {
+    felix: {
+      10: { completed: 1, total: 2, lastPlayedAt: '2026-07-20T00:00:00Z' },
+      11: { completed: 2, total: 2, lastPlayedAt: '2026-07-25T00:00:00Z' },
+    },
+  } });
+  PIANO_CFG.menu_activity = { slots: ['recent-courses'] };
+  const uc = new GetRecentCourseActivity(deps);
+  const { players } = await uc.execute();
+  const felix = players[0];
+  assert.equal(felix.courses.length, 2);                        // 100% course included
+  assert.equal(felix.courses[0].courseId, 'plex:11');           // newest first
+});
+
+test('placeholder and unknown slots contribute nothing without crashing', async () => {
+  const deps = makeDeps({ summaries: {
+    kc: { 10: { completed: 1, total: 2, lastPlayedAt: '2026-07-26T00:00:00Z' } },
+  } });
+  PIANO_CFG.menu_activity = { slots: ['recent-sheet-music', 'top-polish', 'nonsense', 'top-incomplete-courses'] };
+  const uc = new GetRecentCourseActivity(deps);
+  const { players } = await uc.execute();
+  assert.equal(players[0].courses.length, 1);                   // only the real slot filled
+  assert.equal(players[0].courses[0].courseId, 'plex:10');
+});
+
+test('a player with only completed courses falls back to recent courses (their trophy)', async () => {
+  const deps = makeDeps({ summaries: {
+    kc: { 10: { completed: 2, total: 2, lastPlayedAt: '2026-07-26T00:00:00Z' } }, // 100%
+  } });
+  const uc = new GetRecentCourseActivity(deps);
+  const { players } = await uc.execute();
+  assert.equal(players.length, 1);
+  assert.equal(players[0].courses.length, 1);
+  assert.equal(players[0].courses[0].percent, 100);
 });
 
 test('duplicate rows from the raw children container collapse to one course', async () => {
