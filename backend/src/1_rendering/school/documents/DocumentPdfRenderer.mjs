@@ -27,6 +27,7 @@
 
 import PDFDocument from 'pdfkit';
 import SVGtoPDF from 'svg-to-pdfkit';
+import QRCode from 'qrcode';
 
 import { placeFragments } from './layout.mjs';
 import {
@@ -228,15 +229,60 @@ export function createDocumentPdfRenderer({
     });
   }
 
+  /**
+   * The scannable code itself, drawn as vector modules.
+   *
+   * This box used to be an empty outline with the token printed underneath as
+   * small text — a reserved space nobody ever filled. The whole console runs on
+   * scanning, so a worksheet whose code area is blank is a sheet a child cannot
+   * act on without a grown-up keying sixteen characters in by hand.
+   *
+   * Rects rather than a rasterized image: a QR at 40pt would have to be ~600dpi
+   * to survive printing, and vector modules are exact at any resolution and stay
+   * byte-deterministic. `QRCode.create` is synchronous and pure, so the draw
+   * pass keeps its "no clock, no randomness" property.
+   */
+  function drawQrCode(out, { text, xPt, yPt, sizePt }) {
+    const { modules } = QRCode.create(String(text), {
+      errorCorrectionLevel: theme.action.qrErrorCorrection,
+    });
+    // A quiet zone is part of the symbol: without it a reader cannot find the
+    // finder patterns against the dashed border sitting right beside them.
+    const quiet = theme.action.qrQuietModules;
+    const span = modules.size + 2 * quiet;
+    const modulePt = sizePt / span;
+
+    out.save().fillColor(theme.ink.text);
+    for (let row = 0; row < modules.size; row += 1) {
+      for (let col = 0; col < modules.size; col += 1) {
+        if (!modules.data[row * modules.size + col]) continue;
+        out.rect(
+          xPt + (col + quiet) * modulePt,
+          yPt + (row + quiet) * modulePt,
+          // A hair of overlap, so adjacent modules do not show hairlines
+          // between them when the rasterizer rounds to device pixels.
+          modulePt + 0.02,
+          modulePt + 0.02,
+        );
+      }
+    }
+    out.fill().restore();
+  }
+
   function drawActionBox(out, node, { xPt, yPt }) {
     const { padPt, borderWidthPt, borderDash, labelSizePt, codeSizePt, codeAreaPt, codeGapPt } = theme.action;
     out.save().lineWidth(borderWidthPt).strokeColor(theme.ink.box).dash(borderDash[0], { space: borderDash[1] });
     out.rect(xPt, yPt, node.widthPt, node.heightPt).stroke();
     out.undash();
+    out.restore();
 
     const codeX = xPt + node.widthPt - padPt - codeAreaPt;
-    out.rect(codeX, yPt + padPt, codeAreaPt, node.heightPt - 2 * padPt).stroke();
-    out.restore();
+    drawQrCode(out, {
+      text: node.codeText,
+      xPt: codeX,
+      yPt: yPt + padPt,
+      sizePt: Math.min(codeAreaPt, node.heightPt - 2 * padPt),
+    });
 
     const textWidth = codeX - codeGapPt - (xPt + padPt);
     setFont(out, 'bold', labelSizePt);
