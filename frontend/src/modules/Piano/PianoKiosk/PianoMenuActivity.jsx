@@ -24,9 +24,11 @@ export function relativeTime(iso, now = Date.now()) {
 
 /**
  * Menu course-activity strip (spec 2026-07-28-piano-menu-activity-strip):
- * one card per player with course history — avatar in a completion ring
- * (same language as the poster chips), course title, relative time. Tap →
- * that course. Renders nothing while loading, on error, or when empty.
+ * one card per player with course history — avatar + up to four recent-course
+ * poster thumbnails, each with its completion percent underneath (same
+ * percent rule as the poster chips). Tap a thumbnail → that course. Players
+ * idle past the fresh window dim. Renders nothing while loading, on error,
+ * or when empty.
  */
 export default function PianoMenuActivity({ onOpenCourse }) {
   const [players, setPlayers] = useState(null);
@@ -46,34 +48,44 @@ export default function PianoMenuActivity({ onOpenCourse }) {
   return (
     <div className="piano-menu-activity" aria-label="Recent course activity">
       {players.map((u) => {
-        const pct = chipPercent(u);
-        const stale = chipIsStale(u);
+        const stale = chipIsStale(u); // player-level: keyed off their newest course
         return (
-          <button
-            type="button"
+          <div
             key={u.userId}
             className={`piano-menu-activity__card${stale ? ' is-stale' : ''}`}
-            onClick={() => onOpenCourse?.(u.courseId)}
-            title={`${u.name}: ${u.completed}/${u.total}`}
           >
-            <span className="piano-menu-activity__ring">
-              <svg viewBox="0 0 36 36" aria-hidden="true">
-                <circle className="piano-menu-activity__ring-track" cx="18" cy="18" r={100 / (2 * Math.PI)} />
-                <circle
-                  className="piano-menu-activity__ring-fill"
-                  cx="18" cy="18" r={100 / (2 * Math.PI)}
-                  strokeDasharray={`${pct} 100`}
-                  transform="rotate(-90 18 18)"
-                />
-              </svg>
+            <span className="piano-menu-activity__who" title={u.name}>
               <ProfileAvatar id={u.userId} name={u.name} />
-            </span>
-            <span className="piano-menu-activity__meta">
-              <span className="piano-menu-activity__pct">{pct}%</span>
-              <span className="piano-menu-activity__course">{u.courseTitle}</span>
               <span className="piano-menu-activity__when">{relativeTime(u.lastPlayedAt)}</span>
             </span>
-          </button>
+            {(u.courses || []).map((c) => {
+              const pct = chipPercent(c);
+              return (
+                <button
+                  type="button"
+                  key={c.courseId}
+                  className="piano-menu-activity__course"
+                  onClick={() => onOpenCourse?.(c.courseId)}
+                  title={`${u.name} — ${c.courseTitle}: ${c.completed}/${c.total}`}
+                >
+                  {c.thumbnail ? (
+                    <img
+                      className="piano-menu-activity__thumb"
+                      src={c.thumbnail}
+                      alt={c.courseTitle}
+                      loading="lazy"
+                      decoding="async"
+                    />
+                  ) : (
+                    <span className="piano-menu-activity__thumb piano-menu-activity__thumb--fallback">
+                      {c.courseTitle}
+                    </span>
+                  )}
+                  <span className="piano-menu-activity__course-pct">{pct}%</span>
+                </button>
+              );
+            })}
+          </div>
         );
       })}
     </div>
