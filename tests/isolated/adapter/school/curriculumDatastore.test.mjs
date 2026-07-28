@@ -45,6 +45,14 @@ describe('listing', () => {
     await expect(ds.listManifests()).resolves.toEqual({ items: [], errors: [] });
   });
 
+  it('a directory that is not a directory is reported, not read as empty', async () => {
+    fs.mkdirSync(curriculumDir(), { recursive: true });
+    fs.writeFileSync(curriculumDir('units'), 'oops, a file\n');
+    const { items, errors } = await ds.listUnits();
+    expect(items).toEqual([]);
+    expect(errors).toEqual([expect.stringMatching(/^units: unreadable directory/)]);
+  });
+
   it('returns raw parsed YAML keyed by basename, sorted, with no validation applied', async () => {
     // Deliberately NOT a valid unit — the adapter must hand back whatever parsed.
     write('units', 'math-3.4.yml', 'unitId: math-3.4\nnonsense: true\n');

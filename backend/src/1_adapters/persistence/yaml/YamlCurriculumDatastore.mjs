@@ -62,8 +62,13 @@ export class YamlCurriculumDatastore extends ICurriculumCatalog {
     let entries;
     try {
       entries = fs.readdirSync(dir, { withFileTypes: true });
-    } catch {
-      return []; // missing (or unreadable) directory → empty catalog, not a throw
+    } catch (err) {
+      // A directory that does not exist yet is an empty catalog, not a throw.
+      // Anything else (a file where a directory should be, bad permissions) is
+      // reported — blanking the catalog because of it is how a whole shelf of
+      // curriculum silently disappears.
+      if (err.code !== 'ENOENT') errors.push(`${kind}: unreadable directory (${err.message})`);
+      return [];
     }
     const out = [];
     for (const entry of entries) {
