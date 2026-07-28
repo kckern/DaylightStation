@@ -47,12 +47,24 @@
  *    always self-identified, just without naming its owner.
  * 3. `legacy-positional` — anything else with a NON-EMPTY segment before its
  *    first colon → content.
- * 4. `shape` — digit-only: 13 digits behind a Bookland prefix → book, otherwise
- *    → product. Nothing prints a `book:` sticker: the publisher's barcode is
- *    already on the object, so shape is the only signal available.
+ * 4. `shape` — ISBN-13 ONLY: 13 digits behind a Bookland prefix → book. Nothing
+ *    prints a `book:` sticker — the publisher's barcode is already on the
+ *    object — so shape is the only signal available, and 978/979 makes a book
+ *    identifiable FROM THE CODE ITSELF. That is the whole test for what shape may
+ *    claim, and it is why an ordinary UPC/EAN does NOT resolve here.
  * 6. `unknown` — an explicit outcome, never a fall-through. (Step 5, the
  *    reader's `route`, lives in the dispatcher: this module sees only a string
  *    and knows nothing about which reader sent it.)
+ *
+ * **A bare UPC/EAN is deliberately UNCLAIMED**, and falls to step 5. A product
+ * barcode does not say what it is FOR: the same tin scanned at the fridge means
+ * "log this food", and scanned at a content reader means nothing at all. So it
+ * means whatever its reader is configured for, which is a step-5 question by
+ * definition. Claiming it here as `product` would make it log food on a
+ * CONTENT-routed reader, where today it reaches `BarcodePayload.parse`, fails to
+ * parse, and does nothing — a real behaviour change, and the one Phase 1
+ * explicitly forbids. `product` therefore exists only as a route-fallback
+ * target, never as a shape outcome.
  *
  * **Body convention.** `body` is always the payload in the OWNING domain's
  * grammar, whichever form carried it. A prefixed code strips its tag; a legacy
@@ -89,11 +101,19 @@
  *   and refuses what it cannot read, exactly as it does today for a typo'd
  *   sticker.
  *
- * `unknown` therefore stays reachable three ways: input with no colon that is
- * not digits only (`gibberish`); input whose FIRST colon is at index 0
- * (`:4`, `:go:x`), which has an empty tag and so is excluded from steps 1-3 by
- * the same guard — and, being non-digit, from step 4 as well; and non-string or
- * blank input, which returns from the `!raw` guard before any step runs.
+ * `unknown` therefore stays reachable four ways: input with no colon that is not
+ * an ISBN-13 (`gibberish`); a digit-only code that is not an ISBN-13
+ * (`041260010682`), which is the DELIBERATE unclaimed case above and the one the
+ * dispatcher's route fallback is there to catch; input whose FIRST colon is at
+ * index 0 (`:4`, `:go:x`), which has an empty tag and so is excluded from steps
+ * 1-3 by the same guard — and, not being an ISBN, from step 4 as well; and
+ * non-string or blank input, which returns from the `!raw` guard before any step
+ * runs.
+ *
+ * Note what that means for reading `form: 'unknown'`: it is NOT a synonym for
+ * "malformed". It means "this module cannot say", which for a UPC is the correct
+ * and expected answer, not a failure. Only the dispatcher, which knows the
+ * reader, can finish the job.
  *
  * Steps 3 and 4 are DISJOINT BY CONSTRUCTION — step 3 requires a colon, step 4
  * requires digits only — so their ordering is not a judgment call and cannot
@@ -142,9 +162,16 @@ export const LEGACY_NUTRITION_TAGS = Object.freeze(['dl', 'ct', 'rs']);
 const ISBN13_PREFIXES = Object.freeze(['978', '979']);
 
 /**
- * Every namespace a parse can resolve to. `book` and `product` have no prefix
- * tag — they exist only as shape outcomes (step 4) — so they are listed
- * explicitly rather than derived from the registry.
+ * Every namespace the SYSTEM can resolve to, which is deliberately wider than
+ * what THIS module returns. Neither `book` nor `product` has a prefix tag, so
+ * neither is derivable from the registry:
+ *
+ * - `book` is a shape outcome (step 4) and does come back from a parse.
+ * - `product` NEVER comes back from a parse. It is reachable only through the
+ *   dispatcher's step-5 route fallback, because a UPC means whatever its reader
+ *   is configured for. It is listed here because this is the vocabulary's
+ *   namespace list, not a list of parse results — a handler registry and a
+ *   route-fallback config both validate against it.
  */
 export const NAMESPACES = Object.freeze([
   ...new Set([...Object.values(PREFIX_REGISTRY), 'book', 'product']),
@@ -159,10 +186,16 @@ export const FORMS = Object.freeze([
  * Shape test only — a 978/979 code that fails its check digit still reads as a
  * book. Validation belongs to the book handler, on the same principle that
  * keeps this module from validating a prefixed body: shape names the owner and
- * stops there. Length is exact: a 12- or 14-digit code starting `978` reads as
- * a product. A GTIN-14 wrapping a book's EAN misses on the prefix as well as
- * the length, since its leading indicator digit pushes `978` off the front
- * (`19780306406157` starts `197`).
+ * stops there. Length is exact: a 12- or 14-digit code starting `978` is NOT a
+ * book, and now falls through to `unknown` for the reader's route to claim
+ * rather than being called a product here. A GTIN-14 wrapping a book's EAN
+ * misses on the prefix as well as the length, since its leading indicator digit
+ * pushes `978` off the front (`19780306406157` starts `197`).
+ *
+ * `startsWith`, never `includes`: an ordinary grocery EAN-13 that happens to
+ * contain `978` mid-string (`1234978123456`) is not a book, and mis-claiming it
+ * would send a tin of beans to the book log on every reader in the house — shape
+ * outranks the route, so there is no per-reader escape from that mistake.
  */
 function isIsbn13(digits) {
   return digits.length === 13 && ISBN13_PREFIXES.some((p) => digits.startsWith(p));
@@ -172,7 +205,7 @@ function isIsbn13(digits) {
  * Digit-only test. `[0-9]` rather than `\d` states the intent that only ASCII
  * digits count. A UPC/EAN symbology encodes ASCII digits, so Arabic-Indic or
  * fullwidth characters arriving here would mean something upstream re-encoded
- * the payload — better surfaced as `unknown` than claimed as a product. No
+ * the payload — better surfaced as `unknown` than claimed as a book. No
  * alternation or nesting, so there is nothing for a 10,000-digit input to
  * backtrack over. The match is on the STRING: a barcode is never coerced to a
  * number, which would drop the leading zeros that UPC-A codes carry.
@@ -188,9 +221,12 @@ const DIGITS_ONLY = /^[0-9]+$/;
  *   `raw` is the TRIMMED input, not the verbatim argument — scanners append
  *   CR/LF, and every consumer wants the trimmed form (school looks its tokens up
  *   by that exact string). Non-string or blank input yields empty `body` and
- *   `raw`. `namespace` is null and `form` is 'unknown' only when no step claims
- *   the code; `body` then holds the trimmed input untouched. See the module
- *   docstring for the resolution order and the `body` convention.
+ *   `raw`. `namespace` is null and `form` is 'unknown' when no step claims the
+ *   code; `body` then holds the trimmed input untouched. That is the EXPECTED
+ *   result for a bare UPC/EAN, not a failure — the caller is meant to finish the
+ *   job with the reader's route. `namespace` never comes back as 'product' from
+ *   here. See the module docstring for the resolution order and the `body`
+ *   convention.
  */
 export function parseScanCode(code) {
   const raw = typeof code === 'string' ? code.trim() : '';
@@ -234,13 +270,22 @@ export function parseScanCode(code) {
     return { namespace: 'content', body: raw, raw, form: 'legacy-positional' };
   }
 
-  // step 4 — shape. Reached by input with no colon at all AND by input whose
-  // first colon is at index 0 (an empty tag, excluded from steps 1-3 above).
-  // The latter can never be digits only, so shape still means what it says.
-  if (DIGITS_ONLY.test(raw))
-    return { namespace: isIsbn13(raw) ? 'book' : 'product', body: raw, raw, form: 'shape' };
+  // step 4 — shape. ISBN-13 ONLY. Reached by input with no colon at all AND by
+  // input whose first colon is at index 0 (an empty tag, excluded from steps 1-3
+  // above); the latter can never be digits only, so shape still means what it
+  // says.
+  //
+  // A bare UPC/EAN is deliberately NOT claimed here: it means whatever its
+  // reader is configured for, so it falls to step 5 in the dispatcher. Claiming
+  // it as `product` would make a grocery barcode log food on a CONTENT-routed
+  // reader, where today it reaches `BarcodePayload.parse`, fails, and does
+  // nothing. See the module docstring.
+  if (DIGITS_ONLY.test(raw) && isIsbn13(raw))
+    return { namespace: 'book', body: raw, raw, form: 'shape' };
 
-  // step 6 — unknown. Explicit outcome, not a fall-through: input with no
-  // non-empty tag and no digit-only shape. `gibberish` and `:4` both land here.
+  // step 6 — unknown. Explicit outcome, not a fall-through, and NOT a synonym
+  // for malformed: it means "this module cannot say". `gibberish` and `:4` land
+  // here because nothing can be made of them; `041260010682` lands here because
+  // only the reader can say what it is for.
   return { namespace: null, body: raw, raw, form: 'unknown' };
 }

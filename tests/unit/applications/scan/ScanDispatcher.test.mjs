@@ -17,31 +17,45 @@ describe('ScanDispatcher', () => {
   it('falls back to the reader route when the code says nothing', async () => {
     const nutrition = handler('nutrition', async () => ({ status: 'logged' }));
     const d = new ScanDispatcher({ handlers: [nutrition], routeFallback: { nutribot: 'nutrition' } });
-    const out = await d.dispatch({ code: 'greenbeans', device: 'k', route: 'nutribot' });
+    const out = await d.dispatch({ code: '041260010682', device: 'k', route: 'nutribot' });
     expect(out.domain).toBe('nutrition');
   });
 
-  it('does not let the reader route override a shape-resolved barcode', async () => {
-    // The plan's draft of the test above used `041260010682` as its "says
-    // nothing" fixture, which was true before shape detection existed. It is
-    // not any more, and the design doc is explicit that step 5 is a "last
-    // resort for anything STILL UNRESOLVED" and that a bare UPC "goes to the
-    // product lookup exactly as today". So the route must NOT reclaim it.
-    //
-    // This is the same principle as a prefixed code: what the code says beats
-    // where it was scanned, or one sticker means different things in different
-    // rooms. It matters most for `book` — an ISBN scanned at the fridge is
-    // still a book, not a food.
-    const nutrition = handler('nutrition', async () => ({ status: 'logged' }));
+  it('reaches `product` ONLY through the route, never from the code', async () => {
+    // A UPC does not say what it is for. `product` is therefore a route-fallback
+    // target rather than a shape outcome, which is what keeps behaviour
+    // unchanged per reader: the same tin is a food lookup at the fridge and
+    // NOTHING on a content-routed reader, exactly as today.
     const product = handler('product', async () => ({ status: 'looked-up' }));
+    const content = handler('content', async () => ({ status: 'dispatched' }));
+    const d = new ScanDispatcher({
+      handlers: [product, content],
+      routeFallback: { nutribot: 'product', content: 'content' },
+      logger: { debug() {}, info() {}, warn() {}, error() {} },
+    });
+    const atFridge = await d.dispatch({ code: '041260010682', device: 'k', route: 'nutribot' });
+    expect(atFridge).toMatchObject({ domain: 'product', status: 'looked-up' });
+
+    // Same barcode, no route configured for it: nobody claims it, and the scan
+    // does nothing rather than something wrong.
+    const unrouted = await d.dispatch({ code: '041260010682', device: 'office', route: 'lounge' });
+    expect(unrouted).toMatchObject({ status: 'unknown', domain: null });
+    expect(product.handle).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not let the reader route override a shape-resolved ISBN', async () => {
+    // An ISBN is identifiable FROM THE CODE ITSELF — that is the whole test for
+    // what shape may claim — so an ISBN scanned at the fridge is still a book,
+    // not a food. This is the same principle as a prefixed code: what the code
+    // says beats where it was scanned, or one sticker means different things in
+    // different rooms.
+    const nutrition = handler('nutrition', async () => ({ status: 'logged' }));
     const book = handler('book', async () => ({ status: 'shelved' }));
     const d = new ScanDispatcher({
-      handlers: [nutrition, product, book], routeFallback: { nutribot: 'nutrition' },
+      handlers: [nutrition, book], routeFallback: { nutribot: 'nutrition' },
     });
-    const upc = await d.dispatch({ code: '041260010682', device: 'k', route: 'nutribot' });
-    expect(upc.domain).toBe('product');
-    const isbn = await d.dispatch({ code: '9780306406157', device: 'k', route: 'nutribot' });
-    expect(isbn.domain).toBe('book');
+    const out = await d.dispatch({ code: '9780306406157', device: 'k', route: 'nutribot' });
+    expect(out).toMatchObject({ domain: 'book', status: 'shelved' });
     expect(nutrition.handle).not.toHaveBeenCalled();
   });
 
