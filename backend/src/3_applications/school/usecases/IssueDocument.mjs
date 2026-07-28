@@ -117,14 +117,21 @@ export class IssueDocument {
 
     let rendered;
     try {
-      rendered = await this.#renderer.render(document, {
-        tokens,
-        variant: state.variant,
-        artifactId,
-        sessionId,
-        learnerId: state.learnerId,
-        bank: unit.bank ? (this.#bankReader?.getBank(unit.bank) ?? null) : null,
-      });
+      rendered = await this.#renderer.render(
+        // The VARIANT rides on the document, not just the options: it is what
+        // makes a retry sheet a different sheet, and the renderer derives the
+        // form map's identity from the document it was handed. A variant passed
+        // only alongside would be a variant the paper does not actually carry.
+        state.variant === (document.variant ?? 0) ? document : { ...document, variant: state.variant },
+        {
+          tokens,
+          variant: state.variant,
+          artifactId,
+          sessionId,
+          learnerId: state.learnerId,
+          bank: unit.bank ? (this.#bankReader?.getBank(unit.bank) ?? null) : null,
+        },
+      );
     } catch (err) {
       return this.#recordFailure({ sessionId, stage: 'render', reason: err.message, nowIso, state });
     }

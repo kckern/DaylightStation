@@ -25,6 +25,7 @@ import AgentDetail from '../modules/Admin/Agents/AgentDetail.jsx';
 import GamesIndex from '../modules/Admin/Games/GamesIndex.jsx';
 import ConsoleDetail from '../modules/Admin/Games/ConsoleDetail.jsx';
 import PlaybackHubPage from '../modules/Admin/PlaybackHub/PlaybackHubPage.jsx';
+import SchoolVirtualConsole from '../modules/Admin/School/VirtualConsole.jsx';
 import ComboboxTestPage from '../modules/Admin/TestHarness/ComboboxTestPage.jsx';
 import { Notifications } from '@mantine/notifications';
 import AuthGate from '../modules/Auth/AuthGate.jsx';
@@ -161,6 +162,12 @@ function AdminApp() {
 
               {/* Playback Hub */}
               <Route path="playback-hub" element={<PlaybackHubPage />} />
+
+              {/* School — the virtual device console for the physical
+                  learning console. Its API is mounted only when school.yml
+                  sets virtualDevices: true, so the page reports "not wired"
+                  rather than breaking on a real deployment. */}
+              <Route path="school/virtual-console" element={<SchoolVirtualConsole />} />
 
               {/* System */}
               <Route path="system/integrations" element={<IntegrationsIndex />} />

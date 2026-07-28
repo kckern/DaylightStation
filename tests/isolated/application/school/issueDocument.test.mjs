@@ -82,6 +82,16 @@ describe('the happy path', () => {
     });
     await useCase.execute({ sessionId: 'ses_r' });
     expect(renderer.calls[0].opts.variant).toBe(2);
+    // And on the document itself — the renderer derives the form map's identity
+    // from what it was handed, so a variant only in the options is a variant the
+    // paper does not carry.
+    expect(renderer.calls[0].document.variant).toBe(2);
+  });
+
+  it('hands the document through untouched when the variant already matches', async () => {
+    await openSession();
+    await useCase.execute({ sessionId: SID });
+    expect(renderer.calls[0].document.variant).toBe(0);
   });
 
   it('does not write a form map for a sheet that has no bubbles', async () => {

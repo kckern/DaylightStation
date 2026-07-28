@@ -1,0 +1,343 @@
+// backend/src/5_composition/modules/schoolLifecycle.mjs
+//
+// Composition wiring for the School physical console (spec §2, §6.2, §9).
+//
+// This is the only file that names concrete adapters for the lifecycle: the use
+// cases take ports, and the choice between a real printer and a double belongs
+// here (decision D1). It returns everything `app.mjs` needs — the scan handler
+// for the relay branch, the reporter for the parent board, and the routers.
+//
+// FAIL CLOSED, TWICE:
+//
+//  1. The virtual devices are wired ONLY when `school.yml` says
+//     `virtualDevices: true` (default false). A production deployment must not
+//     be able to reach "make the printer fail", even by guessing a path.
+//  2. The lifecycle needs a document renderer, which is a `1_rendering` module
+//     the application layer may not import. If that module is not present, the
+//     whole lifecycle stays unwired and says so at boot — rather than mounting
+//     routes that would fail at the moment a child scans a card.
+//
+// The doubles are constructed ONCE and shared between the lifecycle use cases
+// and the virtual device console. Two instances would mean the console showing
+// an empty tray while `IssueDocument` printed happily into a different one.
+
+import path from 'path';
+import { promises as fs } from 'fs';
+import { YamlCurriculumDatastore } from '#adapters/persistence/yaml/YamlCurriculumDatastore.mjs';
+import { YamlWorkSessionDatastore } from '#adapters/persistence/yaml/YamlWorkSessionDatastore.mjs';
+import { YamlTokenRegistry } from '#adapters/persistence/yaml/YamlTokenRegistry.mjs';
+import { YamlAssignmentStore } from '#adapters/persistence/yaml/YamlAssignmentStore.mjs';
+import { YamlFormMapStore } from '#adapters/persistence/yaml/YamlFormMapStore.mjs';
+import { YamlReviewQueue } from '#adapters/persistence/yaml/YamlReviewQueue.mjs';
+import { CurriculumAccess } from '#apps/school/CurriculumAccess.mjs';
+import { ReceiptPrinting } from '#apps/school/ReceiptPrinting.mjs';
+import { WorkSessionReporter } from '#apps/school/WorkSessionReporter.mjs';
+import { BuildAgenda } from '#apps/school/usecases/BuildAgenda.mjs';
+import { IssueDocument } from '#apps/school/usecases/IssueDocument.mjs';
+import { DispatchMedia } from '#apps/school/usecases/DispatchMedia.mjs';
+import { RecordMediaCompletion } from '#apps/school/usecases/RecordMediaCompletion.mjs';
+import { SubmitPaperWork } from '#apps/school/usecases/SubmitPaperWork.mjs';
+import { GradeSubmission } from '#apps/school/usecases/GradeSubmission.mjs';
+import { CloseSessionOutcome } from '#apps/school/usecases/CloseSessionOutcome.mjs';
+import { OpenRemediation } from '#apps/school/usecases/OpenRemediation.mjs';
+import { ResolvePersonalCard } from '#apps/school/usecases/ResolvePersonalCard.mjs';
+import { ResolveScanAction } from '#apps/school/usecases/ResolveScanAction.mjs';
+import { isSchoolToken } from '#domains/school/sessions/tokens.mjs';
+import { createSchoolLifecycleRouter } from '#api/v1/routers/schoolLifecycle.mjs';
+import { createSchoolVirtualDevicesRouter } from '#api/v1/routers/schoolVirtualDevices.mjs';
+
+/**
+ * Tokens are printed and carried around a house; a predictable stream would let
+ * one child's ticket be guessed from another's. `crypto.randomUUID` is seeded
+ * from the platform CSPRNG, so this draw is too — and it stays an injected
+ * function, which is what keeps the domain pure and the tests deterministic.
+ */
+function cryptoRng(crypto) {
+  return () => {
+    const buf = new Uint32Array(1);
+    crypto.getRandomValues(buf);
+    return buf[0] / 2 ** 32;
+  };
+}
+
+/**
+ * Bridge the receipt renderer's canvas onto the thermal port.
+ *
+ * `createDocumentReceiptRenderer` draws a receipt as a canvas — the right output
+ * for a bitmap printer, and the wrong shape for the application layer, which
+ * knows only `IReceiptRenderer.render(document) → {items, footer}`. The gap is
+ * closed here, in composition, exactly the way every other canvas receipt in the
+ * house reaches paper (see `4_api/v1/routers/fitness.mjs`): render, write a PNG,
+ * hand the thermal adapter an image job.
+ *
+ * @param {object} renderer - from `createDocumentReceiptRenderer`
+ * @param {string} spoolDir - where the PNGs land
+ * @returns {{render: (document: object, opts?: object) => Promise<object>}}
+ */
+function receiptBridge(renderer, spoolDir) {
+  let seq = 0;
+  return {
+    async render(document, opts = {}) {
+      const { canvas, width, height } = await renderer.createCanvas(document, opts);
+      await fs.mkdir(spoolDir, { recursive: true });
+      // Named for the document so a capture directory is readable by eye, with
+      // a counter because one document reprints.
+      const file = path.join(spoolDir, `${document.id}-${String(++seq).padStart(4, '0')}.png`);
+      await fs.writeFile(file, canvas.toBuffer('image/png'));
+      return {
+        items: [{ type: 'image', path: file, width, height, align: 'left', threshold: 128 }],
+        footer: { paddingLines: 3, autoCut: true },
+      };
+    },
+  };
+}
+
+/**
+ * @param {object} deps
+ * @param {object} deps.configService
+ * @param {string|null} [deps.householdId]
+ * @param {object} deps.schoolService - the existing grading engine + bank reader
+ * @param {object} [deps.economyService]
+ * @param {object} [deps.userService]
+ * @param {object} [deps.eventBus]
+ * @param {object} [deps.logger]
+ * @returns {Promise<{
+ *   wired: boolean, reason: string|null,
+ *   handlesCode: (code: string) => boolean,
+ *   handleScan: ((args: {code: string, device?: string}) => Promise<object>)|null,
+ *   reporter: object|null, router: object|null, devicesRouter: object|null,
+ *   useCases: object, stores: object, devices: object,
+ * }>}
+ */
+export async function createSchoolLifecycle({
+  configService, householdId = null, schoolService,
+  economyService = null, userService = null, eventBus = null, logger = console,
+} = {}) {
+  const cfg = configService.getHouseholdAppConfig?.(householdId, 'school') || {};
+  const lifecycleCfg = cfg.lifecycle || {};
+  const dataDir = configService.getDataDir();
+
+  const inert = (reason) => {
+    logger.info?.('school.lifecycle.unwired', { reason });
+    return {
+      wired: false, reason, handlesCode: () => false, handleScan: null,
+      reporter: null, router: null, devicesRouter: null, useCases: {}, stores: {}, devices: {},
+    };
+  };
+
+  if (lifecycleCfg.enabled !== true) return inert('lifecycle.enabled is not true in school.yml');
+
+  // --- hardware --------------------------------------------------------------
+  const useVirtual = (cfg.virtualDevices ?? lifecycleCfg.virtualDevices) === true;
+  const captureRoot = path.join(dataDir, 'apps', 'school', 'captures');
+
+  // --- rendering (the one dependency the application layer cannot import) ----
+  let documentRenderer = null;
+  let receiptRenderer = null;
+  try {
+    const { createDocumentPdfRenderer } = await import('#rendering/school/documents/DocumentPdfRenderer.mjs');
+    // Already the `IDocumentRenderer` shape: `render(document, opts)` →
+    // `{pdf, pageCount, formMap}`. No adaptation needed, and none invented.
+    documentRenderer = createDocumentPdfRenderer({});
+  } catch (err) {
+    // No renderer, no console. Mounting routes that would fail at the moment a
+    // child scans a card is worse than not mounting them.
+    return inert(`document renderer unavailable: ${err.message}`);
+  }
+
+  try {
+    const { createDocumentReceiptRenderer } = await import('#rendering/school/documents/DocumentReceiptRenderer.mjs');
+    receiptRenderer = receiptBridge(
+      createDocumentReceiptRenderer({}),
+      path.join(captureRoot, 'receipt-spool'),
+    );
+  } catch (err) {
+    // A missing receipt renderer is survivable: worksheets still print, and
+    // `ReceiptPrinting` reports every receipt as unprinted rather than lying.
+    logger.warn?.('school.lifecycle.no-receipt-renderer', { error: err.message });
+  }
+
+  const devices = {};
+  let laserPrinter = null;
+  let receiptPrinter = null;
+  let playback = null;
+
+  if (useVirtual) {
+    const [
+      { VirtualLaserPrinterAdapter }, { VirtualThermalPrinterAdapter },
+      { VirtualScannerAdapter }, { VirtualPlaybackAdapter }, { VirtualOmrReader },
+    ] = await Promise.all([
+      import('#adapters/hardware/laser-printer/VirtualLaserPrinterAdapter.mjs'),
+      import('#adapters/hardware/thermal-printer/VirtualThermalPrinterAdapter.mjs'),
+      import('#adapters/hardware/scanner/VirtualScannerAdapter.mjs'),
+      import('#adapters/hardware/playback/VirtualPlaybackAdapter.mjs'),
+      import('#adapters/hardware/omr/VirtualOmrReader.mjs'),
+    ]);
+    devices.laserPrinter = new VirtualLaserPrinterAdapter({
+      captureDir: path.join(captureRoot, 'laser'), logger,
+    });
+    devices.thermalPrinter = new VirtualThermalPrinterAdapter(
+      { captureDir: path.join(captureRoot, 'thermal') }, { logger },
+    );
+    if (eventBus) {
+      devices.scanner = new VirtualScannerAdapter({ eventBus, logger });
+      devices.playback = new VirtualPlaybackAdapter({
+        eventBus, targets: (lifecycleCfg.media?.targets || []).map((t) => t.id).filter(Boolean), logger,
+      });
+    }
+    devices.omrReader = new VirtualOmrReader({ eventBus, logger });
+    laserPrinter = devices.laserPrinter;
+    receiptPrinter = devices.thermalPrinter;
+    playback = devices.playback;
+    logger.warn?.('school.lifecycle.virtual-devices', { captureRoot, devices: Object.keys(devices) });
+  } else {
+    const { LaserPrinterAdapter } = await import('#adapters/hardware/laser-printer/LaserPrinterAdapter.mjs');
+    const printerHost = cfg.printing?.host || configService.getDeviceConfig?.('kitchen-printer')?.host || null;
+    if (!printerHost) return inert('no laser printer host configured (school.yml printing.host)');
+    laserPrinter = new LaserPrinterAdapter({
+      host: printerHost,
+      port: cfg.printing?.port || 631,
+      path: cfg.printing?.path || '/ipp/print',
+      logger,
+    });
+    // The thermal registry is built elsewhere in the composition root; the
+    // lifecycle takes whichever printer the school config names, and runs
+    // without one (every receipt then reports itself unprinted).
+    receiptPrinter = lifecycleCfg.receiptPrinter?.adapter ?? null;
+    playback = lifecycleCfg.playbackAdapter ?? null;
+  }
+
+  // --- persistence -----------------------------------------------------------
+  const stores = {
+    catalog: new YamlCurriculumDatastore({ configService }),
+    sessions: new YamlWorkSessionDatastore({ configService }),
+    tokens: new YamlTokenRegistry({ configService }),
+    assignments: new YamlAssignmentStore({ configService }),
+    formMaps: new YamlFormMapStore({ configService }),
+    reviewQueue: new YamlReviewQueue({ configService }),
+  };
+
+  // --- collaborators ---------------------------------------------------------
+  const rng = cryptoRng(globalThis.crypto);
+  const clock = () => new Date();
+  const curriculum = new CurriculumAccess({
+    catalog: stores.catalog,
+    // Read per call, never captured: banks warm asynchronously after boot, and
+    // a set snapshotted at construction would be empty for the first minute.
+    bankIds: () => (schoolService?.listBanks?.() || []).map((b) => b.id).filter(Boolean),
+    logger,
+  });
+  const bankReader = {
+    getBank: (id) => { try { return schoolService.getBank(id); } catch { return null; } },
+  };
+  const receipts = new ReceiptPrinting({ renderer: receiptRenderer, printer: receiptPrinter, logger });
+
+  // --- use cases -------------------------------------------------------------
+  const buildAgenda = new BuildAgenda({
+    curriculum, assignments: stores.assignments, sessions: stores.sessions, tokens: stores.tokens,
+    clock, rng, tokenTtlHours: lifecycleCfg.tokenTtlHours ?? 48, logger,
+  });
+  const issueDocument = new IssueDocument({
+    curriculum, sessions: stores.sessions, tokens: stores.tokens,
+    renderer: documentRenderer, printer: laserPrinter, formMaps: stores.formMaps,
+    bankReader, clock, rng, logger,
+  });
+  const dispatchMedia = playback
+    ? new DispatchMedia({
+      curriculum, sessions: stores.sessions, playback,
+      targets: lifecycleCfg.media?.targets || [], clock, logger,
+    })
+    : null;
+  const recordMediaCompletion = new RecordMediaCompletion({
+    curriculum, sessions: stores.sessions, clock,
+    graceSec: lifecycleCfg.media?.graceSec ?? 600, logger,
+  });
+  const submitPaperWork = new SubmitPaperWork({
+    curriculum, sessions: stores.sessions, formMaps: stores.formMaps,
+    reviewQueue: stores.reviewQueue, bankReader, clock, logger,
+  });
+  const gradeSubmission = new GradeSubmission({
+    curriculum, sessions: stores.sessions, reviewQueue: stores.reviewQueue,
+    grader: schoolService, bankReader, clock, logger,
+  });
+  const closeSessionOutcome = new CloseSessionOutcome({
+    curriculum, sessions: stores.sessions, tokens: stores.tokens, assignments: stores.assignments,
+    economy: economyService,
+    economyAction: lifecycleCfg.economy?.action || 'school-unit-complete',
+    economyEnabled: lifecycleCfg.economy?.enabled === true,
+    clock, rng, logger,
+  });
+  const openRemediation = new OpenRemediation({ curriculum, sessions: stores.sessions, clock, logger });
+  const resolvePersonalCard = new ResolvePersonalCard({
+    buildAgenda, receipts,
+    roster: {
+      displayName: (id) => (userService?.getHouseholdRoster?.() || []).find((u) => u.id === id)?.name ?? null,
+    },
+    logger,
+  });
+  // The media leg is optional (a household with no playback target still prints
+  // worksheets), but the scan resolver is not — so a no-op stand-in keeps the
+  // single entry point whole rather than making every caller check.
+  const mediaOrNothing = dispatchMedia ?? {
+    selectableTargets: () => [],
+    execute: async ({ sessionId }) => ({
+      status: 'unavailable', sessionId, dispatchId: null, target: null, contentId: null,
+      durationSec: null, message: 'There is nowhere to play this right now. Tell a grown-up.', document: null,
+    }),
+  };
+  const resolveScanAction = new ResolveScanAction({
+    tokens: stores.tokens, sessions: stores.sessions, curriculum,
+    resolvePersonalCard, issueDocument, dispatchMedia: mediaOrNothing, openRemediation,
+    receipts, clock, logger,
+  });
+
+  const useCases = {
+    buildAgenda, issueDocument, dispatchMedia, recordMediaCompletion,
+    submitPaperWork, gradeSubmission, closeSessionOutcome, openRemediation,
+    resolvePersonalCard, resolveScanAction,
+  };
+
+  const router = createSchoolLifecycleRouter({
+    ...useCases,
+    assignments: stores.assignments,
+    reviewQueue: stores.reviewQueue,
+    sessions: stores.sessions,
+    clock,
+    logger,
+  });
+
+  // Only when the doubles exist; the factory itself also refuses to register a
+  // route for a device it was not handed.
+  const devicesRouter = useVirtual
+    ? createSchoolVirtualDevicesRouter({
+      ...devices,
+      getFormMap: (formId) => stores.formMaps.get(formId),
+      logger,
+    })
+    : null;
+
+  logger.info?.('school.lifecycle.ready', {
+    virtualDevices: useVirtual,
+    media: Boolean(dispatchMedia),
+    receipts: receipts.wired,
+    economy: lifecycleCfg.economy?.enabled === true,
+  });
+
+  return {
+    wired: true,
+    reason: null,
+    handlesCode: (code) => isSchoolToken(code),
+    handleScan: ({ code, device = null }) => resolveScanAction.execute({ code, device }),
+    reporter: new WorkSessionReporter({
+      curriculum, sessions: stores.sessions, assignments: stores.assignments,
+      reviewQueue: stores.reviewQueue, clock, logger,
+    }),
+    router,
+    devicesRouter,
+    useCases,
+    stores,
+    devices,
+  };
+}
+
+export default createSchoolLifecycle;
