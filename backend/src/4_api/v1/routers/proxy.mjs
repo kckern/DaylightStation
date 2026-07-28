@@ -352,7 +352,9 @@ export function createProxyRouter(config) {
       const w = parseInt(req.query?.w, 10);
       const h = parseInt(req.query?.h, 10);
       if (Number.isFinite(w) && w > 0 && Number.isFinite(h) && h > 0 && !req.path.startsWith('/photo/')) {
-        req.url = `/photo/:/transcode?width=${w}&height=${h}&minSize=1&upscale=1&url=${encodeURIComponent(req.path)}`;
+        // No minSize=1: w/h are a bounding box (fit-within, aspect preserved),
+        // not a crop target — consumers show the full artwork uncropped.
+        req.url = `/photo/:/transcode?width=${w}&height=${h}&upscale=1&url=${encodeURIComponent(req.path)}`;
       }
 
       // Use ProxyService - required for Plex proxying

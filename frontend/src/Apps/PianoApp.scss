@@ -1327,7 +1327,8 @@
     position: relative;
     display: block;
     width: 4.2rem;
-    height: 6rem; // ~2:3 poster + dot band
+    // Height follows the image: the FULL artwork shows uncropped (whatever
+    // its aspect), with the dot band appended below via the thumb's margin.
     border-radius: 0.45rem;
     overflow: hidden;
     background: #101014; // the dot band under the image
@@ -1335,11 +1336,12 @@
 
   &__thumb {
     width: 100%;
-    height: calc(100% - 0.85rem); // reserve the bottom band
-    object-fit: cover;
+    height: auto; // never crop — full poster at natural aspect
     display: block;
+    margin-bottom: 0.85rem; // the reserved dot band
 
     &--fallback {
+      height: 5.2rem; // text tile still needs a body above the band
       display: flex;
       align-items: center;
       justify-content: center;
