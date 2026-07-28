@@ -207,6 +207,25 @@ test('default season-weighted: each unit is an equal slice, episodes interpolate
   assert.deepEqual(c.units, ['done', 'active']); // per-season dots
 });
 
+test('single-season courses emit per-EPISODE dots (done/active/todo)', async () => {
+  const deps = makeDeps({ summaries: {} });
+  deps.fitnessPlayableService.getPlayableEpisodes = async () => ({ info: {}, items: [
+    { plex: 'e1', metadata: { parentId: 's1' } },
+    { plex: 'e2', metadata: { parentId: 's1' } },
+    { plex: 'e3', metadata: { parentId: 's1' } },
+    { plex: 'e4', metadata: { parentId: 's1' } },
+  ] });
+  deps.userVideoProgressStore.enrich = (items, userId) => (userId !== 'kc' ? items : items.map((it) => ({
+    ...it,
+    userWatched: it.plex === 'e1',
+    userPercent: it.plex === 'e2' ? 40 : null,
+    userLastPlayedAt: it.plex === 'e2' ? '2026-07-26T00:00:00Z' : (it.plex === 'e1' ? '2026-07-20T00:00:00Z' : null),
+  })));
+  const uc = new GetRecentCourseActivity(deps);
+  const { players } = await uc.execute();
+  assert.deepEqual(players[0].courses[0].units, ['done', 'active', 'todo', 'todo']);
+});
+
 test('percent_mode course: plain completed/total across every lecture', async () => {
   const deps = miloDeps();
   PIANO_CFG.menu_activity = { percent_mode: 'course' };

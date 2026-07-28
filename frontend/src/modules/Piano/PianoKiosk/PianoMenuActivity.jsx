@@ -93,7 +93,10 @@ export default function PianoMenuActivity({ onOpenCourse }) {
                     <span className="piano-menu-activity__overlay">
                       <span className="piano-menu-activity__course-pct">{pct}%</span>
                       {Array.isArray(c.units) && c.units.length > 1 && (
-                        <span className="piano-menu-activity__units" aria-hidden="true">
+                        <span
+                          className={`piano-menu-activity__units${c.units.length > 16 ? ' piano-menu-activity__units--dense' : ''}`}
+                          aria-hidden="true"
+                        >
                           {c.units.map((s, i) => (
                             <i key={i} className={`piano-menu-activity__unit is-${s}`} />
                           ))}
