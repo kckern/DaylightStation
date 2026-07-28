@@ -1,0 +1,44 @@
+// Layout only — everything else is Mantine's. The capture pane is the one
+// place that needs real sizing: a worksheet PDF has to be readable inline, and
+// a receipt transcript has to keep its monospace column width.
+.school-virtual-console {
+  &__scan-input {
+    min-width: 280px;
+  }
+
+  &__captures {
+    align-items: stretch;
+  }
+
+  &__capture-list {
+    flex: 0 0 240px;
+    min-width: 240px;
+  }
+
+  &__capture-preview {
+    flex: 1 1 auto;
+    min-width: 0;
+
+    iframe {
+      width: 100%;
+      height: 320px;
+      border: 1px solid var(--mantine-color-default-border);
+      border-radius: var(--mantine-radius-sm);
+      background: #fff;
+    }
+  }
+
+  &__transcript {
+    margin: 0;
+    max-height: 320px;
+    overflow: auto;
+    padding: 0.75rem;
+    border: 1px solid var(--mantine-color-default-border);
+    border-radius: var(--mantine-radius-sm);
+    font-family: var(--mantine-font-family-monospace);
+    font-size: 0.8rem;
+    line-height: 1.4;
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+}
