@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, waitFor, fireEvent } from '@testing-library/react';
 import getLogger, { getRecentEvents } from '../../../../../lib/logging/Logger.js';
 
@@ -7,8 +7,10 @@ vi.mock('../../PianoConfig.jsx', () => ({ usePianoKioskConfig: () => ({ config: 
 vi.mock('../../PianoBreadcrumbContext.jsx', () => ({ usePianoBreadcrumbBar: () => ({ setCrumbs: vi.fn() }) }));
 vi.mock('./useCompositionsApi.js', () => ({ useCompositionsApi: () => ({ list: vi.fn().mockResolvedValue([]), get: vi.fn(), create: vi.fn(), save: vi.fn() }) }));
 // Real active-user hook (grepped from Studio.jsx / Studio.test.jsx): usePianoUser()
-// from PianoUserContext.jsx returns { currentUser }, not { userId }.
-vi.mock('../../PianoUserContext.jsx', () => ({ usePianoUser: () => ({ currentUser: 'kc' }) }));
+// from PianoUserContext.jsx returns { currentUser }, not { userId }. Mutable so
+// individual tests (Guest (F2)) can swap the active identity per-test.
+let mockUser = 'kc';
+vi.mock('../../PianoUserContext.jsx', () => ({ usePianoUser: () => ({ currentUser: mockUser }) }));
 // EditorSurface pulls in the OSMD renderer + MIDI context; stub both so the mode
 // mounts in happy-dom without engraving.
 vi.mock('../../PianoMidiContext.jsx', () => ({ usePianoMidi: () => ({ subscribe: () => () => {} }) }));
@@ -17,6 +19,10 @@ vi.mock('../../../../MusicNotation/renderers/MusicXmlRenderer.jsx', () => ({
 }));
 
 import { Composer } from './Composer.jsx';
+
+beforeEach(() => {
+  mockUser = 'kc';
+});
 
 describe('Composer mode', () => {
   it('leads with a blank-staff editor (not a gallery gate)', async () => {
@@ -96,5 +102,29 @@ describe('Composer mode', () => {
     fireEvent.click(screen.getByRole('button', { name: /new song/i }));
     await waitFor(() => expect(container.querySelector('.composer-editor')).toBeInTheDocument());
     expect(container.querySelector('.composer-gallery')).toBeNull();
+  });
+});
+
+describe('Composer as Guest (F2)', () => {
+  it('shows the guest banner over the editor', async () => {
+    mockUser = 'guest';
+    render(<Composer />);
+    await waitFor(() => expect(document.querySelector('.composer-editor')).toBeInTheDocument());
+    expect(screen.getByText("Playing as Guest — songs won't be saved. Tap the face in the top bar to pick a player.")).toBeInTheDocument();
+  });
+
+  it('gallery shows the pick-a-player notice instead of listing (no guest list call)', async () => {
+    mockUser = 'guest';
+    render(<Composer />);
+    await waitFor(() => expect(screen.getByRole('button', { name: /your songs/i })).toBeInTheDocument());
+    fireEvent.click(screen.getByRole('button', { name: /your songs/i }));
+    await waitFor(() => expect(screen.getByText('Pick a player to see saved songs.')).toBeInTheDocument());
+    expect(screen.queryByRole('button', { name: /new song/i })).not.toBeInTheDocument();
+  });
+
+  it('no banner for a roster user', async () => {
+    render(<Composer />);
+    await waitFor(() => expect(document.querySelector('.composer-editor')).toBeInTheDocument());
+    expect(screen.queryByText(/Playing as Guest/)).toBeNull();
   });
 });

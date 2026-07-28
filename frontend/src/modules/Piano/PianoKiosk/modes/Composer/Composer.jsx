@@ -25,6 +25,7 @@ import { useCompositionsApi } from './useCompositionsApi.js';
 import { parseMusicXml, makeEmptyScore } from './model/index.js';
 import { Gallery } from './Gallery.jsx';
 import { EditorSurface } from './EditorSurface.jsx';
+import { isPersistentUser } from '../../pianoUser.js';
 
 let draftSeq = 0;
 function makeDraft() {
@@ -35,6 +36,18 @@ function makeDraft() {
   return { key: `draft-${draftSeq}`, id: null, title: '', score: makeEmptyScore(), revision: 1 };
 }
 
+// Guests can doodle on the staff, but nothing persists (the backend 400s all
+// guest composition writes — audit F2). A stub API keeps the editor alive with
+// ZERO network: reads come back empty, writes reject so the editor's status
+// chip honestly shows "Couldn't save" (the banner explains why).
+const GUEST_API = {
+  list: async () => [],
+  get: async () => { throw new Error('guest-no-persist'); },
+  create: async () => { throw new Error('guest-no-persist'); },
+  save: async () => { throw new Error('guest-no-persist'); },
+  remove: async () => { throw new Error('guest-no-persist'); },
+};
+
 export function Composer() {
   // Session-logged mode logger: `sessionLog` routes every composer.* event to a
   // persisted per-session .jsonl on the backend (sessionFile transport), filed
@@ -44,7 +57,9 @@ export function Composer() {
   const { config } = usePianoKioskConfig();
   const { setCrumbs } = usePianoBreadcrumbBar();
   const { currentUser } = usePianoUser();
-  const api = useCompositionsApi(currentUser, logger);
+  const persistent = isPersistentUser(currentUser);
+  const realApi = useCompositionsApi(currentUser, logger);
+  const api = persistent ? realApi : GUEST_API;
   const [view, setView] = useState('editor'); // 'editor' | 'gallery'
   const [open, setOpen] = useState(() => makeDraft()); // { key, id, title, score, revision }
   const openRef = useRef(open);
@@ -118,6 +133,9 @@ export function Composer() {
 
   return (
     <section className="piano-mode piano-mode--composer">
+      {view === 'editor' && !persistent && currentUser && (
+        <p className="composer-guest-note">Playing as Guest — songs won't be saved. Tap the face in the top bar to pick a player.</p>
+      )}
       {view === 'editor' && (
         <EditorSurface
           key={open.key}
@@ -136,10 +154,10 @@ export function Composer() {
         />
       )}
       {view === 'gallery' && (
-        currentUser ? (
+        persistent ? (
           <Gallery list={api.list} onOpen={openSong} onNew={newDraft} />
         ) : (
-          <p className="piano-mode__placeholder">Loading…</p>
+          <p className="piano-mode__placeholder">{currentUser ? 'Pick a player to see saved songs.' : 'Loading…'}</p>
         )
       )}
     </section>
