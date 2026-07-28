@@ -1,5 +1,7 @@
 import { describe, it, expect } from 'vitest';
-import { parseScanCode, NAMESPACES, PREFIX_REGISTRY } from '#domains/scan/ScanCode.mjs';
+import {
+  parseScanCode, NAMESPACES, PREFIX_REGISTRY, FORMS, LEGACY_NUTRITION_TAGS,
+} from '#domains/scan/ScanCode.mjs';
 
 describe('parseScanCode — registered prefixes', () => {
   it('resolves a content code', () => {
@@ -38,9 +40,17 @@ describe('parseScanCode — registered prefixes', () => {
   });
 
   it('is case-sensitive', () => {
+    // `NUT` is not registered, so step 1 does not claim it and the body is
+    // never stripped. It lands on the legacy-positional catch-all rather than
+    // `unknown`, which is safe: the content parser owns that grammar and
+    // refuses what it cannot read. What matters here is that a mis-cased tag
+    // NEVER reaches the domain it was aiming at.
     expect(parseScanCode('NUT:dl:4')).toEqual({
-      namespace: null, body: 'NUT:dl:4', raw: 'NUT:dl:4', form: 'unknown',
+      namespace: 'content', body: 'NUT:dl:4', raw: 'NUT:dl:4', form: 'legacy-positional',
     });
+    for (const code of ['NUT:dl:4', 'GO:x:y', 'Sch:a7f3k2', 'DL:4'])
+      expect(parseScanCode(code).form).not.toBe('prefixed');
+    expect(parseScanCode('DL:4').namespace).not.toBe('nutrition');
   });
 
   it('does not validate bodies — an empty body still resolves to its owner', () => {
@@ -56,10 +66,14 @@ describe('parseScanCode — registered prefixes', () => {
 });
 
 describe('parseScanCode — the unknown path', () => {
-  it('passes a bare product barcode through untouched', () => {
-    expect(parseScanCode('012000161155')).toEqual({
-      namespace: null, body: '012000161155', raw: '012000161155', form: 'unknown',
-    });
+  it('still has a reachable unknown path: colon-free, non-digit input', () => {
+    // Steps 3 and 4 claim everything with a colon and everything digit-only,
+    // which is most of the space. This is what is left, and it must stay
+    // explicit rather than becoming a fall-through nobody can reach.
+    for (const code of ['gibberish', 'pause', 'a7f3k2', '9780306406157x'])
+      expect(parseScanCode(code)).toEqual({
+        namespace: null, body: code, raw: code, form: 'unknown',
+      });
   });
 
   it('normalises non-string input to empty body and raw', () => {
@@ -83,9 +97,11 @@ describe('parseScanCode — the unknown path', () => {
       });
   });
 
-  it('treats an unregistered prefix as unknown, body intact', () => {
+  it('never strips an unregistered prefix from the body', () => {
+    // `gone` is not `go`. Lookup is exact equality after the split, so a tag
+    // that merely starts with a registered one must not lose its first segment.
     expect(parseScanCode('gone:room:x')).toEqual({
-      namespace: null, body: 'gone:room:x', raw: 'gone:room:x', form: 'unknown',
+      namespace: 'content', body: 'gone:room:x', raw: 'gone:room:x', form: 'legacy-positional',
     });
   });
 });
@@ -97,12 +113,24 @@ describe('parseScanCode — prototype-chain safety', () => {
   ];
 
   it('does not resolve inherited Object.prototype members as namespaces', () => {
+    // The catch-all in step 3 gives these a namespace now, so the guarantee is
+    // stated where it actually bites: the namespace is a real registered string
+    // (never a Function off the prototype chain), the tag was never treated as
+    // a claim, and the body was never stripped.
     for (const tag of INHERITED) {
       const code = `${tag}:foo`;
       expect(parseScanCode(code)).toEqual({
-        namespace: null, body: code, raw: code, form: 'unknown',
+        namespace: 'content', body: code, raw: code, form: 'legacy-positional',
       });
+      expect(NAMESPACES).toContain(parseScanCode(code).namespace);
     }
+  });
+
+  it('does not let a prototype member masquerade as a legacy nutrition tag', () => {
+    // LEGACY_NUTRITION_TAGS is an array, so `includes` compares values and no
+    // prototype member can match. Same hazard as the registry, different lookup.
+    for (const tag of INHERITED)
+      expect(parseScanCode(`${tag}:foo`).namespace).not.toBe('nutrition');
   });
 
   it('keeps the registry free of a prototype', () => {
@@ -136,6 +164,161 @@ describe('PREFIX_REGISTRY — invariants', () => {
     // grammar (ScanVocabularyService). They are ALSO accepted bare as the legacy
     // form, so a top-level tag colliding with one would capture every fridge
     // scan in the house and hand it to the wrong domain.
-    for (const tag of tags) expect(['dl', 'ct', 'rs']).not.toContain(tag);
+    for (const tag of tags) expect([...LEGACY_NUTRITION_TAGS]).not.toContain(tag);
+  });
+});
+
+describe('legacy and shape resolution', () => {
+  it('routes a bare nutrition code to nutrition', () => {
+    expect(parseScanCode('dl:4')).toMatchObject({
+      namespace: 'nutrition', body: 'dl:4', form: 'legacy-prefixed',
+    });
+    expect(parseScanCode('ct:mug').namespace).toBe('nutrition');
+    expect(parseScanCode('rs:clear').namespace).toBe('nutrition');
+  });
+
+  it('routes an un-prefixed positional content code to content', () => {
+    expect(parseScanCode('living-room:plex:594036')).toMatchObject({
+      namespace: 'content', form: 'legacy-positional',
+    });
+  });
+
+  it('detects ISBN-13 by its Bookland prefix', () => {
+    expect(parseScanCode('9780306406157')).toMatchObject({ namespace: 'book', form: 'shape' });
+    expect(parseScanCode('9791234567896').namespace).toBe('book');
+  });
+
+  it('treats other digit-only codes as product', () => {
+    expect(parseScanCode('041260010682')).toMatchObject({ namespace: 'product', form: 'shape' });
+  });
+
+  it('keeps positional and shape disjoint', () => {
+    // positional needs a colon; shape is digit-only. They cannot both match.
+    expect(parseScanCode('041260010682').form).toBe('shape');
+    expect(parseScanCode('living-room:plex:1').form).toBe('legacy-positional');
+  });
+
+  it('keeps a legacy code whole — there is no prefix to strip', () => {
+    for (const code of ['dl:4', 'living-room:plex:594036'])
+      expect(parseScanCode(code)).toMatchObject({ body: code, raw: code });
+  });
+
+  it('hands the same body to a domain whether or not the code is prefixed', () => {
+    // This is the whole point of the legacy body convention: a handler reads
+    // `body` and never learns which form its code arrived in.
+    expect(parseScanCode('nut:dl:4').body).toBe(parseScanCode('dl:4').body);
+    expect(parseScanCode('go:living-room:plex:1').body)
+      .toBe(parseScanCode('living-room:plex:1').body);
+  });
+
+  it('lets a registered prefix win over both legacy forms', () => {
+    expect(parseScanCode('nut:dl:4').form).toBe('prefixed');
+    expect(parseScanCode('go:living-room:plex:1').form).toBe('prefixed');
+  });
+
+  it('needs a colon for a legacy nutrition tag to count', () => {
+    for (const bare of ['dl', 'ct', 'rs'])
+      expect(parseScanCode(bare)).toEqual({
+        namespace: null, body: bare, raw: bare, form: 'unknown',
+      });
+  });
+
+  it('does not validate legacy bodies either', () => {
+    expect(parseScanCode('dl:')).toMatchObject({
+      namespace: 'nutrition', body: 'dl:', form: 'legacy-prefixed',
+    });
+  });
+});
+
+describe('shape detection — adversarial', () => {
+  it('claims a bare product barcode that used to reach the unknown path', () => {
+    // Before step 4 existed this fell through to `unknown` and the reader's
+    // route decided. Shape now claims it outright, and the body stays whole.
+    expect(parseScanCode('012000161155')).toEqual({
+      namespace: 'product', body: '012000161155', raw: '012000161155', form: 'shape',
+    });
+  });
+
+  it('requires exactly 13 digits for a Bookland prefix to mean book', () => {
+    for (const code of ['978030640615', '97803064061570', '978'])
+      expect(parseScanCode(code).namespace).toBe('product');
+  });
+
+  it('does not read a 13-digit non-Bookland code as a book', () => {
+    expect(parseScanCode('1234567890128').namespace).toBe('product');
+    expect(parseScanCode('9770306406157').namespace).toBe('product'); // 977 = ISSN
+  });
+
+  it('is shape-only — it does not verify the ISBN check digit', () => {
+    // Validation belongs to the book handler, exactly as bodies are not
+    // validated for prefixed codes. Shape names the owner and stops there.
+    expect(parseScanCode('9780306406150').namespace).toBe('book');
+  });
+
+  it('preserves leading zeros — a barcode is a string, never a number', () => {
+    expect(parseScanCode('0000000000000').body).toBe('0000000000000');
+    expect(parseScanCode('00')).toMatchObject({ body: '00', namespace: 'product' });
+  });
+
+  it('rejects anything that is not purely ASCII digits', () => {
+    const notDigits = [
+      '9780306406157x', '+1234', '-1234', '1.5', '12 34', '1_2', '١٢٣٤٥',
+      '١٢٣٤٥٦٧٨٩٠١٢٣', '１２３４', '12\n34', '0x1f', '1e5',
+    ];
+    for (const code of notDigits)
+      expect(parseScanCode(code)).toEqual({
+        namespace: null, body: code, raw: code, form: 'unknown',
+      });
+  });
+
+  it('handles a pathologically long digit string without blowing up', () => {
+    const long = '9'.repeat(10000);
+    expect(parseScanCode(long)).toMatchObject({ namespace: 'product', form: 'shape' });
+  });
+});
+
+describe('FORMS — invariants', () => {
+  it('is frozen and lists every form the parser can return', () => {
+    expect(Object.isFrozen(FORMS)).toBe(true);
+    expect([...FORMS].sort()).toEqual(
+      ['legacy-positional', 'legacy-prefixed', 'prefixed', 'shape', 'unknown'],
+    );
+  });
+
+  it('never returns a form outside the list', () => {
+    const codes = [
+      'go:x', 'nut:dl:4', 'dl:4', 'ct:mug', 'rs:clear', 'living-room:plex:1',
+      '9780306406157', '041260010682', 'gibberish', ':', '', null, 42, {},
+      'constructor:foo', '__proto__:x',
+    ];
+    for (const code of codes) expect(FORMS).toContain(parseScanCode(code).form);
+  });
+
+  it('always returns a string namespace or null, and a string body and raw', () => {
+    const codes = [
+      'go:x', 'dl:4', 'living-room:plex:1', '9780306406157', '041260010682',
+      'gibberish', ':', 'constructor:foo', '__proto__:x', 'toString:x', '', null, 42,
+    ];
+    for (const code of codes) {
+      const r = parseScanCode(code);
+      if (r.namespace !== null) expect(NAMESPACES).toContain(r.namespace);
+      expect(typeof r.body).toBe('string');
+      expect(typeof r.raw).toBe('string');
+    }
+  });
+});
+
+describe('LEGACY_NUTRITION_TAGS — invariants', () => {
+  it('is frozen, non-empty, and colon-free', () => {
+    expect(Object.isFrozen(LEGACY_NUTRITION_TAGS)).toBe(true);
+    expect(() => { LEGACY_NUTRITION_TAGS.push('zz'); }).toThrow();
+    for (const tag of LEGACY_NUTRITION_TAGS) {
+      expect(tag.length).toBeGreaterThan(0);
+      expect(tag).not.toContain(':');
+    }
+  });
+
+  it('is disjoint from the prefix registry', () => {
+    for (const tag of LEGACY_NUTRITION_TAGS) expect(PREFIX_REGISTRY[tag]).toBeUndefined();
   });
 });
