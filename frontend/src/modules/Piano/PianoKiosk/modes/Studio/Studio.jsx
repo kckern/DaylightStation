@@ -4,6 +4,7 @@ import getLogger from '../../../../../lib/logging/Logger.js';
 import { DaylightAPI } from '../../../../../lib/api.mjs';
 import { usePianoMidi, usePianoMidiNotes } from '../../PianoMidiContext.jsx';
 import { usePianoUser } from '../../PianoUserContext.jsx';
+import { isPersistentUser } from '../../pianoUser.js';
 import { useStudioRecorder } from './useStudioRecorder.js';
 import StudioPlay from './StudioPlay.jsx';
 import StudioRecordings from './StudioRecordings.jsx';
@@ -26,6 +27,12 @@ export function Studio() {
   const { subscribe, connected } = usePianoMidi();
   const { isPlaying } = usePianoMidiNotes();
   const { currentUser } = usePianoUser();
+  // Guests can play but can't persist takes (backend 400s /users/guest/studio;
+  // audit F1: a guest take was recorded, "kept", and silently lost). Gate BOTH
+  // the API base (kills the guaranteed-400 list fetch) and the Record entry
+  // point. The always-on MIDI history still captures guest play at household
+  // level, so nothing is truly lost by hiding explicit recording.
+  const canRecord = isPersistentUser(currentUser);
   const { recording, start, stop } = useStudioRecorder(subscribe);
   const { pathname } = useLocation();
   // The Record button lives in the tab bar, but must stay hidden on the individual
@@ -40,7 +47,7 @@ export function Studio() {
   const [confirmId, setConfirmId] = useState(null);
   // A stopped take awaiting the user's keep/discard decision (review lifecycle).
   const [pendingTake, setPendingTake] = useState(null);
-  const studioBase = currentUser ? `api/v1/piano/users/${currentUser}/studio` : null;
+  const studioBase = canRecord ? `api/v1/piano/users/${currentUser}/studio` : null;
 
   // Count-up timer while recording (drives the Record button's MM:SS readout).
   const [elapsedMs, setElapsedMs] = useState(0);
@@ -133,9 +140,11 @@ export function Studio() {
         <NavLink to="recordings" className={({ isActive }) => `piano-studio__tab${isActive ? ' is-active' : ''}`}>
           Recordings
         </NavLink>
-        {!onPlaybackRoute && (
+        {!onPlaybackRoute && ((canRecord || recording) ? (
           <RecordButton recording={recording} elapsedMs={elapsedMs} onToggle={onRecordToggle} />
-        )}
+        ) : (
+          <span className="piano-studio__guest-note">Pick a player to record</span>
+        ))}
       </nav>
 
       <Routes>
