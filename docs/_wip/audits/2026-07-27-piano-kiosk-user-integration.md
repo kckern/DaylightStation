@@ -109,6 +109,42 @@ per-user features dead until a manual reload.
 
 *Recommendation:* retry with backoff, or refetch when the picker opens.
 
+### F7 — Who's-Playing re-prompt can open over a just-launched lecture, then demote to Guest (medium)
+
+`useIdleGap` fires on the *next input* after the gap — a `pointerdown` in capture phase.
+That same tap still completes its own click. If the first tap after an idle gap is the
+one that launches a video lecture (e.g. a resume tile on a course page), the fire-time
+guard `if (videoActive || playing) return` passes — `videoActive` only becomes true
+*after* the player mounts — so the prompt opens on top of the starting lecture. Nothing
+closes `whoOpen` when `videoActive` flips true (the chip handles this via
+`open={open && !locked}`; the PianoApp instance has no equivalent). 30 s later the
+auto-timeout dismisses → `setCurrentUser('guest')` **mid-lesson**: the watch-log
+`userId` flips to guest, per-user progress stops accruing, and the auto-history take
+splits — precisely the mis-credit the chip lock was built to prevent.
+
+*Recommendation:* in PianoApp, close the prompt silently when playback starts
+(`useEffect(() => { if (videoActive || playing) setWhoOpen(false); }, …)`) — silent
+close (keep the prior user), matching the chip-lock semantics, NOT a guest dismiss.
+
+### F8 — Stacked pickers: a chip pick can be clobbered to Guest (medium-low)
+
+The tap that opens the chrome chip's manual picker is also a `pointerdown`, so after an
+idle gap it simultaneously fires the re-prompt: two `ProfilePicker`s stack (the chip's
+renders later in the DOM, so it sits on top). The user picks themselves in the chip
+picker — then the underlying re-prompt is still open, doesn't mark their pick (no
+`activeId`), and its ✕/backdrop/30s-timeout dismiss runs `setCurrentUser('guest')`,
+silently overwriting the pick they just made.
+
+*Recommendation:* close `whoOpen` whenever `currentUser` changes while it's open (any
+pick elsewhere answers the question); that also collapses the double-modal.
+
+### F9 — Re-prompt timeout doesn't extend on in-modal interaction (low)
+
+`ProfilePicker`'s auto-dismiss timer is armed once per open; tapping page dots doesn't
+reset it. On a roster large enough to paginate (7+), browsing to page 2 can eat most of
+the 30 s and land the browser on a surprise guest dismiss. Cosmetic today (household
+roster fits one page).
+
 ---
 
 ## Non-issues verified
@@ -124,10 +160,17 @@ per-user features dead until a manual reload.
   user-scoped route; history is the only guest-writable surface and it's regex-locked.
 - Producer attributes records to `currentUser || 'household'` — household-level storage,
   no validation needed.
-- Chip lock during lectures, re-prompt suppression during video/Listen playback, and
-  owner-change take splitting all behave as documented.
+- Chip lock during lectures, re-prompt suppression during video/Listen playback (at
+  fire time — see F7 for the launch race), and owner-change take splitting all behave
+  as documented.
+- Who's-Playing modal internals: timeout uses an `onDismissRef` (never a stale
+  closure); mount doesn't false-fire the idle gap (`lastRef` initialized to now);
+  `whoIsPlayingMinutes` has a default (2) and is set in live config; dismiss→Guest is
+  scoped to the re-prompt only (chip passes `timeoutMs={0}`, dismiss just closes);
+  screen-off is two-tap armed; the chip picker self-closes when a lecture starts.
 
 ## Suggested priority
 
-F1 (silent data loss) > F3 (identity semantics) > F2 > F4 > F5 > F6. F1+F2+F4 share one
-fix shape: a single "guest can't persist here" gate/notice reused across modes.
+F1 (silent data loss) > F7 (mid-lesson guest demotion) > F3 (identity semantics) > F2 >
+F8 > F4 > F5 > F6 > F9. F1+F2+F4 share one fix shape (a "guest can't persist here"
+gate); F7+F8 share another (close `whoOpen` on playback start / on any user change).
