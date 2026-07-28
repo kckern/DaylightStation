@@ -210,3 +210,18 @@ describe('resolveScreensaver', () => {
     });
   });
 });
+
+describe('autoStudio config', () => {
+  it('defaults enabled with 8 notes / 3s span / 10s window', () => {
+    const cfg = resolvePianoConfig({}, null);
+    expect(cfg.autoStudio).toEqual({ enabled: true, minNotes: 8, minSpanSeconds: 3, windowSeconds: 10 });
+  });
+
+  it('per-piano overrides merge over defaults', () => {
+    const raw = { pianos: { p1: { autoStudio: { minNotes: 12 } } } };
+    const cfg = resolvePianoConfig(raw, 'p1');
+    expect(cfg.autoStudio.minNotes).toBe(12);
+    expect(cfg.autoStudio.enabled).toBe(true);
+    expect(cfg.autoStudio.windowSeconds).toBe(10);
+  });
+});
