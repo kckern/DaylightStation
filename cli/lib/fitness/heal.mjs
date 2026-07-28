@@ -1,34 +1,26 @@
-#!/usr/bin/env node
 /**
- * Retroactive single-session identity heal, plus a `--sweep` mode that scans
- * every stored session for ones that need healing.
+ * Retroactive session identity heal, plus a `--sweep` mode that scans every
+ * stored session for ones that need healing.
  *
- * Applies the backend's `SessionIdentityHealer.planHeal` plan to an
- * on-disk saved fitness session YAML: folds "ghost" occupants (near-zero
- * effort segments, or a known user recorded under a device-swap alias) into
- * the occupant that actually did the work, then recomputes the summary
- * block the same way `merge-fitness-sessions.cli.mjs` does (via the shared
+ * Applies the backend's `SessionIdentityHealer.planHeal` plan to an on-disk
+ * saved fitness session YAML: folds "ghost" occupants (near-zero effort
+ * segments, or a known user recorded under a device-swap alias) into the
+ * occupant that actually did the work, then recomputes the summary block the
+ * same way the `merge` command does (via the shared
  * `cli/lib/fitnessSessionSummary.mjs` helpers).
  *
  * Dry-run by default — prints the plan without touching the file. Pass
- * --apply to write the healed YAML back.
- *
- * Usage:
- *   node cli/heal-fitness-sessions.cli.mjs <date> <sessionId> [--apply]
- *   node cli/heal-fitness-sessions.cli.mjs --sweep [--since Nd] [--apply]
- *
- * Examples:
- *   node cli/heal-fitness-sessions.cli.mjs 2026-06-27 20260627195941 --apply
- *   node cli/heal-fitness-sessions.cli.mjs --sweep --since 30d
- *   node cli/heal-fitness-sessions.cli.mjs --sweep --apply
+ * `--apply` to write the healed YAML back.
  *
  * `--sweep` iterates every `history/fitness/<date>/*.yml` under the (test-
- * injectable) data base dir, plans a heal for each, and reports the ones
- * with `needsHeal === true`. Dry-run (no `--apply`) writes NOTHING — it only
- * reads and reports. `--since Nd` restricts the scan to date directories
- * within the last N days of a reference "now" (injectable via the `now`
- * param, or the `HEAL_SWEEP_NOW` env var when run from the CLI — never a
- * bare `Date.now()` call that a test can't control).
+ * injectable) data base dir, plans a heal for each, and reports the ones with
+ * `needsHeal === true`. Dry-run writes NOTHING — it only reads and reports.
+ * `--since Nd` restricts the scan to date directories within the last N days
+ * of a reference "now" (injectable via the `now` param, or the
+ * `HEAL_SWEEP_NOW` env var when run from the CLI — never a bare `Date.now()`
+ * call that a test can't control).
+ *
+ * @module cli/lib/fitness/heal
  */
 
 import fs from 'fs/promises';
@@ -37,7 +29,9 @@ import yaml from 'js-yaml';
 
 import { decodeSeries, encodeSeries } from '#domains/fitness/services/TimelineService.mjs';
 import { planHeal } from '#domains/fitness/services/SessionIdentityHealer.mjs';
-import { buildSummary, isCumulativeSeriesKey, getLastNonNull } from './lib/fitnessSessionSummary.mjs';
+import { buildSummary, isCumulativeSeriesKey, getLastNonNull } from '../fitnessSessionSummary.mjs';
+import { parseArgs, bool, str } from './argv.mjs';
+import { CliError } from './context.mjs';
 
 // ---------------------------------------------------------------------------
 // Cell-level series merge
@@ -157,7 +151,7 @@ export function foldOccupantSeries(decoded, fromId, toId, { cumulativeStrategy =
 /**
  * Resolve the on-disk path for a session YAML.
  * Honors an explicit `baseDir` override (used by tests) before falling back
- * to DAYLIGHT_BASE_PATH / cwd, same convention as merge-fitness-sessions.cli.mjs.
+ * to DAYLIGHT_BASE_PATH / cwd, same convention as the `merge` command.
  *
  * @param {string} date - YYYY-MM-DD
  * @param {string} sessionId - 14-digit session id
@@ -377,8 +371,8 @@ export async function heal(date, sessionId, { apply = false, baseDir } = {}) {
 
   // -------------------------------------------------------------------
   // Apply: fold transfers then merges (order matters — a chain like
-  // soren -> elizabeth -> grannie must land soren's data on elizabeth
-  // BEFORE elizabeth's (now-combined) series folds into grannie).
+  // learner-one -> parent-two -> grannie must land learner-one's data on parent-two
+  // BEFORE parent-two's (now-combined) series folds into grannie).
   //
   // Transfers (ghost absorption) and merges (known-user device-swap) use
   // DIFFERENT cumulative-fold strategies: a ghost's coins/beats total is
@@ -453,81 +447,76 @@ export async function heal(date, sessionId, { apply = false, baseDir } = {}) {
 // CLI
 // ---------------------------------------------------------------------------
 
-async function runSweep(args) {
-  const apply = args.includes('--apply');
-  const sinceIdx = args.indexOf('--since');
+export const spec = {
+  name: 'heal',
+  summary: 'fold ghost occupants into the participant who did the work',
+  usage: 'fitness session heal <date> <sessionId> [--apply]\n         fitness session heal --sweep [--since=Nd] [--apply]',
+  details: `  --sweep        Scan every stored session instead of one
+  --since=Nd     With --sweep: only date dirs within the last N days
+  --apply        Write the healed YAML (default: dry run)
 
-  let sinceDays;
-  if (sinceIdx !== -1) {
-    try {
-      sinceDays = parseSinceArg(args[sinceIdx + 1]);
-    } catch (e) {
-      console.error(`ERROR: ${e.message}`);
-      process.exit(1);
+  Env: HEAL_SWEEP_NOW pins the reference "now" for --since.`,
+};
+
+/**
+ * @param {string[]} argv
+ * @param {Object} ctx
+ * @returns {Promise<Object>}
+ */
+export async function run(argv, ctx) {
+  const { positional, flags } = parseArgs(argv, { booleanFlags: ['apply', 'sweep'] });
+  const apply = bool(flags, 'apply');
+  const baseDir = ctx.baseDir;
+
+  if (bool(flags, 'sweep')) {
+    let sinceDays;
+    const since = str(flags, 'since');
+    if (since !== undefined) {
+      try {
+        sinceDays = parseSinceArg(since);
+      } catch (e) {
+        throw new CliError(e.message);
+      }
     }
+
+    const now = process.env.HEAL_SWEEP_NOW ? new Date(process.env.HEAL_SWEEP_NOW) : new Date();
+    const { candidates, applied } = await sweep({ baseDir, sinceDays, apply, now });
+
+    console.log('=== Heal sweep ===');
+    if (Number.isFinite(sinceDays)) console.log(`Window: last ${sinceDays}d (as of ${now.toISOString()})`);
+    console.log('');
+    console.log('date        sessionId       removed              merges');
+    for (const c of candidates) {
+      const removedStr = c.removed.join(',') || '(none)';
+      const mergesStr = c.merges.map((m) => `${m.from}->${m.to}`).join(',') || '(none)';
+      console.log(`${c.date}  ${c.sessionId}  ${removedStr.padEnd(20)}  ${mergesStr}`);
+    }
+    console.log('');
+    console.log(`${candidates.length} session(s) need healing`);
+
+    if (candidates.length && apply) {
+      const changedCount = applied.filter((a) => a.changed).length;
+      console.log(`APPLIED — healed ${changedCount} of ${applied.length} candidate session(s).`);
+    } else if (candidates.length) {
+      console.log('DRY RUN — no changes written. Pass --apply to heal these sessions.');
+    }
+
+    return { candidates, applied };
   }
-
-  const now = process.env.HEAL_SWEEP_NOW ? new Date(process.env.HEAL_SWEEP_NOW) : new Date();
-
-  const { candidates, applied } = await sweep({ sinceDays, apply, now });
-
-  console.log('=== Heal sweep ===');
-  if (Number.isFinite(sinceDays)) console.log(`Window: last ${sinceDays}d (as of ${now.toISOString()})`);
-  console.log('');
-  console.log('date        sessionId       removed              merges');
-  for (const c of candidates) {
-    const removedStr = c.removed.join(',') || '(none)';
-    const mergesStr = c.merges.map((m) => `${m.from}->${m.to}`).join(',') || '(none)';
-    console.log(`${c.date}  ${c.sessionId}  ${removedStr.padEnd(20)}  ${mergesStr}`);
-  }
-  console.log('');
-  console.log(`${candidates.length} session(s) need healing`);
-
-  if (!candidates.length) {
-    // nothing to report either way
-  } else if (apply) {
-    const changedCount = applied.filter((a) => a.changed).length;
-    console.log(`APPLIED — healed ${changedCount} of ${applied.length} candidate session(s).`);
-  } else {
-    console.log('DRY RUN — no changes written. Pass --apply to heal these sessions.');
-  }
-
-  process.exit(0);
-}
-
-async function main() {
-  const args = process.argv.slice(2);
-
-  if (args.includes('--sweep')) {
-    await runSweep(args);
-    return;
-  }
-
-  const apply = args.includes('--apply');
-  const positional = args.filter((a) => !a.startsWith('--'));
 
   if (positional.length !== 2) {
-    console.error('Usage: node cli/heal-fitness-sessions.cli.mjs <date> <sessionId> [--apply]');
-    console.error('       node cli/heal-fitness-sessions.cli.mjs --sweep [--since Nd] [--apply]');
-    process.exit(1);
+    throw new CliError(`Usage: ${spec.usage.split('\n')[0]}`);
   }
   const [date, sessionId] = positional;
 
-  if (!isValidDate(date)) {
-    console.error(`ERROR: <date> must be YYYY-MM-DD, got: ${date}`);
-    process.exit(1);
-  }
-  if (!isValidSessionId(sessionId)) {
-    console.error(`ERROR: <sessionId> must be 14 digits, got: ${sessionId}`);
-    process.exit(1);
-  }
+  if (!isValidDate(date)) throw new CliError(`<date> must be YYYY-MM-DD, got: ${date}`);
+  if (!isValidSessionId(sessionId)) throw new CliError(`<sessionId> must be 14 digits, got: ${sessionId}`);
 
   let result;
   try {
-    result = await heal(date, sessionId, { apply });
+    result = await heal(date, sessionId, { apply, baseDir });
   } catch (e) {
-    console.error(`ERROR: ${e.message}`);
-    process.exit(1);
+    throw new CliError(e.message);
   }
 
   const { file, plan } = result;
@@ -551,9 +540,5 @@ async function main() {
     }
   }
 
-  process.exit(0);
-}
-
-if (import.meta.url === `file://${process.argv[1]}`) {
-  main();
+  return result;
 }

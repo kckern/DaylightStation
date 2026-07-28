@@ -8,7 +8,7 @@
  * actual data. This helper is invoked from:
  *   1. FitnessActivityEnrichmentService._createStravaOnlySession (webhook path)
  *   2. ActivityReconciliationService.reconcile (periodic + post-webhook)
- *   3. cli/scripts/backfill-strava-enrichment.mjs (historical backfill)
+ *   3. cli/fitness.cli.mjs strava backfill-enrichment (historical backfill)
  *
  * Conservative absorption rules — a session is deleted only if ALL hold:
  *   - It is not a Strava-only session (`session.source !== 'strava'`)

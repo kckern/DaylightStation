@@ -858,7 +858,7 @@ Expected: both show `contentId: plex:606446`.
 
 ```bash
 ssh {env.prod_host} 'docker exec {env.docker_container} \
-  node /usr/src/app/cli/merge-fitness-sessions.cli.mjs 2026-05-01 \
+  node /usr/src/app/cli/fitness.cli.mjs session merge 2026-05-01 \
   20260501190411 20260501193558'
 ```
 
@@ -879,7 +879,7 @@ Expected: only two files remain (`20260501061820.yml` and `20260501193558.yml`);
 
 ```bash
 ssh {env.prod_host} 'docker exec {env.docker_container} \
-  node /usr/src/app/cli/merge-fitness-sessions.cli.mjs 2026-05-06 \
+  node /usr/src/app/cli/fitness.cli.mjs session merge 2026-05-06 \
   20260506125238 20260506130106'
 ```
 
@@ -1059,7 +1059,7 @@ These came up in the audit but should be tracked separately:
 - `tests/isolated/application/fitness/StravaWebhookJobStore.test.mjs` (Task 3.1 — likely new)
 
 ### CLI (used, unchanged)
-- `cli/merge-fitness-sessions.cli.mjs` (Tasks 4.1, 4.2)
+- `cli/merge-fitness-sessions.cli.mjs` (now: `cli/fitness.cli.mjs session merge`) (Tasks 4.1, 4.2)
 
 ### Docs
 - `docs/_wip/audits/2026-05-06-fitness-session-strava-sync-fragmentation-audit.md` (this plan's source-of-truth)

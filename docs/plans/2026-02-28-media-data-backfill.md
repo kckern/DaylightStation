@@ -4,7 +4,7 @@
 
 **Goal:** Correct stale `durationSeconds` and missing `end` timestamps in 8 affected fitness session YAML files on prod.
 
-**Architecture:** One-off CLI backfill script following `enrich-sessions-with-plex.mjs` patterns — bootstrap config, use FileIO utilities, dry-run by default. Pure functions handle computation so they're testable with `node:test`. Plex API provides workout video durations; session data provides gaming durations.
+**Architecture:** One-off CLI backfill script following `enrich-sessions-with-plex.mjs` (now: `cli/fitness.cli.mjs media enrich-plex`) patterns — bootstrap config, use FileIO utilities, dry-run by default. Pure functions handle computation so they're testable with `node:test`. Plex API provides workout video durations; session data provides gaming durations.
 
 **Tech Stack:** Node.js, `js-yaml` via `#system/utils/FileIO.mjs`, Plex REST API, `node:test` for tests.
 

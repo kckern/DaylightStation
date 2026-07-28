@@ -10,6 +10,7 @@
 
 **Current implementation:** [`docs/reference/school/README.md`](../reference/school/README.md)
 **Programme requirements:** [`docs/superpowers/specs/2026-07-21-portal-homeschool-requirements.md`](../superpowers/specs/2026-07-21-portal-homeschool-requirements.md)
+**Architecture design (2026-07-27):** [`docs/superpowers/specs/2026-07-27-school-physical-console-architecture.md`](../superpowers/specs/2026-07-27-school-physical-console-architecture.md)
 
 ---
 

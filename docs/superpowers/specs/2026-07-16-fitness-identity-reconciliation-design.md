@@ -16,15 +16,15 @@ these cases.
 
 ### Motivating case — session `20260627195941` (2026-06-27)
 
-- One ANT+ HR strap (device `29413`). At startup the roster was fumbled:
-  attributed to **soren** (ticks 1–2), then **elizabeth** (tick 3), then settled
+- One ANT+ HR strap (device `10001`). At startup the roster was fumbled:
+  attributed to **learner-one** (ticks 1–2), then **parent-two** (tick 3), then settled
   on **grannie** (tick 4 onward), who wore it for the whole ~53-minute Jane Fonda
   "Complete Workout (1988)" session.
-- The raw `device:29413:heart-rate` series is **one continuous trace with no
+- The raw `device:10001:heart-rate` series is **one continuous trace with no
   dropout** across those handoffs — proof it was one body the whole time (a
   label fix, not a physical strap handoff).
 - Result: **grannie** (966 coins, full trace) plus two ghost participants —
-  **soren** (1 coin, 2 HR samples) and **elizabeth** (0 coins, 1 HR sample).
+  **learner-one** (1 coin, 2 HR samples) and **parent-two** (0 coins, 1 HR sample).
 
 ### Why today's machinery missed it
 
@@ -33,15 +33,15 @@ There are already two mechanisms — an in-session threshold absorption
 `governance.usage_threshold_seconds`, ~300s) and a session-end backfill
 (`sessionBackfill.js`). Three independent failures let the ghosts through:
 
-1. **Superseded entity never closed.** The elizabeth entity stayed
+1. **Superseded entity never closed.** The parent-two entity stayed
    `status: active, endTime: null` after the device moved to grannie. The
    segment builder fills a null `endTime` with *session end*, so a 4-second
    sliver is measured as a **53-minute** segment → not sub-threshold → not
    absorbed.
-2. **Series-only names are invisible to the backfill.** `soren` has no entity
+2. **Series-only names are invisible to the backfill.** `learner-one` has no entity
    record at all — he exists only as a per-name timeline series
-   (`soren:hr`, `soren:coins`, …). `sessionBackfill.js` reads *only*
-   `entities`, so soren can never be reconciled.
+   (`learner-one:hr`, `learner-one:coins`, …). `sessionBackfill.js` reads *only*
+   `entities`, so learner-one can never be reconciled.
 3. **Absorption keyed on wall-clock, not effort.** Even with the plumbing
    fixed, the duration-only gate would keep a strap that sat idle (long
    duration, zero effort).
@@ -150,7 +150,7 @@ turn-taking is never merged.
   `endTime = now`, `status = 'transferred'` (or `'superseded'`) **even when the
   segment is not absorbed**, so segments are clean, closed, and sequential.
 - **Guarantee an entity record for every assignment**, so no attributed name is
-  entity-less (fixes the soren case at the source; the reconciliation pass still
+  entity-less (fixes the learner-one case at the source; the reconciliation pass still
   covers any that slip through).
 - The live roster drops the prior ghost immediately, so the on-screen
   participant list matches the reconciled save.
@@ -158,7 +158,8 @@ turn-taking is never merged.
 ### Component 3 — Retroactive heal + sweep (in scope)
 
 A backend CLI (`cli/heal-fitness-sessions.cli.mjs`, following
-`merge-fitness-sessions.cli.mjs`) with a pure backend healer
+`merge-fitness-sessions.cli.mjs`; now: `cli/fitness.cli.mjs session heal` and
+`cli/fitness.cli.mjs session merge`) with a pure backend healer
 (`SessionIdentityHealer.mjs`) that mirrors the frontend rules against the
 **on-disk** representation (RLE `<name>:<metric>` series, decoded via
 `TimelineService`). Modes:
@@ -196,7 +197,7 @@ suites), each a fixture → expected participant set:
 - **Known-user 2-device swap** → one participant, coins summed. *(Rule M)*
 - **Idle strap** (long duration, ~0 effort) → absorbed. *(Rule A; duration-only
   would keep it — regression guard.)*
-- **Series-only ghost** (no entity, the soren case) → absorbed.
+- **Series-only ghost** (no entity, the learner-one case) → absorbed.
 - **Unclosed superseded entity** measured with real duration after
   close-on-reassign.
 - **Real shared-strap turn-taking** (3+ alternating substantial segments) →
@@ -205,7 +206,7 @@ suites), each a fixture → expected participant set:
   *(Effort keeps it.)*
 - **Two guest blips on two devices** → NOT cross-merged. *(No identity basis.)*
 - **Golden replay** of the `20260627195941` fixture → grannie sole participant;
-  soren + elizabeth gone; coins/zone-minutes unchanged for grannie.
+  learner-one + parent-two gone; coins/zone-minutes unchanged for grannie.
 
 ---
 

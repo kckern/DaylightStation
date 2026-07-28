@@ -138,3 +138,41 @@ The full `concierge ask` (streaming agent invocation from the shell) is intentio
 ## Existing CLI tools
 
 `cli/buxfer.cli.mjs` is the original Buxfer-direct CLI; it stays as-is for now and will eventually be folded into `dscli finance --direct`.
+
+### `cli/fitness.cli.mjs`
+
+One entry point for every fitness session and Strava operation. It replaced thirteen
+standalone scripts (`heal-fitness-sessions.cli.mjs`, `merge-fitness-sessions.cli.mjs`,
+`strava.cli.mjs`, the `backfill-*` family, …) that each carried their own bootstrap, their
+own argv parser, and — three times over — their own copy of the Strava OAuth refresh logic.
+
+```bash
+node cli/fitness.cli.mjs                          # groups and commands
+node cli/fitness.cli.mjs <group>                  # one group's commands
+node cli/fitness.cli.mjs <group> <cmd> --help     # full usage for one command
+```
+
+| Group | Covers |
+|-------|--------|
+| `session` | surgery on stored session YAML: `scan`, `heal`, `merge`, `split`, `reconstruct` |
+| `media` | linking sessions to what was playing: `enrich-plex`, `backfill-memory`, `backfill-primary` |
+| `strava` | API CRUD (`me`, `list`, `get`, `update`, `delete`, `create`, `streams`, `token`, `refresh`) plus reconciliation (`match-home`, `backfill-calories`, `backfill-enrichment`, `push`) |
+
+A bare command name works when it is unique across groups, so `fitness.cli.mjs heal …` and
+`fitness.cli.mjs session heal …` are equivalent.
+
+**Every mutating command is dry-run by default** — pass `--write` or `--apply` (per the
+command's own help) to commit. `session merge` is the exception worth knowing: it writes and
+deletes source files, so preview it with `--dry-run` first.
+
+Commands live in `cli/lib/fitness/`, one module per operation, each exporting
+`{ spec, run(argv, ctx) }`. To add one:
+
+1. Create `cli/lib/fitness/<name>.mjs` with a `spec` (`name`, `summary`, `usage`, `details`)
+   and an `async run(argv, ctx)`.
+2. Register it in the `GROUPS` map in `cli/fitness.cli.mjs`.
+3. Parse flags with `parseArgs` from `./argv.mjs`; take paths and YAML helpers from `ctx`
+   (never re-derive `baseDir` or call `dotenv.config()`); throw `CliError` instead of
+   calling `process.exit()`.
+4. Keep module import **side-effect free** — the dispatcher imports every module just to
+   build help text, so all work belongs inside `run()`.

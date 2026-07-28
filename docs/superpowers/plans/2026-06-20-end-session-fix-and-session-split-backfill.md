@@ -40,7 +40,7 @@
 **Part B (backfill):**
 - Create: `backend/src/2_domains/fitness/services/sessionSplit.mjs` — pure split/recompute logic.
 - Test: `backend/src/2_domains/fitness/services/sessionSplit.test.mjs`.
-- Create: `cli/fitness-split-session.mjs` — one-shot driver (dry-run + write).
+- Create: `cli/fitness-split-session.mjs` (now: `cli/fitness.cli.mjs session split`) — one-shot driver (dry-run + write).
 
 ---
 
@@ -774,9 +774,9 @@ Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>"
 
 Run:
 ```bash
-sudo docker exec daylight-station sh -c 'cd /usr/src/app && node cli/fitness-split-session.mjs \
-  --file data/household/history/fitness/2026-06-20/20260620191341.yml \
-  --split-ts 1782009019590'
+sudo docker exec daylight-station sh -c 'cd /usr/src/app && node cli/fitness.cli.mjs session split \
+  --file=data/household/history/fitness/2026-06-20/20260620191341.yml \
+  --split-ts=1782009019590'
 ```
 
 - [ ] **Step 2: Verify the output**
@@ -804,9 +804,9 @@ If any invariant FAILs, STOP. Re-investigate (likely the zone→color map or a n
 
 Run:
 ```bash
-sudo docker exec daylight-station sh -c 'cd /usr/src/app && node cli/fitness-split-session.mjs \
-  --file data/household/history/fitness/2026-06-20/20260620191341.yml \
-  --split-ts 1782009019590 --write'
+sudo docker exec daylight-station sh -c 'cd /usr/src/app && node cli/fitness.cli.mjs session split \
+  --file=data/household/history/fitness/2026-06-20/20260620191341.yml \
+  --split-ts=1782009019590 --write'
 ```
 Expected: `ALL INVARIANTS PASS`, `backup written: …PRE-SPLIT.bak.yml`, `WROTE part1: …/20260620191341.yml`, `WROTE part2: …/<part2Id>.yml`.
 

@@ -4,7 +4,7 @@
 
 **Goal:** Make sliver absorption a safety net that runs across every code path that could create or encounter a Strava-only session — so a phantom HR sliver from an off-site workout cannot persist in the data, regardless of which path got us there or how the original webhook fared.
 
-**Architecture:** Extract `_absorbOverlappingSlivers` (currently a private method on `FitnessActivityEnrichmentService`) into a shared module-level function `absorbOverlappingSlivers` under `backend/src/3_applications/fitness/`. Wire it in three places: (1) the existing webhook-time call inside `_createStravaOnlySession` (already done in `5a48108ce` — switch the call site to the new module), (2) `StravaReconciliationService.reconcile()` as a Pass 3 over Strava-only sessions encountered, and (3) the `cli/scripts/backfill-strava-enrichment.mjs` flow that retroactively creates Strava-only sessions for unmatched archives. Add observability (counts in the reconciliation summary log) so it's verifiable. The helper's existing conservative rules (no media, <15 min, time-overlap ±15 min, not source:strava itself) stay unchanged — this plan adds *coverage*, not *aggression*.
+**Architecture:** Extract `_absorbOverlappingSlivers` (currently a private method on `FitnessActivityEnrichmentService`) into a shared module-level function `absorbOverlappingSlivers` under `backend/src/3_applications/fitness/`. Wire it in three places: (1) the existing webhook-time call inside `_createStravaOnlySession` (already done in `5a48108ce` — switch the call site to the new module), (2) `StravaReconciliationService.reconcile()` as a Pass 3 over Strava-only sessions encountered, and (3) the `cli/scripts/backfill-strava-enrichment.mjs` (now: `cli/fitness.cli.mjs strava backfill-enrichment`) flow that retroactively creates Strava-only sessions for unmatched archives. Add observability (counts in the reconciliation summary log) so it's verifiable. The helper's existing conservative rules (no media, <15 min, time-overlap ±15 min, not source:strava itself) stay unchanged — this plan adds *coverage*, not *aggression*.
 
 **Tech Stack:** Node.js / ES modules, existing service architecture (DDD layers), Vitest for tests. No new dependencies.
 
@@ -786,7 +786,7 @@ Skip this if it complicates the code — the CLI is a maintenance tool, not a po
 ```bash
 cd /Users/kckern/Documents/GitHub/DaylightStation
 DAYLIGHT_BASE_PATH="/Users/kckern/Library/CloudStorage/Dropbox/Apps/DaylightStation" \
-  node cli/scripts/backfill-strava-enrichment.mjs 14
+  node cli/fitness.cli.mjs strava backfill-enrichment --days=14
 ```
 
 Expected: dry-run output should NOT delete anything; should report any sliver candidates it sees. If no candidates, output is empty for slivers (because Tasks 5-8 from the prior plan already cleaned up the recent ones).
@@ -811,7 +811,7 @@ remaining path that could leave a phantom sliver behind."
 **Why:** Lets you run a one-shot cleanup without invoking the full reconciliation pipeline. Useful for cron-style maintenance, post-deploy verification, or after restoring from a backup.
 
 **Files:**
-- Modify: `cli/scan-fitness-history.mjs`
+- Modify: `cli/scan-fitness-history.mjs` (now: `cli/fitness.cli.mjs session scan`)
 
 **Step 1: Read the current scanner**
 
@@ -884,7 +884,7 @@ Edit the existing JSDoc/comment at the top to mention the new flag:
 **Step 5: Test in dry-run mode (default)**
 
 ```bash
-node cli/scan-fitness-history.mjs
+node cli/fitness.cli.mjs session scan
 ```
 
 Expected: same as before — read-only report, no deletions.
@@ -892,7 +892,7 @@ Expected: same as before — read-only report, no deletions.
 **Step 6: Test with `--auto-fix` against current data**
 
 ```bash
-node cli/scan-fitness-history.mjs --auto-fix
+node cli/fitness.cli.mjs session scan --auto-fix
 ```
 
 Expected: report + the AUTO-FIX section. Since prior cleanup already removed slivers, the count should be `0`. (If there are any new slivers introduced since the last cleanup, they'll be absorbed.)
@@ -930,7 +930,7 @@ code path that can produce a Strava-only session:
 | Webhook `_createStravaOnlySession` | After saveYaml | `5a48108ce` (initial) → switched to shared module in this plan |
 | Periodic `StravaReconciliationService.reconcile()` Pass 3 | When iterating any `session.source === 'strava'` | this plan |
 | Backfill `cli/scripts/backfill-strava-enrichment.mjs` | After creating Strava-only sessions in `--write` mode | this plan |
-| On-demand `cli/scan-fitness-history.mjs --auto-fix` | When invoked manually | this plan |
+| On-demand `cli/fitness.cli.mjs session scan --auto-fix` | When invoked manually | this plan |
 
 The shared logic lives in `backend/src/3_applications/fitness/sliverAbsorption.mjs`. Conservative rules unchanged: no media, <15 min, time overlap ±15 min, not source:strava itself. The only thing that changed is *coverage*.
 
@@ -961,7 +961,7 @@ Expected: green except the pre-existing `playlistSorter.test.mjs` failure.
 Run the scanner:
 
 ```bash
-node cli/scan-fitness-history.mjs
+node cli/fitness.cli.mjs session scan
 ```
 
 Expected: 0 fragments, 0 absorbable slivers (or the same 3 missing-session ghosts and 4 borderline fragments as before — those are out of scope here).
@@ -969,7 +969,7 @@ Expected: 0 fragments, 0 absorbable slivers (or the same 3 missing-session ghost
 Run an explicit auto-fix:
 
 ```bash
-node cli/scan-fitness-history.mjs --auto-fix
+node cli/fitness.cli.mjs session scan --auto-fix
 ```
 
 Expected: 0 slivers absorbed (everything already clean).

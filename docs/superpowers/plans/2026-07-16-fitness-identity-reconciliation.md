@@ -4,7 +4,7 @@
 
 **Goal:** Stop a shuffled HR strap from crystallizing ghost participants and unify a known user who swaps devices — both live (at save) and retroactively across stored sessions.
 
-**Architecture:** A pure decision core turns per-device occupancy *segments* (with an **effort** summary) into a plan of merges + absorptions. It runs in two parallel implementations: the **frontend** live save path (`sessionBackfill.js`, extended) and a **backend** healer + CLI (`SessionIdentityHealer.mjs` + `heal-fitness-sessions.cli.mjs`) for retroactive sweep/heal. Both are pinned to the same golden fixture (`20260627195941`) for parity. A small in-session fix (`GuestAssignmentService` close-on-reassign) keeps the live roster and segment model honest.
+**Architecture:** A pure decision core turns per-device occupancy *segments* (with an **effort** summary) into a plan of merges + absorptions. It runs in two parallel implementations: the **frontend** live save path (`sessionBackfill.js`, extended) and a **backend** healer + CLI (`SessionIdentityHealer.mjs` + `heal-fitness-sessions.cli.mjs`, now: `cli/fitness.cli.mjs session heal`) for retroactive sweep/heal. Both are pinned to the same golden fixture (`20260627195941`) for parity. A small in-session fix (`GuestAssignmentService` close-on-reassign) keeps the live roster and segment model honest.
 
 **Tech Stack:** JavaScript ESM. Frontend: React hooks under `frontend/src/hooks/fitness/`, tests in Vitest. Backend: Node ESM under `backend/src/`, `#domains/*` import aliases, tests in Vitest (`*.test.mjs`). YAML via `js-yaml`. RLE series via `SessionSerializerV3` (frontend) / `TimelineService.mjs` (backend).
 
@@ -15,7 +15,7 @@
 - **Series metric names differ by representation.** In-memory (frontend save time): `user:<id>:heart_rate | zone_id | coins_total | heart_beats`. On-disk (backend heal): flat `<id>:hr | zone | coins | beats`, RLE-encoded strings; zone letters `c/a/w/h`; `interval_seconds` (default 5) at `timeline.interval_seconds`.
 - **Pure cores have no side effects.** They return plans; callers apply them.
 - **Preserve existing behavior:** OI-2 cycling detection (3+ alternating substantial segments = shared-strap turn-taking) must still keep all participants. Existing `sessionBackfill` exports keep working (the duration path is demoted, not deleted).
-- **Frontend/backend parity is asserted on the `20260627195941` golden fixture:** expected outcome = `grannie` sole participant; `soren` + `elizabeth` removed; grannie's coins/zone-minutes unchanged.
+- **Frontend/backend parity is asserted on the `20260627195941` golden fixture:** expected outcome = `grannie` sole participant; `learner-one` + `parent-two` removed; grannie's coins/zone-minutes unchanged.
 - **Commit after every task.** On `kckern-server` committing is allowed; do NOT deploy as part of plan execution.
 
 ---
@@ -167,16 +167,16 @@ describe('isKnownUserId', () => {
 describe('buildOccupancySegments', () => {
   it('adds a synthetic segment for a series-only occupant (no entity)', () => {
     const entities = [
-      { entityId: 'e1', profileId: 'grannie', deviceId: '29413', startTime: 400, endTime: null, status: 'active' }
+      { entityId: 'e1', profileId: 'grannie', deviceId: '10001', startTime: 400, endTime: null, status: 'active' }
     ];
     const series = {
-      'user:soren:heart_rate': [116, 116, null],
+      'user:learner-one:heart_rate': [116, 116, null],
       'user:grannie:heart_rate': [null, null, 80]
     };
     const per = buildOccupancySegments({ entities, series, sessionEndTime: 1000, intervalSeconds: 5 });
-    const segs = per.get('29413');
+    const segs = per.get('10001');
     const ids = segs.map((s) => s.occupantId).sort();
-    expect(ids).toEqual(['grannie', 'soren']);
+    expect(ids).toEqual(['grannie', 'learner-one']);
     expect(segs.every((s) => s.effort)).toBe(true);
   });
 });
@@ -277,16 +277,16 @@ import { runSessionBackfill } from './sessionBackfill.js';
 describe('runSessionBackfill — effort absorb', () => {
   it('absorbs an idle-long ghost forward into the real occupant', () => {
     const entities = [
-      { entityId: 'g1', profileId: 'elizabeth', deviceId: '29413', startTime: 0,   endTime: 300000, status: 'active' },
-      { entityId: 'g2', profileId: 'grannie',   deviceId: '29413', startTime: 300000, endTime: null, status: 'active' }
+      { entityId: 'g1', profileId: 'parent-two', deviceId: '10001', startTime: 0,   endTime: 300000, status: 'active' },
+      { entityId: 'g2', profileId: 'grannie',   deviceId: '10001', startTime: 300000, endTime: null, status: 'active' }
     ];
     const series = {
-      'user:elizabeth:heart_rate': [116, null, null],
+      'user:parent-two:heart_rate': [116, null, null],
       'user:grannie:heart_rate':   [null, 80, 90]
     };
     const r = runSessionBackfill({ entities, series, sessionEndTime: 600000 });
-    expect([...r.removedOccupants]).toContain('elizabeth');
-    expect(r.transfers.some(t => t.fromOccupantId === 'elizabeth' && t.toOccupantId === 'grannie')).toBe(true);
+    expect([...r.removedOccupants]).toContain('parent-two');
+    expect(r.transfers.some(t => t.fromOccupantId === 'parent-two' && t.toOccupantId === 'grannie')).toBe(true);
   });
 });
 
@@ -455,15 +455,15 @@ git commit -m "feat(fitness): effort-based absorb + cross-device known-user merg
 
 ```javascript
 // PersistenceManager.effortBackfill.test.js  (harness copied from lateTagMerge test)
-// sessionData: elizabeth (1 hr sample, 0 coins) on device 29413 then grannie (full).
-// After persist: capturedPayload.summary.participants has no 'elizabeth';
-//   series['user:elizabeth:heart_rate'] is all null; grannie retains her data.
+// sessionData: parent-two (1 hr sample, 0 coins) on device 10001 then grannie (full).
+// After persist: capturedPayload.summary.participants has no 'parent-two';
+//   series['user:parent-two:heart_rate'] is all null; grannie retains her data.
 ```
 
 - [ ] **Step 2: Run test to verify it fails**
 
 Run: `cd frontend && npx vitest run src/hooks/fitness/PersistenceManager.effortBackfill.test.js`
-Expected: FAIL — elizabeth still present.
+Expected: FAIL — parent-two still present.
 
 - [ ] **Step 3: Implement** — in `_applyBackfill` (around `PersistenceManager.js:1244`) pass the new args and apply merges:
 
@@ -520,7 +520,7 @@ git commit -m "feat(fitness): live save path uses effort-based reconciliation + 
 - Consumes: existing `session.entities` / entity records, `this.ledger`.
 - Produces: on any occupant change for a device, the previous entity gets `endTime = now` and `status = 'transferred'` (absorbed) or `'superseded'` (honored); every assignment ensures a live entity for the new occupant.
 
-- [ ] **Step 1: Write the failing test** — assign device `29413` to soren, then grannie; assert the soren entity ends with a finite `endTime` and non-`active` status, and a grannie entity exists.
+- [ ] **Step 1: Write the failing test** — assign device `10001` to learner-one, then grannie; assert the learner-one entity ends with a finite `endTime` and non-`active` status, and a grannie entity exists.
 
 - [ ] **Step 2: Run to verify it fails.** Run: `cd frontend && npx vitest run src/hooks/fitness/GuestAssignmentService.closeOnReassign.test.js` → FAIL (prior entity still `active`, `endTime` null).
 
@@ -558,7 +558,7 @@ git commit -m "fix(fitness): close superseded entity on device reassignment"
 - Consumes: `decodeSeries` from `#domains/fitness/services/TimelineService.mjs`.
 - Produces: `planHeal(sessionYamlObj, cfg) → { removedOccupants: string[], transfers: [{from,to,reason}], merges: [{from,to,reason}], needsHeal: boolean }`. Reads on-disk flat series `<id>:hr | zone | coins`, `timeline.interval_seconds`, `entities`, roster/participants for known-user detection and `known_user_aliases`.
 
-- [ ] **Step 1: Write the failing test** — construct a minimal decoded session obj (elizabeth: 1 hr sample; grannie: full) and assert `planHeal(...).removedOccupants` = `['elizabeth']`, `needsHeal === true`.
+- [ ] **Step 1: Write the failing test** — construct a minimal decoded session obj (parent-two: 1 hr sample; grannie: full) and assert `planHeal(...).removedOccupants` = `['parent-two']`, `needsHeal === true`.
 
 - [ ] **Step 2: Run to verify it fails.** Run: `cd backend && npx vitest run src/2_domains/fitness/services/SessionIdentityHealer.test.mjs` → FAIL (module missing).
 
@@ -597,7 +597,7 @@ git commit -m "feat(fitness): backend SessionIdentityHealer (pure heal planner)"
 ### Task 7: Golden-parity fixture (both sides)
 
 **Files:**
-- Create: `backend/src/2_domains/fitness/services/__fixtures__/session-20260627195941.yml` (trimmed real session — 3 occupants, device 29413; copy the real `entities`, `timeline.series` participant keys, `interval_seconds`, `summary.participants`).
+- Create: `backend/src/2_domains/fitness/services/__fixtures__/session-20260627195941.yml` (trimmed real session — 3 occupants, device 10001; copy the real `entities`, `timeline.series` participant keys, `interval_seconds`, `summary.participants`).
 - Create: `frontend/src/hooks/fitness/__fixtures__/session-20260627195941.json` (same data, in-memory `user:<id>:...` key form).
 - Test: `SessionIdentityHealer.golden.test.mjs` + `sessionBackfill.golden.test.js`.
 
@@ -609,7 +609,7 @@ sudo docker exec daylight-station sh -c 'cat data/household/history/fitness/2026
 ```
 Trim to the 3 occupant series + entities + interval_seconds + summary.participants; save both fixture forms.
 
-- [ ] **Step 2: Write both golden tests** — assert: `removedOccupants` == `['elizabeth','soren']` (sorted), `grannie` retained, grannie coins unchanged (966).
+- [ ] **Step 2: Write both golden tests** — assert: `removedOccupants` == `['parent-two','learner-one']` (sorted), `grannie` retained, grannie coins unchanged (966).
 
 - [ ] **Step 3: Run both.** Run: `cd backend && npx vitest run src/2_domains/fitness/services/SessionIdentityHealer.golden.test.mjs` and `cd frontend && npx vitest run src/hooks/fitness/sessionBackfill.golden.test.js` → PASS.
 
@@ -633,7 +633,7 @@ git commit -m "test(fitness): golden-parity fixture for session 20260627195941"
 **Interfaces:**
 - Consumes: `planHeal` (Task 6), `decodeSeries`/`encodeSeries`/`mergeTimelines` (TimelineService), summary-recompute logic (reuse the helpers in `merge-fitness-sessions.cli.mjs` — extract shared `recomputeSummary(sessionObj)` into `cli/lib/fitnessSessionSummary.mjs` if not already shared).
 
-- [ ] **Step 1: Write the failing test** — copy the golden YML to a temp path, run the heal function with `apply:true`, re-read: assert `summary.participants` has only `grannie`; `elizabeth`/`soren` series keys removed; series re-encoded as RLE strings.
+- [ ] **Step 1: Write the failing test** — copy the golden YML to a temp path, run the heal function with `apply:true`, re-read: assert `summary.participants` has only `grannie`; `parent-two`/`learner-one` series keys removed; series re-encoded as RLE strings.
 
 - [ ] **Step 2: Run to verify it fails.** → FAIL (CLI missing).
 
@@ -670,9 +670,9 @@ git commit -m "feat(cli): heal-fitness-sessions single-session heal (dry-run/app
 
 - [ ] **Step 5: Live dry-run (report only, no writes)** inside the container:
 ```bash
-sudo docker exec daylight-station sh -c 'node cli/heal-fitness-sessions.cli.mjs --sweep --since 400d'
+sudo docker exec daylight-station sh -c 'node cli/fitness.cli.mjs session heal --sweep --since=400d'
 ```
-Expected: `20260627195941` listed among sessions needing heal (with `removed: [elizabeth, soren]`). Do NOT `--apply` yet — review the report first.
+Expected: `20260627195941` listed among sessions needing heal (with `removed: [parent-two, learner-one]`). Do NOT `--apply` yet — review the report first.
 
 - [ ] **Step 6: Commit**
 

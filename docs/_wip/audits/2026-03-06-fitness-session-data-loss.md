@@ -156,7 +156,7 @@ The lost session can be partially reconstructed from:
 
 ### Reconstruction script
 
-Existing: `cli/reconstruct-fitness-sessions.mjs` — reads Strava activity archives and rebuilds session YAMLs. Can be run with `--write` to produce files.
+Existing: `cli/fitness.cli.mjs session reconstruct` — reads Strava activity archives and rebuilds session YAMLs. Can be run with `--write` to produce files.
 
 ### Session details from logs
 
@@ -234,7 +234,7 @@ Yesterday's session at `/usr/src/app/data/household/history/fitness/2026-03-05/2
 
 The Strava harvester needs to fetch and archive activity 17624884199. Either:
 - Wait for next hourly harvest cycle (it should pick it up since it's within 90 days)
-- Or manually trigger: `node cli/reconstruct-fitness-sessions.mjs --write 1`
+- Or manually trigger: `node cli/fitness.cli.mjs session reconstruct --write --days=1`
 
 But the reconstruction script reads from the Strava summary (`strava.yml`), and today's activity isn't in the summary yet because the harvester only adds `homeSessionId`-matched entries. The activity IS in the Strava API but needs to be archived first.
 
@@ -246,7 +246,7 @@ But the reconstruction script reads from the Strava summary (`strava.yml`), and 
 #    (The hourly cron should do this, or trigger manually via API)
 
 # 2. Run reconstruction script for today
-node cli/reconstruct-fitness-sessions.mjs --write 1
+node cli/fitness.cli.mjs session reconstruct --write --days=1
 ```
 
 **Step 2: Enrich the reconstructed session**
@@ -364,5 +364,5 @@ This 14,773-line JSONL file covers from the fitness app mount (02:16:49 UTC, yes
 |---|---|
 | `frontend/src/hooks/fitness/FitnessSession.js` | Add `_lastKnownGoodRoster`, update on tick, fallback in `summary` getter. Un-swallow autosave errors. Reset PM counters on session start. |
 | `frontend/src/hooks/fitness/PersistenceManager.js` | Add `resetDebugCounters()`. Remove hard `no-participants` gate for sessions with prior saves. Add structured logging for validation failures. |
-| Backend: session reconstruction | Run `cli/reconstruct-fitness-sessions.mjs` or manual YAML write for today's session |
+| Backend: session reconstruction | Run `cli/fitness.cli.mjs session reconstruct` or manual YAML write for today's session |
 | Backend: Strava re-enrichment | Re-trigger enrichment job for activity 17624884199 after session file exists |

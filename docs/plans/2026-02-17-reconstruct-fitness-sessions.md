@@ -4,7 +4,7 @@
 
 **Goal:** Create a CLI script that finds Strava workouts without matching home fitness sessions, matches them with Plex fitness media plays by timestamp, and reconstructs v3 session files with HR data, zones, coins, and media events.
 
-**Architecture:** Standalone CLI script (`cli/reconstruct-fitness-sessions.mjs`) that bootstraps ConfigService, reads strava summary + archives for HR data, reads `14_fitness.yml` for media play timestamps, and writes v3 session YAML files to `history/fitness/`. Uses existing `encodeToRLE` from TimelineService and existing FileIO utilities. Dry-run by default, `--write` to persist.
+**Architecture:** Standalone CLI script (`cli/reconstruct-fitness-sessions.mjs`, now: `cli/fitness.cli.mjs session reconstruct`) that bootstraps ConfigService, reads strava summary + archives for HR data, reads `14_fitness.yml` for media play timestamps, and writes v3 session YAML files to `history/fitness/`. Uses existing `encodeToRLE` from TimelineService and existing FileIO utilities. Dry-run by default, `--write` to persist.
 
 **Tech Stack:** Node.js ESM, moment-timezone, existing DaylightStation YAML utilities (loadYamlSafe, saveYaml, ensureDir), TimelineService (encodeToRLE)
 
@@ -185,7 +185,7 @@ main().catch(err => {
 **Step 3: Run to verify bootstrap works**
 
 ```bash
-node cli/reconstruct-fitness-sessions.mjs
+node cli/fitness.cli.mjs session reconstruct
 ```
 
 Expected: Prints count of unmatched entries, no errors.
@@ -480,7 +480,7 @@ function processEntry(item, mediaMemory, fitnessHistoryDir, stravaSummary, strav
 **Step 2: Run dry-run and verify output**
 
 ```bash
-node cli/reconstruct-fitness-sessions.mjs
+node cli/fitness.cli.mjs session reconstruct
 ```
 
 Expected: Lines like:
@@ -492,7 +492,7 @@ Expected: Lines like:
 **Step 3: Run with --write and verify files created**
 
 ```bash
-node cli/reconstruct-fitness-sessions.mjs --write
+node cli/fitness.cli.mjs session reconstruct --write
 ```
 
 Then verify a created file:

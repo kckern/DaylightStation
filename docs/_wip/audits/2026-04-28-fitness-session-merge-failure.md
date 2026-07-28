@@ -294,7 +294,7 @@ data. A future fix should either:
 
 Both fixed via plan `docs/_wip/plans/2026-04-28-fitness-session-merge-fix.md`. Phase D adds `setPendingContentId(id)` (FitnessSession.js) which the FitnessContext useEffect feeds from the play-queue head, so the resume check has a contentId to work with even before the session starts. Phase B fixes the typo. Phase C adds structured logs at every decision point (`fitness.resumable.check.{start,candidates,match,no_match}` on the backend; `fitness.session.resume_check.{start,no_content,result,finalized_prompt,auto_resume}` on the frontend) so future failures are diagnosable from logs alone.
 
-The three fragmented sessions from this incident were merged via a one-shot CLI script `cli/merge-fitness-sessions.cli.mjs` (Phase A) — final session is `data/household/history/fitness/2026-04-28/20260428124229.yml`, ~37 min, 494 coins.
+The three fragmented sessions from this incident were merged via a one-shot CLI script `cli/merge-fitness-sessions.cli.mjs` (now: `cli/fitness.cli.mjs session merge`) (Phase A) — final session is `data/household/history/fitness/2026-04-28/20260428124229.yml`, ~37 min, 494 coins.
 
 ### Side findings (not addressed in this plan, worth tracking)
 

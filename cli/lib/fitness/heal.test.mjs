@@ -5,11 +5,13 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import yaml from 'js-yaml';
 
-import { heal, mergeCell, foldOccupantSeries, resolveSessionPath, isValidDate, isValidSessionId, sweep, parseSinceArg, cutoffDateString } from './heal-fitness-sessions.cli.mjs';
+import { heal, mergeCell, foldOccupantSeries, resolveSessionPath, isValidDate, isValidSessionId, sweep, parseSinceArg, cutoffDateString } from './heal.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const FIXTURE = path.join(
   __dirname,
+  '..',
+  '..',
   '..',
   'backend/src/2_domains/fitness/services/__fixtures__/session-20260627195941.yml'
 );
@@ -64,19 +66,19 @@ describe('mergeCell', () => {
 describe('foldOccupantSeries', () => {
   it('unions non-null cells and deletes the from-occupant keys', () => {
     const decoded = {
-      'soren:hr': [116, 116, null],
-      'elizabeth:hr': [null, null, 116]
+      'learner-one:hr': [116, 116, null],
+      'parent-two:hr': [null, null, 116]
     };
-    foldOccupantSeries(decoded, 'soren', 'elizabeth');
-    expect(decoded['elizabeth:hr']).toEqual([116, 116, 116]);
-    expect(decoded['soren:hr']).toBeUndefined();
+    foldOccupantSeries(decoded, 'learner-one', 'parent-two');
+    expect(decoded['parent-two:hr']).toEqual([116, 116, 116]);
+    expect(decoded['learner-one:hr']).toBeUndefined();
   });
 
   it('adopts the from-series wholesale when the to-occupant has no such key at all', () => {
-    const decoded = { 'soren:coins': [0, 0, 1, 1] };
-    foldOccupantSeries(decoded, 'soren', 'elizabeth');
-    expect(decoded['elizabeth:coins']).toEqual([0, 0, 1, 1]);
-    expect(decoded['soren:coins']).toBeUndefined();
+    const decoded = { 'learner-one:coins': [0, 0, 1, 1] };
+    foldOccupantSeries(decoded, 'learner-one', 'parent-two');
+    expect(decoded['parent-two:coins']).toEqual([0, 0, 1, 1]);
+    expect(decoded['learner-one:coins']).toBeUndefined();
   });
 });
 
@@ -94,10 +96,10 @@ describe('heal() — golden fixture 20260627195941', () => {
     expect(after).toBe(before);
     expect(result.changed).toBe(false);
     expect(result.plan.needsHeal).toBe(true);
-    expect([...result.plan.removedOccupants].sort()).toEqual(['elizabeth', 'soren']);
+    expect([...result.plan.removedOccupants].sort()).toEqual(['parent-two', 'learner-one']);
   });
 
-  it('apply:true folds soren/elizabeth into grannie and rewrites the file', async () => {
+  it('apply:true folds learner-one/parent-two into grannie and rewrites the file', async () => {
     const result = await heal(DATE, SESSION_ID, { apply: true, baseDir });
     expect(result.changed).toBe(true);
 
@@ -107,10 +109,10 @@ describe('heal() — golden fixture 20260627195941', () => {
     expect(Object.keys(rewritten.participants).sort()).toEqual(['grannie']);
     expect(Object.keys(rewritten.summary.participants).sort()).toEqual(['grannie']);
 
-    // elizabeth:*/soren:* series keys are gone.
+    // parent-two:*/learner-one:* series keys are gone.
     const seriesKeys = Object.keys(rewritten.timeline.series);
-    expect(seriesKeys.some((k) => k.startsWith('elizabeth:'))).toBe(false);
-    expect(seriesKeys.some((k) => k.startsWith('soren:'))).toBe(false);
+    expect(seriesKeys.some((k) => k.startsWith('parent-two:'))).toBe(false);
+    expect(seriesKeys.some((k) => k.startsWith('learner-one:'))).toBe(false);
     expect(seriesKeys.some((k) => k.startsWith('grannie:'))).toBe(true);
 
     // Series values are re-encoded RLE strings, not raw decoded arrays.
@@ -120,14 +122,14 @@ describe('heal() — golden fixture 20260627195941', () => {
     }
 
     // grannie's coins are preserved (the terminal/cumulative value, 966 —
-    // grannie's own trace dominates soren/elizabeth's negligible contributions).
+    // grannie's own trace dominates learner-one/parent-two's negligible contributions).
     expect(rewritten.summary.participants.grannie.coins).toBe(966);
 
     // The removed occupants' entity records are stripped too (an entity-backed
-    // ghost like elizabeth must not linger, or a re-scan would re-flag it).
+    // ghost like parent-two must not linger, or a re-scan would re-flag it).
     const entityProfiles = (rewritten.entities || []).map((e) => e.profileId);
-    expect(entityProfiles).not.toContain('elizabeth');
-    expect(entityProfiles).not.toContain('soren');
+    expect(entityProfiles).not.toContain('parent-two');
+    expect(entityProfiles).not.toContain('learner-one');
   });
 
   it('is idempotent — healing the healed output reports needsHeal:false', async () => {
@@ -312,7 +314,7 @@ describe('sweep() — golden + clean sessions in the same date dir', () => {
     expect(candidates).toHaveLength(1);
     expect(candidates[0].date).toBe(DATE);
     expect(candidates[0].sessionId).toBe(SESSION_ID);
-    expect([...candidates[0].removed].sort()).toEqual(['elizabeth', 'soren']);
+    expect([...candidates[0].removed].sort()).toEqual(['parent-two', 'learner-one']);
     expect(applied).toEqual([]);
 
     const goldenAfter = await readFile(goldenFile, 'utf8');
