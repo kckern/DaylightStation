@@ -213,7 +213,17 @@ export class ConfigService {
     if (!household) return null;
     const folderName = household._folderName || hid;
     const dataDir = this.getDataDir();
-    return loadYaml(`${dataDir}/${folderName}/config/${appName}`) ?? null;
+    const fresh = loadYaml(`${dataDir}/${folderName}/config/${appName}`) ?? null;
+    // Write back into the served snapshot: getHouseholdAppConfig() reads
+    // #config, and without this the reload only ever returned the fresh copy
+    // to its direct caller while every other consumer kept the boot-time
+    // values (top-level #config is frozen, but freeze is shallow — the
+    // household record is mutable by design here).
+    if (fresh !== null) {
+      if (!household.apps) household.apps = {};
+      household.apps[appName] = fresh;
+    }
+    return fresh;
   }
 
   /**
