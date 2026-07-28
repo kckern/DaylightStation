@@ -1340,3 +1340,64 @@ describe('ScorePlayer — metronome in Learn (M1/M2/M4)', () => {
     expect(screen.getByRole('button', { name: /^100%.*100/ })).toBeInTheDocument();
   });
 });
+
+// ── Task 11: honest Learn pacing telemetry ────────────────────────────────────
+// Learn is self-paced, so what the follow telemetry can honestly report is how
+// long the player took to answer the cursor — measured from a reference point
+// that exists. Previously `lastAdvanceRef` started at 0, so the first hit after
+// entering Learn computed an interval of 0 → maximum negative drift → a
+// fabricated `feel: "rush"` (audit M5a).
+describe('ScorePlayer — Learn pacing telemetry (Task 11)', () => {
+  // Capture both levels the follow events use: timing is `sampled`, stats `info`.
+  const captureFollow = () => {
+    const root = getLogger();
+    const origChild = root.child.bind(root);
+    const emitted = []; // [event, data]
+    vi.spyOn(root, 'child').mockImplementation((ctx) => {
+      const c = origChild(ctx);
+      for (const lvl of ['info', 'sampled']) {
+        const orig = c[lvl].bind(c);
+        c[lvl] = (ev, data, opts) => { emitted.push([ev, data]); return orig(ev, data, opts); };
+      }
+      return c;
+    });
+    return emitted;
+  };
+  const pick = (emitted, name) => emitted.filter(([ev]) => ev === name).map(([, d]) => d);
+  afterEach(() => { cleanup(); vi.restoreAllMocks(); });
+
+  it('measures the first Learn hit from mode entry, not from zero', () => {
+    let t = 1000;
+    vi.spyOn(performance, 'now').mockImplementation(() => t);
+    const emitted = captureFollow();
+    renderPlayer();
+    enterLearn(); // stamps the reference point at t=1000
+    t = 1750;
+    play(64); // first note of step 0 (needs 64 + 52 + 40, so the cursor stays put)
+
+    const timing = pick(emitted, 'score.follow.timing');
+    expect(timing.length).toBe(1);
+    expect(timing[0]).toMatchObject({ step: 0, note: 64, sinceAdvanceMs: 750 });
+    // No verdict is passed on a self-paced hit.
+    expect(timing[0]).not.toHaveProperty('feel');
+    expect(timing[0]).not.toHaveProperty('driftMs');
+  });
+
+  it('reports the run\'s own step intervals on leaving Learn — no rush/drag verdict', () => {
+    let t = 1000; // a real performance.now() is never 0 — see the falsy guard in onFollowHit
+    vi.spyOn(performance, 'now').mockImplementation(() => t);
+    const emitted = captureFollow();
+    renderPlayer();
+    enterLearn();
+    // Complete step 0 (E4 + LH E3/E2) at +300ms, then answer step 1 at +900ms.
+    t = 1300; play(64); play(52); play(40);
+    t = 2200; play(62);
+    act(() => { screen.getByText('Listen').click(); }); // leaving Learn flushes
+
+    const stats = pick(emitted, 'score.follow.stats');
+    expect(stats.length).toBe(1);
+    expect(stats[0]).toMatchObject({ hits: 4, count: 4, medianStepMs: 300, p95StepMs: 900 });
+    expect(stats[0]).not.toHaveProperty('rushPct');
+    expect(stats[0]).not.toHaveProperty('meanAbsDriftMs');
+  });
+});
