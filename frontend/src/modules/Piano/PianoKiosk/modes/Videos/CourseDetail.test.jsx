@@ -177,8 +177,25 @@ describe('co-progress lock', () => {
   });
 });
 
-describe('reference units + descending order', () => {
-  it('renders multi-unit LESSON units in descending order (latest on top)', () => {
+describe('reference units + unit ordering', () => {
+  it('renders SEQUENTIAL multi-unit lesson units in descending order (current on top)', () => {
+    hookReturn = {
+      ...baseHook,
+      isSequential: true,
+      parents: { s1: { index: 1, title: 'Unit 1' }, s2: { index: 2, title: 'Unit 2' } },
+      items: [
+        // Unit 1 fully watched so Unit 2 is revealed (sequential hides units
+        // beyond the first incomplete one).
+        { plex: '1', label: 'A', itemIndex: 1, parentId: 's1', userWatched: true },
+        { plex: '2', label: 'B', itemIndex: 1, parentId: 's2', userWatched: false },
+      ],
+    };
+    render(<CourseDetail course={{ id: 'plex:99' }} onPlay={vi.fn()} />);
+    const titles = Array.from(document.querySelectorAll('.piano-course__season-title')).map((e) => e.textContent);
+    expect(titles).toEqual(['Unit 2', 'Unit 1']); // descending
+  });
+
+  it('renders NON-sequential multi-unit shows as a catalog (Unit 1 on top)', () => {
     hookReturn = {
       ...baseHook,
       isSequential: false,
@@ -190,7 +207,7 @@ describe('reference units + descending order', () => {
     };
     render(<CourseDetail course={{ id: 'plex:99' }} onPlay={vi.fn()} />);
     const titles = Array.from(document.querySelectorAll('.piano-course__season-title')).map((e) => e.textContent);
-    expect(titles).toEqual(['Unit 2', 'Unit 1']); // descending
+    expect(titles).toEqual(['Unit 1', 'Unit 2']); // ascending
   });
 
   const refHook = {
