@@ -82,7 +82,7 @@ function ToneStepper({ icon, name, steps, activeIndex, onPick, typeSelect }) {
  */
 export default function SoundPanel({ open, onClose }) {
   const { currentBundle, applyBundle } = usePianoSoundBundle();
-  const { preset, saveDefault, addFavorite } = usePianoPreset();
+  const { preset, saveDefault, addFavorite, canSave } = usePianoPreset();
   const { config } = usePianoKioskConfig();
   const { device } = usePianoSound();
   const [browseOpen, setBrowseOpen] = useState(false);
@@ -260,14 +260,20 @@ export default function SoundPanel({ open, onClose }) {
         </section>
 
         {/* ── Save: snapshot the current bundle onto the active user ── */}
-        <footer className="piano-sound-panel__foot">
-          <button type="button" className="piano-sound-panel__save" onClick={() => saveDefault(currentBundle)}>
-            Save as my default
-          </button>
-          <button type="button" className="piano-sound-panel__favorite" onClick={() => addFavorite(currentBundle)}>
-            Add to favorites
-          </button>
-        </footer>
+        {canSave ? (
+          <footer className="piano-sound-panel__foot">
+            <button type="button" className="piano-sound-panel__save" onClick={() => saveDefault(currentBundle)}>
+              Save as my default
+            </button>
+            <button type="button" className="piano-sound-panel__favorite" onClick={() => addFavorite(currentBundle)}>
+              Add to favorites
+            </button>
+          </footer>
+        ) : (
+          <footer className="piano-sound-panel__foot piano-sound-panel__foot--guest">
+            <span className="piano-sound-panel__guest-note">Pick a player to save sounds</span>
+          </footer>
+        )}
       </aside>
     </div>
   );
