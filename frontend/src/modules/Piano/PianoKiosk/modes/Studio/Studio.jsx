@@ -112,6 +112,7 @@ export function Studio() {
   }, [pendingTake, logger]);
 
   const onToggleFavorite = useCallback(async (id, favorite) => {
+    if (!studioBase) return;
     try {
       await DaylightAPI(`${studioBase}/${id}`, { favorite }, 'PATCH');
       logger.info('studio.favorite', { id, favorite });
@@ -122,6 +123,7 @@ export function Studio() {
   }, [studioBase, loadTakes, logger]);
 
   const onDelete = useCallback(async (id) => {
+    if (!studioBase) return;
     try {
       await DaylightAPI(`${studioBase}/${id}`, {}, 'DELETE');
       logger.info('studio.delete', { id });
