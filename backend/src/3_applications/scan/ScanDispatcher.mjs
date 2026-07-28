@@ -46,6 +46,16 @@
  * (including `undefined`, which is what an `async` function with no `return`
  * produces) is treated as "no fields", leaving the defaults intact.
  *
+ * Field VALUES are otherwise not validated, deliberately. `status` is free-form
+ * per domain, so there is no schema to check it against, and `physical` is
+ * checked by the handler that sets it (assert against `PHYSICAL_KINDS`) rather
+ * than here — validating it twice would put the contract in two places and let
+ * them drift. This is a narrow exposure: composition picks its feedback channel
+ * from `domain`, so an out-of-contract `physical` degrades which paper comes out,
+ * it does not cost the user their feedback. What is guarded here is only what the
+ * never-fall-through invariant depends on: that an Outcome always EXISTS, always
+ * has these six keys, and is always attributed to the handler that produced it.
+ *
  * KNOWN, DELIBERATE, and not this module's to fix: `body` is not trimmed, so
  * `go: living-room:plex:1` hands the handler a body with a LEADING SPACE (the
  * outer `trim()` cannot reach it once the tag is stripped). A handler that
