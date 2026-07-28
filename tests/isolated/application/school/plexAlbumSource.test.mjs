@@ -102,6 +102,7 @@ describe('PlexAlbumSource.listWorks', () => {
       kind: 'work',
       durationMs: null,
       unitCount: 3,
+      summary: null,
     });
   });
 
