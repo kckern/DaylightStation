@@ -1,4 +1,3 @@
-#!/usr/bin/env node
 /**
  * Read-only diagnostic scanner for fitness history data.
  *
@@ -21,49 +20,35 @@
  * 4. STUCK WEBHOOK JOBS — jobs with attempts > 10 (the new MAX_TOTAL_ATTEMPTS
  *    cap from Task 3.1). Should be abandoned.
  *
- * Usage:
- *   node cli/scan-fitness-history.mjs              (read-only diagnostic)
- *   node cli/scan-fitness-history.mjs --auto-fix   (delete absorbable slivers)
- *
- * Reads from /Users/kckern/Library/CloudStorage/Dropbox/Apps/DaylightStation/data
- * (Dropbox mirror of prod).
+ * @module cli/lib/fitness/scan
  */
 
-import { readdirSync, readFileSync, statSync, existsSync } from 'fs';
+import { readdirSync, existsSync } from 'fs';
 import path from 'path';
-import { fileURLToPath } from 'url';
-import yaml from 'js-yaml';
-
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const PROJECT_ROOT = path.join(__dirname, '..');
-
-const DATA_BASE = '/Users/kckern/Library/CloudStorage/Dropbox/Apps/DaylightStation/data';
-const HISTORY_DIR = path.join(DATA_BASE, 'household/history/fitness');
-const WEBHOOK_JOBS_DIR = path.join(DATA_BASE, 'household/common/strava/strava-webhooks');
+import { parseArgs, bool } from './argv.mjs';
 
 const MAX_GAP_MS = 30 * 60 * 1000;       // resume window
 const MAX_TOTAL_ATTEMPTS = 10;
 const ORPHAN_AGE_DAYS = 7;
 
-const args = process.argv.slice(2);
-const AUTO_FIX = args.includes('--auto-fix');
-
-const loadYaml = (p) => {
-  try { return yaml.load(readFileSync(p, 'utf8')); }
-  catch { return null; }
+export const spec = {
+  name: 'scan',
+  summary: 'diagnose fragmented sessions, bad strava matches, orphan and stuck webhook jobs',
+  usage: 'fitness session scan [--auto-fix]',
+  details: `  --auto-fix   Absorb overlapping cooldown slivers (writes)`,
 };
 
 // ---------------------------------------------------------------------------
 // Pass 1: walk all session date dirs, collect normalized session metadata
 // ---------------------------------------------------------------------------
-function loadAllSessions() {
+function loadAllSessions(historyDir, loadYaml) {
   const sessions = [];
-  if (!existsSync(HISTORY_DIR)) return sessions;
-  const dates = readdirSync(HISTORY_DIR)
+  if (!existsSync(historyDir)) return sessions;
+  const dates = readdirSync(historyDir)
     .filter(d => /^\d{4}-\d{2}-\d{2}$/.test(d))
     .sort();
   for (const date of dates) {
-    const dateDir = path.join(HISTORY_DIR, date);
+    const dateDir = path.join(historyDir, date);
     const files = readdirSync(dateDir).filter(f => f.endsWith('.yml'));
     for (const file of files) {
       const fullPath = path.join(dateDir, file);
@@ -105,11 +90,11 @@ function loadAllSessions() {
 // ---------------------------------------------------------------------------
 // Pass 2: walk webhook jobs
 // ---------------------------------------------------------------------------
-function loadAllJobs() {
-  if (!existsSync(WEBHOOK_JOBS_DIR)) return [];
-  const files = readdirSync(WEBHOOK_JOBS_DIR).filter(f => f.endsWith('.yml'));
+function loadAllJobs(webhookJobsDir, loadYaml) {
+  if (!existsSync(webhookJobsDir)) return [];
+  const files = readdirSync(webhookJobsDir).filter(f => f.endsWith('.yml'));
   return files.map(f => {
-    const fullPath = path.join(WEBHOOK_JOBS_DIR, f);
+    const fullPath = path.join(webhookJobsDir, f);
     const data = loadYaml(fullPath);
     if (!data) return null;
     return { ...data, _file: f, _fullPath: fullPath };
@@ -154,7 +139,7 @@ function findFragments(sessions) {
           title: group[0].primaryTitle,
           totalDurationSec: group.reduce((a, g) => a + g.durationSec, 0),
           gaps: group.slice(1).map((g, i) =>
-            g.startMs - group[i].endMs).map(ms => Math.round(ms/1000) + 's'),
+            g.startMs - group[i].endMs).map(ms => Math.round(ms / 1000) + 's'),
         });
       }
       groupStart += group.length;
@@ -250,74 +235,100 @@ function findStuckJobs(jobs) {
     }));
 }
 
-// ---------------------------------------------------------------------------
-// Main
-// ---------------------------------------------------------------------------
-const sessions = loadAllSessions();
-const jobs = loadAllJobs();
+/**
+ * @param {string[]} argv - argv tail AFTER the group+command tokens
+ * @param {Object} ctx - from `getContext()`
+ * @returns {Promise<Object>}
+ */
+export async function run(argv, ctx) {
+  const { flags } = parseArgs(argv, { booleanFlags: ['auto-fix'] });
+  const autoFix = bool(flags, 'auto-fix');
 
-console.log(`Scanned ${sessions.length} sessions across ${new Set(sessions.map(s=>s.date)).size} dates`);
-console.log(`Scanned ${jobs.length} webhook job files\n`);
+  const historyDir = ctx.fitnessHistoryDir;
+  const webhookJobsDir = path.join(ctx.dataDir, 'household', 'common', 'strava', 'strava-webhooks');
+  const loadYaml = ctx.loadYamlSafe;
 
-const fragments = findFragments(sessions);
-const badMatches = findBadMatches(jobs, sessions);
-const orphans = findOrphans(jobs);
-const stuck = findStuckJobs(jobs);
+  const sessions = loadAllSessions(historyDir, loadYaml);
+  const jobs = loadAllJobs(webhookJobsDir, loadYaml);
 
-console.log(`=== 1. FRAGMENTS (same-day same-content, gap<30min) — ${fragments.length} groups ===`);
-for (const f of fragments) {
-  console.log(`  ${f.date} | ${f.contentId.padEnd(20)} | ${(f.title||'').slice(0,40).padEnd(40)} | ${f.sessionIds.join(', ')} | gaps: ${f.gaps.join(',')}`);
-}
+  const dateCount = new Set(sessions.map(s => s.date)).size;
+  console.log(`Scanned ${sessions.length} sessions across ${dateCount} dates`);
+  console.log(`Scanned ${jobs.length} webhook job files\n`);
 
-console.log(`\n=== 2. STRAVA BAD MATCHES — ${badMatches.length} ===`);
-for (const b of badMatches) {
-  if (b.kind === 'missing-session') {
-    console.log(`  [missing-session]    activity=${b.activityId} | session=${b.matchedSessionId} (file not found on disk)`);
-  } else {
-    console.log(`  [gps-vs-empty-short] ${b.date} | activity=${b.activityId} | session=${b.matchedSessionId} | ${b.stravaType} | ${b.sessionDurationMin}min, ${b.coins} coins`);
+  const fragments = findFragments(sessions);
+  const badMatches = findBadMatches(jobs, sessions);
+  const orphans = findOrphans(jobs);
+  const stuck = findStuckJobs(jobs);
+
+  console.log(`=== 1. FRAGMENTS (same-day same-content, gap<30min) — ${fragments.length} groups ===`);
+  for (const f of fragments) {
+    console.log(`  ${f.date} | ${f.contentId.padEnd(20)} | ${(f.title || '').slice(0, 40).padEnd(40)} | ${f.sessionIds.join(', ')} | gaps: ${f.gaps.join(',')}`);
   }
-}
 
-console.log(`\n=== 3. ORPHAN STRAVA JOBS (unmatched/pending, age > ${ORPHAN_AGE_DAYS}d) — ${orphans.length} ===`);
-for (const o of orphans) {
-  console.log(`  ${o.activityId} | ${o.status} | ${o.attempts} attempts | ${o.ageDays}d old | ${o.receivedAt}`);
-}
-
-console.log(`\n=== 4. STUCK JOBS (attempts >= ${MAX_TOTAL_ATTEMPTS}) — ${stuck.length} ===`);
-for (const s of stuck) {
-  console.log(`  ${s.activityId} | ${s.status} | ${s.attempts} attempts | last: ${s.lastAttemptAt}`);
-}
-
-if (AUTO_FIX) {
-  console.log('\n=== AUTO-FIX: running sliver absorption for each Strava-only session ===');
-  const { absorbOverlappingSlivers } = await import(
-    path.join(PROJECT_ROOT, 'backend/src/3_applications/fitness/sliverAbsorption.mjs')
-  );
-
-  const stravaOnlySessions = sessions.filter(s => s.source === 'strava');
-  let totalAbsorbed = 0;
-
-  for (const s of stravaOnlySessions) {
-    const dateDir = path.join(HISTORY_DIR, s.date);
-    if (!s.stravaActivityId) continue;
-    // The scanner doesn't fetch from the Strava API; reconstruct the minimal
-    // fields the helper needs from the session's stored data.
-    const activityShim = {
-      id: s.stravaActivityId,
-      start_date: new Date(s.startMs).toISOString(),
-      elapsed_time: Math.round((s.endMs - s.startMs) / 1000),
-      moving_time: Math.round((s.endMs - s.startMs) / 1000),
-    };
-    const result = absorbOverlappingSlivers(activityShim, dateDir, {
-      justCreatedSessionId: s.sessionId,
-      tz: 'America/Los_Angeles',
-      logger: console,
-    });
-    if (result.absorbed.length > 0) {
-      console.log(`  ${s.date}: absorbed ${result.absorbed.length} sliver(s) for ${s.stravaName || s.stravaActivityId}`);
-      totalAbsorbed += result.absorbed.length;
+  console.log(`\n=== 2. STRAVA BAD MATCHES — ${badMatches.length} ===`);
+  for (const b of badMatches) {
+    if (b.kind === 'missing-session') {
+      console.log(`  [missing-session]    activity=${b.activityId} | session=${b.matchedSessionId} (file not found on disk)`);
+    } else {
+      console.log(`  [gps-vs-empty-short] ${b.date} | activity=${b.activityId} | session=${b.matchedSessionId} | ${b.stravaType} | ${b.sessionDurationMin}min, ${b.coins} coins`);
     }
   }
 
-  console.log(`\nAUTO-FIX complete: ${totalAbsorbed} slivers absorbed across ${stravaOnlySessions.length} Strava-only sessions.`);
+  console.log(`\n=== 3. ORPHAN STRAVA JOBS (unmatched/pending, age > ${ORPHAN_AGE_DAYS}d) — ${orphans.length} ===`);
+  for (const o of orphans) {
+    console.log(`  ${o.activityId} | ${o.status} | ${o.attempts} attempts | ${o.ageDays}d old | ${o.receivedAt}`);
+  }
+
+  console.log(`\n=== 4. STUCK JOBS (attempts >= ${MAX_TOTAL_ATTEMPTS}) — ${stuck.length} ===`);
+  for (const s of stuck) {
+    console.log(`  ${s.activityId} | ${s.status} | ${s.attempts} attempts | last: ${s.lastAttemptAt}`);
+  }
+
+  let autoFixResult = null;
+
+  if (autoFix) {
+    console.log('\n=== AUTO-FIX: running sliver absorption for each Strava-only session ===');
+    const { absorbOverlappingSlivers } = await import(
+      path.join(ctx.projectRoot, 'backend/src/3_applications/fitness/sliverAbsorption.mjs')
+    );
+
+    const stravaOnlySessions = sessions.filter(s => s.source === 'strava');
+    let totalAbsorbed = 0;
+
+    for (const s of stravaOnlySessions) {
+      const dateDir = path.join(historyDir, s.date);
+      if (!s.stravaActivityId) continue;
+      // The scanner doesn't fetch from the Strava API; reconstruct the minimal
+      // fields the helper needs from the session's stored data.
+      const activityShim = {
+        id: s.stravaActivityId,
+        start_date: new Date(s.startMs).toISOString(),
+        elapsed_time: Math.round((s.endMs - s.startMs) / 1000),
+        moving_time: Math.round((s.endMs - s.startMs) / 1000),
+      };
+      const result = absorbOverlappingSlivers(activityShim, dateDir, {
+        justCreatedSessionId: s.sessionId,
+        tz: 'America/Los_Angeles',
+        logger: console,
+      });
+      if (result.absorbed.length > 0) {
+        console.log(`  ${s.date}: absorbed ${result.absorbed.length} sliver(s) for ${s.stravaName || s.stravaActivityId}`);
+        totalAbsorbed += result.absorbed.length;
+      }
+    }
+
+    console.log(`\nAUTO-FIX complete: ${totalAbsorbed} slivers absorbed across ${stravaOnlySessions.length} Strava-only sessions.`);
+    autoFixResult = { totalAbsorbed, stravaOnlySessions: stravaOnlySessions.length };
+  }
+
+  return {
+    sessionsScanned: sessions.length,
+    datesScanned: dateCount,
+    jobsScanned: jobs.length,
+    fragments,
+    badMatches,
+    orphans,
+    stuck,
+    autoFix: autoFixResult,
+  };
 }

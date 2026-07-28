@@ -1,9 +1,8 @@
 /**
  * Shared, pure helpers for recomputing a fitness session's `summary` block
- * from its decoded timeline series + events. Extracted out of
- * `cli/merge-fitness-sessions.cli.mjs` (which originally defined these
- * inline) so `cli/heal-fitness-sessions.cli.mjs` can reuse the exact same
- * logic without duplicating it.
+ * from its decoded timeline series + events. Shared by the `session merge` and
+ * `session heal` commands (`cli/lib/fitness/{merge,heal}.mjs`) so both recompute
+ * a summary the exact same way.
  *
  * All functions here are pure (no I/O, no encoding/decoding) — callers are
  * responsible for decoding RLE series (via TimelineService.decodeSeries)

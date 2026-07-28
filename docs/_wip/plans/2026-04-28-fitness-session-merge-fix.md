@@ -18,7 +18,7 @@
 
 | Phase | File | Responsibility |
 |---|---|---|
-| A | `cli/merge-fitness-sessions.cli.mjs` (NEW) | One-shot script: calls merge endpoint twice, verifies result |
+| A | `cli/merge-fitness-sessions.cli.mjs` (NEW; now: `cli/fitness.cli.mjs session merge`) | One-shot script: calls merge endpoint twice, verifies result |
 | B | `frontend/src/hooks/fitness/FitnessSession.js:1386-1395` | Fix `DaylightAPI.get` typo |
 | B | `frontend/src/hooks/fitness/__tests__/FitnessSession.resumable.test.js` (NEW) | Unit test that fails before fix, passes after |
 | C | `backend/src/3_applications/fitness/services/SessionService.mjs:319-376` | Add structured logging to `findResumable` |

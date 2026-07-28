@@ -4,7 +4,7 @@
  *
  * Used by:
  * - FitnessActivityEnrichmentService (webhook pipeline, Strava-only sessions)
- * - cli/reconstruct-fitness-sessions.mjs (backfill script)
+ * - cli/fitness.cli.mjs session reconstruct (backfill command)
  *
  * @module domains/fitness/services/StravaSessionBuilder
  */

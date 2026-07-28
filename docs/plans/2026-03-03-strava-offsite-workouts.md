@@ -177,7 +177,7 @@ git commit -m "feat(fitness): extract session-level strava block in findByDate"
 **Files:**
 - Modify: `backend/src/3_applications/fitness/FitnessActivityEnrichmentService.mjs:156-167`
 - Modify: `backend/src/1_adapters/persistence/yaml/YamlSessionDatastore.mjs` (new method)
-- Reference: `cli/reconstruct-fitness-sessions.mjs` (for session YAML structure)
+- Reference: `cli/reconstruct-fitness-sessions.mjs` (now: `cli/fitness.cli.mjs session reconstruct`) (for session YAML structure)
 
 **Context:** When the enrichment service finds no matching session for a Strava activity, it currently retries then marks "unmatched." Instead, it should create a new Strava-only session. The session needs the same v3 structure but with `session.source: 'strava'`, no media, and a `strava` block populated from the API response.
 
@@ -479,7 +479,7 @@ git commit -m "feat(fitness): add Strava athlete identity to user profile"
 ## Task 4: Retroactive Enrichment CLI Script
 
 **Files:**
-- Create: `cli/scripts/backfill-strava-enrichment.mjs`
+- Create: `cli/scripts/backfill-strava-enrichment.mjs` (now: `cli/fitness.cli.mjs strava backfill-enrichment`)
 - Reference: `cli/reconstruct-fitness-sessions.mjs` (for bootstrap pattern)
 - Reference: Strava YAML archives in `data/users/kckern/lifelog/strava/`
 - Reference: Session YAMLs in `data/household/history/fitness/{date}/{sessionId}.yml`
@@ -727,12 +727,12 @@ if (!writeMode) console.log('(dry-run — pass --write to persist)');
 
 **Step 2: Run dry-run to verify**
 
-Run: `node cli/scripts/backfill-strava-enrichment.mjs`
+Run: `node cli/fitness.cli.mjs strava backfill-enrichment`
 Expected: Lists sessions to enrich and Strava-only sessions to create, without writing.
 
 **Step 3: Run with --write**
 
-Run: `node cli/scripts/backfill-strava-enrichment.mjs --write`
+Run: `node cli/fitness.cli.mjs strava backfill-enrichment --write`
 Expected: Files written. Verify a sample with `cat data/household/history/fitness/2025-12-20/20251220090306.yml | grep -A5 'strava:'`.
 
 **Step 4: Commit**

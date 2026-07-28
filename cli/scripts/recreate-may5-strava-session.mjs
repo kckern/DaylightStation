@@ -38,11 +38,14 @@ if (!baseDir) {
 const ACTIVITY_ID = '18390552794';
 const SLIVER_FILE = '20260505130756';
 
-const stravaCli = path.join(projectRoot, 'cli/strava.cli.mjs');
+// Was cli/strava.cli.mjs, which the fitness CLI consolidation absorbed as the
+// `strava` command group. This script is a completed one-off kept for the
+// record; only the invocation path was retargeted.
+const stravaCli = path.join(projectRoot, 'cli/fitness.cli.mjs');
 function callStrava(args) {
   // strava CLI emits dotenv banner on stdout. Skip lines starting with '[dotenv'
   // and look for the first line that begins with '{' or '['.
-  const cmd = `node ${stravaCli} ${args} --json 2>/dev/null`;
+  const cmd = `node ${stravaCli} strava ${args} --json 2>/dev/null`;
   const raw = execSync(cmd, { cwd: projectRoot, maxBuffer: 50 * 1024 * 1024 }).toString();
   const lines = raw.split('\n');
   const startIdx = lines.findIndex(l => l.startsWith('{') || (l.startsWith('[') && !l.startsWith('[dotenv')));

@@ -304,7 +304,7 @@ another always-fail path.
 
 The merge endpoint `POST /api/v1/fitness/sessions/merge` does work
 mechanically — `cli/merge-fitness-sessions.cli.mjs` (the script written for
-the 04-28 cleanup) successfully merged the three fragmented files — but the
+the 04-28 cleanup; now: `cli/fitness.cli.mjs session merge`) successfully merged the three fragmented files — but the
 endpoint is not invoked from production code. The whole merge flow is gated on
 the resume check that never matches.
 
@@ -598,7 +598,7 @@ attempts) when the new `MAX_TOTAL_ATTEMPTS` cap fired.
 
 ### Tooling added
 
-- `cli/scan-fitness-history.mjs` — read-only diagnostic that surfaces all four
+- `cli/scan-fitness-history.mjs` (now: `cli/fitness.cli.mjs session scan`) — read-only diagnostic that surfaces all four
   problem patterns (fragments / bad matches / orphans / stuck jobs) across
   the entire fitness history. Run periodically to catch regressions.
 - `cli/merge-fitness-sessions.cli.mjs` — gained `DAYLIGHT_BASE_PATH` support
@@ -630,8 +630,8 @@ every code path that produces a Strava-only session. Per
 |---|---|---|
 | Webhook `_createStravaOnlySession` | After `saveYaml`, before return | `5a48108ce` (original) → `530b37435`, `f058687fc` (extract + delegate) |
 | Periodic `StravaReconciliationService.reconcile()` Pass 3 | When iterating any `session.source === 'strava'` | `7ab28cd54` |
-| Backfill `cli/scripts/backfill-strava-enrichment.mjs` | After creating Strava-only session in `--write` mode | `ee7f1dfb7`, `66d84ada9` (shape fix) |
-| On-demand `cli/scan-fitness-history.mjs --auto-fix` | When invoked manually with the flag | `fa930cc09` |
+| Backfill `cli/scripts/backfill-strava-enrichment.mjs` (now: `cli/fitness.cli.mjs strava backfill-enrichment`) | After creating Strava-only session in `--write` mode | `ee7f1dfb7`, `66d84ada9` (shape fix) |
+| On-demand `cli/fitness.cli.mjs session scan --auto-fix` | When invoked manually with the flag | `fa930cc09` |
 
 All four paths use the same conservative rules from `sliverAbsorption.mjs`:
 no media, `<15` min duration, time overlap with activity ±15 min buffer,

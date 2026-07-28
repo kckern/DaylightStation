@@ -4,7 +4,7 @@
 
 **Goal:** Fix UTC conversion bug in Strava-only session creation and enrich those sessions with HR timeline, zones, and coins from Strava stream data.
 
-**Architecture:** Extract the HR→zones→coins reconstruction logic from `cli/reconstruct-fitness-sessions.mjs` into a shared domain-level builder. Use it in `_createStravaOnlySession` after fetching HR data from the lifelog archive (if harvester already ran) or the Strava streams API (if not). Fix the `start_date_local` timezone bug on the same code path.
+**Architecture:** Extract the HR→zones→coins reconstruction logic from `cli/reconstruct-fitness-sessions.mjs` (now: `cli/fitness.cli.mjs session reconstruct`) into a shared domain-level builder. Use it in `_createStravaOnlySession` after fetching HR data from the lifelog archive (if harvester already ran) or the Strava streams API (if not). Fix the `start_date_local` timezone bug on the same code path.
 
 **Tech Stack:** moment-timezone, vitest, existing TimelineService RLE encoding, existing StravaClientAdapter streams API
 
@@ -631,7 +631,7 @@ const tickCount = hrSamples.length;
 
 **Step 3: Verify CLI still works**
 
-Run: `node cli/reconstruct-fitness-sessions.mjs 7`
+Run: `node cli/fitness.cli.mjs session reconstruct --days=7`
 Expected: Dry-run output, same behavior as before (no `--write`).
 
 **Step 4: Commit**
@@ -662,7 +662,7 @@ sudo docker exec daylight-station sh -c 'rm data/household/history/fitness/2026-
 **Step 3: Run the CLI backfill for March 7**
 
 ```bash
-node cli/reconstruct-fitness-sessions.mjs 3
+node cli/fitness.cli.mjs session reconstruct --days=3
 ```
 
 Expected: Dry-run shows the Workout activity matched with correct sessionId `20260307090118`, with HR data and coins.
@@ -670,7 +670,7 @@ Expected: Dry-run shows the Workout activity matched with correct sessionId `202
 **Step 4: Write the corrected session**
 
 ```bash
-node cli/reconstruct-fitness-sessions.mjs --write 3
+node cli/fitness.cli.mjs session reconstruct --write --days=3
 ```
 
 Expected: `[WRITE]` output showing the session was created with coins and HR data.
