@@ -47,7 +47,12 @@ export class GetCourseProgress {
 
     // Household order, from household.yml — not a restatement in piano.yml.
     const roster = (this.#configService.getHouseholdUsers?.() || [])
-      .map((id) => { const p = this.#configService.getUserProfile(String(id)); return p ? { id: String(id), name: p.name } : null; })
+      .map((id) => {
+        const p = this.#configService.getUserProfile(String(id));
+        // Profiles carry display_name/username, not `name` — same resolution
+        // as the roster endpoint (a bare `p.name` shipped "undefined" labels).
+        return p ? { id: String(id), name: p.display_name || p.username || String(id) } : null;
+      })
       .filter(Boolean);
     const now = new Date();
 

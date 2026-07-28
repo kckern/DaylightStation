@@ -73,7 +73,7 @@ export default function CourseTile({ item, onSelect, progress = null }) {
                 <span
                   key={u.id}
                   className={`piano-cover-progress__chip${stale ? ' is-stale' : ''}`}
-                  title={`${u.name}: ${u.completed}/${u.total}${stale ? ' (resting)' : ''}`}
+                  title={`${u.name || u.id}: ${u.completed}/${u.total}${stale ? ' (resting)' : ''}`}
                 >
                   <span className="piano-cover-progress__ring">
                     <svg viewBox="0 0 36 36" aria-hidden="true">
