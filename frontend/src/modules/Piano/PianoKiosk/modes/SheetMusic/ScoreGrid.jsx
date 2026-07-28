@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import usePianoList from '../../usePianoList.js';
 import PianoEmpty from '../../PianoEmpty.jsx';
+import { balancedColumns } from '../../tileGridLayout.js';
 import { SkeletonPoster } from '../../Skeleton.jsx';
 import { prefetchOsmd } from '../../../../MusicNotation/renderers/osmdRender.js';
 
@@ -36,7 +37,10 @@ export default function ScoreGrid({ listPath, onSelect }) {
         <PianoEmpty message={error || (listPath ? 'No scores found.' : 'No sheet music has been set up yet.')} />
       )}
       {all.length > 0 && (
-        <ul className="piano-video-grid piano-video-grid--posters">
+        <ul
+          className="piano-video-grid piano-video-grid--posters"
+          style={{ '--poster-cols': balancedColumns(all.length, { max: 5 }) }}
+        >
           {all.map((item) => {
             const cover = item.thumbnail || item.image;
             const title = item.type === 'notation' ? prettyTitle(item.title) : (item.title || 'Score');
