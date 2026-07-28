@@ -1,6 +1,6 @@
-import { renderHook, waitFor } from '@testing-library/react';
+import { renderHook, waitFor, act } from '@testing-library/react';
 import { createElement } from 'react';
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 let rosterResponses = [];
 vi.mock('../../../lib/api.mjs', () => ({
@@ -44,5 +44,32 @@ describe('PianoUserContext restore', () => {
     localStorage.setItem('piano:user:test', 'stranger');
     const { result } = renderHook(() => usePianoUser(), { wrapper });
     await waitFor(() => expect(result.current.currentUser).toBe('kc'));
+  });
+});
+
+describe('PianoUserContext roster retry (F6)', () => {
+  afterEach(() => vi.useRealTimers());
+
+  it('retries a failed roster fetch and recovers', async () => {
+    vi.useFakeTimers();
+    rosterResponses = [new Error('boom'), ROSTER];
+    const { result } = renderHook(() => usePianoUser(), { wrapper });
+    await act(async () => { await vi.advanceTimersByTimeAsync(0); });       // flush the initial rejection
+    expect(result.current.users).toEqual([]);
+    await act(async () => { await vi.advanceTimersByTimeAsync(2000); });    // first backoff slot
+    expect(result.current.users).toHaveLength(2);
+    expect(DaylightAPI).toHaveBeenCalledTimes(2);
+  });
+
+  it('gives up after the backoff schedule is exhausted', async () => {
+    vi.useFakeTimers();
+    rosterResponses = [new Error('a'), new Error('b'), new Error('c'), new Error('d'), new Error('e')];
+    const { result } = renderHook(() => usePianoUser(), { wrapper });
+    await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(2000 + 5000 + 15000 + 30000 + 1000); });
+    expect(DaylightAPI).toHaveBeenCalledTimes(5); // initial + 4 retries, then stop
+    expect(result.current.users).toEqual([]);
+    await act(async () => { await vi.advanceTimersByTimeAsync(60000); });
+    expect(DaylightAPI).toHaveBeenCalledTimes(5); // no further attempts
   });
 });
