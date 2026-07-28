@@ -92,6 +92,18 @@ Appreciation tab lectures and other video content logged through the same store.
 exactly the buffer; felix's `coProgressLock` is currently null (lock engages
 beyond the buffer), so felix has one lecture of headroom before waiting on milo.
 
+## Implemented 2026-07-28 (recommendations 3 + chip redesign)
+
+- `progress_overlay.recency_days` 7 → **90** (piano.yml, data volume).
+- Chips idle >7 days now **dim** ("resting", grayscale + reduced opacity)
+  instead of vanishing; tooltip carries the full count + resting marker.
+- Chip shows an avatar **completion ring + percent** (the repetitive `n/NNN`
+  denominator moved to the tooltip).
+- Found & fixed en route: `ConfigService.reloadHouseholdAppConfig` never wrote
+  the fresh config back into the served snapshot, so `POST /system/reload` was
+  a no-op for every `getHouseholdAppConfig` consumer; `GetCourseProgress`
+  labeled chips `undefined` (`p.name` vs `display_name`/`username`).
+
 ## Recommendations (not yet implemented)
 
 1. **Don't render System A for a resolving identity.** In `CourseDetail`/grid,
