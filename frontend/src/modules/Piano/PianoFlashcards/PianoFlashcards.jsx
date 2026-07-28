@@ -10,6 +10,7 @@ import { ChordCard } from './components/ChordCard.jsx';
 import { LevelPicker } from './components/LevelPicker.jsx';
 import { computeKeyboardRange } from '../noteUtils.js';
 import { rootPositionVoicing } from './flashcardEngine.js';
+import { isPersistentUser } from '../PianoKiosk/pianoUser.js';
 import './PianoFlashcards.scss';
 
 // Chord-spelling levels have no note_range (any octave counts) — show C3–C6.
@@ -37,7 +38,7 @@ export function PianoFlashcards({ activeNotes, gameConfig, onDeactivate, onNoteO
   // configured start — applied once, and only while the game is still fresh.
   const prefAppliedRef = useRef(false);
   useEffect(() => {
-    if (!currentUser || prefAppliedRef.current) return undefined;
+    if (!isPersistentUser(currentUser) || prefAppliedRef.current) return undefined;
     let cancelled = false;
     DaylightAPI(`api/v1/piano/users/${currentUser}/preferences`)
       .then((prefs) => {
@@ -61,7 +62,7 @@ export function PianoFlashcards({ activeNotes, gameConfig, onDeactivate, onNoteO
     if (idx === game.level) return;
     game.selectLevel(idx);
     prefAppliedRef.current = true;
-    if (currentUser && levels[idx]?.name) {
+    if (isPersistentUser(currentUser) && levels[idx]?.name) {
       DaylightAPI(
         `api/v1/piano/users/${currentUser}/preferences`,
         { flashcardsLevel: levels[idx].name },
