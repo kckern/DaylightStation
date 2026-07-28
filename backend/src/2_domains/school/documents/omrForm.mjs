@@ -20,6 +20,14 @@
  * says, including that it cannot tell — `ambiguous` (two marks in a row) and
  * `blank` (none) are first-class results, because the one thing worse than an
  * unreadable answer is a guessed one scored as fact.
+ *
+ * WHAT AN ENTRY IS. The value reported for a filled bubble is the CHOICE TEXT
+ * printed under it (`mark.label`, which the renderer took from the question
+ * bank), not the bubble's position letter. The bank's answer for a
+ * multiple-choice item is that same text — `gradeAnswer` compares
+ * `given === item.answer` — so reporting "C" instead of "5/6" scores a
+ * perfectly filled sheet zero. A form map old enough to predate `label` falls
+ * back to the letter, which is all it can say.
  */
 
 /** yPt values within this many points are the same physical response row. */
@@ -34,7 +42,8 @@ const isFiniteNumber = (v) => typeof v === 'number' && Number.isFinite(v);
  *
  * @param {{marks: Array<{itemId: string, choice: string, xPt: number, yPt: number, page?: number}>}} formMap
  * @returns {{ rows: Array<{page: number, yPt: number, columnIndex: number,
- *             choices: Array<{itemId: string, choice: string, xPt: number, bit: number}>}>,
+ *             choices: Array<{itemId: string, choice: string, label: string|null,
+ *                             xPt: number, bit: number}>}>,
  *            errors: string[] }}
  */
 export function projectFormMap(formMap) {
@@ -63,7 +72,14 @@ export function projectFormMap(formMap) {
     }
     const choices = [...row.marks]
       .sort((a, b) => a.xPt - b.xPt)
-      .map((m, bit) => ({ itemId: m.itemId, choice: m.choice, xPt: m.xPt, bit }));
+      .map((m, bit) => ({
+        itemId: m.itemId,
+        choice: m.choice,
+        // What the child actually read under the bubble; see the header.
+        label: typeof m.label === 'string' && m.label !== '' ? m.label : null,
+        xPt: m.xPt,
+        bit,
+      }));
     return { page: row.page, yPt: row.yPt, columnIndex, choices };
   });
 
@@ -104,7 +120,7 @@ export function decodeOmrSheet({ formMap, sheet } = {}) {
       const hits = row.choices.filter((c) => c.itemId === itemId && (mask & (1 << c.bit)) !== 0);
       if (hits.length === 0) blank.push(itemId);
       else if (hits.length > 1) ambiguous.push(itemId);
-      else entries[itemId] = hits[0].choice;
+      else entries[itemId] = hits[0].label ?? hits[0].choice;
     });
   });
 

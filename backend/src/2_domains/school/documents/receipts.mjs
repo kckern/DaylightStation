@@ -83,7 +83,11 @@ export function agendaDocument({ learnerId, learnerName = null, generatedAt = nu
     }
     // No token and not locked: the move belongs to a grown-up (hand the work
     // in, wait for a mark). Say so rather than printing a bare title.
-    blocks.push(text(`${title} — ${entry.actionLabel || 'waiting on a grown-up'}`));
+    //
+    // `actionLabel` is the COMPLETE printed line, exactly as it is for a
+    // tokened entry above — the planner composes it as "Title — what to do".
+    // Prefixing the title again here printed it twice on the tape.
+    blocks.push(text(entry.actionLabel || `${title} — waiting on a grown-up`));
   });
 
   blocks.push(text(footer || 'Scan a line above to start. Scan your card any time for a new list.'));
