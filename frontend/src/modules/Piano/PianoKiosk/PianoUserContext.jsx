@@ -18,12 +18,29 @@ export function PianoUserProvider({ pianoId, children }) {
   const [currentUser, setCurrent] = useState(null);
   const storeKey = `piano:user:${pianoId || 'default'}`;
 
+  // Load the roster, retrying transient failures: kiosks reload exactly when
+  // the backend restarts (deploys), and a single failed fetch used to leave
+  // the tab userless until a manual reload (audit F6). Bounded backoff, then
+  // give up (the tab is likely offline for good).
+  const RETRY_DELAYS_MS = [2000, 5000, 15000, 30000];
   useEffect(() => {
     let cancelled = false;
-    DaylightAPI('api/v1/piano/users')
-      .then((r) => { if (!cancelled) setUsers(Array.isArray(r?.users) ? r.users : []); })
-      .catch(() => { if (!cancelled) setUsers([]); });
-    return () => { cancelled = true; };
+    let timer = null;
+    let attempt = 0;
+    const load = () => {
+      DaylightAPI('api/v1/piano/users')
+        .then((r) => { if (!cancelled) setUsers(Array.isArray(r?.users) ? r.users : []); })
+        .catch(() => {
+          if (cancelled || attempt >= RETRY_DELAYS_MS.length) return;
+          const delay = RETRY_DELAYS_MS[attempt];
+          attempt += 1;
+          getLogger().child({ component: 'piano-user' }).warn('piano.user.roster-retry', { attempt, delay });
+          timer = setTimeout(load, delay);
+        });
+    };
+    load();
+    return () => { cancelled = true; if (timer) clearTimeout(timer); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- mount-once fetch loop
   }, []);
 
   // Restore the last player for this piano once the roster loads. A persisted
