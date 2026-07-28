@@ -55,6 +55,11 @@ Same for favorite/delete (400, warn-logged).
 `currentUser !== 'guest'` with a "pick a player to save recordings" affordance, or route
 guest takes to the household-level history store the way auto-history already does.
 
+**FIXED 2026-07-27:** Studio gates the Record button + API base on
+`isPersistentUser` (guests see "Pick a player to record"); favorite/delete handlers
+null-guard `studioBase` too; guest play is still captured by the always-on household
+MIDI history.
+
 ### F2 — Guest Composer edits can't persist; partial feedback (medium-low)
 
 `Composer.jsx` checks `currentUser ? <Gallery/> : 'Loading…'` — `'guest'` passes. The
@@ -64,6 +69,10 @@ request is a guaranteed 400. A guest can build a whole piece that never persists
 
 *Recommendation:* same gating pattern as F1; the `currentUser ? … : …` branch should
 treat `'guest'` like the null case (or show a dedicated guest notice).
+
+**FIXED 2026-07-27:** module-scope `GUEST_API` stub (list resolves to `[]`, writes
+reject with a "Couldn't save" chip) plus an editor banner ("Playing as Guest — songs
+won't be saved…") and a gallery notice ("Pick a player to see saved songs").
 
 ### F3 — Persisted `'guest'` silently becomes the first roster user on reload (medium-low)
 
@@ -76,6 +85,10 @@ long gaps, so the mis-credit window is small — but it's roster-order-dependent
 contradicts the deliberate guest semantics).
 
 *Recommendation:* honor `saved === 'guest'` in the restore branch.
+
+**FIXED 2026-07-27:** the restore effect in `PianoUserContext` honors a persisted
+`'guest'` via a `known()` check that includes `GUEST_PROFILE.id`, so a reload no longer
+demotes an explicit Guest state to `users[0]`.
 
 ### F4 — Guest selection fires a burst of guaranteed-400 requests (low, systemic)
 
@@ -90,6 +103,11 @@ while the PUT 400s in the background (state reverts on next switch).
 `currentUser === GUEST_PROFILE.id` (the id is statically known), and disable the preset
 save affordances for guests.
 
+**FIXED 2026-07-27:** `usePianoPreferences` and `usePianoPreset` short-circuit for
+guests (no GET/PUT fired); the preset hook exposes `canSave`, which `SoundPanel` uses to
+hide the save/favorite buttons behind a "Pick a player to save sounds" notice;
+`PianoFlashcards`' preference GET/PUT is guarded the same way.
+
 ### F5 — Guest can't browse Videos courses, with a misleading message (low)
 
 `usePianoCoursePlayable(courseId, 'guest')` hits the piano endpoint, which 400s
@@ -100,6 +118,10 @@ device-level fitness endpoint. Guests get a dead end that reads like missing con
 *Recommendation:* for guest, either fall back to the device-level endpoint (watching
 without credit is harmless) or show "pick a player to track course progress".
 
+**FIXED 2026-07-27:** `usePianoCoursePlayable` derives an `effectiveUserId` (guest →
+`null`), so guests fall back to the same device-level fitness playable endpoint the
+null-user case already used — no more dead-end 400.
+
 ### F6 — Roster fetch is one-shot (low, robustness)
 
 `PianoUserProvider` fetches `/api/v1/piano/users` once on mount with no retry. A
@@ -108,6 +130,10 @@ transient failure (backend restarting mid-deploy — exactly when kiosks reload)
 per-user features dead until a manual reload.
 
 *Recommendation:* retry with backoff, or refetch when the picker opens.
+
+**FIXED 2026-07-27:** roster fetch retries at 2s/5s/15s/30s with `piano.user.roster-retry`
+warn logs on each attempt, then gives up (leaving the prior empty-roster degradation);
+retry timers are cleaned up on unmount.
 
 ### F7 — Who's-Playing re-prompt can open over a just-launched lecture, then demote to Guest (medium)
 
@@ -150,6 +176,10 @@ while open (opening with a player already selected does not self-dismiss).
 reset it. On a roster large enough to paginate (7+), browsing to page 2 can eat most of
 the 30 s and land the browser on a surprise guest dismiss. Cosmetic today (household
 roster fits one page).
+
+**FIXED 2026-07-27:** an `interactionEpoch` state, bumped on any in-sheet `pointerdown`
+and included in the auto-dismiss effect's deps, restarts the countdown on interaction
+(page-dot taps included); the scrim/backdrop tap still dismisses immediately.
 
 ---
 

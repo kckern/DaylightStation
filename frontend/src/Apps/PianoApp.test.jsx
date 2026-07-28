@@ -41,9 +41,12 @@ describe('PianoApp', () => {
   it('routes directly to a mode (Studio) and mounts it — no /default/ segment', async () => {
     renderApp('/piano/studio');
     fireEvent.click(await screen.findByText(/Continue without piano/i));
-    // Routing lands on the Studio Play tab; assert its Record button (a
-    // Studio-Play-specific control) to confirm the mode mounted.
-    expect(await screen.findByRole('button', { name: /Start recording/i })).toBeTruthy();
+    // Routing lands on the Studio Play tab; assert its tab bar (a
+    // Studio-specific control) to confirm the mode mounted. Not the Record
+    // button itself: this smoke test never selects a roster player, so
+    // currentUser stays null and Studio's guest gating (audit F1) hides
+    // Record behind "Pick a player to record" — expected, not a regression.
+    expect(await screen.findByText('Recordings')).toBeTruthy();
   });
 
   it('serves the only piano directly at /piano (no redirect into /piano/default)', async () => {
