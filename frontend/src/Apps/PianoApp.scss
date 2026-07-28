@@ -2783,6 +2783,7 @@
   &--green  { color: #7ee2a8; }
   &--yellow { color: #f0d270; }
   &--red    { color: #ff8a8a; }
+  &--none   { color: rgba(243, 239, 230, 0.6); } // nothing graded — a neutral read, not a grade
 }
 .piano-score-run-strip { display: flex; gap: 3px; flex-wrap: wrap; justify-content: center; max-width: 340px; }
 .piano-score-run-chip {

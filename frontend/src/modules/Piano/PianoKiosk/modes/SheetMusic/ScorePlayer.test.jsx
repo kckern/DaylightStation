@@ -677,6 +677,30 @@ describe('ScorePlayer — Polish mode (transport-driven)', () => {
     expect(document.querySelector('.piano-score-measure-grade')).toBeNull(); // no wash
   });
 
+  it('Play → immediate Pause does not congratulate a run that never happened (Task 10)', async () => {
+    // The panel still opens — a kiosk that swallows a button press is its own
+    // failure — but it must report that there is nothing to grade rather than
+    // praising a passage the user never played.
+    h.layoutExtras = THREE_MEASURES;
+    const emitted = captureLog();
+
+    renderPlayer();
+    screen.getByText('Polish').click();
+    await act(async () => {});
+    screen.getByRole('button', { name: 'Play' }).click();
+    await act(async () => {});
+    act(() => vi.advanceTimersByTime(4100));
+    screen.getByRole('button', { name: 'Pause' }).click();
+    await act(async () => {});
+
+    expect(document.querySelector('.piano-score-run-summary')).not.toBeNull(); // the tap was honored
+    expect(screen.queryByText(/nicely done/i)).toBeNull();
+    expect(screen.getByText(/nothing to grade/i)).toBeTruthy();
+    expect(screen.queryByRole('button', { name: /drill worst section/i })).toBeNull();
+    const summaries = emitted.filter(([ev]) => ev === 'score.polish.summary');
+    expect(summaries[0][1]).toMatchObject({ greens: 0, yellows: 0, reds: 0, overall: null });
+  });
+
   // Five single-step measures @60. The advance rule grades measures 0–2 as the
   // cursor leaves them; the run then completes and onDone finalizes measure 3.
   // (The last step's setStep has NOT committed when onDone runs, so the measure
