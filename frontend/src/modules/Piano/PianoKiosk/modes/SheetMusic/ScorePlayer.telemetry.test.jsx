@@ -39,7 +39,18 @@ const tel = vi.hoisted(() => ({
   logMeasureGrade: () => {}, logRunSummary: () => {}, logFocus: () => {},
   logTranspose: () => {}, logMode: () => {},
 }));
-vi.mock('./useScoreTelemetry.js', () => ({ default: () => tel, useScoreTelemetry: () => tel }));
+// …except for the session-log tests below, which must observe the REAL logger:
+// session-log.start is auto-emitted by the child logger at creation (Logger.js:218),
+// so a stubbed hook can never see the double-open. `telMode.real` flips this mock
+// to the actual hook. Flip it BETWEEN tests only, never mid-mount — the real hook
+// calls hooks and the stub does not, so switching under a live component would
+// change the hook order.
+const telMode = vi.hoisted(() => ({ real: false }));
+vi.mock('./useScoreTelemetry.js', async () => {
+  const actual = await vi.importActual('./useScoreTelemetry.js');
+  const pick = (opts) => (telMode.real ? actual.useScoreTelemetry(opts) : tel);
+  return { default: pick, useScoreTelemetry: pick };
+});
 
 const h = vi.hoisted(() => ({
   events: [
@@ -87,6 +98,7 @@ vi.mock('../../../../MusicNotation/renderers/MusicXmlRenderer.jsx', async () => 
 
 import ScorePlayer from './ScorePlayer.jsx';
 import { inputTelemetryEnabled, makeInputSender } from '../../../../../lib/logging/inputTelemetryGate.js';
+import { getRecentEvents } from '../../../../../lib/logging/Logger.js';
 
 const renderPlayer = () =>
   render(<MemoryRouter><ScorePlayer score={{ id: 'files:t.musicxml', title: 'T', musicXml: '<score/>' }} /></MemoryRouter>);
@@ -94,6 +106,7 @@ const renderScore = (musicXml) =>
   render(<MemoryRouter><ScorePlayer score={{ id: 'files:t2.musicxml', title: 'T2', musicXml }} /></MemoryRouter>);
 
 beforeEach(() => {
+  telMode.real = false;
   cfg.value = { keyboard: { startNote: 21, endNote: 108 } };
   rec.startRecorder.mockClear();
   rec.stopRecorder.mockClear();
@@ -289,5 +302,44 @@ describe('makeInputSender — one event per batch', () => {
     expect(ctx).toMatchObject({ app: 'piano-sheetmusic', channel: 'input' });
     expect(ctx.sessionLog).toBeUndefined();
     info.mockRestore();
+  });
+});
+
+// ── Task 16: one session file per score open (audit L1) ───────────────────────
+// The field logs held 54 session-log.start events for 27 score opens: the
+// sessionLog child logger auto-emits one when it is created at mount
+// (Logger.js:218, carrying `app` only) and ScorePlayer emitted a second ~300ms
+// later carrying `scoreId`. The first opened a backend session file that never
+// received another line — seven 416-byte orphans sit in the field log directory.
+describe('ScorePlayer — one session log per score open (audit L1)', () => {
+  // The real logger is in play here (see the telMode note above), so the
+  // recent-events ring is the observation surface.
+  const startCount = () => getRecentEvents(300)
+    .filter((e) => e.event === 'session-log.start' && e.context?.app === 'piano-sheetmusic').length;
+
+  beforeEach(() => { telMode.real = true; });
+
+  it('opens exactly ONE session file per mount', async () => {
+    const before = startCount();
+    renderPlayer();
+    await act(async () => {});
+    expect(startCount() - before).toBe(1);
+  });
+
+  // The guard must not cost us a fresh file when the user opens a DIFFERENT
+  // score in the same mounted player — that file boundary is what keeps a run
+  // log bounded and attributable.
+  it('opens a FRESH session file when the document changes', async () => {
+    const before = startCount();
+    const view = (id, xml) => (
+      <MemoryRouter><ScorePlayer score={{ id, title: id, musicXml: xml }} /></MemoryRouter>
+    );
+    const { rerender } = render(view('files:a.musicxml', '<score/>'));
+    await act(async () => {});
+    expect(startCount() - before).toBe(1);
+
+    rerender(view('files:b.musicxml', '<score-partwise/>'));
+    await act(async () => {});
+    expect(startCount() - before).toBe(2);
   });
 });

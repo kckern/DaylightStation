@@ -1230,6 +1230,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
   // here. Fires once per document (re-engraves from zoom/flow don't re-log).
   const openTsRef = useRef(performance.now());
   const readySentRef = useRef(false);
+  const firstSessionRef = useRef(true);
   // Splash: the sidecar scan covers the stage until the engraving is ready (onReady),
   // so the user sees the score's artwork instead of a blank paper during the ~1-2s engrave.
   const [engraveReady, setEngraveReady] = useState(false);
@@ -1238,7 +1239,12 @@ export default function ScorePlayer({ score: scoreMeta }) {
     openTsRef.current = performance.now(); readySentRef.current = false; setEngraveReady(false); setTranspose(0);
     // Open a fresh per-run session log for this document (bounds the JSONL file);
     // all subsequent events (load / follow / polish / focus / mode / transpose) land in it.
-    startSession(scoreMeta.id);
+    // The sessionLog child logger already opened a session file at mount
+    // (Logger.js:218), so opening another here would strand the first as a
+    // 416-byte orphan — seven of them are in the field log directory (audit L1).
+    // Only a SUBSEQUENT document needs a fresh file.
+    if (firstSessionRef.current) firstSessionRef.current = false;
+    else startSession(scoreMeta.id);
     // A new document resets the practice range (measure indices don't carry over).
     setFocus(null);
     setSelecting(null);
