@@ -23,6 +23,11 @@
  * same sentence on every row. They used to be one field holding the rubric, so a
  * parent marking six questions read the same line six times.
  *
+ * The unit is NAMED rather than numbered: `GET /lifecycle/curriculum/units`
+ * gives the title and objectives behind `math-fractions.03`. A catalog that
+ * will not load costs the parent a title, never a sign-off — the id is the
+ * fallback and the grading controls do not depend on it.
+ *
  * @module Admin/School/ReviewQueue
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -86,6 +91,7 @@ export default function ReviewQueue() {
   const [busyKey, setBusyKey] = useState(null);
   const [itemErrors, setItemErrors] = useState({}); // key -> message
   const [notes, setNotes] = useState({});           // key -> what the parent typed
+  const [units, setUnits] = useState({});           // unitId -> { title, objectives }
   const [signedOff, setSignedOff] = useState({});   // key -> confirmation line
 
   // Race guard (the house pattern): a slow poll must never overwrite a newer
@@ -111,6 +117,24 @@ export default function ReviewQueue() {
     } finally {
       if (seq === seqRef.current) setLoading(false);
     }
+  }, [logger]);
+
+  // The catalog changes on the timescale of a parent editing YAML, so it is
+  // read ONCE per mount rather than on every poll.
+  useEffect(() => {
+    let live = true;
+    schoolAdminApi.curriculumUnits()
+      .then((data) => {
+        if (!live) return;
+        const list = Array.isArray(data?.units) ? data.units : [];
+        setUnits(Object.fromEntries(list.map((u) => [u.unitId, u])));
+        logger.debug('curriculum-loaded', { units: list.length });
+      })
+      .catch((err) => {
+        // A missing title is a cosmetic loss; the queue still grades.
+        if (live) logger.warn('curriculum-failed', { error: err.message, status: err.status });
+      });
+    return () => { live = false; };
   }, [logger]);
 
   useEffect(() => {
@@ -259,13 +283,21 @@ export default function ReviewQueue() {
 
               <Group gap="xs" mt={6} wrap="wrap">
                 <Text size="sm" c="dimmed">Unit</Text>
-                <Code>{item.unitId || 'unknown'}</Code>
+                {units[item.unitId]?.title
+                  ? <Text size="sm" fw={600}>{units[item.unitId].title}</Text>
+                  : <Code>{item.unitId || 'unknown'}</Code>}
                 <Text size="sm" c="dimmed">Question</Text>
                 <Code>{item.itemId}</Code>
                 {Number.isFinite(item.questionNumber) && (
                   <Badge variant="outline" color="gray">Question {item.questionNumber}</Badge>
                 )}
               </Group>
+
+              {units[item.unitId]?.objectives?.length > 0 && (
+                <Text size="xs" c="dimmed" mt={4}>
+                  Teaching: {units[item.unitId].objectives.join('; ')}
+                </Text>
+              )}
 
               <Divider my="sm" />
 

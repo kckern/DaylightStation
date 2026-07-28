@@ -123,6 +123,49 @@ export class CurriculumAccess {
   async getManifest(manifestId) {
     return (await this.#current()).manifests.get(manifestId) ?? null;
   }
+
+  /**
+   * A unit as a PARENT SURFACE may see it: what it is and what it teaches.
+   *
+   * Not the whole unit, on purpose. `review` holds the marking rubric AND the
+   * answer key, and these summaries are served over an HTTP route as reachable
+   * as every other one on this console — a catalog listing that handed out the
+   * answers to the sheet a child is holding would be a worse defect than the
+   * missing titles it fixes. The artefact refs are left out for the same reason:
+   * knowing a unit HAS a bank is useful, knowing which one is a lookup key.
+   *
+   * @param {object} unit
+   * @returns {{unitId: string, title: string, subject: string, objectives: string[],
+   *            courseId: string|null, sequence: number|null, grades: string[],
+   *            passingPercent: number|null, hasBank: boolean, hasDocument: boolean,
+   *            hasMedia: boolean}}
+   */
+  static summarise(unit) {
+    return {
+      unitId: unit.unitId,
+      title: unit.title,
+      subject: unit.subject,
+      objectives: [...(unit.objectives ?? [])],
+      courseId: unit.courseId ?? null,
+      sequence: unit.sequence ?? null,
+      grades: [...(unit.grades ?? [])],
+      passingPercent: unit.passing?.percent ?? null,
+      hasBank: Boolean(unit.bank),
+      hasDocument: Boolean(unit.document),
+      hasMedia: Boolean(unit.media),
+    };
+  }
+
+  /** @returns {Promise<object[]>} every publishable unit, summarised */
+  async listUnitSummaries() {
+    return (await this.listUnits()).map((unit) => CurriculumAccess.summarise(unit));
+  }
+
+  /** @returns {Promise<object|null>} null for an unknown or unpublished unit */
+  async getUnitSummary(unitId) {
+    const unit = await this.getUnit(unitId);
+    return unit ? CurriculumAccess.summarise(unit) : null;
+  }
 }
 
 export default CurriculumAccess;

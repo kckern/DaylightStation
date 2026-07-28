@@ -82,6 +82,15 @@ export const schoolAdminApi = {
   /** The raw event log for one session — the only place lineage is recorded. */
   sessionEvents: (sessionId) => call(`${LIFECYCLE}/sessions/${enc(sessionId)}/events`),
 
+  /**
+   * The published curriculum, read-only: `{ units: [{ unitId, title, subject,
+   * objectives, courseId, sequence, grades, passingPercent, has* }] }`.
+   *
+   * Summaries, deliberately — a unit's `review` block holds the answer key and
+   * never crosses this wire.
+   */
+  curriculumUnits: () => call(`${LIFECYCLE}/curriculum/units`),
+
   /** Every learner with an assignment record. */
   assignments: () => call(`${LIFECYCLE}/assignments`),
 
