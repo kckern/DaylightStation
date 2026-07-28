@@ -1275,6 +1275,9 @@
   padding: var(--sp-3) var(--sp-4);
   overflow-x: auto;
   max-width: 100%;
+  // Scroll stays (touch-drag), the scrollbar chrome doesn't.
+  scrollbar-width: none;
+  &::-webkit-scrollbar { display: none; }
 
   > :first-child { margin-left: auto; }
   > :last-child { margin-right: auto; }
