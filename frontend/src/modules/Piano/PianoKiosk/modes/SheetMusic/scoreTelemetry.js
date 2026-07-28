@@ -40,4 +40,28 @@ export function classifyFollowHit({ expectedMs, actualMs }) {
   return { driftMs, feel };
 }
 
-export default { summarizeDrift, classifyFollowHit, stallThresholdMs };
+/**
+ * Learn is SELF-PACED: the cursor waits for the player, so "drift" against the
+ * written note duration is meaningless there (expectedMs is ~94ms, so every human
+ * response classifies as `drag` and `tight` is unreachable — 24 of 31 field records
+ * were `drag`, audit M5b). Summarize the user's own step-to-step intervals
+ * instead — a median and a tail, no verdict.
+ *
+ * Median convention: for an even count this takes the UPPER of the two middle
+ * values rather than their mean. These are pacing samples, not a statistic anyone
+ * averages downstream, so an actual observed interval is preferable to a synthetic
+ * midpoint.
+ */
+export function summarizeStepIntervals(intervals) {
+  const d = (intervals || []).filter((x) => Number.isFinite(x) && x >= 0).sort((a, b) => a - b);
+  if (!d.length) return { count: 0, medianStepMs: 0, p95StepMs: 0 };
+  return {
+    count: d.length,
+    medianStepMs: Math.round(d[Math.floor(d.length / 2)]),
+    p95StepMs: Math.round(d[Math.min(d.length - 1, Math.floor(d.length * 0.95))]),
+  };
+}
+
+// classifyFollowHit stays exported but is NO LONGER called from the Learn path:
+// Polish is graded at tempo, where a written-duration comparison is meaningful.
+export default { summarizeDrift, classifyFollowHit, stallThresholdMs, summarizeStepIntervals };

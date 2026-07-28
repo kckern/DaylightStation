@@ -531,15 +531,17 @@ export default function ScorePlayer({ score: scoreMeta }) {
   const lastAdvanceRef = useRef(0);
   const followHitsRef = useRef(0);
   const followWrongsRef = useRef(0);
+  // Stamp the reference point when Learn is ENTERED. Left at 0, the first hit
+  // computes an interval of 0 and poisons the run's stats (audit M5a): seven of
+  // 31 field records were this artifact, and one whole score.follow.stats record
+  // inherited it as a fabricated "100% rushing".
+  useEffect(() => { if (mode === 'learn') lastAdvanceRef.current = performance.now(); }, [mode]);
   const onFollowHit = useCallback((note) => {
     setStruck((prev) => { const n = new Set(prev); n.add(note); return n; });
     followHitsRef.current += 1;
-    const s = stepRef.current;
-    const base = stepTimeline[s]?.t ?? 0;
-    const expectedMs = (stepTimeline[s + 1]?.t ?? base) - base; // nominal duration of this step
-    const actualMs = performance.now() - (lastAdvanceRef.current || performance.now());
-    recordFollowHit({ step: s, note, expectedMs, actualMs });
-  }, [stepTimeline, recordFollowHit]);
+    if (!lastAdvanceRef.current) return; // no reference point yet — don't invent one
+    recordFollowHit({ step: stepRef.current, note, sinceAdvanceMs: performance.now() - lastAdvanceRef.current });
+  }, [recordFollowHit]);
   const onFollowStep = useCallback((next) => {
     setStep(next);
     setStruck(() => new Set());

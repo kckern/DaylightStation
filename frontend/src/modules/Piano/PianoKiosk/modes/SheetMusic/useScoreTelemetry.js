@@ -1,6 +1,6 @@
 import { useMemo, useRef, useCallback } from 'react';
 import getLogger from '../../../../../lib/logging/Logger.js';
-import { summarizeDrift, classifyFollowHit, stallThresholdMs } from './scoreTelemetry.js';
+import { summarizeDrift, stallThresholdMs, summarizeStepIntervals } from './scoreTelemetry.js';
 
 // The visual driver is a coarse setInterval at `tickMs` BY DESIGN (see
 // useScoreTransport), so a gap of ~tickMs is healthy, not a stall. Only a gap
@@ -101,25 +101,23 @@ export function useScoreTelemetry({ id, tickMs = 100 }) {
     schedLateWarns.current = 0;
   }, [logger]);
 
-  const recordFollowHit = useCallback(({ step, note, expectedMs, actualMs }) => {
-    const c = classifyFollowHit({ expectedMs, actualMs });
-    follow.current.push(c.driftMs);
-    logger.sampled('score.follow.timing', { step, note, expectedMs: Math.round(expectedMs), actualMs: Math.round(actualMs), driftMs: c.driftMs, feel: c.feel }, { maxPerMinute: 20, aggregate: true });
+  // Learn is self-paced, so there is nothing to be late FOR: `sinceAdvanceMs` is
+  // how long the player took to answer the cursor, reported raw. The old shape
+  // classified it against the written note duration (~94ms), which made every
+  // human response a `drag` and `tight` unreachable — 24 of 31 field records were
+  // `drag`, up to 47s (audit M5b). No verdict is emitted now.
+  const recordFollowHit = useCallback(({ step, note, sinceAdvanceMs }) => {
+    follow.current.push(sinceAdvanceMs);
+    logger.sampled('score.follow.timing', { step, note, sinceAdvanceMs: Math.round(sinceAdvanceMs) }, { maxPerMinute: 20, aggregate: true });
   }, [logger]);
 
   const flushFollow = useCallback((hits, wrongs) => {
-    const abs = follow.current.map(Math.abs);
-    const mean = abs.length ? abs.reduce((a, b) => a + b, 0) / abs.length : 0;
-    logger.info('score.follow.stats', {
-      hits, wrongs, meanAbsDriftMs: Math.round(mean),
-      rushPct: pct(follow.current, (x) => x < -25), dragPct: pct(follow.current, (x) => x > 25),
-    });
+    const s = summarizeStepIntervals(follow.current);
+    logger.info('score.follow.stats', { hits, wrongs, ...s });
     follow.current = [];
   }, [logger]);
 
   return { logger, startSession, logLoad, logLoadFailed, recordFire, recordSchedule, flushPlayback, recordFollowHit, flushFollow, logMeasureGrade, logRunSummary, logFocus, logTranspose, logMode };
 }
-
-function pct(arr, pred) { return arr.length ? Math.round((arr.filter(pred).length / arr.length) * 100) : 0; }
 
 export default useScoreTelemetry;

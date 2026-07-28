@@ -134,6 +134,42 @@ describe('useScoreTelemetry', () => {
     expect(ev[2]).toMatchObject({ semitones: -3 });
   });
 
+  // Learn is self-paced, so the follow telemetry reports the user's OWN pacing
+  // and passes NO verdict — no driftMs, no feel (audit M5b).
+  it('records a follow hit as a raw step interval, with no classification', () => {
+    const { result } = renderHook(() => useScoreTelemetry({ id: 'x' }));
+    act(() => result.current.recordFollowHit({ step: 4, note: 60, sinceAdvanceMs: 812.6 }));
+    const ev = logged.find(([, e]) => e === 'score.follow.timing');
+    expect(ev[0]).toBe('sampled');
+    expect(ev[2]).toMatchObject({ step: 4, note: 60, sinceAdvanceMs: 813 });
+    expect(ev[2]).not.toHaveProperty('feel');
+    expect(ev[2]).not.toHaveProperty('driftMs');
+    expect(ev[2]).not.toHaveProperty('expectedMs');
+  });
+
+  it('flushFollow summarizes the run\'s own step intervals', () => {
+    const { result } = renderHook(() => useScoreTelemetry({ id: 'x' }));
+    act(() => {
+      [100, 200, 300, 400, 10000].forEach((ms, i) => result.current.recordFollowHit({ step: i, note: 60 + i, sinceAdvanceMs: ms }));
+      result.current.flushFollow(5, 2);
+    });
+    const ev = logged.find(([, e]) => e === 'score.follow.stats');
+    expect(ev[2]).toMatchObject({ hits: 5, wrongs: 2, count: 5, medianStepMs: 300, p95StepMs: 10000 });
+    expect(ev[2]).not.toHaveProperty('rushPct');
+    expect(ev[2]).not.toHaveProperty('meanAbsDriftMs');
+  });
+
+  it('flushFollow clears the collector so the next run starts clean', () => {
+    const { result } = renderHook(() => useScoreTelemetry({ id: 'x' }));
+    act(() => {
+      result.current.recordFollowHit({ step: 0, note: 60, sinceAdvanceMs: 900 });
+      result.current.flushFollow(1, 0);
+      result.current.flushFollow(0, 3);
+    });
+    const stats = logged.filter(([, e]) => e === 'score.follow.stats');
+    expect(stats[1][2]).toMatchObject({ count: 0, medianStepMs: 0, p95StepMs: 0 });
+  });
+
   it('logMode emits score.mode', () => {
     const { result } = renderHook(() => useScoreTelemetry({ id: 'x' }));
     act(() => result.current.logMode({ mode: 'polish' }));
