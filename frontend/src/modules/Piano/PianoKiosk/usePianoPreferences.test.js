@@ -49,4 +49,20 @@ describe('usePianoPreferences', () => {
     expect(result.current.loaded).toBe(false);
     expect(calls.length).toBe(0);
   });
+
+  it('guest: performs no GET and reports loaded immediately (F4)', async () => {
+    mockUser = 'guest';
+    const { result } = renderHook(() => usePianoPreferences());
+    await waitFor(() => expect(result.current.loaded).toBe(true));
+    expect(calls).toHaveLength(0);
+  });
+
+  it('guest: setPref applies session-locally but never PUTs (F4)', async () => {
+    mockUser = 'guest';
+    const { result } = renderHook(() => usePianoPreferences());
+    await waitFor(() => expect(result.current.loaded).toBe(true));
+    await act(async () => { await result.current.setPref('topPaneLayout', 'triptych'); });
+    expect(result.current.getPref('topPaneLayout', 'staff')).toBe('triptych');
+    expect(calls).toHaveLength(0);
+  });
 });
