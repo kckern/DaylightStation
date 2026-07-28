@@ -287,6 +287,7 @@ export default function CurriculumPlanner() {
         grader={grader}
         onChange={setGraderId}
         action="change a plan"
+        label="Signed in as"
       />
 
       {rosterError && <Alert color="red" title="Could not load the household roster">{rosterError}</Alert>}

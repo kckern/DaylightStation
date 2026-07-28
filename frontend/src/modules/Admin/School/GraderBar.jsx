@@ -18,8 +18,12 @@ import { Alert, Group, Select, Text } from '@mantine/core';
  * @param {object|null} props.grader
  * @param {(id: string|null) => void} props.onChange
  * @param {string} props.action - what the sign-in unlocks, for the empty-state copy
+ * @param {string} props.label - the picker's label; it must name what this
+ *   screen actually does, or a planning page reads "Marking as"
  */
-export default function GraderBar({ adults, graderId, grader, onChange, action = 'sign off' }) {
+export default function GraderBar({
+  adults, graderId, grader, onChange, action = 'sign off', label = 'Marking as',
+}) {
   if (!adults.length) {
     return (
       <Alert color="yellow" title="No grown-up on the roster">
@@ -30,24 +34,37 @@ export default function GraderBar({ adults, graderId, grader, onChange, action =
     );
   }
 
-  return (
-    <Group gap="sm" align="flex-end" wrap="wrap">
-      <Select
-        label="Marking as"
-        placeholder="Choose your profile"
-        data={adults.map((u) => ({ value: u.id, label: u.name }))}
-        value={grader ? grader.id : null}
-        onChange={onChange}
-        allowDeselect={false}
-        w={240}
-      />
-      {!grader && (
-        <Text size="sm" c="orange" pb={6}>
+  const picker = (
+    <Select
+      label={label}
+      placeholder="Choose your profile"
+      data={adults.map((u) => ({ value: u.id, label: u.name }))}
+      value={grader ? grader.id : null}
+      onChange={onChange}
+      allowDeselect={false}
+      w={240}
+    />
+  );
+
+  // Nobody claimed yet: say it once, loudly, at the top. A quiet line of helper
+  // text next to a dropdown is easy to scroll past, and the whole page is inert
+  // until this is answered — that is worth an alert.
+  if (!grader) {
+    return (
+      <Alert color="orange" title="Say who you are first">
+        <Text size="sm" mb="xs">
           {graderId
             ? 'The remembered profile is no longer a grown-up on this roster — choose again.'
-            : `Choose your profile before you ${action}.`}
+            : `Nothing can be signed off until a grown-up says they are the one about to ${action}.`}
         </Text>
-      )}
+        {picker}
+      </Alert>
+    );
+  }
+
+  return (
+    <Group gap="sm" align="flex-end" wrap="wrap">
+      {picker}
     </Group>
   );
 }

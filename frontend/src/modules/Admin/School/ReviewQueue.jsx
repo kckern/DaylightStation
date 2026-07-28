@@ -276,17 +276,22 @@ export default function ReviewQueue() {
 
               <Divider my="sm" />
 
-              {canSignOff ? (
-                <Group gap="sm" wrap="wrap" align="center">
-                  <SegmentedControl
-                    size="sm"
-                    value={chosen ?? ''}
-                    onChange={(value) => chooseVerdict(key, value)}
-                    data={[
-                      { label: 'Correct', value: 'correct' },
-                      { label: 'Incorrect', value: 'incorrect' },
-                    ]}
-                  />
+              {/* The verdict control is ALWAYS live. Choosing correct or
+                  incorrect writes nothing, and hiding it made the page look
+                  like it had no grading on it at all until an adult was
+                  picked. The gate belongs on the write, which is the button
+                  below — it does not exist for anyone but an adult. */}
+              <Group gap="sm" wrap="wrap" align="center">
+                <SegmentedControl
+                  size="sm"
+                  value={chosen ?? ''}
+                  onChange={(value) => chooseVerdict(key, value)}
+                  data={[
+                    { label: 'Correct', value: 'correct' },
+                    { label: 'Incorrect', value: 'incorrect' },
+                  ]}
+                />
+                {canSignOff ? (
                   <Button
                     size="sm"
                     disabled={!chosen}
@@ -295,12 +300,12 @@ export default function ReviewQueue() {
                   >
                     Sign off as {grader.name}
                   </Button>
-                </Group>
-              ) : (
-                <Text size="sm" c="dimmed">
-                  Choose a grown-up&apos;s profile above to mark this.
-                </Text>
-              )}
+                ) : (
+                  <Text size="sm" c="orange">
+                    Choose a grown-up&apos;s profile at the top to sign this off.
+                  </Text>
+                )}
+              </Group>
 
               {itemError && (
                 <Alert color="red" mt="sm" title="That mark did not save" data-testid="review-item-error">
