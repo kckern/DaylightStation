@@ -1,6 +1,7 @@
 // CourseGrid.jsx
 import { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import usePianoList from '../../usePianoList.js';
+import { balancedColumns } from '../../tileGridLayout.js';
 import PianoEmpty from '../../PianoEmpty.jsx';
 import { SkeletonPoster } from '../../Skeleton.jsx';
 import CourseTile from './CourseTile.jsx';
@@ -190,7 +191,10 @@ export default function CourseGrid({ groups = [], onSelect }) {
         {loading && <SkeletonPoster count={8} />}
         {empty && <PianoEmpty message="No videos found." />}
         {courses && courses.length > 0 && (
-          <ul className="piano-video-grid piano-video-grid--posters">
+          <ul
+            className="piano-video-grid piano-video-grid--posters"
+            style={{ '--poster-cols': balancedColumns(courses.length, { max: 5 }) }}
+          >
             {courses.map((item) => (
               <CourseTile key={item.id} item={item} onSelect={onSelect} progress={progressMap?.[item.id]} />
             ))}
