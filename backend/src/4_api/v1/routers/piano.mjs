@@ -51,6 +51,9 @@ import { musicXmlToNotes } from '#shared/music/musicXmlToNotes.mjs';
  *   Lesson drills (content, read-only):
  *   GET    /lessons/:collection              → index
  *   GET    /lessons/:collection/:id          → drill module
+ *
+ *   Menu activity strip:
+ *   GET    /activity/recent                  → { players: [...] }  (per-player most-recent lesson-course progress)
  */
 export function createPianoRouter({ pianoContainer, logger = console }) {
   if (!pianoContainer) throw new Error('createPianoRouter: pianoContainer required');
@@ -404,6 +407,15 @@ export function createPianoRouter({ pianoContainer, logger = console }) {
       return res.status(400).json({ error: 'Invalid user' });
     }
     res.json(outcome.result);
+  }));
+
+  // ── Menu activity strip: per-player most-recent lesson-course progress ──────
+  router.get('/activity/recent', asyncHandler(async (req, res) => {
+    if (!pianoContainer.isActivityConfigured()) {
+      return res.status(503).json({ error: 'Piano activity service not configured' });
+    }
+    const result = await pianoContainer.getRecentCourseActivity().execute();
+    res.json(result);
   }));
 
   // ── Always-on MIDI history (.mid per user/date) ─────────────────────────────
