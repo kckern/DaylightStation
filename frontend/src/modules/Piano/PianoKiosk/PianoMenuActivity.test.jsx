@@ -9,7 +9,8 @@ import PianoMenuActivity, { relativeTime } from './PianoMenuActivity.jsx';
 const NOW = Date.parse('2026-07-28T12:00:00Z');
 const course = (over = {}) => ({
   courseId: 'plex:11', courseTitle: 'Course B', thumbnail: '/img/b',
-  completed: 13, total: 57, percent: 23, lastPlayedAt: '2026-07-28T10:00:00Z', ...over,
+  completed: 13, total: 57, percent: 23, units: ['done', 'active', 'todo'],
+  lastPlayedAt: '2026-07-28T10:00:00Z', ...over,
 });
 const player = (over = {}) => ({
   userId: 'felix', name: 'Felix', lastPlayedAt: '2026-07-28T10:00:00Z',
@@ -45,10 +46,32 @@ describe('PianoMenuActivity', () => {
     expect(cards[0].querySelectorAll('.piano-menu-activity__course')).toHaveLength(2);
     expect(cards[0].textContent).toContain('23%');
     expect(cards[0].textContent).toContain('1%');
-    expect(screen.getByAltText('Course B').getAttribute('src')).toBe('/img/b');
+    // Thumbnails request a server-side resize (proxy ?w=&h= → Plex transcoder)
+    expect(screen.getByAltText('Course B').getAttribute('src')).toBe('/img/b?w=140&h=200');
     expect(screen.getByAltText('Hoffman Academy')).toBeTruthy();
     // Course title text is NOT rendered as a visible label when a thumbnail exists
     expect(screen.queryByText('Course B')).toBeNull();
+  });
+
+  it('renders per-season dots in the overlay: done filled, active blinking, todo empty', async () => {
+    response = { players: [player({ courses: [course({ units: ['done', 'active', 'todo', 'todo'] })] })] };
+    render(<PianoMenuActivity onOpenCourse={() => {}} />);
+    await waitFor(() => expect(document.querySelector('.piano-menu-activity__units')).toBeTruthy());
+    const dots = document.querySelectorAll('.piano-menu-activity__unit');
+    expect(dots).toHaveLength(4);
+    expect(dots[0].className).toContain('is-done');
+    expect(dots[1].className).toContain('is-active');
+    expect(dots[2].className).toContain('is-todo');
+    // Overlay sits on the poster, percent inside it
+    const overlay = document.querySelector('.piano-menu-activity__overlay');
+    expect(overlay.textContent).toContain('23%');
+  });
+
+  it('hides the dots row for single-unit courses', async () => {
+    response = { players: [player({ courses: [course({ units: ['active'] })] })] };
+    render(<PianoMenuActivity onOpenCourse={() => {}} />);
+    await waitFor(() => expect(document.querySelector('.piano-menu-activity__overlay')).toBeTruthy());
+    expect(document.querySelector('.piano-menu-activity__units')).toBeNull();
   });
 
   it('dims players idle beyond 7 days (keyed off newest course)', async () => {
