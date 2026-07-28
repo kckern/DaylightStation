@@ -1426,3 +1426,45 @@ describe('ScorePlayer — Learn pacing telemetry (Task 11)', () => {
     expect(stats[0]).not.toHaveProperty('meanAbsDriftMs');
   });
 });
+
+// ── Task 14: entering Learn lands somewhere the user can explain ──────────────
+// onMode did not reset the cursor, so Listen→Learn dropped the user wherever the
+// Listen playhead happened to stop — one field session entered Learn at step 32,
+// mid-piece, with no way to know why the cursor was there (audit H3.3).
+describe('ScorePlayer — entering Learn (audit H3.3)', () => {
+  afterEach(() => { cleanup(); vi.restoreAllMocks(); });
+
+  it('returns the cursor to the top when Learn is entered mid-piece', () => {
+    renderPlayer(); // opens in Listen
+    const scroll = document.querySelector('.piano-score-player__scroll');
+    act(() => { fireEvent.click(scroll, { clientX: 280, clientY: 100 }); }); // seek to the last note
+    expect(screen.getByTestId('score-position')).toHaveTextContent('4 / 4');
+    enterLearn();
+    expect(screen.getByTestId('score-position')).toHaveTextContent('1 / 4'); // from the top, not step 4
+  });
+
+  it('enters at the loop in-point when a practice loop is active', () => {
+    // One measure per step, so the measure readout can tell the loop's in-point
+    // apart from a cursor parked deeper inside the loop.
+    h.layoutExtras = {
+      steps: h.events.map((e, i) => ({
+        onsetQuarter: e.onsetQuarter,
+        measure: i,
+        notes: [{ midi: e.midi, staff: 0, x: e.x, top: e.top, bottom: e.bottom, width: 8 }],
+      })),
+      measures: h.events.map((e, i) => ({ index: i, number: i + 1, firstStep: i, lastStep: i })),
+    };
+    renderPlayer(); // Listen
+    // Loop measures 2–3 (steps 1–2) via the guided two-tap selection.
+    const scroll = document.querySelector('.piano-score-player__scroll');
+    act(() => { fireEvent.click(screen.getByRole('button', { name: /^loop/i })); });
+    act(() => { fireEvent.click(screen.getByRole('button', { name: /select measures/i })); });
+    act(() => { fireEvent.click(scroll, { clientX: 160, clientY: 100 }); }); // m2
+    act(() => { fireEvent.click(scroll, { clientX: 220, clientY: 100 }); }); // m3
+    expect(screen.getByTestId('score-position')).toHaveTextContent('m 2 / 4'); // at the in-point
+    act(() => { fireEvent.click(scroll, { clientX: 280, clientY: 100 }); }); // seek deeper (clamped to m3)
+    expect(screen.getByTestId('score-position')).toHaveTextContent('m 3 / 4');
+    enterLearn();
+    expect(screen.getByTestId('score-position')).toHaveTextContent('m 2 / 4'); // back to the in-point
+  });
+});
