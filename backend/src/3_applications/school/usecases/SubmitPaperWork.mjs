@@ -13,11 +13,19 @@
  * it and a child whose eraser smudged both get a grown-up, which is the right
  * outcome for both.
  *
+ * WHAT EACH REVIEW ITEM SAYS. A queued item carries the QUESTION (`prompt`,
+ * plus the `questionNumber` printed beside it) and, separately, the unit's
+ * whole-sheet marking RUBRIC. Those were one field once, holding the rubric, so
+ * a parent marking six questions read the same sentence six times with nothing
+ * to tell them apart. The question text comes from the bank item where there is
+ * one, and otherwise from the printed document — a rubric-graded worksheet has
+ * no bank at all, and that is exactly the sheet a person has to read.
+ *
  * OMR is a feeder, not a second pipeline (§7.3). `fromOmrSheet` decodes column
  * masks against the stored form map and then goes through the same `execute`.
  */
 import { reduceSession, createEvent } from '#domains/school/sessions/sessionEvents.mjs';
-import { questionItemIds } from '#domains/school/documents/documentValidation.mjs';
+import { questionItemIds, questionPrompts } from '#domains/school/documents/documentValidation.mjs';
 import { decodeOmrSheet } from '#domains/school/documents/omrForm.mjs';
 import { noticeDocument } from '#domains/school/documents/receipts.mjs';
 
@@ -105,6 +113,11 @@ export class SubmitPaperWork {
     const ambiguousSet = new Set(ambiguous);
     const blankSet = new Set(blank);
 
+    // What was asked, and how this unit says to mark it — two separate fields.
+    const bankPrompts = new Map((bank?.items ?? []).map((i) => [i.id, i.prompt ?? null]));
+    const printed = questionPrompts(document);
+    const rubric = typeof unit?.review?.rubric === 'string' ? unit.review.rubric : null;
+
     const scorable = {};
     const review = [];
     expectedItems.forEach((itemId) => {
@@ -120,7 +133,11 @@ export class SubmitPaperWork {
       if (reason) {
         review.push({
           sessionId, itemId, learnerId: state.learnerId, unitId: state.unitId,
-          reason, given: given ?? null, prompt: unit?.review?.rubric ?? null, enqueuedAt: nowIso,
+          reason, given: given ?? null,
+          prompt: bankPrompts.get(itemId) ?? printed.get(itemId)?.prompt ?? null,
+          questionNumber: printed.get(itemId)?.number ?? null,
+          rubric,
+          enqueuedAt: nowIso,
         });
         return;
       }
