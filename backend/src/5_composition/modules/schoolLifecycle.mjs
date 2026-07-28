@@ -100,6 +100,8 @@ function receiptBridge(renderer, spoolDir) {
  * @param {object} [deps.economyService]
  * @param {object} [deps.userService]
  * @param {object} [deps.eventBus]
+ * @param {object} [deps.thermalPrinterRegistry] - the house receipt-printer registry
+ * @param {object} [deps.playbackAdapter] - real playback target; null until §8 lands
  * @param {object} [deps.logger]
  * @returns {Promise<{
  *   wired: boolean, reason: string|null,
@@ -111,7 +113,8 @@ function receiptBridge(renderer, spoolDir) {
  */
 export async function createSchoolLifecycle({
   configService, householdId = null, schoolService,
-  economyService = null, userService = null, eventBus = null, logger = console,
+  economyService = null, userService = null, eventBus = null,
+  thermalPrinterRegistry = null, playbackAdapter = null, logger = console,
 } = {}) {
   const cfg = configService.getHouseholdAppConfig?.(householdId, 'school') || {};
   const lifecycleCfg = cfg.lifecycle || {};
@@ -200,11 +203,26 @@ export async function createSchoolLifecycle({
       path: cfg.printing?.path || '/ipp/print',
       logger,
     });
-    // The thermal registry is built elsewhere in the composition root; the
-    // lifecycle takes whichever printer the school config names, and runs
-    // without one (every receipt then reports itself unprinted).
-    receiptPrinter = lifecycleCfg.receiptPrinter?.adapter ?? null;
-    playback = lifecycleCfg.playbackAdapter ?? null;
+    // The thermal registry is built elsewhere in the composition root, so the
+    // lifecycle asks it for whichever printer `school.yml` names rather than
+    // standing up a second adapter against the same host. With no receipt
+    // printer the console still runs: worksheets print, and every receipt
+    // reports itself unprinted instead of pretending.
+    const receiptLocation = lifecycleCfg.receiptPrinter ?? null;
+    if (thermalPrinterRegistry) {
+      try {
+        receiptPrinter = thermalPrinterRegistry.resolve(receiptLocation ?? undefined);
+      } catch (err) {
+        logger.warn?.('school.lifecycle.no-receipt-printer', { location: receiptLocation, error: err.message });
+      }
+    }
+    // Real playback dispatch is NOT wired in this slice: the playback-hub
+    // container is constructed later in the composition root, and mapping a
+    // school target onto a screen or a headset is its own piece of work (§8).
+    // Injected rather than read from YAML, because an adapter is an object and
+    // config is text — a `playbackAdapter:` key in school.yml could only ever
+    // have been dead.
+    playback = playbackAdapter;
   }
 
   // --- persistence -----------------------------------------------------------

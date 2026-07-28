@@ -2218,6 +2218,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
       economyService: economyApi.economyService,
       userService,
       eventBus,
+      thermalPrinterRegistry: printerRegistry,
       logger: schoolLifecycleLogger
     });
   } catch (err) {
