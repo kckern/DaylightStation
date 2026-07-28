@@ -349,6 +349,7 @@ export async function createSchoolLifecycle({
     ...useCases,
     assignments: stores.assignments,
     reviewQueue: stores.reviewQueue,
+    curriculum,
     sessions: stores.sessions,
     logger,
   });

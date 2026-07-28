@@ -61,6 +61,17 @@ const setAssignments = {
   },
 };
 
+const curriculum = {
+  listUnitSummaries: async () => [
+    { unitId: 'math-fractions.03', title: 'Fractions Checkpoint', subject: 'math', objectives: ['add unlike denominators'] },
+  ],
+  getUnitSummary: async (unitId) => (
+    unitId === 'math-fractions.03'
+      ? { unitId, title: 'Fractions Checkpoint', subject: 'math', objectives: ['add unlike denominators'] }
+      : null
+  ),
+};
+
 const sessions = {
   listForLearner: async () => [{ sessionId: 'ses_1', state: 'issued' }],
   readEvents: async () => [{ type: 'created', seq: 1 }],
@@ -92,6 +103,7 @@ beforeAll(async () => {
     openRemediation: { execute: async ({ sessionId }) => ({ status: sessionId === 'ses_open' ? 'already_opened' : 'opened' }) },
     assignments,
     reviewQueue,
+    curriculum,
     resolveReviewItem,
     setAssignments,
     sessions,
@@ -260,6 +272,26 @@ describe('the parent surface', () => {
 
   it('403s a planning write the use case refused', async () => {
     expect((await put('/assignments/kid2', { courses: [], units: [], assignedBy: 'kid1' })).status).toBe(403);
+  });
+});
+
+describe('the curriculum, read-only', () => {
+  it('lists the units a learner can be handed, with their titles and objectives', async () => {
+    const r = await fetch(`${base}/curriculum/units`);
+    expect(r.status).toBe(200);
+    expect(await r.json()).toMatchObject({
+      units: [{ unitId: 'math-fractions.03', title: 'Fractions Checkpoint', objectives: ['add unlike denominators'] }],
+    });
+  });
+
+  it('reads one unit, and 404s one nobody published', async () => {
+    expect((await fetch(`${base}/curriculum/units/math-fractions.03`)).status).toBe(200);
+    expect((await fetch(`${base}/curriculum/units/no-such-unit`)).status).toBe(404);
+  });
+
+  it('offers no way to WRITE curriculum from here', async () => {
+    expect((await put('/curriculum/units/math-fractions.03', { title: 'Nap Time' })).status).toBe(404);
+    expect((await post('/curriculum/units', { unitId: 'nap' })).status).toBe(404);
   });
 });
 

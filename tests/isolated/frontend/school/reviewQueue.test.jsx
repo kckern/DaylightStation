@@ -18,12 +18,14 @@ import ReviewQueue from '#frontend/modules/Admin/School/ReviewQueue.jsx';
 const rosterMock = vi.fn();
 const pendingReviewMock = vi.fn();
 const resolveReviewMock = vi.fn();
+const curriculumUnitsMock = vi.fn();
 
 vi.mock('#frontend/modules/Admin/School/schoolAdminApi.js', () => ({
   schoolAdminApi: {
     roster: (...a) => rosterMock(...a),
     pendingReview: (...a) => pendingReviewMock(...a),
     resolveReview: (...a) => resolveReviewMock(...a),
+    curriculumUnits: (...a) => curriculumUnitsMock(...a),
   },
   default: {},
 }));
@@ -61,6 +63,13 @@ beforeEach(() => {
   rosterMock.mockReset().mockResolvedValue([PARENT, CHILD]);
   pendingReviewMock.mockReset().mockResolvedValue({ items: [item()] });
   resolveReviewMock.mockReset().mockResolvedValue({ ...item(), verdict: 'correct', gradedBy: 'dad' });
+  curriculumUnitsMock.mockReset().mockResolvedValue({
+    units: [{
+      unitId: 'math-fractions.03',
+      title: 'Dividing Fractions',
+      objectives: ['divide a fraction by a fraction', 'explain why you invert'],
+    }],
+  });
 });
 
 describe('ReviewQueue — showing the work', () => {
@@ -68,7 +77,8 @@ describe('ReviewQueue — showing the work', () => {
     renderQueue();
 
     expect(await screen.findByText('learner-two')).toBeInTheDocument();
-    expect(screen.getByText('math-fractions.03')).toBeInTheDocument();
+    // The unit reads as its title once the catalog is in; its id is the fallback.
+    expect(await screen.findByText('Dividing Fractions')).toBeInTheDocument();
     expect(screen.getByText('q3')).toBeInTheDocument();
     expect(screen.getByText('Because you flip the second fraction over')).toBeInTheDocument();
     expect(screen.getByText('Written answer')).toBeInTheDocument();
@@ -147,6 +157,23 @@ describe('ReviewQueue — showing the work', () => {
 
     expect(await screen.findByText('Nothing is waiting for you.')).toBeInTheDocument();
     expect(screen.queryByTestId('review-item')).toBeNull();
+  });
+});
+
+describe('ReviewQueue — naming the unit', () => {
+  it('shows the unit\'s TITLE and what it is teaching, not just an id', async () => {
+    renderQueue();
+
+    expect(await screen.findByText('Dividing Fractions')).toBeInTheDocument();
+    expect(screen.getByText(/divide a fraction by a fraction/)).toBeInTheDocument();
+  });
+
+  it('falls back to the id, and still grades, when the catalog will not load', async () => {
+    curriculumUnitsMock.mockRejectedValue(new Error('catalog unavailable'));
+    renderQueue();
+
+    expect(await screen.findByText('math-fractions.03')).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: /Sign off as Papa/i })).toBeInTheDocument();
   });
 });
 

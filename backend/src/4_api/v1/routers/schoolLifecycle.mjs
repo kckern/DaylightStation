@@ -110,6 +110,9 @@ function reply(res, result) {
  * @param {object} [deps.resolveReviewItem] - guarded sign-off; without it the
  *   sign-off route does not exist. The store is never written to directly.
  * @param {object} [deps.setAssignments] - guarded planning write; likewise
+ * @param {object} [deps.curriculum] - CurriculumAccess, READ-ONLY. Summaries
+ *   only: a unit's `review` block holds the answer key, and this route is as
+ *   reachable as any other.
  * @param {object} [deps.sessions] - IWorkSessionRepository, for session history
  * @param {object} [deps.logger]
  * @returns {import('express').Router}
@@ -128,6 +131,7 @@ export function createSchoolLifecycleRouter({
   reviewQueue = null,
   resolveReviewItem = null,
   setAssignments = null,
+  curriculum = null,
   sessions = null,
   // No clock: every timestamp this router used to stamp (a verdict's `gradedAt`,
   // an assignment's `updatedAt`) is now written by the use case that owns the
@@ -267,6 +271,27 @@ export function createSchoolLifecycleRouter({
       res.json(await resolveReviewItem.execute({
         sessionId: req.params.sessionId, itemId: req.params.itemId, verdict, gradedBy, note,
       }));
+    }));
+  }
+
+  // --- the catalog, read-only ------------------------------------------------
+  // Enough for a queue to name the unit it is asking about and a planner to
+  // offer a real list instead of a text box. There is no write here and there
+  // is not meant to be: assignments are planner config, and the published
+  // catalog is edited on disk (spec §7.2).
+  if (curriculum) {
+    router.get('/curriculum/units', asyncHandler(async (_req, res) => {
+      res.json({ units: await curriculum.listUnitSummaries() });
+    }));
+
+    router.get('/curriculum/units/:unitId', asyncHandler(async (req, res) => {
+      const unit = await curriculum.getUnitSummary(req.params.unitId);
+      if (!unit) {
+        const err = new Error(`no published unit ${req.params.unitId}`);
+        err.status = 404;
+        throw err;
+      }
+      res.json(unit);
     }));
   }
 
