@@ -55,11 +55,23 @@
  * per domain, so there is no schema to check it against, and `physical` is
  * checked by the handler that sets it (assert against `PHYSICAL_KINDS`) rather
  * than here — validating it twice would put the contract in two places and let
- * them drift. This is a narrow exposure: composition picks its feedback channel
- * from `domain`, so an out-of-contract `physical` degrades which paper comes out,
- * it does not cost the user their feedback. What is guarded here is only what the
- * never-fall-through invariant depends on: that an Outcome always EXISTS, always
- * has these six keys, and is always attributed to the handler that produced it.
+ * them drift. The exposure is narrow because the two fields a generic caller
+ * steers on, `domain` and `ok`, are BOTH dispatcher-controlled: `domain` is
+ * assigned here and cannot be spoofed, and `ok` has a default so a silent
+ * handler cannot fake a refusal. An out-of-contract `physical` therefore
+ * degrades which paper comes out; it cannot cost the user their feedback.
+ * What is guarded here is only what the never-fall-through invariant depends
+ * on: that an Outcome always EXISTS, always carries these seven keys, and is
+ * always attributed to the handler that produced it.
+ *
+ * KNOWN GAP — a handler that never settles hangs the dispatch forever, and there
+ * is NO TIMEOUT. Handler liveness is the handler's own responsibility. This is a
+ * deliberate omission, not an oversight: today's `app.mjs` fires and forgets with
+ * no timeout either, so adding one would be a behaviour change in a phase whose
+ * criterion is zero behaviour change, and choosing a duration is a policy call
+ * that needs real handlers in front of it (school prints paper and is slow;
+ * content flips a relay and is not). Revisit in Phase 2, once the four handlers
+ * exist and their latencies are known.
  *
  * KNOWN, DELIBERATE, and not this module's to fix: `body` is not trimmed, so
  * `go: living-room:plex:1` hands the handler a body with a LEADING SPACE (the
@@ -78,6 +90,15 @@ import { parseScanCode } from '#domains/scan/ScanCode.mjs';
  *
  * - `status`   — free-form per domain (`ok`, `logged`, `refused`, …). Only
  *                `unknown` and `failed` are produced HERE.
+ * - `ok`       — did the scan do what it was for? The ONLY field a generic
+ *                caller can read, and the reason it exists: `status` is each
+ *                domain's private vocabulary, so composition cannot tell
+ *                `refused` from `logged` without knowing all four grammars.
+ *                Defaults TRUE, so a handler that refuses must SAY so — the
+ *                alternative defaults every careless handler to "refused" and
+ *                makes diligence indistinguishable from luck. The dispatcher's
+ *                own non-success outcomes (`unknown`, `failed`) set it false.
+ *                `ok === false` is therefore the generic refusal test.
  * - `domain`   — who handled it, or who WOULD have owned it when nothing is
  *                registered. Null only when nothing claimed the code at all.
  * - `physical` — `'worksheet' | 'receipt' | 'none'`. School prints paper;
@@ -85,9 +106,14 @@ import { parseScanCode } from '#domains/scan/ScanCode.mjs';
  * - `printed`  — whether paper actually came out, which is not the same as
  *                having asked for it.
  * - `effect`   — domain-specific payload for the caller to act on.
+ *
+ * These seven keys are ALWAYS present. A handler may add its own on top — that
+ * is what keeps `effect` a convention rather than a cage — so the key set is a
+ * guaranteed minimum, not a closed list.
  */
 const OUTCOME_DEFAULTS = Object.freeze({
   status: 'unknown',
+  ok: true,
   domain: null,
   message: '',
   physical: 'none',
@@ -146,14 +172,19 @@ function toRouteMap(routeFallback) {
  * can fail: a full disk, a closed socket, a serialiser choking on a circular
  * reference in the data. So the call is wrapped as well as guarded.
  *
- * Without the wrapping, a logger fault breaks the never-fall-through invariant
- * in three places, each for a different structural reason: the two `warn` calls
- * in `dispatch` sit outside any try at all, and the `debug` call sits INSIDE the
- * try that decides the outcome — so a logging fault would be caught by the
- * handler's own catch and downgrade a SUCCESSFUL scan to `failed`, and the
- * `error` emit that catch then makes would throw again and escape. The default
- * `console` masks all of it, because Node's console swallows write errors; it
- * would first surface in production wiring.
+ * This try/catch is the ONLY thing holding the invariant against a logger fault,
+ * and it is load-bearing on every path: the `warn` calls in `dispatch` sit
+ * outside any try, and the `debug` and `error` calls sit inside blocks whose
+ * catch routes to `#failed` — which logs again. Splitting the tries in
+ * `dispatch` does NOT provide a second line of defence here; it changes which
+ * catch would mislabel the scan, not whether one does. Unwrap this and a
+ * successful scan whose `debug` emit fails is reported as
+ * `{status:'failed', message:'logger down'}`, which is worse than a rejection
+ * because it is plausible.
+ *
+ * The `typeof` guard is therefore belt-and-braces rather than load-bearing —
+ * this catch subsumes it — and is kept only because a missing method is an
+ * ordinary, expected shape (a partial logger) rather than a fault.
  *
  * SWALLOWED SILENTLY, deliberately. There is no fallback log and no rethrow: a
  * logger that just threw is not a logger you can report to, and `console` may be
@@ -161,6 +192,16 @@ function toRouteMap(routeFallback) {
  * lose without failing the scan — a person is standing at a scanner waiting for
  * an answer, and "the log sink was down" is not an answer.
  */
+/**
+ * The default logger: silent by CHOICE. `console` was the obvious default and
+ * the wrong one — it is precisely what masks the failure mode above, since
+ * Node's console swallows write errors, and CLAUDE.md rules out raw console for
+ * diagnostics. Composition injects the real structured logger (Task 6); until
+ * it does, a dispatcher with no logger should say nothing rather than scribble
+ * on stdout from inside a domain module.
+ */
+const NO_LOGGER = Object.freeze({});
+
 function emit(logger, level, event, data) {
   try {
     if (typeof logger?.[level] === 'function') logger[level](event, data);
@@ -182,8 +223,13 @@ export class ScanDispatcher {
    * @param {Record<string, string>} deps.routeFallback  reader route -> namespace
    * @param {{debug?: Function, info?: Function, warn?: Function, error?: Function}} deps.logger
    */
-  constructor({ handlers = [], routeFallback = {}, logger = console } = {}) {
+  constructor({ handlers = [], routeFallback = {}, logger = NO_LOGGER } = {}) {
     this.#handlers = new Map();
+    // Before the for-of, or a composition-root typo surfaces as a bare
+    // `handlers is not iterable` and reads like an internal fault. Every other
+    // registration error here names this class; this one must too.
+    if (!Array.isArray(handlers))
+      throw new TypeError('ScanDispatcher: `handlers` must be an array');
     for (const handler of handlers) {
       // Fail at CONSTRUCTION, not at scan time. A malformed or duplicated
       // registration is a wiring bug in the composition root; discovering it
@@ -213,7 +259,13 @@ export class ScanDispatcher {
    * @param {unknown} input.code    raw scanned payload
    * @param {string|null} input.device  reader that produced the scan
    * @param {string|null} input.route   reader's configured route, for the step-5 fallback
-   * @returns {Promise<typeof OUTCOME_DEFAULTS>} always resolves, never rejects
+   * @returns {Promise<typeof OUTCOME_DEFAULTS>} Resolves for ANY `code` value —
+   *   any type, any shape, claimed or not — and for any handler behaviour,
+   *   including one that throws or returns something unreadable. NOT guaranteed
+   *   against a hostile `input` OBJECT: `dispatch({ get code() { throw } })`
+   *   rejects, and deliberately is not guarded. The caller is composition, which
+   *   is trusted code in this repo; the scanned payload is the untrusted input,
+   *   and that is what the guarantee covers.
    */
   async dispatch({ code, device = null, route = null } = {}) {
     const parsed = parseScanCode(code);
@@ -228,7 +280,7 @@ export class ScanDispatcher {
 
     if (!namespace) {
       emit(this.#logger, 'warn', 'scan-unclaimed', { raw: parsed.raw, device, route });
-      return outcome({ message: `unrecognised scan "${parsed.raw}"` });
+      return outcome({ ok: false, message: `unrecognised scan "${parsed.raw}"` });
     }
 
     const handler = this.#handlers.get(namespace);
@@ -238,16 +290,21 @@ export class ScanDispatcher {
       // message. `status: 'unknown'` with a domain reads as "this is a school
       // code and school is not wired up here".
       emit(this.#logger, 'warn', 'scan-no-handler', { namespace, raw: parsed.raw, device, route });
-      return outcome({ domain: namespace, message: `no handler registered for "${namespace}"` });
+      return outcome({
+        ok: false, domain: namespace, message: `no handler registered for "${namespace}"`,
+      });
     }
 
     // TWO guarded steps, not one, because calling the handler and READING what
     // it returned can fail independently — and neither may reject.
     //
-    // The first try wraps the call and NOTHING ELSE. A logging call inside it
-    // would be caught by its catch and reported as a HANDLER failure, which is
-    // both a lie and a downgrade of a successful scan; keeping `emit` out of it
-    // makes that impossible even if someone later unwraps `emit`.
+    // The first try wraps the call and NOTHING ELSE, so that ATTRIBUTION stays
+    // honest: "the handler threw" and "the handler's result could not be read"
+    // are different faults and are caught in different places. The split is NOT
+    // a second line of defence against a logger fault — both catches route to
+    // `#failed`, which logs — so it changes which catch would mislabel a scan,
+    // not whether one does. `emit`'s own try/catch is the only thing that
+    // prevents that; see its docstring.
     let result;
     try {
       result = await handler.handle({ ...parsed, device, route });
@@ -277,17 +334,37 @@ export class ScanDispatcher {
     }
   }
 
-  /** The one way a handler fault becomes an Outcome. Logs, then returns; never throws. */
+  /**
+   * The one way a handler fault becomes an Outcome. Logs, then returns; never throws.
+   *
+   * This runs FROM the catch blocks, so it sits outside every try — nothing above
+   * can save it, and `emit`'s internal catch does not cover the DATA OBJECT built
+   * in this frame. A thrown value crosses the same trust boundary as a returned
+   * one and gets the same treatment: `{ get message() { throw } }` and a hostile
+   * proxy are as real here as `{ get status() { throw } }` was there.
+   *
+   * So `message` is read EXACTLY ONCE, defensively, before anything else can
+   * touch it — one read that cannot escape, reused for both the log and the
+   * Outcome. Reading it twice was the bug: each read is a fresh chance to throw.
+   * `String()` because a thrown value need not carry a string message.
+   */
   #failed(namespace, err, context) {
+    let message = '';
+    try {
+      message = String(err?.message ?? '');
+    } catch {
+      // Unreadable — fall through to the generic message below.
+    }
     // The invariant's last mile: a throwing handler becomes a renderable
     // failure, never a rejected promise the caller has to remember to catch.
     emit(this.#logger, 'error', 'scan-handler-threw', {
-      namespace, ...context, error: err?.message,
+      namespace, ...context, error: message,
     });
     return outcome({
       status: 'failed',
+      ok: false,
       domain: namespace,
-      message: err?.message || `scan handler "${namespace}" failed`,
+      message: message || `scan handler "${namespace}" failed`,
     });
   }
 }
