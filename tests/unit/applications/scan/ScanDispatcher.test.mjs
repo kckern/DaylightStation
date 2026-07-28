@@ -120,3 +120,365 @@ describe('claim is not success', () => {
     expect(out.status).toBe('declined');
   });
 });
+
+// ---- Step 6: adversarial ----
+
+const silent = { debug() {}, info() {}, warn() {}, error() {} };
+
+describe('ScanDispatcher — prototype-chain safety', () => {
+  const INHERITED = [
+    'constructor', '__proto__', 'toString', 'valueOf', 'hasOwnProperty',
+    'isPrototypeOf', 'propertyIsEnumerable', 'toLocaleString', '__defineGetter__',
+  ];
+
+  it('does not resolve an inherited member as a route fallback', async () => {
+    // The bug Task 1 shipped, in a new place. `routeFallback` is indexed by a
+    // value that comes from device config, and every object literal inherits
+    // Object.prototype — so `route: 'constructor'` would resolve to a Function
+    // and `route: '__proto__'` to an object, both of which then go looking for
+    // a handler under a non-string namespace. An unregistered route must read
+    // as no fallback, full stop.
+    const d = new ScanDispatcher({
+      handlers: [], routeFallback: { nutribot: 'nutrition' }, logger: silent,
+    });
+    for (const route of INHERITED) {
+      const out = await d.dispatch({ code: 'greenbeans', device: 'k', route });
+      expect(out).toMatchObject({ status: 'unknown', domain: null });
+    }
+  });
+
+  it('does not resolve an inherited member as a handler namespace', async () => {
+    // `#handlers` is a Map, so this is safe for a different reason than the
+    // route map: Map lookup is own-entry only and has no prototype chain to
+    // walk. The test exists so that swapping it for a plain object — an easy
+    // "simplification" — fails loudly instead of reintroducing the hazard.
+    const content = { namespace: 'content', handle: vi.fn(async () => ({ status: 'ok' })) };
+    const d = new ScanDispatcher({
+      handlers: [content],
+      routeFallback: Object.fromEntries(INHERITED.map((n) => [`r-${n}`, n])),
+      logger: silent,
+    });
+    for (const name of INHERITED) {
+      const out = await d.dispatch({ code: 'greenbeans', device: 'k', route: `r-${name}` });
+      // The route DOES resolve to that namespace string — that part is just
+      // config. What must not happen is a Function off Object.prototype being
+      // called as a handler.
+      expect(out).toMatchObject({ status: 'unknown', domain: name });
+      expect(content.handle).not.toHaveBeenCalled();
+    }
+  });
+
+  it('ignores a non-string route rather than stringifying it into the lookup', async () => {
+    // The single-element ARRAY is the one that bites in practice, and it is why
+    // the type guard is not redundant with the null-prototype map: property
+    // lookup coerces its key, and `String(['nutribot']) === 'nutribot'`. Express
+    // hands you `req.query.route` as an array the moment a query param repeats
+    // (`?route=nutribot&route=x`), so a malformed or replayed request would
+    // otherwise pick up a fallback the reader was never configured for.
+    const nutrition = handler('nutrition', async () => ({ status: 'logged' }));
+    const d = new ScanDispatcher({
+      handlers: [nutrition], routeFallback: { nutribot: 'nutrition' }, logger: silent,
+    });
+    const routes = [
+      ['nutribot'], ['nutribot', 'content'], {}, [], 42, true, () => {}, Symbol('nutribot'),
+    ];
+    for (const route of routes) {
+      const out = await d.dispatch({ code: 'greenbeans', device: 'k', route });
+      expect(out.domain).toBe(null);
+    }
+    expect(nutrition.handle).not.toHaveBeenCalled();
+  });
+
+  it('ignores a non-string fallback namespace, so a config typo means no fallback', async () => {
+    const d = new ScanDispatcher({
+      handlers: [], routeFallback: { a: null, b: '', c: 42, d: {} }, logger: silent,
+    });
+    for (const route of ['a', 'b', 'c', 'd'])
+      expect((await d.dispatch({ code: 'greenbeans', route })).domain).toBe(null);
+  });
+
+  it('survives a routeFallback that is not an object at all', () => {
+    for (const junk of [null, undefined, 'nutrition', 42, []])
+      expect(() => new ScanDispatcher({ handlers: [], routeFallback: junk })).not.toThrow();
+  });
+});
+
+describe('ScanDispatcher — handler registration', () => {
+  it('throws on a duplicate namespace rather than silently last-wins', () => {
+    // Two handlers claiming `nutrition` is never intentional; it is a wiring
+    // bug in the composition root. Last-wins would route every fridge scan to
+    // whichever module happened to be listed second.
+    const a = { namespace: 'nutrition', handle: async () => ({}) };
+    const b = { namespace: 'nutrition', handle: async () => ({}) };
+    expect(() => new ScanDispatcher({ handlers: [a, b] })).toThrow(/duplicate/i);
+  });
+
+  it('throws on a malformed handler at construction, not at scan time', () => {
+    // Boot-time is the only place this is cheap to notice. At scan time it
+    // surfaces as a mystery `unknown` on a kiosk, hours later.
+    const bad = [
+      [{ handle: async () => ({}) }],
+      [{ namespace: '', handle: async () => ({}) }],
+      [{ namespace: 42, handle: async () => ({}) }],
+      [{ namespace: 'content' }],
+      [{ namespace: 'content', handle: 'nope' }],
+      [null],
+    ];
+    for (const handlers of bad) expect(() => new ScanDispatcher({ handlers })).toThrow();
+  });
+
+  it('constructs with no arguments at all', async () => {
+    const d = new ScanDispatcher();
+    expect(d.namespaces).toEqual([]);
+    expect((await d.dispatch()).status).toBe('unknown');
+  });
+
+  it('exposes the registered namespaces', () => {
+    const d = new ScanDispatcher({
+      handlers: [
+        { namespace: 'content', handle: async () => ({}) },
+        { namespace: 'school', handle: async () => ({}) },
+      ],
+    });
+    expect(d.namespaces).toEqual(['content', 'school']);
+  });
+});
+
+describe('ScanDispatcher — the handler cannot corrupt the Outcome', () => {
+  it('does not let a handler spoof the domain it answered for', async () => {
+    // Attribution is the dispatcher's to assign. A content handler reporting
+    // `domain: 'school'` would make the caller print a worksheet for a scan
+    // school never saw — and would make every log line untrustworthy.
+    const liar = {
+      namespace: 'content',
+      handle: async () => ({ status: 'ok', domain: 'school', physical: 'worksheet' }),
+    };
+    const d = new ScanDispatcher({ handlers: [liar], logger: silent });
+    const out = await d.dispatch({ code: 'go:a:b' });
+    expect(out.domain).toBe('content');
+    // Everything else it returns still wins — only attribution is reserved.
+    expect(out.physical).toBe('worksheet');
+  });
+
+  it('cannot spoof the domain on the failure path either', async () => {
+    const liar = {
+      namespace: 'content',
+      handle: async () => { const e = new Error('x'); e.domain = 'school'; throw e; },
+    };
+    const d = new ScanDispatcher({ handlers: [liar], logger: silent });
+    expect((await d.dispatch({ code: 'go:a:b' })).domain).toBe('content');
+  });
+
+  it('treats a non-object return as no fields, leaving the defaults intact', async () => {
+    // `undefined` is what an async function with no `return` produces, and it
+    // is the likeliest of these in practice. A string is the nastiest: it
+    // spreads to {0:'o',1:'k'} and would decorate the Outcome with numeric keys.
+    for (const bad of [undefined, null, 'ok', 42, true, ['ok'], Symbol('ok')]) {
+      const d = new ScanDispatcher({
+        handlers: [{ namespace: 'content', handle: async () => bad }], logger: silent,
+      });
+      const out = await d.dispatch({ code: 'go:a:b' });
+      expect(out).toEqual({
+        status: 'unknown', domain: 'content', message: '',
+        physical: 'none', printed: false, effect: null,
+      });
+    }
+  });
+
+  it('accepts a null-prototype partial outcome', async () => {
+    const d = new ScanDispatcher({
+      handlers: [{
+        namespace: 'content',
+        handle: async () => Object.assign(Object.create(null), { status: 'ok' }),
+      }],
+      logger: silent,
+    });
+    expect((await d.dispatch({ code: 'go:a:b' })).status).toBe('ok');
+  });
+
+  it('returns a fresh Outcome each time, so one caller cannot poison the next', async () => {
+    const d = new ScanDispatcher({ handlers: [], logger: silent });
+    const a = await d.dispatch({ code: '!!!' });
+    a.status = 'mutated';
+    a.effect = { evil: true };
+    const b = await d.dispatch({ code: '!!!' });
+    expect(b.status).toBe('unknown');
+    expect(b.effect).toBe(null);
+  });
+
+  it('never lets a handler mutate state shared with the next dispatch', async () => {
+    // The handler args are built fresh per dispatch (`{...parsed, device, route}`
+    // over a fresh parse), so a handler that scribbles on its argument — which
+    // is easy to do accidentally, e.g. normalising `body` in place — cannot
+    // reach the next scan. Read the body BEFORE the mutation, or the handler
+    // clobbers the very object the assertion is inspecting.
+    const bodies = [];
+    const args = [];
+    const d = new ScanDispatcher({
+      handlers: [{
+        namespace: 'content',
+        handle: async (a) => {
+          bodies.push(a.body);
+          args.push(a);
+          a.body = 'CLOBBERED';
+          a.namespace = 'school';
+          return { status: 'ok' };
+        },
+      }],
+      logger: silent,
+    });
+    const first = await d.dispatch({ code: 'go:a:b', device: 'k' });
+    const second = await d.dispatch({ code: 'go:a:b', device: 'k' });
+    expect(bodies).toEqual(['a:b', 'a:b']);
+    expect(args[0]).not.toBe(args[1]);
+    // Nor can it retroactively change how the dispatcher attributed the scan.
+    expect(first.domain).toBe('content');
+    expect(second.domain).toBe('content');
+  });
+});
+
+describe('ScanDispatcher — the never-fall-through invariant', () => {
+  const CODES = [
+    'go:office:plex:1', 'cmd:office:volume:30', 'nut:dl:4', 'sch:a7f3k2',
+    'dl:4', 'ct:teapot', 'rs:clear', 'living-room:plex:1', '9780306406157',
+    '041260010682', 'pause', 'gibberish', ':4', '::', ':', 'go:', 'ct:', '',
+    '   ', '\r\n', 'constructor:foo', '__proto__:x', 'NUT:dl:4', '9'.repeat(10000),
+    null, undefined, 42, {}, [], () => {}, Symbol('s'), NaN, Infinity, 0n,
+  ];
+  const ROUTES = [undefined, null, 'content', 'nutribot', 'school', 'nope', '__proto__'];
+
+  it('always resolves to a well-formed Outcome, for every code x route', async () => {
+    const kinds = ['worksheet', 'receipt', 'none'];
+    const d = new ScanDispatcher({
+      handlers: [
+        { namespace: 'content', handle: async () => ({ status: 'ok' }) },
+        { namespace: 'nutrition', handle: async () => { throw new Error('boom'); } },
+        { namespace: 'school', handle: async () => undefined },
+        { namespace: 'product', handle: async () => ({ status: 'logged', printed: true }) },
+      ],
+      routeFallback: { content: 'content', nutribot: 'nutrition', school: 'school' },
+      logger: silent,
+    });
+    for (const code of CODES) {
+      for (const route of ROUTES) {
+        const out = await d.dispatch({ code, device: 'k', route });
+        expect(typeof out.status).toBe('string');
+        expect(out.status.length).toBeGreaterThan(0);
+        expect(out.domain === null || typeof out.domain === 'string').toBe(true);
+        expect(typeof out.message).toBe('string');
+        expect(kinds).toContain(out.physical);
+        expect(typeof out.printed).toBe('boolean');
+        expect(Object.keys(out).sort()).toEqual(
+          ['domain', 'effect', 'message', 'physical', 'printed', 'status'],
+        );
+      }
+    }
+  });
+
+  it('never rejects, whatever the handler does', async () => {
+    const throwers = [
+      () => { throw new Error('async boom'); },
+      () => { throw 'a bare string'; },           // eslint-disable-line no-throw-literal
+      () => { throw null; },                       // eslint-disable-line no-throw-literal
+      () => Promise.reject(new Error('rejected')),
+      () => { throw { message: 'plain object' }; }, // eslint-disable-line no-throw-literal
+    ];
+    for (const impl of throwers) {
+      const d = new ScanDispatcher({
+        handlers: [{ namespace: 'content', handle: impl }], logger: silent,
+      });
+      const out = await d.dispatch({ code: 'go:a:b' });
+      expect(out.status).toBe('failed');
+      expect(out.domain).toBe('content');
+      expect(out.message).toBeTruthy();
+    }
+  });
+
+  it('handles a SYNCHRONOUSLY throwing handle(), not just a rejected promise', async () => {
+    // `handle` is only contractually async. A non-async function that throws
+    // does so before any promise exists, so `await` never sees it — the try
+    // block has to wrap the CALL, not just the await.
+    const d = new ScanDispatcher({
+      handlers: [{ namespace: 'content', handle() { throw new Error('sync boom'); } }],
+      logger: silent,
+    });
+    const out = await d.dispatch({ code: 'go:a:b' });
+    expect(out).toMatchObject({ status: 'failed', domain: 'content' });
+    expect(out.message).toContain('sync boom');
+  });
+
+  it('handles a handler that returns a non-promise', async () => {
+    const d = new ScanDispatcher({
+      handlers: [{ namespace: 'content', handle: () => ({ status: 'ok' }) }], logger: silent,
+    });
+    expect((await d.dispatch({ code: 'go:a:b' })).status).toBe('ok');
+  });
+
+  it('distinguishes nothing-claimed-it from nobody-is-wired-for-it', async () => {
+    // Both are `unknown`, and a caller has to tell them apart WITHOUT parsing
+    // prose: the first is a bad sticker, the second is a deployment gap.
+    const d = new ScanDispatcher({ handlers: [], logger: silent });
+    const unclaimed = await d.dispatch({ code: 'gibberish' });
+    const unwired = await d.dispatch({ code: 'sch:a7f3k2' });
+    expect(unclaimed).toMatchObject({ status: 'unknown', domain: null });
+    expect(unwired).toMatchObject({ status: 'unknown', domain: 'school' });
+    expect(unwired.message).toContain('school');
+  });
+});
+
+describe('ScanDispatcher — logging and pass-through', () => {
+  it('tolerates a missing or partial logger', async () => {
+    for (const logger of [null, undefined, {}, { warn: null }, 'nope']) {
+      const d = new ScanDispatcher({ handlers: [], logger });
+      expect((await d.dispatch({ code: '!!!' })).status).toBe('unknown');
+    }
+  });
+
+  it('logs the unclaimed, unwired and thrown paths', async () => {
+    const logger = { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };
+    const d = new ScanDispatcher({
+      handlers: [{ namespace: 'content', handle: async () => { throw new Error('x'); } }],
+      logger,
+    });
+    await d.dispatch({ code: 'gibberish', device: 'k' });
+    await d.dispatch({ code: 'sch:a', device: 'k' });
+    await d.dispatch({ code: 'go:a:b', device: 'k' });
+    expect(logger.warn).toHaveBeenCalledTimes(2);
+    expect(logger.error).toHaveBeenCalledTimes(1);
+    expect(logger.error.mock.calls[0][1]).toMatchObject({ namespace: 'content', device: 'k' });
+  });
+
+  it('passes device and route through to the handler untouched', async () => {
+    const school = { namespace: 'school', handle: vi.fn(async () => ({ status: 'printed' })) };
+    const d = new ScanDispatcher({ handlers: [school], logger: silent });
+    await d.dispatch({ code: '  sch:a7f3k2\r\n', device: 'kitchen', route: 'school' });
+    expect(school.handle).toHaveBeenCalledWith({
+      namespace: 'school', body: 'a7f3k2', raw: 'sch:a7f3k2', form: 'prefixed',
+      device: 'kitchen', route: 'school',
+    });
+  });
+
+  it('does not trim the body — that is the handler\'s job, deliberately', async () => {
+    // Carry-forward from Task 3: `trim()` cleans the outer edges of the input,
+    // so a space that is leading in the bare form is INTERIOR in the prefixed
+    // form and survives. Trimming here would silently change what `go:` means
+    // for every domain at once, which is exactly the coupling ScanCode's body
+    // convention exists to prevent. Pinned so the next reader sees it is a
+    // decision, not an oversight.
+    const content = { namespace: 'content', handle: vi.fn(async () => ({ status: 'ok' })) };
+    const d = new ScanDispatcher({ handlers: [content], logger: silent });
+    await d.dispatch({ code: 'go: living-room:plex:1' });
+    expect(content.handle).toHaveBeenCalledWith(
+      expect.objectContaining({ body: ' living-room:plex:1' }),
+    );
+  });
+
+  it('is reusable and stateless across dispatches', async () => {
+    const content = { namespace: 'content', handle: vi.fn(async () => ({ status: 'ok' })) };
+    const d = new ScanDispatcher({ handlers: [content], logger: silent });
+    const outs = await Promise.all([
+      d.dispatch({ code: 'go:a' }), d.dispatch({ code: '!!!' }), d.dispatch({ code: 'go:b' }),
+    ]);
+    expect(outs.map((o) => o.status)).toEqual(['ok', 'unknown', 'ok']);
+  });
+});
