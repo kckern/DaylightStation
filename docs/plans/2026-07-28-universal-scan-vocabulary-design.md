@@ -93,7 +93,7 @@ First match wins.
 
 1. **Registered prefix** — `go:` `cmd:` `nut:` `sch:`
 2. **Legacy self-identifying** — bare `dl:` `ct:` `rs:` → nutrition
-3. **Legacy positional** — `BarcodePayload.parse` against known screens/actions/commands
+3. **Legacy positional** — any remaining code containing a colon → content
 4. **Shape** — ISBN (978/979) → books; other digit-only → product
 5. **Reader's `route`** — last resort for anything still unresolved
 6. **Unknown** — explicit outcome
@@ -158,6 +158,28 @@ Generalized, it stops any domain's malformed code leaking into another's.
 **Steps 3 and 4 are disjoint by construction.** Legacy positional parsing requires
 at least one colon; shape detection requires digit-only. They cannot both match, so
 their ordering is not a judgment call.
+
+**Step 3 is a colon-only catch-all, revised 2026-07-28 during implementation.**
+An earlier draft had it run `BarcodePayload.parse` against the known screen,
+action and command lists. That is not buildable at this layer — those lists come
+from config, and `ScanCode` is a pure `2_domains/` module that imports nothing.
+
+Routing every remaining colon-bearing code to content is faithful to today's
+behavior rather than a new risk: `app.mjs` already hands any non-school,
+non-nutribot code to `TriggerEvent` → `BarcodePayload.parse`, which returns null
+when it cannot read it. Two consequences worth stating plainly:
+
+- `unknown` narrows to colon-free, non-digit input. It stays reachable and
+  explicit, but it is no longer where most malformed codes land.
+- A mis-cased code like `SCH:a7f3k2` resolves to content rather than unknown.
+  This is survivable only because claim ≠ success — the content parser refuses
+  what it cannot read instead of guessing.
+
+**A colon-free legacy command (`pause`) resolves to `unknown`** and therefore
+depends on step 5. That is not a regression: on a content-routed reader the
+fallback sends it to content exactly as today, and on a nutribot-routed reader it
+goes to the product lookup exactly as today. It does mean step 5's fallback map
+is required for Phase 1's zero-behavior-change criterion, not optional.
 
 The dispatcher does not own feedback. It returns the Outcome; composition picks the
 channel (school prints a slip, nutrition edits the Telegram prompt, content flashes
