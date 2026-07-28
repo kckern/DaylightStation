@@ -1284,7 +1284,8 @@
 
   &__card {
     display: inline-flex;
-    align-items: flex-start;
+    align-items: center;
+    height: 8.2rem; // fixed — mixed poster aspects must not ragged the row
     gap: 0.55rem;
     padding: 0.55rem 0.75rem;
     border-radius: var(--r-md, 0.75rem);
@@ -1329,22 +1330,19 @@
   &__poster {
     position: relative;
     display: block;
-    width: 4.2rem;
-    // Height follows the image: the FULL artwork shows uncropped (whatever
-    // its aspect), with the dot band appended below via the thumb's margin.
+    height: 7.1rem; // fixed card rhythm — WIDTH follows the image's aspect
     border-radius: 0.45rem;
     overflow: hidden;
     background: #101014; // the dot band under the image
   }
 
   &__thumb {
-    width: 100%;
-    height: auto; // never crop — full poster at natural aspect
+    height: calc(100% - 0.85rem); // image body above the reserved dot band
+    width: auto; // never crop — full poster at natural aspect
     display: block;
-    margin-bottom: 0.85rem; // the reserved dot band
 
     &--fallback {
-      height: 5.2rem; // text tile still needs a body above the band
+      width: 4.2rem; // text tile needs an explicit width
       display: flex;
       align-items: center;
       justify-content: center;
