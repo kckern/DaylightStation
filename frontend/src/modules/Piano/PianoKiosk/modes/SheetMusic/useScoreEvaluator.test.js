@@ -44,6 +44,23 @@ describe('useScoreEvaluator', () => {
     expect(onSilentStop).toHaveBeenCalledTimes(1);
   });
 
+  it('hands onSilentStop the grade that tripped the stop (same-tick summary fold)', () => {
+    // onSilentStop fires from inside the grading effect, in the same tick as the
+    // stopping measure's onMeasureGrade — a caller reading a render-time grades
+    // snapshot would miss exactly that measure (probe: 4 reds graded, reds: 3
+    // logged). The grade has to travel with the callback.
+    const { subscribe } = makeSubscribe();
+    const onSilentStop = vi.fn();
+    const onMeasureGrade = vi.fn();
+    const { rerender } = renderHook((p) => useScoreEvaluator(opts({ subscribe, currentMeasure: p.m, onMeasureGrade, onSilentStop })), { initialProps: { m: 0 } });
+    rerender({ m: 1 }); // measure 0 silent (1)
+    rerender({ m: 2 }); // measure 1 silent (2) → stop
+    expect(onSilentStop).toHaveBeenCalledTimes(1);
+    expect(onSilentStop.mock.calls[0][0]).toMatchObject({ measure: 1, grade: 'red', silent: true });
+    // …and it is the very object the grade callback just reported.
+    expect(onSilentStop.mock.calls[0][0]).toBe(onMeasureGrade.mock.calls.at(-1)[0]);
+  });
+
   it('a non-silent measure resets the silent run', () => {
     const { subscribe, emit } = makeSubscribe();
     const onSilentStop = vi.fn();

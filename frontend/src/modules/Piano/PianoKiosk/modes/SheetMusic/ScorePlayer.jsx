@@ -520,11 +520,14 @@ export default function ScorePlayer({ score: scoreMeta }) {
     const t = tallyGrades(all);
     logRunSummary({ greens: t.green, yellows: t.yellow, reds: t.red, overall: t.overall });
   }, [logRunSummary]);
-  const onSilentStop = useCallback(() => {
+  // `g` is the measure whose silence tripped the stop, handed over by the
+  // evaluator: it was graded in THIS tick, so gradesRef does not have it yet and
+  // the summary would report one red fewer than the run actually earned.
+  const onSilentStop = useCallback((g) => {
     transport.pause();
     setRunActive(false);
     logger.info('score.polish.silent-stop', {});
-    openRunSummary();
+    openRunSummary(g);
   }, [transport, logger, openRunSummary]);
 
   const evaluator = useScoreEvaluator({

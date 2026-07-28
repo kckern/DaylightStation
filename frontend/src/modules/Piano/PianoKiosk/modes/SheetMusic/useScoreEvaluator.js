@@ -24,7 +24,10 @@ import { gradeMeasure } from './scoreEvaluator.js';
  * @param {Function} p.expectedForMeasure - (measure) → number[] of expected midis
  * @param {Function} p.driftForNote       - (note) → drift in ms for a hit
  * @param {Function} p.onMeasureGrade     - onMeasureGrade({ measure, ...grade })
- * @param {Function} p.onSilentStop       - onSilentStop()
+ * @param {Function} p.onSilentStop       - onSilentStop(graded) — receives the
+ *   grade of the measure that tripped the stop. It is produced in the same tick,
+ *   so a caller summarizing the run must fold it in: a render-time grades
+ *   snapshot does not contain it yet.
  */
 export function useScoreEvaluator({
   enabled,
@@ -123,7 +126,8 @@ export function useScoreEvaluator({
         { expected: expectedForMeasureRef.current?.(ending) || [], hits: hitsRef.current },
         cfgRef.current || {},
       );
-      onMeasureGradeRef.current?.({ measure: ending, ...g });
+      const graded = { measure: ending, ...g };
+      onMeasureGradeRef.current?.(graded);
 
       if (g.silent) {
         silentRunRef.current += 1;
@@ -134,7 +138,11 @@ export function useScoreEvaluator({
           !stoppedRef.current
         ) {
           stoppedRef.current = true;
-          onSilentStopRef.current?.();
+          // Hand the stopping measure's grade to the callback: this fires in the
+          // SAME tick as its onMeasureGrade, so a summary opened from here reads a
+          // render-time grades snapshot that is one measure behind (the probe
+          // graded four reds and logged reds: 3).
+          onSilentStopRef.current?.(graded);
         }
       } else {
         silentRunRef.current = 0;
