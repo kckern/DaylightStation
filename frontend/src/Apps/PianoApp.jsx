@@ -53,6 +53,7 @@ import { Playalong } from '../modules/Piano/PianoKiosk/modes/Playalong/Playalong
 import { Composer } from '../modules/Piano/PianoKiosk/modes/Composer/Composer.jsx';
 import PianoTest from '../modules/Piano/PianoKiosk/modes/Test/PianoTest.jsx';
 import KeepAliveVideo from '../modules/Piano/PianoKiosk/KeepAliveVideo.jsx';
+import PianoDesignScale from '../modules/Piano/PianoKiosk/PianoDesignScale.jsx';
 import { PianoMixProvider } from '../modules/Piano/PianoKiosk/PianoMixContext.jsx';
 import { usePianoUser } from '../modules/Piano/PianoKiosk/PianoUserContext.jsx';
 import { useIdleGap } from '../lib/identity/useIdleGap.js';
@@ -369,6 +370,9 @@ function ActivePiano({ pianoId: pianoIdProp, basePath: basePathProp }) {
           SM-T590 kiosk. Outside ConnectGate so it runs on every piano screen,
           including the connect/menu screens. See KeepAliveVideo.jsx. */}
       <KeepAliveVideo />
+      {/* Fixed design canvas: every screen inside lays out at the tablet's
+          resolution and scales to fit whatever browser is looking. */}
+      <PianoDesignScale width={config.display?.designWidth} height={config.display?.designHeight}>
       <PianoUserProvider pianoId={pianoId}>
       <PianoMidiProvider preferredInputName={config.midi.preferredInputName}>
         <PianoWakeLockProvider>
@@ -397,6 +401,7 @@ function ActivePiano({ pianoId: pianoIdProp, basePath: basePathProp }) {
         </PianoWakeLockProvider>
       </PianoMidiProvider>
       </PianoUserProvider>
+      </PianoDesignScale>
     </ActivePianoProvider>
   );
 }
