@@ -92,8 +92,9 @@ export default function ScorePlayer({ score: scoreMeta }) {
   // the initial mode can come from `defaultMode` — the ladder starts at Listen.
   const smCfg = useMemo(() => resolveSheetMusicConfig(config?.sheetmusic), [config]);
   const VALID_MODES = ['listen', 'learn', 'polish', 'perform'];
-  // Per-score practice settings restored device-locally (mode/tempo/range/hands),
-  // so a walk-up user finds the piece the way they left it (Task 2.5).
+  // Per-score practice settings restored device-locally (mode/tempo/hands), so a
+  // walk-up user finds the piece the way they left it (Task 2.5). The practice
+  // LOOP is excluded on purpose — see scoreSettings.js (audit M1).
   const restored = useMemo(() => loadScoreSettings(scoreMeta.id), [scoreMeta.id]);
 
   const [layout, setLayout] = useState({ events: [], notes: [], steps: [], measures: [], tempoEntries: [], width: 0, height: 0, flow: null, scale: null });
@@ -102,10 +103,9 @@ export default function ScorePlayer({ score: scoreMeta }) {
     const m = restored.mode;
     return VALID_MODES.includes(m) ? m : (VALID_MODES.includes(smCfg.defaultMode) ? smCfg.defaultMode : 'learn');
   });
-  const [focus, setFocus] = useState(() => { // Listen/Learn/Polish practice range (measure INDICES) | null = whole piece
-    const f = restored.focus;
-    return f && f.kind && Number.isInteger(f.inMeasure) && Number.isInteger(f.outMeasure) ? f : null;
-  });
+  // Listen/Learn/Polish practice range (measure INDICES) | null = whole piece.
+  // Practice loops are per-session by design — never restored (audit M1).
+  const [focus, setFocus] = useState(null);
   // Guided measure-selection state machine (Loop → Select measures…):
   //   null | { stage: 'first' } | { stage: 'last', inMeasure } (audit J5/M3)
   const [selecting, setSelecting] = useState(null);
@@ -443,11 +443,11 @@ export default function ScorePlayer({ score: scoreMeta }) {
   // Persist practice settings per score (device-local) whenever they change, so the
   // piece reopens the way it was left (Task 2.5). Writes are tiny; cost is trivial.
   useEffect(() => {
-    saveScoreSettings(scoreMeta.id, { mode, tempoMult, focus, activeParts, myStaves: [...myStaves], clickOn });
-  }, [scoreMeta.id, mode, tempoMult, focus, activeParts, myStaves, clickOn]);
+    saveScoreSettings(scoreMeta.id, { mode, tempoMult, activeParts, myStaves: [...myStaves], clickOn });
+  }, [scoreMeta.id, mode, tempoMult, activeParts, myStaves, clickOn]);
 
-  // A restored range references measure indices; drop it if the engraved score has
-  // fewer measures than it expects (the file may have changed since it was saved).
+  // A range references measure indices; drop it if the engraved score has fewer
+  // measures than it expects (a re-engrave can shrink the measure list).
   useEffect(() => {
     const n = layout.measures?.length;
     if (!focus || !n) return;
@@ -1116,7 +1116,6 @@ export default function ScorePlayer({ score: scoreMeta }) {
   // here. Fires once per document (re-engraves from zoom/flow don't re-log).
   const openTsRef = useRef(performance.now());
   const readySentRef = useRef(false);
-  const firstDocRef = useRef(true); // first musicXml effect = mount; don't wipe restored focus
   // Splash: the sidecar scan covers the stage until the engraving is ready (onReady),
   // so the user sees the score's artwork instead of a blank paper during the ~1-2s engrave.
   const [engraveReady, setEngraveReady] = useState(false);
@@ -1127,10 +1126,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
     // all subsequent events (load / follow / polish / focus / mode / transpose) land in it.
     startSession(scoreMeta.id);
     // A new document resets the practice range (measure indices don't carry over).
-    // EXCEPT the very first mount, whose focus may have been restored from storage
-    // (Task 2.5) — guard so restore isn't immediately wiped.
-    if (!firstDocRef.current) { setFocus(null); }
-    firstDocRef.current = false;
+    setFocus(null);
     setSelecting(null);
   }, [scoreMeta.musicXml]); // eslint-disable-line react-hooks/exhaustive-deps
   const onReady = useCallback(() => {
