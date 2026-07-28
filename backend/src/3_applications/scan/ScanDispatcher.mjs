@@ -18,6 +18,11 @@
  * handler that throws: the rejection is caught and becomes
  * `status: 'failed'` carrying the message. `dispatch` never rejects.
  *
+ * The invariant covers the LOGGER too, which is easy to miss because it is not
+ * part of the scan. An injected logger has a transport behind it and can fail;
+ * if it does, the scan must still be answered. See `emit`, and note that the try
+ * around the handler call deliberately contains nothing else.
+ *
  * ## Claim is not success
  *
  * Once a handler has been reached, dispatch is OVER. A refusal is still a claim,
@@ -132,9 +137,36 @@ function toRouteMap(routeFallback) {
   return map;
 }
 
-/** Best-effort structured log; a caller may inject a partial logger, or none. */
+/**
+ * Best-effort structured log. A caller may inject a partial logger, no logger,
+ * or one that is BROKEN — and those are three different problems.
+ *
+ * The `typeof` check only proves a method exists, not that it works. Composition
+ * injects a real structured logger with a transport behind it, and a transport
+ * can fail: a full disk, a closed socket, a serialiser choking on a circular
+ * reference in the data. So the call is wrapped as well as guarded.
+ *
+ * Without the wrapping, a logger fault breaks the never-fall-through invariant
+ * in three places, each for a different structural reason: the two `warn` calls
+ * in `dispatch` sit outside any try at all, and the `debug` call sits INSIDE the
+ * try that decides the outcome — so a logging fault would be caught by the
+ * handler's own catch and downgrade a SUCCESSFUL scan to `failed`, and the
+ * `error` emit that catch then makes would throw again and escape. The default
+ * `console` masks all of it, because Node's console swallows write errors; it
+ * would first surface in production wiring.
+ *
+ * SWALLOWED SILENTLY, deliberately. There is no fallback log and no rethrow: a
+ * logger that just threw is not a logger you can report to, and `console` may be
+ * the very thing that failed. Observability is the one thing a dispatcher may
+ * lose without failing the scan — a person is standing at a scanner waiting for
+ * an answer, and "the log sink was down" is not an answer.
+ */
 function emit(logger, level, event, data) {
-  if (typeof logger?.[level] === 'function') logger[level](event, data);
+  try {
+    if (typeof logger?.[level] === 'function') logger[level](event, data);
+  } catch {
+    // Intentionally empty — see above.
+  }
 }
 
 export class ScanDispatcher {
@@ -209,27 +241,54 @@ export class ScanDispatcher {
       return outcome({ domain: namespace, message: `no handler registered for "${namespace}"` });
     }
 
+    // TWO guarded steps, not one, because calling the handler and READING what
+    // it returned can fail independently — and neither may reject.
+    //
+    // The first try wraps the call and NOTHING ELSE. A logging call inside it
+    // would be caught by its catch and reported as a HANDLER failure, which is
+    // both a lie and a downgrade of a successful scan; keeping `emit` out of it
+    // makes that impossible even if someone later unwraps `emit`.
+    let result;
     try {
-      const result = await handler.handle({ ...parsed, device, route });
-      emit(this.#logger, 'debug', 'scan-handled', {
-        namespace, form: parsed.form, status: result?.status, device,
-      });
+      result = await handler.handle({ ...parsed, device, route });
+    } catch (err) {
+      return this.#failed(namespace, err, { raw: parsed.raw, device, route });
+    }
+
+    // The second try wraps reading the result. A spread INVOKES GETTERS, so a
+    // handler returning `{ get status() { throw } }` explodes at the return
+    // statement — after the first try has closed. Still a handler fault: its own
+    // return value is what could not be read, so `failed` is the honest answer.
+    try {
       // `domain` is applied AFTER the spread, so a handler cannot report itself
       // as another domain. Everything else it returns wins over the defaults;
       // attribution does not.
-      return outcome({ ...(isMergeableObject(result) ? result : {}), domain: namespace });
+      const merged = outcome({ ...(isMergeableObject(result) ? result : {}), domain: namespace });
+      // Read `status` off the MERGED plain object, never off `result` — the
+      // spread has already materialised every getter exactly once, so this
+      // cannot re-enter hostile code, and a logger fault cannot be blamed on
+      // the handler.
+      emit(this.#logger, 'debug', 'scan-handled', {
+        namespace, form: parsed.form, status: merged.status, device,
+      });
+      return merged;
     } catch (err) {
-      // The invariant's last mile: a throwing handler becomes a renderable
-      // failure, never a rejected promise the caller has to remember to catch.
-      emit(this.#logger, 'error', 'scan-handler-threw', {
-        namespace, raw: parsed.raw, device, route, error: err?.message,
-      });
-      return outcome({
-        status: 'failed',
-        domain: namespace,
-        message: err?.message || `scan handler "${namespace}" failed`,
-      });
+      return this.#failed(namespace, err, { raw: parsed.raw, device, route });
     }
+  }
+
+  /** The one way a handler fault becomes an Outcome. Logs, then returns; never throws. */
+  #failed(namespace, err, context) {
+    // The invariant's last mile: a throwing handler becomes a renderable
+    // failure, never a rejected promise the caller has to remember to catch.
+    emit(this.#logger, 'error', 'scan-handler-threw', {
+      namespace, ...context, error: err?.message,
+    });
+    return outcome({
+      status: 'failed',
+      domain: namespace,
+      message: err?.message || `scan handler "${namespace}" failed`,
+    });
   }
 }
 
