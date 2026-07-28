@@ -2,6 +2,7 @@ import { createContext, createElement, useContext, useState, useEffect, useCallb
 import { DaylightAPI } from '../../../lib/api.mjs';
 import getLogger from '../../../lib/logging/Logger.js';
 import { usePianoUser } from './PianoUserContext.jsx';
+import { isPersistentUser } from './pianoUser.js';
 import { usePianoSoundBundle } from './usePianoSoundBundle.js';
 
 let _logger;
@@ -60,7 +61,7 @@ function usePianoPresetState() {
     // are per-user, so one player's saved sounds must never linger under another's
     // name while the new user's preset loads (or if they have none at all).
     setPreset({});
-    if (!currentUser) return undefined;
+    if (!isPersistentUser(currentUser)) return undefined; // guest/null: no server blob (backend 400s guests)
     let cancelled = false;
     DaylightAPI(`api/v1/piano/users/${currentUser}/preset`)
       .then((r) => {
@@ -82,7 +83,7 @@ function usePianoPresetState() {
 
   const saveDefault = useCallback(async (bundle) => {
     const user = userRef.current;
-    if (!user) return;
+    if (!isPersistentUser(user)) return; // guests can't persist sounds — UI hides the buttons too
     setPreset((prev) => ({ ...prev, default: bundle })); // optimistic
     try {
       await DaylightAPI(`api/v1/piano/users/${user}/preset`, { default: bundle }, 'PUT');
@@ -94,7 +95,7 @@ function usePianoPresetState() {
 
   const addFavorite = useCallback(async (bundle) => {
     const user = userRef.current;
-    if (!user) return;
+    if (!isPersistentUser(user)) return; // guests can't persist sounds — UI hides the buttons too
     const key = voiceKey(bundle);
     const existing = Array.isArray(presetRef.current.favorites) ? presetRef.current.favorites : [];
     const deduped = key ? existing.filter((f) => voiceKey(f) !== key) : existing;
@@ -108,7 +109,7 @@ function usePianoPresetState() {
     }
   }, []);
 
-  return { preset, saveDefault, addFavorite };
+  return { preset, saveDefault, addFavorite, canSave: isPersistentUser(currentUser) };
 }
 
 export default usePianoPreset;
