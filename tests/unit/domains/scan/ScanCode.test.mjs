@@ -43,8 +43,11 @@ describe('parseScanCode — registered prefixes', () => {
     // `NUT` is not registered, so step 1 does not claim it and the body is
     // never stripped. It lands on the legacy-positional catch-all rather than
     // `unknown`, which is safe: the content parser owns that grammar and
-    // refuses what it cannot read. What matters here is that a mis-cased tag
-    // NEVER reaches the domain it was aiming at.
+    // refuses what it cannot read. What is guaranteed is narrower than "never
+    // reaches the domain it aimed at" — `GO:x:y` does reach content, because
+    // the catch-all sends everything there. The guarantee is that a mis-cased
+    // tag is never CLAIMED as `prefixed` and its body is never stripped — the
+    // failed tag stays in the body, where the receiving parser will trip on it.
     expect(parseScanCode('NUT:dl:4')).toEqual({
       namespace: 'content', body: 'NUT:dl:4', raw: 'NUT:dl:4', form: 'legacy-positional',
     });
@@ -66,11 +69,14 @@ describe('parseScanCode — registered prefixes', () => {
 });
 
 describe('parseScanCode — the unknown path', () => {
-  it('still has a reachable unknown path: colon-free, non-digit input', () => {
-    // Steps 3 and 4 claim everything with a colon and everything digit-only,
-    // which is most of the space. This is what is left, and it must stay
-    // explicit rather than becoming a fall-through nobody can reach.
-    for (const code of ['gibberish', 'pause', 'a7f3k2', '9780306406157x'])
+  it('still has a reachable unknown path, and it is reachable two ways', () => {
+    // Steps 3 and 4 claim most of the space, so pin down what is left: it must
+    // stay explicit rather than become a fall-through nobody can reach.
+    const noColonNotDigits = ['gibberish', 'pause', 'a7f3k2', '9780306406157x'];
+    // Step 3 needs a NON-EMPTY tag, so a leading colon skips it too, and an
+    // empty tag can never be digits only — see the leading-colon test below.
+    const emptyTag = [':4', ':go:x', ':1:2', '::'];
+    for (const code of [...noColonNotDigits, ...emptyTag])
       expect(parseScanCode(code)).toEqual({
         namespace: null, body: code, raw: code, form: 'unknown',
       });
@@ -127,8 +133,10 @@ describe('parseScanCode — prototype-chain safety', () => {
   });
 
   it('does not let a prototype member masquerade as a legacy nutrition tag', () => {
-    // LEGACY_NUTRITION_TAGS is an array, so `includes` compares values and no
-    // prototype member can match. Same hazard as the registry, different lookup.
+    // `includes` compares values, so no prototype member can match — a `Set`
+    // would be equally safe here. The test exists because step 2 added a SECOND
+    // lookup on the same untrusted input: switch it to an object map and the
+    // registry's hazard reappears in a place nothing else is watching.
     for (const tag of INHERITED)
       expect(parseScanCode(`${tag}:foo`).namespace).not.toBe('nutrition');
   });
@@ -232,8 +240,8 @@ describe('legacy and shape resolution', () => {
 
 describe('shape detection — adversarial', () => {
   it('claims a bare product barcode that used to reach the unknown path', () => {
-    // Before step 4 existed this fell through to `unknown` and the reader's
-    // route decided. Shape now claims it outright, and the body stays whole.
+    // Before step 4 existed this fell through to `unknown`, leaving the caller
+    // to decide. Shape now claims it outright, and the body stays whole.
     expect(parseScanCode('012000161155')).toEqual({
       namespace: 'product', body: '012000161155', raw: '012000161155', form: 'shape',
     });

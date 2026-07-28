@@ -45,10 +45,11 @@
  * 1. `prefixed` — a registered tag above.
  * 2. `legacy-prefixed` — bare `dl:` `ct:` `rs:` → nutrition. The fridge sheet
  *    always self-identified, just without naming its owner.
- * 3. `legacy-positional` — anything else containing a colon → content.
+ * 3. `legacy-positional` — anything else with a NON-EMPTY segment before its
+ *    first colon → content.
  * 4. `shape` — digit-only: 13 digits behind a Bookland prefix → book, otherwise
- *    → product. Nobody prints a `book:` sticker; the publisher's barcode is the
- *    only thing on the object, so shape is the only signal there will ever be.
+ *    → product. Nothing prints a `book:` sticker: the publisher's barcode is
+ *    already on the object, so shape is the only signal available.
  * 6. `unknown` — an explicit outcome, never a fall-through. (Step 5, the
  *    reader's `route`, lives in the dispatcher: this module sees only a string
  *    and knows nothing about which reader sent it.)
@@ -63,20 +64,26 @@
  *
  * **Step 3 is a CATCH-ALL, and deliberately so.** The design calls for parsing
  * against the known screen and command names, but those live in config and this
- * module imports nothing, by layer rule. A colon is therefore the whole test,
- * with two consequences worth stating out loud:
+ * module imports nothing, by layer rule. Having a non-empty tag segment is
+ * therefore the whole test, with two consequences worth stating out loud:
  *
  * - It resolves to `content`, never `command`, even for a legacy command like
  *   `office:volume:30`. The two legacy grammars share one parser
  *   (`BarcodePayload.parse`) and therefore one handler; the content/command
  *   split exists only for the new prefixed forms.
- * - Every unregistered colon-bearing string lands on content, so a mis-cased
- *   `SCH:a7f3k2` resolves to content rather than unknown. That is survivable
- *   because claim is not success: the content parser owns the grammar and
- *   refuses what it cannot read, exactly as it does today for a typo'd sticker.
- *   `unknown` stays reachable for colon-free, non-digit input.
+ * - Every string with a non-empty tag that steps 1 and 2 do not claim lands on
+ *   content, so a mis-cased `SCH:a7f3k2` resolves to content rather than
+ *   unknown — the tag stays in the body, unstripped. That is
+ *   survivable because claim is not success: the content parser owns the grammar
+ *   and refuses what it cannot read, exactly as it does today for a typo'd
+ *   sticker.
  *
- * Steps 3 and 4 are DISJOINT BY CONSTRUCTION — one requires a colon, the other
+ * `unknown` therefore stays reachable two ways: input with no colon that is not
+ * digits only (`gibberish`), and input whose FIRST colon is at index 0
+ * (`:4`, `:go:x`), which has an empty tag and so is excluded from steps 1-3 by
+ * the same guard — and, being non-digit, from step 4 as well.
+ *
+ * Steps 3 and 4 are DISJOINT BY CONSTRUCTION — step 3 requires a colon, step 4
  * requires digits only — so their ordering is not a judgment call and cannot
  * become one.
  *
@@ -107,10 +114,12 @@ export const PREFIX_REGISTRY = Object.freeze(Object.assign(Object.create(null), 
  * The fridge-sheet tags (`ScanVocabularyService`), accepted bare as the legacy
  * form. DEPRECATION SHELF — delete with step 2.
  *
- * A frozen ARRAY, not a Set: `Object.freeze` does not stop `Set.prototype.add`,
- * so a frozen Set would advertise an immutability it does not have. Three
- * entries make `includes` free, and array lookup — unlike object-key lookup —
- * carries no prototype-chain hazard. Exported so the registry-collision
+ * A frozen ARRAY, not a Set: `Object.freeze` does not stop `Set.prototype.add`
+ * — the Set reports `isFrozen` while still accepting new members — so a frozen
+ * Set would advertise an immutability it does not have. Three entries make
+ * `includes` free. (Both are value-based lookups, so unlike the object-keyed
+ * registry above, neither carries a prototype-chain hazard; that is not what
+ * decides between them.) Exported so the registry-collision
  * invariant can be tested against this list rather than a copy of it: a tag
  * here that also appears in PREFIX_REGISTRY would be shadowed by step 1 and
  * would capture every fridge scan in the house.
@@ -138,8 +147,10 @@ export const FORMS = Object.freeze([
  * Shape test only — a 978/979 code that fails its check digit still reads as a
  * book. Validation belongs to the book handler, on the same principle that
  * keeps this module from validating a prefixed body: shape names the owner and
- * stops there. Length is exact, so a 12- or 14-digit code starting `978` is a
- * product, which is what a GTIN-14 with a leading indicator digit actually is.
+ * stops there. Length is exact: a 12- or 14-digit code starting `978` reads as
+ * a product. A GTIN-14 wrapping a book's EAN misses on the prefix as well as
+ * the length, since its leading indicator digit pushes `978` off the front
+ * (`19780306406157` starts `197`).
  */
 function isIsbn13(digits) {
   return digits.length === 13 && ISBN13_PREFIXES.some((p) => digits.startsWith(p));
@@ -147,12 +158,12 @@ function isIsbn13(digits) {
 
 /**
  * Digit-only test. `[0-9]` rather than `\d` states the intent that only ASCII
- * digits count: no scanner emits Arabic-Indic or fullwidth digits for a
- * barcode, and a string of them is far more likely to be a mis-decode than a
- * product. No alternation or nesting, so there is nothing for a 10,000-digit
- * input to backtrack over. The match is on the STRING — a barcode is never
- * coerced to a number, which would eat the leading zero that half the UPCs in a
- * pantry start with.
+ * digits count. A UPC/EAN symbology encodes ASCII digits, so Arabic-Indic or
+ * fullwidth characters arriving here would mean something upstream re-encoded
+ * the payload — better surfaced as `unknown` than claimed as a product. No
+ * alternation or nesting, so there is nothing for a 10,000-digit input to
+ * backtrack over. The match is on the STRING: a barcode is never coerced to a
+ * number, which would drop the leading zeros that UPC-A codes carry.
  */
 const DIGITS_ONLY = /^[0-9]+$/;
 
@@ -173,10 +184,12 @@ export function parseScanCode(code) {
   const raw = typeof code === 'string' ? code.trim() : '';
   if (!raw) return { namespace: null, body: '', raw: '', form: 'unknown' };
 
-  // idx > 0 (not >= 0): a leading colon means an empty tag. `>= 0` would behave
-  // identically today — the lookup would just miss — so this guard states the
-  // intent rather than changing the result. The no-empty-tag invariant test is
-  // what actually keeps the two equivalent; if that ever fails, so does this.
+  // idx > 0 (not >= 0): a leading colon means an empty tag. This USED to be
+  // cosmetic — with only step 1 below, `>= 0` behaved identically because the
+  // registry lookup simply missed. Step 3 changed that: it claims any tag it
+  // reaches, empty or not, so `>= 0` would resolve `:4` and `:go:x` to content
+  // instead of unknown. The guard now decides the outcome, and the
+  // leading-colon test is what holds it.
   const idx = raw.indexOf(':');
   if (idx > 0) {
     const tag = raw.slice(0, idx);
@@ -197,10 +210,13 @@ export function parseScanCode(code) {
     return { namespace: 'content', body: raw, raw, form: 'legacy-positional' };
   }
 
-  // step 4 — shape. Only colon-free strings get here, by the branch above.
+  // step 4 — shape. Reached by input with no colon at all AND by input whose
+  // first colon is at index 0 (an empty tag, excluded from steps 1-3 above).
+  // The latter can never be digits only, so shape still means what it says.
   if (DIGITS_ONLY.test(raw))
     return { namespace: isIsbn13(raw) ? 'book' : 'product', body: raw, raw, form: 'shape' };
 
-  // step 6 — unknown. Explicit outcome: colon-free and not a digit string.
+  // step 6 — unknown. Explicit outcome, not a fall-through: input with no
+  // non-empty tag and no digit-only shape. `gibberish` and `:4` both land here.
   return { namespace: null, body: raw, raw, form: 'unknown' };
 }
