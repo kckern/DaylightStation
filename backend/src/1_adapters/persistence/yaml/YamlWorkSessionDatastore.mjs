@@ -123,6 +123,10 @@ export class YamlWorkSessionDatastore extends IWorkSessionRepository {
       unitId: state.unitId,
       state: state.state,
       open: !state.terminal,
+      // The gating question ("has this unit been passed?") must be answerable
+      // from the index alone, or the planner would reduce every session a
+      // learner has ever had just to draw one agenda.
+      result: state.outcome?.result ?? null,
       updatedAt: (last && typeof last === 'object' ? last.at : null) ?? null,
     };
     await fs.writeFile(file, dumpYaml(index), 'utf8');
@@ -172,8 +176,8 @@ export class YamlWorkSessionDatastore extends IWorkSessionRepository {
     return events.reduce((m, e) => Math.max(m, seqOf(e)), 0) + 1;
   }
 
-  /** @inheritdoc */
-  async listOpenForLearner(learnerId) {
+  /** Every indexed row for a learner, newest day first. */
+  async #rowsFor(learnerId) {
     if (typeof learnerId !== 'string' || learnerId.trim() === '') return [];
     const out = [];
     for (const day of await this.#days()) {
@@ -181,17 +185,41 @@ export class YamlWorkSessionDatastore extends IWorkSessionRepository {
       const raw = await this.#readYaml(path.join(this.#root(), day, INDEX_FILE));
       if (!raw || typeof raw !== 'object' || Array.isArray(raw)) continue;
       Object.entries(raw)
-        .filter(([, row]) => row && typeof row === 'object' && row.open && row.learnerId === learnerId)
-        .forEach(([sessionId, row]) => out.push({
-          sessionId,
-          learnerId: row.learnerId,
-          unitId: row.unitId ?? null,
-          state: row.state ?? null,
-          day,
-          updatedAt: row.updatedAt ?? null,
-        }));
+        .filter(([, row]) => row && typeof row === 'object' && row.learnerId === learnerId)
+        .forEach(([sessionId, row]) => out.push({ sessionId, day, row }));
     }
     return out; // days already newest-first
+  }
+
+  /** @inheritdoc */
+  async listOpenForLearner(learnerId) {
+    return (await this.#rowsFor(learnerId))
+      .filter(({ row }) => row.open)
+      .map(({ sessionId, day, row }) => ({
+        sessionId,
+        learnerId: row.learnerId,
+        unitId: row.unitId ?? null,
+        state: row.state ?? null,
+        day,
+        updatedAt: row.updatedAt ?? null,
+      }));
+  }
+
+  /** @inheritdoc */
+  async listForLearner(learnerId) {
+    return (await this.#rowsFor(learnerId)).map(({ sessionId, day, row }) => ({
+      sessionId,
+      learnerId: row.learnerId,
+      unitId: row.unitId ?? null,
+      state: row.state ?? null,
+      // A session written before the index carried a result reduces to
+      // `open: true, result: null`, which reads as "unfinished" — the safe
+      // direction: worst case a completed unit is offered again.
+      terminal: row.open === false,
+      outcome: row.result ? { result: row.result } : null,
+      day,
+      updatedAt: row.updatedAt ?? null,
+    }));
   }
 }
 

@@ -55,6 +55,22 @@ export class IWorkSessionRepository {
   }
 
   /**
+   * Every session this learner has, open or finished — the planner's input.
+   *
+   * Gating asks "has this unit been passed?", which no list of OPEN sessions can
+   * answer. Returning derived facts (not events) is what keeps drawing one
+   * agenda from reducing a whole term's history.
+   *
+   * @param {string} learnerId
+   * @returns {Promise<Array<{ sessionId: string, learnerId: string, unitId: string|null,
+   *                          state: string|null, terminal: boolean,
+   *                          outcome: {result: string}|null, day: string, updatedAt: string|null }>>}
+   */
+  async listForLearner(learnerId) {
+    throw new Error('IWorkSessionRepository.listForLearner must be implemented');
+  }
+
+  /**
    * The seq the next appended event will carry. Advisory only — see `appendEvent`.
    *
    * @param {string} sessionId
