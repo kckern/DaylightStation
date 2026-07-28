@@ -22,6 +22,13 @@
  * a `failed` annotation says why, and the child's receipt still prints. Coins
  * are the least important thing on that piece of paper.
  *
+ * SIGN-OFF IS A CLAIM, SO IT CARRIES A NAME. `signedOff` releases a reward the
+ * unit says a grown-up must approve, and it arrives as a boolean in a request
+ * body — a child could once close their own session with `{signedOff: true}`
+ * and pay themselves. The claim now names the person making it and is checked
+ * against the household roster. Closing WITHOUT a sign-off needs nobody:
+ * settling a result is not the privileged part, approving the coins is.
+ *
  * SETTLING PRINTS. Building a result document and handing it back to a caller
  * was not enough: on a FAIL that document carries the retry ticket, and a retry
  * ticket that never leaves the printer is a loop the child cannot close — they
@@ -39,7 +46,7 @@ import { planLearnerWork } from '#domains/school/planner.mjs';
 
 export class CloseSessionOutcome {
   #curriculum; #sessions; #tokens; #assignments; #economy; #economyAction; #economyEnabled;
-  #receipts; #clock; #rng; #logger;
+  #receipts; #grownUps; #clock; #rng; #logger;
 
   /**
    * @param {object} deps
@@ -53,6 +60,8 @@ export class CloseSessionOutcome {
    * @param {import('../ReceiptPrinting.mjs').ReceiptPrinting} [deps.receipts] - puts
    *   the result document on the roll. Optional so an install with no receipt
    *   printer still settles; every result then reports `printed: false`.
+   * @param {import('../GrownUpGate.mjs').GrownUpGate} deps.grownUps - who may
+   *   approve a reward; required, so the check cannot be omitted by wiring
    * @param {() => Date} [deps.clock]
    * @param {() => number} [deps.rng]
    * @param {object} [deps.logger]
@@ -60,11 +69,12 @@ export class CloseSessionOutcome {
   constructor({
     curriculum, sessions, tokens, assignments,
     economy = null, economyAction = 'school-unit-complete', economyEnabled = false,
-    receipts = null, clock = () => new Date(), rng = Math.random, logger = console,
+    receipts = null, grownUps = null, clock = () => new Date(), rng = Math.random, logger = console,
   } = {}) {
     if (!curriculum || !sessions || !tokens || !assignments) {
       throw new Error('CloseSessionOutcome requires curriculum, sessions, tokens and assignments');
     }
+    if (!grownUps) throw new Error('CloseSessionOutcome requires grownUps (a GrownUpGate)');
     this.#curriculum = curriculum;
     this.#sessions = sessions;
     this.#tokens = tokens;
@@ -73,6 +83,7 @@ export class CloseSessionOutcome {
     this.#economyAction = economyAction;
     this.#economyEnabled = economyEnabled;
     this.#receipts = receipts;
+    this.#grownUps = grownUps;
     this.#clock = clock;
     this.#rng = rng;
     this.#logger = logger;
@@ -82,6 +93,8 @@ export class CloseSessionOutcome {
    * @param {object} args
    * @param {string} args.sessionId
    * @param {boolean} [args.signedOff] - a grown-up has approved the reward
+   * @param {string} [args.signedOffBy] - the roster id of that grown-up;
+   *   required (and checked) whenever `signedOff` is true
    * @returns {Promise<{ status: 'settled'|'already_settled'|'unavailable',
    *                     sessionId: string, outcomeId: string|null,
    *                     result: string|null, percent: number|null,
@@ -92,7 +105,13 @@ export class CloseSessionOutcome {
    *   `printed` is whether the result document actually reached the roll — a
    *   false here on a FAIL means the retry ticket is not in the child's hand.
    */
-  async execute({ sessionId, signedOff = false } = {}) {
+  async execute({ sessionId, signedOff = false, signedOffBy = null } = {}) {
+    if (signedOff === true) {
+      this.#grownUps.assert(signedOffBy, 'Only a grown-up can sign off a reward', {
+        action: 'close.signoff', sessionId,
+      });
+    }
+
     const nowIso = this.#clock().toISOString();
     const state = reduceSession(await this.#sessions.readEvents(sessionId));
     if (!state.sessionId) return this.#unavailable(sessionId, 'We could not find that work.');

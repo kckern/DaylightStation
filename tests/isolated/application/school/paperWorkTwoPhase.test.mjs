@@ -5,7 +5,7 @@ import { CurriculumAccess } from '#apps/school/CurriculumAccess.mjs';
 import { questionItemIds } from '#domains/school/documents/documentValidation.mjs';
 import {
   FakeCatalog, FakeSessionRepository, FakeFormMapStore, FakeReviewQueue,
-  fakeClock, silentLogger,
+  fakeClock, fakeGrownUps, silentLogger,
 } from '#testlib/school/lifecycleFakes.mjs';
 import {
   rawUnits, rawDocuments, rawManifests, BANK_IDS, OMR_UNIT,
@@ -60,7 +60,10 @@ beforeEach(async () => {
     curriculum, sessions, formMaps: new FakeFormMapStore(), reviewQueue, bankReader,
     clock: clock.now, logger: silentLogger,
   });
-  grade = new GradeSubmission({ curriculum, sessions, reviewQueue, grader, bankReader, clock: clock.now, logger: silentLogger });
+  grade = new GradeSubmission({
+    curriculum, sessions, reviewQueue, grader, bankReader,
+    grownUps: fakeGrownUps(clock), clock: clock.now, logger: silentLogger,
+  });
 
   await sessions.appendEvent(SID, { type: 'created', at: clock.iso(), sessionId: SID, learnerId: 'kid1', unitId: OMR_UNIT });
   await sessions.appendEvent(SID, { type: 'issued', at: clock.iso(), sessionId: SID, artifactId: 'art_1' });

@@ -17,12 +17,19 @@
  * The session only reaches `graded` when EVERY question on the sheet has a
  * verdict. Until then it sits at `submitted`, whose printed next action is "a
  * grown-up will check this" — waiting, not wedged.
+ *
+ * A PERSON'S VERDICT NEEDS A PERSON. `gradedBy` overrides the engine and is
+ * written into the durable verdict sheet, so it is authority rather than a
+ * label — and it arrives from an HTTP body. Any call carrying `verdicts` is
+ * therefore checked against the household roster before a single one is
+ * recorded. A sheet the ENGINE marks needs no identity: nobody is claiming
+ * anything.
  */
 import { reduceSession, createEvent } from '#domains/school/sessions/sessionEvents.mjs';
 import { questionItemIds } from '#domains/school/documents/documentValidation.mjs';
 
 export class GradeSubmission {
-  #curriculum; #sessions; #reviewQueue; #grader; #bankReader; #clock; #logger;
+  #curriculum; #sessions; #reviewQueue; #grader; #bankReader; #grownUps; #clock; #logger;
 
   /**
    * @param {object} deps
@@ -32,18 +39,23 @@ export class GradeSubmission {
    * @param {{openSession: Function, answer: Function}} deps.grader - `SchoolService`;
    *   the existing engine, injected rather than reimplemented
    * @param {{getBank: (id: string) => object|null}} [deps.bankReader]
+   * @param {import('../GrownUpGate.mjs').GrownUpGate} deps.grownUps - who may
+   *   hand down a verdict; required, because a gate that can be left out is a
+   *   gate that will be
    * @param {() => Date} [deps.clock]
    * @param {object} [deps.logger]
    */
-  constructor({ curriculum, sessions, reviewQueue, grader, bankReader = null, clock = () => new Date(), logger = console } = {}) {
+  constructor({ curriculum, sessions, reviewQueue, grader, bankReader = null, grownUps = null, clock = () => new Date(), logger = console } = {}) {
     if (!curriculum || !sessions || !reviewQueue || !grader) {
       throw new Error('GradeSubmission requires curriculum, sessions, reviewQueue and grader');
     }
+    if (!grownUps) throw new Error('GradeSubmission requires grownUps (a GrownUpGate)');
     this.#curriculum = curriculum;
     this.#sessions = sessions;
     this.#reviewQueue = reviewQueue;
     this.#grader = grader;
     this.#bankReader = bankReader;
+    this.#grownUps = grownUps;
     this.#clock = clock;
     this.#logger = logger;
   }
@@ -53,13 +65,23 @@ export class GradeSubmission {
    * @param {string} args.sessionId
    * @param {Record<string,*>} [args.entries] - itemId → given, for machine grading
    * @param {Record<string,'correct'|'incorrect'>} [args.verdicts] - a person's marks
-   * @param {string} [args.gradedBy] - who marked the review items
+   * @param {string} [args.gradedBy] - the roster id of the grown-up who marked
+   *   the review items; required (and checked) whenever `verdicts` is non-empty
    * @returns {Promise<{ status: 'graded'|'awaiting_review'|'duplicate'|'unavailable',
    *                     sessionId: string, percent: number|null, correct: number,
    *                     expected: number, attemptIds: string[], outstanding: string[],
    *                     message: string, pointsAt?: object }>}
    */
   async execute({ sessionId, entries = {}, verdicts = {}, gradedBy = null } = {}) {
+    // Before anything is read, let alone written: a human verdict is a claim of
+    // authority over a child's work, and this is the only place it can be
+    // checked once for every caller — HTTP, a scan, or a reconciliation job.
+    if (Object.values(verdicts ?? {}).some((v) => v === 'correct' || v === 'incorrect')) {
+      this.#grownUps.assert(gradedBy, 'Only a grown-up can mark a child\'s work', {
+        action: 'grade.verdicts', sessionId,
+      });
+    }
+
     const nowIso = this.#clock().toISOString();
     const state = reduceSession(await this.#sessions.readEvents(sessionId));
     if (!state.sessionId) return this.#unavailable(sessionId, 'We could not find that work.');

@@ -219,16 +219,22 @@ export function createSchoolLifecycleRouter({
   }
 
   if (gradeSubmission) {
-    router.post('/sessions/:sessionId/grade', asyncHandler(async (req, res) => {
+    // `gradedBy` is checked in the use case whenever verdicts are present: a
+    // person's mark overrides the engine, so it has to be a person who may.
+    router.post('/sessions/:sessionId/grade', guarded(async (req, res) => {
       const { entries = {}, verdicts = {}, gradedBy = null } = req.body || {};
       reply(res, await gradeSubmission.execute({ sessionId: req.params.sessionId, entries, verdicts, gradedBy }));
     }));
   }
 
   if (closeSessionOutcome) {
-    router.post('/sessions/:sessionId/close', asyncHandler(async (req, res) => {
-      const { signedOff = false } = req.body || {};
-      reply(res, await closeSessionOutcome.execute({ sessionId: req.params.sessionId, signedOff: signedOff === true }));
+    // Closing is open; claiming the grown-up's approval that releases a reward
+    // is not, and the use case checks `signedOffBy` for it.
+    router.post('/sessions/:sessionId/close', guarded(async (req, res) => {
+      const { signedOff = false, signedOffBy = null } = req.body || {};
+      reply(res, await closeSessionOutcome.execute({
+        sessionId: req.params.sessionId, signedOff: signedOff === true, signedOffBy,
+      }));
     }));
   }
 
