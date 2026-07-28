@@ -8,7 +8,7 @@ const basePianoCfg = () => ({ videos: { collections: [
   { label: 'Music Appreciation', plex: ['plex:200'] },
 ] } });
 
-function makeDeps({ summaries }) {
+function makeDeps({ summaries, itemCounts = {} }) {
   PIANO_CFG = basePianoCfg();
   // summaries: { [userId]: { [showId]: { completed, total, lastPlayedAt } } }
   return {
@@ -23,13 +23,25 @@ function makeDeps({ summaries }) {
         : [{ ratingKey: '20', title: 'Appreciation X', thumb: '/img/x' }]),
     },
     fitnessPlayableService: {
-      getPlayableEpisodes: async (id) => ({ info: {}, items: [{ plex: `${id}-e1` }, { plex: `${id}-e2` }] }),
+      getPlayableEpisodes: async (id) => ({
+        info: {},
+        items: Array.from({ length: itemCounts[id] ?? 2 }, (_, i) => ({ plex: `${id}-e${i + 1}` })),
+      }),
     },
     userVideoProgressStore: {
       progressFileMtime: () => 1,
-      summarize: (items, userId) => {
+      // Flat (single-unit) shows: the summary {completed, total, lastPlayedAt}
+      // maps to per-item enrichment — first `completed` items watched, newest
+      // activity stamped on the first item.
+      enrich: (items, userId) => {
         const showId = String(items[0].plex).split('-')[0];
-        return summaries[userId]?.[showId] || { completed: 0, total: items.length, lastPlayedAt: null };
+        const s = summaries[userId]?.[showId];
+        if (!s || !s.lastPlayedAt) return items;
+        return items.map((it, i) => ({
+          ...it,
+          userWatched: i < s.completed,
+          userLastPlayedAt: i === 0 ? s.lastPlayedAt : null,
+        }));
       },
     },
     logger: { info: () => {}, warn: () => {}, debug: () => {} },
@@ -57,15 +69,42 @@ test('default slot: incomplete courses by highest percent, 100% courses dropped'
 });
 
 test('default slot ranks by percent (highest first), not recency', async () => {
-  const deps = makeDeps({ summaries: {
-    kc: {
-      10: { completed: 1, total: 10, lastPlayedAt: '2026-07-26T00:00:00Z' }, // 10%, newest
-      11: { completed: 8, total: 10, lastPlayedAt: '2026-07-20T00:00:00Z' }, // 80%, older
+  const deps = makeDeps({
+    summaries: {
+      kc: {
+        10: { completed: 1, lastPlayedAt: '2026-07-26T00:00:00Z' }, // 1/10 = 10%, newest
+        11: { completed: 8, lastPlayedAt: '2026-07-20T00:00:00Z' }, // 8/10 = 80%, older
+      },
     },
-  } });
+    itemCounts: { 10: 10, 11: 10 },
+  });
   const uc = new GetRecentCourseActivity(deps);
   const { players } = await uc.execute();
   assert.deepEqual(players[0].courses.map((c) => c.courseId), ['plex:11', 'plex:10']);
+  assert.equal(players[0].courses[0].percent, 80);
+});
+
+test('percent reflects the current module, not the whole program', async () => {
+  const deps = makeDeps({ summaries: {} });
+  // One show, two 2-lecture units; kc finished unit s1 and is 1-of-2 into s2
+  // (course-wide that is 3/4 = 75%; the card must say 50% — the current module).
+  deps.fitnessPlayableService.getPlayableEpisodes = async () => ({ info: {}, items: [
+    { plex: 'e1', parentId: 's1' }, { plex: 'e2', parentId: 's1' },
+    { plex: 'e3', parentId: 's2' }, { plex: 'e4', parentId: 's2' },
+  ] });
+  deps.userVideoProgressStore.enrich = (items, userId) => (userId !== 'kc' ? items : items.map((it) => ({
+    ...it,
+    userWatched: ['e1', 'e2', 'e3'].includes(it.plex),
+    userLastPlayedAt: it.plex === 'e3' ? '2026-07-26T00:00:00Z'
+      : (it.plex === 'e1' ? '2026-07-01T00:00:00Z' : null),
+  })));
+  const uc = new GetRecentCourseActivity(deps);
+  const { players } = await uc.execute();
+  const c = players[0].courses[0];
+  assert.equal(c.completed, 1);           // current module s2: 1 of 2
+  assert.equal(c.total, 2);
+  assert.equal(c.percent, 50);            // NOT 75 course-wide
+  assert.equal(c.courseCompleted, false); // course-level flag stays whole-course
 });
 
 test('menu_activity.slots config overrides the default (recent-courses)', async () => {
@@ -122,13 +161,13 @@ test('duplicate rows from the raw children container collapse to one course', as
   assert.equal(players[0].courses[0].courseId, 'plex:10');
 });
 
-test('caps each player at 4 course thumbnails, most recent kept', async () => {
+test('caps each player at 2 course thumbnails (equal percents break ties by recency)', async () => {
   const deps = makeDeps({ summaries: {
     kc: {
       10: { completed: 1, total: 2, lastPlayedAt: '2026-07-21T00:00:00Z' },
       11: { completed: 1, total: 2, lastPlayedAt: '2026-07-22T00:00:00Z' },
       12: { completed: 1, total: 2, lastPlayedAt: '2026-07-23T00:00:00Z' },
-      13: { completed: 1, total: 2, lastPlayedAt: '2026-07-24T00:00:00Z' },
+      13: { completed: 1, total: 2, lastPlayedAt: '2026-07-24T00:00:00Z' }, // newest
       14: { completed: 1, total: 2, lastPlayedAt: '2026-07-20T00:00:00Z' }, // oldest — dropped
     },
   } });
@@ -137,8 +176,8 @@ test('caps each player at 4 course thumbnails, most recent kept', async () => {
     : []);
   const uc = new GetRecentCourseActivity(deps);
   const { players } = await uc.execute();
-  assert.equal(players[0].courses.length, 4);
-  assert.deepEqual(players[0].courses.map((c) => c.courseId), ['plex:13', 'plex:12', 'plex:11', 'plex:10']);
+  assert.equal(players[0].courses.length, 2);
+  assert.deepEqual(players[0].courses.map((c) => c.courseId), ['plex:13', 'plex:12']);
 });
 
 test('appreciation collections are out of scope', async () => {

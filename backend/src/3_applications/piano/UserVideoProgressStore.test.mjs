@@ -110,7 +110,7 @@ describe('UserVideoProgressStore.enrich', () => {
     expect(result[0].userPercent).toBeUndefined();
   });
 
-  it('adds all 5 fields; completed entry -> userWatched true, missing entry -> nulls/false', () => {
+  it('adds all 6 fields; completed entry -> userWatched true, missing entry -> nulls/false', () => {
     const store = makeStore();
     store.record({ userId: USER, plexId: '100', percent: 95, seconds: 100, engaged: true });
     const items = store.enrich([{ id: '100' }, { id: '200' }], USER);
@@ -121,6 +121,7 @@ describe('UserVideoProgressStore.enrich', () => {
     expect(done.userWatched).toBe(true);
     expect(done.userEngaged).toBe(true);
     expect(done.userCompletedAt).toBeTruthy();
+    expect(done.userLastPlayedAt).toBeTruthy(); // stamped by record()
 
     const none = items[1];
     expect(none.userPercent).toBe(null);
@@ -128,6 +129,7 @@ describe('UserVideoProgressStore.enrich', () => {
     expect(none.userWatched).toBe(false);
     expect(none.userEngaged).toBe(false);
     expect(none.userCompletedAt).toBe(null);
+    expect(none.userLastPlayedAt).toBe(null);
   });
 
   it('legacy tolerance: engagementCount>0 (no engaged) -> userEngaged true and userWatched at >=90%', () => {

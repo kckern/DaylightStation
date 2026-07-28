@@ -99,7 +99,8 @@ export class UserVideoProgressStore {
   /**
    * Enrich playable items with this user's progress fields. Items are matched by
    * their plex/id. Adds userPercent, userPlayhead, userWatched, userEngaged,
-   * userCompletedAt. If the user is unknown, items are returned unchanged.
+   * userCompletedAt, userLastPlayedAt. If the user is unknown, items are
+   * returned unchanged.
    */
   enrich(items, userId) {
     if (!Array.isArray(items)) return items;
@@ -121,6 +122,7 @@ export class UserVideoProgressStore {
         userWatched,
         userEngaged: engaged,
         userCompletedAt: up.completedAt || null,
+        userLastPlayedAt: up.lastPlayed || null,
       };
     });
   }
