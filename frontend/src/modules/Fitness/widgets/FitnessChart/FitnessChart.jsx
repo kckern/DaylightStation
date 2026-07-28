@@ -25,7 +25,7 @@ import { createChartDataSource } from './sessionDataAdapter.js';
 import { computeScaleBasisValue } from './logScaleBasis.js';
 import { useGovernanceExemptions } from '@/hooks/fitness/useGovernanceExemptions.js';
 import { computeRaceBands, computeSeamLines, computeChallengeMarkers, computeVideoMarkers, withBadgeXs, snapChallengeEndsToZoneTicks } from '../FitnessSessionDetailWidget/timelineOverlay.js';
-import { resolveSessionStartMs } from '../FitnessSessionDetailWidget/sessionDetailUtils.js';
+import { resolveSessionStartMs, resolvePrimaryMediaKey } from '../FitnessSessionDetailWidget/sessionDetailUtils.js';
 import { getChallengeMarkerColor } from '@/modules/Fitness/lib/activities/challengeTypeRegistry.js';
 import { resolveHistoricalParticipant } from './resolveHistoricalParticipant.js';
 export { resolveHistoricalParticipant } from './resolveHistoricalParticipant.js';
@@ -855,7 +855,7 @@ const RaceChartSvgBase = ({ paths, avatars, badges, connectors = EMPTY_ARRAY, xT
 const RaceChartSvg = React.memo(RaceChartSvgBase);
 RaceChartSvg.displayName = 'RaceChartSvg';
 
-const FitnessChart = ({ mode, onClose, config, onMount, sessionData }) => {
+const FitnessChart = ({ mode, onClose, config, onMount, sessionData, primaryMediaKey }) => {
 	useRenderProfiler('FitnessChart');
 	// Exempt participants are excluded from the y-scale basis (logScaleBasis.js).
 	const exemptions = useGovernanceExemptions();
@@ -1323,7 +1323,11 @@ const FitnessChart = ({ mode, onClose, config, onMount, sessionData }) => {
 		if (!(seams?.length) && !(activities?.length) && !hasEvents) return null;
 		const innerWidth = Math.max(1, chartWidth - CHART_MARGIN.left - CHART_MARGIN.right);
 		const intervalMs = Number(src?.timeline?.interval_seconds) > 0 ? Number(src.timeline.interval_seconds) * 1000 : 5000;
-		const opts = { intervalMs, effectiveTicks, plotWidth: innerWidth, marginLeft: CHART_MARGIN.left, sessionStartMs: resolveSessionStartMs(src) };
+		const opts = {
+			intervalMs, effectiveTicks, plotWidth: innerWidth, marginLeft: CHART_MARGIN.left,
+			sessionStartMs: resolveSessionStartMs(src),
+			primaryMediaKey: primaryMediaKey ?? resolvePrimaryMediaKey(src)
+		};
 		// Per-tick zone ids, keyed the same way the timeline/gutter do (entry.id || entry.profileId).
 		const zoneSeriesByUser = {};
 		for (const entry of chartParticipants || []) {
@@ -1349,7 +1353,7 @@ const FitnessChart = ({ mode, onClose, config, onMount, sessionData }) => {
 			top: CHART_MARGIN.top,
 			bottom: chartHeight - CHART_MARGIN.bottom,
 		};
-	}, [isHistorical, sessionData, effectiveTicks, chartWidth, chartHeight, chartParticipants, chartGetSeries]);
+	}, [isHistorical, sessionData, effectiveTicks, chartWidth, chartHeight, chartParticipants, chartGetSeries, primaryMediaKey]);
 
 	const hasData = allEntries.length > 0 && paths.length > 0;
 

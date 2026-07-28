@@ -14,7 +14,8 @@ import './FitnessSessionDetailWidget.scss';
 import { formatFitnessDate } from '@/modules/Fitness/lib/dateFormatter.js';
 import { getActivityDisplay, primaryActivity } from '@/modules/Fitness/lib/activities/fitnessActivityRegistry.jsx';
 import { selectPrimaryMedia, buildSelectionConfig } from '@/hooks/fitness/selectPrimaryMedia.js';
-import { mediaDisplayUrl, resolveSessionStartMs } from './sessionDetailUtils.js';
+import { mediaDisplayUrl, resolveSessionStartMs, mediaIdentityKey } from './sessionDetailUtils.js';
+import { selectVideoMarkerEvents } from './timelineOverlay.js';
 import { deriveRecap } from './recapVideo.js';
 import { useSettledRecapPlay } from './recapPlayback.js';
 
@@ -249,6 +250,9 @@ export default function FitnessSessionDetailWidget({ sessionId }) {
 
     return {
       title,
+      // Identity of the video the header shows — the overlay layers leave this one
+      // out of the marker gutter, so they must agree on it with the header.
+      primaryMediaKey: pm ? mediaIdentityKey(pm) : null,
       activityPoster: actDisplay?.Poster || null,
       activityAccent: actDisplay?.accent || null,
       showTitle: pm?.showTitle || pm?.grandparentTitle || null,
@@ -326,11 +330,12 @@ export default function FitnessSessionDetailWidget({ sessionId }) {
   const ChartComponent = registry.get('fitness:chart');
 
   // The center gutter holds only video-change cards now (challenge badges live at the
-  // top of the line chart), so it earns its 66px only when there IS a video change:
-  // >1 non-audio media event. Strava-map sessions never show it.
+  // top of the line chart), so it earns its 66px only when a card will actually render.
+  // Same selection the gutter uses, so the band never opens empty. Strava-map sessions
+  // never show it.
   const events = sessionData?.timeline?.events;
-  const hasVideoChanges = !header?.stravaHasMap && Array.isArray(events) &&
-    events.filter((e) => e?.type === 'media' && e?.data?.contentType !== 'track' && !e?.data?.artist).length > 1;
+  const hasVideoChanges = !header?.stravaHasMap &&
+    selectVideoMarkerEvents(events, header?.primaryMediaKey).length > 0;
 
   return (
     <div className="session-detail">
@@ -546,7 +551,7 @@ export default function FitnessSessionDetailWidget({ sessionId }) {
             elevation={sessionData.strava?.totalElevationGain}
           />
         ) : ChartComponent ? (
-          <ChartComponent sessionData={sessionData} mode="standalone" />
+          <ChartComponent sessionData={sessionData} mode="standalone" primaryMediaKey={header?.primaryMediaKey} />
         ) : (
           <Text c="dimmed" ta="center" py="xl">Chart not available</Text>
         )}
@@ -555,13 +560,13 @@ export default function FitnessSessionDetailWidget({ sessionId }) {
       {/* Marker gutter — icons + labels live here; charts above/below draw the indicators */}
       {hasVideoChanges && (
         <div className="session-detail__gutter">
-          <MarkerGutter sessionData={sessionData} />
+          <MarkerGutter sessionData={sessionData} primaryMediaKey={header?.primaryMediaKey} />
         </div>
       )}
 
       {/* Timeline (35%) */}
       <div className="session-detail__timeline">
-        <FitnessTimeline sessionData={sessionData} maxAvatarSize={posterWidth} />
+        <FitnessTimeline sessionData={sessionData} maxAvatarSize={posterWidth} primaryMediaKey={header?.primaryMediaKey} />
       </div>
     </div>
   );
