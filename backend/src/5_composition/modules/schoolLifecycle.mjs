@@ -84,19 +84,27 @@ function cryptoRng(crypto) {
  * @param {object} [deps.eventBus]
  * @param {object} [deps.thermalPrinterRegistry] - the house receipt-printer registry
  * @param {object} [deps.playbackAdapter] - real playback target; null until §8 lands
+ * @param {() => Date} [deps.clock] - the ONE clock the whole lifecycle reads.
+ *   Grace windows, token expiry and the UTC day boundary of a payout are all
+ *   decided from it, so nothing downstream calls `Date.now()` and a test states
+ *   the time rather than waiting for it. Defaults to the wall clock.
+ * @param {() => number} [deps.rng] - draws in [0,1) for token minting. Defaults
+ *   to the platform CSPRNG; a caller passes a seeded one only to make a run
+ *   reproducible.
  * @param {object} [deps.logger]
  * @returns {Promise<{
  *   wired: boolean, reason: string|null,
  *   handlesCode: (code: string) => boolean,
  *   handleScan: ((args: {code: string, device?: string}) => Promise<object>)|null,
  *   reporter: object|null, router: object|null, devicesRouter: object|null,
- *   useCases: object, stores: object, devices: object,
+ *   useCases: object, stores: object, devices: object, renderers: object,
  * }>}
  */
 export async function createSchoolLifecycle({
   configService, householdId = null, schoolService,
   economyService = null, userService = null, eventBus = null,
-  thermalPrinterRegistry = null, playbackAdapter = null, logger = console,
+  thermalPrinterRegistry = null, playbackAdapter = null,
+  clock = () => new Date(), rng = null, logger = console,
 } = {}) {
   const cfg = configService.getHouseholdAppConfig?.(householdId, 'school') || {};
   const lifecycleCfg = cfg.lifecycle || {};
@@ -106,7 +114,8 @@ export async function createSchoolLifecycle({
     logger.info?.('school.lifecycle.unwired', { reason });
     return {
       wired: false, reason, handlesCode: () => false, handleScan: null,
-      reporter: null, router: null, devicesRouter: null, useCases: {}, stores: {}, devices: {},
+      reporter: null, router: null, devicesRouter: null,
+      useCases: {}, stores: {}, devices: {}, renderers: {},
     };
   };
 
@@ -231,8 +240,7 @@ export async function createSchoolLifecycle({
   };
 
   // --- collaborators ---------------------------------------------------------
-  const rng = cryptoRng(globalThis.crypto);
-  const clock = () => new Date();
+  const draw = rng ?? cryptoRng(globalThis.crypto);
   const curriculum = new CurriculumAccess({
     catalog: stores.catalog,
     // Read per call, never captured: banks warm asynchronously after boot, and
@@ -248,12 +256,12 @@ export async function createSchoolLifecycle({
   // --- use cases -------------------------------------------------------------
   const buildAgenda = new BuildAgenda({
     curriculum, assignments: stores.assignments, sessions: stores.sessions, tokens: stores.tokens,
-    clock, rng, tokenTtlHours: lifecycleCfg.tokenTtlHours ?? 48, logger,
+    clock, rng: draw, tokenTtlHours: lifecycleCfg.tokenTtlHours ?? 48, logger,
   });
   const issueDocument = new IssueDocument({
     curriculum, sessions: stores.sessions, tokens: stores.tokens,
     renderer: documentRenderer, printer: laserPrinter, formMaps: stores.formMaps,
-    bankReader, clock, rng, logger,
+    bankReader, clock, rng: draw, logger,
   });
   const dispatchMedia = playback
     ? new DispatchMedia({
@@ -282,7 +290,7 @@ export async function createSchoolLifecycle({
     economy: economyService,
     economyAction: lifecycleCfg.economy?.action || 'school-unit-complete',
     economyEnabled: lifecycleCfg.economy?.enabled === true,
-    clock, rng, logger,
+    clock, rng: draw, logger,
   });
   const openRemediation = new OpenRemediation({ curriculum, sessions: stores.sessions, clock, logger });
   const resolvePersonalCard = new ResolvePersonalCard({
@@ -352,8 +360,14 @@ export async function createSchoolLifecycle({
     router,
     devicesRouter,
     useCases,
-    stores,
+    // `curriculum` is the read model every use case above shares — the same
+    // cache, so a caller reading a unit sees exactly what the console saw.
+    stores: { ...stores, curriculum },
     devices,
+    // The two renderers this console built, exposed for inspection. Neither is
+    // reachable any other way, and a caller that wants to know whether a
+    // document can be drawn on 58mm tape should ask the one that will draw it.
+    renderers: { document: documentRenderer, receipt: receiptRenderer },
   };
 }
 

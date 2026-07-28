@@ -308,7 +308,17 @@ describe('scenario 4 — failing, retrying, and being paid exactly once', () => 
     expect(retryState.variant).toBe(1);                   // a different form
     expect(retryState.issuedArtifacts).toEqual([retry.effect.artifactId]);
     expect(retry.effect.artifactId).not.toBe(firstArtifact);
-    expect(h.renderCalls.map((c) => c.variant)).toEqual([0, 1]);
+
+    // A retry is different PAPER: a second job in the tray whose bytes are not
+    // the first one's. WHICH form the renderer was asked for is pinned at the
+    // unit level (issueDocument.test.mjs) and recorded on the session above —
+    // the harness no longer wraps the renderer to count calls, because a
+    // wrapper production does not have is the parallel construction this suite
+    // exists to be free of.
+    const [firstJob, retryJob] = h.printedPdfs();
+    const firstBytes = (await h.readPrintedPdf(firstJob.jobId)).pdf;
+    const retryBytes = (await h.readPrintedPdf(retryJob.jobId)).pdf;
+    expect(retryBytes.equals(firstBytes)).toBe(false);
 
     // The original keeps its own evidence and is terminal.
     const originalState = await h.sessionState(firstSession);
@@ -586,6 +596,15 @@ describe('scenario 9 — a scan with nobody behind it', () => {
     expect(foreign.status).toBe('not_school');
     expect(foreign.physical).toBe('none');
     expect(h.receiptTexts()).toEqual([]);
+    // The relay asks the console `handlesCode` BEFORE handing anything over —
+    // an EAN belongs to the nutrition route, and a console that claimed it
+    // would swallow every grocery scan in the house.
+    expect(h.consoleClaimedLastScan()).toBe(false);
+  });
+
+  it('claims its own tokens at the relay branch', async () => {
+    await h.scanCard();
+    expect(h.consoleClaimedLastScan()).toBe(true);
   });
 });
 

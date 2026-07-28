@@ -1,31 +1,50 @@
 /**
  * The School physical-console lifecycle harness.
  *
- * Everything else in this subsystem is tested in isolation, against doubles.
- * That proves each part works alone. It does not prove a child can do a piece of
- * schoolwork. This harness builds the WHOLE object graph — real use cases, real
- * domain, real renderers (MathJax + pdfkit), real YAML persistence on a temp
- * data dir — and swaps in the virtual devices for the four things that are
- * physical: the laser printer, the receipt printer, the playback target, and the
- * mark reader. Nothing else is faked.
+ * IT BOOTS THE PRODUCTION COMPOSITION. This file calls
+ * `createSchoolLifecycle(...)` — the exact function `app.mjs` calls — on a temp
+ * data dir with `virtualDevices: true`, and drives the graph that comes back.
+ * It constructs no store, no renderer and no use case of its own. Everything a
+ * test touches is the object the house would be running.
  *
- * WHAT A TEST ASSERTS ON. Observable artifacts only: the transcript of what came
- * off the receipt roll, the PDF bytes that landed in the tray, the form map that
- * was stored, the event log on disk, the coin ledger. A use case that returns a
- * tidy object while printing a piece of paper a child cannot act on has failed,
- * and only artifact-level assertions can see that.
+ * WHY THAT IS THE WHOLE POINT. The harness used to hand-assemble eight
+ * datastores, both renderers and all ten use cases in parallel with the
+ * composition root. Every "harness green, production broken" defect in this
+ * build came out of that gap: the missing asset resolver, the result receipt
+ * that was never printed on close-out, and two barcodes that scanned to
+ * nothing. The harness was testing one system while the console shipped
+ * another. Now a wiring mistake in `5_composition/modules/schoolLifecycle.mjs`
+ * is a failing test by construction.
  *
- * THE CLOCK IS INJECTED THROUGHOUT. Nothing in the lifecycle path reads
- * `Date.now()`, so grace windows, token expiry and UTC day boundaries are
- * things a test states rather than waits for.
+ * WHAT IS STILL SUPPLIED FROM OUTSIDE, and why each one is legitimate:
  *
- * NOTHING HERE STANDS IN FOR PRODUCTION. The harness used to carry three
- * compensations for gaps in the composition root — an ESC/POS receipt renderer,
- * a variant-carrying document-renderer adapter, and an inline asset lookup —
- * and each one hid a defect that made the real console unusable. All three now
- * live in `backend/` and the harness imports the same ones the composition root
- * wires. If a production seam is missing, this file must FAIL rather than fill
- * it in.
+ *   configService, userService  — system-layer inputs. The real ones read the
+ *                                 house's YAML; these read the temp dir.
+ *   schoolService, economyService — collaborators `app.mjs` also builds outside
+ *                                 the lifecycle and passes in. Same arguments,
+ *                                 same order, one wrapper that COUNTS payouts
+ *                                 without changing any.
+ *   eventBus                    — the house bus. `broadcast` is what the relay
+ *                                 uses; `subscribe` is this harness standing in
+ *                                 for app.mjs's relay branch, which it copies.
+ *   clock, rng                  — determinism controls, now first-class
+ *                                 parameters of the composition itself.
+ *
+ * The only test-only object built here is `receiptCanvasRenderer`: an ORACLE,
+ * wired into nothing, used to answer "could this document be drawn on 58mm
+ * tape?" The composition deliberately prints ESC/POS items instead, and says so.
+ *
+ * WHAT A TEST ASSERTS ON. Observable artifacts only: the transcript off the
+ * receipt roll, the PDF bytes in the tray, the form map that was stored, the
+ * event log on disk, the coin ledger. A use case that returns a tidy object
+ * while printing paper a child cannot act on has failed, and only
+ * artifact-level assertions can see that.
+ *
+ * A KNOWN PRODUCTION GAP, stated rather than papered over: nothing in the
+ * composition subscribes a playback-completion signal to
+ * `RecordMediaCompletion`. `playToEnd()` therefore stops the virtual player and
+ * then calls the use case off the graph directly. When that correlation is
+ * wired, this method should shrink to the stop alone.
  *
  * @module tests/_lib/school/lifecycleHarness
  */
@@ -35,42 +54,12 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import yaml from 'js-yaml';
 
-import { YamlCurriculumDatastore } from '#adapters/persistence/yaml/YamlCurriculumDatastore.mjs';
-import { YamlWorkSessionDatastore } from '#adapters/persistence/yaml/YamlWorkSessionDatastore.mjs';
-import { YamlTokenRegistry } from '#adapters/persistence/yaml/YamlTokenRegistry.mjs';
-import { YamlFormMapStore } from '#adapters/persistence/yaml/YamlFormMapStore.mjs';
-import { YamlAssignmentStore } from '#adapters/persistence/yaml/YamlAssignmentStore.mjs';
-import { YamlReviewQueue } from '#adapters/persistence/yaml/YamlReviewQueue.mjs';
+import { createSchoolLifecycle } from '#composition/modules/schoolLifecycle.mjs';
 import { YamlSchoolDatastore } from '#adapters/persistence/yaml/YamlSchoolDatastore.mjs';
 import { YamlEconomyDatastore } from '#adapters/persistence/yaml/YamlEconomyDatastore.mjs';
-
-import { VirtualLaserPrinterAdapter } from '#adapters/hardware/laser-printer/VirtualLaserPrinterAdapter.mjs';
-import { VirtualThermalPrinterAdapter } from '#adapters/hardware/thermal-printer/VirtualThermalPrinterAdapter.mjs';
-import { VirtualPlaybackAdapter } from '#adapters/hardware/playback/VirtualPlaybackAdapter.mjs';
-import { VirtualScannerAdapter } from '#adapters/hardware/scanner/VirtualScannerAdapter.mjs';
-import { VirtualOmrReader } from '#adapters/hardware/omr/VirtualOmrReader.mjs';
-
-import { createDocumentPdfRenderer } from '#rendering/school/documents/DocumentPdfRenderer.mjs';
-import { createDocumentReceiptRenderer } from '#rendering/school/documents/DocumentReceiptRenderer.mjs';
-import { createDocumentEscPosRenderer } from '#rendering/school/documents/DocumentEscPosRenderer.mjs';
-import { createFileAssetResolver } from '#rendering/school/documents/assetResolver.mjs';
-
-import { CurriculumAccess } from '#apps/school/CurriculumAccess.mjs';
-import { ReceiptPrinting } from '#apps/school/ReceiptPrinting.mjs';
 import { SchoolService } from '#apps/school/SchoolService.mjs';
 import { EconomyService } from '#apps/economy/EconomyService.mjs';
-
-import { BuildAgenda } from '#apps/school/usecases/BuildAgenda.mjs';
-import { ResolvePersonalCard } from '#apps/school/usecases/ResolvePersonalCard.mjs';
-import { ResolveScanAction } from '#apps/school/usecases/ResolveScanAction.mjs';
-import { IssueDocument } from '#apps/school/usecases/IssueDocument.mjs';
-import { DispatchMedia } from '#apps/school/usecases/DispatchMedia.mjs';
-import { RecordMediaCompletion } from '#apps/school/usecases/RecordMediaCompletion.mjs';
-import { SubmitPaperWork } from '#apps/school/usecases/SubmitPaperWork.mjs';
-import { GradeSubmission } from '#apps/school/usecases/GradeSubmission.mjs';
-import { CloseSessionOutcome } from '#apps/school/usecases/CloseSessionOutcome.mjs';
-import { OpenRemediation } from '#apps/school/usecases/OpenRemediation.mjs';
-
+import { createDocumentReceiptRenderer } from '#rendering/school/documents/DocumentReceiptRenderer.mjs';
 import { mintToken } from '#domains/school/sessions/tokens.mjs';
 import { reduceSession } from '#domains/school/sessions/sessionEvents.mjs';
 
@@ -92,13 +81,14 @@ export const DEFAULT_LEARNER = 'kid1';
 export const DEFAULT_GROWNUP = 'grownup1';
 
 const HOUR_MS = 3_600_000;
+const SCAN_TOPIC = 'barcode-relay';
 const silent = { info() {}, warn() {}, error() {}, debug() {} };
 
 // ---------------------------------------------------------------------------
 // small deterministic primitives
 // ---------------------------------------------------------------------------
 
-/** A clock a test moves by hand. Every collaborator below reads this one. */
+/** A clock a test moves by hand. The composition reads this one. */
 export function harnessClock(startIso = '2026-07-27T09:00:00.000Z') {
   let at = Date.parse(startIso);
   if (Number.isNaN(at)) throw new Error(`harnessClock: not an ISO timestamp: ${startIso}`);
@@ -118,11 +108,6 @@ export function seededRng(seed = 20260727) {
     s = (Math.imul(s, 1103515245) + 12345) >>> 0;
     return s / 4294967296;
   };
-}
-
-function sequentialIds(prefix) {
-  let n = 0;
-  return () => `${prefix}${String(++n).padStart(3, '0')}`;
 }
 
 // ---------------------------------------------------------------------------
@@ -152,9 +137,9 @@ function seedDataDir(dataDir) {
   // Banks live in the EXISTING quiz tree, because paper is graded by the same
   // engine and the same banks the on-screen quiz uses (spec §7.1).
   copyTree(path.join(FIXTURE_DIR, 'banks'), path.join(dataDir, 'content', 'quizzes'));
-  // Artwork, at the path the COMPOSITION ROOT resolves refs against. The
-  // harness used to hand the renderer an inline resolver, which is exactly how
-  // production shipped with none at all and nobody noticed.
+  // Artwork, at the path the COMPOSITION ROOT resolves refs against — nothing
+  // here tells it where that is, which is the point: production shipped with no
+  // resolver at all and nobody noticed, because the harness had its own.
   const strips = path.join(dataDir, 'content', 'assets', 'school', 'math');
   fs.mkdirSync(strips, { recursive: true });
   fs.copyFileSync(STRIPS_SVG_FILE, path.join(strips, 'fraction-strips.svg'));
@@ -191,8 +176,20 @@ export async function createLifecycleHarness({
 
   const clock = harnessClock(startIso);
   const rng = seededRng();
-  const now = () => clock.now();
 
+  // --- what school.yml would say in a house running the console -------------
+  const schoolConfig = {
+    virtualDevices: true,
+    lifecycle: {
+      enabled: true,
+      tokenTtlHours,
+      media: {
+        graceSec,
+        targets: [{ id: 'school-screen', label: 'the school screen', child_selectable: true }],
+      },
+      economy: { enabled: economyEnabled, action: 'school-unit-complete' },
+    },
+  };
   const economyConfig = {
     earn: {
       'school-unit-complete': { reward: economyReward, per: 'completion', daily_cap: 1000 },
@@ -203,133 +200,106 @@ export async function createLifecycleHarness({
     getDataDir: () => dataDir,
     getUserDir: (id) => path.join(dataDir, 'users', String(id)),
     getUserProfile: (id) => roster.find((r) => r.id === id) ?? null,
-    getHouseholdAppConfig: (_hid, app) => (app === 'economy' ? economyConfig : null),
+    getHouseholdAppConfig: (_hid, app) => {
+      if (app === 'school') return schoolConfig;
+      if (app === 'economy') return economyConfig;
+      return null;
+    },
   };
   const userService = {
     getHouseholdRoster: () => roster.map((r) => ({ ...r })),
     getProfile: (id) => roster.find((r) => r.id === id) ?? null,
   };
 
-  // --- persistence (real) --------------------------------------------------
-  const curriculumStore = new YamlCurriculumDatastore({ configService });
-  const sessions = new YamlWorkSessionDatastore({ configService });
-  const tokens = new YamlTokenRegistry({ configService });
-  const formMaps = new YamlFormMapStore({ configService });
-  const assignments = new YamlAssignmentStore({ configService });
-  const reviewQueue = new YamlReviewQueue({ configService });
+  // --- the collaborators app.mjs builds OUTSIDE the lifecycle and passes in --
   const schoolDatastore = new YamlSchoolDatastore({ configService });
-  const economyDatastore = new YamlEconomyDatastore({ configService });
-
-  // --- hardware (virtual) --------------------------------------------------
-  const busEvents = [];
-  const eventBus = { broadcast: (topic, payload) => { busEvents.push({ topic, payload }); } };
-
-  const laser = new VirtualLaserPrinterAdapter({
-    captureDir: path.join(dataDir, 'captures', 'laser'), logger, clock: now,
-  });
-  const thermal = new VirtualThermalPrinterAdapter(
-    { captureDir: path.join(dataDir, 'captures', 'thermal') },
-    { logger, clock: now },
-  );
-  const playback = new VirtualPlaybackAdapter({
-    eventBus, targets: ['school-screen'], logger, clock: now,
-  });
-  const omr = new VirtualOmrReader({ eventBus, readerId: 'virtual-omr', logger });
-
-  // --- rendering (real) ----------------------------------------------------
-  // The SAME resolver the composition root wires, against the same data-dir
-  // layout — so "the asset is missing" fails here exactly as it would in the
-  // house rather than being papered over by a lookup table.
-  const realPdfRenderer = createDocumentPdfRenderer({
-    resolveAsset: createFileAssetResolver({
-      rootDir: path.join(dataDir, 'content', 'assets'), logger,
-    }),
-  });
-  // OBSERVATION ONLY — it changes nothing and decides nothing. `render` is the
-  // production one; this records what it was asked for so a test can say "the
-  // retry asked for form 1", which no artifact reveals on a sheet that has no
-  // form map. If this ever needs to ALTER a call, that is a production gap and
-  // belongs in the composition root instead.
-  const renderCalls = [];
-  const pdfRenderer = {
-    render(document, opts = {}) {
-      renderCalls.push({ documentId: document.id, variant: opts.variant ?? document.variant ?? 0 });
-      return realPdfRenderer.render(document, opts);
-    },
-  };
-  const receiptRenderer = createDocumentEscPosRenderer();
-  // The real thermal renderer, used as a PROBE: it is what proves a receipt
-  // document can actually be drawn on tape (it refuses `omr_response`, for one).
-  const receiptCanvasRenderer = createDocumentReceiptRenderer();
-
-  // --- application (real) --------------------------------------------------
-  const curriculum = new CurriculumAccess({
-    catalog: curriculumStore,
-    bankIds: () => schoolDatastore.listBankIds(),
-    ttlMs: 0,
-    clock: () => clock.epoch(),
-    logger,
-  });
-
-  const grader = new SchoolService({
+  const schoolService = new SchoolService({
     datastore: schoolDatastore, userService, logger, now: () => clock.epoch(),
   });
-  const bankReader = { getBank: (bankId) => { try { return grader.getBank(bankId); } catch { return null; } } };
-
+  // The boot pre-warm app.mjs does (`warmSchoolBanks`). `listBanks()` is a SYNC
+  // read of a cache that fills asynchronously, and the lifecycle resolves every
+  // unit's `bank:` ref against it — so without this the two units that name a
+  // bank silently vanish from a child's agenda.
+  await schoolService.warmBanks({ force: true });
+  const economyDatastore = new YamlEconomyDatastore({ configService });
   const economy = new EconomyService({ datastore: economyDatastore, configService, logger });
+
+  // Counting, not deciding: every call is forwarded to the real service
+  // untouched. `economyCalls` is how a test says "and it was asked exactly once".
   const economyCalls = [];
-  const countingEconomy = {
-    earn: async (userId, args) => {
-      economyCalls.push({ userId, ...args });
-      return economy.earn(userId, args);
+  const countingEconomy = new Proxy(economy, {
+    get(target, prop, receiver) {
+      const value = Reflect.get(target, prop, receiver);
+      if (prop !== 'earn' || typeof value !== 'function') {
+        return typeof value === 'function' ? value.bind(target) : value;
+      }
+      return async (userId, args) => {
+        economyCalls.push({ userId, ...args });
+        return target.earn(userId, args);
+      };
+    },
+  });
+
+  // --- the house bus --------------------------------------------------------
+  const busEvents = [];
+  const subscribers = new Map();
+  const eventBus = {
+    broadcast: (topic, payload) => {
+      busEvents.push({ topic, payload });
+      for (const fn of subscribers.get(topic) ?? []) fn(payload);
+    },
+    subscribe: (topic, fn) => {
+      if (!subscribers.has(topic)) subscribers.set(topic, []);
+      subscribers.get(topic).push(fn);
+      return () => {};
     },
   };
 
-  const receipts = new ReceiptPrinting({ renderer: receiptRenderer, printer: thermal, logger });
-
-  const buildAgenda = new BuildAgenda({
-    curriculum, assignments, sessions, tokens,
-    clock: now, rng, newSessionId: sequentialIds('ses_'), tokenTtlHours, logger,
-  });
-  const issueDocument = new IssueDocument({
-    curriculum, sessions, tokens, renderer: pdfRenderer, printer: laser, formMaps, bankReader,
-    clock: now, rng, newArtifactId: sequentialIds('art_'), logger,
-  });
-  const dispatchMedia = new DispatchMedia({
-    curriculum, sessions, playback,
-    targets: [{ id: 'school-screen', label: 'the school screen', child_selectable: true }],
-    clock: now, logger,
-  });
-  const recordMediaCompletion = new RecordMediaCompletion({ curriculum, sessions, clock: now, graceSec, logger });
-  const submitPaperWork = new SubmitPaperWork({ curriculum, sessions, formMaps, reviewQueue, bankReader, clock: now, logger });
-  const gradeSubmission = new GradeSubmission({ curriculum, sessions, reviewQueue, grader, bankReader, clock: now, logger });
-  const closeSessionOutcome = new CloseSessionOutcome({
-    curriculum, sessions, tokens, assignments, receipts,
-    economy: countingEconomy, economyAction: 'school-unit-complete', economyEnabled,
-    clock: now, rng, logger,
-  });
-  const openRemediation = new OpenRemediation({
-    curriculum, sessions, clock: now, newSessionId: sequentialIds('rem_'), logger,
-  });
-  const resolvePersonalCard = new ResolvePersonalCard({
-    buildAgenda, receipts, roster: { displayName: (id) => userService.getProfile(id)?.name ?? null }, logger,
-  });
-  const resolveScanAction = new ResolveScanAction({
-    tokens, sessions, curriculum, resolvePersonalCard, issueDocument,
-    dispatchMedia, openRemediation, receipts, clock: now, logger,
-  });
-
-  // --- the scanner routes into the one entry point -------------------------
-  let inFlight = Promise.resolve(null);
-  const scanner = new VirtualScannerAdapter({
+  // =========================================================================
+  // THE PRODUCTION GRAPH
+  // =========================================================================
+  const lifecycle = await createSchoolLifecycle({
+    configService,
+    householdId: null,
+    schoolService,
+    economyService: countingEconomy,
+    userService,
     eventBus,
-    onScan: (payload) => {
-      inFlight = resolveScanAction.execute({ code: payload.code, device: payload.device });
-    },
-    defaultDevice: 'school-desk',
+    clock: () => clock.now(),
+    rng,
     logger,
-    clock: now,
   });
+  if (!lifecycle.wired) {
+    throw new Error(`the school composition refused to wire: ${lifecycle.reason}`);
+  }
+
+  const { useCases, stores, devices } = lifecycle;
+  const laser = devices.laserPrinter;
+  const thermal = devices.thermalPrinter;
+  const { playback, omrReader: omr, scanner } = devices;
+  for (const [name, device] of Object.entries({ laser, thermal, playback, omr, scanner })) {
+    if (!device) throw new Error(`the composition wired no ${name} under virtualDevices: true`);
+  }
+
+  // --- the relay branch, copied from app.mjs --------------------------------
+  // A scanner anywhere in the house offers every code to the console; the
+  // console's own predicate decides whether it is one of ours. Both halves are
+  // production's, so a change to either shows up here.
+  let inFlight = Promise.resolve(null);
+  let lastClaimed = null;
+  eventBus.subscribe(SCAN_TOPIC, (relay) => {
+    lastClaimed = lifecycle.handlesCode(relay.code);
+    inFlight = lifecycle.handleScan({ code: relay.code, device: relay.device });
+  });
+
+  // --- the ORACLE (wired into nothing) --------------------------------------
+  // Proves a document CAN be drawn on 58mm tape — it refuses `omr_response`,
+  // for one. The console prints ESC/POS items instead, on purpose.
+  const receiptCanvasRenderer = createDocumentReceiptRenderer();
+
+  const bankReader = {
+    getBank: (bankId) => { try { return schoolService.getBank(bankId); } catch { return null; } },
+  };
 
   // Personal cards. An identify token never expires, which is what makes a card
   // the recovery path for every other failure.
@@ -339,7 +309,7 @@ export async function createLifecycleHarness({
       tokenClass: 'identify', subject: { learnerId: learner.id }, at: clock.iso(), rng,
     });
     // eslint-disable-next-line no-await-in-loop
-    await tokens.put(record);
+    await stores.tokens.put(record);
     scanner.registerCard(learner.id, record.token);
     cards[learner.id] = record.token;
   }
@@ -362,7 +332,7 @@ export async function createLifecycleHarness({
     .map((item) => ({ token: String(item.content), label: String(item.label ?? '') }));
 
   /** Every session this learner has, newest first, as derived facts. */
-  const sessionRows = async (learnerId = currentLearner) => sessions.listForLearner(learnerId);
+  const sessionRows = async (learnerId = currentLearner) => stores.sessions.listForLearner(learnerId);
 
   async function sessionIdFor(unitId, learnerId = currentLearner) {
     const rows = await sessionRows(learnerId);
@@ -373,10 +343,10 @@ export async function createLifecycleHarness({
   }
 
   async function stateOf(sessionId) {
-    return reduceSession(await sessions.readEvents(sessionId));
+    return reduceSession(await stores.sessions.readEvents(sessionId));
   }
 
-  /** The artifact this session last had printed, and the form map behind it. */
+  /** The artifact this session last had printed. */
   async function lastArtifactId(sessionId) {
     return (await stateOf(sessionId)).issuedArtifacts.at(-1) ?? null;
   }
@@ -386,16 +356,17 @@ export async function createLifecycleHarness({
     dataDir,
     clock,
     cards,
+    /** The graph itself, for a test that wants to assert on the wiring. */
+    lifecycle,
     devices: { laser, thermal, playback, omr, scanner },
-    stores: { sessions, tokens, formMaps, assignments, reviewQueue, schoolDatastore, curriculum },
-    useCases: {
-      buildAgenda, issueDocument, dispatchMedia, recordMediaCompletion,
-      submitPaperWork, gradeSubmission, closeSessionOutcome, openRemediation,
-      resolvePersonalCard, resolveScanAction,
-    },
+    stores,
+    useCases,
+    renderers: lifecycle.renderers,
     economyCalls,
     busEvents,
-    renderCalls,
+
+    /** Did the console's OWN predicate claim the last scanned code? */
+    consoleClaimedLastScan() { return lastClaimed; },
 
     /** Which learner the shorthand methods act for. */
     as(learnerId) { currentLearner = learnerId; return harness; },
@@ -403,7 +374,7 @@ export async function createLifecycleHarness({
 
     // --- setup ---------------------------------------------------------------
     async assign({ learnerId = currentLearner, courses = [COURSE_ID], units = [] } = {}) {
-      return assignments.put({ learnerId, courses, units, updatedAt: clock.iso() });
+      return stores.assignments.put({ learnerId, courses, units, updatedAt: clock.iso() });
     },
 
     // --- scanning ------------------------------------------------------------
@@ -463,7 +434,7 @@ export async function createLifecycleHarness({
     /** The stored form map for a session's most recent sheet. */
     async formMapFor(sessionId) {
       const artifactId = await lastArtifactId(sessionId);
-      return artifactId ? formMaps.get(artifactId) : null;
+      return artifactId ? stores.formMaps.get(artifactId) : null;
     },
     async lastFormMap(unitId = OMR_UNIT) {
       const sessionId = lastScan?.sessionId ?? await sessionIdFor(unitId);
@@ -471,9 +442,8 @@ export async function createLifecycleHarness({
     },
 
     /**
-     * Draw the last receipt on the REAL thermal renderer. Nothing about the
-     * item list proves a document can be put on tape — this does, and it is the
-     * probe that catches a block the receipt target refuses.
+     * Draw a document on the REAL thermal canvas renderer. Nothing about an
+     * item list proves a document can be put on tape — this does.
      */
     async probeReceiptRendering(document) {
       const canvas = await receiptCanvasRenderer.createCanvas(document, {});
@@ -483,15 +453,16 @@ export async function createLifecycleHarness({
     // --- media ---------------------------------------------------------------
 
     /**
-     * Play the current dispatch to the end and let the completion signal reach
-     * the lifecycle — the correlation the composition root subscribes for.
+     * Play the current dispatch to the end and let the completion reach the
+     * lifecycle. See the module header: the composition wires no subscriber for
+     * this yet, so the use case is called off the graph directly.
      */
     async playToEnd({ sessionId = lastScan?.sessionId, dispatchId = null } = {}) {
       const id = dispatchId ?? lastScan?.effect?.dispatchId
         ?? playback.listDispatches().at(-1)?.dispatchId;
       if (!id) throw new Error('playToEnd: nothing has been dispatched');
       const record = playback.playToEnd(id);
-      lastResult = await recordMediaCompletion.execute({
+      lastResult = await useCases.recordMediaCompletion.execute({
         sessionId, learnerId: currentLearner, dispatchId: record.dispatchId, verified: 'playhead',
       });
       return lastResult;
@@ -505,7 +476,7 @@ export async function createLifecycleHarness({
       return playback.interrupt(id);
     },
 
-    async checkStalled(sessionId) { return recordMediaCompletion.checkStalled({ sessionId }); },
+    async checkStalled(sessionId) { return useCases.recordMediaCompletion.checkStalled({ sessionId }); },
 
     // --- paper in ------------------------------------------------------------
 
@@ -521,7 +492,7 @@ export async function createLifecycleHarness({
       const formMap = await harness.formMapFor(id);
       if (!formMap) throw new Error(`omrSubmit: no form map stored for session ${id}`);
       const sheet = omr.scanSheet({ formMap, chosen, ambiguous, blank });
-      lastResult = await submitPaperWork.fromOmrSheet({ sessionId: id, sheet, submittedBy });
+      lastResult = await useCases.submitPaperWork.fromOmrSheet({ sessionId: id, sheet, submittedBy });
       return lastResult;
     },
 
@@ -559,7 +530,7 @@ export async function createLifecycleHarness({
     async handIn({ sessionId = null, entries = {}, ambiguous = [], blank = [], submittedBy = DEFAULT_GROWNUP } = {}) {
       const id = sessionId ?? lastScan?.sessionId;
       if (!id) throw new Error('handIn: no session to submit against');
-      lastResult = await submitPaperWork.execute({ sessionId: id, entries, ambiguous, blank, submittedBy });
+      lastResult = await useCases.submitPaperWork.execute({ sessionId: id, entries, ambiguous, blank, submittedBy });
       return lastResult;
     },
 
@@ -573,9 +544,9 @@ export async function createLifecycleHarness({
       if (!id) throw new Error('parentGrades: no session to mark');
       const state = await stateOf(id);
       if (state.state === 'issued' || state.state === 'reprinted' || state.state === 'media_completed') {
-        await submitPaperWork.execute({ sessionId: id, entries: {}, submittedBy: gradedBy });
+        await useCases.submitPaperWork.execute({ sessionId: id, entries: {}, submittedBy: gradedBy });
       }
-      lastResult = await gradeSubmission.execute({ sessionId: id, verdicts, gradedBy });
+      lastResult = await useCases.gradeSubmission.execute({ sessionId: id, verdicts, gradedBy });
       return lastResult;
     },
 
@@ -583,7 +554,7 @@ export async function createLifecycleHarness({
     async grade({ sessionId = null, entries = {}, verdicts = {}, gradedBy = null } = {}) {
       const id = sessionId ?? lastScan?.sessionId;
       if (!id) throw new Error('grade: no session to mark');
-      lastResult = await gradeSubmission.execute({ sessionId: id, entries, verdicts, gradedBy });
+      lastResult = await useCases.gradeSubmission.execute({ sessionId: id, entries, verdicts, gradedBy });
       return lastResult;
     },
 
@@ -597,7 +568,7 @@ export async function createLifecycleHarness({
     async closeOutcome({ sessionId = null, signedOff = false } = {}) {
       const id = sessionId ?? lastScan?.sessionId;
       if (!id) throw new Error('closeOutcome: no session to settle');
-      lastResult = await closeSessionOutcome.execute({ sessionId: id, signedOff });
+      lastResult = await useCases.closeSessionOutcome.execute({ sessionId: id, signedOff });
       return lastResult;
     },
 
@@ -606,13 +577,15 @@ export async function createLifecycleHarness({
     async sessionState(sessionId) { return stateOf(sessionId); },
     async sessionIdFor(unitId, learnerId = currentLearner) { return sessionIdFor(unitId, learnerId); },
     async sessionRows(learnerId = currentLearner) { return sessionRows(learnerId); },
-    async sessionEvents(sessionId) { return sessions.readEvents(sessionId); },
-    async eventTypes(sessionId) { return (await sessions.readEvents(sessionId)).map((e) => e.type); },
-    async reviewItems(sessionId) { return reviewQueue.listForSession(sessionId); },
-    async pendingReview() { return reviewQueue.listPending(); },
+    async sessionEvents(sessionId) { return stores.sessions.readEvents(sessionId); },
+    async eventTypes(sessionId) { return (await stores.sessions.readEvents(sessionId)).map((e) => e.type); },
+    async reviewItems(sessionId) { return stores.reviewQueue.listForSession(sessionId); },
+    async pendingReview() { return stores.reviewQueue.listPending(); },
 
     async agenda(learnerId = currentLearner) {
-      return buildAgenda.execute({ learnerId, learnerName: userService.getProfile(learnerId)?.name ?? null });
+      return useCases.buildAgenda.execute({
+        learnerId, learnerName: userService.getProfile(learnerId)?.name ?? null,
+      });
     },
     async plan(learnerId = currentLearner) { return (await harness.agenda(learnerId)).plan; },
 
@@ -656,8 +629,8 @@ export async function createLifecycleHarness({
         .map((item) => [item.id, item.answer]));
       const matching = bank.items.filter((item) => item.type === 'matching');
       for (const item of matching) entries[item.id] = item.pairs.map((p) => ({ ...p }));
-      await submitPaperWork.execute({ sessionId, entries, submittedBy: learnerId });
-      await gradeSubmission.execute({ sessionId, entries });
+      await useCases.submitPaperWork.execute({ sessionId, entries, submittedBy: learnerId });
+      await useCases.gradeSubmission.execute({ sessionId, entries });
       return harness.closeOutcome({ sessionId });
     },
 
