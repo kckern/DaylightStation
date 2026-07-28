@@ -153,6 +153,30 @@ describe('YamlReviewQueue', () => {
     expect(resolved).toMatchObject({ verdict: 'incorrect', gradedBy: 'parent', gradedAt: AT });
   });
 
+  it('keeps the parent\'s NOTE with the verdict — the reason is the valuable part', async () => {
+    await review.enqueue([item()]);
+    const resolved = await review.resolve({
+      sessionId: 'ses_a', itemId: 'q3', verdict: 'incorrect', gradedBy: 'parent',
+      note: 'Right method, but you forgot to simplify.', at: AT,
+    });
+    expect(resolved.note).toBe('Right method, but you forgot to simplify.');
+    // ...and it survives the round trip to disk, which is the whole point.
+    expect((await review.listForSession('ses_a'))[0].note).toBe('Right method, but you forgot to simplify.');
+  });
+
+  it('stores no note as null rather than dropping the field', async () => {
+    await review.enqueue([item()]);
+    const resolved = await review.resolve({ sessionId: 'ses_a', itemId: 'q3', verdict: 'correct', gradedBy: 'parent', at: AT });
+    expect(resolved.note).toBeNull();
+  });
+
+  it('does not erase an earlier note when a verdict is changed without one', async () => {
+    await review.enqueue([item()]);
+    await review.resolve({ sessionId: 'ses_a', itemId: 'q3', verdict: 'incorrect', gradedBy: 'parent', note: 'Check the denominator.', at: AT });
+    const again = await review.resolve({ sessionId: 'ses_a', itemId: 'q3', verdict: 'correct', gradedBy: 'parent', at: AT });
+    expect(again.note).toBe('Check the denominator.');
+  });
+
   it('returns null for an item that was never queued', async () => {
     expect(await review.resolve({ sessionId: 'ses_a', itemId: 'nope', verdict: 'correct', gradedBy: 'p', at: AT })).toBeNull();
   });

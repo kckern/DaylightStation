@@ -211,7 +211,7 @@ export class FakeReviewQueue extends IReviewQueue {
     const existing = this.#items.get(sessionId) ?? [];
     items.forEach((item) => {
       const at = existing.findIndex((e) => e.itemId === item.itemId);
-      if (at === -1) existing.push({ verdict: null, gradedBy: null, gradedAt: null, ...item });
+      if (at === -1) existing.push({ verdict: null, gradedBy: null, gradedAt: null, note: null, ...item });
       else if (!existing[at].verdict) existing[at] = { ...existing[at], ...item };
     });
     this.#items.set(sessionId, existing);
@@ -220,11 +220,15 @@ export class FakeReviewQueue extends IReviewQueue {
 
   async listForSession(sessionId) { return [...(this.#items.get(sessionId) ?? [])]; }
 
-  async resolve({ sessionId, itemId, verdict, gradedBy = null, at }) {
+  async resolve({ sessionId, itemId, verdict, gradedBy = null, note = null, at }) {
     const items = this.#items.get(sessionId) ?? [];
     const index = items.findIndex((i) => i.itemId === itemId);
     if (index === -1) return null;
-    items[index] = { ...items[index], verdict, gradedBy, gradedAt: at };
+    const written = typeof note === 'string' && note.trim() ? note.trim() : null;
+    items[index] = {
+      ...items[index], verdict, gradedBy, gradedAt: at,
+      note: written ?? items[index].note ?? null,
+    };
     return items[index];
   }
 

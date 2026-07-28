@@ -21,7 +21,7 @@
  *             given: *, prompt: string|null, questionNumber: number|null,
  *             rubric: string|null, enqueuedAt: string,
  *             verdict: 'correct'|'incorrect'|null, gradedBy: string|null,
- *             gradedAt: string|null }} ReviewItem
+ *             gradedAt: string|null, note: string|null }} ReviewItem
  */
 export class IReviewQueue {
   /**
@@ -51,10 +51,13 @@ export class IReviewQueue {
    * @param {string} args.itemId
    * @param {'correct'|'incorrect'} args.verdict
    * @param {string} args.gradedBy
+   * @param {string|null} [args.note] - what the parent wants the child to read:
+   *   why it was marked that way. Optional, kept verbatim, and NOT erased by a
+   *   later verdict that arrives without one.
    * @param {string} args.at - ISO time (injected; the adapter reads no clock)
    * @returns {Promise<ReviewItem|null>} null when the item is not queued
    */
-  async resolve({ sessionId, itemId, verdict, gradedBy, at }) {
+  async resolve({ sessionId, itemId, verdict, gradedBy, note, at }) {
     throw new Error('IReviewQueue.resolve must be implemented');
   }
 

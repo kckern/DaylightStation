@@ -159,7 +159,7 @@ describe('ReviewQueue — signing off', () => {
     fireEvent.click(screen.getByRole('button', { name: /Sign off as Papa/i }));
 
     await waitFor(() => expect(resolveReviewMock).toHaveBeenCalledWith(
-      'ses_a', 'q3', { verdict: 'correct', gradedBy: 'dad' },
+      'ses_a', 'q3', { verdict: 'correct', gradedBy: 'dad', note: null },
     ));
   });
 
@@ -172,8 +172,33 @@ describe('ReviewQueue — signing off', () => {
     fireEvent.click(screen.getByRole('button', { name: /Sign off as Papa/i }));
 
     await waitFor(() => expect(resolveReviewMock).toHaveBeenCalledWith(
-      'ses_a', 'q3', { verdict: 'incorrect', gradedBy: 'dad' },
+      'ses_a', 'q3', { verdict: 'incorrect', gradedBy: 'dad', note: null },
     ));
+  });
+
+  it('sends the parent\'s note with the verdict — the reason is the valuable part', async () => {
+    renderQueue();
+    await screen.findByRole('button', { name: /Sign off as Papa/i });
+
+    fireEvent.click(screen.getByText('Incorrect'));
+    fireEvent.change(screen.getByLabelText(/note for/i), {
+      target: { value: 'Right method — you forgot to simplify at the end.' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: /Sign off as Papa/i }));
+
+    await waitFor(() => expect(resolveReviewMock).toHaveBeenCalledWith(
+      'ses_a', 'q3', {
+        verdict: 'incorrect', gradedBy: 'dad',
+        note: 'Right method — you forgot to simplify at the end.',
+      },
+    ));
+  });
+
+  it('shows a note already written on an item rather than hiding it', async () => {
+    pendingReviewMock.mockResolvedValue({ items: [item({ note: 'We talked about this one.' })] });
+    renderQueue();
+
+    expect(await screen.findByDisplayValue('We talked about this one.')).toBeInTheDocument();
   });
 
   it('will not sign off before a verdict is chosen', async () => {

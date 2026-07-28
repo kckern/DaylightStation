@@ -71,7 +71,7 @@ export class YamlReviewQueue extends IReviewQueue {
       const merged = [...existing];
       incoming.forEach((item) => {
         const at = merged.findIndex((e) => e.itemId === item.itemId);
-        if (at === -1) { merged.push({ verdict: null, gradedBy: null, gradedAt: null, ...item }); return; }
+        if (at === -1) { merged.push({ verdict: null, gradedBy: null, gradedAt: null, note: null, ...item }); return; }
         // A re-submission must not un-mark what a grown-up already marked.
         if (merged[at].verdict) return;
         merged[at] = { ...merged[at], ...item };
@@ -87,7 +87,7 @@ export class YamlReviewQueue extends IReviewQueue {
   }
 
   /** @inheritdoc */
-  async resolve({ sessionId, itemId, verdict, gradedBy = null, at } = {}) {
+  async resolve({ sessionId, itemId, verdict, gradedBy = null, note = null, at } = {}) {
     if (!isSafeSessionId(sessionId)) return null;
     if (verdict !== 'correct' && verdict !== 'incorrect') {
       throw new Error(`YamlReviewQueue: verdict must be correct|incorrect, got: ${verdict}`);
@@ -99,7 +99,14 @@ export class YamlReviewQueue extends IReviewQueue {
       const items = await this.#read(sessionId);
       const index = items.findIndex((i) => i.itemId === itemId);
       if (index === -1) return null;
-      const resolved = { ...items[index], verdict, gradedBy, gradedAt: at };
+      // A note is what the parent wants the child to read. Re-marking WITHOUT
+      // one keeps whatever was written before: changing a verdict is not a
+      // reason to throw away the sentence explaining the first one.
+      const written = typeof note === 'string' && note.trim() ? note.trim() : null;
+      const resolved = {
+        ...items[index], verdict, gradedBy, gradedAt: at,
+        note: written ?? items[index].note ?? null,
+      };
       items[index] = resolved;
       await this.#write(sessionId, items);
       return resolved;
