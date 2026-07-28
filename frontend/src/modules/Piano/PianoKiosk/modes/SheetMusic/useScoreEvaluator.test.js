@@ -67,6 +67,27 @@ describe('useScoreEvaluator', () => {
     expect(onMeasureGrade).toHaveBeenCalledTimes(1);
   });
 
+  it('finalize returns the grade it produced so a same-tick summary can include it', () => {
+    const onMeasureGrade = vi.fn();
+    let fire;
+    const { result } = renderHook(() => useScoreEvaluator({
+      enabled: true,
+      cfg: { silentMeasuresToStop: 4 },
+      subscribe: (fn) => { fire = fn; return () => {}; },
+      currentMeasure: 3,
+      expectedForMeasure: () => [60],
+      driftForNote: () => 0,
+      onMeasureGrade,
+      onSilentStop: vi.fn(),
+    }));
+    act(() => { fire({ type: 'note_on', note: 60, velocity: 90 }); });
+    let returned;
+    act(() => { returned = result.current.finalize(); });
+    expect(returned).toBeTruthy();
+    expect(returned.measure).toBe(3);
+    expect(onMeasureGrade).toHaveBeenCalledTimes(1);
+  });
+
   // ── Loop wraps (Task 9) ─────────────────────────────────────────────────────
   // A one-measure loop wraps from the end of measure N back to its START, so
   // `currentMeasure` never changes and the advance rule alone never grades.
