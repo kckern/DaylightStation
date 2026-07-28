@@ -9,13 +9,10 @@
  * Only structure is checked. Spec shapes for plot/geometry, Markdown grammar,
  * and asset resolution belong to the renderer and its catalog — deep-checking
  * them here would duplicate the layout engine in the domain layer.
+ *
+ * Errors are reported at a dotted path (`blocks[0].blocks[1]: <message>`), the
+ * one notation used across the whole document error list.
  */
-export const BLOCK_TYPES = Object.freeze([
-  'rich_text', 'math', 'plot', 'geometry', 'asset',
-  'question', 'answer_space', 'omr_response',
-  'media_action', 'scan_action',
-]);
-
 const isNonEmptyString = (v) => typeof v === 'string' && v.trim().length > 0;
 const isPositiveNumber = (v) => typeof v === 'number' && Number.isFinite(v) && v > 0;
 
@@ -27,85 +24,105 @@ const isPositiveNumber = (v) => typeof v === 'number' && Number.isFinite(v) && v
 const REQUIRE_MACRO = /\\require\s*\{/;
 const requireError = (field) => `${field} must not use \\require{} (server rendering loads all packages)`;
 
-const specValidator = (type) => (raw, errors) => {
+const specValidator = (type) => (raw, push) => {
   if (!raw.spec || typeof raw.spec !== 'object' || Array.isArray(raw.spec)) {
-    errors.push(`${type} spec must be an object`);
+    push(`${type} spec must be an object`);
     return;
   }
-  if (!isNonEmptyString(raw.spec.kind)) errors.push(`${type} spec.kind must be a non-empty string`);
+  if (!isNonEmptyString(raw.spec.kind)) push(`${type} spec.kind must be a non-empty string`);
 };
 
-const actionValidator = (type) => (raw, errors) => {
-  if (!isNonEmptyString(raw.action)) errors.push(`${type} action must be a non-empty string`);
-  if (!isNonEmptyString(raw.label)) errors.push(`${type} label must be a non-empty string`);
+const actionValidator = (type) => (raw, push) => {
+  if (!isNonEmptyString(raw.action)) push(`${type} action must be a non-empty string`);
+  if (!isNonEmptyString(raw.label)) push(`${type} label must be a non-empty string`);
 };
 
+/**
+ * Key order IS the block-type order (BLOCK_TYPES is derived from it below), so
+ * a type can never be declared without a validator or validated without being
+ * declared.
+ */
 const VALIDATORS = {
-  rich_text(raw, errors) {
-    if (!isNonEmptyString(raw.md)) errors.push('rich_text md must be a non-empty string');
-    else if (REQUIRE_MACRO.test(raw.md)) errors.push(requireError('rich_text md'));
+  rich_text(raw, push) {
+    if (!isNonEmptyString(raw.md)) push('rich_text md must be a non-empty string');
+    else if (REQUIRE_MACRO.test(raw.md)) push(requireError('rich_text md'));
   },
-  math(raw, errors) {
-    if (!isNonEmptyString(raw.tex)) errors.push('math tex must be a non-empty string');
-    else if (REQUIRE_MACRO.test(raw.tex)) errors.push(requireError('math tex'));
-    if (raw.display !== undefined && typeof raw.display !== 'boolean') {
-      errors.push('math display must be a boolean');
-    }
+  math(raw, push) {
+    if (!isNonEmptyString(raw.tex)) push('math tex must be a non-empty string');
+    else if (REQUIRE_MACRO.test(raw.tex)) push(requireError('math tex'));
+    if (raw.display !== undefined && typeof raw.display !== 'boolean') push('math display must be a boolean');
   },
   plot: specValidator('plot'),
   geometry: specValidator('geometry'),
-  asset(raw, errors) {
-    if (!isNonEmptyString(raw.ref)) errors.push('asset ref must be a non-empty string');
+  asset(raw, push) {
+    if (!isNonEmptyString(raw.ref)) push('asset ref must be a non-empty string');
     // Alt doubles as the print caption, so it is required even though nothing
     // on paper reads it aloud.
-    if (!isNonEmptyString(raw.alt)) errors.push('asset alt must be a non-empty string');
+    if (!isNonEmptyString(raw.alt)) push('asset alt must be a non-empty string');
   },
-  question(raw, errors) {
-    if (!isNonEmptyString(raw.itemId)) errors.push('question itemId must be a non-empty string');
-    if (!Number.isInteger(raw.number) || raw.number < 1) errors.push('question number must be an integer >= 1');
+  question(raw, push, ctx) {
+    if (!isNonEmptyString(raw.itemId)) push('question itemId must be a non-empty string');
+    if (!Number.isInteger(raw.number) || raw.number < 1) push('question number must be an integer >= 1');
     if (!Array.isArray(raw.blocks) || raw.blocks.length === 0) {
-      errors.push('question blocks must be a non-empty array');
+      push('question blocks must be a non-empty array');
       return;
     }
     raw.blocks.forEach((child, i) => {
+      const at = ctx.at ? `${ctx.at}.blocks[${i}]` : `blocks[${i}]`;
       // A question is the keep-together atomic (spec §4); nesting one inside
-      // another has no page-break semantics, so it is rejected outright.
+      // another has no page-break semantics, so it is rejected outright —
+      // which is also what bounds this recursion's depth at one level.
       if (child && typeof child === 'object' && child.type === 'question') {
-        errors.push(`blocks[${i}]: question may not contain another question`);
+        ctx.errors.push(`${at}: question may not contain another question`);
         return;
       }
-      validateBlock(child).errors.forEach((e) => errors.push(`blocks[${i}]: ${e}`));
+      validateInto(child, at, ctx.errors);
     });
   },
-  answer_space(raw, errors) {
+  answer_space(raw, push) {
     const minOk = isPositiveNumber(raw.minPt);
     const maxOk = isPositiveNumber(raw.maxPt);
-    if (!minOk) errors.push('answer_space minPt must be a number > 0');
-    if (!maxOk) errors.push('answer_space maxPt must be a number > 0');
-    if (minOk && maxOk && raw.minPt > raw.maxPt) errors.push('answer_space minPt must be <= maxPt');
+    if (!minOk) push('answer_space minPt must be a number > 0');
+    if (!maxOk) push('answer_space maxPt must be a number > 0');
+    if (minOk && maxOk && raw.minPt > raw.maxPt) push('answer_space minPt must be <= maxPt');
   },
-  omr_response(raw, errors) {
-    if (!isNonEmptyString(raw.itemId)) errors.push('omr_response itemId must be a non-empty string');
+  omr_response(raw, push) {
+    if (!isNonEmptyString(raw.itemId)) push('omr_response itemId must be a non-empty string');
     // 2..8 is what a printed mark row can carry legibly at receipt width.
     if (!Number.isInteger(raw.choices) || raw.choices < 2 || raw.choices > 8) {
-      errors.push('omr_response choices must be an integer between 2 and 8');
+      push('omr_response choices must be an integer between 2 and 8');
     }
   },
   media_action: actionValidator('media_action'),
   scan_action: actionValidator('scan_action'),
 };
 
+export const BLOCK_TYPES = Object.freeze(Object.keys(VALIDATORS));
+
+function validateInto(raw, at, errors) {
+  const prefix = at ? `${at}: ` : '';
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+    errors.push(`${prefix}block must be a mapping`);
+    return;
+  }
+  // Own-property lookup, not a bracket read: `constructor`/`toString` would
+  // otherwise resolve to an Object.prototype function and validate clean.
+  if (!Object.prototype.hasOwnProperty.call(VALIDATORS, raw.type)) {
+    errors.push(`${prefix}unknown block type: ${raw.type}`);
+    return;
+  }
+  VALIDATORS[raw.type](raw, (message) => errors.push(prefix + message), { at, errors });
+}
+
 /**
  * @param {*} raw - one parsed block
+ * @param {{ path?: string }} [opts] - path prefix for reported errors; the
+ *   caller's position in the document, so nested paths compose as one dotted
+ *   trail instead of stacked prefixes
  * @returns {{ errors: string[] }} empty errors === valid
  */
-export function validateBlock(raw) {
-  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
-    return { errors: ['block must be a mapping'] };
-  }
-  const validate = Object.prototype.hasOwnProperty.call(VALIDATORS, raw.type) ? VALIDATORS[raw.type] : null;
-  if (!validate) return { errors: [`unknown block type: ${raw.type}`] };
+export function validateBlock(raw, { path = '' } = {}) {
   const errors = [];
-  validate(raw, errors);
+  validateInto(raw, path, errors);
   return { errors };
 }

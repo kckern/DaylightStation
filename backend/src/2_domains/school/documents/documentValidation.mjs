@@ -14,7 +14,10 @@ const ID_PATTERN = /^[a-z0-9][a-z0-9-]*$/;
 const TARGETS = new Set(['letter', 'receipt']);
 const ANSWER_KEYS = ['answer', 'answers'];
 
-const isInteger = (v, min) => Number.isInteger(v) && v >= min;
+// Safe integers only: past MAX_SAFE_INTEGER distinct values collide onto the
+// same float, so "same seed, byte-identical output" would stop holding.
+const isCountable = (v) => Number.isSafeInteger(v) && v >= 0;
+const countableError = (field) => `${field} must be an integer between 0 and ${Number.MAX_SAFE_INTEGER}`;
 
 /**
  * Depth-first walk of the block tree, visiting every block with its dotted path
@@ -46,7 +49,9 @@ export function walkBlocks(blocks, visit, { path = 'blocks', question = null, op
 }
 
 // Answers can hide anywhere, including inside a renderer-owned plot/geometry
-// spec, so this walk is over arbitrary values rather than the block tree.
+// spec, so this walk is over arbitrary values rather than the block tree. Paths
+// are reported in the same dotted notation as block errors ('' is the document
+// root, so a top-level `blocks` child reads `blocks[0]`, not `document.blocks[0]`).
 function collectAnswerKeys(node, at, errors, seen) {
   if (!node || typeof node !== 'object' || seen.has(node)) return;
   seen.add(node);
@@ -56,11 +61,11 @@ function collectAnswerKeys(node, at, errors, seen) {
   }
   for (const key of ANSWER_KEYS) {
     if (Object.prototype.hasOwnProperty.call(node, key)) {
-      errors.push(`${at} must not carry an answer key (answer keys render from the question bank)`);
+      errors.push(`${at || 'document'}: must not carry an answer key (answer keys render from the question bank)`);
       break;
     }
   }
-  Object.entries(node).forEach(([k, v]) => collectAnswerKeys(v, `${at}.${k}`, errors, seen));
+  Object.entries(node).forEach(([k, v]) => collectAnswerKeys(v, at ? `${at}.${k}` : k, errors, seen));
 }
 
 /**
@@ -76,23 +81,23 @@ export function validateDocument(raw) {
   // Regeneration is byte-identical from the seed, so a missing seed is not a
   // defaultable omission — a random fill-in would make the document
   // irreproducible after the fact.
-  if (!isInteger(raw.seed, 0)) errors.push('seed must be an integer >= 0');
+  if (!isCountable(raw.seed)) errors.push(countableError('seed'));
   const variant = raw.variant === undefined || raw.variant === null ? 0 : raw.variant;
-  if (!isInteger(variant, 0)) errors.push('variant must be an integer >= 0');
+  if (!isCountable(variant)) errors.push(countableError('variant'));
   if (!Array.isArray(raw.target) || raw.target.length === 0) {
     errors.push('target must be a non-empty array');
   } else {
     raw.target.forEach((t) => { if (!TARGETS.has(t)) errors.push(`unknown target: ${t}`); });
   }
 
-  collectAnswerKeys(raw, 'document', errors, new WeakSet());
+  collectAnswerKeys(raw, '', errors, new WeakSet());
 
   if (!Array.isArray(raw.blocks) || raw.blocks.length === 0) {
     errors.push('blocks must be a non-empty array');
     return { errors };
   }
   raw.blocks.forEach((block, i) => {
-    validateBlock(block).errors.forEach((e) => errors.push(`blocks[${i}]: ${e}`));
+    errors.push(...validateBlock(block, { path: `blocks[${i}]` }).errors);
   });
 
   const seenItemIds = new Set();
