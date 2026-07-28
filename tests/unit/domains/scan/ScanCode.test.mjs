@@ -69,9 +69,11 @@ describe('parseScanCode — registered prefixes', () => {
 });
 
 describe('parseScanCode — the unknown path', () => {
-  it('still has a reachable unknown path, and it is reachable two ways', () => {
+  it('still has a reachable unknown path, by more than one route', () => {
     // Steps 3 and 4 claim most of the space, so pin down what is left: it must
-    // stay explicit rather than become a fall-through nobody can reach.
+    // stay explicit rather than become a fall-through nobody can reach. The
+    // third route — non-string and blank input — is the `!raw` early return,
+    // covered by the two normalisation tests below.
     const noColonNotDigits = ['gibberish', 'pause', 'a7f3k2', '9780306406157x'];
     // Step 3 needs a NON-EMPTY tag, so a leading colon skips it too, and an
     // empty tag can never be digits only — see the leading-colon test below.
@@ -200,10 +202,16 @@ describe('legacy and shape resolution', () => {
     expect(parseScanCode('041260010682')).toMatchObject({ namespace: 'product', form: 'shape' });
   });
 
-  it('keeps positional and shape disjoint', () => {
-    // positional needs a colon; shape is digit-only. They cannot both match.
-    expect(parseScanCode('041260010682').form).toBe('shape');
-    expect(parseScanCode('living-room:plex:1').form).toBe('legacy-positional');
+  it('needs an exact legacy tag, not one that merely starts with it', () => {
+    // The step 1 equivalent of this is `never strips an unregistered prefix
+    // from the body` (`gone` is not `go`). `ctrl:` is a plausible legacy
+    // command prefix, and ScanVocabularyService picked `rs` over `ctl`/`rst`
+    // precisely so no prefix would be a near-twin of another — so a near-twin
+    // reaching step 2 must fall through, not be captured by nutrition.
+    for (const code of ['ctrl:reboot', 'dlx:4', 'rsync:go'])
+      expect(parseScanCode(code)).toMatchObject({
+        namespace: 'content', form: 'legacy-positional',
+      });
   });
 
   it('keeps a legacy code whole — there is no prefix to strip', () => {
@@ -255,6 +263,10 @@ describe('shape detection — adversarial', () => {
   it('does not read a 13-digit non-Bookland code as a book', () => {
     expect(parseScanCode('1234567890128').namespace).toBe('product');
     expect(parseScanCode('9770306406157').namespace).toBe('product'); // 977 = ISSN
+    // The prefix must be at the FRONT, not merely present: an ordinary grocery
+    // EAN-13 that happens to contain 978/979 mid-string is not a book.
+    expect(parseScanCode('1234978123456').namespace).toBe('product');
+    expect(parseScanCode('9991234979123').namespace).toBe('product');
   });
 
   it('is shape-only — it does not verify the ISBN check digit', () => {

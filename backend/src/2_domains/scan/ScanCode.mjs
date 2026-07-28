@@ -62,6 +62,17 @@
  * reads `body` and never learns which form its code arrived in. For `shape`,
  * `body` is the whole barcode, which is likewise the entire payload.
  *
+ * ONE EXCEPTION, and it is INTERIOR WHITESPACE. `trim()` cleans the outer edges
+ * of the whole input, so a space that is LEADING in the bare form is INTERIOR in
+ * the prefixed form and survives: `" living-room:plex:1"` yields body
+ * `"living-room:plex:1"`, but `"go: living-room:plex:1"` yields
+ * `" living-room:plex:1"`. The body is deliberately NOT trimmed — that would
+ * change what `go:` means, and this module's refusal to touch bodies is what
+ * lets each domain keep its own grammar. A handler that splits on `:` must
+ * `.trim()` its own segments. This is a known hazard in this codebase, not a
+ * hypothetical: see the CLAUDE.md note that YAML content IDs parse with a
+ * leading space and that code parsing `source:localId` has to trim.
+ *
  * **Step 3 is a CATCH-ALL, and deliberately so.** The design calls for parsing
  * against the known screen and command names, but those live in config and this
  * module imports nothing, by layer rule. Having a non-empty tag segment is
@@ -78,10 +89,11 @@
  *   and refuses what it cannot read, exactly as it does today for a typo'd
  *   sticker.
  *
- * `unknown` therefore stays reachable two ways: input with no colon that is not
- * digits only (`gibberish`), and input whose FIRST colon is at index 0
+ * `unknown` therefore stays reachable three ways: input with no colon that is
+ * not digits only (`gibberish`); input whose FIRST colon is at index 0
  * (`:4`, `:go:x`), which has an empty tag and so is excluded from steps 1-3 by
- * the same guard — and, being non-digit, from step 4 as well.
+ * the same guard — and, being non-digit, from step 4 as well; and non-string or
+ * blank input, which returns from the `!raw` guard before any step runs.
  *
  * Steps 3 and 4 are DISJOINT BY CONSTRUCTION — step 3 requires a colon, step 4
  * requires digits only — so their ordering is not a judgment call and cannot
@@ -201,6 +213,18 @@ export function parseScanCode(code) {
     // step 2 — legacy self-identifying nutrition. Deprecation shelf. Reached
     // only after step 1 misses, so a tag can never mean two things; the
     // disjointness invariant is tested, not assumed.
+    //
+    // The collision runs the OTHER WAY TOO, and that direction is not testable
+    // here. ScanVocabularyService warns that "the one theoretical collision is
+    // a screen named `dl`, `ct`, or `rs`; keep screen names out of that set" —
+    // this is the line that makes it real. A legacy positional code for a
+    // screen so named is captured here and handed to nutrition, never reaching
+    // step 3. Screen names live in config, which this module cannot read (the
+    // same reason step 3 is a catch-all), so the constraint can only be held by
+    // whoever names screens. It expires with the shelf.
+    //
+    // Exact match, not a prefix test: `ctrl:` and `dlx:` are near-twins of `ct`
+    // and `dl`, and must fall through to step 3.
     if (LEGACY_NUTRITION_TAGS.includes(tag))
       return { namespace: 'nutrition', body: raw, raw, form: 'legacy-prefixed' };
 
