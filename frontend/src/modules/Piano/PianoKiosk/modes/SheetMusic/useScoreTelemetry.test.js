@@ -23,13 +23,42 @@ describe('useScoreTelemetry', () => {
     expect(ev[2]).toMatchObject({ id: 'x', engraveMs: 200, totalMs: 300 });
   });
 
-  it('emits a stall warn when a fire drifts past threshold, and a stats rollup', () => {
+  it('does not flag a healthy tick gap as a stall', () => {
+    const { result } = renderHook(() => useScoreTelemetry({ id: 'x', tickMs: 100 }));
+    // 100ms gap is the tick interval BY DESIGN; 40ms drift at 90bpm is well
+    // inside the ~167ms budget. Neither is a stall.
+    act(() => { result.current.recordFire({ step: 3 }, 40, 100, 90); });
+    expect(logged.some(([, e]) => e === 'score.playback.stall')).toBe(false);
+    act(() => result.current.flushPlayback('listen'));
+    expect(logged.find(([, e]) => e === 'score.playback.stats')[2].stalls).toBe(0);
+  });
+
+  it('flags a gap that skipped whole ticks', () => {
+    const { result } = renderHook(() => useScoreTelemetry({ id: 'x', tickMs: 100 }));
+    act(() => { result.current.recordFire({ step: 3 }, 10, 400, 90); });
+    expect(logged.some(([, e]) => e === 'score.playback.stall')).toBe(true);
+  });
+
+  it('flags drift past the tempo-scaled budget, and emits it at debug', () => {
+    const { result } = renderHook(() => useScoreTelemetry({ id: 'x', tickMs: 100 }));
+    // 200ms drift at 216bpm — budget there is ~69ms.
+    act(() => { result.current.recordFire({ step: 3 }, 200, 100, 216); });
+    const ev = logged.find(([, e]) => e === 'score.playback.stall');
+    expect(ev).toBeTruthy();
+    expect(ev[0]).toBe('debug'); // NOT warn — this fires per tick on a bad run
+    act(() => result.current.flushPlayback('polish'));
+    expect(logged.find(([, e]) => e === 'score.playback.stats')[2].stalls).toBe(1);
+  });
+
+  it('caps sched-late warns per run but counts them all in stats', () => {
     const { result } = renderHook(() => useScoreTelemetry({ id: 'x' }));
-    act(() => { result.current.recordFire({ step: 3 }, 200, 60, 90); });
-    expect(logged.some(([lvl, e]) => lvl === 'warn' && e === 'score.playback.stall')).toBe(true);
-    act(() => result.current.flushPlayback('play'));
-    const stats = logged.find(([, e]) => e === 'score.playback.stats');
-    expect(stats[2]).toMatchObject({ mode: 'play', maxDriftMs: 200, stalls: 1 });
+    act(() => {
+      for (let i = 0; i < 20; i++) result.current.recordSchedule({ note: 60 }, -100);
+      result.current.flushPlayback('listen');
+    });
+    const warns = logged.filter(([lvl, e]) => lvl === 'warn' && e === 'score.playback.sched-late');
+    expect(warns.length).toBe(5);
+    expect(logged.find(([, e]) => e === 'score.playback.stats')[2].schedLate).toBe(20);
   });
 
   it('collects schedule leads and reports them in playback stats', () => {
