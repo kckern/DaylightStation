@@ -59,6 +59,10 @@ export function useScoreEvaluator({
   const silentRunRef = useRef(0);
   const stoppedRef = useRef(false);
   const finalizedRef = useRef(false);
+  // Has this run actually run? Set the first time a measure boundary is crossed
+  // (an advance or a loop wrap). Distinguishes "the user worked a passage" from
+  // "the user tapped Play and changed their mind" — see finalize.
+  const advancedRef = useRef(false);
 
   // Grade the CURRENT measure once at end-of-piece: the advance-driven grader only
   // fires when currentMeasure changes, so the last measure the cursor never leaves
@@ -66,6 +70,14 @@ export function useScoreEvaluator({
   const finalize = useCallback(() => {
     if (!enabledRef.current || finalizedRef.current) return undefined;
     finalizedRef.current = true;
+    // A measure with expected notes and zero hits is NOT automatically a failure
+    // at finalize time. Silence only reads as a failed measure once the run has
+    // actually run THROUGH one — and measures the run ran through are the
+    // advance-driven grader's job, not finalize's. When nothing has happened at
+    // all (no boundary crossed, no note played) the user tapped Play and stopped;
+    // grading that would bank a red they never earned, wash the measure on the
+    // score, and count toward the silent stop.
+    if (!advancedRef.current && hitsRef.current.length === 0) return undefined;
     const m = currentMeasureRef.current;
     const expected = expectedForMeasureRef.current?.(m) || [];
     if (expected.length === 0 && hitsRef.current.length === 0) return undefined; // nothing to grade
@@ -106,6 +118,7 @@ export function useScoreEvaluator({
       : (wrapped ? currentMeasure : null);
 
     if (ending != null) {
+      advancedRef.current = true; // the run has run through a measure
       const g = gradeMeasure(
         { expected: expectedForMeasureRef.current?.(ending) || [], hits: hitsRef.current },
         cfgRef.current || {},
@@ -145,6 +158,7 @@ export function useScoreEvaluator({
     silentRunRef.current = 0;
     stoppedRef.current = false;
     finalizedRef.current = false; // a fresh run may finalize again
+    advancedRef.current = false;  // …and must earn its right to finalize again
     return undefined;
   }, [enabled, boundary]);
 
@@ -157,6 +171,7 @@ export function useScoreEvaluator({
     silentRunRef.current = 0;
     stoppedRef.current = false;
     finalizedRef.current = false;
+    advancedRef.current = false;
   }, []);
 
   return { finalize };

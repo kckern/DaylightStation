@@ -88,6 +88,37 @@ describe('useScoreEvaluator', () => {
     expect(onMeasureGrade).toHaveBeenCalledTimes(1);
   });
 
+  it('finalize does not grade a run that never ran: no boundary crossed, no hits', () => {
+    // Tap Play, change your mind, tap Pause. The measure has expected notes and
+    // zero hits — but the user never got to play it, so grading it red would bank
+    // a failure they never earned (and tint the score, and count toward the
+    // silent stop).
+    const { subscribe } = makeSubscribe();
+    const onMeasureGrade = vi.fn();
+    const { result } = renderHook(() => useScoreEvaluator(opts({ subscribe, currentMeasure: 2, onMeasureGrade, onSilentStop: vi.fn() })));
+    let returned;
+    act(() => { returned = result.current.finalize(); });
+    expect(returned).toBeUndefined();
+    expect(onMeasureGrade).not.toHaveBeenCalled();
+  });
+
+  it('finalize still grades a silent measure once the run HAS crossed a boundary', () => {
+    // The run really ran: measure 0 went by silently. Finalizing measure 1 as a
+    // red is legitimate here — the user was playing and did not play.
+    const { subscribe } = makeSubscribe();
+    const onMeasureGrade = vi.fn();
+    const { result, rerender } = renderHook(
+      (p) => useScoreEvaluator(opts({ subscribe, currentMeasure: p.m, onMeasureGrade, onSilentStop: vi.fn() })),
+      { initialProps: { m: 0 } },
+    );
+    rerender({ m: 1 }); // measure 0 graded silent by the advance rule
+    expect(onMeasureGrade).toHaveBeenCalledTimes(1);
+    let returned;
+    act(() => { returned = result.current.finalize(); });
+    expect(returned).toMatchObject({ measure: 1, grade: 'red' });
+    expect(onMeasureGrade).toHaveBeenCalledTimes(2);
+  });
+
   // ── Loop wraps (Task 9) ─────────────────────────────────────────────────────
   // A one-measure loop wraps from the end of measure N back to its START, so
   // `currentMeasure` never changes and the advance rule alone never grades.
