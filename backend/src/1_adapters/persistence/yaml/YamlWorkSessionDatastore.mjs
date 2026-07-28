@@ -29,6 +29,8 @@ const INDEX_FILE = 'index.yml';
 
 const dumpYaml = (value) => yaml.dump(value, { indent: 2, lineWidth: -1, noRefs: true });
 const isSafeSessionId = (id) => typeof id === 'string' && SESSION_ID_RE.test(id);
+// Total over junk entries: a malformed line sorts to the front rather than throwing.
+const seqOf = (event) => (event && typeof event === 'object' ? Number(event.seq) : NaN) || 0;
 
 export class YamlWorkSessionDatastore extends IWorkSessionRepository {
   #configService;
@@ -103,9 +105,10 @@ export class YamlWorkSessionDatastore extends IWorkSessionRepository {
   async #readEventsAt(day, sessionId) {
     const raw = await this.#readYaml(path.join(this.#root(), day, sessionId, EVENTS_FILE));
     if (!Array.isArray(raw)) return [];
-    return raw
-      .filter((e) => e && typeof e === 'object' && !Array.isArray(e))
-      .sort((a, b) => (Number(a.seq) || 0) - (Number(b.seq) || 0));
+    // Entries are sorted but never filtered: a malformed entry is the reducer's
+    // to report, and dropping it here would hide it from the one place a parent
+    // could see that something went wrong.
+    return [...raw].sort((a, b) => seqOf(a) - seqOf(b));
   }
 
   /** Rebuild this session's row in the day index from its whole log. */
@@ -114,12 +117,13 @@ export class YamlWorkSessionDatastore extends IWorkSessionRepository {
     const raw = await this.#readYaml(file);
     const index = (raw && typeof raw === 'object' && !Array.isArray(raw)) ? raw : {};
     const state = reduceSession(events);
+    const last = events[events.length - 1];
     index[sessionId] = {
       learnerId: state.learnerId,
       unitId: state.unitId,
       state: state.state,
       open: !state.terminal,
-      updatedAt: events.length ? events[events.length - 1].at ?? null : null,
+      updatedAt: (last && typeof last === 'object' ? last.at : null) ?? null,
     };
     await fs.writeFile(file, dumpYaml(index), 'utf8');
   }
@@ -140,14 +144,14 @@ export class YamlWorkSessionDatastore extends IWorkSessionRepository {
       // seq is assigned HERE, inside the queue, and overrides whatever the
       // caller passed: two callers that each read nextSeq() before either wrote
       // would otherwise be handed the same number.
-      const maxSeq = events.reduce((m, e) => Math.max(m, Number(e.seq) || 0), 0);
+      const maxSeq = events.reduce((m, e) => Math.max(m, seqOf(e)), 0);
       const stored = { ...event, sessionId, seq: maxSeq + 1 };
       events.push(stored);
       await fs.writeFile(path.join(dir, EVENTS_FILE), dumpYaml(events), 'utf8');
       await this.#reindex(day, sessionId, events);
       return stored;
     };
-    const queued = this.#writeChain.then(run, run);
+    const queued = this.#writeChain.then(run);
     // The chain must survive a rejected append, or one bad write would strand
     // every later one. The caller still sees the rejection through `queued`.
     this.#writeChain = queued.catch(() => {});
@@ -165,7 +169,7 @@ export class YamlWorkSessionDatastore extends IWorkSessionRepository {
   /** @inheritdoc */
   async nextSeq(sessionId) {
     const events = await this.readEvents(sessionId);
-    return events.reduce((m, e) => Math.max(m, Number(e.seq) || 0), 0) + 1;
+    return events.reduce((m, e) => Math.max(m, seqOf(e)), 0) + 1;
   }
 
   /** @inheritdoc */

@@ -48,7 +48,7 @@ export class YamlTokenRegistry extends ITokenRegistry {
   #fileFor(body) { return path.join(this.#root(), `${body}.yml`); }
 
   #enqueue(run) {
-    const queued = this.#writeChain.then(run, run);
+    const queued = this.#writeChain.then(run);
     this.#writeChain = queued.catch(() => {});
     return queued;
   }
