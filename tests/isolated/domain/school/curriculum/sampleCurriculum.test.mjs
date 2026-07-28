@@ -20,6 +20,7 @@ import { validateUnit, isPublishable } from '#domains/school/curriculum/unitVali
 import { validateManifest } from '#domains/school/curriculum/manifestValidation.mjs';
 import { validateDocument, walkBlocks } from '#domains/school/documents/documentValidation.mjs';
 import { validateQuestionBank } from '#domains/school/questionBankValidation.mjs';
+import { TOKEN_CLASSES } from '#domains/school/sessions/tokens.mjs';
 
 const FIXTURES = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
@@ -221,7 +222,30 @@ describe('sample curriculum: unit 04 mixed audio plus worksheet', () => {
     const actions = [];
     walkBlocks(doc.blocks, (block) => { if (block.type === 'media_action') actions.push(block); });
     expect(actions).toHaveLength(1);
-    expect(actions[0].action).toContain(unit().media);
+    // The action names the TOKEN CLASS, not the manifest. What plays comes from
+    // the unit's `media:` ref; a manifest id here is a string printed into the
+    // barcode area that no scan can resolve.
+    expect(actions[0].action).toBe('media_action');
+  });
+});
+
+// A barcode is printed onto a physical sheet a child is holding. If its
+// `action` is not a token class, `IssueDocument` mints nothing, the renderer
+// draws the literal string, and scanning it answers `not_school` — a dead end
+// on a real artifact. This is the structural guard against re-introducing that.
+describe('sample curriculum: every printed action is a real ticket', () => {
+  it.each([...documentById.keys()])('%s declares only token classes', (documentId) => {
+    const actions = [];
+    walkBlocks(documentById.get(documentId).blocks, (block) => {
+      if (block.type === 'scan_action' || block.type === 'media_action') actions.push(block);
+    });
+    expect(actions.length).toBeGreaterThan(0);
+    for (const action of actions) {
+      expect(TOKEN_CLASSES, `${documentId}: '${action.action}' is not a token class`)
+        .toContain(action.action);
+      expect(typeof action.label).toBe('string');
+      expect(action.label.trim().length).toBeGreaterThan(0);
+    }
   });
 });
 

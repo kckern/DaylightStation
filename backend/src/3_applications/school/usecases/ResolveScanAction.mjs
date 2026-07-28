@@ -190,7 +190,10 @@ export class ResolveScanAction {
       physical: printedSheet ? 'worksheet' : 'receipt',
       printed,
       message: result.message,
-      effect: { artifactId: result.artifactId, pageCount: result.pageCount },
+      // The tickets that went out ON the sheet. Reported so a caller can see
+      // what a child is now holding — and so a test can check that every
+      // barcode printed on it resolves to something.
+      effect: { artifactId: result.artifactId, pageCount: result.pageCount, tokens: result.tokens ?? {} },
     };
   }
 

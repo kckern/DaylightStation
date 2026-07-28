@@ -229,6 +229,50 @@ describe('answer keys', () => {
   });
 });
 
+// A retry hands over a "fresh" sheet. `render` had no variant parameter at all,
+// so the artifact and the form map both recorded form 0 whatever the session
+// said, and nothing on the paper or in the record distinguished attempt two
+// from attempt one.
+describe('variant', () => {
+  const omrDoc = doc([omrQuestion(1)]);
+
+  it('records the variant it was asked for on the form map', async () => {
+    const { formMap } = await renderer.render(omrDoc, { bank, variant: 2 });
+    expect(formMap.variant).toBe(2);
+  });
+
+  it('falls back to the document\'s own variant when none is passed', async () => {
+    const { formMap } = await renderer.render({ ...omrDoc, variant: 3 }, { bank });
+    expect(formMap.variant).toBe(3);
+  });
+
+  it('an explicit variant wins over the document\'s', async () => {
+    const { formMap } = await renderer.render({ ...omrDoc, variant: 3 }, { bank, variant: 1 });
+    expect(formMap.variant).toBe(1);
+  });
+
+  // What the form letter LOOKS like on the page is pinned by the golden suite
+  // (fixture-02-worksheet-form-b): pdfkit subsets its fonts to glyph ids, so
+  // there is no readable text in the buffer to assert on here. What this pins
+  // is that the two sheets are not the same bytes — which is the property a
+  // retry depends on and which held false before.
+  it('MAKES A RETRY A DIFFERENT PIECE OF PAPER', async () => {
+    const first = await renderer.render(worksheet, { studentName: 'learner-two', variant: 0 });
+    const second = await renderer.render(worksheet, { studentName: 'learner-two', variant: 1 });
+    expect(first.pdf.equals(second.pdf)).toBe(false);
+    // Still deterministic per variant.
+    const again = await renderer.render(worksheet, { studentName: 'learner-two', variant: 1 });
+    expect(second.pdf.equals(again.pdf)).toBe(true);
+  });
+
+  it.each([
+    ['not an integer', 1.5], ['negative', -1], ['a string', '2'], ['null', null],
+  ])('ignores a variant that is %s rather than printing nonsense', async (_label, variant) => {
+    const { formMap } = await renderer.render(omrDoc, { bank, variant });
+    expect(formMap.variant).toBe(0);
+  });
+});
+
 describe('determinism', () => {
   it('renders byte-identical PDFs for the same document', async () => {
     const first = await renderer.render(worksheet, { studentName: 'learner-two' });
