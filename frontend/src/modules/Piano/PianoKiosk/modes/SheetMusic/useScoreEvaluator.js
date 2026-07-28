@@ -129,20 +129,26 @@ export function useScoreEvaluator({
   }, [enabled, currentMeasure, boundary]);
 
   // Reset all state when disabled or on unmount; never grade while disabled.
+  // `boundary` is a dependency so wraps that happen WHILE disabled keep
+  // prevBoundaryRef in step: the loop follows Listen↔Polish, so a Listen loop
+  // bumps the counter with grading off, and a stale ref would read as a wrap on
+  // the first commit back in Polish — a red wash before a note is played.
   useEffect(() => {
     if (enabled) return undefined;
     hitsRef.current = [];
     prevMeasureRef.current = null;
-    prevBoundaryRef.current = boundary; // returning to Polish must not read a stale wrap
+    prevBoundaryRef.current = boundary;
     silentRunRef.current = 0;
     stoppedRef.current = false;
     finalizedRef.current = false; // a fresh run may finalize again
     return undefined;
-  }, [enabled]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [enabled, boundary]);
 
   useEffect(() => () => {
     hitsRef.current = [];
     prevMeasureRef.current = null;
+    // Mount-time value on purpose — do NOT promote `boundary` to a dependency
+    // here: this teardown runs once, and nothing reads these refs after it.
     prevBoundaryRef.current = boundary;
     silentRunRef.current = 0;
     stoppedRef.current = false;

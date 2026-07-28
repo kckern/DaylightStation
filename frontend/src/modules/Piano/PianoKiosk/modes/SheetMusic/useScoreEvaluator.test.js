@@ -130,6 +130,23 @@ describe('useScoreEvaluator', () => {
     expect(onMeasureGrade).toHaveBeenCalledTimes(1); // no phantom
   });
 
+  it('wraps that happen WHILE disabled do not fire a phantom grade on re-enable', () => {
+    // The loop follows Listen↔Polish, and Listen wraps bump `boundary` with the
+    // evaluator disabled. The disabled reset has to track those, or the first
+    // commit back in Polish reads the stale value as a wrap and grades a measure
+    // the user has not played yet.
+    const { subscribe } = makeSubscribe();
+    const onMeasureGrade = vi.fn();
+    const { rerender } = renderHook(
+      (p) => useScoreEvaluator(opts({ enabled: p.enabled, subscribe, currentMeasure: 2, boundary: p.boundary, onMeasureGrade, onSilentStop: vi.fn() })),
+      { initialProps: { enabled: false, boundary: 0 } },
+    );
+    rerender({ enabled: false, boundary: 1 }); // a Listen loop wrap
+    rerender({ enabled: false, boundary: 2 }); // …and another
+    rerender({ enabled: true, boundary: 2 });  // Polish + Play
+    expect(onMeasureGrade).not.toHaveBeenCalled();
+  });
+
   it('finalize() is a no-op when disabled', () => {
     const { subscribe } = makeSubscribe();
     const onMeasureGrade = vi.fn();
