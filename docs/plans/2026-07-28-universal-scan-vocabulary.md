@@ -173,27 +173,42 @@ This is the rule that makes single-split parsing safe. It must be a test, becaus
 
 **Step 1: Write the failing test**
 
+> **Corrected 2026-07-28 after code review.** An earlier draft of this task
+> asserted "no tag may be a prefix of another tag" and called that the invariant
+> behind single-split parsing. It is not load-bearing: parsing does an exact
+> match on the segment before the first colon, so a registry of `{go, gone}`
+> resolves `gone:x` and `go:ne:x` unambiguously. The invariant that actually
+> protects the parse is **no tag may contain a colon**. Register `go:room` and it
+> is unreachable forever, because `go:room:x` splits at the first colon and
+> resolves to `go`. Assert the real property.
+
 ```javascript
 describe('registry invariants', () => {
   const tags = Object.keys(PREFIX_REGISTRY);
 
-  it('has no tag that is a prefix of another tag', () => {
-    for (const a of tags) {
-      for (const b of tags) {
-        if (a === b) continue;
-        expect(b.startsWith(a)).toBe(false);
-      }
-    }
+  it('has no tag containing a colon', () => {
+    // THE load-bearing invariant. Parsing splits on the first colon and matches
+    // the segment exactly, so a tag containing a colon can never be reached.
+    for (const tag of tags) expect(tag).not.toContain(':');
   });
 
-  it('has no tag containing a colon', () => {
-    for (const tag of tags) expect(tag).not.toContain(':');
+  it('has no empty tag', () => {
+    for (const tag of tags) expect(tag.length).toBeGreaterThan(0);
   });
 
   it('does not let any domain claim nutrition sub-prefixes', () => {
     // `ct:` is containers. A content or command tag colliding with it would
     // break every container scan in the house.
     for (const tag of tags) expect(['dl', 'ct', 'rs']).not.toContain(tag);
+  });
+
+  it('does not collide with a legacy screen name', () => {
+    // A legacy positional code is `screen:source:id`. If a screen were ever
+    // named `go`, then `go:plex:1` would resolve as a PREFIXED content code with
+    // body `plex:1` — silently dropping the screen. No such screen exists today;
+    // this stops one being added.
+    const RESERVED_AGAINST_SCREENS = ['go', 'cmd', 'nut', 'sch'];
+    for (const tag of tags) expect(RESERVED_AGAINST_SCREENS).toContain(tag);
   });
 });
 ```
