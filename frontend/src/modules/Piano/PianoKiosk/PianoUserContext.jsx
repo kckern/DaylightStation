@@ -1,7 +1,7 @@
 import { createContext, useContext, useState, useEffect, useMemo, useCallback } from 'react';
 import { DaylightAPI } from '../../../lib/api.mjs';
 import getLogger from '../../../lib/logging/Logger.js';
-import { resolveProfile } from './pianoUser.js';
+import { resolveProfile, GUEST_PROFILE } from './pianoUser.js';
 
 /**
  * Piano roster + current player.
@@ -26,14 +26,18 @@ export function PianoUserProvider({ pianoId, children }) {
     return () => { cancelled = true; };
   }, []);
 
-  // Restore the last player for this piano once the roster loads.
+  // Restore the last player for this piano once the roster loads. A persisted
+  // 'guest' is a deliberate "stepping away" state (screen-off / dismissed
+  // prompt) and must survive reloads — falling back to users[0] here would
+  // silently credit the first roster user (audit F3).
   useEffect(() => {
     if (!users.length) return;
     let saved = null;
     try { saved = localStorage.getItem(storeKey); } catch { /* private mode */ }
+    const known = (id) => id === GUEST_PROFILE.id || users.some((u) => u.id === id);
     setCurrent((prev) => {
-      if (prev && users.some((u) => u.id === prev)) return prev;
-      if (saved && users.some((u) => u.id === saved)) return saved;
+      if (prev && known(prev)) return prev;
+      if (saved && known(saved)) return saved;
       return users[0].id;
     });
   }, [users, storeKey]);
