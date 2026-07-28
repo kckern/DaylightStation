@@ -85,8 +85,12 @@ export class VirtualThermalPrinterAdapter extends ThermalPrinterAdapter {
   async print(printJob) {
     // Same serialization guarantee as the real adapter: one job at a time,
     // chained off a promise, so back-to-back receipts can never interleave.
-    const run = this.#queue.then(() => this.#capture(printJob));
-    this.#queue = run.catch(() => {});
+    // A failure resolves false — the real adapter never rejects from print().
+    const run = this.#queue.then(() => this.#capture(printJob).catch((e) => {
+      this.#logger.error?.('virtual-thermal.queue.error', { error: e.message });
+      return false;
+    }));
+    this.#queue = run;
     return run;
   }
 
