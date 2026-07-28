@@ -49,6 +49,18 @@ describe('validateBlock: rich_text', () => {
   ])('rejects md that is %s', (_label, md) => {
     expect(errs({ type: 'rich_text', md })).toContain('rich_text md must be a non-empty string');
   });
+
+  // rich_text carries inline math to the same renderer as a math block, so the
+  // browser-only \require macro is reachable through this field too.
+  it('rejects \\require in inline math', () => {
+    expect(errs({ type: 'rich_text', md: 'Simplify $\\require{enclose} x$' }))
+      .toContain('rich_text md must not use \\require{} (server rendering loads all packages)');
+  });
+
+  it('rejects \\require written with a space before the brace', () => {
+    expect(errs({ type: 'rich_text', md: '$\\require {enclose} x$' }))
+      .toContain('rich_text md must not use \\require{} (server rendering loads all packages)');
+  });
 });
 
 describe('validateBlock: math', () => {
@@ -68,6 +80,11 @@ describe('validateBlock: math', () => {
 
   it('rejects a non-boolean display', () => {
     expect(errs({ type: 'math', tex: 'x', display: 'yes' })).toContain('math display must be a boolean');
+  });
+
+  it('rejects \\require written with a space before the brace', () => {
+    expect(errs({ type: 'math', tex: '\\require {enclose} x' }))
+      .toContain('math tex must not use \\require{} (server rendering loads all packages)');
   });
 });
 
@@ -152,6 +169,21 @@ describe('validateBlock: question', () => {
   it('may not nest another question', () => {
     expect(errs(question({ blocks: [question()] })))
       .toContain('blocks[0]: question may not contain another question');
+  });
+});
+
+describe('validateBlock: cyclic trees', () => {
+  it('reports a self-referencing question instead of overflowing the stack', () => {
+    const q = { type: 'question', itemId: 'q1', number: 1, blocks: [] };
+    q.blocks.push(q);
+    expect(() => validateBlock(q)).not.toThrow();
+    expect(errs(q).length).toBeGreaterThan(0);
+  });
+
+  it('reports a question reachable from itself through a sibling array', () => {
+    const q = { type: 'question', itemId: 'q1', number: 1, blocks: [] };
+    q.blocks.push({ type: 'rich_text', md: 'x', extra: q });
+    expect(() => validateBlock(q)).not.toThrow();
   });
 });
 

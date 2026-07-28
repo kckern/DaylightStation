@@ -19,6 +19,14 @@ export const BLOCK_TYPES = Object.freeze([
 const isNonEmptyString = (v) => typeof v === 'string' && v.trim().length > 0;
 const isPositiveNumber = (v) => typeof v === 'number' && Number.isFinite(v) && v > 0;
 
+// \require is MathJax's browser-only lazy package loader. Server-side every
+// package is preloaded, and the macro renders as literal red error text on the
+// printed page (found in the math rendering spike). It is banned in every field
+// that reaches the math renderer — rich_text carries inline math to the same
+// place as a math block. TeX tolerates space before the argument brace.
+const REQUIRE_MACRO = /\\require\s*\{/;
+const requireError = (field) => `${field} must not use \\require{} (server rendering loads all packages)`;
+
 const specValidator = (type) => (raw, errors) => {
   if (!raw.spec || typeof raw.spec !== 'object' || Array.isArray(raw.spec)) {
     errors.push(`${type} spec must be an object`);
@@ -35,15 +43,11 @@ const actionValidator = (type) => (raw, errors) => {
 const VALIDATORS = {
   rich_text(raw, errors) {
     if (!isNonEmptyString(raw.md)) errors.push('rich_text md must be a non-empty string');
+    else if (REQUIRE_MACRO.test(raw.md)) errors.push(requireError('rich_text md'));
   },
   math(raw, errors) {
     if (!isNonEmptyString(raw.tex)) errors.push('math tex must be a non-empty string');
-    // \require is MathJax's browser-only lazy package loader. Server-side every
-    // package is preloaded, and the macro renders as literal red error text on
-    // the printed page (found in the math rendering spike).
-    else if (raw.tex.includes('\\require{')) {
-      errors.push('math tex must not use \\require{} (server rendering loads all packages)');
-    }
+    else if (REQUIRE_MACRO.test(raw.tex)) errors.push(requireError('math tex'));
     if (raw.display !== undefined && typeof raw.display !== 'boolean') {
       errors.push('math display must be a boolean');
     }
