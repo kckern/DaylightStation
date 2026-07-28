@@ -182,7 +182,15 @@ export class CloseSessionOutcome {
     let earned;
     try {
       earned = await this.#economy.earn(state.learnerId, {
-        action: this.#economyAction, source: 'school', ref: decision.ref,
+        action: this.#economyAction,
+        source: 'school',
+        ref: decision.ref,
+        // What the UNIT says this piece of work is worth. `rewardDecision`
+        // already read it off the curriculum and floored it to whole coins;
+        // dropping it here paid every unit the earn action's flat rate, so a
+        // milestone checkpoint worth 15 quietly settled for 5 and the
+        // `reward.amount:` field in the unit schema did nothing at all.
+        amount: decision.amount,
       });
     } catch (err) {
       // The outcome stands. Coins are the least important thing on the receipt.

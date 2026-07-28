@@ -38,6 +38,44 @@ export function slugify(value, fallback = 'x') {
 const text = (md) => ({ type: 'rich_text', md });
 
 /**
+ * The printed time, as a person says it: `Mon 27 Jul, 9:05 am`.
+ *
+ * A raw ISO timestamp on a child's paper is machine notation, and the agenda
+ * printed one. The pieces come from `Intl` (the only way to place an instant in
+ * a named zone without a tz database of our own) but are ASSEMBLED here, in a
+ * fixed order, from `hourCycle: 'h23'` — so the wording does not drift with the
+ * host's ICU build the way a locale-formatted string would.
+ *
+ * Returns null rather than "Invalid Date" for anything unparseable or a zone
+ * this platform does not know: an unreadable time is worth omitting, and it is
+ * certainly not worth losing the rest of the agenda over.
+ *
+ * @param {string} iso        ISO-8601 instant (injected — nothing here reads a clock)
+ * @param {string} [timeZone] IANA zone the household reads its paper in
+ * @returns {string|null}
+ */
+export function formatPrintedAt(iso, timeZone = 'UTC') {
+  if (!isNonEmptyString(iso)) return null;
+  const ms = Date.parse(iso);
+  if (Number.isNaN(ms)) return null;
+  let parts;
+  try {
+    parts = new Intl.DateTimeFormat('en-US', {
+      timeZone, weekday: 'short', day: 'numeric', month: 'short',
+      hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
+    }).formatToParts(new Date(ms));
+  } catch {
+    return null;
+  }
+  const part = (type) => parts.find((p) => p.type === type)?.value ?? '';
+  const hour24 = Number(part('hour'));
+  if (!Number.isInteger(hour24)) return null;
+  const hour12 = hour24 % 12 === 0 ? 12 : hour24 % 12;
+  const period = hour24 < 12 ? 'am' : 'pm';
+  return `${part('weekday')} ${part('day')} ${part('month')}, ${hour12}:${part('minute')} ${period}`;
+}
+
+/**
  * Receipts are single-column, receipt-target, and carry no randomness at all, so
  * seed 0 is not a placeholder — regeneration is byte-identical by construction.
  */
@@ -57,13 +95,18 @@ const receipt = (id, blocks, seed = 0, variant = 0) => ({
  * @param {string} args.learnerId
  * @param {string} [args.learnerName]
  * @param {string} args.generatedAt   ISO time (injected — nothing here reads a clock)
+ * @param {string} [args.timeZone]    IANA zone the printed time is stated in
  * @param {Array}  args.entries       planner entries, each optionally carrying `{ token, actionLabel }`
  * @param {string} [args.footer]
  * @returns {object} a document ready for `validateDocument`
  */
-export function agendaDocument({ learnerId, learnerName = null, generatedAt = null, entries = [], footer = null } = {}) {
+export function agendaDocument({
+  learnerId, learnerName = null, generatedAt = null, timeZone = 'UTC',
+  entries = [], footer = null,
+} = {}) {
   const blocks = [text(`# ${learnerName || learnerId || 'School'}`)];
-  if (isNonEmptyString(generatedAt)) blocks.push(text(`Printed ${generatedAt}`));
+  const printedAt = formatPrintedAt(generatedAt, timeZone);
+  if (printedAt) blocks.push(text(`Printed ${printedAt}`));
 
   const offered = (Array.isArray(entries) ? entries : []).filter((e) => e && typeof e === 'object');
   if (!offered.length) {

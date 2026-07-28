@@ -31,6 +31,47 @@ import { shortId } from '#domains/core/utils/id.mjs';
 /** States in which handing over a sheet still means something. */
 const ISSUABLE = new Set(['created', 'media_completed', 'issued', 'reprinted']);
 
+/**
+ * What a child (and the grown-up they fetch) is told, per cause.
+ *
+ * Every entry carries a recovery ticket, because §9 says a failure is a retry.
+ * They differ in WHO can clear it: paper and cables for `printer`, the
+ * curriculum for `missing_artwork`, and a page that will not lay out for
+ * `render`. Three different next moves, so three different slips.
+ */
+const FAILURE_COPY = Object.freeze({
+  printer: {
+    status: 'print_failed',
+    slipId: 'print-failed',
+    headline: 'The printer is not answering',
+    lines: ['Your work is safe. Nothing was lost.'],
+    message: 'The printer did not answer. Scan the ticket below to try again.',
+    actionLabel: 'Try printing again',
+  },
+  missing_artwork: {
+    status: 'render_failed',
+    slipId: 'missing-artwork',
+    headline: 'A picture is missing from that sheet',
+    lines: [
+      'Your work is safe. Nothing was lost.',
+      'Show this to a grown-up — the sheet cannot be made until the picture is put back.',
+    ],
+    message: 'A picture on that sheet is missing, so it could not be made. Tell a grown-up.',
+    actionLabel: 'Try again once it is fixed',
+  },
+  render: {
+    status: 'render_failed',
+    slipId: 'sheet-failed',
+    headline: 'That sheet could not be made',
+    lines: [
+      'Your work is safe. Nothing was lost.',
+      'Show this to a grown-up.',
+    ],
+    message: 'We could not make that sheet. Tell a grown-up, then scan the ticket below.',
+    actionLabel: 'Try again once it is fixed',
+  },
+});
+
 export class IssueDocument {
   #curriculum; #sessions; #tokens; #renderer; #printer; #formMaps; #bankReader;
   #clock; #rng; #newArtifactId; #logger;
@@ -73,7 +114,7 @@ export class IssueDocument {
   /**
    * @param {object} args
    * @param {string} args.sessionId
-   * @returns {Promise<{ status: 'issued'|'reprinted'|'print_failed'|'unavailable'|'already_done',
+   * @returns {Promise<{ status: 'issued'|'reprinted'|'print_failed'|'render_failed'|'unavailable'|'already_done',
    *                     sessionId: string, artifactId: string|null, pageCount: number|null,
    *                     tokens: Record<string,string>, document: object|null, message: string }>}
    *   `document` is a receipt document to print when something needs explaining;
@@ -133,7 +174,13 @@ export class IssueDocument {
         },
       );
     } catch (err) {
-      return this.#recordFailure({ sessionId, stage: 'render', reason: err.message, nowIso, state });
+      return this.#recordFailure({
+        sessionId, stage: 'render', reason: err.message, nowIso, state,
+        // Read by NAME, not by class: `1_rendering` is not importable from here
+        // (D1), and the renderer arrives through a port that may be any
+        // implementation. The name is part of that port's contract.
+        cause: err.name === 'UnresolvedAssetError' ? 'missing_artwork' : 'render',
+      });
     }
 
     try {
@@ -142,7 +189,7 @@ export class IssueDocument {
         user: state.learnerId ?? 'daylight',
       });
     } catch (err) {
-      return this.#recordFailure({ sessionId, stage: 'print', reason: err.message, nowIso, state });
+      return this.#recordFailure({ sessionId, stage: 'print', reason: err.message, nowIso, state, cause: 'printer' });
     }
 
     // Written first-wins and BEFORE the issue event: see the header.
@@ -170,14 +217,20 @@ export class IssueDocument {
   }
 
   /**
-   * One token per `scan_action` block whose `action` names a token class. A
-   * block naming anything else is left alone — a document may carry a literal
-   * instruction that is not a ticket.
+   * One token per action block whose `action` names a token class. A block
+   * naming anything else is left alone — a document may carry a literal
+   * instruction that is not a ticket — but a block that DOES name one gets a
+   * real, resolvable code, because a barcode printed on a sheet a child is
+   * holding must never scan to nothing.
+   *
+   * `media_action` counts as well as `scan_action`: the "play this" box on a
+   * worksheet is scanned exactly like the "another copy" box beside it.
    */
   async #mintSheetTokens(document, sessionId, nowIso) {
     const wanted = new Set();
     walkBlocks(document.blocks, (block) => {
-      if (block.type === 'scan_action' && TOKEN_CLASSES.includes(block.action)) wanted.add(block.action);
+      const isAction = block.type === 'scan_action' || block.type === 'media_action';
+      if (isAction && TOKEN_CLASSES.includes(block.action)) wanted.add(block.action);
     });
     const tokens = {};
     for (const tokenClass of wanted) {
@@ -194,8 +247,14 @@ export class IssueDocument {
    * in the child's hand stays valid) and hand back a slip with a fresh recovery
    * ticket. Never throws — §9's whole point is that a failed print is a retry,
    * not a dead end.
+   *
+   * The slip says which thing broke. A message that misidentifies the cause is
+   * worse than none: "the printer is not answering" over a document that could
+   * not be DRAWN sends a grown-up to check paper and cables while the real
+   * problem — a missing diagram — sits in the curriculum, and every retry fails
+   * the same way with the same wrong explanation.
    */
-  async #recordFailure({ sessionId, stage, reason, nowIso, state }) {
+  async #recordFailure({ sessionId, stage, reason, nowIso, state, cause = 'printer' }) {
     const { event } = createEvent({ type: 'failed', at: nowIso, sessionId, stage, reason: reason || stage });
     if (event) await this.#sessions.appendEvent(sessionId, event);
     this.#logger.warn?.('school.issue.failed', { sessionId, stage, reason });
@@ -210,18 +269,19 @@ export class IssueDocument {
       this.#logger.warn?.('school.issue.recovery-token-failed', { sessionId, error: err.message });
     }
 
+    const copy = FAILURE_COPY[cause] ?? FAILURE_COPY.printer;
     return {
-      status: 'print_failed',
+      status: copy.status,
       sessionId,
       artifactId: state.issuedArtifacts.at(-1) ?? null,
       pageCount: null,
       tokens: {},
-      message: 'The printer did not answer. Scan the ticket below to try again.',
+      message: copy.message,
       document: noticeDocument({
-        id: `print-failed-${sessionId}`,
-        headline: 'The printer is not answering',
-        lines: ['Your work is safe. Nothing was lost.'],
-        actions: recovery ? [{ token: recovery, label: 'Try printing again' }] : [],
+        id: `${copy.slipId}-${sessionId}`,
+        headline: copy.headline,
+        lines: copy.lines,
+        actions: recovery ? [{ token: recovery, label: copy.actionLabel }] : [],
       }),
     };
   }

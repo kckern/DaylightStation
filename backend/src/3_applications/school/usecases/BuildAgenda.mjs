@@ -47,7 +47,14 @@ function agendaLabel(unit, state, fallback) {
     if (unit.bank) return 'answer on the screen';
     return 'start this';
   }
-  if (state === 'media_completed') return 'print the questions';
+  if (state === 'media_completed') {
+    // The reducer says `issue_document` here because it never sees units. A unit
+    // whose questions live in a BANK has no sheet to print, and offering one
+    // sends the child to a scan that can only answer "there is no sheet".
+    if (unit.document) return 'print the questions';
+    if (unit.bank) return 'answer on the screen';
+    return 'carry on';
+  }
   if (state === 'media_stalled') return 'start it again';
   if (state === 'media_dispatched') return 'finish watching, then scan your card';
   if (state === 'outcome_recorded') return 'try again with a fresh sheet';

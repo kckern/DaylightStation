@@ -72,7 +72,9 @@ export const rawDocuments = () => [
     id: 'fractions-04-worksheet', seed: 1104, variant: 0, target: ['letter'],
     blocks: [
       { type: 'rich_text', md: 'Write each answer in simplest form.' },
+      { type: 'media_action', action: 'media_action', label: 'Play the word problems' },
       { type: 'question', itemId: 'q1', number: 1, blocks: [{ type: 'rich_text', md: 'Two thirds of a cup, twice.' }, { type: 'answer_space', minPt: 40, maxPt: 90 }] },
+      { type: 'scan_action', action: 'recovery', label: 'Need another copy?' },
     ],
   },
 ];
