@@ -1,6 +1,7 @@
-import { render, act } from '@testing-library/react';
+import { render, act, screen } from '@testing-library/react';
 import { MemoryRouter, Routes, Route } from 'react-router-dom';
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { DaylightAPI } from '../../../../../lib/api.mjs';
 
 // --- mocks -----------------------------------------------------------------
 vi.mock('../../../../../lib/logging/Logger.js', () => ({
@@ -12,7 +13,8 @@ vi.mock('../../PianoMidiContext.jsx', () => ({
   usePianoMidi: () => ({ subscribe: vi.fn(() => () => {}), connected: true }),
   usePianoMidiNotes: () => ({ isPlaying: false }),
 }));
-vi.mock('../../PianoUserContext.jsx', () => ({ usePianoUser: () => ({ currentUser: 'test-user' }) }));
+let mockUser = 'test-user';
+vi.mock('../../PianoUserContext.jsx', () => ({ usePianoUser: () => ({ currentUser: mockUser }) }));
 
 vi.mock('./useStudioRecorder.js', () => ({
   useStudioRecorder: () => ({ recording: false, start: vi.fn(), stop: vi.fn(() => ({ events: [], durationMs: 0 })) }),
@@ -44,6 +46,11 @@ async function renderAt(path) {
   return result;
 }
 
+beforeEach(() => {
+  mockUser = 'test-user';
+  DaylightAPI.mockClear();
+});
+
 describe('Studio tab-bar record button', () => {
   it('shows the Record button on the Play (index) route', async () => {
     const { container } = await renderAt('/studio');
@@ -63,5 +70,21 @@ describe('Studio tab-bar record button', () => {
   it('no longer renders the old NavLink rec-dot (the button carries recording state)', async () => {
     const { container } = await renderAt('/studio');
     expect(container.querySelector('.piano-studio__rec-dot')).toBeNull();
+  });
+});
+
+describe('Studio as Guest (F1)', () => {
+  it('hides the Record button and shows the pick-a-player note', async () => {
+    mockUser = 'guest';
+    await renderAt('/studio');
+    expect(screen.queryByRole('button', { name: /Start recording/i })).toBeNull();
+    expect(screen.getByText('Pick a player to record')).toBeTruthy();
+  });
+
+  it('does not fetch takes for guest (the backend 400s it)', async () => {
+    mockUser = 'guest';
+    await renderAt('/studio');
+    const studioCalls = DaylightAPI.mock.calls.filter(([p]) => String(p).includes('/studio'));
+    expect(studioCalls).toHaveLength(0);
   });
 });
