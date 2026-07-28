@@ -17,7 +17,7 @@ import {
 } from '#testlib/school/lifecycleFakes.mjs';
 import {
   rawUnits, rawDocuments, rawManifests, BANK_IDS,
-  MEDIA_UNIT, WORKSHEET_UNIT, MIXED_UNIT,
+  MEDIA_UNIT, WORKSHEET_UNIT, MIXED_UNIT, MEDIA_BANK_ID,
 } from '#testlib/school/lifecycleFixtures.mjs';
 
 const TARGETS = [{ id: 'living-room-tv', label: 'the TV', child_selectable: true }];
@@ -184,7 +184,7 @@ describe('a unit that finishes on the screen', () => {
 
     const result = await resolve.execute({ code: record.token });
     expect(result).toMatchObject({ status: 'open_on_screen', physical: 'receipt', printed: true });
-    expect(result.effect).toMatchObject({ unitId: MEDIA_UNIT, bank: 'fractions-01-quiz' });
+    expect(result.effect).toMatchObject({ unitId: MEDIA_UNIT, bank: MEDIA_BANK_ID });
     expect(thermal.lastTranscript()).toMatch(/school screen/i);
     expect(thermal.lastTranscript()).not.toMatch(/no sheet to print/i);
     expect(laser.jobs).toEqual([]);

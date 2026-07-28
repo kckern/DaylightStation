@@ -8,7 +8,7 @@ import {
   fakeClock, silentLogger,
 } from '#testlib/school/lifecycleFakes.mjs';
 import {
-  rawUnits, rawDocuments, rawManifests, BANK_IDS, MEDIA_UNIT, WORKSHEET_UNIT,
+  rawUnits, rawDocuments, rawManifests, BANK_IDS, MEDIA_UNIT, WORKSHEET_UNIT, fixtureUnit,
 } from '#testlib/school/lifecycleFixtures.mjs';
 
 let clock, sessions, assignments, reviewQueue, reporter;
@@ -70,7 +70,7 @@ describe('the row', () => {
     await pass('ses_1', MEDIA_UNIT);
     const [row] = await reporter.summarize({ userId: 'kid1' });
     expect(row.headline).toBe('1 of 4 done');
-    expect(row.next.label).toBe('Unlike Denominators');
+    expect(row.next.label).toBe(fixtureUnit(WORKSHEET_UNIT).title);
   });
 
   it('reports the course complete when every unit has passed', async () => {

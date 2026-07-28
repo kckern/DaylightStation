@@ -130,26 +130,58 @@ describe('tests/_fixtures/school/curriculum — the committed sample course', ()
  *                                 validator; checked for coherence with the
  *                                 bank and document it claims to describe
  *   id | idList                 — an identifier, checked to resolve
+ *   bubbleChoice                — a derivation (itemId → bubble letter), checked
+ *                                 to land on the bank's own answer
+ *
+ * An export taking arguments carries a `sample` thunk, so a parameterised
+ * accessor is validated over real inputs rather than exempted for being a
+ * function.
  */
 const DECLARED = Object.freeze({
   MEDIA_UNIT: { kind: 'id', resolves: 'unit' },
   WORKSHEET_UNIT: { kind: 'id', resolves: 'unit' },
   OMR_UNIT: { kind: 'id', resolves: 'unit' },
   MIXED_UNIT: { kind: 'id', resolves: 'unit' },
+  COURSE_ID: { kind: 'id', resolves: 'course' },
+  OMR_BANK_ID: { kind: 'id', resolves: 'bank' },
+  MEDIA_BANK_ID: { kind: 'id', resolves: 'bank' },
+  OMR_DOCUMENT_ID: { kind: 'id', resolves: 'document' },
+  WORKSHEET_DOCUMENT_ID: { kind: 'id', resolves: 'document' },
+  BANK_IDS: { kind: 'idList', resolves: 'bank' },
   rawUnits: { kind: 'unit', many: true },
   rawDocuments: { kind: 'document', many: true },
   rawManifests: { kind: 'manifest', many: true },
-  omrBank: { kind: 'bank' },
-  omrFormMap: { kind: 'formMap' },
-  BANK_IDS: { kind: 'idList', resolves: 'bank' },
+  rawBanks: { kind: 'bank', many: true },
+  fixtureUnit: {
+    kind: 'unit',
+    many: true,
+    sample: (m) => [m.MEDIA_UNIT, m.WORKSHEET_UNIT, m.OMR_UNIT, m.MIXED_UNIT].map((id) => m.fixtureUnit(id)),
+  },
+  fixtureDocument: {
+    kind: 'document',
+    many: true,
+    sample: (m) => m.rawDocuments().map((d) => m.fixtureDocument(d.id)),
+  },
+  fixtureBank: {
+    kind: 'bank',
+    many: true,
+    sample: (m) => m.BANK_IDS.map((id) => m.fixtureBank(id)),
+  },
+  printedFormMap: { kind: 'formMap' },
+  correctBubbles: { kind: 'bubbleChoice' },
 });
 
-const call = (value) => (typeof value === 'function' ? value() : value);
+const call = (name) => {
+  const spec = DECLARED[name];
+  if (spec.sample) return spec.sample(lifecycleFixtures);
+  const value = lifecycleFixtures[name];
+  return typeof value === 'function' ? value() : value;
+};
 const asList = (value) => (Array.isArray(value) ? value : [value]);
 
 const declaredOf = (kind) => Object.entries(DECLARED)
   .filter(([, spec]) => spec.kind === kind)
-  .flatMap(([name]) => asList(call(lifecycleFixtures[name])).map((raw, i) => [
+  .flatMap(([name]) => asList(call(name)).map((raw, i) => [
     DECLARED[name].many ? `${name}()[${i}]` : `${name}()`, raw,
   ]));
 
@@ -166,7 +198,7 @@ const fixtureSets = setsFrom({
 // The bank ids a unit may reference are the ones the suite DECLARES it serves,
 // not only the ones it happens to hand back as objects: `BANK_IDS` is what the
 // application tests feed `CurriculumAccess`, so it is what a ref resolves in.
-for (const id of asList(call(lifecycleFixtures.BANK_IDS)) ?? []) fixtureSets.bankIds.add(id);
+for (const id of asList(call('BANK_IDS'))) fixtureSets.bankIds.add(id);
 
 describe('tests/_lib/school/lifecycleFixtures.mjs — the in-memory fixtures', () => {
   it('describes every export, so nothing can be added that skips validation', () => {
@@ -200,6 +232,7 @@ describe('tests/_lib/school/lifecycleFixtures.mjs — the in-memory fixtures', (
   it('every declared id resolves to a fixture of the kind it names', () => {
     const known = {
       unit: new Set(fixtureUnits.map(([, raw]) => raw?.unitId)),
+      course: new Set(fixtureUnits.map(([, raw]) => raw?.courseId).filter(Boolean)),
       document: fixtureSets.documentIds,
       manifest: fixtureSets.manifestIds,
       bank: fixtureSets.bankIds,
@@ -207,11 +240,39 @@ describe('tests/_lib/school/lifecycleFixtures.mjs — the in-memory fixtures', (
     const dangling = [];
     for (const [name, spec] of Object.entries(DECLARED)) {
       if (spec.kind !== 'id' && spec.kind !== 'idList') continue;
-      for (const id of asList(call(lifecycleFixtures[name]))) {
+      for (const id of asList(call(name))) {
         if (!known[spec.resolves].has(id)) dangling.push(`${name}: ${spec.resolves} '${id}' not found`);
       }
     }
     expect(dangling).toEqual([]);
+  });
+
+  /**
+   * The bank/paper join, in the one place it can be checked cheaply. A helper
+   * that returns a letter whose bubble carries the wrong text is the 0-of-6 bug
+   * wearing a different hat.
+   */
+  it('correctBubbles lands on the bubble whose printed text IS the bank answer', () => {
+    const formMap = lifecycleFixtures.printedFormMap();
+    const bank = lifecycleFixtures.fixtureBank(lifecycleFixtures.OMR_BANK_ID);
+    const chosen = lifecycleFixtures.correctBubbles({ formMap, bankId: bank.id });
+
+    expect(Object.keys(chosen).sort()).toEqual(bank.items.map((i) => i.id).sort());
+    const wrong = bank.items
+      .map((item) => {
+        const bubble = formMap.marks.find((m) => m.itemId === item.id && m.choice === chosen[item.id]);
+        return bubble?.label === item.answer
+          ? null
+          : `${item.id}: bubble ${chosen[item.id]} reads ${JSON.stringify(bubble?.label)}, answer is ${JSON.stringify(item.answer)}`;
+      })
+      .filter(Boolean);
+    expect(wrong).toEqual([]);
+
+    // And the `wrong` lever really does miss, or a "failed attempt" test would
+    // be quietly asserting a pass.
+    const missed = lifecycleFixtures.correctBubbles({ formMap, bankId: bank.id, wrong: [bank.items[0].id] });
+    const missedBubble = formMap.marks.find((m) => m.itemId === bank.items[0].id && m.choice === missed[bank.items[0].id]);
+    expect(missedBubble.label).not.toBe(bank.items[0].answer);
   });
 });
 
@@ -229,7 +290,7 @@ describe('tests/_lib/school/lifecycleFixtures.mjs — the in-memory fixtures', (
 describe('the OMR form map matches the bank and the document it describes', () => {
   const formMaps = Object.entries(DECLARED)
     .filter(([, spec]) => spec.kind === 'formMap')
-    .map(([name]) => [`${name}()`, call(lifecycleFixtures[name])]);
+    .map(([name]) => [`${name}()`, call(name)]);
 
   it('there is one to check', () => {
     expect(formMaps.length).toBeGreaterThan(0);
