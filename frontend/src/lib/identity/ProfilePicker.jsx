@@ -37,11 +37,16 @@ export default function ProfilePicker({ open, users = [], activeId, onPick, onDi
   // Keep the active page in range when the roster shrinks.
   useEffect(() => { setPage((p) => Math.min(p, Math.max(0, pages.length - 1))); }, [pages.length]);
 
+  // Any interaction inside the sheet restarts the auto-dismiss countdown —
+  // browsing pages must not eat the timeout budget and land on a surprise
+  // Guest dismiss (audit F9).
+  const [interactionEpoch, setInteractionEpoch] = useState(0);
+
   useEffect(() => {
     if (!open || !(timeoutMs > 0)) return undefined;
     const t = setTimeout(() => onDismissRef.current?.(), timeoutMs);
     return () => clearTimeout(t);
-  }, [open, timeoutMs]);
+  }, [open, timeoutMs, interactionEpoch]);
 
   if (!open) return null;
   const current = pages[Math.min(page, Math.max(0, pages.length - 1))] || [];
@@ -49,7 +54,7 @@ export default function ProfilePicker({ open, users = [], activeId, onPick, onDi
   return (
     <div className="piano-userpicker piano-userpicker--prompt" role="dialog" aria-modal="true" aria-label={title}>
       <div className="piano-userpicker__scrim" onClick={() => onDismiss?.()} />
-      <div className="piano-userpicker__sheet">
+      <div className="piano-userpicker__sheet" onPointerDown={() => setInteractionEpoch((e) => e + 1)}>
         <button type="button" className="piano-userpicker__close" aria-label="Close" onClick={() => onDismiss?.()}>✕</button>
         <h2 className="piano-userpicker__title">{title}</h2>
         <ul

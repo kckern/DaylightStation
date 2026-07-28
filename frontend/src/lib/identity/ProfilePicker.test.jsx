@@ -31,6 +31,19 @@ describe('ProfilePicker', () => {
     act(() => { vi.advanceTimersByTime(30000); });
     expect(onDismiss).toHaveBeenCalledTimes(1);
   });
+  it('interaction inside the sheet restarts the auto-dismiss countdown (F9)', () => {
+    const onDismiss = vi.fn();
+    const { container } = render(
+      <ProfilePicker open users={users} onPick={() => {}} onDismiss={onDismiss} timeoutMs={30000} />
+    );
+    act(() => { vi.advanceTimersByTime(20000); });
+    fireEvent.pointerDown(container.querySelector('.piano-userpicker__sheet'));
+    act(() => { vi.advanceTimersByTime(20000); }); // 40s total, but only 20s since the tap
+    expect(onDismiss).not.toHaveBeenCalled();
+    act(() => { vi.advanceTimersByTime(10000); }); // 30s since the tap
+    expect(onDismiss).toHaveBeenCalledTimes(1);
+  });
+
   it('renders nothing when closed', () => {
     const { container } = render(<ProfilePicker open={false} users={users} onPick={() => {}} onDismiss={() => {}} />);
     expect(container.firstChild).toBeNull();
