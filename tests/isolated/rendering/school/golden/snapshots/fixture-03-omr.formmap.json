@@ -1,0 +1,224 @@
+{
+  "formVersion": "school-document-1",
+  "documentId": "math-fractions-03-omr",
+  "seed": 20260724,
+  "variant": 0,
+  "marks": [
+    {
+      "itemId": "u3-q1",
+      "choice": "A",
+      "label": "2/5",
+      "xPt": 104.2666015625,
+      "yPt": 231.45000000000002,
+      "rPt": 6.5,
+      "page": 1
+    },
+    {
+      "itemId": "u3-q1",
+      "choice": "B",
+      "label": "2/6",
+      "xPt": 221.458984375,
+      "yPt": 231.45000000000002,
+      "rPt": 6.5,
+      "page": 1
+    },
+    {
+      "itemId": "u3-q1",
+      "choice": "C",
+      "label": "5/6",
+      "xPt": 339.1689453125,
+      "yPt": 231.45000000000002,
+      "rPt": 6.5,
+      "page": 1
+    },
+    {
+      "itemId": "u3-q1",
+      "choice": "D",
+      "label": "1/6",
+      "xPt": 456.7080078125,
+      "yPt": 231.45000000000002,
+      "rPt": 6.5,
+      "page": 1
+    },
+    {
+      "itemId": "u3-q2",
+      "choice": "A",
+      "label": "2/12",
+      "xPt": 104.2666015625,
+      "yPt": 319.6,
+      "rPt": 6.5,
+      "page": 1
+    },
+    {
+      "itemId": "u3-q2",
+      "choice": "B",
+      "label": "5/12",
+      "xPt": 221.458984375,
+      "yPt": 319.6,
+      "rPt": 6.5,
+      "page": 1
+    },
+    {
+      "itemId": "u3-q2",
+      "choice": "C",
+      "label": "1/2",
+      "xPt": 339.1689453125,
+      "yPt": 319.6,
+      "rPt": 6.5,
+      "page": 1
+    },
+    {
+      "itemId": "u3-q2",
+      "choice": "D",
+      "label": "4/7",
+      "xPt": 456.7080078125,
+      "yPt": 319.6,
+      "rPt": 6.5,
+      "page": 1
+    },
+    {
+      "itemId": "u3-q3",
+      "choice": "A",
+      "label": "2/3",
+      "xPt": 104.2666015625,
+      "yPt": 428.25,
+      "rPt": 6.5,
+      "page": 1
+    },
+    {
+      "itemId": "u3-q3",
+      "choice": "B",
+      "label": "3/4",
+      "xPt": 221.458984375,
+      "yPt": 428.25,
+      "rPt": 6.5,
+      "page": 1
+    },
+    {
+      "itemId": "u3-q3",
+      "choice": "C",
+      "label": "4/6",
+      "xPt": 339.1689453125,
+      "yPt": 428.25,
+      "rPt": 6.5,
+      "page": 1
+    },
+    {
+      "itemId": "u3-q3",
+      "choice": "D",
+      "label": "5/8",
+      "xPt": 456.7080078125,
+      "yPt": 428.25,
+      "rPt": 6.5,
+      "page": 1
+    },
+    {
+      "itemId": "u3-q4",
+      "choice": "A",
+      "label": "1 3/4",
+      "xPt": 104.2666015625,
+      "yPt": 536.614,
+      "rPt": 6.5,
+      "page": 1
+    },
+    {
+      "itemId": "u3-q4",
+      "choice": "B",
+      "label": "2 1/4",
+      "xPt": 221.458984375,
+      "yPt": 536.614,
+      "rPt": 6.5,
+      "page": 1
+    },
+    {
+      "itemId": "u3-q4",
+      "choice": "C",
+      "label": "2 3/4",
+      "xPt": 339.1689453125,
+      "yPt": 536.614,
+      "rPt": 6.5,
+      "page": 1
+    },
+    {
+      "itemId": "u3-q4",
+      "choice": "D",
+      "label": "3 1/4",
+      "xPt": 456.7080078125,
+      "yPt": 536.614,
+      "rPt": 6.5,
+      "page": 1
+    },
+    {
+      "itemId": "u3-q5",
+      "choice": "A",
+      "label": "4/12",
+      "xPt": 104.2666015625,
+      "yPt": 659.764,
+      "rPt": 6.5,
+      "page": 1
+    },
+    {
+      "itemId": "u3-q5",
+      "choice": "B",
+      "label": "4/8",
+      "xPt": 221.458984375,
+      "yPt": 659.764,
+      "rPt": 6.5,
+      "page": 1
+    },
+    {
+      "itemId": "u3-q5",
+      "choice": "C",
+      "label": "5/12",
+      "xPt": 339.1689453125,
+      "yPt": 659.764,
+      "rPt": 6.5,
+      "page": 1
+    },
+    {
+      "itemId": "u3-q5",
+      "choice": "D",
+      "label": "5/8",
+      "xPt": 456.7080078125,
+      "yPt": 659.764,
+      "rPt": 6.5,
+      "page": 1
+    },
+    {
+      "itemId": "u3-q6",
+      "choice": "A",
+      "label": "2/3",
+      "xPt": 104.2666015625,
+      "yPt": 85.5,
+      "rPt": 6.5,
+      "page": 2
+    },
+    {
+      "itemId": "u3-q6",
+      "choice": "B",
+      "label": "5/8",
+      "xPt": 221.458984375,
+      "yPt": 85.5,
+      "rPt": 6.5,
+      "page": 2
+    },
+    {
+      "itemId": "u3-q6",
+      "choice": "C",
+      "label": "3/5",
+      "xPt": 339.1689453125,
+      "yPt": 85.5,
+      "rPt": 6.5,
+      "page": 2
+    },
+    {
+      "itemId": "u3-q6",
+      "choice": "D",
+      "label": "7/12",
+      "xPt": 456.7080078125,
+      "yPt": 85.5,
+      "rPt": 6.5,
+      "page": 2
+    }
+  ]
+}
