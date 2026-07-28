@@ -13,8 +13,8 @@ import './MarkerGutter.scss';
  * lanes). Video-change poster cards live here; challenge number badges live at the top
  * of the line chart. Same tick axis (useTimelineMarkers) keeps everything aligned.
  */
-export default function MarkerGutter({ sessionData }) {
-  const { ref, width, height, challengeMarkers, videoMarkers } = useTimelineMarkers(sessionData);
+export default function MarkerGutter({ sessionData, primaryMediaKey }) {
+  const { ref, width, height, challengeMarkers, videoMarkers } = useTimelineMarkers(sessionData, primaryMediaKey);
 
   return (
     <div ref={ref} className="marker-gutter">

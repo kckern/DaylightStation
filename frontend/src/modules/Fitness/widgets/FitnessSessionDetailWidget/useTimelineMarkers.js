@@ -2,7 +2,7 @@ import { useMemo, useRef, useState, useLayoutEffect } from 'react';
 import { createChartDataSource } from '../FitnessChart/sessionDataAdapter.js';
 import { CHART_MARGIN, MIN_VISIBLE_TICKS } from '@/modules/Fitness/lib/chartConstants.js';
 import { computeChallengeMarkers, computeVideoMarkers, snapChallengeEndsToZoneTicks } from './timelineOverlay.js';
-import { resolveSessionStartMs } from './sessionDetailUtils.js';
+import { resolveSessionStartMs, resolvePrimaryMediaKey } from './sessionDetailUtils.js';
 
 /**
  * Shared tick-axis scale for the session-detail overlay. Mirrors FitnessTimeline's
@@ -30,7 +30,7 @@ export function computeEffectiveTicks(sessionData, getSeries, roster) {
  * shared tick axis. Returns a ref to attach to the full-width host plus the marker
  * arrays. The left inset (avatar column) is applied by the caller via opts.marginLeft.
  */
-export function useTimelineMarkers(sessionData) {
+export function useTimelineMarkers(sessionData, primaryMediaKey) {
   const ref = useRef(null);
   const [dims, setDims] = useState({ width: 0, height: 0 });
   const { width, height } = dims;
@@ -63,7 +63,8 @@ export function useTimelineMarkers(sessionData) {
       effectiveTicks,
       plotWidth,
       marginLeft: CHART_MARGIN.left,
-      sessionStartMs: resolveSessionStartMs(sessionData)
+      sessionStartMs: resolveSessionStartMs(sessionData),
+      primaryMediaKey: primaryMediaKey ?? resolvePrimaryMediaKey(sessionData)
     };
     const events = sessionData?.timeline?.events;
     const zoneSeriesByUser = {};
@@ -78,5 +79,5 @@ export function useTimelineMarkers(sessionData) {
       challengeMarkers: snapChallengeEndsToZoneTicks(computeChallengeMarkers(events, opts), zoneSeriesByUser, opts),
       videoMarkers: computeVideoMarkers(events, opts)
     };
-  }, [sessionData, width, height, getSeries, roster, timebase]);
+  }, [sessionData, width, height, getSeries, roster, timebase, primaryMediaKey]);
 }
