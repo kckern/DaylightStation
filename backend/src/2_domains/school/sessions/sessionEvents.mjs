@@ -214,6 +214,10 @@ const emptyState = () => ({
   outcome: null,
   rewardTxn: null,
   remediationOf: null,
+  // Which equivalent-problem form of the unit this session was opened with
+  // (spec §3.3). Derived rather than looked up because the document that gets
+  // reprinted has to be the SAME variant the child was handed.
+  variant: 0,
   remediation: null,
   lastFailure: null,
   eventCount: 0,
@@ -226,6 +230,7 @@ const APPLY = {
     s.learnerId = e.learnerId ?? null;
     s.unitId = e.unitId ?? null;
     if (e.remediationOf) s.remediationOf = e.remediationOf;
+    if (Number.isInteger(e.variant)) s.variant = e.variant;
   },
   issued(s, e) {
     if (e.artifactId && !s.issuedArtifacts.includes(e.artifactId)) s.issuedArtifacts.push(e.artifactId);
