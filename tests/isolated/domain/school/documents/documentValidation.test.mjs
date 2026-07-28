@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { validateDocument } from '#domains/school/documents/documentValidation.mjs';
+import { validateDocument, walkBlocks } from '#domains/school/documents/documentValidation.mjs';
 
 const question = (over = {}) => ({
   type: 'question',
@@ -153,6 +153,18 @@ describe('validateDocument: omr_response placement', () => {
     expect(errs(doc({ blocks: [{ type: 'omr_response', itemId: 'q1', choices: 4 }] })))
       .toContain('blocks[0]: omr_response must be inside a question block');
   });
+
+  // The bubble row and the question must grade the same bank item; a mismatched
+  // pair marks up one item's sheet and scores another's. Multi-part questions
+  // are modelled as separate question blocks, so equality is the whole rule.
+  it('rejects an omr_response whose itemId differs from its question, naming both', () => {
+    const mismatched = question({ blocks: [
+      { type: 'rich_text', md: 'Pick one.' },
+      { type: 'omr_response', itemId: 'TOTALLY-OTHER', choices: 4 },
+    ] });
+    expect(errs(doc({ blocks: [mismatched] })))
+      .toContain('blocks[0].blocks[1]: omr_response itemId "TOTALLY-OTHER" must match its question itemId "q1"');
+  });
 });
 
 describe('validateDocument: answer keys are structurally impossible', () => {
@@ -179,6 +191,61 @@ describe('validateDocument: answer keys are structurally impossible', () => {
 
   it('does not confuse a legitimate answer_space block for an answer key', () => {
     expect(errs(doc({ blocks: [{ type: 'answer_space', minPt: 40, maxPt: 120 }] }))).toEqual([]);
+  });
+});
+
+describe('validateDocument: cyclic trees', () => {
+  it('reports a self-referencing question instead of overflowing the stack', () => {
+    const q = question();
+    q.blocks.push(q);
+    expect(() => validateDocument(doc({ blocks: [q] }))).not.toThrow();
+    expect(errs(doc({ blocks: [q] })).length).toBeGreaterThan(0);
+  });
+
+  it('reports a two-question cycle instead of overflowing the stack', () => {
+    const a = question({ itemId: 'a' });
+    const b = question({ itemId: 'b', number: 2 });
+    a.blocks.push(b);
+    b.blocks.push(a);
+    expect(() => validateDocument(doc({ blocks: [a] }))).not.toThrow();
+  });
+});
+
+describe('walkBlocks', () => {
+  it('visits every block with its dotted path and enclosing question', () => {
+    const inner = { type: 'omr_response', itemId: 'q1', choices: 4 };
+    const q = question({ blocks: [inner] });
+    const seen = [];
+    walkBlocks([q], (block, at, enclosing) => seen.push([block.type, at, enclosing?.itemId ?? null]));
+    expect(seen).toEqual([
+      ['question', 'blocks[0]', null],
+      ['omr_response', 'blocks[0].blocks[0]', 'q1'],
+    ]);
+  });
+
+  it('passes the enclosing question object itself, not a flag', () => {
+    const q = question({ blocks: [{ type: 'rich_text', md: 'x' }] });
+    const enclosing = [];
+    walkBlocks([q], (_block, _at, encl) => enclosing.push(encl));
+    expect(enclosing[1]).toBe(q);
+  });
+
+  it('skips non-object entries rather than crashing', () => {
+    const seen = [];
+    expect(() => walkBlocks([null, 'nope', { type: 'rich_text', md: 'x' }], (b) => seen.push(b.type))).not.toThrow();
+    expect(seen).toEqual(['rich_text']);
+  });
+
+  it('ignores a non-array blocks value', () => {
+    const seen = [];
+    walkBlocks(undefined, (b) => seen.push(b));
+    expect(seen).toEqual([]);
+  });
+
+  it('terminates on a cyclic tree', () => {
+    const q = question();
+    q.blocks.push(q);
+    expect(() => walkBlocks([q], () => {})).not.toThrow();
   });
 });
 
