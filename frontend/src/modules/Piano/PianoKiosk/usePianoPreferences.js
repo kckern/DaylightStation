@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { DaylightAPI } from '../../../lib/api.mjs';
 import getLogger from '../../../lib/logging/Logger.js';
 import { usePianoUser } from './PianoUserContext.jsx';
+import { isPersistentUser, GUEST_PROFILE } from './pianoUser.js';
 
 let _logger;
 function logger() {
@@ -23,7 +24,13 @@ export function usePianoPreferences() {
   userRef.current = currentUser;
 
   useEffect(() => {
-    if (!currentUser) { setPrefs({}); setLoaded(false); return undefined; }
+    if (!isPersistentUser(currentUser)) {
+      // Guest has no server blob (the backend 400s it) — loaded immediately.
+      // No user yet (roster resolving) stays un-loaded.
+      setPrefs({});
+      setLoaded(currentUser === GUEST_PROFILE.id);
+      return undefined;
+    }
     let cancelled = false;
     setLoaded(false);
     DaylightAPI(`api/v1/piano/users/${currentUser}/preferences`)
@@ -49,7 +56,8 @@ export function usePianoPreferences() {
   const setPref = useCallback(async (key, value) => {
     const user = userRef.current;
     if (!user) return;
-    setPrefs((prev) => ({ ...prev, [key]: value })); // optimistic
+    setPrefs((prev) => ({ ...prev, [key]: value })); // optimistic (session-only for guests)
+    if (!isPersistentUser(user)) return; // guest: never PUT — the backend rejects it
     try {
       await DaylightAPI(`api/v1/piano/users/${user}/preferences`, { [key]: value }, 'PUT');
       logger().info('preferences.save', { user, key });
