@@ -98,6 +98,42 @@ describe('computeVideoMarkers', () => {
     const events = [videoEvent(0), { type: 'media', data: { contentId: 'plex:3', artist: 'X', start: 1_300_000 } }];
     expect(computeVideoMarkers(events, MARKER_OPTS)).toHaveLength(0);
   });
+
+  it('collapses consecutive events for the same video into one marker', () => {
+    const events = [
+      videoEvent(0, { title: 'Warmup' }),
+      videoEvent(300, { title: 'Hero', contentId: 'plex:2' }),
+      videoEvent(600, { title: 'Hero', contentId: 'plex:2' }), // resume/re-log — not a change
+      videoEvent(900, { title: 'Cooldown', contentId: 'plex:3' })
+    ];
+    const markers = computeVideoMarkers(events, MARKER_OPTS);
+    expect(markers.map(m => m.episodeName)).toEqual(['Hero', 'Cooldown']);
+  });
+
+  it('still marks a video that returns after another one played in between', () => {
+    const events = [
+      videoEvent(0, { title: 'A' }),
+      videoEvent(300, { title: 'B', contentId: 'plex:2' }),
+      videoEvent(600, { title: 'A again', contentId: 'plex:1' })
+    ];
+    const markers = computeVideoMarkers(events, MARKER_OPTS);
+    expect(markers.map(m => m.episodeName)).toEqual(['B', 'A again']);
+  });
+
+  it('omits the primary video, not the first, when the primary plays second', () => {
+    const events = [
+      videoEvent(0, { title: 'Warmup' }),
+      videoEvent(300, { title: 'Hero', contentId: 'plex:2' })
+    ];
+    const markers = computeVideoMarkers(events, { ...MARKER_OPTS, primaryMediaKey: 'plex:2' });
+    expect(markers.map(m => m.episodeName)).toEqual(['Warmup']);
+  });
+
+  it('keeps every video when the primary is not among them', () => {
+    const events = [videoEvent(0, { title: 'A' }), videoEvent(300, { title: 'B', contentId: 'plex:2' })];
+    const markers = computeVideoMarkers(events, { ...MARKER_OPTS, primaryMediaKey: 'plex:99' });
+    expect(markers.map(m => m.episodeName)).toEqual(['A', 'B']);
+  });
 });
 
 describe('computeChallengeMarkers', () => {

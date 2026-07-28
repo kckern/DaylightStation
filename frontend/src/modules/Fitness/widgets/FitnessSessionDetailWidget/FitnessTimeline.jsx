@@ -3,7 +3,7 @@ import { createChartDataSource } from '../FitnessChart/sessionDataAdapter.js';
 import { CHART_MARGIN, MIN_GAP_DURATION_FOR_DASHED_MS, MARKER_FILL_OPACITY } from '@/modules/Fitness/lib/chartConstants.js';
 import { ZONE_COLOR_MAP, buildActivityMaskFromHeartRate } from '@/modules/Fitness/lib/chartHelpers.js';
 import { computeRaceBands, computeSeamLines, computeVideoMarkers, computeChallengeMarkers, snapChallengeEndsToZoneTicks } from './timelineOverlay.js';
-import { resolveSessionStartMs } from './sessionDetailUtils.js';
+import { resolveSessionStartMs, resolvePrimaryMediaKey } from './sessionDetailUtils.js';
 import { computeEffectiveTicks } from './useTimelineMarkers.js';
 import { getChallengeMarkerColor } from '@/modules/Fitness/lib/activities/challengeTypeRegistry.js';
 import { getActivityDisplay, primaryActivity } from '@/modules/Fitness/lib/activities/fitnessActivityRegistry.jsx';
@@ -204,7 +204,7 @@ export function buildHrAreaPath(hrSeries, zoneSeries, effectiveTicks, plotWidth,
   return { fills, hrMin, hrMax, lastActiveTick: lastValid };
 }
 
-export default function FitnessTimeline({ sessionData, maxAvatarSize }) {
+export default function FitnessTimeline({ sessionData, maxAvatarSize, primaryMediaKey }) {
   const containerRef = useRef(null);
   const [dimensions, setDimensions] = useState({ width: 0, height: 0 });
 
@@ -238,7 +238,10 @@ export default function FitnessTimeline({ sessionData, maxAvatarSize }) {
 
   const overlay = useMemo(() => {
     const sessionStartMs = resolveSessionStartMs(sessionData);
-    const opts = { intervalMs, effectiveTicks, plotWidth, marginLeft: CHART_MARGIN.left, sessionStartMs };
+    const opts = {
+      intervalMs, effectiveTicks, plotWidth, marginLeft: CHART_MARGIN.left, sessionStartMs,
+      primaryMediaKey: primaryMediaKey ?? resolvePrimaryMediaKey(sessionData)
+    };
     const events = sessionData?.timeline?.events;
     const zoneSeriesByUser = {};
     for (const entry of roster || []) {
@@ -252,7 +255,7 @@ export default function FitnessTimeline({ sessionData, maxAvatarSize }) {
       challengeMarkers: snapChallengeEndsToZoneTicks(computeChallengeMarkers(events, opts), zoneSeriesByUser, opts),
       accent: getActivityDisplay(primaryActivity(sessionData?.activities)?.type)?.accent || '#3ba776',
     };
-  }, [sessionData, intervalMs, effectiveTicks, plotWidth, getSeries, roster]);
+  }, [sessionData, intervalMs, effectiveTicks, plotWidth, getSeries, roster, primaryMediaKey]);
 
   const lanes = useMemo(() => {
     if (!roster || roster.length === 0 || plotWidth <= 0 || plotHeight <= 0) return [];

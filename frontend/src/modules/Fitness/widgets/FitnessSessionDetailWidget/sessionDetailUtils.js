@@ -1,3 +1,34 @@
+import { selectPrimaryMedia, buildSelectionConfig } from '@/hooks/fitness/selectPrimaryMedia.js';
+
+/**
+ * Identity key for a media item / media event — what makes two of them "the same
+ * video". Shared by the header's primary pick and the overlay's video markers so
+ * both sides compare the same way.
+ */
+export function mediaIdentityKey(item) {
+  const d = item?.data || item || {};
+  const key = d.contentId ?? d.ratingKey ?? d.title;
+  return key == null ? '' : String(key);
+}
+
+/**
+ * Key of the session's primary video — the one the detail header already shows,
+ * so the overlay can leave it out of the marker gutter.
+ *
+ * Mirrors the header's derivation (selectPrimaryMedia, then the stored flag, then
+ * media[0]). `config` is optional: the header passes the household plex config,
+ * the chart/timeline layers call it without one. Returns null when the session
+ * carries no media summary, which leaves the overlay on its default behavior.
+ */
+export function resolvePrimaryMediaKey(sessionData, plexConfig) {
+  const mediaList = Array.isArray(sessionData?.summary?.media) ? sessionData.summary.media : null;
+  if (!mediaList || mediaList.length === 0) return null;
+  const pm = selectPrimaryMedia(mediaList, buildSelectionConfig(plexConfig))
+    || mediaList.find((m) => m.primary)
+    || mediaList[0];
+  return pm ? mediaIdentityKey(pm) || null : null;
+}
+
 /** Build a display image URL from a (possibly source-qualified) content id. */
 export function mediaDisplayUrl(contentId) {
   if (!contentId) return null;
