@@ -44,6 +44,7 @@ import { YamlAssignmentStore } from '#adapters/persistence/yaml/YamlAssignmentSt
 import { YamlFormMapStore } from '#adapters/persistence/yaml/YamlFormMapStore.mjs';
 import { YamlReviewQueue } from '#adapters/persistence/yaml/YamlReviewQueue.mjs';
 import { CurriculumAccess } from '#apps/school/CurriculumAccess.mjs';
+import { GrownUpGate } from '#apps/school/GrownUpGate.mjs';
 import { ReceiptPrinting } from '#apps/school/ReceiptPrinting.mjs';
 import { WorkSessionReporter } from '#apps/school/WorkSessionReporter.mjs';
 import { BuildAgenda } from '#apps/school/usecases/BuildAgenda.mjs';
@@ -56,6 +57,8 @@ import { CloseSessionOutcome } from '#apps/school/usecases/CloseSessionOutcome.m
 import { OpenRemediation } from '#apps/school/usecases/OpenRemediation.mjs';
 import { ResolvePersonalCard } from '#apps/school/usecases/ResolvePersonalCard.mjs';
 import { ResolveScanAction } from '#apps/school/usecases/ResolveScanAction.mjs';
+import { ResolveReviewItem } from '#apps/school/usecases/ResolveReviewItem.mjs';
+import { SetAssignments } from '#apps/school/usecases/SetAssignments.mjs';
 import { isSchoolToken } from '#domains/school/sessions/tokens.mjs';
 import { createSchoolLifecycleRouter } from '#api/v1/routers/schoolLifecycle.mjs';
 import { createSchoolVirtualDevicesRouter } from '#api/v1/routers/schoolVirtualDevices.mjs';
@@ -252,6 +255,16 @@ export async function createSchoolLifecycle({
     getBank: (id) => { try { return schoolService.getBank(id); } catch { return null; } },
   };
   const receipts = new ReceiptPrinting({ renderer: receiptRenderer, printer: receiptPrinter, logger });
+  // Who may act for a child. Read through `userService` per call, never
+  // snapshotted: a member added after boot is a member. With no user service at
+  // all, nobody is a grown-up and every parent-only write is refused — the
+  // console still teaches and prints, it just cannot be signed off, which is the
+  // right way round for a household with an unreadable roster.
+  const grownUps = new GrownUpGate({
+    roster: () => userService?.getHouseholdRoster?.() ?? [],
+    clock,
+    logger,
+  });
 
   // --- use cases -------------------------------------------------------------
   const buildAgenda = new BuildAgenda({
@@ -316,10 +329,19 @@ export async function createSchoolLifecycle({
     receipts, clock, logger,
   });
 
+  // The two parent-only writes. They are use cases rather than raw store calls
+  // because the router may not be the place a child's sign-off is checked.
+  const resolveReviewItem = new ResolveReviewItem({
+    reviewQueue: stores.reviewQueue, grownUps, clock, logger,
+  });
+  const setAssignments = new SetAssignments({
+    assignments: stores.assignments, grownUps, clock, logger,
+  });
+
   const useCases = {
     buildAgenda, issueDocument, dispatchMedia, recordMediaCompletion,
     submitPaperWork, gradeSubmission, closeSessionOutcome, openRemediation,
-    resolvePersonalCard, resolveScanAction,
+    resolvePersonalCard, resolveScanAction, resolveReviewItem, setAssignments,
   };
 
   const router = createSchoolLifecycleRouter({
@@ -327,7 +349,6 @@ export async function createSchoolLifecycle({
     assignments: stores.assignments,
     reviewQueue: stores.reviewQueue,
     sessions: stores.sessions,
-    clock,
     logger,
   });
 

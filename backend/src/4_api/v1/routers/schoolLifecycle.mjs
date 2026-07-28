@@ -5,6 +5,15 @@
  * use case, and returns what came back. All policy — who may do what, when a
  * ticket is still valid, what prints — lives in the use cases.
  *
+ * THAT INCLUDES WHO MAY WRITE. The two parent-only writes on this router —
+ * signing off a review item and changing a learner's assignments — used to call
+ * their stores directly, taking the actor's id as a free string and writing it
+ * verbatim. A child with curl could sign off their own sheet. Both now go
+ * through use cases that check the id against the household roster before
+ * anything is written (`ResolveReviewItem`, `SetAssignments`), and neither route
+ * is registered unless its guarded use case was injected. Read routes are
+ * unchanged: the gate is on the write.
+ *
  * TWO BOUNDARY RULES, both structural rather than stylistic:
  *
  *  - **Errors are mapped HERE, not imported.** `4_api` may not import
@@ -54,6 +63,30 @@ const STATUS_BY_OUTCOME = Object.freeze({
 
 const httpStatusFor = (outcome) => STATUS_BY_OUTCOME[outcome] ?? 200;
 
+/**
+ * Domain error NAMES that mean "you are not allowed to do this".
+ *
+ * Matched by name rather than `instanceof` because `4_api` may not import
+ * `#domains/*` (`api-no-domains`). The status is the one the print path already
+ * returns for the same class, so a refused sign-off and a refused print approval
+ * look identical from a browser. Everything else falls through to
+ * `errorHandlerMiddleware`, which maps by name already.
+ */
+const FORBIDDEN_ERROR_NAMES = new Set(['GuestForbiddenError']);
+
+/**
+ * Run a handler and stamp an authorisation refusal with its HTTP status.
+ * The refusal itself is decided in the use case; this only names the number.
+ */
+const guarded = (fn) => asyncHandler(async (req, res) => {
+  try {
+    await fn(req, res);
+  } catch (err) {
+    if (FORBIDDEN_ERROR_NAMES.has(err?.name) && err.status === undefined) err.status = 403;
+    throw err;
+  }
+});
+
 /** Send a use-case result at the status its own outcome implies. */
 function reply(res, result) {
   const status = httpStatusFor(result?.status);
@@ -72,10 +105,12 @@ function reply(res, result) {
  * @param {object} [deps.gradeSubmission]
  * @param {object} [deps.closeSessionOutcome]
  * @param {object} [deps.openRemediation]
- * @param {object} [deps.assignments] - IAssignmentStore, for the parent surface
- * @param {object} [deps.reviewQueue] - IReviewQueue, for the parent surface
+ * @param {object} [deps.assignments] - IAssignmentStore, READS only
+ * @param {object} [deps.reviewQueue] - IReviewQueue, READS only
+ * @param {object} [deps.resolveReviewItem] - guarded sign-off; without it the
+ *   sign-off route does not exist. The store is never written to directly.
+ * @param {object} [deps.setAssignments] - guarded planning write; likewise
  * @param {object} [deps.sessions] - IWorkSessionRepository, for session history
- * @param {() => Date} [deps.clock]
  * @param {object} [deps.logger]
  * @returns {import('express').Router}
  */
@@ -91,8 +126,12 @@ export function createSchoolLifecycleRouter({
   openRemediation = null,
   assignments = null,
   reviewQueue = null,
+  resolveReviewItem = null,
+  setAssignments = null,
   sessions = null,
-  clock = () => new Date(),
+  // No clock: every timestamp this router used to stamp (a verdict's `gradedAt`,
+  // an assignment's `updatedAt`) is now written by the use case that owns the
+  // rule for it, from the one injected clock the lifecycle shares.
   logger = console,
 } = {}) {
   const router = express.Router();
@@ -209,23 +248,19 @@ export function createSchoolLifecycleRouter({
       res.json({ items: await reviewQueue.listForSession(req.params.sessionId) });
     }));
 
-    router.post('/sessions/:sessionId/review/:itemId', asyncHandler(async (req, res) => {
-      const { verdict, gradedBy = null } = req.body || {};
-      if (verdict !== 'correct' && verdict !== 'incorrect') {
-        const err = new Error(`verdict must be correct|incorrect, got: ${verdict}`);
-        err.status = 400;
-        throw err;
-      }
-      const item = await reviewQueue.resolve({
-        sessionId: req.params.sessionId, itemId: req.params.itemId,
-        verdict, gradedBy, at: clock().toISOString(),
-      });
-      if (!item) {
-        const err = new Error(`no review item ${req.params.itemId} on session ${req.params.sessionId}`);
-        err.status = 404;
-        throw err;
-      }
-      res.json(item);
+  }
+
+  // Signing off is a PARENT-ONLY WRITE, so it goes through the use case that
+  // checks who is asking — never through `reviewQueue.resolve`, which writes
+  // whatever `gradedBy` it is handed. With the use case unwired this route does
+  // not exist at all: a deployment missing the guard refuses the write rather
+  // than performing it unguarded.
+  if (resolveReviewItem) {
+    router.post('/sessions/:sessionId/review/:itemId', guarded(async (req, res) => {
+      const { verdict, gradedBy = null, note = null } = req.body || {};
+      res.json(await resolveReviewItem.execute({
+        sessionId: req.params.sessionId, itemId: req.params.itemId, verdict, gradedBy, note,
+      }));
     }));
   }
 
@@ -244,15 +279,15 @@ export function createSchoolLifecycleRouter({
       res.json(record);
     }));
 
-    router.put('/assignments/:learnerId', asyncHandler(async (req, res) => {
-      const { courses = [], units = [] } = req.body || {};
-      if (!Array.isArray(courses) || !Array.isArray(units)) {
-        const err = new Error('courses and units must be arrays');
-        err.status = 400;
-        throw err;
-      }
-      res.json(await assignments.put({
-        learnerId: req.params.learnerId, courses, units, updatedAt: clock().toISOString(),
+  }
+
+  // Same shape as the sign-off: the planning WRITE is adult-only and lives in
+  // its use case, while the reads above stay open.
+  if (setAssignments) {
+    router.put('/assignments/:learnerId', guarded(async (req, res) => {
+      const { courses = [], units = [], assignedBy = null } = req.body || {};
+      res.json(await setAssignments.execute({
+        learnerId: req.params.learnerId, courses, units, assignedBy,
       }));
     }));
   }

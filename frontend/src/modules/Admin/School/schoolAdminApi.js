@@ -85,10 +85,14 @@ export const schoolAdminApi = {
    * Write planner config for one learner. This is the ONLY write the planning
    * screen makes, and it touches `apps/school/assignments/{learnerId}.yml` —
    * never the published curriculum catalog (spec §7.2).
+   *
+   * `assignedBy` must be a grown-up's roster id: the server checks it against
+   * the household roster and answers 403 for a child, an unknown id, or none at
+   * all. Sending it is what makes the write land, not a formality.
    */
-  putAssignment: (learnerId, { courses, units }) => call(
+  putAssignment: (learnerId, { courses, units, assignedBy }) => call(
     `${LIFECYCLE}/assignments/${enc(learnerId)}`,
-    { method: 'PUT', body: { courses, units } },
+    { method: 'PUT', body: { courses, units, assignedBy } },
   ),
 };
 

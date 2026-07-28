@@ -239,7 +239,13 @@ export default function CurriculumPlanner() {
     setSaving(true);
     setSaveError(null);
     setSaved(null);
-    const body = { courses: toStored(courses, 'courseId'), units: toStored(units, 'unitId') };
+    // `assignedBy` is the server's business, not this screen's courtesy: the
+    // planning write is refused unless it names a grown-up on the roster.
+    const body = {
+      courses: toStored(courses, 'courseId'),
+      units: toStored(units, 'unitId'),
+      assignedBy: grader.id,
+    };
     logger.info('assignment-save-dispatch', {
       learnerId, by: grader.id, courses: body.courses.length, units: body.units.length,
     });

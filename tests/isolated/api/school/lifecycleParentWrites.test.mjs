@@ -1,0 +1,181 @@
+// @vitest-environment node
+//
+// The security boundary, exercised the way an attack would exercise it: over
+// HTTP, with no browser and no UI involved.
+//
+// Unlike `schoolLifecycleRouter.test.mjs`, which stubs the use cases to their
+// return shapes to test the status mapping, this file wires the REAL
+// `ResolveReviewItem` and `SetAssignments` over fake stores and a real roster.
+// That is the point — the refusal must come from the application layer, so
+// posting a child's id as `gradedBy` straight at the route has to fail even
+// though the route itself does no checking at all.
+import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
+import express from 'express';
+import { createSchoolLifecycleRouter } from '#api/v1/routers/schoolLifecycle.mjs';
+import { errorHandlerMiddleware } from '#system/http/middleware/index.mjs';
+import { GrownUpGate } from '#apps/school/GrownUpGate.mjs';
+import { ResolveReviewItem } from '#apps/school/usecases/ResolveReviewItem.mjs';
+import { SetAssignments } from '#apps/school/usecases/SetAssignments.mjs';
+
+const silent = { info: () => {}, warn: () => {}, error: () => {}, debug: () => {} };
+const clock = () => new Date('2026-07-27T09:00:00.000Z');
+
+const ROSTER = [
+  { id: 'dad', name: 'Papa', birthyear: 1984 },
+  { id: 'learner-two', name: 'learner-two', birthyear: 2016 },
+  { id: 'aunty', name: 'Aunty', birthyear: null },
+];
+
+/** In-memory stand-ins for the YAML stores — what was actually written matters. */
+let queued;
+let assigned;
+
+const reviewQueue = {
+  listPending: async () => queued.filter((i) => !i.verdict),
+  listForSession: async (sessionId) => queued.filter((i) => i.sessionId === sessionId),
+  resolve: async ({ sessionId, itemId, verdict, gradedBy, note = null, at }) => {
+    const item = queued.find((i) => i.sessionId === sessionId && i.itemId === itemId);
+    if (!item) return null;
+    Object.assign(item, { verdict, gradedBy, note, gradedAt: at });
+    return { ...item };
+  },
+};
+
+const assignments = {
+  list: async () => [...assigned.values()],
+  get: async (learnerId) => assigned.get(learnerId) ?? null,
+  put: async (record) => { assigned.set(record.learnerId, { ...record }); return { ...record }; },
+};
+
+let server;
+let base;
+
+beforeAll(async () => {
+  const grownUps = new GrownUpGate({ roster: () => ROSTER, clock, logger: silent });
+  const app = express();
+  app.use(express.json());
+  app.use('/api/v1/school/lifecycle', createSchoolLifecycleRouter({
+    // One use case is enough to get the router past its "nothing is wired" guard.
+    buildAgenda: { execute: async () => ({ offers: [] }) },
+    assignments,
+    reviewQueue,
+    resolveReviewItem: new ResolveReviewItem({ reviewQueue, grownUps, clock, logger: silent }),
+    setAssignments: new SetAssignments({ assignments, grownUps, clock, logger: silent }),
+    clock,
+    logger: silent,
+  }));
+  app.use(errorHandlerMiddleware({ logger: silent, shape: 'string' }));
+  await new Promise((res) => { server = app.listen(0, res); });
+  base = `http://127.0.0.1:${server.address().port}/api/v1/school/lifecycle`;
+});
+
+afterAll(() => new Promise((res) => server.close(res)));
+
+beforeEach(() => {
+  queued = [{
+    sessionId: 'ses_a', itemId: 'q3', learnerId: 'learner-two', unitId: 'math-fractions.03',
+    reason: 'free_response', given: 'because you flip it', verdict: null, gradedBy: null, gradedAt: null,
+  }];
+  assigned = new Map([['learner-two', { learnerId: 'learner-two', courses: ['math-fractions'], units: [] }]]);
+});
+
+const post = (path, body) => fetch(base + path, {
+  method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body ?? {}),
+});
+const put = (path, body) => fetch(base + path, {
+  method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body ?? {}),
+});
+
+describe('signing off over HTTP', () => {
+  it('a grown-up signs off and the verdict lands', async () => {
+    const r = await post('/sessions/ses_a/review/q3', { verdict: 'correct', gradedBy: 'dad' });
+    expect(r.status).toBe(200);
+    expect(await r.json()).toMatchObject({ verdict: 'correct', gradedBy: 'dad', gradedAt: '2026-07-27T09:00:00.000Z' });
+    expect(queued[0].verdict).toBe('correct');
+  });
+
+  it('THE ONE THAT MATTERS: a forged gradedBy is refused, 403, and nothing is written', async () => {
+    const r = await post('/sessions/ses_a/review/q3', { verdict: 'correct', gradedBy: 'learner-two' });
+    expect(r.status).toBe(403);
+    expect((await r.json()).error).toMatch(/grown-up/i);
+    expect(queued[0]).toMatchObject({ verdict: null, gradedBy: null, gradedAt: null });
+  });
+
+  it('refuses an id nobody in the house has', async () => {
+    expect((await post('/sessions/ses_a/review/q3', { verdict: 'correct', gradedBy: 'mr-nobody' })).status).toBe(403);
+    expect(queued[0].verdict).toBeNull();
+  });
+
+  it('refuses a roster member with no birthyear', async () => {
+    expect((await post('/sessions/ses_a/review/q3', { verdict: 'correct', gradedBy: 'aunty' })).status).toBe(403);
+    expect(queued[0].verdict).toBeNull();
+  });
+
+  it('refuses an omitted gradedBy — an anonymous mark is not a mark', async () => {
+    expect((await post('/sessions/ses_a/review/q3', { verdict: 'correct' })).status).toBe(403);
+    expect(queued[0].verdict).toBeNull();
+  });
+
+  it('still 400s a bad verdict from a real grown-up, and 404s an unqueued item', async () => {
+    expect((await post('/sessions/ses_a/review/q3', { verdict: 'maybe', gradedBy: 'dad' })).status).toBe(400);
+    expect((await post('/sessions/ses_a/review/ghost', { verdict: 'correct', gradedBy: 'dad' })).status).toBe(404);
+  });
+
+  it('never answers a refusal with a success:false envelope or a 500', async () => {
+    const r = await post('/sessions/ses_a/review/q3', { verdict: 'correct', gradedBy: 'learner-two' });
+    expect(r.status).toBe(403);
+    expect(await r.json()).not.toHaveProperty('success');
+  });
+});
+
+describe('assigning work over HTTP', () => {
+  it('a grown-up reassigns, and the record says who did it', async () => {
+    const r = await put('/assignments/learner-two', { courses: ['history'], units: [], assignedBy: 'dad' });
+    expect(r.status).toBe(200);
+    expect(await r.json()).toMatchObject({ learnerId: 'learner-two', courses: ['history'], assignedBy: 'dad' });
+  });
+
+  it('a child cannot assign themselves easier work', async () => {
+    const r = await put('/assignments/learner-two', { courses: ['nap-time'], units: [], assignedBy: 'learner-two' });
+    expect(r.status).toBe(403);
+    expect(assigned.get('learner-two').courses).toEqual(['math-fractions']);
+  });
+
+  it('an unsigned PUT is refused rather than accepted as anonymous', async () => {
+    expect((await put('/assignments/learner-two', { courses: ['nap-time'], units: [] })).status).toBe(403);
+    expect(assigned.get('learner-two').courses).toEqual(['math-fractions']);
+  });
+
+  it('reading assignments stays open — the gate is on the write', async () => {
+    expect((await fetch(`${base}/assignments`)).status).toBe(200);
+    expect((await fetch(`${base}/assignments/learner-two`)).status).toBe(200);
+  });
+});
+
+describe('fail closed when the guarded use case is missing', () => {
+  it('does not fall back to the raw store for either write', async () => {
+    const app = express();
+    app.use(express.json());
+    // The stores ARE wired; only the guarded use cases are absent.
+    app.use('/api/v1/school/lifecycle', createSchoolLifecycleRouter({
+      buildAgenda: { execute: async () => ({ offers: [] }) },
+      assignments, reviewQueue, clock, logger: silent,
+    }));
+    app.use(errorHandlerMiddleware({ logger: silent, shape: 'string' }));
+    const bare = await new Promise((res) => { const s = app.listen(0, () => res(s)); });
+    const url = `http://127.0.0.1:${bare.address().port}/api/v1/school/lifecycle`;
+
+    expect((await fetch(`${url}/sessions/ses_a/review/q3`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ verdict: 'correct', gradedBy: 'dad' }),
+    })).status).toBe(404);
+    expect((await fetch(`${url}/assignments/learner-two`, {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ courses: [], units: [], assignedBy: 'dad' }),
+    })).status).toBe(404);
+    // The reads are unaffected.
+    expect((await fetch(`${url}/review`)).status).toBe(200);
+
+    await new Promise((res) => bare.close(res));
+  });
+});
