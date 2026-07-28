@@ -59,6 +59,10 @@ export const PIANO_CONFIG_DEFAULTS = {
   // Producer route loop playback to the piano's own engine (tier 1). Null =
   // unverified: browser gmSynth (tier 2) carries everything.
   producer: null,
+  // Auto-enter Studio from the menu when sustained playing is detected
+  // (spec 2026-07-28-piano-auto-studio-design.md). Count AND span so a
+  // key-brush, one chord, or a forearm bump never triggers.
+  autoStudio: { enabled: true, minNotes: 8, minSpanSeconds: 3, windowSeconds: 10 },
 };
 
 /** Resolve screensaver config: per-piano values override shared, over defaults. */
@@ -141,6 +145,7 @@ export function resolvePianoConfig(raw, pianoId) {
         ?? PIANO_CONFIG_DEFAULTS.studio.topPaneLayout,
     },
     producer: p.producer ?? shared.producer ?? PIANO_CONFIG_DEFAULTS.producer,
+    autoStudio: { ...PIANO_CONFIG_DEFAULTS.autoStudio, ...(shared.autoStudio || {}), ...(p.autoStudio || {}) },
   };
 }
 
