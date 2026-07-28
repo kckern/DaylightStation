@@ -79,6 +79,7 @@ import { createCostApiRouter } from '#composition/modules/costApi.mjs';
 import { createHomeAutomationApiRouter, createHomeDashboardApiRouter } from '#composition/modules/homeApi.mjs';
 import { createDeviceApiRouter } from '#composition/modules/deviceApi.mjs';
 import { createTriggerApiRouter } from '#composition/modules/triggerApi.mjs';
+import { createScanDispatch } from '#composition/modules/scanDispatch.mjs';
 import { createGratitudeApiRouter } from '#composition/modules/gratitudeApi.mjs';
 import { createEconomyApi } from '#composition/modules/economyApi.mjs';
 import { createJournalistApiRouter } from '#composition/modules/journalistApi.mjs';
@@ -155,7 +156,6 @@ import { createScaleNutribotBridge } from '#apps/hardware/ScaleNutribotBridge.mj
 import { CompositionStore } from '#apps/nutribot/CompositionStore.mjs';
 import { ApplyScanToComposition } from '#apps/nutribot/usecases/ApplyScanToComposition.mjs';
 import { validateScanConfig } from '#apps/nutribot/lib/validateScanConfig.mjs';
-import { routeNutribotScan, nutriscanRefusalNotice } from '#apps/nutribot/lib/routeNutribotScan.mjs';
 import { normalizeScaleNutribotConfig } from '#apps/nutribot/lib/scaleNutribotConfig.mjs';
 import { createBarcodeRelay } from '#apps/hardware/barcodeRelay.mjs';
 import { createFingerprintProfileWriter } from '#apps/fitness/fingerprintProfileWriter.mjs';
@@ -216,7 +216,6 @@ import { ComposePresentationUseCase } from './3_applications/content/usecases/Co
 // boot path here (kept in-tree for Plan 4 to delete) and no longer constructed.
 import { resolveCommand } from '#domains/barcode/BarcodeCommandMap.mjs';
 import { ContentDispatcher } from '#apps/trigger/ContentDispatcher.mjs';
-import { TriggerEvent } from '#domains/trigger/TriggerEvent.mjs';
 
 // Weekly Review domain
 import { WeeklyReviewImmichAdapter } from './1_adapters/weekly-review/WeeklyReviewImmichAdapter.mjs';
@@ -1764,6 +1763,11 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   let barcodeLogger = null;
   let barcodeKnownScanners = [];
   let barcodePersistDir = null;
+  // Every name a legacy positional code can carry in its FIRST segment. Hoisted
+  // out of the block below so the scan-dispatch wiring can check it against the
+  // prefix registry — `ScanCode` imports nothing and cannot read config, so
+  // composition is the first place both lists exist at once.
+  let barcodeScreenNames = [];
   {
     const barcodeConfig = configService.getHouseholdAppConfig(householdId, 'barcode') || {};
     const barcodeDevicesConfig = configService.getHouseholdDevices(householdId) || {};
@@ -1836,6 +1840,13 @@ export async function createApp({ server, logger, configPaths, configExists, ena
 
     barcodeKnownScanners = Object.keys(scannerDeviceConfig);
     barcodePersistDir = barcodeConfig.persistence?.dir;
+    // Both sources a `<screen>:<source>:<id>` code can name: the screen-path
+    // slug and the content-control broadcast topic.
+    barcodeScreenNames = [...new Set([
+      ...Object.keys(screenToDevice),
+      ...Object.keys(screenDisplayScripts),
+      ...Object.values(barcodeDevices).map((d) => d.content_control?.topic).filter(Boolean),
+    ])];
 
     rootLogger.info('barcode.dispatcher.ready', {
       scanners: barcodeKnownScanners,
@@ -2718,15 +2729,6 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   // after startup — so we bind the reference instead.
   let scaleNutribotBridge = null;
 
-  // Conditions that are decided once at startup but observed once per scan.
-  // Reported at warn the FIRST time each is hit, at debug thereafter — see the
-  // `swallow` branch in onScan. Deliberately not a general rate limiter.
-  const nutriscanWarned = new Set();
-  const NUTRISCAN_SWALLOW_EVENT = {
-    'nutriscan-disabled': 'barcode_relay.nutriscan.config_disabled',
-    'no-scale-id': 'barcode_relay.nutriscan.no_scale_id',
-  };
-
   // Trigger dispatch (NFC modality source: apps/nfc/config.yml; barcode modality
   // shares this same dispatch core — see the barcode-relay wiring just below).
   const { router: triggerRouter, triggerDispatchService } = createTriggerApiRouter({
@@ -2745,13 +2747,36 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   });
   v1Routers.trigger = triggerRouter;
 
-  // Feed the barcode BLE relay into the now-live trigger pipeline. Wired here
-  // (rather than in the earlier "Barcode ingress" block) because it needs
-  // triggerDispatchService, which createTriggerApiRouter() just returned.
+  // Every scan in the house resolves through ONE vocabulary. The five branches
+  // the relay's `onScan` used to hold inline (school, nutriscan, UPC, trigger,
+  // and the reader's route) live in `scanDispatch`, where each is a handler and
+  // the routing decision belongs to `ScanCode`/`ScanDispatcher` rather than to
+  // an `if` chain only the reader's configured route could steer. Behaviour is
+  // unchanged: a namespace still outranks the route, school is still reached
+  // ahead of everything, and every log event keeps its name and its channel.
+  //
+  // Wired here (rather than in the earlier "Barcode ingress" block) because it
+  // needs triggerDispatchService, which createTriggerApiRouter() just returned.
+  const scanDispatch = createScanDispatch({
+    schoolLifecycle,
+    triggerDispatchService,
+    relayInstances: barcodeRelayInstances,
+    relayConfig: barcodeRelayConfig,
+    applyScanToComposition,
+    // Both LATE-BOUND: constructed further down this function, long before any
+    // scan arrives but well after this line. Read at scan time, never captured.
+    getScaleNutribotBridge: () => scaleNutribotBridge,
+    getLogFoodFromUPC: () => nutribotServices.nutribotContainer.getLogFoodFromUPC(),
+    configService,
+    userIdentityService,
+    screenNames: barcodeScreenNames,
+    logger: rootLogger.child({ module: 'scan-dispatch' }),
+    barcodeLogger,
+  });
+
   // Persistence (per-device day-log under household/history/barcode) and the
-  // relay's own device/gatekeeper config are untouched by the trigger-pipeline
-  // migration — only the dispatch target changed (BarcodeScanService.handle →
-  // triggerDispatchService.handleEvent).
+  // relay's own device/gatekeeper config are untouched by everything above —
+  // only where a scan goes has ever changed here.
   createBarcodeRelay({
     eventBus,
     dataDir,
@@ -2759,120 +2784,11 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     timezone: configService.getHouseholdTimezone?.(householdId),
     logger: rootLogger.child({ module: 'barcode-relay' }),
     onScan: (relay) => {
-      const relayCfg = barcodeRelayInstances[relay.device] || {};
-      const route = relay.route || relayCfg.route || 'content';
-
-      // School action tokens, FIRST and route-independent (spec §6.2): a token
-      // is self-identifying (`sch:` prefix), so any scanner in the house works
-      // whatever route it is configured for. Real UPC/EAN are digit-only and
-      // the fridge-sheet namespaces are `dl:`/`ct:`/`rs:`, so this branch cannot
-      // shadow either existing consumer — and when the console is unwired,
-      // `handlesCode` is a constant false and nothing below changes at all.
-      if (schoolLifecycle.handlesCode(relay.code)) {
-        schoolLifecycle.handleScan({ code: relay.code, device: relay.device })
-          .catch((err) => {
-            barcodeLogger?.warn?.('barcode_relay.school.dispatch.failed', {
-              device: relay.device, error: err.message,
-            });
-          });
-        return;
-      }
-
-      if (route === 'nutribot') {
-        // Namespace-first: dl:/ct:/rs: belong to the fridge sheet. Real UPC/EAN
-        // are digit-only and can never match <prefix>:<rest>, so ordering this
-        // ahead of the UPC lookup cannot shadow a product scan. The DECISION
-        // lives in routeNutribotScan (pure, unit-tested) — this branch only acts
-        // on it, because the version inlined here had an untestable hole: with
-        // nutriscan disabled it fell through and UPC-looked-up `dl:4`.
-        const scaleId = relayCfg.scale_id || null;
-        const decision = routeNutribotScan({ scaleId, code: relay.code, apply: applyScanToComposition });
-
-        if (decision.action === 'nutriscan') {
-          const { outcome } = decision;
-          const refused = outcome.ok === false;
-          barcodeLogger?.info?.('barcode_relay.nutriscan', {
-            device: relay.device, scaleId, kind: outcome.kind, ok: !refused,
-            error: outcome.error || null,
-          });
-          // ACK on the message the user is already looking at — INCLUDING a
-          // refusal, which writes nothing to the buffer and so would otherwise
-          // render as no change whatsoever. That silent failure is precisely
-          // what the ACK exists to prevent, so the reason rides along as a
-          // transient notice. Fire-and-forget: a failed edit must not swallow a
-          // scan that already landed in the buffer.
-          const notice = refused ? nutriscanRefusalNotice(outcome) : null;
-          scaleNutribotBridge?.refreshPrompt?.(scaleId, notice)?.catch?.(() => {});
-          return;
-        }
-
-        if (decision.action === 'swallow') {
-          // A fridge-sheet code with nowhere to go. Both reasons are decided at
-          // STARTUP (a broken scales.yml, or a reader deliberately configured
-          // without a scale), so they are reported once and then demoted —
-          // warning per scan buried the log without adding information.
-          const event = NUTRISCAN_SWALLOW_EVENT[decision.reason] || 'barcode_relay.nutriscan.unavailable';
-          if (nutriscanWarned.has(decision.reason)) {
-            barcodeLogger?.debug?.(event, { device: relay.device, code: relay.code });
-          } else {
-            nutriscanWarned.add(decision.reason);
-            barcodeLogger?.warn?.(event, {
-              device: relay.device, code: relay.code, hint: 'further occurrences log at debug',
-            });
-          }
-          return;
-        }
-
-        const userId = relayCfg.nutribot?.user_id || barcodeRelayConfig.nutribot?.user_id || configService.getHeadOfHousehold?.() || null;
-
-        if (!userId) {
-          barcodeLogger?.warn?.('barcode_relay.nutribot.no_user', { device: relay.device, code: relay.code });
-          return;
-        }
-
-        // Derive the Telegram address the same way the scale->nutribot bridge
-        // does (see createScaleNutribotBridge below): telegram:b<botId>_c<chatId>.
-        // The old fallback built "nutribot-upc:<userId>", which
-        // TelegramAdapter.extractChatId() cannot parse — it was handed to the
-        // Telegram API verbatim and rejected with 400, so scans reached
-        // UPCGateway and then died silently at delivery. Deriving it also means
-        // a changed bot or head-of-household stays correct without a config edit.
-        const resolveNutribotConversationId = () => {
-          const botId = configService.getSystemConfig?.('bots')?.nutribot?.telegram?.bot_id || '';
-          const platformId = userIdentityService.resolvePlatformId?.('telegram', userId);
-          return botId && platformId ? `telegram:b${botId}_c${platformId}` : null;
-        };
-
-        const conversationId = relayCfg.nutribot?.conversation_id
-          || barcodeRelayConfig.nutribot?.conversation_id
-          || resolveNutribotConversationId();
-
-        if (!conversationId) {
-          barcodeLogger?.warn?.('barcode_relay.nutribot.no_conversation', {
-            device: relay.device, code: relay.code, userId,
-          });
-          return;
-        }
-
-        nutribotServices.nutribotContainer.getLogFoodFromUPC().execute({
-          userId,
-          conversationId,
-          upc: relay.code,
-          messageId: null,
-        }).catch((err) => {
-          barcodeLogger?.warn?.('barcode_relay.nutribot.dispatch.failed', { device: relay.device, error: err.message });
-        });
-        return;
-      }
-
-      const event = TriggerEvent.create({
-        source: 'barcode',
-        location: relay.device,
-        value: relay.code,
-        meta: { device: relay.device, timestamp: relay.ts, transport: 'ws', route },
-      });
-      triggerDispatchService.handleEvent(event).catch((err) => {
-        barcodeLogger?.warn?.('trigger.ingress.barcode.dispatch.failed', { error: err.message });
+      // `dispatch` never rejects (see its invariant); the catch is the belt to
+      // that braces, so a future change there cannot surface as an unhandled
+      // rejection on a scan.
+      scanDispatch.handleScan(relay).catch((err) => {
+        barcodeLogger?.warn?.('scan.dispatch.failed', { device: relay.device, error: err.message });
       });
     },
   });
