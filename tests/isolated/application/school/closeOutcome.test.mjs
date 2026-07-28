@@ -2,10 +2,12 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { CloseSessionOutcome } from '#apps/school/usecases/CloseSessionOutcome.mjs';
 import { OpenRemediation } from '#apps/school/usecases/OpenRemediation.mjs';
 import { CurriculumAccess } from '#apps/school/CurriculumAccess.mjs';
+import { ReceiptPrinting } from '#apps/school/ReceiptPrinting.mjs';
 import { validateDocument } from '#domains/school/documents/documentValidation.mjs';
 import { isSchoolToken } from '#domains/school/sessions/tokens.mjs';
 import {
   FakeCatalog, FakeSessionRepository, FakeTokenRegistry, FakeAssignmentStore, FakeEconomy,
+  FakeReceiptPrinter, FakeReceiptRenderer,
   fakeClock, seededRng, sequentialIds, silentLogger,
 } from '#testlib/school/lifecycleFakes.mjs';
 import {
@@ -15,18 +17,24 @@ import {
 
 const SID = 'ses_1';
 
-let clock, sessions, tokens, economy, close, remediate;
+let clock, sessions, tokens, economy, thermal, close, remediate;
 
-const build = ({ economyEnabled = true, throwOn = null } = {}) => {
+const build = ({ economyEnabled = true, throwOn = null, receiptPrinter = undefined } = {}) => {
   clock = fakeClock();
   const catalog = new FakeCatalog({ units: rawUnits(), documents: rawDocuments(), manifests: rawManifests() });
   const curriculum = new CurriculumAccess({ catalog, bankIds: () => BANK_IDS, clock: clock.epoch, logger: silentLogger });
   sessions = new FakeSessionRepository();
   tokens = new FakeTokenRegistry();
   economy = new FakeEconomy({ throwOn });
+  thermal = new FakeReceiptPrinter();
   const assignments = new FakeAssignmentStore([{ learnerId: 'kid1', courses: ['math-fractions'] }]);
+  const receipts = new ReceiptPrinting({
+    renderer: new FakeReceiptRenderer(),
+    printer: receiptPrinter === undefined ? thermal : receiptPrinter,
+    logger: silentLogger,
+  });
   close = new CloseSessionOutcome({
-    curriculum, sessions, tokens, assignments, economy,
+    curriculum, sessions, tokens, assignments, economy, receipts,
     economyAction: 'school-unit-complete', economyEnabled,
     clock: clock.now, rng: seededRng(5), logger: silentLogger,
   });
@@ -133,6 +141,54 @@ describe('the result receipt', () => {
     await graded({ percent: 10 });
     const { document } = await close.execute({ sessionId: SID });
     expect(document.blocks.map((b) => b.md ?? '').join('\n')).not.toContain('coin');
+  });
+});
+
+// A result the child never sees is not a result. Settling used to return a
+// document and stop, so on a FAIL the retry barcode never left the printer and
+// the loop dead-ended with nothing in the child's hand to scan.
+describe('the result receipt reaches paper', () => {
+  it('prints the receipt as part of settling', async () => {
+    await graded();
+    const result = await close.execute({ sessionId: SID });
+    expect(result.printed).toBe(true);
+    expect(thermal.jobs).toHaveLength(1);
+    expect(thermal.lastTranscript()).toContain('Score: 90%');
+  });
+
+  it('PUTS THE RETRY TICKET ON PAPER after a fail, scannably', async () => {
+    await graded({ percent: 20 });
+    const result = await close.execute({ sessionId: SID });
+    expect(result.printed).toBe(true);
+    const barcodes = thermal.jobs.at(-1).items.filter((i) => i.type === 'barcode');
+    expect(barcodes.map((b) => b.content)).toContain(result.retryToken);
+    expect(await tokens.get(result.retryToken)).toMatchObject({ tokenClass: 'remediation' });
+  });
+
+  it('reprints on a second close-out — the child may have lost the first', async () => {
+    await graded();
+    await close.execute({ sessionId: SID });
+    const again = await close.execute({ sessionId: SID });
+    expect(again.status).toBe('already_settled');
+    expect(thermal.jobs).toHaveLength(2);
+  });
+
+  it('settles anyway when there is no receipt printer, and says it did not print', async () => {
+    build({ receiptPrinter: null });
+    await graded();
+    const result = await close.execute({ sessionId: SID });
+    expect(result.status).toBe('settled');
+    expect(result.printed).toBe(false);
+    expect(sessions.derive(SID).terminal).toBe(true);
+  });
+
+  it('settles anyway when the printer refuses the job', async () => {
+    await graded();
+    thermal.setFault('offline');
+    const result = await close.execute({ sessionId: SID });
+    expect(result.status).toBe('settled');
+    expect(result.printed).toBe(false);
+    expect(result.result).toBe('passed');
   });
 });
 

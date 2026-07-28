@@ -21,6 +21,15 @@
  * (an install with no `school` earn action, say), the outcome stays recorded,
  * a `failed` annotation says why, and the child's receipt still prints. Coins
  * are the least important thing on that piece of paper.
+ *
+ * SETTLING PRINTS. Building a result document and handing it back to a caller
+ * was not enough: on a FAIL that document carries the retry ticket, and a retry
+ * ticket that never leaves the printer is a loop the child cannot close — they
+ * are told to try again with nothing in their hand to scan. `ResolveScanAction`
+ * already prints its own receipts for exactly this reason; settling does the
+ * same, so every caller (the router, a scan, a reconciliation job) puts the
+ * result on paper without having to remember to. A printer that is absent or
+ * refuses does NOT hold up the settlement — `printed: false` reports it.
  */
 import { reduceSession, createEvent } from '#domains/school/sessions/sessionEvents.mjs';
 import { outcomeIdFor, evaluateOutcome, rewardDecision } from '#domains/school/sessions/outcome.mjs';
@@ -30,7 +39,7 @@ import { planLearnerWork } from '#domains/school/planner.mjs';
 
 export class CloseSessionOutcome {
   #curriculum; #sessions; #tokens; #assignments; #economy; #economyAction; #economyEnabled;
-  #clock; #rng; #logger;
+  #receipts; #clock; #rng; #logger;
 
   /**
    * @param {object} deps
@@ -41,6 +50,9 @@ export class CloseSessionOutcome {
    * @param {{earn: Function}} [deps.economy] - EconomyService
    * @param {string} [deps.economyAction] - the earn action configured for school work
    * @param {boolean} [deps.economyEnabled] - household switch; default OFF (spec A5)
+   * @param {import('../ReceiptPrinting.mjs').ReceiptPrinting} [deps.receipts] - puts
+   *   the result document on the roll. Optional so an install with no receipt
+   *   printer still settles; every result then reports `printed: false`.
    * @param {() => Date} [deps.clock]
    * @param {() => number} [deps.rng]
    * @param {object} [deps.logger]
@@ -48,7 +60,7 @@ export class CloseSessionOutcome {
   constructor({
     curriculum, sessions, tokens, assignments,
     economy = null, economyAction = 'school-unit-complete', economyEnabled = false,
-    clock = () => new Date(), rng = Math.random, logger = console,
+    receipts = null, clock = () => new Date(), rng = Math.random, logger = console,
   } = {}) {
     if (!curriculum || !sessions || !tokens || !assignments) {
       throw new Error('CloseSessionOutcome requires curriculum, sessions, tokens and assignments');
@@ -60,6 +72,7 @@ export class CloseSessionOutcome {
     this.#economy = economy;
     this.#economyAction = economyAction;
     this.#economyEnabled = economyEnabled;
+    this.#receipts = receipts;
     this.#clock = clock;
     this.#rng = rng;
     this.#logger = logger;
@@ -74,7 +87,10 @@ export class CloseSessionOutcome {
    *                     result: string|null, percent: number|null,
    *                     reward: {amount: number, txnId: string|null, skipReason: string|null}|null,
    *                     unlocked: {unitId: string, title: string}|null,
-   *                     retryToken: string|null, document: object|null, message: string }>}
+   *                     retryToken: string|null, document: object|null, message: string,
+   *                     printed: boolean, printReason: string|null }>}
+   *   `printed` is whether the result document actually reached the roll — a
+   *   false here on a FAIL means the retry ticket is not in the child's hand.
    */
   async execute({ sessionId, signedOff = false } = {}) {
     const nowIso = this.#clock().toISOString();
@@ -128,6 +144,17 @@ export class CloseSessionOutcome {
     const actions = [];
     if (retryToken) actions.push({ token: retryToken, label: 'Try again with a fresh sheet' });
 
+    const document = resultDocument({
+      sessionId,
+      unitTitle: unit?.title ?? state.unitId,
+      result: outcome.result,
+      percent: state.gradedPercent,
+      objectives: unit?.objectives ?? [],
+      actions,
+      reward: reward && reward.amount > 0 ? { amount: reward.amount } : null,
+      unlockedTitle: unlocked?.title ?? null,
+    });
+
     return {
       status: resettling ? 'already_settled' : 'settled',
       sessionId,
@@ -138,17 +165,24 @@ export class CloseSessionOutcome {
       unlocked,
       retryToken,
       message: passed ? 'Nice work!' : 'Almost there — try again.',
-      document: resultDocument({
-        sessionId,
-        unitTitle: unit?.title ?? state.unitId,
-        result: outcome.result,
-        percent: state.gradedPercent,
-        objectives: unit?.objectives ?? [],
-        actions,
-        reward: reward && reward.amount > 0 ? { amount: reward.amount } : null,
-        unlockedTitle: unlocked?.title ?? null,
-      }),
+      document,
+      ...(await this.#printed(document)),
     };
+  }
+
+  /**
+   * Put a result document on the roll. Never throws and never blocks the
+   * settlement: `ReceiptPrinting` already resolves `{printed:false}` for a
+   * printer that is missing, jammed or unplugged, and a settled outcome must
+   * not be undone by a paper problem.
+   */
+  async #printed(document) {
+    if (!this.#receipts) return { printed: false, printReason: 'not_wired' };
+    const outcome = await this.#receipts.print(document);
+    if (!outcome.printed) {
+      this.#logger.warn?.('school.outcome.receipt-unprinted', { id: document?.id ?? null, reason: outcome.reason });
+    }
+    return { printed: outcome.printed, printReason: outcome.reason };
   }
 
   /**
@@ -251,7 +285,12 @@ export class CloseSessionOutcome {
     return { unitId: next.unitId, title: next.title };
   }
 
-  #unavailable(sessionId, line) {
+  async #unavailable(sessionId, line) {
+    const document = noticeDocument({
+      id: `outcome-${sessionId ?? 'none'}`,
+      headline: 'Nothing to settle yet',
+      lines: [line, 'Scan your card to see what is next.'],
+    });
     return {
       status: 'unavailable',
       sessionId: sessionId ?? null,
@@ -262,11 +301,8 @@ export class CloseSessionOutcome {
       unlocked: null,
       retryToken: null,
       message: line,
-      document: noticeDocument({
-        id: `outcome-${sessionId ?? 'none'}`,
-        headline: 'Nothing to settle yet',
-        lines: [line, 'Scan your card to see what is next.'],
-      }),
+      document,
+      ...(await this.#printed(document)),
     };
   }
 }
