@@ -67,11 +67,28 @@ export function useScoreEvaluator({
   // "the user tapped Play and changed their mind" — see finalize.
   const advancedRef = useRef(false);
 
-  // Grade the CURRENT measure once at end-of-piece: the advance-driven grader only
-  // fires when currentMeasure changes, so the last measure the cursor never leaves
-  // would otherwise never be graded (audit H1). Idempotent; no-op when disabled.
-  const finalize = useCallback(() => {
-    if (!enabledRef.current || finalizedRef.current) return undefined;
+  // Close out the run at end-of-piece: the advance-driven grader only fires when
+  // currentMeasure changes, so the last measure the cursor never leaves would
+  // otherwise never be graded (audit H1). Idempotent; no-op when disabled.
+  //
+  // `endMeasure` is the measure the run actually ENDED on, which the hook cannot
+  // work out for itself: the transport fires the final step's onEvent and completes
+  // in the same tick, so that setStep never commits (and the caller then sends the
+  // cursor home) — currentMeasureRef still reads the SECOND-TO-LAST measure. The
+  // probe's 5-measure run graded 0–3 and never 4.
+  //
+  // When the two differ, the completing tick swallowed a measure boundary and BOTH
+  // measures are still ungraded. Grade both from the same undivided buffer: the run
+  // ended before the boundary could be observed, so there is no honest way to say
+  // which side a hit fell on — and gradeMeasure scores only the notes a measure
+  // EXPECTS (extra hits cost nothing), so neither is punished for the other's.
+  // Handing the whole buffer to one of them instead would leave the other with a
+  // false red (or no grade at all) on every piece that ends on a single chord.
+  //
+  // @param {number} [endMeasure] - measure the run ended on; defaults to current.
+  // @returns {Array<object>} the grades produced (0, 1, or 2), newest last.
+  const finalize = useCallback((endMeasure) => {
+    if (!enabledRef.current || finalizedRef.current) return [];
     finalizedRef.current = true;
     // A measure with expected notes and zero hits is NOT automatically a failure
     // at finalize time. Silence only reads as a failed measure once the run has
@@ -80,17 +97,21 @@ export function useScoreEvaluator({
     // all (no boundary crossed, no note played) the user tapped Play and stopped;
     // grading that would bank a red they never earned, wash the measure on the
     // score, and count toward the silent stop.
-    if (!advancedRef.current && hitsRef.current.length === 0) return undefined;
-    const m = currentMeasureRef.current;
-    const expected = expectedForMeasureRef.current?.(m) || [];
-    if (expected.length === 0 && hitsRef.current.length === 0) return undefined; // nothing to grade
-    const g = gradeMeasure({ expected, hits: hitsRef.current }, cfgRef.current || {});
-    const graded = { measure: m, ...g };
-    onMeasureGradeRef.current?.(graded);
+    if (!advancedRef.current && hitsRef.current.length === 0) return [];
+    const cur = currentMeasureRef.current;
+    const swallowed = Number.isFinite(endMeasure) && endMeasure !== cur;
+    const out = [];
+    for (const m of swallowed ? [cur, endMeasure] : [cur]) {
+      const expected = expectedForMeasureRef.current?.(m) || [];
+      if (expected.length === 0 && hitsRef.current.length === 0) continue; // nothing to grade
+      const graded = { measure: m, ...gradeMeasure({ expected, hits: hitsRef.current }, cfgRef.current || {}) };
+      onMeasureGradeRef.current?.(graded);
+      out.push(graded);
+    }
     hitsRef.current = [];
-    // Returned so a caller opening the run summary in the SAME tick can fold this
-    // in: gradesRef is assigned during render, so it does not yet contain it.
-    return graded;
+    // Returned so a caller opening the run summary in the SAME tick can fold these
+    // in: gradesRef is assigned during render, so it does not yet contain them.
+    return out;
   }, []);
 
   // Buffer MIDI hits for the current measure. Subscribe once per enabled/subscribe.

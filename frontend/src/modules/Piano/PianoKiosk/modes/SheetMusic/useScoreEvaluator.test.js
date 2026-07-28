@@ -84,7 +84,42 @@ describe('useScoreEvaluator', () => {
     expect(onMeasureGrade).toHaveBeenCalledTimes(1);
   });
 
-  it('finalize returns the grade it produced so a same-tick summary can include it', () => {
+  it('finalize(endMeasure) closes out the boundary the completing tick swallowed', () => {
+    // The transport fires the final step's onEvent and completes in the SAME tick,
+    // so the advance onto the last measure never commits — the evaluator still
+    // reads the second-to-last one, and BOTH are ungraded. finalize grades both
+    // from the same undivided buffer: the run ended before that boundary could be
+    // observed, so there is no honest way to say which side a hit fell on.
+    const { subscribe, emit } = makeSubscribe();
+    const onMeasureGrade = vi.fn();
+    const { result, rerender } = renderHook(
+      (p) => useScoreEvaluator(opts({ subscribe, currentMeasure: p.m, onMeasureGrade, onSilentStop: vi.fn() })),
+      { initialProps: { m: 0 } },
+    );
+    rerender({ m: 1 });            // the run really ran
+    onMeasureGrade.mockClear();
+    act(() => { emit(64); emit(67); }); // measure 1's note, then measure 2's closing note
+    let returned;
+    act(() => { returned = result.current.finalize(2); });
+    expect(returned.map((g) => [g.measure, g.grade])).toEqual([[1, 'green'], [2, 'green']]);
+    expect(onMeasureGrade).toHaveBeenCalledTimes(2);
+  });
+
+  it('finalize(endMeasure) grades once when the run ended on the measure it was already on', () => {
+    // A final measure with more than one onset: the advance onto it committed long
+    // before the run ended, so no boundary was swallowed and there is one measure
+    // to close out, not two.
+    const { subscribe, emit } = makeSubscribe();
+    const onMeasureGrade = vi.fn();
+    const { result } = renderHook(() => useScoreEvaluator(opts({ subscribe, currentMeasure: 2, onMeasureGrade, onSilentStop: vi.fn() })));
+    act(() => emit(67));
+    let returned;
+    act(() => { returned = result.current.finalize(2); });
+    expect(returned.map((g) => g.measure)).toEqual([2]);
+    expect(onMeasureGrade).toHaveBeenCalledTimes(1);
+  });
+
+  it('finalize returns the grades it produced so a same-tick summary can include them', () => {
     const onMeasureGrade = vi.fn();
     let fire;
     const { result } = renderHook(() => useScoreEvaluator({
@@ -100,8 +135,8 @@ describe('useScoreEvaluator', () => {
     act(() => { fire({ type: 'note_on', note: 60, velocity: 90 }); });
     let returned;
     act(() => { returned = result.current.finalize(); });
-    expect(returned).toBeTruthy();
-    expect(returned.measure).toBe(3);
+    expect(returned).toHaveLength(1);
+    expect(returned[0].measure).toBe(3);
     expect(onMeasureGrade).toHaveBeenCalledTimes(1);
   });
 
@@ -115,7 +150,7 @@ describe('useScoreEvaluator', () => {
     const { result } = renderHook(() => useScoreEvaluator(opts({ subscribe, currentMeasure: 2, onMeasureGrade, onSilentStop: vi.fn() })));
     let returned;
     act(() => { returned = result.current.finalize(); });
-    expect(returned).toBeUndefined();
+    expect(returned).toEqual([]);
     expect(onMeasureGrade).not.toHaveBeenCalled();
   });
 
@@ -132,7 +167,8 @@ describe('useScoreEvaluator', () => {
     expect(onMeasureGrade).toHaveBeenCalledTimes(1);
     let returned;
     act(() => { returned = result.current.finalize(); });
-    expect(returned).toMatchObject({ measure: 1, grade: 'red' });
+    expect(returned).toHaveLength(1);
+    expect(returned[0]).toMatchObject({ measure: 1, grade: 'red' });
     expect(onMeasureGrade).toHaveBeenCalledTimes(2);
   });
 

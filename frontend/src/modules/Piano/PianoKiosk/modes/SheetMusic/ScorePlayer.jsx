@@ -399,7 +399,14 @@ export default function ScorePlayer({ score: scoreMeta }) {
       flushPlaybackNow();
       // A Polish run that plays to the end must grade its final measure and show
       // the summary — the reward for finishing, not only for giving up (audit H1).
-      if (mode === 'polish') { openRunSummaryRef.current?.(finalizeRef.current?.()); }
+      // The evaluator cannot name the measure the run ended on: the final step's
+      // setStep has not committed (and the cursor goes home below), so it still
+      // reads the second-to-last one. Derive it here — a completed run ended on
+      // the LAST step, whatever measure that step belongs to.
+      if (mode === 'polish') {
+        const endMeasure = steps[events.length - 1]?.measure;
+        openRunSummaryRef.current?.(finalizeRef.current?.(endMeasure));
+      }
       setRunActive(false); // done WITHOUT a loop = a genuine end of run (see runActive)
       logger.info('score.transport.done', { mode, steps: events.length });
       // The run is OVER — put the cursor back where a run starts (the loop
@@ -513,10 +520,14 @@ export default function ScorePlayer({ score: scoreMeta }) {
   // completion path.
   const openRunSummary = useCallback((extra) => {
     setSummaryOpen(true);
-    // `extra` is the measure finalize() just graded — gradesRef.current is a
-    // render-time snapshot and does not include it yet, so a summary opened in
-    // the same tick would under-count by one measure.
-    const all = extra ? { ...gradesRef.current, [extra.measure]: extra } : gradesRef.current;
+    // `extra` is the grade — or grades, since finalize can close out two measures
+    // at a completion — produced in THIS tick. gradesRef.current is a render-time
+    // snapshot and does not include them yet, so a summary opened in the same tick
+    // would under-count.
+    const fresh = (Array.isArray(extra) ? extra : [extra]).filter(Boolean);
+    const all = fresh.length
+      ? { ...gradesRef.current, ...Object.fromEntries(fresh.map((g) => [g.measure, g])) }
+      : gradesRef.current;
     const t = tallyGrades(all);
     logRunSummary({ greens: t.green, yellows: t.yellow, reds: t.red, overall: t.overall });
   }, [logRunSummary]);

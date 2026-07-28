@@ -460,18 +460,30 @@ describe('ScorePlayer — Polish mode (transport-driven)', () => {
   });
 
   it('opens the RunSummary when a Polish run completes, grading the final measure (H1)', async () => {
-    h.layoutExtras = { tempoEntries: [{ onsetQuarter: 0, bpm: 120 }] }; // fast so the run ends quickly
+    // The panel appearing was never the claim worth making — the FINAL measure
+    // getting a grade is. The transport fires the last step's onEvent and completes
+    // in the SAME tick, so its setStep never commits (and onDone then sends the
+    // cursor home): the evaluator still reads the second-to-last measure. The
+    // probe's 5-measure run graded 0–3 and never 4.
+    h.layoutExtras = FIVE_MEASURES;
+    const emitted = captureLog();
+
     renderPlayer();
     screen.getByText('Polish').click();
     await act(async () => {});
     screen.getByRole('button', { name: 'Play' }).click();
     await act(async () => {});
-    act(() => vi.advanceTimersByTime(2100)); // through the 4-beat @120 count-in (2000ms)
-    // Play the 4 onsets' expected notes so the final measure isn't silent, and run to the end.
-    act(() => { [64, 52, 40, 62, 60, 62].forEach((n) => h.noteCb?.({ type: 'note_on', note: n, velocity: 80 })); });
-    act(() => vi.advanceTimersByTime(4000)); // past all onsets → onDone
-    // Summary panel appears on completion (not only on silent-stop).
+    act(() => vi.advanceTimersByTime(4100)); // through the 4-beat @60 count-in
+    // Play each measure's note 100ms into its beat (comfortably inside tolerance).
+    play(60);
+    for (const n of [61, 62, 63]) { act(() => vi.advanceTimersByTime(1000)); play(n); }
+    play(64); // the closing note, rolled in on its beat — i.e. before the tick that
+              // fires the last onset and ends the run in the same breath
+    act(() => vi.advanceTimersByTime(1000)); // …that tick → onDone
+
     expect(document.querySelector('.piano-score-run-summary')).not.toBeNull();
+    const graded = emitted.filter(([ev]) => ev === 'score.polish.measure').map(([, d]) => [d.measure, d.grade]);
+    expect(graded).toEqual([[0, 'green'], [1, 'green'], [2, 'green'], [3, 'green'], [4, 'green']]);
   });
 
   // Two measures, one step each @60bpm. Single-step FINAL measure: a loop pinned to
@@ -777,11 +789,12 @@ describe('ScorePlayer — Polish mode (transport-driven)', () => {
   // silentMeasuresToStop) is a plain mid-piece advance, not the completing tick.
   const SEVEN_MEASURES = singleStepMeasures(7);
 
-  it('the completion summary counts the measure onDone just finalized (Task 10)', async () => {
-    // A run played through silently: four measures red — three from the advance
-    // rule, the fourth from finalize() at onDone. The summary must report all
-    // FOUR. Reporting three is Bug B: gradesRef is a render-time snapshot, so
-    // the measure finalize just graded is not in it yet.
+  it('the completion summary counts the measures onDone just finalized (Task 10)', async () => {
+    // A run played through silently: FIVE measures red — three from the advance
+    // rule, then the last two from finalize() at onDone (the completing tick
+    // swallows the boundary between them, so neither had been graded). The
+    // summary must report all five. Reporting fewer is Bug B: gradesRef is a
+    // render-time snapshot, so what finalize just graded is not in it yet.
     h.layoutExtras = FIVE_MEASURES;
     const emitted = captureLog();
 
@@ -794,13 +807,13 @@ describe('ScorePlayer — Polish mode (transport-driven)', () => {
     for (let i = 0; i < 8; i++) act(() => vi.advanceTimersByTime(1100)); // play the piece out
 
     const grades = emitted.filter(([ev]) => ev === 'score.polish.measure');
-    expect(grades.map(([, d]) => d.measure)).toEqual([0, 1, 2, 3]); // advance rule ×3 + finalize
+    expect(grades.map(([, d]) => d.measure)).toEqual([0, 1, 2, 3, 4]); // advance rule ×3 + finalize ×2
     expect(grades.every(([, d]) => d.grade === 'red')).toBe(true);
     const summaries = emitted.filter(([ev]) => ev === 'score.polish.summary');
     expect(summaries.length).toBe(1);
-    // Every graded measure is in the tally — including the one finalize produced
+    // Every graded measure is in the tally — including the ones finalize produced
     // in this same tick. Without the fold this reads reds: 3.
-    expect(summaries[0][1]).toMatchObject({ greens: 0, yellows: 0, reds: 4, overall: 'red' });
+    expect(summaries[0][1]).toMatchObject({ greens: 0, yellows: 0, reds: 5, overall: 'red' });
     expect(summaries[0][1].reds).toBe(grades.length);
   });
 
