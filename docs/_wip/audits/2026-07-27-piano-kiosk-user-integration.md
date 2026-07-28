@@ -126,6 +126,9 @@ splits — precisely the mis-credit the chip lock was built to prevent.
 (`useEffect(() => { if (videoActive || playing) setWhoOpen(false); }, …)`) — silent
 close (keep the prior user), matching the chip-lock semantics, NOT a guest dismiss.
 
+**FIXED 2026-07-27:** `useWhoPromptAutoClose` (PianoKiosk) wired into PianoShell —
+closes silently on `videoActive`/`playing`, covered by hook tests.
+
 ### F8 — Stacked pickers: a chip pick can be clobbered to Guest (medium-low)
 
 The tap that opens the chrome chip's manual picker is also a `pointerdown`, so after an
@@ -137,6 +140,9 @@ silently overwriting the pick they just made.
 
 *Recommendation:* close `whoOpen` whenever `currentUser` changes while it's open (any
 pick elsewhere answers the question); that also collapses the double-modal.
+
+**FIXED 2026-07-27:** same `useWhoPromptAutoClose` hook — closes on a player *change*
+while open (opening with a player already selected does not self-dismiss).
 
 ### F9 — Re-prompt timeout doesn't extend on in-modal interaction (low)
 

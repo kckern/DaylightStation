@@ -55,6 +55,7 @@ import KeepAliveVideo from '../modules/Piano/PianoKiosk/KeepAliveVideo.jsx';
 import { PianoMixProvider } from '../modules/Piano/PianoKiosk/PianoMixContext.jsx';
 import { usePianoUser } from '../modules/Piano/PianoKiosk/PianoUserContext.jsx';
 import { useIdleGap } from '../lib/identity/useIdleGap.js';
+import { useWhoPromptAutoClose } from '../modules/Piano/PianoKiosk/useWhoPromptAutoClose.js';
 import { useAutoMidiHistory } from '../modules/Piano/PianoKiosk/useAutoMidiHistory.js';
 import ProfilePicker from '../lib/identity/ProfilePicker.jsx';
 import './PianoApp.scss';
@@ -268,6 +269,17 @@ function PianoShell() {
     logger.info('piano.who-is-playing.prompt', { pianoId });
     setWhoOpen(true);
   });
+
+  // Silent auto-close (keeps the current player): the qualifying tap above can
+  // itself launch playback or open the chip's picker, and the prompt's 30s
+  // timeout would then dismiss to Guest over an active lesson / a fresh pick.
+  const closeWhoPrompt = useCallback(() => {
+    setWhoOpen((was) => {
+      if (was) logger.info('piano.who-is-playing.auto-close', { pianoId });
+      return false;
+    });
+  }, [logger, pianoId]);
+  useWhoPromptAutoClose({ open: whoOpen, close: closeWhoPrompt, videoActive, playing, currentUser });
 
   // Always-on MIDI history: capture/segment/flush .mid files under the player.
   useAutoMidiHistory(subscribe, currentUser, config.autoRecord);
