@@ -9,6 +9,7 @@ import { PianoKeyboard } from '../../../components/PianoKeyboard.jsx';
 import { computeKeyboardRange } from '../../../noteUtils.js';
 import { usePianoMidi, usePianoMidiNotes } from '../../PianoMidiContext.jsx';
 import { usePianoUser } from '../../PianoUserContext.jsx';
+import { isPersistentUser } from '../../pianoUser.js';
 import { usePianoBreadcrumb } from '../../PianoBreadcrumbContext.jsx';
 import { useStudioPlayback } from './useStudioPlayback.js';
 import Icon from '../../icons/Icon.jsx';
@@ -132,7 +133,7 @@ export default function StudioPlayback() {
   const [take, setTake] = useState(undefined); // undefined=loading, null=missing
 
   useEffect(() => {
-    if (!currentUser) return undefined;
+    if (!isPersistentUser(currentUser)) return undefined;
     let cancelled = false;
     (async () => {
       try {
