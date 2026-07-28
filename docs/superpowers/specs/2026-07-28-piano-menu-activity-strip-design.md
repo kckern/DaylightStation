@@ -35,9 +35,13 @@ to power them (per-lecture `completedAt`, 100% courses) already exists.
 
 ## Card content selection (added 2026-07-28, second iteration)
 
-Each card shows up to **4 course poster thumbnails** with the percent under
-each (replacing the single-course text line). Which items fill a card is
-**config-driven** via `piano.yml`:
+Each card shows up to **2 course poster thumbnails** with the percent under
+each (replacing the single-course text line). The percent (and the tooltip's
+completed/total) is **module-scoped**: progress through the unit containing
+the player's most recently played lecture — not the whole program, which
+reads as discouraging on multi-hundred-lecture courses. Course-level
+completion (`courseCompleted`) still governs the incomplete-course filter.
+Which items fill a card is **config-driven** via `piano.yml`:
 
 ```yaml
 menu_activity:

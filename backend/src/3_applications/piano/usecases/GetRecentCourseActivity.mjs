@@ -10,7 +10,7 @@
  */
 const HARD_TTL_MS = 6 * 60 * 60 * 1000;
 // Thumbnails per player card on the menu strip.
-const MAX_COURSES_PER_PLAYER = 4;
+const MAX_COURSES_PER_PLAYER = 2;
 
 /**
  * Card-content selectors — what fills a player's thumbnails, config-driven via
@@ -26,8 +26,12 @@ const MAX_COURSES_PER_PLAYER = 4;
  * nothing until implemented, but configs may already list them.
  */
 const SLOT_BUILDERS = {
+  // Incompleteness is judged at the COURSE level (courseCompleted), but the
+  // displayed/ranked percent is the player's progress through their CURRENT
+  // MODULE — a 344-lecture program at 9% overall is discouraging; "unit 6,
+  // 60% done" is motivating.
   'top-incomplete-courses': (courses) => courses
-    .filter((c) => c.percent < 100)
+    .filter((c) => !c.courseCompleted)
     .sort((a, b) => (b.percent - a.percent)
       || String(b.lastPlayedAt).localeCompare(String(a.lastPlayedAt))),
   'recent-courses': (courses) => courses, // already newest-first
@@ -107,9 +111,33 @@ export class GetRecentCourseActivity {
       for (const show of shows) {
         const items = perShowItems.get(show.id);
         if (!items?.length) continue;
-        const s = this.#userVideoProgressStore.summarize(items, userId);
-        if (!s.lastPlayedAt) continue;
-        touched.push({ show, ...s });
+        const enriched = this.#userVideoProgressStore.enrich(items, userId);
+        // Course-level aggregation + the player's most recent lecture (its
+        // unit is their "current module").
+        let courseCompleted = 0;
+        let lastPlayedAt = null;
+        let currentUnitId = null;
+        for (const it of enriched) {
+          if (it.userWatched) courseCompleted += 1;
+          const lp = it.userLastPlayedAt;
+          if (lp && (!lastPlayedAt || String(lp) > String(lastPlayedAt))) {
+            lastPlayedAt = lp;
+            currentUnitId = it.parentId ?? null;
+          }
+        }
+        if (!lastPlayedAt) continue;
+        // Module-scoped progress: percent through the CURRENT unit, not the
+        // whole program (motivating on multi-hundred-lecture courses). Flat
+        // single-unit courses degrade to whole-course numbers naturally.
+        const unitItems = enriched.filter((it) => (it.parentId ?? null) === currentUnitId);
+        const unitCompleted = unitItems.filter((it) => it.userWatched).length;
+        touched.push({
+          show,
+          lastPlayedAt,
+          completed: unitCompleted,
+          total: unitItems.length,
+          courseCompleted: enriched.length > 0 && courseCompleted >= enriched.length,
+        });
       }
       if (!touched.length) continue;
       touched.sort((a, b) => String(b.lastPlayedAt).localeCompare(String(a.lastPlayedAt)));
@@ -121,6 +149,7 @@ export class GetRecentCourseActivity {
         total: e.total,
         percent: e.total > 0 && e.completed > 0
           ? Math.max(1, Math.round((e.completed / e.total) * 100)) : 0,
+        courseCompleted: e.courseCompleted,
         lastPlayedAt: e.lastPlayedAt,
       }));
 
