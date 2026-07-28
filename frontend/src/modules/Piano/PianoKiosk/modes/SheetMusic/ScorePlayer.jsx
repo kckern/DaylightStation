@@ -371,6 +371,15 @@ export default function ScorePlayer({ score: scoreMeta }) {
       // the summary — the reward for finishing, not only for giving up (audit H1).
       if (mode === 'polish') { finalizeRef.current?.(); openRunSummaryRef.current?.(); }
       logger.info('score.transport.done', { mode, steps: events.length });
+      // The run is OVER — put the cursor back where a run starts (the loop
+      // in-point when one is active, else the top). Without this, `step` stays
+      // parked on the final step while the transport has already rewound, so the
+      // next Play seeks to the end and plays ~1.6s of the last measure. Users hit
+      // that fourteen times in one session (audit H2). Mirrors what reset() does.
+      const home = homeStep(rangeRef.current);
+      setStep(home);
+      setStruck(() => new Set());
+      if (home === 0) scrollRef.current?.scrollTo({ top: 0, left: 0 });
     },
   });
   const transportRef = useRef(null); transportRef.current = transport; // read latest transport inside the tick closure
