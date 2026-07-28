@@ -714,6 +714,20 @@ No code exists for anything in this section. Each links its spec.
   9100 clears on the printer's own TCP idle timeout. `printPdf` resolves on
   flush, not on the printer closing the socket, precisely so a fire-and-forget
   job doesn't hang on that.
+- **YAML scalar trap in question banks:** a choice written as a bare number
+  (`- 12`) parses as an integer and fails the bank validator's non-empty-string
+  check. Quote numeric choices (`'12'`). The error names the field but not the
+  cause, so this is worth knowing before you go looking.
+- **`\fbox` switches TeX to text mode**, where `\phantom` is invalid — use
+  `\enclose{box}{\phantom{X}}` for a fill-in blank. Schema validation cannot
+  catch this class of error; only the catalog's `--render-probe` can, which is
+  why it exists. Run `node cli/school-catalog.cli.mjs validate --render-probe`
+  before promoting authored curriculum.
+- **Never build a MathJax document without filtering out the `noundefined`
+  package.** With it (the default in `AllPackages`), an undefined control
+  sequence — a macro typo, the single likeliest authoring mistake — renders as
+  **red literal text** instead of raising an error, and prints that way on a
+  child's worksheet. `mathSvg.mjs` filters it; any new MathJax consumer must too.
 - **Bank ids for printables must be top-level.** `readBankRaw` forbids `/` in a
   bank id and `listYamlFiles` is non-recursive, so only `*.yml` directly under
   `data/content/quizzes/` (e.g. `us-state-capitals`) resolve as a printable
