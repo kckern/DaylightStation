@@ -133,11 +133,36 @@ describe('claim is not success', () => {
     const out = await d.dispatch({ code: 'go:nope', device: 'k' });
     expect(out.status).toBe('declined');
   });
+
+  it('lets a caller tell refusal from success WITHOUT knowing any domain vocabulary', async () => {
+    // `status` is free-form per domain, so a generic caller — composition
+    // picking a feedback channel — cannot read it. `ok` is the one field that
+    // means the same thing everywhere. It defaults to TRUE so that a handler
+    // which refuses has to say so explicitly, rather than a diligent handler
+    // being distinguishable from a careless one only by accident.
+    const d = new ScanDispatcher({
+      handlers: [
+        { namespace: 'nutrition', handle: async () => ({ status: 'refused', ok: false }) },
+        { namespace: 'school', handle: async () => ({ status: 'printed' }) },
+        { namespace: 'content', handle: async () => { throw new Error('nope'); } },
+      ],
+      logger: silent,
+    });
+    expect((await d.dispatch({ code: 'ct:teapot' })).ok).toBe(false);
+    expect((await d.dispatch({ code: 'sch:a7f3k2' })).ok).toBe(true);
+    // The two outcomes the dispatcher itself produces are not successes either.
+    expect((await d.dispatch({ code: 'go:a:b' })).ok).toBe(false); // handler threw
+    expect((await d.dispatch({ code: 'gibberish' })).ok).toBe(false); // nothing claimed it
+    expect((await d.dispatch({ code: '9780306406157' })).ok).toBe(false); // no book handler
+  });
 });
 
 // ---- Step 6: adversarial ----
 
 const silent = { debug() {}, info() {}, warn() {}, error() {} };
+
+/** The keys every Outcome carries, whatever the domain and whatever the handler returned. */
+const DEFAULT_KEYS = ['status', 'ok', 'domain', 'message', 'physical', 'printed', 'effect'];
 
 /** A logger whose methods EXIST but throw — the shape a real transport takes when it is down. */
 const brokenLogger = {
@@ -249,6 +274,17 @@ describe('ScanDispatcher — handler registration', () => {
     for (const handlers of bad) expect(() => new ScanDispatcher({ handlers })).toThrow();
   });
 
+  it('names itself when `handlers` is not a list at all', async () => {
+    // Every other registration error carries a curated `ScanDispatcher: …`
+    // message. A bare `handlers is not iterable` from the for-of makes a
+    // composition-root typo look like an internal fault.
+    for (const handlers of [{}, 'content', 42, true]) {
+      expect(() => new ScanDispatcher({ handlers })).toThrow(/^ScanDispatcher: /);
+    }
+    // null/undefined mean "none", not a mistake.
+    expect(() => new ScanDispatcher({ handlers: undefined })).not.toThrow();
+  });
+
   it('constructs with no arguments at all', async () => {
     const d = new ScanDispatcher();
     expect(d.namespaces).toEqual([]);
@@ -301,7 +337,7 @@ describe('ScanDispatcher — the handler cannot corrupt the Outcome', () => {
       });
       const out = await d.dispatch({ code: 'go:a:b' });
       expect(out).toEqual({
-        status: 'unknown', domain: 'content', message: '',
+        status: 'unknown', ok: true, domain: 'content', message: '',
         physical: 'none', printed: false, effect: null,
       });
     }
@@ -390,9 +426,12 @@ describe('ScanDispatcher — the never-fall-through invariant', () => {
         expect(typeof out.message).toBe('string');
         expect(kinds).toContain(out.physical);
         expect(typeof out.printed).toBe('boolean');
-        expect(Object.keys(out).sort()).toEqual(
-          ['domain', 'effect', 'message', 'physical', 'printed', 'status'],
-        );
+        expect(typeof out.ok).toBe('boolean');
+        // Every default key is ALWAYS present. A handler may add its own on
+        // top (that is what makes `effect` a convention rather than a cage),
+        // so this is a superset check, not an equality one — but nothing in
+        // the guaranteed set may ever go missing.
+        expect(Object.keys(out)).toEqual(expect.arrayContaining(DEFAULT_KEYS));
       }
     }
   });
@@ -448,6 +487,23 @@ describe('ScanDispatcher — the never-fall-through invariant', () => {
     expect(out.status).toBe('failed');
     expect(out.domain).toBe('content');
     expect(out.message).toContain('getter boom');
+  });
+
+  it('survives a handler whose THROWN value is unreadable', async () => {
+    // The mirror of the return-value case above, and the same trust boundary:
+    // a handler's thrown value is no more trustworthy than its returned one.
+    // `#failed` is called FROM the catch blocks, so it runs outside every try,
+    // and reading `err.message` there is what rejects.
+    const cases = [
+      ['message getter', () => { throw { get message() { throw new Error('msg boom'); } }; }],
+      ['hostile proxy', () => { throw new Proxy({}, { get() { throw new Error('proxy boom'); } }); }],
+    ];
+    for (const [label, handle] of cases) {
+      const d = new ScanDispatcher({ handlers: [{ namespace: 'content', handle }], logger: silent });
+      const out = await d.dispatch({ code: 'go:a:b', device: 'k' });
+      expect(out, label).toMatchObject({ status: 'failed', domain: 'content', ok: false });
+      expect(typeof out.message, label).toBe('string');
+    }
   });
 
   it('survives a hostile proxy as the handler result', async () => {
