@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Routes, Route, useNavigate, useLocation, useParams } from 'react-router-dom';
 import useDocumentTitle from '../hooks/useDocumentTitle.js';
 import getLogger from '../lib/logging/Logger.js';
@@ -15,6 +15,7 @@ import {
 import { PianoMidiProvider, usePianoMidi, usePianoMidiNotes } from '../modules/Piano/PianoKiosk/PianoMidiContext.jsx';
 import { PianoUserProvider } from '../modules/Piano/PianoKiosk/PianoUserContext.jsx';
 import { useInactivityReturn } from '../modules/Piano/PianoKiosk/useInactivityReturn.js';
+import { useAutoStudioEntry } from '../modules/Piano/PianoKiosk/useAutoStudioEntry.js';
 import { useScreenControl, screenOffFailureMessage } from '../modules/Piano/PianoKiosk/useScreenControl.js';
 import { useArmedAction } from '../lib/identity/useArmedAction.js';
 import {
@@ -284,15 +285,30 @@ function PianoShell() {
   // Always-on MIDI history: capture/segment/flush .mid files under the player.
   useAutoMidiHistory(subscribe, currentUser, config.autoRecord);
 
+  const idleReturnRef = useRef(false);
+
   // After idle, return to this piano's menu (unless already there).
   // keepAlive=playing suppresses the timer while audio/video is actively playing.
   useInactivityReturn(activeNotes, noteHistory.length, config.inactivityMinutes, () => {
     const home = basePath;
     if (location.pathname !== home) {
       logger.info('piano.inactivity-reset', { from: location.pathname, pianoId });
+      idleReturnRef.current = true; // mark: the coming studio→menu transition is idle-driven
       navigate(home);
     }
   }, playing);
+
+  // Auto-enter Studio when someone sits down and plays on the menu
+  // (spec 2026-07-28-piano-auto-studio-design.md).
+  useAutoStudioEntry({
+    pathname: location.pathname,
+    basePath,
+    noteHistory,
+    autoStudio: config.autoStudio,
+    inactivityMinutes: config.inactivityMinutes,
+    consumeIdleReturn: () => { const v = idleReturnRef.current; idleReturnRef.current = false; return v; },
+    onEnter: () => navigate(`${basePath}/studio`),
+  });
 
   const MODE_LABELS = { videos: 'Courses', playalong: 'Playalong', singalong: 'Karaoke', music: 'Music', sheetmusic: 'Sheet Music', games: 'Games', lessons: 'Training', studio: 'Studio', composer: 'Composer', producer: 'Producer' };
   const modeKey = Object.keys(MODE_LABELS).find((k) => location.pathname.includes(`/${k}`));
