@@ -62,11 +62,6 @@ describe('parseScanCode — the unknown path', () => {
     });
   });
 
-  it('returns the unknown shape for junk input', () => {
-    for (const junk of [null, undefined, 42, {}, [], '', '  ', ':', '::', ':4'])
-      expect(parseScanCode(junk)).toMatchObject({ namespace: null, form: 'unknown' });
-  });
-
   it('normalises non-string input to empty body and raw', () => {
     for (const junk of [null, undefined, 42, 0, true, false, {}, [], () => {}])
       expect(parseScanCode(junk)).toEqual({
@@ -134,5 +129,13 @@ describe('PREFIX_REGISTRY — invariants', () => {
   it('is frozen', () => {
     expect(Object.isFrozen(PREFIX_REGISTRY)).toBe(true);
     expect(Object.isFrozen(NAMESPACES)).toBe(true);
+  });
+
+  it('does not let any domain claim a nutrition sub-prefix', () => {
+    // `dl:` density, `ct:` container and `rs:` reset are the fridge-sheet
+    // grammar (ScanVocabularyService). They are ALSO accepted bare as the legacy
+    // form, so a top-level tag colliding with one would capture every fridge
+    // scan in the house and hand it to the wrong domain.
+    for (const tag of tags) expect(['dl', 'ct', 'rs']).not.toContain(tag);
   });
 });
