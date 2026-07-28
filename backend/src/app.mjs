@@ -2236,8 +2236,37 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   });
   // Aggregate report across programs. Each program implements IProgramReporter;
   // adding one means registering it here, not editing the use case.
+  // The physical console (printed agenda → worksheet/media → graded → receipt).
+  // Fails closed: unwired unless school.yml sets `lifecycle.enabled: true` AND
+  // the document renderer is present. When it is unwired every field below is
+  // null/false, so the relay branch, the reporter and the routes all no-op.
+  const schoolLifecycleLogger = rootLogger.child({ module: 'school-lifecycle' });
+  let schoolLifecycle = {
+    wired: false, reason: 'not attempted', handlesCode: () => false, handleScan: null,
+    reporter: null, router: null, devicesRouter: null,
+  };
+  try {
+    const { createSchoolLifecycle } = await import('#composition/modules/schoolLifecycle.mjs');
+    schoolLifecycle = await createSchoolLifecycle({
+      configService,
+      householdId,
+      schoolService,
+      economyService: economyApi.economyService,
+      userService,
+      eventBus,
+      thermalPrinterRegistry: printerRegistry,
+      logger: schoolLifecycleLogger
+    });
+  } catch (err) {
+    // A console that cannot be built must not stop the house from booting: the
+    // rest of School (banks, materials, language) is untouched by its absence.
+    schoolLifecycleLogger.error('school.lifecycle.wiring-failed', { error: err.message });
+  }
+
   const getSchoolReport = new GetSchoolReport({
-    reporters: [schoolService, languageStudyService],
+    // The lifecycle reporter is filtered out by GetSchoolReport itself when it
+    // is null, so an unwired console simply does not appear on the board.
+    reporters: [schoolService, languageStudyService, schoolLifecycle.reporter],
     userService,
     logger: rootLogger.child({ module: 'school-report' })
   });
@@ -2296,6 +2325,16 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     languageStudyService,
     logger: rootLogger.child({ module: 'school-language-api' })
   }));
+
+  if (schoolLifecycle.router) {
+    v1Routers.school.use('/lifecycle', schoolLifecycle.router);
+  }
+  // Only when the doubles were actually constructed (school.yml
+  // `virtualDevices: true`). A production deployment never mounts a surface that
+  // can knock a printer offline.
+  if (schoolLifecycle.devicesRouter) {
+    v1Routers.school.use('/devices', schoolLifecycle.devicesRouter);
+  }
 
   // Strava webhook enrichment (provider-agnostic webhook, Strava adapter)
   let providerWebhookAdapters = {};
@@ -2722,6 +2761,22 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     onScan: (relay) => {
       const relayCfg = barcodeRelayInstances[relay.device] || {};
       const route = relay.route || relayCfg.route || 'content';
+
+      // School action tokens, FIRST and route-independent (spec §6.2): a token
+      // is self-identifying (`sch:` prefix), so any scanner in the house works
+      // whatever route it is configured for. Real UPC/EAN are digit-only and
+      // the fridge-sheet namespaces are `dl:`/`ct:`/`rs:`, so this branch cannot
+      // shadow either existing consumer — and when the console is unwired,
+      // `handlesCode` is a constant false and nothing below changes at all.
+      if (schoolLifecycle.handlesCode(relay.code)) {
+        schoolLifecycle.handleScan({ code: relay.code, device: relay.device })
+          .catch((err) => {
+            barcodeLogger?.warn?.('barcode_relay.school.dispatch.failed', {
+              device: relay.device, error: err.message,
+            });
+          });
+        return;
+      }
 
       if (route === 'nutribot') {
         // Namespace-first: dl:/ct:/rs: belong to the fridge sheet. Real UPC/EAN

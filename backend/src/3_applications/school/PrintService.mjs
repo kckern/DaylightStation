@@ -12,7 +12,7 @@
  * A `bank` printable renders an existing quiz bank as a worksheet; a `pdf`
  * printable prints a file from the data volume. Both resolve to {pdf, pageCount}.
  */
-import { evaluatePrintQuota, DEFAULT_PRINT_POLICY } from '#domains/school/index.mjs';
+import { evaluatePrintQuota, DEFAULT_PRINT_POLICY, isAdult } from '#domains/school/index.mjs';
 import { ValidationError, EntityNotFoundError } from '#domains/core/errors/index.mjs';
 import { GuestForbiddenError } from '#domains/school/errors.mjs';
 import { shortId } from '#domains/core/utils/id.mjs';
@@ -44,11 +44,11 @@ export class PrintService {
     return this.#printableDefs().find((p) => p.id === id) || null;
   }
 
+  // The rule itself is `#domains/school/people.mjs` — the SAME predicate the
+  // lifecycle sign-off and planning writes apply. It used to be written out
+  // here, which is how the lifecycle routes came to ship without any copy of it.
   #isAdult(userId) {
-    const u = this.#userService.getHouseholdRoster().find((r) => r.id === userId);
-    if (!u) return false;
-    if (!u.birthyear) return false; // unknown age can't approve — fail closed for approval only
-    return new Date(this.#now()).getUTCFullYear() - u.birthyear >= 18;
+    return isAdult({ roster: this.#userService.getHouseholdRoster(), userId, now: this.#now() });
   }
 
   /** Resolve a printable definition to {pdf, pageCount} for a student. */

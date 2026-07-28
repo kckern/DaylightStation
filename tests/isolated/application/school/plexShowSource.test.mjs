@@ -60,8 +60,8 @@ describe('PlexShowSource.listMaterials', () => {
     const materials = await source.listMaterials('60000');
 
     expect(materials).toEqual([
-      { id: 'plex:70001', title: 'Shakespeare Tales', poster: '/api/v1/proxy/plex/library/metadata/70001/thumb/1', source: 'plex-show', medium: 'video', durationMs: null, unitCount: 5 },
-      { id: 'plex:70002', title: 'Art Lessons', poster: '/api/v1/proxy/plex/library/metadata/70002/thumb/1', source: 'plex-show', medium: 'video', durationMs: null, unitCount: 12 },
+      { id: 'plex:70001', title: 'Shakespeare Tales', poster: '/api/v1/proxy/plex/library/metadata/70001/thumb/1', source: 'plex-show', medium: 'video', durationMs: null, unitCount: 5, summary: null },
+      { id: 'plex:70002', title: 'Art Lessons', poster: '/api/v1/proxy/plex/library/metadata/70002/thumb/1', source: 'plex-show', medium: 'video', durationMs: null, unitCount: 12, summary: null },
     ]);
     for (const m of materials) {
       expect(m.units).toBeUndefined();

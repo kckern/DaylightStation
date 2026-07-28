@@ -1,0 +1,24 @@
+# Unit 1 of 4: watch, then answer on screen. No paper in this unit — the quiz
+# is the interactive bank, so nothing has to be printed before the child starts.
+unitId: math-fractions.01
+title: Equivalent Fractions and Common Denominators
+subject: math
+courseId: math-fractions
+sequence: 1
+grades:
+  - lower
+  - upper
+objectives:
+  - Explain that two fractions are equivalent when they name the same amount of the same whole.
+  - Generate an equivalent fraction by multiplying the numerator and the denominator by the same number.
+  - Find the least common denominator of two fractions whose denominators are 12 or less.
+  - Rewrite a pair of fractions with unlike denominators so that they share a common denominator.
+media: math-fractions-intro-video
+bank: math-fractions-01-quiz
+passing:
+  percent: 80
+provenance:
+  source: hand-authored
+  author: parent
+  reviewState: approved
+  reviewedOn: '2026-07-21'

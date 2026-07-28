@@ -1,0 +1,19 @@
+# Unit 01 media. The Plex ratingKey is ONE current address for this episode; the
+# title/series/aliases below are what a repair tool rebinds against after a
+# library rebuild reassigns rating keys.
+id: math-fractions-intro-video
+locator: plex:481203
+title: Equivalent Fractions and Common Denominators
+series: Daylight Math Lessons
+aliases:
+  - Equivalent Fractions and Common Denominators
+  - Fractions Lesson 1 Equivalent Fractions
+  - daylight-math-s01e04
+season: 1
+episode: 4
+durationSec: 611
+provenance:
+  source: household-recording
+  addedBy: parent
+  addedOn: '2026-07-20'
+  note: Screen recording of the whiteboard lesson given at the kitchen table.

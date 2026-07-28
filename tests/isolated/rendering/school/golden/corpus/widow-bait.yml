@@ -1,0 +1,78 @@
+# Widow/orphan bait: filler that lands a long paragraph right at the page edge.
+#
+# The paragraph below must break with at least two lines on each page — a single
+# trailing line stranded at the top of page two is the classic defect this
+# document exists to catch.
+id: widow-bait
+title: Reading About Fractions
+seed: 20260727
+variant: 0
+target:
+  - letter
+blocks:
+  - type: rich_text
+    md: |
+      ## Reading About Fractions
+
+      A fraction names a part of a whole. The number underneath the line tells
+      you how many equal pieces the whole was cut into, and the number above the
+      line tells you how many of those pieces you have. When the pieces are the
+      same size on both sides, you can add or subtract them directly.
+
+      When the pieces are different sizes, you first have to make them match.
+      Finding a common denominator means cutting both wholes into the same
+      number of equal pieces, so that the parts can be counted together. The
+      easiest common denominator to find is the product of the two
+      denominators, though it is often not the smallest one available to you.
+
+      Once the denominators match, adding is only counting: three twelfths plus
+      eight twelfths is eleven twelfths, because eleven pieces of the same size
+      have been gathered together. Subtracting works the same way, and so does
+      comparing, which is why rewriting with a common denominator is the first
+      move in almost every fraction problem you will meet this year.
+
+      A result is in simplest form when the top and bottom numbers share no
+      factor except one. To get there, divide both by the largest number that
+      goes into each of them evenly. If the top number is larger than the
+      bottom number, the fraction is greater than one whole, and it is usually
+      written as a mixed number instead: a whole number followed by the part
+      that is left over.
+
+      Reading a fraction out loud helps more than it looks like it should. Say
+      the top number as a count and the bottom number as the size of the piece:
+      five sixths is five pieces, each one a sixth of the whole. Once the words
+      match the picture in your head, the arithmetic tends to follow along
+      without much trouble at all, even when the numbers get awkward.
+
+      Mixed numbers are two things written side by side: a count of whole
+      objects and a fraction of one more. Two and a third cups means two full
+      cups and a third of a third cup beside them. To add mixed numbers, add
+      the whole parts and the fraction parts separately, then regroup if the
+      fraction part comes out greater than one whole.
+
+      Improper fractions say the same thing a different way. Eleven quarters
+      and two and three quarters are the same amount of stuff; one of them
+      counts quarters and the other counts wholes first. Which one to write
+      depends on what you are about to do with it, and both are correct.
+
+      Comparing fractions is easiest when the pieces are the same size, which
+      is why the first move is so often to rewrite both with a common
+      denominator. Three fifths and five eighths look close together until you
+      write them as twenty four fortieths and twenty five fortieths, at which
+      point the answer is simply which count is larger.
+
+      A last warning about simplest form. It is not a different number; it is
+      the same number written with the smallest pieces that still land on it
+      exactly. Six eighths and three quarters are the same amount, and a
+      teacher asking for simplest form is asking which of the two ways of
+      writing it is easier for the next person to read at a glance.
+
+      This last paragraph is deliberately long, and it is deliberately placed
+      where the page runs out, because that is the moment a layout engine gets
+      it wrong. A break here must leave at least two lines behind on this page
+      and carry at least two lines onto the next one. A single line stranded by
+      itself at the top of a page is called a widow, a single line left behind
+      at the bottom is called an orphan, and both of them look like a printing
+      mistake to the child reading the sheet. The snapshot beside this document
+      is what proves the rule still holds, so if this paragraph ever splits one
+      line to six, the page image changes and the suite says so out loud.

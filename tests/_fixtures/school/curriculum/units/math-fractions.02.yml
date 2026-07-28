@@ -1,0 +1,57 @@
+# Unit 2 of 4: printed practice, graded by a parent against the rubric below.
+# There is no bank, so nothing here scores itself — `review` is the whole
+# grading contract, and the reward settles on the parent's mark without a
+# separate sign-off step.
+unitId: math-fractions.02
+title: Adding and Subtracting Unlike Denominators
+subject: math
+courseId: math-fractions
+sequence: 2
+grades:
+  - lower
+  - upper
+objectives:
+  - Add and subtract two fractions with unlike denominators of 12 or less, writing each result in simplest form.
+  - Add mixed numbers, regrouping when the fractional part of the sum is greater than one.
+  - Simplify a stacked fraction by dividing one fraction by another.
+  - Compare two fractions with unlike denominators by rewriting both over a common denominator.
+document: math-fractions-02-worksheet
+passing:
+  percent: 80
+# Three printings of the same problems with different numbers, so a retry after
+# a failed attempt is not the same sheet handed back.
+retry:
+  variants: 3
+reward:
+  amount: 5
+review:
+  rubric: |
+    Mark each of the six problems right or wrong. A problem is right only when
+    the final value is correct AND written in simplest form (question 3, 4 and 6
+    must be written as mixed numbers). Give half credit on a problem where the
+    common denominator step is correct but the arithmetic after it is not.
+  passingNote: Five of six correct, or 80 percent with half credits counted, is a pass.
+  answerKey:
+    - number: 1
+      expected: 11/12
+      working: 8/12 + 3/12
+    - number: 2
+      expected: 7/12
+      working: 10/12 - 3/12
+    - number: 3
+      expected: 3 5/6
+      working: 14/6 + 9/6 = 23/6
+    - number: 4
+      expected: 1 1/2
+      working: 3/4 divided by 1/2 = 3/4 times 2/1 = 3/2
+    - number: 5
+      expected: less than
+      working: 24/40 is less than 25/40, so 3/5 < 5/8
+    - number: 6
+      expected: 1 1/5 miles
+      working: 7/10 + 5/10 = 12/10 = 6/5
+provenance:
+  source: hand-authored
+  author: parent
+  reviewState: approved
+  reviewedOn: '2026-07-23'

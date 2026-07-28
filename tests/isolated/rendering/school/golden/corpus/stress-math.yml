@@ -1,0 +1,180 @@
+# The rendering spike's twelve math stress cases, as a real worksheet.
+#
+# Every case here caused a visible defect at some point in the spike (oversized
+# ex-unit sizing, invisible menclose strokes, currentColor strokes vanishing),
+# so this document is the corpus that keeps those fixed. It is deliberately
+# shaped like something a child would actually be handed: instructions, numbered
+# questions, answer space, a scan footer.
+id: stress-math
+title: Math Rendering Stress Sheet
+seed: 20260727
+variant: 0
+target:
+  - letter
+blocks:
+  - type: rich_text
+    md: |
+      ## Math Rendering Stress Sheet
+
+      Every problem below exercises a different part of the math renderer.
+      Work them in order and show your steps in the space provided.
+
+  - type: question
+    itemId: s1
+    number: 1
+    blocks:
+      - type: rich_text
+        md: A fraction divided by a fraction.
+      - type: math
+        tex: '\dfrac{\;\frac{3}{4}\;}{\;\frac{1}{2}\;}'
+        display: true
+      - type: answer_space
+        minPt: 48
+        maxPt: 72
+
+  - type: question
+    itemId: s2
+    number: 2
+    blocks:
+      - type: rich_text
+        md: Square and cube roots.
+      - type: math
+        tex: '\sqrt{\frac{9}{16}} + \sqrt[3]{27}'
+        display: true
+      - type: answer_space
+        minPt: 48
+        maxPt: 72
+
+  - type: question
+    itemId: s3
+    number: 3
+    blocks:
+      - type: rich_text
+        md: A three by three matrix.
+      - type: math
+        tex: '\begin{pmatrix} 1 & 2 & 3 \\ 4 & 5 & 6 \\ 7 & 8 & 9 \end{pmatrix}'
+        display: true
+      - type: answer_space
+        minPt: 48
+        maxPt: 72
+
+  - type: question
+    itemId: s4
+    number: 4
+    blocks:
+      - type: rich_text
+        md: A long expression that must stay inside the margins.
+      - type: math
+        tex: '12 + 34 - 56 \times 78 \div 90 + \frac{123}{456} - \frac{789}{1011} + \sqrt{144} \cdot 15'
+        display: true
+      - type: answer_space
+        minPt: 48
+        maxPt: 72
+
+  - type: question
+    itemId: s5
+    number: 5
+    blocks:
+      - type: rich_text
+        md: A chain of inequalities.
+      - type: math
+        tex: '-\tfrac{1}{2} < \tfrac{3}{5} \le \tfrac{5}{8} < 1'
+        display: true
+      - type: answer_space
+        minPt: 48
+        maxPt: 72
+
+  - type: question
+    itemId: s6
+    number: 6
+    blocks:
+      - type: rich_text
+        md: Trigonometry with superscripts.
+      - type: math
+        tex: '\sin^2\theta + \cos^2\theta = 1'
+        display: true
+      - type: answer_space
+        minPt: 48
+        maxPt: 72
+
+  - type: question
+    itemId: s7
+    number: 7
+    blocks:
+      - type: rich_text
+        md: Long division — the enclosure strokes must be visible.
+      - type: math
+        tex: '24\enclose{longdiv}{3768}'
+        display: true
+      - type: answer_space
+        minPt: 60
+        maxPt: 96
+
+  - type: question
+    itemId: s8
+    number: 8
+    blocks:
+      - type: rich_text
+        md: A multi-line aligned derivation.
+      - type: math
+        tex: '\begin{aligned} \frac{2}{3} + \frac{1}{4} &= \frac{8}{12} + \frac{3}{12} \\ &= \frac{11}{12} \end{aligned}'
+        display: true
+      - type: answer_space
+        minPt: 48
+        maxPt: 72
+
+  - type: question
+    itemId: s9
+    number: 9
+    blocks:
+      - type: rich_text
+        md: Mixed numbers with text labels.
+      - type: math
+        tex: '2\frac{1}{3}\ \text{cups} + 1\frac{1}{2}\ \text{cups}'
+        display: true
+      - type: answer_space
+        minPt: 48
+        maxPt: 72
+
+  - type: question
+    itemId: s10
+    number: 10
+    blocks:
+      - type: rich_text
+        md: A summation with limits above and below.
+      - type: math
+        tex: '\sum_{n=1}^{12} \frac{1}{n}'
+        display: true
+      - type: answer_space
+        minPt: 48
+        maxPt: 72
+
+  - type: question
+    itemId: s11
+    number: 11
+    blocks:
+      - type: rich_text
+        md: Stretchy parentheses around a sum of fractions.
+      - type: math
+        tex: '1 - \left( \frac{1}{3} + \frac{2}{5} \right)'
+        display: true
+      - type: answer_space
+        minPt: 48
+        maxPt: 72
+
+  - type: question
+    itemId: s12
+    number: 12
+    blocks:
+      - type: rich_text
+        md: The quadratic formula, with a nested radical.
+      - type: math
+        tex: 'x = \frac{-b \pm \sqrt{b^2 - 4ac}}{2a}'
+        display: true
+      - type: answer_space
+        minPt: 48
+        maxPt: 72
+
+  - type: scan_action
+    action: scan-worksheet
+    label: Scan this sheet when every problem is finished

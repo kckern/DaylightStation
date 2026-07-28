@@ -1,0 +1,29 @@
+# Unit 3 of 4: the paper checkpoint. Both refs are load-bearing and point at the
+# same six items — `document` is what the printer produces, `bank` is what the
+# scanned bubbles are graded against. The reward is the course's milestone
+# payout, so a parent signs it off before it settles.
+unitId: math-fractions.03
+title: Fractions Checkpoint
+subject: math
+courseId: math-fractions
+sequence: 3
+grades:
+  - lower
+  - upper
+objectives:
+  - Choose the correct sum or difference of two fractions with unlike denominators from four printed options.
+  - Recognise an equivalent fraction written in a different but equal form.
+  - Rewrite an improper fraction as a mixed number.
+  - Order fractions with unlike denominators by rewriting them over a common denominator.
+document: math-fractions-03-omr
+bank: math-fractions-03-bank
+passing:
+  percent: 80
+reward:
+  amount: 15
+  requiresSignoff: true
+provenance:
+  source: hand-authored
+  author: parent
+  reviewState: approved
+  reviewedOn: '2026-07-25'

@@ -44,6 +44,27 @@ describe('EconomyService', () => {
     expect(res.earned).toBe(5);
     expect(res.balance).toBe(5);
   });
+  // A caller whose own policy prices the completion (a school unit declares
+  // `reward.amount`) has to be able to say so, or the field is decoration.
+  it('earn honours an explicit amount over the policy reward', async () => {
+    const svc = makeService();
+    const res = await svc.earn(USER, { action: 'piano-lesson-complete', source: 'piano', ref: 'plex:1', amount: 8 });
+    expect(res.earned).toBe(8);
+    expect(res.balance).toBe(8);
+  });
+  it('an explicit amount is still bounded by the household daily_cap', async () => {
+    const svc = makeService();
+    const res = await svc.earn(USER, { action: 'piano-lesson-complete', source: 'piano', ref: 'plex:1', amount: 40 });
+    expect(res.earned).toBe(10);
+    expect(res.capped).toBe(true);
+  });
+  it.each([
+    ['null', null], ['zero', 0], ['negative', -3], ['fractional', 2.5], ['a string', '9'],
+  ])('falls back to the policy reward when the amount is %s', async (_label, amount) => {
+    const svc = makeService();
+    const res = await svc.earn(USER, { action: 'piano-lesson-complete', source: 'piano', ref: 'plex:1', amount });
+    expect(res.earned).toBe(5);
+  });
   it('earn enforces daily_cap (10) and reports capped earns', async () => {
     const svc = makeService();
     await svc.earn(USER, { action: 'piano-lesson-complete', source: 'piano', ref: 'plex:1' });

@@ -55,7 +55,20 @@ export class EconomyService {
     return { userId, balance: wallet.balance };
   }
 
-  async earn(userId, { action, source, ref = null }) {
+  /**
+   * @param {string} userId
+   * @param {object} args
+   * @param {string} args.action - an `earn` action from the economy catalog
+   * @param {string} args.source
+   * @param {string|null} [args.ref] - idempotency key; a ref pays once per UTC day
+   * @param {number|null} [args.amount] - what THIS completion is worth, when the
+   *   caller's own policy says so (a school unit declares `reward.amount`).
+   *   Overrides the catalog's flat `reward`; still subject to `daily_cap`, which
+   *   is the household's ceiling and not the caller's to raise. A non-positive
+   *   or non-integer value is ignored rather than treated as "pay nothing" — a
+   *   miswired override must not silently zero a real reward.
+   */
+  async earn(userId, { action, source, ref = null, amount = null }) {
     this.#assertUser(userId);
     const config = this.#config();
     // Feature-off no-op: on an install with no economy policy at all (no
@@ -64,11 +77,12 @@ export class EconomyService {
     // economy with an unknown action still throws below.
     if (!config?.earn) {
       const wallet = this.#snapshot(userId);
-      return { userId, earned: 0, capped: false, duplicate: false, skipped: true, balance: wallet.balance };
+      return { userId, earned: 0, capped: false, duplicate: false, skipped: true, txnId: null, balance: wallet.balance };
     }
     const policy = resolvePolicy(config, userId, action);
     if (!policy || policy.type !== 'earn') throw new ValidationError(`unknown earn action: ${action}`);
-    const reward = policy.reward || 0;
+    const override = Number.isInteger(amount) && amount > 0 ? amount : null;
+    const reward = override ?? (policy.reward || 0);
     const cap = policy.daily_cap ?? Infinity;
     // NOTE: cap accounting is UTC-day (matches how txn.at is stamped). Blackout
     // windows are local-time; the split is intentional (see openSession).
@@ -80,16 +94,23 @@ export class EconomyService {
     if (ref != null && todaysEarns.some((t) => t.ref === ref)) {
       const wallet = this.#snapshot(userId);
       this.#logger.info('economy-earn-duplicate', { userId, action, ref, balance: wallet.balance });
-      return { userId, earned: 0, capped: false, duplicate: true, balance: wallet.balance };
+      // The already-paid transaction, so a caller holding a durable record of
+      // its own (School's work sessions) can store the same id on a retry
+      // instead of recording "paid, id unknown".
+      const existing = todaysEarns.find((t) => t.ref === ref);
+      return { userId, earned: 0, capped: false, duplicate: true, txnId: existing?.id ?? null, balance: wallet.balance };
     }
     const earnedToday = todaysEarns.reduce((s, t) => s + t.delta, 0);
     const grant = Math.max(0, Math.min(reward, cap - earnedToday));
+    let txnId = null;
     if (grant > 0) {
-      this.#ds.appendTransaction(userId, createTransaction({ kind: 'earn', delta: grant, action, source, ref }));
+      const txn = createTransaction({ kind: 'earn', delta: grant, action, source, ref });
+      this.#ds.appendTransaction(userId, txn);
+      txnId = txn.id ?? null;
     }
     const wallet = this.#snapshot(userId);
     this.#logger.info('economy-earn', { userId, action, earned: grant, capped: grant < reward, balance: wallet.balance });
-    return { userId, earned: grant, capped: grant < reward, duplicate: false, balance: wallet.balance };
+    return { userId, earned: grant, capped: grant < reward, duplicate: false, txnId, balance: wallet.balance };
   }
 
   async openSession(userId, { action, source }) {
