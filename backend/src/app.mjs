@@ -2009,6 +2009,20 @@ export async function createApp({ server, logger, configPaths, configExists, ena
         return rewritten;
       });
     },
+    // One item's own metadata — for lesson shows that live in NO collection
+    // (config `shows:` entries). Same thumb proxy-rewrite contract.
+    metadata: async (ratingKey) => {
+      if (!pianoPlexAdapter?.client) return null;
+      const data = await pianoPlexAdapter.client.getContainer(`/library/metadata/${ratingKey}`);
+      const item = data?.MediaContainer?.Metadata?.[0];
+      if (!item) return null;
+      const rewritten = { ...item };
+      const proxyPath = pianoPlexAdapter.proxyPath;
+      if (typeof rewritten.thumb === 'string' && rewritten.thumb.startsWith('/')) {
+        rewritten.thumb = `${proxyPath}${rewritten.thumb}`;
+      }
+      return rewritten;
+    },
   } : null;
   const pianoContainer = new PianoContainer({
     studioDatastore: pianoStudioDatastore,

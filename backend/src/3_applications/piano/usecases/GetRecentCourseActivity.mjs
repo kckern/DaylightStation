@@ -58,15 +58,27 @@ export class GetRecentCourseActivity {
     this.#logger = logger;
   }
 
-  #lessonCollectionIds() {
+  /**
+   * Lesson scope = every tab group whose label contains "lesson" (so Piano
+   * Lessons AND Voice Lessons count; Music Appreciation doesn't), falling back
+   * to the first group when no label matches. Groups contribute their plex
+   * collections plus any directly-listed `shows` (which may live in no
+   * collection at all).
+   */
+  #lessonScope() {
     const videos = (this.#configService.getHouseholdAppConfig(null, 'piano') || {}).videos || {};
+    const strip = (id) => String(id).replace(/^plex:/, '');
+    const toList = (v) => (Array.isArray(v) ? v : [v]).filter(Boolean);
     if (Array.isArray(videos.collections) && videos.collections.length) {
-      const group = videos.collections[0];
-      const list = Array.isArray(group?.plex) ? group.plex : [group?.plex];
-      return list.filter(Boolean).map((id) => String(id).replace(/^plex:/, ''));
+      const lessonGroups = videos.collections.filter((g, i) => (g?.label ? /lesson/i.test(String(g.label)) : i === 0));
+      const scoped = lessonGroups.length ? lessonGroups : [videos.collections[0]];
+      return {
+        collectionIds: [...new Set(scoped.flatMap((g) => toList(g?.plex ?? g?.collections)).map(strip))],
+        showIds: [...new Set(scoped.flatMap((g) => toList(g?.shows)).map(strip))],
+      };
     }
-    const flat = Array.isArray(videos.plexCollection) ? videos.plexCollection : [videos.plexCollection];
-    return flat.filter(Boolean).map((id) => String(id).replace(/^plex:/, ''));
+    const flat = toList(videos.plexCollection);
+    return { collectionIds: flat.map(strip), showIds: [] };
   }
 
   async execute() {
@@ -82,7 +94,8 @@ export class GetRecentCourseActivity {
     // item more than once (observed live 2026-07-28 — every show doubled),
     // and a show may also legitimately sit in two configured collections.
     const seenShowIds = new Set();
-    for (const collectionId of this.#lessonCollectionIds()) {
+    const scope = this.#lessonScope();
+    for (const collectionId of scope.collectionIds) {
       try {
         const children = await this.#plexClient.children(collectionId);
         for (const c of children || []) {
@@ -94,6 +107,20 @@ export class GetRecentCourseActivity {
       } catch (err) {
         fetchFailed = true;
         this.#logger.warn?.('piano.activity.children_failed', { collectionId, error: err.message });
+      }
+    }
+    // Directly-listed lesson shows (config `shows:`) that no collection walk
+    // covered — fetch their own metadata for the tile fields.
+    for (const showId of scope.showIds) {
+      if (seenShowIds.has(String(showId))) continue;
+      try {
+        const meta = await this.#plexClient.metadata?.(showId);
+        if (!meta) continue;
+        seenShowIds.add(String(showId));
+        shows.push({ id: String(showId), title: meta.title || '', thumb: meta.thumb || null });
+      } catch (err) {
+        fetchFailed = true;
+        this.#logger.warn?.('piano.activity.metadata_failed', { showId, error: err.message });
       }
     }
 

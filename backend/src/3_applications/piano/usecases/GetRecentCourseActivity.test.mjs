@@ -4,7 +4,8 @@ import { GetRecentCourseActivity } from './GetRecentCourseActivity.mjs';
 
 let PIANO_CFG;
 const basePianoCfg = () => ({ videos: { collections: [
-  { label: 'Music Lessons', plex: ['plex:100'] },
+  { label: 'Piano Lessons', plex: ['plex:100'] },
+  { label: 'Voice Lessons', shows: ['plex:30'] },
   { label: 'Music Appreciation', plex: ['plex:200'] },
 ] } });
 
@@ -21,6 +22,7 @@ function makeDeps({ summaries, itemCounts = {} }) {
       children: async (key) => (String(key) === '100'
         ? [{ ratingKey: '10', title: 'Course A', thumb: '/img/a' }, { ratingKey: '11', title: 'Course B', thumb: '/img/b' }]
         : [{ ratingKey: '20', title: 'Appreciation X', thumb: '/img/x' }]),
+      metadata: async (key) => ({ ratingKey: String(key), title: `Standalone ${key}`, thumb: `/img/${key}` }),
     },
     fitnessPlayableService: {
       getPlayableEpisodes: async (id) => ({
@@ -180,6 +182,16 @@ test('caps each player at 2 course thumbnails (equal percents break ties by rece
   const { players } = await uc.execute();
   assert.equal(players[0].courses.length, 2);
   assert.deepEqual(players[0].courses.map((c) => c.courseId), ['plex:13', 'plex:12']);
+});
+
+test('voice-lesson shows outside any collection join the scope via metadata()', async () => {
+  const uc = new GetRecentCourseActivity(makeDeps({
+    summaries: { kc: { 30: { completed: 1, lastPlayedAt: '2026-07-26T00:00:00Z' } } },
+  }));
+  const { players } = await uc.execute();
+  assert.equal(players.length, 1);
+  assert.equal(players[0].courses[0].courseId, 'plex:30');
+  assert.equal(players[0].courses[0].courseTitle, 'Standalone 30'); // from metadata()
 });
 
 test('appreciation collections are out of scope', async () => {
