@@ -202,16 +202,30 @@ describe('registry invariants', () => {
     for (const tag of tags) expect(['dl', 'ct', 'rs']).not.toContain(tag);
   });
 
-  it('does not collide with a legacy screen name', () => {
-    // A legacy positional code is `screen:source:id`. If a screen were ever
-    // named `go`, then `go:plex:1` would resolve as a PREFIXED content code with
-    // body `plex:1` — silently dropping the screen. No such screen exists today;
-    // this stops one being added.
-    const RESERVED_AGAINST_SCREENS = ['go', 'cmd', 'nut', 'sch'];
-    for (const tag of tags) expect(RESERVED_AGAINST_SCREENS).toContain(tag);
-  });
 });
 ```
+
+> **Withdrawn after review — do not implement a screen-name collision test here.**
+> A draft of this task included:
+>
+> ```js
+> const RESERVED_AGAINST_SCREENS = ['go', 'cmd', 'nut', 'sch'];
+> for (const tag of tags) expect(RESERVED_AGAINST_SCREENS).toContain(tag);
+> ```
+>
+> It does not test what its name claims — there are no screen names in it. It
+> asserts the registry contains *only* today's four tags, so it fails the moment
+> anyone registers a fifth prefix, which is exactly the one-line extension this
+> module is built for.
+>
+> **The underlying hazard is real:** a legacy positional code is
+> `screen:source:id`, so a screen named `go` would make `go:plex:1` resolve as a
+> PREFIXED content code with body `plex:1`, dropping the screen. But screen names
+> come from config and are not reachable from a pure domain test without breaking
+> the layer rule. Assert it in **Task 6**, at the composition layer, where the
+> screen list is already in hand: no configured screen name may appear in
+> `Object.keys(PREFIX_REGISTRY)`. No such screen exists today (verified against
+> `BarcodeCommandMap.mjs`).
 
 Add `PREFIX_REGISTRY` to the existing import at the top of the file.
 
