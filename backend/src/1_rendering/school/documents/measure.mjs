@@ -350,11 +350,12 @@ function measureOmrNode(ctx, block, { widthPt, path }) {
 }
 
 /**
- * Token VALUES arrive in the document data; the renderer only draws them.
- * Nothing here mints, signs, or derives a code.
+ * Token VALUES arrive from the caller (IDocumentRenderer's `opts.tokens`, keyed
+ * by action) or from the document data. The renderer only draws them; nothing
+ * here mints, signs, or derives a code.
  */
-function actionCodeText(block) {
-  return block.code ?? block.token ?? block.action;
+function actionCodeText(block, tokens) {
+  return tokens?.[block.action] ?? block.code ?? block.token ?? block.action;
 }
 
 /** One block → the nodes it contributes to its enclosing fragment. */
@@ -392,7 +393,7 @@ function measureNodes(ctx, block, { widthPt, path }) {
         actionType: block.type,
         action: block.action,
         label: block.label,
-        codeText: actionCodeText(block),
+        codeText: actionCodeText(block, ctx.tokens),
         widthPt,
         heightPt: theme.action.heightPt,
       }];
@@ -496,16 +497,18 @@ function fragmentFromNode(node, { id, block, theme }) {
  * @param {Function} [deps.resolveAsset] - (ref) => { svg, widthPt, heightPt } | null
  * @param {Function} [deps.resolveChoices] - (itemId, { choices, path }) => string[];
  *   omitted means probe mode (bubble rows reserve space but carry no labels)
+ * @param {Object<string,string>} [deps.tokens] - action value → already-minted token
  * @param {string} [deps.path='blocks'] - dotted path prefix for fragment ids
  * @returns {Array<Object>} fragments for placeFragments()
  * @throws {UnsupportedBlockError|BlockMeasureError|MissingChoicesError|UnresolvedAssetError}
  *   with the offending block's path
  */
 export function measureBlocks(blocks, {
-  doc, theme = documentPdfTheme, texToSvg, resolveAsset = null, resolveChoices = null, path = 'blocks',
+  doc, theme = documentPdfTheme, texToSvg, resolveAsset = null, resolveChoices = null,
+  tokens = null, path = 'blocks',
 } = {}) {
   const widthPt = theme.page.widthPt - 2 * theme.page.marginPt;
-  const ctx = { doc, theme, texToSvg, resolveAsset, resolveChoices, widthPt };
+  const ctx = { doc, theme, texToSvg, resolveAsset, resolveChoices, tokens, widthPt };
 
   return blocks.flatMap((block, index) => {
     const at = `${path}[${index}]`;
@@ -555,11 +558,12 @@ function headerFragment(document, { theme, studentName }) {
  * @returns {Array<Object>}
  */
 export function measureDocumentFragments(document, {
-  doc, theme = documentPdfTheme, texToSvg, resolveAsset = null, resolveChoices = null, studentName = null,
+  doc, theme = documentPdfTheme, texToSvg, resolveAsset = null, resolveChoices = null,
+  tokens = null, studentName = null,
 } = {}) {
   return [
     headerFragment(document, { theme, studentName }),
-    ...measureBlocks(document.blocks, { doc, theme, texToSvg, resolveAsset, resolveChoices }),
+    ...measureBlocks(document.blocks, { doc, theme, texToSvg, resolveAsset, resolveChoices, tokens }),
   ];
 }
 

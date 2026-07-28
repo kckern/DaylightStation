@@ -184,9 +184,9 @@ describe('form map', () => {
     expect(event.marks).toEqual([0b0001, 0b0100, 0]);
   });
 
-  it('is empty for a document with no bubbles', async () => {
+  it('is null for a document with no bubbles — there is no form to grade', async () => {
     const { formMap } = await renderer.render(worksheet);
-    expect(formMap.marks).toEqual([]);
+    expect(formMap).toBeNull();
   });
 });
 
@@ -204,7 +204,23 @@ describe('answer keys', () => {
     expect(key.pdf.equals(learner.pdf)).toBe(false);
     expect(key.isAnswerKey).toBe(true);
     expect(learner.isAnswerKey).toBe(false);
-    expect(key.formMap.marks).toEqual([]);
+    expect(key.formMap).toBeNull();
+  });
+
+  it('sources key answers from the bank when asked for answerKey without a map', async () => {
+    const sheet = doc([omrQuestion(1), omrQuestion(2)]);
+    const { keyItems, isAnswerKey } = await renderer.render(sheet, { bank, answerKey: true });
+    expect(isAnswerKey).toBe(true);
+    expect(keyItems).toEqual([
+      { itemId: 'q1', number: 1, answer: '1/2' },
+      { itemId: 'q2', number: 2, answer: '2/2' },
+    ]);
+  });
+
+  it('draws a caller-minted token in the action box, minting nothing', async () => {
+    const withAction = doc([{ type: 'scan_action', action: 'scan-worksheet', label: 'Scan when done' }]);
+    const { pdf } = await renderer.render(withAction, { tokens: { 'scan-worksheet': 'TKN-123' } });
+    expect(Buffer.isBuffer(pdf)).toBe(true);
   });
 
   it('lists every answered item on the key', async () => {

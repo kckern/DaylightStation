@@ -336,7 +336,7 @@ export function createDocumentPdfRenderer({
   }
 
   // ── render ────────────────────────────────────────────────────────────
-  function renderPlaced(document, { studentName, isAnswerKey, keyItems, bank }) {
+  function renderPlaced(document, { studentName, isAnswerKey, keyItems, bank, tokens }) {
     const measurementDoc = createMeasurementDocument({ theme, fontDir });
     const fragments = measureDocumentFragments(document, {
       doc: measurementDoc,
@@ -344,6 +344,7 @@ export function createDocumentPdfRenderer({
       texToSvg,
       resolveAsset: assetResolver,
       resolveChoices: createChoiceResolver(bank),
+      tokens,
       studentName,
     });
     const { pages, errors } = placeFragments(fragments, {
@@ -373,13 +374,15 @@ export function createDocumentPdfRenderer({
       out.on('end', () => resolve({
         pdf: Buffer.concat(chunks),
         pageCount: pages.length,
-        formMap: {
+        // Null, not an empty map: a document with no bubbles has no form to
+        // grade, and IDocumentRenderer's contract distinguishes the two.
+        formMap: marks.length ? {
           formVersion: FORM_VERSION,
           documentId: document.id,
           seed: document.seed,
           variant: document.variant ?? 0,
           marks,
-        },
+        } : null,
         isAnswerKey,
         keyItems,
       }));
@@ -410,19 +413,30 @@ export function createDocumentPdfRenderer({
    * @param {Object<string,string>} [options.answers] - itemId → answer. When
    *   given, the returned artifact IS the answer key — a separate document.
    *   Call again without `answers` for the learner copy.
-   * @param {{id?: string, items: Array<{id: string, choices: string[]}>}} [options.bank]
+   * @param {boolean} [options.answerKey] - render the key sourcing answers from
+   *   the bank, for callers that hold no answer map of their own.
+   * @param {{id?: string, items: Array<{id: string, choices: string[], answer?: string}>}} [options.bank]
    *   the question bank behind this document. REQUIRED when the document has
    *   any `omr_response`: the choice text is printed from the bank, never
    *   duplicated into the document.
-   * @returns {Promise<{pdf: Buffer, pageCount: number, formMap: Object, isAnswerKey: boolean, keyItems: Array}>}
+   * @param {Object<string,string>} [options.tokens] - action value → already-minted
+   *   token, drawn in the action box. Nothing is minted here.
+   * @returns {Promise<{pdf: Buffer, pageCount: number, formMap: Object|null, isAnswerKey: boolean, keyItems: Array}>}
    */
-  async function render(document, { studentName = null, answers = null, bank = null } = {}) {
-    if (!answers) {
-      return renderPlaced(document, { studentName, isAnswerKey: false, keyItems: [], bank });
+  async function render(document, {
+    studentName = null, answers = null, answerKey = false, bank = null, tokens = null,
+  } = {}) {
+    const resolvedAnswers = answers
+      ?? (answerKey ? Object.fromEntries((bank?.items ?? [])
+        .filter((item) => item.answer !== undefined)
+        .map((item) => [item.id, item.answer])) : null);
+
+    if (!resolvedAnswers) {
+      return renderPlaced(document, { studentName, isAnswerKey: false, keyItems: [], bank, tokens });
     }
-    const keyItems = keyItemsFor(document, answers);
+    const keyItems = keyItemsFor(document, resolvedAnswers);
     return renderPlaced(keyDocumentFor(document, keyItems), {
-      studentName: null, isAnswerKey: true, keyItems, bank,
+      studentName: null, isAnswerKey: true, keyItems, bank, tokens,
     });
   }
 
