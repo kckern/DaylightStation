@@ -39,6 +39,10 @@ import FocusRangeLayer from './FocusRangeLayer.jsx';
 import SelectBanner from './SelectBanner.jsx';
 import { nearestEvent, SELECT_MAX_DIST } from './nearestEvent.js';
 
+// One source of truth for the transport's tick rate: the telemetry's stall rule
+// is expressed as a MULTIPLE of it, so the two can never drift apart (audit H1).
+const TRANSPORT_TICK_MS = 100;
+
 /**
  * ScorePlayer — interactive engraved score. Four modes:
  *  Learn   — full-hand tracking: the cursor advances only once every active-staff
@@ -65,7 +69,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
   // holding the returned object: the object identity is fresh every render, and
   // the renderer's engrave effect depends on `onReady` — a churning identity
   // would re-fire onLayout/onReady endlessly (infinite re-engrave loop).
-  const { logger, startSession, logLoad, recordFire, recordSchedule, flushPlayback, recordFollowHit, flushFollow, logMeasureGrade, logRunSummary, logFocus, logTranspose, logMode } = useScoreTelemetry({ id: scoreMeta.id });
+  const { logger, startSession, logLoad, recordFire, recordSchedule, flushPlayback, recordFollowHit, flushFollow, logMeasureGrade, logRunSummary, logFocus, logTranspose, logMode } = useScoreTelemetry({ id: scoreMeta.id, tickMs: TRANSPORT_TICK_MS });
 
   const parsed = useMemo(() => { try { return parseMusicXml(scoreMeta.musicXml); } catch { return null; } }, [scoreMeta.musicXml]);
   const tempo = parsed?.tempo || 90;
@@ -275,6 +279,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
 
   const transport = useScoreTransport({
     timeline: mode === 'polish' || mode === 'listen' ? playTimeline : [],
+    tickMs: TRANSPORT_TICK_MS,
     // AUDIO PLANE — runs up to lookaheadMs ahead; must touch NO React state
     // beyond the sounding ledger (used only for flush bookkeeping). Sends carry
     // the transport's wall timestamp so the MIDI service dispatches on time even

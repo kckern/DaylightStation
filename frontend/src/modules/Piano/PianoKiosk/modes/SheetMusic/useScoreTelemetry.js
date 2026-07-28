@@ -1,9 +1,16 @@
 import { useMemo, useRef, useCallback } from 'react';
 import getLogger from '../../../../../lib/logging/Logger.js';
-import { summarizeDrift, classifyFollowHit } from './scoreTelemetry.js';
+import { summarizeDrift, classifyFollowHit, stallThresholdMs } from './scoreTelemetry.js';
 
-const STALL_MS = 120;
-const FRAME_GAP_MS = 50;
+// The visual driver is a coarse setInterval at `tickMs` BY DESIGN (see
+// useScoreTransport), so a gap of ~tickMs is healthy, not a stall. Only a gap
+// that skipped whole ticks is worth a line. The old absolute 50ms budget could
+// essentially never NOT fire: it produced 65,595 warnings in three days, 95% of
+// them from this term alone, and drowned the log (audit H1).
+const GAP_TICK_MULTIPLE = 2.5;
+// Sched-late is a REAL condition, but 1,442 lines for one underlying problem is
+// not information. Warn a handful per run; the full count ships in stats.
+const SCHED_LATE_WARN_CAP = 5;
 
 /**
  * useScoreTelemetry — owns one child logger and the per-run collectors for the
@@ -12,7 +19,7 @@ const FRAME_GAP_MS = 50;
  * score.playback.stall/stats, score.follow.timing/stats). Timing math lives in
  * scoreTelemetry.js; this layer only collects + emits.
  */
-export function useScoreTelemetry({ id }) {
+export function useScoreTelemetry({ id, tickMs = 100 }) {
   // app + sessionLog on the child context route every emitted event to the
   // backend per-app session file (media/logs/piano-sheetmusic/{ts}.jsonl). A
   // startSession() 'session-log.start' opens that file; all subsequent events
@@ -23,6 +30,8 @@ export function useScoreTelemetry({ id }) {
   const stalls = useRef(0);
   const follow = useRef([]);
   const leads = useRef([]);
+  const stallMsRef = useRef(stallThresholdMs(90)); // latest tempo-scaled budget, for the flush
+  const schedLateWarns = useRef(0);
 
   const startSession = useCallback((scoreId) => logger.info('session-log.start', { scoreId }), [logger]);
 
@@ -38,22 +47,33 @@ export function useScoreTelemetry({ id }) {
 
   const recordFire = useCallback((ev, driftMs, gapMs, bpm) => {
     drifts.current.push(driftMs); gaps.current.push(gapMs);
-    if (driftMs >= STALL_MS || gapMs >= FRAME_GAP_MS) {
+    const stallMs = stallThresholdMs(bpm);
+    stallMsRef.current = stallMs; // flushPlayback must count stalls by the same rule
+    if (driftMs >= stallMs || gapMs >= tickMs * GAP_TICK_MULTIPLE) {
       stalls.current += 1;
-      logger.warn('score.playback.stall', { step: ev.step ?? ev.index, driftMs: Math.round(driftMs), gapMs: Math.round(gapMs), bpm });
+      // debug, not warn: on a genuinely bad run this fires per tick. The count
+      // lives in score.playback.stats; turn these on with
+      // window.DAYLIGHT_LOG_LEVEL='debug' when investigating.
+      logger.debug('score.playback.stall', {
+        step: ev.step ?? ev.index,
+        driftMs: Math.round(driftMs), gapMs: Math.round(gapMs),
+        bpm, stallMs: Math.round(stallMs),
+      });
     }
-  }, [logger]);
+  }, [logger, tickMs]);
 
   const recordSchedule = useCallback((ev, leadMs) => {
     leads.current.push(leadMs);
     // A negative lead means the tick woke later than the event's due time — the
     // note was sent with a past timestamp (dispatches immediately, audibly late).
-    // Rare by design; each one is worth a line.
-    if (leadMs < 0) logger.warn('score.playback.sched-late', { note: ev.note, leadMs: Math.round(leadMs) });
+    if (leadMs < 0 && schedLateWarns.current < SCHED_LATE_WARN_CAP) {
+      schedLateWarns.current += 1;
+      logger.warn('score.playback.sched-late', { note: ev.note, leadMs: Math.round(leadMs) });
+    }
   }, [logger]);
 
   const flushPlayback = useCallback((mode) => {
-    const d = summarizeDrift(drifts.current, { stallMs: STALL_MS });
+    const d = summarizeDrift(drifts.current, { stallMs: stallMsRef.current });
     const l = leads.current;
     const meanLeadMs = l.length ? Math.round(l.reduce((a, b) => a + b, 0) / l.length) : 0;
     logger.info('score.playback.stats', {
@@ -65,6 +85,7 @@ export function useScoreTelemetry({ id }) {
       schedLate: l.filter((x) => x < 0).length,
     });
     drifts.current = []; gaps.current = []; stalls.current = 0; leads.current = [];
+    schedLateWarns.current = 0;
   }, [logger]);
 
   const recordFollowHit = useCallback(({ step, note, expectedMs, actualMs }) => {
