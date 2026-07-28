@@ -143,3 +143,7 @@ tests/isolated/rendering/school/golden/snapshots/*.diff.png
 
 # Agent scratch probes at repo root
 /_scratch/
+
+# Mutation-test scratch modules (tests/isolated/e2e/school/sabotage.test.mjs writes
+# a patched sibling of a real module and deletes it; this catches a crashed run).
+__sabotage_*.mjs
