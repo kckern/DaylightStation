@@ -43,8 +43,9 @@ const deviceEffects = {
 vi.mock('./usePianoSoundBundle.js', () => ({
   usePianoSoundBundle: () => ({ currentBundle, applyBundle }),
 }));
+let canSave = true;
 vi.mock('./usePianoPreset.js', () => ({
-  usePianoPreset: () => ({ preset: { favorites: [favoriteBundle] }, saveDefault, addFavorite }),
+  usePianoPreset: () => ({ preset: { favorites: [favoriteBundle] }, saveDefault, addFavorite, canSave }),
 }));
 vi.mock('./PianoConfig.jsx', () => ({
   usePianoKioskConfig: () => ({ config: { shortlist: { voices: shortlistVoices } }, pianoId: 'default' }),
@@ -60,6 +61,7 @@ beforeEach(() => {
   applyBundle.mockClear();
   saveDefault.mockClear();
   addFavorite.mockClear();
+  canSave = true;
 });
 
 describe('SoundPanel', () => {
@@ -136,6 +138,14 @@ describe('SoundPanel', () => {
     render(<SoundPanel open onClose={vi.fn()} />);
     fireEvent.click(screen.getByRole('button', { name: /Add to favorites/i }));
     expect(addFavorite).toHaveBeenCalledWith(currentBundle);
+  });
+
+  it('guest (canSave=false): save buttons are hidden, note shown (F4)', () => {
+    canSave = false;
+    render(<SoundPanel open onClose={vi.fn()} />);
+    expect(screen.queryByText('Save as my default')).toBeNull();
+    expect(screen.queryByText('Add to favorites')).toBeNull();
+    expect(screen.getByText('Pick a player to save sounds')).toBeTruthy();
   });
 
   it('has no operator/destructive controls on the player surface', () => {
