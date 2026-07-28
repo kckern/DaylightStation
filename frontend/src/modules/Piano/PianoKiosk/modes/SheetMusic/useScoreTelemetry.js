@@ -82,6 +82,10 @@ export function useScoreTelemetry({ id, tickMs = 100 }) {
   }, [logger]);
 
   const flushPlayback = useCallback((mode) => {
+    // A run that never fired and never scheduled has nothing to report. Mode
+    // changes, Restart, view changes and unmount all call this unconditionally;
+    // without the guard 22% of stats records were empty (audit M4).
+    if (!drifts.current.length && !leads.current.length) return;
     const d = summarizeDrift(drifts.current, { stallMs: stallMsRef.current });
     const l = leads.current;
     const meanLeadMs = l.length ? Math.round(l.reduce((a, b) => a + b, 0) / l.length) : 0;

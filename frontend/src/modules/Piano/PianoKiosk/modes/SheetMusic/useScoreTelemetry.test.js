@@ -92,6 +92,12 @@ describe('useScoreTelemetry', () => {
     expect(warn[2]).toMatchObject({ leadMs: -20 });
   });
 
+  it('does not emit a stats record for a run that produced nothing', () => {
+    const { result } = renderHook(() => useScoreTelemetry({ id: 'x' }));
+    act(() => result.current.flushPlayback('polish'));
+    expect(logged.some(([, e]) => e === 'score.playback.stats')).toBe(false);
+  });
+
   it('startSession opens a session log', () => {
     const { result } = renderHook(() => useScoreTelemetry({ id: 'x' }));
     act(() => result.current.startSession('score-1'));
