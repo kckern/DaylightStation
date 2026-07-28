@@ -474,24 +474,27 @@ describe('ScorePlayer — Polish mode (transport-driven)', () => {
     expect(document.querySelector('.piano-score-run-summary')).not.toBeNull();
   });
 
+  // Two measures, one step each @60bpm. Single-step FINAL measure: a loop pinned to
+  // measure index 1 has its in-point ON the last timeline event (zero-span) — the
+  // nastiest wrap case; it must dwell + wrap, never finish.
+  const TAIL_MEASURE = {
+    tempoEntries: [{ onsetQuarter: 0, bpm: 60 }],
+    events: [
+      { midi: 64, midis: [64], onsetQuarter: 0, x: 100, top: 10, bottom: 200, system: 0 },
+      { midi: 62, midis: [62], onsetQuarter: 1, x: 160, top: 10, bottom: 200, system: 0 },
+    ],
+    steps: [
+      { onsetQuarter: 0, measure: 0, notes: [{ midi: 64, staff: 0, x: 100, top: 10, bottom: 200, width: 8 }] },
+      { onsetQuarter: 1, measure: 1, notes: [{ midi: 62, staff: 0, x: 160, top: 10, bottom: 200, width: 8 }] },
+    ],
+    measures: [
+      { index: 0, number: 1, firstStep: 0, lastStep: 0 },
+      { index: 1, number: 2, firstStep: 1, lastStep: 1 },
+    ],
+  };
+
   it('a Polish loop on the final measure wraps at onDone instead of finishing (L6)', async () => {
-    h.layoutExtras = {
-      tempoEntries: [{ onsetQuarter: 0, bpm: 60 }],
-      // Single-step final measure: the loop's in-point IS the last timeline event
-      // (zero-span) — the nastiest wrap case; it must dwell + wrap, never finish.
-      events: [
-        { midi: 64, midis: [64], onsetQuarter: 0, x: 100, top: 10, bottom: 200, system: 0 },
-        { midi: 62, midis: [62], onsetQuarter: 1, x: 160, top: 10, bottom: 200, system: 0 },
-      ],
-      steps: [
-        { onsetQuarter: 0, measure: 0, notes: [{ midi: 64, staff: 0, x: 100, top: 10, bottom: 200, width: 8 }] },
-        { onsetQuarter: 1, measure: 1, notes: [{ midi: 62, staff: 0, x: 160, top: 10, bottom: 200, width: 8 }] },
-      ],
-      measures: [
-        { index: 0, number: 1, firstStep: 0, lastStep: 0 },
-        { index: 1, number: 2, firstStep: 1, lastStep: 1 },
-      ],
-    };
+    h.layoutExtras = TAIL_MEASURE;
     renderPlayer();
     screen.getByText('Polish').click();
     await act(async () => {});
@@ -546,14 +549,16 @@ describe('ScorePlayer — Polish mode (transport-driven)', () => {
     return emitted;
   };
 
-  // Guided two-tap selection of measure 2 (index 1) — both taps land ON its note.
-  const loopSecondMeasure = () => {
+  // Guided two-tap selection of the one measure whose note sits at `clientX` —
+  // both taps land ON that note, so the loop is exactly one measure long.
+  const loopMeasureAtX = (clientX) => {
     act(() => { fireEvent.click(screen.getByRole('button', { name: /^loop/i })); });
     act(() => { fireEvent.click(screen.getByRole('button', { name: /select measures/i })); });
     const scroll = document.querySelector('.piano-score-player__scroll');
-    act(() => { fireEvent.click(scroll, { clientX: 160, clientY: 100 }); });
-    act(() => { fireEvent.click(scroll, { clientX: 160, clientY: 100 }); });
+    act(() => { fireEvent.click(scroll, { clientX, clientY: 100 }); });
+    act(() => { fireEvent.click(scroll, { clientX, clientY: 100 }); });
   };
+  const loopSecondMeasure = () => loopMeasureAtX(160); // THREE_MEASURES: a MIDDLE measure
 
   it('grades the measure of a ONE-measure Polish loop on every wrap (Task 9)', async () => {
     // The field scenario: focus {inMeasure: 2, outMeasure: 2}, count-in, notes
@@ -577,6 +582,62 @@ describe('ScorePlayer — Polish mode (transport-driven)', () => {
     expect(grades.length).toBeGreaterThanOrEqual(1);
     expect(grades[0][1]).toMatchObject({ measure: 1, grade: 'green' });
     expect(screen.getByText('m 2 / 3')).toBeTruthy(); // still looping the same measure
+  });
+
+  it('grades a Polish loop pinned to the FINAL measure, pass after pass (Task 19)', async () => {
+    // The zero-span case: the loop's in-point IS the last timeline event, so the
+    // run completes inside play()'s immediate tick and restarts through onDone's
+    // one-beat dwell. `transport.playing` never commits true across that dwell, so
+    // an evaluator gated on it never even subscribes — the probe played six correct
+    // passes over a tail-measure loop and got { btn: 'Play', grades: [], stops: 0 }.
+    h.layoutExtras = TAIL_MEASURE;
+    const emitted = captureLog();
+
+    renderPlayer();
+    screen.getByText('Polish').click();
+    await act(async () => {});
+    loopMeasureAtX(160); // TAIL_MEASURE: the LAST measure (index 1)
+    expect(screen.getByText('m 2 / 2')).toBeTruthy();
+    screen.getByRole('button', { name: 'Play' }).click();
+    await act(async () => {});
+    act(() => vi.advanceTimersByTime(4100)); // through the 4-beat @60 count-in
+    act(() => { h.noteCb?.({ type: 'note_on', note: 62, velocity: 80 }); }); // pass 1
+    act(() => vi.advanceTimersByTime(1100)); // one-beat dwell expires → wrap
+    act(() => { h.noteCb?.({ type: 'note_on', note: 62, velocity: 80 }); }); // pass 2
+    act(() => vi.advanceTimersByTime(1100)); // …and wrap again
+
+    const grades = emitted.filter(([ev]) => ev === 'score.polish.measure');
+    expect(grades.length).toBeGreaterThanOrEqual(2);        // one per pass
+    expect(grades.map(([, d]) => d.measure)).toEqual(grades.map(() => 1)); // the looped measure
+    // Every pass is scored from the note actually played — not a silent red wash.
+    // (Only the GRADE band varies with the at-tempo drift proxy: a note struck
+    // 200ms into the beat is a legitimate yellow.)
+    expect(grades.every(([, d]) => d.noteScore === 1)).toBe(true);
+    expect(grades[0][1].grade).toBe('green'); // played on the beat → green
+  });
+
+  it('the evaluator is off once a run is over — a later cursor move grades nothing (Task 19)', async () => {
+    // Guards the phantom-grade class of bug: the run-active signal that survives
+    // the loop dwell must NOT survive a genuine end-of-run, or the evaluator would
+    // grade measures the cursor merely passes over while nothing is playing.
+    h.layoutExtras = THREE_MEASURES;
+    const emitted = captureLog();
+
+    renderPlayer();
+    screen.getByText('Polish').click();
+    await act(async () => {});
+    screen.getByRole('button', { name: 'Play' }).click();
+    await act(async () => {});
+    act(() => vi.advanceTimersByTime(4100)); // count-in
+    for (let i = 0; i < 4; i++) act(() => vi.advanceTimersByTime(1100)); // play it out → onDone
+    expect(document.querySelector('.piano-score-run-summary')).not.toBeNull(); // the run ended
+    emitted.length = 0; // only what happens AFTER the run is over
+
+    const scroll = document.querySelector('.piano-score-player__scroll');
+    act(() => { fireEvent.click(scroll, { clientX: 220, clientY: 100 }); }); // tap-seek to measure 3
+    act(() => { h.noteCb?.({ type: 'note_on', note: 60, velocity: 80 }); });
+    act(() => { fireEvent.click(scroll, { clientX: 100, clientY: 100 }); }); // …and back to measure 1
+    expect(emitted.filter(([ev]) => ev === 'score.polish.measure')).toEqual([]);
   });
 
   it('Listen loop wraps do not make Polish grade a measure the user has not played (Task 9)', async () => {
