@@ -1,0 +1,184 @@
+/**
+ * The two parent-only writes on the lifecycle: signing off a piece of work, and
+ * changing what a child is assigned.
+ *
+ * THE DEFECT THESE PIN. Both used to be raw port calls from the router:
+ * `POST /sessions/:id/review/:itemId` took `gradedBy` as a free string and wrote
+ * it verbatim, and `PUT /assignments/:learnerId` had no author at all. A child
+ * with a browser could sign off their own sheet and assign themselves whatever
+ * they liked. The parent UI's grown-up picker is a usability affordance, not a
+ * boundary — so the refusal has to live HERE, where HTTP cannot get around it.
+ *
+ * Everything below therefore calls the use case DIRECTLY, with no router in the
+ * picture. If these pass and the router is bypassed entirely, the write is still
+ * refused.
+ */
+import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { GrownUpGate } from '#apps/school/GrownUpGate.mjs';
+import { ResolveReviewItem } from '#apps/school/usecases/ResolveReviewItem.mjs';
+import { SetAssignments } from '#apps/school/usecases/SetAssignments.mjs';
+
+const silent = { info: () => {}, warn: () => {}, error: () => {}, debug: () => {} };
+const AT = new Date('2026-07-27T09:00:00.000Z');
+const clock = () => AT;
+
+const ROSTER = [
+  { id: 'dad', name: 'Papa', birthyear: 1984 },
+  { id: 'learner-1', name: 'Test Learner', birthyear: 2016 },
+  { id: 'aunty', name: 'Aunty', birthyear: null },
+];
+
+const gate = () => new GrownUpGate({ roster: () => ROSTER, clock });
+
+let reviewQueue;
+let assignments;
+let resolveReviewItem;
+let setAssignments;
+
+beforeEach(() => {
+  reviewQueue = {
+    resolve: vi.fn(async ({ sessionId, itemId, verdict, gradedBy, at }) => (
+      itemId === 'ghost' ? null : { sessionId, itemId, verdict, gradedBy, gradedAt: at }
+    )),
+  };
+  assignments = {
+    put: vi.fn(async (record) => ({ ...record })),
+  };
+  resolveReviewItem = new ResolveReviewItem({ reviewQueue, grownUps: gate(), clock, logger: silent });
+  setAssignments = new SetAssignments({ assignments, grownUps: gate(), clock, logger: silent });
+});
+
+describe('signing off a review item', () => {
+  it('a grown-up marks it, and the verdict is attributed to them at the injected time', async () => {
+    const item = await resolveReviewItem.execute({
+      sessionId: 'ses_a', itemId: 'q3', verdict: 'correct', gradedBy: 'dad',
+    });
+    expect(item).toMatchObject({ verdict: 'correct', gradedBy: 'dad', gradedAt: AT.toISOString() });
+    expect(reviewQueue.resolve).toHaveBeenCalledTimes(1);
+  });
+
+  it('REFUSES a child signing off their own work, and writes nothing', async () => {
+    await expect(resolveReviewItem.execute({
+      sessionId: 'ses_a', itemId: 'q3', verdict: 'correct', gradedBy: 'learner-1',
+    })).rejects.toMatchObject({ name: 'GuestForbiddenError' });
+    expect(reviewQueue.resolve).not.toHaveBeenCalled();
+  });
+
+  it('REFUSES an id that is not on the roster', async () => {
+    await expect(resolveReviewItem.execute({
+      sessionId: 'ses_a', itemId: 'q3', verdict: 'correct', gradedBy: 'mr-nobody',
+    })).rejects.toMatchObject({ name: 'GuestForbiddenError' });
+    expect(reviewQueue.resolve).not.toHaveBeenCalled();
+  });
+
+  it('REFUSES a roster member with no birthyear — a blank field buys nothing', async () => {
+    await expect(resolveReviewItem.execute({
+      sessionId: 'ses_a', itemId: 'q3', verdict: 'correct', gradedBy: 'aunty',
+    })).rejects.toMatchObject({ name: 'GuestForbiddenError' });
+    expect(reviewQueue.resolve).not.toHaveBeenCalled();
+  });
+
+  it('REFUSES an absent gradedBy rather than recording an anonymous mark', async () => {
+    await expect(resolveReviewItem.execute({ sessionId: 'ses_a', itemId: 'q3', verdict: 'correct' }))
+      .rejects.toMatchObject({ name: 'GuestForbiddenError' });
+    expect(reviewQueue.resolve).not.toHaveBeenCalled();
+  });
+
+  it('checks who is asking BEFORE it looks at what they asked for', async () => {
+    // A forged caller must not learn anything from the shape of the refusal.
+    await expect(resolveReviewItem.execute({
+      sessionId: 'ses_a', itemId: 'q3', verdict: 'maybe', gradedBy: 'learner-1',
+    })).rejects.toMatchObject({ name: 'GuestForbiddenError' });
+  });
+
+  it('rejects a verdict that is not correct|incorrect', async () => {
+    await expect(resolveReviewItem.execute({
+      sessionId: 'ses_a', itemId: 'q3', verdict: 'maybe', gradedBy: 'dad',
+    })).rejects.toMatchObject({ name: 'ValidationError' });
+    expect(reviewQueue.resolve).not.toHaveBeenCalled();
+  });
+
+  it('reports an item that is not queued as not found', async () => {
+    await expect(resolveReviewItem.execute({
+      sessionId: 'ses_a', itemId: 'ghost', verdict: 'correct', gradedBy: 'dad',
+    })).rejects.toMatchObject({ name: 'EntityNotFoundError' });
+  });
+
+  it('cannot be built without a grown-up gate', () => {
+    expect(() => new ResolveReviewItem({ reviewQueue, clock })).toThrow(/grownUps/);
+  });
+});
+
+describe('changing what a child is assigned', () => {
+  const plan = (over = {}) => ({
+    learnerId: 'learner-1', courses: ['math-fractions'], units: [], assignedBy: 'dad', ...over,
+  });
+
+  it('a grown-up reassigns, and the record is stamped with the injected time', async () => {
+    const record = await setAssignments.execute(plan());
+    expect(record).toMatchObject({
+      learnerId: 'learner-1', courses: ['math-fractions'], units: [], updatedAt: AT.toISOString(),
+    });
+    expect(assignments.put).toHaveBeenCalledTimes(1);
+  });
+
+  it('records WHO changed it, so a reassignment is traceable to a person', async () => {
+    expect(await setAssignments.execute(plan())).toMatchObject({ assignedBy: 'dad' });
+  });
+
+  it('REFUSES a child assigning themselves, and writes nothing', async () => {
+    await expect(setAssignments.execute(plan({ assignedBy: 'learner-1' })))
+      .rejects.toMatchObject({ name: 'GuestForbiddenError' });
+    expect(assignments.put).not.toHaveBeenCalled();
+  });
+
+  it('REFUSES an unknown author, a birthyear-less one, and no author at all', async () => {
+    for (const assignedBy of ['mr-nobody', 'aunty', null]) {
+      // eslint-disable-next-line no-await-in-loop
+      await expect(setAssignments.execute(plan({ assignedBy })))
+        .rejects.toMatchObject({ name: 'GuestForbiddenError' });
+    }
+    expect(assignments.put).not.toHaveBeenCalled();
+  });
+
+  it('rejects courses or units that are not arrays', async () => {
+    await expect(setAssignments.execute(plan({ courses: 'math' })))
+      .rejects.toMatchObject({ name: 'ValidationError' });
+    await expect(setAssignments.execute(plan({ units: { a: 1 } })))
+      .rejects.toMatchObject({ name: 'ValidationError' });
+    expect(assignments.put).not.toHaveBeenCalled();
+  });
+
+  it('rejects a missing learnerId rather than writing a record nobody owns', async () => {
+    await expect(setAssignments.execute(plan({ learnerId: '' })))
+      .rejects.toMatchObject({ name: 'ValidationError' });
+  });
+
+  it('cannot be built without a grown-up gate', () => {
+    expect(() => new SetAssignments({ assignments, clock })).toThrow(/grownUps/);
+  });
+});
+
+describe('GrownUpGate', () => {
+  it('reads the roster at call time — a member added after boot counts', () => {
+    const live = [];
+    const g = new GrownUpGate({ roster: () => live, clock });
+    expect(g.isAdult('dad')).toBe(false);
+    live.push({ id: 'dad', birthyear: 1984 });
+    expect(g.isAdult('dad')).toBe(true);
+  });
+
+  it('accepts a plain array as well as a function', () => {
+    expect(new GrownUpGate({ roster: ROSTER, clock }).isAdult('dad')).toBe(true);
+  });
+
+  it('refuses everyone when the roster cannot be read, rather than letting everyone through', () => {
+    const g = new GrownUpGate({ roster: () => { throw new Error('roster unavailable'); }, clock });
+    expect(g.isAdult('dad')).toBe(false);
+  });
+
+  it('assert carries the caller\'s message on the refusal', () => {
+    expect(() => gate().assert('learner-1', 'Only a grown-up can sign off schoolwork'))
+      .toThrow('Only a grown-up can sign off schoolwork');
+  });
+});

@@ -1,0 +1,632 @@
+/**
+ * Block measurers — validated blocks in, layout fragments out.
+ *
+ * This is the "measure" half of the measure-then-place design: it turns each
+ * block into the geometry `layout.mjs` places, using a real PDFDocument purely
+ * as a font-metrics oracle. That document is NEVER written anywhere; nothing
+ * here produces bytes.
+ *
+ * Two invariants make the golden snapshots meaningful:
+ *
+ * 1. **Measurement is the drawing plan.** Lines are wrapped here, word by word,
+ *    with each word's x offset recorded — the draw pass replays those numbers
+ *    instead of re-wrapping with pdfkit's own layout. Measure and draw cannot
+ *    disagree about where line 4 sits, because there is only one calculation.
+ * 2. **A question is one atomic fragment.** Its stem, math, bubbles and answer
+ *    space are nodes with offsets inside that fragment, so a page break can
+ *    never land between a question and the space to answer it.
+ *
+ * INLINE MATH IS DEFERRED (v1). A `$...$` span inside `rich_text` is promoted to
+ * its own display-math fragment rather than measured as an inline run: getting
+ * an inline baseline subtly wrong shifts every following glyph on the line, and
+ * the worksheet corpus is display-dominant. Nothing prints a literal `$`.
+ *
+ * @module rendering/school/documents/measure
+ */
+
+import { fileURLToPath } from 'node:url';
+import PDFDocument from 'pdfkit';
+
+import { placeFragments } from './layout.mjs';
+import { documentPdfTheme } from './documentPdfTheme.mjs';
+import { texToSvg as mathJaxTexToSvg } from './mathSvg.mjs';
+
+/** Bundled font assets, resolved against this module — never the process cwd. */
+const DEFAULT_FONT_DIR = fileURLToPath(new URL('../../../../assets/fonts', import.meta.url));
+
+/** Markdown subset: ATX headings, blank-line paragraphs, `-`/`*` bullets. */
+const HEADING = /^(#{1,6})\s+(.*)$/;
+const BULLET = /^[-*]\s+(.*)$/;
+const BULLET_PREFIX = '•  ';
+/** Inline spans: **bold**, `code`, $math$ — in one pass so nesting can't reorder them. */
+const INLINE_SPAN = /\*\*([^*]+)\*\*|`([^`]+)`|\$([^$\n]+)\$/g;
+
+/** A block type with no Letter renderer — refuse rather than print a blank space. */
+export class UnsupportedBlockError extends Error {
+  constructor(type, path) {
+    super(`${path}: block type '${type}' has no Letter renderer`);
+    this.name = 'UnsupportedBlockError';
+    this.path = path;
+    this.blockType = type;
+  }
+}
+
+/** A block that could not be measured (bad TeX, unresolvable geometry), with its path. */
+export class BlockMeasureError extends Error {
+  constructor(message, path, cause) {
+    super(`${path}: ${message}`);
+    this.name = 'BlockMeasureError';
+    this.path = path;
+    this.cause = cause;
+  }
+}
+
+/**
+ * A bubble row whose choice text cannot be resolved from the question bank.
+ * Printing bare bubbles would hand a child a sheet they cannot answer and a
+ * grader a sheet that scans but means nothing, so the render refuses.
+ */
+export class MissingChoicesError extends Error {
+  constructor(message, path, itemId) {
+    super(`${path}: ${message}`);
+    this.name = 'MissingChoicesError';
+    this.path = path;
+    this.itemId = itemId;
+  }
+}
+
+/**
+ * An `asset` block whose ref no resolver could turn into artwork. A bordered
+ * empty rectangle on a worksheet is a silent failure — the diagram the question
+ * depends on is simply gone — so this fails at measure time, where the publish
+ * gate sees it.
+ */
+export class UnresolvedAssetError extends Error {
+  constructor(ref, path) {
+    super(`${path}: asset '${ref}' could not be resolved to artwork`);
+    this.name = 'UnresolvedAssetError';
+    this.path = path;
+    this.ref = ref;
+  }
+}
+
+/**
+ * Register the theme's TTFs on a pdfkit document under their theme alias.
+ * Shared by the measurement document and the output document so both resolve
+ * `theme.fonts.bold` to the same face.
+ */
+export function registerDocumentFonts(doc, { theme = documentPdfTheme, fontDir = DEFAULT_FONT_DIR } = {}) {
+  for (const font of Object.values(theme.fonts)) {
+    doc.registerFont(font.name, `${fontDir}/${font.file}`);
+  }
+  return doc;
+}
+
+/**
+ * A PDFDocument used only for `widthOfString`. It is never ended, never
+ * streamed, and never written to disk.
+ */
+export function createMeasurementDocument({ theme = documentPdfTheme, fontDir = DEFAULT_FONT_DIR } = {}) {
+  const doc = new PDFDocument({ size: 'letter', margin: theme.page.marginPt, autoFirstPage: false });
+  return registerDocumentFonts(doc, { theme, fontDir });
+}
+
+const stringWidth = (doc, theme, fontKey, sizePt, text) =>
+  doc.font(theme.fonts[fontKey].name).fontSize(sizePt).widthOfString(text);
+
+/** Paragraph descriptors from a constrained-Markdown source. */
+function splitParagraphs(md) {
+  const paragraphs = [];
+  for (const chunk of String(md).split(/\n\s*\n/)) {
+    const lines = chunk.split('\n').map((l) => l.trim()).filter(Boolean);
+    if (!lines.length) continue;
+    let buffer = [];
+    const flush = () => {
+      if (buffer.length) paragraphs.push({ style: 'body', text: buffer.join(' ') });
+      buffer = [];
+    };
+    for (const line of lines) {
+      const heading = HEADING.exec(line);
+      const bullet = BULLET.exec(line);
+      if (heading) { flush(); paragraphs.push({ style: 'heading', text: heading[2] }); continue; }
+      if (bullet) { flush(); paragraphs.push({ style: 'body', text: BULLET_PREFIX + bullet[1] }); continue; }
+      buffer.push(line);
+    }
+    flush();
+  }
+  return paragraphs;
+}
+
+/**
+ * Split one paragraph into alternating text/math segments.
+ * @returns {Array<{ kind: 'text', runs: Array<{text:string, font:string}> } | { kind: 'math', tex: string }>}
+ */
+function segmentParagraph(text) {
+  const segments = [];
+  let runs = [];
+  const pushText = (raw, font) => { if (raw) runs.push({ text: raw, font }); };
+  const flushText = () => {
+    if (runs.some((r) => r.text.trim())) segments.push({ kind: 'text', runs });
+    runs = [];
+  };
+
+  let cursor = 0;
+  INLINE_SPAN.lastIndex = 0;
+  let match = INLINE_SPAN.exec(text);
+  while (match) {
+    pushText(text.slice(cursor, match.index), 'regular');
+    const [, bold, code, math] = match;
+    if (bold !== undefined) pushText(bold, 'bold');
+    else if (code !== undefined) pushText(code, 'regular');
+    else { flushText(); segments.push({ kind: 'math', tex: math }); }
+    cursor = match.index + match[0].length;
+    match = INLINE_SPAN.exec(text);
+  }
+  pushText(text.slice(cursor), 'regular');
+  flushText();
+  return segments;
+}
+
+/**
+ * Split styled runs into words. A word may span runs: `**simplest form**.` puts
+ * the closing period in a different run from `form` with no whitespace between
+ * them, and they must stay one word — otherwise the period drifts a space away
+ * from the word it belongs to, and can even wrap to the next line alone.
+ *
+ * @returns {Array<{ pieces: Array<{text: string, font: string}> }>}
+ */
+function tokenizeRuns(runs) {
+  const words = [];
+  let current = null;
+  for (const run of runs) {
+    for (const part of run.text.split(/(\s+)/)) {
+      if (!part) continue;
+      if (/^\s+$/.test(part)) { current = null; continue; }
+      if (!current) { current = { pieces: [] }; words.push(current); }
+      current.pieces.push({ text: part, font: run.font });
+    }
+  }
+  return words;
+}
+
+/**
+ * The constrained-Markdown grammar, flattened for targets that do not style
+ * inline runs (the thermal receipt). ONE grammar for both targets: a second
+ * parser would eventually disagree with this one about what a `##` means.
+ *
+ * @param {string} md
+ * @returns {Array<{style: string, kind: 'text', text: string} | {style: string, kind: 'math', tex: string}>}
+ */
+export function parseRichText(md) {
+  return splitParagraphs(md).flatMap((paragraph) =>
+    segmentParagraph(paragraph.text).map((segment) => (segment.kind === 'math'
+      ? { style: paragraph.style, kind: 'math', tex: segment.tex }
+      : { style: paragraph.style, kind: 'text', text: segment.runs.map((run) => run.text).join('') })));
+}
+
+/**
+ * Greedy word wrap across styled runs.
+ *
+ * Advance rule (identical in the draw pass): each piece is drawn at its recorded
+ * x, and after a whole word x advances by a space measured in that word's last
+ * font. Sharing one rule is what keeps measurement honest.
+ */
+function wrapRuns(doc, theme, runs, { widthPt, sizePt, leadingPt }) {
+  const words = tokenizeRuns(runs);
+
+  const lines = [];
+  let current = [];
+  let xPt = 0;
+  const flush = () => {
+    if (!current.length) return;
+    const last = current[current.length - 1];
+    lines.push({ runs: current, widthPt: last.xPt + last.widthPt, heightPt: leadingPt });
+    current = [];
+    xPt = 0;
+  };
+
+  for (const word of words) {
+    const pieces = word.pieces.map((piece) => ({
+      ...piece, sizePt, widthPt: stringWidth(doc, theme, piece.font, sizePt, piece.text),
+    }));
+    const wordWidth = pieces.reduce((total, piece) => total + piece.widthPt, 0);
+    const spaceWidth = stringWidth(doc, theme, pieces[pieces.length - 1].font, sizePt, ' ');
+    // A word that overruns on its own is placed alone: breaking inside a word
+    // would silently alter what the child reads.
+    if (current.length && xPt + wordWidth > widthPt) flush();
+    for (const piece of pieces) {
+      current.push({ ...piece, xPt });
+      xPt += piece.widthPt;
+    }
+    xPt += spaceWidth;
+  }
+  flush();
+  return lines;
+}
+
+function measureTextLines(doc, theme, runs, { widthPt, styleKey }) {
+  const style = theme.styles[styleKey];
+  const lines = wrapRuns(doc, theme, runs, {
+    widthPt, sizePt: style.sizePt, leadingPt: style.leadingPt,
+  });
+  return { style, styleKey, lines, heightPt: lines.length * style.leadingPt };
+}
+
+function measureMathNode(ctx, tex, { display, widthPt, path }) {
+  let svg;
+  try {
+    svg = ctx.texToSvg(tex, { display, fontSizePt: ctx.theme.math.fontSizePt, ink: ctx.theme.ink.text });
+  } catch (err) {
+    throw new BlockMeasureError(err?.message ?? String(err), path, err);
+  }
+  const availablePt = widthPt - ctx.theme.math.indentPt;
+  const scale = svg.widthPt > availablePt && svg.widthPt > 0 ? availablePt / svg.widthPt : 1;
+  const drawWidthPt = svg.widthPt * scale;
+  const drawHeightPt = svg.heightPt * scale;
+  return {
+    kind: 'math',
+    svgString: svg.svgString,
+    scale,
+    drawWidthPt,
+    drawHeightPt,
+    indentPt: ctx.theme.math.indentPt,
+    widthPt,
+    heightPt: drawHeightPt + ctx.theme.math.padAbovePt + ctx.theme.math.padBelowPt,
+    padAbovePt: ctx.theme.math.padAbovePt,
+  };
+}
+
+/**
+ * An asset is measured at the size its resolver reports.
+ *
+ * With a resolver that cannot produce artwork, this throws: an empty bordered
+ * rectangle where the diagram should be is a silent failure — the child is
+ * asked about a picture that is not on the page. With NO resolver at all it
+ * reserves probe geometry, for the same reason bubble rows do (the publish gate
+ * has no asset resolver wired); the draw pass refuses an unresolved node.
+ */
+function measureAssetNode(ctx, block, { widthPt, path }) {
+  const { theme } = ctx;
+  const resolved = ctx.resolveAsset ? ctx.resolveAsset(block.ref) : null;
+  if (ctx.resolveAsset && !resolved?.svg) throw new UnresolvedAssetError(block.ref, path);
+
+  const caption = measureTextLines(ctx.doc, theme, [{ text: block.alt, font: 'regular' }], {
+    widthPt, styleKey: 'instruction',
+  });
+  const naturalWidth = resolved?.widthPt > 0 ? resolved.widthPt : widthPt;
+  const naturalHeight = resolved?.heightPt > 0 ? resolved.heightPt : theme.asset.placeholderHeightPt;
+  const scale = Math.min(widthPt / naturalWidth, theme.asset.maxHeightPt / naturalHeight, 1);
+  const drawWidthPt = naturalWidth * scale;
+  const drawHeightPt = naturalHeight * scale;
+
+  return {
+    kind: 'asset',
+    resolved: Boolean(resolved?.svg),
+    svg: resolved?.svg ?? null,
+    ref: block.ref,
+    drawWidthPt,
+    drawHeightPt,
+    caption,
+    widthPt,
+    heightPt: drawHeightPt + theme.asset.captionGapPt + caption.heightPt,
+  };
+}
+
+/**
+ * A bubble row: one cell per choice, all bubbles on ONE baseline, the choice
+ * text wrapped underneath its own bubble.
+ *
+ * Choice TEXT is never duplicated into the document — it lives in the question
+ * bank, which is also what the grader scores against, so paper and grader
+ * cannot drift. `resolveChoices` is how the bank reaches the page.
+ *
+ * With no resolver (the publish-time probe, which has no banks wired) the row
+ * is measured in probe mode: bubbles plus a conservative reservation for the
+ * choice text, enough to fail a page that could not fit the real thing. Probe
+ * mode NEVER produces a printable row — the draw pass refuses a cell with no
+ * label.
+ */
+function measureOmrNode(ctx, block, { widthPt, path }) {
+  const { theme, doc } = ctx;
+  const availablePt = widthPt - theme.omr.indentPt;
+  const cellWidthPt = availablePt / block.choices;
+  const labels = ctx.resolveChoices
+    ? ctx.resolveChoices(block.itemId, { choices: block.choices, path })
+    : null;
+
+  const cells = [];
+  for (let index = 0; index < block.choices; index += 1) {
+    const label = labels ? String(labels[index]) : null;
+    cells.push({
+      choice: theme.omr.letters[index],
+      label,
+      lines: label
+        ? wrapRuns(doc, theme, [{ text: label, font: 'regular' }], {
+          widthPt: cellWidthPt, sizePt: theme.omr.choiceSizePt, leadingPt: theme.omr.choiceLeadingPt,
+        })
+        : [],
+    });
+  }
+
+  const textLines = labels
+    ? Math.max(...cells.map((cell) => cell.lines.length))
+    : theme.omr.probeChoiceLines;
+
+  return {
+    kind: 'omr',
+    itemId: block.itemId,
+    choices: block.choices,
+    cells,
+    cellWidthPt,
+    labelled: Boolean(labels),
+    widthPt,
+    heightPt: theme.omr.rowHeightPt + theme.omr.choiceGapPt + textLines * theme.omr.choiceLeadingPt,
+  };
+}
+
+/**
+ * Token VALUES arrive from the caller (IDocumentRenderer's `opts.tokens`, keyed
+ * by action) or from the document data. The renderer only draws them; nothing
+ * here mints, signs, or derives a code.
+ */
+function actionCodeText(block, tokens) {
+  return tokens?.[block.action] ?? block.code ?? block.token ?? block.action;
+}
+
+/** One block → the nodes it contributes to its enclosing fragment. */
+function measureNodes(ctx, block, { widthPt, path, bodyStyleKey = 'body' }) {
+  const { theme } = ctx;
+  switch (block.type) {
+    case 'rich_text':
+      return splitParagraphs(block.md).flatMap((paragraph) =>
+        segmentParagraph(paragraph.text).map((segment) => (segment.kind === 'math'
+          ? measureMathNode(ctx, segment.tex, { display: true, widthPt, path })
+          : {
+            kind: 'text',
+            // Body prose inside a question is the `question` style; a heading
+            // stays a heading wherever it sits.
+            ...measureTextLines(ctx.doc, theme, segment.runs, {
+              widthPt, styleKey: paragraph.style === 'body' ? bodyStyleKey : paragraph.style,
+            }),
+            widthPt,
+          })));
+
+    case 'math':
+      return [measureMathNode(ctx, block.tex, { display: block.display !== false, widthPt, path })];
+
+    case 'asset':
+      return [measureAssetNode(ctx, block, { widthPt, path })];
+
+    case 'answer_space':
+      return [{
+        kind: 'answerSpace',
+        minPt: block.minPt,
+        maxPt: block.maxPt,
+        widthPt,
+        heightPt: block.minPt,
+      }];
+
+    case 'omr_response':
+      return [measureOmrNode(ctx, block, { widthPt, path })];
+
+    case 'media_action':
+    case 'scan_action':
+      return [{
+        kind: 'action',
+        actionType: block.type,
+        action: block.action,
+        label: block.label,
+        codeText: actionCodeText(block, ctx.tokens),
+        widthPt,
+        heightPt: theme.action.heightPt,
+      }];
+
+    default:
+      // plot/geometry are valid blocks with no Letter renderer yet. Refusing is
+      // the only outcome that cannot mis-print.
+      throw new UnsupportedBlockError(block.type, path);
+  }
+}
+
+/** Stack nodes vertically with the question's inner gap; returns the total height. */
+function stackNodes(nodes, gapPt) {
+  let cursor = 0;
+  nodes.forEach((node, index) => {
+    if (index > 0) cursor += gapPt;
+    node.offsetYPt = cursor;
+    cursor += node.heightPt;
+  });
+  return cursor;
+}
+
+/**
+ * Answer-space headroom for a fragment, in the shape `layout.mjs` grows.
+ * minPt is the fragment's own height so normalization is a no-op; maxPt adds
+ * every nested space's remaining room.
+ */
+function answerSpaceFor(nodes, baseHeightPt) {
+  const spaces = nodes.filter((node) => node.kind === 'answerSpace');
+  if (!spaces.length) return null;
+  const headroomPt = spaces.reduce((total, node) => total + (node.maxPt - node.minPt), 0);
+  return { minPt: baseHeightPt, maxPt: baseHeightPt + headroomPt };
+}
+
+function questionFragment(ctx, block, path) {
+  const widthPt = ctx.widthPt - ctx.theme.question.numberGutterPt;
+  const nodes = block.blocks.flatMap((child, index) =>
+    measureNodes(ctx, child, { widthPt, path: `${path}.blocks[${index}]`, bodyStyleKey: 'question' }));
+  const heightPt = stackNodes(nodes, ctx.theme.question.innerGapPt);
+  return {
+    id: path,
+    blocks: [block],
+    atomic: true,
+    spacingClass: ctx.theme.question.spacingClass,
+    number: block.number,
+    itemId: block.itemId,
+    gutterPt: ctx.theme.question.numberGutterPt,
+    widthPt: ctx.widthPt,
+    nodes,
+    heightPt,
+    baseHeightPt: heightPt,
+    answerSpace: answerSpaceFor(nodes, heightPt),
+  };
+}
+
+/** A wrapped-text node becomes a FLOWABLE fragment; everything else is atomic. */
+function fragmentFromNode(node, { id, block, theme }) {
+  if (node.kind === 'text') {
+    return {
+      id,
+      blocks: [block],
+      atomic: false,
+      spacingClass: node.style.spacingClass,
+      styleKey: node.styleKey,
+      widthPt: node.widthPt,
+      lines: node.lines,
+      heightPt: node.heightPt,
+      minLinesBeforeBreak: theme.widowOrphan.minLinesBeforeBreak,
+      minLinesAfterBreak: theme.widowOrphan.minLinesAfterBreak,
+    };
+  }
+  const spacingClassByKind = {
+    math: theme.math.spacingClass,
+    asset: theme.asset.spacingClass,
+    answerSpace: theme.answerSpace.spacingClass,
+    omr: theme.omr.spacingClass,
+    action: theme.action.spacingClass,
+  };
+  node.offsetYPt = 0;
+  return {
+    id,
+    blocks: [block],
+    atomic: true,
+    spacingClass: spacingClassByKind[node.kind],
+    widthPt: node.widthPt,
+    nodes: [node],
+    heightPt: node.heightPt,
+    baseHeightPt: node.heightPt,
+    answerSpace: answerSpaceFor([node], node.heightPt),
+  };
+}
+
+/**
+ * Measure a block list into layout fragments.
+ *
+ * @param {Array<Object>} blocks - validated document blocks
+ * @param {Object} deps
+ * @param {Object} deps.doc - measurement PDFDocument (see createMeasurementDocument)
+ * @param {Object} deps.theme - documentPdfTheme or a compatible theme
+ * @param {Function} deps.texToSvg - (tex, opts) => { svgString, widthPt, heightPt }
+ * @param {Function} [deps.resolveAsset] - (ref) => { svg, widthPt, heightPt } | null
+ * @param {Function} [deps.resolveChoices] - (itemId, { choices, path }) => string[];
+ *   omitted means probe mode (bubble rows reserve space but carry no labels)
+ * @param {Object<string,string>} [deps.tokens] - action value → already-minted token
+ * @param {string} [deps.path='blocks'] - dotted path prefix for fragment ids
+ * @returns {Array<Object>} fragments for placeFragments()
+ * @throws {UnsupportedBlockError|BlockMeasureError|MissingChoicesError|UnresolvedAssetError}
+ *   with the offending block's path
+ */
+export function measureBlocks(blocks, {
+  doc, theme = documentPdfTheme, texToSvg, resolveAsset = null, resolveChoices = null,
+  tokens = null, path = 'blocks',
+} = {}) {
+  const widthPt = theme.page.widthPt - 2 * theme.page.marginPt;
+  const ctx = { doc, theme, texToSvg, resolveAsset, resolveChoices, tokens, widthPt };
+
+  return blocks.flatMap((block, index) => {
+    const at = `${path}[${index}]`;
+    if (block.type === 'question') return [questionFragment(ctx, block, at)];
+    const nodes = measureNodes(ctx, block, { widthPt, path: at });
+    // A rich_text block yields one fragment per paragraph (and per promoted
+    // inline-math span), so a heading and its body can break apart and carry
+    // their own spacing class.
+    return nodes.map((node, nodeIndex) => fragmentFromNode(node, {
+      id: nodes.length > 1 || block.type === 'rich_text' ? `${at}#p${nodeIndex}` : at,
+      block,
+      theme,
+    }));
+  });
+}
+
+/** The title/name/date banner, measured as an atomic fragment on page one. */
+function headerFragment(document, { theme, studentName }) {
+  const { header } = theme;
+  const heightPt = header.titleLeadingPt + header.metaLeadingPt
+    + header.ruleGapPt + header.ruleWidthPt + header.gapBelowPt;
+  const node = {
+    kind: 'header',
+    title: document.title || document.id,
+    studentName: studentName || null,
+    widthPt: theme.page.widthPt - 2 * theme.page.marginPt,
+    heightPt,
+    offsetYPt: 0,
+  };
+  return {
+    id: 'header',
+    blocks: [],
+    atomic: true,
+    spacingClass: header.spacingClass,
+    widthPt: node.widthPt,
+    nodes: [node],
+    heightPt,
+    baseHeightPt: heightPt,
+  };
+}
+
+/**
+ * Fragments for a whole document: header banner, then every block.
+ *
+ * @param {Object} document - validated document ({ id, seed, variant, blocks }, title optional)
+ * @param {Object} deps - as measureBlocks, plus `studentName`
+ * @returns {Array<Object>}
+ */
+export function measureDocumentFragments(document, {
+  doc, theme = documentPdfTheme, texToSvg, resolveAsset = null, resolveChoices = null,
+  tokens = null, studentName = null,
+} = {}) {
+  return [
+    headerFragment(document, { theme, studentName }),
+    ...measureBlocks(document.blocks, { doc, theme, texToSvg, resolveAsset, resolveChoices, tokens }),
+  ];
+}
+
+/**
+ * Publish-time gate: measure and place a document, produce NO bytes, and report
+ * what would print wrong. Consumed by ValidateCatalog's `--render-probe`.
+ *
+ * Measurement stops at the first block it cannot measure (a renderer has no way
+ * to continue past bad TeX), so a document with two broken blocks reports the
+ * first; layout errors are reported in full.
+ *
+ * SCOPE: without a `resolveChoices` the probe checks PAGE GEOMETRY, reserving a
+ * conservative two lines under each bubble instead of the bank's real choice
+ * text. It is not a claim that the sheet is printable — the print path refuses
+ * an unlabelled bubble row outright, which is the guarantee that matters.
+ *
+ * @param {Object} document - a validated document
+ * @param {Object} [deps] - injectable for tests; defaults to the real MathJax renderer
+ * @returns {Promise<{ errors: string[] }>}
+ */
+export async function probeDocument(document, {
+  theme = documentPdfTheme, texToSvg = mathJaxTexToSvg, resolveAsset = null,
+  resolveChoices = null, fontDir = DEFAULT_FONT_DIR,
+} = {}) {
+  let fragments;
+  try {
+    const doc = createMeasurementDocument({ theme, fontDir });
+    fragments = measureDocumentFragments(document, { doc, theme, texToSvg, resolveAsset, resolveChoices });
+  } catch (err) {
+    return { errors: [err?.message ?? String(err)] };
+  }
+
+  const { errors } = placeFragments(fragments, {
+    pageHeightPt: theme.page.heightPt,
+    marginPt: theme.page.marginPt,
+    spacing: theme.spacing,
+  });
+  return { errors: errors.map((error) => error.message) };
+}
+
+export default {
+  measureBlocks, measureDocumentFragments, createMeasurementDocument, probeDocument, parseRichText,
+};

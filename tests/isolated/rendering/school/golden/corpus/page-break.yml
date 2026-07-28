@@ -1,0 +1,85 @@
+# Break-forcing document: tall atomic questions that cannot share a page.
+#
+# Each question is a keep-together unit taller than a third of the page, so the
+# third one must move whole to page two rather than splitting between its math
+# and the space to answer it. The trailing free space on page one is what the
+# answer-space distribution rule grows into.
+id: page-break
+title: Long Answers
+seed: 20260727
+variant: 0
+target:
+  - letter
+blocks:
+  - type: rich_text
+    md: |
+      ## Long Answers
+
+      Use the whole space under each problem. Show every step.
+
+  - type: question
+    itemId: p1
+    number: 1
+    blocks:
+      - type: rich_text
+        md: |
+          Ravi's bread recipe uses two thirds of a cup of milk and he is making
+          it twice. Write the total as a mixed number of cups, then explain in
+          a sentence how you regrouped the fraction part.
+      - type: math
+        tex: '\frac{2}{3} \times 2'
+        display: true
+      - type: answer_space
+        minPt: 160
+        maxPt: 220
+
+  - type: question
+    itemId: p2
+    number: 2
+    blocks:
+      - type: rich_text
+        md: |
+          A board is three and a half feet long and Sam saws three quarters of
+          a foot off one end. How long is the piece that is left? Draw the
+          board and label both pieces.
+      - type: math
+        tex: '3\frac{1}{2} - \frac{3}{4}'
+        display: true
+      - type: answer_space
+        minPt: 160
+        maxPt: 220
+
+  - type: question
+    itemId: p3
+    number: 3
+    blocks:
+      - type: rich_text
+        md: |
+          Lena read one third of her book on Monday and two fifths of it on
+          Tuesday. What fraction of the book is still unread? Show the common
+          denominator you used.
+      - type: math
+        tex: '1 - \left( \frac{1}{3} + \frac{2}{5} \right)'
+        display: true
+      - type: answer_space
+        minPt: 160
+        maxPt: 220
+
+  - type: question
+    itemId: p4
+    number: 4
+    blocks:
+      - type: rich_text
+        md: |
+          Two friends share five sixths of a pan of cornbread equally. What
+          fraction of the whole pan does each friend get?
+      - type: math
+        tex: '\dfrac{\;\frac{5}{6}\;}{2}'
+        display: true
+      - type: answer_space
+        minPt: 160
+        maxPt: 220
+
+  - type: scan_action
+    action: scan-worksheet
+    label: Scan this page when every problem is finished

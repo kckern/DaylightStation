@@ -1,0 +1,105 @@
+# Unit 03: the printed checkpoint. Each question block pairs a stem with a
+# four-bubble omr_response whose itemId equals the enclosing question's itemId —
+# that equality is what lets the scanner's mark row and the grading engine agree
+# on which item was answered. The CHOICES are not repeated here: they render
+# from math-fractions-03-bank, so the paper and the grader can never drift.
+id: math-fractions-03-omr
+title: Fractions Checkpoint
+seed: 20260724
+variant: 0
+target:
+  - letter
+blocks:
+  - type: rich_text
+    md: |
+      ## Fractions Checkpoint
+
+      Fill in ONE bubble for each question. Press hard enough to fill the whole
+      circle, and erase completely if you change your mind. You may use scratch
+      paper; do not write in the bubble rows.
+
+  - type: question
+    itemId: u3-q1
+    number: 1
+    blocks:
+      - type: math
+        tex: '\frac{1}{2} + \frac{1}{3}'
+        display: true
+      - type: omr_response
+        itemId: u3-q1
+        choices: 4
+
+  - type: question
+    itemId: u3-q2
+    number: 2
+    blocks:
+      - type: math
+        tex: '\frac{3}{4} - \frac{1}{3}'
+        display: true
+      - type: omr_response
+        itemId: u3-q2
+        choices: 4
+
+  - type: question
+    itemId: u3-q3
+    number: 3
+    blocks:
+      - type: rich_text
+        md: Which fraction is equivalent to the one below?
+      - type: math
+        tex: '\frac{6}{8}'
+        display: true
+      - type: omr_response
+        itemId: u3-q3
+        choices: 4
+
+  - type: question
+    itemId: u3-q4
+    number: 4
+    blocks:
+      - type: rich_text
+        md: Which mixed number equals this improper fraction?
+      - type: math
+        tex: '\frac{11}{4}'
+        display: true
+      - type: omr_response
+        itemId: u3-q4
+        choices: 4
+
+  - type: question
+    itemId: u3-q5
+    number: 5
+    blocks:
+      - type: rich_text
+        md: |
+          Ben ate one quarter of a pizza and Ann ate three eighths of the same
+          pizza. How much of the pizza did they eat together?
+      - type: math
+        tex: '\frac{1}{4} + \frac{3}{8}'
+        display: true
+      - type: omr_response
+        itemId: u3-q5
+        choices: 4
+
+  - type: question
+    itemId: u3-q6
+    number: 6
+    blocks:
+      - type: rich_text
+        md: Which of the four fractions in the bubble row below is the greatest?
+      - type: omr_response
+        itemId: u3-q6
+        choices: 4
+
+  # The barcode on a printed sheet is a REAL ticket, so it names a token class
+  # from the closed set in `sessions/tokens.mjs` and `IssueDocument` mints it at
+  # issue time. `recovery` is the honest one here: it is actionable for as long
+  # as the work is open and it reprints THIS artifact (same id, same form map).
+  #
+  # Handing the sheet in is deliberately NOT a barcode — the session reducer
+  # gives `submit_work` a null tokenClass because a grown-up marks paper. On the
+  # OMR sheet a submit-by-scan would be worse than useless: it would advance the
+  # session to `submitted` and lock the mark reader out of its own sheet.
+  - type: scan_action
+    action: recovery
+    label: Scan this code if you need another copy of this sheet

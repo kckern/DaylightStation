@@ -1,0 +1,47 @@
+# Unit 4 of 4: audio plus paper in one sitting. The media is listened to, the
+# document is written on, and a parent reads the work against the rubric — three
+# delivery modes inside a single unit.
+unitId: math-fractions.04
+title: Fraction Word Problems
+subject: math
+courseId: math-fractions
+sequence: 4
+grades:
+  - lower
+  - upper
+objectives:
+  - Listen to a word problem read aloud and name the operation on fractions that it calls for.
+  - Multiply a fraction by a whole number in a measurement context.
+  - Divide a fraction by a whole number to share a quantity equally.
+  - Subtract a fraction from a mixed number and write the difference in simplest form.
+  - Find the part of a whole that remains after two fractional parts are used.
+media: math-fractions-word-problems-audio
+document: math-fractions-04-worksheet
+passing:
+  percent: 80
+review:
+  rubric: |
+    Mark each of the four problems right or wrong. A problem is right when the
+    value is correct, in simplest form, and labelled with its unit (cups, feet,
+    or "of the pan" / "of the book"). Read the child's written fractions aloud
+    with them before marking anything wrong — a correct method with a copying
+    slip is worth a second look, not a zero.
+  passingNote: Three of four correct is a pass.
+  answerKey:
+    - number: 1
+      expected: 1 1/3 cups
+      working: 2/3 times 2 = 4/3
+    - number: 2
+      expected: 2 3/4 feet
+      working: 14/4 - 3/4 = 11/4
+    - number: 3
+      expected: 5/12 of the pan
+      working: 5/6 divided by 2 = 5/12
+    - number: 4
+      expected: 4/15 of the book
+      working: 5/15 + 6/15 = 11/15, and 15/15 - 11/15 = 4/15
+provenance:
+  source: hand-authored
+  author: parent
+  reviewState: approved
+  reviewedOn: '2026-07-26'

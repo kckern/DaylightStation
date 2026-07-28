@@ -1,0 +1,67 @@
+# Unit 01 post-video quiz. Answered on screen right after the lesson, so the
+# item types are the interactive ones (matching and cloze do not print well).
+id: math-fractions-01-quiz
+title: Equivalent Fractions and Common Denominators
+subject: math
+audience: assigned
+unit: math-fractions.01
+topics:
+  - fractions
+  - equivalent-fractions
+  - common-denominators
+items:
+  - id: u1-q1
+    type: multiple_choice
+    prompt: Which fraction names the same amount as 1/2?
+    choices:
+      - 3/6
+      - 2/5
+      - 3/5
+      - 4/9
+    answer: 3/6
+
+  - id: u1-q2
+    type: multiple_choice
+    prompt: What is the least common denominator of 1/4 and 1/6?
+    choices:
+      - '6'
+      - '10'
+      - '12'
+      - '24'
+    answer: '12'
+
+  - id: u1-q3
+    type: short_answer
+    prompt: Rewrite 2/3 as an equivalent fraction with a denominator of 12.
+    answer: 8/12
+    accept:
+      - 8/12
+      - 8 / 12
+
+  - id: u1-q4
+    type: cloze
+    prompt: To add 1/3 and 1/6, first rewrite 1/3 as ___/6.
+    answer: '2'
+
+  - id: u1-q5
+    type: matching
+    prompt: Match each fraction to its simplest form.
+    pairs:
+      - left: 4/8
+        right: 1/2
+      - left: 6/9
+        right: 2/3
+      - left: 9/12
+        right: 3/4
+      - left: 2/10
+        right: 1/5
+
+  - id: u1-q6
+    type: multiple_choice
+    prompt: What is 1/4 + 1/2?
+    choices:
+      - 1/6
+      - 2/6
+      - 2/3
+      - 3/4
+    answer: 3/4

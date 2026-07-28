@@ -9,7 +9,8 @@ import {
   IconRun, IconCoin, IconHeart, IconShoppingCart,
   IconUsers, IconDevices,
   IconPlugConnected, IconClock, IconFileCode,
-  IconRobot, IconDeviceGamepad2, IconBroadcast, IconPhoto, IconBell
+  IconRobot, IconDeviceGamepad2, IconBroadcast, IconPhoto, IconBell, IconPrinter,
+  IconChecklist, IconHistory, IconBooks
 } from '@tabler/icons-react';
 
 const navSections = [
@@ -42,6 +43,15 @@ const navSections = [
     label: 'PLAYBACK HUB',
     items: [
       { label: 'All Devices', icon: IconBroadcast, to: '/admin/playback-hub' },
+    ]
+  },
+  {
+    label: 'SCHOOL',
+    items: [
+      { label: 'Review Queue', icon: IconChecklist, to: '/admin/school/review' },
+      { label: 'Work Sessions', icon: IconHistory, to: '/admin/school/sessions' },
+      { label: 'Planning', icon: IconBooks, to: '/admin/school/planning' },
+      { label: 'Virtual Console', icon: IconPrinter, to: '/admin/school/virtual-console' },
     ]
   },
   {

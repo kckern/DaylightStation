@@ -25,6 +25,10 @@ import AgentDetail from '../modules/Admin/Agents/AgentDetail.jsx';
 import GamesIndex from '../modules/Admin/Games/GamesIndex.jsx';
 import ConsoleDetail from '../modules/Admin/Games/ConsoleDetail.jsx';
 import PlaybackHubPage from '../modules/Admin/PlaybackHub/PlaybackHubPage.jsx';
+import SchoolVirtualConsole from '../modules/Admin/School/VirtualConsole.jsx';
+import SchoolReviewQueue from '../modules/Admin/School/ReviewQueue.jsx';
+import SchoolSessionHistory from '../modules/Admin/School/SessionHistory.jsx';
+import SchoolCurriculumPlanner from '../modules/Admin/School/CurriculumPlanner.jsx';
 import ComboboxTestPage from '../modules/Admin/TestHarness/ComboboxTestPage.jsx';
 import { Notifications } from '@mantine/notifications';
 import AuthGate from '../modules/Auth/AuthGate.jsx';
@@ -161,6 +165,20 @@ function AdminApp() {
 
               {/* Playback Hub */}
               <Route path="playback-hub" element={<PlaybackHubPage />} />
+
+              {/* School — the virtual device console for the physical
+                  learning console. Its API is mounted only when school.yml
+                  sets virtualDevices: true, so the page reports "not wired"
+                  rather than breaking on a real deployment. */}
+              <Route path="school/virtual-console" element={<SchoolVirtualConsole />} />
+
+              {/* The parent surfaces over the same lifecycle. Unlike the
+                  virtual console these are for a real household: the review
+                  queue is where a grown-up marks paper the machine would not
+                  score, and until it existed that queue had no door. */}
+              <Route path="school/review" element={<SchoolReviewQueue />} />
+              <Route path="school/sessions" element={<SchoolSessionHistory />} />
+              <Route path="school/planning" element={<SchoolCurriculumPlanner />} />
 
               {/* System */}
               <Route path="system/integrations" element={<IntegrationsIndex />} />

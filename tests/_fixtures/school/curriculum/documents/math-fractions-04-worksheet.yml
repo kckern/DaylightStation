@@ -1,0 +1,98 @@
+# Unit 04: the mixed unit. A media_action starts the read-aloud on the console,
+# then the child works the same four problems on paper. Listening and writing
+# are one unit, so they are one document.
+id: math-fractions-04-worksheet
+title: Fraction Word Problems
+seed: 20260726
+variant: 0
+target:
+  - letter
+blocks:
+  - type: rich_text
+    md: |
+      ## Fraction Word Problems
+
+      Press play and listen to all four problems once through before you write
+      anything. Then play them again one at a time and work each problem here.
+      Show the fractions you used and write each result in simplest form.
+
+  # `action` names the TOKEN CLASS, not the manifest: what gets played comes
+  # from the unit's `media:` ref, and a manifest id printed here would have been
+  # a string no scan could resolve.
+  - type: media_action
+    action: media_action
+    label: Play the word problems
+
+  - type: question
+    itemId: u4-q1
+    number: 1
+    blocks:
+      - type: rich_text
+        md: |
+          Ravi's bread recipe uses two thirds of a cup of milk. He is making the
+          recipe twice. How much milk does he need in all? Write the total as a
+          mixed number of cups.
+      - type: math
+        tex: '\frac{2}{3} \times 2'
+        display: true
+      - type: answer_space
+        minPt: 90
+        maxPt: 144
+
+  - type: question
+    itemId: u4-q2
+    number: 2
+    blocks:
+      - type: rich_text
+        md: |
+          A board is three and a half feet long. Sam saws three quarters of a
+          foot off one end. How long is the piece that is left?
+      - type: math
+        tex: '3\frac{1}{2} - \frac{3}{4}'
+        display: true
+      - type: answer_space
+        minPt: 90
+        maxPt: 144
+
+  - type: question
+    itemId: u4-q3
+    number: 3
+    blocks:
+      - type: rich_text
+        md: |
+          Two friends share five sixths of a pan of cornbread equally. What
+          fraction of the whole pan does each friend get?
+      - type: math
+        tex: '\dfrac{\;\frac{5}{6}\;}{2}'
+        display: true
+      - type: answer_space
+        minPt: 90
+        maxPt: 144
+
+  - type: question
+    itemId: u4-q4
+    number: 4
+    blocks:
+      - type: rich_text
+        md: |
+          Lena read one third of her book on Monday and two fifths of it on
+          Tuesday. What fraction of the book is still unread?
+      - type: math
+        tex: '1 - \left( \frac{1}{3} + \frac{2}{5} \right)'
+        display: true
+      - type: answer_space
+        minPt: 108
+        maxPt: 180
+
+  # The barcode on a printed sheet is a REAL ticket, so it names a token class
+  # from the closed set in `sessions/tokens.mjs` and `IssueDocument` mints it at
+  # issue time. `recovery` is the honest one here: it is actionable for as long
+  # as the work is open and it reprints THIS artifact (same id, same form map).
+  #
+  # Handing the sheet in is deliberately NOT a barcode — the session reducer
+  # gives `submit_work` a null tokenClass because a grown-up marks paper. On the
+  # OMR sheet a submit-by-scan would be worse than useless: it would advance the
+  # session to `submitted` and lock the mark reader out of its own sheet.
+  - type: scan_action
+    action: recovery
+    label: Scan this code if you need another copy of this sheet

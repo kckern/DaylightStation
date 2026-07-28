@@ -14,6 +14,9 @@ backend/node_modules
 !backend/src/3_applications/agents/health-coach/playbooks/seed.yml
 !backend/src/2_domains/fitness/services/__fixtures__/*.yml
 !backend/src/3_applications/school/sources/geography/*.yml
+# Golden-page corpus: these ARE the test inputs. Without this the suite passes
+# only on a machine where they happen to sit untracked in the working tree.
+!tests/isolated/rendering/school/golden/corpus/*.yml
 data/
 !tests/_fixtures/data/
 !**/screen-framework/data/
@@ -57,6 +60,7 @@ config.app-local.yml
 !scripts/gate-vitest.mjs
 !scripts/audit-baseline.vitest.txt
 !scripts/build-daylight.sh
+!scripts/school-smoke.mjs
 *.log
 .github/copilot-instructions.md
 # Skill local configs
@@ -137,3 +141,13 @@ dev.log*
 !/_extensions/content-barcode-relay/config.example.yml
 !/_extensions/ir-blaster/config.example.yml
 !/_extensions/piano/recorder/config.example.yml
+
+# Golden-test failure artifacts (regenerated on every failing run, never source)
+tests/isolated/rendering/school/golden/snapshots/*.diff.png
+
+# Agent scratch probes at repo root
+/_scratch/
+
+# Mutation-test scratch modules (tests/isolated/e2e/school/sabotage.test.mjs writes
+# a patched sibling of a real module and deletes it; this catches a crashed run).
+__sabotage_*.mjs
