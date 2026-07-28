@@ -63,6 +63,10 @@ export const PIANO_CONFIG_DEFAULTS = {
   // (spec 2026-07-28-piano-auto-studio-design.md). Count AND span so a
   // key-brush, one chord, or a forearm bump never triggers.
   autoStudio: { enabled: true, minNotes: 8, minSpanSeconds: 3, windowSeconds: 10 },
+  // Fixed design canvas: the kiosk lays out at the tablet's CSS viewport
+  // (SM-T590 = 1280×800) and scales to fit any other browser — same layout
+  // everywhere. Null either dimension to disable scaling.
+  display: { designWidth: 1280, designHeight: 800 },
 };
 
 /** Resolve screensaver config: per-piano values override shared, over defaults. */
@@ -146,6 +150,7 @@ export function resolvePianoConfig(raw, pianoId) {
     },
     producer: p.producer ?? shared.producer ?? PIANO_CONFIG_DEFAULTS.producer,
     autoStudio: { ...PIANO_CONFIG_DEFAULTS.autoStudio, ...(shared.autoStudio || {}), ...(p.autoStudio || {}) },
+    display: { ...PIANO_CONFIG_DEFAULTS.display, ...(shared.display || {}), ...(p.display || {}) },
   };
 }
 
