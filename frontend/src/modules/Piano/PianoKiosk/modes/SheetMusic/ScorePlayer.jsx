@@ -37,6 +37,7 @@ import CountInOverlay from './CountInOverlay.jsx';
 import LearnComplete from './LearnComplete.jsx';
 import FocusRangeLayer from './FocusRangeLayer.jsx';
 import SelectBanner from './SelectBanner.jsx';
+import StuckPrompt from './StuckPrompt.jsx';
 import { nearestEvent, SELECT_MAX_DIST } from './nearestEvent.js';
 
 // One source of truth for the transport's tick rate: the telemetry's stall rule
@@ -46,6 +47,10 @@ const TRANSPORT_TICK_MS = 100;
 // How long a guided loop-selection arm survives with no progress before it
 // expires (audit H4b).
 const SELECT_IDLE_MS = 15000;
+
+// How long Learn's cursor may sit on one both-hands step before the hands split is
+// offered on the score (audit H3).
+const STUCK_PROMPT_MS = 5000;
 
 /**
  * ScorePlayer — interactive engraved score. Four modes:
@@ -1192,6 +1197,34 @@ export default function ScorePlayer({ score: scoreMeta }) {
     }
   }, [mode, disruptListenPlayback, logger, tapIntent]);
 
+  // Surface the hands split after the cursor has sat on one multi-note step for a
+  // while. Only when a split would actually help: a grand staff, both hands
+  // active, and this step genuinely needs both.
+  const [stuckOpen, setStuckOpen] = useState(false);
+  const stuckDismissedRef = useRef(false);
+  useEffect(() => { setStuckOpen(false); }, [step, mode]);
+  useEffect(() => {
+    if (mode !== 'learn' || stuckDismissedRef.current) return undefined;
+    const staves = new Set((steps[step]?.notes || []).filter((n) => activeParts[n.staff]).map((n) => n.staff));
+    if (!grandStaff || staves.size < 2) return undefined;
+    const t = setTimeout(() => {
+      setStuckOpen(true);
+      logger.info('score.learn.stuck-prompt', { step, staves: staves.size });
+    }, STUCK_PROMPT_MS);
+    return () => clearTimeout(t);
+  }, [mode, step, steps, activeParts, grandStaff, logger]);
+
+  const onStuckPick = useCallback((v) => {
+    setStuckOpen(false);
+    onHandsChange(v);
+    logger.info('score.learn.stuck-resolved', { value: v });
+  }, [onHandsChange, logger]);
+  const onStuckDismiss = useCallback(() => {
+    setStuckOpen(false);
+    stuckDismissedRef.current = true; // asked and answered — don't nag for the rest of the session
+    logger.info('score.learn.stuck-dismissed', {});
+  }, [logger]);
+
   // ── Load timing (best-effort) ───────────────────────────────────────────────
   // Measured: fetch ms (from SheetMusic.jsx via score.fetchMs) + open→ready total
   // here. Fires once per document (re-engraves from zoom/flow don't re-log).
@@ -1306,6 +1339,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
         </MusicXmlRenderer>
         <CountInOverlay active={countIn.active} beat={countIn.beat} />
         <SelectBanner stage={selecting?.stage} rejects={selectRejects} onCancel={onCancelSelect} />
+        <StuckPrompt open={stuckOpen && mode === 'learn'} onPick={onStuckPick} onDismiss={onStuckDismiss} />
       </div>
 
       {keyboardVisible && (

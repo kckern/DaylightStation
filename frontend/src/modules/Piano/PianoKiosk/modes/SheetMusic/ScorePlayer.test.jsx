@@ -1468,3 +1468,61 @@ describe('ScorePlayer — entering Learn (audit H3.3)', () => {
     expect(screen.getByTestId('score-position')).toHaveTextContent('m 2 / 4'); // back to the in-point
   });
 });
+
+// ── Task 13: offer the hands split when Learn stalls on a step ────────────────
+// Learn advances only once EVERY active-staff note of the step is struck, so a
+// two-note step reads as "I played it and nothing happened". The escape hatch —
+// narrowing to one hand — lives in the transport bar and fired ZERO times in
+// three days of field logs (audit H3). Bring the offer to the score instead.
+describe('ScorePlayer — Learn stuck prompt (audit H3)', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.spyOn(performance, 'now').mockImplementation(() => Date.now());
+    vi.stubGlobal('requestAnimationFrame', (cb) => setTimeout(() => cb(Date.now()), 16));
+    vi.stubGlobal('cancelAnimationFrame', (id) => clearTimeout(id));
+    vi.setSystemTime(0);
+  });
+  afterEach(() => { cleanup(); vi.useRealTimers(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
+
+  const stuck = () => document.querySelector('.piano-score-stuck');
+
+  it('offers one hand after dwelling on a both-hands step, and narrows to it on pick', async () => {
+    renderPlayer(); // opens in Listen
+    await act(async () => {});
+    enterLearn();
+    // Step 0 is E4 (staff 0) + E3/E2 (staff 1) — a step the all-notes rule holds
+    // hostage until both hands arrive.
+    expect(stuck()).toBeNull();          // not offered immediately — dwelling is the signal
+    act(() => vi.advanceTimersByTime(5100));
+    expect(stuck()).not.toBeNull();
+
+    act(() => { fireEvent.click(screen.getByRole('button', { name: /right hand/i })); });
+    expect(stuck()).toBeNull();          // taken up → the offer goes away
+
+    // …and Learn now advances on the RH note alone: staff 1 is no longer active.
+    expect(screen.getByTestId('score-position')).toHaveTextContent('1 / 4');
+    play(64);
+    expect(screen.getByTestId('score-position')).toHaveTextContent('2 / 4');
+  });
+
+  it('does not offer on a single-staff step — a split would not help', async () => {
+    renderPlayer();
+    await act(async () => {});
+    enterLearn();
+    play(64); play(52); play(40); // satisfy step 0 → step 1 is D4 alone (staff 0)
+    expect(screen.getByTestId('score-position')).toHaveTextContent('2 / 4');
+    act(() => vi.advanceTimersByTime(5100));
+    expect(stuck()).toBeNull();
+  });
+
+  it('stays gone for the rest of the session once dismissed', async () => {
+    renderPlayer();
+    await act(async () => {});
+    enterLearn();
+    act(() => vi.advanceTimersByTime(5100));
+    act(() => { fireEvent.click(screen.getByRole('button', { name: /keep both/i })); });
+    expect(stuck()).toBeNull();
+    act(() => vi.advanceTimersByTime(20000));
+    expect(stuck()).toBeNull(); // asked and answered — no nagging
+  });
+});
