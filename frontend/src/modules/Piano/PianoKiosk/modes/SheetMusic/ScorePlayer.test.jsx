@@ -574,10 +574,13 @@ describe('ScorePlayer — Listen mode', () => {
     screen.getByRole('button', { name: 'Play' }).click();
     await act(async () => {});
     expect(document.querySelector('.piano-score-countin')).toBeNull();
-    // Reset, claim a part, play again → count-in now runs.
+    // Stop first: a part change mid-run resumes itself WITHOUT a count-in (H5), so
+    // the count-in rule is about an explicit Play, which is what this test is for.
+    screen.getByRole('button', { name: 'Pause' }).click();
+    await act(async () => {});
     act(() => { fireEvent.click(screen.getByRole('radio', { name: 'RH' })); });
-    // (a fresh Play after the timeline change)
-    if (screen.queryByRole('button', { name: 'Play' })) { screen.getByRole('button', { name: 'Play' }).click(); await act(async () => {}); }
+    screen.getByRole('button', { name: 'Play' }).click();
+    await act(async () => {});
     expect(document.querySelector('.piano-score-countin')).not.toBeNull();
   });
 
@@ -689,7 +692,7 @@ describe('ScorePlayer — Listen mode', () => {
     expect(screen.getByRole('radio', { name: 'RH' })).toHaveAttribute('aria-checked', 'true'); // preserved
   });
 
-  it('a mid-run view change (transpose) pauses playback so sheet & sound cannot diverge (H2)', async () => {
+  it('a mid-run view change (transpose) flushes the schedule, then picks the run back up (H2/M3)', async () => {
     h.layoutExtras = {
       tempoEntries: [{ onsetQuarter: 0, bpm: 60 }],
       notes: [{ midi: 40, staff: 1, onsetQuarter: 0, durationQuarters: 8 }],
@@ -705,7 +708,12 @@ describe('ScorePlayer — Listen mode', () => {
     act(() => { fireEvent.click(screen.getByRole('button', { name: /transpose up/i })); });
     await act(async () => {});
     expect(h.sendPanic).toHaveBeenCalled(); // silenced on the view change
-    expect(screen.getByRole('button', { name: 'Play' })).toBeInTheDocument(); // paused
+    // …and the user is not stranded mid-piece: the rebuild-pause resumes itself
+    // once the layout is trustworthy (M3).
+    // NOTE: `layoutFresh` tracks flow + scale only, so a TRANSPOSE re-engrave does
+    // not gate this resume — it fires on the next commit. See the transpose gap
+    // noted in the Task 8 report.
+    expect(screen.getByRole('button', { name: 'Pause' })).toBeInTheDocument();
   });
 
   it('silences sounding notes on tap-seek in Play mode (no stuck note)', async () => {
@@ -818,6 +826,120 @@ describe('ScorePlayer — Listen mode', () => {
     act(() => { fireEvent.click(screen.getByRole('radio', { name: 'None' })); });
     act(() => vi.advanceTimersByTime(1500)); // well past the one-beat dwell
     expect(h.sendNoteAt).not.toHaveBeenCalled(); // stale dwell canceled — no uncommanded restart
+  });
+});
+
+describe('ScorePlayer — rebuild-pause resume (H5/M3)', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.spyOn(performance, 'now').mockImplementation(() => Date.now());
+    vi.stubGlobal('requestAnimationFrame', (cb) => setTimeout(() => cb(Date.now()), 16));
+    vi.stubGlobal('cancelAnimationFrame', (id) => clearTimeout(id));
+    vi.setSystemTime(0);
+  });
+  afterEach(() => { cleanup(); vi.useRealTimers(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
+
+  it('the rebuild-pause flush cannot cut the run it just resumed', async () => {
+    // pauseForRebuild arms the delayed panic (lookahead+60ms). toggleRun has always
+    // cancelled it on resume — now that the resume effect is a SECOND entry point,
+    // it must do the same, or the panic lands ~460ms INTO the resumed music.
+    h.layoutExtras = {
+      tempoEntries: [{ onsetQuarter: 0, bpm: 60 }],
+      notes: [
+        { midi: 64, staff: 0, onsetQuarter: 0, durationQuarters: 1 },
+        { midi: 40, staff: 1, onsetQuarter: 0, durationQuarters: 8 }, // long sounding note
+      ],
+    };
+    renderPlayer();
+    screen.getByText('Listen').click();
+    await act(async () => {});
+    screen.getByRole('button', { name: 'Play' }).click();
+    await act(async () => {});
+    act(() => vi.advanceTimersByTime(100));
+    await act(async () => { fireEvent.click(screen.getByRole('radio', { name: 'RH' })); });
+    expect(screen.getByRole('button', { name: 'Pause' })).toBeInTheDocument(); // resumed
+    h.sendPanic.mockClear();
+    act(() => vi.advanceTimersByTime(600)); // past lookahead(400)+60
+    expect(h.sendPanic).not.toHaveBeenCalled();
+  });
+
+  it('resumes playback after a Listen part change, with no surprise count-in (H5)', async () => {
+    // Choosing "my part" rebuilds the note timeline, so playback has to be paused —
+    // but a part pick is not a stop request. All four field part-changes were
+    // reverted within 90s because the music died on the spot.
+    h.layoutExtras = {
+      tempoEntries: [{ onsetQuarter: 0, bpm: 60 }],
+      notes: [
+        { midi: 64, staff: 0, onsetQuarter: 0, durationQuarters: 1 }, // RH
+        { midi: 40, staff: 1, onsetQuarter: 0, durationQuarters: 8 }, // LH
+      ],
+    };
+    renderPlayer();
+    screen.getByText('Listen').click();
+    await act(async () => {});
+    screen.getByRole('button', { name: 'Play' }).click(); // My part = None → plays immediately
+    await act(async () => {});
+    act(() => vi.advanceTimersByTime(100));
+    expect(screen.getByRole('button', { name: 'Pause' })).toBeInTheDocument(); // playing
+
+    await act(async () => { fireEvent.click(screen.getByRole('radio', { name: 'RH' })); });
+    expect(screen.getByRole('button', { name: 'Pause' })).toBeInTheDocument(); // resumed itself
+    expect(document.querySelector('.piano-score-countin')).toBeNull(); // and did NOT count the user in
+  });
+
+  it('resumes where it left off once a view-change re-engrave lands (M3)', async () => {
+    // Zoom/flow/transpose must pause (the sheet repaints while the audio would
+    // keep playing the stale engraving) — but all five field pauses were followed
+    // by a hand-flown Play 9–29s later, always landing somewhere else.
+    h.layoutExtras = {
+      tempoEntries: [{ onsetQuarter: 0, bpm: 60 }],
+      notes: [{ midi: 40, staff: 1, onsetQuarter: 0, durationQuarters: 8 }],
+    };
+    renderPlayer();
+    screen.getByText('Listen').click();
+    await act(async () => {});
+    screen.getByRole('button', { name: 'Play' }).click();
+    await act(async () => {});
+    act(() => vi.advanceTimersByTime(1100)); // one step in
+    expect(screen.getByTestId('score-position')).toHaveTextContent('2 / 4');
+
+    // Flow change → pause. The stub keeps reporting flow 'wrapped', so the layout
+    // is stale (mid re-engrave) and the resume must WAIT.
+    fireEvent.click(screen.getByRole('button', { name: /view options/i }));
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: /^across$/i })); });
+    expect(screen.queryByRole('button', { name: 'Pause' })).toBeNull(); // paused for the re-engrave
+
+    // Layout catches up → the run picks up where it was, unaided.
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: /down the page/i })); });
+    expect(screen.getByRole('button', { name: 'Pause' })).toBeInTheDocument();
+    expect(screen.getByTestId('score-position')).toHaveTextContent('2 / 4'); // not back at the top
+  });
+
+  it('an explicit Restart supersedes a pending rebuild-resume (no uncommanded audio)', async () => {
+    h.layoutExtras = {
+      tempoEntries: [{ onsetQuarter: 0, bpm: 60 }],
+      notes: [{ midi: 40, staff: 1, onsetQuarter: 0, durationQuarters: 8 }],
+    };
+    renderPlayer();
+    screen.getByText('Listen').click();
+    await act(async () => {});
+    screen.getByRole('button', { name: 'Play' }).click();
+    await act(async () => {});
+    act(() => vi.advanceTimersByTime(1100)); // one step in, so Restart is enabled
+    expect(screen.getByRole('button', { name: 'Pause' })).toBeInTheDocument();
+
+    // Flow change → pause + a pending resume. The stub keeps reporting flow
+    // 'wrapped', so the layout stays stale and the resume is held pending.
+    fireEvent.click(screen.getByRole('button', { name: /view options/i }));
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: /^across$/i })); });
+    // The user takes explicit control while the re-engrave is still in flight.
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: /restart/i })); });
+    h.sendNoteAt.mockClear();
+    // Layout catches up (flow back to what the stub reports) → layoutFresh again.
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: /down the page/i })); });
+    act(() => vi.advanceTimersByTime(1000));
+    expect(screen.getByRole('button', { name: 'Play' })).toBeInTheDocument(); // still stopped
+    expect(h.sendNoteAt).not.toHaveBeenCalled();                              // and silent
   });
 });
 
