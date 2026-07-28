@@ -372,12 +372,16 @@
   display: flex;
   flex-direction: column;
 
+  // Strip on top, tile wall anchored to the bottom (above the live keyboard)
+  // with breathing room — spec 2026-07-28-piano-menu-activity-strip.
   &__body {
     flex: 1 1 auto;
     min-height: 0;
     display: flex;
     align-items: center;
-    justify-content: center;
+    flex-direction: column;
+    justify-content: flex-end;
+    padding-bottom: var(--sp-4);
   }
 
   &__keyboard {
@@ -1231,6 +1235,57 @@
       white-space: nowrap;
     }
   }
+}
+
+// ── Menu activity strip: per-player recent-course cards ─────────────────
+.piano-menu-activity {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--sp-4);
+  padding: var(--sp-3) var(--sp-4);
+  margin-bottom: auto; // pins the strip to the top while the grid sits flush-bottom
+  overflow-x: auto;
+
+  &__card {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.6rem;
+    padding: 0.5rem 0.9rem;
+    border: 0;
+    border-radius: var(--r-md, 0.75rem);
+    background: rgba(255, 255, 255, 0.06);
+    color: inherit;
+    cursor: pointer;
+    &.is-stale { opacity: 0.45; filter: grayscale(0.55); }
+  }
+
+  &__ring {
+    position: relative;
+    width: 2.6rem;
+    height: 2.6rem;
+    flex: 0 0 auto;
+    svg { position: absolute; inset: 0; width: 100%; height: 100%; }
+    &-track { fill: none; stroke: rgba(255, 255, 255, 0.28); stroke-width: 3.4; }
+    &-fill { fill: none; stroke: #4ade80; stroke-width: 3.4; stroke-linecap: round; }
+
+    // Explicit box, not `auto`: an absolutely-positioned replaced element
+    // (the avatar <img>) resolves width:auto to its INTRINSIC size and
+    // paints the full-resolution portrait over the page.
+    .piano-avatar {
+      position: absolute;
+      top: 0.3rem;
+      left: 0.3rem;
+      width: calc(100% - 0.6rem);
+      height: calc(100% - 0.6rem);
+      font-size: 0.7rem;
+    }
+  }
+
+  &__meta { display: flex; flex-direction: column; align-items: flex-start; line-height: 1.25; }
+  &__pct { font-weight: 700; font-variant-numeric: tabular-nums; }
+  &__course { font-size: 0.85rem; opacity: 0.85; max-width: 14rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  &__when { font-size: 0.72rem; opacity: 0.6; }
 }
 
 .piano-game-fullscreen {
