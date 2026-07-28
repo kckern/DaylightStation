@@ -12,10 +12,11 @@ const cfg = { silentMeasuresToStop: 2, timingToleranceMs: 80, thresholds: { gree
 // expectedByMeasure[m] = midis due in measure m
 const EXPECTED = { 0: [60], 1: [64], 2: [67] };
 const opts = (over) => ({
-  enabled: true,
+  enabled: over.enabled ?? true,
   cfg,
   subscribe: over.subscribe,
   currentMeasure: over.currentMeasure,
+  boundary: over.boundary, // undefined → the hook's default (0)
   expectedForMeasure: (m) => EXPECTED[m] || [],
   driftForNote: () => 0, // on-time
   onMeasureGrade: over.onMeasureGrade,
@@ -64,6 +65,69 @@ describe('useScoreEvaluator', () => {
     expect(onMeasureGrade.mock.calls[0][0]).toMatchObject({ measure: 2, grade: 'green' });
     act(() => result.current.finalize()); // idempotent
     expect(onMeasureGrade).toHaveBeenCalledTimes(1);
+  });
+
+  // ── Loop wraps (Task 9) ─────────────────────────────────────────────────────
+  // A one-measure loop wraps from the end of measure N back to its START, so
+  // `currentMeasure` never changes and the advance rule alone never grades.
+  it('grades the repeated measure when a single-measure loop wraps', () => {
+    const { subscribe, emit } = makeSubscribe();
+    const onMeasureGrade = vi.fn();
+    const { rerender } = renderHook(
+      (p) => useScoreEvaluator(opts({ subscribe, currentMeasure: 2, boundary: p.boundary, onMeasureGrade, onSilentStop: vi.fn() })),
+      { initialProps: { boundary: 0 } },
+    );
+    act(() => emit(67));                             // play measure 2's note
+    expect(onMeasureGrade).not.toHaveBeenCalled();   // mid-measure, nothing yet
+    rerender({ boundary: 1 });                       // the loop wrapped
+    expect(onMeasureGrade).toHaveBeenCalledTimes(1);
+    expect(onMeasureGrade.mock.calls[0][0]).toMatchObject({ measure: 2, grade: 'green' });
+  });
+
+  it('a multi-measure wrap grades the OUTGOING measure exactly once (no double-grade)', () => {
+    // m2 → m0 is both a measure-index change AND a boundary bump in the same
+    // commit; only the measure that just ended (m2) may be graded, and only once.
+    const { subscribe, emit } = makeSubscribe();
+    const onMeasureGrade = vi.fn();
+    const { rerender } = renderHook(
+      (p) => useScoreEvaluator(opts({ subscribe, currentMeasure: p.m, boundary: p.boundary, onMeasureGrade, onSilentStop: vi.fn() })),
+      { initialProps: { m: 2, boundary: 0 } },
+    );
+    act(() => emit(67));
+    rerender({ m: 0, boundary: 1 }); // wrap m2 → m0
+    expect(onMeasureGrade).toHaveBeenCalledTimes(1);
+    expect(onMeasureGrade.mock.calls[0][0]).toMatchObject({ measure: 2, grade: 'green' });
+  });
+
+  it('consecutive silent wraps of a one-measure loop reach the silent stop (not sooner, not never)', () => {
+    const { subscribe } = makeSubscribe();
+    const onSilentStop = vi.fn();
+    const { rerender } = renderHook(
+      (p) => useScoreEvaluator(opts({ subscribe, currentMeasure: 2, boundary: p.boundary, onMeasureGrade: vi.fn(), onSilentStop })),
+      { initialProps: { boundary: 0 } },
+    );
+    rerender({ boundary: 1 }); // silent measure 1 of 2
+    expect(onSilentStop).not.toHaveBeenCalled();
+    rerender({ boundary: 2 }); // silent measure 2 of 2 → stop
+    expect(onSilentStop).toHaveBeenCalledTimes(1);
+  });
+
+  it('re-entering Polish after wraps does not fire a phantom grade', () => {
+    // `boundary` is monotonic component state upstream — it is never reset. The
+    // disabled reset must re-sync it, or the first commit back in Polish would
+    // read the stale value as a wrap and grade an empty measure.
+    const { subscribe, emit } = makeSubscribe();
+    const onMeasureGrade = vi.fn();
+    const { rerender } = renderHook(
+      (p) => useScoreEvaluator(opts({ enabled: p.enabled, subscribe, currentMeasure: 2, boundary: p.boundary, onMeasureGrade, onSilentStop: vi.fn() })),
+      { initialProps: { enabled: true, boundary: 0 } },
+    );
+    act(() => emit(67));
+    rerender({ enabled: true, boundary: 1 }); // a real wrap → one grade
+    expect(onMeasureGrade).toHaveBeenCalledTimes(1);
+    rerender({ enabled: false, boundary: 1 }); // leave Polish
+    rerender({ enabled: true, boundary: 1 });  // come back
+    expect(onMeasureGrade).toHaveBeenCalledTimes(1); // no phantom
   });
 
   it('finalize() is a no-op when disabled', () => {

@@ -508,6 +508,64 @@ describe('ScorePlayer — Polish mode (transport-driven)', () => {
     expect(screen.getByText('m 2 / 2')).toBeTruthy(); // still parked on the looped measure
   });
 
+  it('grades the measure of a ONE-measure Polish loop on every wrap (Task 9)', async () => {
+    // The field scenario: focus {inMeasure: 2, outMeasure: 2}, count-in, notes
+    // played, and not one score.polish.measure in the whole run — the cursor
+    // wraps onto the SAME measure, so the advance-driven grader never fired.
+    // Measure index 1 is a MIDDLE measure here, so the wrap comes from the
+    // transport's onEvent branch (the tail-measure onDone wrap is the L6 test).
+    h.layoutExtras = {
+      tempoEntries: [{ onsetQuarter: 0, bpm: 60 }],
+      events: [
+        { midi: 64, midis: [64], onsetQuarter: 0, x: 100, top: 10, bottom: 200, system: 0 },
+        { midi: 62, midis: [62], onsetQuarter: 1, x: 160, top: 10, bottom: 200, system: 0 },
+        { midi: 60, midis: [60], onsetQuarter: 2, x: 220, top: 10, bottom: 200, system: 0 },
+      ],
+      steps: [
+        { onsetQuarter: 0, measure: 0, notes: [{ midi: 64, staff: 0, x: 100, top: 10, bottom: 200, width: 8 }] },
+        { onsetQuarter: 1, measure: 1, notes: [{ midi: 62, staff: 0, x: 160, top: 10, bottom: 200, width: 8 }] },
+        { onsetQuarter: 2, measure: 2, notes: [{ midi: 60, staff: 0, x: 220, top: 10, bottom: 200, width: 8 }] },
+      ],
+      measures: [
+        { index: 0, number: 1, firstStep: 0, lastStep: 0 },
+        { index: 1, number: 2, firstStep: 1, lastStep: 1 },
+        { index: 2, number: 3, firstStep: 2, lastStep: 2 },
+      ],
+    };
+    // Capture what the session-logged child logger emits (same spy shape as the
+    // intent-routing test above) so the assertion is on the shipped event.
+    const root = getLogger();
+    const origChild = root.child.bind(root);
+    const emitted = []; // [event, data]
+    vi.spyOn(root, 'child').mockImplementation((ctx) => {
+      const c = origChild(ctx);
+      const orig = c.info.bind(c);
+      c.info = (ev, data, opts) => { emitted.push([ev, data]); return orig(ev, data, opts); };
+      return c;
+    });
+
+    renderPlayer();
+    screen.getByText('Polish').click();
+    await act(async () => {});
+    // Loop measure 2 only (index 1) — a one-measure loop.
+    act(() => { fireEvent.click(screen.getByRole('button', { name: /^loop/i })); });
+    act(() => { fireEvent.click(screen.getByRole('button', { name: /select measures/i })); });
+    const scroll = document.querySelector('.piano-score-player__scroll');
+    act(() => { fireEvent.click(scroll, { clientX: 160, clientY: 100 }); });
+    act(() => { fireEvent.click(scroll, { clientX: 160, clientY: 100 }); });
+    expect(screen.getByText('m 2 / 3')).toBeTruthy(); // parked on the looped measure
+    screen.getByRole('button', { name: 'Play' }).click();
+    await act(async () => {});
+    act(() => vi.advanceTimersByTime(4100)); // through the 4-beat @60 count-in
+    act(() => { h.noteCb?.({ type: 'note_on', note: 62, velocity: 80 }); }); // play the measure
+    act(() => vi.advanceTimersByTime(1100)); // one quarter @60 → cursor passes the out-point → wrap
+
+    const grades = emitted.filter(([ev]) => ev === 'score.polish.measure');
+    expect(grades.length).toBeGreaterThanOrEqual(1);
+    expect(grades[0][1]).toMatchObject({ measure: 1, grade: 'green' });
+    expect(screen.getByText('m 2 / 3')).toBeTruthy(); // still looping the same measure
+  });
+
 });
 
 describe('ScorePlayer — Listen mode', () => {

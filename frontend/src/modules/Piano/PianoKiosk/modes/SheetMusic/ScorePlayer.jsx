@@ -130,6 +130,9 @@ export default function ScorePlayer({ score: scoreMeta }) {
   const kbOverrideRef = useRef({}); // mode → explicit user choice (true/false)
   const [kbTick, setKbTick] = useState(0);
   const [grades, setGrades] = useState({}); // measure INDEX → grade result (Polish scoring)
+  // Every loop wrap is an end-of-measure for grading purposes, even when the loop
+  // is one measure long and the measure index never changes (audit: Polish).
+  const [loopWraps, setLoopWraps] = useState(0);
   const gradesRef = useRef(grades); gradesRef.current = grades; // latest grades for the run-summary log (onSilentStop closure)
   const [summaryOpen, setSummaryOpen] = useState(false); // Polish run summary panel
   const scrollRef = useRef(null);
@@ -317,6 +320,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
           transportRef.current?.seek((stepTimeline[r[0]]?.t ?? 0) / tempoMult);
           setStep(r[0]);
           setStruck(() => new Set());
+          setLoopWraps((n) => n + 1);
           // The wrap-seek jumps idxRef past the skipped tail's note_offs — in
           // Listen (the only mode that sends audio) flush so they don't drone.
           if (mode === 'listen') silenceScheduled();
@@ -356,6 +360,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
           transportRef.current?.seek(tIn);
           setStep(r[0]);
           setStruck(() => new Set());
+          setLoopWraps((n) => n + 1);
           transportRef.current?.play();
         };
         // Zero-span guard: when the in-point IS the final timeline event (a
@@ -501,6 +506,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
 
   const evaluator = useScoreEvaluator({
     enabled: mode === 'polish' && transport.playing, // grade only during real playback
+    boundary: loopWraps,
     cfg: resolvedScoringCfg,
     subscribe,
     currentMeasure,
