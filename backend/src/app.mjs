@@ -11,6 +11,7 @@ import express from 'express';
 import cors from 'cors';
 import axios from 'axios';
 import { existsSync } from 'fs';
+import { execSync } from 'child_process';
 import path, { join } from 'path';
 
 // Infrastructure imports
@@ -309,6 +310,21 @@ export async function createApp({ server, logger, configPaths, configExists, ena
       return next('route');
     }
     next();
+  });
+
+  // Build metadata: Docker bakes /build.txt (local build time + GitHub commit
+  // URL) at image-build time. In dev there is no baked file, so report the
+  // working tree's HEAD instead.
+  app.get('/build.txt', (req, res) => {
+    res.type('text/plain');
+    if (existsSync('/build.txt')) {
+      return res.sendFile('/build.txt');
+    }
+    let sha = 'unknown';
+    try {
+      sha = execSync('git rev-parse HEAD', { cwd: __dirname }).toString().trim();
+    } catch { /* not a git checkout */ }
+    res.send(`Build Time: dev (not built)\nCommit: https://github.com/kckern/DaylightStation/commit/${sha}\n`);
   });
 
   if (!configExists) {
