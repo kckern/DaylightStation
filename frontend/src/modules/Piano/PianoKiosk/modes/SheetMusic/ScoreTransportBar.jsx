@@ -462,7 +462,7 @@ export default function ScoreTransportBar({
           onClearFocus={onClearFocus}
           onNudge={onNudge}
         />
-        {hasPosition && <span className="piano-score-position tabular-nums">{position}</span>}
+        {hasPosition && <span className="piano-score-position tabular-nums" data-testid="score-position">{position}</span>}
         {isPerform && (
           <span className="piano-score-page-indicator tabular-nums" aria-label="Page">{`${page} / ${pages}`}</span>
         )}

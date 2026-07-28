@@ -420,7 +420,11 @@ describe('ScorePlayer — Polish mode (transport-driven)', () => {
     act(() => vi.advanceTimersByTime(1050)); // 2nd quarter @60
     expect(screen.getByText('3 / 4')).toBeTruthy();
     act(() => vi.advanceTimersByTime(550)); // 3rd quarter @120 = 500ms
-    expect(screen.getByText('4 / 4')).toBeTruthy();
+    // The 4th onset is the LAST timeline event, so firing it also completes the
+    // run — and a completed run returns the cursor home (audit H2). Landing on
+    // '1 / 4' at 2550ms elapsed is itself the proof the mid-piece 120bpm change
+    // applied: at the written 60bpm the 4th onset wouldn't be due until 3000ms.
+    expect(screen.getByText('1 / 4')).toBeTruthy();
   });
 
   it('Play starts a count-in before the transport moves, then advances (J1)', async () => {
@@ -757,6 +761,22 @@ describe('ScorePlayer — Listen mode', () => {
     // any in-flight tail sends so nothing drones across the loop boundary.
     act(() => vi.advanceTimersByTime(500));
     expect(h.sendPanic).toHaveBeenCalled();
+  });
+
+  it('returns the cursor home when a run completes, so Play replays the piece (audit H2)', async () => {
+    // The transport rewinds itself at onDone, but `step` used to stay parked on
+    // the final step — so the next Play seeked to the end and produced ~1.6s of
+    // the last measure. One field session hit that fourteen times.
+    h.layoutExtras = { tempoEntries: [{ onsetQuarter: 0, bpm: 60 }] }; // 1000ms/quarter, onsets at q0..q3
+    renderPlayer();
+    screen.getByText('Listen').click();
+    await act(async () => {});
+    expect(screen.getByTestId('score-position')).toHaveTextContent('1 / 4');
+    screen.getByRole('button', { name: 'Play' }).click(); // My part = None → plays immediately
+    await act(async () => {});
+    act(() => vi.advanceTimersByTime(5000)); // past the final onset AND its release → onDone
+    expect(screen.getByRole('button', { name: 'Play' })).toBeInTheDocument(); // the run finished
+    expect(screen.getByTestId('score-position')).toHaveTextContent('1 / 4'); // home, not parked at 4 / 4
   });
 
   it('a role change during the wrap dwell cancels the pending restart — no uncommanded audio (L6)', async () => {
