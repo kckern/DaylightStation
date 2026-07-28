@@ -50,6 +50,19 @@ describe('useScoreTelemetry', () => {
     expect(logged.find(([, e]) => e === 'score.playback.stats')[2].stalls).toBe(1);
   });
 
+  it('scales the drift budget with the tempo it is handed', () => {
+    // Same 100ms drift, two tempi: inside the ~167ms budget at 90bpm, past the
+    // ~83ms budget at 180. Callers must therefore hand it the EFFECTIVE tempo
+    // (written bpm x tempoMult) — see ScorePlayer.telemetry.test.jsx.
+    const { result } = renderHook(() => useScoreTelemetry({ id: 'x', tickMs: 100 }));
+    act(() => { result.current.recordFire({ step: 1 }, 100, 100, 90); });
+    expect(logged.some(([, e]) => e === 'score.playback.stall')).toBe(false);
+    act(() => { result.current.recordFire({ step: 2 }, 100, 100, 180); });
+    const ev = logged.find(([, e]) => e === 'score.playback.stall');
+    expect(ev).toBeTruthy();
+    expect(ev[2]).toMatchObject({ step: 2, effectiveBpm: 180, stallMs: 83 });
+  });
+
   it('caps sched-late warns per run but counts them all in stats', () => {
     const { result } = renderHook(() => useScoreTelemetry({ id: 'x' }));
     act(() => {

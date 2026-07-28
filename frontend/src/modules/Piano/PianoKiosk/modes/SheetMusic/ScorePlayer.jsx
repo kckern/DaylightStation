@@ -325,7 +325,12 @@ export default function ScorePlayer({ score: scoreMeta }) {
     // Polish has no note events (silent step timeline), so onSchedule never runs
     // there — mark a run pending here too, so the unmount-flush guard still emits
     // a Polish run's stats when the view is left mid-run.
-    onFire: (ev, driftMs, gapMs) => { pendingPlaybackRef.current = true; recordFire(ev, driftMs, gapMs, tempoMap[0]?.bpm); },
+    // recordFire takes the EFFECTIVE tempo: playTimeline is scaled by
+    // 1/tempoMult, so at 0.5x the beat is twice as long and the stall budget
+    // (a fraction of a beat) must grow with it. Passing the written bpm made
+    // the budget half as tight as the music warranted at 0.5x and 25% too
+    // loose at 1.25x — and `stalls` ships at info level in score.playback.stats.
+    onFire: (ev, driftMs, gapMs) => { pendingPlaybackRef.current = true; recordFire(ev, driftMs, gapMs, (tempoMap[0]?.bpm || 90) * tempoMult); },
     onDone: () => {
       // A loop that contains the FINAL step never sees a step past its out-point,
       // so the onEvent wrap can't fire — the run completes instead. Wrap here:
