@@ -28,7 +28,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert, Badge, Button, Card, Code, Divider, Group, Loader, SegmentedControl,
-  Stack, Text, Title, Tooltip,
+  Stack, Text, Textarea, Title, Tooltip,
 } from '@mantine/core';
 import getLogger from '../../../lib/logging/Logger.js';
 import { schoolAdminApi } from './schoolAdminApi.js';
@@ -85,6 +85,7 @@ export default function ReviewQueue() {
   const [verdicts, setVerdicts] = useState({});   // key -> 'correct' | 'incorrect'
   const [busyKey, setBusyKey] = useState(null);
   const [itemErrors, setItemErrors] = useState({}); // key -> message
+  const [notes, setNotes] = useState({});           // key -> what the parent typed
   const [signedOff, setSignedOff] = useState({});   // key -> confirmation line
 
   // Race guard (the house pattern): a slow poll must never overwrite a newer
@@ -122,6 +123,10 @@ export default function ReviewQueue() {
     };
   }, [logger, refresh]);
 
+  const editNote = useCallback((key, text) => {
+    setNotes((prev) => ({ ...prev, [key]: text }));
+  }, []);
+
   const chooseVerdict = useCallback((key, verdict) => {
     setVerdicts((prev) => ({ ...prev, [key]: verdict }));
     setItemErrors((prev) => (prev[key] ? { ...prev, [key]: undefined } : prev));
@@ -131,6 +136,8 @@ export default function ReviewQueue() {
   const signOff = useCallback(async (item) => {
     const key = keyOf(item);
     const verdict = verdicts[key];
+    const typed = (notes[key] ?? item.note ?? '').trim();
+    const note = typed || null;
 
     // Both guards are real refusals, not disabled-button theatre: this function
     // is the last thing between a click and a permanent mark on a child's work.
@@ -148,11 +155,11 @@ export default function ReviewQueue() {
     setItemErrors((prev) => ({ ...prev, [key]: undefined }));
     logger.info('signoff-dispatch', {
       sessionId: item.sessionId, itemId: item.itemId, learnerId: item.learnerId,
-      unitId: item.unitId, verdict, gradedBy: grader.id,
+      unitId: item.unitId, verdict, gradedBy: grader.id, note: Boolean(note),
     });
     try {
       const resolved = await schoolAdminApi.resolveReview(item.sessionId, item.itemId, {
-        verdict, gradedBy: grader.id,
+        verdict, gradedBy: grader.id, note,
       });
       logger.info('signoff-ok', {
         sessionId: item.sessionId, itemId: item.itemId,
@@ -176,7 +183,7 @@ export default function ReviewQueue() {
     } finally {
       setBusyKey(null);
     }
-  }, [verdicts, grader, graderId, logger, refresh]);
+  }, [verdicts, notes, grader, graderId, logger, refresh]);
 
   const ordered = useMemo(() => newestFirst(items), [items]);
 
@@ -293,6 +300,21 @@ export default function ReviewQueue() {
                   like it had no grading on it at all until an adult was
                   picked. The gate belongs on the write, which is the button
                   below — it does not exist for anyone but an adult. */}
+              {/* A parent explaining WHY is the most valuable thing on this
+                  screen, and it used to have nowhere to go — the route read
+                  only a verdict and an id, so a box here would have thrown
+                  their words away. It is stored with the verdict now. */}
+              <Textarea
+                label={`Note for ${nameFor(item.learnerId)} (optional)`}
+                description="Why it was marked this way. Kept with the verdict."
+                placeholder="Right method — you forgot to simplify at the end."
+                autosize
+                minRows={2}
+                mb="sm"
+                value={notes[key] ?? item.note ?? ''}
+                onChange={(event) => editNote(key, event.currentTarget.value)}
+              />
+
               <Group gap="sm" wrap="wrap" align="center">
                 <SegmentedControl
                   size="sm"

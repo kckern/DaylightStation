@@ -63,13 +63,17 @@ export const schoolAdminApi = {
   sessionReview: (sessionId) => call(`${LIFECYCLE}/sessions/${enc(sessionId)}/review`),
 
   /**
-   * Record one verdict. `gradedBy` is the adult's roster id — the caller is
-   * responsible for having established that, and does not send anything else:
-   * the route accepts only `{ verdict, gradedBy }` and drops the rest.
+   * Record one verdict. `gradedBy` is the adult's roster id, and the server
+   * checks it against the household roster — a child's id, an unknown one, or
+   * none comes back 403 with nothing written.
+   *
+   * `note` is optional and is what the parent wants the child to read: why it
+   * was marked that way. It is stored with the verdict, and sending none leaves
+   * any earlier note alone.
    */
-  resolveReview: (sessionId, itemId, { verdict, gradedBy }) => call(
+  resolveReview: (sessionId, itemId, { verdict, gradedBy, note = null }) => call(
     `${LIFECYCLE}/sessions/${enc(sessionId)}/review/${enc(itemId)}`,
-    { method: 'POST', body: { verdict, gradedBy } },
+    { method: 'POST', body: { verdict, gradedBy, note } },
   ),
 
   /** Index rows: `{ sessionId, learnerId, unitId, state, terminal, outcome, day, updatedAt }`. */
