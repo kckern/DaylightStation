@@ -27,6 +27,19 @@ import { validateUnit, isPublishable } from '#domains/school/curriculum/unitVali
 
 const LETTER = 'letter';
 
+/**
+ * References resolve by FILE id, so a declared id that disagrees with its
+ * filename is dead metadata at best. At worst it is a trap: an author renames
+ * `id:` expecting references to follow, and every unit pointing at the file
+ * reports "not found" against a file plainly sitting on disk. The domain
+ * validators cannot catch this — they never see a filename — so the catalog
+ * gate is the only place it can be caught.
+ */
+function idMismatch(kind, fileId, declared) {
+  if (typeof declared !== 'string' || declared === fileId) return null;
+  return `${kind} id "${declared}" does not match its filename "${fileId}" (references resolve by filename)`;
+}
+
 export class ValidateCatalog {
   #catalog;
   #bankIds;
@@ -80,7 +93,9 @@ export class ValidateCatalog {
     const validDocuments = new Map();
     for (const { id, raw } of documents.items ?? []) {
       const { errors, document } = validateDocument(raw);
-      if (errors.length) documentErrors[id] = errors;
+      const mismatch = idMismatch('document', id, raw?.id);
+      const all = mismatch ? [...errors, mismatch] : errors;
+      if (all.length) documentErrors[id] = all;
       else validDocuments.set(id, document);
     }
 
@@ -88,7 +103,9 @@ export class ValidateCatalog {
     const validManifests = new Map();
     for (const { id, raw } of manifests.items ?? []) {
       const { errors, manifest } = validateManifest(raw);
-      if (errors.length) manifestErrors[id] = errors;
+      const mismatch = idMismatch('manifest', id, raw?.id);
+      const all = mismatch ? [...errors, mismatch] : errors;
+      if (all.length) manifestErrors[id] = all;
       else validManifests.set(id, manifest);
     }
 
@@ -102,9 +119,11 @@ export class ValidateCatalog {
     let publishable = 0;
     for (const { id, raw } of units.items ?? []) {
       const { errors, unit } = validateUnit(raw, sets);
+      const mismatch = idMismatch('unit', id, raw?.unitId);
+      const all = mismatch ? [...errors, mismatch] : errors;
       // Keyed by the CATALOG id (the filename the author must go fix), which is
       // the only name a unit too broken to declare a `unitId` still has.
-      if (errors.length) unitErrors[id] = errors;
+      if (all.length) unitErrors[id] = all;
       else if (isPublishable(unit)) publishable += 1;
     }
 

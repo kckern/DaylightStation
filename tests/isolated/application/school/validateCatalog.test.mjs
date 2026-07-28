@@ -14,12 +14,15 @@ class FakeCatalog extends ICurriculumCatalog {
    * `unitEntries` lets a test hand over entries whose raw payload is too broken
    * to name itself.
    */
-  constructor({ units = [], documents = [], manifests = [], unitEntries = null, errors = {} } = {}) {
+  constructor({
+    units = [], documents = [], manifests = [],
+    unitEntries = null, documentEntries = null, manifestEntries = null, errors = {},
+  } = {}) {
     super();
     const entries = (list) => list.map((raw) => ({ id: raw?.unitId ?? raw?.id ?? 'anon', raw }));
     this.#units = unitEntries ?? entries(units);
-    this.#documents = entries(documents);
-    this.#manifests = entries(manifests);
+    this.#documents = documentEntries ?? entries(documents);
+    this.#manifests = manifestEntries ?? entries(manifests);
     this.#errors = errors;
   }
 
@@ -231,5 +234,53 @@ describe('the gate is read-only', () => {
     const useCase = build({});
     const methods = Object.getOwnPropertyNames(Object.getPrototypeOf(useCase));
     expect(methods).toEqual(['constructor', 'execute']);
+  });
+});
+
+describe('declared id must match filename', () => {
+  // References resolve by FILENAME, so a mismatched `id:` is dead metadata --
+  // and an author who renames it gets "not found" on a file they can see.
+  it('rejects a document whose declared id disagrees with its filename', async () => {
+    const gate = new ValidateCatalog({
+      catalog: new FakeCatalog({ documentEntries: [{ id: 'ws-01', raw: aDocument({ id: 'renamed' }) }] }),
+    });
+    const result = await gate.execute();
+    expect(result.ok).toBe(false);
+    expect(result.documentErrors['ws-01']).toContain(
+      'document id "renamed" does not match its filename "ws-01" (references resolve by filename)',
+    );
+  });
+
+  it('makes a mismatched document unresolvable to a unit referencing the filename', async () => {
+    const gate = new ValidateCatalog({
+      catalog: new FakeCatalog({
+        documentEntries: [{ id: 'ws-01', raw: aDocument({ id: 'renamed' }) }],
+        units: [aUnit()],
+      }),
+    });
+    const result = await gate.execute();
+    expect(result.unitErrors['math-fractions-01'].join(' ')).toMatch(/document 'ws-01' not found/);
+  });
+
+  it('rejects a unit whose declared unitId disagrees with its filename', async () => {
+    const gate = new ValidateCatalog({
+      catalog: new FakeCatalog({
+        unitEntries: [{ id: 'math-1', raw: aUnit({ unitId: 'other' }) }],
+        documentEntries: [{ id: 'ws-01', raw: aDocument() }],
+      }),
+    });
+    const result = await gate.execute();
+    expect(result.unitErrors['math-1']).toContain(
+      'unit id "other" does not match its filename "math-1" (references resolve by filename)',
+    );
+  });
+
+  it('accepts entities whose declared id matches the filename', async () => {
+    const gate = new ValidateCatalog({
+      catalog: new FakeCatalog({ units: [aUnit()], documents: [aDocument()] }),
+    });
+    const result = await gate.execute();
+    expect(result.unitErrors).toEqual({});
+    expect(result.documentErrors).toEqual({});
   });
 });
