@@ -762,16 +762,20 @@ describe('ScorePlayer — Polish mode (transport-driven)', () => {
     expect(summaries[0][1]).toMatchObject({ greens: 0, yellows: 0, reds: 0, overall: null });
   });
 
-  // Five single-step measures @60. The advance rule grades measures 0–2 as the
-  // cursor leaves them; the run then completes and onDone finalizes measure 3.
-  // (The last step's setStep has NOT committed when onDone runs, so the measure
-  // finalize sees is 3, not 4 — a separate pre-existing gap, not this task's.)
-  const FIVE_MEASURES = {
+  // N single-step measures @60bpm — one measure per beat, so a run walks a measure
+  // boundary every 1000ms and every measure is either played or silent outright.
+  const singleStepMeasures = (n) => ({
     tempoEntries: [{ onsetQuarter: 0, bpm: 60 }],
-    events: [0, 1, 2, 3, 4].map((i) => ({ midi: 60 + i, midis: [60 + i], onsetQuarter: i, x: 100 + i * 60, top: 10, bottom: 200, system: 0 })),
-    steps: [0, 1, 2, 3, 4].map((i) => ({ onsetQuarter: i, measure: i, notes: [{ midi: 60 + i, staff: 0, x: 100 + i * 60, top: 10, bottom: 200, width: 8 }] })),
-    measures: [0, 1, 2, 3, 4].map((i) => ({ index: i, number: i + 1, firstStep: i, lastStep: i })),
-  };
+    events: Array.from({ length: n }, (_, i) => ({ midi: 60 + i, midis: [60 + i], onsetQuarter: i, x: 100 + i * 60, top: 10, bottom: 200, system: 0 })),
+    steps: Array.from({ length: n }, (_, i) => ({ onsetQuarter: i, measure: i, notes: [{ midi: 60 + i, staff: 0, x: 100 + i * 60, top: 10, bottom: 200, width: 8 }] })),
+    measures: Array.from({ length: n }, (_, i) => ({ index: i, number: i + 1, firstStep: i, lastStep: i })),
+  });
+  // The advance rule grades measures 0–3 as the cursor leaves them; the run then
+  // completes on measure 4, which onDone must finalize.
+  const FIVE_MEASURES = singleStepMeasures(5);
+  // Long enough that the 4th consecutive silent measure (the default
+  // silentMeasuresToStop) is a plain mid-piece advance, not the completing tick.
+  const SEVEN_MEASURES = singleStepMeasures(7);
 
   it('the completion summary counts the measure onDone just finalized (Task 10)', async () => {
     // A run played through silently: four measures red — three from the advance
@@ -798,6 +802,32 @@ describe('ScorePlayer — Polish mode (transport-driven)', () => {
     // in this same tick. Without the fold this reads reds: 3.
     expect(summaries[0][1]).toMatchObject({ greens: 0, yellows: 0, reds: 4, overall: 'red' });
     expect(summaries[0][1].reds).toBe(grades.length);
+  });
+
+  it('the silent-stop summary counts the measure that silenced the run (Task 20)', async () => {
+    // Four silent measures trip the auto-stop. onSilentStop fires from INSIDE the
+    // evaluator's grading effect, in the same tick as the 4th measure's grade, so
+    // gradesRef (assigned during render) is one behind — the probe graded four reds
+    // and logged reds: 3. The measure that silenced the run must be in its own
+    // summary; the grade has to travel with the callback.
+    h.layoutExtras = SEVEN_MEASURES;
+    const emitted = captureLog();
+
+    renderPlayer();
+    screen.getByText('Polish').click();
+    await act(async () => {});
+    screen.getByRole('button', { name: 'Play' }).click();
+    await act(async () => {});
+    act(() => vi.advanceTimersByTime(4100)); // through the count-in
+    for (let i = 0; i < 5; i++) act(() => vi.advanceTimersByTime(1100)); // 4 silent measures → stop
+
+    const grades = emitted.filter(([ev]) => ev === 'score.polish.measure');
+    expect(grades.map(([, d]) => d.measure)).toEqual([0, 1, 2, 3]);
+    expect(emitted.filter(([ev]) => ev === 'score.polish.silent-stop').length).toBe(1);
+    const summaries = emitted.filter(([ev]) => ev === 'score.polish.summary');
+    expect(summaries.length).toBe(1);
+    expect(summaries[0][1]).toMatchObject({ greens: 0, yellows: 0, reds: 4, overall: 'red' });
+    expect(summaries[0][1].reds).toBe(grades.length); // the tally is the run's grades
   });
 
   it('score.countin.start logs the PLAN, not the meter', async () => {
