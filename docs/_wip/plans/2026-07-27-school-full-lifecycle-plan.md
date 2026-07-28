@@ -56,6 +56,17 @@ path ends in a printed recovery action, never a dead end.
   as a property test across all reachable states. A state with no next action is
   the "wedged session" failure the spec forbids.
 
+> **Correction found during implementation (2026-07-27).** The transition table
+> above lists `issued→failed` but gives `failed` no outgoing edges, which reads
+> as a terminal dead end — directly contradicting §9, where a failed print must
+> leave the token valid so the next scan retries. `failed` and `reassigned` are
+> therefore **annotations, not states**: they record a fact, are legal at any
+> non-terminal state, and leave `state` unchanged. A retry after a print failure
+> is a `reprinted` event (already legal from `issued`), with the pending failure
+> surfacing as `lastFailure` plus a reprint `nextAction`. `reassigned` behaves
+> the same way — it re-credits work without moving the lifecycle (§5.3).
+> Terminal states are exactly `rewarded`, `remediation_opened`, and `abandoned`.
+
 Commit: `feat(school): work-session event model and reducer`
 
 ### Task D2: Outcome + reward idempotency (pure domain)

@@ -15,6 +15,11 @@ Stack: `mathjax-full@^3.2.2` (TeX input + SVG output, `fontCache: 'none'`,
 `AllPackages`), `svg-to-pdfkit@^0.1.8`, `pdfkit@^0.18.0` — the last two already
 repo dependencies; only `mathjax-full` is new.
 
+> **Updated 2026-07-27 during implementation (B2).** Three corrections found
+> while productionizing this recipe — a fourth mandatory rule, and two places
+> where the reference implementation below is subtly wrong. Read
+> "Corrections from implementation" before copying any code from this document.
+
 ## Three preprocessing rules (all required)
 
 svg-to-pdfkit misinterprets MathJax's SVG as emitted. The document renderer MUST
@@ -53,6 +58,60 @@ function texToSvg(texSrc, { display = true, fontSizePt = 12, ink = '#000000' } =
 }
 // place with: SVGtoPDF(doc, svgString, x, y, { width: widthPt, height: heightPt, assumePt: true })
 ```
+
+## Corrections from implementation (2026-07-27)
+
+The live implementation is `backend/src/1_rendering/school/documents/mathSvg.mjs`;
+where it differs from this document, **it is right and this document was wrong**.
+
+### 4. Drop the `noundefined` TeX extension — this is a fourth mandatory rule
+
+Under stock `AllPackages`, bad TeX does **not** reliably produce an error node.
+Only *syntax* errors (`\frac{`) emit `merror` / `data-mjx-error`. An **undefined
+control sequence** — a macro typo, or `\require{...}` itself, the single most
+likely authoring mistake — is swallowed by the `noundefined` extension and
+rendered as **red literal text** (`<g data-mml-node="mtext" fill="red">`).
+
+That is exactly the "red error text printed on a child's worksheet" failure this
+module exists to prevent, and error-node detection alone does not catch it. The
+fix is to build the TeX input with `AllPackages.filter(p => p !== 'noundefined')`,
+after which undefined macros emit `data-mjx-error` and the renderer throws.
+
+**Any other code in this repo that constructs its own MathJax document must
+apply the same filter**, or it will silently print red glyphs instead of failing.
+
+A defensive check for the red-text signature is retained in case that config
+ever drifts back. It does not false-positive on legitimate `\color{red}{…}` /
+`\textcolor{red}{…}`, because MathJax puts the colour on the `mstyle` node
+rather than on `mtext`.
+
+Note this also makes the §"`\require` never works server-side" claim above
+*enforceable*: before the filter, `\require{enclose} x` rendered as red text
+rather than throwing.
+
+### 5. Strip width/height from the ROOT tag only
+
+The reference implementation's `.replace(/ width="[^"]+"/, '')` is fragile.
+`\overline`, `\overrightarrow`, and extensible delimiters emit **nested `<svg>`
+elements carrying their own `width`/`height`/`viewBox`/`x`/`y` in viewBox units**.
+Those must survive — stripping globally collapses the stretchy rules. Confine
+the strip to the root element.
+
+### 6. Parse the style attribute per-declaration
+
+Rule 2's stroke-width promotion is narrower than described: only
+`\enclose{longdiv}` uses inline CSS. `\cancel` and `\enclose{circle}` already
+emit `stroke-width` as a proper attribute. Promote by parsing individual
+declarations rather than regex-matching the whole attribute value, so a future
+`style="stroke-width: N; fill: none;"` still promotes correctly.
+
+### Still unverified (carry into the PDF renderer work)
+
+- svg-to-pdfkit's handling of the **nested `<svg>` viewport** (own viewBox plus
+  x/y offset) used by stretchy accents. The spike's visual pass covered radicals
+  and matrices; `\overline` / `\overrightarrow` specifically were not in it.
+- The WinAnsi-only limitation of pdfkit's base-14 fonts (below) still applies to
+  document themes.
 
 ## Other findings
 
