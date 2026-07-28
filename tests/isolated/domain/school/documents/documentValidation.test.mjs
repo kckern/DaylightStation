@@ -56,13 +56,23 @@ describe('validateDocument: seed and variant', () => {
     expect(errs(doc({ seed: 0 }))).toEqual([]);
   });
 
+  it('accepts the largest exactly-representable seed', () => {
+    expect(errs(doc({ seed: Number.MAX_SAFE_INTEGER }))).toEqual([]);
+  });
+
   it.each([
     ['negative', -1],
     ['fractional', 1.5],
     ['a numeric string', '12345'],
     ['missing', undefined],
+    // Beyond MAX_SAFE_INTEGER, distinct seeds collide onto the same float, so
+    // "same seed, byte-identical output" stops being a property the seed has.
+    ['past the safe-integer ceiling', Number.MAX_SAFE_INTEGER + 2],
+    ['enormous', 1e300],
+    ['Infinity', Infinity],
+    ['NaN', NaN],
   ])('rejects a seed that is %s', (_label, seed) => {
-    expect(errs(doc({ seed }))).toContain('seed must be an integer >= 0');
+    expect(errs(doc({ seed }))).toContain(`seed must be an integer between 0 and ${Number.MAX_SAFE_INTEGER}`);
   });
 
   it('accepts an omitted variant (defaults to 0)', () => {
@@ -84,8 +94,9 @@ describe('validateDocument: seed and variant', () => {
     ['negative', -1],
     ['fractional', 0.5],
     ['a numeric string', '1'],
+    ['past the safe-integer ceiling', Number.MAX_SAFE_INTEGER + 2],
   ])('rejects a variant that is %s', (_label, variant) => {
-    expect(errs(doc({ variant }))).toContain('variant must be an integer >= 0');
+    expect(errs(doc({ variant }))).toContain(`variant must be an integer between 0 and ${Number.MAX_SAFE_INTEGER}`);
   });
 });
 
@@ -126,6 +137,19 @@ describe('validateDocument: blocks', () => {
   it('prefixes at the failing index, not the first', () => {
     expect(errs(doc({ blocks: [{ type: 'rich_text', md: 'ok' }, { type: 'html' }] })))
       .toContain('blocks[1]: unknown block type: html');
+  });
+
+  // One notation for every error in the list: a dotted path, one colon.
+  it('joins nested block paths with dots rather than repeating the prefix', () => {
+    const q = question({ blocks: [{ type: 'rich_text', md: 'ok' }, { type: 'math', tex: '' }] });
+    expect(errs(doc({ blocks: [q] })))
+      .toContain('blocks[0].blocks[1]: math tex must be a non-empty string');
+  });
+
+  it('uses the same dotted notation for structural and tree-walk rules', () => {
+    const q = question({ blocks: [{ type: 'question', itemId: 'q2', number: 2, blocks: [{ type: 'rich_text', md: 'x' }] }] });
+    expect(errs(doc({ blocks: [q] })))
+      .toContain('blocks[0].blocks[0]: question may not contain another question');
   });
 });
 
@@ -168,25 +192,25 @@ describe('validateDocument: omr_response placement', () => {
 });
 
 describe('validateDocument: answer keys are structurally impossible', () => {
+  const noKey = 'must not carry an answer key (answer keys render from the question bank)';
+
   it('rejects an answer key on the document itself', () => {
-    expect(errs(doc({ answer: 'Olympia' })))
-      .toContain('document must not carry an answer key (answer keys render from the question bank)');
+    expect(errs(doc({ answer: 'Olympia' }))).toContain(`document: ${noKey}`);
   });
 
   it('rejects an answers key on a block', () => {
-    expect(errs(doc({ blocks: [{ type: 'rich_text', md: 'x', answers: ['a'] }] })).length).toBeGreaterThan(0);
-    expect(errs(doc({ blocks: [{ type: 'rich_text', md: 'x', answers: ['a'] }] }))[0])
-      .toMatch(/answer key/);
+    expect(errs(doc({ blocks: [{ type: 'rich_text', md: 'x', answers: ['a'] }] })))
+      .toEqual([`blocks[0]: ${noKey}`]);
   });
 
   it('rejects an answer key nested deep inside a question block', () => {
     const sneaky = question({ blocks: [{ type: 'omr_response', itemId: 'q1', choices: 4, answer: 'B' }] });
-    expect(errs(doc({ blocks: [sneaky] })).some((e) => /answer key/.test(e))).toBe(true);
+    expect(errs(doc({ blocks: [sneaky] }))).toEqual([`blocks[0].blocks[0]: ${noKey}`]);
   });
 
   it('rejects an answer key hidden in a nested spec object', () => {
     const block = { type: 'plot', spec: { kind: 'cartesian', hint: { answer: 42 } } };
-    expect(errs(doc({ blocks: [block] })).some((e) => /answer key/.test(e))).toBe(true);
+    expect(errs(doc({ blocks: [block] }))).toEqual([`blocks[0].spec.hint: ${noKey}`]);
   });
 
   it('does not confuse a legitimate answer_space block for an answer key', () => {
@@ -256,6 +280,11 @@ describe('validateDocument: return value', () => {
 
   it('accumulates every failure rather than stopping at the first', () => {
     const r = validateDocument({ id: 'BAD', seed: -1, target: ['fax'], blocks: [{ type: 'html' }] });
-    expect(r.errors.length).toBeGreaterThanOrEqual(4);
+    expect(r.errors).toEqual([
+      'id must match ^[a-z0-9][a-z0-9-]*$',
+      `seed must be an integer between 0 and ${Number.MAX_SAFE_INTEGER}`,
+      'unknown target: fax',
+      'blocks[0]: unknown block type: html',
+    ]);
   });
 });

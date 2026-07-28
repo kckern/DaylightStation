@@ -15,6 +15,12 @@ describe('BLOCK_TYPES', () => {
   it('is frozen — a new block type is a code change, never config', () => {
     expect(Object.isFrozen(BLOCK_TYPES)).toBe(true);
   });
+
+  it('lists exactly the types that have a validator (no declared-but-unhandled type)', () => {
+    BLOCK_TYPES.forEach((type) => {
+      expect(validateBlock({ type })).not.toEqual({ errors: [`unknown block type: ${type}`] });
+    });
+  });
 });
 
 describe('validateBlock: shape', () => {
@@ -32,8 +38,19 @@ describe('validateBlock: shape', () => {
     ['an array', []],
     ['a string', 'rich_text'],
   ])('rejects a block that is %s', (_label, raw) => {
-    expect(errs(raw).length).toBeGreaterThan(0);
+    expect(errs(raw)).toEqual(['block must be a mapping']);
   });
+
+  // The type lookup must be an own-property check: a bracket lookup finds
+  // Object.prototype members, so `constructor`/`toString` would resolve to a
+  // function and "validate" clean, and `__proto__` would resolve to an object
+  // and crash.
+  it.each(['toString', 'constructor', '__proto__', 'hasOwnProperty', 'valueOf'])(
+    'rejects the inherited Object.prototype member %s as a type',
+    (type) => {
+      expect(errs({ type })).toEqual([`unknown block type: ${type}`]);
+    },
+  );
 });
 
 describe('validateBlock: rich_text', () => {
