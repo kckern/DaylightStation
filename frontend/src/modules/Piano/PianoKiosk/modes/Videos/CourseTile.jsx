@@ -10,8 +10,14 @@ const FRESH_MS = 7 * 24 * 60 * 60 * 1000;
 // then take the percent directly.
 const RING_R = 100 / (2 * Math.PI);
 
-/** Completion percent for a chip: floors at 1% once anything is completed. */
+/**
+ * Completion percent for a chip: prefers a server-computed `percent` (the
+ * activity endpoint's season-weighted metric doesn't equal completed/total),
+ * else derives from counts. Floors at 1% once anything is completed.
+ */
 export function chipPercent(u) {
+  const server = Number(u?.percent);
+  if (Number.isFinite(server) && u?.percent != null) return Math.max(0, Math.min(100, Math.round(server)));
   const total = Number(u?.total) || 0;
   const completed = Number(u?.completed) || 0;
   if (!total || !completed) return 0;
