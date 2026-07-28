@@ -140,6 +140,16 @@ export default function ScorePlayer({ score: scoreMeta }) {
   const [loopWraps, setLoopWraps] = useState(0);
   const gradesRef = useRef(grades); gradesRef.current = grades; // latest grades for the run-summary log (onSilentStop closure)
   const [summaryOpen, setSummaryOpen] = useState(false); // Polish run summary panel
+  // Is a RUN active? True from the moment playback starts until it is paused,
+  // stopped, or finishes. Deliberately NOT `transport.playing`: a Polish loop
+  // pinned to the FINAL measure restarts through onDone's one-beat dwell (the
+  // zero-span guard), and across that dwell the transport completes inside play()'s
+  // immediate tick, so `playing` never commits true. An evaluator gated on
+  // `playing` therefore never subscribed at all — the probe played six correct
+  // passes over a tail-measure loop and got zero grades and zero stops (Task 19).
+  // It must go false on every genuine end-of-run, or the evaluator grades measures
+  // the cursor merely passes over (the phantom grades e501ff6fd fixed).
+  const [runActive, setRunActive] = useState(false);
   const scrollRef = useRef(null);
   const cursorRef = useRef(null);
   const prevTopRef = useRef(null);
@@ -366,6 +376,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
           setStep(r[0]);
           setStruck(() => new Set());
           setLoopWraps((n) => n + 1);
+          setRunActive(true); // the run continues through the wrap (see runActive)
           transportRef.current?.play();
         };
         // Zero-span guard: when the in-point IS the final timeline event (a
@@ -389,6 +400,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
       // A Polish run that plays to the end must grade its final measure and show
       // the summary — the reward for finishing, not only for giving up (audit H1).
       if (mode === 'polish') { openRunSummaryRef.current?.(finalizeRef.current?.()); }
+      setRunActive(false); // done WITHOUT a loop = a genuine end of run (see runActive)
       logger.info('score.transport.done', { mode, steps: events.length });
       // The run is OVER — put the cursor back where a run starts (the loop
       // in-point when one is active, else the top). Without this, `step` stays
@@ -422,6 +434,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
       const startStep = rangeRef.current ? clampStepToRange(stepRef.current, rangeRef.current) : stepRef.current;
       if (startStep !== stepRef.current) setStep(startStep);
       transportRef.current?.seek((stepTimeline[startStep]?.t ?? 0) / tempoMult);
+      setRunActive(true);
       transportRef.current?.play();
       logger.info('score.countin.go', { step: startStep, mode });
     },
@@ -509,12 +522,13 @@ export default function ScorePlayer({ score: scoreMeta }) {
   }, [logRunSummary]);
   const onSilentStop = useCallback(() => {
     transport.pause();
+    setRunActive(false);
     logger.info('score.polish.silent-stop', {});
     openRunSummary();
   }, [transport, logger, openRunSummary]);
 
   const evaluator = useScoreEvaluator({
-    enabled: mode === 'polish' && transport.playing, // grade only during real playback
+    enabled: mode === 'polish' && runActive, // grade only inside a real run (Task 19)
     boundary: loopWraps,
     cfg: resolvedScoringCfg,
     subscribe,
@@ -660,6 +674,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
     setStep(target);
     setStruck(() => new Set());
     transportRef.current?.seek((stepTimeline[target]?.t ?? 0) / tempoMult);
+    setRunActive(true);
     transportRef.current?.play();
     logger.info('score.transport.resume', { step: target });
   }, [resumeTick, layoutFresh, events.length, stepTimeline, tempoMult, logger]);
@@ -968,6 +983,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
     if (mode === 'learn') flushFollowNow();
     clearWrapDwell();            // a pending loop-wrap dwell dies with the run
     transport.stop();
+    setRunActive(false);         // …and so does the run itself (see runActive)
     silenceScheduled();
     setStruck(() => new Set());
     // The loop follows Listen↔Learn↔Polish (hear it, drill it, prove it — audit
@@ -1012,6 +1028,10 @@ export default function ScorePlayer({ score: scoreMeta }) {
     clearWrapDwell(); // BEFORE the playing check — during the dwell nothing plays
     if (!transportRef.current?.playing) return;
     transport.pause();
+    // The evaluator must not stay armed across the rebuild gap: the cursor can be
+    // moved (tap-seek) while nothing is playing, and an armed evaluator would read
+    // that as an end-of-measure. The resume re-arms it (see runActive).
+    setRunActive(false);
     silenceScheduled();
     flushPlaybackNow();
     resumeAfterRef.current = { step: stepRef.current };
@@ -1043,6 +1063,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
     clearWrapDwell();       // …and any pending loop-wrap dwell
     setLearnDone(false);    // fresh pass — close the completion card
     transport.stop();
+    setRunActive(false);    // Restart ends the current run (see runActive)
     if (mode === 'listen') silenceScheduled();
     flushPlaybackNow();
     const home = homeStep(rangeRef.current); // loop in-point when a loop is active (audit L5)
@@ -1111,6 +1132,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
       // from transport.playing, and finalize early-returns once it goes false.
       if (mode === 'polish') openRunSummaryRef.current?.(finalizeRef.current?.());
       transport.pause();
+      setRunActive(false);
       if (mode === 'listen') silenceScheduled();
       flushPlaybackNow();
       logger.info('score.transport.pause', { step: stepRef.current });
@@ -1140,6 +1162,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
         const startStep = rangeRef.current ? clampStepToRange(stepRef.current, rangeRef.current) : stepRef.current;
         if (startStep !== stepRef.current) setStep(startStep);
         transport.seek((stepTimeline[startStep]?.t ?? 0) / tempoMult);
+        setRunActive(true);
         transport.play();
         logger.info('score.transport.play', { step: startStep, mode, bpm: tempoMap[0]?.bpm, tempoMult });
         tapIntent('transport-play');
