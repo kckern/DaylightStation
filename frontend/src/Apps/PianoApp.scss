@@ -2742,6 +2742,22 @@
   .piano-note-hit {
     filter: drop-shadow(0 0 2.5px var(--nh-color, #2ec46f));
   }
+  // Expected at this step but not yet struck (Learn's all-notes rule). Outlined
+  // and pulsing rather than filled, so "you still owe me the left hand" is legible
+  // without competing with the green hit colour.
+  .piano-note-pending {
+    path, rect, ellipse, text {
+      fill: none;
+      stroke: var(--nh-color, #2ec46f);
+      stroke-width: 1.2;
+    }
+    animation: piano-note-pending-pulse 1.1s ease-in-out infinite;
+  }
+}
+
+@keyframes piano-note-pending-pulse {
+  0%, 100% { opacity: 0.45; }
+  50%      { opacity: 1; }
 }
 
 // ── Task 14: Polish per-measure grade wash + run summary ──────────────────────

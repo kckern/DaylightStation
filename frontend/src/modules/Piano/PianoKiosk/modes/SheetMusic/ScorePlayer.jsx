@@ -1286,6 +1286,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
               activeParts={activeParts}
               struck={litNotes}
               accent={cursorColor}
+              showPending={mode === 'learn'}
             />
           )}
         </MusicXmlRenderer>
