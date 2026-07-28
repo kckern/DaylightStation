@@ -175,7 +175,7 @@ stamped to wall-clock by the framework. Math is in `scoreTelemetry.js`; collecti
 | Event | Level | Fields |
 |-------|-------|--------|
 | `score.load` | info | `id, fetchMs, openToReadyMs, steps, …` (phase totals) |
-| `score.load.failed` | warn | `id, phase, error` |
+| `piano.score-open-failed` | warn | `id, error` — the score's XML fetch failed. Emitted from `SheetMusic.jsx` (`NotationScore`), not this hook: a failed fetch renders `PianoEmpty` and never mounts `ScorePlayer`. It carries `app: 'piano-sheetmusic', sessionLog: true` on its own context so it still lands in the run's session file without creating a second one. |
 | `score.playback.stall` | debug | `step, driftMs, gapMs, effectiveBpm, stallMs` (drift past a tempo-scaled budget, or a tick gap that skipped whole ticks) |
 | `score.playback.stats` | info | `mode, events, meanDriftMs, p95DriftMs, maxDriftMs, stalls, maxFrameGapMs` (at pause/stop/done/unmount) |
 | `score.follow.timing` | sampled | `step, note, sinceAdvanceMs` (how long the player took to answer the cursor — no verdict) |

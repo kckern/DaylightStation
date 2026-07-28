@@ -151,7 +151,16 @@ function NotationScore({ contentId }) {
         fetchMsRef.current = performance.now() - t0;
         if (!cancelled) setXml(text);
       } catch (err) {
-        logger.warn('piano.score-open-failed', { id: localId, error: err.message });
+        // Audit L2: this failure used to go only to the plain kiosk logger, so the
+        // per-run session file showed the open and then nothing — no recorded
+        // reason. Route it into the same file as the rest of the run by tagging
+        // THIS event's context, rather than making a sessionLog child: creating
+        // one auto-emits 'session-log.start' (Logger.js:217) and would open an
+        // extra session file per score open. The backend sessionFile transport
+        // keys on context.app + context.sessionLog per event, so the tag alone
+        // is enough for it to land in the active run log.
+        logger.warn('piano.score-open-failed', { id: localId, error: err.message },
+          { context: { app: 'piano-sheetmusic', sessionLog: true } });
         if (!cancelled) setXml('');
       }
     })();
