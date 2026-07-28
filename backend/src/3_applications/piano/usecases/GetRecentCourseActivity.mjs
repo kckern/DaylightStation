@@ -138,6 +138,15 @@ export class GetRecentCourseActivity {
     const pianoCfg = this.#configService.getHouseholdAppConfig(null, 'piano') || {};
     const menuCfg = pianoCfg.menu_activity || {};
     const slots = Array.isArray(menuCfg.slots) && menuCfg.slots.length ? menuCfg.slots.map(String) : DEFAULT_SLOTS;
+    // How a course's displayed percent is computed (config `menu_activity.percent_mode`):
+    //   season-weighted (default) — every season/unit is an equal slice of the
+    //     bar (5 seasons → finishing season 1 = 20%), episode progress
+    //     interpolates within each slice. Season count is the base, so one
+    //     giant season can't dwarf the rest.
+    //   current-module — progress through the most recently active incomplete
+    //     unit only.
+    //   course — plain completed/total over every lecture.
+    const percentMode = String(menuCfg.percent_mode || 'season-weighted');
     const referenceUnits = pianoCfg.videos?.reference_units || [];
 
     const players = [];
@@ -172,15 +181,37 @@ export class GetRecentCourseActivity {
           }
         }
         if (!newestOverall) continue;
-        const active = [...units.values()].filter((r) => r.lastPlayed);
-        const incomplete = active.filter((r) => r.completed < r.total);
-        const pool = incomplete.length ? incomplete : active;
-        const current = pool.reduce((a, b) => (String(b.lastPlayed) > String(a.lastPlayed) ? b : a));
+        let completed;
+        let total;
+        let percent;
+        if (percentMode === 'current-module') {
+          const active = [...units.values()].filter((r) => r.lastPlayed);
+          const incomplete = active.filter((r) => r.completed < r.total);
+          const pool = incomplete.length ? incomplete : active;
+          const current = pool.reduce((a, b) => (String(b.lastPlayed) > String(a.lastPlayed) ? b : a));
+          completed = current.completed;
+          total = current.total;
+          percent = total > 0 && completed > 0 ? Math.max(1, Math.round((completed / total) * 100)) : 0;
+        } else if (percentMode === 'course') {
+          completed = courseCompleted;
+          total = enriched.length;
+          percent = total > 0 && completed > 0 ? Math.max(1, Math.round((completed / total) * 100)) : 0;
+        } else {
+          // season-weighted (default): each unit is an equal 1/N slice.
+          const all = [...units.values()];
+          const fraction = all.length
+            ? all.reduce((sum, r) => sum + (r.total > 0 ? r.completed / r.total : 0), 0) / all.length
+            : 0;
+          completed = courseCompleted;      // tooltip shows whole-course counts
+          total = enriched.length;
+          percent = fraction > 0 ? Math.max(1, Math.round(fraction * 100)) : 0;
+        }
         touched.push({
           show,
           lastPlayedAt: newestOverall,
-          completed: current.completed,
-          total: current.total,
+          completed,
+          total,
+          percent,
           courseCompleted: enriched.length > 0 && courseCompleted >= enriched.length,
         });
       }
@@ -192,8 +223,7 @@ export class GetRecentCourseActivity {
         thumbnail: e.show.thumb,
         completed: e.completed,
         total: e.total,
-        percent: e.total > 0 && e.completed > 0
-          ? Math.max(1, Math.round((e.completed / e.total) * 100)) : 0,
+        percent: e.percent,
         courseCompleted: e.courseCompleted,
         lastPlayedAt: e.lastPlayedAt,
       }));

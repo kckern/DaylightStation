@@ -1,6 +1,6 @@
 // lectureMeta.test.js
 import { describe, it, expect } from 'vitest';
-import { lectureContentId, deriveResumeSeconds, lectureStatus } from './lectureMeta.js';
+import { lectureContentId, deriveResumeSeconds, lectureStatus, resumeSecondsFor } from './lectureMeta.js';
 
 describe('lectureContentId', () => {
   it('prefers the plex field', () => {
@@ -45,5 +45,24 @@ describe('lectureStatus', () => {
   });
   it('counts a real completed view via playCount', () => {
     expect(lectureStatus({ playCount: 1, watchProgress: 0 })).toEqual({ watched: true, percent: 0, completedAt: null });
+  });
+});
+
+describe('resumeSecondsFor', () => {
+  it('restarts a completed lecture from 0 (per-user completion)', () => {
+    expect(resumeSecondsFor({ userWatched: true, userPlayhead: 1700, watchSeconds: 1700 })).toBe(0);
+  });
+
+  it('restarts a device-watched lecture from 0 (playCount signal)', () => {
+    expect(resumeSecondsFor({ playCount: 2, watchSeconds: 1650, duration: 1800 })).toBe(0);
+  });
+
+  it('resumes an in-progress lecture at the per-user playhead', () => {
+    expect(resumeSecondsFor({ userWatched: false, userPercent: 40, userPlayhead: 480 })).toBe(480);
+  });
+
+  it('falls back to device signals when no per-user playhead', () => {
+    expect(resumeSecondsFor({ watchSeconds: 120 })).toBe(120);
+    expect(resumeSecondsFor({})).toBe(0);
   });
 });
