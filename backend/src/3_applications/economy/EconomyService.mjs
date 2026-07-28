@@ -64,7 +64,7 @@ export class EconomyService {
     // economy with an unknown action still throws below.
     if (!config?.earn) {
       const wallet = this.#snapshot(userId);
-      return { userId, earned: 0, capped: false, duplicate: false, skipped: true, balance: wallet.balance };
+      return { userId, earned: 0, capped: false, duplicate: false, skipped: true, txnId: null, balance: wallet.balance };
     }
     const policy = resolvePolicy(config, userId, action);
     if (!policy || policy.type !== 'earn') throw new ValidationError(`unknown earn action: ${action}`);
@@ -80,16 +80,23 @@ export class EconomyService {
     if (ref != null && todaysEarns.some((t) => t.ref === ref)) {
       const wallet = this.#snapshot(userId);
       this.#logger.info('economy-earn-duplicate', { userId, action, ref, balance: wallet.balance });
-      return { userId, earned: 0, capped: false, duplicate: true, balance: wallet.balance };
+      // The already-paid transaction, so a caller holding a durable record of
+      // its own (School's work sessions) can store the same id on a retry
+      // instead of recording "paid, id unknown".
+      const existing = todaysEarns.find((t) => t.ref === ref);
+      return { userId, earned: 0, capped: false, duplicate: true, txnId: existing?.id ?? null, balance: wallet.balance };
     }
     const earnedToday = todaysEarns.reduce((s, t) => s + t.delta, 0);
     const grant = Math.max(0, Math.min(reward, cap - earnedToday));
+    let txnId = null;
     if (grant > 0) {
-      this.#ds.appendTransaction(userId, createTransaction({ kind: 'earn', delta: grant, action, source, ref }));
+      const txn = createTransaction({ kind: 'earn', delta: grant, action, source, ref });
+      this.#ds.appendTransaction(userId, txn);
+      txnId = txn.id ?? null;
     }
     const wallet = this.#snapshot(userId);
     this.#logger.info('economy-earn', { userId, action, earned: grant, capped: grant < reward, balance: wallet.balance });
-    return { userId, earned: grant, capped: grant < reward, duplicate: false, balance: wallet.balance };
+    return { userId, earned: grant, capped: grant < reward, duplicate: false, txnId, balance: wallet.balance };
   }
 
   async openSession(userId, { action, source }) {
