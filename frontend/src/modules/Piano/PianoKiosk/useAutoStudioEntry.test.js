@@ -70,6 +70,21 @@ describe('useAutoStudioEntry', () => {
     expect(onEnter).toHaveBeenCalledTimes(1);
   });
 
+  it('re-arms via idle-flagged return even after a fire consumed the armed state', () => {
+    const onEnter = vi.fn();
+    let idleFlag = false;
+    const consumeIdleReturn = () => { const v = idleFlag; idleFlag = false; return v; };
+    const props = { ...base, onEnter, consumeIdleReturn };
+    const { rerender } = renderHook((p) => useAutoStudioEntry(p), { initialProps: props });
+    rerender({ ...props, noteHistory: playing() });                  // fires (1) — armedRef now false
+    expect(onEnter).toHaveBeenCalledTimes(1);
+    rerender({ ...props, noteHistory: playing(), pathname: '/piano/studio' });
+    idleFlag = true;
+    rerender({ ...props, noteHistory: playing(), pathname: '/piano' }); // idle return → re-arm
+    rerender({ ...props, pathname: '/piano', noteHistory: playing(60_000) });
+    expect(onEnter).toHaveBeenCalledTimes(2);                        // fires again after re-arm
+  });
+
   it('re-arms after inactivityMinutes of quiet', () => {
     const onEnter = vi.fn();
     const { rerender } = mount({ onEnter });
