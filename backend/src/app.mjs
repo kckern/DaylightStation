@@ -1991,12 +1991,32 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     configService,
     logger: rootLogger.child({ module: 'composer-store' })
   });
+  // Minimal Plex children seam for the piano activity strip (collection →
+  // shows). Same contract as schoolPlexClient.children below: thumbs come
+  // back app-proxied.
+  const pianoPlexAdapter = contentRegistry?.get('plex') || null;
+  const pianoPlexClient = pianoPlexAdapter ? {
+    children: async (ratingKey) => {
+      if (!pianoPlexAdapter?.client) return [];
+      const data = await pianoPlexAdapter.client.getContainer(`/library/metadata/${ratingKey}/children`);
+      const items = data?.MediaContainer?.Metadata || [];
+      const proxyPath = pianoPlexAdapter.proxyPath;
+      return items.map((item) => {
+        const rewritten = { ...item };
+        if (typeof rewritten.thumb === 'string' && rewritten.thumb.startsWith('/')) {
+          rewritten.thumb = `${proxyPath}${rewritten.thumb}`;
+        }
+        return rewritten;
+      });
+    },
+  } : null;
   const pianoContainer = new PianoContainer({
     studioDatastore: pianoStudioDatastore,
     fitnessPlayableService,
     userVideoProgressStore: contentServices.userVideoProgressStore,
     composerSongStore,
     configService,
+    plexClient: pianoPlexClient,
     logger: rootLogger.child({ module: 'piano-api' })
   });
   v1Routers.piano = createPianoRouter({
