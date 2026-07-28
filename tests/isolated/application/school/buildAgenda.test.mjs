@@ -9,7 +9,7 @@ import {
 } from '#testlib/school/lifecycleFakes.mjs';
 import {
   rawUnits, rawDocuments, rawManifests, BANK_IDS,
-  MEDIA_UNIT, WORKSHEET_UNIT, OMR_UNIT, MIXED_UNIT,
+  MEDIA_UNIT, WORKSHEET_UNIT, OMR_UNIT, MIXED_UNIT, fixtureUnit,
 } from '#testlib/school/lifecycleFixtures.mjs';
 
 let clock, catalog, curriculum, sessions, tokens, assignments, useCase;
@@ -48,8 +48,10 @@ describe('the agenda document', () => {
 
   it('prints locked units WITH their remedy rather than hiding them', async () => {
     const text = transcript((await useCase.execute({ learnerId: 'kid1' })).document);
-    expect(text).toContain('Unlike Denominators');
-    expect(text).toContain('Finish “Equivalent Fractions” first');
+    // Titles come from the fixture, never retyped: a remedy line that names a
+    // unit by a title nothing carries is the drift this suite exists to catch.
+    expect(text).toContain(fixtureUnit(WORKSHEET_UNIT).title);
+    expect(text).toContain(`Finish “${fixtureUnit(MEDIA_UNIT).title}” first`);
   });
 
   it('labels the action from the unit composition, not the reducer default', async () => {

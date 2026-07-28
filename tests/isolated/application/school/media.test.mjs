@@ -8,8 +8,16 @@ import {
   fakeClock, silentLogger,
 } from '#testlib/school/lifecycleFakes.mjs';
 import {
-  rawUnits, rawDocuments, rawManifests, BANK_IDS, MEDIA_UNIT, WORKSHEET_UNIT,
+  rawUnits, rawDocuments, rawManifests, BANK_IDS, MEDIA_UNIT, WORKSHEET_UNIT, fixtureUnit,
 } from '#testlib/school/lifecycleFixtures.mjs';
+
+/**
+ * The video's real running time, read off the manifest the unit points at. The
+ * stall window is `duration + grace`, so a hardcoded round number here would
+ * test a video that does not exist.
+ */
+const MEDIA_SEC = rawManifests().find((m) => m.id === fixtureUnit(MEDIA_UNIT).media).durationSec;
+const GRACE_SEC = 600;
 
 const SID = 'ses_1';
 const TARGETS = [
@@ -19,7 +27,7 @@ const TARGETS = [
 
 let clock, sessions, playback, curriculum, dispatch, completion;
 
-const build = ({ targets = TARGETS, graceSec = 600 } = {}) => {
+const build = ({ targets = TARGETS, graceSec = GRACE_SEC } = {}) => {
   clock = fakeClock();
   const catalog = new FakeCatalog({ units: rawUnits(), documents: rawDocuments(), manifests: rawManifests() });
   curriculum = new CurriculumAccess({ catalog, bankIds: () => BANK_IDS, clock: clock.epoch, logger: silentLogger });
@@ -55,8 +63,8 @@ describe('DispatchMedia', () => {
   it('sends the manifest locator and duration to the chosen target', async () => {
     await openSession();
     const result = await dispatch.execute({ sessionId: SID, target: 'living-room-tv' });
-    expect(result).toMatchObject({ status: 'dispatched', target: 'living-room-tv', contentId: 'plex:481203', durationSec: 600 });
-    expect(playback.dispatches[0]).toMatchObject({ contentId: 'plex:481203', learnerId: 'kid1', durationSec: 600 });
+    expect(result).toMatchObject({ status: 'dispatched', target: 'living-room-tv', contentId: 'plex:481203', durationSec: MEDIA_SEC });
+    expect(playback.dispatches[0]).toMatchObject({ contentId: 'plex:481203', learnerId: 'kid1', durationSec: MEDIA_SEC });
   });
 
   it('records the dispatch with its correlator', async () => {
@@ -174,7 +182,7 @@ describe('the stall window', () => {
   it('holds while the media could still be playing', async () => {
     await openSession();
     await dispatch.execute({ sessionId: SID, target: 'living-room-tv' });
-    clock.advanceMs((600 + 600) * 1000 - 1000);
+    clock.advanceMs((MEDIA_SEC + GRACE_SEC) * 1000 - 1000);
     const check = await completion.checkStalled({ sessionId: SID });
     expect(check).toMatchObject({ stalled: false, reason: 'still_within_window' });
     expect(check.secondsRemaining).toBe(1);
@@ -183,7 +191,7 @@ describe('the stall window', () => {
   it('stalls once duration plus grace has passed with no signal', async () => {
     await openSession();
     await dispatch.execute({ sessionId: SID, target: 'living-room-tv' });
-    clock.advanceMs((600 + 600) * 1000 + 1000);
+    clock.advanceMs((MEDIA_SEC + GRACE_SEC) * 1000 + 1000);
     expect(await completion.checkStalled({ sessionId: SID })).toMatchObject({ stalled: true });
     expect(sessions.derive(SID).mediaDispatch.status).toBe('stalled');
   });
@@ -218,7 +226,7 @@ describe('the stall window', () => {
   it('honours a per-call grace override', async () => {
     await openSession();
     await dispatch.execute({ sessionId: SID, target: 'living-room-tv' });
-    clock.advanceMs(601 * 1000);
+    clock.advanceMs((MEDIA_SEC + 1) * 1000);
     expect(await completion.checkStalled({ sessionId: SID, graceSec: 0 })).toMatchObject({ stalled: true });
   });
 

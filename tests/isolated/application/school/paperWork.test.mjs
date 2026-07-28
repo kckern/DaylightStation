@@ -1,18 +1,39 @@
+/**
+ * Paper in: what a hand-in means, and what a bubble sheet decodes to.
+ *
+ * EVERY answer below is the REAL bank's answer TEXT ('5/6'), never a bubble
+ * letter. That distinction is the whole suite: this file used to grade against a
+ * hand-written bank whose `answer` was 'C', so a decoder returning the letter
+ * instead of the choice printed under the bubble agreed with the fixture and
+ * disagreed with every real sheet — 0 out of 6, green tests.
+ */
 import { describe, it, expect, beforeEach } from 'vitest';
 import { SubmitPaperWork } from '#apps/school/usecases/SubmitPaperWork.mjs';
 import { GradeSubmission } from '#apps/school/usecases/GradeSubmission.mjs';
 import { CurriculumAccess } from '#apps/school/CurriculumAccess.mjs';
 import { VirtualOmrReader } from '#adapters/hardware/omr/VirtualOmrReader.mjs';
+import { questionItemIds } from '#domains/school/documents/documentValidation.mjs';
 import {
   FakeCatalog, FakeSessionRepository, FakeFormMapStore, FakeReviewQueue,
   fakeClock, silentLogger,
 } from '#testlib/school/lifecycleFakes.mjs';
 import {
-  rawUnits, rawDocuments, rawManifests, BANK_IDS, omrFormMap, omrBank,
-  WORKSHEET_UNIT, OMR_UNIT,
+  rawUnits, rawDocuments, rawManifests, BANK_IDS, printedFormMap, correctBubbles,
+  fixtureBank, fixtureDocument, OMR_BANK_ID, MEDIA_BANK_ID, OMR_DOCUMENT_ID,
+  WORKSHEET_UNIT, WORKSHEET_DOCUMENT_ID, OMR_UNIT,
 } from '#testlib/school/lifecycleFixtures.mjs';
 
 const SID = 'ses_1';
+
+const OMR_BANK = fixtureBank(OMR_BANK_ID);
+/** The six items the PAPER poses, in printed order — the score's denominator. */
+const PRINTED = questionItemIds(fixtureDocument(OMR_DOCUMENT_ID));
+/** itemId → the bank's answer TEXT, which is what a decoded bubble must equal. */
+const RIGHT = Object.fromEntries(OMR_BANK.items.map((i) => [i.id, i.answer]));
+/** The same, but three of them wrong — a real distractor off the same bank item. */
+const wrongFor = (itemId) => OMR_BANK.items.find((i) => i.id === itemId).choices.find((c) => c !== RIGHT[itemId]);
+const someWrong = (ids) => ({ ...RIGHT, ...Object.fromEntries(ids.map((id) => [id, wrongFor(id)])) });
+const without = (ids) => Object.fromEntries(Object.entries(RIGHT).filter(([id]) => !ids.includes(id)));
 
 /**
  * A stand-in for `SchoolService` with its two grading methods and its attempt
@@ -40,8 +61,8 @@ class FakeGrader {
 let clock, sessions, formMaps, reviewQueue, grader, submit, grade;
 
 const BANKS = {
-  'fractions-03-bank': omrBank(),
-  'fractions-01-quiz': { id: 'fractions-01-quiz', items: [{ id: 'q1', type: 'multiple_choice', answer: 'A' }] },
+  [OMR_BANK_ID]: OMR_BANK,
+  [MEDIA_BANK_ID]: fixtureBank(MEDIA_BANK_ID),
 };
 
 const build = () => {
@@ -68,45 +89,49 @@ beforeEach(() => build());
 describe('SubmitPaperWork classification', () => {
   it('scores what it can and records the hand-in', async () => {
     await issued();
-    const result = await submit.execute({ sessionId: SID, entries: { q1: 'C', q2: 'B' } });
-    expect(result).toMatchObject({ status: 'submitted', expectedItems: ['q1', 'q2'], review: [] });
-    expect(result.scorable).toEqual({ q1: 'C', q2: 'B' });
+    const result = await submit.execute({ sessionId: SID, entries: RIGHT });
+    expect(result).toMatchObject({ status: 'submitted', expectedItems: PRINTED, review: [] });
+    expect(result.scorable).toEqual(RIGHT);
     expect(sessions.types(SID)).toEqual(['created', 'issued', 'submitted']);
     expect(sessions.derive(SID).transport).toBe('paper');
   });
 
   it('sends an AMBIGUOUS row to a person instead of guessing', async () => {
     await issued();
-    const result = await submit.execute({ sessionId: SID, entries: { q1: 'C' }, ambiguous: ['q2'] });
-    expect(result.scorable).toEqual({ q1: 'C' });
-    expect(result.review).toEqual([expect.objectContaining({ itemId: 'q2', reason: 'ambiguous' })]);
+    const result = await submit.execute({ sessionId: SID, entries: without(['u3-q2']), ambiguous: ['u3-q2'] });
+    expect(result.scorable).toEqual(without(['u3-q2']));
+    expect(result.review).toEqual([expect.objectContaining({ itemId: 'u3-q2', reason: 'ambiguous' })]);
     expect(await reviewQueue.listForSession(SID)).toHaveLength(1);
   });
 
   it('sends a BLANK row to a person rather than marking it wrong', async () => {
     await issued();
-    const result = await submit.execute({ sessionId: SID, entries: { q1: 'C' }, blank: ['q2'] });
-    expect(result.review[0]).toMatchObject({ itemId: 'q2', reason: 'blank' });
+    const result = await submit.execute({ sessionId: SID, entries: without(['u3-q2']), blank: ['u3-q2'] });
+    expect(result.review[0]).toMatchObject({ itemId: 'u3-q2', reason: 'blank' });
   });
 
   it('treats a missing answer as blank — the sheet is out of what it printed', async () => {
     await issued();
-    const result = await submit.execute({ sessionId: SID, entries: { q1: 'C' } });
-    expect(result.expectedItems).toEqual(['q1', 'q2']);
-    expect(result.review[0]).toMatchObject({ itemId: 'q2', reason: 'blank' });
+    const result = await submit.execute({ sessionId: SID, entries: without(['u3-q6']) });
+    expect(result.expectedItems).toEqual(PRINTED);
+    expect(result.review).toEqual([expect.objectContaining({ itemId: 'u3-q6', reason: 'blank' })]);
   });
 
   it('sends free-response work to a person — no bank means nothing to compare', async () => {
     await issued(WORKSHEET_UNIT);
-    const result = await submit.execute({ sessionId: SID, entries: { q1: '11/12', q2: '7/12' } });
+    const written = questionItemIds(fixtureDocument(WORKSHEET_DOCUMENT_ID));
+    const result = await submit.execute({
+      sessionId: SID, entries: Object.fromEntries(written.map((id, i) => [id, `${i + 1}/12`])),
+    });
     expect(result.scorable).toEqual({});
-    expect(result.review.map((r) => r.reason)).toEqual(['free_response', 'free_response']);
+    expect(result.review.map((r) => r.reason)).toEqual(written.map(() => 'free_response'));
+    // The prompt a parent sees IS the unit's own rubric, not a paraphrase.
     expect(result.review[0].prompt).toContain('Mark each');
   });
 
   it('carries the learner and unit into the queue so a parent knows whose work it is', async () => {
     await issued();
-    await submit.execute({ sessionId: SID, entries: {}, blank: ['q1', 'q2'] });
+    await submit.execute({ sessionId: SID, entries: {}, blank: PRINTED });
     expect((await reviewQueue.listPending())[0]).toMatchObject({ learnerId: 'kid1', unitId: OMR_UNIT });
   });
 });
@@ -114,8 +139,8 @@ describe('SubmitPaperWork classification', () => {
 describe('SubmitPaperWork refusals', () => {
   it('rejects a DUPLICATE submission and points at the existing result', async () => {
     await issued();
-    await submit.execute({ sessionId: SID, entries: { q1: 'C', q2: 'B' } });
-    const second = await submit.execute({ sessionId: SID, entries: { q1: 'A', q2: 'A' } });
+    await submit.execute({ sessionId: SID, entries: RIGHT });
+    const second = await submit.execute({ sessionId: SID, entries: someWrong(PRINTED) });
     expect(second.status).toBe('duplicate');
     expect(second.pointsAt).toMatchObject({ state: 'submitted' });
     expect(sessions.types(SID)).toEqual(['created', 'issued', 'submitted']);
@@ -123,7 +148,7 @@ describe('SubmitPaperWork refusals', () => {
 
   it('refuses work that was never printed', async () => {
     await sessions.appendEvent(SID, { type: 'created', at: clock.iso(), sessionId: SID, learnerId: 'kid1', unitId: OMR_UNIT });
-    expect(await submit.execute({ sessionId: SID, entries: { q1: 'C' } })).toMatchObject({ status: 'unavailable' });
+    expect(await submit.execute({ sessionId: SID, entries: RIGHT })).toMatchObject({ status: 'unavailable' });
   });
 
   it('explains an unknown session', async () => {
@@ -134,32 +159,44 @@ describe('SubmitPaperWork refusals', () => {
 describe('SubmitPaperWork from a bubble sheet', () => {
   const reader = new VirtualOmrReader({ logger: silentLogger });
 
-  it('reads the real form map the printer produced', async () => {
+  it('decodes each bubble to the CHOICE TEXT printed under it, not its letter', async () => {
     const artifactId = await issued();
-    await formMaps.put(artifactId, omrFormMap());
-    const sheet = reader.scanSheet({ formMap: omrFormMap(), chosen: { q1: 'C', q2: 'B' } });
+    const formMap = printedFormMap();
+    await formMaps.put(artifactId, formMap);
+
+    const chosen = correctBubbles({ formMap });
+    // What a child fills in is a letter…
+    expect(Object.values(chosen).every((c) => /^[A-D]$/.test(c))).toBe(true);
+
+    const sheet = reader.scanSheet({ formMap, chosen });
     const result = await submit.fromOmrSheet({ sessionId: SID, sheet });
-    expect(result.scorable).toEqual({ q1: 'C', q2: 'B' });
+    // …and what reaches the grader is the answer the bank holds. A decoder that
+    // handed the letter over would score every one of these wrong.
+    expect(result.scorable).toEqual(RIGHT);
   });
 
   it('routes a smudged row to review', async () => {
     const artifactId = await issued();
-    await formMaps.put(artifactId, omrFormMap());
-    const sheet = reader.scanSheet({ formMap: omrFormMap(), chosen: { q1: 'C' }, ambiguous: ['q2'] });
+    const formMap = printedFormMap();
+    await formMaps.put(artifactId, formMap);
+    const chosen = correctBubbles({ formMap });
+    delete chosen['u3-q2'];
+    const sheet = reader.scanSheet({ formMap, chosen, ambiguous: ['u3-q2'] });
     const result = await submit.fromOmrSheet({ sessionId: SID, sheet });
-    expect(result.review).toEqual([expect.objectContaining({ itemId: 'q2', reason: 'ambiguous' })]);
+    expect(result.review).toEqual([expect.objectContaining({ itemId: 'u3-q2', reason: 'ambiguous' })]);
   });
 
   it('refuses a sheet with no stored form map rather than scoring blind', async () => {
     await issued();
-    const sheet = reader.scanSheet({ formMap: omrFormMap(), chosen: { q1: 'C' } });
+    const formMap = printedFormMap();
+    const sheet = reader.scanSheet({ formMap, chosen: correctBubbles({ formMap }) });
     expect(await submit.fromOmrSheet({ sessionId: SID, sheet })).toMatchObject({ status: 'unavailable' });
     expect(sessions.types(SID)).toEqual(['created', 'issued']);
   });
 
   it('refuses a sheet that does not match the form it claims', async () => {
     const artifactId = await issued();
-    await formMaps.put(artifactId, omrFormMap());
+    await formMaps.put(artifactId, printedFormMap());
     expect(await submit.fromOmrSheet({ sessionId: SID, sheet: { marks: [1, 2, 3, 4] } })).toMatchObject({ status: 'unavailable' });
   });
 });
@@ -171,64 +208,71 @@ describe('GradeSubmission through the one engine', () => {
   };
 
   it('produces normal quiz attempts carrying transport: paper', async () => {
-    await submitAll({ q1: 'C', q2: 'B' });
-    const result = await grade.execute({ sessionId: SID, entries: { q1: 'C', q2: 'B' } });
-    expect(result).toMatchObject({ status: 'graded', percent: 100, correct: 2, expected: 2 });
+    await submitAll(RIGHT);
+    const result = await grade.execute({ sessionId: SID, entries: RIGHT });
+    expect(result).toMatchObject({ status: 'graded', percent: 100, correct: PRINTED.length, expected: PRINTED.length });
     expect(grader.attempts.every((a) => a.transport === 'paper' && a.mode === 'quiz')).toBe(true);
   });
 
   it('scores out of what the sheet printed, not out of what came back', async () => {
-    await submitAll({ q1: 'C' });
-    const result = await grade.execute({ sessionId: SID, entries: { q1: 'C' } });
-    // q2 came back blank, so it is outstanding — NOT counted wrong out of one.
-    expect(result).toMatchObject({ status: 'awaiting_review', correct: 1, expected: 2, outstanding: ['q2'] });
+    const partial = without(['u3-q6']);
+    await submitAll(partial);
+    const result = await grade.execute({ sessionId: SID, entries: partial });
+    // u3-q6 came back blank, so it is outstanding — NOT counted wrong out of five.
+    expect(result).toMatchObject({ status: 'awaiting_review', correct: 5, expected: 6, outstanding: ['u3-q6'] });
     expect(sessions.types(SID)).not.toContain('graded');
   });
 
   it('records the grade only when every question has a verdict', async () => {
-    await submitAll({ q1: 'C' });
-    await grade.execute({ sessionId: SID, entries: { q1: 'C' } });
-    const finished = await grade.execute({ sessionId: SID, verdicts: { q2: 'correct' }, gradedBy: 'parent' });
+    const partial = without(['u3-q6']);
+    await submitAll(partial);
+    await grade.execute({ sessionId: SID, entries: partial });
+    const finished = await grade.execute({ sessionId: SID, verdicts: { 'u3-q6': 'correct' }, gradedBy: 'parent' });
     expect(finished).toMatchObject({ status: 'graded', percent: 100 });
     expect(sessions.derive(SID)).toMatchObject({ state: 'graded', gradedPercent: 100 });
   });
 
   it('keeps a parent verdict in the review queue, NOT in the attempt log', async () => {
-    await submitAll({}, { blank: ['q1', 'q2'] });
-    await grade.execute({ sessionId: SID, verdicts: { q1: 'correct', q2: 'incorrect' }, gradedBy: 'parent' });
+    await submitAll({}, { blank: PRINTED });
+    const verdicts = Object.fromEntries(PRINTED.map((id, i) => [id, i === 0 ? 'incorrect' : 'correct']));
+    await grade.execute({ sessionId: SID, verdicts, gradedBy: 'parent' });
     expect(grader.attempts).toEqual([]);
     const queue = await reviewQueue.listForSession(SID);
-    expect(queue.map((i) => [i.itemId, i.verdict, i.gradedBy])).toEqual([['q1', 'correct', 'parent'], ['q2', 'incorrect', 'parent']]);
+    expect(queue.map((i) => [i.itemId, i.verdict, i.gradedBy]))
+      .toEqual(PRINTED.map((id, i) => [id, i === 0 ? 'incorrect' : 'correct', 'parent']));
   });
 
   it('points a wholly parent-marked sheet at its own session for evidence', async () => {
-    await submitAll({}, { blank: ['q1', 'q2'] });
-    const result = await grade.execute({ sessionId: SID, verdicts: { q1: 'correct', q2: 'correct' }, gradedBy: 'parent' });
+    await submitAll({}, { blank: PRINTED });
+    const result = await grade.execute({
+      sessionId: SID, verdicts: Object.fromEntries(PRINTED.map((id) => [id, 'correct'])), gradedBy: 'parent',
+    });
     expect(result.attemptIds).toEqual([`review:${SID}`]);
   });
 
   it('marks a wrong answer wrong', async () => {
-    await submitAll({ q1: 'A', q2: 'B' });
-    expect(await grade.execute({ sessionId: SID, entries: { q1: 'A', q2: 'B' } }))
-      .toMatchObject({ status: 'graded', percent: 50, correct: 1 });
+    const missed = someWrong(['u3-q4', 'u3-q5', 'u3-q6']);
+    await submitAll(missed);
+    expect(await grade.execute({ sessionId: SID, entries: missed }))
+      .toMatchObject({ status: 'graded', percent: 50, correct: 3 });
   });
 
   it('rejects a second marking and points at the first result', async () => {
-    await submitAll({ q1: 'C', q2: 'B' });
-    await grade.execute({ sessionId: SID, entries: { q1: 'C', q2: 'B' } });
-    const second = await grade.execute({ sessionId: SID, entries: { q1: 'A', q2: 'A' } });
+    await submitAll(RIGHT);
+    await grade.execute({ sessionId: SID, entries: RIGHT });
+    const second = await grade.execute({ sessionId: SID, entries: someWrong(PRINTED) });
     expect(second).toMatchObject({ status: 'duplicate', percent: 100 });
     expect(sessions.types(SID).filter((t) => t === 'graded')).toHaveLength(1);
   });
 
   it('refuses to mark work that was never handed in', async () => {
     await issued();
-    expect(await grade.execute({ sessionId: SID, entries: { q1: 'C' } })).toMatchObject({ status: 'unavailable' });
+    expect(await grade.execute({ sessionId: SID, entries: RIGHT })).toMatchObject({ status: 'unavailable' });
   });
 
   it('opens exactly one quiz session for a whole sheet', async () => {
-    await submitAll({ q1: 'C', q2: 'B' });
-    await grade.execute({ sessionId: SID, entries: { q1: 'C', q2: 'B' } });
+    await submitAll(RIGHT);
+    await grade.execute({ sessionId: SID, entries: RIGHT });
     expect(grader.sessions).toBe(1);
   });
 });

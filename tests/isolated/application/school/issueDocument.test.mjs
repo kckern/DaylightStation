@@ -9,8 +9,9 @@ import {
   fakeClock, seededRng, silentLogger,
 } from '#testlib/school/lifecycleFakes.mjs';
 import {
-  rawUnits, rawDocuments, rawManifests, BANK_IDS, omrFormMap,
+  rawUnits, rawDocuments, rawManifests, BANK_IDS, printedFormMap,
   WORKSHEET_UNIT, OMR_UNIT, MEDIA_UNIT, MIXED_UNIT,
+  WORKSHEET_DOCUMENT_ID, OMR_DOCUMENT_ID,
 } from '#testlib/school/lifecycleFixtures.mjs';
 
 let clock, sessions, tokens, formMaps, renderer, printer, useCase;
@@ -83,7 +84,7 @@ describe('the happy path', () => {
 
   it('leaves an action naming no token class alone — not every box is a ticket', async () => {
     await openSession();
-    const doc = rawDocuments().find((d) => d.id === 'fractions-02-worksheet');
+    const doc = rawDocuments().find((d) => d.id === WORKSHEET_DOCUMENT_ID);
     expect(doc.blocks.some((b) => b.type === 'scan_action' && b.action === 'recovery')).toBe(true);
     const result = await useCase.execute({ sessionId: SID });
     expect(Object.keys(result.tokens)).toEqual(['recovery']);
@@ -122,13 +123,13 @@ describe('the happy path', () => {
 });
 
 describe('form maps', () => {
-  beforeEach(() => build({ formMapFor: (doc, opts) => omrFormMap({ documentId: doc.id, variant: opts.variant ?? 0 }) }));
+  beforeEach(() => build({ formMapFor: (doc, opts) => printedFormMap({ documentId: doc.id, variant: opts.variant ?? 0 }) }));
 
   it('keeps the form map under the artifact id', async () => {
     await openSession(OMR_UNIT);
     const result = await useCase.execute({ sessionId: SID });
     expect(formMaps.ids()).toEqual([result.artifactId]);
-    expect(await formMaps.get(result.artifactId)).toMatchObject({ documentId: 'fractions-03-omr' });
+    expect(await formMaps.get(result.artifactId)).toMatchObject({ documentId: OMR_DOCUMENT_ID });
   });
 
   it('a reprint resolves to the IDENTICAL form map', async () => {

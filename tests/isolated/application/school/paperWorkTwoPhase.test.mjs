@@ -2,22 +2,36 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { SubmitPaperWork } from '#apps/school/usecases/SubmitPaperWork.mjs';
 import { GradeSubmission } from '#apps/school/usecases/GradeSubmission.mjs';
 import { CurriculumAccess } from '#apps/school/CurriculumAccess.mjs';
+import { questionItemIds } from '#domains/school/documents/documentValidation.mjs';
 import {
   FakeCatalog, FakeSessionRepository, FakeFormMapStore, FakeReviewQueue,
   fakeClock, silentLogger,
 } from '#testlib/school/lifecycleFakes.mjs';
 import {
-  rawUnits, rawDocuments, rawManifests, BANK_IDS, omrBank, OMR_UNIT,
+  rawUnits, rawDocuments, rawManifests, BANK_IDS, OMR_UNIT,
+  fixtureBank, fixtureDocument, OMR_BANK_ID, OMR_DOCUMENT_ID,
 } from '#testlib/school/lifecycleFixtures.mjs';
 
 /**
  * Marking a paper sheet is not one moment. The engine reads the bubbles now; a
  * parent may read the handwriting tomorrow, from a different device, holding
  * nothing but the queue. These are the tests that pin that seam.
+ *
+ * Answers are the real bank's answer TEXT throughout.
  */
 
 const SID = 'ses_1';
-const BANK = omrBank();
+const BANK = fixtureBank(OMR_BANK_ID);
+const PRINTED = questionItemIds(fixtureDocument(OMR_DOCUMENT_ID));
+/** The item the reader smudges, so a person has to finish the sheet. */
+const SMUDGED = PRINTED[PRINTED.length - 1];
+const MACHINE_READ = PRINTED.filter((id) => id !== SMUDGED);
+
+const answerFor = (id) => BANK.items.find((i) => i.id === id).answer;
+const distractorFor = (id) => BANK.items.find((i) => i.id === id).choices.find((c) => c !== answerFor(id));
+
+/** Five bubbles the reader could read: three right, two wrong. */
+const READ = Object.fromEntries(MACHINE_READ.map((id, i) => [id, i < 3 ? answerFor(id) : distractorFor(id)]));
 
 class FakeGrader {
   constructor() { this.attempts = []; this.sessions = 0; }
@@ -52,44 +66,50 @@ beforeEach(async () => {
   await sessions.appendEvent(SID, { type: 'issued', at: clock.iso(), sessionId: SID, artifactId: 'art_1' });
 });
 
+const handIn = (entries = READ) => submit.execute({ sessionId: SID, entries, ambiguous: [SMUDGED] });
+
 describe('machine now, parent later', () => {
   it('the parent finishes the sheet WITHOUT re-sending the answers', async () => {
-    await submit.execute({ sessionId: SID, entries: { q1: 'C' }, ambiguous: ['q2'] });
-    const first = await grade.execute({ sessionId: SID, entries: { q1: 'C' } });
-    expect(first).toMatchObject({ status: 'awaiting_review', outstanding: ['q2'] });
+    await handIn();
+    const first = await grade.execute({ sessionId: SID, entries: READ });
+    expect(first).toMatchObject({ status: 'awaiting_review', outstanding: [SMUDGED] });
 
     clock.advanceDays(1);
     // A day later, from the parent surface: a verdict and nothing else.
-    const second = await grade.execute({ sessionId: SID, verdicts: { q2: 'incorrect' }, gradedBy: 'parent' });
-    expect(second).toMatchObject({ status: 'graded', percent: 50, correct: 1, expected: 2 });
+    const second = await grade.execute({ sessionId: SID, verdicts: { [SMUDGED]: 'incorrect' }, gradedBy: 'parent' });
+    expect(second).toMatchObject({ status: 'graded', percent: 50, correct: 3, expected: 6 });
   });
 
   it('does not re-grade an item the engine already marked', async () => {
-    await submit.execute({ sessionId: SID, entries: { q1: 'C' }, ambiguous: ['q2'] });
-    await grade.execute({ sessionId: SID, entries: { q1: 'C' } });
-    await grade.execute({ sessionId: SID, entries: { q1: 'C' }, verdicts: { q2: 'correct' }, gradedBy: 'parent' });
-    expect(grader.attempts).toHaveLength(1);
+    await handIn();
+    await grade.execute({ sessionId: SID, entries: READ });
+    await grade.execute({ sessionId: SID, entries: READ, verdicts: { [SMUDGED]: 'correct' }, gradedBy: 'parent' });
+    expect(grader.attempts).toHaveLength(MACHINE_READ.length);
   });
 
   it('keeps the engine\'s marks off the parent\'s pending list', async () => {
-    await submit.execute({ sessionId: SID, entries: { q1: 'C' }, ambiguous: ['q2'] });
-    await grade.execute({ sessionId: SID, entries: { q1: 'C' } });
-    expect((await reviewQueue.listPending()).map((i) => i.itemId)).toEqual(['q2']);
+    await handIn();
+    await grade.execute({ sessionId: SID, entries: READ });
+    expect((await reviewQueue.listPending()).map((i) => i.itemId)).toEqual([SMUDGED]);
   });
 
   it('records who marked each item — engine or person', async () => {
-    await submit.execute({ sessionId: SID, entries: { q1: 'C' }, ambiguous: ['q2'] });
-    await grade.execute({ sessionId: SID, entries: { q1: 'C' } });
-    await grade.execute({ sessionId: SID, verdicts: { q2: 'correct' }, gradedBy: 'parent' });
+    await handIn();
+    await grade.execute({ sessionId: SID, entries: READ });
+    await grade.execute({ sessionId: SID, verdicts: { [SMUDGED]: 'correct' }, gradedBy: 'parent' });
     const queue = await reviewQueue.listForSession(SID);
-    expect(queue.map((i) => [i.itemId, i.gradedBy])).toEqual([['q2', 'parent'], ['q1', 'engine']]);
+    expect(queue.map((i) => [i.itemId, i.gradedBy]))
+      .toEqual([[SMUDGED, 'parent'], ...MACHINE_READ.map((id) => [id, 'engine'])]);
   });
 
   it('a parent may overrule the engine before the sheet is closed', async () => {
-    await submit.execute({ sessionId: SID, entries: { q1: 'A' }, ambiguous: ['q2'] });
-    await grade.execute({ sessionId: SID, entries: { q1: 'A' } }); // wrong per the bank
+    const allWrong = Object.fromEntries(MACHINE_READ.map((id) => [id, distractorFor(id)]));
+    await handIn(allWrong);
+    await grade.execute({ sessionId: SID, entries: allWrong }); // every one wrong per the bank
     const result = await grade.execute({
-      sessionId: SID, verdicts: { q1: 'correct', q2: 'correct' }, gradedBy: 'parent',
+      sessionId: SID,
+      verdicts: Object.fromEntries(PRINTED.map((id) => [id, 'correct'])),
+      gradedBy: 'parent',
     });
     expect(result).toMatchObject({ status: 'graded', percent: 100 });
   });

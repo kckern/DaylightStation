@@ -12,7 +12,7 @@ import {
 } from '#testlib/school/lifecycleFakes.mjs';
 import {
   rawUnits, rawDocuments, rawManifests, BANK_IDS,
-  WORKSHEET_UNIT, OMR_UNIT, MIXED_UNIT,
+  WORKSHEET_UNIT, OMR_UNIT, MIXED_UNIT, MEDIA_UNIT, fixtureUnit,
 } from '#testlib/school/lifecycleFixtures.mjs';
 
 const SID = 'ses_1';
@@ -118,14 +118,18 @@ describe('the result receipt', () => {
     const action = result.document.blocks.find((b) => b.type === 'scan_action');
     expect(isSchoolToken(action.action)).toBe(true);
     expect(await tokens.get(action.action)).toMatchObject({ tokenClass: 'remediation', subject: { sessionId: SID } });
-    expect(result.document.blocks.map((b) => b.md ?? '').join('\n')).toContain('Add unlike denominators');
+    // The objectives printed back are the unit's OWN, verbatim — a receipt that
+    // paraphrases is a receipt a child cannot match to the sheet in their hand.
+    expect(result.document.blocks.map((b) => b.md ?? '').join('\n'))
+      .toContain(fixtureUnit(WORKSHEET_UNIT).objectives[0]);
   });
 
   it('names the newly unlocked next unit on a pass', async () => {
-    await graded({ unitId: 'math-fractions.01', percent: 100 });
+    await graded({ unitId: MEDIA_UNIT, percent: 100 });
     const result = await close.execute({ sessionId: SID });
-    expect(result.unlocked).toMatchObject({ unitId: WORKSHEET_UNIT, title: 'Unlike Denominators' });
-    expect(result.document.blocks.map((b) => b.md ?? '').join('\n')).toContain('Next up: Unlike Denominators');
+    const next = fixtureUnit(WORKSHEET_UNIT).title;
+    expect(result.unlocked).toMatchObject({ unitId: WORKSHEET_UNIT, title: next });
+    expect(result.document.blocks.map((b) => b.md ?? '').join('\n')).toContain(`Next up: ${next}`);
   });
 
   it('promises no next unit at the end of a course', async () => {
