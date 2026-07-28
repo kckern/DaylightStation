@@ -233,6 +233,23 @@ busctl --system call org.bluez /org/bluez/hciN/dev_<MAC_UNDER> org.bluez.Device1
 ```
 Verify the sink exists: `sudo -u kckern XDG_RUNTIME_DIR=/run/user/1000 mpv --audio-device=help | grep bluez`.
 
+### Watchdog audio-stack recovery
+
+The monitor watchdog does more than respawn mpv. When a connected, scheduled
+slot fails to launch repeatedly **and** its expected `bluez_output.<MAC>.1` sink
+is absent, it records the failure and, after three failures in two minutes,
+restarts the kckern user services `wireplumber`, `pipewire-pulse`, and
+`pipewire`. It then probes for the triggering headset's sink for up to eight
+seconds. Recovery is serialized across slots and rate-limited to one attempt
+per five minutes, so a normal Bluetooth renegotiation or a bad media file does
+not cause a service storm.
+
+If two audio-stack recovery attempts fail, the watchdog asks systemd to restart
+`playback-hub.service`, with a 30-minute cooldown. The events
+`audio.start_failed`, `audio.stack_recovery`, `audio.stack_recovered`, and
+`hub.self_recovery` show the escalation path in the slot event ledger and hub
+log. Pairing is not changed by this recovery path.
+
 ### Critical: don't add `--audio-fallback-to-null=yes` or `PIPEWIRE_PROPS=node.dont-reconnect`
 
 This combination silently silences mpv. On any transient pipewire sink hiccup (which happens normally during BT transport setup), mpv falls back to the null AO and stays silent forever. Status will keep reporting `playing=1` and time-pos will advance because mpv is decoding into the void. The TX bytes on the BT controller will still climb at ~47 KB/s but the actual SBC payload is silence.

@@ -539,7 +539,7 @@ No code exists for anything in this section. Each links its spec.
 
 | Sub-project | Spec | Shape |
 |---|---|---|
-| **Writing assignments** | [`2026-07-21-school-writing-assignments-design.md`](../../superpowers/specs/2026-07-21-school-writing-assignments-design.md) | TipTap, light rich text, no spell check. Bluetooth keyboard |
+| **Writing assignments** | [`2026-07-26-school-composition-delivery-design.md`](../../superpowers/specs/2026-07-26-school-composition-delivery-design.md) | Keyboard-first composition, curriculum-defined submission, advisory rubric feedback, and parent-controlled print/email/postal outbox |
 | **Typing tutor** | [`2026-07-21-school-typing-tutor-design.md`](../../superpowers/specs/2026-07-21-school-typing-tutor-design.md) | Drill (curriculum) + arcade, modelled on `PianoSpaceInvaders`' pure-engine split. No npm dependency |
 | Curriculum / assignments | — | Not yet designed |
 | Parent view, sign-off, reassignment UI | — | Not yet designed. **The reassignment UI is unbuilt**; today's storage makes it *possible*, nothing performs it |
