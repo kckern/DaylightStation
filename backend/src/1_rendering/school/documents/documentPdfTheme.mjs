@@ -103,15 +103,25 @@ export const documentPdfTheme = Object.freeze({
     spacingClass: 'body',
   },
 
+  /**
+   * A bubble row is one reader column, so every bubble of an item MUST share a
+   * single y — the choice text therefore sits UNDER its bubble (where it can
+   * wrap freely) instead of beside it (where a long choice would force a second
+   * row and split the item across two reader columns).
+   */
   omr: {
     letters: 'ABCDEFGH',
-    rowHeightPt: 26,
+    rowHeightPt: 22,
     bubbleRadiusPt: 6.5,
-    bubblePitchPt: 54,
     bubbleStrokeWidthPt: 0.9,
     labelSizePt: 10,
-    labelGapPt: 5,
+    labelGapPt: 4,
     indentPt: 10,
+    choiceSizePt: 10,
+    choiceLeadingPt: 12.5,
+    choiceGapPt: 3,
+    /** Lines of choice text reserved when the probe has no bank to measure. */
+    probeChoiceLines: 2,
     spacingClass: 'body',
   },
 
