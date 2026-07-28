@@ -1209,11 +1209,15 @@
       &-track { fill: none; stroke: rgba(255, 255, 255, 0.28); stroke-width: 3.4; }
       &-fill { fill: none; stroke: #4ade80; stroke-width: 3.4; stroke-linecap: round; }
 
+      // Explicit box, not `auto`: an absolutely-positioned replaced element
+      // (the avatar <img>) resolves width:auto to its INTRINSIC size — it
+      // does not stretch between insets like a div would.
       .piano-avatar {
         position: absolute;
-        inset: 0.24rem;
-        width: auto;
-        height: auto;
+        top: 0.24rem;
+        left: 0.24rem;
+        width: calc(100% - 0.48rem);
+        height: calc(100% - 0.48rem);
         font-size: 0.55rem;
       }
     }
