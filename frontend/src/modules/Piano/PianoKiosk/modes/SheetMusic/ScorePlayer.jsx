@@ -971,6 +971,20 @@ export default function ScorePlayer({ score: scoreMeta }) {
     setSelecting(null);
     // Leaving Polish: drop the run summary + grades (they belong to that run).
     setSummaryOpen(false); setGrades({});
+    // Learn is a from-the-top (or from-the-loop) exercise: entering it should not
+    // strand the user wherever the Listen playhead stopped (audit H3.3) — one
+    // field session entered Learn at step 32, mid-piece, with nothing on screen
+    // to explain why the cursor was there.
+    // NOTE: lastAdvanceRef is deliberately NOT stamped here. The mode effect
+    // (`if (mode === 'learn') lastAdvanceRef.current = performance.now()`) runs
+    // after this handler's state commits, so its stamp would overwrite one taken
+    // here anyway — and a post-commit stamp is the more honest reference point
+    // for Learn's pacing telemetry (audit M5a).
+    if (id === 'learn') {
+      const home = homeStep(rangeRef.current);
+      setStep(home);
+      if (home === 0) scrollRef.current?.scrollTo({ top: 0, left: 0 });
+    }
     setMode(id); // keyboard visibility follows the new mode automatically (M2)
     logMode({ mode: id });
     tapIntent('mode');
