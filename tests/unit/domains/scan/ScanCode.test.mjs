@@ -198,8 +198,27 @@ describe('legacy and shape resolution', () => {
     expect(parseScanCode('9791234567896').namespace).toBe('book');
   });
 
-  it('treats other digit-only codes as product', () => {
-    expect(parseScanCode('041260010682')).toMatchObject({ namespace: 'product', form: 'shape' });
+  it('leaves other digit-only codes UNCLAIMED, for the reader route to resolve', () => {
+    // A UPC does not say what it is for: the same tin means "log this food" at
+    // the fridge and nothing at all on a content reader. Claiming it as
+    // `product` here would make a grocery barcode log food on a content-routed
+    // reader, where today it reaches `BarcodePayload.parse`, fails, and does
+    // nothing — the behaviour change Phase 1 forbids. So it falls to step 5.
+    expect(parseScanCode('041260010682')).toEqual({
+      namespace: null, body: '041260010682', raw: '041260010682', form: 'unknown',
+    });
+  });
+
+  it('never resolves `product` from a parse at all', () => {
+    // `product` is a route-fallback target, not a shape. Nothing this module
+    // sees can justify it, so nothing here may return it — that is what keeps
+    // the reader in charge of what a bare barcode means.
+    const digits = [
+      '041260010682', '012000161155', '0', '00', '9', '1234567890128',
+      '9770306406157', '978030640615', '97803064061570', '978', '979',
+      '1234978123456', '9991234979123', '0000000000000', '9'.repeat(10000),
+    ];
+    for (const code of digits) expect(parseScanCode(code).namespace).not.toBe('product');
   });
 
   it('needs an exact legacy tag, not one that merely starts with it', () => {
@@ -247,26 +266,38 @@ describe('legacy and shape resolution', () => {
 });
 
 describe('shape detection — adversarial', () => {
-  it('claims a bare product barcode that used to reach the unknown path', () => {
-    // Before step 4 existed this fell through to `unknown`, leaving the caller
-    // to decide. Shape now claims it outright, and the body stays whole.
+  it('leaves a bare product barcode on the unknown path, for its reader to claim', () => {
+    // A UPC carries no statement of purpose, so the code alone cannot resolve
+    // it and the body stays whole for whoever does.
     expect(parseScanCode('012000161155')).toEqual({
-      namespace: 'product', body: '012000161155', raw: '012000161155', form: 'shape',
+      namespace: null, body: '012000161155', raw: '012000161155', form: 'unknown',
     });
   });
 
   it('requires exactly 13 digits for a Bookland prefix to mean book', () => {
-    for (const code of ['978030640615', '97803064061570', '978'])
-      expect(parseScanCode(code).namespace).toBe('product');
+    for (const code of ['978030640615', '97803064061570', '978']) {
+      expect(parseScanCode(code).namespace).not.toBe('book');
+      expect(parseScanCode(code).form).not.toBe('shape');
+    }
   });
 
   it('does not read a 13-digit non-Bookland code as a book', () => {
-    expect(parseScanCode('1234567890128').namespace).toBe('product');
-    expect(parseScanCode('9770306406157').namespace).toBe('product'); // 977 = ISSN
     // The prefix must be at the FRONT, not merely present: an ordinary grocery
-    // EAN-13 that happens to contain 978/979 mid-string is not a book.
-    expect(parseScanCode('1234978123456').namespace).toBe('product');
-    expect(parseScanCode('9991234979123').namespace).toBe('product');
+    // EAN-13 that happens to contain 978/979 mid-string is not a book. This is
+    // the `startsWith`-not-`includes` guarantee, and it matters MORE now than it
+    // did: shape outranks the reader's route, so a tin mis-claimed as a book
+    // here would go to the book log on every reader in the house, with no
+    // per-reader escape.
+    const notBooks = [
+      '1234567890128',
+      '9770306406157', // 977 = ISSN
+      '1234978123456', // contains 978, does not start with it
+      '9991234979123', // contains 979, does not start with it
+    ];
+    for (const code of notBooks) {
+      expect(parseScanCode(code).namespace).not.toBe('book');
+      expect(parseScanCode(code).form).not.toBe('shape');
+    }
   });
 
   it('is shape-only — it does not verify the ISBN check digit', () => {
@@ -276,8 +307,11 @@ describe('shape detection — adversarial', () => {
   });
 
   it('preserves leading zeros — a barcode is a string, never a number', () => {
+    // Unclaimed codes still carry their body through verbatim, which is what
+    // makes step 5 able to finish the job: the reader's handler gets the exact
+    // digits that were scanned, leading zeros and all.
     expect(parseScanCode('0000000000000').body).toBe('0000000000000');
-    expect(parseScanCode('00')).toMatchObject({ body: '00', namespace: 'product' });
+    expect(parseScanCode('00')).toMatchObject({ body: '00', namespace: null });
   });
 
   it('rejects anything that is not purely ASCII digits', () => {
@@ -293,7 +327,10 @@ describe('shape detection — adversarial', () => {
 
   it('handles a pathologically long digit string without blowing up', () => {
     const long = '9'.repeat(10000);
-    expect(parseScanCode(long)).toMatchObject({ namespace: 'product', form: 'shape' });
+    expect(parseScanCode(long)).toMatchObject({ namespace: null, form: 'unknown' });
+    // And one that DOES hit the Bookland branch, so the length guard is
+    // exercised on both sides rather than short-circuiting on the prefix.
+    expect(parseScanCode(`978${'0'.repeat(10000)}`).namespace).not.toBe('book');
   });
 });
 
