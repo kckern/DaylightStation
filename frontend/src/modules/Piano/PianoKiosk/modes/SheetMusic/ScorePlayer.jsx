@@ -393,6 +393,14 @@ export default function ScorePlayer({ score: scoreMeta }) {
   });
   const transportRef = useRef(null); transportRef.current = transport; // read latest transport inside the tick closure
 
+  // A pause taken purely to rebuild the timeline or re-engrave is not a user
+  // decision — remember where we were and resume there once the layout is fresh.
+  // Both the Listen part-change (audit H5) and the zoom/flow/transpose pause
+  // (audit M3) go through this; without it, choosing a part reads as "this button
+  // breaks the song" and a zoom costs the user their place.
+  const resumeAfterRef = useRef(null);
+  const [resumeTick, setResumeTick] = useState(0);
+
   // Count-in: one measure of click before a run where the user is expected to play
   // (Polish always; Listen when they've claimed a part — wired in a later task). It
   // must be audible BEFORE the transport is graded (audit J1). onGo seeks to the
@@ -614,6 +622,31 @@ export default function ScorePlayer({ score: scoreMeta }) {
   }, [step, flow, mode, current, layoutFresh]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => () => cancelScrollTween(scrollRef.current), []);
 
+  // Resume a rebuild-pause once the engraving matches the current flow/scale.
+  // For a part change `layoutFresh` is already true, so this fires on the very
+  // next commit (the music barely hiccups); for a zoom/flow change it waits for
+  // the re-engrave. Deliberately bypasses toggleRun so no count-in fires — the
+  // user never asked to start a run, they asked to change a setting.
+  // `resumeTick` is the TRIGGER (a part change moves neither layoutFresh nor
+  // stepTimeline, so nothing else would re-run this effect); `layoutFresh` is the
+  // GATE. Both are required.
+  useEffect(() => {
+    const pending = resumeAfterRef.current;
+    if (!pending || !layoutFresh || !events.length) return;
+    resumeAfterRef.current = null;
+    // Same contract toggleRun documents for its resume: pauseForRebuild armed a
+    // delayed panic, and it would otherwise fire ~lookahead+60ms INTO the music we
+    // are about to restart and cut whatever is sounding. This is now the second
+    // resume entry point, so it needs the same cancel.
+    clearTimeout(flushTimerRef.current);
+    const target = rangeRef.current ? clampStepToRange(pending.step, rangeRef.current) : pending.step;
+    setStep(target);
+    setStruck(() => new Set());
+    transportRef.current?.seek((stepTimeline[target]?.t ?? 0) / tempoMult);
+    transportRef.current?.play();
+    logger.info('score.transport.resume', { step: target });
+  }, [resumeTick, layoutFresh, events.length, stepTimeline, tempoMult, logger]);
+
   // Perform page indicator — a rough page = floor(scrollPos / viewport) + 1 over
   // the current flow's axis. Recomputed on scroll + resize while in Perform.
   const { advancePedalCC, backPedalCC } = smCfg.perform;
@@ -816,6 +849,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
     const i = nearestEvent(events, e.clientX - r.left, e.clientY - r.top);
     if (i < 0) return;
     // Normal seek. When a practice range is active, clamp the target into it.
+    resumeAfterRef.current = null; // a tap-seek supersedes a pending rebuild-resume
     clearWrapDwell(); // a tap-seek overrides a pending loop-wrap dwell
     const target = range ? clampStepToRange(i, range) : i;
     // Tap-to-seek is the primary navigation gesture and emitted nothing, so every
@@ -910,6 +944,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
   // ── Bar handlers ──────────────────────────────────────────────────────────────
   const onMode = useCallback((id) => {
     if (id === mode) return;
+    resumeAfterRef.current = null; // a mode change supersedes a pending rebuild-resume
     countIn.cancel();            // a mode change aborts a pending count-in
     setLearnDone(false);         // the Learn completion card belongs to Learn only
     flushPlaybackNow();          // leaving a Polish/Listen run
@@ -940,14 +975,20 @@ export default function ScorePlayer({ score: scoreMeta }) {
   // the geometry extraction is DEFERRED (holdExtraction) — so the sheet would repaint
   // in the new key/size while the audio kept playing the stale one and the cursor
   // vanished (audit H2). Pause + flush first so sound and sheet never diverge.
-  const pauseForViewChange = useCallback(() => {
+  // Same shape for a Listen part change, which rebuilds the note timeline. Neither
+  // is a stop request, so both arm the resume (see the resume effect above).
+  const pauseForRebuild = useCallback((reason) => {
     clearWrapDwell(); // BEFORE the playing check — during the dwell nothing plays
     if (!transportRef.current?.playing) return;
     transport.pause();
     silenceScheduled();
     flushPlaybackNow();
-    logger.info('score.viewchange.pause', {});
+    resumeAfterRef.current = { step: stepRef.current };
+    setResumeTick((t) => t + 1);
+    logger.info('score.viewchange.pause', { reason, step: stepRef.current });
   }, [clearWrapDwell, transport, silenceScheduled, flushPlaybackNow, logger]);
+
+  const pauseForViewChange = useCallback(() => pauseForRebuild('view'), [pauseForRebuild]);
 
   // Listen key transpose: clamp to ±7 semitones (one fifth either way). The renderer
   // re-engraves in the new key and re-extracts pitches, so both the notation and the
@@ -965,6 +1006,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
   const onScaleStep = useCallback((v) => { pauseForViewChange(); setScale(v); }, [pauseForViewChange]);
 
   const reset = useCallback(() => {
+    resumeAfterRef.current = null; // Restart supersedes a pending rebuild-resume
     setSelecting(null);     // Restart means the user is done arming a loop
     countIn.cancel();       // reset aborts a pending count-in
     clearWrapDwell();       // …and any pending loop-wrap dwell
@@ -1025,6 +1067,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
   }, [mode]);
 
   const toggleRun = useCallback(() => {
+    resumeAfterRef.current = null; // an explicit play/pause supersedes a pending rebuild-resume
     setSelecting(null); // starting/stopping a run means the user is done arming a loop
     clearWrapDwell(); // a manual play/pause overrides a pending loop-wrap dwell
     // A second tap during the count-in aborts it (never reaches the transport).
@@ -1064,13 +1107,13 @@ export default function ScorePlayer({ score: scoreMeta }) {
   }, [countIn, transport, mode, myStaves, silenceScheduled, flushPlaybackNow, logger, stepTimeline, tempoMap, tempoMult, parsed, clearWrapDwell, tapIntent]);
 
   // Changing the Listen role map mid-flight invalidates the note timeline — pause,
-  // flush, and silence so a stale schedule doesn't drone. Shared by the chip
-  // fallback and the My-part control.
+  // flush, and silence so a stale schedule doesn't drone, then resume where we
+  // were (audit H5: the music dying on the spot read as a broken button). Shared
+  // by the chip fallback and the My-part control.
   const disruptListenPlayback = useCallback(() => {
-    clearWrapDwell(); // BEFORE the playing check — during the dwell nothing plays
-    if (transportRef.current?.playing) { transport.pause(); flushPlaybackNow(); }
-    silenceScheduled();
-  }, [clearWrapDwell, transport, flushPlaybackNow, silenceScheduled]);
+    pauseForRebuild('part');
+    silenceScheduled(); // also flush when nothing was playing (a stale schedule may still be queued)
+  }, [pauseForRebuild, silenceScheduled]);
 
   const onCyclePart = useCallback((staff) => {
     if (mode === 'listen') {
