@@ -70,7 +70,9 @@ export default function ProfilePicker({ open, users = [], activeId, onPick, onDi
                 aria-pressed={activeId ? u.id === activeId : undefined}
                 onClick={() => onPick?.(u.id)}
               >
-                <ProfileAvatar id={u.id} name={u.name} />
+                {/* Big picker faces (4.5rem + DPR/canvas scaling) need a larger
+                    resized variant than the 96px default. */}
+                <ProfileAvatar id={u.id} name={u.name} size={192} />
                 <span className="piano-usercard__name">{resolveUserDisplayName(u, { familyContext }).displayName}</span>
               </button>
             </li>
