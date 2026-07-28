@@ -158,9 +158,46 @@ describe('validateDocument: question itemId uniqueness', () => {
     expect(errs(doc({ blocks: [question(), question({ itemId: 'q2', number: 2 })] }))).toEqual([]);
   });
 
-  it('rejects a duplicate itemId at the top level', () => {
+  it('rejects a duplicate itemId at the top level, naming both positions', () => {
     expect(errs(doc({ blocks: [question(), question({ number: 2 })] })))
-      .toContain('duplicate question itemId: q1');
+      .toContain('blocks[1]: duplicate question itemId "q1" (already used at blocks[0])');
+  });
+});
+
+describe('validateDocument: structural ceilings', () => {
+  // The cycle guard is path-scoped so legitimate anchor reuse still validates,
+  // which leaves an aliased DAG re-walked once per path into it. These ceilings
+  // are what stop a few dozen lines of YAML from becoming millions of visits.
+  it('accepts a document at a depth real worksheets reach', () => {
+    let inner = { type: 'question', itemId: 'leaf', number: 1, blocks: [{ type: 'rich_text', md: 'x' }] };
+    for (let i = 0; i < 5; i++) {
+      inner = { type: 'question', itemId: `q${i}`, number: i + 1, blocks: [inner] };
+    }
+    // Nested questions are themselves rejected, but the walk must complete
+    // rather than bail on a ceiling.
+    expect(errs(doc({ blocks: [inner] })))
+      .not.toContain('blocks: structure too large or too deeply nested to validate (limits: depth 64, 50000 blocks)');
+  });
+
+  it('reports a ceiling instead of hanging on an alias-built structure', () => {
+    // Each level holds the previous one twice: 2^n paths from n levels of YAML.
+    let node = { type: 'question', itemId: 'leaf', number: 1, blocks: [{ type: 'rich_text', md: 'x' }] };
+    for (let i = 0; i < 30; i++) {
+      node = { type: 'question', itemId: `q${i}`, number: 1, blocks: [node, node] };
+    }
+    const start = Date.now();
+    const errors = errs(doc({ blocks: [node] }));
+    expect(Date.now() - start).toBeLessThan(2000);
+    expect(errors).toContain('blocks: structure too large or too deeply nested to validate (limits: depth 64, 50000 blocks)');
+  });
+
+  it('reports a ceiling on excessive nesting depth', () => {
+    let node = { type: 'rich_text', md: 'x' };
+    for (let i = 0; i < 70; i++) {
+      node = { type: 'question', itemId: `q${i}`, number: 1, blocks: [node] };
+    }
+    expect(errs(doc({ blocks: [node] })))
+      .toContain('blocks: structure too large or too deeply nested to validate (limits: depth 64, 50000 blocks)');
   });
 });
 

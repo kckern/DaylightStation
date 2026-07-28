@@ -29,23 +29,47 @@ const countableError = (field) => `${field} must be an integer between 0 and ${N
  * one block object in two places legitimately, but a block reachable from
  * itself would recurse forever.
  *
+ * Because that guard is path-scoped, an anchor-built DAG is re-walked once per
+ * path into it, which is exponential in nesting depth — ~20 levels of aliased
+ * questions is 3M visits from 67 lines of YAML. `budget` caps total visits and
+ * `MAX_DEPTH` caps nesting so a pathological document fails validation instead
+ * of hanging the process or exhausting memory. Both ceilings sit far above any
+ * hand-authored worksheet.
+ *
  * @param {*} blocks - the document's (or a question's) blocks array
  * @param {(block: object, at: string, question: object|null) => void} visit
- * @param {{ path?: string, question?: object|null, open?: WeakSet }} [ctx]
+ * @param {{ path?: string, question?: object|null, open?: WeakSet, depth?: number, budget?: {left: number} }} [ctx]
+ * @returns {{ exhausted: boolean }} true when a ceiling stopped the walk early
  */
-export function walkBlocks(blocks, visit, { path = 'blocks', question = null, open = new WeakSet() } = {}) {
-  if (!Array.isArray(blocks)) return;
+export const MAX_DEPTH = 64;
+export const MAX_VISITS = 50000;
+
+export function walkBlocks(blocks, visit, ctx = {}) {
+  const {
+    path = 'blocks', question = null, open = new WeakSet(),
+    depth = 0, budget = { left: MAX_VISITS },
+  } = ctx;
+  if (!Array.isArray(blocks) || depth > MAX_DEPTH) {
+    return { exhausted: depth > MAX_DEPTH };
+  }
+  let exhausted = false;
   blocks.forEach((block, i) => {
+    if (budget.left <= 0) { exhausted = true; return; }
     if (!block || typeof block !== 'object' || Array.isArray(block)) return;
     if (open.has(block)) return;
+    budget.left -= 1;
     const at = `${path}[${i}]`;
     visit(block, at, question);
     if (block.type === 'question') {
       open.add(block);
-      walkBlocks(block.blocks, visit, { path: `${at}.blocks`, question: block, open });
+      const inner = walkBlocks(block.blocks, visit, {
+        path: `${at}.blocks`, question: block, open, depth: depth + 1, budget,
+      });
       open.delete(block);
+      if (inner.exhausted) exhausted = true;
     }
   });
+  return { exhausted };
 }
 
 // Answers can hide anywhere, including inside a renderer-owned plot/geometry
@@ -100,11 +124,14 @@ export function validateDocument(raw) {
     errors.push(...validateBlock(block, { path: `blocks[${i}]` }).errors);
   });
 
-  const seenItemIds = new Set();
-  walkBlocks(raw.blocks, (block, at, question) => {
+  const seenItemIds = new Map();
+  const walk = walkBlocks(raw.blocks, (block, at, question) => {
     if (block.type === 'question' && typeof block.itemId === 'string') {
-      if (seenItemIds.has(block.itemId)) errors.push(`duplicate question itemId: ${block.itemId}`);
-      else seenItemIds.add(block.itemId);
+      // Name both positions: knowing only the colliding id leaves an author
+      // hunting through a long document for which of the two to renumber.
+      const first = seenItemIds.get(block.itemId);
+      if (first !== undefined) errors.push(`${at}: duplicate question itemId "${block.itemId}" (already used at ${first})`);
+      else seenItemIds.set(block.itemId, at);
     }
     if (block.type === 'omr_response') {
       if (!question) errors.push(`${at}: omr_response must be inside a question block`);
@@ -117,6 +144,9 @@ export function validateDocument(raw) {
       }
     }
   });
+  if (walk.exhausted) {
+    errors.push(`blocks: structure too large or too deeply nested to validate (limits: depth ${MAX_DEPTH}, ${MAX_VISITS} blocks)`);
+  }
 
   if (errors.length) return { errors };
   return {
