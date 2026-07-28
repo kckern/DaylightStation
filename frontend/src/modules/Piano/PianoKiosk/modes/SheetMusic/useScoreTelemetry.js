@@ -45,9 +45,15 @@ export function useScoreTelemetry({ id, tickMs = 100 }) {
   const logTranspose = useCallback(({ semitones }) => logger.info('score.transpose', { semitones }), [logger]);
   const logMode = useCallback(({ mode }) => logger.info('score.mode', { mode }), [logger]);
 
-  const recordFire = useCallback((ev, driftMs, gapMs, bpm) => {
+  /**
+   * @param {number} effectiveBpm — the tempo the music is ACTUALLY playing at
+   *   (written bpm x tempoMult), NOT the tempo on the page. The drift budget is
+   *   a fraction of a beat, and a beat at 0.5x is twice as long, so the written
+   *   bpm would size the budget to a beat that isn't happening.
+   */
+  const recordFire = useCallback((ev, driftMs, gapMs, effectiveBpm) => {
     drifts.current.push(driftMs); gaps.current.push(gapMs);
-    const stallMs = stallThresholdMs(bpm);
+    const stallMs = stallThresholdMs(effectiveBpm);
     stallMsRef.current = stallMs; // flushPlayback must count stalls by the same rule
     if (driftMs >= stallMs || gapMs >= tickMs * GAP_TICK_MULTIPLE) {
       stalls.current += 1;
@@ -57,7 +63,10 @@ export function useScoreTelemetry({ id, tickMs = 100 }) {
       logger.debug('score.playback.stall', {
         step: ev.step ?? ev.index,
         driftMs: Math.round(driftMs), gapMs: Math.round(gapMs),
-        bpm, stallMs: Math.round(stallMs),
+        // effectiveBpm, not bpm: this is tempo-adjusted and will NOT match the
+        // `bpm` on score.transport.play (which logs the written tempo + its
+        // tempoMult separately). Don't compare the two fields directly.
+        effectiveBpm, stallMs: Math.round(stallMs),
       });
     }
   }, [logger, tickMs]);

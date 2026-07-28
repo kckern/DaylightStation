@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, cleanup } from '@testing-library/react';
+import { render, cleanup, screen, act } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 
 // ── Task 13: config-gated recorder lifecycle ─────────────────────────────────
@@ -28,11 +28,25 @@ vi.mock('../../../../../lib/logging/inputRecorder.js', () => ({
   },
 }));
 
+// Telemetry is mocked here so the CALL SITE can be asserted directly: what
+// ScorePlayer hands recordFire is the thing under test, not what the hook does
+// with it. One stable object identity across renders, matching the real hook's
+// memoized-callback contract (ScorePlayer depends on that — see its comment).
+const tel = vi.hoisted(() => ({
+  logger: { info: () => {}, warn: () => {}, debug: () => {}, error: () => {}, sampled: () => {} },
+  startSession: () => {}, logLoad: () => {}, recordFire: null, recordSchedule: () => {},
+  flushPlayback: () => {}, recordFollowHit: () => {}, flushFollow: () => {},
+  logMeasureGrade: () => {}, logRunSummary: () => {}, logFocus: () => {},
+  logTranspose: () => {}, logMode: () => {},
+}));
+vi.mock('./useScoreTelemetry.js', () => ({ default: () => tel, useScoreTelemetry: () => tel }));
+
 const h = vi.hoisted(() => ({
   events: [
     { midi: 64, midis: [64], onsetQuarter: 0, x: 100, top: 10, bottom: 200, system: 0 },
     { midi: 62, midis: [62], onsetQuarter: 1, x: 160, top: 10, bottom: 200, system: 0 },
   ],
+  layoutExtras: null,
 }));
 const deriveSteps = (events) => events.map((e) => ({
   onsetQuarter: e.onsetQuarter,
@@ -63,7 +77,7 @@ vi.mock('../../../../MusicNotation/renderers/MusicXmlRenderer.jsx', async () => 
         const events = h.events;
         const steps = deriveSteps(events);
         const notes = deriveNotes(steps).map((n) => ({ ...n }));
-        onLayout?.({ width: 800, height: 400, tempoEntries: [], flow: 'wrapped', events, steps, notes });
+        onLayout?.({ width: 800, height: 400, tempoEntries: [], flow: 'wrapped', events, steps, notes, ...(h.layoutExtras || {}) });
         onReady?.();
       }, [onLayout, onReady]);
       return <div data-testid="renderer" className="musicxml-renderer">{children}</div>;
@@ -81,6 +95,8 @@ beforeEach(() => {
   cfg.value = { keyboard: { startNote: 21, endNote: 108 } };
   rec.startRecorder.mockClear();
   rec.stopRecorder.mockClear();
+  h.layoutExtras = null;
+  tel.recordFire = vi.fn();
   try { window.localStorage.clear(); } catch { /* no storage */ }
 });
 afterEach(() => cleanup());
@@ -122,6 +138,47 @@ describe('ScorePlayer — recorder gate (Task 13)', () => {
     // Manual start works the deploy-free lever even with config off.
     window.__INPUT_REC__.start();
     expect(rec.startRecorder).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('ScorePlayer — stall budget follows the EFFECTIVE tempo', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.spyOn(performance, 'now').mockImplementation(() => Date.now());
+    vi.stubGlobal('requestAnimationFrame', (cb) => setTimeout(() => cb(Date.now()), 16));
+    vi.stubGlobal('cancelAnimationFrame', (id) => clearTimeout(id));
+    vi.setSystemTime(0);
+    h.layoutExtras = { tempoEntries: [{ onsetQuarter: 0, bpm: 90 }] };
+  });
+  afterEach(() => { cleanup(); vi.useRealTimers(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
+
+  // playTimeline is scaled by 1/tempoMult, so at 2x a 90bpm piece is REALLY
+  // playing at 180bpm and the beat is half as long. Handing recordFire the
+  // written bpm would size the stall budget to a beat that isn't happening.
+  it('hands recordFire bpm x tempoMult, not the written bpm', async () => {
+    window.localStorage.setItem('daylight.piano.sm.files:t.musicxml', JSON.stringify({ v: 1, mode: 'polish', tempoMult: 2 }));
+    renderPlayer();
+    await act(async () => {});
+    screen.getByRole('button', { name: 'Play' }).click();
+    await act(async () => {});
+    act(() => vi.advanceTimersByTime(1400)); // 4-beat count-in @180 = 1333ms
+    act(() => vi.advanceTimersByTime(500));  // quarters are 333ms at 2x → fires
+
+    expect(tel.recordFire.mock.calls.length).toBeGreaterThan(0);
+    for (const call of tel.recordFire.mock.calls) expect(call[3]).toBe(180);
+  });
+
+  it('hands recordFire the written bpm when tempoMult is 1', async () => {
+    window.localStorage.setItem('daylight.piano.sm.files:t.musicxml', JSON.stringify({ v: 1, mode: 'polish', tempoMult: 1 }));
+    renderPlayer();
+    await act(async () => {});
+    screen.getByRole('button', { name: 'Play' }).click();
+    await act(async () => {});
+    act(() => vi.advanceTimersByTime(2700)); // 4-beat count-in @90 = 2667ms
+    act(() => vi.advanceTimersByTime(700));  // quarters are 667ms → fires
+
+    expect(tel.recordFire.mock.calls.length).toBeGreaterThan(0);
+    for (const call of tel.recordFire.mock.calls) expect(call[3]).toBe(90);
   });
 });
 

@@ -176,7 +176,7 @@ stamped to wall-clock by the framework. Math is in `scoreTelemetry.js`; collecti
 |-------|-------|--------|
 | `score.load` | info | `id, fetchMs, openToReadyMs, steps, …` (phase totals) |
 | `score.load.failed` | warn | `id, phase, error` |
-| `score.playback.stall` | warn | `step, driftMs, gapMs, bpm` (fire later than ~120 ms, or a >50 ms frame gap) |
+| `score.playback.stall` | debug | `step, driftMs, gapMs, effectiveBpm, stallMs` (drift past a tempo-scaled budget, or a tick gap that skipped whole ticks) |
 | `score.playback.stats` | info | `mode, events, meanDriftMs, p95DriftMs, maxDriftMs, stalls, maxFrameGapMs` (at pause/stop/done/unmount) |
 | `score.follow.timing` | sampled | `step, note, expectedMs, actualMs, driftMs, feel` (rush/tight/drag) |
 | `score.follow.stats` | info | `hits, wrongs, meanAbsDriftMs, rushPct, dragPct` (on leaving Learn) |
@@ -191,6 +191,13 @@ stamped to wall-clock by the framework. Math is in `scoreTelemetry.js`; collecti
 **Reading "on beat":** transport jitter is `driftMs` = actual fire time − scheduled
 `t`; single-digit ms = tight, a `score.playback.stall` = a stutter. In Learn,
 `score.follow.timing.driftMs` is signed (− rush, + drag) vs the notated rhythm.
+
+**`score.playback.stall` is debug-level** — on a bad run it fires per tick, so
+the count you want is `stalls` in `score.playback.stats`. Raise the level with
+`window.DAYLIGHT_LOG_LEVEL='debug'` only while investigating a specific run.
+Its `effectiveBpm` is the tempo the music is actually playing at (written bpm ×
+`tempoMult`), so it will NOT match the `bpm` on `score.transport.play`, which
+logs the written tempo and `tempoMult` as separate fields.
 
 **Per-session practice log.** The telemetry child logger carries
 `app: 'piano-sheetmusic'` + `sessionLog: true`, and `startSession(scoreId)` emits
