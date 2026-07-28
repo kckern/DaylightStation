@@ -4,6 +4,7 @@ import getLogger from '../../../lib/logging/Logger.js';
 import { usePianoKioskConfig } from './PianoConfig.jsx';
 import { usePianoMidi } from './PianoMidiContext.jsx';
 import PianoTile from './PianoTile.jsx';
+import PianoMenuActivity from './PianoMenuActivity.jsx';
 import LiveKeyboard from './LiveKeyboard.jsx';
 import { balancedColumns } from './tileGridLayout.js';
 
@@ -50,6 +51,12 @@ export function PianoMenu() {
   return (
     <main className="piano-home">
       <div className="piano-home__body">
+        <PianoMenuActivity
+          onOpenCourse={(courseId) => {
+            logger.info('piano.menu-activity.open-course', { courseId });
+            navigate(`${basePath}/videos/${String(courseId).replace(/^plex:/, '')}`);
+          }}
+        />
         <ul className="piano-menu__tiles" style={{ '--tile-cols': cols }}>
           {PIANO_MODES.map((m) => (
             <li key={m.id}>

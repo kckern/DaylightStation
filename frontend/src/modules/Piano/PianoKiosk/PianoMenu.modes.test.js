@@ -1,12 +1,15 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { createElement } from 'react';
-import { render } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { PIANO_MODES, PianoMenu } from './PianoMenu.jsx';
 
 // Lightweight stubs so PianoMenu renders without its full context/hardware chain.
 // The tile-grid assertion below only inspects the <ul>, so the tiles' innards and
-// the live keyboard are irrelevant here.
+// the live keyboard are irrelevant here — except the label, which the activity-strip
+// integration test (below) needs to confirm the tile wall still renders.
+let activityResponse;
+vi.mock('../../../lib/api.mjs', () => ({ DaylightAPI: vi.fn(() => Promise.resolve(activityResponse)) }));
 vi.mock('./PianoConfig.jsx', () => ({
   usePianoKioskConfig: () => ({
     pianoId: 'test-piano',
@@ -18,7 +21,7 @@ vi.mock('./PianoMidiContext.jsx', () => ({
   usePianoMidi: () => ({ pressNote: () => {}, releaseNote: () => {} }),
 }));
 vi.mock('./LiveKeyboard.jsx', () => ({ default: () => null }));
-vi.mock('./PianoTile.jsx', () => ({ default: () => null }));
+vi.mock('./PianoTile.jsx', () => ({ default: ({ label }) => createElement('span', null, label) }));
 vi.mock('../../../lib/logging/Logger.js', () => ({
   default: () => ({ child: () => ({ info() {}, debug() {}, warn() {}, error() {} }) }),
 }));
@@ -69,5 +72,24 @@ describe('PianoMenu (tile grid columns)', () => {
     const ul = document.querySelector('.piano-menu__tiles');
     expect(ul).toBeTruthy();
     expect(ul.style.getPropertyValue('--tile-cols')).toBe('5');
+  });
+});
+
+// Integration-lite: the menu activity strip (Task 8, spec
+// 2026-07-28-piano-menu-activity-strip) mounts inside PianoMenu, above the tile
+// wall, without displacing it. Reuses Task 8's DaylightAPI mock pattern.
+describe('PianoMenu (activity strip)', () => {
+  beforeEach(() => { activityResponse = { players: [] }; });
+
+  it('renders the activity strip alongside the tile wall', async () => {
+    activityResponse = {
+      players: [{
+        userId: 'felix', name: 'Felix', courseId: 'plex:11', courseTitle: 'Course B',
+        completed: 13, total: 57, percent: 23, lastPlayedAt: '2026-07-28T10:00:00Z',
+      }],
+    };
+    render(createElement(MemoryRouter, null, createElement(PianoMenu)));
+    await waitFor(() => expect(screen.getByText('Course B')).toBeTruthy());
+    expect(screen.getByText('Courses')).toBeTruthy();
   });
 });
