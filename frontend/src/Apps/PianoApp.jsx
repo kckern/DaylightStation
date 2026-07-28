@@ -293,7 +293,13 @@ function PianoShell() {
     const home = basePath;
     if (location.pathname !== home) {
       logger.info('piano.inactivity-reset', { from: location.pathname, pianoId });
-      idleReturnRef.current = true; // mark: the coming studio→menu transition is idle-driven
+      // Mark idle-driven ONLY when the idle return is actually leaving Studio —
+      // useAutoStudioEntry only consumes this flag on a Studio→menu transition.
+      // An idle return from any other route (e.g. /videos) must NOT leave a
+      // stale true sitting here for a later, unrelated manual Studio exit to
+      // misread as idle-driven (which would re-arm auto-entry and defeat the
+      // manual disarm).
+      idleReturnRef.current = location.pathname.startsWith(`${basePath}/studio`);
       navigate(home);
     }
   }, playing);
