@@ -2922,6 +2922,18 @@
   .piano-score-select-cancel { background: rgba(0, 0, 0, 0.18); border-color: rgba(0, 0, 0, 0.25); color: #07120a; }
 }
 
+// A rejected selection tap (too far from any note) shakes the banner and turns
+// it amber — the kiosk has no other way to say "I heard you, try again".
+.piano-score-select-banner.is-reject {
+  background: rgba(232, 163, 61, 0.95);
+  animation: piano-select-shake 320ms ease-out;
+}
+@keyframes piano-select-shake {
+  0%, 100% { transform: translateX(-50%); }
+  25%      { transform: translateX(calc(-50% - 7px)); }
+  75%      { transform: translateX(calc(-50% + 7px)); }
+}
+
 // Focus-range brackets + tint on the score (audit J5/M3).
 .piano-score-range-tint {
   position: absolute; z-index: 3; pointer-events: none;
