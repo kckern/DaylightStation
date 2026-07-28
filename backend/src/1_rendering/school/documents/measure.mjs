@@ -190,6 +190,21 @@ function tokenizeRuns(runs) {
 }
 
 /**
+ * The constrained-Markdown grammar, flattened for targets that do not style
+ * inline runs (the thermal receipt). ONE grammar for both targets: a second
+ * parser would eventually disagree with this one about what a `##` means.
+ *
+ * @param {string} md
+ * @returns {Array<{style: string, kind: 'text', text: string} | {style: string, kind: 'math', tex: string}>}
+ */
+export function parseRichText(md) {
+  return splitParagraphs(md).flatMap((paragraph) =>
+    segmentParagraph(paragraph.text).map((segment) => (segment.kind === 'math'
+      ? { style: paragraph.style, kind: 'math', tex: segment.tex }
+      : { style: paragraph.style, kind: 'text', text: segment.runs.map((run) => run.text).join('') })));
+}
+
+/**
  * Greedy word wrap across styled runs.
  *
  * Advance rule (identical in the draw pass): each piece is drawn at its recorded
