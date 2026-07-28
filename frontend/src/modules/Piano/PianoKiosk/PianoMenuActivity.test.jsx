@@ -67,7 +67,8 @@ describe('PianoMenuActivity', () => {
     render(<PianoMenuActivity onOpenCourse={onOpenCourse} />);
     await waitFor(() => expect(screen.getByAltText('Course C')).toBeTruthy());
     fireEvent.click(screen.getByAltText('Course C').closest('button'));
-    expect(onOpenCourse).toHaveBeenCalledWith('plex:12');
+    // Carries the card owner too — tapping a player's card also selects them.
+    expect(onOpenCourse).toHaveBeenCalledWith('plex:12', 'felix');
   });
 
   it('falls back to a text tile when a course has no thumbnail', async () => {

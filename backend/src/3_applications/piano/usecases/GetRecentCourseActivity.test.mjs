@@ -165,6 +165,30 @@ test('duplicate rows from the raw children container collapse to one course', as
   assert.equal(players[0].courses[0].courseId, 'plex:10');
 });
 
+test('a finished one-off unit played last does not carry the day — the incomplete module does', async () => {
+  const deps = makeDeps({ summaries: {} });
+  // Milo shape: intro unit s1 (single lecture, DONE, most recent play) while
+  // unit s2 sits at 5/8. The card must say 5/8 = 63%, not 1/1 = 100%.
+  deps.fitnessPlayableService.getPlayableEpisodes = async () => ({ info: {}, items: [
+    { plex: 'intro', metadata: { parentId: 's1' } },
+    ...Array.from({ length: 8 }, (_, i) => ({ plex: `m${i + 1}`, metadata: { parentId: 's2' } })),
+  ] });
+  deps.userVideoProgressStore.enrich = (items, userId) => (userId !== 'milo' ? items : items.map((it) => ({
+    ...it,
+    userWatched: it.plex === 'intro' || ['m1', 'm2', 'm3', 'm4', 'm5'].includes(it.plex),
+    userLastPlayedAt: it.plex === 'intro' ? '2026-07-27T00:00:00Z'
+      : (it.plex === 'm5' ? '2026-07-21T00:00:00Z' : null),
+  })));
+  deps.configService.getHouseholdUsers = () => ['milo'];
+  const uc = new GetRecentCourseActivity(deps);
+  const { players } = await uc.execute();
+  const c = players[0].courses[0];
+  assert.equal(c.completed, 5);
+  assert.equal(c.total, 8);
+  assert.equal(c.percent, 63);
+  assert.equal(players[0].lastPlayedAt, '2026-07-27T00:00:00Z'); // recency still the intro play
+});
+
 test('caps each player at 2 course thumbnails (equal percents break ties by recency)', async () => {
   const deps = makeDeps({ summaries: {
     kc: {

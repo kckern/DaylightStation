@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import getLogger from '../../../lib/logging/Logger.js';
 import { usePianoKioskConfig } from './PianoConfig.jsx';
 import { usePianoMidi } from './PianoMidiContext.jsx';
+import { usePianoUser } from './PianoUserContext.jsx';
 import PianoTile from './PianoTile.jsx';
 import PianoMenuActivity from './PianoMenuActivity.jsx';
 import LiveKeyboard from './LiveKeyboard.jsx';
@@ -39,6 +40,7 @@ export function PianoMenu() {
   const navigate = useNavigate();
   const { pianoId, basePath, config } = usePianoKioskConfig();
   const { pressNote, releaseNote } = usePianoMidi();
+  const { setCurrentUser } = usePianoUser();
   const kb = config?.keyboard || { startNote: 21, endNote: 108 };
   const logger = useMemo(() => getLogger().child({ component: 'piano-menu' }), []);
   const cols = balancedColumns(PIANO_MODES.length); // 11 → 4
@@ -52,8 +54,12 @@ export function PianoMenu() {
     <main className="piano-home">
       <div className="piano-home__body">
         <PianoMenuActivity
-          onOpenCourse={(courseId) => {
-            logger.info('piano.menu-activity.open-course', { courseId });
+          onOpenCourse={(courseId, userId) => {
+            logger.info('piano.menu-activity.open-course', { courseId, userId });
+            // Tapping a player's card IS picking that player: their progress,
+            // their credit (owner-requested 2026-07-28 — supersedes the
+            // original no-switch design).
+            if (userId) setCurrentUser(userId);
             navigate(`${basePath}/videos/${String(courseId).replace(/^plex:/, '')}`);
           }}
         />
