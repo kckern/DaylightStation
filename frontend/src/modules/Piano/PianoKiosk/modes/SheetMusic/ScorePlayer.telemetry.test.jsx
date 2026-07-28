@@ -167,7 +167,9 @@ describe('ScorePlayer — stall budget follows the EFFECTIVE tempo', () => {
     await act(async () => {});
     screen.getByRole('button', { name: 'Play' }).click();
     await act(async () => {});
-    act(() => vi.advanceTimersByTime(1400)); // 4-beat count-in @180 = 1333ms
+    // 180 effective bpm is past the countable rate, so the count-in is 4 half-note
+    // clicks over 2 bars = 2667ms (it used to be 4 quarter clicks in 1333ms).
+    act(() => vi.advanceTimersByTime(2700));
     act(() => vi.advanceTimersByTime(500));  // quarters are 333ms at 2x → fires
 
     expect(tel.recordFire.mock.calls.length).toBeGreaterThan(0);

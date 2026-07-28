@@ -739,6 +739,31 @@ describe('ScorePlayer — Polish mode (transport-driven)', () => {
     expect(summaries[0][1].reds).toBe(grades.length);
   });
 
+  it('score.countin.start logs the PLAN, not the meter', async () => {
+    // The log used to carry `beats: parsed?.timeSig?.beats` — the meter. Now that a
+    // fast tempo changes the pulse, the meter no longer tells a log reader how many
+    // clicks were heard or how long the count-in ran, so the plan itself is shipped.
+    h.layoutExtras = { tempoEntries: [{ onsetQuarter: 0, bpm: 216 }] }; // above the countable rate
+    const emitted = captureLog();
+
+    renderPlayer();
+    screen.getByText('Polish').click();
+    await act(async () => {});
+    screen.getByRole('button', { name: 'Play' }).click();
+    await act(async () => {});
+
+    const starts = emitted.filter(([ev]) => ev === 'score.countin.start');
+    expect(starts.length).toBe(1);
+    const d = starts[0][1];
+    expect(d.subdivision).toBe(2);        // the pulse actually used
+    expect(d.beats).toBe(4);              // CLICKS heard, not the 4/4 meter's beats
+    expect(d.periodMs).toBeCloseTo(555.6, 1);
+    expect(d.totalMs).toBeCloseTo(2222.2, 1);
+    expect(d.bpm).toBe(216);              // written tempo survives the spread
+    expect(d.tempoMult).toBe(1);          // and so does the multiplier
+    expect(d.mode).toBe('polish');
+  });
+
 });
 
 describe('ScorePlayer — Listen mode', () => {
