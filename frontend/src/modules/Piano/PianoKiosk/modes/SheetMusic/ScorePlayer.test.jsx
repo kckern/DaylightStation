@@ -15,6 +15,11 @@ const h = vi.hoisted(() => ({
     { midi: 62, midis: [62], onsetQuarter: 3, x: 280, top: 10, bottom: 200, system: 0 }, // D4
   ],
   layoutExtras: {},
+  // A real engrave is ASYNC: after a transpose the sheet republishes its geometry
+  // a beat later. Set holdLayout to keep the stub's publish pending (the state the
+  // resume gate must respect) and call releaseLayout() to land it.
+  holdLayout: false,
+  releaseLayout: null,
   pressNote: vi.fn(),
   releaseNote: vi.fn(),
   sendNoteAt: vi.fn(),
@@ -60,23 +65,30 @@ vi.mock('./clickScheduler.js', () => ({ createClickScheduler: () => h.clickSched
 vi.mock('../../../../MusicNotation/renderers/MusicXmlRenderer.jsx', async () => {
   const { useEffect } = await import('react');
   return {
-    MusicXmlRenderer: ({ onLayout, onReady, children, scale }) => {
-      // Re-fire onLayout when scale changes (mirrors a real re-engrave), always
-      // with FRESH array references so tests exercise the new-identity path.
+    MusicXmlRenderer: ({ onLayout, onReady, children, scale, transpose = 0 }) => {
+      // Re-fire onLayout when scale or transpose changes (mirrors a real
+      // re-engrave — both force one), always with FRESH array references so tests
+      // exercise the new-identity path. `transpose` is echoed in the payload
+      // because the real renderer publishes it (it is what tells the consumer the
+      // engraved KEY is current, audit H2).
       useEffect(() => {
-        const extra = h.layoutExtras || {};
-        const events = extra.events || h.events;
-        const steps = extra.steps || deriveSteps(events);
-        const notes = (extra.notes || deriveNotes(steps)).map((n) => ({ ...n }));
-        onLayout?.({
-          width: 800, height: 400, tempoEntries: [], flow: 'wrapped',
-          ...extra,
-          events,
-          steps,
-          notes,
-        });
-        onReady?.();
-      }, [onLayout, onReady, scale]);
+        const publish = () => {
+          const extra = h.layoutExtras || {};
+          const events = extra.events || h.events;
+          const steps = extra.steps || deriveSteps(events);
+          const notes = (extra.notes || deriveNotes(steps)).map((n) => ({ ...n }));
+          onLayout?.({
+            width: 800, height: 400, tempoEntries: [], flow: 'wrapped', transpose,
+            ...extra,
+            events,
+            steps,
+            notes,
+          });
+          onReady?.();
+        };
+        if (h.holdLayout) { h.releaseLayout = () => { h.holdLayout = false; publish(); }; return; }
+        publish();
+      }, [onLayout, onReady, scale, transpose]);
       return <div data-testid="renderer" className="musicxml-renderer">{children}</div>;
     },
   };
@@ -90,6 +102,7 @@ const renderPlayer = () =>
 
 beforeEach(() => {
   h.noteCb = null; h.rawCb = null; h.layoutExtras = {};
+  h.holdLayout = false; h.releaseLayout = null;
   h.pressNote.mockClear(); h.releaseNote.mockClear();
   h.sendNoteAt.mockClear(); h.sendNoteOffAt.mockClear();
   // sendPanic gets a FRESH fn per test, not just mockClear: every ScorePlayer
@@ -1070,9 +1083,9 @@ describe('ScorePlayer — Listen mode', () => {
     expect(h.sendPanic).toHaveBeenCalled(); // silenced on the view change
     // …and the user is not stranded mid-piece: the rebuild-pause resumes itself
     // once the layout is trustworthy (M3).
-    // NOTE: `layoutFresh` tracks flow + scale only, so a TRANSPOSE re-engrave does
-    // not gate this resume — it fires on the next commit. See the transpose gap
-    // noted in the Task 8 report.
+    // The stub republishes its geometry for the new key immediately, so the
+    // transpose gate (Task 18) opens on the next commit and the run continues.
+    // The held-engrave case — where the gate has to WAIT — is covered below.
     expect(screen.getByRole('button', { name: 'Pause' })).toBeInTheDocument();
   });
 
@@ -1273,6 +1286,37 @@ describe('ScorePlayer — rebuild-pause resume (H5/M3)', () => {
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: /down the page/i })); });
     expect(screen.getByRole('button', { name: 'Pause' })).toBeInTheDocument();
     expect(screen.getByTestId('score-position')).toHaveTextContent('2 / 4'); // not back at the top
+  });
+
+  // ── Task 18: the resume must wait for the TRANSPOSED engrave ────────────────
+  // The gate read flow + scale only, but a transpose forces a full re-engrave too
+  // (it is part of the renderer's cache key). So a transpose resumed on the very
+  // next commit, and the transport performed the OLD key until the new geometry
+  // landed ~1–2s later — the sheet-new/audio-old divergence of audit H2.
+  it('holds the resume until the re-engraved KEY lands (audit H2)', async () => {
+    h.layoutExtras = {
+      tempoEntries: [{ onsetQuarter: 0, bpm: 60 }],
+      notes: [{ midi: 40, staff: 1, onsetQuarter: 0, durationQuarters: 8 }],
+    };
+    renderPlayer();
+    screen.getByText('Listen').click();
+    await act(async () => {});
+    screen.getByRole('button', { name: 'Play' }).click(); // My part = None → plays immediately
+    await act(async () => {});
+    act(() => vi.advanceTimersByTime(1100)); // one step in
+    expect(screen.getByTestId('score-position')).toHaveTextContent('2 / 4');
+    expect(screen.getByRole('button', { name: 'Pause' })).toBeInTheDocument();
+
+    // The re-engrave is in flight: the stub holds its publish, so the reported
+    // layout still belongs to the WRITTEN key.
+    h.holdLayout = true;
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: /transpose up/i })); });
+    expect(screen.queryByRole('button', { name: 'Pause' })).toBeNull(); // still paused — the old key must not play on
+
+    // New key engraved → the run picks itself back up, in the key on the page.
+    await act(async () => { h.releaseLayout(); });
+    expect(screen.getByRole('button', { name: 'Pause' })).toBeInTheDocument();
+    expect(screen.getByTestId('score-position')).toHaveTextContent('2 / 4'); // where it left off
   });
 
   it('an explicit Restart supersedes a pending rebuild-resume (no uncommanded audio)', async () => {
