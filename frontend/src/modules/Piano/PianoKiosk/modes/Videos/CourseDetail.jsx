@@ -56,8 +56,9 @@ function CoProgressLockIcon() {
 /**
  * Course landing page. Per-user watch state (✓ / progress) rides on each
  * thumbnail. Sequential courses lock episodes after the first unwatched LESSON one
- * and, when multi-unit, hide lesson units beyond the first incomplete one. Lesson
- * units render newest-on-top (descending), episodes ascending within. Config-flagged
+ * and, when multi-unit, hide lesson units beyond the first incomplete one. Sequential
+ * lesson units render newest-on-top (descending); non-sequential shows read like a
+ * catalog (Unit 1 first). Episodes are ascending within a unit. Config-flagged
  * "reference" units (exercise/practice/walkthrough banks) are never locked, give no
  * credit, and render in an always-open "Practice & Reference" section at the bottom.
  */
@@ -328,7 +329,10 @@ export default function CourseDetail({ course, onPlay, playable }) {
           {!loading && items?.length > 0 && (
             <>
               {isMultiSeason ? (
-                [...visibleSeasons].reverse().map((s) => {
+                // Sequential shows float the unit you're working on to the top
+                // (newest-on-top); a browsable non-sequential show reads like a
+                // catalog — Season/Unit 1 first, ascending.
+                (isSequential ? [...visibleSeasons].reverse() : visibleSeasons).map((s) => {
                   const eps = [...episodesOf(s.id)].sort((a, b) => (a.itemIndex ?? 0) - (b.itemIndex ?? 0));
                   if (!eps.length) return null;
                   return (
