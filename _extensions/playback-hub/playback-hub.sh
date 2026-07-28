@@ -40,6 +40,13 @@ CROSS_BLEED_INTERVAL=1         # seconds between fast cross-bleed guard ticks (2
 HEARTBEAT_INTERVAL=180         # seconds between playback.heartbeat liveness samples per live slot. track.start only fires on track CHANGE (and is suppressed on resume-to-same-track), so it can't answer "is audio actually flowing right now". The heartbeat is the positive liveness signal: {plex_id,pos,paused,sink_live} sampled while mpv is alive + BT-connected.
 RECONNECT_LOG_EVERY=30         # during a reconnect outage, after the FIRST miss only emit bt.reconnect_fail on escalation ticks + every Nth miss. The old per-tick emit was ~95% of events.jsonl (3.4k–7.3k lines/week/slot) and rotated genuinely-useful events out of the 5MB ledger. Onset + escalation + a coarse heartbeat preserve the signal.
 SILENT_SLOT_ALERT_SEC=300      # GUARDRAIL: seconds a slot may be BT-connected + should-be-playing (armed or in an active schedule window) but have NO live mpv before we dispatch a `slot_silent` alert. Catches the 2026-07-06 failure mode where start_playback bailed EVERY tick (WirePlumber bluez monitor seat-gated off → no A2DP sink → resolve_audio_device fails before spawning mpv), leaving slots "connected but silent" with no mpv.start and no heartbeat — invisible for 8 days. Cleared the instant mpv is alive; alert fires once per outage streak.
+AUDIO_DEVICE_PROBE_TIMEOUT=4     # seconds for a one-shot PipeWire/mpv sink probe; never let recovery detection wedge the watchdog
+AUDIO_RECOVERY_FAILURES=3        # consecutive sink-related launch failures before restarting the audio stack
+AUDIO_RECOVERY_WINDOW=120        # seconds in which launch failures count as one failure streak
+AUDIO_RECOVERY_COOLDOWN=300      # seconds between PipeWire/WirePlumber restart attempts (global across slots)
+AUDIO_RECOVERY_VERIFY=8          # seconds to wait for the triggering headset's sink after an audio-stack restart
+HUB_RECOVERY_AFTER_AUDIO=2       # failed audio-stack recoveries before restarting playback-hub itself
+HUB_RECOVERY_COOLDOWN=1800       # seconds between daemon self-restarts; prevents a restart loop
 
 # Central cache manager — sourced for both direct-exec and source (tests).
 # Defined here, before refresh_config_cache, and NOT inside the dispatch guard.
@@ -872,6 +879,144 @@ resolve_audio_device() {
     return 1
 }
 
+# One-shot view of mpv's PipeWire/Pulse audio devices. The watchdog uses this
+# only to classify a failed launch; resolve_audio_device remains the authoritative
+# wait-for-sink path before a normal mpv start. Keep this probe bounded because a
+# wedged PipeWire client must never stall the watchdog's other slots.
+audio_device_list() {
+    if command -v timeout >/dev/null 2>&1; then
+        timeout --signal=TERM "$AUDIO_DEVICE_PROBE_TIMEOUT" \
+            mpv --audio-device=help 2>/dev/null || true
+    else
+        mpv --audio-device=help 2>/dev/null || true
+    fi
+}
+
+audio_sink_available() {
+    local mac="$1" normalized="${mac//:/_}" devices
+    devices="$(audio_device_list)"
+    grep -Fq "'pipewire/bluez_output.${normalized}.1'" <<< "$devices" || \
+        grep -Fq "'pulse/bluez_output.${normalized}.1'" <<< "$devices"
+}
+
+# Record a failed start only when the expected sink is absent. This keeps a
+# corrupt track/cache failure in the existing stall/revalidate lane instead of
+# bouncing the global audio service. File format: "count first_failure_epoch".
+note_audio_start_failure() {
+    local slot="$1" dir; dir="$(slot_dir "$slot")"
+    local now count first state
+    now="$(date +%s)"
+    state="$(cat "$dir/.audio_start_failures" 2>/dev/null || echo "")"
+    read -r count first <<< "$state"
+    [[ "$count" =~ ^[0-9]+$ ]] || count=0
+    [[ "$first" =~ ^[0-9]+$ ]] || first=0
+    if (( first == 0 || now - first > AUDIO_RECOVERY_WINDOW )); then
+        count=0
+        first="$now"
+    fi
+    count=$((count + 1))
+    printf '%s %s' "$count" "$first" > "$dir/.audio_start_failures"
+    echo "$count"
+}
+
+clear_audio_start_failures() {
+    rm -f "$(slot_dir "$1")/.audio_start_failures" 2>/dev/null || true
+}
+
+# Restart the user audio graph at most once per cooldown, with one recovery
+# operation globally serialized across slots. The monitor runs as kckern's
+# systemd --user service, so these restarts intentionally use that same user
+# bus; no sudo or system-wide PipeWire restart is appropriate here.
+#
+# Return values: 0 = sink recovered, 1 = restart attempted but not recovered,
+# 2 = another slot/recent attempt owns the recovery window, 3 = below threshold.
+recover_audio_stack() {
+    local slot="$1" tag="$2" mac="$3" failures="$4"
+    (( failures >= AUDIO_RECOVERY_FAILURES )) || return 3
+
+    local lock="$BASE_DIR/.audio-stack-recovery.lock" state_file="$BASE_DIR/.audio-stack-recovery"
+    local now last attempts
+    mkdir -p "$BASE_DIR"
+    exec 8>"$lock"
+    if ! flock -n 8; then
+        exec 8>&-
+        return 2
+    fi
+
+    now="$(date +%s)"
+    last="$(awk '{print $1}' "$state_file" 2>/dev/null || echo 0)"
+    [[ "$last" =~ ^[0-9]+$ ]] || last=0
+    if (( last > 0 && now - last < AUDIO_RECOVERY_COOLDOWN )); then
+        exec 8>&-
+        return 2
+    fi
+
+    attempts="$(awk '{print $2}' "$state_file" 2>/dev/null || echo 0)"
+    [[ "$attempts" =~ ^[0-9]+$ ]] || attempts=0
+    attempts=$((attempts + 1))
+    printf '%s %s' "$now" "$attempts" > "$state_file"
+    logev "$tag" audio.stack_recovery action=restart reason=missing_sink failures="$failures" attempt="$attempts"
+
+    local restart_rc=0
+    if command -v timeout >/dev/null 2>&1; then
+        timeout --signal=TERM 20 \
+            systemctl --user restart wireplumber.service pipewire-pulse.service pipewire.service \
+            >/dev/null 2>&1 || restart_rc=$?
+    else
+        systemctl --user restart wireplumber.service pipewire-pulse.service pipewire.service \
+            >/dev/null 2>&1 || restart_rc=$?
+    fi
+    if (( restart_rc != 0 )); then
+        logev "$tag" audio.stack_recovery_failed action=restart rc="$restart_rc" attempt="$attempts"
+    fi
+
+    local recovered=0 i
+    if (( restart_rc == 0 )); then
+        for i in $(seq 1 "$AUDIO_RECOVERY_VERIFY"); do
+            if audio_sink_available "$mac"; then
+                recovered=1
+                break
+            fi
+            sleep 1
+        done
+    fi
+    if (( recovered == 1 )); then
+        logev "$tag" audio.stack_recovered action=restart attempts="$attempts"
+        # Keep the cooldown timestamp, but reset the consecutive failed
+        # recovery count. A later independent outage must earn its own hub
+        # restart escalation rather than inheriting this incident's count.
+        printf '%s 0' "$now" > "$state_file"
+        clear_audio_start_failures "$slot"
+        exec 8>&-
+        return 0
+    fi
+
+    logev "$tag" audio.stack_recovery_failed action=verify attempts="$attempts"
+    dispatch_alert warning audio_stack_recovery \
+        "$tag has no PipeWire A2DP sink after audio-stack recovery attempt $attempts"
+
+    # A second failed stack restart means the daemon's own PipeWire client or
+    # monitor may be wedged. Let systemd recreate the complete monitor process,
+    # but rate-limit this much more aggressively than the audio restart.
+    if (( attempts >= HUB_RECOVERY_AFTER_AUDIO )); then
+        local hub_stamp="$BASE_DIR/.hub-recovery" hub_last
+        hub_last="$(cat "$hub_stamp" 2>/dev/null || echo 0)"
+        [[ "$hub_last" =~ ^[0-9]+$ ]] || hub_last=0
+        if (( now - hub_last >= HUB_RECOVERY_COOLDOWN )); then
+            printf '%s' "$now" > "$hub_stamp"
+            logev "$tag" hub.self_recovery action=restart reason=audio_stack_unrecovered attempts="$attempts"
+            if command -v timeout >/dev/null 2>&1; then
+                timeout --signal=TERM 20 systemctl --user restart playback-hub.service \
+                    >/dev/null 2>&1 || true
+            else
+                systemctl --user restart playback-hub.service >/dev/null 2>&1 || true
+            fi
+        fi
+    fi
+    exec 8>&-
+    return 1
+}
+
 device_path_for_mac() {
     local mac="$1"
     local dbus_id
@@ -1692,6 +1837,12 @@ sanitize_resume() { # playlist_file track pos -> "track pos"
     if ! [[ "$track" =~ ^[0-9]+$ ]] || (( track < 0 || track >= count )); then
         echo "0 0"; return
     fi
+    # jq/ffmpeg can persist a mathematically-zero position as -0.000000.
+    # Passing that through produces mpv's invalid --start=+-0.000000 and an
+    # immediate exit, which the watchdog otherwise mistakes for a media crash.
+    if [[ "$pos" =~ ^-([0-9]+([.][0-9]+)?)$ ]]; then
+        echo "$track 0"; return
+    fi
     if [[ "$pos" =~ ^[0-9]+([.][0-9]+)?$ ]]; then
         local f dur; f="$(playlist_file_at "$file" "$track")"
         dur="$(track_duration "$f")"
@@ -1926,6 +2077,7 @@ stop_all() {
     [[ -n "${SCHEDULED_PID:-}" ]] && kill "$SCHEDULED_PID" 2>/dev/null || true
     [[ -n "${SELFCHECK_PID:-}" ]] && kill "$SELFCHECK_PID" 2>/dev/null || true
     [[ -n "${CONNECTIVITY_PID:-}" ]] && kill "$CONNECTIVITY_PID" 2>/dev/null || true
+    [[ -n "${CROSS_BLEED_PID:-}" ]] && kill "$CROSS_BLEED_PID" 2>/dev/null || true
 
     local count idx
     count=$(jq '.devices | length' "$CONFIG_FILE")
@@ -2573,7 +2725,31 @@ mpv_watchdog() {
             # bring mpv up (the 2026-07-06 no-A2DP-sink failure mode).
             note_silent_slot "$slot" "$tag"
             log "$tag" "watchdog: BT connected but mpv missing/dead — respawning (queue=$eff_queue)"
-            start_playback "$slot" "$tag" "$mac" "$eff_queue" "$shuffle" "$resume_queue" "$resume_track" || true
+            local start_rc=0 start_failures=0
+            start_playback "$slot" "$tag" "$mac" "$eff_queue" "$shuffle" "$resume_queue" "$resume_track" || start_rc=$?
+            if (( start_rc == 0 )) && [[ -f "$dir/mpv.pid" ]] && \
+                kill -0 "$(cat "$dir/mpv.pid" 2>/dev/null)" 2>/dev/null; then
+                # A healthy launch clears only this slot's audio-recovery
+                # streak. The global restart cooldown remains intact.
+                clear_audio_start_failures "$slot"
+                continue
+            fi
+
+            # start_playback already waits for mpv to survive its initial
+            # launch window. If it failed and the expected A2DP sink is also
+            # absent, this is an audio-stack failure—not a cache/track crash.
+            # Count it and escalate only after several consecutive failures.
+            if ! audio_sink_available "$mac"; then
+                start_failures="$(note_audio_start_failure "$slot")"
+                logev "$tag" audio.start_failed reason=missing_sink failures="$start_failures"
+                recover_audio_stack "$slot" "$tag" "$mac" "$start_failures" || true
+            else
+                # A sink exists, so leave recovery to the existing cache/stall
+                # safeguards and avoid resetting audio for a media-specific
+                # mpv failure.
+                clear_audio_start_failures "$slot"
+                logev "$tag" audio.start_failed reason=sink_present
+            fi
         done
     done
 }
