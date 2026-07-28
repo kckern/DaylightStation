@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { DaylightAPI } from '../../../../../lib/api.mjs';
 import getLogger from '../../../../../lib/logging/Logger.js';
+import { isPersistentUser } from '../../pianoUser.js';
 
 let _logger;
 function logger() {
@@ -16,6 +17,11 @@ function logger() {
 export function usePianoCoursePlayable(courseId, userId) {
   const [state, setState] = useState({ data: null, loading: !!courseId, error: null });
 
+  // Guest behaves like "no user": the piano endpoint 400s unknown users
+  // (audit F5 — guests got a dead 'No lectures found'), while the fitness
+  // device-level endpoint lets them watch without per-user credit.
+  const effectiveUserId = isPersistentUser(userId) ? userId : null;
+
   useEffect(() => {
     if (!courseId) {
       setState({ data: null, loading: false, error: null });
@@ -24,8 +30,8 @@ export function usePianoCoursePlayable(courseId, userId) {
     let cancelled = false;
     setState((s) => ({ ...s, loading: true, error: null }));
 
-    const url = userId
-      ? `api/v1/piano/courses/${courseId}/playable?userId=${encodeURIComponent(userId)}`
+    const url = effectiveUserId
+      ? `api/v1/piano/courses/${courseId}/playable?userId=${encodeURIComponent(effectiveUserId)}`
       : `api/v1/fitness/show/${courseId}/playable`;
 
     DaylightAPI(url)
@@ -37,7 +43,7 @@ export function usePianoCoursePlayable(courseId, userId) {
         logger().warn('piano.course-playable.failed', { courseId, error: err.message });
       });
     return () => { cancelled = true; };
-  }, [courseId, userId]);
+  }, [courseId, effectiveUserId]);
 
   return {
     data: state.data,
