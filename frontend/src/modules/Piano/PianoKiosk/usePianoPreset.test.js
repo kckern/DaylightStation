@@ -106,4 +106,27 @@ describe('usePianoPreset', () => {
     expect(calls.length).toBe(0);
     expect(applyBundle).not.toHaveBeenCalled();
   });
+
+  it('guest: performs no GET and leaves the current sound alone (F4)', async () => {
+    mockUser = 'guest';
+    const { result } = renderHook(() => usePianoPreset(), { wrapper });
+    await waitFor(() => expect(result.current.canSave).toBe(false));
+    expect(calls).toHaveLength(0);
+    expect(applyBundle).not.toHaveBeenCalled();
+  });
+
+  it('guest: saveDefault and addFavorite are no-ops (F4)', async () => {
+    mockUser = 'guest';
+    const { result } = renderHook(() => usePianoPreset(), { wrapper });
+    await waitFor(() => expect(result.current.canSave).toBe(false));
+    await act(async () => { await result.current.saveDefault({ voice: { pc: 1 } }); });
+    await act(async () => { await result.current.addFavorite({ voice: { pc: 2 } }); });
+    expect(calls).toHaveLength(0);
+    expect(result.current.preset).toEqual({});
+  });
+
+  it('roster user: canSave is true', async () => {
+    const { result } = renderHook(() => usePianoPreset(), { wrapper });
+    await waitFor(() => expect(result.current.canSave).toBe(true));
+  });
 });
