@@ -41,7 +41,7 @@ export function useScoreTelemetry({ id, tickMs = 100 }) {
   // Full sheet-music event catalog — one path per event so nothing double-logs.
   const logMeasureGrade = useCallback(({ measure, grade, noteScore, timingScore }) => logger.info('score.polish.measure', { measure, grade, noteScore, timingScore }), [logger]);
   const logRunSummary = useCallback(({ greens, yellows, reds, overall }) => logger.info('score.polish.summary', { greens, yellows, reds, overall }), [logger]);
-  const logFocus = useCallback(({ kind, inMeasure, outMeasure }) => logger.info('score.focus.set', { kind, inMeasure, outMeasure }), [logger]);
+  const logFocus = useCallback(({ kind, inMeasure, outMeasure, origin }) => logger.info('score.focus.set', { kind, inMeasure, outMeasure, origin }), [logger]);
   const logTranspose = useCallback(({ semitones }) => logger.info('score.transpose', { semitones }), [logger]);
   const logMode = useCallback(({ mode }) => logger.info('score.mode', { mode }), [logger]);
 
