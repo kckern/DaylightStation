@@ -9,9 +9,32 @@
  * Plex metadata drift) so menu loads never re-walk Plex when nothing changed.
  */
 const HARD_TTL_MS = 6 * 60 * 60 * 1000;
-// Thumbnails per player card on the menu strip — recent courses beyond this
-// are dropped (most-recent-first).
+// Thumbnails per player card on the menu strip.
 const MAX_COURSES_PER_PLAYER = 4;
+
+/**
+ * Card-content selectors — what fills a player's thumbnails, config-driven via
+ * piano.yml `menu_activity.slots` (applied in order until the card is full,
+ * deduped by course). Each builder gets the player's touched courses
+ * (newest-first) and returns an ordered candidate list.
+ *
+ * Default `top-incomplete-courses`: highest percent first, 100% courses
+ * excluded — surface the course they're closest to finishing.
+ *
+ * `recent-sheet-music` and `top-polish` are recognized placeholders for
+ * non-course sources (sheet-music history, polish scores); they contribute
+ * nothing until implemented, but configs may already list them.
+ */
+const SLOT_BUILDERS = {
+  'top-incomplete-courses': (courses) => courses
+    .filter((c) => c.percent < 100)
+    .sort((a, b) => (b.percent - a.percent)
+      || String(b.lastPlayedAt).localeCompare(String(a.lastPlayedAt))),
+  'recent-courses': (courses) => courses, // already newest-first
+  'recent-sheet-music': () => [],         // placeholder — not yet implemented
+  'top-polish': () => [],                 // placeholder — not yet implemented
+};
+const DEFAULT_SLOTS = ['top-incomplete-courses'];
 
 export class GetRecentCourseActivity {
   #fitnessPlayableService; #userVideoProgressStore; #configService; #plexClient; #logger;
@@ -75,6 +98,9 @@ export class GetRecentCourseActivity {
       }
     }
 
+    const menuCfg = (this.#configService.getHouseholdAppConfig(null, 'piano') || {}).menu_activity || {};
+    const slots = Array.isArray(menuCfg.slots) && menuCfg.slots.length ? menuCfg.slots.map(String) : DEFAULT_SLOTS;
+
     const players = [];
     for (const userId of roster) {
       const touched = [];
@@ -87,7 +113,7 @@ export class GetRecentCourseActivity {
       }
       if (!touched.length) continue;
       touched.sort((a, b) => String(b.lastPlayedAt).localeCompare(String(a.lastPlayedAt)));
-      const courses = touched.slice(0, MAX_COURSES_PER_PLAYER).map((e) => ({
+      const allCourses = touched.map((e) => ({
         courseId: `plex:${e.show.id}`,
         courseTitle: e.show.title,
         thumbnail: e.show.thumb,
@@ -97,11 +123,35 @@ export class GetRecentCourseActivity {
           ? Math.max(1, Math.round((e.completed / e.total) * 100)) : 0,
         lastPlayedAt: e.lastPlayedAt,
       }));
+
+      // Fill the card from the configured slots in order, dedupe by course.
+      const courses = [];
+      const seenCourseIds = new Set();
+      for (const slot of slots) {
+        const builder = SLOT_BUILDERS[slot];
+        if (!builder) {
+          this.#logger.warn?.('piano.activity.unknown_slot', { slot });
+          continue;
+        }
+        for (const c of builder(allCourses)) {
+          if (courses.length >= MAX_COURSES_PER_PLAYER) break;
+          if (seenCourseIds.has(c.courseId)) continue;
+          seenCourseIds.add(c.courseId);
+          courses.push(c);
+        }
+      }
+      // A player whose slots yield nothing (e.g. every course at 100%) still
+      // deserves a card — fall back to their recent courses (their trophy).
+      if (!courses.length) {
+        courses.push(...allCourses.slice(0, MAX_COURSES_PER_PLAYER));
+      }
+
+      const newest = allCourses[0].lastPlayedAt;
       const p = this.#configService.getUserProfile(userId);
       players.push({
         userId,
         name: p?.display_name || p?.username || userId,
-        lastPlayedAt: courses[0].lastPlayedAt, // newest — drives ordering + staleness
+        lastPlayedAt: newest, // newest overall — drives ordering + staleness
         courses,
       });
     }
