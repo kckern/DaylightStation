@@ -1107,8 +1107,14 @@ export default function ScorePlayer({ score: scoreMeta }) {
       // starts the transport. Pure playback (Listen, no part) plays immediately.
       const countUserIn = mode === 'polish' || (mode === 'listen' && myStaves.size > 0);
       if (countUserIn) {
-        countIn.start(countInPlan({ beats: parsed?.timeSig?.beats, bpm: tempoMap[0]?.bpm, tempoMult }));
-        logger.info('score.countin.start', { mode, beats: parsed?.timeSig?.beats, bpm: tempoMap[0]?.bpm, tempoMult });
+        // Log the PLAN, not the meter: at fast tempi the pulse coarsens and the
+        // count-in may run extra bars, so the time signature no longer tells a log
+        // reader how many clicks were heard or how long the wait was. `bpm` and
+        // `tempoMult` come AFTER the spread — the plan has no such keys today, and
+        // this keeps it that way if it ever grows them.
+        const plan = countInPlan({ beats: parsed?.timeSig?.beats, bpm: tempoMap[0]?.bpm, tempoMult });
+        countIn.start(plan);
+        logger.info('score.countin.start', { mode, ...plan, bpm: tempoMap[0]?.bpm, tempoMult });
       } else {
         // Play always starts INSIDE an active loop (audit L6) — clamp a cursor
         // left outside the range to its in-point before seeking.
