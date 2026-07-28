@@ -242,7 +242,7 @@ export function createDocumentPdfRenderer({
    * byte-deterministic. `QRCode.create` is synchronous and pure, so the draw
    * pass keeps its "no clock, no randomness" property.
    */
-  function drawQrCode(out, { text, xPt, yPt, sizePt }) {
+  function drawQrCode(out, { text, xPt, yPt, sizePt, codes = null, page = null }) {
     const { modules } = QRCode.create(String(text), {
       errorCorrectionLevel: theme.action.qrErrorCorrection,
     });
@@ -252,6 +252,7 @@ export function createDocumentPdfRenderer({
     const span = modules.size + 2 * quiet;
     const modulePt = sizePt / span;
 
+    let drawn = 0;
     out.save().fillColor(theme.ink.text);
     for (let row = 0; row < modules.size; row += 1) {
       for (let col = 0; col < modules.size; col += 1) {
@@ -264,12 +265,29 @@ export function createDocumentPdfRenderer({
           modulePt + 0.02,
           modulePt + 0.02,
         );
+        drawn += 1;
       }
     }
     out.fill().restore();
+
+    // Reported for the same reason bubble geometry is: a symbol is machine-read
+    // hardware and the pixel gate cannot see it — adding the QR at all moved
+    // 0.33% of a Letter page, under the golden suite's 0.5% tolerance, so every
+    // snapshot passed with and without a scannable code.
+    //
+    // `darkModules` is counted AS THE RECTS ARE EMITTED, never recomputed from
+    // the matrix. A count taken from `QRCode.create` would report a healthy
+    // symbol even if the draw loop emitted nothing — which is exactly the
+    // empty-box defect this record exists to catch.
+    codes?.push({
+      text: String(text),
+      moduleCount: modules.size,
+      darkModules: drawn,
+      xPt, yPt, sizePt, page,
+    });
   }
 
-  function drawActionBox(out, node, { xPt, yPt }) {
+  function drawActionBox(out, node, { xPt, yPt, codes = null, page = null }) {
     const { padPt, borderWidthPt, borderDash, labelSizePt, codeSizePt, codeAreaPt, codeGapPt } = theme.action;
     out.save().lineWidth(borderWidthPt).strokeColor(theme.ink.box).dash(borderDash[0], { space: borderDash[1] });
     out.rect(xPt, yPt, node.widthPt, node.heightPt).stroke();
@@ -282,6 +300,8 @@ export function createDocumentPdfRenderer({
       xPt: codeX,
       yPt: yPt + padPt,
       sizePt: Math.min(codeAreaPt, node.heightPt - 2 * padPt),
+      codes,
+      page,
     });
 
     const textWidth = codeX - codeGapPt - (xPt + padPt);
@@ -333,7 +353,7 @@ export function createDocumentPdfRenderer({
     }
   }
 
-  function drawFragment(out, fragment, { page, marks }) {
+  function drawFragment(out, fragment, { page, marks, codes }) {
     if (Array.isArray(fragment.lines)) {
       drawLines(out, fragment.lines, { xPt: contentLeftPt, yPt: fragment.yPt, styleKey: fragment.styleKey });
       return;
@@ -345,7 +365,7 @@ export function createDocumentPdfRenderer({
       out.text(`${fragment.number}.`, contentLeftPt, fragment.yPt, { width: fragment.gutterPt, lineBreak: false });
     }
     for (const node of fragment.nodes ?? []) {
-      drawNode(out, node, { xPt: nodeXPt, yPt: fragment.yPt + node.offsetYPt, page, marks });
+      drawNode(out, node, { xPt: nodeXPt, yPt: fragment.yPt + node.offsetYPt, page, marks, codes });
     }
   }
 
@@ -445,11 +465,16 @@ export function createDocumentPdfRenderer({
           variant: document.variant ?? 0,
           marks,
         } : null,
+        // Always an array (empty is meaningful: this sheet has no scannable
+        // ticket), unlike formMap, where null vs empty distinguishes "not a
+        // gradeable form" from "a form with no bubbles".
+        codeMap: codes,
         isAnswerKey,
         keyItems,
       }));
 
       const marks = [];
+      const codes = [];
       pages.forEach((page, index) => {
         out.addPage();
         // Pagination belongs to layout.mjs alone. pdfkit otherwise spawns a
@@ -458,7 +483,7 @@ export function createDocumentPdfRenderer({
         // containing only its footer).
         out.page.margins = { top: 0, bottom: 0, left: 0, right: 0 };
         for (const fragment of page.fragments) {
-          drawFragment(out, fragment, { page: index + 1, marks });
+          drawFragment(out, fragment, { page: index + 1, marks, codes });
         }
         drawFooter(out, { page: index + 1, pageCount: pages.length, variant: document.variant ?? 0 });
       });
