@@ -191,7 +191,9 @@ export function createDocumentPdfRenderer({
   function drawOmrRow(out, node, { xPt, yPt, page, marks }) {
     const { bubbleRadiusPt, bubbleStrokeWidthPt, labelSizePt, labelGapPt, indentPt, rowHeightPt, choiceSizePt, choiceGapPt } = theme.omr;
     if (!node.labelled) {
-      throw new MissingChoicesError('bubble row has no choice text to print', node.itemId, node.itemId);
+      throw new MissingChoicesError(
+        'bubble row has no choice text to print', `omr_response(${node.itemId})`, node.itemId,
+      );
     }
     const centreY = yPt + rowHeightPt / 2;
     const textY = yPt + rowHeightPt + choiceGapPt;

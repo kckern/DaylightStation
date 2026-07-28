@@ -140,7 +140,6 @@ export const documentPdfTheme = Object.freeze({
   asset: {
     placeholderHeightPt: 110,
     maxHeightPt: 260,
-    borderWidthPt: 0.6,
     captionSizePt: 9,
     captionLeadingPt: 12,
     captionGapPt: 5,
@@ -149,8 +148,6 @@ export const documentPdfTheme = Object.freeze({
 
   answerKey: {
     titleSuffix: 'Answer Key',
-    bannerSizePt: 12,
-    itemLeadingPt: 16,
   },
 
   /** Lines a paragraph may not be broken below, on either side of a page break. */

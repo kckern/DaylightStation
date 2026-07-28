@@ -374,14 +374,22 @@ function actionCodeText(block, tokens) {
 }
 
 /** One block → the nodes it contributes to its enclosing fragment. */
-function measureNodes(ctx, block, { widthPt, path }) {
+function measureNodes(ctx, block, { widthPt, path, bodyStyleKey = 'body' }) {
   const { theme } = ctx;
   switch (block.type) {
     case 'rich_text':
       return splitParagraphs(block.md).flatMap((paragraph) =>
         segmentParagraph(paragraph.text).map((segment) => (segment.kind === 'math'
           ? measureMathNode(ctx, segment.tex, { display: true, widthPt, path })
-          : { kind: 'text', ...measureTextLines(ctx.doc, theme, segment.runs, { widthPt, styleKey: paragraph.style }), widthPt })));
+          : {
+            kind: 'text',
+            // Body prose inside a question is the `question` style; a heading
+            // stays a heading wherever it sits.
+            ...measureTextLines(ctx.doc, theme, segment.runs, {
+              widthPt, styleKey: paragraph.style === 'body' ? bodyStyleKey : paragraph.style,
+            }),
+            widthPt,
+          })));
 
     case 'math':
       return [measureMathNode(ctx, block.tex, { display: block.display !== false, widthPt, path })];
@@ -446,7 +454,7 @@ function answerSpaceFor(nodes, baseHeightPt) {
 function questionFragment(ctx, block, path) {
   const widthPt = ctx.widthPt - ctx.theme.question.numberGutterPt;
   const nodes = block.blocks.flatMap((child, index) =>
-    measureNodes(ctx, child, { widthPt, path: `${path}.blocks[${index}]` }));
+    measureNodes(ctx, child, { widthPt, path: `${path}.blocks[${index}]`, bodyStyleKey: 'question' }));
   const heightPt = stackNodes(nodes, ctx.theme.question.innerGapPt);
   return {
     id: path,
@@ -619,4 +627,6 @@ export async function probeDocument(document, {
   return { errors: errors.map((error) => error.message) };
 }
 
-export default { measureBlocks, measureDocumentFragments, createMeasurementDocument, probeDocument };
+export default {
+  measureBlocks, measureDocumentFragments, createMeasurementDocument, probeDocument, parseRichText,
+};
