@@ -72,6 +72,27 @@ export function walkBlocks(blocks, visit, ctx = {}) {
   return { exhausted };
 }
 
+/**
+ * The bank items this document actually poses, in printed order.
+ *
+ * This is the DENOMINATOR of a paper score: a sheet with six questions is out of
+ * six whether or not six answers came back, so an unanswered question has to
+ * count as unresolved rather than quietly shrink the total. Derived from the
+ * document (what was printed) and never from the submission (what came back).
+ *
+ * @param {object} document
+ * @returns {string[]} unique itemIds
+ */
+export function questionItemIds(document) {
+  const ids = [];
+  walkBlocks(document?.blocks, (block) => {
+    if (block.type === 'question' && typeof block.itemId === 'string' && !ids.includes(block.itemId)) {
+      ids.push(block.itemId);
+    }
+  });
+  return ids;
+}
+
 // Answers can hide anywhere, including inside a renderer-owned plot/geometry
 // spec, so this walk is over arbitrary values rather than the block tree. Paths
 // are reported in the same dotted notation as block errors ('' is the document

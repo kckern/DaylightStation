@@ -37,7 +37,7 @@ export class SchoolService {
    *
    * Previously this sorted by `display_name` while the picker rendered
    * `group_label`, so the order was computed from strings nobody could see —
-   * "Elizabeth" and "KC Kern" sorting into positions labelled "Mom" and "Dad".
+   * "parent-two" and "KC Kern" sorting into positions labelled "Mom" and "Dad".
    * It looked random because it was sorted on invisible keys, and it disagreed
    * with every other picker in the house.
    */
@@ -192,7 +192,13 @@ export class SchoolService {
     return s;
   }
 
-  answer({ sessionId, itemId, given, selfGrade }) {
+  /**
+   * `transport` is provenance only (spec §7.1): a paper answer is graded by the
+   * same engine, against the same bank, producing the same attempt — "paper
+   * earns nothing the screen couldn't". It defaults to `'screen'`, so every
+   * existing caller is unaffected.
+   */
+  answer({ sessionId, itemId, given, selfGrade, transport = 'screen' }) {
     const s = this.#session(sessionId);
     const item = s.bank.items.find((i) => i.id === itemId);
     if (!item) throw new ValidationError(`unknown item: ${itemId}`);
@@ -215,7 +221,7 @@ export class SchoolService {
     if (s.userId != null) {
       const attempt = createAttempt({
         sessionId: s.id, bankId: s.bankId, itemId, itemType: item.type,
-        mode: s.mode, given: recordedGiven, correct, attributedTo: s.userId,
+        mode: s.mode, given: recordedGiven, correct, attributedTo: s.userId, transport,
       });
       // appendAttempt can fail two ways: it can throw (router 500, UI shows
       // "unrecorded"), or — per YamlSchoolDatastore — return null/falsy without
