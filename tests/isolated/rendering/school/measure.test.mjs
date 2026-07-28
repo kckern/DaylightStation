@@ -12,6 +12,7 @@ import {
   createMeasurementDocument,
   probeDocument,
   UnsupportedBlockError,
+  UnresolvedAssetError,
 } from '#rendering/school/documents/measure.mjs';
 import { documentPdfTheme as theme } from '#rendering/school/documents/documentPdfTheme.mjs';
 
@@ -27,9 +28,12 @@ function stubTexToSvg(tex, { fontSizePt = 12 } = {}) {
   };
 }
 
-function measure(blocks, { texToSvg = stubTexToSvg, resolveAsset = null } = {}) {
+const stubResolveChoices = (itemId, { choices }) =>
+  Array.from({ length: choices }, (_, i) => `${itemId}-choice-${i}`);
+
+function measure(blocks, { texToSvg = stubTexToSvg, resolveAsset = null, resolveChoices = stubResolveChoices } = {}) {
   const doc = createMeasurementDocument({ theme });
-  return measureBlocks(blocks, { doc, theme, texToSvg, resolveAsset });
+  return measureBlocks(blocks, { doc, theme, texToSvg, resolveAsset, resolveChoices });
 }
 
 const totalHeight = (nodes) => nodes.reduce((max, n) => Math.max(max, n.offsetYPt + n.heightPt), 0);
@@ -86,6 +90,16 @@ describe('measureBlocks — rich_text', () => {
     expect(runs.every((r) => !r.text.includes('*'))).toBe(true);
   });
 
+  it('keeps punctuation abutting the bold span it follows', () => {
+    const [fragment] = measure([{ type: 'rich_text', md: 'Write it in **simplest form**. Then stop.' }]);
+    const runs = fragment.lines[0].runs;
+    const form = runs.find((r) => r.text === 'form');
+    const period = runs.find((r) => r.text === '.');
+    expect(form.font).toBe('bold');
+    // No space between them: the period starts exactly where 'form' ends.
+    expect(period.xPt).toBeCloseTo(form.xPt + form.widthPt, 9);
+  });
+
   it('renders inline $math$ as its own display-math fragment (v1 deferral)', () => {
     const fragments = measure([{ type: 'rich_text', md: 'Simplify $\\frac{1}{2}$ now.' }]);
     const kinds = fragments.map((f) => f.nodes?.[0]?.kind ?? 'text');
@@ -133,15 +147,44 @@ describe('measureBlocks — questions', () => {
     expect(loose.widthPt).toBeCloseTo(CONTENT_WIDTH, 6);
   });
 
-  it('measures an omr_response row from the theme bubble geometry', () => {
+  it('measures an omr_response row with the bank choice text under each bubble', () => {
     const [fragment] = measure([{
       ...question,
       blocks: [{ type: 'omr_response', itemId: 'u2-q1', choices: 4 }],
-    }]);
+    }], { resolveChoices: () => ['2/5', '2/6', '5/6', '1/6'] });
     const node = fragment.nodes[0];
     expect(node.kind).toBe('omr');
     expect(node.choices).toBe(4);
-    expect(node.heightPt).toBe(theme.omr.rowHeightPt);
+    expect(node.labelled).toBe(true);
+    expect(node.cells.map((c) => c.label)).toEqual(['2/5', '2/6', '5/6', '1/6']);
+    expect(node.cells.map((c) => c.choice)).toEqual(['A', 'B', 'C', 'D']);
+    expect(node.heightPt).toBe(theme.omr.rowHeightPt + theme.omr.choiceGapPt + theme.omr.choiceLeadingPt);
+  });
+
+  it('lets long choice text wrap under its own bubble rather than widen the row', () => {
+    const long = 'three and seven twelfths of a whole pan';
+    const [fragment] = measure([{
+      ...question,
+      blocks: [{ type: 'omr_response', itemId: 'u2-q1', choices: 4 }],
+    }], { resolveChoices: () => [long, 'x', 'y', 'z'] });
+    const node = fragment.nodes[0];
+    const lineCount = node.cells[0].lines.length;
+    expect(lineCount).toBeGreaterThan(1);
+    for (const line of node.cells[0].lines) expect(line.widthPt).toBeLessThanOrEqual(node.cellWidthPt);
+    expect(node.heightPt)
+      .toBe(theme.omr.rowHeightPt + theme.omr.choiceGapPt + lineCount * theme.omr.choiceLeadingPt);
+  });
+
+  it('reserves probe geometry — never labels — when no bank is wired', () => {
+    const [fragment] = measure([{
+      ...question,
+      blocks: [{ type: 'omr_response', itemId: 'u2-q1', choices: 4 }],
+    }], { resolveChoices: null });
+    const node = fragment.nodes[0];
+    expect(node.labelled).toBe(false);
+    expect(node.heightPt).toBe(
+      theme.omr.rowHeightPt + theme.omr.choiceGapPt + theme.omr.probeChoiceLines * theme.omr.choiceLeadingPt,
+    );
   });
 });
 
@@ -165,7 +208,13 @@ describe('measureBlocks — math, assets and actions', () => {
     expect(node.drawHeightPt).toBeCloseTo(100 * node.scale, 6);
   });
 
-  it('reserves a placeholder box and caption for an unresolvable asset', () => {
+  it('throws when a resolver cannot turn an asset ref into artwork', () => {
+    const missing = () => null;
+    expect(() => measure([{ type: 'asset', ref: 'school/math/strips', alt: 'Strips.' }], { resolveAsset: missing }))
+      .toThrow(UnresolvedAssetError);
+  });
+
+  it('reserves probe geometry for an asset when no resolver is wired at all', () => {
     const [fragment] = measure([{ type: 'asset', ref: 'school/math/strips', alt: 'Fraction strips.' }]);
     expect(fragment.atomic).toBe(true);
     expect(fragment.nodes[0].kind).toBe('asset');
@@ -280,6 +329,15 @@ describe('probeDocument', () => {
     const result = await probeDocument(wrap([{ type: 'math', tex: '\\frac{', display: true }]));
     expect(result.errors.length).toBeGreaterThan(0);
     expect(result.errors.join(' ')).toMatch(/blocks\[0\]/);
+  });
+
+  it('surfaces an asset that a wired resolver cannot resolve', async () => {
+    const result = await probeDocument(
+      wrap([{ type: 'asset', ref: 'missing/art', alt: 'Nothing.' }]),
+      { resolveAsset: () => null },
+    );
+    expect(result.errors).toHaveLength(1);
+    expect(result.errors[0]).toContain("asset 'missing/art'");
   });
 
   it('surfaces an unsupported block type as a document error', async () => {

@@ -62,6 +62,35 @@ export class BlockMeasureError extends Error {
 }
 
 /**
+ * A bubble row whose choice text cannot be resolved from the question bank.
+ * Printing bare bubbles would hand a child a sheet they cannot answer and a
+ * grader a sheet that scans but means nothing, so the render refuses.
+ */
+export class MissingChoicesError extends Error {
+  constructor(message, path, itemId) {
+    super(`${path}: ${message}`);
+    this.name = 'MissingChoicesError';
+    this.path = path;
+    this.itemId = itemId;
+  }
+}
+
+/**
+ * An `asset` block whose ref no resolver could turn into artwork. A bordered
+ * empty rectangle on a worksheet is a silent failure — the diagram the question
+ * depends on is simply gone — so this fails at measure time, where the publish
+ * gate sees it.
+ */
+export class UnresolvedAssetError extends Error {
+  constructor(ref, path) {
+    super(`${path}: asset '${ref}' could not be resolved to artwork`);
+    this.name = 'UnresolvedAssetError';
+    this.path = path;
+    this.ref = ref;
+  }
+}
+
+/**
  * Register the theme's TTFs on a pdfkit document under their theme alias.
  * Shared by the measurement document and the output document so both resolve
  * `theme.fonts.bold` to the same face.
@@ -139,19 +168,36 @@ function segmentParagraph(text) {
 }
 
 /**
+ * Split styled runs into words. A word may span runs: `**simplest form**.` puts
+ * the closing period in a different run from `form` with no whitespace between
+ * them, and they must stay one word — otherwise the period drifts a space away
+ * from the word it belongs to, and can even wrap to the next line alone.
+ *
+ * @returns {Array<{ pieces: Array<{text: string, font: string}> }>}
+ */
+function tokenizeRuns(runs) {
+  const words = [];
+  let current = null;
+  for (const run of runs) {
+    for (const part of run.text.split(/(\s+)/)) {
+      if (!part) continue;
+      if (/^\s+$/.test(part)) { current = null; continue; }
+      if (!current) { current = { pieces: [] }; words.push(current); }
+      current.pieces.push({ text: part, font: run.font });
+    }
+  }
+  return words;
+}
+
+/**
  * Greedy word wrap across styled runs.
  *
- * Advance rule (identical in the draw pass): a word is drawn at its recorded x,
- * then x advances by the word's width plus a space measured in that same word's
+ * Advance rule (identical in the draw pass): each piece is drawn at its recorded
+ * x, and after a whole word x advances by a space measured in that word's last
  * font. Sharing one rule is what keeps measurement honest.
  */
 function wrapRuns(doc, theme, runs, { widthPt, sizePt, leadingPt }) {
-  const words = [];
-  for (const run of runs) {
-    for (const word of run.text.split(/\s+/)) {
-      if (word) words.push({ text: word, font: run.font });
-    }
-  }
+  const words = tokenizeRuns(runs);
 
   const lines = [];
   let current = [];
@@ -165,13 +211,19 @@ function wrapRuns(doc, theme, runs, { widthPt, sizePt, leadingPt }) {
   };
 
   for (const word of words) {
-    const wordWidth = stringWidth(doc, theme, word.font, sizePt, word.text);
-    const spaceWidth = stringWidth(doc, theme, word.font, sizePt, ' ');
+    const pieces = word.pieces.map((piece) => ({
+      ...piece, sizePt, widthPt: stringWidth(doc, theme, piece.font, sizePt, piece.text),
+    }));
+    const wordWidth = pieces.reduce((total, piece) => total + piece.widthPt, 0);
+    const spaceWidth = stringWidth(doc, theme, pieces[pieces.length - 1].font, sizePt, ' ');
     // A word that overruns on its own is placed alone: breaking inside a word
     // would silently alter what the child reads.
     if (current.length && xPt + wordWidth > widthPt) flush();
-    current.push({ text: word.text, font: word.font, sizePt, xPt, widthPt: wordWidth });
-    xPt += wordWidth + spaceWidth;
+    for (const piece of pieces) {
+      current.push({ ...piece, xPt });
+      xPt += piece.widthPt;
+    }
+    xPt += spaceWidth;
   }
   flush();
   return lines;
@@ -209,26 +261,32 @@ function measureMathNode(ctx, tex, { display, widthPt, path }) {
   };
 }
 
-function measureAssetNode(ctx, block, { widthPt }) {
+/**
+ * An asset is measured at the size its resolver reports.
+ *
+ * With a resolver that cannot produce artwork, this throws: an empty bordered
+ * rectangle where the diagram should be is a silent failure — the child is
+ * asked about a picture that is not on the page. With NO resolver at all it
+ * reserves probe geometry, for the same reason bubble rows do (the publish gate
+ * has no asset resolver wired); the draw pass refuses an unresolved node.
+ */
+function measureAssetNode(ctx, block, { widthPt, path }) {
   const { theme } = ctx;
   const resolved = ctx.resolveAsset ? ctx.resolveAsset(block.ref) : null;
+  if (ctx.resolveAsset && !resolved?.svg) throw new UnresolvedAssetError(block.ref, path);
+
   const caption = measureTextLines(ctx.doc, theme, [{ text: block.alt, font: 'regular' }], {
     widthPt, styleKey: 'instruction',
   });
-
-  let drawWidthPt = widthPt;
-  let drawHeightPt = theme.asset.placeholderHeightPt;
-  if (resolved) {
-    const naturalWidth = resolved.widthPt > 0 ? resolved.widthPt : widthPt;
-    const naturalHeight = resolved.heightPt > 0 ? resolved.heightPt : theme.asset.placeholderHeightPt;
-    const scale = Math.min(widthPt / naturalWidth, theme.asset.maxHeightPt / naturalHeight, 1);
-    drawWidthPt = naturalWidth * scale;
-    drawHeightPt = naturalHeight * scale;
-  }
+  const naturalWidth = resolved?.widthPt > 0 ? resolved.widthPt : widthPt;
+  const naturalHeight = resolved?.heightPt > 0 ? resolved.heightPt : theme.asset.placeholderHeightPt;
+  const scale = Math.min(widthPt / naturalWidth, theme.asset.maxHeightPt / naturalHeight, 1);
+  const drawWidthPt = naturalWidth * scale;
+  const drawHeightPt = naturalHeight * scale;
 
   return {
     kind: 'asset',
-    resolved: Boolean(resolved),
+    resolved: Boolean(resolved?.svg),
     svg: resolved?.svg ?? null,
     ref: block.ref,
     drawWidthPt,
@@ -236,6 +294,58 @@ function measureAssetNode(ctx, block, { widthPt }) {
     caption,
     widthPt,
     heightPt: drawHeightPt + theme.asset.captionGapPt + caption.heightPt,
+  };
+}
+
+/**
+ * A bubble row: one cell per choice, all bubbles on ONE baseline, the choice
+ * text wrapped underneath its own bubble.
+ *
+ * Choice TEXT is never duplicated into the document — it lives in the question
+ * bank, which is also what the grader scores against, so paper and grader
+ * cannot drift. `resolveChoices` is how the bank reaches the page.
+ *
+ * With no resolver (the publish-time probe, which has no banks wired) the row
+ * is measured in probe mode: bubbles plus a conservative reservation for the
+ * choice text, enough to fail a page that could not fit the real thing. Probe
+ * mode NEVER produces a printable row — the draw pass refuses a cell with no
+ * label.
+ */
+function measureOmrNode(ctx, block, { widthPt, path }) {
+  const { theme, doc } = ctx;
+  const availablePt = widthPt - theme.omr.indentPt;
+  const cellWidthPt = availablePt / block.choices;
+  const labels = ctx.resolveChoices
+    ? ctx.resolveChoices(block.itemId, { choices: block.choices, path })
+    : null;
+
+  const cells = [];
+  for (let index = 0; index < block.choices; index += 1) {
+    const label = labels ? String(labels[index]) : null;
+    cells.push({
+      choice: theme.omr.letters[index],
+      label,
+      lines: label
+        ? wrapRuns(doc, theme, [{ text: label, font: 'regular' }], {
+          widthPt: cellWidthPt, sizePt: theme.omr.choiceSizePt, leadingPt: theme.omr.choiceLeadingPt,
+        })
+        : [],
+    });
+  }
+
+  const textLines = labels
+    ? Math.max(...cells.map((cell) => cell.lines.length))
+    : theme.omr.probeChoiceLines;
+
+  return {
+    kind: 'omr',
+    itemId: block.itemId,
+    choices: block.choices,
+    cells,
+    cellWidthPt,
+    labelled: Boolean(labels),
+    widthPt,
+    heightPt: theme.omr.rowHeightPt + theme.omr.choiceGapPt + textLines * theme.omr.choiceLeadingPt,
   };
 }
 
@@ -261,7 +371,7 @@ function measureNodes(ctx, block, { widthPt, path }) {
       return [measureMathNode(ctx, block.tex, { display: block.display !== false, widthPt, path })];
 
     case 'asset':
-      return [measureAssetNode(ctx, block, { widthPt })];
+      return [measureAssetNode(ctx, block, { widthPt, path })];
 
     case 'answer_space':
       return [{
@@ -273,13 +383,7 @@ function measureNodes(ctx, block, { widthPt, path }) {
       }];
 
     case 'omr_response':
-      return [{
-        kind: 'omr',
-        itemId: block.itemId,
-        choices: block.choices,
-        widthPt,
-        heightPt: theme.omr.rowHeightPt,
-      }];
+      return [measureOmrNode(ctx, block, { widthPt, path })];
 
     case 'media_action':
     case 'scan_action':
@@ -390,13 +494,18 @@ function fragmentFromNode(node, { id, block, theme }) {
  * @param {Object} deps.theme - documentPdfTheme or a compatible theme
  * @param {Function} deps.texToSvg - (tex, opts) => { svgString, widthPt, heightPt }
  * @param {Function} [deps.resolveAsset] - (ref) => { svg, widthPt, heightPt } | null
+ * @param {Function} [deps.resolveChoices] - (itemId, { choices, path }) => string[];
+ *   omitted means probe mode (bubble rows reserve space but carry no labels)
  * @param {string} [deps.path='blocks'] - dotted path prefix for fragment ids
  * @returns {Array<Object>} fragments for placeFragments()
- * @throws {UnsupportedBlockError|BlockMeasureError} with the offending block's path
+ * @throws {UnsupportedBlockError|BlockMeasureError|MissingChoicesError|UnresolvedAssetError}
+ *   with the offending block's path
  */
-export function measureBlocks(blocks, { doc, theme = documentPdfTheme, texToSvg, resolveAsset = null, path = 'blocks' } = {}) {
+export function measureBlocks(blocks, {
+  doc, theme = documentPdfTheme, texToSvg, resolveAsset = null, resolveChoices = null, path = 'blocks',
+} = {}) {
   const widthPt = theme.page.widthPt - 2 * theme.page.marginPt;
-  const ctx = { doc, theme, texToSvg, resolveAsset, widthPt };
+  const ctx = { doc, theme, texToSvg, resolveAsset, resolveChoices, widthPt };
 
   return blocks.flatMap((block, index) => {
     const at = `${path}[${index}]`;
@@ -445,10 +554,12 @@ function headerFragment(document, { theme, studentName }) {
  * @param {Object} deps - as measureBlocks, plus `studentName`
  * @returns {Array<Object>}
  */
-export function measureDocumentFragments(document, { doc, theme = documentPdfTheme, texToSvg, resolveAsset = null, studentName = null } = {}) {
+export function measureDocumentFragments(document, {
+  doc, theme = documentPdfTheme, texToSvg, resolveAsset = null, resolveChoices = null, studentName = null,
+} = {}) {
   return [
     headerFragment(document, { theme, studentName }),
-    ...measureBlocks(document.blocks, { doc, theme, texToSvg, resolveAsset }),
+    ...measureBlocks(document.blocks, { doc, theme, texToSvg, resolveAsset, resolveChoices }),
   ];
 }
 
@@ -460,15 +571,23 @@ export function measureDocumentFragments(document, { doc, theme = documentPdfThe
  * to continue past bad TeX), so a document with two broken blocks reports the
  * first; layout errors are reported in full.
  *
+ * SCOPE: without a `resolveChoices` the probe checks PAGE GEOMETRY, reserving a
+ * conservative two lines under each bubble instead of the bank's real choice
+ * text. It is not a claim that the sheet is printable — the print path refuses
+ * an unlabelled bubble row outright, which is the guarantee that matters.
+ *
  * @param {Object} document - a validated document
  * @param {Object} [deps] - injectable for tests; defaults to the real MathJax renderer
  * @returns {Promise<{ errors: string[] }>}
  */
-export async function probeDocument(document, { theme = documentPdfTheme, texToSvg = mathJaxTexToSvg, resolveAsset = null, fontDir = DEFAULT_FONT_DIR } = {}) {
+export async function probeDocument(document, {
+  theme = documentPdfTheme, texToSvg = mathJaxTexToSvg, resolveAsset = null,
+  resolveChoices = null, fontDir = DEFAULT_FONT_DIR,
+} = {}) {
   let fragments;
   try {
     const doc = createMeasurementDocument({ theme, fontDir });
-    fragments = measureDocumentFragments(document, { doc, theme, texToSvg, resolveAsset });
+    fragments = measureDocumentFragments(document, { doc, theme, texToSvg, resolveAsset, resolveChoices });
   } catch (err) {
     return { errors: [err?.message ?? String(err)] };
   }
