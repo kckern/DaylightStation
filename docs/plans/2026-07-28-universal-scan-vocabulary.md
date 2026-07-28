@@ -656,6 +656,32 @@ export function createScanDispatch({
 
 `makeTriggerEvent`, `nutritionHandler` and `productHandler` are lifted verbatim from the corresponding branches in `app.mjs` — move the code, do not rewrite it. `nutritionHandler` wraps `routeNutribotScan` + `scaleNutribotBridge.refreshPrompt`; `productHandler` wraps the `userId`/`conversationId` resolution + `getLogFoodFromUPC().execute`.
 
+**Step 2b: assert the fallback map at construction**
+
+Since Task 4, **no parse ever resolves to `product`** — it is reachable only
+through `routeFallback`. So a missing or misspelled key there stops UPC food
+logging house-wide, with no parse-level signal and nothing in the logs pointing
+at the cause. A scanner that has stopped logging food is precisely the failure
+nobody notices for a week.
+
+Fail loudly at composition, where the two halves can be compared:
+
+```js
+// Every namespace named in routeFallback MUST have a registered handler.
+// `product` depends on this entirely — it has no other route in.
+for (const [route, namespace] of Object.entries(routeFallback)) {
+  if (!handlers.some((h) => h.namespace === namespace)) {
+    throw new Error(
+      `scanDispatch: route "${route}" falls back to "${namespace}", which has no registered handler`,
+    );
+  }
+}
+```
+
+Add a unit test for the throw. Note the dispatcher already throws on duplicate
+namespace registration (Task 4), so this completes the pair: neither a missing
+handler nor a doubled one can reach production as a mystery `unknown`.
+
 **Step 3: Replace the app.mjs callback**
 
 ```javascript
