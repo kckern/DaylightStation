@@ -1,0 +1,41 @@
+// Layout only — everything else is Mantine's, so these screens stay in the
+// Admin app's one visual language. The few rules here exist because a parent is
+// reading a CHILD'S HANDWRITING transcribed to text and a session id side by
+// side, and those two want opposite treatments.
+.school-admin {
+  max-width: 1100px;
+
+  &__item {
+    // A queue read top-to-bottom: give each item enough separation that two
+    // questions from the same sheet are never mistaken for one.
+    border-left: 3px solid var(--mantine-color-yellow-7);
+  }
+
+  &__answer {
+    // The child's actual answer is the thing being judged — make it the largest
+    // text in the card and let it wrap rather than truncate.
+    font-size: 1.05rem;
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+
+  &__rubric {
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+
+  &__empty {
+    background: var(--mantine-color-dark-6);
+  }
+
+  &__attempt {
+    padding-left: 0.25rem;
+  }
+
+  &__entry-id {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+}
