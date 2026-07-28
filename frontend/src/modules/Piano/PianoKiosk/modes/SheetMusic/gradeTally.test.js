@@ -16,8 +16,14 @@ describe('tallyGrades', () => {
     expect(tallyGrades(g({ 0: 'yellow', 1: 'yellow', 2: 'red' })))
       .toEqual({ green: 0, yellow: 2, red: 1, overall: 'yellow' });
   });
-  it('empty → all zero, overall green (greens >= both by the tie rule)', () => {
-    expect(tallyGrades({})).toEqual({ green: 0, yellow: 0, red: 0, overall: 'green' });
+  it('empty → all zero and NO overall: an empty set has no overall quality', () => {
+    // The tie rule used to make this 'green', so a run with nothing graded read
+    // as a success — a congratulation for a passage the user never played.
+    expect(tallyGrades({})).toEqual({ green: 0, yellow: 0, red: 0, overall: null });
+  });
+  it('nothing but ungraded entries also has no overall', () => {
+    expect(tallyGrades({ 0: {}, 1: { grade: undefined } }))
+      .toEqual({ green: 0, yellow: 0, red: 0, overall: null });
   });
   it('ignores ungraded entries', () => {
     expect(tallyGrades({ 0: { grade: 'green' }, 1: {}, 2: { grade: undefined } }))
