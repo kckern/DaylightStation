@@ -393,6 +393,26 @@ describe('ScanDispatcher', () => {
     expect(out.domain).toBe('nutrition');
   });
 
+  // The fallback is REQUIRED for Phase 1's zero-behavior-change criterion, not a
+  // nicety. `BarcodePayload.#parseCommand` accepts a bare single segment, so a
+  // colon-free legacy command like `pause` is valid today — and step 3 needs a
+  // non-empty tag before a colon, so `pause` resolves to `unknown` and reaches
+  // its handler ONLY through this path. Deleting the fallback silently breaks
+  // every un-prefixed command barcode in the house.
+  it('routes a colon-free legacy command via the reader route', async () => {
+    const content = handler('content', async () => ({ status: 'dispatched', claimed: true }));
+    const d = new ScanDispatcher({
+      handlers: [content],
+      routeFallback: { content: 'content' },
+    });
+
+    const out = await d.dispatch({ code: 'pause', device: 'office', route: 'content' });
+    expect(out.domain).toBe('content');
+    expect(content.handle).toHaveBeenCalledWith(
+      expect.objectContaining({ body: 'pause', form: 'unknown' }),
+    );
+  });
+
   it('returns an explicit unknown outcome rather than falling through', async () => {
     const d = new ScanDispatcher({ handlers: [] });
     const out = await d.dispatch({ code: '!!!', device: 'k' });
