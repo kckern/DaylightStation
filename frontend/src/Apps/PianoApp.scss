@@ -1241,11 +1241,17 @@
 .piano-menu-activity {
   display: flex;
   align-items: center;
-  justify-content: center;
+  // NOT justify-content:center — a centered overflowing flex row clips its
+  // left half unreachably. Auto margins on the end cards center the row when
+  // it fits and degrade to a proper left-anchored scroll when it doesn't.
   gap: var(--sp-4);
   padding: var(--sp-3) var(--sp-4);
   margin-bottom: auto; // pins the strip to the top while the grid sits flush-bottom
   overflow-x: auto;
+  max-width: 100%;
+
+  > :first-child { margin-left: auto; }
+  > :last-child { margin-right: auto; }
 
   &__card {
     display: inline-flex;
