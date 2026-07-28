@@ -364,7 +364,7 @@ export async function createLifecycleHarness({
   const submitPaperWork = new SubmitPaperWork({ curriculum, sessions, formMaps, reviewQueue, bankReader, clock: now, logger });
   const gradeSubmission = new GradeSubmission({ curriculum, sessions, reviewQueue, grader, bankReader, clock: now, logger });
   const closeSessionOutcome = new CloseSessionOutcome({
-    curriculum, sessions, tokens, assignments,
+    curriculum, sessions, tokens, assignments, receipts,
     economy: countingEconomy, economyAction: 'school-unit-complete', economyEnabled,
     clock: now, rng, logger,
   });
@@ -650,17 +650,15 @@ export async function createLifecycleHarness({
     // --- settling ------------------------------------------------------------
 
     /**
-     * Close a graded session out and PRINT the receipt it produced. The use case
-     * builds the document; putting it on the roll is the composition's job, and
-     * a result nobody printed is a result the child never saw.
+     * Close a graded session out. The use case prints its own result receipt —
+     * the harness used to do that here, which hid the fact that production
+     * never did it at all.
      */
-    async closeOutcome({ sessionId = null, signedOff = false, print = true } = {}) {
+    async closeOutcome({ sessionId = null, signedOff = false } = {}) {
       const id = sessionId ?? lastScan?.sessionId;
       if (!id) throw new Error('closeOutcome: no session to settle');
-      const result = await closeSessionOutcome.execute({ sessionId: id, signedOff });
-      if (print && result.document) await receipts.print(result.document);
-      lastResult = result;
-      return result;
+      lastResult = await closeSessionOutcome.execute({ sessionId: id, signedOff });
+      return lastResult;
     },
 
     // --- reading the record --------------------------------------------------

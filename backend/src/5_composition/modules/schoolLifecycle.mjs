@@ -280,6 +280,10 @@ export async function createSchoolLifecycle({
   });
   const closeSessionOutcome = new CloseSessionOutcome({
     curriculum, sessions: stores.sessions, tokens: stores.tokens, assignments: stores.assignments,
+    // The result receipt is where a FAILED attempt's retry barcode reaches the
+    // child's hand. Without this the close-out returned JSON and the loop
+    // dead-ended.
+    receipts,
     economy: economyService,
     economyAction: lifecycleCfg.economy?.action || 'school-unit-complete',
     economyEnabled: lifecycleCfg.economy?.enabled === true,

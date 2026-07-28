@@ -280,6 +280,11 @@ describe('scenario 4 — failing, retrying, and being paid exactly once', () => 
     const failed = await h.closeOutcome({ sessionId: firstSession });
     expect(failed.result).toBe('needs_remediation');
 
+    // Settling PRINTS. Nothing in this test asks it to — a close-out that only
+    // returned JSON left the retry barcode inside the server and the child
+    // holding a marked sheet with no way to ask for another.
+    expect(failed.printed).toBe(true);
+
     // --- the receipt says what went wrong AND carries the next move ---------
     const receipt = h.lastReceiptText();
     expect(receipt).toContain('Almost there');
