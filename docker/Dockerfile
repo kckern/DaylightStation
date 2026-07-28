@@ -55,7 +55,11 @@ RUN chmod +x /usr/src/app/entrypoint.sh \
 ARG BUILD_TIME
 ARG COMMIT_HASH
 RUN echo "Build Time: ${BUILD_TIME:-unknown}" > /build.txt \
-    && echo "Commit: ${COMMIT_HASH:-unknown}" >> /build.txt
+    && if [ -n "${COMMIT_HASH}" ]; then \
+         echo "Commit: https://github.com/kckern/DaylightStation/commit/${COMMIT_HASH}" >> /build.txt; \
+       else \
+         echo "Commit: unknown" >> /build.txt; \
+       fi
 
 ENV NODE_ENV=production
 EXPOSE 3111

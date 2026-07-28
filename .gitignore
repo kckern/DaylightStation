@@ -56,6 +56,7 @@ config.app-local.yml
 !scripts/audit-baseline.json
 !scripts/gate-vitest.mjs
 !scripts/audit-baseline.vitest.txt
+!scripts/build-daylight.sh
 *.log
 .github/copilot-instructions.md
 # Skill local configs
