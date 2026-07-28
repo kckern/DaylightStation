@@ -45,10 +45,19 @@ export class GetRecentCourseActivity {
 
     let fetchFailed = false;
     const shows = [];
+    // Dedupe by ratingKey: the RAW /children container can list a collection
+    // item more than once (observed live 2026-07-28 — every show doubled),
+    // and a show may also legitimately sit in two configured collections.
+    const seenShowIds = new Set();
     for (const collectionId of this.#lessonCollectionIds()) {
       try {
         const children = await this.#plexClient.children(collectionId);
-        for (const c of children || []) shows.push({ id: String(c.ratingKey), title: c.title || '', thumb: c.thumb || null });
+        for (const c of children || []) {
+          const id = String(c.ratingKey);
+          if (seenShowIds.has(id)) continue;
+          seenShowIds.add(id);
+          shows.push({ id, title: c.title || '', thumb: c.thumb || null });
+        }
       } catch (err) {
         fetchFailed = true;
         this.#logger.warn?.('piano.activity.children_failed', { collectionId, error: err.message });
