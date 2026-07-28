@@ -8,9 +8,15 @@
  * in-memory keyed on the roster's progress-file mtimes (+ 6h hard TTL for
  * Plex metadata drift) so menu loads never re-walk Plex when nothing changed.
  */
+import { excludeReferenceUnits } from '../courseProgress.mjs';
+
 const HARD_TTL_MS = 6 * 60 * 60 * 1000;
 // Thumbnails per player card on the menu strip.
 const MAX_COURSES_PER_PLAYER = 2;
+
+// The playable SERVICE nests parentId under item.metadata (the HTTP router
+// flattens it — a known gotcha); accept both so either shape groups units.
+const unitOf = (it) => it?.parentId ?? it?.metadata?.parentId ?? null;
 
 /**
  * Card-content selectors — what fills a player's thumbnails, config-driven via
@@ -102,15 +108,21 @@ export class GetRecentCourseActivity {
       }
     }
 
-    const menuCfg = (this.#configService.getHouseholdAppConfig(null, 'piano') || {}).menu_activity || {};
+    const pianoCfg = this.#configService.getHouseholdAppConfig(null, 'piano') || {};
+    const menuCfg = pianoCfg.menu_activity || {};
     const slots = Array.isArray(menuCfg.slots) && menuCfg.slots.length ? menuCfg.slots.map(String) : DEFAULT_SLOTS;
+    const referenceUnits = pianoCfg.videos?.reference_units || [];
 
     const players = [];
     for (const userId of roster) {
       const touched = [];
       for (const show of shows) {
-        const items = perShowItems.get(show.id);
-        if (!items?.length) continue;
+        const rawItems = perShowItems.get(show.id);
+        if (!rawItems?.length) continue;
+        // Same lesson-counting rules as the poster wall: reference/practice
+        // banks never count toward progress.
+        const items = excludeReferenceUnits(rawItems, show.id, referenceUnits);
+        if (!items.length) continue;
         const enriched = this.#userVideoProgressStore.enrich(items, userId);
         // Course-level aggregation + the player's most recent lecture (its
         // unit is their "current module").
@@ -122,14 +134,14 @@ export class GetRecentCourseActivity {
           const lp = it.userLastPlayedAt;
           if (lp && (!lastPlayedAt || String(lp) > String(lastPlayedAt))) {
             lastPlayedAt = lp;
-            currentUnitId = it.parentId ?? null;
+            currentUnitId = unitOf(it);
           }
         }
         if (!lastPlayedAt) continue;
         // Module-scoped progress: percent through the CURRENT unit, not the
         // whole program (motivating on multi-hundred-lecture courses). Flat
         // single-unit courses degrade to whole-course numbers naturally.
-        const unitItems = enriched.filter((it) => (it.parentId ?? null) === currentUnitId);
+        const unitItems = enriched.filter((it) => unitOf(it) === currentUnitId);
         const unitCompleted = unitItems.filter((it) => it.userWatched).length;
         touched.push({
           show,
