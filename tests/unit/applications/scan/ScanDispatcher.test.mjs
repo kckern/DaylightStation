@@ -139,6 +139,14 @@ describe('claim is not success', () => {
 
 const silent = { debug() {}, info() {}, warn() {}, error() {} };
 
+/** A logger whose methods EXIST but throw — the shape a real transport takes when it is down. */
+const brokenLogger = {
+  debug: () => { throw new Error('logger down'); },
+  info: () => { throw new Error('logger down'); },
+  warn: () => { throw new Error('logger down'); },
+  error: () => { throw new Error('logger down'); },
+};
+
 describe('ScanDispatcher — prototype-chain safety', () => {
   const INHERITED = [
     'constructor', '__proto__', 'toString', 'valueOf', 'hasOwnProperty',
@@ -421,6 +429,41 @@ describe('ScanDispatcher — the never-fall-through invariant', () => {
     expect(out.message).toContain('sync boom');
   });
 
+  it('survives a handler whose RETURN VALUE throws when read', async () => {
+    // Found while probing the logger fix. Catching the handler CALL is not
+    // enough: the outcome is built by spreading what the handler returned, and
+    // a spread invokes getters. A booby-trapped result therefore throws at the
+    // `return` statement — after the try has closed — and rejects the dispatch.
+    // Exotic, but it is the same class of bug as the logger one: a step that
+    // looks like plumbing sits outside the guard.
+    //
+    // Reporting it as `failed` is the honest answer, because it IS a handler
+    // fault — the handler's own return value is what exploded.
+    const evil = {
+      namespace: 'content',
+      handle: async () => ({ get status() { throw new Error('getter boom'); } }),
+    };
+    const d = new ScanDispatcher({ handlers: [evil], logger: silent });
+    const out = await d.dispatch({ code: 'go:a:b', device: 'k' });
+    expect(out.status).toBe('failed');
+    expect(out.domain).toBe('content');
+    expect(out.message).toContain('getter boom');
+  });
+
+  it('survives a hostile proxy as the handler result', async () => {
+    const hostile = {
+      namespace: 'content',
+      handle: async () => new Proxy({}, {
+        ownKeys() { throw new Error('proxy boom'); },
+        get() { throw new Error('proxy boom'); },
+      }),
+    };
+    const d = new ScanDispatcher({ handlers: [hostile], logger: silent });
+    await expect(d.dispatch({ code: 'go:a:b' })).resolves.toMatchObject({
+      status: 'failed', domain: 'content',
+    });
+  });
+
   it('handles a handler that returns a non-promise', async () => {
     const d = new ScanDispatcher({
       handlers: [{ namespace: 'content', handle: () => ({ status: 'ok' }) }], logger: silent,
@@ -448,6 +491,60 @@ describe('ScanDispatcher — logging and pass-through', () => {
     }
   });
 
+  it('survives a logger that throws, on every path', async () => {
+    // Checking that a log method EXISTS is not the same as checking it
+    // BEHAVES. Three paths fail for three different structural reasons:
+    //
+    //   A unclaimed  — the warn emit sits outside any try at all
+    //   B no-handler — likewise
+    //   C success    — the debug emit sits INSIDE the try that decides the
+    //                  outcome, so a logger fault is caught by the handler's
+    //                  own catch. Even with a well-behaved `error` emit that
+    //                  would downgrade a SUCCESSFUL scan to `failed`; with a
+    //                  broken one the second throw escapes entirely.
+    //
+    // The default `console` hides all of this, because Node's console swallows
+    // write errors — so it would first appear in production wiring, where
+    // composition injects a real structured logger.
+    const ok = { namespace: 'content', handle: async () => ({ status: 'dispatched' }) };
+    const d = new ScanDispatcher({ handlers: [ok], logger: brokenLogger });
+
+    await expect(d.dispatch({ code: '!!!', device: 'k' }))
+      .resolves.toMatchObject({ status: 'unknown' });
+    await expect(d.dispatch({ code: 'sch:abc', device: 'k' }))
+      .resolves.toMatchObject({ status: 'unknown' });
+    await expect(d.dispatch({ code: 'go:a:b', device: 'k' }))
+      .resolves.toMatchObject({ status: 'dispatched' });
+  });
+
+  it('still reports a handler failure when the logger is also broken', async () => {
+    // Both the handler and the observability channel are down, which is
+    // precisely when the caller most needs the Outcome to be truthful: it must
+    // still learn that the handler failed AND why. Losing the message here
+    // would leave a user staring at a scanner that did nothing, with no trace
+    // anywhere of the reason.
+    const boom = { namespace: 'content', handle: async () => { throw new Error('nope'); } };
+    const d = new ScanDispatcher({ handlers: [boom], logger: brokenLogger });
+    const out = await d.dispatch({ code: 'go:a:b', device: 'k' });
+    expect(out.status).toBe('failed');
+    expect(out.message).toContain('nope');
+  });
+
+  it('does not let a broken logger corrupt an otherwise good Outcome', async () => {
+    // Not just "does not reject": the Outcome must be byte-for-byte what a
+    // working logger would have produced. A dispatcher that cannot log is
+    // still a dispatcher.
+    const impl = async () => ({ status: 'printed', physical: 'worksheet', printed: true });
+    const withGood = new ScanDispatcher({
+      handlers: [{ namespace: 'school', handle: impl }], logger: silent,
+    });
+    const withBroken = new ScanDispatcher({
+      handlers: [{ namespace: 'school', handle: impl }], logger: brokenLogger,
+    });
+    expect(await withBroken.dispatch({ code: 'sch:a7f3k2', device: 'k' }))
+      .toEqual(await withGood.dispatch({ code: 'sch:a7f3k2', device: 'k' }));
+  });
+
   it('logs the unclaimed, unwired and thrown paths', async () => {
     const logger = { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };
     const d = new ScanDispatcher({
@@ -460,6 +557,27 @@ describe('ScanDispatcher — logging and pass-through', () => {
     expect(logger.warn).toHaveBeenCalledTimes(2);
     expect(logger.error).toHaveBeenCalledTimes(1);
     expect(logger.error.mock.calls[0][1]).toMatchObject({ namespace: 'content', device: 'k' });
+  });
+
+  it('logs the status it actually returned, reading each field exactly once', async () => {
+    // The log must never disagree with what the caller got, or debugging a
+    // production scan means reasoning about which of two readings won. The
+    // spread materialises every getter ONCE; logging then reads the merged
+    // plain object rather than re-entering the handler's result. An unstable
+    // getter is the cheapest way to prove the read happens once and only once.
+    let reads = 0;
+    const drifting = {
+      namespace: 'content',
+      handle: async () => ({ get status() { reads += 1; return reads === 1 ? 'ok' : 'DRIFTED'; } }),
+    };
+    const logger = { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };
+    const d = new ScanDispatcher({ handlers: [drifting], logger });
+    const out = await d.dispatch({ code: 'go:a:b', device: 'k' });
+    expect(out.status).toBe('ok');
+    expect(logger.debug).toHaveBeenCalledWith('scan-handled', expect.objectContaining({
+      status: 'ok',
+    }));
+    expect(reads).toBe(1);
   });
 
   it('passes device and route through to the handler untouched', async () => {
