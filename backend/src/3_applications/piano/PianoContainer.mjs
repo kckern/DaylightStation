@@ -15,6 +15,7 @@
  */
 import { GetCourseProgress } from './usecases/GetCourseProgress.mjs';
 import { GetPlayableUnits } from './usecases/GetPlayableUnits.mjs';
+import { GetRecentCourseActivity } from './usecases/GetRecentCourseActivity.mjs';
 
 export class PianoContainer {
   #studioDatastore;
@@ -22,12 +23,14 @@ export class PianoContainer {
   #userVideoProgressStore;
   #composerSongStore;
   #configService;
+  #plexClient;
   #logger;
 
   #getCourseProgress;
   #getPlayableUnits;
+  #getRecentCourseActivity;
 
-  constructor({ studioDatastore, fitnessPlayableService = null, userVideoProgressStore = null, composerSongStore = null, configService, logger = console } = {}) {
+  constructor({ studioDatastore, fitnessPlayableService = null, userVideoProgressStore = null, composerSongStore = null, configService, plexClient = null, logger = console } = {}) {
     if (!studioDatastore) throw new Error('PianoContainer: studioDatastore required');
     if (!configService) throw new Error('PianoContainer: configService required');
     this.#studioDatastore = studioDatastore;
@@ -35,6 +38,7 @@ export class PianoContainer {
     this.#userVideoProgressStore = userVideoProgressStore;
     this.#composerSongStore = composerSongStore;
     this.#configService = configService;
+    this.#plexClient = plexClient;
     this.#logger = logger;
   }
 
@@ -75,6 +79,24 @@ export class PianoContainer {
       });
     }
     return this.#getPlayableUnits;
+  }
+
+  /** Activity endpoint 503s without the Plex-backed services. */
+  isActivityConfigured() {
+    return !!this.#fitnessPlayableService && !!this.#plexClient;
+  }
+
+  getRecentCourseActivity() {
+    if (!this.#getRecentCourseActivity) {
+      this.#getRecentCourseActivity = new GetRecentCourseActivity({
+        fitnessPlayableService: this.#fitnessPlayableService,
+        userVideoProgressStore: this.#userVideoProgressStore,
+        configService: this.#configService,
+        plexClient: this.#plexClient,
+        logger: this.#logger,
+      });
+    }
+    return this.#getRecentCourseActivity;
   }
 }
 
