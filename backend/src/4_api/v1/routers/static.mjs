@@ -13,7 +13,14 @@
 import express from 'express';
 import fs from 'fs';
 import path from 'path';
+import { createCanvas, loadImage } from 'canvas';
 import { splatPath } from '#api/utils/wildcard.mjs';
+
+// Resized-variant cache: path|mtime|w|h → encoded buffer. Bounded FIFO —
+// avatars and small thumbs only, so a few hundred entries is plenty; the
+// mtime in the key makes edits invalidate naturally.
+const resizeCache = new Map();
+const RESIZE_CACHE_MAX = 300;
 
 /**
  * Create static assets router
@@ -88,6 +95,54 @@ export function createStaticRouter(config) {
     res.setHeader('Access-Control-Allow-Origin', '*');
 
     fs.createReadStream(filePath).pipe(res);
+  };
+
+  /**
+   * Server-side resize (`?w=` and/or `?h=`, raster png/jpeg only): fit within
+   * the requested box preserving aspect, high-quality smoothing, cached by
+   * file mtime. Lightens kiosk clients and kills the aliasing of browser-side
+   * downscales of full-resolution sources.
+   */
+  const sendResized = async (res, filePath, w, h) => {
+    const stat = fs.statSync(filePath);
+    const key = `${filePath}|${stat.mtimeMs}|${w || ''}|${h || ''}`;
+    const isPng = /\.png$/i.test(filePath);
+    let buf = resizeCache.get(key);
+    if (!buf) {
+      const img = await loadImage(filePath);
+      let boxW = w || Math.round(img.width * ((h || img.height) / img.height));
+      let boxH = h || Math.round(img.height * ((w || img.width) / img.width));
+      const scale = Math.min(boxW / img.width, boxH / img.height, 1); // never upscale
+      const dw = Math.max(1, Math.round(img.width * scale));
+      const dh = Math.max(1, Math.round(img.height * scale));
+      const cv = createCanvas(dw, dh);
+      const ctx = cv.getContext('2d');
+      ctx.imageSmoothingEnabled = true;
+      ctx.imageSmoothingQuality = 'high';
+      ctx.drawImage(img, 0, 0, dw, dh);
+      buf = isPng ? cv.toBuffer('image/png') : cv.toBuffer('image/jpeg', { quality: 0.85 });
+      resizeCache.set(key, buf);
+      if (resizeCache.size > RESIZE_CACHE_MAX) resizeCache.delete(resizeCache.keys().next().value);
+    }
+    res.setHeader('Content-Type', isPng ? 'image/png' : 'image/jpeg');
+    res.setHeader('Content-Length', buf.length);
+    res.setHeader('Cache-Control', 'public, max-age=86400');
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.end(buf);
+  };
+
+  /** Route helper: serve resized when ?w/?h fit a resizable raster, else raw. */
+  const sendImageMaybeResized = (req, res, filePath) => {
+    const w = parseInt(req.query?.w, 10) || null;
+    const h = parseInt(req.query?.h, 10) || null;
+    if ((w > 0 || h > 0) && /\.(png|jpe?g)$/i.test(filePath)) {
+      sendResized(res, filePath, w > 0 ? w : null, h > 0 ? h : null).catch((err) => {
+        logger.warn?.('static.img.resize_failed', { filePath, error: err.message });
+        if (!res.headersSent) sendImage(res, filePath);
+      });
+      return;
+    }
+    sendImage(res, filePath);
   };
 
   // ===========================================================================
@@ -204,7 +259,7 @@ export function createStaticRouter(config) {
     }
 
     logger.debug?.('static.img.served', { path: relativePath });
-    sendImage(res, filePath);
+    sendImageMaybeResized(req, res, filePath);
   });
 
   return router;
