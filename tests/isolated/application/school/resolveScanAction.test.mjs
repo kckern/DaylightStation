@@ -13,7 +13,7 @@ import {
   FakeCatalog, FakeSessionRepository, FakeTokenRegistry, FakeAssignmentStore,
   FakeFormMapStore, FakeDocumentRenderer, FakeReceiptRenderer, FakeLaserPrinter,
   FakeReceiptPrinter, FakePlayback, FakeEconomy,
-  fakeClock, seededRng, sequentialIds, silentLogger,
+  fakeClock, fakeGrownUps, seededRng, sequentialIds, silentLogger,
 } from '#testlib/school/lifecycleFakes.mjs';
 import {
   rawUnits, rawDocuments, rawManifests, BANK_IDS,
@@ -51,7 +51,7 @@ const build = () => {
   const openRemediation = new OpenRemediation({ curriculum, sessions, clock: clock.now, newSessionId: sequentialIds('ses_r'), logger: silentLogger });
   close = new CloseSessionOutcome({
     curriculum, sessions, tokens, assignments, economy: new FakeEconomy(), economyEnabled: true,
-    clock: clock.now, rng, logger: silentLogger,
+    grownUps: fakeGrownUps(clock), clock: clock.now, rng, logger: silentLogger,
   });
   const card = new ResolvePersonalCard({
     buildAgenda: agenda, receipts,

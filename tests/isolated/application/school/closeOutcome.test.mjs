@@ -8,7 +8,7 @@ import { isSchoolToken } from '#domains/school/sessions/tokens.mjs';
 import {
   FakeCatalog, FakeSessionRepository, FakeTokenRegistry, FakeAssignmentStore, FakeEconomy,
   FakeReceiptPrinter, FakeReceiptRenderer,
-  fakeClock, seededRng, sequentialIds, silentLogger,
+  fakeClock, fakeGrownUps, seededRng, sequentialIds, silentLogger,
 } from '#testlib/school/lifecycleFakes.mjs';
 import {
   rawUnits, rawDocuments, rawManifests, BANK_IDS,
@@ -36,6 +36,7 @@ const build = ({ economyEnabled = true, throwOn = null, receiptPrinter = undefin
   close = new CloseSessionOutcome({
     curriculum, sessions, tokens, assignments, economy, receipts,
     economyAction: 'school-unit-complete', economyEnabled,
+    grownUps: fakeGrownUps(clock),
     clock: clock.now, rng: seededRng(5), logger: silentLogger,
   });
   remediate = new OpenRemediation({
@@ -253,7 +254,7 @@ describe('the reward guard', () => {
       { sessionId: 'ses_a', unitId: 'math-fractions.01' },
       { sessionId: 'ses_b', unitId: WORKSHEET_UNIT },
     ] });
-    const result = await close.execute({ sessionId: SID, signedOff: true });
+    const result = await close.execute({ sessionId: SID, signedOff: true, signedOffBy: 'parent' });
     expect(result.reward).toMatchObject({ amount: 15, txnId: 'txn_1' });
   });
 
@@ -265,7 +266,7 @@ describe('the reward guard', () => {
       { sessionId: 'ses_a', unitId: 'math-fractions.01' },
       { sessionId: 'ses_b', unitId: WORKSHEET_UNIT },
     ] });
-    const result = await close.execute({ sessionId: SID, signedOff: true });
+    const result = await close.execute({ sessionId: SID, signedOff: true, signedOffBy: 'parent' });
     expect(economy.calls[0].amount).toBe(15);
     expect(result.reward.amount).toBe(15);
     expect(sessions.derive(SID)).toMatchObject({ state: 'rewarded', terminal: true });
@@ -278,7 +279,7 @@ describe('the reward guard', () => {
     ] });
     await close.execute({ sessionId: SID });
     expect(sessions.types(SID)).not.toContain('rewarded');
-    const later = await close.execute({ sessionId: SID, signedOff: true });
+    const later = await close.execute({ sessionId: SID, signedOff: true, signedOffBy: 'parent' });
     expect(later.reward).toMatchObject({ amount: 15 });
   });
 
@@ -354,5 +355,49 @@ describe('OpenRemediation', () => {
     const result = await remediate.execute({ sessionId: SID });
     expect(result.status).toBe('unavailable');
     expect(validateDocument(result.document).errors).toEqual([]);
+  });
+});
+
+/**
+ * `signedOff` is a grown-up saying "yes, pay them". It arrives as a boolean in a
+ * request body, and until now it named nobody at all — a child could close their
+ * own session with `{signedOff: true}` and collect a reward the unit says needs
+ * a parent. The claim now has to carry the person making it.
+ */
+describe('who may sign off a reward', () => {
+  const rewardable = () => graded({ unitId: OMR_UNIT, percent: 100, passedEarlier: [
+    { sessionId: 'ses_a', unitId: 'math-fractions.01' },
+    { sessionId: 'ses_b', unitId: WORKSHEET_UNIT },
+  ] });
+
+  it('REFUSES a sign-off claimed by the child, and pays nothing', async () => {
+    await rewardable();
+    await expect(close.execute({ sessionId: SID, signedOff: true, signedOffBy: 'kid1' }))
+      .rejects.toMatchObject({ name: 'GuestForbiddenError' });
+    expect(economy.calls).toEqual([]);
+    expect(sessions.types(SID)).not.toContain('rewarded');
+  });
+
+  it('REFUSES an unknown signer, a birthyear-less one, and an unsigned claim', async () => {
+    await rewardable();
+    for (const signedOffBy of ['mr-nobody', 'aunty', null]) {
+      // eslint-disable-next-line no-await-in-loop
+      await expect(close.execute({ sessionId: SID, signedOff: true, signedOffBy }))
+        .rejects.toMatchObject({ name: 'GuestForbiddenError' });
+    }
+    expect(economy.calls).toEqual([]);
+  });
+
+  it('settles WITHOUT a sign-off for anyone at all — closing is not the privileged part', async () => {
+    await rewardable();
+    const result = await close.execute({ sessionId: SID });
+    expect(result.result).toBe('passed');
+    expect(result.reward).toMatchObject({ skipReason: 'awaiting_signoff' });
+  });
+
+  it('cannot be built without a grown-up gate', () => {
+    expect(() => new CloseSessionOutcome({
+      curriculum: {}, sessions, tokens, assignments: new FakeAssignmentStore([]), clock: clock.now,
+    })).toThrow(/grownUps/);
   });
 });

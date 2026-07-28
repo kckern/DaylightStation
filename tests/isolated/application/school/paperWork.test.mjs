@@ -15,7 +15,7 @@ import { VirtualOmrReader } from '#adapters/hardware/omr/VirtualOmrReader.mjs';
 import { questionItemIds } from '#domains/school/documents/documentValidation.mjs';
 import {
   FakeCatalog, FakeSessionRepository, FakeFormMapStore, FakeReviewQueue,
-  fakeClock, silentLogger,
+  fakeClock, fakeGrownUps, silentLogger,
 } from '#testlib/school/lifecycleFakes.mjs';
 import {
   rawUnits, rawDocuments, rawManifests, BANK_IDS, printedFormMap, correctBubbles,
@@ -75,7 +75,10 @@ const build = () => {
   grader = new FakeGrader(BANKS);
   const bankReader = { getBank: (id) => BANKS[id] ?? null };
   submit = new SubmitPaperWork({ curriculum, sessions, formMaps, reviewQueue, bankReader, clock: clock.now, logger: silentLogger });
-  grade = new GradeSubmission({ curriculum, sessions, reviewQueue, grader, bankReader, clock: clock.now, logger: silentLogger });
+  grade = new GradeSubmission({
+    curriculum, sessions, reviewQueue, grader, bankReader,
+    grownUps: fakeGrownUps(clock), clock: clock.now, logger: silentLogger,
+  });
 };
 
 const issued = async (unitId = OMR_UNIT, artifactId = 'art_1') => {
@@ -274,5 +277,56 @@ describe('GradeSubmission through the one engine', () => {
     await submitAll(RIGHT);
     await grade.execute({ sessionId: SID, entries: RIGHT });
     expect(grader.sessions).toBe(1);
+  });
+});
+
+/**
+ * A parent's verdict overrides the engine, so `gradedBy` is authority, not a
+ * label. The route that carries it takes it from a request body — which is why
+ * the roster check has to be here, in front of the write, and not in the UI that
+ * happens to send the right id today.
+ */
+describe('who may mark a child\'s work', () => {
+  const submitBlank = async () => {
+    await issued();
+    return submit.execute({ sessionId: SID, entries: {}, blank: PRINTED });
+  };
+
+  it('lets a grown-up mark', async () => {
+    await submitBlank();
+    const result = await grade.execute({
+      sessionId: SID, verdicts: Object.fromEntries(PRINTED.map((id) => [id, 'correct'])), gradedBy: 'parent',
+    });
+    expect(result).toMatchObject({ status: 'graded', percent: 100 });
+  });
+
+  it('REFUSES a verdict attributed to the child whose work it is', async () => {
+    await submitBlank();
+    await expect(grade.execute({ sessionId: SID, verdicts: { 'u3-q1': 'correct' }, gradedBy: 'kid1' }))
+      .rejects.toMatchObject({ name: 'GuestForbiddenError' });
+    expect((await reviewQueue.listForSession(SID)).every((i) => i.verdict === null)).toBe(true);
+    expect(sessions.types(SID)).not.toContain('graded');
+  });
+
+  it('REFUSES an unknown marker, a birthyear-less one, and an anonymous one', async () => {
+    await submitBlank();
+    for (const gradedBy of ['mr-nobody', 'aunty', null]) {
+      // eslint-disable-next-line no-await-in-loop
+      await expect(grade.execute({ sessionId: SID, verdicts: { 'u3-q1': 'correct' }, gradedBy }))
+        .rejects.toMatchObject({ name: 'GuestForbiddenError' });
+    }
+    expect((await reviewQueue.listForSession(SID)).every((i) => i.verdict === null)).toBe(true);
+  });
+
+  it('needs no identity when nothing but the ENGINE is marking', async () => {
+    // A machine-scorable sheet coming back from the reader carries no person.
+    await issued();
+    await submit.execute({ sessionId: SID, entries: RIGHT });
+    expect(await grade.execute({ sessionId: SID, entries: RIGHT })).toMatchObject({ status: 'graded', percent: 100 });
+  });
+
+  it('cannot be built without a grown-up gate', () => {
+    expect(() => new GradeSubmission({ curriculum: {}, sessions, reviewQueue, grader, clock: clock.now }))
+      .toThrow(/grownUps/);
   });
 });

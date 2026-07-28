@@ -292,7 +292,7 @@ export async function createSchoolLifecycle({
   });
   const gradeSubmission = new GradeSubmission({
     curriculum, sessions: stores.sessions, reviewQueue: stores.reviewQueue,
-    grader: schoolService, bankReader, clock, logger,
+    grader: schoolService, bankReader, grownUps, clock, logger,
   });
   const closeSessionOutcome = new CloseSessionOutcome({
     curriculum, sessions: stores.sessions, tokens: stores.tokens, assignments: stores.assignments,
@@ -303,6 +303,7 @@ export async function createSchoolLifecycle({
     economy: economyService,
     economyAction: lifecycleCfg.economy?.action || 'school-unit-complete',
     economyEnabled: lifecycleCfg.economy?.enabled === true,
+    grownUps,
     clock, rng: draw, logger,
   });
   const openRemediation = new OpenRemediation({ curriculum, sessions: stores.sessions, clock, logger });

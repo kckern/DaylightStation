@@ -564,11 +564,16 @@ export async function createLifecycleHarness({
      * Close a graded session out. The use case prints its own result receipt —
      * the harness used to do that here, which hid the fact that production
      * never did it at all.
+     *
+     * A sign-off names the grown-up making it: the use case checks the id
+     * against the roster, so `signedOff: true` with nobody attached is refused.
      */
-    async closeOutcome({ sessionId = null, signedOff = false } = {}) {
+    async closeOutcome({ sessionId = null, signedOff = false, signedOffBy = DEFAULT_GROWNUP } = {}) {
       const id = sessionId ?? lastScan?.sessionId;
       if (!id) throw new Error('closeOutcome: no session to settle');
-      lastResult = await useCases.closeSessionOutcome.execute({ sessionId: id, signedOff });
+      lastResult = await useCases.closeSessionOutcome.execute({
+        sessionId: id, signedOff, signedOffBy: signedOff ? signedOffBy : null,
+      });
       return lastResult;
     },
 

@@ -18,10 +18,32 @@ import { IAssignmentStore } from '#apps/school/ports/IAssignmentStore.mjs';
 import { IFormMapStore } from '#apps/school/ports/IFormMapStore.mjs';
 import { IReviewQueue } from '#apps/school/ports/IReviewQueue.mjs';
 import { IDocumentRenderer, IReceiptRenderer } from '#apps/school/ports/IDocumentRenderer.mjs';
+import { GrownUpGate } from '#apps/school/GrownUpGate.mjs';
 import { reduceSession } from '#domains/school/sessions/sessionEvents.mjs';
 import { TOKEN_PREFIX } from '#domains/school/sessions/tokens.mjs';
 
 export const silentLogger = { info() {}, warn() {}, error() {}, debug() {} };
+
+/**
+ * The household a lifecycle test runs in. One grown-up, one child, and one
+ * profile whose birthyear was never filled in — the last is not padding: an
+ * unknown birthyear is a child as far as authority goes, and that is the case
+ * most likely to rot.
+ */
+export const FAKE_ROSTER = Object.freeze([
+  Object.freeze({ id: 'parent', name: 'Parent', birthyear: 1985 }),
+  Object.freeze({ id: 'kid1', name: 'Kid', birthyear: 2016 }),
+  Object.freeze({ id: 'aunty', name: 'Aunty', birthyear: null }),
+]);
+
+/**
+ * The gate the parent-only writes ask before they write anything.
+ * @param {object} [clock] - a `fakeClock`; defaults to the fixture household's "now"
+ * @param {Array<object>} [roster]
+ */
+export function fakeGrownUps(clock = fakeClock(), roster = FAKE_ROSTER) {
+  return new GrownUpGate({ roster: () => roster, clock: clock.now, logger: silentLogger });
+}
 
 /** A clock a test moves by hand. */
 export function fakeClock(startIso = '2026-07-27T09:00:00.000Z') {
