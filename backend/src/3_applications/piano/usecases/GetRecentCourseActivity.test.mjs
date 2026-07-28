@@ -76,3 +76,35 @@ test('caches on unchanged progress mtimes, recomputes on change', async () => {
   await uc.execute();
   assert.ok(childrenCalls > callsAfterFirst);   // mtime change → recompute
 });
+
+test('a failed children() fetch degrades the result but does not poison the cache', async () => {
+  const deps = makeDeps({ summaries: {
+    kc: { 10: { completed: 1, total: 2, lastPlayedAt: '2026-07-26T00:00:00Z' } },
+  } });
+  // Fixed mtime — an unchanged key would normally serve the cached (possibly
+  // stale) result, so this proves the skip: the second execute() must still
+  // recompute even though nothing about the roster's mtimes changed.
+  deps.userVideoProgressStore.progressFileMtime = () => 1;
+  let childrenCalls = 0;
+  deps.plexClient.children = async (key) => {
+    childrenCalls += 1;
+    if (childrenCalls === 1) throw new Error('Plex unreachable');
+    return String(key) === '100'
+      ? [{ ratingKey: '10', title: 'Course A', thumb: '/img/a' }, { ratingKey: '11', title: 'Course B', thumb: '/img/b' }]
+      : [{ ratingKey: '20', title: 'Appreciation X', thumb: '/img/x' }];
+  };
+  const uc = new GetRecentCourseActivity(deps);
+
+  const first = await uc.execute();
+  assert.equal(first.players.length, 0); // degraded: no shows discovered, so no player has history
+
+  const second = await uc.execute();
+  // Only the in-scope collection ("plex:100", the first group) is ever queried
+  // (see the "appreciation collections are out of scope" test above) — one
+  // failed call on the first execute(), one successful call on the second.
+  // If the degraded result had been cached, this second call would never
+  // happen at all.
+  assert.equal(childrenCalls, 2);
+  assert.equal(second.players.length, 1); // players present once the fetch succeeds
+  assert.equal(second.players[0].userId, 'kc');
+});
