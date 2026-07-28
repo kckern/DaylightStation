@@ -39,6 +39,22 @@ Three forks were settled before designing:
 | Prefix shape | **Domain-first, flat.** The prefix names the owner; the body stays each domain's existing grammar. Rejected: a house-wide sentinel (`ds:…`, costs length on every printed Code128) and action-first verbs (ambiguous when two domains want `play:`). |
 | Un-prefixed codes | **Shape first, per-reader default.** Detect what is detectable (ISBN-13 is 978/979-prefixed); fall back to the reader's `route` only for what remains. |
 
+**On step 4's exact scope** (corrected 2026-07-28 during Task 4, restoring the
+decision as originally taken). Shape detection claims **ISBN-13 only**. A bare
+UPC/EAN is *not* claimed by shape — it falls to step 5 and means whatever its
+reader is configured for.
+
+The distinction is behavioral, not cosmetic. Claiming all digit-only codes as
+`product` would make a UPC scanned on a **content** reader log food, where today
+it reaches `BarcodePayload.parse`, fails to parse, and does nothing. That breaks
+Phase 1's zero-behavior-change criterion. Routing it through step 5 preserves
+both readers exactly: nutribot → the UPC food lookup, content → nothing.
+
+`product` is therefore a **route-fallback target, not a shape**. It is reachable
+only via `routeFallback: { nutribot: 'product' }`. ISBN is different because a
+book is identifiable from the code itself, which is the whole point of detecting
+what is detectable.
+
 ## 1. The grammar
 
 A closed registry maps a prefix to its owning domain. A domain must register to
@@ -94,7 +110,8 @@ First match wins.
 1. **Registered prefix** — `go:` `cmd:` `nut:` `sch:`
 2. **Legacy self-identifying** — bare `dl:` `ct:` `rs:` → nutrition
 3. **Legacy positional** — any remaining code containing a colon → content
-4. **Shape** — ISBN (978/979) → books; other digit-only → product
+4. **Shape** — ISBN-13 (978/979) → books. **Other digit-only codes are NOT claimed
+   here** and fall to step 5.
 5. **Reader's `route`** — last resort for anything still unresolved
 6. **Unknown** — explicit outcome
 
