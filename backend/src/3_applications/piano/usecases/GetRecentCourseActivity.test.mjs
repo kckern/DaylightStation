@@ -204,6 +204,7 @@ test('default season-weighted: each unit is an equal slice, episodes interpolate
   assert.equal(c.percent, 81);
   assert.equal(c.completed, 6);  // tooltip counts are whole-course
   assert.equal(c.total, 9);
+  assert.deepEqual(c.units, ['done', 'active']); // per-season dots
 });
 
 test('percent_mode course: plain completed/total across every lecture', async () => {

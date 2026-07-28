@@ -181,14 +181,25 @@ export class GetRecentCourseActivity {
           }
         }
         if (!newestOverall) continue;
+        // The "current" unit (most recently active incomplete, else most
+        // recent) — drives the current-module percent AND the blinking dot.
+        const activeUnits = [...units.values()].filter((r) => r.lastPlayed);
+        const incompleteUnits = activeUnits.filter((r) => r.completed < r.total);
+        const pool = incompleteUnits.length ? incompleteUnits : activeUnits;
+        const current = pool.length
+          ? pool.reduce((a, b) => (String(b.lastPlayed) > String(a.lastPlayed) ? b : a))
+          : null;
+        // Per-season indicator states, in season order (Map insertion order =
+        // playable order): done (filled) / active (blinking) / todo (empty).
+        const unitStates = [...units.values()].map((r) => {
+          if (r.total > 0 && r.completed >= r.total) return 'done';
+          if (r === current || r.completed > 0) return 'active';
+          return 'todo';
+        });
         let completed;
         let total;
         let percent;
         if (percentMode === 'current-module') {
-          const active = [...units.values()].filter((r) => r.lastPlayed);
-          const incomplete = active.filter((r) => r.completed < r.total);
-          const pool = incomplete.length ? incomplete : active;
-          const current = pool.reduce((a, b) => (String(b.lastPlayed) > String(a.lastPlayed) ? b : a));
           completed = current.completed;
           total = current.total;
           percent = total > 0 && completed > 0 ? Math.max(1, Math.round((completed / total) * 100)) : 0;
@@ -212,6 +223,7 @@ export class GetRecentCourseActivity {
           completed,
           total,
           percent,
+          units: unitStates,
           courseCompleted: enriched.length > 0 && courseCompleted >= enriched.length,
         });
       }
@@ -224,6 +236,7 @@ export class GetRecentCourseActivity {
         completed: e.completed,
         total: e.total,
         percent: e.percent,
+        units: e.units,
         courseCompleted: e.courseCompleted,
         lastPlayedAt: e.lastPlayedAt,
       }));

@@ -10,6 +10,12 @@ function logger() {
   return _logger;
 }
 
+// Request a right-sized, server-side-scaled thumbnail (proxy `?w=&h=` →
+// Plex photo transcoder) instead of downscaling a full poster in the browser.
+const THUMB_W = 140;
+const THUMB_H = 200;
+const sizedThumb = (url) => (url ? `${url}${url.includes('?') ? '&' : '?'}w=${THUMB_W}&h=${THUMB_H}` : url);
+
 /** "just now" / "Nm ago" / "Nh ago" / "Nd ago" — coarse by design. */
 export function relativeTime(iso, now = Date.now()) {
   const t = Date.parse(iso || '');
@@ -68,20 +74,33 @@ export default function PianoMenuActivity({ onOpenCourse }) {
                   onClick={() => onOpenCourse?.(c.courseId, u.userId)}
                   title={`${u.name} — ${c.courseTitle}: ${c.completed}/${c.total}`}
                 >
-                  {c.thumbnail ? (
-                    <img
-                      className="piano-menu-activity__thumb"
-                      src={c.thumbnail}
-                      alt={c.courseTitle}
-                      loading="lazy"
-                      decoding="async"
-                    />
-                  ) : (
-                    <span className="piano-menu-activity__thumb piano-menu-activity__thumb--fallback">
-                      {c.courseTitle}
+                  <span className="piano-menu-activity__poster">
+                    {c.thumbnail ? (
+                      <img
+                        className="piano-menu-activity__thumb"
+                        src={sizedThumb(c.thumbnail)}
+                        alt={c.courseTitle}
+                        loading="lazy"
+                        decoding="async"
+                      />
+                    ) : (
+                      <span className="piano-menu-activity__thumb piano-menu-activity__thumb--fallback">
+                        {c.courseTitle}
+                      </span>
+                    )}
+                    {/* Bottom gradient overlay: percent + per-season dots
+                        (filled=done, blinking=in progress, empty=to do). */}
+                    <span className="piano-menu-activity__overlay">
+                      <span className="piano-menu-activity__course-pct">{pct}%</span>
+                      {Array.isArray(c.units) && c.units.length > 1 && (
+                        <span className="piano-menu-activity__units" aria-hidden="true">
+                          {c.units.map((s, i) => (
+                            <i key={i} className={`piano-menu-activity__unit is-${s}`} />
+                          ))}
+                        </span>
+                      )}
                     </span>
-                  )}
-                  <span className="piano-menu-activity__course-pct">{pct}%</span>
+                  </span>
                 </button>
               );
             })}
