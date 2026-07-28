@@ -191,11 +191,23 @@ export class GetRecentCourseActivity {
           : null;
         // Per-season indicator states, in season order (Map insertion order =
         // playable order): done (filled) / active (blinking) / todo (empty).
-        const unitStates = [...units.values()].map((r) => {
+        let unitStates = [...units.values()].map((r) => {
           if (r.total > 0 && r.completed >= r.total) return 'done';
           if (r === current || r.completed > 0) return 'active';
           return 'todo';
         });
+        // Single-season courses: the dots represent EPISODES instead — same
+        // vocabulary, finer grain.
+        if (units.size === 1) {
+          const newestUnwatched = enriched
+            .filter((it) => !it.userWatched && it.userLastPlayedAt)
+            .reduce((a, b) => (!a || String(b.userLastPlayedAt) > String(a.userLastPlayedAt) ? b : a), null);
+          unitStates = enriched.map((it) => {
+            if (it.userWatched) return 'done';
+            if ((it.userPercent ?? 0) > 0 || (newestUnwatched && it === newestUnwatched)) return 'active';
+            return 'todo';
+          });
+        }
         let completed;
         let total;
         let percent;
