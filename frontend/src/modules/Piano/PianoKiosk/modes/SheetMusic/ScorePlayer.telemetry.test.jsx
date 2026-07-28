@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, cleanup, screen, act } from '@testing-library/react';
+import { render, cleanup, screen, act, fireEvent } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 
 // ── Task 13: config-gated recorder lifecycle ─────────────────────────────────
@@ -90,6 +90,8 @@ import { inputTelemetryEnabled, makeInputSender } from '../../../../../lib/loggi
 
 const renderPlayer = () =>
   render(<MemoryRouter><ScorePlayer score={{ id: 'files:t.musicxml', title: 'T', musicXml: '<score/>' }} /></MemoryRouter>);
+const renderScore = (musicXml) =>
+  render(<MemoryRouter><ScorePlayer score={{ id: 'files:t2.musicxml', title: 'T2', musicXml }} /></MemoryRouter>);
 
 beforeEach(() => {
   cfg.value = { keyboard: { startNote: 21, endNote: 108 } };
@@ -97,6 +99,10 @@ beforeEach(() => {
   rec.stopRecorder.mockClear();
   h.layoutExtras = null;
   tel.recordFire = vi.fn();
+  // Emitted events are the assertion surface for the control telemetry below;
+  // the logger object identity must stay stable (ScorePlayer memoizes on it).
+  tel.logger.info = vi.fn();
+  tel.logFocus = vi.fn();
   try { window.localStorage.clear(); } catch { /* no storage */ }
 });
 afterEach(() => cleanup());
@@ -181,6 +187,91 @@ describe('ScorePlayer — stall budget follows the EFFECTIVE tempo', () => {
     for (const call of tel.recordFire.mock.calls) expect(call[3]).toBe(90);
   });
 });
+
+// ── Task 5: the controls users press must leave a trace ───────────────────────
+// Restart, tap-to-seek and Perform's tap-scroll emitted NOTHING, so a three-day
+// field log could not say whether a mode was used or abandoned; and the ±1 loop
+// nudge emitted a bare score.focus.set indistinguishable from a two-tap commit
+// or a section pick (audit T1).
+describe('ScorePlayer — control telemetry (Task 5)', () => {
+  const TWO_MEASURES = {
+    steps: [
+      { onsetQuarter: 0, measure: 0, notes: [{ midi: 64, staff: 0, x: 100, top: 10, bottom: 200, width: 8 }] },
+      { onsetQuarter: 1, measure: 1, notes: [{ midi: 62, staff: 0, x: 160, top: 10, bottom: 200, width: 8 }] },
+    ],
+    measures: [
+      { index: 0, number: 1, firstStep: 0, lastStep: 0 },
+      { index: 1, number: 2, firstStep: 1, lastStep: 1 },
+    ],
+  };
+  // Two rehearsal marks → two pickable sections in the Loop menu.
+  const SECTIONED_XML = `<score-partwise><part-list><score-part id="P1"><part-name>P</part-name></score-part></part-list>
+    <part id="P1">
+      <measure number="1"><direction><direction-type><rehearsal>A</rehearsal></direction-type></direction></measure>
+      <measure number="2"><direction><direction-type><rehearsal>B</rehearsal></direction-type></direction></measure>
+    </part></score-partwise>`;
+
+  const emitted = (name) => tel.logger.info.mock.calls.filter((c) => c[0] === name).map((c) => c[1]);
+  const tapScore = (x, y = 100) => {
+    const el = document.querySelector('.piano-score-player__scroll');
+    act(() => { fireEvent.click(el, { clientX: x, clientY: y }); });
+  };
+  const selectLoop = (x) => { // Loop → Select measures… → two taps on the same note
+    act(() => { fireEvent.click(screen.getByRole('button', { name: /^loop/i })); });
+    act(() => { fireEvent.click(screen.getByRole('button', { name: /select measures/i })); });
+    tapScore(x); tapScore(x);
+  };
+
+  beforeEach(() => { h.layoutExtras = TWO_MEASURES; });
+
+  it('emits score.transport.restart when Restart is pressed', () => {
+    renderPlayer();
+    tapScore(160); // seek to step 1 so Restart is enabled
+    act(() => { fireEvent.click(screen.getByRole('button', { name: /restart/i })); });
+    expect(emitted('score.transport.restart')).toEqual([{ from: 1, to: 0, mode: 'listen' }]);
+  });
+
+  it('emits score.seek.tap for a tap-to-seek in a non-Perform mode', () => {
+    renderPlayer();
+    act(() => { screen.getByText('Learn').click(); });
+    tapScore(160);
+    expect(emitted('score.seek.tap')).toEqual([{ from: 0, to: 1, mode: 'learn' }]);
+  });
+
+  it('emits score.perform.tapscroll instead of a seek in Perform', () => {
+    renderPlayer();
+    act(() => { screen.getByText('Perform').click(); });
+    tapScore(160);
+    expect(emitted('score.perform.tapscroll')).toEqual([{ axis: 'y' }]);
+    expect(emitted('score.seek.tap')).toEqual([]);
+  });
+
+  it('tags a focus set by the ±1 loop nudge with origin: nudge', () => {
+    renderPlayer();
+    act(() => { screen.getByText('Learn').click(); });
+    selectLoop(100); // loop m1–m1
+    act(() => { fireEvent.click(screen.getByRole('button', { name: /loop m1–m1/i })); });
+    act(() => { fireEvent.click(screen.getByRole('button', { name: /loop end later/i })); });
+    const last = tel.logFocus.mock.calls.at(-1)[0];
+    expect(last).toMatchObject({ kind: 'custom', inMeasure: 0, outMeasure: 1, origin: 'nudge' });
+  });
+
+  it('tags a focus set by a two-tap selection with origin: select', () => {
+    renderPlayer();
+    act(() => { screen.getByText('Learn').click(); });
+    selectLoop(160);
+    expect(tel.logFocus.mock.calls.at(-1)[0]).toMatchObject({ kind: 'custom', origin: 'select' });
+  });
+
+  it('tags a focus set by a section pick with origin: section', () => {
+    renderScore(SECTIONED_XML);
+    act(() => { screen.getByText('Learn').click(); });
+    act(() => { fireEvent.click(screen.getByRole('button', { name: /^loop/i })); });
+    act(() => { fireEvent.click(screen.getByRole('button', { name: 'B' })); });
+    expect(tel.logFocus.mock.calls.at(-1)[0]).toMatchObject({ kind: 'section', inMeasure: 1, outMeasure: 1, origin: 'section' });
+  });
+});
+
 
 describe('makeInputSender — one event per batch', () => {
   it('emits exactly one logger.info per call, on the input channel with no sessionLog', async () => {

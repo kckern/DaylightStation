@@ -134,6 +134,10 @@ export default function ScorePlayer({ score: scoreMeta }) {
   const stepRef = useRef(0);
   stepRef.current = step;
   const stepStartRef = useRef(0); // wall time the current step began (Polish drift proxy)
+  // What CAUSED the next focus change, so score.focus.set is attributable. The
+  // two-tap flow, the ±1 nudge and a section pick all commit the same event
+  // shape; without this the log cannot tell them apart (audit T1).
+  const focusOriginRef = useRef('restore');
 
   const events = layout.events;
   const steps = layout.steps;
@@ -773,6 +777,11 @@ export default function ScorePlayer({ score: scoreMeta }) {
       const dy = e.clientY - (r.top + el.clientHeight / 2);
       const dx = e.clientX - (r.left + el.clientWidth / 2);
       el.scrollBy(flow === 'horizontal' ? { left: dx, behavior: 'smooth' } : { top: dy, behavior: 'smooth' });
+      // Perform's tap-scroll was unlogged, so a silent music-stand session read as
+      // abandonment: the audit first concluded Perform was "entered twice and
+      // abandoned" when it had been entered five times, once for 15m50s (T1).
+      logger.info('score.perform.tapscroll', { axis: flow === 'horizontal' ? 'x' : 'y' });
+      tapIntent('perform-scroll');
       return;
     }
     if (!rdr || !events.length) return;
@@ -793,6 +802,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
         const inMeasure = Math.min(selecting.inMeasure, mi);
         const outMeasure = Math.max(selecting.inMeasure, mi);
         setSelecting(null);
+        focusOriginRef.current = 'select';
         setFocus({ kind: 'custom', inMeasure, outMeasure });
       }
       return;
@@ -802,6 +812,10 @@ export default function ScorePlayer({ score: scoreMeta }) {
     // Normal seek. When a practice range is active, clamp the target into it.
     clearWrapDwell(); // a tap-seek overrides a pending loop-wrap dwell
     const target = range ? clampStepToRange(i, range) : i;
+    // Tap-to-seek is the primary navigation gesture and emitted nothing, so every
+    // `play {step: N}` with an unexplained N was a seek nobody could see (T1).
+    logger.info('score.seek.tap', { from: stepRef.current, to: target, mode });
+    tapIntent('seek');
     setStep(target);
     setStruck(() => new Set());
     lastAdvanceRef.current = performance.now();
@@ -816,7 +830,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
     // Transport timeline is tempo-scaled (playTimeline uses factor 1/tempoMult);
     // seek positions come from the unscaled stepTimeline, so scale to match.
     transport.seek((stepTimeline[target]?.t ?? 0) / tempoMult);
-  }, [mode, flow, events, transport, stepTimeline, silenceScheduled, tempoMult, selecting, range, measureIndexOfStep, logger, countIn, scale, clearWrapDwell]);
+  }, [mode, flow, events, transport, stepTimeline, silenceScheduled, tempoMult, selecting, range, measureIndexOfStep, logger, countIn, scale, clearWrapDwell, tapIntent]);
 
   // Single unmount teardown: immediate silence + one delayed panic (see the
   // silenceScheduled note above), plus any pending loop-wrap dwell — a restart
@@ -834,7 +848,8 @@ export default function ScorePlayer({ score: scoreMeta }) {
     setStep(r[0]);
     setStruck(() => new Set());
     lastAdvanceRef.current = performance.now();
-    logFocus({ kind: focus.kind, inMeasure: focus.inMeasure, outMeasure: focus.outMeasure });
+    logFocus({ kind: focus.kind, inMeasure: focus.inMeasure, outMeasure: focus.outMeasure, origin: focusOriginRef.current });
+    focusOriginRef.current = 'restore';
     tapIntent('focus');
   }, [focus]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -842,6 +857,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
     const r = layout.measures ? sectionToRange(section, layout.measures) : null;
     if (!r) return;
     setSelecting(null);
+    focusOriginRef.current = 'section';
     setFocus({ kind: 'section', label: section.label, ...r });
   }, [layout.measures]);
 
@@ -863,6 +879,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
   // re-seeks its start when an endpoint moves. A clamped no-op returns the same
   // object, so setFocus bails without re-rendering.
   const onNudge = useCallback((edge, delta) => {
+    focusOriginRef.current = 'nudge';
     setFocus((f) => nudgeRange(f, edge, delta, layout.measures?.length || 0));
   }, [layout.measures]);
   // Scope label for the Loop control: a section's label or a 1-based measure span
@@ -936,6 +953,10 @@ export default function ScorePlayer({ score: scoreMeta }) {
     if (mode === 'listen') silenceScheduled();
     flushPlaybackNow();
     const home = homeStep(rangeRef.current); // loop in-point when a loop is active (audit L5)
+    // Restart emitted nothing at all, so the most-pressed control in the mode was
+    // only inferable from a statistical artifact in the stats records (audit T1).
+    logger.info('score.transport.restart', { from: stepRef.current, to: home, mode });
+    tapIntent('restart');
     setStep(home);
     setStruck(() => new Set());
     setGrades({});          // a fresh run clears the previous grades…
@@ -943,7 +964,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
     // The auto-follow effect scrolls to the new step; only a true top-of-piece
     // reset should force-scroll to the origin.
     if (home === 0) scrollRef.current?.scrollTo({ top: 0, left: 0 });
-  }, [transport, mode, silenceScheduled, flushPlaybackNow, countIn, clearWrapDwell]);
+  }, [transport, mode, silenceScheduled, flushPlaybackNow, countIn, clearWrapDwell, logger, tapIntent]);
 
   // Run summary Replay: reset the run (clears grades + closes the panel).
   const onReplaySummary = useCallback(() => { reset(); }, [reset]);
@@ -962,6 +983,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
     if (!span) return;
     setSummaryOpen(false);
     onMode('learn');
+    focusOriginRef.current = 'drill';
     setFocus({ kind: 'custom', ...span });
     logger.info('score.drill.worst', span);
   }, [onMode, logger]);
