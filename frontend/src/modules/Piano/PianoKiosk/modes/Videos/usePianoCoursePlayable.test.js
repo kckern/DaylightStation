@@ -74,4 +74,12 @@ describe('usePianoCoursePlayable', () => {
     await waitFor(() => expect(result.current.loading).toBe(false));
     expect(result.current.referenceUnitIds).toEqual([]);
   });
+
+  it('falls back to the fitness endpoint for guest — never a guest-userId piano call (F5)', async () => {
+    api.mockResolvedValue({ items: [], info: {} });
+    const { result } = renderHook(() => usePianoCoursePlayable('12345', 'guest'));
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    expect(api).toHaveBeenCalledWith('api/v1/fitness/show/12345/playable');
+    expect(api).not.toHaveBeenCalledWith(expect.stringContaining('userId=guest'));
+  });
 });
