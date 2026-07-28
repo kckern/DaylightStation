@@ -291,7 +291,7 @@ pacing knob is new-sentences-per-day.
   declared per device and defaults to assuming nothing.
 - **Legacy import from the recovered database.** The 2016–2020 MySQL dump
   survived (`dbbackup/2020-12-01/glossika.gz`) and carries the whole history:
-  **5,348 events across all four rungs**, real day numbers (KC 1–59, Elizabeth
+  **5,348 events across all four rungs**, real day numbers (KC 1–59, parent-two
   1–119), and **2,655 typed answers**, all scored on import so the Review diff
   has something to compare against. `import-db` supersedes the earlier
   mtime-based reconstruction, which could only recover 519 undated recordings.
@@ -530,6 +530,92 @@ Boot-cached like the rest of `school.yml`; edits need a container restart.
 print single-sided default), a print history surface for parents (the log
 exists; nothing renders it), and Telegram approval (the pending API is ready
 for it, no bot hook is wired).
+
+### The physical learning console (branch `feature/school-document-system`)
+
+> **Status:** built on a feature branch, not yet merged or deployed.
+> Architecture: [`2026-07-27-school-physical-console-architecture.md`](../../superpowers/specs/2026-07-27-school-physical-console-architecture.md).
+
+School is becoming a paper-first system with the touchscreen as one surface
+among several. A child scans a personal card, a thermal agenda prints, they scan
+a choice, a worksheet prints or media plays, the work is graded through the
+*same* engine as the on-screen quiz, and a result receipt prints with the next
+action on it. Four new pieces carry that.
+
+**The curriculum catalog** — a published, reviewed set of units at
+`data/content/school/curriculum/{units,documents,manifests}/`. A unit composes
+references (bank, document, media manifest, review rubric) and carries the
+educational and administrative facts; it never inlines them. Validation is pure
+and cross-referential: `validateUnit(raw, {bankIds, documentIds, manifestIds})`
+resolves every reference at publish time, so runtime never discovers a dangling
+one. **The promotion boundary is "valid YAML in the published directory with
+`reviewState: approved`"** — runtime is ignorant of how a draft was authored,
+which is what keeps the AI ingestion pipeline out of the runtime contract.
+
+Two rules that exist because of specific traps:
+- **External locators are not identities.** A manifest holds `plex:<key>` as a
+  *current* locator plus durable metadata (title, series, aliases). A manifest
+  whose only identity is its locator is rejected — otherwise a Plex library
+  rebuild orphans the curriculum with nothing to rebind from.
+- **A declared `id` must match its filename.** References resolve by filename,
+  so a mismatch is dead metadata that makes every referrer report "not found"
+  against a file plainly on disk.
+
+**The learning-document system** — typed blocks (`rich_text`, `math`, `plot`,
+`geometry`, `asset`, `question`, `answer_space`, `omr_response`,
+`media_action`, `scan_action`) rendered to Letter PDF and thermal receipt from
+one source. The block set is closed in code, the same posture as
+`categories.mjs` and `reporting.mjs`.
+
+- **Documents cannot carry answers.** Validation walks the whole tree and
+  rejects any `answer`/`answers` key anywhere, including inside a renderer-owned
+  `plot` spec. Learner copies and keys render from the document plus the bank;
+  a document that *could* hold an answer is one that can print it on the
+  learner's sheet.
+- **Layout is measured, not streamed.** A measure pass sizes every block, then a
+  place pass applies keep-together (a question and its answer space never split),
+  widow/orphan minima, a spacing-class table (inter-block space is a decision,
+  not a residue), and answer-space distribution into leftover page space. An
+  atomic fragment taller than a page is a publish-time error, not a print-time
+  surprise.
+- **An `omr_response`'s `itemId` must equal its enclosing question's.** The
+  bubble row and the question must grade the same bank item, or the sheet marks
+  up one item and the grader scores another.
+- Rendering is pure-JS in-process (pdfkit + MathJax→SVG + svg-to-pdfkit); no
+  typesetting binary in the container. **Three svg-to-pdfkit normalizations are
+  mandatory** and a fourth MathJax rule besides — see
+  [the spike results](../../_wip/plans/2026-07-27-school-math-rendering-spike-results.md).
+  Skipping any one produces silently wrong output, not an error.
+
+**Work sessions** — the durable record School lacked: append-only events per
+session under `data/apps/school/sessions/{date}/{sessionId}/events.yml`, with
+state derived on every read (the language-ladder pattern). It supplies the
+context the attempt log intentionally lacks — why work was selected, what paper
+was issued, what comes next.
+- `failed` and `reassigned` are **annotations, not states**: they record a fact
+  at any non-terminal state and leave the lifecycle where it was, so a failed
+  print leaves the token valid and the next scan retries.
+- **Every non-terminal state yields a non-null next action**, asserted as a
+  property across all reachable states. A state without one is a wedged session.
+- The outcome carries a deterministic id (`out:{sessionId}`) used as the
+  economy `ref`. **School checks its own `rewardTxn` before calling
+  `EconomyService.earn()`**, because that guard only scans the current UTC day's
+  ledger shard and would pay the same ref again tomorrow.
+
+**Opaque action tokens** — printed as `sch:<opaque>` and resolved server-side.
+They encode nothing: no learner id, no unit id, no policy. `identify` (the
+personal card) never expires; selection/media/remediation tokens are renewable
+and return a friendly "already done" once the session has advanced past them —
+a child holding a piece of paper is never shown an error.
+
+**Virtual hardware** — every physical endpoint has a double implementing the
+*same* surface as the real adapter (laser printer, thermal printer, scanner,
+playback target, OMR reader), with fault injection. Production code never
+branches on test mode; composition picks the double. The OMR double synthesizes
+bubble marks from the **real form map the PDF renderer emits**, which is what
+makes the paper-grading path testable years before the reader hardware exists.
+Gated behind `school.yml` → `virtualDevices: true`, default false — a
+production deployment must never expose a "make the printer fail" endpoint.
 
 ---
 
