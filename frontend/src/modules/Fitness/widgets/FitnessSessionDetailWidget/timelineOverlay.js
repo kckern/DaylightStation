@@ -1,5 +1,5 @@
 // Pure geometry helpers for overlaying race bands + seams on the tick-based timeline axis.
-import { mediaDisplayUrl } from './sessionDetailUtils.js';
+import { mediaDisplayUrl, mediaIdentityKey } from './sessionDetailUtils.js';
 import { resolveChallengeMarkerType } from '@/modules/Fitness/lib/activities/challengeTypeRegistry.js';
 
 export function msToTickX(ms, { intervalMs, effectiveTicks, plotWidth, marginLeft = 0 }) {
@@ -49,17 +49,39 @@ const isVideoMedia = (evt) => {
 };
 
 /**
- * Video-change markers. The first video (the opening slot — warm-up OR hero)
- * gets no flag; videos 2..N are marked at their start. Event `start` is absolute
- * epoch ms, rebased onto the tick axis via opts.sessionStartMs.
+ * The video events that earn a marker — chronological, one per distinct video,
+ * minus the one the header already shows.
+ *
+ * Two omissions, both to keep the gutter one card per distinct video:
+ *  - consecutive events for the SAME video collapse (a resume/re-log of the
+ *    already-playing item isn't a change);
+ *  - the primary video (primaryMediaKey) is dropped, since the header owns it.
+ *    When the primary isn't the opening slot, the opening video is a real second
+ *    item and DOES get a card. Without a primaryMediaKey the first video is
+ *    assumed to be the header's.
  */
-export function computeVideoMarkers(events, opts) {
-  if (!Array.isArray(events) || !Number.isFinite(opts?.sessionStartMs)) return [];
+export function selectVideoMarkerEvents(events, primaryMediaKey) {
+  if (!Array.isArray(events)) return [];
   const videos = events
     .filter(isVideoMedia)
     .filter((e) => Number.isFinite(e.data?.start))
-    .sort((a, b) => a.data.start - b.data.start);
-  return videos.slice(1).map((e) => {
+    .sort((a, b) => a.data.start - b.data.start)
+    .filter((e, i, arr) => i === 0 || mediaIdentityKey(e) !== mediaIdentityKey(arr[i - 1]));
+  const primaryKey = primaryMediaKey ? String(primaryMediaKey) : null;
+  const headerIndex = primaryKey
+    ? videos.findIndex((e) => mediaIdentityKey(e) === primaryKey)
+    : 0;
+  return videos.filter((_, i) => i !== headerIndex);
+}
+
+/**
+ * Video-change markers. Event `start` is absolute epoch ms, rebased onto the
+ * tick axis via opts.sessionStartMs. See selectVideoMarkerEvents for which
+ * videos make the cut.
+ */
+export function computeVideoMarkers(events, opts) {
+  if (!Number.isFinite(opts?.sessionStartMs)) return [];
+  return selectVideoMarkerEvents(events, opts?.primaryMediaKey).map((e) => {
     const offsetMs = e.data.start - opts.sessionStartMs;
     return {
       x: clampX(msToTickX(offsetMs, opts), opts),
