@@ -20,6 +20,20 @@
 // The doubles are constructed ONCE and shared between the lifecycle use cases
 // and the virtual device console. Two instances would mean the console showing
 // an empty tray while `IssueDocument` printed happily into a different one.
+//
+// WHERE ARTWORK LIVES: `<dataDir>/content/assets/<ref>.svg`.
+//
+// A document's `asset` block carries a bare ref (`school/math/fraction-strips`)
+// and nothing about where it is — that is deployment knowledge, and it is
+// resolved here. Refs are already namespaced by subsystem, which is why the root
+// is `content/assets` and not `content/school/assets`: one tree, and the ref's
+// first segment says whose it is. Curriculum YAML sits beside it under
+// `content/school/curriculum/`.
+//
+// Shipping with NO resolver (which is what this file used to do) meant the
+// renderer's default one threw on every sheet carrying a diagram, `IssueDocument`
+// recorded a failure, and the child was handed a slip saying the printer was not
+// answering — false, and no amount of retrying could clear it.
 
 import path from 'path';
 import { promises as fs } from 'fs';
@@ -57,38 +71,6 @@ function cryptoRng(crypto) {
     const buf = new Uint32Array(1);
     crypto.getRandomValues(buf);
     return buf[0] / 2 ** 32;
-  };
-}
-
-/**
- * Bridge the receipt renderer's canvas onto the thermal port.
- *
- * `createDocumentReceiptRenderer` draws a receipt as a canvas — the right output
- * for a bitmap printer, and the wrong shape for the application layer, which
- * knows only `IReceiptRenderer.render(document) → {items, footer}`. The gap is
- * closed here, in composition, exactly the way every other canvas receipt in the
- * house reaches paper (see `4_api/v1/routers/fitness.mjs`): render, write a PNG,
- * hand the thermal adapter an image job.
- *
- * @param {object} renderer - from `createDocumentReceiptRenderer`
- * @param {string} spoolDir - where the PNGs land
- * @returns {{render: (document: object, opts?: object) => Promise<object>}}
- */
-function receiptBridge(renderer, spoolDir) {
-  let seq = 0;
-  return {
-    async render(document, opts = {}) {
-      const { canvas, width, height } = await renderer.createCanvas(document, opts);
-      await fs.mkdir(spoolDir, { recursive: true });
-      // Named for the document so a capture directory is readable by eye, with
-      // a counter because one document reprints.
-      const file = path.join(spoolDir, `${document.id}-${String(++seq).padStart(4, '0')}.png`);
-      await fs.writeFile(file, canvas.toBuffer('image/png'));
-      return {
-        items: [{ type: 'image', path: file, width, height, align: 'left', threshold: 128 }],
-        footer: { paddingLines: 3, autoCut: true },
-      };
-    },
   };
 }
 
@@ -139,9 +121,15 @@ export async function createSchoolLifecycle({
   let receiptRenderer = null;
   try {
     const { createDocumentPdfRenderer } = await import('#rendering/school/documents/DocumentPdfRenderer.mjs');
+    const { createFileAssetResolver } = await import('#rendering/school/documents/assetResolver.mjs');
     // Already the `IDocumentRenderer` shape: `render(document, opts)` →
     // `{pdf, pageCount, formMap}`. No adaptation needed, and none invented.
-    documentRenderer = createDocumentPdfRenderer({});
+    documentRenderer = createDocumentPdfRenderer({
+      resolveAsset: createFileAssetResolver({
+        rootDir: cfg.assets?.dir || path.join(dataDir, 'content', 'assets'),
+        logger,
+      }),
+    });
   } catch (err) {
     // No renderer, no console. Mounting routes that would fail at the moment a
     // child scans a card is worse than not mounting them.
@@ -149,11 +137,18 @@ export async function createSchoolLifecycle({
   }
 
   try {
-    const { createDocumentReceiptRenderer } = await import('#rendering/school/documents/DocumentReceiptRenderer.mjs');
-    receiptRenderer = receiptBridge(
-      createDocumentReceiptRenderer({}),
-      path.join(captureRoot, 'receipt-spool'),
-    );
+    // ESC/POS text + barcode items, NOT the canvas renderer's PNG.
+    //
+    // The canvas draws an empty square where the code belongs — it renders no
+    // barcode at all — so an image job handed a child a receipt with nothing
+    // scannable on it, and left the printer's text transcript (the operator's
+    // record of what a child was told) empty. Emitting items lets the printer
+    // generate a real Code128 in firmware. None of the three receipts this
+    // console prints contains math, which is the only thing the raster path
+    // buys; `DocumentReceiptRenderer` stays the probe that proves a document
+    // CAN be drawn on 58mm tape.
+    const { createDocumentEscPosRenderer } = await import('#rendering/school/documents/DocumentEscPosRenderer.mjs');
+    receiptRenderer = createDocumentEscPosRenderer({});
   } catch (err) {
     // A missing receipt renderer is survivable: worksheets still print, and
     // `ReceiptPrinting` reports every receipt as unprinted rather than lying.

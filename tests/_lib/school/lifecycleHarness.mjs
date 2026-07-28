@@ -19,22 +19,13 @@
  * `Date.now()`, so grace windows, token expiry and UTC day boundaries are
  * things a test states rather than waits for.
  *
- * TWO ADAPTERS LIVE HERE THAT PRODUCTION STILL NEEDS (Phase F7 composition):
- *
- *  1. `EscPosReceiptRenderer` — `ReceiptPrinting` takes an `IReceiptRenderer`
- *     that returns the ESC/POS `{ items, footer }` job the thermal adapter
- *     accepts. No implementation of that port exists in `backend/`. Without one
- *     the console prints nothing at all, so the harness supplies a faithful one
- *     (text + labelled barcode per block) rather than pretending receipts work.
- *  2. `PdfDocumentRendererAdapter` — `IssueDocument` calls
- *     `renderer.render(document, { tokens, variant, bank, ... })`;
- *     `createDocumentPdfRenderer()` returns a `render(document, { tokens, bank,
- *     studentName })` with no `variant` parameter at all. Something has to carry
- *     the session's retry variant onto the document. That something does not
- *     exist in `backend/` either.
- *
- * Both are flagged rather than hidden: they are the seam the composition root
- * has to close, and the harness is where their absence shows up first.
+ * NOTHING HERE STANDS IN FOR PRODUCTION. The harness used to carry three
+ * compensations for gaps in the composition root — an ESC/POS receipt renderer,
+ * a variant-carrying document-renderer adapter, and an inline asset lookup —
+ * and each one hid a defect that made the real console unusable. All three now
+ * live in `backend/` and the harness imports the same ones the composition root
+ * wires. If a production seam is missing, this file must FAIL rather than fill
+ * it in.
  *
  * @module tests/_lib/school/lifecycleHarness
  */
@@ -61,12 +52,13 @@ import { VirtualOmrReader } from '#adapters/hardware/omr/VirtualOmrReader.mjs';
 
 import { createDocumentPdfRenderer } from '#rendering/school/documents/DocumentPdfRenderer.mjs';
 import { createDocumentReceiptRenderer } from '#rendering/school/documents/DocumentReceiptRenderer.mjs';
+import { createDocumentEscPosRenderer } from '#rendering/school/documents/DocumentEscPosRenderer.mjs';
+import { createFileAssetResolver } from '#rendering/school/documents/assetResolver.mjs';
 
 import { CurriculumAccess } from '#apps/school/CurriculumAccess.mjs';
 import { ReceiptPrinting } from '#apps/school/ReceiptPrinting.mjs';
 import { SchoolService } from '#apps/school/SchoolService.mjs';
 import { EconomyService } from '#apps/economy/EconomyService.mjs';
-import { IDocumentRenderer, IReceiptRenderer } from '#apps/school/ports/IDocumentRenderer.mjs';
 
 import { BuildAgenda } from '#apps/school/usecases/BuildAgenda.mjs';
 import { ResolvePersonalCard } from '#apps/school/usecases/ResolvePersonalCard.mjs';
@@ -134,79 +126,6 @@ function sequentialIds(prefix) {
 }
 
 // ---------------------------------------------------------------------------
-// the two composition adapters production still owes (see the header)
-// ---------------------------------------------------------------------------
-
-/**
- * Receipt document → the ESC/POS item list `ThermalPrinterAdapter.print()`
- * accepts. A `scan_action` prints its LABEL and then its opaque code as a
- * barcode, in that order, because a page of unlabelled stripes is not something
- * a child can act on.
- */
-export class EscPosReceiptRenderer extends IReceiptRenderer {
-  render(document, { tokens = null } = {}) {
-    const items = [];
-    for (const block of document.blocks ?? []) {
-      if (block.type === 'rich_text') {
-        for (const raw of String(block.md ?? '').split('\n')) {
-          const line = raw.trim();
-          if (!line) { items.push({ type: 'space', lines: 1 }); continue; }
-          const heading = line.startsWith('#');
-          items.push({
-            type: 'text',
-            content: heading ? line.replace(/^#+\s*/, '') : line,
-            align: heading ? 'center' : 'left',
-            ...(heading ? { style: { bold: true }, size: { width: 2, height: 2 } } : {}),
-          });
-        }
-        continue;
-      }
-      if (block.type === 'scan_action' || block.type === 'media_action') {
-        const code = tokens?.[block.action] ?? block.action;
-        items.push({ type: 'text', content: block.label, align: 'left' });
-        items.push({ type: 'barcode', content: code, label: block.label, symbology: 'CODE128' });
-        continue;
-      }
-      // Refused by name rather than dropped: a block that silently vanishes is a
-      // receipt that silently loses the child's next move.
-      throw new Error(`EscPosReceiptRenderer: block type '${block.type}' has no receipt rendering`);
-    }
-    items.push({ type: 'line', content: '-', width: 32 });
-    return { items, footer: { paddingLines: 3, autoCut: true } };
-  }
-}
-
-/**
- * `IDocumentRenderer` over `createDocumentPdfRenderer()`.
- *
- * The one decision it makes is carrying `opts.variant` onto the document, so the
- * artifact and its form map record WHICH form of the sheet was handed over. The
- * underlying renderer has no variant parameter and generates no equivalent
- * problems, so a retry currently reprints the same questions under a new
- * variant number — recorded here, and reported by the e2e suite.
- */
-export class PdfDocumentRendererAdapter extends IDocumentRenderer {
-  #inner;
-
-  constructor(inner) {
-    super();
-    this.#inner = inner;
-    this.calls = [];
-  }
-
-  async render(document, opts = {}) {
-    const variant = Number.isInteger(opts.variant) ? opts.variant : (document.variant ?? 0);
-    const doc = variant === (document.variant ?? 0) ? document : { ...document, variant };
-    this.calls.push({ documentId: document.id, variant, tokens: opts.tokens ?? {} });
-    return this.#inner.render(doc, {
-      tokens: opts.tokens ?? null,
-      bank: opts.bank ?? null,
-      studentName: opts.studentName ?? null,
-    });
-  }
-}
-
-// ---------------------------------------------------------------------------
 // temp data dir
 // ---------------------------------------------------------------------------
 
@@ -233,6 +152,12 @@ function seedDataDir(dataDir) {
   // Banks live in the EXISTING quiz tree, because paper is graded by the same
   // engine and the same banks the on-screen quiz uses (spec §7.1).
   copyTree(path.join(FIXTURE_DIR, 'banks'), path.join(dataDir, 'content', 'quizzes'));
+  // Artwork, at the path the COMPOSITION ROOT resolves refs against. The
+  // harness used to hand the renderer an inline resolver, which is exactly how
+  // production shipped with none at all and nobody noticed.
+  const strips = path.join(dataDir, 'content', 'assets', 'school', 'math');
+  fs.mkdirSync(strips, { recursive: true });
+  fs.copyFileSync(STRIPS_SVG_FILE, path.join(strips, 'fraction-strips.svg'));
 }
 
 // ---------------------------------------------------------------------------
@@ -312,12 +237,27 @@ export async function createLifecycleHarness({
   const omr = new VirtualOmrReader({ eventBus, readerId: 'virtual-omr', logger });
 
   // --- rendering (real) ----------------------------------------------------
-  const stripsSvg = fs.readFileSync(STRIPS_SVG_FILE, 'utf8');
-  const resolveAsset = (ref) => (ref === 'school/math/fraction-strips'
-    ? { svg: stripsSvg, widthPt: 400, heightPt: 120 }
-    : null);
-  const pdfRenderer = new PdfDocumentRendererAdapter(createDocumentPdfRenderer({ resolveAsset }));
-  const receiptRenderer = new EscPosReceiptRenderer();
+  // The SAME resolver the composition root wires, against the same data-dir
+  // layout — so "the asset is missing" fails here exactly as it would in the
+  // house rather than being papered over by a lookup table.
+  const realPdfRenderer = createDocumentPdfRenderer({
+    resolveAsset: createFileAssetResolver({
+      rootDir: path.join(dataDir, 'content', 'assets'), logger,
+    }),
+  });
+  // OBSERVATION ONLY — it changes nothing and decides nothing. `render` is the
+  // production one; this records what it was asked for so a test can say "the
+  // retry asked for form 1", which no artifact reveals on a sheet that has no
+  // form map. If this ever needs to ALTER a call, that is a production gap and
+  // belongs in the composition root instead.
+  const renderCalls = [];
+  const pdfRenderer = {
+    render(document, opts = {}) {
+      renderCalls.push({ documentId: document.id, variant: opts.variant ?? document.variant ?? 0 });
+      return realPdfRenderer.render(document, opts);
+    },
+  };
+  const receiptRenderer = createDocumentEscPosRenderer();
   // The real thermal renderer, used as a PROBE: it is what proves a receipt
   // document can actually be drawn on tape (it refuses `omr_response`, for one).
   const receiptCanvasRenderer = createDocumentReceiptRenderer();
@@ -455,7 +395,7 @@ export async function createLifecycleHarness({
     },
     economyCalls,
     busEvents,
-    renderCalls: pdfRenderer.calls,
+    renderCalls,
 
     /** Which learner the shorthand methods act for. */
     as(learnerId) { currentLearner = learnerId; return harness; },
