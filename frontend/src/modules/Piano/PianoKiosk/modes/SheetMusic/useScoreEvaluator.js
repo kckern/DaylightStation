@@ -19,6 +19,8 @@ import { gradeMeasure } from './scoreEvaluator.js';
  * @param {object}   p.cfg                - { silentMeasuresToStop, timingToleranceMs, thresholds }
  * @param {Function} p.subscribe          - subscribe(fn) → unsubscribe; fn(evt)
  * @param {number}   p.currentMeasure     - current measure index (parent-owned)
+ * @param {number}   [p.boundary]        - bump this to force an end-of-measure
+ *   grade without a measure-index change (a loop wrapping onto the SAME measure).
  * @param {Function} p.expectedForMeasure - (measure) → number[] of expected midis
  * @param {Function} p.driftForNote       - (note) → drift in ms for a hit
  * @param {Function} p.onMeasureGrade     - onMeasureGrade({ measure, ...grade })
@@ -29,6 +31,7 @@ export function useScoreEvaluator({
   cfg,
   subscribe,
   currentMeasure,
+  boundary = 0,
   expectedForMeasure,
   driftForNote,
   onMeasureGrade,
@@ -52,6 +55,7 @@ export function useScoreEvaluator({
 
   const hitsRef = useRef([]);
   const prevMeasureRef = useRef(null);
+  const prevBoundaryRef = useRef(boundary);
   const silentRunRef = useRef(0);
   const stoppedRef = useRef(false);
   const finalizedRef = useRef(false);
@@ -80,16 +84,29 @@ export function useScoreEvaluator({
     });
   }, [enabled, subscribe]);
 
-  // Grade the measure that just ended whenever currentMeasure advances.
+  // Grade the measure that just ended: normally when `currentMeasure` advances,
+  // but ALSO when `boundary` bumps. A single-measure loop wraps from the end of
+  // measure N back to its start, so currentMeasure never changes and the advance
+  // rule alone would never grade — the field logs show a 5.5s Polish run over a
+  // one-measure loop producing 17 note events and zero grades.
   useEffect(() => {
     if (!enabled) return;
     const prev = prevMeasureRef.current;
-    if (prev != null && currentMeasure !== prev) {
+    const wrapped = boundary !== prevBoundaryRef.current;
+    prevBoundaryRef.current = boundary;
+    // An advance names the measure we LEFT; a wrap onto the same measure names
+    // the one we're still on. A multi-measure wrap is both — prefer `prev` so it
+    // grades the outgoing measure once, never twice.
+    const ending = (prev != null && currentMeasure !== prev)
+      ? prev
+      : (wrapped ? currentMeasure : null);
+
+    if (ending != null) {
       const g = gradeMeasure(
-        { expected: expectedForMeasureRef.current?.(prev) || [], hits: hitsRef.current },
+        { expected: expectedForMeasureRef.current?.(ending) || [], hits: hitsRef.current },
         cfgRef.current || {},
       );
-      onMeasureGradeRef.current?.({ measure: prev, ...g });
+      onMeasureGradeRef.current?.({ measure: ending, ...g });
 
       if (g.silent) {
         silentRunRef.current += 1;
@@ -109,22 +126,24 @@ export function useScoreEvaluator({
       hitsRef.current = [];
     }
     prevMeasureRef.current = currentMeasure;
-  }, [enabled, currentMeasure]);
+  }, [enabled, currentMeasure, boundary]);
 
   // Reset all state when disabled or on unmount; never grade while disabled.
   useEffect(() => {
     if (enabled) return undefined;
     hitsRef.current = [];
     prevMeasureRef.current = null;
+    prevBoundaryRef.current = boundary; // returning to Polish must not read a stale wrap
     silentRunRef.current = 0;
     stoppedRef.current = false;
     finalizedRef.current = false; // a fresh run may finalize again
     return undefined;
-  }, [enabled]);
+  }, [enabled]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => () => {
     hitsRef.current = [];
     prevMeasureRef.current = null;
+    prevBoundaryRef.current = boundary;
     silentRunRef.current = 0;
     stoppedRef.current = false;
     finalizedRef.current = false;
