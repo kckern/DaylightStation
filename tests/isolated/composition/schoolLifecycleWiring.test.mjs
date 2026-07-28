@@ -7,12 +7,12 @@
 //  1. **Fail closed.** The console must not wire itself without an explicit
 //     opt-in, and must never mount the virtual device console (which can knock a
 //     printer offline) on a real deployment.
-//  2. **The relay branch is non-disruptive.** A new branch at the TOP of a
-//     shared `onScan` router is exactly where an existing consumer gets
-//     shadowed. The school prefix is asserted against every code shape the
-//     `content` and `nutribot` routes actually carry, and the branch ORDER in
-//     `app.mjs` is asserted against the source, because "first" is the whole
-//     requirement and nothing else pins it.
+//  2. **The relay branch is non-disruptive.** A new claim at the TOP of a shared
+//     scan router is exactly where an existing consumer gets shadowed. The school
+//     prefix is asserted against every code shape the `content` and `nutribot`
+//     routes actually carry, and "school first, whatever the route" is asserted
+//     against the scan vocabulary that now decides it — because "first" is the
+//     whole requirement and nothing else pins it.
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { mkdtemp, rm, readFile } from 'node:fs/promises';
 import os from 'node:os';
@@ -133,36 +133,50 @@ describe('the relay branch cannot shadow an existing consumer', () => {
 });
 
 describe('branch order in the composition root', () => {
-  const appSource = async () => readFile(
-    path.join(path.dirname(fileURLToPath(import.meta.url)), '..', '..', '..', 'backend', 'src', 'app.mjs'),
+  // The `onScan` if-chain these tests used to grep out of `app.mjs` no longer
+  // exists: every scan now resolves through the shared scan vocabulary
+  // (`ScanCode` -> `ScanDispatcher`), wired in `5_composition/modules/
+  // scanDispatch.mjs`. The REQUIREMENT is unchanged and still the whole point —
+  // school is reached first, whatever route the reader is on — so it is asserted
+  // where it now lives, and behaviourally rather than by source position.
+  const dispatchSource = async () => readFile(
+    path.join(
+      path.dirname(fileURLToPath(import.meta.url)), '..', '..', '..',
+      'backend', 'src', '5_composition', 'modules', 'scanDispatch.mjs',
+    ),
     'utf8',
   );
 
-  it('the school branch sits FIRST in onScan, ahead of nutribot and the trigger fallback', async () => {
-    const source = await appSource();
-    const onScan = source.indexOf('onScan: (relay) => {');
-    expect(onScan).toBeGreaterThan(-1);
-    const school = source.indexOf('schoolLifecycle.handlesCode(relay.code)', onScan);
-    const nutribot = source.indexOf("route === 'nutribot'", onScan);
-    const trigger = source.indexOf('TriggerEvent.create({', onScan);
-    expect(school).toBeGreaterThan(onScan);
-    expect(school).toBeLessThan(nutribot);
-    expect(nutribot).toBeLessThan(trigger);
+  it('school outranks the reader route for every reader in the house', async () => {
+    const { parseScanCode } = await import('#domains/scan/ScanCode.mjs');
+    // The parse claims the token, and a claimed namespace is never overridden by
+    // `route` (the dispatcher consults its fallback only when `namespace` is
+    // null) — which is what "first, and route-independent" now means.
+    for (const code of ['sch:A7F3K2', 'sch:23456789ABCDEFGH']) {
+      expect(parseScanCode(code)).toMatchObject({ namespace: 'school', raw: code });
+    }
   });
 
   it('the school branch returns, so it can never fall through into another route', async () => {
-    const source = await appSource();
-    const school = source.indexOf('schoolLifecycle.handlesCode(relay.code)');
-    const nutribot = source.indexOf("route === 'nutribot'", school);
-    expect(source.slice(school, nutribot)).toContain('return;');
+    const { ScanDispatcher } = await import('#apps/scan/ScanDispatcher.mjs');
+    const school = { namespace: 'school', handle: () => ({ status: 'dispatched' }) };
+    const product = { namespace: 'product', handle: () => ({ status: 'logged' }) };
+    const dispatcher = new ScanDispatcher({
+      handlers: [school, product], routeFallback: { nutribot: 'product' },
+    });
+    // Scanned on the FRIDGE reader, which falls back to a product lookup.
+    const out = await dispatcher.dispatch({
+      code: 'sch:A7F3K2', device: 'nutribot-upc', route: 'nutribot',
+    });
+    expect(out.domain).toBe('school');
   });
 
   it('the existing branches are untouched by it', async () => {
-    const source = await appSource();
-    // The two decisions the nutribot route is built on, and the trigger
-    // fallback's source tag. If the school branch had been threaded THROUGH
-    // either of them rather than placed ahead, one of these would have moved.
-    expect(source).toContain('const decision = routeNutribotScan({ scaleId, code: relay.code, apply: applyScanToComposition });');
+    const source = await dispatchSource();
+    // The decision the nutribot route is built on, and the trigger fallback's
+    // source tag. If school had been threaded THROUGH either of them rather than
+    // registered beside them, one of these would have moved.
+    expect(source).toContain('routeNutribotScan({ scaleId, code: body, apply: applyScanToComposition })');
     expect(source).toContain("source: 'barcode',");
   });
 });
