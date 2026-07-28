@@ -2,6 +2,7 @@ export { validateQuestionBank, summarizeQuestionBank } from './questionBankValid
 export { gradeAnswer, givenShapeError } from './grading.mjs';
 export { createAttempt } from './attempt.mjs';
 export { GuestForbiddenError, SessionGoneError } from './errors.mjs';
+export { isAdult, ADULT_AGE } from './people.mjs';
 export { CATEGORIES, resolveCategory } from './categories.mjs';
 export { GRADES, gradeRank, gradeFromLabels, isVisibleAtCeiling } from './grades.mjs';
 export { orderUnits, unitCompleted, annotateLocks, quizSessionPassed } from './materialPolicy.mjs';
