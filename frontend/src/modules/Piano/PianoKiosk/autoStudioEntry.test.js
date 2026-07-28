@@ -16,6 +16,11 @@ describe('shouldAutoEnterStudio', () => {
     expect(shouldAutoEnterStudio(h, CFG)).toBe(false);
   });
 
+  it('does not fire on a big simultaneous cluster (count met, zero span)', () => {
+    const h = Array.from({ length: 8 }, () => note(1000));
+    expect(shouldAutoEnterStudio(h, CFG)).toBe(false);
+  });
+
   it('does not fire on a fast glissando (many notes, span below minimum)', () => {
     const h = Array.from({ length: 15 }, (_, i) => note(1000 + i * 100)); // 1.4s span
     expect(shouldAutoEnterStudio(h, CFG)).toBe(false);
