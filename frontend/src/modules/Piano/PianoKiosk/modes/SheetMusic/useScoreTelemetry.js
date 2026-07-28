@@ -36,7 +36,12 @@ export function useScoreTelemetry({ id, tickMs = 100 }) {
   const startSession = useCallback((scoreId) => logger.info('session-log.start', { scoreId }), [logger]);
 
   const logLoad = useCallback((phases) => logger.info('score.load', { id, ...phases }), [logger, id]);
-  const logLoadFailed = useCallback((phase, error) => logger.warn('score.load.failed', { id, phase, error }), [logger, id]);
+  // No load-failure emitter here BY DESIGN: the XML fetch lives in SheetMusic.jsx's
+  // NotationScore, and a failed fetch renders PianoEmpty instead of ScorePlayer, so
+  // this hook never mounts on that path. The old `logLoadFailed` was therefore
+  // unreachable and 'score.load.failed' was never once emitted in three days of
+  // field logs (audit L2). The failure is logged at its real site instead, tagged
+  // into this same session log.
 
   // Full sheet-music event catalog — one path per event so nothing double-logs.
   const logMeasureGrade = useCallback(({ measure, grade, noteScore, timingScore }) => logger.info('score.polish.measure', { measure, grade, noteScore, timingScore }), [logger]);
@@ -117,7 +122,7 @@ export function useScoreTelemetry({ id, tickMs = 100 }) {
     follow.current = [];
   }, [logger]);
 
-  return { logger, startSession, logLoad, logLoadFailed, recordFire, recordSchedule, flushPlayback, recordFollowHit, flushFollow, logMeasureGrade, logRunSummary, logFocus, logTranspose, logMode };
+  return { logger, startSession, logLoad, recordFire, recordSchedule, flushPlayback, recordFollowHit, flushFollow, logMeasureGrade, logRunSummary, logFocus, logTranspose, logMode };
 }
 
 export default useScoreTelemetry;

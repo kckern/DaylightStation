@@ -23,6 +23,16 @@ describe('useScoreTelemetry', () => {
     expect(ev[2]).toMatchObject({ id: 'x', engraveMs: 200, totalMs: 300 });
   });
 
+  // Audit L2: a load-failure emitter here was unreachable by construction — the
+  // XML fetch lives in SheetMusic.jsx's NotationScore, and a failure renders
+  // PianoEmpty instead of ScorePlayer, so this hook never exists on that path.
+  // The failure is logged at the real failure site instead.
+  it('exposes no load-failure emitter — the failure path never mounts this hook', () => {
+    const { result } = renderHook(() => useScoreTelemetry({ id: 'x' }));
+    expect(result.current.logLoadFailed).toBeUndefined();
+    expect(logged.some(([, e]) => e === 'score.load.failed')).toBe(false);
+  });
+
   it('does not flag a healthy tick gap as a stall', () => {
     const { result } = renderHook(() => useScoreTelemetry({ id: 'x', tickMs: 100 }));
     // 100ms gap is the tick interval BY DESIGN; 40ms drift at 90bpm is well
