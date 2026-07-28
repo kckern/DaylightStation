@@ -8,10 +8,43 @@
  * in-memory keyed on the roster's progress-file mtimes (+ 6h hard TTL for
  * Plex metadata drift) so menu loads never re-walk Plex when nothing changed.
  */
+import { excludeReferenceUnits } from '../courseProgress.mjs';
+
 const HARD_TTL_MS = 6 * 60 * 60 * 1000;
-// Thumbnails per player card on the menu strip — recent courses beyond this
-// are dropped (most-recent-first).
-const MAX_COURSES_PER_PLAYER = 4;
+// Thumbnails per player card on the menu strip.
+const MAX_COURSES_PER_PLAYER = 2;
+
+// The playable SERVICE nests parentId under item.metadata (the HTTP router
+// flattens it — a known gotcha); accept both so either shape groups units.
+const unitOf = (it) => it?.parentId ?? it?.metadata?.parentId ?? null;
+
+/**
+ * Card-content selectors — what fills a player's thumbnails, config-driven via
+ * piano.yml `menu_activity.slots` (applied in order until the card is full,
+ * deduped by course). Each builder gets the player's touched courses
+ * (newest-first) and returns an ordered candidate list.
+ *
+ * Default `top-incomplete-courses`: highest percent first, 100% courses
+ * excluded — surface the course they're closest to finishing.
+ *
+ * `recent-sheet-music` and `top-polish` are recognized placeholders for
+ * non-course sources (sheet-music history, polish scores); they contribute
+ * nothing until implemented, but configs may already list them.
+ */
+const SLOT_BUILDERS = {
+  // Incompleteness is judged at the COURSE level (courseCompleted), but the
+  // displayed/ranked percent is the player's progress through their CURRENT
+  // MODULE — a 344-lecture program at 9% overall is discouraging; "unit 6,
+  // 60% done" is motivating.
+  'top-incomplete-courses': (courses) => courses
+    .filter((c) => !c.courseCompleted)
+    .sort((a, b) => (b.percent - a.percent)
+      || String(b.lastPlayedAt).localeCompare(String(a.lastPlayedAt))),
+  'recent-courses': (courses) => courses, // already newest-first
+  'recent-sheet-music': () => [],         // placeholder — not yet implemented
+  'top-polish': () => [],                 // placeholder — not yet implemented
+};
+const DEFAULT_SLOTS = ['top-incomplete-courses'];
 
 export class GetRecentCourseActivity {
   #fitnessPlayableService; #userVideoProgressStore; #configService; #plexClient; #logger;
@@ -75,19 +108,52 @@ export class GetRecentCourseActivity {
       }
     }
 
+    const pianoCfg = this.#configService.getHouseholdAppConfig(null, 'piano') || {};
+    const menuCfg = pianoCfg.menu_activity || {};
+    const slots = Array.isArray(menuCfg.slots) && menuCfg.slots.length ? menuCfg.slots.map(String) : DEFAULT_SLOTS;
+    const referenceUnits = pianoCfg.videos?.reference_units || [];
+
     const players = [];
     for (const userId of roster) {
       const touched = [];
       for (const show of shows) {
-        const items = perShowItems.get(show.id);
-        if (!items?.length) continue;
-        const s = this.#userVideoProgressStore.summarize(items, userId);
-        if (!s.lastPlayedAt) continue;
-        touched.push({ show, ...s });
+        const rawItems = perShowItems.get(show.id);
+        if (!rawItems?.length) continue;
+        // Same lesson-counting rules as the poster wall: reference/practice
+        // banks never count toward progress.
+        const items = excludeReferenceUnits(rawItems, show.id, referenceUnits);
+        if (!items.length) continue;
+        const enriched = this.#userVideoProgressStore.enrich(items, userId);
+        // Course-level aggregation + the player's most recent lecture (its
+        // unit is their "current module").
+        let courseCompleted = 0;
+        let lastPlayedAt = null;
+        let currentUnitId = null;
+        for (const it of enriched) {
+          if (it.userWatched) courseCompleted += 1;
+          const lp = it.userLastPlayedAt;
+          if (lp && (!lastPlayedAt || String(lp) > String(lastPlayedAt))) {
+            lastPlayedAt = lp;
+            currentUnitId = unitOf(it);
+          }
+        }
+        if (!lastPlayedAt) continue;
+        // Module-scoped progress: percent through the CURRENT unit, not the
+        // whole program (motivating on multi-hundred-lecture courses). Flat
+        // single-unit courses degrade to whole-course numbers naturally.
+        const unitItems = enriched.filter((it) => unitOf(it) === currentUnitId);
+        const unitCompleted = unitItems.filter((it) => it.userWatched).length;
+        touched.push({
+          show,
+          lastPlayedAt,
+          completed: unitCompleted,
+          total: unitItems.length,
+          courseCompleted: enriched.length > 0 && courseCompleted >= enriched.length,
+        });
       }
       if (!touched.length) continue;
       touched.sort((a, b) => String(b.lastPlayedAt).localeCompare(String(a.lastPlayedAt)));
-      const courses = touched.slice(0, MAX_COURSES_PER_PLAYER).map((e) => ({
+      const allCourses = touched.map((e) => ({
         courseId: `plex:${e.show.id}`,
         courseTitle: e.show.title,
         thumbnail: e.show.thumb,
@@ -95,13 +161,38 @@ export class GetRecentCourseActivity {
         total: e.total,
         percent: e.total > 0 && e.completed > 0
           ? Math.max(1, Math.round((e.completed / e.total) * 100)) : 0,
+        courseCompleted: e.courseCompleted,
         lastPlayedAt: e.lastPlayedAt,
       }));
+
+      // Fill the card from the configured slots in order, dedupe by course.
+      const courses = [];
+      const seenCourseIds = new Set();
+      for (const slot of slots) {
+        const builder = SLOT_BUILDERS[slot];
+        if (!builder) {
+          this.#logger.warn?.('piano.activity.unknown_slot', { slot });
+          continue;
+        }
+        for (const c of builder(allCourses)) {
+          if (courses.length >= MAX_COURSES_PER_PLAYER) break;
+          if (seenCourseIds.has(c.courseId)) continue;
+          seenCourseIds.add(c.courseId);
+          courses.push(c);
+        }
+      }
+      // A player whose slots yield nothing (e.g. every course at 100%) still
+      // deserves a card — fall back to their recent courses (their trophy).
+      if (!courses.length) {
+        courses.push(...allCourses.slice(0, MAX_COURSES_PER_PLAYER));
+      }
+
+      const newest = allCourses[0].lastPlayedAt;
       const p = this.#configService.getUserProfile(userId);
       players.push({
         userId,
         name: p?.display_name || p?.username || userId,
-        lastPlayedAt: courses[0].lastPlayedAt, // newest — drives ordering + staleness
+        lastPlayedAt: newest, // newest overall — drives ordering + staleness
         courses,
       });
     }

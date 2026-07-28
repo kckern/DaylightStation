@@ -33,6 +33,35 @@ on overflow. Each card:
 slot where trophy-case / completion-certificate badges can later sit; the data
 to power them (per-lecture `completedAt`, 100% courses) already exists.
 
+## Card content selection (added 2026-07-28, second iteration)
+
+Each card shows up to **2 course poster thumbnails** with the percent under
+each (replacing the single-course text line). The percent (and the tooltip's
+completed/total) is **module-scoped**: progress through the unit containing
+the player's most recently played lecture — not the whole program, which
+reads as discouraging on multi-hundred-lecture courses. Course-level
+completion (`courseCompleted`) still governs the incomplete-course filter.
+Which items fill a card is **config-driven** via `piano.yml`:
+
+```yaml
+menu_activity:
+  slots: [top-incomplete-courses]   # default
+```
+
+Slot types (applied in order until the card is full, deduped):
+
+- `top-incomplete-courses` (default): the player's courses ranked by highest
+  percent, **excluding 100%-complete ones** — surfaces the course they're
+  closest to finishing (completion motivation).
+- `recent-courses`: newest activity first, completed included.
+- `recent-sheet-music`, `top-polish`: recognized **placeholders** for future
+  non-course sources (sheet-music history, polish scores); contribute nothing
+  until implemented.
+
+A player whose slots yield nothing (e.g. everything at 100%) falls back to
+their recent courses — the card never vanishes for someone with history.
+Player-level recency/staleness still keys off their newest activity overall.
+
 ## Data
 
 New endpoint `GET /api/v1/piano/activity/recent` → per roster user, the
