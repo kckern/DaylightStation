@@ -101,6 +101,16 @@ import { parseScanCode } from '#domains/scan/ScanCode.mjs';
  *                `ok === false` is therefore the generic refusal test.
  * - `domain`   — who handled it, or who WOULD have owned it when nothing is
  *                registered. Null only when nothing claimed the code at all.
+ * - `message`  — the one HUMAN-READABLE field, and the only place a reason
+ *                survives: `status` and `ok` say a scan was refused, `message`
+ *                says why (`unrecognised scan "..."`, `no handler registered
+ *                for "book"`, whatever a handler chose). Empty string by
+ *                default, because a scan that worked has nothing to explain;
+ *                every non-success Outcome produced HERE sets it, and handlers
+ *                set it on their own refusals. Its intended reader is whoever
+ *                gives the person at the scanner an answer — a screen toast, a
+ *                Telegram reply, a printed line. There is no schema: it is
+ *                prose for a person, not a code to branch on. Branch on `ok`.
  * - `physical` — `'worksheet' | 'receipt' | 'none'`. School prints paper;
  *                everything else is `'none'`.
  * - `printed`  — whether paper actually came out, which is not the same as
@@ -110,6 +120,14 @@ import { parseScanCode } from '#domains/scan/ScanCode.mjs';
  * These seven keys are ALWAYS present. A handler may add its own on top — that
  * is what keeps `effect` a convention rather than a cage — so the key set is a
  * guaranteed minimum, not a closed list.
+ *
+ * NOBODY RENDERS `message` TODAY, and that is a stated Phase 1 gap rather than
+ * an oversight: composition's `onScan` calls `dispatch` and discards what comes
+ * back, so an unclaimed or failed scan is silent at the scanner. The gap is
+ * written up where it bites hardest — see the `KNOWN PHASE 1 GAP` note in
+ * `composition/modules/scanDispatch`, on a `book` code that resolves, finds no
+ * handler, and answers nobody. Closing it means giving that Outcome somewhere
+ * to go; this field is what will be shown when someone does.
  */
 const OUTCOME_DEFAULTS = Object.freeze({
   status: 'unknown',
