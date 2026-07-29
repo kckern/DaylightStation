@@ -40,7 +40,19 @@ export function normalizeScaleNutribotConfig(raw = {}) {
   const items = Array.isArray(nb.containers?.items) && nb.containers.items.length
     ? nb.containers.items
         .filter((c) => c && c.id && Number.isFinite(Number(c.grams)))
-        .map((c) => ({ id: String(c.id), label: c.label || c.id, emoji: c.emoji || '📦', grams: Number(c.grams) }))
+        // `icon` is printed-sheet decoration. It is listed EXPLICITLY because this
+        // mapper rebuilds each row from a fixed field list, so anything unlisted is
+        // silently dropped — which happened twice: once here and once in the density
+        // mapper below. Both times the config was right, the sheet rendered without
+        // pictures, and nothing errored. Adding a field to either table means adding
+        // it here too.
+        .map((c) => ({
+          id: String(c.id),
+          label: c.label || c.id,
+          emoji: c.emoji || '📦',
+          grams: Number(c.grams),
+          icon: c.icon || null,
+        }))
     : DEFAULT_CONTAINERS.items;
 
   const densityLevels = Array.isArray(nb.density_levels) && nb.density_levels.length
