@@ -52,7 +52,7 @@ function makeDeps({ summaries, itemCounts = {} }) {
 
 test('default slot: incomplete courses by highest percent, 100% courses dropped', async () => {
   const uc = new GetRecentCourseActivity(makeDeps({ summaries: {
-    learner-two: {
+    'learner-two': {
       10: { completed: 1, total: 2, lastPlayedAt: '2026-07-20T00:00:00Z' },  // 50%
       11: { completed: 2, total: 2, lastPlayedAt: '2026-07-25T00:00:00Z' },  // 100% — excluded
     },
@@ -63,11 +63,11 @@ test('default slot: incomplete courses by highest percent, 100% courses dropped'
   assert.equal(players[0].userId, 'kc');                        // newest player first
   assert.equal(players[0].name, 'KC');                          // display_name resolution
   assert.equal(players[0].lastPlayedAt, '2026-07-26T00:00:00Z');
-  const learner-two = players[1];
-  assert.equal(learner-two.courses.length, 1);                        // completed course dropped
-  assert.equal(learner-two.courses[0].courseId, 'plex:10');
-  assert.equal(learner-two.courses[0].percent, 50);
-  assert.equal(learner-two.lastPlayedAt, '2026-07-25T00:00:00Z');     // recency still counts the 100% course
+  const learnerTwo = players[1];
+  assert.equal(learnerTwo.courses.length, 1);                        // completed course dropped
+  assert.equal(learnerTwo.courses[0].courseId, 'plex:10');
+  assert.equal(learnerTwo.courses[0].percent, 50);
+  assert.equal(learnerTwo.lastPlayedAt, '2026-07-25T00:00:00Z');     // recency still counts the 100% course
 });
 
 test('default slot ranks by percent (highest first), not recency', async () => {
@@ -114,7 +114,7 @@ test('percent_mode current-module reflects the current unit, not the whole progr
 
 test('menu_activity.slots config overrides the default (recent-courses)', async () => {
   const deps = makeDeps({ summaries: {
-    learner-two: {
+    'learner-two': {
       10: { completed: 1, total: 2, lastPlayedAt: '2026-07-20T00:00:00Z' },
       11: { completed: 2, total: 2, lastPlayedAt: '2026-07-25T00:00:00Z' },
     },
@@ -122,9 +122,9 @@ test('menu_activity.slots config overrides the default (recent-courses)', async 
   PIANO_CFG.menu_activity = { slots: ['recent-courses'] };
   const uc = new GetRecentCourseActivity(deps);
   const { players } = await uc.execute();
-  const learner-two = players[0];
-  assert.equal(learner-two.courses.length, 2);                        // 100% course included
-  assert.equal(learner-two.courses[0].courseId, 'plex:11');           // newest first
+  const learnerTwo = players[0];
+  assert.equal(learnerTwo.courses.length, 2);                        // 100% course included
+  assert.equal(learnerTwo.courses[0].courseId, 'plex:11');           // newest first
 });
 
 test('placeholder and unknown slots contribute nothing without crashing', async () => {
