@@ -4,17 +4,7 @@ import PianoEmpty from '../../PianoEmpty.jsx';
 import { balancedColumns } from '../../tileGridLayout.js';
 import { SkeletonPoster } from '../../Skeleton.jsx';
 import { prefetchOsmd } from '../../../../MusicNotation/renderers/osmdRender.js';
-
-/** Prettify a filename-derived title: "fur-elise-super-easy" → "Fur Elise Super Easy". */
-function prettyTitle(raw) {
-  const s = String(raw || '').trim();
-  if (!s) return 'Score';
-  return s
-    .replace(/\.[a-z0-9]+$/i, '')       // drop any lingering extension
-    .replace(/[_-]+/g, ' ')             // dashes/underscores → spaces
-    .replace(/\s+/g, ' ')
-    .replace(/\b\w/g, (c) => c.toUpperCase());
-}
+import { prettyTitle } from './scoreTitle.js';
 
 // Last-selected tab (by label), so a walk-up user lands where they left off.
 // Same guarded-localStorage discipline as scoreSettings.js.
