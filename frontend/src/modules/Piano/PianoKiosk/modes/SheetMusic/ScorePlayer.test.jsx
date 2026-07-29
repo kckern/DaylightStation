@@ -227,6 +227,24 @@ describe('ScorePlayer — default mode', () => {
   });
 });
 
+describe('ScorePlayer — note-highlight ink (wave-2 A)', () => {
+  it('lit noteheads use the fixed near-black ink, not the mode accent', async () => {
+    const rhEl = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+    h.layoutExtras = {
+      notes: [{ midi: 64, staff: 0, onsetQuarter: 0, durationQuarters: 1 }],
+      steps: [{ onsetQuarter: 0, notes: [{ midi: 64, staff: 0, el: rhEl }] }],
+    };
+    renderPlayer(); // opens in Listen
+    await act(async () => {});
+    // The engraved fake note carries an `el` (see the harness); the highlight
+    // layer stamps classes + --nh-color directly onto that element (not into
+    // the rendered DOM tree — the real OSMD notehead lives inside the SVG the
+    // stub renderer doesn't reproduce), so assert against `rhEl` itself.
+    expect(rhEl.classList.contains('piano-note-lit')).toBe(true);
+    expect(rhEl.style.getPropertyValue('--nh-color')).toBe('#23262b');
+  });
+});
+
 describe('ScorePlayer — keyboard visibility policy (M2)', () => {
   it('Listen hides the keyboard until the user plays a part; Learn shows it', async () => {
     renderPlayer(); // opens in Listen, My part = None
