@@ -1,0 +1,43 @@
+// Transport design system (wave 1) — the ONE place kiosk transport chrome is
+// styled. Tokens fall back so the sheet works on both stage (dark) and surface
+// hosts; hosts may override the custom properties, never the rules.
+
+.piano-tbtn {
+  // The kiosk touch floor: 3rem = 48px at the 16px root (audit F4).
+  min-width: 3rem;
+  min-height: 3rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  padding: 0.35rem 0.75rem;
+  border: 1px solid var(--piano-tbtn-border, rgba(255, 255, 255, 0.22));
+  border-radius: 0.6rem;
+  background: var(--piano-tbtn-bg, rgba(255, 255, 255, 0.08));
+  color: var(--piano-tbtn-fg, inherit);
+  font: inherit;
+  font-size: 1rem;
+  line-height: 1;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+
+  .piano-icon { font-size: 1.25em; display: inline-flex; }
+
+  &.is-on {
+    background: var(--piano-tbtn-on-bg, rgba(94, 170, 255, 0.28));
+    border-color: var(--piano-tbtn-on-border, rgba(94, 170, 255, 0.8));
+  }
+  &:disabled { opacity: 0.4; cursor: default; }
+}
+
+.piano-tbtn--primary {
+  background: var(--piano-tbtn-primary-bg, #3878c2);
+  border-color: var(--piano-tbtn-primary-bg, #3878c2);
+  color: var(--piano-tbtn-primary-fg, #fff);
+  min-width: 4.5rem;
+}
+
+.piano-tbtn--quiet {
+  background: transparent;
+  border-color: transparent;
+}
