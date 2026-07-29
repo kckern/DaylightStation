@@ -6,7 +6,7 @@ Runs on a Linux host with the reader's DB9 on a USB-serial adapter (the Keyspan
 USA-19H works there; it does NOT work on Apple silicon — see ../README.md).
 
 Exists so protocol discovery does not depend on the ATOM firmware. Once the
-baud/framing and frame layout are known they get locked into scantrons.yml and
+baud/framing and frame layout are known they get locked into omr-readers.yml and
 the ATOM takes over as the permanent relay.
 
 DESIGN NOTE — bytes are streamed to disk the instant they arrive, and every

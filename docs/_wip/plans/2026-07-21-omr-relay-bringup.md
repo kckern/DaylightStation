@@ -1,9 +1,9 @@
-# scantron-relay — bring-up status and remaining work
+# omr-relay — bring-up status and remaining work
 
 **Date:** 2026-07-21
 **Status:** protocol SOLVED and verified on hardware; relay and backend NOT built
 **Owner:** KC
-**Reference:** [`docs/reference/scantron/`](../../reference/scantron/README.md) —
+**Reference:** [`docs/reference/omr/`](../../reference/omr/README.md) —
 protocol, card spec, and troubleshooting live there and are authoritative.
 
 ## Where this landed
@@ -22,7 +22,7 @@ invisible until someone reads the vendor manual:
 
 Neither is discoverable by experiment in reasonable time; both came out of
 vendor documentation recovered from the Wayback Machine index of the vendor's
-dead domain, now archived in `_extensions/scantron-relay/docs/recovered/`.
+dead domain, now archived in `_extensions/omr-relay/docs/recovered/`.
 
 First successful read, 2026-07-21 — the generated test strip, 39 columns, all 36
 designed marks correct and nothing spurious:
@@ -53,9 +53,9 @@ generator should drop that border.
 
 ### 1. Backend dispatch
 
-Add `backend/src/3_applications/hardware/scantronRelay.mjs`, mirroring
-`foodScaleRelay.mjs`; wire it in `app.mjs`; re-broadcast on `scantron`; persist
-to `household/history/scantron/<reader-id>/<YYYY-MM-DD>.yml`.
+Add `backend/src/3_applications/hardware/omrRelay.mjs`, mirroring
+`foodScaleRelay.mjs`; wire it in `app.mjs`; re-broadcast on `omr`; persist
+to `household/history/omr/<reader-id>/<YYYY-MM-DD>.yml`.
 
 Note the persistence lesson from the food-scale relay: appends must be
 serialized, because a naive async read-modify-write races and loses records.

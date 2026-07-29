@@ -2,7 +2,7 @@
 
 Transcribed from *Technical Manual for OMR 1102*, Appendix A "Document
 Specifications" (retained as PDF in
-`_extensions/scantron-relay/docs/recovered/`), cross-checked against the
+`_extensions/omr-relay/docs/recovered/`), cross-checked against the
 OMR-1100 operator guide and the ACP-100 datasheet, which state the same
 geometry.
 
@@ -137,7 +137,7 @@ the left for branding and yielding two cards per form.
 
 ## Printing your own
 
-`_extensions/scantron-relay/tools/gen-test-strip.py` generates a spec-conforming
+`_extensions/omr-relay/tools/gen-test-strip.py` generates a spec-conforming
 strip as PDF, carrying a walking-diagonal mark pattern whose decode is
 self-evident — one mark per column stepping through all twelve rows, then two
 blank columns. This is the only card verified to work on this reader.

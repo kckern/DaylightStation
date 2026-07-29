@@ -4,9 +4,9 @@
  * Takes the REAL artifact the School PDF renderer emits —
  * `{ formVersion, marks: [{ itemId, choice, xPt, yPt, rPt, page }] }` — plus a
  * set of chosen answers, and synthesizes the normalized sheet event documented
- * in `docs/reference/scantron/README.md`:
+ * in `docs/reference/omr/README.md`:
  *
- *   { source:'scantron-relay', type:'sheet', id, columns, markedColumns, marks[] }
+ *   { source:'omr-relay', type:'sheet', id, columns, markedColumns, marks[] }
  *
  * `marks[]` is one 12-bit mask per column, bit 0 = row 12 (far edge) …
  * bit 11 = row 9 (strobe edge). Blank columns are present as 0, per the doc's
@@ -17,7 +17,7 @@
  * ASSUMPTION — ordinal geometry, not physical pitch. A reader column is a
  * physical 0.250in strobe step and a channel is a 0.250in lane across a 3.250in
  * card; the renderer's form map is Letter-sized worksheet geometry in points, and
- * per the scantron doc NO off-the-shelf card fits this reader yet, so there is no
+ * as of writing no card had ever been measured against this reader, so there is no
  * real card whose pitch we could project onto. This double therefore assigns
  * column indices ordinally (response rows sorted by page then yPt) and channel
  * bits ordinally (bubbles sorted left to right by xPt). When a real card geometry
@@ -28,8 +28,8 @@
  */
 import { InfrastructureError } from '#system/utils/errors/index.mjs';
 
-const SOURCE = 'scantron-relay';
-const DEFAULT_TOPIC = 'scantron';
+const SOURCE = 'omr-relay';
+const DEFAULT_TOPIC = 'omr';
 /** The reader has twelve Hollerith channels: 12, 11, 0, 1…9. */
 const CHANNELS = 12;
 /** yPt values within this many points are the same physical response row. */
@@ -43,7 +43,7 @@ export class VirtualOmrReader {
    * @param {Object} [deps]
    * @param {Object} [deps.eventBus] - IEventBus; optional, the event is also returned
    * @param {string} [deps.readerId='virtual-omr']
-   * @param {string} [deps.topic='scantron']
+   * @param {string} [deps.topic='omr']
    * @param {Object} [deps.logger=console]
    */
   constructor({ eventBus = null, readerId = 'virtual-omr', topic = DEFAULT_TOPIC, logger = console } = {}) {
