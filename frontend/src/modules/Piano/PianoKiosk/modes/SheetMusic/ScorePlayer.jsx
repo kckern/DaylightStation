@@ -1469,10 +1469,8 @@ export default function ScorePlayer({ score: scoreMeta }) {
         onTranspose={onTranspose}
         parts={barParts}
         activeParts={activeParts}
-        roles={roles}
         onCyclePart={onCyclePart}
         grandStaff={grandStaff}
-        handsVariant={handsVariant}
         handsValue={handsValue}
         onHandsChange={onHandsChange}
         sections={sections}
