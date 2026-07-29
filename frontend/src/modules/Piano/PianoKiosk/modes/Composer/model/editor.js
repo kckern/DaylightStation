@@ -292,6 +292,28 @@ export function insertRest(state, opts = {}) {
   return insertElement(state, { isRest: true, pitch: null, opts });
 }
 
+/**
+ * Locate the {measureIdx, noteIdx} of the note carrying `entryTag` (see
+ * note.js's `entryTag` field). Read-only, O(notes) — fine at kid-scale score
+ * sizes (see history.js's cost note). Used by the MIDI note-entry pipeline
+ * (useComposerInput.js) to find a just-inserted note again at note_off, since
+ * every intervening edit deep-clones the score and orphans any object
+ * reference taken at insert time. Returns null when not found (e.g. the note
+ * was deleted or undone since it was tagged) — callers should no-op rather
+ * than throw.
+ */
+export function findNoteByTag(score, entryTag) {
+  if (entryTag == null) return null;
+  const measures = score.parts?.[0]?.measures ?? [];
+  for (let measureIdx = 0; measureIdx < measures.length; measureIdx++) {
+    const notes = measures[measureIdx].notes;
+    for (let noteIdx = 0; noteIdx < notes.length; noteIdx++) {
+      if (notes[noteIdx].entryTag === entryTag) return { measureIdx, noteIdx };
+    }
+  }
+  return null;
+}
+
 // ---------------------------------------------------------------------------
 // reflowMeasure — after a command changes a note's duration, a measure may no
 // longer fit its bar. VOICE-SCOPED (finding #2): a grand-staff bar is two voices

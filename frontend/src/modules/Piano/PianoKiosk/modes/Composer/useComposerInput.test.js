@@ -1,8 +1,17 @@
 import { describe, it, expect, vi } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
-import { mapKey, useComposerInput, KEY_LEGEND } from './useComposerInput.js';
+import { mapKey, useComposerInput, KEY_LEGEND, CHORD_ONSET_TOLERANCE_MS } from './useComposerInput.js';
 import { makeEmptyScore, initEditor } from './model/index.js';
 import { intern, KIND, __resetRecorder, __snapshotForTest } from '../../../../../lib/logging/inputRecorder.js';
+
+// A stub logger with vi.fn() spies on every method the hook calls, so tests can
+// assert on the STRUCTURED events (task 27) without a real transport.
+function mockLogger() {
+  return { info: vi.fn(), warn: vi.fn(), debug: vi.fn(), error: vi.fn(), sampled: vi.fn() };
+}
+const eventNames = (log) => log.sampled.mock.calls.map((c) => c[0]);
+const eventPayload = (log, name) => log.sampled.mock.calls.find((c) => c[0] === name)?.[1];
+const eventPayloads = (log, name) => log.sampled.mock.calls.filter((c) => c[0] === name).map((c) => c[1]);
 
 describe('mapKey (numpad)', () => {
   it('maps duration + arm + rest + delete codes', () => {
@@ -246,5 +255,154 @@ describe('useComposerInput playback echo guard', () => {
     expect(result.current.armed).toBe(true);
     rerender({ playing: false });
     expect(result.current.armed).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Task 27 — structured note-entry logging + duration classification.
+//
+// Recon finding (see task-27-report.md): this pipeline has NO chord-grouping
+// logic today — every armed note-on inserts as its own independent note,
+// regardless of timing. `composer.input.chord-decision` is a DIAGNOSTIC log
+// only (grouped/size describe what WOULD happen under CHORD_ONSET_TOLERANCE_MS,
+// not actual behavior) — these tests assert the measurement is correct, not
+// that grouping happens (it doesn't, by design, in this task).
+// ---------------------------------------------------------------------------
+describe('useComposerInput note-entry logging (task 27)', () => {
+  function armedHarness(logger = mockLogger()) {
+    let state = initEditor(makeEmptyScore());
+    const setEditorState = vi.fn((fn) => { state = typeof fn === 'function' ? fn(state) : fn; });
+    let midiFn;
+    renderHook(() => useComposerInput({
+      setEditorState, subscribe: (fn) => { midiFn = fn; return () => {}; }, logger,
+    }));
+    act(() => { window.dispatchEvent(new KeyboardEvent('keydown', { code: 'Numpad4' })); }); // arm Write
+    return { logger, midi: (evt) => act(() => { midiFn(evt); }), getState: () => state };
+  }
+
+  it('logs a note-on event for every note_on, armed or not', () => {
+    const { logger, midi } = armedHarness();
+    midi({ type: 'note_on', note: 60, velocity: 80, time: 1000 });
+    const payload = eventPayload(logger, 'composer.input.note-on');
+    expect(payload).toMatchObject({ note: 60, velocity: 80, t: 1000 });
+  });
+
+  it('logs a note-off event for every note_off, even with nothing pending', () => {
+    const { logger, midi } = armedHarness();
+    midi({ type: 'note_off', note: 60, time: 500 }); // no matching note_on
+    expect(eventPayload(logger, 'composer.input.note-off')).toMatchObject({ note: 60, t: 500 });
+    expect(eventNames(logger)).not.toContain('composer.input.note-duration');
+  });
+
+  describe('chord-decision diagnostic', () => {
+    it('first note-on in a run has no previous onset: spreadMs null, size 1, not grouped', () => {
+      const { logger, midi } = armedHarness();
+      midi({ type: 'note_on', note: 60, velocity: 80, time: 1000 });
+      expect(eventPayload(logger, 'composer.input.chord-decision')).toMatchObject({
+        spreadMs: null, toleranceMs: CHORD_ONSET_TOLERANCE_MS, grouped: false, size: 1,
+      });
+    });
+
+    it('a note-on within tolerance of the previous one is flagged grouped, cluster grows', () => {
+      const { logger, midi } = armedHarness();
+      midi({ type: 'note_on', note: 60, velocity: 80, time: 1000 });
+      midi({ type: 'note_on', note: 64, velocity: 80, time: 1000 + CHORD_ONSET_TOLERANCE_MS }); // exactly at the boundary
+      midi({ type: 'note_on', note: 67, velocity: 80, time: 1000 + CHORD_ONSET_TOLERANCE_MS + 5 });
+      const decisions = eventPayloads(logger, 'composer.input.chord-decision');
+      expect(decisions[1]).toMatchObject({ spreadMs: CHORD_ONSET_TOLERANCE_MS, grouped: true, size: 2 });
+      expect(decisions[2]).toMatchObject({ spreadMs: 5, grouped: true, size: 3 });
+    });
+
+    it('a note-on beyond tolerance is NOT grouped and resets the cluster to size 1', () => {
+      const { logger, midi } = armedHarness();
+      midi({ type: 'note_on', note: 60, velocity: 80, time: 1000 });
+      midi({ type: 'note_on', note: 64, velocity: 80, time: 1000 + CHORD_ONSET_TOLERANCE_MS + 1 });
+      const decisions = eventPayloads(logger, 'composer.input.chord-decision');
+      expect(decisions[1]).toMatchObject({ spreadMs: CHORD_ONSET_TOLERANCE_MS + 1, grouped: false, size: 1 });
+    });
+
+    it('does NOT actually group notes into a chord — every note-on still appends its own sequential note', () => {
+      // This is the honest-recon assertion: the diagnostic log can say
+      // grouped:true, but insertion behavior is untouched by this task.
+      const { midi, getState } = armedHarness();
+      midi({ type: 'note_on', note: 60, velocity: 80, time: 1000 });
+      midi({ type: 'note_on', note: 64, velocity: 80, time: 1005 });
+      midi({ type: 'note_on', note: 67, velocity: 80, time: 1008 });
+      expect(getState().score.parts[0].measures[0].notes).toHaveLength(3);
+      expect(getState().score.parts[0].measures[0].notes.every((n) => !n.chord)).toBe(true);
+    });
+  });
+
+  describe('duration classification (short/medium/long -> 16th/eighth/quarter)', () => {
+    it('a short held note (< 150ms) is reclassified to 16th on release', () => {
+      const { logger, midi, getState } = armedHarness();
+      midi({ type: 'note_on', note: 60, velocity: 80, time: 1000 });
+      midi({ type: 'note_off', note: 60, time: 1080 }); // heldMs = 80
+      expect(eventPayload(logger, 'composer.input.note-duration')).toMatchObject({
+        note: 60, heldMs: 80, class: 'short', type: '16th',
+      });
+      expect(getState().score.parts[0].measures[0].notes[0].type).toBe('16th');
+    });
+
+    it('a medium held note (150-449ms) is reclassified to eighth on release', () => {
+      const { getState, midi } = armedHarness();
+      midi({ type: 'note_on', note: 60, velocity: 80, time: 1000 });
+      midi({ type: 'note_off', note: 60, time: 1300 }); // heldMs = 300
+      expect(getState().score.parts[0].measures[0].notes[0].type).toBe('eighth');
+    });
+
+    it('a long held note (>= 450ms) is reclassified to quarter on release', () => {
+      const { getState, midi } = armedHarness();
+      midi({ type: 'note_on', note: 60, velocity: 80, time: 1000 });
+      midi({ type: 'note_off', note: 60, time: 1600 }); // heldMs = 600
+      expect(getState().score.parts[0].measures[0].notes[0].type).toBe('quarter');
+    });
+
+    it('a chord (3 notes pressed together, released together) reclassifies each note independently', () => {
+      const { getState, midi } = armedHarness();
+      midi({ type: 'note_on', note: 60, velocity: 80, time: 1000 });
+      midi({ type: 'note_on', note: 64, velocity: 80, time: 1003 });
+      midi({ type: 'note_on', note: 67, velocity: 80, time: 1006 });
+      // released out of onset order, held for very different lengths — the
+      // entryTag correlation (not array position) must still resolve each one
+      midi({ type: 'note_off', note: 67, time: 1006 + 80 });   // short  -> 16th
+      midi({ type: 'note_off', note: 60, time: 1000 + 300 });  // medium -> eighth
+      midi({ type: 'note_off', note: 64, time: 1003 + 600 });  // long   -> quarter
+      const notes = getState().score.parts[0].measures[0].notes;
+      expect(notes.find((n) => n.midi === 60).type).toBe('eighth');
+      expect(notes.find((n) => n.midi === 64).type).toBe('quarter');
+      expect(notes.find((n) => n.midi === 67).type).toBe('16th');
+    });
+
+    it('the same pitch pressed twice before either releases resolves FIFO (first on, first off)', () => {
+      const { getState, midi } = armedHarness();
+      midi({ type: 'note_on', note: 60, velocity: 80, time: 1000 }); // will hold 600ms -> quarter
+      midi({ type: 'note_on', note: 60, velocity: 80, time: 1010 }); // will hold 80ms -> 16th
+      midi({ type: 'note_off', note: 60, time: 1600 }); // resolves the FIRST pending (1000 -> 600ms)
+      midi({ type: 'note_off', note: 60, time: 1090 }); // resolves the SECOND pending (1010 -> 80ms)
+      const notes = getState().score.parts[0].measures[0].notes;
+      expect(notes).toHaveLength(2);
+      expect(notes[0].type).toBe('quarter');
+      expect(notes[1].type).toBe('16th');
+    });
+
+    it('a stray note_off with no pending entry does not touch the score', () => {
+      const { getState, midi } = armedHarness();
+      midi({ type: 'note_on', note: 60, velocity: 80, time: 1000 });
+      midi({ type: 'note_off', note: 60, time: 1600 }); // resolves it (-> quarter)
+      const before = getState();
+      midi({ type: 'note_off', note: 60, time: 2000 }); // nothing pending now
+      expect(getState()).toBe(before); // no-op, same state reference
+    });
+
+    it('disarmed play-along (audition) is never reclassified — no pending entry is created', () => {
+      const { getState, logger, midi } = armedHarness();
+      // disarm
+      act(() => { window.dispatchEvent(new KeyboardEvent('keydown', { code: 'Numpad4' })); });
+      midi({ type: 'note_on', note: 60, velocity: 80, time: 1000 });
+      midi({ type: 'note_off', note: 60, time: 1600 });
+      expect(getState().score.parts[0].measures[0].notes).toHaveLength(0);
+      expect(eventNames(logger)).not.toContain('composer.input.note-duration');
+    });
   });
 });

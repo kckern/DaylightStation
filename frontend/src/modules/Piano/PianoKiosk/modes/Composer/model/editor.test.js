@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   initEditor, replacePitch, serializeFromEditor, insertNote,
   insertRest, deleteNote, deleteBeforeCaret, setDuration, toggleDot, toggleTriplet, toggleTie,
-  reflowMeasure, nudgePitch, midiToPitch, moveCaret, select, setAttribute,
+  reflowMeasure, nudgePitch, midiToPitch, moveCaret, select, setAttribute, findNoteByTag,
 } from './editor.js';
 import { makeEmptyScore } from './score.js';
 import { makeNote, makeRest, noteDivisions } from './note.js';
@@ -206,6 +206,39 @@ describe('deleteNote', () => {
     const after = deleteNote(ed, { measureIdx: 0, noteIdx: 0 });
     expect(after.score.parts[0].measures[0].notes).toHaveLength(0);
     expect(after.caret).toEqual({ measureIdx: 0, noteIdx: 0 });
+  });
+});
+
+describe('findNoteByTag (task 27 — MIDI note-entry duration reclassification)', () => {
+  it('finds the note carrying a given entryTag', () => {
+    let ed = initEditor(makeEmptyScore());
+    ed = insertNote(ed, { step: 'C', octave: 4 }, { type: 'quarter', entryTag: 7 });
+    ed = insertNote(ed, { step: 'D', octave: 4 }, { type: 'quarter', entryTag: 8 });
+    expect(findNoteByTag(ed.score, 8)).toEqual({ measureIdx: 0, noteIdx: 1 });
+    expect(findNoteByTag(ed.score, 7)).toEqual({ measureIdx: 0, noteIdx: 0 });
+  });
+
+  it('returns null for an unknown or null tag', () => {
+    let ed = initEditor(makeEmptyScore());
+    ed = insertNote(ed, { step: 'C', octave: 4 }, { type: 'quarter', entryTag: 1 });
+    expect(findNoteByTag(ed.score, 999)).toBeNull();
+    expect(findNoteByTag(ed.score, null)).toBeNull();
+  });
+
+  it('the tag survives a later, unrelated edit (score gets re-cloned) — the whole point of tagging by value', () => {
+    let ed = initEditor(makeEmptyScore());
+    ed = insertNote(ed, { step: 'C', octave: 4 }, { type: 'quarter', entryTag: 1 });
+    ed = insertNote(ed, { step: 'D', octave: 4 }, { type: 'quarter', entryTag: 2 }); // re-clones the whole score
+    ed = insertNote(ed, { step: 'E', octave: 4 }, { type: 'quarter', entryTag: 3 }); // re-clones again
+    expect(findNoteByTag(ed.score, 1)).toEqual({ measureIdx: 0, noteIdx: 0 });
+  });
+
+  it('setDuration (used to reclassify) preserves the entryTag through rebuildDuration', () => {
+    let ed = initEditor(makeEmptyScore());
+    ed = insertNote(ed, { step: 'C', octave: 4 }, { type: 'quarter', entryTag: 42 });
+    ed = setDuration(ed, { measureIdx: 0, noteIdx: 0 }, { type: 'eighth' });
+    expect(ed.score.parts[0].measures[0].notes[0].entryTag).toBe(42);
+    expect(findNoteByTag(ed.score, 42)).toEqual({ measureIdx: 0, noteIdx: 0 });
   });
 });
 
