@@ -1705,19 +1705,14 @@
   &__spacer { flex: 1 1 auto; }
   &__time { color: var(--piano-muted); font-variant-numeric: tabular-nums; font-size: 0.95rem; }
 
+  /* Buttons in this row are TransportButton (.piano-tbtn) — the FACE (bg/border/
+     radius/color/min-size/font) lives in Transport.scss. This class is now a
+     LAYOUT-only hook, plus the one visual state Transport.scss doesn't know
+     about: the "arming" warn-colour ring on mark-A after a lone A mark. */
   &__btn {
-    min-width: 3rem; height: 3rem; padding: 0 0.75rem;
-    background: var(--piano-surface-2); color: var(--piano-fg); border: 1px solid var(--piano-border);
-    border-radius: var(--r-md); font-size: 1rem; cursor: pointer;
-    display: flex; align-items: center; justify-content: center;
-    &:disabled { opacity: 0.4; cursor: default; }
     &.is-arming { border-color: var(--piano-warn); color: var(--piano-warn); }
-    &.is-on { border-color: var(--piano-accent); color: var(--piano-accent-text); }
   }
-  &__btn--play { min-width: 4.5rem; height: 3rem; font-size: 1.2rem; background: var(--piano-accent); color: var(--piano-accent-ink); border-color: var(--piano-accent); }
   &__btn--rate { width: 4rem; flex-shrink: 0; }
-  &__btn--skip { gap: 0.25rem; padding: 0 0.7rem; }
-  &__skip-n { font-size: 0.95rem; font-weight: 600; font-variant-numeric: tabular-nums; line-height: 1; }
   &__btn--restart { flex-shrink: 0; }
 
   &__loop-group {
