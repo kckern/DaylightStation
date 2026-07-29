@@ -46,12 +46,16 @@ describe('balancedGrid', () => {
   });
 
   it('widens past 5 columns for a big library instead of stacking more 5-wide rows', () => {
-    const { rows, cols } = balancedGrid(30);
-    expect(cols).toBeGreaterThanOrEqual(6);
-    expect(rows * cols).toBeGreaterThanOrEqual(30);
-    // Widening (not just endlessly stacking rows) keeps the row count sane —
-    // a naive fixed max=5 would need 6 rows for 30; this should need fewer.
-    expect(rows).toBeLessThan(6);
+    // rows0 (cap heuristic) is 4 for n=30, but 4×8 wastes 2 (8/8/8/6) — the
+    // nearest BALANCED neighbour is rows=3, cols=10 (waste 0, 10/10/10).
+    expect(balancedGrid(30)).toEqual({ rows: 3, cols: 10 });
+  });
+
+  it('finds the nearest balanced split when the cap-preferred rows count is ragged', () => {
+    // rows0=3 for n=13 wastes 2 (13%3=1, needs rem===2 to balance at rows=3);
+    // the nearest balanced neighbour is rows=2, cols=7 (waste 1, 7/6) — not
+    // the naive cap-then-ceil answer, which would silently waste 2.
+    expect(balancedGrid(13)).toEqual({ rows: 2, cols: 7 });
   });
 
   it('handles degenerate counts', () => {
@@ -61,5 +65,19 @@ describe('balancedGrid', () => {
 
   it('honors a custom minimum column cap', () => {
     expect(balancedGrid(6, { minCols: 3 })).toEqual({ rows: 2, cols: 3 });
+  });
+
+  // MANDATORY regression guard: balancedColumns' cap-then-ceil heuristic,
+  // reused verbatim for rows/cols here, does NOT guarantee balance — 8 of the
+  // 32 counts below (13, 16, 19, 22, 25, 26, 29, 30) failed it (spread up to
+  // 2) before the nearest-balanced-neighbour search replaced it. This is the
+  // assertion that would have caught that bug.
+  it('is provably balanced (waste ≤ 1) for every count from 1 to 32', () => {
+    for (let n = 1; n <= 32; n++) {
+      const { rows, cols } = balancedGrid(n);
+      const capacity = rows * cols;
+      expect(capacity, `n=${n} rows=${rows} cols=${cols}`).toBeGreaterThanOrEqual(n);
+      expect(capacity - n, `n=${n} rows=${rows} cols=${cols}`).toBeLessThanOrEqual(1);
+    }
   });
 });
