@@ -1748,9 +1748,11 @@ describe('ScorePlayer — Learn state matrix (wave-3 B)', () => {
   it('Learn without a range runs no wrong-note gate — a mismatched note neither shakes nor blocks', async () => {
     h.layoutExtras = THREE;
     await enterLearnFresh();
-    expect(h.noteCb).toBeNull(); // the follow tracker never subscribed
+    // The machine rows DO hold a subscription (neutral wet ink, wave-3 D), but no
+    // gate: a mismatched note neither shakes the cursor nor moves it.
     play(61); // a wrong note against step 0 (E4/E2)
     expect(document.querySelector('.piano-score-cursor.is-wrong')).toBeNull();
+    expect(document.querySelector('.piano-learn-ink__note.is-wrong')).toBeNull();
     expect(pos()).toContain('m 1 / 3'); // and input does not drive the cursor either
   });
 
@@ -1818,7 +1820,12 @@ describe('ScorePlayer — Learn state matrix (wave-3 B)', () => {
     armLoopAt(160);
     expect(h.noteCb).toBeTypeOf('function');
     act(() => { fireEvent.click(screen.getByRole('button', { name: 'Loop' })); }); // loop OFF
-    expect(h.noteCb).toBeNull();                                  // tracker unsubscribed
+    // The tracker unsubscribed: the only subscription these machine rows keep is
+    // the neutral wet ink (wave-3 D), which gates nothing — so a plausible wrong
+    // note neither shakes the cursor nor drives it.
+    play(63);
+    expect(document.querySelector('.piano-score-cursor.is-wrong')).toBeNull();
+    expect(document.querySelector('.piano-learn-ink__note.is-neutral')).not.toBeNull();
     expect(pos()).toContain('m 2 / 3');                            // cursor stays where it was
     expect(screen.getByRole('button', { name: 'Play' })).not.toBeDisabled();
   });
@@ -2763,5 +2770,159 @@ describe('ScorePlayer — staff dim layer (Task 8)', () => {
 
     act(() => { fireEvent.click(screen.getByRole('button', { name: 'Left hand' })); }); // reselect LH
     expect(document.querySelectorAll('.piano-score-staff-dim')).toHaveLength(0);
+  });
+});
+
+// Learn wet ink (wave-3 D): a wrong note draws the PLAYED pitch in red on the
+// staff, so "no" also answers "then what did I play?". The keyboard reveal moves
+// onto a 3-consecutive-wrongs budget — help when genuinely stuck, not a spoiler
+// on the first fumble.
+describe('ScorePlayer — Learn wet ink + reveal budget (wave-3 D)', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.spyOn(performance, 'now').mockImplementation(() => Date.now());
+    vi.stubGlobal('requestAnimationFrame', (cb) => setTimeout(() => cb(Date.now()), 16));
+    vi.stubGlobal('cancelAnimationFrame', (id) => clearTimeout(id));
+    vi.setSystemTime(0);
+  });
+  afterEach(() => { cleanup(); vi.useRealTimers(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
+
+  const ink = (kind) => document.querySelectorAll(`.piano-learn-ink__note.is-${kind}`);
+  const targets = () => document.querySelectorAll('.piano-key.target');
+
+  it('inks a wrong note red at the played pitch, and the mark expires on its own', async () => {
+    renderPlayer();
+    await act(async () => {});
+    enterLearnGate();
+    expect(document.querySelector('svg.piano-learn-ink')).toBeNull(); // nothing played yet
+
+    play(63); // a plausible wrong note against step 0's E4 (within 2 octaves)
+    expect(document.querySelectorAll('svg.piano-learn-ink')).toHaveLength(1); // ONE svg node, always
+    expect(ink('wrong')).toHaveLength(1);
+    // Spelled from the SOUNDING key — 63 in C major is D#/Eb, so the glyph carries
+    // an accidental (the whole point: it names the pitch that was played).
+    expect(document.querySelector('.piano-learn-ink [data-acc]')).not.toBeNull();
+
+    act(() => vi.advanceTimersByTime(500));
+    expect(ink('wrong')).toHaveLength(1); // still readable against the expected note
+    act(() => vi.advanceTimersByTime(500)); // past the 900ms wrong TTL
+    expect(ink('wrong')).toHaveLength(0);
+    expect(document.querySelector('svg.piano-learn-ink')).toBeNull(); // layer folds away entirely
+  });
+
+  it('inks a correct note as a hit flash', async () => {
+    renderPlayer();
+    await act(async () => {});
+    enterLearnGate();
+    play(64); // step 0's RH note — a hit (the step needs the LH notes too, so no advance)
+    expect(ink('hit')).toHaveLength(1);
+    expect(ink('wrong')).toHaveLength(0);
+    act(() => vi.advanceTimersByTime(400)); // past the 350ms hit TTL
+    expect(ink('hit')).toHaveLength(0);
+  });
+
+  it('does not reveal the keyboard on the first two wrongs — the third does', async () => {
+    renderPlayer();
+    await act(async () => {});
+    enterLearnGate();
+    expect(targets()).toHaveLength(0); // Learn starts un-spoiled
+
+    play(63);
+    expect(document.querySelector('.piano-score-cursor.is-wrong')).not.toBeNull(); // shake still says "no"
+    expect(targets()).toHaveLength(0);
+    play(63);
+    expect(targets()).toHaveLength(0); // two is a fumble, not stuck
+    play(63);
+    // Third consecutive wrong on ONE step → the dim half-shade hint appears, for
+    // every active-staff note of the step (E4 + E3 + E2).
+    expect(targets()).toHaveLength(3);
+    expect(document.querySelector('.piano-keyboard.target-dim')).not.toBeNull();
+  });
+
+  it('a hit resets the streak, so wrongs spread around a chord never reveal', async () => {
+    renderPlayer();
+    await act(async () => {});
+    enterLearnGate();
+    play(63); play(63);   // two wrongs…
+    play(64);             // …then a correct note: the player is reading, not stuck
+    expect(targets()).toHaveLength(0);
+    play(63); play(63);   // two more wrongs — the streak restarted at the hit
+    expect(targets()).toHaveLength(0);
+    play(63);
+    expect(targets().length).toBeGreaterThan(0); // three consecutive → help
+  });
+
+  it('the streak resets on a step change, so the next note starts un-penalised', async () => {
+    renderPlayer();
+    await act(async () => {});
+    enterLearnGate();
+    play(63); play(63);            // two wrongs on step 0
+    play(64); play(52); play(40);  // satisfy step 0 → advance
+    expect(screen.getByTestId('score-position')).toHaveTextContent('2 / 4');
+    play(63); play(63);            // two wrongs on step 1 (D4) — carried streak would reveal
+    expect(targets()).toHaveLength(0);
+  });
+
+  it('inks NEUTRAL in the machine rows — never red, never a shake', async () => {
+    renderPlayer();
+    await act(async () => {});
+    enterLearn(); // Learn WITHOUT a range = machine playback (wave-3 §B row 1)
+    play(63);
+    expect(ink('neutral')).toHaveLength(1);
+    expect(ink('wrong')).toHaveLength(0);
+    expect(document.querySelector('.piano-score-cursor.is-wrong')).toBeNull();
+    expect(targets()).toHaveLength(0); // and no reveal, however many notes land
+    play(63); play(63); play(63);
+    expect(targets()).toHaveLength(0);
+    act(() => vi.advanceTimersByTime(600)); // past the 500ms neutral TTL
+    expect(ink('neutral')).toHaveLength(0);
+  });
+
+  it('renders no ink layer outside Learn', async () => {
+    renderPlayer(); // opens in Listen
+    await act(async () => {});
+    play(63);
+    expect(document.querySelector('svg.piano-learn-ink')).toBeNull();
+    pickMode('Polish');
+    play(63);
+    expect(document.querySelector('svg.piano-learn-ink')).toBeNull();
+    pickMode('Perform');
+    play(63);
+    expect(document.querySelector('svg.piano-learn-ink')).toBeNull();
+  });
+
+  it('clears live ink when the mode changes', async () => {
+    renderPlayer();
+    await act(async () => {});
+    enterLearnGate();
+    play(63);
+    expect(ink('wrong')).toHaveLength(1);
+    pickMode('Polish');
+    expect(document.querySelector('svg.piano-learn-ink')).toBeNull();
+    pickMode('Learn'); // back to Learn — the old mark must not reappear
+    expect(document.querySelector('svg.piano-learn-ink')).toBeNull();
+  });
+
+  it('spells the ink in the SOUNDING key when the piece is transposed', async () => {
+    renderPlayer();
+    await act(async () => {});
+    enterLearnGate();
+    // The fixture parses no key (fifths 0 = C major), where midi 70 spells A#.
+    // Transposing −2 makes the SOUNDING key Bb major (fifths −2), where the very
+    // same played pitch spells Bb — a different letter, a different staff line, a
+    // different accidental. That flip is the whole claim: ink is spelled in the
+    // key the player is HEARING, not the one on the page.
+    play(70);
+    expect(document.querySelector('.piano-learn-ink [data-acc="sharp"]')).not.toBeNull();
+    expect(document.querySelector('.piano-learn-ink [data-acc="flat"]')).toBeNull();
+    act(() => vi.advanceTimersByTime(1000)); // let the mark expire
+
+    act(() => { fireEvent.click(screen.getByRole('button', { name: 'Key' })); }); // open the Key sheet
+    act(() => { fireEvent.click(screen.getByRole('button', { name: /-2/ })); });  // −2 semitones
+    await act(async () => {});
+    play(70);
+    expect(ink('wrong')).toHaveLength(1);
+    expect(document.querySelector('.piano-learn-ink [data-acc="flat"]')).not.toBeNull();
+    expect(document.querySelector('.piano-learn-ink [data-acc="sharp"]')).toBeNull();
   });
 });
