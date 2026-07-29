@@ -79,3 +79,42 @@
     h2 { margin: 0; font-size: 1.15rem; }
   }
 }
+
+.piano-stepgrid {
+  display: flex;
+  gap: 0.4rem;
+  margin: 0.35rem 0;
+
+  &__step {
+    flex: 1 1 0;
+    min-width: 3rem;
+    min-height: 3rem; // 48px floor
+    display: inline-flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0.15rem;
+    padding: 0.3rem 0.4rem;
+    border: 1px solid var(--piano-tbtn-border, rgba(255, 255, 255, 0.22));
+    border-radius: 0.6rem;
+    background: var(--piano-tbtn-bg, rgba(255, 255, 255, 0.08));
+    color: inherit;
+    font: inherit;
+    line-height: 1.1;
+    cursor: pointer;
+
+    &.is-on {
+      background: var(--piano-tbtn-on-bg, rgba(94, 170, 255, 0.28));
+      border-color: var(--piano-tbtn-on-border, rgba(94, 170, 255, 0.8));
+    }
+    &:disabled { opacity: 0.4; cursor: default; }
+  }
+
+  &__sub {
+    font-size: 0.72em;
+    opacity: 0.75;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.2em;
+  }
+}
