@@ -2,7 +2,10 @@ import React, { useState, memo } from 'react';
 import HandsControl from './HandsControl.jsx';
 import LoopControl from './LoopControl.jsx';
 import ViewMenu from './ViewMenu.jsx';
-import { PlayIcon, PauseIcon, RestartIcon, QuarterNoteIcon, ChevronDownIcon } from './icons.jsx';
+import Icon from '../../icons/Icon.jsx';
+import TransportButton from '../../transport/TransportButton.jsx';
+import KeySheet from '../../transport/KeySheet.jsx';
+import TempoSheet, { TEMPO_STEPS, nearestStep } from '../../transport/TempoSheet.jsx';
 
 // Tab order: Listen · Learn · Polish · Perform.
 const MODES = [
@@ -16,28 +19,6 @@ const ROLE_TITLES = {
   play: 'Play',
   you: 'You',
   mute: 'Mute',
-};
-
-// Tempo & size are discrete segmented steppers (the kiosk's canonical touch
-// control — cf. SoundPanel/VolumeModal's Off/Low/Med/High/Max), never a slider
-// or typed value. Percent labels double as the readout.
-const TEMPO_STEPS = [
-  { label: '50%', value: 0.5 },
-  { label: '75%', value: 0.75 },
-  { label: '100%', value: 1 },
-  { label: '125%', value: 1.25 },
-  { label: '150%', value: 1.5 },
-];
-// (Size steps moved into ViewMenu, which now owns the size control.)
-// Which step is lit for a current value — the nearest one by amount.
-const nearestStep = (steps, val) => {
-  let best = 0;
-  let bestDist = Infinity;
-  steps.forEach((s, i) => {
-    const d = Math.abs(s.value - val);
-    if (d < bestDist) { bestDist = d; best = i; }
-  });
-  return best;
 };
 
 /**
@@ -87,22 +68,22 @@ const ScoreTransportButtons = memo(function ScoreTransportButtons({ mode, runnin
     <>
       <button
         type="button"
-        className="piano-score-btn piano-score-reset"
+        className="piano-tbtn piano-score-btn piano-score-reset"
         aria-label="Restart"
         disabled={!canRestart}
         onClick={onReset}
       >
-        <RestartIcon />
+        <Icon name="previous" />
       </button>
       <button
         type="button"
-        className={`piano-score-btn piano-score-run${!ready && !isLearn ? ' is-preparing' : ''}`}
+        className={`piano-tbtn piano-score-btn piano-score-run${!ready && !isLearn ? ' is-preparing' : ''}`}
         aria-label={runLabel}
         aria-pressed={running}
         disabled={isLearn || !ready}
         onClick={onToggleRun}
       >
-        {isLearn ? <PlayIcon /> : !ready ? '…' : running ? <PauseIcon /> : <PlayIcon />}
+        {isLearn ? <Icon name="play" /> : !ready ? '…' : running ? <Icon name="pause" /> : <Icon name="play" />}
       </button>
     </>
   );
@@ -139,13 +120,13 @@ const ScorePracticeCluster = memo(function ScorePracticeCluster({
     <>
       <button
         type="button"
-        className={`piano-score-btn piano-score-click${clickActive && !metronomeDisabled ? ' is-on' : ''}`}
+        className={`piano-tbtn piano-score-btn piano-score-click${clickActive && !metronomeDisabled ? ' is-on' : ''}`}
         aria-label="Metronome"
         aria-pressed={clickActive && !metronomeDisabled}
         disabled={metronomeDisabled}
         onClick={onToggleClick}
       >
-        <QuarterNoteIcon />
+        <Icon name="quarter-note" />
         <span className="tabular-nums">{bpm}</span>
       </button>
       <LoopControl
@@ -200,13 +181,16 @@ const ScoreViewControls = memo(function ScoreViewControls({
   onToggleKeyboard,
   baseBpm = 90, // the piece's written tempo (unscaled) — each tempo step shows the BPM it produces (M4)
   meta = {},
+  keyFifths,
+  keyMode,
   onBodyRender,
 }) {
   if (onBodyRender) onBodyRender();
 
-  // Single-open popover discipline (audit M4): tempo and the View menu share one
-  // state, so opening one closes the other, and a shared backdrop dismisses on an
-  // outside tap. 'tempo' | 'view' | null.
+  // Single-open popover discipline (audit M4): key, tempo, and the View menu
+  // share one state, so opening one closes the others. Key/Tempo are sheets
+  // that bring their own scrim; the shared backdrop below only ever applies to
+  // 'view'. 'key' | 'tempo' | 'view' | null.
   const [openPopover, setOpenPopover] = useState(null);
   const toggle = (name) => setOpenPopover((cur) => (cur === name ? null : name));
   const closePopover = () => setOpenPopover(null);
@@ -256,60 +240,40 @@ const ScoreViewControls = memo(function ScoreViewControls({
         ? <HandsControl variant={handsVariant} value={handsValue} onChange={onHandsChange} />
         : <div className="piano-score-parts">{parts.map(renderPartChip)}</div>}
 
-      <div className={`piano-score-key${keyEnabled ? '' : ' is-dimmed'}`} role="group" aria-label="Key">
-        <span className="piano-score-key-label">Key</span>
-        <button
-          type="button"
-          className="piano-score-btn piano-score-key-down"
-          aria-label="Transpose down"
+      <div className={`piano-score-key${keyEnabled ? '' : ' is-dimmed'}`}>
+        <TransportButton
+          label={`Key ${transpose > 0 ? `+${transpose}` : transpose}`}
+          icon="chevron-down"
+          ariaLabel="Key"
           disabled={!keyEnabled}
-          onClick={() => onTranspose?.(transpose - 1)}
-        >
-          {'−'}
-        </button>
-        <span className="piano-score-key-readout tabular-nums">
-          {transpose > 0 ? `+${transpose}` : String(transpose)}
-        </span>
-        <button
-          type="button"
-          className="piano-score-btn piano-score-key-up"
-          aria-label="Transpose up"
-          disabled={!keyEnabled}
-          onClick={() => onTranspose?.(transpose + 1)}
-        >
-          {'+'}
-        </button>
+          on={transpose !== 0}
+          onPress={() => toggle('key')}
+        />
       </div>
+      <KeySheet
+        open={openPopover === 'key'}
+        onClose={closePopover}
+        value={transpose}
+        onPick={(n) => { onTranspose?.(n); closePopover(); }}
+        keyFifths={keyFifths}
+        keyMode={keyMode}
+      />
 
       <div className="piano-score-tempo-wrap">
-        <button
-          type="button"
-          className="piano-score-btn piano-score-tempo"
-          aria-label="Tempo"
-          aria-expanded={openPopover === 'tempo'}
-          onClick={() => toggle('tempo')}
-        >
-          {`Tempo ${Math.round(tempoMult * 100)}%`}
-          <ChevronDownIcon />
-        </button>
-        {openPopover === 'tempo' && (
-          <div className="piano-score-tempo-modal" role="dialog" aria-label="Tempo">
-            <div className="piano-score-steps" role="group" aria-label="Tempo">
-              {TEMPO_STEPS.map((s, i) => (
-                <button
-                  key={s.label}
-                  type="button"
-                  className={`piano-score-btn piano-score-step${i === nearestStep(TEMPO_STEPS, tempoMult) ? ' is-on' : ''}`}
-                  aria-pressed={i === nearestStep(TEMPO_STEPS, tempoMult)}
-                  onClick={() => onTempo?.(s.value)}
-                >
-                  {s.label}
-                  <span className="piano-score-step__bpm tabular-nums"><QuarterNoteIcon /> {Math.round(baseBpm * s.value)}</span>
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
+        <TransportButton
+          label={`Tempo ${Math.round(tempoMult * 100)}%`}
+          icon="chevron-down"
+          ariaLabel="Tempo"
+          on={tempoMult !== 1}
+          onPress={() => toggle('tempo')}
+        />
+        <TempoSheet
+          open={openPopover === 'tempo'}
+          onClose={closePopover}
+          value={tempoMult}
+          onPick={(v) => { onTempo?.(v); closePopover(); }}
+          baseBpm={baseBpm}
+        />
       </div>
 
       <div className="piano-score-view-wrap">
@@ -321,7 +285,7 @@ const ScoreViewControls = memo(function ScoreViewControls({
           onClick={() => toggle('view')}
         >
           {'View'}
-          <ChevronDownIcon />
+          <Icon name="chevron-down" />
         </button>
         {openPopover === 'view' && (
           <ViewMenu
@@ -336,8 +300,10 @@ const ScoreViewControls = memo(function ScoreViewControls({
         )}
       </div>
 
-      {/* Shared backdrop: an outside tap dismisses whichever popover is open (M4). */}
-      {openPopover && (
+      {/* Shared backdrop: an outside tap dismisses the View menu (M4). Key/Tempo
+          bring their own scrims via TransportSheet, so this backdrop is scoped
+          to 'view' only — otherwise it'd double-dismiss under the sheet's scrim. */}
+      {openPopover === 'view' && (
         <button type="button" className="piano-score-popover-backdrop" aria-label="Close" onClick={closePopover} />
       )}
     </div>
@@ -422,6 +388,8 @@ export default function ScoreTransportBar({
   bpm,
   baseBpm,
   meta,
+  keyFifths,
+  keyMode,
   onBodyRender,
 }) {
   // Musicians think in measures, not note-steps (audit L2): show "m 3 / 24" when a
@@ -491,6 +459,8 @@ export default function ScoreTransportBar({
         onToggleKeyboard={onToggleKeyboard}
         baseBpm={baseBpm}
         meta={meta}
+        keyFifths={keyFifths}
+        keyMode={keyMode}
         onBodyRender={onBodyRender}
       />
     </div>

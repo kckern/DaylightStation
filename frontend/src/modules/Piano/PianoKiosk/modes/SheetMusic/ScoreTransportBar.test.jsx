@@ -126,7 +126,7 @@ describe('ScoreTransportBar', () => {
     fireEvent.click(screen.getByRole('button', { name: /^75%/ }));
     expect(onTempo).toHaveBeenCalledWith(0.75);
     // Key stays rendered in Polish but is gated in place (disabled); play-along is gone.
-    expect(screen.getByRole('button', { name: /transpose up/i })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Key' })).toBeDisabled();
     expect(screen.queryByRole('button', { name: /play along/i })).toBeNull();
   });
 
@@ -135,10 +135,12 @@ describe('ScoreTransportBar', () => {
     expect(screen.queryByRole('button', { name: /play along/i })).toBeNull();
   });
 
-  it('listen mode: key + button transposes up by one semitone via onTranspose', () => {
+  it('listen mode: Key opens the sheet and tapping an offset commits via onTranspose', () => {
     const onTranspose = vi.fn();
     render(<ScoreTransportBar {...base} mode="listen" transpose={1} onTranspose={onTranspose} />);
-    fireEvent.click(screen.getByRole('button', { name: /transpose up/i }));
+    fireEvent.click(screen.getByRole('button', { name: 'Key' })); // open the sheet
+    expect(screen.getByRole('dialog', { name: 'Key' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '+2' })); // direct-pick +2
     expect(onTranspose).toHaveBeenCalledWith(2);
   });
 
@@ -303,7 +305,7 @@ describe('ScoreTransportBar — stable geography (C2)', () => {
   });
   it('Learn/Polish keep Key rendered but disabled (in-place gating)', () => {
     render(<ScoreTransportBar {...base} mode="polish" step={0} total={4} ready />);
-    expect(screen.getByRole('button', { name: /transpose up/i })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Key' })).toBeDisabled();
   });
   it('transport buttons render Play/Pause as SVG icons, not glyph text', () => {
     render(<ScoreTransportBar {...base} mode="polish" step={0} total={4} ready canRestart />);

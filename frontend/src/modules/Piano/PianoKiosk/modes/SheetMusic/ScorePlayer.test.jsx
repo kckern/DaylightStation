@@ -1078,7 +1078,8 @@ describe('ScorePlayer — Listen mode', () => {
     act(() => vi.advanceTimersByTime(100));
     expect(screen.getByRole('button', { name: 'Pause' })).toBeInTheDocument(); // playing
     h.sendPanic.mockClear();
-    act(() => { fireEvent.click(screen.getByRole('button', { name: /transpose up/i })); });
+    act(() => { fireEvent.click(screen.getByRole('button', { name: 'Key' })); }); // open the Key sheet
+    act(() => { fireEvent.click(screen.getByRole('button', { name: '+1' })); }); // tap +1 semitone
     await act(async () => {});
     expect(h.sendPanic).toHaveBeenCalled(); // silenced on the view change
     // …and the user is not stranded mid-piece: the rebuild-pause resumes itself
@@ -1310,7 +1311,8 @@ describe('ScorePlayer — rebuild-pause resume (H5/M3)', () => {
     // The re-engrave is in flight: the stub holds its publish, so the reported
     // layout still belongs to the WRITTEN key.
     h.holdLayout = true;
-    await act(async () => { fireEvent.click(screen.getByRole('button', { name: /transpose up/i })); });
+    fireEvent.click(screen.getByRole('button', { name: 'Key' })); // open the Key sheet
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: '+1' })); }); // tap +1 semitone
     expect(screen.queryByRole('button', { name: 'Pause' })).toBeNull(); // still paused — the old key must not play on
 
     // New key engraved → the run picks itself back up, in the key on the page.
