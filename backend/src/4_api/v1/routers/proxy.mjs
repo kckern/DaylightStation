@@ -345,6 +345,18 @@ export function createProxyRouter(config) {
    */
   router.use('/plex', async (req, res, next) => {
     try {
+      // Server-side thumbnail resizing: `?w=&h=` on an image path rewrites
+      // the request to Plex's photo transcoder, so clients get a small,
+      // smoothly-scaled JPEG instead of downscaling a full poster in the
+      // browser (visible aliasing on kiosk thumbnails).
+      const w = parseInt(req.query?.w, 10);
+      const h = parseInt(req.query?.h, 10);
+      if (Number.isFinite(w) && w > 0 && Number.isFinite(h) && h > 0 && !req.path.startsWith('/photo/')) {
+        // No minSize=1: w/h are a bounding box (fit-within, aspect preserved),
+        // not a crop target — consumers show the full artwork uncropped.
+        req.url = `/photo/:/transcode?width=${w}&height=${h}&upscale=1&url=${encodeURIComponent(req.path)}`;
+      }
+
       // Use ProxyService - required for Plex proxying
       if (proxyService?.isConfigured?.('plex')) {
         await proxyService.proxy('plex', req, res);

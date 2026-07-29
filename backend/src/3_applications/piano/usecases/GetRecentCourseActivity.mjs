@@ -58,15 +58,27 @@ export class GetRecentCourseActivity {
     this.#logger = logger;
   }
 
-  #lessonCollectionIds() {
+  /**
+   * Lesson scope = every tab group whose label contains "lesson" (so Piano
+   * Lessons AND Voice Lessons count; Music Appreciation doesn't), falling back
+   * to the first group when no label matches. Groups contribute their plex
+   * collections plus any directly-listed `shows` (which may live in no
+   * collection at all).
+   */
+  #lessonScope() {
     const videos = (this.#configService.getHouseholdAppConfig(null, 'piano') || {}).videos || {};
+    const strip = (id) => String(id).replace(/^plex:/, '');
+    const toList = (v) => (Array.isArray(v) ? v : [v]).filter(Boolean);
     if (Array.isArray(videos.collections) && videos.collections.length) {
-      const group = videos.collections[0];
-      const list = Array.isArray(group?.plex) ? group.plex : [group?.plex];
-      return list.filter(Boolean).map((id) => String(id).replace(/^plex:/, ''));
+      const lessonGroups = videos.collections.filter((g, i) => (g?.label ? /lesson/i.test(String(g.label)) : i === 0));
+      const scoped = lessonGroups.length ? lessonGroups : [videos.collections[0]];
+      return {
+        collectionIds: [...new Set(scoped.flatMap((g) => toList(g?.plex ?? g?.collections)).map(strip))],
+        showIds: [...new Set(scoped.flatMap((g) => toList(g?.shows)).map(strip))],
+      };
     }
-    const flat = Array.isArray(videos.plexCollection) ? videos.plexCollection : [videos.plexCollection];
-    return flat.filter(Boolean).map((id) => String(id).replace(/^plex:/, ''));
+    const flat = toList(videos.plexCollection);
+    return { collectionIds: flat.map(strip), showIds: [] };
   }
 
   async execute() {
@@ -82,7 +94,8 @@ export class GetRecentCourseActivity {
     // item more than once (observed live 2026-07-28 — every show doubled),
     // and a show may also legitimately sit in two configured collections.
     const seenShowIds = new Set();
-    for (const collectionId of this.#lessonCollectionIds()) {
+    const scope = this.#lessonScope();
+    for (const collectionId of scope.collectionIds) {
       try {
         const children = await this.#plexClient.children(collectionId);
         for (const c of children || []) {
@@ -94,6 +107,20 @@ export class GetRecentCourseActivity {
       } catch (err) {
         fetchFailed = true;
         this.#logger.warn?.('piano.activity.children_failed', { collectionId, error: err.message });
+      }
+    }
+    // Directly-listed lesson shows (config `shows:`) that no collection walk
+    // covered — fetch their own metadata for the tile fields.
+    for (const showId of scope.showIds) {
+      if (seenShowIds.has(String(showId))) continue;
+      try {
+        const meta = await this.#plexClient.metadata?.(showId);
+        if (!meta) continue;
+        seenShowIds.add(String(showId));
+        shows.push({ id: String(showId), title: meta.title || '', thumb: meta.thumb || null });
+      } catch (err) {
+        fetchFailed = true;
+        this.#logger.warn?.('piano.activity.metadata_failed', { showId, error: err.message });
       }
     }
 
@@ -111,6 +138,15 @@ export class GetRecentCourseActivity {
     const pianoCfg = this.#configService.getHouseholdAppConfig(null, 'piano') || {};
     const menuCfg = pianoCfg.menu_activity || {};
     const slots = Array.isArray(menuCfg.slots) && menuCfg.slots.length ? menuCfg.slots.map(String) : DEFAULT_SLOTS;
+    // How a course's displayed percent is computed (config `menu_activity.percent_mode`):
+    //   season-weighted (default) — every season/unit is an equal slice of the
+    //     bar (5 seasons → finishing season 1 = 20%), episode progress
+    //     interpolates within each slice. Season count is the base, so one
+    //     giant season can't dwarf the rest.
+    //   current-module — progress through the most recently active incomplete
+    //     unit only.
+    //   course — plain completed/total over every lecture.
+    const percentMode = String(menuCfg.percent_mode || 'season-weighted');
     const referenceUnits = pianoCfg.videos?.reference_units || [];
 
     const players = [];
@@ -124,30 +160,82 @@ export class GetRecentCourseActivity {
         const items = excludeReferenceUnits(rawItems, show.id, referenceUnits);
         if (!items.length) continue;
         const enriched = this.#userVideoProgressStore.enrich(items, userId);
-        // Course-level aggregation + the player's most recent lecture (its
-        // unit is their "current module").
+        // Per-unit aggregation. The "current module" is the most recently
+        // active INCOMPLETE unit — a finished one-off unit (e.g. a single
+        // intro lecture played last) must not carry the day with 100% while
+        // the player is mid-way through a real module. Only when every
+        // touched unit is complete does the newest one (at 100%) show.
         let courseCompleted = 0;
-        let lastPlayedAt = null;
-        let currentUnitId = null;
+        let newestOverall = null;
+        const units = new Map(); // unitId -> { completed, total, lastPlayed }
         for (const it of enriched) {
-          if (it.userWatched) courseCompleted += 1;
+          const unitId = unitOf(it);
+          let rec = units.get(unitId);
+          if (!rec) { rec = { completed: 0, total: 0, lastPlayed: null }; units.set(unitId, rec); }
+          rec.total += 1;
+          if (it.userWatched) { rec.completed += 1; courseCompleted += 1; }
           const lp = it.userLastPlayedAt;
-          if (lp && (!lastPlayedAt || String(lp) > String(lastPlayedAt))) {
-            lastPlayedAt = lp;
-            currentUnitId = unitOf(it);
+          if (lp) {
+            if (!rec.lastPlayed || String(lp) > String(rec.lastPlayed)) rec.lastPlayed = lp;
+            if (!newestOverall || String(lp) > String(newestOverall)) newestOverall = lp;
           }
         }
-        if (!lastPlayedAt) continue;
-        // Module-scoped progress: percent through the CURRENT unit, not the
-        // whole program (motivating on multi-hundred-lecture courses). Flat
-        // single-unit courses degrade to whole-course numbers naturally.
-        const unitItems = enriched.filter((it) => unitOf(it) === currentUnitId);
-        const unitCompleted = unitItems.filter((it) => it.userWatched).length;
+        if (!newestOverall) continue;
+        // The "current" unit (most recently active incomplete, else most
+        // recent) — drives the current-module percent AND the blinking dot.
+        const activeUnits = [...units.values()].filter((r) => r.lastPlayed);
+        const incompleteUnits = activeUnits.filter((r) => r.completed < r.total);
+        const pool = incompleteUnits.length ? incompleteUnits : activeUnits;
+        const current = pool.length
+          ? pool.reduce((a, b) => (String(b.lastPlayed) > String(a.lastPlayed) ? b : a))
+          : null;
+        // Per-season indicator states, in season order (Map insertion order =
+        // playable order): done (filled) / active (blinking) / todo (empty).
+        let unitStates = [...units.values()].map((r) => {
+          if (r.total > 0 && r.completed >= r.total) return 'done';
+          if (r === current || r.completed > 0) return 'active';
+          return 'todo';
+        });
+        // Single-season courses: the dots represent EPISODES instead — same
+        // vocabulary, finer grain.
+        if (units.size === 1) {
+          const newestUnwatched = enriched
+            .filter((it) => !it.userWatched && it.userLastPlayedAt)
+            .reduce((a, b) => (!a || String(b.userLastPlayedAt) > String(a.userLastPlayedAt) ? b : a), null);
+          unitStates = enriched.map((it) => {
+            if (it.userWatched) return 'done';
+            if ((it.userPercent ?? 0) > 0 || (newestUnwatched && it === newestUnwatched)) return 'active';
+            return 'todo';
+          });
+        }
+        let completed;
+        let total;
+        let percent;
+        if (percentMode === 'current-module') {
+          completed = current.completed;
+          total = current.total;
+          percent = total > 0 && completed > 0 ? Math.max(1, Math.round((completed / total) * 100)) : 0;
+        } else if (percentMode === 'course') {
+          completed = courseCompleted;
+          total = enriched.length;
+          percent = total > 0 && completed > 0 ? Math.max(1, Math.round((completed / total) * 100)) : 0;
+        } else {
+          // season-weighted (default): each unit is an equal 1/N slice.
+          const all = [...units.values()];
+          const fraction = all.length
+            ? all.reduce((sum, r) => sum + (r.total > 0 ? r.completed / r.total : 0), 0) / all.length
+            : 0;
+          completed = courseCompleted;      // tooltip shows whole-course counts
+          total = enriched.length;
+          percent = fraction > 0 ? Math.max(1, Math.round(fraction * 100)) : 0;
+        }
         touched.push({
           show,
-          lastPlayedAt,
-          completed: unitCompleted,
-          total: unitItems.length,
+          lastPlayedAt: newestOverall,
+          completed,
+          total,
+          percent,
+          units: unitStates,
           courseCompleted: enriched.length > 0 && courseCompleted >= enriched.length,
         });
       }
@@ -159,8 +247,8 @@ export class GetRecentCourseActivity {
         thumbnail: e.show.thumb,
         completed: e.completed,
         total: e.total,
-        percent: e.total > 0 && e.completed > 0
-          ? Math.max(1, Math.round((e.completed / e.total) * 100)) : 0,
+        percent: e.percent,
+        units: e.units,
         courseCompleted: e.courseCompleted,
         lastPlayedAt: e.lastPlayedAt,
       }));

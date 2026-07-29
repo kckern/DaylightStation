@@ -1,11 +1,13 @@
 // CourseGrid.jsx
-import { useState, useMemo, useEffect, useCallback } from 'react';
+import { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import usePianoList from '../../usePianoList.js';
+import { balancedColumns } from '../../tileGridLayout.js';
 import PianoEmpty from '../../PianoEmpty.jsx';
 import { SkeletonPoster } from '../../Skeleton.jsx';
 import CourseTile from './CourseTile.jsx';
 
 const ratingKeyOf = (c) => (c ? String(c).replace(/^plex:/, '') : null);
+const idOf = (raw) => String(raw || '').replace(/^plex:/, '');
 
 // Pull both the collection's display title and its courses from one /list call.
 const selectCollection = (r) => ({ title: r?.title || null, items: r?.items ?? [] });
@@ -52,9 +54,14 @@ const titleFromPayload = (p) => (p && !Array.isArray(p) ? p.title : null);
  * renders as a plain grid with no tab bar.
  */
 export default function CourseGrid({ groups = [], onSelect }) {
-  // Every distinct collection across all groups is fetched once.
+  // Every distinct collection across all groups is fetched once. Cherry-picked
+  // `shows` get their own fetch through the same list endpoint — a standalone
+  // show (in no collection) returns itself as a tile, so the pool covers it.
   const allCollections = useMemo(
-    () => [...new Set(groups.flatMap((g) => g.collections || []))],
+    () => [...new Set([
+      ...groups.flatMap((g) => g.collections || []),
+      ...groups.flatMap((g) => g.shows || []),
+    ])],
     [groups],
   );
 
@@ -77,13 +84,36 @@ export default function CourseGrid({ groups = [], onSelect }) {
   const multi = groups.length > 1;
 
   // Merge the active group's collections. Loading (null) until every collection
-  // in the group has reported, so the wall doesn't flash a partial set.
+  // in the group has reported, so the wall doesn't flash a partial set. Groups
+  // may also cherry-pick shows from the OTHER collections' pool (`shows`) or
+  // hide shows their own collections include (`excludeShows`) — see
+  // resolveCourseGroups.
   const merged = useMemo(() => {
     if (!activeGroup) return null;
-    const payloads = activeGroup.collections.map((c) => byCollection[c]);
-    if (payloads.some((p) => p == null)) return null;
-    return payloads.flatMap((p) => itemsFromPayload(p) || []);
-  }, [activeGroup, byCollection]);
+    const own = activeGroup.collections.map((c) => byCollection[c]);
+    if (own.some((p) => p == null)) return null;
+    const wanted = new Set((activeGroup.shows || []).map(idOf));
+    if (wanted.size) {
+      // Cherry-picked shows live in other collections' payloads — wait for the
+      // whole pool so the tab doesn't flash without its adopted shows.
+      const pool = allCollections.map((c) => byCollection[c]);
+      if (pool.some((p) => p == null)) return null;
+    }
+    const exclude = new Set((activeGroup.excludeShows || []).map(idOf));
+    const base = own
+      .flatMap((p) => itemsFromPayload(p) || [])
+      .filter((it) => !exclude.has(idOf(it.id)));
+    if (wanted.size) {
+      const seen = new Set(base.map((it) => idOf(it.id)));
+      for (const c of allCollections) {
+        for (const it of itemsFromPayload(byCollection[c]) || []) {
+          const id = idOf(it.id);
+          if (wanted.has(id) && !seen.has(id)) { seen.add(id); base.push(it); }
+        }
+      }
+    }
+    return base;
+  }, [activeGroup, byCollection, allCollections]);
   const courses = useMemo(() => coursesOf(merged), [merged]);
 
   // Per-course roster progress for the poster overlay. Sorted ids keep the
@@ -108,6 +138,26 @@ export default function CourseGrid({ groups = [], onSelect }) {
   const loading = !noGroups && courses === null;
   const empty = !noGroups && Array.isArray(courses) && courses.length === 0;
 
+  // Swipe left/right on the content panel steps through the tabs (touch
+  // kiosk). Horizontal-dominant swipes only, so vertical poster-wall scrolling
+  // never changes tabs; clamped at the ends.
+  const swipeRef = useRef(null);
+  const onTouchStart = (e) => {
+    const t = e.touches?.[0];
+    swipeRef.current = t ? { x: t.clientX, y: t.clientY } : null;
+  };
+  const onTouchEnd = (e) => {
+    const start = swipeRef.current;
+    swipeRef.current = null;
+    const t = e.changedTouches?.[0];
+    if (!start || !t || !multi) return;
+    const dx = t.clientX - start.x;
+    const dy = t.clientY - start.y;
+    if (Math.abs(dx) < 60 || Math.abs(dx) < 2 * Math.abs(dy)) return;
+    const next = Math.min(groups.length - 1, Math.max(0, idx + (dx < 0 ? 1 : -1)));
+    setActiveIdx(next);
+  };
+
   return (
     <section className="piano-mode piano-mode--videos">
       {allCollections.map((c) => (
@@ -131,12 +181,20 @@ export default function CourseGrid({ groups = [], onSelect }) {
         </div>
       )}
 
-      <div className="piano-course-tabpanel" role={multi ? 'tabpanel' : undefined}>
+      <div
+        className="piano-course-tabpanel"
+        role={multi ? 'tabpanel' : undefined}
+        onTouchStart={onTouchStart}
+        onTouchEnd={onTouchEnd}
+      >
         {noGroups && <PianoEmpty message="No video library has been set up yet." />}
         {loading && <SkeletonPoster count={8} />}
         {empty && <PianoEmpty message="No videos found." />}
         {courses && courses.length > 0 && (
-          <ul className="piano-video-grid piano-video-grid--posters">
+          <ul
+            className="piano-video-grid piano-video-grid--posters"
+            style={{ '--poster-cols': balancedColumns(courses.length, { max: 5 }) }}
+          >
             {courses.map((item) => (
               <CourseTile key={item.id} item={item} onSelect={onSelect} progress={progressMap?.[item.id]} />
             ))}

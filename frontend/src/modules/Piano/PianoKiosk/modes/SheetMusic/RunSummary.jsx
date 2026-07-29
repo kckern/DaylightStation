@@ -2,6 +2,9 @@ import React from 'react';
 import { tallyGrades } from './gradeTally.js';
 
 const OVERALL_LABEL = { green: 'Nicely done', yellow: 'Getting there', red: 'Keep at it' };
+// tallyGrades reports overall: null when nothing was graded. Say so plainly —
+// praising a run the user never played teaches them the feedback is noise.
+const NOTHING_LABEL = 'Nothing to grade yet';
 
 /**
  * RunSummary — end-of-run report for Sheet Music "Polish" mode. Pure/presentational:
@@ -24,8 +27,8 @@ export default function RunSummary({ open, grades = {}, measures = [], onClose, 
 
   return (
     <div className="piano-score-run-summary" role="dialog" aria-label="Run summary">
-      <div className={`piano-score-run-overall piano-score-run-overall--${overall}`}>
-        {OVERALL_LABEL[overall]}
+      <div className={`piano-score-run-overall piano-score-run-overall--${overall || 'none'}`}>
+        {overall ? OVERALL_LABEL[overall] : NOTHING_LABEL}
       </div>
 
       <div className="piano-score-run-strip" aria-hidden="true">

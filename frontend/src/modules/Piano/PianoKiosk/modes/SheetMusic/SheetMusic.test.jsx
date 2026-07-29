@@ -19,7 +19,13 @@ vi.mock('./ScorePlayer.jsx', () => ({
 
 import { ActivePianoProvider } from '../../PianoConfig.jsx';
 import { __clearPianoListCache } from '../../usePianoList.js';
+import { getRecentEvents } from '../../../../../lib/logging/Logger.js';
 import { SheetMusic, collectionListPath, isNotationId } from './SheetMusic.jsx';
+
+// The recent-events ring buffer tails every emitted event with its context, so
+// it is the cheapest way to assert BOTH what was emitted and which log file it
+// was routed to (context.sessionLog) — no transport spy needed.
+const recent = (name) => getRecentEvents(300).filter((e) => e.event === name);
 
 // SheetMusic renders its own <Routes>, so mount it under a "sheetmusic/*" route
 // inside a MemoryRouter — mirroring how PianoShell mounts it (path="sheetmusic/*").
@@ -159,6 +165,32 @@ describe('SheetMusic mode', () => {
     expect(apiText).toHaveBeenCalledWith(
       'api/v1/proxy/media/stream/docs%2Fsheet-music%2Fthe-adventures-of-tintin-theme.mxl'
     );
+  });
+
+  // Audit L2: a failed score open used to land ONLY on the plain kiosk logger, so
+  // the per-run session file (media/logs/piano-sheetmusic/{ts}.jsonl) showed the
+  // open and then nothing — the failure and its reason were never recorded there.
+  it('routes a failed score open into the session log, exactly once (audit L2)', async () => {
+    api.mockResolvedValue({});
+    apiText.mockRejectedValue(new Error('stream 404'));
+    const startsBefore = recent('session-log.start').length;
+
+    renderSheet(
+      { collection: 'files:docs/sheet-music' },
+      '/sheetmusic/view/files:docs/sheet-music/broken-score.musicxml'
+    );
+    expect(await screen.findByText('Could not load this score.')).toBeTruthy();
+
+    const failures = recent('piano.score-open-failed')
+      .filter((e) => e.data?.id === 'docs/sheet-music/broken-score.musicxml');
+    expect(failures.length).toBe(1);
+    expect(failures[0].data).toMatchObject({ error: 'stream 404' });
+    // sessionLog + app on the event's context are what route it to the run file
+    // (backend sessionFile transport keys on both).
+    expect(failures[0].context).toMatchObject({ app: 'piano-sheetmusic', sessionLog: true });
+    // ...and it must NOT open another session file: a fresh sessionLog CHILD would
+    // auto-emit session-log.start (Logger.js:217), fragmenting the run log.
+    expect(recent('session-log.start').length).toBe(startsBefore);
   });
 
   it('falls back to the page-image viewer for a non-notation (Plex) score', async () => {

@@ -2010,7 +2010,11 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   const pianoPlexClient = pianoPlexAdapter ? {
     children: async (ratingKey) => {
       if (!pianoPlexAdapter?.client) return [];
-      const data = await pianoPlexAdapter.client.getContainer(`/library/metadata/${ratingKey}/children`);
+      // Collections MUST list via /library/collections/{id}/items — the
+      // generic /children endpoint returns WRONG contents for some
+      // collections (observed live: 675686's "children" were another
+      // collection's shows, doubling six courses and dropping two).
+      const data = await pianoPlexAdapter.client.getContainer(`/library/collections/${ratingKey}/items`);
       const items = data?.MediaContainer?.Metadata || [];
       const proxyPath = pianoPlexAdapter.proxyPath;
       return items.map((item) => {
@@ -2020,6 +2024,20 @@ export async function createApp({ server, logger, configPaths, configExists, ena
         }
         return rewritten;
       });
+    },
+    // One item's own metadata — for lesson shows that live in NO collection
+    // (config `shows:` entries). Same thumb proxy-rewrite contract.
+    metadata: async (ratingKey) => {
+      if (!pianoPlexAdapter?.client) return null;
+      const data = await pianoPlexAdapter.client.getContainer(`/library/metadata/${ratingKey}`);
+      const item = data?.MediaContainer?.Metadata?.[0];
+      if (!item) return null;
+      const rewritten = { ...item };
+      const proxyPath = pianoPlexAdapter.proxyPath;
+      if (typeof rewritten.thumb === 'string' && rewritten.thumb.startsWith('/')) {
+        rewritten.thumb = `${proxyPath}${rewritten.thumb}`;
+      }
+      return rewritten;
     },
   } : null;
   const pianoContainer = new PianoContainer({
