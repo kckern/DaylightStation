@@ -1125,6 +1125,16 @@
   flex-direction: column;
 }
 
+/* Course grid route ONLY (not the lecture list / subcourse nav, which reuse
+   .piano-mode--videos but manage their own scroll regions). The one-page wall
+   must NEVER scroll — kills the inherited .piano-mode overflow:auto and gives
+   the tabpanel a definite height so its grid's `fr` rows can divide it evenly
+   instead of overflowing. */
+.piano-mode--videos-grid {
+  overflow: hidden;
+  min-height: 0;
+}
+
 /* Course collection tabs (one per configured Plex collection), pinned at top. */
 .piano-course-tabs {
   flex: 0 0 auto;
@@ -1147,9 +1157,11 @@
   &:focus-visible { outline: 3px solid var(--piano-accent); outline-offset: -3px; }
 }
 
-/* Active tab's grid: center the poster wall both axes when it fits; once there
-   are enough rows to overflow, the `safe` keyword falls back to top-align so the
-   first row stays reachable while .piano-mode's overflow:auto scrolls. */
+/* Active tab's poster wall: this panel IS the one-page grid's height budget —
+   flex:1 1 auto inside .piano-mode--videos-grid's column gives it whatever
+   height is left under the tab strip, and the grid (--onepage, below) divides
+   that evenly by --rows. No overflow/scroll fallback here on purpose: the
+   whole point of balancedGrid is that it never needs one. */
 .piano-course-tabpanel {
   flex: 1 1 auto;
   min-height: 0;
@@ -1272,6 +1284,42 @@
       text-shadow: 0 1px 2px rgba(0, 0, 0, 0.7);
       white-space: nowrap;
     }
+  }
+}
+
+/* One-page adaptive course wall (CourseGrid only — layered on TOP of
+   .piano-video-grid--posters above, which still supplies the badge/progress
+   overlay styling; ScoreGrid uses --posters WITHOUT this modifier and keeps
+   its fixed 12.75rem poster grid untouched).
+   --cols/--rows come from balancedGrid (tileGridLayout.js), sized to the
+   course count. Both tracks are `fr`, so the grid always exactly fills the
+   tabpanel's box — as more rows are needed the row height (and so the tile)
+   shrinks automatically instead of the page ever scrolling. Tiles fill their
+   cell (no fixed 12.75rem width) and the cover crops to the cell via
+   object-fit: cover, since a cell's shape varies with the split (wide cells
+   at 1-2 rows, taller at many). */
+.piano-video-grid--onepage {
+  grid-template-columns: repeat(var(--cols, 5), minmax(0, 1fr));
+  grid-template-rows: repeat(var(--rows, 1), minmax(0, 1fr));
+  width: 100%;
+  height: 100%;
+  align-content: stretch;
+
+  .piano-video-grid__tile {
+    flex: initial;
+    width: 100%;
+    height: 100%;
+    min-width: 0;
+    min-height: 0;
+  }
+  .piano-video-grid__tile img {
+    // Explicit width AND height (both definite, from the cell) neutralize the
+    // fixed aspect-ratio:2/3 the shared --posters skeleton rule sets on this
+    // same element further down the sheet — a cell isn't always 2:3, so the
+    // cover crops to fill it via object-fit instead of forcing that ratio.
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
   }
 }
 
