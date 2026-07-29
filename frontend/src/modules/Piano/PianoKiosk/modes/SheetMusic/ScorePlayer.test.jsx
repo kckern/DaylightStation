@@ -2046,6 +2046,33 @@ describe('ScorePlayer — metronome in Learn (M1/M2/M4)', () => {
   });
 });
 
+describe('ScorePlayer — Listen metronome (wave-3 G)', () => {
+  it('is session-local like Learn: toggling ON starts the click, and a mode round-trip resets it OFF', () => {
+    // Default fixture has no tempoEntries → buildTempoMap falls back to a single
+    // entry, so the guard allows the click in Listen.
+    renderPlayer(); // opens in Listen
+    const click = () => screen.getByRole('button', { name: /metronome/i });
+    expect(click()).toHaveAttribute('aria-pressed', 'false'); // Listen defaults OFF
+    expect(h.clickSched.start).not.toHaveBeenCalled();
+    act(() => { fireEvent.click(click()); });
+    expect(click()).toHaveAttribute('aria-pressed', 'true');
+    expect(h.clickSched.start).toHaveBeenCalledTimes(1);
+    // Leave Listen (Learn) and come back — session-local, never persisted (M2 discipline).
+    pickMode('Learn');
+    pickMode('Listen');
+    expect(click()).toHaveAttribute('aria-pressed', 'false');
+  });
+
+  it('is disabled when the tempo map has more than one entry (mid-piece tempo change)', () => {
+    h.layoutExtras = { tempoEntries: [{ onsetQuarter: 0, bpm: 60 }, { onsetQuarter: 4, bpm: 120 }] };
+    renderPlayer(); // opens in Listen
+    const click = screen.getByRole('button', { name: /metronome/i });
+    expect(click).toBeDisabled();
+    act(() => { fireEvent.click(click); });
+    expect(h.clickSched.start).not.toHaveBeenCalled();
+  });
+});
+
 // ── Task 11: honest Learn pacing telemetry ────────────────────────────────────
 // Learn is self-paced, so what the follow telemetry can honestly report is how
 // long the player took to answer the cursor — measured from a reference point
