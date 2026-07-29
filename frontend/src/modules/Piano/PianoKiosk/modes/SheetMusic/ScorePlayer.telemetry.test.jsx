@@ -126,8 +126,6 @@ import { getRecentEvents } from '../../../../../lib/logging/Logger.js';
 
 const renderPlayer = () =>
   render(<MemoryRouter><ScorePlayer score={{ id: 'files:t.musicxml', title: 'T', musicXml: '<score/>' }} /></MemoryRouter>);
-const renderScore = (musicXml) =>
-  render(<MemoryRouter><ScorePlayer score={{ id: 'files:t2.musicxml', title: 'T2', musicXml }} /></MemoryRouter>);
 
 // Mode switching now lives in the header crumb → ModeSheet (wave-2 B), not a bar
 // tab strip. This harness stubs usePianoBreadcrumb (no PianoChrome mounted to
@@ -252,9 +250,9 @@ describe('ScorePlayer — stall budget follows the EFFECTIVE tempo', () => {
 
 // ── Task 5: the controls users press must leave a trace ───────────────────────
 // Restart, tap-to-seek and Perform's tap-scroll emitted NOTHING, so a three-day
-// field log could not say whether a mode was used or abandoned; and the ±1 loop
-// nudge emitted a bare score.focus.set indistinguishable from a two-tap commit
-// or a section pick (audit T1).
+// field log could not say whether a mode was used or abandoned; and a loop change
+// emitted a bare score.focus.set that could not be attributed (audit T1). The
+// origins are wave-3 F's now: 'auto' | 'handle-tap' | 'drag' | 'drill' | 'restore'.
 describe('ScorePlayer — control telemetry (Task 5)', () => {
   const TWO_MEASURES = {
     steps: [
@@ -266,21 +264,15 @@ describe('ScorePlayer — control telemetry (Task 5)', () => {
       { index: 1, number: 2, firstStep: 1, lastStep: 1 },
     ],
   };
-  // Two rehearsal marks → two pickable sections in the Loop menu.
-  const SECTIONED_XML = `<score-partwise><part-list><score-part id="P1"><part-name>P</part-name></score-part></part-list>
-    <part id="P1">
-      <measure number="1"><direction><direction-type><rehearsal>A</rehearsal></direction-type></direction></measure>
-      <measure number="2"><direction><direction-type><rehearsal>B</rehearsal></direction-type></direction></measure>
-    </part></score-partwise>`;
-
   const emitted = (name) => tel.logger.info.mock.calls.filter((c) => c[0] === name).map((c) => c[1]);
   const tapScore = (x, y = 100) => {
     const el = document.querySelector('.piano-score-player__scroll');
     act(() => { fireEvent.click(el, { clientX: x, clientY: y }); });
   };
-  const selectLoop = (x) => { // no range yet -> the trigger starts selection directly; two taps on the same note
-    act(() => { fireEvent.click(screen.getByRole('button', { name: 'Loop' })); });
-    tapScore(x); tapScore(x);
+  // Arm an endpoint (wave-3 F) and commit it with one tap on the score.
+  const armAndTap = (edge, x) => {
+    act(() => { fireEvent.click(screen.getByRole('button', { name: edge === 'in' ? 'Mark loop start' : 'Mark loop end' })); });
+    tapScore(x);
   };
 
   beforeEach(() => { h.layoutExtras = TWO_MEASURES; });
@@ -307,34 +299,41 @@ describe('ScorePlayer — control telemetry (Task 5)', () => {
     expect(emitted('score.seek.tap')).toEqual([]);
   });
 
-  it('tags a focus set by the ±1 loop nudge with origin: nudge', () => {
+  // The ±1 nudge and the section pick are retired with the loop menu (wave-3 F);
+  // MOVING an endpoint is an armed re-tap, and it must stay attributable.
+  it('tags a moved loop endpoint with origin: handle-tap', () => {
     renderPlayer();
     pickMode('Learn');
     clearAutoRange(); // this spec arms its own loop from a blank entry
-    selectLoop(100); // loop m1–m1
-    // With a range active, the main trigger flips looping on/off — the sheet
-    // (for nudging) opens via the separate "Loop options" chevron.
-    act(() => { fireEvent.click(screen.getByRole('button', { name: 'Loop options' })); });
-    act(() => { fireEvent.click(screen.getByRole('button', { name: /loop end later/i })); });
+    armAndTap('in', 100);  // loop m1–m1
+    armAndTap('out', 160); // …grown to m1–m2
     const last = tel.logFocus.mock.calls.at(-1)[0];
-    expect(last).toMatchObject({ kind: 'custom', inMeasure: 0, outMeasure: 1, origin: 'nudge' });
+    expect(last).toMatchObject({ kind: 'custom', inMeasure: 0, outMeasure: 1, origin: 'handle-tap' });
   });
 
-  it('tags a focus set by a two-tap selection with origin: select', () => {
+  it('tags a focus set by an armed endpoint tap with origin: handle-tap', () => {
     renderPlayer();
     pickMode('Learn');
     clearAutoRange(); // this spec arms its own loop from a blank entry
-    selectLoop(160);
-    expect(tel.logFocus.mock.calls.at(-1)[0]).toMatchObject({ kind: 'custom', origin: 'select' });
+    armAndTap('in', 160);
+    expect(tel.logFocus.mock.calls.at(-1)[0]).toMatchObject({ kind: 'custom', origin: 'handle-tap' });
   });
 
-  it('tags a focus set by a section pick with origin: section', () => {
-    renderScore(SECTIONED_XML);
+  // The armed flow's own events (§F): arming, committing and the loop toggle each
+  // ship one line, and the retired two-tap events ship none.
+  it('emits score.loop.arm / .set / .on and never the retired two-tap events', () => {
+    renderPlayer();
     pickMode('Learn');
-    // No range yet -> sections live on the sheet, opened via the chevron.
-    act(() => { fireEvent.click(screen.getByRole('button', { name: 'Loop options' })); });
-    act(() => { fireEvent.click(screen.getByRole('button', { name: 'B' })); });
-    expect(tel.logFocus.mock.calls.at(-1)[0]).toMatchObject({ kind: 'section', inMeasure: 1, outMeasure: 1, origin: 'section' });
+    clearAutoRange();
+    tel.logger.info.mockClear();
+    armAndTap('out', 160);
+    act(() => { fireEvent.click(screen.getByRole('button', { name: 'Toggle loop' })); });
+    expect(emitted('score.loop.arm')).toEqual([{ edge: 'out' }]);
+    expect(emitted('score.loop.set')).toEqual([{ edge: 'out', measure: 1, via: 'tap', snapped: false }]);
+    expect(emitted('score.loop.on')).toEqual([{ on: true }]);
+    for (const dead of ['score.focus.select-start', 'score.focus.select-timeout', 'score.focus.arm', 'score.loop.toggle']) {
+      expect(emitted(dead)).toEqual([]);
+    }
   });
 });
 
