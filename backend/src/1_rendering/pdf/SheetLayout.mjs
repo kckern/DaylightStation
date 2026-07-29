@@ -61,7 +61,17 @@ export function layout({ page, blocks }) {
     // Centre on the FULL row width (cols), not on how many items a given row got.
     // Centring each row independently would make a short final row float between
     // the columns above it, which reads as misalignment rather than as centring.
-    const rowW = block.cols * cellW + (block.cols - 1) * gap;
+    // `justify` spends the row's leftover width on the GAPS instead of on a margin,
+    // so a smaller mark ends up further from its neighbours. On a sheet read by a
+    // hand scanner that is a functional property, not a cosmetic one: the failure
+    // being designed against is catching the code next to the one you aimed at.
+    // Vertical spacing stays `gapPt` — only the horizontal axis is redistributed,
+    // because only the horizontal axis has slack to redistribute.
+    const colGap = block.align === 'justify' && block.cols > 1
+      ? Math.max(gap, (contentW - block.cols * cellW) / (block.cols - 1))
+      : gap;
+
+    const rowW = block.cols * cellW + (block.cols - 1) * colGap;
     const originX = block.align === 'center'
       ? page.marginPt + Math.max(0, (contentW - rowW) / 2)
       : page.marginPt;
@@ -140,7 +150,7 @@ export function layout({ page, blocks }) {
           page: pageIdx,
           block: block.id,
           index: placed + i,
-          x: originX + col * (cellW + gap),
+          x: originX + col * (cellW + colGap),
           y: cursorY + row * (cellH + gap),
           w: cellW,
           h: cellH,
