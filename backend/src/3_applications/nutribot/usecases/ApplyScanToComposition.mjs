@@ -62,6 +62,29 @@ export class ApplyScanToComposition {
       return { handled: true, ok: true, kind: 'reset', hadState };
     }
 
+    if (parsed.kind === 'undo') {
+      const undone = this.#store.undo(scaleId);
+      this.#logger.info?.('applyScan.undo', { scaleId, undone });
+      // `ok: true` even when nothing was there. `ok: false` is a REFUSAL and
+      // paints a ⚠️ on the prompt; an undo that found nothing to take back is a
+      // scan that worked and had no work, exactly like a bare `rs:clear`.
+      // `undone` carries the difference for the ack.
+      return { handled: true, ok: true, kind: 'undo', undone };
+    }
+
+    if (parsed.kind === 'done') {
+      // Routed to `endPlacement`, whose contract — consume every slot for this
+      // scale, now — is precisely what "done" asks for. The store keeps
+      // `endPlacement` and `clear` as separate methods because they MEAN
+      // different things, and `done` sits on the endPlacement side of that line:
+      // it says "the sequence is complete, process it", not "forget it". The
+      // result reports `kind: 'done'` rather than reusing 'reset', so the call
+      // site and the ack the user reads never conflate the two.
+      const hadState = this.#store.endPlacement(scaleId);
+      this.#logger.info?.('applyScan.done', { scaleId, hadState });
+      return { handled: true, ok: true, kind: 'done', hadState };
+    }
+
     if (parsed.kind === 'density') {
       // Parsing only proves the level is inside the grammar; the level still has
       // to exist in the config table. Rejecting here keeps a gap in the table from

@@ -85,6 +85,36 @@ back", or "that's the whole intent". `CONTROL_VERBS` is the frozen vocabulary an
 test: `ApplyScanToComposition` switches on `parsed.kind === 'reset'`, and renaming the kind to
 match the verb would disable the one control code already in the field with no error anywhere.
 
+### What each control code does
+
+| Kind | Store call | Result shape |
+|------|-----------|--------------|
+| `reset` | `clear(scaleId)` | `{ok: true, kind: 'reset', hadState}` |
+| `undo` | `undo(scaleId)` | `{ok: true, kind: 'undo', undone}` |
+| `done` | `endPlacement(scaleId)` | `{ok: true, kind: 'done', hadState}` |
+
+All three are `ok: true` even when they found nothing to act on — `ok: false` is a refusal and
+paints a ⚠️ on the prompt, whereas a control scan that had no work still worked. The boolean
+(`hadState` / `undone`) is what the ack renders.
+
+**`done` routes to `endPlacement`, not to `clear`.** The two store methods are mechanically
+identical today and kept separate because they mean different things: `clear` is "forget it",
+`endPlacement` is "that placement is over, consume the slots". `done` is the human saying
+"process it now", which is the same event the bridge raises when the scale returns to rest —
+so it belongs on the `endPlacement` side. The result still reports `kind: 'done'` so the ack
+never conflates it with a reset.
+
+**Undo is one deep.** The setters overwrite, so rescanning already fixes a *wrong* slot;
+`undo` exists for the fix rescanning cannot express — taking a slot back to empty. A second
+consecutive `rs:undo` is a no-op rather than a deeper rewind, and `rs:clear` covers anything
+more tangled. Undo refreshes the window (a person scanned a cell), does not resurrect a
+`clear`/`done`, and has nothing to take back once the window has expired.
+
+**Every kind is matched explicitly.** `ApplyScanToComposition` has no fall-through arm. A kind
+the grammar produces with no handler here is refused by name (`UNHANDLED_SCAN_KIND`), still
+`handled: true` so it cannot leak into the UPC product lookup. The container branch used to be
+the implicit `else`, which made `rs:undo` and `rs:done` report as `UNKNOWN_CONTAINER`.
+
 **Case-sensitive throughout.** `DL:4`, `CT:mug`, `RS:clear` and `ct:Dinner-Bowl` all return
 `null`. A case-preserved id would miss its `containers.items` key and silently skip the tare,
 producing a wrong-but-plausible calorie count rather than a visible error.
