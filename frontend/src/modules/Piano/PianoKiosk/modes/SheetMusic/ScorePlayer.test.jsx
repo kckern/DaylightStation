@@ -1160,7 +1160,9 @@ describe('ScorePlayer — Listen mode', () => {
     expect(screen.getByRole('button', { name: 'Pause' })).toBeInTheDocument(); // playing
     h.sendPanic.mockClear();
     act(() => { fireEvent.click(screen.getByRole('button', { name: 'Key' })); }); // open the Key sheet
-    act(() => { fireEvent.click(screen.getByRole('button', { name: '+1' })); }); // tap +1 semitone
+    // The stub's default parse has written key fifths:0/mode:null (C major), so the
+    // +1 cell speaks the sounding key name (C# major) per Task 5 — not a bare offset.
+    act(() => { fireEvent.click(screen.getByRole('button', { name: /C# major/ })); }); // tap +1 semitone
     await act(async () => {});
     expect(h.sendPanic).toHaveBeenCalled(); // silenced on the view change
     // …and the user is not stranded mid-piece: the rebuild-pause resumes itself
@@ -1397,7 +1399,9 @@ describe('ScorePlayer — rebuild-pause resume (H5/M3)', () => {
     // layout still belongs to the WRITTEN key.
     h.holdLayout = true;
     fireEvent.click(screen.getByRole('button', { name: 'Key' })); // open the Key sheet
-    await act(async () => { fireEvent.click(screen.getByRole('button', { name: '+1' })); }); // tap +1 semitone
+    // Default parse key is fifths:0/mode:null (C major), so the +1 cell speaks the
+    // sounding key name (C# major) — see Task 5.
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: /C# major/ })); }); // tap +1 semitone
     expect(screen.queryByRole('button', { name: 'Pause' })).toBeNull(); // still paused — the old key must not play on
 
     // New key engraved → the run picks itself back up, in the key on the page.

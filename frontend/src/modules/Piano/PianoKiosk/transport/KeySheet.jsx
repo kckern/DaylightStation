@@ -15,9 +15,16 @@ const label = (n) => (n > 0 ? `+${n}` : String(n));
  */
 export default function KeySheet({ open, onClose, value = 0, onPick, keyFifths, keyMode }) {
   const v = Math.max(-6, Math.min(6, value));
+  // Each cell speaks the SOUNDING key when the written key is known (label =
+  // key name, sub = offset), so the picker reads "D major / +2" instead of a
+  // bare offset; unknown key falls back to today's offset-only label.
+  const cell = (n) => {
+    const name = soundingKeyLabel(keyFifths, keyMode, n);
+    return name ? { label: name, sub: label(n) } : { label: label(n) };
+  };
   const row = (values) => (
     <StepGrid
-      steps={values.map((n) => ({ label: label(n) }))}
+      steps={values.map(cell)}
       activeIndex={values.indexOf(v)}
       onPick={(i) => onPick(values[i])}
       ariaLabel={values[0] < 0 ? 'Transpose down' : values[0] === 0 ? 'No transpose' : 'Transpose up'}
