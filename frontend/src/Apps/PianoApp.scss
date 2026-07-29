@@ -2660,15 +2660,23 @@
 
 // Active-note light-up: recolour the ENGRAVED notehead itself — NO overlay
 // rectangle. NoteHighlightLayer toggles these classes on OSMD's per-note <g>
-// and sets --nh-color to the mode accent. A stylesheet `fill` beats vexflow's
+// and sets --nh-color to a fixed near-black ink (wave-2 A, ScorePlayer's
+// NOTE_INK) for "current" noteheads. A stylesheet `fill` beats vexflow's
 // black `fill` presentation attribute, so the real note glyph changes colour.
 .musicxml-renderer__svg {
   .piano-note-lit {
-    path, rect, ellipse, text { fill: var(--nh-color, #2ec46f); }
+    path, rect, ellipse, text { fill: var(--nh-color, #23262b); }
   }
-  // Struck correctly — same colour plus a soft glow (cheap single drop-shadow).
+  // Struck correctly — always an affirming green, regardless of --nh-color
+  // (which is the near-black lit ink, not a "you got it" signal). Fixed
+  // literal, not threaded through NoteHighlightLayer's accent prop: the hit
+  // glow must stay green in every mode, not follow the lit ink or the mode
+  // accent. Declared after .piano-note-lit so its fill wins the cascade (same
+  // specificity, later source order) on notes carrying both classes.
   .piano-note-hit {
-    filter: drop-shadow(0 0 2.5px var(--nh-color, #2ec46f));
+    --nh-hit-color: #2ec46f;
+    path, rect, ellipse, text { fill: var(--nh-hit-color); }
+    filter: drop-shadow(0 0 2.5px var(--nh-hit-color));
   }
   // Expected at this step but not yet struck (Learn's all-notes rule). Outlined
   // and pulsing rather than filled, so "you still owe me the left hand" is legible
@@ -2676,7 +2684,7 @@
   .piano-note-pending {
     path, rect, ellipse, text {
       fill: none;
-      stroke: var(--nh-color, #2ec46f);
+      stroke: var(--nh-color, #23262b);
       stroke-width: 1.2;
     }
     animation: piano-note-pending-pulse 1.1s ease-in-out infinite;

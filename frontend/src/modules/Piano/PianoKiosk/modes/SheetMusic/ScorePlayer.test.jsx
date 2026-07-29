@@ -1,3 +1,5 @@
+import { readFileSync } from 'fs';
+import { fileURLToPath } from 'url';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, act, cleanup, fireEvent, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
@@ -242,6 +244,46 @@ describe('ScorePlayer — note-highlight ink (wave-2 A)', () => {
     // stub renderer doesn't reproduce), so assert against `rhEl` itself.
     expect(rhEl.classList.contains('piano-note-lit')).toBe(true);
     expect(rhEl.style.getPropertyValue('--nh-color')).toBe('#23262b');
+  });
+
+  it('a struck note keeps the lit class split (+ near-black --nh-color) that lets CSS give HIT its own green — a merely-lit sibling is untouched', async () => {
+    const hitEl = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+    const litOnlyEl = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+    h.layoutExtras = {
+      notes: [
+        { midi: 64, staff: 0, onsetQuarter: 0, durationQuarters: 1 },
+        { midi: 60, staff: 0, onsetQuarter: 0, durationQuarters: 1 },
+      ],
+      steps: [{ onsetQuarter: 0, notes: [{ midi: 64, staff: 0, el: hitEl }, { midi: 60, staff: 0, el: litOnlyEl }] }],
+    };
+    renderPlayer(); // opens in Listen
+    await act(async () => {});
+    play(64); // matches the step's expected midi → Listen's play-along lights it green (struck)
+    await act(async () => {});
+    // jsdom can't compute the stylesheet's cascade (HIT's fixed #2ec46f overriding
+    // LIT's --nh-color), so this locks in the JS-level contract the CSS fix relies
+    // on: NoteHighlightLayer still stamps the SAME near-black --nh-color on every
+    // lit note (struck or not) — the class split (lit vs. lit+hit) is what the
+    // stylesheet keys off to give HIT its own colour. See the PianoApp.scss source
+    // assertion below for the actual colour override.
+    expect(hitEl.classList.contains('piano-note-lit')).toBe(true);
+    expect(hitEl.classList.contains('piano-note-hit')).toBe(true);
+    expect(hitEl.style.getPropertyValue('--nh-color')).toBe('#23262b');
+    expect(litOnlyEl.classList.contains('piano-note-lit')).toBe(true);
+    expect(litOnlyEl.classList.contains('piano-note-hit')).toBe(false);
+    expect(litOnlyEl.style.getPropertyValue('--nh-color')).toBe('#23262b');
+  });
+
+  it('PianoApp.scss gives .piano-note-hit its own fixed green, never the shared --nh-color ink (wave-2 A)', () => {
+    // jsdom doesn't compute styles from the stylesheet, so assert the source
+    // directly (same pattern as TransportButton.test.jsx's SCSS floor check).
+    const scss = readFileSync(fileURLToPath(new URL('../../../../../Apps/PianoApp.scss', import.meta.url)), 'utf8');
+    // .piano-note-hit nests one level (its `path, rect, ...` sub-rule), so match
+    // through that inner brace pair too, not just up to the first `}`.
+    const hitBlock = scss.match(/\.piano-note-hit\s*\{(?:[^{}]|\{[^{}]*\})*\}/s)?.[0];
+    expect(hitBlock).toBeTruthy();
+    expect(hitBlock).toContain('#2ec46f'); // struck-correctly stays affirming green
+    expect(hitBlock).not.toMatch(/var\(--nh-color/); // never inherits the near-black lit ink
   });
 });
 
