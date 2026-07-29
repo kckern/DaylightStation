@@ -1199,8 +1199,15 @@ export default function ScorePlayer({ score: scoreMeta }) {
   // measure itself is not applied: a drag paints its own handle, and writing
   // `focus` per crossed measure would stop the transport dozens of times
   // (commitEndpoint → stopForMatrixChange) during one gesture.
+  // A live drag also RELEASES any pending arm. The two gestures answer the same
+  // question, so once the finger starts moving a grip the arm has been superseded —
+  // and an arm that survived the drag would be the audit-H4b hazard exactly: the
+  // banner would still be up after the range committed, and the next tap on the
+  // music would set an endpoint instead of seeking.
   const onHandlePreview = useCallback((edge, mi) => {
-    setDraggingEdge(mi == null ? null : edge);
+    if (mi == null) { setDraggingEdge(null); return; }
+    setDraggingEdge(edge);
+    setArming(null);
   }, []);
 
   // Tap: Learn/Polish → move the cursor to the nearest note; Perform → scroll it into view.

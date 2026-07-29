@@ -11,9 +11,12 @@ const TAP_SLOP_PX = 8;
 // out-point down a long piece cannot lift to scroll — it would commit.
 const EDGE_ZONE_PX = 48;
 const EDGE_STEP_PX = 12;
-// Half the handle's CSS width: the grip straddles the extent it marks rather than
-// sitting beside it, so the finger lands ON the boundary (SCSS keeps them in sync).
-const HANDLE_HALF_PX = 24;
+// The handle's CSS width, and half of it: the grip straddles the extent it marks
+// rather than sitting beside it, so the finger lands ON the boundary (SCSS keeps
+// them in sync). The full width doubles as the minimum separation two grips need
+// before they start covering each other.
+const HANDLE_WIDTH_PX = 48;
+const HANDLE_HALF_PX = HANDLE_WIDTH_PX / 2;
 // Vertical slack around a system's staves — a pointer this far above/below still
 // counts as "on" that system for the same-system nearest-column rule.
 const BAND_SLACK_PX = 40;
@@ -146,8 +149,24 @@ export default function RangeHandleLayer({
   const outExt = outM && measureExtent(outM, stepBoxes);
   if (!inExt || !outExt) return null;
 
-  const handle = (edge, ext) => {
-    const anchor = edge === 'in' ? ext.left : ext.right;
+  // Where each grip sits when it is not being dragged. Normally the boundary it
+  // marks — but a one-measure range on a single onset puts both extents at the
+  // SAME x, and two 48px grips at one x means the later-painted one (out) fully
+  // covers the other: the in-point would be unreachable by tap or drag, on exactly
+  // the range shape the endpoint flow creates first (§F plants a one-measure range).
+  // Spread them symmetrically about the boundary so each keeps a reachable half.
+  // Only when they share a vertical band: a range whose ends are on different
+  // systems can have any x relationship without ever overlapping on screen.
+  let inAnchor = inExt.left;
+  let outAnchor = outExt.right;
+  const sameBand = inExt.top < outExt.bottom && outExt.top < inExt.bottom;
+  if (sameBand && outAnchor - inAnchor < HANDLE_WIDTH_PX) {
+    const mid = (inAnchor + outAnchor) / 2;
+    inAnchor = mid - HANDLE_HALF_PX;
+    outAnchor = mid + HANDLE_HALF_PX;
+  }
+
+  const handle = (edge, ext, anchor) => {
     const x = dragPos?.edge === edge ? dragPos.x : anchor;
     return (
       <div
@@ -172,8 +191,8 @@ export default function RangeHandleLayer({
 
   return (
     <div ref={rootRef} className="piano-score-range-handles">
-      {handle('in', inExt)}
-      {handle('out', outExt)}
+      {handle('in', inExt, inAnchor)}
+      {handle('out', outExt, outAnchor)}
     </div>
   );
 }
