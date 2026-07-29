@@ -22,7 +22,10 @@ export const KEY_SIGNATURES = {
   'Eb': { sharps: [], flats: [10, 3, 8], scale: [0, 2, 3, 5, 7, 8, 10] },
   'Ab': { sharps: [], flats: [10, 3, 8, 1], scale: [0, 1, 3, 5, 7, 8, 10] },
   'Db': { sharps: [], flats: [10, 3, 8, 1, 6], scale: [0, 1, 3, 5, 6, 8, 10] },
-  'Gb': { sharps: [], flats: [10, 3, 8, 1, 6, 11], scale: [0, 1, 3, 5, 6, 8, 10] }
+  // G♭ major is G♭ A♭ B♭ C♭ D♭ E♭ F → pcs 6 8 10 11 1 3 5. The 4th degree is C♭ (pc
+  // 11), NOT C♮ (pc 0); this entry used to be byte-identical to D♭'s and so scored key
+  // detection against the wrong scale.
+  'Gb': { sharps: [], flats: [10, 3, 8, 1, 6, 11], scale: [1, 3, 5, 6, 8, 10, 11] }
 };
 
 // Natural note names (white keys).

@@ -20,13 +20,19 @@ const SETTLE_MS = 80;
  * shows, so rolling/transitioning between chords doesn't flash intermediate
  * partial chords; on release the last chord lingers `holdMs` before blanking.
  *
+ * Spelling: the panel is handed the same detected key as the staff and circle, so a
+ * B♭ chord in a flat key reads "B♭ major" and the plaque agrees with the notes drawn
+ * beside it. Without a key it falls back to conventional spelling (see
+ * MusicNotation/model/spelling.js).
+ *
  * @param {number[]} midiNotes - active MIDI note numbers
+ * @param {string} [keySignature='C'] - major key to spell the root and bass against
  * @param {number} [holdMs] - linger after release (default 500ms)
  * @param {number} [settleMs] - onset settle window (default 80ms)
  */
-export function ChordNamePanel({ midiNotes = [], holdMs = RELEASE_HOLD_MS, settleMs = SETTLE_MS }) {
+export function ChordNamePanel({ midiNotes = [], keySignature = 'C', holdMs = RELEASE_HOLD_MS, settleMs = SETTLE_MS }) {
   const logger = useMemo(() => getLogger().child({ component: 'chord-name-panel' }), []);
-  const chord = useMemo(() => identifyChord(midiNotes), [midiNotes]);
+  const chord = useMemo(() => identifyChord(midiNotes, keySignature), [midiNotes, keySignature]);
   const shown = useStableChord(chord, { settleMs, holdMs });
 
   logger.sampled('chord.identify', { quality: chord.quality, name: chord.displayName },
