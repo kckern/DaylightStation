@@ -180,9 +180,18 @@ describe('branch order in the composition root', () => {
     // still reachable at all — a school branch that had swallowed one of them
     // would show up here and nowhere else.
     const { createScanDispatch } = await import('#composition/modules/scanDispatch.mjs');
+    // The full bag is REQUIRED: `assertDeps` refuses to build on a partial one,
+    // because a silently-missing dependency is how the composition seam breaks
+    // without any gate noticing. `applyScanToComposition: null` is legal and
+    // means nutriscan is disabled; the getters are late-bound by contract.
     const { namespaces } = createScanDispatch({
       schoolLifecycle: { handlesCode: () => false, handleScan: null },
       triggerDispatchService: { handleEvent: async () => {} },
+      relayInstances: {}, relayConfig: {},
+      applyScanToComposition: null,
+      getScaleNutribotBridge: () => null,
+      getLogFoodFromUPC: () => null,
+      screenNames: [],
       configService: {}, userIdentityService: {}, logger: silent, barcodeLogger: silent,
     });
     expect(namespaces).toEqual(
