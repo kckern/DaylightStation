@@ -97,7 +97,11 @@ export function createCellRenderers({ qrRenderer = createQRCodeRenderer() } = {}
       const QR = 100;
       const GAP = 9;
       const LEFT = 84;
-      const LABEL_H = 22;
+      const LABEL_H = 20;
+      // Subtitle band, present only when the item has one. Keeping it optional is
+      // what lets the card hold a container's tare weight without forcing an empty
+      // strip onto every density card.
+      const SUB_H = 14;
       // Clear space between the icon box and the label's cap height. Icons vary in
       // how much internal padding their artwork carries: the outlined ones leave a
       // margin, but a filled mark like the salad bowl runs edge to edge, and with
@@ -107,12 +111,18 @@ export function createCellRenderers({ qrRenderer = createQRCodeRenderer() } = {}
       const ICON_GAP = 5;
       const H = QR + PAD * 2;
       const hasIcon = Boolean(item.iconSvg);
+      const subText = String(item.sublabel ?? '').trim();
+      // Opt-OUT per block. The density cards carry a kcal/g sublabel that is useful
+      // to the bot but was explicitly unwanted on paper, while the container cards
+      // want their tare weight shown. Same item shape, different presentation — so
+      // the choice belongs to the block's config, not to the provider.
+      const hasSub = subText.length > 0 && opts.sublabel !== false;
       // Without an icon the label has nowhere to sit beside the code, so it goes
       // UNDER it and the card becomes taller than wide. Dropping the label instead
       // would leave a wall of anonymous codes — which is what happened first time,
       // and made the containers block unusable.
       const W = hasIcon ? PAD + LEFT + GAP + QR + PAD : PAD + QR + PAD;
-      const H2 = hasIcon ? H : QR + PAD * 2 + LABEL_H;
+      const H2 = hasIcon ? H : QR + PAD * 2 + LABEL_H + (hasSub ? SUB_H : 0);
 
       const modules = QRCode.create(item.code, { errorCorrectionLevel: 'H' }).modules;
       const n = modules.size;
@@ -136,23 +146,43 @@ export function createCellRenderers({ qrRenderer = createQRCodeRenderer() } = {}
 
       let left = '';
       if (hasIcon) {
-        const iconBox = Math.min(LEFT, H - PAD * 2 - LABEL_H - ICON_GAP);
+        // Derived so the left column's total height equals the QR's. That keeps the
+        // card's aspect ratio CONSTANT whether or not a subtitle is present — the
+        // grid is laid out from a single `aspect` per block, so a card that changed
+        // shape with its content would letterbox against its neighbours.
+        const stackH = LABEL_H + (hasSub ? SUB_H : 0) + ICON_GAP;
+        const iconBox = Math.min(LEFT, QR - stackH);
         const iconX = PAD + (LEFT - iconBox) / 2;
-        const iconY = PAD + (H - PAD * 2 - LABEL_H - ICON_GAP - iconBox) / 2;
+        const iconY = PAD + (QR - (iconBox + stackH)) / 2;
         const iconEl = stripXmlDecl(item.iconSvg)
           .replace(/<svg\b[^>]*>/, (tag) => tag
             .replace(/\s(width|height|x|y)\s*=\s*"[^"]*"/g, '')
             .replace(/^<svg/, `<svg x="${iconX}" y="${iconY}" width="${iconBox}" height="${iconBox}" preserveAspectRatio="xMidYMid meet"`));
         const text = labelText;
         const size = fit(text, LEFT, LABEL_H * 0.72);
+        const labelY = iconY + iconBox + ICON_GAP + LABEL_H * 0.72;
         left = iconEl
-          + `<text x="${PAD + LEFT / 2}" y="${iconY + iconBox + ICON_GAP + LABEL_H * 0.66}" text-anchor="middle"`
+          + `<text x="${PAD + LEFT / 2}" y="${labelY}" text-anchor="middle"`
           + ` font-family="Helvetica" font-weight="bold" font-size="${size.toFixed(2)}" fill="#000">${esc(text)}</text>`;
+        if (hasSub) {
+          left += `<text x="${PAD + LEFT / 2}" y="${labelY + SUB_H * 0.86}" text-anchor="middle"`
+            + ` font-family="Helvetica" font-size="${fit(subText, LEFT, SUB_H * 0.82).toFixed(2)}"`
+            + ` fill="#444">${esc(subText)}</text>`;
+        }
       }
 
-      const under = hasIcon ? '' : `<text x="${W / 2}" y="${PAD + QR + LABEL_H * 0.66}" text-anchor="middle"`
-        + ` font-family="Helvetica" font-weight="bold" font-size="${fit(labelText, QR, LABEL_H * 0.8).toFixed(2)}"`
-        + ` fill="#000">${esc(labelText)}</text>`;
+      let under = '';
+      if (!hasIcon) {
+        const y0 = PAD + QR + LABEL_H * 0.72;
+        under = `<text x="${W / 2}" y="${y0}" text-anchor="middle"`
+          + ` font-family="Helvetica" font-weight="bold" font-size="${fit(labelText, QR, LABEL_H * 0.8).toFixed(2)}"`
+          + ` fill="#000">${esc(labelText)}</text>`;
+        if (hasSub) {
+          under += `<text x="${W / 2}" y="${y0 + SUB_H * 0.86}" text-anchor="middle"`
+            + ` font-family="Helvetica" font-size="${fit(subText, QR, SUB_H * 0.82).toFixed(2)}"`
+            + ` fill="#444">${esc(subText)}</text>`;
+        }
+      }
 
       // One rounded rectangle around the whole card — icon, label and code together.
       const frame = `<rect x="0.6" y="0.6" width="${W - 1.2}" height="${H2 - 1.2}" rx="7" ry="7"`
