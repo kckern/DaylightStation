@@ -33,6 +33,12 @@ const h = vi.hoisted(() => ({
   // PianoChrome, so there's no DOM crumb to click — pickMode() below invokes the
   // captured crumb's onClick directly instead.
   crumbs: [],
+  // usePracticeRecord (Task 12) reaches usePianoUser, and this harness never
+  // wraps ScorePlayer in a PianoUserProvider — mocking the module (Task 13) is
+  // what keeps every OTHER test in this file from throwing on render, not just
+  // the ones that care about the practice record.
+  recordCycle: vi.fn(),
+  recordTierBest: vi.fn(),
 }));
 
 // Derive per-onset full-staff steps from the melody events: the first pitch of
@@ -66,6 +72,11 @@ vi.mock('../../useReloadGuard.js', () => ({ default: () => {} }));
 // Spyable click scheduler: useMetronomeClick creates one per enable, so hand it
 // the shared holder object and assert on start/stop/setBpm.
 vi.mock('./clickScheduler.js', () => ({ createClickScheduler: () => h.clickSched }));
+// Observe recordCycle calls without touching usePianoUser/DaylightAPI — see the
+// rationale on h.recordCycle above.
+vi.mock('./usePracticeRecord.js', () => ({
+  default: () => ({ record: {}, loaded: true, recordCycle: h.recordCycle, recordTierBest: h.recordTierBest }),
+}));
 
 // Stub the engraver: report a known layout (melody events + derived per-onset
 // steps), render the cursor / light-up children.
@@ -129,6 +140,8 @@ beforeEach(() => {
   // stop() on unmount, which for a stale shared instance would leak a stop()
   // from a PREVIOUS test's component into this test's assertions.
   h.clickSched = { start: vi.fn(), stop: vi.fn(), setBpm: vi.fn() };
+  h.recordCycle.mockClear();
+  h.recordTierBest.mockClear();
 });
 
 // Mode switching now lives in the header crumb → ModeSheet (wave-2 B), not a
@@ -458,6 +471,92 @@ describe('ScorePlayer — the practice range is Learn-only state (wave-3 §0)', 
     pickMode('Listen');
     // Inactive trigger is icon-only (wave-2: no range → no visible label) — aria-label stays 'Loop'.
     expect(trigger().textContent).toBe('');
+  });
+});
+
+// Learn cycle instrumentation (wave-3 C, Task 13): a completed, non-voided gate
+// loop (in→out→wrap) feeds usePracticeRecord.recordCycle — attempts for every
+// measure the range spans, a pass wherever no wrong note landed in that measure
+// during the pass. Two measures, one step (single note) each, so ONE full pass
+// is exactly two note-plays: the first satisfies+advances step 0→1 (no wrap —
+// the tracker only wraps FROM the range's out-point), the second satisfies step
+// 1 and wraps 1→0, which is where recordCycle fires.
+//
+// ARMING a range is itself a voider (a range "set" — see the focus-set effect):
+// the pass immediately after `selectFullRange()` is always discarded, so every
+// test below plays one throwaway pass first to reach a genuinely clean baseline
+// before asserting on the pass that's actually under test.
+describe('ScorePlayer — Learn cycle instrumentation feeds the practice record (Task 13)', () => {
+  const TWO_MEASURE_LEARN = {
+    steps: [
+      { onsetQuarter: 0, measure: 0, notes: [{ midi: 64, staff: 0, x: 100, top: 10, bottom: 200, width: 8 }] },
+      { onsetQuarter: 1, measure: 1, notes: [{ midi: 62, staff: 0, x: 160, top: 10, bottom: 200, width: 8 }] },
+    ],
+    measures: [
+      { index: 0, number: 1, firstStep: 0, lastStep: 0 },
+      { index: 1, number: 2, firstStep: 1, lastStep: 1 },
+    ],
+  };
+  // Two-tap select spanning BOTH measures: tap the note at x=100 (measure 1)
+  // then x=160 (measure 2) — matches h.events' default x positions, so
+  // nearestEvent/measureIndexOfStep resolve to indices 0 and 1.
+  const selectFullRange = () => {
+    enterLearn();
+    act(() => { fireEvent.click(screen.getByRole('button', { name: 'Loop' })); });
+    const scroll = document.querySelector('.piano-score-player__scroll');
+    act(() => { fireEvent.click(scroll, { clientX: 100, clientY: 100 }); });
+    act(() => { fireEvent.click(scroll, { clientX: 160, clientY: 100 }); });
+  };
+  const playFullPass = () => { play(64); play(62); }; // 0→1, then 1→wraps to 0
+
+  it('completing the 2-measure range once calls recordCycle with both measure indices and the wrong-measures set', () => {
+    h.layoutExtras = TWO_MEASURE_LEARN;
+    renderPlayer();
+    selectFullRange();
+    playFullPass(); // throwaway — voided by arming the range, not counted
+    expect(h.recordCycle).not.toHaveBeenCalled();
+    play(63); // a plausible wrong note against step 0's expected 64 (within 2 octaves)
+    play(64); // the correct note — advances 0→1 (not the out-point yet, no wrap)
+    expect(h.recordCycle).not.toHaveBeenCalled();
+    play(62); // completes step 1 (the out-point) — wraps 1→0, the cycle is banked
+    expect(h.recordCycle).toHaveBeenCalledTimes(1);
+    expect(h.recordCycle).toHaveBeenCalledWith({
+      measureIndices: [0, 1],
+      wrongMeasures: new Set([0]), // the wrong note landed while the cursor sat on measure 0
+      bucket: 'both', // single staff in this fixture → not a grand staff
+    });
+  });
+
+  it('a tap-seek mid-cycle voids it (no recordCycle on the next wrap) — the following clean pass still counts', () => {
+    h.layoutExtras = TWO_MEASURE_LEARN;
+    renderPlayer();
+    selectFullRange();
+    playFullPass(); // throwaway — voided by arming the range, not the tap-seek under test
+    expect(h.recordCycle).not.toHaveBeenCalled();
+    // Tap-seek (not the guided selection — `selecting` is null after the two-tap
+    // commit above) breaks the NEXT in-progress cycle.
+    const scroll = document.querySelector('.piano-score-player__scroll');
+    act(() => { fireEvent.click(scroll, { clientX: 100, clientY: 100 }); });
+    playFullPass(); // wraps — but voided by the tap-seek above
+    expect(h.recordCycle).not.toHaveBeenCalled();
+    playFullPass(); // a second, UNINTERRUPTED pass — this one counts
+    expect(h.recordCycle).toHaveBeenCalledTimes(1);
+    expect(h.recordCycle).toHaveBeenCalledWith({
+      measureIndices: [0, 1],
+      wrongMeasures: new Set(),
+      bucket: 'both',
+    });
+  });
+
+  it('renders and completes a cycle without a PianoUserProvider — the practice hook is fully mocked out, so nothing crashes for a guest-shaped render', () => {
+    h.layoutExtras = TWO_MEASURE_LEARN;
+    expect(() => {
+      renderPlayer();
+      selectFullRange();
+      playFullPass(); // throwaway
+      playFullPass(); // clean
+    }).not.toThrow();
+    expect(h.recordCycle).toHaveBeenCalledTimes(1);
   });
 });
 
