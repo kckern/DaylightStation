@@ -118,6 +118,7 @@ export function createApiRouter(config) {
     '/weekly-review': 'weekly-review',
     '/qrcode': 'qrcode',
     '/catalog': 'catalog',
+    '/sheets': 'sheets',      // Printable interaction surfaces — see _wip/plans/2026-07-29-printable-sheet-framework-design.md
     '/livestream': 'livestream',
     '/camera': 'camera',
     '/piano': 'piano',
