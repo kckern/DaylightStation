@@ -40,7 +40,22 @@ export function normalizeScaleNutribotConfig(raw = {}) {
   const items = Array.isArray(nb.containers?.items) && nb.containers.items.length
     ? nb.containers.items
         .filter((c) => c && c.id && Number.isFinite(Number(c.grams)))
-        .map((c) => ({ id: String(c.id), label: c.label || c.id, emoji: c.emoji || '📦', grams: Number(c.grams) }))
+        // `icon` is printed-sheet decoration. It is listed EXPLICITLY because this
+        // mapper rebuilds each row from a fixed field list, so anything unlisted is
+        // silently dropped — which happened twice: once here and once in the density
+        // mapper below. Both times the config was right, the sheet rendered without
+        // pictures, and nothing errored. Adding a field to either table means adding
+        // it here too.
+        .map((c) => ({
+          id: String(c.id),
+          label: c.label || c.id,
+          emoji: c.emoji || '📦',
+          grams: Number(c.grams),
+          icon: c.icon || null,
+          // Draw scale for the icon, 1 = full size. Lets two vessels share one piece
+          // of artwork and still be told apart — the smaller sibling renders smaller.
+          icon_scale: Number.isFinite(Number(c.icon_scale)) ? Number(c.icon_scale) : null,
+        }))
     : DEFAULT_CONTAINERS.items;
 
   const densityLevels = Array.isArray(nb.density_levels) && nb.density_levels.length
@@ -53,6 +68,12 @@ export function normalizeScaleNutribotConfig(raw = {}) {
             emoji: l.emoji || '🍽',
             kcal_per_g: Number(l.kcal_per_g),
             hint: l.hint || '',
+            // Printed-sheet decoration, resolved to SVG by the sheet's icon loader.
+            // This mapper rebuilds each level from an explicit field list, so an
+            // unlisted key is silently dropped — which is exactly what happened to
+            // `icon` first time round: the config had it, the sheet rendered blank
+            // gaps where the pictures should have been, and nothing errored.
+            icon: l.icon || null,
           };
           // Passed through untouched. `computeNutrition` (ScanNutritionService)
           // validates these when a density level is applied, and treats a blank
@@ -63,6 +84,24 @@ export function normalizeScaleNutribotConfig(raw = {}) {
           return out;
         })
     : DEFAULT_DENSITY_LEVELS;
+
+  // Common-foods list for the printed fridge sheet. There is NO default table:
+  // an absent `foods:` means the block renders empty, which is the honest state
+  // before anyone has written the list. Rows are shaped, not filtered — nothing
+  // here is encoded into a scan code (no `fd:` grammar exists), so no row can be
+  // unprintable, and dropping a malformed one would put a silent hole in a
+  // laminated sheet. When a food grammar lands, validateScanConfig must REJECT
+  // unprintable ids the way it already does for containers, rather than this
+  // normalizer quietly discarding them.
+  const foods = Array.isArray(nb.foods)
+    ? nb.foods
+        .filter((f) => f && typeof f === 'object')
+        .map((f) => {
+          const out = { id: String(f.id ?? f.label ?? ''), label: String(f.label ?? f.id ?? '') };
+          if (f.sublabel !== undefined) out.sublabel = String(f.sublabel);
+          return out;
+        })
+    : [];
 
   return {
     minGrams: num(nb.min_grams, DEFAULT_MIN_GRAMS),
@@ -80,6 +119,7 @@ export function normalizeScaleNutribotConfig(raw = {}) {
       items,
     },
     densityLevels,
+    foods,
   };
 }
 

@@ -17,9 +17,11 @@
  *
  * ## The window refresh set EXCLUDES raw scale frames
  *
- * Refreshes come from `setWeight` / `setDensity` / `setContainer` only —
- * vocabulary scans and qualifying placements. The scale firmware heartbeats at
- * 0.5 Hz continuously while it rests on its shelf (`emit.heartbeat_hz` in
+ * Refreshes come from `setWeight` / `setDensity` / `setContainer` / `undo` only —
+ * vocabulary scans, qualifying placements, and the human correcting one of them.
+ * The membership rule is "did a person act", not "did state grow": the scale
+ * firmware heartbeats at 0.5 Hz continuously while it rests on its shelf
+ * (`emit.heartbeat_hz` in
  * `_extensions/food-scale-relay/config.example.yml`), so a frame-driven refresh
  * would mean the window never expires and the store never forgets. `read()` does
  * not refresh either — polling is not activity.
@@ -40,6 +42,28 @@
  * `Composition` never yields a partially built instance, and this store never
  * writes `touchedAt` until the new composition exists. Hence the ordering in
  * every setter: build first, write second.
+ *
+ * ## Undo is ONE DEEP, on purpose
+ *
+ * Each entry carries the composition as it stood before its most recent setter,
+ * and nothing further back. `Composition` is immutable, so that is a retained
+ * reference rather than a copy — but the depth is a product decision, not a cost
+ * one.
+ *
+ * Rescanning already repairs a WRONG slot, because the setters overwrite: scan
+ * `dl:4` over `dl:7` and the mistake is gone. Undo exists for the one repair
+ * rescanning cannot express — taking a slot back to EMPTY, e.g. a `ct:` scanned
+ * for a container that turned out not to be on the scale. That is a
+ * single-mistake shape, and `rs:clear` (one scan) already covers the tangle where
+ * more than one step needs unwinding. An unbounded stack would add a history
+ * nobody can see: the sheet has one undo cell, so the user cannot count how deep
+ * they are, and a rewind that goes further than expected is a worse failure than
+ * one that does nothing.
+ *
+ * The record dies with the entry. `clear` and `endPlacement` delete the entry, so
+ * neither is undoable — both are unambiguous statements about the whole
+ * composition rather than a step within one — and an expired entry takes its
+ * record with it rather than letting a stale rewind attach to fresh state.
  *
  * @module nutribot/CompositionStore
  */
@@ -86,11 +110,25 @@ function requireScaleId(scaleId) {
   return scaleId;
 }
 
+/**
+ * @typedef {object} Entry
+ * @property {Composition} composition
+ * @property {number} touchedAt
+ * @property {{composition: Composition|null}|null} undoTo One-deep undo record.
+ *   `null` means there is nothing to undo — either no setter has run since the
+ *   entry was created, or an undo already consumed the record. Otherwise it wraps
+ *   the state to restore, whose `composition` is `null` when there was no live
+ *   entry at all before the setter ran. That wrapper is what makes "restore to
+ *   ABSENT" expressible: undoing the first scan of a placement must leave
+ *   `read().active === false`, not an active entry with every slot empty, because
+ *   `active` is exactly what tells those two apart for the ack.
+ */
+
 /** Per-scale composition state with a rolling expiry window. */
 export class CompositionStore {
   #windowMs;
   #now;
-  /** @type {Map<string, {composition: Composition, touchedAt: number}>} */
+  /** @type {Map<string, Entry>} */
   #scales;
 
   /**
@@ -133,6 +171,7 @@ export class CompositionStore {
     this.setContainer = this.setContainer.bind(this);
     this.endPlacement = this.endPlacement.bind(this);
     this.clear = this.clear.bind(this);
+    this.undo = this.undo.bind(this);
     this.read = this.read.bind(this);
   }
 
@@ -174,11 +213,23 @@ export class CompositionStore {
    * validates, and it has to happen before this is reached so a rejected setter
    * leaves `touchedAt` alone.
    *
+   * The undo record is captured HERE rather than in each setter, so a setter that
+   * threw cannot have left one behind: a call that did not happen is not a step
+   * to walk back, and undoing "past" it would take back the last GOOD scan and
+   * blame it on the bad one. `#live` (not `#scales.get`) supplies the previous
+   * state so an expired entry restores to absent instead of to a stale
+   * composition the window already retired.
+   *
    * @param {string} scaleId
    * @param {Composition} composition
    */
   #commit(scaleId, composition) {
-    this.#scales.set(scaleId, { composition, touchedAt: this.#now() });
+    const previous = this.#live(scaleId)?.composition ?? null;
+    this.#scales.set(scaleId, {
+      composition,
+      touchedAt: this.#now(),
+      undoTo: { composition: previous },
+    });
   }
 
   /**
@@ -297,6 +348,56 @@ export class CompositionStore {
     const had = this.#live(scaleId) !== null;
     this.#scales.delete(scaleId);
     return had;
+  }
+
+  /**
+   * Walk back the most recent `setWeight` / `setDensity` / `setContainer` — the
+   * `rs:undo` scan. ONE DEEP; see the module docstring for why that is the whole
+   * feature and not a first instalment.
+   *
+   * A second consecutive call is a safe no-op: the record is consumed by the undo
+   * that used it, so nothing rewinds twice from one mistake. Another setter makes
+   * the entry undoable again — one deep per mutation, not one undo per lifetime.
+   *
+   * ## It DOES refresh the window
+   *
+   * `rs:undo` is a human at the fridge scanning a printed cell, which is the same
+   * class of activity as `dl:4`, and the refresh set is defined by activity
+   * rather than by whether state grew. Not refreshing would mean a correction
+   * shortens the window it is correcting within: fix a mis-scan at minute 14 and
+   * the composition you just repaired expires a minute later, taking the repair
+   * with it. The heartbeat argument that keeps raw frames and `read()` out of the
+   * refresh set does not reach here — nothing emits `rs:undo` on a timer.
+   *
+   * Restoring to ABSENT (undoing the first scan of a placement) deletes the entry
+   * outright, so there is no `touchedAt` left to refresh. That is consistent: the
+   * window exists to age state, and there is none.
+   *
+   * @param {string} scaleId
+   * @returns {boolean} Whether anything was restored. False when the entry has
+   *   expired, was already cleared, or has no step left to walk back — the same
+   *   "was there anything there" signal `clear` returns, and what drives the
+   *   "nothing to undo" ack.
+   * @throws {ValidationError} If the scale id is unusable.
+   */
+  undo(scaleId) {
+    requireScaleId(scaleId);
+    const entry = this.#live(scaleId);
+    if (!entry?.undoTo) return false;
+
+    const { composition } = entry.undoTo;
+    if (composition === null) {
+      // There was no live entry before the setter that is being walked back, so
+      // "as it was" is nothing at all.
+      this.#scales.delete(scaleId);
+      return true;
+    }
+
+    // Written directly rather than through `#commit`: this must NOT record itself
+    // as a new undo step, which is exactly what makes the second consecutive undo
+    // a no-op instead of a rewind of the rewind.
+    this.#scales.set(scaleId, { composition, touchedAt: this.#now(), undoTo: null });
+    return true;
   }
 
   /**
