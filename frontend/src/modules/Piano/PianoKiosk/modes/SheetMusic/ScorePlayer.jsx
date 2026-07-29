@@ -1144,6 +1144,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
     onMode('learn');
     focusOriginRef.current = 'drill';
     setFocus({ kind: 'custom', ...span });
+    setLoopOn(true); // a freshly-picked range always starts looping (audit L2 follow-up) — drilling the worst section must loop it even if a prior loop was toggled off
     logger.info('score.drill.worst', span);
   }, [onMode, logger]);
   // The Drill button only makes sense when there's a trouble span to drill.
