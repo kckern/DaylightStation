@@ -6,6 +6,7 @@ To restore: `git checkout -b branch-name <commit-hash>`
 
 | Date | Branch | Commit | Description |
 |------|--------|--------|-------------|
+| 2026-07-28 | worktree-piano-transport-design-system | d0fcd7c2e | PianoKiosk transport design system wave 1 (transport/ primitives, Key/Tempo/Loop/Volume sheets, player migrations, 3 video-player bug fixes) - merged to main (93eb928fc) |
 | 2026-07-16 | feature/sheetmusic-practice-ux | 9e3dfd0ce | Sheet Music practice-UX overhaul (loop/metronome/three-zone bar) - merged to main (994f14982); on-kiosk verify still pending |
 | 2026-07-11 | fix/fitness-emergency-failsafe | 4754df171 | Fail-safe emergency-lockdown ceremony + cooldown/debounce guards - merged to main (c305774d0) |
 | 2026-01-29 | refactor/ddd-migration | c4d71d55 | DDD architecture refactor - merged to main |
