@@ -1774,36 +1774,13 @@
   &__spacer { flex: 1 1 auto; }
   &__time { color: var(--piano-muted); font-variant-numeric: tabular-nums; font-size: 0.95rem; }
 
-  /* Buttons in this row are TransportButton (.piano-tbtn) — the FACE (bg/border/
-     radius/color/min-size/font) lives in Transport.scss. This class is now a
-     LAYOUT-only hook, plus the one visual state Transport.scss doesn't know
-     about: the "arming" warn-colour ring on mark-A after a lone A mark. */
-  &__btn {
-    &.is-arming { border-color: var(--piano-warn); color: var(--piano-warn); }
-  }
   &__btn--rate { width: 4rem; flex-shrink: 0; }
   &__btn--restart { flex-shrink: 0; }
 
-  &__loop-group {
-    display: flex; align-items: center; gap: 0;
-    border: 1px solid var(--piano-border); border-radius: var(--r-md); overflow: hidden;
-    flex-shrink: 0;
-    &.has-marks { border-color: var(--piano-warn); }
-    .piano-video-chrome__btn {
-      border: none; border-radius: 0;
-      border-right: 1px solid var(--piano-border);
-      &:last-child { border-right: none; }
-      /* Splits the group into its two halves: mark-the-timeline (in/out) on the
-         left, act-on-the-loop (cycle/clear) on the right. A fat border in the
-         chrome's own background colour reads as a gap, not another divider. */
-      &.is-section-end { border-right: 4px solid var(--piano-surface); }
-    }
-  }
-  /* The cycle + clear glyphs are stroked outlines while the in/out brackets are
-     solid fills, so at a matched 1em the strokes read visibly lighter. Nudge
-     just those two up until all four buttons carry the same optical weight. */
-  &__btn--loop-toggle .piano-icon svg,
-  &__btn--clear-loop .piano-icon svg { width: 1.25em; height: 1.25em; }
+  // The loop cluster's face (border/has-marks/is-section-end/is-arming/icon
+  // sizing) lives in transport/Transport.scss under .piano-loop-group — this
+  // is a bare layout hook for the video chrome's own flex row.
+  &__loop { flex-shrink: 0; }
 
   &__mix-wrap { position: relative; flex-shrink: 0; }
   &__mix-flyout {

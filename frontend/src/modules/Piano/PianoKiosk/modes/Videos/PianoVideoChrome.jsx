@@ -2,6 +2,7 @@
 import { useRef } from 'react';
 import TransportButton from '../../transport/TransportButton.jsx';
 import VolumeControl from '../../transport/VolumeControl.jsx';
+import LoopGroup from '../../transport/LoopGroup.jsx';
 
 const fmt = (s) => {
   let v = Number.isFinite(s) && s > 0 ? Math.floor(s) : 0;
@@ -58,15 +59,20 @@ export default function PianoVideoChrome({
         {!isSequential && (
           <TransportButton label={`${rate}×`} ariaLabel="Playback speed" className="piano-video-chrome__btn piano-video-chrome__btn--rate" disabled={gateOpen} onPress={onCycleRate} />
         )}
-        <div className={`piano-video-chrome__loop-group${hasLoop ? ' has-marks' : ''}`}>
-          {/* Two families: the in/out brackets plant marks on the timeline; the
-              cycle + trash act on the loop itself. `is-section-end` draws the
-              divider between the two halves. */}
-          <TransportButton icon="loop-in" ariaLabel="Mark loop start" className={`piano-video-chrome__btn${loop?.a != null && loop?.b == null ? ' is-arming' : ''}`} disabled={gateOpen} onPress={onMarkA} />
-          <TransportButton icon="loop-out" ariaLabel="Mark loop end" className="piano-video-chrome__btn is-section-end" disabled={gateOpen} onPress={onMarkB} />
-          <TransportButton icon="loop-toggle" ariaLabel="Toggle A-B loop" className="piano-video-chrome__btn piano-video-chrome__btn--loop-toggle" on={loopActive} disabled={gateOpen || !bothMarks} onPress={onToggleLoop} />
-          <TransportButton icon="clear-loop" ariaLabel="Clear loop" className="piano-video-chrome__btn piano-video-chrome__btn--clear-loop" disabled={gateOpen || !hasLoop} onPress={onClearLoop} />
-        </div>
+        <LoopGroup
+          className="piano-video-chrome__loop"
+          inSet={loop?.a != null}
+          outSet={loop?.b != null}
+          armingIn={loop?.a != null && loop?.b == null}
+          loopOn={loopActive}
+          canToggle={bothMarks}
+          canClear={hasLoop}
+          disabled={gateOpen}
+          onMarkIn={onMarkA}
+          onMarkOut={onMarkB}
+          onToggle={onToggleLoop}
+          onClear={onClearLoop}
+        />
         <VolumeControl disabled={gateOpen} className="piano-video-chrome__btn piano-video-chrome__btn--volume" />
         <TransportButton icon="fullscreen" ariaLabel="Toggle fullscreen" className="piano-video-chrome__btn" disabled={gateOpen} onPress={onToggleFullscreen} />
       </div>
