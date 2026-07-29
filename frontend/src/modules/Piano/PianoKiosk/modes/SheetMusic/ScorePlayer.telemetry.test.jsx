@@ -256,9 +256,8 @@ describe('ScorePlayer — control telemetry (Task 5)', () => {
     const el = document.querySelector('.piano-score-player__scroll');
     act(() => { fireEvent.click(el, { clientX: x, clientY: y }); });
   };
-  const selectLoop = (x) => { // Loop → Select measures… → two taps on the same note
-    act(() => { fireEvent.click(screen.getByRole('button', { name: /^loop/i })); });
-    act(() => { fireEvent.click(screen.getByRole('button', { name: /select measures/i })); });
+  const selectLoop = (x) => { // no range yet -> the trigger starts selection directly; two taps on the same note
+    act(() => { fireEvent.click(screen.getByRole('button', { name: 'Loop' })); });
     tapScore(x); tapScore(x);
   };
 
@@ -290,7 +289,9 @@ describe('ScorePlayer — control telemetry (Task 5)', () => {
     renderPlayer();
     pickMode('Learn');
     selectLoop(100); // loop m1–m1
-    act(() => { fireEvent.click(screen.getByRole('button', { name: 'Loop' })); });
+    // With a range active, the main trigger flips looping on/off — the sheet
+    // (for nudging) opens via the separate "Loop options" chevron.
+    act(() => { fireEvent.click(screen.getByRole('button', { name: 'Loop options' })); });
     act(() => { fireEvent.click(screen.getByRole('button', { name: /loop end later/i })); });
     const last = tel.logFocus.mock.calls.at(-1)[0];
     expect(last).toMatchObject({ kind: 'custom', inMeasure: 0, outMeasure: 1, origin: 'nudge' });
@@ -306,7 +307,8 @@ describe('ScorePlayer — control telemetry (Task 5)', () => {
   it('tags a focus set by a section pick with origin: section', () => {
     renderScore(SECTIONED_XML);
     pickMode('Learn');
-    act(() => { fireEvent.click(screen.getByRole('button', { name: /^loop/i })); });
+    // No range yet -> sections live on the sheet, opened via the chevron.
+    act(() => { fireEvent.click(screen.getByRole('button', { name: 'Loop options' })); });
     act(() => { fireEvent.click(screen.getByRole('button', { name: 'B' })); });
     expect(tel.logFocus.mock.calls.at(-1)[0]).toMatchObject({ kind: 'section', inMeasure: 1, outMeasure: 1, origin: 'section' });
   });
