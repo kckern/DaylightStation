@@ -160,7 +160,9 @@ describe('ScoreTransportBar', () => {
     const onPickSection = vi.fn();
     const sections = [{ label: 'A', startMeasure: 1, endMeasure: 4 }];
     render(<ScoreTransportBar {...base} mode="learn" sections={sections} onPickSection={onPickSection} />);
-    fireEvent.click(screen.getByRole('button', { name: /^loop/i })); // open popover
+    // No range yet, so the main trigger starts on-score selection directly
+    // (wave-2 T7) — the popover opens via the separate "Loop options" chevron.
+    fireEvent.click(screen.getByRole('button', { name: 'Loop options' })); // open popover
     fireEvent.click(screen.getByRole('button', { name: /^A$/ }));
     expect(onPickSection).toHaveBeenCalledWith(sections[0]);
   });
@@ -170,13 +172,15 @@ describe('ScoreTransportBar', () => {
     const onClearFocus = vi.fn();
     render(<ScoreTransportBar {...base} mode="learn" loopActive scopeLabel="m3–m6" onStartSelect={onStartSelect} onClearFocus={onClearFocus} />);
     // The active range surfaces on the trigger's visible label (the aria-label
-    // stays the stable 'Loop', matching the Key/Tempo convention).
+    // stays the stable 'Loop', matching the Key/Tempo convention). With a range
+    // active, tapping the TRIGGER itself now flips looping on/off in place
+    // (wave-2 T7) — the popover opens via the separate "Loop options" chevron.
     const trigger = screen.getByRole('button', { name: 'Loop' });
     expect(trigger).toHaveTextContent('m3–m6');
-    fireEvent.click(trigger);
+    fireEvent.click(screen.getByRole('button', { name: 'Loop options' }));
     fireEvent.click(screen.getByRole('button', { name: /select measures/i }));
     expect(onStartSelect).toHaveBeenCalled();
-    fireEvent.click(screen.getByRole('button', { name: 'Loop' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Loop options' }));
     // Scope to the sheet — the standalone one-tap clear also matches /clear loop/i.
     const menu = screen.getByRole('dialog', { name: 'Loop' });
     fireEvent.click(within(menu).getByRole('button', { name: /clear loop/i }));
@@ -185,11 +189,11 @@ describe('ScoreTransportBar', () => {
 
   it('Loop control is Listen + Learn + Polish (absent only in Perform) (L6)', () => {
     const { unmount } = render(<ScoreTransportBar {...base} mode="perform" />);
-    expect(screen.queryByRole('button', { name: /^loop/i })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Loop' })).toBeNull();
     unmount();
     for (const mode of ['listen', 'learn', 'polish']) {
       const { unmount: u } = render(<ScoreTransportBar {...base} mode={mode} />);
-      expect(screen.getByRole('button', { name: /^loop/i })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Loop' })).toBeInTheDocument();
       u();
     }
   });
@@ -293,7 +297,7 @@ describe('ScoreTransportBar — stable geography (C2)', () => {
     expect(screen.getByRole('button', { name: /restart/i })).toBeDisabled();
     expect(screen.getByRole('button', { name: /learn advances as you play/i })).toBeDisabled();
     expect(screen.getByRole('button', { name: /metronome/i })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /^loop/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Loop' })).toBeInTheDocument();
   });
   it('Listen renders the metronome disabled (the performance is the beat)', () => {
     render(<ScoreTransportBar {...base} mode="listen" step={0} total={4} ready />);
@@ -301,7 +305,7 @@ describe('ScoreTransportBar — stable geography (C2)', () => {
   });
   it('Perform renders only tabs and the page indicator', () => {
     render(<ScoreTransportBar {...base} mode="perform" page={2} pages={5} />);
-    expect(screen.queryByRole('button', { name: /^loop/i })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Loop' })).toBeNull();
     expect(screen.queryByRole('button', { name: /metronome/i })).toBeNull();
     expect(screen.getByLabelText('Page')).toHaveTextContent('2 / 5');
   });

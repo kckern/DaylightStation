@@ -70,12 +70,14 @@ const ScorePracticeCluster = memo(function ScorePracticeCluster({
   bpm = 90,
   onToggleClick,
   loopActive = false,
+  loopEnabled = true,
   scopeLabel = '',
   sections = [],
   onPickSection,
   onStartSelect,
   onClearFocus,
   onNudge,
+  onToggleLoop,
 }) {
   if (mode === 'perform') return null;
   // Listen disables the click (its own performance is the beat); a persisted
@@ -95,12 +97,14 @@ const ScorePracticeCluster = memo(function ScorePracticeCluster({
       </button>
       <LoopControl
         active={loopActive}
+        enabled={loopEnabled}
         scopeLabel={scopeLabel}
         sections={sections}
         onPickSection={onPickSection}
         onStartSelect={onStartSelect}
         onClearFocus={onClearFocus}
         onNudge={onNudge}
+        onToggleEnabled={onToggleLoop}
       />
     </>
   );
@@ -349,11 +353,13 @@ export default function ScoreTransportBar({
   onHandsChange,
   sections,
   loopActive,
+  loopEnabled,
   scopeLabel,
   onPickSection,
   onStartSelect,
   onClearFocus,
   onNudge,
+  onToggleLoop,
   keyboardVisible,
   onToggleKeyboard,
   clickActive,
@@ -393,12 +399,14 @@ export default function ScoreTransportBar({
           bpm={bpm}
           onToggleClick={onToggleClick}
           loopActive={loopActive}
+          loopEnabled={loopEnabled}
           scopeLabel={scopeLabel}
           sections={sections}
           onPickSection={onPickSection}
           onStartSelect={onStartSelect}
           onClearFocus={onClearFocus}
           onNudge={onNudge}
+          onToggleLoop={onToggleLoop}
         />
         {hasPosition && <span className="piano-score-position tabular-nums" data-testid="score-position">{position}</span>}
         {isPerform && (

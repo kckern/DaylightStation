@@ -404,8 +404,7 @@ describe('ScorePlayer — practice range persistence (J3/L6)', () => {
     renderPlayer();
     enterLearn();
     // Guided selection: Loop → Select measures… → two taps set a custom range.
-    act(() => { fireEvent.click(screen.getByRole('button', { name: /^loop/i })); });
-    act(() => { fireEvent.click(screen.getByRole('button', { name: /select measures/i })); });
+    act(() => { fireEvent.click(screen.getByRole('button', { name: 'Loop' })); }); // no range yet -> direct tap starts selection
     // Selection taps must land near a note (L3 threshold) — tap ON the first note.
     const scroll = document.querySelector('.piano-score-player__scroll');
     act(() => { fireEvent.click(scroll, { clientX: 100, clientY: 100 }); }); // first tap → measure 0
@@ -422,7 +421,8 @@ describe('ScorePlayer — practice range persistence (J3/L6)', () => {
     // Perform releases it.
     pickMode('Perform');
     pickMode('Listen');
-    expect(screen.getByRole('button', { name: 'Loop' }).textContent).toBe('Loop'); // back to inactive trigger
+    // Inactive trigger is icon-only (wave-2: no range → no visible label) — aria-label stays 'Loop'.
+    expect(screen.getByRole('button', { name: 'Loop' }).textContent).toBe('');
   });
 });
 
@@ -604,8 +604,7 @@ describe('ScorePlayer — Polish mode (transport-driven)', () => {
     renderPlayer();
     pickMode('Polish');
     await act(async () => {});
-    act(() => { fireEvent.click(screen.getByRole('button', { name: /^loop/i })); });
-    act(() => { fireEvent.click(screen.getByRole('button', { name: /select measures/i })); });
+    act(() => { fireEvent.click(screen.getByRole('button', { name: 'Loop' })); }); // no range yet -> direct tap starts selection
     const scroll = document.querySelector('.piano-score-player__scroll');
     act(() => { fireEvent.click(scroll, { clientX: 160, clientY: 100 }); });
     act(() => { fireEvent.click(scroll, { clientX: 160, clientY: 100 }); });
@@ -658,8 +657,7 @@ describe('ScorePlayer — Polish mode (transport-driven)', () => {
   // Guided two-tap selection of the one measure whose note sits at `clientX` —
   // both taps land ON that note, so the loop is exactly one measure long.
   const loopMeasureAtX = (clientX) => {
-    act(() => { fireEvent.click(screen.getByRole('button', { name: /^loop/i })); });
-    act(() => { fireEvent.click(screen.getByRole('button', { name: /select measures/i })); });
+    act(() => { fireEvent.click(screen.getByRole('button', { name: 'Loop' })); }); // no range yet -> direct tap starts selection
     const scroll = document.querySelector('.piano-score-player__scroll');
     act(() => { fireEvent.click(scroll, { clientX, clientY: 100 }); });
     act(() => { fireEvent.click(scroll, { clientX, clientY: 100 }); });
@@ -771,6 +769,30 @@ describe('ScorePlayer — Polish mode (transport-driven)', () => {
     act(() => vi.advanceTimersByTime(4100)); // through the count-in → the transport starts
 
     expect(emitted.filter(([ev]) => ev === 'score.polish.measure')).toEqual([]);
+  });
+
+  // ── wave-2 T7: loop is a direct toggle — flip it off without losing the range ──
+  it('toggling Loop off keeps the range visible but the cursor advances past it instead of wrapping', async () => {
+    h.layoutExtras = THREE_MEASURES;
+    renderPlayer(); // opens in Listen
+    await act(async () => {});
+    loopSecondMeasure(); // one-measure loop on m2 (index 1) — same setup as the wrap test above
+    expect(screen.getByText('m 2 / 3')).toBeTruthy(); // parked at the loop in-point
+    const trigger = screen.getByRole('button', { name: 'Loop' });
+    expect(trigger).toHaveTextContent(/m2–m2/i);
+    expect(trigger).toHaveAttribute('aria-pressed', 'true');
+    // With a range active, the SAME trigger tap now flips looping off instead of
+    // opening the sheet (audit L2 follow-up) — no re-selection needed.
+    act(() => { fireEvent.click(trigger); });
+    expect(trigger).toHaveAttribute('aria-pressed', 'false'); // unlit…
+    expect(trigger).toHaveTextContent(/m2–m2/i); // …but the range label is still shown, not cleared
+    screen.getByRole('button', { name: 'Play' }).click(); // My part = None → plays at once
+    await act(async () => {});
+    // The wrap test above asserts 'm 2 / 3' after this same advance (loop ON,
+    // wraps back to the in-point). With looping OFF the cursor must instead
+    // advance PAST the (still-visible) range boundary onto measure 3.
+    act(() => vi.advanceTimersByTime(1100)); // one quarter @60 → cursor passes the old out-point
+    expect(screen.getByText('m 3 / 3')).toBeTruthy();
   });
 
   it('pausing a Polish run grades the worked measure and summarizes it (Task 10)', async () => {
@@ -1211,8 +1233,7 @@ describe('ScorePlayer — Listen mode', () => {
     pickMode('Listen');
     await act(async () => {});
     // Loop measure 2 only (tail measure — exercises the onDone wrap path).
-    act(() => { fireEvent.click(screen.getByRole('button', { name: /^loop/i })); });
-    act(() => { fireEvent.click(screen.getByRole('button', { name: /select measures/i })); });
+    act(() => { fireEvent.click(screen.getByRole('button', { name: 'Loop' })); }); // no range yet -> direct tap starts selection
     const scroll = document.querySelector('.piano-score-player__scroll');
     act(() => { fireEvent.click(scroll, { clientX: 160, clientY: 100 }); });
     act(() => { fireEvent.click(scroll, { clientX: 160, clientY: 100 }); });
@@ -1272,8 +1293,7 @@ describe('ScorePlayer — Listen mode', () => {
     // My part = everything → kiosk sends nothing (toggles: none → rh → both)
     act(() => { fireEvent.click(screen.getByRole('button', { name: 'Right hand' })); });
     act(() => { fireEvent.click(screen.getByRole('button', { name: 'Left hand' })); });
-    act(() => { fireEvent.click(screen.getByRole('button', { name: /^loop/i })); });
-    act(() => { fireEvent.click(screen.getByRole('button', { name: /select measures/i })); });
+    act(() => { fireEvent.click(screen.getByRole('button', { name: 'Loop' })); }); // no range yet -> direct tap starts selection
     const scroll = document.querySelector('.piano-score-player__scroll');
     act(() => { fireEvent.click(scroll, { clientX: 160, clientY: 100 }); });
     act(() => { fireEvent.click(scroll, { clientX: 160, clientY: 100 }); });
@@ -1453,8 +1473,7 @@ describe('ScorePlayer — Restart honors the loop in-point (L5)', () => {
     renderPlayer();
     pickMode('Polish');
     // Set a loop on measure 2 only (two selection taps at x=160 → step 1 → measure index 1).
-    act(() => { fireEvent.click(screen.getByRole('button', { name: /^loop/i })); });
-    act(() => { fireEvent.click(screen.getByRole('button', { name: /select measures/i })); });
+    act(() => { fireEvent.click(screen.getByRole('button', { name: 'Loop' })); }); // no range yet -> direct tap starts selection
     const scroll = document.querySelector('.piano-score-player__scroll');
     act(() => { fireEvent.click(scroll, { clientX: 160, clientY: 100 }); });
     act(() => { fireEvent.click(scroll, { clientX: 160, clientY: 100 }); });
@@ -1479,14 +1498,13 @@ describe('ScorePlayer — loop endpoint nudging (L2)', () => {
     renderPlayer();
     pickMode('Learn');
     // Set a loop of m1–m1 (two selection taps on the first note).
-    act(() => { fireEvent.click(screen.getByRole('button', { name: /^loop/i })); });
-    act(() => { fireEvent.click(screen.getByRole('button', { name: /select measures/i })); });
+    act(() => { fireEvent.click(screen.getByRole('button', { name: 'Loop' })); }); // no range yet -> direct tap starts selection
     const scroll = document.querySelector('.piano-score-player__scroll');
     act(() => { fireEvent.click(scroll, { clientX: 100, clientY: 100 }); });
     act(() => { fireEvent.click(scroll, { clientX: 100, clientY: 100 }); });
     expect(screen.getByRole('button', { name: 'Loop' })).toHaveTextContent(/m1–m1/i);
-    // Open the Loop menu and nudge the end later.
-    act(() => { fireEvent.click(screen.getByRole('button', { name: 'Loop' })); });
+    // Open the Loop menu (the chevron, now that the trigger is a direct toggle) and nudge the end later.
+    act(() => { fireEvent.click(screen.getByRole('button', { name: 'Loop options' })); });
     act(() => { fireEvent.click(screen.getByRole('button', { name: /loop end later/i })); });
     expect(screen.getByRole('button', { name: 'Loop' })).toHaveTextContent(/m1–m2/i);
   });
@@ -1506,8 +1524,7 @@ describe('ScorePlayer — selection tap threshold (L3)', () => {
     };
     renderPlayer();
     pickMode('Learn');
-    act(() => { fireEvent.click(screen.getByRole('button', { name: /^loop/i })); });
-    act(() => { fireEvent.click(screen.getByRole('button', { name: /select measures/i })); });
+    act(() => { fireEvent.click(screen.getByRole('button', { name: 'Loop' })); }); // no range yet -> direct tap starts selection
     const scroll = document.querySelector('.piano-score-player__scroll');
     // A tap 800px right of the last note (margin) must NOT arm an in-point — and
     // must SAY so rather than look like a dead screen (audit H4a).
@@ -1542,8 +1559,7 @@ describe('ScorePlayer — loop arming expires (H4b)', () => {
     };
     renderPlayer();
     pickMode('Learn');
-    act(() => { fireEvent.click(screen.getByRole('button', { name: /^loop/i })); });
-    act(() => { fireEvent.click(screen.getByRole('button', { name: /select measures/i })); });
+    act(() => { fireEvent.click(screen.getByRole('button', { name: 'Loop' })); }); // no range yet -> direct tap starts selection
     expect(screen.getByText(/tap the first measure/i)).toBeInTheDocument();
 
     act(() => { vi.advanceTimersByTime(15001); }); // the user wandered off
@@ -1553,7 +1569,8 @@ describe('ScorePlayer — loop arming expires (H4b)', () => {
     const scroll = document.querySelector('.piano-score-player__scroll');
     act(() => { fireEvent.click(scroll, { clientX: 160, clientY: 100 }); });
     expect(screen.getByText('m 2 / 2')).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'Loop' }).textContent).toBe('Loop'); // and set no loop
+    // Inactive trigger is icon-only (wave-2: no range → no visible label) — and set no loop.
+    expect(screen.getByRole('button', { name: 'Loop' }).textContent).toBe('');
   });
 });
 
@@ -1694,8 +1711,7 @@ describe('ScorePlayer — entering Learn (audit H3.3)', () => {
     renderPlayer(); // Listen
     // Loop measures 2–3 (steps 1–2) via the guided two-tap selection.
     const scroll = document.querySelector('.piano-score-player__scroll');
-    act(() => { fireEvent.click(screen.getByRole('button', { name: /^loop/i })); });
-    act(() => { fireEvent.click(screen.getByRole('button', { name: /select measures/i })); });
+    act(() => { fireEvent.click(screen.getByRole('button', { name: 'Loop' })); }); // no range yet -> direct tap starts selection
     act(() => { fireEvent.click(scroll, { clientX: 160, clientY: 100 }); }); // m2
     act(() => { fireEvent.click(scroll, { clientX: 220, clientY: 100 }); }); // m3
     expect(screen.getByTestId('score-position')).toHaveTextContent('m 2 / 4'); // at the in-point

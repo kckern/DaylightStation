@@ -126,6 +126,15 @@ export default function ScorePlayer({ score: scoreMeta }) {
   // Listen/Learn/Polish practice range (measure INDICES) | null = whole piece.
   // Practice loops are per-session by design — never restored (audit M1).
   const [focus, setFocus] = useState(null);
+  // Is the loop ON (wave-2: loop is a direct toggle, separate from whether a
+  // range exists — audit L2 follow-up)? A defined range keeps showing its
+  // brackets even when looping is off (FocusRangeLayer reads `focus`, not the
+  // gated `range` below); only the wrap/clamp/home-step machinery cares.
+  // Defaults true so picking/selecting a range loops it immediately, same as
+  // before this control existed. A fresh session never restores this either —
+  // it rides the same per-session discipline as `focus` (audit M1).
+  const [loopOn, setLoopOn] = useState(true);
+  const loopOnRef = useRef(loopOn); loopOnRef.current = loopOn;
   // Guided measure-selection state machine (Loop → Select measures…):
   //   null | { stage: 'first' } | { stage: 'last', inMeasure } (audit J5/M3)
   const [selecting, setSelecting] = useState(null);
@@ -202,8 +211,8 @@ export default function ScorePlayer({ score: scoreMeta }) {
   // Perform (music-stand mode) ignores the loop.
   const sections = useMemo(() => parsed?.sections || [], [parsed]);
   const range = useMemo(
-    () => (focus && mode !== 'perform' && layout.measures ? rangeSteps(layout.measures, focus) : null),
-    [focus, mode, layout.measures],
+    () => (focus && loopOn && mode !== 'perform' && layout.measures ? rangeSteps(layout.measures, focus) : null),
+    [focus, loopOn, mode, layout.measures],
   );
   const rangeRef = useRef(range); rangeRef.current = range; // read latest range inside the transport tick
   // Array position (== measure INDEX) whose step run contains `i`. Used to turn a
@@ -909,6 +918,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
         setSelecting(null);
         focusOriginRef.current = 'select';
         setFocus({ kind: 'custom', inMeasure, outMeasure });
+        setLoopOn(true); // a freshly-picked range always starts looping (audit L2 follow-up)
       }
       return;
     }
@@ -965,6 +975,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
     setSelecting(null);
     focusOriginRef.current = 'section';
     setFocus({ kind: 'section', label: section.label, ...r });
+    setLoopOn(true); // a freshly-picked range always starts looping (audit L2 follow-up)
   }, [layout.measures]);
 
   // Begin the guided two-tap measure selection (from Loop → Select measures…).
@@ -1151,6 +1162,15 @@ export default function ScorePlayer({ score: scoreMeta }) {
     if (mode === 'learn') setLearnClick((v) => !v); // free-run, session-local
     else setClickOn((v) => !v); // Polish arm state, persisted
   }, [mode]);
+  // Flip looping on/off IN PLACE — the range stays defined (its brackets keep
+  // showing) but wrap/clamp/home-step stop treating it as a boundary. Stable
+  // identity (empty deps via loopOnRef, mirroring stepRef) so the memoized bar
+  // doesn't reconcile on a cursor advance.
+  const onToggleLoop = useCallback(() => {
+    const next = !loopOnRef.current;
+    setLoopOn(next);
+    logger.info('score.loop.toggle', { on: next });
+  }, [logger]);
 
   const toggleRun = useCallback(() => {
     resumeAfterRef.current = null; // an explicit play/pause supersedes a pending rebuild-resume
@@ -1456,11 +1476,13 @@ export default function ScorePlayer({ score: scoreMeta }) {
         onHandsChange={onHandsChange}
         sections={sections}
         loopActive={!!focus}
+        loopEnabled={loopOn}
         scopeLabel={scopeLabel}
         onPickSection={onPickSection}
         onStartSelect={onStartSelect}
         onClearFocus={onClearFocus}
         onNudge={onNudge}
+        onToggleLoop={onToggleLoop}
         keyboardVisible={keyboardVisible}
         onToggleKeyboard={onToggleKeyboard}
         clickActive={clickActive}
