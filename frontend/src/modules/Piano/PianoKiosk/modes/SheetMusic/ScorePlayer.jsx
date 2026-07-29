@@ -42,6 +42,8 @@ import RunSummary from './RunSummary.jsx';
 import CountInOverlay from './CountInOverlay.jsx';
 import LearnComplete from './LearnComplete.jsx';
 import FocusRangeLayer from './FocusRangeLayer.jsx';
+import LearnInkLayer from './LearnInkLayer.jsx';
+import { soundingFifths } from '../../../../MusicNotation/model/spellMidi.js';
 import SelectBanner from './SelectBanner.jsx';
 import StuckPrompt from './StuckPrompt.jsx';
 import { nearestEvent, SELECT_MAX_DIST } from './nearestEvent.js';
@@ -58,6 +60,17 @@ const SELECT_IDLE_MS = 15000;
 // How long Learn's cursor may sit on one both-hands step before the hands split is
 // offered on the score (audit H3).
 const STUCK_PROMPT_MS = 5000;
+
+// How long a wet-ink mark lives, per kind (wave-3 D). A wrong note lingers long
+// enough to be READ against the note that was expected; a hit is a flash, not a
+// record; the machine rows' neutral trace sits between the two.
+const INK_TTL = { wrong: 900, hit: 350, neutral: 500 };
+
+// Consecutive wrongs on ONE step before Learn reveals the keyboard hint (wave-3 D).
+// The reveal is STUCK SUPPORT, not punishment: spoiling the keys on the first
+// fumble hands the answer over the instant the reading gets hard, which is the
+// exact moment reading is being trained. Three says "you are actually stuck".
+const REVEAL_WRONG_STREAK = 3;
 
 // Fixed near-black ink for lit noteheads (wave-2 A): every mode's cursor band
 // keeps its own accent colour, but the noteheads themselves always light this
@@ -685,6 +698,82 @@ export default function ScorePlayer({ score: scoreMeta }) {
   // Clear grades + summary when the score document changes or scoring is turned off.
   useEffect(() => { setGrades({}); setSummaryOpen(false); setLearnDone(false); }, [scoreMeta.musicXml]);
 
+  // ── Learn wet ink (wave-3 D) ──────────────────────────────────────────────────
+  // Every note the user plays in Learn leaves a short-lived mark on the staff at
+  // the cursor column — red at the PLAYED pitch when it was wrong (so "no" also
+  // answers "then what did I play?"), a green flash on a hit, muted grey in the
+  // machine rows where nothing is gated. LearnInkLayer is pure; the lifecycle
+  // (append + timed removal) lives here.
+  //
+  // These callbacks run from a MIDI subscription, so every score-derived value
+  // they read comes from a ref mirror, not the render closure: the subscription is
+  // deliberately NOT re-established per re-engrave (a fresh `events` identity
+  // arrives on every zoom/flow/transpose), so a closure read would go stale the
+  // first time the sheet re-engraved.
+  const [inks, setInks] = useState([]);
+  const inkSeqRef = useRef(0);
+  const inkTimersRef = useRef(new Map());
+  const eventsRef = useRef(events); eventsRef.current = events;
+  const layoutRef = useRef(layout); layoutRef.current = layout;
+  const stepsRef = useRef(steps); stepsRef.current = steps;
+  const activePartsRef = useRef(activeParts); activePartsRef.current = activeParts;
+  // Drop every pending expiry AND the marks themselves — used on a document
+  // change and a mode change, where the geometry the marks were placed against is
+  // about to be replaced (or hidden). Without clearing the timers too, a stale
+  // expiry would fire against the new document's ink list.
+  const clearInks = useCallback(() => {
+    inkTimersRef.current.forEach(clearTimeout);
+    inkTimersRef.current.clear();
+    setInks([]);
+  }, []);
+  const pushInk = useCallback((midi, kind) => {
+    const cur = eventsRef.current?.[stepRef.current];
+    const boxes = layoutRef.current?.staffBoxes || [];
+    if (!cur || !boxes.length) return; // no cursor column / no geometry — nothing to draw on
+    // Which staff does this mark belong to? One active hand answers itself. With
+    // both hands active the honest guess is the staff of the NEAREST expected
+    // pitch at this step — a fumbled left-hand note inks on the left-hand staff.
+    const active = activePartsRef.current || {};
+    const activeStaves = Object.keys(active).filter((s) => active[s]).map(Number);
+    let staff = activeStaves.length === 1 ? activeStaves[0] : 0;
+    if (activeStaves.length > 1) {
+      let best = Infinity;
+      for (const n of stepsRef.current?.[stepRef.current]?.notes || []) {
+        if (!active[n.staff]) continue;
+        const d = Math.abs(n.midi - midi);
+        if (d < best) { best = d; staff = n.staff; }
+      }
+    }
+    // Which SYSTEM is the cursor on? The cursor box spans the whole grand staff,
+    // so its vertical midpoint lands inside one system's band; fall back to the
+    // first box carrying this staff (single-system scores, degenerate geometry).
+    const mid = (cur.top + cur.bottom) / 2;
+    const sys = boxes.find((b) => mid >= b.top - b.lineSpacing * 3 && mid <= b.top + b.lineSpacing * 7)?.system
+      ?? boxes.find((b) => b.staff === staff)?.system ?? 0;
+    const id = ++inkSeqRef.current;
+    setInks((prev) => [...prev, { id, midi, staff, system: sys, x: cur.x, kind }]);
+    const t = setTimeout(() => {
+      inkTimersRef.current.delete(id);
+      setInks((prev) => prev.filter((i) => i.id !== id));
+    }, INK_TTL[kind] ?? 600);
+    inkTimersRef.current.set(id, t);
+  }, []);
+  useEffect(() => () => { inkTimersRef.current.forEach(clearTimeout); }, []);
+  // 0-based staff id → clef. `parsed.parts[0].clefs` is keyed by the 1-based
+  // MusicXML staff NUMBER, while every geometry/activeParts id in this component
+  // is 0-based (activeParts.js convention) — shift once here rather than at each
+  // read site.
+  const inkClefs = useMemo(() => {
+    const c = parsed?.parts?.[0]?.clefs || {};
+    return Object.fromEntries(Object.entries(c).map(([n, v]) => [Number(n) - 1, v]));
+  }, [parsed]);
+  // Ink is spelled in the SOUNDING key: on a C-major piece transposed +2, a played
+  // D5 must land on the D-major grid the player is hearing, not the written one.
+  const inkFifths = useMemo(
+    () => soundingFifths(parsed?.key?.fifths ?? 0, transpose),
+    [parsed, transpose],
+  );
+
   // ── Learn mode: full-hand tracker (all active-staff notes → advance) ──────────
   const lastAdvanceRef = useRef(0);
   const followHitsRef = useRef(0);
@@ -696,21 +785,30 @@ export default function ScorePlayer({ score: scoreMeta }) {
   useEffect(() => { if (mode === 'learn') lastAdvanceRef.current = performance.now(); }, [mode]);
   const onFollowHit = useCallback((note) => {
     setStruck((prev) => { const n = new Set(prev); n.add(note); return n; });
+    pushInk(note, 'hit');
+    // A hit means the reading landed — the "is this player stuck?" evidence resets
+    // even mid-chord, so three wrongs SPREAD across a chord's right notes never
+    // add up to a reveal (only three genuinely consecutive misses do).
+    wrongStreakRef.current = 0;
     followHitsRef.current += 1;
     if (!lastAdvanceRef.current) return; // no reference point yet — don't invent one
     recordFollowHit({ step: stepRef.current, note, sinceAdvanceMs: performance.now() - lastAdvanceRef.current });
-  }, [recordFollowHit]);
+  }, [recordFollowHit, pushInk]);
   const onFollowStep = useCallback((next) => {
     setStep(next);
     setStruck(() => new Set());
     lastAdvanceRef.current = performance.now();
   }, []);
   // Learn mode optimizes for READING the score, so the keyboard must not spoil
-  // which key to press. Reveal the target key(s) only AFTER a wrong attempt at the
-  // current step (and then only in a dim "half shade" — see targetNotes/dimTarget
-  // below). Resets on every step change so the next note starts un-spoiled.
+  // which key to press. The reveal is on a BUDGET (wave-3 D): it arms only after
+  // REVEAL_WRONG_STREAK consecutive wrongs on the SAME step, and then only in a dim
+  // "half shade" (see targetNotes/dimTarget below). One wrong note now gets the wet
+  // ink instead — which shows what was played without giving away what to play.
+  // Both the streak and the reveal reset on every step change, so the next note
+  // starts un-spoiled and un-penalised.
   const [revealKeys, setRevealKeys] = useState(false);
-  useEffect(() => { setRevealKeys(false); }, [step]);
+  const wrongStreakRef = useRef(0);
+  useEffect(() => { setRevealKeys(false); wrongStreakRef.current = 0; }, [step]);
 
   // ── Learn cycle bookkeeping (wave-3 C) ────────────────────────────────────────
   // One completed, non-voided gate loop (in→out→wrap) is an "attempt" for every
@@ -723,12 +821,17 @@ export default function ScorePlayer({ score: scoreMeta }) {
   const cycleVoidRef = useRef(false);
   const voidCycle = useCallback(() => { cycleVoidRef.current = true; }, []);
 
-  const onFollowWrong = useCallback(() => {
+  const onFollowWrong = useCallback((midi) => {
     flashWrong();
-    setRevealKeys(true);
+    pushInk(midi, 'wrong'); // the played pitch, in red, on the staff (wave-3 D)
     followWrongsRef.current += 1;
     cycleWrongsRef.current.add(measureIndexOfStep(stepRef.current));
-  }, [flashWrong, measureIndexOfStep]);
+    // The reveal is on a budget — see REVEAL_WRONG_STREAK. It never disarms until
+    // the step changes: once help has been offered, taking it back mid-struggle
+    // would be worse than never offering it.
+    wrongStreakRef.current += 1;
+    if (wrongStreakRef.current >= REVEAL_WRONG_STREAK) setRevealKeys(true);
+  }, [flashWrong, pushInk, measureIndexOfStep]);
   // End of piece in Learn: show the completion card (audit M5). Follow-timing stats
   // still flush when the user leaves Learn / on unmount, so no flush is needed here.
   const [learnDone, setLearnDone] = useState(false);
@@ -766,6 +869,18 @@ export default function ScorePlayer({ score: scoreMeta }) {
     onWrap: onFollowWrap,
     range, // wrap advancement within the practice range (null → linear)
   });
+
+  // Machine rows of the Learn matrix (wave-3 §B rows 1/3): nothing is gated, so
+  // there is no right or wrong note to report — but playing along with the kiosk
+  // should still leave a trace. Ink every note_on NEUTRALLY: never red, never a
+  // shake, never a reveal. This is the ONLY subscription these rows make.
+  useEffect(() => {
+    if (!machineLearn || !subscribe) return undefined;
+    return subscribe((evt) => {
+      if (!evt || evt.type !== 'note_on' || !evt.velocity) return;
+      pushInk(evt.note, 'neutral');
+    });
+  }, [machineLearn, subscribe, pushInk]);
 
   // Flush follow-timing stats when leaving Learn (and on unmount if still in it).
   const flushFollowNow = useCallback(() => {
@@ -1245,6 +1360,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
     setRunActive(false);         // …and so does the run itself (see runActive)
     silenceScheduled();
     setStruck(() => new Set());
+    clearInks();                 // wet ink belongs to the mode it was played in (wave-3 D)
     // Loop/focus is Learn-only state (wave-3 §0): only Learn keeps a range. Listen
     // is a jukebox and Polish grades whole-piece runs, so entering either releases
     // the range AND the loop toggle (the wave-2 "loop follows the ladder" semantics
@@ -1275,7 +1391,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
     setMode(id); // keyboard visibility follows the new mode automatically (M2)
     logMode({ mode: id });
     tapIntent('mode');
-  }, [mode, flushPlaybackNow, flushFollowNow, transport, silenceScheduled, logMode, countIn, clearWrapDwell, tapIntent]);
+  }, [mode, flushPlaybackNow, flushFollowNow, transport, silenceScheduled, logMode, countIn, clearWrapDwell, clearInks, tapIntent]);
 
   // Listen tempo: clamp to a sane playable range (0.25×–2×). Timeline rescales via
   // the playTimeline memo; the transport reads the new timings on its next tick.
@@ -1555,6 +1671,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
     // A new document resets the practice range (measure indices don't carry over).
     setFocus(null);
     setSelecting(null);
+    clearInks(); // ink marks are pinned to the OLD engraving's geometry (wave-3 D)
   }, [scoreMeta.musicXml]); // eslint-disable-line react-hooks/exhaustive-deps
   const onReady = useCallback(() => {
     setEngraveReady(true); // lift the splash — the sheet is engraved
@@ -1635,6 +1752,17 @@ export default function ScorePlayer({ score: scoreMeta }) {
                 height: Math.max(40 * scale, current.bottom - current.top),
                 '--cursor-color': cursorColor,
               }}
+            />
+          )}
+          {/* Learn only (wave-3 D) — Listen/Polish/Perform have no user-input ink.
+              Mounted AFTER the cursor div so the ink paints above the cursor band
+              at the same z-index rather than under it. */}
+          {mode === 'learn' && layoutFresh && (
+            <LearnInkLayer
+              inks={inks}
+              staffBoxes={layout.staffBoxes}
+              clefs={inkClefs}
+              keyFifths={inkFifths}
             />
           )}
           {showGrades && layoutFresh && (
