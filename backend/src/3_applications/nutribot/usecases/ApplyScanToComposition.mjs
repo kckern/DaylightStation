@@ -5,6 +5,16 @@
  * how the caller knows to fall through to the UPC path. That flag is the entire
  * contract for three-way routing — it must never throw for an unclaimed code.
  *
+ * ## Every branch is an EXPLICIT kind check
+ *
+ * There is no fall-through arm. A kind the grammar produces but this file has no
+ * handler for is refused by name, not absorbed by whichever branch happens to sit
+ * last. That is not hypothetical tidiness: the container branch WAS the implicit
+ * else, so `rs:undo` and `rs:done` — real codes, printable since the grammar
+ * gained its control verbs — came back as `UNKNOWN_CONTAINER`. A printed code
+ * with no handler is the failure this whole design exists to prevent; it must at
+ * minimum say so.
+ *
  * @module nutribot/usecases/ApplyScanToComposition
  */
 
@@ -39,6 +49,8 @@ export class ApplyScanToComposition {
   /**
    * @param {{scaleId: string, code: string}} input
    * @returns {{handled: boolean, ok?: boolean, kind?: string, error?: string}}
+   *   `handled: false` ONLY when the grammar did not claim the code. Anything it
+   *   claimed comes back `handled: true`, with `ok` saying whether it landed.
    */
   execute({ scaleId, code }) {
     const parsed = parseScan(code);
@@ -65,19 +77,42 @@ export class ApplyScanToComposition {
       return { handled: true, ok: true, kind: 'density', level: parsed.level, label: row.label, emoji: row.emoji };
     }
 
-    // container — an unknown id must NOT reach the store. `resolveScaleNet` would
-    // find no matching row and fall back to the un-tared gross; it does flag that
-    // on the prompt, but a renamed id is better caught at scan time than argued
-    // about later on the message.
-    const item = (this.#config.containers?.items || []).find((c) => c.id === parsed.id);
-    if (!item) {
-      this.#logger.warn?.('applyScan.unknownContainer', { scaleId, id: parsed.id });
-      return { handled: true, ok: false, kind: 'container', error: 'UNKNOWN_CONTAINER', id: parsed.id };
+    // EXPLICIT, never the fall-through. This branch was the implicit `else` once,
+    // which meant every kind the switch above did not name landed here and came
+    // back as `{kind:'container', error:'UNKNOWN_CONTAINER', id: undefined}` — a
+    // control command reported to the user as a broken container. `undo` and
+    // `done` did exactly that between the grammar landing and their handlers.
+    //
+    // An unknown id must NOT reach the store. `resolveScaleNet` would find no
+    // matching row and fall back to the un-tared gross; it does flag that on the
+    // prompt, but a renamed id is better caught at scan time than argued about
+    // later on the message.
+    if (parsed.kind === 'container') {
+      const item = (this.#config.containers?.items || []).find((c) => c.id === parsed.id);
+      if (!item) {
+        this.#logger.warn?.('applyScan.unknownContainer', { scaleId, id: parsed.id });
+        return { handled: true, ok: false, kind: 'container', error: 'UNKNOWN_CONTAINER', id: parsed.id };
+      }
+
+      this.#store.setContainer(scaleId, parsed.id);
+      this.#logger.info?.('applyScan.container', { scaleId, id: parsed.id, grams: item.grams });
+      return { handled: true, ok: true, kind: 'container', id: parsed.id, label: item.label, emoji: item.emoji, grams: item.grams };
     }
 
-    this.#store.setContainer(scaleId, parsed.id);
-    this.#logger.info?.('applyScan.container', { scaleId, id: parsed.id, grams: item.grams });
-    return { handled: true, ok: true, kind: 'container', id: parsed.id, label: item.label, emoji: item.emoji, grams: item.grams };
+    // A kind the grammar produced that this use case does not implement — a
+    // future prefix whose handler has not landed yet, which is the state `undo`
+    // and `done` were in.
+    //
+    // Deliberately NOT `notHandled()`. That reply means "the fridge grammar does
+    // not claim this code", and `routeNutribotScan` acts on it by sending the
+    // scan onward to the product lookup — a lie about a code that unmistakably
+    // came off the sheet, and the same shape as the defect above. Claiming it and
+    // refusing it puts a visible ⚠️ on the prompt at the fridge, which is the
+    // failure direction this subsystem prefers everywhere else. `kind` echoes
+    // what was parsed rather than naming any implemented branch, so the next
+    // fifth kind cannot masquerade as one.
+    this.#logger.warn?.('applyScan.unhandledKind', { scaleId, kind: parsed.kind });
+    return { handled: true, ok: false, kind: parsed.kind, error: 'UNHANDLED_SCAN_KIND' };
   }
 }
 
