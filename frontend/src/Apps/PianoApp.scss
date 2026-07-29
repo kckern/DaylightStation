@@ -2927,7 +2927,6 @@
 // Hands / My-part segmented control (grand-staff fast path, audit J4).
 .piano-score-hands {
   display: inline-flex; align-items: center; gap: 0.3rem;
-  &__opt { min-width: 2.6rem; }
 }
 
 .piano-score-btn {

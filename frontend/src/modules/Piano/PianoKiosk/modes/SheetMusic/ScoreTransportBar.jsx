@@ -67,7 +67,6 @@ const ScoreTransportButtons = memo(function ScoreTransportButtons({ mode, runnin
 const ScorePracticeCluster = memo(function ScorePracticeCluster({
   mode,
   clickActive = false,
-  bpm = 90,
   onToggleClick,
   loopActive = false,
   loopEnabled = true,
@@ -391,7 +390,6 @@ export default function ScoreTransportBar({
         <ScorePracticeCluster
           mode={mode}
           clickActive={clickActive}
-          bpm={bpm}
           onToggleClick={onToggleClick}
           loopActive={loopActive}
           loopEnabled={loopEnabled}
