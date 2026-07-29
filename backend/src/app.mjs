@@ -1950,6 +1950,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   const { createSheetService } = await import('#apps/sheets/SheetService.mjs');
   const { createCellRenderers } = await import('#rendering/pdf/cellRenderers.mjs');
   const { createNutritionProviders } = await import('#composition/modules/sheetProviders.mjs');
+  const { createIconLoader } = await import('#composition/modules/iconLoader.mjs');
   const { createSheetsRouter } = await import('./4_api/v1/routers/sheets.mjs');
 
   const sheetCellKinds = createCellRenderers();
@@ -1963,6 +1964,10 @@ export async function createApp({ server, logger, configPaths, configExists, ena
         getScaleConfig: () => normalizeScaleNutribotConfig(
           configService.getHouseholdAppConfig(householdId, 'scales') || {},
         ),
+        loadIcon: createIconLoader({
+          dir: `${configService.getDataDir()}/household/assets/icons`,
+          logger: sheetsLogger,
+        }),
       }),
       cellKinds: sheetCellKinds,
       logger: sheetsLogger,

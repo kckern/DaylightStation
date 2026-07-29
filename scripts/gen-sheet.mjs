@@ -30,6 +30,7 @@ import yaml from 'js-yaml';
 
 import { normalizeScaleNutribotConfig } from '#apps/nutribot/lib/scaleNutribotConfig.mjs';
 import { createNutritionProviders } from '#composition/modules/sheetProviders.mjs';
+import { createIconLoader } from '#composition/modules/iconLoader.mjs';
 import { createCellRenderers } from '#rendering/pdf/cellRenderers.mjs';
 import { createSheetService } from '#apps/sheets/SheetService.mjs';
 import { renderSheetPdf } from '#rendering/pdf/QRSheetRenderer.mjs';
@@ -115,6 +116,10 @@ const service = createSheetService({
   getConfig: () => sheetsConfig,
   providers: createNutritionProviders({
     getScaleConfig: () => normalizeScaleNutribotConfig(scalesConfig),
+    loadIcon: createIconLoader({
+      dir: path.join(base, 'data', 'household', 'assets', 'icons'),
+      logger: { warn: (event, data) => console.warn(`  warn  ${event} ${JSON.stringify(data)}`) },
+    }),
   }),
   cellKinds,
   logger: {
