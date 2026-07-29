@@ -38,7 +38,7 @@ const shelf = {
 };
 
 beforeEach(() => {
-  profile = { currentUser: { id: 'felix', name: 'Felix' }, isGuest: false, openPicker: vi.fn() };
+  profile = { currentUser: { id: 'learner-two', name: 'learner-two' }, isGuest: false, openPicker: vi.fn() };
 });
 
 describe('SubjectPage', () => {

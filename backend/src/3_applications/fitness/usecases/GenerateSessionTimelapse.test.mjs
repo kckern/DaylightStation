@@ -235,7 +235,7 @@ test('buildSlug prefers the primary media item over earlier background audio (ES
       ]
     }
   };
-  assert.equal(buildSlug(data), '20260625170246_30m_kckern-user_3-felix_game-cycling');
+  assert.equal(buildSlug(data), '20260625170246_30m_kckern-user_3-learnerTwo_game-cycling');
 });
 
 test('buildSlug drops the redundant date prefix (sessionId already carries the date)', () => {
@@ -246,7 +246,7 @@ test('buildSlug drops the redundant date prefix (sessionId already carries the d
     summary: { media: [{ showTitle: 'Insanity Max:30', primary: true }] }
   };
   const slug = buildSlug(data);
-  assert.equal(slug, '20260626151907_34m_kckern-felix_insanity-max-30');
+  assert.equal(slug, '20260626151907_34m_kckern-learnerTwo_insanity-max-30');
   assert.equal(slug.startsWith('20260626151907_'), true);
   assert.equal(slug.includes('20260626_'), false); // no double-date
 });

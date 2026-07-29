@@ -26,7 +26,7 @@ const GLOBAL_ZONES = [
   { id: 'fire', name: 'Fire', min: 160, color: 'red', coins: 5 },
 ];
 
-const SOREN_ZONE_CONFIG = [
+const LEARNER_ONE_ZONE_CONFIG = [
   { id: 'cool', name: 'Cool', min: 0, color: 'blue', coins: 0 },
   { id: 'active', name: 'Active', min: 125, color: 'green', coins: 1 },
   { id: 'warm', name: 'Warm', min: 150, color: 'yellow', coins: 2 },
@@ -69,7 +69,7 @@ describe('TreasureBox per-user zone resolution', () => {
   });
 
   it('uses per-user zones from ZoneProfileStore when available', () => {
-    const store = createMockZoneProfileStore({ user_5: SOREN_ZONE_CONFIG });
+    const store = createMockZoneProfileStore({ user_5: LEARNER_ONE_ZONE_CONFIG });
     const tb = createTreasureBox(store);
     const zone = tb.resolveZone('user_5', 113);
     expect(zone.id).toBe('cool');
@@ -77,7 +77,7 @@ describe('TreasureBox per-user zone resolution', () => {
   });
 
   it('falls back to global zones for users without custom profiles', () => {
-    const store = createMockZoneProfileStore({ user_5: SOREN_ZONE_CONFIG });
+    const store = createMockZoneProfileStore({ user_5: LEARNER_ONE_ZONE_CONFIG });
     const tb = createTreasureBox(store);
     const zone = tb.resolveZone('user_4', 113);
     expect(zone.id).toBe('active');
@@ -85,7 +85,7 @@ describe('TreasureBox per-user zone resolution', () => {
   });
 
   it('respects per-user active threshold exactly at boundary', () => {
-    const store = createMockZoneProfileStore({ user_5: SOREN_ZONE_CONFIG });
+    const store = createMockZoneProfileStore({ user_5: LEARNER_ONE_ZONE_CONFIG });
     const tb = createTreasureBox(store);
     const zone = tb.resolveZone('user_5', 125);
     expect(zone.id).toBe('active');
@@ -93,7 +93,7 @@ describe('TreasureBox per-user zone resolution', () => {
   });
 
   it('resolves higher zones correctly with per-user thresholds', () => {
-    const store = createMockZoneProfileStore({ user_5: SOREN_ZONE_CONFIG });
+    const store = createMockZoneProfileStore({ user_5: LEARNER_ONE_ZONE_CONFIG });
     const tb = createTreasureBox(store);
     const zone = tb.resolveZone('user_5', 155);
     expect(zone.id).toBe('warm');

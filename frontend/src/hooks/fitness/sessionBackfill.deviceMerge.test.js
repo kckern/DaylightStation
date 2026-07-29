@@ -4,16 +4,16 @@ import { runSessionBackfill } from './sessionBackfill.js';
 describe('runSessionBackfill — effort absorb', () => {
   it('absorbs an idle-long ghost forward into the real occupant', () => {
     const entities = [
-      { entityId: 'g1', profileId: 'elizabeth', deviceId: '29413', startTime: 0,   endTime: 300000, status: 'active' },
-      { entityId: 'g2', profileId: 'grannie',   deviceId: '29413', startTime: 300000, endTime: null, status: 'active' }
+      { entityId: 'g1', profileId: 'parent-two', deviceId: '10001', startTime: 0,   endTime: 300000, status: 'active' },
+      { entityId: 'g2', profileId: 'grannie',   deviceId: '10001', startTime: 300000, endTime: null, status: 'active' }
     ];
     const series = {
-      'user:elizabeth:heart_rate': [116, null, null],
+      'user:parent-two:heart_rate': [116, null, null],
       'user:grannie:heart_rate':   [null, 80, 90]
     };
     const r = runSessionBackfill({ entities, series, sessionEndTime: 600000 });
-    expect([...r.removedOccupants]).toContain('elizabeth');
-    expect(r.transfers.some(t => t.fromOccupantId === 'elizabeth' && t.toOccupantId === 'grannie')).toBe(true);
+    expect([...r.removedOccupants]).toContain('parent-two');
+    expect(r.transfers.some(t => t.fromOccupantId === 'parent-two' && t.toOccupantId === 'grannie')).toBe(true);
   });
 });
 

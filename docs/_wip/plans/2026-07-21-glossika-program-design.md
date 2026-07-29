@@ -147,7 +147,7 @@ Mirrors the School attempt log exactly: **one event per action, carrying
 this log on every read* — there is no stored queue table. That is what makes a
 parent's later reassignment move the evidence and the pacing together.
 
-> This is the direct fix for the 2017 failure mode. Elizabeth's progress
+> This is the direct fix for the 2017 failure mode. parent-two's progress
 > silently stopped advancing because the queue was **stored state** in
 > `user_queue` and a server migration lost the writes. A derived queue cannot
 > desynchronise from its evidence.
@@ -303,14 +303,14 @@ What the dump restores:
 | | mtime reconstruction | recovered dump |
 |---|---|---|
 | Events | 519, recordings only | **5,348**, all four rungs |
-| Day numbers | none | **real** — KC 1–59, Elizabeth 1–119 |
+| Day numbers | none | **real** — KC 1–59, parent-two 1–119 |
 | Typed answers | lost | **2,655**, all scored on import |
 | Sentences | 3,000 | **4,143** |
-| Span | inferred | KC 2017-10→2019-12, Elizabeth 2016-12→2020-01 |
+| Span | inferred | KC 2017-10→2019-12, parent-two 2016-12→2020-01 |
 
 Reading it lives in `1_adapters/glossika/LegacyDumpReader.mjs` — an
 anti-corruption layer that is the only code aware of the old vocabulary
-(`action`→rung, `data`→given, `val`→target text, `ekern`→`elizabeth`).
+(`action`→rung, `data`→given, `val`→target text, `ekern`→`parent-two`).
 
 **Two sources, one corpus.** Sequences 1–3000 are the commercial course read by
 native speakers; 3001–4143 were appended by the original `import.php` from a

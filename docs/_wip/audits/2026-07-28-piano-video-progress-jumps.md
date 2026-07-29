@@ -46,7 +46,7 @@ progress**, and the flip to System B makes every checkmark "pop in."
 3. **Recency filter ≠ data loss (grid vs detail disagreement).** The poster
    endpoint applies `progress_overlay` rules from `piano.yml`
    (`recency_days: 7`, `min_completed: 1`). Today Hoffman's poster shows ONLY
-   soren (3/344) — felix's 32 and milo's 29 completions are hidden because
+   learner-one (3/344) — learner-two's 32 and learner-three's 29 completions are hidden because
    their last activity (7/16) is 12 days old. Opening the course then shows the
    full checkmark history. The chips silently "losing" a student's progress
    after a quiet week is the strongest "data loss" illusion in the flow.
@@ -54,7 +54,7 @@ progress**, and the flip to System B makes every checkmark "pop in."
 ## Data integrity check (files on disk, 2026-07-28)
 
 Per-user stores are healthy — six files, parseable, recent writes (latest
-2026-07-25). Full inventory in the tables below. One anomaly: **alan and kckern
+2026-07-25). Full inventory in the tables below. One anomaly: **learner-four and kckern
 both hold 37% on the same Hoffman lecture from the same day (7/10)** — the
 signature of a mid-video player switch (`usePianoWatchLog` re-subscribes on
 `userId` change: the close post credits the old user, subsequent ticks the new
@@ -70,27 +70,27 @@ Better Piano System (~316).
 
 | Student | Course | Completed | Touched | Last active |
 |---|---|---|---|---|
-| felix | AM Vocal Studios | **47/47** ✔ course complete | 47 | 2026-07-17 |
-| felix | Hoffman Academy | 32 | 32 | 2026-07-16 |
-| felix | Classical Piano Collection | 13 | 13 | 2026-07-23 |
-| milo | Hoffman Academy | 29 | 29 | 2026-07-16 |
-| milo | Classical Piano Collection | 5 | 5 | 2026-07-21 |
-| milo | Piano With Jonny | 1 | 3 | 2026-07-10 |
-| milo | AM Vocal Studios | 1 | 2 | 2026-07-14 |
-| soren | Hoffman Academy | 3 | 4 (one at 5%) | 2026-07-22 |
-| soren | How to Play Piano | 0 | 3 | 2026-07-11 |
+| learner-two | AM Vocal Studios | **47/47** ✔ course complete | 47 | 2026-07-17 |
+| learner-two | Hoffman Academy | 32 | 32 | 2026-07-16 |
+| learner-two | Classical Piano Collection | 13 | 13 | 2026-07-23 |
+| learner-three | Hoffman Academy | 29 | 29 | 2026-07-16 |
+| learner-three | Classical Piano Collection | 5 | 5 | 2026-07-21 |
+| learner-three | Piano With Jonny | 1 | 3 | 2026-07-10 |
+| learner-three | AM Vocal Studios | 1 | 2 | 2026-07-14 |
+| learner-one | Hoffman Academy | 3 | 4 (one at 5%) | 2026-07-22 |
+| learner-one | How to Play Piano | 0 | 3 | 2026-07-11 |
 | kckern | Piano University | 1 | 1 | 2026-07-25 |
 | kckern | How to Play Piano | 1 | 1 | 2026-07-11 |
 | kckern | Better Piano System | 1 | 2 | 2026-07-03 |
-| alan | Hoffman (First Piano Lesson, 37%) | 0 | 1 | 2026-07-10 |
-| elizabeth | Music Theory + AM Vocal (samples) | 0 | 2 | 2026-07-13 |
+| learner-four | Hoffman (First Piano Lesson, 37%) | 0 | 1 | 2026-07-10 |
+| parent-two | Music Theory + AM Vocal (samples) | 0 | 2 | 2026-07-13 |
 
 (Entries not matching any lesson course — 9–24 per adult/kid — are Music
 Appreciation tab lectures and other video content logged through the same store.)
 
-**Hoffman co-progress (milo↔felix, buffer 3):** felix 32 vs milo 29 — aheadBy
-exactly the buffer; felix's `coProgressLock` is currently null (lock engages
-beyond the buffer), so felix has one lecture of headroom before waiting on milo.
+**Hoffman co-progress (learner-three↔learner-two, buffer 3):** learner-two 32 vs learner-three 29 — aheadBy
+exactly the buffer; learner-two's `coProgressLock` is currently null (lock engages
+beyond the buffer), so learner-two has one lecture of headroom before waiting on learner-three.
 
 ## Implemented 2026-07-28 (recommendations 3 + chip redesign)
 

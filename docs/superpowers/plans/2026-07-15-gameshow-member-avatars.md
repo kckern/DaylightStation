@@ -49,17 +49,17 @@
 - [ ] **Step 1: Read the current test to learn the mock's shape**
 
 Run: `sed -n '1,60p' backend/src/3_applications/gameshow/GameShowService.test.mjs`
-Note how `userService.getProfile` is mocked and how members are asserted (currently `{ id: 'felix', name: 'FELIX', avatar: '/api/v1/static/users/felix' }`). You will extend the mock so one profile carries a `group_label`.
+Note how `userService.getProfile` is mocked and how members are asserted (currently `{ id: 'learner-two', name: 'learner-two', avatar: '/api/v1/static/users/learner-two' }`). You will extend the mock so one profile carries a `group_label`.
 
 - [ ] **Step 2: Write the failing test**
 
-In `GameShowService.test.mjs`, update the mock `userService.getProfile` so it returns a `group_label` for one user (e.g. `kckern → { username: 'kckern', display_name: 'KC Kern', group_label: 'Dad' }`) and none for another (e.g. `felix → { username: 'felix', display_name: 'FELIX' }`). Then add assertions in the existing `getConfig hydrates preset members` test (or a new `it`):
+In `GameShowService.test.mjs`, update the mock `userService.getProfile` so it returns a `group_label` for one user (e.g. `kckern → { username: 'kckern', display_name: 'KC Kern', group_label: 'Dad' }`) and none for another (e.g. `learner-two → { username: 'learner-two', display_name: 'learner-two' }`). Then add assertions in the existing `getConfig hydrates preset members` test (or a new `it`):
 
 ```js
 // contextual label wins when present
 expect(cfg.team_presets[0].teams[1].members[0]).toMatchObject({ id: 'kckern', name: 'Dad' });
 // falls back to display_name when no group_label
-expect(cfg.team_presets[0].teams[0].members[0]).toMatchObject({ id: 'felix', name: 'FELIX' });
+expect(cfg.team_presets[0].teams[0].members[0]).toMatchObject({ id: 'learner-two', name: 'learner-two' });
 ```
 
 (Adjust team/member indices to match the test's preset fixture. If the fixture doesn't include kckern, add it to the fixture's preset teams and the mock.)
@@ -119,10 +119,10 @@ import MemberAvatar from './MemberAvatar.jsx';
 
 describe('MemberAvatar', () => {
   it('renders the avatar image when member.avatar is set', () => {
-    render(<MemberAvatar member={{ id: 'felix', name: 'Felix', avatar: '/api/v1/static/users/felix' }} teamColor="#3273dc" />);
-    const img = screen.getByAltText('Felix');
+    render(<MemberAvatar member={{ id: 'learner-two', name: 'learner-two', avatar: '/api/v1/static/users/learner-two' }} teamColor="#3273dc" />);
+    const img = screen.getByAltText('learner-two');
     expect(img.tagName).toBe('IMG');
-    expect(img.getAttribute('src')).toBe('/api/v1/static/users/felix');
+    expect(img.getAttribute('src')).toBe('/api/v1/static/users/learner-two');
   });
 
   it('renders an initial-letter fallback when avatar is null', () => {

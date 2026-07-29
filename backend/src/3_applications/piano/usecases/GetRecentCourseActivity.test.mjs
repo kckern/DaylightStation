@@ -166,26 +166,26 @@ test('duplicate rows from the raw children container collapse to one course', as
   assert.equal(players[0].courses[0].courseId, 'plex:10');
 });
 
-// Milo shape: intro unit s1 (single lecture, DONE, most recent play) while
+// learner-three shape: intro unit s1 (single lecture, DONE, most recent play) while
 // unit s2 sits at 5/8.
-function miloDeps() {
+function learnerThreeDeps() {
   const deps = makeDeps({ summaries: {} });
   deps.fitnessPlayableService.getPlayableEpisodes = async () => ({ info: {}, items: [
     { plex: 'intro', metadata: { parentId: 's1' } },
     ...Array.from({ length: 8 }, (_, i) => ({ plex: `m${i + 1}`, metadata: { parentId: 's2' } })),
   ] });
-  deps.userVideoProgressStore.enrich = (items, userId) => (userId !== 'milo' ? items : items.map((it) => ({
+  deps.userVideoProgressStore.enrich = (items, userId) => (userId !== 'learner-three' ? items : items.map((it) => ({
     ...it,
     userWatched: it.plex === 'intro' || ['m1', 'm2', 'm3', 'm4', 'm5'].includes(it.plex),
     userLastPlayedAt: it.plex === 'intro' ? '2026-07-27T00:00:00Z'
       : (it.plex === 'm5' ? '2026-07-21T00:00:00Z' : null),
   })));
-  deps.configService.getHouseholdUsers = () => ['milo'];
+  deps.configService.getHouseholdUsers = () => ['learner-three'];
   return deps;
 }
 
 test('current-module mode: a finished one-off unit played last does not carry the day', async () => {
-  const deps = miloDeps();
+  const deps = learnerThreeDeps();
   PIANO_CFG.menu_activity = { percent_mode: 'current-module' };
   const uc = new GetRecentCourseActivity(deps);
   const { players } = await uc.execute();
@@ -197,7 +197,7 @@ test('current-module mode: a finished one-off unit played last does not carry th
 });
 
 test('default season-weighted: each unit is an equal slice, episodes interpolate within', async () => {
-  const uc = new GetRecentCourseActivity(miloDeps());
+  const uc = new GetRecentCourseActivity(learnerThreeDeps());
   const { players } = await uc.execute();
   const c = players[0].courses[0];
   // (s1 done = 1.0) + (s2 at 5/8 = 0.625) over 2 units → 81%
@@ -227,7 +227,7 @@ test('single-season courses emit per-EPISODE dots (done/active/todo)', async () 
 });
 
 test('percent_mode course: plain completed/total across every lecture', async () => {
-  const deps = miloDeps();
+  const deps = learnerThreeDeps();
   PIANO_CFG.menu_activity = { percent_mode: 'course' };
   const uc = new GetRecentCourseActivity(deps);
   const { players } = await uc.execute();

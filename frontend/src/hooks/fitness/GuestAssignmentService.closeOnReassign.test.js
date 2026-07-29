@@ -1,6 +1,6 @@
 // Fitness identity reconciliation — Task 5 (close-on-reassign).
 //
-// Regression guard for the "elizabeth" bug: a superseded entity was left
+// Regression guard for the "parent-two" bug: a superseded entity was left
 // `status: active, endTime: null` after its device moved to a new occupant,
 // so the session-end segment builder measured it as spanning the whole
 // session instead of its real (brief) duration.
@@ -17,7 +17,7 @@ import { FitnessSession } from './FitnessSession.js';
 import { DeviceAssignmentLedger } from './DeviceAssignmentLedger.js';
 import { GuestAssignmentService } from './GuestAssignmentService.js';
 
-const DEVICE_ID = '29413';
+const DEVICE_ID = '10001';
 
 // Mirrors the FitnessSession.assignmentDurability wiring: the ledger is
 // injected into UserManager by the React layer, not constructed inside
@@ -31,31 +31,31 @@ const makeService = () => {
 };
 
 describe('GuestAssignmentService — close-on-reassign', () => {
-  it('closes the first occupant entity (endTime + non-active status) when device 29413 is reassigned', () => {
+  it('closes the first occupant entity (endTime + non-active status) when device 10001 is reassigned', () => {
     const { session, service } = makeService();
 
-    const first = service.assignGuest(DEVICE_ID, { name: 'Soren', profileId: 'soren' });
+    const first = service.assignGuest(DEVICE_ID, { name: 'learner-one', profileId: 'learner-one' });
     expect(first.ok).toBe(true);
-    const sorenEntityId = first.data.entityId;
-    expect(sorenEntityId).toBeTruthy();
+    const learnerOneEntityId = first.data.entityId;
+    expect(learnerOneEntityId).toBeTruthy();
 
     // Sanity: freshly created entity starts active/open.
-    const sorenEntityBefore = session.entityRegistry.get(sorenEntityId);
-    expect(sorenEntityBefore.status).toBe('active');
-    expect(sorenEntityBefore.endTime).toBeNull();
+    const learnerOneEntityBefore = session.entityRegistry.get(learnerOneEntityId);
+    expect(learnerOneEntityBefore.status).toBe('active');
+    expect(learnerOneEntityBefore.endTime).toBeNull();
 
     const second = service.assignGuest(DEVICE_ID, { name: 'Grannie', profileId: 'grannie' });
     expect(second.ok).toBe(true);
     const grannieEntityId = second.data.entityId;
     expect(grannieEntityId).toBeTruthy();
-    expect(grannieEntityId).not.toBe(sorenEntityId);
+    expect(grannieEntityId).not.toBe(learnerOneEntityId);
 
-    // The superseded (soren) entity must now be closed with a finite endTime
-    // and a non-active status — not left dangling as the elizabeth bug did.
-    const sorenEntityAfter = session.entityRegistry.get(sorenEntityId);
-    expect(sorenEntityAfter.status).not.toBe('active');
-    expect(sorenEntityAfter.status).toBe('superseded');
-    expect(Number.isFinite(sorenEntityAfter.endTime)).toBe(true);
+    // The superseded (learner-one) entity must now be closed with a finite endTime
+    // and a non-active status — not left dangling as the parent-two bug did.
+    const learnerOneEntityAfter = session.entityRegistry.get(learnerOneEntityId);
+    expect(learnerOneEntityAfter.status).not.toBe('active');
+    expect(learnerOneEntityAfter.status).toBe('superseded');
+    expect(Number.isFinite(learnerOneEntityAfter.endTime)).toBe(true);
 
     // The new occupant (grannie) has its own live entity.
     const grannieEntity = session.entityRegistry.get(grannieEntityId);
@@ -72,16 +72,16 @@ describe('GuestAssignmentService — close-on-reassign', () => {
     // well under it, so this exercises the isSegmentAbsorbed branch instead.
     const service = new GuestAssignmentService({ session, ledger });
 
-    const first = service.assignGuest(DEVICE_ID, { name: 'Soren', profileId: 'soren' });
-    const sorenEntityId = first.data.entityId;
+    const first = service.assignGuest(DEVICE_ID, { name: 'learner-one', profileId: 'learner-one' });
+    const learnerOneEntityId = first.data.entityId;
 
-    const second = service.assignGuest(DEVICE_ID, { name: 'Elizabeth', profileId: 'elizabeth' });
+    const second = service.assignGuest(DEVICE_ID, { name: 'parent-two', profileId: 'parent-two' });
     expect(second.ok).toBe(true);
-    const elizabethEntityId = second.data.entityId;
-    expect(elizabethEntityId).not.toBe(sorenEntityId);
+    const parentTwoEntityId = second.data.entityId;
+    expect(parentTwoEntityId).not.toBe(learnerOneEntityId);
 
-    const sorenEntityAfter = session.entityRegistry.get(sorenEntityId);
-    expect(sorenEntityAfter.status).toBe('transferred');
-    expect(Number.isFinite(sorenEntityAfter.endTime)).toBe(true);
+    const learnerOneEntityAfter = session.entityRegistry.get(learnerOneEntityId);
+    expect(learnerOneEntityAfter.status).toBe('transferred');
+    expect(Number.isFinite(learnerOneEntityAfter.endTime)).toBe(true);
   });
 });

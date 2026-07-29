@@ -29,7 +29,7 @@ function makeDeps(overrides = {}) {
     worksheetRenderer: { renderBankWorksheet: vi.fn(async () => ({ pdf: Buffer.from('%PDF-1.4 ws'), pageCount: 2 })) },
     bankReader: { getBank: vi.fn((id) => (id === 'us-state-capitals' ? { id, title: 'Caps', items: [{}, {}] } : null)) },
     pdfReader: { read: vi.fn(() => ({ pdf: Buffer.from('%PDF-1.4 file'), pageCount: 3 })) },
-    userService: { getHouseholdRoster: () => [{ id: 'felix', name: 'Felix', birthyear: 2016 }, { id: 'dad', name: 'Papa', birthyear: 1984 }] },
+    userService: { getHouseholdRoster: () => [{ id: 'learner-two', name: 'learner-two', birthyear: 2016 }, { id: 'dad', name: 'Papa', birthyear: 1984 }] },
     logger,
     now: () => T0,
     ...overrides,
@@ -52,24 +52,24 @@ describe('PrintService.requestPrint — under quota', () => {
   it('prints immediately and logs the job', async () => {
     const { deps, store, printed } = makeDeps();
     const svc = new PrintService(deps);
-    const r = await svc.requestPrint({ userId: 'felix', printableId: 'caps', copies: 1 });
+    const r = await svc.requestPrint({ userId: 'learner-two', printableId: 'caps', copies: 1 });
     expect(r.decision).toBe('printed');
     expect(printed).toHaveLength(1);
     expect(store.log).toHaveLength(1);
-    expect(store.log[0]).toMatchObject({ userId: 'felix', pages: 2, printableId: 'caps' });
+    expect(store.log[0]).toMatchObject({ userId: 'learner-two', pages: 2, printableId: 'caps' });
   });
 });
 
 describe('PrintService.requestPrint — over quota', () => {
   it('does NOT print; files a pending approval request', async () => {
     const { deps, store, printed } = makeDeps();
-    store.log.push({ at: new Date(T0 - 5 * 60000).toISOString(), userId: 'felix', pages: 4, printableId: 'caps' });
+    store.log.push({ at: new Date(T0 - 5 * 60000).toISOString(), userId: 'learner-two', pages: 4, printableId: 'caps' });
     const svc = new PrintService(deps);
-    const r = await svc.requestPrint({ userId: 'felix', printableId: 'caps', copies: 1 }); // 4 + 2 = 6 > 5
+    const r = await svc.requestPrint({ userId: 'learner-two', printableId: 'caps', copies: 1 }); // 4 + 2 = 6 > 5
     expect(r.decision).toBe('approval');
     expect(printed).toHaveLength(0);
     expect(store.pending).toHaveLength(1);
-    expect(store.pending[0]).toMatchObject({ userId: 'felix', printableId: 'caps', pages: 2, status: 'pending' });
+    expect(store.pending[0]).toMatchObject({ userId: 'learner-two', printableId: 'caps', pages: 2, status: 'pending' });
     expect(store.pending[0].id).toBeTruthy();
   });
 });
@@ -84,14 +84,14 @@ describe('PrintService.requestPrint — guards', () => {
   it('404s an unknown printable', async () => {
     const { deps } = makeDeps();
     const svc = new PrintService(deps);
-    await expect(svc.requestPrint({ userId: 'felix', printableId: 'nope' })).rejects.toThrow();
+    await expect(svc.requestPrint({ userId: 'learner-two', printableId: 'nope' })).rejects.toThrow();
   });
 
   it('denies an oversized job outright (no print, no pending)', async () => {
     const { deps, store, printed } = makeDeps();
     deps.worksheetRenderer.renderBankWorksheet = vi.fn(async () => ({ pdf: Buffer.from('%PDF-'), pageCount: 30 }));
     const svc = new PrintService(deps);
-    const r = await svc.requestPrint({ userId: 'felix', printableId: 'caps' });
+    const r = await svc.requestPrint({ userId: 'learner-two', printableId: 'caps' });
     expect(r.decision).toBe('deny');
     expect(printed).toHaveLength(0);
     expect(store.pending).toHaveLength(0);
@@ -100,7 +100,7 @@ describe('PrintService.requestPrint — guards', () => {
   it('multiplies pages by copies for the quota check', async () => {
     const { deps } = makeDeps();
     const svc = new PrintService(deps);
-    const r = await svc.requestPrint({ userId: 'felix', printableId: 'caps', copies: 3 }); // 2*3 = 6 > 5
+    const r = await svc.requestPrint({ userId: 'learner-two', printableId: 'caps', copies: 3 }); // 2*3 = 6 > 5
     expect(r.decision).toBe('approval');
     expect(r.pages).toBe(6);
   });
@@ -109,18 +109,18 @@ describe('PrintService.requestPrint — guards', () => {
 describe('PrintService.approve / deny', () => {
   it('approve prints the pending job, moves it out of pending, and logs it', async () => {
     const { deps, store, printed } = makeDeps();
-    store.pending = [{ id: 'req1', userId: 'felix', printableId: 'caps', copies: 1, pages: 2, status: 'pending', at: new Date(T0).toISOString() }];
+    store.pending = [{ id: 'req1', userId: 'learner-two', printableId: 'caps', copies: 1, pages: 2, status: 'pending', at: new Date(T0).toISOString() }];
     const svc = new PrintService(deps);
     const r = await svc.approve({ requestId: 'req1', approver: 'dad' });
     expect(r.decision).toBe('printed');
     expect(printed).toHaveLength(1);
     expect(store.pending).toHaveLength(0);
-    expect(store.log.at(-1)).toMatchObject({ userId: 'felix', pages: 2, approvedBy: 'dad' });
+    expect(store.log.at(-1)).toMatchObject({ userId: 'learner-two', pages: 2, approvedBy: 'dad' });
   });
 
   it('deny removes the pending job without printing', async () => {
     const { deps, store, printed } = makeDeps();
-    store.pending = [{ id: 'req1', userId: 'felix', printableId: 'caps', copies: 1, pages: 2, status: 'pending', at: new Date(T0).toISOString() }];
+    store.pending = [{ id: 'req1', userId: 'learner-two', printableId: 'caps', copies: 1, pages: 2, status: 'pending', at: new Date(T0).toISOString() }];
     const svc = new PrintService(deps);
     const r = await svc.deny({ requestId: 'req1', approver: 'dad' });
     expect(r.decision).toBe('denied');
@@ -136,20 +136,20 @@ describe('PrintService.approve / deny', () => {
 
   it('only an adult may approve (a child cannot self-approve)', async () => {
     const { deps, store } = makeDeps();
-    store.pending = [{ id: 'req1', userId: 'felix', printableId: 'caps', copies: 1, pages: 2, status: 'pending', at: new Date(T0).toISOString() }];
+    store.pending = [{ id: 'req1', userId: 'learner-two', printableId: 'caps', copies: 1, pages: 2, status: 'pending', at: new Date(T0).toISOString() }];
     const svc = new PrintService(deps);
-    await expect(svc.approve({ requestId: 'req1', approver: 'felix' })).rejects.toThrow(/grown-?up|adult|permission/i);
+    await expect(svc.approve({ requestId: 'req1', approver: 'learner-two' })).rejects.toThrow(/grown-?up|adult|permission/i);
   });
 });
 
 describe('PrintService.getQuota', () => {
   it('reports pages used and remaining in the window for a user', () => {
     const { deps, store } = makeDeps();
-    store.log.push({ at: new Date(T0 - 10 * 60000).toISOString(), userId: 'felix', pages: 3 });
-    store.log.push({ at: new Date(T0 - 90 * 60000).toISOString(), userId: 'felix', pages: 5 }); // outside window
+    store.log.push({ at: new Date(T0 - 10 * 60000).toISOString(), userId: 'learner-two', pages: 3 });
+    store.log.push({ at: new Date(T0 - 90 * 60000).toISOString(), userId: 'learner-two', pages: 5 }); // outside window
     store.log.push({ at: new Date(T0 - 5 * 60000).toISOString(), userId: 'other', pages: 2 }); // other user
     const svc = new PrintService(deps);
-    const q = svc.getQuota('felix');
+    const q = svc.getQuota('learner-two');
     expect(q.pagesInWindow).toBe(3);
     expect(q.remaining).toBe(2);
     expect(q.pagesPerWindow).toBe(5);

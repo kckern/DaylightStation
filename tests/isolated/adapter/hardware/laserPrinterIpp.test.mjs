@@ -4,7 +4,7 @@ import { OPS, encodeRequest, decodeResponse, printJobAttrs } from '../../../../b
 describe('IPP encodeRequest', () => {
   it('emits version 1.1, the operation, request-id, and the document after end-of-attributes', () => {
     const pdf = Buffer.from('%PDF-1.4 fake');
-    const buf = encodeRequest(OPS.PRINT_JOB, printJobAttrs('ipp://p:631/ipp/print', { user: 'felix', jobName: 'ws' }), pdf, 7);
+    const buf = encodeRequest(OPS.PRINT_JOB, printJobAttrs('ipp://p:631/ipp/print', { user: 'learner-two', jobName: 'ws' }), pdf, 7);
 
     expect(buf.readUInt8(0)).toBe(1);
     expect(buf.readUInt8(1)).toBe(1);

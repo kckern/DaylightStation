@@ -5,7 +5,7 @@ const PRESET = {
   id: 'kids_vs_parents',
   name: 'Kids vs Parents',
   teams: [
-    { name: 'Kids', color: '#e6b325', members: [{ id: 'felix', name: 'Felix', avatar: null }] },
+    { name: 'Kids', color: '#e6b325', members: [{ id: 'learner-two', name: 'learner-two', avatar: null }] },
     { name: 'Parents', color: '#3273dc', members: [{ id: 'kckern', name: 'KC', avatar: null }] },
   ],
 };
@@ -22,7 +22,7 @@ describe('teamSetupReducer', () => {
     const s = initTeamSetup({ team_presets: [PRESET] });
     expect(s.presetId).toBe('kids_vs_parents');
     expect(s.teams[0].name).toBe('Kids');
-    expect(s.teams[0].members[0].id).toBe('felix');
+    expect(s.teams[0].members[0].id).toBe('learner-two');
   });
 
   it('LOAD_PRESET replaces teams; ADD/REMOVE/RENAME work and re-slot', () => {
@@ -41,12 +41,12 @@ describe('teamSetupReducer', () => {
 
   it('ASSIGN_MEMBER moves a member between teams (no duplicates)', () => {
     let s = initTeamSetup({ team_presets: [PRESET] });
-    const felix = { id: 'felix', name: 'Felix', avatar: null };
-    s = teamSetupReducer(s, { type: 'ASSIGN_MEMBER', teamId: 'team_2', member: felix });
-    expect(s.teams[0].members.find((m) => m.id === 'felix')).toBeUndefined();
-    expect(s.teams[1].members.some((m) => m.id === 'felix')).toBe(true);
-    s = teamSetupReducer(s, { type: 'REMOVE_MEMBER', teamId: 'team_2', memberId: 'felix' });
-    expect(s.teams[1].members.some((m) => m.id === 'felix')).toBe(false);
+    const learner-two = { id: 'learner-two', name: 'learner-two', avatar: null };
+    s = teamSetupReducer(s, { type: 'ASSIGN_MEMBER', teamId: 'team_2', member: learner-two });
+    expect(s.teams[0].members.find((m) => m.id === 'learner-two')).toBeUndefined();
+    expect(s.teams[1].members.some((m) => m.id === 'learner-two')).toBe(true);
+    s = teamSetupReducer(s, { type: 'REMOVE_MEMBER', teamId: 'team_2', memberId: 'learner-two' });
+    expect(s.teams[1].members.some((m) => m.id === 'learner-two')).toBe(false);
   });
 
   it('ADD_GUEST adds profile-less members with unique ids', () => {

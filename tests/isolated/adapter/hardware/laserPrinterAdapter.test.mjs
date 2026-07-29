@@ -23,7 +23,7 @@ describe('LaserPrinterAdapter.printPdf (raw 9100)', () => {
   it('streams the PDF bytes to the raw port and resolves on clean close', async () => {
     const { port, received } = await rawSink();
     const p = new LaserPrinterAdapter({ host: '127.0.0.1', rawPort: port, logger: { info() {} } });
-    const r = await p.printPdf(PDF, { jobName: 't', user: 'felix' });
+    const r = await p.printPdf(PDF, { jobName: 't', user: 'learner-two' });
     expect(r.ok).toBe(true);
     expect(r.bytes).toBe(PDF.length);
     await new Promise((res) => setTimeout(res, 20)); // let the server flush 'end'

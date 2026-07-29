@@ -179,7 +179,7 @@ export class GuestAssignmentService {
         // entity-to-entity transfer below (which may not fire, e.g. if the
         // successor entity fails to be created). Without this, a superseded
         // entity can be left `status: active, endTime: null` and later get
-        // measured as spanning the whole session (the "elizabeth" bug).
+        // measured as spanning the whole session (the "parent-two" bug).
         if (previousEntityId && session.closeEntity) {
           session.closeEntity(previousEntityId, { endTime: now, status: 'transferred' });
         }
@@ -218,7 +218,7 @@ export class GuestAssignmentService {
         // honored as its own distinct participant — but its entity must still
         // be closed (endTime + non-active status) now that the device has
         // moved on, or the segment builder measures it as spanning the whole
-        // session (the "elizabeth" bug).
+        // session (the "parent-two" bug).
         if (previousEntityId && session.closeEntity) {
           session.closeEntity(previousEntityId, { endTime: now, status: 'superseded' });
         }

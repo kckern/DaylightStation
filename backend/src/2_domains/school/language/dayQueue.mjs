@@ -6,7 +6,7 @@ import { chainFor, graduationEdges } from './ladder.mjs';
  * The queue is DERIVED from the attempt log on every read — it is never stored.
  * That is the deliberate fix for the 2017 failure that killed the original app:
  * the queue lived in a `user_queue` table, a server migration lost the writes,
- * and Elizabeth's progress silently stopped advancing ("it's still on the
+ * and parent-two's progress silently stopped advancing ("it's still on the
  * dictation set I did twice"). A derived queue cannot desynchronise from its
  * own evidence, because it has none of its own to lose.
  *

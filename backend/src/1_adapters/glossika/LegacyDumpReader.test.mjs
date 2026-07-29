@@ -12,7 +12,7 @@ import {
 } from './LegacyDumpReader.mjs';
 
 const LANGUAGES = { source: 'EN', target: 'KR' };
-const USER_MAP = { kckern: 'kckern', ekern: 'elizabeth' };
+const USER_MAP = { kckern: 'kckern', ekern: 'parent-two' };
 
 const dump = (table, values) => `INSERT INTO \`${table}\` VALUES ${values};\n`;
 
@@ -78,11 +78,11 @@ describe('readSentences', () => {
 });
 
 describe('readLearners', () => {
-  const sql = dump('user', "('kckern','','',2,'KC Kern'),('ekern','','',5,'Elizabeth')");
+  const sql = dump('user', "('kckern','','',2,'KC Kern'),('ekern','','',5,'parent-two')");
 
   it('translates the legacy account onto a household user id', () => {
     const out = readLearners(sql, USER_MAP);
-    expect(out.map((l) => l.userId)).toEqual(['kckern', 'elizabeth']);
+    expect(out.map((l) => l.userId)).toEqual(['kckern', 'parent-two']);
     expect(out[1]).toMatchObject({ legacyUser: 'ekern', dailyLimit: 5 });
   });
 
@@ -99,8 +99,8 @@ describe('readAttempts', () => {
   it('maps action onto rung and strips the mysqldump _binary marker', () => {
     const sql = dump('user_log', row('ekern', 'dictation', "_binary '오늘 날씨가 좋아요'", '0001', 2));
     const { byUser } = readAttempts(sql, USER_MAP);
-    expect(byUser.elizabeth[0]).toMatchObject({
-      rung: 'dictation', seq: 1, day: 2, given: '오늘 날씨가 좋아요', attributedTo: 'elizabeth',
+    expect(byUser.parent-two[0]).toMatchObject({
+      rung: 'dictation', seq: 1, day: 2, given: '오늘 날씨가 좋아요', attributedTo: 'parent-two',
     });
   });
 

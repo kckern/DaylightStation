@@ -2,8 +2,8 @@
   "entities": [
     {
       "entityId": "entity-1782615587720-zzbzh",
-      "profileId": "elizabeth",
-      "deviceId": "29413",
+      "profileId": "parent-two",
+      "deviceId": "10001",
       "startTime": 1782615587720,
       "endTime": null,
       "status": "active",
@@ -12,7 +12,7 @@
     {
       "entityId": "entity-1782615592246-w1185",
       "profileId": "grannie",
-      "deviceId": "29413",
+      "deviceId": "10001",
       "startTime": 1782615592246,
       "endTime": null,
       "status": "active",
@@ -21,7 +21,7 @@
   ],
   "timeline": {
     "series": {
-      "user:soren:heart_beats": [
+      "user:learner-one:heart_beats": [
         9.7,
         19.3,
         null,
@@ -669,7 +669,7 @@
         null,
         null
       ],
-      "user:soren:heart_rate": [
+      "user:learner-one:heart_rate": [
         116,
         116,
         null,
@@ -1317,7 +1317,7 @@
         null,
         null
       ],
-      "user:soren:zone_id": [
+      "user:learner-one:zone_id": [
         "c",
         "c",
         null,
@@ -1965,7 +1965,7 @@
         null,
         null
       ],
-      "user:soren:coins_total": [
+      "user:learner-one:coins_total": [
         0,
         0,
         1,
@@ -2613,7 +2613,7 @@
         1,
         1
       ],
-      "user:elizabeth:heart_beats": [
+      "user:parent-two:heart_beats": [
         null,
         null,
         9.7,
@@ -3261,7 +3261,7 @@
         null,
         null
       ],
-      "user:elizabeth:heart_rate": [
+      "user:parent-two:heart_rate": [
         null,
         null,
         116,
@@ -3909,7 +3909,7 @@
         null,
         null
       ],
-      "user:elizabeth:zone_id": [
+      "user:parent-two:zone_id": [
         null,
         null,
         "a",
@@ -7167,7 +7167,7 @@
           "hot": 0.67
         }
       },
-      "soren": {
+      "learner-one": {
         "coins": 1,
         "hr_avg": 116,
         "hr_max": 116,
@@ -7176,7 +7176,7 @@
           "cool": 0.17
         }
       },
-      "elizabeth": {
+      "parent-two": {
         "coins": 0,
         "hr_avg": 116,
         "hr_max": 116,

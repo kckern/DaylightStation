@@ -151,7 +151,7 @@ team_presets:
   - id: kids_vs_parents
     name: Kids vs Parents
     teams:
-      - { name: Kids,    color: "#e6b325", members: [felix, milo, alan, soren] }
+      - { name: Kids,    color: "#e6b325", members: [learner-two, learner-three, learner-four, learner-one] }
       - { name: Parents, color: "#3273dc", members: [kckern, cammy] }
 defaults:
   timer_seconds: 12          # per-clue countdown default (game set / round can override)

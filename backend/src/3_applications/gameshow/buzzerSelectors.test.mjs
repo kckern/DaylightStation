@@ -29,7 +29,7 @@ describe('makeBuzzerSelectHandler', () => {
   });
   it('ignores non-gameshow selections', () => {
     const broadcastEvent = vi.fn();
-    makeBuzzerSelectHandler(broadcastEvent)({ selectorId: 'x', equipmentId: 'niceday', userId: 'felix', action: '1_single' });
+    makeBuzzerSelectHandler(broadcastEvent)({ selectorId: 'x', equipmentId: 'niceday', userId: 'learner-two', action: '1_single' });
     expect(broadcastEvent).not.toHaveBeenCalled();
   });
 });

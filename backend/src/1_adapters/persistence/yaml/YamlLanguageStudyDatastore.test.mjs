@@ -12,7 +12,7 @@ import { YamlLanguageStudyDatastore, padSeq } from './YamlLanguageStudyDatastore
 
 const DATA = '/data';
 const MEDIA = '/media';
-const PROFILES = new Set(['kckern', 'elizabeth']);
+const PROFILES = new Set(['kckern', 'parent-two']);
 
 const configService = {
   getDataDir: () => DATA,

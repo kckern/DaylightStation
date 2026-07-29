@@ -73,7 +73,7 @@ const GLOBAL_ZONES = [
 ];
 
 // User_5's personal zones (active threshold much higher)
-const SOREN_ZONE_CONFIG = [
+const LEARNER_ONE_ZONE_CONFIG = [
   { id: 'cool', name: 'Cool', min: 0, color: 'blue', coins: 0 },
   { id: 'active', name: 'Active', min: 125, color: 'green', coins: 1 },
   { id: 'warm', name: 'Warm', min: 150, color: 'yellow', coins: 2 },
@@ -117,7 +117,7 @@ describe('TreasureBox per-user zone resolution', () => {
   });
 
   it('uses per-user zones from ZoneProfileStore when available', () => {
-    const store = createMockZoneProfileStore({ user_5: SOREN_ZONE_CONFIG });
+    const store = createMockZoneProfileStore({ user_5: LEARNER_ONE_ZONE_CONFIG });
     const tb = createTreasureBox(store);
     // HR 113 is below User_5's active (125) -> should resolve to cool
     const zone = tb.resolveZone('user_5', 113);
@@ -126,7 +126,7 @@ describe('TreasureBox per-user zone resolution', () => {
   });
 
   it('falls back to global zones for users without custom profiles', () => {
-    const store = createMockZoneProfileStore({ user_5: SOREN_ZONE_CONFIG });
+    const store = createMockZoneProfileStore({ user_5: LEARNER_ONE_ZONE_CONFIG });
     const tb = createTreasureBox(store);
     // user_4 has no custom zones -> should use global thresholds
     const zone = tb.resolveZone('user_4', 113);
@@ -135,7 +135,7 @@ describe('TreasureBox per-user zone resolution', () => {
   });
 
   it('respects per-user active threshold exactly at boundary', () => {
-    const store = createMockZoneProfileStore({ user_5: SOREN_ZONE_CONFIG });
+    const store = createMockZoneProfileStore({ user_5: LEARNER_ONE_ZONE_CONFIG });
     const tb = createTreasureBox(store);
     // HR 125 is exactly at User_5's active threshold
     const zone = tb.resolveZone('user_5', 125);
@@ -144,7 +144,7 @@ describe('TreasureBox per-user zone resolution', () => {
   });
 
   it('resolves higher zones correctly with per-user thresholds', () => {
-    const store = createMockZoneProfileStore({ user_5: SOREN_ZONE_CONFIG });
+    const store = createMockZoneProfileStore({ user_5: LEARNER_ONE_ZONE_CONFIG });
     const tb = createTreasureBox(store);
     // HR 155 is warm for User_5 (>= 150) but would be hot (>= 140) by global
     const zone = tb.resolveZone('user_5', 155);

@@ -7,7 +7,7 @@ import { GameShowSessionStore } from './GameShowSessionStore.mjs';
 
 const NOOP = { info() {}, warn() {}, error() {}, debug() {} };
 const TEAMS = [
-  { id: 'team_1', name: 'Kids', color: '#e6b325', slot: 'slot_1', members: [{ id: 'felix', name: 'Felix' }] },
+  { id: 'team_1', name: 'Kids', color: '#e6b325', slot: 'slot_1', members: [{ id: 'learner-two', name: 'learner-two' }] },
   { id: 'team_2', name: 'Parents', color: '#3273dc', slot: 'slot_2', members: [{ id: 'kckern', name: 'KC' }] },
 ];
 

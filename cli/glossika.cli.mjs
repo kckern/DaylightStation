@@ -89,7 +89,7 @@ const CORPORA = {
     /** Legacy recording folder → household user id (design §6). */
     legacyUsers: [
       { folder: 'kckern', userId: 'kckern' },
-      { folder: 'ekern', userId: 'elizabeth' },
+      { folder: 'ekern', userId: 'parent-two' },
     ],
     /** Encoding spot-checks — if these fail the CSV→YAML round trip is corrupt. */
     spotChecks: [

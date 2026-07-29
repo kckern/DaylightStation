@@ -13,7 +13,7 @@ const HOUSEHOLD_CFG = {
   buzzers: [{ id: 'living_room', mqtt_topic: 'zigbee2mqtt/GameShow Buzzers', buttons: { '1_single': 'slot_1' } }],
   team_presets: [
     { id: 'kids_vs_parents', name: 'Kids vs Parents', teams: [
-      { name: 'Kids', color: '#e6b325', members: ['felix'] },
+      { name: 'Kids', color: '#e6b325', members: ['learner-two'] },
       { name: 'Parents', color: '#3273dc', members: ['kckern', 'ghost_user'] },
     ] },
   ],
@@ -49,7 +49,7 @@ describe('GameShowService', () => {
   it('getConfig hydrates preset members via userService and applies defaults', () => {
     const cfg = makeService({ dataDir }).getConfig();
     expect(cfg.team_presets[0].teams[0].members[0]).toEqual(
-      { id: 'felix', name: 'FELIX', avatar: '/api/v1/static/users/felix' });
+      { id: 'learner-two', name: 'learner-two', avatar: '/api/v1/static/users/learner-two' });
     // contextual label (group_label) wins over display_name
     expect(cfg.team_presets[0].teams[1].members[0]).toEqual(
       { id: 'kckern', name: 'Dad', avatar: '/api/v1/static/users/kckern' });

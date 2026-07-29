@@ -323,7 +323,7 @@ import { GameShowSessionStore } from './GameShowSessionStore.mjs';
 
 const NOOP = { info() {}, warn() {}, error() {}, debug() {} };
 const TEAMS = [
-  { id: 'team_1', name: 'Kids', color: '#e6b325', slot: 'slot_1', members: [{ id: 'felix', name: 'Felix' }] },
+  { id: 'team_1', name: 'Kids', color: '#e6b325', slot: 'slot_1', members: [{ id: 'learner-two', name: 'learner-two' }] },
   { id: 'team_2', name: 'Parents', color: '#3273dc', slot: 'slot_2', members: [{ id: 'kckern', name: 'KC' }] },
 ];
 
@@ -540,7 +540,7 @@ const HOUSEHOLD_CFG = {
   buzzers: [{ id: 'living_room', mqtt_topic: 'zigbee2mqtt/GameShow Buzzers', buttons: { '1_single': 'slot_1' } }],
   team_presets: [
     { id: 'kids_vs_parents', name: 'Kids vs Parents', teams: [
-      { name: 'Kids', color: '#e6b325', members: ['felix'] },
+      { name: 'Kids', color: '#e6b325', members: ['learner-two'] },
       { name: 'Parents', color: '#3273dc', members: ['kckern', 'ghost_user'] },
     ] },
   ],
@@ -572,7 +572,7 @@ describe('GameShowService', () => {
   it('getConfig hydrates preset members via userService and applies defaults', () => {
     const cfg = makeService({ dataDir }).getConfig();
     expect(cfg.team_presets[0].teams[0].members[0]).toEqual(
-      { id: 'felix', name: 'FELIX', avatar: '/api/v1/static/users/felix' });
+      { id: 'learner-two', name: 'learner-two', avatar: '/api/v1/static/users/learner-two' });
     // unknown user passes through, no avatar
     expect(cfg.team_presets[0].teams[1].members[1]).toEqual(
       { id: 'ghost_user', name: 'ghost_user', avatar: null });
@@ -1080,7 +1080,7 @@ describe('makeBuzzerSelectHandler', () => {
   });
   it('ignores non-gameshow selections', () => {
     const broadcastEvent = vi.fn();
-    makeBuzzerSelectHandler(broadcastEvent)({ selectorId: 'x', equipmentId: 'niceday', userId: 'felix', action: '1_single' });
+    makeBuzzerSelectHandler(broadcastEvent)({ selectorId: 'x', equipmentId: 'niceday', userId: 'learner-two', action: '1_single' });
     expect(broadcastEvent).not.toHaveBeenCalled();
   });
 });
@@ -2234,7 +2234,7 @@ const PRESET = {
   id: 'kids_vs_parents',
   name: 'Kids vs Parents',
   teams: [
-    { name: 'Kids', color: '#e6b325', members: [{ id: 'felix', name: 'Felix', avatar: null }] },
+    { name: 'Kids', color: '#e6b325', members: [{ id: 'learner-two', name: 'learner-two', avatar: null }] },
     { name: 'Parents', color: '#3273dc', members: [{ id: 'kckern', name: 'KC', avatar: null }] },
   ],
 };
@@ -2251,7 +2251,7 @@ describe('teamSetupReducer', () => {
     const s = initTeamSetup({ team_presets: [PRESET] });
     expect(s.presetId).toBe('kids_vs_parents');
     expect(s.teams[0].name).toBe('Kids');
-    expect(s.teams[0].members[0].id).toBe('felix');
+    expect(s.teams[0].members[0].id).toBe('learner-two');
   });
 
   it('LOAD_PRESET replaces teams; ADD/REMOVE/RENAME work and re-slot', () => {
@@ -2270,12 +2270,12 @@ describe('teamSetupReducer', () => {
 
   it('ASSIGN_MEMBER moves a member between teams (no duplicates)', () => {
     let s = initTeamSetup({ team_presets: [PRESET] });
-    const felix = { id: 'felix', name: 'Felix', avatar: null };
-    s = teamSetupReducer(s, { type: 'ASSIGN_MEMBER', teamId: 'team_2', member: felix });
-    expect(s.teams[0].members.find((m) => m.id === 'felix')).toBeUndefined();
-    expect(s.teams[1].members.some((m) => m.id === 'felix')).toBe(true);
-    s = teamSetupReducer(s, { type: 'REMOVE_MEMBER', teamId: 'team_2', memberId: 'felix' });
-    expect(s.teams[1].members.some((m) => m.id === 'felix')).toBe(false);
+    const learner-two = { id: 'learner-two', name: 'learner-two', avatar: null };
+    s = teamSetupReducer(s, { type: 'ASSIGN_MEMBER', teamId: 'team_2', member: learner-two });
+    expect(s.teams[0].members.find((m) => m.id === 'learner-two')).toBeUndefined();
+    expect(s.teams[1].members.some((m) => m.id === 'learner-two')).toBe(true);
+    s = teamSetupReducer(s, { type: 'REMOVE_MEMBER', teamId: 'team_2', memberId: 'learner-two' });
+    expect(s.teams[1].members.some((m) => m.id === 'learner-two')).toBe(false);
   });
 
   it('ADD_GUEST adds profile-less members with unique ids', () => {
@@ -3977,7 +3977,7 @@ team_presets:
   - id: kids_vs_parents
     name: Kids vs Parents
     teams:
-      - { name: Kids,    color: "#e6b325", members: [felix, milo, alan, soren] }
+      - { name: Kids,    color: "#e6b325", members: [learner-two, learner-three, learner-four, learner-one] }
       - { name: Parents, color: "#3273dc", members: [kckern, cammy] }
 defaults:
   timer_seconds: 12

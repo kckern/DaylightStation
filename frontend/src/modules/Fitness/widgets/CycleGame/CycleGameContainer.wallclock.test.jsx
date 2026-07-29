@@ -218,7 +218,7 @@ describe('CycleGameContainer — wall-clock race ticks (audit F8)', () => {
     // infinite counted distance, and the idle-DNF clock (fed a real 0) could
     // never fire. race_idle_dnf_s is lowered to 5 purely to keep the fixture's
     // tick count small — the mechanism under test is the CAP, not the threshold.
-    let felixConnected = true;
+    let learnerTwoConnected = true;
     mockCtx = makeCtx({
       cycleGameConfig: {
         default_win_condition: 'distance',
@@ -234,7 +234,7 @@ describe('CycleGameContainer — wall-clock race ticks (audit F8)', () => {
         getEquipmentRider: (id) => ({ cycle_ace: 'user_1', tricycle: 'user_2' })[id] || null,
         getEquipmentCadence: (id) => {
           if (id === 'cycle_ace') return { rpm: 100, connected: true }; // user_1 rides on, unaffected
-          return { rpm: 100, connected: felixConnected };
+          return { rpm: 100, connected: learnerTwoConnected };
         }
       }
     });
@@ -246,7 +246,7 @@ describe('CycleGameContainer — wall-clock race ticks (audit F8)', () => {
     nowMs = 2000;
     act(() => { vi.advanceTimersByTime(RACE_TICK_MS); });
 
-    felixConnected = false;
+    learnerTwoConnected = false;
     // 13 more ticks: gap ticks 1-5 hold, 6-8 decay, 9-13 are true zeros — the
     // 5th consecutive zero (race_idle_dnf_s: 5) trips the idle-DNF at gap tick 13.
     nowMs = 2000 + 13000;
@@ -267,7 +267,7 @@ describe('CycleGameContainer — wall-clock race ticks (audit F8)', () => {
   });
 
   it('clears the sensor_lost flag and logs sensor_recovered once the sensor reconnects', () => {
-    let felixConnected = true;
+    let learnerTwoConnected = true;
     mockCtx = makeCtx({
       cycleGameConfig: {
         default_win_condition: 'distance',
@@ -283,7 +283,7 @@ describe('CycleGameContainer — wall-clock race ticks (audit F8)', () => {
         getEquipmentRider: (id) => ({ cycle_ace: 'user_1', tricycle: 'user_2' })[id] || null,
         getEquipmentCadence: (id) => {
           if (id === 'cycle_ace') return { rpm: 100, connected: true };
-          return { rpm: 100, connected: felixConnected };
+          return { rpm: 100, connected: learnerTwoConnected };
         }
       }
     });
@@ -294,13 +294,13 @@ describe('CycleGameContainer — wall-clock race ticks (audit F8)', () => {
     nowMs = 2000;
     act(() => { vi.advanceTimersByTime(RACE_TICK_MS); });
 
-    felixConnected = false;
+    learnerTwoConnected = false;
     // Cross SENSOR_LOST_GAP_TICKS (9) but stop short of the idle-DNF window.
     nowMs = 2000 + 9000;
     act(() => { vi.advanceTimersByTime(RACE_TICK_MS); });
     expect(logSpy.info.mock.calls.filter(([event]) => event === 'cycle_game.sensor_lost')).toHaveLength(1);
 
-    felixConnected = true;
+    learnerTwoConnected = true;
     nowMs = 2000 + 9000 + 1000;
     act(() => { vi.advanceTimersByTime(RACE_TICK_MS); });
 

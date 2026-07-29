@@ -115,7 +115,7 @@ observations about this user that future turns will see. Examples:
   - "user frequently under-reports calorie consumption on social weekends"
   - "user's perceived effort and HR diverge — when they say 'easy', HR
     averages 12 bpm below typical"
-  - "after long runs, user reports soreness 2 days later"
+  - "after long runs, user reports learnerOneess 2 days later"
 
 Record a playbook when you notice a pattern that's likely to recur. Update
 when new data revises the picture. Don't record one-offs.

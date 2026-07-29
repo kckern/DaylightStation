@@ -9,11 +9,11 @@ const URL = 'http://localhost:3111/admin/content/lists/menus/fhe';
   await page.goto(URL, { waitUntil: 'networkidle' });
   await page.waitForSelector('[data-testid="item-row-0-4"]', { timeout: 10000 });
 
-  const alanRow = page.locator('[data-testid="item-row-0-4"]');
-  await alanRow.hover();
+  const learnerFourRow = page.locator('[data-testid="item-row-0-4"]');
+  await learnerFourRow.hover();
   await page.waitForTimeout(500);
 
-  const handle = alanRow.locator('.col-content-drag');
+  const handle = learnerFourRow.locator('.col-content-drag');
   const hBox = await handle.boundingBox();
   console.log('Handle boundingBox:', JSON.stringify(hBox));
 

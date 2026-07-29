@@ -5,15 +5,15 @@
 
 ## Problem
 
-The GameShow TeamSetup screen — and every surface that shows team members — renders members as plain text names (e.g. "Felix ×", "KC Kern ×"). The user wants:
+The GameShow TeamSetup screen — and every surface that shows team members — renders members as plain text names (e.g. "learner-two ×", "KC Kern ×"). The user wants:
 1. **Member avatars** shown in TeamSetup and **throughout the game**.
 2. Names resolved **with household context**, so parents show as **"Mom" / "Dad"** instead of given names.
 
 ## Key finding: the data already exists
 
-- `GameShowService.#hydrateMember` (`backend/src/3_applications/gameshow/GameShowService.mjs:22`) already resolves every preset member to `{ id, name, avatar }`, where `avatar = /api/v1/static/users/{id}` — a real image endpoint. All six current preset members (felix, milo, alan, soren, kckern, elizabeth) return `200 image/jpeg`. The frontend simply **discards** the avatar and renders only the name.
+- `GameShowService.#hydrateMember` (`backend/src/3_applications/gameshow/GameShowService.mjs:22`) already resolves every preset member to `{ id, name, avatar }`, where `avatar = /api/v1/static/users/{id}` — a real image endpoint. All six current preset members (learner-two, learner-three, learner-four, learner-one, kckern, parent-two) return `200 image/jpeg`. The frontend simply **discards** the avatar and renders only the name.
 - The frontend flow preserves the field: `teamSetupReducer.fromPreset` spreads member objects, `ASSIGN_MEMBER` re-spreads them, and confirmed teams pass through `flow.teams` into the game — so `team.members[].avatar` is available on every play surface. Guests added in-UI get `avatar: null`.
-- The **contextual label** ("Mom"/"Dad") is the profile field **`group_label`**. Verified: `kckern → Dad`, `elizabeth → Mom`; the four kids have **no** `group_label`. So the rule "use `group_label` when present, else `display_name`" yields Mom/Dad for parents and given names for kids — exactly the request. `UserService` already has this exact fallback (`getGroupLabel`-style: `group_label || display_name || username`).
+- The **contextual label** ("Mom"/"Dad") is the profile field **`group_label`**. Verified: `kckern → Dad`, `parent-two → Mom`; the four kids have **no** `group_label`. So the rule "use `group_label` when present, else `display_name`" yields Mom/Dad for parents and given names for kids — exactly the request. `UserService` already has this exact fallback (`getGroupLabel`-style: `group_label || display_name || username`).
 
 So this feature is mostly **frontend rendering** plus a **one-line backend name change** — no new data, no new endpoint.
 
@@ -42,8 +42,8 @@ So this feature is mostly **frontend rendering** plus a **one-line backend name 
 ## Surface-by-surface changes (all frontend, all degrade gracefully)
 
 1. **TeamSetup** (`TeamSetup.jsx` + `TeamSetup.scss`) — the screen the user is on.
-   - Assigned-member chips (`gs-chip--member`, currently "Felix ×"): `<MemberAvatar size={28}>` + name + `×`. Still a button that removes on click.
-   - Pool chips (`gs-chip--pool`, "+ Felix"): small avatar + "+ name" for recognition.
+   - Assigned-member chips (`gs-chip--member`, currently "learner-two ×"): `<MemberAvatar size={28}>` + name + `×`. Still a button that removes on click.
+   - Pool chips (`gs-chip--pool`, "+ learner-two"): small avatar + "+ name" for recognition.
    - Guest chips: fallback initial (guest has no image).
 
 2. **Scoreboard** (`Scoreboard.jsx` + `.scss`) — persistent during play.
