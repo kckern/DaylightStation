@@ -155,8 +155,21 @@ const pickMode = (label) => {
   act(() => { screen.getByText(label).click(); });
 };
 
+// Task 14's Learn landing auto-picks a range (and arms the loop) the instant
+// Learn opens on a fixture whose layout reports `measures` — the frontier/
+// section/density/fallback heuristic always resolves to SOME range, never
+// null. The many pre-14 tests below assume a BLANK Learn entry (no range) so
+// they can arm their own via the guided two-tap flow or exercise the
+// no-range machine-playback row directly; clear the auto-pick immediately
+// after entering so their original, fixture-independent assumptions hold.
+// A no-op when no range was picked (e.g. layout.measures is empty/absent).
+const clearAutoRange = () => {
+  const btn = screen.queryByRole('button', { name: 'Clear loop' });
+  if (btn) act(() => { fireEvent.click(btn); });
+};
+
 // Scores now open in Listen (default). The Learn tests select Learn first.
-const enterLearn = () => pickMode('Learn');
+const enterLearn = () => { pickMode('Learn'); clearAutoRange(); };
 
 // Learn's GATE (wave-3 §B): the follow tracker only drives the cursor when a
 // practice range is armed AND looping is on — Learn WITHOUT a range is machine
@@ -978,6 +991,7 @@ describe('ScorePlayer — Polish mode (transport-driven)', () => {
     renderPlayer(); // opens in Listen
     pickMode('Learn');
     await act(async () => {});
+    clearAutoRange(); // this spec arms its own one-measure loop from a blank entry
     loopSecondMeasure(); // one-measure loop on m2 (index 1) — same setup as the Polish tests above
     expect(screen.getByText('m 2 / 3')).toBeTruthy(); // parked at the loop in-point
     const trigger = screen.getByRole('button', { name: 'Loop' });
@@ -1160,6 +1174,29 @@ describe('ScorePlayer — Polish mode (transport-driven)', () => {
     act(() => { fireEvent.click(drillBtn); });
     // A fresh range from the drill flow must loop, regardless of the earlier toggle.
     expect(screen.getByRole('button', { name: 'Loop' })).toHaveAttribute('aria-pressed', 'true');
+  });
+
+  // Task 14: onDrillWorst batches onMode('learn') with setFocus(span) in one
+  // handler, so by the time the Learn-landing arm effect commits, `focus` is
+  // already the drilled span — not null. This is the real, user-set-range-
+  // beforehand case the auto-pick's `|| focus` guard exists for: it must see
+  // the drilled range and never fire (no score.learn.auto-range, no clobber).
+  it('a range set the same moment Learn is entered (Drill worst) is never overwritten by the auto-pick', async () => {
+    h.layoutExtras = FIVE_MEASURES;
+    const emitted = captureLog();
+    renderPlayer();
+    pickMode('Polish');
+    await act(async () => {});
+    screen.getByRole('button', { name: 'Play' }).click();
+    await act(async () => {});
+    act(() => vi.advanceTimersByTime(4100)); // count-in
+    for (let i = 0; i < 8; i++) act(() => vi.advanceTimersByTime(1100)); // play the piece out silently — all five red
+    expect(document.querySelector('.piano-score-run-summary')).not.toBeNull();
+    act(() => { fireEvent.click(screen.getByRole('button', { name: /drill worst section/i })); });
+    // worstSpan over five contiguous reds is the whole piece — the drilled range.
+    expect(screen.getByRole('button', { name: 'Loop' })).toHaveTextContent(/m1–m5/i);
+    expect(screen.getByRole('button', { name: 'Loop' })).toHaveAttribute('aria-pressed', 'true');
+    expect(emitted.filter(([ev]) => ev === 'score.learn.auto-range')).toEqual([]); // the landing never fired
   });
 
   it('the silent-stop summary counts the measure that silenced the run (Task 20)', async () => {
@@ -1627,6 +1664,7 @@ describe('ScorePlayer — Learn state matrix (wave-3 B)', () => {
     renderPlayer();
     pickMode('Learn');
     await act(async () => {});
+    clearAutoRange(); // this describe tests the matrix rows from a BLANK entry
   };
   // Guided two-tap selection: both taps on the note at `clientX` → a ONE-measure
   // range, looping (a freshly-picked range always arms the loop).
@@ -1752,6 +1790,7 @@ describe('ScorePlayer — Learn state matrix (wave-3 B)', () => {
     expect(trigger().textContent).toBe('');                       // range gone
     expect(trigger()).toHaveAttribute('aria-pressed', 'false');   // …and the loop toggle with it
     pickMode('Learn');
+    clearAutoRange(); // this spec checks the range does NOT survive the round trip
     expect(trigger().textContent).toBe('');                       // nothing came back
 
     armLoopAt(160);
@@ -1767,6 +1806,7 @@ describe('ScorePlayer — Learn state matrix (wave-3 B)', () => {
     armLoopAt(160);
     pickMode('Perform');
     pickMode('Learn');
+    clearAutoRange(); // this spec checks the range does NOT survive the round trip
     expect(screen.getByRole('button', { name: 'Loop' }).textContent).toBe('');
   });
 
@@ -2083,6 +2123,7 @@ describe('ScorePlayer — loop endpoint nudging (L2)', () => {
     };
     renderPlayer();
     pickMode('Learn');
+    clearAutoRange(); // this spec arms its own loop from a blank entry
     // Set a loop of m1–m1 (two selection taps on the first note).
     act(() => { fireEvent.click(screen.getByRole('button', { name: 'Loop' })); }); // no range yet -> direct tap starts selection
     const scroll = document.querySelector('.piano-score-player__scroll');
@@ -2110,6 +2151,7 @@ describe('ScorePlayer — selection tap threshold (L3)', () => {
     };
     renderPlayer();
     pickMode('Learn');
+    clearAutoRange(); // this spec starts selection from a blank entry
     act(() => { fireEvent.click(screen.getByRole('button', { name: 'Loop' })); }); // no range yet -> direct tap starts selection
     const scroll = document.querySelector('.piano-score-player__scroll');
     // A tap 800px right of the last note (margin) must NOT arm an in-point — and
@@ -2145,6 +2187,7 @@ describe('ScorePlayer — loop arming expires (H4b)', () => {
     };
     renderPlayer();
     pickMode('Learn');
+    clearAutoRange(); // this spec starts selection from a blank entry
     act(() => { fireEvent.click(screen.getByRole('button', { name: 'Loop' })); }); // no range yet -> direct tap starts selection
     expect(screen.getByText(/tap the first measure/i)).toBeInTheDocument();
 
@@ -2338,6 +2381,75 @@ describe('ScorePlayer — entering Learn (audit H3.3)', () => {
     expect(screen.getByRole('button', { name: 'Loop' }).textContent).toBe(''); // range released
     enterLearn();
     expect(screen.getByTestId('score-position')).toHaveTextContent('m 1 / 4'); // from the top
+  });
+});
+
+// ── Task 14: the Learn landing auto-picks a practice range so a walk-up user is
+// never dropped on a blank "no range" Learn — pickLearnRange (learnRange.js)
+// resolves frontier/section/density/fallback/whole, and the wiring effect
+// arms it as the loop the instant Learn opens without one.
+describe('ScorePlayer — Learn auto-range landing (Task 14)', () => {
+  afterEach(() => { cleanup(); vi.restoreAllMocks(); });
+  // Two single-note measures, no rests, no sections, no practice history — the
+  // heuristic has nothing to key off but "where the notes are", so it falls
+  // through frontier/section/density to the FALLBACK rule: the first non-empty
+  // run, clipped to the piece. With only 2 measures (< the 4-measure window)
+  // that fallback span is the whole piece: {0, 1}.
+  const AUTO_TWO = {
+    steps: [
+      { onsetQuarter: 0, measure: 0, notes: [{ midi: 64, staff: 0, x: 100, top: 10, bottom: 200, width: 8 }] },
+      { onsetQuarter: 1, measure: 1, notes: [{ midi: 62, staff: 0, x: 160, top: 10, bottom: 200, width: 8 }] },
+    ],
+    measures: [
+      { index: 0, number: 1, firstStep: 0, lastStep: 0 },
+      { index: 1, number: 2, firstStep: 1, lastStep: 1 },
+    ],
+  };
+  // Same shape, mirroring the captureLog pattern already used by the Polish
+  // describe above (a local spy on the session-logged child, scoped to this
+  // describe's own afterEach restore).
+  const captureLog = () => {
+    const root = getLogger();
+    const origChild = root.child.bind(root);
+    const emitted = [];
+    vi.spyOn(root, 'child').mockImplementation((ctx) => {
+      const c = origChild(ctx);
+      const orig = c.info.bind(c);
+      c.info = (ev, data, opts) => { emitted.push([ev, data]); return orig(ev, data, opts); };
+      return c;
+    });
+    return emitted;
+  };
+
+  it('entering Learn on a fresh score sets a focus with loopOn true and logs score.learn.auto-range', async () => {
+    h.layoutExtras = AUTO_TWO;
+    const emitted = captureLog();
+    renderPlayer(); // opens in Listen
+    pickMode('Learn');
+    await act(async () => {});
+    const trigger = screen.getByRole('button', { name: 'Loop' });
+    expect(trigger).toHaveTextContent(/m1–m2/i);         // a range was picked…
+    expect(trigger).toHaveAttribute('aria-pressed', 'true'); // …and the loop is ON
+    // …which is the Learn GATE — Play is locked, the follow tracker drives.
+    expect(screen.getByRole('button', { name: 'Learn advances as you play' })).toBeDisabled();
+    const picks = emitted.filter(([ev]) => ev === 'score.learn.auto-range').map(([, d]) => d);
+    expect(picks).toEqual([{ inMeasure: 0, outMeasure: 1, reason: 'fallback' }]);
+  });
+
+  it('does not auto-pick again after the user clears the picked range mid-Learn', async () => {
+    h.layoutExtras = AUTO_TWO;
+    const emitted = captureLog();
+    renderPlayer();
+    pickMode('Learn');
+    await act(async () => {});
+    expect(emitted.filter(([ev]) => ev === 'score.learn.auto-range').length).toBe(1);
+    // The user clears the picked range (back to a blank Learn) — the SAME
+    // mode==='learn' && !focus shape the arm effect keys off, but the arm is
+    // spent for this Learn entry (it only re-arms on a mode TRANSITION into
+    // Learn), so it must not silently repick under the user.
+    act(() => { fireEvent.click(screen.getByRole('button', { name: 'Clear loop' })); });
+    expect(screen.getByRole('button', { name: 'Loop' }).textContent).toBe('');
+    expect(emitted.filter(([ev]) => ev === 'score.learn.auto-range').length).toBe(1); // still just the one
   });
 });
 

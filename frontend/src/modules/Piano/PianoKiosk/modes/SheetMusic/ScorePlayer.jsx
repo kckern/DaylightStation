@@ -21,6 +21,7 @@ import useScoreTelemetry from './useScoreTelemetry.js';
 import useScoreEvaluator from './useScoreEvaluator.js';
 import usePracticeRecord from './usePracticeRecord.js';
 import { bucketOf } from './practiceKey.js';
+import { pickLearnRange } from './learnRange.js';
 import { resolveSheetMusicConfig } from './sheetMusicConfig.js';
 import { tallyGrades } from './gradeTally.js';
 import { worstSpan } from './worstSpan.js';
@@ -112,11 +113,8 @@ export default function ScorePlayer({ score: scoreMeta }) {
     () => ({ measureCount: meta.measures, xmlBytes: scoreMeta.musicXml?.length || 0 }),
     [meta.measures, scoreMeta.musicXml],
   );
-  // `record`/`loaded` are unused until Task 14 (auto-range heuristic + Learn
-  // landing) consumes them — kept named `practice`/`practiceLoaded` now so that
-  // task's wiring is a pure addition, not a rename.
   const { record: practice, loaded: practiceLoaded, recordCycle, recordTierBest } = usePracticeRecord({ scoreId: scoreMeta.id, fingerprint });
-  void practice; void practiceLoaded; void recordTierBest;
+  void recordTierBest;
 
   // Resolved sheetmusic config (defaults filled). Hoisted above the mode state so
   // the initial mode can come from `defaultMode` — the ladder starts at Listen.
@@ -1097,6 +1095,25 @@ export default function ScorePlayer({ score: scoreMeta }) {
     focusOriginRef.current = 'restore';
     tapIntent('focus');
   }, [focus]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Learn landing (wave-3 B): pick the frontier window when Learn is entered
+  // without a range. Runs once per Learn entry — the pickedRef arms on entry
+  // and disarms after the pick (or when the user sets a range themselves).
+  const learnAutoRef = useRef(false);
+  useEffect(() => { if (mode === 'learn' && !focus) learnAutoRef.current = true; else if (mode !== 'learn') learnAutoRef.current = false; }, [mode]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (!learnAutoRef.current || mode !== 'learn' || focus || !layout.measures?.length || !practiceLoaded) return;
+    learnAutoRef.current = false;
+    const bucket = bucketOf(grandStaff, activeParts);
+    const passes = practice?.measures
+      ? layout.measures.map((m) => practice.measures[String(m.index)]?.[bucket]?.passes ?? 0)
+      : null;
+    const picked = pickLearnRange({ sections, measures: layout.measures, steps: layout.steps, activeParts, passesByMeasure: passes });
+    focusOriginRef.current = 'auto';
+    setFocus({ kind: 'custom', inMeasure: picked.inMeasure, outMeasure: picked.outMeasure });
+    setLoopOn(true); // the landing IS the gate state — ready to play
+    logger.info('score.learn.auto-range', { ...picked });
+  }, [mode, focus, layout.measures, layout.steps, practiceLoaded, practice, activeParts, grandStaff, sections, logger]);
 
   const onPickSection = useCallback((section) => {
     const r = layout.measures ? sectionToRange(section, layout.measures) : null;
