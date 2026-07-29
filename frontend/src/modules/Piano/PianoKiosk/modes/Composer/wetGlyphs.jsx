@@ -42,15 +42,84 @@ export const staffPositionOf = (pitch, clef) => absDiatonic(pitch) - bottomLineD
 export const WET_ADVANCE_UNITS = 2.4; // note centre → next note centre
 export const WET_RX_UNITS = 0.62;     // notehead half-width
 
-const MIDDLE_LINE = 4; // position of the centre staff line — the stem-flip point
+export const MIDDLE_LINE = 4; // position of the centre staff line — the stem-flip point
 const TOP_LINE = 8; // 5 lines, so the top line is 8 half-steps up
 
+// STEMMING (standard engraving rules; positions are staff HALF-steps, so one
+// space = 2 and one octave = 7).
+export const STEM_LEN_UNITS = 3.5; // default stem length, in lineSpacing units (≈ one octave)
+export const STEM_MIN_UNITS = 2.5; // never shorter than this (only beamed groups compress, and we don't beam)
+const OCTAVE_HALF_STEPS = 7;       // "more than an octave from the middle line" → extend to the middle line
+
 /**
- * Renders one note glyph (ledger lines, stem, accidental, notehead, dots) as a
- * flat list of SVG children — no wrapping <g>, so callers can drop the output
- * directly into their own <svg> alongside rests or other markup.
+ * Which way the stem points for a set of simultaneous noteheads.
+ *
+ * - ONE note: up when it sits BELOW the middle line, down at or above it. The
+ *   middle-line note itself stems DOWN — that is the convention (Gould, Behind
+ *   Bars; Ross), not an off-by-one.
+ * - A GROUP (chord / same onset): every member shares ONE direction, decided by
+ *   the notehead FARTHEST from the middle line (max |position − 4|), because
+ *   that is the note whose stem would otherwise shoot off the system. Ties (a
+ *   chord straddling the middle line symmetrically, e.g. positions 2 and 6) go
+ *   DOWN, again per convention.
+ *
+ * @param {number[]|number} positions - staff positions of the simultaneity.
+ * @returns {'up'|'down'}
  */
-export function WetNoteGlyph({ x, staff, pitch, clef, type = 'quarter', dots = 0, classPrefix = 'composer-wet-note', className = '' }) {
+export function stemDirectionFor(positions) {
+  const list = (Array.isArray(positions) ? positions : [positions]).filter((p) => Number.isFinite(p));
+  if (!list.length) return 'down'; // degenerate; match the tie convention rather than throwing
+  let bestDist = -1;
+  let dir = 'down';
+  for (const p of list) {
+    const dist = Math.abs(p - MIDDLE_LINE);
+    const own = p < MIDDLE_LINE ? 'up' : 'down';
+    if (dist > bestDist) { bestDist = dist; dir = own; }
+    // Equal distance = a straddling tie: 'down' wins whichever order we saw them in.
+    else if (dist === bestDist && own === 'down') dir = 'down';
+  }
+  return dir;
+}
+
+/**
+ * Stem length in lineSpacing units for ONE notehead.
+ *
+ * Default 3.5 spaces. A notehead more than an OCTAVE from the middle line gets a
+ * stem long enough to REACH the middle line (standard rule — it visually ties a
+ * far-ledgered note back to the staff, which is exactly the "way too long /
+ * way too short, disagreeing with its neighbours" case the fixed 3.5 got wrong).
+ *
+ * Only extends when the stem actually points TOWARD the middle line: a group
+ * direction can force an outlier to stem away from it (positions [-6, 12] → the
+ * -6 is farthest, so the 12 stems up, away), and lengthening that would drive it
+ * off the top of the system.
+ */
+export function stemLengthUnits(position, direction = 'up') {
+  const dist = Math.abs(position - MIDDLE_LINE);
+  const towardMiddle = direction === 'up' ? position < MIDDLE_LINE : position > MIDDLE_LINE;
+  const len = dist > OCTAVE_HALF_STEPS && towardMiddle
+    ? Math.max(STEM_LEN_UNITS, dist / 2) // dist is in half-steps; /2 → spaces
+    : STEM_LEN_UNITS;
+  return Math.max(STEM_MIN_UNITS, len);
+}
+
+// Flags per note value. Without these a classified eighth (task 27 assigns
+// 'eighth'/'16th' from held time) is pixel-identical to a quarter, so the
+// classification is invisible to the kid it was built for. Hand-drawn SVG only —
+// the U+1D15x glyphs are tofu on the kiosk.
+const flagCountFor = (type) => (type === 'eighth' ? 1 : type === '16th' ? 2 : 0);
+
+/**
+ * Renders one note glyph (ledger lines, stem, flags, accidental, notehead, dots)
+ * as a flat list of SVG children — no wrapping <g>, so callers can drop the
+ * output directly into their own <svg> alongside rests or other markup.
+ *
+ * @param {'up'|'down'} [stemDirection] - overrides the per-note rule. Callers
+ *   that render a SIMULTANEITY pass the group's direction (stemDirectionFor of
+ *   every member's position) so a chord's stems agree; callers rendering
+ *   independent events (LearnInkLayer) omit it and get the per-note rule.
+ */
+export function WetNoteGlyph({ x, staff, pitch, clef, type = 'quarter', dots = 0, stemDirection = null, classPrefix = 'composer-wet-note', className = '' }) {
   const { top, lineSpacing } = staff;
   const half = lineSpacing / 2;
   // `top` is the TOP line; five lines with four gaps put the bottom line 4 spaces down.
@@ -59,10 +128,11 @@ export function WetNoteGlyph({ x, staff, pitch, clef, type = 'quarter', dots = 0
 
   const rx = lineSpacing * WET_RX_UNITS;
   const ry = lineSpacing * 0.42;
-  const stemLen = lineSpacing * 3.5;
 
   const position = staffPositionOf(pitch || {}, clef);
   const y = yFor(position);
+  const direction = stemDirection === 'up' || stemDirection === 'down' ? stemDirection : stemDirectionFor([position]);
+  const stemLen = lineSpacing * stemLengthUnits(position, direction);
   const hollow = type === 'half' || type === 'whole';
   const prefixClass = (suffix) => (className ? `${classPrefix}__${suffix} ${className}` : `${classPrefix}__${suffix}`);
 
@@ -89,12 +159,14 @@ export function WetNoteGlyph({ x, staff, pitch, clef, type = 'quarter', dots = 0
     );
   });
 
-  // Stem up on the right below the middle line, down on the left at or above
-  // it — standard engraving, and it keeps high notes from running off the top
-  // of the system.
+  // Stem up on the right, down on the left; which one comes from `direction`
+  // (per-note rule, or the group's direction when a caller passed one). Length
+  // is 3.5 spaces except for far-ledgered notes, which reach the middle line.
   if (type !== 'whole') {
-    const up = position < MIDDLE_LINE;
+    const up = direction === 'up';
     const stemX = up ? x + rx * 0.92 : x - rx * 0.92;
+    const tipY = up ? y - stemLen : y + stemLen;
+    const stroke = Math.max(1, lineSpacing * 0.12);
     glyphs.push(
       <line
         key="stem"
@@ -102,12 +174,32 @@ export function WetNoteGlyph({ x, staff, pitch, clef, type = 'quarter', dots = 0
         x1={stemX}
         y1={y}
         x2={stemX}
-        y2={up ? y - stemLen : y + stemLen}
+        y2={tipY}
         stroke="currentColor"
-        strokeWidth={Math.max(1, lineSpacing * 0.12)}
+        strokeWidth={stroke}
         strokeLinecap="round"
       />
     );
+
+    // Flags hang off the stem TIP and always curl to the RIGHT of the stem,
+    // back toward the notehead — the same shape for up and down stems, mirrored
+    // in y. Proportions rescaled from DurationPalette's NoteGlyph so the toolbar
+    // and the staff draw the same eighth.
+    const s = up ? 1 : -1; // +y is "toward the notehead" for an up stem
+    for (let f = 0; f < flagCountFor(type); f++) {
+      const startY = tipY + s * lineSpacing * 0.45 * f;
+      glyphs.push(
+        <path
+          key={`flag-${f}`}
+          className={prefixClass('flag')}
+          d={`M ${stemX} ${startY} q ${lineSpacing * 0.68} ${s * lineSpacing * 0.27} ${lineSpacing * 0.45} ${s * lineSpacing * 0.92}`}
+          fill="none"
+          stroke="currentColor"
+          strokeWidth={stroke}
+          strokeLinecap="round"
+        />
+      );
+    }
   }
 
   if (pitch?.alter) glyphs.push(accidental(pitch.alter, x - rx * 2.6, y, lineSpacing, classPrefix, className));

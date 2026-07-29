@@ -68,6 +68,19 @@ describe('LearnInkLayer (wave-3 D)', () => {
     expect(container.querySelector('svg')).toBeNull();
   });
 
+  // Ink marks are INDEPENDENT events (one per key strike), not a simultaneity, so
+  // each stems by its own position — no group direction is imposed across them.
+  it('stems each ink by its own position', () => {
+    const inks = [
+      { id: 1, midi: 60, staff: 0, system: 0, x: 120, kind: 'wrong' }, // C4 treble → below the middle line
+      { id: 2, midi: 79, staff: 0, system: 0, x: 160, kind: 'hit' },   // G5 → above it
+    ];
+    const { container } = render(<LearnInkLayer inks={inks} staffBoxes={BOXES} clefs={CLEFS} keyFifths={0} />);
+    const [low, high] = [...container.querySelectorAll('.piano-learn-ink__stem')];
+    expect(Number(low.getAttribute('y2'))).toBeLessThan(Number(low.getAttribute('y1')));      // up
+    expect(Number(high.getAttribute('y2'))).toBeGreaterThan(Number(high.getAttribute('y1'))); // down
+  });
+
   it('falls back to a sensible clef when none is reported for the staff', () => {
     const inks = [{ id: 1, midi: 40, staff: 1, system: 0, x: 120, kind: 'wrong' }];
     const { container } = render(<LearnInkLayer inks={inks} staffBoxes={BOXES} clefs={{}} keyFifths={0} />);
