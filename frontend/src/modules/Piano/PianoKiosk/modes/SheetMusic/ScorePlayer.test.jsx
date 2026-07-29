@@ -1778,7 +1778,13 @@ describe('ScorePlayer — Learn state matrix (wave-3 B)', () => {
   });
 
   // ── Spec 6: loop/focus is Learn-only state ──────────────────────────────────
-  it('entering Listen or Polish clears the range AND the loop toggle; Learn keeps it', async () => {
+  // Task 14 layers a fresh auto-pick on top of this: a blank Learn re-entry now
+  // immediately lands on a NEW range (see "a full Listen→Learn round trip
+  // re-fires the auto-pick" further down for that behavior). This spec isolates
+  // the ORIGINAL claim under test — the user's OLD armed range/loop state does
+  // not survive the round trip — by clearing each re-entry's auto-pick right
+  // away, so what's left to assert is "nothing OLD came back".
+  it('entering Listen or Polish clears the user-armed range AND the loop toggle; the OLD range never survives a round trip back into Learn', async () => {
     h.layoutExtras = THREE;
     await enterLearnFresh();
     armLoopAt(160);
@@ -1790,8 +1796,8 @@ describe('ScorePlayer — Learn state matrix (wave-3 B)', () => {
     expect(trigger().textContent).toBe('');                       // range gone
     expect(trigger()).toHaveAttribute('aria-pressed', 'false');   // …and the loop toggle with it
     pickMode('Learn');
-    clearAutoRange(); // this spec checks the range does NOT survive the round trip
-    expect(trigger().textContent).toBe('');                       // nothing came back
+    clearAutoRange(); // isolate the OLD-range claim from Task 14's fresh auto-pick
+    expect(trigger().textContent).toBe('');                       // the OLD range did not come back
 
     armLoopAt(160);
     expect(trigger()).toHaveTextContent(/m2–m2/i);
@@ -1800,13 +1806,13 @@ describe('ScorePlayer — Learn state matrix (wave-3 B)', () => {
     expect(trigger()).toHaveAttribute('aria-pressed', 'false');
   });
 
-  it('Perform still releases the range (unchanged)', async () => {
+  it('Perform still releases the range (unchanged) — the OLD range never survives a round trip back into Learn', async () => {
     h.layoutExtras = THREE;
     await enterLearnFresh();
     armLoopAt(160);
     pickMode('Perform');
     pickMode('Learn');
-    clearAutoRange(); // this spec checks the range does NOT survive the round trip
+    clearAutoRange(); // isolate the OLD-range claim from Task 14's fresh auto-pick
     expect(screen.getByRole('button', { name: 'Loop' }).textContent).toBe('');
   });
 
@@ -2355,8 +2361,13 @@ describe('ScorePlayer — entering Learn (audit H3.3)', () => {
 
   // Wave-3 §0 retires "enter Learn on the loop another mode was holding": no other
   // mode holds a range any more. What replaces it is the round trip — a range set
-  // in Learn does not survive the trip out, so Learn is re-entered from the top.
-  it('re-enters from the top: leaving Learn released the range that pinned the cursor', () => {
+  // in Learn does not survive the trip out. Task 14 layers a fresh auto-pick on
+  // top of that: a blank re-entry now immediately lands on a NEW range (see "a
+  // full Listen→Learn round trip re-fires the auto-pick" further down). This
+  // spec isolates the underlying claim — the OLD range/cursor position does not
+  // survive the round trip — by clearing each re-entry's auto-pick (via
+  // `enterLearn`'s built-in `clearAutoRange`), so what's left is "from the top".
+  it('re-enters from the top: leaving Learn released the OLD range that pinned the cursor (auto-pick cleared to isolate this)', () => {
     // One measure per step, so the measure readout can tell the loop's in-point
     // apart from a cursor parked deeper inside the loop.
     h.layoutExtras = {
@@ -2450,6 +2461,37 @@ describe('ScorePlayer — Learn auto-range landing (Task 14)', () => {
     act(() => { fireEvent.click(screen.getByRole('button', { name: 'Clear loop' })); });
     expect(screen.getByRole('button', { name: 'Loop' }).textContent).toBe('');
     expect(emitted.filter(([ev]) => ev === 'score.learn.auto-range').length).toBe(1); // still just the one
+  });
+
+  // Leaving Learn always releases its range (wave-3 §0 — Learn-only state), so a
+  // full Listen→Learn round trip lands on a BLANK Learn again — the exact arm
+  // shape (`mode === 'learn' && !focus`) the landing keys off. Unlike the
+  // mid-Learn clear above, THIS re-entry is a real mode TRANSITION into Learn,
+  // which is what re-arms `learnAutoRef` — so the landing must fire again,
+  // fresh, on every return trip, not just the first-ever entry.
+  it('a full Listen→Learn round trip re-fires the auto-pick — leaving and returning lands on a FRESH range', async () => {
+    h.layoutExtras = AUTO_TWO;
+    const emitted = captureLog();
+    const trigger = () => screen.getByRole('button', { name: 'Loop' });
+    renderPlayer(); // opens in Listen
+    pickMode('Learn');
+    await act(async () => {});
+    expect(trigger()).toHaveAttribute('aria-pressed', 'true');
+    expect(emitted.filter(([ev]) => ev === 'score.learn.auto-range').length).toBe(1);
+
+    pickMode('Listen'); // Learn-only state (wave-3 §0) — leaving releases the range AND the loop
+    expect(trigger().textContent).toBe('');
+    expect(trigger()).toHaveAttribute('aria-pressed', 'false');
+
+    pickMode('Learn'); // re-enter — a blank Learn again, so the landing fires again
+    await act(async () => {});
+    expect(trigger()).toHaveTextContent(/m1–m2/i);
+    expect(trigger()).toHaveAttribute('aria-pressed', 'true');
+    const picks = emitted.filter(([ev]) => ev === 'score.learn.auto-range').map(([, d]) => d);
+    expect(picks).toEqual([
+      { inMeasure: 0, outMeasure: 1, reason: 'fallback' },
+      { inMeasure: 0, outMeasure: 1, reason: 'fallback' }, // a FRESH pick, not a stale replay
+    ]);
   });
 });
 
