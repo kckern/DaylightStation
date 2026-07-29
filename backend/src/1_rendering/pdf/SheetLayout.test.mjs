@@ -73,3 +73,53 @@ describe('layout — underfull and stacking', () => {
     expect(bTop).toBeGreaterThanOrEqual(aBottom);
   });
 });
+
+describe('layout — pagination', () => {
+  it('overflows past rows-per-page onto a new page and repeats the title as continued', () => {
+    const result = layout({
+      page: PAGE,
+      blocks: [{ id: 'containers', title: 'Containers', cols: 5, rows: 5, count: 30, gapPt: 8, titleHeightPt: 24 }],
+    });
+
+    expect(result.pages).toBe(2);
+    expect(result.cells.filter((c) => c.page === 0)).toHaveLength(25);
+    expect(result.cells.filter((c) => c.page === 1)).toHaveLength(5);
+    expect(result.cells.find((c) => c.page === 1).index).toBe(25);
+
+    expect(result.titles).toHaveLength(2);
+    expect(result.titles[0]).toMatchObject({ page: 0, continued: false });
+    expect(result.titles[1]).toMatchObject({ page: 1, continued: true });
+
+    expect(result.underfull).toEqual([]);
+  });
+
+  it('starts a block on a new page when it cannot fit under the previous one', () => {
+    const result = layout({
+      page: PAGE,
+      blocks: [
+        { id: 'a', cols: 2, rows: 4, count: 8, gapPt: 8 },
+        { id: 'b', cols: 2, rows: 4, count: 8, gapPt: 8 },
+      ],
+    });
+    expect(result.pages).toBeGreaterThan(1);
+    const bPages = new Set(result.cells.filter((c) => c.block === 'b').map((c) => c.page));
+    const aPages = new Set(result.cells.filter((c) => c.block === 'a').map((c) => c.page));
+    for (const c of result.cells.filter((x) => x.block === 'b')) {
+      expect(c.y + c.h).toBeLessThanOrEqual(PAGE.heightPt - PAGE.marginPt + 0.01);
+    }
+    expect([...bPages].some((p) => !aPages.has(p))).toBe(true);
+  });
+
+  // A cell taller than the printable area can never fit, so the "advance to a new page
+  // and re-measure" path must not keep advancing forever. Verified by removing the
+  // guard: the run hangs outright (vitest cannot preempt a synchronous loop, so this
+  // regression surfaces as a wedged suite, not a red assertion).
+  it('terminates when a cell is taller than the page can ever hold', () => {
+    const result = layout({
+      page: { widthPt: 612, heightPt: 200, marginPt: 36 },
+      blocks: [{ id: 'oversize', cols: 1, rows: 3, count: 3, gapPt: 8 }],
+    });
+    expect(result.cells).toHaveLength(3);
+    expect(new Set(result.cells.map((c) => c.page)).size).toBe(3);
+  });
+});

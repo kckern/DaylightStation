@@ -38,9 +38,13 @@ export function layout({ page, blocks }) {
   const titles = [];
   const underfull = [];
 
+  // Bottom of the printable area — the line nothing may cross.
+  const bottom = page.heightPt - page.marginPt;
+
   // Vertical pen position. Blocks stack down the page, so each one starts where the
   // previous left off rather than at a position derived from its own index.
   let cursorY = page.marginPt;
+  let pageIdx = 0;
 
   for (const block of blocks) {
     const gap = block.gapPt ?? DEFAULT_GAP_PT;
@@ -61,35 +65,76 @@ export function layout({ page, blocks }) {
       underfull.push({ block: block.id, capacity, items: block.count });
     }
 
-    if (block.title) {
-      titles.push({
-        page: 0,
-        block: block.id,
-        text: block.title,
-        x: page.marginPt,
-        y: cursorY,
-        continued: false,
-      });
-      cursorY += titleH;
-    }
+    // A block is emitted one page-chunk at a time. `placed` counts items already laid
+    // out and doubles as the absolute item index, which must NOT restart at a page
+    // break: the caller maps index → item, so cell 25 of a 30-item block is index 25
+    // whichever page it lands on.
+    let placed = 0;
+    let continued = false;
 
-    for (let i = 0; i < block.count; i += 1) {
-      const col = i % block.cols;
-      const row = Math.floor(i / block.cols);
-      cells.push({
-        page: 0,
-        block: block.id,
-        index: i,
-        x: page.marginPt + col * (cellW + gap),
-        y: cursorY + row * (cellH + gap),
-        w: cellW,
-        h: cellH,
-      });
-    }
+    while (placed < block.count) {
+      // How many rows survive between the pen and the bottom margin, capped at the
+      // block's declared per-page maximum. The trailing `+ gap` is because the last row
+      // on a page needs no gap beneath it.
+      let rowsHere = Math.min(
+        block.rows,
+        Math.max(0, Math.floor((bottom - cursorY - titleH + gap) / (cellH + gap))),
+      );
 
-    const usedRows = Math.ceil(block.count / block.cols);
-    cursorY += usedRows * (cellH + gap);
+      if (rowsHere < 1) {
+        // Not even one row fits under whatever precedes us. Move to a fresh page and
+        // re-measure. Guard against spinning forever: if the pen is ALREADY at the top
+        // of a page and a row still will not fit, no page will ever hold this block, so
+        // place a row anyway and let it overflow visibly rather than hang the request.
+        if (cursorY > page.marginPt) {
+          pageIdx += 1;
+          cursorY = page.marginPt;
+          continue;
+        }
+        rowsHere = 1;
+      }
+
+      if (block.title) {
+        // The title repeats on every page the block spans. `continued` lets the emitter
+        // mark the repeats (e.g. "Containers (cont.)") so a reader picking up page two
+        // knows they are mid-block rather than looking at a second block of the same name.
+        titles.push({
+          page: pageIdx,
+          block: block.id,
+          text: block.title,
+          x: page.marginPt,
+          y: cursorY,
+          continued,
+        });
+        cursorY += titleH;
+      }
+
+      const chunk = Math.min(block.count - placed, rowsHere * block.cols);
+      for (let i = 0; i < chunk; i += 1) {
+        const col = i % block.cols;
+        const row = Math.floor(i / block.cols);
+        cells.push({
+          page: pageIdx,
+          block: block.id,
+          index: placed + i,
+          x: page.marginPt + col * (cellW + gap),
+          y: cursorY + row * (cellH + gap),
+          w: cellW,
+          h: cellH,
+        });
+      }
+
+      const usedRows = Math.ceil(chunk / block.cols);
+      cursorY += usedRows * (cellH + gap);
+      placed += chunk;
+      continued = true;
+
+      if (placed < block.count) {
+        pageIdx += 1;
+        cursorY = page.marginPt;
+      }
+    }
   }
 
-  return { pages: 1, cells, titles, underfull };
+  return { pages: pageIdx + 1, cells, titles, underfull };
 }
