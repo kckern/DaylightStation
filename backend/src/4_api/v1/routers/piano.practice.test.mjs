@@ -70,6 +70,35 @@ describe('piano practice endpoints', () => {
     expect(r.body.polish.both.slow).toBe(70);
   });
 
+  it('PUT merges multiple tiers within the SAME polish bucket across successive PUTs', async () => {
+    const a = app();
+    await request(a).put('/api/v1/piano/users/kc/practice/files-x').send({ polish: { rh: { full: 95 } } });
+    const r = await request(a).put('/api/v1/piano/users/kc/practice/files-x').send({ polish: { rh: { medium: 80 } } });
+    expect(r.body.polish.rh.full).toBe(95);
+    expect(r.body.polish.rh.medium).toBe(80);
+  });
+
+  it('a polish patch carrying an own "__proto__" key does not wipe existing buckets or pollute the prototype', async () => {
+    const a = app();
+    await request(a).put('/api/v1/piano/users/kc/practice/files-x').send({ polish: { rh: { full: 95 } } });
+    // Sent as raw JSON text (not a JS object literal — `{ __proto__: x }` as a
+    // *non-computed* literal key sets the [[Prototype]] slot at construction
+    // time rather than creating an own property, which would defeat the repro).
+    // express.json() -> JSON.parse gives the server an own data property
+    // literally named "__proto__"; bracket assignment on it must not be
+    // allowed to swap the target object's prototype.
+    const r = await request(a).put('/api/v1/piano/users/kc/practice/files-x')
+      .set('Content-Type', 'application/json')
+      .send('{"polish":{"__proto__":{"full":99}}}');
+    expect(r.status).toBe(200);
+    expect(r.body.polish.rh.full).toBe(95); // existing bucket survives, not wiped
+    expect(Object.prototype.hasOwnProperty.call(r.body.polish, '__proto__')).toBe(false);
+    expect(r.body.polish.__proto__).not.toEqual({ full: 99 });
+    const persisted = files['/data/users/kc/apps/piano/practice/files-x'];
+    expect(persisted.polish.rh.full).toBe(95);
+    expect(Object.prototype.hasOwnProperty.call(persisted.polish, '__proto__')).toBe(false);
+  });
+
   it('a changed fingerprint REPLACES the record', async () => {
     const a = app();
     await request(a).put('/api/v1/piano/users/kc/practice/files-y')
