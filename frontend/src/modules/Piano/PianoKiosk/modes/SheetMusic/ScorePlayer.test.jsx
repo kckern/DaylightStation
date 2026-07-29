@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, act, cleanup, fireEvent } from '@testing-library/react';
+import { render, screen, act, cleanup, fireEvent, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import getLogger from '../../../../../lib/logging/Logger.js';
 import { __resetRecorder, __snapshotForTest, KIND } from '../../../../../lib/logging/inputRecorder.js';
@@ -144,7 +144,7 @@ describe('ScorePlayer — intent-event session-log routing (Task 10)', () => {
     try {
       renderPlayer(); // opens in Listen
       // Claim a part → fires score.listen.mypart, an intent event.
-      act(() => { fireEvent.click(screen.getByRole('radio', { name: 'RH' })); });
+      act(() => { fireEvent.click(screen.getByRole('button', { name: 'Right hand' })); });
       const emitter = children.find((r) => r.events.includes('score.listen.mypart'));
       expect(emitter).toBeTruthy(); // some child emitted it
       // …and that child must carry session-log routing, so the event persists.
@@ -232,7 +232,7 @@ describe('ScorePlayer — keyboard visibility policy (M2)', () => {
     renderPlayer(); // opens in Listen, My part = None
     await act(async () => {});
     expect(document.querySelector('.piano-score-player__keys')).toBeNull(); // hidden (no part)
-    act(() => { fireEvent.click(screen.getByRole('radio', { name: 'RH' })); }); // My part = RH
+    act(() => { fireEvent.click(screen.getByRole('button', { name: 'Right hand' })); }); // My part = RH
     expect(document.querySelector('.piano-score-player__keys')).not.toBeNull(); // now shown
     act(() => { screen.getByText('Learn').click(); }); // Learn auto-shows the keyboard
     expect(document.querySelector('.piano-score-player__keys')).not.toBeNull();
@@ -929,7 +929,7 @@ describe('ScorePlayer — Listen mode', () => {
     renderPlayer();
     screen.getByText('Listen').click();
     await act(async () => {});
-    fireEvent.click(screen.getByRole('radio', { name: 'RH' })); // My part = RH: the user plays staff 0, kiosk must NOT
+    fireEvent.click(screen.getByRole('button', { name: 'Right hand' })); // My part = RH: the user plays staff 0, kiosk must NOT
     await act(async () => {});
     screen.getByRole('button', { name: 'Play' }).click();
     await act(async () => {});
@@ -952,7 +952,7 @@ describe('ScorePlayer — Listen mode', () => {
     // the count-in rule is about an explicit Play, which is what this test is for.
     screen.getByRole('button', { name: 'Pause' }).click();
     await act(async () => {});
-    act(() => { fireEvent.click(screen.getByRole('radio', { name: 'RH' })); });
+    act(() => { fireEvent.click(screen.getByRole('button', { name: 'Right hand' })); });
     screen.getByRole('button', { name: 'Play' }).click();
     await act(async () => {});
     expect(document.querySelector('.piano-score-countin')).not.toBeNull();
@@ -1056,14 +1056,14 @@ describe('ScorePlayer — Listen mode', () => {
     renderPlayer();
     screen.getByText('Listen').click();
     await act(async () => {});
-    fireEvent.click(screen.getByRole('radio', { name: 'RH' })); // My part = RH
+    fireEvent.click(screen.getByRole('button', { name: 'Right hand' })); // My part = RH
     await act(async () => {});
-    expect(screen.getByRole('radio', { name: 'RH' })).toHaveAttribute('aria-checked', 'true');
+    expect(screen.getByRole('button', { name: 'Right hand' })).toHaveAttribute('aria-pressed', 'true');
     // Zoom via the Size stepper → re-engrave (fresh layout.notes identity).
     fireEvent.click(screen.getByRole('button', { name: /view options/i }));
     fireEvent.click(screen.getByRole('button', { name: '125%' }));
     await act(async () => {});
-    expect(screen.getByRole('radio', { name: 'RH' })).toHaveAttribute('aria-checked', 'true'); // preserved
+    expect(screen.getByRole('button', { name: 'Right hand' })).toHaveAttribute('aria-pressed', 'true'); // preserved
   });
 
   it('a mid-run view change (transpose) flushes the schedule, then picks the run back up (H2/M3)', async () => {
@@ -1187,7 +1187,9 @@ describe('ScorePlayer — Listen mode', () => {
     renderPlayer();
     screen.getByText('Listen').click();
     await act(async () => {});
-    act(() => { fireEvent.click(screen.getByRole('radio', { name: 'Both' })); }); // My part = everything → kiosk sends nothing
+    // My part = everything → kiosk sends nothing (toggles: none → rh → both)
+    act(() => { fireEvent.click(screen.getByRole('button', { name: 'Right hand' })); });
+    act(() => { fireEvent.click(screen.getByRole('button', { name: 'Left hand' })); });
     act(() => { fireEvent.click(screen.getByRole('button', { name: /^loop/i })); });
     act(() => { fireEvent.click(screen.getByRole('button', { name: /select measures/i })); });
     const scroll = document.querySelector('.piano-score-player__scroll');
@@ -1198,7 +1200,9 @@ describe('ScorePlayer — Listen mode', () => {
     act(() => vi.advanceTimersByTime(4100)); // count-in (my part set) → zero-span run ends instantly → dwell armed
     h.sendNoteAt.mockClear();
     // Give the parts back to the kiosk DURING the dwell (transport idle).
-    act(() => { fireEvent.click(screen.getByRole('radio', { name: 'None' })); });
+    // Toggles: both → lh → none.
+    act(() => { fireEvent.click(screen.getByRole('button', { name: 'Right hand' })); });
+    act(() => { fireEvent.click(screen.getByRole('button', { name: 'Left hand' })); });
     act(() => vi.advanceTimersByTime(1500)); // well past the one-beat dwell
     expect(h.sendNoteAt).not.toHaveBeenCalled(); // stale dwell canceled — no uncommanded restart
   });
@@ -1231,7 +1235,7 @@ describe('ScorePlayer — rebuild-pause resume (H5/M3)', () => {
     screen.getByRole('button', { name: 'Play' }).click();
     await act(async () => {});
     act(() => vi.advanceTimersByTime(100));
-    await act(async () => { fireEvent.click(screen.getByRole('radio', { name: 'RH' })); });
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Right hand' })); });
     expect(screen.getByRole('button', { name: 'Pause' })).toBeInTheDocument(); // resumed
     h.sendPanic.mockClear();
     act(() => vi.advanceTimersByTime(600)); // past lookahead(400)+60
@@ -1257,7 +1261,7 @@ describe('ScorePlayer — rebuild-pause resume (H5/M3)', () => {
     act(() => vi.advanceTimersByTime(100));
     expect(screen.getByRole('button', { name: 'Pause' })).toBeInTheDocument(); // playing
 
-    await act(async () => { fireEvent.click(screen.getByRole('radio', { name: 'RH' })); });
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Right hand' })); });
     expect(screen.getByRole('button', { name: 'Pause' })).toBeInTheDocument(); // resumed itself
     expect(document.querySelector('.piano-score-countin')).toBeNull(); // and did NOT count the user in
   });
@@ -1647,7 +1651,8 @@ describe('ScorePlayer — Learn stuck prompt (audit H3)', () => {
     act(() => vi.advanceTimersByTime(5100));
     expect(stuck()).not.toBeNull();
 
-    act(() => { fireEvent.click(screen.getByRole('button', { name: /right hand/i })); });
+    // Disambiguate from the bar's Right-hand toggle: pick inside the prompt.
+    act(() => { fireEvent.click(within(stuck()).getByRole('button', { name: /right hand/i })); });
     expect(stuck()).toBeNull();          // taken up → the offer goes away
 
     // …and Learn now advances on the RH note alone: staff 1 is no longer active.

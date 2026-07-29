@@ -68,18 +68,21 @@ describe('ScoreTransportBar', () => {
     expect(base.onCyclePart).toHaveBeenCalledWith(1);
   });
 
-  it('grand-staff (2 staves) shows the Hands segmented control, not chips (J4)', () => {
+  it('grand-staff (2 staves) shows the Hands toggles, not chips (J4)', () => {
     const onHandsChange = vi.fn();
     render(<ScoreTransportBar {...base} mode="learn" grandStaff handsVariant="hands" handsValue="both" onHandsChange={onHandsChange} />);
     expect(screen.getByRole('group', { name: /hands/i })).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('radio', { name: 'LH' }));
+    // Both hands lit; turning Right off narrows practice to the left hand.
+    fireEvent.click(screen.getByRole('button', { name: 'Right hand' }));
     expect(onHandsChange).toHaveBeenCalledWith('lh');
   });
 
   it('grand-staff Listen shows the My-part control', () => {
     render(<ScoreTransportBar {...base} mode="listen" grandStaff handsVariant="mypart" handsValue="none" onHandsChange={vi.fn()} />);
     expect(screen.getByRole('group', { name: /my part/i })).toBeInTheDocument();
-    expect(screen.getByRole('radio', { name: 'None' })).toHaveAttribute('aria-checked', 'true');
+    // 'none' = neither hand toggle lit (the kiosk performs everything).
+    expect(screen.getByRole('button', { name: 'Left hand' })).toHaveAttribute('aria-pressed', 'false');
+    expect(screen.getByRole('button', { name: 'Right hand' })).toHaveAttribute('aria-pressed', 'false');
   });
 
   it('perform mode: shows the page indicator (page / pages)', () => {
