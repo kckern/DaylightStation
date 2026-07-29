@@ -126,5 +126,5 @@ repo where nothing can verify it.
 - The wider fleet (`playback-hub` :8080, `fitness` :3000, `document-processor` :8190)
   have control planes and no CLI. The registry shape here should absorb them later.
 - `piano-bridge` and `portal-keys` already have `pbctl`/`pkctl`. Not worth rewriting.
-- `scantron-relay` and `eink-panel` run no server — the eink panel deliberately, since a
+- `omr-relay` and `eink-panel` run no server — the eink panel deliberately, since a
   deep-sleeping panel cannot answer a query (`eink-panel/firmware/src/main.cpp:175`).

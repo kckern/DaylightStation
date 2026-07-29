@@ -1,5 +1,5 @@
 // Example schema for the generated config.h. The REAL config.h is generated
-// from the household SSOT (data/household/config/scantrons.yml) by
+// from the household SSOT (data/household/config/omr-readers.yml) by
 // tools/gen-config.mjs and is gitignored. Do NOT commit config.h.
 #pragma once
 
@@ -13,8 +13,8 @@
 #define WS_PATH        "/ws"
 
 // --- reader identity ---
-#define READER_ID      "study-scantron"
-#define BUS_TOPIC      "scantron"
+#define READER_ID      "study-omr"
+#define BUS_TOPIC      "omr"
 
 // --- RS-232 UART (VERIFIED 2026-07-21 against the real OMR-1100) ---
 // Confirmed by live interrogation AND by the operator manual: the reader's

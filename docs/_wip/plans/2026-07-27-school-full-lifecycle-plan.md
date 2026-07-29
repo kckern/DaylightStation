@@ -187,8 +187,8 @@ double-scan (replay) so idempotency is testable.
   `getStatus()` mirrors the playback-hub status shape.
 - OMR: `scanSheet({ formMap, chosen })` — takes a **real form map** produced by
   the PDF renderer plus a chosen answer per item, and synthesizes the normalized
-  sheet event (`{ source:'scantron-relay', type:'sheet', id, columns,
-  markedColumns, marks[] }` per `docs/reference/scantron/README.md`). Support
+  sheet event (`{ source:'omr-relay', type:'sheet', id, columns,
+  markedColumns, marks[] }` per `docs/reference/omr/README.md`). Support
   `ambiguous: ['q3']` (two marks in one row) and `blank: ['q4']` so the
   review-queue paths are exercisable. This is what makes OMR testable years
   before the hardware is assembled.

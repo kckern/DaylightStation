@@ -1,4 +1,4 @@
-# Scantron / OMR (bubble-sheet reader → event bus)
+# OMR (bubble-sheet reader → event bus)
 
 How a physical bubble-sheet scan reaches the DaylightStation backend.
 
@@ -10,8 +10,15 @@ its serial contract is undocumented on the live web and one mandatory step is
 invisible from the outside; both are captured below.
 
 **Status (2026-07-21):** protocol solved and verified end-to-end on hardware;
-cards decode correctly. The ESP32 relay and the backend dispatch are **not yet
-built** — see [remaining work](../../_wip/plans/2026-07-21-scantron-relay-bringup.md).
+cards decode correctly. See
+[remaining work](../../_wip/plans/2026-07-21-omr-relay-bringup.md).
+
+**Update (2026-07-29):** the extension was renamed `scantron-relay` → `omr-relay`
+(bus topic `scantron` → `omr`, source `scantron-relay` → `omr-relay`, config
+`scantrons.yml` → `omr-readers.yml`). **Backend dispatch is now written and
+wired** (`createOmrRelay`, 20 tests). Host wiring is resolved and the household
+config exists. What remains is physical: the loopback test, then flashing the
+ATOM — and the standing card-sourcing blocker.
 
 ---
 
@@ -22,19 +29,35 @@ Chatsworth OMR-1100   (RS-232C, 9600 7E1, marks decoded on-board)
      │  host must FIRST download a conversion mode, or output is silent
      │  record: 2 bytes/column, CR-terminated
      ▼
-M5Stack ATOM Lite + ATOMIC RS232 base (MAX3232)     [_extensions/scantron-relay]   NOT BUILT
+M5Stack ATOM Lite + ATOMIC RS232 base (MAX3232)     [_extensions/omr-relay]   NOT BUILT
      │  re-arms the mode every 60s while idle (self-heals reader power cycles)
-     │  WS message: { source:'scantron-relay', type:'sheet', id, columns, marks[] }
+     │  WS message: { source:'omr-relay', type:'sheet', id, columns, marks[] }
      ▼
 WebSocketEventBus  (/ws)  .onClientMessage
      ▼
-createScantronRelay()        [backend/src/3_applications/hardware/scantronRelay.mjs]   NOT WRITTEN
-     ├─ broadcast('scantron', payload)   → live subscribers
-     └─ PERSIST → household/history/scantron/<reader-id>/<YYYY-MM-DD>.yml
+createOmrRelay()        [backend/src/3_applications/hardware/omrRelay.mjs]   ✅ WRITTEN
+     ├─ broadcast('omr', payload)   → live subscribers
+     └─ PERSIST → household/history/omr/<reader-id>/<YYYY-MM-DD>.yml
 ```
 
+The relay **broadcasts three message types and persists two**: `sheet` (a card)
+and `reader-error` (a rejected command echo) are recorded; `raw` — undecodable
+frames, and every frame while the firmware is in `SNIFF_MODE` — is broadcast for
+live diagnostics but never written to disk, because sniff mode is a firehose.
+
+Two behaviors worth knowing before reading a day file:
+
+- **`columns` and `markedColumns` are re-derived from `marks[]`**, not taken from
+  the wire. The firmware sends them for convenience and a truncated frame can
+  leave them disagreeing with the array.
+- **Identical sheets inside a 2 s window are treated as one card.** The OMR-1100
+  has a documented `R` retransmit command and a stalled card gets re-fed by hand;
+  both produce a byte-identical record that would otherwise grade as two
+  submissions. Tunable via `persistence.dedupWindowMs`. Dedup is **per reader**,
+  so two readers producing the same sheet at once both record.
+
 During bring-up a Linux host with a USB-serial adapter stands in for the ATOM,
-running the tools in `_extensions/scantron-relay/tools/`. The adapter in use is
+running the tools in `_extensions/omr-relay/tools/`. The adapter in use is
 a **Keyspan USA-19HS**, which works on Linux (in-tree `keyspan` driver, two-stage
 firmware upload) but **not on Apple silicon** — macOS enumerates the device and
 creates no `/dev/cu.*`, because the pre-CDC vendor driver was never ported to
@@ -165,7 +188,64 @@ The vendor's own spec sheet settles it numerically: the **815-E is 3⅜ in
 of an inch too wide, so the strobe track rides past the timing sensor's lane.
 Any Scantron form in the 4.25 in family is further out still.
 
-### Sourcing cards
+### Sourcing cards — SOLVED ✅ (ordered 2026-07-24)
+
+> **Ordered 2026-07-22: one package of `3705` — 500 cards, $68.25.** Invoiced
+> 2026-07-24, paid by check (their invoice adds 3% for credit-card payment, so
+> deduct it when paying by check). The `LP`-prefix thread below was correct:
+> Lincolnshire still stocks Chatsworth cards, so the "nothing fits, expect a
+> custom run" conclusion recorded 2026-07-21 is **superseded**. The reasoning is
+> kept because it found the right vendor; do not act on its conclusion.
+>
+> **Also in stock there:** `2093-5SD`, and `2093-6SD` (6 packages / 3000 cards on
+> the shelf). Volume pricing, per pack of 500: 1–9 packs $68.25, 10–24 $49.75,
+> 25+ $43.40.
+>
+> ### The lesson: a vendor's public page is not their inventory
+>
+> The 2026-07-21 audit checked Lincolnshire's live stock-forms page, found eleven
+> forms, none 3¼ in, and concluded no card exists. **`3705`, `2093-5SD` and
+> `2093-6SD` are none of those eleven** — they're kept in stock but were never on
+> the public page. The conclusion was wrong not because the audit was sloppy but
+> because the source was incomplete. A phone call found in one voicemail what a
+> careful page-read could not.
+>
+> **`omrscan.com` is the live contact route**, which also resolves an old mystery:
+> that domain was recorded here as "a dead vendor domain that now redirects to a
+> print storefront." The storefront *is* Lincolnshire. The redirect was the answer,
+> not a dead end.
+>
+> **They have MOVED** — shipping/receiving is now Wilmot, WI; corporate/mailing is
+> Antioch, IL. Confirm current details with them rather than trusting the Illinois
+> phone number below.
+
+#### ⚠️ `SD` suffix vs. bare part numbers = the IR / Visible-Red split
+
+This is the thing to get right before reordering. The archived 2006 catalog marks
+`05SD` / `06SD` as *"use with pencil only OMR's (I.R.)"* — the `SD` cards are
+printed for **infrared** heads, and their background ink would read as marks on a
+Visible Red unit. Lincolnshire's in-stock list maps straight onto that split:
+
+| Part | Printed for | Use if our head is |
+|---|---|---|
+| `3705` (ordered) | non-`SD` | **Visible Red** |
+| `2093-5SD`, `2093-6SD` | `SD` → I.R. | **Infrared** |
+
+**[Step 0b — which optical variant we have — is still unresolved](#step-0b), and
+this is what hangs on it.** The happy case is that `3705` reads correctly, which
+retroactively confirms a Visible Red head and closes Step 0b for free. If `3705`
+transports but reads nothing while a pencil mark is clearly present, suspect an
+IR head and the `SD` cards become the correct order — Lincolnshire has 3000 of
+them on the shelf, so that recovery is a phone call, not another month.
+
+Do **not** conclude "the reader is broken" from one card type failing to read.
+
+> **Unknown until they arrive:** `3705`'s actual width and question count. The
+> spec sheet came as an email attachment that isn't in the repo. Geometry is what
+> killed the ScanRite 815-E, so measure before assuming — see *Verifying the cards
+> on arrival* below.
+
+#### Superseded 2026-07-21 finding (kept for the reasoning, not the conclusion)
 
 **No off-the-shelf card currently sold anywhere fits this reader.** Verified
 2026-07-21 against Lincolnshire Printing's live stock-forms page: every one of
@@ -201,15 +281,38 @@ card on the list, please contact us"* and *"we can modify any existing stock for
 to accommodate your individual needs."* So the realistic ask is whether they
 still hold the artwork or plates for the 3¼ in Chatsworth cards.
 
-**Lincolnshire Printing**, Illinois, `815-578-0740`, `www.printlpp.com` (the
-bare domain does not resolve — the `www.` is required). Lead with the model, the
-Visible Red variant, and the archived part numbers. There is no secondhand
-supply; searching those part numbers returns only 1980s trade-magazine scans.
+**Lincolnshire Printing & Promotions** — `omrscan.com` (the live contact route,
+confirmed 2026-07-24), also `www.printlpp.com` (bare domain does not resolve —
+the `www.` is required), historically `815-578-0740`. Shipping/receiving moved to
+Wilmot, WI; corporate/mailing to Antioch, IL. There is no secondhand supply;
+searching the archived part numbers returns only 1980s trade-magazine scans.
+
+### Verifying the cards on arrival
+
+Geometry is what killed the ScanRite 815-E, and a vendor saying "Chatsworth
+cards" is not proof of fit. Check in this order, cheapest first:
+
+1. **Width, with calipers: 3.250 in ±0.010.** The 815-E failed at 3⅜ in — ⅛ in
+   over. This single measurement is the whole gate.
+2. **Timing ticks** flush to one long edge, 0.125 in × ≥0.030 in on 0.250 in
+   centers, first tick ≥0.250 in from the leading edge, leading 0.125 in blank.
+3. **Background ink.** A Visible Red head needs warm-red dropout printing; a
+   green or black background reads as marks. If these cards were printed for the
+   Chatsworth line they should already be correct — but this also means the cards
+   **double as the test for [Step 0b, the optical variant](#step-0b), which is
+   still unresolved.** If a pencil mark reads and the printed background doesn't,
+   the head/ink pairing is right and that question closes itself.
+4. **Feed one blank card** before marking any. A blank card that transports and
+   returns an all-`0x20 0x20` record proves transport, strobe timing and framing
+   independently of any mark detection.
+
+Until they arrive, `tools/gen-test-strip.py` remains the only card verified to
+work on this reader.
 
 Until a source is confirmed, `gen-test-strip.py` output is the only card known
 to work, and a custom print run is the likely end state.
 
-`_extensions/scantron-relay/tools/gen-test-strip.py` generates a spec-exact
+`_extensions/omr-relay/tools/gen-test-strip.py` generates a spec-exact
 printable strip (`docs/omr1100-test-strip.pdf` in that extension) carrying a
 walking-diagonal pattern whose decode is self-evident. Print at **100% / actual
 size** — any "fit to page" scaling breaks the 0.250 in pitch — and cut on the
@@ -229,7 +332,7 @@ background print will be read as marks.
 
 ```json
 {
-  "source": "scantron-relay",
+  "source": "omr-relay",
   "type": "sheet",
   "id": "<reader-id>",
   "columns": 39,
@@ -248,7 +351,7 @@ imprint, or grade).
 
 ## Tools
 
-All in `_extensions/scantron-relay/tools/`, runnable against any host with the
+All in `_extensions/omr-relay/tools/`, runnable against any host with the
 reader on a serial port.
 
 | Tool | Purpose |
@@ -309,7 +412,7 @@ unrelated Chatsworth Products rack company, and the vendor's old domain now
 redirects to a print storefront.
 
 Everything was recovered from the **Wayback Machine CDX index of the vendor's
-dead domain** and is archived at `_extensions/scantron-relay/docs/recovered/`:
+dead domain** and is archived at `_extensions/omr-relay/docs/recovered/`:
 
 | File | Contents |
 |---|---|

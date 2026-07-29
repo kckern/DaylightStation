@@ -153,6 +153,7 @@ import { FitnessProgressClassifier } from '#domains/fitness/services/FitnessProg
 import { initUnlockService } from '#apps/fitness/unlockService.mjs';
 import { initManageService } from '#apps/fitness/manageService.mjs';
 import { createFoodScaleRelay } from '#apps/hardware/foodScaleRelay.mjs';
+import { createOmrRelay } from '#apps/hardware/omrRelay.mjs';
 import { createScaleNutribotBridge } from '#apps/hardware/ScaleNutribotBridge.mjs';
 import { CompositionStore } from '#apps/nutribot/CompositionStore.mjs';
 import { ApplyScanToComposition } from '#apps/nutribot/usecases/ApplyScanToComposition.mjs';
@@ -602,6 +603,22 @@ export async function createApp({ server, logger, configPaths, configExists, ena
       || {},
     timezone: configService.getHouseholdTimezone?.(householdId),
     logger: rootLogger.child({ module: 'food-scale-relay' }),
+  });
+
+  // OMR relay — ingests the ESP32 bubble-sheet relay's decoded card records
+  // (source: 'omr-relay') off a Chatsworth OMR-1100 and re-broadcasts on the
+  // `omr` topic; a decoupled subscriber persists completed reads to
+  // history/omr/<reader-id>/. The relay reports WHICH POSITIONS WERE MARKED and
+  // nothing more — scoring is the consuming app's job, since the mapping from
+  // columns to answers is form-specific. See _extensions/omr-relay.
+  createOmrRelay({
+    eventBus,
+    dataDir,
+    config: configService.getHouseholdAppConfig(householdId, 'omr-readers')
+      || configService.reloadHouseholdAppConfig?.(householdId, 'omr-readers')
+      || {},
+    timezone: configService.getHouseholdTimezone?.(householdId),
+    logger: rootLogger.child({ module: 'omr-relay' }),
   });
 
   // Content barcode input (now produced by the shared food-scale/content-barcode

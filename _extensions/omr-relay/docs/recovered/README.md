@@ -23,9 +23,9 @@ search engines.
 Everything operationally relevant now lives in the main docs, which are the
 working reference:
 
-- `docs/reference/scantron/README.md` — protocol, troubleshooting, sourcing
-- `docs/reference/scantron/command-reference.md` — full command set
-- `docs/reference/scantron/card-specification.md` — Appendix A card spec
+- `docs/reference/omr/README.md` — protocol, troubleshooting, sourcing
+- `docs/reference/omr/command-reference.md` — full command set
+- `docs/reference/omr/card-specification.md` — Appendix A card spec
 
 The PDFs are kept as primary source so transcription errors can be caught.
 

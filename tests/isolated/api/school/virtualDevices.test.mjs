@@ -324,11 +324,11 @@ describe('virtual device console, fully wired', () => {
 
       expect(r.status).toBe(200);
       const body = await r.json();
-      expect(body.sheet).toMatchObject({ source: 'scantron-relay', type: 'sheet', id: 'omr-1100-virtual', columns: 3 });
+      expect(body.sheet).toMatchObject({ source: 'omr-relay', type: 'sheet', id: 'omr-1100-virtual', columns: 3 });
       expect(body.sheet.marks).toEqual([0b0001, 0b0100, 0]);
       expect(body.sheet.markedColumns).toBe(2);
       expect(omrReader.lastSheet().marks).toEqual([0b0001, 0b0100, 0]);
-      expect(bus.broadcasts.some((b) => b.topic === 'scantron')).toBe(true);
+      expect(bus.broadcasts.some((b) => b.topic === 'omr')).toBe(true);
     });
 
     it('marks a row ambiguous — two bits in one column', async () => {

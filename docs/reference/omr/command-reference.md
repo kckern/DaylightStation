@@ -3,7 +3,7 @@
 Transcribed from vendor documentation recovered via the Wayback Machine:
 *OMR1100 Commands Rev. B* (Chatsworth Data, "For Factory Use Only") and
 *Technical Manual for OMR 1102* §6–8. Both PDFs are retained alongside this file
-in `_extensions/scantron-relay/docs/recovered/` as primary source.
+in `_extensions/omr-relay/docs/recovered/` as primary source.
 
 Verified against the live unit 2026-07-21 (firmware `OMR-1100 - Version 1.04,
 Wed Oct 2 1996`) for the queries and the binary mode; the rest is transcription
