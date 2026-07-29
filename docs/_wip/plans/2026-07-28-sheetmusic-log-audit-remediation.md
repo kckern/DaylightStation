@@ -8,6 +8,10 @@
 
 **Tech Stack:** React 18 (hooks), vitest 4 + @testing-library/react, SCSS (`frontend/src/Apps/PianoApp.scss`), the in-house structured logger at `frontend/src/lib/logging/Logger.js`.
 
+> **STATUS 2026-07-28: all 17 tasks implemented**, plus 7 further defects the implementers found while working. Branch `feat/sheetmusic-log-audit-remediation`, 27 commits from `d8232531f`. Suite: 247 files / 2607 tests green (`frontend/src/modules/Piano/` + `MusicNotation/` + `lib/logging/`), up from 241 tests in `SheetMusic/` at branch start.
+>
+> **NOT merged and NOT deployed. On-kiosk verification below is still outstanding** — every change is test-verified only. Three items specifically want eyes on the tablet: the pending-notehead outline (a hollow quarter-note head can read as a half note), the stuck prompt's placement against the keyboard strip, and the transposed-engrave gate, whose real timing window (a 15–24s engrave) is only modeled in tests.
+
 **Test command (memorize this — it is the only one you need):**
 
 ```bash
