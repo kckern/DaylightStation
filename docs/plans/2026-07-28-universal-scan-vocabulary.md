@@ -276,9 +276,11 @@ describe('legacy and shape resolution', () => {
     expect(parseScanCode('9791234567896').namespace).toBe('book');
   });
 
-  it('treats other digit-only codes as product', () => {
+  // SUPERSEDED during Task 4 — see the correction note after this block.
+  // Step 4 claims ISBN-13 ONLY; a bare UPC is left unclaimed for step 5.
+  it('leaves other digit-only codes unclaimed, for the reader route to decide', () => {
     expect(parseScanCode('041260010682')).toMatchObject({
-      namespace: 'product', form: 'shape',
+      namespace: null, form: 'unknown',
     });
   });
 
@@ -321,6 +323,12 @@ Replace the tail of `parseScanCode` (everything after the registered-prefix bloc
   }
 
   // ---- step 4: shape ----------------------------------------------------
+  // SUPERSEDED during Task 4 — this sketch claims a bare UPC as `product`,
+  // which was wrong. Shipped form claims ISBN-13 ONLY; everything else
+  // digit-only falls through to `unknown` so step 5 can decide:
+  //   if (DIGITS_ONLY.test(raw) && isIsbn13(raw)) {
+  //     return { namespace: 'book', body: raw, raw, form: 'shape' };
+  //   }
   if (/^\d+$/.test(raw)) {
     const namespace = isIsbn13(raw) ? 'book' : 'product';
     return { namespace, body: raw, raw, form: 'shape' };
