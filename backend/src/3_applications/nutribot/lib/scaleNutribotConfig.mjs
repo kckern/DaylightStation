@@ -52,6 +52,9 @@ export function normalizeScaleNutribotConfig(raw = {}) {
           emoji: c.emoji || '📦',
           grams: Number(c.grams),
           icon: c.icon || null,
+          // Draw scale for the icon, 1 = full size. Lets two vessels share one piece
+          // of artwork and still be told apart — the smaller sibling renders smaller.
+          icon_scale: Number.isFinite(Number(c.icon_scale)) ? Number(c.icon_scale) : null,
         }))
     : DEFAULT_CONTAINERS.items;
 
