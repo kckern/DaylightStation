@@ -20,8 +20,11 @@ export function loadScoreSettings(id) {
     // `focus` was persisted through v1 and is deliberately RETIRED: an indefinite
     // loop means the piece silently opens mid-score and never plays from the top,
     // which the field logs show confusing users across six sessions (audit M1).
-    // Stripping on read also cleans up values written by older builds.
-    const { v, focus, ...rest } = obj;
+    // `myStaves` (Listen's old "my part" claim set) is retired with the play-along
+    // machinery itself (wave-3 A) — Listen now performs activeParts like every
+    // other mode, so a legacy record has nothing left to restore. Stripping on
+    // read also cleans up values written by older builds.
+    const { v, focus, myStaves, ...rest } = obj;
     return rest;
   } catch {
     return {};

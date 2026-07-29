@@ -10,7 +10,7 @@ import useReloadGuard from '../../useReloadGuard.js';
 import { buildTempoMap, buildStepTimeline, scaleTimeline } from '../../../../MusicNotation/scoreTimeline.js';
 import { useScoreTransport } from '../../score/useScoreTransport.js';
 import { tweenScrollTo, cancelScrollTween } from './scrollTween.js';
-import { partsOf, cyclePart, buildPlayTimeline, youMidisAt } from './playParts.js';
+import { partsOf, buildPlayTimeline } from './playParts.js';
 import { staffLabels, defaultActiveParts, expectedMidisAtStep } from './activeParts.js';
 import { rangeSteps, clampStepToRange, sectionToRange, homeStep, nudgeRange } from './focusRange.js';
 import useFollowTracker from './useFollowTracker.js';
@@ -67,8 +67,9 @@ export const NOTE_INK = '#23262b';
  *  Polish  — auto-advances at tempo; the current onset's active-staff
  *            noteheads light up (bouncing ball). It does NOT perform through
  *            the piano — it only lights the notes you should be playing.
- *  Listen  — the kiosk performs 'play' parts through the piano; 'you' parts are
- *            highlighted (never sent) so the user plays them along with the kiosk.
+ *  Listen  — the kiosk performs the ACTIVE hands through the piano; an inactive
+ *            hand is simply muted (one hands model — wave-3 A: no play-along
+ *            highlighting, no "your part").
  *  Perform — no awareness; config-defined pedals + tap-to-scroll turn the page.
  *
  * Chrome lives in a pinned bottom {@link ScoreTransportBar}; the top bar shows the
@@ -248,25 +249,12 @@ export default function ScorePlayer({ score: scoreMeta }) {
     [parts, staffSig], // eslint-disable-line react-hooks/exhaustive-deps
   );
 
-  // Listen "my part": the staves the user plays along with; the kiosk performs the
-  // rest. This is the single source for Listen roles (audit J4) — `roles` is derived
-  // (staff ∈ myStaves → 'you', else 'play'), replacing the old free-standing roles
-  // state. Restored per score.
-  const [myStaves, setMyStaves] = useState(() => new Set(Array.isArray(restored.myStaves) ? restored.myStaves : []));
-  const roles = useMemo(
-    () => Object.fromEntries(parts.map((p) => [p.staff, myStaves.has(p.staff) ? 'you' : 'play'])),
-    [parts, myStaves],
-  );
-
-  // Keyboard: auto per mode, with a remembered per-mode manual override (M2). Listen
-  // auto = shown only when the user plays a part (My part ≠ None). kbTick forces a
-  // read of the override ref after a toggle.
-  const AUTO_KB = { learn: true, polish: true, perform: false };
-  const autoKb = mode === 'listen' ? myStaves.size > 0 : (AUTO_KB[mode] ?? true);
-  const keyboardVisible = kbOverrideRef.current[mode] ?? autoKb; // eslint-disable-line no-unused-expressions
-  void kbTick; // keyboardVisible re-reads the override ref whenever kbTick bumps
-  // Restored active-part picks (which staves you play in Learn/Polish); the effect
-  // below preserves any staff present in `prev`, so seeding it restores the choice.
+  // Active staves: the single "which hands am I responsible for" model, shared by
+  // EVERY mode (wave-3 A — the old Listen-only myStaves claim set is retired).
+  // Learn/Polish practice the active staves; Listen performs them through the
+  // piano — an inactive staff is simply muted (no play-along highlighting).
+  // Restored per score; the effect below preserves any staff present in `prev`
+  // (so seeding it restores the choice), and defaults a fresh staff on.
   const [activeParts, setActiveParts] = useState(() => (
     restored.activeParts && typeof restored.activeParts === 'object' ? restored.activeParts : {}
   ));
@@ -277,11 +265,28 @@ export default function ScorePlayer({ score: scoreMeta }) {
     });
   }, [staffSig]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Listen performs the parts the user did NOT claim as their own: a staff set to
-  // 'you' is engraved + highlighted but never sent to the piano (the user plays it);
-  // 'play' staves are performed. Tempo-scaled by the user's multiplier (faster tempo
-  // → shorter durations → factor 1/tempoMult). Other modes keep their silent step
-  // timeline. Polish is scaled too so its tempo control tracks the same knob.
+  // Roles feed Listen's audio timeline (buildPlayTimeline's isAudible checks
+  // === 'play'): an active staff plays, an inactive one mutes — the single source
+  // for Listen roles (audit J4), now the SAME source Learn/Polish practice from.
+  const roles = useMemo(
+    () => Object.fromEntries(parts.map((p) => [p.staff, activeParts[p.staff] ? 'play' : 'mute'])),
+    [parts, activeParts],
+  );
+
+  // Keyboard: auto per mode, with a remembered per-mode manual override (M2). Listen
+  // defaults hidden — the kiosk performs, so there is nothing "yours" to play along
+  // with — but the View-sheet toggle still overrides. kbTick forces a read of the
+  // override ref after a toggle.
+  const AUTO_KB = { learn: true, polish: true, perform: false, listen: false };
+  const autoKb = AUTO_KB[mode] ?? true;
+  const keyboardVisible = kbOverrideRef.current[mode] ?? autoKb; // eslint-disable-line no-unused-expressions
+  void kbTick; // keyboardVisible re-reads the override ref whenever kbTick bumps
+
+  // Listen performs the ACTIVE staves; an inactive staff is engraved but simply
+  // muted — never sent to the piano, and no longer highlighted as "yours" (wave-3
+  // A retires the play-along model). Tempo-scaled by the user's multiplier (faster
+  // tempo → shorter durations → factor 1/tempoMult). Other modes keep their silent
+  // step timeline. Polish is scaled too so its tempo control tracks the same knob.
   const playTimeline = useMemo(
     () => (mode === 'listen'
       ? scaleTimeline(buildPlayTimeline(events, layout.notes, tempoMap, roles), 1 / tempoMult)
@@ -510,8 +515,8 @@ export default function ScorePlayer({ score: scoreMeta }) {
   // Persist practice settings per score (device-local) whenever they change, so the
   // piece reopens the way it was left (Task 2.5). Writes are tiny; cost is trivial.
   useEffect(() => {
-    saveScoreSettings(scoreMeta.id, { mode, tempoMult, activeParts, myStaves: [...myStaves], clickOn });
-  }, [scoreMeta.id, mode, tempoMult, activeParts, myStaves, clickOn]);
+    saveScoreSettings(scoreMeta.id, { mode, tempoMult, activeParts, clickOn });
+  }, [scoreMeta.id, mode, tempoMult, activeParts, clickOn]);
 
   // A range references measure indices; drop it if the engraved score has fewer
   // measures than it expects (a re-engrave can shrink the measure list).
@@ -632,27 +637,6 @@ export default function ScorePlayer({ score: scoreMeta }) {
     onComplete: onFollowComplete,
     range, // wrap advancement within the practice range (null → linear)
   });
-
-  // ── Listen play-along: non-gating light-up ────────────────────────────────────
-  // Optional in Listen only. A struck note that matches the CURRENT step's expected
-  // active-staff midis lights green (adds to `struck`). It NEVER advances or blocks —
-  // the transport clock alone drives the cursor. Subscribes once per enabled change;
-  // step/steps/activeParts read from refs (ref pattern, like useFollowTracker). The
-  // transport's per-step `struck` reset already clears these additions each step.
-  const stepsRef = useRef(steps); stepsRef.current = steps;
-  const activePartsRef = useRef(activeParts); activePartsRef.current = activeParts;
-  // Always on in Listen (no toggle — audit J5): a correct strike lights green. Never
-  // advances or blocks; the transport clock alone drives the cursor.
-  useEffect(() => {
-    if (mode !== 'listen' || !subscribe) return undefined;
-    return subscribe((evt) => {
-      if (!evt || evt.type !== 'note_on' || !evt.velocity) return;
-      const expected = expectedMidisAtStep(stepsRef.current?.[stepRef.current], activePartsRef.current || {});
-      if (expected.has(evt.note)) {
-        setStruck((prev) => { const n = new Set(prev); n.add(evt.note); return n; });
-      }
-    });
-  }, [mode, subscribe]);
 
   // Flush follow-timing stats when leaving Learn (and on unmount if still in it).
   const flushFollowNow = useCallback(() => {
@@ -1199,9 +1183,10 @@ export default function ScorePlayer({ score: scoreMeta }) {
       // transport first, so their pending panic is harmless.)
       clearTimeout(flushTimerRef.current);
       // Count the user in when they're expected to PLAY: Polish always (the beat is
-      // graded — audit J1), and Listen when they've claimed a part (audit J7). onGo
-      // starts the transport. Pure playback (Listen, no part) plays immediately.
-      const countUserIn = mode === 'polish' || (mode === 'listen' && myStaves.size > 0);
+      // graded — audit J1). Listen never counts in (wave-3 A: the kiosk performs the
+      // active hands — it's a jukebox, not a play-along) — onGo starts the transport;
+      // Listen always plays immediately.
+      const countUserIn = mode === 'polish';
       if (countUserIn) {
         // Log the PLAN, not the meter: at fast tempi the pulse coarsens and the
         // count-in may run extra bars, so the time signature no longer tells a log
@@ -1225,55 +1210,47 @@ export default function ScorePlayer({ score: scoreMeta }) {
     }
     // NOTE: reads the live cursor via `stepRef.current` (mirrors `step`), NOT the
     // `step` closure — so `step` is deliberately OUT of the dep array.
-  }, [countIn, transport, mode, myStaves, silenceScheduled, flushPlaybackNow, logger, stepTimeline, tempoMap, tempoMult, parsed, clearWrapDwell, tapIntent]);
+  }, [countIn, transport, mode, silenceScheduled, flushPlaybackNow, logger, stepTimeline, tempoMap, tempoMult, parsed, clearWrapDwell, tapIntent]);
 
-  // Changing the Listen role map mid-flight invalidates the note timeline — pause,
-  // flush, and silence so a stale schedule doesn't drone, then resume where we
-  // were (audit H5: the music dying on the spot read as a broken button). Shared
-  // by the chip fallback and the My-part control.
-  const disruptListenPlayback = useCallback(() => {
-    pauseForRebuild('part');
-    silenceScheduled(); // also flush when nothing was playing (a stale schedule may still be queued)
-  }, [pauseForRebuild, silenceScheduled]);
-
+  // Toggle a staff's active state — the chip fallback for >2 staves. One branch,
+  // every mode (wave-3 A): Learn/Polish need ≥1 active staff or the all-notes rule
+  // can never be satisfied (the cursor would deadlock); Listen needs ≥1 too, or the
+  // kiosk would have nothing left to perform / resume into. Refuse to turn off the
+  // last active staff.
   const onCyclePart = useCallback((staff) => {
+    const activeCount = parts.reduce((c, p) => c + (activeParts[p.staff] ? 1 : 0), 0);
+    if (activeParts[staff] && activeCount <= 1) return; // keep the last staff on
     if (mode === 'listen') {
-      // Toggle this staff's membership in "my part" (you ↔ kiosk). >2-staff chip path.
-      setMyStaves((prev) => { const n = new Set(prev); if (n.has(staff)) n.delete(staff); else n.add(staff); return n; });
-      disruptListenPlayback();
-      logger.info('score.listen.part', { staff, mine: !myStaves.has(staff) });
-    } else {
-      // Learn needs ≥1 active staff or the all-notes rule can never be satisfied
-      // (the cursor would deadlock). Refuse to turn off the last active staff.
-      const activeCount = parts.reduce((c, p) => c + (activeParts[p.staff] ? 1 : 0), 0);
-      if (activeParts[staff] && activeCount <= 1) return; // keep the last staff on
-      setActiveParts((a) => ({ ...a, [staff]: !a[staff] }));
-      logger.info('score.active-part', { staff, on: !activeParts[staff] });
-      tapIntent('active-part');
+      // Changing the active-part map mid-flight invalidates the Listen note
+      // timeline — pause, flush, and silence so a stale schedule doesn't drone,
+      // then resume where we were (audit H5: the music dying on the spot read as
+      // a broken button).
+      pauseForRebuild('part');
+      silenceScheduled(); // also flush when nothing was playing (a stale schedule may still be queued)
     }
-  }, [mode, myStaves, disruptListenPlayback, logger, activeParts, parts, tapIntent]);
+    setActiveParts((a) => ({ ...a, [staff]: !a[staff] }));
+    logger.info('score.active-part', { staff, on: !activeParts[staff] });
+    tapIntent('active-part');
+  }, [mode, pauseForRebuild, silenceScheduled, logger, activeParts, parts, tapIntent]);
 
   // Grand-staff (2 staves) fast path: a single segmented control instead of chips.
-  // Learn/Polish → "Hands"; Listen → "My part". Value + handler map to activeParts
-  // / myStaves. Staff 0 = RH, 1 = LH (activeParts.js convention).
+  // One variant, every mode (wave-3 A) — value + handler map to activeParts alone.
+  // Staff 0 = RH, 1 = LH (activeParts.js convention).
   const grandStaff = parts.length === 2;
-  const handsVariant = mode === 'listen' ? 'mypart' : 'hands';
-  const handsValue = mode === 'listen'
-    ? (myStaves.has(0) && myStaves.has(1) ? 'both' : myStaves.has(0) ? 'rh' : myStaves.has(1) ? 'lh' : 'none')
-    : (activeParts[0] && activeParts[1] ? 'both' : activeParts[0] ? 'rh' : 'lh');
+  const handsValue = activeParts[0] && activeParts[1] ? 'both' : activeParts[0] ? 'rh' : 'lh';
   const onHandsChange = useCallback((v) => {
+    // Both/RH/LH → which staves are active. Always ≥1 active (never deadlocks).
+    setActiveParts({ 0: v !== 'lh', 1: v !== 'rh' });
     if (mode === 'listen') {
-      const next = v === 'none' ? new Set() : v === 'rh' ? new Set([0]) : v === 'lh' ? new Set([1]) : new Set([0, 1]);
-      setMyStaves(next);
-      disruptListenPlayback();
-      logger.info('score.listen.mypart', { value: v });
-    } else {
-      // Both/RH/LH → which staves you practice. Always ≥1 active (never deadlocks).
-      setActiveParts({ 0: v !== 'lh', 1: v !== 'rh' });
-      logger.info('score.hands', { value: v });
-      tapIntent('hands');
+      // A hand change mid-flight invalidates the Listen note timeline — pause,
+      // flush, and silence so a stale schedule doesn't drone, then resume where we
+      // were (audit H5: the music dying on the spot read as a broken button).
+      pauseForRebuild('part');
+      silenceScheduled();
     }
-  }, [mode, disruptListenPlayback, logger, tapIntent]);
+    logger.info('score.hands', { value: v });
+    tapIntent('hands');
+  }, [mode, pauseForRebuild, silenceScheduled, logger, tapIntent]);
 
   // Surface the hands split after the cursor has sat on one multi-note step for a
   // while. Only when a split would actually help: a grand staff, both hands
@@ -1345,18 +1322,16 @@ export default function ScorePlayer({ score: scoreMeta }) {
   const jump = current != null && prevTopRef.current != null && Math.abs(current.top - prevTopRef.current) > 1;
   useEffect(() => { prevTopRef.current = current?.top ?? null; }, [current]);
 
-  // Keyboard target set: Listen → your ('you') part pitches at this onset; other
-  // interactive modes → the active-staff expected midis at this step.
-  // Listen → your ('you') part pitches (playalong reference). Polish → the bouncing-
-  // ball expected notes (an auto demo, fine to show). Learn → NOTHING until a wrong
-  // attempt reveals it (reading-first; see revealKeys). Perform → no keyboard.
-  const targetNotes = mode === 'listen' && current
-    ? youMidisAt(layout.notes, roles, current.onsetQuarter)
-    : mode === 'polish'
+  // Keyboard target set: Listen → none (the kiosk performs the active hands —
+  // wave-3 A retires play-along targets; nothing is "yours"). Polish → the
+  // bouncing-ball expected notes (an auto demo, fine to show). Learn → NOTHING
+  // until a wrong attempt reveals it (reading-first; see revealKeys). Perform →
+  // no keyboard (hidden entirely).
+  const targetNotes = mode === 'polish'
+    ? expectedMidisAtStep(steps[step], activeParts)
+    : mode === 'learn' && revealKeys
       ? expectedMidisAtStep(steps[step], activeParts)
-      : mode === 'learn' && revealKeys
-        ? expectedMidisAtStep(steps[step], activeParts)
-        : null;
+      : null;
 
   // Lit (green "hit") noteheads. Learn/Listen fill `struck` as notes are struck /
   // sounded (unchanged). Polish has no note_on transport events, so nothing
