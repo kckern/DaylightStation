@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import usePianoList from '../../usePianoList.js';
 import PianoEmpty from '../../PianoEmpty.jsx';
 import { balancedColumns } from '../../tileGridLayout.js';
@@ -16,13 +16,30 @@ function prettyTitle(raw) {
     .replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
+// Last-selected tab (by label), so a walk-up user lands where they left off.
+// Same guarded-localStorage discipline as scoreSettings.js.
+const TAB_KEY = 'daylight.piano.sm.tab';
+const loadTab = () => { try { return window.localStorage.getItem(TAB_KEY); } catch { return null; } };
+const saveTab = (label) => { try { window.localStorage.setItem(TAB_KEY, label); } catch { /* storage unavailable */ } };
+
 /**
- * Grid of scores listed from a folder via the generic content API. MusicXML
- * scores are engraved (interactive); scanned page-image scores show their cover.
- * Tap a score to open it.
+ * Grid of scores from one or more configured folders (`sheetmusic.collections`
+ * tabs — the Courses menu's model). One group renders the tabless grid; two or
+ * more add a Courses-style tab strip (same .piano-course-tab language) with one
+ * folder per tab. MusicXML scores are engraved (interactive); scanned
+ * page-image scores show their cover. Tap a score to open it.
+ *
+ * @param {Array<{label: string|null, listPath: string}>} groups
+ * @param {(item: object) => void} onSelect
  */
-export default function ScoreGrid({ listPath, onSelect }) {
-  const { data: items, error } = usePianoList(listPath);
+export default function ScoreGrid({ groups = [], onSelect }) {
+  // Restore the remembered tab; a label that no longer exists falls back to 0.
+  const [tabIdx, setTabIdx] = useState(() => {
+    const i = groups.findIndex((g) => g.label != null && g.label === loadTab());
+    return i >= 0 ? i : 0;
+  });
+  const active = groups[Math.min(tabIdx, groups.length - 1)] ?? null;
+  const { data: items, error } = usePianoList(active?.listPath ?? null);
   const all = items ?? [];
   const loading = items === null;
 
@@ -30,11 +47,32 @@ export default function ScoreGrid({ listPath, onSelect }) {
   // heavy engraving chunk is loaded before they open one (cuts first-open lag).
   useEffect(() => { prefetchOsmd().catch(() => {}); }, []);
 
+  const pickTab = (i) => {
+    setTabIdx(i);
+    if (groups[i]?.label) saveTab(groups[i].label);
+  };
+
   return (
     <section className="piano-mode piano-mode--sheetmusic">
+      {groups.length > 1 && (
+        <div className="piano-course-tabs" role="tablist" aria-label="Score collections">
+          {groups.map((g, i) => (
+            <button
+              key={g.label ?? i}
+              type="button"
+              role="tab"
+              aria-selected={i === tabIdx}
+              className={`piano-course-tab${i === tabIdx ? ' is-active' : ''}`}
+              onClick={() => pickTab(i)}
+            >
+              {g.label ?? 'Scores'}
+            </button>
+          ))}
+        </div>
+      )}
       {loading && <SkeletonPoster count={8} />}
       {!loading && all.length === 0 && (
-        <PianoEmpty message={error || (listPath ? 'No scores found.' : 'No sheet music has been set up yet.')} />
+        <PianoEmpty message={error || (active ? 'No scores found.' : 'No sheet music has been set up yet.')} />
       )}
       {all.length > 0 && (
         <ul
