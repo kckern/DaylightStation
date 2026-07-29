@@ -219,16 +219,14 @@
   }
 
   &__crumb {
+    display: inline-flex;          // icon/thumb + label on one baseline (wave-3 J)
+    align-items: center;
+    gap: 0.35em;
     min-width: 0;
-    background: none;
-    border: none;
-    color: var(--piano-muted);
-    font: inherit;
-    font-size: 1.1rem;
-    cursor: pointer;
-    padding: 0.25rem;
-    overflow: hidden;
-    text-overflow: ellipsis;
+    background: none; border: none;
+    color: var(--piano-muted); font: inherit; font-size: 1.1rem;
+    cursor: pointer; padding: 0.25rem;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
     &:hover { color: var(--piano-fg); }
   }
   /* current location: bold, full-contrast. Usually not a link (span, cursor
@@ -246,7 +244,6 @@
     height: 1.6em;
     object-fit: cover;
     border-radius: 0.3em;
-    margin-right: 0.35em;
     vertical-align: middle;
   }
 
