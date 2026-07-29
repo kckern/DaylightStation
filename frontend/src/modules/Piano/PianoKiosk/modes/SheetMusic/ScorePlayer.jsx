@@ -90,8 +90,12 @@ export default function ScorePlayer({ score: scoreMeta }) {
   // Hand preference (wave-3 E): user → household → 'both'. usePianoPreferences
   // no-ops (empty prefs, loaded immediately) for guests — getPref then always
   // falls through to the household default, which is exactly the desired
-  // behavior for a walk-up guest session.
-  const { getPref } = usePianoPreferences();
+  // behavior for a walk-up guest session. `loaded` gates the seeding effect
+  // below: the prefs GET is a fresh round-trip on every user switch, and OSMD
+  // engraving is pure client-side after mount — a fast score can report notes
+  // before prefs resolve, so the seed must wait or it latches the household
+  // default before the real per-user choice ever arrives (review fix round 1).
+  const { getPref, loaded: prefsLoaded } = usePianoPreferences();
 
   // Destructure the (individually memoized) telemetry callbacks rather than
   // holding the returned object: the object identity is fresh every render, and
@@ -1114,9 +1118,23 @@ export default function ScorePlayer({ score: scoreMeta }) {
   // same pass). Comparing against this ref's identity can: it stays !== the
   // rendered `activeParts` for exactly one extra pass, then becomes ===.
   const pendingHandSeedRef = useRef(null);
+  // Session-scoped "the user already made a manual choice" latch (review fix
+  // round 1): set by the manual hand handlers (onHandsChange, onCyclePart)
+  // below, in ANY mode — a Listen-mode toggle counts. Without this, a user who
+  // picks their hands manually before ever opening Learn gets silently
+  // overridden the instant Learn seeds from the resolved preference.
+  const userTouchedHandsRef = useRef(false);
   useEffect(() => {
-    if (mode !== 'learn' || seededHandsRef.current || !grandStaff) return;
+    // !prefsLoaded: the prefs GET is a fresh round-trip per user switch while
+    // OSMD engraving is pure client-side after mount, so a fast score can
+    // report notes before the real per-user learnHands resolves — wait for it
+    // rather than seeding off the household default and latching there (review
+    // fix round 1). Not a latch itself: this returns WITHOUT touching
+    // seededHandsRef, so the effect simply re-fires once prefsLoaded flips true
+    // (getPref's identity changes when prefs load, re-running this effect).
+    if (mode !== 'learn' || seededHandsRef.current || !grandStaff || !prefsLoaded) return;
     if (restored.activeParts && typeof restored.activeParts === 'object') { seededHandsRef.current = true; return; }
+    if (userTouchedHandsRef.current) { seededHandsRef.current = true; return; } // manual pick this session wins, same as a persisted one
     if (!layout.notes?.length) return;
     seededHandsRef.current = true;
     const pref = getPref('learnHands', smCfg.learn.defaultHands);
@@ -1128,8 +1146,12 @@ export default function ScorePlayer({ score: scoreMeta }) {
     const next = { 0: target === 0, 1: target === 1 };
     pendingHandSeedRef.current = next;
     setActiveParts(next);
-  }, [mode, grandStaff, layout.notes, restored.activeParts, getPref, smCfg]);
-  useEffect(() => { seededHandsRef.current = false; pendingHandSeedRef.current = null; }, [scoreMeta.id]);
+  }, [mode, grandStaff, layout.notes, restored.activeParts, getPref, smCfg, prefsLoaded]);
+  useEffect(() => {
+    seededHandsRef.current = false;
+    pendingHandSeedRef.current = null;
+    userTouchedHandsRef.current = false;
+  }, [scoreMeta.id]);
 
   // Learn landing (wave-3 B): pick the frontier window when Learn is entered
   // without a range. Runs once per Learn entry — the learnAutoRef arms on entry
@@ -1444,6 +1466,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
   const onCyclePart = useCallback((staff) => {
     const activeCount = parts.reduce((c, p) => c + (activeParts[p.staff] ? 1 : 0), 0);
     if (activeParts[staff] && activeCount <= 1) return; // keep the last staff on
+    userTouchedHandsRef.current = true; // a manual pick outranks the hand-preference seed (review fix round 1)
     voidCycle(); // an active-parts change breaks a Learn cycle in progress (wave-3 C)
     if (sendsAudio) {
       // Changing the active-part map mid-flight invalidates the NOTE timeline —
@@ -1466,6 +1489,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
   const handsValue = activeParts[0] && activeParts[1] ? 'both' : activeParts[0] ? 'rh' : 'lh';
   const onHandsChange = useCallback((v) => {
     // Both/RH/LH → which staves are active. Always ≥1 active (never deadlocks).
+    userTouchedHandsRef.current = true; // a manual pick outranks the hand-preference seed (review fix round 1)
     setActiveParts({ 0: v !== 'lh', 1: v !== 'rh' });
     voidCycle(); // a hand-toggle change breaks a Learn cycle in progress (wave-3 C)
     if (sendsAudio) {
