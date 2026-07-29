@@ -14,10 +14,13 @@ import './Transport.scss';
  * @param {boolean} [disabled]
  * @param {() => void} [onPress]
  * @param {string} [className] - layout hooks appended by the host
+ * @param {boolean} [labelFirst] - render the label span BEFORE the icon (default:
+ *   icon-then-label). Escape hatch for mirror-symmetric pairs (e.g. skip±N,
+ *   where the numeral must sit innermost, nearest the button it mirrors around).
  */
 export default function TransportButton({
   icon, label, ariaLabel, emphasis = 'default', on = false,
-  disabled = false, onPress, className = '', ...rest
+  disabled = false, onPress, className = '', labelFirst = false, ...rest
 }) {
   const classes = [
     'piano-tbtn',
@@ -25,6 +28,8 @@ export default function TransportButton({
     on ? 'is-on' : '',
     className,
   ].filter(Boolean).join(' ');
+  const iconEl = icon && <Icon key="icon" name={icon} />;
+  const labelEl = label != null && <span key="label" className="piano-tbtn__label">{label}</span>;
   return (
     <button
       type="button"
@@ -35,8 +40,7 @@ export default function TransportButton({
       onClick={onPress}
       {...rest}
     >
-      {icon && <Icon name={icon} />}
-      {label != null && <span className="piano-tbtn__label">{label}</span>}
+      {labelFirst ? <>{labelEl}{iconEl}</> : <>{iconEl}{labelEl}</>}
     </button>
   );
 }

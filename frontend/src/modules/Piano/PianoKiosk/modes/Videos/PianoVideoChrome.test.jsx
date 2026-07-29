@@ -34,6 +34,15 @@ describe('PianoVideoChrome', () => {
     expect(onSkip).toHaveBeenCalledWith(-15);
     expect(onSkip).toHaveBeenCalledWith(15);
   });
+  it('keeps the skip numerals mirror-symmetric around Play (innermost on both sides)', () => {
+    render(<PianoVideoChrome {...baseProps} />);
+    // Back-15 sits left of Play: icon outermost, numeral innermost (rightmost) — default order.
+    const back = screen.getByLabelText('Back 15 seconds');
+    expect(back.firstElementChild.className).toContain('piano-icon');
+    // Forward-15 sits right of Play: numeral innermost (leftmost), icon outermost — labelFirst.
+    const forward = screen.getByLabelText('Forward 15 seconds');
+    expect(forward.firstElementChild.className).toContain('piano-tbtn__label');
+  });
   it('skips −30 and +30 via the new buttons', () => {
     const onSkip = vi.fn();
     render(<PianoVideoChrome {...baseProps} onSkip={onSkip} />);
