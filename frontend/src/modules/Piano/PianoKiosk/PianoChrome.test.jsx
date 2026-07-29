@@ -6,12 +6,13 @@ const midi = vi.hoisted(() => ({ connected: true, status: 'connected', connect: 
 const sound = vi.hoisted(() => ({ activeName: 'Grand Piano' }));
 const longPressHandlers = vi.hoisted(() => ({ onPointerDown: vi.fn(), onPointerUp: vi.fn() }));
 const longPressSpy = vi.hoisted(() => vi.fn());
+const breadcrumbBar = vi.hoisted(() => ({ crumbs: [] }));
 
 vi.mock('./PianoMidiContext.jsx', () => ({ usePianoMidi: () => midi }));
 vi.mock('./PianoSoundContext.jsx', () => ({ usePianoSound: () => sound }));
 vi.mock('./PianoConfig.jsx', () => ({ usePianoKioskConfig: () => ({ basePath: '/piano' }) }));
-vi.mock('./PianoBreadcrumbContext.jsx', () => ({ usePianoBreadcrumbBar: () => ({ crumbs: [] }) }));
-vi.mock('./icons/Icon.jsx', () => ({ default: () => null }));
+vi.mock('./PianoBreadcrumbContext.jsx', () => ({ usePianoBreadcrumbBar: () => breadcrumbBar }));
+vi.mock('./icons/Icon.jsx', () => ({ default: ({ name }) => <span className="piano-icon" data-icon={name} /> }));
 vi.mock('./SoundPanel.jsx', () => ({ default: ({ open }) => (open ? <div>SOUND-PANEL-OPEN</div> : null) }));
 vi.mock('./OperatorDrawer.jsx', () => ({ default: ({ open }) => (open ? <div>OPERATOR-DRAWER-OPEN</div> : null) }));
 vi.mock('./useLongPress.js', () => ({
@@ -29,6 +30,7 @@ const renderChrome = (props = {}) =>
 describe('PianoChrome', () => {
   beforeEach(() => {
     longPressSpy.mockClear();
+    breadcrumbBar.crumbs = [];
   });
 
   it('shows the active voice in the status chip', () => {
@@ -78,5 +80,23 @@ describe('PianoChrome', () => {
     expect(reconnectBtn).toBeTruthy();
     fireEvent.click(reconnectBtn);
     expect(midi.connect).toHaveBeenCalled();
+  });
+
+  it('renders crumb thumbnails and icons, and a clickable current crumb', () => {
+    const spy = vi.fn();
+    breadcrumbBar.crumbs = [
+      { label: 'Super Mario Theme', image: '/img/mario.jpg' },
+      { label: 'Listen', icon: 'mode-listen', onClick: spy },
+    ];
+    renderChrome();
+
+    const img = document.querySelector('.piano-chrome__crumb-thumb');
+    expect(img).not.toBeNull();
+    expect(img).toHaveAttribute('src', '/img/mario.jpg');
+
+    const modeCrumb = screen.getByRole('button', { name: /listen/i });
+    expect(modeCrumb.querySelector('.piano-icon')).not.toBeNull();
+    fireEvent.click(modeCrumb);
+    expect(spy).toHaveBeenCalled();
   });
 });
