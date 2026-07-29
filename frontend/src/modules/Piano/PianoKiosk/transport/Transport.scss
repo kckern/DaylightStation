@@ -118,3 +118,18 @@
     gap: 0.2em;
   }
 }
+
+.piano-volsheet__card { margin-bottom: 0.75rem; }
+.piano-volsheet__cardhead {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.25rem;
+  font-weight: 600;
+}
+.piano-volsheet__curve {
+  display: flex;
+  gap: 0.4rem;
+  justify-content: flex-end;
+  margin-top: 0.5rem;
+}
