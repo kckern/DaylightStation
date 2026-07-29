@@ -367,13 +367,22 @@ export default function ScoreTransportBar({
   baseBpm,
   keyFifths,
   keyMode,
+  // Wave-3 H: Polish's live run score ('82%'), or null before any measure is
+  // graded. Rendered as a PREFIX in the position readout below — deliberately in
+  // the SHELL and not threaded to a memoized child, because it changes on a
+  // per-measure cadence (same order as `step`, which the shell already owns) and
+  // handing it to ScoreViewControls/ScorePracticeCluster would break their bail-out.
+  scoreLabel = null,
   onBodyRender,
 }) {
   // Musicians think in measures, not note-steps (audit L2): show "m 3 / 24" when a
   // measure count is available, falling back to the step readout otherwise.
-  const position = measureTotal > 0
+  const positionCore = measureTotal > 0
     ? `m ${Math.min(measure ?? 1, measureTotal)} / ${measureTotal}`
     : `${Math.min(step + 1, total)} / ${total}`;
+  // One span, not two: the score and the position are read as a single line
+  // ("82% · m 12 / 24"), and a second span would shift the readout's width mid-run.
+  const position = scoreLabel ? `${scoreLabel} · ${positionCore}` : positionCore;
 
   const isPerform = mode === 'perform';
   // The position readout and page indicator exist in every mode but Perform.

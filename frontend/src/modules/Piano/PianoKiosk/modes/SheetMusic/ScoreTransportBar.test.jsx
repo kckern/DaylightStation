@@ -96,6 +96,17 @@ describe('ScoreTransportBar', () => {
     expect(screen.getByText(/\/\s*40/)).toBeInTheDocument();
   });
 
+  it('prefixes the position readout with the live Polish score, and omits it before any grade (wave-3 H)', () => {
+    const props = { ...base, mode: 'polish', step: 11, measure: 12, measureTotal: 24 };
+    // Before a measure has been graded there is no score to show — plain position.
+    const { rerender } = render(<ScoreTransportBar {...props} scoreLabel={null} />);
+    expect(screen.getByTestId('score-position')).toHaveTextContent('m 12 / 24');
+    expect(screen.getByTestId('score-position').textContent).not.toMatch(/%/);
+    // Once a grade exists, the score leads — the readout is one span, not two.
+    rerender(<ScoreTransportBar {...props} scoreLabel="82%" />);
+    expect(screen.getByTestId('score-position')).toHaveTextContent('82% · m 12 / 24');
+  });
+
   it('disables Play with a Preparing label until geometry is ready (H0)', () => {
     render(<ScoreTransportBar {...base} mode="polish" ready={false} total={0} />);
     const play = screen.getByRole('button', { name: /preparing/i });
