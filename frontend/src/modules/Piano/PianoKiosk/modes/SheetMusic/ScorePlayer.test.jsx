@@ -933,6 +933,33 @@ describe('ScorePlayer — Polish mode (transport-driven)', () => {
     expect(summaries[0][1].reds).toBe(grades.length);
   });
 
+  // ── wave-2 T7 fix: "Drill worst section" sets a brand-new range too — it must
+  // re-arm looping even if the user had toggled a PRIOR loop off, or the drilled
+  // passage would silently not loop (the whole point of drilling a section).
+  it('drilling the worst section re-arms the loop even after a prior loop was toggled off', async () => {
+    h.layoutExtras = FIVE_MEASURES;
+    renderPlayer();
+    pickMode('Polish');
+    await act(async () => {});
+    // Arm an (unrelated) loop, then toggle it off — the state the fix must survive.
+    loopMeasureAtX(160); // one-measure loop on m2 (index 1)
+    const trigger = screen.getByRole('button', { name: 'Loop' });
+    expect(trigger).toHaveAttribute('aria-pressed', 'true');
+    act(() => { fireEvent.click(trigger); }); // toggle OFF — range stays, looping doesn't
+    expect(trigger).toHaveAttribute('aria-pressed', 'false');
+    // Play the piece out silently (loop is off, so nothing clamps the run to m2) —
+    // five reds, same as the completion-summary test above.
+    screen.getByRole('button', { name: 'Play' }).click();
+    await act(async () => {});
+    act(() => vi.advanceTimersByTime(4100)); // count-in
+    for (let i = 0; i < 8; i++) act(() => vi.advanceTimersByTime(1100)); // play the piece out
+    expect(document.querySelector('.piano-score-run-summary')).not.toBeNull();
+    const drillBtn = screen.getByRole('button', { name: /drill worst section/i });
+    act(() => { fireEvent.click(drillBtn); });
+    // A fresh range from the drill flow must loop, regardless of the earlier toggle.
+    expect(screen.getByRole('button', { name: 'Loop' })).toHaveAttribute('aria-pressed', 'true');
+  });
+
   it('the silent-stop summary counts the measure that silenced the run (Task 20)', async () => {
     // Four silent measures trip the auto-stop. onSilentStop fires from INSIDE the
     // evaluator's grading effect, in the same tick as the 4th measure's grade, so
