@@ -1626,16 +1626,16 @@ describe('ScorePlayer — metronome in Learn (M1/M2/M4)', () => {
   });
 
   it('retunes a running Learn click live with the EXACT bpm (no rounding)', () => {
-    h.layoutExtras = { tempoEntries: [{ onsetQuarter: 0, bpm: 100 }] }; // 100 × 0.7 = 70 — rounding would corrupt it
+    h.layoutExtras = { tempoEntries: [{ onsetQuarter: 0, bpm: 90 }] }; // 90 × 1.25 = 112.5 — rounding would corrupt it
     renderPlayer();
     enterLearn();
     act(() => { fireEvent.click(screen.getByRole('button', { name: /metronome/i })); }); // ON first
-    expect(h.clickSched.start).toHaveBeenCalledWith(100);
+    expect(h.clickSched.start).toHaveBeenCalledWith(90);
     act(() => { fireEvent.click(screen.getByRole('button', { name: /^tempo/i })); });
-    act(() => { fireEvent.click(screen.getByRole('button', { name: /^70%/ })); }); // change tempo while ticking
+    act(() => { fireEvent.click(screen.getByRole('button', { name: /^125%/ })); }); // change tempo while ticking
     // The hook must receive the exact product, not a rounded display value —
-    // (playTimeline scales by exact 1/tempoMult): 100 × 0.7 = 70.
-    expect(h.clickSched.setBpm).toHaveBeenCalledWith(70);
+    // (playTimeline scales by exact 1/tempoMult): 90 × 1.25 = 112.5.
+    expect(h.clickSched.setBpm).toHaveBeenCalledWith(112.5);
   });
 
   it('tempo steps show the resulting BPM (M4)', () => {
