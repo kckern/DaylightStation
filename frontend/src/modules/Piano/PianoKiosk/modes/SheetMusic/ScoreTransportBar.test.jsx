@@ -302,12 +302,28 @@ describe('ScoreTransportBar', () => {
 });
 
 describe('ScoreTransportBar — stable geography (C2)', () => {
-  it('Learn renders Restart, a disabled Play, the metronome, and the Loop control', () => {
-    render(<ScoreTransportBar {...base} mode="learn" step={0} total={4} measure={1} measureTotal={2} ready canRestart={false} />);
+  it('Learn renders Restart, the metronome, the Loop control — and a Play the gate can lock', () => {
+    // Wave-3 §B: Play is locked by `playLocked` (Learn's GATE — a range with
+    // looping on), not by the mode. Learn's machine states pass it false and get
+    // an ordinary live transport in the same slot.
+    const { rerender } = render(<ScoreTransportBar {...base} mode="learn" step={0} total={4} measure={1} measureTotal={2} ready canRestart={false} playLocked />);
     expect(screen.getByRole('button', { name: /restart/i })).toBeDisabled();
     expect(screen.getByRole('button', { name: /learn advances as you play/i })).toBeDisabled();
     expect(screen.getByRole('button', { name: /metronome/i })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Loop' })).toBeInTheDocument();
+
+    rerender(<ScoreTransportBar {...base} mode="learn" step={0} total={4} measure={1} measureTotal={2} ready canRestart={false} />);
+    expect(screen.queryByRole('button', { name: /learn advances as you play/i })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Play' })).toBeEnabled(); // machine playback in Learn
+  });
+
+  it('playLocked, not the mode, is what disables the run button', () => {
+    // The lock is a state, not a place: any mode can be handed it, and Learn
+    // without it behaves exactly like Listen/Polish.
+    const { rerender } = render(<ScoreTransportBar {...base} mode="listen" step={0} total={4} ready playLocked />);
+    expect(screen.getByRole('button', { name: /learn advances as you play/i })).toBeDisabled();
+    rerender(<ScoreTransportBar {...base} mode="listen" step={0} total={4} ready running />);
+    expect(screen.getByRole('button', { name: 'Pause' })).toBeEnabled();
   });
   it('Listen renders the metronome disabled (the performance is the beat)', () => {
     render(<ScoreTransportBar {...base} mode="listen" step={0} total={4} ready />);
