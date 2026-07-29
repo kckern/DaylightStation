@@ -36,6 +36,7 @@ export function layout({ page, blocks }) {
   const contentW = page.widthPt - 2 * page.marginPt;
   const cells = [];
   const titles = [];
+  const underfull = [];
 
   // Vertical pen position. Blocks stack down the page, so each one starts where the
   // previous left off rather than at a position derived from its own index.
@@ -49,6 +50,16 @@ export function layout({ page, blocks }) {
     // An untitled block reserves no headroom at all — the caller opted out of the label,
     // not merely out of the text, so the cells move up to fill the space.
     const titleH = block.title ? (block.titleHeightPt ?? DEFAULT_TITLE_HEIGHT_PT) : 0;
+
+    // `cols` is fixed but `rows` is only a per-page maximum: config declares the shape,
+    // the data decides how many marks there actually are. A short block prints one
+    // partial row and stops — it is never padded and never an error. It IS worth
+    // reporting, though: a fridge sheet with four of twenty-five container slots filled
+    // is usually a sign the caller's data went missing, so the caller gets told.
+    const capacity = block.cols * block.rows;
+    if (block.count < capacity) {
+      underfull.push({ block: block.id, capacity, items: block.count });
+    }
 
     if (block.title) {
       titles.push({
@@ -80,5 +91,5 @@ export function layout({ page, blocks }) {
     cursorY += usedRows * (cellH + gap);
   }
 
-  return { pages: 1, cells, titles, underfull: [] };
+  return { pages: 1, cells, titles, underfull };
 }

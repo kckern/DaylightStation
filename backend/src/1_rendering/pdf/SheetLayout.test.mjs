@@ -48,3 +48,28 @@ describe('layout — titles', () => {
     expect(withTitle.cells[0].y - noTitle.cells[0].y).toBeCloseTo(24, 5);
   });
 });
+
+describe('layout — underfull and stacking', () => {
+  it('an underfull block ends after its last item and reports capacity', () => {
+    const result = layout({
+      page: PAGE,
+      blocks: [{ id: 'containers', cols: 5, rows: 5, count: 4, gapPt: 8 }],
+    });
+    expect(result.cells).toHaveLength(4);
+    expect(result.cells.every((c) => c.page === 0)).toBe(true);
+    expect(result.underfull).toEqual([{ block: 'containers', capacity: 25, items: 4 }]);
+  });
+
+  it('stacks a second block below the first, not overlapping it', () => {
+    const result = layout({
+      page: PAGE,
+      blocks: [
+        { id: 'a', cols: 3, rows: 3, count: 9, gapPt: 8 },
+        { id: 'b', cols: 5, rows: 5, count: 5, gapPt: 8 },
+      ],
+    });
+    const aBottom = Math.max(...result.cells.filter((c) => c.block === 'a').map((c) => c.y + c.h));
+    const bTop = Math.min(...result.cells.filter((c) => c.block === 'b').map((c) => c.y));
+    expect(bTop).toBeGreaterThanOrEqual(aBottom);
+  });
+});
