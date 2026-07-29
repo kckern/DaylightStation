@@ -489,6 +489,153 @@ describe('CompositionStore', () => {
     });
   });
 
+  // ---------------------------------------------------------------------------
+  // One-deep undo — the `rs:undo` scan.
+  //
+  // Rescanning already fixes a WRONG slot (setters overwrite), so undo exists for
+  // the case rescanning cannot reach: taking a slot back to empty. That makes
+  // "what does the entry look like afterwards" the whole contract, and these
+  // assert the entry, not the return value alone.
+  // ---------------------------------------------------------------------------
+
+  describe('undo', () => {
+    it('takes back a density, leaving the slots that preceded it', () => {
+      store.setWeight('scale-1', { grams: 500, unit: 'g' });
+      store.setDensity('scale-1', 4);
+      expect(store.undo('scale-1')).toBe(true);
+      expect(store.read('scale-1')).toMatchObject({
+        grams: 500, unit: 'g', density: null, container: null, active: true, complete: false,
+      });
+    });
+
+    it('takes back a container', () => {
+      store.setDensity('scale-1', 4);
+      store.setContainer('scale-1', 'mug');
+      expect(store.undo('scale-1')).toBe(true);
+      expect(store.read('scale-1')).toMatchObject({ density: 4, container: null });
+    });
+
+    it('takes back a weight', () => {
+      store.setDensity('scale-1', 4);
+      store.setWeight('scale-1', { grams: 500, unit: 'g' });
+      expect(store.undo('scale-1')).toBe(true);
+      expect(store.read('scale-1')).toMatchObject({ grams: null, unit: null, density: 4 });
+    });
+
+    it('takes back an overwrite to the value it overwrote, not to empty', () => {
+      // The setters overwrite rather than append, so the state before `dl:7` was
+      // `dl:4` — not "no density". An undo that emptied the slot would silently
+      // discard a correct earlier scan.
+      store.setDensity('scale-1', 4);
+      store.setDensity('scale-1', 7);
+      expect(store.undo('scale-1')).toBe(true);
+      expect(store.read('scale-1').density).toBe(4);
+    });
+
+    it('undoes the FIRST scan back to no entry at all', () => {
+      // Before the first scan there was no entry, so that is what gets restored.
+      // Leaving an active-but-empty entry would report active: true on a scale
+      // nobody has scanned, and `read().active` is what tells those two apart.
+      store.setDensity('scale-1', 4);
+      expect(store.undo('scale-1')).toBe(true);
+      expect(store.read('scale-1').active).toBe(false);
+    });
+
+    it('reports false with nothing to undo, rather than throwing', () => {
+      expect(store.undo('scale-1')).toBe(false);
+      expect(store.read('scale-1').active).toBe(false);
+    });
+
+    it('is one deep: a second consecutive undo is a no-op, not a double rewind', () => {
+      store.setWeight('scale-1', { grams: 500, unit: 'g' });
+      store.setContainer('scale-1', 'mug');
+      store.setDensity('scale-1', 4);
+      expect(store.undo('scale-1')).toBe(true);
+      const afterFirst = store.read('scale-1');
+      expect(store.undo('scale-1')).toBe(false);
+      expect(store.read('scale-1')).toEqual(afterFirst);   // container still there
+      expect(afterFirst).toMatchObject({ grams: 500, container: 'mug', density: null });
+    });
+
+    it('becomes undoable again after another scan', () => {
+      // One deep means one deep per mutation, not one undo per lifetime.
+      store.setDensity('scale-1', 4);
+      store.setContainer('scale-1', 'mug');
+      expect(store.undo('scale-1')).toBe(true);
+      store.setContainer('scale-1', 'small-bowl');
+      expect(store.undo('scale-1')).toBe(true);
+      expect(store.read('scale-1')).toMatchObject({ density: 4, container: null });
+    });
+
+    it('has nothing to undo once the window has expired', () => {
+      store.setDensity('scale-1', 4);
+      store.setContainer('scale-1', 'mug');
+      clock += 900_001;
+      expect(store.undo('scale-1')).toBe(false);
+      expect(store.read('scale-1').active).toBe(false);
+    });
+
+    it('does not resurrect an entry a later scan expired past', () => {
+      // The undo record dies with the entry that carried it: after expiry the
+      // fresh entry starts with nothing behind it.
+      store.setDensity('scale-1', 4);
+      clock += 900_001;
+      store.setWeight('scale-1', { grams: 700, unit: 'g' });
+      expect(store.undo('scale-1')).toBe(true);
+      expect(store.read('scale-1').active).toBe(false);    // back to nothing, not to dl:4
+    });
+
+    it('does not resurrect a cleared composition', () => {
+      // `rs:clear` is deliberate and total. Undo covers the three setters only,
+      // so a clear (and likewise endPlacement) is not a step it can walk back.
+      store.setDensity('scale-1', 4);
+      store.clear('scale-1');
+      expect(store.undo('scale-1')).toBe(false);
+      expect(store.read('scale-1').active).toBe(false);
+    });
+
+    it('refreshes the window, because a scan at the fridge is user activity', () => {
+      // An undo that did NOT refresh would shorten the window it is correcting
+      // within: the user fixes a mis-scan at minute 14 and the composition they
+      // just fixed expires a minute later.
+      store.setDensity('scale-1', 4);
+      store.setContainer('scale-1', 'mug');
+      clock += 800_000;
+      store.undo('scale-1');
+      clock += 800_000;                       // 1.6M total, 800k since the undo
+      expect(store.read('scale-1')).toMatchObject({ density: 4, active: true });
+    });
+
+    it('keeps scales independent', () => {
+      store.setDensity('scale-1', 4);
+      store.setDensity('scale-2', 9);
+      expect(store.undo('scale-1')).toBe(true);
+      expect(store.read('scale-2').density).toBe(9);
+    });
+
+    it('does not undo a setter that rejected', () => {
+      // A call that did not happen is not a step. Undoing past it would take back
+      // the last GOOD scan and blame it on the bad one.
+      store.setDensity('scale-1', 4);
+      store.setContainer('scale-1', 'mug');
+      expect(() => store.setDensity('scale-1', 99)).toThrow(ValidationError);
+      expect(store.undo('scale-1')).toBe(true);
+      expect(store.read('scale-1')).toMatchObject({ density: 4, container: null });
+    });
+
+    it('refuses an unusable scale id', () => {
+      expect(() => store.undo('')).toThrow(ValidationError);
+      expect(() => store.undo(null)).toThrow(ValidationError);
+    });
+
+    it('survives being called through a detached reference', () => {
+      const { setDensity, undo, read } = store;
+      setDensity('scale-1', 4);
+      expect(undo('scale-1')).toBe(true);
+      expect(read('scale-1').active).toBe(false);
+    });
+  });
+
   describe('clock injection', () => {
     it('requires a clock rather than defaulting to Date.now', () => {
       // No Date.now fallback: a caller who forgets to inject would otherwise get
