@@ -18,7 +18,7 @@ import Icon from '../../icons/Icon.jsx';
 import usePauseMediaOnUnmount from './usePauseMediaOnUnmount.js';
 import useABLoop from './useABLoop.js';
 import usePianoWatchLog from './usePianoWatchLog.js';
-import { nextPianoRate } from './pianoPlaybackRate.js';
+import useSyncedPlaybackRate from './useSyncedPlaybackRate.js';
 import { lectureContentId, resumeSecondsFor } from './lectureMeta.js';
 import useReloadGuard from '../../useReloadGuard.js';
 import EngagementGate from './EngagementGate.jsx';
@@ -56,7 +56,6 @@ export default function PianoVideoPlayer({ lecture, source, onBack, isSequential
   const [isPlaying, setIsPlaying] = useState(true);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
-  const [rate, setRate] = useState(1);
   const [aspect, setAspect] = useState(16 / 9); // intrinsic video AR → sizes the box (no pillarbox)
   const bodyRef = useRef(null);
   const [stackW, setStackW] = useState(null);   // px width of the video+controls column
@@ -111,6 +110,7 @@ export default function PianoVideoPlayer({ lecture, source, onBack, isSequential
     ...(title ? [{ label: title }] : []),
   ], [source, title, onBack]));
   const loop = useABLoop(mediaEl, ctrl.seek, ctrl.getCurrentTime);
+  const { rate, cycleRate: handleCycleRate } = useSyncedPlaybackRate(mediaEl, playerRef);
   usePianoWatchLog({ mediaEl, contentId, title, resumeSeconds, userId: currentUser, engagedRef });
   useReloadGuard(isPlaying);
 
@@ -122,11 +122,17 @@ export default function PianoVideoPlayer({ lecture, source, onBack, isSequential
     <PlayerBoundary onBack={onBack}>
       <Suspense fallback={<SkeletonStage />}>
         {/* focused = the minimal shader (Player suppresses its own overlays; the
-            piano chrome provides the controls). */}
-        <Player ref={playerRef} play={{ contentId, shader: 'focused' }} clear={onBack} />
+            piano chrome provides the controls). `seconds` carries OUR computed
+            resumeSecondsFor(lecture) explicitly, and `resume:false` suppresses
+            the Player's own implicit Plex-viewOffset resume — otherwise a
+            completed lecture (resumeSeconds 0) could still open at Plex's tail
+            playhead and auto-exit seconds later when `ended` fires (the
+            re-watch "jumpscare"). Passing our value for BOTH the completed and
+            in-progress cases means there's only ever one source of truth. */}
+        <Player ref={playerRef} play={{ contentId, shader: 'focused', seconds: resumeSeconds, resume: false }} clear={onBack} />
       </Suspense>
     </PlayerBoundary>
-  ), [contentId, onBack]);
+  ), [contentId, onBack, resumeSeconds]);
 
   // Fullscreen is entered from the chrome strip's button; a tap never enters it.
   // While fullscreen the strip is offscreen, so taps summon the transport
@@ -244,13 +250,6 @@ export default function PianoVideoPlayer({ lecture, source, onBack, isSequential
       flash(isPlaying ? 'pause' : 'play');
     }
   }, [isFullscreen, handleSkip, forwardDisabled, ctrl, isPlaying, flash]);
-
-  const handleCycleRate = useCallback(() => {
-    const r = nextPianoRate(rate);
-    setRate(r);
-    playerRef.current?.setPlaybackRate?.(r);
-    getLogger().child({ component: 'piano-video-player' }).info('piano.video.rate', { rate: r });
-  }, [rate]);
 
   if (!contentId) {
     return (

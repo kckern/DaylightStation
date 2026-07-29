@@ -88,7 +88,7 @@ describe('PianoVideoChrome — volume modal', () => {
   it('closes the volume modal from its own close button', () => {
     render(<PianoVideoChrome {...baseProps} />);
     fireEvent.click(screen.getByLabelText('Volume'));
-    fireEvent.click(screen.getByLabelText('Close volume'));
+    fireEvent.click(screen.getByLabelText('Close Volume'));
     expect(screen.queryByRole('dialog', { name: 'Volume' })).toBeNull();
   });
 });

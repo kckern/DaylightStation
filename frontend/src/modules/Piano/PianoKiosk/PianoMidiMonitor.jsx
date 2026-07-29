@@ -38,7 +38,7 @@ export default function PianoMidiMonitor() {
     <div className="piano-midimon">
       <div className="piano-midimon__outs">
         <div className="piano-midimon__pc">
-          <button type="button" className="piano-midimon__btn" onClick={() => setProgram((p) => Math.max(0, p - 1))} aria-label="Program down">−</button>
+          <button type="button" className="piano-midimon__btn" onClick={() => setProgram((p) => Math.max(0, p - 1))} aria-label="Program down">-</button>
           <span className="piano-midimon__pcval">PC {program}</span>
           <button type="button" className="piano-midimon__btn" onClick={() => setProgram((p) => Math.min(127, p + 1))} aria-label="Program up">+</button>
           <button type="button" className="piano-midimon__btn piano-midimon__btn--go" onClick={() => fire('program', () => sendProgramChange(program))}>Send</button>
