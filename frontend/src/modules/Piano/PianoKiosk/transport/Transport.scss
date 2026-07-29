@@ -161,3 +161,41 @@
   gap: 0.4rem;
   .piano-tbtn { justify-content: flex-start; font-size: 1.1rem; }
 }
+
+// ToggleSwitch — label-left switch row (wave-3 J). Track ≥48px wide; the whole
+// row is the tap target, so the thumb never needs to be hit precisely.
+.piano-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.6rem;
+  min-height: 3rem;
+  padding: 0.25rem 0.5rem;
+  background: none;
+  border: none;
+  color: var(--piano-fg);
+  font: inherit;
+  cursor: pointer;
+
+  &__track {
+    width: 3rem;
+    height: 1.5rem;
+    border-radius: 0.75rem;
+    background: var(--piano-border);
+    position: relative;
+    transition: background 120ms ease;
+    flex-shrink: 0;
+  }
+  &__thumb {
+    position: absolute;
+    top: 0.15rem;
+    left: 0.15rem;
+    width: 1.2rem;
+    height: 1.2rem;
+    border-radius: 50%;
+    background: var(--piano-surface);
+    transition: transform 120ms ease;
+  }
+  &.is-on &__track { background: var(--piano-accent, #2ec46f); }
+  &.is-on &__thumb { transform: translateX(1.5rem); }
+  &:disabled { opacity: 0.4; cursor: default; }
+}
