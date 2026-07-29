@@ -114,8 +114,10 @@ const ScorePracticeCluster = memo(function ScorePracticeCluster({
  * ScorePracticeCluster since audit C1/C2.)
  *
  * Stable geography (audit C2): every control renders in all non-Perform modes;
- * mode gating disables IN PLACE (Key dims outside Listen) instead of unmounting,
- * so the cluster never reflows on a mode change.
+ * mode gating (e.g. the metronome disabling in Listen) applies IN PLACE instead
+ * of unmounting, so the cluster never reflows on a mode change. Key transposes
+ * in every mode but Perform — the engrave re-pitches and Learn/Polish evaluate
+ * against the transposed steps.
  *
  * Memoized and step-INDEPENDENT: none of its props change as the cursor advances,
  * so `React.memo` bails out and this whole subtree is skipped per step. Only the
@@ -165,9 +167,9 @@ const ScoreViewControls = memo(function ScoreViewControls({
   // else stays mounted and gates in place (audit C2).
   const isPerform = mode === 'perform';
   if (isPerform) return null;
-  // Key transpose only ACTS in Listen (the demo can be re-pitched); elsewhere the
-  // control stays put but its buttons disable and the wrapper dims.
-  const keyEnabled = mode === 'listen';
+  // Key transpose acts in every practice mode; the engrave re-pitches and the
+  // evaluator follows the engraved steps, so Learn/Polish get a live Key chip too.
+  const keyEnabled = mode !== 'perform';
 
   const renderPartChip = (part) => {
     const { staff, label } = part;
@@ -297,10 +299,10 @@ const ScoreViewControls = memo(function ScoreViewControls({
  * Every control renders in ALL modes but Perform; per-mode gating disables/dims
  * IN PLACE instead of unmounting, so nothing ever moves under the finger:
  *  Listen  — all live except metronome (disabled — the performance is the beat)
- *            and the Learn-only Play lockout; Key enabled here only.
+ *            and the Learn-only Play lockout; Key live.
  *  Learn   — Play disabled ("Learn advances as you play"); metronome free-runs;
- *            Key dimmed.
- *  Polish  — full transport; metronome arms the run click; Key dimmed.
+ *            Key live (transposes the engrave Learn evaluates against).
+ *  Polish  — full transport; metronome arms the run click; Key live.
  *  Perform — only a {page} / {pages} indicator (music-stand mode).
  *
  * Perf structure (Task 10): this component is a THIN SHELL. It threads props and

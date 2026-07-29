@@ -119,8 +119,8 @@ describe('ScoreTransportBar', () => {
     fireEvent.click(tempoBtn);
     fireEvent.click(screen.getByRole('button', { name: /^75%/ }));
     expect(onTempo).toHaveBeenCalledWith(0.75);
-    // Key stays rendered in Polish but is gated in place (disabled); play-along is gone.
-    expect(screen.getByRole('button', { name: 'Key' })).toBeDisabled();
+    // Key stays live in Polish (transpose acts in every practice mode); play-along is gone.
+    expect(screen.getByRole('button', { name: 'Key' })).toBeEnabled();
     expect(screen.queryByRole('button', { name: /play along/i })).toBeNull();
   });
 
@@ -298,9 +298,11 @@ describe('ScoreTransportBar — stable geography (C2)', () => {
     expect(screen.queryByRole('button', { name: /metronome/i })).toBeNull();
     expect(screen.getByLabelText('Page')).toHaveTextContent('2 / 5');
   });
-  it('Learn/Polish keep Key rendered but disabled (in-place gating)', () => {
-    render(<ScoreTransportBar {...base} mode="polish" step={0} total={4} ready />);
-    expect(screen.getByRole('button', { name: 'Key' })).toBeDisabled();
+  it('Learn/Polish keep Key rendered and enabled — transpose acts in every practice mode', () => {
+    const { rerender } = render(<ScoreTransportBar {...base} mode="learn" step={0} total={4} ready />);
+    expect(screen.getByRole('button', { name: 'Key' })).toBeEnabled();
+    rerender(<ScoreTransportBar {...base} mode="polish" step={0} total={4} ready />);
+    expect(screen.getByRole('button', { name: 'Key' })).toBeEnabled();
   });
   it('transport buttons render Play/Pause as SVG icons, not glyph text', () => {
     render(<ScoreTransportBar {...base} mode="polish" step={0} total={4} ready canRestart />);
