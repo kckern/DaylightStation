@@ -4,8 +4,9 @@
  * Stands in for the ESP32 barcode relay: it publishes exactly the normalized
  * event `createBarcodeRelay` broadcasts (`backend/src/3_applications/hardware/
  * barcodeRelay.mjs`) on the same `barcode-relay` topic, and hands the same
- * payload to the same optional `onScan` router — which is where the School
- * console's `sch:` token branch lives. Subscribers cannot tell the difference.
+ * payload to the same optional `onScan` callback — which now hands every scan to
+ * the shared scan vocabulary (`#composition/modules/scanDispatch.mjs`), School's
+ * `sch:` tokens included. Subscribers cannot tell the difference.
  *
  * Note the broadcast payload is `{ source, device, route, code, ts }`: the
  * inbound `type: 'scan'` discriminator belongs to the relay's WS ingest message

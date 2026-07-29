@@ -172,11 +172,21 @@ describe('branch order in the composition root', () => {
   });
 
   it('the existing branches are untouched by it', async () => {
-    const source = await dispatchSource();
-    // The decision the nutribot route is built on, and the trigger fallback's
-    // source tag. If school had been threaded THROUGH either of them rather than
-    // registered beside them, one of these would have moved.
-    expect(source).toContain('routeNutribotScan({ scaleId, code: body, apply: applyScanToComposition })');
-    expect(source).toContain("source: 'barcode',");
+    // Was a source grep for the literal `routeNutribotScan(...)` call. That broke
+    // on reformatting and proved nothing a behaviour test does not: school being
+    // registered BESIDE the other domains rather than threaded through them is
+    // exactly what "each keeps its own handler" means, and the two tests above
+    // already pin it. What is left worth asserting is that the other domains are
+    // still reachable at all — a school branch that had swallowed one of them
+    // would show up here and nowhere else.
+    const { createScanDispatch } = await import('#composition/modules/scanDispatch.mjs');
+    const { namespaces } = createScanDispatch({
+      schoolLifecycle: { handlesCode: () => false, handleScan: null },
+      triggerDispatchService: { handleEvent: async () => {} },
+      configService: {}, userIdentityService: {}, logger: silent, barcodeLogger: silent,
+    });
+    expect(namespaces).toEqual(
+      expect.arrayContaining(['content', 'command', 'school', 'nutrition', 'product']),
+    );
   });
 });

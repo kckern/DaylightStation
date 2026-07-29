@@ -202,7 +202,16 @@ function toRouteMap(routeFallback) {
  */
 const NO_LOGGER = Object.freeze({});
 
-function emit(logger, level, event, data) {
+/**
+ * Exported so composition can hold the same guarantee on ITS OWN logger calls.
+ *
+ * The doctrine above is not specific to this class: any logger call that a
+ * caller's correctness does not depend on wants exactly this treatment, and a
+ * composition root that reports a config problem AT STARTUP wants it most of
+ * all — a bare call there turns "the log sink is down" into "the station does
+ * not boot", which is the worst available trade in the building.
+ */
+export function emit(logger, level, event, data) {
   try {
     if (typeof logger?.[level] === 'function') logger[level](event, data);
   } catch {
