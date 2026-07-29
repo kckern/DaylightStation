@@ -263,11 +263,32 @@ export function useComposerInput({ setEditorState, subscribe, logger, onTogglePl
         log.sampled('composer.input.note-duration', {
           note: evt.note, pitch, heldMs, class: cls, type,
         }, { maxPerMinute: 120, aggregate: true });
+        // HISTORY-NEUTRAL WRITE (fix round 1): call the raw `setNoteDuration`
+        // command directly, NOT through `applyCommand`. applyCommand always
+        // pushes a history entry whenever the score reference changes (it has
+        // no no-op short-circuit for "this is just a follow-up patch of the
+        // insert that already recorded history"), so routing this through it
+        // pushed a SECOND `past` entry per played note — one undo only
+        // downgraded the type back toward the default, a second undo was
+        // needed to actually remove the note (doubled undo presses, and half
+        // the effective depth of HISTORY_CAP=200).
+        //
+        // The insert-then-classify pair must read as ONE atomic edit for
+        // undo, so the classify step reuses the SAME history entry the insert
+        // already pushed: `setNoteDuration` itself never touches `state.history`
+        // (see model/editor.js — it returns `{ ...state, score, dirty, revision }`,
+        // which spreads the existing `history` through unchanged), so calling
+        // it directly here still returns a genuinely new `state` object (new
+        // score reference, bumped revision) — `setEditorState` still sees a
+        // changed reference and still re-renders/settles exactly as before —
+        // it just never calls `pushHistory`. One undo after this now restores
+        // the score as it was immediately before the note_on insert, i.e. it
+        // removes the note entirely, in one press.
         setEditorState((s) => {
           const pos = findNoteByTag(s.score, tag);
           if (!pos) return s; // deleted/undone since insertion — nothing to reclassify
           const note = s.score.parts[0].measures[pos.measureIdx].notes[pos.noteIdx];
-          return applyCommand(s, setNoteDuration, pos, { type, dots: note.dots, triplet: note.triplet });
+          return setNoteDuration(s, pos, { type, dots: note.dots, triplet: note.triplet });
         });
         return;
       }

@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
 import { mapKey, useComposerInput, KEY_LEGEND, CHORD_ONSET_TOLERANCE_MS } from './useComposerInput.js';
-import { makeEmptyScore, initEditor } from './model/index.js';
+import { makeEmptyScore, initEditor, undo } from './model/index.js';
 import { intern, KIND, __resetRecorder, __snapshotForTest } from '../../../../../lib/logging/inputRecorder.js';
 
 // A stub logger with vi.fn() spies on every method the hook calls, so tests can
@@ -342,6 +342,25 @@ describe('useComposerInput note-entry logging (task 27)', () => {
         note: 60, heldMs: 80, class: 'short', type: '16th',
       });
       expect(getState().score.parts[0].measures[0].notes[0].type).toBe('16th');
+    });
+
+    // Fix round 1 (probe-verified review finding): the note_off reclassify
+    // write used to route through applyCommand, which always pushes a SECOND
+    // history entry (it has no no-op short-circuit for "this just patches the
+    // insert that already recorded history"). Insert-then-classify must read
+    // as ONE atomic edit for undo — one press should remove the whole note,
+    // not just downgrade its type back toward the default first.
+    it('insert + release-time reclassify is ONE history entry — one undo removes the whole note', () => {
+      const { getState, midi } = armedHarness();
+      midi({ type: 'note_on', note: 60, velocity: 80, time: 1000 });
+      midi({ type: 'note_off', note: 60, time: 1080 }); // heldMs = 80 -> '16th' (observable vs. the 'quarter' default)
+      const settled = getState();
+      expect(settled.score.parts[0].measures[0].notes).toHaveLength(1);
+      expect(settled.score.parts[0].measures[0].notes[0].type).toBe('16th'); // classification did apply
+      expect(settled.history.past).toHaveLength(1); // NOT two — insert + classify collapsed to one entry
+
+      const afterUndo = undo(settled);
+      expect(afterUndo.score.parts[0].measures[0].notes).toHaveLength(0); // one undo removes the note entirely
     });
 
     it('a medium held note (150-449ms) is reclassified to eighth on release', () => {
