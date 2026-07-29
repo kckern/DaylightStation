@@ -201,3 +201,42 @@ describe('layout — alignment', () => {
     expect(lastRow[0].x).toBeCloseTo(firstRow[0].x, 5);
   });
 });
+
+describe('layout — justify', () => {
+  const contentW = PAGE.widthPt - 2 * PAGE.marginPt;
+
+  it('spreads a row across the full content width, turning slack into gap', () => {
+    const r = layout({
+      page: PAGE,
+      blocks: [{ id: 'a', cols: 3, rows: 1, count: 3, gapPt: 8, maxCellWPt: 135, align: 'justify' }],
+    });
+    const [c0, c1, c2] = r.cells;
+    expect(c0.w).toBe(135);
+    // first cell at the margin, last cell flush to the right margin
+    expect(c0.x).toBeCloseTo(PAGE.marginPt, 5);
+    expect(c2.x + c2.w).toBeCloseTo(PAGE.widthPt - PAGE.marginPt, 5);
+    // gaps equal, and far wider than the configured 8pt — that is the point
+    const g1 = c1.x - (c0.x + c0.w);
+    const g2 = c2.x - (c1.x + c1.w);
+    expect(g1).toBeCloseTo(g2, 5);
+    expect(g1).toBeGreaterThan(60);
+  });
+
+  it('keeps the VERTICAL gap at gapPt — justify only redistributes horizontally', () => {
+    const r = layout({
+      page: PAGE,
+      blocks: [{ id: 'a', cols: 3, rows: 2, count: 6, gapPt: 26, maxCellWPt: 135, align: 'justify' }],
+    });
+    const rowGap = r.cells[3].y - (r.cells[0].y + r.cells[0].h);
+    expect(rowGap).toBeCloseTo(26, 5);
+  });
+
+  it('does not stretch a single-column block', () => {
+    const r = layout({
+      page: PAGE,
+      blocks: [{ id: 'a', cols: 1, rows: 1, count: 1, gapPt: 8, maxCellWPt: 135, align: 'justify' }],
+    });
+    expect(r.cells[0].w).toBe(135);
+    expect(r.cells[0].x).toBeCloseTo(PAGE.marginPt, 5);
+  });
+});
