@@ -49,10 +49,15 @@ import {
  * no entry here still prints (capitalised, with no hint) rather than blocking the
  * sheet; fill in its copy here so the button explains itself on the fridge.
  */
+// Copy and icons for the control verbs. These live in code rather than config
+// because the verbs themselves do: they come from CONTROL_VERBS in the grammar,
+// not from scales.yml, so a house cannot have a control the parser does not know.
+// `nutribot.controls.<verb>.icon` still overrides, for a household that wants
+// different art without touching source.
 const CONTROL_COPY = Object.freeze(Object.assign(Object.create(null), {
-  clear: { label: 'Clear', sublabel: 'Start this entry over' },
-  undo: { label: 'Undo', sublabel: 'Take back the last scan' },
-  done: { label: 'Done', sublabel: 'Log it now' },
+  clear: { label: 'Clear', sublabel: 'Start this entry over', icon: 'control/clear' },
+  undo: { label: 'Undo', sublabel: 'Take back the last scan', icon: 'control/undo' },
+  done: { label: 'Done', sublabel: 'Log it now', icon: 'control/done' },
 }));
 
 const capitalise = (s) => s.charAt(0).toUpperCase() + s.slice(1);
@@ -116,16 +121,19 @@ export function createNutritionProviders({ getScaleConfig, loadIcon = () => null
      * parser cannot disagree about which verbs exist. Independent of scale config:
      * these are grammar, not configuration.
      */
-    'nutrition.controls': () => CONTROL_VERBS.map((verb) => {
-      const copy = CONTROL_COPY[verb];
-      return {
-        code: encodeControl(verb),
-        label: copy?.label ?? capitalise(verb),
-        sublabel: copy?.sublabel ?? '',
-        ...icon(copy?.icon),
-        meta: { verb },
-      };
-    }),
+    'nutrition.controls': () => {
+      const overrides = (getScaleConfig() || {}).controls || {};
+      return CONTROL_VERBS.map((verb) => {
+        const copy = CONTROL_COPY[verb];
+        return {
+          code: encodeControl(verb),
+          label: copy?.label ?? capitalise(verb),
+          sublabel: copy?.sublabel ?? '',
+          ...icon(overrides[verb]?.icon ?? copy?.icon),
+          meta: { verb },
+        };
+      });
+    },
 
     /**
      * Common foods — READABLE TEXT ONLY, deliberately WITHOUT a `code`.

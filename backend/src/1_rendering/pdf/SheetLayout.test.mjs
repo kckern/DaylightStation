@@ -171,3 +171,33 @@ describe('layout — max cell width', () => {
     expect(capped.pages).toBe(1);
   });
 });
+
+describe('layout — alignment', () => {
+  it('left-aligns by default', () => {
+    const r = layout({ page: PAGE, blocks: [{ id: 'a', cols: 3, rows: 1, count: 3, gapPt: 8, maxCellWPt: 100 }] });
+    expect(r.cells[0].x).toBeCloseTo(PAGE.marginPt, 5);
+  });
+
+  it('centres a block whose cells do not span the page', () => {
+    const r = layout({
+      page: PAGE,
+      blocks: [{ id: 'a', cols: 3, rows: 1, count: 3, gapPt: 8, maxCellWPt: 100, align: 'center' }],
+    });
+    const used = 3 * 100 + 2 * 8;
+    const contentW = PAGE.widthPt - 2 * PAGE.marginPt;
+    expect(r.cells[0].x).toBeCloseTo(PAGE.marginPt + (contentW - used) / 2, 5);
+    // and the block is symmetric: left inset equals right inset
+    const rightEdge = r.cells[2].x + r.cells[2].w;
+    expect(r.cells[0].x - PAGE.marginPt).toBeCloseTo(PAGE.widthPt - PAGE.marginPt - rightEdge, 5);
+  });
+
+  it('centres on the FULL row width, so a short last row stays column-aligned', () => {
+    const r = layout({
+      page: PAGE,
+      blocks: [{ id: 'a', cols: 5, rows: 2, count: 7, gapPt: 8, maxCellWPt: 90, align: 'center' }],
+    });
+    const firstRow = r.cells.slice(0, 5);
+    const lastRow = r.cells.slice(5);
+    expect(lastRow[0].x).toBeCloseTo(firstRow[0].x, 5);
+  });
+});
