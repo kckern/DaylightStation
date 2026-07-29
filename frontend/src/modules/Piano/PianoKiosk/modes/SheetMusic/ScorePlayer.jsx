@@ -42,6 +42,7 @@ import RunSummary from './RunSummary.jsx';
 import CountInOverlay from './CountInOverlay.jsx';
 import LearnComplete from './LearnComplete.jsx';
 import FocusRangeLayer from './FocusRangeLayer.jsx';
+import RangeHandleLayer from './RangeHandleLayer.jsx';
 import LearnInkLayer from './LearnInkLayer.jsx';
 import { soundingFifths } from '../../../../MusicNotation/model/spellMidi.js';
 import SelectBanner from './SelectBanner.jsx';
@@ -79,6 +80,11 @@ const REVEAL_WRONG_STREAK = 3;
 // same near-black so the sheet doesn't take on a per-mode tint. Struck (green
 // HIT glow) and pending markers are unaffected — they're separate CSS classes.
 export const NOTE_INK = '#23262b';
+
+// A stable empty array for the section-mark prop: a fresh `[]` literal is a new
+// identity on every render, which would re-render FocusRangeLayer (and defeat any
+// future memoisation of it) on every transport tick just to draw no ticks.
+const NO_MARKS = [];
 
 /**
  * ScorePlayer — interactive engraved score. Four modes:
@@ -169,8 +175,8 @@ export default function ScorePlayer({ score: scoreMeta }) {
   // Practice loops are per-session by design — never restored (audit M1).
   const [focus, setFocus] = useState(null);
   // Is the loop ON (wave-2: loop is a direct toggle, separate from whether a
-  // range exists — audit L2 follow-up)? A defined range keeps showing its
-  // brackets even when looping is off (FocusRangeLayer reads `focus`, not the
+  // range exists — audit L2 follow-up)? A defined range keeps showing its tint
+  // and its handles even when looping is off (both layers read `focus`, not the
   // gated `range` below); only the wrap/clamp/home-step machinery cares.
   // Defaults FALSE (wave-3 B): a fresh session has no range at all, and the
   // endpoint flow starts loop-off — an endpoint tap plants a range without
@@ -184,6 +190,10 @@ export default function ScorePlayer({ score: scoreMeta }) {
   //   intermediate state (the retired two-tap flow's `selecting` stage machine).
   const [arming, setArming] = useState(null);
   const [armRejects, setArmRejects] = useState(0);
+  // Which endpoint handle is being DRAGGED right now (wave-3 F): null | 'in' |
+  // 'out'. Only chrome depends on it — the section ticks a drag would snap to —
+  // so it is deliberately not a ref: the ticks have to appear as the drag starts.
+  const [draggingEdge, setDraggingEdge] = useState(null);
   const [clickOn, setClickOn] = useState(() => restored.clickOn !== false); // Polish metronome — on unless turned off
   // Learn free-running metronome — explicit opt-in per session, NEVER persisted:
   // a walk-up user must not inherit a ticking room (audit M2).
@@ -1136,6 +1146,15 @@ export default function ScorePlayer({ score: scoreMeta }) {
     }
     return [...set];
   }, [sections, layout.measures]);
+  // The same landmarks, drawn on the score while an endpoint is up for grabs
+  // (armed, or a handle mid-drag): only the section STARTS, because a section's
+  // end and the next one's start are the same visual boundary one measure apart —
+  // ticking both would double every line and say nothing extra. Snapping still
+  // considers both ends (sectionBounds above); this is only what is SHOWN.
+  const sectionMarks = useMemo(() => {
+    const ms = layout.measures || [];
+    return sections.map((s) => sectionToRange(s, ms)?.inMeasure).filter((m) => m != null);
+  }, [sections, layout.measures]);
   // Nearest boundary within ONE measure, else the tapped measure unchanged.
   const snapMeasure = useCallback((mi) => {
     let best = mi;
@@ -1173,6 +1192,16 @@ export default function ScorePlayer({ score: scoreMeta }) {
     }
     logger.info('score.loop.set', { edge, measure, via, snapped: measure !== mi });
   }, [snapMeasure, stopForMatrixChange, logger]);
+
+  // A handle drag in progress. The layer reports `(edge, measureIndex)` as measures
+  // are crossed and `(edge, null)` when the gesture ENDS (commit, cancel or miss
+  // alike) — so this flag can never latch the section ticks on. The previewed
+  // measure itself is not applied: a drag paints its own handle, and writing
+  // `focus` per crossed measure would stop the transport dozens of times
+  // (commitEndpoint → stopForMatrixChange) during one gesture.
+  const onHandlePreview = useCallback((edge, mi) => {
+    setDraggingEdge(mi == null ? null : edge);
+  }, []);
 
   // Tap: Learn/Polish → move the cursor to the nearest note; Perform → scroll it into view.
   const onScoreClick = useCallback((e) => {
@@ -1754,10 +1783,12 @@ export default function ScorePlayer({ score: scoreMeta }) {
     : struck;
 
   // Per-step cursor boxes (same offset-space as the cursor). Shared geometry for
-  // BOTH the measure-grade wash (Polish) and the focus-range brackets (Learn/Polish),
-  // so it's computed whenever either could draw.
+  // the measure-grade wash (Polish) and the range tint / ticks / drag handles
+  // (Learn), so it's computed whenever any of them could draw.
   const showGrades = mode === 'polish';
-  const showFocusLayer = mode === 'learn' || mode === 'polish';
+  // Learn-only (wave-3 F): Polish lost the loop in the state matrix (Task 9), so a
+  // range tint there would advertise a control Polish does not have.
+  const showFocusLayer = mode === 'learn';
   const stepBoxes = useMemo(
     () => ((showGrades || showFocusLayer) ? events.map((e) => ({ x: e.x, top: e.top, bottom: e.bottom })) : []),
     [showGrades, showFocusLayer, events],
@@ -1814,13 +1845,31 @@ export default function ScorePlayer({ score: scoreMeta }) {
               grades={grades}
             />
           )}
-          {/* No `pending` bracket any more (wave-3 F): the first endpoint commits a
-              real one-measure range, so there is never a half-marked range to draw. */}
-          {showFocusLayer && layoutFresh && focus && (
+          {/* The range's TINT plus the section ticks a commit snaps to. No bracket
+              and no `pending` half-state (wave-3 F): the ends are the draggable
+              handles below, and the first endpoint commits a real one-measure
+              range. Mounted while ARMING even with no range yet — the ticks are
+              precisely what a first endpoint lands on. */}
+          {showFocusLayer && layoutFresh && (focus || arming) && (
             <FocusRangeLayer
               measures={layout.measures}
               stepBoxes={stepBoxes}
+              range={focus ? { inMeasure: focus.inMeasure, outMeasure: focus.outMeasure } : null}
+              marks={(arming || draggingEdge) ? sectionMarks : NO_MARKS}
+            />
+          )}
+          {/* The range's two draggable ends. AFTER FocusRangeLayer so the grips sit
+              above the tint; the layer root is inert, so only the 48px handles take
+              the gesture (and they swallow it, keeping tap-to-seek off them). */}
+          {mode === 'learn' && layoutFresh && focus && (
+            <RangeHandleLayer
+              measures={layout.measures}
+              stepBoxes={stepBoxes}
               range={{ inMeasure: focus.inMeasure, outMeasure: focus.outMeasure }}
+              onArm={onArm}
+              onCommit={commitEndpoint}
+              onPreview={onHandlePreview}
+              scrollRef={scrollRef}
             />
           )}
           {mode !== 'perform' && layoutFresh && (
