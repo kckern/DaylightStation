@@ -64,6 +64,24 @@ export function normalizeScaleNutribotConfig(raw = {}) {
         })
     : DEFAULT_DENSITY_LEVELS;
 
+  // Common-foods list for the printed fridge sheet. There is NO default table:
+  // an absent `foods:` means the block renders empty, which is the honest state
+  // before anyone has written the list. Rows are shaped, not filtered — nothing
+  // here is encoded into a scan code (no `fd:` grammar exists), so no row can be
+  // unprintable, and dropping a malformed one would put a silent hole in a
+  // laminated sheet. When a food grammar lands, validateScanConfig must REJECT
+  // unprintable ids the way it already does for containers, rather than this
+  // normalizer quietly discarding them.
+  const foods = Array.isArray(nb.foods)
+    ? nb.foods
+        .filter((f) => f && typeof f === 'object')
+        .map((f) => {
+          const out = { id: String(f.id ?? f.label ?? ''), label: String(f.label ?? f.id ?? '') };
+          if (f.sublabel !== undefined) out.sublabel = String(f.sublabel);
+          return out;
+        })
+    : [];
+
   return {
     minGrams: num(nb.min_grams, DEFAULT_MIN_GRAMS),
     baselineToleranceG: num(nb.baseline_tolerance_g, 6),
@@ -80,6 +98,7 @@ export function normalizeScaleNutribotConfig(raw = {}) {
       items,
     },
     densityLevels,
+    foods,
   };
 }
 
