@@ -24,6 +24,9 @@ const DEFAULT_TITLE_HEIGHT_PT = 24;
 /** Space between adjacent cells, both horizontally and vertically, in points. */
 const DEFAULT_GAP_PT = 8;
 
+/** Space between a section rule and the title beneath it, in points. */
+const DEFAULT_DIVIDER_GAP_PT = 9;
+
 /**
  * Compute cell and title placements for a sheet.
  *
@@ -37,6 +40,12 @@ export function layout({ page, blocks }) {
   const cells = [];
   const titles = [];
   const underfull = [];
+  // Horizontal rules separating major sections. Emitted as placements rather than
+  // drawn by the emitter off a title's coordinates, because a rule is geometry and
+  // geometry is this module's job — and because the rule has to be positioned
+  // BEFORE the title reserves its band, not inferred backwards from where the text
+  // ended up.
+  const rules = [];
 
   // Bottom of the printable area — the line nothing may cross.
   const bottom = page.heightPt - page.marginPt;
@@ -125,6 +134,14 @@ export function layout({ page, blocks }) {
         rowsHere = 1;
       }
 
+      // A rule spans the full content width, not the (possibly narrower) grid: it
+      // separates SECTIONS of the page, so it should read as a page-level division
+      // rather than as decoration attached to one block's columns.
+      if (block.divider) {
+        rules.push({ page: pageIdx, x: page.marginPt, y: cursorY, w: contentW });
+        cursorY += block.dividerGapPt ?? DEFAULT_DIVIDER_GAP_PT;
+      }
+
       if (block.title) {
         // The title repeats on every page the block spans. `continued` lets the emitter
         // mark the repeats (e.g. "Containers (cont.)") so a reader picking up page two
@@ -169,5 +186,5 @@ export function layout({ page, blocks }) {
     }
   }
 
-  return { pages: pageIdx + 1, cells, titles, underfull };
+  return { pages: pageIdx + 1, cells, titles, rules, underfull };
 }

@@ -32,6 +32,8 @@ const TITLE_SIZE = 18;
 const BLOCK_TITLE_SIZE = 12;
 const FOOTER_SIZE = 7;
 const FOOTER_COLOUR = '#777';
+const RULE_WIDTH = 0.8;
+const RULE_COLOUR = '#999';
 
 /**
  * @param {object} model From `SheetService.build()`.
@@ -56,6 +58,16 @@ export async function renderSheetPdf(model, { cellKinds, logger = console } = {}
     if (p === 0 && model.title) {
       doc.font('Helvetica-Bold').fontSize(TITLE_SIZE).fillColor('black')
         .text(model.title, model.page.marginPt, model.page.marginPt / 2, { lineBreak: false });
+    }
+
+    // Section rules first: a hairline under the previous block's marks, above the
+    // next block's heading. Drawn before the titles so a rule can never overprint
+    // the text sitting below it.
+    for (const r of (model.placements.rules || []).filter((x) => x.page === p)) {
+      doc.save()
+        .moveTo(r.x, r.y).lineTo(r.x + r.w, r.y)
+        .lineWidth(RULE_WIDTH).strokeColor(RULE_COLOUR).stroke()
+        .restore();
     }
 
     for (const t of model.placements.titles.filter((x) => x.page === p)) {

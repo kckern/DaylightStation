@@ -156,6 +156,9 @@ export function createSheetService({ getConfig, providers, cellKinds, logger = c
         // page — enough on their own to push a sheet onto a second sheet of paper.
         titleHeightPt: b.title_height_pt ?? defaults.title_height_pt,
         align: b.align ?? defaults.align,
+        // A rule above this block, separating it from the section before it.
+        divider: b.divider ?? false,
+        dividerGapPt: b.divider_gap_pt ?? defaults.divider_gap_pt,
         kind,
         cellOpts: toCellOpts(b.cell),
         items,
@@ -175,6 +178,8 @@ export function createSheetService({ getConfig, providers, cellKinds, logger = c
         maxCellWPt: b.maxCellWPt,
         titleHeightPt: b.titleHeightPt,
         align: b.align,
+        divider: b.divider,
+        dividerGapPt: b.dividerGapPt,
       })),
     });
 
