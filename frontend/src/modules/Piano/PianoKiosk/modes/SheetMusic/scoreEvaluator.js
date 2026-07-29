@@ -17,7 +17,7 @@ function clamp(v, lo, hi) {
 /**
  * @param {{ expected?: number[], hits?: {note:number, driftMs:number}[] }} measure
  * @param {{ timingToleranceMs?: number, thresholds?: {green?:number, yellow?:number} }} cfg
- * @returns {{ noteScore:number, timingScore:number, combined:number, grade:'green'|'yellow'|'red', silent:boolean }}
+ * @returns {{ noteScore:number, timingScore:number, combined:number, grade:'green'|'yellow'|'red', silent:boolean, rest:boolean }}
  */
 export function gradeMeasure(measure, cfg) {
   const expected = Array.isArray(measure?.expected) ? measure.expected : [];
@@ -74,5 +74,7 @@ export function gradeMeasure(measure, cfg) {
 
   const silent = expected.length > 0 && hits.length === 0;
 
-  return { noteScore, timingScore, combined, grade, silent };
+  const rest = expected.length === 0;
+
+  return { noteScore, timingScore, combined, grade, silent, rest };
 }
