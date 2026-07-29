@@ -98,6 +98,13 @@ export function createCellRenderers({ qrRenderer = createQRCodeRenderer() } = {}
       const GAP = 9;
       const LEFT = 84;
       const LABEL_H = 22;
+      // Clear space between the icon box and the label's cap height. Icons vary in
+      // how much internal padding their artwork carries: the outlined ones leave a
+      // margin, but a filled mark like the salad bowl runs edge to edge, and with
+      // the label baseline sitting a hair under the box its ascenders collided with
+      // the bowl. Reserving the gap explicitly makes the card safe for any icon
+      // rather than only for the well-padded ones.
+      const ICON_GAP = 5;
       const H = QR + PAD * 2;
       const hasIcon = Boolean(item.iconSvg);
       // Without an icon the label has nowhere to sit beside the code, so it goes
@@ -129,17 +136,17 @@ export function createCellRenderers({ qrRenderer = createQRCodeRenderer() } = {}
 
       let left = '';
       if (hasIcon) {
-        const iconBox = Math.min(LEFT, H - PAD * 2 - LABEL_H);
+        const iconBox = Math.min(LEFT, H - PAD * 2 - LABEL_H - ICON_GAP);
         const iconX = PAD + (LEFT - iconBox) / 2;
-        const iconY = PAD + (H - PAD * 2 - LABEL_H - iconBox) / 2;
+        const iconY = PAD + (H - PAD * 2 - LABEL_H - ICON_GAP - iconBox) / 2;
         const iconEl = stripXmlDecl(item.iconSvg)
           .replace(/<svg\b[^>]*>/, (tag) => tag
             .replace(/\s(width|height|x|y)\s*=\s*"[^"]*"/g, '')
             .replace(/^<svg/, `<svg x="${iconX}" y="${iconY}" width="${iconBox}" height="${iconBox}" preserveAspectRatio="xMidYMid meet"`));
         const text = labelText;
-        const size = fit(text, LEFT, LABEL_H * 0.8);
+        const size = fit(text, LEFT, LABEL_H * 0.72);
         left = iconEl
-          + `<text x="${PAD + LEFT / 2}" y="${iconY + iconBox + LABEL_H * 0.62}" text-anchor="middle"`
+          + `<text x="${PAD + LEFT / 2}" y="${iconY + iconBox + ICON_GAP + LABEL_H * 0.66}" text-anchor="middle"`
           + ` font-family="Helvetica" font-weight="bold" font-size="${size.toFixed(2)}" fill="#000">${esc(text)}</text>`;
       }
 
