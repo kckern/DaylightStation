@@ -184,6 +184,17 @@ A few components appear across many modes because they are the kiosk's visual vo
   chip (MIDI connection and active voice, tap to open settings) on the other, with deeper
   routes free to publish their own breadcrumb segments.
 - **Icons** — inline single-colour SVGs that inherit their button's colour.
+- **Transport primitives** — the touch controls shared by every player-style mode
+  (Sheet Music, Courses, Music, Karaoke/Singalong/Playalong): a single button shape
+  for any transport action, and a modal bottom sheet for any control that offers a
+  set of discrete choices — direct-pick ladders for stepped values (loop range,
+  tempo percent, transpose semitones) rather than a slider or a stepper the player
+  has to nudge repeatedly. Volume is the one affordance every player exposes the
+  same way: a single button opens a sheet with Media and MIDI levels as five-step
+  ladders and a Log/Linear curve toggle, so turning the piano or the media down
+  works identically no matter which mode is open. Every button in this family is
+  an inline SVG on a ≥48px touch target — no text glyphs or emoji — so the same
+  visual grammar reads the same across the whole kiosk.
 
 ---
 
@@ -241,6 +252,7 @@ logging, so a backend outage degrades gracefully rather than breaking the surfac
 | Modes | `frontend/src/modules/Piano/PianoKiosk/modes/{Videos,Music,SheetMusic,Studio,Producer,Games,Lessons,Composers}/` |
 | Games | `frontend/src/modules/Piano/gameRegistry.js` · `frontend/src/modules/Piano/Piano*Game*/` |
 | Shared components | `frontend/src/modules/Piano/components/` · `PianoKiosk/icons/` |
+| Transport primitives | `frontend/src/modules/Piano/PianoKiosk/transport/` |
 | Kiosk runtime | `frontend/src/lib/fkb.js` · `PianoKiosk/{useInactivityReturn,usePianoScreensaver,useReloadGuard,useRenderWatchdog,useVanishingControls}.js[x]` |
 | Backend | `backend/src/4_api/v1/routers/piano.mjs` · `backend/src/4_api/v1/routers/admin/apps.mjs` |
 | Hardware + setup | [kiosk-setup.md](./kiosk-setup.md) |
