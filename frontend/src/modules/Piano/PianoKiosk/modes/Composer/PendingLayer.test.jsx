@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { render } from '@testing-library/react';
-import { PendingLayer } from './PendingLayer.jsx';
+import { PendingLayer, simultaneityRuns } from './PendingLayer.jsx';
 
 // One system, chosen so the position math lands on round numbers:
 //   top = 100 is the TOP staff line; 5 lines / 4 gaps of 10 → bottom line at 140.
@@ -21,12 +21,38 @@ const note = (step, octave, opts = {}) => ({
   pitch: { step, octave, alter: opts.alter ?? 0 },
   type: opts.type ?? 'quarter',
   dots: opts.dots ?? 0,
+  // `chord: true` = "shares the previous note's onset" (model/note.js). It is the
+  // only simultaneity marker the model has, so it is how a group is expressed here.
+  chord: opts.chord ?? false,
 });
 
 const draw = (props) =>
   render(<PendingLayer staves={[STAVE]} anchorX={200} anchorSystem={0} clef={TREBLE} {...props} />).container;
 
 const heads = (c) => [...c.querySelectorAll('.composer-wet-note__head')];
+
+describe('simultaneityRuns', () => {
+  it('makes every note its own run when nothing is flagged chord', () => {
+    expect(simultaneityRuns([note('C', 4), note('E', 4), note('G', 4)])).toEqual([[0], [1], [2]]);
+  });
+
+  it('folds chord members into the run of the note they follow', () => {
+    const pending = [
+      note('C', 4), note('E', 4, { chord: true }), note('G', 4, { chord: true }),
+      note('D', 4), note('F', 4, { chord: true }),
+    ];
+    expect(simultaneityRuns(pending)).toEqual([[0, 1, 2], [3, 4]]);
+  });
+
+  it('treats a leading chord flag as its own run (nothing to attach to)', () => {
+    expect(simultaneityRuns([note('C', 4, { chord: true }), note('E', 4)])).toEqual([[0], [1]]);
+  });
+
+  it('handles an empty list', () => {
+    expect(simultaneityRuns([])).toEqual([]);
+    expect(simultaneityRuns()).toEqual([]);
+  });
+});
 
 describe('PendingLayer', () => {
   describe('nothing to paint', () => {
@@ -150,6 +176,84 @@ describe('PendingLayer', () => {
 
       expect(Number(high.getAttribute('x1'))).toBeLessThan(200); // left of the head
       expect(Number(high.getAttribute('y2'))).toBeGreaterThan(yAt(5)); // reaches downward
+    });
+
+    // The middle-line note itself stems DOWN (Gould/Ross convention), so the flip
+    // point is "at or above", not "above".
+    it('stems the middle-line note down', () => {
+      const stem = draw({ pending: [note('B', 4)] }).querySelector('.composer-wet-note__stem'); // position 4
+      expect(Number(stem.getAttribute('y2'))).toBeGreaterThan(yAt(4));
+      expect(Number(stem.getAttribute('x1'))).toBeLessThan(200); // left of the head
+    });
+
+    // Standard rule: a notehead more than an octave from the middle line gets a
+    // stem long enough to REACH that line, instead of a blind 3.5 spaces that
+    // leaves a far-ledgered note's stem stopping in mid-air below the staff.
+    it('extends a far-below note stem all the way to the middle line', () => {
+      const stem = draw({ pending: [note('F', 3)] }).querySelector('.composer-wet-note__stem'); // position -6
+      expect(Number(stem.getAttribute('y1'))).toBe(yAt(-6));
+      expect(Number(stem.getAttribute('y2'))).toBeCloseTo(yAt(4), 5); // 120 — the middle line
+    });
+
+    it('extends a far-above note stem down to the middle line', () => {
+      const stem = draw({ pending: [note('D', 6)] }).querySelector('.composer-wet-note__stem'); // position 13
+      expect(Number(stem.getAttribute('y1'))).toBe(yAt(13));
+      expect(Number(stem.getAttribute('y2'))).toBeCloseTo(yAt(4), 5);
+    });
+
+    // Exactly an octave out is NOT "more than an octave" — it keeps the default.
+    it('keeps the default 3.5-space stem at exactly an octave from the middle line', () => {
+      const stem = draw({ pending: [note('B', 3)] }).querySelector('.composer-wet-note__stem'); // position -3
+      const len = Number(stem.getAttribute('y1')) - Number(stem.getAttribute('y2'));
+      expect(len).toBeCloseTo(35, 5); // 3.5 * lineSpacing
+    });
+
+    // A simultaneity shares ONE direction, decided by the member farthest from
+    // the middle line — C5 alone would stem down, but grouped under E4 (which is
+    // farther out) it must follow the group up.
+    it('gives a simultaneity one shared stem direction, set by the outermost note', () => {
+      const c = draw({ pending: [note('E', 4), note('C', 5, { chord: true })] });
+      const stems = [...c.querySelectorAll('.composer-wet-note__stem')];
+      expect(stems).toHaveLength(2);
+      stems.forEach((stem) => {
+        expect(Number(stem.getAttribute('y2'))).toBeLessThan(Number(stem.getAttribute('y1'))); // upward
+      });
+    });
+
+    // …and sequential notes (no chord flag) keep deciding independently.
+    it('lets successive independent notes disagree', () => {
+      const c = draw({ pending: [note('E', 4), note('C', 5)] });
+      const [first, second] = [...c.querySelectorAll('.composer-wet-note__stem')];
+      expect(Number(first.getAttribute('y2'))).toBeLessThan(Number(first.getAttribute('y1')));   // up
+      expect(Number(second.getAttribute('y2'))).toBeGreaterThan(Number(second.getAttribute('y1'))); // down
+    });
+
+    // A bare stem makes a classified eighth (task 27) indistinguishable from a
+    // quarter, which defeats the classification the kid is being shown.
+    it('flags eighths once and sixteenths twice, and quarters not at all', () => {
+      const flags = (type) => draw({ pending: [note('E', 4, { type })] }).querySelectorAll('.composer-wet-note__flag');
+      expect(flags('quarter')).toHaveLength(0);
+      expect(flags('half')).toHaveLength(0);
+      expect(flags('eighth')).toHaveLength(1);
+      expect(flags('16th')).toHaveLength(2);
+    });
+
+    it('hangs the flag off the stem tip on both stem directions', () => {
+      const up = draw({ pending: [note('E', 4, { type: 'eighth' })] }); // position 0 → stem up
+      const down = draw({ pending: [note('C', 5, { type: 'eighth' })] }); // position 5 → stem down
+      for (const c of [up, down]) {
+        const stem = c.querySelector('.composer-wet-note__stem');
+        const flag = c.querySelector('.composer-wet-note__flag');
+        const [, fx, fy] = flag.getAttribute('d').match(/^M ([\d.-]+) ([\d.-]+)/);
+        expect(Number(fx)).toBeCloseTo(Number(stem.getAttribute('x2')), 5);
+        expect(Number(fy)).toBeCloseTo(Number(stem.getAttribute('y2')), 5);
+      }
+    });
+
+    it('draws flags as SVG geometry, never as text', () => {
+      const c = draw({ pending: [note('E', 4, { type: '16th' })] });
+      expect(c.querySelector('.composer-wet-note text')).toBeNull();
+      expect(c.querySelector('path.composer-wet-note__flag')).toBeTruthy();
     });
 
     it('draws a dot to the right of a dotted note, and none otherwise', () => {
