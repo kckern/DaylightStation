@@ -168,14 +168,16 @@ describe('ScoreTransportBar', () => {
     const onStartSelect = vi.fn();
     const onClearFocus = vi.fn();
     render(<ScoreTransportBar {...base} mode="learn" loopActive scopeLabel="m3–m6" onStartSelect={onStartSelect} onClearFocus={onClearFocus} />);
-    // The active range surfaces on the trigger.
-    expect(screen.getByRole('button', { name: /loop m3–m6/i })).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: /loop m3–m6/i }));
+    // The active range surfaces on the trigger's visible label (the aria-label
+    // stays the stable 'Loop', matching the Key/Tempo convention).
+    const trigger = screen.getByRole('button', { name: 'Loop' });
+    expect(trigger).toHaveTextContent('m3–m6');
+    fireEvent.click(trigger);
     fireEvent.click(screen.getByRole('button', { name: /select measures/i }));
     expect(onStartSelect).toHaveBeenCalled();
-    fireEvent.click(screen.getByRole('button', { name: /loop m3–m6/i }));
-    // Scope to the popover — the standalone one-tap clear also matches /clear loop/i.
-    const menu = screen.getByRole('dialog', { name: /loop range/i });
+    fireEvent.click(screen.getByRole('button', { name: 'Loop' }));
+    // Scope to the sheet — the standalone one-tap clear also matches /clear loop/i.
+    const menu = screen.getByRole('dialog', { name: 'Loop' });
     fireEvent.click(within(menu).getByRole('button', { name: /clear loop/i }));
     expect(onClearFocus).toHaveBeenCalled();
   });

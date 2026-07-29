@@ -1,4 +1,7 @@
 import React from 'react';
+import StepGrid from '../../transport/StepGrid.jsx';
+import TransportButton from '../../transport/TransportButton.jsx';
+import { nearestStep } from '../../transport/TempoSheet.jsx';
 
 /**
  * ViewMenu — the consolidated "how the score looks" panel behind the View button
@@ -24,11 +27,6 @@ const SIZE_STEPS = [
   { label: '150%', value: 1.5 },
   { label: '200%', value: 2 },
 ];
-const nearestStep = (steps, val) => {
-  let best = 0, bestDist = Infinity;
-  steps.forEach((s, i) => { const d = Math.abs(s.value - val); if (d < bestDist) { bestDist = d; best = i; } });
-  return best;
-};
 
 export default function ViewMenu({ flow, onToggleFlow, scale, onScale, keyboardVisible, onToggleKeyboard, meta = {} }) {
   const sizeIdx = nearestStep(SIZE_STEPS, scale);
@@ -36,48 +34,34 @@ export default function ViewMenu({ flow, onToggleFlow, scale, onScale, keyboardV
     <div className="piano-score-view-menu" role="dialog" aria-label="View">
       <div className="piano-score-view-row" role="group" aria-label="Layout">
         <span className="piano-score-view-row__label">Layout</span>
-        <button
-          type="button"
-          className={`piano-score-btn${flow === 'wrapped' ? ' is-on' : ''}`}
-          aria-pressed={flow === 'wrapped'}
-          onClick={() => { if (flow !== 'wrapped') onToggleFlow?.(); }}
-        >
-          Down the page
-        </button>
-        <button
-          type="button"
-          className={`piano-score-btn${flow === 'horizontal' ? ' is-on' : ''}`}
-          aria-pressed={flow === 'horizontal'}
-          onClick={() => { if (flow !== 'horizontal') onToggleFlow?.(); }}
-        >
-          Across
-        </button>
+        <TransportButton
+          label="Down the page"
+          on={flow === 'wrapped'}
+          onPress={() => { if (flow !== 'wrapped') onToggleFlow?.(); }}
+        />
+        <TransportButton
+          label="Across"
+          on={flow === 'horizontal'}
+          onPress={() => { if (flow !== 'horizontal') onToggleFlow?.(); }}
+        />
       </div>
 
       <div className="piano-score-view-row" role="group" aria-label="Size">
         <span className="piano-score-view-row__label">Size</span>
-        {SIZE_STEPS.map((s, i) => (
-          <button
-            key={s.label}
-            type="button"
-            className={`piano-score-btn piano-score-step${i === sizeIdx ? ' is-on' : ''}`}
-            aria-pressed={i === sizeIdx}
-            onClick={() => onScale?.(s.value)}
-          >
-            {s.label}
-          </button>
-        ))}
+        <StepGrid
+          steps={SIZE_STEPS.map((s) => ({ label: s.label }))}
+          activeIndex={sizeIdx}
+          onPick={(i) => onScale?.(SIZE_STEPS[i].value)}
+          ariaLabel="Size"
+        />
       </div>
 
       <div className="piano-score-view-row">
-        <button
-          type="button"
-          className={`piano-score-btn${keyboardVisible ? ' is-on' : ''}`}
-          aria-pressed={keyboardVisible}
-          onClick={onToggleKeyboard}
-        >
-          {`Keyboard: ${keyboardVisible ? 'Shown' : 'Hidden'}`}
-        </button>
+        <TransportButton
+          label={`Keyboard: ${keyboardVisible ? 'Shown' : 'Hidden'}`}
+          on={keyboardVisible}
+          onPress={onToggleKeyboard}
+        />
       </div>
 
       <dl className="piano-score-view-about">

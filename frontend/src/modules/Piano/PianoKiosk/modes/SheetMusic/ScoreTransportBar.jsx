@@ -6,6 +6,7 @@ import Icon from '../../icons/Icon.jsx';
 import TransportButton from '../../transport/TransportButton.jsx';
 import KeySheet from '../../transport/KeySheet.jsx';
 import TempoSheet, { TEMPO_STEPS, nearestStep } from '../../transport/TempoSheet.jsx';
+import VolumeControl from '../../transport/VolumeControl.jsx';
 
 // Tab order: Listen · Learn · Polish · Perform.
 const MODES = [
@@ -299,6 +300,8 @@ const ScoreViewControls = memo(function ScoreViewControls({
           />
         )}
       </div>
+
+      <VolumeControl className="piano-score-volume" />
 
       {/* Shared backdrop: an outside tap dismisses the View menu (M4). Key/Tempo
           bring their own scrims via TransportSheet, so this backdrop is scoped
