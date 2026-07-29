@@ -1943,6 +1943,34 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     logger: rootLogger.child({ module: 'catalog' }),
   });
 
+  // Printable sheets — config-driven pages of scannable marks that act as input
+  // devices (the nutrition fridge sheet is the first). Providers are injected
+  // rather than imported by the service, which is what keeps the printed codes
+  // and the parsing grammar from drifting: both come from ScanVocabularyService.
+  const { createSheetService } = await import('#apps/sheets/SheetService.mjs');
+  const { createCellRenderers } = await import('#rendering/pdf/cellRenderers.mjs');
+  const { createNutritionProviders } = await import('#composition/modules/sheetProviders.mjs');
+  const { createSheetsRouter } = await import('./4_api/v1/routers/sheets.mjs');
+
+  const sheetCellKinds = createCellRenderers();
+  const sheetsLogger = rootLogger.child({ module: 'sheets' });
+  v1Routers.sheets = createSheetsRouter({
+    sheetService: createSheetService({
+      getConfig: () => configService.getHouseholdAppConfig(householdId, 'sheets') || {},
+      providers: createNutritionProviders({
+        // Read per build, not once: the sheet must reflect the scale config as it
+        // stands when someone asks for a printout.
+        getScaleConfig: () => normalizeScaleNutribotConfig(
+          configService.getHouseholdAppConfig(householdId, 'scales') || {},
+        ),
+      }),
+      cellKinds: sheetCellKinds,
+      logger: sheetsLogger,
+    }),
+    cellKinds: sheetCellKinds,
+    logger: sheetsLogger,
+  });
+
   // Nutribot report renderer (canvas-based PNG generation)
   let nutribotReportRenderer = null;
   try {
