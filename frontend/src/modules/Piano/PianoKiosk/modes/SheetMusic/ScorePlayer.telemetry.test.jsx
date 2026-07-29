@@ -134,6 +134,15 @@ const pickMode = (label) => {
   act(() => { screen.getByText(label).click(); });
 };
 
+// Task 14's Learn landing auto-picks a range (and arms the loop) the instant
+// Learn opens on a fixture whose layout reports `measures` — clear it so specs
+// below that arm their own range via the guided two-tap flow start from a
+// blank Learn entry, matching their original assumptions. No-op otherwise.
+const clearAutoRange = () => {
+  const btn = screen.queryByRole('button', { name: 'Clear loop' });
+  if (btn) act(() => { fireEvent.click(btn); });
+};
+
 beforeEach(() => {
   telMode.real = false;
   cfg.value = { keyboard: { startNote: 21, endNote: 108 } };
@@ -294,6 +303,7 @@ describe('ScorePlayer — control telemetry (Task 5)', () => {
   it('tags a focus set by the ±1 loop nudge with origin: nudge', () => {
     renderPlayer();
     pickMode('Learn');
+    clearAutoRange(); // this spec arms its own loop from a blank entry
     selectLoop(100); // loop m1–m1
     // With a range active, the main trigger flips looping on/off — the sheet
     // (for nudging) opens via the separate "Loop options" chevron.
@@ -306,6 +316,7 @@ describe('ScorePlayer — control telemetry (Task 5)', () => {
   it('tags a focus set by a two-tap selection with origin: select', () => {
     renderPlayer();
     pickMode('Learn');
+    clearAutoRange(); // this spec arms its own loop from a blank entry
     selectLoop(160);
     expect(tel.logFocus.mock.calls.at(-1)[0]).toMatchObject({ kind: 'custom', origin: 'select' });
   });
