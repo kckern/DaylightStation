@@ -1,0 +1,156 @@
+// Transport design system (wave 1) — the ONE place kiosk transport chrome is
+// styled. Tokens fall back so the sheet works on both stage (dark) and surface
+// hosts; hosts may override the custom properties, never the rules.
+
+.piano-tbtn {
+  // The kiosk touch floor: 3rem = 48px at the 16px root (audit F4).
+  min-width: 3rem;
+  min-height: 3rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  padding: 0.35rem 0.75rem;
+  border: 1px solid var(--piano-tbtn-border, rgba(255, 255, 255, 0.22));
+  border-radius: 0.6rem;
+  background: var(--piano-tbtn-bg, rgba(255, 255, 255, 0.08));
+  color: var(--piano-tbtn-fg, inherit);
+  font: inherit;
+  font-size: 1rem;
+  line-height: 1;
+  white-space: nowrap; // anti-two-line rule (C1) — mirrors .piano-score-btn; truncate/grow, never wrap
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+
+  .piano-icon { font-size: 1.25em; display: inline-flex; }
+
+  &.is-on {
+    background: var(--piano-tbtn-on-bg, rgba(94, 170, 255, 0.28));
+    border-color: var(--piano-tbtn-on-border, rgba(94, 170, 255, 0.8));
+  }
+  &:disabled { opacity: 0.4; cursor: default; }
+}
+
+.piano-tbtn--primary {
+  background: var(--piano-tbtn-primary-bg, #3878c2);
+  border-color: var(--piano-tbtn-primary-bg, #3878c2);
+  color: var(--piano-tbtn-primary-fg, #fff);
+  min-width: 4.5rem;
+}
+
+.piano-tbtn--quiet {
+  background: transparent;
+  border-color: transparent;
+}
+
+.piano-tsheet {
+  position: fixed;
+  inset: 0;
+  z-index: 60; // above player chrome; matches the old .piano-volume-modal layer
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  &__scrim {
+    position: absolute;
+    inset: 0;
+    border: 0;
+    background: rgba(0, 0, 0, 0.55);
+    cursor: pointer;
+  }
+
+  &__panel {
+    position: relative;
+    min-width: 22rem;
+    max-width: 92vw;
+    max-height: 88vh;
+    overflow-y: auto;
+    padding: 1rem 1.25rem 1.25rem;
+    border-radius: 1rem;
+    background: var(--piano-tsheet-bg, #1c2028);
+    color: var(--piano-tsheet-fg, #f2f5fa);
+    box-shadow: 0 1rem 3rem rgba(0, 0, 0, 0.5);
+  }
+
+  &__head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 0.75rem;
+    h2 { margin: 0; font-size: 1.15rem; }
+  }
+}
+
+.piano-stepgrid {
+  display: flex;
+  gap: 0.4rem;
+  margin: 0.35rem 0;
+
+  &__step {
+    flex: 1 1 0;
+    min-width: 3rem;
+    min-height: 3rem; // 48px floor
+    display: inline-flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0.15rem;
+    padding: 0.3rem 0.4rem;
+    border: 1px solid var(--piano-tbtn-border, rgba(255, 255, 255, 0.22));
+    border-radius: 0.6rem;
+    background: var(--piano-tbtn-bg, rgba(255, 255, 255, 0.08));
+    color: inherit;
+    font: inherit;
+    line-height: 1.1;
+    cursor: pointer;
+
+    &.is-on {
+      background: var(--piano-tbtn-on-bg, rgba(94, 170, 255, 0.28));
+      border-color: var(--piano-tbtn-on-border, rgba(94, 170, 255, 0.8));
+    }
+    &:disabled { opacity: 0.4; cursor: default; }
+  }
+
+  &__sub {
+    font-size: 0.72em;
+    opacity: 0.75;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.2em;
+  }
+}
+
+.piano-volsheet__card { margin-bottom: 0.75rem; }
+.piano-volsheet__cardhead {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.25rem;
+  font-weight: 600;
+}
+.piano-volsheet__curve {
+  display: flex;
+  gap: 0.4rem;
+  justify-content: flex-end;
+  margin-top: 0.5rem;
+}
+
+.piano-keysheet__sounding {
+  margin: 0.6rem 0 0;
+  text-align: center;
+  opacity: 0.85;
+}
+
+.piano-loopsheet__options {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  .piano-tbtn { justify-content: flex-start; }
+}
+.piano-loopsheet__nudge {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin-top: 0.75rem;
+  span { opacity: 0.8; margin-right: 0.2rem; &:not(:first-child) { margin-left: 0.6rem; } }
+}

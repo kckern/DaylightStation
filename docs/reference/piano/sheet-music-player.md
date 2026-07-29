@@ -13,16 +13,24 @@ shared OSMD renderer in `frontend/src/modules/MusicNotation/renderers/`.
 - **Bottom:** a pinned `ScoreTransportBar` (`ScoreTransportBar.jsx`) with a
   **stable three-zone grid**: mode tabs (left) · metronome ♩BPM, restart,
   play/pause, **Loop**, position readout (center) · Hands segments, Key ±,
-  Tempo, View menu (right). The geography never reshuffles — modes
+  Tempo, View menu, **Volume** (right). The geography never reshuffles — modes
   **disable/dim controls in place** instead of unmounting them, so Play is
   always where Play was; **Perform** is the sole exception (bar strips to tabs +
   a page indicator). One button grammar throughout: shared inline-SVG icons
-  (`icons.jsx` — no text glyphs/emoji), ≥48px touch targets, one radius,
-  **blue = a setting is on** (metronome armed, loop active), **green = the
-  transport is running**, and a chevron on every button that opens a popover.
-  The View menu holds layout/size/keyboard toggles plus the score's About
-  metadata; size is a discrete tap-commit stepper, so the score repaints once
-  per step.
+  (no text glyphs/emoji), ≥48px touch targets, one radius, **blue = a setting
+  is on** (metronome armed, loop active), **green = the transport is
+  running**, and a chevron on every button that opens a popover or sheet.
+  **Key, Tempo, and Loop are modal sheets**, not popovers: tapping the button
+  opens a centered modal sheet with its own scrim, a direct-pick ladder of
+  steps (or, for Key, a −6…+6 range showing the sounding key), and a close
+  affordance — one tap commits and dismisses, so there's no separate "confirm"
+  step. The **View** menu is the one surface that stays a lightweight popover
+  (layout/size/keyboard toggles plus the score's About metadata); size is a
+  discrete tap-commit stepper, so the score repaints once per step. **Volume**
+  opens the same volume sheet every player in the kiosk uses — Media and MIDI
+  levels as five-step ladders, with a Log/Linear curve toggle — so turning the
+  piano or the media down works identically here as in Karaoke, Music, or a
+  video course.
 
 ## Modes — a learning progression
 
@@ -65,10 +73,10 @@ must be struck. A left-hand-only intro is a real cursor stop (see alignment note
 ## The loop (focus range & sections)
 
 `focusRange.js` confines practice to `[inMeasure, outMeasure]` and **loops** it
-(wrap at the out-point). The loop is a first-class transport control
-(`LoopControl.jsx`): a labeled **Loop** trigger in the center zone that reads
-`Loop m9–m16` when active, with a one-tap ✕ clear beside it. Its menu offers,
-all feeding one range:
+(wrap at the out-point). The loop is a first-class transport control: a
+labeled **Loop** trigger in the center zone that reads `Loop m9–m16` when
+active, with a one-tap ✕ clear beside it. Tapping it opens the Loop sheet,
+which offers, all feeding one range:
 - **A section** — rehearsal marks (`<rehearsal>` letter/named blocks) parsed from
   the MusicXML by `parseMusicXml.extractSections` → `layout.sections`; picking one
   snaps the range to that section (`sectionToRange`, mapping XML measure
@@ -108,7 +116,7 @@ semantics:
   is playing; the armed state persists per score.
 - **Listen / Perform** — no metronome.
 
-Each step in the tempo popover shows the BPM it produces, so "75%" always reads
+Each step in the Tempo sheet shows the BPM it produces, so "75%" always reads
 against a concrete ♩ value.
 
 ## Per-score persistence
@@ -246,9 +254,10 @@ running on the per-step fallback (keyboard stays note-precise regardless).
 | `SheetMusic.jsx` | routing (grid ↔ viewer), MusicXML fetch + load timing |
 | `ScorePlayer.jsx` | orchestrator: modes, transport, overlays, telemetry wiring |
 | `ScoreTransportBar.jsx` | pinned bottom bar (presentational, three-zone grid) |
-| `LoopControl.jsx` | Loop trigger + menu (sections · select measures · nudges · clear) |
+| `LoopControl.jsx` | Loop trigger button, opens the shared Loop sheet (sections · select measures · nudges · clear) |
 | `HandsControl.jsx` | per-staff Hands segments |
-| `icons.jsx` | shared inline-SVG icon set for all chrome buttons |
+| `../../transport/` | shared transport primitives: the button, sheet shell, direct-pick step ladder, and the Key/Tempo/Loop/Volume sheets themselves |
+| `../../icons/Icon.jsx` | shared inline-SVG icon set for all chrome buttons |
 | `nearestEvent.js` | tap→note mapping with `SELECT_MAX_DIST` miss rejection |
 | `scoreSettings.js` | per-score localStorage persistence |
 | `NoteHighlightLayer.jsx` / `MeasureGradeLayer.jsx` | per-notehead chips / per-measure R/Y/G washes |

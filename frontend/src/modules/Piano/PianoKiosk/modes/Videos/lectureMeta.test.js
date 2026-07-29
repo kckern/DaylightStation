@@ -65,4 +65,11 @@ describe('resumeSecondsFor', () => {
     expect(resumeSecondsFor({ watchSeconds: 120 })).toBe(120);
     expect(resumeSecondsFor({})).toBe(0);
   });
+
+  it('starts a known user with no per-user record at 0 — never inherits another user/device tail position', () => {
+    // Enriched item (userWatched present, boolean false) but this user has no
+    // playhead of their own. Device-level watchSeconds sits at the tail — e.g.
+    // another user on the shared kiosk nearly finished it. Must NOT leak.
+    expect(resumeSecondsFor({ userWatched: false, userPercent: null, watchSeconds: 1790, duration: 1800 })).toBe(0);
+  });
 });

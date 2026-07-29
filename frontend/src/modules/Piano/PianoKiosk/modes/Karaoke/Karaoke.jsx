@@ -9,6 +9,7 @@ import SingalongPlayer from '../Singalong/SingalongPlayer.jsx';
 import { SkeletonGrid } from '../../Skeleton.jsx';
 import { parseSongs, categoriesOf, filterSongs, categoryHue, songArt } from './karaokeBrowse.js';
 import { MaterialGlyph } from '../../producer/MaterialGlyph.jsx';
+import Icon from '../../icons/Icon.jsx';
 
 const idOf = (raw) => String(raw || '').replace(/^plex:/, '');
 
@@ -146,7 +147,7 @@ function KaraokeBrowser({ playable, onSelect }) {
                 <button type="button" className="piano-karaoke__card" onClick={() => onSelect(s)}>
                   <span className="piano-karaoke__art" style={{ background: art.background }} aria-hidden="true">
                     <MaterialGlyph seed={art.seed} size={44} className="piano-karaoke__glyph" />
-                    <span className="piano-karaoke__play">▶</span>
+                    <span className="piano-karaoke__play"><Icon name="play" /></span>
                   </span>
                   <span className="piano-karaoke__card-body">
                     <span className="piano-karaoke__card-song">{s.song}</span>

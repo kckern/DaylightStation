@@ -1767,7 +1767,6 @@
   &__row { display: flex; align-items: center; gap: 0.5rem; flex-wrap: nowrap; }
   &__spacer { flex: 1 1 auto; }
   &__time { color: var(--piano-muted); font-variant-numeric: tabular-nums; font-size: 0.95rem; }
-  &__vol { color: var(--piano-muted); font-variant-numeric: tabular-nums; font-size: 0.95rem; min-width: 2.25rem; text-align: center; }
 
   &__btn {
     min-width: 3rem; height: 3rem; padding: 0 0.75rem;
@@ -2213,7 +2212,6 @@
   border-radius: var(--r-md); font-size: 1.1rem; cursor: pointer;
   display: flex; align-items: center; justify-content: center;
   &.is-on { border-color: var(--piano-accent); color: #6cf0a0; }
-  &--play { min-width: 4.5rem; height: 3.5rem; font-size: 1.4rem; background: var(--piano-accent); color: var(--piano-accent-ink); border-color: var(--piano-accent); }
 }
 
 .piano-music-queue {
@@ -2409,70 +2407,6 @@
   &__save { border-color: var(--piano-accent); color: var(--piano-accent-text); }
 }
 
-// Volume — the player-facing modal for Media + MIDI level (replaces the old
-// MixControls popup on the video chrome). A centered modal, not a slide-over
-// sheet: it's a focused two-control dialog, bigger and more touch-friendly
-// than the popup it replaces. Steppers mirror SoundPanel's Tone rows so the
-// visual language (icon + name header over a 5-up Off/Low/Med/High/Max
-// button group) matches the rest of the kiosk's stepper controls.
-.piano-volume-modal {
-  position: fixed; inset: 0; z-index: 50;
-  display: flex; align-items: center; justify-content: center;
-
-  &__scrim { position: absolute; inset: 0; background: rgba(0, 0, 0, 0.55); }
-
-  &__sheet {
-    position: relative; width: min(26rem, 90vw);
-    background: var(--piano-surface); border: 1px solid var(--piano-border);
-    border-radius: var(--r-lg, var(--r-md)); display: flex; flex-direction: column;
-    gap: 1rem; padding: 1.25rem 1.5rem 1.5rem; box-shadow: 0 1.5rem 4rem rgba(0, 0, 0, 0.5);
-  }
-
-  &__head {
-    display: flex; align-items: center; justify-content: space-between;
-    h2 { font-size: var(--t-title); font-weight: 700; margin: 0; }
-  }
-  &__close {
-    display: flex; align-items: center; justify-content: center;
-    width: 2rem; height: 2rem; border-radius: var(--r-pill);
-    background: var(--piano-surface-2); border: 1px solid var(--piano-border);
-    color: var(--piano-muted); cursor: pointer; font-size: 1rem; line-height: 1;
-    &:active { background: var(--piano-border); }
-  }
-
-  &__card { display: flex; flex-direction: column; gap: 0.5rem; }
-  &__cardhead { display: flex; align-items: center; gap: 0.55rem; min-height: 1.9rem; }
-  &__icon { font-size: 1.3rem; color: var(--piano-accent-text); line-height: 1; }
-  &__name { font-weight: 700; font-size: 1.1rem; }
-
-  &__steps { display: grid; grid-template-columns: repeat(5, 1fr); gap: 0.35rem; }
-  &__step {
-    min-height: 52px; display: flex; align-items: center; justify-content: center;
-    background: var(--piano-surface-2); color: var(--piano-muted);
-    border: 1px solid var(--piano-border); border-radius: var(--r-sm);
-    font: inherit; font-weight: 700; font-size: 0.95rem; text-transform: uppercase; letter-spacing: 0.04em;
-    cursor: pointer; transition: background 0.12s, color 0.12s, border-color 0.12s;
-    &:active { transform: translateY(1px); }
-    &.is-on { background: var(--piano-accent); color: var(--piano-accent-ink); border-color: var(--piano-accent); }
-    &.is-on.is-off { background: var(--piano-surface); color: var(--piano-fg); border-color: var(--piano-muted); }
-  }
-
-  // Log/Linear — a small pill toggle governing how the five steps map onto
-  // the underlying 0-1 level (log spreads perceived loudness better; linear
-  // over-indexes at the top). One toggle governs both steppers above.
-  &__curve {
-    display: flex; gap: 0.4rem; align-self: center; margin-top: 0.25rem;
-    padding: 0.2rem; background: var(--piano-surface-2); border: 1px solid var(--piano-border);
-    border-radius: var(--r-pill);
-  }
-  &__curve-btn {
-    min-width: 5rem; min-height: 2.1rem; background: transparent; color: var(--piano-muted);
-    border: none; border-radius: var(--r-pill); font: inherit; font-weight: 700; font-size: 0.85rem;
-    cursor: pointer; transition: background 0.12s, color 0.12s;
-    &.is-on { background: var(--piano-accent); color: var(--piano-accent-ink); }
-  }
-}
-
 /* ---- Operator Drawer (maintenance console, behind long-press — design §7) ----
    Hardware / Diagnostics / Display / Recovery(ranked) / Feedback. Mirrors the
    Sound Panel's slide-over shell but is the operator-only twin: destructive
@@ -2595,23 +2529,6 @@
 .piano-test__keys--full { height: 42%; }
 .piano-test--scroller {
   .side-scroller { position: absolute; inset: 0; }
-}
-
-// Shared piano/media balance control (MixControls). Buttons inherit the host
-// chrome's button style via `btnClass`; these rules only lay out the clusters.
-.piano-mix {
-  display: flex;
-  align-items: center;
-  gap: 1.5rem;
-
-  &__cluster { display: flex; align-items: center; gap: 0.25rem; }
-  &__lead { opacity: 0.7; }
-  &__val {
-    min-width: 2.5rem;
-    text-align: center;
-    font-variant-numeric: tabular-nums;
-    color: var(--piano-stage-muted);
-  }
 }
 
 // ── Sheet Music: interactive engraved score player (MusicNotation framework) ──
@@ -2862,9 +2779,12 @@
 .piano-score-view { justify-self: end; display: flex; align-items: center; gap: 0.5rem; flex-wrap: nowrap; }
 // Key transpose gates in place: disabled outside Listen, whole group dims (C2).
 // The wrapper carries the ONLY dim — reset the generic [disabled] opacity on its
-// buttons or the two multiply (0.35 × 0.4 ≈ 0.14: near-invisible ghosts).
+// buttons (both the legacy .piano-score-btn chrome and the transport-system
+// .piano-tbtn the Key trigger now renders as) or the two multiply
+// (0.35 × 0.4 ≈ 0.14: near-invisible ghosts).
 .piano-score-key.is-dimmed { opacity: 0.35; }
-.piano-score-key.is-dimmed .piano-score-btn[disabled] { opacity: 1; }
+.piano-score-key.is-dimmed .piano-score-btn[disabled],
+.piano-score-key.is-dimmed .piano-tbtn[disabled] { opacity: 1; }
 
 // Narrow-bar fallback (C1): at tablet widths (~1280px CSS viewport) the full
 // Listen + loop + grand-staff bar is tight — trim button padding and step the
@@ -2909,14 +2829,16 @@
 // Loop control popover (audit L1/L2) — first-class labeled loop with one-tap clear.
 .piano-score-loop-wrap { position: relative; display: inline-flex; align-items: center; gap: 0.3rem; }
 // The trigger's label can be free text (a section name), so bound + ellipsize it.
-// The label lives in its own span that carries the truncation; the chevron is a
-// flex sibling OUTSIDE the truncating span, so the menu affordance survives any
-// label length (C4). Double-class beats the .piano-score-btn base rule.
-.piano-score-btn.piano-score-loop-trigger {
+// The label lives in its own span (the transport system's .piano-tbtn__label)
+// that carries the truncation; the chevron is a flex sibling OUTSIDE the
+// truncating span, so the menu affordance survives any label length (C4).
+// The trigger is a TransportButton — it renders .piano-tbtn .piano-score-loop-trigger,
+// not .piano-score-btn — so key on the modifier class alone.
+.piano-score-loop-trigger {
   max-width: 14rem;
   svg { flex: 0 0 auto; }
 }
-.piano-score-loop-trigger__label {
+.piano-score-loop-trigger .piano-tbtn__label {
   min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .piano-score-loop-menu {
