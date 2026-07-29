@@ -130,7 +130,9 @@ export function resolvePianoConfig(raw, pianoId) {
       collection: p.music?.collection ?? shared.music?.collection ?? null,
       playlists: p.music?.playlists ?? shared.music?.playlists ?? [],
     },
-    sheetmusic: { collection: p.sheetmusic?.collection ?? shared.sheetmusic?.collection ?? null },
+    // Whole-node passthrough (like videos): sheetmusic carries either the legacy
+    // single `collection` or the grouped `collections` score tabs.
+    sheetmusic: { ...PIANO_CONFIG_DEFAULTS.sheetmusic, ...(shared.sheetmusic || {}), ...(p.sheetmusic || {}) },
     lessons: { collection: p.lessons?.collection ?? shared.lessons?.collection ?? PIANO_CONFIG_DEFAULTS.lessons.collection },
     midi: { preferredInputName: p.midi?.preferredInputName ?? shared.midi?.preferredInputName ?? null },
     keyboard: {

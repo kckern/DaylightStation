@@ -61,6 +61,25 @@ describe('resolvePianoConfig', () => {
     expect(cfg.videos.engagement_timeout_seconds).toBe(90);
   });
 
+  it('passes sheetmusic grouped collections through (score tabs)', () => {
+    const raw = {
+      sheetmusic: {
+        collections: [
+          { label: 'Video Games', ref: 'files:docs/sheet-music/video-games' },
+          { label: 'TV Shows', ref: 'files:docs/sheet-music/tv-shows' },
+        ],
+      },
+    };
+    const cfg = resolvePianoConfig(raw, 'default');
+    expect(cfg.sheetmusic.collections).toHaveLength(2);
+    expect(cfg.sheetmusic.collections[0].label).toBe('Video Games');
+  });
+
+  it('keeps the legacy single sheetmusic collection working', () => {
+    const cfg = resolvePianoConfig({ sheetmusic: { collection: 'files:docs/sheet-music' } }, 'default');
+    expect(cfg.sheetmusic.collection).toBe('files:docs/sheet-music');
+  });
+
   it('resolves separate playalong and singalong collections', () => {
     const raw = {
       playalong: { plexCollection: ['plex:676474'] },
