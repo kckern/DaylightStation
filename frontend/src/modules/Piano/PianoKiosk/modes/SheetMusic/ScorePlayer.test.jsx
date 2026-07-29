@@ -3260,6 +3260,25 @@ describe('ScorePlayer — armed endpoint picking (wave-3 F)', () => {
     expect(ticks()).toHaveLength(0);
   });
 
+  it('a drag releases a pending arm, so the next tap on the music seeks', () => {
+    // Both gestures answer "which measure?", so the drag supersedes the arm. If the
+    // arm survived, the banner would still be up after the range committed and the
+    // next tap would set an endpoint instead of seeking (audit H4b).
+    renderSectioned();
+    armAndTap('in', xOfMeasure(8));             // range m8–m8
+    arm('out');                                 // …then arm the out edge
+    expect(banner()).not.toBeNull();
+    pressGrip('out', xOfMeasure(8));
+    moveGrip('out', xOfMeasure(12));
+    expect(banner()).toBeNull();                // the grab took over from the arm
+    releaseGrip('out', xOfMeasure(12));
+    expect(loopSpan()).toBe('m8–m12');
+    expect(ticks()).toHaveLength(0);            // no latched arm chrome either
+    tapScore(xOfMeasure(10));                   // the next tap SEEKS…
+    expect(loopSpan()).toBe('m8–m12');          // …and sets no endpoint
+    expect(screen.getByTestId('score-position')).toHaveTextContent('m 10 / 18');
+  });
+
   it('a cancelled handle drag leaves the range alone and clears the tick chrome', () => {
     renderSectioned();
     armAndTap('in', xOfMeasure(8));

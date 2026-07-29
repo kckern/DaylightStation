@@ -94,6 +94,25 @@ describe('RangeHandleLayer', () => {
     expect(onArm).not.toHaveBeenCalled(); // a drag is not a tap
   });
 
+  it('captures the pointer on the handle for the duration of the drag', () => {
+    // Without capture, a finger that outruns the 48px grip mid-drag stops delivering
+    // moves to it and the handle silently comes off the finger — the one thing a
+    // drag gesture on glass must never do. Nothing in the OUTPUT of a drag reveals
+    // whether capture was taken, so assert the call itself.
+    Element.prototype.setPointerCapture.mockClear();
+    Element.prototype.releasePointerCapture.mockClear();
+    const { container } = mount();
+    const h = handleOut(container);
+    pDown(h, { pointerId: 7, clientX: 400, clientY: 130 });
+    expect(Element.prototype.setPointerCapture).toHaveBeenCalledWith(7);
+    pMove(h, { pointerId: 7, clientX: 110, clientY: 130 });
+    pUp(h, { pointerId: 7, clientX: 110, clientY: 130 });
+    // No explicit release, by design: the browser drops implicit capture on
+    // pointerup/pointercancel itself, so calling releasePointerCapture would be
+    // dead code — and calling it on an already-released pointer throws.
+    expect(Element.prototype.releasePointerCapture).not.toHaveBeenCalled();
+  });
+
   it('previews once per measure crossed, not once per move', () => {
     const onPreview = vi.fn();
     const { container } = mount({ onPreview });
@@ -196,6 +215,43 @@ describe('RangeHandleLayer', () => {
     fireEvent.click(h, { clientX: 100, clientY: 130 });
     expect(onPointerDown).not.toHaveBeenCalled(); // …so tap-to-seek never fires under a handle
     expect(onClick).not.toHaveBeenCalled();
+  });
+
+  it('spreads the grips of a one-onset range so neither can occlude the other', () => {
+    // §F's very first commit plants a ONE-measure range, and a measure with a single
+    // onset has left === right: both grips would land on the same x, where the
+    // later-painted `out` covers `in` completely and the in-point becomes
+    // untouchable. They must share the boundary, not stack on it.
+    const boxes = [{ x: 200, top: 100, bottom: 160 }];
+    const oneMeasure = [{ index: 0, firstStep: 0, lastStep: 0 }];
+    const onArm = vi.fn();
+    const { container } = render(
+      <RangeHandleLayer
+        measures={oneMeasure}
+        stepBoxes={boxes}
+        range={{ inMeasure: 0, outMeasure: 0 }}
+        onArm={onArm}
+        onCommit={vi.fn()}
+      />,
+    );
+    const i = handleIn(container);
+    const o = handleOut(container);
+    const gap = parseFloat(o.style.left) - parseFloat(i.style.left);
+    expect(gap).toBeGreaterThanOrEqual(24); // …at least half a grip of each is exposed
+    // And both are really reachable, not merely offset in the style attribute.
+    pDown(i, { pointerId: 1, clientX: 176, clientY: 130 });
+    pUp(i, { pointerId: 1, clientX: 176, clientY: 130 });
+    pDown(o, { pointerId: 2, clientX: 224, clientY: 130 });
+    pUp(o, { pointerId: 2, clientX: 224, clientY: 130 });
+    expect(onArm.mock.calls).toEqual([['in'], ['out']]);
+  });
+
+  it('leaves a roomy range’s grips on their own boundaries', () => {
+    // The spread is a collision fix, not a layout rule: whenever the ends are far
+    // enough apart each grip must still straddle the exact boundary it marks.
+    const { container } = mount();
+    expect(handleIn(container).style.left).toBe('76px');   // in-measure's left, 100
+    expect(handleOut(container).style.left).toBe('376px'); // out-measure's right, 400
   });
 
   it('no range renders nothing', () => {
