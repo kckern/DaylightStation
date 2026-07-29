@@ -9,7 +9,7 @@ const base = {
   flow: 'wrapped', onToggleFlow: vi.fn(),
   scale: 1, onScale: vi.fn(),
   parts: [{ staff: 0, label: 'RH' }, { staff: 1, label: 'LH' }],
-  activeParts: { 0: true, 1: true }, roles: {}, onCyclePart: vi.fn(),
+  activeParts: { 0: true, 1: true }, onCyclePart: vi.fn(),
   keyboardVisible: true, onToggleKeyboard: vi.fn(),
 };
 
@@ -60,19 +60,16 @@ describe('ScoreTransportBar', () => {
 
   it('grand-staff (2 staves) shows the Hands toggles, not chips (J4)', () => {
     const onHandsChange = vi.fn();
-    render(<ScoreTransportBar {...base} mode="learn" grandStaff handsVariant="hands" handsValue="both" onHandsChange={onHandsChange} />);
+    render(<ScoreTransportBar {...base} mode="learn" grandStaff handsValue="both" onHandsChange={onHandsChange} />);
     expect(screen.getByRole('group', { name: /hands/i })).toBeInTheDocument();
     // Both hands lit; turning Right off narrows practice to the left hand.
     fireEvent.click(screen.getByRole('button', { name: 'Right hand' }));
     expect(onHandsChange).toHaveBeenCalledWith('lh');
   });
 
-  it('grand-staff Listen shows the My-part control', () => {
-    render(<ScoreTransportBar {...base} mode="listen" grandStaff handsVariant="mypart" handsValue="none" onHandsChange={vi.fn()} />);
-    expect(screen.getByRole('group', { name: /my part/i })).toBeInTheDocument();
-    // 'none' = neither hand toggle lit (the kiosk performs everything).
-    expect(screen.getByRole('button', { name: 'Left hand' })).toHaveAttribute('aria-pressed', 'false');
-    expect(screen.getByRole('button', { name: 'Right hand' })).toHaveAttribute('aria-pressed', 'false');
+  it('Listen renders the same Hands control as Learn/Polish (one semantic)', () => {
+    render(<ScoreTransportBar {...base} mode="listen" grandStaff handsValue="both" onHandsChange={vi.fn()} />);
+    expect(screen.getByRole('group', { name: 'Hands' })).toBeInTheDocument();
   });
 
   it('perform mode: shows the page indicator (page / pages)', () => {
@@ -337,16 +334,16 @@ describe('ScoreTransportBar — stable geography (C2)', () => {
 
   it('geography invariant: the ordered button list is IDENTICAL across Listen/Learn/Polish', () => {
     // The C2 contract itself: same buttons, same order, in every practice mode —
-    // only disabled state may differ. Grand staff keeps the parts control as
-    // radios (excluded from the button roll-call), since chip labels legitimately
-    // change wording between Listen roles and Learn/Polish toggles.
+    // only disabled state may differ. Grand staff's Hands toggles carry the same
+    // Left/Right hand labels in every mode (wave-3 A: one semantic everywhere),
+    // so they participate in the roll-call unchanged too.
     const collect = () => screen.getAllByRole('button').map((b) => {
       const name = b.getAttribute('aria-label') || b.textContent.trim();
       // Learn's run button carries an explanatory accessible name by design —
       // it is the SAME Play button in the same slot, so normalize for comparison.
       return name === 'Learn advances as you play' ? 'Play' : name;
     });
-    const props = { ...base, grandStaff: true, handsVariant: 'hands', handsValue: 'both', onHandsChange: vi.fn() };
+    const props = { ...base, grandStaff: true, handsValue: 'both', onHandsChange: vi.fn() };
     const { rerender } = render(<ScoreTransportBar {...props} mode="listen" />);
     const listen = collect();
     expect(listen.length).toBeGreaterThan(0);

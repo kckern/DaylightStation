@@ -8,12 +8,6 @@ import KeySheet from '../../transport/KeySheet.jsx';
 import TempoSheet, { TEMPO_STEPS, nearestStep } from '../../transport/TempoSheet.jsx';
 import VolumeControl from '../../transport/VolumeControl.jsx';
 
-const ROLE_TITLES = {
-  play: 'Play',
-  you: 'You',
-  mute: 'Mute',
-};
-
 /**
  * ScoreTransportButtons — Restart (icon) + run (Play/Pause icons). Stable
  * geography (audit C2): both render in EVERY mode but Perform and gate in place
@@ -140,10 +134,8 @@ const ScoreViewControls = memo(function ScoreViewControls({
   onTranspose,
   parts = [],
   activeParts = {},
-  roles = {},
   onCyclePart,
   grandStaff = false,
-  handsVariant = 'hands',
   handsValue = 'both',
   onHandsChange,
   keyboardVisible,
@@ -177,20 +169,6 @@ const ScoreViewControls = memo(function ScoreViewControls({
 
   const renderPartChip = (part) => {
     const { staff, label } = part;
-    if (mode === 'listen') {
-      const role = roles[staff] || 'play';
-      const roleTitle = ROLE_TITLES[role] || role;
-      return (
-        <button
-          key={staff}
-          type="button"
-          className={`piano-score-part-chip is-role-${role}`}
-          onClick={() => onCyclePart(staff)}
-        >
-          {`${label}: ${roleTitle}`}
-        </button>
-      );
-    }
     const on = !!activeParts[staff];
     return (
       <button
@@ -210,7 +188,7 @@ const ScoreViewControls = memo(function ScoreViewControls({
       <span className="piano-score-divider" aria-hidden="true" />
 
       {grandStaff
-        ? <HandsControl variant={handsVariant} value={handsValue} onChange={onHandsChange} />
+        ? <HandsControl value={handsValue} onChange={onHandsChange} />
         : <div className="piano-score-parts">{parts.map(renderPartChip)}</div>}
 
       <div className={`piano-score-key${keyEnabled ? '' : ' is-dimmed'}`}>
@@ -340,10 +318,8 @@ export default function ScoreTransportBar({
   onTranspose,
   parts,
   activeParts,
-  roles,
   onCyclePart,
   grandStaff,
-  handsVariant,
   handsValue,
   onHandsChange,
   sections,
@@ -420,10 +396,8 @@ export default function ScoreTransportBar({
         onTranspose={onTranspose}
         parts={parts}
         activeParts={activeParts}
-        roles={roles}
         onCyclePart={onCyclePart}
         grandStaff={grandStaff}
-        handsVariant={handsVariant}
         handsValue={handsValue}
         onHandsChange={onHandsChange}
         keyboardVisible={keyboardVisible}
