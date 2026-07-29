@@ -8,6 +8,7 @@ import { SkeletonStage } from '../../Skeleton.jsx';
 import ScoreGrid from './ScoreGrid.jsx';
 import ScoreViewer from './ScoreViewer.jsx';
 import ScorePlayer from './ScorePlayer.jsx';
+import { resolveScoreGroups } from './scoreGroups.js';
 
 /**
  * Sheet Music mode — browse a folder of scores and view them.
@@ -84,22 +85,29 @@ export function useScoreImage(contentId) {
 
 export function SheetMusic() {
   const { config } = usePianoKioskConfig();
-  const ref = config.sheetmusic?.collection;
+  // Grouped tabs (sheetmusic.collections) or the legacy single collection —
+  // either way ScoreGrid receives ordered {label, listPath} groups.
+  const groups = useMemo(
+    () => resolveScoreGroups(config.sheetmusic)
+      .map((g) => ({ label: g.label, listPath: collectionListPath(g.ref) }))
+      .filter((g) => g.listPath),
+    [config.sheetmusic],
+  );
   return (
     <Routes>
-      <Route index element={<ScoreGridRoute collectionRef={ref} />} />
+      <Route index element={<ScoreGridRoute groups={groups} />} />
       <Route path="view/*" element={<ScoreViewerRoute />} />
     </Routes>
   );
 }
 
 /** Score grid → push the selected score's content id (relative). */
-function ScoreGridRoute({ collectionRef }) {
+function ScoreGridRoute({ groups }) {
   const logger = useMemo(() => getLogger().child({ component: 'piano-sheetmusic' }), []);
   const navigate = useNavigate();
   return (
     <ScoreGrid
-      listPath={collectionListPath(collectionRef)}
+      groups={groups}
       onSelect={(item) => {
         logger.info('piano.score-select', { id: item.id });
         // The id can contain slashes (a file path); they become real path
