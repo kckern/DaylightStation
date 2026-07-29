@@ -2848,6 +2848,31 @@
   &--yellow::before { background: #e8c43d; }
   &--red::before    { background: #ff5252; }
 }
+// Wave-3 H — the run's numeric score + the tier it was played at, above the
+// verbal overall. The number is the headline; the tier is the qualifier.
+.piano-score-run-score {
+  font-weight: 800; font-size: 2rem; line-height: 1; letter-spacing: -0.01em;
+  color: var(--piano-stage-fg, #f3efe6);
+  &__value { font-size: 2.4rem; }
+  &__tier { font-size: 1rem; font-weight: 600; opacity: 0.72; text-transform: lowercase; }
+  &__tier--mixed { color: #f0d270; opacity: 0.95; } // voided: no best banked
+}
+// Four tier bests for the run's hands bucket. A cell with no best reads as an
+// em dash, never a zero — never run is not the same as scored nothing.
+.piano-score-run-tiers {
+  display: flex; flex-direction: column; align-items: center; gap: 0.35rem;
+  width: 100%;
+  &__caption { font-size: 0.72rem; letter-spacing: 0.08em; text-transform: uppercase; opacity: 0.55; }
+  &__cells { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.4rem; width: 100%; }
+}
+.piano-score-run-tier {
+  display: flex; flex-direction: column; align-items: center; gap: 0.15rem;
+  padding: 0.4rem 0.2rem; border-radius: var(--r-sm, 8px);
+  background: rgba(255, 255, 255, 0.05); border: 1px solid transparent;
+  &__label { font-size: 0.68rem; opacity: 0.6; white-space: nowrap; }
+  &__value { font-weight: 700; font-size: 1.05rem; }
+  &--current { background: rgba(46, 196, 111, 0.16); border-color: #2ec46f; }
+}
 .piano-score-run-actions { display: flex; gap: 0.6rem; }
 .piano-score-run-replay { background: rgba(46, 196, 111, 0.2); border-color: #2ec46f; color: #b8f2cf; }
 .piano-score-run-drill { background: rgba(232, 163, 61, 0.22); border-color: #e8a33d; color: #ffdca6; }
