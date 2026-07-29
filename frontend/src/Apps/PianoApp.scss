@@ -1704,6 +1704,8 @@
   }
   &__btn--play { min-width: 4.5rem; height: 3rem; font-size: 1.2rem; background: var(--piano-accent); color: var(--piano-accent-ink); border-color: var(--piano-accent); }
   &__btn--rate { width: 4rem; flex-shrink: 0; }
+  &__btn--skip { gap: 0.25rem; padding: 0 0.7rem; }
+  &__skip-n { font-size: 0.95rem; font-weight: 600; font-variant-numeric: tabular-nums; line-height: 1; }
   &__btn--restart { flex-shrink: 0; }
 
   &__loop-group {
@@ -1715,8 +1717,17 @@
       border: none; border-radius: 0;
       border-right: 1px solid var(--piano-border);
       &:last-child { border-right: none; }
+      /* Splits the group into its two halves: mark-the-timeline (in/out) on the
+         left, act-on-the-loop (cycle/clear) on the right. A fat border in the
+         chrome's own background colour reads as a gap, not another divider. */
+      &.is-section-end { border-right: 4px solid var(--piano-surface); }
     }
   }
+  /* The cycle + clear glyphs are stroked outlines while the in/out brackets are
+     solid fills, so at a matched 1em the strokes read visibly lighter. Nudge
+     just those two up until all four buttons carry the same optical weight. */
+  &__btn--loop-toggle .piano-icon svg,
+  &__btn--clear-loop .piano-icon svg { width: 1.25em; height: 1.25em; }
 
   &__mix-wrap { position: relative; flex-shrink: 0; }
   &__mix-flyout {

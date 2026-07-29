@@ -47,20 +47,26 @@ export default function PianoVideoChrome({
         <button type="button" className="piano-video-chrome__btn piano-video-chrome__btn--restart" onClick={onRestart} disabled={gateOpen} aria-label="Restart from beginning"><Icon name="previous" /></button>
         <span className="piano-video-chrome__time">{fmt(currentTime)} / {fmt(dur)}</span>
         <div className="piano-video-chrome__spacer" />
-        <button type="button" className="piano-video-chrome__btn" onClick={() => onSkip(-30)} disabled={gateOpen} aria-label="Back 30 seconds"><Icon name="skip-back-30" /></button>
-        <button type="button" className="piano-video-chrome__btn" onClick={() => onSkip(-15)} disabled={gateOpen} aria-label="Back 15 seconds"><Icon name="skip-back-15" /></button>
+        {/* The chevron COUNT carries the magnitude (one = 15s, two = 30s) so the
+            step size reads at a glance; the numeral spells it out. Without both,
+            back-15 and back-30 are indistinguishable — they were the same glyph. */}
+        <button type="button" className="piano-video-chrome__btn piano-video-chrome__btn--skip" onClick={() => onSkip(-30)} disabled={gateOpen} aria-label="Back 30 seconds"><Icon name="skip-back-30" /><span className="piano-video-chrome__skip-n">30</span></button>
+        <button type="button" className="piano-video-chrome__btn piano-video-chrome__btn--skip" onClick={() => onSkip(-15)} disabled={gateOpen} aria-label="Back 15 seconds"><Icon name="skip-back-15" /><span className="piano-video-chrome__skip-n">15</span></button>
         <button type="button" className="piano-video-chrome__btn piano-video-chrome__btn--play" onClick={onToggle} disabled={gateOpen} aria-label={isPlaying ? 'Pause' : 'Play'}>{isPlaying ? <Icon name="pause" /> : <Icon name="play" />}</button>
-        <button type="button" className="piano-video-chrome__btn" onClick={() => onSkip(15)} disabled={gateOpen || forwardDisabled} aria-label="Forward 15 seconds"><Icon name="skip-forward-15" /></button>
-        <button type="button" className="piano-video-chrome__btn" onClick={() => onSkip(30)} disabled={gateOpen || forwardDisabled} aria-label="Forward 30 seconds"><Icon name="skip-forward-30" /></button>
+        <button type="button" className="piano-video-chrome__btn piano-video-chrome__btn--skip" onClick={() => onSkip(15)} disabled={gateOpen || forwardDisabled} aria-label="Forward 15 seconds"><span className="piano-video-chrome__skip-n">15</span><Icon name="skip-forward-15" /></button>
+        <button type="button" className="piano-video-chrome__btn piano-video-chrome__btn--skip" onClick={() => onSkip(30)} disabled={gateOpen || forwardDisabled} aria-label="Forward 30 seconds"><span className="piano-video-chrome__skip-n">30</span><Icon name="skip-forward-30" /></button>
         <div className="piano-video-chrome__spacer" />
         {!isSequential && (
           <button type="button" className="piano-video-chrome__btn piano-video-chrome__btn--rate" onClick={onCycleRate} disabled={gateOpen} aria-label="Playback speed">{rate}×</button>
         )}
         <div className={`piano-video-chrome__loop-group${hasLoop ? ' has-marks' : ''}`}>
-          <button type="button" className={`piano-video-chrome__btn${loop?.a != null && loop?.b == null ? ' is-arming' : ''}`} onClick={onMarkA} disabled={gateOpen} aria-label="Mark loop start"><Icon name="loop-a" /></button>
-          <button type="button" className="piano-video-chrome__btn" onClick={onMarkB} disabled={gateOpen} aria-label="Mark loop end"><Icon name="loop-b" /></button>
-          <button type="button" className={`piano-video-chrome__btn${loopActive ? ' is-on' : ''}`} onClick={onToggleLoop} disabled={gateOpen || !bothMarks} aria-label="Toggle A-B loop"><Icon name="repeat" /></button>
-          <button type="button" className="piano-video-chrome__btn" onClick={onClearLoop} disabled={gateOpen || !hasLoop} aria-label="Clear loop"><Icon name="clear-loop" /></button>
+          {/* Two families: the in/out brackets plant marks on the timeline; the
+              cycle + trash act on the loop itself. `is-section-end` draws the
+              divider between the two halves. */}
+          <button type="button" className={`piano-video-chrome__btn${loop?.a != null && loop?.b == null ? ' is-arming' : ''}`} onClick={onMarkA} disabled={gateOpen} aria-label="Mark loop start"><Icon name="loop-in" /></button>
+          <button type="button" className="piano-video-chrome__btn is-section-end" onClick={onMarkB} disabled={gateOpen} aria-label="Mark loop end"><Icon name="loop-out" /></button>
+          <button type="button" className={`piano-video-chrome__btn piano-video-chrome__btn--loop-toggle${loopActive ? ' is-on' : ''}`} onClick={onToggleLoop} disabled={gateOpen || !bothMarks} aria-label="Toggle A-B loop"><Icon name="loop-toggle" /></button>
+          <button type="button" className="piano-video-chrome__btn piano-video-chrome__btn--clear-loop" onClick={onClearLoop} disabled={gateOpen || !hasLoop} aria-label="Clear loop"><Icon name="clear-loop" /></button>
         </div>
         <button type="button" className={`piano-video-chrome__btn${volumeOpen ? ' is-on' : ''}`} onClick={() => setVolumeOpen(true)} disabled={gateOpen} aria-label="Volume"><Icon name="volume-up" /></button>
         <button type="button" className="piano-video-chrome__btn piano-video-chrome__btn--fullscreen" onClick={onToggleFullscreen} disabled={gateOpen} aria-label="Toggle fullscreen"><Icon name="fullscreen" /></button>
