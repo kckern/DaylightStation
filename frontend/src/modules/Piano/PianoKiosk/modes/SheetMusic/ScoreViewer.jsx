@@ -30,7 +30,10 @@ export default function ScoreViewer({ score }) {
     setPages(null); setFailed(false);
     (async () => {
       try {
-        logger.info('piano.score-open', { id });
+        // Same session-log tag as the failure emit below: without it a page-image
+        // run's session file records the failure but never the open, so a reader
+        // sees an error with nothing before it (audit L2).
+        logger.info('piano.score-open', { id }, { context: { app: 'piano-sheetmusic', sessionLog: true } });
         // Info (title + cover) and pages resolve in parallel; a missing info is not
         // fatal (the list may still have pages), so info failures degrade to null.
         const [info, list] = await Promise.all([
@@ -47,7 +50,18 @@ export default function ScoreViewer({ score }) {
         setPages(children.length ? children : [cover].filter(Boolean));
       } catch (err) {
         if (cancelled) return;
-        logger.warn('piano.score-open-failed', { id, error: err.message });
+        // Audit L2: this failure went only to the plain kiosk logger, so the
+        // per-run session file showed the open and then nothing — a blank score
+        // with no recorded reason. Route it into the same file as the rest of
+        // the run by tagging THIS event's context, rather than making a
+        // sessionLog child: creating one auto-emits 'session-log.start'
+        // (Logger.js:217) and would open an extra session file per score open.
+        // The backend sessionFile transport keys on context.app +
+        // context.sessionLog per event, so the tag alone routes it. The
+        // per-call context merges last over the child's (Logger.js:205), so
+        // `component: 'piano-sheetmusic-viewer'` is preserved alongside it.
+        logger.warn('piano.score-open-failed', { id, error: err.message },
+          { context: { app: 'piano-sheetmusic', sessionLog: true } });
         setFailed(true);
       }
     })();

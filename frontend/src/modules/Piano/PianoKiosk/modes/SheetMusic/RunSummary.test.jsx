@@ -30,6 +30,14 @@ describe('RunSummary', () => {
     expect(onClose).toHaveBeenCalled();
   });
 
+  it('an empty run says there is nothing to grade, never a congratulation', () => {
+    render(<RunSummary open grades={{}} measures={measures} onClose={() => {}} onReplay={() => {}} />);
+    expect(screen.queryByText(/nicely done/i)).toBeNull();
+    expect(screen.getByText(/nothing to grade/i)).toBeTruthy();
+    // The strip still shows every measure, all ungraded.
+    expect(document.querySelectorAll('.piano-score-run-chip--none').length).toBe(3);
+  });
+
   it('shows Drill worst section only when drillable, and fires onDrill (J6)', () => {
     const onDrill = vi.fn();
     const { rerender } = render(

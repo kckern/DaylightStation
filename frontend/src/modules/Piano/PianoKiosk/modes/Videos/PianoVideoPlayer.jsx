@@ -19,7 +19,7 @@ import usePauseMediaOnUnmount from './usePauseMediaOnUnmount.js';
 import useABLoop from './useABLoop.js';
 import usePianoWatchLog from './usePianoWatchLog.js';
 import { nextPianoRate } from './pianoPlaybackRate.js';
-import { lectureContentId, deriveResumeSeconds } from './lectureMeta.js';
+import { lectureContentId, resumeSecondsFor } from './lectureMeta.js';
 import useReloadGuard from '../../useReloadGuard.js';
 import EngagementGate from './EngagementGate.jsx';
 import { useEngagementGate } from './useEngagementGate.js';
@@ -83,7 +83,7 @@ export default function PianoVideoPlayer({ lecture, source, onBack, isSequential
 
   const contentId = lectureContentId(lecture);
   const title = lecture?.label || lecture?.title || '';
-  const resumeSeconds = lecture?.userPlayhead != null ? lecture.userPlayhead : deriveResumeSeconds(lecture);
+  const resumeSeconds = resumeSecondsFor(lecture);
 
   const { currentUser } = usePianoUser();
   const engagedRef = useRef(false);

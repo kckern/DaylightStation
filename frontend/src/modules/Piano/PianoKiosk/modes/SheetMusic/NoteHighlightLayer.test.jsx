@@ -61,4 +61,47 @@ describe('NoteHighlightLayer', () => {
     expect(rh2.classList.contains('piano-note-lit')).toBe(true); // new note lit
     cleanup();
   });
+
+  it('marks expected-but-unstruck notes as pending when asked', () => {
+    const a = mkEl(); const b = mkEl();
+    render(<NoteHighlightLayer
+      step={{ notes: [{ midi: 60, staff: 0, el: a }, { midi: 48, staff: 1, el: b }] }}
+      activeParts={{ 0: true, 1: true }}
+      struck={new Set([60])}
+      showPending
+    />);
+    expect(a.classList.contains('piano-note-hit')).toBe(true);
+    expect(a.classList.contains('piano-note-pending')).toBe(false);
+    expect(b.classList.contains('piano-note-pending')).toBe(true);
+  });
+
+  it('does not mark pending notes when showPending is off', () => {
+    const b = mkEl();
+    render(<NoteHighlightLayer
+      step={{ notes: [{ midi: 48, staff: 1, el: b }] }}
+      activeParts={{ 1: true }}
+      struck={new Set()}
+    />);
+    expect(b.classList.contains('piano-note-pending')).toBe(false);
+  });
+
+  it('drops the pending outline when the step advances', () => {
+    const a = mkEl(); const b = mkEl();
+    const { rerender } = render(<NoteHighlightLayer
+      step={{ notes: [{ midi: 48, staff: 1, el: a }] }}
+      activeParts={{ 1: true }}
+      struck={new Set()}
+      showPending
+    />);
+    expect(a.classList.contains('piano-note-pending')).toBe(true);
+    rerender(<NoteHighlightLayer
+      step={{ notes: [{ midi: 50, staff: 1, el: b }] }}
+      activeParts={{ 1: true }}
+      struck={new Set()}
+      showPending
+    />);
+    expect(a.classList.contains('piano-note-pending')).toBe(false); // no stale outline at step N+1
+    expect(b.classList.contains('piano-note-pending')).toBe(true);
+    cleanup();
+  });
 });

@@ -13,6 +13,19 @@ export function lectureContentId(item) {
   return null;
 }
 
+/**
+ * Where to open a lecture. A COMPLETED lecture (per the standard completion
+ * gate — lectureUserStatus) restarts from 0: rewatching a done video must not
+ * drop you at the tail. Progress/completion records are untouched — replaying
+ * never un-completes anything. In-progress lectures resume at the saved
+ * per-user playhead, else the device-level signals.
+ */
+export function resumeSecondsFor(item) {
+  if (lectureUserStatus(item).watched) return 0;
+  if (item?.userPlayhead != null) return item.userPlayhead;
+  return deriveResumeSeconds(item);
+}
+
 /** Resume position in seconds from a /playable lecture item (0 = start). */
 export function deriveResumeSeconds(item) {
   const ws = num(item?.watchSeconds);

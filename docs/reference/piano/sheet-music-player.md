@@ -175,11 +175,11 @@ stamped to wall-clock by the framework. Math is in `scoreTelemetry.js`; collecti
 | Event | Level | Fields |
 |-------|-------|--------|
 | `score.load` | info | `id, fetchMs, openToReadyMs, steps, …` (phase totals) |
-| `score.load.failed` | warn | `id, phase, error` |
-| `score.playback.stall` | warn | `step, driftMs, gapMs, bpm` (fire later than ~120 ms, or a >50 ms frame gap) |
+| `piano.score-open-failed` | warn | `id, error` — the score's XML fetch failed. Emitted from `SheetMusic.jsx` (`NotationScore`), not this hook: a failed fetch renders `PianoEmpty` and never mounts `ScorePlayer`. It carries `app: 'piano-sheetmusic', sessionLog: true` on its own context so it still lands in the run's session file without creating a second one. |
+| `score.playback.stall` | debug | `step, driftMs, gapMs, effectiveBpm, stallMs` (drift past a tempo-scaled budget, or a tick gap that skipped whole ticks) |
 | `score.playback.stats` | info | `mode, events, meanDriftMs, p95DriftMs, maxDriftMs, stalls, maxFrameGapMs` (at pause/stop/done/unmount) |
-| `score.follow.timing` | sampled | `step, note, expectedMs, actualMs, driftMs, feel` (rush/tight/drag) |
-| `score.follow.stats` | info | `hits, wrongs, meanAbsDriftMs, rushPct, dragPct` (on leaving Learn) |
+| `score.follow.timing` | sampled | `step, note, sinceAdvanceMs` (how long the player took to answer the cursor — no verdict) |
+| `score.follow.stats` | info | `hits, wrongs, count, medianStepMs, p95StepMs` (on leaving Learn) |
 | `score.polish.measure` | info | `measure, grade, noteScore, timingScore` (per graded measure) |
 | `score.polish.summary` | info | `greens, yellows, reds, overall` (at run end) |
 | `score.focus.set` | info | `kind (section/custom), inMeasure, outMeasure` |
@@ -189,8 +189,24 @@ stamped to wall-clock by the framework. Math is in `scoreTelemetry.js`; collecti
 | `session-log.start` | info | `scoreId` — opens the per-session JSONL |
 
 **Reading "on beat":** transport jitter is `driftMs` = actual fire time − scheduled
-`t`; single-digit ms = tight, a `score.playback.stall` = a stutter. In Learn,
-`score.follow.timing.driftMs` is signed (− rush, + drag) vs the notated rhythm.
+`t`; single-digit ms = tight, a `score.playback.stall` = a stutter.
+
+**Learn timing is descriptive, not graded.** Learn is SELF-PACED — the cursor waits
+for the player and advances only once every active-staff note of the step is struck
+— so there is nothing to be late for. `score.follow.timing.sinceAdvanceMs` is simply
+how long the player took to answer, and `score.follow.stats` reports the median and
+p95 of those intervals. It passes no rush/tight/drag verdict: the old shape compared
+the response against the written note duration (~94ms in most records), which made
+every human response a `drag` and `tight` unreachable — 24 of 31 field records were
+`drag`, up to 47s (audit M5b). `classifyFollowHit` still exists in `scoreTelemetry.js`
+for Polish, which IS graded at tempo, but the Learn path no longer calls it.
+
+**`score.playback.stall` is debug-level** — on a bad run it fires per tick, so
+the count you want is `stalls` in `score.playback.stats`. Raise the level with
+`window.DAYLIGHT_LOG_LEVEL='debug'` only while investigating a specific run.
+Its `effectiveBpm` is the tempo the music is actually playing at (written bpm ×
+`tempoMult`), so it will NOT match the `bpm` on `score.transport.play`, which
+logs the written tempo and `tempoMult` as separate fields.
 
 **Per-session practice log.** The telemetry child logger carries
 `app: 'piano-sheetmusic'` + `sessionLog: true`, and `startSession(scoreId)` emits

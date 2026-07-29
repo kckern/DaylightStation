@@ -1,5 +1,5 @@
 /**
- * scoreSettings — per-score, device-local practice settings (mode, tempo, range,
+ * scoreSettings — per-score, device-local practice settings (mode, tempo,
  * hands) so a walk-up user finds a piece the way they left it. Stored in
  * localStorage under `daylight.piano.sm.<id>`; every access is wrapped so a private
  * window / disabled storage / corrupt value degrades to "no settings", never throws.
@@ -17,7 +17,11 @@ export function loadScoreSettings(id) {
     if (!raw) return {};
     const obj = JSON.parse(raw);
     if (!obj || typeof obj !== 'object') return {};
-    const { v, ...rest } = obj; // drop the envelope version from the returned view
+    // `focus` was persisted through v1 and is deliberately RETIRED: an indefinite
+    // loop means the piece silently opens mid-score and never plays from the top,
+    // which the field logs show confusing users across six sessions (audit M1).
+    // Stripping on read also cleans up values written by older builds.
+    const { v, focus, ...rest } = obj;
     return rest;
   } catch {
     return {};

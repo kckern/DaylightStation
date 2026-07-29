@@ -4,7 +4,8 @@ import { GetRecentCourseActivity } from './GetRecentCourseActivity.mjs';
 
 let PIANO_CFG;
 const basePianoCfg = () => ({ videos: { collections: [
-  { label: 'Music Lessons', plex: ['plex:100'] },
+  { label: 'Piano Lessons', plex: ['plex:100'] },
+  { label: 'Voice Lessons', shows: ['plex:30'] },
   { label: 'Music Appreciation', plex: ['plex:200'] },
 ] } });
 
@@ -21,6 +22,7 @@ function makeDeps({ summaries, itemCounts = {} }) {
       children: async (key) => (String(key) === '100'
         ? [{ ratingKey: '10', title: 'Course A', thumb: '/img/a' }, { ratingKey: '11', title: 'Course B', thumb: '/img/b' }]
         : [{ ratingKey: '20', title: 'Appreciation X', thumb: '/img/x' }]),
+      metadata: async (key) => ({ ratingKey: String(key), title: `Standalone ${key}`, thumb: `/img/${key}` }),
     },
     fitnessPlayableService: {
       getPlayableEpisodes: async (id) => ({
@@ -84,8 +86,9 @@ test('default slot ranks by percent (highest first), not recency', async () => {
   assert.equal(players[0].courses[0].percent, 80);
 });
 
-test('percent reflects the current module, not the whole program', async () => {
+test('percent_mode current-module reflects the current unit, not the whole program', async () => {
   const deps = makeDeps({ summaries: {} });
+  PIANO_CFG.menu_activity = { percent_mode: 'current-module' };
   // One show, two 2-lecture units; kc finished unit s1 and is 1-of-2 into s2
   // (course-wide that is 3/4 = 75%; the card must say 50% — the current module).
   // parentId nests under item.metadata — the playable SERVICE shape (the HTTP
@@ -163,6 +166,77 @@ test('duplicate rows from the raw children container collapse to one course', as
   assert.equal(players[0].courses[0].courseId, 'plex:10');
 });
 
+// Milo shape: intro unit s1 (single lecture, DONE, most recent play) while
+// unit s2 sits at 5/8.
+function miloDeps() {
+  const deps = makeDeps({ summaries: {} });
+  deps.fitnessPlayableService.getPlayableEpisodes = async () => ({ info: {}, items: [
+    { plex: 'intro', metadata: { parentId: 's1' } },
+    ...Array.from({ length: 8 }, (_, i) => ({ plex: `m${i + 1}`, metadata: { parentId: 's2' } })),
+  ] });
+  deps.userVideoProgressStore.enrich = (items, userId) => (userId !== 'milo' ? items : items.map((it) => ({
+    ...it,
+    userWatched: it.plex === 'intro' || ['m1', 'm2', 'm3', 'm4', 'm5'].includes(it.plex),
+    userLastPlayedAt: it.plex === 'intro' ? '2026-07-27T00:00:00Z'
+      : (it.plex === 'm5' ? '2026-07-21T00:00:00Z' : null),
+  })));
+  deps.configService.getHouseholdUsers = () => ['milo'];
+  return deps;
+}
+
+test('current-module mode: a finished one-off unit played last does not carry the day', async () => {
+  const deps = miloDeps();
+  PIANO_CFG.menu_activity = { percent_mode: 'current-module' };
+  const uc = new GetRecentCourseActivity(deps);
+  const { players } = await uc.execute();
+  const c = players[0].courses[0];
+  assert.equal(c.completed, 5);
+  assert.equal(c.total, 8);
+  assert.equal(c.percent, 63);
+  assert.equal(players[0].lastPlayedAt, '2026-07-27T00:00:00Z'); // recency still the intro play
+});
+
+test('default season-weighted: each unit is an equal slice, episodes interpolate within', async () => {
+  const uc = new GetRecentCourseActivity(miloDeps());
+  const { players } = await uc.execute();
+  const c = players[0].courses[0];
+  // (s1 done = 1.0) + (s2 at 5/8 = 0.625) over 2 units → 81%
+  assert.equal(c.percent, 81);
+  assert.equal(c.completed, 6);  // tooltip counts are whole-course
+  assert.equal(c.total, 9);
+  assert.deepEqual(c.units, ['done', 'active']); // per-season dots
+});
+
+test('single-season courses emit per-EPISODE dots (done/active/todo)', async () => {
+  const deps = makeDeps({ summaries: {} });
+  deps.fitnessPlayableService.getPlayableEpisodes = async () => ({ info: {}, items: [
+    { plex: 'e1', metadata: { parentId: 's1' } },
+    { plex: 'e2', metadata: { parentId: 's1' } },
+    { plex: 'e3', metadata: { parentId: 's1' } },
+    { plex: 'e4', metadata: { parentId: 's1' } },
+  ] });
+  deps.userVideoProgressStore.enrich = (items, userId) => (userId !== 'kc' ? items : items.map((it) => ({
+    ...it,
+    userWatched: it.plex === 'e1',
+    userPercent: it.plex === 'e2' ? 40 : null,
+    userLastPlayedAt: it.plex === 'e2' ? '2026-07-26T00:00:00Z' : (it.plex === 'e1' ? '2026-07-20T00:00:00Z' : null),
+  })));
+  const uc = new GetRecentCourseActivity(deps);
+  const { players } = await uc.execute();
+  assert.deepEqual(players[0].courses[0].units, ['done', 'active', 'todo', 'todo']);
+});
+
+test('percent_mode course: plain completed/total across every lecture', async () => {
+  const deps = miloDeps();
+  PIANO_CFG.menu_activity = { percent_mode: 'course' };
+  const uc = new GetRecentCourseActivity(deps);
+  const { players } = await uc.execute();
+  const c = players[0].courses[0];
+  assert.equal(c.completed, 6);
+  assert.equal(c.total, 9);
+  assert.equal(c.percent, 67);
+});
+
 test('caps each player at 2 course thumbnails (equal percents break ties by recency)', async () => {
   const deps = makeDeps({ summaries: {
     kc: {
@@ -180,6 +254,16 @@ test('caps each player at 2 course thumbnails (equal percents break ties by rece
   const { players } = await uc.execute();
   assert.equal(players[0].courses.length, 2);
   assert.deepEqual(players[0].courses.map((c) => c.courseId), ['plex:13', 'plex:12']);
+});
+
+test('voice-lesson shows outside any collection join the scope via metadata()', async () => {
+  const uc = new GetRecentCourseActivity(makeDeps({
+    summaries: { kc: { 30: { completed: 1, lastPlayedAt: '2026-07-26T00:00:00Z' } } },
+  }));
+  const { players } = await uc.execute();
+  assert.equal(players.length, 1);
+  assert.equal(players[0].courses[0].courseId, 'plex:30');
+  assert.equal(players[0].courses[0].courseTitle, 'Standalone 30'); // from metadata()
 });
 
 test('appreciation collections are out of scope', async () => {
