@@ -39,6 +39,7 @@ import FocusRangeLayer from './FocusRangeLayer.jsx';
 import SelectBanner from './SelectBanner.jsx';
 import StuckPrompt from './StuckPrompt.jsx';
 import { nearestEvent, SELECT_MAX_DIST } from './nearestEvent.js';
+import { titleFromScoreId } from './scoreTitle.js';
 
 // One source of truth for the transport's tick rate: the telemetry's stall rule
 // is expressed as a MULTIPLE of it, so the two can never drift apart (audit H1).
@@ -89,13 +90,13 @@ export default function ScorePlayer({ score: scoreMeta }) {
   const parsed = useMemo(() => { try { return parseMusicXml(scoreMeta.musicXml); } catch { return null; } }, [scoreMeta.musicXml]);
   const tempo = parsed?.tempo || 90;
   const meta = useMemo(() => ({
-    title: scoreMeta.title || parsed?.title || 'Score',
+    title: scoreMeta.title || parsed?.title || titleFromScoreId(scoreMeta.id),
     composer: parsed?.composer || null,
     tempo,
     key: keyLabel(parsed?.key?.fifths ?? 0, parsed?.key?.mode),
     time: parsed ? `${parsed.timeSig.beats}/${parsed.timeSig.beatType}` : null,
     measures: parsed?.parts?.[0]?.measures?.length || 0,
-  }), [scoreMeta.title, parsed, tempo]);
+  }), [scoreMeta.id, scoreMeta.title, parsed, tempo]);
 
   usePianoBreadcrumb(useMemo(() => [{ label: meta.title }], [meta.title]));
 
