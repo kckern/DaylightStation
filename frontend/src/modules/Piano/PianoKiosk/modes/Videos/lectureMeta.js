@@ -14,15 +14,33 @@ export function lectureContentId(item) {
 }
 
 /**
+ * True when `item` carries the piano courses endpoint's per-user enrichment
+ * (`UserVideoProgressStore#enrich`) — `userPercent`/`userWatched` are ALWAYS
+ * present (even `null`/`false`) once a known kiosk user's request went
+ * through it, so their presence — not their value — is the enrichment signal.
+ * Absent entirely on device-level-only payloads: the no-user/guest fallback
+ * (the fitness-show endpoint) never adds these fields. That's the only case
+ * allowed to read device-level (Plex media-memory) signals below.
+ */
+function isUserScoped(item) {
+  return item?.userPercent != null || item?.userWatched != null;
+}
+
+/**
  * Where to open a lecture. A COMPLETED lecture (per the standard completion
  * gate — lectureUserStatus) restarts from 0: rewatching a done video must not
  * drop you at the tail. Progress/completion records are untouched — replaying
  * never un-completes anything. In-progress lectures resume at the saved
- * per-user playhead, else the device-level signals.
+ * per-user playhead. When a kiosk user is active (the item is user-scoped)
+ * but has no playhead of their own, start at 0 — device-level signals (Plex
+ * media-memory shared by everyone on the kiosk) must never stand in for
+ * another user's/device's position. The device-level fallback is reserved
+ * for the genuine no-user path (guest / no persistent user selected).
  */
 export function resumeSecondsFor(item) {
   if (lectureUserStatus(item).watched) return 0;
   if (item?.userPlayhead != null) return item.userPlayhead;
+  if (isUserScoped(item)) return 0;
   return deriveResumeSeconds(item);
 }
 
@@ -60,7 +78,7 @@ export function lectureStatus(item) {
  * device-level lectureStatus (Plex media-memory signals).
  */
 export function lectureUserStatus(item) {
-  if (item?.userPercent != null || item?.userWatched != null) {
+  if (isUserScoped(item)) {
     const pct = num(item.userPercent);
     const percent = pct ? Math.max(0, Math.min(100, Math.round(pct))) : 0;
     return { watched: !!item.userWatched, percent, completedAt: item.userCompletedAt || null };
