@@ -53,11 +53,18 @@ export function layout({ page, blocks }) {
     // size is purely page-width / cols, so a 3-column block always eats a third
     // of the page each and a sheet of four such blocks runs to four pages of
     // mostly whitespace. Capping the width lets a block keep the grid shape the
-    // content wants while spending only the room it needs. Left-aligned rather
-    // than centred: ragged right edges read as a deliberate column, a centred
-    // short row reads as a mistake.
+    // content wants while spending only the room it needs. Horizontal placement of
+    // the resulting narrower grid is then the block's own choice (`align`).
     const naturalW = (contentW - (block.cols - 1) * gap) / block.cols;
     const cellW = block.maxCellWPt ? Math.min(naturalW, block.maxCellWPt) : naturalW;
+
+    // Centre on the FULL row width (cols), not on how many items a given row got.
+    // Centring each row independently would make a short final row float between
+    // the columns above it, which reads as misalignment rather than as centring.
+    const rowW = block.cols * cellW + (block.cols - 1) * gap;
+    const originX = block.align === 'center'
+      ? page.marginPt + Math.max(0, (contentW - rowW) / 2)
+      : page.marginPt;
     // `aspect` is the mark's width/height. Square is only right for a bare glyph:
     // a framed QR with a label strip measures ~0.73 w/h, and that ratio DRIFTS with
     // size (0.726 at a 108pt module, 0.677 at 64pt) because the frame and label
@@ -116,7 +123,9 @@ export function layout({ page, blocks }) {
           page: pageIdx,
           block: block.id,
           text: block.title,
-          x: page.marginPt,
+          // Follows the grid's origin, not the page margin, so a centred block's
+          // heading sits over its own columns instead of drifting to the left.
+          x: originX,
           y: cursorY,
           continued,
         });
@@ -131,7 +140,7 @@ export function layout({ page, blocks }) {
           page: pageIdx,
           block: block.id,
           index: placed + i,
-          x: page.marginPt + col * (cellW + gap),
+          x: originX + col * (cellW + gap),
           y: cursorY + row * (cellH + gap),
           w: cellW,
           h: cellH,

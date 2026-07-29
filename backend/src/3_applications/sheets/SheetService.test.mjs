@@ -46,11 +46,14 @@ describe('SheetService', () => {
       expect(model.fingerprint).toMatch(/^[0-9a-f]{6}$/);
     });
 
-    it('falls back to the sheet id when the sheet declares no title', async () => {
+    // Omitting `title:` means NO heading, not "use the id". The fallback printed a
+    // stray "fridge" across the top of the sheet, over the first block's own title,
+    // and there is no case where a sheet wants its config key rendered as a heading.
+    it('renders no title when the sheet declares none', async () => {
       const config = baseConfig();
       delete config.sheets.fridge.title;
       const model = await svcWith(config).build('fridge', {});
-      expect(model.title).toBe('fridge');
+      expect(model.title).toBe('');
     });
 
     it('awaits async providers', async () => {

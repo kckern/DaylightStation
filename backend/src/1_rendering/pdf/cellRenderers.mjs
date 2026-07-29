@@ -21,6 +21,7 @@
  * @module rendering/pdf/cellRenderers
  */
 
+import QRCode from 'qrcode';
 import { createQRCodeRenderer } from '#rendering/qrcode/QRCodeRenderer.mjs';
 
 /**
@@ -73,62 +74,85 @@ export function createCellRenderers({ qrRenderer = createQRCodeRenderer() } = {}
     },
 
     /**
-     * Icon on the left, QR on the right — a WIDE cell.
+     * ONE framed card: icon and its label on the left, code on the right.
      *
-     * Two reasons this exists rather than stacking them:
+     * The QR is drawn HERE from the raw module matrix rather than delegating to
+     * `QRCodeRenderer`. That renderer wraps every code in its own frame and label
+     * strip, which put a hard rail between the icon and the code and boxed the two
+     * as separate objects. This design wants a single rectangle around the whole
+     * card, so the code has to be drawable without chrome — and a module matrix is
+     * the only way to get that.
      *
-     * 1. **Separation.** On a dense sheet, adjacent QR codes with only a thin gap
-     *    read as one field to the eye and to an over-eager scanner. Putting a
-     *    solid icon between neighbouring codes is horizontal whitespace that also
-     *    carries meaning.
-     * 2. **Packing.** A stacked QR cell is tall (~0.83 w/h), which is the worst
-     *    shape for a letter page: three rows of them nearly fills it. A wide cell
-     *    fits more rows, which is what lets a 3x3 block share a page with three
-     *    others.
+     * Squares, not dots, for the data modules: at this size the sheet is already
+     * near the limit of what decodes reliably, and dots throw away part of each
+     * module's area for decoration.
      *
-     * The icon is nested as a child `<svg>`. That is safe — svg-to-pdfkit renders
-     * nested `<svg>` correctly (verified: a nested element draws at exactly its
-     * viewBox-derived scale). The thing it genuinely cannot do is an `<image>`
-     * referencing SVG data, which is a different problem and is why the content
-     * catalog rasterises cover art.
-     *
-     * A missing icon degrades to the plain `qr` mark rather than failing: a cell
-     * with no picture still scans, and losing the whole sheet over a missing file
-     * would be the wrong trade.
+     * A missing icon still renders — the card simply gives the code the full width
+     * rather than losing the sheet over a missing file.
      */
     'qr-icon': function qrIcon(item, rect, opts = {}) {
-      const qrSvg = qrRenderer.renderSvg(item.code, {
-        size: opts.sizePt ?? 300,
-        label: item.label,
-        sublabel: item.sublabel,
-      });
-      if (!item.iconSvg) return qrSvg;
+      // Layout units, not points. The card is emitted with a viewBox and the
+      // emitter scales it into the cell, so these only fix the PROPORTIONS.
+      const PAD = 9;
+      const QR = 100;
+      const GAP = 9;
+      const LEFT = 84;
+      const LABEL_H = 22;
+      const H = QR + PAD * 2;
+      const hasIcon = Boolean(item.iconSvg);
+      // Without an icon the label has nowhere to sit beside the code, so it goes
+      // UNDER it and the card becomes taller than wide. Dropping the label instead
+      // would leave a wall of anonymous codes — which is what happened first time,
+      // and made the containers block unusable.
+      const W = hasIcon ? PAD + LEFT + GAP + QR + PAD : PAD + QR + PAD;
+      const H2 = hasIcon ? H : QR + PAD * 2 + LABEL_H;
 
-      const box = readViewBox(qrSvg) || { w: 404, h: 484 };
-      const iconW = Math.round(box.h * (opts.iconScale ?? 0.62));
-      const gap = Math.round(box.w * (opts.iconGap ?? 0.08));
-      const totalW = iconW + gap + box.w;
+      const modules = QRCode.create(item.code, { errorCorrectionLevel: 'H' }).modules;
+      const n = modules.size;
+      const m = QR / n;
+      let cells = '';
+      for (let r = 0; r < n; r += 1) {
+        for (let c = 0; c < n; c += 1) {
+          if (!modules.data[r * n + c]) continue;
+          // +0.02 overlap closes hairline seams between adjacent modules that some
+          // rasterisers leave, which read as breaks in a finder pattern.
+          cells += `<rect x="${(c * m).toFixed(3)}" y="${(r * m).toFixed(3)}" width="${(m + 0.02).toFixed(3)}" height="${(m + 0.02).toFixed(3)}"/>`;
+        }
+      }
+      const qrX = hasIcon ? PAD + LEFT + GAP : PAD;
+      const qrG = `<g transform="translate(${qrX},${PAD})" fill="#000">${cells}</g>`;
 
-      // The source icons carry their own width/height on the root tag. Those must be
-      // REMOVED, not merely overridden: appending a second width= produces duplicate
-      // attributes, and the original wins — which renders the icon at its intrinsic
-      // size, overflowing the cell and swallowing the QR beside it. Seen on the first
-      // attempt; the viewBox is what the nested element should scale from.
-      // NOT anchored to the start of the string. These files begin with an XML
-      // declaration and a generator comment, so `^<svg` matched nothing and the
-      // icon kept its own width="800px" — rendering at intrinsic size, overflowing
-      // the cell and swallowing the QR beside it. Match the first <svg> wherever
-      // it is, and strip the sizing attributes rather than trying to override
-      // them: a duplicate attribute resolves to the original, not the addition.
-      const iconEl = stripXmlDecl(item.iconSvg)
-        .replace(/<svg\b[^>]*>/, (tag) => tag
-          .replace(/\s(width|height|x|y)\s*=\s*"[^"]*"/g, '')
-          .replace(/^<svg/, `<svg x="0" y="${(box.h - iconW) / 2}" width="${iconW}" height="${iconW}" preserveAspectRatio="xMidYMid meet"`));
+      const labelText = String(item.label ?? '');
+      const fit = (text, boxW, maxSize) => (text.length
+        ? Math.max(5, Math.min(maxSize, (boxW * 0.98) / (text.length * 0.55)))
+        : maxSize);
 
-      return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${totalW} ${box.h}" width="${totalW}" height="${box.h}">`
-        + iconEl
-        + `<g transform="translate(${iconW + gap},0)">${stripXmlDecl(qrSvg)}</g>`
-        + '</svg>';
+      let left = '';
+      if (hasIcon) {
+        const iconBox = Math.min(LEFT, H - PAD * 2 - LABEL_H);
+        const iconX = PAD + (LEFT - iconBox) / 2;
+        const iconY = PAD + (H - PAD * 2 - LABEL_H - iconBox) / 2;
+        const iconEl = stripXmlDecl(item.iconSvg)
+          .replace(/<svg\b[^>]*>/, (tag) => tag
+            .replace(/\s(width|height|x|y)\s*=\s*"[^"]*"/g, '')
+            .replace(/^<svg/, `<svg x="${iconX}" y="${iconY}" width="${iconBox}" height="${iconBox}" preserveAspectRatio="xMidYMid meet"`));
+        const text = labelText;
+        const size = fit(text, LEFT, LABEL_H * 0.8);
+        left = iconEl
+          + `<text x="${PAD + LEFT / 2}" y="${iconY + iconBox + LABEL_H * 0.62}" text-anchor="middle"`
+          + ` font-family="Helvetica" font-weight="bold" font-size="${size.toFixed(2)}" fill="#000">${esc(text)}</text>`;
+      }
+
+      const under = hasIcon ? '' : `<text x="${W / 2}" y="${PAD + QR + LABEL_H * 0.66}" text-anchor="middle"`
+        + ` font-family="Helvetica" font-weight="bold" font-size="${fit(labelText, QR, LABEL_H * 0.8).toFixed(2)}"`
+        + ` fill="#000">${esc(labelText)}</text>`;
+
+      // One rounded rectangle around the whole card — icon, label and code together.
+      const frame = `<rect x="0.6" y="0.6" width="${W - 1.2}" height="${H2 - 1.2}" rx="7" ry="7"`
+        + ` fill="#fff" stroke="#000" stroke-width="1.2"/>`;
+
+      return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${H2}" width="${W}" height="${H2}">`
+        + frame + left + qrG + under + '</svg>';
     },
 
     /**

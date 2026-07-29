@@ -155,6 +155,7 @@ export function createSheetService({ getConfig, providers, cellKinds, logger = c
         // Four block titles at the layout's 24pt default spend 96pt of a 720pt
         // page — enough on their own to push a sheet onto a second sheet of paper.
         titleHeightPt: b.title_height_pt ?? defaults.title_height_pt,
+        align: b.align ?? defaults.align,
         kind,
         cellOpts: toCellOpts(b.cell),
         items,
@@ -173,6 +174,7 @@ export function createSheetService({ getConfig, providers, cellKinds, logger = c
         aspect: b.aspect,
         maxCellWPt: b.maxCellWPt,
         titleHeightPt: b.titleHeightPt,
+        align: b.align,
       })),
     });
 
@@ -199,7 +201,9 @@ export function createSheetService({ getConfig, providers, cellKinds, logger = c
       .digest('hex')
       .slice(0, 6);
 
-    return { sheetId, title: spec.title || sheetId, page, blocks, placements, fingerprint };
+    // `?? ''` not `|| sheetId`: a sheet that omits `title:` wants NO heading, and
+    // falling back to the id printed a stray "fridge" over the first block.
+    return { sheetId, title: spec.title ?? '', page, blocks, placements, fingerprint };
   }
 
   return { build };
