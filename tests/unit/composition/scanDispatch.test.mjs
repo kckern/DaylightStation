@@ -13,7 +13,7 @@
  * copy of the decision instead of the decision itself.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { createScanDispatch, SCAN_ROUTE_FALLBACK } from '#composition/modules/scanDispatch.mjs';
+import { createScanDispatch, SCAN_ROUTE_FALLBACK, errText } from '#composition/modules/scanDispatch.mjs';
 
 const makeLogger = () => ({
   debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn(),
@@ -23,7 +23,15 @@ const makeLogger = () => ({
 /** Event names a fake logger saw at one level, in order. */
 const eventNames = (logger, level) => logger[level].mock.calls.map((c) => c[0]);
 
-function harness(over = {}) {
+/**
+ * The dependency bag by itself, WITHOUT constructing anything.
+ *
+ * `harness` builds this and then calls the factory, which is what every
+ * behaviour test below wants. The seam tests want the bag on its own, so they
+ * can delete one key from it and watch the factory refuse — see
+ * `the composition seam`.
+ */
+function makeDeps(over = {}) {
   const barcodeLogger = makeLogger();
   const dispatcherLogger = makeLogger();
 
@@ -59,6 +67,11 @@ function harness(over = {}) {
     ...over,
   };
 
+  return { deps, barcodeLogger, dispatcherLogger, refreshPrompt, execute };
+}
+
+function harness(over = {}) {
+  const { deps, barcodeLogger, dispatcherLogger, refreshPrompt, execute } = makeDeps(over);
   return {
     ...deps,
     barcodeLogger,
@@ -166,6 +179,203 @@ describe('createScanDispatch — construction', () => {
     expect(() => harness({ barcodeLogger: broken, screenNames: ['go'] })).not.toThrow();
     expect(harness({ barcodeLogger: broken, screenNames: ['go'] }).scanDispatch.screenCollisions)
       .toEqual(['go']);
+  });
+});
+
+describe('createScanDispatch — the composition seam', () => {
+  /**
+   * THE UNTESTABLE CALL SITE.
+   *
+   * Every test above drives this factory with its own harness, so all of them
+   * pass whatever `app.mjs` does. `app.mjs` is a composition root no unit test
+   * can import — nothing in this repository references `createApp`'s barcode
+   * wiring — so a deleted or misspelled line in
+   * `createScanDispatch({ ..., screenNames: barcodeScreenNames, ... })` is
+   * invisible to the whole test tree.
+   *
+   * The factory therefore checks its OWN inputs and refuses to build, which
+   * turns that class of mistake into a boot failure rather than a live gap.
+   * These tests are what make that refusal falsifiable. Each one corresponds to
+   * a line that could go missing from the call site.
+   */
+  const REQUIRED = [
+    'schoolLifecycle', 'triggerDispatchService', 'relayInstances', 'relayConfig',
+    'applyScanToComposition', 'getScaleNutribotBridge', 'getLogFoodFromUPC',
+    'configService', 'userIdentityService', 'screenNames', 'logger', 'barcodeLogger',
+  ];
+
+  const depsWithout = (...keys) => {
+    const { deps } = makeDeps();
+    for (const key of keys) delete deps[key];
+    return deps;
+  };
+  const depsWith = (over) => makeDeps(over).deps;
+
+  it('builds from the full production-shaped bag', () => {
+    expect(() => createScanDispatch(depsWith({}))).not.toThrow();
+  });
+
+  it.each(REQUIRED)('refuses to build when `%s` is missing from the call site', (key) => {
+    expect(() => createScanDispatch(depsWithout(key)))
+      .toThrow(new RegExp(`missing: [^;]*\\b${key}\\b`));
+  });
+
+  it('names EVERY missing dependency, not just the first one it meets', () => {
+    // One boot, one fix. Reporting only the head of the list turns a two-line
+    // deletion into two restarts.
+    const call = () => createScanDispatch(depsWithout('screenNames', 'logger'));
+    expect(call).toThrow(/screenNames/);
+    expect(call).toThrow(/logger/);
+  });
+
+  it('refuses an empty call entirely', () => {
+    expect(() => createScanDispatch()).toThrow(/scanDispatch: /);
+  });
+
+  it('takes an EMPTY screen list as an answer, and its absence as a question', () => {
+    // The whole reason `screenNames` is required rather than defaulted: `[]` is
+    // a legitimate value (a household with no screens configured) and used to be
+    // indistinguishable from a dropped argument. Passing `[]` costs one
+    // character and says which one you meant.
+    expect(() => createScanDispatch(depsWith({ screenNames: [] }))).not.toThrow();
+    expect(() => createScanDispatch(depsWithout('screenNames'))).toThrow(/missing: /);
+  });
+
+  it('refuses a screen list that is not an array', () => {
+    // A bare string is the shape a one-screen household invites. It has a
+    // `length` and iterates, so it reaches the collision check and contributes
+    // its CHARACTERS — no tag is one character long, so the guard reports
+    // nothing and looks healthy.
+    expect(() => createScanDispatch(depsWith({ screenNames: 'living-room' })))
+      .toThrow(/malformed: [^;]*screenNames/);
+  });
+
+  it('refuses a command list that is not an array', () => {
+    expect(() => createScanDispatch(depsWith({ commandNames: 'pause' })))
+      .toThrow(/malformed: [^;]*commandNames/);
+  });
+
+  it('refuses a misspelled key instead of ignoring it', () => {
+    // `relayInstance` (singular) is not required, so the missing-key check alone
+    // would let it through: `relayInstances` would silently be `{}`, every
+    // reader would lose its `scale_id`, and every fridge scan in the house would
+    // be swallowed. The unknown-key check is the only thing that catches a
+    // misspelled OPTIONAL argument.
+    const deps = depsWithout('relayInstances');
+    deps.relayInstance = { 'nutribot-upc': { route: 'nutribot' } };
+    const call = () => createScanDispatch(deps);
+    expect(call).toThrow(/unknown: [^;]*relayInstance\b/);
+    expect(call).toThrow(/missing: [^;]*relayInstances\b/);
+  });
+
+  it('accepts the two keys `app.mjs` deliberately does NOT pass', () => {
+    // `commandNames` defaults to the live constant and `routeFallback` to the
+    // production map. Both are parameters only so a test can drive them.
+    expect(() => createScanDispatch(depsWithout('commandNames', 'routeFallback'))).not.toThrow();
+    expect(() => createScanDispatch(depsWith({ commandNames: ['pause'] }))).not.toThrow();
+    expect(() => createScanDispatch(depsWith({ routeFallback: { content: 'content' } }))).not.toThrow();
+  });
+
+  it('accepts a null school console and a null nutriscan use case, but not their absence', () => {
+    // Both are legitimately null — the console may not be built, and nutriscan
+    // may be configured off. `null` is a WIRED answer; an absent key is not.
+    expect(() => createScanDispatch(depsWith({ schoolLifecycle: null }))).not.toThrow();
+    expect(() => createScanDispatch(depsWith({ applyScanToComposition: null }))).not.toThrow();
+    expect(() => createScanDispatch(depsWithout('schoolLifecycle'))).toThrow(/missing: /);
+    expect(() => createScanDispatch(depsWithout('applyScanToComposition'))).toThrow(/missing: /);
+  });
+
+  it('refuses a trigger service that cannot take an event', () => {
+    // Content and command are four scans in five. A trigger service with no
+    // `handleEvent` fails every one of them at dispatch time instead of at boot.
+    expect(() => createScanDispatch(depsWith({ triggerDispatchService: {} })))
+      .toThrow(/malformed: [^;]*triggerDispatchService/);
+  });
+
+  it('refuses a late-bound getter that is not callable', () => {
+    // These two are read at scan time, so a non-function is a TypeError inside a
+    // handler — reported as a FAILED scan, attributed to the domain, months of
+    // logs away from the line that is actually wrong.
+    expect(() => createScanDispatch(depsWith({ getLogFoodFromUPC: { execute() {} } })))
+      .toThrow(/malformed: [^;]*getLogFoodFromUPC/);
+    expect(() => createScanDispatch(depsWith({ getScaleNutribotBridge: null })))
+      .toThrow(/malformed: [^;]*getScaleNutribotBridge/);
+  });
+
+  it('refuses a NULL reader map, and tolerates a badly-typed one', () => {
+    // `relayInstances[device]` would throw on every scan from `handleScan`,
+    // outside the dispatcher's never-reject guard, so null is refused.
+    expect(() => createScanDispatch(depsWith({ relayInstances: null })))
+      .toThrow(/malformed: [^;]*relayInstances/);
+    // Its CONTENT is somebody's YAML. A mistyped `relays:` block leaves every
+    // reader without a `scale_id` — bad, and still not worth refusing to boot
+    // the house over, which is the call this codebase already made for the
+    // nutriscan table.
+    expect(() => createScanDispatch(depsWith({ relayInstances: 'nutribot-upc' }))).not.toThrow();
+  });
+
+  it('refuses a bag that is not an object at all', () => {
+    expect(() => createScanDispatch('screenNames')).toThrow(/scanDispatch: dependencies/);
+    expect(() => createScanDispatch(null)).toThrow(/scanDispatch: dependencies/);
+  });
+
+  it('checks the bag BEFORE it acts on any of it', () => {
+    // Ordering, pinned: the dependency check runs ahead of the route-fallback
+    // assertion, so a missing argument is reported as the missing argument
+    // rather than as whatever the first consumer of it happens to complain
+    // about. Both errors are true here; only one of them is the diagnosis.
+    const deps = depsWithout('screenNames');
+    deps.routeFallback = { nutribot: 'produce' };
+    expect(() => createScanDispatch(deps)).toThrow(/missing: [^;]*screenNames/);
+  });
+
+  it('reads only OWN keys, so a dep named after an inherited member is unknown', () => {
+    // `'constructor' in DEP_CONTRACT` is true for any object literal, which
+    // would make `constructor:` a recognised dependency name. The same
+    // prototype hazard `PREFIX_REGISTRY` and `toRouteMap` are hardened against.
+    const deps = depsWith({});
+    deps.constructor = 'nonsense';
+    expect(() => createScanDispatch(deps)).toThrow(/unknown: [^;]*constructor/);
+  });
+
+  it('reads OWN keys of the bag, not whatever its prototype carries', () => {
+    // The other direction of the same rule. `for...in` walks the chain, so a bag
+    // built on a prototype would have that prototype's names reported as unknown
+    // dependencies and refuse to boot over something the caller never wrote.
+    const bag = Object.assign(Object.create({ inheritedNoise: true }), depsWith({}));
+    expect(() => createScanDispatch(bag)).not.toThrow();
+  });
+});
+
+describe('errText — the shared rejection reader', () => {
+  // Every `.catch` in this module, and the one in `app.mjs`'s `onScan`, reads a
+  // rejection through this function. It runs INSIDE a catch callback, where a
+  // throw is an unhandled rejection nothing can catch.
+  it('reads an Error the ordinary way', () => {
+    expect(errText(new Error('printer offline'))).toBe('printer offline');
+  });
+
+  it('answers a null rejection with an empty string', () => {
+    expect(errText(null)).toBe('');
+    expect(errText(undefined)).toBe('');
+  });
+
+  it('keeps a bare thrown string, which carries no `message` at all', () => {
+    expect(errText('nope')).toBe('nope');
+  });
+
+  it('stringifies a non-string message', () => {
+    expect(errText({ message: 42 })).toBe('42');
+  });
+
+  it('survives a value whose `message` getter throws', () => {
+    expect(errText({ get message() { throw new Error('hostile'); } })).toBe('');
+  });
+
+  it('survives a value that cannot be stringified', () => {
+    // A null-prototype object has no `toString`, so `String(err)` throws — after
+    // the `?? err` fallback has already chosen it.
+    expect(errText(Object.create(null))).toBe('');
   });
 });
 
