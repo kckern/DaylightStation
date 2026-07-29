@@ -2928,36 +2928,9 @@
   &__label { font-size: 0.78rem; opacity: 0.7; width: 100%; }
 }
 
-// Loop control popover (audit L1/L2) — first-class labeled loop with one-tap clear.
-.piano-score-loop-wrap { position: relative; display: inline-flex; align-items: center; gap: 0.3rem; }
-// The trigger's label can be free text (a section name), so bound + ellipsize it.
-// The label lives in its own span (the transport system's .piano-tbtn__label)
-// that carries the truncation; the chevron is a flex sibling OUTSIDE the
-// truncating span, so the menu affordance survives any label length (C4).
-// The trigger is a TransportButton — it renders .piano-tbtn .piano-score-loop-trigger,
-// not .piano-score-btn — so key on the modifier class alone.
-.piano-score-loop-trigger {
-  max-width: 14rem;
-  svg { flex: 0 0 auto; }
-}
-.piano-score-loop-trigger .piano-tbtn__label {
-  min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-}
-.piano-score-loop-menu {
-  // Anchored under the CENTER zone now (the loop trigger moved beside the
-  // transport) — center the menu on its trigger instead of left-aligning.
-  position: absolute; bottom: calc(100% + 0.4rem); left: 50%; transform: translateX(-50%); z-index: 21;
-  display: flex; flex-direction: column; gap: 0.25rem; min-width: 12rem;
-  padding: 0.4rem; background: var(--piano-surface, #1f1f26);
-  border: 1px solid var(--piano-border, #34343f); border-radius: var(--r-md, 12px);
-  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5);
-  .piano-score-loop-opt { justify-content: flex-start; text-align: left; }
-}
-// ±1-measure Start/End nudge row inside the loop menu (audit L2).
-.piano-score-loop-nudge {
-  display: flex; align-items: center; gap: 0.3rem;
-  &__label { font-size: 0.8rem; opacity: 0.7; }
-}
+// The Learn loop cluster is transport/LoopGroup (wave-3 F) — its face lives in
+// transport/Transport.scss under .piano-loop-group. The retired LoopControl
+// trigger/popover/nudge styles went with the components.
 
 // On-score guidance banner during guided measure selection (audit J5/M3).
 .piano-score-select-banner {
