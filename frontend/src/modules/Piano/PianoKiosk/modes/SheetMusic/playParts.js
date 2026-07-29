@@ -1,7 +1,9 @@
 // playParts — Play-mode part model. A "part" is a staff of the engraved score;
-// each part has a role: 'play' (kiosk performs it through the piano) or 'you'
-// (the user's part — engraved + highlighted, never sent to MIDI out). Both-play =
-// pure playback; melody-'you' = hybrid practice (the user plays along).
+// each part has a role: 'play' (kiosk performs it through the piano) or 'mute'
+// (an inactive staff — never sent to MIDI out, and no longer highlighted as
+// "yours" to play along with; the play-along machinery was retired in wave-3 A).
+// One role model, every mode: Listen performs the active hands; Learn/Polish
+// practice them.
 
 import { buildStepTimeline, buildNoteTimeline } from '../../../../MusicNotation/scoreTimeline.js';
 
@@ -10,11 +12,6 @@ export function partsOf(notes) {
   const staves = [...new Set((notes || []).map((n) => n.staff))].sort((a, b) => a - b);
   return staves.map((staff) => ({ staff, role: 'play' }));
 }
-
-// Two states only: the kiosk plays it ('play') or you do ('you'). Muting every
-// staff is just Learn; a dedicated 'mute' role was dropped as redundant (A4).
-const CYCLE = { play: 'you', you: 'play' };
-export function cyclePart(role) { return CYCLE[role] || 'play'; }
 
 /**
  * Merged transport timeline: cursor steps ({kind:'step', index}) + note events
@@ -27,15 +24,4 @@ export function buildPlayTimeline(events, notes, tempoMap, roles) {
   return [...steps, ...noteEvts].sort((a, b) => a.t - b.t || (a.kind === 'step' ? -1 : b.kind === 'step' ? 1 : 0));
 }
 
-/** Pitches of 'you' parts at an exact onset, or null when no you-part is set. */
-export function youMidisAt(notes, roles, onsetQuarter) {
-  if (!Object.values(roles).includes('you')) return null;
-  const set = new Set(
-    (notes || [])
-      .filter((n) => (roles[n.staff] || 'play') === 'you' && n.onsetQuarter === onsetQuarter)
-      .map((n) => n.midi),
-  );
-  return set.size ? set : null;
-}
-
-export default { partsOf, cyclePart, buildPlayTimeline, youMidisAt };
+export default { partsOf, buildPlayTimeline };

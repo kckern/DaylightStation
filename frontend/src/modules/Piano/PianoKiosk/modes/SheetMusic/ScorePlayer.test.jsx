@@ -161,9 +161,10 @@ describe('ScorePlayer — intent-event session-log routing (Task 10)', () => {
     });
     try {
       renderPlayer(); // opens in Listen
-      // Claim a part → fires score.listen.mypart, an intent event.
+      // Toggle a hand → fires score.hands, an intent event (wave-3 A: one hands
+      // model, every mode — the old Listen-only score.listen.mypart is retired).
       act(() => { fireEvent.click(screen.getByRole('button', { name: 'Right hand' })); });
-      const emitter = children.find((r) => r.events.includes('score.listen.mypart'));
+      const emitter = children.find((r) => r.events.includes('score.hands'));
       expect(emitter).toBeTruthy(); // some child emitted it
       // …and that child must carry session-log routing, so the event persists.
       expect(emitter.ctx).toMatchObject({ sessionLog: true, app: 'piano-sheetmusic' });
@@ -275,9 +276,11 @@ describe('ScorePlayer — note-highlight ink (wave-2 A)', () => {
       ],
       steps: [{ onsetQuarter: 0, notes: [{ midi: 64, staff: 0, el: hitEl }, { midi: 60, staff: 0, el: litOnlyEl }] }],
     };
-    renderPlayer(); // opens in Listen
+    renderPlayer();
+    enterLearn(); // Listen no longer registers MIDI input at all (wave-3 A) — Learn's
+    // follow tracker is what populates `struck` now.
     await act(async () => {});
-    play(64); // matches the step's expected midi → Listen's play-along lights it green (struck)
+    play(64); // matches the step's expected midi → Learn's follow tracker lights it green (struck)
     await act(async () => {});
     // jsdom can't compute the stylesheet's cascade (HIT's fixed #2ec46f overriding
     // LIT's --nh-color), so this locks in the JS-level contract the CSS fix relies
@@ -307,12 +310,18 @@ describe('ScorePlayer — note-highlight ink (wave-2 A)', () => {
 });
 
 describe('ScorePlayer — keyboard visibility policy (M2)', () => {
-  it('Listen hides the keyboard until the user plays a part; Learn shows it', async () => {
-    renderPlayer(); // opens in Listen, My part = None
+  it('Listen keeps the keyboard hidden regardless of hand selection; the View toggle still overrides', async () => {
+    renderPlayer(); // opens in Listen
     await act(async () => {});
-    expect(document.querySelector('.piano-score-player__keys')).toBeNull(); // hidden (no part)
-    act(() => { fireEvent.click(screen.getByRole('button', { name: 'Right hand' })); }); // My part = RH
-    expect(document.querySelector('.piano-score-player__keys')).not.toBeNull(); // now shown
+    expect(document.querySelector('.piano-score-player__keys')).toBeNull(); // hidden by default
+    // Deselecting a hand no longer auto-shows the keyboard (wave-3 A: the kiosk
+    // performs — nothing is "yours" to play along with).
+    act(() => { fireEvent.click(screen.getByRole('button', { name: 'Right hand' })); });
+    expect(document.querySelector('.piano-score-player__keys')).toBeNull(); // still hidden
+    // The View-sheet toggle is the escape hatch.
+    fireEvent.click(screen.getByRole('button', { name: /view options/i }));
+    act(() => { fireEvent.click(screen.getByRole('switch', { name: 'Keyboard' })); });
+    expect(document.querySelector('.piano-score-player__keys')).not.toBeNull(); // shown via explicit override
     pickMode('Learn'); // Learn auto-shows the keyboard
     expect(document.querySelector('.piano-score-player__keys')).not.toBeNull();
   });
@@ -755,7 +764,7 @@ describe('ScorePlayer — Polish mode (transport-driven)', () => {
     renderPlayer(); // opens in Listen
     await act(async () => {});
     loopSecondMeasure();
-    screen.getByRole('button', { name: 'Play' }).click(); // My part = None → plays at once
+    screen.getByRole('button', { name: 'Play' }).click(); // Listen always plays immediately (no count-in — wave-3 A)
     await act(async () => {});
     act(() => vi.advanceTimersByTime(3000)); // several Listen loop wraps
     screen.getByRole('button', { name: 'Pause' }).click();
@@ -786,7 +795,7 @@ describe('ScorePlayer — Polish mode (transport-driven)', () => {
     act(() => { fireEvent.click(trigger); });
     expect(trigger).toHaveAttribute('aria-pressed', 'false'); // unlit…
     expect(trigger).toHaveTextContent(/m2–m2/i); // …but the range label is still shown, not cleared
-    screen.getByRole('button', { name: 'Play' }).click(); // My part = None → plays at once
+    screen.getByRole('button', { name: 'Play' }).click(); // Listen always plays immediately (no count-in — wave-3 A)
     await act(async () => {});
     // The wrap test above asserts 'm 2 / 3' after this same advance (loop ON,
     // wraps back to the in-point). With looping OFF the cursor must instead
@@ -1047,7 +1056,7 @@ describe('ScorePlayer — Listen mode', () => {
     expect(h.sendPanic).toHaveBeenCalled(); // no droning chord
   });
 
-  it('does NOT perform staves the user marked as their own — roles route audio (H5)', async () => {
+  it('does NOT send a DESELECTED staff — roles route audio (H5)', async () => {
     h.layoutExtras = {
       tempoEntries: [{ onsetQuarter: 0, bpm: 60 }],
       notes: [
@@ -1058,33 +1067,32 @@ describe('ScorePlayer — Listen mode', () => {
     renderPlayer();
     pickMode('Listen');
     await act(async () => {});
-    fireEvent.click(screen.getByRole('button', { name: 'Right hand' })); // My part = RH: the user plays staff 0, kiosk must NOT
+    fireEvent.click(screen.getByRole('button', { name: 'Left hand' })); // deselect LH — kiosk must NOT send it
     await act(async () => {});
-    screen.getByRole('button', { name: 'Play' }).click();
+    screen.getByRole('button', { name: 'Play' }).click(); // Listen always plays immediately (no count-in)
     await act(async () => {});
-    act(() => vi.advanceTimersByTime(4100)); // My part is set → count-in (4 beats @60) runs first
-    act(() => vi.advanceTimersByTime(100));  // then the kiosk performs
-    expect(h.sendNoteAt).toHaveBeenCalledWith(40, expect.any(Number), expect.any(Number)); // LH still performed
-    expect(h.sendNoteAt).not.toHaveBeenCalledWith(64, expect.any(Number), expect.any(Number)); // RH (yours) NOT performed
+    act(() => vi.advanceTimersByTime(100));
+    expect(h.sendNoteAt).toHaveBeenCalledWith(64, expect.any(Number), expect.any(Number)); // RH still performed
+    expect(h.sendNoteAt).not.toHaveBeenCalledWith(40, expect.any(Number), expect.any(Number)); // LH (deselected) NOT performed
   });
 
-  it('Listen counts the user in only when they play a part (J7)', async () => {
+  it('Listen never counts the user in, regardless of hand selection (item 2)', async () => {
     h.layoutExtras = { tempoEntries: [{ onsetQuarter: 0, bpm: 60 }] };
     renderPlayer();
     pickMode('Listen');
     await act(async () => {});
-    // My part = None → Play starts immediately (no count-in overlay).
     screen.getByRole('button', { name: 'Play' }).click();
     await act(async () => {});
     expect(document.querySelector('.piano-score-countin')).toBeNull();
-    // Stop first: a part change mid-run resumes itself WITHOUT a count-in (H5), so
-    // the count-in rule is about an explicit Play, which is what this test is for.
     screen.getByRole('button', { name: 'Pause' }).click();
     await act(async () => {});
+    // Deselecting a hand — once the play-along claim, now just a mute — still
+    // never triggers a count-in on the next Play (wave-3 A: count-in is
+    // Polish-only).
     act(() => { fireEvent.click(screen.getByRole('button', { name: 'Right hand' })); });
     screen.getByRole('button', { name: 'Play' }).click();
     await act(async () => {});
-    expect(document.querySelector('.piano-score-countin')).not.toBeNull();
+    expect(document.querySelector('.piano-score-countin')).toBeNull();
   });
 
   it('sends scheduled notes with timestamps (audio plane), not pressNote', async () => {
@@ -1177,7 +1185,7 @@ describe('ScorePlayer — Listen mode', () => {
     expect(screen.getByText('1 / 4')).toBeTruthy();
   });
 
-  it('keeps My-part selection across a re-engrave (zoom must not wipe it)', async () => {
+  it('keeps a hand deselection across a re-engrave (zoom must not wipe it)', async () => {
     h.layoutExtras = { notes: [
       { midi: 64, staff: 0, onsetQuarter: 0, durationQuarters: 1 },
       { midi: 40, staff: 1, onsetQuarter: 0, durationQuarters: 4 },
@@ -1185,14 +1193,14 @@ describe('ScorePlayer — Listen mode', () => {
     renderPlayer();
     pickMode('Listen');
     await act(async () => {});
-    fireEvent.click(screen.getByRole('button', { name: 'Right hand' })); // My part = RH
+    fireEvent.click(screen.getByRole('button', { name: 'Right hand' })); // deselect RH (default is both ON)
     await act(async () => {});
-    expect(screen.getByRole('button', { name: 'Right hand' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('button', { name: 'Right hand' })).toHaveAttribute('aria-pressed', 'false');
     // Zoom via the Size stepper → re-engrave (fresh layout.notes identity).
     fireEvent.click(screen.getByRole('button', { name: /view options/i }));
     fireEvent.click(screen.getByRole('button', { name: '125%' }));
     await act(async () => {});
-    expect(screen.getByRole('button', { name: 'Right hand' })).toHaveAttribute('aria-pressed', 'true'); // preserved
+    expect(screen.getByRole('button', { name: 'Right hand' })).toHaveAttribute('aria-pressed', 'false'); // preserved
   });
 
   it('a mid-run view change (transpose) flushes the schedule, then picks the run back up (H2/M3)', async () => {
@@ -1203,7 +1211,7 @@ describe('ScorePlayer — Listen mode', () => {
     renderPlayer();
     pickMode('Listen');
     await act(async () => {});
-    screen.getByRole('button', { name: 'Play' }).click(); // My part = None → plays immediately
+    screen.getByRole('button', { name: 'Play' }).click(); // Listen always plays immediately (no count-in — wave-3 A)
     await act(async () => {});
     act(() => vi.advanceTimersByTime(100));
     expect(screen.getByRole('button', { name: 'Pause' })).toBeInTheDocument(); // playing
@@ -1265,7 +1273,7 @@ describe('ScorePlayer — Listen mode', () => {
     act(() => { fireEvent.click(scroll, { clientX: 160, clientY: 100 }); });
     act(() => { fireEvent.click(scroll, { clientX: 160, clientY: 100 }); });
     expect(screen.getByText('m 2 / 2')).toBeTruthy();
-    screen.getByRole('button', { name: 'Play' }).click(); // My part = None → plays immediately
+    screen.getByRole('button', { name: 'Play' }).click(); // Listen always plays immediately (no count-in — wave-3 A)
     await act(async () => {});
     act(() => vi.advanceTimersByTime(1100)); // past the final step @60bpm → would normally finish
     expect(screen.getByRole('button', { name: 'Pause' })).toBeInTheDocument(); // still playing — wrapped, not done
@@ -1285,56 +1293,23 @@ describe('ScorePlayer — Listen mode', () => {
     pickMode('Listen');
     await act(async () => {});
     expect(screen.getByTestId('score-position')).toHaveTextContent('1 / 4');
-    screen.getByRole('button', { name: 'Play' }).click(); // My part = None → plays immediately
+    screen.getByRole('button', { name: 'Play' }).click(); // Listen always plays immediately (no count-in — wave-3 A)
     await act(async () => {});
     act(() => vi.advanceTimersByTime(5000)); // past the final onset AND its release → onDone
     expect(screen.getByRole('button', { name: 'Play' })).toBeInTheDocument(); // the run finished
     expect(screen.getByTestId('score-position')).toHaveTextContent('1 / 4'); // home, not parked at 4 / 4
   });
 
-  it('a role change during the wrap dwell cancels the pending restart — no uncommanded audio (L6)', async () => {
-    // All staves claimed as "mine" → step-only timeline → a tail loop on the
-    // final step is ZERO-SPAN, so each pass ends in the one-beat dwell before
-    // wrapping. Un-claiming the parts DURING the dwell goes through
-    // disruptListenPlayback while nothing is playing — it must still cancel the
-    // dwell, or the stale timer restarts playback seconds later with the
-    // now-note-bearing timeline (uncommanded audio).
-    h.layoutExtras = {
-      tempoEntries: [{ onsetQuarter: 0, bpm: 60 }],
-      events: [
-        { midi: 64, midis: [64, 40], onsetQuarter: 0, x: 100, top: 10, bottom: 200, system: 0 },
-        { midi: 62, midis: [62, 41], onsetQuarter: 1, x: 160, top: 10, bottom: 200, system: 0 },
-      ],
-      steps: [
-        { onsetQuarter: 0, measure: 0, notes: [{ midi: 64, staff: 0, x: 100, top: 10, bottom: 200, width: 8 }, { midi: 40, staff: 1, x: 100, top: 10, bottom: 200, width: 8 }] },
-        { onsetQuarter: 1, measure: 1, notes: [{ midi: 62, staff: 0, x: 160, top: 10, bottom: 200, width: 8 }, { midi: 41, staff: 1, x: 160, top: 10, bottom: 200, width: 8 }] },
-      ],
-      measures: [
-        { index: 0, number: 1, firstStep: 0, lastStep: 0 },
-        { index: 1, number: 2, firstStep: 1, lastStep: 1 },
-      ],
-    };
-    renderPlayer();
-    pickMode('Listen');
-    await act(async () => {});
-    // My part = everything → kiosk sends nothing (toggles: none → rh → both)
-    act(() => { fireEvent.click(screen.getByRole('button', { name: 'Right hand' })); });
-    act(() => { fireEvent.click(screen.getByRole('button', { name: 'Left hand' })); });
-    act(() => { fireEvent.click(screen.getByRole('button', { name: 'Loop' })); }); // no range yet -> direct tap starts selection
-    const scroll = document.querySelector('.piano-score-player__scroll');
-    act(() => { fireEvent.click(scroll, { clientX: 160, clientY: 100 }); });
-    act(() => { fireEvent.click(scroll, { clientX: 160, clientY: 100 }); });
-    screen.getByRole('button', { name: 'Play' }).click();
-    await act(async () => {});
-    act(() => vi.advanceTimersByTime(4100)); // count-in (my part set) → zero-span run ends instantly → dwell armed
-    h.sendNoteAt.mockClear();
-    // Give the parts back to the kiosk DURING the dwell (transport idle).
-    // Toggles: both → lh → none.
-    act(() => { fireEvent.click(screen.getByRole('button', { name: 'Right hand' })); });
-    act(() => { fireEvent.click(screen.getByRole('button', { name: 'Left hand' })); });
-    act(() => vi.advanceTimersByTime(1500)); // well past the one-beat dwell
-    expect(h.sendNoteAt).not.toHaveBeenCalled(); // stale dwell canceled — no uncommanded restart
-  });
+  // The old "role change during the wrap dwell cancels the pending restart" test
+  // (L6) relied on claiming BOTH staves as "mine" to produce an entirely
+  // note-empty (step-only) playTimeline — the zero-span condition that arms the
+  // one-beat dwell. Under the one-hands model (wave-3 A) the ≥1-active floor
+  // holds in every mode, so a user can never mute every staff via the hands
+  // control — that transition is no longer reachable through the UI, and with it
+  // the test's premise. The MECHANISM it guarded (pauseForRebuild's unconditional
+  // clearWrapDwell) is still exercised by the ordinary rebuild-pause/resume
+  // coverage below and by "resumes playback after a Listen part change, with no
+  // surprise count-in (H5)" above.
 });
 
 describe('ScorePlayer — rebuild-pause resume (H5/M3)', () => {
@@ -1385,7 +1360,7 @@ describe('ScorePlayer — rebuild-pause resume (H5/M3)', () => {
     renderPlayer();
     pickMode('Listen');
     await act(async () => {});
-    screen.getByRole('button', { name: 'Play' }).click(); // My part = None → plays immediately
+    screen.getByRole('button', { name: 'Play' }).click(); // Listen always plays immediately (no count-in — wave-3 A)
     await act(async () => {});
     act(() => vi.advanceTimersByTime(100));
     expect(screen.getByRole('button', { name: 'Pause' })).toBeInTheDocument(); // playing
@@ -1436,7 +1411,7 @@ describe('ScorePlayer — rebuild-pause resume (H5/M3)', () => {
     renderPlayer();
     pickMode('Listen');
     await act(async () => {});
-    screen.getByRole('button', { name: 'Play' }).click(); // My part = None → plays immediately
+    screen.getByRole('button', { name: 'Play' }).click(); // Listen always plays immediately (no count-in — wave-3 A)
     await act(async () => {});
     act(() => vi.advanceTimersByTime(1100)); // one step in
     expect(screen.getByTestId('score-position')).toHaveTextContent('2 / 4');
