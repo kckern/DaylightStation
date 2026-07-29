@@ -1558,12 +1558,12 @@ describe('ScorePlayer — loop arming expires (H4b)', () => {
 });
 
 describe('ScorePlayer — metronome in Learn (M1/M2/M4)', () => {
-  it('shows a labeled BPM toggle in Learn; toggling starts/stops the click immediately', () => {
+  it('is an icon-only toggle in Learn; toggling starts/stops the click immediately', () => {
     renderPlayer();
     enterLearn();
     const btn = screen.getByRole('button', { name: /metronome/i });
-    expect(btn).toHaveTextContent('100'); // parseMusicXml default tempo 100 × 100% (note icon is SVG)
-    expect(btn.querySelector('svg')).not.toBeNull(); // QuarterNoteIcon
+    expect(btn.textContent).toBe(''); // icon-only — no bpm span (wave-2 T6)
+    expect(btn.querySelector('svg')).not.toBeNull(); // MetronomeIcon
     expect(btn).toHaveAttribute('aria-pressed', 'false'); // Learn defaults OFF
     expect(h.clickSched.start).not.toHaveBeenCalled();
     act(() => { fireEvent.click(btn); });
@@ -1581,7 +1581,7 @@ describe('ScorePlayer — metronome in Learn (M1/M2/M4)', () => {
     expect(h.clickSched.start).toHaveBeenCalledWith(50); // 100 × 0.5
   });
 
-  it('retunes a running Learn click live with the EXACT bpm (no display rounding)', () => {
+  it('retunes a running Learn click live with the EXACT bpm (no rounding)', () => {
     h.layoutExtras = { tempoEntries: [{ onsetQuarter: 0, bpm: 63 }] }; // 63 × 0.5 = 31.5 — rounding would corrupt it
     renderPlayer();
     enterLearn();
@@ -1589,11 +1589,9 @@ describe('ScorePlayer — metronome in Learn (M1/M2/M4)', () => {
     expect(h.clickSched.start).toHaveBeenCalledWith(63);
     act(() => { fireEvent.click(screen.getByRole('button', { name: /^tempo/i })); });
     act(() => { fireEvent.click(screen.getByRole('button', { name: /^50%/ })); }); // change tempo while ticking
-    // The hook must receive the exact product — rounding belongs to the bar's
-    // readout only, or the click drifts against the tempo-scaled timelines
+    // The hook must receive the exact product, not a rounded display value —
     // (playTimeline scales by exact 1/tempoMult): 32 vs 31.5 = a beat per ~64.
     expect(h.clickSched.setBpm).toHaveBeenCalledWith(31.5);
-    expect(screen.getByRole('button', { name: /metronome/i })).toHaveTextContent('32'); // readout IS rounded
   });
 
   it('tempo steps show the resulting BPM (M4)', () => {
