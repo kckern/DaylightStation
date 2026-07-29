@@ -148,6 +148,10 @@ export function createSheetService({ getConfig, providers, cellKinds, logger = c
         // Width/height of the mark. Left undefined when unset so the layout applies
         // its own square default rather than this layer guessing a framed ratio.
         aspect: b.cell?.aspect ?? defaults.cell?.aspect,
+        // Caps how wide a cell may grow. Without it a block's cell size is purely
+        // page-width / cols, so "3 across but compact" is inexpressible and a
+        // multi-block sheet sprawls over pages of whitespace.
+        maxCellWPt: b.cell?.max_w_pt ?? defaults.cell?.max_w_pt,
         kind,
         cellOpts: toCellOpts(b.cell),
         items,
@@ -164,6 +168,7 @@ export function createSheetService({ getConfig, providers, cellKinds, logger = c
         count: b.items.length,
         gapPt: b.gapPt,
         aspect: b.aspect,
+        maxCellWPt: b.maxCellWPt,
       })),
     });
 
