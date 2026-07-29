@@ -2201,7 +2201,6 @@
   border-radius: var(--r-md); font-size: 1.1rem; cursor: pointer;
   display: flex; align-items: center; justify-content: center;
   &.is-on { border-color: var(--piano-accent); color: #6cf0a0; }
-  &--play { min-width: 4.5rem; height: 3.5rem; font-size: 1.4rem; background: var(--piano-accent); color: var(--piano-accent-ink); border-color: var(--piano-accent); }
 }
 
 .piano-music-queue {
@@ -2519,23 +2518,6 @@
 .piano-test__keys--full { height: 42%; }
 .piano-test--scroller {
   .side-scroller { position: absolute; inset: 0; }
-}
-
-// Shared piano/media balance control (MixControls). Buttons inherit the host
-// chrome's button style via `btnClass`; these rules only lay out the clusters.
-.piano-mix {
-  display: flex;
-  align-items: center;
-  gap: 1.5rem;
-
-  &__cluster { display: flex; align-items: center; gap: 0.25rem; }
-  &__lead { opacity: 0.7; }
-  &__val {
-    min-width: 2.5rem;
-    text-align: center;
-    font-variant-numeric: tabular-nums;
-    color: var(--piano-stage-muted);
-  }
 }
 
 // ── Sheet Music: interactive engraved score player (MusicNotation framework) ──

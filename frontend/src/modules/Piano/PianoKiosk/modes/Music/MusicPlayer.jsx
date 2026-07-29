@@ -10,7 +10,8 @@ import useReloadGuard from '../../useReloadGuard.js';
 import { PianoKeyboard } from '../../../components/PianoKeyboard.jsx';
 import Icon from '../../icons/Icon.jsx';
 import { usePianoMix } from '../../PianoMixContext.jsx';
-import MixControls from '../../MixControls.jsx';
+import TransportButton from '../../transport/TransportButton.jsx';
+import VolumeControl from '../../transport/VolumeControl.jsx';
 
 /**
  * Plexamp-style now-playing for the Music mode. Album art + progress are the
@@ -28,7 +29,7 @@ export default function MusicPlayer({ album, tracks, startIndex = 0, shuffle: sh
   const { activeNotes, noteHistory } = usePianoMidiNotes();
   const { config } = usePianoKioskConfig();
   const kb = config?.keyboard || { startNote: 21, endNote: 108 };
-  const { mediaLevel, setMediaLevel, pianoLevel, setPianoLevel } = usePianoMix();
+  const { mediaLevel } = usePianoMix();
 
   // Third now-playing state: PLAY-ALONG. Entered by MIDI (not touch) — the user
   // is playing the piano along to the track. The keyboard slides up, the cover
@@ -58,11 +59,12 @@ export default function MusicPlayer({ album, tracks, startIndex = 0, shuffle: sh
   const [time, setTime] = useState(0);
   const [dur, setDur] = useState(0);
   const [showQueue, setShowQueue] = useState(false);
+  const [volOpen, setVolOpen] = useState(false);
 
   const trackIndex = order[pos] ?? 0;
   const track = tracks[trackIndex] || null;
   const cover = track?.image || album?.image || album?.thumbnail || null;
-  const { visible, reveal } = useVanishingControls({ active: playing && !showQueue });
+  const { visible, reveal } = useVanishingControls({ active: playing && !showQueue && !volOpen });
   useReloadGuard(playing);
 
   // Load + autoplay the current track whenever it changes.
@@ -160,12 +162,12 @@ export default function MusicPlayer({ album, tracks, startIndex = 0, shuffle: sh
 
       <div className="piano-music-player__chrome">
         <div className="piano-music-player__top">
-          <button type="button" className="piano-music-btn" onClick={onBack} aria-label="Back to music"><Icon name="back" /></button>
+          <TransportButton icon="back" ariaLabel="Back to music" className="piano-music-btn" onPress={onBack} />
           <div className="piano-music-player__meta">
             <div className="piano-music-player__title">{track?.title || ''}</div>
             <div className="piano-music-player__sub">{[track?.artist, track?.album].filter(Boolean).join(' — ')}</div>
           </div>
-          <button type="button" className="piano-music-btn" onClick={() => setShowQueue((q) => !q)} aria-label="Queue"><Icon name="queue" /></button>
+          <TransportButton icon="queue" ariaLabel="Queue" className="piano-music-btn" onPress={() => setShowQueue((q) => !q)} />
         </div>
 
         <div className="piano-music-player__bottom">
@@ -176,19 +178,13 @@ export default function MusicPlayer({ album, tracks, startIndex = 0, shuffle: sh
             <span>{formatTime(time)}</span><span>{formatTime(dur)}</span>
           </div>
           <div className="piano-music-player__transport">
-            <button type="button" className={`piano-music-btn${shuffle ? ' is-on' : ''}`} onClick={toggleShuffle} aria-label="Shuffle"><Icon name="shuffle" /></button>
-            <button type="button" className="piano-music-btn" onClick={goPrev} aria-label="Previous"><Icon name="previous" /></button>
-            <button type="button" className="piano-music-btn piano-music-btn--play" onClick={toggle} aria-label={playing ? 'Pause' : 'Play'}>{playing ? <Icon name="pause" /> : <Icon name="play" />}</button>
-            <button type="button" className="piano-music-btn" onClick={() => goNext(false)} aria-label="Next"><Icon name="next" /></button>
-            <button type="button" className={`piano-music-btn${repeat ? ' is-on' : ''}`} onClick={toggleRepeat} aria-label="Repeat"><Icon name="repeat" /></button>
+            <TransportButton icon="shuffle" ariaLabel="Shuffle" on={shuffle} className="piano-music-btn" onPress={toggleShuffle} />
+            <TransportButton icon="previous" ariaLabel="Previous" className="piano-music-btn" onPress={goPrev} />
+            <TransportButton icon={playing ? 'pause' : 'play'} ariaLabel={playing ? 'Pause' : 'Play'} emphasis="primary" className="piano-music-btn" onPress={toggle} />
+            <TransportButton icon="next" ariaLabel="Next" className="piano-music-btn" onPress={() => goNext(false)} />
+            <TransportButton icon="repeat" ariaLabel="Repeat" on={repeat} className="piano-music-btn" onPress={toggleRepeat} />
+            <VolumeControl className="piano-music-btn" onOpenChange={(o) => { setVolOpen(o); if (!o) reveal(); }} />
           </div>
-          <MixControls
-            pianoLevel={pianoLevel}
-            mediaLevel={mediaLevel}
-            onPiano={(d) => { setPianoLevel(pianoLevel + d); reveal(); }}
-            onMedia={(d) => { setMediaLevel(mediaLevel + d); reveal(); }}
-            btnClass="piano-music-btn"
-          />
         </div>
       </div>
 
