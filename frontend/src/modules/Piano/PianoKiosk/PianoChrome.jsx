@@ -35,10 +35,19 @@ export function PianoChrome({ modeLabel, modeKey }) {
   const chipPress = useLongPress(() => setOperatorOpen(true), { onTap: () => setSoundOpen(true) });
 
   // Assemble the trail: mode crumb (links to the mode index) + any deeper crumbs
-  // published by the active route. The last crumb renders as the current page.
+  // published by the active route. The last crumb renders as the current page —
+  // it can still carry an onClick (e.g. a mode crumb that reopens a picker).
   const trail = [];
   if (modeLabel) trail.push({ label: modeLabel, onClick: () => navigate(`${basePath}/${modeKey}`) });
-  (extraCrumbs || []).forEach((c) => trail.push({ label: c.label, onClick: c.onClick }));
+  (extraCrumbs || []).forEach((c) => trail.push({ label: c.label, onClick: c.onClick, icon: c.icon, image: c.image }));
+
+  const crumbBody = (c) => (
+    <Fragment>
+      {c.image && <img className="piano-chrome__crumb-thumb" src={c.image} alt="" />}
+      {c.icon && <Icon name={c.icon} />}
+      {c.label}
+    </Fragment>
+  );
 
   return (
     <Fragment>
@@ -55,17 +64,16 @@ export function PianoChrome({ modeLabel, modeKey }) {
 
         {trail.map((c, i) => {
           const isLast = i === trail.length - 1;
+          const cls = `piano-chrome__crumb${isLast ? ' piano-chrome__crumb--current' : ''}`;
           return (
             <Fragment key={`${c.label}-${i}`}>
               <span className="piano-chrome__sep" aria-hidden>›</span>
-              {!isLast && c.onClick ? (
-                <button type="button" className="piano-chrome__crumb" onClick={c.onClick}>
-                  {c.label}
+              {c.onClick ? (
+                <button type="button" className={cls} onClick={c.onClick}>
+                  {crumbBody(c)}
                 </button>
               ) : (
-                <span className={`piano-chrome__crumb${isLast ? ' piano-chrome__crumb--current' : ''}`}>
-                  {c.label}
-                </span>
+                <span className={cls}>{crumbBody(c)}</span>
               )}
             </Fragment>
           );

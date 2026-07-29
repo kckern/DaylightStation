@@ -231,11 +231,23 @@
     text-overflow: ellipsis;
     &:hover { color: var(--piano-fg); }
   }
-  /* current location: bold, full-contrast, not a link */
+  /* current location: bold, full-contrast. Usually not a link (span, cursor
+     default) — but when it carries an onClick (e.g. a mode crumb reopening its
+     picker) it renders as a <button>, which keeps the pointer cursor from the
+     base &__crumb rule above. */
   &__crumb--current {
     color: var(--piano-fg);
     font-weight: 700;
-    cursor: default;
+    &:not(button) { cursor: default; }
+  }
+
+  &__crumb-thumb {
+    width: 1.6em;
+    height: 1.6em;
+    object-fit: cover;
+    border-radius: 0.3em;
+    margin-right: 0.35em;
+    vertical-align: middle;
   }
 
   /* right cluster: a single status chip (connection dot + active voice) → Settings */
