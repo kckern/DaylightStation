@@ -285,12 +285,15 @@ const ScoreViewControls = memo(function ScoreViewControls({
  * breadcrumb-only).
  *
  * The mode ladder (Listen/Learn/Polish/Perform) has moved to the header — a
- * crumb opens {@link ../ModeSheet.jsx|ModeSheet} — so this bar no longer owns a
- * left zone. `mode` remains a prop purely for in-place gating (wave-2 B).
+ * crumb opens {@link ../ModeSheet.jsx|ModeSheet} — so this bar no longer owns
+ * a left zone's CONTENT. `mode` remains a prop purely for in-place gating
+ * (wave-2 B).
  *
- * Stable two-zone geography (audit C1/C2, revised wave-2 B): a fixed grid of
+ * Stable three-zone geography (audit C1/C2), geometry UNCHANGED by wave-2 B:
+ *   left   — empty (formerly the mode tabs; kept as a flex column so the
+ *            center cluster stays truly centered, not just centered-in-what's-left)
  *   center — Restart · Play/Pause · metronome · Loop · position readout
- *   right — Hands/parts · Key · Tempo · View menu
+ *   right  — Hands/parts · Key · Tempo · View menu
  * Every control renders in ALL modes but Perform; per-mode gating disables/dims
  * IN PLACE instead of unmounting, so nothing ever moves under the finger:
  *  Listen  — all live except metronome (disabled — the performance is the beat)

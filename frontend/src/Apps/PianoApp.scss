@@ -2781,23 +2781,32 @@
 // ── Task 11: pinned bottom transport bar (ScoreTransportBar) ──────────────────
 .tabular-nums { font-variant-numeric: tabular-nums; } // utility (position readout, size preview)
 
-// Stable two-zone grid (audit C1/C2; mode ladder moved to the header crumb in
-// wave-2 B, so the bar's former left "tabs" column is gone): transport+practice
-// | view. Fixed columns keep every control in the same place across mode
-// changes; gating is done in place via disabled/dimmed, never by unmounting
-// (no flex-wrap raggedness).
+// Stable three-zone grid (audit C1/C2), geometry unchanged from pre-wave-2:
+// the left column is now empty (the mode tabs it used to hold moved to the
+// header crumb in wave-2 B) but stays in the template, flanking the center
+// column the same way the old (populated) left zone did — so the transport
+// cluster keeps its true CENTER on the bar, not just the center of what's
+// left of a two-column row. That's the C2 "stable geography" contract: the
+// transport cluster never moves, regardless of what does or doesn't occupy
+// the flanks. Only two DOM children remain (playback, view), so each is
+// pinned to its ORIGINAL column explicitly — implicit auto-placement would
+// pack them into columns 1–2 and strand column 3 (and the view zone) empty.
+// Fixed columns keep every control in the same place across mode changes;
+// gating is done in place via disabled/dimmed, never by unmounting (no
+// flex-wrap raggedness).
 .piano-score-transportbar {
   flex: 0 0 auto; width: 100%;
-  display: grid; grid-template-columns: auto 1fr; align-items: center; gap: 1rem;
+  display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 1rem;
   padding: 0.55rem 1rem;
   padding-bottom: calc(0.55rem + env(safe-area-inset-bottom, 0px));
   background: rgba(0, 0, 0, 0.45); border-top: 1px solid rgba(255, 255, 255, 0.08);
   color: var(--piano-stage-fg, #f3efe6);
 }
 
-// Zones
-.piano-score-playback { justify-self: start; display: flex; align-items: center; gap: 0.5rem; }
-.piano-score-view { justify-self: end; display: flex; align-items: center; gap: 0.5rem; flex-wrap: nowrap; }
+// Zones — explicit grid-column keeps each in its pre-wave-2 slot now that the
+// (empty) left column no longer has a sibling ahead of playback to auto-place after.
+.piano-score-playback { grid-column: 2; justify-self: center; display: flex; align-items: center; gap: 0.5rem; }
+.piano-score-view { grid-column: 3; justify-self: end; display: flex; align-items: center; gap: 0.5rem; flex-wrap: nowrap; }
 // Key transpose gates in place: disabled outside Listen, whole group dims (C2).
 // The wrapper carries the ONLY dim — reset the generic [disabled] opacity on its
 // buttons (both the legacy .piano-score-btn chrome and the transport-system
