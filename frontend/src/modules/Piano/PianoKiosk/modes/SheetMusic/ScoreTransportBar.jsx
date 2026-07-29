@@ -12,17 +12,19 @@ import VolumeControl from '../../transport/VolumeControl.jsx';
  * ScoreTransportButtons — Restart (icon) + run (Play/Pause icons). Stable
  * geography (audit C2): both render in EVERY mode but Perform and gate in place
  * via `disabled` instead of unmounting, so mode changes never shuffle the bar.
- * Restart is inert until there is a run to restart; the run button in Learn is
- * a permanently disabled Play (Learn advances as you play, not on a transport).
+ * Restart is inert until there is a run to restart; `playLocked` turns the run
+ * button into a disabled Play labelled "Learn advances as you play" — the state
+ * Learn's gate (a range with looping on) puts it in, where the cursor moves on
+ * what the user plays rather than on a transport. Learn's machine states pass
+ * `playLocked` false and get an ordinary live Play/Pause.
  * Memoized so a step advance can't reconcile them (they depend on mode/running,
  * not step).
  */
-const ScoreTransportButtons = memo(function ScoreTransportButtons({ mode, running, onToggleRun, onReset, ready = true, canRestart = false }) {
+const ScoreTransportButtons = memo(function ScoreTransportButtons({ mode, running, onToggleRun, onReset, ready = true, canRestart = false, playLocked = false }) {
   if (mode === 'perform') return null;
-  const isLearn = mode === 'learn';
   // Until geometry extraction publishes a timeline the transport is inert; show a
   // disabled "Preparing…" so the bar doesn't look live while it can't play (audit H0).
-  const runLabel = isLearn ? 'Learn advances as you play' : !ready ? 'Preparing' : running ? 'Pause' : 'Play';
+  const runLabel = playLocked ? 'Learn advances as you play' : !ready ? 'Preparing' : running ? 'Pause' : 'Play';
   return (
     <>
       <button
@@ -36,13 +38,13 @@ const ScoreTransportButtons = memo(function ScoreTransportButtons({ mode, runnin
       </button>
       <button
         type="button"
-        className={`piano-tbtn piano-score-btn piano-score-run${!ready && !isLearn ? ' is-preparing' : ''}`}
+        className={`piano-tbtn piano-score-btn piano-score-run${!ready && !playLocked ? ' is-preparing' : ''}`}
         aria-label={runLabel}
         aria-pressed={running}
-        disabled={isLearn || !ready}
+        disabled={playLocked || !ready}
         onClick={onToggleRun}
       >
-        {isLearn ? <Icon name="play" /> : !ready ? '…' : running ? <Icon name="pause" /> : <Icon name="play" />}
+        {playLocked ? <Icon name="play" /> : !ready ? '…' : running ? <Icon name="pause" /> : <Icon name="play" />}
       </button>
     </>
   );
@@ -276,8 +278,10 @@ const ScoreViewControls = memo(function ScoreViewControls({
  * IN PLACE instead of unmounting, so nothing ever moves under the finger:
  *  Listen  — all live except metronome (disabled — the performance is the beat)
  *            and the Learn-only Play lockout; Key live.
- *  Learn   — Play disabled ("Learn advances as you play"); metronome free-runs;
- *            Key live (transposes the engrave Learn evaluates against).
+ *  Learn   — Play disabled ("Learn advances as you play") only while the gate is
+ *            armed (a range with looping on — `playLocked`); the machine states
+ *            get a live transport. Metronome free-runs; Key live (transposes the
+ *            engrave Learn evaluates against).
  *  Polish  — full transport; metronome arms the run click; Key live.
  *  Perform — only a {page} / {pages} indicator (music-stand mode).
  *
@@ -293,6 +297,7 @@ const ScoreViewControls = memo(function ScoreViewControls({
 export default function ScoreTransportBar({
   mode,
   running,
+  playLocked,
   onToggleRun,
   onReset,
   ready,
@@ -358,6 +363,7 @@ export default function ScoreTransportBar({
         <ScoreTransportButtons
           mode={mode}
           running={running}
+          playLocked={playLocked}
           onToggleRun={onToggleRun}
           onReset={onReset}
           ready={ready}
