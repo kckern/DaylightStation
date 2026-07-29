@@ -2734,6 +2734,37 @@
 // `transform` here would override the inline position and jump the cursor to origin.
 @keyframes scoreCursorWrong { 0%,100% { translate: 0 0; } 25% { translate: -4px 0; } 75% { translate: 4px 0; } }
 
+// Learn wet ink (wave-3 D): z5 with the cursor, mounted AFTER it in the DOM
+// so ink paints above the band; the busy/progress veils (z6/z7) stay on top.
+// Colour rides `currentColor` on the per-ink <g>, because WetNoteGlyph draws
+// every stroke/fill with currentColor — one declaration per kind recolours the
+// whole glyph (head, stem, ledgers, accidental).
+.piano-learn-ink {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  z-index: 5;
+  pointer-events: none;
+
+  &__note {
+    &.is-wrong { color: #ff5252; animation: piano-ink-fade 900ms ease-out forwards; }
+    &.is-hit { color: var(--piano-accent, #2ec46f); animation: piano-ink-fade 350ms ease-out forwards; }
+    &.is-neutral { color: var(--piano-muted, #8a8f98); animation: piano-ink-fade 500ms ease-out forwards; }
+  }
+}
+@keyframes piano-ink-fade {
+  0% { opacity: 0.95; }
+  70% { opacity: 0.9; }
+  100% { opacity: 0; }
+}
+// The ink is a transient trace, not motion for its own sake — with reduced motion
+// it simply holds its colour for its lifetime and the parent's timer removes it.
+@media (prefers-reduced-motion: reduce) {
+  .piano-learn-ink__note { animation: none; opacity: 0.95; }
+}
+
 // Active-note light-up: recolour the ENGRAVED notehead itself — NO overlay
 // rectangle. NoteHighlightLayer toggles these classes on OSMD's per-note <g>
 // and sets --nh-color to a fixed near-black ink (wave-2 A, ScorePlayer's
