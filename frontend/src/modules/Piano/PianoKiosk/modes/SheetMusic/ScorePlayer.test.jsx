@@ -39,6 +39,13 @@ const h = vi.hoisted(() => ({
   // the ones that care about the practice record.
   recordCycle: vi.fn(),
   recordTierBest: vi.fn(),
+  // usePianoPreferences (Task 15): a plain key→value bag a test can seed before
+  // render to control getPref('learnHands', …) — empty by default, so every
+  // OTHER test in this file falls through to the household/hardcoded default
+  // ('both') exactly as an unconfigured kiosk would.
+  prefs: {},
+  // usePracticeRecord's `record` (Task 15) — {} by default (no history).
+  practice: {},
 }));
 
 // Derive per-onset full-staff steps from the melody events: the first pitch of
@@ -75,7 +82,22 @@ vi.mock('./clickScheduler.js', () => ({ createClickScheduler: () => h.clickSched
 // Observe recordCycle calls without touching usePianoUser/DaylightAPI — see the
 // rationale on h.recordCycle above.
 vi.mock('./usePracticeRecord.js', () => ({
-  default: () => ({ record: {}, loaded: true, recordCycle: h.recordCycle, recordTierBest: h.recordTierBest }),
+  // `record` reads h.practice so a test can seed per-bucket pass history before
+  // render (Task 15's frontier-follows-the-seeded-bucket test) — {} by default,
+  // matching every OTHER test's prior no-history behavior exactly.
+  default: () => ({ record: h.practice, loaded: true, recordCycle: h.recordCycle, recordTierBest: h.recordTierBest }),
+}));
+// usePianoPreferences (Task 15) reaches usePianoUser exactly like
+// usePracticeRecord does — mock it out for the same reason (no
+// PianoUserProvider in this harness). getPref reads h.prefs, which starts
+// empty and individual tests can seed before render.
+vi.mock('../../usePianoPreferences.js', () => ({
+  usePianoPreferences: () => ({
+    prefs: h.prefs,
+    loaded: true,
+    getPref: (key, fallback) => (key in h.prefs ? h.prefs[key] : fallback),
+    setPref: vi.fn(),
+  }),
 }));
 
 // Stub the engraver: report a known layout (melody events + derived per-onset
@@ -142,6 +164,8 @@ beforeEach(() => {
   h.clickSched = { start: vi.fn(), stop: vi.fn(), setBpm: vi.fn() };
   h.recordCycle.mockClear();
   h.recordTierBest.mockClear();
+  h.prefs = {};
+  h.practice = {};
 });
 
 // Mode switching now lives in the header crumb → ModeSheet (wave-2 B), not a
@@ -2492,6 +2516,113 @@ describe('ScorePlayer — Learn auto-range landing (Task 14)', () => {
       { inMeasure: 0, outMeasure: 1, reason: 'fallback' },
       { inMeasure: 0, outMeasure: 1, reason: 'fallback' }, // a FRESH pick, not a stale replay
     ]);
+  });
+});
+
+// ── Task 15: Learn hand preference (wave-3 E) ──────────────────────────────────
+// user → household → 'both', applied once per fresh (no persisted activeParts)
+// grand-staff score, clamped to a staff that actually carries notes. Also proves
+// the seed lands BEFORE Task 14's auto-range frontier reads activeParts — a
+// naive same-pass ordering would let the picker bucket off the PRE-seed hands.
+describe('ScorePlayer — Learn hand preference (Task 15)', () => {
+  afterEach(() => { cleanup(); vi.restoreAllMocks(); try { window.localStorage.clear(); } catch { /* no storage */ } });
+
+  // Six measures, both staves carrying a note in every measure, so every
+  // measure is "active" for whichever single hand ends up seeded — the only
+  // thing that can move the picked frontier is WHICH bucket's pass history it
+  // reads.
+  const GRAND_SIX = {
+    steps: [0, 1, 2, 3, 4, 5].map((m) => ({
+      onsetQuarter: m,
+      measure: m,
+      notes: [
+        { midi: 72 - m, staff: 0, x: 100 + m * 60, top: 10, bottom: 200, width: 8 }, // RH
+        { midi: 48 + m, staff: 1, x: 100 + m * 60, top: 10, bottom: 200, width: 8 }, // LH
+      ],
+    })),
+    measures: [0, 1, 2, 3, 4, 5].map((m) => ({ index: m, number: m + 1, firstStep: m, lastStep: m })),
+  };
+  // rh/both are both under-practiced from measure 0 (frontier would land at 0);
+  // lh alone is caught up through measure 1 and under-practiced from measure 2 —
+  // a bucket mix-up is very visible: {in:0,out:3} (wrong bucket) vs {in:2,out:5}
+  // (lh bucket, correct).
+  const passHistory = (m, bucket) => (bucket === 'lh' ? (m < 2 ? 5 : 1) : 1);
+  const captureLog = () => {
+    const root = getLogger();
+    const origChild = root.child.bind(root);
+    const emitted = [];
+    vi.spyOn(root, 'child').mockImplementation((ctx) => {
+      const c = origChild(ctx);
+      const orig = c.info.bind(c);
+      c.info = (ev, data, opts) => { emitted.push([ev, data]); return orig(ev, data, opts); };
+      return c;
+    });
+    return emitted;
+  };
+
+  it('seeds LH-only from the learnHands preference and the auto-range frontier follows the LH practice history', async () => {
+    h.prefs.learnHands = 'lh';
+    h.layoutExtras = GRAND_SIX;
+    h.practice = {
+      measures: Object.fromEntries([0, 1, 2, 3, 4, 5].map((m) => [String(m), {
+        rh: { passes: passHistory(m, 'rh') },
+        both: { passes: passHistory(m, 'both') },
+        lh: { passes: passHistory(m, 'lh') },
+      }])),
+    };
+    const emitted = captureLog();
+    renderPlayer();
+    pickMode('Learn');
+    await act(async () => {});
+    // Hands seeded to LH-only — the RIGHT hand toggle is un-pressed.
+    expect(screen.getByRole('button', { name: 'Right hand' })).toHaveAttribute('aria-pressed', 'false');
+    expect(screen.getByRole('button', { name: 'Left hand' })).toHaveAttribute('aria-pressed', 'true');
+    // …and the frontier picker read the SEEDED (lh) bucket's history, not the
+    // pre-seed 'both' bucket — {in:0,out:3} would mean it read the wrong one.
+    const picks = emitted.filter(([ev]) => ev === 'score.learn.auto-range').map(([, d]) => d);
+    expect(picks).toEqual([{ inMeasure: 2, outMeasure: 5, reason: 'frontier' }]);
+  });
+
+  it('clamps to the content-bearing hand when the preferred hand has no notes anywhere (content clamp)', async () => {
+    h.prefs.learnHands = 'lh';
+    // Real 2-staff extraction can never produce an entirely note-free staff —
+    // OSMD drops rests before a note ever reaches `layout.notes`
+    // (collectOnsetNotes) — so a genuinely empty staff-1 can't coexist with
+    // parts.length===2 under the real index pair {0,1}. To exercise the CLAMP
+    // branch itself (the wanted staff carries nothing anywhere → fall back to
+    // the staff that does), fabricate a grand-staff-shaped layout whose two
+    // note-bearing staves are 0 (RH) and 2 (stand-in for "some other staff",
+    // deliberately never 1/LH) — grandStaff only cares that exactly two
+    // staves carry notes, not which two.
+    h.layoutExtras = {
+      steps: [{ onsetQuarter: 0, measure: 0, notes: [
+        { midi: 72, staff: 0, x: 100, top: 10, bottom: 200, width: 8 },
+        { midi: 48, staff: 2, x: 100, top: 10, bottom: 200, width: 8 },
+      ] }],
+      measures: [{ index: 0, number: 1, firstStep: 0, lastStep: 0 }],
+    };
+    renderPlayer();
+    pickMode('Learn');
+    await act(async () => {});
+    // want=LH has no notes anywhere → clamps to the content-bearing hand (RH).
+    expect(screen.getByRole('button', { name: 'Right hand' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('button', { name: 'Left hand' })).toHaveAttribute('aria-pressed', 'false');
+  });
+
+  it('a score with persisted activeParts ignores the hand preference entirely', async () => {
+    const score = { id: 'files:hp-persisted.musicxml', title: 'Persisted', musicXml: '<score/>' };
+    window.localStorage.setItem(
+      'daylight.piano.sm.files:hp-persisted.musicxml',
+      JSON.stringify({ v: 1, activeParts: { 0: true, 1: true } }),
+    );
+    h.prefs.learnHands = 'lh'; // would seed LH-only on a FRESH score — must be ignored here
+    h.layoutExtras = GRAND_SIX;
+    render(<MemoryRouter><ScorePlayer score={score} /></MemoryRouter>);
+    pickMode('Learn');
+    await act(async () => {});
+    // Both hands stay on — the restored choice, not the preference, won.
+    expect(screen.getByRole('button', { name: 'Right hand' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('button', { name: 'Left hand' })).toHaveAttribute('aria-pressed', 'true');
   });
 });
 

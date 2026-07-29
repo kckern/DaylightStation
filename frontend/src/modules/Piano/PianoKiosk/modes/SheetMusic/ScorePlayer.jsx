@@ -3,6 +3,7 @@ import { parseMusicXml } from '../../../../MusicNotation/parseMusicXml.js';
 import { MusicXmlRenderer } from '../../../../MusicNotation/renderers/MusicXmlRenderer.jsx';
 import LiveKeyboard from '../../LiveKeyboard.jsx';
 import { usePianoKioskConfig } from '../../PianoConfig.jsx';
+import { usePianoPreferences } from '../../usePianoPreferences.js';
 import { usePianoMidi } from '../../PianoMidiContext.jsx';
 import { usePianoPlayback } from '../../PianoPlaybackContext.jsx';
 import { usePianoBreadcrumb } from '../../PianoBreadcrumbContext.jsx';
@@ -86,6 +87,11 @@ export default function ScorePlayer({ score: scoreMeta }) {
   const { setPlaying: setGlobalPlaying } = usePianoPlayback();
   const { config } = usePianoKioskConfig();
   const kb = config?.keyboard || { startNote: 21, endNote: 108 };
+  // Hand preference (wave-3 E): user → household → 'both'. usePianoPreferences
+  // no-ops (empty prefs, loaded immediately) for guests — getPref then always
+  // falls through to the household default, which is exactly the desired
+  // behavior for a walk-up guest session.
+  const { getPref } = usePianoPreferences();
 
   // Destructure the (individually memoized) telemetry callbacks rather than
   // holding the returned object: the object identity is fresh every render, and
@@ -1096,6 +1102,35 @@ export default function ScorePlayer({ score: scoreMeta }) {
     tapIntent('focus');
   }, [focus]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Hand preference (wave-3 E): user → household → both, applied once per score
+  // when Learn is entered with no persisted hands choice. Clamped to staves
+  // that actually carry notes — a preference must never dead-end the gate.
+  const seededHandsRef = useRef(false);
+  // The exact object just handed to setActiveParts, held until it lands: the
+  // auto-range effect below (same source-order pass) still closes over the
+  // PRE-seed `activeParts` the instant this effect calls setActiveParts — a
+  // plain boolean latch can't tell that apart from "nothing to seed" (both are
+  // seededHandsRef.current===true by the time the auto-range effect runs in the
+  // same pass). Comparing against this ref's identity can: it stays !== the
+  // rendered `activeParts` for exactly one extra pass, then becomes ===.
+  const pendingHandSeedRef = useRef(null);
+  useEffect(() => {
+    if (mode !== 'learn' || seededHandsRef.current || !grandStaff) return;
+    if (restored.activeParts && typeof restored.activeParts === 'object') { seededHandsRef.current = true; return; }
+    if (!layout.notes?.length) return;
+    seededHandsRef.current = true;
+    const pref = getPref('learnHands', smCfg.learn.defaultHands);
+    if (pref !== 'rh' && pref !== 'lh') return; // 'both' is already the default
+    const staffHasNotes = (s) => layout.notes.some((nte) => nte.staff === s);
+    const want = pref === 'rh' ? 0 : 1;
+    const target = staffHasNotes(want) ? want : staffHasNotes(want === 0 ? 1 : 0) ? (want === 0 ? 1 : 0) : null;
+    if (target == null) return;
+    const next = { 0: target === 0, 1: target === 1 };
+    pendingHandSeedRef.current = next;
+    setActiveParts(next);
+  }, [mode, grandStaff, layout.notes, restored.activeParts, getPref, smCfg]);
+  useEffect(() => { seededHandsRef.current = false; pendingHandSeedRef.current = null; }, [scoreMeta.id]);
+
   // Learn landing (wave-3 B): pick the frontier window when Learn is entered
   // without a range. Runs once per Learn entry — the learnAutoRef arms on entry
   // and disarms after the pick (or when the user sets a range themselves).
@@ -1103,6 +1138,10 @@ export default function ScorePlayer({ score: scoreMeta }) {
   useEffect(() => { if (mode === 'learn' && !focus) learnAutoRef.current = true; else if (mode !== 'learn') learnAutoRef.current = false; }, [mode]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     if (!learnAutoRef.current || mode !== 'learn' || focus || !layout.measures?.length || !practiceLoaded) return;
+    // Wait for a hand-preference seed requested THIS pass (above) to actually
+    // land in `activeParts` — picking now would read the pre-seed value and
+    // frontier off the wrong hands' practice history (audit: wave-3 E).
+    if (pendingHandSeedRef.current && pendingHandSeedRef.current !== activeParts) return;
     learnAutoRef.current = false;
     const bucket = bucketOf(grandStaff, activeParts);
     const passes = practice?.measures
