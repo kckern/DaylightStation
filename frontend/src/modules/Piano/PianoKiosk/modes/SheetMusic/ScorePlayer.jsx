@@ -1063,9 +1063,21 @@ export default function ScorePlayer({ score: scoreMeta }) {
 
   // ── Focus range: selection + custom-loop taps ─────────────────────────────────
   // When a practice range is (re)selected, jump the cursor to its in-point and log.
+  // prevFocusRef lags one commit behind `focus` — unlike focusRef/rangeRef (which
+  // mirror the CURRENT value during render, for reads inside other callbacks),
+  // this one is updated at the end of THIS effect, so reading it at the top always
+  // sees the PRIOR focus, never the one that just committed.
+  const prevFocusRef = useRef(null);
   useEffect(() => {
     clearWrapDwell(); // a loop change (set/clear/nudge) invalidates a pending dwell
-    voidCycle(); // any range change (set/nudge/clear) breaks a Learn cycle in progress (wave-3 C)
+    // A range change only VOIDS a cycle it could have disrupted — i.e. one where a
+    // range was already active. Arming a FRESH range (prior focus was null) has no
+    // prior cycle to disrupt: it starts an honest first cycle instead, so reset
+    // (not void) — voiding it would silently raise the pass-count bar on every
+    // range selection (wave-3 C fix round 1).
+    if (prevFocusRef.current) voidCycle(); // an existing range was replaced/cleared
+    else { cycleVoidRef.current = false; cycleWrongsRef.current = new Set(); } // fresh arm (or bare mount)
+    prevFocusRef.current = focus;
     // The no-focus path is BOTH a bare mount and a cleared range, and must not
     // touch the transport or the piano: this effect runs on mount, so stopping
     // here would have every ScorePlayer open by silencing a kiosk it has not yet
