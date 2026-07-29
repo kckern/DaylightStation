@@ -86,6 +86,10 @@ vi.mock('../../../../MusicNotation/renderers/MusicXmlRenderer.jsx', async () => 
           const notes = (extra.notes || deriveNotes(steps)).map((n) => ({ ...n }));
           onLayout?.({
             width: 800, height: 400, tempoEntries: [], flow: 'wrapped', transpose,
+            staffBoxes: [
+              { system: 0, staff: 0, top: 10, left: 40, right: 300, lineSpacing: 10 },
+              { system: 0, staff: 1, top: 120, left: 40, right: 300, lineSpacing: 10 },
+            ],
             ...extra,
             events,
             steps,
@@ -1860,5 +1864,23 @@ describe('ScorePlayer — Learn stuck prompt (audit H3)', () => {
     expect(stuck()).toBeNull();
     act(() => vi.advanceTimersByTime(20000));
     expect(stuck()).toBeNull(); // asked and answered — no nagging
+  });
+});
+
+describe('ScorePlayer — staff dim layer (Task 8)', () => {
+  afterEach(() => { cleanup(); });
+
+  it('dims the deselected staff in Learn and clears when reselected', async () => {
+    renderPlayer(); // opens in Listen
+    await act(async () => {});
+    enterLearn();
+    await act(async () => {});
+    expect(document.querySelectorAll('.piano-score-staff-dim')).toHaveLength(0);
+
+    act(() => { fireEvent.click(screen.getByRole('button', { name: 'Left hand' })); }); // deselect LH
+    expect(document.querySelectorAll('.piano-score-staff-dim').length).toBeGreaterThan(0);
+
+    act(() => { fireEvent.click(screen.getByRole('button', { name: 'Left hand' })); }); // reselect LH
+    expect(document.querySelectorAll('.piano-score-staff-dim')).toHaveLength(0);
   });
 });

@@ -33,6 +33,7 @@ import ScoreTransportBar from './ScoreTransportBar.jsx';
 import ModeSheet, { MODES } from './ModeSheet.jsx';
 import NoteHighlightLayer from './NoteHighlightLayer.jsx';
 import MeasureGradeLayer from './MeasureGradeLayer.jsx';
+import StaffDimLayer from './StaffDimLayer.jsx';
 import RunSummary from './RunSummary.jsx';
 import CountInOverlay from './CountInOverlay.jsx';
 import LearnComplete from './LearnComplete.jsx';
@@ -1352,6 +1353,12 @@ export default function ScorePlayer({ score: scoreMeta }) {
     [showGrades, showFocusLayer, events],
   );
 
+  // Staves the user has deselected — dimmed in every interactive mode (wave-3 A).
+  const dimmedStaves = useMemo(
+    () => parts.filter((p) => !activeParts[p.staff]).map((p) => p.staff),
+    [parts, activeParts],
+  );
+
   return (
     <div className="piano-score-player">
       {scoreMeta.splashImage && !engraveReady && (
@@ -1361,6 +1368,12 @@ export default function ScorePlayer({ score: scoreMeta }) {
       )}
       <div className={`piano-score-player__scroll piano-score-player__scroll--${flow}`} ref={scrollRef} onClick={onScoreClick}>
         <MusicXmlRenderer score={parsed} musicXml={scoreMeta.musicXml} flow={flow} scale={scale} transpose={transpose} onLayout={onLayout} onReady={onReady} holdExtraction={running}>
+          {mode !== 'perform' && layoutFresh && (
+            <StaffDimLayer
+              staffBoxes={layout.staffBoxes}
+              dimmed={dimmedStaves}
+            />
+          )}
           {mode !== 'perform' && current && layoutFresh && (
             <div
               ref={cursorRef}

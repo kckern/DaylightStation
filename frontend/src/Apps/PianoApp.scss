@@ -2700,6 +2700,17 @@
   50%      { opacity: 1; }
 }
 
+// Deselected-staff mask (wave-3 A): paper at 65% ⇒ engraved ink reads ~0.35.
+// z2 — under the range tint (3), cursor (5) and wet ink; wrong notes on a
+// dimmed staff still render at full strength above this.
+.piano-score-staff-dim {
+  position: absolute;
+  z-index: 2;
+  pointer-events: none;
+  background: rgba(255, 255, 255, 0.65); // the engraved sheet's paper white
+  border-radius: 4px;
+}
+
 // ── Task 14: Polish per-measure grade wash + run summary ──────────────────────
 // Translucent fill over each graded measure (MeasureGradeLayer sets geometry
 // inline). Sits below the cursor (z5) and note chips (z6). Non-interactive.
