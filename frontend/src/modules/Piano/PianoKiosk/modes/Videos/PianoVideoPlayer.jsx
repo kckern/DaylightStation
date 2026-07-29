@@ -122,11 +122,17 @@ export default function PianoVideoPlayer({ lecture, source, onBack, isSequential
     <PlayerBoundary onBack={onBack}>
       <Suspense fallback={<SkeletonStage />}>
         {/* focused = the minimal shader (Player suppresses its own overlays; the
-            piano chrome provides the controls). */}
-        <Player ref={playerRef} play={{ contentId, shader: 'focused' }} clear={onBack} />
+            piano chrome provides the controls). `seconds` carries OUR computed
+            resumeSecondsFor(lecture) explicitly, and `resume:false` suppresses
+            the Player's own implicit Plex-viewOffset resume — otherwise a
+            completed lecture (resumeSeconds 0) could still open at Plex's tail
+            playhead and auto-exit seconds later when `ended` fires (the
+            re-watch "jumpscare"). Passing our value for BOTH the completed and
+            in-progress cases means there's only ever one source of truth. */}
+        <Player ref={playerRef} play={{ contentId, shader: 'focused', seconds: resumeSeconds, resume: false }} clear={onBack} />
       </Suspense>
     </PlayerBoundary>
-  ), [contentId, onBack]);
+  ), [contentId, onBack, resumeSeconds]);
 
   // Fullscreen is entered from the chrome strip's button; a tap never enters it.
   // While fullscreen the strip is offscreen, so taps summon the transport
