@@ -1321,6 +1321,30 @@
     height: 100%;
     object-fit: cover;
   }
+
+  // The sequential badge (1.7rem) and progress-ring chips (1.85rem) are fixed
+  // absolute-size overlays inherited from --posters' 12.75rem-wide tile. At
+  // dense splits (many rows → small tiles) they'd dominate or clip a shrunken
+  // poster, so they scale down with --tile-scale (CourseGrid's
+  // tileScaleFor(rows): 1 at ≤2 rows, stepping down at 3/4/5+ rows). The
+  // badge's inner <svg> has fixed 16x16 attributes in CourseTile.jsx; the
+  // `svg { width/height: 100% }` override here beats those (CSS always wins
+  // over SVG presentation attributes) so it scales with its shrunk parent.
+  .piano-cover-badge {
+    width: calc(1.7rem * var(--tile-scale, 1));
+    height: calc(1.7rem * var(--tile-scale, 1));
+    svg { width: 100%; height: 100%; }
+  }
+  .piano-cover-progress {
+    padding: calc(1.4rem * var(--tile-scale, 1)) calc(0.4rem * var(--tile-scale, 1)) calc(0.4rem * var(--tile-scale, 1));
+    gap: calc(0.3rem * var(--tile-scale, 1)) calc(0.45rem * var(--tile-scale, 1));
+
+    &__ring {
+      width: calc(1.85rem * var(--tile-scale, 1));
+      height: calc(1.85rem * var(--tile-scale, 1));
+    }
+    &__pct { font-size: calc(0.78rem * var(--tile-scale, 1)); }
+  }
 }
 
 // ── Menu activity strip: per-player recent-course cards ─────────────────

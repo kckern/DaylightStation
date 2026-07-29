@@ -9,6 +9,22 @@ import CourseTile from './CourseTile.jsx';
 const ratingKeyOf = (c) => (c ? String(c).replace(/^plex:/, '') : null);
 const idOf = (raw) => String(raw || '').replace(/^plex:/, '');
 
+/**
+ * Overlay scale for the sequential badge + progress-ring chips (see
+ * `--tile-scale` in PianoApp.scss), keyed off row count. Those overlays are
+ * fixed-size (1.7rem badge, 1.85rem ring) against the --posters grid's fixed
+ * 12.75rem tile; once balancedGrid needs 3+ rows to stay on one page the
+ * tile itself has shrunk well below that, so the overlay must shrink too or
+ * it dominates/clips a small poster. 1 = no shrink (≤2 rows, tiles still
+ * near full size); steps down at 3/4/5+ rows.
+ */
+export function tileScaleFor(rows) {
+  if (rows >= 5) return 0.55;
+  if (rows >= 4) return 0.7;
+  if (rows >= 3) return 0.85;
+  return 1;
+}
+
 // Pull both the collection's display title and its courses from one /list call.
 const selectCollection = (r) => ({ title: r?.title || null, items: r?.items ?? [] });
 
@@ -203,7 +219,7 @@ export default function CourseGrid({ groups = [], onSelect }) {
         {courses && courses.length > 0 && (
           <ul
             className="piano-video-grid piano-video-grid--posters piano-video-grid--onepage"
-            style={{ '--cols': gridCols, '--rows': gridRows }}
+            style={{ '--cols': gridCols, '--rows': gridRows, '--tile-scale': tileScaleFor(gridRows) }}
           >
             {courses.map((item) => (
               <CourseTile key={item.id} item={item} onSelect={onSelect} progress={progressMap?.[item.id]} />

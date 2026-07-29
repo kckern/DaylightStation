@@ -19,11 +19,11 @@ vi.mock('../../usePianoList.js', () => ({
 }));
 vi.mock('./CourseTile.jsx', () => ({ default: ({ item }) => <li>{item.title}</li> }));
 
-import CourseGrid from './CourseGrid.jsx';
+import CourseGrid, { tileScaleFor } from './CourseGrid.jsx';
 import { balancedGrid } from '../../tileGridLayout.js';
 
 describe('CourseGrid one-page adaptive wall', () => {
-  it('sizes the poster wall to a balanced rows×cols split and marks the no-scroll wrapper', async () => {
+  it('sizes the poster wall to a balanced rows×cols split, sets the density scale, and marks the no-scroll wrapper', async () => {
     const groups = [{ label: 'Lessons', collections: ['plex:1'] }];
     const { container } = render(<CourseGrid groups={groups} onSelect={() => {}} />);
     await waitFor(() => expect(screen.getByText('Course 0')).toBeTruthy());
@@ -33,8 +33,24 @@ describe('CourseGrid one-page adaptive wall', () => {
 
     const grid = container.querySelector('.piano-video-grid--onepage');
     expect(grid).toBeTruthy();
-    const { rows, cols } = balancedGrid(12);
+    const { rows, cols } = balancedGrid(12); // 12 → 3×4 (see tileGridLayout.test.js)
     expect(grid.style.getPropertyValue('--cols')).toBe(String(cols));
     expect(grid.style.getPropertyValue('--rows')).toBe(String(rows));
+    // 3 rows → badge/progress overlays scale down (tileScaleFor(3) = 0.85),
+    // not the full-size 1 used at ≤2 rows.
+    expect(grid.style.getPropertyValue('--tile-scale')).toBe(String(tileScaleFor(rows)));
+    expect(rows).toBe(3);
+    expect(grid.style.getPropertyValue('--tile-scale')).toBe('0.85');
+  });
+});
+
+describe('tileScaleFor', () => {
+  it('stays full-size at ≤2 rows and steps down at 3/4/5+', () => {
+    expect(tileScaleFor(1)).toBe(1);
+    expect(tileScaleFor(2)).toBe(1);
+    expect(tileScaleFor(3)).toBe(0.85);
+    expect(tileScaleFor(4)).toBe(0.7);
+    expect(tileScaleFor(5)).toBe(0.55);
+    expect(tileScaleFor(8)).toBe(0.55);
   });
 });
