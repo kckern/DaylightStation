@@ -79,7 +79,8 @@ import { createCostApiRouter } from '#composition/modules/costApi.mjs';
 import { createHomeAutomationApiRouter, createHomeDashboardApiRouter } from '#composition/modules/homeApi.mjs';
 import { createDeviceApiRouter } from '#composition/modules/deviceApi.mjs';
 import { createTriggerApiRouter } from '#composition/modules/triggerApi.mjs';
-import { createScanDispatch } from '#composition/modules/scanDispatch.mjs';
+import { createScanDispatch, errText } from '#composition/modules/scanDispatch.mjs';
+import { emit } from '#apps/scan/ScanDispatcher.mjs';
 import { createGratitudeApiRouter } from '#composition/modules/gratitudeApi.mjs';
 import { createEconomyApi } from '#composition/modules/economyApi.mjs';
 import { createJournalistApiRouter } from '#composition/modules/journalistApi.mjs';
@@ -2795,11 +2796,17 @@ export async function createApp({ server, logger, configPaths, configExists, ena
       // that braces, so a future change there cannot surface as an unhandled
       // rejection on a scan.
       scanDispatch.handleScan(relay).catch((err) => {
-        // `err?.message`, not `err.message`: a `Promise.reject(null)` would throw
-        // INSIDE this callback, and a throw here is an unhandledRejection — the
-        // reporting path taking the process down is the one failure a catch of
-        // last resort must not have.
-        barcodeLogger?.warn?.('scan.dispatch.failed', { device: relay.device, error: err?.message });
+        // `emit` + `errText`, the same pair every `.catch` in `scanDispatch`
+        // uses, and for the same two reasons. `errText` because reading a
+        // rejection can itself throw (`{ get message() { throw } }`, a bare
+        // `throw 'nope'`, a null-prototype value) and a throw INSIDE this
+        // callback is an unhandledRejection nothing can catch. `emit` because
+        // the logger has a transport behind it that can fail, and this is the
+        // outermost catch on the scan path — there is nothing above it to
+        // report to.
+        emit(barcodeLogger, 'warn', 'scan.dispatch.failed', {
+          device: relay.device, error: errText(err),
+        });
       });
     },
   });
