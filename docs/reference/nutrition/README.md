@@ -242,15 +242,24 @@ restart before it takes effect.
 | `services/ScanNutritionService.mjs` — net weight, calories, macros | **shipped**, reviewed, 58 tests |
 | `value-objects/Composition.mjs` — immutable slots | **shipped**, 62 tests |
 | `3_applications/nutribot/CompositionStore.mjs` — per-scale state, window | **shipped**, 70 tests |
-| Config: macros, 25 containers, validator | not started |
-| `ApplyScanToComposition` use case | not started |
+| `ApplyScanToComposition` use case | **shipped**, handles density/container/reset/undo/done |
+| `nutriscan` route wiring (`5_composition/modules/scanDispatch.mjs`) | **shipped** |
+| Control grammar `rs:clear|undo|done` + one-deep undo | **shipped** |
+| `SheetLayout` / `QRSheetRenderer` / `SheetService` + `GET /api/v1/sheets/:id.pdf` | **shipped** |
+| `npm run sheet` local generator | **shipped** |
+| Config: real container table | **shipped**, but every `grams` is a PLACEHOLDER estimate |
 | Bridge integration: unit passthrough, session end, mutex | not started |
-| `nutriscan` route wiring | not started |
 | Memo (voice flow-state branch, Memo button) | not started |
-| `QRSheetRenderer` + sheet endpoint | not started |
+| Food grammar (`fd:` prefix) | not started — sheet prints foods as inert labels, if at all |
 
-Nothing above is reachable from the running system yet — the domain layer is built but no
-relay, bridge, or API path calls it.
+The scan path IS reachable end to end now: a code scanned on the kitchen relay reaches
+`barcode_relay.scan`, is claimed by the nutrition grammar, and applies to the live
+composition. What has NOT happened is a physical test — every verification so far has
+decoded rendered pixels rather than ink under kitchen light.
+
+**The tare weights are estimates.** An unknown or zero tare does not refuse: `computeNet`
+treats it as "no tare" and silently subtracts nothing, so a container scan today reports
+the gross weight as food. Weigh the nine vessels before trusting a tared entry.
 
 ---
 
