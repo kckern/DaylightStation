@@ -36,7 +36,6 @@ const HandsControl = memo(function HandsControl({ variant = 'hands', value, onCh
   };
   return (
     <div className="piano-score-hands" role="group" aria-label={label}>
-      <span className="piano-score-hands__label">{label}</span>
       <TransportButton
         icon="hand-left"
         ariaLabel="Left hand"

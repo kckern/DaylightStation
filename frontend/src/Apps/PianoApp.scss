@@ -2837,23 +2837,12 @@
   font: inherit; font-weight: 600;
 }
 
-// View menu (audit J5/M4) — consolidates layout/size/keyboard/about behind the View trigger.
+// View sheet (audit J5/M4; wave-2 T8 ports the trigger's popover onto the
+// shared TransportSheet — the sheet itself is styled once via .piano-tsheet).
 .piano-score-view-wrap { position: relative; display: inline-block; }
-.piano-score-view-menu {
-  position: absolute; bottom: calc(100% + 0.4rem); right: 0; z-index: 21;
-  display: flex; flex-direction: column; gap: 0.5rem; min-width: 15rem;
-  padding: 0.6rem; background: var(--piano-surface, #1f1f26);
-  border: 1px solid var(--piano-border, #34343f); border-radius: var(--r-md, 12px);
-  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5);
-}
 .piano-score-view-row {
   display: flex; flex-wrap: wrap; align-items: center; gap: 0.3rem;
   &__label { font-size: 0.78rem; opacity: 0.7; width: 100%; }
-}
-.piano-score-view-about {
-  margin: 0.2rem 0 0; display: grid; grid-template-columns: auto 1fr; gap: 0.15rem 0.6rem;
-  font-size: 0.82rem;
-  dt { opacity: 0.6; } dd { margin: 0; }
 }
 
 // Loop control popover (audit L1/L2) — first-class labeled loop with one-tap clear.
@@ -2885,11 +2874,6 @@
 .piano-score-loop-nudge {
   display: flex; align-items: center; gap: 0.3rem;
   &__label { font-size: 0.8rem; opacity: 0.7; }
-}
-// Shared backdrop that closes any open popover on an outside tap (audit M4).
-.piano-score-popover-backdrop {
-  position: fixed; inset: 0; z-index: 20; appearance: none; border: 0;
-  background: transparent; cursor: default; padding: 0;
 }
 
 // On-score guidance banner during guided measure selection (audit J5/M3).
@@ -2938,10 +2922,16 @@
   &--pending { background: #f0d270; box-shadow: 0 0 6px rgba(240, 210, 112, 0.6); }
 }
 
+// Hairline divider ahead of the hands/parts cluster (wave-2 T8) — the label
+// span it replaces is gone, so the divider alone marks where the practice
+// controls end and the parts/hands cluster begins.
+.piano-score-divider {
+  width: 1px; align-self: stretch; background: rgba(255, 255, 255, 0.18); margin: 0 0.35rem;
+}
+
 // Hands / My-part segmented control (grand-staff fast path, audit J4).
 .piano-score-hands {
   display: inline-flex; align-items: center; gap: 0.3rem;
-  &__label { font-size: 0.8rem; opacity: 0.7; margin-right: 0.15rem; }
   &__opt { min-width: 2.6rem; }
 }
 
@@ -2987,8 +2977,6 @@
 // Tempo popover — anchored above the bar, elevated.
 .piano-score-tempo-wrap { position: relative; }
 .piano-score-tempo-modal {
-  // 21 > .piano-score-popover-backdrop (20) — the backdrop renders later in the DOM,
-  // so an equal z-index would hit-test above the tempo steps and eat their taps.
   position: absolute; bottom: calc(100% + 0.5rem); right: 0; z-index: 21;
   background: var(--piano-surface, #1f1f26); border: 1px solid var(--piano-border, #34343f);
   border-radius: var(--r-md, 12px); box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5);

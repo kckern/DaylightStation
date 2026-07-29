@@ -1,7 +1,7 @@
 import React, { useState, memo } from 'react';
 import HandsControl from './HandsControl.jsx';
 import LoopControl from './LoopControl.jsx';
-import ViewMenu from './ViewMenu.jsx';
+import ViewSheet from './ViewSheet.jsx';
 import Icon from '../../icons/Icon.jsx';
 import TransportButton from '../../transport/TransportButton.jsx';
 import KeySheet from '../../transport/KeySheet.jsx';
@@ -112,8 +112,8 @@ const ScorePracticeCluster = memo(function ScorePracticeCluster({
 
 /**
  * ScoreViewControls — the expensive right cluster: part chips / Hands, key
- * transpose, tempo & view popovers. This is the bulk of the bar's DOM +
- * local popover state. (The metronome and Loop control live in the center
+ * transpose, tempo & view sheets. This is the bulk of the bar's DOM +
+ * local sheet-open state. (The metronome and Loop control live in the center
  * ScorePracticeCluster since audit C1/C2.)
  *
  * Stable geography (audit C2): every control renders in all non-Perform modes;
@@ -150,20 +150,22 @@ const ScoreViewControls = memo(function ScoreViewControls({
   keyboardVisible,
   onToggleKeyboard,
   baseBpm = 90, // the piece's written tempo (unscaled) — each tempo step shows the BPM it produces (M4)
-  meta = {},
   keyFifths,
   keyMode,
   onBodyRender,
 }) {
   if (onBodyRender) onBodyRender();
 
-  // Single-open popover discipline (audit M4): key, tempo, and the View menu
-  // share one state, so opening one closes the others. Key/Tempo are sheets
-  // that bring their own scrim; the shared backdrop below only ever applies to
-  // 'view'. 'key' | 'tempo' | 'view' | null.
-  const [openPopover, setOpenPopover] = useState(null);
-  const toggle = (name) => setOpenPopover((cur) => (cur === name ? null : name));
-  const closePopover = () => setOpenPopover(null);
+  // Key / Tempo / View each own an independent open boolean (wave-2 T8 drops
+  // the old shared `openPopover` + backdrop machinery). Every one of them is a
+  // TransportSheet, which brings its own full-screen scrim — an outside tap
+  // dismisses whichever sheet is open, and a tap that would otherwise open a
+  // second sheet lands on that scrim first and just closes the first one. Two
+  // sheets can never visibly stack in practice, so single-open discipline is
+  // inherent to the primitive rather than coordinated here.
+  const [keyOpen, setKeyOpen] = useState(false);
+  const [tempoOpen, setTempoOpen] = useState(false);
+  const [viewOpen, setViewOpen] = useState(false);
 
   // Per-mode cluster gating (all derived from `mode`, so identical across steps).
   // Perform (music-stand mode) is the ONLY mode that drops chrome; everything
@@ -206,6 +208,8 @@ const ScoreViewControls = memo(function ScoreViewControls({
 
   return (
     <div className="piano-score-view">
+      <span className="piano-score-divider" aria-hidden="true" />
+
       {grandStaff
         ? <HandsControl variant={handsVariant} value={handsValue} onChange={onHandsChange} />
         : <div className="piano-score-parts">{parts.map(renderPartChip)}</div>}
@@ -217,14 +221,14 @@ const ScoreViewControls = memo(function ScoreViewControls({
           ariaLabel="Key"
           disabled={!keyEnabled}
           on={transpose !== 0}
-          onPress={() => toggle('key')}
+          onPress={() => setKeyOpen((v) => !v)}
         />
       </div>
       <KeySheet
-        open={openPopover === 'key'}
-        onClose={closePopover}
+        open={keyOpen}
+        onClose={() => setKeyOpen(false)}
         value={transpose}
-        onPick={(n) => { onTranspose?.(n); closePopover(); }}
+        onPick={(n) => { onTranspose?.(n); setKeyOpen(false); }}
         keyFifths={keyFifths}
         keyMode={keyMode}
       />
@@ -235,13 +239,13 @@ const ScoreViewControls = memo(function ScoreViewControls({
           icon="quarter-note"
           ariaLabel="Tempo"
           on={tempoMult !== 1}
-          onPress={() => toggle('tempo')}
+          onPress={() => setTempoOpen((v) => !v)}
         />
         <TempoSheet
-          open={openPopover === 'tempo'}
-          onClose={closePopover}
+          open={tempoOpen}
+          onClose={() => setTempoOpen(false)}
           value={tempoMult}
-          onPick={(v) => { onTempo?.(v); closePopover(); }}
+          onPick={(v) => { onTempo?.(v); setTempoOpen(false); }}
           baseBpm={baseBpm}
         />
       </div>
@@ -251,33 +255,25 @@ const ScoreViewControls = memo(function ScoreViewControls({
           type="button"
           className="piano-score-btn piano-score-viewmenu"
           aria-label="View options"
-          aria-expanded={openPopover === 'view'}
-          onClick={() => toggle('view')}
+          aria-expanded={viewOpen}
+          onClick={() => setViewOpen((v) => !v)}
         >
           {'View'}
           <Icon name="chevron-down" />
         </button>
-        {openPopover === 'view' && (
-          <ViewMenu
-            flow={flow}
-            onToggleFlow={onToggleFlow}
-            scale={scale}
-            onScale={onScale}
-            keyboardVisible={keyboardVisible}
-            onToggleKeyboard={onToggleKeyboard}
-            meta={meta}
-          />
-        )}
+        <ViewSheet
+          open={viewOpen}
+          onClose={() => setViewOpen(false)}
+          flow={flow}
+          onToggleFlow={onToggleFlow}
+          scale={scale}
+          onScale={onScale}
+          keyboardVisible={keyboardVisible}
+          onToggleKeyboard={onToggleKeyboard}
+        />
       </div>
 
       <VolumeControl className="piano-score-volume" />
-
-      {/* Shared backdrop: an outside tap dismisses the View menu (M4). Key/Tempo
-          bring their own scrims via TransportSheet, so this backdrop is scoped
-          to 'view' only — otherwise it'd double-dismiss under the sheet's scrim. */}
-      {openPopover === 'view' && (
-        <button type="button" className="piano-score-popover-backdrop" aria-label="Close" onClick={closePopover} />
-      )}
     </div>
   );
 });
@@ -335,10 +331,10 @@ export default function ScoreTransportBar({
   scale,
   onScale,
   // NOTE: threaded-only props are intentionally NOT defaulted here. Object/array
-  // defaults (e.g. `parts = []`, `meta = {}`) mint a FRESH reference every render
-  // for an omitted prop, which would defeat React.memo on ScoreViewControls. The
-  // memoized children apply their own defaults instead, so an omitted prop stays
-  // referentially stable (`undefined`) across a step advance.
+  // defaults (e.g. `parts = []`, `activeParts = {}`) mint a FRESH reference every
+  // render for an omitted prop, which would defeat React.memo on ScoreViewControls.
+  // The memoized children apply their own defaults instead, so an omitted prop
+  // stays referentially stable (`undefined`) across a step advance.
   tempoMult,
   onTempo,
   transpose,
@@ -366,7 +362,6 @@ export default function ScoreTransportBar({
   onToggleClick,
   bpm,
   baseBpm,
-  meta,
   keyFifths,
   keyMode,
   onBodyRender,
@@ -436,7 +431,6 @@ export default function ScoreTransportBar({
         keyboardVisible={keyboardVisible}
         onToggleKeyboard={onToggleKeyboard}
         baseBpm={baseBpm}
-        meta={meta}
         keyFifths={keyFifths}
         keyMode={keyMode}
         onBodyRender={onBodyRender}

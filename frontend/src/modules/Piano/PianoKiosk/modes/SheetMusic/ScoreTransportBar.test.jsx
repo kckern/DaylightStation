@@ -242,12 +242,26 @@ describe('ScoreTransportBar', () => {
     expect(chip.textContent).toBe('RH'); // no "✓ " prefix
   });
 
-  it('single-open popovers: opening the View menu closes Tempo (M4)', () => {
+  // Wave-2 T8 dropped the shared `openPopover` state that made this bar
+  // cross-dismiss sheets on the parent's behalf — Key/Tempo/View are now three
+  // independent booleans. In the real kiosk, two sheets can never visibly
+  // stack: each TransportSheet brings its own full-screen scrim, so a tap
+  // aimed at a second trigger while one sheet is open actually lands on that
+  // sheet's scrim and just closes it (the trigger never receives the click).
+  // RTL's fireEvent.click dispatches straight to the target element and skips
+  // that hit-testing, so a same-shaped "click View, assert Tempo closed" test
+  // would silently pass or fail on jsdom implementation details rather than on
+  // the real behavior — it can't faithfully exercise the scrim swallow. This
+  // replaces that assertion with what IS verifiable here: each sheet's own
+  // scrim dismisses it, and once dismissed, opening a different sheet works
+  // on its own — there's no leftover coupling between them.
+  it('sheets self-dismiss via their own scrim; each opens independently (M4 successor)', () => {
     render(<ScoreTransportBar {...base} mode="listen" tempoMult={1} onTempo={vi.fn()} />);
     fireEvent.click(screen.getByRole('button', { name: /^tempo/i }));
     expect(screen.getByRole('dialog', { name: /tempo/i })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /dismiss tempo/i })); // tempo's own scrim
+    expect(screen.queryByRole('dialog', { name: /tempo/i })).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: /view options/i }));
-    expect(screen.queryByRole('dialog', { name: /tempo/i })).toBeNull(); // tempo closed
     expect(screen.getByRole('dialog', { name: /view/i })).toBeInTheDocument();
   });
 
