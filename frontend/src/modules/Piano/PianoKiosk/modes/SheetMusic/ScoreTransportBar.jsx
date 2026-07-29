@@ -54,8 +54,10 @@ const ScoreTransportButtons = memo(function ScoreTransportButtons({ mode, runnin
  * ScorePracticeCluster — the center-zone practice controls: metronome + Loop.
  * These moved out of the right cluster (audit C1/C2) so the practice loop and
  * click sit beside the transport they modify. Both render in every mode but
- * Perform; the metronome gates IN PLACE (disabled in Listen — Listen's own
- * performance is the beat) instead of unmounting, preserving spatial memory.
+ * Perform; the metronome gates IN PLACE via the caller-supplied `clickDisabled`
+ * (wave-3 G: Listen's metronome is session-local, same as Learn's — the mode
+ * itself no longer disables it, only ScorePlayer's tempo-map guard does)
+ * instead of unmounting, preserving spatial memory.
  *
  * Memoized and step-INDEPENDENT: none of its props change as the cursor
  * advances, so React.memo bails out per step.
@@ -64,6 +66,7 @@ const ScorePracticeCluster = memo(function ScorePracticeCluster({
   mode,
   clickActive = false,
   onToggleClick,
+  clickDisabled = false,
   loopActive = false,
   loopEnabled = true,
   scopeLabel = '',
@@ -75,17 +78,18 @@ const ScorePracticeCluster = memo(function ScorePracticeCluster({
   onToggleLoop,
 }) {
   if (mode === 'perform') return null;
-  // Listen disables the click (its own performance is the beat); a persisted
-  // clickActive must not paint the accent on a button that can't act.
-  const metronomeDisabled = mode === 'listen';
+  // Gating is the caller's call now (wave-3 G): Listen's metronome is
+  // session-local + free-running like Learn's, only gated by the tempo-map
+  // guard ScorePlayer computes (`clickDisabled`) — no mode check here. A
+  // disabled-in-place button must not paint the accent it can't act on.
   return (
     <>
       <button
         type="button"
-        className={`piano-tbtn piano-score-btn piano-score-click${clickActive && !metronomeDisabled ? ' is-on' : ''}`}
+        className={`piano-tbtn piano-score-btn piano-score-click${clickActive && !clickDisabled ? ' is-on' : ''}`}
         aria-label="Metronome"
-        aria-pressed={clickActive && !metronomeDisabled}
-        disabled={metronomeDisabled}
+        aria-pressed={clickActive && !clickDisabled}
+        disabled={clickDisabled}
         onClick={onToggleClick}
       >
         <Icon name="metronome" />
@@ -276,8 +280,9 @@ const ScoreViewControls = memo(function ScoreViewControls({
  *   right  — Hands/parts · Key · Tempo · View menu
  * Every control renders in ALL modes but Perform; per-mode gating disables/dims
  * IN PLACE instead of unmounting, so nothing ever moves under the finger:
- *  Listen  — all live except metronome (disabled — the performance is the beat)
- *            and the Learn-only Play lockout; Key live.
+ *  Listen  — all live, including a free-running metronome (session-local, same
+ *            as Learn's — gated by `clickDisabled`, the caller's tempo-map
+ *            guard, not the mode, wave-3 G) and the Learn-only Play lockout; Key live.
  *  Learn   — Play disabled ("Learn advances as you play") only while the gate is
  *            armed (a range with looping on — `playLocked`); the machine states
  *            get a live transport. Metronome free-runs; Key live (transposes the
@@ -340,6 +345,7 @@ export default function ScoreTransportBar({
   onToggleKeyboard,
   clickActive,
   onToggleClick,
+  clickDisabled,
   bpm,
   baseBpm,
   keyFifths,
@@ -373,6 +379,7 @@ export default function ScoreTransportBar({
           mode={mode}
           clickActive={clickActive}
           onToggleClick={onToggleClick}
+          clickDisabled={clickDisabled}
           loopActive={loopActive}
           loopEnabled={loopEnabled}
           scopeLabel={scopeLabel}

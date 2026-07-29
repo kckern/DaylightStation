@@ -29,13 +29,26 @@ describe('ScoreTransportBar', () => {
     expect(screen.getByRole('button', { name: 'Metronome' })).toHaveAttribute('aria-pressed', 'true');
   });
 
-  it('metronome ACTS in Learn AND Polish, not Listen — gated in place, never unmounted (M1/M2, C2)', () => {
+  it('metronome ACTS in Learn, Polish AND Listen — gated in place by clickDisabled, never unmounted (M1/M2, C2, wave-3 G)', () => {
+    // wave-3 G: Listen's metronome is session-local and free-running, same as
+    // Learn's — the bar no longer hardcodes it off for the mode. Gating is now
+    // purely the caller-supplied `clickDisabled` prop (the tempo-map guard).
     const { rerender } = render(<ScoreTransportBar {...base} mode="learn" clickActive onToggleClick={vi.fn()} />);
     expect(screen.getByRole('button', { name: /metronome/i })).toBeEnabled();
     rerender(<ScoreTransportBar {...base} mode="polish" clickActive onToggleClick={vi.fn()} />);
     expect(screen.getByRole('button', { name: /metronome/i })).toBeEnabled();
-    // Listen keeps the button in place but disabled — its own performance is the beat.
+    // Without clickDisabled, Listen's metronome is ENABLED — it was hardcoded
+    // disabled before wave-3 G; now the mode alone never gates it.
     rerender(<ScoreTransportBar {...base} mode="listen" clickActive onToggleClick={vi.fn()} />);
+    expect(screen.getByRole('button', { name: /metronome/i })).toBeEnabled();
+  });
+
+  it('clickDisabled disables the metronome button in ANY mode (the tempo-map guard, wave-3 G)', () => {
+    const { rerender } = render(<ScoreTransportBar {...base} mode="learn" clickActive clickDisabled onToggleClick={vi.fn()} />);
+    expect(screen.getByRole('button', { name: /metronome/i })).toBeDisabled();
+    rerender(<ScoreTransportBar {...base} mode="polish" clickActive clickDisabled onToggleClick={vi.fn()} />);
+    expect(screen.getByRole('button', { name: /metronome/i })).toBeDisabled();
+    rerender(<ScoreTransportBar {...base} mode="listen" clickActive clickDisabled onToggleClick={vi.fn()} />);
     expect(screen.getByRole('button', { name: /metronome/i })).toBeDisabled();
   });
 
@@ -325,8 +338,13 @@ describe('ScoreTransportBar — stable geography (C2)', () => {
     rerender(<ScoreTransportBar {...base} mode="listen" step={0} total={4} ready running />);
     expect(screen.getByRole('button', { name: 'Pause' })).toBeEnabled();
   });
-  it('Listen renders the metronome disabled (the performance is the beat)', () => {
-    render(<ScoreTransportBar {...base} mode="listen" step={0} total={4} ready />);
+  it('Listen renders the metronome enabled by default; clickDisabled gates it in place (wave-3 G)', () => {
+    // wave-3 G: Listen's metronome is session-local + free-running like Learn's;
+    // the bar's own hardcoded "disabled in Listen" rule is gone. Only the caller's
+    // `clickDisabled` (ScorePlayer's single-entry tempo-map guard) can gate it.
+    const { rerender } = render(<ScoreTransportBar {...base} mode="listen" step={0} total={4} ready />);
+    expect(screen.getByRole('button', { name: /metronome/i })).toBeEnabled();
+    rerender(<ScoreTransportBar {...base} mode="listen" step={0} total={4} ready clickDisabled />);
     expect(screen.getByRole('button', { name: /metronome/i })).toBeDisabled();
   });
   it('Perform renders only tabs and the page indicator', () => {

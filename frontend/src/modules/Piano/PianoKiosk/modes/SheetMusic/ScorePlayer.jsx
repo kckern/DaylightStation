@@ -146,6 +146,9 @@ export default function ScorePlayer({ score: scoreMeta }) {
   // Learn free-running metronome — explicit opt-in per session, NEVER persisted:
   // a walk-up user must not inherit a ticking room (audit M2).
   const [learnClick, setLearnClick] = useState(false);
+  // Listen free-running metronome — session-local, mirrors learnClick: explicit
+  // opt-in per session, NEVER persisted (wave-3 G, audit M2 discipline).
+  const [listenClick, setListenClick] = useState(false);
   const [flow, setFlow] = useState('wrapped');
   const [perfPage, setPerfPage] = useState({ page: 1, pages: 1 }); // Perform page indicator (1-based)
   const [scale, setScale] = useState(1);
@@ -535,21 +538,28 @@ export default function ScorePlayer({ score: scoreMeta }) {
     if (hadSound || (sendsAudio && wasPlaying)) silenceScheduled(); else silence();
   }, [countIn, clearWrapDwell, sendsAudio, silence, silenceScheduled]);
 
-  // Metronome click (audit M1/M2/M4). Two modes, one bar button:
+  // Metronome click (audit M1/M2/M4; wave-3 G). Three modes, one bar button:
   //  Polish — `clickOn` (persisted) ARMS a reference beat that sounds only while
   //           the transport actually runs (the count-in supplies its own blips).
   //  Learn  — `learnClick` (session-local) IS the metronome: toggling ON starts a
   //           free-running practice beat immediately. Leaving Learn silences it
   //           (enabled goes false → the hook's cleanup stops the scheduler).
+  //  Listen — `listenClick` (session-local, mirrors learnClick) is the SAME
+  //           free-running beat as Learn's, but only offered when the tempo map
+  //           has a single entry — a mid-piece tempo change has no one BPM for a
+  //           free-running click to lock to, so the button gates in place.
   // It NEVER gates or advances the cursor. Ticks at the practice tempo.
-  const clickActive = mode === 'learn' ? learnClick : clickOn;
+  const clickAllowed = tempoMap.length === 1;
+  const clickActive = mode === 'learn' ? learnClick : mode === 'listen' ? listenClick : clickOn;
   // The hook gets the EXACT product — the Polish transport runs at exactly
   // bpm × tempoMult (playTimeline scales by 1/tempoMult), so rounding here would
   // drift the click against the graded run (63 × 0.5 → 32 vs 31.5 = a full beat
   // every ~64). Round only the bar's readout.
   const clickBpmExact = (tempoMap[0]?.bpm || 90) * tempoMult;
   useMetronomeClick({
-    enabled: (mode === 'polish' && clickOn && transport.playing) || (mode === 'learn' && learnClick),
+    enabled: (mode === 'polish' && clickOn && transport.playing)
+      || (mode === 'learn' && learnClick)
+      || (mode === 'listen' && listenClick && clickAllowed),
     bpm: clickBpmExact,
   });
 
@@ -1084,6 +1094,11 @@ export default function ScorePlayer({ score: scoreMeta }) {
     // the range AND the loop toggle (the wave-2 "loop follows the ladder" semantics
     // are deliberately reversed). Loop-arming always resets.
     if (id !== 'learn') { setFocus(null); setLoopOn(false); }
+    // Listen's free-running click is session-local to the Listen visit itself
+    // (mirrors learnClick's never-persisted discipline, wave-3 G): leaving
+    // Listen ends that session, so a walk-up back into Listen never inherits a
+    // ticking room it didn't start.
+    if (mode === 'listen' && id !== 'listen') setListenClick(false);
     setSelecting(null);
     // Leaving Polish: drop the run summary + grades (they belong to that run).
     setSummaryOpen(false); setGrades({});
@@ -1211,6 +1226,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
   }, [mode, keyboardVisible]);
   const onToggleClick = useCallback(() => {
     if (mode === 'learn') setLearnClick((v) => !v); // free-run, session-local
+    else if (mode === 'listen') setListenClick((v) => !v); // free-run, session-local (wave-3 G)
     else setClickOn((v) => !v); // Polish arm state, persisted
   }, [mode]);
   // Flip looping on/off IN PLACE — the range stays defined (its brackets keep
@@ -1548,6 +1564,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
         keyboardVisible={keyboardVisible}
         onToggleKeyboard={onToggleKeyboard}
         clickActive={clickActive}
+        clickDisabled={mode === 'listen' && !clickAllowed}
         bpm={Math.round(clickBpmExact)}
         baseBpm={Math.round(tempoMap[0]?.bpm || 90)}
         onToggleClick={onToggleClick}
