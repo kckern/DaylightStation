@@ -9,7 +9,7 @@ import PlayerBoundary from '../Videos/PlayerBoundary.jsx';
 import useResolvedMediaEl from '../Videos/useResolvedMediaEl.js';
 import usePauseMediaOnUnmount from '../Videos/usePauseMediaOnUnmount.js';
 import usePianoWatchLog from '../Videos/usePianoWatchLog.js';
-import { lectureContentId, deriveResumeSeconds } from '../Videos/lectureMeta.js';
+import { lectureContentId } from '../Videos/lectureMeta.js';
 import { videoTapAction, TAP_SKIP_SECONDS } from '../Videos/videoTapAction.js';
 import { useKeepScreenAwake } from '../../usePianoScreensaver.jsx';
 import { usePianoUser } from '../../PianoUserContext.jsx';
@@ -64,7 +64,7 @@ export default function SingalongPlayer({ lecture, source, onBack, startFresh = 
   // always start at 0. Otherwise resume from the saved playhead like a lecture.
   const resumeSeconds = startFresh
     ? 0
-    : (lecture?.userPlayhead != null ? lecture.userPlayhead : deriveResumeSeconds(lecture));
+    : (lecture?.userPlayhead != null ? lecture.userPlayhead : 0);
   const { currentUser } = usePianoUser();
   const engagedRef = useRef(true); // karaoke: opening the song counts as engaged
 
