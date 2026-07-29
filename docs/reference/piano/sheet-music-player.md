@@ -7,37 +7,56 @@ shared OSMD renderer in `frontend/src/modules/MusicNotation/renderers/`.
 
 ## Chrome layout
 
-- **Top:** the standard always-on breadcrumb (`PianoChrome`) only — `🎹 › Sheet
-  Music › {title}`. The mode publishes its title crumb via `usePianoBreadcrumb`;
-  it does **not** render its own header. Back = the breadcrumb's mode crumb.
+- **Top:** the standard always-on breadcrumb (`PianoChrome`) — `🎹 › Sheet
+  Music › [thumb] {title} › ⦿ {Mode}`. The mode publishes two crumbs via
+  `usePianoBreadcrumb`: a title crumb carrying a small square score thumbnail,
+  and a trailing **mode crumb** (icon + the current mode's name — Listen,
+  Learn, Polish, or Perform). The mode crumb is tappable even though it's the
+  last (current) segment: it opens a centered **Mode** sheet listing all four
+  modes with their icons; picking one switches modes and closes the sheet.
+  This is how **every** mode — including Perform — changes mode; there is no
+  in-bar mode selector. Back = the breadcrumb's parent crumb. Score titles
+  come from the score's own metadata (an explicit title, then the MusicXML's
+  embedded work title); a score with neither falls back to a title derived
+  from its filename rather than showing a bare "Score".
 - **Bottom:** a pinned `ScoreTransportBar` (`ScoreTransportBar.jsx`) with a
-  **stable three-zone grid**: mode tabs (left) · metronome ♩BPM, restart,
-  play/pause, **Loop**, position readout (center) · Hands segments, Key ±,
-  Tempo, View menu, **Volume** (right). The geography never reshuffles — modes
-  **disable/dim controls in place** instead of unmounting them, so Play is
-  always where Play was; **Perform** is the sole exception (bar strips to tabs +
-  a page indicator). One button grammar throughout: shared inline-SVG icons
-  (no text glyphs/emoji), ≥48px touch targets, one radius, **blue = a setting
-  is on** (metronome armed, loop active), **green = the transport is
-  running**, and a chevron on every button that opens a popover or sheet.
+  **stable three-zone grid**: an empty left zone (keeps the center cluster
+  truly centered) · metronome, restart, play/pause, **Loop**, position readout
+  (center) · Hands toggles, Key, Tempo, View menu, **Volume** (right). The
+  geography never reshuffles — modes **disable/dim controls in place** instead
+  of unmounting them, so Play is always where Play was; **Perform** is the
+  sole exception (bar strips to just the page indicator). One button grammar
+  throughout: shared inline-SVG icons (no text glyphs/emoji), ≥48px touch
+  targets, one radius, **blue = a setting is on** (metronome armed, loop
+  active), **green = the transport is running**, and a chevron on every button
+  that opens a popover or sheet.
   **Key, Tempo, and Loop are modal sheets**, not popovers: tapping the button
   opens a centered modal sheet with its own scrim, a direct-pick ladder of
-  steps (or, for Key, a −6…+6 range showing the sounding key), and a close
-  affordance — one tap commits and dismisses, so there's no separate "confirm"
-  step. The **View** menu is the one surface that stays a lightweight popover
-  (layout/size/keyboard toggles plus the score's About metadata); size is a
-  discrete tap-commit stepper, so the score repaints once per step. **Volume**
-  opens the same volume sheet every player in the kiosk uses — Media and MIDI
-  levels as five-step ladders, with a Log/Linear curve toggle — so turning the
-  piano or the media down works identically here as in Karaoke, Music, or a
-  video course.
+  steps, and a close affordance — one tap commits and dismisses, so there's no
+  separate "confirm" step. The **View** menu is the same sheet shell —
+  layout, size, and keyboard-visibility controls only, no metadata list; size
+  is a discrete tap-commit stepper, so the score repaints once per step.
+  **Volume** opens the same volume sheet every player in the kiosk uses —
+  Media and MIDI levels as five-step ladders, with a Log/Linear curve toggle —
+  so turning the piano or the media down works identically here as in
+  Karaoke, Music, or a video course.
+
+## Browsing scores
+
+The score grid is a Courses-style browser: `sheetmusic.collections` in
+`piano.yml` names an ordered set of `{label, ref}` folders/collections, each
+becoming a tab (`Video Games`, `TV Shows`, …) above the grid; a household with
+a single collection gets the tabless grid unchanged. The last tab a player
+picked is remembered per device, so returning to Sheet Music opens where they
+left off.
 
 ## Modes — a learning progression
 
-Four modes, **Listen · Learn · Polish · Perform**, selected by the bar's tabs. The
-bar is **mode-aware**: controls a mode doesn't use disable/dim in place (only
-Perform unmounts them). The metronome is a labeled **click toggle** (audible
-tempo reference), not a mode — see "Metronome" below for its per-mode semantics.
+Four modes, **Listen · Learn · Polish · Perform**, selected from the header's
+Mode sheet (see "Chrome layout" above). The bar is **mode-aware**: controls a
+mode doesn't use disable/dim in place (only Perform unmounts them). The
+metronome is an icon-only **click toggle** (audible tempo reference), not a
+mode — see "Metronome" below for its per-mode semantics.
 
 | Mode | Idea | Cursor | Light-up | Sound |
 |------|------|--------|----------|-------|
@@ -60,23 +79,43 @@ tempo reference), not a mode — see "Metronome" below for its per-mode semantic
 - **Perform**: static sheet; `advancePedalCC` (default 67) / `backPedalCC` (default
   66) turn pages (rising-edge, config-driven); a `page / pages` indicator.
 
+The current-step notehead itself is recolored directly on the engraved SVG
+rather than drawn as an overlay: it takes a subtle near-black ink, the same
+fixed shade in every mode (only the cursor band keeps the per-mode accent
+color). A note struck correctly glows green with a soft drop-shadow — a fixed
+color, independent of mode or the current-step ink, so "hit" always reads the
+same regardless of what's playing. In Learn, a note still owed a strike shows
+an unfilled, gently pulsing outline until it's struck.
+
 ## Active parts (full-hand model)
 
 `activeParts.js` is the single "which staves am I responsible for" model, shared by
 Learn/Polish advancement + grading, note light-up, and the keyboard target set.
 Staves are 0-indexed (`0`=RH, `1`=LH, …); **default = all staves on (full hand)**.
-Per-staff chips toggle a staff on/off (Learn/Polish) or cycle its Listen role
-(`play`/`you`/`mute`). The last active staff can't be toggled off (would deadlock
-Learn). Advancement uses the **all-notes rule** — every expected midi at a step
-must be struck. A left-hand-only intro is a real cursor stop (see alignment note).
+A standard two-staff (grand-staff) piano score gets **two icon-only hand
+toggles** in the bar's right zone (a hairline divider sets them apart from the
+neighboring view controls) — no text label, just the left-/right-hand glyphs,
+lit when that staff is active. In Learn/Polish they toggle a staff on/off, and
+the last active staff can't be toggled off (would deadlock Learn). In Listen
+both toggles can go off together — that's the kiosk-plays-everything state,
+nothing is marked "yours" to light up — or either/both can be on to mark that
+hand's part as yours to play along with. A score with more than two staves
+falls back to one labeled chip per staff instead of the hand icons: Learn/Polish
+toggle a chip on/off, and Listen cycles each chip through Play/You/Mute.
+Advancement uses the **all-notes rule** — every expected midi at a step must
+be struck. A left-hand-only intro is a real cursor stop (see alignment note).
 
 ## The loop (focus range & sections)
 
 `focusRange.js` confines practice to `[inMeasure, outMeasure]` and **loops** it
 (wrap at the out-point). The loop is a first-class transport control: a
-labeled **Loop** trigger in the center zone that reads `Loop m9–m16` when
-active, with a one-tap ✕ clear beside it. Tapping it opens the Loop sheet,
-which offers, all feeding one range:
+**repeat-icon** toggle in the center zone. With no range set, tapping it
+starts the on-score two-tap selection immediately (see "Select measures…"
+below). Once a range exists, the same tap toggles looping on/off **without
+losing the range** — the toggle then also carries the range's scope label
+(e.g. "m9–16") as a secondary cue, lit when looping is on. A one-tap ✕ clear
+sits beside it whenever a range is active. A separate chevron opens the Loop
+sheet, which offers, all feeding one range:
 - **A section** — rehearsal marks (`<rehearsal>` letter/named blocks) parsed from
   the MusicXML by `parseMusicXml.extractSections` → `layout.sections`; picking one
   snaps the range to that section (`sectionToRange`, mapping XML measure
@@ -106,9 +145,9 @@ lastStep}` — the basis for tap-to-jump, ranges, chips, and per-measure grading
 
 ## Metronome
 
-One labeled toggle beside Play — a quarter-note SVG + live BPM readout
-(`useMetronomeClick` keeps the exact bpm; only the readout rounds). Per-mode
-semantics:
+One icon-only toggle beside Play — a quarter-note glyph, no BPM readout on its
+own face (the effective BPM lives on the Tempo chip instead; `useMetronomeClick`
+keeps the exact bpm regardless). Per-mode semantics:
 - **Learn** — a **free-running** click at the practice tempo: toggling it ON
   starts the beat immediately, transport running or not. Session-local by design
   (not persisted) — it's an ambient practice aid, not a score setting.
@@ -116,8 +155,11 @@ semantics:
   is playing; the armed state persists per score.
 - **Listen / Perform** — no metronome.
 
-Each step in the Tempo sheet shows the BPM it produces, so "75%" always reads
-against a concrete ♩ value.
+The Tempo chip's face is a quarter-note icon + the effective BPM
+(`round(baseBpm × tempoMult)`); tapping it opens a 3×3 grid of percent steps
+(50, 60, 70, 80, 90, 100, 110, 125, 150 — finer resolution near 100%, coarser
+toward the extremes), each cell sub-labeled with the BPM it produces, so a
+step always reads against a concrete ♩ value rather than a bare percentage.
 
 ## Per-score persistence
 
@@ -137,12 +179,19 @@ your input per measure (multi-subscriber `subscribe`), grades on measure advance
 and fires an auto-stop after `scoring.silentMeasuresToStop` silent measures.
 `MeasureGradeLayer` washes graded measures; `RunSummary` shows the strip + tallies.
 
-## Key transpose (Listen)
+## Key transpose (Listen · Learn · Polish)
 
-`± semitone` sets `osmd.TransposeCalculator` + `osmd.Sheet.Transpose` and re-engraves
-on the paint-first path (transpose is part of the renderer `cacheKey`, so a change
-re-parses cleanly and re-extracts pitches — notation **and** playback move to the
-new key). Returning to 0 restores the written key. Reset on new document.
+The Key sheet's grid cells speak **sounding key names** — each cell's primary
+label is the key that offset produces (e.g. "D major"), with the semitone
+offset (`+2`, `0`, `−6`, …) as a sub-label; a score with no written key falls
+back to offset-only cells. Picking a step sets `osmd.TransposeCalculator` +
+`osmd.Sheet.Transpose` and re-engraves on the paint-first path (transpose is
+part of the renderer `cacheKey`, so a change re-parses cleanly and re-extracts
+pitches — notation **and** playback move to the new key). Returning to 0
+restores the written key; transpose resets on a new document. The control is
+live in all three practice modes — Learn and Polish transpose the engrave
+their advancement and grading read from, so practice stays consistent with
+what's sounding — and is unavailable only in Perform (no chrome at all).
 
 ## Load pipeline (paint-first, non-blocking)
 
@@ -252,10 +301,14 @@ running on the per-step fallback (keyboard stays note-precise regardless).
 | File | Role |
 |------|------|
 | `SheetMusic.jsx` | routing (grid ↔ viewer), MusicXML fetch + load timing |
+| `ScoreGrid.jsx` / `scoreGroups.js` | score browser grid + `sheetmusic.collections` → tab strip |
+| `scoreTitle.js` | filename → title fallback shared by the grid and the player |
 | `ScorePlayer.jsx` | orchestrator: modes, transport, overlays, telemetry wiring |
 | `ScoreTransportBar.jsx` | pinned bottom bar (presentational, three-zone grid) |
-| `LoopControl.jsx` | Loop trigger button, opens the shared Loop sheet (sections · select measures · nudges · clear) |
-| `HandsControl.jsx` | per-staff Hands segments |
+| `ModeSheet.jsx` | header mode crumb's Listen/Learn/Polish/Perform picker |
+| `LoopControl.jsx` | Loop repeat-icon toggle button, opens the shared Loop sheet (sections · select measures · nudges · clear) |
+| `HandsControl.jsx` | icon-only left/right-hand toggle (grand-staff scores) |
+| `ViewSheet.jsx` | layout/size/keyboard-visibility sheet (controls only, no metadata) |
 | `../../transport/` | shared transport primitives: the button, sheet shell, direct-pick step ladder, and the Key/Tempo/Loop/Volume sheets themselves |
 | `../../icons/Icon.jsx` | shared inline-SVG icon set for all chrome buttons |
 | `nearestEvent.js` | tap→note mapping with `SELECT_MAX_DIST` miss rejection |

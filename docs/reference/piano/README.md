@@ -154,7 +154,7 @@ own data source; the chrome and the live keyboard are the only things they share
 |------|------------|--------|
 | **Courses** (Videos) | Watch piano lessons and lectures — a grid of courses, a lecture list, then a player with A/B looping, variable speed, a watch log, and a live staff sidebar showing the chord under the keys. | A Plex collection of video courses |
 | **Music** | A jukebox: browse albums and playlists in a cover-flow carousel, then a now-playing screen that can dim to a glow and slide up a play-along keyboard. | Plex albums and playlists |
-| **Sheet Music** | Browse a folder of scores; MusicXML files are engraved live and played along with (follow/metronome/manual modes, tap-to-seek, a moving cursor). Scanned page-image scores fall back to a page viewer. | A media folder of `.musicxml`/`.mxl` files (e.g. `media/docs/sheet-music/`), listed by the generic content API; a Plex collection still works for page-image scores |
+| **Sheet Music** | Browse scores through a Courses-style tab strip, one tab per configured collection; MusicXML files are engraved live and played along with (Listen/Learn/Polish/Perform, tap-to-seek, a moving cursor). Scanned page-image scores fall back to a page viewer. | Media folders of `.musicxml`/`.mxl` files, one per tab (e.g. `media/docs/sheet-music/video-games/`), listed by the generic content API; a Plex collection still works for page-image scores |
 | **Studio** | Free play that records the MIDI stream to a take and replays it back out the instrument; takes persist on the backend. | The live MIDI stream + saved takes |
 | **Producer** | A beat-and-loop launcher: keys below a split fire drum one-shots, keys above play melodically over a looping bed. | Local audio kits |
 | **Games** | A full-screen picker and host for note-driven games. | The MIDI stream + game engines |
@@ -194,7 +194,12 @@ A few components appear across many modes because they are the kiosk's visual vo
   ladders and a Log/Linear curve toggle, so turning the piano or the media down
   works identically no matter which mode is open. Every button in this family is
   an inline SVG on a ≥48px touch target — no text glyphs or emoji — so the same
-  visual grammar reads the same across the whole kiosk.
+  visual grammar reads the same across the whole kiosk. There is one bank of these
+  components, not one per mode: the Courses video player's whole chrome row
+  (restart, skip-back/forward, play/pause, rate, A/B loop, fullscreen, volume) is
+  built from the same buttons as Sheet Music's transport bar, down to shared
+  arming/active states for the loop buttons — no mode reimplements its own
+  transport controls.
 
 ---
 
