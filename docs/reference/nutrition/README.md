@@ -27,7 +27,7 @@ a precise gram measurement, never survives to the entry.
   ┌──────────────┐                 ┌────────────────┐
   │ dl:1 … dl:9  │  9 density      │ KitchenIQ 50797│
   │ ct:<id> ×25  │  25 containers  │ SENSSUN FOOD   │
-  │ rs:clear     │  1 reset        └───────┬────────┘
+  │ rs:<verb> ×3 │  3 control      └───────┬────────┘
   └──────┬───────┘                         │ BLE notify 0xFFB2
          │ scanned                         ▼
          │                          ATOM Lite relay          [_extensions/food-scale-relay]
@@ -70,13 +70,56 @@ the parser.
 |------|---------|
 | `dl:<1-9>` | caloric density level |
 | `ct:<id>` | container tare, `id` matching `/^[a-z0-9][a-z0-9-]*$/` |
-| `rs:clear` | reset the in-progress composition |
+| `rs:clear` | discard the in-progress composition and start fresh — parses to `{kind:'reset'}` |
+| `rs:undo` | take back the most recent scan |
+| `rs:done` | the sequence is complete; process it now |
+
+The `rs:` codes are the **control layer** — the punctuation of the grammar. Density and
+container scans accumulate a composition; because they arrive as separate events over a time
+window with no payload boundary, these three are the only way to say "start over", "take that
+back", or "that's the whole intent". `CONTROL_VERBS` is the frozen vocabulary and
+`encodeControl(verb)` the encoder; `RESET_CODE` remains exported and is exactly
+`encodeControl('clear')`.
+
+**`clear` parses to kind `reset`, not `clear`.** The asymmetry is deliberate and pinned by a
+test: `ApplyScanToComposition` switches on `parsed.kind === 'reset'`, and renaming the kind to
+match the verb would disable the one control code already in the field with no error anywhere.
+
+### What each control code does
+
+| Kind | Store call | Result shape |
+|------|-----------|--------------|
+| `reset` | `clear(scaleId)` | `{ok: true, kind: 'reset', hadState}` |
+| `undo` | `undo(scaleId)` | `{ok: true, kind: 'undo', undone}` |
+| `done` | `endPlacement(scaleId)` | `{ok: true, kind: 'done', hadState}` |
+
+All three are `ok: true` even when they found nothing to act on — `ok: false` is a refusal and
+paints a ⚠️ on the prompt, whereas a control scan that had no work still worked. The boolean
+(`hadState` / `undone`) is what the ack renders.
+
+**`done` routes to `endPlacement`, not to `clear`.** The two store methods are mechanically
+identical today and kept separate because they mean different things: `clear` is "forget it",
+`endPlacement` is "that placement is over, consume the slots". `done` is the human saying
+"process it now", which is the same event the bridge raises when the scale returns to rest —
+so it belongs on the `endPlacement` side. The result still reports `kind: 'done'` so the ack
+never conflates it with a reset.
+
+**Undo is one deep.** The setters overwrite, so rescanning already fixes a *wrong* slot;
+`undo` exists for the fix rescanning cannot express — taking a slot back to empty. A second
+consecutive `rs:undo` is a no-op rather than a deeper rewind, and `rs:clear` covers anything
+more tangled. Undo refreshes the window (a person scanned a cell), does not resurrect a
+`clear`/`done`, and has nothing to take back once the window has expired.
+
+**Every kind is matched explicitly.** `ApplyScanToComposition` has no fall-through arm. A kind
+the grammar produces with no handler here is refused by name (`UNHANDLED_SCAN_KIND`), still
+`handled: true` so it cannot leak into the UPC product lookup. The container branch used to be
+the implicit `else`, which made `rs:undo` and `rs:done` report as `UNKNOWN_CONTAINER`.
 
 **Case-sensitive throughout.** `DL:4`, `CT:mug`, `RS:clear` and `ct:Dinner-Bowl` all return
 `null`. A case-preserved id would miss its `containers.items` key and silently skip the tare,
 producing a wrong-but-plausible calorie count rather than a visible error.
 
-**The encoders validate and throw.** `encodeDensity` / `encodeContainer` reject anything
+**The encoders validate and throw.** `encodeDensity` / `encodeContainer` / `encodeControl` reject anything
 `parseScan` would decline. An id that encodes but does not parse produces a laminated QR that
 can never be read, and the remedy is a reprint rather than a code fix — so failing at
 PDF-generation time is the cheap option. `MAX_DENSITY_LEVEL` is exported and drives both the
@@ -199,15 +242,24 @@ restart before it takes effect.
 | `services/ScanNutritionService.mjs` — net weight, calories, macros | **shipped**, reviewed, 58 tests |
 | `value-objects/Composition.mjs` — immutable slots | **shipped**, 62 tests |
 | `3_applications/nutribot/CompositionStore.mjs` — per-scale state, window | **shipped**, 70 tests |
-| Config: macros, 25 containers, validator | not started |
-| `ApplyScanToComposition` use case | not started |
+| `ApplyScanToComposition` use case | **shipped**, handles density/container/reset/undo/done |
+| `nutriscan` route wiring (`5_composition/modules/scanDispatch.mjs`) | **shipped** |
+| Control grammar `rs:clear|undo|done` + one-deep undo | **shipped** |
+| `SheetLayout` / `QRSheetRenderer` / `SheetService` + `GET /api/v1/sheets/:id.pdf` | **shipped** |
+| `npm run sheet` local generator | **shipped** |
+| Config: real container table | **shipped**, but every `grams` is a PLACEHOLDER estimate |
 | Bridge integration: unit passthrough, session end, mutex | not started |
-| `nutriscan` route wiring | not started |
 | Memo (voice flow-state branch, Memo button) | not started |
-| `QRSheetRenderer` + sheet endpoint | not started |
+| Food grammar (`fd:` prefix) | not started — sheet prints foods as inert labels, if at all |
 
-Nothing above is reachable from the running system yet — the domain layer is built but no
-relay, bridge, or API path calls it.
+The scan path IS reachable end to end now: a code scanned on the kitchen relay reaches
+`barcode_relay.scan`, is claimed by the nutrition grammar, and applies to the live
+composition. What has NOT happened is a physical test — every verification so far has
+decoded rendered pixels rather than ink under kitchen light.
+
+**The tare weights are estimates.** An unknown or zero tare does not refuse: `computeNet`
+treats it as "no tare" and silently subtracts nothing, so a container scan today reports
+the gross weight as food. Weigh the nine vessels before trusting a tared entry.
 
 ---
 
