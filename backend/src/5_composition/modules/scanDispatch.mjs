@@ -133,9 +133,22 @@ export const SCAN_ROUTE_FALLBACK = Object.freeze({ nutribot: 'product', content:
  * says so: reading `message` unguarded WAS the bug. Same trust boundary, same
  * treatment — one read, wrapped, reused. `String()` because a thrown value need
  * not carry a string message, and `?? err` so a bare `throw 'nope'` still says
- * something useful instead of an empty string.
+ * something useful instead of an empty string. The `?? err` branch is itself
+ * inside the try, because `String(Object.create(null))` throws.
+ *
+ * The `?.` is belt-and-braces rather than the thing holding this up: the catch
+ * subsumes it, and `errText(null)` answers `''` with or without it. It is kept
+ * on the same grounds `emit` keeps its `typeof` guard — a null or undefined
+ * rejection is an ORDINARY shape, not a fault, and ordinary shapes are handled
+ * rather than caught. Mutation-testing says so out loud: dropping the `?.`
+ * changes no observable behaviour while the try/catch stands.
+ *
+ * EXPORTED for `app.mjs`, whose `onScan` holds the last-resort catch around
+ * `handleScan`. That catch sits at the very top of the scan path — a throw
+ * inside it has nothing above it at all — so it wants this treatment most, and
+ * gets it from here rather than from a second copy.
  */
-function errText(err) {
+export function errText(err) {
   try {
     return String(err?.message ?? err ?? '');
   } catch {
@@ -170,6 +183,142 @@ function assertRouteFallback(routeFallback, handlers) {
       );
     }
   }
+}
+
+function isObject(value) {
+  return typeof value === 'object' && value !== null;
+}
+
+function isFunction(value) {
+  return typeof value === 'function';
+}
+
+/** Present-but-null, told apart from absent. See the YAML note in DEP_CONTRACT. */
+function isNotNull(value) {
+  return value !== null;
+}
+
+/**
+ * What `app.mjs` must hand this factory, and what each argument must BE.
+ *
+ * ## Why this exists at all
+ *
+ * The call site is in `createApp`, a composition root of several thousand lines
+ * that no unit test can import — nothing in this repository exercises it. Every
+ * test of this module drives it through a harness of its own, so the arguments
+ * `app.mjs` actually passes are covered by NOTHING. Deleting
+ * `screenNames: barcodeScreenNames` from that call used to pass every gate in
+ * the repo while turning the leading-segment guard off house-wide.
+ *
+ * A test cannot reach that line, so the check lives here instead: a dropped or
+ * misspelled argument stops the boot, loudly, naming itself. That is the same
+ * trade `assertRouteFallback` above already makes, for the same reason — a
+ * WIRING bug in code, not a mistake in somebody's YAML.
+ *
+ * ## Absent is not the same as empty
+ *
+ * Every required key is checked on the RAW bag and destructured only afterwards,
+ * so no default can stand in for a missing argument. That is the whole mechanism:
+ * `screenNames = []` in the signature made `[]` (a household with no screens)
+ * and "nobody passed it" the same value, and the guard reads healthy in both.
+ * The keys with a deliberate default — `commandNames` and `routeFallback`, which
+ * `app.mjs` does not pass — keep theirs, and are listed as optional rather than
+ * required.
+ *
+ * `schoolLifecycle` and `applyScanToComposition` may be NULL: an unbuilt console
+ * and a disabled nutriscan are real states. They may not be ABSENT, because null
+ * is an answer and absence is not.
+ *
+ * ## Unknown keys are rejected, and that is what catches a misspelling
+ *
+ * A misspelled REQUIRED key already fails the missing check. A misspelled
+ * OPTIONAL one does not: `relayInstance` (singular) would leave `relayInstances`
+ * at nothing, strip every reader of its `scale_id`, and swallow every fridge
+ * scan in the house. Rejecting names this module does not know is the only thing
+ * that catches it.
+ *
+ * ## What is checked for SHAPE, and what only for presence
+ *
+ * Shape checks apply to values `app.mjs` BUILDS: services, loggers, the
+ * late-bound getters, and `screenNames` (assembled in code from device config,
+ * so an array is a code guarantee). A wrong shape there is a wiring bug and this
+ * throws on it.
+ *
+ * `relayInstances` and `relayConfig` come straight out of `barcode-relay.yml`
+ * and are checked only for being present and non-null. Their CONTENT is
+ * somebody's YAML, and this module already decided that argument the other way
+ * for the nutriscan table — refusing to boot the whole station over a mistyped
+ * config value is the worst available trade in the building. Null is the one
+ * exception because `relayInstances[device]` would then throw on every scan,
+ * from `handleScan`, outside the dispatcher's never-reject guard.
+ */
+const DEP_CONTRACT = Object.freeze({
+  schoolLifecycle:        { ok: () => true, want: 'present (may be null when the console is unbuilt)' },
+  triggerDispatchService: { ok: (v) => typeof v?.handleEvent === 'function', want: 'an object with handleEvent()' },
+  relayInstances:         { ok: isNotNull, want: 'non-null (indexed by reader id)' },
+  relayConfig:            { ok: isNotNull, want: 'non-null' },
+  applyScanToComposition: { ok: () => true, want: 'present (may be null when nutriscan is disabled)' },
+  getScaleNutribotBridge: { ok: isFunction, want: 'a function (late-bound getter)' },
+  getLogFoodFromUPC:      { ok: isFunction, want: 'a function (late-bound getter)' },
+  configService:          { ok: isObject, want: 'an object' },
+  userIdentityService:    { ok: isObject, want: 'an object' },
+  screenNames:            { ok: Array.isArray, want: 'an array of configured screen names' },
+  logger:                 { ok: isObject, want: 'a structured logger' },
+  barcodeLogger:          { ok: isObject, want: 'a structured logger' },
+});
+
+/**
+ * Keys with a deliberate default. Optional to PASS, still checked when passed —
+ * a `commandNames` string would iterate as characters and report no collisions
+ * while looking perfectly healthy.
+ */
+const OPTIONAL_DEPS = Object.freeze({
+  commandNames:  { ok: Array.isArray, want: 'an array of command names' },
+  routeFallback: { ok: isObject, want: 'an object mapping reader route -> namespace' },
+});
+
+/**
+ * Refuse to build on a bag that does not match the contract above.
+ *
+ * Runs FIRST, ahead of every other check in the factory, so a missing argument
+ * is reported as the missing argument rather than as whatever the first
+ * consumer of it complains about.
+ *
+ * Reports all three faults together, and every instance of each: one boot, one
+ * fix. Only KEY NAMES go into the message — a dependency value here is a live
+ * service object, and the name is the whole diagnosis anyway.
+ */
+function assertDeps(deps) {
+  if (!isObject(deps)) throw new TypeError('scanDispatch: dependencies must be an object');
+
+  const missing = [];
+  const malformed = [];
+  for (const [key, { ok, want }] of Object.entries(DEP_CONTRACT)) {
+    const value = deps[key];
+    if (value === undefined) missing.push(key);
+    else if (!ok(value)) malformed.push(`${key} (wants ${want})`);
+  }
+  for (const [key, { ok, want }] of Object.entries(OPTIONAL_DEPS)) {
+    if (deps[key] !== undefined && !ok(deps[key])) malformed.push(`${key} (wants ${want})`);
+  }
+
+  // `Object.hasOwn`, never `key in DEP_CONTRACT`. Both maps are ordinary object
+  // literals, so `in` resolves `Object.prototype` and would accept
+  // `constructor`, `toString` and `__proto__` as recognised dependency names —
+  // the same prototype hazard `PREFIX_REGISTRY` and `toRouteMap` are hardened
+  // against, met here with `hasOwn` instead of a null prototype so that exactly
+  // ONE thing decides the answer and a test can prove which. `Object.keys` on
+  // the caller's bag is own-and-enumerable for the same reason.
+  const unknown = Object.keys(deps).filter(
+    (key) => !Object.hasOwn(DEP_CONTRACT, key) && !Object.hasOwn(OPTIONAL_DEPS, key),
+  );
+
+  const problems = [];
+  if (missing.length) problems.push(`missing: ${missing.join(', ')}`);
+  if (malformed.length) problems.push(`malformed: ${malformed.join(', ')}`);
+  if (unknown.length) problems.push(`unknown: ${unknown.join(', ')}`);
+  if (problems.length)
+    throw new TypeError(`scanDispatch: bad dependencies — ${problems.join('; ')}`);
 }
 
 /**
@@ -217,10 +366,11 @@ function assertRouteFallback(routeFallback, handlers) {
  */
 function reportLeadingSegmentCollisions(screenNames, commandNames, logger) {
   const tags = new Set([...Object.keys(PREFIX_REGISTRY), ...LEGACY_NUTRITION_TAGS]);
-  const leading = [
-    ...(Array.isArray(screenNames) ? screenNames : []),
-    ...(Array.isArray(commandNames) ? commandNames : []),
-  ];
+  // Both lists are checked as arrays by `assertDeps`, so they are spread
+  // directly. An `Array.isArray` fallback here would be a second opinion no test
+  // could reach, and would put back the exact failure the contract removes: a
+  // non-array quietly contributing nothing while the guard reports all clear.
+  const leading = [...screenNames, ...commandNames];
   const collisions = [...new Set(
     leading.filter((name) => tags.has(name)),
   )];
@@ -234,46 +384,59 @@ function reportLeadingSegmentCollisions(screenNames, commandNames, logger) {
 }
 
 /**
+ * Every key below is REQUIRED unless marked optional; see `DEP_CONTRACT` for why
+ * the bag is checked before it is destructured.
+ *
  * @param {object} deps
- * @param {{handlesCode: Function, handleScan: Function|null}} deps.schoolLifecycle
+ * @param {{handlesCode: Function, handleScan: Function|null}|null} deps.schoolLifecycle  null when
+ *   the console is not built
  * @param {{handleEvent: Function}} deps.triggerDispatchService
- * @param {Record<string, object>} [deps.relayInstances]  `relays:` block from barcode-relay.yml
- * @param {object} [deps.relayConfig]                     the whole barcode-relay app config
- * @param {{execute: Function}|null} [deps.applyScanToComposition]  null when nutriscan is disabled
- * @param {() => ({refreshPrompt?: Function}|null)} [deps.getScaleNutribotBridge]  LATE-BOUND — the
+ * @param {Record<string, object>} deps.relayInstances  `relays:` block from barcode-relay.yml
+ * @param {object} deps.relayConfig                     the whole barcode-relay app config
+ * @param {{execute: Function}|null} deps.applyScanToComposition  null when nutriscan is disabled
+ * @param {() => ({refreshPrompt?: Function}|null)} deps.getScaleNutribotBridge  LATE-BOUND — the
  *   bridge is constructed long after this module and only exists if the head of household and bot
  *   id resolve, so it is read at scan time, never captured.
- * @param {() => ({execute: Function})} [deps.getLogFoodFromUPC]  late-bound for the same reason:
+ * @param {() => ({execute: Function})} deps.getLogFoodFromUPC  late-bound for the same reason:
  *   `nutribotServices` is built further down `app.mjs` than the relay wiring.
  * @param {object} deps.configService
  * @param {object} deps.userIdentityService
- * @param {string[]} [deps.screenNames]   configured screen names, for the collision check
+ * @param {string[]} deps.screenNames     configured screen names, for the collision check. Required
+ *   even when empty — pass `[]` to say a household has no screens.
  * @param {object} deps.logger            STRUCTURED logger for the dispatcher itself
  * @param {object} deps.barcodeLogger     the channel the lifted branches already logged on; keeping
  *   it is what keeps every existing event name and payload byte-identical
- * @param {Record<string,string>} [deps.routeFallback]
+ * @param {string[]} [deps.commandNames]  OPTIONAL, defaults to the live command map
+ * @param {Record<string,string>} [deps.routeFallback]  OPTIONAL, defaults to SCAN_ROUTE_FALLBACK
  * @returns {{handleScan: (relay: object) => Promise<object>, namespaces: string[],
  *            screenCollisions: string[]}}
  */
-export function createScanDispatch({
-  schoolLifecycle,
-  triggerDispatchService,
-  relayInstances = {},
-  relayConfig = {},
-  applyScanToComposition = null,
-  getScaleNutribotBridge = () => null,
-  getLogFoodFromUPC = () => null,
-  configService,
-  userIdentityService,
-  screenNames = [],
-  // Defaulted rather than injected by `app.mjs`: this is a closed set in code,
-  // not config. It is a PARAMETER only so the collision check can be driven with
-  // a colliding name — an unfalsifiable guard is not a guard.
-  commandNames = KNOWN_COMMANDS,
-  logger,
-  barcodeLogger,
-  routeFallback = SCAN_ROUTE_FALLBACK,
-} = {}) {
+export function createScanDispatch(deps = {}) {
+  // FIRST, and on the RAW bag: a destructuring default cannot tell an argument
+  // that was omitted from one that was passed empty, so nothing may be
+  // destructured until the bag has been checked. See `DEP_CONTRACT`.
+  assertDeps(deps);
+
+  const {
+    schoolLifecycle,
+    triggerDispatchService,
+    relayInstances,
+    relayConfig,
+    applyScanToComposition,
+    getScaleNutribotBridge,
+    getLogFoodFromUPC,
+    configService,
+    userIdentityService,
+    screenNames,
+    // Defaulted rather than injected by `app.mjs`: this is a closed set in code,
+    // not config. It is a PARAMETER only so the collision check can be driven
+    // with a colliding name — an unfalsifiable guard is not a guard.
+    commandNames = KNOWN_COMMANDS,
+    logger,
+    barcodeLogger,
+    routeFallback = SCAN_ROUTE_FALLBACK,
+  } = deps;
+
   // Per-PROCESS, keyed by reason — exactly as the `let` in `app.mjs` was. Both
   // swallow reasons are decided at STARTUP (a broken scales.yml, or a reader
   // deliberately configured without a scale), so warning per scan buried the log
