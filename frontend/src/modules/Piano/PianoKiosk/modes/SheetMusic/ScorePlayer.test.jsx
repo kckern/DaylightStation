@@ -1152,15 +1152,15 @@ describe('ScorePlayer — Listen mode', () => {
     renderPlayer();
     pickMode('Listen');
     await act(async () => {});
-    // Half speed (0.5×) → each step takes 2000ms.
+    // 80% speed (0.8×) → each step takes 1250ms.
     fireEvent.click(screen.getByRole('button', { name: /^tempo/i }));
-    fireEvent.click(screen.getByRole('button', { name: /^50%/ }));
+    fireEvent.click(screen.getByRole('button', { name: /^80%/ }));
     await act(async () => {});
     screen.getByRole('button', { name: 'Play' }).click();
     await act(async () => {});
-    act(() => vi.advanceTimersByTime(1050)); // < 2000ms → not yet advanced
+    act(() => vi.advanceTimersByTime(1100)); // < 1250ms → not yet advanced
     expect(screen.getByText('1 / 4')).toBeTruthy();
-    act(() => vi.advanceTimersByTime(1050)); // > 2000ms total → advanced one step
+    act(() => vi.advanceTimersByTime(200)); // > 1250ms total → advanced one step
     expect(screen.getByText('2 / 4')).toBeTruthy();
   });
 
@@ -1211,7 +1211,7 @@ describe('ScorePlayer — Listen mode', () => {
     act(() => { fireEvent.click(screen.getByRole('button', { name: 'Key' })); }); // open the Key sheet
     // The stub's default parse has written key fifths:0/mode:null (C major), so the
     // +1 cell speaks the sounding key name (C# major) per Task 5 — not a bare offset.
-    act(() => { fireEvent.click(screen.getByRole('button', { name: /C# major/ })); }); // tap +1 semitone
+    act(() => { fireEvent.click(screen.getByRole('button', { name: /\+1/ })); }); // tap +1 semitone
     await act(async () => {});
     expect(h.sendPanic).toHaveBeenCalled(); // silenced on the view change
     // …and the user is not stranded mid-piece: the rebuild-pause resumes itself
@@ -1448,7 +1448,7 @@ describe('ScorePlayer — rebuild-pause resume (H5/M3)', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Key' })); // open the Key sheet
     // Default parse key is fifths:0/mode:null (C major), so the +1 cell speaks the
     // sounding key name (C# major) — see Task 5.
-    await act(async () => { fireEvent.click(screen.getByRole('button', { name: /C# major/ })); }); // tap +1 semitone
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: /\+1/ })); }); // tap +1 semitone
     expect(screen.queryByRole('button', { name: 'Pause' })).toBeNull(); // still paused — the old key must not play on
 
     // New key engraved → the run picks itself back up, in the key on the page.
@@ -1620,29 +1620,29 @@ describe('ScorePlayer — metronome in Learn (M1/M2/M4)', () => {
     renderPlayer();
     enterLearn();
     act(() => { fireEvent.click(screen.getByRole('button', { name: /^tempo/i })); });
-    act(() => { fireEvent.click(screen.getByRole('button', { name: /^50%/ })); }); // anchored — /50%/ also hits "150%"
+    act(() => { fireEvent.click(screen.getByRole('button', { name: /^60%/ })); });
     act(() => { fireEvent.click(screen.getByRole('button', { name: /metronome/i })); });
-    expect(h.clickSched.start).toHaveBeenCalledWith(50); // 100 × 0.5
+    expect(h.clickSched.start).toHaveBeenCalledWith(60); // 100 × 0.6
   });
 
   it('retunes a running Learn click live with the EXACT bpm (no rounding)', () => {
-    h.layoutExtras = { tempoEntries: [{ onsetQuarter: 0, bpm: 63 }] }; // 63 × 0.5 = 31.5 — rounding would corrupt it
+    h.layoutExtras = { tempoEntries: [{ onsetQuarter: 0, bpm: 100 }] }; // 100 × 0.7 = 70 — rounding would corrupt it
     renderPlayer();
     enterLearn();
     act(() => { fireEvent.click(screen.getByRole('button', { name: /metronome/i })); }); // ON first
-    expect(h.clickSched.start).toHaveBeenCalledWith(63);
+    expect(h.clickSched.start).toHaveBeenCalledWith(100);
     act(() => { fireEvent.click(screen.getByRole('button', { name: /^tempo/i })); });
-    act(() => { fireEvent.click(screen.getByRole('button', { name: /^50%/ })); }); // change tempo while ticking
+    act(() => { fireEvent.click(screen.getByRole('button', { name: /^70%/ })); }); // change tempo while ticking
     // The hook must receive the exact product, not a rounded display value —
-    // (playTimeline scales by exact 1/tempoMult): 32 vs 31.5 = a beat per ~64.
-    expect(h.clickSched.setBpm).toHaveBeenCalledWith(31.5);
+    // (playTimeline scales by exact 1/tempoMult): 100 × 0.7 = 70.
+    expect(h.clickSched.setBpm).toHaveBeenCalledWith(70);
   });
 
   it('tempo steps show the resulting BPM (M4)', () => {
     renderPlayer(); // Listen
     act(() => { fireEvent.click(screen.getByRole('button', { name: /^tempo/i })); });
     // Each percent step also shows the BPM it produces (base 100 from the fixture).
-    expect(screen.getByRole('button', { name: /^50%.*50/ })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^60%.*60/ })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /^100%.*100/ })).toBeInTheDocument();
   });
 });
