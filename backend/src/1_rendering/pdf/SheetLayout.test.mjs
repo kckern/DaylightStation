@@ -240,3 +240,38 @@ describe('layout — justify', () => {
     expect(r.cells[0].x).toBeCloseTo(PAGE.marginPt, 5);
   });
 });
+
+describe('layout — section dividers', () => {
+  const contentW = PAGE.widthPt - 2 * PAGE.marginPt;
+
+  it('emits no rules unless a block asks for one', () => {
+    const r = layout({ page: PAGE, blocks: [{ id: 'a', title: 'A', cols: 3, rows: 1, count: 3, gapPt: 8 }] });
+    expect(r.rules).toEqual([]);
+  });
+
+  it('emits a full-width rule above a divided block, and pushes its title below it', () => {
+    const plain = layout({
+      page: PAGE,
+      blocks: [{ id: 'a', title: 'A', cols: 3, rows: 1, count: 3, gapPt: 8, titleHeightPt: 20 }],
+    });
+    const ruled = layout({
+      page: PAGE,
+      blocks: [{ id: 'a', title: 'A', cols: 3, rows: 1, count: 3, gapPt: 8, titleHeightPt: 20, divider: true, dividerGapPt: 9 }],
+    });
+
+    expect(ruled.rules).toHaveLength(1);
+    expect(ruled.rules[0]).toMatchObject({ page: 0, x: PAGE.marginPt, w: contentW });
+    // the rule sits where the title used to start; the title moves down past it
+    expect(ruled.rules[0].y).toBeCloseTo(plain.titles[0].y, 5);
+    expect(ruled.titles[0].y - plain.titles[0].y).toBeCloseTo(9, 5);
+  });
+
+  it('repeats the rule on every page a divided block continues onto', () => {
+    const r = layout({
+      page: PAGE,
+      blocks: [{ id: 'a', title: 'A', cols: 5, rows: 5, count: 30, gapPt: 8, titleHeightPt: 20, divider: true }],
+    });
+    expect(r.pages).toBe(2);
+    expect(r.rules.map((x) => x.page)).toEqual([0, 1]);
+  });
+});
