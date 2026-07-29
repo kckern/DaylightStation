@@ -38,7 +38,13 @@ function isUserScoped(item) {
  * for the genuine no-user path (guest / no persistent user selected).
  */
 export function resumeSecondsFor(item) {
-  if (lectureUserStatus(item).watched) return 0;
+  // The restart-from-0 check intentionally reads device-level `lectureStatus`
+  // (not the user-scoped-only `lectureUserStatus`) for unenriched items: this
+  // is the guest/no-user resume path, where "this device says I finished it"
+  // is a reasonable restart signal for the person sitting at THIS kiosk right
+  // now — unlike badges, it's never shown to, or attributed to, anyone else.
+  const watched = isUserScoped(item) ? lectureUserStatus(item).watched : lectureStatus(item).watched;
+  if (watched) return 0;
   if (item?.userPlayhead != null) return item.userPlayhead;
   if (isUserScoped(item)) return 0;
   return deriveResumeSeconds(item);
@@ -57,11 +63,14 @@ export function deriveResumeSeconds(item) {
 }
 
 /**
- * Tile badge state from media_memory signals: watched flag + integer percent.
- * The backend `isWatched` flag is unreliable for generic Plex collections (it
+ * Device-level watch status from Plex media-memory signals (watched flag +
+ * integer percent) — shared by everyone on the kiosk, so it must NEVER be
+ * shown as a per-user badge (see `lectureUserStatus`). Its only remaining
+ * consumer is `resumeSecondsFor`'s guest/no-user restart-from-0 check. The
+ * backend `isWatched` flag is unreliable for generic Plex collections (it
  * comes back true with playCount 0 / progress 0), so derive "watched" from the
  * honest per-item history instead: a real completed view (playCount) or
- * near-complete progress. Otherwise show the in-progress percent (or nothing).
+ * near-complete progress.
  */
 export function lectureStatus(item) {
   const pct = num(item?.watchProgress);
@@ -73,9 +82,15 @@ export function lectureStatus(item) {
 }
 
 /**
- * Per-user watch status — prefers the user-keyed fields from the piano courses
- * endpoint (userWatched/userPercent) when present, else falls back to the
- * device-level lectureStatus (Plex media-memory signals).
+ * Per-user watch status for anything shown/derived as a badge — tile
+ * checkmarks/percent, sequential-lock gating, "current lesson" selection.
+ * Reads ONLY the user-keyed fields from the piano courses endpoint
+ * (userWatched/userPercent); an item with no per-user enrichment (the guest /
+ * no-persistent-user fallback never adds these fields) reports unwatched/0
+ * rather than falling back to device-level Plex media-memory signals — those
+ * are shared by everyone on the kiosk and must never be attributed to, or
+ * shown to, a specific person. (Device-level `lectureStatus` still backs the
+ * narrow resume-restart decision in `resumeSecondsFor` — see its comment.)
  */
 export function lectureUserStatus(item) {
   if (isUserScoped(item)) {
@@ -83,5 +98,5 @@ export function lectureUserStatus(item) {
     const percent = pct ? Math.max(0, Math.min(100, Math.round(pct))) : 0;
     return { watched: !!item.userWatched, percent, completedAt: item.userCompletedAt || null };
   }
-  return lectureStatus(item);
+  return { watched: false, percent: 0, completedAt: null };
 }
