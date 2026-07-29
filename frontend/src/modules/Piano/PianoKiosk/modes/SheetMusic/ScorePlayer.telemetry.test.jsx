@@ -58,6 +58,10 @@ const h = vi.hoisted(() => ({
     { midi: 62, midis: [62], onsetQuarter: 1, x: 160, top: 10, bottom: 200, system: 0 },
   ],
   layoutExtras: null,
+  // An OSMD parse/engrave throw takes the renderer's catch path: nothing is
+  // published and onReady never runs, so the session gets no score.load.
+  failEngrave: false,
+  publishes: 0, // how many times the stub published a layout (re-engrave counter)
 }));
 const deriveSteps = (events) => events.map((e) => ({
   onsetQuarter: e.onsetQuarter,
@@ -85,6 +89,8 @@ vi.mock('../../../../MusicNotation/renderers/MusicXmlRenderer.jsx', async () => 
   return {
     MusicXmlRenderer: ({ onLayout, onReady, children }) => {
       useEffect(() => {
+        if (h.failEngrave) return; // engrave threw: no layout, no onReady (so no score.load)
+        h.publishes += 1;
         const events = h.events;
         const steps = deriveSteps(events);
         const notes = deriveNotes(steps).map((n) => ({ ...n }));
@@ -111,6 +117,8 @@ beforeEach(() => {
   rec.startRecorder.mockClear();
   rec.stopRecorder.mockClear();
   h.layoutExtras = null;
+  h.failEngrave = false;
+  h.publishes = 0;
   tel.recordFire = vi.fn();
   // Emitted events are the assertion surface for the control telemetry below;
   // the logger object identity must stay stable (ScorePlayer memoizes on it).
@@ -341,5 +349,61 @@ describe('ScorePlayer — one session log per score open (audit L1)', () => {
     rerender(view('files:b.musicxml', '<score-partwise/>'));
     await act(async () => {});
     expect(startCount() - before).toBe(2);
+  });
+});
+
+// ── Task 24: a failed engrave must still be attributable (audit H6) ───────────
+// The mount-time session-log.start carried only { app }, so the score id reached
+// the run log solely through score.load — and logLoad runs from onReady, which
+// MusicXmlRenderer fires only on a SUCCESSFUL extraction. The field logs hold 24
+// score.load events for 27 score opens: ~3 sessions per corpus have events but no
+// attributable score, and those are exactly the failed/slow engraves worth
+// investigating.
+describe('ScorePlayer — the session log names its score (audit H6)', () => {
+  const starts = () => getRecentEvents(300)
+    .filter((e) => e.event === 'session-log.start' && e.context?.app === 'piano-sheetmusic');
+  // Everything logged since the last session file was opened — i.e. this run's log.
+  const sinceLastStart = () => {
+    const evs = getRecentEvents(300);
+    const i = evs.map((e) => e.event).lastIndexOf('session-log.start');
+    return evs.slice(i);
+  };
+
+  beforeEach(() => { telMode.real = true; });
+
+  it('puts the score id on the start event the mount writes', async () => {
+    renderPlayer();
+    await act(async () => {});
+    expect(starts().at(-1)?.context?.scoreId).toBe('files:t.musicxml');
+  });
+
+  it('names the score even when the engrave never completes (no score.load at all)', async () => {
+    h.failEngrave = true; // OSMD threw → onReady never runs
+    renderPlayer();
+    await act(async () => {});
+    const run = sinceLastStart();
+    expect(run.some((e) => e.event === 'score.load')).toBe(false); // the gap being covered
+    expect(run[0].context?.scoreId).toBe('files:t.musicxml');      // …still attributable
+  });
+
+  it('names the NEW score after a document change, and does not re-engrave in a loop', async () => {
+    const view = (id, xml) => (
+      <MemoryRouter><ScorePlayer score={{ id, title: id, musicXml: xml }} /></MemoryRouter>
+    );
+    const { rerender } = render(view('files:a.musicxml', '<score/>'));
+    await act(async () => {});
+    expect(starts().at(-1)?.context?.scoreId).toBe('files:a.musicxml');
+    expect(h.publishes).toBe(1);
+
+    rerender(view('files:b.musicxml', '<score-partwise/>'));
+    await act(async () => {});
+    expect(starts().at(-1)?.context?.scoreId).toBe('files:b.musicxml'); // not the stale one
+    // The logger identity must not churn: a fresh child per render would re-fire
+    // the renderer's onLayout/onReady forever (why its memo deps are []). One
+    // engrave per document, and settling does not add more.
+    expect(h.publishes).toBe(2);
+    await act(async () => {});
+    await act(async () => {});
+    expect(h.publishes).toBe(2);
   });
 });

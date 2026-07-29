@@ -24,7 +24,30 @@ export function useScoreTelemetry({ id, tickMs = 100 }) {
   // backend per-app session file (media/logs/piano-sheetmusic/{ts}.jsonl). A
   // startSession() 'session-log.start' opens that file; all subsequent events
   // (load / follow / polish / focus / mode / transpose) land in the same run log.
-  const logger = useMemo(() => getLogger().child({ component: 'piano-score-player', app: 'piano-sheetmusic', sessionLog: true }), []);
+  //
+  // `scoreId` names the score ON THE CONTEXT, so the session-log.start the child
+  // logger auto-emits at mount (Logger.js:218) already carries it. Without it the
+  // id reached the log only via score.load — which is emitted from onReady, and
+  // MusicXmlRenderer fires onReady only on a SUCCESSFUL extraction. A failed or
+  // abandoned engrave therefore produced a session with events and no attributable
+  // score (24 score.load events for 27 field score opens), and those are precisely
+  // the sessions worth reading (audit H6).
+  //
+  // It is a live GETTER over a ref rather than a plain value because the logger
+  // identity must stay stable for the life of the component (memo deps []): a
+  // churning identity re-fires the renderer's onLayout/onReady — an infinite
+  // re-engrave loop (see ScorePlayer's note) — and every freshly created sessionLog
+  // child auto-opens ANOTHER session file. Logger.child() spreads its context at
+  // EMIT time, so a stable object with a getter reports the CURRENT score on every
+  // event, including the fresh start a subsequent document opens.
+  const idRef = useRef(id);
+  idRef.current = id;
+  const logger = useMemo(() => getLogger().child({
+    component: 'piano-score-player',
+    app: 'piano-sheetmusic',
+    sessionLog: true,
+    get scoreId() { return idRef.current; },
+  }), []); // eslint-disable-line react-hooks/exhaustive-deps
   const drifts = useRef([]);
   const gaps = useRef([]);
   const stalls = useRef(0);
