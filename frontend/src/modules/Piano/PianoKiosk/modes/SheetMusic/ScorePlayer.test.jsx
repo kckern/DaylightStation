@@ -46,6 +46,14 @@ const h = vi.hoisted(() => ({
   prefs: {},
   // usePracticeRecord's `record` (Task 15) — {} by default (no history).
   practice: {},
+  // usePianoPreferences' `loaded` (Task 15 review fix round 1) — true by
+  // default (every OTHER test's prefs are "already resolved"). A test that
+  // needs to prove the seeding effect WAITS for a late-resolving prefs fetch
+  // sets this false before render, then flips it true and notifies
+  // prefsListeners (subscribed by the mock hook below) to simulate the GET
+  // landing after the score has already engraved.
+  prefsLoaded: true,
+  prefsListeners: new Set(),
 }));
 
 // Derive per-onset full-staff steps from the melody events: the first pitch of
@@ -90,15 +98,27 @@ vi.mock('./usePracticeRecord.js', () => ({
 // usePianoPreferences (Task 15) reaches usePianoUser exactly like
 // usePracticeRecord does — mock it out for the same reason (no
 // PianoUserProvider in this harness). getPref reads h.prefs, which starts
-// empty and individual tests can seed before render.
-vi.mock('../../usePianoPreferences.js', () => ({
-  usePianoPreferences: () => ({
-    prefs: h.prefs,
-    loaded: true,
-    getPref: (key, fallback) => (key in h.prefs ? h.prefs[key] : fallback),
-    setPref: vi.fn(),
-  }),
-}));
+// empty and individual tests can seed before render. `loaded` reads
+// h.prefsLoaded LIVE via a subscribed re-render (not just at mock-creation
+// time): a real hook flips `loaded` false→true asynchronously after its own
+// GET resolves, and the seeding effect must be provably re-entered when that
+// happens — a static `loaded: true` can't exercise that path.
+vi.mock('../../usePianoPreferences.js', async () => {
+  const { useEffect, useReducer } = await import('react');
+  return { usePianoPreferences: () => {
+    const [, bump] = useReducer((c) => c + 1, 0);
+    useEffect(() => {
+      h.prefsListeners.add(bump);
+      return () => h.prefsListeners.delete(bump);
+    }, [bump]);
+    return {
+      prefs: h.prefs,
+      loaded: h.prefsLoaded,
+      getPref: (key, fallback) => (key in h.prefs ? h.prefs[key] : fallback),
+      setPref: vi.fn(),
+    };
+  } };
+});
 
 // Stub the engraver: report a known layout (melody events + derived per-onset
 // steps), render the cursor / light-up children.
@@ -166,6 +186,8 @@ beforeEach(() => {
   h.recordTierBest.mockClear();
   h.prefs = {};
   h.practice = {};
+  h.prefsLoaded = true;
+  h.prefsListeners = new Set();
 });
 
 // Mode switching now lives in the header crumb → ModeSheet (wave-2 B), not a
@@ -2623,6 +2645,47 @@ describe('ScorePlayer — Learn hand preference (Task 15)', () => {
     // Both hands stay on — the restored choice, not the preference, won.
     expect(screen.getByRole('button', { name: 'Right hand' })).toHaveAttribute('aria-pressed', 'true');
     expect(screen.getByRole('button', { name: 'Left hand' })).toHaveAttribute('aria-pressed', 'true');
+  });
+
+  // Review fix round 1, finding 1: the prefs GET is a fresh round-trip per user
+  // switch while OSMD engraving is pure client-side after mount — a fast score
+  // can report notes before the real learnHands preference resolves. The seed
+  // must wait for prefsLoaded, not fire off the household default and latch.
+  it('waits for prefs to load before seeding — a fast-engraving score does not seed off the household default early', async () => {
+    h.prefsLoaded = false; // the GET is still in flight when the score engraves
+    h.layoutExtras = GRAND_SIX;
+    renderPlayer();
+    pickMode('Learn');
+    await act(async () => {});
+    // Still unresolved — must NOT have seeded off 'both' (the household default)
+    // and latched there; both hands stay on exactly as they started.
+    expect(screen.getByRole('button', { name: 'Right hand' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('button', { name: 'Left hand' })).toHaveAttribute('aria-pressed', 'true');
+    // Prefs resolve late, carrying the real per-user choice.
+    h.prefs.learnHands = 'lh';
+    h.prefsLoaded = true;
+    act(() => { h.prefsListeners.forEach((fn) => fn()); });
+    await act(async () => {});
+    expect(screen.getByRole('button', { name: 'Right hand' })).toHaveAttribute('aria-pressed', 'false');
+    expect(screen.getByRole('button', { name: 'Left hand' })).toHaveAttribute('aria-pressed', 'true');
+  });
+
+  // Review fix round 1, finding 2: a manual hand pick (any mode, this session)
+  // must outrank the resolved preference the first time Learn is entered —
+  // seeding must never clobber a choice the user already made.
+  it('a manual hand toggle in Listen wins over the preference — Learn does not overwrite it', async () => {
+    h.prefs.learnHands = 'lh'; // would seed LH-only on Learn entry if nothing else intervened
+    h.layoutExtras = GRAND_SIX;
+    renderPlayer(); // opens in Listen
+    await act(async () => {});
+    act(() => { fireEvent.click(screen.getByRole('button', { name: 'Left hand' })); }); // manual: drop LH → RH-only
+    expect(screen.getByRole('button', { name: 'Right hand' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('button', { name: 'Left hand' })).toHaveAttribute('aria-pressed', 'false');
+    pickMode('Learn');
+    await act(async () => {});
+    // The manual pick (RH-only) survives — the lh preference is NOT applied.
+    expect(screen.getByRole('button', { name: 'Right hand' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('button', { name: 'Left hand' })).toHaveAttribute('aria-pressed', 'false');
   });
 });
 
