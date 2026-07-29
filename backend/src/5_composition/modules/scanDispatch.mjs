@@ -70,11 +70,27 @@
  * grammars with no segments at all. One trim, in the one place a space changes
  * the meaning.
  *
+ * ## KNOWN PHASE 1 GAP: an unhandled namespace has no way to answer the person
+ *
+ * `book` is a real parse outcome with no handler here, so an ISBN-13 resolves,
+ * finds nothing registered, and comes back `{ok: false, domain: 'book'}` — which
+ * `onScan` discards. The scan is SILENT at the scanner. That is a real loss for
+ * the one place it can happen today: scanning a book at the food scale used to
+ * reach the UPC lookup and get a "not found" reply in Telegram, which was wrong
+ * but was at least an ANSWER. It is user error either way and Phase 1 ships no
+ * book handler on purpose, so this is not worth a special case — but whoever
+ * builds that handler should know the FEEDBACK path is missing too, not just the
+ * handler. The dispatcher's whole premise is that a scanner which appears to do
+ * nothing is indistinguishable from a broken one; honouring that here means
+ * `onScan` (or a `book` handler) eventually has to render the Outcome it is
+ * currently throwing away.
+ *
  * @module composition/modules/scanDispatch
  */
 
 import { ScanDispatcher } from '#apps/scan/ScanDispatcher.mjs';
-import { PREFIX_REGISTRY } from '#domains/scan/ScanCode.mjs';
+import { PREFIX_REGISTRY, LEGACY_NUTRITION_TAGS } from '#domains/scan/ScanCode.mjs';
+import { KNOWN_COMMANDS } from '#domains/barcode/BarcodeCommandMap.mjs';
 import { TriggerEvent } from '#domains/trigger/TriggerEvent.mjs';
 import { routeNutribotScan, nutriscanRefusalNotice } from '#apps/nutribot/lib/routeNutribotScan.mjs';
 
@@ -121,14 +137,38 @@ function assertRouteFallback(routeFallback, handlers) {
 }
 
 /**
- * No configured screen may be named after a registry prefix.
+ * Nothing that can LEAD a legacy positional code may share a name with a scan
+ * tag.
  *
  * Deferred to composition from `ScanCode`, which imports nothing and so cannot
- * read config: this is the first place both lists are in hand. A legacy
- * positional code is `screen:source:id`, so a screen named `go` would make
- * `go:plex:1` resolve as a PREFIXED content code with body `plex:1` — the screen
- * segment dropped, the content sent wherever the reader defaults to. No such
- * screen exists today.
+ * read config: this is the first place both lists are in hand. A legacy code is
+ * `<screen>:<source>:<id>` or `<command>:<arg>`, and both steps 1 and 2 of the
+ * resolution order split at the FIRST colon — so a leading segment that matches
+ * a tag is claimed by the tag and the segment is gone.
+ *
+ * ## Two tag sets, and the SECOND one is the dangerous one
+ *
+ * `PREFIX_REGISTRY` (`go`/`cmd`/`nut`/`sch`) is the obvious half: a screen named
+ * `go` would make `go:plex:1` resolve as a PREFIXED content code with body
+ * `plex:1` — the screen dropped, the content sent wherever the reader defaults
+ * to.
+ *
+ * `LEGACY_NUTRITION_TAGS` (`dl`/`ct`/`rs`) is the half that matters more, and it
+ * is THIS COMMIT that made it matter. `ScanVocabularyService` has always warned
+ * that "the one theoretical collision is a screen named `dl`, `ct`, or `rs`",
+ * but until now the fridge grammar was consulted only when the reader's route
+ * was `nutribot`, so a `dl`-named screen still worked on every content reader in
+ * the house. Step 2 is ROUTE-INDEPENDENT: `dl:plex:1` now resolves to nutrition
+ * on a content reader too, where it is swallowed rather than dispatched. The
+ * blast radius grew here, so the guard belongs here.
+ *
+ * `KNOWN_COMMANDS` is checked alongside the configured screens because a command
+ * leads a legacy code exactly as a screen does — `volume:30` is `<tag>:<rest>` to
+ * the same `indexOf(':')`. It is a closed set in code rather than config, but a
+ * check that covered only half the leading segments would be a guard placed
+ * where the risk LOOKS like it is.
+ *
+ * No collision exists today, in either direction.
  *
  * Reported, NOT thrown. The collision breaks barcodes for one screen; a throw
  * here would stop the whole station from booting over a name in `devices.yml`,
@@ -137,16 +177,21 @@ function assertRouteFallback(routeFallback, handlers) {
  * offending screen's codes were already broken before the check ran, so failing
  * loudly buys nothing and costs everything else in the house.
  *
- * @returns {string[]} colliding screen names, for a caller (or a test) to assert on
+ * @returns {string[]} colliding names, for a caller (or a test) to assert on
  */
-function reportScreenPrefixCollisions(screenNames, logger) {
-  const tags = new Set(Object.keys(PREFIX_REGISTRY));
-  const collisions = (Array.isArray(screenNames) ? screenNames : [])
-    .filter((name) => typeof name === 'string' && tags.has(name));
+function reportLeadingSegmentCollisions(screenNames, commandNames, logger) {
+  const tags = new Set([...Object.keys(PREFIX_REGISTRY), ...LEGACY_NUTRITION_TAGS]);
+  const leading = [
+    ...(Array.isArray(screenNames) ? screenNames : []),
+    ...(Array.isArray(commandNames) ? commandNames : []),
+  ];
+  const collisions = [...new Set(
+    leading.filter((name) => typeof name === 'string' && tags.has(name)),
+  )];
   if (collisions.length > 0) {
-    logger?.error?.('scan.screen_name.shadows_prefix', {
-      screens: collisions,
-      hint: 'rename the screen; a `<screen>:<source>:<id>` code named after a prefix loses its screen',
+    logger?.error?.('scan.leading_segment.shadows_tag', {
+      names: collisions,
+      hint: 'rename it; a `<screen|command>:...` code named after a scan tag loses that segment',
     });
   }
   return collisions;
@@ -185,6 +230,10 @@ export function createScanDispatch({
   configService,
   userIdentityService,
   screenNames = [],
+  // Defaulted rather than injected by `app.mjs`: this is a closed set in code,
+  // not config. It is a PARAMETER only so the collision check can be driven with
+  // a colliding name — an unfalsifiable guard is not a guard.
+  commandNames = KNOWN_COMMANDS,
   logger,
   barcodeLogger,
   routeFallback = SCAN_ROUTE_FALLBACK,
@@ -334,7 +383,7 @@ export function createScanDispatch({
   const probeHandlers = buildHandlers(null);
   assertRouteFallback(routeFallback, probeHandlers);
   const probe = new ScanDispatcher({ handlers: probeHandlers, routeFallback, logger });
-  const screenCollisions = reportScreenPrefixCollisions(screenNames, barcodeLogger);
+  const screenCollisions = reportLeadingSegmentCollisions(screenNames, commandNames, barcodeLogger);
 
   /**
    * @param {{code?: string, device?: string, route?: string, ts?: string}} relay
