@@ -2,32 +2,48 @@ import { describe, it, expect, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import HandsControl from './HandsControl.jsx';
 
+// Two independent L/R hand toggles replace the old Both/RH/LH radio row.
+// External value vocabulary is unchanged: both | rh | lh | none.
 describe('HandsControl', () => {
-  it('variant="hands" renders Both/RH/LH, marks the value, reports selection', () => {
+  it('lights both toggles for "both" and turning one off selects the other hand', () => {
     const onChange = vi.fn();
     render(<HandsControl variant="hands" value="both" onChange={onChange} />);
     expect(screen.getByRole('group', { name: /hands/i })).toBeInTheDocument();
-    const both = screen.getByRole('radio', { name: 'Both' });
-    expect(both).toHaveAttribute('aria-checked', 'true');
-    fireEvent.click(screen.getByRole('radio', { name: 'LH' }));
+    const left = screen.getByRole('button', { name: 'Left hand' });
+    const right = screen.getByRole('button', { name: 'Right hand' });
+    expect(left).toHaveAttribute('aria-pressed', 'true');
+    expect(right).toHaveAttribute('aria-pressed', 'true');
+    fireEvent.click(right); // both minus RH → LH only
     expect(onChange).toHaveBeenCalledWith('lh');
   });
 
-  it('variant="mypart" includes None and labels the group "My part"', () => {
+  it('turning the second hand on selects "both"', () => {
     const onChange = vi.fn();
-    render(<HandsControl variant="mypart" value="none" onChange={onChange} />);
-    expect(screen.getByRole('group', { name: /my part/i })).toBeInTheDocument();
-    expect(screen.getByRole('radio', { name: 'None' })).toHaveAttribute('aria-checked', 'true');
-    fireEvent.click(screen.getByRole('radio', { name: 'RH' }));
-    expect(onChange).toHaveBeenCalledWith('rh');
-    // mypart offers None + RH + LH + Both
-    for (const n of ['None', 'RH', 'LH', 'Both']) {
-      expect(screen.getByRole('radio', { name: n })).toBeInTheDocument();
-    }
+    render(<HandsControl variant="hands" value="lh" onChange={onChange} />);
+    expect(screen.getByRole('button', { name: 'Left hand' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('button', { name: 'Right hand' })).toHaveAttribute('aria-pressed', 'false');
+    fireEvent.click(screen.getByRole('button', { name: 'Right hand' }));
+    expect(onChange).toHaveBeenCalledWith('both');
   });
 
-  it('hands variant has no None option', () => {
-    render(<HandsControl variant="hands" value="rh" onChange={vi.fn()} />);
-    expect(screen.queryByRole('radio', { name: 'None' })).toBeNull();
+  it('variant="hands" keeps at least one hand on — the last toggle is inert', () => {
+    const onChange = vi.fn();
+    render(<HandsControl variant="hands" value="rh" onChange={onChange} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Right hand' }));
+    expect(onChange).not.toHaveBeenCalled();
+  });
+
+  it('variant="mypart" allows both toggles off ("none") and labels the group "My part"', () => {
+    const onChange = vi.fn();
+    render(<HandsControl variant="mypart" value="rh" onChange={onChange} />);
+    expect(screen.getByRole('group', { name: /my part/i })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Right hand' }));
+    expect(onChange).toHaveBeenCalledWith('none');
+  });
+
+  it('renders hand icons, not text glyphs', () => {
+    render(<HandsControl variant="hands" value="both" onChange={vi.fn()} />);
+    const left = screen.getByRole('button', { name: 'Left hand' });
+    expect(left.querySelector('.piano-icon')).not.toBeNull();
   });
 });
