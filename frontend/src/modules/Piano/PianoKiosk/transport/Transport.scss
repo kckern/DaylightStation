@@ -139,3 +139,17 @@
   text-align: center;
   opacity: 0.85;
 }
+
+.piano-loopsheet__options {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  .piano-tbtn { justify-content: flex-start; }
+}
+.piano-loopsheet__nudge {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin-top: 0.75rem;
+  span { opacity: 0.8; margin-right: 0.2rem; &:not(:first-child) { margin-left: 0.6rem; } }
+}
