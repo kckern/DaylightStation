@@ -37,10 +37,12 @@ const run = (cmd, args, opts = {}) => {
 };
 
 run('node', ['tools/gen-config.mjs', src, ...(scaleId ? [scaleId] : [])]);
-// m5-atom-idf5, not m5-atom. src/idf_component.yml declares `idf: '>=5.1'`, and
-// the m5-atom env pins espressif32@6.5.0 (IDF 4.4.6) -- so that env cannot
-// resolve dependencies at all and fails before compiling a single file
-// ("Because project depends on idf (>=5.1) ... version solving failed").
-// This pointed at the broken env, so the documented flash path did not work.
-run('pio', ['run', '-e', 'm5-atom-idf5', '-t', 'upload', '--upload-port', port]);
+// `m5-atom` is the ONLY env platformio.ini defines. This said `m5-atom-idf5` for
+// six days after that env was deleted, so the documented flash path failed
+// outright — `pio` exits "Unknown environment names". The idf5 env existed for
+// the Bluedroid/Classic build; it went with the DS6878, along with the
+// src/idf_component.yml (`idf: '>=5.1'`) that was the reason to prefer it over
+// this one. Nothing here needs ESP-IDF 5 any more: NimBLE 1.4.x wants Arduino
+// core 2.x, which is what espressif32@6.5.0 pins.
+run('pio', ['run', '-e', 'm5-atom', '-t', 'upload', '--upload-port', port]);
 console.log(`\n[flash] done → ${port}`);

@@ -1,15 +1,26 @@
-// shared food-scale + content-barcode relay — M5Stack ATOM Lite (ESP32-PICO-D4)
+// kitchen-relay — one M5Stack ATOM Lite (ESP32-PICO-D4) for the whole kitchen.
 //
-// BLE-connects to a KitchenIQ 50797 (SENSSUN FOOD) kitchen scale, decodes its
-// weight notifications, and streams them (+ button presses) over WebSocket to
-// the DaylightStation event bus (/ws). The backend re-broadcasts the
-// `food-scale` topic. See ../README.md.
-// The same ESP may also maintain a second BLE connection to a Zebra DS2278
-// HID scanner and publish normalized barcode events.
+// TWO BLE peripherals on one board, both LE:
+//   - a KitchenIQ 50797 (SENSSUN FOOD) scale: decode its weight notifications and
+//     stream them, plus button presses, to the DaylightStation event bus (/ws)
+//   - a Zebra DS2278 in "HID Bluetooth Low Energy (Discoverable)" mode (PRG
+//     p.6-6): a standard BLE HID keyboard we host as central, decoded to barcodes
 //
-// Message shapes sent to the bus (dispatched backend-side by `source`):
-//   {"source":"food-scale-relay","type":"scale","id":"kitchen","grams":240,"stable":true,"unit":"g","ts":<ms>}
-//   {"source":"food-scale-relay","type":"button","id":"kitchen","press":"short"|"long","ts":<ms>}
+// Both being LE is the point. The DS6878 this replaced was Classic BT, and one
+// ESP32 cannot run BLE discovery while holding a Classic link — it dies with HCI
+// 0x08 (supervision timeout), measured repeatedly, which is what forced the scale
+// and the scanner onto separate boards from 2026-07-23 to 2026-07-28. Two LE
+// links share the LE scheduler and that contention does not arise. Do not
+// reintroduce Classic BT here: NimBLE has no Classic support at all, and the
+// Bluedroid stack that does is mutually exclusive with it (one BLE stack per
+// binary). The retired Classic board is recorded in
+// docs/_archive/deleted-extensions.md.
+//
+// Message shapes sent to the bus — ONE source, dispatched backend-side by `type`:
+//   {"source":"kitchen-relay","type":"scale","id":"kitchen-food-scale","grams":240,"stable":true,"unit":"g","ts":<ms>}
+//   {"source":"kitchen-relay","type":"button","id":"kitchen-food-scale","press":"short"|"long","ts":<ms>}
+//   {"source":"kitchen-relay","type":"scan","device":"nutribot-upc","route":"nutribot","code":"…","ts":<ms>}
+// See ../README.md.
 
 #include <Arduino.h>
 #include <WiFi.h>
@@ -211,11 +222,30 @@ static void queueEvent(const PendingEvent& e) {
 }
 
 // ---- send helpers -------------------------------------------------------
+// One board, one wire source, three message types. The backend discriminates on
+// `type`: foodScaleRelay.mjs claims `scale`/`button`, barcodeRelay.mjs claims
+// `scan`, and each ignores what the other owns. Both accept the legacy per-board
+// sources (`food-scale-relay`, `barcode-relay`) as well, which is what keeps
+// ../../content-barcode-relay working unchanged.
+//
+// DEPLOY THE BACKEND FIRST. That legacy acceptance makes the backend safe to
+// deploy early, but it does nothing the other way round: a board running this
+// firmware against a backend that predates the change matches no handler, and
+// every reading and scan is dropped SILENTLY -- the socket connects, /status
+// looks healthy, and nothing reaches the bus.
+//
+// This is NOT the source apps see. Both handlers re-broadcast under their own
+// topic-level identity (`ble-relay` on `food-scale`, `barcode-relay` on
+// `barcode-relay`); School's VirtualScannerAdapter emits that same broadcast
+// identity with no hardware behind it. Which board a message came from is
+// carried by `id`/`device`, not by this string.
+#define RELAY_SOURCE "kitchen-relay"
+
 /** Wire-format a reading. `capturedMs` is capture time, not send time. */
 static bool txReading(int grams, bool stable, uint8_t unit, uint32_t capturedMs) {
   if (!wsConnected) return false;
   JsonDocument doc;
-  doc["source"] = "food-scale-relay";
+  doc["source"] = RELAY_SOURCE;
   doc["type"]   = "scale";
   doc["id"]     = SCALE_ID;
   doc["grams"]  = grams;
@@ -252,7 +282,7 @@ static void sendReading(int grams, bool stable, uint8_t unit, bool durable) {
 static bool txButton(const char* press, uint32_t capturedMs) {
   if (!wsConnected) return false;
   JsonDocument doc;
-  doc["source"] = "food-scale-relay";
+  doc["source"] = RELAY_SOURCE;
   doc["type"]   = "button";
   doc["id"]     = SCALE_ID;
   doc["press"]  = press;
@@ -304,22 +334,6 @@ static void flushBarcode() {
   xQueueSend(g_bcQueue, buf, 0); g_code="";
 }
 
-// SPP carries the decoded symbol as plain bytes, so there are no HID keyboard
-// reports to translate. Zebra scanners may or may not append a terminator
-// depending on configuration, so treat CR/LF as an immediate flush and keep the
-// idle-gap flush in loop() as the fallback (the DS2278 sends no terminator at
-// all over BLE HID, and the DS6878's SPP behaviour is unverified until we see a
-// real scan).
-static void onSppBytes(const uint8_t* data, size_t len) {
-  for (size_t i = 0; i < len; i++) {
-    uint8_t b = data[i];
-    if (b == '\r' || b == '\n') { flushBarcode(); continue; }
-    if (b < 0x20 || b > 0x7e) continue;            // drop control / non-printable
-    if (g_code.length() < 120) g_code += (char)b;
-    g_lastKeyMs = millis();
-  }
-}
-
 // ---- offline scan queue -------------------------------------------------
 // A dropped scan is a missing food-log entry that nobody can notice after the
 // fact, so scans are the one event worth buffering across a backend outage.
@@ -337,7 +351,7 @@ static uint32_t g_pendingDropped = 0;
 static bool sendScan(const char* code, uint32_t capturedMs) {
   if (!wsConnected) return false;
   JsonDocument d;
-  d["source"] = "barcode-relay"; d["type"] = "scan";
+  d["source"] = RELAY_SOURCE; d["type"] = "scan";
   d["device"] = BARCODE_ID; d["route"] = BARCODE_ROUTE; d["code"] = code;
   d["ts"] = capturedMs;                    // capture time, not send time
   uint32_t delayed = millis() - capturedMs;
@@ -514,9 +528,19 @@ class ScanCallbacks : public NimBLEAdvertisedDeviceCallbacks {
     // The DS2278 advertises the standard HID service (0x1812). Claim it here so
     // one scan feeds both connections; the scale and the scanner are found by
     // the same sweep instead of competing for the radio.
-    bool hidMatch = (BARCODE_MAC[0] && dev.getAddress().toString() == BARCODE_MAC)
-                 || dev.isAdvertisingService(NimBLEUUID((uint16_t)0x1812))
-                 || (dev.haveName() && String(dev.getName().c_str()).indexOf(BARCODE_NAME) >= 0);
+    //
+    // A CONFIGURED MAC IS AUTHORITATIVE — it is the whole match, not one clause of
+    // an OR. This used to fall through to "…|| advertises 0x1812 || name contains
+    // BARCODE_NAME", which meant pinning the address bought nothing: the first
+    // BLE HID keyboard to advertise anywhere near the kitchen was adopted and the
+    // real scanner was then locked out by the `!g_hidClient` guard. Only with
+    // `mac: ""` (adopt-by-name, for bring-up before the LE address is known) do
+    // the loose clauses apply.
+    const bool macPinned = BARCODE_MAC[0] != 0;
+    bool hidMatch = macPinned
+      ? (dev.getAddress().toString() == BARCODE_MAC)
+      : (dev.isAdvertisingService(NimBLEUUID((uint16_t)0x1812))
+         || (dev.haveName() && String(dev.getName().c_str()).indexOf(BARCODE_NAME) >= 0));
     if (!g_hidClient && hidMatch) {
       relayLogf("[hid] found %s", dev.getAddress().toString().c_str());
       NimBLEDevice::getScan()->stop();
@@ -648,24 +672,14 @@ static void startScan() {
 #define SCAN_BURST_MS              10000UL   // listen this long...
 #define SCAN_BACKOFF_PERIOD_MS     60000UL   // ...once per this long
 
-// While an SPP session is live the scan MUST be duty-cycled, never continuous.
-// A continuous 7.5%-duty scan alongside an established Classic link kills it with
-// HCI 0x08 (supervision timeout) within a couple of minutes — measured 2026-07-22:
-// the scanner dropped and re-paged every few seconds, beeping each time, until
-// this gate went in. Short bursts leave long uninterrupted stretches for Classic
-// while still finding a scale that was just switched on within ~20 s.
-// Measured 2026-07-22: 3 s bursts every 20 s still timed the SPP link out (HCI
-// 0x08) after ~50 s. Discovery is the only thing that hurts — once the scale is
-// CONNECTED no scanning happens at all and the two links coexist indefinitely —
-// so the window is cut to the shortest that can still catch an advertiser, as
-// rarely as is tolerable. Worst-case latency to notice a scale that was just
-// switched on is SCAN_PERIOD_CLASSIC_MS.
-#define SCAN_BURST_CLASSIC_MS       1500UL
-#define SCAN_PERIOD_CLASSIC_MS     45000UL
-// And the controller-level duty drops too while Classic is up: 20/800 = 2.5%
-// instead of the usual 30/400 = 7.5%.
-#define SCAN_INTERVAL_CLASSIC        800
-#define SCAN_WINDOW_CLASSIC           20
+// The Classic duty-cycle constants that used to live here (SCAN_BURST_CLASSIC_MS
+// and friends) are gone with the SPP path — nothing referenced them any more.
+// What they encoded, kept because it is the reason this board can exist at all:
+// a continuous 7.5%-duty BLE scan alongside an established Classic link killed it
+// with HCI 0x08 within ~2 min, and even 3 s bursts every 20 s timed it out after
+// ~50 s (both measured 2026-07-22). Discovery was the only thing that hurt — once
+// CONNECTED the links coexisted indefinitely. None of it applies between two LE
+// connections. It applies again the day Classic BT returns.
 
 static void serviceScanWatchdog() {
   if (!g_bleScanEnabled || g_bleConnected || g_doConnect) return;
@@ -741,8 +755,8 @@ static void wsEvent(WStype_t type, uint8_t* payload, size_t length) {
 
 static void handleStatus() {
   JsonDocument doc;
-  doc["device"] = "food-scale-relay";
-  doc["firmware"] = "shared-scale-content-barcode";
+  doc["device"] = "kitchen-relay";
+  doc["firmware"] = "kitchen-scale-and-barcode";
   doc["uptime_s"] = (uint32_t)(millis() / 1000);
   doc["identity"]["scale_id"] = SCALE_ID;
   doc["identity"]["barcode_id"] = BARCODE_ID;
@@ -880,7 +894,7 @@ static void serviceButton() {
 void setup() {
   Serial.begin(115200);
   delay(200);
-  relayLogLine("[food-scale-relay] boot");
+  relayLogLine("[kitchen-relay] boot");
 
   FastLED.addLeds<SK6812, LED_PIN, GRB>(led, 1);
   FastLED.setBrightness(60);
@@ -945,7 +959,8 @@ void setup() {
   // Barcode control plane. The DS2278 is a BLE HID keyboard and the ESP is the
   // central, so there is no pairing profile, no SDP record and no link-key
   // ceremony to expose -- all of that belonged to the Classic-SPP DS6878 and now
-  // lives in ../../kitchen-scanner.
+  // belonged to the retired DS6878 board (see
+  // docs/_archive/deleted-extensions.md).
   http.on("/barcode/disconnect", [](){
     if (g_hidClient) g_hidClient->disconnect();
     http.send(200, "application/json", "{\"ok\":true,\"action\":\"disconnect\"}");
@@ -1034,7 +1049,7 @@ void setup() {
   });
 #endif
 
-  http.onNotFound([](){ http.send(404, "text/plain", "food-scale-relay: GET /status\\n"); });
+  http.onNotFound([](){ http.send(404, "text/plain", "kitchen-relay: GET /status\\n"); });
   http.begin();
   relayLogLine("[http] status server listening on :80");
 

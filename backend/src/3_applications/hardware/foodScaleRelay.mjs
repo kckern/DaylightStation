@@ -2,8 +2,8 @@
 //
 // Food-scale relay wiring — two independent handlers on the event bus:
 //
-//   1) INGEST  (client → bus): the ESP32 food-scale-relay (see
-//      _extensions/food-scale-relay) connects to the WS event bus as a device
+//   1) INGEST  (client → bus): the ESP32 kitchen relay (see
+//      _extensions/kitchen-relay) connects to the WS event bus as a device
 //      client and streams decoded weight/button events. We re-broadcast them on
 //      the scale's configured topic (default `food-scale`) so any app/display
 //      can subscribe live.
@@ -33,6 +33,17 @@ import { DEFAULT_TIMEZONE } from '#domains/core/utils/timezone.mjs';
 const RELAY_SOURCE = 'food-scale-relay';
 const DEFAULT_TOPIC = 'food-scale';
 const DEFAULT_DIR = 'household/history/nutrition'; // relative to dataDir
+
+// Ingest discriminators we accept. `kitchen-relay` is the unified kitchen board
+// (_extensions/kitchen-relay), which carries the scale AND the DS2278 scanner and
+// so emits scale/button/scan under ONE source, discriminated by `type`.
+// `food-scale-relay` is the legacy per-board source, kept so a backend deploy and
+// a reflash can happen in either order.
+//
+// A `type:'scan'` message from the kitchen board reaches this handler too and
+// falls out of the bottom untouched — barcodeRelay.mjs owns it. That is the whole
+// contract between the two handlers: same source, disjoint `type` sets.
+const INGEST_SOURCES = new Set([RELAY_SOURCE, 'kitchen-relay']);
 
 // Persistence policy tuning (overridable via config.persistence).
 // - emptyThresholdG: at/below this the pan is considered empty → a fresh
@@ -70,7 +81,7 @@ export function createFoodScaleRelay({ eventBus, dataDir, config = {}, timezone 
 
   // ---- 1) INGEST: relay device client → bus ------------------------------
   eventBus.onClientMessage((clientId, message) => {
-    if (!message || message.source !== RELAY_SOURCE) return;
+    if (!message || !INGEST_SOURCES.has(message.source)) return;
     const id = typeof message.id === 'string' && message.id ? message.id : 'unknown';
     // Local wall-clock timestamp (household tz), NOT UTC — the day-file bucket is
     // its date prefix, so an evening-local event never spills into the next UTC day.

@@ -151,3 +151,58 @@ describe('createFoodScaleRelay persistence', () => {
     expect(recs[0].ts.slice(0, 10)).toBe(laDay);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Wire-source acceptance. The kitchen board (_extensions/kitchen-relay) carries
+// the scale AND the DS2278 scanner, so it emits scale/button/scan under ONE
+// source and discriminates by `type`. This handler must accept that source
+// without regressing the legacy per-board one, because a backend deploy and a
+// reflash cannot be made simultaneous.
+// ---------------------------------------------------------------------------
+describe('createFoodScaleRelay ingest sources', () => {
+  function wireIngest() {
+    const bus = makeBus();
+    const seen = [];
+    createFoodScaleRelay({
+      eventBus: bus,
+      dataDir: os.tmpdir(),
+      config: { persistence: { dir: 'kitchen-relay-ingest-test' } },
+      timezone: 'UTC',
+      logger: NOOP_LOGGER,
+    });
+    bus.subscribe('food-scale', (p) => seen.push(p));
+    return { bus, seen };
+  }
+
+  it('accepts the unified kitchen-relay source for readings and buttons', () => {
+    const { bus, seen } = wireIngest();
+    bus.emit({ source: 'kitchen-relay', type: 'scale', id: SCALE_ID, grams: 240, stable: true, unit: 'g' });
+    bus.emit({ source: 'kitchen-relay', type: 'button', id: SCALE_ID, press: 'short' });
+
+    expect(seen).toHaveLength(2);
+    expect(seen[0]).toMatchObject({ id: SCALE_ID, grams: 240, stable: true });
+    expect(seen[1]).toMatchObject({ id: SCALE_ID, event: 'button', press: 'short' });
+  });
+
+  it('still accepts the legacy food-scale-relay source', () => {
+    const { bus, seen } = wireIngest();
+    bus.emit(scaleFrame(180, true));
+    expect(seen).toHaveLength(1);
+    expect(seen[0]).toMatchObject({ grams: 180 });
+  });
+
+  it('ignores a scan from the kitchen board — barcodeRelay owns type:scan', () => {
+    // Same source reaches BOTH handlers. The contract between them is disjoint
+    // `type` sets, so a barcode must fall straight through this one rather than
+    // being broadcast on the scale topic as a weightless reading.
+    const { bus, seen } = wireIngest();
+    bus.emit({ source: 'kitchen-relay', type: 'scan', device: 'nutribot-upc', route: 'nutribot', code: '012345678905' });
+    expect(seen).toHaveLength(0);
+  });
+
+  it('ignores an unrelated source', () => {
+    const { bus, seen } = wireIngest();
+    bus.emit({ source: 'barcode-relay', type: 'scale', id: SCALE_ID, grams: 99, stable: true });
+    expect(seen).toHaveLength(0);
+  });
+});

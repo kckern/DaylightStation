@@ -1,4 +1,4 @@
-# Example schema for the food-scale-relay SSOT. The REAL file lives in household
+# Example schema for the kitchen-relay SSOT. The REAL file lives in household
 # data (private, Dropbox-synced), NOT in this repo:
 #   data/household/config/scales.yml
 #
@@ -52,11 +52,16 @@ scales:
       min_delta_g: 1
       heartbeat_hz: 0.5
     topic: food-scale
+    # Optional. Omit the whole block for a scale-only board.
     barcode:
-      id: content-barcode
-      route: content
-      mac: "c8:1c:fe:fd:ce:90"       # optional Zebra DS2278 BLE HID target
-      name: "DS2278"
+      id: nutribot-upc               # keys the relay entry in barcode-relay.yml
+      route: nutribot                # DEFAULT for codes that claim no namespace;
+                                     # sch:/go:/cmd:/nut: + dl:/ct:/rs: override it
+      name: "DS2278"                 # Zebra DS2278 in HID Bluetooth LOW ENERGY mode
+      # AUTHORITATIVE when set: the firmware matches on this address alone. Leave
+      # empty ONLY for bring-up before the LE address is known (adopt-by-name, which
+      # will take any BLE HID keyboard in range). gen-config.mjs warns when empty.
+      mac: "c8:1c:fe:fd:ce:90"
 
 # ---------------------------------------------------------------------------
 # Nutribot integration: settled readings become density-logged food entries.
