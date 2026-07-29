@@ -1097,7 +1097,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
   }, [focus]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Learn landing (wave-3 B): pick the frontier window when Learn is entered
-  // without a range. Runs once per Learn entry — the pickedRef arms on entry
+  // without a range. Runs once per Learn entry — the learnAutoRef arms on entry
   // and disarms after the pick (or when the user sets a range themselves).
   const learnAutoRef = useRef(false);
   useEffect(() => { if (mode === 'learn' && !focus) learnAutoRef.current = true; else if (mode !== 'learn') learnAutoRef.current = false; }, [mode]); // eslint-disable-line react-hooks/exhaustive-deps
