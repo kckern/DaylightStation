@@ -49,7 +49,15 @@ export function layout({ page, blocks }) {
   for (const block of blocks) {
     const gap = block.gapPt ?? DEFAULT_GAP_PT;
     // Cells are square: the width follows from the column count, and the height copies it.
-    const cellW = (contentW - (block.cols - 1) * gap) / block.cols;
+    // Columns alone cannot express "3 across, but small". Without a cap, cell
+    // size is purely page-width / cols, so a 3-column block always eats a third
+    // of the page each and a sheet of four such blocks runs to four pages of
+    // mostly whitespace. Capping the width lets a block keep the grid shape the
+    // content wants while spending only the room it needs. Left-aligned rather
+    // than centred: ragged right edges read as a deliberate column, a centred
+    // short row reads as a mistake.
+    const naturalW = (contentW - (block.cols - 1) * gap) / block.cols;
+    const cellW = block.maxCellWPt ? Math.min(naturalW, block.maxCellWPt) : naturalW;
     // `aspect` is the mark's width/height. Square is only right for a bare glyph:
     // a framed QR with a label strip measures ~0.73 w/h, and that ratio DRIFTS with
     // size (0.726 at a 108pt module, 0.677 at 64pt) because the frame and label

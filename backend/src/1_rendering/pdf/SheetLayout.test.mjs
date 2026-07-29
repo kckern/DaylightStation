@@ -149,3 +149,25 @@ describe('layout — cell aspect', () => {
     expect(tall.pages).toBeGreaterThan(square.pages);
   });
 });
+
+describe('layout — max cell width', () => {
+  it('caps cell width so a 3-column block need not span the page', () => {
+    const wide = layout({ page: PAGE, blocks: [{ id: 'a', cols: 3, rows: 3, count: 3, gapPt: 8 }] });
+    const capped = layout({
+      page: PAGE,
+      blocks: [{ id: 'a', cols: 3, rows: 3, count: 3, gapPt: 8, maxCellWPt: 120 }],
+    });
+    expect(wide.cells[0].w).toBeGreaterThan(120);
+    expect(capped.cells[0].w).toBe(120);
+    // still left-aligned at the margin, still one row
+    expect(capped.cells[0].x).toBeCloseTo(PAGE.marginPt, 5);
+    expect(capped.cells[2].x).toBeCloseTo(PAGE.marginPt + 2 * (120 + 8), 5);
+  });
+
+  it('a capped cell is shorter too, so more rows fit per page', () => {
+    const wide = layout({ page: PAGE, blocks: [{ id: 'a', cols: 3, rows: 9, count: 27, gapPt: 8, aspect: 0.835 }] });
+    const capped = layout({ page: PAGE, blocks: [{ id: 'a', cols: 3, rows: 9, count: 27, gapPt: 8, aspect: 0.835, maxCellWPt: 60 }] });
+    expect(wide.pages).toBe(3);
+    expect(capped.pages).toBe(1);
+  });
+});
