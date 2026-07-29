@@ -482,15 +482,29 @@ describe('ScorePlayer — the practice range is Learn-only state (wave-3 §0)', 
 // the tracker only wraps FROM the range's out-point), the second satisfies step
 // 1 and wraps 1→0, which is where recordCycle fires.
 //
-// ARMING a range is itself a voider (a range "set" — see the focus-set effect):
-// the pass immediately after `selectFullRange()` is always discarded, so every
-// test below plays one throwaway pass first to reach a genuinely clean baseline
-// before asserting on the pass that's actually under test.
+// Fix round 1: arming a FRESH range must NOT void — there is no prior cycle for
+// a fresh arm to have disrupted, so the pass immediately after selectFullRange()
+// is now an honest first cycle and counts. Only a range CHANGE against an
+// ALREADY-active range (nudge, reselect, tap-seek, hand/part toggle, transpose,
+// clear) voids.
 describe('ScorePlayer — Learn cycle instrumentation feeds the practice record (Task 13)', () => {
   const TWO_MEASURE_LEARN = {
     steps: [
       { onsetQuarter: 0, measure: 0, notes: [{ midi: 64, staff: 0, x: 100, top: 10, bottom: 200, width: 8 }] },
       { onsetQuarter: 1, measure: 1, notes: [{ midi: 62, staff: 0, x: 160, top: 10, bottom: 200, width: 8 }] },
+    ],
+    measures: [
+      { index: 0, number: 1, firstStep: 0, lastStep: 0 },
+      { index: 1, number: 2, firstStep: 1, lastStep: 1 },
+    ],
+  };
+  // Same shape as TWO_MEASURE_LEARN but with a SECOND staff on every step, so
+  // parts.length === 2 (grandStaff) and the Hands (Right/Left hand) control
+  // renders — needed for the hand-toggle voider test below.
+  const GRAND_TWO_MEASURE_LEARN = {
+    steps: [
+      { onsetQuarter: 0, measure: 0, notes: [{ midi: 64, staff: 0, x: 100, top: 10, bottom: 200, width: 8 }, { midi: 40, staff: 1, x: 100, top: 10, bottom: 200, width: 8 }] },
+      { onsetQuarter: 1, measure: 1, notes: [{ midi: 62, staff: 0, x: 160, top: 10, bottom: 200, width: 8 }, { midi: 38, staff: 1, x: 160, top: 10, bottom: 200, width: 8 }] },
     ],
     measures: [
       { index: 0, number: 1, firstStep: 0, lastStep: 0 },
@@ -509,16 +523,15 @@ describe('ScorePlayer — Learn cycle instrumentation feeds the practice record 
   };
   const playFullPass = () => { play(64); play(62); }; // 0→1, then 1→wraps to 0
 
-  it('completing the 2-measure range once calls recordCycle with both measure indices and the wrong-measures set', () => {
+  it('a fresh range arm starts an honest first cycle — the very first pass counts, no throwaway needed', () => {
     h.layoutExtras = TWO_MEASURE_LEARN;
     renderPlayer();
     selectFullRange();
-    playFullPass(); // throwaway — voided by arming the range, not counted
-    expect(h.recordCycle).not.toHaveBeenCalled();
+    expect(h.recordCycle).not.toHaveBeenCalled(); // arming alone doesn't bank anything
     play(63); // a plausible wrong note against step 0's expected 64 (within 2 octaves)
     play(64); // the correct note — advances 0→1 (not the out-point yet, no wrap)
     expect(h.recordCycle).not.toHaveBeenCalled();
-    play(62); // completes step 1 (the out-point) — wraps 1→0, the cycle is banked
+    play(62); // completes step 1 (the out-point) — wraps 1→0, the FIRST pass is banked
     expect(h.recordCycle).toHaveBeenCalledTimes(1);
     expect(h.recordCycle).toHaveBeenCalledWith({
       measureIndices: [0, 1],
@@ -531,10 +544,8 @@ describe('ScorePlayer — Learn cycle instrumentation feeds the practice record 
     h.layoutExtras = TWO_MEASURE_LEARN;
     renderPlayer();
     selectFullRange();
-    playFullPass(); // throwaway — voided by arming the range, not the tap-seek under test
-    expect(h.recordCycle).not.toHaveBeenCalled();
     // Tap-seek (not the guided selection — `selecting` is null after the two-tap
-    // commit above) breaks the NEXT in-progress cycle.
+    // commit above) breaks the in-progress cycle, even though it's the FIRST one.
     const scroll = document.querySelector('.piano-score-player__scroll');
     act(() => { fireEvent.click(scroll, { clientX: 100, clientY: 100 }); });
     playFullPass(); // wraps — but voided by the tap-seek above
@@ -548,13 +559,63 @@ describe('ScorePlayer — Learn cycle instrumentation feeds the practice record 
     });
   });
 
+  it('nudging a loop endpoint mid-cycle still voids the next wrap — the following clean pass still counts', () => {
+    h.layoutExtras = TWO_MEASURE_LEARN;
+    renderPlayer();
+    enterLearn();
+    // Arm a ONE-measure loop at m1 (fresh arm — no void; nothing played yet).
+    act(() => { fireEvent.click(screen.getByRole('button', { name: 'Loop' })); });
+    const scroll = document.querySelector('.piano-score-player__scroll');
+    act(() => { fireEvent.click(scroll, { clientX: 100, clientY: 100 }); });
+    act(() => { fireEvent.click(scroll, { clientX: 100, clientY: 100 }); });
+    expect(screen.getByRole('button', { name: 'Loop' })).toHaveTextContent(/m1–m1/i);
+    // Nudge the end later — grows to m1–m2. A range was ALREADY active (the
+    // fresh arm above), so this is a genuine mid-cycle disruption and must void,
+    // even though no note has been played since arming.
+    act(() => { fireEvent.click(screen.getByRole('button', { name: 'Loop options' })); });
+    act(() => { fireEvent.click(screen.getByRole('button', { name: /loop end later/i })); });
+    expect(screen.getByRole('button', { name: 'Loop' })).toHaveTextContent(/m1–m2/i);
+    playFullPass(); // wraps m1→m2→m1 — but voided by the nudge above
+    expect(h.recordCycle).not.toHaveBeenCalled();
+    playFullPass(); // a second, uninterrupted pass — this one counts
+    expect(h.recordCycle).toHaveBeenCalledTimes(1);
+    expect(h.recordCycle).toHaveBeenCalledWith({
+      measureIndices: [0, 1],
+      wrongMeasures: new Set(),
+      bucket: 'both',
+    });
+  });
+
+  it('a transpose (key) change mid-cycle voids the next wrap', () => {
+    h.layoutExtras = TWO_MEASURE_LEARN;
+    renderPlayer();
+    selectFullRange();
+    act(() => { fireEvent.click(screen.getByRole('button', { name: 'Key' })); }); // open the Key sheet
+    act(() => { fireEvent.click(screen.getByRole('button', { name: /\+1/ })); }); // tap +1 semitone → voids
+    playFullPass(); // wraps — but voided by the transpose above
+    expect(h.recordCycle).not.toHaveBeenCalled();
+    playFullPass(); // a second, uninterrupted pass — this one counts
+    expect(h.recordCycle).toHaveBeenCalledTimes(1);
+  });
+
+  it('a hand-toggle change mid-cycle voids the next wrap', () => {
+    h.layoutExtras = GRAND_TWO_MEASURE_LEARN;
+    renderPlayer();
+    selectFullRange();
+    act(() => { fireEvent.click(screen.getByRole('button', { name: 'Left hand' })); }); // drop LH → voids
+    // The LH note (40/38) is now inactive — only the RH note is expected per step.
+    playFullPass(); // wraps — but voided by the hand toggle above
+    expect(h.recordCycle).not.toHaveBeenCalled();
+    playFullPass(); // a second, uninterrupted pass — this one counts
+    expect(h.recordCycle).toHaveBeenCalledTimes(1);
+  });
+
   it('renders and completes a cycle without a PianoUserProvider — the practice hook is fully mocked out, so nothing crashes for a guest-shaped render', () => {
     h.layoutExtras = TWO_MEASURE_LEARN;
     expect(() => {
       renderPlayer();
       selectFullRange();
-      playFullPass(); // throwaway
-      playFullPass(); // clean
+      playFullPass();
     }).not.toThrow();
     expect(h.recordCycle).toHaveBeenCalledTimes(1);
   });
