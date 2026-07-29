@@ -145,6 +145,22 @@ const pickMode = (label) => {
 // Scores now open in Listen (default). The Learn tests select Learn first.
 const enterLearn = () => pickMode('Learn');
 
+// Learn's GATE (wave-3 §B): the follow tracker only drives the cursor when a
+// practice range is armed AND looping is on — Learn WITHOUT a range is machine
+// playback on the transport instead. Every test about the all-notes rule, the
+// wrong-note flash or follow telemetry therefore has to arm a range first: enter
+// Learn, start the guided selection, and tap the note at `clientX` twice (a
+// one-measure range; a freshly-picked range always arms the loop). Fixtures with
+// no `measures` in their layout resolve to a null step span, so the tracker
+// advances linearly through the whole piece — exactly as it did before wave-3.
+const enterLearnGate = (clientX = 100) => {
+  enterLearn();
+  act(() => { fireEvent.click(screen.getByRole('button', { name: 'Loop' })); });
+  const scroll = document.querySelector('.piano-score-player__scroll');
+  act(() => { fireEvent.click(scroll, { clientX, clientY: 100 }); });
+  act(() => { fireEvent.click(scroll, { clientX, clientY: 100 }); });
+};
+
 describe('ScorePlayer — intent-event session-log routing (Task 10)', () => {
   it('emits intent events through the session-logged logger (app + sessionLog context)', () => {
     // Spy on the root logger's child() so we can see which child logger each
@@ -281,8 +297,10 @@ describe('ScorePlayer — note-highlight ink (wave-2 A)', () => {
       steps: [{ onsetQuarter: 0, notes: [{ midi: 64, staff: 0, el: hitEl }, { midi: 60, staff: 0, el: litOnlyEl }] }],
     };
     renderPlayer();
-    enterLearn(); // Listen no longer registers MIDI input at all (wave-3 A) — Learn's
-    // follow tracker is what populates `struck` now.
+    // Listen no longer registers MIDI input at all (wave-3 A), and Learn only
+    // tracks input inside its GATE (wave-3 §B) — arm a range so the follow
+    // tracker is what populates `struck`.
+    enterLearnGate();
     await act(async () => {});
     play(64); // matches the step's expected midi → Learn's follow tracker lights it green (struck)
     await act(async () => {});
@@ -362,7 +380,7 @@ describe('ScorePlayer — Learn mode (full-hand, simulated MIDI input)', () => {
 
   it('advances only when every active-staff note of the step is struck', () => {
     renderPlayer();
-    enterLearn();
+    enterLearnGate(); // the all-notes rule lives in Learn's gate (wave-3 §B)
 
     // Layout reported 4 onsets; cursor starts at the first.
     expect(screen.getByText('1 / 4')).toBeTruthy();
@@ -388,22 +406,25 @@ describe('ScorePlayer — Learn mode (full-hand, simulated MIDI input)', () => {
 
   it('does not advance past the end on extra notes', () => {
     renderPlayer();
-    enterLearn();
+    enterLearnGate();
     for (const n of [64, 52, 40, 62, 60, 62, 64, 64, 64]) play(n);
     expect(screen.getByText('4 / 4')).toBeTruthy();
   });
 
   it('shows the Learn completion card once the final step is satisfied (M5)', () => {
     renderPlayer();
-    enterLearn();
+    enterLearnGate();
     expect(document.querySelector('.piano-score-learn-complete')).toBeNull();
     for (const n of [64, 52, 40, 62, 60, 62]) play(n); // satisfy all four onsets incl. the last
     expect(document.querySelector('.piano-score-learn-complete')).not.toBeNull();
   });
 });
 
-describe('ScorePlayer — practice range persistence (J3/L6)', () => {
-  it('carries the focus range across Learn↔Polish↔Listen; only Perform releases it', () => {
+// Wave-3 §0 REVERSES wave-2's J3/L6 semantics: the range no longer follows the
+// ladder. Loop/focus is Learn-only state — Listen is a jukebox and Polish grades
+// whole-piece runs, so entering either releases the range (and the loop toggle).
+describe('ScorePlayer — the practice range is Learn-only state (wave-3 §0)', () => {
+  it('drops the focus range on the way out of Learn, in every direction', () => {
     h.layoutExtras = {
       steps: [
         { onsetQuarter: 0, measure: 0, notes: [{ midi: 64, staff: 0, x: 100, top: 10, bottom: 200, width: 8 }] },
@@ -415,34 +436,35 @@ describe('ScorePlayer — practice range persistence (J3/L6)', () => {
       ],
     };
     renderPlayer();
-    enterLearn();
     // Guided selection: Loop → Select measures… → two taps set a custom range.
-    act(() => { fireEvent.click(screen.getByRole('button', { name: 'Loop' })); }); // no range yet -> direct tap starts selection
-    // Selection taps must land near a note (L3 threshold) — tap ON the first note.
-    const scroll = document.querySelector('.piano-score-player__scroll');
-    act(() => { fireEvent.click(scroll, { clientX: 100, clientY: 100 }); }); // first tap → measure 0
-    act(() => { fireEvent.click(scroll, { clientX: 100, clientY: 100 }); }); // second tap → range set
+    // (Selection taps must land near a note — the L3 threshold — so tap ON one.)
+    enterLearnGate();
     // The Loop trigger's aria-label stays the stable 'Loop' (Key/Tempo convention);
     // the measure-span scope shows in the visible label instead.
-    expect(screen.getByRole('button', { name: 'Loop' })).toHaveTextContent(/m1/i);
-    // Switch to Polish — range must persist.
+    const trigger = () => screen.getByRole('button', { name: 'Loop' });
+    expect(trigger()).toHaveTextContent(/m1/i);
+    // Polish grades whole-piece runs — it releases the range…
     pickMode('Polish');
-    expect(screen.getByRole('button', { name: 'Loop' })).toHaveTextContent(/m1/i);
-    // Switch to Listen — the loop now FOLLOWS (audit L6).
+    expect(trigger().textContent).toBe('');
+    // …and re-entering Learn does not resurrect it.
+    enterLearnGate();
+    expect(trigger()).toHaveTextContent(/m1/i);
+    // Listen is a jukebox — it releases it too.
     pickMode('Listen');
-    expect(screen.getByRole('button', { name: 'Loop' })).toHaveTextContent(/m1/i);
-    // Perform releases it.
+    expect(trigger().textContent).toBe('');
+    // Perform still releases it (unchanged).
+    enterLearnGate();
     pickMode('Perform');
     pickMode('Listen');
     // Inactive trigger is icon-only (wave-2: no range → no visible label) — aria-label stays 'Loop'.
-    expect(screen.getByRole('button', { name: 'Loop' }).textContent).toBe('');
+    expect(trigger().textContent).toBe('');
   });
 });
 
 describe('ScorePlayer — Learn mode chord tolerance (audit B2)', () => {
   it('does not flash wrong for accompaniment notes that belong to the current onset', () => {
     renderPlayer();
-    enterLearn();
+    enterLearnGate();
     play(52); // LH note of the current onset — a correct hit, no advance, NO flash
     expect(document.querySelector('.piano-score-cursor.is-wrong')).toBeNull();
     expect(screen.getByText('1 / 4')).toBeTruthy();
@@ -612,7 +634,11 @@ describe('ScorePlayer — Polish mode (transport-driven)', () => {
     ],
   };
 
-  it('a Polish loop on the final measure wraps at onDone instead of finishing (L6)', async () => {
+  // Wave-3 §0 retires Polish looping: Polish grades WHOLE-PIECE runs, which is what
+  // makes tier bests comparable. A range picked here is inert — the run is never
+  // pinned to it and finishes normally (the wrap machinery is Learn's, and Learn's
+  // gate has no transport at all).
+  it('a range on the final measure does NOT pin a Polish run — it finishes and finalizes', async () => {
     h.layoutExtras = TAIL_MEASURE;
     renderPlayer();
     pickMode('Polish');
@@ -623,10 +649,10 @@ describe('ScorePlayer — Polish mode (transport-driven)', () => {
     act(() => { fireEvent.click(scroll, { clientX: 160, clientY: 100 }); });
     screen.getByRole('button', { name: 'Play' }).click();
     await act(async () => {});
-    act(() => vi.advanceTimersByTime(4100)); // through the 4-beat @60 count-in → run starts at the in-point
-    act(() => vi.advanceTimersByTime(3500)); // several loop periods past the piece end
-    expect(document.querySelector('.piano-score-run-summary')).toBeNull(); // wrapped, never finalized
-    expect(screen.getByText('m 2 / 2')).toBeTruthy(); // still parked on the looped measure
+    act(() => vi.advanceTimersByTime(4100)); // through the 4-beat @60 count-in
+    act(() => vi.advanceTimersByTime(3500)); // well past where a loop would have wrapped
+    expect(document.querySelector('.piano-score-run-summary')).not.toBeNull(); // finalized, not looping
+    expect(screen.getByRole('button', { name: 'Play' })).toBeInTheDocument();  // the run is over
   });
 
   // Three measures, one step each @60bpm. Measure INDEX 1 is a MIDDLE measure, so
@@ -677,60 +703,56 @@ describe('ScorePlayer — Polish mode (transport-driven)', () => {
   };
   const loopSecondMeasure = () => loopMeasureAtX(160); // THREE_MEASURES: a MIDDLE measure
 
-  it('grades the measure of a ONE-measure Polish loop on every wrap (Task 9)', async () => {
-    // The field scenario: focus {inMeasure: 2, outMeasure: 2}, count-in, notes
-    // played, and not one score.polish.measure in the whole run — the cursor
-    // wraps onto the SAME measure, so the advance-driven grader never fired.
+  it('a range in Polish gates nothing: the cursor runs past the out-point and the measure still grades', async () => {
+    // The wave-2 shape of this test asserted a WRAP onto the same measure. Polish
+    // no longer loops (wave-3 §0), so what has to hold is the other half: the
+    // advance-driven grader still banks the measure the user played, and the run
+    // carries on past the (inert) out-point instead of being pinned to it.
     h.layoutExtras = THREE_MEASURES;
     const emitted = captureLog();
 
     renderPlayer();
     pickMode('Polish');
     await act(async () => {});
-    loopSecondMeasure();
-    expect(screen.getByText('m 2 / 3')).toBeTruthy(); // parked on the looped measure
+    loopMeasureAtX(100); // a one-measure range on m1 (index 0)
+    expect(screen.getByText('m 1 / 3')).toBeTruthy(); // the range still parks the cursor at its in-point
     screen.getByRole('button', { name: 'Play' }).click();
     await act(async () => {});
     act(() => vi.advanceTimersByTime(4100)); // through the 4-beat @60 count-in
-    act(() => { h.noteCb?.({ type: 'note_on', note: 62, velocity: 80 }); }); // play the measure
-    act(() => vi.advanceTimersByTime(1100)); // one quarter @60 → cursor passes the out-point → wrap
+    act(() => { h.noteCb?.({ type: 'note_on', note: 64, velocity: 80 }); }); // play the measure
+    act(() => vi.advanceTimersByTime(1100)); // one quarter @60 → cursor passes the old out-point
 
     const grades = emitted.filter(([ev]) => ev === 'score.polish.measure');
     expect(grades.length).toBeGreaterThanOrEqual(1);
-    expect(grades[0][1]).toMatchObject({ measure: 1, grade: 'green' });
-    expect(screen.getByText('m 2 / 3')).toBeTruthy(); // still looping the same measure
+    expect(grades[0][1]).toMatchObject({ measure: 0, grade: 'green' });
+    expect(screen.getByText('m 2 / 3')).toBeTruthy(); // ran on into m2 — no wrap back to m1
   });
 
-  it('grades a Polish loop pinned to the FINAL measure, pass after pass (Task 19)', async () => {
-    // The zero-span case: the loop's in-point IS the last timeline event, so the
-    // run completes inside play()'s immediate tick and restarts through onDone's
-    // one-beat dwell. `transport.playing` never commits true across that dwell, so
-    // an evaluator gated on it never even subscribes — the probe played six correct
-    // passes over a tail-measure loop and got { btn: 'Play', grades: [], stops: 0 }.
-    h.layoutExtras = TAIL_MEASURE;
+  it('a Polish run that starts inside a range still grades the measure it played, exactly once', async () => {
+    // The wave-2 version of this drove SIX passes over a tail-measure loop and
+    // demanded a grade per pass. Polish has no passes now (wave-3 §0) — so what
+    // must survive is that the single pass is scored from the note actually
+    // played (not a silent red wash) and banked once, not once per phantom wrap.
+    h.layoutExtras = THREE_MEASURES;
     const emitted = captureLog();
 
     renderPlayer();
     pickMode('Polish');
     await act(async () => {});
-    loopMeasureAtX(160); // TAIL_MEASURE: the LAST measure (index 1)
-    expect(screen.getByText('m 2 / 2')).toBeTruthy();
+    loopSecondMeasure(); // a one-measure range on m2 (index 1)
+    expect(screen.getByText('m 2 / 3')).toBeTruthy();
     screen.getByRole('button', { name: 'Play' }).click();
     await act(async () => {});
     act(() => vi.advanceTimersByTime(4100)); // through the 4-beat @60 count-in
-    act(() => { h.noteCb?.({ type: 'note_on', note: 62, velocity: 80 }); }); // pass 1
-    act(() => vi.advanceTimersByTime(1100)); // one-beat dwell expires → wrap
-    act(() => { h.noteCb?.({ type: 'note_on', note: 62, velocity: 80 }); }); // pass 2
-    act(() => vi.advanceTimersByTime(1100)); // …and wrap again
+    act(() => { h.noteCb?.({ type: 'note_on', note: 62, velocity: 80 }); }); // the pass
+    act(() => vi.advanceTimersByTime(2200)); // play it out → onDone finalizes
 
     const grades = emitted.filter(([ev]) => ev === 'score.polish.measure');
-    expect(grades.length).toBeGreaterThanOrEqual(2);        // one per pass
-    expect(grades.map(([, d]) => d.measure)).toEqual(grades.map(() => 1)); // the looped measure
-    // Every pass is scored from the note actually played — not a silent red wash.
-    // (Only the GRADE band varies with the at-tempo drift proxy: a note struck
-    // 200ms into the beat is a legitimate yellow.)
-    expect(grades.every(([, d]) => d.noteScore === 1)).toBe(true);
-    expect(grades[0][1].grade).toBe('green'); // played on the beat → green
+    const played = grades.filter(([, d]) => d.measure === 1);
+    expect(played.length).toBe(1);          // banked ONCE — no phantom re-passes
+    expect(played[0][1].noteScore).toBe(1); // scored from the real note
+    expect(played[0][1].grade).toBe('green'); // played on the beat → green
+    expect(document.querySelector('.piano-score-run-summary')).not.toBeNull(); // …and the run ended
   });
 
   it('the evaluator is off once a run is over — a later cursor move grades nothing (Task 19)', async () => {
@@ -757,11 +779,13 @@ describe('ScorePlayer — Polish mode (transport-driven)', () => {
     expect(emitted.filter(([ev]) => ev === 'score.polish.measure')).toEqual([]);
   });
 
-  it('Listen loop wraps do not make Polish grade a measure the user has not played (Task 9)', async () => {
-    // The loop follows Listen↔Polish (L6), and Listen wraps bump the same
-    // loop-wrap counter with the evaluator disabled. If those wraps go untracked,
-    // the first commit back in Polish reads a stale counter as an end-of-measure
-    // and paints a red wash + banks a silent measure before a single note.
+  it('a range armed in Listen neither loops nor survives the hop to Polish — no phantom grade', async () => {
+    // Wave-2: the loop followed Listen↔Polish (L6) and Listen's wraps bumped the
+    // same counter the evaluator uses as an end-of-measure boundary — a stale
+    // counter painted a red wash before a single note. Wave-3 §0 removes the whole
+    // premise: Listen never wraps, and the range is released on the way into
+    // Polish. Both halves are asserted here — the range is gone, and the Polish
+    // run that follows banks nothing it did not hear.
     h.layoutExtras = THREE_MEASURES;
     const emitted = captureLog();
 
@@ -770,12 +794,12 @@ describe('ScorePlayer — Polish mode (transport-driven)', () => {
     loopSecondMeasure();
     screen.getByRole('button', { name: 'Play' }).click(); // Listen always plays immediately (no count-in — wave-3 A)
     await act(async () => {});
-    act(() => vi.advanceTimersByTime(3000)); // several Listen loop wraps
-    screen.getByRole('button', { name: 'Pause' }).click();
-    await act(async () => {});
-    // Now drill the same loop in Polish.
+    act(() => vi.advanceTimersByTime(3000)); // where wave-2 would have wrapped several times
+    expect(emitted.filter(([ev]) => ev === 'score.transport.loop-wrap')).toEqual([]); // Listen does not loop
+    // Now drill in Polish — which arrives with no range at all.
     pickMode('Polish');
     await act(async () => {});
+    expect(screen.getByRole('button', { name: 'Loop' }).textContent).toBe('');
     screen.getByRole('button', { name: 'Play' }).click();
     await act(async () => {});
     emitted.length = 0; // only what the Polish run itself emits
@@ -785,24 +809,29 @@ describe('ScorePlayer — Polish mode (transport-driven)', () => {
   });
 
   // ── wave-2 T7: loop is a direct toggle — flip it off without losing the range ──
-  it('toggling Loop off keeps the range visible but the cursor advances past it instead of wrapping', async () => {
+  // Re-homed to Learn (wave-3 §0): Learn is the only mode that holds a range, so
+  // it is the only place the direct toggle means anything. The toggle also moves
+  // between rows of the Learn matrix — gate → machine playback — so the run
+  // button goes from locked to live across it.
+  it('toggling Loop off in Learn keeps the range visible and the cursor advances past it instead of wrapping', async () => {
     h.layoutExtras = THREE_MEASURES;
     renderPlayer(); // opens in Listen
+    pickMode('Learn');
     await act(async () => {});
-    loopSecondMeasure(); // one-measure loop on m2 (index 1) — same setup as the wrap test above
+    loopSecondMeasure(); // one-measure loop on m2 (index 1) — same setup as the Polish tests above
     expect(screen.getByText('m 2 / 3')).toBeTruthy(); // parked at the loop in-point
     const trigger = screen.getByRole('button', { name: 'Loop' });
     expect(trigger).toHaveTextContent(/m2–m2/i);
     expect(trigger).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('button', { name: 'Learn advances as you play' })).toBeDisabled(); // the gate
     // With a range active, the SAME trigger tap now flips looping off instead of
     // opening the sheet (audit L2 follow-up) — no re-selection needed.
     act(() => { fireEvent.click(trigger); });
     expect(trigger).toHaveAttribute('aria-pressed', 'false'); // unlit…
     expect(trigger).toHaveTextContent(/m2–m2/i); // …but the range label is still shown, not cleared
-    screen.getByRole('button', { name: 'Play' }).click(); // Listen always plays immediately (no count-in — wave-3 A)
+    screen.getByRole('button', { name: 'Play' }).click(); // …and the transport is live again
     await act(async () => {});
-    // The wrap test above asserts 'm 2 / 3' after this same advance (loop ON,
-    // wraps back to the in-point). With looping OFF the cursor must instead
+    // With looping ON the cursor would be held on m2; with looping OFF it must
     // advance PAST the (still-visible) range boundary onto measure 3.
     act(() => vi.advanceTimersByTime(1100)); // one quarter @60 → cursor passes the old out-point
     expect(screen.getByText('m 3 / 3')).toBeTruthy();
@@ -1262,7 +1291,11 @@ describe('ScorePlayer — Listen mode', () => {
     expect(h.sendPanic).toHaveBeenCalled(); // flushed, won't drone
   });
 
-  it('Listen plays only the loop and wraps at the out-point with a silence flush (L6)', async () => {
+  // Wave-3 §0: loop/focus is Learn-only state, so Listen is a straight jukebox —
+  // a range picked here (until the loop chrome leaves Listen entirely) neither
+  // pins the performance nor wraps it. Wave-2's "plays only the loop" contract is
+  // deliberately retired; what must hold now is that the piece plays through.
+  it('Listen ignores a range: the performance runs to the end instead of wrapping', async () => {
     h.layoutExtras = {
       tempoEntries: [{ onsetQuarter: 0, bpm: 60 }],
       // Two onsets only, matching the steps below — the loop (m2) contains the
@@ -1288,14 +1321,14 @@ describe('ScorePlayer — Listen mode', () => {
     const scroll = document.querySelector('.piano-score-player__scroll');
     act(() => { fireEvent.click(scroll, { clientX: 160, clientY: 100 }); });
     act(() => { fireEvent.click(scroll, { clientX: 160, clientY: 100 }); });
-    expect(screen.getByText('m 2 / 2')).toBeTruthy();
+    expect(screen.getByText('m 2 / 2')).toBeTruthy(); // the range still parks the cursor at its in-point
     screen.getByRole('button', { name: 'Play' }).click(); // Listen always plays immediately (no count-in — wave-3 A)
     await act(async () => {});
-    act(() => vi.advanceTimersByTime(1100)); // past the final step @60bpm → would normally finish
-    expect(screen.getByRole('button', { name: 'Pause' })).toBeInTheDocument(); // still playing — wrapped, not done
-    expect(screen.getByText('m 2 / 2')).toBeTruthy(); // back at the loop in-point
-    // The wrap arms the silence flush; its delayed panic (lookahead+60ms) kills
-    // any in-flight tail sends so nothing drones across the loop boundary.
+    act(() => vi.advanceTimersByTime(1100)); // past the final step @60bpm → the run completes
+    expect(screen.getByRole('button', { name: 'Play' })).toBeInTheDocument(); // finished, never wrapped
+    expect(screen.getByText('m 1 / 2')).toBeTruthy(); // …and the cursor went home, not to an in-point
+    // Completion still flushes the audio plane (sendsAudio): the delayed panic
+    // (lookahead+60ms) kills any in-flight tail sends so nothing drones.
     act(() => vi.advanceTimersByTime(500));
     expect(h.sendPanic).toHaveBeenCalled();
   });
@@ -1316,27 +1349,17 @@ describe('ScorePlayer — Listen mode', () => {
     expect(screen.getByTestId('score-position')).toHaveTextContent('1 / 4'); // home, not parked at 4 / 4
   });
 
-  it('a hand toggle during the Listen wrap dwell cancels the pending restart — no uncommanded audio (L6)', async () => {
-    // A tail-measure Listen loop can end in a ZERO-SPAN dwell: the loop's
-    // in-point IS the very last playTimeline event, so onDone dwells one beat
-    // before restarting instead of completing (see "Listen plays only the loop
-    // and wraps…" above). Under the one-hands model (wave-3 A) the ≥1-active
-    // floor means a user can no longer mute EVERY staff via the hands control to
-    // reach zero-span — but the fixture can still produce it directly: put every
-    // note in the un-looped first measure, short enough that its note_offs land
-    // well before the loop's in-point, so the looped tail measure (m2) carries NO
-    // audio regardless of which hand is active. A hand toggle mid-dwell still
-    // goes through pauseForRebuild, whose clearWrapDwell() runs UNCONDITIONALLY
-    // before the playing check — it must cancel the pending restart, or the
-    // stale timer fires seconds later with the wrong (now-different) timeline.
-    //
-    // A genuinely zero-span loop has NOTHING left to schedule in the WHOLE
-    // piece past its in-point — restarting it or not, sendNoteAt/sendPanic never
-    // fire either way, so an audio-silence assertion can't tell a canceled dwell
-    // apart from a stale one that fired. What DOES differ observably: onDone's
-    // loop branch logs `score.transport.loop-wrap` every time it runs (armed OR
-    // restarted). A canceled dwell logs it once (the initial arm); a stale
-    // restart that fires anyway re-enters onDone and logs a SECOND one.
+  it('a tail-measure range in Listen arms no wrap dwell at all — nothing restarts itself (L6, retired)', async () => {
+    // Wave-2 shape: a tail-measure Listen loop ended in a ZERO-SPAN dwell (the
+    // loop's in-point IS the last playTimeline event), so onDone dwelled one beat
+    // before restarting, and a hand toggle mid-dwell had to cancel that pending
+    // restart or a stale timer would fire seconds later against a rebuilt
+    // timeline. Wave-3 §0 removes the dwell from Listen entirely: Listen holds no
+    // range, so the run simply completes. The observable that told a canceled
+    // dwell from a fired one is the same one that proves the dwell is gone —
+    // onDone's loop branch logs `score.transport.loop-wrap` every time it runs
+    // (armed OR restarted), and here it must never run. The uncommanded-audio
+    // half is kept too: nothing may sound after the run ends.
     h.layoutExtras = {
       tempoEntries: [{ onsetQuarter: 0, bpm: 60 }],
       events: [
@@ -1381,18 +1404,276 @@ describe('ScorePlayer — Listen mode', () => {
     const scroll = document.querySelector('.piano-score-player__scroll');
     act(() => { fireEvent.click(scroll, { clientX: 160, clientY: 100 }); });
     act(() => { fireEvent.click(scroll, { clientX: 160, clientY: 100 }); });
-    expect(screen.getByText('m 2 / 2')).toBeTruthy();
+    expect(screen.getByText('m 2 / 2')).toBeTruthy(); // the range still parks the cursor at its in-point
     screen.getByRole('button', { name: 'Play' }).click(); // Listen always plays immediately (no count-in — wave-3 A)
     await act(async () => {});
-    act(() => vi.advanceTimersByTime(200)); // the zero-span run completes almost instantly → dwell armed
-    expect(wraps().length).toBe(1);              // confirms the dwell actually armed…
-    expect(wraps()[0][1]).toMatchObject({ dwell: true }); // …as a zero-span dwell, not an immediate restart
+    act(() => vi.advanceTimersByTime(200)); // where wave-2 armed the zero-span dwell
+    expect(wraps()).toEqual([]);            // …nothing is armed: Listen holds no range
+    h.sendNoteAt.mockClear();
 
-    // Toggle a hand DURING the dwell (transport idle) — allowed under the ≥1
-    // floor since the other hand stays active.
+    // A hand toggle after the run — the wave-2 trigger for the stale restart.
     act(() => { fireEvent.click(screen.getByRole('button', { name: 'Right hand' })); });
-    act(() => vi.advanceTimersByTime(1500)); // well past the one-beat (1000ms) dwell
-    expect(wraps().length).toBe(1); // no second loop-wrap — the stale restart never fired
+    act(() => vi.advanceTimersByTime(1500)); // well past where the one-beat dwell would have fired
+    expect(wraps()).toEqual([]);             // no loop-wrap, ever
+    expect(h.sendNoteAt).not.toHaveBeenCalled(); // and no uncommanded audio
+  });
+});
+
+// ── Task 9 (§B): the Learn state matrix ───────────────────────────────────────
+// Learn has THREE states, not one:
+//   1. no range           → machine playback of the active hands (Play live)
+//   2. range + loop ON    → the gate: follow tracker drives, kiosk silent, Play locked
+//   3. range + loop OFF   → machine playback of the WHOLE piece, brackets still shown
+// Loop/focus is Learn-only state: entering any other mode clears both.
+describe('ScorePlayer — Learn state matrix (wave-3 B)', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.spyOn(performance, 'now').mockImplementation(() => Date.now());
+    vi.stubGlobal('requestAnimationFrame', (cb) => setTimeout(() => cb(Date.now()), 16));
+    vi.stubGlobal('cancelAnimationFrame', (id) => clearTimeout(id));
+    vi.setSystemTime(0);
+  });
+  afterEach(() => { cleanup(); vi.useRealTimers(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
+
+  // Three measures, one onset each @60bpm (1000ms/quarter). Step 0 is a
+  // both-hands step (RH E4 + LH E2) so the follow gate has something to hold;
+  // steps 1-2 are RH alone.
+  const THREE = {
+    tempoEntries: [{ onsetQuarter: 0, bpm: 60 }],
+    events: [
+      { midi: 64, midis: [64, 40], onsetQuarter: 0, x: 100, top: 10, bottom: 200, system: 0 },
+      { midi: 62, midis: [62], onsetQuarter: 1, x: 160, top: 10, bottom: 200, system: 0 },
+      { midi: 60, midis: [60], onsetQuarter: 2, x: 220, top: 10, bottom: 200, system: 0 },
+    ],
+    steps: [
+      { onsetQuarter: 0, measure: 0, notes: [{ midi: 64, staff: 0, x: 100, top: 10, bottom: 200, width: 8 }, { midi: 40, staff: 1, x: 100, top: 10, bottom: 200, width: 8 }] },
+      { onsetQuarter: 1, measure: 1, notes: [{ midi: 62, staff: 0, x: 160, top: 10, bottom: 200, width: 8 }] },
+      { onsetQuarter: 2, measure: 2, notes: [{ midi: 60, staff: 0, x: 220, top: 10, bottom: 200, width: 8 }] },
+    ],
+    measures: [
+      { index: 0, number: 1, firstStep: 0, lastStep: 0 },
+      { index: 1, number: 2, firstStep: 1, lastStep: 1 },
+      { index: 2, number: 3, firstStep: 2, lastStep: 2 },
+    ],
+    notes: [
+      { midi: 64, staff: 0, onsetQuarter: 0, durationQuarters: 1 },
+      { midi: 40, staff: 1, onsetQuarter: 0, durationQuarters: 1 },
+      { midi: 62, staff: 0, onsetQuarter: 1, durationQuarters: 1 },
+      { midi: 60, staff: 0, onsetQuarter: 2, durationQuarters: 1 },
+    ],
+  };
+
+  const enterLearnFresh = async () => {
+    renderPlayer();
+    pickMode('Learn');
+    await act(async () => {});
+  };
+  // Guided two-tap selection: both taps on the note at `clientX` → a ONE-measure
+  // range, looping (a freshly-picked range always arms the loop).
+  const armLoopAt = (clientX) => {
+    act(() => { fireEvent.click(screen.getByRole('button', { name: 'Loop' })); });
+    const scroll = document.querySelector('.piano-score-player__scroll');
+    act(() => { fireEvent.click(scroll, { clientX, clientY: 100 }); });
+    act(() => { fireEvent.click(scroll, { clientX, clientY: 100 }); });
+  };
+  const armLoopSpan = (x1, x2) => {
+    act(() => { fireEvent.click(screen.getByRole('button', { name: 'Loop' })); });
+    const scroll = document.querySelector('.piano-score-player__scroll');
+    act(() => { fireEvent.click(scroll, { clientX: x1, clientY: 100 }); });
+    act(() => { fireEvent.click(scroll, { clientX: x2, clientY: 100 }); });
+  };
+  const pos = () => screen.getByTestId('score-position').textContent;
+  const runBtn = () => document.querySelector('.piano-score-run');
+
+  // ── Spec 1: Learn with no range = machine playback ──────────────────────────
+  it('Learn without a range performs the active hands through the piano, on a live transport', async () => {
+    h.layoutExtras = THREE;
+    await enterLearnFresh();
+    const btn = screen.getByRole('button', { name: 'Play' });
+    expect(btn).not.toBeDisabled(); // Play is NOT locked without a range
+    btn.click();
+    await act(async () => {});
+    expect(document.querySelector('.piano-score-countin')).toBeNull(); // Polish-only count-in
+    act(() => vi.advanceTimersByTime(100));
+    expect(h.sendNoteAt).toHaveBeenCalledWith(64, expect.any(Number), expect.any(Number)); // RH performed
+    expect(h.sendNoteAt).toHaveBeenCalledWith(40, expect.any(Number), expect.any(Number)); // LH performed
+    act(() => vi.advanceTimersByTime(1000));
+    expect(pos()).toContain('m 2 / 3'); // the transport advances the cursor
+  });
+
+  it('Learn without a range runs no wrong-note gate — a mismatched note neither shakes nor blocks', async () => {
+    h.layoutExtras = THREE;
+    await enterLearnFresh();
+    expect(h.noteCb).toBeNull(); // the follow tracker never subscribed
+    play(61); // a wrong note against step 0 (E4/E2)
+    expect(document.querySelector('.piano-score-cursor.is-wrong')).toBeNull();
+    expect(pos()).toContain('m 1 / 3'); // and input does not drive the cursor either
+  });
+
+  // ── Spec 2: range + loop ON = the gate ──────────────────────────────────────
+  it('Learn with a looping range locks Play, stays silent, and lets the follow tracker drive', async () => {
+    h.layoutExtras = THREE;
+    await enterLearnFresh();
+    armLoopSpan(100, 220); // m1–m3, looping
+    expect(screen.getByRole('button', { name: 'Learn advances as you play' })).toBeDisabled();
+    act(() => vi.advanceTimersByTime(2000));
+    expect(h.sendNoteAt).not.toHaveBeenCalled(); // the kiosk performs nothing in the gate
+    expect(h.noteCb).toBeTypeOf('function');     // the tracker is subscribed
+    play(64); play(40);                          // all active-staff notes of step 0
+    expect(pos()).toContain('m 2 / 3');           // …advances the cursor
+    play(63);                                     // a plausible wrong note flashes — the gate is armed
+    expect(document.querySelector('.piano-score-cursor.is-wrong')).not.toBeNull();
+  });
+
+  // ── Spec 3: range + loop OFF = machine playback of the whole piece ──────────
+  it('Learn with a range but the loop OFF plays the WHOLE piece, brackets still visible', async () => {
+    h.layoutExtras = THREE;
+    await enterLearnFresh();
+    armLoopAt(160); // one-measure range on m2 — cursor jumps to the in-point
+    expect(pos()).toContain('m 2 / 3');
+    act(() => { fireEvent.click(screen.getByRole('button', { name: 'Loop' })); }); // loop OFF, range kept
+    expect(screen.getByRole('button', { name: 'Loop' })).toHaveTextContent(/m2–m2/i);
+    expect(document.querySelectorAll('.piano-score-range-bracket').length).toBeGreaterThan(0);
+    const btn = screen.getByRole('button', { name: 'Play' });
+    expect(btn).not.toBeDisabled();
+    btn.click();
+    await act(async () => {});
+    act(() => vi.advanceTimersByTime(1100)); // one quarter past the out-point
+    expect(pos()).toContain('m 3 / 3');      // ran PAST the range — no wrap
+  });
+
+  // ── Spec 4: turning the loop ON is a matrix change ──────────────────────────
+  it('turning the loop ON stops the transport, silences, jumps to the in-point, and does not auto-play', async () => {
+    h.layoutExtras = THREE;
+    await enterLearnFresh();
+    armLoopAt(160);                                                            // range on m2
+    act(() => { fireEvent.click(screen.getByRole('button', { name: 'Loop' })); }); // …loop OFF
+    const scroll = document.querySelector('.piano-score-player__scroll');
+    act(() => { fireEvent.click(scroll, { clientX: 220, clientY: 100 }); });    // seek to m3
+    expect(pos()).toContain('m 3 / 3');
+    screen.getByRole('button', { name: 'Play' }).click();
+    await act(async () => {});
+    act(() => vi.advanceTimersByTime(100));
+    expect(h.sendNoteAt).toHaveBeenCalled(); // machine playback is running
+    h.sendPanic.mockClear();
+    h.sendNoteAt.mockClear();
+
+    act(() => { fireEvent.click(screen.getByRole('button', { name: 'Loop' })); }); // loop back ON
+    expect(h.sendPanic).toHaveBeenCalled();                                        // silenced
+    expect(screen.getByRole('button', { name: 'Learn advances as you play' })).toBeDisabled();
+    expect(pos()).toContain('m 2 / 3');   // jumped to the in-point
+    act(() => vi.advanceTimersByTime(2000));
+    expect(pos()).toContain('m 2 / 3');   // …and never started itself
+    expect(h.sendNoteAt).not.toHaveBeenCalled();
+  });
+
+  // ── Spec 5: turning the loop OFF leaves the cursor alone ────────────────────
+  it('turning the loop OFF drops the follow gate cleanly and leaves the cursor put', async () => {
+    h.layoutExtras = THREE;
+    await enterLearnFresh();
+    armLoopAt(160);
+    expect(h.noteCb).toBeTypeOf('function');
+    act(() => { fireEvent.click(screen.getByRole('button', { name: 'Loop' })); }); // loop OFF
+    expect(h.noteCb).toBeNull();                                  // tracker unsubscribed
+    expect(pos()).toContain('m 2 / 3');                            // cursor stays where it was
+    expect(screen.getByRole('button', { name: 'Play' })).not.toBeDisabled();
+  });
+
+  // ── Spec 6: loop/focus is Learn-only state ──────────────────────────────────
+  it('entering Listen or Polish clears the range AND the loop toggle; Learn keeps it', async () => {
+    h.layoutExtras = THREE;
+    await enterLearnFresh();
+    armLoopAt(160);
+    const trigger = () => screen.getByRole('button', { name: 'Loop' });
+    expect(trigger()).toHaveTextContent(/m2–m2/i);
+    expect(trigger()).toHaveAttribute('aria-pressed', 'true');
+
+    pickMode('Listen');
+    expect(trigger().textContent).toBe('');                       // range gone
+    expect(trigger()).toHaveAttribute('aria-pressed', 'false');   // …and the loop toggle with it
+    pickMode('Learn');
+    expect(trigger().textContent).toBe('');                       // nothing came back
+
+    armLoopAt(160);
+    expect(trigger()).toHaveTextContent(/m2–m2/i);
+    pickMode('Polish');                                            // Polish grades whole-piece only
+    expect(trigger().textContent).toBe('');
+    expect(trigger()).toHaveAttribute('aria-pressed', 'false');
+  });
+
+  it('Perform still releases the range (unchanged)', async () => {
+    h.layoutExtras = THREE;
+    await enterLearnFresh();
+    armLoopAt(160);
+    pickMode('Perform');
+    pickMode('Learn');
+    expect(screen.getByRole('button', { name: 'Loop' }).textContent).toBe('');
+  });
+
+  // ── Spec 7: every former `mode === 'listen'` audio guard is `sendsAudio` ─────
+  const startMachineLearn = async () => {
+    h.layoutExtras = THREE;
+    await enterLearnFresh();
+    screen.getByRole('button', { name: 'Play' }).click();
+    await act(async () => {});
+    act(() => vi.advanceTimersByTime(100));
+    expect(h.sendNoteAt).toHaveBeenCalled();
+    h.sendPanic.mockClear();
+  };
+
+  it('a tap-seek during Learn machine playback flushes the schedule', async () => {
+    await startMachineLearn();
+    act(() => { fireEvent.click(document.querySelector('.piano-score-player__scroll'), { clientX: 220, clientY: 100 }); });
+    expect(h.sendPanic).toHaveBeenCalled();
+  });
+
+  it('pausing Learn machine playback flushes the schedule', async () => {
+    await startMachineLearn();
+    screen.getByRole('button', { name: 'Pause' }).click();
+    await act(async () => {});
+    expect(h.sendPanic).toHaveBeenCalled();
+  });
+
+  it('Restart during Learn machine playback flushes the schedule', async () => {
+    await startMachineLearn();
+    act(() => { fireEvent.click(screen.getByRole('button', { name: /restart/i })); });
+    expect(h.sendPanic).toHaveBeenCalled();
+  });
+
+  it('a hand change during Learn machine playback flushes the schedule and picks the run back up', async () => {
+    // The machine states perform the same note timeline Listen does, so a hand
+    // change invalidates it the same way (audit H5) — pause + flush, then resume.
+    await startMachineLearn();
+    act(() => { fireEvent.click(screen.getByRole('button', { name: 'Left hand' })); });
+    await act(async () => {});
+    expect(h.sendPanic).toHaveBeenCalled();
+    expect(screen.getByRole('button', { name: 'Pause' })).toBeInTheDocument(); // resumed, not stranded
+  });
+
+  it('a completed Learn machine run flushes the schedule and returns the cursor home', async () => {
+    await startMachineLearn();
+    act(() => vi.advanceTimersByTime(5000)); // past the final onset + its release → onDone
+    expect(h.sendPanic).toHaveBeenCalled();
+    expect(pos()).toContain('m 1 / 3');
+    expect(runBtn()).not.toBeDisabled(); // still a live transport, back at the top
+  });
+
+  // ── Spec 8: the Learn free metronome is orthogonal to the matrix ────────────
+  it('the Learn free metronome works in all three states', async () => {
+    h.layoutExtras = THREE;
+    await enterLearnFresh();
+    const click = () => screen.getByRole('button', { name: /metronome/i });
+    act(() => { fireEvent.click(click()); });                     // state 1: no range
+    expect(h.clickSched.start).toHaveBeenCalledTimes(1);
+    act(() => { fireEvent.click(click()); });
+    armLoopAt(160);                                               // state 2: the gate
+    act(() => { fireEvent.click(click()); });
+    expect(h.clickSched.start).toHaveBeenCalledTimes(2);
+    expect(click()).toHaveAttribute('aria-pressed', 'true');
+    act(() => { fireEvent.click(click()); });
+    act(() => { fireEvent.click(screen.getByRole('button', { name: 'Loop' })); }); // state 3: loop OFF
+    act(() => { fireEvent.click(click()); });
+    expect(h.clickSched.start).toHaveBeenCalledTimes(3);
   });
 });
 
@@ -1545,6 +1826,8 @@ describe('ScorePlayer — rebuild-pause resume (H5/M3)', () => {
 });
 
 describe('ScorePlayer — Restart honors the loop in-point (L5)', () => {
+  // Loop/focus is Learn-only state now (wave-3 §0), so this is a Learn scenario:
+  // the loop is OFF-limits to Polish, but Restart's home-step rule is unchanged.
   it('Restart returns to the loop in-point, not measure 1', () => {
     h.layoutExtras = {
       steps: [
@@ -1557,12 +1840,8 @@ describe('ScorePlayer — Restart honors the loop in-point (L5)', () => {
       ],
     };
     renderPlayer();
-    pickMode('Polish');
     // Set a loop on measure 2 only (two selection taps at x=160 → step 1 → measure index 1).
-    act(() => { fireEvent.click(screen.getByRole('button', { name: 'Loop' })); }); // no range yet -> direct tap starts selection
-    const scroll = document.querySelector('.piano-score-player__scroll');
-    act(() => { fireEvent.click(scroll, { clientX: 160, clientY: 100 }); });
-    act(() => { fireEvent.click(scroll, { clientX: 160, clientY: 100 }); });
+    enterLearnGate(160);
     expect(screen.getByText('m 2 / 2')).toBeTruthy(); // focus jump put the cursor at the in-point
     act(() => { fireEvent.click(screen.getByRole('button', { name: /restart/i })); });
     expect(screen.getByText('m 2 / 2')).toBeTruthy(); // NOT m 1 / 2
@@ -1736,7 +2015,7 @@ describe('ScorePlayer — Learn pacing telemetry (Task 11)', () => {
     vi.spyOn(performance, 'now').mockImplementation(() => t);
     const emitted = captureFollow();
     renderPlayer();
-    enterLearn(); // stamps the reference point at t=1000
+    enterLearnGate(); // stamps the reference point at t=1000; the gate is what tracks
     t = 1750;
     play(64); // first note of step 0 (needs 64 + 52 + 40, so the cursor stays put)
 
@@ -1753,7 +2032,7 @@ describe('ScorePlayer — Learn pacing telemetry (Task 11)', () => {
     vi.spyOn(performance, 'now').mockImplementation(() => t);
     const emitted = captureFollow();
     renderPlayer();
-    enterLearn();
+    enterLearnGate();
     // Complete step 0 (E4 + LH E3/E2) at +300ms, then answer step 1 at +900ms.
     t = 1300; play(64); play(52); play(40);
     t = 2200; play(62);
@@ -1783,7 +2062,10 @@ describe('ScorePlayer — entering Learn (audit H3.3)', () => {
     expect(screen.getByTestId('score-position')).toHaveTextContent('1 / 4'); // from the top, not step 4
   });
 
-  it('enters at the loop in-point when a practice loop is active', () => {
+  // Wave-3 §0 retires "enter Learn on the loop another mode was holding": no other
+  // mode holds a range any more. What replaces it is the round trip — a range set
+  // in Learn does not survive the trip out, so Learn is re-entered from the top.
+  it('re-enters from the top: leaving Learn released the range that pinned the cursor', () => {
     // One measure per step, so the measure readout can tell the loop's in-point
     // apart from a cursor parked deeper inside the loop.
     h.layoutExtras = {
@@ -1795,6 +2077,7 @@ describe('ScorePlayer — entering Learn (audit H3.3)', () => {
       measures: h.events.map((e, i) => ({ index: i, number: i + 1, firstStep: i, lastStep: i })),
     };
     renderPlayer(); // Listen
+    enterLearn();
     // Loop measures 2–3 (steps 1–2) via the guided two-tap selection.
     const scroll = document.querySelector('.piano-score-player__scroll');
     act(() => { fireEvent.click(screen.getByRole('button', { name: 'Loop' })); }); // no range yet -> direct tap starts selection
@@ -1803,8 +2086,10 @@ describe('ScorePlayer — entering Learn (audit H3.3)', () => {
     expect(screen.getByTestId('score-position')).toHaveTextContent('m 2 / 4'); // at the in-point
     act(() => { fireEvent.click(scroll, { clientX: 280, clientY: 100 }); }); // seek deeper (clamped to m3)
     expect(screen.getByTestId('score-position')).toHaveTextContent('m 3 / 4');
+    pickMode('Listen');
+    expect(screen.getByRole('button', { name: 'Loop' }).textContent).toBe(''); // range released
     enterLearn();
-    expect(screen.getByTestId('score-position')).toHaveTextContent('m 2 / 4'); // back to the in-point
+    expect(screen.getByTestId('score-position')).toHaveTextContent('m 1 / 4'); // from the top
   });
 });
 
@@ -1828,7 +2113,7 @@ describe('ScorePlayer — Learn stuck prompt (audit H3)', () => {
   it('offers one hand after dwelling on a both-hands step, and narrows to it on pick', async () => {
     renderPlayer(); // opens in Listen
     await act(async () => {});
-    enterLearn();
+    enterLearnGate(); // the all-notes rule (and this prompt's whole premise) is Learn's gate
     // Step 0 is E4 (staff 0) + E3/E2 (staff 1) — a step the all-notes rule holds
     // hostage until both hands arrive.
     expect(stuck()).toBeNull();          // not offered immediately — dwelling is the signal
@@ -1848,7 +2133,7 @@ describe('ScorePlayer — Learn stuck prompt (audit H3)', () => {
   it('does not offer on a single-staff step — a split would not help', async () => {
     renderPlayer();
     await act(async () => {});
-    enterLearn();
+    enterLearnGate();
     play(64); play(52); play(40); // satisfy step 0 → step 1 is D4 alone (staff 0)
     expect(screen.getByTestId('score-position')).toHaveTextContent('2 / 4');
     act(() => vi.advanceTimersByTime(5100));
