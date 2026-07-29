@@ -2965,17 +2965,51 @@
   .piano-score-stuck__dismiss { opacity: 0.75; }
 }
 
-// Focus-range brackets + tint on the score (audit J5/M3).
+// Focus-range tint on the score (audit J5/M3). The range's ENDS are the draggable
+// handles below — since wave-3 F there is no separate bracket, because a boundary
+// you can see but not grab is a decoy target.
 .piano-score-range-tint {
   position: absolute; z-index: 3; pointer-events: none;
   background: color-mix(in srgb, var(--piano-accent, #2ec46f) 12%, transparent);
   border-radius: 4px;
 }
-.piano-score-range-bracket {
-  position: absolute; z-index: 4; pointer-events: none; width: 3px;
-  background: var(--piano-accent, #2ec46f); border-radius: 2px;
-  box-shadow: 0 0 6px rgba(46, 196, 111, 0.5);
-  &--pending { background: #f0d270; box-shadow: 0 0 6px rgba(240, 210, 112, 0.6); }
+
+// Section boundaries, ticked only while an endpoint is being chosen (armed or
+// mid-drag) — these are the landmarks a commit SNAPS to, so they appear exactly
+// when they are actionable and never clutter a score at rest.
+.piano-score-section-mark {
+  position: absolute; z-index: 4; width: 2px; pointer-events: none;
+  background: #f0d270; opacity: 0.8; border-radius: 1px;
+}
+
+// The loop range's two draggable endpoints (wave-3 F). The layer root is inert;
+// only the handles take pointer events, so tap-to-seek still works everywhere
+// else on the score.
+.piano-score-range-handles {
+  position: absolute; inset: 0; pointer-events: none;
+}
+.piano-score-range-handle {
+  position: absolute; z-index: 8;
+  // 48px wide / tall minimum: the handle straddles the boundary it marks, and
+  // HANDLE_HALF_PX in RangeHandleLayer.jsx is half of this width — keep in sync.
+  width: 48px; min-height: 48px;
+  pointer-events: auto;
+  // The browser must never claim this gesture as a scroll: a drag that gets
+  // stolen mid-way leaves the handle stranded under the finger.
+  touch-action: none;
+  cursor: grab;
+  // The grip itself — a 3px accent bar down the middle of the 48px target, so
+  // the visual boundary is exact while the tappable area stays thumb-sized.
+  &::after {
+    content: ''; position: absolute; top: 0; bottom: 0; left: 50%;
+    width: 3px; margin-left: -1.5px; border-radius: 2px;
+    background: var(--piano-accent, #2ec46f);
+    box-shadow: 0 0 6px rgba(46, 196, 111, 0.5);
+  }
+  &.is-dragging {
+    cursor: grabbing;
+    &::after { background: #f0d270; box-shadow: 0 0 10px rgba(240, 210, 112, 0.75); }
+  }
 }
 
 // Hairline divider ahead of the hands/parts cluster (wave-2 T8) — the label

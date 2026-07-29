@@ -1800,14 +1800,14 @@ describe('ScorePlayer — Learn state matrix (wave-3 B)', () => {
   });
 
   // ── Spec 3: range + loop OFF = machine playback of the whole piece ──────────
-  it('Learn with a range but the loop OFF plays the WHOLE piece, brackets still visible', async () => {
+  it('Learn with a range but the loop OFF plays the WHOLE piece, handles still visible', async () => {
     h.layoutExtras = THREE;
     await enterLearnFresh();
     armLoopAt(160); // one-measure range on m2 — cursor jumps to the in-point
     expect(pos()).toContain('m 2 / 3');
     toggleLoop(); // loop OFF, range kept
     expect(loopSpan()).toBe('m2–m2');
-    expect(document.querySelectorAll('.piano-score-range-bracket').length).toBeGreaterThan(0);
+    expect(document.querySelectorAll('.piano-score-range-handle').length).toBe(2); // the ends are the handles now (wave-3 F)
     const btn = screen.getByRole('button', { name: 'Play' });
     expect(btn).not.toBeDisabled();
     btn.click();
@@ -3007,7 +3007,7 @@ describe('ScorePlayer — armed endpoint picking (wave-3 F)', () => {
     expect(banner()).toBeNull();              // committed → guidance goes away
     expect(loopSpan()).toBe('m3–m3');         // a ONE-measure range
     expect(loopToggle()).toHaveAttribute('aria-pressed', 'false'); // …with the loop OFF (§F)
-    expect(document.querySelectorAll('.piano-score-range-bracket').length).toBeGreaterThan(0);
+    expect(document.querySelectorAll('.piano-score-range-handle').length).toBe(2); // the ends are the handles now (wave-3 F)
     expect(screen.getByTestId('score-position')).toHaveTextContent('m 3 / 4'); // cursor at the in-point
     expect(screen.getByRole('button', { name: 'Play' })).toBeEnabled();        // …and nothing started
   });
@@ -3181,5 +3181,93 @@ describe('ScorePlayer — armed endpoint picking (wave-3 F)', () => {
       armAndTap('in', 160);
       expect(screen.getByRole('button', { name: 'Play' })).toBeInTheDocument(); // stopped, never auto-played
     } finally { vi.useRealTimers(); }
+  });
+
+  // ── Task 21 (§F): the range's ends are DRAGGABLE handles ──────────────────
+  // The two grips on the score are both the boundary visual and the way to move
+  // it. A still press on one ARMS that edge (the same flow the bar's mark buttons
+  // start); a drag moves it directly and commits the measure it is released over.
+  // jsdom has no PointerEvent, but the listeners route by type string and a
+  // MouseEvent carries clientX/clientY — the same trick the touch-gesture tests
+  // above use. The handle layer's root rect is all zeros here, so client coords
+  // are renderer-local coords.
+  const pev = (type, x, y = 100) => new MouseEvent(type, { clientX: x, clientY: y, bubbles: true, cancelable: true });
+  const grip = (edge) => document.querySelector(`.piano-score-range-handle--${edge}`);
+  const ticks = () => document.querySelectorAll('.piano-score-section-mark');
+  const pressGrip = (edge, x) => { act(() => { grip(edge).dispatchEvent(pev('pointerdown', x)); }); };
+  const moveGrip = (edge, x) => { act(() => { grip(edge).dispatchEvent(pev('pointermove', x)); }); };
+  const releaseGrip = (edge, x) => { act(() => { grip(edge).dispatchEvent(pev('pointerup', x)); }); };
+
+  const renderSectioned = () => {
+    h.layoutExtras = EIGHTEEN;
+    render(<MemoryRouter><ScorePlayer score={{ title: 'S', musicXml: sectionedXml(18, { 8: 'A', 16: 'B' }) }} /></MemoryRouter>);
+    enterLearn();
+  };
+
+  it('renders a handle at each end of the range — Learn only, and only with a range', () => {
+    renderSectioned();
+    expect(document.querySelectorAll('.piano-score-range-handle')).toHaveLength(0); // no range yet
+    armAndTap('in', xOfMeasure(8));
+    expect(loopSpan()).toBe('m8–m8');
+    expect(grip('in')).not.toBeNull();
+    expect(grip('out')).not.toBeNull();
+    expect(grip('in').getAttribute('aria-valuenow')).toBe('8'); // 1-based, like the readout
+    pickMode('Polish'); // Polish has no loop (Task 9) — so it must not show its ends
+    expect(document.querySelectorAll('.piano-score-range-handle')).toHaveLength(0);
+  });
+
+  it('dragging a handle commits that edge — snapped to a section boundary', () => {
+    const emitted = captureLog();
+    renderSectioned();
+    armAndTap('in', xOfMeasure(8));            // range m8–m8 (the mark itself)
+    emitted.length = 0;
+    pressGrip('out', xOfMeasure(8));
+    // m15 is section A's LAST measure (the mark at m16 starts B); release one
+    // measure short of it…
+    moveGrip('out', xOfMeasure(14));
+    releaseGrip('out', xOfMeasure(14));
+    expect(loopSpan()).toBe('m8–m15');          // …and the commit snaps to the boundary
+    expect(emitted.filter(([ev]) => ev === 'score.loop.set').map(([, d]) => d))
+      .toEqual([{ edge: 'out', measure: 14, via: 'drag', snapped: true }]);
+  });
+
+  it('a still press on a handle arms that edge instead of moving it', () => {
+    renderSectioned();
+    armAndTap('in', xOfMeasure(8));
+    expect(banner()).toBeNull();
+    pressGrip('out', 400);
+    releaseGrip('out', 403);                    // inside the tap slop → a TAP
+    expect(banner()).not.toBeNull();
+    expect(banner().textContent).toMatch(/loop end/i);
+    expect(loopSpan()).toBe('m8–m8');           // nothing moved
+    tapScore(xOfMeasure(12));                   // …and the armed flow still commits
+    expect(loopSpan()).toBe('m8–m12');
+  });
+
+  it('ticks the section boundaries only while an endpoint is up for grabs', () => {
+    renderSectioned();
+    expect(ticks()).toHaveLength(0);            // a score at rest is unmarked
+    arm('in');
+    const armedTicks = ticks().length;
+    expect(armedTicks).toBeGreaterThan(0);      // armed with no range yet — still drawn
+    tapScore(xOfMeasure(8));
+    expect(ticks()).toHaveLength(0);            // committed → the landmarks go away
+    // …and again for the whole span of a drag.
+    pressGrip('out', xOfMeasure(8));
+    moveGrip('out', xOfMeasure(12));
+    expect(ticks()).toHaveLength(armedTicks);
+    releaseGrip('out', xOfMeasure(12));
+    expect(ticks()).toHaveLength(0);
+  });
+
+  it('a cancelled handle drag leaves the range alone and clears the tick chrome', () => {
+    renderSectioned();
+    armAndTap('in', xOfMeasure(8));
+    pressGrip('out', xOfMeasure(8));
+    moveGrip('out', xOfMeasure(12));
+    expect(ticks().length).toBeGreaterThan(0);
+    act(() => { grip('out').dispatchEvent(pev('pointercancel', xOfMeasure(12))); });
+    expect(loopSpan()).toBe('m8–m8'); // nothing committed
+    expect(ticks()).toHaveLength(0);  // and no latched drag chrome
   });
 });
