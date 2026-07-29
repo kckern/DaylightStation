@@ -516,10 +516,24 @@ export default function ScorePlayer({ score: scoreMeta }) {
     countIn.cancel();
     clearWrapDwell();
     resumeAfterRef.current = null;
-    if (transportRef.current?.playing) transportRef.current.pause();
+    // Did this component actually put anything on the audio plane? Only then can
+    // note-ons already be dispatched into the lookahead window, and only then may
+    // we arm the DELAYED panic. silenceScheduled() is NOT safe on a silent kiosk:
+    // silence() self-guards on the sounding ledger, but the delayed sendPanic
+    // timer is armed unconditionally — and a stray CC123 in Learn's gate cuts off
+    // notes the PLAYER is holding down (the contract silence() states above). A
+    // quiet matrix change therefore takes the self-guarding silence() and nothing
+    // else. Two ways to be loud: notes on the ledger (every scheduled note_on
+    // lands there the moment it is dispatched, lookahead included — so this also
+    // covers a range ARMED mid-performance, where the effect that runs the change
+    // already sees the post-change `sendsAudio`), or an audio-plane run that was
+    // still going when this was called.
+    const hadSound = soundingRef.current.size > 0;
+    const wasPlaying = !!transportRef.current?.playing;
+    if (wasPlaying) transportRef.current.pause();
     setRunActive(false);
-    silenceScheduled(); // safe when already silent: soundingRef is empty → no panic
-  }, [countIn, clearWrapDwell, silenceScheduled]);
+    if (hadSound || (sendsAudio && wasPlaying)) silenceScheduled(); else silence();
+  }, [countIn, clearWrapDwell, sendsAudio, silence, silenceScheduled]);
 
   // Metronome click (audit M1/M2/M4). Two modes, one bar button:
   //  Polish — `clickOn` (persisted) ARMS a reference beat that sounds only while
@@ -981,11 +995,17 @@ export default function ScorePlayer({ score: scoreMeta }) {
   // ── Focus range: selection + custom-loop taps ─────────────────────────────────
   // When a practice range is (re)selected, jump the cursor to its in-point and log.
   useEffect(() => {
-    // A range change moves between rows of the Learn matrix — stop and quiet down
-    // first (this also clears the pending dwell), then position the cursor. Nothing
-    // below plays: a new range never auto-starts a run.
-    stopForMatrixChange();
+    clearWrapDwell(); // a loop change (set/clear/nudge) invalidates a pending dwell
+    // The no-focus path is BOTH a bare mount and a cleared range, and must not
+    // touch the transport or the piano: this effect runs on mount, so stopping
+    // here would have every ScorePlayer open by silencing a kiosk it has not yet
+    // played a note through. A range CLEAR still stops its driver — onClearFocus
+    // owns that (it calls stopForMatrixChange before clearing).
     if (!focus) return;
+    // SETTING a range moves between rows of the Learn matrix — stop and quiet down
+    // first, then position the cursor. Nothing below plays: a new range never
+    // auto-starts a run.
+    stopForMatrixChange();
     const r = layout.measures ? rangeSteps(layout.measures, focus) : null;
     if (!r) return;
     setStep(r[0]);

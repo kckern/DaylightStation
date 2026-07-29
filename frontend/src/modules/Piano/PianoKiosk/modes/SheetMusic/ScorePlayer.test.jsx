@@ -1658,6 +1658,67 @@ describe('ScorePlayer — Learn state matrix (wave-3 B)', () => {
     expect(runBtn()).not.toBeDisabled(); // still a live transport, back at the top
   });
 
+  // ── A matrix change must never panic a SILENT kiosk (fix round 1) ───────────
+  // silenceScheduled() arms a delayed CC123 unconditionally — silence() self-
+  // guards on the sounding ledger, but the timer does not. In Learn's gate the
+  // player is holding keys down, so a stray panic cuts off THEIR notes. A quiet
+  // matrix change (mount, arming a range, flipping the loop with nothing playing)
+  // must send nothing at all; an audible one must still flush.
+  it('mounting the player sends no panic — nothing has played yet', async () => {
+    h.layoutExtras = THREE;
+    renderPlayer();
+    await act(async () => {});
+    act(() => vi.advanceTimersByTime(1000)); // well past lookahead + 60ms
+    expect(h.sendPanic).not.toHaveBeenCalled();
+  });
+
+  // Entering a mode flushes unconditionally (onMode, pre-existing) — let that
+  // delayed panic land and reset the spy, so these assert the matrix change ALONE.
+  const settleInSilentLearn = async () => {
+    h.layoutExtras = THREE;
+    await enterLearnFresh();
+    act(() => vi.advanceTimersByTime(1000)); // drain the mode-change flush
+    h.sendPanic.mockClear();
+  };
+
+  it('arming a range in a silent Learn sends no panic', async () => {
+    await settleInSilentLearn();
+    armLoopAt(160);
+    act(() => vi.advanceTimersByTime(1000));
+    expect(h.sendPanic).not.toHaveBeenCalled();
+  });
+
+  it('flipping the loop in a silent Learn gate sends no panic, either way', async () => {
+    await settleInSilentLearn();
+    armLoopAt(160);
+    act(() => { fireEvent.click(screen.getByRole('button', { name: 'Loop' })); }); // gate → machine
+    act(() => { fireEvent.click(screen.getByRole('button', { name: 'Loop' })); }); // …and back
+    act(() => vi.advanceTimersByTime(1000));
+    expect(h.sendPanic).not.toHaveBeenCalled();
+  });
+
+  it('clearing a range in a silent Learn sends no panic', async () => {
+    await settleInSilentLearn();
+    armLoopAt(160);
+    act(() => { fireEvent.click(screen.getByRole('button', { name: /clear loop/i })); });
+    act(() => vi.advanceTimersByTime(1000));
+    expect(h.sendPanic).not.toHaveBeenCalled();
+  });
+
+  it('…but a matrix change during AUDIBLE machine playback still flushes, twice', async () => {
+    await startMachineLearn();            // playing, notes sounding
+    act(() => vi.advanceTimersByTime(400)); // let the mode-change flush land first
+    h.sendPanic.mockClear();
+    act(() => { fireEvent.click(screen.getByRole('button', { name: 'Loop' })); }); // no range → starts selection
+    const scroll = document.querySelector('.piano-score-player__scroll');
+    act(() => { fireEvent.click(scroll, { clientX: 160, clientY: 100 }); });
+    act(() => { fireEvent.click(scroll, { clientX: 160, clientY: 100 }); }); // range set → matrix change
+    const immediate = h.sendPanic.mock.calls.length;
+    expect(immediate).toBeGreaterThanOrEqual(1); // the sounding note is killed now…
+    act(() => vi.advanceTimersByTime(500));      // …and the lookahead window is swept after
+    expect(h.sendPanic.mock.calls.length).toBeGreaterThan(immediate);
+  });
+
   // ── Spec 8: the Learn free metronome is orthogonal to the matrix ────────────
   it('the Learn free metronome works in all three states', async () => {
     h.layoutExtras = THREE;
