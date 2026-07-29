@@ -3,11 +3,11 @@
 // Barcode relay wiring — like foodScaleRelay.mjs, two decoupled concerns on the
 // event bus:
 //
-//   1) INGEST  (client → bus): the shared food-scale/content-barcode ESP32
-//      (see _extensions/food-scale-relay and _extensions/content-barcode-relay)
+//   1) INGEST  (client → bus): a scanner-bearing ESP32 (see
+//      _extensions/kitchen-relay and _extensions/content-barcode-relay)
 //      connects to the WS event bus as a device client and sends one message per
 //      completed scan:
-//        { source:'barcode-relay', type:'scan', device:'<relay-id>', route:'content|nutribot', code:'<barcode>', ts:<ms> }
+//        { source:'kitchen-relay'|'barcode-relay', type:'scan', device:'<relay-id>', route:'content|nutribot', code:'<barcode>', ts:<ms> }
 //      We re-broadcast on the `barcode-relay` topic (any app can subscribe live)
 //      and, when a pipeline is wired, hand the scan to `onScan` (BarcodeScanService
 //      → gatekeeper → queue/play/open) so BLE scans behave exactly like the USB scanner.
@@ -28,6 +28,21 @@ import { DEFAULT_TIMEZONE } from '#domains/core/utils/timezone.mjs';
 const RELAY_SOURCE = 'barcode-relay';
 const TOPIC = 'barcode-relay';
 const DEFAULT_DIR = 'household/history/barcode'; // relative to dataDir
+
+// Ingest discriminators we accept, which is NOT the same set as the one value we
+// re-broadcast (`RELAY_SOURCE`). Two boards can feed this handler:
+//   - `kitchen-relay`  — the unified kitchen board (_extensions/kitchen-relay).
+//     Scale, button AND scan all ride ONE source there, discriminated by `type`,
+//     because it is one device; the `type !== 'scan'` guard below is what keeps
+//     its weight stream out of this handler.
+//   - `barcode-relay`  — the legacy per-board source, still emitted by
+//     _extensions/content-barcode-relay.
+// Accepting both is what lets the backend deploy and the reflash happen in either
+// order, and what keeps the content board working when a replacement gun is
+// paired to it. The BROADCAST source stays `barcode-relay` regardless: apps,
+// School's VirtualScannerAdapter and the tests all key on that value, and which
+// board a scan came from is already carried by `device`.
+const INGEST_SOURCES = new Set([RELAY_SOURCE, 'kitchen-relay']);
 
 /**
  * @param {object}   deps
@@ -57,7 +72,7 @@ export function createBarcodeRelay({
 
   // ---- 1) INGEST: relay device client → bus ------------------------------
   eventBus.onClientMessage((clientId, message) => {
-    if (!message || message.source !== RELAY_SOURCE || message.type !== 'scan') return;
+    if (!message || !INGEST_SOURCES.has(message.source) || message.type !== 'scan') return;
 
     const code = typeof message.code === 'string' ? message.code.trim() : '';
     if (!code) {
