@@ -123,3 +123,29 @@ describe('layout — pagination', () => {
     expect(new Set(result.cells.map((c) => c.page)).size).toBe(3);
   });
 });
+
+describe('layout — cell aspect', () => {
+  it('defaults to square cells', () => {
+    const r = layout({ page: PAGE, blocks: [{ id: 'a', cols: 3, rows: 3, count: 3, gapPt: 8 }] });
+    expect(r.cells[0].h).toBeCloseTo(r.cells[0].w, 5);
+  });
+
+  it('honours a block aspect ratio (w/h) so a mark taller than it is wide gets a taller cell', () => {
+    // The QR mark is ~0.73 w/h: frame + label chrome make it taller than wide, and
+    // the ratio even shifts with size because that chrome is absolute. Square cells
+    // would letterbox every mark, so the block declares the shape it needs.
+    const r = layout({
+      page: PAGE,
+      blocks: [{ id: 'a', cols: 3, rows: 3, count: 3, gapPt: 8, aspect: 0.73 }],
+    });
+    const c = r.cells[0];
+    expect(c.h).toBeCloseTo(c.w / 0.73, 5);
+    expect(c.h).toBeGreaterThan(c.w);
+  });
+
+  it('a taller cell means fewer rows fit, so pagination accounts for aspect', () => {
+    const square = layout({ page: PAGE, blocks: [{ id: 'a', cols: 3, rows: 9, count: 27, gapPt: 8 }] });
+    const tall = layout({ page: PAGE, blocks: [{ id: 'a', cols: 3, rows: 9, count: 27, gapPt: 8, aspect: 0.5 }] });
+    expect(tall.pages).toBeGreaterThan(square.pages);
+  });
+});
