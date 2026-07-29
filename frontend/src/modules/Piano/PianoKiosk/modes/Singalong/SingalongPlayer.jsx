@@ -14,8 +14,9 @@ import { videoTapAction, TAP_SKIP_SECONDS } from '../Videos/videoTapAction.js';
 import { useKeepScreenAwake } from '../../usePianoScreensaver.jsx';
 import { usePianoUser } from '../../PianoUserContext.jsx';
 import useReloadGuard from '../../useReloadGuard.js';
-import Icon from '../../icons/Icon.jsx';
 import { SkeletonStage } from '../../Skeleton.jsx';
+import TransportButton from '../../transport/TransportButton.jsx';
+import VolumeControl from '../../transport/VolumeControl.jsx';
 import { usePlayerSessionBinding } from '../../../../../screen-framework/publishers/usePlayerSessionBinding.js';
 
 // Player is heavy — code-split it so the menu/other modes don't pay for it.
@@ -27,8 +28,6 @@ const fmt = (s) => {
   const mm = h ? String(m).padStart(2, '0') : String(m);
   return (h ? `${h}:` : '') + `${mm}:${String(sec).padStart(2, '0')}`;
 };
-
-const VOL_STEP = 0.1;
 
 /**
  * SingalongPlayer — a karaoke-flavoured lecture player. Reuses the Videos media
@@ -54,7 +53,7 @@ export default function SingalongPlayer({ lecture, source, onBack, startFresh = 
     try { playerRef.current?.getMediaElement?.()?.pause?.(); } catch { /* torn down */ }
   }, [ctrlPause]);
 
-  const { mediaLevel, setMediaLevel } = usePianoMix();
+  const { mediaLevel } = usePianoMix();
   const [isPlaying, setIsPlaying] = useState(true);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
@@ -214,17 +213,15 @@ export default function SingalongPlayer({ lecture, source, onBack, startFresh = 
           <div className="piano-singalong-chrome__progress" style={{ width: `${pct}%` }} />
         </div>
         <div className="piano-singalong-chrome__row">
-          <button type="button" className="piano-singalong-chrome__btn" onClick={handleRestart} aria-label="Restart from beginning"><Icon name="previous" /></button>
+          <TransportButton icon="previous" ariaLabel="Restart from beginning" className="piano-singalong-chrome__btn" onPress={handleRestart} />
           <span className="piano-singalong-chrome__time">{fmt(currentTime)} / {fmt(dur)}</span>
           <div className="piano-singalong-chrome__spacer" />
-          <button type="button" className="piano-singalong-chrome__btn" onClick={() => handleSkip(-15)} aria-label="Back 15 seconds"><Icon name="skip-back-15" /></button>
-          <button type="button" className="piano-singalong-chrome__btn piano-singalong-chrome__btn--play" onClick={ctrl.toggle} aria-label={isPlaying ? 'Pause' : 'Play'}>{isPlaying ? <Icon name="pause" /> : <Icon name="play" />}</button>
-          <button type="button" className="piano-singalong-chrome__btn" onClick={() => handleSkip(15)} aria-label="Forward 15 seconds"><Icon name="skip-forward-15" /></button>
+          <TransportButton icon="skip-back-15" ariaLabel="Back 15 seconds" className="piano-singalong-chrome__btn" onPress={() => handleSkip(-15)} />
+          <TransportButton icon={isPlaying ? 'pause' : 'play'} ariaLabel={isPlaying ? 'Pause' : 'Play'} emphasis="primary" className="piano-singalong-chrome__btn" onPress={ctrl.toggle} />
+          <TransportButton icon="skip-forward-15" ariaLabel="Forward 15 seconds" className="piano-singalong-chrome__btn" onPress={() => handleSkip(15)} />
           <div className="piano-singalong-chrome__spacer" />
-          <button type="button" className="piano-singalong-chrome__btn" onClick={() => setMediaLevel(mediaLevel - VOL_STEP)} aria-label="Volume down"><Icon name="volume-down" /></button>
-          <span className="piano-singalong-chrome__vol">{Math.round((mediaLevel ?? 0) * 100)}</span>
-          <button type="button" className="piano-singalong-chrome__btn" onClick={() => setMediaLevel(mediaLevel + VOL_STEP)} aria-label="Volume up"><Icon name="volume-up" /></button>
-          <button type="button" className="piano-singalong-chrome__btn piano-singalong-chrome__btn--fullscreen" onClick={toggleFullscreen} aria-label="Toggle fullscreen"><Icon name={isFullscreen ? 'fullscreen-exit' : 'fullscreen'} /></button>
+          <VolumeControl className="piano-singalong-chrome__btn" />
+          <TransportButton icon={isFullscreen ? 'fullscreen-exit' : 'fullscreen'} ariaLabel="Toggle fullscreen" className="piano-singalong-chrome__btn" onPress={toggleFullscreen} />
         </div>
       </div>
     </div>
