@@ -1,24 +1,27 @@
-import React from 'react';
+import TransportSheet from '../../transport/TransportSheet.jsx';
 import StepGrid from '../../transport/StepGrid.jsx';
 import TransportButton from '../../transport/TransportButton.jsx';
 import { nearestStep } from '../../transport/TempoSheet.jsx';
 
 /**
- * ViewMenu — the consolidated "how the score looks" panel behind the View button
- * (audit J5/M4). Gathers what used to be four separate bar buttons (layout/flow,
- * size, keyboard, info) into one labeled menu, so the bar's view controls stop
- * competing with the practice controls.
+ * ViewSheet — the "how the score looks" panel behind the View button (audit
+ * J5/M4; wave-2 T8 ports this off the old bespoke ViewMenu popover onto the
+ * shared {@link TransportSheet} shell, matching Key/Tempo: a centered sheet
+ * with its own scrim instead of a corner-anchored popover). The metadata
+ * ("About") block moves out entirely — this is controls only, not an info
+ * panel.
  *
- * Presentational: open/close is owned by the parent (single-open popover state).
+ * Presentational: open/close is owned by the parent (one boolean per sheet).
  *
  * @param {object} p
+ * @param {boolean} p.open
+ * @param {() => void} p.onClose
  * @param {'wrapped'|'horizontal'} p.flow
  * @param {() => void} p.onToggleFlow  - binary toggle; the rows call it only on change
  * @param {number} p.scale
  * @param {(v:number) => void} p.onScale
  * @param {boolean} p.keyboardVisible
  * @param {() => void} p.onToggleKeyboard
- * @param {object} p.meta
  */
 const SIZE_STEPS = [
   { label: '75%', value: 0.75 },
@@ -28,18 +31,20 @@ const SIZE_STEPS = [
   { label: '200%', value: 2 },
 ];
 
-export default function ViewMenu({ flow, onToggleFlow, scale, onScale, keyboardVisible, onToggleKeyboard, meta = {} }) {
+export default function ViewSheet({ open, onClose, flow, onToggleFlow, scale, onScale, keyboardVisible, onToggleKeyboard }) {
   const sizeIdx = nearestStep(SIZE_STEPS, scale);
   return (
-    <div className="piano-score-view-menu" role="dialog" aria-label="View">
+    <TransportSheet open={open} title="View" onClose={onClose}>
       <div className="piano-score-view-row" role="group" aria-label="Layout">
         <span className="piano-score-view-row__label">Layout</span>
         <TransportButton
+          icon="layout-down"
           label="Down the page"
           on={flow === 'wrapped'}
           onPress={() => { if (flow !== 'wrapped') onToggleFlow?.(); }}
         />
         <TransportButton
+          icon="layout-across"
           label="Across"
           on={flow === 'horizontal'}
           onPress={() => { if (flow !== 'horizontal') onToggleFlow?.(); }}
@@ -63,15 +68,6 @@ export default function ViewMenu({ flow, onToggleFlow, scale, onScale, keyboardV
           onPress={onToggleKeyboard}
         />
       </div>
-
-      <dl className="piano-score-view-about">
-        {meta.title != null && (<><dt>Title</dt><dd>{meta.title}</dd></>)}
-        {meta.composer != null && (<><dt>Composer</dt><dd>{meta.composer}</dd></>)}
-        {meta.key != null && (<><dt>Key</dt><dd>{meta.key}</dd></>)}
-        {meta.time != null && (<><dt>Time</dt><dd>{meta.time}</dd></>)}
-        {meta.tempo != null && (<><dt>Tempo</dt><dd>{meta.tempo}</dd></>)}
-        {meta.measures != null && (<><dt>Measures</dt><dd>{meta.measures}</dd></>)}
-      </dl>
-    </div>
+    </TransportSheet>
   );
 }

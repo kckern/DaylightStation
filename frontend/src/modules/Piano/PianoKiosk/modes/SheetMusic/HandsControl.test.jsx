@@ -46,4 +46,16 @@ describe('HandsControl', () => {
     const left = screen.getByRole('button', { name: 'Left hand' });
     expect(left.querySelector('.piano-icon')).not.toBeNull();
   });
+
+  it('carries no visible text label — the group aria-label alone names the control (wave-2 T8)', () => {
+    render(<HandsControl variant="hands" value="both" onChange={vi.fn()} />);
+    expect(screen.queryByText('Hands')).toBeNull();
+    expect(screen.getByRole('group', { name: /hands/i })).toBeInTheDocument();
+  });
+
+  it('"mypart" variant also carries no visible text label', () => {
+    render(<HandsControl variant="mypart" value="rh" onChange={vi.fn()} />);
+    expect(screen.queryByText('My part')).toBeNull();
+    expect(screen.getByRole('group', { name: /my part/i })).toBeInTheDocument();
+  });
 });
