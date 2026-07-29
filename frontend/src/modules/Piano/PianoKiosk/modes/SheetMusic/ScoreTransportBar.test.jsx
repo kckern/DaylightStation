@@ -11,7 +11,6 @@ const base = {
   parts: [{ staff: 0, label: 'RH' }, { staff: 1, label: 'LH' }],
   activeParts: { 0: true, 1: true }, roles: {}, onCyclePart: vi.fn(),
   keyboardVisible: true, onToggleKeyboard: vi.fn(),
-  meta: { title: 'X', tempo: 90 },
 };
 
 describe('ScoreTransportBar', () => {

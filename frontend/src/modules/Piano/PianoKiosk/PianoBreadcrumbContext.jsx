@@ -35,8 +35,13 @@ export function usePianoBreadcrumbBar() {
  */
 export function usePianoBreadcrumb(crumbs) {
   const { setCrumbs } = usePianoBreadcrumbBar();
-  // Re-publish only when the visible labels change (handlers are stable callbacks).
-  const key = (crumbs || []).map((c) => c?.label ?? '').join('›');
+  // Re-publish when the visible labels, icons, or images change (handlers are
+  // stable callbacks). Folding image/icon into the key matters because a splash
+  // image can land after the label already mounted the crumb (its fetch races
+  // the score XML fetch) — without it in the key, that late arrival never
+  // triggers a re-publish and the thumbnail is stuck missing until something
+  // else (e.g. a mode change) forces a re-render.
+  const key = (crumbs || []).map((c) => `${c?.label ?? ''}|${c?.image ?? ''}|${c?.icon ?? ''}`).join('›');
   useEffect(() => {
     const mine = crumbs || [];
     setCrumbs(mine);

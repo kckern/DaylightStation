@@ -28,8 +28,9 @@ shared OSMD renderer in `frontend/src/modules/MusicNotation/renderers/`.
   sole exception (bar strips to just the page indicator). One button grammar
   throughout: shared inline-SVG icons (no text glyphs/emoji), ≥48px touch
   targets, one radius, **blue = a setting is on** (metronome armed, loop
-  active), **green = the transport is running**, and a chevron on every button
-  that opens a popover or sheet.
+  active), **green = the transport is running**. Buttons that open a sheet cue
+  it with a small icon rather than a uniform affordance — Key and View show a
+  chevron, while Tempo shows the quarter-note glyph it always carries.
   **Key, Tempo, and Loop are modal sheets**, not popovers: tapping the button
   opens a centered modal sheet with its own scrim, a direct-pick ladder of
   steps, and a close affordance — one tap commits and dismisses, so there's no
