@@ -28,3 +28,23 @@ describe('layout — single block', () => {
     }
   });
 });
+
+describe('layout — titles', () => {
+  it('emits a title placement per block and pushes cells below it', () => {
+    const noTitle = layout({
+      page: PAGE,
+      blocks: [{ id: 'a', cols: 3, rows: 3, count: 3, gapPt: 8 }],
+    });
+    const withTitle = layout({
+      page: PAGE,
+      blocks: [{ id: 'a', title: 'Caloric density', cols: 3, rows: 3, count: 3, gapPt: 8, titleHeightPt: 24 }],
+    });
+
+    expect(noTitle.titles).toHaveLength(0);
+    expect(withTitle.titles).toHaveLength(1);
+    expect(withTitle.titles[0]).toMatchObject({
+      page: 0, block: 'a', text: 'Caloric density', continued: false,
+    });
+    expect(withTitle.cells[0].y - noTitle.cells[0].y).toBeCloseTo(24, 5);
+  });
+});

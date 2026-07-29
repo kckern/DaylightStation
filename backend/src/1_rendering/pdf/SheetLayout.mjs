@@ -35,12 +35,32 @@ const DEFAULT_GAP_PT = 8;
 export function layout({ page, blocks }) {
   const contentW = page.widthPt - 2 * page.marginPt;
   const cells = [];
+  const titles = [];
+
+  // Vertical pen position. Blocks stack down the page, so each one starts where the
+  // previous left off rather than at a position derived from its own index.
+  let cursorY = page.marginPt;
 
   for (const block of blocks) {
     const gap = block.gapPt ?? DEFAULT_GAP_PT;
     // Cells are square: the width follows from the column count, and the height copies it.
     const cellW = (contentW - (block.cols - 1) * gap) / block.cols;
     const cellH = cellW;
+    // An untitled block reserves no headroom at all — the caller opted out of the label,
+    // not merely out of the text, so the cells move up to fill the space.
+    const titleH = block.title ? (block.titleHeightPt ?? DEFAULT_TITLE_HEIGHT_PT) : 0;
+
+    if (block.title) {
+      titles.push({
+        page: 0,
+        block: block.id,
+        text: block.title,
+        x: page.marginPt,
+        y: cursorY,
+        continued: false,
+      });
+      cursorY += titleH;
+    }
 
     for (let i = 0; i < block.count; i += 1) {
       const col = i % block.cols;
@@ -50,12 +70,15 @@ export function layout({ page, blocks }) {
         block: block.id,
         index: i,
         x: page.marginPt + col * (cellW + gap),
-        y: page.marginPt + row * (cellH + gap),
+        y: cursorY + row * (cellH + gap),
         w: cellW,
         h: cellH,
       });
     }
+
+    const usedRows = Math.ceil(block.count / block.cols);
+    cursorY += usedRows * (cellH + gap);
   }
 
-  return { pages: 1, cells, titles: [], underfull: [] };
+  return { pages: 1, cells, titles, underfull: [] };
 }
