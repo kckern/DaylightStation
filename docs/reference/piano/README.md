@@ -186,7 +186,7 @@ A few components appear across many modes because they are the kiosk's visual vo
 - **Icons** — inline single-colour SVGs that inherit their button's colour.
 - **Transport primitives** — the touch controls shared by every player-style mode
   (Sheet Music, Courses, Music, Karaoke/Singalong/Playalong): a single button shape
-  for any transport action, and a modal bottom sheet for any control that offers a
+  for any transport action, and a centered modal sheet for any control that offers a
   set of discrete choices — direct-pick ladders for stepped values (loop range,
   tempo percent, transpose semitones) rather than a slider or a stepper the player
   has to nudge repeatedly. Volume is the one affordance every player exposes the

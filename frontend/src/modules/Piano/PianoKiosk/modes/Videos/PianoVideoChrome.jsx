@@ -61,7 +61,7 @@ export default function PianoVideoChrome({
           <button type="button" className={`piano-video-chrome__btn${loopActive ? ' is-on' : ''}`} onClick={onToggleLoop} disabled={gateOpen || !bothMarks} aria-label="Toggle A-B loop"><Icon name="repeat" /></button>
           <button type="button" className="piano-video-chrome__btn" onClick={onClearLoop} disabled={gateOpen || !hasLoop} aria-label="Clear loop"><Icon name="clear-loop" /></button>
         </div>
-        <VolumeControl disabled={gateOpen} className="piano-video-chrome__btn--volume" />
+        <VolumeControl disabled={gateOpen} className="piano-video-chrome__btn piano-video-chrome__btn--volume" />
         <button type="button" className="piano-video-chrome__btn piano-video-chrome__btn--fullscreen" onClick={onToggleFullscreen} disabled={gateOpen} aria-label="Toggle fullscreen"><Icon name="fullscreen" /></button>
       </div>
     </div>
