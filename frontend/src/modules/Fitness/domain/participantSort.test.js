@@ -25,9 +25,9 @@ describe('sortByZoneRank', () => {
     // test-child 127 BPM @ 1/3 through active; Dad 115 BPM @ 2/3 through active.
     // Dad must be on top — the sidebar showed the reverse when Dad's progress
     // lookup missed on his group label and degraded to 0.
-    const learner-two = p({ id: 'user_4', name: 'test-child', zoneProgress: 0.33, heartRate: 127 });
+    const learnerTwo = p({ id: 'user_4', name: 'test-child', zoneProgress: 0.33, heartRate: 127 });
     const dad = p({ id: 'user_1', name: 'test-parent', zoneProgress: 0.66, heartRate: 115 });
-    expect(sortByZoneRank([learner-two, dad]).map((x) => x.id)).toEqual(['user_1', 'user_4']);
+    expect(sortByZoneRank([learnerTwo, dad]).map((x) => x.id)).toEqual(['user_1', 'user_4']);
   });
 
   it('ranks a hotter zone above a cooler one regardless of progress', () => {

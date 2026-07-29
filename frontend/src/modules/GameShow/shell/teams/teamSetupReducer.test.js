@@ -41,8 +41,8 @@ describe('teamSetupReducer', () => {
 
   it('ASSIGN_MEMBER moves a member between teams (no duplicates)', () => {
     let s = initTeamSetup({ team_presets: [PRESET] });
-    const learner-two = { id: 'learner-two', name: 'learner-two', avatar: null };
-    s = teamSetupReducer(s, { type: 'ASSIGN_MEMBER', teamId: 'team_2', member: learner-two });
+    const learnerTwo = { id: 'learner-two', name: 'learner-two', avatar: null };
+    s = teamSetupReducer(s, { type: 'ASSIGN_MEMBER', teamId: 'team_2', member: learnerTwo });
     expect(s.teams[0].members.find((m) => m.id === 'learner-two')).toBeUndefined();
     expect(s.teams[1].members.some((m) => m.id === 'learner-two')).toBe(true);
     s = teamSetupReducer(s, { type: 'REMOVE_MEMBER', teamId: 'team_2', memberId: 'learner-two' });
