@@ -1172,16 +1172,28 @@ describe('ScorePlayer — Listen mode', () => {
     expect(screen.getByText('2 / 4')).toBeTruthy();
   });
 
-  it('Listen light-up is always on: a correct strike lights without advancing (non-gating)', async () => {
+  it('Listen ignores MIDI input entirely: a struck note does not light, and does not advance (wave-3 A retires J5)', async () => {
+    // The retired play-along subscription used to add a matching strike to
+    // `struck`, which NoteHighlightLayer turns into the HIT (green) class on top
+    // of the current step's plain LIT paint. Assert the HIT class never appears —
+    // a `play(64)`/cursor-unchanged pair alone would pass even with the old
+    // subscription still wired up (nothing gates on it), so this only proves the
+    // retirement through an effect that WOULD differ if the subscription came back.
+    const rhEl = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+    h.layoutExtras = {
+      notes: [{ midi: 64, staff: 0, onsetQuarter: 0, durationQuarters: 1 }],
+      steps: [{ onsetQuarter: 0, notes: [{ midi: 64, staff: 0, el: rhEl }] }],
+    };
     renderPlayer();
     pickMode('Listen');
     await act(async () => {});
-    // No toggle — light-up is unconditional in Listen (J5). Struck the top note of
-    // the current (first) onset → lights, never advances.
-    play(64);
-    expect(screen.getByText('1 / 4')).toBeTruthy(); // cursor unchanged (non-gating)
-    // A note NOT expected here does nothing (no advance, no throw).
-    play(99);
+    expect(rhEl.classList.contains('piano-note-lit')).toBe(true);  // current-step paint, unconditional
+    expect(rhEl.classList.contains('piano-note-hit')).toBe(false); // not struck — nothing played it yet
+    play(64); // matches the current step's expected midi exactly
+    expect(rhEl.classList.contains('piano-note-hit')).toBe(false); // still not struck — Listen has no subscriber
+    expect(screen.getByText('1 / 4')).toBeTruthy(); // cursor unchanged — Listen never gates on input
+    play(99); // an unmatched note does nothing either (no throw, no advance)
+    expect(rhEl.classList.contains('piano-note-hit')).toBe(false);
     expect(screen.getByText('1 / 4')).toBeTruthy();
   });
 
@@ -1300,16 +1312,84 @@ describe('ScorePlayer — Listen mode', () => {
     expect(screen.getByTestId('score-position')).toHaveTextContent('1 / 4'); // home, not parked at 4 / 4
   });
 
-  // The old "role change during the wrap dwell cancels the pending restart" test
-  // (L6) relied on claiming BOTH staves as "mine" to produce an entirely
-  // note-empty (step-only) playTimeline — the zero-span condition that arms the
-  // one-beat dwell. Under the one-hands model (wave-3 A) the ≥1-active floor
-  // holds in every mode, so a user can never mute every staff via the hands
-  // control — that transition is no longer reachable through the UI, and with it
-  // the test's premise. The MECHANISM it guarded (pauseForRebuild's unconditional
-  // clearWrapDwell) is still exercised by the ordinary rebuild-pause/resume
-  // coverage below and by "resumes playback after a Listen part change, with no
-  // surprise count-in (H5)" above.
+  it('a hand toggle during the Listen wrap dwell cancels the pending restart — no uncommanded audio (L6)', async () => {
+    // A tail-measure Listen loop can end in a ZERO-SPAN dwell: the loop's
+    // in-point IS the very last playTimeline event, so onDone dwells one beat
+    // before restarting instead of completing (see "Listen plays only the loop
+    // and wraps…" above). Under the one-hands model (wave-3 A) the ≥1-active
+    // floor means a user can no longer mute EVERY staff via the hands control to
+    // reach zero-span — but the fixture can still produce it directly: put every
+    // note in the un-looped first measure, short enough that its note_offs land
+    // well before the loop's in-point, so the looped tail measure (m2) carries NO
+    // audio regardless of which hand is active. A hand toggle mid-dwell still
+    // goes through pauseForRebuild, whose clearWrapDwell() runs UNCONDITIONALLY
+    // before the playing check — it must cancel the pending restart, or the
+    // stale timer fires seconds later with the wrong (now-different) timeline.
+    //
+    // A genuinely zero-span loop has NOTHING left to schedule in the WHOLE
+    // piece past its in-point — restarting it or not, sendNoteAt/sendPanic never
+    // fire either way, so an audio-silence assertion can't tell a canceled dwell
+    // apart from a stale one that fired. What DOES differ observably: onDone's
+    // loop branch logs `score.transport.loop-wrap` every time it runs (armed OR
+    // restarted). A canceled dwell logs it once (the initial arm); a stale
+    // restart that fires anyway re-enters onDone and logs a SECOND one.
+    h.layoutExtras = {
+      tempoEntries: [{ onsetQuarter: 0, bpm: 60 }],
+      events: [
+        { midi: 64, midis: [64, 40], onsetQuarter: 0, x: 100, top: 10, bottom: 200, system: 0 },
+        { midi: 62, midis: [62, 41], onsetQuarter: 1, x: 160, top: 10, bottom: 200, system: 0 },
+      ],
+      steps: [
+        { onsetQuarter: 0, measure: 0, notes: [{ midi: 64, staff: 0, x: 100, top: 10, bottom: 200, width: 8 }, { midi: 40, staff: 1, x: 100, top: 10, bottom: 200, width: 8 }] },
+        { onsetQuarter: 1, measure: 1, notes: [{ midi: 62, staff: 0, x: 160, top: 10, bottom: 200, width: 8 }, { midi: 41, staff: 1, x: 160, top: 10, bottom: 200, width: 8 }] },
+      ],
+      measures: [
+        { index: 0, number: 1, firstStep: 0, lastStep: 0 },
+        { index: 1, number: 2, firstStep: 1, lastStep: 1 },
+      ],
+      // Both staves keep a real signature (grandStaff Hands control stays
+      // visible), but their only notes sit at onset 0 with a short 0.5-quarter
+      // duration (note_off @ 500ms, well clear of m2's 1000ms in-point) — m2 has
+      // no note entries at all, at either staff.
+      notes: [
+        { midi: 64, staff: 0, onsetQuarter: 0, durationQuarters: 0.5 },
+        { midi: 40, staff: 1, onsetQuarter: 0, durationQuarters: 0.5 },
+      ],
+    };
+    // Capture logged events the same way the Polish describe's captureLog()
+    // does (that helper is scoped to the Polish block, so inlined here).
+    const root = getLogger();
+    const origChild = root.child.bind(root);
+    const emitted = []; // [event, data]
+    vi.spyOn(root, 'child').mockImplementation((ctx) => {
+      const c = origChild(ctx);
+      const orig = c.info.bind(c);
+      c.info = (ev, data, opts) => { emitted.push([ev, data]); return orig(ev, data, opts); };
+      return c;
+    });
+    const wraps = () => emitted.filter(([ev]) => ev === 'score.transport.loop-wrap');
+
+    renderPlayer();
+    pickMode('Listen');
+    await act(async () => {});
+    // Loop measure 2 only (tail measure — the zero-span case).
+    act(() => { fireEvent.click(screen.getByRole('button', { name: 'Loop' })); }); // no range yet -> direct tap starts selection
+    const scroll = document.querySelector('.piano-score-player__scroll');
+    act(() => { fireEvent.click(scroll, { clientX: 160, clientY: 100 }); });
+    act(() => { fireEvent.click(scroll, { clientX: 160, clientY: 100 }); });
+    expect(screen.getByText('m 2 / 2')).toBeTruthy();
+    screen.getByRole('button', { name: 'Play' }).click(); // Listen always plays immediately (no count-in — wave-3 A)
+    await act(async () => {});
+    act(() => vi.advanceTimersByTime(200)); // the zero-span run completes almost instantly → dwell armed
+    expect(wraps().length).toBe(1);              // confirms the dwell actually armed…
+    expect(wraps()[0][1]).toMatchObject({ dwell: true }); // …as a zero-span dwell, not an immediate restart
+
+    // Toggle a hand DURING the dwell (transport idle) — allowed under the ≥1
+    // floor since the other hand stays active.
+    act(() => { fireEvent.click(screen.getByRole('button', { name: 'Right hand' })); });
+    act(() => vi.advanceTimersByTime(1500)); // well past the one-beat (1000ms) dwell
+    expect(wraps().length).toBe(1); // no second loop-wrap — the stale restart never fired
+  });
 });
 
 describe('ScorePlayer — rebuild-pause resume (H5/M3)', () => {
