@@ -1,7 +1,7 @@
 // CourseGrid.jsx
 import { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import usePianoList from '../../usePianoList.js';
-import { balancedColumns } from '../../tileGridLayout.js';
+import { balancedGrid } from '../../tileGridLayout.js';
 import PianoEmpty from '../../PianoEmpty.jsx';
 import { SkeletonPoster } from '../../Skeleton.jsx';
 import CourseTile from './CourseTile.jsx';
@@ -158,8 +158,18 @@ export default function CourseGrid({ groups = [], onSelect }) {
     setActiveIdx(next);
   };
 
+  // Rows AND cols for the one-page wall (balancedGrid), so the tab's poster
+  // count drives BOTH axes — more courses add rows and widen the cap, and the
+  // CSS grid (--cols/--rows, both `fr`) shrinks tiles to fit rather than the
+  // page ever scrolling. Only meaningful once courses are loaded; the loading
+  // skeleton and empty state don't use it.
+  const { rows: gridRows, cols: gridCols } = useMemo(
+    () => balancedGrid(courses?.length ?? 0),
+    [courses],
+  );
+
   return (
-    <section className="piano-mode piano-mode--videos">
+    <section className="piano-mode piano-mode--videos piano-mode--videos-grid">
       {allCollections.map((c) => (
         <CollectionFetcher key={c} collection={c} onData={onData} />
       ))}
@@ -192,8 +202,8 @@ export default function CourseGrid({ groups = [], onSelect }) {
         {empty && <PianoEmpty message="No videos found." />}
         {courses && courses.length > 0 && (
           <ul
-            className="piano-video-grid piano-video-grid--posters"
-            style={{ '--poster-cols': balancedColumns(courses.length, { max: 5 }) }}
+            className="piano-video-grid piano-video-grid--posters piano-video-grid--onepage"
+            style={{ '--cols': gridCols, '--rows': gridRows }}
           >
             {courses.map((item) => (
               <CourseTile key={item.id} item={item} onSelect={onSelect} progress={progressMap?.[item.id]} />
