@@ -33,13 +33,25 @@
  * way to keep that field, and binding it per scan is the only way to do that
  * without shared mutable state between scans.
  *
- * The alternative — one dispatcher plus a "current scan" variable set immediately
- * before `dispatch()` — happens to work today only because `dispatch` reaches the
- * handler with no intervening `await`. That is an invariant of a file this module
- * does not own, and a future `await` in front of the handler call would corrupt
- * the timestamp silently. Constructing a Map of five handlers is measured in
- * microseconds and scans are human-paced, so the cheap thing here is also the
- * correct one.
+ * There are THREE options, not two, and the third is the right one — later.
+ *
+ *  1. One dispatcher plus a "current scan" variable set immediately before
+ *     `dispatch()`. REJECTED: it works today only because `dispatch` reaches the
+ *     handler with no intervening `await`. That is an invariant of a file this
+ *     module does not own, and a future `await` in front of the handler call
+ *     would corrupt the timestamp silently.
+ *  2. A dispatcher per scan — what this does. Measured at ~347ns to construct
+ *     against ~1318ns to dispatch, so it is about a quarter of an operation that
+ *     happens at human pace. It costs an allocation, the `buildHandlers(ts)`
+ *     indirection, and a probe that is not quite the object production uses.
+ *  3. PHASE 2: widen `dispatch({code, device, route})` to carry a `meta` bag
+ *     alongside `device` and `route` and pass it through to handlers. `ts` is
+ *     transport metadata exactly as `device` is, and the only reason it is not
+ *     already there is that the contract was drawn before this caller existed.
+ *     That removes the allocation, the indirection, and the probe/production
+ *     divergence in one change — but it edits the dispatcher's public contract,
+ *     which is not a thing to do in a phase whose criterion is zero behaviour
+ *     change. Option 2 is the cheapest correct thing UNTIL then, not forever.
  *
  * A dispatcher is still built ONCE at composition, and discarded: it proves the
  * handler set is well-formed (the `ScanDispatcher` constructor rejects duplicate
@@ -88,7 +100,7 @@
  * @module composition/modules/scanDispatch
  */
 
-import { ScanDispatcher } from '#apps/scan/ScanDispatcher.mjs';
+import { ScanDispatcher, emit } from '#apps/scan/ScanDispatcher.mjs';
 import { PREFIX_REGISTRY, LEGACY_NUTRITION_TAGS } from '#domains/scan/ScanCode.mjs';
 import { KNOWN_COMMANDS } from '#domains/barcode/BarcodeCommandMap.mjs';
 import { TriggerEvent } from '#domains/trigger/TriggerEvent.mjs';
@@ -106,6 +118,30 @@ import { routeNutribotScan, nutriscanRefusalNotice } from '#apps/nutribot/lib/ro
  * through this map or not at all. See `assertRouteFallback`.
  */
 export const SCAN_ROUTE_FALLBACK = Object.freeze({ nutribot: 'product', content: 'content' });
+
+/**
+ * Read a rejection's message ONCE, defensively.
+ *
+ * Every `.catch` below used to read `err.message` bare, which is fine for an
+ * `Error` and a live grenade for anything else: `Promise.reject(null)` from any
+ * collaborator throws INSIDE the catch callback, and a throw there is not caught
+ * by anything — it surfaces as a process-level `unhandledRejection`. The module
+ * advertises a never-reject invariant; a reporting path that can take the process
+ * down is not compatible with it.
+ *
+ * `ScanDispatcher.#failed` already learned this the hard way and its docstring
+ * says so: reading `message` unguarded WAS the bug. Same trust boundary, same
+ * treatment — one read, wrapped, reused. `String()` because a thrown value need
+ * not carry a string message, and `?? err` so a bare `throw 'nope'` still says
+ * something useful instead of an empty string.
+ */
+function errText(err) {
+  try {
+    return String(err?.message ?? err ?? '');
+  } catch {
+    return '';
+  }
+}
 
 /** Startup-decided swallow reasons, reported once each. Lifted from `app.mjs`. */
 const NUTRISCAN_SWALLOW_EVENT = {
@@ -186,10 +222,10 @@ function reportLeadingSegmentCollisions(screenNames, commandNames, logger) {
     ...(Array.isArray(commandNames) ? commandNames : []),
   ];
   const collisions = [...new Set(
-    leading.filter((name) => typeof name === 'string' && tags.has(name)),
+    leading.filter((name) => tags.has(name)),
   )];
   if (collisions.length > 0) {
-    logger?.error?.('scan.leading_segment.shadows_tag', {
+    emit(logger, 'error', 'scan.leading_segment.shadows_tag', {
       names: collisions,
       hint: 'rename it; a `<screen|command>:...` code named after a scan tag loses that segment',
     });
@@ -258,7 +294,7 @@ export function createScanDispatch({
     // Fire and forget, as before: the relay's `onScan` never awaited this, and
     // making the scan wait on a screen would change when the next one is read.
     triggerDispatchService.handleEvent(event).catch((err) => {
-      barcodeLogger?.warn?.('trigger.ingress.barcode.dispatch.failed', { error: err.message });
+      emit(barcodeLogger, 'warn', 'trigger.ingress.barcode.dispatch.failed', { error: errText(err) });
     });
     return { status: 'dispatched', effect: { value: event.value } };
   };
@@ -272,8 +308,8 @@ export function createScanDispatch({
     }
     schoolLifecycle.handleScan({ code: raw, device })
       .catch((err) => {
-        barcodeLogger?.warn?.('barcode_relay.school.dispatch.failed', {
-          device, error: err.message,
+        emit(barcodeLogger, 'warn', 'barcode_relay.school.dispatch.failed', {
+          device, error: errText(err),
         });
       });
     return { status: 'dispatched' };
@@ -291,7 +327,7 @@ export function createScanDispatch({
     if (decision.action === 'nutriscan') {
       const { outcome } = decision;
       const refused = outcome.ok === false;
-      barcodeLogger?.info?.('barcode_relay.nutriscan', {
+      emit(barcodeLogger, 'info', 'barcode_relay.nutriscan', {
         device, scaleId, kind: outcome.kind, ok: !refused, error: outcome.error || null,
       });
       // ACK on the message the user is already looking at — INCLUDING a refusal,
@@ -310,10 +346,10 @@ export function createScanDispatch({
       // `raw`, not `body`: an operator reading this line wants the string that
       // was physically scanned. They are equal for every legacy code.
       if (nutriscanWarned.has(decision.reason)) {
-        barcodeLogger?.debug?.(event, { device, code: raw });
+        emit(barcodeLogger, 'debug', event, { device, code: raw });
       } else {
         nutriscanWarned.add(decision.reason);
-        barcodeLogger?.warn?.(event, {
+        emit(barcodeLogger, 'warn', event, {
           device, code: raw, hint: 'further occurrences log at debug',
         });
       }
@@ -335,7 +371,7 @@ export function createScanDispatch({
       || null;
 
     if (!userId) {
-      barcodeLogger?.warn?.('barcode_relay.nutribot.no_user', { device, code: raw });
+      emit(barcodeLogger, 'warn', 'barcode_relay.nutribot.no_user', { device, code: raw });
       return { status: 'refused', ok: false, message: 'no nutribot user' };
     }
 
@@ -356,14 +392,14 @@ export function createScanDispatch({
       || resolveNutribotConversationId();
 
     if (!conversationId) {
-      barcodeLogger?.warn?.('barcode_relay.nutribot.no_conversation', { device, code: raw, userId });
+      emit(barcodeLogger, 'warn', 'barcode_relay.nutribot.no_conversation', { device, code: raw, userId });
       return { status: 'refused', ok: false, message: 'no nutribot conversation' };
     }
 
     getLogFoodFromUPC().execute({
       userId, conversationId, upc: body, messageId: null,
     }).catch((err) => {
-      barcodeLogger?.warn?.('barcode_relay.nutribot.dispatch.failed', { device, error: err.message });
+      emit(barcodeLogger, 'warn', 'barcode_relay.nutribot.dispatch.failed', { device, error: errText(err) });
     });
     return { status: 'logged', effect: { upc: body, conversationId } };
   };

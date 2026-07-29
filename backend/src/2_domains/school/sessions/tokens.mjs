@@ -34,8 +34,16 @@ const isNonEmptyString = (v) => typeof v === 'string' && v.trim().length > 0;
 const isIsoTimestamp = (v) => isNonEmptyString(v) && !Number.isNaN(Date.parse(v));
 
 /**
- * Does this scan belong to School? The relay's `onScan` router branches on this
- * ahead of its own route dispatch (spec §6.2), so any scanner in the house works.
+ * Does this scan belong to School? (spec §6.2 — any scanner in the house works,
+ * whatever route it is configured for.)
+ *
+ * The relay's `onScan` used to branch on this ahead of its own route dispatch.
+ * It no longer does: the shared scan vocabulary claims `sch:` for the school
+ * NAMESPACE (`#domains/scan/ScanCode.mjs`), and a namespace always outranks the
+ * reader's route, which is what makes route-independence structural rather than
+ * a matter of branch order. This predicate agrees with that parse by
+ * construction — both test the same prefix — and is still consulted inside the
+ * school handler, where it doubles as the unwired-console switch.
  *
  * @param {*} code - raw scanned code
  * @returns {boolean}

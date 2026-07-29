@@ -87,6 +87,14 @@ describe('createScanDispatch — construction', () => {
     }
   });
 
+  it('registers all five domains, including the two with no route fallback', () => {
+    // `school` and `command` are reachable ONLY through a parsed prefix, so the
+    // fallback assertion above cannot see them. Dropping either registration is
+    // otherwise a silent `no handler registered for "school"` at the kiosk.
+    expect(harness().scanDispatch.namespaces)
+      .toEqual(['content', 'command', 'school', 'nutrition', 'product']);
+  });
+
   it('throws when a route falls back to a namespace with no handler', () => {
     // The failure this guards: no parse EVER yields `product`, so a misspelled
     // key here stops UPC food logging house-wide with nothing in the logs.
@@ -148,6 +156,17 @@ describe('createScanDispatch — construction', () => {
     expect(h.scanDispatch.screenCollisions).toEqual([]);
     expect(h.barcodeLogger.error).not.toHaveBeenCalled();
   });
+
+  it('still BOOTS when the logger it reports the collision on is broken', () => {
+    // The guard is only as non-fatal as the line that reports it. A bare
+    // `logger.error(...)` here turns "the log sink is down" into "the station
+    // does not boot" — and does it at STARTUP, which is the one place a throw
+    // takes everything else in the house with it.
+    const broken = { error: () => { throw new Error('sink closed'); } };
+    expect(() => harness({ barcodeLogger: broken, screenNames: ['go'] })).not.toThrow();
+    expect(harness({ barcodeLogger: broken, screenNames: ['go'] }).scanDispatch.screenCollisions)
+      .toEqual(['go']);
+  });
 });
 
 describe('school — first and route-independent', () => {
@@ -197,10 +216,16 @@ describe('school — first and route-independent', () => {
   });
 
   it('claims nothing when the console is unwired', async () => {
-    const h = harness({ schoolLifecycle: { handlesCode: () => false, handleScan: null } });
+    // `handlesCode: () => true` DELIBERATELY. The real inert lifecycle returns
+    // false for both, which lets the first half of the guard short-circuit and
+    // makes the `handleScan` half unfalsifiable — the guard would ship green with
+    // that check deleted, and then TypeError on the day something returns a
+    // handlesCode without a handler.
+    const h = harness({ schoolLifecycle: { handlesCode: () => true, handleScan: null } });
     const out = await h.scanDispatch.handleScan(relayScan({ code: 'sch:A7F3K2' }));
     expect(out.ok).toBe(false);
     expect(out.domain).toBe('school');
+    expect(out.status).toBe('unwired');
     expect(h.triggerDispatchService.handleEvent).not.toHaveBeenCalled();
   });
 });
@@ -211,7 +236,7 @@ describe('nutrition — the nutriscan path', () => {
       execute: vi.fn(() => ({ handled: true, ok: true, kind: 'density', level: 4 })),
     };
     const h = harness({ applyScanToComposition });
-    await h.scanDispatch.handleScan(relayScan({
+    const out = await h.scanDispatch.handleScan(relayScan({
       device: 'nutribot-upc', route: 'nutribot', code: 'dl:4',
     }));
 
@@ -220,6 +245,7 @@ describe('nutrition — the nutriscan path', () => {
     });
     // ACK on the message the user is already looking at; no notice on success.
     expect(h.refreshPrompt).toHaveBeenCalledWith('kitchen-food-scale', null);
+    expect(out).toMatchObject({ domain: 'nutrition', ok: true });
     expect(h.execute).not.toHaveBeenCalled();
     expect(h.barcodeLogger.info).toHaveBeenCalledWith('barcode_relay.nutriscan', {
       device: 'nutribot-upc', scaleId: 'kitchen-food-scale', kind: 'density', ok: true, error: null,
@@ -246,13 +272,21 @@ describe('nutrition — the nutriscan path', () => {
       })),
     };
     const h = harness({ applyScanToComposition });
-    await h.scanDispatch.handleScan(relayScan({
+    const out = await h.scanDispatch.handleScan(relayScan({
       device: 'nutribot-upc', route: 'nutribot', code: 'ct:teapot',
     }));
 
     expect(h.refreshPrompt).toHaveBeenCalledWith(
       'kitchen-food-scale', 'unknown container "teapot" — not tared',
     );
+    // `ok` is the ONLY field a generic caller can read — `status` is each
+    // domain's private vocabulary — so a refusal that reports `ok: true` is
+    // indistinguishable from a success everywhere outside this domain.
+    expect(out).toMatchObject({ domain: 'nutrition', ok: false });
+    expect(h.barcodeLogger.info).toHaveBeenCalledWith('barcode_relay.nutriscan', {
+      device: 'nutribot-upc', scaleId: 'kitchen-food-scale', kind: 'container',
+      ok: false, error: 'UNKNOWN_CONTAINER',
+    });
     // Claim is not success: a refusal must NOT fall through to a product lookup.
     expect(h.execute).not.toHaveBeenCalled();
   });
@@ -279,9 +313,12 @@ describe('nutrition — the nutriscan path', () => {
   it('warns ONCE per swallow reason and demotes every repeat to debug', async () => {
     const h = harness();
     const scan = relayScan({ device: 'nutribot-noscale', route: 'nutribot', code: 'dl:4' });
+    const first = await h.scanDispatch.handleScan(scan);
     await h.scanDispatch.handleScan(scan);
     await h.scanDispatch.handleScan(scan);
-    await h.scanDispatch.handleScan(scan);
+
+    // A swallowed scan did NOT do what it was for, whatever `status` calls it.
+    expect(first).toMatchObject({ domain: 'nutrition', ok: false });
 
     const warns = h.barcodeLogger.warn.mock.calls
       .filter((c) => c[0] === 'barcode_relay.nutriscan.no_scale_id');
@@ -311,7 +348,8 @@ describe('product — the UPC path', () => {
   const upcScan = () => relayScan({ device: 'nutribot-upc', route: 'nutribot', code: '041260010682' });
 
   it('logs a bare UPC through the nutribot use case', async () => {
-    const h = harness();
+    const resolvePlatformId = vi.fn(() => '4242');
+    const h = harness({ userIdentityService: { resolvePlatformId } });
     await h.scanDispatch.handleScan(upcScan());
     expect(h.execute).toHaveBeenCalledWith({
       userId: 'test-user',
@@ -319,6 +357,11 @@ describe('product — the UPC path', () => {
       upc: '041260010682',
       messageId: null,
     });
+    // The PLATFORM argument, pinned. The comment above this derivation records a
+    // production outage — a conversation id that reached UPCGateway and then died
+    // at delivery — and resolving the wrong platform's id rebuilds it exactly:
+    // well-formed, wrong, and silent until Telegram rejects it.
+    expect(resolvePlatformId).toHaveBeenCalledWith('telegram', 'test-user');
   });
 
   it('prefers the relay instance user over the relay-wide one over the household head', async () => {
@@ -492,6 +535,35 @@ describe('the never-reject invariant, at the wiring layer', () => {
     };
     const h = harness({ logger: broken });
     await expect(h.scanDispatch.handleScan(relayScan())).resolves.toHaveProperty('domain', 'content');
+  });
+
+  it('reports a collaborator that rejects with a NON-error, without taking the process down', async () => {
+    // `err.message` on `Promise.reject(null)` throws INSIDE the catch callback,
+    // where nothing catches it — it surfaces as a process-level
+    // unhandledRejection. A reporting path that can kill the process is not
+    // compatible with a never-reject invariant.
+    const seen = [];
+    const onRejection = (err) => seen.push(err);
+    process.on('unhandledRejection', onRejection);
+    try {
+      const h = harness({
+        triggerDispatchService: { handleEvent: () => Promise.reject(null) },
+        schoolLifecycle: { handlesCode: () => true, handleScan: () => Promise.reject(null) },
+        getLogFoodFromUPC: () => ({ execute: () => Promise.reject(null) }),
+      });
+      await h.scanDispatch.handleScan(relayScan());
+      await h.scanDispatch.handleScan(relayScan({ code: 'sch:A7F3K2' }));
+      await h.scanDispatch.handleScan(relayScan({
+        device: 'nutribot-upc', route: 'nutribot', code: '041260010682',
+      }));
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      expect(seen).toEqual([]);
+      expect(h.barcodeLogger.warn).toHaveBeenCalledWith(
+        'trigger.ingress.barcode.dispatch.failed', { error: '' },
+      );
+    } finally {
+      process.off('unhandledRejection', onRejection);
+    }
   });
 
   it('survives a relay payload with no device at all', async () => {

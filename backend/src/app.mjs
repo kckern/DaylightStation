@@ -2751,9 +2751,16 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   // the relay's `onScan` used to hold inline (school, nutriscan, UPC, trigger,
   // and the reader's route) live in `scanDispatch`, where each is a handler and
   // the routing decision belongs to `ScanCode`/`ScanDispatcher` rather than to
-  // an `if` chain only the reader's configured route could steer. Behaviour is
-  // unchanged: a namespace still outranks the route, school is still reached
-  // ahead of everything, and every log event keeps its name and its channel.
+  // an `if` chain only the reader's configured route could steer.
+  //
+  // Every scan that WORKS today works identically. Four that do not are named
+  // and pinned in `tests/unit/composition/scanDispatch.test.mjs`; the one to
+  // know about here is that a namespaced code now dead-ends in its own domain
+  // rather than falling through, so a malformed fridge code (`dl:99`) no longer
+  // reaches the UPC lookup — and logs nothing on the barcode channel when it
+  // happens. That is the dispatcher's claim-is-not-success rule, which exists so
+  // a typo is never answered with a nonsense food. Do not read "refactor" as
+  // "no observable difference on any path".
   //
   // Wired here (rather than in the earlier "Barcode ingress" block) because it
   // needs triggerDispatchService, which createTriggerApiRouter() just returned.
@@ -2788,7 +2795,11 @@ export async function createApp({ server, logger, configPaths, configExists, ena
       // that braces, so a future change there cannot surface as an unhandled
       // rejection on a scan.
       scanDispatch.handleScan(relay).catch((err) => {
-        barcodeLogger?.warn?.('scan.dispatch.failed', { device: relay.device, error: err.message });
+        // `err?.message`, not `err.message`: a `Promise.reject(null)` would throw
+        // INSIDE this callback, and a throw here is an unhandledRejection — the
+        // reporting path taking the process down is the one failure a catch of
+        // last resort must not have.
+        barcodeLogger?.warn?.('scan.dispatch.failed', { device: relay.device, error: err?.message });
       });
     },
   });
