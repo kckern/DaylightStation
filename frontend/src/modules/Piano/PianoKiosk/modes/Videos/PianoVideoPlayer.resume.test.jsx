@@ -89,4 +89,23 @@ describe('PianoVideoPlayer — resume directive', () => {
     const play = playPropSpy.mock.calls.at(-1)[0];
     expect(play).toMatchObject({ contentId: 'plex:243204', seconds: 42, resume: false });
   });
+
+  // Cross-user leak regression: the item is user-scoped (this kiosk user's
+  // request went through UserVideoProgressStore#enrich — userWatched is
+  // present) but THIS user has never watched it, so there's no userPlayhead.
+  // Device-level watchSeconds sits at the tail — e.g. another user on the
+  // shared kiosk nearly finished the same lecture minutes ago. The active
+  // user must start at 0, never inherit that position.
+  it('a user with no per-user record opens at 0, ignoring a device-level tail position from another user', async () => {
+    const lecture = {
+      plex: '243205', label: 'Lecture 5', userWatched: false, userPercent: null,
+      watchSeconds: 1790, watchProgress: 99, duration: 1800,
+    };
+    render(<PianoVideoPlayer lecture={lecture} source="Course" onBack={vi.fn()} />);
+    await findPlayer();
+
+    expect(playPropSpy).toHaveBeenCalled();
+    const play = playPropSpy.mock.calls.at(-1)[0];
+    expect(play).toMatchObject({ contentId: 'plex:243205', seconds: 0, resume: false });
+  });
 });
