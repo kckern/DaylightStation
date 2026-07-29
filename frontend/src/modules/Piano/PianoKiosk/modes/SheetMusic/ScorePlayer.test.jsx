@@ -8,7 +8,15 @@ import { __resetRecorder, __snapshotForTest, KIND } from '../../../../../lib/log
 
 // Shared holders (hoisted so the vi.mock factories can see them).
 const h = vi.hoisted(() => ({
-  noteCb: null, // the Follow-mode note-event subscriber
+  // EVERY live note-event subscriber, not just the last one. The real
+  // PianoMidiContext is a multicast bus, and ScorePlayer now has more than one
+  // possible subscriber per mode (the follow tracker, the Polish evaluator, and
+  // Learn's machine-row wet ink). A single-slot mock silently collapses them: the
+  // last effect to subscribe wins the slot, so "the tracker unsubscribed" and "the
+  // tracker is still subscribed but something else overwrote the slot" become
+  // indistinguishable — which is exactly how a widened gate would sail through the
+  // machine-row guards below. Subscribing adds; unsubscribing removes THAT fn.
+  noteCbs: new Set(),
   rawCb: null,  // the Manual-mode raw-MIDI subscriber
   events: [
     { midi: 64, midis: [64, 52, 40], onsetQuarter: 0, x: 100, top: 10, bottom: 200, system: 0 }, // E4 + LH E3/E2
@@ -70,7 +78,7 @@ const deriveNotes = (steps) => steps.flatMap((s) => s.notes.map((n) => ({ midi: 
 
 vi.mock('../../PianoMidiContext.jsx', () => ({
   usePianoMidi: () => ({
-    subscribe: (fn) => { h.noteCb = fn; return () => { h.noteCb = null; }; },
+    subscribe: (fn) => { h.noteCbs.add(fn); return () => { h.noteCbs.delete(fn); }; },
     subscribeRaw: (fn) => { h.rawCb = fn; return () => { h.rawCb = null; }; },
     pressNote: h.pressNote,
     releaseNote: h.releaseNote,
@@ -160,12 +168,17 @@ vi.mock('../../../../MusicNotation/renderers/MusicXmlRenderer.jsx', async () => 
 
 import ScorePlayer from './ScorePlayer.jsx';
 
-const play = (note) => act(() => { h.noteCb?.({ type: 'note_on', note, velocity: 80 }); });
+// One physical key press, fanned out to every live subscriber (the real bus is
+// multicast). Snapshot the set first: a callback may subscribe or unsubscribe as a
+// side effect of the state it commits, and mutating a Set mid-iteration is
+// undefined-ish.
+const emitNote = (evt) => act(() => { [...h.noteCbs].forEach((fn) => fn(evt)); });
+const play = (note) => emitNote({ type: 'note_on', note, velocity: 80 });
 const renderPlayer = () =>
   render(<MemoryRouter><ScorePlayer score={{ title: 'Mary', musicXml: '<score/>' }} /></MemoryRouter>);
 
 beforeEach(() => {
-  h.noteCb = null; h.rawCb = null; h.layoutExtras = {};
+  h.noteCbs = new Set(); h.rawCb = null; h.layoutExtras = {};
   h.holdLayout = false; h.releaseLayout = null;
   h.pressNote.mockClear(); h.releaseNote.mockClear();
   h.sendNoteAt.mockClear(); h.sendNoteOffAt.mockClear();
@@ -456,7 +469,7 @@ describe('ScorePlayer — Learn mode (full-hand, simulated MIDI input)', () => {
 
     // Layout reported 4 onsets; cursor starts at the first.
     expect(screen.getByText('1 / 4')).toBeTruthy();
-    expect(h.noteCb).toBeTypeOf('function'); // Follow mode subscribed
+    expect(h.noteCbs.size).toBe(1); // Follow mode subscribed — and it is the ONLY subscriber in the gate
 
     play(64);                                  // melody of the opening chord — not enough alone
     expect(screen.getByText('1 / 4')).toBeTruthy();
@@ -938,7 +951,7 @@ describe('ScorePlayer — Polish mode (transport-driven)', () => {
     screen.getByRole('button', { name: 'Play' }).click();
     await act(async () => {});
     act(() => vi.advanceTimersByTime(4100)); // through the 4-beat @60 count-in
-    act(() => { h.noteCb?.({ type: 'note_on', note: 64, velocity: 80 }); }); // play the measure
+    play(64); // play the measure
     act(() => vi.advanceTimersByTime(1100)); // one quarter @60 → cursor passes the old out-point
 
     const grades = emitted.filter(([ev]) => ev === 'score.polish.measure');
@@ -963,7 +976,7 @@ describe('ScorePlayer — Polish mode (transport-driven)', () => {
     screen.getByRole('button', { name: 'Play' }).click();
     await act(async () => {});
     act(() => vi.advanceTimersByTime(4100)); // through the 4-beat @60 count-in
-    act(() => { h.noteCb?.({ type: 'note_on', note: 62, velocity: 80 }); }); // the pass
+    play(62); // the pass
     act(() => vi.advanceTimersByTime(2200)); // play it out → onDone finalizes
 
     const grades = emitted.filter(([ev]) => ev === 'score.polish.measure');
@@ -993,7 +1006,7 @@ describe('ScorePlayer — Polish mode (transport-driven)', () => {
 
     const scroll = document.querySelector('.piano-score-player__scroll');
     act(() => { fireEvent.click(scroll, { clientX: 220, clientY: 100 }); }); // tap-seek to measure 3
-    act(() => { h.noteCb?.({ type: 'note_on', note: 60, velocity: 80 }); });
+    play(60);
     act(() => { fireEvent.click(scroll, { clientX: 100, clientY: 100 }); }); // …and back to measure 1
     expect(emitted.filter(([ev]) => ev === 'score.polish.measure')).toEqual([]);
   });
@@ -1748,9 +1761,14 @@ describe('ScorePlayer — Learn state matrix (wave-3 B)', () => {
   it('Learn without a range runs no wrong-note gate — a mismatched note neither shakes nor blocks', async () => {
     h.layoutExtras = THREE;
     await enterLearnFresh();
-    // The machine rows DO hold a subscription (neutral wet ink, wave-3 D), but no
-    // gate: a mismatched note neither shakes the cursor nor moves it.
+    // EXACTLY one subscriber, and it is the neutral wet ink (wave-3 D) — the
+    // follow tracker is not on the bus at all. The count is the load-bearing
+    // assertion: it is what fails if the tracker's `enabled` is ever widened from
+    // `learnGate` to `mode === 'learn'`, which the behavioural checks below cannot
+    // catch on their own (a second subscriber is invisible to them).
+    expect(h.noteCbs.size).toBe(1);
     play(61); // a wrong note against step 0 (E4/E2)
+    expect(document.querySelector('.piano-learn-ink__note.is-neutral')).not.toBeNull(); // ink is the one subscriber
     expect(document.querySelector('.piano-score-cursor.is-wrong')).toBeNull();
     expect(document.querySelector('.piano-learn-ink__note.is-wrong')).toBeNull();
     expect(pos()).toContain('m 1 / 3'); // and input does not drive the cursor either
@@ -1764,7 +1782,10 @@ describe('ScorePlayer — Learn state matrix (wave-3 B)', () => {
     expect(screen.getByRole('button', { name: 'Learn advances as you play' })).toBeDisabled();
     act(() => vi.advanceTimersByTime(2000));
     expect(h.sendNoteAt).not.toHaveBeenCalled(); // the kiosk performs nothing in the gate
-    expect(h.noteCb).toBeTypeOf('function');     // the tracker is subscribed
+    // Exactly one subscriber here too — the TRACKER. The wet-ink effect gates on
+    // machineLearn, so the gate row inks via the tracker's own hit/wrong callbacks
+    // rather than a second subscription.
+    expect(h.noteCbs.size).toBe(1);
     play(64); play(40);                          // all active-staff notes of step 0
     expect(pos()).toContain('m 2 / 3');           // …advances the cursor
     play(63);                                     // a plausible wrong note flashes — the gate is armed
@@ -1818,11 +1839,13 @@ describe('ScorePlayer — Learn state matrix (wave-3 B)', () => {
     h.layoutExtras = THREE;
     await enterLearnFresh();
     armLoopAt(160);
-    expect(h.noteCb).toBeTypeOf('function');
+    expect(h.noteCbs.size).toBe(1); // the tracker, alone
     act(() => { fireEvent.click(screen.getByRole('button', { name: 'Loop' })); }); // loop OFF
-    // The tracker unsubscribed: the only subscription these machine rows keep is
-    // the neutral wet ink (wave-3 D), which gates nothing — so a plausible wrong
-    // note neither shakes the cursor nor drives it.
+    // The tracker actually UNSUBSCRIBED — still exactly one subscriber, but now it
+    // is the neutral wet ink (wave-3 D), which gates nothing. Without the count,
+    // "tracker gone, ink here" and "tracker still here, ink stacked on top" look
+    // identical from the DOM.
+    expect(h.noteCbs.size).toBe(1);
     play(63);
     expect(document.querySelector('.piano-score-cursor.is-wrong')).toBeNull();
     expect(document.querySelector('.piano-learn-ink__note.is-neutral')).not.toBeNull();
@@ -2867,6 +2890,7 @@ describe('ScorePlayer — Learn wet ink + reveal budget (wave-3 D)', () => {
     renderPlayer();
     await act(async () => {});
     enterLearn(); // Learn WITHOUT a range = machine playback (wave-3 §B row 1)
+    expect(h.noteCbs.size).toBe(1); // the ink effect, and nothing else — no gate on the bus
     play(63);
     expect(ink('neutral')).toHaveLength(1);
     expect(ink('wrong')).toHaveLength(0);
@@ -2881,9 +2905,11 @@ describe('ScorePlayer — Learn wet ink + reveal budget (wave-3 D)', () => {
   it('renders no ink layer outside Learn', async () => {
     renderPlayer(); // opens in Listen
     await act(async () => {});
+    expect(h.noteCbs.size).toBe(0); // Listen subscribes to nothing at all
     play(63);
     expect(document.querySelector('svg.piano-learn-ink')).toBeNull();
     pickMode('Polish');
+    expect(h.noteCbs.size).toBe(0); // …and idle Polish only arms its evaluator inside a run
     play(63);
     expect(document.querySelector('svg.piano-learn-ink')).toBeNull();
     pickMode('Perform');
