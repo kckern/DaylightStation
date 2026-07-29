@@ -104,7 +104,43 @@ describe('createScanDispatch — construction', () => {
     // code with body `plex:1` — the screen silently dropped.
     const h = harness({ screenNames: ['living-room', 'go'] });
     expect(h.scanDispatch.screenCollisions).toEqual(['go']);
-    expect(eventNames(h.barcodeLogger, 'error')).toContain('scan.screen_name.shadows_prefix');
+    expect(eventNames(h.barcodeLogger, 'error')).toContain('scan.leading_segment.shadows_tag');
+  });
+
+  it('reports a screen named after a LEGACY nutrition tag', () => {
+    // The half this commit made dangerous: step 2 is route-independent, so
+    // `dl:plex:1` now resolves to nutrition on a CONTENT reader too, where it is
+    // swallowed. Before this commit the fridge grammar was consulted only on a
+    // nutribot-routed reader and a `dl`-named screen still worked everywhere else.
+    const h = harness({ screenNames: ['living-room', 'dl'] });
+    expect(h.scanDispatch.screenCollisions).toEqual(['dl']);
+    expect(eventNames(h.barcodeLogger, 'error')).toContain('scan.leading_segment.shadows_tag');
+  });
+
+  it('covers every tag in both halves of the registry', () => {
+    const h = harness({ screenNames: ['go', 'cmd', 'nut', 'sch', 'dl', 'ct', 'rs'] });
+    expect(h.scanDispatch.screenCollisions.sort())
+      .toEqual(['cmd', 'ct', 'dl', 'go', 'nut', 'rs', 'sch']);
+  });
+
+  it('checks COMMAND names too, since a command also leads a legacy code', () => {
+    // `volume:30` is `<tag>:<rest>` to the same single split, so the command list
+    // is as much a source of leading segments as the screen list.
+    const h = harness({ commandNames: ['pause', 'nut'] });
+    expect(h.scanDispatch.screenCollisions).toEqual(['nut']);
+  });
+
+  it('checks the REAL command list by default, and it is clean today', async () => {
+    const { KNOWN_COMMANDS } = await import('#domains/barcode/BarcodeCommandMap.mjs');
+    const { PREFIX_REGISTRY, LEGACY_NUTRITION_TAGS } = await import('#domains/scan/ScanCode.mjs');
+    const tags = new Set([...Object.keys(PREFIX_REGISTRY), ...LEGACY_NUTRITION_TAGS]);
+    expect(KNOWN_COMMANDS.filter((c) => tags.has(c))).toEqual([]);
+    // Not injected by app.mjs — the default is the live constant, so a command
+    // added later is checked without anyone remembering to wire it. The DEFAULT
+    // itself is not observable while the real list is clean (`[]` would look the
+    // same); the assertion above is what bites the day it stops being clean, and
+    // the injected case below is what proves the union works at all.
+    expect(harness().scanDispatch.screenCollisions).toEqual([]);
   });
 
   it('reports nothing for the screens configured today', () => {
