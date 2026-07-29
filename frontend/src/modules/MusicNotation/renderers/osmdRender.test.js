@@ -4,6 +4,7 @@ import {
   pickMelodyNote,
   collectOnsetNotes,
   extractStaffGeometry,
+  extractPerStaffGeometry,
   extractEvents,
   extractLayoutSliced,
 } from './osmdRender.js';
@@ -78,6 +79,10 @@ describe('collectOnsetNotes', () => {
 const staffLine = ({ x, y, width }) => ({
   PositionAndShape: { AbsolutePosition: { x, y }, Size: { width } },
 });
+const staffLineWithId = ({ x, y, width, staffId }) => ({
+  PositionAndShape: { AbsolutePosition: { x, y }, Size: { width } },
+  ParentStaff: staffId == null ? undefined : { idInMusicSheet: staffId },
+});
 const sheet = (systems, zoom) => ({
   Zoom: zoom,
   GraphicSheet: { MusicPages: [{ MusicSystems: systems }] },
@@ -137,6 +142,36 @@ describe('extractStaffGeometry', () => {
   });
 });
 
+describe('extractPerStaffGeometry', () => {
+  it('emits one entry per staff per system with the OSMD staff id', () => {
+    const sys = { StaffLines: [
+      staffLineWithId({ x: 12, y: 6, width: 100, staffId: 0 }),
+      staffLineWithId({ x: 12, y: 14, width: 100, staffId: 1 }),
+    ] };
+    const out = extractPerStaffGeometry(sheet([sys], 1));
+    expect(out).toEqual([
+      { system: 0, staff: 0, top: 60, left: 120, right: 1120, lineSpacing: 10 },
+      { system: 0, staff: 1, top: 140, left: 120, right: 1120, lineSpacing: 10 },
+    ]);
+  });
+
+  it('falls back to the StaffLines index when ParentStaff is absent', () => {
+    const sys = { StaffLines: [staffLineWithId({ x: 0, y: 0, width: 10 }), staffLineWithId({ x: 0, y: 8, width: 10 })] };
+    expect(extractPerStaffGeometry(sheet([sys], 1)).map((s) => s.staff)).toEqual([0, 1]);
+  });
+
+  it('scales by Zoom and skips malformed staves', () => {
+    const sys = { StaffLines: [staffLineWithId({ x: 12, y: 6, width: 100, staffId: 0 }), {}] };
+    const out = extractPerStaffGeometry(sheet([sys], 0.75));
+    expect(out).toEqual([{ system: 0, staff: 0, top: 45, left: 90, right: 840, lineSpacing: 7.5 }]);
+  });
+
+  it('returns [] for garbage', () => {
+    expect(extractPerStaffGeometry(undefined)).toEqual([]);
+    expect(extractPerStaffGeometry({})).toEqual([]);
+  });
+});
+
 describe('layout extract publishes staff geometry', () => {
   // A cursor-less score is the blank-draft case: no notes to walk, but the
   // caret still needs to know where the staff is.
@@ -145,6 +180,7 @@ describe('layout extract publishes staff geometry', () => {
   it('includes `staves` on the no-cursor early return of extractEvents', () => {
     const out = extractEvents(blankDraft);
     expect(out.staves).toEqual([{ system: 0, top: 63.5, left: 120, right: 1120, lineSpacing: 10 }]);
+    expect(Array.isArray(out.staffBoxes)).toBe(true);
     // additive only — the pre-existing keys keep their shape
     expect(out.events).toEqual([]);
     expect(out.notes).toEqual([]);
@@ -156,6 +192,7 @@ describe('layout extract publishes staff geometry', () => {
   it('includes `staves` on the no-cursor early return of extractLayoutSliced', async () => {
     const out = await extractLayoutSliced(blankDraft);
     expect(out.staves).toEqual([{ system: 0, top: 63.5, left: 120, right: 1120, lineSpacing: 10 }]);
+    expect(Array.isArray(out.staffBoxes)).toBe(true);
     expect(out.steps).toEqual([]);
     expect(out.measures).toEqual([]);
   });
