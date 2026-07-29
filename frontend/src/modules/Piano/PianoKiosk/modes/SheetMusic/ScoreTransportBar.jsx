@@ -8,47 +8,11 @@ import KeySheet from '../../transport/KeySheet.jsx';
 import TempoSheet, { TEMPO_STEPS, nearestStep } from '../../transport/TempoSheet.jsx';
 import VolumeControl from '../../transport/VolumeControl.jsx';
 
-// Tab order: Listen · Learn · Polish · Perform.
-const MODES = [
-  { id: 'listen', label: 'Listen' },
-  { id: 'learn', label: 'Learn' },
-  { id: 'polish', label: 'Polish' },
-  { id: 'perform', label: 'Perform' },
-];
-
 const ROLE_TITLES = {
   play: 'Play',
   you: 'You',
   mute: 'Mute',
 };
-
-/**
- * ScoreModeTabs — the left segmented mode control (Listen/Learn/Polish/Perform).
- *
- * Memoized: it depends only on `mode`/`onMode`, so a cursor-step advance (which
- * only touches the shell's position readout) leaves this subtree untouched.
- */
-const ScoreModeTabs = memo(function ScoreModeTabs({ mode, onMode }) {
-  return (
-    <div className="piano-score-modes" role="tablist" aria-label="Score mode">
-      {MODES.map(({ id, label }) => {
-        const selected = mode === id;
-        return (
-          <button
-            key={id}
-            type="button"
-            role="tab"
-            aria-selected={selected}
-            className={`piano-score-mode-tab${selected ? ' is-active' : ''}`}
-            onClick={() => onMode(id)}
-          >
-            {label}
-          </button>
-        );
-      })}
-    </div>
-  );
-});
 
 /**
  * ScoreTransportButtons — Restart (icon) + run (Play/Pause icons). Stable
@@ -320,8 +284,11 @@ const ScoreViewControls = memo(function ScoreViewControls({
  * router concerns live here. Replaces the old top toolbar (top bar becomes
  * breadcrumb-only).
  *
- * Stable three-zone geography (audit C1/C2): a fixed grid of
- *   left  — mode tabs
+ * The mode ladder (Listen/Learn/Polish/Perform) has moved to the header — a
+ * crumb opens {@link ../ModeSheet.jsx|ModeSheet} — so this bar no longer owns a
+ * left zone. `mode` remains a prop purely for in-place gating (wave-2 B).
+ *
+ * Stable two-zone geography (audit C1/C2, revised wave-2 B): a fixed grid of
  *   center — Restart · Play/Pause · metronome · Loop · position readout
  *   right — Hands/parts · Key · Tempo · View menu
  * Every control renders in ALL modes but Perform; per-mode gating disables/dims
@@ -331,12 +298,12 @@ const ScoreViewControls = memo(function ScoreViewControls({
  *  Learn   — Play disabled ("Learn advances as you play"); metronome free-runs;
  *            Key dimmed.
  *  Polish  — full transport; metronome arms the run click; Key dimmed.
- *  Perform — tabs + a {page} / {pages} indicator only (music-stand mode).
+ *  Perform — only a {page} / {pages} indicator (music-stand mode).
  *
  * Perf structure (Task 10): this component is a THIN SHELL. It threads props and
  * owns only the cheap, step-dependent position readout in the center column. The
- * four expensive clusters — mode tabs, transport buttons, the practice cluster,
- * and the right-hand view controls — are `React.memo`'d children whose props don't
+ * expensive clusters — transport buttons, the practice cluster, and the
+ * right-hand view controls — are `React.memo`'d children whose props don't
  * change as the cursor steps, so advancing `step` re-renders only this shell + the
  * small readout, and the memoized subtrees bail out. (Approach B: sub-section
  * memoization; the readout must stay nested inside the grid's center zone, so it
@@ -344,7 +311,6 @@ const ScoreViewControls = memo(function ScoreViewControls({
  */
 export default function ScoreTransportBar({
   mode,
-  onMode,
   running,
   onToggleRun,
   onReset,
@@ -407,9 +373,6 @@ export default function ScoreTransportBar({
 
   return (
     <div className="piano-score-transportbar">
-      {/* Left — mode tabs (memoized; step-independent) */}
-      <ScoreModeTabs mode={mode} onMode={onMode} />
-
       {/* Center — transport buttons + practice cluster (memoized) + the per-step position readout (shell) */}
       <div className="piano-score-playback">
         <ScoreTransportButtons

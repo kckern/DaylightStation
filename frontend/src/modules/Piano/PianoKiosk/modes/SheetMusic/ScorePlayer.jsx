@@ -30,6 +30,7 @@ import { coalesce } from '../../../../../lib/logging/gestureCoalescer.js';
 import { inputTelemetryEnabled, makeInputSender } from '../../../../../lib/logging/inputTelemetryGate.js';
 import { keyLabel } from './keyLabel.js';
 import ScoreTransportBar from './ScoreTransportBar.jsx';
+import ModeSheet, { MODES } from './ModeSheet.jsx';
 import NoteHighlightLayer from './NoteHighlightLayer.jsx';
 import MeasureGradeLayer from './MeasureGradeLayer.jsx';
 import RunSummary from './RunSummary.jsx';
@@ -98,8 +99,6 @@ export default function ScorePlayer({ score: scoreMeta }) {
     measures: parsed?.parts?.[0]?.measures?.length || 0,
   }), [scoreMeta.id, scoreMeta.title, parsed, tempo]);
 
-  usePianoBreadcrumb(useMemo(() => [{ label: meta.title }], [meta.title]));
-
   // Resolved sheetmusic config (defaults filled). Hoisted above the mode state so
   // the initial mode can come from `defaultMode` — the ladder starts at Listen.
   const smCfg = useMemo(() => resolveSheetMusicConfig(config?.sheetmusic), [config]);
@@ -115,6 +114,15 @@ export default function ScorePlayer({ score: scoreMeta }) {
     const m = restored.mode;
     return VALID_MODES.includes(m) ? m : (VALID_MODES.includes(smCfg.defaultMode) ? smCfg.defaultMode : 'learn');
   });
+  // The mode picker now lives in the header (wave-2 B): the title crumb stays
+  // put, and a second crumb — the current mode's icon + label — opens ModeSheet.
+  const [modeSheetOpen, setModeSheetOpen] = useState(false);
+  const openModeSheet = useCallback(() => setModeSheetOpen(true), []);
+  const modeMeta = MODES.find((m) => m.id === mode) || MODES[0];
+  usePianoBreadcrumb(useMemo(() => [
+    { label: meta.title, image: scoreMeta.splashImage || null },
+    { label: modeMeta.label, icon: modeMeta.icon, onClick: openModeSheet },
+  ], [meta.title, scoreMeta.splashImage, modeMeta, openModeSheet]));
   // Listen/Learn/Polish practice range (measure INDICES) | null = whole piece.
   // Practice loops are per-session by design — never restored (audit M1).
   const [focus, setFocus] = useState(null);
@@ -1410,9 +1418,15 @@ export default function ScorePlayer({ score: scoreMeta }) {
         </div>
       )}
 
+      <ModeSheet
+        open={modeSheetOpen}
+        onClose={() => setModeSheetOpen(false)}
+        mode={mode}
+        onPick={onMode}
+      />
+
       <ScoreTransportBar
         mode={mode}
-        onMode={onMode}
         running={running}
         onToggleRun={toggleRun}
         onReset={reset}

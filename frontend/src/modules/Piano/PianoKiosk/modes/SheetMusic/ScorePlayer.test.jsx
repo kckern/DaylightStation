@@ -28,6 +28,11 @@ const h = vi.hoisted(() => ({
   sendNoteOffAt: vi.fn(),
   sendPanic: vi.fn(),
   clickSched: { start: vi.fn(), stop: vi.fn(), setBpm: vi.fn() },
+  // Latest crumbs ScorePlayer published via usePianoBreadcrumb (wave-2 B: mode
+  // switching moved to the header crumb → ModeSheet). This harness doesn't mount
+  // PianoChrome, so there's no DOM crumb to click — pickMode() below invokes the
+  // captured crumb's onClick directly instead.
+  crumbs: [],
 }));
 
 // Derive per-onset full-staff steps from the melody events: the first pitch of
@@ -56,7 +61,7 @@ vi.mock('../../PianoMidiContext.jsx', () => ({
 }));
 vi.mock('../../PianoPlaybackContext.jsx', () => ({ usePianoPlayback: () => ({ setPlaying: () => {} }) }));
 vi.mock('../../PianoConfig.jsx', () => ({ usePianoKioskConfig: () => ({ config: { keyboard: { startNote: 21, endNote: 108 } } }) }));
-vi.mock('../../PianoBreadcrumbContext.jsx', () => ({ usePianoBreadcrumb: () => {} }));
+vi.mock('../../PianoBreadcrumbContext.jsx', () => ({ usePianoBreadcrumb: (crumbs) => { h.crumbs = crumbs || []; } }));
 vi.mock('../../useReloadGuard.js', () => ({ default: () => {} }));
 // Spyable click scheduler: useMetronomeClick creates one per enable, so hand it
 // the shared holder object and assert on start/stop/setBpm.
@@ -122,8 +127,19 @@ beforeEach(() => {
   h.clickSched = { start: vi.fn(), stop: vi.fn(), setBpm: vi.fn() };
 });
 
+// Mode switching now lives in the header crumb → ModeSheet (wave-2 B), not a
+// bar tab strip. This harness stubs usePianoBreadcrumb (no PianoChrome mounted
+// to click the crumb through in the DOM), so the crumb is captured in h.crumbs
+// instead; pickMode invokes its onClick directly — the exact handler a real
+// crumb tap would fire, opening the ModeSheet ScorePlayer mounts itself — then
+// clicks the target mode's row in the now-open dialog, same as the old tab click.
+const pickMode = (label) => {
+  act(() => { h.crumbs[h.crumbs.length - 1]?.onClick?.(); });
+  act(() => { screen.getByText(label).click(); });
+};
+
 // Scores now open in Listen (default). The Learn tests select Learn first.
-const enterLearn = () => act(() => { screen.getByText('Learn').click(); });
+const enterLearn = () => pickMode('Learn');
 
 describe('ScorePlayer — intent-event session-log routing (Task 10)', () => {
   it('emits intent events through the session-logged logger (app + sessionLog context)', () => {
@@ -175,7 +191,7 @@ describe('ScorePlayer — UI-intent capture (Task 12)', () => {
   it('records a UI_INTENT in the ring when a control is used (mode change)', () => {
     renderPlayer(); // opens in Listen
     __resetRecorder();
-    act(() => { screen.getByText('Learn').click(); }); // mode change → tapIntent('mode')
+    pickMode('Learn'); // mode change → tapIntent('mode')
     const hit = __snapshotForTest().records.some((r) => r.kind === KIND.UI_INTENT);
     expect(hit).toBe(true);
     cleanup();
@@ -224,8 +240,11 @@ describe('ScorePlayer — touch gesture flush (pointercancel + active guard)', (
 describe('ScorePlayer — default mode', () => {
   it('opens in Listen (defaultMode), not Learn (J2)', () => {
     renderPlayer();
-    expect(screen.getByRole('tab', { name: /listen/i })).toHaveAttribute('aria-selected', 'true');
-    expect(screen.getByRole('tab', { name: /learn/i })).toHaveAttribute('aria-selected', 'false');
+    // Mode now surfaces via the header crumb (wave-2 B), not a bar tab strip.
+    // The crumb shows exactly the current mode, so asserting its label is
+    // Listen carries the same information as the old "Listen selected AND
+    // Learn not selected" pair (only one mode can be current at a time).
+    expect(h.crumbs[h.crumbs.length - 1]).toMatchObject({ label: 'Listen', icon: 'mode-listen' });
   });
 });
 
@@ -294,7 +313,7 @@ describe('ScorePlayer — keyboard visibility policy (M2)', () => {
     expect(document.querySelector('.piano-score-player__keys')).toBeNull(); // hidden (no part)
     act(() => { fireEvent.click(screen.getByRole('button', { name: 'Right hand' })); }); // My part = RH
     expect(document.querySelector('.piano-score-player__keys')).not.toBeNull(); // now shown
-    act(() => { screen.getByText('Learn').click(); }); // Learn auto-shows the keyboard
+    pickMode('Learn'); // Learn auto-shows the keyboard
     expect(document.querySelector('.piano-score-player__keys')).not.toBeNull();
   });
 });
@@ -306,21 +325,22 @@ describe('ScorePlayer — per-score persistence (Task 2.5)', () => {
 
   it('restores the last-used mode for a given score id', () => {
     const { unmount } = renderScore();
-    act(() => { screen.getByText('Learn').click(); }); // change away from the default (Listen)
+    pickMode('Learn'); // change away from the default (Listen)
     unmount();
     renderScore();
-    expect(screen.getByRole('tab', { name: /learn/i })).toHaveAttribute('aria-selected', 'true');
+    // Mode now surfaces via the header crumb (wave-2 B), not a bar tab strip.
+    expect(h.crumbs[h.crumbs.length - 1]).toMatchObject({ label: 'Learn', icon: 'mode-learn' });
   });
 
   it('restores the metronome arm state for a given score id (M3)', () => {
     const { unmount } = renderScore();
-    act(() => { screen.getByText('Polish').click(); });
+    pickMode('Polish');
     const click = screen.getByRole('button', { name: /metronome/i });
     expect(click).toHaveAttribute('aria-pressed', 'true'); // default ON
     act(() => { fireEvent.click(click); }); // turn it off
     unmount();
     renderScore();
-    act(() => { screen.getByText('Polish').click(); });
+    pickMode('Polish');
     expect(screen.getByRole('button', { name: /metronome/i })).toHaveAttribute('aria-pressed', 'false');
   });
 });
@@ -394,14 +414,14 @@ describe('ScorePlayer — practice range persistence (J3/L6)', () => {
     // the measure-span scope shows in the visible label instead.
     expect(screen.getByRole('button', { name: 'Loop' })).toHaveTextContent(/m1/i);
     // Switch to Polish — range must persist.
-    act(() => { screen.getByText('Polish').click(); });
+    pickMode('Polish');
     expect(screen.getByRole('button', { name: 'Loop' })).toHaveTextContent(/m1/i);
     // Switch to Listen — the loop now FOLLOWS (audit L6).
-    act(() => { screen.getByText('Listen').click(); });
+    pickMode('Listen');
     expect(screen.getByRole('button', { name: 'Loop' })).toHaveTextContent(/m1/i);
     // Perform releases it.
-    act(() => { screen.getByText('Perform').click(); });
-    act(() => { screen.getByText('Listen').click(); });
+    pickMode('Perform');
+    pickMode('Listen');
     expect(screen.getByRole('button', { name: 'Loop' }).textContent).toBe('Loop'); // back to inactive trigger
   });
 });
@@ -455,7 +475,7 @@ describe('ScorePlayer — Perform mode pedal page-turn', () => {
     const scrollBy = vi.fn();
     Element.prototype.scrollBy = scrollBy;
     renderPlayer();
-    screen.getByText('Perform').click();
+    pickMode('Perform');
     await act(async () => {});
     const cc66 = (v) => act(() => { h.rawCb?.({ data: [0xb0, 66, v] }); });
 
@@ -483,7 +503,7 @@ describe('ScorePlayer — Polish mode (transport-driven)', () => {
   it('advances the cursor on the tempo map, including a mid-piece change', async () => {
     h.layoutExtras = { tempoEntries: [{ onsetQuarter: 0, bpm: 60 }, { onsetQuarter: 2, bpm: 120 }] };
     renderPlayer();
-    screen.getByText('Polish').click();
+    pickMode('Polish');
     await act(async () => {});
     screen.getByRole('button', { name: 'Play' }).click();
     await act(async () => {});
@@ -504,7 +524,7 @@ describe('ScorePlayer — Polish mode (transport-driven)', () => {
   it('Play starts a count-in before the transport moves, then advances (J1)', async () => {
     h.layoutExtras = { tempoEntries: [{ onsetQuarter: 0, bpm: 60 }] }; // count-in 4 beats @60 = 4000ms
     renderPlayer();
-    screen.getByText('Polish').click();
+    pickMode('Polish');
     await act(async () => {});
     screen.getByRole('button', { name: 'Play' }).click();
     await act(async () => {});
@@ -521,7 +541,7 @@ describe('ScorePlayer — Polish mode (transport-driven)', () => {
   it('tapping during the count-in cancels it (transport never starts) (J1)', async () => {
     h.layoutExtras = { tempoEntries: [{ onsetQuarter: 0, bpm: 60 }] };
     renderPlayer();
-    screen.getByText('Polish').click();
+    pickMode('Polish');
     await act(async () => {});
     screen.getByRole('button', { name: 'Play' }).click();
     await act(async () => {});
@@ -543,7 +563,7 @@ describe('ScorePlayer — Polish mode (transport-driven)', () => {
     const emitted = captureLog();
 
     renderPlayer();
-    screen.getByText('Polish').click();
+    pickMode('Polish');
     await act(async () => {});
     screen.getByRole('button', { name: 'Play' }).click();
     await act(async () => {});
@@ -582,7 +602,7 @@ describe('ScorePlayer — Polish mode (transport-driven)', () => {
   it('a Polish loop on the final measure wraps at onDone instead of finishing (L6)', async () => {
     h.layoutExtras = TAIL_MEASURE;
     renderPlayer();
-    screen.getByText('Polish').click();
+    pickMode('Polish');
     await act(async () => {});
     act(() => { fireEvent.click(screen.getByRole('button', { name: /^loop/i })); });
     act(() => { fireEvent.click(screen.getByRole('button', { name: /select measures/i })); });
@@ -654,7 +674,7 @@ describe('ScorePlayer — Polish mode (transport-driven)', () => {
     const emitted = captureLog();
 
     renderPlayer();
-    screen.getByText('Polish').click();
+    pickMode('Polish');
     await act(async () => {});
     loopSecondMeasure();
     expect(screen.getByText('m 2 / 3')).toBeTruthy(); // parked on the looped measure
@@ -680,7 +700,7 @@ describe('ScorePlayer — Polish mode (transport-driven)', () => {
     const emitted = captureLog();
 
     renderPlayer();
-    screen.getByText('Polish').click();
+    pickMode('Polish');
     await act(async () => {});
     loopMeasureAtX(160); // TAIL_MEASURE: the LAST measure (index 1)
     expect(screen.getByText('m 2 / 2')).toBeTruthy();
@@ -710,7 +730,7 @@ describe('ScorePlayer — Polish mode (transport-driven)', () => {
     const emitted = captureLog();
 
     renderPlayer();
-    screen.getByText('Polish').click();
+    pickMode('Polish');
     await act(async () => {});
     screen.getByRole('button', { name: 'Play' }).click();
     await act(async () => {});
@@ -743,7 +763,7 @@ describe('ScorePlayer — Polish mode (transport-driven)', () => {
     screen.getByRole('button', { name: 'Pause' }).click();
     await act(async () => {});
     // Now drill the same loop in Polish.
-    act(() => { screen.getByText('Polish').click(); });
+    pickMode('Polish');
     await act(async () => {});
     screen.getByRole('button', { name: 'Play' }).click();
     await act(async () => {});
@@ -762,7 +782,7 @@ describe('ScorePlayer — Polish mode (transport-driven)', () => {
     const emitted = captureLog();
 
     renderPlayer();
-    screen.getByText('Polish').click();
+    pickMode('Polish');
     await act(async () => {});
     screen.getByRole('button', { name: 'Play' }).click();
     await act(async () => {});
@@ -782,7 +802,7 @@ describe('ScorePlayer — Polish mode (transport-driven)', () => {
     const emitted = captureLog();
 
     renderPlayer();
-    screen.getByText('Polish').click();
+    pickMode('Polish');
     await act(async () => {});
     screen.getByRole('button', { name: 'Play' }).click();
     await act(async () => {});
@@ -812,7 +832,7 @@ describe('ScorePlayer — Polish mode (transport-driven)', () => {
     const emitted = captureLog();
 
     renderPlayer();
-    screen.getByText('Polish').click();
+    pickMode('Polish');
     await act(async () => {});
     screen.getByRole('button', { name: 'Play' }).click();
     await act(async () => {});
@@ -832,7 +852,7 @@ describe('ScorePlayer — Polish mode (transport-driven)', () => {
     const emitted = captureLog();
 
     renderPlayer();
-    screen.getByText('Polish').click();
+    pickMode('Polish');
     await act(async () => {});
     screen.getByRole('button', { name: 'Play' }).click();
     await act(async () => {});
@@ -873,7 +893,7 @@ describe('ScorePlayer — Polish mode (transport-driven)', () => {
     const emitted = captureLog();
 
     renderPlayer();
-    screen.getByText('Polish').click();
+    pickMode('Polish');
     await act(async () => {});
     screen.getByRole('button', { name: 'Play' }).click();
     await act(async () => {});
@@ -901,7 +921,7 @@ describe('ScorePlayer — Polish mode (transport-driven)', () => {
     const emitted = captureLog();
 
     renderPlayer();
-    screen.getByText('Polish').click();
+    pickMode('Polish');
     await act(async () => {});
     screen.getByRole('button', { name: 'Play' }).click();
     await act(async () => {});
@@ -925,7 +945,7 @@ describe('ScorePlayer — Polish mode (transport-driven)', () => {
     const emitted = captureLog();
 
     renderPlayer();
-    screen.getByText('Polish').click();
+    pickMode('Polish');
     await act(async () => {});
     screen.getByRole('button', { name: 'Play' }).click();
     await act(async () => {});
@@ -963,7 +983,7 @@ describe('ScorePlayer — Listen mode', () => {
       ],
     };
     renderPlayer();
-    screen.getByText('Listen').click();
+    pickMode('Listen');
     await act(async () => {});
     screen.getByRole('button', { name: 'Play' }).click();
     await act(async () => {});
@@ -987,7 +1007,7 @@ describe('ScorePlayer — Listen mode', () => {
       ],
     };
     renderPlayer();
-    screen.getByText('Listen').click();
+    pickMode('Listen');
     await act(async () => {});
     fireEvent.click(screen.getByRole('button', { name: 'Right hand' })); // My part = RH: the user plays staff 0, kiosk must NOT
     await act(async () => {});
@@ -1002,7 +1022,7 @@ describe('ScorePlayer — Listen mode', () => {
   it('Listen counts the user in only when they play a part (J7)', async () => {
     h.layoutExtras = { tempoEntries: [{ onsetQuarter: 0, bpm: 60 }] };
     renderPlayer();
-    screen.getByText('Listen').click();
+    pickMode('Listen');
     await act(async () => {});
     // My part = None → Play starts immediately (no count-in overlay).
     screen.getByRole('button', { name: 'Play' }).click();
@@ -1024,7 +1044,7 @@ describe('ScorePlayer — Listen mode', () => {
       notes: [{ midi: 64, staff: 0, onsetQuarter: 0, durationQuarters: 1 }],
     };
     renderPlayer();
-    screen.getByText('Listen').click();
+    pickMode('Listen');
     await act(async () => {});
     screen.getByRole('button', { name: 'Play' }).click();
     await act(async () => {});
@@ -1043,7 +1063,7 @@ describe('ScorePlayer — Listen mode', () => {
       notes: [{ midi: 40, staff: 1, onsetQuarter: 0, durationQuarters: 8 }], // long note, still sounding
     };
     renderPlayer();
-    screen.getByText('Listen').click();
+    pickMode('Listen');
     await act(async () => {});
     screen.getByRole('button', { name: 'Play' }).click();
     await act(async () => {});
@@ -1063,7 +1083,7 @@ describe('ScorePlayer — Listen mode', () => {
       notes: [{ midi: 40, staff: 1, onsetQuarter: 0, durationQuarters: 8 }], // long note
     };
     renderPlayer();
-    screen.getByText('Listen').click();
+    pickMode('Listen');
     await act(async () => {});
     screen.getByRole('button', { name: 'Play' }).click();
     await act(async () => {});
@@ -1081,7 +1101,7 @@ describe('ScorePlayer — Listen mode', () => {
   it('tempo control scales the Listen performance timeline', async () => {
     h.layoutExtras = { tempoEntries: [{ onsetQuarter: 0, bpm: 60 }] }; // written = 1000ms/quarter
     renderPlayer();
-    screen.getByText('Listen').click();
+    pickMode('Listen');
     await act(async () => {});
     // Half speed (0.5×) → each step takes 2000ms.
     fireEvent.click(screen.getByRole('button', { name: /^tempo/i }));
@@ -1097,7 +1117,7 @@ describe('ScorePlayer — Listen mode', () => {
 
   it('Listen light-up is always on: a correct strike lights without advancing (non-gating)', async () => {
     renderPlayer();
-    screen.getByText('Listen').click();
+    pickMode('Listen');
     await act(async () => {});
     // No toggle — light-up is unconditional in Listen (J5). Struck the top note of
     // the current (first) onset → lights, never advances.
@@ -1114,7 +1134,7 @@ describe('ScorePlayer — Listen mode', () => {
       { midi: 40, staff: 1, onsetQuarter: 0, durationQuarters: 4 },
     ] };
     renderPlayer();
-    screen.getByText('Listen').click();
+    pickMode('Listen');
     await act(async () => {});
     fireEvent.click(screen.getByRole('button', { name: 'Right hand' })); // My part = RH
     await act(async () => {});
@@ -1132,7 +1152,7 @@ describe('ScorePlayer — Listen mode', () => {
       notes: [{ midi: 40, staff: 1, onsetQuarter: 0, durationQuarters: 8 }],
     };
     renderPlayer();
-    screen.getByText('Listen').click();
+    pickMode('Listen');
     await act(async () => {});
     screen.getByRole('button', { name: 'Play' }).click(); // My part = None → plays immediately
     await act(async () => {});
@@ -1157,7 +1177,7 @@ describe('ScorePlayer — Listen mode', () => {
       notes: [{ midi: 40, staff: 1, onsetQuarter: 0, durationQuarters: 8 }], // long note, still sounding
     };
     renderPlayer();
-    screen.getByText('Listen').click();
+    pickMode('Listen');
     await act(async () => {});
     screen.getByRole('button', { name: 'Play' }).click();
     await act(async () => {});
@@ -1186,7 +1206,7 @@ describe('ScorePlayer — Listen mode', () => {
       ],
     };
     renderPlayer();
-    screen.getByText('Listen').click();
+    pickMode('Listen');
     await act(async () => {});
     // Loop measure 2 only (tail measure — exercises the onDone wrap path).
     act(() => { fireEvent.click(screen.getByRole('button', { name: /^loop/i })); });
@@ -1212,7 +1232,7 @@ describe('ScorePlayer — Listen mode', () => {
     // the last measure. One field session hit that fourteen times.
     h.layoutExtras = { tempoEntries: [{ onsetQuarter: 0, bpm: 60 }] }; // 1000ms/quarter, onsets at q0..q3
     renderPlayer();
-    screen.getByText('Listen').click();
+    pickMode('Listen');
     await act(async () => {});
     expect(screen.getByTestId('score-position')).toHaveTextContent('1 / 4');
     screen.getByRole('button', { name: 'Play' }).click(); // My part = None → plays immediately
@@ -1245,7 +1265,7 @@ describe('ScorePlayer — Listen mode', () => {
       ],
     };
     renderPlayer();
-    screen.getByText('Listen').click();
+    pickMode('Listen');
     await act(async () => {});
     // My part = everything → kiosk sends nothing (toggles: none → rh → both)
     act(() => { fireEvent.click(screen.getByRole('button', { name: 'Right hand' })); });
@@ -1290,7 +1310,7 @@ describe('ScorePlayer — rebuild-pause resume (H5/M3)', () => {
       ],
     };
     renderPlayer();
-    screen.getByText('Listen').click();
+    pickMode('Listen');
     await act(async () => {});
     screen.getByRole('button', { name: 'Play' }).click();
     await act(async () => {});
@@ -1314,7 +1334,7 @@ describe('ScorePlayer — rebuild-pause resume (H5/M3)', () => {
       ],
     };
     renderPlayer();
-    screen.getByText('Listen').click();
+    pickMode('Listen');
     await act(async () => {});
     screen.getByRole('button', { name: 'Play' }).click(); // My part = None → plays immediately
     await act(async () => {});
@@ -1335,7 +1355,7 @@ describe('ScorePlayer — rebuild-pause resume (H5/M3)', () => {
       notes: [{ midi: 40, staff: 1, onsetQuarter: 0, durationQuarters: 8 }],
     };
     renderPlayer();
-    screen.getByText('Listen').click();
+    pickMode('Listen');
     await act(async () => {});
     screen.getByRole('button', { name: 'Play' }).click();
     await act(async () => {});
@@ -1365,7 +1385,7 @@ describe('ScorePlayer — rebuild-pause resume (H5/M3)', () => {
       notes: [{ midi: 40, staff: 1, onsetQuarter: 0, durationQuarters: 8 }],
     };
     renderPlayer();
-    screen.getByText('Listen').click();
+    pickMode('Listen');
     await act(async () => {});
     screen.getByRole('button', { name: 'Play' }).click(); // My part = None → plays immediately
     await act(async () => {});
@@ -1392,7 +1412,7 @@ describe('ScorePlayer — rebuild-pause resume (H5/M3)', () => {
       notes: [{ midi: 40, staff: 1, onsetQuarter: 0, durationQuarters: 8 }],
     };
     renderPlayer();
-    screen.getByText('Listen').click();
+    pickMode('Listen');
     await act(async () => {});
     screen.getByRole('button', { name: 'Play' }).click();
     await act(async () => {});
@@ -1427,7 +1447,7 @@ describe('ScorePlayer — Restart honors the loop in-point (L5)', () => {
       ],
     };
     renderPlayer();
-    act(() => { screen.getByText('Polish').click(); });
+    pickMode('Polish');
     // Set a loop on measure 2 only (two selection taps at x=160 → step 1 → measure index 1).
     act(() => { fireEvent.click(screen.getByRole('button', { name: /^loop/i })); });
     act(() => { fireEvent.click(screen.getByRole('button', { name: /select measures/i })); });
@@ -1453,7 +1473,7 @@ describe('ScorePlayer — loop endpoint nudging (L2)', () => {
       ],
     };
     renderPlayer();
-    act(() => { screen.getByText('Learn').click(); });
+    pickMode('Learn');
     // Set a loop of m1–m1 (two selection taps on the first note).
     act(() => { fireEvent.click(screen.getByRole('button', { name: /^loop/i })); });
     act(() => { fireEvent.click(screen.getByRole('button', { name: /select measures/i })); });
@@ -1481,7 +1501,7 @@ describe('ScorePlayer — selection tap threshold (L3)', () => {
       ],
     };
     renderPlayer();
-    act(() => { screen.getByText('Learn').click(); });
+    pickMode('Learn');
     act(() => { fireEvent.click(screen.getByRole('button', { name: /^loop/i })); });
     act(() => { fireEvent.click(screen.getByRole('button', { name: /select measures/i })); });
     const scroll = document.querySelector('.piano-score-player__scroll');
@@ -1517,7 +1537,7 @@ describe('ScorePlayer — loop arming expires (H4b)', () => {
       ],
     };
     renderPlayer();
-    act(() => { screen.getByText('Learn').click(); });
+    pickMode('Learn');
     act(() => { fireEvent.click(screen.getByRole('button', { name: /^loop/i })); });
     act(() => { fireEvent.click(screen.getByRole('button', { name: /select measures/i })); });
     expect(screen.getByText(/tap the first measure/i)).toBeInTheDocument();
@@ -1632,7 +1652,7 @@ describe('ScorePlayer — Learn pacing telemetry (Task 11)', () => {
     // Complete step 0 (E4 + LH E3/E2) at +300ms, then answer step 1 at +900ms.
     t = 1300; play(64); play(52); play(40);
     t = 2200; play(62);
-    act(() => { screen.getByText('Listen').click(); }); // leaving Learn flushes
+    pickMode('Listen'); // leaving Learn flushes
 
     const stats = pick(emitted, 'score.follow.stats');
     expect(stats.length).toBe(1);

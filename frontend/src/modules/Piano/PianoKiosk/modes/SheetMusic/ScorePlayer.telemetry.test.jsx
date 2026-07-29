@@ -62,6 +62,11 @@ const h = vi.hoisted(() => ({
   // published and onReady never runs, so the session gets no score.load.
   failEngrave: false,
   publishes: 0, // how many times the stub published a layout (re-engrave counter)
+  // Latest crumbs ScorePlayer published via usePianoBreadcrumb (wave-2 B: mode
+  // switching moved to the header crumb → ModeSheet, not a bar tab strip). This
+  // harness doesn't mount PianoChrome, so pickMode() below invokes the captured
+  // crumb's onClick directly instead of clicking a DOM crumb.
+  crumbs: [],
 }));
 const deriveSteps = (events) => events.map((e) => ({
   onsetQuarter: e.onsetQuarter,
@@ -80,7 +85,7 @@ vi.mock('../../PianoMidiContext.jsx', () => ({
 }));
 vi.mock('../../PianoPlaybackContext.jsx', () => ({ usePianoPlayback: () => ({ setPlaying: () => {} }) }));
 vi.mock('../../PianoConfig.jsx', () => ({ usePianoKioskConfig: () => ({ config: cfg.value }) }));
-vi.mock('../../PianoBreadcrumbContext.jsx', () => ({ usePianoBreadcrumb: () => {} }));
+vi.mock('../../PianoBreadcrumbContext.jsx', () => ({ usePianoBreadcrumb: (crumbs) => { h.crumbs = crumbs || []; } }));
 vi.mock('../../useReloadGuard.js', () => ({ default: () => {} }));
 vi.mock('./clickScheduler.js', () => ({ createClickScheduler: () => ({ start: vi.fn(), stop: vi.fn(), setBpm: vi.fn() }) }));
 
@@ -110,6 +115,18 @@ const renderPlayer = () =>
   render(<MemoryRouter><ScorePlayer score={{ id: 'files:t.musicxml', title: 'T', musicXml: '<score/>' }} /></MemoryRouter>);
 const renderScore = (musicXml) =>
   render(<MemoryRouter><ScorePlayer score={{ id: 'files:t2.musicxml', title: 'T2', musicXml }} /></MemoryRouter>);
+
+// Mode switching now lives in the header crumb → ModeSheet (wave-2 B), not a bar
+// tab strip. This harness stubs usePianoBreadcrumb (no PianoChrome mounted to
+// click the crumb through in the DOM), so pickMode invokes the captured crumb's
+// onClick directly — the exact handler a real crumb tap would fire, opening the
+// ModeSheet ScorePlayer mounts itself — then clicks the target mode's row in the
+// now-open dialog. Each step is its OWN act() (never nested inside a caller's
+// act()): opening the sheet must commit before the row it renders can be queried.
+const pickMode = (label) => {
+  act(() => { h.crumbs[h.crumbs.length - 1]?.onClick?.(); });
+  act(() => { screen.getByText(label).click(); });
+};
 
 beforeEach(() => {
   telMode.real = false;
@@ -256,14 +273,14 @@ describe('ScorePlayer — control telemetry (Task 5)', () => {
 
   it('emits score.seek.tap for a tap-to-seek in a non-Perform mode', () => {
     renderPlayer();
-    act(() => { screen.getByText('Learn').click(); });
+    pickMode('Learn');
     tapScore(160);
     expect(emitted('score.seek.tap')).toEqual([{ from: 0, to: 1, mode: 'learn' }]);
   });
 
   it('emits score.perform.tapscroll instead of a seek in Perform', () => {
     renderPlayer();
-    act(() => { screen.getByText('Perform').click(); });
+    pickMode('Perform');
     tapScore(160);
     expect(emitted('score.perform.tapscroll')).toEqual([{ axis: 'y' }]);
     expect(emitted('score.seek.tap')).toEqual([]);
@@ -271,7 +288,7 @@ describe('ScorePlayer — control telemetry (Task 5)', () => {
 
   it('tags a focus set by the ±1 loop nudge with origin: nudge', () => {
     renderPlayer();
-    act(() => { screen.getByText('Learn').click(); });
+    pickMode('Learn');
     selectLoop(100); // loop m1–m1
     act(() => { fireEvent.click(screen.getByRole('button', { name: 'Loop' })); });
     act(() => { fireEvent.click(screen.getByRole('button', { name: /loop end later/i })); });
@@ -281,14 +298,14 @@ describe('ScorePlayer — control telemetry (Task 5)', () => {
 
   it('tags a focus set by a two-tap selection with origin: select', () => {
     renderPlayer();
-    act(() => { screen.getByText('Learn').click(); });
+    pickMode('Learn');
     selectLoop(160);
     expect(tel.logFocus.mock.calls.at(-1)[0]).toMatchObject({ kind: 'custom', origin: 'select' });
   });
 
   it('tags a focus set by a section pick with origin: section', () => {
     renderScore(SECTIONED_XML);
-    act(() => { screen.getByText('Learn').click(); });
+    pickMode('Learn');
     act(() => { fireEvent.click(screen.getByRole('button', { name: /^loop/i })); });
     act(() => { fireEvent.click(screen.getByRole('button', { name: 'B' })); });
     expect(tel.logFocus.mock.calls.at(-1)[0]).toMatchObject({ kind: 'section', inMeasure: 1, outMeasure: 1, origin: 'section' });
