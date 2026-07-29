@@ -152,6 +152,9 @@ export function createSheetService({ getConfig, providers, cellKinds, logger = c
         // page-width / cols, so "3 across but compact" is inexpressible and a
         // multi-block sheet sprawls over pages of whitespace.
         maxCellWPt: b.cell?.max_w_pt ?? defaults.cell?.max_w_pt,
+        // Four block titles at the layout's 24pt default spend 96pt of a 720pt
+        // page — enough on their own to push a sheet onto a second sheet of paper.
+        titleHeightPt: b.title_height_pt ?? defaults.title_height_pt,
         kind,
         cellOpts: toCellOpts(b.cell),
         items,
@@ -169,6 +172,7 @@ export function createSheetService({ getConfig, providers, cellKinds, logger = c
         gapPt: b.gapPt,
         aspect: b.aspect,
         maxCellWPt: b.maxCellWPt,
+        titleHeightPt: b.titleHeightPt,
       })),
     });
 
