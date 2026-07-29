@@ -52,6 +52,12 @@ const SELECT_IDLE_MS = 15000;
 // offered on the score (audit H3).
 const STUCK_PROMPT_MS = 5000;
 
+// Fixed near-black ink for lit noteheads (wave-2 A): every mode's cursor band
+// keeps its own accent colour, but the noteheads themselves always light this
+// same near-black so the sheet doesn't take on a per-mode tint. Struck (green
+// HIT glow) and pending markers are unaffected — they're separate CSS classes.
+export const NOTE_INK = '#23262b';
+
 /**
  * ScorePlayer — interactive engraved score. Four modes:
  *  Learn   — full-hand tracking: the cursor advances only once every active-staff
@@ -1301,6 +1307,8 @@ export default function ScorePlayer({ score: scoreMeta }) {
     });
   }, [logLoad, scoreMeta.fetchMs]);
 
+  // The band keeps its mode colour; lit NOTEHEADS get a fixed near-black ink
+  // (wave-2 A): visibly "current", nothing louder.
   const cursorColor = mode === 'learn' ? '#2ec46f' : mode === 'listen' ? '#e8a33d' : '#6cf';
 
   // Teleport (don't sweep diagonally) when the cursor crosses to a new system.
@@ -1380,7 +1388,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
               step={steps[step]}
               activeParts={activeParts}
               struck={litNotes}
-              accent={cursorColor}
+              accent={NOTE_INK}
               showPending={mode === 'learn'}
             />
           )}
