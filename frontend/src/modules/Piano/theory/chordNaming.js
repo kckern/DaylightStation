@@ -2,7 +2,10 @@
 // human display name (e.g. "D minor", "C 7 / E", "C 9"). No React, no DOM.
 //
 // Pitch class = midi % 12. The lowest sounding MIDI note sets the bass (for
-// inversion / slash spelling). v2 uses sharp spelling for roots.
+// inversion / slash spelling). Root and bass NAMES come from the shared speller
+// (MusicNotation/model/spelling.js), which is key-aware — so a B♭ chord in F major
+// reads "B♭ major" rather than "A♯ major", and the plaque agrees with the staff
+// drawn next to it.
 //
 // WHY A TIERED MATCHER (not a blind exact-match dictionary):
 //   1. EXACT tier — the played pitch classes equal a template exactly. Among
@@ -17,8 +20,7 @@
 // Inversions are first-class: any root is tried, so C-E-G-Bb voiced E-G-Bb-C is
 // still "C 7" (spelled "C 7 / E"), never a different chord.
 
-/** Sharp-spelled pitch-class names (index 0..11 = C..B). */
-export const PITCH_CLASS_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+import { spellNoteName, spellChord, accidentalGlyph, rootQualityOf } from '../../MusicNotation/model/spelling.js';
 
 const mod12 = (n) => ((n % 12) + 12) % 12;
 const PERFECT_FIFTH = 7; // the one chord tone allowed to be absent in a real voicing
@@ -29,25 +31,25 @@ const PERFECT_FIFTH = 7; // the one chord tone allowed to be absent in a real vo
 // deliberately broad so real voicings resolve to a real name.
 const TEMPLATES = [
   // ── ninths ────────────────────────────────────────────────────────────────
-  { quality: 'major9',       intervals: [0, 2, 4, 7, 11], label: 'major 9' },
-  { quality: 'dominant9',    intervals: [0, 2, 4, 7, 10], label: '9' },
-  { quality: 'minor9',       intervals: [0, 2, 3, 7, 10], label: 'minor 9' },
-  { quality: 'six9',         intervals: [0, 2, 4, 7, 9],  label: '6/9' },
+  { quality: 'major9',       intervals: [0, 2, 4, 7, 11], label: 'major 9', degrees: [1, 2, 3, 5, 7] },
+  { quality: 'dominant9',    intervals: [0, 2, 4, 7, 10], label: '9', degrees: [1, 2, 3, 5, 7] },
+  { quality: 'minor9',       intervals: [0, 2, 3, 7, 10], label: 'minor 9', degrees: [1, 2, 3, 5, 7] },
+  { quality: 'six9',         intervals: [0, 2, 4, 7, 9],  label: '6/9', degrees: [1, 2, 3, 5, 6] },
   // ── lydian (♯11 / ♯4) ────────────────────────────────────────────────────────
   // The ♯11 is lydian's characteristic tone; these are the chords that carry that
   // "lydian" color. (A mode is a scale, not a chord — see the note below the table.)
-  { quality: 'major7sharp11', intervals: [0, 4, 6, 7, 11], label: 'major 7 ♯11' },
-  { quality: 'addSharp11',    intervals: [0, 4, 6, 7],     label: 'add ♯11' },
+  { quality: 'major7sharp11', intervals: [0, 4, 6, 7, 11], label: 'major 7 ♯11', degrees: [1, 3, 4, 5, 7] },
+  { quality: 'addSharp11',    intervals: [0, 4, 6, 7],     label: 'add ♯11', degrees: [1, 3, 4, 5] },
   // ── sevenths ────────────────────────────────────────────────────────────────
-  { quality: 'major7',       intervals: [0, 4, 7, 11],    label: 'major 7' },
-  { quality: 'dominant7',    intervals: [0, 4, 7, 10],    label: '7' },
-  { quality: 'minor7',       intervals: [0, 3, 7, 10],    label: 'minor 7' },
-  { quality: 'minorMajor7',  intervals: [0, 3, 7, 11],    label: 'minor major 7' },
-  { quality: 'minor7b5',     intervals: [0, 3, 6, 10],    label: 'minor 7 ♭5' },
-  { quality: 'diminished7',  intervals: [0, 3, 6, 9],     label: 'diminished 7' },
-  { quality: 'augmented7',   intervals: [0, 4, 8, 10],    label: '7 ♯5' },
-  { quality: 'dominant7b5',  intervals: [0, 4, 6, 10],    label: '7 ♭5' },
-  { quality: 'dominant7sus4', intervals: [0, 5, 7, 10],   label: '7 sus4' },
+  { quality: 'major7',       intervals: [0, 4, 7, 11],    label: 'major 7', degrees: [1, 3, 5, 7] },
+  { quality: 'dominant7',    intervals: [0, 4, 7, 10],    label: '7', degrees: [1, 3, 5, 7] },
+  { quality: 'minor7',       intervals: [0, 3, 7, 10],    label: 'minor 7', degrees: [1, 3, 5, 7] },
+  { quality: 'minorMajor7',  intervals: [0, 3, 7, 11],    label: 'minor major 7', degrees: [1, 3, 5, 7] },
+  { quality: 'minor7b5',     intervals: [0, 3, 6, 10],    label: 'minor 7 ♭5', degrees: [1, 3, 5, 7] },
+  { quality: 'diminished7',  intervals: [0, 3, 6, 9],     label: 'diminished 7', degrees: [1, 3, 5, 7] },
+  { quality: 'augmented7',   intervals: [0, 4, 8, 10],    label: '7 ♯5', degrees: [1, 3, 5, 7] },
+  { quality: 'dominant7b5',  intervals: [0, 4, 6, 10],    label: '7 ♭5', degrees: [1, 3, 5, 7] },
+  { quality: 'dominant7sus4', intervals: [0, 5, 7, 10],   label: '7 sus4', degrees: [1, 4, 5, 7] },
   // ── sixths ────────────────────────────────────────────────────────────────
   // These share a pitch-class set with a minor 7th rooted a minor 3rd below:
   //     sixth  [0,4,7,9] == minor7   [0,3,7,10]
@@ -57,22 +59,22 @@ const TEMPLATES = [
   // names depending on which tone is lowest — and sixths follow the same rule.
   // C-E-G-A over C is "C 6"; the same notes over A are "A minor 7". Both are
   // what a player would call them, and root position (pickBest) decides.
-  { quality: 'sixth',        intervals: [0, 4, 7, 9],     label: '6' },
-  { quality: 'minor6',       intervals: [0, 3, 7, 9],     label: 'minor 6' },
+  { quality: 'sixth',        intervals: [0, 4, 7, 9],     label: '6', degrees: [1, 3, 5, 6] },
+  { quality: 'minor6',       intervals: [0, 3, 7, 9],     label: 'minor 6', degrees: [1, 3, 5, 6] },
   // ── added tone ──────────────────────────────────────────────────────────────
-  { quality: 'add9',         intervals: [0, 2, 4, 7],     label: 'add9' },
-  { quality: 'minorAdd9',    intervals: [0, 2, 3, 7],     label: 'minor add9' },
-  { quality: 'add4',         intervals: [0, 4, 5, 7],     label: 'add4' },
-  { quality: 'minorAdd4',    intervals: [0, 3, 5, 7],     label: 'minor add4' },
+  { quality: 'add9',         intervals: [0, 2, 4, 7],     label: 'add9', degrees: [1, 2, 3, 5] },
+  { quality: 'minorAdd9',    intervals: [0, 2, 3, 7],     label: 'minor add9', degrees: [1, 2, 3, 5] },
+  { quality: 'add4',         intervals: [0, 4, 5, 7],     label: 'add4', degrees: [1, 3, 4, 5] },
+  { quality: 'minorAdd4',    intervals: [0, 3, 5, 7],     label: 'minor add4', degrees: [1, 3, 4, 5] },
   // ── triads ────────────────────────────────────────────────────────────────
-  { quality: 'major',        intervals: [0, 4, 7],        label: 'major' },
-  { quality: 'minor',        intervals: [0, 3, 7],        label: 'minor' },
-  { quality: 'diminished',   intervals: [0, 3, 6],        label: 'diminished' },
-  { quality: 'augmented',    intervals: [0, 4, 8],        label: 'augmented' },
-  { quality: 'sus2',         intervals: [0, 2, 7],        label: 'sus2' },
-  { quality: 'sus4',         intervals: [0, 5, 7],        label: 'sus4' },
+  { quality: 'major',        intervals: [0, 4, 7],        label: 'major', degrees: [1, 3, 5] },
+  { quality: 'minor',        intervals: [0, 3, 7],        label: 'minor', degrees: [1, 3, 5] },
+  { quality: 'diminished',   intervals: [0, 3, 6],        label: 'diminished', degrees: [1, 3, 5] },
+  { quality: 'augmented',    intervals: [0, 4, 8],        label: 'augmented', degrees: [1, 3, 5] },
+  { quality: 'sus2',         intervals: [0, 2, 7],        label: 'sus2', degrees: [1, 2, 5] },
+  { quality: 'sus4',         intervals: [0, 5, 7],        label: 'sus4', degrees: [1, 4, 5] },
   // ── dyad ────────────────────────────────────────────────────────────────────
-  { quality: 'power',        intervals: [0, 7],           label: '5' },
+  { quality: 'power',        intervals: [0, 7],           label: '5', degrees: [1, 5] },
 ].map((t) => ({ ...t, set: new Set(t.intervals) }));
 
 // NOTE ON MODES: this identifies CHORDS (a set of simultaneous pitch classes), not
@@ -147,16 +149,27 @@ function pickBest(candidates) {
 /**
  * Identify a chord from a list of MIDI note numbers.
  * @param {number[]} midiNotes
+ * @param {string} [keySignature='C'] - major key the naming is spelled against
  * @returns {{
  *   root: number|null, quality: string|null, inversion: number,
- *   displayName: string, bassPitchClass: number|null, notePitchClasses: number[]
+ *   displayName: string, bassPitchClass: number|null, notePitchClasses: number[],
+ *   spelling: Map<number, {letter: string, alter: number}>
  * }}
+ *
+ * `spelling` is how the chord's tones should be WRITTEN — one letter per tone, stacked
+ * in thirds. Hand it to the staff renderer so the notes drawn and the name printed come
+ * from one computation instead of agreeing by coincidence.
  */
-export function identifyChord(midiNotes) {
+export function identifyChord(midiNotes, keySignature = 'C') {
   const notes = Array.isArray(midiNotes) ? midiNotes.filter((n) => Number.isFinite(n)) : [];
+  // Root and bass are spelled by the shared speller so the plaque agrees with the
+  // staff beside it (both go through model/spelling.js). Bass notes take no quality:
+  // a slash bass is a scale degree, not a chord of its own.
+  const nameRoot = (pc, quality) => spellNoteName(pc, { keySignature, rootQuality: rootQualityOf(quality) });
+  const nameBass = (pc) => spellNoteName(pc, { keySignature });
   const empty = {
     root: null, quality: null, inversion: 0,
-    displayName: '', bassPitchClass: null, notePitchClasses: [],
+    displayName: '', bassPitchClass: null, notePitchClasses: [], spelling: new Map(),
   };
   if (notes.length === 0) return empty;
 
@@ -168,7 +181,8 @@ export function identifyChord(midiNotes) {
     return {
       ...empty,
       root: pitchClasses[0],
-      displayName: PITCH_CLASS_NAMES[pitchClasses[0]],
+      spelling: spellChord(pitchClasses[0], [[0, 1]], { keySignature }),
+      displayName: nameBass(pitchClasses[0]),
       bassPitchClass: bassPc,
       notePitchClasses: pitchClasses,
     };
@@ -189,13 +203,28 @@ export function identifyChord(midiNotes) {
   const best = exact.length ? pickBest(exact) : (tolerant.length ? pickBest(tolerant) : null);
   if (!best) return { ...empty, bassPitchClass: bassPc, notePitchClasses: pitchClasses };
 
-  const rootName = PITCH_CLASS_NAMES[best.root];
+  const rootQuality = rootQualityOf(best.template.quality);
+  // One spelling for the whole chord: root by the tiers, every other tone by the letter
+  // its degree demands. The NAME is read out of that same map, so the plaque cannot
+  // drift from the staff.
+  const spelling = spellChord(
+    best.root,
+    best.template.intervals.map((iv, i) => [iv, best.template.degrees[i]]),
+    { keySignature, rootQuality },
+  );
+  const spelt = (pc) => {
+    const s = spelling.get(mod12(pc));
+    return s ? `${s.letter}${accidentalGlyph(s.alter)}` : null;
+  };
+  const rootName = spelt(best.root) ?? nameRoot(best.root, best.template.quality);
   let displayName = best.template.quality === 'power'
     ? `${rootName}5`
     : `${rootName} ${best.template.label}`;
   // Slash whenever the bass isn't the root — that covers real inversions AND a
   // bass the chord has no tone for (which must never read as root position).
-  if (mod12(bassPc) !== best.root) displayName += ` / ${PITCH_CLASS_NAMES[bassPc]}`;
+  // The bass takes the chord's own spelling when it is a chord tone (so C7 over its
+  // ♭7 reads "/ B♭", matching the notehead), else the per-note tiers.
+  if (mod12(bassPc) !== best.root) displayName += ` / ${spelt(bassPc) ?? nameBass(bassPc)}`;
 
   return {
     root: best.root,
@@ -204,6 +233,7 @@ export function identifyChord(midiNotes) {
     displayName,
     bassPitchClass: bassPc,
     notePitchClasses: pitchClasses,
+    spelling,
   };
 }
 

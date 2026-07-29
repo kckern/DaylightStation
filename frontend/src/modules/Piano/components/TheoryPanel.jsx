@@ -31,7 +31,7 @@ export function TheoryPanel({ activeNotes, layout = 'row' }) {
   // One shared rolling key, fed to BOTH the circle and the staff so they agree.
   const detectedKey = useDetectedKey(activeNotes);
   // The identified chord's root pitch class → the circle emphasises that degree.
-  const rootPc = useMemo(() => identifyChord(midiNotes).root, [midiNotes]);
+  const rootPc = useMemo(() => identifyChord(midiNotes, detectedKey).root, [midiNotes, detectedKey]);
 
   return (
     <div className={`theory-panel theory-panel--${layout}`}>
@@ -44,7 +44,7 @@ export function TheoryPanel({ activeNotes, layout = 'row' }) {
         <CurrentChordStaff activeNotes={activeNotes} detectedKey={detectedKey} />
       </div>
       <div className="theory-panel__chord">
-        <ChordNamePanel midiNotes={midiNotes} />
+        <ChordNamePanel midiNotes={midiNotes} keySignature={detectedKey} />
       </div>
     </div>
   );
