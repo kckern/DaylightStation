@@ -162,6 +162,41 @@
   .piano-tbtn { justify-content: flex-start; font-size: 1.1rem; }
 }
 
+// LoopGroup — shared A-B loop cluster (wave-3 F). Two families separated by
+// the section-end divider: mark-the-timeline (in/out) on the left,
+// act-on-the-loop (toggle/clear) on the right. Rehomed here from the video
+// chrome (PianoApp.scss) so Learn (SheetMusic) can share the same face.
+.piano-loop-group {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  border: 1px solid var(--piano-border);
+  border-radius: var(--r-md);
+  overflow: hidden;
+  flex-shrink: 0;
+
+  &.has-marks { border-color: var(--piano-warn); }
+
+  &__btn {
+    border: none;
+    border-radius: 0;
+    border-right: 1px solid var(--piano-border);
+    &:last-child { border-right: none; }
+    // Splits the group into its two halves. A fat border in the host's own
+    // background colour reads as a gap, not another divider.
+    &.is-section-end { border-right: 4px solid var(--piano-surface); }
+    // Warn-colour ring on a lone armed mark (e.g. A set, B not yet).
+    &.is-arming { border-color: var(--piano-warn); color: var(--piano-warn); }
+  }
+
+  // The cycle + clear glyphs are stroked outlines while the in/out brackets
+  // are solid fills, so at a matched 1em the strokes read visibly lighter.
+  // Nudge just those two up until all four buttons carry the same optical
+  // weight.
+  &__btn--loop-toggle .piano-icon svg,
+  &__btn--clear-loop .piano-icon svg { width: 1.25em; height: 1.25em; }
+}
+
 // ToggleSwitch — label-left switch row (wave-3 J). Track ≥48px wide; the whole
 // row is the tap target, so the thumb never needs to be hit precisely.
 .piano-toggle {
