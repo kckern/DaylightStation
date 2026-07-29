@@ -46,6 +46,8 @@ export {
   parseScan,
   encodeDensity,
   encodeContainer,
+  encodeControl,
+  CONTROL_VERBS,
   RESET_CODE,
   MAX_DENSITY_LEVEL,
 } from './services/ScanVocabularyService.mjs';

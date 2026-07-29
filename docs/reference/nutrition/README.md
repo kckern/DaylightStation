@@ -27,7 +27,7 @@ a precise gram measurement, never survives to the entry.
   ┌──────────────┐                 ┌────────────────┐
   │ dl:1 … dl:9  │  9 density      │ KitchenIQ 50797│
   │ ct:<id> ×25  │  25 containers  │ SENSSUN FOOD   │
-  │ rs:clear     │  1 reset        └───────┬────────┘
+  │ rs:<verb> ×3 │  3 control      └───────┬────────┘
   └──────┬───────┘                         │ BLE notify 0xFFB2
          │ scanned                         ▼
          │                          ATOM Lite relay          [_extensions/food-scale-relay]
@@ -70,13 +70,26 @@ the parser.
 |------|---------|
 | `dl:<1-9>` | caloric density level |
 | `ct:<id>` | container tare, `id` matching `/^[a-z0-9][a-z0-9-]*$/` |
-| `rs:clear` | reset the in-progress composition |
+| `rs:clear` | discard the in-progress composition and start fresh — parses to `{kind:'reset'}` |
+| `rs:undo` | take back the most recent scan |
+| `rs:done` | the sequence is complete; process it now |
+
+The `rs:` codes are the **control layer** — the punctuation of the grammar. Density and
+container scans accumulate a composition; because they arrive as separate events over a time
+window with no payload boundary, these three are the only way to say "start over", "take that
+back", or "that's the whole intent". `CONTROL_VERBS` is the frozen vocabulary and
+`encodeControl(verb)` the encoder; `RESET_CODE` remains exported and is exactly
+`encodeControl('clear')`.
+
+**`clear` parses to kind `reset`, not `clear`.** The asymmetry is deliberate and pinned by a
+test: `ApplyScanToComposition` switches on `parsed.kind === 'reset'`, and renaming the kind to
+match the verb would disable the one control code already in the field with no error anywhere.
 
 **Case-sensitive throughout.** `DL:4`, `CT:mug`, `RS:clear` and `ct:Dinner-Bowl` all return
 `null`. A case-preserved id would miss its `containers.items` key and silently skip the tare,
 producing a wrong-but-plausible calorie count rather than a visible error.
 
-**The encoders validate and throw.** `encodeDensity` / `encodeContainer` reject anything
+**The encoders validate and throw.** `encodeDensity` / `encodeContainer` / `encodeControl` reject anything
 `parseScan` would decline. An id that encodes but does not parse produces a laminated QR that
 can never be read, and the remedy is a reprint rather than a code fix — so failing at
 PDF-generation time is the cheap option. `MAX_DENSITY_LEVEL` is exported and drives both the

@@ -32,7 +32,10 @@ const DENSITY_PREFIX = 'dl';
 const CONTAINER_PREFIX = 'ct';
 // 'rs' rather than 'ctl'/'rst' so no prefix is a near-twin of another — a
 // single misread character should not turn one kind of scan into another.
-const RESET_PREFIX = 'rs';
+// Named CONTROL_ rather than RESET_ because the namespace now carries three
+// verbs; the prefix string itself is frozen by every sheet already printed and
+// by `LEGACY_NUTRITION_TAGS` in `2_domains/scan/ScanCode.mjs`, so it stays 'rs'.
+const CONTROL_PREFIX = 'rs';
 
 /**
  * Highest caloric-density level in the grammar.
@@ -53,8 +56,45 @@ const DENSITY_LEVEL_RE = /^[1-9][0-9]*$/;
 const isDensityLevel = (level) =>
   Number.isInteger(level) && level >= 1 && level <= MAX_DENSITY_LEVEL;
 
-/** The single code that clears any pending density/container selection. */
-export const RESET_CODE = `${RESET_PREFIX}:clear`;
+/**
+ * Control verbs — the punctuation of the grammar.
+ *
+ * Density and container scans accumulate a composition; these three say what to
+ * do with the sequence itself. The scale reports a weight, then the human scans
+ * a container and a density as SEPARATE events over a time window, so there is
+ * no payload boundary to signal intent — these codes are it.
+ *
+ * Frozen ARRAY rather than a Set, matching `LEGACY_NUTRITION_TAGS` in
+ * `2_domains/scan/ScanCode.mjs`: `Object.freeze` does not stop `Set.prototype.add`,
+ * so a frozen Set would advertise an immutability it does not have. Three
+ * entries make `includes` free.
+ */
+export const CONTROL_VERBS = Object.freeze(['clear', 'undo', 'done']);
+
+/**
+ * Verb (what is printed) → parsed kind (what consumers switch on).
+ *
+ * ASYMMETRIC ON PURPOSE: the verb `clear` parses to kind `'reset'`, not
+ * `'clear'`. `reset` predates the other two verbs and
+ * `3_applications/nutribot/usecases/ApplyScanToComposition.mjs` switches on
+ * `parsed.kind === 'reset'`. Aligning the kind to the verb would read tidier and
+ * would silently disable the ONE control code that exists in the field — a
+ * laminated sheet whose reset button stops working with no error anywhere.
+ * The mapping is spelled out here so the asymmetry is a decision, not a leftover.
+ */
+const CONTROL_VERB_KINDS = Object.freeze(Object.assign(Object.create(null), {
+  clear: 'reset',
+  undo: 'undo',
+  done: 'done',
+}));
+
+/**
+ * The code that clears any pending density/container selection.
+ *
+ * Kept as a named export because docs, plans, and sheet configs reference it by
+ * name; it is exactly `encodeControl('clear')`.
+ */
+export const RESET_CODE = `${CONTROL_PREFIX}:clear`;
 
 /**
  * @param {number} level Caloric-density level, 1..MAX_DENSITY_LEVEL.
@@ -87,12 +127,29 @@ export function encodeContainer(id) {
 }
 
 /**
+ * @param {string} verb One of CONTROL_VERBS: 'clear', 'undo', or 'done'.
+ * @returns {string} Scan code to print on the sheet.
+ * @throws {ValidationError} If the verb would print a code the parser rejects.
+ */
+export function encodeControl(verb) {
+  if (typeof verb !== 'string' || !CONTROL_VERBS.includes(verb)) {
+    throw new ValidationError(
+      `Control verb must be one of: ${CONTROL_VERBS.join(', ')}`,
+      { code: 'INVALID_CONTROL_VERB', field: 'verb', value: verb },
+    );
+  }
+  return `${CONTROL_PREFIX}:${verb}`;
+}
+
+/**
  * Parse a scanned string into a fridge-sheet command.
  *
  * @param {unknown} code Raw scanned payload.
  * @returns {{kind: 'density', level: number}
  *          |{kind: 'container', id: string}
  *          |{kind: 'reset'}
+ *          |{kind: 'undo'}
+ *          |{kind: 'done'}
  *          |null} Parsed command, or null if this grammar does not claim it.
  */
 export function parseScan(code) {
@@ -112,8 +169,12 @@ export function parseScan(code) {
   if (prefix === CONTAINER_PREFIX) {
     return CONTAINER_ID_RE.test(rest) ? { kind: 'container', id: rest } : null;
   }
-  if (prefix === RESET_PREFIX) {
-    return rest === 'clear' ? { kind: 'reset' } : null;
+  if (prefix === CONTROL_PREFIX) {
+    // Null-prototype map, so `rs:constructor` and `rs:__proto__` cannot resolve
+    // an inherited member and hand back a non-kind. Exact match on a bare verb:
+    // `rs:clear:extra` and `rs:` are different strings and stay unclaimed.
+    const kind = CONTROL_VERB_KINDS[rest];
+    return kind ? { kind } : null;
   }
   return null;
 }
