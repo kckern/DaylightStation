@@ -21,12 +21,30 @@
 // (delete the note before the caret) is unambiguous. If Composer is ever mounted
 // under one of those shells, the two bindings will fight over the same key.
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { applyCommand, insertNote, insertRest, deleteNote, deleteBeforeCaret, moveCaret } from './model/index.js';
+import {
+  applyCommand, insertNote, insertRest, deleteNote, deleteBeforeCaret, moveCaret,
+  setDuration as setNoteDuration, findNoteByTag,
+} from './model/index.js';
 import { midiToPitch } from './model/editor.js';
+import { classifyHeldMs, DURATION_CLASS_TYPE } from './model/durationClass.js';
 import getLogger from '../../../../../lib/logging/Logger.js';
 import { record, intern, KIND } from '../../../../../lib/logging/inputRecorder.js';
 
 const DURATION_KEYS = { Numpad1: '16th', Numpad3: 'eighth', Numpad5: 'quarter', Numpad7: 'half', Numpad9: 'whole' };
+
+// CHORD-GROUPING DIAGNOSTIC TOLERANCE (task 27). Recon finding: this pipeline has
+// NO chord-onset-grouping logic today — every armed note-on inserts as its own
+// independent, caret-advancing note, regardless of how close in time it lands to
+// the previous one. That absence IS the root cause of the "a chord renders
+// sequential" complaint. Per the task's explicit sequencing (logging first,
+// tuning later), this constant is NOT wired into insertion behavior — it only
+// drives the `composer.input.chord-decision` diagnostic log below, so a future
+// grouping feature can be tuned from real spread-vs-tolerance data instead of a
+// guess. 40ms is a first-pass, defensible starting point (commonly-cited
+// simultaneity window for grouping near-simultaneous onsets as one attack in
+// MIDI transcription literature, ~30-50ms) — NOT validated against this app's
+// actual hardware/BLE latency yet.
+export const CHORD_ONSET_TOLERANCE_MS = 40;
 
 // KEY_LEGEND — human-readable documentation of the numpad map, grouped for the
 // on-screen (i) help panel (ComposerHelp.jsx). This is the SSOT for that panel:
@@ -128,6 +146,22 @@ export function useComposerInput({ setEditorState, subscribe, logger, onTogglePl
   playingRef.current = playing;
   const onTogglePlayRef = useRef(onTogglePlay);
   onTogglePlayRef.current = onTogglePlay;
+  // task 27 — note-entry instrumentation + duration-classification state, all
+  // read/written ONLY inside the MIDI subscription callback below (never during
+  // render), so plain refs are correct here the same way `sticky`/`armedRef` are.
+  //   pendingOnsetsRef: midi note -> FIFO queue of {tag, t, pitch} for armed
+  //     presses awaiting their note_off (a queue, not a single slot, so the same
+  //     pitch pressed twice before either releases is handled correctly).
+  //   entryTagCounterRef: monotonic id stamped on each inserted note (see
+  //     model/note.js `entryTag`) so note_off can find that EXACT note again via
+  //     findNoteByTag — object identity doesn't survive the score being
+  //     re-cloned by any intervening edit.
+  //   chordClusterRef: rolling onset-cluster tracker for the chord-decision
+  //     diagnostic log (see CHORD_ONSET_TOLERANCE_MS above) — NOT wired to any
+  //     actual insertion behavior.
+  const pendingOnsetsRef = useRef(new Map());
+  const entryTagCounterRef = useRef(0);
+  const chordClusterRef = useRef({ lastT: null, size: 0 });
   const [hud, setHud] = useState({ ...sticky.current, armed: false });
   // `sync` only ever touches refs (stable identities) + setHud (stable), so the
   // useCallback'd setters below may safely close over the first render's copy.
@@ -208,8 +242,44 @@ export function useComposerInput({ setEditorState, subscribe, logger, onTogglePl
     if (!subscribe) return undefined;
     log.debug('composer.input.midi-subscribed', {});
     const unsub = subscribe((evt) => {
-      if (!evt || evt.type !== 'note_on' || !evt.velocity) return;
+      if (!evt) return;
+
+      // --- RELEASE: resolve a pending armed insert's held duration, then
+      // reclassify its rendered type (see model/durationClass.js — the LIGHT
+      // short/medium/long -> 16th/eighth/quarter classifier). A note_off
+      // with no matching pending entry (audition, playback-echo, or a stray
+      // hardware note_off) is logged for completeness (task 27, "every
+      // note_on/note_off") but otherwise a no-op.
+      if (evt.type === 'note_off') {
+        const t = evt.time ?? Date.now();
+        log.sampled('composer.input.note-off', { note: evt.note, t }, { maxPerMinute: 120, aggregate: true });
+        const queue = pendingOnsetsRef.current.get(evt.note);
+        if (!queue || queue.length === 0) return; // not an armed/tracked press
+        const { tag, t: onsetT, pitch } = queue.shift();
+        if (queue.length === 0) pendingOnsetsRef.current.delete(evt.note);
+        const heldMs = Math.max(0, t - onsetT);
+        const cls = classifyHeldMs(heldMs);
+        const type = DURATION_CLASS_TYPE[cls];
+        log.sampled('composer.input.note-duration', {
+          note: evt.note, pitch, heldMs, class: cls, type,
+        }, { maxPerMinute: 120, aggregate: true });
+        setEditorState((s) => {
+          const pos = findNoteByTag(s.score, tag);
+          if (!pos) return s; // deleted/undone since insertion — nothing to reclassify
+          const note = s.score.parts[0].measures[pos.measureIdx].notes[pos.noteIdx];
+          return applyCommand(s, setNoteDuration, pos, { type, dots: note.dots, triplet: note.triplet });
+        });
+        return;
+      }
+
+      if (evt.type !== 'note_on') return; // ignore anything else on this channel
       const pitch = midiToPitch(evt.note);
+      const t = evt.time ?? Date.now();
+      // Raw fact, logged regardless of arm state or velocity (task 27, "every
+      // note_on/note_off with timestamps").
+      log.sampled('composer.input.note-on', { note: evt.note, pitch, velocity: evt.velocity, t }, { maxPerMinute: 120, aggregate: true });
+      if (!evt.velocity) return; // some devices send note_on vel=0 as note_off; unchanged pre-existing behavior — dropped, not tracked
+
       if (!armedRef.current) {
         // Disarmed = audition-only (play freely, no score edit). Sampled: a kid
         // can play many notes/sec, and this fires per note while disarmed.
@@ -227,17 +297,37 @@ export function useComposerInput({ setEditorState, subscribe, logger, onTogglePl
         log.sampled('composer.input.playback-echo-ignored', { note: evt.note, pitch }, { maxPerMinute: 10, aggregate: true });
         return;
       }
-      // Armed insert — the core "did my note land?" signal. Sampled high so a
-      // fast passage is captured but a stuck stream can't storm the transport.
-      log.sampled('composer.input.note', {
-        note: evt.note,
-        pitch,
-        velocity: evt.velocity,
-        duration: sticky.current.type,
-        dots: sticky.current.dots,
+
+      // --- CHORD-GROUPING DIAGNOSTIC (decision is NOT enacted — see
+      // CHORD_ONSET_TOLERANCE_MS doc above). Every armed note-on still inserts
+      // below as an independent, caret-advancing note; there is no simultaneity
+      // grouping in this pipeline. This block only MEASURES, per note-on, the
+      // gap since the previous armed note-on (spreadMs) against the candidate
+      // tolerance, and logs whether it WOULD cluster — data to tune a real
+      // grouping feature later, per the task's explicit "logging first" order.
+      const cluster = chordClusterRef.current;
+      const spreadMs = cluster.lastT == null ? null : t - cluster.lastT;
+      const withinTolerance = spreadMs !== null && spreadMs <= CHORD_ONSET_TOLERANCE_MS;
+      cluster.size = withinTolerance ? cluster.size + 1 : 1;
+      cluster.lastT = t;
+      log.sampled('composer.input.chord-decision', {
+        note: evt.note, pitch, spreadMs, toleranceMs: CHORD_ONSET_TOLERANCE_MS,
+        grouped: withinTolerance, size: cluster.size,
       }, { maxPerMinute: 120, aggregate: true });
+
+      // Armed insert — the core "did my note land?" signal. Inserted NOW at the
+      // sticky/default type (unchanged timing from before this task: the note
+      // appears the instant the key is pressed); `entryTag` lets the note_off
+      // branch above find this EXACT note again to reclassify its type once the
+      // held duration is known (task 27, duration classification "assigned on
+      // release" — see note.js `entryTag` doc for why release can't just be
+      // "render at default then update" via a stale position/reference).
       recordEdit('insert-note', evt.note, undefined, sticky.current.type); // measure ← live caret
-      setEditorState((s) => applyCommand(s, insertNote, pitch, { ...sticky.current }));
+      const entryTag = ++entryTagCounterRef.current;
+      setEditorState((s) => applyCommand(s, insertNote, pitch, { ...sticky.current, entryTag }));
+      const queue = pendingOnsetsRef.current.get(evt.note) ?? [];
+      queue.push({ tag: entryTag, t, pitch });
+      pendingOnsetsRef.current.set(evt.note, queue);
     });
     return () => { log.debug('composer.input.midi-unsubscribed', {}); if (unsub) unsub(); };
   }, [subscribe, setEditorState, log]);
