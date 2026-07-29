@@ -155,7 +155,10 @@ export class ComposerSongStore {
   }
   #rosterFallback() {
     // Test/dev: derive from any user dir we can reach. In prod getHouseholdUsers exists.
-    return ['kc', 'soren'].filter(u => this.isKnownUser(u));
+    // Deliberately no household first names here — this repo is public, and a
+    // hardcoded roster is the one place a real user id would have to survive a
+    // PII scrub to keep working. Prod reads the real roster from config.
+    return ['kc'].filter(u => this.isKnownUser(u));
   }
 }
 
