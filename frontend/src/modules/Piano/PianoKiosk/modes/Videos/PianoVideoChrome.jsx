@@ -52,8 +52,8 @@ export default function PianoVideoChrome({
         <TransportButton icon="skip-back-30" label="30" ariaLabel="Back 30 seconds" className="piano-video-chrome__btn" disabled={gateOpen} onPress={() => onSkip(-30)} />
         <TransportButton icon="skip-back-15" label="15" ariaLabel="Back 15 seconds" className="piano-video-chrome__btn" disabled={gateOpen} onPress={() => onSkip(-15)} />
         <TransportButton icon={isPlaying ? 'pause' : 'play'} ariaLabel={isPlaying ? 'Pause' : 'Play'} emphasis="primary" className="piano-video-chrome__btn" disabled={gateOpen} onPress={onToggle} />
-        <TransportButton icon="skip-forward-15" label="15" ariaLabel="Forward 15 seconds" className="piano-video-chrome__btn" disabled={gateOpen || forwardDisabled} onPress={() => onSkip(15)} />
-        <TransportButton icon="skip-forward-30" label="30" ariaLabel="Forward 30 seconds" className="piano-video-chrome__btn" disabled={gateOpen || forwardDisabled} onPress={() => onSkip(30)} />
+        <TransportButton icon="skip-forward-15" label="15" labelFirst ariaLabel="Forward 15 seconds" className="piano-video-chrome__btn" disabled={gateOpen || forwardDisabled} onPress={() => onSkip(15)} />
+        <TransportButton icon="skip-forward-30" label="30" labelFirst ariaLabel="Forward 30 seconds" className="piano-video-chrome__btn" disabled={gateOpen || forwardDisabled} onPress={() => onSkip(30)} />
         <div className="piano-video-chrome__spacer" />
         {!isSequential && (
           <TransportButton label={`${rate}×`} ariaLabel="Playback speed" className="piano-video-chrome__btn piano-video-chrome__btn--rate" disabled={gateOpen} onPress={onCycleRate} />

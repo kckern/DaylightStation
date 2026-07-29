@@ -28,6 +28,12 @@ describe('TransportButton', () => {
     expect(onPress).not.toHaveBeenCalled();
   });
 
+  it('labelFirst renders the label span before the icon (default is icon-first)', () => {
+    render(<TransportButton icon="play" label="15" ariaLabel="Forward 15 seconds" labelFirst onPress={() => {}} />);
+    const btn = screen.getByRole('button', { name: 'Forward 15 seconds' });
+    expect(btn.firstElementChild.className).toContain('piano-tbtn__label');
+  });
+
   it('SCSS enforces the 48px (3rem) kiosk floor', () => {
     // jsdom computes no layout, so assert the stylesheet source directly.
     const scss = readFileSync(fileURLToPath(new URL('./Transport.scss', import.meta.url)), 'utf8');
