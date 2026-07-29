@@ -94,6 +94,13 @@ vi.mock('./clickScheduler.js', () => ({ createClickScheduler: () => ({ start: vi
 vi.mock('./usePracticeRecord.js', () => ({
   default: () => ({ record: {}, loaded: true, recordCycle: vi.fn(), recordTierBest: vi.fn() }),
 }));
+// usePianoPreferences (Task 15) reaches usePianoUser exactly like
+// usePracticeRecord — mock it out for the same reason (no PianoUserProvider in
+// this harness); this file doesn't assert on preferences, only that mounting
+// doesn't throw.
+vi.mock('../../usePianoPreferences.js', () => ({
+  usePianoPreferences: () => ({ prefs: {}, loaded: true, getPref: (key, fallback) => fallback, setPref: vi.fn() }),
+}));
 
 vi.mock('../../../../MusicNotation/renderers/MusicXmlRenderer.jsx', async () => {
   const { useEffect } = await import('react');

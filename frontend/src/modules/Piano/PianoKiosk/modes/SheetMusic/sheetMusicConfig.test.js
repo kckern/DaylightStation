@@ -7,6 +7,7 @@ describe('resolveSheetMusicConfig', () => {
       defaultMode: 'listen',
       perform: { advancePedalCC: 67, backPedalCC: 66 },
       scoring: { silentMeasuresToStop: 4, timingToleranceMs: 80, thresholds: { green: 0.9, yellow: 0.6 } },
+      learn: { defaultHands: 'both' },
     });
   });
   it('merges partial overrides', () => {
@@ -18,5 +19,9 @@ describe('resolveSheetMusicConfig', () => {
   it('ignores null/garbage and returns full defaults', () => {
     expect(resolveSheetMusicConfig(null).defaultMode).toBe('listen');
     expect(resolveSheetMusicConfig('nope').perform.backPedalCC).toBe(66);
+  });
+  it('resolves the Learn hand preference default and override (wave-3 E)', () => {
+    expect(resolveSheetMusicConfig({}).learn.defaultHands).toBe('both');
+    expect(resolveSheetMusicConfig({ learn: { defaultHands: 'rh' } }).learn.defaultHands).toBe('rh');
   });
 });
