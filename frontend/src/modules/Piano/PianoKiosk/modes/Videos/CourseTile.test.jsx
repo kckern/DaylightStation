@@ -58,8 +58,8 @@ describe('CourseTile', () => {
       isSequential: true,
       total: 344,
       users: [
-        { id: 'user_2', name: 'User_2', completed: 32, total: 344, lastPlayedAt: old },
-        { id: 'user_5', name: 'User_5', completed: 3, total: 344, lastPlayedAt: new Date().toISOString() },
+        { id: 'learner-two', name: 'learner-two', completed: 32, total: 344, lastPlayedAt: old },
+        { id: 'learner-one', name: 'learner-one', completed: 3, total: 344, lastPlayedAt: new Date().toISOString() },
       ],
     };
     render(<CourseTile item={item} onSelect={() => {}} progress={progress} />);
@@ -73,7 +73,7 @@ describe('CourseTile', () => {
     const progress = {
       isSequential: true,
       total: 344,
-      users: [{ id: 'user_5', name: 'User_5', completed: 3, total: 344, lastPlayedAt: new Date().toISOString() }],
+      users: [{ id: 'learner-one', name: 'learner-one', completed: 3, total: 344, lastPlayedAt: new Date().toISOString() }],
     };
     render(<CourseTile item={item} onSelect={() => {}} progress={progress} />);
     expect(document.querySelector('.piano-cover-progress').textContent).toContain('1%');

@@ -123,11 +123,11 @@ describe('buildSessionSummary', () => {
     });
 
     // user_4 zones: c,a,a,w,h,h,w,a,c,c = cool:3*5=15s, active:3*5=15s, warm:2*5=10s, hot:2*5=10s
-    const alanZone = summary.participants.user_4.zone_minutes;
-    expect(alanZone.cool).toBeCloseTo(0.25, 1);  // 15s / 60
-    expect(alanZone.active).toBeCloseTo(0.25, 1);
-    expect(alanZone.warm).toBeCloseTo(0.17, 1);   // 10s / 60
-    expect(alanZone.hot).toBeCloseTo(0.17, 1);
+    const learnerFourZone = summary.participants.user_4.zone_minutes;
+    expect(learnerFourZone.cool).toBeCloseTo(0.25, 1);  // 15s / 60
+    expect(learnerFourZone.active).toBeCloseTo(0.25, 1);
+    expect(learnerFourZone.warm).toBeCloseTo(0.17, 1);   // 10s / 60
+    expect(learnerFourZone.hot).toBeCloseTo(0.17, 1);
   });
 
   it('extracts media events with primary flag on longest', () => {

@@ -87,7 +87,7 @@ describe('PianoMenu (activity strip)', () => {
   it('renders the activity strip alongside the tile wall', async () => {
     activityResponse = {
       players: [{
-        userId: 'user_2', name: 'User_2', lastPlayedAt: '2026-07-28T10:00:00Z',
+        userId: 'learner-two', name: 'learner-two', lastPlayedAt: '2026-07-28T10:00:00Z',
         courses: [{
           courseId: 'plex:11', courseTitle: 'Course B', thumbnail: '/img/b',
           completed: 13, total: 57, percent: 23, lastPlayedAt: '2026-07-28T10:00:00Z',

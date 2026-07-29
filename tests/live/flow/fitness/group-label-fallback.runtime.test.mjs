@@ -33,7 +33,7 @@ const API_URL = BACKEND_URL;
 
 // Device configuration
 const KCKERN_DEVICE_ID = '40475';
-const FELIX_DEVICE_ID = '90003';
+const LEARNER_TWO_DEVICE_ID = '90003';
 
 const EXPECTED = {
   user_1: { single: 'User_1', group: 'Dad' },
@@ -328,14 +328,14 @@ test.describe('Group Label Fallback', () => {
       // Verify required device configs exist (not active devices)
       const devices = await sim.getDevices();
       const hasKckern = devices.some(d => String(d.deviceId) === KCKERN_DEVICE_ID);
-      const hasFelix = devices.some(d => String(d.deviceId) === FELIX_DEVICE_ID);
+      const hasFelix = devices.some(d => String(d.deviceId) === LEARNER_TWO_DEVICE_ID);
 
       console.log(`  Configured devices: ${devices.length}`);
       console.log(`  user_1 (${KCKERN_DEVICE_ID}): ${hasKckern ? 'found' : 'MISSING'}`);
-      console.log(`  user_2 (${FELIX_DEVICE_ID}): ${hasFelix ? 'found' : 'MISSING'}`);
+      console.log(`  user_2 (${LEARNER_TWO_DEVICE_ID}): ${hasFelix ? 'found' : 'MISSING'}`);
 
       expect(hasKckern, `user_1 device (${KCKERN_DEVICE_ID}) must exist`).toBe(true);
-      expect(hasFelix, `user_2 device (${FELIX_DEVICE_ID}) must exist`).toBe(true);
+      expect(hasFelix, `user_2 device (${LEARNER_TWO_DEVICE_ID}) must exist`).toBe(true);
 
       // ═══════════════════════════════════════════════════════════════
       // PHASE 1: Single device - should show display_name
@@ -368,26 +368,26 @@ test.describe('Group Label Fallback', () => {
       // PHASE 2: Second device joins - should switch to group_label
       // ═══════════════════════════════════════════════════════════════
       console.log('\n[PHASE 2] Second device joins - expecting group_label');
-      console.log(`  Activating user_2 (${FELIX_DEVICE_ID})...`);
+      console.log(`  Activating user_2 (${LEARNER_TWO_DEVICE_ID})...`);
 
-      await sim.setZone(FELIX_DEVICE_ID, 'warm');
+      await sim.setZone(LEARNER_TWO_DEVICE_ID, 'warm');
       await page.waitForTimeout(1000);
 
-      const felixAppeared = await waitForDeviceVisible(page, FELIX_DEVICE_ID);
-      expect(felixAppeared, 'user_2 device should appear in sidebar').toBe(true);
+      const learnerTwoAppeared = await waitForDeviceVisible(page, LEARNER_TWO_DEVICE_ID);
+      expect(learnerTwoAppeared, 'user_2 device should appear in sidebar').toBe(true);
 
       // Wait for user_1's name to switch to group_label
       const switchedToGroup = await waitForDeviceName(page, KCKERN_DEVICE_ID, EXPECTED.kckern.group);
       expect(switchedToGroup, `user_1 should switch to "${EXPECTED.kckern.group}" when user_2 joins`).toBe(true);
 
       const groupName = await getDeviceName(page, KCKERN_DEVICE_ID);
-      const felixName = await getDeviceName(page, FELIX_DEVICE_ID);
+      const learnerTwoName = await getDeviceName(page, LEARNER_TWO_DEVICE_ID);
 
       console.log(`  ✓ user_1 shows: "${groupName}"`);
-      console.log(`  ✓ user_2 shows: "${felixName}"`);
+      console.log(`  ✓ user_2 shows: "${learnerTwoName}"`);
 
       expect(groupName).toBe(EXPECTED.kckern.group);
-      expect(felixName).toBe(EXPECTED.user_2.group);
+      expect(learnerTwoName).toBe(EXPECTED.user_2.group);
 
       // ═══════════════════════════════════════════════════════════════
       // SSOT CHECK: Governance overlay should show same label
@@ -406,7 +406,7 @@ test.describe('Group Label Fallback', () => {
       // PHASE 3: Second device drops - should restore display_name
       // ═══════════════════════════════════════════════════════════════
       console.log('\n[PHASE 3] Second device drops - expecting display_name restored');
-      console.log(`  Stopping user_2 (${FELIX_DEVICE_ID})...`);
+      console.log(`  Stopping user_2 (${LEARNER_TWO_DEVICE_ID})...`);
 
       // Force-remove user_2's device from the device manager (bypasses ANT+ timeout)
       await page.evaluate((deviceId) => {
@@ -414,13 +414,13 @@ test.describe('Group Label Fallback', () => {
         if (session?.deviceManager) {
           session.deviceManager.removeDevice(deviceId);
         }
-      }, FELIX_DEVICE_ID);
-      await sim.stopDevice(FELIX_DEVICE_ID);
+      }, LEARNER_TWO_DEVICE_ID);
+      await sim.stopDevice(LEARNER_TWO_DEVICE_ID);
       await page.waitForTimeout(1000); // Give time for state to propagate
 
       // Wait for user_2 to disappear from UI
-      const felixGone = await waitForDeviceGone(page, FELIX_DEVICE_ID, 10000);
-      console.log(`  user_2 device gone: ${felixGone}`);
+      const learnerTwoGone = await waitForDeviceGone(page, LEARNER_TWO_DEVICE_ID, 10000);
+      console.log(`  user_2 device gone: ${learnerTwoGone}`);
 
       // Wait for user_1's name to switch back to display_name
       const switchedBack = await waitForDeviceName(page, KCKERN_DEVICE_ID, EXPECTED.kckern.single, 10000);

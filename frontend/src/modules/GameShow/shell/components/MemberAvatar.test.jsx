@@ -4,10 +4,10 @@ import MemberAvatar from './MemberAvatar.jsx';
 
 describe('MemberAvatar', () => {
   it('renders the avatar image when member.avatar is set', () => {
-    render(<MemberAvatar member={{ id: 'user_2', name: 'User_2', avatar: '/api/v1/static/users/user_2' }} teamColor="#3273dc" />);
-    const img = screen.getByAltText('User_2');
+    render(<MemberAvatar member={{ id: 'learner-two', name: 'learner-two', avatar: '/api/v1/static/users/learner-two' }} teamColor="#3273dc" />);
+    const img = screen.getByAltText('learner-two');
     expect(img.tagName).toBe('IMG');
-    expect(img.getAttribute('src')).toBe('/api/v1/static/users/user_2');
+    expect(img.getAttribute('src')).toBe('/api/v1/static/users/learner-two');
   });
 
   it('renders an initial-letter fallback when avatar is null', () => {

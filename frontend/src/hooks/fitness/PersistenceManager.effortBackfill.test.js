@@ -2,11 +2,11 @@
  * Task 4 — live save path wires the effort-based reconciliation
  * (runSessionBackfill's series-aware path) into PersistenceManager._applyBackfill.
  *
- * Scenario: a synthetic/ghost participant ("user_9") shows up on a device
+ * Scenario: a synthetic/ghost participant ("parent-two") shows up on a device
  * for a handful of ticks with essentially no effort (1 HR sample, 0 coins,
  * no active-zone time) before the device is properly claimed by "grannie",
  * who accrues a full session's worth of data. Duration alone (the legacy
- * threshold-only backfill) would NOT necessarily absorb user_9's segment
+ * threshold-only backfill) would NOT necessarily absorb parent-two's segment
  * forward — it's the EFFORT-based rule (Task 1-3's runSessionBackfill +
  * DEFAULT_INSIGNIFICANT_USAGE) that catches this. Prior to Task 4,
  * PersistenceManager._applyBackfill never passed `series` into
@@ -14,9 +14,9 @@
  * participants list.
  *
  * After persist:
- *   - capturedPayload.summary.participants has no 'user_9' key.
- *   - capturedPayload.participants has no 'user_9' key.
- *   - sessionData.timeline.series['user:user_9:heart_rate'] (live, mutated
+ *   - capturedPayload.summary.participants has no 'parent-two' key.
+ *   - capturedPayload.participants has no 'parent-two' key.
+ *   - sessionData.timeline.series['user:parent-two:heart_rate'] (live, mutated
  *     in-place before RLE encoding) is emptied to all-null.
  *   - grannie's data survives untouched (destination-wins merge).
  *
@@ -56,8 +56,8 @@ describe('PersistenceManager — effort-based reconciliation on the live save pa
     pm.setUsageThresholdMs(5 * 60 * 1000); // 5 minutes
   });
 
-  it('drops a zero-effort ghost occupant (user_9) and folds her forward into grannie', async () => {
-    // NOTE: user_9's segment is deliberately LONGER than the configured
+  it('drops a zero-effort ghost occupant (parent-two) and folds her forward into grannie', async () => {
+    // NOTE: parent-two's segment is deliberately LONGER than the configured
     // usage threshold (5 min) so the legacy duration-only backfill rule
     // (no `series` input) would NOT absorb her — she's not "sub-threshold"
     // by duration. It's only the EFFORT-based rule (near-zero HR samples /
@@ -72,13 +72,13 @@ describe('PersistenceManager — effort-based reconciliation on the live save pa
     const intervalMs = 5000;
     const tickCount = 180; // 15 min / 5s
 
-    // user_9: first 10 min (120 ticks) on device 90005 — 1 HR sample, 0 coins.
-    const elizabethEnd = sessionStart + 10 * 60 * 1000;
+    // parent-two: first 10 min (120 ticks) on device 10001 — 1 HR sample, 0 coins.
+    const parentTwoEnd = sessionStart + 10 * 60 * 1000;
     // grannie: claims the device for the remaining 5 min, full data.
-    const grannieStart = elizabethEnd;
+    const grannieStart = parentTwoEnd;
 
-    const elizabethHr = new Array(tickCount).fill(null);
-    elizabethHr[0] = 70; // single sample — well under DEFAULT_INSIGNIFICANT_USAGE.maxHrSamples (3)
+    const parentTwoHr = new Array(tickCount).fill(null);
+    parentTwoHr[0] = 70; // single sample — well under DEFAULT_INSIGNIFICANT_USAGE.maxHrSamples (3)
 
     const grannieHr = new Array(tickCount).fill(null);
     for (let i = 120; i < tickCount; i++) grannieHr[i] = 130;
@@ -89,20 +89,20 @@ describe('PersistenceManager — effort-based reconciliation on the live save pa
       endTime: sessionEnd,
       finalized: true,
       roster: [
-        { profileId: 'user_9', name: 'User_9', hrDeviceId: '90005' },
-        { profileId: 'grannie', name: 'Grannie', hrDeviceId: '90005' }
+        { profileId: 'parent-two', name: 'parent-two', hrDeviceId: '10001' },
+        { profileId: 'grannie', name: 'Grannie', hrDeviceId: '10001' }
       ],
       deviceAssignments: [
-        { deviceId: '90005', occupantId: 'grannie', occupantName: 'Grannie' }
+        { deviceId: '10001', occupantId: 'grannie', occupantName: 'Grannie' }
       ],
       entities: [
         {
-          entityId: 'entity-user_9-1',
-          profileId: 'user_9',
-          name: 'User_9',
-          deviceId: '90005',
+          entityId: 'entity-parent-two-1',
+          profileId: 'parent-two',
+          name: 'parent-two',
+          deviceId: '10001',
           startTime: sessionStart,
-          endTime: elizabethEnd,
+          endTime: parentTwoEnd,
           status: 'active',
           coins: 0
         },
@@ -110,7 +110,7 @@ describe('PersistenceManager — effort-based reconciliation on the live save pa
           entityId: 'entity-grannie-1',
           profileId: 'grannie',
           name: 'Grannie',
-          deviceId: '90005',
+          deviceId: '10001',
           startTime: grannieStart,
           endTime: sessionEnd,
           status: 'active',
@@ -125,7 +125,7 @@ describe('PersistenceManager — effort-based reconciliation on the live save pa
         },
         interval_seconds: 5,
         series: {
-          'user:user_9:heart_rate': elizabethHr,
+          'user:parent-two:heart_rate': parentTwoHr,
           'user:grannie:heart_rate': grannieHr
         },
         events: []
@@ -146,20 +146,20 @@ describe('PersistenceManager — effort-based reconciliation on the live save pa
     // Ghost is excluded from both the top-level participants block and the
     // computed summary.
     const participantIds = Object.keys(capturedPayload.participants || {});
-    expect(participantIds).not.toContain('user_9');
+    expect(participantIds).not.toContain('parent-two');
     expect(participantIds).toContain('grannie');
 
     const summaryParticipantIds = Object.keys(capturedPayload.summary?.participants || {});
-    expect(summaryParticipantIds).not.toContain('user_9');
+    expect(summaryParticipantIds).not.toContain('parent-two');
     expect(summaryParticipantIds).toContain('grannie');
 
     // The live series (mutated in-place before RLE encoding) shows
-    // user_9's heart_rate series fully emptied...
-    const liveElizabethHr = sessionData.timeline.series['user:user_9:heart_rate'];
+    // parent-two's heart_rate series fully emptied...
+    const liveElizabethHr = sessionData.timeline.series['user:parent-two:heart_rate'];
     expect(liveElizabethHr.every((v) => v == null)).toBe(true);
 
     // ...while grannie's own data survives (destination-wins merge; her
-    // segment's values are untouched since user_9 had nothing but nulls
+    // segment's values are untouched since parent-two had nothing but nulls
     // where grannie has real values).
     const liveGrannieHr = sessionData.timeline.series['user:grannie:heart_rate'];
     for (let i = 120; i < tickCount; i++) {

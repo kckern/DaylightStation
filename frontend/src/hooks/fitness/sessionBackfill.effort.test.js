@@ -44,16 +44,16 @@ describe('isKnownUserId', () => {
 describe('buildOccupancySegments', () => {
   it('adds a synthetic segment for a series-only occupant (no entity)', () => {
     const entities = [
-      { entityId: 'e1', profileId: 'grannie', deviceId: '90005', startTime: 400, endTime: null, status: 'active' }
+      { entityId: 'e1', profileId: 'grannie', deviceId: '10001', startTime: 400, endTime: null, status: 'active' }
     ];
     const series = {
-      'user:user_5:heart_rate': [116, 116, null],
+      'user:learner-one:heart_rate': [116, 116, null],
       'user:grannie:heart_rate': [null, null, 80]
     };
     const per = buildOccupancySegments({ entities, series, sessionEndTime: 1000, intervalSeconds: 5 });
-    const segs = per.get('90005');
+    const segs = per.get('10001');
     const ids = segs.map((s) => s.occupantId).sort();
-    expect(ids).toEqual(['grannie', 'user_5']);
+    expect(ids).toEqual(['grannie', 'learner-one']);
     expect(segs.every((s) => s.effort)).toBe(true);
   });
 });

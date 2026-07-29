@@ -126,7 +126,7 @@ Naming + metadata are mapped by the pure module `2_domains/fitness/services/reca
 ```yaml
 timelapse:
   status: ready            # processing | ready | failed | skipped
-  videoPath: media/video/fitness/20260612180809_30m_kckern-felix_daytona-usa.mp4
+  videoPath: media/video/fitness/20260612180809_30m_kckern-learnerTwo_daytona-usa.mp4
   durationSeconds: 180
   frameCount: 1800
   fps: 10

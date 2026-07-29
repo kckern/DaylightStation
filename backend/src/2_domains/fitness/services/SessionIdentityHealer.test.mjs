@@ -4,15 +4,15 @@ import { planHeal, isKnownUserId, discoverOccupantIds, occupantEffort, isInsigni
 describe('discoverOccupantIds', () => {
   it('finds flat <id>:hr keys, excludes device/vib/bike/global namespaces', () => {
     const series = {
-      'user_9:hr': '[]',
+      'parent-two:hr': '[]',
       'grannie:hr': '[]',
-      'device:90005:hr': '[]',
+      'device:10001:hr': '[]',
       'vib:punching-bag:hr': '[]',
       'bike:7138:hr': '[]',
       'global:hr': '[]'
     };
     const ids = discoverOccupantIds(series);
-    expect([...ids].sort()).toEqual(['user_9', 'grannie']);
+    expect([...ids].sort()).toEqual(['parent-two', 'grannie']);
   });
 });
 
@@ -51,14 +51,14 @@ describe('planHeal — insignificant occupant removal', () => {
   it('removes a 1-sample/0-coin ghost, keeps the substantial occupant', () => {
     const session = {
       entities: [
-        { deviceId: '90005', profileId: 'user_9', startTime: 0, endTime: 5000, status: 'active' },
-        { deviceId: '90005', profileId: 'grannie', startTime: 5000, endTime: 10000, status: 'active' }
+        { deviceId: '10001', profileId: 'parent-two', startTime: 0, endTime: 5000, status: 'active' },
+        { deviceId: '10001', profileId: 'grannie', startTime: 5000, endTime: 10000, status: 'active' }
       ],
       timeline: {
         interval_seconds: 5,
         series: {
-          'user_9:hr': [116, null],
-          'user_9:coins': [0, 0],
+          'parent-two:hr': [116, null],
+          'parent-two:coins': [0, 0],
           'grannie:hr': [80, 90],
           'grannie:coins': [5, 10],
           'grannie:zone': ['a', 'w']
@@ -68,9 +68,9 @@ describe('planHeal — insignificant occupant removal', () => {
 
     const result = planHeal(session);
 
-    expect([...result.removedOccupants].sort()).toEqual(['user_9']);
+    expect([...result.removedOccupants].sort()).toEqual(['parent-two']);
     expect(result.needsHeal).toBe(true);
-    expect(result.transfers).toContainEqual({ from: 'user_9', to: 'grannie', reason: 'insignificant-forward' });
+    expect(result.transfers).toContainEqual({ from: 'parent-two', to: 'grannie', reason: 'insignificant-forward' });
     expect(result.merges).toEqual([]);
   });
 
@@ -150,12 +150,12 @@ describe('planHeal — series-only occupant discovery + successor fallback', () 
   it('folds a series-only ghost (no entity) into the sole device occupant', () => {
     const session = {
       entities: [
-        { deviceId: '90005', profileId: 'grannie', startTime: 400, endTime: null, status: 'active' }
+        { deviceId: '10001', profileId: 'grannie', startTime: 400, endTime: null, status: 'active' }
       ],
       timeline: {
         interval_seconds: 5,
         series: {
-          'user_5:hr': [116, 116, null],
+          'learner-one:hr': [116, 116, null],
           'grannie:hr': [null, null, 80],
           'grannie:coins': [1, 2, 10]
         }
@@ -164,8 +164,8 @@ describe('planHeal — series-only occupant discovery + successor fallback', () 
 
     const result = planHeal(session);
 
-    expect(result.removedOccupants).toEqual(['user_5']);
-    expect(result.transfers).toContainEqual({ from: 'user_5', to: 'grannie', reason: expect.stringMatching(/insignificant-/) });
+    expect(result.removedOccupants).toEqual(['learner-one']);
+    expect(result.transfers).toContainEqual({ from: 'learner-one', to: 'grannie', reason: expect.stringMatching(/insignificant-/) });
   });
 });
 
@@ -173,15 +173,15 @@ describe('planHeal — RLE-encoded on-disk series (decode integration)', () => {
   it('decodes RLE-encoded strings via TimelineService before computing effort', () => {
     const session = {
       entities: [
-        { deviceId: 'D1', profileId: 'user_9', startTime: 0, endTime: 5000, status: 'active' },
+        { deviceId: 'D1', profileId: 'parent-two', startTime: 0, endTime: 5000, status: 'active' },
         { deviceId: 'D1', profileId: 'grannie', startTime: 5000, endTime: 10000, status: 'active' }
       ],
       timeline: {
         interval_seconds: 5,
         series: {
           // RLE: [116, 1] then null x1 -> one 116, one null
-          'user_9:hr': JSON.stringify([116, null]),
-          'user_9:coins': JSON.stringify([[0, 2]]),
+          'parent-two:hr': JSON.stringify([116, null]),
+          'parent-two:coins': JSON.stringify([[0, 2]]),
           'grannie:hr': JSON.stringify([[85, 4]]),
           'grannie:coins': JSON.stringify([[20, 4]]),
           'grannie:zone': JSON.stringify([['a', 4]])
@@ -191,7 +191,7 @@ describe('planHeal — RLE-encoded on-disk series (decode integration)', () => {
 
     const result = planHeal(session);
 
-    expect(result.removedOccupants).toEqual(['user_9']);
+    expect(result.removedOccupants).toEqual(['parent-two']);
     expect(result.needsHeal).toBe(true);
   });
 });

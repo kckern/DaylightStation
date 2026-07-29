@@ -34,7 +34,7 @@ const materials = [
 ];
 
 beforeEach(() => {
-  profile = { currentUser: { id: 'user_2', name: 'User_2' }, isGuest: false, openPicker: vi.fn() };
+  profile = { currentUser: { id: 'learner-two', name: 'learner-two' }, isGuest: false, openPicker: vi.fn() };
 });
 
 describe('MaterialsSection renderCatalog seam', () => {
