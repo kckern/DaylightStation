@@ -13,7 +13,7 @@ import { useScoreTransport } from '../../score/useScoreTransport.js';
 import { tweenScrollTo, cancelScrollTween } from './scrollTween.js';
 import { partsOf, buildPlayTimeline } from './playParts.js';
 import { staffLabels, defaultActiveParts, expectedMidisAtStep } from './activeParts.js';
-import { rangeSteps, clampStepToRange, sectionToRange, homeStep, nudgeRange } from './focusRange.js';
+import { rangeSteps, clampStepToRange, sectionToRange, homeStep } from './focusRange.js';
 import useFollowTracker from './useFollowTracker.js';
 import useMetronomeClick from './useMetronomeClick.js';
 import useCountIn from './useCountIn.js';
@@ -46,15 +46,17 @@ import LearnInkLayer from './LearnInkLayer.jsx';
 import { soundingFifths } from '../../../../MusicNotation/model/spellMidi.js';
 import SelectBanner from './SelectBanner.jsx';
 import StuckPrompt from './StuckPrompt.jsx';
-import { nearestEvent, SELECT_MAX_DIST } from './nearestEvent.js';
+import { nearestEvent } from './nearestEvent.js';
+import { measureAtPoint } from './measureAtPoint.js';
 import { titleFromScoreId } from './scoreTitle.js';
 
 // One source of truth for the transport's tick rate: the telemetry's stall rule
 // is expressed as a MULTIPLE of it, so the two can never drift apart (audit H1).
 const TRANSPORT_TICK_MS = 100;
 
-// How long a guided loop-selection arm survives with no progress before it
-// expires (audit H4b).
+// How long an armed loop endpoint survives with no progress before it expires
+// (audit H4b): an arm gates the seek branch of onScoreClick, so a forgotten one
+// silently disables tap-to-seek.
 const SELECT_IDLE_MS = 15000;
 
 // How long Learn's cursor may sit on one both-hands step before the hands split is
@@ -171,15 +173,17 @@ export default function ScorePlayer({ score: scoreMeta }) {
   // brackets even when looping is off (FocusRangeLayer reads `focus`, not the
   // gated `range` below); only the wrap/clamp/home-step machinery cares.
   // Defaults FALSE (wave-3 B): a fresh session has no range at all, and the
-  // endpoint flow starts loop-off — picking/selecting a range still arms the
-  // loop, because onPickSection / the two-tap commit / drill set it explicitly.
+  // endpoint flow starts loop-off — an endpoint tap plants a range without
+  // committing the user to looping it (§F). The Learn landing and Drill-worst
+  // set it explicitly, because those hand over a range that IS the exercise.
   // Never restored: it rides the same per-session discipline as `focus` (M1).
   const [loopOn, setLoopOn] = useState(false);
   const loopOnRef = useRef(loopOn); loopOnRef.current = loopOn;
-  // Guided measure-selection state machine (Loop → Select measures…):
-  //   null | { stage: 'first' } | { stage: 'last', inMeasure } (audit J5/M3)
-  const [selecting, setSelecting] = useState(null);
-  const [selectRejects, setSelectRejects] = useState(0);
+  // Which loop endpoint is armed for the next tap on the score (wave-3 F):
+  //   null | 'in' | 'out'. One tap sets one endpoint — there is no half-marked
+  //   intermediate state (the retired two-tap flow's `selecting` stage machine).
+  const [arming, setArming] = useState(null);
+  const [armRejects, setArmRejects] = useState(0);
   const [clickOn, setClickOn] = useState(() => restored.clickOn !== false); // Polish metronome — on unless turned off
   // Learn free-running metronome — explicit opt-in per session, NEVER persisted:
   // a walk-up user must not inherit a ticking room (audit M2).
@@ -225,9 +229,10 @@ export default function ScorePlayer({ score: scoreMeta }) {
   const stepRef = useRef(0);
   stepRef.current = step;
   const stepStartRef = useRef(0); // wall time the current step began (Polish drift proxy)
-  // What CAUSED the next focus change, so score.focus.set is attributable. The
-  // two-tap flow, the ±1 nudge and a section pick all commit the same event
-  // shape; without this the log cannot tell them apart (audit T1).
+  // What CAUSED the next focus change, so score.focus.set is attributable. An
+  // armed endpoint tap, a handle drag, the Learn landing and Drill-worst all
+  // commit the same event shape; without this the log cannot tell them apart
+  // (audit T1). Origins: 'auto' | 'handle-tap' | 'drag' | 'drill' | 'restore'.
   const focusOriginRef = useRef('restore');
 
   const events = layout.events;
@@ -1105,6 +1110,70 @@ export default function ScorePlayer({ score: scoreMeta }) {
     };
   }, [mode, subscribeRaw, advancePedalCC, backPedalCC, computePerfPage, pageBy]);
 
+  // ── Armed loop endpoints (wave-3 F) ───────────────────────────────────────────
+  // Arm an edge from the bar's LoopGroup (or, from Task 21, a handle tap): the
+  // NEXT tap on the score names the measure for that edge. Arming is a mode, not
+  // a wizard — one tap, one endpoint, and the arm expires on its own (below).
+  const onArm = useCallback((edge) => {
+    setArming(edge);
+    setArmRejects(0);
+    logger.info('score.loop.arm', { edge });
+  }, [logger]);
+
+  // Section boundaries (measure INDICES) an endpoint snaps to. Rehearsal marks are
+  // the musician's landmarks: a coarse tap one measure off one almost always means
+  // the mark, and an off-by-one loop is a worse outcome than a snap the user can
+  // see and re-tap. Both ends of every section count (a section's last measure is
+  // as real a boundary as its first).
+  const sectionBounds = useMemo(() => {
+    const ms = layout.measures || [];
+    const set = new Set();
+    for (const s of sections) {
+      const r = sectionToRange(s, ms);
+      if (!r) continue;
+      set.add(r.inMeasure);
+      set.add(r.outMeasure);
+    }
+    return [...set];
+  }, [sections, layout.measures]);
+  // Nearest boundary within ONE measure, else the tapped measure unchanged.
+  const snapMeasure = useCallback((mi) => {
+    let best = mi;
+    let bestD = Infinity;
+    for (const b of sectionBounds) {
+      const d = Math.abs(mi - b);
+      if (d <= 1 && d < bestD) { bestD = d; best = b; }
+    }
+    return best;
+  }, [sectionBounds]);
+
+  // Commit one endpoint (§F). With NO range, an endpoint plants a one-measure
+  // range with the loop OFF — `focus` stays atomic (there is never a half-marked
+  // range) and the user is not committed to looping by a single tap. With a range
+  // already set, this REPLACES that edge, swapping the ends if they crossed.
+  // A range change is a move between rows of the Learn matrix, so it always stops
+  // and quiets down (Task 9) and never auto-plays.
+  // Cycle voiding is deliberately NOT done here: the focus effect below owns it
+  // (a fresh arm resets, a change against an existing range voids — wave-3 C fix
+  // round 1), and doing it in both places would void a fresh arm's honest first
+  // pass.
+  const commitEndpoint = useCallback((edge, mi, via) => {
+    const measure = snapMeasure(mi);
+    const f = focusRef.current;
+    stopForMatrixChange();
+    focusOriginRef.current = via === 'drag' ? 'drag' : 'handle-tap';
+    if (!f) {
+      setFocus({ kind: 'custom', inMeasure: measure, outMeasure: measure });
+      setLoopOn(false);
+    } else {
+      let inMeasure = edge === 'in' ? measure : f.inMeasure;
+      let outMeasure = edge === 'out' ? measure : f.outMeasure;
+      if (inMeasure > outMeasure) { const t = inMeasure; inMeasure = outMeasure; outMeasure = t; }
+      setFocus({ kind: 'custom', inMeasure, outMeasure });
+    }
+    logger.info('score.loop.set', { edge, measure, via, snapped: measure !== mi });
+  }, [snapMeasure, stopForMatrixChange, logger]);
+
   // Tap: Learn/Polish → move the cursor to the nearest note; Perform → scroll it into view.
   const onScoreClick = useCallback((e) => {
     const el = scrollRef.current;
@@ -1127,27 +1196,26 @@ export default function ScorePlayer({ score: scoreMeta }) {
     }
     if (!rdr || !events.length) return;
     const r = rdr.getBoundingClientRect();
-    // Guided loop selection (Listen/Learn/Polish): first tap sets the pending in-measure
-    // (a bracket appears + the banner asks for the last), the second sets the
-    // out-measure → an ordered { inMeasure, outMeasure } custom range. Selection taps
-    // set the range instead of seeking (audit J5/M3), and require the tap to be
-    // NEAR a note (audit L3) — a margin tap is ignored, not committed.
-    if (selecting) {
-      const si = nearestEvent(events, e.clientX - r.left, e.clientY - r.top, SELECT_MAX_DIST * scale);
-      if (si < 0) { setSelectRejects((n) => n + 1); return; } // too far — say so, don't swallow it
-      setSelectRejects(0);
-      const mi = measureIndexOfStep(si);
-      if (selecting.stage === 'first') {
-        setSelecting({ stage: 'last', inMeasure: mi });
-        logger.info('score.focus.arm', { inMeasure: mi });
-      } else {
-        const inMeasure = Math.min(selecting.inMeasure, mi);
-        const outMeasure = Math.max(selecting.inMeasure, mi);
-        setSelecting(null);
-        focusOriginRef.current = 'select';
-        setFocus({ kind: 'custom', inMeasure, outMeasure });
-        setLoopOn(true); // a freshly-picked range always starts looping (audit L2 follow-up)
-      }
+    // An ARMED endpoint (wave-3 F): this tap names the measure for that edge of
+    // the loop and sets it — it does not seek. Hit-testing is coarse by design
+    // (measureAtPoint): any x inside a system's band resolves to the nearest
+    // measure column, so only a DEAD MARGIN is refused. The retired two-tap
+    // flow's near-a-note radius (audit L3) is gone with it.
+    if (arming) {
+      const ms = layout.measures || [];
+      const mi = measureAtPoint({
+        events,
+        // A degenerate engrave can publish steps with no measure model at all;
+        // treat the whole piece as one measure so an armed tap on the music is
+        // never a dead press (the fallback the retired measureIndexOfStep applied).
+        measures: ms.length ? ms : [{ index: 0, firstStep: 0, lastStep: events.length - 1 }],
+        x: e.clientX - r.left,
+        y: e.clientY - r.top,
+        slack: 40 * scale,
+      });
+      if (mi < 0) { setArmRejects((n) => n + 1); return; } // outside the music — say so, don't swallow it
+      setArming(null);
+      commitEndpoint(arming, mi, 'tap');
       return;
     }
     const i = nearestEvent(events, e.clientX - r.left, e.clientY - r.top);
@@ -1176,7 +1244,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
     // Transport timeline is tempo-scaled (playTimeline uses factor 1/tempoMult);
     // seek positions come from the unscaled stepTimeline, so scale to match.
     transport.seek((stepTimeline[target]?.t ?? 0) / tempoMult);
-  }, [mode, sendsAudio, flow, events, transport, stepTimeline, silenceScheduled, tempoMult, selecting, range, measureIndexOfStep, logger, countIn, scale, clearWrapDwell, tapIntent, voidCycle]);
+  }, [mode, sendsAudio, flow, events, transport, stepTimeline, silenceScheduled, tempoMult, arming, commitEndpoint, layout.measures, range, logger, countIn, scale, clearWrapDwell, tapIntent, voidCycle]);
 
   // Single unmount teardown: immediate silence + one delayed panic (see the
   // silenceScheduled note above), plus any pending loop-wrap dwell — a restart
@@ -1291,56 +1359,30 @@ export default function ScorePlayer({ score: scoreMeta }) {
     logger.info('score.learn.auto-range', { ...picked });
   }, [mode, focus, layout.measures, layout.steps, practiceLoaded, practice, activeParts, grandStaff, sections, logger]);
 
-  const onPickSection = useCallback((section) => {
-    const r = layout.measures ? sectionToRange(section, layout.measures) : null;
-    if (!r) return;
-    setSelecting(null);
-    focusOriginRef.current = 'section';
-    setFocus({ kind: 'section', label: section.label, ...r });
-    setLoopOn(true); // a freshly-picked range always starts looping (audit L2 follow-up)
-  }, [layout.measures]);
-
-  // Begin the guided two-tap measure selection (from Loop → Select measures…).
-  const onStartSelect = useCallback(() => {
-    setSelecting({ stage: 'first' });
-    setSelectRejects(0);
-    logger.info('score.focus.select-start', {});
-  }, [logger]);
-
-  // Arming must not outlive the user's intent. `selecting` gates the seek branch
-  // of onScoreClick, so a forgotten arm silently disables tap-to-seek — one user
+  // An arm must not outlive the user's intent. `arming` gates the seek branch of
+  // onScoreClick, so a forgotten arm silently disables tap-to-seek — one user
   // armed, played for 30s, tapped to seek and got a 10-measure loop (audit H4b).
   useEffect(() => {
-    if (!selecting) return undefined;
+    if (!arming) return undefined;
     const t = setTimeout(() => {
-      setSelecting(null);
-      logger.info('score.focus.select-timeout', { stage: selecting.stage });
+      setArming(null);
+      logger.info('score.loop.arm-expire', { edge: arming });
     }, SELECT_IDLE_MS);
     return () => clearTimeout(t);
-  }, [selecting, logger]);
-  const onCancelSelect = useCallback(() => setSelecting(null), []);
+  }, [arming, logger]);
+  const onCancelArm = useCallback(() => setArming(null), []);
 
   const onClearFocus = useCallback(() => {
-    setSelecting(null);
+    setArming(null);
     stopForMatrixChange(); // clearing the range is a matrix change — stop, don't jump
     setFocus(null);
     logger.info('score.focus.clear', {});
   }, [stopForMatrixChange, logger]);
-  // Nudge one loop endpoint by ±1 measure (audit L2). Pure clamped math in
-  // nudgeRange; a real change flows through the focus effect above, which jumps
-  // the cursor to the (possibly new) in-point and logs — desired: the loop
-  // re-seeks its start when an endpoint moves. A clamped no-op returns the same
-  // object, so setFocus bails without re-rendering.
-  const onNudge = useCallback((edge, delta) => {
-    focusOriginRef.current = 'nudge';
-    voidCycle(); // a range edge move breaks a Learn cycle in progress (wave-3 C)
-    setFocus((f) => nudgeRange(f, edge, delta, layout.measures?.length || 0));
-  }, [layout.measures, voidCycle]);
-  // Scope label for the Loop control: a section's label or a 1-based measure span
-  // (indices are 0-based internally); empty when no loop is active.
-  const scopeLabel = focus
-    ? (focus.label || `m${focus.inMeasure + 1}–m${focus.outMeasure + 1}`)
-    : '';
+  // Endpoint labels for the bar's LoopGroup: 1-based measure numbers (indices are
+  // 0-based internally), undefined when no range is set so the mark buttons stay
+  // icon-only until there is something to show.
+  const inLabel = focus ? `m${focus.inMeasure + 1}` : undefined;
+  const outLabel = focus ? `m${focus.outMeasure + 1}` : undefined;
 
   // ── Bar handlers ──────────────────────────────────────────────────────────────
   const onMode = useCallback((id) => {
@@ -1371,7 +1413,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
     // Listen ends that session, so a walk-up back into Listen never inherits a
     // ticking room it didn't start.
     if (mode === 'listen' && id !== 'listen') setListenClick(false);
-    setSelecting(null);
+    setArming(null);              // a mode change abandons a pending endpoint arm
     // Leaving Polish: drop the run summary + grades (they belong to that run).
     setSummaryOpen(false); setGrades({});
     // Learn is a from-the-top (or from-the-loop) exercise: entering it should not
@@ -1441,7 +1483,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
 
   const reset = useCallback(() => {
     resumeAfterRef.current = null; // Restart supersedes a pending rebuild-resume
-    setSelecting(null);     // Restart means the user is done arming a loop
+    setArming(null);        // Restart means the user is done arming a loop
     countIn.cancel();       // reset aborts a pending count-in
     clearWrapDwell();       // …and any pending loop-wrap dwell
     setLearnDone(false);    // fresh pass — close the completion card
@@ -1516,12 +1558,12 @@ export default function ScorePlayer({ score: scoreMeta }) {
       const r = rangeSteps(layout.measures, focus);
       if (r) { setStep(r[0]); setStruck(() => new Set()); lastAdvanceRef.current = performance.now(); }
     }
-    logger.info('score.loop.toggle', { on: next });
+    logger.info('score.loop.on', { on: next });
   }, [stopForMatrixChange, focus, layout.measures, logger]);
 
   const toggleRun = useCallback(() => {
     resumeAfterRef.current = null; // an explicit play/pause supersedes a pending rebuild-resume
-    setSelecting(null); // starting/stopping a run means the user is done arming a loop
+    setArming(null); // starting/stopping a run means the user is done arming a loop
     clearWrapDwell(); // a manual play/pause overrides a pending loop-wrap dwell
     // A second tap during the count-in aborts it (never reaches the transport).
     if (countIn.active) { countIn.cancel(); logger.info('score.countin.cancel', { via: 'toggle' }); return; }
@@ -1670,7 +1712,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
     else startSession(scoreMeta.id);
     // A new document resets the practice range (measure indices don't carry over).
     setFocus(null);
-    setSelecting(null);
+    setArming(null);
     clearInks(); // ink marks are pinned to the OLD engraving's geometry (wave-3 D)
   }, [scoreMeta.musicXml]); // eslint-disable-line react-hooks/exhaustive-deps
   const onReady = useCallback(() => {
@@ -1772,12 +1814,13 @@ export default function ScorePlayer({ score: scoreMeta }) {
               grades={grades}
             />
           )}
-          {showFocusLayer && layoutFresh && ((!selecting && focus) || selecting?.stage === 'last') && (
+          {/* No `pending` bracket any more (wave-3 F): the first endpoint commits a
+              real one-measure range, so there is never a half-marked range to draw. */}
+          {showFocusLayer && layoutFresh && focus && (
             <FocusRangeLayer
               measures={layout.measures}
               stepBoxes={stepBoxes}
-              range={!selecting && focus ? { inMeasure: focus.inMeasure, outMeasure: focus.outMeasure } : null}
-              pending={selecting?.stage === 'last' ? selecting.inMeasure : null}
+              range={{ inMeasure: focus.inMeasure, outMeasure: focus.outMeasure }}
             />
           )}
           {mode !== 'perform' && layoutFresh && (
@@ -1791,7 +1834,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
           )}
         </MusicXmlRenderer>
         <CountInOverlay active={countIn.active} beat={countIn.beat} />
-        <SelectBanner stage={selecting?.stage} rejects={selectRejects} onCancel={onCancelSelect} />
+        <SelectBanner edge={arming} rejects={armRejects} onCancel={onCancelArm} />
         <StuckPrompt open={stuckOpen && mode === 'learn'} onPick={onStuckPick} onDismiss={onStuckDismiss} />
       </div>
 
@@ -1841,14 +1884,13 @@ export default function ScorePlayer({ score: scoreMeta }) {
         grandStaff={grandStaff}
         handsValue={handsValue}
         onHandsChange={onHandsChange}
-        sections={sections}
         loopActive={!!focus}
         loopEnabled={loopOn}
-        scopeLabel={scopeLabel}
-        onPickSection={onPickSection}
-        onStartSelect={onStartSelect}
+        arming={arming}
+        inLabel={inLabel}
+        outLabel={outLabel}
+        onArm={onArm}
         onClearFocus={onClearFocus}
-        onNudge={onNudge}
         onToggleLoop={onToggleLoop}
         keyboardVisible={keyboardVisible}
         onToggleKeyboard={onToggleKeyboard}

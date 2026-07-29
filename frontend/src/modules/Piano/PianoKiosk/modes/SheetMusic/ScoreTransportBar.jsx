@@ -1,9 +1,9 @@
 import React, { useState, memo } from 'react';
 import HandsControl from './HandsControl.jsx';
-import LoopControl from './LoopControl.jsx';
 import ViewSheet from './ViewSheet.jsx';
 import Icon from '../../icons/Icon.jsx';
 import TransportButton from '../../transport/TransportButton.jsx';
+import LoopGroup from '../../transport/LoopGroup.jsx';
 import KeySheet from '../../transport/KeySheet.jsx';
 import TempoSheet, { TEMPO_STEPS, nearestStep } from '../../transport/TempoSheet.jsx';
 import VolumeControl from '../../transport/VolumeControl.jsx';
@@ -51,13 +51,22 @@ const ScoreTransportButtons = memo(function ScoreTransportButtons({ mode, runnin
 });
 
 /**
- * ScorePracticeCluster — the center-zone practice controls: metronome + Loop.
- * These moved out of the right cluster (audit C1/C2) so the practice loop and
- * click sit beside the transport they modify. Both render in every mode but
- * Perform; the metronome gates IN PLACE via the caller-supplied `clickDisabled`
- * (wave-3 G: Listen's metronome is session-local, same as Learn's — the mode
- * itself no longer disables it, only ScorePlayer's tempo-map guard does)
- * instead of unmounting, preserving spatial memory.
+ * ScorePracticeCluster — the center-zone practice controls: metronome + the loop
+ * cluster. These moved out of the right cluster (audit C1/C2) so the practice
+ * loop and click sit beside the transport they modify. The metronome renders in
+ * every mode but Perform and gates IN PLACE via the caller-supplied
+ * `clickDisabled` (wave-3 G: Listen's metronome is session-local, same as
+ * Learn's — the mode itself no longer disables it, only ScorePlayer's tempo-map
+ * guard does) instead of unmounting, preserving spatial memory.
+ *
+ * The LOOP cluster is Learn-only (wave-3 §0/§F): a practice range is Learn state
+ * — Listen is a jukebox and Polish grades whole-piece runs, so neither can hold
+ * one, and chrome for a range they cannot have is a lie. This is a deliberate
+ * exception to C2's stable-geography rule: the buttons are gone, not disabled,
+ * because the whole capability is gone.
+ *
+ * {@link LoopGroup} is presentational — "mark" here means "arm this edge for the
+ * next tap on the score" (§F); ScorePlayer owns the arming/commit semantics.
  *
  * Memoized and step-INDEPENDENT: none of its props change as the cursor
  * advances, so React.memo bails out per step.
@@ -69,12 +78,11 @@ const ScorePracticeCluster = memo(function ScorePracticeCluster({
   clickDisabled = false,
   loopActive = false,
   loopEnabled = true,
-  scopeLabel = '',
-  sections = [],
-  onPickSection,
-  onStartSelect,
+  arming = null,
+  inLabel,
+  outLabel,
+  onArm,
   onClearFocus,
-  onNudge,
   onToggleLoop,
 }) {
   if (mode === 'perform') return null;
@@ -94,17 +102,23 @@ const ScorePracticeCluster = memo(function ScorePracticeCluster({
       >
         <Icon name="metronome" />
       </button>
-      <LoopControl
-        active={loopActive}
-        enabled={loopEnabled}
-        scopeLabel={scopeLabel}
-        sections={sections}
-        onPickSection={onPickSection}
-        onStartSelect={onStartSelect}
-        onClearFocus={onClearFocus}
-        onNudge={onNudge}
-        onToggleEnabled={onToggleLoop}
-      />
+      {mode === 'learn' && (
+        <LoopGroup
+          inSet={loopActive}
+          outSet={loopActive}
+          inLabel={inLabel}
+          outLabel={outLabel}
+          armingIn={arming === 'in'}
+          armingOut={arming === 'out'}
+          loopOn={loopActive && loopEnabled}
+          canToggle={loopActive}
+          canClear={loopActive}
+          onMarkIn={() => onArm?.('in')}
+          onMarkOut={() => onArm?.('out')}
+          onToggle={onToggleLoop}
+          onClear={onClearFocus}
+        />
+      )}
     </>
   );
 });
@@ -276,18 +290,22 @@ const ScoreViewControls = memo(function ScoreViewControls({
  * Stable three-zone geography (audit C1/C2), geometry UNCHANGED by wave-2 B:
  *   left   — empty (formerly the mode tabs; kept as a flex column so the
  *            center cluster stays truly centered, not just centered-in-what's-left)
- *   center — Restart · Play/Pause · metronome · Loop · position readout
+ *   center — Restart · Play/Pause · metronome · (Learn: loop cluster) · position readout
  *   right  — Hands/parts · Key · Tempo · View menu
  * Every control renders in ALL modes but Perform; per-mode gating disables/dims
- * IN PLACE instead of unmounting, so nothing ever moves under the finger:
+ * IN PLACE instead of unmounting, so nothing ever moves under the finger. The one
+ * deliberate exception is the loop cluster, which is Learn-ONLY (wave-3 §0/§F):
+ * only Learn can hold a practice range, so Listen/Polish render no loop chrome at
+ * all rather than four permanently dead buttons.
  *  Listen  — all live, including a free-running metronome (session-local, same
  *            as Learn's — gated by `clickDisabled`, the caller's tempo-map
- *            guard, not the mode, wave-3 G) and the Learn-only Play lockout; Key live.
+ *            guard, not the mode, wave-3 G) and the Learn-only Play lockout; Key
+ *            live. No loop cluster.
  *  Learn   — Play disabled ("Learn advances as you play") only while the gate is
  *            armed (a range with looping on — `playLocked`); the machine states
  *            get a live transport. Metronome free-runs; Key live (transposes the
- *            engrave Learn evaluates against).
- *  Polish  — full transport; metronome arms the run click; Key live.
+ *            engrave Learn evaluates against). Owns the loop cluster.
+ *  Polish  — full transport; metronome arms the run click; Key live. No loop cluster.
  *  Perform — only a {page} / {pages} indicator (music-stand mode).
  *
  * Perf structure (Task 10): this component is a THIN SHELL. It threads props and
@@ -332,14 +350,13 @@ export default function ScoreTransportBar({
   grandStaff,
   handsValue,
   onHandsChange,
-  sections,
   loopActive,
   loopEnabled,
-  scopeLabel,
-  onPickSection,
-  onStartSelect,
+  arming,
+  inLabel,
+  outLabel,
+  onArm,
   onClearFocus,
-  onNudge,
   onToggleLoop,
   keyboardVisible,
   onToggleKeyboard,
@@ -382,12 +399,11 @@ export default function ScoreTransportBar({
           clickDisabled={clickDisabled}
           loopActive={loopActive}
           loopEnabled={loopEnabled}
-          scopeLabel={scopeLabel}
-          sections={sections}
-          onPickSection={onPickSection}
-          onStartSelect={onStartSelect}
+          arming={arming}
+          inLabel={inLabel}
+          outLabel={outLabel}
+          onArm={onArm}
           onClearFocus={onClearFocus}
-          onNudge={onNudge}
           onToggleLoop={onToggleLoop}
         />
         {hasPosition && <span className="piano-score-position tabular-nums" data-testid="score-position">{position}</span>}

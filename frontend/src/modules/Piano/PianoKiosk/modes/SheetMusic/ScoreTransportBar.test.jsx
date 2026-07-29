@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { render, screen, fireEvent, within } from '@testing-library/react';
+import { render, screen, fireEvent } from '@testing-library/react';
 import ScoreTransportBar from './ScoreTransportBar.jsx';
 
 const base = {
@@ -165,46 +165,79 @@ describe('ScoreTransportBar', () => {
     expect(screen.queryByRole('button', { name: /tempo/i })).toBeNull(); // Perform is chrome-free
   });
 
-  it('learn mode: Loop popover lists sections and fires onPickSection', () => {
-    const onPickSection = vi.fn();
-    const sections = [{ label: 'A', startMeasure: 1, endMeasure: 4 }];
-    render(<ScoreTransportBar {...base} mode="learn" sections={sections} onPickSection={onPickSection} />);
-    // No range yet, so the main trigger starts on-score selection directly
-    // (wave-2 T7) — the popover opens via the separate "Loop options" chevron.
-    fireEvent.click(screen.getByRole('button', { name: 'Loop options' })); // open popover
-    fireEvent.click(screen.getByRole('button', { name: /^A$/ }));
-    expect(onPickSection).toHaveBeenCalledWith(sections[0]);
-  });
-
-  it('learn mode: Loop popover offers Select measures… and Clear loop when active', () => {
-    const onStartSelect = vi.fn();
+  // Wave-3 F: the loop popover (LoopControl + LoopSheet — sections, "Select
+  // measures…", ±1 nudges) is retired outright. Its replacement is LoopGroup's
+  // four flat buttons: two mark buttons that ARM an endpoint for the next tap on
+  // the score, a loop toggle, and a clear. No menu, no two-tap wizard.
+  it('learn mode: the loop cluster is four flat buttons that arm, toggle and clear', () => {
+    const onArm = vi.fn();
+    const onToggleLoop = vi.fn();
     const onClearFocus = vi.fn();
-    render(<ScoreTransportBar {...base} mode="learn" loopActive scopeLabel="m3–m6" onStartSelect={onStartSelect} onClearFocus={onClearFocus} />);
-    // The active range surfaces on the trigger's visible label (the aria-label
-    // stays the stable 'Loop', matching the Key/Tempo convention). With a range
-    // active, tapping the TRIGGER itself now flips looping on/off in place
-    // (wave-2 T7) — the popover opens via the separate "Loop options" chevron.
-    const trigger = screen.getByRole('button', { name: 'Loop' });
-    expect(trigger).toHaveTextContent('m3–m6');
-    fireEvent.click(screen.getByRole('button', { name: 'Loop options' }));
-    fireEvent.click(screen.getByRole('button', { name: /select measures/i }));
-    expect(onStartSelect).toHaveBeenCalled();
-    fireEvent.click(screen.getByRole('button', { name: 'Loop options' }));
-    // Scope to the sheet — the standalone one-tap clear also matches /clear loop/i.
-    const menu = screen.getByRole('dialog', { name: 'Loop' });
-    fireEvent.click(within(menu).getByRole('button', { name: /clear loop/i }));
+    render(
+      <ScoreTransportBar
+        {...base}
+        mode="learn"
+        loopActive
+        loopEnabled
+        inLabel="m3"
+        outLabel="m6"
+        onArm={onArm}
+        onToggleLoop={onToggleLoop}
+        onClearFocus={onClearFocus}
+      />,
+    );
+    // The range shows as its two endpoints, on the buttons that set them.
+    const markIn = screen.getByRole('button', { name: 'Mark loop start' });
+    const markOut = screen.getByRole('button', { name: 'Mark loop end' });
+    expect(markIn).toHaveTextContent('m3');
+    expect(markOut).toHaveTextContent('m6');
+    fireEvent.click(markIn);
+    expect(onArm).toHaveBeenCalledWith('in');
+    fireEvent.click(markOut);
+    expect(onArm).toHaveBeenCalledWith('out');
+    fireEvent.click(screen.getByRole('button', { name: 'Toggle loop' }));
+    expect(onToggleLoop).toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Clear loop' }));
     expect(onClearFocus).toHaveBeenCalled();
+    // There is no menu left to open.
+    expect(screen.queryByRole('button', { name: 'Loop options' })).toBeNull();
+    expect(screen.queryByRole('button', { name: /select measures/i })).toBeNull();
   });
 
-  it('Loop control is Listen + Learn + Polish (absent only in Perform) (L6)', () => {
-    const { unmount } = render(<ScoreTransportBar {...base} mode="perform" />);
-    expect(screen.queryByRole('button', { name: 'Loop' })).toBeNull();
-    unmount();
-    for (const mode of ['listen', 'learn', 'polish']) {
-      const { unmount: u } = render(<ScoreTransportBar {...base} mode={mode} />);
-      expect(screen.getByRole('button', { name: 'Loop' })).toBeInTheDocument();
-      u();
+  it('the armed edge is shown on its own mark button', () => {
+    const { rerender } = render(<ScoreTransportBar {...base} mode="learn" loopActive arming="in" onArm={vi.fn()} />);
+    expect(screen.getByRole('button', { name: 'Mark loop start' }).className).toMatch(/is-arming/);
+    expect(screen.getByRole('button', { name: 'Mark loop end' }).className).not.toMatch(/is-arming/);
+    rerender(<ScoreTransportBar {...base} mode="learn" loopActive arming="out" onArm={vi.fn()} />);
+    expect(screen.getByRole('button', { name: 'Mark loop start' }).className).not.toMatch(/is-arming/);
+    expect(screen.getByRole('button', { name: 'Mark loop end' }).className).toMatch(/is-arming/);
+  });
+
+  it('toggle and clear are inert until a range exists', () => {
+    const { rerender } = render(<ScoreTransportBar {...base} mode="learn" onArm={vi.fn()} />);
+    expect(screen.getByRole('button', { name: 'Toggle loop' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Clear loop' })).toBeDisabled();
+    // …and the mark buttons are live regardless: arming is how a range STARTS.
+    expect(screen.getByRole('button', { name: 'Mark loop start' })).toBeEnabled();
+    rerender(<ScoreTransportBar {...base} mode="learn" loopActive loopEnabled onArm={vi.fn()} />);
+    expect(screen.getByRole('button', { name: 'Toggle loop' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'Toggle loop' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('button', { name: 'Clear loop' })).toBeEnabled();
+  });
+
+  // Wave-3 §0/§F reverses wave-2's L6: the range is LEARN-ONLY state, so Listen and
+  // Polish render no loop chrome at all. Four permanently dead buttons would
+  // advertise a capability those modes do not have.
+  it('the loop cluster is LEARN-ONLY — Listen, Polish and Perform show no loop chrome', () => {
+    for (const mode of ['listen', 'polish', 'perform']) {
+      const { unmount } = render(<ScoreTransportBar {...base} mode={mode} loopActive inLabel="m3" outLabel="m6" onArm={vi.fn()} />);
+      for (const name of ['Mark loop start', 'Mark loop end', 'Toggle loop', 'Clear loop']) {
+        expect(screen.queryByRole('button', { name })).toBeNull();
+      }
+      unmount();
     }
+    render(<ScoreTransportBar {...base} mode="learn" onArm={vi.fn()} />);
+    expect(screen.getByRole('button', { name: 'Mark loop start' })).toBeInTheDocument();
   });
 
   it('has no Scoring toggle — Polish always grades (J5)', () => {
@@ -323,7 +356,7 @@ describe('ScoreTransportBar — stable geography (C2)', () => {
     expect(screen.getByRole('button', { name: /restart/i })).toBeDisabled();
     expect(screen.getByRole('button', { name: /learn advances as you play/i })).toBeDisabled();
     expect(screen.getByRole('button', { name: /metronome/i })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Loop' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Toggle loop' })).toBeInTheDocument();
 
     rerender(<ScoreTransportBar {...base} mode="learn" step={0} total={4} measure={1} measureTotal={2} ready canRestart={false} />);
     expect(screen.queryByRole('button', { name: /learn advances as you play/i })).toBeNull();
@@ -349,7 +382,7 @@ describe('ScoreTransportBar — stable geography (C2)', () => {
   });
   it('Perform renders only tabs and the page indicator', () => {
     render(<ScoreTransportBar {...base} mode="perform" page={2} pages={5} />);
-    expect(screen.queryByRole('button', { name: 'Loop' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Toggle loop' })).toBeNull();
     expect(screen.queryByRole('button', { name: /metronome/i })).toBeNull();
     expect(screen.getByLabelText('Page')).toHaveTextContent('2 / 5');
   });
@@ -366,24 +399,35 @@ describe('ScoreTransportBar — stable geography (C2)', () => {
     expect(play.textContent).toBe(''); // no ▶ glyph
   });
 
-  it('geography invariant: the ordered button list is IDENTICAL across Listen/Learn/Polish', () => {
-    // The C2 contract itself: same buttons, same order, in every practice mode —
-    // only disabled state may differ. Grand staff's Hands toggles carry the same
+  it('geography invariant: the ordered button list is IDENTICAL across Listen/Learn/Polish, apart from Learn\'s loop cluster', () => {
+    // The C2 contract: same buttons, same order, in every practice mode — only
+    // disabled state may differ. Grand staff's Hands toggles carry the same
     // Left/Right hand labels in every mode (wave-3 A: one semantic everywhere),
     // so they participate in the roll-call unchanged too.
+    //
+    // Wave-3 F carves out ONE documented exception: the loop cluster is Learn-only
+    // state, so Learn ADDS four buttons the other modes never render (rather than
+    // showing everyone four dead ones). The invariant is asserted in both halves:
+    // Listen === Polish exactly, and Learn === the same list PLUS the cluster, in
+    // its own contiguous slot — nothing else shifts.
+    const LOOP = ['Mark loop start', 'Mark loop end', 'Toggle loop', 'Clear loop'];
     const collect = () => screen.getAllByRole('button').map((b) => {
       const name = b.getAttribute('aria-label') || b.textContent.trim();
       // Learn's run button carries an explanatory accessible name by design —
       // it is the SAME Play button in the same slot, so normalize for comparison.
       return name === 'Learn advances as you play' ? 'Play' : name;
     });
-    const props = { ...base, grandStaff: true, handsValue: 'both', onHandsChange: vi.fn() };
+    const props = { ...base, grandStaff: true, handsValue: 'both', onHandsChange: vi.fn(), onArm: vi.fn() };
     const { rerender } = render(<ScoreTransportBar {...props} mode="listen" />);
     const listen = collect();
     expect(listen.length).toBeGreaterThan(0);
-    rerender(<ScoreTransportBar {...props} mode="learn" />);
-    expect(collect()).toEqual(listen);
+    expect(listen.filter((n) => LOOP.includes(n))).toEqual([]); // no loop chrome outside Learn
     rerender(<ScoreTransportBar {...props} mode="polish" />);
     expect(collect()).toEqual(listen);
+    rerender(<ScoreTransportBar {...props} mode="learn" />);
+    const learn = collect();
+    expect(learn.filter((n) => !LOOP.includes(n))).toEqual(listen); // every other button, same order
+    const first = learn.findIndex((n) => LOOP.includes(n));
+    expect(learn.slice(first, first + LOOP.length)).toEqual(LOOP);  // …and the cluster is contiguous
   });
 });
