@@ -18,6 +18,7 @@
   font: inherit;
   font-size: 1rem;
   line-height: 1;
+  white-space: nowrap; // anti-two-line rule (C1) — mirrors .piano-score-btn; truncate/grow, never wrap
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
 

@@ -21,7 +21,7 @@ shared OSMD renderer in `frontend/src/modules/MusicNotation/renderers/`.
   is on** (metronome armed, loop active), **green = the transport is
   running**, and a chevron on every button that opens a popover or sheet.
   **Key, Tempo, and Loop are modal sheets**, not popovers: tapping the button
-  opens a full-width bottom sheet with its own scrim, a direct-pick ladder of
+  opens a centered modal sheet with its own scrim, a direct-pick ladder of
   steps (or, for Key, a −6…+6 range showing the sounding key), and a close
   affordance — one tap commits and dismisses, so there's no separate "confirm"
   step. The **View** menu is the one surface that stays a lightweight popover

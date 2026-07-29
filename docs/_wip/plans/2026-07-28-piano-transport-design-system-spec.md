@@ -77,6 +77,7 @@ One component per file, colocated `.test.jsx`, one `Transport.scss` imported whe
 
 - **Glyph lint test** (unit test in `transport/`): scan `modules/Piano/PianoKiosk/**` JSX source for non-ASCII symbol characters used as button content; allow-list musical spellings (`♯ ♭ ♩`) in notation contexts. Locks F2 permanently.
 - **Size test:** `TransportButton` computed min box ≥ 48 px in default and `dense` sizing.
+  - **Deviation:** wave 1 shipped without a `dense` size variant — no consumer needed one, so it was dropped (YAGNI) rather than built speculatively. The size test covers default sizing only; add `dense` back if/when a real consumer calls for it.
 - New unit tests: `StepGrid` (lit step, pick), `KeySheet` (clamp, footer name, disabled propagation), `TransportSheet` (scrim dismiss, close), `VolumeControl` (opens sheet, both channels wired).
 - Updated: `ScoreTransportBar.test.jsx`; `VolumeModal.test.jsx` content moves to `VolumeSheet.test.jsx`; `MixControls.test.jsx` deleted.
 - Post-deploy verification: reload the piano tablet kiosk; eyeball Sheet Music (Key/Tempo/Loop sheets, volume), Karaoke (volume button, card icons), Music (transport row, volume).
