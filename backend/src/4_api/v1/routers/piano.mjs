@@ -349,9 +349,17 @@ export function createPianoRouter({ pianoContainer, logger = console }) {
   // scoreKey is a dot-free slug (FileIO appends .yml by sniffing the extension,
   // so a dot would corrupt the filename — same rule as PRODUCER_ID_RE).
   const PRACTICE_KEY_RE = /^[a-z0-9-]{1,120}$/;
+  // Bracket-assignment (out[b] = …) invokes inherited setters, so a JSON body
+  // carrying an own key literally named "__proto__" (JSON.parse permits this)
+  // would swap out's [[Prototype]] instead of storing a bucket — silently
+  // wiping existing polish data. Skip the dunder/prototype keys explicitly.
+  const UNSAFE_KEY = new Set(['__proto__', 'constructor', 'prototype']);
   const mergeBuckets = (cur = {}, patch = {}) => {
     const out = { ...cur };
-    for (const b of Object.keys(patch)) out[b] = { ...(cur?.[b] || {}), ...(patch[b] || {}) };
+    for (const b of Object.keys(patch)) {
+      if (UNSAFE_KEY.has(b)) continue;
+      out[b] = { ...(cur?.[b] || {}), ...(patch[b] || {}) };
+    }
     return out;
   };
 
