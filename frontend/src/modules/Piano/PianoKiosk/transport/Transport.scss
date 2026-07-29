@@ -41,3 +41,41 @@
   background: transparent;
   border-color: transparent;
 }
+
+.piano-tsheet {
+  position: fixed;
+  inset: 0;
+  z-index: 60; // above player chrome; matches the old .piano-volume-modal layer
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  &__scrim {
+    position: absolute;
+    inset: 0;
+    border: 0;
+    background: rgba(0, 0, 0, 0.55);
+    cursor: pointer;
+  }
+
+  &__panel {
+    position: relative;
+    min-width: 22rem;
+    max-width: 92vw;
+    max-height: 88vh;
+    overflow-y: auto;
+    padding: 1rem 1.25rem 1.25rem;
+    border-radius: 1rem;
+    background: var(--piano-tsheet-bg, #1c2028);
+    color: var(--piano-tsheet-fg, #f2f5fa);
+    box-shadow: 0 1rem 3rem rgba(0, 0, 0, 0.5);
+  }
+
+  &__head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 0.75rem;
+    h2 { margin: 0; font-size: 1.15rem; }
+  }
+}
