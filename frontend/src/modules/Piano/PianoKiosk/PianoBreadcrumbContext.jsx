@@ -5,8 +5,11 @@ import { createContext, useContext, useEffect, useMemo, useState } from 'react';
  * (home › mode › …); deep routes (a course, a lecture, an album, a game) publish
  * their own deeper segments here so the chrome can show them inline — there is no
  * separate back pill or second header row. Each extra crumb is
- * `{ label, onClick? }`; an `onClick` makes it a navigable ancestor, while the
- * deepest crumb (no handler) renders as the current location.
+ * `{ label, onClick?, icon?, image? }`; `onClick` makes it a navigable/actionable
+ * crumb even when it's the last one (e.g. sheet music's mode crumb opens
+ * ModeSheet), `icon` renders the shared Icon, and `image` renders a small thumb
+ * (e.g. a score's splash image). A crumb with no handler renders as inert current
+ * location.
  */
 const BreadcrumbContext = createContext(null);
 
@@ -28,7 +31,7 @@ export function usePianoBreadcrumbBar() {
  * already shows). Clears them on unmount — guarded so a sibling route that mounts
  * first isn't clobbered by this one's teardown.
  *
- * @param {Array<{label:string, onClick?:function}>} crumbs
+ * @param {Array<{label:string, onClick?:function, icon?:string, image?:string}>} crumbs
  */
 export function usePianoBreadcrumb(crumbs) {
   const { setCrumbs } = usePianoBreadcrumbBar();

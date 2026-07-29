@@ -154,3 +154,10 @@
   margin-top: 0.75rem;
   span { opacity: 0.8; margin-right: 0.2rem; &:not(:first-child) { margin-left: 0.6rem; } }
 }
+
+.piano-modesheet {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  .piano-tbtn { justify-content: flex-start; font-size: 1.1rem; }
+}

@@ -3,7 +3,7 @@ import { render, screen, fireEvent, within } from '@testing-library/react';
 import ScoreTransportBar from './ScoreTransportBar.jsx';
 
 const base = {
-  mode: 'learn', onMode: vi.fn(),
+  mode: 'learn',
   running: false, onToggleRun: vi.fn(), onReset: vi.fn(),
   step: 0, total: 40,
   flow: 'wrapped', onToggleFlow: vi.fn(),
@@ -15,15 +15,6 @@ const base = {
 };
 
 describe('ScoreTransportBar', () => {
-  it('renders the four named mode tabs (Listen/Learn/Polish/Perform) and fires onMode', () => {
-    render(<ScoreTransportBar {...base} />);
-    for (const name of [/listen/i, /learn/i, /polish/i, /perform/i]) {
-      expect(screen.getByRole('tab', { name })).toBeInTheDocument();
-    }
-    fireEvent.click(screen.getByRole('tab', { name: /polish/i }));
-    expect(base.onMode).toHaveBeenCalledWith('polish');
-  });
-
   it('exposes a labeled BPM metronome toggle in Polish (aria-pressed reflects clickActive)', () => {
     const onToggleClick = vi.fn();
     const { rerender } = render(
@@ -275,17 +266,16 @@ describe('ScoreTransportBar', () => {
     expect(onBodyRender).toHaveBeenCalledTimes(2);
   });
 
-  it('memoization: mode tabs + transport buttons are unaffected by a step advance', () => {
+  it('memoization: transport buttons are unaffected by a step advance', () => {
     // Sanity: the shell still threads props correctly across a step change — the
-    // tabs, transport, and readout all remain present & correct.
+    // transport and readout remain present & correct (mode tabs left the bar in
+    // wave-2 B; `mode` itself is asserted via the transport buttons it gates).
     const props = { ...base, mode: 'polish', step: 0 };
     const { rerender } = render(<ScoreTransportBar {...props} />);
-    expect(screen.getByRole('tab', { name: /polish/i })).toHaveAttribute('aria-selected', 'true');
     expect(screen.getByRole('button', { name: /pause|play/i })).toBeInTheDocument();
 
     rerender(<ScoreTransportBar {...props} step={3} />);
     expect(screen.getByText('4 / 40')).toBeInTheDocument();
-    expect(screen.getByRole('tab', { name: /polish/i })).toHaveAttribute('aria-selected', 'true');
     expect(screen.getByRole('button', { name: /pause|play/i })).toBeInTheDocument();
   });
 });
