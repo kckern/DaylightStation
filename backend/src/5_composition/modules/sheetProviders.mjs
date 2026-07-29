@@ -63,13 +63,27 @@ const capitalise = (s) => s.charAt(0).toUpperCase() + s.slice(1);
  * As with the renderer registry there is deliberately no fallback provider: an
  * unrecognised `source` comes back `undefined` so the caller throws.
  *
- * @param {{ getScaleConfig: () => object }} deps `getScaleConfig` returns the
- *   normalized nutribot config (see `#apps/nutribot/lib/scaleNutribotConfig.mjs`).
- *   It is called per invocation, so an edited scales.yml reaches the next sheet
- *   without rebuilding the registry.
+ * @param {object} deps
+ * @param {() => object} deps.getScaleConfig Returns the normalized nutribot config
+ *   (see `#apps/nutribot/lib/scaleNutribotConfig.mjs`). Called per invocation, so an
+ *   edited scales.yml reaches the next sheet without rebuilding the registry.
+ * @param {(name: string) => (string|null)} [deps.loadIcon] Resolves an `icon:` name
+ *   from config to SVG markup. INJECTED, and resolved HERE rather than in the
+ *   renderer, because `1_rendering/` must not touch the filesystem — a renderer that
+ *   reads files stops being testable without a disk. Missing icons return null and
+ *   the mark degrades to a plain QR.
  * @returns {Record<string, () => Array<object>>}
  */
-export function createNutritionProviders({ getScaleConfig }) {
+export function createNutritionProviders({ getScaleConfig, loadIcon = () => null }) {
+  const icon = (name) => {
+    if (!name) return { icon: null, iconSvg: null };
+    let svg = null;
+    // Never let a missing or unreadable icon cost the sheet: it is decoration, and
+    // the code beside it still scans.
+    try { svg = loadIcon(name); } catch { svg = null; }
+    return { icon: name, iconSvg: svg };
+  };
+
   return {
     /** One QR per configured caloric-density level. */
     'nutrition.density': () => {
@@ -78,6 +92,7 @@ export function createNutritionProviders({ getScaleConfig }) {
         code: encodeDensity(l.level),
         label: l.label,
         sublabel: `${l.kcal_per_g} kcal/g`,
+        ...icon(l.icon),
         meta: { level: l.level },
       }));
     },
@@ -89,6 +104,7 @@ export function createNutritionProviders({ getScaleConfig }) {
         code: encodeContainer(c.id),
         label: c.label,
         sublabel: `${c.grams} g`,
+        ...icon(c.icon),
         meta: { id: c.id },
       }));
     },
@@ -106,6 +122,7 @@ export function createNutritionProviders({ getScaleConfig }) {
         code: encodeControl(verb),
         label: copy?.label ?? capitalise(verb),
         sublabel: copy?.sublabel ?? '',
+        ...icon(copy?.icon),
         meta: { verb },
       };
     }),

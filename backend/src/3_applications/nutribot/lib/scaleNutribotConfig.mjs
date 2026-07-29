@@ -53,6 +53,12 @@ export function normalizeScaleNutribotConfig(raw = {}) {
             emoji: l.emoji || '🍽',
             kcal_per_g: Number(l.kcal_per_g),
             hint: l.hint || '',
+            // Printed-sheet decoration, resolved to SVG by the sheet's icon loader.
+            // This mapper rebuilds each level from an explicit field list, so an
+            // unlisted key is silently dropped — which is exactly what happened to
+            // `icon` first time round: the config had it, the sheet rendered blank
+            // gaps where the pictures should have been, and nothing errored.
+            icon: l.icon || null,
           };
           // Passed through untouched. `computeNutrition` (ScanNutritionService)
           // validates these when a density level is applied, and treats a blank
