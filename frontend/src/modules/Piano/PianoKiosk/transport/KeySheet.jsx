@@ -1,6 +1,7 @@
 import TransportSheet from './TransportSheet.jsx';
 import StepGrid from './StepGrid.jsx';
 import { soundingKeyLabel } from './soundingKey.js';
+import { abbrevKey } from '../modes/SheetMusic/keyLabel.js';
 
 // ASCII labels only (house rule): '-6'..'-1', '0', '+1'..'+6'.
 const DOWN = [-6, -5, -4, -3, -2, -1];
@@ -20,7 +21,7 @@ export default function KeySheet({ open, onClose, value = 0, onPick, keyFifths, 
   // bare offset; unknown key falls back to today's offset-only label.
   const cell = (n) => {
     const name = soundingKeyLabel(keyFifths, keyMode, n);
-    return name ? { label: name, sub: label(n) } : { label: label(n) };
+    return name ? { label: abbrevKey(name), sub: label(n) } : { label: label(n) };
   };
   const row = (values) => (
     <StepGrid
