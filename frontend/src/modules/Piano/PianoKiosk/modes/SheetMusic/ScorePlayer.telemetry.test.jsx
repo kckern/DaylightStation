@@ -273,7 +273,7 @@ describe('ScorePlayer — control telemetry (Task 5)', () => {
     renderPlayer();
     act(() => { screen.getByText('Learn').click(); });
     selectLoop(100); // loop m1–m1
-    act(() => { fireEvent.click(screen.getByRole('button', { name: /loop m1–m1/i })); });
+    act(() => { fireEvent.click(screen.getByRole('button', { name: 'Loop' })); });
     act(() => { fireEvent.click(screen.getByRole('button', { name: /loop end later/i })); });
     const last = tel.logFocus.mock.calls.at(-1)[0];
     expect(last).toMatchObject({ kind: 'custom', inMeasure: 0, outMeasure: 1, origin: 'nudge' });

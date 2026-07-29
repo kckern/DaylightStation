@@ -330,18 +330,19 @@ describe('ScorePlayer — practice range persistence (J3/L6)', () => {
     const scroll = document.querySelector('.piano-score-player__scroll');
     act(() => { fireEvent.click(scroll, { clientX: 100, clientY: 100 }); }); // first tap → measure 0
     act(() => { fireEvent.click(scroll, { clientX: 100, clientY: 100 }); }); // second tap → range set
-    // The Loop trigger now shows a measure-span scope.
-    expect(screen.getByRole('button', { name: /loop m1/i })).toBeInTheDocument();
+    // The Loop trigger's aria-label stays the stable 'Loop' (Key/Tempo convention);
+    // the measure-span scope shows in the visible label instead.
+    expect(screen.getByRole('button', { name: 'Loop' })).toHaveTextContent(/m1/i);
     // Switch to Polish — range must persist.
     act(() => { screen.getByText('Polish').click(); });
-    expect(screen.getByRole('button', { name: /loop m1/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Loop' })).toHaveTextContent(/m1/i);
     // Switch to Listen — the loop now FOLLOWS (audit L6).
     act(() => { screen.getByText('Listen').click(); });
-    expect(screen.getByRole('button', { name: /loop m1/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Loop' })).toHaveTextContent(/m1/i);
     // Perform releases it.
     act(() => { screen.getByText('Perform').click(); });
     act(() => { screen.getByText('Listen').click(); });
-    expect(screen.getByRole('button', { name: /^loop$/i })).toBeInTheDocument(); // back to inactive trigger
+    expect(screen.getByRole('button', { name: 'Loop' }).textContent).toBe('Loop'); // back to inactive trigger
   });
 });
 
@@ -1395,11 +1396,11 @@ describe('ScorePlayer — loop endpoint nudging (L2)', () => {
     const scroll = document.querySelector('.piano-score-player__scroll');
     act(() => { fireEvent.click(scroll, { clientX: 100, clientY: 100 }); });
     act(() => { fireEvent.click(scroll, { clientX: 100, clientY: 100 }); });
-    expect(screen.getByRole('button', { name: /loop m1–m1/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Loop' })).toHaveTextContent(/m1–m1/i);
     // Open the Loop menu and nudge the end later.
-    act(() => { fireEvent.click(screen.getByRole('button', { name: /loop m1–m1/i })); });
+    act(() => { fireEvent.click(screen.getByRole('button', { name: 'Loop' })); });
     act(() => { fireEvent.click(screen.getByRole('button', { name: /loop end later/i })); });
-    expect(screen.getByRole('button', { name: /loop m1–m2/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Loop' })).toHaveTextContent(/m1–m2/i);
   });
 });
 
@@ -1464,7 +1465,7 @@ describe('ScorePlayer — loop arming expires (H4b)', () => {
     const scroll = document.querySelector('.piano-score-player__scroll');
     act(() => { fireEvent.click(scroll, { clientX: 160, clientY: 100 }); });
     expect(screen.getByText('m 2 / 2')).toBeTruthy();
-    expect(screen.getByRole('button', { name: /^loop$/i })).toBeInTheDocument(); // and set no loop
+    expect(screen.getByRole('button', { name: 'Loop' }).textContent).toBe('Loop'); // and set no loop
   });
 });
 
