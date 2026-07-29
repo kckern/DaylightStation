@@ -152,12 +152,16 @@ export function createCellRenderers({ qrRenderer = createQRCodeRenderer() } = {}
         // shape with its content would letterbox against its neighbours.
         const stackH = LABEL_H + (hasSub ? SUB_H : 0) + ICON_GAP;
         const iconBox = Math.min(LEFT, QR - stackH);
-        const iconX = PAD + (LEFT - iconBox) / 2;
+        // The slot keeps its size; only the artwork inside it shrinks. Scaling the
+        // slot instead would move the label and change the card's proportions, so
+        // two vessels sharing an icon would stop lining up with each other.
+        const drawn = iconBox * (Number(item.iconScale) > 0 ? Number(item.iconScale) : 1);
+        const iconX = PAD + (LEFT - drawn) / 2;
         const iconY = PAD + (QR - (iconBox + stackH)) / 2;
         const iconEl = stripXmlDecl(item.iconSvg)
           .replace(/<svg\b[^>]*>/, (tag) => tag
             .replace(/\s(width|height|x|y)\s*=\s*"[^"]*"/g, '')
-            .replace(/^<svg/, `<svg x="${iconX}" y="${iconY}" width="${iconBox}" height="${iconBox}" preserveAspectRatio="xMidYMid meet"`));
+            .replace(/^<svg/, `<svg x="${iconX}" y="${iconY + (iconBox - drawn) / 2}" width="${drawn}" height="${drawn}" preserveAspectRatio="xMidYMid meet"`));
         const text = labelText;
         const size = fit(text, LEFT, LABEL_H * 0.72);
         const labelY = iconY + iconBox + ICON_GAP + LABEL_H * 0.72;

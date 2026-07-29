@@ -88,6 +88,7 @@ export function createNutritionProviders({ getScaleConfig, loadIcon = () => null
     try { svg = loadIcon(name); } catch { svg = null; }
     return { icon: name, iconSvg: svg };
   };
+  const withIcon = (row) => ({ ...icon(row.icon), ...(row.icon_scale ? { iconScale: row.icon_scale } : {}) });
 
   return {
     /** One QR per configured caloric-density level. */
@@ -109,7 +110,7 @@ export function createNutritionProviders({ getScaleConfig, loadIcon = () => null
         code: encodeContainer(c.id),
         label: c.label,
         sublabel: `${c.grams} g`,
-        ...icon(c.icon),
+        ...withIcon(c),
         meta: { id: c.id },
       }));
     },
