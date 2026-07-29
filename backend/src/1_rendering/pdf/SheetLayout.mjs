@@ -50,7 +50,13 @@ export function layout({ page, blocks }) {
     const gap = block.gapPt ?? DEFAULT_GAP_PT;
     // Cells are square: the width follows from the column count, and the height copies it.
     const cellW = (contentW - (block.cols - 1) * gap) / block.cols;
-    const cellH = cellW;
+    // `aspect` is the mark's width/height. Square is only right for a bare glyph:
+    // a framed QR with a label strip measures ~0.73 w/h, and that ratio DRIFTS with
+    // size (0.726 at a 108pt module, 0.677 at 64pt) because the frame and label
+    // chrome are absolute rather than proportional. Forcing square cells would
+    // letterbox every mark on the sheet, so the block declares the shape it needs
+    // and the emitter scales to fit inside it.
+    const cellH = cellW / (block.aspect || 1);
     // An untitled block reserves no headroom at all — the caller opted out of the label,
     // not merely out of the text, so the cells move up to fill the space.
     const titleH = block.title ? (block.titleHeightPt ?? DEFAULT_TITLE_HEIGHT_PT) : 0;
