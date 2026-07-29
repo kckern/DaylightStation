@@ -88,6 +88,12 @@ vi.mock('../../PianoConfig.jsx', () => ({ usePianoKioskConfig: () => ({ config: 
 vi.mock('../../PianoBreadcrumbContext.jsx', () => ({ usePianoBreadcrumb: (crumbs) => { h.crumbs = crumbs || []; } }));
 vi.mock('../../useReloadGuard.js', () => ({ default: () => {} }));
 vi.mock('./clickScheduler.js', () => ({ createClickScheduler: () => ({ start: vi.fn(), stop: vi.fn(), setBpm: vi.fn() }) }));
+// usePracticeRecord (Task 13) reaches usePianoUser, and this harness never wraps
+// ScorePlayer in a PianoUserProvider — mock the module out entirely (this file
+// doesn't assert on the practice record, only that mounting doesn't throw).
+vi.mock('./usePracticeRecord.js', () => ({
+  default: () => ({ record: {}, loaded: true, recordCycle: vi.fn(), recordTierBest: vi.fn() }),
+}));
 
 vi.mock('../../../../MusicNotation/renderers/MusicXmlRenderer.jsx', async () => {
   const { useEffect } = await import('react');

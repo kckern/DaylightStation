@@ -1,4 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
+import { useState } from 'react';
 import { renderHook, act } from '@testing-library/react';
 import { useFollowTracker } from './useFollowTracker.js';
 
@@ -59,5 +60,31 @@ describe('useFollowTracker', () => {
     act(() => emit(64));
     expect(onComplete).not.toHaveBeenCalled();
     expect(onStep).toHaveBeenCalledWith(0); // wrapped to range start
+  });
+
+  it('fires onWrap when the range wraps out→in', () => {
+    const { subscribe, emit } = makeSubscribe();
+    const onWrap = vi.fn();
+    // range [0, 1]: satisfy step 0 (advances to 1), then step 1 → wraps back to 0.
+    // A real `step` prop update is needed between the two satisfactions (the
+    // hook only reads the range's out-point off the LATEST step), so this
+    // harness threads the tracker's own onStep back in via useState, mirroring
+    // how ScorePlayer actually drives it.
+    const { result } = renderHook(() => {
+      const [step, setStep] = useState(0);
+      useFollowTracker({
+        enabled: true, steps: STEPS, activeParts: { 0: true, 1: true }, step,
+        subscribe, onStep: setStep, onHit: vi.fn(), onWrong: vi.fn(),
+        range: [0, 1], onWrap,
+      });
+      return step;
+    });
+    act(() => emit(60)); // step 0's only active note in this range (LH off by default here isn't relevant — both active)
+    act(() => emit(48)); // completes step 0 → advances to step 1 (no wrap yet)
+    expect(result.current).toBe(1);
+    expect(onWrap).not.toHaveBeenCalled();
+    act(() => emit(64)); // completes step 1 (the range's out-point) → wraps to 0
+    expect(onWrap).toHaveBeenCalledTimes(1);
+    expect(result.current).toBe(0);
   });
 });
