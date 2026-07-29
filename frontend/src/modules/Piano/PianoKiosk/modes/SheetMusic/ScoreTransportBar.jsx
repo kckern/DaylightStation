@@ -91,8 +91,7 @@ const ScorePracticeCluster = memo(function ScorePracticeCluster({
         disabled={metronomeDisabled}
         onClick={onToggleClick}
       >
-        <Icon name="quarter-note" />
-        <span className="tabular-nums">{bpm}</span>
+        <Icon name="metronome" />
       </button>
       <LoopControl
         active={loopActive}
@@ -228,8 +227,8 @@ const ScoreViewControls = memo(function ScoreViewControls({
 
       <div className="piano-score-tempo-wrap">
         <TransportButton
-          label={`Tempo ${Math.round(tempoMult * 100)}%`}
-          icon="chevron-down"
+          label={String(Math.round(baseBpm * tempoMult))}
+          icon="quarter-note"
           ariaLabel="Tempo"
           on={tempoMult !== 1}
           onPress={() => toggle('tempo')}

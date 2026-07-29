@@ -15,19 +15,19 @@ const base = {
 };
 
 describe('ScoreTransportBar', () => {
-  it('exposes a labeled BPM metronome toggle in Polish (aria-pressed reflects clickActive)', () => {
+  it('is an icon-only metronome toggle in Polish — no BPM readout (aria-pressed reflects clickActive)', () => {
     const onToggleClick = vi.fn();
     const { rerender } = render(
       <ScoreTransportBar {...base} mode="polish" clickActive={false} bpm={72} onToggleClick={onToggleClick} />,
     );
-    const click = screen.getByRole('button', { name: /metronome/i });
+    const click = screen.getByRole('button', { name: 'Metronome' });
     expect(click).toHaveAttribute('aria-pressed', 'false');
-    expect(click).toHaveTextContent('72'); // live BPM readout (M4)
-    expect(click.querySelector('svg')).not.toBeNull(); // QuarterNoteIcon
+    expect(click.textContent).toBe(''); // icon-only — no bpm span (wave-2 T6)
+    expect(click.querySelector('svg')).not.toBeNull(); // MetronomeIcon
     fireEvent.click(click);
     expect(onToggleClick).toHaveBeenCalled();
     rerender(<ScoreTransportBar {...base} mode="polish" clickActive bpm={72} onToggleClick={onToggleClick} />);
-    expect(screen.getByRole('button', { name: /metronome/i })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('button', { name: 'Metronome' })).toHaveAttribute('aria-pressed', 'true');
   });
 
   it('metronome ACTS in Learn AND Polish, not Listen — gated in place, never unmounted (M1/M2, C2)', () => {
@@ -103,7 +103,7 @@ describe('ScoreTransportBar', () => {
     const onTempo = vi.fn();
     render(<ScoreTransportBar {...base} mode="listen" tempoMult={1} onTempo={onTempo} />);
     const tempoBtn = screen.getByRole('button', { name: /^tempo/i });
-    expect(tempoBtn).toHaveTextContent(/100%/);
+    expect(tempoBtn).toHaveTextContent('90'); // round(baseBpm=90 × tempoMult=1)
     fireEvent.click(tempoBtn);
     // No slider / no typed value — discrete percent steps commit on tap.
     expect(screen.queryByRole('slider')).toBeNull();
@@ -111,14 +111,21 @@ describe('ScoreTransportBar', () => {
     expect(onTempo).toHaveBeenCalledWith(1.5);
   });
 
+  it('tempo chip shows the effective ♩BPM (baseBpm × tempoMult), not a percent label', () => {
+    render(<ScoreTransportBar {...base} mode="listen" baseBpm={90} tempoMult={1.25} onTempo={vi.fn()} />);
+    const tempo = screen.getByRole('button', { name: 'Tempo' });
+    expect(tempo).toHaveTextContent('113'); // round(90 × 1.25)
+    expect(tempo.querySelector('svg')).not.toBeNull(); // quarter-note icon
+  });
+
   it('polish mode: tempo stepper is present and commits via onTempo; no key/play-along', () => {
     const onTempo = vi.fn();
     render(<ScoreTransportBar {...base} mode="polish" tempoMult={1} onTempo={onTempo} />);
     const tempoBtn = screen.getByRole('button', { name: /^tempo/i });
-    expect(tempoBtn).toHaveTextContent(/100%/);
+    expect(tempoBtn).toHaveTextContent('90'); // round(baseBpm=90 × tempoMult=1)
     fireEvent.click(tempoBtn);
-    fireEvent.click(screen.getByRole('button', { name: /^75%/ }));
-    expect(onTempo).toHaveBeenCalledWith(0.75);
+    fireEvent.click(screen.getByRole('button', { name: /^80%/ }));
+    expect(onTempo).toHaveBeenCalledWith(0.8);
     // Key stays live in Polish (transpose acts in every practice mode); play-along is gone.
     expect(screen.getByRole('button', { name: 'Key' })).toBeEnabled();
     expect(screen.queryByRole('button', { name: /play along/i })).toBeNull();
@@ -214,14 +221,14 @@ describe('ScoreTransportBar', () => {
     expect(base.onScale).toHaveBeenCalledWith(1.25);
   });
 
-  it('menu affordance (C4): View and Tempo triggers each carry a chevron SVG', () => {
+  it('menu affordance (C4): View carries a chevron SVG, Tempo carries a quarter-note SVG', () => {
     render(<ScoreTransportBar {...base} mode="listen" tempoMult={1} onTempo={vi.fn()} />);
     const view = screen.getByRole('button', { name: /view options/i });
     expect(view.querySelector('svg')).not.toBeNull(); // ChevronDownIcon, not a ⋯ glyph
     expect(view).toHaveTextContent('View'); // plain typography label
     expect(view.textContent).not.toContain('⋯');
     const tempo = screen.getByRole('button', { name: /^tempo/i });
-    expect(tempo.querySelector('svg')).not.toBeNull(); // ChevronDownIcon
+    expect(tempo.querySelector('svg')).not.toBeNull(); // QuarterNoteIcon — the chip face IS the affordance (T6)
   });
 
   it('part chips carry no ✓ glyph — is-on/is-off styling holds the state (C3)', () => {
