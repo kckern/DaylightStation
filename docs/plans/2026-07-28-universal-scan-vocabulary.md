@@ -720,6 +720,20 @@ git commit -m "refactor(scan): route every scanner through the shared dispatcher
 
 ## Task 7: The regression that started this
 
+> **SUBSUMED by Task 6 — do not implement.** Both assertions landed in
+> `tests/unit/composition/scanDispatch.test.mjs` and are stronger there than the
+> version below, which used fakes. The real ones drive the actual
+> `createScanDispatch` with the real `routeNutribotScan` and `parseScanCode`:
+>
+> - `:484` — a content code on a nutribot reader reaches content with
+>   `value: 'living-room:plex:594036+shuffle'`, `execute` never called, and the
+>   reader's route still riding along in `meta.route` (a namespace outranks the
+>   route for resolution without erasing it)
+> - `:497` — a bare UPC on that reader still reaches the food log, plus the
+>   payload-omits-a-route fallback chain this task never specified
+>
+> Building the version below would be weaker duplication.
+
 **Files:**
 - Create: `tests/unit/applications/scan/scanRegression.test.mjs`
 
