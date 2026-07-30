@@ -1831,6 +1831,37 @@
   &__btn--play { min-width: 4.5rem; font-size: 1.2rem; background: var(--piano-accent); color: var(--piano-accent-ink); border-color: var(--piano-accent); }
 }
 
+// Karaoke key-change stepper ([-] Key [+]) on the singalong chrome. The value
+// face is itself a tap-to-reset button: quiet while at the natural key, filled
+// accent while the song is transposed so an active shift is obvious at a glance.
+.piano-keyctl {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+
+  &__value {
+    min-width: 3.25rem;
+    height: 3rem;
+    padding: 0 0.5rem;
+    border: 1px solid transparent;
+    border-radius: var(--r-md);
+    background: transparent;
+    color: var(--piano-muted);
+    font: inherit;
+    font-size: 1rem;
+    font-variant-numeric: tabular-nums;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+
+    &.is-on {
+      color: var(--piano-accent-ink);
+      background: var(--piano-accent);
+      border-color: var(--piano-accent);
+      font-weight: 600;
+    }
+  }
+}
+
 /* ---- Karaoke mode: a searchable song browser (title + artist, no thumbnails).
    Simpler than Courses on purpose: search box, a horizontal row of category
    chips, and a touch-friendly grid of big text-only cards. ---- */
