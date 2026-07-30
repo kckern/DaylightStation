@@ -212,6 +212,25 @@ describe('PlaybackPresenceTracker', () => {
     expect(tracker.playingRecently()).toBe(false);
   });
 
+  it('a match predicate discriminates the source — only the matching payload refreshes recency (mechanism test; today\'s real payload has no such field — see report)', () => {
+    const bus = fakeBus();
+    const clock = fakeClock();
+    // Synthetic discriminator for this test only — the real playback.log payload
+    // carries no device/screen field (see task-7-report.md discovery). This
+    // exercises the `match` plumbing itself, not a real composition config.
+    const tracker = new PlaybackPresenceTracker({
+      eventBus: bus,
+      clock,
+      match: (payload) => payload?.sourceHint === 'livingroom-tv',
+    });
+    // Non-matching event (e.g. the piano kiosk's video lesson elsewhere) must NOT refresh recency.
+    bus.emit('playback.log', { contentId: 'plex:99', sourceHint: 'piano-kiosk' });
+    expect(tracker.playingRecently()).toBe(false);
+    // Matching event refreshes recency.
+    bus.emit('playback.log', { contentId: 'plex:1', sourceHint: 'livingroom-tv' });
+    expect(tracker.playingRecently()).toBe(true);
+  });
+
   it('does not expose occupancy() — the livingroom adapter (Task 8) combines this with TV power', () => {
     const bus = fakeBus();
     const tracker = new PlaybackPresenceTracker({ eventBus: bus, clock: fakeClock() });
