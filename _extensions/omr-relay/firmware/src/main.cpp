@@ -32,6 +32,93 @@
 #include <FastLED.h>
 #include "config.h"
 
+#if NFC_ENABLED
+// ============================ NFC tap reader =================================
+// M5 Unit NFC (SKU U216) on the ATOM's Grove port — an ST25R3916 NFC front-end
+// over I2C. A student taps a card to start a session; the relay emits an `nfc`
+// message over the same bus link the sheets use.
+//
+// Verified on hardware 2026-07-29: the chip answers at I2C 0x50 with IC Identity
+// 0x2A (ic_type 5, silicon rev 2), and an NTAG 215 read as uid 04669C0FCB2A81.
+//
+// WHY THIS RUNS ON ITS OWN CORE: a FAILED detect() blocks for its entire timeout.
+// The UART reader in loop() is the only hard real-time path in this firmware — at
+// 9600 baud a byte lands every ~1 ms and the RX ring is finite — so NFC polling
+// must never sit in front of it. The ESP32-PICO-D4 has two cores and the Arduino
+// loop() runs on core 1, so the poll is pinned to core 0 and hands results across
+// a FreeRTOS queue. The OMR path is otherwise untouched, and the outbound bus
+// queue stays single-threaded because only core 1 ever calls emit().
+#include <Wire.h>
+#include <M5Unified.h>
+#include <M5UnitUnified.h>
+#include <M5UnitUnifiedNFC.h>
+
+struct NfcCard {
+  char     uid[32];
+  char     type[32];
+  uint16_t atqa;
+  uint8_t  sak;
+  uint32_t atMs;   // millis() at read, so the bus message dates the TAP
+};
+
+// Depth 8: a tap produces one entry and core 1 drains every loop, so this only
+// ever fills if core 1 is wedged — in which case counting the loss is the point.
+static const size_t NFC_HANDOFF_DEPTH = 8;
+static QueueHandle_t nfcQueue   = nullptr;
+static uint32_t cNfcCards       = 0;   // cards handed to the bus
+static uint32_t cNfcPolls       = 0;   // detect attempts
+static uint32_t cNfcHandoffLost = 0;   // handoff queue was full
+static uint32_t lastNfcMs       = 0;
+static volatile bool nfcReady   = false;
+#endif  // NFC_ENABLED
+
+#if BUZZER_ENABLED
+// ============================ audible tap ACK ================================
+// Active (self-oscillating) buzzer wired GND + a free pad on the ATOMIC RS232
+// base (its silkscreen leaves only GPIO23 and GPIO33 free), gated through LEDC.
+//
+// A status LED cannot serve as the ACK: this board lives in a case where nobody
+// can see it. The tap has to make a sound.
+//
+// DO NOT try to quieten this by lowering duty. Measured on hardware 2026-07-29:
+// at duty 5 / 15 / 40 / 80 the buzzer SCRATCHED rather than playing a quieter
+// tone, and only 160+ produced a clean note. An active buzzer has its own
+// oscillator with a minimum working voltage, and a chopped supply below that
+// starves it — so duty is a DISTORTION control here, not a volume control.
+// Loudness is set by DURATION at full duty: a 4 ms pulse never lets the
+// diaphragm reach full amplitude, which reads as a soft tick. To go quieter than
+// duration allows, add a series resistor (~100-470R) or damp it in the case.
+//
+// Non-blocking by construction: started and expired from loop(), never delay().
+// A delay here would stall the UART drain, which is the entire reason the NFC
+// poll was moved to the other core.
+static const int BUZZER_LEDC_CHANNEL = 0;   // nothing else here uses LEDC
+static bool     buzzing     = false;
+static uint32_t buzzOffAtMs = 0;
+static uint32_t cBeeps      = 0;
+
+static void buzzerInit() {
+  ledcSetup(BUZZER_LEDC_CHANNEL, BUZZER_FREQ_HZ, 8);
+  ledcAttachPin(BUZZER_PIN, BUZZER_LEDC_CHANNEL);
+  ledcWrite(BUZZER_LEDC_CHANNEL, 0);
+}
+
+static void buzzerStart() {
+  ledcWrite(BUZZER_LEDC_CHANNEL, BUZZER_DUTY);
+  buzzing     = true;
+  buzzOffAtMs = millis() + (uint32_t)BUZZER_MS;
+  cBeeps++;
+}
+
+// Rollover-safe expiry, same idiom the status LED uses.
+static void buzzerService() {
+  if (buzzing && (int32_t)(millis() - buzzOffAtMs) >= 0) {
+    ledcWrite(BUZZER_LEDC_CHANNEL, 0);
+    buzzing = false;
+  }
+}
+#endif  // BUZZER_ENABLED
+
 // Onboard SK6812 status LED. GPIO27 on ATOM Lite.
 #define LED_PIN   27
 #define NUM_LEDS  1
@@ -247,6 +334,87 @@ static void onWsEvent(WStype_t type, uint8_t *payload, size_t len) {
   }
 }
 
+#if NFC_ENABLED
+// --- NFC poll (core 0) -------------------------------------------------------
+// This task owns the I2C bus and the ST25R3916 exclusively. The ONLY thing it
+// shares with core 1 is nfcQueue, so nothing here touches the outbound bus queue,
+// the counters core 1 serves over HTTP, or the buzzer.
+static void nfcTask(void *) {
+  Wire.begin(NFC_SDA_PIN, NFC_SCL_PIN, NFC_I2C_HZ);
+
+  static m5::unit::UnitUnified units;
+  static m5::unit::UnitNFC     unit;
+  static m5::nfc::NFCLayerA    nfcA{unit};
+
+  // The technology must be chosen BEFORE begin(): the chip holds one at a time,
+  // and every transmit in the wrong mode fails with "Illegal mode".
+  auto cfg = unit.config();
+  cfg.mode = m5::nfc::NFC::A;
+  unit.config(cfg);
+
+  if (!units.add(unit, Wire) || !units.begin()) {
+    // Deliberately not fatal. A missing or dead NFC unit must not take the OMR
+    // relay down with it — sheets are the primary job. /health reports nfc.ready
+    // false so this is visible from the LAN rather than only on the serial log.
+    Serial.println("[nfc] init FAILED — NFC inactive for this boot");
+    vTaskDelete(nullptr);
+    return;
+  }
+  nfcReady = true;
+  Serial.println("[nfc] ready");
+
+  for (;;) {
+    units.update();
+    cNfcPolls++;
+
+    std::vector<m5::nfc::a::PICC> piccs;
+    if (nfcA.detect(piccs, NFC_DETECT_TIMEOUT_MS)) {
+      for (auto &&p : piccs) {
+        nfcA.identify(p);   // detect() only provisionally classifies from sak
+        NfcCard card{};
+        snprintf(card.uid,  sizeof(card.uid),  "%s", p.uidAsString().c_str());
+        snprintf(card.type, sizeof(card.type), "%s", p.typeAsString().c_str());
+        card.atqa = p.atqa;
+        card.sak  = p.sak;
+        card.atMs = millis();
+        // Zero wait: the ACK and the bus message belong to core 1, and a full
+        // handoff must not stall the reader. Loss is counted, never silent.
+        if (xQueueSend(nfcQueue, &card, 0) != pdTRUE) cNfcHandoffLost++;
+      }
+      // HLTA the card so it stops answering while it rests on the antenna. A
+      // halted PICC ignores REQA until it leaves the field and loses power —
+      // which is exactly the debounce a tap wants: one tap, one trigger, and a
+      // card left lying on the reader does not re-fire forever.
+      nfcA.deactivate();
+    }
+    vTaskDelay(pdMS_TO_TICKS(NFC_POLL_MS));
+  }
+}
+
+// Runs on core 1 from loop(), which is what keeps emit()/the outbound queue and
+// the buzzer single-threaded.
+static void drainNfcQueue() {
+  if (!nfcQueue) return;
+  NfcCard card;
+  while (xQueueReceive(nfcQueue, &card, 0) == pdTRUE) {
+    cNfcCards++;
+    lastNfcMs = card.atMs;
+#if BUZZER_ENABLED
+    buzzerStart();
+#endif
+    JsonDocument doc;
+    doc["source"]   = "omr-relay";
+    doc["type"]     = "nfc";
+    doc["id"]       = READER_ID;
+    doc["uid"]      = card.uid;
+    doc["piccType"] = card.type;
+    doc["atqa"]     = card.atqa;
+    doc["sak"]      = card.sak;
+    emit(doc);
+  }
+}
+#endif  // NFC_ENABLED
+
 // --- mode download -----------------------------------------------------------
 
 // Send "I00": Binary-to-ASCII conversion for all columns (up to 126).
@@ -321,7 +489,43 @@ static void fillStatus(JsonDocument &doc) {
   q["maxDepth"]  = qMaxDepth;
   q["delivered"] = qDelivered;
   q["dropped"]   = qDropped;      // non-zero here means data was LOST
-  doc["ok"] = (qDropped == 0 && cTruncated == 0);
+  doc["ok"] = (qDropped == 0 && cTruncated == 0)
+#if NFC_ENABLED
+              && (cNfcHandoffLost == 0)
+#endif
+              ;
+
+#if NFC_ENABLED
+  // Compiled NFC config plus liveness, so "is the tap reader working?" is
+  // answerable from the LAN without opening the case.
+  JsonObject n = doc["nfc"].to<JsonObject>();
+  n["enabled"]          = true;
+  n["ready"]            = nfcReady;   // false => the unit failed to initialise
+  n["sdaPin"]           = NFC_SDA_PIN;
+  n["sclPin"]           = NFC_SCL_PIN;
+  n["i2cHz"]            = NFC_I2C_HZ;
+  n["pollMs"]           = NFC_POLL_MS;
+  n["detectTimeoutMs"]  = NFC_DETECT_TIMEOUT_MS;
+  n["polls"]            = cNfcPolls;
+  n["cards"]            = cNfcCards;
+  n["handoffLost"]      = cNfcHandoffLost;   // non-zero means a TAP was lost
+  if (lastNfcMs) n["lastCardMsAgo"] = millis() - lastNfcMs;
+  else           n["lastCardMsAgo"] = nullptr;   // null, not a bogus elapsed time
+#else
+  doc["nfc"]["enabled"] = false;
+#endif
+
+#if BUZZER_ENABLED
+  JsonObject bz = doc["buzzer"].to<JsonObject>();
+  bz["enabled"] = true;
+  bz["pin"]     = BUZZER_PIN;
+  bz["ms"]      = BUZZER_MS;
+  bz["duty"]    = BUZZER_DUTY;
+  bz["freqHz"]  = BUZZER_FREQ_HZ;
+  bz["beeps"]   = cBeeps;
+#else
+  doc["buzzer"]["enabled"] = false;
+#endif
 }
 
 static void sendJson(JsonDocument &doc) {
@@ -473,6 +677,16 @@ static void connectWifi() {
 
 void setup() {
   Serial.begin(115200);
+
+#if NFC_ENABLED
+  // M5Unified BEFORE FastLED. M5.begin() also touches the ATOM's onboard RGB on
+  // GPIO27, so FastLED is initialised afterwards to take ownership of the pin
+  // last. If the LED ever sits lit at rest, suspect this ordering first — the
+  // resting state is dark, and that is the observable check.
+  auto m5cfg = M5.config();
+  M5.begin(m5cfg);
+#endif
+
   FastLED.addLeds<SK6812, LED_PIN, GRB>(leds, NUM_LEDS);
   FastLED.setBrightness(40);
   // Force the LED dark at boot. setLed() short-circuits when the color is
@@ -481,7 +695,16 @@ void setup() {
   leds[0] = CRGB::Black;
   FastLED.show();
 
+  // Belt-and-braces against a stalled loop(). Arduino's default RX ring is 256
+  // bytes, which at 9600 baud is only ~267 ms of slack — thin once anything else
+  // shares core 1 (the HTTP server already can). 2 KB buys ~2.1 s. Must be called
+  // BEFORE begin() or it is ignored.
+  OMR.setRxBufferSize(2048);
   OMR.begin(UART_BAUD, UART_CONFIG, UART_RX_PIN, UART_TX_PIN);
+
+#if BUZZER_ENABLED
+  buzzerInit();
+#endif
 
   connectWifi();
 
@@ -498,6 +721,18 @@ void setup() {
   http.on("/recent", handleRecent);
   http.onNotFound([]() { http.send(404, "application/json", "{\"ok\":false,\"error\":\"not found\"}"); });
   http.begin();
+
+#if NFC_ENABLED
+  nfcQueue = xQueueCreate(NFC_HANDOFF_DEPTH, sizeof(NfcCard));
+  if (!nfcQueue) {
+    Serial.println("[nfc] xQueueCreate FAILED — NFC inactive");
+  } else {
+    // Core 0. loop() is on core 1, so a blocking detect() cannot delay the UART
+    // drain. 8 KB stack: the M5 driver allocates std::vector per detect and this
+    // is not a path where a stack overflow should be discovered in the field.
+    xTaskCreatePinnedToCore(nfcTask, "nfc", 8192, nullptr, 1, nullptr, 0);
+  }
+#endif
 
   delay(200);
   downloadMode();
@@ -538,6 +773,15 @@ void loop() {
   ws.loop();
   http.handleClient();
   drainQueue();
+
+#if NFC_ENABLED
+  // Before the UART read below, so a tap's ACK is as prompt as possible — but
+  // still on core 1, which is what keeps emit() and the buzzer single-threaded.
+  drainNfcQueue();
+#endif
+#if BUZZER_ENABLED
+  buzzerService();
+#endif
 
   // WiFi watchdog. arduinoWebSockets reconnects its own socket, but it cannot
   // bring the radio back — if the AP drops, the station stays down until we

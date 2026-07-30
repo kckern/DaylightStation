@@ -172,6 +172,75 @@ describe('createOmrRelay', () => {
     expect(await readRecords()).toHaveLength(0);
   });
 
+  // ---- NFC taps (optional Grove NFC unit on the same relay) ----------------
+  // Values from the bench unit: an ST25R3916 reading an NTAG 215.
+  function nfcFrame(uid = '04669C0FCB2A81', over = {}) {
+    return {
+      source: 'omr-relay', type: 'nfc', id: READER_ID,
+      uid, piccType: 'NTAG 215', atqa: 0x0044, sak: 0x00, ...over,
+    };
+  }
+
+  it('broadcasts and persists an NFC tap', async () => {
+    const bus = wire();
+    bus.emit(nfcFrame());
+
+    const live = bus.broadcasts.find((b) => b.payload.event === 'nfc');
+    expect(live).toBeTruthy();
+    expect(live.topic).toBe('omr');
+    expect(live.payload).toMatchObject({
+      id: READER_ID, event: 'nfc', uid: '04669C0FCB2A81', piccType: 'NTAG 215',
+    });
+
+    const recs = await waitForRecords(1);
+    expect(recs).toHaveLength(1);
+    expect(recs[0]).toMatchObject({ event: 'nfc', uid: '04669C0FCB2A81', piccType: 'NTAG 215' });
+  });
+
+  it('normalizes a lowercase UID so one card never reads as two students', async () => {
+    const bus = wire();
+    bus.emit(nfcFrame('04669c0fcb2a81'));
+    const live = bus.broadcasts.find((b) => b.payload.event === 'nfc');
+    expect(live.payload.uid).toBe('04669C0FCB2A81');
+  });
+
+  it('drops a tap with no usable UID rather than broadcasting an unidentifiable one', async () => {
+    const bus = wire();
+    bus.emit(nfcFrame(''));
+    bus.emit(nfcFrame('nonsense'));
+    bus.emit({ source: 'omr-relay', type: 'nfc', id: READER_ID });
+
+    expect(bus.broadcasts.filter((b) => b.payload.event === 'nfc')).toHaveLength(0);
+    await new Promise((r) => setTimeout(r, 40));
+    expect(await readRecords()).toHaveLength(0);
+  });
+
+  it('suppresses a repeat of the SAME card inside the dedup window', async () => {
+    // A fumbled card can leave and re-enter the field in a moment. That must not
+    // start two sessions or print two tests.
+    const bus = wire({ config: { persistence: { dir: 'omr', dedupWindowMs: 2000 } } });
+    bus.emit(nfcFrame());
+    bus.emit(nfcFrame());
+    await new Promise((r) => setTimeout(r, 40));
+    expect(await readRecords()).toHaveLength(1);
+  });
+
+  it('records a DIFFERENT card tapped immediately after — dedup is per UID', async () => {
+    const bus = wire({ config: { persistence: { dir: 'omr', dedupWindowMs: 2000 } } });
+    bus.emit(nfcFrame('04669C0FCB2A81'));
+    bus.emit(nfcFrame('04AABBCCDDEE01'));
+    const recs = await waitForRecords(2);
+    expect(recs.map((r) => r.uid)).toEqual(['04669C0FCB2A81', '04AABBCCDDEE01']);
+  });
+
+  it('backdates a queued tap by ageMs so it carries the TAP time', async () => {
+    const bus = wire({ timezone: 'UTC' });
+    bus.emit(nfcFrame('04669C0FCB2A81', { ageMs: 90_000 }));
+    const recs = await waitForRecords(1);
+    const recorded = new Date(`${recs[0].ts.replace(' ', 'T')}Z`);
+    expect(Date.now() - recorded.getTime()).toBeGreaterThan(60_000);
+  });
+
   it('broadcasts and persists a reader-error echo', async () => {
     const bus = wire();
     bus.emit({ source: 'omr-relay', type: 'reader-error', id: READER_ID, echo: '49303F' });
@@ -225,14 +294,31 @@ describe('createOmrRelay', () => {
   });
 
   it('buckets the day file by LOCAL date, not UTC', async () => {
-    const bus = wire({ timezone: 'America/Denver' });
+    const TZ = 'America/Denver';
+    const bus = wire({ timezone: TZ });
     bus.emit(sheetFrame([1]));
 
-    const recs = await waitForRecords(1);
-    // The record's ts is local wall-clock; the file it landed in is that ts's day.
-    const localDay = recs[0].ts.slice(0, 10);
-    const file = path.join(dataDir, 'omr', READER_ID, `${localDay}.yml`);
-    await expect(fs.access(file)).resolves.toBeUndefined();
+    // Deliberately NOT via readRecords(): that helper derives the filename from
+    // toISOString(), i.e. the UTC day. Using it here made this test — the very
+    // one asserting local-vs-UTC bucketing — silently UTC-dependent, so it failed
+    // every evening once local and UTC dates diverged. Discover the file instead.
+    const dir = path.join(dataDir, 'omr', READER_ID);
+    let files = [];
+    for (let i = 0; i < 50; i++) {
+      files = await fs.readdir(dir).catch(() => []);
+      if (files.length) break;
+      await new Promise((r) => setTimeout(r, 5));
+    }
+    expect(files).toHaveLength(1);
+
+    // en-CA renders as YYYY-MM-DD, which is the bucket format.
+    const expectedDay = new Intl.DateTimeFormat('en-CA', {
+      timeZone: TZ, year: 'numeric', month: '2-digit', day: '2-digit',
+    }).format(new Date());
+    expect(files[0]).toBe(`${expectedDay}.yml`);
+
+    const recs = yaml.load(await fs.readFile(path.join(dir, files[0]), 'utf8'));
+    expect(recs[0].ts.slice(0, 10)).toBe(expectedDay);
   });
 
   // The relay is wired with timezone 'UTC' in these tests, so its `ts` is a

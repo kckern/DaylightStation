@@ -347,6 +347,34 @@ does **not** translate columns into answers — that mapping is per-form, and
 scoring is a backend concern because the reader is read-only (it cannot print,
 imprint, or grade).
 
+### NFC tap (optional, added 2026-07-29)
+
+A reader may also carry an **M5 Unit NFC** (ST25R3916) on the ATOM's Grove port so
+a student taps a card to start a session. Same relay, same bus link, same
+`omr` topic:
+
+```json
+{
+  "source": "omr-relay",
+  "type": "nfc",
+  "id": "<reader-id>",
+  "uid": "04669C0FCB2A81",
+  "piccType": "NTAG 215",
+  "atqa": 68,
+  "sak": 0
+}
+```
+
+Broadcast as `event: 'nfc'` and persisted alongside sheets, deduped per UID within
+`persistence.dedupWindowMs`. Resolving `uid` → student is **not** done here, for
+the same reason scoring isn't: it is per-roster, and keeping it out lets one
+reader serve several.
+
+Enabled per reader via the `nfc:` / `buzzer:` blocks in `omr-readers.yml`; when
+disabled the firmware compiles the path out entirely. Hardware detail, the
+core-pinning rationale, and the buzzer's duty-vs-duration gotcha are in
+[`_extensions/omr-relay/README.md`](../../../_extensions/omr-relay/README.md#nfc-tap-reader--tap-to-start).
+
 ---
 
 ## Tools
