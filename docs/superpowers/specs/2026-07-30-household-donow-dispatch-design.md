@@ -46,6 +46,7 @@ dispatch({
   learnerId,      // who this is FOR (occupancy same-person rule; may be null)
   requestedBy,    // provenance: 'school-scan' | 'api' | 'trigger' | ...
   ref,            // caller's correlation id (e.g. school sessionId)
+  force,          // undefined | 'never_ask' (deny instead of pending)
 }) → {
   decision: 'dispatched' | 'pending_approval' | 'denied' | 'failed',
   approvalId,     // when pending
@@ -83,6 +84,10 @@ cron/ambient callers that should never page a parent). There is no
 Mirrors the laser-print approval system (pending queue + adult decision),
 delivered through HA:
 
+- Callback authentication: the HA automation posts back with the same
+  per-location token mechanism the trigger router already uses
+  (`/api/v1/trigger`'s `authenticate` — a configured location token),
+  under a dedicated `donow-approvals` location entry. No new auth scheme.
 - Pending requests persist at `data/apps/donow/pending.yml`
   (`{ id, surface, action, label, learnerId, requestedBy, ref, occupant,
   createdAt, expiresAt }`).
@@ -91,9 +96,25 @@ delivered through HA:
   `actions: [APPROVE_<id>, DENY_<id>]`). An HA automation (deployment
   config, documented like the NFC-card setup) posts the tap back to
   `POST /api/v1/donow/approvals/:id/approve|deny` with the location token.
-- **Approve** → re-check occupancy (the world may have changed), then
-  dispatch; **deny** or **timeout** (default 120s, config) → denied. Every
-  transition is logged; the pending file is pruned on read (TTL).
+- **Approve** → re-check occupancy against the PENDING RECORD, because the
+  world may have changed and the parent only decided about the occupant
+  they were told about:
+
+  | occupancy at approve time | decision |
+  |---|---|
+  | idle | dispatch |
+  | occupant = the learner | dispatch |
+  | occupant = the occupant named in the pending record | dispatch (this is exactly what was approved) |
+  | a DIFFERENT occupant | re-pend ONCE with a fresh notification naming the new occupant; a second occupant flip → denied with the remedy line (nobody gets clobbered that a parent did not name) |
+  | unknown | re-pend once, same rule |
+
+  **Deny** or **timeout** (default 120s, config) → denied. Every transition
+  is logged; the pending file is pruned on read (TTL).
+- **TOCTOU is accepted, not solved.** Between any occupancy check and the
+  dispatch there is an unavoidable window in a facade over eight seams; we
+  accept it rather than building a distributed lock. The approve-time
+  re-check above bounds the human-facing version of the race; the
+  millisecond version is tolerated by design — do not add locking.
 - The requesting surface stays honest: School's slip already prints "we
   asked a grown-up" (scan-never-silent); approval later just makes the
   surface start. No caller blocks waiting.
@@ -121,7 +142,52 @@ caller is YAGNI. Same for `office`.
 Addressing note: `surface` ids are DoNow's own closed vocabulary. Where an
 adapter needs a device id (`livingroom-tv`), the id is configured on the
 adapter at composition from `devices.yml` — DoNow never invents a sixth
-addressing scheme for callers.
+addressing scheme for callers. **Piano caveat:** the kiosk's launch
+identity is the `?device=` localStorage value, NOT a `devices.yml` id (the
+same distinction behind the screensaver shared-deviceId bug) — the piano
+adapter is configured with the kiosk's device PARAM value, and the spec
+says so precisely because composition once wired the wrong kind of id.
+
+### 5.1 Soft occupancy sources — mechanism, freshness, silence rule
+
+Every non-synchronous source names three things: where the truth comes
+from, how fresh it must be, and what silence means. Stale-`idle` fails
+OPEN (clobbers a live human — forbidden); permanent-`unknown` fails the
+feature by paging parents forever. These rules are the spec, not hints:
+
+- **portal** — source: `SchoolService`'s in-memory session map
+  (`lastActiveAt` per user; the store sweeps expired sittings itself) plus
+  language attempt-log writes. Active when a session's `lastActiveAt` is
+  within **10 minutes**; otherwise idle. Silence IS idle here — the store
+  is authoritative for on-screen work, not a heartbeat. (Chosen and noted:
+  a child scanning mid-their-own-quiz navigates their own sitting away —
+  their scan, their intent.)
+- **piano-kiosk** — source: a small presence tracker subscribed to the
+  `midi` topic at composition (`session_start`/`session_end`/`note_on`).
+  Active when any MIDI activity arrived within **5 minutes**; a missed
+  `session_end` (BLE flaps drop the bridge routinely in this house)
+  self-heals by that TTL — a wedged "active" forever is the named failure
+  this rule exists to prevent. Silence beyond TTL → idle (the bridge emits
+  continuously while anyone plays).
+- **garage-fitness** — source: the backend's own log-ingest stream of
+  `fitness-profile` events (the same `sessionActive`/`rosterSize` signals
+  the deploy gate greps; the kiosk emits them every ~30s whenever the app
+  is up). `sessionActive:true` within **3 minutes** → active;
+  `sessionActive:false` within 3 minutes → idle; silence beyond 3 minutes
+  → **unknown** (fail closed): a silent garage kiosk means the surface
+  itself is dark, and dispatching PE to a dark screen SHOULD involve a
+  grown-up — that ask is correct, not nagging, because the always-on kiosk
+  makes silence rare.
+- **livingroom-tv** — three-step: TV power off (the HA
+  `binary_sensor.living_room_tv_state` the `TVControlAdapter` already
+  polls) → idle; power on with `playback.log` frames reporting a playing
+  state within **2 minutes** → active (occupant null — the living room
+  never knows who); power on without recent playing frames → idle
+  (paused/menu is idle, deploy-gate semantics). Every Player surface emits
+  render-frame logs, which is what makes silence-while-on mean idle rather
+  than unknown; if a non-Player app ever plays there, this rule revisits.
+- **playback-hub** — synchronous probe (`GET /api/status` per-slot
+  `playing`); no decay rule needed.
 
 ## 6. Curriculum integration
 
@@ -130,14 +196,43 @@ addressing scheme for callers.
   catalog load calls the registered adapter's `validateAction` — an unknown
   surface or malformed payload rejects the unit at publish time, the same
   lane as every other curriculum reference.
-- **Composition rules:** `launch` joins the "must reference at least one
-  of" list (a launch-only unit is legal — PE). `launch` is mutually
-  exclusive with `media` (media units already have their own delivery via
-  `DispatchMedia`/manifests — two delivery mechanisms on one unit is the
-  ambiguity trap) and with `program` (programs own their own dispatch).
-  `launch` + `bank` is legal (go do the thing, then quiz on the Portal);
-  `launch` + `document`/`review` is legal (go do the thing, parent marks
-  the rubric).
+- **Composition rules (v1): `launch` stands ALONE.** It joins the "must
+  reference at least one of" list, and is mutually exclusive with `media`,
+  `bank`, `document`, `review` AND `program`. Rationale: daily "go do it"
+  work (PE every morning) is a PROGRAM unit — programs already have
+  cadence, launcher-owned evidence, and no sessions; a garage-fitness
+  program launcher covers it with zero session-machinery changes. A
+  `launch:` unit is the ONE-SHOT case ("play hymn 12 on the piano as unit
+  3 of the music course"). `launch`+`bank` is deferred to the per-surface
+  evidence work (§10) because the quiz gate opens at `media_completed`,
+  which is driven by playback completion reports a fire-and-forget WS
+  launch does not have — shipping it now would strand the child in a
+  dispatched state with an unreachable quiz. Same deferral for
+  `launch`+`document`/`review`.
+- **Session mechanics for a `launch` unit — a named closed-set change.**
+  The work-session event vocabulary gains ONE event kind,
+  `launch_dispatched` (`{ surface, decision, approvalId? }`), with its
+  reducer state, transition (`created → launch_dispatched`) and
+  non-terminal `nextAction`. On a `dispatched` decision the school routing
+  appends `launch_dispatched` and then closes the session through the
+  EXISTING `CloseSessionOutcome` with `result: passed` (no percent) — the
+  unit completes, the course advances, and the subject serves today under
+  the SHIPPED passing-outcome rule with **no amendment to `servedToday`**.
+  This is deliberate honor-system completion, the household's
+  fire-and-forget decision applied: a launch-only unit has nothing else to
+  measure, so "starting is never completion" (a rule about watch-percent
+  on media) does not apply to it — dispatch IS the unit's whole ask.
+  Reward: only if the unit declares one (existing optional `reward:`),
+  settled by the existing outcome→economy machinery.
+- **The approval gap:** on `pending_approval` no session event is written
+  (nothing happened yet). When a parent approves and the dispatch fires,
+  `DoNowService` emits `donow.dispatched { ref, surface }` on the internal
+  bus; the school lifecycle subscribes and closes the loop for sessions it
+  owns (append + outcome as above). Deny/timeout: no event — the next scan
+  re-offers the unit, and the slip already said a grown-up was asked.
+- **`nextMove` gains a `launch` arm:** state `created` + `unit.launch` →
+  kind `'launch'`. After the outcome records, re-scans hit the shipped
+  served/already-done paths — no new wait states.
 - **`ResolveSubjectNext` routing** gains one arm: a unit whose composition
   is a `launch:` block routes `subject_next` scans to
   `DoNowService.dispatch({ surface, action, learnerId, requestedBy:
@@ -161,8 +256,9 @@ addressing scheme for callers.
 - `POST /api/v1/donow/dispatch` `{ surface, action, learnerId?, ref? }` →
   the contract result (guarded by the same household-LAN posture as
   siblings; `requestedBy: 'api'`).
-- `GET /api/v1/donow/surfaces` → registry ids + action schemas (for future
-  authoring UI).
+- `GET /api/v1/donow/surfaces` → registry ids + human labels (adapters
+  validate via `validateAction` error strings; no formal schemas are
+  promised).
 - `GET /api/v1/donow/approvals` / `POST /approvals/:id/approve|deny` —
   pending queue, HA callback target.
 

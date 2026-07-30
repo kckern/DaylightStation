@@ -41,6 +41,18 @@ logger) with two injected write-side stand-ins:
 
 No `BuildAgenda` code changes. The dry run is pure composition.
 
+Two guards that keep the dry run honest over time:
+
+- **`todayStatus` read-only-ness is load-bearing.** The whole safety of this
+  GET rests on launcher `status()` never writing. The dry-run test asserts
+  no language progress file is written by a preview, and `todayStatus`
+  carries a comment naming the preview's dependence — so a future
+  "optimization" that persists the rollover it computed fails a test
+  instead of silently advancing language state on every refresh.
+- **The preview instance logs as itself.** `previewAgenda` gets a child
+  logger with `{ preview: true }`, so `school.agenda.launcher-failed` and
+  plan-error lines from previews are distinguishable from real taps.
+
 ## 4. Rendering — real QR in the receipt PNG
 
 `DocumentReceiptRenderer` (the tape's PNG twin, currently test-only) gains a
@@ -51,14 +63,17 @@ behavior — golden tests untouched):
   `QRCode.create(code, { errorCorrectionLevel: 'M' })` (the repo's existing
   `qrcode` dependency, same encoder the QR sheet renderer uses) → fill dark
   modules as rects scaled into `theme.action.codeAreaPx` with a quiet zone.
-  Synchronous, no rasterizer round-trip. The readable token text stays
-  printed beneath the symbol, exactly as on the tape path.
+  The module MATH is synchronous (`QRCode.create`), inside the renderer's
+  existing async `render()` — no extra rasterizer round-trip is added; do
+  not "fix" the outer await. The readable token text stays printed beneath
+  the symbol, exactly as on the tape path.
 - The composition constructs the preview renderer with `scanCodes: 'qr'`.
 
 Output: the renderer's existing `{ canvas }` → `canvas.toBuffer('image/png')`
 (the gratitude/fitness pattern), served with
 `Content-Type: image/png` and `Content-Disposition: inline;
-filename="agenda-<learnerId>.png"`.
+filename="agenda-<slugified learnerId>.png"` (the id is a raw path param —
+it is slugified before entering a header, via the receipts `slugify`).
 
 ## 5. Route behavior
 
