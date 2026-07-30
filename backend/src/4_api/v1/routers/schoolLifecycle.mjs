@@ -32,11 +32,6 @@
  */
 import express from 'express';
 import { asyncHandler } from '#system/http/middleware/index.mjs';
-// The one domain import this router carries: a pure string transform (no
-// behaviour, no error class) used only to name the preview PNG's downloaded
-// filename the same way the printed agenda names itself (spec: DoNow +
-// Agenda Preview plan, Task 2).
-import { slugify } from '#domains/school/documents/receipts.mjs';
 
 /**
  * Use-case outcome → HTTP status. Anything not listed is a success (200): the
@@ -200,9 +195,14 @@ export function createSchoolLifecycleRouter({
       // see `actionOp` in `DocumentReceiptRenderer.mjs`.
       const { canvas } = await receiptPngRenderer.createCanvas(result.document, { tokens: {} });
       const buffer = canvas.toBuffer('image/png');
+      // `result.document.id` is already the slugged, filename-safe id
+      // `agendaDocument`/`noticeDocument` computed in `2_domains` (`agenda-
+      // <learner>` for a real learner, `notice-<slug>` for the guest/no-learner
+      // slip) — reusing it here means this router never needs its own
+      // `#domains` import (`api-no-domains`) just to slug a filename.
       res.setHeader('Content-Type', 'image/png');
       res.setHeader('Content-Length', buffer.length);
-      res.setHeader('Content-Disposition', `inline; filename="agenda-${slugify(req.params.learnerId, 'learner')}.png"`);
+      res.setHeader('Content-Disposition', `inline; filename="${result.document.id}.png"`);
       res.send(buffer);
     }));
   } else if (previewAgenda || receiptPngRenderer) {
