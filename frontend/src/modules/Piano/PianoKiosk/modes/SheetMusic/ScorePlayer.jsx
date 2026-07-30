@@ -25,6 +25,7 @@ import { bucketOf } from './practiceKey.js';
 import { pickLearnRange } from './learnRange.js';
 import { resolveSheetMusicConfig } from './sheetMusicConfig.js';
 import { tallyGrades } from './gradeTally.js';
+import { tierOf, runScore, displayScore } from './polishTiers.js';
 import { worstSpan } from './worstSpan.js';
 import { loadScoreSettings, saveScoreSettings } from './scoreSettings.js';
 import { isRisingEdge } from './pedalEdge.js';
@@ -145,7 +146,6 @@ export default function ScorePlayer({ score: scoreMeta }) {
     [meta.measures, scoreMeta.musicXml],
   );
   const { record: practice, loaded: practiceLoaded, recordCycle, recordTierBest } = usePracticeRecord({ scoreId: scoreMeta.id, fingerprint });
-  void recordTierBest;
 
   // Resolved sheetmusic config (defaults filled). Hoisted above the mode state so
   // the initial mode can come from `defaultMode` — the ladder starts at Listen.
@@ -222,6 +222,26 @@ export default function ScorePlayer({ score: scoreMeta }) {
   const [loopWraps, setLoopWraps] = useState(0);
   const gradesRef = useRef(grades); gradesRef.current = grades; // latest grades for the run-summary log (onSilentStop closure)
   const [summaryOpen, setSummaryOpen] = useState(false); // Polish run summary panel
+  // Immutable snapshot of the run the OPEN summary describes: `{ grades, tier,
+  // mixed }`, taken when the panel opens.
+  //  · `grades` is the same folded map openRunSummary logged, including grades
+  //    produced in the tick that ended the run. Deriving the panel's score from
+  //    `grades` state instead would read a render-time snapshot one or two measures
+  //    behind, so the headline and the shipped log would disagree (the exact drift
+  //    Task 10's fold fixed for the tally).
+  //  · `tier`/`mixed` are SNAPSHOT rather than read from their refs at render time,
+  //    because starting a new run re-arms both — and the previous run's summary can
+  //    still be on screen (Play does not dismiss it). Reading live would silently
+  //    re-label a finished run's report as the new run's tier.
+  const [summaryRun, setSummaryRun] = useState(null);
+  // ── Polish tempo tiers (wave-3 H) ───────────────────────────────────────────
+  // The tier is decided by the tempo the run STARTED at and frozen there: a best
+  // is only comparable against other runs of the same piece at the same speed.
+  const runTierRef = useRef('full');
+  // Did the tempo move while a run was active? Then this run belongs to no tier
+  // and must not bank a best — live grades keep flowing regardless (the user still
+  // gets their feedback; only persistence is withheld).
+  const runMixedRef = useRef(false);
   // Is a RUN active? True from the moment playback starts until it is paused,
   // stopped, or finishes. Deliberately NOT `transport.playing`: a Polish loop
   // pinned to the FINAL measure restarts through onDone's one-beat dwell (the
@@ -232,6 +252,9 @@ export default function ScorePlayer({ score: scoreMeta }) {
   // It must go false on every genuine end-of-run, or the evaluator grades measures
   // the cursor merely passes over (the phantom grades e501ff6fd fixed).
   const [runActive, setRunActive] = useState(false);
+  // Mirror for handlers that must know whether a run is in flight without taking
+  // `runActive` as a dependency (onTempo's void check — wave-3 H).
+  const runActiveRef = useRef(runActive); runActiveRef.current = runActive;
   const scrollRef = useRef(null);
   const cursorRef = useRef(null);
   const prevTopRef = useRef(null);
@@ -524,7 +547,20 @@ export default function ScorePlayer({ score: scoreMeta }) {
       // the LAST step, whatever measure that step belongs to.
       if (mode === 'polish') {
         const endMeasure = steps[events.length - 1]?.measure;
-        openRunSummaryRef.current?.(finalizeRef.current?.(endMeasure));
+        // The SAME folded map feeds the log, the panel, and the tier best (wave-3 H).
+        const folded = openRunSummaryRef.current?.(finalizeRef.current?.(endMeasure));
+        // ONLY a completion banks a best. A silent-stop or a manual pause opens the
+        // same panel but is not a whole-piece run, so its score is not comparable —
+        // and a mid-run tempo change voids even a completion (runMixedRef).
+        const base = runScore(folded);
+        if (!runMixedRef.current && base != null) {
+          const tier = runTierRef.current;
+          recordTierBest({
+            bucket: bucketOf(grandStaff, activeParts),
+            tier,
+            score: displayScore(base, tier),
+          });
+        }
       }
       setRunActive(false); // done WITHOUT a loop = a genuine end of run (see runActive)
       logger.info('score.transport.done', { mode, steps: events.length });
@@ -559,10 +595,18 @@ export default function ScorePlayer({ score: scoreMeta }) {
       // left outside the range to its in-point before seeking.
       const startStep = rangeRef.current ? clampStepToRange(stepRef.current, rangeRef.current) : stepRef.current;
       if (startStep !== stepRef.current) setStep(startStep);
+      // Freeze the tempo tier HERE, not at countIn.start: onGo is the moment the
+      // transport actually anchors, and `tempoMult` at this point is the value the
+      // timeline is scaled by — a tempo picked DURING the count-in is the tempo the
+      // run is played at, so it belongs to this run's tier, not the previous one's.
+      // (Polish always counts in, so for Polish this IS the start path — see the
+      // matching capture in toggleRun's play branch for the no-count-in modes.)
+      runTierRef.current = tierOf(tempoMult);
+      runMixedRef.current = false;
       transportRef.current?.seek((stepTimeline[startStep]?.t ?? 0) / tempoMult);
       setRunActive(true);
       transportRef.current?.play();
-      logger.info('score.countin.go', { step: startStep, mode });
+      logger.info('score.countin.go', { step: startStep, mode, tier: runTierRef.current });
     },
   });
   // The run button reads "playing" during the count-in too, so a second tap can
@@ -671,6 +715,10 @@ export default function ScorePlayer({ score: scoreMeta }) {
   // Open the run summary + log the aggregate, using the shared tally (so the log
   // and the panel headline can't drift). Used by BOTH the silent-stop and the
   // completion path.
+  //
+  // RETURNS the folded grade map so the completion path can score the run from the
+  // exact same measures this logged (wave-3 H): a best derived from a second,
+  // independently-folded map could disagree with the summary the user is looking at.
   const openRunSummary = useCallback((extra) => {
     setSummaryOpen(true);
     // `extra` is the grade — or grades, since finalize can close out two measures
@@ -681,8 +729,10 @@ export default function ScorePlayer({ score: scoreMeta }) {
     const all = fresh.length
       ? { ...gradesRef.current, ...Object.fromEntries(fresh.map((g) => [g.measure, g])) }
       : gradesRef.current;
+    setSummaryRun({ grades: all, tier: runTierRef.current, mixed: runMixedRef.current });
     const t = tallyGrades(all);
     logRunSummary({ greens: t.green, yellows: t.yellow, reds: t.red, overall: t.overall });
+    return all;
   }, [logRunSummary]);
   // `g` is the measure whose silence tripped the stop, handed over by the
   // evaluator: it was graded in THIS tick, so gradesRef does not have it yet and
@@ -711,7 +761,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
   const openRunSummaryRef = useRef(openRunSummary); openRunSummaryRef.current = openRunSummary;
 
   // Clear grades + summary when the score document changes or scoring is turned off.
-  useEffect(() => { setGrades({}); setSummaryOpen(false); setLearnDone(false); }, [scoreMeta.musicXml]);
+  useEffect(() => { setGrades({}); setSummaryOpen(false); setSummaryRun(null); setLearnDone(false); }, [scoreMeta.musicXml]);
 
   // ── Learn wet ink (wave-3 D) ──────────────────────────────────────────────────
   // Every note the user plays in Learn leaves a short-lived mark on the staff at
@@ -1475,6 +1525,11 @@ export default function ScorePlayer({ score: scoreMeta }) {
   // the playTimeline memo; the transport reads the new timings on its next tick.
   const onTempo = useCallback((v) => {
     const n = Number(v);
+    // A tempo change mid-run voids this run's tier best (wave-3 H): half the piece
+    // at 60% and half at 100% is not a score at either speed. Scoped to an ACTIVE
+    // run — a tempo picked before Play (or during the count-in, before onGo) is
+    // simply the tempo the run will be played at, and must not poison it.
+    if (runActiveRef.current) runMixedRef.current = true;
     setTempoMult(Number.isFinite(n) ? Math.min(2, Math.max(0.25, n)) : 1);
   }, []);
 
@@ -1536,6 +1591,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
     setStruck(() => new Set());
     setGrades({});          // a fresh run clears the previous grades…
     setSummaryOpen(false);  // …and closes any open summary
+    setSummaryRun(null);    // …and forgets the run that summary reported
     // The auto-follow effect scrolls to the new step; only a true top-of-piece
     // reset should force-scroll to the origin.
     if (home === 0) scrollRef.current?.scrollTo({ top: 0, left: 0 });
@@ -1565,6 +1621,27 @@ export default function ScorePlayer({ score: scoreMeta }) {
   }, [onMode, logger]);
   // The Drill button only makes sense when there's a trouble span to drill.
   const drillable = useMemo(() => worstSpan(grades) != null, [grades]);
+
+  // ── Polish tempo tiers: live readout + summary props (wave-3 H) ──────────────
+  // The bar's score prefix. Derived from `grades`, so it moves on a per-MEASURE
+  // cadence (not per step) — and it is consumed by the bar SHELL, which already
+  // re-renders per step, so the memoized clusters keep bailing out. Reads the LIVE
+  // tempo rather than runTierRef: before the first run there is no captured tier,
+  // and mid-run the two agree (a change voids the best, not the readout).
+  const scoreLabel = useMemo(() => {
+    if (mode !== 'polish') return null;
+    const base = runScore(grades);
+    return base == null ? null : `${displayScore(base, tierOf(tempoMult))}%`;
+  }, [mode, grades, tempoMult]);
+  // Which hands bucket the run belongs to — the same key the completion path banks
+  // under, so the strip always shows the bests the next completion would beat.
+  const polishBucket = bucketOf(grandStaff, activeParts);
+  // Score the OPEN summary from the snapshot it was opened with (see summaryRun) —
+  // same map, same tier as the completion path used to bank the best.
+  const summaryScore = useMemo(
+    () => displayScore(runScore(summaryRun?.grades), summaryRun?.tier),
+    [summaryRun],
+  );
 
   // Stable toggles for the transport bar. Passing fresh inline arrows here would
   // defeat React.memo on the bar's expensive body (parts/chips/popovers), so the
@@ -1641,6 +1718,8 @@ export default function ScorePlayer({ score: scoreMeta }) {
         // left outside the range to its in-point before seeking.
         const startStep = rangeRef.current ? clampStepToRange(stepRef.current, rangeRef.current) : stepRef.current;
         if (startStep !== stepRef.current) setStep(startStep);
+        runTierRef.current = tierOf(tempoMult); // the no-count-in start path (wave-3 H)
+        runMixedRef.current = false;
         transport.seek((stepTimeline[startStep]?.t ?? 0) / tempoMult);
         setRunActive(true);
         transport.play();
@@ -1957,6 +2036,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
         onToggleClick={onToggleClick}
         keyFifths={parsed?.key?.fifths}
         keyMode={parsed?.key?.mode}
+        scoreLabel={scoreLabel}
       />
 
       {mode === 'polish' && (
@@ -1968,6 +2048,11 @@ export default function ScorePlayer({ score: scoreMeta }) {
           onReplay={onReplaySummary}
           drillable={drillable}
           onDrill={onDrillWorst}
+          runScore={summaryScore}
+          tier={summaryRun?.tier || null}
+          mixedTempo={!!summaryRun?.mixed}
+          bucket={polishBucket}
+          tierBests={practice?.polish?.[polishBucket] || {}}
         />
       )}
 
