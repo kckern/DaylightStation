@@ -1471,13 +1471,19 @@ export default function ScorePlayer({ score: scoreMeta }) {
     // resolve it against — reset both refs rather than merely marking voided.
     cycleVoidRef.current = false;
     cycleWrongsRef.current = new Set();
+    const hadSound = soundingRef.current.size > 0;
+    const wasPlaying = !!transportRef.current?.playing;
     transport.stop();
     setRunActive(false);         // …and so does the run itself (see runActive)
     // A mode change ends the run outright, so its whole-piece claim dies with it —
     // otherwise an arm taken in Listen/Learn (which also start runs at step 0) would
     // still be standing when Polish is entered mid-piece and played to the end (§H).
     runEligibleRef.current = false;
-    silenceScheduled();
+    // Same guard as stopForMatrixChange: silenceScheduled() arms a delayed CC123
+    // unconditionally, and a silent mode switch (e.g. leaving Learn's gate while
+    // holding keys) must not cut the PLAYER's notes. Flush only when the kiosk
+    // itself was sounding; silence() self-guards on the ledger.
+    if (hadSound || (sendsAudio && wasPlaying)) silenceScheduled(); else silence();
     setStruck(() => new Set());
     clearInks();                 // wet ink belongs to the mode it was played in (wave-3 D)
     // Loop/focus is Learn-only state (wave-3 §0): only Learn keeps a range. Listen
@@ -1510,7 +1516,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
     setMode(id); // keyboard visibility follows the new mode automatically (M2)
     logMode({ mode: id });
     tapIntent('mode');
-  }, [mode, flushPlaybackNow, flushFollowNow, transport, silenceScheduled, logMode, countIn, clearInks, tapIntent]);
+  }, [mode, flushPlaybackNow, flushFollowNow, transport, silenceScheduled, silence, sendsAudio, logMode, countIn, clearInks, tapIntent]);
 
   // Listen tempo: clamp to a sane playable range (0.25×–2×). Timeline rescales via
   // the playTimeline memo; the transport reads the new timings on its next tick.
@@ -1548,12 +1554,15 @@ export default function ScorePlayer({ score: scoreMeta }) {
     // moved (tap-seek) while nothing is playing, and an armed evaluator would read
     // that as an end-of-measure. The resume re-arms it (see runActive).
     setRunActive(false);
-    silenceScheduled();
+    // Polish runs a SILENT step timeline — a mid-run view change (zoom/flow/
+    // transpose) must not panic a piano the kiosk never played through while
+    // the player is holding keys. Only the audio plane needs the delayed flush.
+    if (sendsAudio || soundingRef.current.size) silenceScheduled(); else silence();
     flushPlaybackNow();
     resumeAfterRef.current = { step: stepRef.current };
     setResumeTick((t) => t + 1);
     logger.info('score.viewchange.pause', { reason, step: stepRef.current });
-  }, [transport, silenceScheduled, flushPlaybackNow, logger]);
+  }, [transport, silenceScheduled, silence, sendsAudio, flushPlaybackNow, logger]);
 
   const pauseForViewChange = useCallback(() => pauseForRebuild('view'), [pauseForRebuild]);
 
