@@ -158,7 +158,8 @@ Per subject, derive:
   stays live and its QR routes to the retry (the remediation path), because
   "done today" must never print next to a failing grade while the child holds
   no way back in. A served subject prints its header, a `done today` mark
-  (ASCII — the tape encodes cp858; U+2713 prints as `?`) and its progress
+  (ASCII — the tape encodes cp858 and `escposEncode` silently DROPS
+  unmappable characters, so a ✓ would vanish) and its progress
   numbers, **no QR**.
 - **`next`** — the single entry the QR will act on, chosen exactly as the
   planner already orders work: first `in_progress` entry, else first
@@ -242,7 +243,9 @@ already skips `identify`.
    likewise end in a notice slip.
 
 Idempotency inherits from the underlying flows: re-scanning a subject QR
-mid-video hits `DispatchMedia`'s already-dispatched refusal; re-scanning after
+mid-video finds the session at `media_dispatched`, whose next move is the
+"finish watching, then scan your card" slip — printed directly, no
+`DispatchMedia` call; re-scanning after
 a pass lands in `servedToday`.
 
 ### 4.3 Portal launch
@@ -277,7 +280,8 @@ still composed entirely of **existing block types** (`rich_text`,
 
 - Subject header: `## MATH` with the status/progress on the same line
   (`## MATH — Unit 2 of 4` / `## MATH — done today`). ASCII only on the
-  tape: it encodes cp858, where a ✓ prints as `?`.
+  tape: it encodes cp858 and `escposEncode` drops unmappable characters
+  silently (em-dashes are safe — `TRANSLITERATIONS` maps them to `-`).
 - Grade line, next-task line: plain `rich_text`.
 - One `scan_action` per unserved subject, `label` = the next-task sentence,
   `action` = the `subject_next` token.
