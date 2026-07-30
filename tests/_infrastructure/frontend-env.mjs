@@ -134,7 +134,16 @@ export default {
     const { keys, originals } = populateGlobalFromWindow(global, win);
 
     return {
-      teardown(g) {
+      async teardown(g) {
+        // Drain one macrotask before tearing the window down. This window's
+        // console IS the worker console (see setup above), and every write is
+        // forwarded to the host over the worker's rpc channel (onUserConsoleLog).
+        // A forward still in flight when the worker recycles dies as
+        // "EnvironmentTeardownError: Closing rpc while onUserConsoleLog was
+        // pending" — an intermittent, file-shifting sweep failure (exit 1 with
+        // zero test failures). The await gives in-flight forwards a tick to
+        // settle before the channel can tear down.
+        await new Promise((resolve) => setTimeout(resolve, 0));
         keys.forEach(key => {
           try { delete g[key]; } catch {}
         });
