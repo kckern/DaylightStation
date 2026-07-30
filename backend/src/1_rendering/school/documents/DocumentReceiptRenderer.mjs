@@ -243,6 +243,7 @@ export function createDocumentReceiptRenderer({
       ctx.strokeRect(codeX, codeY, theme.action.codeAreaPx, theme.action.codeAreaPx);
 
       if (scanCodes === 'qr') {
+        ctx.save();
         const qr = QRCode.create(op.code, { errorCorrectionLevel: 'M' });
         const count = qr.modules.size;
         const quiet = 2; // modules of quiet zone inside the box
@@ -256,6 +257,7 @@ export function createDocumentReceiptRenderer({
             }
           }
         }
+        ctx.restore();
       }
 
       ctx.font = theme.fonts.code;

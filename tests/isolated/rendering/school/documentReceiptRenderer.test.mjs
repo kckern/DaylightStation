@@ -160,4 +160,53 @@ describe("scanCodes: 'qr'", () => {
     const out = await r.createCanvas(scanDoc, { tokens: {} });
     expect(out.codes).toHaveLength(1); // existing contract intact
   });
+
+  it('renders QR codes at correct y-positions with multiple action blocks', async () => {
+    const multiActionDoc = doc([
+      { type: 'rich_text', md: 'First task' },
+      { type: 'scan_action', action: 'task1', label: 'Scan task 1' },
+      { type: 'rich_text', md: 'Second task' },
+      { type: 'scan_action', action: 'task2', label: 'Scan task 2' },
+    ]);
+    const qr = createDocumentReceiptRenderer({ theme, texToSvg, scanCodes: 'qr' });
+    const result = await qr.createCanvas(multiActionDoc, { tokens: {} });
+
+    // Verify both code blocks exist
+    expect(result.codes).toHaveLength(2);
+    expect(result.codes[0].action).toBe('task1');
+    expect(result.codes[1].action).toBe('task2');
+
+    // Verify both have dense QR pixels at their respective positions
+    const darkPixelsInCodeAreaAtY = (canvas, theme, targetY) => {
+      const ctx = canvas.getContext('2d');
+      const size = theme.action.codeAreaPx - 8;
+      const x = theme.canvas.width - theme.layout.margin - theme.action.padding - theme.action.codeAreaPx + 4;
+
+      // Search for box starting from targetY
+      let boxStartY = targetY;
+      for (let py = targetY; py < Math.min(targetY + 300, canvas.height); py += 1) {
+        let darkInRow = 0;
+        const rowData = ctx.getImageData(x, py, size, 1).data;
+        for (let i = 0; i < rowData.length; i += 4) {
+          if (rowData[i] < 96) darkInRow += 1;
+        }
+        if (darkInRow > size * 0.3) {
+          boxStartY = py;
+          break;
+        }
+      }
+
+      const img = ctx.getImageData(x, boxStartY, size, size).data;
+      let dark = 0;
+      for (let i = 0; i < img.length; i += 4) if (img[i] < 96) dark += 1;
+      return dark;
+    };
+
+    // Each code area should have significant dark pixels (QR modules)
+    const dark1 = darkPixelsInCodeAreaAtY(result.canvas, theme, 80); // first action op
+    const dark2 = darkPixelsInCodeAreaAtY(result.canvas, theme, 350); // second action op (approx)
+
+    expect(dark1).toBeGreaterThan(500); // QR in first code area
+    expect(dark2).toBeGreaterThan(500); // QR in second code area
+  });
 });
