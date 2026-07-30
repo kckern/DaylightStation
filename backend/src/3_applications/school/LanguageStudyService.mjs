@@ -421,6 +421,65 @@ export class LanguageStudyService {
       .filter(Boolean);
   }
 
+  /**
+   * The unfiltered ladder — every rung, as if every capability were present.
+   * Reporting and status answer "what is next for this learner" (design
+   * §IProgramReporter), which is not a property of whichever panel happens to
+   * be asking; device filtering belongs to `getDay`, not to a summary.
+   *
+   * Shared by `#summarizeCourse` and `todayStatus` so the day-queue math (and
+   * the progress it is built from) is derived exactly once per call site,
+   * never duplicated.
+   */
+  #fullDayQueue(userId, corpusId, corpus, log, progress) {
+    return buildDayQueue({
+      log,
+      day: progress.day,
+      dailyLimit: progress.dailyLimit,
+      corpusSize: corpus.size,
+      capabilities: { microphone: true, textInput: Object.values(corpus.languages) },
+      languages: corpus.languages,
+      playable: corpus.playable,
+    });
+  }
+
+  /**
+   * Today's status for the program-launcher surface (design §IProgramLauncher):
+   * has this learner cleared everything the day's queue asked of them, and
+   * what day are they on. `score` is always `null` — the ladder does not
+   * grade (design §3); accuracy is informational only.
+   *
+   * Scans every course this learner has touched (in `listCorpusIds()` order)
+   * and reports on the first one with any evidence at all — a stored progress
+   * record or a logged attempt. A learner with neither, for any course, has
+   * never touched language study, and gets the null triple rather than a
+   * fabricated "Day 1" for a course they have not started.
+   *
+   * @param {{userId: string}} args
+   * @returns {{doneToday: boolean, progressLabel: string|null, score: number|null}}
+   */
+  todayStatus({ userId }) {
+    if (!userId) return { doneToday: false, progressLabel: null, score: null };
+    for (const corpusId of this.#ds.listCorpusIds()) {
+      const corpus = this.#loadCorpus(corpusId);
+      if (!corpus) continue;
+
+      const rawProgress = this.#ds.readProgress(userId, corpusId);
+      const log = this.#ds.readAllEvents(userId, corpusId);
+      if (!rawProgress && log.length === 0) continue; // never touched this course
+
+      const progress = this.#readProgress(userId, corpusId);
+      const queue = this.#fullDayQueue(userId, corpusId, corpus, log, progress);
+      const summary = summarizeQueue(queue);
+      return {
+        doneToday: summary.total > 0 && summary.done === summary.total,
+        progressLabel: `Day ${progress.day}`,
+        score: null,
+      };
+    }
+    return { doneToday: false, progressLabel: null, score: null };
+  }
+
   #summarizeCourse(userId, corpusId) {
     const corpus = this.#loadCorpus(corpusId);
     if (!corpus) return null;
@@ -451,15 +510,7 @@ export class LanguageStudyService {
     }
 
     const progress = this.#readProgress(userId, corpusId);
-    const queue = buildDayQueue({
-      log,
-      day: progress.day,
-      dailyLimit: progress.dailyLimit,
-      corpusSize: corpus.size,
-      capabilities: { microphone: true, textInput: Object.values(corpus.languages) },
-      languages: corpus.languages,
-      playable: corpus.playable,
-    });
+    const queue = this.#fullDayQueue(userId, corpusId, corpus, log, progress);
 
     const touched = new Set(log.map((e) => Number(e.seq)).filter(Number.isFinite));
     const retired = new Set(
