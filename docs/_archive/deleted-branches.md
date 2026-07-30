@@ -174,3 +174,4 @@ To restore: `git checkout -b branch-name <commit-hash>`
 | 2026-07-28 | backup/pre-pii-scrub | c86c67502 | Safety net for the PII-scrub history rewrite. Redundant once that rewrite was abandoned: the pre-scrub history is preserved on the remote both as origin/main's prior tip and as the pushed branch backup/pre-pii-scrub-origin (b86002952). Zero commit subjects absent from main. |
 | 2026-07-29 | worktree-sheetmusic-wave3 | 3cb9c0d92 | Sheet-music wave 3: hands model, Learn matrix+practice history, wet ink, loop handles, Polish tiers + ad-hoc kiosk fixes (merged to main) |
 | 2026-07-29 | sheetmusic-residuals | da01f1c16 | wave-3 code residuals: 8 fixes, dead transport-loop deletion, mutant-killer tests, comment/doc closeout |
+| 2026-07-30 | vitest-teardown-flake | aea52e493 | vitest 4.1.10 + env teardown drain + threads pool — kills EnvironmentTeardownError sweep flake |
