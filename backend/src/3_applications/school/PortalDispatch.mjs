@@ -38,7 +38,15 @@ export class PortalDispatch {
       this.#logger.warn?.('school.portal.no-bus', { learnerId, target });
       return { dispatched: false };
     }
-    this.#eventBus.broadcast('school', { type: 'school.launch', learnerId, target });
+    try {
+      this.#eventBus.broadcast('school', { type: 'school.launch', learnerId, target });
+    } catch (err) {
+      // A bus that throws mid-broadcast (posture matches DispatchMedia's
+      // dispatch-failed handling) must not blow up the caller — the learner
+      // simply did not get handed off, which is retryable.
+      this.#logger.warn?.('school.portal.broadcast-failed', { learnerId, target, error: err.message });
+      return { dispatched: false };
+    }
     this.#logger.info?.('school.portal.launch', { learnerId, target });
     return { dispatched: true };
   }

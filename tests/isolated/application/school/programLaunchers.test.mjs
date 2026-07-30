@@ -45,6 +45,13 @@ describe('PortalDispatch', () => {
     const result = portal.launch({ learnerId: 'kid1', target: { kind: 'program', program: 'language' } });
     expect(result).toEqual({ dispatched: false });
   });
+
+  it('reports dispatched:false and does not throw when broadcast itself throws', () => {
+    const eventBus = { broadcast: vi.fn(() => { throw new Error('bus down'); }) };
+    const portal = new PortalDispatch({ eventBus, logger: { warn() {}, info() {} } });
+    const result = portal.launch({ learnerId: 'kid1', target: { kind: 'program', program: 'language' } });
+    expect(result).toEqual({ dispatched: false });
+  });
 });
 
 describe('LanguageProgramLauncher', () => {
@@ -166,6 +173,37 @@ describe('LanguageStudyService.todayStatus', () => {
 
   it('reports the null triple for a learner with no corpus/progress at all', () => {
     const status = svc.todayStatus({ userId: 'brand-new-kid' });
+    expect(status).toEqual({ doneToday: false, progressLabel: null, score: null });
+  });
+
+  it('reports doneToday:true / "Course complete" when the corpus was fully retired on a prior day', () => {
+    // An empty queue counts as complete (rollover.mjs:45-46) — a learner who
+    // has climbed the whole ladder on every sentence must not be told they
+    // still have a "Day N" pending forever.
+    const RUNG_ORDER = ['repetition', 'dictation', 'recording', 'interpretation'];
+    for (const seq of [1, 2, 3]) {
+      RUNG_ORDER.forEach((rung, i) => {
+        ds.appendEvent('kckern', 'test-korean', {
+          at: `2026-07-0${i + 1}T00:00:00Z`, day: i + 1, seq, rung, attributedTo: 'kckern',
+        });
+      });
+    }
+    ds.writeProgress('kckern', 'test-korean', {
+      corpus: 'test-korean', day: 10, daily_limit: 5, last_activity: '2026-07-04T00:00:00Z',
+    });
+
+    const status = svc.todayStatus({ userId: 'kckern' });
+    expect(status).toEqual({ doneToday: true, progressLabel: 'Course complete', score: null });
+  });
+
+  it('never throws — a datastore failure yields the null triple', () => {
+    const throwingDs = { listCorpusIds() { throw new Error('datastore unavailable'); } };
+    const brokenSvc = new LanguageStudyService({
+      datastore: throwingDs,
+      logger: { warn() {}, info() {}, debug() {}, error() {} },
+    });
+
+    const status = brokenSvc.todayStatus({ userId: 'kckern' });
     expect(status).toEqual({ doneToday: false, progressLabel: null, score: null });
   });
 });
