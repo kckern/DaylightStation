@@ -6,6 +6,7 @@ const refs = () => ({
   bankIds: new Set(['math-fractions']),
   documentIds: new Set(['math-fractions-01-ws']),
   manifestIds: new Set(['liberty-kids-01']),
+  programIds: new Set(['language']),
 });
 
 const valid = (over = {}) => ({
@@ -333,6 +334,57 @@ describe('validateUnit: provenance', () => {
   it('rejects an unknown review state, naming it', () => {
     expect(errs(valid({ provenance: { source: 'hand-authored', reviewState: 'published' } })))
       .toContain('provenance.reviewState must be draft|approved, got: published');
+  });
+});
+
+describe('program units', () => {
+  const programUnit = (over = {}) => ({
+    unitId: 'language-daily',
+    title: 'Language — today\'s sentences',
+    subject: 'language',
+    program: 'language',
+    cadence: 'daily',
+    provenance: { source: 'hand-authored', author: 'parent', reviewState: 'approved' },
+    ...over,
+  });
+
+  it('accepts a valid daily program unit and normalizes program + cadence', () => {
+    const { errors, unit } = validateUnit(programUnit(), refs());
+    expect(errors).toEqual([]);
+    expect(unit.program).toBe('language');
+    expect(unit.cadence).toBe('daily');
+  });
+  it('defaults cadence to once when omitted', () => {
+    const { unit } = validateUnit(programUnit({ cadence: undefined }), refs());
+    expect(unit.cadence).toBe('once');
+  });
+  it('rejects an unknown program id', () => {
+    const { errors } = validateUnit(programUnit({ program: 'chess' }), refs());
+    expect(errors.some((e) => e.includes("program 'chess' not found"))).toBe(true);
+  });
+  it('rejects program combined with any other composition', () => {
+    for (const extra of [{ bank: 'math-fractions' }, { document: 'math-fractions-01-ws' }, { media: 'liberty-kids-01' }]) {
+      const { errors } = validateUnit(programUnit(extra), refs());
+      expect(errors.some((e) => e.includes('program is exclusive'))).toBe(true);
+    }
+  });
+  it('rejects passing/retry/review/reward on a program unit', () => {
+    for (const extra of [{ passing: { percent: 80 } }, { retry: { variants: 2 } }, { review: 'rubric' }, { reward: { amount: 5 } }]) {
+      const { errors } = validateUnit(programUnit(extra), refs());
+      expect(errors.length).toBeGreaterThan(0);
+    }
+  });
+  it('rejects courseId/sequence on a program unit', () => {
+    const { errors } = validateUnit(programUnit({ courseId: 'c', sequence: 1 }), refs());
+    expect(errors.length).toBeGreaterThan(0);
+  });
+  it('rejects cadence daily on a non-program unit', () => {
+    const { errors } = validateUnit(valid({ cadence: 'daily' }), refs());
+    expect(errors.some((e) => e.includes('cadence'))).toBe(true);
+  });
+  it('multi-composition NON-program units stay legal (media + bank)', () => {
+    const { errors } = validateUnit(valid({ document: undefined, media: 'liberty-kids-01', bank: 'math-fractions' }), refs());
+    expect(errors).toEqual([]);
   });
 });
 

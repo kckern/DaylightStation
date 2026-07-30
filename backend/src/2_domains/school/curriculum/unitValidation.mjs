@@ -26,6 +26,19 @@ const UNIT_ID_PATTERN = /^[a-z0-9][a-z0-9.-]*$/;
 const REVIEW_STATES = ['draft', 'approved'];
 const DEFAULT_PASSING_PERCENT = 80;
 
+/**
+ * How often a program unit is handed out. `once` is a standard standalone
+ * unit that happens to draw its content from a program instead of a
+ * bank/document/media reference; `daily` is re-offered every study day (see
+ * Task 3's planner). Only meaningful when `program` is present.
+ */
+export const CADENCES = Object.freeze(['daily', 'once']);
+
+// Fields a program unit may never carry, alongside bank/document/media
+// (checked separately since that trio has its own combined message). Each
+// gets one clear, field-named error rather than a shared generic one.
+const PROGRAM_EXCLUSIVE_FIELDS = ['passing', 'retry', 'review', 'reward', 'courseId', 'sequence'];
+
 // Resolvable reference kinds: field name → the injected set that must contain
 // its value. `review` is deliberately absent — it is a free-form parent rubric
 // for unscorable work, with no catalog to resolve against.
@@ -42,7 +55,7 @@ const isPresent = (v) => v !== undefined && v !== null;
 
 /**
  * @param {*} raw - one parsed unit YAML
- * @param {{bankIds?: Set<string>, documentIds?: Set<string>, manifestIds?: Set<string>}} [sets]
+ * @param {{bankIds?: Set<string>, documentIds?: Set<string>, manifestIds?: Set<string>, programIds?: Set<string>}} [sets]
  * @returns {{ errors: string[], unit?: object }} empty errors === valid;
  *   `unit` is present only then.
  */
@@ -114,9 +127,47 @@ export function validateUnit(raw, sets = {}) {
       review = raw.review;
     }
   }
+
+  // The program unit kind: its content IS a whole program (spec Task 2), so it
+  // is exclusive with every other composition kind and with the sequential/
+  // scored machinery that assumes an authored artefact underneath it.
+  let program;
+  let cadence;
+  if (isPresent(raw.program)) {
+    if (!isNonEmptyString(raw.program)) {
+      errors.push('program must be a non-empty string');
+    } else {
+      const knownPrograms = sets.programIds;
+      if (!(knownPrograms instanceof Set) || !knownPrograms.has(raw.program)) {
+        errors.push(`program '${raw.program}' not found`);
+      } else {
+        program = raw.program;
+      }
+    }
+
+    if (isPresent(raw.bank) || isPresent(raw.document) || isPresent(raw.media)) {
+      errors.push('program is exclusive — remove bank/document/media');
+    }
+    for (const field of PROGRAM_EXCLUSIVE_FIELDS) {
+      if (isPresent(raw[field])) errors.push(`a program unit takes no ${field}`);
+    }
+
+    if (isPresent(raw.cadence)) {
+      if (!CADENCES.includes(raw.cadence)) {
+        errors.push(`cadence must be one of ${CADENCES.join('|')}, got: ${raw.cadence}`);
+      } else {
+        cadence = raw.cadence;
+      }
+    } else {
+      cadence = 'once';
+    }
+  } else if (isPresent(raw.cadence)) {
+    errors.push('cadence is only meaningful on a program unit');
+  }
+
   // Presence, not resolvability: a dangling reference is already reported, and
   // reporting it twice would read as two separate authoring mistakes.
-  if (!REFERENCE_FIELDS.some((field) => isPresent(raw[field]))) {
+  if (![...REFERENCE_FIELDS, 'program'].some((field) => isPresent(raw[field]))) {
     errors.push('unit must reference at least one of bank, document, media, review');
   }
 
@@ -147,6 +198,8 @@ export function validateUnit(raw, sets = {}) {
       document: references.document,
       media: references.media,
       review,
+      program,
+      cadence,
       provenance: raw.provenance,
     },
   };

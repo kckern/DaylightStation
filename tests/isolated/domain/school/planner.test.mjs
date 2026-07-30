@@ -246,3 +246,57 @@ describe('unlocking report', () => {
     expect(byId(result, 'math-fractions.03').unlocks).toBeNull();
   });
 });
+
+describe('program units', () => {
+  it('a program unit flows through: always available, never locked or completed', () => {
+    const units = [
+      { unitId: 'language-daily', title: 'Language', subject: 'language', program: 'language', cadence: 'daily' },
+    ];
+    const result = planLearnerWork({
+      learnerId: 'felix',
+      assignment: { units: ['language-daily'] },
+      units,
+      sessions: [],
+      now: NOW,
+    });
+    expect(result.entries).toHaveLength(1);
+    expect(result.entries[0]).toMatchObject({
+      unitId: 'language-daily', status: 'available', program: 'language', cadence: 'daily',
+      sessionId: null, lockReason: null,
+    });
+  });
+
+  it('a stray non-terminal session against a program unit does not leak sessionId/state', () => {
+    const units = [
+      { unitId: 'language-daily', title: 'Language', subject: 'language', program: 'language', cadence: 'daily' },
+    ];
+    const result = planLearnerWork({
+      learnerId: 'felix',
+      assignment: { units: ['language-daily'] },
+      units,
+      sessions: [session({ unitId: 'language-daily', state: 'issued', sessionId: 'ses_stray' })],
+      now: NOW,
+    });
+    expect(result.entries[0]).toMatchObject({
+      unitId: 'language-daily', status: 'available', program: 'language', cadence: 'daily',
+      sessionId: null, state: null, lockReason: null,
+    });
+  });
+
+  it('a passed session against a program unit does not mark it completed', () => {
+    const units = [
+      { unitId: 'language-daily', title: 'Language', subject: 'language', program: 'language', cadence: 'daily' },
+    ];
+    const result = planLearnerWork({
+      learnerId: 'felix',
+      assignment: { units: ['language-daily'] },
+      units,
+      sessions: [passed('language-daily')],
+      now: NOW,
+    });
+    expect(result.entries[0]).toMatchObject({
+      unitId: 'language-daily', status: 'available', program: 'language', cadence: 'daily',
+      sessionId: null, state: null, lockReason: null,
+    });
+  });
+});

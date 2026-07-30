@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
+import yaml from 'js-yaml';
 import { YamlWorkSessionDatastore } from '#adapters/persistence/yaml/YamlWorkSessionDatastore.mjs';
 import { IWorkSessionRepository } from '#apps/school/ports/IWorkSessionRepository.mjs';
 import { reduceSession } from '#domains/school/sessions/sessionEvents.mjs';
@@ -247,6 +248,67 @@ describe('listOpenForLearner', () => {
     await ds.appendEvent(SID, created());
     expect(await ds.listOpenForLearner(null)).toEqual([]);
     expect(await ds.listOpenForLearner('')).toEqual([]);
+  });
+});
+
+describe('listForLearner', () => {
+  it('projects gradedPercent from the session state', async () => {
+    await ds.appendEvent(SID, created());
+    await ds.appendEvent(SID, issued());
+    await ds.appendEvent(SID, { type: 'submitted', at: AT, sessionId: SID, transport: 'paper' });
+    await ds.appendEvent(SID, { type: 'graded', at: AT, sessionId: SID, attemptIds: ['att_1'], percent: 85 });
+    await ds.appendEvent(SID, { type: 'outcome_recorded', at: AT, sessionId: SID, outcomeId: `out:${SID}`, result: 'passed' });
+    await ds.appendEvent(SID, { type: 'rewarded', at: AT, sessionId: SID, txnId: 'txn_1' });
+
+    const facts = await ds.listForLearner('kid1');
+    expect(facts).toHaveLength(1);
+    expect(facts[0]).toMatchObject({
+      sessionId: SID,
+      learnerId: 'kid1',
+      unitId: 'u1',
+      state: 'rewarded',
+      terminal: true,
+      outcome: { result: 'passed' },
+      gradedPercent: 85,
+    });
+  });
+
+  it('projects gradedPercent as null when no graded event exists', async () => {
+    await ds.appendEvent(SID, created());
+    await ds.appendEvent(SID, issued());
+
+    const facts = await ds.listForLearner('kid1');
+    expect(facts).toHaveLength(1);
+    expect(facts[0].gradedPercent).toBe(null);
+  });
+
+  it('recomputes gradedPercent for pre-upgrade rows (missing gradedPercent key)', async () => {
+    // Build a complete graded session through the real datastore
+    await ds.appendEvent(SID, created());
+    await ds.appendEvent(SID, issued());
+    await ds.appendEvent(SID, { type: 'submitted', at: AT, sessionId: SID, transport: 'paper' });
+    await ds.appendEvent(SID, { type: 'graded', at: AT, sessionId: SID, attemptIds: ['att_1'], percent: 85 });
+    await ds.appendEvent(SID, { type: 'outcome_recorded', at: AT, sessionId: SID, outcomeId: `out:${SID}`, result: 'passed' });
+    await ds.appendEvent(SID, { type: 'rewarded', at: AT, sessionId: SID, txnId: 'txn_1' });
+
+    // Simulate a pre-upgrade index row by stripping the gradedPercent key
+    const indexPath = path.join(sessionsRoot(), DAY, 'index.yml');
+    const raw = yaml.load(fs.readFileSync(indexPath, 'utf8'));
+    const upgradeRow = { ...raw[SID] };
+    delete upgradeRow.gradedPercent; // Strip the key to simulate pre-upgrade
+    raw[SID] = upgradeRow;
+    fs.writeFileSync(indexPath, yaml.dump(raw, { indent: 2, lineWidth: -1, noRefs: true }), 'utf8');
+
+    // Clear any cache to force a fresh read
+    ds = new YamlWorkSessionDatastore({ configService: { getDataDir: () => tmp } });
+
+    // listForLearner should still report gradedPercent: 85 by recomputing from events
+    const facts = await ds.listForLearner('kid1');
+    expect(facts).toHaveLength(1);
+    expect(facts[0]).toMatchObject({
+      sessionId: SID,
+      gradedPercent: 85,
+    });
   });
 });
 
