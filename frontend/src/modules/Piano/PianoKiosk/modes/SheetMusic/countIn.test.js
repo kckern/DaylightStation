@@ -56,8 +56,9 @@ describe('countInPlan', () => {
     expect(p.subdivision).toBe(1); // 5 has no 2-or-3-based divisor to escalate to
   });
 
-  // TEMPO_STEPS reaches 1.75x, so one halving is not enough: 216 x 1.75 = 378 and a
-  // half-note pulse there is still ~94 clicks/min.
+  // TEMPO_STEPS reaches 1.75x, so one halving is not enough to cover the whole
+  // range. This test runs at 1.5x: 216 x 1.5 = 324 effective bpm, and a
+  // half-note pulse there is still 162 clicks/min.
   it('escalates the pulse until the click rate is countable at the top of the tempo range', () => {
     const p = countInPlan({ beats: 4, bpm: 216, tempoMult: 1.5 }); // 324 effective bpm
     expect(p.subdivision).toBe(4); // one click per bar
