@@ -39,7 +39,7 @@ const fmt = (s) => {
  * `engagementTimeoutSeconds` are accepted for that contract but unused — karaoke
  * has no sequential lock or engagement gate.
  */
-export default function SingalongPlayer({ lecture, source, onBack, startFresh = false }) {
+export default function SingalongPlayer({ lecture, source, onBack, startFresh = true }) {
   const playerRef = useRef(null);
   const ctrl = usePlayerController(playerRef);
   const { el: mediaEl, timedOut } = useResolvedMediaEl(playerRef);
