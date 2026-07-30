@@ -595,7 +595,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
   const running = transport.playing || countIn.active;
 
   // A move between rows of the Learn matrix (wave-3 §B) is never a play request:
-  // stop whatever was running, kill any pending count-in/dwell/rebuild-resume, and
+  // stop whatever was running, kill any pending count-in/rebuild-resume, and
   // silence the piano — but NEVER start anything. Used by the loop toggle, a range
   // clear, and the focus-set effect, so all three land in a known-quiet state.
   const stopForMatrixChange = useCallback(() => {
@@ -1322,8 +1322,9 @@ export default function ScorePlayer({ score: scoreMeta }) {
   }, [mode, sendsAudio, flow, events, transport, stepTimeline, silenceScheduled, tempoMult, arming, commitEndpoint, layout.measures, range, logger, countIn, scale, tapIntent, voidCycle]);
 
   // Single unmount teardown: immediate silence + one delayed panic (see the
-  // silenceScheduled note above) — a restart after unmount would replay into a
-  // dead view. One effect → order-independent by construction.
+  // silenceScheduled note above), so a note-on already dispatched into the
+  // lookahead window doesn't drone with no note-off after the view is gone.
+  // One effect → order-independent by construction.
   useEffect(() => () => { silenceScheduled(); }, [silenceScheduled]);
 
   // ── Focus range: selection + custom-loop taps ─────────────────────────────────
