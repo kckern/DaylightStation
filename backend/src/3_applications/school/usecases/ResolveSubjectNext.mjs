@@ -1,0 +1,146 @@
+/**
+ * ResolveSubjectNext — what a scanned `subject_next` ticket means RIGHT NOW
+ * (spec §6.3, v2 sectioned agenda; Task 11).
+ *
+ * `BuildAgenda` mints one sessionless ticket per subject and moves on; this is
+ * the second caller of the same computation, invoked at SCAN time rather than
+ * PRINT time. It reads the plan and the daily sections exactly as `BuildAgenda`
+ * does — same planner, same `planDailyAgenda`, same per-program `status()`
+ * fan-out with its own try/catch — because the ticket names a learner and a
+ * subject, not a moment, and the only way to keep it meaning something as the
+ * day's work advances underneath it is to recompute "what's next" from
+ * scratch on every scan.
+ *
+ * This use case COMPUTES; it never prints. `ResolveScanAction#subjectNext` is
+ * the only caller and is the only place a physical outcome (a worksheet, a
+ * dispatch, a slip) gets made from the answer here.
+ *
+ * For a curriculum entry the session is ENSURED here (reused if the entry
+ * already carries one, opened fresh otherwise — the same idempotent rule
+ * `offerSession.mjs` gives `BuildAgenda`), and the resulting `state` rides
+ * along in the return value. The caller must never re-read the session's
+ * events itself — that would risk seeing a different moment than the one this
+ * decision was actually made against.
+ */
+import { planLearnerWork } from '#domains/school/planner.mjs';
+import { planDailyAgenda } from '#domains/school/agenda.mjs';
+import { ensureSession, nextMove } from './offerSession.mjs';
+
+export class ResolveSubjectNext {
+  #curriculum; #assignments; #sessions; #launchers; #timezone; #clock; #newSessionId; #logger;
+
+  /**
+   * @param {object} deps
+   * @param {import('../CurriculumAccess.mjs').CurriculumAccess} deps.curriculum
+   * @param {import('../ports/IAssignmentStore.mjs').IAssignmentStore} deps.assignments
+   * @param {import('../ports/IWorkSessionRepository.mjs').IWorkSessionRepository} deps.sessions
+   * @param {Map<string, import('../ports/IProgramLauncher.mjs').IProgramLauncher>} [deps.launchers]
+   *   program id -> launcher, consulted read-only (`status`) — the same map
+   *   `ResolveScanAction` separately calls `launch()` on.
+   * @param {string|null} [deps.timezone]
+   * @param {() => Date} [deps.clock]
+   * @param {() => string} deps.newSessionId
+   * @param {object} [deps.logger]
+   */
+  constructor({
+    curriculum, assignments, sessions, launchers = new Map(),
+    timezone = null, clock = () => new Date(), newSessionId, logger = console,
+  } = {}) {
+    if (!curriculum || !assignments || !sessions || typeof newSessionId !== 'function') {
+      throw new Error('ResolveSubjectNext requires curriculum, assignments, sessions and newSessionId');
+    }
+    this.#curriculum = curriculum;
+    this.#assignments = assignments;
+    this.#sessions = sessions;
+    this.#launchers = launchers;
+    this.#timezone = timezone;
+    this.#clock = clock;
+    this.#newSessionId = newSessionId;
+    this.#logger = logger;
+  }
+
+  /**
+   * @param {object} args
+   * @param {string} args.learnerId
+   * @param {string} args.subject
+   * @returns {Promise<
+   *   { kind: 'served', subjectLabel: string } |
+   *   { kind: 'locked', remedy: string|null } |
+   *   { kind: 'empty' } |
+   *   { kind: 'unavailable' } |
+   *   { kind: 'program', programId: string, unit: object|null } |
+   *   { kind: 'move', move: object, sessionId: string, state: object, unit: object|null, entry: object }
+   * >}
+   */
+  async execute({ learnerId, subject } = {}) {
+    const nowIso = this.#clock().toISOString();
+    const [assignment, units, history] = await Promise.all([
+      this.#assignments.get(learnerId),
+      this.#curriculum.listUnits(),
+      this.#sessions.listForLearner(learnerId),
+    ]);
+
+    const plan = planLearnerWork({ learnerId, assignment, units, sessions: history, now: nowIso });
+    if (plan.errors.length) {
+      this.#logger.warn?.('school.subject.plan-errors', { learnerId, subject, errors: plan.errors });
+    }
+
+    const programStatuses = await this.#collectProgramStatuses(plan, learnerId);
+    const { sections } = planDailyAgenda({
+      plan, sessions: history, programStatuses, now: nowIso, timezone: this.#timezone,
+    });
+
+    const section = sections.find((s) => s.subject === subject);
+    if (!section) return { kind: 'empty' };
+    if (section.servedToday) return { kind: 'served', subjectLabel: subject };
+
+    const entry = section.next;
+    if (!entry) {
+      if (section.lockedRemedy) return { kind: 'locked', remedy: section.lockedRemedy };
+      if (section.programUnavailable) return { kind: 'unavailable' };
+      return { kind: 'empty' };
+    }
+
+    const unitsById = new Map(units.map((u) => [u.unitId, u]));
+    const unit = unitsById.get(entry.unitId) ?? null;
+
+    // A program entry never gets a session — there is nothing here to track,
+    // same rule `BuildAgenda#offerFor` follows for the identical case.
+    if (entry.program) return { kind: 'program', programId: entry.program, unit };
+
+    const { sessionId, state } = await ensureSession({
+      entry, learnerId, nowIso, sessions: this.#sessions, newSessionId: this.#newSessionId,
+    });
+    const move = nextMove(unit ?? {}, state);
+    return {
+      kind: 'move', move, sessionId, state, unit, entry,
+    };
+  }
+
+  /**
+   * One read-only `status()` call per DISTINCT program id among the plan's
+   * entries — mirrors `BuildAgenda#collectProgramStatuses` exactly. A program
+   * that throws or was never registered must not blank the rest of the
+   * subject's resolution — it degrades to `{ error: true }`, which
+   * `planDailyAgenda` turns into `programUnavailable`.
+   */
+  async #collectProgramStatuses(plan, learnerId) {
+    const programIds = [...new Set((plan.entries ?? []).filter((e) => e.program).map((e) => e.program))];
+    const statuses = {};
+    await Promise.all(programIds.map(async (programId) => {
+      try {
+        const launcher = this.#launchers.get(programId);
+        if (!launcher) throw new Error(`no launcher registered for program "${programId}"`);
+        statuses[programId] = await launcher.status({ userId: learnerId });
+      } catch (err) {
+        this.#logger.warn?.('school.subject.launcher-failed', {
+          learnerId, program: programId, error: err?.message ?? String(err),
+        });
+        statuses[programId] = { error: true };
+      }
+    }));
+    return statuses;
+  }
+}
+
+export default ResolveSubjectNext;
