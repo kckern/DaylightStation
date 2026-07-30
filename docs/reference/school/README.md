@@ -763,6 +763,18 @@ line rather than blanking the rest of the agenda. Language study is the first
 program: the day queue's own "everything cleared" is what "done today" means
 for it.
 
+**Program ids are addresses, not a fixed enum.** A `program:` value resolves
+to either a code-registered launcher (`language`) or a `school.yml`
+`programs:` entry backed by the generic `SurfaceProgramLauncher` — config
+selecting from DoNow's closed *surface* vocabulary (`garage-fitness`,
+`piano-kiosk`, `portal`, ...), the household "start this, there, now" dispatch
+facade every program launcher now calls through
+(`docs/superpowers/specs/2026-07-30-household-donow-dispatch-design.md`). It
+is the surface set that stays closed in code, same posture as
+`categories.mjs` — not the program id set; a `programs:` entry whose id
+collides with a code-registered launcher is a **boot-time error**, never a
+silent override.
+
 **Scanning a subject's ticket that resolves to on-screen work — the quiz
 runner, or a program — hands the learner to the Portal.** The console
 broadcasts a launch event naming the learner and the runner to open on the
@@ -786,9 +798,12 @@ the one caller that opts into QR.
 | Application | `backend/src/3_applications/school/usecases/offerSession.mjs` — `ensureSession`/`nextMove`, shared by `BuildAgenda` and `ResolveSubjectNext` |
 | Application | `backend/src/3_applications/school/usecases/ResolveSubjectNext.mjs` — what a `subject_next` ticket means right now, recomputed on every scan |
 | Port | `backend/src/3_applications/school/ports/IProgramLauncher.mjs` — `status()`/`launch()`, the whole surface a program plugs in |
-| Application | `backend/src/3_applications/school/PortalDispatch.mjs` — the one place that turns a `target` into a `school.launch` broadcast |
-| Application | `backend/src/3_applications/school/LanguageProgramLauncher.mjs` — the `IProgramLauncher` face of language study |
+| Application | `backend/src/3_applications/donow/DoNowService.mjs` — the household dispatch facade every program launcher (and every `launch:` unit) now calls through; composed in `backend/src/5_composition/modules/donow.mjs`, independent of this lifecycle's own `enabled` gate |
+| Application | `backend/src/3_applications/school/SurfaceProgramLauncher.mjs` — the generic `IProgramLauncher` for a `school.yml` `programs:` entry — one class, config-driven, zero new code per surface program |
+| Application | `backend/src/3_applications/school/DoNowSchoolBridge.mjs` — closes a `launch:` unit's session when a PENDING DoNow dispatch is later approved out of band |
+| Application | `backend/src/3_applications/school/LanguageProgramLauncher.mjs` — the `IProgramLauncher` face of language study, dispatching through the `portal` DoNow surface |
 | Frontend | `frontend/src/modules/School/useSchoolLaunch.js` — the Portal-launch subscription hook |
+| API | `GET /api/v1/school/lifecycle/learners/:learnerId/agenda/preview` — dry-run twin of the printed agenda (no session/token side effects), PNG with a real scannable QR |
 
 ## 3. Specced, not built
 
