@@ -20,7 +20,7 @@ export const TOKEN_PREFIX = 'sch:';
 
 /** Closed set — a new action class is a code change, never config. */
 export const TOKEN_CLASSES = Object.freeze([
-  'identify', 'select_unit', 'issue_document', 'media_action', 'remediation', 'recovery',
+  'identify', 'select_unit', 'issue_document', 'media_action', 'remediation', 'recovery', 'subject_next',
 ]);
 
 /**
@@ -77,6 +77,12 @@ export function mintToken({ tokenClass, subject, at, rng, expiresAt = null } = {
     // A personal card never expires and is reusable forever (spec §6.1); an
     // expiry on one would strand a child at the very scan that recovers them.
     if (expiresAt != null) throw new Error('mintToken: an identify token never expires');
+  } else if (tokenClass === 'subject_next') {
+    // Sessionless by design: it names a learner + subject, not a session, so it
+    // can be minted and re-minted before any session exists. Unlike identify it
+    // DOES expire — the agenda it points at goes stale.
+    if (!isNonEmptyString(subject.learnerId)) throw new Error('mintToken: subject_next subject requires a learnerId');
+    if (!isNonEmptyString(subject.subject)) throw new Error('mintToken: subject_next subject requires a subject');
   } else if (!isNonEmptyString(subject.sessionId)) {
     throw new Error(`mintToken: ${tokenClass} subject requires a sessionId`);
   }
@@ -141,6 +147,14 @@ const SEMANTICS = {
     doneMessage: () => 'This work is all finished. Scan your card to see what is next.',
     readyMessage: 'Printing that again for you.',
   },
+  subject_next: {
+    // Sessionless: it names a learner + subject, not a session, so there is no
+    // derived state to consult at all — resolveTokenState short-circuits this
+    // class before the sessionState guard.
+    actionable: () => true,
+    doneMessage: () => 'Scan your card for a fresh list.',
+    readyMessage: 'Finding the next thing for you.',
+  },
 };
 
 /**
@@ -172,6 +186,11 @@ export function resolveTokenState(record, { sessionState = null, now } = {}) {
   }
   if (record.expiresAt && isIsoTimestamp(now) && Date.parse(now) > Date.parse(record.expiresAt)) {
     return { status: 'expired', message: 'That ticket is out of date. Scan your card for a new one.' };
+  }
+  if (record.tokenClass === 'subject_next') {
+    // Sessionless, unlike identify it can still expire (checked above) — but it
+    // never names a session, so there is no sessionState to require here.
+    return { status: 'actionable', message: semantics.readyMessage };
   }
   if (!sessionState || typeof sessionState !== 'object') {
     return { status: 'unknown', message: 'We could not find that work. Scan your card for a new list.' };
