@@ -455,29 +455,43 @@ export class LanguageStudyService {
    * never touched language study, and gets the null triple rather than a
    * fabricated "Day 1" for a course they have not started.
    *
+   * Never throws — the `IProgramLauncher.status` contract says one failing
+   * program must not blank the agenda for the rest (mirrors `summarize`'s
+   * per-course try/catch, one level up since this returns a single object).
+   *
    * @param {{userId: string}} args
    * @returns {{doneToday: boolean, progressLabel: string|null, score: number|null}}
    */
   todayStatus({ userId }) {
     if (!userId) return { doneToday: false, progressLabel: null, score: null };
-    for (const corpusId of this.#ds.listCorpusIds()) {
-      const corpus = this.#loadCorpus(corpusId);
-      if (!corpus) continue;
+    try {
+      for (const corpusId of this.#ds.listCorpusIds()) {
+        const corpus = this.#loadCorpus(corpusId);
+        if (!corpus) continue;
 
-      const rawProgress = this.#ds.readProgress(userId, corpusId);
-      const log = this.#ds.readAllEvents(userId, corpusId);
-      if (!rawProgress && log.length === 0) continue; // never touched this course
+        const rawProgress = this.#ds.readProgress(userId, corpusId);
+        const log = this.#ds.readAllEvents(userId, corpusId);
+        if (!rawProgress && log.length === 0) continue; // never touched this course
 
-      const progress = this.#readProgress(userId, corpusId);
-      const queue = this.#fullDayQueue(userId, corpusId, corpus, log, progress);
-      const summary = summarizeQueue(queue);
-      return {
-        doneToday: summary.total > 0 && summary.done === summary.total,
-        progressLabel: `Day ${progress.day}`,
-        score: null,
-      };
+        const progress = this.#readProgress(userId, corpusId);
+        const queue = this.#fullDayQueue(userId, corpusId, corpus, log, progress);
+        const summary = summarizeQueue(queue);
+        const outstanding = summary.total - summary.done;
+
+        // An empty queue counts as complete: a fresh learner can never present
+        // one (new sentences fill it), so empty means every available sentence
+        // has been retired — the same rule `shouldRollDay` uses to advance
+        // rather than stall on a vacuous condition (rollover.mjs:45-46: "An
+        // empty queue counts as complete...").
+        const doneToday = outstanding === 0;
+        const progressLabel = summary.total === 0 ? 'Course complete' : `Day ${progress.day}`;
+        return { doneToday, progressLabel, score: null };
+      }
+      return { doneToday: false, progressLabel: null, score: null };
+    } catch (err) {
+      this.#logger.error?.('school.language.today-status-failed', { userId, error: err.message });
+      return { doneToday: false, progressLabel: null, score: null };
     }
-    return { doneToday: false, progressLabel: null, score: null };
   }
 
   #summarizeCourse(userId, corpusId) {
