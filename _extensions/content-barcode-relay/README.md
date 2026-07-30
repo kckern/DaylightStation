@@ -1,9 +1,11 @@
 # content-barcode-relay
 
 The content barcode use case: a Zebra scanner event is relayed over WiFi/WebSocket to
-the DaylightStation event bus (topic **`barcode-relay`**). The firmware now lives in
-[`../food-scale-relay`](../food-scale-relay) because one ATOM can maintain both the
-food-scale BLE connection and the scanner HID connection.
+the DaylightStation event bus (topic **`barcode-relay`**). This board is DARK as of 2026-07-29: its DS2278 was moved into the kitchen and is
+now driven by [`../kitchen-relay`](../kitchen-relay), which hosts the scale and a
+scanner on one ATOM. The board, this firmware and the backend path all still work
+-- pair a replacement gun, reflash, and the `content` route is live again with no
+backend change (`barcodeRelay.mjs` still accepts `source: barcode-relay`).
 
 ```
 DS2278 (HID-BLE keyboard) ─┐
@@ -28,8 +30,8 @@ scales:
       name: DS2278
 ```
 
-Flash the shared firmware from `food-scale-relay/firmware`; the selected scale
-instance owns the ATOM and both BLE peripherals.
+Flash from `firmware/` here (this extension has its own image and its own
+`barcode-relay.yml` SSOT); `../kitchen-relay` is a separate board and binary.
 
 ---
 

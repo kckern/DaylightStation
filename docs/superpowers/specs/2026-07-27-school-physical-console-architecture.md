@@ -33,7 +33,8 @@ Constraint findings that shaped these (from code discovery, 2026-07-27):
   `newlyCompleted` return value — the "verified end" edge exists but is unconsumed.
 - OMR: serial protocol fully solved (9600 7E1, volatile `I00` mode), but relay
   backend, persistence, form registry, scoring, and hardware assembly do not exist,
-  and **no off-the-shelf card fits the reader** — form layout is a real blocker,
+  and **card geometry was unproven** (resolved 2026-07-22: Lincolnshire `3705`
+  ordered, 500 cards — see `docs/reference/omr/README.md`) — form layout was a blocker,
   which is why parent-review-first is the sequence.
 - `WorksheetRenderer` is 112 lines of pdfkit with three item branches — a rebuild,
   not an extension. `svg-to-pdfkit` is already a dependency (catalog router).
@@ -378,7 +379,7 @@ Aligned to roadmap §9; this spec is the reference for each slice's own spec/pla
 | 2. Document system + print QA | §4 targets, golden tests, artifact IDs, print failure flow (§9) |
 | 3. Work sessions + barcode actions | §5, §6 |
 | 4. First end-to-end paper unit | Anchor math unit; parent-review grading (§7); acceptance = the §9 matrix rows that apply |
-| 5. OMR relay + form pipeline | Form map contract (§3.3) + submission feeder (§7.2); relay/persistence per scantron bring-up plan |
+| 5. OMR relay + form pipeline | Form map contract (§3.3) + submission feeder (§7.2); relay/persistence per the OMR bring-up plan |
 | 6. Remote media completion bridge | §8 |
 | 7. Parent review + economy policy | §7 full surface; §5.4 reward path switched on by household policy |
 | 8. Curriculum ingestion skill suite | Out of scope here (A4); consumes §3 contracts |
@@ -389,7 +390,7 @@ Aligned to roadmap §9; this spec is the reference for each slice's own spec/pla
 
 | Roadmap §11 | Status |
 |---|---|
-| Q1 OMR optical/dropout constraints | **Remaining.** Blocked on hardware assembly + card sourcing; form geometry per the scantron card spec. Gates item 5 only |
+| Q1 OMR optical/dropout constraints | **Remaining.** Blocked on hardware assembly + card sourcing; form geometry per the OMR card spec. Gates item 5 only |
 | Q2 Media target autonomy | **Mechanism decided** (§8 per-target `child_selectable`); actual per-target values are household config |
 | Q3 Token validity | **Mechanism decided** (§6.1 per-action-class semantics); durations are config with conservative defaults |
 | Q4 Source licences | Deferred with the ingestion spec (A4); `provenance` field is required from day one |

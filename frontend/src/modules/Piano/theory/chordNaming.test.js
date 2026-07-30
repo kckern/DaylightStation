@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { identifyChord, PITCH_CLASS_NAMES } from './chordNaming.js';
+import { identifyChord } from './chordNaming.js';
+import { midiToVexKey } from '../../MusicNotation/renderers/chordStaff.js';
 
 // MIDI helpers: C4 = 60. pitch class = midi % 12.
 const C4 = 60, D4 = 62, E4 = 64, F4 = 65, G4 = 67, A4 = 69, B4 = 71;
@@ -288,9 +289,98 @@ describe('identifyChord — the bass disambiguates an ambiguous set (v2)', () =>
   });
 });
 
-describe('PITCH_CLASS_NAMES', () => {
-  it('maps 0 → C and 6 → F# (sharp default)', () => {
-    expect(PITCH_CLASS_NAMES[0]).toBe('C');
-    expect(PITCH_CLASS_NAMES[6]).toBe('F#');
+// Root and bass spelling is key-aware (MusicNotation/model/spelling.js). The full
+// tier-by-tier rules are unit-tested there; these cover the wiring and the cases a
+// player actually complains about.
+describe('identifyChord — enharmonic spelling', () => {
+  it('names the black key above A as B♭, not A♯, with no key context', () => {
+    // B♭ major needs 2 flats; A♯ major needs 10 sharps and a double-sharp third, so
+    // it is essentially never written. This was the visible bug.
+    expect(identifyChord([Bb4, D4 + 12, F4 + 12]).displayName).toBe('B♭ major');
+  });
+
+  it('follows the key when the root is IN it', () => {
+    expect(identifyChord([Bb4, D4 + 12, F4 + 12], 'F').displayName).toBe('B♭ major');
+    // …and the same sound is A♯ in a key that spells it that way.
+    expect(identifyChord([70, 74, 77], 'B').displayName).toBe('A♯ major');
+  });
+
+  it('spells the raised 4th sharp in whatever key you are in', () => {
+    expect(identifyChord([66, 70, 73], 'C').displayName).toBe('F♯ major');   // ♯4 of C
+    expect(identifyChord([63, 67, 70], 'A').displayName).toBe('D♯ major');   // ♯4 of A
+    expect(identifyChord([63, 67, 70], 'C').displayName).toBe('E♭ major');   // ♭3 of C
+  });
+
+  it('prefers G♯ minor over A♭ minor (7 flats is never written)', () => {
+    expect(identifyChord([68, 71, 75], 'C').displayName).toBe('G♯ minor');
+    expect(identifyChord([68, 72, 75], 'C').displayName).toBe('A♭ major');
+  });
+
+  it('spells a slash bass that is a chord tone from the CHORD, not the key', () => {
+    // C7 voiced over its own ♭7. The seventh of a C chord has to be a B-letter, or the
+    // chord stops alternating letters and C–E–G–A♯ is an augmented sixth rather than a
+    // dominant seventh. So it reads B♭ even in B major, where the key would otherwise
+    // spell that pitch A♯.
+    expect(identifyChord([70, 72, 76, 79], 'C').displayName).toBe('C 7 / B♭');
+    expect(identifyChord([70, 72, 76, 79], 'B').displayName).toBe('C 7 / B♭');
+    // (A bass the chord has no tone for falls back to the key's own spelling. Hard to
+    // isolate here: adding a foreign bass usually makes the matcher re-root onto it,
+    // since pickBest prefers root position — see the "bass is never silently dropped"
+    // suite. The fallback itself is covered by the single-note path above.)
+  });
+
+  it('spells a lone note key-aware too', () => {
+    expect(identifyChord([Bb4]).displayName).toBe('B♭');
+    expect(identifyChord([70], 'B').displayName).toBe('A♯');
+  });
+
+  // The bug that made this visible was a DISAGREEMENT: the staff spelled B♭ while the
+  // plaque six inches away said A♯. Both now go through model/spelling.js, so assert
+  // they agree for every root in every key rather than trusting that they do.
+  it('always agrees with the note the staff draws', () => {
+    const KEYS = ['C', 'G', 'D', 'A', 'E', 'B', 'F#', 'F', 'Bb', 'Eb', 'Ab', 'Db', 'Gb'];
+    // EVERY quality, not just major. An earlier version of this test swept major
+    // triads only — the exact subset where the quality-sensitive spelling rules can
+    // never fire — so it stayed green while the plaque said "G♯ minor" over a staff
+    // drawing A♭. Minor and diminished are the cases that matter here.
+    const SHAPES = [
+      ['major', [0, 4, 7]],
+      ['minor', [0, 3, 7]],
+      ['diminished', [0, 3, 6]],
+      ['dominant7', [0, 4, 7, 10]],
+      ['minor7', [0, 3, 7, 10]],
+    ];
+    const mismatches = [];
+    for (const key of KEYS) {
+      for (const [shape, intervals] of SHAPES) {
+        for (let pc = 0; pc < 12; pc++) {
+          const root = 60 + pc;
+          const midis = intervals.map((iv) => root + iv);
+          const chord = identifyChord(midis, key);
+          if (!chord.displayName) continue;
+          const plaque = chord.displayName.split(' ')[0];
+          // …vs how the staff spells that same pitch (e.g. 'bb/4' → 'B♭').
+          const [spelling] = midiToVexKey(root, key, chord.spelling).split('/');
+          const staff = spelling[0].toUpperCase()
+            + (spelling.slice(1) === '#' ? '♯' : spelling.slice(1) === 'b' ? '♭' : '');
+          if (plaque !== staff) mismatches.push(`${key} ${shape} pc${pc}: plaque ${plaque} vs staff ${staff}`);
+        }
+      }
+    }
+    expect(mismatches).toEqual([]);
+  });
+
+  it('spells a chord as a stack of thirds — one letter per tone, never repeated', () => {
+    // The strongest rule in the theory (see docs/reference/piano/enharmonic-spelling.md
+    // §2.1). Spelling notes one at a time by pitch class cannot honour it: G♯ minor came
+    // out A♭–B–E♭, three letters that stack in no triad.
+    const letters = (midis, key) => {
+      const chord = identifyChord(midis, key);
+      return midis.map((m) => midiToVexKey(m, key, chord.spelling)[0].toUpperCase());
+    };
+    expect(letters([68, 71, 75], 'C')).toEqual(['G', 'B', 'D']); // G♯ minor
+    expect(letters([61, 65, 68], 'C')).toEqual(['D', 'F', 'A']); // D♭ major
+    expect(letters([70, 74, 77], 'C')).toEqual(['B', 'D', 'F']); // B♭ major
+    expect(letters([66, 70, 73], 'C')).toEqual(['F', 'A', 'C']); // F♯ major
   });
 });

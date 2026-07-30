@@ -93,7 +93,7 @@ this"* rather than failing silently, so a media unit is visibly unavailable
 rather than mysteriously broken. Worksheet, OMR, and quiz units are unaffected.
 
 **OMR** is protocol-solved but has no assembled reader and no card that fits it
-(see `docs/reference/scantron/README.md`). The grading path is exercised by a
+(see `docs/reference/omr/README.md`). The grading path is exercised by a
 virtual reader driving the renderer's real form map, so it is ready for hardware
 whenever the hardware exists.
 

@@ -40,7 +40,14 @@ COPY --chown=node:node cli/ ./cli/
 COPY --chown=node:node package*.json ./
 
 # Layer 8: Build frontend
-RUN cd frontend && npm run build
+#
+# NODE_OPTIONS raises the V8 old-space cap for this step only. Node defaults to
+# roughly 2 GB here, and the bundle crossed it during "rendering chunks": the
+# build died with "FATAL ERROR: Reached heap limit Allocation failed" after
+# transforming all ~12k modules, so every deploy failed at the last moment.
+# The Docker VM has ~7.7 GB, so 4 GB leaves ample headroom for the rest of the
+# build. If this is hit again the bundle needs splitting, not a bigger number.
+RUN cd frontend && NODE_OPTIONS=--max-old-space-size=4096 npm run build
 
 # Layer 9: Setup entrypoint and permissions
 COPY docker/entrypoint.sh /usr/src/app/

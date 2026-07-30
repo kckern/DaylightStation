@@ -28,7 +28,7 @@ beforeEach(() => {
 describe('construction', () => {
   it('works without an event bus — the sheet event is also returned directly', () => {
     const solo = new VirtualOmrReader({ logger: silent });
-    expect(solo.scanSheet({ formMap, chosen: { q1: 'A' } }).source).toBe('scantron-relay');
+    expect(solo.scanSheet({ formMap, chosen: { q1: 'A' } }).source).toBe('omr-relay');
   });
 });
 
@@ -70,7 +70,7 @@ describe('scanSheet — the normalized sheet event', () => {
   it('emits the documented field set', () => {
     const sheet = reader.scanSheet({ formMap, chosen: { q1: 'A' } });
     expect(Object.keys(sheet).sort()).toEqual(['columns', 'id', 'markedColumns', 'marks', 'source', 'type']);
-    expect(sheet.source).toBe('scantron-relay');
+    expect(sheet.source).toBe('omr-relay');
     expect(sheet.type).toBe('sheet');
     expect(sheet.id).toBe('omr-1100-virtual');
   });
@@ -101,10 +101,10 @@ describe('scanSheet — the normalized sheet event', () => {
     expect(sheet.markedColumns).toBe(0);
   });
 
-  it('broadcasts on the scantron topic when a bus is injected', () => {
+  it('broadcasts on the omr topic when a bus is injected', () => {
     const sheet = reader.scanSheet({ formMap, chosen: { q1: 'A' } });
     expect(bus.broadcasts).toHaveLength(1);
-    expect(bus.broadcasts[0].topic).toBe('scantron');
+    expect(bus.broadcasts[0].topic).toBe('omr');
     expect(bus.broadcasts[0].payload).toEqual(sheet);
   });
 });

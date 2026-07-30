@@ -5,20 +5,29 @@ import './ChordStaffRenderer.scss';
 /**
  * ChordStaffRenderer — React wrapper over the VexFlow chord engraving.
  *
- * Renders the current chord as a compact grand staff. The host div OWNS its
- * bounding box (see ChordStaffRenderer.scss: the SVG is absolutely positioned so
- * it can never drive layout). A ResizeObserver measures the real box and feeds a
- * bucketed aspect into the engraving so a wide box WIDENS the stave to fill it.
- * Re-renders only when the chord, key, or (bucketed) aspect changes.
+ * Renders the live note flow as a grand staff. The host div OWNS its bounding box
+ * (see ChordStaffRenderer.scss: the SVG is absolutely positioned so it can never
+ * drive layout). A ResizeObserver measures the real box and feeds a bucketed aspect
+ * into the engraving so a wide box WIDENS the stave to fill it. Re-renders only when
+ * the flow, key, or (bucketed) aspect changes.
  *
- * @param {Map} notes - MIDI note → data (only keys are used)
+ * @param {Array<number[]|{midis: number[], spelling?: Map}>} [columns] - the note flow,
+ *   oldest → newest (see model/noteFlow.js); columns may carry a chord spelling
+ * @param {Map} [notes] - single-chord form: MIDI note → data (only keys are used)
  * @param {string} [keySignature='C']
  * @param {string} [className='chord-staff']
  */
-export function ChordStaffRenderer({ notes, keySignature = 'C', className = 'chord-staff' }) {
+export function ChordStaffRenderer({ columns, notes, keySignature = 'C', className = 'chord-staff' }) {
   const ref = useRef(null);
   const [aspect, setAspect] = useState(null);
-  const notesKey = notes ? [...notes.keys()].sort((a, b) => a - b).join(',') : '';
+  // Identity of what is drawn — columns are ordered, so this must not be sorted
+  // across them: [[60],[64]] and [[64],[60]] are different pictures.
+  const notesKey = columns
+    ? columns
+      .map((col) => (Array.isArray(col) ? col : col?.midis ?? []))
+      .map((midis) => [...midis].sort((a, b) => a - b).join('.'))
+      .join('|')
+    : notes ? [...notes.keys()].sort((a, b) => a - b).join(',') : '';
 
   useLayoutEffect(() => {
     const el = ref.current;
@@ -36,7 +45,7 @@ export function ChordStaffRenderer({ notes, keySignature = 'C', className = 'cho
 
   useLayoutEffect(() => {
     const host = ref.current;
-    if (host) renderChordStaff(host, { notes, keySignature, aspect });
+    if (host) renderChordStaff(host, { columns, notes, keySignature, aspect });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [notesKey, keySignature, aspect]);
 
