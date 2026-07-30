@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
-import { mapKey, useComposerInput, KEY_LEGEND, CHORD_ONSET_TOLERANCE_MS } from './useComposerInput.js';
+import { mapKey, useComposerInput, KEY_LEGEND, CHORD_ONSET_TOLERANCE_MS, MAX_PENDING_ONSET_MS } from './useComposerInput.js';
 import { makeEmptyScore, initEditor, undo } from './model/index.js';
 import { intern, KIND, __resetRecorder, __snapshotForTest } from '../../../../../lib/logging/inputRecorder.js';
 
@@ -412,6 +412,21 @@ describe('useComposerInput note-entry logging (task 27)', () => {
       const before = getState();
       midi({ type: 'note_off', note: 60, time: 2000 }); // nothing pending now
       expect(getState()).toBe(before); // no-op, same state reference
+    });
+
+    it('a dropped note_off no longer poisons later presses of the same pitch — stale onsets evict', () => {
+      const { logger, getState, midi } = armedHarness();
+      midi({ type: 'note_on', note: 60, velocity: 80, time: 1000 }); // its note_off is DROPPED (BLE)
+      const later = 1000 + MAX_PENDING_ONSET_MS + 1000;
+      midi({ type: 'note_on', note: 60, velocity: 80, time: later });     // the sweep evicts the stale head here
+      midi({ type: 'note_off', note: 60, time: later + 80 });             // an 80ms hold on the SECOND press
+      const notes = getState().score.parts[0].measures[0].notes;
+      expect(notes).toHaveLength(2);
+      expect(notes[0].type).toBe('quarter'); // the abandoned note keeps its inserted default — never late-reclassified
+      expect(notes[1].type).toBe('16th');    // the note_off resolved the FRESH onset, not the stale head
+      // eventNames() only surfaces log.sampled calls; the eviction is a warn-level
+      // event, so assert it directly rather than widening the helper.
+      expect(logger.warn).toHaveBeenCalledWith('composer.input.onset-evicted', expect.objectContaining({ note: 60 }));
     });
 
     it('disarmed play-along (audition) is never reclassified — no pending entry is created', () => {
