@@ -80,6 +80,16 @@ describe('resolvePianoConfig', () => {
     expect(cfg.sheetmusic.collection).toBe('files:docs/sheet-music');
   });
 
+  // Wave-3 E — the resolver gotcha: sheetmusic is a whole-node passthrough (like
+  // videos/karaoke above), so a new nested field is not silently dropped only
+  // BECAUSE nothing field-wise unpacks it today. This pins that passthrough for
+  // `learn.defaultHands` specifically, so a future field-wise rewrite of the
+  // sheetmusic block can't drop it without a failing test.
+  it('passes sheetmusic.learn.defaultHands through (the resolver gotcha)', () => {
+    const cfg = resolvePianoConfig({ sheetmusic: { learn: { defaultHands: 'rh' } } }, 'default');
+    expect(cfg.sheetmusic.learn.defaultHands).toBe('rh');
+  });
+
   it('resolves separate playalong and singalong collections', () => {
     const raw = {
       playalong: { plexCollection: ['plex:676474'] },

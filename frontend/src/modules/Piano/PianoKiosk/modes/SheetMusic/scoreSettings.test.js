@@ -28,6 +28,13 @@ describe('scoreSettings', () => {
     expect(s.tempoMult).toBe(1.25);
   });
 
+  it('strips the retired myStaves field on read and never rewrites it', () => {
+    window.localStorage.setItem('daylight.piano.sm.x', JSON.stringify({ v: 1, myStaves: [0], mode: 'listen' }));
+    expect(loadScoreSettings('x')).toEqual({ mode: 'listen' });
+    saveScoreSettings('x', { tempoMult: 1 });
+    expect(JSON.parse(window.localStorage.getItem('daylight.piano.sm.x')).myStaves).toBeUndefined();
+  });
+
   it('tolerates corrupt JSON and missing/blank ids', () => {
     window.localStorage.setItem('daylight.piano.sm.files:c.musicxml', '{oops');
     expect(loadScoreSettings('files:c.musicxml')).toEqual({});

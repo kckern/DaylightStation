@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { partsOf, cyclePart, buildPlayTimeline, youMidisAt } from './playParts.js';
+import { partsOf, buildPlayTimeline } from './playParts.js';
 
 const NOTES = [
   { midi: 76, staff: 0, onsetQuarter: 0, durationQuarters: 1 },
@@ -15,29 +15,11 @@ describe('partsOf', () => {
   });
 });
 
-describe('cyclePart', () => {
-  it('cycles play ↔ you (two states; mute dropped)', () => {
-    expect(cyclePart('play')).toBe('you');
-    expect(cyclePart('you')).toBe('play');
-  });
-  it('unknown role falls back to play', () => {
-    expect(cyclePart('mute')).toBe('play');
-    expect(cyclePart(undefined)).toBe('play');
-  });
-});
-
 describe('buildPlayTimeline', () => {
   it('merges cursor steps with note on/offs for audible parts only, time-sorted', () => {
-    const tl = buildPlayTimeline(EVENTS, NOTES, MAP, { 0: 'you', 1: 'play' });
+    const tl = buildPlayTimeline(EVENTS, NOTES, MAP, { 0: 'mute', 1: 'play' });
     expect(tl.map((e) => e.kind ?? e.type)).toEqual(['step', 'note_on', 'step', 'note_off']);
-    expect(tl.find((e) => e.type === 'note_on').note).toBe(40); // only the LH sounds
-  });
-});
-
-describe('youMidisAt', () => {
-  it('returns the you-part pitches at an onset', () => {
-    expect([...youMidisAt(NOTES, { 0: 'you', 1: 'play' }, 0)]).toEqual([76]);
-    expect(youMidisAt(NOTES, { 0: 'play', 1: 'play' }, 0)).toBeNull();
+    expect(tl.find((e) => e.type === 'note_on').note).toBe(40); // only the active (LH) staff sounds
   });
 });
 

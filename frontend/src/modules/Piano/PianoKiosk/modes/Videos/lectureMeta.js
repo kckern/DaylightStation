@@ -31,34 +31,22 @@ function isUserScoped(item) {
  * gate — lectureUserStatus) restarts from 0: rewatching a done video must not
  * drop you at the tail. Progress/completion records are untouched — replaying
  * never un-completes anything. In-progress lectures resume at the saved
- * per-user playhead. When a kiosk user is active (the item is user-scoped)
+ * per-user playhead. Wave-3 J: when a kiosk user is active (the item is user-scoped)
  * but has no playhead of their own, start at 0 — device-level signals (Plex
  * media-memory shared by everyone on the kiosk) must never stand in for
- * another user's/device's position. The device-level fallback is reserved
- * for the genuine no-user path (guest / no persistent user selected).
+ * another user's/device's position. Unenriched items (no persistent user) also
+ * start from 0 — the device playhead belonged to whoever used the kiosk last
+ * and must never position someone else's playback.
  */
 export function resumeSecondsFor(item) {
-  // The restart-from-0 check intentionally reads device-level `lectureStatus`
-  // (not the user-scoped-only `lectureUserStatus`) for unenriched items: this
-  // is the guest/no-user resume path, where "this device says I finished it"
-  // is a reasonable restart signal for the person sitting at THIS kiosk right
-  // now — unlike badges, it's never shown to, or attributed to, anyone else.
+  // Watched check still reads device-level status for unenriched items — a
+  // "finished" flag only ever produces a restart-from-zero, never a leak.
   const watched = isUserScoped(item) ? lectureUserStatus(item).watched : lectureStatus(item).watched;
   if (watched) return 0;
   if (item?.userPlayhead != null) return item.userPlayhead;
-  if (isUserScoped(item)) return 0;
-  return deriveResumeSeconds(item);
-}
-
-/** Resume position in seconds from a /playable lecture item (0 = start). */
-export function deriveResumeSeconds(item) {
-  const ws = num(item?.watchSeconds);
-  if (ws && ws > 0) return ws;
-  const dur = num(item?.duration);
-  const pct = num(item?.watchProgress);
-  if (pct && pct > 0 && dur && dur > 0) {
-    return Math.min(dur, (Math.max(0, Math.min(100, pct)) / 100) * dur);
-  }
+  // Wave-3 J: no per-user record → start at the top. The device playhead
+  // (watchSeconds/watchProgress) belonged to whoever used the kiosk last and
+  // must never position someone else's playback.
   return 0;
 }
 

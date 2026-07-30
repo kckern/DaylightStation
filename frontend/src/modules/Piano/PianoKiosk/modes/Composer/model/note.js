@@ -19,6 +19,19 @@ export function makeNote(pitch, opts = {}) {
     tuplet: opts.tuplet,
     staff: opts.staff ?? 1, voice: opts.voice ?? 1,
     lyric: opts.lyric, dynamics: opts.dynamics, articulations: opts.articulations,
+    // Ephemeral live-entry correlation id (task 27, Composer MIDI note-entry
+    // pipeline only). NOT written to MusicXML — the serializer never reads it —
+    // and excluded from the dataLoss round-trip projection (dataLoss.test.js),
+    // so it is safe dead weight for any note not created by armed MIDI entry.
+    // Purpose: a note is inserted at note_on with a DEFAULT duration (its held
+    // time isn't known yet); this tag lets useComposerInput.js find that exact
+    // note again at note_off — by VALUE, not object identity, because every
+    // later edit runs `structuredClone` on the whole score and would otherwise
+    // orphan any reference held from insert time — to reclassify its type once
+    // the held duration is known. `rebuildDuration` (setDuration/toggleDot/...)
+    // spreads the old note's fields through `makeNote`, so the tag survives a
+    // duration/dot/triplet edit; it is opaque/unused elsewhere.
+    entryTag: opts.entryTag ?? null,
   };
 }
 

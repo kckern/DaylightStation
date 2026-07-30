@@ -141,23 +141,82 @@
   opacity: 0.85;
 }
 
-.piano-loopsheet__options {
-  display: flex;
-  flex-direction: column;
-  gap: 0.4rem;
-  .piano-tbtn { justify-content: flex-start; }
-}
-.piano-loopsheet__nudge {
-  display: flex;
-  align-items: center;
-  gap: 0.4rem;
-  margin-top: 0.75rem;
-  span { opacity: 0.8; margin-right: 0.2rem; &:not(:first-child) { margin-left: 0.6rem; } }
-}
-
 .piano-modesheet {
   display: flex;
   flex-direction: column;
   gap: 0.4rem;
   .piano-tbtn { justify-content: flex-start; font-size: 1.1rem; }
+}
+
+// LoopGroup — shared A-B loop cluster (wave-3 F). Two families separated by
+// the section-end divider: mark-the-timeline (in/out) on the left,
+// act-on-the-loop (toggle/clear) on the right. Rehomed here from the video
+// chrome (PianoApp.scss) so Learn (SheetMusic) can share the same face.
+.piano-loop-group {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  border: 1px solid var(--piano-border);
+  border-radius: var(--r-md);
+  overflow: hidden;
+  flex-shrink: 0;
+
+  &.has-marks { border-color: var(--piano-warn); }
+
+  &__btn {
+    border: none;
+    border-radius: 0;
+    border-right: 1px solid var(--piano-border);
+    &:last-child { border-right: none; }
+    // Splits the group into its two halves. A fat border in the host's own
+    // background colour reads as a gap, not another divider.
+    &.is-section-end { border-right: 4px solid var(--piano-surface); }
+    // Warn-colour ring on a lone armed mark (e.g. A set, B not yet).
+    &.is-arming { border-color: var(--piano-warn); color: var(--piano-warn); }
+  }
+
+  // The cycle + clear glyphs are stroked outlines while the in/out brackets
+  // are solid fills, so at a matched 1em the strokes read visibly lighter.
+  // Nudge just those two up until all four buttons carry the same optical
+  // weight.
+  &__btn--loop-toggle .piano-icon svg,
+  &__btn--clear-loop .piano-icon svg { width: 1.25em; height: 1.25em; }
+}
+
+// ToggleSwitch — label-left switch row (wave-3 J). Track ≥48px wide; the whole
+// row is the tap target, so the thumb never needs to be hit precisely.
+.piano-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.6rem;
+  min-height: 3rem;
+  padding: 0.25rem 0.5rem;
+  background: none;
+  border: none;
+  color: var(--piano-fg);
+  font: inherit;
+  cursor: pointer;
+
+  &__track {
+    width: 3rem;
+    height: 1.5rem;
+    border-radius: 0.75rem;
+    background: var(--piano-border);
+    position: relative;
+    transition: background 120ms ease;
+    flex-shrink: 0;
+  }
+  &__thumb {
+    position: absolute;
+    top: 0.15rem;
+    left: 0.15rem;
+    width: 1.2rem;
+    height: 1.2rem;
+    border-radius: 50%;
+    background: var(--piano-surface);
+    transition: transform 120ms ease;
+  }
+  &.is-on &__track { background: var(--piano-accent, #2ec46f); }
+  &.is-on &__thumb { transform: translateX(1.5rem); }
+  &:disabled { opacity: 0.4; cursor: default; }
 }

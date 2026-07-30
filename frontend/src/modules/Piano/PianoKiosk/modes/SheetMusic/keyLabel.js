@@ -18,4 +18,10 @@ export function keyLabel(fifths, mode) {
   return `${tonic} ${mode === 'minor' ? 'minor' : 'major'}`;
 }
 
-export default { keyLabel };
+/** Compact key form for tight sheet cells: "D major" → "DM", "F# minor" → "F#m". */
+export function abbrevKey(label) {
+  if (!label) return label;
+  return label.replace(/ major$/, 'M').replace(/ minor$/, 'm');
+}
+
+export default { keyLabel, abbrevKey };

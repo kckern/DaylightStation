@@ -1,9 +1,14 @@
 /**
  * nearestEvent — nearest melody event to a tap at renderer-local (x, y). Y is
  * down-weighted (x dominates within a system). With `maxDist`, taps farther than
- * that (weighted px, at scale 1) from every event return -1 — used by the guided
- * loop selection so a stray margin tap can't silently commit a far-away measure
- * (audit L3). Seek taps pass no maxDist: tap-anywhere-to-seek is intentional.
+ * that (weighted px, at scale 1) from every event return -1.
+ *
+ * Every live caller is a SEEK tap and passes no maxDist: tap-anywhere-to-seek is
+ * intentional. The guided loop selection that needed a radius is retired — wave-3
+ * F reversed audit L3, hit-testing an armed endpoint tap by measure column
+ * (measureAtPoint) instead, so only a dead margin is refused. The parameter stays
+ * because "nearest, but not absurdly far" is the harder half to get right and is
+ * worth keeping proven for the next caller that needs it.
  */
 export function nearestEvent(events, x, y, maxDist = Infinity) {
   let best = -1, bestD = Infinity;
@@ -15,8 +20,5 @@ export function nearestEvent(events, x, y, maxDist = Infinity) {
   }
   return bestD <= maxDist ? best : -1;
 }
-
-/** Max weighted distance (px at scale 1) a SELECTION tap may be from a note. */
-export const SELECT_MAX_DIST = 90;
 
 export default nearestEvent;

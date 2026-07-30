@@ -31,4 +31,12 @@ describe('gradeMeasure', () => {
     expect(g.grade).toBe('green');
     expect(g.silent).toBe(false);
   });
+  it('rest flag is true when expected is empty', () => {
+    const g = gradeMeasure({ expected: [], hits: [] }, cfg);
+    expect(g.rest).toBe(true);
+  });
+  it('rest flag is false when expected has notes', () => {
+    const g = gradeMeasure({ expected: [60], hits: [] }, cfg);
+    expect(g.rest).toBe(false);
+  });
 });

@@ -157,6 +157,41 @@ export function extractStaffGeometry(osmd) {
 }
 
 /**
+ * Per-staff geometry: one entry per (system, staff). `staff` is OSMD's
+ * ParentStaff.idInMusicSheet — the same id the extracted notes carry
+ * (steps[].notes[].staff), so consumers can join against activeParts.
+ * Same unit space as extractStaffGeometry; bottom line = top + 4*lineSpacing.
+ * @returns {Array<{system:number,staff:number,top:number,left:number,right:number,lineSpacing:number}>}
+ */
+export function extractPerStaffGeometry(osmd) {
+  try {
+    const zoom = osmd?.Zoom ?? osmd?.zoom ?? 1;
+    const px = (u) => u * OSMD_UNIT_PX * zoom;
+    const systems = osmd?.GraphicSheet?.MusicPages?.[0]?.MusicSystems || [];
+    const out = [];
+    systems.forEach((sys, i) => {
+      (sys?.StaffLines || []).forEach((sl, j) => {
+        const box = sl?.PositionAndShape;
+        const pos = box?.AbsolutePosition;
+        if (!pos) return; // malformed staff — skip it, keep the rest
+        out.push({
+          system: i,
+          staff: sl?.ParentStaff?.idInMusicSheet ?? j,
+          top: px(pos.y),
+          left: px(pos.x),
+          right: px(pos.x + (box.Size?.width ?? 0)),
+          lineSpacing: px(1),
+        });
+      });
+    });
+    return out;
+  } catch (err) {
+    logger().warn('osmd.staff-geometry-failed', { error: err?.message, per: 'staff' });
+    return [];
+  }
+}
+
+/**
  * The engraved SVG `<g>` for a note's notehead (OSMD's per-note group: notehead,
  * stem, flag). The light-up overlay recolors this element directly instead of
  * painting a rectangle over it. Null if the graphical note / element is missing.
@@ -289,7 +324,7 @@ function makeCursorWalk(osmd) {
         bottom: box.bottom,
       };
     });
-    return { events, notes, tempoEntries, steps, measures, staves: extractStaffGeometry(osmd) };
+    return { events, notes, tempoEntries, steps, measures, staves: extractStaffGeometry(osmd), staffBoxes: extractPerStaffGeometry(osmd) };
   }
 
   return { cursor, processStep, finalize };
@@ -324,7 +359,7 @@ export function extractEvents(osmd) {
   const cursor = osmd.cursor;
   // No cursor == a score with nothing to walk (the blank-draft case) — still
   // publish staff geometry, which is exactly what a blank staff's caret needs.
-  if (!cursor) return { events: [], notes: [], tempoEntries: [], steps: [], measures: [], staves: extractStaffGeometry(osmd) };
+  if (!cursor) return { events: [], notes: [], tempoEntries: [], steps: [], measures: [], staves: extractStaffGeometry(osmd), staffBoxes: extractPerStaffGeometry(osmd) };
   const walk = makeCursorWalk(osmd);
   const cursorEl = cursor.cursorElement;
   try {
@@ -376,7 +411,7 @@ export async function extractLayoutSliced(osmd, opts = {}) {
     shouldAbort = () => false,
   } = opts;
   const cursor = osmd?.cursor;
-  if (!cursor) { onProgress?.(1); return { events: [], notes: [], tempoEntries: [], steps: [], measures: [], staves: extractStaffGeometry(osmd) }; }
+  if (!cursor) { onProgress?.(1); return { events: [], notes: [], tempoEntries: [], steps: [], measures: [], staves: extractStaffGeometry(osmd), staffBoxes: extractPerStaffGeometry(osmd) }; }
 
   const walk = makeCursorWalk(osmd);
 

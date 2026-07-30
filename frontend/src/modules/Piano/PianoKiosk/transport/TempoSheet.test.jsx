@@ -2,9 +2,9 @@ import { render, fireEvent, screen } from '@testing-library/react';
 import TempoSheet, { TEMPO_STEPS, nearestStep } from './TempoSheet.jsx';
 
 describe('TempoSheet', () => {
-  it('exposes the canonical nine-step ladder and nearestStep', () => {
-    expect(TEMPO_STEPS.map((s) => s.value)).toEqual([0.5, 0.6, 0.7, 0.8, 0.9, 1, 1.1, 1.25, 1.5]);
-    expect(nearestStep(TEMPO_STEPS, 1.2)).toBe(7); // nearest to 125%
+  it('ladder is 60-175 with 100% dead-center', () => {
+    expect(TEMPO_STEPS.map((s) => s.value)).toEqual([0.6, 0.7, 0.8, 0.9, 1, 1.1, 1.25, 1.5, 1.75]);
+    expect(TEMPO_STEPS[4].value).toBe(1); // center cell of the middle row
   });
 
   it('renders a 3×3 ladder — three StepGrid rows', () => {
@@ -18,7 +18,7 @@ describe('TempoSheet', () => {
     expect(screen.getByRole('dialog', { name: 'Tempo' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /^125%/ })).toHaveAttribute('aria-pressed', 'true');
     expect(screen.getByText('100')).toBeInTheDocument(); // 80 × 1.25
-    fireEvent.click(screen.getByRole('button', { name: /^50%/ }));
-    expect(onPick).toHaveBeenCalledWith(0.5);
+    fireEvent.click(screen.getByRole('button', { name: /^60%/ }));
+    expect(onPick).toHaveBeenCalledWith(0.6);
   });
 });

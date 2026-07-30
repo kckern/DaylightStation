@@ -24,7 +24,7 @@ describe('ViewSheet', () => {
     expect(screen.getByRole('button', { name: /down the page/i })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /across/i })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '150%' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /keyboard/i })).toBeInTheDocument();
+    expect(screen.getByRole('switch', { name: 'Keyboard' })).toBeInTheDocument();
   });
 
   it('layout buttons carry icon faces (layout-down / layout-across), not text-only', () => {
@@ -53,13 +53,22 @@ describe('ViewSheet', () => {
     expect(onToggleFlow).not.toHaveBeenCalled();
   });
 
-  it('size step commits via onScale; keyboard row toggles', () => {
+  it('size step commits via onScale', () => {
     const onScale = vi.fn();
-    const onToggleKeyboard = vi.fn();
-    render(<ViewSheet {...base} onScale={onScale} onToggleKeyboard={onToggleKeyboard} />);
+    render(<ViewSheet {...base} onScale={onScale} />);
     fireEvent.click(screen.getByRole('button', { name: '125%' }));
     expect(onScale).toHaveBeenCalledWith(1.25);
-    fireEvent.click(screen.getByRole('button', { name: /keyboard/i }));
+  });
+
+  it('keyboard row is a switch reflecting visibility', () => {
+    render(<ViewSheet open onClose={vi.fn()} flow="wrapped" onToggleFlow={vi.fn()} scale={1} onScale={vi.fn()} keyboardVisible onToggleKeyboard={vi.fn()} />);
+    expect(screen.getByRole('switch', { name: 'Keyboard' })).toHaveAttribute('aria-checked', 'true');
+  });
+
+  it('tapping the keyboard switch fires the toggle', () => {
+    const onToggleKeyboard = vi.fn();
+    render(<ViewSheet open onClose={vi.fn()} flow="wrapped" onToggleFlow={vi.fn()} scale={1} onScale={vi.fn()} keyboardVisible={false} onToggleKeyboard={onToggleKeyboard} />);
+    fireEvent.click(screen.getByRole('switch', { name: 'Keyboard' }));
     expect(onToggleKeyboard).toHaveBeenCalled();
   });
 

@@ -76,8 +76,8 @@ describe('extractLayoutSliced — time-budget slicing', () => {
   it('returns an empty result when the osmd has no cursor', async () => {
     const progress = [];
     const res = await extractLayoutSliced({}, { onProgress: (p) => progress.push(p) });
-    // `staves` is [] here too: the bare {} osmd has no GraphicSheet to read geometry from.
-    expect(res).toEqual({ events: [], notes: [], tempoEntries: [], steps: [], measures: [], staves: [] });
+    // `staves` and `staffBoxes` are [] here too: the bare {} osmd has no GraphicSheet to read geometry from.
+    expect(res).toEqual({ events: [], notes: [], tempoEntries: [], steps: [], measures: [], staves: [], staffBoxes: [] });
     expect(progress[progress.length - 1]).toBe(1);
   });
 

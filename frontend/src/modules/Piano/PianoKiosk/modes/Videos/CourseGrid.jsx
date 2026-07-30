@@ -1,13 +1,29 @@
 // CourseGrid.jsx
 import { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import usePianoList from '../../usePianoList.js';
-import { balancedColumns } from '../../tileGridLayout.js';
+import { balancedGrid } from '../../tileGridLayout.js';
 import PianoEmpty from '../../PianoEmpty.jsx';
 import { SkeletonPoster } from '../../Skeleton.jsx';
 import CourseTile from './CourseTile.jsx';
 
 const ratingKeyOf = (c) => (c ? String(c).replace(/^plex:/, '') : null);
 const idOf = (raw) => String(raw || '').replace(/^plex:/, '');
+
+/**
+ * Overlay scale for the sequential badge + progress-ring chips (see
+ * `--tile-scale` in PianoApp.scss), keyed off row count. Those overlays are
+ * fixed-size (1.7rem badge, 1.85rem ring) against the --posters grid's fixed
+ * 12.75rem tile; once balancedGrid needs 3+ rows to stay on one page the
+ * tile itself has shrunk well below that, so the overlay must shrink too or
+ * it dominates/clips a small poster. 1 = no shrink (≤2 rows, tiles still
+ * near full size); steps down at 3/4/5+ rows.
+ */
+export function tileScaleFor(rows) {
+  if (rows >= 5) return 0.55;
+  if (rows >= 4) return 0.7;
+  if (rows >= 3) return 0.85;
+  return 1;
+}
 
 // Pull both the collection's display title and its courses from one /list call.
 const selectCollection = (r) => ({ title: r?.title || null, items: r?.items ?? [] });
@@ -158,8 +174,18 @@ export default function CourseGrid({ groups = [], onSelect }) {
     setActiveIdx(next);
   };
 
+  // Rows AND cols for the one-page wall (balancedGrid), so the tab's poster
+  // count drives BOTH axes — more courses add rows and widen the cap, and the
+  // CSS grid (--cols/--rows, both `fr`) shrinks tiles to fit rather than the
+  // page ever scrolling. Only meaningful once courses are loaded; the loading
+  // skeleton and empty state don't use it.
+  const { rows: gridRows, cols: gridCols } = useMemo(
+    () => balancedGrid(courses?.length ?? 0),
+    [courses],
+  );
+
   return (
-    <section className="piano-mode piano-mode--videos">
+    <section className="piano-mode piano-mode--videos piano-mode--videos-grid">
       {allCollections.map((c) => (
         <CollectionFetcher key={c} collection={c} onData={onData} />
       ))}
@@ -192,8 +218,8 @@ export default function CourseGrid({ groups = [], onSelect }) {
         {empty && <PianoEmpty message="No videos found." />}
         {courses && courses.length > 0 && (
           <ul
-            className="piano-video-grid piano-video-grid--posters"
-            style={{ '--poster-cols': balancedColumns(courses.length, { max: 5 }) }}
+            className="piano-video-grid piano-video-grid--posters piano-video-grid--onepage"
+            style={{ '--cols': gridCols, '--rows': gridRows, '--tile-scale': tileScaleFor(gridRows) }}
           >
             {courses.map((item) => (
               <CourseTile key={item.id} item={item} onSelect={onSelect} progress={progressMap?.[item.id]} />

@@ -22,11 +22,17 @@ describe('KeySheet', () => {
     expect(screen.queryByText(/Sounding key/)).toBeNull();
   });
 
-  it('labels cells with sounding key names when the written key is known', () => {
+  it('labels cells with abbreviated sounding key names when the written key is known', () => {
     render(<KeySheet open onClose={() => {}} value={0} onPick={() => {}} keyFifths={0} keyMode="major" />);
-    const plus2 = screen.getByRole('button', { name: /D major/ });
+    const plus2 = screen.getByRole('button', { name: /DM/ });
     expect(plus2.textContent).toContain('+2');
-    expect(screen.getByRole('button', { name: /C major/ })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('button', { name: /CM/ })).toHaveAttribute('aria-pressed', 'true');
+  });
+
+  it('cells show abbreviated keys, footer keeps the long form', () => {
+    render(<KeySheet open onClose={() => {}} value={2} onPick={vi.fn()} keyFifths={0} keyMode="major" />);
+    expect(screen.getByText('DM')).toBeInTheDocument();           // +2 from C major
+    expect(screen.getByText(/Sounding key: D major/)).toBeInTheDocument();
   });
 
   it('falls back to offset labels when the key is unknown', () => {

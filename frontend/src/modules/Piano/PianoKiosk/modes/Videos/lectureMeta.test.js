@@ -1,6 +1,6 @@
 // lectureMeta.test.js
 import { describe, it, expect } from 'vitest';
-import { lectureContentId, deriveResumeSeconds, lectureStatus, resumeSecondsFor } from './lectureMeta.js';
+import { lectureContentId, lectureStatus, resumeSecondsFor } from './lectureMeta.js';
 
 describe('lectureContentId', () => {
   it('prefers the plex field', () => {
@@ -16,18 +16,6 @@ describe('lectureContentId', () => {
   });
 });
 
-describe('deriveResumeSeconds', () => {
-  it('uses watchSeconds when present', () => {
-    expect(deriveResumeSeconds({ watchSeconds: 42, duration: 100 })).toBe(42);
-  });
-  it('falls back to watchProgress percent of duration', () => {
-    expect(deriveResumeSeconds({ watchProgress: 25, duration: 200 })).toBe(50);
-  });
-  it('is 0 with no progress info', () => {
-    expect(deriveResumeSeconds({ duration: 100 })).toBe(0);
-    expect(deriveResumeSeconds(null)).toBe(0);
-  });
-});
 
 describe('lectureStatus', () => {
   it('reports watched and clamps percent', () => {
@@ -61,8 +49,9 @@ describe('resumeSecondsFor', () => {
     expect(resumeSecondsFor({ userWatched: false, userPercent: 40, userPlayhead: 480 })).toBe(480);
   });
 
-  it('falls back to device signals when no per-user playhead', () => {
-    expect(resumeSecondsFor({ watchSeconds: 120 })).toBe(120);
+  it('unenriched items start from zero — device playhead is never a resume source', () => {
+    expect(resumeSecondsFor({ watchSeconds: 120 })).toBe(0);
+    expect(resumeSecondsFor({ watchSeconds: 120, duration: 1800, watchProgress: 40 })).toBe(0);
     expect(resumeSecondsFor({})).toBe(0);
   });
 

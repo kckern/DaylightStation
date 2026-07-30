@@ -3,6 +3,7 @@ import { parseMusicXml } from '../../../../MusicNotation/parseMusicXml.js';
 import { MusicXmlRenderer } from '../../../../MusicNotation/renderers/MusicXmlRenderer.jsx';
 import LiveKeyboard from '../../LiveKeyboard.jsx';
 import { usePianoKioskConfig } from '../../PianoConfig.jsx';
+import { usePianoPreferences } from '../../usePianoPreferences.js';
 import { usePianoMidi } from '../../PianoMidiContext.jsx';
 import { usePianoPlayback } from '../../PianoPlaybackContext.jsx';
 import { usePianoBreadcrumb } from '../../PianoBreadcrumbContext.jsx';
@@ -10,17 +11,21 @@ import useReloadGuard from '../../useReloadGuard.js';
 import { buildTempoMap, buildStepTimeline, scaleTimeline } from '../../../../MusicNotation/scoreTimeline.js';
 import { useScoreTransport } from '../../score/useScoreTransport.js';
 import { tweenScrollTo, cancelScrollTween } from './scrollTween.js';
-import { partsOf, cyclePart, buildPlayTimeline, youMidisAt } from './playParts.js';
+import { partsOf, buildPlayTimeline } from './playParts.js';
 import { staffLabels, defaultActiveParts, expectedMidisAtStep } from './activeParts.js';
-import { rangeSteps, clampStepToRange, sectionToRange, homeStep, nudgeRange } from './focusRange.js';
+import { rangeSteps, clampStepToRange, sectionToRange, homeStep } from './focusRange.js';
 import useFollowTracker from './useFollowTracker.js';
 import useMetronomeClick from './useMetronomeClick.js';
 import useCountIn from './useCountIn.js';
 import { countInPlan } from './countIn.js';
 import useScoreTelemetry from './useScoreTelemetry.js';
 import useScoreEvaluator from './useScoreEvaluator.js';
+import usePracticeRecord from './usePracticeRecord.js';
+import { bucketOf } from './practiceKey.js';
+import { pickLearnRange } from './learnRange.js';
 import { resolveSheetMusicConfig } from './sheetMusicConfig.js';
 import { tallyGrades } from './gradeTally.js';
+import { tierOf, runScore, displayScore } from './polishTiers.js';
 import { worstSpan } from './worstSpan.js';
 import { loadScoreSettings, saveScoreSettings } from './scoreSettings.js';
 import { isRisingEdge } from './pedalEdge.js';
@@ -33,32 +38,54 @@ import ScoreTransportBar from './ScoreTransportBar.jsx';
 import ModeSheet, { MODES } from './ModeSheet.jsx';
 import NoteHighlightLayer from './NoteHighlightLayer.jsx';
 import MeasureGradeLayer from './MeasureGradeLayer.jsx';
+import StaffDimLayer from './StaffDimLayer.jsx';
 import RunSummary from './RunSummary.jsx';
 import CountInOverlay from './CountInOverlay.jsx';
 import LearnComplete from './LearnComplete.jsx';
 import FocusRangeLayer from './FocusRangeLayer.jsx';
+import RangeHandleLayer from './RangeHandleLayer.jsx';
+import LearnInkLayer from './LearnInkLayer.jsx';
+import { soundingFifths } from '../../../../MusicNotation/model/spellMidi.js';
 import SelectBanner from './SelectBanner.jsx';
 import StuckPrompt from './StuckPrompt.jsx';
-import { nearestEvent, SELECT_MAX_DIST } from './nearestEvent.js';
+import { nearestEvent } from './nearestEvent.js';
+import { measureAtPoint } from './measureAtPoint.js';
 import { titleFromScoreId } from './scoreTitle.js';
 
 // One source of truth for the transport's tick rate: the telemetry's stall rule
 // is expressed as a MULTIPLE of it, so the two can never drift apart (audit H1).
 const TRANSPORT_TICK_MS = 100;
 
-// How long a guided loop-selection arm survives with no progress before it
-// expires (audit H4b).
+// How long an armed loop endpoint survives with no progress before it expires
+// (audit H4b): an arm gates the seek branch of onScoreClick, so a forgotten one
+// silently disables tap-to-seek.
 const SELECT_IDLE_MS = 15000;
 
 // How long Learn's cursor may sit on one both-hands step before the hands split is
 // offered on the score (audit H3).
 const STUCK_PROMPT_MS = 5000;
 
+// How long a wet-ink mark lives, per kind (wave-3 D). A wrong note lingers long
+// enough to be READ against the note that was expected; a hit is a flash, not a
+// record; the machine rows' neutral trace sits between the two.
+const INK_TTL = { wrong: 900, hit: 350, neutral: 500 };
+
+// Consecutive wrongs on ONE step before Learn reveals the keyboard hint (wave-3 D).
+// The reveal is STUCK SUPPORT, not punishment: spoiling the keys on the first
+// fumble hands the answer over the instant the reading gets hard, which is the
+// exact moment reading is being trained. Three says "you are actually stuck".
+const REVEAL_WRONG_STREAK = 3;
+
 // Fixed near-black ink for lit noteheads (wave-2 A): every mode's cursor band
 // keeps its own accent colour, but the noteheads themselves always light this
 // same near-black so the sheet doesn't take on a per-mode tint. Struck (green
 // HIT glow) and pending markers are unaffected — they're separate CSS classes.
 export const NOTE_INK = '#23262b';
+
+// A stable empty array for the section-mark prop: a fresh `[]` literal is a new
+// identity on every render, which would re-render FocusRangeLayer (and defeat any
+// future memoisation of it) on every transport tick just to draw no ticks.
+const NO_MARKS = [];
 
 /**
  * ScorePlayer — interactive engraved score. Four modes:
@@ -67,8 +94,9 @@ export const NOTE_INK = '#23262b';
  *  Polish  — auto-advances at tempo; the current onset's active-staff
  *            noteheads light up (bouncing ball). It does NOT perform through
  *            the piano — it only lights the notes you should be playing.
- *  Listen  — the kiosk performs 'play' parts through the piano; 'you' parts are
- *            highlighted (never sent) so the user plays them along with the kiosk.
+ *  Listen  — the kiosk performs the ACTIVE hands through the piano; an inactive
+ *            hand is simply muted (one hands model — wave-3 A: no play-along
+ *            highlighting, no "your part").
  *  Perform — no awareness; config-defined pedals + tap-to-scroll turn the page.
  *
  * Chrome lives in a pinned bottom {@link ScoreTransportBar}; the top bar shows the
@@ -81,6 +109,15 @@ export default function ScorePlayer({ score: scoreMeta }) {
   const { setPlaying: setGlobalPlaying } = usePianoPlayback();
   const { config } = usePianoKioskConfig();
   const kb = config?.keyboard || { startNote: 21, endNote: 108 };
+  // Hand preference (wave-3 E): user → household → 'both'. usePianoPreferences
+  // no-ops (empty prefs, loaded immediately) for guests — getPref then always
+  // falls through to the household default, which is exactly the desired
+  // behavior for a walk-up guest session. `loaded` gates the seeding effect
+  // below: the prefs GET is a fresh round-trip on every user switch, and OSMD
+  // engraving is pure client-side after mount — a fast score can report notes
+  // before prefs resolve, so the seed must wait or it latches the household
+  // default before the real per-user choice ever arrives (review fix round 1).
+  const { getPref, loaded: prefsLoaded } = usePianoPreferences();
 
   // Destructure the (individually memoized) telemetry callbacks rather than
   // holding the returned object: the object identity is fresh every render, and
@@ -98,6 +135,17 @@ export default function ScorePlayer({ score: scoreMeta }) {
     time: parsed ? `${parsed.timeSig.beats}/${parsed.timeSig.beatType}` : null,
     measures: parsed?.parts?.[0]?.measures?.length || 0,
   }), [scoreMeta.id, scoreMeta.title, parsed, tempo]);
+
+  // ── Practice record (wave-3 C) ────────────────────────────────────────────────
+  // fingerprint identifies THIS engraving (measure count + XML byte length) so a
+  // record from a stale engraving (a re-transcription that moved measures) is
+  // never misapplied against the current one — see usePracticeRecord's fpMatches
+  // guard. Guest/no-user runs history-less (the hook no-ops reads and writes).
+  const fingerprint = useMemo(
+    () => ({ measureCount: meta.measures, xmlBytes: scoreMeta.musicXml?.length || 0 }),
+    [meta.measures, scoreMeta.musicXml],
+  );
+  const { record: practice, loaded: practiceLoaded, persistent: practicePersistent, recordCycle, recordTierBest } = usePracticeRecord({ scoreId: scoreMeta.id, fingerprint });
 
   // Resolved sheetmusic config (defaults filled). Hoisted above the mode state so
   // the initial mode can come from `defaultMode` — the ladder starts at Listen.
@@ -127,24 +175,33 @@ export default function ScorePlayer({ score: scoreMeta }) {
   // Practice loops are per-session by design — never restored (audit M1).
   const [focus, setFocus] = useState(null);
   // Is the loop ON (wave-2: loop is a direct toggle, separate from whether a
-  // range exists — audit L2 follow-up)? A defined range keeps showing its
-  // brackets even when looping is off (FocusRangeLayer reads `focus`, not the
+  // range exists — audit L2 follow-up)? A defined range keeps showing its tint
+  // and its handles even when looping is off (both layers read `focus`, not the
   // gated `range` below); only the wrap/clamp/home-step machinery cares.
-  // Defaults true so picking/selecting a range loops it immediately, same as
-  // before this control existed. A fresh session never restores this either —
-  // it rides the same per-session discipline as `focus` (audit M1).
-  const [loopOn, setLoopOn] = useState(true);
+  // Defaults FALSE (wave-3 B): a fresh session has no range at all, and the
+  // endpoint flow starts loop-off — an endpoint tap plants a range without
+  // committing the user to looping it (§F). The Learn landing and Drill-worst
+  // set it explicitly, because those hand over a range that IS the exercise.
+  // Never restored: it rides the same per-session discipline as `focus` (M1).
+  const [loopOn, setLoopOn] = useState(false);
   const loopOnRef = useRef(loopOn); loopOnRef.current = loopOn;
-  // Guided measure-selection state machine (Loop → Select measures…):
-  //   null | { stage: 'first' } | { stage: 'last', inMeasure } (audit J5/M3)
-  const [selecting, setSelecting] = useState(null);
-  const [selectRejects, setSelectRejects] = useState(0);
+  // Which loop endpoint is armed for the next tap on the score (wave-3 F):
+  //   null | 'in' | 'out'. One tap sets one endpoint — there is no half-marked
+  //   intermediate state (the retired two-tap flow's `selecting` stage machine).
+  const [arming, setArming] = useState(null);
+  const [armRejects, setArmRejects] = useState(0);
+  // Which endpoint handle is being DRAGGED right now (wave-3 F): null | 'in' |
+  // 'out'. Only chrome depends on it — the section ticks a drag would snap to —
+  // so it is deliberately not a ref: the ticks have to appear as the drag starts.
+  const [draggingEdge, setDraggingEdge] = useState(null);
   const [clickOn, setClickOn] = useState(() => restored.clickOn !== false); // Polish metronome — on unless turned off
   // Learn free-running metronome — explicit opt-in per session, NEVER persisted:
   // a walk-up user must not inherit a ticking room (audit M2).
   const [learnClick, setLearnClick] = useState(false);
+  // Listen free-running metronome — session-local, mirrors learnClick: explicit
+  // opt-in per session, NEVER persisted (wave-3 G, audit M2 discipline).
+  const [listenClick, setListenClick] = useState(false);
   const [flow, setFlow] = useState('wrapped');
-  const [perfPage, setPerfPage] = useState({ page: 1, pages: 1 }); // Perform page indicator (1-based)
   const [scale, setScale] = useState(1);
   const [transpose, setTranspose] = useState(0); // Listen key transpose (semitones)
   const [tempoMult, setTempoMult] = useState(() => { // Listen/Polish tempo: 1 = written, 0.5 = half
@@ -164,6 +221,45 @@ export default function ScorePlayer({ score: scoreMeta }) {
   const [loopWraps, setLoopWraps] = useState(0);
   const gradesRef = useRef(grades); gradesRef.current = grades; // latest grades for the run-summary log (onSilentStop closure)
   const [summaryOpen, setSummaryOpen] = useState(false); // Polish run summary panel
+  // Immutable snapshot of the run the OPEN summary describes: `{ grades, tier,
+  // mixed }`, taken when the panel opens.
+  //  · `grades` is the same folded map openRunSummary logged, including grades
+  //    produced in the tick that ended the run. Deriving the panel's score from
+  //    `grades` state instead would read a render-time snapshot one or two measures
+  //    behind, so the headline and the shipped log would disagree (the exact drift
+  //    Task 10's fold fixed for the tally).
+  //  · `tier`/`mixed` are SNAPSHOT rather than read from their refs at render time,
+  //    because starting a new run re-arms both — and the previous run's summary can
+  //    still be on screen (Play does not dismiss it). Reading live would silently
+  //    re-label a finished run's report as the new run's tier.
+  const [summaryRun, setSummaryRun] = useState(null);
+  // ── Polish tempo tiers (wave-3 H) ───────────────────────────────────────────
+  // The tier is decided by the tempo the run STARTED at and frozen there: a best
+  // is only comparable against other runs of the same piece at the same speed.
+  const runTierRef = useRef('full');
+  // Did the tempo move while a run was active? Then this run belongs to no tier
+  // and must not bank a best — live grades keep flowing regardless (the user still
+  // gets their feedback; only persistence is withheld).
+  const runMixedRef = useRef(false);
+  // Is the run in flight still a COMPLETED WHOLE-PIECE run in the making (design
+  // §H)? `mixed` only catches a tempo move while the transport is actually running;
+  // it does not catch a run that never started at the top, or one whose tempo/hands
+  // moved across a gap where `runActive` is false. Those all reach onDone looking
+  // exactly like an honest completion — and because a best only ever improves, a
+  // single inflated bank is permanent. So eligibility is tracked explicitly:
+  //  · ARMED (true) by a start from step 0 — the only genuine whole-piece start.
+  //    The assignment is one-way: a start from anywhere else LEAVES it alone rather
+  //    than clearing, so resuming a paused run mid-piece at the same tempo/hands
+  //    stays eligible (it is still the same whole-piece run — §H).
+  //  · CLEARED by every event that makes the run something other than one clean
+  //    pass of the whole piece at one tempo on one pair of hands: a tap-seek, a
+  //    tempo change while a run is in flight OR suspended (paused mid-run / waiting
+  //    on a rebuild), a hands change in Polish, and the end of the run's world (a
+  //    mode change, a Restart, a new document).
+  // Started-at-0 + reached-the-end (onDone's completion branch) together are what
+  // "whole piece" means; nothing in between can jump the cursor forward without
+  // going through one of the clears above.
+  const runEligibleRef = useRef(false);
   // Is a RUN active? True from the moment playback starts until it is paused,
   // stopped, or finishes. Deliberately NOT `transport.playing`: a Polish loop
   // pinned to the FINAL measure restarts through onDone's one-beat dwell (the
@@ -174,6 +270,9 @@ export default function ScorePlayer({ score: scoreMeta }) {
   // It must go false on every genuine end-of-run, or the evaluator grades measures
   // the cursor merely passes over (the phantom grades e501ff6fd fixed).
   const [runActive, setRunActive] = useState(false);
+  // Mirror for handlers that must know whether a run is in flight without taking
+  // `runActive` as a dependency (onTempo's void check — wave-3 H).
+  const runActiveRef = useRef(runActive); runActiveRef.current = runActive;
   const scrollRef = useRef(null);
   const cursorRef = useRef(null);
   const prevTopRef = useRef(null);
@@ -181,9 +280,10 @@ export default function ScorePlayer({ score: scoreMeta }) {
   const stepRef = useRef(0);
   stepRef.current = step;
   const stepStartRef = useRef(0); // wall time the current step began (Polish drift proxy)
-  // What CAUSED the next focus change, so score.focus.set is attributable. The
-  // two-tap flow, the ±1 nudge and a section pick all commit the same event
-  // shape; without this the log cannot tell them apart (audit T1).
+  // What CAUSED the next focus change, so score.focus.set is attributable. An
+  // armed endpoint tap, a handle drag, the Learn landing and Drill-worst all
+  // commit the same event shape; without this the log cannot tell them apart
+  // (audit T1). Origins: 'auto' | 'handle-tap' | 'drag' | 'drill' | 'restore'.
   const focusOriginRef = useRef('restore');
 
   const events = layout.events;
@@ -207,14 +307,32 @@ export default function ScorePlayer({ score: scoreMeta }) {
   // Sections come from rehearsal marks (measure NUMBERS); `layout.measures` maps
   // NUMBERS↔INDICES and INDICES↔step spans. A `focus` resolves to a step span
   // [lo, hi]; the follow tracker loops within it and taps/seeks clamp into it.
-  // Listen participates too (hear the passage, then drill it — audit L6); only
-  // Perform (music-stand mode) ignores the loop.
+  // Loop/focus is LEARN-ONLY state (wave-3 §0): Listen is a jukebox and Polish
+  // grades whole-piece runs, so neither keeps a range — entering them clears it.
+  // The mode check here is belt and braces for that clear.
   const sections = useMemo(() => parsed?.sections || [], [parsed]);
   const range = useMemo(
-    () => (focus && loopOn && mode !== 'perform' && layout.measures ? rangeSteps(layout.measures, focus) : null),
+    () => (focus && loopOn && mode === 'learn' && layout.measures ? rangeSteps(layout.measures, focus) : null),
     [focus, loopOn, mode, layout.measures],
   );
   const rangeRef = useRef(range); rangeRef.current = range; // read latest range inside the transport tick
+  const focusRef = useRef(focus); focusRef.current = focus; // read latest focus (measure indices) inside onFollowWrap
+
+  // ── The Learn state matrix (wave-3 §B) ───────────────────────────────────────
+  // Learn is three states, not one:
+  //   1. no range         → machineLearn: the kiosk performs the active hands on
+  //                         the transport (Play live), nothing is gated on input.
+  //   2. range + loop ON  → learnGate: the follow tracker drives the cursor, the
+  //                         kiosk stays silent, and Play is locked.
+  //   3. range + loop OFF → machineLearn again, over the WHOLE piece; the range
+  //                         brackets stay on screen but nothing wraps.
+  // `learnGate` keys off `focus`, NOT `range`: `range` is the already-gated step
+  // span (null the moment looping is off), which would collapse rows 2 and 3.
+  const learnGate = mode === 'learn' && !!focus && loopOn;
+  const machineLearn = mode === 'learn' && !learnGate;
+  // The audio plane's one predicate: who actually sends notes to the piano. Every
+  // flush/panic guard reads THIS, never a literal mode check (wave-3 §0).
+  const sendsAudio = mode === 'listen' || machineLearn;
   // Array position (== measure INDEX) whose step run contains `i`. Used to turn a
   // tapped note (step index) into a measure index for the custom loop brackets.
   const measureIndexOfStep = useCallback((i) => {
@@ -239,6 +357,10 @@ export default function ScorePlayer({ score: scoreMeta }) {
   // staves keep their choice; new staves default (play / on).
   const parts = useMemo(() => partsOf(layout.notes), [layout.notes]);
   const staffSig = parts.map((p) => p.staff).join(',');
+  // Grand-staff (2 staves) signal — hoisted above the Learn-cycle callbacks
+  // (which read it via bucketOf) so its declaration precedes every use; the
+  // Hands control further down reads this same binding.
+  const grandStaff = parts.length === 2;
   const partLabels = staffLabels(parts.map((p) => p.staff));
   // Memoized so the memoized transport bar can bail across a step advance (a fresh
   // array each render would defeat React.memo on ScoreViewControls). Keyed to the
@@ -248,25 +370,12 @@ export default function ScorePlayer({ score: scoreMeta }) {
     [parts, staffSig], // eslint-disable-line react-hooks/exhaustive-deps
   );
 
-  // Listen "my part": the staves the user plays along with; the kiosk performs the
-  // rest. This is the single source for Listen roles (audit J4) — `roles` is derived
-  // (staff ∈ myStaves → 'you', else 'play'), replacing the old free-standing roles
-  // state. Restored per score.
-  const [myStaves, setMyStaves] = useState(() => new Set(Array.isArray(restored.myStaves) ? restored.myStaves : []));
-  const roles = useMemo(
-    () => Object.fromEntries(parts.map((p) => [p.staff, myStaves.has(p.staff) ? 'you' : 'play'])),
-    [parts, myStaves],
-  );
-
-  // Keyboard: auto per mode, with a remembered per-mode manual override (M2). Listen
-  // auto = shown only when the user plays a part (My part ≠ None). kbTick forces a
-  // read of the override ref after a toggle.
-  const AUTO_KB = { learn: true, polish: true, perform: false };
-  const autoKb = mode === 'listen' ? myStaves.size > 0 : (AUTO_KB[mode] ?? true);
-  const keyboardVisible = kbOverrideRef.current[mode] ?? autoKb; // eslint-disable-line no-unused-expressions
-  void kbTick; // keyboardVisible re-reads the override ref whenever kbTick bumps
-  // Restored active-part picks (which staves you play in Learn/Polish); the effect
-  // below preserves any staff present in `prev`, so seeding it restores the choice.
+  // Active staves: the single "which hands am I responsible for" model, shared by
+  // EVERY mode (wave-3 A — the old Listen-only myStaves claim set is retired).
+  // Learn/Polish practice the active staves; Listen performs them through the
+  // piano — an inactive staff is simply muted (no play-along highlighting).
+  // Restored per score; the effect below preserves any staff present in `prev`
+  // (so seeding it restores the choice), and defaults a fresh staff on.
   const [activeParts, setActiveParts] = useState(() => (
     restored.activeParts && typeof restored.activeParts === 'object' ? restored.activeParts : {}
   ));
@@ -277,16 +386,34 @@ export default function ScorePlayer({ score: scoreMeta }) {
     });
   }, [staffSig]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Listen performs the parts the user did NOT claim as their own: a staff set to
-  // 'you' is engraved + highlighted but never sent to the piano (the user plays it);
-  // 'play' staves are performed. Tempo-scaled by the user's multiplier (faster tempo
-  // → shorter durations → factor 1/tempoMult). Other modes keep their silent step
-  // timeline. Polish is scaled too so its tempo control tracks the same knob.
+  // Roles feed Listen's audio timeline (buildPlayTimeline's isAudible checks
+  // === 'play'): an active staff plays, an inactive one mutes — the single source
+  // for Listen roles (audit J4), now the SAME source Learn/Polish practice from.
+  const roles = useMemo(
+    () => Object.fromEntries(parts.map((p) => [p.staff, activeParts[p.staff] ? 'play' : 'mute'])),
+    [parts, activeParts],
+  );
+
+  // Keyboard: auto per mode, with a remembered per-mode manual override (M2). Listen
+  // defaults hidden — the kiosk performs, so there is nothing "yours" to play along
+  // with — but the View-sheet toggle still overrides. kbTick forces a read of the
+  // override ref after a toggle.
+  const AUTO_KB = { learn: true, polish: true, perform: false, listen: false };
+  const autoKb = AUTO_KB[mode] ?? true;
+  const keyboardVisible = kbOverrideRef.current[mode] ?? autoKb; // eslint-disable-line no-unused-expressions
+  void kbTick; // keyboardVisible re-reads the override ref whenever kbTick bumps
+
+  // Listen — and Learn's machine states (wave-3 §B) — perform the ACTIVE staves;
+  // an inactive staff is engraved but simply muted — never sent to the piano, and
+  // no longer highlighted as "yours" (wave-3 A retires the play-along model).
+  // Tempo-scaled by the user's multiplier (faster tempo → shorter durations →
+  // factor 1/tempoMult). Polish (and Learn's gate) keep the silent step timeline;
+  // Polish is scaled too so its tempo control tracks the same knob.
   const playTimeline = useMemo(
-    () => (mode === 'listen'
+    () => (mode === 'listen' || machineLearn
       ? scaleTimeline(buildPlayTimeline(events, layout.notes, tempoMap, roles), 1 / tempoMult)
       : scaleTimeline(stepTimeline, 1 / tempoMult)),
-    [mode, events, layout.notes, tempoMap, roles, stepTimeline, tempoMult],
+    [mode, machineLearn, events, layout.notes, tempoMap, roles, stepTimeline, tempoMult],
   );
 
   const soundingRef = useRef(new Set());
@@ -324,17 +451,21 @@ export default function ScorePlayer({ score: scoreMeta }) {
   // future, would otherwise drone with no note-off). sendPanic comes from the MIDI
   // context, which outlives this component, so that post-unmount timer is safe.
 
-  // Flush playback telemetry only when a Polish/Listen run actually produced fires.
+  // Flush playback telemetry only when a transport run actually produced fires:
+  // Polish (silent step timeline, still a run) or anything on the audio plane
+  // (Listen + Learn's machine states — wave-3 §B).
   // `pendingPlaybackRef` tracks whether a run has emitted fires since the last flush,
   // so the unmount flush doesn't double-emit a summary the pause/stop/done path
   // already flushed (and so an already-empty run doesn't emit an empty stats line).
   const pendingPlaybackRef = useRef(false);
   const flushPlaybackNow = useCallback(() => {
-    if (mode === 'polish' || mode === 'listen') { flushPlayback(mode); pendingPlaybackRef.current = false; }
-  }, [mode, flushPlayback]);
+    if (mode === 'polish' || sendsAudio) { flushPlayback(mode); pendingPlaybackRef.current = false; }
+  }, [mode, sendsAudio, flushPlayback]);
 
   const transport = useScoreTransport({
-    timeline: mode === 'polish' || mode === 'listen' ? playTimeline : [],
+    // Polish runs the silent step timeline; Listen and Learn's machine states run
+    // the note timeline; Learn's gate has no transport at all (the tracker drives).
+    timeline: mode === 'polish' || sendsAudio ? playTimeline : [],
     tickMs: TRANSPORT_TICK_MS,
     // AUDIO PLANE — runs up to lookaheadMs ahead; must touch NO React state
     // beyond the sounding ledger (used only for flush bookkeeping). Sends carry
@@ -365,9 +496,9 @@ export default function ScorePlayer({ score: scoreMeta }) {
           setStep(r[0]);
           setStruck(() => new Set());
           setLoopWraps((n) => n + 1);
-          // The wrap-seek jumps idxRef past the skipped tail's note_offs — in
-          // Listen (the only mode that sends audio) flush so they don't drone.
-          if (mode === 'listen') silenceScheduled();
+          // The wrap-seek jumps idxRef past the skipped tail's note_offs — on the
+          // audio plane (sendsAudio) flush so they don't drone.
+          if (sendsAudio) silenceScheduled();
           return;
         }
         stepStartRef.current = dueWall; // musical step start (audit T4) — not commit time
@@ -398,7 +529,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
       // silent-stop fires — the summary still arrives via that path.
       const r = rangeRef.current;
       if (r && (mode === 'listen' || mode === 'polish')) {
-        if (mode === 'listen') silenceScheduled(); // skipped tail note_offs must not drone
+        if (sendsAudio) silenceScheduled(); // skipped tail note_offs must not drone
         const tIn = (stepTimeline[r[0]]?.t ?? 0) / tempoMult;
         const restart = () => {
           transportRef.current?.seek(tIn);
@@ -424,7 +555,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
         logger.info('score.transport.loop-wrap', { mode, inStep: r[0], dwell: tIn >= endT });
         return;
       }
-      if (mode === 'listen') silenceScheduled();
+      if (sendsAudio) silenceScheduled();
       flushPlaybackNow();
       // A Polish run that plays to the end must grade its final measure and show
       // the summary — the reward for finishing, not only for giving up (audit H1).
@@ -434,7 +565,41 @@ export default function ScorePlayer({ score: scoreMeta }) {
       // the LAST step, whatever measure that step belongs to.
       if (mode === 'polish') {
         const endMeasure = steps[events.length - 1]?.measure;
-        openRunSummaryRef.current?.(finalizeRef.current?.(endMeasure));
+        // The SAME snapshot feeds the log, the panel, and the tier best (wave-3 H).
+        const run = openRunSummaryRef.current?.(finalizeRef.current?.(endMeasure));
+        // ONLY a completion banks a best. A silent-stop or a manual pause opens the
+        // same panel but is not a whole-piece run, so its score is not comparable —
+        // and a mid-run tempo change voids even a completion (`mixed`).
+        //
+        // Reaching here proves only that the run ENDED at the last step; that it also
+        // STARTED at the first, at one tempo, on one pair of hands, is what
+        // runEligibleRef carries ('partial' — §H). Both halves are required: a best
+        // only ever improves, so one inflated bank is permanent.
+        //
+        // The decision is NAMED, not just taken: from outside, "voided", "not an
+        // improvement" and "guest, nothing can persist" are three different things
+        // that all look like silence. Order matters — the first true reason wins,
+        // most-specific first ('mixed' before 'partial': a tempo change mid-run
+        // trips both, and "you changed speed" is the more actionable of the two).
+        const bucket = bucketOf(grandStaff, activeParts);
+        const prevBest = practice?.polish?.[bucket]?.[run?.tier];
+        const reason = run?.base == null ? 'nothing-graded'
+          : run.mixed ? 'mixed'
+            : !runEligibleRef.current ? 'partial'
+              : !practicePersistent ? 'guest'
+                : (Number.isFinite(prevBest) && prevBest >= run.score) ? 'not-better'
+                  : 'banked';
+        // recordTierBest re-checks 'guest' and 'not-better' itself (it is the owner
+        // of both rules) — calling only on 'banked' keeps this path from being a
+        // second, drifting copy of them.
+        if (reason === 'banked') recordTierBest({ bucket, tier: run.tier, score: run.score });
+        logger.info('score.polish.tier-best', {
+          bucket,
+          tier: run?.tier ?? null,
+          score: run?.score ?? null,
+          banked: reason === 'banked',
+          reason,
+        });
       }
       setRunActive(false); // done WITHOUT a loop = a genuine end of run (see runActive)
       logger.info('score.transport.done', { mode, steps: events.length });
@@ -469,31 +634,78 @@ export default function ScorePlayer({ score: scoreMeta }) {
       // left outside the range to its in-point before seeking.
       const startStep = rangeRef.current ? clampStepToRange(stepRef.current, rangeRef.current) : stepRef.current;
       if (startStep !== stepRef.current) setStep(startStep);
+      // Freeze the tempo tier HERE, not at countIn.start: onGo is the moment the
+      // transport actually anchors, and `tempoMult` at this point is the value the
+      // timeline is scaled by — a tempo picked DURING the count-in is the tempo the
+      // run is played at, so it belongs to this run's tier, not the previous one's.
+      // (Polish always counts in, so for Polish this IS the start path — see the
+      // matching capture in toggleRun's play branch for the no-count-in modes.)
+      runTierRef.current = tierOf(tempoMult);
+      runMixedRef.current = false;
+      // One-way arm (see runEligibleRef): a start from the top makes this a
+      // whole-piece run; a start from anywhere else leaves an earlier arm — or an
+      // earlier clear — standing, which is what keeps a mid-piece RESUME of the
+      // same run eligible and a mid-piece FRESH start ineligible.
+      if (startStep === 0) runEligibleRef.current = true;
       transportRef.current?.seek((stepTimeline[startStep]?.t ?? 0) / tempoMult);
       setRunActive(true);
       transportRef.current?.play();
-      logger.info('score.countin.go', { step: startStep, mode });
+      logger.info('score.countin.go', { step: startStep, mode, tier: runTierRef.current });
     },
   });
   // The run button reads "playing" during the count-in too, so a second tap can
   // abort it (via onScoreClick) and the bar shows ⏸ rather than a dead ▶.
   const running = transport.playing || countIn.active;
 
-  // Metronome click (audit M1/M2/M4). Two modes, one bar button:
+  // A move between rows of the Learn matrix (wave-3 §B) is never a play request:
+  // stop whatever was running, kill any pending count-in/dwell/rebuild-resume, and
+  // silence the piano — but NEVER start anything. Used by the loop toggle, a range
+  // clear, and the focus-set effect, so all three land in a known-quiet state.
+  const stopForMatrixChange = useCallback(() => {
+    countIn.cancel();
+    clearWrapDwell();
+    resumeAfterRef.current = null;
+    // Did this component actually put anything on the audio plane? Only then can
+    // note-ons already be dispatched into the lookahead window, and only then may
+    // we arm the DELAYED panic. silenceScheduled() is NOT safe on a silent kiosk:
+    // silence() self-guards on the sounding ledger, but the delayed sendPanic
+    // timer is armed unconditionally — and a stray CC123 in Learn's gate cuts off
+    // notes the PLAYER is holding down (the contract silence() states above). A
+    // quiet matrix change therefore takes the self-guarding silence() and nothing
+    // else. Two ways to be loud: notes on the ledger (every scheduled note_on
+    // lands there the moment it is dispatched, lookahead included — so this also
+    // covers a range ARMED mid-performance, where the effect that runs the change
+    // already sees the post-change `sendsAudio`), or an audio-plane run that was
+    // still going when this was called.
+    const hadSound = soundingRef.current.size > 0;
+    const wasPlaying = !!transportRef.current?.playing;
+    if (wasPlaying) transportRef.current.pause();
+    setRunActive(false);
+    if (hadSound || (sendsAudio && wasPlaying)) silenceScheduled(); else silence();
+  }, [countIn, clearWrapDwell, sendsAudio, silence, silenceScheduled]);
+
+  // Metronome click (audit M1/M2/M4; wave-3 G). Three modes, one bar button:
   //  Polish — `clickOn` (persisted) ARMS a reference beat that sounds only while
   //           the transport actually runs (the count-in supplies its own blips).
   //  Learn  — `learnClick` (session-local) IS the metronome: toggling ON starts a
   //           free-running practice beat immediately. Leaving Learn silences it
   //           (enabled goes false → the hook's cleanup stops the scheduler).
+  //  Listen — `listenClick` (session-local, mirrors learnClick) is the SAME
+  //           free-running beat as Learn's, but only offered when the tempo map
+  //           has a single entry — a mid-piece tempo change has no one BPM for a
+  //           free-running click to lock to, so the button gates in place.
   // It NEVER gates or advances the cursor. Ticks at the practice tempo.
-  const clickActive = mode === 'learn' ? learnClick : clickOn;
+  const clickAllowed = tempoMap.length === 1;
+  const clickActive = mode === 'learn' ? learnClick : mode === 'listen' ? listenClick : clickOn;
   // The hook gets the EXACT product — the Polish transport runs at exactly
   // bpm × tempoMult (playTimeline scales by 1/tempoMult), so rounding here would
   // drift the click against the graded run (63 × 0.5 → 32 vs 31.5 = a full beat
   // every ~64). Round only the bar's readout.
   const clickBpmExact = (tempoMap[0]?.bpm || 90) * tempoMult;
   useMetronomeClick({
-    enabled: (mode === 'polish' && clickOn && transport.playing) || (mode === 'learn' && learnClick),
+    enabled: (mode === 'polish' && clickOn && transport.playing)
+      || (mode === 'learn' && learnClick)
+      || (mode === 'listen' && listenClick && clickAllowed),
     bpm: clickBpmExact,
   });
 
@@ -510,8 +722,8 @@ export default function ScorePlayer({ score: scoreMeta }) {
   // Persist practice settings per score (device-local) whenever they change, so the
   // piece reopens the way it was left (Task 2.5). Writes are tiny; cost is trivial.
   useEffect(() => {
-    saveScoreSettings(scoreMeta.id, { mode, tempoMult, activeParts, myStaves: [...myStaves], clickOn });
-  }, [scoreMeta.id, mode, tempoMult, activeParts, myStaves, clickOn]);
+    saveScoreSettings(scoreMeta.id, { mode, tempoMult, activeParts, clickOn });
+  }, [scoreMeta.id, mode, tempoMult, activeParts, clickOn]);
 
   // A range references measure indices; drop it if the engraved score has fewer
   // measures than it expects (a re-engrave can shrink the measure list).
@@ -547,6 +759,11 @@ export default function ScorePlayer({ score: scoreMeta }) {
   // Open the run summary + log the aggregate, using the shared tally (so the log
   // and the panel headline can't drift). Used by BOTH the silent-stop and the
   // completion path.
+  //
+  // RETURNS the run snapshot — `{ grades, tier, mixed, base, score }` — so the
+  // completion path scores the run from the exact values this logged (wave-3 H).
+  // Recomputing the score there instead would leave the shipped log, the panel and
+  // the banked best free to disagree.
   const openRunSummary = useCallback((extra) => {
     setSummaryOpen(true);
     // `extra` is the grade — or grades, since finalize can close out two measures
@@ -557,8 +774,20 @@ export default function ScorePlayer({ score: scoreMeta }) {
     const all = fresh.length
       ? { ...gradesRef.current, ...Object.fromEntries(fresh.map((g) => [g.measure, g])) }
       : gradesRef.current;
+    const tier = runTierRef.current;
+    const mixed = runMixedRef.current;
+    const base = runScore(all);              // 0-100 mean over the non-rest measures
+    const run = { grades: all, tier, mixed, base, score: displayScore(base, tier) };
+    setSummaryRun(run);
     const t = tallyGrades(all);
-    logRunSummary({ greens: t.green, yellows: t.yellow, reds: t.red, overall: t.overall });
+    logRunSummary({
+      greens: t.green, yellows: t.yellow, reds: t.red, overall: t.overall,
+      // The tier outcome ships on EVERY path that opens the panel — completion,
+      // silent-stop and manual pause alike. Two of those bank nothing, and a reader
+      // who only sees the tally cannot tell a 40% pause from a 95% one.
+      score: run.score, tier, mixed,
+    });
+    return run;
   }, [logRunSummary]);
   // `g` is the measure whose silence tripped the stop, handed over by the
   // evaluator: it was graded in THIS tick, so gradesRef does not have it yet and
@@ -587,7 +816,86 @@ export default function ScorePlayer({ score: scoreMeta }) {
   const openRunSummaryRef = useRef(openRunSummary); openRunSummaryRef.current = openRunSummary;
 
   // Clear grades + summary when the score document changes or scoring is turned off.
-  useEffect(() => { setGrades({}); setSummaryOpen(false); setLearnDone(false); }, [scoreMeta.musicXml]);
+  useEffect(() => {
+    setGrades({}); setSummaryOpen(false); setSummaryRun(null); setLearnDone(false);
+    runEligibleRef.current = false; // a new document is a new piece — no run in progress (§H)
+  }, [scoreMeta.musicXml]);
+
+  // ── Learn wet ink (wave-3 D) ──────────────────────────────────────────────────
+  // Every note the user plays in Learn leaves a short-lived mark on the staff at
+  // the cursor column — red at the PLAYED pitch when it was wrong (so "no" also
+  // answers "then what did I play?"), a green flash on a hit, muted grey in the
+  // machine rows where nothing is gated. LearnInkLayer is pure; the lifecycle
+  // (append + timed removal) lives here.
+  //
+  // These callbacks run from a MIDI subscription, so every score-derived value
+  // they read comes from a ref mirror, not the render closure: the subscription is
+  // deliberately NOT re-established per re-engrave (a fresh `events` identity
+  // arrives on every zoom/flow/transpose), so a closure read would go stale the
+  // first time the sheet re-engraved.
+  const [inks, setInks] = useState([]);
+  const inkSeqRef = useRef(0);
+  const inkTimersRef = useRef(new Map());
+  const eventsRef = useRef(events); eventsRef.current = events;
+  const layoutRef = useRef(layout); layoutRef.current = layout;
+  const stepsRef = useRef(steps); stepsRef.current = steps;
+  const activePartsRef = useRef(activeParts); activePartsRef.current = activeParts;
+  // Drop every pending expiry AND the marks themselves — used on a document
+  // change and a mode change, where the geometry the marks were placed against is
+  // about to be replaced (or hidden). Without clearing the timers too, a stale
+  // expiry would fire against the new document's ink list.
+  const clearInks = useCallback(() => {
+    inkTimersRef.current.forEach(clearTimeout);
+    inkTimersRef.current.clear();
+    setInks([]);
+  }, []);
+  const pushInk = useCallback((midi, kind) => {
+    const cur = eventsRef.current?.[stepRef.current];
+    const boxes = layoutRef.current?.staffBoxes || [];
+    if (!cur || !boxes.length) return; // no cursor column / no geometry — nothing to draw on
+    // Which staff does this mark belong to? One active hand answers itself. With
+    // both hands active the honest guess is the staff of the NEAREST expected
+    // pitch at this step — a fumbled left-hand note inks on the left-hand staff.
+    const active = activePartsRef.current || {};
+    const activeStaves = Object.keys(active).filter((s) => active[s]).map(Number);
+    let staff = activeStaves.length === 1 ? activeStaves[0] : 0;
+    if (activeStaves.length > 1) {
+      let best = Infinity;
+      for (const n of stepsRef.current?.[stepRef.current]?.notes || []) {
+        if (!active[n.staff]) continue;
+        const d = Math.abs(n.midi - midi);
+        if (d < best) { best = d; staff = n.staff; }
+      }
+    }
+    // Which SYSTEM is the cursor on? The cursor box spans the whole grand staff,
+    // so its vertical midpoint lands inside one system's band; fall back to the
+    // first box carrying this staff (single-system scores, degenerate geometry).
+    const mid = (cur.top + cur.bottom) / 2;
+    const sys = boxes.find((b) => mid >= b.top - b.lineSpacing * 3 && mid <= b.top + b.lineSpacing * 7)?.system
+      ?? boxes.find((b) => b.staff === staff)?.system ?? 0;
+    const id = ++inkSeqRef.current;
+    setInks((prev) => [...prev, { id, midi, staff, system: sys, x: cur.x, kind }]);
+    const t = setTimeout(() => {
+      inkTimersRef.current.delete(id);
+      setInks((prev) => prev.filter((i) => i.id !== id));
+    }, INK_TTL[kind] ?? 600);
+    inkTimersRef.current.set(id, t);
+  }, []);
+  useEffect(() => () => { inkTimersRef.current.forEach(clearTimeout); }, []);
+  // 0-based staff id → clef. `parsed.parts[0].clefs` is keyed by the 1-based
+  // MusicXML staff NUMBER, while every geometry/activeParts id in this component
+  // is 0-based (activeParts.js convention) — shift once here rather than at each
+  // read site.
+  const inkClefs = useMemo(() => {
+    const c = parsed?.parts?.[0]?.clefs || {};
+    return Object.fromEntries(Object.entries(c).map(([n, v]) => [Number(n) - 1, v]));
+  }, [parsed]);
+  // Ink is spelled in the SOUNDING key: on a C-major piece transposed +2, a played
+  // D5 must land on the D-major grid the player is hearing, not the written one.
+  const inkFifths = useMemo(
+    () => soundingFifths(parsed?.key?.fifths ?? 0, transpose),
+    [parsed, transpose],
+  );
 
   // ── Learn mode: full-hand tracker (all active-staff notes → advance) ──────────
   const lastAdvanceRef = useRef(0);
@@ -600,28 +908,92 @@ export default function ScorePlayer({ score: scoreMeta }) {
   useEffect(() => { if (mode === 'learn') lastAdvanceRef.current = performance.now(); }, [mode]);
   const onFollowHit = useCallback((note) => {
     setStruck((prev) => { const n = new Set(prev); n.add(note); return n; });
+    pushInk(note, 'hit');
+    // A hit means the reading landed — the "is this player stuck?" evidence resets
+    // even mid-chord, so three wrongs SPREAD across a chord's right notes never
+    // add up to a reveal (only three genuinely consecutive misses do).
+    wrongStreakRef.current = 0;
     followHitsRef.current += 1;
     if (!lastAdvanceRef.current) return; // no reference point yet — don't invent one
     recordFollowHit({ step: stepRef.current, note, sinceAdvanceMs: performance.now() - lastAdvanceRef.current });
-  }, [recordFollowHit]);
+  }, [recordFollowHit, pushInk]);
   const onFollowStep = useCallback((next) => {
     setStep(next);
     setStruck(() => new Set());
     lastAdvanceRef.current = performance.now();
   }, []);
   // Learn mode optimizes for READING the score, so the keyboard must not spoil
-  // which key to press. Reveal the target key(s) only AFTER a wrong attempt at the
-  // current step (and then only in a dim "half shade" — see targetNotes/dimTarget
-  // below). Resets on every step change so the next note starts un-spoiled.
+  // which key to press. The reveal is on a BUDGET (wave-3 D): it arms only after
+  // REVEAL_WRONG_STREAK consecutive wrongs on the SAME step, and then only in a dim
+  // "half shade" (see targetNotes/dimTarget below). One wrong note now gets the wet
+  // ink instead — which shows what was played without giving away what to play.
+  // Both the streak and the reveal reset on every step change, so the next note
+  // starts un-spoiled and un-penalised.
   const [revealKeys, setRevealKeys] = useState(false);
-  useEffect(() => { setRevealKeys(false); }, [step]);
-  const onFollowWrong = useCallback(() => { flashWrong(); setRevealKeys(true); followWrongsRef.current += 1; }, [flashWrong]);
+  const wrongStreakRef = useRef(0);
+  useEffect(() => { setRevealKeys(false); wrongStreakRef.current = 0; }, [step]);
+
+  // ── Learn cycle bookkeeping (wave-3 C) ────────────────────────────────────────
+  // One completed, non-voided gate loop (in→out→wrap) is an "attempt" for every
+  // measure it spans; a measure "passes" the cycle if no wrong note landed in it.
+  // cycleWrongsRef accumulates measure indices touched by a wrong note THIS cycle;
+  // cycleVoidRef marks the cycle as unusable (a disruption mid-pass — the loop was
+  // never actually run clean start-to-finish). Both are consumed and reset the
+  // instant a wrap fires (onFollowWrap below), or discarded outright on mode exit.
+  const cycleWrongsRef = useRef(new Set());
+  const cycleVoidRef = useRef(false);
+  const voidCycle = useCallback(() => { cycleVoidRef.current = true; }, []);
+
+  const onFollowWrong = useCallback((midi) => {
+    flashWrong();
+    pushInk(midi, 'wrong'); // the played pitch, in red, on the staff (wave-3 D)
+    followWrongsRef.current += 1;
+    cycleWrongsRef.current.add(measureIndexOfStep(stepRef.current));
+    // The reveal is on a budget — see REVEAL_WRONG_STREAK. It never disarms until
+    // the step changes: once help has been offered, taking it back mid-struggle
+    // would be worse than never offering it.
+    wrongStreakRef.current += 1;
+    if (wrongStreakRef.current >= REVEAL_WRONG_STREAK) setRevealKeys(true);
+  }, [flashWrong, pushInk, measureIndexOfStep]);
   // End of piece in Learn: show the completion card (audit M5). Follow-timing stats
   // still flush when the user leaves Learn / on unmount, so no flush is needed here.
   const [learnDone, setLearnDone] = useState(false);
   const onFollowComplete = useCallback(() => { setLearnDone(true); logger.info('score.learn.complete', {}); }, [logger]);
+
+  // Fires the instant the tracker wraps the range's out-point back to its
+  // in-point — one full, uninterrupted pass. A voided cycle (any disruption since
+  // the last wrap — tap-seek, hand/part change, range change, transpose, or a
+  // mode exit) is discarded, not recorded: it never ran the loop clean.
+  const onFollowWrap = useCallback(() => {
+    const f = focusRef.current;
+    const voided = cycleVoidRef.current;
+    const wrongs = cycleWrongsRef.current;
+    cycleVoidRef.current = false;
+    cycleWrongsRef.current = new Set();
+    if (voided || !f) return;
+    const indices = [];
+    for (let m = f.inMeasure; m <= f.outMeasure; m++) indices.push(m);
+    recordCycle({ measureIndices: indices, wrongMeasures: wrongs, bucket: bucketOf(grandStaff, activeParts) });
+    logger.info('score.learn.cycle', { in: f.inMeasure, out: f.outMeasure, wrongs: wrongs.size });
+    // A pass over a range that spans the WHOLE piece IS the end of the piece, so
+    // it earns the completion card here. useFollowTracker's onComplete cannot
+    // deliver it: `atEnd` is `!range && at the last step`, and the tracker only
+    // drives the cursor at all inside Learn's GATE — which by definition has a
+    // range. So the card was structurally unreachable for every gated run; the
+    // only path that ever fired it was the degenerate no-measures layout (kept
+    // wired below, harmless). A partial range still just records its cycle: it is
+    // a lap of a passage, not the end of anything.
+    const nMeasures = layoutRef.current?.measures?.length || 0;
+    if (nMeasures && f.inMeasure === 0 && f.outMeasure === nMeasures - 1) {
+      setLearnDone(true);
+      logger.info('score.learn.complete', {});
+    }
+  }, [recordCycle, grandStaff, activeParts, logger]);
+
   useFollowTracker({
-    enabled: mode === 'learn',
+    // Learn's GATE only (range + loop on — wave-3 §B): the machine states run the
+    // transport instead, and must not gate the cursor on what the user plays.
+    enabled: learnGate,
     steps,
     activeParts,
     step,
@@ -630,29 +1002,21 @@ export default function ScorePlayer({ score: scoreMeta }) {
     onHit: onFollowHit,
     onWrong: onFollowWrong,
     onComplete: onFollowComplete,
+    onWrap: onFollowWrap,
     range, // wrap advancement within the practice range (null → linear)
   });
 
-  // ── Listen play-along: non-gating light-up ────────────────────────────────────
-  // Optional in Listen only. A struck note that matches the CURRENT step's expected
-  // active-staff midis lights green (adds to `struck`). It NEVER advances or blocks —
-  // the transport clock alone drives the cursor. Subscribes once per enabled change;
-  // step/steps/activeParts read from refs (ref pattern, like useFollowTracker). The
-  // transport's per-step `struck` reset already clears these additions each step.
-  const stepsRef = useRef(steps); stepsRef.current = steps;
-  const activePartsRef = useRef(activeParts); activePartsRef.current = activeParts;
-  // Always on in Listen (no toggle — audit J5): a correct strike lights green. Never
-  // advances or blocks; the transport clock alone drives the cursor.
+  // Machine rows of the Learn matrix (wave-3 §B rows 1/3): nothing is gated, so
+  // there is no right or wrong note to report — but playing along with the kiosk
+  // should still leave a trace. Ink every note_on NEUTRALLY: never red, never a
+  // shake, never a reveal. This is the ONLY subscription these rows make.
   useEffect(() => {
-    if (mode !== 'listen' || !subscribe) return undefined;
+    if (!machineLearn || !subscribe) return undefined;
     return subscribe((evt) => {
       if (!evt || evt.type !== 'note_on' || !evt.velocity) return;
-      const expected = expectedMidisAtStep(stepsRef.current?.[stepRef.current], activePartsRef.current || {});
-      if (expected.has(evt.note)) {
-        setStruck((prev) => { const n = new Set(prev); n.add(evt.note); return n; });
-      }
+      pushInk(evt.note, 'neutral');
     });
-  }, [mode, subscribe]);
+  }, [machineLearn, subscribe, pushInk]);
 
   // Flush follow-timing stats when leaving Learn (and on unmount if still in it).
   const flushFollowNow = useCallback(() => {
@@ -722,19 +1086,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
     logger.info('score.transport.resume', { step: target });
   }, [resumeTick, layoutFresh, events.length, stepTimeline, tempoMult, logger]);
 
-  // Perform page indicator — a rough page = floor(scrollPos / viewport) + 1 over
-  // the current flow's axis. Recomputed on scroll + resize while in Perform.
   const { advancePedalCC, backPedalCC } = smCfg.perform;
-  const computePerfPage = useCallback(() => {
-    const el = scrollRef.current;
-    if (!el) return;
-    const horiz = flow === 'horizontal';
-    const viewport = horiz ? el.clientWidth : el.clientHeight;
-    if (!viewport) return;
-    const pos = horiz ? el.scrollLeft : el.scrollTop;
-    const contentSize = horiz ? el.scrollWidth : el.scrollHeight;
-    setPerfPage({ page: Math.floor(pos / viewport) + 1, pages: Math.max(1, Math.ceil(contentSize / viewport)) });
-  }, [flow]);
 
   // UI-intent + input→paint tap. Records the intent immediately (tagged with the
   // current cursor step) and, on the next frame, the input→paint latency for the
@@ -850,14 +1202,10 @@ export default function ScorePlayer({ score: scoreMeta }) {
 
   // Perform mode: config-defined pedals turn the page — advancePedalCC forward,
   // backPedalCC back — rising edge ONLY, since continuous/half pedals stream many
-  // CC values per physical press. Also tracks the page indicator on scroll/resize.
+  // CC values per physical press. Zero chrome (wave-3 I): there is no on-screen
+  // page readout to keep in sync, so this is just the CC subscription.
   useEffect(() => {
     if (mode !== 'perform') return undefined;
-    computePerfPage();
-    const el = scrollRef.current;
-    const onScroll = () => computePerfPage();
-    el?.addEventListener('scroll', onScroll, { passive: true });
-    window.addEventListener('resize', computePerfPage);
     const prev = {}; // controller number → last seen CC value
     const unsub = subscribeRaw(({ data }) => {
       if (!data || data.length < 3) return;
@@ -870,12 +1218,98 @@ export default function ScorePlayer({ score: scoreMeta }) {
       if (!rising) return;
       pageBy(cc === backPedalCC ? 'back' : 'fwd');
     });
-    return () => {
-      el?.removeEventListener('scroll', onScroll);
-      window.removeEventListener('resize', computePerfPage);
-      unsub?.();
-    };
-  }, [mode, subscribeRaw, advancePedalCC, backPedalCC, computePerfPage, pageBy]);
+    return () => { unsub?.(); };
+  }, [mode, subscribeRaw, advancePedalCC, backPedalCC, pageBy]);
+
+  // ── Armed loop endpoints (wave-3 F) ───────────────────────────────────────────
+  // Arm an edge from the bar's LoopGroup (or, from Task 21, a handle tap): the
+  // NEXT tap on the score names the measure for that edge. Arming is a mode, not
+  // a wizard — one tap, one endpoint, and the arm expires on its own (below).
+  const onArm = useCallback((edge) => {
+    setArming(edge);
+    setArmRejects(0);
+    logger.info('score.loop.arm', { edge });
+  }, [logger]);
+
+  // Section boundaries (measure INDICES) an endpoint snaps to. Rehearsal marks are
+  // the musician's landmarks: a coarse tap one measure off one almost always means
+  // the mark, and an off-by-one loop is a worse outcome than a snap the user can
+  // see and re-tap. Both ends of every section count (a section's last measure is
+  // as real a boundary as its first).
+  const sectionBounds = useMemo(() => {
+    const ms = layout.measures || [];
+    const set = new Set();
+    for (const s of sections) {
+      const r = sectionToRange(s, ms);
+      if (!r) continue;
+      set.add(r.inMeasure);
+      set.add(r.outMeasure);
+    }
+    return [...set];
+  }, [sections, layout.measures]);
+  // The same landmarks, drawn on the score while an endpoint is up for grabs
+  // (armed, or a handle mid-drag): only the section STARTS, because a section's
+  // end and the next one's start are the same visual boundary one measure apart —
+  // ticking both would double every line and say nothing extra. Snapping still
+  // considers both ends (sectionBounds above); this is only what is SHOWN.
+  const sectionMarks = useMemo(() => {
+    const ms = layout.measures || [];
+    return sections.map((s) => sectionToRange(s, ms)?.inMeasure).filter((m) => m != null);
+  }, [sections, layout.measures]);
+  // Nearest boundary within ONE measure, else the tapped measure unchanged.
+  const snapMeasure = useCallback((mi) => {
+    let best = mi;
+    let bestD = Infinity;
+    for (const b of sectionBounds) {
+      const d = Math.abs(mi - b);
+      if (d <= 1 && d < bestD) { bestD = d; best = b; }
+    }
+    return best;
+  }, [sectionBounds]);
+
+  // Commit one endpoint (§F). With NO range, an endpoint plants a one-measure
+  // range with the loop OFF — `focus` stays atomic (there is never a half-marked
+  // range) and the user is not committed to looping by a single tap. With a range
+  // already set, this REPLACES that edge, swapping the ends if they crossed.
+  // A range change is a move between rows of the Learn matrix, so it always stops
+  // and quiets down (Task 9) and never auto-plays.
+  // Cycle voiding is deliberately NOT done here: the focus effect below owns it
+  // (a fresh arm resets, a change against an existing range voids — wave-3 C fix
+  // round 1), and doing it in both places would void a fresh arm's honest first
+  // pass.
+  const commitEndpoint = useCallback((edge, mi, via) => {
+    const measure = snapMeasure(mi);
+    const f = focusRef.current;
+    stopForMatrixChange();
+    focusOriginRef.current = via === 'drag' ? 'drag' : 'handle-tap';
+    if (!f) {
+      setFocus({ kind: 'custom', inMeasure: measure, outMeasure: measure });
+      setLoopOn(false);
+    } else {
+      let inMeasure = edge === 'in' ? measure : f.inMeasure;
+      let outMeasure = edge === 'out' ? measure : f.outMeasure;
+      if (inMeasure > outMeasure) { const t = inMeasure; inMeasure = outMeasure; outMeasure = t; }
+      setFocus({ kind: 'custom', inMeasure, outMeasure });
+    }
+    logger.info('score.loop.set', { edge, measure, via, snapped: measure !== mi });
+  }, [snapMeasure, stopForMatrixChange, logger]);
+
+  // A handle drag in progress. The layer reports `(edge, measureIndex)` as measures
+  // are crossed and `(edge, null)` when the gesture ENDS (commit, cancel or miss
+  // alike) — so this flag can never latch the section ticks on. The previewed
+  // measure itself is not applied: a drag paints its own handle, and writing
+  // `focus` per crossed measure would stop the transport dozens of times
+  // (commitEndpoint → stopForMatrixChange) during one gesture.
+  // A live drag also RELEASES any pending arm. The two gestures answer the same
+  // question, so once the finger starts moving a grip the arm has been superseded —
+  // and an arm that survived the drag would be the audit-H4b hazard exactly: the
+  // banner would still be up after the range committed, and the next tap on the
+  // music would set an endpoint instead of seeking.
+  const onHandlePreview = useCallback((edge, mi) => {
+    if (mi == null) { setDraggingEdge(null); return; }
+    setDraggingEdge(edge);
+    setArming(null);
+  }, []);
 
   // Tap: Learn/Polish → move the cursor to the nearest note; Perform → scroll it into view.
   const onScoreClick = useCallback((e) => {
@@ -899,27 +1333,26 @@ export default function ScorePlayer({ score: scoreMeta }) {
     }
     if (!rdr || !events.length) return;
     const r = rdr.getBoundingClientRect();
-    // Guided loop selection (Listen/Learn/Polish): first tap sets the pending in-measure
-    // (a bracket appears + the banner asks for the last), the second sets the
-    // out-measure → an ordered { inMeasure, outMeasure } custom range. Selection taps
-    // set the range instead of seeking (audit J5/M3), and require the tap to be
-    // NEAR a note (audit L3) — a margin tap is ignored, not committed.
-    if (selecting) {
-      const si = nearestEvent(events, e.clientX - r.left, e.clientY - r.top, SELECT_MAX_DIST * scale);
-      if (si < 0) { setSelectRejects((n) => n + 1); return; } // too far — say so, don't swallow it
-      setSelectRejects(0);
-      const mi = measureIndexOfStep(si);
-      if (selecting.stage === 'first') {
-        setSelecting({ stage: 'last', inMeasure: mi });
-        logger.info('score.focus.arm', { inMeasure: mi });
-      } else {
-        const inMeasure = Math.min(selecting.inMeasure, mi);
-        const outMeasure = Math.max(selecting.inMeasure, mi);
-        setSelecting(null);
-        focusOriginRef.current = 'select';
-        setFocus({ kind: 'custom', inMeasure, outMeasure });
-        setLoopOn(true); // a freshly-picked range always starts looping (audit L2 follow-up)
-      }
+    // An ARMED endpoint (wave-3 F): this tap names the measure for that edge of
+    // the loop and sets it — it does not seek. Hit-testing is coarse by design
+    // (measureAtPoint): any x inside a system's band resolves to the nearest
+    // measure column, so only a DEAD MARGIN is refused. The retired two-tap
+    // flow's near-a-note radius (audit L3) is gone with it.
+    if (arming) {
+      const ms = layout.measures || [];
+      const mi = measureAtPoint({
+        events,
+        // A degenerate engrave can publish steps with no measure model at all;
+        // treat the whole piece as one measure so an armed tap on the music is
+        // never a dead press (the fallback the retired measureIndexOfStep applied).
+        measures: ms.length ? ms : [{ index: 0, firstStep: 0, lastStep: events.length - 1 }],
+        x: e.clientX - r.left,
+        y: e.clientY - r.top,
+        slack: 40 * scale,
+      });
+      if (mi < 0) { setArmRejects((n) => n + 1); return; } // outside the music — say so, don't swallow it
+      setArming(null);
+      commitEndpoint(arming, mi, 'tap');
       return;
     }
     const i = nearestEvent(events, e.clientX - r.left, e.clientY - r.top);
@@ -927,6 +1360,11 @@ export default function ScorePlayer({ score: scoreMeta }) {
     // Normal seek. When a practice range is active, clamp the target into it.
     resumeAfterRef.current = null; // a tap-seek supersedes a pending rebuild-resume
     clearWrapDwell(); // a tap-seek overrides a pending loop-wrap dwell
+    voidCycle(); // a tap-seek breaks any Learn gate cycle in progress (wave-3 C)
+    // …and in Polish it breaks the whole-piece claim: a run played from the tail
+    // scores only the tail, but reaches onDone looking like a completion (§H). A
+    // later Play from step 0 re-arms, so this only costs the run it should cost.
+    if (mode === 'polish') runEligibleRef.current = false;
     const target = range ? clampStepToRange(i, range) : i;
     // Tap-to-seek is the primary navigation gesture and emitted nothing, so every
     // `play {step: N}` with an unexplained N was a seek nobody could see (T1).
@@ -936,17 +1374,18 @@ export default function ScorePlayer({ score: scoreMeta }) {
     setStruck(() => new Set());
     lastAdvanceRef.current = performance.now();
     // Seek jumps idxRef past pending note_offs — flush sounding notes first
-    // (Listen mode) so a skipped-over note doesn't drone on the piano.
+    // (whenever the kiosk is on the audio plane) so a skipped-over note doesn't
+    // drone on the piano.
     // NOTE: unlike pause→resume, we deliberately do NOT clear the delayed panic
     // here — the transport keeps playing, so the panic still needs to fire to
     // kill pre-seek queued note-ons whose note-offs the jump skipped. Accepted
     // minor limitation: it can also clip a post-seek note once at the +lookahead
     // mark; a one-time clip is preferable to stranding a pre-seek note (drone).
-    if (mode === 'listen') silenceScheduled();
+    if (sendsAudio) silenceScheduled();
     // Transport timeline is tempo-scaled (playTimeline uses factor 1/tempoMult);
     // seek positions come from the unscaled stepTimeline, so scale to match.
     transport.seek((stepTimeline[target]?.t ?? 0) / tempoMult);
-  }, [mode, flow, events, transport, stepTimeline, silenceScheduled, tempoMult, selecting, range, measureIndexOfStep, logger, countIn, scale, clearWrapDwell, tapIntent]);
+  }, [mode, sendsAudio, flow, events, transport, stepTimeline, silenceScheduled, tempoMult, arming, commitEndpoint, layout.measures, range, logger, countIn, scale, clearWrapDwell, tapIntent, voidCycle]);
 
   // Single unmount teardown: immediate silence + one delayed panic (see the
   // silenceScheduled note above), plus any pending loop-wrap dwell — a restart
@@ -956,9 +1395,31 @@ export default function ScorePlayer({ score: scoreMeta }) {
 
   // ── Focus range: selection + custom-loop taps ─────────────────────────────────
   // When a practice range is (re)selected, jump the cursor to its in-point and log.
+  // prevFocusRef lags one commit behind `focus` — unlike focusRef/rangeRef (which
+  // mirror the CURRENT value during render, for reads inside other callbacks),
+  // this one is updated at the end of THIS effect, so reading it at the top always
+  // sees the PRIOR focus, never the one that just committed.
+  const prevFocusRef = useRef(null);
   useEffect(() => {
     clearWrapDwell(); // a loop change (set/clear/nudge) invalidates a pending dwell
+    // A range change only VOIDS a cycle it could have disrupted — i.e. one where a
+    // range was already active. Arming a FRESH range (prior focus was null) has no
+    // prior cycle to disrupt: it starts an honest first cycle instead, so reset
+    // (not void) — voiding it would silently raise the pass-count bar on every
+    // range selection (wave-3 C fix round 1).
+    if (prevFocusRef.current) voidCycle(); // an existing range was replaced/cleared
+    else { cycleVoidRef.current = false; cycleWrongsRef.current = new Set(); } // fresh arm (or bare mount)
+    prevFocusRef.current = focus;
+    // The no-focus path is BOTH a bare mount and a cleared range, and must not
+    // touch the transport or the piano: this effect runs on mount, so stopping
+    // here would have every ScorePlayer open by silencing a kiosk it has not yet
+    // played a note through. A range CLEAR still stops its driver — onClearFocus
+    // owns that (it calls stopForMatrixChange before clearing).
     if (!focus) return;
+    // SETTING a range moves between rows of the Learn matrix — stop and quiet down
+    // first, then position the cursor. Nothing below plays: a new range never
+    // auto-starts a run.
+    stopForMatrixChange();
     const r = layout.measures ? rangeSteps(layout.measures, focus) : null;
     if (!r) return;
     setStep(r[0]);
@@ -969,54 +1430,100 @@ export default function ScorePlayer({ score: scoreMeta }) {
     tapIntent('focus');
   }, [focus]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const onPickSection = useCallback((section) => {
-    const r = layout.measures ? sectionToRange(section, layout.measures) : null;
-    if (!r) return;
-    setSelecting(null);
-    focusOriginRef.current = 'section';
-    setFocus({ kind: 'section', label: section.label, ...r });
-    setLoopOn(true); // a freshly-picked range always starts looping (audit L2 follow-up)
-  }, [layout.measures]);
+  // Hand preference (wave-3 E): user → household → both, applied once per score
+  // when Learn is entered with no persisted hands choice. Clamped to staves
+  // that actually carry notes — a preference must never dead-end the gate.
+  const seededHandsRef = useRef(false);
+  // The exact object just handed to setActiveParts, held until it lands: the
+  // auto-range effect below (same source-order pass) still closes over the
+  // PRE-seed `activeParts` the instant this effect calls setActiveParts — a
+  // plain boolean latch can't tell that apart from "nothing to seed" (both are
+  // seededHandsRef.current===true by the time the auto-range effect runs in the
+  // same pass). Comparing against this ref's identity can: it stays !== the
+  // rendered `activeParts` for exactly one extra pass, then becomes ===.
+  const pendingHandSeedRef = useRef(null);
+  // Session-scoped "the user already made a manual choice" latch (review fix
+  // round 1): set by the manual hand handlers (onHandsChange, onCyclePart)
+  // below, in ANY mode — a Listen-mode toggle counts. Without this, a user who
+  // picks their hands manually before ever opening Learn gets silently
+  // overridden the instant Learn seeds from the resolved preference.
+  const userTouchedHandsRef = useRef(false);
+  useEffect(() => {
+    // !prefsLoaded: the prefs GET is a fresh round-trip per user switch while
+    // OSMD engraving is pure client-side after mount, so a fast score can
+    // report notes before the real per-user learnHands resolves — wait for it
+    // rather than seeding off the household default and latching there (review
+    // fix round 1). Not a latch itself: this returns WITHOUT touching
+    // seededHandsRef, so the effect simply re-fires once prefsLoaded flips true
+    // (getPref's identity changes when prefs load, re-running this effect).
+    if (mode !== 'learn' || seededHandsRef.current || !grandStaff || !prefsLoaded) return;
+    if (restored.activeParts && typeof restored.activeParts === 'object') { seededHandsRef.current = true; return; }
+    if (userTouchedHandsRef.current) { seededHandsRef.current = true; return; } // manual pick this session wins, same as a persisted one
+    if (!layout.notes?.length) return;
+    seededHandsRef.current = true;
+    const pref = getPref('learnHands', smCfg.learn.defaultHands);
+    if (pref !== 'rh' && pref !== 'lh') return; // 'both' is already the default
+    const staffHasNotes = (s) => layout.notes.some((nte) => nte.staff === s);
+    const want = pref === 'rh' ? 0 : 1;
+    const target = staffHasNotes(want) ? want : staffHasNotes(want === 0 ? 1 : 0) ? (want === 0 ? 1 : 0) : null;
+    if (target == null) return;
+    const next = { 0: target === 0, 1: target === 1 };
+    pendingHandSeedRef.current = next;
+    setActiveParts(next);
+  }, [mode, grandStaff, layout.notes, restored.activeParts, getPref, smCfg, prefsLoaded]);
+  useEffect(() => {
+    seededHandsRef.current = false;
+    pendingHandSeedRef.current = null;
+    userTouchedHandsRef.current = false;
+  }, [scoreMeta.id]);
 
-  // Begin the guided two-tap measure selection (from Loop → Select measures…).
-  const onStartSelect = useCallback(() => {
-    setSelecting({ stage: 'first' });
-    setSelectRejects(0);
-    logger.info('score.focus.select-start', {});
-  }, [logger]);
+  // Learn landing (wave-3 B): pick the frontier window when Learn is entered
+  // without a range. Runs once per Learn entry — the learnAutoRef arms on entry
+  // and disarms after the pick (or when the user sets a range themselves).
+  const learnAutoRef = useRef(false);
+  useEffect(() => { if (mode === 'learn' && !focus) learnAutoRef.current = true; else if (mode !== 'learn') learnAutoRef.current = false; }, [mode]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (!learnAutoRef.current || mode !== 'learn' || focus || !layout.measures?.length || !practiceLoaded) return;
+    // Wait for a hand-preference seed requested THIS pass (above) to actually
+    // land in `activeParts` — picking now would read the pre-seed value and
+    // frontier off the wrong hands' practice history (audit: wave-3 E).
+    if (pendingHandSeedRef.current && pendingHandSeedRef.current !== activeParts) return;
+    learnAutoRef.current = false;
+    const bucket = bucketOf(grandStaff, activeParts);
+    const passes = practice?.measures
+      ? layout.measures.map((m) => practice.measures[String(m.index)]?.[bucket]?.passes ?? 0)
+      : null;
+    const picked = pickLearnRange({ sections, measures: layout.measures, steps: layout.steps, activeParts, passesByMeasure: passes });
+    focusOriginRef.current = 'auto';
+    setFocus({ kind: 'custom', inMeasure: picked.inMeasure, outMeasure: picked.outMeasure });
+    setLoopOn(true); // the landing IS the gate state — ready to play
+    logger.info('score.learn.auto-range', { ...picked });
+  }, [mode, focus, layout.measures, layout.steps, practiceLoaded, practice, activeParts, grandStaff, sections, logger]);
 
-  // Arming must not outlive the user's intent. `selecting` gates the seek branch
-  // of onScoreClick, so a forgotten arm silently disables tap-to-seek — one user
+  // An arm must not outlive the user's intent. `arming` gates the seek branch of
+  // onScoreClick, so a forgotten arm silently disables tap-to-seek — one user
   // armed, played for 30s, tapped to seek and got a 10-measure loop (audit H4b).
   useEffect(() => {
-    if (!selecting) return undefined;
+    if (!arming) return undefined;
     const t = setTimeout(() => {
-      setSelecting(null);
-      logger.info('score.focus.select-timeout', { stage: selecting.stage });
+      setArming(null);
+      logger.info('score.loop.arm-expire', { edge: arming });
     }, SELECT_IDLE_MS);
     return () => clearTimeout(t);
-  }, [selecting, logger]);
-  const onCancelSelect = useCallback(() => setSelecting(null), []);
+  }, [arming, logger]);
+  const onCancelArm = useCallback(() => setArming(null), []);
 
   const onClearFocus = useCallback(() => {
-    setSelecting(null);
+    setArming(null);
+    stopForMatrixChange(); // clearing the range is a matrix change — stop, don't jump
     setFocus(null);
     logger.info('score.focus.clear', {});
-  }, [logger]);
-  // Nudge one loop endpoint by ±1 measure (audit L2). Pure clamped math in
-  // nudgeRange; a real change flows through the focus effect above, which jumps
-  // the cursor to the (possibly new) in-point and logs — desired: the loop
-  // re-seeks its start when an endpoint moves. A clamped no-op returns the same
-  // object, so setFocus bails without re-rendering.
-  const onNudge = useCallback((edge, delta) => {
-    focusOriginRef.current = 'nudge';
-    setFocus((f) => nudgeRange(f, edge, delta, layout.measures?.length || 0));
-  }, [layout.measures]);
-  // Scope label for the Loop control: a section's label or a 1-based measure span
-  // (indices are 0-based internally); empty when no loop is active.
-  const scopeLabel = focus
-    ? (focus.label || `m${focus.inMeasure + 1}–m${focus.outMeasure + 1}`)
-    : '';
+  }, [stopForMatrixChange, logger]);
+  // Endpoint labels for the bar's LoopGroup: 1-based measure numbers (indices are
+  // 0-based internally), undefined when no range is set so the mark buttons stay
+  // icon-only until there is something to show.
+  const inLabel = focus ? `m${focus.inMeasure + 1}` : undefined;
+  const outLabel = focus ? `m${focus.outMeasure + 1}` : undefined;
 
   // ── Bar handlers ──────────────────────────────────────────────────────────────
   const onMode = useCallback((id) => {
@@ -1027,14 +1534,31 @@ export default function ScorePlayer({ score: scoreMeta }) {
     flushPlaybackNow();          // leaving a Polish/Listen run
     if (mode === 'learn') flushFollowNow();
     clearWrapDwell();            // a pending loop-wrap dwell dies with the run
+    // A mode exit mid-cycle DISCARDS it outright (not a void-until-next-wrap):
+    // the gate this cycle belonged to is gone, so there is no "next wrap" to
+    // resolve it against — reset both refs rather than merely marking voided.
+    cycleVoidRef.current = false;
+    cycleWrongsRef.current = new Set();
     transport.stop();
     setRunActive(false);         // …and so does the run itself (see runActive)
+    // A mode change ends the run outright, so its whole-piece claim dies with it —
+    // otherwise an arm taken in Listen/Learn (which also start runs at step 0) would
+    // still be standing when Polish is entered mid-piece and played to the end (§H).
+    runEligibleRef.current = false;
     silenceScheduled();
     setStruck(() => new Set());
-    // The loop follows Listen↔Learn↔Polish (hear it, drill it, prove it — audit
-    // L6/J3); only Perform (music-stand mode) releases it. Loop-arming always resets.
-    if (id === 'perform') setFocus(null);
-    setSelecting(null);
+    clearInks();                 // wet ink belongs to the mode it was played in (wave-3 D)
+    // Loop/focus is Learn-only state (wave-3 §0): only Learn keeps a range. Listen
+    // is a jukebox and Polish grades whole-piece runs, so entering either releases
+    // the range AND the loop toggle (the wave-2 "loop follows the ladder" semantics
+    // are deliberately reversed). Loop-arming always resets.
+    if (id !== 'learn') { setFocus(null); setLoopOn(false); }
+    // Listen's free-running click is session-local to the Listen visit itself
+    // (mirrors learnClick's never-persisted discipline, wave-3 G): leaving
+    // Listen ends that session, so a walk-up back into Listen never inherits a
+    // ticking room it didn't start.
+    if (mode === 'listen' && id !== 'listen') setListenClick(false);
+    setArming(null);              // a mode change abandons a pending endpoint arm
     // Leaving Polish: drop the run summary + grades (they belong to that run).
     setSummaryOpen(false); setGrades({});
     // Learn is a from-the-top (or from-the-loop) exercise: entering it should not
@@ -1054,12 +1578,28 @@ export default function ScorePlayer({ score: scoreMeta }) {
     setMode(id); // keyboard visibility follows the new mode automatically (M2)
     logMode({ mode: id });
     tapIntent('mode');
-  }, [mode, flushPlaybackNow, flushFollowNow, transport, silenceScheduled, logMode, countIn, clearWrapDwell, tapIntent]);
+  }, [mode, flushPlaybackNow, flushFollowNow, transport, silenceScheduled, logMode, countIn, clearWrapDwell, clearInks, tapIntent]);
 
   // Listen tempo: clamp to a sane playable range (0.25×–2×). Timeline rescales via
   // the playTimeline memo; the transport reads the new timings on its next tick.
   const onTempo = useCallback((v) => {
     const n = Number(v);
+    // A tempo change mid-run voids this run's tier best (wave-3 H): half the piece
+    // at 60% and half at 100% is not a score at either speed. Scoped to an ACTIVE
+    // run — a tempo picked before Play (or during the count-in, before onGo) is
+    // simply the tempo the run will be played at, and must not poison it.
+    if (runActiveRef.current) runMixedRef.current = true;
+    // `mixed` alone is not enough: `runActive` is FALSE across a manual pause and
+    // across a rebuild gap, so a tempo change taken there slips past it and the
+    // resume re-captures the tier at the NEW speed — half the piece banked as if
+    // it had all been played at the new tempo (§H). A run is "in flight or merely
+    // suspended" whenever the transport is running, a rebuild-resume is pending, or
+    // grades from this run are already on the board; in all three cases the change
+    // costs the run its whole-piece claim. A tempo change with a CLEAN board (or
+    // after a completed run, whose next Play re-arms from step 0) costs nothing.
+    if (runActiveRef.current || resumeAfterRef.current || Object.keys(gradesRef.current).length > 0) {
+      runEligibleRef.current = false;
+    }
     setTempoMult(Number.isFinite(n) ? Math.min(2, Math.max(0.25, n)) : 1);
   }, []);
 
@@ -1091,25 +1631,27 @@ export default function ScorePlayer({ score: scoreMeta }) {
   // performed/highlighted notes move together.
   const onTranspose = useCallback((v) => {
     pauseForViewChange();
+    voidCycle(); // a key change breaks a Learn cycle in progress (wave-3 C)
     const n = Math.round(Number(v));
     const clamped = Number.isFinite(n) ? Math.min(7, Math.max(-7, n)) : 0;
     setTranspose(clamped);
     logTranspose({ semitones: clamped });
     tapIntent('transpose');
-  }, [logTranspose, pauseForViewChange, tapIntent]);
+  }, [logTranspose, pauseForViewChange, tapIntent, voidCycle]);
 
   // Zoom (Size) — pause a running transport before the re-engrave (H2).
   const onScaleStep = useCallback((v) => { pauseForViewChange(); setScale(v); }, [pauseForViewChange]);
 
   const reset = useCallback(() => {
     resumeAfterRef.current = null; // Restart supersedes a pending rebuild-resume
-    setSelecting(null);     // Restart means the user is done arming a loop
+    setArming(null);        // Restart means the user is done arming a loop
     countIn.cancel();       // reset aborts a pending count-in
     clearWrapDwell();       // …and any pending loop-wrap dwell
     setLearnDone(false);    // fresh pass — close the completion card
     transport.stop();
     setRunActive(false);    // Restart ends the current run (see runActive)
-    if (mode === 'listen') silenceScheduled();
+    runEligibleRef.current = false; // …and its whole-piece claim; the next Play re-arms from home (§H)
+    if (sendsAudio) silenceScheduled();
     flushPlaybackNow();
     const home = homeStep(rangeRef.current); // loop in-point when a loop is active (audit L5)
     // Restart emitted nothing at all, so the most-pressed control in the mode was
@@ -1120,10 +1662,11 @@ export default function ScorePlayer({ score: scoreMeta }) {
     setStruck(() => new Set());
     setGrades({});          // a fresh run clears the previous grades…
     setSummaryOpen(false);  // …and closes any open summary
+    setSummaryRun(null);    // …and forgets the run that summary reported
     // The auto-follow effect scrolls to the new step; only a true top-of-piece
     // reset should force-scroll to the origin.
     if (home === 0) scrollRef.current?.scrollTo({ top: 0, left: 0 });
-  }, [transport, mode, silenceScheduled, flushPlaybackNow, countIn, clearWrapDwell, logger, tapIntent]);
+  }, [transport, mode, sendsAudio, silenceScheduled, flushPlaybackNow, countIn, clearWrapDwell, logger, tapIntent]);
 
   // Run summary Replay: reset the run (clears grades + closes the panel).
   const onReplaySummary = useCallback(() => { reset(); }, [reset]);
@@ -1150,6 +1693,25 @@ export default function ScorePlayer({ score: scoreMeta }) {
   // The Drill button only makes sense when there's a trouble span to drill.
   const drillable = useMemo(() => worstSpan(grades) != null, [grades]);
 
+  // ── Polish tempo tiers: live readout + summary props (wave-3 H) ──────────────
+  // The bar's score prefix. Derived from `grades`, so it moves on a per-MEASURE
+  // cadence (not per step) — and it is consumed by the bar SHELL, which already
+  // re-renders per step, so the memoized clusters keep bailing out. Reads the LIVE
+  // tempo rather than runTierRef: before the first run there is no captured tier,
+  // and mid-run the two agree (a change voids the best, not the readout).
+  const scoreLabel = useMemo(() => {
+    if (mode !== 'polish') return null;
+    const base = runScore(grades);
+    return base == null ? null : `${displayScore(base, tierOf(tempoMult))}%`;
+  }, [mode, grades, tempoMult]);
+  // Which hands bucket the run belongs to — the same key the completion path banks
+  // under, so the strip always shows the bests the next completion would beat.
+  const polishBucket = bucketOf(grandStaff, activeParts);
+  // The panel shows the score the snapshot was built with — the same number the
+  // summary log shipped and the completion path banked. Not recomputed here: a
+  // second derivation is a second chance to disagree.
+  const summaryScore = summaryRun?.score ?? null;
+
   // Stable toggles for the transport bar. Passing fresh inline arrows here would
   // defeat React.memo on the bar's expensive body (parts/chips/popovers), so the
   // whole bar would reconcile on every cursor-step advance. Functional updaters →
@@ -1161,21 +1723,29 @@ export default function ScorePlayer({ score: scoreMeta }) {
   }, [mode, keyboardVisible]);
   const onToggleClick = useCallback(() => {
     if (mode === 'learn') setLearnClick((v) => !v); // free-run, session-local
+    else if (mode === 'listen') setListenClick((v) => !v); // free-run, session-local (wave-3 G)
     else setClickOn((v) => !v); // Polish arm state, persisted
   }, [mode]);
   // Flip looping on/off IN PLACE — the range stays defined (its brackets keep
-  // showing) but wrap/clamp/home-step stop treating it as a boundary. Stable
-  // identity (empty deps via loopOnRef, mirroring stepRef) so the memoized bar
-  // doesn't reconcile on a cursor advance.
+  // showing) but wrap/clamp/home-step stop treating it as a boundary. In Learn
+  // this MOVES between rows of the state matrix (gate ↔ machine playback), so it
+  // stops whatever was running and silences first; turning it ON also parks the
+  // cursor on the in-point, because that is where the gated pass begins. Turning
+  // it OFF leaves the cursor exactly where it was. Neither direction auto-plays.
   const onToggleLoop = useCallback(() => {
     const next = !loopOnRef.current;
+    stopForMatrixChange();
     setLoopOn(next);
-    logger.info('score.loop.toggle', { on: next });
-  }, [logger]);
+    if (next && focus && layout.measures) {
+      const r = rangeSteps(layout.measures, focus);
+      if (r) { setStep(r[0]); setStruck(() => new Set()); lastAdvanceRef.current = performance.now(); }
+    }
+    logger.info('score.loop.on', { on: next });
+  }, [stopForMatrixChange, focus, layout.measures, logger]);
 
   const toggleRun = useCallback(() => {
     resumeAfterRef.current = null; // an explicit play/pause supersedes a pending rebuild-resume
-    setSelecting(null); // starting/stopping a run means the user is done arming a loop
+    setArming(null); // starting/stopping a run means the user is done arming a loop
     clearWrapDwell(); // a manual play/pause overrides a pending loop-wrap dwell
     // A second tap during the count-in aborts it (never reaches the transport).
     if (countIn.active) { countIn.cancel(); logger.info('score.countin.cancel', { via: 'toggle' }); return; }
@@ -1188,7 +1758,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
       if (mode === 'polish') openRunSummaryRef.current?.(finalizeRef.current?.());
       transport.pause();
       setRunActive(false);
-      if (mode === 'listen') silenceScheduled();
+      if (sendsAudio) silenceScheduled();
       flushPlaybackNow();
       logger.info('score.transport.pause', { step: stepRef.current });
       tapIntent('transport-pause');
@@ -1199,9 +1769,10 @@ export default function ScorePlayer({ score: scoreMeta }) {
       // transport first, so their pending panic is harmless.)
       clearTimeout(flushTimerRef.current);
       // Count the user in when they're expected to PLAY: Polish always (the beat is
-      // graded — audit J1), and Listen when they've claimed a part (audit J7). onGo
-      // starts the transport. Pure playback (Listen, no part) plays immediately.
-      const countUserIn = mode === 'polish' || (mode === 'listen' && myStaves.size > 0);
+      // graded — audit J1). Listen never counts in (wave-3 A: the kiosk performs the
+      // active hands — it's a jukebox, not a play-along) — onGo starts the transport;
+      // Listen always plays immediately.
+      const countUserIn = mode === 'polish';
       if (countUserIn) {
         // Log the PLAN, not the meter: at fast tempi the pulse coarsens and the
         // count-in may run extra bars, so the time signature no longer tells a log
@@ -1216,6 +1787,9 @@ export default function ScorePlayer({ score: scoreMeta }) {
         // left outside the range to its in-point before seeking.
         const startStep = rangeRef.current ? clampStepToRange(stepRef.current, rangeRef.current) : stepRef.current;
         if (startStep !== stepRef.current) setStep(startStep);
+        runTierRef.current = tierOf(tempoMult); // the no-count-in start path (wave-3 H)
+        runMixedRef.current = false;
+        if (startStep === 0) runEligibleRef.current = true; // one-way arm — see runEligibleRef
         transport.seek((stepTimeline[startStep]?.t ?? 0) / tempoMult);
         setRunActive(true);
         transport.play();
@@ -1225,55 +1799,58 @@ export default function ScorePlayer({ score: scoreMeta }) {
     }
     // NOTE: reads the live cursor via `stepRef.current` (mirrors `step`), NOT the
     // `step` closure — so `step` is deliberately OUT of the dep array.
-  }, [countIn, transport, mode, myStaves, silenceScheduled, flushPlaybackNow, logger, stepTimeline, tempoMap, tempoMult, parsed, clearWrapDwell, tapIntent]);
+  }, [countIn, transport, mode, sendsAudio, silenceScheduled, flushPlaybackNow, logger, stepTimeline, tempoMap, tempoMult, parsed, clearWrapDwell, tapIntent]);
 
-  // Changing the Listen role map mid-flight invalidates the note timeline — pause,
-  // flush, and silence so a stale schedule doesn't drone, then resume where we
-  // were (audit H5: the music dying on the spot read as a broken button). Shared
-  // by the chip fallback and the My-part control.
-  const disruptListenPlayback = useCallback(() => {
-    pauseForRebuild('part');
-    silenceScheduled(); // also flush when nothing was playing (a stale schedule may still be queued)
-  }, [pauseForRebuild, silenceScheduled]);
-
+  // Toggle a staff's active state — the chip fallback for >2 staves. One branch,
+  // every mode (wave-3 A): Learn/Polish need ≥1 active staff or the all-notes rule
+  // can never be satisfied (the cursor would deadlock); Listen needs ≥1 too, or the
+  // kiosk would have nothing left to perform / resume into. Refuse to turn off the
+  // last active staff.
   const onCyclePart = useCallback((staff) => {
-    if (mode === 'listen') {
-      // Toggle this staff's membership in "my part" (you ↔ kiosk). >2-staff chip path.
-      setMyStaves((prev) => { const n = new Set(prev); if (n.has(staff)) n.delete(staff); else n.add(staff); return n; });
-      disruptListenPlayback();
-      logger.info('score.listen.part', { staff, mine: !myStaves.has(staff) });
-    } else {
-      // Learn needs ≥1 active staff or the all-notes rule can never be satisfied
-      // (the cursor would deadlock). Refuse to turn off the last active staff.
-      const activeCount = parts.reduce((c, p) => c + (activeParts[p.staff] ? 1 : 0), 0);
-      if (activeParts[staff] && activeCount <= 1) return; // keep the last staff on
-      setActiveParts((a) => ({ ...a, [staff]: !a[staff] }));
-      logger.info('score.active-part', { staff, on: !activeParts[staff] });
-      tapIntent('active-part');
+    const activeCount = parts.reduce((c, p) => c + (activeParts[p.staff] ? 1 : 0), 0);
+    if (activeParts[staff] && activeCount <= 1) return; // keep the last staff on
+    userTouchedHandsRef.current = true; // a manual pick outranks the hand-preference seed (review fix round 1)
+    voidCycle(); // an active-parts change breaks a Learn cycle in progress (wave-3 C)
+    // In Polish the hands ARE the bucket a best is banked under (§H): measures
+    // graded with both hands must never bank as an rh-only best. The next Play from
+    // step 0 re-arms, so a change made between runs costs nothing.
+    if (mode === 'polish') runEligibleRef.current = false;
+    if (sendsAudio) {
+      // Changing the active-part map mid-flight invalidates the NOTE timeline —
+      // pause, flush, and silence so a stale schedule doesn't drone, then resume
+      // where we were (audit H5: the music dying on the spot read as a broken
+      // button). Learn's machine states perform the same timeline (wave-3 §B), so
+      // they need the same treatment; Learn's gate and Polish are silent.
+      pauseForRebuild('part');
+      silenceScheduled(); // also flush when nothing was playing (a stale schedule may still be queued)
     }
-  }, [mode, myStaves, disruptListenPlayback, logger, activeParts, parts, tapIntent]);
+    setActiveParts((a) => ({ ...a, [staff]: !a[staff] }));
+    logger.info('score.active-part', { staff, on: !activeParts[staff] });
+    tapIntent('active-part');
+  }, [mode, sendsAudio, pauseForRebuild, silenceScheduled, logger, activeParts, parts, tapIntent, voidCycle]);
 
   // Grand-staff (2 staves) fast path: a single segmented control instead of chips.
-  // Learn/Polish → "Hands"; Listen → "My part". Value + handler map to activeParts
-  // / myStaves. Staff 0 = RH, 1 = LH (activeParts.js convention).
-  const grandStaff = parts.length === 2;
-  const handsVariant = mode === 'listen' ? 'mypart' : 'hands';
-  const handsValue = mode === 'listen'
-    ? (myStaves.has(0) && myStaves.has(1) ? 'both' : myStaves.has(0) ? 'rh' : myStaves.has(1) ? 'lh' : 'none')
-    : (activeParts[0] && activeParts[1] ? 'both' : activeParts[0] ? 'rh' : 'lh');
+  // One variant, every mode (wave-3 A) — value + handler map to activeParts alone.
+  // Staff 0 = RH, 1 = LH (activeParts.js convention). `grandStaff` itself is
+  // hoisted up near `parts` (Learn-cycle bucketOf needs it earlier).
+  const handsValue = activeParts[0] && activeParts[1] ? 'both' : activeParts[0] ? 'rh' : 'lh';
   const onHandsChange = useCallback((v) => {
-    if (mode === 'listen') {
-      const next = v === 'none' ? new Set() : v === 'rh' ? new Set([0]) : v === 'lh' ? new Set([1]) : new Set([0, 1]);
-      setMyStaves(next);
-      disruptListenPlayback();
-      logger.info('score.listen.mypart', { value: v });
-    } else {
-      // Both/RH/LH → which staves you practice. Always ≥1 active (never deadlocks).
-      setActiveParts({ 0: v !== 'lh', 1: v !== 'rh' });
-      logger.info('score.hands', { value: v });
-      tapIntent('hands');
+    // Both/RH/LH → which staves are active. Always ≥1 active (never deadlocks).
+    userTouchedHandsRef.current = true; // a manual pick outranks the hand-preference seed (review fix round 1)
+    setActiveParts({ 0: v !== 'lh', 1: v !== 'rh' });
+    voidCycle(); // a hand-toggle change breaks a Learn cycle in progress (wave-3 C)
+    if (mode === 'polish') runEligibleRef.current = false; // the hands are the bucket — see onCyclePart (§H)
+    if (sendsAudio) {
+      // A hand change mid-flight invalidates the NOTE timeline (Listen and Learn's
+      // machine states both perform it — wave-3 §B) — pause, flush, and silence so
+      // a stale schedule doesn't drone, then resume where we were (audit H5: the
+      // music dying on the spot read as a broken button).
+      pauseForRebuild('part');
+      silenceScheduled();
     }
-  }, [mode, disruptListenPlayback, logger, tapIntent]);
+    logger.info('score.hands', { value: v });
+    tapIntent('hands');
+  }, [mode, sendsAudio, pauseForRebuild, silenceScheduled, logger, tapIntent, voidCycle]);
 
   // Surface the hands split after the cursor has sat on one multi-note step for a
   // while. Only when a split would actually help: a grand staff, both hands
@@ -1325,7 +1902,8 @@ export default function ScorePlayer({ score: scoreMeta }) {
     else startSession(scoreMeta.id);
     // A new document resets the practice range (measure indices don't carry over).
     setFocus(null);
-    setSelecting(null);
+    setArming(null);
+    clearInks(); // ink marks are pinned to the OLD engraving's geometry (wave-3 D)
   }, [scoreMeta.musicXml]); // eslint-disable-line react-hooks/exhaustive-deps
   const onReady = useCallback(() => {
     setEngraveReady(true); // lift the splash — the sheet is engraved
@@ -1345,18 +1923,16 @@ export default function ScorePlayer({ score: scoreMeta }) {
   const jump = current != null && prevTopRef.current != null && Math.abs(current.top - prevTopRef.current) > 1;
   useEffect(() => { prevTopRef.current = current?.top ?? null; }, [current]);
 
-  // Keyboard target set: Listen → your ('you') part pitches at this onset; other
-  // interactive modes → the active-staff expected midis at this step.
-  // Listen → your ('you') part pitches (playalong reference). Polish → the bouncing-
-  // ball expected notes (an auto demo, fine to show). Learn → NOTHING until a wrong
-  // attempt reveals it (reading-first; see revealKeys). Perform → no keyboard.
-  const targetNotes = mode === 'listen' && current
-    ? youMidisAt(layout.notes, roles, current.onsetQuarter)
-    : mode === 'polish'
+  // Keyboard target set: Listen → none (the kiosk performs the active hands —
+  // wave-3 A retires play-along targets; nothing is "yours"). Polish → the
+  // bouncing-ball expected notes (an auto demo, fine to show). Learn → NOTHING
+  // until a wrong attempt reveals it (reading-first; see revealKeys). Perform →
+  // no keyboard (hidden entirely).
+  const targetNotes = mode === 'polish'
+    ? expectedMidisAtStep(steps[step], activeParts)
+    : mode === 'learn' && revealKeys
       ? expectedMidisAtStep(steps[step], activeParts)
-      : mode === 'learn' && revealKeys
-        ? expectedMidisAtStep(steps[step], activeParts)
-        : null;
+      : null;
 
   // Lit (green "hit") noteheads. Learn/Listen fill `struck` as notes are struck /
   // sounded (unchanged). Polish has no note_on transport events, so nothing
@@ -1368,13 +1944,21 @@ export default function ScorePlayer({ score: scoreMeta }) {
     : struck;
 
   // Per-step cursor boxes (same offset-space as the cursor). Shared geometry for
-  // BOTH the measure-grade wash (Polish) and the focus-range brackets (Learn/Polish),
-  // so it's computed whenever either could draw.
+  // the measure-grade wash (Polish) and the range tint / ticks / drag handles
+  // (Learn), so it's computed whenever any of them could draw.
   const showGrades = mode === 'polish';
-  const showFocusLayer = mode === 'learn' || mode === 'polish';
+  // Learn-only (wave-3 F): Polish lost the loop in the state matrix (Task 9), so a
+  // range tint there would advertise a control Polish does not have.
+  const showFocusLayer = mode === 'learn';
   const stepBoxes = useMemo(
     () => ((showGrades || showFocusLayer) ? events.map((e) => ({ x: e.x, top: e.top, bottom: e.bottom })) : []),
     [showGrades, showFocusLayer, events],
+  );
+
+  // Staves the user has deselected — dimmed in every interactive mode (wave-3 A).
+  const dimmedStaves = useMemo(
+    () => parts.filter((p) => !activeParts[p.staff]).map((p) => p.staff),
+    [parts, activeParts],
   );
 
   return (
@@ -1386,6 +1970,12 @@ export default function ScorePlayer({ score: scoreMeta }) {
       )}
       <div className={`piano-score-player__scroll piano-score-player__scroll--${flow}`} ref={scrollRef} onClick={onScoreClick}>
         <MusicXmlRenderer score={parsed} musicXml={scoreMeta.musicXml} flow={flow} scale={scale} transpose={transpose} onLayout={onLayout} onReady={onReady} holdExtraction={running}>
+          {mode !== 'perform' && layoutFresh && (
+            <StaffDimLayer
+              staffBoxes={layout.staffBoxes}
+              dimmed={dimmedStaves}
+            />
+          )}
           {mode !== 'perform' && current && layoutFresh && (
             <div
               ref={cursorRef}
@@ -1398,6 +1988,17 @@ export default function ScorePlayer({ score: scoreMeta }) {
               }}
             />
           )}
+          {/* Learn only (wave-3 D) — Listen/Polish/Perform have no user-input ink.
+              Mounted AFTER the cursor div so the ink paints above the cursor band
+              at the same z-index rather than under it. */}
+          {mode === 'learn' && layoutFresh && (
+            <LearnInkLayer
+              inks={inks}
+              staffBoxes={layout.staffBoxes}
+              clefs={inkClefs}
+              keyFifths={inkFifths}
+            />
+          )}
           {showGrades && layoutFresh && (
             <MeasureGradeLayer
               measures={layout.measures}
@@ -1405,12 +2006,31 @@ export default function ScorePlayer({ score: scoreMeta }) {
               grades={grades}
             />
           )}
-          {showFocusLayer && layoutFresh && ((!selecting && focus) || selecting?.stage === 'last') && (
+          {/* The range's TINT plus the section ticks a commit snaps to. No bracket
+              and no `pending` half-state (wave-3 F): the ends are the draggable
+              handles below, and the first endpoint commits a real one-measure
+              range. Mounted while ARMING even with no range yet — the ticks are
+              precisely what a first endpoint lands on. */}
+          {showFocusLayer && layoutFresh && (focus || arming) && (
             <FocusRangeLayer
               measures={layout.measures}
               stepBoxes={stepBoxes}
-              range={!selecting && focus ? { inMeasure: focus.inMeasure, outMeasure: focus.outMeasure } : null}
-              pending={selecting?.stage === 'last' ? selecting.inMeasure : null}
+              range={focus ? { inMeasure: focus.inMeasure, outMeasure: focus.outMeasure } : null}
+              marks={(arming || draggingEdge) ? sectionMarks : NO_MARKS}
+            />
+          )}
+          {/* The range's two draggable ends. AFTER FocusRangeLayer so the grips sit
+              above the tint; the layer root is inert, so only the 48px handles take
+              the gesture (and they swallow it, keeping tap-to-seek off them). */}
+          {mode === 'learn' && layoutFresh && focus && (
+            <RangeHandleLayer
+              measures={layout.measures}
+              stepBoxes={stepBoxes}
+              range={{ inMeasure: focus.inMeasure, outMeasure: focus.outMeasure }}
+              onArm={onArm}
+              onCommit={commitEndpoint}
+              onPreview={onHandlePreview}
+              scrollRef={scrollRef}
             />
           )}
           {mode !== 'perform' && layoutFresh && (
@@ -1424,7 +2044,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
           )}
         </MusicXmlRenderer>
         <CountInOverlay active={countIn.active} beat={countIn.beat} />
-        <SelectBanner stage={selecting?.stage} rejects={selectRejects} onCancel={onCancelSelect} />
+        <SelectBanner edge={arming} rejects={armRejects} onCancel={onCancelArm} />
         <StuckPrompt open={stuckOpen && mode === 'learn'} onPick={onStuckPick} onDismiss={onStuckDismiss} />
       </div>
 
@@ -1449,6 +2069,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
       <ScoreTransportBar
         mode={mode}
         running={running}
+        playLocked={learnGate}
         onToggleRun={toggleRun}
         onReset={reset}
         ready={events.length > 0 && layoutFresh}
@@ -1457,8 +2078,6 @@ export default function ScorePlayer({ score: scoreMeta }) {
         total={events.length}
         measure={(layout.steps?.[step]?.measure ?? 0) + 1}
         measureTotal={layout.measures?.length ?? 0}
-        page={perfPage.page}
-        pages={perfPage.pages}
         flow={flow}
         onToggleFlow={onToggleFlow}
         scale={scale}
@@ -1469,29 +2088,28 @@ export default function ScorePlayer({ score: scoreMeta }) {
         onTranspose={onTranspose}
         parts={barParts}
         activeParts={activeParts}
-        roles={roles}
         onCyclePart={onCyclePart}
         grandStaff={grandStaff}
-        handsVariant={handsVariant}
         handsValue={handsValue}
         onHandsChange={onHandsChange}
-        sections={sections}
         loopActive={!!focus}
         loopEnabled={loopOn}
-        scopeLabel={scopeLabel}
-        onPickSection={onPickSection}
-        onStartSelect={onStartSelect}
+        arming={arming}
+        inLabel={inLabel}
+        outLabel={outLabel}
+        onArm={onArm}
         onClearFocus={onClearFocus}
-        onNudge={onNudge}
         onToggleLoop={onToggleLoop}
         keyboardVisible={keyboardVisible}
         onToggleKeyboard={onToggleKeyboard}
         clickActive={clickActive}
+        clickDisabled={mode === 'listen' && !clickAllowed}
         bpm={Math.round(clickBpmExact)}
         baseBpm={Math.round(tempoMap[0]?.bpm || 90)}
         onToggleClick={onToggleClick}
         keyFifths={parsed?.key?.fifths}
         keyMode={parsed?.key?.mode}
+        scoreLabel={scoreLabel}
       />
 
       {mode === 'polish' && (
@@ -1503,6 +2121,11 @@ export default function ScorePlayer({ score: scoreMeta }) {
           onReplay={onReplaySummary}
           drillable={drillable}
           onDrill={onDrillWorst}
+          runScore={summaryScore}
+          tier={summaryRun?.tier || null}
+          mixedTempo={!!summaryRun?.mixed}
+          bucket={polishBucket}
+          tierBests={practice?.polish?.[polishBucket] || {}}
         />
       )}
 
