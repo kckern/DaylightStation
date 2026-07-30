@@ -531,10 +531,17 @@ print single-sided default), a print history surface for parents (the log
 exists; nothing renders it), and Telegram approval (the pending API is ready
 for it, no bot hook is wired).
 
-### The physical learning console (branch `feature/school-document-system`)
+### The physical learning console
 
-> **Status:** built on a feature branch, not yet merged or deployed.
+> **Status (2026-07-29): LIVE in production.** Enabled via `school.yml` →
+> `lifecycle.enabled: true`, and the tap-to-agenda path is verified on real
+> hardware — see [NFC personal cards](#nfc-personal-cards--tap-to-agenda) below.
 > Architecture: [`2026-07-27-school-physical-console-architecture.md`](../../superpowers/specs/2026-07-27-school-physical-console-architecture.md).
+>
+> An earlier revision of this section said "built on a feature branch
+> `feature/school-document-system`, not yet merged or deployed". That branch
+> exists **nowhere** — not locally, not on origin, not on the homeserver — because
+> the work is already on `main`. Don't go looking for it.
 
 School is becoming a paper-first system with the touchscreen as one surface
 among several. A child scans a personal card, a thermal agenda prints, they scan
@@ -634,6 +641,90 @@ Gated behind `school.yml` → `virtualDevices: true`, default false — a
 production deployment must never expose a "make the printer fail" endpoint.
 
 ---
+
+### NFC personal cards — tap to agenda
+
+> **Verified end to end on hardware 2026-07-29.** A tap produced
+> `school.card.agenda-printed` and paper came out of the thermal printer.
+
+The personal card is NFC, not a printed barcode. A child taps it on the reader in
+the school room and their agenda prints. The card is the recovery path for every
+other failure in the system, which is why it never expires and has no
+preconditions.
+
+```text
+NFC tap (omr-relay)                        emits {type:'nfc', uid} on the `omr` bus topic
+  -> canonicalizeNfcUid                    one card = one identity, whatever the reader spells
+  -> config/triggers/bindings/nfc/cards.yml  uid -> school_learner
+  -> ResolvePersonalCard                   -> BuildAgenda -> thermal receipt
+```
+
+**The tag registry, not School, owns the uid → learner mapping.** One registry
+answers *what a tag is* for the whole house; the owning domain decides what
+happens. A book sticker resolves to a Plex id because for books the meaning IS
+the action; a personal card resolves to a learner because what happens next is
+the planner's decision. This is the rule the roadmap already states for barcode —
+the relay stays transport-only and School is a resolver namespace downstream:
+
+| File | Holds |
+|---|---|
+| `config/triggers/bindings/nfc/cards.yml` | personal cards: `school_learner: <household user id>` |
+| `config/triggers/bindings/nfc/books.yml` | audiobook/content tags (`plex:`, `action:`) |
+| `config/triggers/bindings/nfc/unsorted.yml` | where a newly-seen tag is filed when named at runtime |
+
+Four traps worth knowing before editing any of that:
+
+- **Tag fields must be SCALARS.** `parseNfcTags` reads any object-valued key as a
+  per-reader override block and throws on an unknown reader id, so a nested
+  `school: {learner: x}` fails at boot. Hence the flat `school_learner`.
+- **UIDs are canonical: lowercase, separators stripped.** Readers disagree — the
+  audiobook readers write `04_66_9c_0f_cb_2a_81`, the omr-relay's ST25R3916
+  reports `04669C0FCB2A81`. Before canonicalization those were two identities and
+  a registered card could read as unknown.
+- **Keys must stay QUOTED in YAML.** A separator-free hex uid can be valid
+  scientific notation: `838e6806` and `0421e521470289` both parse as float
+  `Infinity`, so an unquoted dump collapses two distinct tags into one duplicated
+  mapping key and the file stops parsing. js-yaml quotes them correctly; a
+  hand-rolled migration script did not. Locked down in
+  `tests/isolated/domain/trigger/nfcUid.test.mjs`.
+- **One layout only.** NFC bindings live either as `bindings/nfc.yml` or as
+  `bindings/nfc/*.yml`, never both — both present is a deliberate hard boot error,
+  because this household already lost time to two plausible tag files diverging
+  (62 entries in a stale path, 58 in the live one) with nothing to say which was
+  authoritative.
+
+An **unregistered** tag still falls through to the trigger pipeline rather than
+being swallowed here, because that is where the unknown-tag notify fires and that
+notify is how a new card gets enrolled. A card that IS enrolled while the school
+lifecycle is off logs at ERROR: a child tapping their own card and getting nothing
+is the failure the spec calls worse than having no card at all.
+
+`lifecycle.nfcLocation` is intentionally **unset**. It would route non-school tags
+tapped on the school reader into the trigger pipeline, which needs that location
+registered in `triggers/sources.yml` with a target and action. Until there is an
+answer to "what should a book sticker do in the school room", such a tap is logged
+and does nothing.
+
+### An assigned course, not a catalog, is what prints
+
+A valid curriculum catalog offers **nothing** on its own. `BuildAgenda` builds
+strictly from what a grown-up has assigned, so the first live tap printed a
+correct but empty agenda (`offers: 0`). That is the design, not a bug: the catalog
+is what *exists*, the assignment is what *this child* is doing.
+
+```bash
+curl -X PUT .../api/v1/school/lifecycle/assignments/<learner>   -H 'Content-Type: application/json'   -d '{"courses":["math-fractions"],"assignedBy":"<grown-up roster id>"}'
+```
+
+`assignedBy` must pass `GrownUpGate`. Assigning one course then yields the gating
+the curriculum declares — with `math-fractions` assigned: 4 assigned, unit `.01`
+available, `.02`–`.04` **locked** behind it, `next: math-fractions.01`. Passing a
+unit releases the next; only sequential courses gate.
+
+Seeded catalog lives at `data/content/school/curriculum/{units,documents,manifests}/`,
+and referenced question banks at `data/content/quizzes/<bankId>.yml` — a bank id is
+the path under that directory. A unit whose bank is missing is **rejected at load**
+with `school.curriculum.invalid-units` rather than failing when a child opens it.
 
 ## 3. Specced, not built
 
