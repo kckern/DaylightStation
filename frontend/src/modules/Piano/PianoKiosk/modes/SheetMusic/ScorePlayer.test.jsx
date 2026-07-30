@@ -1832,6 +1832,199 @@ describe('ScorePlayer — Polish tempo tiers (wave-3 H)', () => {
     const cells = [...document.querySelectorAll('.piano-score-run-tier__value')].map((n) => n.textContent);
     expect(cells).toEqual(['—', '—', '—', '—']);
   });
+
+  // ── A bank requires a COMPLETED WHOLE-PIECE run (design §H) ─────────────────
+  // Reaching onDone's completion branch proves only that the run ENDED at the last
+  // step. Four ways to end there without having played the whole piece at one
+  // tempo on one pair of hands used to bank anyway — and a best only ever
+  // improves, so every one of them was a permanent, unrecoverable inflation.
+  const tierBestOnly = (emitted) => emitted.filter(([ev]) => ev === 'score.polish.tier-best').map(([, d]) => d);
+
+  it('a run started by seeking into the piece banks nothing — reason "partial" (§H path a)', async () => {
+    // The cheat: tap the third measure, play the tail clean, collect a 100. The
+    // score is real for what it graded; it is just not a score for THIS PIECE.
+    h.layoutExtras = tierFixture(4, 0.8);
+    const emitted = captureTierLog();
+    renderPlayer();
+    pickMode('Polish');
+    await act(async () => {});
+    pickTempo('80%');
+    tapScore(160); // measure 2's column (x = 100 + 1 × 60) → cursor seeks off the top
+    await pressPlay();
+    act(() => vi.advanceTimersByTime(COUNT_IN_MS));
+    play(61);
+    act(() => vi.advanceTimersByTime(1000)); // → step 2 (grades m1)
+    play(62);
+    play(63);
+    act(() => vi.advanceTimersByTime(1000)); // → final step + onDone
+
+    const events = tierBestOnly(emitted);
+    expect(events.length).toBe(1);
+    expect(events[0]).toMatchObject({ bucket: 'both', tier: 'medium', banked: false, reason: 'partial' });
+    expect(events[0].score).toBeGreaterThan(0); // it DID grade a clean tail — that is the whole hazard
+    expect(h.recordTierBest).not.toHaveBeenCalled();
+  });
+
+  it('a tempo change taken while PAUSED banks nothing, even though the resume re-captures the tier (§H path b)', async () => {
+    // `mixed` only watches an ACTIVE run, so a pause hides the tempo change from
+    // it, and the resume's count-in re-freezes runTierRef at the new speed: half
+    // the piece at 80% banked as a clean run at 125%.
+    h.layoutExtras = tierFixture(4, 0.8);
+    const emitted = captureTierLog();
+    renderPlayer();
+    pickMode('Polish');
+    await act(async () => {});
+    pickTempo('80%');
+    await pressPlay();
+    act(() => vi.advanceTimersByTime(COUNT_IN_MS));
+    play(60);
+    act(() => vi.advanceTimersByTime(1000)); // m0 graded at 80%
+    act(() => { screen.getByRole('button', { name: 'Pause' }).click(); });
+    await act(async () => {});
+    pickTempo('125%'); // …and now the rest of the piece is a different exercise
+    await pressPlay();
+    act(() => vi.advanceTimersByTime(2560)); // count-in at 125% (93.75 eff bpm → 4 × 640ms)
+    play(61);
+    act(() => vi.advanceTimersByTime(700));
+    play(62);
+    play(63);
+    act(() => vi.advanceTimersByTime(1400)); // → the end at the new tempo → onDone
+
+    const events = tierBestOnly(emitted);
+    expect(events.length).toBe(1);
+    expect(events[0]).toMatchObject({ banked: false, reason: 'partial' });
+    expect(events[0].score).toBeGreaterThan(0);
+    expect(h.recordTierBest).not.toHaveBeenCalled();
+  });
+
+  it('a tempo change taken in a view-rebuild gap banks nothing — the tier would be stale (§H path c)', async () => {
+    // pauseForRebuild also drops runActive, so the same blind spot opens during a
+    // zoom/flow/transpose re-engrave — and unlike path b nothing re-captures the
+    // tier at all: the whole run would bank under the tier it STARTED at, at a
+    // tempo it was never played at. No measure has been graded yet when the tempo
+    // moves, so only the pending-resume signal can catch this one.
+    h.layoutExtras = tierFixture(4, 0.8);
+    const emitted = captureTierLog();
+    renderPlayer();
+    pickMode('Polish');
+    await act(async () => {});
+    pickTempo('80%');
+    await pressPlay();
+    act(() => vi.advanceTimersByTime(COUNT_IN_MS)); // running, step 0, nothing graded
+
+    // Flow change → pauseForRebuild. The stub keeps reporting flow 'wrapped', so
+    // the layout stays stale and the resume waits (same lever as the H5/M3 tests).
+    fireEvent.click(screen.getByRole('button', { name: /view options/i }));
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: /^across$/i })); });
+    expect(screen.queryByRole('button', { name: 'Pause' })).toBeNull(); // paused for the re-engrave
+    // Close the View sheet before touching Tempo: its zoom ladder carries its own
+    // '125%' step, which would make the tempo pick ambiguous.
+    act(() => { fireEvent.click(screen.getByRole('button', { name: /view options/i })); });
+    pickTempo('125%'); // the gap the void check cannot see
+    act(() => { fireEvent.click(screen.getByRole('button', { name: /view options/i })); });
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: /down the page/i })); }); // layout lands → resume
+
+    play(60);
+    act(() => vi.advanceTimersByTime(700)); // 125% → 640ms steps
+    play(61);
+    act(() => vi.advanceTimersByTime(700));
+    play(62);
+    play(63);
+    act(() => vi.advanceTimersByTime(700)); // → onDone
+
+    const events = tierBestOnly(emitted);
+    expect(events.length).toBe(1);
+    expect(events[0]).toMatchObject({ banked: false, reason: 'partial' });
+    expect(h.recordTierBest).not.toHaveBeenCalled();
+  });
+
+  it('a mid-run hands change banks nothing — both-hands measures must not land in the rh bucket (§H path d)', async () => {
+    // The bucket is read at the END of the run, so dropping a hand mid-run filed
+    // both-hands grades under `rh` — a best in a bucket the run never belonged to.
+    h.layoutExtras = grandTierFixture(4, 0.8);
+    const emitted = captureTierLog();
+    renderPlayer();
+    pickMode('Polish');
+    await act(async () => {});
+    pickTempo('80%');
+    await pressPlay();
+    act(() => vi.advanceTimersByTime(COUNT_IN_MS));
+    play(60); play(48); // m0 played with BOTH hands
+    act(() => vi.advanceTimersByTime(1000));
+    act(() => { fireEvent.click(screen.getByRole('button', { name: 'Left hand' })); }); // both → rh, mid-run
+    play(61);
+    act(() => vi.advanceTimersByTime(1000));
+    play(62);
+    play(63);
+    act(() => vi.advanceTimersByTime(1000)); // → onDone
+
+    const events = tierBestOnly(emitted);
+    expect(events.length).toBe(1);
+    expect(events[0]).toMatchObject({ bucket: 'rh', banked: false, reason: 'partial' });
+    expect(h.recordTierBest).not.toHaveBeenCalled();
+  });
+
+  it('a pause and a same-tempo resume is still ONE whole-piece run — it banks (§H positive control)', async () => {
+    // The gate must not become "never pause": stopping to shake out a hand and
+    // picking the same run back up at the same tempo, on the same hands, is the
+    // ordinary way a piece gets played.
+    h.layoutExtras = tierFixture(4, 0.8);
+    const emitted = captureTierLog();
+    renderPlayer();
+    pickMode('Polish');
+    await act(async () => {});
+    pickTempo('80%');
+    await pressPlay();
+    act(() => vi.advanceTimersByTime(COUNT_IN_MS));
+    play(60);
+    act(() => vi.advanceTimersByTime(1000));
+    act(() => { screen.getByRole('button', { name: 'Pause' }).click(); });
+    await act(async () => {});
+    await pressPlay(); // same tempo, same hands, same run
+    act(() => vi.advanceTimersByTime(COUNT_IN_MS));
+    play(61);
+    act(() => vi.advanceTimersByTime(1000));
+    play(62);
+    play(63);
+    act(() => vi.advanceTimersByTime(1000)); // → onDone
+
+    const events = tierBestOnly(emitted);
+    expect(events[events.length - 1]).toMatchObject({ bucket: 'both', tier: 'medium', banked: true, reason: 'banked' });
+    expect(h.recordTierBest).toHaveBeenCalledTimes(1);
+    expect(h.recordTierBest.mock.calls[0][0]).toMatchObject({ bucket: 'both', tier: 'medium' });
+  });
+
+  it('a tempo change made between runs does not disqualify the NEXT full run', async () => {
+    // The clears must cost only the run they belong to: after a completed run the
+    // grades are still on the board, and bumping the tempo for another go from the
+    // top is exactly how the tiers are meant to be climbed.
+    h.layoutExtras = tierFixture(3, 0.8);
+    renderPlayer();
+    pickMode('Polish');
+    await act(async () => {});
+    pickTempo('80%');
+    await pressPlay();
+    act(() => vi.advanceTimersByTime(COUNT_IN_MS));
+    play(60);
+    act(() => vi.advanceTimersByTime(1000));
+    play(61);
+    play(62);
+    act(() => vi.advanceTimersByTime(1000)); // run 1 → banks medium
+    expect(h.recordTierBest).toHaveBeenCalledTimes(1);
+
+    // onDone parked the cursor back home, so this is a fresh run from the top.
+    pickTempo('125%');
+    await pressPlay();
+    act(() => vi.advanceTimersByTime(2560)); // count-in at 125% (93.75 eff bpm → 4 × 640ms)
+    play(60);
+    act(() => vi.advanceTimersByTime(700));
+    play(61);
+    play(62);
+    act(() => vi.advanceTimersByTime(700)); // → onDone
+
+    expect(h.recordTierBest).toHaveBeenCalledTimes(2);
+    expect(h.recordTierBest.mock.calls[1][0]).toMatchObject({ bucket: 'both', tier: 'overclocked' });
+  });
 });
 
 describe('ScorePlayer — Listen mode', () => {
