@@ -141,6 +141,63 @@ export class DoNowService {
     return this.#actPend({ adapter, surface, action, learnerId, requestedBy, ref, occupancy, nowIso });
   }
 
+  /**
+   * List the closed surface registry as ids + human labels only — no
+   * schemas, no actions (spec §7: `GET /api/v1/donow/surfaces`). A missing
+   * or throwing `label()` yields a bare `{ id }` row rather than failing
+   * the whole listing for one badly-behaved adapter.
+   * @returns {Array<{id: string, label?: string}>}
+   */
+  listSurfaces() {
+    return Array.from(this.#surfaces.keys()).map((id) => {
+      const adapter = this.#surfaces.get(id);
+      let label;
+      try {
+        label = typeof adapter.label === 'function' ? adapter.label() : undefined;
+      } catch {
+        label = undefined;
+      }
+      return label ? { id, label } : { id };
+    });
+  }
+
+  /**
+   * Re-probe occupancy for one surface — the approvals lifecycle's hook
+   * into the same fail-closed probe `dispatch()` uses, so approve-time
+   * re-checks (spec §4) share one code path with the initial decision. An
+   * unregistered surface probes as `unknown` (fail closed), matching the
+   * probe-failure posture rather than throwing on a since-removed surface.
+   * @param {string} surface
+   * @returns {Promise<{state: 'idle'|'active'|'unknown', occupantId: string|null}>}
+   */
+  async occupancyFor(surface) {
+    const adapter = this.#surfaces.get(surface);
+    if (!adapter) return { state: 'unknown', occupantId: null };
+    return this.#probeOccupancy(adapter, surface);
+  }
+
+  /**
+   * Dispatch an already-approved pending record. Shares `#actDispatch` with
+   * the initial `dispatch()` path so the log-append + broadcast + message
+   * semantics live in exactly one place (the approvals lifecycle must not
+   * duplicate them). The dispatch-log row carries `approvalId` (present
+   * only when non-null, mirroring `programId`) so the audit trail shows
+   * which approval produced the dispatch.
+   * @param {Object} record - A pending record (`{id, surface, action, learnerId, requestedBy, ref}`).
+   * @returns {Promise<{decision: 'dispatched'|'failed', message: string}>}
+   */
+  async dispatchApproved(record) {
+    const { surface, action, learnerId, requestedBy, ref, id: approvalId } = record || {};
+    const adapter = this.#surfaces.get(surface);
+    if (!adapter) {
+      return { decision: 'failed', message: `Unknown surface "${surface}".` };
+    }
+    const nowIso = this.#nowIso();
+    return this.#actDispatch({
+      adapter, surface, action, learnerId, requestedBy, ref, programId: null, nowIso, approvalId,
+    });
+  }
+
   #validate(adapter, action) {
     try {
       return adapter.validateAction(action) || [];
@@ -158,7 +215,9 @@ export class DoNowService {
     }
   }
 
-  async #actDispatch({ adapter, surface, action, learnerId, requestedBy, ref, programId, nowIso }) {
+  async #actDispatch({
+    adapter, surface, action, learnerId, requestedBy, ref, programId, nowIso, approvalId = null,
+  }) {
     const label = this.#safeLabel(adapter, action, surface);
     let result;
     try {
@@ -179,6 +238,7 @@ export class DoNowService {
     // datastore's own presence-filtered evidence query (Task 12).
     const row = { at: nowIso, surface, decision: 'dispatch', learnerId, requestedBy, ref };
     if (programId != null) row.programId = programId;
+    if (approvalId != null) row.approvalId = approvalId;
     await this.#datastore.appendDispatch(row);
     this.#eventBus?.broadcast('donow', { type: 'donow.dispatched', ref, surface, requestedBy });
 
