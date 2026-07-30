@@ -1578,6 +1578,11 @@ export default function ScorePlayer({ score: scoreMeta }) {
     setArming(null);        // Restart means the user is done arming a loop
     countIn.cancel();       // reset aborts a pending count-in
     setLearnDone(false);    // fresh pass — close the completion card
+    // Restart abandons the in-progress pass and returns to the in-point: the next
+    // wrap is a fresh cycle, and wrongs from the abandoned pass must not count
+    // against it (discard, same as a mode exit).
+    cycleVoidRef.current = false;
+    cycleWrongsRef.current = new Set();
     transport.stop();
     setRunActive(false);    // Restart ends the current run (see runActive)
     runEligibleRef.current = false; // …and its whole-piece claim; the next Play re-arms from home (§H)
@@ -1665,6 +1670,16 @@ export default function ScorePlayer({ score: scoreMeta }) {
   const onToggleLoop = useCallback(() => {
     const next = !loopOnRef.current;
     stopForMatrixChange();
+    // The gate session the current cycle belonged to ends the instant the loop
+    // goes OFF — DISCARD the partial cycle outright (mode-exit semantics, not a
+    // void): stale wrongs would otherwise poison the first wrap of the NEXT
+    // session, and a void would silently raise the pass bar on a session that
+    // never had a prior cycle to disrupt. Gated on the OFF edge only: wrongs can
+    // only accumulate while `learnGate` (loopOn) is true, so by the time ON
+    // re-enters, either this OFF edge already cleared them, or nothing has
+    // touched the refs since a focus change set them (e.g. the armed-endpoint
+    // void a fresh range carries into its first gate-on — that must survive).
+    if (!next) { cycleVoidRef.current = false; cycleWrongsRef.current = new Set(); }
     setLoopOn(next);
     if (next && focus && layout.measures) {
       const r = rangeSteps(layout.measures, focus);
