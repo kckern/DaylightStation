@@ -114,6 +114,16 @@ describe('findPending', () => {
     });
     expect(found).toMatchObject({ id: 'req_1' });
   });
+
+  it('treats exact expiresAt === nowIso as expired (the boundary is exclusive)', async () => {
+    await ds.putPending(pending({ expiresAt: '2026-07-27T10:02:00.000Z' }));
+    const found = await ds.findPending({
+      surface: 'garage-fitness',
+      ref: 'ses_abc',
+      nowIso: '2026-07-27T10:02:00.000Z',
+    });
+    expect(found).toBeNull();
+  });
 });
 
 describe('prunePending', () => {
@@ -131,6 +141,54 @@ describe('prunePending', () => {
     await ds.putPending(pending({ id: 'req_live' }));
     await ds.prunePending('2026-07-27T09:00:00.000Z');
     expect(await ds.listPending()).toHaveLength(1);
+  });
+});
+
+describe('lazy prune persists to disk (not just filtered from the return value)', () => {
+  it('listPending drops an expired row from the RAW file on disk, not only from what it returns', async () => {
+    await ds.putPending(pending({ id: 'req_expired', ref: 'ses_expired', expiresAt: '2026-07-27T10:02:00.000Z' }));
+    await ds.putPending(pending({ id: 'req_live', ref: 'ses_live' }));
+
+    // listPending has no nowIso param — it prunes against the real wall
+    // clock, which is well past 2026-07-27 by the time this test runs.
+    const rows = await ds.listPending();
+    expect(rows.map((r) => r.id)).toEqual(['req_live']);
+
+    const raw = yaml.load(fs.readFileSync(pendingFile(), 'utf8'));
+    expect(raw.map((r) => r.id)).toEqual(['req_live']);
+  });
+
+  it('findPending also persists the prune it computes, even though its job is to answer one lookup', async () => {
+    await ds.putPending(pending({ id: 'req_expired', surface: 'other', ref: 'ses_x', expiresAt: '2026-07-27T10:02:00.000Z' }));
+    await ds.putPending(pending({ id: 'req_live' }));
+
+    await ds.findPending({ surface: 'garage-fitness', ref: 'ses_abc', nowIso: '2026-07-27T11:00:00.000Z' });
+
+    const raw = yaml.load(fs.readFileSync(pendingFile(), 'utf8'));
+    expect(raw.map((r) => r.id)).toEqual(['req_live']);
+  });
+});
+
+describe('concurrency — the read-modify-write gap must not lose rows', () => {
+  it('three concurrent appendDispatch calls all land — none lost to an interleaved read', async () => {
+    await Promise.all([
+      ds.appendDispatch({ at: '2026-07-27T10:00:00.000Z', surface: 'garage-fitness', decision: 'dispatch', learnerId: 'kid1', requestedBy: 'school-scan', ref: 'ses_1' }),
+      ds.appendDispatch({ at: '2026-07-27T10:00:01.000Z', surface: 'garage-fitness', decision: 'dispatch', learnerId: 'kid2', requestedBy: 'school-scan', ref: 'ses_2' }),
+      ds.appendDispatch({ at: '2026-07-27T10:00:02.000Z', surface: 'garage-fitness', decision: 'dispatch', learnerId: 'kid3', requestedBy: 'school-scan', ref: 'ses_3' }),
+    ]);
+
+    const rows = await ds.listDispatches({ dayStamp: '2026-07-27' });
+    expect(rows.map((r) => r.ref).sort()).toEqual(['ses_1', 'ses_2', 'ses_3']);
+  });
+
+  it('two concurrent putPending upserts with different ids both survive — no last-write-wins clobber', async () => {
+    await Promise.all([
+      ds.putPending(pending({ id: 'req_a', ref: 'ses_a' })),
+      ds.putPending(pending({ id: 'req_b', ref: 'ses_b' })),
+    ]);
+
+    const rows = await ds.listPending();
+    expect(rows.map((r) => r.id).sort()).toEqual(['req_a', 'req_b']);
   });
 });
 

@@ -9,7 +9,10 @@
  *     (`{ id, surface, action, label, learnerId, requestedBy, ref, occupant,
  *     createdAt, expiresAt, repended? }`). Upserted by `id`; pruned lazily
  *     on read (TTL) rather than by a background job — a pending file is small
- *     and read on every dispatch, so pruning there is enough.
+ *     and read on every dispatch, so pruning there is enough. "Pruned on
+ *     read" means the read path also PERSISTS the pruned file back to disk
+ *     (not just filters what it returns) — otherwise the file grows forever
+ *     with rows nobody will ever look at again.
  *
  *   dispatch log: <dataDir>/apps/donow/log/{YYYY-MM-DD}.yml   (append-only)
  *     One row per `dispatched` decision (`{ at, surface, decision, learnerId,
@@ -22,6 +25,16 @@
  *   non-null value — the KEY is absent, not present-with-null — because
  *   Task 12's evidence query filters on key presence (`programId` in a row),
  *   not truthiness.
+ *
+ * Concurrency: every method that touches the pending file OR a log shard
+ * runs through a single per-instance `#writeChain` (same shape as
+ * `YamlWorkSessionDatastore`'s write queue) — a read-modify-write with an
+ * await gap between the read and the write is otherwise a lost-update race
+ * (two concurrent `putPending` upserts, or two concurrent `appendDispatch`
+ * calls into the same day shard, would silently drop all but the last).
+ * Unlike the economy-ledger precedent this mirrors in file layout, that
+ * precedent's `appendTransaction` is fully SYNCHRONOUS (no interleaving
+ * window), so it doesn't need a queue — this store's fs/promises calls do.
  */
 import path from 'path';
 import { promises as fs } from 'fs';
@@ -45,6 +58,11 @@ function utcDayOf(at) {
 export class YamlDoNowDatastore {
   #dataDir;
   #logger;
+  // One queue for every mutation on this instance (pending file AND log
+  // shards alike) — see the header note on concurrency. A read path that
+  // also persists a prune enqueues too, so it can't race a concurrent
+  // putPending/appendDispatch either.
+  #writeChain = Promise.resolve();
 
   /**
    * @param {Object} config
@@ -57,6 +75,18 @@ export class YamlDoNowDatastore {
     }
     this.#dataDir = config.dataDir;
     this.#logger = config.logger || console;
+  }
+
+  /**
+   * Run `fn` after every previously-enqueued operation on this instance has
+   * settled, and keep the chain alive even if `fn` rejects — one bad write
+   * must not strand every later one. The caller still sees the rejection
+   * through the returned promise.
+   */
+  #enqueue(fn) {
+    const queued = this.#writeChain.then(fn);
+    this.#writeChain = queued.catch(() => {});
+    return queued;
   }
 
   #root() { return path.join(this.#dataDir, 'apps', 'donow'); }
@@ -102,9 +132,22 @@ export class YamlDoNowDatastore {
   // Pending queue
   // ===========================================================================
 
+  /**
+   * Read the pending file, drop expired rows, and — if anything was
+   * dropped — persist the pruned list before returning. Every public
+   * pending-file method funnels through this, so a "just reading" call and
+   * a concurrent upsert can never interleave into a lost update.
+   */
+  async #loadPrunedPending(nowIso) {
+    const rows = await this.#readPendingRaw();
+    const kept = this.#unexpired(rows, nowIso);
+    if (kept.length !== rows.length) await this.#writePendingRaw(kept);
+    return kept;
+  }
+
   /** @returns {Promise<Array>} every unexpired pending row. */
   async listPending() {
-    return this.#unexpired(await this.#readPendingRaw(), new Date().toISOString());
+    return this.#enqueue(() => this.#loadPrunedPending(new Date().toISOString()));
   }
 
   /** Upsert a pending row by `id`. */
@@ -112,20 +155,24 @@ export class YamlDoNowDatastore {
     if (!record || typeof record !== 'object' || typeof record.id !== 'string' || !record.id) {
       throw new Error('YamlDoNowDatastore: putPending requires a record with a string id');
     }
-    const rows = await this.#readPendingRaw();
-    const idx = rows.findIndex((row) => row && row.id === record.id);
-    if (idx >= 0) rows[idx] = record;
-    else rows.push(record);
-    await this.#writePendingRaw(rows);
-    return record;
+    return this.#enqueue(async () => {
+      const rows = await this.#readPendingRaw();
+      const idx = rows.findIndex((row) => row && row.id === record.id);
+      if (idx >= 0) rows[idx] = record;
+      else rows.push(record);
+      await this.#writePendingRaw(rows);
+      return record;
+    });
   }
 
   /** Remove a pending row by id. No-op if the id is not present. */
   async removePending(id) {
-    const rows = await this.#readPendingRaw();
-    const next = rows.filter((row) => !(row && row.id === id));
-    if (next.length === rows.length) return;
-    await this.#writePendingRaw(next);
+    return this.#enqueue(async () => {
+      const rows = await this.#readPendingRaw();
+      const next = rows.filter((row) => !(row && row.id === id));
+      if (next.length === rows.length) return;
+      await this.#writePendingRaw(next);
+    });
   }
 
   /**
@@ -138,8 +185,10 @@ export class YamlDoNowDatastore {
    * @returns {Promise<Object|null>}
    */
   async findPending({ surface, ref, nowIso = new Date().toISOString() } = {}) {
-    const rows = this.#unexpired(await this.#readPendingRaw(), nowIso);
-    return rows.find((row) => row.surface === surface && row.ref === ref) ?? null;
+    return this.#enqueue(async () => {
+      const kept = await this.#loadPrunedPending(nowIso);
+      return kept.find((row) => row.surface === surface && row.ref === ref) ?? null;
+    });
   }
 
   /**
@@ -148,10 +197,7 @@ export class YamlDoNowDatastore {
    * @returns {Promise<Array>} the surviving (unexpired) rows.
    */
   async prunePending(nowIso = new Date().toISOString()) {
-    const rows = await this.#readPendingRaw();
-    const kept = this.#unexpired(rows, nowIso);
-    if (kept.length !== rows.length) await this.#writePendingRaw(kept);
-    return kept;
+    return this.#enqueue(() => this.#loadPrunedPending(nowIso));
   }
 
   // ===========================================================================
@@ -180,14 +226,16 @@ export class YamlDoNowDatastore {
     if (programId != null) stored.programId = programId;
     if (approvalId != null) stored.approvalId = approvalId;
 
-    const file = this.#logFile(dayStamp);
-    const rows = await this.#readYaml(file);
-    const list = Array.isArray(rows) ? rows : [];
-    list.push(stored);
-    await fs.mkdir(path.dirname(file), { recursive: true });
-    await fs.writeFile(file, dumpYaml(list), 'utf8');
-    this.#logger.debug?.('donow.dispatch.appended', { dayStamp, surface, decision, ref });
-    return stored;
+    return this.#enqueue(async () => {
+      const file = this.#logFile(dayStamp);
+      const rows = await this.#readYaml(file);
+      const list = Array.isArray(rows) ? rows : [];
+      list.push(stored);
+      await fs.mkdir(path.dirname(file), { recursive: true });
+      await fs.writeFile(file, dumpYaml(list), 'utf8');
+      this.#logger.debug?.('donow.dispatch.appended', { dayStamp, surface, decision, ref });
+      return stored;
+    });
   }
 
   /**
