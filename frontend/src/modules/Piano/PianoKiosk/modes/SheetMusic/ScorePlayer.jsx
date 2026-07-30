@@ -241,6 +241,25 @@ export default function ScorePlayer({ score: scoreMeta }) {
   // and must not bank a best — live grades keep flowing regardless (the user still
   // gets their feedback; only persistence is withheld).
   const runMixedRef = useRef(false);
+  // Is the run in flight still a COMPLETED WHOLE-PIECE run in the making (design
+  // §H)? `mixed` only catches a tempo move while the transport is actually running;
+  // it does not catch a run that never started at the top, or one whose tempo/hands
+  // moved across a gap where `runActive` is false. Those all reach onDone looking
+  // exactly like an honest completion — and because a best only ever improves, a
+  // single inflated bank is permanent. So eligibility is tracked explicitly:
+  //  · ARMED (true) by a start from step 0 — the only genuine whole-piece start.
+  //    The assignment is one-way: a start from anywhere else LEAVES it alone rather
+  //    than clearing, so resuming a paused run mid-piece at the same tempo/hands
+  //    stays eligible (it is still the same whole-piece run — §H).
+  //  · CLEARED by every event that makes the run something other than one clean
+  //    pass of the whole piece at one tempo on one pair of hands: a tap-seek, a
+  //    tempo change while a run is in flight OR suspended (paused mid-run / waiting
+  //    on a rebuild), a hands change in Polish, and the end of the run's world (a
+  //    mode change, a Restart, a new document).
+  // Started-at-0 + reached-the-end (onDone's completion branch) together are what
+  // "whole piece" means; nothing in between can jump the cursor forward without
+  // going through one of the clears above.
+  const runEligibleRef = useRef(false);
   // Is a RUN active? True from the moment playback starts until it is paused,
   // stopped, or finishes. Deliberately NOT `transport.playing`: a Polish loop
   // pinned to the FINAL measure restarts through onDone's one-beat dwell (the
@@ -552,17 +571,24 @@ export default function ScorePlayer({ score: scoreMeta }) {
         // same panel but is not a whole-piece run, so its score is not comparable —
         // and a mid-run tempo change voids even a completion (`mixed`).
         //
+        // Reaching here proves only that the run ENDED at the last step; that it also
+        // STARTED at the first, at one tempo, on one pair of hands, is what
+        // runEligibleRef carries ('partial' — §H). Both halves are required: a best
+        // only ever improves, so one inflated bank is permanent.
+        //
         // The decision is NAMED, not just taken: from outside, "voided", "not an
         // improvement" and "guest, nothing can persist" are three different things
         // that all look like silence. Order matters — the first true reason wins,
-        // most-specific first.
+        // most-specific first ('mixed' before 'partial': a tempo change mid-run
+        // trips both, and "you changed speed" is the more actionable of the two).
         const bucket = bucketOf(grandStaff, activeParts);
         const prevBest = practice?.polish?.[bucket]?.[run?.tier];
         const reason = run?.base == null ? 'nothing-graded'
           : run.mixed ? 'mixed'
-            : !practicePersistent ? 'guest'
-              : (Number.isFinite(prevBest) && prevBest >= run.score) ? 'not-better'
-                : 'banked';
+            : !runEligibleRef.current ? 'partial'
+              : !practicePersistent ? 'guest'
+                : (Number.isFinite(prevBest) && prevBest >= run.score) ? 'not-better'
+                  : 'banked';
         // recordTierBest re-checks 'guest' and 'not-better' itself (it is the owner
         // of both rules) — calling only on 'banked' keeps this path from being a
         // second, drifting copy of them.
@@ -616,6 +642,11 @@ export default function ScorePlayer({ score: scoreMeta }) {
       // matching capture in toggleRun's play branch for the no-count-in modes.)
       runTierRef.current = tierOf(tempoMult);
       runMixedRef.current = false;
+      // One-way arm (see runEligibleRef): a start from the top makes this a
+      // whole-piece run; a start from anywhere else leaves an earlier arm — or an
+      // earlier clear — standing, which is what keeps a mid-piece RESUME of the
+      // same run eligible and a mid-piece FRESH start ineligible.
+      if (startStep === 0) runEligibleRef.current = true;
       transportRef.current?.seek((stepTimeline[startStep]?.t ?? 0) / tempoMult);
       setRunActive(true);
       transportRef.current?.play();
@@ -785,7 +816,10 @@ export default function ScorePlayer({ score: scoreMeta }) {
   const openRunSummaryRef = useRef(openRunSummary); openRunSummaryRef.current = openRunSummary;
 
   // Clear grades + summary when the score document changes or scoring is turned off.
-  useEffect(() => { setGrades({}); setSummaryOpen(false); setSummaryRun(null); setLearnDone(false); }, [scoreMeta.musicXml]);
+  useEffect(() => {
+    setGrades({}); setSummaryOpen(false); setSummaryRun(null); setLearnDone(false);
+    runEligibleRef.current = false; // a new document is a new piece — no run in progress (§H)
+  }, [scoreMeta.musicXml]);
 
   // ── Learn wet ink (wave-3 D) ──────────────────────────────────────────────────
   // Every note the user plays in Learn leaves a short-lived mark on the staff at
@@ -1314,6 +1348,10 @@ export default function ScorePlayer({ score: scoreMeta }) {
     resumeAfterRef.current = null; // a tap-seek supersedes a pending rebuild-resume
     clearWrapDwell(); // a tap-seek overrides a pending loop-wrap dwell
     voidCycle(); // a tap-seek breaks any Learn gate cycle in progress (wave-3 C)
+    // …and in Polish it breaks the whole-piece claim: a run played from the tail
+    // scores only the tail, but reaches onDone looking like a completion (§H). A
+    // later Play from step 0 re-arms, so this only costs the run it should cost.
+    if (mode === 'polish') runEligibleRef.current = false;
     const target = range ? clampStepToRange(i, range) : i;
     // Tap-to-seek is the primary navigation gesture and emitted nothing, so every
     // `play {step: N}` with an unexplained N was a seek nobody could see (T1).
@@ -1490,6 +1528,10 @@ export default function ScorePlayer({ score: scoreMeta }) {
     cycleWrongsRef.current = new Set();
     transport.stop();
     setRunActive(false);         // …and so does the run itself (see runActive)
+    // A mode change ends the run outright, so its whole-piece claim dies with it —
+    // otherwise an arm taken in Listen/Learn (which also start runs at step 0) would
+    // still be standing when Polish is entered mid-piece and played to the end (§H).
+    runEligibleRef.current = false;
     silenceScheduled();
     setStruck(() => new Set());
     clearInks();                 // wet ink belongs to the mode it was played in (wave-3 D)
@@ -1534,6 +1576,17 @@ export default function ScorePlayer({ score: scoreMeta }) {
     // run — a tempo picked before Play (or during the count-in, before onGo) is
     // simply the tempo the run will be played at, and must not poison it.
     if (runActiveRef.current) runMixedRef.current = true;
+    // `mixed` alone is not enough: `runActive` is FALSE across a manual pause and
+    // across a rebuild gap, so a tempo change taken there slips past it and the
+    // resume re-captures the tier at the NEW speed — half the piece banked as if
+    // it had all been played at the new tempo (§H). A run is "in flight or merely
+    // suspended" whenever the transport is running, a rebuild-resume is pending, or
+    // grades from this run are already on the board; in all three cases the change
+    // costs the run its whole-piece claim. A tempo change with a CLEAN board (or
+    // after a completed run, whose next Play re-arms from step 0) costs nothing.
+    if (runActiveRef.current || resumeAfterRef.current || Object.keys(gradesRef.current).length > 0) {
+      runEligibleRef.current = false;
+    }
     setTempoMult(Number.isFinite(n) ? Math.min(2, Math.max(0.25, n)) : 1);
   }, []);
 
@@ -1584,6 +1637,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
     setLearnDone(false);    // fresh pass — close the completion card
     transport.stop();
     setRunActive(false);    // Restart ends the current run (see runActive)
+    runEligibleRef.current = false; // …and its whole-piece claim; the next Play re-arms from home (§H)
     if (sendsAudio) silenceScheduled();
     flushPlaybackNow();
     const home = homeStep(rangeRef.current); // loop in-point when a loop is active (audit L5)
@@ -1722,6 +1776,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
         if (startStep !== stepRef.current) setStep(startStep);
         runTierRef.current = tierOf(tempoMult); // the no-count-in start path (wave-3 H)
         runMixedRef.current = false;
+        if (startStep === 0) runEligibleRef.current = true; // one-way arm — see runEligibleRef
         transport.seek((stepTimeline[startStep]?.t ?? 0) / tempoMult);
         setRunActive(true);
         transport.play();
@@ -1743,6 +1798,10 @@ export default function ScorePlayer({ score: scoreMeta }) {
     if (activeParts[staff] && activeCount <= 1) return; // keep the last staff on
     userTouchedHandsRef.current = true; // a manual pick outranks the hand-preference seed (review fix round 1)
     voidCycle(); // an active-parts change breaks a Learn cycle in progress (wave-3 C)
+    // In Polish the hands ARE the bucket a best is banked under (§H): measures
+    // graded with both hands must never bank as an rh-only best. The next Play from
+    // step 0 re-arms, so a change made between runs costs nothing.
+    if (mode === 'polish') runEligibleRef.current = false;
     if (sendsAudio) {
       // Changing the active-part map mid-flight invalidates the NOTE timeline —
       // pause, flush, and silence so a stale schedule doesn't drone, then resume
@@ -1755,7 +1814,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
     setActiveParts((a) => ({ ...a, [staff]: !a[staff] }));
     logger.info('score.active-part', { staff, on: !activeParts[staff] });
     tapIntent('active-part');
-  }, [sendsAudio, pauseForRebuild, silenceScheduled, logger, activeParts, parts, tapIntent, voidCycle]);
+  }, [mode, sendsAudio, pauseForRebuild, silenceScheduled, logger, activeParts, parts, tapIntent, voidCycle]);
 
   // Grand-staff (2 staves) fast path: a single segmented control instead of chips.
   // One variant, every mode (wave-3 A) — value + handler map to activeParts alone.
@@ -1767,6 +1826,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
     userTouchedHandsRef.current = true; // a manual pick outranks the hand-preference seed (review fix round 1)
     setActiveParts({ 0: v !== 'lh', 1: v !== 'rh' });
     voidCycle(); // a hand-toggle change breaks a Learn cycle in progress (wave-3 C)
+    if (mode === 'polish') runEligibleRef.current = false; // the hands are the bucket — see onCyclePart (§H)
     if (sendsAudio) {
       // A hand change mid-flight invalidates the NOTE timeline (Listen and Learn's
       // machine states both perform it — wave-3 §B) — pause, flush, and silence so
@@ -1777,7 +1837,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
     }
     logger.info('score.hands', { value: v });
     tapIntent('hands');
-  }, [sendsAudio, pauseForRebuild, silenceScheduled, logger, tapIntent, voidCycle]);
+  }, [mode, sendsAudio, pauseForRebuild, silenceScheduled, logger, tapIntent, voidCycle]);
 
   // Surface the hands split after the cursor has sat on one multi-note step for a
   // while. Only when a split would actually help: a grand staff, both hands

@@ -256,6 +256,16 @@ run compares itself only against other right-hand-only bests. A best only
 updates on a completed, non-voided, whole-piece run — an aborted or
 mixed-tempo run can't quietly overwrite a real personal best.
 
+**"Whole piece" means started at the top and played through**, at one tempo on
+one pair of hands. A run that begins from a tap-seek into the middle, or whose
+tempo or hands changed anywhere along the way — including while it was paused
+or waiting on a zoom/flow/key re-engrave — reaches the end of the piece but
+banks nothing; the summary still shows its score. Pausing itself is fine:
+picking the same run back up at the same tempo on the same hands is still one
+whole-piece run. Because a best only ever improves, an inflated one would be
+permanent, so the gate errs toward withholding — and every withheld bank names
+its reason in the log.
+
 ## Perform
 
 Zero chrome, by design — nothing on screen but the engraved page. The left
@@ -337,7 +347,7 @@ stamped to wall-clock by the framework. Math is in `scoreTelemetry.js`; collecti
 | `score.polish.measure` | info | `measure, grade, noteScore, timingScore` (per graded measure) |
 | `score.polish.silent-stop` | info | the run auto-stopped after N silent measures |
 | `score.polish.summary` | info | `greens, yellows, reds, overall` (at run end) |
-| `score.polish.tier-best` | info | a tempo-tier personal best updated |
+| `score.polish.tier-best` | info | `bucket, tier, score, banked, reason` — the bank decision for a completed run, named either way: `banked`, or withheld as `nothing-graded` / `mixed` (tempo moved mid-run) / `partial` (not a whole-piece run) / `guest` / `not-better` |
 | `piano.practice.save` | info | (backend) a practice record PUT was persisted |
 | `score.transpose` | info | `semitones` |
 | `score.mode` | info | `mode` |
