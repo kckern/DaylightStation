@@ -629,7 +629,13 @@ was issued, what comes next.
 They encode nothing: no learner id, no unit id, no policy. `identify` (the
 personal card) never expires; selection/media/remediation tokens are renewable
 and return a friendly "already done" once the session has advanced past them —
-a child holding a piece of paper is never shown an error.
+a child holding a piece of paper is never shown an error. Token records live
+one-per-file in the data volume and are **pruned on a grace period**: a record
+whose expiry is more than a week past is deleted (at boot, and opportunistically
+after mints), so the registry never grows without bound. Inside the grace
+window an expired ticket still resolves to the "out of date" slip; after
+pruning it resolves like any unknown ticket. Unexpiring records are never
+pruned.
 
 **Virtual hardware** — every physical endpoint has a double implementing the
 *same* surface as the real adapter (laser printer, thermal printer, scanner,

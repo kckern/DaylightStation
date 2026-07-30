@@ -267,11 +267,17 @@ export async function createSchoolLifecycle({
   const stores = {
     catalog: new YamlCurriculumDatastore({ configService }),
     sessions: new YamlWorkSessionDatastore({ configService }),
-    tokens: new YamlTokenRegistry({ configService }),
+    tokens: new YamlTokenRegistry({ configService, logger }),
     assignments: new YamlAssignmentStore({ configService }),
     formMaps: new YamlFormMapStore({ configService }),
     reviewQueue: new YamlReviewQueue({ configService }),
   };
+  // Long-expired token files are dead weight (a pruned scan resolves to the
+  // "unknown ticket" slip, which is what week-old paper deserves). Swept at
+  // boot and after mints; fire-and-forget so a slow disk never delays boot.
+  stores.tokens.prune().catch((error) => {
+    logger.warn?.('school.tokens.prune-failed', { error: error?.message });
+  });
 
   // --- program launchers (Task 8/12/13) ---------------------------------------
   // The same IANA zone `LanguageStudyService` reads its 4am study-day boundary
