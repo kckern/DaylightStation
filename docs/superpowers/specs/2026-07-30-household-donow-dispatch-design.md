@@ -209,15 +209,23 @@ feature by paging parents forever. These rules are the spec, not hints:
   launch does not have — shipping it now would strand the child in a
   dispatched state with an unreachable quiz. Same deferral for
   `launch`+`document`/`review`.
-- **Session mechanics for a `launch` unit — a named closed-set change.**
-  The work-session event vocabulary gains ONE event kind,
-  `launch_dispatched` (`{ surface, decision, approvalId? }`), with its
-  reducer state, transition (`created → launch_dispatched`) and
-  non-terminal `nextAction`. On a `dispatched` decision the school routing
-  appends `launch_dispatched` and then closes the session through the
-  EXISTING `CloseSessionOutcome` with `result: passed` (no percent) — the
-  unit completes, the course advances, and the subject serves today under
-  the SHIPPED passing-outcome rule with **no amendment to `servedToday`**.
+- **Session mechanics for a `launch` unit — TWO named closed-set changes.**
+  (1) The work-session event vocabulary gains `launch_dispatched`
+  (`{ surface, decision, approvalId? }`), with its reducer state,
+  TRANSITIONS entries (`created → launch_dispatched` AND
+  `launch_dispatched → outcome_recorded`) and a non-terminal `nextAction`.
+  (2) `CloseSessionOutcome` gains an explicit **honor-close mode** — legal
+  ONLY from state `launch_dispatched` — which records `outcome_recorded`
+  with `result: 'passed', reason: 'launch_dispatched'` and then rides the
+  existing `#settle` (reward guard, unlock line, result receipt all stay
+  uniform). This is named as a change because the shipped close path
+  refuses everything else about it: it hard-gates on `graded`, derives its
+  result via `evaluateOutcome` (no percent → `needs_remediation`), and a
+  synthesized `graded` event demands `attemptIds` a launch unit does not
+  have. The honor-close is a door, not a bypass — outside
+  `launch_dispatched` it does not exist. The unit then completes, the
+  course advances, and the subject serves today under the SHIPPED
+  passing-outcome rule with **no amendment to `servedToday`**.
   This is deliberate honor-system completion, the household's
   fire-and-forget decision applied: a launch-only unit has nothing else to
   measure, so "starting is never completion" (a rule about watch-percent
@@ -226,10 +234,16 @@ feature by paging parents forever. These rules are the spec, not hints:
   settled by the existing outcome→economy machinery.
 - **The approval gap:** on `pending_approval` no session event is written
   (nothing happened yet). When a parent approves and the dispatch fires,
-  `DoNowService` emits `donow.dispatched { ref, surface }` on the internal
-  bus; the school lifecycle subscribes and closes the loop for sessions it
-  owns (append + outcome as above). Deny/timeout: no event — the next scan
-  re-offers the unit, and the slip already said a grown-up was asked.
+  `DoNowService` emits `donow.dispatched { ref, surface, requestedBy }` on
+  the internal bus; the school lifecycle subscribes with an OWNERSHIP
+  FILTER — it acts only when `requestedBy === 'school-scan'` AND its own
+  session repository resolves `ref` to a real session it owns (repository
+  lookup, never shape matching; no session event was written while
+  pending, so the session is still at `created`) — then appends
+  `launch_dispatched` + honor-close as above. Any other caller's
+  colliding ref is ignored by construction. Deny/timeout:
+  no event — the next scan re-offers the unit, and the slip already said a
+  grown-up was asked.
 - **`nextMove` gains a `launch` arm:** state `created` + `unit.launch` →
   kind `'launch'`. After the outcome records, re-scans hit the shipped
   served/already-done paths — no new wait states.
@@ -248,10 +262,15 @@ feature by paging parents forever. These rules are the spec, not hints:
   launchers (`language`) — collision is a boot error.
 - **The dispatch log.** Every `dispatched` decision appends one line to
   `data/apps/donow/log/{YYYY-MM-DD}.yml`
-  (`{ at, surface, decision, learnerId, requestedBy, ref, approvalId? }`)
-  — append-only, date-sharded, the economy-ledger pattern. It exists for
-  audit regardless; surface programs read it as their evidence source
-  (derived on read, never a stored rollup).
+  (`{ at, surface, decision, learnerId, requestedBy, ref, programId?,
+  approvalId? }`) — append-only, date-sharded, the economy-ledger pattern.
+  `ref` semantics are per-caller: `school-scan` → sessionId;
+  `school-program` → the program id, ALSO copied into `programId` so the
+  evidence query is explicit. `SurfaceProgramLauncher.status()` filters on
+  `programId` + `learnerId` + study day — a one-shot garage launch unit
+  dispatched the same morning can never mark PE done (it has no
+  programId). The log exists for audit regardless; surface programs read
+  it as their evidence source (derived on read, never a stored rollup).
 - **`ResolveSubjectNext` routing** gains one arm: a unit whose composition
   is a `launch:` block routes `subject_next` scans to
   `DoNowService.dispatch({ surface, action, learnerId, requestedBy:
@@ -314,3 +333,10 @@ feature by paging parents forever. These rules are the spec, not hints:
 - Per-surface rich completion evidence (minutes played, attribution on the
   garage player) — arrives surface-by-surface later.
 - An authoring UI for `launch:` blocks.
+
+**Shipping note (docs alignment, in scope when this builds):** the agenda-v2
+spec and `docs/reference/school/README.md` say "program ids are a closed set
+in code." `SurfaceProgramLauncher` refines that: the SURFACE vocabulary stays
+closed in code; program ids become addresses (code launchers + config-declared
+surface programs, collisions a boot error). Both documents get that sentence
+updated in the same change, so they cannot contradict this spec later.
