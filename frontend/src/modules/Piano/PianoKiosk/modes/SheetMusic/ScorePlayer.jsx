@@ -1643,13 +1643,17 @@ export default function ScorePlayer({ score: scoreMeta }) {
   // ── Polish tempo tiers: live readout + summary props (wave-3 H) ──────────────
   // The bar's score prefix. Derived from `grades`, so it moves on a per-MEASURE
   // cadence (not per step) — and it is consumed by the bar SHELL, which already
-  // re-renders per step, so the memoized clusters keep bailing out. Reads the LIVE
-  // tempo rather than runTierRef: before the first run there is no captured tier,
-  // and mid-run the two agree (a change voids the best, not the readout).
+  // re-renders per step, so the memoized clusters keep bailing out. Reads the
+  // RUN's tier (runTierRef, frozen at Play), never the live knob: a mid-run
+  // change voids the run (runMixedRef), and its readout then shows the plain
+  // base — re-labeling (or ×1.25-ing) a voided run would grade a tier it never
+  // ran. tempoMult stays a dependency so the change that flips those refs also
+  // recomputes this.
   const scoreLabel = useMemo(() => {
     if (mode !== 'polish') return null;
     const base = runScore(grades);
-    return base == null ? null : `${displayScore(base, tierOf(tempoMult))}%`;
+    if (base == null) return null;
+    return `${displayScore(base, runMixedRef.current ? null : runTierRef.current)}%`;
   }, [mode, grades, tempoMult]);
   // Which hands bucket the run belongs to — the same key the completion path banks
   // under, so the strip always shows the bests the next completion would beat.

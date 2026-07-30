@@ -1680,6 +1680,20 @@ describe('ScorePlayer — Polish tempo tiers (wave-3 H)', () => {
     expect(h.recordTierBest).not.toHaveBeenCalled();
   });
 
+  it('the live score readout keeps the RUN\'s tier across a mid-run tempo change — no overclock credit on a voided run', async () => {
+    h.layoutExtras = tierFixture(3, 1);
+    renderPlayer();
+    pickMode('Polish');
+    await act(async () => {});
+    await pressPlay();                        // 100% — tier 'full', no multiplier
+    act(() => vi.advanceTimersByTime(COUNT_IN_MS));
+    play(60);
+    act(() => vi.advanceTimersByTime(1000));  // m0 graded — a live base score exists
+    const before = position().split(' · ')[0]; // e.g. "100%"
+    pickTempo('125%');                        // voids the run; the live knob is now 'overclocked'
+    expect(position().split(' · ')[0]).toBe(before); // the readout must NOT jump ×1.25
+  });
+
   it('logs reason "not-better" when the run did not beat the stored best (and skips the write)', async () => {
     h.layoutExtras = tierFixture(3, 0.8);
     h.practice = { polish: { both: { medium: 100 } } }; // already perfect at this tier
