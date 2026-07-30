@@ -25,6 +25,7 @@
 
 import { initCanvas } from '#rendering/lib/CanvasFactory.mjs';
 import { wrapText } from '#rendering/lib/TextRenderer.mjs';
+import QRCode from 'qrcode';
 
 import { parseRichText } from './measure.mjs';
 import { documentReceiptTheme } from './documentReceiptTheme.mjs';
@@ -52,6 +53,7 @@ export function createDocumentReceiptRenderer({
   texToSvg = mathJaxTexToSvg,
   rasterizeSvg = defaultRasterizeSvg,
   fontDir = undefined,
+  scanCodes = 'box',
 } = {}) {
   const contentWidth = theme.canvas.width - 2 * theme.layout.margin;
 
@@ -239,6 +241,23 @@ export function createDocumentReceiptRenderer({
       const codeX = x + contentWidth - theme.action.padding - theme.action.codeAreaPx;
       const codeY = op.yPx + theme.action.padding;
       ctx.strokeRect(codeX, codeY, theme.action.codeAreaPx, theme.action.codeAreaPx);
+
+      if (scanCodes === 'qr') {
+        const qr = QRCode.create(op.code, { errorCorrectionLevel: 'M' });
+        const count = qr.modules.size;
+        const quiet = 2; // modules of quiet zone inside the box
+        const cell = Math.floor(theme.action.codeAreaPx / (count + 2 * quiet));
+        const offset = Math.floor((theme.action.codeAreaPx - cell * count) / 2);
+        ctx.fillStyle = '#000';
+        for (let r = 0; r < count; r += 1) {
+          for (let c = 0; c < count; c += 1) {
+            if (qr.modules.get(r, c)) {
+              ctx.fillRect(codeX + offset + c * cell, codeY + offset + r * cell, cell, cell);
+            }
+          }
+        }
+      }
+
       ctx.font = theme.fonts.code;
       op.codeLines.forEach((line, index) => ctx.fillText(
         line, codeX, codeY + theme.action.codeAreaPx + theme.action.codeGap + index * theme.text.codeLineHeight,

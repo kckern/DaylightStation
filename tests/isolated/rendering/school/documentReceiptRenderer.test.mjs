@@ -113,3 +113,51 @@ describe('createDocumentReceiptRenderer', () => {
     expect(first.canvas.toBuffer('image/png').equals(second.canvas.toBuffer('image/png'))).toBe(true);
   });
 });
+
+describe("scanCodes: 'qr'", () => {
+  const scanDoc = doc([{ type: 'scan_action', action: 'sch:ABCDEFGH23456789', label: 'Scan me' }]);
+
+  const darkPixelsInCodeArea = (canvas, theme) => {
+    const ctx = canvas.getContext('2d');
+    const size = theme.action.codeAreaPx - 8; // inside the border
+    const x = theme.canvas.width - theme.layout.margin - theme.action.padding - theme.action.codeAreaPx + 4;
+    // Extract the code area column and scan for the border row to locate the box top
+    const fullStrip = ctx.getImageData(x, 0, size, canvas.height).data;
+
+    // Find where the box starts by looking for dark pixels (border)
+    let boxStartY = 0;
+    for (let py = 0; py < canvas.height; py += 1) {
+      let darkInRow = 0;
+      for (let px = 0; px < size; px += 1) {
+        const idx = (py * size + px) * 4;
+        if (fullStrip[idx] < 96) darkInRow += 1;
+      }
+      if (darkInRow > size * 0.3) { // Border row has significant dark pixels
+        boxStartY = py;
+        break;
+      }
+    }
+
+    // Sample only the code box interior (size rows from the border start)
+    const img = ctx.getImageData(x, boxStartY, size, size).data;
+    let dark = 0;
+    for (let i = 0; i < img.length; i += 4) if (img[i] < 96) dark += 1;
+    return dark;
+  };
+
+  it('draws real QR modules into the code area', async () => {
+    const qr = createDocumentReceiptRenderer({ theme, texToSvg, scanCodes: 'qr' });
+    const box = createDocumentReceiptRenderer({ theme, texToSvg });
+    const a = await qr.createCanvas(scanDoc, { tokens: {} });
+    const b = await box.createCanvas(scanDoc, { tokens: {} });
+    const darkQr = darkPixelsInCodeArea(a.canvas, theme);
+    const darkBox = darkPixelsInCodeArea(b.canvas, theme);
+    expect(darkQr).toBeGreaterThan(darkBox * 3); // modules vs an empty stroked box
+  });
+
+  it('default stays box — construction without the option is unchanged', async () => {
+    const r = createDocumentReceiptRenderer({ theme, texToSvg });
+    const out = await r.createCanvas(scanDoc, { tokens: {} });
+    expect(out.codes).toHaveLength(1); // existing contract intact
+  });
+});
