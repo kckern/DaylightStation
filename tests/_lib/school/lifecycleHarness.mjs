@@ -164,6 +164,20 @@ function seedDataDir(dataDir) {
  *   be dropped as an unknown program at catalog load) passes one — see
  *   `LanguageStudyService` + a fake datastore, same arrangement as
  *   `programLaunchers.test.mjs`.
+ * @param {Array<object>} [options.programs] - `school.yml`'s own `programs:`
+ *   list (spec §6 "surface programs"), forwarded verbatim into the harness's
+ *   `schoolConfig` — a test that wants a config-driven `SurfaceProgramLauncher`
+ *   (e.g. `pe-daily`) to resolve passes `[{id, label, surface, action, subject}]`
+ *   here, the same shape a household's real `school.yml` would carry.
+ * @param {string} [options.donowNotifyService] - present makes DoNow's own
+ *   `HaApprovalNotifier` a live notifier (Task 13's own rule: no
+ *   `notifyService` config + no `haGateway`, no notifier). Wires a FAKE
+ *   `haGateway` (`{callService}`) through `createDonow`'s real
+ *   `CallHomeAssistantService`/`HaApprovalNotifier` chain — no new adapter
+ *   double, the same production classes, with only the HA transport faked.
+ *   Every call the notifier makes is recorded on the returned harness's
+ *   `haGatewayCalls` array, so a test can assert "exactly one notification"
+ *   without a bespoke notifier stub.
  * @returns {Promise<object>} the fluent driver
  */
 export async function createLifecycleHarness({
@@ -177,6 +191,8 @@ export async function createLifecycleHarness({
   graceSec = 600,
   tokenTtlHours = 48,
   languageStudyService = null,
+  programs = [],
+  donowNotifyService = null,
   logger = silent,
 } = {}) {
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'school-lifecycle-e2e-'));
@@ -188,6 +204,10 @@ export async function createLifecycleHarness({
   // --- what school.yml would say in a house running the console -------------
   const schoolConfig = {
     virtualDevices: true,
+    // `programs` sits at the TOP level of the school config (schoolLifecycle.mjs
+    // reads `cfg.programs`, not `cfg.lifecycle.programs`) — mirrors a real
+    // `school.yml`'s own shape.
+    programs,
     lifecycle: {
       enabled: true,
       tokenTtlHours,
@@ -203,6 +223,22 @@ export async function createLifecycleHarness({
       'school-unit-complete': { reward: economyReward, per: 'completion', daily_cap: 1000 },
     },
   };
+  // Only meaningful when a test opts in (`donowNotifyService`) — `createDonow`
+  // only builds a real `HaApprovalNotifier` when BOTH `notifyService` and a
+  // `haGateway` are present, mirroring app.mjs's own household config shape.
+  const donowConfig = donowNotifyService ? { notifyService: donowNotifyService } : {};
+
+  // The fake HA transport `HaApprovalNotifier` sends through — every call
+  // recorded here, so a test can assert "exactly one notification" against
+  // the REAL notifier/CallHomeAssistantService chain rather than a bespoke
+  // notifier double.
+  const haGatewayCalls = [];
+  const haGateway = {
+    callService: async (domain, service, data) => {
+      haGatewayCalls.push({ domain, service, data });
+      return { ok: true };
+    },
+  };
 
   const configService = {
     getDataDir: () => dataDir,
@@ -211,6 +247,7 @@ export async function createLifecycleHarness({
     getHouseholdAppConfig: (_hid, app) => {
       if (app === 'school') return schoolConfig;
       if (app === 'economy') return economyConfig;
+      if (app === 'donow') return donowConfig;
       return null;
     },
   };
@@ -273,6 +310,17 @@ export async function createLifecycleHarness({
     householdId: null,
     eventBus,
     schoolService,
+    // Only wired when a test opts in — an absent `haGateway` is exactly the
+    // "no HA gateway" degrade every other household config path already takes
+    // (see `donow.mjs`'s own `donow.notifier.no-ha-gateway` warn branch).
+    homeAutomationAdapters: donowNotifyService ? { haGateway } : null,
+    // THE SAME clock the school lifecycle reads (below) — without this,
+    // DoNowService stamps its dispatch-log rows against the REAL wall clock
+    // (its own default) while `SurfaceProgramLauncher.status()` computes
+    // "today"'s UTC day shard against THIS harness's simulated `startIso`,
+    // so a program dispatched "today" in the simulated calendar could land
+    // in a shard `status()` never reads back. One clock, one calendar.
+    clock: () => clock.now(),
     logger,
   });
 
@@ -396,6 +444,8 @@ export async function createLifecycleHarness({
     renderers: lifecycle.renderers,
     economyCalls,
     busEvents,
+    /** Every call DoNow's HA notifier made through the fake `haGateway` — see `donowNotifyService`. */
+    haGatewayCalls,
 
     /** Did the console's OWN predicate claim the last scanned code? */
     consoleClaimedLastScan() { return lastClaimed; },
