@@ -171,6 +171,23 @@ describe('LanguageStudyService.todayStatus', () => {
     expect(status).toEqual({ doneToday: true, progressLabel: 'Day 1', score: null });
   });
 
+  it('a day completed on a PRIOR study day reports the rolled day, never done today', () => {
+    // Found live (felix, 2026-07-30): day 1 cleared on July 22, the app never
+    // reopened, so the stored day stayed 1 and todayStatus reported the
+    // long-finished day as "done today" — hiding the subject on the agenda.
+    // The stored day only advances when the learner next opens the app, so
+    // todayStatus must apply the same rollover the live session applies.
+    ds.appendEvent('kckern', 'test-korean', {
+      at: '2026-07-13T10:00:00Z', day: 1, seq: 1, rung: 'repetition', attributedTo: 'kckern',
+    });
+    ds.writeProgress('kckern', 'test-korean', {
+      corpus: 'test-korean', day: 1, daily_limit: 1, last_activity: '2026-07-13T10:00:00Z',
+    });
+
+    const status = svc.todayStatus({ userId: 'kckern' }); // now = 2026-07-21
+    expect(status).toEqual({ doneToday: false, progressLabel: 'Day 2', score: null });
+  });
+
   it('reports the null triple for a learner with no corpus/progress at all', () => {
     const status = svc.todayStatus({ userId: 'brand-new-kid' });
     expect(status).toEqual({ doneToday: false, progressLabel: null, score: null });

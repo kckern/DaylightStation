@@ -474,7 +474,28 @@ export class LanguageStudyService {
         if (!rawProgress && log.length === 0) continue; // never touched this course
 
         const progress = this.#readProgress(userId, corpusId);
-        const queue = this.#fullDayQueue(userId, corpusId, corpus, log, progress);
+        let day = progress.day;
+        let queue = this.#fullDayQueue(userId, corpusId, corpus, log, progress);
+
+        // The stored day only advances when the learner next opens the app,
+        // so a day finished last week still reads as day N with everything
+        // cleared. Apply the same rollover the live session applies on open —
+        // otherwise the agenda prints "done today" for work finished days ago
+        // and hides the subject (found live: a day-1 queue cleared 2026-07-22
+        // still reported done on 07-30).
+        const nowMs = this.#now();
+        const roll = shouldRollDay({
+          queue,
+          lastActivity: progress.lastActivity ? Date.parse(progress.lastActivity) : null,
+          now: nowMs,
+          boundaryHour: this.#boundaryHour,
+          offsetMinutes: this.#offsetMinutes(nowMs),
+        });
+        if (roll.roll) {
+          day += 1;
+          queue = this.#fullDayQueue(userId, corpusId, corpus, log, { ...progress, day });
+        }
+
         const summary = summarizeQueue(queue);
         const outstanding = summary.total - summary.done;
 
@@ -484,7 +505,7 @@ export class LanguageStudyService {
         // rather than stall on a vacuous condition (rollover.mjs:45-46: "An
         // empty queue counts as complete...").
         const doneToday = outstanding === 0;
-        const progressLabel = summary.total === 0 ? 'Course complete' : `Day ${progress.day}`;
+        const progressLabel = summary.total === 0 ? 'Course complete' : `Day ${day}`;
         return { doneToday, progressLabel, score: null };
       }
       return { doneToday: false, progressLabel: null, score: null };
