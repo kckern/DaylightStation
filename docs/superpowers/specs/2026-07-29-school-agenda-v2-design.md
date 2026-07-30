@@ -26,7 +26,7 @@ Next: Adding Unlike Denominators
       — print your sheet
         [QR: subject_next]
 --------------------------------
-LANGUAGE  ✓ done today    Day 61
+LANGUAGE - done today     Day 61
 --------------------------------
 READING            Unit 1 of 6
 Next: The Lion, the Witch...
@@ -86,8 +86,11 @@ provenance:
 
 Rules, enforced by `validateUnit` at catalog load (never at scan time):
 
-- A unit carries **exactly one** composition: `media` | `document` | `bank` |
-  `program`. A program unit with a `bank` is rejected.
+- **`program` is mutually exclusive with `media`/`document`/`bank`.**
+  Curriculum units keep combining compositions exactly as they do today
+  (`math-fractions.01` is `media` + `bank`, `.04` is `media` + `document`;
+  the watch-then-questions lifecycle depends on that). A program unit is the
+  only pure kind: it delegates whole, or it is not a program unit.
 - `program:` values are a **closed set in code** — the ids of registered
   program launchers (same posture as `categories.mjs`). An unknown program is
   a load-time rejection with the unit named.
@@ -131,10 +134,14 @@ never completed; a `daily` unit is not `completed` by yesterday's outcome).
 
 ### 3.1 The study day
 
-4am→4am in the household time zone, the language ladder's boundary, computed
-with the same rule (a session at 1am belongs to yesterday's list). Exposed as
-`studyDayOf(isoInstant, timeZone)` and used for exactly one thing: deciding
-which session outcomes and program completions count as "today."
+4am→4am in the household time zone, the language ladder's boundary — and the
+ladder's **implementation**, not a second one: `studyDayIndex(epochMs,
+{boundaryHour, offsetMinutes})` and `offsetMinutesFor(timezone)` are hoisted
+out of `LanguageStudyService` into a shared domain home and reused. Two
+boundary clocks would disagree for an hour twice a year across DST, splitting
+the ladder's `doneToday` from the agenda's "today." Used for exactly one
+thing: deciding which session outcomes and program completions count as
+"today."
 
 ### 3.2 Sections
 
@@ -146,18 +153,26 @@ not a greyed shelf on paper; tape is too narrow for consolation rows.
 Per subject, derive:
 
 - **`servedToday`** — true when any curriculum unit in the subject has a
-  session outcome recorded this study day, or any program unit's status says
-  `doneToday`. A served subject prints its header, the ✓ mark and its progress
+  **passing** outcome recorded this study day, or any program unit's status
+  says `doneToday`. A failed attempt does NOT serve the subject: the section
+  stays live and its QR routes to the retry (the remediation path), because
+  "done today" must never print next to a failing grade while the child holds
+  no way back in. A served subject prints its header, a `done today` mark
+  (ASCII — the tape encodes cp858; U+2713 prints as `?`) and its progress
   numbers, **no QR**.
 - **`next`** — the single entry the QR will act on, chosen exactly as the
   planner already orders work: first `in_progress` entry, else first
   `available`. A subject with only `locked` entries prints the nearest
-  blocker's remedy line instead of a QR (this can only happen cross-subject —
-  within a subject the planner always surfaces the blocker itself).
-- **`progressLabel`** — `Unit {min(passed+1, total)} of {total}` over the
-  subject's assigned course, or `Course complete` once every unit has passed;
-  for a pure program subject, the launcher's `progressLabel`. Mixed subjects
-  prefer the course numbers (they are the sequenced thing).
+  blocker's remedy line instead of a QR. (This CAN happen within one subject:
+  assigning unit 2 without its course leaves its blocker outside the
+  assignment, so every assigned entry in the subject is locked.)
+- **`progressLabel`** — for a subject whose assigned curriculum units all
+  belong to one course: `Unit {min(passed+1, total)} of {total}`, or
+  `Course complete` once every unit has passed. For a subject spanning
+  multiple courses or mixing standalone units: `{passed} of {total} done`
+  over all assigned curriculum units in the subject. For a pure program
+  subject, the launcher's `progressLabel`. Mixed curriculum+program subjects
+  prefer the curriculum numbers (they are the sequenced thing).
 - **`grade`** — mean of each assigned curriculum unit's **latest** outcome
   percent (attempted units only — unattempted work is not a zero), blended
   with the launcher's `score` (as a percent) when non-null, weighted equally
@@ -186,8 +201,15 @@ A new token class alongside `identify`/`select_unit`/…:
   an actual unit happens at *resolution*, not at mint.
 - **TTL:** 7 days (a subject pointer stays correct as the work advances; the
   card is still the recovery path for everything).
-- **Minting:** one per printed subject section, at agenda build, via the
-  existing `mintToken`/`ITokenRegistry` machinery.
+- **Minting:** one per printed subject section, at agenda build.
+
+The token domain is built around session-subject tokens, so this class needs
+four named changes, not "one branch": a `TOKEN_CLASSES` entry; a per-class
+subject-shape rule in `mintToken` (today it throws for any non-identify
+subject lacking `sessionId`); a session-independent `SEMANTICS` entry (today
+`resolveTokenState` returns `unknown` without a `sessionState`); and
+`ResolveScanAction`'s early session lookup skipping this class the way it
+already skips `identify`.
 
 ### 4.2 Resolution
 
@@ -197,20 +219,27 @@ A new token class alongside `identify`/`select_unit`/…:
    path as printing — one implementation of "what is next," used twice).
 2. If the subject is `servedToday` → notice slip: *"Math is done for today.
    Nice work — scan your card tomorrow."*
-3. Else route the subject's `next` entry by its composition, reusing the
-   existing flows — the subject token is an **indirection**, not a new
-   lifecycle:
-   - `document` unit → ensure/reuse the work session (BuildAgenda's
-     `#offerFor` logic, extracted so both callers share it) → `IssueDocument`
-     prints the sheet.
-   - `media` unit → `DispatchMedia` to the default child-selectable target.
-   - `bank` unit → **Portal launch** (§4.3) into the quiz runner — replaces
-     today's "go to the school screen" pointer slip for this path.
+3. Else route the subject's `next` entry. **Routing is by composition AND
+   derived session state, never composition alone** — a `media`+`bank` unit
+   at `media_completed` must go to the quiz, not to `DispatchMedia`'s
+   `already_done` refusal loop. Concretely: ensure/reuse the entry's work
+   session (BuildAgenda's `#offerFor` logic, extracted so both callers share
+   it — this applies to all curriculum paths, since media dispatch and the
+   bank runner both need the `sessionId`), then act on the same
+   state-and-composition decision `#offerFor`/`nextAction` already encode:
+   - next move is *print the sheet* → `IssueDocument` prints it.
+   - next move is *watch/listen* → `DispatchMedia` to the default
+     child-selectable target.
+   - next move is *answer on the screen* → **Portal launch** (§4.3) into the
+     quiz runner.
    - `program` unit → `IProgramLauncher.launch()` → Portal launch into the
-     program's runner.
-4. Every failure path ends in a printed notice (scan never succeeds silently,
-   §6.2 of the console architecture). Dispatch refused / Portal unreachable →
-   slip says what to do by hand ("Go to the Portal and open Language").
+     program's runner. No work session (§4.4).
+4. Every scan ends in paper (scan never succeeds silently, §6.2 of the
+   console architecture). On-screen dispatches **always** print a short slip
+   naming the manual fallback ("Language is starting on the Portal — or open
+   it there yourself"), because the WS broadcast has no acknowledgement: the
+   backend cannot tell "launched" from "nobody listening." Failure paths
+   likewise end in a notice slip.
 
 Idempotency inherits from the underlying flows: re-scanning a subject QR
 mid-video hits `DispatchMedia`'s already-dispatched refusal; re-scanning after
@@ -247,7 +276,8 @@ still composed entirely of **existing block types** (`rich_text`,
 `scan_action`) — the closed block set does not grow:
 
 - Subject header: `## MATH` with the status/progress on the same line
-  (`## MATH — Unit 2 of 4` / `## MATH ✓ done today`).
+  (`## MATH — Unit 2 of 4` / `## MATH — done today`). ASCII only on the
+  tape: it encodes cp858, where a ✓ prints as `?`.
 - Grade line, next-task line: plain `rich_text`.
 - One `scan_action` per unserved subject, `label` = the next-task sentence,
   `action` = the `subject_next` token.
@@ -294,13 +324,17 @@ Pure domain first, hardware doubles for the rest — the console's established
 pattern:
 
 1. **`agenda.mjs` unit tests** — study-day boundary (1am belongs to
-   yesterday; TZ-sensitive), grouping + nine-subject order, servedToday from
-   both evidence kinds, next-selection, progress label, grade math (latest
-   attempt only; no-evidence omission; program blend).
+   yesterday; TZ/DST-sensitive, via the hoisted ladder implementation),
+   grouping + nine-subject order, servedToday from both evidence kinds AND
+   not-served on a failed outcome (the retry stays offered), next-selection,
+   progress labels (single course, multi-course, complete), grade math
+   (latest attempt only; no-evidence omission; program blend).
 2. **Catalog validation tests** — program unit exclusivity, unknown program,
    cadence enum, forbidden blocks.
-3. **Token resolution tests** — `subject_next` routing per composition,
-   served-today slip, launcher failure slip, TTL.
+3. **Token resolution tests** — `subject_next` routing per composition AND
+   state (a `media`+`bank` unit at `media_completed` reaches the quiz, never
+   `DispatchMedia`'s refusal), failed-today routes to the retry, served-today
+   slip, launcher failure slip, TTL, sessionless mint/resolve semantics.
 4. **Renderer tests** — `##` styling, QR item emission; golden agenda tape
    via the virtual thermal printer (dimension-stable like existing goldens).
 5. **End-to-end via virtual hardware** — tap → sectioned agenda with N
