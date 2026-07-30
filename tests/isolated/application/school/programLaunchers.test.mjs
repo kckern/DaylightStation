@@ -1,10 +1,11 @@
 /**
- * PortalDispatch + LanguageProgramLauncher (Task 8, design §IProgramLauncher;
- * Task 12 routes LanguageProgramLauncher's launch through DoNow).
+ * LanguageProgramLauncher (Task 8, design §IProgramLauncher; Task 12 routes
+ * LanguageProgramLauncher's launch through DoNow).
  *
- * PortalDispatch is the one place that knows how to hand a learner off to a
- * program — everything else just describes a target and lets the bus carry
- * it; `ResolveScanAction#onScreen`'s bank hand-off still uses it directly.
+ * `PortalDispatch` — the un-occupancy-checked broadcast this file used to
+ * unit-test directly — is deleted (Task 13): `donow` is now the household's
+ * unconditionally-wired dispatch facade, and `ResolveScanAction#onScreen`'s
+ * bank hand-off (and every program launcher) routes through it instead.
  * LanguageProgramLauncher is the thinnest possible adapter: status() passes
  * through LanguageStudyService.todayStatus, launch() asks `DoNowService` to
  * dispatch a fixed 'language' program target on the `portal` surface — so a
@@ -12,51 +13,8 @@
  * policy any other DoNow caller gets (spec §6 last bullet).
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { PortalDispatch } from '#apps/school/PortalDispatch.mjs';
 import { LanguageProgramLauncher } from '#apps/school/LanguageProgramLauncher.mjs';
 import { LanguageStudyService } from '#apps/school/LanguageStudyService.mjs';
-
-describe('PortalDispatch', () => {
-  it('broadcasts a school.launch event on the school topic', () => {
-    const eventBus = { broadcast: vi.fn() };
-    const portal = new PortalDispatch({ eventBus, logger: { info() {}, warn() {} } });
-
-    const target = { kind: 'bank', bankId: 'geo-1', unitId: 'unit-1', sessionId: 'sess-1' };
-    const result = portal.launch({ learnerId: 'kid1', target });
-
-    expect(result).toEqual({ dispatched: true });
-    expect(eventBus.broadcast).toHaveBeenCalledWith('school', {
-      type: 'school.launch',
-      learnerId: 'kid1',
-      target,
-    });
-  });
-
-  it('accepts a program target as well as a bank target', () => {
-    const eventBus = { broadcast: vi.fn() };
-    const portal = new PortalDispatch({ eventBus });
-    const target = { kind: 'program', program: 'language' };
-
-    portal.launch({ learnerId: 'kid1', target });
-
-    expect(eventBus.broadcast).toHaveBeenCalledWith('school', {
-      type: 'school.launch', learnerId: 'kid1', target,
-    });
-  });
-
-  it('reports dispatched:false and does not throw when no bus is wired', () => {
-    const portal = new PortalDispatch({});
-    const result = portal.launch({ learnerId: 'kid1', target: { kind: 'program', program: 'language' } });
-    expect(result).toEqual({ dispatched: false });
-  });
-
-  it('reports dispatched:false and does not throw when broadcast itself throws', () => {
-    const eventBus = { broadcast: vi.fn(() => { throw new Error('bus down'); }) };
-    const portal = new PortalDispatch({ eventBus, logger: { warn() {}, info() {} } });
-    const result = portal.launch({ learnerId: 'kid1', target: { kind: 'program', program: 'language' } });
-    expect(result).toEqual({ dispatched: false });
-  });
-});
 
 describe('LanguageProgramLauncher', () => {
   it('has the id "language"', () => {

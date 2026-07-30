@@ -23,7 +23,19 @@
  * spec §5.1 (any MIDI activity within 5 minutes → active; a missed
  * `session_end` self-heals via that TTL, silence beyond it reads idle, not
  * unknown — no MIDI ever seen just means nobody has played).
+ *
+ * `validateAction` requires `isSheetMusicContentId(raw.contentId)` (Task 9's
+ * discovery + verdict, mirrored server-side in
+ * `#domains/donow/pianoContentShape.mjs`): today the kiosk can only actually
+ * OPEN an explicit `source:localId` content id (SheetMusic's `view/*` route);
+ * every other shape reaches the tablet, gets logged, and silently no-ops —
+ * `dispatched: true` for a payload that provably does nothing is exactly the
+ * "honesty" failure the plan calls out, so it is rejected at validation time
+ * instead (both curriculum catalog-load AND live dispatch call this same
+ * method).
  */
+import { isSheetMusicContentId } from '#domains/donow/pianoContentShape.mjs';
+
 export class PianoKioskSurface {
   #eventBus;
   #presence;
@@ -52,6 +64,9 @@ export class PianoKioskSurface {
   validateAction(raw) {
     if (!raw || typeof raw !== 'object') return ['action must be an object'];
     if (typeof raw.contentId !== 'string' || raw.contentId.length === 0) return ['action.contentId is required'];
+    if (!isSheetMusicContentId(raw.contentId)) {
+      return [`action.contentId "${raw.contentId}" is not a reachable piano-kiosk content shape (expected source:localId, e.g. hymn:12)`];
+    }
     return [];
   }
 

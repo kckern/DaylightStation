@@ -2,13 +2,13 @@
  * PortalSurface — the DoNow adapter for the school Portal tablet (spec §5,
  * surface id `portal`).
  *
- * Dispatch is a thin generalization of the existing `PortalDispatch`
- * mechanism (`backend/src/3_applications/school/PortalDispatch.mjs`): the
- * SAME `school` WS topic, the SAME `school.launch` envelope shape
- * (`{ type: 'school.launch', learnerId, target }`). PortalDispatch itself
- * becomes a consumer of this surface rather than a parallel path — this
- * class does not replace it, it is the generalized entry point the spec
- * calls for.
+ * Dispatch is a thin generalization of the `PortalDispatch` mechanism School
+ * used to broadcast directly (deleted at Task 13, once `donow` became the
+ * household's unconditionally-wired dispatch facade): the SAME `school` WS
+ * topic, the SAME `school.launch` envelope shape (`{ type: 'school.launch',
+ * learnerId, target }`) — this class is the generalized entry point the spec
+ * calls for, and every caller (School's bank hand-off, the program
+ * launchers) now goes through it instead of a parallel broadcast path.
  *
  * Occupancy (spec §5.1 "portal"): the backend's own truth about who is
  * mid-quiz — `SchoolService`'s in-memory session map, read through the
