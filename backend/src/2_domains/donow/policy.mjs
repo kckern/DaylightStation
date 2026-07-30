@@ -22,10 +22,10 @@ export function decideDispatch({ occupancy, learnerId, force }) {
   }
 
   if (occupancy.state === 'active') {
-    if (occupancy.occupantId === learnerId) {
+    if (learnerId != null && occupancy.occupantId === learnerId) {
       return 'dispatch';
     }
-    // Different occupant or null
+    // Different occupant or null (including null learner + null occupant)
     return force === 'never_ask' ? 'denied' : 'pending_approval';
   }
 
@@ -52,11 +52,11 @@ export function decideOnApprove({ occupancy, learnerId, pendingOccupant, repende
 
   if (occupancy.state === 'active') {
     // Same learner (the one the unit is FOR) → always safe
-    if (occupancy.occupantId === learnerId) {
+    if (learnerId != null && occupancy.occupantId === learnerId) {
       return 'dispatch';
     }
     // Same occupant as when the parent was asked → dispatch (approved for this exact person)
-    if (occupancy.occupantId === pendingOccupant) {
+    if (pendingOccupant != null && occupancy.occupantId === pendingOccupant) {
       return 'dispatch';
     }
     // Different occupant → re-pend once (name the new occupant to the parent)
