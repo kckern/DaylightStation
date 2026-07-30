@@ -42,13 +42,22 @@ function logger() {
  * `hymn:12`) with no mode/kind discriminator, and each piano mode
  * (Videos/Music/SheetMusic/…) opens content through its OWN bespoke route
  * shape with no single reachable "open by contentId" resolver (confirmed by
- * reading `PianoMenu.jsx`, `usePianoList.js`, and the mode components) — so
- * this hook cannot safely guess which mode's route to build. It exposes an
- * `onPianoOpen(contentId)` callback for a caller that DOES know how (e.g. a
- * kiosk mounted inside Router context with a resolved basePath); when none is
- * wired, it logs a structured warn and no-ops rather than risk routing into
- * the wrong mode. See `docs/superpowers/plans/2026-07-30-donow-and-agenda-preview.md`
- * Task 9/13.
+ * reading `PianoMenu.jsx`, `usePianoList.js`, and the mode components). This
+ * hook itself stays agnostic and NEVER guesses — it just calls the injected
+ * `onPianoOpen(contentId)` callback when one is provided, or logs a
+ * structured warn and no-ops when it isn't.
+ *
+ * In production (`PianoApp.jsx`'s `KioskLaunchListener`) `onPianoOpen` IS
+ * wired, via `pianoContentOpen.js`'s `openPianoContent` — which resolves ONE
+ * reachable slice: a contentId carrying an explicit `source:localId` shape
+ * (e.g. `hymn:12`) opens directly through SheetMusic's `sheetmusic/view/*`
+ * route (SheetMusic needs no extra lookup for a bare id). Anything else
+ * (Videos/Music/… content ids, or a bare colon-less legacy id) still has no
+ * resolver and warns + no-ops there. So: piano-kiosk IS registrable/reachable
+ * for sheet-music content ids today; other content kinds remain the v1
+ * boundary. See `docs/superpowers/plans/2026-07-30-donow-and-agenda-preview.md`
+ * Task 9/13 — Task 13 should default-register `piano-kiosk` on this basis,
+ * with curriculum validation scoped to the reachable (sheet-music) shape.
  *
  * @param {Object}   [opts]
  * @param {string}   [opts.deviceId]  - this client's identity (defaults to KIOSK_DEVICE_ID)

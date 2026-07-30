@@ -12,7 +12,8 @@ vi.mock('../useWebSocket.js', () => ({
 
 const info = vi.fn();
 const debugFn = vi.fn();
-const child = vi.fn(() => ({ info, debug: debugFn, warn: vi.fn(), error: vi.fn() }));
+const warnFn = vi.fn();
+const child = vi.fn(() => ({ info, debug: debugFn, warn: warnFn, error: vi.fn() }));
 const getLoggerMock = vi.fn(() => ({ child }));
 vi.mock('../../lib/logging/Logger.js', () => ({
   default: (...args) => getLoggerMock(...args),
@@ -29,12 +30,13 @@ describe('useFitnessLaunch', () => {
     h.handlers.length = 0;
     info.mockClear();
     debugFn.mockClear();
+    warnFn.mockClear();
     child.mockClear();
     getLoggerMock.mockClear();
     onLaunch = vi.fn();
   });
 
-  const mount = () => renderHook(() => useFitnessLaunch({ onLaunch }));
+  const mount = (opts) => renderHook(() => useFitnessLaunch({ onLaunch, ...opts }));
 
   it('calls onLaunch with the episodeId and learnerId on a well-formed message', () => {
     mount();
@@ -90,5 +92,34 @@ describe('useFitnessLaunch', () => {
     mount();
     deliver({ topic: 'school', type: 'school.launch', learnerId: 'kid1', target: {} });
     expect(onLaunch).not.toHaveBeenCalled();
+  });
+
+  describe('busy guard (a queue/episode already loaded)', () => {
+    it('does not call onLaunch and logs a structured warn when busy', () => {
+      mount({ busy: true });
+      deliver({ topic: 'fitness', type: 'fitness.launch', learnerId: 'kid1', episodeId: '12345' });
+
+      expect(onLaunch).not.toHaveBeenCalled();
+      expect(warnFn).toHaveBeenCalledWith(
+        'fitness-launch-ignored-queue-active',
+        { learnerId: 'kid1', episodeId: '12345' }
+      );
+    });
+
+    it('still ignores a malformed message while busy without warning about it', () => {
+      mount({ busy: true });
+      deliver({ topic: 'fitness', type: 'fitness.other', learnerId: 'kid1', episodeId: '12345' });
+
+      expect(onLaunch).not.toHaveBeenCalled();
+      expect(warnFn).not.toHaveBeenCalled();
+    });
+
+    it('launches normally when not busy (default)', () => {
+      mount();
+      deliver({ topic: 'fitness', type: 'fitness.launch', learnerId: 'kid1', episodeId: '12345' });
+
+      expect(onLaunch).toHaveBeenCalledWith('12345', { learnerId: 'kid1' });
+      expect(warnFn).not.toHaveBeenCalled();
+    });
   });
 });

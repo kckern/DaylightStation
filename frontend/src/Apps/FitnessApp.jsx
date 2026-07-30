@@ -883,12 +883,17 @@ const FitnessApp = () => {
   // /fitness/play/:id URL: navigate there and let handlePlayFromUrl fetch the
   // episode's info (governance/labels included) and populate the queue. This
   // is the surface's FIRST remote reachability (previously zero).
+  //
+  // `busy: fitnessPlayQueue.length > 0` mirrors the URL-restore effect above
+  // (the one guarding `if (fitnessPlayQueue.length > 0) return`, ~line 1157):
+  // a launch must not clobber an already-loaded queue — fail toward not
+  // interrupting, the household's busy-surface posture.
   const handleFitnessLaunch = (episodeId, { learnerId } = {}) => {
     logger.info('fitness-launch-dispatched', { episodeId, learnerId });
     navigate(`/fitness/play/${episodeId}`, { replace: true });
     handlePlayFromUrl(episodeId, { nogovern });
   };
-  useFitnessLaunch({ onLaunch: handleFitnessLaunch });
+  useFitnessLaunch({ onLaunch: handleFitnessLaunch, busy: fitnessPlayQueue.length > 0 });
 
   const handleHomePlay = useCallback((queueItem) => {
     // Boundary normalize: queueItem comes from upstream caller (widgets that
