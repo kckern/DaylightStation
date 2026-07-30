@@ -1996,6 +1996,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
               onCommit={commitEndpoint}
               onPreview={onHandlePreview}
               scrollRef={scrollRef}
+              scale={scale}
             />
           )}
           {mode !== 'perform' && layoutFresh && (
