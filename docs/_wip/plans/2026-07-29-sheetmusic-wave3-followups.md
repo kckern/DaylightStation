@@ -15,17 +15,26 @@ Wave 3 merged to main 2026-07-29 (`3cb9c0d92`, deployed at `fdfda4929`). All 25 
 - [ ] **Studio chord data:** after some real use, pull `composer.input.chord-decision` / `note-duration` logs to size a real chord-grouping tolerance (root cause confirmed: NO grouping exists — every note-on inserts sequentially; `CHORD_ONSET_TOLERANCE_MS = 40` is diagnostic-only).
 - Tablet was off WiFi at deploy time (known doze-drop) — it pulls the new bundle on next wake; hard-reload from FKB if it serves stale.
 
-## Code follow-ups (accepted residuals, none load-bearing)
+## Code follow-ups (resolved 2026-07-29 — `sheetmusic-residuals` branch)
 
-- Stale `cycleWrongsRef` across loop OFF→ON / Restart mid-cycle (stingy-only: denies passes, never grants).
-- `onMode`/`pauseForRebuild` unconditional `silenceScheduled` — entering a mode while holding keys still panics (pre-existing class).
-- `usePracticeRecord`: `currentUser === null` (roster pending/failed) leaves `loaded` false → auto-range waits; suggest `setLoaded(true)` for all non-persistent users.
-- `RangeHandleLayer` `BAND_SLACK_PX = 40` not scale-aware (vs `measureAtPoint`'s `40 * scale`).
-- Dead-but-inert transport loop branch in ScorePlayer's `onDone` (+ wrap dwell, `loopWraps`) — deletion candidate.
-- Duplicate spelling modules after the merge: `MusicNotation/model/spelling.js` (degree-relative, chord/theory surfaces) vs `model/spellMidi.js` (diatonic-or-sharps, wet ink) — consolidation candidate.
-- `SvgStaffRenderer` (ActionStaff family) still stems by avg-position with the opposite middle-line convention — route through `wetGlyphs`' `stemDirectionFor`/`stemLengthUnits`.
-- Composer duration classes change the numpad-duration UX for entered notes (numpad still governs rests/dots/triplet) — product sign-off.
-- `pendingOnsetsRef` unbounded on repeatedly dropped note_offs (cap/timeout).
-- Test nits: L6 tail-measure test lacks a positive anchor; `TAP_SLOP_PX`/cross-system tie-break are surviving mutants; mocks omitting `persistent` read as guest (`persistent !== false`).
-- Stale comments: `ScoreTransportBar` "Learn-only Play lockout"; `ScorePlayer` "a Listen part change" + `:1655` voided-readout claim; `KeySheet` "D major / +2"; `countIn` "top of TEMPO_STEPS is 1.5x".
-- `--current` tier highlight shows on non-banking partial runs (gate on the completion predicate); live `scoreLabel` applies the overclock multiplier to a voided run mid-change.
+All items from the original residuals list are resolved except the two flagged **OPEN** below (plus one record correction). None were load-bearing; each landed with tests.
+
+| # | Residual | Resolution | Commit(s) |
+|---|----------|------------|-----------|
+| 1 | Stale `cycleWrongsRef` across loop OFF→ON / Restart mid-cycle | Fixed — reset now covers both paths. Toggle discard is OFF-edge-only, which wipes the arming void; equivalent for the leak since wrongs only accumulate while the gate is on. | `45531e56b` (+ `2bf16b0ea` comment fix) |
+| 2 | `onMode`/`pauseForRebuild` unconditional `silenceScheduled` | Fixed — `stopForMatrixChange`'s held-note guard now applies to both entry paths. | `dda52ab08` |
+| 3 | `usePracticeRecord` null-user `loaded` stall | Fixed — `setLoaded(true)` for all non-persistent users. | `4adf3ca89` |
+| 4 | `RangeHandleLayer` `BAND_SLACK_PX` not scale-aware | Fixed — scale prop threaded through; slack = `40 * scale`. | `60255e818` |
+| 5 | Dead transport loop branch (+ wrap dwell, `loopWraps`) | Deleted. The retired-L6 test's missing positive anchor (item 9) was hardened alongside — log-based (`score.transport.play`/`done`), since an audio anchor is unsatisfiable there by fixture design. | `e718a6fbe` (+ `ae0610d44` comment scrub) |
+| 6 | Duplicate spelling modules (`model/spelling.js` vs `model/spellMidi.js`) | Resolved as a **deliberate split**, not a bug — documented with cross-reference headers. A merge would change wet-ink chromatic spelling by policy, so consolidation was rejected. | `d8a66a22d` |
+| 7 | `SvgStaffRenderer` avg-position / backwards-middle-line stemming | Fixed — shared stem rules extracted to `MusicNotation/model/stems.js`; `wetGlyphs` now re-exports them. | `dc125c8e6` |
+| 8 | `pendingOnsetsRef` unbounded on repeatedly dropped note_offs | Fixed — 30s lazy eviction added to both MIDI branches. Also cures a latent FIFO-poisoning bug: one dropped note_off previously caused every later note_off of that pitch to resolve the wrong onset. | `8c5bb3d78` |
+| 9 | Test nits: L6 positive anchor; `TAP_SLOP_PX`/tie-break surviving mutants | Fixed — L6 anchor landed with item 5 (`e718a6fbe`); boundary + cross-system geometry tests added to kill the surviving mutants. | `60255e818` |
+| 9a | *(record correction)* "mocks omitting `persistent` read as guest (`persistent !== false`)" | **This claim was wrong.** The production check is `isPersistentUser(id)` on an id string — no `persistent !== false` pattern exists anywhere in the codebase. The real gap was the missing `currentUser = null` test, closed by item 3. | `4adf3ca89` |
+| 10 | Stale comments (`ScoreTransportBar`, `ScorePlayer`, `KeySheet`, `countIn`) | Fixed. The `countIn` fix also separates the ladder fact (reaches 1.75×) from the test's own fixture values (1.5× / 324 / 162), which the original comment conflated. The `ScorePlayer` `:1655` voided-readout comment was fixed together with its code. | `33640dcd0` (+ `455191c22` countIn correction); `cb874d978` (ScorePlayer) |
+| 11 | `--current` tier highlight on partial runs; live `scoreLabel` overclock-on-voided-run | Fixed — highlight now gated on the completion predicate; `scoreLabel` freezes `runTierRef` and shows base-only tempo when a run goes mixed. | `7868ca696` (highlight); `cb874d978` (scoreLabel) |
+
+**Still open:**
+
+- Composer duration-classes numpad UX (numpad still governs rests/dots/triplet for entered notes) — **awaiting product sign-off**, a decision not code.
+- Chord grouping (root cause confirmed in the original sweep: no grouping exists, every note-on inserts sequentially; `CHORD_ONSET_TOLERANCE_MS = 40` remains diagnostic-only) — **awaiting `composer.input.chord-decision` field data**. The stale-onset eviction from item 8 now protects that field data's integrity going forward.
