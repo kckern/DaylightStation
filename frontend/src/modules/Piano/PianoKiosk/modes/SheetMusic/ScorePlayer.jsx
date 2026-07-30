@@ -1674,11 +1674,16 @@ export default function ScorePlayer({ score: scoreMeta }) {
     // goes OFF — DISCARD the partial cycle outright (mode-exit semantics, not a
     // void): stale wrongs would otherwise poison the first wrap of the NEXT
     // session, and a void would silently raise the pass bar on a session that
-    // never had a prior cycle to disrupt. Gated on the OFF edge only: wrongs can
-    // only accumulate while `learnGate` (loopOn) is true, so by the time ON
-    // re-enters, either this OFF edge already cleared them, or nothing has
-    // touched the refs since a focus change set them (e.g. the armed-endpoint
-    // void a fresh range carries into its first gate-on — that must survive).
+    // never had a prior cycle to disrupt. Gated on the OFF edge only, and that's
+    // enough for cycleWrongsRef specifically: wrongs can only accumulate while
+    // `learnGate` (loopOn) is true, so by the time ON re-enters this OFF edge has
+    // already cleared any it held. cycleVoidRef is a different story — voidCycle()
+    // fires unconditionally (tap-seek, transpose, hand/part toggle) regardless of
+    // loopOn, so a disruption during the OFF window can leave it set with no OFF
+    // edge of ITS OWN to clear it. That's fine: it's the same "any disruption
+    // since the last wrap invalidates the cycle" invariant as always (~899), and
+    // surviving into the next gate session just means the first wrap there
+    // consumes it as a void, same as it would anywhere else.
     if (!next) { cycleVoidRef.current = false; cycleWrongsRef.current = new Set(); }
     setLoopOn(next);
     if (next && focus && layout.measures) {
