@@ -168,6 +168,11 @@ it never auto-plays into the new state. Toggling the loop ON snaps the cursor
 to the range's in-point; toggling it OFF, or clearing the range, leaves the
 cursor exactly where it was.
 
+**Finishing Learn.** When a clean pass wraps a range that spans the *whole*
+piece, that pass is the end of the piece: Learn shows a completion card
+offering another pass or the next rung ("Polish it"). A pass over a partial
+range is a lap of a passage — it feeds the practice record and nothing more.
+
 **Wrong-note feedback (kid-UX, deliberately light-touch):** a wrong note gets
 a shake and a red notehead drawn **at the pitch you actually played** — wet
 ink, rendered right beside the note that was expected, spelled from the
@@ -338,7 +343,7 @@ stamped to wall-clock by the framework. Math is in `scoreTelemetry.js`; collecti
 | `score.learn.auto-range` | info | `inMeasure, outMeasure, reason` — the landing heuristic's pick and which rule produced it |
 | `score.learn.cycle` | info | a completed or voided gate cycle, feeding the practice record |
 | `score.learn.stuck-prompt` / `-resolved` / `-dismissed` | info | the 3-wrong reveal-keys assist arming and clearing |
-| `score.learn.complete` | info | Learn handing off to Polish |
+| `score.learn.complete` | info | a clean gated pass covered the whole piece — the completion card is offered (Learn handing off to Polish) |
 | `score.loop.arm` / `score.loop.arm-expire` | info | an endpoint armed for the next tap, or the arm expiring unused |
 | `score.loop.set` | info | `edge, measure, via, snapped` — an endpoint committed, by tap or drag |
 | `score.loop.on` | info | the loop toggled on/off |

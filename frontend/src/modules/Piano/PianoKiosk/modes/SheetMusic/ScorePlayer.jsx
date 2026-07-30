@@ -975,6 +975,19 @@ export default function ScorePlayer({ score: scoreMeta }) {
     for (let m = f.inMeasure; m <= f.outMeasure; m++) indices.push(m);
     recordCycle({ measureIndices: indices, wrongMeasures: wrongs, bucket: bucketOf(grandStaff, activeParts) });
     logger.info('score.learn.cycle', { in: f.inMeasure, out: f.outMeasure, wrongs: wrongs.size });
+    // A pass over a range that spans the WHOLE piece IS the end of the piece, so
+    // it earns the completion card here. useFollowTracker's onComplete cannot
+    // deliver it: `atEnd` is `!range && at the last step`, and the tracker only
+    // drives the cursor at all inside Learn's GATE — which by definition has a
+    // range. So the card was structurally unreachable for every gated run; the
+    // only path that ever fired it was the degenerate no-measures layout (kept
+    // wired below, harmless). A partial range still just records its cycle: it is
+    // a lap of a passage, not the end of anything.
+    const nMeasures = layoutRef.current?.measures?.length || 0;
+    if (nMeasures && f.inMeasure === 0 && f.outMeasure === nMeasures - 1) {
+      setLearnDone(true);
+      logger.info('score.learn.complete', {});
+    }
   }, [recordCycle, grandStaff, activeParts, logger]);
 
   useFollowTracker({

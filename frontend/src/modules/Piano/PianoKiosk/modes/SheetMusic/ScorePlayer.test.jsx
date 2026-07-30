@@ -711,6 +711,57 @@ describe('ScorePlayer — Learn cycle instrumentation feeds the practice record 
     expect(h.recordCycle).toHaveBeenCalledTimes(1);
   });
 
+  // ── The completion card rides the WHOLE-PIECE wrap, not the tracker's onComplete ──
+  // useFollowTracker fires onComplete only when it advances past the last step with
+  // NO range (`atEnd = !range && …`), but the tracker only drives the cursor inside
+  // Learn's gate — which by definition has a range. So the card was structurally
+  // unreachable for every gated run: the piece could be played end to end and the
+  // Learn journey just silently looped. A pass over a range that spans the whole
+  // piece IS the end of the piece, so that wrap now fires the completion too.
+  const captureLog = () => {
+    const root = getLogger();
+    const origChild = root.child.bind(root);
+    const emitted = [];
+    vi.spyOn(root, 'child').mockImplementation((ctx) => {
+      const c = origChild(ctx);
+      const orig = c.info.bind(c);
+      c.info = (ev, data, opts) => { emitted.push([ev, data]); return orig(ev, data, opts); };
+      return c;
+    });
+    return emitted;
+  };
+  afterEach(() => { vi.restoreAllMocks(); });
+
+  it('a clean pass over a WHOLE-PIECE range shows the completion card — and still records the cycle', () => {
+    h.layoutExtras = TWO_MEASURE_LEARN;
+    const emitted = captureLog();
+    renderPlayer();
+    selectFullRange(); // m1–m2 of a two-measure piece = the whole piece
+    settleCycle();     // spend the second-endpoint void on a throwaway pass
+    expect(document.querySelector('.piano-score-learn-complete')).toBeNull(); // the voided pass earns nothing
+
+    playFullPass();
+    expect(document.querySelector('.piano-score-learn-complete')).not.toBeNull();
+    // The cycle is unaffected — the card is an additional consequence of the wrap,
+    // not a replacement for it (attempts/passes still land).
+    expect(h.recordCycle).toHaveBeenCalledTimes(1);
+    expect(h.recordCycle).toHaveBeenCalledWith({ measureIndices: [0, 1], wrongMeasures: new Set(), bucket: 'both' });
+    expect(emitted.filter(([ev]) => ev === 'score.learn.complete').length).toBe(1);
+  });
+
+  it('a clean pass over a PARTIAL range records the cycle and shows NO card', () => {
+    // A lap of a passage is not the end of anything — the card would be a lie, and
+    // an "on to Polish" offer for a piece the user has practised two measures of.
+    h.layoutExtras = TWO_MEASURE_LEARN;
+    const emitted = captureLog();
+    renderPlayer();
+    enterLearnGate(100); // a one-measure range at m1 — measure 2 is not in it
+    play(64);            // satisfies the range's only measure → wraps
+    expect(h.recordCycle).toHaveBeenCalledTimes(1);
+    expect(document.querySelector('.piano-score-learn-complete')).toBeNull();
+    expect(emitted.filter(([ev]) => ev === 'score.learn.complete').length).toBe(0);
+  });
+
   it('renders and completes a cycle without a PianoUserProvider — the practice hook is fully mocked out, so nothing crashes for a guest-shaped render', () => {
     h.layoutExtras = TWO_MEASURE_LEARN;
     expect(() => {
