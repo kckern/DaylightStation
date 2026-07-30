@@ -557,8 +557,8 @@ export function nextMove(unit, state) →
 ```
 
 `nextMove` rules (this is the routing table Task 11 depends on — implement exactly):
-- state `created`: unit.media → `play`/`select_unit`; else unit.document → `print`/`select_unit`; else unit.bank → `screen`/`select_unit`; else `nothing`.
-- state `media_completed`: unit.document → `print`/`issue_document`; unit.bank → `screen`/null; else `wait`.
+- state `created`: unit.media → `play`/`select_unit`; else unit.document → `print`/`select_unit`; else unit.bank → `screen`/`select_unit`; else kind `nothing` with tokenClass `'select_unit'` (adjudicated: the shipped code minted select_unit unconditionally at created, and ResolveScanAction#start's empty branch prints the friendly 'Nothing to do there yet' slip — the token is the scan-never-dead-ends affordance, keep it).
+- state `media_completed`: unit.document → `print`/`issue_document`; unit.bank → `screen` keeping the reducer's `issue_document` tokenClass (adjudicated: preserves shipped truthy-token behavior; Task 11 routes on move.kind, tokenClass inert there); else `wait`.
 - state `media_stalled` → `play`/`media_action`. state `media_dispatched` → `wait` (label: `finish watching, then scan your card`).
 - state `outcome_recorded` + outcome `needs_remediation` → `retry`/`remediation` (label `try again with a fresh sheet`). NEVER `print`: `IssueDocument` refuses at `outcome_recorded` (`ISSUABLE` is `created|media_completed|issued|reprinted`), so a `print` here would loop the child through already_done slips until 4am. The retry is `OpenRemediation` — a NEW session, fresh variant — via `ResolveScanAction.#retry`.
 - anything else → `wait` with the reducer's `nextAction?.label` fallback.
