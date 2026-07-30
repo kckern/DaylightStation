@@ -192,7 +192,11 @@ A few components appear across many modes because they are the kiosk's visual vo
   has to nudge repeatedly. Volume is the one affordance every player exposes the
   same way: a single button opens a sheet with Media and MIDI levels as five-step
   ladders and a Log/Linear curve toggle, so turning the piano or the media down
-  works identically no matter which mode is open. Every button in this family is
+  works identically no matter which mode is open. Karaoke and play-along add a
+  key-change control beside volume — lower/raise buttons transpose the song's
+  audio in whole semitones (±6, pitch-shifted live in the browser without
+  changing tempo), the value face between them shows the current offset and
+  taps back to the natural key, and every song opens untransposed. Every button in this family is
   an inline SVG on a ≥48px touch target — no text glyphs or emoji — so the same
   visual grammar reads the same across the whole kiosk. There is one bank of these
   components, not one per mode: the Courses video player's whole chrome row
