@@ -504,8 +504,11 @@ describe('the subject ticket', () => {
     expect(result.sessionId).toBe('ses_w');
   });
 
-  it('a move->screen resolves on-screen, broadcasting the portal launch', async () => {
-    build({ portalLaunch: vi.fn(() => ({ dispatched: true })) });
+  // The bank hand-off routes through DoNow (Task 12 review — spec §6
+  // "occupancy applies uniformly"): a screen mid-quiz for one child must not
+  // be clobbered by another child's scan, which a direct PortalDispatch
+  // broadcast could not protect against.
+  const watchedMediaBankUnit = async () => {
     const sid = 'ses_m';
     await sessions.appendEvent(sid, { type: 'created', at: clock.iso(), sessionId: sid, learnerId: 'kid1', unitId: MEDIA_UNIT });
     await sessions.appendEvent(sid, {
@@ -513,11 +516,55 @@ describe('the subject ticket', () => {
       dispatchId: 'dsp_1', target: 'living-room-tv', contentId: 'plex:481203',
     });
     await sessions.appendEvent(sid, { type: 'media_completed', at: clock.iso(), sessionId: sid, verified: 'playhead' });
+    return sid;
+  };
+
+  it('a move->screen dispatches through DoNow (portal surface) and resolves on-screen', async () => {
+    const sid = await watchedMediaBankUnit();
 
     const result = await resolve.execute({ code: await subjectToken('math') });
     expect(result).toMatchObject({ status: 'open_on_screen', tokenClass: 'subject_next', physical: 'receipt', printed: true });
     expect(result.effect).toMatchObject({ unitId: MEDIA_UNIT, bank: MEDIA_BANK_ID });
     expect(thermal.lastTranscript()).toMatch(/school screen/i);
+    expect(donow.dispatch).toHaveBeenCalledWith({
+      surface: 'portal',
+      action: { target: { kind: 'bank', bankId: MEDIA_BANK_ID, unitId: MEDIA_UNIT, sessionId: sid } },
+      learnerId: 'kid1', requestedBy: 'school-scan', ref: sid,
+    });
+  });
+
+  it('a busy portal pends the screen hand-off, printing "we asked a grown-up"', async () => {
+    build({
+      donowDispatch: vi.fn(async () => ({
+        decision: 'pending_approval', approvalId: 'dnr_1', message: 'The Portal is busy — we asked a grown-up.',
+      })),
+    });
+    await watchedMediaBankUnit();
+
+    const result = await resolve.execute({ code: await subjectToken('math') });
+    expect(result).toMatchObject({ status: 'pending_approval', tokenClass: 'subject_next', printed: true });
+    expect(thermal.lastTranscript()).toContain('is busy — we asked a grown-up');
+  });
+
+  it('a denied/failed screen hand-off prints "go to the school screen and open it there"', async () => {
+    build({ donowDispatch: vi.fn(async () => ({ decision: 'failed', message: 'Could not start the Portal.' })) });
+    await watchedMediaBankUnit();
+
+    const result = await resolve.execute({ code: await subjectToken('math') });
+    expect(result).toMatchObject({ status: 'failed', tokenClass: 'subject_next', printed: true });
+    expect(thermal.lastTranscript()).toContain('Go to the school screen and open it there');
+  });
+
+  // OPTIONAL-DEGRADING: no donow wired falls back to the legacy direct
+  // PortalDispatch broadcast — today's un-occupancy-checked behavior, kept
+  // only for a deployment/fake that has not wired donow yet (flagged for
+  // removal once Task 13 wires donow everywhere).
+  it('with no donow wired, falls back to the legacy PortalDispatch broadcast', async () => {
+    build({ portalLaunch: vi.fn(() => ({ dispatched: true })), wireDonow: false });
+    const sid = await watchedMediaBankUnit();
+
+    const result = await resolve.execute({ code: await subjectToken('math') });
+    expect(result).toMatchObject({ status: 'open_on_screen', tokenClass: 'subject_next', physical: 'receipt', printed: true });
     expect(portal.launch).toHaveBeenCalledWith({
       learnerId: 'kid1',
       target: { kind: 'bank', bankId: MEDIA_BANK_ID, unitId: MEDIA_UNIT, sessionId: sid },

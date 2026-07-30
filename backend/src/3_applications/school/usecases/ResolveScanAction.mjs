@@ -200,18 +200,67 @@ export class ResolveScanAction {
 
   /**
    * A screen-only unit prints nothing but must still announce itself, or the
-   * child scans and watches nothing happen. It ALSO broadcasts the hand-off
-   * through `PortalDispatch` (spec §4.3) so a screen that is already awake
-   * can pick the bank session up without the child hunting for it — the slip
-   * still prints regardless, because a household with no screen listening
-   * (or a `portal` that was never wired) must not strand the child on paper
-   * that only half-explains itself.
+   * child scans and watches nothing happen. Hands the bank session off to
+   * the Portal through `DoNowService` (Task 12 review — spec §6 "occupancy
+   * applies uniformly"): a bank hand-off used to broadcast directly through
+   * `PortalDispatch`, bypassing occupancy entirely, so a screen mid-quiz for
+   * one child could be clobbered by another child's scan. With `donow`
+   * wired, `dispatched` still prints the same "starting on the school
+   * screen" slip; `pending_approval` slips DoNow's own busy/asked-a-grown-up
+   * message; `denied`/`failed` slip "Go to the school screen and open it
+   * there." — the slip still prints regardless of decision, so a household
+   * with no screen listening never strands the child on paper that only
+   * half-explains itself.
+   *
+   * OPTIONAL-DEGRADING: absent `donow` (a deployment/fake that has not wired
+   * it), this falls back to the legacy direct `PortalDispatch` broadcast —
+   * today's behavior, unoccupancy-checked — rather than crashing or silently
+   * doing nothing. `PortalDispatch` becomes dead code once composition wires
+   * `donow` everywhere (flagged for Task 13's removal).
    */
   async #onScreen(sessionId, unit, tokenClass, learnerId = null) {
-    this.#portal?.launch({
-      learnerId,
-      target: { kind: 'bank', bankId: unit.bank, unitId: unit.unitId, sessionId },
-    });
+    const target = { kind: 'bank', bankId: unit.bank, unitId: unit.unitId, sessionId };
+
+    if (this.#donow) {
+      let result;
+      try {
+        result = await this.#donow.dispatch({
+          surface: 'portal', action: { target }, learnerId, requestedBy: 'school-scan', ref: sessionId,
+        });
+      } catch (err) {
+        this.#logger.warn?.('school.scan.onscreen-donow-threw', { sessionId, error: err?.message ?? String(err) });
+        result = { decision: 'failed', message: 'Could not start that.' };
+      }
+
+      if (result.decision === 'dispatched') {
+        return this.#slip({
+          status: 'open_on_screen', tokenClass, sessionId,
+          id: `screen-${sessionId}`, headline: unit.title,
+          lines: ['Starting on the school screen — or open it there yourself.'],
+          message: 'Start this one on the screen.',
+          effect: { unitId: unit.unitId, bank: unit.bank },
+        });
+      }
+      if (result.decision === 'pending_approval') {
+        return this.#slip({
+          status: 'pending_approval', tokenClass, sessionId,
+          id: `screen-pending-${sessionId}`, headline: unit.title,
+          lines: [result.message], message: result.message,
+          effect: { unitId: unit.unitId, bank: unit.bank },
+        });
+      }
+      // denied | failed
+      return this.#slip({
+        status: result.decision, tokenClass, sessionId,
+        id: `screen-${result.decision}-${sessionId}`, headline: unit.title,
+        lines: ['Go to the school screen and open it there.'],
+        message: 'Go to the school screen and open it there.',
+        effect: { unitId: unit.unitId, bank: unit.bank },
+      });
+    }
+
+    // Legacy path, only when `donow` was never wired.
+    this.#portal?.launch({ learnerId, target });
     return this.#slip({
       status: 'open_on_screen',
       tokenClass,
@@ -265,8 +314,13 @@ export class ResolveScanAction {
     }
 
     if (result.decision === 'dispatched') {
+      // `approvalId` is always null here — the IMMEDIATE dispatch path never
+      // carries one (that's `dispatchApproved`-only) — but the field is
+      // included explicitly for parity with `DoNowSchoolBridge`'s identical
+      // append on the pending-then-approved path.
       const { errors, event } = createEvent({
-        type: 'launch_dispatched', at: this.#clock().toISOString(), sessionId, surface, decision: result.decision,
+        type: 'launch_dispatched', at: this.#clock().toISOString(), sessionId, surface,
+        decision: result.decision, approvalId: result.approvalId ?? null,
       });
       if (!errors.length) await this.#sessions.appendEvent(sessionId, event);
       else this.#logger.warn?.('school.scan.launch-event-invalid', { sessionId, errors });

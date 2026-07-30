@@ -26,7 +26,14 @@
  *        false}` becomes `failed`. On real success, append ONE dispatch-log
  *        row and ONLY THEN emit `donow.dispatched` on the event bus (log
  *        before broadcast, so nothing downstream can observe the event
- *        before the audit trail exists).
+ *        before the audit trail exists). The broadcast carries `approved:
+ *        true` + `approvalId` ONLY when this dispatch came from
+ *        `dispatchApproved` (an out-of-band approval, nobody waiting
+ *        synchronously on this exact call) — the immediate `dispatch()` path
+ *        never sets them, since ITS caller already has the result in hand
+ *        and needs no notification. A subscriber that acted on both shapes
+ *        the same way would double-fire against its own caller's inline
+ *        handling — see `DoNowSchoolBridge`.
  *      - `pending_approval` -> persist a pending record (label from
  *        `adapter.label(action)`, occupant from the probe, `expiresAt` =
  *        now + `approvalTtlSeconds`) and best-effort notify; a notifier
@@ -246,7 +253,20 @@ export class DoNowService {
     if (programId != null) row.programId = programId;
     if (approvalId != null) row.approvalId = approvalId;
     await this.#datastore.appendDispatch(row);
-    this.#eventBus?.broadcast('donow', { type: 'donow.dispatched', ref, surface, requestedBy });
+
+    // `approved`/`approvalId` are present ONLY on the dispatchApproved path
+    // (approvalId is non-null there, always null on the immediate `dispatch()`
+    // path). This is the ONLY discriminator between "this just dispatched
+    // inline, the caller already has the result in hand" and "this dispatched
+    // out of band, from a pending approval, and nobody is waiting on this
+    // exact call to find out" — a subscriber (`DoNowSchoolBridge`) that acted
+    // on the immediate case too would double-fire, racing its own caller.
+    const payload = { type: 'donow.dispatched', ref, surface, requestedBy };
+    if (approvalId != null) {
+      payload.approved = true;
+      payload.approvalId = approvalId;
+    }
+    this.#eventBus?.broadcast('donow', payload);
 
     return { decision: 'dispatched', message: `Starting the ${label} now.` };
   }

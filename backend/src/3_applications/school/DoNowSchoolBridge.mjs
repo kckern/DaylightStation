@@ -13,21 +13,39 @@
  * it subscribes to the `donow` topic and, on approval, does exactly what the
  * synchronous path already did.
  *
+ * `donow.dispatched` FIRES FOR BOTH PATHS, AND THE BUS IS SYNCHRONOUS — a
+ * naive "session is still at `created`" check is a RACE, not a filter: an
+ * immediate dispatch (already handled inline by `ResolveScanAction
+ * #dispatchLaunch`, in the SAME call that produced the broadcast) reaches
+ * this subscriber before that inline code has appended its own
+ * `launch_dispatched` event, so the session still reads `created` at the
+ * moment this handler runs. Acting on it there would append a SECOND
+ * `launch_dispatched` from a state that no longer permits it once the inline
+ * append lands — a permanent illegal-transition error on the session. The
+ * fix is deterministic, not timing-dependent: `DoNowService` sets `approved:
+ * true` (+ `approvalId`) on the broadcast ONLY when the dispatch came from
+ * `dispatchApproved` (the out-of-band path this bridge exists for); the
+ * immediate path never sets it. This bridge checks `payload.approved ===
+ * true` FIRST, before any I/O — the immediate case never even reaches the
+ * repository lookup.
+ *
  * OWNERSHIP FILTER, BY REPOSITORY LOOKUP — NEVER SHAPE MATCHING. `ref` on the
  * `donow` topic is per-caller (a schoolwork sessionId for `school-scan`, a
  * program id for `school-program`, anything an `api`/`trigger` caller chose).
- * This bridge only ever acts when BOTH:
- *   1. `requestedBy === 'school-scan'` — the provenance this bridge owns.
- *   2. `sessions.readEvents(ref)` resolves to a REAL session this store owns,
+ * This bridge only ever acts when ALL of:
+ *   1. `payload.approved === true` — the out-of-band-approval discriminator
+ *      above, checked first and cheaply, before any I/O.
+ *   2. `requestedBy === 'school-scan'` — the provenance this bridge owns.
+ *   3. `sessions.readEvents(ref)` resolves to a REAL session this store owns,
  *      sitting at `created` — no session event was written while pending
  *      (spec §6), so a session this bridge is entitled to close is still at
- *      `created` when the approval fires. A stale/unknown ref, or a `ref`
- *      that happens to collide with some OTHER caller's id, reads back as
- *      "not mine" and is ignored by construction — never a shape check on
- *      the payload itself.
- * Anything else (a different `requestedBy`, a ref this store can't resolve,
- * a ref already past `created`) is silently ignored — this bridge never
- * throws on traffic that isn't its own.
+ *      `created` when the approval fires. Kept as belt-and-braces even with
+ *      `approved` as the deterministic gate: a stale/unknown ref, a ref that
+ *      collides with some OTHER caller's id, or a ref somehow already past
+ *      `created` (a double-approval race, a replayed event) still reads back
+ *      as "not mine" and is ignored — never a shape check on the payload.
+ * Anything else is silently ignored — this bridge never throws on traffic
+ * that isn't its own.
  */
 import { reduceSession, createEvent } from '#domains/school/sessions/sessionEvents.mjs';
 
@@ -75,7 +93,13 @@ export class DoNowSchoolBridge {
   }
 
   async #handle(payload) {
-    if (!payload || payload.type !== 'donow.dispatched' || payload.requestedBy !== 'school-scan') return;
+    if (!payload || payload.type !== 'donow.dispatched') return;
+    // Deterministic gate, checked FIRST and before any I/O: the immediate
+    // dispatch path (already handled inline by the scan) never sets
+    // `approved`, so it never reaches the repository lookup below — no race
+    // against that inline code's own `launch_dispatched` append.
+    if (payload.approved !== true) return;
+    if (payload.requestedBy !== 'school-scan') return;
     const sessionId = payload.ref;
     if (!sessionId) return;
 
@@ -87,13 +111,15 @@ export class DoNowSchoolBridge {
       return;
     }
 
-    // Repository lookup, never shape matching: a ref this store cannot
-    // resolve to a real session, or one that has already moved past
-    // `created` (not ours to close, or already closed), is not acted on.
+    // Belt-and-braces (see class doc): a ref this store cannot resolve to a
+    // real session, or one that has already moved past `created` (not ours
+    // to close, or already closed by a prior/duplicate approval), is not
+    // acted on.
     if (!state.sessionId || state.state !== 'created') return;
 
     const { errors, event } = createEvent({
-      type: 'launch_dispatched', at: this.#clock().toISOString(), sessionId, surface: payload.surface,
+      type: 'launch_dispatched', at: this.#clock().toISOString(), sessionId,
+      surface: payload.surface, decision: 'dispatched', approvalId: payload.approvalId ?? null,
     });
     if (errors.length) {
       this.#logger.warn?.('school.donow-bridge.event-invalid', { sessionId, errors });
