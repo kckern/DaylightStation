@@ -2131,6 +2131,22 @@ describe('ScorePlayer — Polish tempo tiers (wave-3 H)', () => {
     expect(h.recordTierBest).toHaveBeenCalledTimes(2);
     expect(h.recordTierBest.mock.calls[1][0]).toMatchObject({ bucket: 'both', tier: 'overclocked' });
   });
+
+  it('a manual pause opens the summary with no current-tier highlight — a partial run belongs to no column', async () => {
+    h.layoutExtras = tierFixture(3, 0.8);
+    renderPlayer();
+    pickMode('Polish');
+    await act(async () => {});
+    pickTempo('80%');
+    await pressPlay();
+    act(() => vi.advanceTimersByTime(COUNT_IN_MS));
+    play(60);
+    act(() => vi.advanceTimersByTime(1000)); // one measure graded — a real partial run
+    screen.getByRole('button', { name: 'Pause' }).click(); // → toggleRun's finalize+open path
+    await act(async () => {});
+    expect(document.querySelector('.piano-score-run-summary')).not.toBeNull();
+    expect(document.querySelectorAll('.piano-score-run-tier--current').length).toBe(0);
+  });
 });
 
 describe('ScorePlayer — Listen mode', () => {
