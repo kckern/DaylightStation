@@ -118,6 +118,9 @@ function reply(res, result) {
  *   only: a unit's `review` block holds the answer key, and this route is as
  *   reachable as any other.
  * @param {object} [deps.sessions] - IWorkSessionRepository, for session history
+ * @param {object} [deps.roster] - `{displayName(id)}`, the same lookup
+ *   `ResolvePersonalCard` uses; the agenda routes resolve the printed name
+ *   through it so paper and preview agree without a `?name=` on every URL
  * @param {object} [deps.logger]
  * @returns {import('express').Router}
  */
@@ -139,6 +142,7 @@ export function createSchoolLifecycleRouter({
   setAssignments = null,
   curriculum = null,
   sessions = null,
+  roster = null,
   // No clock: every timestamp this router used to stamp (a verdict's `gradedAt`,
   // an assignment's `updatedAt`) is now written by the use case that owns the
   // rule for it, from the one injected clock the lifecycle shares.
@@ -167,11 +171,17 @@ export function createSchoolLifecycleRouter({
   }
 
   // --- agenda ---------------------------------------------------------------
+  // The printed name: an explicit `?name=` wins, then the household roster's
+  // display name, then (inside the use case) the learner id itself.
+  const learnerName = (req) => (typeof req.query.name === 'string' && req.query.name
+    ? req.query.name
+    : roster?.displayName?.(req.params.learnerId) ?? null);
+
   if (buildAgenda) {
     router.get('/learners/:learnerId/agenda', asyncHandler(async (req, res) => {
       const result = await buildAgenda.execute({
         learnerId: req.params.learnerId,
-        learnerName: typeof req.query.name === 'string' ? req.query.name : null,
+        learnerName: learnerName(req),
       });
       res.json(result);
     }));
@@ -188,7 +198,7 @@ export function createSchoolLifecycleRouter({
     router.get('/learners/:learnerId/agenda/preview', asyncHandler(async (req, res) => {
       const result = await previewAgenda.execute({
         learnerId: req.params.learnerId,
-        learnerName: typeof req.query.name === 'string' ? req.query.name : null,
+        learnerName: learnerName(req),
       });
       // The document's own `scan_action.action` fields already carry the real
       // (dry-run) token values, so an empty tokens map falls back to them —

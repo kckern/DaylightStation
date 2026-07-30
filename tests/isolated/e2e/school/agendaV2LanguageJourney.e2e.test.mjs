@@ -156,12 +156,14 @@ describe('the v2 agenda — math and language together, one card', () => {
       const printer = new VirtualThermalPrinterAdapter({ captureDir }, { logger: silent });
       expect(await printer.print(job)).toBe(true);
 
-      // The name banner is always block zero: centred, double-size, and the
-      // markdown `#` is stripped rather than printed literally.
+      // The standard header is always item zero: the learner's name inverted
+      // (white on black), centred, double-size — never a literal markdown `#`.
       const banner = job.items[0];
-      expect(banner).toMatchObject({ type: 'text', align: 'center', size: { width: 2, height: 2 } });
+      expect(banner).toMatchObject({
+        type: 'text', align: 'center', size: { width: 2, height: 2 }, style: { invert: true },
+      });
       expect(banner.content).not.toMatch(/^#/);
-      expect(banner.content).toContain('Test Learner');
+      expect(banner.content).toContain('TEST LEARNER');
 
       // Section headers: `## ` renders bold, left, NORMAL size — and MATH
       // prints before LANGUAGE (the subject-wall order, spec §6.2).
@@ -197,7 +199,7 @@ describe('the v2 agenda — math and language together, one card', () => {
       // And it really did reach the (virtual) printer with a readable
       // transcript and two real, scannable codes — not an empty box.
       const transcript = printer.lastTranscript();
-      expect(transcript).toContain('Test Learner');
+      expect(transcript).toContain('TEST LEARNER');
       expect(transcript).toMatch(/sch:/);
       expect(printer.listReceipts()).toHaveLength(1);
     } finally {

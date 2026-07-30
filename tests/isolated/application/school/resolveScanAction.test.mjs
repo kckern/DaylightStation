@@ -133,7 +133,8 @@ describe('the personal card', () => {
   it('prints the agenda, by name', async () => {
     const result = await resolve.execute({ code: await cardToken(), device: 'kitchen-scanner' });
     expect(result).toMatchObject({ status: 'agenda_printed', tokenClass: 'identify', physical: 'receipt', printed: true });
-    expect(thermal.lastTranscript()).toContain('Sam');
+    // The name arrives via the standard header, which prints uppercased.
+    expect(thermal.lastTranscript()).toContain('SAM');
   });
 
   it('re-scanning reprints and NEVER opens a second session', async () => {

@@ -46,7 +46,6 @@ describe('agendaDocument', () => {
       learnerId: 'kid1', learnerName: 'Kid One', generatedAt: '2026-07-27T09:00:00.000Z', sections, tokensBySubject,
     });
     expect(doc.blocks.map((b) => b.type)).toEqual([
-      'rich_text', // name
       'rich_text', // printed at
       'rich_text', // ## MATH — Unit 2 of 4
       'rich_text', // Grade so far: 88%
@@ -54,6 +53,20 @@ describe('agendaDocument', () => {
       'rich_text', // ## LANGUAGE — done today
       'rich_text', // footer
     ]);
+  });
+
+  // The name is the document TITLE (the renderers' standard-header banner),
+  // never a text block — a markdown heading cannot ask for the inverted band.
+  it('carries the learner name as the document title, preferring the display name', () => {
+    expect(agendaDocument({ learnerId: 'kid1', learnerName: 'Kid One', sections, tokensBySubject }).title).toBe('Kid One');
+    expect(agendaDocument({ learnerId: 'kid1', sections, tokensBySubject }).title).toBe('kid1');
+    expect(agendaDocument({ sections: [] }).title).toBe('School');
+    expect(textOf(agendaDocument({ learnerId: 'kid1', learnerName: 'Kid One', sections, tokensBySubject })))
+      .not.toContain('# Kid One');
+  });
+
+  it('titles the empty agenda too', () => {
+    expect(valid(agendaDocument({ learnerId: 'kid1', learnerName: 'Kid One', sections: [] })).title).toBe('Kid One');
   });
 
   it('never prints the checkmark glyph — escposEncode silently drops non-cp858 chars', () => {
@@ -87,9 +100,9 @@ describe('agendaDocument', () => {
     expect(noGrade).not.toContain('Grade so far');
   });
 
-  it('composes a scan_action label as "title — actionLabel" and carries the opaque token', () => {
+  it('composes a scan_action label as "title — actionLabel", carries the opaque token, and names the subject icon', () => {
     const doc = agendaDocument({ learnerId: 'kid1', sections, tokensBySubject });
-    expect(actionsOf(doc)).toEqual([{ type: 'scan_action', action: 'sch:AAAA', label: 'Unit Two — watch it' }]);
+    expect(actionsOf(doc)).toEqual([{ type: 'scan_action', action: 'sch:AAAA', label: 'Unit Two — watch it', icon: 'math' }]);
   });
 
   it('prints an untokened next as plain text rather than a bare scan action', () => {

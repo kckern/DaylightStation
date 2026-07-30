@@ -57,6 +57,20 @@ export function createDocumentEscPosRenderer({ width = 32, symbology = 'CODE128'
    */
   function render(document, { tokens = null } = {}) {
     const items = [];
+    if (typeof document?.title === 'string' && document.title.trim()) {
+      // The standard header (same treatment as the canvas renderer's black
+      // band): the title inverted — white on black, double size, centred. The
+      // padding spaces widen the band past the glyphs; a full-width band would
+      // need raster mode, which this text path deliberately is not.
+      items.push({
+        type: 'text',
+        content: ` ${document.title.trim().toUpperCase()} `,
+        align: 'center',
+        style: { bold: true, invert: true },
+        size: { width: 2, height: 2 },
+      });
+      items.push({ type: 'space', lines: 1 });
+    }
     for (const block of document?.blocks ?? []) {
       if (!SUPPORTED.has(block?.type)) {
         // A block that silently vanished would be a receipt that silently lost

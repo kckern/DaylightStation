@@ -475,11 +475,14 @@ export async function createSchoolLifecycle({
     clock, rng: draw, logger,
   });
   const openRemediation = new OpenRemediation({ curriculum, sessions: stores.sessions, clock, logger });
+  // One name lookup for everything that prints a learner's name — the card
+  // scan AND the agenda routes, so tape and preview show the same header.
+  const displayRoster = {
+    displayName: (id) => (userService?.getHouseholdRoster?.() || []).find((u) => u.id === id)?.name ?? null,
+  };
   const resolvePersonalCard = new ResolvePersonalCard({
     buildAgenda, receipts,
-    roster: {
-      displayName: (id) => (userService?.getHouseholdRoster?.() || []).find((u) => u.id === id)?.name ?? null,
-    },
+    roster: displayRoster,
     logger,
   });
   // The media leg is optional (a household with no playback target still prints
@@ -547,6 +550,7 @@ export async function createSchoolLifecycle({
     reviewQueue: stores.reviewQueue,
     curriculum,
     sessions: stores.sessions,
+    roster: displayRoster,
     logger,
   });
 

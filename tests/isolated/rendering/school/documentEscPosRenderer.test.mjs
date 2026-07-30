@@ -120,16 +120,30 @@ describe('the code a child scans', () => {
 describe('what a child is told', () => {
   it('carries the headline and every line of the agenda as text', () => {
     const text = textOf(renderer.render(agenda()));
-    expect(text).toContain('Test Learner');
+    expect(text).toContain('TEST LEARNER');
     expect(text).toContain('Printed Mon 27 Jul, 9:00 am');
     expect(text).toContain('Finish “Equivalent Fractions” first');
     expect(text).toContain('Scan a line above to start.');
   });
 
-  it('sets a markdown heading in double size and centred', () => {
-    const heading = renderer.render(agenda()).items.find((i) => i.type === 'text' && i.content === 'Test Learner');
-    expect(heading).toMatchObject({ align: 'center', size: { width: 2, height: 2 } });
-    expect(heading.content).not.toContain('#');
+  it('prints the standard header INVERTED — the black band the canvas renderer draws', () => {
+    const header = renderer.render(agenda()).items[0];
+    expect(header).toMatchObject({
+      type: 'text',
+      content: ' TEST LEARNER ',
+      align: 'center',
+      style: { bold: true, invert: true },
+      size: { width: 2, height: 2 },
+    });
+  });
+
+  it('an untitled document gets no header item', () => {
+    const document = {
+      id: 'sheet', seed: 0, variant: 0, target: ['receipt'],
+      blocks: [{ type: 'rich_text', md: 'Just a line.' }],
+    };
+    const job = renderer.render(document);
+    expect(job.items[0]).toMatchObject({ type: 'text', content: 'Just a line.' });
   });
 
   it('renders a `## ` subject header bold, left-aligned and NORMAL size — unlike a bare `#`', () => {
@@ -162,7 +176,7 @@ describe('through the real thermal adapter', () => {
       expect(await printer.print(renderer.render(agenda()))).toBe(true);
 
       const transcript = printer.lastTranscript();
-      expect(transcript).toContain('Test Learner');
+      expect(transcript).toContain('TEST LEARNER');
       expect(transcript).toContain('Equivalent Fractions — watch or listen');
       // The token itself lands on its own line, which is what a test asserting
       // "the receipt carried token sch:…" reads.
