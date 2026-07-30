@@ -3072,7 +3072,8 @@
   color: var(--piano-stage-muted, #9a958a); font-variant-numeric: tabular-nums;
 }
 
-// Part chips — Follow/Metronome/Manual: on/off toggle. Play: role cycle.
+// Part chips — the >2-staff fallback for "which hands am I responsible for":
+// a plain on/off toggle per staff, one semantic in every mode (wave-3 A).
 .piano-score-part-chip {
   appearance: none; border: 1px solid rgba(255, 255, 255, 0.2);
   background: rgba(255, 255, 255, 0.08); color: var(--piano-stage-fg, #f3efe6);
@@ -3082,10 +3083,6 @@
   min-height: 3rem; padding: 0.4rem 0.7rem; border-radius: var(--r-md, 12px); cursor: pointer; white-space: nowrap;
   &.is-on { background: rgba(255, 255, 255, 0.16); border-color: rgba(255, 255, 255, 0.4); }
   &.is-off { opacity: 0.45; }
-  // Play-mode roles
-  &.is-role-play { background: rgba(255, 255, 255, 0.16); border-color: rgba(255, 255, 255, 0.4); color: var(--piano-stage-fg, #f3efe6); }
-  &.is-role-you  { background: #e8a33d; border-color: #e8a33d; color: #1d1405; }
-  &.is-role-mute { opacity: 0.45; }
 }
 
 // Tempo popover — anchored above the bar, elevated.
