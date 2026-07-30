@@ -308,6 +308,40 @@ export async function createSchoolLifecycle({
     curriculum, assignments: stores.assignments, sessions: stores.sessions,
     launchers, timezone, clock, newSessionId, logger,
   });
+
+  // --- dry-run agenda preview (DoNow + Agenda Preview plan, Task 2) ---------
+  // A parent-facing "what would print right now" view. It runs the exact same
+  // algorithm as `buildAgenda` above — same curriculum, same planner, same
+  // program launchers — but against dry-run stand-ins for sessions and tokens,
+  // so a preview can never open a real work session or mint a scannable
+  // ticket. `appendEvent` is a no-op because `ensureSession` only needs to
+  // REDUCE a session's events to decide what is next; it never has to persist
+  // one for a preview to be accurate.
+  const previewSessions = {
+    listForLearner: (id) => stores.sessions.listForLearner(id),
+    readEvents: (sid) => stores.sessions.readEvents(sid),
+    appendEvent: async () => {},
+  };
+  const previewAgenda = new BuildAgenda({
+    curriculum, assignments: stores.assignments, sessions: previewSessions,
+    tokens: { put: async () => {} },
+    launchers, timezone, clock, rng: draw, newSessionId,
+    subjectTokenTtlHours: lifecycleCfg.subjectTokenTtlHours,
+    logger: logger.child ? logger.child({ preview: true }) : logger,
+  });
+  // The rendering-layer PNG renderer, same optional-dependency posture as the
+  // ESC/POS receipt renderer above: a preview is a nice-to-have surface, not
+  // the console itself, so its absence degrades the one route rather than the
+  // whole lifecycle.
+  let receiptPngRenderer = null;
+  try {
+    const { createDocumentReceiptRenderer } = await import('#rendering/school/documents/DocumentReceiptRenderer.mjs');
+    // QR, matching the printed receipt's own symbology — the preview is
+    // supposed to look like the paper, not like a different console.
+    receiptPngRenderer = createDocumentReceiptRenderer({ scanCodes: 'qr' });
+  } catch (err) {
+    logger.warn?.('school.lifecycle.no-preview-renderer', { error: err.message });
+  }
   const issueDocument = new IssueDocument({
     curriculum, sessions: stores.sessions, tokens: stores.tokens,
     renderer: documentRenderer, printer: laserPrinter, formMaps: stores.formMaps,
@@ -380,10 +414,12 @@ export async function createSchoolLifecycle({
     buildAgenda, issueDocument, dispatchMedia, recordMediaCompletion,
     submitPaperWork, gradeSubmission, closeSessionOutcome, openRemediation,
     resolvePersonalCard, resolveScanAction, resolveReviewItem, setAssignments,
+    previewAgenda,
   };
 
   const router = createSchoolLifecycleRouter({
     ...useCases,
+    receiptPngRenderer,
     assignments: stores.assignments,
     reviewQueue: stores.reviewQueue,
     curriculum,
@@ -428,7 +464,7 @@ export async function createSchoolLifecycle({
     // The two renderers this console built, exposed for inspection. Neither is
     // reachable any other way, and a caller that wants to know whether a
     // document can be drawn on 58mm tape should ask the one that will draw it.
-    renderers: { document: documentRenderer, receipt: receiptRenderer },
+    renderers: { document: documentRenderer, receipt: receiptRenderer, receiptPng: receiptPngRenderer },
   };
 }
 

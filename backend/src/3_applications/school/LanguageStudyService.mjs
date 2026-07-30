@@ -462,6 +462,7 @@ export class LanguageStudyService {
    * @param {{userId: string}} args
    * @returns {{doneToday: boolean, progressLabel: string|null, score: number|null}}
    */
+  // READ-ONLY by contract: the agenda preview GET depends on status() never writing (preview spec §3).
   todayStatus({ userId }) {
     if (!userId) return { doneToday: false, progressLabel: null, score: null };
     try {
