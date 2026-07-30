@@ -113,6 +113,28 @@ describe('DoNow Policy — dispatch decision', () => {
         expect(result).toBe('denied');
       });
     });
+
+    describe('CRITICAL: null learner edge cases', () => {
+      it('active + null occupantId + null learnerId → pending_approval (not dispatch)', () => {
+        const result = decideDispatch({
+          occupancy: { state: 'active', occupantId: null },
+          learnerId: null,
+          force: undefined,
+        });
+        expect(result).toBe('pending_approval');
+      });
+    });
+
+    describe('malformed occupancy (fail closed)', () => {
+      it('missing state property → pending_approval', () => {
+        const result = decideDispatch({
+          occupancy: { occupantId: 'bob' },
+          learnerId: 'alice',
+          force: undefined,
+        });
+        expect(result).toBe('pending_approval');
+      });
+    });
   });
 
   describe('decideOnApprove table (§4)', () => {
@@ -123,6 +145,16 @@ describe('DoNow Policy — dispatch decision', () => {
           learnerId: 'alice',
           pendingOccupant: 'bob',
           repended: false,
+        });
+        expect(result).toBe('dispatch');
+      });
+
+      it('idle + repended:true → dispatch (repend flag does not deny idle)', () => {
+        const result = decideOnApprove({
+          occupancy: { state: 'idle', occupantId: null },
+          learnerId: 'alice',
+          pendingOccupant: 'bob',
+          repended: true,
         });
         expect(result).toBe('dispatch');
       });
@@ -197,14 +229,14 @@ describe('DoNow Policy — dispatch decision', () => {
     });
 
     describe('null pendingOccupant edge cases', () => {
-      it('occupant null when pendingOccupant null → dispatch (same occupant)', () => {
+      it('occupant null when pendingOccupant null → repend (unknown changes require re-ask)', () => {
         const result = decideOnApprove({
           occupancy: { state: 'active', occupantId: null },
           learnerId: 'alice',
           pendingOccupant: null,
           repended: false,
         });
-        expect(result).toBe('dispatch');
+        expect(result).toBe('repend');
       });
 
       it('occupant null when pendingOccupant is string → different, first time → repend', () => {
@@ -222,6 +254,18 @@ describe('DoNow Policy — dispatch decision', () => {
           occupancy: { state: 'active', occupantId: 'bob' },
           learnerId: 'alice',
           pendingOccupant: null,
+          repended: false,
+        });
+        expect(result).toBe('repend');
+      });
+    });
+
+    describe('CRITICAL: null learnerId edge cases', () => {
+      it('occupant null, learnerId null, pendingOccupant string → different, first time → repend', () => {
+        const result = decideOnApprove({
+          occupancy: { state: 'active', occupantId: null },
+          learnerId: null,
+          pendingOccupant: 'bob',
           repended: false,
         });
         expect(result).toBe('repend');
