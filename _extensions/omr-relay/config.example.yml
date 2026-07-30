@@ -26,7 +26,42 @@ scanners:
       # operator manual. 8N1 produces SILENCE, not garbage — don't "correct" it.
       baud: 9600
       framing: "7E1"                 # 7 data bits, EVEN parity, 1 stop
-      rx_pin: 22                     # ATOM base UART RX <- VERIFY vs M5 ATOMIC RS232 base pinout
+      # CONFIRMED 2026-07-29: the ATOMIC RS232 base's own silkscreen reads
+      # "RX:22  TX:19". No longer an assumption.
+      rx_pin: 22                     # ATOM base UART RX
       tx_pin: 19                     # ATOM base UART TX <- REQUIRED (mode download is sent on TX)
     sniff_mode: false                # decode sheets; set true only to re-investigate framing
     topic: omr
+
+    # ---- optional NFC tap reader -------------------------------------------
+    # M5 Unit NFC (SKU U216, ST25R3916) on the ATOM's Grove port. Lets a student
+    # tap a card to start a session; the relay emits an `nfc` message over the
+    # same bus link the sheets use.
+    #
+    # Verified on hardware 2026-07-29: ST25R3916 at I2C 0x50, IC Identity 0x2A
+    # (ic_type 5, silicon rev 2); an NTAG 215 read as uid 04669C0FCB2A81.
+    #
+    # Grove is GPIO26/32 and the OMR UART is GPIO22/19, so there is no conflict —
+    # and gen-config.mjs rejects the file outright if they ever do collide.
+    nfc:
+      enabled: false                 # true only on readers that have the unit fitted
+      sda_pin: 26                    # ATOM Lite Grove SDA
+      scl_pin: 32                    # ATOM Lite Grove SCL
+      i2c_hz: 400000
+      poll_ms: 40                    # gap between detect attempts
+      detect_timeout_ms: 120         # NOT the library's 1000ms default — see main.cpp
+      # Only NFC-A (ISO14443A: MIFARE / NTAG) is polled. The ST25R3916 also does
+      # NFC-B / FeliCa / ISO15693, but the chip holds ONE technology at a time and
+      # it must be selected before init — so covering more means round-robin
+      # re-initialisation, not just another flag here.
+
+    # ---- optional buzzer (audible tap ACK) ---------------------------------
+    # A status LED is useless once the board is in a case, so a tap needs sound.
+    # Active (self-oscillating) buzzer wired GND + one free pad on the RS232
+    # base. Only GPIO23 and GPIO33 are broken out free; gen-config enforces that.
+    buzzer:
+      enabled: false
+      pin: 23                        # 23 or 33 only
+      ms: 4                          # 4ms = gentle tick. Chosen by ear 2026-07-29.
+      duty: 255                      # FULL. Lower duty SCRATCHES, it does not quieten
+      freq_hz: 30000                 # ultrasonic gate rate, inaudible by design

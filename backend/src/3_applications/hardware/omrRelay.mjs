@@ -31,6 +31,12 @@
 //                    SNIFF_MODE. Broadcast for live diagnostics but NEVER
 //                    persisted: sniff mode is a firehose and this is a bring-up
 //                    aid, not a record.
+//   - `nfc`          a card tapped on the reader's optional Grove NFC unit
+//                    (ST25R3916): { uid, piccType, atqa, sak }. A student
+//                    announcing readiness, which downstream becomes a session
+//                    start. Broadcast AND persisted, deduped per UID.
+//                    Resolving uid → student is NOT this layer's job either; the
+//                    same reasoning that keeps scoring out of here applies.
 //
 // Config-driven from the household SSOT (config/omr-readers.yml), passed in as
 // `config`. Persistence policy can change without touching relay firmware.
@@ -145,6 +151,32 @@ export function createOmrRelay({ eventBus, dataDir, config = {}, timezone = DEFA
       return;
     }
 
+    // An NFC card tapped on the reader's Grove-port NFC unit — a student
+    // announcing "I'm ready", which downstream turns into a session start. The
+    // relay already debounces in hardware (it HLTAs the card, so one physical tap
+    // produces exactly one message), so anything arriving here is a real tap.
+    if (message.type === 'nfc') {
+      const uid = typeof message.uid === 'string' ? message.uid.trim().toUpperCase() : '';
+      // A UID is the whole payload — without one there is nothing to resolve to a
+      // student, so drop it rather than broadcast an unidentifiable tap.
+      if (!/^[0-9A-F]{8,20}$/.test(uid)) {
+        logger.warn?.('omr.ingest.bad_nfc_uid', { clientId, id, uid: message.uid });
+        return;
+      }
+      logger.info?.('omr.ingest.nfc', { clientId, id, uid, piccType: message.piccType });
+      eventBus.broadcast(topic, {
+        id,
+        event: 'nfc',
+        uid,
+        piccType: typeof message.piccType === 'string' ? message.piccType : null,
+        atqa: Number.isFinite(Number(message.atqa)) ? Number(message.atqa) : null,
+        sak: Number.isFinite(Number(message.sak)) ? Number(message.sak) : null,
+        ts,
+        source: RELAY_SOURCE,
+      });
+      return;
+    }
+
     if (message.type === 'reader-error') {
       logger.warn?.('omr.ingest.reader_error', { clientId, id, echo: message.echo });
       eventBus.broadcast(topic, { id, event: 'reader-error', echo: message.echo ?? null, ts, source: RELAY_SOURCE });
@@ -163,6 +195,9 @@ export function createOmrRelay({ eventBus, dataDir, config = {}, timezone = DEFA
   // ---- 2) PERSIST: bus → disk (sheets + reader errors) --------------------
   // Per-reader dedup state: the signature of the last sheet we RECORDED and when.
   const lastSheet = new Map(); // id -> { signature, atMs }
+  // Same idea for NFC taps, keyed on UID so two different cards in quick
+  // succession both register — only a REPEAT of the same card is suppressed.
+  const lastNfc = new Map();   // id -> { uid, atMs }
 
   // Serialize all appends through one promise chain: appendRecord is a
   // read-modify-write, so two cards fed in quick succession would otherwise
@@ -180,6 +215,27 @@ export function createOmrRelay({ eventBus, dataDir, config = {}, timezone = DEFA
 
     if (payload.event === 'reader-error') {
       enqueueAppend(id, { ts: payload.ts, event: 'reader-error', echo: payload.echo ?? null });
+      return;
+    }
+
+    // NFC taps are persisted: "who started a session, when" is exactly the sort
+    // of thing you want a record of. Deduped per UID on the same window sheets
+    // use — a fumbled card can leave and re-enter the field within a moment, and
+    // a double tap must not start two sessions or print two tests.
+    if (payload.event === 'nfc') {
+      const nowMs = Date.now();
+      const prev = lastNfc.get(id);
+      if (prev && prev.uid === payload.uid && (nowMs - prev.atMs) < dedupWindowMs) {
+        logger.debug?.('omr.persist.nfc_deduped', { id, uid: payload.uid, sinceMs: nowMs - prev.atMs });
+        return;
+      }
+      lastNfc.set(id, { uid: payload.uid, atMs: nowMs });
+      enqueueAppend(id, {
+        ts: payload.ts,
+        event: 'nfc',
+        uid: payload.uid,
+        piccType: payload.piccType ?? null,
+      });
       return;
     }
 

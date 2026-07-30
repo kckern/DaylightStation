@@ -10,8 +10,18 @@
 > topic `scantron` → `omr`, source `scantron-relay` → `omr-relay`, config
 > `scantrons.yml` → `omr-readers.yml`). Host-side wiring is **resolved**
 > (Step 1), the household config is **written**, and **backend dispatch is built
-> and wired** (Step 5). Everything remaining is physical: the Step 1b loopback
-> test, then flashing the ATOM.
+> and wired** (Step 5).
+>
+> **The ATOM IS FLASHED and live (2026-07-29).** An earlier revision of this note
+> listed flashing as outstanding; it was already done. `study-omr` runs on the LAN
+> with the bus connected — confirm with `curl http://<ip>/health`. The GPIO
+> mapping is likewise settled: the base's own silkscreen reads `RX:22 TX:19`, so
+> the Step 1b loopback is a debugging tool now, not a prerequisite.
+>
+> **NFC tap-to-start ADDED (2026-07-29).** The same ATOM now also reads NFC cards
+> from an M5 Unit NFC on its Grove port and beeps an audible ACK — see
+> [NFC tap reader](#nfc-tap-reader--tap-to-start) below. Verified on hardware:
+> ST25R3916 at I²C `0x50`, IC Identity `0x2A`, an NTAG 215 read end to end.
 >
 > **Cards are ORDERED (2026-07-22)** — one 500-pack of Lincolnshire `3705`,
 > invoiced 7/24. The long-standing card-sourcing blocker is closed; see
@@ -151,10 +161,81 @@ tables).
 - **Never** send `SETBAUD` / `SETFLAGS` / `SETPARITY` / `SETTHRESH` / `SETDECAY` /
   `SETTMCH` / `PROGRAM` / `SETFACTORY` casually — they write EEPROM.
 
+## NFC tap reader — tap-to-start
+
+**Optional, off by default.** The same ATOM can also read NFC cards, so a student
+taps a card to say "I'm ready" and the backend starts a session (print the test,
+open the app, whatever the trigger config says). Enable it per reader with the
+`nfc:` and `buzzer:` blocks in `omr-readers.yml`; with `nfc.enabled: false` the
+whole path compiles out and the firmware keeps its OMR-only footprint (30.3%
+flash vs 38.9% with NFC).
+
+| | |
+|---|---|
+| Unit | **M5 Unit NFC** (SKU U216) — ST25R3916 NFC front-end, I²C `0x50` |
+| Verified | IC Identity `0x2A` (`ic_type` 5, silicon rev 2), 2026-07-29 |
+| Bus | Grove port: **SDA GPIO26 / SCL GPIO32** — no clash with the UART on 22/19 |
+| Technology | **NFC-A only** (ISO 14443A: MIFARE, NTAG). Read an NTAG 215 |
+| Driver | [`m5stack/M5Unit-NFC`](https://github.com/m5stack/M5Unit-NFC) + M5Unified |
+
+### Why the NFC poll runs on the other core
+
+A **failed** `detect()` blocks for its whole timeout. The UART reader is the only
+hard real-time path in this firmware — at 9600 baud a byte lands every ~1 ms —
+so NFC polling must never sit in front of it. The ESP32-PICO-D4 has two cores and
+Arduino's `loop()` runs on core 1, so the poll is pinned to **core 0** and hands
+cards across a **FreeRTOS queue**. `loop()` drains that queue, which is what keeps
+`emit()`, the outbound bus queue and the buzzer single-threaded — the existing
+queue was written assuming one writer and still gets exactly one.
+
+`detect_timeout_ms` defaults to **120 ms, not the library's 1000 ms**. At 1000 ms
+the reader listens barely once a second and a quick swipe falls between polls,
+giving the student no beep and no clue why. Measured at the defaults: **6.05
+polls/sec, 165 ms per cycle**. `handoffLost` in `/health` counts any tap the
+handoff dropped — a lost tap is never silent.
+
+### The ACK has to be audible
+
+A status LED is useless here: the board lives in a case where nobody can see it.
+So a tap beeps. Active (self-oscillating) buzzer, **GND + GPIO23** on the base's
+free solder pads, gated through LEDC and expired non-blocking in `loop()`.
+
+> ⚠️ **Do not quieten this buzzer by lowering PWM duty.** Measured 2026-07-29: at
+> duty 5 / 15 / 40 / 80 it *scratched* instead of playing a quieter tone, and only
+> 160+ gave a clean note. An active buzzer has its own oscillator with a minimum
+> working voltage, and a chopped supply below it starves the oscillator — duty is
+> a **distortion** control here, not a volume control.
+>
+> Loudness is set by **duration at full duty**: `buzzer.ms: 4` never lets the
+> diaphragm reach full amplitude, which reads as a soft tick (chosen by ear). To
+> go quieter than duration allows, add a series resistor (~100–470 Ω) on the red
+> wire or damp the buzzer inside the case.
+
+Ruled out along the way, so nobody re-treads it: a **Grove hub + Unit Buzzer**
+cannot work — the Unit Buzzer is PWM on the Grove signal pin (GPIO26 on an ATOM
+Lite), which is the NFC unit's SDA; a hub multiplexes I²C *devices* and a PWM
+buzzer is not one. An **ATOM Echo** (built-in speaker) is also out: M5 reserves
+G19/G22/G23/G33 for its I²S audio and warns that reusing them can damage the
+board — and the RS232 base drives the OMR UART on G22/G19.
+
+### One tap, one trigger
+
+After a successful read the firmware sends **HLTA** (halt). A halted PICC ignores
+**REQA** until it leaves the field and loses power, so a card left resting on the
+antenna does **not** re-fire — the debounce is a property of the protocol, not a
+timer. The backend adds a second guard, deduping per UID inside
+`persistence.dedupWindowMs`, because a fumbled card can leave and re-enter the
+field in a moment and a double tap must not start two sessions.
+
+Resolving `uid` → student is **not** the relay's job, exactly as scoring isn't:
+that mapping belongs to the consuming app, which is what lets one reader serve
+several rosters.
+
 ## Messages sent to the bus
 
 ```json
 {"source":"omr-relay","type":"sheet","id":"<reader-id>","columns":39,"markedColumns":37,"marks":[2048,1024,512]}
+{"source":"omr-relay","type":"nfc","id":"<reader-id>","uid":"04669C0FCB2A81","piccType":"NTAG 215","atqa":68,"sak":0}
 ```
 
 `marks[]` is one 12-bit mask per column in physical top-to-bottom order:
@@ -317,7 +398,7 @@ OMR-1100 ──original Chatsworth cable──▶ DB9 breakout          ATOMIC R
                                           2  RXD    ────────▶  R
                                           3  TXD    ◀────────  T
                                           5  GND    ────────   G
-                                          1,4,6,7,8,9 unused   DC24V  ← LEAVE OPEN
+                                          1,4,6,7,8,9 unused   DC12V  ← LEAVE OPEN
 ```
 
 **Why pin 2 is the reader's output** — this is settled empirically, not
@@ -345,7 +426,7 @@ tidiness only. Use black for GND.
 
 **Hazards:**
 
-- **`DC24V` is a power input for the base, not a serial line.** Nothing from the
+- **`DC12V` is a power input for the base, not a serial line.** Nothing from the
   reader touches it. Power the ATOM over USB-C.
 - **Never** wire the reader's TX straight to an ATOM GPIO — RS-232 swings
   **±5–12V** and will fry the 3.3V pin. The signal **must** pass through the
@@ -366,9 +447,14 @@ diagnose a wiring fault inside that window.
 
 ### Step 1b — Loopback test (do this BEFORE connecting the reader)
 
-The base's **GPIO mapping is unverified**: `rx_pin: 22 / tx_pin: 19` are the
-values the scaffold shipped with and nobody has confirmed them against a real
-ATOMIC RS232 base. Settle it without the reader in the loop:
+**RESOLVED 2026-07-29 — the mapping is printed on the base itself.** The
+ATOMIC RS232 base's silkscreen reads `RX:22  TX:19`, matching what the scaffold
+shipped with and what `config.h` generates. No loopback needed to establish it.
+The same face also breaks out solder pads `3V3 / 22-Rx / 19-Tx / 23 / 33`, i.e.
+**GPIO23 and GPIO33 are free** — that is where the tap buzzer lives (see below).
+
+The loopback below is still the right tool if the link is ever silent, because it
+separates "our end is fine" from "the reader or cable is at fault":
 
 1. Jumper `R` to `T` on the screw terminal. Nothing else connected.
 2. Flash with `sniff_mode: true`.
