@@ -91,7 +91,8 @@ describe('fail closed', () => {
     expect(Object.keys(useCases).sort()).toEqual([
       'buildAgenda', 'closeSessionOutcome', 'dispatchMedia', 'gradeSubmission',
       'issueDocument', 'openRemediation', 'recordMediaCompletion',
-      'resolvePersonalCard', 'resolveScanAction', 'submitPaperWork',
+      'resolvePersonalCard', 'resolveReviewItem', 'resolveScanAction',
+      'setAssignments', 'submitPaperWork',
     ]);
   });
 
