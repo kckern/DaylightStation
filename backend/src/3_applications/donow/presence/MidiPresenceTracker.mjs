@@ -45,7 +45,7 @@ export class MidiPresenceTracker {
 
   #onMidiEvent(payload) {
     this.#lastSeenAt = this.#nowMs();
-    this.#logger?.debug?.('donow.presence.midi.activity', { event: payload?.event });
+    this.#logger?.debug?.('donow.presence.midi.activity', { event: payload?.data?.event ?? payload?.event });
   }
 
   /** @returns {{state: 'idle'|'active', occupantId: null}} */
