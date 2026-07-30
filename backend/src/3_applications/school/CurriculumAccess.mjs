@@ -31,7 +31,7 @@ import { validateManifest } from '#domains/school/curriculum/manifestValidation.
 const DEFAULT_TTL_MS = 15_000;
 
 export class CurriculumAccess {
-  #catalog; #bankIds; #ttlMs; #clock; #logger;
+  #catalog; #bankIds; #programIds; #ttlMs; #clock; #logger;
   #snapshot = null;
   #loading = null;
 
@@ -40,14 +40,19 @@ export class CurriculumAccess {
    * @param {import('./ports/ICurriculumCatalog.mjs').ICurriculumCatalog} deps.catalog
    * @param {() => Iterable<string>} [deps.bankIds] - ids of every question bank that exists;
    *   a function because banks warm asynchronously and the set changes without a restart
+   * @param {() => Iterable<string>} [deps.programIds] - ids of every program that exists
+   *   (Task 12 supplies real ids; default empty means no unit can be a program unit yet)
    * @param {number} [deps.ttlMs]
    * @param {() => number} [deps.clock] - epoch ms, injected for deterministic tests
    * @param {object} [deps.logger]
    */
-  constructor({ catalog, bankIds = () => [], ttlMs = DEFAULT_TTL_MS, clock = () => Date.now(), logger = console } = {}) {
+  constructor({
+    catalog, bankIds = () => [], programIds = () => [], ttlMs = DEFAULT_TTL_MS, clock = () => Date.now(), logger = console,
+  } = {}) {
     if (!catalog) throw new Error('CurriculumAccess requires a catalog');
     this.#catalog = catalog;
     this.#bankIds = typeof bankIds === 'function' ? bankIds : () => bankIds;
+    this.#programIds = typeof programIds === 'function' ? programIds : () => programIds;
     this.#ttlMs = ttlMs;
     this.#clock = clock;
     this.#logger = logger;
@@ -78,6 +83,7 @@ export class CurriculumAccess {
       bankIds: new Set(this.#bankIds() ?? []),
       documentIds: new Set(validDocuments.keys()),
       manifestIds: new Set(validManifests.keys()),
+      programIds: new Set(this.#programIds() ?? []),
     };
 
     const validUnits = new Map();
