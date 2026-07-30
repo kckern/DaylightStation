@@ -154,7 +154,8 @@ export function planLearnerWork({ learnerId = null, assignment = null, units = [
 
   const entries = ordering.map(({ unitId, elective }) => {
     const unit = byUnitId.get(unitId);
-    const open = openByUnit.get(unitId) ?? null;
+    // Program units never carry an open session — always sessionId: null, state: null
+    const open = isNonEmptyString(unit.program) ? null : (openByUnit.get(unitId) ?? null);
     const blocker = blockerFor(unit);
 
     let status = 'available';
