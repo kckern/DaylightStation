@@ -2372,16 +2372,23 @@ describe('ScorePlayer — Listen mode', () => {
   });
 
   it('a tail-measure range in Listen arms no wrap dwell at all — nothing restarts itself (L6, retired)', async () => {
-    // Wave-2 shape: a tail-measure Listen loop ended in a ZERO-SPAN dwell (the
-    // loop's in-point IS the last playTimeline event), so onDone dwelled one beat
-    // before restarting, and a hand toggle mid-dwell had to cancel that pending
-    // restart or a stale timer would fire seconds later against a rebuilt
-    // timeline. Wave-3 §0 removes the dwell from Listen entirely: Listen holds no
-    // range, so the run simply completes. The observable that told a canceled
-    // dwell from a fired one is the same one that proves the dwell is gone —
-    // onDone's loop branch logs `score.transport.loop-wrap` every time it runs
-    // (armed OR restarted), and here it must never run. The uncommanded-audio
-    // half is kept too: nothing may sound after the run ends.
+    // The transport's loop-wrap branch is deleted outright: `range` is
+    // Learn-only, and Learn's gate runs the transport with an empty timeline,
+    // so no mode can ever reach onDone (or onEvent's step handler) with a
+    // non-null range — no transport wrap can exist. This test survives as
+    // the regression guard: nothing may restart itself after a tail-measure
+    // run in Listen, and `score.transport.loop-wrap` (the log event the
+    // deleted branch used to emit) must never be seen again — the `wraps()`
+    // checks below now guard against reintroduction, not a live code path.
+    //
+    // The fixture keeps its zero-span shape (m2, the tail measure, has no
+    // note entries at all, at either staff) because that shape is exactly
+    // what the deleted loop-wrap machinery had to handle correctly. It also
+    // means THIS run never calls sendNoteAt even when it genuinely plays —
+    // so proof the run wasn't silently skipped is log-based
+    // (`score.transport.play` / `score.transport.done`), not audio; the
+    // "nothing happened after" negatives are only non-vacuous once that's
+    // established.
     h.layoutExtras = {
       tempoEntries: [{ onsetQuarter: 0, bpm: 60 }],
       events: [
@@ -2417,6 +2424,7 @@ describe('ScorePlayer — Listen mode', () => {
       return c;
     });
     const wraps = () => emitted.filter(([ev]) => ev === 'score.transport.loop-wrap');
+    const hasEvent = (name) => emitted.some(([ev]) => ev === name);
 
     renderPlayer();
     // Loop measure 2 only (tail measure — the zero-span case), armed in Learn:
@@ -2429,6 +2437,11 @@ describe('ScorePlayer — Listen mode', () => {
     await act(async () => {});
     act(() => vi.advanceTimersByTime(200)); // where wave-2 armed the zero-span dwell
     expect(wraps()).toEqual([]);            // …nothing is armed: Listen holds no range
+    // Non-vacuous anchor (log-based — see the comment above): the run really
+    // started and really reached onDone, so the negatives below aren't
+    // guarding against a run that never happened at all.
+    expect(hasEvent('score.transport.play')).toBe(true);
+    expect(hasEvent('score.transport.done')).toBe(true);
     h.sendNoteAt.mockClear();
 
     // A hand toggle after the run — the wave-2 trigger for the stale restart.
