@@ -91,9 +91,16 @@ Rules, enforced by `validateUnit` at catalog load (never at scan time):
   (`math-fractions.01` is `media` + `bank`, `.04` is `media` + `document`;
   the watch-then-questions lifecycle depends on that). A program unit is the
   only pure kind: it delegates whole, or it is not a program unit.
-- `program:` values are a **closed set in code** — the ids of registered
-  program launchers (same posture as `categories.mjs`). An unknown program is
-  a load-time rejection with the unit named.
+- `program:` values are **addresses, not a fixed enum** — refined by
+  `docs/superpowers/specs/2026-07-30-household-donow-dispatch-design.md` §6/§10's
+  `SurfaceProgramLauncher`: a program id resolves to either a code-registered
+  launcher (`language`) or a `school.yml` `programs:` entry, config selecting
+  from the closed DoNow *surface* vocabulary (same posture as `categories.mjs` —
+  it is the surface set, not the program id set, that is fixed in code). A
+  `programs:` entry whose id collides with a code-registered launcher is a
+  BOOT-TIME error, not a silent override. An unknown program — matching
+  neither a code launcher nor a config entry — is still a load-time rejection
+  with the unit named.
 - `cadence:` is an enum: `daily` (re-offers each study day) or `once`
   (default; behaves like any other unit). Only program units may declare
   `daily` for now — a daily worksheet is a plausible future, not this project.

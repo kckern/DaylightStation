@@ -1,6 +1,11 @@
 import { describe, it, expect } from 'vitest';
 import { GRADES } from '#domains/school/grades.mjs';
 import { SUBJECT_IDS, isPublishable, validateUnit } from '#domains/school/curriculum/unitValidation.mjs';
+// The real registered adapter, not a hand-rolled stand-in: `launch:` validation
+// exists precisely so a unit cannot publish naming a surface/payload its own
+// adapter would reject at dispatch time, and a fake validator could drift from
+// that contract without anyone noticing.
+import { GarageFitnessSurface } from '#apps/donow/surfaces/GarageFitnessSurface.mjs';
 
 const refs = () => ({
   bankIds: new Set(['math-fractions']),
@@ -385,6 +390,86 @@ describe('program units', () => {
   it('multi-composition NON-program units stay legal (media + bank)', () => {
     const { errors } = validateUnit(valid({ document: undefined, media: 'liberty-kids-01', bank: 'math-fractions' }), refs());
     expect(errors).toEqual([]);
+  });
+});
+
+describe('launch units', () => {
+  // The one registered adapter used across these tests. `episodeId` is its
+  // whole action contract (see `GarageFitnessSurface#validateAction`).
+  const surfaceValidators = () => {
+    const validators = new Map();
+    const surface = new GarageFitnessSurface();
+    validators.set('garage-fitness', (payload) => surface.validateAction(payload));
+    return validators;
+  };
+  const refsWithSurfaces = () => ({ ...refs(), surfaceValidators: surfaceValidators() });
+
+  const launchUnit = (over = {}) => ({
+    unitId: 'skills-pe-hymn',
+    title: 'Play hymn 12 on the piano',
+    subject: 'skills',
+    launch: { surface: 'garage-fitness', episodeId: 'plex:12345' },
+    provenance: { source: 'hand-authored', reviewState: 'approved' },
+    ...over,
+  });
+
+  it('accepts a legal launch-only unit and normalizes the launch block', () => {
+    const { errors, unit } = validateUnit(launchUnit(), refsWithSurfaces());
+    expect(errors).toEqual([]);
+    expect(unit.launch).toEqual({ surface: 'garage-fitness', episodeId: 'plex:12345' });
+  });
+
+  it('omits launch from the normalised unit when absent', () => {
+    expect(unitOf(valid())?.launch).toBeUndefined();
+  });
+
+  it('joins the "must reference at least one" list — launch alone is enough, no other composition needed', () => {
+    const { errors } = validateUnit(launchUnit(), refsWithSurfaces());
+    expect(errors).not.toContain('unit must reference at least one of bank, document, media, review');
+  });
+
+  it('rejects launch that is not an object', () => {
+    expect(errs(launchUnit({ launch: 'garage-fitness' }), refsWithSurfaces()))
+      .toContain('launch must be an object');
+  });
+
+  it('requires a non-empty surface', () => {
+    for (const surface of [undefined, '', '   ', 42]) {
+      expect(errs(launchUnit({ launch: { surface, episodeId: 'plex:1' } }), refsWithSurfaces()))
+        .toContain('launch.surface must be a non-empty string');
+    }
+  });
+
+  it('rejects an unknown surface, naming it', () => {
+    expect(errs(launchUnit({ launch: { surface: 'sky-castle', episodeId: 'x' } }), refsWithSurfaces()))
+      .toContain("launch.surface 'sky-castle' not found");
+  });
+
+  it('treats an absent surfaceValidators set as no known surfaces, rather than throwing', () => {
+    expect(() => validateUnit(launchUnit(), refs())).not.toThrow();
+    expect(errs(launchUnit(), refs())).toContain("launch.surface 'garage-fitness' not found");
+  });
+
+  // The adapter is handed the launch block MINUS `surface` — its own action
+  // shape, the same payload `DoNowService` will later dispatch with.
+  it("rejects a payload the surface adapter's own validateAction rejects", () => {
+    expect(errs(launchUnit({ launch: { surface: 'garage-fitness' } }), refsWithSurfaces()))
+      .toContain('launch: action.episodeId is required');
+  });
+
+  it.each([
+    ['media', { media: 'liberty-kids-01' }],
+    ['bank', { bank: 'math-fractions' }],
+    ['document', { document: 'math-fractions-01-ws' }],
+    ['review', { review: 'Parent checks it' }],
+    ['program', { program: 'language' }],
+  ])('rejects launch combined with %s', (field, extra) => {
+    expect(errs(launchUnit(extra), refsWithSurfaces())).toContain(`a launch unit takes no ${field}`);
+  });
+
+  it('accepts every other field alongside launch (courseId/sequence/grades/objectives)', () => {
+    expect(errs(launchUnit({ courseId: 'skills-1', sequence: 3, grades: ['lower'], objectives: ['Move around'] }), refsWithSurfaces()))
+      .toEqual([]);
   });
 });
 

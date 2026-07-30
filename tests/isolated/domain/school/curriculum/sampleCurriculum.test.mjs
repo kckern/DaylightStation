@@ -53,15 +53,24 @@ const banks = loadDir('banks');
 
 // Reference sets are built from the fixtures ACTUALLY PRESENT, so a unit that
 // points at an artefact nobody wrote fails here rather than at print time.
-// `programIds` is the one exception — a program unit's `program:` value names
-// a registered LAUNCHER (composition root), not a fixture file; `language` is
-// the one program the house registers (Task 14's seed), mirroring what
-// `fixtureIntegrity.test.mjs` hands the same validator.
+// `programIds` and `surfaceValidators` are the two exceptions — a program
+// unit's `program:` value names a registered LAUNCHER (composition root), not
+// a fixture file, and a `launch:` unit's `surface:` names a registered DoNow
+// SURFACE ADAPTER, likewise not a fixture file. `language` is the
+// code-registered program (school-agenda-v2's seed); `pe-daily` is the
+// config-driven `school.yml` `programs:` entry the DoNow launch-journey e2e
+// (Task 14) seeds; `garage-fitness` is one of DoNow's own unconditionally-
+// registered surfaces (`donow.mjs`) — the stand-in validator below mirrors
+// `GarageFitnessSurface.validateAction`'s real contract (`episodeId`
+// required) so a malformed `launch:` block would still be caught here.
 const refs = {
   manifestIds: new Set(manifests.map(([, m]) => m?.id)),
   documentIds: new Set(documents.map(([, d]) => d?.id)),
   bankIds: new Set(banks.map(([, b]) => b?.id)),
-  programIds: new Set(['language']),
+  programIds: new Set(['language', 'pe-daily']),
+  surfaceValidators: new Map([
+    ['garage-fitness', (raw) => ((raw && typeof raw.episodeId === 'string' && raw.episodeId) ? [] : ['episodeId required'])],
+  ]),
 };
 
 const byUnitId = new Map(units.map(([, u]) => [u?.unitId, u]));

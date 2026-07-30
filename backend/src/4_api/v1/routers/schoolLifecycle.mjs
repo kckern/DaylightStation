@@ -98,6 +98,10 @@ function reply(res, result) {
  * @param {object} deps - each use case is optional and gates its own routes
  * @param {object} [deps.resolveScanAction]
  * @param {object} [deps.buildAgenda]
+ * @param {object} [deps.previewAgenda] - dry-run twin of `buildAgenda` (Task 2);
+ *   gates `GET .../agenda/preview` together with `deps.receiptPngRenderer`
+ * @param {object} [deps.receiptPngRenderer] - `1_rendering`'s PNG receipt
+ *   renderer (`createCanvas(document, {tokens})`); the preview route's other gate
  * @param {object} [deps.issueDocument]
  * @param {object} [deps.dispatchMedia]
  * @param {object} [deps.recordMediaCompletion]
@@ -120,6 +124,8 @@ function reply(res, result) {
 export function createSchoolLifecycleRouter({
   resolveScanAction = null,
   buildAgenda = null,
+  previewAgenda = null,
+  receiptPngRenderer = null,
   issueDocument = null,
   dispatchMedia = null,
   recordMediaCompletion = null,
@@ -168,6 +174,43 @@ export function createSchoolLifecycleRouter({
         learnerName: typeof req.query.name === 'string' ? req.query.name : null,
       });
       res.json(result);
+    }));
+  }
+
+  // --- agenda preview (dry-run PNG, real QR) ---------------------------------
+  // A parent/planning surface, not the console: same document `buildAgenda`
+  // would print, rendered straight to a PNG rather than issued to paper. Both
+  // `previewAgenda` (composition's dry-run twin of `buildAgenda`, spec §3 —
+  // never opens a session, never mints a live ticket) and `receiptPngRenderer`
+  // (the `1_rendering` PNG renderer) are required; either alone is a
+  // half-configured deployment, which answers 501 rather than 404 or a crash.
+  if (previewAgenda && receiptPngRenderer) {
+    router.get('/learners/:learnerId/agenda/preview', asyncHandler(async (req, res) => {
+      const result = await previewAgenda.execute({
+        learnerId: req.params.learnerId,
+        learnerName: typeof req.query.name === 'string' ? req.query.name : null,
+      });
+      // The document's own `scan_action.action` fields already carry the real
+      // (dry-run) token values, so an empty tokens map falls back to them —
+      // see `actionOp` in `DocumentReceiptRenderer.mjs`.
+      const { canvas } = await receiptPngRenderer.createCanvas(result.document, { tokens: {} });
+      const buffer = canvas.toBuffer('image/png');
+      // `result.document.id` is already the slugged, filename-safe id
+      // `agendaDocument`/`noticeDocument` computed in `2_domains` (`agenda-
+      // <learner>` for a real learner, `notice-<slug>` for the guest/no-learner
+      // slip) — reusing it here means this router never needs its own
+      // `#domains` import (`api-no-domains`) just to slug a filename.
+      res.setHeader('Content-Type', 'image/png');
+      res.setHeader('Content-Length', buffer.length);
+      res.setHeader('Content-Disposition', `inline; filename="${result.document.id}.png"`);
+      res.send(buffer);
+    }));
+  } else if (previewAgenda || receiptPngRenderer) {
+    // Same not-configured posture as `gratitude.mjs`'s card endpoint: one half
+    // of the pair present and the other missing is a deployment gap, not a
+    // 404 — the route exists, it just cannot answer yet.
+    router.get('/learners/:learnerId/agenda/preview', asyncHandler(async (_req, res) => {
+      res.status(501).json({ error: 'agenda preview not configured' });
     }));
   }
 

@@ -296,6 +296,12 @@ export function createPlayRouter(config) {
       const finalSource = resolved.source;
       const finalLocalId = resolved.localId;
 
+      // Karaoke/play-along tracks pass ?resume=false so the response never
+      // carries a resume_position (or a Plex stream offset) — computed once
+      // up front so every response branch below (shuffle, container, single
+      // item) forwards it consistently.
+      const resumeOverride = req.query.resume === 'false' ? false : undefined;
+
       // If shuffle modifier, use resolve with random pick
       if (modifiers.shuffle) {
         let selectedItem;
@@ -325,7 +331,7 @@ export function createPlayRouter(config) {
           : finalSource;
         const watchState = await playResponseService.getWatchState(selectedItem, storagePath, adapter);
 
-        return res.json(playResponseService.toPlayResponse(selectedItem, watchState, { adapter }));
+        return res.json(playResponseService.toPlayResponse(selectedItem, watchState, { adapter, resume: resumeOverride }));
       }
 
       // Get single item using resolver's localId
@@ -368,7 +374,7 @@ export function createPlayRouter(config) {
           : finalSource;
         const watchState = await playResponseService.getWatchState(selectedItem, storagePath, adapter);
 
-        return res.json(playResponseService.toPlayResponse(selectedItem, watchState, { adapter }));
+        return res.json(playResponseService.toPlayResponse(selectedItem, watchState, { adapter, resume: resumeOverride }));
       }
 
       // Return playable item
@@ -382,7 +388,6 @@ export function createPlayRouter(config) {
         watchState.playhead = watchState.bookmark.playhead;
       }
 
-      const resumeOverride = req.query.resume === 'false' ? false : undefined;
       res.json(playResponseService.toPlayResponse(item, watchState, { adapter, resume: resumeOverride }));
   }));
 
@@ -400,6 +405,11 @@ export function createPlayRouter(config) {
     const adapter = resolved.adapter;
     const finalSource = resolved.source;
     const finalLocalId = resolved.localId;
+
+    // Karaoke/play-along content ids are bare compound ids (e.g. `plex:662039`)
+    // and land on this route, not the /:source/*splat one above — it must
+    // forward the same override or ?resume=false silently does nothing here.
+    const resumeOverride = req.query.resume === 'false' ? false : undefined;
 
     const item = await adapter.getItem(finalLocalId);
     if (!item) {
@@ -429,7 +439,7 @@ export function createPlayRouter(config) {
         ? await adapter.getStoragePath(selectedItem.id)
         : finalSource;
       const watchState = await playResponseService.getWatchState(selectedItem, storagePath, adapter);
-      return res.json(playResponseService.toPlayResponse(selectedItem, watchState, { adapter }));
+      return res.json(playResponseService.toPlayResponse(selectedItem, watchState, { adapter, resume: resumeOverride }));
     }
 
     const storagePath = typeof adapter.getStoragePath === 'function'
@@ -442,7 +452,7 @@ export function createPlayRouter(config) {
       watchState.playhead = watchState.bookmark.playhead;
     }
 
-    res.json(playResponseService.toPlayResponse(item, watchState, { adapter }));
+    res.json(playResponseService.toPlayResponse(item, watchState, { adapter, resume: resumeOverride }));
   }));
 
   return router;

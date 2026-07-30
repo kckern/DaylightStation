@@ -75,6 +75,10 @@ const SCHEMA = {
   // (spec §8); reports need to tell the two confidences apart.
   media_completed: { fields: ['verified'], validate: () => {} },
   media_stalled: { fields: ['reason'], validate: () => {} },
+  launch_dispatched: {
+    fields: ['surface', 'decision', 'approvalId'],
+    validate: stringField('surface'),
+  },
   submitted: { fields: ['transport'], validate: oneOfField('transport', TRANSPORTS) },
   graded: {
     fields: ['attemptIds', 'percent'],
@@ -124,12 +128,13 @@ export const EVENT_TYPES = Object.freeze(Object.keys(SCHEMA));
  * session is in state K, these event types may be appended".
  */
 export const TRANSITIONS = Object.freeze({
-  created: ['issued', 'media_dispatched', 'abandoned'],
+  created: ['issued', 'media_dispatched', 'launch_dispatched', 'abandoned'],
   issued: ['submitted', 'reprinted', 'failed', 'abandoned'],
   reprinted: ['submitted', 'reprinted', 'abandoned'],
   media_dispatched: ['media_completed', 'media_stalled', 'abandoned'],
   media_completed: ['issued', 'submitted'],
   media_stalled: ['media_dispatched', 'abandoned'],
+  launch_dispatched: ['outcome_recorded', 'abandoned'],
   submitted: ['graded'],
   graded: ['outcome_recorded'],
   outcome_recorded: ['rewarded', 'remediation_opened'],
@@ -220,6 +225,7 @@ const emptyState = () => ({
   variant: 0,
   remediation: null,
   lastFailure: null,
+  launch: null,
   eventCount: 0,
   nextAction: null,
   errors: [],
@@ -259,6 +265,13 @@ const APPLY = {
   },
   media_stalled(s) {
     if (s.mediaDispatch) s.mediaDispatch.status = 'stalled';
+  },
+  launch_dispatched(s, e) {
+    s.launch = {
+      surface: e.surface ?? null,
+      at: e.at,
+    };
+    s.lastFailure = null;
   },
   submitted(s, e) {
     s.transport = e.transport ?? null;
@@ -308,6 +321,8 @@ function computeNextAction(s) {
       return act('issue_document', 'Scan your ticket to print the questions', 'issue_document');
     case 'media_stalled':
       return act('replay_media', 'Scan your ticket to start it again', 'media_action');
+    case 'launch_dispatched':
+      return act('record_outcome', 'Waiting for the work to be done');
     case 'submitted':
       return act('grade_work', 'A grown-up will check this');
     case 'graded':

@@ -205,6 +205,7 @@ git rev-parse HEAD > docs/docs-last-updated.txt
 | Layer guidelines | `docs/reference/core/layers-of-abstraction/*.md` |
 | Piano Producer (jam/song builder) | `docs/reference/piano/producer.md` |
 | Household economy (coins) | `docs/reference/economy/economy.md` |
+| DoNow (household "start this, there, now" dispatch) | `docs/reference/donow/README.md` |
 | Nutrition (scan-enriched food logging) | `docs/reference/nutrition/README.md` |
 | OMR bubble-sheet reader (Chatsworth OMR-1100) | `docs/reference/omr/README.md` |
 | Journalist domain (journaling bot) | `docs/reference/journalist/journalist-domain.md` |

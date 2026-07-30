@@ -26,6 +26,22 @@ export class IProgramLauncher {
   }
 
   /**
+   * OPTIONAL. The wording a child reads for "where this program sends me" —
+   * e.g. `'on the Portal'` (`LanguageProgramLauncher`, always true) or
+   * `'in the garage'` (a `SurfaceProgramLauncher` configured for
+   * `garage-fitness`). `BuildAgenda`/`ResolveScanAction` compose it into the
+   * offer label and the dispatch slip; a launcher that returns `undefined`/
+   * `null` (the base class default) gets a generic, location-agnostic
+   * wording from those callers instead of a guessed — or worse, wrong —
+   * location. Never assume `'on the Portal'` for a launcher that has not
+   * said so itself.
+   * @returns {string|null|undefined}
+   */
+  get locationHint() {
+    return null;
+  }
+
+  /**
    * Today's status for one learner. Must not throw: agenda compilation calls
    * every launcher, and one failing program must not blank the agenda for the
    * rest.
@@ -42,8 +58,16 @@ export class IProgramLauncher {
    * Hand the learner off to the program — dispatch it to wherever this
    * learner studies (a portal target, a kiosk screen, a bank session).
    *
+   * Routes through `DoNowService.dispatch` (spec §6 last bullet — "program
+   * launchers become DoNow callers where they dispatch surfaces"), so the
+   * return value is DoNow's own contract result, not a bare boolean: the
+   * caller (`ResolveScanAction`) must branch on `decision` to slip the right
+   * wording for a busy surface exactly as a `launch:` unit's one-shot
+   * dispatch does.
+   *
    * @param {{userId: string}} args
-   * @returns {Promise<{dispatched: boolean}>}
+   * @returns {Promise<{decision: 'dispatched'|'pending_approval'|'denied'|'failed',
+   *                     approvalId?: string, message: string}>}
    */
   // eslint-disable-next-line no-unused-vars
   launch({ userId }) {
