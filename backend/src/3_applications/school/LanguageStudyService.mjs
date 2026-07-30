@@ -16,6 +16,7 @@ import {
 import { RUNG_IDS } from '#domains/school/language/ladder.mjs';
 import { resolveGate, capabilitiesUnder, allowsRung, gateMessage } from '#domains/school/accessGate.mjs';
 import { requirementFor } from '#domains/school/language/ladder.mjs';
+import { offsetMinutesFor } from '#domains/school/studyDay.mjs';
 import { GuestForbiddenError, GateClosedError } from '#domains/school/errors.mjs';
 import { ValidationError, EntityNotFoundError } from '#domains/core/errors/index.mjs';
 
@@ -26,36 +27,6 @@ const DEFAULT_BOUNDARY_HOUR = 4;
 /** Untouched for this long and the program stops claiming to be active. */
 const IDLE_AFTER_DAYS = 14;
 const TREND_BUCKETS = 12;
-
-/**
- * Local UTC offset for an instant, in minutes.
- *
- * Computed per call rather than once at boot because the offset is not a
- * constant: a household on a DST-observing timezone would drift by an hour
- * twice a year, and a 4am study-day boundary computed with a stale offset
- * rolls the day at 3am or 5am — silently handing out tomorrow's sentences
- * early, or refusing them for an hour.
- */
-function offsetMinutesFor(timezone, epochMs) {
-  if (!timezone) return 0;
-  try {
-    const parts = Object.fromEntries(
-      new Intl.DateTimeFormat('en-US', {
-        timeZone: timezone,
-        hour12: false,
-        year: 'numeric', month: '2-digit', day: '2-digit',
-        hour: '2-digit', minute: '2-digit', second: '2-digit',
-      }).formatToParts(new Date(epochMs)).map((p) => [p.type, p.value]),
-    );
-    const asUTC = Date.UTC(
-      Number(parts.year), Number(parts.month) - 1, Number(parts.day),
-      Number(parts.hour) % 24, Number(parts.minute), Number(parts.second),
-    );
-    return Math.round((asUTC - epochMs) / 60000);
-  } catch {
-    return 0;
-  }
-}
 
 export class LanguageStudyService {
   #ds; #logger; #now; #timezone; #boundaryHour; #readGate;
