@@ -1190,6 +1190,13 @@
     border: none;
     gap: 0.35rem;
   }
+  // The poster box: positions the badge/progress overlays on the POSTER's
+  // corners (they're absolute against this, not the tile/cell).
+  .piano-cover-box {
+    position: relative;
+    display: block;
+    width: 100%;
+  }
   .piano-video-grid__tile img {
     aspect-ratio: 2 / 3;
     border-radius: var(--r-sm);
@@ -1294,10 +1301,10 @@
    --cols/--rows come from balancedGrid (tileGridLayout.js), sized to the
    course count. Both tracks are `fr`, so the grid always exactly fills the
    tabpanel's box — as more rows are needed the row height (and so the tile)
-   shrinks automatically instead of the page ever scrolling. Tiles fill their
-   cell (no fixed 12.75rem width) and the cover crops to the cell via
-   object-fit: cover, since a cell's shape varies with the split (wide cells
-   at 1-2 rows, taller at many). */
+   shrinks automatically instead of the page ever scrolling. Posters are NEVER
+   crop-fitted to the cell: each tile centers a fixed 2:3 poster box sized to
+   the largest 2:3 rectangle that fits its cell (aspect-ratio with min/max
+   transfer), so covers keep their shape at every split. */
 .piano-video-grid--onepage {
   grid-template-columns: repeat(var(--cols, 5), minmax(0, 1fr));
   grid-template-rows: repeat(var(--rows, 1), minmax(0, 1fr));
@@ -1311,14 +1318,25 @@
     height: 100%;
     min-width: 0;
     min-height: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    // Size container: exposes the cell's box as cqw/cqh for the poster below.
+    container-type: size;
+  }
+  // The largest 2:3 box that fits the cell, via container-query units: height
+  // is the cell height unless a narrow cell's width would be exceeded (then
+  // 1.5x the cell width), and width follows from the ratio. The poster is
+  // letterboxed by empty cell space — never crop-fitted, never distorted.
+  .piano-cover-box {
+    height: min(100cqh, 150cqw);
+    aspect-ratio: 2 / 3;
   }
   .piano-video-grid__tile img {
-    // Explicit width AND height (both definite, from the cell) neutralize the
-    // fixed aspect-ratio:2/3 the shared --posters skeleton rule sets on this
-    // same element further down the sheet — a cell isn't always 2:3, so the
-    // cover crops to fill it via object-fit instead of forcing that ratio.
     width: 100%;
     height: 100%;
+    // Within the true-2:3 frame this only touches sources that aren't exactly
+    // 2:3 themselves (trims slivers instead of distorting).
     object-fit: cover;
   }
 
