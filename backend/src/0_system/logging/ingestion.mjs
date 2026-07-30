@@ -27,14 +27,26 @@ function getLocalTimestamp() {
  * Process incoming log events from frontend
  * @param {Object} payload - WebSocket or HTTP message payload
  * @param {Object} clientMeta - Client metadata { ip?, userAgent? }
+ * @param {Object} [hooks]
+ * @param {(normalized: Object) => void} [hooks.onEvent] - called once per
+ *   normalized event (the same `{event, data, context, ...}` shape the
+ *   dispatcher receives), for EVERY event including input-channel telemetry —
+ *   BEFORE dispatch/session-file writes. Additive, optional, never throws the
+ *   caller: a throwing hook is caught and logged, never lets a presence
+ *   observer (e.g. `FitnessPresenceTracker.observe`, composed in
+ *   `5_composition/modules/donow.mjs`) take down log ingestion. There is no
+ *   per-event-name hook registry here — `ingestFrontendLogs` has exactly one
+ *   call site (`app.mjs`'s WS message handler), so a single caller-supplied
+ *   hook is enough; a second consumer can fan out from there.
  * @returns {number} Number of events processed
  */
-export function ingestFrontendLogs(payload, clientMeta = {}) {
+export function ingestFrontendLogs(payload, clientMeta = {}, hooks = {}) {
   if (!isLoggingInitialized()) {
     process.stderr.write('[LogIngestion] Dispatcher not initialized, dropping events\n');
     return 0;
   }
 
+  const { onEvent } = hooks;
   const dispatcher = getDispatcher();
   const events = normalizePayload(payload);
 
@@ -42,6 +54,14 @@ export function ingestFrontendLogs(payload, clientMeta = {}) {
   for (const event of events) {
     const normalized = normalizeEvent(event, clientMeta);
     if (normalized) {
+      if (typeof onEvent === 'function') {
+        try {
+          onEvent(normalized);
+        } catch (err) {
+          process.stderr.write(`[LogIngestion] onEvent hook threw: ${err?.message || err}\n`);
+        }
+      }
+
       // Input-channel telemetry bypasses the semantic pipeline (dispatcher +
       // session-file) and routes straight to the .events stream transport.
       if (isInputChannel(normalized)) {

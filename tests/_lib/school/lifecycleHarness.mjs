@@ -55,6 +55,7 @@ import { fileURLToPath } from 'node:url';
 import yaml from 'js-yaml';
 
 import { createSchoolLifecycle } from '#composition/modules/schoolLifecycle.mjs';
+import { createDonow } from '#composition/modules/donow.mjs';
 import { YamlSchoolDatastore } from '#adapters/persistence/yaml/YamlSchoolDatastore.mjs';
 import { YamlEconomyDatastore } from '#adapters/persistence/yaml/YamlEconomyDatastore.mjs';
 import { SchoolService } from '#apps/school/SchoolService.mjs';
@@ -262,6 +263,19 @@ export async function createLifecycleHarness({
     },
   };
 
+  // Real, household-level DoNow (Task 13) — the SAME `createDonow` app.mjs
+  // calls, constructed BEFORE the school lifecycle exactly like app.mjs now
+  // orders it. `schoolActivity` (via `schoolService`) makes `portal`
+  // occupancy-aware for real, and the shared `eventBus` is what a language
+  // dispatch actually broadcasts on.
+  const donow = await createDonow({
+    configService,
+    householdId: null,
+    eventBus,
+    schoolService,
+    logger,
+  });
+
   // =========================================================================
   // THE PRODUCTION GRAPH
   // =========================================================================
@@ -273,6 +287,9 @@ export async function createLifecycleHarness({
     userService,
     eventBus,
     languageStudyService,
+    donow: donow.service,
+    donowSurfaces: donow.surfaces,
+    donowDatastore: donow.datastore,
     clock: () => clock.now(),
     rng,
     logger,
@@ -371,6 +388,8 @@ export async function createLifecycleHarness({
     cards,
     /** The graph itself, for a test that wants to assert on the wiring. */
     lifecycle,
+    /** The real household-level DoNow module this harness constructed. */
+    donow,
     devices: { laser, thermal, playback, omr, scanner },
     stores,
     useCases,
@@ -666,6 +685,7 @@ export async function createLifecycleHarness({
     },
 
     dispose() {
+      donow.stop();
       fs.rmSync(dataDir, { recursive: true, force: true });
     },
   };

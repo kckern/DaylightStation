@@ -41,9 +41,12 @@ export class ResolveScanAction {
    *   required to route `subject_next` tickets; a deployment that has not yet
    *   wired Task 12's composition simply never mints one, so this is allowed
    *   to be absent rather than widening every existing construction site.
-   * @param {import('../PortalDispatch.mjs').PortalDispatch} [deps.portal] - broadcasts
-   *   a bank/program hand-off; a screen-bound move still prints its slip
-   *   without one, it just cannot also wake a screen.
+   * @param {{launch: Function}} [deps.portal] - LEGACY, degrade-only fallback:
+   *   the un-occupancy-checked broadcast path `#onScreen` falls back to ONLY
+   *   when `donow` is absent (composition no longer constructs a concrete
+   *   `PortalDispatch` — deleted as dead code once `donow` became
+   *   unconditionally wired; this duck-typed shape is kept so the fallback
+   *   itself, and its regression test, still have something to call).
    * @param {Map<string, import('../ports/IProgramLauncher.mjs').IProgramLauncher>} [deps.launchers]
    *   program id -> launcher, called for `launch()` on a `program` resolution
    *   (the same map `ResolveSubjectNext` separately calls `status()` on).
