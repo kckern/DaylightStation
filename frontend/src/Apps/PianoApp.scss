@@ -1331,6 +1331,10 @@
   .piano-cover-box {
     height: min(100cqh, 150cqw);
     aspect-ratio: 2 / 3;
+    // MUST reset the base --posters rule's explicit `width: 100%`: a definite
+    // width beats aspect-ratio derivation, which crop-stretched the box to the
+    // cell (measured 0.763 instead of 0.667 on prod). auto = derive from height.
+    width: auto;
   }
   .piano-video-grid__tile img {
     width: 100%;
