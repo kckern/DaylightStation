@@ -1,10 +1,11 @@
 import React from 'react';
 
 /**
- * LearnComplete — the end-of-piece card for Learn mode. When the follow tracker
- * reaches the final step, the piece is done: celebrate and offer the next rung
- * ("Polish it" → prove it at tempo) or another pass ("Practice again"). Closes the
- * Learn journey instead of leaving the cursor dead at the last note (audit M5/J6).
+ * LearnComplete — the end-of-piece card for Learn mode. Once a gated pass covers
+ * the WHOLE piece (the loop's range spans every measure and it wrapped clean), the
+ * piece is done: celebrate and offer the next rung ("Polish it" → prove it at
+ * tempo) or another pass ("Practice again"). Closes the Learn journey instead of
+ * silently looping forever at the end of it (audit M5/J6).
  *
  * @param {object} p
  * @param {boolean} p.open
