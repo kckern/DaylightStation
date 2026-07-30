@@ -3,6 +3,13 @@
 // guess the clef and coin-flip the accidental; this helper is the missing
 // bridge: spell from the SOUNDING key signature, sharps-default otherwise.
 
+// NOT the same speller as model/spelling.js, on purpose: that one is
+// degree-relative and chord-aware (plaque and chord staff must agree) but
+// octaveless and key-NAME-keyed. This one is deliberately dumber — diatonic
+// letters from the fifths, sharps for everything else — because a struck
+// wrong note has no harmonic context. See spelling.js's header for the
+// merge-would-change-behavior details.
+
 const LETTER_PC = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
 const LETTERS = ['C', 'D', 'E', 'F', 'G', 'A', 'B'];
 const SHARP_ORDER = ['F', 'C', 'G', 'D', 'A', 'E', 'B'];

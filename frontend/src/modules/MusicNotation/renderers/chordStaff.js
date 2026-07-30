@@ -146,6 +146,8 @@ export function midiToVexKey(midi, keySig = 'C', spelling = null) {
   // only thing that can keep a chord's letters alternating (G♯–B–D♯, not A♭–B–E♭).
   const { letter, alter } = spelling?.get(pc) ?? spellPitchClass(pc, { keySignature: keySig });
   let octave = Math.floor(midi / 12) - 1;
+  // Same letter-wrap rule as spellMidi.js's octave math — kept local because
+  // spellPitchClass is pitch-class-only (no octave to correct at the source).
   if (letter === 'C' && alter === -1) octave += 1; // C♭ sits with the B below it
   if (letter === 'B' && alter === 1) octave -= 1;  // B♯ sits with the C above it
   const glyph = alter === 1 ? '#' : alter === -1 ? 'b' : '';
