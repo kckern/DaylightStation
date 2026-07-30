@@ -67,7 +67,9 @@ describe('DoNowApprovals.approve', () => {
     const result = await approvals.approve({ id: 'dnr_test1' });
 
     expect(result).toEqual({ decision: 'dispatched', message: 'Starting the Dance video in the garage now.' });
-    expect(service.occupancyFor).toHaveBeenCalledWith('garage-fitness');
+    // action is threaded through so a target-scoped adapter (e.g. playback-hub)
+    // re-checks the SAME target the parent was asked about, not the whole surface.
+    expect(service.occupancyFor).toHaveBeenCalledWith('garage-fitness', { episode: 'plex:1' });
     expect(service.dispatchApproved).toHaveBeenCalledWith(expect.objectContaining({ id: 'dnr_test1', surface: 'garage-fitness' }));
     expect(datastore.removePending).toHaveBeenCalledWith('dnr_test1');
   });

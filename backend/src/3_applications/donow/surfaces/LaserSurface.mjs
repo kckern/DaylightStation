@@ -13,7 +13,11 @@
  * {learnerId, requestedBy}` at `info`, whether or not a printer is actually
  * wired — a laser job with no attribution trail is exactly the failure mode
  * the household's quota/attribution system exists to prevent, so this is
- * logged even on a no-op degrade.
+ * logged even on a no-op degrade. `requestedBy` is read off the TOP-LEVEL
+ * `dispatch({action, learnerId, requestedBy})` argument, not `action` —
+ * `DoNowService` passes it as a sibling of `action` (see
+ * `#actDispatch`/`dispatchApproved`), it is never merged into the action
+ * payload itself.
  *
  * Occupancy is always `idle` — like the thermal printer, a queue, not a
  * stage.
@@ -34,7 +38,7 @@ export class LaserSurface {
 
   get id() { return 'laser'; }
 
-  /** @param {{document?: object, requestedBy?: string}} raw */
+  /** @param {{document?: object}} raw */
   validateAction(raw) {
     if (!raw || typeof raw !== 'object') return ['action must be an object'];
     if (raw.document !== undefined && (raw.document === null || typeof raw.document !== 'object')) {
@@ -49,8 +53,7 @@ export class LaserSurface {
   }
 
   /** @returns {Promise<{dispatched: boolean, detail?: *}>} */
-  async dispatch({ action, learnerId }) {
-    const requestedBy = action?.requestedBy ?? null;
+  async dispatch({ action, learnerId, requestedBy = null }) {
     // NON-OPTIONAL: logged unconditionally, even when no printer is wired —
     // attribution is the whole point of the authorized-actor path.
     this.#logger.info?.('donow.laser.print', { learnerId, requestedBy });

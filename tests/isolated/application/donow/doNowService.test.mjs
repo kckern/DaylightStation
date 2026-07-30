@@ -160,7 +160,9 @@ describe('DoNowService.dispatch', () => {
       });
 
       expect(result.decision).toBe('dispatched');
-      expect(adapter.dispatch).toHaveBeenCalledWith({ action: { episode: 'plex:1' }, learnerId: 'kid1' });
+      expect(adapter.dispatch).toHaveBeenCalledWith({
+        action: { episode: 'plex:1' }, learnerId: 'kid1', requestedBy: 'school-scan',
+      });
       expect(store.appendDispatch).toHaveBeenCalledTimes(1);
       const [row] = store.appendDispatch.mock.calls[0];
       expect(row).toMatchObject({
@@ -378,7 +380,9 @@ describe('DoNowService.dispatchApproved', () => {
     const result = await service.dispatchApproved(record);
 
     expect(result.decision).toBe('dispatched');
-    expect(adapter.dispatch).toHaveBeenCalledWith({ action: { episode: 'plex:1' }, learnerId: 'kid1' });
+    expect(adapter.dispatch).toHaveBeenCalledWith({
+      action: { episode: 'plex:1' }, learnerId: 'kid1', requestedBy: 'school-scan',
+    });
     expect(store.appendDispatch).toHaveBeenCalledTimes(1);
     const [row] = store.appendDispatch.mock.calls[0];
     expect(row).toMatchObject({

@@ -18,13 +18,13 @@
  * `sendHubCommand` — `SendHubCommand` does not expose the raw gateway, and
  * occupancy has no reason to route through command-building.
  *
- * `IDoNowSurface.occupancy()` is called with no arguments by `DoNowService`
- * (it probes speculatively, ahead of knowing whether a request will even be
- * approved) — so with no action to scope to, this checks whether ANYTHING
- * on the hub is currently playing. Callers that know which slots they are
- * about to target (tests, or a future direct probe) may pass the action
- * through `occupancy(action)` to scope the check to just that target's
- * color set.
+ * `DoNowService` calls `adapter.occupancy({ action })`, passing the SAME
+ * action that is (or would be) dispatched — so this scopes the busy-check
+ * to just that action's target color set (e.g. a `target:'blue'` dispatch
+ * only cares whether blue is playing, not red). With no action supplied
+ * (`{}`/`undefined`, or an action with no `target`), it checks whether
+ * ANYTHING on the hub is currently playing — the safe default when there
+ * is nothing to scope to yet.
  */
 export class PlaybackHubSurface {
   #sendHubCommand;
@@ -55,10 +55,10 @@ export class PlaybackHubSurface {
   }
 
   /**
-   * @param {{target?: string}} [action] - optional; scopes the probe to this target's colors
+   * @param {{action?: {target?: string}}} [args] - `action`, when present, scopes the probe to its target's colors
    * @returns {Promise<{state: 'idle'|'active'|'unknown', occupantId: null}>}
    */
-  async occupancy(action) {
+  async occupancy({ action } = {}) {
     if (!this.#gateway) return { state: 'unknown', occupantId: null };
     let slots;
     try {
