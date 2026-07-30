@@ -503,7 +503,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
       if (mode === 'polish') {
         const endMeasure = steps[events.length - 1]?.measure;
         // The SAME snapshot feeds the log, the panel, and the tier best (wave-3 H).
-        const run = openRunSummaryRef.current?.(finalizeRef.current?.(endMeasure));
+        const run = openRunSummaryRef.current?.(finalizeRef.current?.(endMeasure), { completed: runEligibleRef.current });
         // ONLY a completion banks a best. A silent-stop or a manual pause opens the
         // same panel but is not a whole-piece run, so its score is not comparable —
         // and a mid-run tempo change voids even a completion (`mixed`).
@@ -700,7 +700,10 @@ export default function ScorePlayer({ score: scoreMeta }) {
   // completion path scores the run from the exact values this logged (wave-3 H).
   // Recomputing the score there instead would leave the shipped log, the panel and
   // the banked best free to disagree.
-  const openRunSummary = useCallback((extra) => {
+  // `completed` carries the caller's whole-piece claim (onDone + runEligibleRef);
+  // pause and silent-stop leave it false, and the summary's tier highlight gates
+  // on it.
+  const openRunSummary = useCallback((extra, { completed = false } = {}) => {
     setSummaryOpen(true);
     // `extra` is the grade — or grades, since finalize can close out two measures
     // at a completion — produced in THIS tick. gradesRef.current is a render-time
@@ -713,7 +716,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
     const tier = runTierRef.current;
     const mixed = runMixedRef.current;
     const base = runScore(all);              // 0-100 mean over the non-rest measures
-    const run = { grades: all, tier, mixed, base, score: displayScore(base, tier) };
+    const run = { grades: all, tier, mixed, base, completed, score: displayScore(base, tier) };
     setSummaryRun(run);
     const t = tallyGrades(all);
     logRunSummary({
@@ -2082,6 +2085,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
           runScore={summaryScore}
           tier={summaryRun?.tier || null}
           mixedTempo={!!summaryRun?.mixed}
+          completed={!!summaryRun?.completed}
           bucket={polishBucket}
           tierBests={practice?.polish?.[polishBucket] || {}}
         />
