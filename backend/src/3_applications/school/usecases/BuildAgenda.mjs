@@ -27,39 +27,13 @@
  * `already_done` on its own.
  */
 import { planLearnerWork } from '#domains/school/planner.mjs';
-import { reduceSession, createEvent } from '#domains/school/sessions/sessionEvents.mjs';
 import { mintToken } from '#domains/school/sessions/tokens.mjs';
 import { agendaDocument, noticeDocument } from '#domains/school/documents/receipts.mjs';
 import { shortId } from '#domains/core/utils/id.mjs';
+import { ensureSession, nextMove } from './offerSession.mjs';
 
 const DEFAULT_TOKEN_TTL_HOURS = 48;
 const HOUR_MS = 3_600_000;
-
-/**
- * What the child is being invited to DO, in their words. Derived from the unit's
- * composition rather than the reducer's generic label, because "print your work"
- * is the wrong sentence in front of a video.
- */
-function agendaLabel(unit, state, fallback) {
-  if (state === 'created') {
-    if (unit.media) return 'watch or listen';
-    if (unit.document) return 'print your sheet';
-    if (unit.bank) return 'answer on the screen';
-    return 'start this';
-  }
-  if (state === 'media_completed') {
-    // The reducer says `issue_document` here because it never sees units. A unit
-    // whose questions live in a BANK has no sheet to print, and offering one
-    // sends the child to a scan that can only answer "there is no sheet".
-    if (unit.document) return 'print the questions';
-    if (unit.bank) return 'answer on the screen';
-    return 'carry on';
-  }
-  if (state === 'media_stalled') return 'start it again';
-  if (state === 'media_dispatched') return 'finish watching, then scan your card';
-  if (state === 'outcome_recorded') return 'try again with a fresh sheet';
-  return fallback || 'carry on';
-}
 
 export class BuildAgenda {
   #curriculum; #assignments; #sessions; #tokens; #clock; #rng; #newSessionId; #ttlMs; #logger;
@@ -161,27 +135,13 @@ export class BuildAgenda {
    * @returns {Promise<{unitId, sessionId, token: string|null, tokenClass: string|null, label: string, created: boolean}>}
    */
   async #offerFor({ entry, unit, learnerId, nowIso }) {
-    let sessionId = entry.sessionId;
-    let created = false;
-    let state;
+    const { sessionId, state, created } = await ensureSession({
+      entry, learnerId, nowIso, sessions: this.#sessions, newSessionId: this.#newSessionId,
+    });
 
-    if (sessionId) {
-      state = reduceSession(await this.#sessions.readEvents(sessionId));
-    } else {
-      sessionId = this.#newSessionId();
-      const { errors, event } = createEvent({
-        type: 'created', at: nowIso, sessionId, learnerId, unitId: entry.unitId,
-      });
-      if (errors.length) throw new Error(`BuildAgenda: could not open a session: ${errors.join('; ')}`);
-      await this.#sessions.appendEvent(sessionId, event);
-      state = reduceSession([{ ...event, seq: 1 }]);
-      created = true;
-    }
-
-    const label = `${entry.title} — ${agendaLabel(unit ?? {}, state.state, state.nextAction?.label)}`;
-    // `created` is the one state the reducer cannot label for us: what starting
-    // MEANS depends on the unit's composition, and the reducer never sees units.
-    const tokenClass = state.state === 'created' ? 'select_unit' : (state.nextAction?.tokenClass ?? null);
+    const move = nextMove(unit ?? {}, state);
+    const label = `${entry.title} — ${move.label}`;
+    const tokenClass = move.tokenClass;
     if (!tokenClass) return { unitId: entry.unitId, sessionId, token: null, tokenClass: null, label, created };
 
     const record = mintToken({
