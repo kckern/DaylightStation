@@ -17,8 +17,9 @@ const label = (n) => (n > 0 ? `+${n}` : String(n));
 export default function KeySheet({ open, onClose, value = 0, onPick, keyFifths, keyMode }) {
   const v = Math.max(-6, Math.min(6, value));
   // Each cell speaks the SOUNDING key when the written key is known (label =
-  // key name, sub = offset), so the picker reads "D major / +2" instead of a
-  // bare offset; unknown key falls back to today's offset-only label.
+  // abbreviated key name, sub = offset), so the picker reads "DM / +2" instead
+  // of a bare offset — the full name lives in the footer ("Sounding key: D
+  // major"). Unknown key falls back to today's offset-only label.
   const cell = (n) => {
     const name = soundingKeyLabel(keyFifths, keyMode, n);
     return name ? { label: abbrevKey(name), sub: label(n) } : { label: label(n) };

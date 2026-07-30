@@ -1548,7 +1548,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
   // the geometry extraction is DEFERRED (holdExtraction) — so the sheet would repaint
   // in the new key/size while the audio kept playing the stale one and the cursor
   // vanished (audit H2). Pause + flush first so sound and sheet never diverge.
-  // Same shape for a Listen part change, which rebuilds the note timeline. Neither
+  // Same shape for an audio-plane part/hand change (Listen AND Learn's machine states perform the timeline — wave-3 §B), which rebuilds the note timeline. Neither
   // is a stop request, so both arm the resume (see the resume effect above).
   const pauseForRebuild = useCallback((reason) => {
     if (!transportRef.current?.playing) return;
