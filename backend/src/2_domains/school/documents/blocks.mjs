@@ -94,7 +94,15 @@ const VALIDATORS = {
     }
   },
   media_action: actionValidator('media_action'),
-  scan_action: actionValidator('scan_action'),
+  scan_action(raw, push) {
+    actionValidator('scan_action')(raw, push);
+    // Optional decoration (a subject shelf icon id). Raster renderers draw it,
+    // text renderers ignore it — so an unknown id degrades to no icon, and only
+    // the SHAPE is validated here.
+    if (raw.icon !== undefined && !isNonEmptyString(raw.icon)) {
+      push('scan_action icon must be a non-empty string when present');
+    }
+  },
 };
 
 export const BLOCK_TYPES = Object.freeze(Object.keys(VALIDATORS));

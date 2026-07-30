@@ -78,9 +78,15 @@ export function formatPrintedAt(iso, timeZone = 'UTC') {
 /**
  * Receipts are single-column, receipt-target, and carry no randomness at all, so
  * seed 0 is not a placeholder — regeneration is byte-identical by construction.
+ *
+ * `title`, when given, is the STANDARD HEADER: renderers print it as an
+ * inverted banner (black band, light text) across the top of the tape. Only
+ * the agenda carries one today — the result/notice slips open with their own
+ * `# …` headline blocks instead.
  */
-const receipt = (id, blocks, seed = 0, variant = 0) => ({
-  id, seed, variant, target: ['receipt'], blocks,
+const receipt = (id, blocks, { title = null } = {}) => ({
+  id, seed: 0, variant: 0, target: ['receipt'], blocks,
+  ...(isNonEmptyString(title) ? { title } : {}),
 });
 
 /**
@@ -115,14 +121,18 @@ export function agendaDocument({
   learnerId, learnerName = null, generatedAt = null, timeZone = 'UTC',
   sections = [], tokensBySubject = {}, footer = null,
 } = {}) {
-  const blocks = [text(`# ${learnerName || learnerId || 'School'}`)];
+  // The learner's name is the document TITLE, not a text block: the renderers
+  // give a title the standard-header treatment (inverted banner), which a
+  // markdown heading in the block stream cannot ask for.
+  const title = learnerName || learnerId || 'School';
+  const blocks = [];
   const printedAt = formatPrintedAt(generatedAt, timeZone);
   if (printedAt) blocks.push(text(`Printed ${printedAt}`));
 
   const offered = (Array.isArray(sections) ? sections : []).filter((s) => s && typeof s === 'object');
   if (!offered.length) {
     blocks.push(text('Nothing is assigned right now. Ask a grown-up what to do next.'));
-    return receipt(`agenda-${slugify(learnerId, 'learner')}`, blocks);
+    return receipt(`agenda-${slugify(learnerId, 'learner')}`, blocks, { title });
   }
 
   offered.forEach((section) => {
@@ -151,18 +161,20 @@ export function agendaDocument({
 
     const next = section.next;
     if (!next || typeof next !== 'object') return;
-    const title = next.title || next.unitId;
-    const label = isNonEmptyString(next.actionLabel) ? `${title} — ${next.actionLabel}` : title;
+    const nextTitle = next.title || next.unitId;
+    const label = isNonEmptyString(next.actionLabel) ? `${nextTitle} — ${next.actionLabel}` : nextTitle;
     const token = tokensBySubject?.[section.subject];
     if (isNonEmptyString(token)) {
-      blocks.push({ type: 'scan_action', action: token, label });
+      // `icon` names the subject's shelf icon (the nine School-home SVGs);
+      // raster renderers draw it beside the label, text renderers ignore it.
+      blocks.push({ type: 'scan_action', action: token, label, icon: section.subject });
     } else {
       blocks.push(text(label));
     }
   });
 
   blocks.push(text(footer || 'Scan a line above to start. Scan your card any time for a new list.'));
-  return receipt(`agenda-${slugify(learnerId, 'learner')}`, blocks);
+  return receipt(`agenda-${slugify(learnerId, 'learner')}`, blocks, { title });
 }
 
 /**

@@ -40,7 +40,7 @@ describe('scenario 1 — the video unit, end to end', () => {
     expect(card.printed).toBe(true);
 
     const agenda = h.lastReceiptText();
-    expect(agenda).toContain('Test Learner');
+    expect(agenda).toContain('TEST LEARNER');
     expect(agenda).toContain('Equivalent Fractions and Common Denominators');
     expect(agenda).toContain('watch or listen');
 

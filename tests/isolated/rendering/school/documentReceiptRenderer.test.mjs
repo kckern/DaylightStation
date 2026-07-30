@@ -12,8 +12,11 @@ import { texToSvg } from '#rendering/school/documents/mathSvg.mjs';
 
 const renderer = createDocumentReceiptRenderer({ theme, texToSvg });
 
+// Untitled on purpose: a `title` now asks for the standard-header banner
+// (tested in its own describe below); these structural tests exercise the
+// plain path.
 const doc = (blocks) => ({
-  id: 'receipt-doc', title: 'Receipt Doc', seed: 7, variant: 0, target: ['receipt'], blocks,
+  id: 'receipt-doc', seed: 7, variant: 0, target: ['receipt'], blocks,
 });
 
 const PNG_MAGIC = Buffer.from([0x89, 0x50, 0x4e, 0x47]);
@@ -111,6 +114,76 @@ describe('createDocumentReceiptRenderer', () => {
     const first = await renderer.createCanvas(source, { tokens: { 'scan-omr': 'T1' } });
     const second = await renderer.createCanvas(source, { tokens: { 'scan-omr': 'T1' } });
     expect(first.canvas.toBuffer('image/png').equals(second.canvas.toBuffer('image/png'))).toBe(true);
+  });
+});
+
+describe('the standard header', () => {
+  const rowDarkness = (canvas, y) => {
+    const img = canvas.getContext('2d').getImageData(0, y, canvas.width, 1).data;
+    let dark = 0;
+    for (let i = 0; i < img.length; i += 4) if (img[i] < 96) dark += 1;
+    return dark / (img.length / 4);
+  };
+
+  it('a titled document opens with a full-bleed black band', async () => {
+    const titled = await renderer.createCanvas({ ...doc([{ type: 'rich_text', md: 'Body.' }]), title: 'Felix' });
+    // The band bleeds edge to edge at the very top of the tape; the knocked-out
+    // name keeps it from being 100% dark.
+    expect(rowDarkness(titled.canvas, 2)).toBeGreaterThan(0.8);
+    expect(rowDarkness(titled.canvas, Math.floor(theme.header.padY / 2))).toBeGreaterThan(0.5);
+  });
+
+  it('an untitled document keeps the plain id heading — no band', async () => {
+    const plain = await renderer.createCanvas(doc([{ type: 'rich_text', md: 'Body.' }]));
+    expect(rowDarkness(plain.canvas, 2)).toBeLessThan(0.1);
+  });
+});
+
+describe('subject icons on scan_action blocks', () => {
+  const iconDoc = (icon) => doc([{ type: 'scan_action', action: 'sch:AAAA', label: 'Unit Two — watch it', ...(icon ? { icon } : {}) }]);
+
+  it('reads the SAME svg files the School home grid uses, rasterized at 2x', async () => {
+    const calls = [];
+    const spy = (args) => { calls.push(args); return renderer.rasterizeSvg(args); };
+    const withSpy = createDocumentReceiptRenderer({ theme, texToSvg, rasterizeSvg: spy });
+    await withSpy.createCanvas(iconDoc('math'), { tokens: {} });
+    expect(calls).toHaveLength(1);
+    expect(calls[0].widthPx).toBe(theme.action.iconPx * 2);
+    // The shared frontend icon, not a copy: currentColor pinned to tape ink.
+    expect(calls[0].svgString).toContain('<svg');
+    expect(calls[0].svgString).not.toContain('currentColor');
+  });
+
+  it('draws the icon in the slot and moves the label out of it', async () => {
+    // A one-glyph label: with an icon the glyph starts past the icon slot, so
+    // the slot's ink is the icon's alone — a clean with/without comparison.
+    const narrow = (icon) => doc([{ type: 'scan_action', action: 'sch:AAAA', label: 'X', ...(icon ? { icon } : {}) }]);
+    const iconSlotDark = async (document) => {
+      const { canvas } = await renderer.createCanvas(document, { tokens: {} });
+      const ctx = canvas.getContext('2d');
+      const x = theme.layout.margin + theme.action.padding + 2;
+      const img = ctx.getImageData(x, 0, theme.action.iconPx - 4, canvas.height).data;
+      let dark = 0;
+      for (let i = 0; i < img.length; i += 4) if (img[i] < 96) dark += 1;
+      return dark;
+    };
+    const withIcon = await iconSlotDark(narrow('math'));
+    const without = await iconSlotDark(narrow(null));
+    expect(withIcon).toBeGreaterThan(without + 100);
+  });
+
+  it('an unknown icon id degrades to the un-iconed box, never a failed print', async () => {
+    const out = await renderer.createCanvas(iconDoc('no-such-subject'), { tokens: {} });
+    expect(out.codes).toHaveLength(1);
+  });
+
+  it('a traversal-shaped icon id is refused without touching the filesystem', async () => {
+    const calls = [];
+    const spy = (args) => { calls.push(args); return renderer.rasterizeSvg(args); };
+    const withSpy = createDocumentReceiptRenderer({ theme, texToSvg, rasterizeSvg: spy });
+    const out = await withSpy.createCanvas(iconDoc('../../auth/plex'), { tokens: {} });
+    expect(out.codes).toHaveLength(1);
+    expect(calls).toHaveLength(0);
   });
 });
 

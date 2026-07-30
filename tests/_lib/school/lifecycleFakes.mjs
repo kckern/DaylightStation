@@ -271,6 +271,11 @@ export class FakeReceiptRenderer extends IReceiptRenderer {
     const items = document.blocks.map((block) => (block.type === 'scan_action'
       ? { type: 'barcode', content: block.action, label: block.label }
       : { type: 'text', content: block.md ?? '' }));
+    // The real renderer prints a titled document's standard header first —
+    // uppercased, inverted (DocumentEscPosRenderer). Transcripts assert on it.
+    if (typeof document.title === 'string' && document.title.trim()) {
+      items.unshift({ type: 'text', content: ` ${document.title.trim().toUpperCase()} ` });
+    }
     // A scan action must print its LABEL as well as its barcode, or the child
     // holds a page of unlabelled stripes.
     const withLabels = items.flatMap((item) => (item.type === 'barcode'
