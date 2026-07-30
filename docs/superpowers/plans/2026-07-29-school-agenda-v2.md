@@ -33,7 +33,7 @@
 
 **Interfaces:**
 - Consumes: `studyDayIndex(epochMs, { boundaryHour, offsetMinutes })` from `#domains/school/language/rollover.mjs` (already exported).
-- Produces: `offsetMinutesFor(timezone, epochMs) → number` and `isSameStudyDay(aMs, bMs, { timezone, boundaryHour = 4 }) → boolean` from `#domains/school/studyDay.mjs`. Task 5 uses `isSameStudyDay`; Task 9 relies on LanguageStudyService still passing its tests.
+- Produces: `offsetMinutesFor(timezone, epochMs) → number` and `isSameStudyDay(aMs, bMs, { timezone, boundaryHour = 4 }) → boolean` from `#domains/school/studyDay.mjs`. Task 5 uses `isSameStudyDay`; Task 8 relies on LanguageStudyService still passing its tests.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -533,30 +533,7 @@ export function planDailyAgenda({ plan, sessions = [], programStatuses = {}, now
 
 ---
 
-### Task 7: `agendaDocument` v2 — sectioned receipt
-
-**Files:**
-- Modify: `backend/src/2_domains/school/documents/receipts.mjs`
-- Test: `tests/isolated/domain/school/documents/receipts.test.mjs` (extend; locate via `grep -rln agendaDocument tests/`)
-
-**Interfaces:**
-- Consumes: `planDailyAgenda` sections (Task 5).
-- Produces: `agendaDocument({ learnerId, learnerName, generatedAt, timeZone, sections, tokensBySubject, footer })` where `tokensBySubject = { math: 'sch:…' }`. Emits per section, in order:
-  - `rich_text` `## MATH — Unit 2 of 4` (subject upper-cased; ` — done today` suffix when served; ` — {progressLabel}` otherwise when present)
-  - `rich_text` `Grade so far: 88%` (only when `gradePercent != null`)
-  - served → nothing more; `programUnavailable` → `rich_text` `Not answering right now — try it on the Portal.`; `lockedRemedy` → `rich_text` of it; `next` + token → `scan_action { action, label }` with label `"{title} — {actionLabel}"` (the entry's `actionLabel`, see Task 10); `next` without a token → the label as `rich_text`.
-  - The old flat-entries signature is REPLACED — callers are BuildAgenda (Task 10) and its tests only (`grep -rn 'agendaDocument(' backend frontend tests`). Keep `noticeDocument`/`resultDocument` untouched. Keep the empty case: no sections → the existing "Nothing is assigned right now" line.
-  - ASCII rule: no `✓` — the served suffix is the words `done today`.
-
-- [ ] **Step 1: Write failing tests** — build two sections (one served language section with `progressLabel 'Day 61'`, one live math section with grade 88 and a `next` entry) plus `tokensBySubject`, call `agendaDocument`, and assert: block sequence types `['rich_text' (name), 'rich_text' (printed at), 'rich_text' (## MATH…), 'rich_text' (grade), 'scan_action', 'rich_text' (## LANGUAGE — done today…), 'rich_text' (footer)]`; the scan_action's `action` is the math token; the string `✓` appears nowhere in any `md`. Also: empty sections → "Nothing is assigned" text; result passes `validateDocument` from `#domains/school/documents/documentValidation.mjs`.
-- [ ] **Step 2: Run — expect FAIL.**
-- [ ] **Step 3: Implement** — rewrite the entry loop into a section loop per the contract above. Reuse `formatPrintedAt`, `slugify`, `receipt` helpers unchanged.
-- [ ] **Step 4: Run the documents test dir — PASS.** (BuildAgenda tests will break — that is Task 10's job; run only `tests/isolated/domain/school/documents/` here.)
-- [ ] **Step 5: Commit** (`feat(school): sectioned agenda document`)
-
----
-
-### Task 8: Extract the session-offer helper
+### Task 7: Extract the session-offer helper
 
 **Files:**
 - Create: `backend/src/3_applications/school/usecases/offerSession.mjs`
@@ -576,14 +553,14 @@ export async function ensureSession({ entry, learnerId, nowIso, sessions, newSes
 
 /** The state-and-composition decision: what acting on this entry means NOW. */
 export function nextMove(unit, state) →
-  { kind: 'print'|'play'|'screen'|'wait'|'nothing', tokenClass: string|null, label: string }
+  { kind: 'print'|'play'|'screen'|'retry'|'wait'|'nothing', tokenClass: string|null, label: string }
 ```
 
 `nextMove` rules (this is the routing table Task 11 depends on — implement exactly):
 - state `created`: unit.media → `play`/`select_unit`; else unit.document → `print`/`select_unit`; else unit.bank → `screen`/`select_unit`; else `nothing`.
 - state `media_completed`: unit.document → `print`/`issue_document`; unit.bank → `screen`/null; else `wait`.
 - state `media_stalled` → `play`/`media_action`. state `media_dispatched` → `wait` (label: `finish watching, then scan your card`).
-- state `outcome_recorded` + outcome `needs_remediation` → `print`/`remediation` (label `try again with a fresh sheet`).
+- state `outcome_recorded` + outcome `needs_remediation` → `retry`/`remediation` (label `try again with a fresh sheet`). NEVER `print`: `IssueDocument` refuses at `outcome_recorded` (`ISSUABLE` is `created|media_completed|issued|reprinted`), so a `print` here would loop the child through already_done slips until 4am. The retry is `OpenRemediation` — a NEW session, fresh variant — via `ResolveScanAction.#retry`.
 - anything else → `wait` with the reducer's `nextAction?.label` fallback.
 - `label` uses the same wording `agendaLabel` produces today (they share the strings — build `agendaLabel` ON `nextMove` so there is one table: `agendaLabel = (unit, state, fallback) => nextMove-derived label ?? fallback`).
 
@@ -593,7 +570,7 @@ export function nextMove(unit, state) →
 
 ---
 
-### Task 9: `IProgramLauncher` port, PortalDispatch, and the language launcher
+### Task 8: `IProgramLauncher` port, PortalDispatch, and the language launcher
 
 **Files:**
 - Create: `backend/src/3_applications/school/ports/IProgramLauncher.mjs`
@@ -636,6 +613,29 @@ export class LanguageProgramLauncher {
 
 ---
 
+### Task 9: `agendaDocument` v2 — sectioned receipt
+
+**Files:**
+- Modify: `backend/src/2_domains/school/documents/receipts.mjs`
+- Test: `tests/isolated/domain/school/documents/receipts.test.mjs` (extend; locate via `grep -rln agendaDocument tests/`)
+
+**Interfaces:**
+- Consumes: `planDailyAgenda` sections (Task 5).
+- Produces: `agendaDocument({ learnerId, learnerName, generatedAt, timeZone, sections, tokensBySubject, footer })` where `tokensBySubject = { math: 'sch:…' }`. Emits per section, in order:
+  - `rich_text` `## MATH — Unit 2 of 4` (subject upper-cased; ` — done today` suffix when served; ` — {progressLabel}` otherwise when present)
+  - `rich_text` `Grade so far: 88%` (only when `gradePercent != null`)
+  - served → nothing more; `programUnavailable` → `rich_text` `Not answering right now — try it on the Portal.`; `lockedRemedy` → `rich_text` of it; `next` + token → `scan_action { action, label }` with label `"{title} — {actionLabel}"` (the entry's `actionLabel`, see Task 10); `next` without a token → the label as `rich_text`.
+  - The old flat-entries signature is REPLACED — callers are BuildAgenda (Task 10) and its tests only (`grep -rn 'agendaDocument(' backend frontend tests`). Keep `noticeDocument`/`resultDocument` untouched. Keep the empty case: no sections → the existing "Nothing is assigned right now" line.
+  - ASCII rule: no `✓` — the served suffix is the words `done today`.
+
+- [ ] **Step 1: Write failing tests** — build two sections (one served language section with `progressLabel 'Day 61'`, one live math section with grade 88 and a `next` entry) plus `tokensBySubject`, call `agendaDocument`, and assert: block sequence types `['rich_text' (name), 'rich_text' (printed at), 'rich_text' (## MATH…), 'rich_text' (grade), 'scan_action', 'rich_text' (## LANGUAGE — done today…), 'rich_text' (footer)]`; the scan_action's `action` is the math token; the string `✓` appears nowhere in any `md`. Also: empty sections → "Nothing is assigned" text; result passes `validateDocument` from `#domains/school/documents/documentValidation.mjs`.
+- [ ] **Step 2: Run — expect FAIL.**
+- [ ] **Step 3: Implement** — rewrite the entry loop into a section loop per the contract above. Reuse `formatPrintedAt`, `slugify`, `receipt` helpers unchanged.
+- [ ] **Step 4: Run the documents test dir — PASS.** Run ONLY `tests/isolated/domain/school/documents/` here: `buildAgenda.test.mjs` is EXPECTED red from this task until Task 10 rewrites BuildAgenda — do not run the application suite as part of this task, and do not "fix" BuildAgenda here.
+- [ ] **Step 5: Commit** (`feat(school): sectioned agenda document`)
+
+---
+
 ### Task 10: BuildAgenda v2 — sections, subject tokens
 
 **Files:**
@@ -643,8 +643,8 @@ export class LanguageProgramLauncher {
 - Modify: `tests/isolated/application/school/buildAgenda.test.mjs` (update expectations to sections)
 
 **Interfaces:**
-- Consumes: `planDailyAgenda` (Task 5), `agendaDocument` v2 (Task 7), `ensureSession`/`nextMove` (Task 8), launcher registry (Task 9), `subject_next` minting (Task 4).
-- Produces: `new BuildAgenda({ curriculum, assignments, sessions, tokens, launchers = new Map(), timezone = null, clock, rng, newSessionId, tokenTtlHours, subjectTokenTtlHours = 168, logger })`. `execute({ learnerId, learnerName })` returns `{ learnerId, plan, sections, offers, createdSessions, document }` where `offers` = one record per unserved section `{ subject, unitId, sessionId: string|null, token, tokenClass: 'subject_next', label }` (ResolvePersonalCard only reads `offers.length` — verified — but keep the shape informative).
+- Consumes: `planDailyAgenda` (Task 5), `agendaDocument` v2 (Task 9), `ensureSession`/`nextMove` (Task 7), launcher registry (Task 8), `subject_next` minting (Task 4).
+- Produces: `new BuildAgenda({ curriculum, assignments, sessions, tokens, launchers = new Map(), timezone = null, clock, rng, newSessionId, subjectTokenTtlHours = 168, logger })  // tokenTtlHours is GONE — step 8 removes the only per-unit minting`. `execute({ learnerId, learnerName })` returns `{ learnerId, plan, sections, offers, createdSessions, document }` where `offers` = one record per unserved section `{ subject, unitId, sessionId: string|null, token, tokenClass: 'subject_next', label }` (ResolvePersonalCard reads `offers.length` and forwards the array as `effect.offers` through ResolveScanAction#identify — run the full dir and let the suite, not this parenthetical, tell you what broke).
 
 Behavior:
 1. Guest path unchanged (notice document).
@@ -670,7 +670,7 @@ Behavior:
 - Test: `tests/isolated/application/school/resolveSubjectNext.test.mjs` + extend the existing ResolveScanAction test file (`grep -rln ResolveScanAction tests/`)
 
 **Interfaces:**
-- Consumes: everything Task 10 consumes (same computation, second caller) + `PortalDispatch`.
+- Consumes: everything Task 10 consumes (same computation, second caller) + `PortalDispatch` (Task 8).
 - Produces:
 
 ```js
@@ -681,7 +681,7 @@ execute({ learnerId, subject }) → one of:
   { kind: 'locked',   remedy }                          // all locked
   { kind: 'empty' }                                     // nothing in this subject
   { kind: 'unavailable' }                               // launcher error
-  { kind: 'move', move: {kind,label,tokenClass}, sessionId, unit, entry }  // curriculum next (session ensured here)
+  { kind: 'move', move: {kind,label,tokenClass}, sessionId, state, unit, entry }  // curriculum next (session ensured HERE; `state` is ensureSession's reduced state — pass it through, never re-read events)
   { kind: 'program',  programId, unit }                 // program next
 ```
 
@@ -714,7 +714,8 @@ async #subjectNext(record) {
       message: 'Off to the Portal.' });
   }
   // r.kind === 'move' — act through the existing helpers
-  if (r.move.kind === 'print') return this.#print(r.sessionId, 'subject_next', reduce-again-or-pass-state);
+  if (r.move.kind === 'retry') return this.#retry(r.sessionId);            // OpenRemediation: new session, fresh sheet
+  if (r.move.kind === 'print') return this.#print(r.sessionId, 'subject_next', r.state);
   if (r.move.kind === 'play')  return this.#play(r.sessionId);
   if (r.move.kind === 'screen') return this.#onScreen(r.sessionId, r.unit, 'subject_next');
   return this.#slip({ status: 'wait', tokenClass: 'subject_next', id: `wait-${r.sessionId}`,
@@ -724,7 +725,7 @@ async #subjectNext(record) {
 
 - `#onScreen` additionally broadcasts the Portal launch (spec §4.3) and keeps printing the fallback slip: `this.#portal.launch({ learnerId, target: { kind: 'bank', bankId: unit.bank, unitId: unit.unitId, sessionId } })` — learnerId comes from the session state (`reduceSession` exposes `learnerId`; verify the field on the derived state and thread it — `#start`/`#print` already hold `sessionState`). Change the slip line to `'Starting on the school screen — or open it there yourself.'`. Update the existing `#onScreen` tests accordingly.
 
-- [ ] **Step 1: Write failing tests.** ResolveSubjectNext: served → `served`; failed-today (`needs_remediation` outcome today, session `outcome_recorded`) → `move` with `move.kind 'print'` and tokenClass `'remediation'` label semantics (the fresh-sheet path); a `media`+`bank` unit whose session is `media_completed` → `move.kind 'screen'` (NEVER 'play' — pin this); program subject → `program`. ResolveScanAction: scanning a subject token routes each kind to the right physical outcome using the existing fakes (assert printed slips via the fake receipts, and portal broadcasts via a fake PortalDispatch `{ launch: vi.fn(() => ({dispatched:true})) }`); a subject token needs no session to resolve (regression for the early-lookup skip).
+- [ ] **Step 1: Write failing tests.** ResolveSubjectNext: served → `served`; failed-today (`needs_remediation` outcome today, session `outcome_recorded`) → `move` with `move.kind 'retry'`, and scanning it produces a FRESH sheet from a NEW session via `OpenRemediation` (assert the result's `effect.remediationOf` is the old sessionId and the sessionId in the result is the new one — never an `already_done` slip); a `media`+`bank` unit whose session is `media_completed` → `move.kind 'screen'` (NEVER 'play' — pin this); program subject → `program`. ResolveScanAction: scanning a subject token routes each kind to the right physical outcome using the existing fakes (assert printed slips via the fake receipts, and portal broadcasts via a fake PortalDispatch `{ launch: vi.fn(() => ({dispatched:true})) }`); a subject token needs no session to resolve (regression for the early-lookup skip).
 - [ ] **Step 2: Run — FAIL.** **Step 3: Implement.** **Step 4: Run full application/school — PASS.**
 - [ ] **Step 5: Commit** (`feat(school): subject_next scan resolution — state-aware routing, portal launch`)
 
@@ -759,7 +760,7 @@ Buffer.concat([
 ])
 ```
 
-Print the human-readable `item.label` as a text line after the symbol the way barcode does (check `#processBarcodeItem` for the label convention and mirror it).
+The adapter prints NO label line for `qrcode` items — the renderer already emits a separate preceding text item carrying the label (`DocumentEscPosRenderer.mjs:85-86` convention, same as barcode; `#processBarcodeItem` prints no label either). Adding one in the adapter would print every label twice.
 - Composition (`schoolLifecycle.mjs`): accept `languageStudyService = null` dep; build `const portal = new PortalDispatch({ eventBus, logger })`; `const launchers = new Map(languageStudyService ? [['language', new LanguageProgramLauncher({ languageStudyService, portal, logger })]] : [])`; pass `launchers` + `timezone` (from `configService` — find how LanguageStudyService gets its timezone in `app.mjs:2300` and use the same source) into `BuildAgenda` and `ResolveSubjectNext`; construct `ResolveSubjectNext` and pass it + `portal` + `launchers` into `ResolveScanAction`; construct the ESC/POS renderer with `symbology: 'QR'` (find the construction site — `grep -n createDocumentEscPosRenderer backend/src/5_composition/modules/schoolLifecycle.mjs`); thread `programIds: [...launchers.keys()]` into `CurriculumAccess` / `ValidateCatalog` (Task 2's option).
 - `app.mjs`: add `languageStudyService` to the `createSchoolLifecycle({ … })` call at line ~2330 (it is constructed at ~2300, before the lifecycle — verify order).
 
@@ -797,7 +798,7 @@ Print the human-readable `item.label` as a text line after the symbol the way ba
 
 **Steps:**
 - [ ] **Step 1: Fixture YAML** — exactly the §2.1 spec YAML. Add it to the fixture loader the way other fixture units load (read `tests/_fixtures/school/curriculum/` conventions + `fixtureIntegrity.test.mjs`).
-- [ ] **Step 2: End-to-end test (write first, watch it fail at the first unbuilt seam it touches — it should pass immediately if Tasks 1-13 are correct):** wire the real use cases over the fakes (the buildAgenda test's graph + ResolveScanAction + a fake PortalDispatch): (a) card tap (BuildAgenda via ResolvePersonalCard) → document has `## MATH` and `## LANGUAGE` sections and 2 subject tokens; (b) scan the math token → worksheet issued (or media dispatched per fixture composition); (c) record a passing outcome today, tap again → math section shows done today, ONE token; (d) scan the stale math token from (a) → served-today slip (yesterday's paper still safe); (e) scan the language token → fake portal received `{ kind: 'program', program: 'language' }` AND a slip printed.
+- [ ] **Step 2: End-to-end test (write first, watch it fail at the first unbuilt seam it touches — it should pass immediately if Tasks 1-13 are correct):** wire the real use cases over the fakes (the buildAgenda test's graph + ResolveScanAction + a fake PortalDispatch): (a) card tap (BuildAgenda via ResolvePersonalCard) → document has `## MATH` and `## LANGUAGE` sections and 2 subject tokens; (b) scan the math token → worksheet issued (or media dispatched per fixture composition); (c) record a passing outcome today, tap again → math section shows done today, ONE token; (d) scan the stale math token from (a) → served-today slip (yesterday's paper still safe); (e) scan the language token → fake portal received `{ kind: 'program', program: 'language' }` AND a slip printed; (f) golden tape: render the step-(a) agenda through `createDocumentEscPosRenderer({ symbology: 'QR' })` and feed it to `VirtualThermalPrinterAdapter` — assert the recorded item stream (types + qrcode contents in order: name text, sections' bold headers, one qrcode per live subject) so the whole print path is pinned, dimension-stable like the existing goldens.
 - [ ] **Step 3: Run the ENTIRE isolated suite + frontend School suite** — `node /opt/Code/DaylightStation/node_modules/vitest/vitest.mjs run tests/isolated/ frontend/src/modules/School/`. Expected: PASS, no skips. Capture the real exit code (`echo $?` immediately — no pipes).
 - [ ] **Step 4: Update `docs/reference/school/README.md`** — rewrite the "NFC personal cards — tap to agenda" + "An assigned course, not a catalog, is what prints" sections to describe the sectioned daily agenda, the program unit kind, the `subject_next` token, the daily serving rule, and Portal launch. Present tense, endstate, no class names in prose beyond the layer table (per the household's reference-docs convention). Add the new files to the layer table.
 - [ ] **Step 5: Commit** (`feat(school): agenda v2 e2e proof, seed fixture, reference docs`)
@@ -810,5 +811,6 @@ Print the human-readable `item.label` as a text line after the symbol the way ba
 
 - Spec §3.3 (serving locks nothing) is honoured structurally: nothing in Tasks 3-11 adds a gate to existing token classes or session flows; only agenda composition and `subject_next` resolution consult `servedToday`.
 - Spec §4.4 (no sessions for program units) appears in Tasks 10 (no ensureSession for program next) and 11 (`kind: 'program'` carries no sessionId).
+- Task order is 1-6, 7 (offerSession), 8 (launchers), 9 (agendaDocument v2), 10-14: Task 9 breaks `buildAgenda.test.mjs` by design and says so; Tasks 7 and 8 run their green gates BEFORE that break; Task 10 is the first consumer and restores the suite.
 - Every printed string introduced is ASCII.
-- Type consistency spot-checks: `planDailyAgenda` section shape (Task 5) matches consumption in Tasks 7/10/11; `nextMove` kinds (Task 8) match the routing in Task 11; `PortalDispatch.launch` target shapes match Tasks 9/11/13.
+- Type consistency spot-checks: `planDailyAgenda` section shape (Task 5) matches consumption in Tasks 9/10/11; `nextMove` kinds (Task 7, incl. `retry`) match the routing in Task 11; `PortalDispatch.launch` target shapes match Tasks 8/11/13.
