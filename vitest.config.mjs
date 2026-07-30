@@ -45,6 +45,14 @@ export default {
   },
   test: {
     globals: true,
+    // Worker pool: threads, deliberately. The default forks pool intermittently
+    // dies at worker recycle with "EnvironmentTeardownError: Closing rpc while
+    // onUserConsoleLog was pending" (exit 1 with zero test failures) — its
+    // process-IPC console forwarding races the worker shutdown under full-sweep
+    // load (~1 in 3 runs, 2026-07-30, vitest 4.1.10). The threads pool's
+    // MessagePort transport doesn't exhibit the race: 6/6 clean sweeps, same
+    // test counts and duration.
+    pool: 'threads',
     environment: path.resolve(__dirname, 'tests/_infrastructure/frontend-env.mjs'),
     // Loads @testing-library/jest-dom matchers so `expect(el).toBeInTheDocument()` works.
     setupFiles: [path.resolve(__dirname, 'frontend/src/test-setup.js')],
