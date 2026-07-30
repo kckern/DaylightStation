@@ -1511,6 +1511,27 @@ describe('ScorePlayer — Polish tempo tiers (wave-3 H)', () => {
   };
   const position = () => screen.getByTestId('score-position').textContent;
 
+  // Polish runs a SILENT step timeline — pauseForRebuild must not panic a piano
+  // the kiosk never played through while the player is holding keys (Task 4).
+  // holdLayout keeps the stub's re-engrave publish pending (M3's resume gate),
+  // so the rebuild-resume effect can't race in and cancel the delayed panic
+  // before the assertion — isolating pauseForRebuild's own guard.
+  it('a transpose during a silent Polish run sends no panic — Polish never sounds through the kiosk', async () => {
+    h.layoutExtras = tierFixture(3, 1);
+    renderPlayer();
+    pickMode('Polish');
+    await act(async () => {});
+    await pressPlay();
+    act(() => vi.advanceTimersByTime(COUNT_IN_MS)); // run active, transport ticking silently
+    h.sendPanic.mockClear();                        // drain anything the entry path sent
+    h.holdLayout = true;
+    act(() => { fireEvent.click(screen.getByRole('button', { name: 'Key' })); });
+    act(() => { fireEvent.click(screen.getByRole('button', { name: /\+1/ })); }); // → pauseForRebuild('transpose')
+    expect(screen.queryByRole('button', { name: 'Pause' })).toBeNull(); // paused, held for the re-engrave
+    act(() => vi.advanceTimersByTime(1000));
+    expect(h.sendPanic).not.toHaveBeenCalled();
+  });
+
   it('a completed run at 80% banks the medium tier best for the bucket, and the summary shows the run + all four bests (spec 1)', async () => {
     // Three measures, all played dead on the beat → every combined is 1.0 → 100.
     h.layoutExtras = tierFixture(3, 0.8);
@@ -2748,9 +2769,11 @@ describe('ScorePlayer — Learn state matrix (wave-3 B)', () => {
   // ── A matrix change must never panic a SILENT kiosk (fix round 1) ───────────
   // silenceScheduled() arms a delayed CC123 unconditionally — silence() self-
   // guards on the sounding ledger, but the timer does not. In Learn's gate the
-  // player is holding keys down, so a stray panic cuts off THEIR notes. A quiet
-  // matrix change (mount, arming a range, flipping the loop with nothing playing)
-  // must send nothing at all; an audible one must still flush.
+  // player is holding keys down, so a stray panic cuts off THEIR notes. The same
+  // guard now covers stopForMatrixChange, onMode, AND pauseForRebuild: a quiet
+  // matrix change (mount, arming a range, flipping the loop with nothing playing),
+  // a silent mode switch, or a silent-run rebuild must send nothing at all; an
+  // audible one must still flush.
   it('mounting the player sends no panic — nothing has played yet', async () => {
     h.layoutExtras = THREE;
     renderPlayer();
@@ -2759,12 +2782,19 @@ describe('ScorePlayer — Learn state matrix (wave-3 B)', () => {
     expect(h.sendPanic).not.toHaveBeenCalled();
   });
 
-  // Entering a mode flushes unconditionally (onMode, pre-existing) — let that
-  // delayed panic land and reset the spy, so these assert the matrix change ALONE.
+  it('entering a mode on a silent kiosk sends no panic — held piano keys survive a mode switch', async () => {
+    h.layoutExtras = THREE;
+    await enterLearnFresh();               // a mode change with nothing sounding
+    act(() => vi.advanceTimersByTime(1000)); // well past lookahead + 60ms
+    expect(h.sendPanic).not.toHaveBeenCalled();
+  });
+
+  // Entering a mode is guarded too now (onMode) — on a silent kiosk it sends
+  // nothing, so this is a plain settle before the matrix-change assertions below.
   const settleInSilentLearn = async () => {
     h.layoutExtras = THREE;
     await enterLearnFresh();
-    act(() => vi.advanceTimersByTime(1000)); // drain the mode-change flush
+    act(() => vi.advanceTimersByTime(1000)); // settle
     h.sendPanic.mockClear();
   };
 
