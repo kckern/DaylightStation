@@ -101,7 +101,11 @@ export class PianoKioskSurface {
     return { dispatched: true };
   }
 
-  label() { return 'The Piano Kiosk'; }
+  // Article-free — `DoNowService`'s own templates own the leading article
+  // (spec review finding: a self-capitalized label doubled up to "The The
+  // Piano Kiosk is busy right now."). "Piano Kiosk" itself stays capitalized
+  // as the device's proper name, same as "Portal"/"TV" elsewhere.
+  label() { return 'Piano Kiosk'; }
 }
 
 export default PianoKioskSurface;

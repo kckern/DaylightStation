@@ -69,7 +69,17 @@ beforeEach(async () => {
     startIso: new Date().toISOString(),
     donowNotifyService: NOTIFY_SERVICE,
     programs: [{
-      id: PE_PROGRAM_ID, label: 'P.E.', surface: SURFACE, action: { episodeId: 'plex:901' }, subject: 'skills',
+      id: PE_PROGRAM_ID,
+      label: 'P.E.',
+      surface: SURFACE,
+      action: { episodeId: 'plex:901' },
+      subject: 'skills',
+      // Author-supplied, exactly like a `launch:` unit's own `labelHint`
+      // (spec review finding): without this, BuildAgenda/ResolveScanAction
+      // used to hardcode "on the Portal" for EVERY program, which was
+      // simply wrong here — `pe-daily` dispatches to `garage-fitness`,
+      // never the Portal.
+      locationHint: 'in the garage',
     }],
   });
   // No math course here — just the two fixture units this journey exercises.
@@ -96,7 +106,11 @@ describe('the DoNow launch journey — one card, garage-fitness, end to end (Tas
 
     const offeredA = h.tokensInLastReceipt();
     const launchToken = offeredA.find((o) => /go to the garage/i.test(o.label))?.token;
-    const peToken = offeredA.find((o) => /on the portal/i.test(o.label))?.token;
+    // `pe-daily` dispatches to `garage-fitness`, never the Portal — its
+    // configured `locationHint: 'in the garage'` is what the offer label
+    // reads (spec review finding: this used to wrongly say "on the Portal"
+    // for every program, garage included).
+    const peToken = offeredA.find((o) => /in the garage/i.test(o.label))?.token;
     expect(launchToken, `no launch ticket in ${JSON.stringify(offeredA)}`).toBeTruthy();
     expect(peToken, `no pe-daily ticket in ${JSON.stringify(offeredA)}`).toBeTruthy();
 
@@ -166,8 +180,13 @@ describe('the DoNow launch journey — one card, garage-fitness, end to end (Tas
 
     // The bridge's own append+honor-close is a DETACHED async effect (see
     // module doc) — poll for it rather than assume it landed by the time
-    // approve() resolved.
-    const bridgeSettled = await waitUntil(async () => (await h.eventTypes(launchSessionId)).includes('outcome_recorded'));
+    // approve() resolved. Polling the RAW event log for `outcome_recorded`
+    // raced `CloseSessionOutcome`'s own post-outcome appends (reproduced
+    // under full-suite load): the event can land before the session is
+    // actually settled, so the very next read below could still catch it
+    // mid-close. Polling the DERIVED state's own `terminal` flag instead
+    // waits for the thing this test actually needs to be true.
+    const bridgeSettled = await waitUntil(async () => (await h.sessionState(launchSessionId)).terminal === true);
     expect(bridgeSettled, 'DoNowSchoolBridge never honor-closed the launch session after approval').toBe(true);
 
     const launchEvents = await h.sessionEvents(launchSessionId);
@@ -186,7 +205,7 @@ describe('the DoNow launch journey — one card, garage-fitness, end to end (Tas
     const offeredD = h.tokensInLastReceipt();
     expect(offeredD.find((o) => /go to the garage/i.test(o.label))).toBeUndefined();
     // The pe-daily subject is still unserved — its ticket is still offered.
-    const peTokenD = offeredD.find((o) => /on the portal/i.test(o.label))?.token;
+    const peTokenD = offeredD.find((o) => /in the garage/i.test(o.label))?.token;
     expect(peTokenD, `no pe-daily ticket in ${JSON.stringify(offeredD)}`).toBeTruthy();
 
     // -----------------------------------------------------------------------

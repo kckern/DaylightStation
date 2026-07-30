@@ -51,6 +51,23 @@ describe('SurfaceProgramLauncher', () => {
     expect(launcher.label).toBe('pe-daily');
   });
 
+  // Spec review finding: BuildAgenda/ResolveScanAction used to hardcode "on
+  // the Portal" for EVERY program, wrongly telling a child a garage PE
+  // ticket was on the Portal. `locationHint` is the author-supplied fix —
+  // absent, callers must degrade to a generic wording rather than guess.
+  it('defaults locationHint to null when config supplies none — never the Portal', () => {
+    const { launcher } = build({ id: 'pe-daily', surface: 'garage-fitness' });
+    expect(launcher.locationHint).toBeNull();
+  });
+
+  it('exposes a configured locationHint verbatim', () => {
+    const launcher = new SurfaceProgramLauncher({
+      id: 'pe-daily', surface: 'garage-fitness', locationHint: 'in the garage',
+      donow: { dispatch: vi.fn() }, datastore: new FakeDoNowDatastore(),
+    });
+    expect(launcher.locationHint).toBe('in the garage');
+  });
+
   it('requires id, surface, donow and datastore', () => {
     expect(() => new SurfaceProgramLauncher({ id: 'pe-daily' })).toThrow();
     expect(() => new SurfaceProgramLauncher({

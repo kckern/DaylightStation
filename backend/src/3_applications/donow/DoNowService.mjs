@@ -39,7 +39,12 @@
  *        now + `approvalTtlSeconds`) and best-effort notify; a notifier
  *        failure is caught, logged loudly, and does NOT change the outcome
  *        — the request still pends and can be approved later from the
- *        queue.
+ *        queue. The message ITSELF is honest about whether anyone was
+ *        actually notified: "...we asked a grown-up" only when a notifier
+ *        is configured AND its call succeeded; absent a notifier, or on a
+ *        failed notify, the slip reads "...ask a grown-up" instead — the
+ *        household still has to be told by some other means, since nobody
+ *        was paged.
  *      - `denied` -> a message naming the busy surface by its label.
  */
 import { decideDispatch } from '#domains/donow/policy.mjs';
@@ -298,9 +303,17 @@ export class DoNowService {
 
     await this.#datastore.putPending(record);
 
+    // Whether a grown-up was ACTUALLY asked — no notifier configured, or the
+    // one call that was made failed, both mean nobody was really notified.
+    // The pending record still gets written either way (approval via the
+    // API/queue remains possible), but the printed slip must not claim a
+    // notification that never reached anyone (spec review finding: "we
+    // asked a grown-up" was said even with `notifier: null`).
+    let notified = false;
     if (this.#notifier) {
       try {
         await this.#notifier.notify(record);
+        notified = true;
       } catch (err) {
         this.#logger.error?.('donow.notify.failed', { surface, approvalId: id, error: err?.message || String(err) });
       }
@@ -309,7 +322,9 @@ export class DoNowService {
     return {
       decision: 'pending_approval',
       approvalId: id,
-      message: `The ${label} is busy — we asked a grown-up.`,
+      message: notified
+        ? `The ${label} is busy — we asked a grown-up.`
+        : `The ${label} is busy — ask a grown-up.`,
     };
   }
 

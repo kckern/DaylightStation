@@ -33,6 +33,18 @@ export class LanguageProgramLauncher {
   get id() { return 'language'; }
 
   /**
+   * The language ladder always dispatches to the `portal` surface (see
+   * `launch()` below) — this is the one program whose "on the Portal"
+   * wording is actually true, so it is stated here explicitly. Callers
+   * (`BuildAgenda`/`ResolveScanAction`) never assume this for any OTHER
+   * launcher — a launcher that declares no `locationHint` (e.g. a
+   * `SurfaceProgramLauncher` with no configured hint) gets a generic,
+   * location-agnostic wording instead, precisely because a garage program
+   * is not on the Portal.
+   */
+  get locationHint() { return 'on the Portal'; }
+
+  /**
    * @param {{userId: string}} args
    * @returns {Promise<{doneToday: boolean, progressLabel: string|null, score: number|null}>}
    */

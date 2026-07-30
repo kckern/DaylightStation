@@ -68,7 +68,10 @@ export class LaserSurface {
     }
   }
 
-  label() { return 'A print job on the laser printer'; }
+  // Article-free, lowercase noun phrase — `DoNowService`'s own templates own
+  // the leading article (spec review finding: a self-capitalized label
+  // doubled up to "The A print job on the laser printer is busy right now.").
+  label() { return 'print job on the laser printer'; }
 }
 
 export default LaserSurface;

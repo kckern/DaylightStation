@@ -115,8 +115,12 @@ export class DoNowApprovals {
     // caller sees a denial rather than a silently stuck request.
     await this.#datastore.removePending(record.id);
     if (result.decision !== 'dispatched') {
+      this.#logger.info?.('donow.approvals.outcome', {
+        id: record.id, surface: record.surface, outcome: 'denied', reason: 'dispatch-failed-at-approve',
+      });
       return { decision: 'denied', message: result.message };
     }
+    this.#logger.info?.('donow.approvals.outcome', { id: record.id, surface: record.surface, outcome: 'dispatched' });
     return { decision: 'dispatched', message: result.message };
   }
 
@@ -140,6 +144,7 @@ export class DoNowApprovals {
       }
     }
 
+    this.#logger.info?.('donow.approvals.outcome', { id: record.id, surface: record.surface, outcome: 'repend' });
     return {
       decision: 'pending_approval',
       message: `Someone else is using the ${record.label} now — we asked a grown-up again.`,
@@ -148,6 +153,7 @@ export class DoNowApprovals {
 
   async #denyRecord(record) {
     await this.#datastore.removePending(record.id);
+    this.#logger.info?.('donow.approvals.outcome', { id: record.id, surface: record.surface, outcome: 'denied' });
     return { decision: 'denied', message: `The ${record.label} request was denied.` };
   }
 

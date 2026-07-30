@@ -67,7 +67,11 @@ export class GarageFitnessSurface {
     return { dispatched: true };
   }
 
-  label() { return 'The garage fitness kiosk'; }
+  // Article-free, lowercase noun phrase: `DoNowService`'s own templates
+  // ("The {label} is busy...") own the leading article — a label that
+  // supplied its own ("The garage fitness kiosk") produced "The The garage
+  // fitness kiosk is busy right now." on a child's slip (spec review finding).
+  label() { return 'garage fitness kiosk'; }
 }
 
 export default GarageFitnessSurface;
