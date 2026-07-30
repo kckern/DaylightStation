@@ -202,7 +202,6 @@ export default function ScorePlayer({ score: scoreMeta }) {
   // opt-in per session, NEVER persisted (wave-3 G, audit M2 discipline).
   const [listenClick, setListenClick] = useState(false);
   const [flow, setFlow] = useState('wrapped');
-  const [perfPage, setPerfPage] = useState({ page: 1, pages: 1 }); // Perform page indicator (1-based)
   const [scale, setScale] = useState(1);
   const [transpose, setTranspose] = useState(0); // Listen key transpose (semitones)
   const [tempoMult, setTempoMult] = useState(() => { // Listen/Polish tempo: 1 = written, 0.5 = half
@@ -1040,19 +1039,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
     logger.info('score.transport.resume', { step: target });
   }, [resumeTick, layoutFresh, events.length, stepTimeline, tempoMult, logger]);
 
-  // Perform page indicator — a rough page = floor(scrollPos / viewport) + 1 over
-  // the current flow's axis. Recomputed on scroll + resize while in Perform.
   const { advancePedalCC, backPedalCC } = smCfg.perform;
-  const computePerfPage = useCallback(() => {
-    const el = scrollRef.current;
-    if (!el) return;
-    const horiz = flow === 'horizontal';
-    const viewport = horiz ? el.clientWidth : el.clientHeight;
-    if (!viewport) return;
-    const pos = horiz ? el.scrollLeft : el.scrollTop;
-    const contentSize = horiz ? el.scrollWidth : el.scrollHeight;
-    setPerfPage({ page: Math.floor(pos / viewport) + 1, pages: Math.max(1, Math.ceil(contentSize / viewport)) });
-  }, [flow]);
 
   // UI-intent + input→paint tap. Records the intent immediately (tagged with the
   // current cursor step) and, on the next frame, the input→paint latency for the
@@ -1168,14 +1155,10 @@ export default function ScorePlayer({ score: scoreMeta }) {
 
   // Perform mode: config-defined pedals turn the page — advancePedalCC forward,
   // backPedalCC back — rising edge ONLY, since continuous/half pedals stream many
-  // CC values per physical press. Also tracks the page indicator on scroll/resize.
+  // CC values per physical press. Zero chrome (wave-3 I): there is no on-screen
+  // page readout to keep in sync, so this is just the CC subscription.
   useEffect(() => {
     if (mode !== 'perform') return undefined;
-    computePerfPage();
-    const el = scrollRef.current;
-    const onScroll = () => computePerfPage();
-    el?.addEventListener('scroll', onScroll, { passive: true });
-    window.addEventListener('resize', computePerfPage);
     const prev = {}; // controller number → last seen CC value
     const unsub = subscribeRaw(({ data }) => {
       if (!data || data.length < 3) return;
@@ -1188,12 +1171,8 @@ export default function ScorePlayer({ score: scoreMeta }) {
       if (!rising) return;
       pageBy(cc === backPedalCC ? 'back' : 'fwd');
     });
-    return () => {
-      el?.removeEventListener('scroll', onScroll);
-      window.removeEventListener('resize', computePerfPage);
-      unsub?.();
-    };
-  }, [mode, subscribeRaw, advancePedalCC, backPedalCC, computePerfPage, pageBy]);
+    return () => { unsub?.(); };
+  }, [mode, subscribeRaw, advancePedalCC, backPedalCC, pageBy]);
 
   // ── Armed loop endpoints (wave-3 F) ───────────────────────────────────────────
   // Arm an edge from the bar's LoopGroup (or, from Task 21, a handle tap): the
@@ -2026,8 +2005,6 @@ export default function ScorePlayer({ score: scoreMeta }) {
         total={events.length}
         measure={(layout.steps?.[step]?.measure ?? 0) + 1}
         measureTotal={layout.measures?.length ?? 0}
-        page={perfPage.page}
-        pages={perfPage.pages}
         flow={flow}
         onToggleFlow={onToggleFlow}
         scale={scale}

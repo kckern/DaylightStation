@@ -306,7 +306,8 @@ const ScoreViewControls = memo(function ScoreViewControls({
  *            get a live transport. Metronome free-runs; Key live (transposes the
  *            engrave Learn evaluates against). Owns the loop cluster.
  *  Polish  — full transport; metronome arms the run click; Key live. No loop cluster.
- *  Perform — only a {page} / {pages} indicator (music-stand mode).
+ *  Perform — zero chrome: the bar renders `null` (music-stand mode). Pedal paging
+ *            and tap-to-scroll still turn pages — there is just no on-screen readout.
  *
  * Perf structure (Task 10): this component is a THIN SHELL. It threads props and
  * owns only the cheap, step-dependent position readout in the center column. The
@@ -329,8 +330,6 @@ export default function ScoreTransportBar({
   total,
   measure,
   measureTotal,
-  page = 1,
-  pages = 1,
   flow,
   onToggleFlow,
   scale,
@@ -375,6 +374,11 @@ export default function ScoreTransportBar({
   scoreLabel = null,
   onBodyRender,
 }) {
+  // Perform is zero-chrome (wave-3 I, music-stand mode): the bar renders nothing
+  // at all. Pedal paging and tap-to-scroll (owned by ScorePlayer) still turn
+  // pages — there is just no on-screen readout to keep in sync with them.
+  if (mode === 'perform') return null;
+
   // Musicians think in measures, not note-steps (audit L2): show "m 3 / 24" when a
   // measure count is available, falling back to the step readout otherwise.
   const positionCore = measureTotal > 0
@@ -383,10 +387,6 @@ export default function ScoreTransportBar({
   // One span, not two: the score and the position are read as a single line
   // ("82% · m 12 / 24"), and a second span would shift the readout's width mid-run.
   const position = scoreLabel ? `${scoreLabel} · ${positionCore}` : positionCore;
-
-  const isPerform = mode === 'perform';
-  // The position readout and page indicator exist in every mode but Perform.
-  const hasPosition = !isPerform;
 
   return (
     <div className="piano-score-transportbar">
@@ -415,10 +415,7 @@ export default function ScoreTransportBar({
           onClearFocus={onClearFocus}
           onToggleLoop={onToggleLoop}
         />
-        {hasPosition && <span className="piano-score-position tabular-nums" data-testid="score-position">{position}</span>}
-        {isPerform && (
-          <span className="piano-score-page-indicator tabular-nums" aria-label="Page">{`${page} / ${pages}`}</span>
-        )}
+        <span className="piano-score-position tabular-nums" data-testid="score-position">{position}</span>
       </div>
 
       {/* Right — parts, key, tempo & view controls (memoized; step-independent) */}
