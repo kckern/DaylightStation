@@ -182,3 +182,5 @@ To restore: `git checkout -b branch-name <commit-hash>`
 | 2026-07-30 | agenda-header-icons | 0e0bdce9b | Agenda standard header (black band) + subject icons on scan boxes |
 | 2026-07-30 | token-pruning | abb237fac | Grace-period pruning of expired school token files |
 | 2026-07-30 | feature/karaoke-keyshift | 1185b4a88 | Karaoke key-change stepper on singalong chrome: live ±6 semitone transpose via lazy Tone.PitchShift on the resolved media element |
+| 2026-07-30 | fix/engagement-gate-interval | b161c026f | Engagement gate poll interval died under render churn; sequential courses never unlocked |
+| 2026-07-30 | fix/karaoke-keyshift-quality | 3862b9259 | Karaoke key shift: Tone.PitchShift → Signalsmith Stretch (discordant smear fix) |
