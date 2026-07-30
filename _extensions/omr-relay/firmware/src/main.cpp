@@ -32,6 +32,13 @@
 #include <FastLED.h>
 #include "config.h"
 
+// A config.h generated before the NFC/buzzer keys existed simply has none of
+// these. The ack machinery is compiled unconditionally (it costs nothing when
+// nothing registers), so it needs a default rather than a missing-macro error.
+#ifndef BUZZER_ACK_TIMEOUT_MS
+#define BUZZER_ACK_TIMEOUT_MS 2000
+#endif
+
 #if NFC_ENABLED
 // ============================ NFC tap reader =================================
 // M5 Unit NFC (SKU U216) on the ATOM's Grove port — an ST25R3916 NFC front-end
@@ -92,32 +99,173 @@ static volatile bool nfcReady   = false;
 // Non-blocking by construction: started and expired from loop(), never delay().
 // A delay here would stall the UART drain, which is the entire reason the NFC
 // poll was moved to the other core.
+// PITCH: only a PASSIVE element (piezo transducer) has controllable pitch. An
+// active buzzer plays its own fixed tone, so `tone` is ignored and meaning comes
+// from RHYTHM. Both live behind one pattern table, so swapping the hardware is a
+// config change (buzzer.kind) rather than a firmware change.
+struct BuzzStep {
+  uint16_t tone;   // Hz; passive only. 0 = use the plain gated drive
+  uint16_t ms;     // sound for this long
+  uint16_t gap;    // then stay silent this long
+};
+
 static const int BUZZER_LEDC_CHANNEL = 0;   // nothing else here uses LEDC
-static bool     buzzing     = false;
-static uint32_t buzzOffAtMs = 0;
-static uint32_t cBeeps      = 0;
+
+static const BuzzStep SND_READ[SND_READ_LEN]           = SND_READ_INIT;
+static const BuzzStep SND_CONFIRMED[SND_CONFIRMED_LEN] = SND_CONFIRMED_INIT;
+static const BuzzStep SND_FAILED[SND_FAILED_LEN]       = SND_FAILED_INIT;
+
+// Non-blocking sequencer. Everything is advanced from loop(); nothing here may
+// delay(), because a delay would stall the UART drain.
+static const BuzzStep *seqSteps = nullptr;
+static uint8_t  seqLen   = 0;
+static uint8_t  seqIdx   = 0;
+static bool     seqOn    = false;   // currently sounding (vs in the gap)
+static uint32_t seqNextMs = 0;
+static uint32_t cBeeps   = 0;       // patterns played
+
+static void toneOn(uint16_t tone) {
+#if BUZZER_PASSIVE
+  if (tone > 0) { ledcWriteTone(BUZZER_LEDC_CHANNEL, tone); return; }
+#else
+  (void)tone;
+#endif
+  ledcWrite(BUZZER_LEDC_CHANNEL, BUZZER_DUTY);
+}
+
+static void toneOff() { ledcWrite(BUZZER_LEDC_CHANNEL, 0); }
 
 static void buzzerInit() {
   ledcSetup(BUZZER_LEDC_CHANNEL, BUZZER_FREQ_HZ, 8);
   ledcAttachPin(BUZZER_PIN, BUZZER_LEDC_CHANNEL);
-  ledcWrite(BUZZER_LEDC_CHANNEL, 0);
+  toneOff();
 }
 
-static void buzzerStart() {
-  ledcWrite(BUZZER_LEDC_CHANNEL, BUZZER_DUTY);
-  buzzing     = true;
-  buzzOffAtMs = millis() + (uint32_t)BUZZER_MS;
+// A new pattern preempts whatever is playing: the newest event is the one the
+// person in the room cares about, and queueing patterns would let a backlog of
+// beeps outlive the thing that caused them.
+static void buzzerPlay(const BuzzStep *steps, uint8_t len) {
+  if (!steps || !len) return;
+  seqSteps = steps;
+  seqLen   = len;
+  seqIdx   = 0;
+  seqOn    = true;
+  seqNextMs = millis() + steps[0].ms;
+  toneOn(steps[0].tone);
   cBeeps++;
 }
 
-// Rollover-safe expiry, same idiom the status LED uses.
 static void buzzerService() {
-  if (buzzing && (int32_t)(millis() - buzzOffAtMs) >= 0) {
-    ledcWrite(BUZZER_LEDC_CHANNEL, 0);
-    buzzing = false;
+  if (!seqSteps) return;
+  if ((int32_t)(millis() - seqNextMs) < 0) return;   // rollover-safe
+
+  if (seqOn) {
+    toneOff();
+    seqOn = false;
+    if (seqSteps[seqIdx].gap) { seqNextMs = millis() + seqSteps[seqIdx].gap; return; }
   }
+  if (++seqIdx >= seqLen) { seqSteps = nullptr; seqLen = 0; return; }
+  seqOn = true;
+  seqNextMs = millis() + seqSteps[seqIdx].ms;
+  toneOn(seqSteps[seqIdx].tone);
 }
 #endif  // BUZZER_ENABLED
+
+// ============================ round-trip ACK =================================
+// A local beep only proves the CARD was read — it says nothing about whether the
+// server got it. So the relay subscribes to its own bus topic and waits for the
+// backend to echo the event back, which is a real round trip: received,
+// validated, re-broadcast. Echo => `confirmed` sound. Silence => `failed`.
+//
+// Deliberately NOT a disk-level guarantee: the backend broadcasts first and
+// persists on the subscriber chain immediately after, so this confirms ACCEPTANCE.
+// A storage ack would need a new backend message.
+//
+// No new backend capability is needed for this — `client-control:<clientId>`
+// exists but "logs a warn and drops" because connection identity isn't tracked,
+// whereas topic subscription already works.
+struct PendingAck {
+  bool     used;
+  char     kind[8];   // "nfc" | "sheet"
+  char     key[24];   // nfc: uid. sheet: empty, matched oldest-first
+  uint32_t dueMs;
+};
+static const size_t PENDING_MAX = 4;
+static PendingAck pending[PENDING_MAX];
+static uint32_t cAckOk = 0, cAckTimeout = 0;
+
+// ============================ event log ======================================
+// A short rolling window of what happened, readable from the LAN at any time.
+// Distinct from /recent (raw UART frames): this is the lifecycle — read, ack,
+// timeout — which is what you actually want when someone says "I tapped it and
+// nothing happened".
+struct LogEntry { uint32_t atMs; char kind[12]; char detail[72]; };
+static const size_t LOG_MAX = 32;
+static LogEntry logBuf[LOG_MAX];
+static size_t logCount = 0, logNext = 0;
+
+static void logEvent(const char *kind, const char *fmt, ...) {
+  LogEntry &e = logBuf[logNext];
+  e.atMs = millis();
+  snprintf(e.kind, sizeof(e.kind), "%s", kind);
+  va_list ap;
+  va_start(ap, fmt);
+  vsnprintf(e.detail, sizeof(e.detail), fmt, ap);
+  va_end(ap);
+  logNext = (logNext + 1) % LOG_MAX;
+  if (logCount < LOG_MAX) logCount++;
+}
+
+// Register an outstanding message. If the slots are full the OLDEST is dropped:
+// the sound is feedback for a person standing there, and a stale unacked message
+// from a minute ago is worth less than the one they just triggered.
+static void ackExpect(const char *kind, const char *key) {
+  PendingAck *slot = nullptr;
+  for (size_t i = 0; i < PENDING_MAX; i++) if (!pending[i].used) { slot = &pending[i]; break; }
+  if (!slot) {
+    size_t oldest = 0;
+    for (size_t i = 1; i < PENDING_MAX; i++) {
+      if ((int32_t)(pending[i].dueMs - pending[oldest].dueMs) < 0) oldest = i;
+    }
+    slot = &pending[oldest];
+    logEvent("ack-evict", "slots full, dropped a pending %s", slot->kind);
+  }
+  slot->used = true;
+  snprintf(slot->kind, sizeof(slot->kind), "%s", kind);
+  snprintf(slot->key, sizeof(slot->key), "%s", key ? key : "");
+  slot->dueMs = millis() + BUZZER_ACK_TIMEOUT_MS;
+}
+
+// Match an echo from the bus. For `nfc` the uid disambiguates; sheets carry no
+// natural key, so the oldest outstanding sheet is matched.
+static void ackResolve(const char *kind, const char *key) {
+  PendingAck *best = nullptr;
+  for (size_t i = 0; i < PENDING_MAX; i++) {
+    if (!pending[i].used || strcmp(pending[i].kind, kind) != 0) continue;
+    if (key && key[0] && pending[i].key[0] && strcmp(pending[i].key, key) != 0) continue;
+    if (!best || (int32_t)(pending[i].dueMs - best->dueMs) < 0) best = &pending[i];
+  }
+  if (!best) return;   // an echo we weren't waiting for: ignore, never beep
+  best->used = false;
+  cAckOk++;
+  logEvent("ack-ok", "%s %s confirmed by server", kind, key && key[0] ? key : "");
+#if BUZZER_ENABLED
+  buzzerPlay(SND_CONFIRMED, SND_CONFIRMED_LEN);
+#endif
+}
+
+static void ackService() {
+  for (size_t i = 0; i < PENDING_MAX; i++) {
+    if (!pending[i].used) continue;
+    if ((int32_t)(millis() - pending[i].dueMs) < 0) continue;
+    pending[i].used = false;
+    cAckTimeout++;
+    logEvent("ack-timeout", "%s %s got no server echo", pending[i].kind, pending[i].key);
+#if BUZZER_ENABLED
+    buzzerPlay(SND_FAILED, SND_FAILED_LEN);
+#endif
+  }
+}
 
 // Onboard SK6812 status LED. GPIO27 on ATOM Lite.
 #define LED_PIN   27
@@ -324,11 +472,41 @@ static void onWsEvent(WStype_t type, uint8_t *payload, size_t len) {
       doc["truncated"] = cTruncated;
       doc["uptimeMs"]  = millis();
       emit(doc);
+
+      // Subscribe to our own topic so the backend's re-broadcast comes BACK to
+      // us — that echo is the round-trip ack. Sent directly rather than through
+      // emit(): it is a control frame, and it has to be in place before the next
+      // event's echo can arrive.
+      {
+        String sub = String("{\"type\":\"bus_command\",\"action\":\"subscribe\",\"topic\":\"")
+                   + BUS_TOPIC + "\"}";
+        ws.sendTXT(sub);
+      }
+      logEvent("ws", "connected, subscribed to %s", BUS_TOPIC);
       break;
     }
     case WStype_DISCONNECTED:
       wsConnected = false;
+      logEvent("ws", "disconnected");
       break;
+
+    // The echo of our own event, coming back off the bus after the backend
+    // accepted it. Anything else on this topic is ignored.
+    case WStype_TEXT: {
+      JsonDocument in;
+      if (deserializeJson(in, payload, len)) return;   // not JSON: ignore quietly
+      const char *ev = in["event"] | "";
+      const char *id = in["id"] | "";
+      // Another reader's traffic on a shared topic must never beep this box.
+      if (strcmp(id, READER_ID) != 0) return;
+      if (strcmp(ev, "nfc") == 0) {
+        const char *uid = in["uid"] | "";
+        ackResolve("nfc", uid);
+      } else if (strcmp(ev, "sheet") == 0) {
+        ackResolve("sheet", "");
+      }
+      break;
+    }
     default:
       break;
   }
@@ -399,9 +577,14 @@ static void drainNfcQueue() {
   while (xQueueReceive(nfcQueue, &card, 0) == pdTRUE) {
     cNfcCards++;
     lastNfcMs = card.atMs;
+    logEvent("nfc", "read %s (%s)", card.uid, card.type);
 #if BUZZER_ENABLED
-    buzzerStart();
+    buzzerPlay(SND_READ, SND_READ_LEN);   // "I read your card"
 #endif
+    // ...and start waiting for the server to say it got it. The `confirmed` or
+    // `failed` sound follows from the echo, not from this local read.
+    ackExpect("nfc", card.uid);
+
     JsonDocument doc;
     doc["source"]   = "omr-relay";
     doc["type"]     = "nfc";
@@ -515,14 +698,28 @@ static void fillStatus(JsonDocument &doc) {
   doc["nfc"]["enabled"] = false;
 #endif
 
+  // Round-trip ack: ackTimeout > 0 means a read never reached the server.
+  JsonObject ak = doc["ack"].to<JsonObject>();
+  ak["timeoutMs"] = BUZZER_ACK_TIMEOUT_MS;
+  ak["ok"]        = cAckOk;
+  ak["timedOut"]  = cAckTimeout;
+  { size_t p = 0; for (size_t i = 0; i < PENDING_MAX; i++) if (pending[i].used) p++;
+    ak["pending"] = p; }
+
 #if BUZZER_ENABLED
   JsonObject bz = doc["buzzer"].to<JsonObject>();
   bz["enabled"] = true;
   bz["pin"]     = BUZZER_PIN;
-  bz["ms"]      = BUZZER_MS;
+  bz["passive"] = (bool)BUZZER_PASSIVE;   // false => `tone` is ignored, rhythm only
   bz["duty"]    = BUZZER_DUTY;
   bz["freqHz"]  = BUZZER_FREQ_HZ;
-  bz["beeps"]   = cBeeps;
+  bz["beeps"]   = cBeeps;   // patterns played, not individual pulses
+  // The compiled vocabulary, so "which sounds does this board actually know?"
+  // is answerable without reading config.h on the build host.
+  JsonObject sn = bz["sounds"].to<JsonObject>();
+  sn["readSteps"]      = SND_READ_LEN;
+  sn["confirmedSteps"] = SND_CONFIRMED_LEN;
+  sn["failedSteps"]    = SND_FAILED_LEN;
 #else
   doc["buzzer"]["enabled"] = false;
 #endif
@@ -537,6 +734,29 @@ static void sendJson(JsonDocument &doc) {
 static void handleStatus() {
   JsonDocument doc;
   fillStatus(doc);
+  sendJson(doc);
+}
+
+// A short rolling window of the LIFECYCLE — read, ack, timeout, ws state — so
+// "I tapped it and nothing happened" is answerable from the LAN at any time,
+// without a serial cable and without having been watching when it happened.
+// Newest first. Distinct from /recent, which is raw UART frames.
+static void handleEvents() {
+  JsonDocument doc;
+  doc["count"]      = logCount;
+  doc["capacity"]   = LOG_MAX;
+  doc["uptimeMs"]   = millis();
+  doc["ackOk"]      = cAckOk;
+  doc["ackTimeout"] = cAckTimeout;
+  JsonArray arr = doc["events"].to<JsonArray>();
+  // Walk backwards from the most recent write so the newest entry is first.
+  for (size_t i = 0; i < logCount; i++) {
+    const LogEntry &e = logBuf[(logNext + LOG_MAX - 1 - i) % LOG_MAX];
+    JsonObject o = arr.add<JsonObject>();
+    o["msAgo"]  = millis() - e.atMs;
+    o["kind"]   = e.kind;
+    o["detail"] = e.detail;
+  }
   sendJson(doc);
 }
 
@@ -634,6 +854,13 @@ static void handleFrame(const uint8_t *buf, size_t n, bool truncated) {
   }
   cSheets++;
   recentPush("sheet", buf, n, false);
+  logEvent("sheet", "decoded %u columns", (unsigned)(n / 2));
+#if BUZZER_ENABLED
+  buzzerPlay(SND_READ, SND_READ_LEN);   // "I read your sheet"
+#endif
+  // Sheets carry no natural key, so the ack matches oldest-outstanding-first.
+  // Cards are fed one at a time by hand, so that is not a real ambiguity.
+  ackExpect("sheet", "");
 
   JsonDocument doc;
   doc["source"]  = "omr-relay";
@@ -719,6 +946,7 @@ void setup() {
   http.on("/health", handleStatus);
   http.on("/queue",  handleQueue);
   http.on("/recent", handleRecent);
+  http.on("/events", handleEvents);
   http.onNotFound([]() { http.send(404, "application/json", "{\"ok\":false,\"error\":\"not found\"}"); });
   http.begin();
 
@@ -782,6 +1010,9 @@ void loop() {
 #if BUZZER_ENABLED
   buzzerService();
 #endif
+  // Fires the `failed` sound when the server never echoed. Unconditional: the
+  // counters are worth keeping even on a board with no buzzer fitted.
+  ackService();
 
   // WiFi watchdog. arduinoWebSockets reconnects its own socket, but it cannot
   // bring the radio back — if the AP drops, the station stays down until we

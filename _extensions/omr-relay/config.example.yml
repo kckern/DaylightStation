@@ -62,6 +62,35 @@ scanners:
     buzzer:
       enabled: false
       pin: 23                        # 23 or 33 only
-      ms: 4                          # 4ms = gentle tick. Chosen by ear 2026-07-29.
       duty: 255                      # FULL. Lower duty SCRATCHES, it does not quieten
       freq_hz: 30000                 # ultrasonic gate rate, inaudible by design
+
+      # active  = self-oscillating buzzer. ONE fixed pitch; `tone` below is
+      #           IGNORED, so meaning must come from RHYTHM.
+      # passive = piezo transducer. `tone` sets real pitch, so low->high /
+      #           high->low patterns work.
+      # Measured 2026-07-29 on the active unit fitted here: PWM duty could not
+      # make it quieter, only dirtier. Pitch is a hardware property, not a
+      # firmware one — swap the element to get it.
+      kind: active
+
+      # How long to wait for the server to echo a message back before calling it
+      # failed. The relay subscribes to its own topic, so the backend's
+      # re-broadcast IS the ack: proof it was received, validated and accepted.
+      # NOT proof it reached disk — the backend persists just after broadcasting.
+      ack_timeout_ms: 2000
+
+      # Sound vocabulary. Each step is { tone, ms, gap }: sound for `ms`, then
+      # silence for `gap`. Max 8 steps per pattern.
+      #   read      — a card/sheet was read here, locally
+      #   confirmed — the server echoed it; the round trip closed
+      #   failed    — no echo inside ack_timeout_ms
+      sounds:
+        read:      [{ ms: 4 }]                     # the gentle tick
+        confirmed: [{ ms: 4, gap: 60 }, { ms: 4 }] # tick-tick
+        failed:    [{ ms: 250 }]                   # one long buzz
+      # With kind: passive, the same table gains pitch — gen-config warns if you
+      # set `tone` while kind is active, rather than letting it silently do
+      # nothing:
+      #   confirmed: [{ tone: 880, ms: 60 }, { tone: 1320, ms: 90 }]   # low -> high
+      #   failed:    [{ tone: 1320, ms: 60 }, { tone: 660, ms: 140 }]  # high -> low
