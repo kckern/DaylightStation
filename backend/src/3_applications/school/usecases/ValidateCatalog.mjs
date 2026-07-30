@@ -43,19 +43,23 @@ function idMismatch(kind, fileId, declared) {
 export class ValidateCatalog {
   #catalog;
   #bankIds;
+  #programIds;
   #measureProbe;
 
   /**
    * @param {object} deps
    * @param {import('../ports/ICurriculumCatalog.mjs').ICurriculumCatalog} deps.catalog
    * @param {Iterable<string>} [deps.bankIds] - ids of every question bank that exists
+   * @param {Iterable<string>} [deps.programIds] - ids of every program that exists
+   *   (Task 12 supplies real ids; default empty means no unit can be a program unit yet)
    * @param {(document: object, ctx: {id: string}) => (void|{errors?: string[]}|Promise<*>)} [deps.measureProbe]
    *   optional render-measure callback; only consulted under `renderProbe`
    */
-  constructor({ catalog, bankIds = [], measureProbe = null } = {}) {
+  constructor({ catalog, bankIds = [], programIds = [], measureProbe = null } = {}) {
     if (!catalog) throw new Error('ValidateCatalog requires a catalog');
     this.#catalog = catalog;
     this.#bankIds = bankIds instanceof Set ? bankIds : new Set(bankIds);
+    this.#programIds = programIds instanceof Set ? programIds : new Set(programIds);
     this.#measureProbe = typeof measureProbe === 'function' ? measureProbe : null;
   }
 
@@ -113,6 +117,7 @@ export class ValidateCatalog {
       bankIds: this.#bankIds,
       documentIds: new Set(validDocuments.keys()),
       manifestIds: new Set(validManifests.keys()),
+      programIds: this.#programIds,
     };
 
     const unitErrors = {};
