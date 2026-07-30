@@ -1,9 +1,10 @@
 # Sheet Music Player
 
 The piano kiosk's engraved-score mode: browse a folder of scores, open a MusicXML
-file, and follow / auto-play it with per-notehead light-up. Lives in
-`frontend/src/modules/Piano/PianoKiosk/modes/SheetMusic/`, engraving through the
-shared OSMD renderer in `frontend/src/modules/MusicNotation/renderers/`.
+file, and practice it through a four-mode learning progression with per-notehead
+light-up. Lives in `frontend/src/modules/Piano/PianoKiosk/modes/SheetMusic/`,
+engraving through the shared OSMD renderer in
+`frontend/src/modules/MusicNotation/renderers/`.
 
 ## Chrome layout
 
@@ -19,28 +20,37 @@ shared OSMD renderer in `frontend/src/modules/MusicNotation/renderers/`.
   come from the score's own metadata (an explicit title, then the MusicXML's
   embedded work title); a score with neither falls back to a title derived
   from its filename rather than showing a bare "Score".
-- **Bottom:** a pinned `ScoreTransportBar` (`ScoreTransportBar.jsx`) with a
-  **stable three-zone grid**: an empty left zone (keeps the center cluster
-  truly centered) · metronome, restart, play/pause, **Loop**, position readout
-  (center) · Hands toggles, Key, Tempo, View menu, **Volume** (right). The
+- **Bottom:** a pinned transport bar with a **stable three-zone grid**: an
+  empty left zone (keeps the center cluster truly centered) · metronome,
+  restart, play/pause, the **loop group** (Learn only), position readout
+  (center) · hand toggles, Key, Tempo, View menu, Volume (right). The
   geography never reshuffles — modes **disable/dim controls in place** instead
-  of unmounting them, so Play is always where Play was; **Perform** is the
-  sole exception (bar strips to just the page indicator). One button grammar
-  throughout: shared inline-SVG icons (no text glyphs/emoji), ≥48px touch
-  targets, one radius, **blue = a setting is on** (metronome armed, loop
-  active), **green = the transport is running**. Buttons that open a sheet cue
-  it with a small icon rather than a uniform affordance — Key and View show a
-  chevron, while Tempo shows the quarter-note glyph it always carries.
-  **Key, Tempo, and Loop are modal sheets**, not popovers: tapping the button
-  opens a centered modal sheet with its own scrim, a direct-pick ladder of
-  steps, and a close affordance — one tap commits and dismisses, so there's no
-  separate "confirm" step. The **View** menu is the same sheet shell —
-  layout, size, and keyboard-visibility controls only, no metadata list; size
-  is a discrete tap-commit stepper, so the score repaints once per step.
+  of unmounting them, so Play is always where Play was; the loop group is the
+  one deliberate exception (it doesn't exist outside Learn, so it unmounts
+  rather than lying with disabled chrome), and **Perform** is the other (bar
+  strips to zero chrome — see "Perform" below). One button grammar throughout:
+  shared inline-SVG icons (no text glyphs/emoji), ≥48px touch targets, one
+  radius, **blue = a setting is on** (metronome armed, loop active), **green =
+  the transport is running**. Buttons that open a sheet cue it with a small
+  icon rather than a uniform affordance — Key and View show a chevron, while
+  Tempo shows the quarter-note glyph it always carries. **Key and Tempo are
+  modal sheets**, not popovers: tapping the button opens a centered modal
+  sheet with its own scrim, a direct-pick ladder of steps, and a close
+  affordance — one tap commits and dismisses, so there's no separate "confirm"
+  step. The **View** menu is the same sheet shell — layout, size, and
+  keyboard-visibility controls only, no metadata list; keyboard visibility is
+  a switch (`ToggleSwitch` — a real `role="switch"` track, not a checkbox);
+  size is a discrete tap-commit stepper, so the score repaints once per step.
   **Volume** opens the same volume sheet every player in the kiosk uses —
   Media and MIDI levels as five-step ladders, with a Log/Linear curve toggle —
   so turning the piano or the media down works identically here as in
   Karaoke, Music, or a video course.
+- **Key abbreviations:** the Key sheet's grid cells show the short form —
+  `DM` / `F#m` (`M` = major, `m` = minor) — with the semitone offset as a
+  sub-label; the transport bar's own readouts keep the long form ("D major").
+- **Tempo ladder:** percent steps `60 · 70 · 80 · 90 / 100 / 110 · 125 · 150 ·
+  175`, deliberately centered so 100% sits dead-center of the grid rather than
+  at an edge.
 
 ## Browsing scores
 
@@ -54,131 +64,206 @@ left off.
 ## Modes — a learning progression
 
 Four modes, **Listen · Learn · Polish · Perform**, selected from the header's
-Mode sheet (see "Chrome layout" above). The bar is **mode-aware**: controls a
-mode doesn't use disable/dim in place (only Perform unmounts them). The
-metronome is an icon-only **click toggle** (audible tempo reference), not a
-mode — see "Metronome" below for its per-mode semantics.
+Mode sheet (see "Chrome layout" above). Each has one job and the chrome tells
+the truth about what that job is:
 
-| Mode | Idea | Cursor | Light-up | Sound |
-|------|------|--------|----------|-------|
-| **Listen** | Jukebox / player-piano | auto, at tempo (settable) | play-along green (always on) | kiosk performs **all** parts |
-| **Learn** | Wait-for-notes practice | waits — advances only when all active-part notes of the step are struck | dim `target` → green `hit`; wrong notes flash | you play |
-| **Polish** | At-tempo, scored | auto, at tempo | current onset lights (bouncing ball) + measure R/Y/G washes | silent for your parts |
-| **Perform** | Concert / recital | none (config pedal turns pages) | none | you play |
+| Mode | Identity | Transport chrome |
+|------|----------|-------------------|
+| **Listen** | Pure playback — a jukebox that performs the score | Restart/Play · metronome (session-local, off by default) · hand toggles · Key/Tempo/View/Volume. No looping. |
+| **Learn** | Untimed practice at the frontier of what's been learned | Listen's chrome **plus** the loop group and range handles on the score |
+| **Polish** | Real-time scored runs, always whole-piece | Play + count-in · metronome (on by default, persisted) · hand toggles · settings. No looping. |
+| **Perform** | The music stand | Zero chrome; the left pedal turns pages |
 
-- **Listen** (`playParts.allPlayRoles` → `buildPlayTimeline` → `scaleTimeline`): the
-  kiosk plays everything; a **tempo** control (multiplier, cheap timeline rescale)
-  and a **key** control (± semitone, OSMD transpose — see below); **play-along**
-  light-up marks notes green as you match them (always on, non-gating). With a
-  loop active, **Listen plays only the loop**.
-- **Learn** (`useFollowTracker`): notes-only exit criteria, no timing pressure. The
-  loop confines practice; the metronome free-runs at the practice tempo
-  (reference-only — never gates).
-- **Polish** (`useScoreEvaluator`): the clock runs; each completed measure is graded
-  and washed R/Y/G; after N silent measures a **run summary** appears. The loop
-  repeats at tempo; **scoring is always on** during Polish runs.
-- **Perform**: static sheet; `advancePedalCC` (default 67) / `backPedalCC` (default
-  66) turn pages (rising-edge, config-driven); a `page / pages` indicator.
+A practice **loop/range is Learn-only state**: leaving Learn for Listen or
+Polish clears it, and re-entering Learn re-derives a fresh one from practice
+history (see "Learn: landing and the state matrix" below) rather than
+restoring whatever was there before. Listen always plays the whole piece;
+Polish always grades the whole piece — a range they can't hold would be a lie
+the chrome tells.
+
+### One hands model
+
+A single "active hands" concept applies in all four modes — `HandsControl`'s
+two icon-only toggles (left-/right-hand glyphs, no text label) on a standard
+two-staff (grand-staff) score:
+
+- **Listen** — which hands the kiosk *performs*. An inactive staff is engraved
+  but silent, not just dimmed; there is no "play along and get lit up" layer
+  in Listen — that machinery retired with wave 3. Both hands on is the
+  default; either or both can be off (an all-off Listen is a valid "just
+  watch the page" state, since the kiosk is doing the playing either way — the
+  only floor is Learn/Polish's own).
+- **Learn / Polish** — which hands *the user* is responsible for: advancement,
+  grading, and the keyboard's lit target set all read the same active-hands
+  value. At least one hand always stays on here — an empty selection would
+  deadlock advancement.
+- The on-screen keyboard defaults hidden in Listen (nothing is "yours" to
+  play along with) and shown in Learn/Polish; the View sheet's keyboard
+  switch always overrides, remembered per mode for the session.
+
+**Non-grand-staff scores** (a single staff, or three or more) keep the older
+labeled-chip control instead of the two hand icons — one chip per staff.
+Learn/Polish toggle a chip on/off the same way; Listen cycles a chip through
+Play/You/Mute. For these scores the hands preference and practice-history
+buckets always collapse to a single "both" bucket; per-staff dimming still
+applies to whichever chip staff is deselected.
+
+**Staff dimming** (Listen/Learn/Polish, grand-staff scores): a deselected
+staff renders under a translucent mask rather than disappearing, using real
+per-staff geometry (not a bounding-box guess) — so the shape of what you
+aren't playing stays visible for context. A wrong note struck on a dimmed
+staff still renders at full strength above the mask; the stacking order,
+bottom to top, is dim mask → range tint → cursor band → engraved ink → wet
+ink, so nothing live is ever muted by the dim layer.
 
 The current-step notehead itself is recolored directly on the engraved SVG
 rather than drawn as an overlay: it takes a subtle near-black ink, the same
 fixed shade in every mode (only the cursor band keeps the per-mode accent
 color). A note struck correctly glows green with a soft drop-shadow — a fixed
 color, independent of mode or the current-step ink, so "hit" always reads the
-same regardless of what's playing. In Learn, a note still owed a strike shows
-an unfilled, gently pulsing outline until it's struck.
+same regardless of what's playing.
 
-## Active parts (full-hand model)
+## Listen
 
-`activeParts.js` is the single "which staves am I responsible for" model, shared by
-Learn/Polish advancement + grading, note light-up, and the keyboard target set.
-Staves are 0-indexed (`0`=RH, `1`=LH, …); **default = all staves on (full hand)**.
-A standard two-staff (grand-staff) piano score gets **two icon-only hand
-toggles** in the bar's right zone (a hairline divider sets them apart from the
-neighboring view controls) — no text label, just the left-/right-hand glyphs,
-lit when that staff is active. In Learn/Polish they toggle a staff on/off, and
-the last active staff can't be toggled off (would deadlock Learn). In Listen
-both toggles can go off together — that's the kiosk-plays-everything state,
-nothing is marked "yours" to light up — or either/both can be on to mark that
-hand's part as yours to play along with. A score with more than two staves
-falls back to one labeled chip per staff instead of the hand icons: Learn/Polish
-toggle a chip on/off, and Listen cycles each chip through Play/You/Mute.
-Advancement uses the **all-notes rule** — every expected midi at a step must
-be struck. A left-hand-only intro is a real cursor stop (see alignment note).
+The kiosk performs the active hands at a settable tempo and key; the other
+hands, if any are deselected, sit silent and dimmed rather than disappearing.
+A **session-local metronome** (off by default, never persisted) is available
+as a free-running click at the practice tempo — offered only when the score's
+tempo map has a single entry, since a free-running click has no one BPM to
+lock to across a mid-piece tempo change; scores with tempo changes keep the
+metronome disabled-in-place rather than ticking against a ritardando.
 
-## The loop (focus range & sections)
+## Learn: landing and the state matrix
 
-`focusRange.js` confines practice to `[inMeasure, outMeasure]` and **loops** it
-(wrap at the out-point). The loop is a first-class transport control: a
-**repeat-icon** toggle in the center zone. With no range set, tapping it
-starts the on-score two-tap selection immediately (see "Select measures…"
-below). Once a range exists, the same tap toggles looping on/off **without
-losing the range** — the toggle then also carries the range's scope label
-(e.g. "m9–16") as a secondary cue, lit when looping is on. A one-tap ✕ clear
-sits beside it whenever a range is active. A separate chevron opens the Loop
-sheet, which offers, all feeding one range:
-- **A section** — rehearsal marks (`<rehearsal>` letter/named blocks) parsed from
-  the MusicXML by `parseMusicXml.extractSections` → `layout.sections`; picking one
-  snaps the range to that section (`sectionToRange`, mapping XML measure
-  **numbers** to measure **indices**).
-- **Select measures…** — the guided two-tap flow (tap the start measure, then the
-  end). Taps farther than `SELECT_MAX_DIST` from any note — margins, between
-  systems, blank paper — are rejected rather than snapped to the mathematically
-  nearest note (`nearestEvent.js`).
-- **±1-measure nudges** — when a loop is active, Start/End −/+ rows adjust either
-  endpoint without redoing the selection (the menu stays open so endpoints can be
-  walked).
+Opening Learn on a score already lands you somewhere useful: an **auto-range**
+heuristic picks a loop range the moment Learn is entered with no range set,
+in priority order —
 
-Loop semantics:
-- **Follows Listen ↔ Learn ↔ Polish.** Hop to Listen to hear the passage, back to
-  Learn to drill it — the range survives. It is **cleared** on entering Perform
-  or opening a new score.
-- **Restart returns to the loop in-point** (`homeStep`), not measure 1.
-- In Listen, a loop that ends at the piece's final measure wraps at `onDone` (a
-  one-beat dwell covers the zero-span edge).
-- The on-score tint draws **one band per system** the range spans
-  (`FocusRangeLayer`), so a loop across a line break highlights exactly its own
-  measures; the endpoint brackets mark in/out.
+1. **History frontier** — the first ~4-measure window, anchored at the first
+   playable measure whose pass count (for the active hands) is under the
+   learned threshold.
+2. **First rehearsal section**, if the score has any.
+3. **First 4-measure window** every measure of which the active hands can
+   actually play (skips rest-heavy intros for a one-handed selection).
+4. **First four non-empty measures**, or the whole piece if the score is that
+   short.
 
-The **measure model** (`osmdRender.buildMeasures`) tags each step with its OSMD
-measure `index` and XML `number`, giving `measures[] = {index, number, firstStep,
-lastStep}` — the basis for tap-to-jump, ranges, chips, and per-measure grading.
+The pick is always loop-on, so Learn opens already inside its gated practice
+state — landing directly in guided repetition instead of a blank slate.
 
-## Metronome
+**The state matrix.** Learn has exactly three states, and the chrome always
+tells you which one you're in:
 
-One icon-only toggle beside Play — a quarter-note glyph, no BPM readout on its
-own face (the effective BPM lives on the Tempo chip instead; `useMetronomeClick`
-keeps the exact bpm regardless). Per-mode semantics:
-- **Learn** — a **free-running** click at the practice tempo: toggling it ON
-  starts the beat immediately, transport running or not. Session-local by design
-  (not persisted) — it's an ambient practice aid, not a score setting.
-- **Polish** — the toggle **arms** a reference click that sounds only while a run
-  is playing; the armed state persists per score.
-- **Listen / Perform** — no metronome.
+| State | Play button | Cursor driver | Kiosk audio | Gate / ink |
+|---|---|---|---|---|
+| **No range** | Enabled | Transport, same as Listen | Performs active hands | No gate; wet ink is neutral, never red |
+| **Range + loop ON** | Disabled — "Learn advances as you play" | You (the follow tracker) | Silent | Gate active: wrong notes shake + red ink |
+| **Range + loop OFF** | Enabled | Transport, whole piece | Performs active hands | No gate; neutral wet ink |
 
-The Tempo chip's face is a quarter-note icon + the effective BPM
-(`round(baseBpm × tempoMult)`); tapping it opens a 3×3 grid of percent steps
-(50, 60, 70, 80, 90, 100, 110, 125, 150 — finer resolution near 100%, coarser
-toward the extremes), each cell sub-labeled with the BPM it produces, so a
-step always reads against a concrete ♩ value rather than a bare percentage.
+Play is enabled exactly when the loop is off — the follow tracker and the
+machine transport are never driving the cursor at the same time. Moving
+between any two matrix states (toggling the loop, setting or clearing a
+range) always stops whatever was driving the cursor and silences the kiosk;
+it never auto-plays into the new state. Toggling the loop ON snaps the cursor
+to the range's in-point; toggling it OFF, or clearing the range, leaves the
+cursor exactly where it was.
 
-## Per-score persistence
+**Wrong-note feedback (kid-UX, deliberately light-touch):** a wrong note gets
+a shake and a red notehead drawn **at the pitch you actually played** — wet
+ink, rendered right beside the note that was expected, spelled from the
+score's sounding key so a transposed piece still reads correctly. That's the
+whole punishment. The on-screen keyboard doesn't reveal the expected key on
+every miss — it arms only after **three consecutive wrong attempts on the
+same step**, as stuck-support rather than a correction on every slip.
 
-`scoreSettings.js` stores `mode, tempoMult, focus, activeParts, myStaves,
-clickOn` per score — device-local (`localStorage`, key `daylight.piano.sm.<id>`,
-merge-on-write, degrades to no-op without storage) — so a walk-up user finds a
-piece exactly the way they left it. The Learn free-run click is deliberately
-excluded (session-local, above).
+## The loop group and range handles (Learn only)
 
-## Polish scoring
+The loop cluster — mark-in, mark-out, toggle, clear — lives in the bar's
+center zone and only renders in Learn; there's nothing for it to control
+anywhere else. Marking is **tap-to-arm**: tapping "mark in" arms the in-point,
+and the *next* tap on the score names that measure — anywhere within a
+system's vertical band resolves to its nearest measure (no need to land near a
+note); a tap in the dead margin outside every system rejects with a shake and
+a hint rather than snapping to a wrong measure. Mark-out is symmetric; if the
+two ever cross, they swap. Setting either endpoint when no range exists
+creates a one-measure range at that measure with the loop off — there is no
+half-marked in-between state, so the brackets, handles, and loop toggle always
+describe either a complete range or nothing.
 
-`scoreEvaluator.gradeMeasure` grades each measure on **notes + timing**:
-`noteScore` = fraction of expected midis struck; `timingScore` = from each hit's
-`driftMs` vs `scoring.timingToleranceMs`; `combined = noteScore·(0.6+0.4·timingScore)`
-→ **green / yellow / red** per `scoring.thresholds`. `useScoreEvaluator` buffers
-your input per measure (multi-subscriber `subscribe`), grades on measure advance,
-and fires an auto-stop after `scoring.silentMeasuresToStop` silent measures.
-`MeasureGradeLayer` washes graded measures; `RunSummary` shows the strip + tallies.
+The range's two endpoints also live as **draggable handles** directly on the
+score (≥48px touch targets, replacing the older bracket-only markers as the
+range's visual boundary — the range tint band stays). A press that barely
+moves is a tap (arms the edge, same as the bar button); a press that moves is
+a drag, tracked sub-measure under the finger and committed to the nearest
+whole measure on release. Dragging near the top or bottom edge of the score's
+scroll container auto-scrolls, so a range can be dragged across a page without
+lifting the finger; the drag never hijacks the page scroll itself (pointer
+capture is scoped to the handle alone). Section starts render as snap markers
+while an endpoint is being armed or dragged, and rehearsal sections in the
+Loop sheet still offer a one-tap "loop this section" shortcut.
+
+**In Learn, the in/out buttons show their measure numbers** (`m5` / `m8`)
+once a range exists.
+
+## Practice history
+
+Progress is tracked per user, per score, and read back to drive the Learn
+auto-range and the Polish tier bests:
+
+- A **guest / no selected user is exempt** — the practice heuristics run
+  history-less, and nothing is read or written on their behalf. Only a
+  persistent (roster) user's practice is ever recorded.
+- **Attempts and passes** are tallied per measure, per hands bucket
+  (`both`/`rh`/`lh`; non-grand-staff scores always use `both`). One trip
+  through a loop (in → out, with the gate active) is an **attempt** for every
+  measure inside it. Any seek, tap, hand-toggle change, range change,
+  transpose change, or leaving the mode mid-cycle **voids** that cycle
+  entirely — no attempt is recorded. A completed cycle earns a **pass** on a
+  measure only if no wrong note occurred within that specific measure during
+  the cycle — a single slip on measure 9 of a 12-measure loop costs only
+  measure 9 its pass, so broad practice keeps advancing the frontier
+  elsewhere. A measure counts as "learned" (and drops out of the auto-range
+  frontier) once it has accumulated **three passes** for the relevant hands
+  bucket.
+- **Polish best scores** are also kept per hands bucket, one best per tempo
+  tier (see "Polish" below) — an RH-only run is never compared against a
+  both-hands best.
+- The record is invalidated wholesale if the score's engraving has changed
+  shape since the record was written (a different measure count or file
+  size) — a stale per-measure record describing measures that no longer exist
+  is discarded rather than silently misapplied.
+
+## Polish: real-time scoring with tempo tiers
+
+Polish always grades the whole piece — never a range — which is what makes
+the tier bests below comparable run to run. The metronome is on by default
+(persisted) and a count-in leads into the run. Each measure is graded live on
+notes-and-timing (the same measure wash used elsewhere) and folded into a
+running score; the transport bar's center readout shows the live tally as the
+run progresses (e.g. `82% · m 12/24`).
+
+**Tempo tiers.** A run is bucketed by the tempo it was played at, decided the
+instant the run starts: **slow** (under 80%), **medium** (80–99%), **full**
+(exactly 100%), **overclocked** (over 100%). Changing the tempo mid-run voids
+that run's tier — the summary labels it "mixed tempo" and it competes for no
+best, though the live grading still shows. **Overclocked runs earn extra
+credit**: the displayed/stored score is the base score scaled up, and can
+exceed 100 — that's the reward for playing faster than written.
+
+At the end of a run, the summary shows this run's score and tier alongside
+the four tier bests **for the current hands bucket**, so a right-hand-only
+run compares itself only against other right-hand-only bests. A best only
+updates on a completed, non-voided, whole-piece run — an aborted or
+mixed-tempo run can't quietly overwrite a real personal best.
+
+## Perform
+
+Zero chrome, by design — nothing on screen but the engraved page. The left
+pedal turns pages forward, the other back (config-driven CC numbers, rising-
+edge detected so a held pedal doesn't repeat-page); a tap can also scroll the
+page into view. There is no page indicator and no other control surface —
+mode-switching still works through the header's mode crumb, the one thing
+that's never hidden.
 
 ## Key transpose (Listen · Learn · Polish)
 
@@ -191,8 +276,9 @@ part of the renderer `cacheKey`, so a change re-parses cleanly and re-extracts
 pitches — notation **and** playback move to the new key). Returning to 0
 restores the written key; transpose resets on a new document. The control is
 live in all three practice modes — Learn and Polish transpose the engrave
-their advancement and grading read from, so practice stays consistent with
-what's sounding — and is unavailable only in Perform (no chrome at all).
+their advancement and grading read from, and Learn's wrong-note wet ink
+spells its pitches from the sounding key too, so practice stays consistent
+with what's sounding — and is unavailable only in Perform (no chrome at all).
 
 ## Load pipeline (paint-first, non-blocking)
 
@@ -204,10 +290,11 @@ in one main-thread block. The pipeline now decouples paint from extraction:
 2. **Fetch** the MusicXML (`SheetMusic.jsx`).
 3. **`osmdEngrave`** — load + `render()` only → returns dims. The sheet **paints
    here** and Manual mode is immediately usable.
-4. **`extractLayoutSliced`** — the geometry walk (cursor → per-notehead boxes),
-   run in **yielded ~256-step slices** (`runSliced`/`scheduleYield`) so the main
-   thread stays responsive; a determinate `.musicxml-renderer__progress` bar
-   covers it. On completion, `onLayout(...)` + `onReady()` arm Follow/Play.
+4. **`extractLayoutSliced`** — the geometry walk (cursor → per-notehead boxes,
+   plus per-staff bounds for the dim layer), run in **yielded ~256-step
+   slices** (`runSliced`/`scheduleYield`) so the main thread stays responsive;
+   a determinate `.musicxml-renderer__progress` bar covers it. On completion,
+   `onLayout(...)` + `onReady()` arm Follow/Play.
 5. **Zoom/resize** takes the cheap path: `osmdRepaint` (paint-only, no extract) +
    one sliced extract — no blocking double-walk.
 
@@ -238,9 +325,20 @@ stamped to wall-clock by the framework. Math is in `scoreTelemetry.js`; collecti
 | `score.playback.stats` | info | `mode, events, meanDriftMs, p95DriftMs, maxDriftMs, stalls, maxFrameGapMs` (at pause/stop/done/unmount) |
 | `score.follow.timing` | sampled | `step, note, sinceAdvanceMs` (how long the player took to answer the cursor — no verdict) |
 | `score.follow.stats` | info | `hits, wrongs, count, medianStepMs, p95StepMs` (on leaving Learn) |
+| `score.learn.auto-range` | info | `inMeasure, outMeasure, reason` — the landing heuristic's pick and which rule produced it |
+| `score.learn.cycle` | info | a completed or voided gate cycle, feeding the practice record |
+| `score.learn.stuck-prompt` / `-resolved` / `-dismissed` | info | the 3-wrong reveal-keys assist arming and clearing |
+| `score.learn.complete` | info | Learn handing off to Polish |
+| `score.loop.arm` / `score.loop.arm-expire` | info | an endpoint armed for the next tap, or the arm expiring unused |
+| `score.loop.set` | info | `edge, measure, via, snapped` — an endpoint committed, by tap or drag |
+| `score.loop.on` | info | the loop toggled on/off |
+| `score.focus.set` | info | `kind, inMeasure, outMeasure, origin` — a range established (auto-range, section pick, or handle/tap) |
+| `score.focus.clear` | info | the range cleared |
 | `score.polish.measure` | info | `measure, grade, noteScore, timingScore` (per graded measure) |
+| `score.polish.silent-stop` | info | the run auto-stopped after N silent measures |
 | `score.polish.summary` | info | `greens, yellows, reds, overall` (at run end) |
-| `score.focus.set` | info | `kind (section/custom), inMeasure, outMeasure` |
+| `score.polish.tier-best` | info | a tempo-tier personal best updated |
+| `piano.practice.save` | info | (backend) a practice record PUT was persisted |
 | `score.transpose` | info | `semitones` |
 | `score.mode` | info | `mode` |
 | `notation.geometry` | debug | `total, graphical, fallback` (per-notehead vs cursor-box fallback counts) |
@@ -253,11 +351,9 @@ stamped to wall-clock by the framework. Math is in `scoreTelemetry.js`; collecti
 for the player and advances only once every active-staff note of the step is struck
 — so there is nothing to be late for. `score.follow.timing.sinceAdvanceMs` is simply
 how long the player took to answer, and `score.follow.stats` reports the median and
-p95 of those intervals. It passes no rush/tight/drag verdict: the old shape compared
-the response against the written note duration (~94ms in most records), which made
-every human response a `drag` and `tight` unreachable — 24 of 31 field records were
-`drag`, up to 47s (audit M5b). `classifyFollowHit` still exists in `scoreTelemetry.js`
-for Polish, which IS graded at tempo, but the Learn path no longer calls it.
+p95 of those intervals. It passes no rush/tight/drag verdict. `classifyFollowHit`
+still exists in `scoreTelemetry.js` for Polish, which IS graded at tempo, but the
+Learn path no longer calls it.
 
 **`score.playback.stall` is debug-level** — on a bad run it fires per tick, so
 the count you want is `stalls` in `score.playback.stats`. Raise the level with
@@ -286,7 +382,35 @@ sheetmusic:
     silentMeasuresToStop: 4     # Polish auto-stop
     timingToleranceMs: 80       # inside this = on-beat
     thresholds: { green: 0.9, yellow: 0.6 }   # combined note+timing score
+  learn:
+    defaultHands: both          # both|rh|lh — household default; per-user overrides in preferences
 ```
+
+The hand preference resolves user → household → `both`; if the preferred
+hand's staff has no notes anywhere in the piece, the resolver falls back to
+whichever hand(s) actually have content rather than landing the player on a
+silent, undeadlockable staff.
+
+## Practice record (`users/{id}/apps/piano/practice/`)
+
+`GET`/`PUT` (merge-on-write, same pattern as preferences) at
+`api/v1/piano/users/{user}/practice/{scoreKey}`, one YAML file per user per
+score:
+
+```yaml
+fingerprint: { measureCount: 24, xmlBytes: 48213 }   # invalidation: mismatch → discard record
+measures:            # keys are measure INDICES (0-based) — never XML numbers
+  "4": { rh: {attempts: 3, passes: 2}, lh: {attempts: 1, passes: 0}, both: {attempts: 0, passes: 0} }
+polish:               # tier bests keyed by hands bucket — an RH-only run never overwrites a both-hands best
+  both: { slow: 78, medium: 84, full: 61, overclocked: null }
+  rh: { slow: null, medium: null, full: 95, overclocked: null }
+  lh: { slow: null, medium: null, full: null, overclocked: null }
+updatedAt: …
+```
+
+A guest or walk-up with no selected user never reads or writes this endpoint —
+the frontend gate skips the call entirely, and the backend rejects a
+non-roster user with 400 if it were ever called anyway.
 
 ## Note geometry fallback
 
@@ -304,33 +428,45 @@ running on the per-step fallback (keyboard stays note-precise regardless).
 | `SheetMusic.jsx` | routing (grid ↔ viewer), MusicXML fetch + load timing |
 | `ScoreGrid.jsx` / `scoreGroups.js` | score browser grid + `sheetmusic.collections` → tab strip |
 | `scoreTitle.js` | filename → title fallback shared by the grid and the player |
-| `ScorePlayer.jsx` | orchestrator: modes, transport, overlays, telemetry wiring |
+| `ScorePlayer.jsx` | orchestrator: modes, the Learn state matrix, transport, overlays, telemetry wiring |
 | `ScoreTransportBar.jsx` | pinned bottom bar (presentational, three-zone grid) |
 | `ModeSheet.jsx` | header mode crumb's Listen/Learn/Polish/Perform picker |
-| `LoopControl.jsx` | Loop repeat-icon toggle button, opens the shared Loop sheet (sections · select measures · nudges · clear) |
-| `HandsControl.jsx` | icon-only left/right-hand toggle (grand-staff scores) |
+| `HandsControl.jsx` | icon-only left/right-hand toggle, one semantic in every mode (grand-staff scores) |
+| `StaffDimLayer.jsx` | translucent mask over deselected staves, from per-staff geometry |
+| `learnRange.js` | pure auto-range heuristic for the Learn landing (frontier → section → density → fallback) |
+| `usePracticeRecord.js` / `practiceKey.js` | per-user practice-history hook + score-key/hands-bucket helpers |
+| `LearnInkLayer.jsx` | wrong-note wet ink drawn at the played pitch, on the score |
+| `measureAtPoint.js` | armed-tap → nearest-measure hit-testing |
+| `polishTiers.js` | pure tempo-tier math: bucket, run score, overclocked extra credit |
+| `RangeHandleLayer.jsx` | draggable in/out range handles on the score (tap-to-arm or drag) |
+| `../../transport/LoopGroup.jsx` | shared mark-in/mark-out/toggle/clear loop cluster (also used by the video chrome) |
+| `../../transport/ToggleSwitch.jsx` | shared switch primitive (View sheet's keyboard row) |
 | `ViewSheet.jsx` | layout/size/keyboard-visibility sheet (controls only, no metadata) |
-| `../../transport/` | shared transport primitives: the button, sheet shell, direct-pick step ladder, and the Key/Tempo/Loop/Volume sheets themselves |
+| `../../transport/` | shared transport primitives: the button, sheet shell, direct-pick step ladder, and the Key/Tempo/Volume sheets themselves |
 | `../../icons/Icon.jsx` | shared inline-SVG icon set for all chrome buttons |
-| `nearestEvent.js` | tap→note mapping with `SELECT_MAX_DIST` miss rejection |
+| `nearestEvent.js` | tap→note mapping used for cursor seek |
 | `scoreSettings.js` | per-score localStorage persistence |
 | `NoteHighlightLayer.jsx` / `MeasureGradeLayer.jsx` | per-notehead chips / per-measure R/Y/G washes |
-| `FocusRangeLayer.jsx` | loop brackets + per-system tint bands |
+| `FocusRangeLayer.jsx` | loop range's per-system tint band |
 | `countIn.js` / `useCountIn.js` | count-in beats before a run |
 | `clickScheduler.js` | look-ahead scheduling for the metronome click |
-| `RunSummary.jsx` | Polish end-of-run summary |
+| `RunSummary.jsx` | Polish end-of-run summary, extended with run score/tier + tier-best strip |
 | `activeParts.js` / `focusRange.js` | staff-responsibility model / practice-range math |
 | `useFollowTracker.js` | Learn matching + advancement (range-aware) |
 | `useScoreEvaluator.js` / `scoreEvaluator.js` | Polish per-measure grading hook / math |
 | `useMetronomeClick.js` / `click.js` | click scheduler / WebAudio blip |
 | `pedalEdge.js` | Perform pedal rising-edge |
-| `sheetMusicConfig.js` | `sheetmusic:` config resolver (modes, pedals, scoring) |
+| `sheetMusicConfig.js` | `sheetmusic:` config resolver (modes, pedals, scoring, hand preference) |
 | `useScoreTransport.js` | rAF playback engine (+ `onFire` jitter) |
 | `useScoreTelemetry.js` / `scoreTelemetry.js` | logs-only telemetry + session log / math |
-| `playParts.js` | Listen roles + merged/full-performance timeline |
+| `playParts.js` | Listen's active-hands performance timeline |
 | `../../MusicNotation/parseMusicXml.js` | parser + `extractSections` (rehearsal marks) |
-| `../../MusicNotation/renderers/osmdRender.js` | OSMD adapter: engrave, sliced extract, geometry, transpose, measure model |
+| `../../MusicNotation/model/spellMidi.js` | key-aware MIDI → notated-pitch spelling, used by the wet-ink layer |
+| `../../MusicNotation/renderers/osmdRender.js` | OSMD adapter: engrave, sliced extract, per-staff geometry, transpose, measure model |
 | `../../MusicNotation/renderers/MusicXmlRenderer.jsx` | React wrapper: paint-first + progress + transpose |
 
 Design/history: `docs/plans/2026-07-03-sheet-music-overhaul.md` (infra),
-`docs/plans/2026-07-03-sheet-music-modes-design.md` + `-modes.md` (four modes).
+`docs/plans/2026-07-03-sheet-music-modes-design.md` + `-modes.md` (four modes,
+original design), `docs/_wip/plans/2026-07-29-sheetmusic-wave3-design.md`
+(wave-3: hands model, Learn state matrix, practice history, wet ink, loop
+handles, Polish tiers, Perform cleanup).
