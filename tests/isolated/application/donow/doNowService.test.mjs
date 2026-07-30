@@ -8,7 +8,7 @@ const fakeAdapter = (over = {}) => ({
   validateAction: () => [],
   occupancy: vi.fn(),
   dispatch: vi.fn(),
-  label: () => 'Dance video in the garage',
+  label: () => 'dance video in the garage',
   ...over,
 });
 
@@ -253,7 +253,7 @@ describe('DoNowService.dispatch', () => {
         id: 'dnr_test1',
         surface: 'garage-fitness',
         action: { episode: 'plex:1' },
-        label: 'Dance video in the garage',
+        label: 'dance video in the garage',
         learnerId: 'kid1',
         requestedBy: 'school-scan',
         ref: 'ses_1',
@@ -296,9 +296,13 @@ describe('DoNowService.dispatch', () => {
       expect(result.approvalId).toBe('dnr_test1');
       expect(store.putPending).toHaveBeenCalledTimes(1);
       expect(errorLog).toHaveBeenCalled();
+      // A failed notify means nobody was actually told — the slip must not
+      // claim otherwise (spec review finding).
+      expect(result.message).toMatch(/is busy — ask a grown-up\.$/);
+      expect(result.message).not.toMatch(/we asked a grown-up/);
     });
 
-    it('no notifier configured -> still pends without throwing', async () => {
+    it('no notifier configured -> still pends without throwing, and is honest that nobody was asked', async () => {
       const adapter = fakeAdapter({
         occupancy: vi.fn().mockResolvedValue({ state: 'active', occupantId: 'kid2' }),
       });
@@ -309,6 +313,27 @@ describe('DoNowService.dispatch', () => {
       });
 
       expect(result.decision).toBe('pending_approval');
+      // No notifier configured means nobody was actually asked — the pend
+      // still happens (approval via the API/queue remains possible), but
+      // the printed slip must say so honestly rather than claiming "we
+      // asked a grown-up" (spec review finding).
+      expect(result.message).toMatch(/is busy — ask a grown-up\.$/);
+      expect(result.message).not.toMatch(/we asked a grown-up/);
+    });
+
+    it('notifier configured and successful -> the slip honestly says a grown-up WAS asked', async () => {
+      const adapter = fakeAdapter({
+        occupancy: vi.fn().mockResolvedValue({ state: 'active', occupantId: 'kid2' }),
+      });
+      const notifier = fakeNotifier();
+      const { service } = build({ adapter, notifier });
+
+      const result = await service.dispatch({
+        surface: 'garage-fitness', action: {}, learnerId: 'kid1', requestedBy: 'school-scan', ref: 'ses_1',
+      });
+
+      expect(result.decision).toBe('pending_approval');
+      expect(result.message).toMatch(/we asked a grown-up\.$/);
     });
   });
 
@@ -325,7 +350,14 @@ describe('DoNowService.dispatch', () => {
       });
 
       expect(result.decision).toBe('denied');
-      expect(result.message).toBe('The Dance video in the garage is busy right now.');
+      expect(result.message).toBe('The dance video in the garage is busy right now.');
+      // The adapter's own label is article-free ('dance video in the
+      // garage') — DoNowService's "The {label}" template owns the ONE
+      // leading article. A label that supplied its own capitalized article
+      // used to double up into "The The dance video in the garage is busy
+      // right now." on a child's slip (spec review finding); this guards
+      // against that regressing.
+      expect(result.message.match(/\bThe /g)).toHaveLength(1);
       expect(store.putPending).not.toHaveBeenCalled();
     });
   });
@@ -479,11 +511,11 @@ describe('DoNowService.occupancyFor', () => {
 
 describe('DoNowService.listSurfaces', () => {
   it('returns ids + human labels only', () => {
-    const { service } = build({ adapter: fakeAdapter({ label: () => 'Dance video in the garage' }) });
+    const { service } = build({ adapter: fakeAdapter({ label: () => 'dance video in the garage' }) });
 
     const result = service.listSurfaces();
 
-    expect(result).toEqual([{ id: 'garage-fitness', label: 'Dance video in the garage' }]);
+    expect(result).toEqual([{ id: 'garage-fitness', label: 'dance video in the garage' }]);
   });
 
   it('a missing/throwing label() yields a bare { id } row', () => {

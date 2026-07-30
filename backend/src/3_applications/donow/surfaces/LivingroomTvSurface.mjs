@@ -84,7 +84,10 @@ export class LivingroomTvSurface {
     }
   }
 
-  label() { return 'The living room TV'; }
+  // Article-free — `DoNowService`'s own templates own the leading article
+  // (spec review finding: a self-capitalized label doubled up to "The The
+  // living room TV is busy right now.").
+  label() { return 'living room TV'; }
 }
 
 export default LivingroomTvSurface;

@@ -103,11 +103,17 @@ export class PortalSurface {
     return { dispatched: true };
   }
 
-  /** @param {*} action */
+  /**
+   * Article-free, lowercase noun phrase — `DoNowService`'s own templates own
+   * the leading article (spec review finding: a self-capitalized default
+   * doubled up to "The A quiz on the Portal is busy right now."). The
+   * `program` branch already carried no article and is unchanged.
+   * @param {*} action
+   */
   label(action) {
     const target = action?.target;
     if (target?.kind === 'program') return `${target.program} on the Portal`;
-    return 'A quiz on the Portal';
+    return 'quiz on the Portal';
   }
 }
 

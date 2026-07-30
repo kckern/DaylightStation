@@ -24,6 +24,15 @@ describe('LanguageProgramLauncher', () => {
     expect(launcher.id).toBe('language');
   });
 
+  // The one program this wording is actually true for — the ladder always
+  // dispatches to the `portal` surface (see the `launch()` test below).
+  it('reports locationHint "on the Portal"', () => {
+    const launcher = new LanguageProgramLauncher({
+      languageStudyService: { todayStatus: vi.fn() }, donow: { dispatch: vi.fn() },
+    });
+    expect(launcher.locationHint).toBe('on the Portal');
+  });
+
   it('status() passes through LanguageStudyService.todayStatus verbatim', async () => {
     const canned = { doneToday: true, progressLabel: 'Day 3', score: null };
     const languageStudyService = { todayStatus: vi.fn().mockReturnValue(canned) };

@@ -86,7 +86,10 @@ export class PlaybackHubSurface {
     }
   }
 
-  label() { return 'The headset playback hub'; }
+  // Article-free, lowercase noun phrase — `DoNowService`'s own templates own
+  // the leading article (spec review finding: a self-capitalized label
+  // doubled up to "The The headset playback hub is busy right now.").
+  label() { return 'headset playback hub'; }
 
   /** Parse a `target` string into a Set of colors, or null for group keywords we can't resolve without HubConfig. */
   #targetColors(target) {

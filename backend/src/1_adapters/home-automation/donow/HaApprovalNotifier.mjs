@@ -52,12 +52,22 @@ export class HaApprovalNotifier {
     const dot = this.#notifyService.indexOf('.');
     const service = dot >= 0 ? this.#notifyService.slice(dot + 1) : this.#notifyService;
 
+    // Surface labels are now article-free, lowercase noun phrases (spec
+    // review finding — `DoNowService`'s own templates own the article
+    // elsewhere). This is the ONE place a label starts a sentence rather
+    // than following "The"/"the", so it needs its own capitalization —
+    // otherwise a lowercase label reads as a broken sentence: "garage
+    // fitness kiosk — a grown-up's OK is needed to start."
+    const sentence = record.label
+      ? record.label.charAt(0).toUpperCase() + record.label.slice(1)
+      : 'This';
+
     const payload = {
       domain: 'notify',
       service,
       data: {
         title: 'Approval needed',
-        message: `${record.label} — a grown-up's OK is needed to start.`,
+        message: `${sentence} — a grown-up's OK is needed to start.`,
         data: {
           actions: [
             { action: `DONOW_APPROVE_${record.id}`, title: 'Approve' },

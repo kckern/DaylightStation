@@ -43,7 +43,10 @@ export class ThermalSurface {
     return { dispatched: Boolean(result?.printed), detail: result };
   }
 
-  label() { return 'A receipt on the printer'; }
+  // Article-free, lowercase noun phrase — `DoNowService`'s own templates own
+  // the leading article (spec review finding: a self-capitalized label
+  // doubled up to "The A receipt on the printer is busy right now.").
+  label() { return 'receipt on the printer'; }
 }
 
 export default ThermalSurface;

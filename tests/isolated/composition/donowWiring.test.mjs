@@ -82,7 +82,9 @@ describe('createDonow — composed entirely from fakes', () => {
     });
     // No haGateway supplied -> notifier stays null even with no notifyService configured.
     expect(donow.notifier).toBeNull();
-    expect(donow.surfaces.get('piano-kiosk').label()).toBe('The Piano Kiosk');
+    // Article-free — DoNowService's own templates own the leading article
+    // (spec review finding).
+    expect(donow.surfaces.get('piano-kiosk').label()).toBe('Piano Kiosk');
   });
 
   it('stop() unsubscribes the eventBus-backed presence trackers, safe to call twice', async () => {

@@ -32,7 +32,7 @@
 import { isSameStudyDay } from '#domains/school/studyDay.mjs';
 
 export class SurfaceProgramLauncher {
-  #id; #label; #surface; #action; #subject; #donow; #datastore; #timezone; #clock; #logger;
+  #id; #label; #surface; #action; #subject; #locationHint; #donow; #datastore; #timezone; #clock; #logger;
 
   /**
    * @param {object} config
@@ -43,6 +43,11 @@ export class SurfaceProgramLauncher {
    * @param {string} config.surface - the DoNow surface id this program dispatches to.
    * @param {object} [config.action] - the surface-specific action payload, from config.
    * @param {string} [config.subject] - the subject shelf this program's units are assigned under.
+   * @param {string} [config.locationHint] - the FULL wording a child reads for "where do
+   *   I go / what am I doing" (e.g. `'in the garage'`), author-supplied from `school.yml`
+   *   `programs:` (mirrors a `launch:` unit's own `labelHint`) — this is what stopped a
+   *   garage program's slip from wrongly reading "on the Portal" (spec review finding).
+   *   `null` (unconfigured) degrades to a location-agnostic default rather than guessing.
    * @param {import('../donow/DoNowService.mjs').DoNowService} config.donow
    * @param {object} config.datastore - YamlDoNowDatastore-shaped (`listDispatches({dayStamp})`).
    * @param {string|null} [config.timezone] - household timezone, for the study-day boundary.
@@ -50,7 +55,7 @@ export class SurfaceProgramLauncher {
    * @param {object} [config.logger]
    */
   constructor({
-    id, label = null, surface, action = {}, subject = null,
+    id, label = null, surface, action = {}, subject = null, locationHint = null,
     donow, datastore, timezone = null, clock = () => new Date(), logger = console,
   } = {}) {
     if (!id || !surface || !donow || !datastore) {
@@ -61,6 +66,7 @@ export class SurfaceProgramLauncher {
     this.#surface = surface;
     this.#action = action;
     this.#subject = subject;
+    this.#locationHint = locationHint;
     this.#donow = donow;
     this.#datastore = datastore;
     this.#timezone = timezone;
@@ -76,6 +82,16 @@ export class SurfaceProgramLauncher {
 
   /** The subject shelf this program is assigned under, when config declares one. */
   get subject() { return this.#subject; }
+
+  /**
+   * The offer wording `BuildAgenda`/`ResolveScanAction` compose into a
+   * child's slip ("{title} — {locationHint}", "Starting {locationHint} —
+   * off you go."). `null` when `school.yml` did not configure one — callers
+   * degrade to a generic, location-agnostic default rather than assuming
+   * every surface program is Portal-hosted (it is not: `pe-daily` dispatches
+   * to `garage-fitness`).
+   */
+  get locationHint() { return this.#locationHint; }
 
   /**
    * @param {{userId: string}} args

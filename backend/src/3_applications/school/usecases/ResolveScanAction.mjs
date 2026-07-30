@@ -489,11 +489,18 @@ export class ResolveScanAction {
       }
       const decision = result?.decision ?? 'failed';
       if (decision === 'dispatched') {
+        // The old text hardcoded "on the Portal" for EVERY program — wrong for
+        // a surface program like `pe-daily` (garage-fitness, never the
+        // Portal). `locationHint` (`null` for a launcher that declares none)
+        // is what the launcher itself says is true; a hint-less launcher gets
+        // the SAME location-agnostic wording `#dispatchLaunch`'s own one-shot
+        // dispatch uses, rather than a guessed room.
+        const hint = launcher?.locationHint ?? null;
         return this.#slip({
           status: 'launched', tokenClass: 'subject_next',
           id: `launch-${r.programId}`, headline: r.unit?.title ?? nice(subject),
-          lines: ['Starting on the Portal — or open it there yourself.'],
-          message: 'Off to the Portal.',
+          lines: [hint ? `Starting ${hint} — off you go.` : 'Starting — off you go.'],
+          message: hint ? `Starting ${hint}.` : 'Starting — off you go.',
         });
       }
       if (decision === 'pending_approval') {
@@ -504,11 +511,16 @@ export class ResolveScanAction {
           message: result.message,
         });
       }
+      // denied | failed — the remedy line IS the DoNow result's own message
+      // (mirrors `#dispatchLaunch`'s identical branch), which already names
+      // the REAL busy/unreachable surface via that surface's own adapter
+      // label — never a hardcoded "Go to the Portal", which lied for any
+      // program that was never on the Portal to begin with.
       return this.#slip({
         status: 'launch_unconfirmed', tokenClass: 'subject_next',
         id: `launch-${r.programId}`, headline: r.unit?.title ?? nice(subject),
-        lines: ['Go to the Portal and open it there.'],
-        message: 'Go to the Portal and open it there.',
+        lines: [result?.message ?? 'Could not start that. Ask a grown-up to set this up.'],
+        message: result?.message ?? 'Could not start that. Ask a grown-up to set this up.',
       });
     }
 

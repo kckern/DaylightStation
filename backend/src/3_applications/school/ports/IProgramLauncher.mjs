@@ -26,6 +26,22 @@ export class IProgramLauncher {
   }
 
   /**
+   * OPTIONAL. The wording a child reads for "where this program sends me" —
+   * e.g. `'on the Portal'` (`LanguageProgramLauncher`, always true) or
+   * `'in the garage'` (a `SurfaceProgramLauncher` configured for
+   * `garage-fitness`). `BuildAgenda`/`ResolveScanAction` compose it into the
+   * offer label and the dispatch slip; a launcher that returns `undefined`/
+   * `null` (the base class default) gets a generic, location-agnostic
+   * wording from those callers instead of a guessed — or worse, wrong —
+   * location. Never assume `'on the Portal'` for a launcher that has not
+   * said so itself.
+   * @returns {string|null|undefined}
+   */
+  get locationHint() {
+    return null;
+  }
+
+  /**
    * Today's status for one learner. Must not throw: agenda compilation calls
    * every launcher, and one failing program must not blank the agenda for the
    * rest.

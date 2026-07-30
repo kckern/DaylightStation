@@ -456,11 +456,32 @@ describe('the subject ticket', () => {
       launchers: new Map([[PROGRAM_ID, {
         status: async () => ({ doneToday: false, progressLabel: null, score: null }),
         launch: vi.fn(async () => ({ decision: 'dispatched', message: 'Starting the Portal now.' })),
+        // Explicit, like `LanguageProgramLauncher`'s own getter — a launcher
+        // that declares no `locationHint` gets generic, location-agnostic
+        // wording instead (spec review finding: the slip used to hardcode
+        // "on the Portal" for every program, which was wrong for a surface
+        // program like `pe-daily`; see surfaceProgramLauncher wiring).
+        locationHint: 'on the Portal',
       }]]),
     });
     const result = await resolve.execute({ code: await subjectToken('language') });
     expect(result).toMatchObject({ status: 'launched', tokenClass: 'subject_next', physical: 'receipt', printed: true });
     expect(thermal.lastTranscript()).toContain('Starting on the Portal');
+  });
+
+  it('a program launcher with no locationHint gets generic, location-agnostic wording — never a guessed room', async () => {
+    build({
+      ...withLanguageProgram(),
+      launchers: new Map([[PROGRAM_ID, {
+        status: async () => ({ doneToday: false, progressLabel: null, score: null }),
+        launch: vi.fn(async () => ({ decision: 'dispatched', message: 'Starting now.' })),
+        // No locationHint at all — mirrors an unconfigured SurfaceProgramLauncher.
+      }]]),
+    });
+    const result = await resolve.execute({ code: await subjectToken('language') });
+    expect(result).toMatchObject({ status: 'launched', tokenClass: 'subject_next', printed: true });
+    expect(thermal.lastTranscript()).toContain('Starting — off you go');
+    expect(thermal.lastTranscript()).not.toMatch(/portal/i);
   });
 
   // Launchers now return DoNow's own `{decision, ...}` shape (Task 12, spec §6
@@ -491,7 +512,10 @@ describe('the subject ticket', () => {
     });
     const result = await resolve.execute({ code: await subjectToken('language') });
     expect(result).toMatchObject({ status: 'launch_unconfirmed', tokenClass: 'subject_next', printed: true });
-    expect(thermal.lastTranscript()).toContain('Go to the Portal');
+    // The remedy line is now DoNow's own result message (mirrors
+    // `#dispatchLaunch`'s identical branch) — never a hardcoded "Go to the
+    // Portal", which used to lie for a program that was never on the Portal.
+    expect(thermal.lastTranscript()).toContain('Could not start the Portal');
   });
 
   it('a move->print resolves the worksheet itself, not a receipt about it', async () => {

@@ -324,6 +324,12 @@ export async function createSchoolLifecycle({
       surface: entry.surface,
       action: entry.action ?? {},
       subject: entry.subject ?? null,
+      // Author-supplied wording for "where does this send a child" (e.g.
+      // `'in the garage'` for a `garage-fitness` program) — mirrors a
+      // `launch:` unit's own `labelHint`. Unconfigured (`null`) degrades to a
+      // generic phrase in BuildAgenda/ResolveScanAction rather than the
+      // Portal default, which is only ever true for the Portal surface.
+      locationHint: entry.locationHint ?? null,
       donow,
       datastore: donowDatastore,
       timezone,
