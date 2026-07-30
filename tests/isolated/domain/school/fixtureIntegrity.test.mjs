@@ -78,11 +78,22 @@ const yamlManifests = readDir('manifests');
  * catalog builds them at load time. Built from the fixtures themselves, so a
  * unit pointing at a bank nobody ships is an error here rather than at the
  * printer with a child standing beside it.
+ *
+ * `programIds` is the one set that is NOT derived from a fixture directory —
+ * a program unit's `program:` value names a registered launcher (composition
+ * root, `[...launchers.keys()]`), not a file on disk. `language` is the one
+ * program the house registers today (`LanguageProgramLauncher`), so it is the
+ * closed set the fixture catalog validates against here, mirroring what the
+ * composition root hands `CurriculumAccess` when the language study service is
+ * wired.
  */
-const setsFrom = ({ banks = [], documents = [], manifests = [] }) => ({
+const setsFrom = ({
+  banks = [], documents = [], manifests = [], programs = ['language'],
+} = {}) => ({
   bankIds: new Set(banks.map((b) => b?.id).filter(Boolean)),
   documentIds: new Set(documents.map((d) => d?.id).filter(Boolean)),
   manifestIds: new Set(manifests.map((m) => m?.id).filter(Boolean)),
+  programIds: new Set(programs),
 });
 
 const yamlSets = setsFrom({

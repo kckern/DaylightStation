@@ -1,0 +1,10 @@
+unitId: language-daily
+title: Language — today's sentences
+subject: language
+program: language        # NEW: delegates to a registered program
+cadence: daily           # NEW: re-offers every study day; never terminally completed
+provenance:
+  source: hand-authored
+  author: parent
+  reviewState: approved
+  reviewedOn: '2026-07-29'

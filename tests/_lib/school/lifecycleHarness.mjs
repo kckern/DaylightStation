@@ -157,6 +157,12 @@ function seedDataDir(dataDir) {
  * @param {number} [options.economyReward] - coins the configured earn action pays
  * @param {number} [options.graceSec] - media stall grace window
  * @param {number} [options.tokenTtlHours]
+ * @param {object} [options.languageStudyService] - present makes the
+ *   `language` program a live launcher (composition's own rule: no service,
+ *   no launcher). A test that wants a `program:` unit to resolve (rather than
+ *   be dropped as an unknown program at catalog load) passes one — see
+ *   `LanguageStudyService` + a fake datastore, same arrangement as
+ *   `programLaunchers.test.mjs`.
  * @returns {Promise<object>} the fluent driver
  */
 export async function createLifecycleHarness({
@@ -169,6 +175,7 @@ export async function createLifecycleHarness({
   economyReward = 5,
   graceSec = 600,
   tokenTtlHours = 48,
+  languageStudyService = null,
   logger = silent,
 } = {}) {
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'school-lifecycle-e2e-'));
@@ -265,6 +272,7 @@ export async function createLifecycleHarness({
     economyService: countingEconomy,
     userService,
     eventBus,
+    languageStudyService,
     clock: () => clock.now(),
     rng,
     logger,
