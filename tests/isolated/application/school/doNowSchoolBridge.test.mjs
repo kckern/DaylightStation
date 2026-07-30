@@ -5,11 +5,16 @@
  * grown-up working the approvals queue — nobody is scanning a card at that
  * moment for `ResolveScanAction` to answer synchronously.
  *
- * Ownership is a REPOSITORY LOOKUP, never shape matching: only
- * `requestedBy === 'school-scan'` AND a `ref` this store resolves to a real
- * session sitting at `created` gets acted on. Everything else — a different
- * provenance, an unresolvable ref, a ref already past `created` — is ignored
- * by construction.
+ * `donow.dispatched` fires identically for BOTH the immediate dispatch path
+ * (already handled inline by the scan) and the out-of-band approval path
+ * this bridge exists for. `payload.approved === true` is the ONLY
+ * deterministic discriminator (set by `DoNowService` only on the approved
+ * path) — checked FIRST, before any I/O, so the immediate case never even
+ * reaches the repository lookup. Ownership below that gate is a REPOSITORY
+ * LOOKUP, never shape matching: `requestedBy === 'school-scan'` AND a `ref`
+ * this store resolves to a real session sitting at `created` gets acted on.
+ * Everything else — unapproved, a different provenance, an unresolvable ref,
+ * a ref already past `created` — is ignored by construction.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { DoNowSchoolBridge } from '#apps/school/DoNowSchoolBridge.mjs';
@@ -51,6 +56,12 @@ const build = () => {
   bridge = new DoNowSchoolBridge({ eventBus, sessions, closeSessionOutcome: close, clock: clock.now, logger: silentLogger });
 };
 
+/** The shape DoNowService actually broadcasts for an approved dispatch. */
+const approvedPayload = (over = {}) => ({
+  type: 'donow.dispatched', surface: 'garage-fitness', requestedBy: 'school-scan',
+  approved: true, approvalId: 'dnr_1', ...over,
+});
+
 beforeEach(() => build());
 
 describe('construction', () => {
@@ -89,32 +100,63 @@ describe('start/stop', () => {
     await sessions.appendEvent(sid, { type: 'created', at: clock.iso(), sessionId: sid, learnerId: 'kid1', unitId: 'unit-1' });
     bridge.start();
     bridge.stop();
-    await eventBus.emit('donow', { type: 'donow.dispatched', ref: sid, surface: 'garage-fitness', requestedBy: 'school-scan' });
+    await eventBus.emit('donow', approvedPayload({ ref: sid }));
     expect(close.execute).not.toHaveBeenCalled();
     expect(sessions.types(sid)).not.toContain('launch_dispatched');
   });
 });
 
-describe('the ownership filter (spec §6)', () => {
-  it('acts on a school-scan dispatch whose ref resolves to a session at created: appends launch_dispatched and honor-closes', async () => {
+describe('the approved gate — deterministic, checked before any I/O', () => {
+  // THE double-fire fix: the immediate dispatch path (already handled
+  // inline by ResolveScanAction, in the SAME call that produced this very
+  // broadcast) reaches this bridge too, on the same synchronous bus, and its
+  // session still reads `created` at that instant — a race, not a filter.
+  // `approved` is the deterministic answer: the immediate path never sets it.
+  it('ignores an unapproved dispatched event outright, even though the ref resolves to a session at created', async () => {
     const sid = 'ses_1';
     await sessions.appendEvent(sid, { type: 'created', at: clock.iso(), sessionId: sid, learnerId: 'kid1', unitId: 'unit-1' });
     bridge.start();
 
-    await eventBus.emit('donow', { type: 'donow.dispatched', ref: sid, surface: 'garage-fitness', requestedBy: 'school-scan' });
+    await eventBus.emit('donow', {
+      type: 'donow.dispatched', ref: sid, surface: 'garage-fitness', requestedBy: 'school-scan',
+      // no `approved` key — exactly what the immediate dispatch path broadcasts.
+    });
+
+    expect(close.execute).not.toHaveBeenCalled();
+    expect(sessions.types(sid)).not.toContain('launch_dispatched');
+  });
+
+  it('also ignores approved: false explicitly', async () => {
+    const sid = 'ses_1';
+    await sessions.appendEvent(sid, { type: 'created', at: clock.iso(), sessionId: sid, learnerId: 'kid1', unitId: 'unit-1' });
+    bridge.start();
+
+    await eventBus.emit('donow', approvedPayload({ ref: sid, approved: false }));
+
+    expect(close.execute).not.toHaveBeenCalled();
+  });
+});
+
+describe('the ownership filter (spec §6)', () => {
+  it('an approved event on a session at created appends launch_dispatched (with approvalId) and honor-closes', async () => {
+    const sid = 'ses_1';
+    await sessions.appendEvent(sid, { type: 'created', at: clock.iso(), sessionId: sid, learnerId: 'kid1', unitId: 'unit-1' });
+    bridge.start();
+
+    await eventBus.emit('donow', approvedPayload({ ref: sid, approvalId: 'dnr_42' }));
 
     expect(sessions.types(sid)).toContain('launch_dispatched');
     const event = (await sessions.readEvents(sid)).find((e) => e.type === 'launch_dispatched');
-    expect(event).toMatchObject({ surface: 'garage-fitness' });
+    expect(event).toMatchObject({ surface: 'garage-fitness', decision: 'dispatched', approvalId: 'dnr_42' });
     expect(close.execute).toHaveBeenCalledWith({ sessionId: sid, honorClose: true });
   });
 
-  it('ignores a different requestedBy (e.g. school-program) even if the ref happens to resolve to a session', async () => {
+  it('ignores a different requestedBy (e.g. school-program) even if approved and the ref resolves to a session', async () => {
     const sid = 'ses_1';
     await sessions.appendEvent(sid, { type: 'created', at: clock.iso(), sessionId: sid, learnerId: 'kid1', unitId: 'unit-1' });
     bridge.start();
 
-    await eventBus.emit('donow', { type: 'donow.dispatched', ref: sid, surface: 'portal', requestedBy: 'school-program' });
+    await eventBus.emit('donow', approvedPayload({ ref: sid, surface: 'portal', requestedBy: 'school-program' }));
 
     expect(close.execute).not.toHaveBeenCalled();
     expect(sessions.types(sid)).not.toContain('launch_dispatched');
@@ -125,24 +167,27 @@ describe('the ownership filter (spec §6)', () => {
     await sessions.appendEvent(sid, { type: 'created', at: clock.iso(), sessionId: sid, learnerId: 'kid1', unitId: 'unit-1' });
     bridge.start();
 
-    await eventBus.emit('donow', { type: 'donow.pending', ref: sid, surface: 'garage-fitness', requestedBy: 'school-scan' });
+    await eventBus.emit('donow', approvedPayload({ ref: sid, type: 'donow.pending' }));
 
     expect(close.execute).not.toHaveBeenCalled();
   });
 
   it('ignores a ref this store cannot resolve to any session (unknown id) — never a shape check', async () => {
     bridge.start();
-    await eventBus.emit('donow', { type: 'donow.dispatched', ref: 'ses_nope', surface: 'garage-fitness', requestedBy: 'school-scan' });
+    await eventBus.emit('donow', approvedPayload({ ref: 'ses_nope' }));
     expect(close.execute).not.toHaveBeenCalled();
   });
 
-  it('ignores a ref whose session has already moved past created (not this bridge\'s to close)', async () => {
+  // Belt-and-braces even with `approved` as the deterministic gate: a
+  // double-approval (or a replayed event) must skip silently, not re-append
+  // or re-close.
+  it('an approved event whose session has already moved past created skips silently (already launch_dispatched)', async () => {
     const sid = 'ses_1';
     await sessions.appendEvent(sid, { type: 'created', at: clock.iso(), sessionId: sid, learnerId: 'kid1', unitId: 'unit-1' });
     await sessions.appendEvent(sid, { type: 'launch_dispatched', at: clock.iso(), sessionId: sid, surface: 'garage-fitness' });
     bridge.start();
 
-    await eventBus.emit('donow', { type: 'donow.dispatched', ref: sid, surface: 'garage-fitness', requestedBy: 'school-scan' });
+    await eventBus.emit('donow', approvedPayload({ ref: sid }));
 
     // Still only the one launch_dispatched event that was already there — the
     // bridge did not append a second one or re-honor-close.
@@ -154,7 +199,7 @@ describe('the ownership filter (spec §6)', () => {
     // 'language' is never a real sessionId in this store — readEvents resolves
     // empty, reduceSession yields no sessionId, and the bridge ignores it.
     bridge.start();
-    await eventBus.emit('donow', { type: 'donow.dispatched', ref: 'language', surface: 'portal', requestedBy: 'school-scan' });
+    await eventBus.emit('donow', approvedPayload({ ref: 'language', surface: 'portal' }));
     expect(close.execute).not.toHaveBeenCalled();
   });
 
@@ -164,9 +209,7 @@ describe('the ownership filter (spec §6)', () => {
       eventBus, sessions: throwingSessions, closeSessionOutcome: close, clock: clock.now, logger: silentLogger,
     });
     bridge.start();
-    await expect(eventBus.emit('donow', {
-      type: 'donow.dispatched', ref: 'ses_1', surface: 'garage-fitness', requestedBy: 'school-scan',
-    })).resolves.not.toThrow();
+    await expect(eventBus.emit('donow', approvedPayload({ ref: 'ses_1' }))).resolves.not.toThrow();
     expect(close.execute).not.toHaveBeenCalled();
   });
 });

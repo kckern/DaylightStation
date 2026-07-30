@@ -265,14 +265,28 @@ export async function createSchoolLifecycle({
   const portal = new PortalDispatch({ eventBus, logger });
   // A minimal DoNowService, `portal`-surface-only, so LanguageProgramLauncher
   // (Task 12, spec §6 last bullet: "program launchers become DoNow callers")
-  // gets real occupancy-aware dispatch rather than the raw broadcast it used
-  // to make directly through `PortalDispatch`. `schoolActivity` stands in as
-  // "nobody is ever mid-quiz" until a real active-sittings projection exists
-  // (Task 13) — fail-OPEN here would be wrong for a fresh occupancy source,
-  // but an always-idle stand-in is the correct placeholder for one that does
-  // not exist yet: there is no sitting to protect against clobbering.
+  // and `ResolveScanAction#onScreen`'s bank hand-off get real occupancy-aware
+  // dispatch rather than the raw broadcast either used to make directly
+  // through `PortalDispatch`. `schoolActivity` is `schoolService` itself —
+  // `SchoolService.activeSittings()` (Task 8) already IS the portal's live
+  // "who is mid-quiz right now" projection, the same one `PortalSurface`'s
+  // own doc names as its occupancy source, so this wires the real thing, not
+  // a placeholder. What this DOES protect: a bank/language hand-off through
+  // THIS `portal` surface can no longer clobber a child's live in-memory
+  // quiz/flashcard/drill sitting. What it does NOT yet protect: the other
+  // seven DoNow surfaces (garage-fitness, piano, TVs, printers, ...) have no
+  // registered adapter here at all — a `launch:` unit or `programs:` entry
+  // naming any of them still degrades to "Ask a grown-up to set this up."
+  // (`ResolveScanAction`/`SurfaceProgramLauncher`'s optional-degrading
+  // design) until Task 13 wires the full 8-surface registry + composition.
+  // `typeof ... === 'function'` guards the same missing-dep posture
+  // `PortalSurface` itself already has (no schoolActivity -> occupancy
+  // `unknown`, fail-closed to `pending_approval`, never fail-open to idle) —
+  // belt-and-braces in case a future caller passes a `schoolService`-shaped
+  // object without the method.
+  const schoolActivity = typeof schoolService?.activeSittings === 'function' ? schoolService : null;
   const donowSurfaces = new Map([
-    ['portal', new PortalSurface({ eventBus, schoolActivity: { activeSittings: async () => [] }, logger })],
+    ['portal', new PortalSurface({ eventBus, schoolActivity, logger })],
   ]);
   const donow = new DoNowService({
     surfaces: donowSurfaces,

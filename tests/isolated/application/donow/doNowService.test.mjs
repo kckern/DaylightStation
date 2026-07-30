@@ -169,9 +169,14 @@ describe('DoNowService.dispatch', () => {
         at: NOW_ISO, surface: 'garage-fitness', learnerId: 'kid1',
         requestedBy: 'school-scan', ref: 'ses_1',
       });
+      // The IMMEDIATE dispatch path never carries `approved`/`approvalId` —
+      // that pair is `dispatchApproved`-only, and is the sole discriminator a
+      // subscriber (DoNowSchoolBridge) has for telling the two paths apart.
       expect(eventBus.broadcast).toHaveBeenCalledWith('donow', {
         type: 'donow.dispatched', ref: 'ses_1', surface: 'garage-fitness', requestedBy: 'school-scan',
       });
+      expect(eventBus.broadcast.mock.calls[0][1]).not.toHaveProperty('approved');
+      expect(eventBus.broadcast.mock.calls[0][1]).not.toHaveProperty('approvalId');
       // log append happens before the broadcast
       const appendOrder = store.appendDispatch.mock.invocationCallOrder[0];
       const broadcastOrder = eventBus.broadcast.mock.invocationCallOrder[0];
@@ -390,8 +395,12 @@ describe('DoNowService.dispatchApproved', () => {
       learnerId: 'kid1', requestedBy: 'school-scan', ref: 'ses_1', approvalId: 'dnr_approved1',
     });
     expect('programId' in row).toBe(false);
+    // approved:true + approvalId are the ONLY discriminator a subscriber has
+    // between this out-of-band approval and the immediate dispatch() path
+    // (which never sets them) — see DoNowSchoolBridge's ownership filter.
     expect(eventBus.broadcast).toHaveBeenCalledWith('donow', {
       type: 'donow.dispatched', ref: 'ses_1', surface: 'garage-fitness', requestedBy: 'school-scan',
+      approved: true, approvalId: 'dnr_approved1',
     });
   });
 
