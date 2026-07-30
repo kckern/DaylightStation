@@ -26,7 +26,7 @@ Next: Adding Unlike Denominators
       — print your sheet
         [QR: subject_next]
 --------------------------------
-LANGUAGE - done today     Day 61
+LANGUAGE - done today
 --------------------------------
 READING            Unit 1 of 6
 Next: The Lion, the Witch...
@@ -354,3 +354,6 @@ pattern:
 - Per-subject pacing knobs (daily serving is the one policy).
 - Any change to coins/rewards, the parent board, or worksheet grading.
 - Printing the agenda anywhere but the thermal console printer.
+- A served section prints only `done today` in its header — the progress label
+  yields the slot (adjudicated). A distinct 'complete'/progress-carrying served
+  header is deferred wording work, recorded in the plan's out-of-scope list.
