@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import SchoolApp from './SchoolApp.jsx';
 
 // Capture the WS subscriber so these tests can push `school.launch` messages
@@ -89,6 +89,18 @@ beforeEach(() => {
 // full payload the WS layer hands every subscribed filter, `topic` included.
 const deliverLaunch = (learnerId, target) => h.handlers[0]({ topic: 'school', type: 'school.launch', learnerId, target });
 
+// `banks` loads via its own un-awaited `schoolApi.banks()` fetch — a separate
+// promise from the materials/courses `Promise.all` that gates the subject
+// wall's render. Firing a bank-targeted launch before it resolves means
+// `onPortalLaunch`'s `banks.find` correctly (but flakily, from the test's
+// point of view) sees an empty list and answers not-found. Opening the
+// Library and waiting for a bank tile to appear is a deterministic proof
+// that `banks` state has actually landed.
+async function openLibraryAndWaitForBanks() {
+  fireEvent.click(await screen.findByRole('button', { name: /library/i }));
+  await screen.findByText('Caps');
+}
+
 describe('SchoolApp — Portal launch subscription (school.launch)', () => {
   it('program:language with a loaded course navigates into the language runner', async () => {
     coursesMock.mockResolvedValue({
@@ -126,7 +138,7 @@ describe('SchoolApp — Portal launch subscription (school.launch)', () => {
 
   it('bank launch for a known bank opens the quiz runner directly, bypassing the picker', async () => {
     render(<SchoolApp clear={() => {}} />);
-    await screen.findByText('History & Geography');
+    await openLibraryAndWaitForBanks();
 
     deliverLaunch('kid1', { kind: 'bank', bankId: 'caps', unitId: 'u1', sessionId: 'ses_1' });
 
@@ -137,13 +149,14 @@ describe('SchoolApp — Portal launch subscription (school.launch)', () => {
 
   it('bank launch for an unknown bankId does nothing visible and logs a warn', async () => {
     render(<SchoolApp clear={() => {}} />);
-    await screen.findByText('History & Geography');
+    await openLibraryAndWaitForBanks(); // banks state resolved deterministically
 
     deliverLaunch('kid1', { kind: 'bank', bankId: 'nonexistent', unitId: 'u1', sessionId: 'ses_1' });
 
     await waitFor(() => expect(bankLogMock).toHaveBeenCalledWith('not-found', { bankId: 'nonexistent' }));
     expect(screen.queryByText('WA?')).toBeNull();
     expect(screen.queryByRole('dialog')).toBeNull();
-    expect(screen.getByText('History & Geography')).toBeInTheDocument();
+    // Still in the Library, no runner opened.
+    expect(screen.getByText('Caps')).toBeInTheDocument();
   });
 });
