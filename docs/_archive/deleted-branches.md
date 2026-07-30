@@ -184,3 +184,4 @@ To restore: `git checkout -b branch-name <commit-hash>`
 | 2026-07-30 | feature/karaoke-keyshift | 1185b4a88 | Karaoke key-change stepper on singalong chrome: live ±6 semitone transpose via lazy Tone.PitchShift on the resolved media element |
 | 2026-07-30 | fix/engagement-gate-interval | b161c026f | Engagement gate poll interval died under render churn; sequential courses never unlocked |
 | 2026-07-30 | fix/karaoke-keyshift-quality | 3862b9259 | Karaoke key shift: Tone.PitchShift → Signalsmith Stretch (discordant smear fix) |
+| 2026-07-30 | fix/courses-poster-aspect | e6b6872a7 | Course wall posters fixed 2:3 letterboxed in cell (was crop-to-cell), overlays anchored to poster box |
