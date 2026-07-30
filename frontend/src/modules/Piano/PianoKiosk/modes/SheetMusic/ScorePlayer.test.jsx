@@ -976,7 +976,9 @@ describe('ScorePlayer — Polish mode (transport-driven)', () => {
     const grades = emitted.filter(([ev]) => ev === 'score.polish.measure');
     expect(grades.length).toBeGreaterThanOrEqual(1);
     expect(grades[0][1]).toMatchObject({ measure: 0, grade: 'green' });
-    expect(screen.getByText('m 2 / 3')).toBeTruthy(); // ran on into m2 — no wrap back to m1
+    // Ran on into m2 — no wrap back to m1. Matched on the tail, because once a
+    // measure is graded the Polish readout leads with the live run score (wave-3 H).
+    expect(screen.getByTestId('score-position').textContent).toMatch(/m 2 \/ 3$/);
   });
 
   it('a Polish run that starts inside a range still grades the measure it played, exactly once', async () => {
@@ -1328,6 +1330,311 @@ describe('ScorePlayer — Polish mode (transport-driven)', () => {
     expect(d.mode).toBe('polish');
   });
 
+});
+
+// ── Polish tempo tiers (wave-3 H) ───────────────────────────────────────────────
+// A whole-piece Polish run banks a per-tier best, so the tier and the score have
+// to be exact — not "roughly green". Two things make that possible here:
+//
+//  1. The fixture's WRITTEN bpm is derived from the tempo the test will pick
+//     (`60 / tempoMult`), so the run's scaled quarter is exactly 1000ms AND the
+//     count-in runs at exactly 60 effective bpm (4 clicks × 1000ms = 4000ms).
+//     Both land on multiples of the 100ms transport tick.
+//  2. Advancing to exactly the boundary means the step fires with dueWall ===
+//     performance.now(), so a note played immediately after has drift 0 →
+//     timingScore 1 → combined = noteScore. The score is then pure note accuracy.
+//
+// Only 0.8 (→75bpm) and 1.25 (→48bpm) are used: both divide cleanly. 0.9 would
+// give 66.666…bpm and a 1000.0000000000002ms quarter, which the tick misses.
+describe('ScorePlayer — Polish tempo tiers (wave-3 H)', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.spyOn(performance, 'now').mockImplementation(() => Date.now());
+    vi.stubGlobal('requestAnimationFrame', (cb) => setTimeout(() => cb(Date.now()), 16));
+    vi.stubGlobal('cancelAnimationFrame', (id) => clearTimeout(id));
+    vi.setSystemTime(0);
+  });
+  afterEach(() => { cleanup(); vi.useRealTimers(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
+
+  const COUNT_IN_MS = 4000; // 4 clicks at 60 effective bpm, by fixture construction
+
+  /** n single-step measures, one per scaled quarter, all on ONE staff (bucket 'both'). */
+  const tierFixture = (n, tempoMult) => ({
+    tempoEntries: [{ onsetQuarter: 0, bpm: 60 / tempoMult }],
+    events: Array.from({ length: n }, (_, i) => ({ midi: 60 + i, midis: [60 + i], onsetQuarter: i, x: 100 + i * 60, top: 10, bottom: 200, system: 0 })),
+    steps: Array.from({ length: n }, (_, i) => ({ onsetQuarter: i, measure: i, notes: [{ midi: 60 + i, staff: 0, x: 100 + i * 60, top: 10, bottom: 200, width: 8 }] })),
+    notes: Array.from({ length: n }, (_, i) => ({ midi: 60 + i, staff: 0, onsetQuarter: i, durationQuarters: 1 })),
+    measures: Array.from({ length: n }, (_, i) => ({ index: i, number: i + 1, firstStep: i, lastStep: i })),
+  });
+
+  /** Same shape but a GRAND staff: each measure's note doubled an octave down on staff 1. */
+  const grandTierFixture = (n, tempoMult) => ({
+    tempoEntries: [{ onsetQuarter: 0, bpm: 60 / tempoMult }],
+    events: Array.from({ length: n }, (_, i) => ({ midi: 60 + i, midis: [60 + i, 48 + i], onsetQuarter: i, x: 100 + i * 60, top: 10, bottom: 200, system: 0 })),
+    steps: Array.from({ length: n }, (_, i) => ({
+      onsetQuarter: i,
+      measure: i,
+      notes: [
+        { midi: 60 + i, staff: 0, x: 100 + i * 60, top: 10, bottom: 200, width: 8 },
+        { midi: 48 + i, staff: 1, x: 100 + i * 60, top: 120, bottom: 300, width: 8 },
+      ],
+    })),
+    notes: Array.from({ length: n }, (_, i) => [
+      { midi: 60 + i, staff: 0, onsetQuarter: i, durationQuarters: 1 },
+      { midi: 48 + i, staff: 1, onsetQuarter: i, durationQuarters: 1 },
+    ]).flat(),
+    measures: Array.from({ length: n }, (_, i) => ({ index: i, number: i + 1, firstStep: i, lastStep: i })),
+  });
+
+  const pickTempo = (label) => {
+    act(() => { fireEvent.click(screen.getByRole('button', { name: /^tempo/i })); });
+    act(() => { fireEvent.click(screen.getByRole('button', { name: new RegExp(`^${label}`) })); });
+  };
+  const pressPlay = async () => {
+    screen.getByRole('button', { name: 'Play' }).click();
+    await act(async () => {});
+  };
+  const position = () => screen.getByTestId('score-position').textContent;
+
+  it('a completed run at 80% banks the medium tier best for the bucket, and the summary shows the run + all four bests (spec 1)', async () => {
+    // Three measures, all played dead on the beat → every combined is 1.0 → 100.
+    h.layoutExtras = tierFixture(3, 0.8);
+    h.practice = { polish: { both: { slow: 78, medium: 84 } } }; // prior history
+    renderPlayer();
+    pickMode('Polish');
+    await act(async () => {});
+    pickTempo('80%');
+    await pressPlay();
+    act(() => vi.advanceTimersByTime(COUNT_IN_MS)); // count-in exactly → play() fires step 0 at drift 0
+    play(60);
+    act(() => vi.advanceTimersByTime(1000)); // → step 1 (grades m0)
+    play(61);
+    play(62); // the closing note, rolled in before the tick that ends the run
+    act(() => vi.advanceTimersByTime(1000)); // → final step + onDone (finalize grades m1 AND m2)
+
+    expect(document.querySelector('.piano-score-run-summary')).not.toBeNull();
+    expect(h.recordTierBest).toHaveBeenCalledTimes(1);
+    expect(h.recordTierBest).toHaveBeenCalledWith({ bucket: 'both', tier: 'medium', score: 100 });
+    // The panel reports THIS run and the bucket's bests — the seeded 78/84 plus
+    // two never-run tiers.
+    expect(document.querySelector('.piano-score-run-score__value').textContent).toBe('100');
+    expect(document.querySelector('.piano-score-run-score__tier').textContent).toBe('medium');
+    const cells = [...document.querySelectorAll('.piano-score-run-tier__value')].map((n) => n.textContent);
+    expect(cells).toEqual(['78', '84', '—', '—']);
+    expect(document.querySelector('.piano-score-run-tier--current .piano-score-run-tier__value').textContent).toBe('84');
+  });
+
+  it('an RH-only run banks polish.rh, never polish.both — and the strip shows the rh bests (spec 2)', async () => {
+    h.layoutExtras = grandTierFixture(3, 0.8);
+    // Seeded so a bucket mix-up is visible: 'both' bests would render 11/22.
+    h.practice = { polish: { rh: { medium: 84 }, both: { slow: 11, medium: 22 } } };
+    renderPlayer();
+    pickMode('Polish');
+    await act(async () => {});
+    act(() => { fireEvent.click(screen.getByRole('button', { name: 'Left hand' })); }); // both → rh
+    pickTempo('80%');
+    await pressPlay();
+    act(() => vi.advanceTimersByTime(COUNT_IN_MS));
+    play(60);
+    act(() => vi.advanceTimersByTime(1000));
+    play(61);
+    play(62);
+    act(() => vi.advanceTimersByTime(1000)); // → onDone
+
+    expect(h.recordTierBest).toHaveBeenCalledTimes(1);
+    const call = h.recordTierBest.mock.calls[0][0];
+    expect(call.bucket).toBe('rh');
+    expect(call.tier).toBe('medium');
+    // Only the RH notes were expected (LH is inactive), and all three were played.
+    expect(call.score).toBe(100);
+    const cells = [...document.querySelectorAll('.piano-score-run-tier__value')].map((n) => n.textContent);
+    expect(cells).toEqual(['—', '84', '—', '—']); // the rh bucket's bests, not both's
+    expect(screen.getByText(/right hand/i)).toBeInTheDocument();
+  });
+
+  it('a mid-run tempo change voids the run: the summary says mixed tempo and NO best is written (spec 3)', async () => {
+    h.layoutExtras = tierFixture(3, 0.8);
+    renderPlayer();
+    pickMode('Polish');
+    await act(async () => {});
+    pickTempo('80%');
+    await pressPlay();
+    act(() => vi.advanceTimersByTime(COUNT_IN_MS));
+    play(60);
+    act(() => vi.advanceTimersByTime(1000));
+    pickTempo('125%'); // mid-run tempo change → tier bests are no longer comparable
+    play(61);
+    play(62);
+    act(() => vi.advanceTimersByTime(2000)); // let the (now rescaled) run finish → onDone
+
+    expect(document.querySelector('.piano-score-run-summary')).not.toBeNull();
+    expect(screen.getByText(/mixed tempo/i)).toBeInTheDocument();
+    expect(h.recordTierBest).not.toHaveBeenCalled();
+    // Live grades still flow — voiding is about persistence, not feedback.
+    expect(document.querySelector('.piano-score-run-score__value')).not.toBeNull();
+  });
+
+  it('the voiding flag is scoped to a run: a tempo change made BEFORE Play does not void the next run', async () => {
+    // runMixedRef must be armed by the run, not by the session — otherwise the
+    // first tempo pick a user ever makes would poison every run that follows.
+    h.layoutExtras = tierFixture(3, 0.8);
+    renderPlayer();
+    pickMode('Polish');
+    await act(async () => {});
+    pickTempo('125%'); // …changed their mind…
+    pickTempo('80%');  // …twice, all before pressing Play
+    await pressPlay();
+    act(() => vi.advanceTimersByTime(COUNT_IN_MS));
+    play(60);
+    act(() => vi.advanceTimersByTime(1000));
+    play(61);
+    play(62);
+    act(() => vi.advanceTimersByTime(1000));
+
+    expect(screen.queryByText(/mixed tempo/i)).toBeNull();
+    expect(h.recordTierBest).toHaveBeenCalledWith({ bucket: 'both', tier: 'medium', score: 100 });
+  });
+
+  it('an open summary keeps describing the run it reported, even once the NEXT run has started', async () => {
+    // Play does not dismiss the panel, and starting a run re-arms the tier/void
+    // state. If the panel read those live it would silently re-label a finished,
+    // VOIDED run as a clean one at the new tempo — a best the user never earned,
+    // shown next to a run that never earned it.
+    h.layoutExtras = tierFixture(4, 0.8);
+    renderPlayer();
+    pickMode('Polish');
+    await act(async () => {});
+    pickTempo('80%');
+    await pressPlay();
+    act(() => vi.advanceTimersByTime(COUNT_IN_MS));
+    play(60);
+    act(() => vi.advanceTimersByTime(1000));
+    pickTempo('125%'); // void this run
+    play(61);
+    play(62);
+    play(63);
+    act(() => vi.advanceTimersByTime(3000)); // finish it → voided summary
+    expect(screen.getByText(/mixed tempo/i)).toBeInTheDocument();
+
+    // A fresh run: onGo re-arms runTierRef/runMixedRef while the panel is still up.
+    await pressPlay();
+    act(() => vi.advanceTimersByTime(3200)); // count-in at 125% (48bpm base → 60 eff) → onGo
+    expect(screen.getByText(/mixed tempo/i)).toBeInTheDocument(); // still the OLD run's report
+  });
+
+  it('a silent-stop shows the summary but banks NO best (spec 4)', async () => {
+    // Seven silent measures: the 4th consecutive silent one trips the auto-stop.
+    // The run never reached the end, so it is not a comparable whole-piece score.
+    h.layoutExtras = tierFixture(7, 0.8);
+    renderPlayer();
+    pickMode('Polish');
+    await act(async () => {});
+    pickTempo('80%');
+    await pressPlay();
+    act(() => vi.advanceTimersByTime(COUNT_IN_MS));
+    for (let i = 0; i < 5; i++) act(() => vi.advanceTimersByTime(1000)); // 4 silent measures → stop
+
+    expect(document.querySelector('.piano-score-run-summary')).not.toBeNull();
+    expect(h.recordTierBest).not.toHaveBeenCalled();
+  });
+
+  it('a manual pause shows the summary but banks NO best (spec 4)', async () => {
+    h.layoutExtras = tierFixture(5, 0.8);
+    renderPlayer();
+    pickMode('Polish');
+    await act(async () => {});
+    pickTempo('80%');
+    await pressPlay();
+    act(() => vi.advanceTimersByTime(COUNT_IN_MS));
+    play(60);
+    act(() => vi.advanceTimersByTime(1000)); // one graded measure — a real, scored partial run
+    play(61);
+    act(() => { screen.getByRole('button', { name: 'Pause' }).click(); });
+    await act(async () => {});
+
+    expect(document.querySelector('.piano-score-run-summary')).not.toBeNull();
+    expect(document.querySelector('.piano-score-run-score__value')).not.toBeNull(); // it DOES have a score…
+    expect(h.recordTierBest).not.toHaveBeenCalled();                                // …but banks nothing
+  });
+
+  it('an overclocked completed run earns the 1.25 multiplier (spec 6)', async () => {
+    // Two measures, mean combined 0.9 → base 90 → overclocked stores round(90 × 1.25) = 113.
+    // m0 is a five-note chord with only FOUR played (noteScore 0.8, timing perfect);
+    // m1 is a single note played clean (1.0). The multiplier itself is pinned in
+    // polishTiers.test.js — what this proves is that the RUN's tier reaches it.
+    const CHORD = [60, 62, 64, 65, 67];
+    h.layoutExtras = {
+      tempoEntries: [{ onsetQuarter: 0, bpm: 60 / 1.25 }], // 48bpm → 1000ms scaled quarter
+      events: [
+        { midi: 60, midis: CHORD, onsetQuarter: 0, x: 100, top: 10, bottom: 200, system: 0 },
+        { midi: 72, midis: [72], onsetQuarter: 1, x: 160, top: 10, bottom: 200, system: 0 },
+      ],
+      steps: [
+        { onsetQuarter: 0, measure: 0, notes: CHORD.map((m) => ({ midi: m, staff: 0, x: 100, top: 10, bottom: 200, width: 8 })) },
+        { onsetQuarter: 1, measure: 1, notes: [{ midi: 72, staff: 0, x: 160, top: 10, bottom: 200, width: 8 }] },
+      ],
+      notes: [...CHORD.map((m) => ({ midi: m, staff: 0, onsetQuarter: 0, durationQuarters: 1 })),
+        { midi: 72, staff: 0, onsetQuarter: 1, durationQuarters: 1 }],
+      measures: [
+        { index: 0, number: 1, firstStep: 0, lastStep: 0 },
+        { index: 1, number: 2, firstStep: 1, lastStep: 1 },
+      ],
+    };
+    renderPlayer();
+    pickMode('Polish');
+    await act(async () => {});
+    pickTempo('125%');
+    await pressPlay();
+    act(() => vi.advanceTimersByTime(COUNT_IN_MS));
+    for (const n of [60, 62, 64, 65]) play(n); // four of five — the fifth is missed
+    play(72);                                  // …and m1's note, rolled in on the same beat
+    act(() => vi.advanceTimersByTime(1000));   // → final step + onDone
+
+    expect(h.recordTierBest).toHaveBeenCalledWith({ bucket: 'both', tier: 'overclocked', score: 113 });
+    expect(document.querySelector('.piano-score-run-score__value').textContent).toBe('113');
+    expect(document.querySelector('.piano-score-run-score__tier').textContent).toBe('overclocked');
+  });
+
+  it('the bar readout leads with the live run score once a measure is graded (spec 5)', async () => {
+    // Four measures, so the readout is observed MID-run: a 3-measure fixture would
+    // complete on the second advance and send the cursor home (audit H2).
+    h.layoutExtras = tierFixture(4, 0.8);
+    renderPlayer();
+    pickMode('Polish');
+    await act(async () => {});
+    pickTempo('80%');
+    expect(position()).toBe('m 1 / 4'); // nothing graded yet → plain position
+    await pressPlay();
+    act(() => vi.advanceTimersByTime(COUNT_IN_MS));
+    play(60);
+    expect(position()).toBe('m 1 / 4'); // still nothing GRADED — a hit is not a grade
+    act(() => vi.advanceTimersByTime(1000)); // the boundary grades m0 → 100
+    expect(position()).toBe('100% · m 2 / 4');
+    // A wrong note in m1 drags the running mean down: (1.0 + 0.0) / 2 = 50.
+    play(99);
+    act(() => vi.advanceTimersByTime(1000));
+    expect(position()).toBe('50% · m 3 / 4');
+  });
+
+  it('a guest / historyless record renders every tier as unset rather than zero', async () => {
+    // h.practice is {} — polish.<bucket> is absent. Four em dashes, no zeros: a
+    // tier that was never run is not a tier scored nothing.
+    h.layoutExtras = tierFixture(3, 0.8);
+    renderPlayer();
+    pickMode('Polish');
+    await act(async () => {});
+    pickTempo('80%');
+    await pressPlay();
+    act(() => vi.advanceTimersByTime(COUNT_IN_MS));
+    play(60);
+    act(() => vi.advanceTimersByTime(1000));
+    play(61);
+    play(62);
+    act(() => vi.advanceTimersByTime(1000));
+
+    const cells = [...document.querySelectorAll('.piano-score-run-tier__value')].map((n) => n.textContent);
+    expect(cells).toEqual(['—', '—', '—', '—']);
+  });
 });
 
 describe('ScorePlayer — Listen mode', () => {
