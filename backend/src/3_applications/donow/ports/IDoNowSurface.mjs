@@ -45,9 +45,19 @@ export class IDoNowSurface {
    * `unknown` rather than guessing `idle`; the policy engine fails closed on
    * `unknown` (never clobbers a possibly-busy surface).
    *
+   * `DoNowService` calls this as `adapter.occupancy({ action })`, passing the
+   * SAME action that is (or would be) dispatched — a multi-target surface
+   * (e.g. `playback-hub`'s color/group targets) can scope its busy-check to
+   * just the action's target instead of treating the whole surface as one
+   * unit. `action` may be `undefined` (a probe with nothing to scope to
+   * yet); adapters that have no notion of sub-targets are free to ignore it
+   * entirely — this is an additive, opt-in parameter, not a required one.
+   *
+   * @param {{action?: *}} [args]
    * @returns {Promise<{state: 'idle'|'active'|'unknown', occupantId: string|null}>}
    */
-  occupancy() {
+  // eslint-disable-next-line no-unused-vars
+  occupancy(args) {
     throw new Error('IDoNowSurface.occupancy must be implemented');
   }
 
@@ -55,11 +65,11 @@ export class IDoNowSurface {
    * Hand the learner off to this surface. Only called once the policy engine
    * has already decided `dispatch`.
    *
-   * @param {{action: *, learnerId: string|null}} args
+   * @param {{action: *, learnerId: string|null, requestedBy?: string}} args
    * @returns {Promise<{dispatched: boolean, detail?: *}>}
    */
   // eslint-disable-next-line no-unused-vars
-  dispatch({ action, learnerId }) {
+  dispatch({ action, learnerId, requestedBy }) {
     throw new Error('IDoNowSurface.dispatch must be implemented');
   }
 

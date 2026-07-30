@@ -8,10 +8,11 @@
  * broadcast + message semantics for an actual dispatch live in exactly one
  * place (`DoNowService#actDispatch`, reached here via `dispatchApproved`):
  *
- *   - `service.occupancyFor(surface)` — the same fail-closed occupancy
- *     probe `dispatch()` uses, re-run against the surface named on the
- *     pending record (the world may have changed since the parent was
- *     asked).
+ *   - `service.occupancyFor(surface, action)` — the same fail-closed
+ *     occupancy probe `dispatch()` uses, re-run against the surface (and
+ *     the ORIGINAL action) named on the pending record (the world may have
+ *     changed since the parent was asked) — a target-scoped adapter
+ *     re-checks the same target, not the whole surface.
  *   - `service.dispatchApproved(record)` — call the surface adapter, log
  *     the dispatch row (carrying `approvalId`), and broadcast
  *     `donow.dispatched`, exactly like an immediate dispatch would.
@@ -46,7 +47,7 @@ export class DoNowApprovals {
 
   /**
    * @param {Object} config
-   * @param {Object} config.service - DoNowService-shaped: `occupancyFor(surface)`, `dispatchApproved(record)`.
+   * @param {Object} config.service - DoNowService-shaped: `occupancyFor(surface, action)`, `dispatchApproved(record)`.
    * @param {Object} config.datastore - YamlDoNowDatastore-shaped: `listPending/putPending/removePending`.
    * @param {Object} [config.notifier] - `{ notify(record) }`; best-effort, failures are swallowed.
    * @param {Function} [config.clock] - `() => Date`, overridable for tests.
@@ -82,7 +83,7 @@ export class DoNowApprovals {
     const record = await this.#findPendingById(id);
     if (!record) return this.#alreadySettled();
 
-    const occupancy = await this.#service.occupancyFor(record.surface);
+    const occupancy = await this.#service.occupancyFor(record.surface, record.action);
     const decision = decideOnApprove({
       occupancy,
       learnerId: record.learnerId,

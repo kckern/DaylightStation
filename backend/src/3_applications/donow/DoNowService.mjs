@@ -126,7 +126,7 @@ export class DoNowService {
       };
     }
 
-    const occupancy = await this.#probeOccupancy(adapter, surface);
+    const occupancy = await this.#probeOccupancy(adapter, surface, action);
     const decision = decideDispatch({ occupancy, learnerId, force });
 
     if (decision === 'dispatch') {
@@ -167,13 +167,17 @@ export class DoNowService {
    * re-checks (spec §4) share one code path with the initial decision. An
    * unregistered surface probes as `unknown` (fail closed), matching the
    * probe-failure posture rather than throwing on a since-removed surface.
+   * `action` (the pending record's original action) is threaded through so
+   * a target-scoped adapter (e.g. `playback-hub`) re-checks the SAME target
+   * the parent was asked about, not the whole surface.
    * @param {string} surface
+   * @param {*} [action]
    * @returns {Promise<{state: 'idle'|'active'|'unknown', occupantId: string|null}>}
    */
-  async occupancyFor(surface) {
+  async occupancyFor(surface, action) {
     const adapter = this.#surfaces.get(surface);
     if (!adapter) return { state: 'unknown', occupantId: null };
-    return this.#probeOccupancy(adapter, surface);
+    return this.#probeOccupancy(adapter, surface, action);
   }
 
   /**
@@ -208,9 +212,9 @@ export class DoNowService {
     }
   }
 
-  async #probeOccupancy(adapter, surface) {
+  async #probeOccupancy(adapter, surface, action) {
     try {
-      return await adapter.occupancy();
+      return await adapter.occupancy({ action });
     } catch (err) {
       this.#logger.warn?.('donow.occupancy.probe-failed', { surface, error: err?.message || String(err) });
       return { state: 'unknown', occupantId: null };
@@ -223,7 +227,7 @@ export class DoNowService {
     const label = this.#safeLabel(adapter, action, surface);
     let result;
     try {
-      result = await adapter.dispatch({ action, learnerId });
+      result = await adapter.dispatch({ action, learnerId, requestedBy });
     } catch (err) {
       this.#logger.error?.('donow.dispatch.adapter-threw', { surface, error: err?.message || String(err) });
       return { decision: 'failed', message: `Could not start the ${label}.` };

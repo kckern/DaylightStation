@@ -159,7 +159,10 @@ describe('LaserSurface', () => {
     const print = vi.fn().mockResolvedValue({ printed: true });
     const s = new LaserSurface({ issueOrPrint: { print }, logger: silentLogger });
     const document = { id: 'd1' };
-    const result = await s.dispatch({ action: { document, requestedBy: 'school-scan' }, learnerId: 'kid1' });
+    // requestedBy arrives as a SIBLING of action (this is the exact shape
+    // DoNowService#actDispatch calls adapters with — see the real-service
+    // regression test below) — NOT merged into the action payload.
+    const result = await s.dispatch({ action: { document }, learnerId: 'kid1', requestedBy: 'school-scan' });
     expect(print).toHaveBeenCalledTimes(1);
     expect(print).toHaveBeenCalledWith(document, { learnerId: 'kid1', requestedBy: 'school-scan' });
     expect(result).toEqual({ dispatched: true, detail: { printed: true } });
@@ -168,7 +171,7 @@ describe('LaserSurface', () => {
   it('attribution logging is NON-OPTIONAL: donow.laser.print {learnerId, requestedBy} at info, even with no printer wired', async () => {
     const info = vi.fn();
     const s = new LaserSurface({ logger: { ...silentLogger, info } });
-    await s.dispatch({ action: { document: { id: 'd1' }, requestedBy: 'school-scan' }, learnerId: 'kid1' });
+    await s.dispatch({ action: { document: { id: 'd1' } }, learnerId: 'kid1', requestedBy: 'school-scan' });
     expect(info).toHaveBeenCalledWith('donow.laser.print', { learnerId: 'kid1', requestedBy: 'school-scan' });
   });
 
@@ -183,6 +186,22 @@ describe('LaserSurface', () => {
     expect(info).toHaveBeenCalledWith('donow.laser.print', { learnerId: 'kid1', requestedBy: null });
   });
 
+  it('REGRESSION GUARD (spec §5 laser): a real DoNowService call — where requestedBy is a sibling of action, exactly as the router/DoNowService send it — must NOT log requestedBy:null', async () => {
+    const info = vi.fn();
+    const s = new LaserSurface({ issueOrPrint: { print: vi.fn().mockResolvedValue({ printed: true }) }, logger: { ...silentLogger, info } });
+    const { DoNowService } = await import('#apps/donow/DoNowService.mjs');
+    const service = new DoNowService({
+      surfaces: new Map([['laser', s]]),
+      datastore: { findPending: async () => null, putPending: async () => {}, appendDispatch: async () => {} },
+      logger: silentLogger,
+    });
+    const result = await service.dispatch({
+      surface: 'laser', action: { document: { id: 'd1' } }, learnerId: 'kid1', requestedBy: 'school-scan', ref: 'ref1',
+    });
+    expect(result.decision).toBe('dispatched');
+    expect(info).toHaveBeenCalledWith('donow.laser.print', { learnerId: 'kid1', requestedBy: 'school-scan' });
+  });
+
   it('occupancy is always idle', async () => {
     const s = new LaserSurface();
     await expect(s.occupancy()).resolves.toEqual({ state: 'idle', occupantId: null });
@@ -190,6 +209,10 @@ describe('LaserSurface', () => {
 });
 
 describe('PlaybackHubSurface', () => {
+  const slot = (color, playing, paused = false) => ({
+    color, now_playing: playing ? { queue: { source: 'plex', id: '1' } } : null, paused,
+  });
+
   it('id', () => expect(new PlaybackHubSurface().id).toBe('playback-hub'));
 
   it('validateAction rejects garbage, accepts a well-formed action', () => {
@@ -233,10 +256,9 @@ describe('PlaybackHubSurface', () => {
   });
 
   describe('occupancy', () => {
-    const slot = (color, playing, paused = false) => ({
-      color, now_playing: playing ? { queue: { source: 'plex', id: '1' } } : null, paused,
-    });
-
+    // NOTE: the real call convention is `adapter.occupancy({ action })` (see
+    // DoNowService#probeOccupancy) — action is a SIBLING key, never the
+    // whole argument. These unit tests mirror that shape directly.
     it('no gateway -> unknown', async () => {
       const s = new PlaybackHubSurface();
       await expect(s.occupancy()).resolves.toEqual({ state: 'unknown', occupantId: null });
@@ -244,27 +266,81 @@ describe('PlaybackHubSurface', () => {
     it('a matching slot playing (not paused) -> active', async () => {
       const getStatus = vi.fn().mockResolvedValue([slot('red', true), slot('blue', false)]);
       const s = new PlaybackHubSurface({ headsetHubGateway: { getStatus } });
-      await expect(s.occupancy({ target: 'red' })).resolves.toEqual({ state: 'active', occupantId: null });
+      await expect(s.occupancy({ action: { target: 'red' } })).resolves.toEqual({ state: 'active', occupantId: null });
     });
     it('a matching slot playing but PAUSED does not count as active (idle)', async () => {
       const getStatus = vi.fn().mockResolvedValue([slot('red', true, true)]);
       const s = new PlaybackHubSurface({ headsetHubGateway: { getStatus } });
-      await expect(s.occupancy({ target: 'red' })).resolves.toEqual({ state: 'idle', occupantId: null });
+      await expect(s.occupancy({ action: { target: 'red' } })).resolves.toEqual({ state: 'idle', occupantId: null });
     });
     it('no target scoping (no action) checks every slot', async () => {
       const getStatus = vi.fn().mockResolvedValue([slot('red', false), slot('blue', true)]);
       const s = new PlaybackHubSurface({ headsetHubGateway: { getStatus } });
       await expect(s.occupancy()).resolves.toEqual({ state: 'active', occupantId: null });
+      await expect(s.occupancy({})).resolves.toEqual({ state: 'active', occupantId: null });
     });
     it('no slot playing -> idle', async () => {
       const getStatus = vi.fn().mockResolvedValue([slot('red', false), slot('blue', false)]);
       const s = new PlaybackHubSurface({ headsetHubGateway: { getStatus } });
-      await expect(s.occupancy({ target: 'red,blue' })).resolves.toEqual({ state: 'idle', occupantId: null });
+      await expect(s.occupancy({ action: { target: 'red,blue' } })).resolves.toEqual({ state: 'idle', occupantId: null });
     });
     it('getStatus throwing -> unknown (fail closed)', async () => {
       const getStatus = vi.fn().mockRejectedValue(new Error('hub unreachable'));
       const s = new PlaybackHubSurface({ headsetHubGateway: { getStatus }, logger: silentLogger });
-      await expect(s.occupancy({ target: 'red' })).resolves.toEqual({ state: 'unknown', occupantId: null });
+      await expect(s.occupancy({ action: { target: 'red' } })).resolves.toEqual({ state: 'unknown', occupantId: null });
+    });
+  });
+
+  describe('REGRESSION GUARD (spec §5.1 playback-hub): occupancy scoping through a real DoNowService', () => {
+    it('one slot (red) playing + a dispatch targeting a DIFFERENT slot (blue) -> dispatched, not pending', async () => {
+      const getStatus = vi.fn().mockResolvedValue([slot('red', true), slot('blue', false)]);
+      const execute = vi.fn().mockResolvedValue({ applied: ['blue'], skipped: [] });
+      const s = new PlaybackHubSurface({ sendHubCommand: { execute }, headsetHubGateway: { getStatus }, logger: silentLogger });
+      const { DoNowService } = await import('#apps/donow/DoNowService.mjs');
+      const service = new DoNowService({
+        surfaces: new Map([['playback-hub', s]]),
+        datastore: { findPending: async () => null, putPending: async () => {}, appendDispatch: async () => {} },
+        logger: silentLogger,
+      });
+      const result = await service.dispatch({
+        surface: 'playback-hub', action: { action: 'play', target: 'blue', contentId: 'plex:2' },
+        learnerId: null, requestedBy: 'api', ref: 'r-blue',
+      });
+      expect(result.decision).toBe('dispatched');
+    });
+
+    it('one slot (red) playing + a dispatch targeting THAT slot (red) -> pending_approval (busy), not dispatched', async () => {
+      const getStatus = vi.fn().mockResolvedValue([slot('red', true), slot('blue', false)]);
+      const execute = vi.fn().mockResolvedValue({ applied: ['red'], skipped: [] });
+      const s = new PlaybackHubSurface({ sendHubCommand: { execute }, headsetHubGateway: { getStatus }, logger: silentLogger });
+      const { DoNowService } = await import('#apps/donow/DoNowService.mjs');
+      const service = new DoNowService({
+        surfaces: new Map([['playback-hub', s]]),
+        datastore: { findPending: async () => null, putPending: async () => {}, appendDispatch: async () => {} },
+        notifier: { notify: async () => {} },
+        logger: silentLogger,
+      });
+      const result = await service.dispatch({
+        surface: 'playback-hub', action: { action: 'play', target: 'red', contentId: 'plex:1' },
+        learnerId: null, requestedBy: 'api', ref: 'r-red',
+      });
+      expect(result.decision).toBe('pending_approval');
+      expect(execute).not.toHaveBeenCalled();
+    });
+
+    it('DoNowService.occupancyFor(surface, action) — the approve-time re-check hook — re-scopes to the SAME action, not the whole surface', async () => {
+      const getStatus = vi.fn().mockResolvedValue([slot('red', true), slot('blue', false)]);
+      const s = new PlaybackHubSurface({ headsetHubGateway: { getStatus }, logger: silentLogger });
+      const { DoNowService } = await import('#apps/donow/DoNowService.mjs');
+      const service = new DoNowService({
+        surfaces: new Map([['playback-hub', s]]),
+        datastore: { findPending: async () => null, putPending: async () => {}, appendDispatch: async () => {} },
+        logger: silentLogger,
+      });
+      await expect(service.occupancyFor('playback-hub', { target: 'red' }))
+        .resolves.toEqual({ state: 'active', occupantId: null });
+      await expect(service.occupancyFor('playback-hub', { target: 'blue' }))
+        .resolves.toEqual({ state: 'idle', occupantId: null });
     });
   });
 });

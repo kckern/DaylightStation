@@ -60,8 +60,8 @@ The **surface adapter port** (`IDoNowSurface`, documentation-only like
 ```js
 id            // closed registry name
 validateAction(raw) → string[]     // catalog-load + call-time validation
-occupancy()   → { state: 'idle'|'active'|'unknown', occupantId: string|null }
-dispatch({ action, learnerId })    → { dispatched: boolean, detail? }
+occupancy({ action? })   → { state: 'idle'|'active'|'unknown', occupantId: string|null }
+dispatch({ action, learnerId, requestedBy })    → { dispatched: boolean, detail? }
 label(action) → string             // "Dance video in the garage" — for
                                    // approval notifications and agenda lines
 ```
