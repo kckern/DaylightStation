@@ -98,6 +98,14 @@ describe('planDailyAgenda', () => {
     expect(multi.sections[0].progressLabel).toBe('1 of 2 done');
   });
 
+  it('progress: a real course mixed with a standalone entry is "done" counting, not "Unit N of M"', () => {
+    const { sections } = planDailyAgenda(args({ plan: plan([
+      entry({ unitId: 'u1', status: 'completed', courseId: 'c' }),
+      entry({ unitId: 'u2', courseId: null, sequence: null }),
+    ]) }));
+    expect(sections[0].progressLabel).toBe('1 of 2 done');
+  });
+
   it('grade: mean of latest gradedPercent per attempted unit, program score blended; no evidence → null', () => {
     const { sections } = planDailyAgenda(args({
       plan: plan([entry({ unitId: 'u1', status: 'completed' }), entry({ unitId: 'u2', sequence: 2 })]),
@@ -111,5 +119,18 @@ describe('planDailyAgenda', () => {
     expect(sections[0].gradePercent).toBe(90); // latest attempt only, u2 unattempted is NOT a zero
     const none = planDailyAgenda(args({ plan: plan([entry({})]) }));
     expect(none.sections[0].gradePercent).toBeNull();
+  });
+
+  it('grade: a later millisecond-precision timestamp beats an earlier one numerically, not lexically', () => {
+    const { sections } = planDailyAgenda(args({
+      plan: plan([entry({ unitId: 'u1', status: 'completed' })]),
+      sessions: [
+        { sessionId: 's0', unitId: 'u1', state: 'closed', terminal: true,
+          outcome: { result: 'needs_remediation', at: '2026-07-21T15:00:00Z' }, gradedPercent: 40, updatedAt: '2026-07-21T15:00:00Z' },
+        { sessionId: 's1', unitId: 'u1', state: 'closed', terminal: true,
+          outcome: { result: 'passed', at: '2026-07-21T15:00:00.001Z' }, gradedPercent: 90, updatedAt: '2026-07-21T15:00:00.001Z' },
+      ],
+    }));
+    expect(sections[0].gradePercent).toBe(90);
   });
 });

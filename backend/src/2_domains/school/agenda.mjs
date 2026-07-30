@@ -30,9 +30,9 @@ function latestGradedPerUnit(sessions) {
   const byUnit = new Map();
   sessions.forEach((s) => {
     if (!s || !isNonEmptyString(s.unitId) || s.gradedPercent == null) return;
-    const stamp = String(s.outcome?.at ?? s.updatedAt ?? '');
+    const stampMs = Date.parse(s.outcome?.at ?? s.updatedAt ?? '');
     const held = byUnit.get(s.unitId);
-    if (!held || stamp >= held.stamp) byUnit.set(s.unitId, { stamp, gradedPercent: s.gradedPercent });
+    if (!held || stampMs >= held.stampMs) byUnit.set(s.unitId, { stampMs, gradedPercent: s.gradedPercent });
   });
   return byUnit;
 }
@@ -41,12 +41,12 @@ function latestGradedPerUnit(sessions) {
  * Progress label for one subject's entry list.
  *   - No curriculum (non-program) entries: defer to the first program
  *     status's own `progressLabel` (or null — the launcher owns this text).
- *   - One distinct courseId (all curriculum entries share it, standalone
- *     entries have `courseId: null` and don't count as a second course):
+ *   - Every curriculum entry shares the SAME non-null courseId (a single
+ *     sequential course, no standalone entries mixed in):
  *     `Unit {min(passed+1,total)} of {total}`, or `Course complete` once
  *     every entry is `completed`.
- *   - Otherwise (multiple courses, or a mix of standalone units): `{passed}
- *     of {total} done`.
+ *   - Otherwise (multiple courses, a standalone-only set, or a course mixed
+ *     with standalone entries): `{passed} of {total} done`.
  */
 function progressLabelFor(list, statuses) {
   const curriculum = list.filter((e) => !e.program);
@@ -56,7 +56,8 @@ function progressLabelFor(list, statuses) {
   const total = curriculum.length;
   const passed = curriculum.filter((e) => e.status === 'completed').length;
   const courseIds = new Set(curriculum.map((e) => e.courseId).filter(isNonEmptyString));
-  if (courseIds.size <= 1) {
+  const singleCourse = courseIds.size === 1 && curriculum.every((e) => isNonEmptyString(e.courseId));
+  if (singleCourse) {
     if (passed >= total) return 'Course complete';
     return `Unit ${Math.min(passed + 1, total)} of ${total}`;
   }
