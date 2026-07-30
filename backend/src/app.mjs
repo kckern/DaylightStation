@@ -2335,6 +2335,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
       userService,
       eventBus,
       thermalPrinterRegistry: printerRegistry,
+      languageStudyService,
       logger: schoolLifecycleLogger
     });
   } catch (err) {

@@ -102,6 +102,10 @@ describe('scenario 1 — the video unit, end to end', () => {
     expect(plan.entries.find((e) => e.unitId === MEDIA_UNIT).status).toBe('completed');
     expect(plan.entries.find((e) => e.unitId === WORKSHEET_UNIT).status).toBe('available');
 
+    // The v2 agenda mints ONE ticket per SUBJECT and serves it once per study
+    // day (spec §6.3) — math already served today via unit 01, so unit 02
+    // only shows up on the card tomorrow's study day.
+    h.advanceDays(1);
     await h.scanCard();
     expect(h.lastReceiptText()).toContain('Adding and Subtracting Unlike Denominators — print your sheet');
   });
@@ -114,6 +118,8 @@ describe('scenario 1 — the video unit, end to end', () => {
 describe('scenario 2 — the printed worksheet unit', () => {
   it('prints a real multi-page PDF, takes a parent mark, and pays out', async () => {
     await h.completeMediaUnit();
+    // math already served today via unit 01 — unit 02 is due on the next study day.
+    h.advanceDays(1);
     await h.scanCard();
 
     const issued = await h.scanTokenMatching(/print your sheet/i);
@@ -170,7 +176,9 @@ describe('scenario 2 — the printed worksheet unit', () => {
 describe('scenario 3 — the bubble-sheet checkpoint', () => {
   it('reads the real form map and grades through the canonical engine', async () => {
     await h.completeMediaUnit();
+    h.advanceDays(1); // math served today via unit 01 — unit 02 is due tomorrow
     await h.completeWorksheetUnit();
+    h.advanceDays(1); // and unit 03 the day after that
     await h.scanCard();
 
     const issued = await h.scanTokenMatching(/print your sheet/i);
@@ -230,7 +238,9 @@ describe('scenario 3 — the bubble-sheet checkpoint', () => {
 
   it('sends a smudged row and an empty one to a grown-up rather than guessing', async () => {
     await h.completeMediaUnit();
+    h.advanceDays(1);
     await h.completeWorksheetUnit();
+    h.advanceDays(1);
     await h.scanCard();
     const issued = await h.scanTokenMatching(/print your sheet/i);
     const sessionId = issued.sessionId;
@@ -271,6 +281,7 @@ describe('scenario 3 — the bubble-sheet checkpoint', () => {
 describe('scenario 4 — failing, retrying, and being paid exactly once', () => {
   it('prints a retry ticket, opens a new variant, and credits one payout', async () => {
     await h.completeMediaUnit();
+    h.advanceDays(1);
     await h.scanCard();
     const issued = await h.scanTokenMatching(/print your sheet/i);
     const firstSession = issued.sessionId;
@@ -362,10 +373,16 @@ describe('scenario 5 — the idempotency matrix, driven for real', () => {
     const token = h.tokensInLastReceipt()[0].token;
     expect((await h.scan(token)).status).toBe('dispatched');
 
+    // The v2 ticket is a `subject_next` token, sessionless and re-resolved
+    // fresh on every scan (Task 11) — a re-scan while the video is out
+    // recomputes "what's next for math right now" and finds `media_dispatched`,
+    // which reads as "wait", not the old per-selection "already_done". The
+    // INVARIANT the scenario proves is unchanged: no second dispatch, and the
+    // child is told to keep going rather than left to guess.
     const again = await h.scan(token);
-    expect(again.status).toBe('already_done');
+    expect(again.status).toBe('wait');
     expect(again.printed).toBe(true);
-    expect(h.lastReceiptText()).toMatch(/already started/i);
+    expect(h.lastReceiptText()).toMatch(/finish watching, then scan your card/i);
     expect(h.devices.playback.listDispatches()).toHaveLength(1);
   });
 
@@ -383,6 +400,7 @@ describe('scenario 5 — the idempotency matrix, driven for real', () => {
 
   it('a reprint reuses the original artifact id and adds a lineage event', async () => {
     await h.completeMediaUnit();
+    h.advanceDays(1);
     await h.scanCard();
     const issued = await h.scanTokenMatching(/print your sheet/i);
 
@@ -397,6 +415,7 @@ describe('scenario 5 — the idempotency matrix, driven for real', () => {
 
   it('a duplicate submission is refused and points at the one already in', async () => {
     await h.completeMediaUnit();
+    h.advanceDays(1);
     await h.scanCard();
     const issued = await h.scanTokenMatching(/print your sheet/i);
     expect((await h.handIn({ sessionId: issued.sessionId })).status).toBe('submitted');
@@ -409,6 +428,7 @@ describe('scenario 5 — the idempotency matrix, driven for real', () => {
 
   it('settling twice records one outcome', async () => {
     await h.completeMediaUnit();
+    h.advanceDays(1);
     await h.scanCard();
     const issued = await h.scanTokenMatching(/print your sheet/i);
     await h.parentGrades(ALL_RIGHT(U2), { sessionId: issued.sessionId });
@@ -426,6 +446,7 @@ describe('scenario 5 — the idempotency matrix, driven for real', () => {
 
   it('a payout retried after UTC midnight does not pay twice', async () => {
     await h.completeMediaUnit();
+    h.advanceDays(1);
     await h.scanCard();
     const issued = await h.scanTokenMatching(/print your sheet/i);
     await h.parentGrades(ALL_RIGHT(U2), { sessionId: issued.sessionId });
@@ -453,6 +474,7 @@ describe('scenario 5 — the idempotency matrix, driven for real', () => {
 describe('scenario 6 — the printer is offline when the sheet is asked for', () => {
   it('records the failure, hands over a recovery ticket, and prints on the retry', async () => {
     await h.completeMediaUnit();
+    h.advanceDays(1);
     await h.scanCard();
 
     h.setFault('laser', 'offline');
@@ -534,11 +556,23 @@ describe('scenario 7 — the video is stopped halfway and never finishes', () =>
 // ---------------------------------------------------------------------------
 
 describe('scenario 8 — a locked unit always names its remedy', () => {
-  it('will not offer unit 03 before 02 passes, and says on paper why', async () => {
+  // v2's agenda (§6.3) sections BY SUBJECT and prints only the ONE thing a
+  // subject owes right now (Task 9/10) — all four fixture units share subject
+  // "math", so the receipt never shows more than one line for it at a time.
+  // That is a real behaviour change from the old flat per-unit agenda: a
+  // distant lock (unit 03, gated on unit 02) is no longer printed BESIDE the
+  // thing currently due (unit 01) — it simply is not reached yet. What v1's
+  // "always names its remedy" promise still guarantees, unchanged, is (a) the
+  // PLAN (the ungated, per-unit read `h.plan()` exposes) always carries the
+  // locked unit's remedy, or a scan action is never left dangling on a
+  // dead-end, and (b) when a section's one line genuinely IS a lock (nothing
+  // else is due), the agenda prints the remedy rather than nothing at all —
+  // proven directly below with a learner assigned ONLY the checkpoint.
+  it('will not offer unit 03 before 02 passes, though only one line prints per day', async () => {
     await h.scanCard();
-    const first = h.lastReceiptText();
-    expect(first).toContain('Fractions Checkpoint — Finish “Adding and Subtracting Unlike Denominators” first');
-    // A lock is printed, never hidden — and it is not scannable.
+    // The one line math owes today is unit 01 — not the distant lock.
+    expect(h.lastReceiptText()).toContain('Equivalent Fractions and Common Denominators — watch or listen');
+    expect(h.tokensInLastReceipt()).toHaveLength(1);
     expect(h.tokensInLastReceipt().some((t) => t.label.includes('Fractions Checkpoint'))).toBe(false);
 
     const locked = (await h.plan()).entries.find((e) => e.unitId === OMR_UNIT);
@@ -547,21 +581,41 @@ describe('scenario 8 — a locked unit always names its remedy', () => {
     // Nothing was opened for a unit that cannot be worked on.
     expect((await h.sessionRows()).map((r) => r.unitId)).toEqual([MEDIA_UNIT]);
 
-    // Passing 01 moves the lock's remedy along, it does not remove the lock.
+    // Passing 01 moves math's one-line-a-day to 02; the checkpoint's remedy
+    // is unchanged — it was already naming 02, the nearer unpassed sibling.
     await h.completeMediaUnit();
+    h.advanceDays(1);
     await h.scanCard();
-    expect(h.lastReceiptText()).toContain('Fractions Checkpoint — Finish “Adding and Subtracting Unlike Denominators” first');
+    expect(h.lastReceiptText()).toContain('Adding and Subtracting Unlike Denominators — print your sheet');
+    expect((await h.plan()).entries.find((e) => e.unitId === OMR_UNIT).remedy).toMatchObject({ unitId: WORKSHEET_UNIT });
 
-    // Passing 02 opens it, and the offered line becomes scannable.
+    // Passing 02 opens 03, and math's one line becomes it (the next study day).
     await h.completeWorksheetUnit();
     expect((await h.plan()).entries.find((e) => e.unitId === OMR_UNIT).status).toBe('available');
 
+    h.advanceDays(1);
     await h.scanCard();
     const opened = h.tokensInLastReceipt();
     expect(opened).toHaveLength(1);
     expect(opened[0].label).toContain('Fractions Checkpoint');
     // Drawing the agenda is what opens the session behind the offered line.
     expect((await h.plan()).entries.find((e) => e.unitId === OMR_UNIT).status).toBe('in_progress');
+  });
+
+  it('prints the remedy directly on the agenda when a lock is the only thing due', async () => {
+    // Assigned standalone — the two earlier units are not on this learner's
+    // list at all, so math's one line has nowhere else to point. The
+    // checkpoint's lock IS the whole story, and the agenda says so rather
+    // than printing nothing (spec §6.2/§9: a scan/agenda never dead-ends).
+    await h.assign({ courses: [], units: [OMR_UNIT] });
+    await h.scanCard();
+    // The agenda names the subject section and, since nothing is available,
+    // prints the lock's remedy in place of an offered line — no title, no
+    // barcode, just the reason and what would clear it.
+    expect(h.lastReceiptText()).toContain('MATH');
+    expect(h.lastReceiptText()).toContain('Finish “Adding and Subtracting Unlike Denominators” first');
+    // A lock is printed, never hidden — and it is not scannable.
+    expect(h.tokensInLastReceipt()).toHaveLength(0);
   });
 });
 
@@ -631,7 +685,11 @@ describe('no printed barcode is a no-op', () => {
     ['the bubble sheet', OMR_UNIT, /print your sheet|print the questions/i],
   ])('every action printed on %s resolves to something that prints', async (_label, unitId, offer) => {
     await h.completeMediaUnit();
-    if (unitId === OMR_UNIT) await h.completeWorksheetUnit();
+    h.advanceDays(1);
+    if (unitId === OMR_UNIT) {
+      await h.completeWorksheetUnit();
+      h.advanceDays(1);
+    }
     await h.scanCard();
 
     const issued = await h.scanTokenMatching(offer);
@@ -681,6 +739,7 @@ describe('the artifacts a child is handed', () => {
 
   it('puts a legible worksheet in the tray with the questions actually on it', async () => {
     await h.completeMediaUnit();
+    h.advanceDays(1);
     await h.scanCard();
     await h.scanTokenMatching(/print your sheet/i);
 
