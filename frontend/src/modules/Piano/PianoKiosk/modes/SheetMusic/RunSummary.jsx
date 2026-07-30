@@ -46,11 +46,13 @@ const NO_BEST = '—'; // em dash — this tier has never been run
  * @param {Object<string, number|null>|null} [p.tierBests] - bests for THIS bucket;
  *   omit (null) to render no strip at all.
  * @param {boolean} [p.mixedTempo] - the tempo moved mid-run: this run belongs to no tier
+ * @param {boolean} [p.completed] - this run played the whole piece (§H eligibility) —
+ *   only a completed run's tier cell is marked current
  * @param {string} [p.bucket] - hands bucket the strip is scoped to
  */
 export default function RunSummary({
   open, grades = {}, measures = [], onClose, onReplay, drillable = false, onDrill,
-  runScore = null, tier = null, tierBests = null, mixedTempo = false, bucket = 'both',
+  runScore = null, tier = null, tierBests = null, mixedTempo = false, completed = false, bucket = 'both',
 }) {
   if (!open) return null;
 
@@ -97,7 +99,7 @@ export default function RunSummary({
           <div className="piano-score-run-tiers__cells">
             {TIER_CELLS.map(({ tier: t, label }) => {
               const best = tierBests[t];
-              const current = !mixedTempo && t === tier;
+              const current = !mixedTempo && completed && t === tier;
               return (
                 <div key={t} className={`piano-score-run-tier${current ? ' piano-score-run-tier--current' : ''}`}>
                   <span className="piano-score-run-tier__label">{label}</span>

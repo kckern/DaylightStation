@@ -46,6 +46,16 @@ const DURATION_KEYS = { Numpad1: '16th', Numpad3: 'eighth', Numpad5: 'quarter', 
 // actual hardware/BLE latency yet.
 export const CHORD_ONSET_TOLERANCE_MS = 40;
 
+// Pending-onset eviction horizon. An armed onset whose note_off never arrives
+// (BLE drop) must not live forever: the Map grows on a kiosk that never
+// unmounts, and — worse — removal is FIFO per pitch, so one stale head makes
+// every later note_off of that pitch resolve the WRONG onset (huge heldMs →
+// always 'quarter') and strands the real one. Swept lazily on MIDI events; no
+// human hold approaches 30s (long-class starts at MEDIUM_MAX_MS = 450ms).
+// Evicted notes keep their inserted type — a late reclassify could clobber a
+// duration the user has since set by numpad.
+export const MAX_PENDING_ONSET_MS = 30000;
+
 // KEY_LEGEND — human-readable documentation of the numpad map, grouped for the
 // on-screen (i) help panel (ComposerHelp.jsx). This is the SSOT for that panel:
 // keep every `code` in step with `mapKey` below (the drift-guard test in
@@ -244,6 +254,17 @@ export function useComposerInput({ setEditorState, subscribe, logger, onTogglePl
     const unsub = subscribe((evt) => {
       if (!evt) return;
 
+      // Drop armed onsets past the eviction horizon (see MAX_PENDING_ONSET_MS).
+      const evictStaleOnsets = (now) => {
+        for (const [note, queue] of pendingOnsetsRef.current) {
+          while (queue.length && now - queue[0].t > MAX_PENDING_ONSET_MS) {
+            const stale = queue.shift();
+            log.warn('composer.input.onset-evicted', { note, pitch: stale.pitch, ageMs: now - stale.t });
+          }
+          if (!queue.length) pendingOnsetsRef.current.delete(note);
+        }
+      };
+
       // --- RELEASE: resolve a pending armed insert's held duration, then
       // reclassify its rendered type (see model/durationClass.js — the LIGHT
       // short/medium/long -> 16th/eighth/quarter classifier). A note_off
@@ -253,6 +274,7 @@ export function useComposerInput({ setEditorState, subscribe, logger, onTogglePl
       if (evt.type === 'note_off') {
         const t = evt.time ?? Date.now();
         log.sampled('composer.input.note-off', { note: evt.note, t }, { maxPerMinute: 120, aggregate: true });
+        evictStaleOnsets(t);
         const queue = pendingOnsetsRef.current.get(evt.note);
         if (!queue || queue.length === 0) return; // not an armed/tracked press
         const { tag, t: onsetT, pitch } = queue.shift();
@@ -346,6 +368,7 @@ export function useComposerInput({ setEditorState, subscribe, logger, onTogglePl
       recordEdit('insert-note', evt.note, undefined, sticky.current.type); // measure ← live caret
       const entryTag = ++entryTagCounterRef.current;
       setEditorState((s) => applyCommand(s, insertNote, pitch, { ...sticky.current, entryTag }));
+      evictStaleOnsets(t);
       const queue = pendingOnsetsRef.current.get(evt.note) ?? [];
       queue.push({ tag: entryTag, t, pitch });
       pendingOnsetsRef.current.set(evt.note, queue);

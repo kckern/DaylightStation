@@ -299,8 +299,8 @@ const ScoreViewControls = memo(function ScoreViewControls({
  * all rather than four permanently dead buttons.
  *  Listen  — all live, including a free-running metronome (session-local, same
  *            as Learn's — gated by `clickDisabled`, the caller's tempo-map
- *            guard, not the mode, wave-3 G) and the Learn-only Play lockout; Key
- *            live. No loop cluster.
+ *            guard, not the mode, wave-3 G); Key live. Play is never locked
+ *            (`playLocked` is only ever passed for Learn's gate). No loop cluster.
  *  Learn   — Play disabled ("Learn advances as you play") only while the gate is
  *            armed (a range with looping on — `playLocked`); the machine states
  *            get a live transport. Metronome free-runs; Key live (transposes the

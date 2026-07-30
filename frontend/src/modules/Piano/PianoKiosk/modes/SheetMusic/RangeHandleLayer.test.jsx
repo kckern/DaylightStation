@@ -269,3 +269,86 @@ describe('RangeHandleLayer', () => {
     expect(container.firstChild).toBeNull();
   });
 });
+
+describe('RangeHandleLayer — tap/drag boundary and band-slack geometry', () => {
+  it('a 7px wobble is still a TAP; a 9px move is a DRAG (TAP_SLOP_PX = 8 boundary)', () => {
+    // Tap side
+    let onArm = vi.fn(); let onCommit = vi.fn();
+    let { container } = mount({ onArm, onCommit });
+    let h = handleIn(container);
+    pDown(h, { pointerId: 1, clientX: 100, clientY: 130 });
+    pMove(h, { pointerId: 1, clientX: 107, clientY: 130 }); // 7px < slop
+    pUp(h, { pointerId: 1, clientX: 107, clientY: 130 });
+    expect(onArm).toHaveBeenCalledWith('in');
+    expect(onCommit).not.toHaveBeenCalled();
+    // Drag side
+    onArm = vi.fn(); onCommit = vi.fn();
+    ({ container } = mount({ onArm, onCommit }));
+    h = handleIn(container);
+    pDown(h, { pointerId: 1, clientX: 100, clientY: 130 });
+    pMove(h, { pointerId: 1, clientX: 109, clientY: 130 }); // 9px > slop
+    pUp(h, { pointerId: 1, clientX: 109, clientY: 130 });
+    expect(onCommit).toHaveBeenCalledWith('in', 0, 'drag');
+    expect(onArm).not.toHaveBeenCalled();
+  });
+
+  // Two systems; the x-offsets are tuned so the 40px band slack DECIDES the
+  // winner (not just the score): with slack, the sys-1 box wins on pure dx;
+  // without (or with a halved, scale-aware band), the out-of-band penalty
+  // flips it to the sys-2 box under the pointer.
+  const slackFixture = {
+    stepBoxes: [
+      { x: 100, top: 100, bottom: 160 }, // step 0 → measure 0 (system 1)
+      { x: 570, top: 400, bottom: 460 }, // step 1 → measure 1 (system 2)
+    ],
+    measures: [
+      { index: 0, firstStep: 0, lastStep: 0 }, { index: 1, firstStep: 1, lastStep: 1 },
+    ],
+    range: { inMeasure: 0, outMeasure: 1 },
+  };
+  // At (570, 190): sys-1 box d = 470 + (in band? 0 : 2·60=120); sys-2 box d = 0 + 2·240 = 480.
+
+  it('the band slack keeps a just-below-the-staves drag on ITS system (kills BAND_SLACK_PX and weight mutants)', () => {
+    const onPreview = vi.fn();
+    const { container } = mount({ ...slackFixture, onPreview, onCommit: vi.fn() });
+    const h = handleOut(container);
+    pDown(h, { pointerId: 1, clientX: 570, clientY: 430 });
+    pMove(h, { pointerId: 1, clientX: 570, clientY: 190 }); // 30px below system 1: in-band only via slack
+    pUp(h, { pointerId: 1, clientX: 570, clientY: 190 });
+    // slack 40 → sys-1 wins (470 < 480). slack 0 → 590 > 480, sys-2 would win.
+    // weight ×1 instead of ×2 → sys-2's penalty halves to 240 and it would win.
+    // (toHaveBeenCalledWith, not …Last…: endDrag always fires a trailing
+    // onPreview(edge, null) on release — see "announces the drag end" above —
+    // so the winning measure is the move-phase call, never the last one.)
+    expect(onPreview).toHaveBeenCalledWith('out', 0);
+  });
+
+  it('the slack scales with the engrave zoom — at scale 0.5 the same point is out of band', () => {
+    const onPreview = vi.fn();
+    const { container } = mount({ ...slackFixture, scale: 0.5, onPreview, onCommit: vi.fn() });
+    const h = handleOut(container);
+    pDown(h, { pointerId: 1, clientX: 570, clientY: 430 });
+    pMove(h, { pointerId: 1, clientX: 570, clientY: 190 }); // 30px gap > 40·0.5 = 20 slack
+    pUp(h, { pointerId: 1, clientX: 570, clientY: 190 });
+    expect(onPreview).toHaveBeenCalledWith('out', 1);
+  });
+
+  it('an over-weighted penalty would strand the drag on the wrong system (pins the ×2 from above)', () => {
+    // Same probe, sys-1 box pushed to dx=500: ×2 → 480 < 500 + 0, sys-2 wins; a ×3
+    // mutant inflates sys-2's penalty to 720 and sys-1 would win.
+    const fixture = {
+      ...slackFixture,
+      stepBoxes: [
+        { x: 100, top: 100, bottom: 160 },
+        { x: 600, top: 400, bottom: 460 },
+      ],
+    };
+    const onPreview = vi.fn();
+    const { container } = mount({ ...fixture, onPreview, onCommit: vi.fn() });
+    const h = handleOut(container);
+    pDown(h, { pointerId: 1, clientX: 600, clientY: 430 });
+    pMove(h, { pointerId: 1, clientX: 600, clientY: 190 }); // sys-1: 500 (in band); sys-2: 480
+    pUp(h, { pointerId: 1, clientX: 600, clientY: 190 });
+    expect(onPreview).toHaveBeenCalledWith('out', 1);
+  });
+});

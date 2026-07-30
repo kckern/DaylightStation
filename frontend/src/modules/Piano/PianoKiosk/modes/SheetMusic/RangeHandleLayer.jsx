@@ -50,9 +50,10 @@ const BAND_SLACK_PX = 40;
  * @param {(edge:'in'|'out', measureIndex:number, via:'drag') => void} [p.onCommit]
  * @param {(edge:'in'|'out', measureIndex:number|null) => void} [p.onPreview]
  * @param {{current: HTMLElement|null}} [p.scrollRef] - the score's scroll container
+ * @param {number} [p.scale] - engrave zoom; the vertical band slack is in on-screen px, so it scales with the sheet the way measureAtPoint's call site already does (40 * scale)
  */
 export default function RangeHandleLayer({
-  measures = [], stepBoxes = [], range = null, onArm, onCommit, onPreview, scrollRef,
+  measures = [], stepBoxes = [], range = null, onArm, onCommit, onPreview, scrollRef, scale = 1,
 }) {
   const rootRef = useRef(null);
   const dragRef = useRef(null); // { edge, startX, startY, moved, lastMeasure }
@@ -76,17 +77,18 @@ export default function RangeHandleLayer({
   const measureUnder = useCallback((pt) => {
     let bestI = -1;
     let bestD = Infinity;
+    const slack = BAND_SLACK_PX * scale; // on-screen px — tracks the engrave zoom (see measureAtPoint's call site)
     for (let i = 0; i < stepBoxes.length; i++) {
       const b = stepBoxes[i];
       if (!b) continue;
-      const inBand = pt.y >= b.top - BAND_SLACK_PX && pt.y <= b.bottom + BAND_SLACK_PX;
+      const inBand = pt.y >= b.top - slack && pt.y <= b.bottom + slack;
       const d = Math.abs(pt.x - b.x)
         + (inBand ? 0 : Math.abs(pt.y - (b.top + b.bottom) / 2) * 2);
       if (d < bestD) { bestD = d; bestI = i; }
     }
     if (bestI < 0) return -1;
     return measures.findIndex((mm) => bestI >= mm.firstStep && bestI <= mm.lastStep);
-  }, [stepBoxes, measures]);
+  }, [stepBoxes, measures, scale]);
 
   const endDrag = useCallback((edge) => {
     dragRef.current = null;

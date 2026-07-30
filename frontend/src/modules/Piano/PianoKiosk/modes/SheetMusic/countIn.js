@@ -65,8 +65,8 @@ export function countInPlan({ beats, bpm, tempoMult = 1 }) {
   // land on real beats — two clicks a half-note apart in 3/4 would put click 2 on
   // beat 3 and teach a duple feel against a triple piece, which is worse than a buzz.
   // Escalating over that list (1 -> 2 -> 4 in 4/4, 1 -> 3 in 3/4) covers the whole
-  // tempo range, not just one halving: the top of TEMPO_STEPS is 1.5x, so a fast
-  // 216bpm piece reaches 324 effective bpm and needs one click per bar (81/min).
+  // tempo range, not just one halving: the top of TEMPO_STEPS is 1.75x, so a fast
+  // 216bpm piece reaches 378 effective bpm and needs one click per bar (~94/min).
   // Residual worst case: a SHORT bar of an irregular or 2-beat meter, where the
   // coarsest usable pulse still exceeds the countable rate (5/4 has no divisor at
   // all; 2/4 at 324bpm tops out at 162 clicks/min). Both are rare and both are

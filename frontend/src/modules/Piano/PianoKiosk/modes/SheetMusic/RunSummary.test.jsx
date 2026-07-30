@@ -41,7 +41,7 @@ describe('RunSummary', () => {
   // ── Polish tempo tiers (wave-3 H) ──────────────────────────────────────────
   it('shows the run score with tier and the four tier bests', () => {
     render(<RunSummary open grades={grades} measures={measures} onClose={vi.fn()} onReplay={vi.fn()}
-      runScore={87} tier="medium" bucket="rh" mixedTempo={false}
+      runScore={87} tier="medium" bucket="rh" mixedTempo={false} completed
       tierBests={{ slow: 78, medium: 84, full: null, overclocked: null }} />);
     expect(screen.getByText(/87/)).toBeInTheDocument();
     expect(screen.getByText(/medium/i)).toBeInTheDocument();
@@ -61,6 +61,13 @@ describe('RunSummary', () => {
     expect(screen.queryByText(/^medium$/i)).toBeNull();
     expect(document.querySelectorAll('.piano-score-run-tier--current').length).toBe(0);
     expect(screen.getAllByText('—').length).toBe(4);
+  });
+
+  it('a partial run (pause / silent-stop) marks NO tier cell — it banked nothing and belongs to no column', () => {
+    render(<RunSummary open grades={grades} measures={measures} onClose={vi.fn()} onReplay={vi.fn()}
+      runScore={87} tier="medium" bucket="both" mixedTempo={false} completed={false}
+      tierBests={{ slow: 78, medium: 84, full: null, overclocked: null }} />);
+    expect(document.querySelectorAll('.piano-score-run-tier--current').length).toBe(0);
   });
 
   it('an ungraded run shows no score headline (nothing to report), and the bests strip is opt-in', () => {
