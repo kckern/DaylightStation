@@ -711,6 +711,40 @@ describe('ScorePlayer — Learn cycle instrumentation feeds the practice record 
     expect(h.recordCycle).toHaveBeenCalledTimes(1);
   });
 
+  it('a loop OFF→ON toggle discards wrongs from the dead gate session — the new session\'s first clean pass counts clean', () => {
+    h.layoutExtras = TWO_MEASURE_LEARN;
+    renderPlayer();
+    selectFullRange();
+    settleCycle();
+    play(63);       // a wrong lands mid-cycle (cursor on measure 0)
+    toggleLoop();   // gate OFF — the partial cycle dies with its session
+    toggleLoop();   // gate back ON at the in-point — a fresh session
+    playFullPass(); // clean pass
+    expect(h.recordCycle).toHaveBeenCalledTimes(1);
+    expect(h.recordCycle).toHaveBeenCalledWith({
+      measureIndices: [0, 1],
+      wrongMeasures: new Set(), // the pre-toggle wrong did NOT leak in
+      bucket: 'both',
+    });
+  });
+
+  it('Restart mid-cycle discards accumulated wrongs — the pass after Restart can be clean', () => {
+    h.layoutExtras = TWO_MEASURE_LEARN;
+    renderPlayer();
+    selectFullRange();
+    settleCycle();
+    play(64); // satisfies step 0 → cursor to step 1 (Restart needs step > 0 to enable)
+    play(63); // a wrong against step 1 → measure 1 tainted in the abandoned pass
+    act(() => { fireEvent.click(screen.getByRole('button', { name: 'Restart' })); });
+    playFullPass(); // a clean pass from the in-point
+    expect(h.recordCycle).toHaveBeenCalledTimes(1);
+    expect(h.recordCycle).toHaveBeenCalledWith({
+      measureIndices: [0, 1],
+      wrongMeasures: new Set(), // the pre-Restart wrong did NOT leak in
+      bucket: 'both',
+    });
+  });
+
   // ── The completion card rides the WHOLE-PIECE wrap, not the tracker's onComplete ──
   // useFollowTracker fires onComplete only when it advances past the last step with
   // NO range (`atEnd = !range && …`), but the tracker only drives the cursor inside
