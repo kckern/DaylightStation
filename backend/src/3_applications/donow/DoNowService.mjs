@@ -138,7 +138,7 @@ export class DoNowService {
       return { decision: 'denied', message: `The ${label} is busy right now.` };
     }
 
-    return this.#actPend({ adapter, surface, action, learnerId, requestedBy, ref, occupancy, nowIso });
+    return this.#actPend({ adapter, surface, action, learnerId, requestedBy, ref, programId, occupancy, nowIso });
   }
 
   /**
@@ -187,14 +187,16 @@ export class DoNowService {
    * @returns {Promise<{decision: 'dispatched'|'failed', message: string}>}
    */
   async dispatchApproved(record) {
-    const { surface, action, learnerId, requestedBy, ref, id: approvalId } = record || {};
+    const {
+      surface, action, learnerId, requestedBy, ref, programId = null, id: approvalId,
+    } = record || {};
     const adapter = this.#surfaces.get(surface);
     if (!adapter) {
       return { decision: 'failed', message: `Unknown surface "${surface}".` };
     }
     const nowIso = this.#nowIso();
     return this.#actDispatch({
-      adapter, surface, action, learnerId, requestedBy, ref, programId: null, nowIso, approvalId,
+      adapter, surface, action, learnerId, requestedBy, ref, programId: programId ?? null, nowIso, approvalId,
     });
   }
 
@@ -245,7 +247,9 @@ export class DoNowService {
     return { decision: 'dispatched', message: `Starting the ${label} now.` };
   }
 
-  async #actPend({ adapter, surface, action, learnerId, requestedBy, ref, occupancy, nowIso }) {
+  async #actPend({
+    adapter, surface, action, learnerId, requestedBy, ref, programId, occupancy, nowIso,
+  }) {
     const label = this.#safeLabel(adapter, action, surface);
     const id = this.#newId();
     const expiresAt = new Date(Date.parse(nowIso) + this.#approvalTtlSeconds * 1000).toISOString();
@@ -261,6 +265,12 @@ export class DoNowService {
       createdAt: nowIso,
       expiresAt,
     };
+    // Absent key, not present-with-null — mirrors the dispatch-log row's
+    // own programId convention (Task 12's evidence query filters on
+    // presence). Without this, a school-program request that PENDS and is
+    // approved later would dispatch with no programId at all, and could
+    // never count as done for that program.
+    if (programId != null) record.programId = programId;
 
     await this.#datastore.putPending(record);
 
