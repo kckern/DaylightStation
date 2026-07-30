@@ -211,15 +211,26 @@ export class BuildAgenda {
 
   /**
    * What the section's `next` entry means RIGHT NOW: a program entry never
-   * gets a session (there is nothing here to track — the Portal owns it); a
-   * curriculum entry gets `ensureSession` + `nextMove`, exactly as the old
-   * per-unit path did, just no longer minting its own token.
+   * gets a session (there is nothing here to track — whatever surface the
+   * program's own launcher dispatches to owns it); a curriculum entry gets
+   * `ensureSession` + `nextMove`, exactly as the old per-unit path did, just
+   * no longer minting its own token.
+   *
+   * The suffix used to be hardcoded `'on the Portal'` for EVERY program,
+   * which was simply wrong for a surface program like `pe-daily` (dispatches
+   * to `garage-fitness`, never the Portal) — a garage PE ticket printed
+   * "on the Portal" and sent a child to the wrong room. It now reads the
+   * offering launcher's own `locationHint` (`null` for one that declares
+   * none, e.g. an unconfigured `SurfaceProgramLauncher`) and only falls back
+   * to a generic, location-agnostic phrase — never assumes the Portal.
    *
    * @returns {Promise<{sessionId: string|null, suffix: string, created: boolean}>}
    */
   async #offerFor({ entry, unitsById, learnerId, nowIso }) {
     if (entry.program) {
-      return { sessionId: null, suffix: 'on the Portal', created: false };
+      const launcher = this.#launchers.get(entry.program);
+      const hint = launcher?.locationHint ?? null;
+      return { sessionId: null, suffix: hint ?? 'go do this', created: false };
     }
     const { sessionId, state, created } = await ensureSession({
       entry, learnerId, nowIso, sessions: this.#sessions, newSessionId: this.#newSessionId,

@@ -20,12 +20,12 @@
  * child's experience, theirs protect the record.
  */
 import { isSchoolToken, resolveTokenState } from '#domains/school/sessions/tokens.mjs';
-import { reduceSession } from '#domains/school/sessions/sessionEvents.mjs';
+import { reduceSession, createEvent } from '#domains/school/sessions/sessionEvents.mjs';
 import { noticeDocument } from '#domains/school/documents/receipts.mjs';
 
 export class ResolveScanAction {
   #tokens; #sessions; #curriculum; #card; #issue; #media; #remediation; #receipts; #clock; #logger;
-  #subjectResolver; #portal; #launchers;
+  #subjectResolver; #portal; #launchers; #donow; #close;
 
   /**
    * @param {object} deps
@@ -41,12 +41,24 @@ export class ResolveScanAction {
    *   required to route `subject_next` tickets; a deployment that has not yet
    *   wired Task 12's composition simply never mints one, so this is allowed
    *   to be absent rather than widening every existing construction site.
-   * @param {import('../PortalDispatch.mjs').PortalDispatch} [deps.portal] - broadcasts
-   *   a bank/program hand-off; a screen-bound move still prints its slip
-   *   without one, it just cannot also wake a screen.
+   * @param {{launch: Function}} [deps.portal] - LEGACY, degrade-only fallback:
+   *   the un-occupancy-checked broadcast path `#onScreen` falls back to ONLY
+   *   when `donow` is absent (composition no longer constructs a concrete
+   *   `PortalDispatch` — deleted as dead code once `donow` became
+   *   unconditionally wired; this duck-typed shape is kept so the fallback
+   *   itself, and its regression test, still have something to call).
    * @param {Map<string, import('../ports/IProgramLauncher.mjs').IProgramLauncher>} [deps.launchers]
    *   program id -> launcher, called for `launch()` on a `program` resolution
    *   (the same map `ResolveSubjectNext` separately calls `status()` on).
+   * @param {import('../../donow/DoNowService.mjs').DoNowService} [deps.donow] -
+   *   OPTIONAL-DEGRADING: the composition wires this, but a fake/test builder
+   *   may not. Absent, a `launch:` unit's scan (per-unit OR `subject_next`)
+   *   never crashes and never phantom-dispatches — it slips "Ask a grown-up
+   *   to set this up."
+   * @param {import('./CloseSessionOutcome.mjs').CloseSessionOutcome} [deps.closeSessionOutcome] -
+   *   honors a launch unit the moment DoNow reports `dispatched` (spec §6.2's
+   *   door), so the scan itself closes the session — never `signedOffBy`,
+   *   that claim belongs to a grown-up, not a barcode.
    * @param {() => Date} [deps.clock]
    * @param {object} [deps.logger]
    */
@@ -54,6 +66,7 @@ export class ResolveScanAction {
     tokens, sessions, curriculum, resolvePersonalCard, issueDocument,
     dispatchMedia, openRemediation, receipts,
     resolveSubjectNext = null, portal = null, launchers = new Map(),
+    donow = null, closeSessionOutcome = null,
     clock = () => new Date(), logger = console,
   } = {}) {
     if (!tokens || !sessions || !curriculum || !resolvePersonalCard || !issueDocument
@@ -71,6 +84,8 @@ export class ResolveScanAction {
     this.#subjectResolver = resolveSubjectNext;
     this.#portal = portal;
     this.#launchers = launchers;
+    this.#donow = donow;
+    this.#close = closeSessionOutcome;
     this.#clock = clock;
     this.#logger = logger;
   }
@@ -167,6 +182,11 @@ export class ResolveScanAction {
    */
   async #start(sessionId, sessionState) {
     const unit = await this.#curriculum.getUnit(sessionState?.unitId);
+    if (unit?.launch) {
+      return this.#dispatchLaunch({
+        sessionId, learnerId: sessionState?.learnerId ?? null, launch: unit.launch, tokenClass: 'select_unit',
+      });
+    }
     if (unit?.media) return this.#play(sessionId);
     if (unit?.document) return this.#print(sessionId, 'select_unit', sessionState);
     if (unit?.bank) return this.#onScreen(sessionId, unit, 'select_unit', sessionState?.learnerId ?? null);
@@ -183,18 +203,67 @@ export class ResolveScanAction {
 
   /**
    * A screen-only unit prints nothing but must still announce itself, or the
-   * child scans and watches nothing happen. It ALSO broadcasts the hand-off
-   * through `PortalDispatch` (spec §4.3) so a screen that is already awake
-   * can pick the bank session up without the child hunting for it — the slip
-   * still prints regardless, because a household with no screen listening
-   * (or a `portal` that was never wired) must not strand the child on paper
-   * that only half-explains itself.
+   * child scans and watches nothing happen. Hands the bank session off to
+   * the Portal through `DoNowService` (Task 12 review — spec §6 "occupancy
+   * applies uniformly"): a bank hand-off used to broadcast directly through
+   * `PortalDispatch`, bypassing occupancy entirely, so a screen mid-quiz for
+   * one child could be clobbered by another child's scan. With `donow`
+   * wired, `dispatched` still prints the same "starting on the school
+   * screen" slip; `pending_approval` slips DoNow's own busy/asked-a-grown-up
+   * message; `denied`/`failed` slip "Go to the school screen and open it
+   * there." — the slip still prints regardless of decision, so a household
+   * with no screen listening never strands the child on paper that only
+   * half-explains itself.
+   *
+   * OPTIONAL-DEGRADING: absent `donow` (a deployment/fake that has not wired
+   * it), this falls back to the legacy direct `PortalDispatch` broadcast —
+   * today's behavior, unoccupancy-checked — rather than crashing or silently
+   * doing nothing. `PortalDispatch` becomes dead code once composition wires
+   * `donow` everywhere (flagged for Task 13's removal).
    */
   async #onScreen(sessionId, unit, tokenClass, learnerId = null) {
-    this.#portal?.launch({
-      learnerId,
-      target: { kind: 'bank', bankId: unit.bank, unitId: unit.unitId, sessionId },
-    });
+    const target = { kind: 'bank', bankId: unit.bank, unitId: unit.unitId, sessionId };
+
+    if (this.#donow) {
+      let result;
+      try {
+        result = await this.#donow.dispatch({
+          surface: 'portal', action: { target }, learnerId, requestedBy: 'school-scan', ref: sessionId,
+        });
+      } catch (err) {
+        this.#logger.warn?.('school.scan.onscreen-donow-threw', { sessionId, error: err?.message ?? String(err) });
+        result = { decision: 'failed', message: 'Could not start that.' };
+      }
+
+      if (result.decision === 'dispatched') {
+        return this.#slip({
+          status: 'open_on_screen', tokenClass, sessionId,
+          id: `screen-${sessionId}`, headline: unit.title,
+          lines: ['Starting on the school screen — or open it there yourself.'],
+          message: 'Start this one on the screen.',
+          effect: { unitId: unit.unitId, bank: unit.bank },
+        });
+      }
+      if (result.decision === 'pending_approval') {
+        return this.#slip({
+          status: 'pending_approval', tokenClass, sessionId,
+          id: `screen-pending-${sessionId}`, headline: unit.title,
+          lines: [result.message], message: result.message,
+          effect: { unitId: unit.unitId, bank: unit.bank },
+        });
+      }
+      // denied | failed
+      return this.#slip({
+        status: result.decision, tokenClass, sessionId,
+        id: `screen-${result.decision}-${sessionId}`, headline: unit.title,
+        lines: ['Go to the school screen and open it there.'],
+        message: 'Go to the school screen and open it there.',
+        effect: { unitId: unit.unitId, bank: unit.bank },
+      });
+    }
+
+    // Legacy path, only when `donow` was never wired.
+    this.#portal?.launch({ learnerId, target });
     return this.#slip({
       status: 'open_on_screen',
       tokenClass,
@@ -204,6 +273,87 @@ export class ResolveScanAction {
       lines: ['Starting on the school screen — or open it there yourself.'],
       message: 'Start this one on the screen.',
       effect: { unitId: unit.unitId, bank: unit.bank },
+    });
+  }
+
+  /**
+   * A `launch:` unit's whole ask IS the dispatch (spec §6/§6.2). ONE helper
+   * for BOTH callers that can reach a launch unit at `created` — the per-unit
+   * `select_unit` scan (`#start`) and the sessionless `subject_next` move
+   * (`#subjectNext`, `move.kind === 'launch'`) — so the DoNow call, the event
+   * append, the honor-close and the slip wording exist in exactly one place.
+   *
+   * `donow` is OPTIONAL-DEGRADING: a deployment that has not yet wired it
+   * (or a test fake that doesn't) must never crash and never phantom-dispatch
+   * — it slips the same "ask a grown-up" line an unwired printer or portal
+   * gets elsewhere in this file.
+   *
+   * On `dispatched`, the scan ALSO closes the session right here — honor-
+   * system fire-and-forget, spec §6.2's door, called WITHOUT `signedOffBy`
+   * (that claim is a grown-up's, not a barcode's). The pending→approved path
+   * is NOT this method's job: it happens later, out of band, and is the
+   * `DoNowSchoolBridge`'s job instead.
+   */
+  async #dispatchLaunch({ sessionId, learnerId, launch, tokenClass }) {
+    if (!this.#donow) {
+      return this.#slip({
+        status: 'unavailable', tokenClass, sessionId,
+        id: `launch-unwired-${sessionId}`,
+        headline: 'Not set up yet',
+        lines: ['Ask a grown-up to set this up.'],
+        message: 'Ask a grown-up to set this up.',
+      });
+    }
+
+    const { surface, ...action } = launch;
+    let result;
+    try {
+      result = await this.#donow.dispatch({
+        surface, action, learnerId, requestedBy: 'school-scan', ref: sessionId,
+      });
+    } catch (err) {
+      this.#logger.warn?.('school.scan.donow-dispatch-threw', { sessionId, surface, error: err?.message ?? String(err) });
+      result = { decision: 'failed', message: 'Could not start that.' };
+    }
+
+    if (result.decision === 'dispatched') {
+      // `approvalId` is always null here — the IMMEDIATE dispatch path never
+      // carries one (that's `dispatchApproved`-only) — but the field is
+      // included explicitly for parity with `DoNowSchoolBridge`'s identical
+      // append on the pending-then-approved path.
+      const { errors, event } = createEvent({
+        type: 'launch_dispatched', at: this.#clock().toISOString(), sessionId, surface,
+        decision: result.decision, approvalId: result.approvalId ?? null,
+      });
+      if (!errors.length) await this.#sessions.appendEvent(sessionId, event);
+      else this.#logger.warn?.('school.scan.launch-event-invalid', { sessionId, errors });
+      if (this.#close) await this.#close.execute({ sessionId, honorClose: true });
+      return this.#slip({
+        status: 'dispatched', tokenClass, sessionId,
+        id: `launch-${sessionId}`,
+        headline: 'Off you go',
+        lines: ['Starting — off you go.'],
+        message: 'Starting — off you go.',
+      });
+    }
+
+    if (result.decision === 'pending_approval') {
+      return this.#slip({
+        status: 'pending_approval', tokenClass, sessionId,
+        id: `launch-pending-${sessionId}`,
+        headline: 'Waiting on a grown-up',
+        lines: [result.message],
+        message: result.message,
+      });
+    }
+
+    // denied | failed — the remedy line IS the DoNow result's own message.
+    return this.#slip({
+      status: result.decision, tokenClass, sessionId,
+      id: `launch-${result.decision}-${sessionId}`,
+      headline: 'Could not start that',
+      lines: [result.message],
+      message: result.message,
     });
   }
 
@@ -326,20 +476,51 @@ export class ResolveScanAction {
       });
     }
     if (r.kind === 'program') {
+      // Program launchers now route through DoNow themselves and return its
+      // `{decision, message}` shape (Task 12, spec §6 last bullet) — occupancy
+      // applies uniformly, so a busy portal pends here exactly as a busy
+      // garage-fitness kiosk pends on the per-unit launch path.
       const launcher = this.#launchers.get(r.programId);
-      let dispatched = false;
+      let result;
       try {
-        dispatched = (await launcher?.launch({ userId: learnerId }))?.dispatched === true;
+        result = await launcher?.launch({ userId: learnerId });
       } catch (e) {
         this.#logger.warn?.('school.scan.launch-failed', { programId: r.programId, error: e.message });
       }
+      const decision = result?.decision ?? 'failed';
+      if (decision === 'dispatched') {
+        // The old text hardcoded "on the Portal" for EVERY program — wrong for
+        // a surface program like `pe-daily` (garage-fitness, never the
+        // Portal). `locationHint` (`null` for a launcher that declares none)
+        // is what the launcher itself says is true; a hint-less launcher gets
+        // the SAME location-agnostic wording `#dispatchLaunch`'s own one-shot
+        // dispatch uses, rather than a guessed room.
+        const hint = launcher?.locationHint ?? null;
+        return this.#slip({
+          status: 'launched', tokenClass: 'subject_next',
+          id: `launch-${r.programId}`, headline: r.unit?.title ?? nice(subject),
+          lines: [hint ? `Starting ${hint} — off you go.` : 'Starting — off you go.'],
+          message: hint ? `Starting ${hint}.` : 'Starting — off you go.',
+        });
+      }
+      if (decision === 'pending_approval') {
+        return this.#slip({
+          status: 'pending_approval', tokenClass: 'subject_next',
+          id: `launch-pending-${r.programId}`, headline: r.unit?.title ?? nice(subject),
+          lines: [result.message],
+          message: result.message,
+        });
+      }
+      // denied | failed — the remedy line IS the DoNow result's own message
+      // (mirrors `#dispatchLaunch`'s identical branch), which already names
+      // the REAL busy/unreachable surface via that surface's own adapter
+      // label — never a hardcoded "Go to the Portal", which lied for any
+      // program that was never on the Portal to begin with.
       return this.#slip({
-        status: dispatched ? 'launched' : 'launch_unconfirmed', tokenClass: 'subject_next',
+        status: 'launch_unconfirmed', tokenClass: 'subject_next',
         id: `launch-${r.programId}`, headline: r.unit?.title ?? nice(subject),
-        lines: [dispatched
-          ? 'Starting on the Portal — or open it there yourself.'
-          : 'Go to the Portal and open it there.'],
-        message: 'Off to the Portal.',
+        lines: [result?.message ?? 'Could not start that. Ask a grown-up to set this up.'],
+        message: result?.message ?? 'Could not start that. Ask a grown-up to set this up.',
       });
     }
 
@@ -349,6 +530,11 @@ export class ResolveScanAction {
     if (r.move.kind === 'retry') return this.#retry(r.sessionId); // OpenRemediation: new session, fresh sheet
     if (r.move.kind === 'print') return this.#print(r.sessionId, 'subject_next', r.state);
     if (r.move.kind === 'play') return this.#play(r.sessionId);
+    if (r.move.kind === 'launch') {
+      return this.#dispatchLaunch({
+        sessionId: r.sessionId, learnerId, launch: r.unit.launch, tokenClass: 'subject_next',
+      });
+    }
     if (r.move.kind === 'screen') return this.#onScreen(r.sessionId, r.unit, 'subject_next', r.state?.learnerId ?? null);
     return this.#slip({
       status: 'wait', tokenClass: 'subject_next', id: `wait-${r.sessionId}`,

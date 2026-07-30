@@ -1,0 +1,17 @@
+# A one-shot `launch:` unit (spec §6): the whole ask IS the dispatch, nothing
+# else to compose. Used by the DoNow launch-journey e2e (Task 14) to exercise
+# a per-unit launch to the `garage-fitness` surface end to end — the
+# approval-gap loop (busy -> pend -> approve -> bridge honor-close) as well as
+# the plain immediate-dispatch case other tests already cover.
+unitId: garage-launch.01
+title: A garage fitness break
+subject: science
+launch:
+  surface: garage-fitness
+  episodeId: plex:900
+  labelHint: go to the garage
+provenance:
+  source: hand-authored
+  author: parent
+  reviewState: approved
+  reviewedOn: '2026-07-29'

@@ -205,6 +205,35 @@ describe('sections', () => {
     expect(sectionFor(result, 'language').programUnavailable).toBe(true);
     expect(offerFor(result, 'math')).toBeTruthy();
   });
+
+  // Spec review finding: the offer suffix used to hardcode "on the Portal"
+  // for EVERY program entry, including a garage surface program — wrong
+  // enough to send a child to the wrong room. The suffix now reads the
+  // offering launcher's own `locationHint`.
+  it('a program entry composes its offer suffix from the launcher\'s configured locationHint', async () => {
+    build({
+      ...withLanguageProgram(),
+      launchers: new Map([[PROGRAM_ID, {
+        status: async () => ({ doneToday: false, progressLabel: null, score: null }),
+        locationHint: 'in the garage',
+      }]]),
+    });
+    const result = await useCase.execute({ learnerId: 'kid1' });
+    expect(offerFor(result, 'language').label).toContain('in the garage');
+  });
+
+  it('a program launcher with no locationHint gets a generic suffix — never the Portal', async () => {
+    build({
+      ...withLanguageProgram(),
+      launchers: new Map([[PROGRAM_ID, {
+        status: async () => ({ doneToday: false, progressLabel: null, score: null }),
+        // No locationHint at all — mirrors an unconfigured SurfaceProgramLauncher.
+      }]]),
+    });
+    const result = await useCase.execute({ learnerId: 'kid1' });
+    expect(offerFor(result, 'language').label).toContain('go do this');
+    expect(offerFor(result, 'language').label).not.toMatch(/portal/i);
+  });
 });
 
 describe('progression', () => {

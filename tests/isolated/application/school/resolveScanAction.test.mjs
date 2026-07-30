@@ -24,18 +24,26 @@ import {
 const TARGETS = [{ id: 'living-room-tv', label: 'the TV', child_selectable: true }];
 // Used only by the program-path subject_next tests, mirroring buildAgenda.test.mjs's fixture.
 const PROGRAM_ID = 'lang-app';
+// Used only by the launch-unit tests below.
+const LAUNCH_SURFACE = 'garage-fitness';
 
-let clock, rng, sessions, tokens, thermal, laser, playback, resolve, agenda, close, portal;
+let clock, rng, sessions, tokens, thermal, laser, playback, resolve, agenda, close, portal, donow;
 
 const build = ({
   assignment = { learnerId: 'kid1', courses: ['math-fractions'] },
   units, launchers = new Map(), portalLaunch = null,
+  // A launch unit validates only if the catalog's surface registry knows the
+  // surface it names (spec §6) — always-valid stand-in, mirroring
+  // resolveSubjectNext.test.mjs's identical fixture concern.
+  surfaceValidators = () => new Map([[LAUNCH_SURFACE, () => []]]),
+  donowDispatch = null,
+  wireDonow = true,
 } = {}) => {
   clock = fakeClock();
   rng = seededRng(21);
   const catalog = new FakeCatalog({ units: units ?? rawUnits(), documents: rawDocuments(), manifests: rawManifests() });
   const curriculum = new CurriculumAccess({
-    catalog, bankIds: () => BANK_IDS, programIds: () => [PROGRAM_ID], clock: clock.epoch, logger: silentLogger,
+    catalog, bankIds: () => BANK_IDS, programIds: () => [PROGRAM_ID], surfaceValidators, clock: clock.epoch, logger: silentLogger,
   });
   sessions = new FakeSessionRepository();
   tokens = new FakeTokenRegistry();
@@ -73,10 +81,16 @@ const build = ({
   // Null unless a test needs to assert on the broadcast — `#onScreen`'s
   // `this.#portal?.launch` no-ops without one, same as an unwired household.
   portal = portalLaunch ? { launch: portalLaunch } : null;
+  // Null when a test asks for the unwired ("optional-degrading") case; wired
+  // by default with a fake that dispatches immediately, so a test wanting
+  // pending/denied/failed passes its own `donowDispatch` mock.
+  donow = wireDonow
+    ? { dispatch: donowDispatch || vi.fn(async () => ({ decision: 'dispatched', message: 'Starting the garage fitness kiosk now.' })) }
+    : null;
   resolve = new ResolveScanAction({
     tokens, sessions, curriculum, resolvePersonalCard: card, issueDocument,
     dispatchMedia, openRemediation, receipts,
-    resolveSubjectNext, portal, launchers,
+    resolveSubjectNext, portal, launchers, donow, closeSessionOutcome: close,
     clock: clock.now, logger: silentLogger,
   });
 };
@@ -87,6 +101,19 @@ const withLanguageProgram = () => ({
   units: rawUnits({
     [WORKSHEET_UNIT]: {
       subject: 'language', program: PROGRAM_ID, cadence: 'once',
+      courseId: undefined, sequence: undefined, passing: undefined,
+      retry: undefined, reward: undefined, review: undefined, document: undefined,
+    },
+  }),
+  assignment: { learnerId: 'kid1', units: [WORKSHEET_UNIT] },
+});
+
+/** Turn WORKSHEET_UNIT into a standalone launch unit — same derivation
+ * pattern as `withLanguageProgram` above. */
+const withLaunchUnit = () => ({
+  units: rawUnits({
+    [WORKSHEET_UNIT]: {
+      launch: { surface: LAUNCH_SURFACE, episodeId: 'plex:999' },
       courseId: undefined, sequence: undefined, passing: undefined,
       retry: undefined, reward: undefined, review: undefined, document: undefined,
     },
@@ -192,6 +219,72 @@ describe('starting a unit', () => {
     expect(result).toMatchObject({ status: 'issued', physical: 'worksheet', printed: true });
     expect(laser.jobs).toHaveLength(1);
     expect(thermal.jobs).toEqual([]);
+  });
+});
+
+describe('a launch unit (Task 12, spec §6/§6.2)', () => {
+  const launchSession = async () => {
+    const sid = 'ses_l';
+    await sessions.appendEvent(sid, { type: 'created', at: clock.iso(), sessionId: sid, learnerId: 'kid1', unitId: WORKSHEET_UNIT });
+    const record = mintToken({ tokenClass: 'select_unit', subject: { sessionId: sid }, at: clock.iso(), rng });
+    await tokens.put(record);
+    return { sid, record };
+  };
+
+  it('dispatches through DoNow, honor-closes the session in the same round trip, and prints "off you go"', async () => {
+    build(withLaunchUnit());
+    const { sid, record } = await launchSession();
+    const result = await resolve.execute({ code: record.token });
+    expect(result).toMatchObject({ status: 'dispatched', tokenClass: 'select_unit', physical: 'receipt', printed: true });
+    expect(thermal.lastTranscript()).toContain('Starting — off you go');
+    expect(donow.dispatch).toHaveBeenCalledWith({
+      surface: LAUNCH_SURFACE, action: { episodeId: 'plex:999' }, learnerId: 'kid1',
+      requestedBy: 'school-scan', ref: sid,
+    });
+    // The scan itself closed it (honorClose, no signedOffBy) — never left
+    // dangling at launch_dispatched waiting on something else to finish it.
+    expect(sessions.types(sid)).toEqual(expect.arrayContaining(['launch_dispatched', 'outcome_recorded']));
+    expect(sessions.derive(sid).terminal).toBe(true);
+  });
+
+  it('a busy surface pends, printing "we asked a grown-up" and never touching the session', async () => {
+    build({
+      ...withLaunchUnit(),
+      donowDispatch: vi.fn(async () => ({
+        decision: 'pending_approval', approvalId: 'dnr_1',
+        message: 'The garage fitness kiosk is busy — we asked a grown-up.',
+      })),
+    });
+    const { sid, record } = await launchSession();
+    const result = await resolve.execute({ code: record.token });
+    expect(result).toMatchObject({ status: 'pending_approval', tokenClass: 'select_unit', printed: true });
+    expect(thermal.lastTranscript()).toContain('is busy — we asked a grown-up');
+    // No session event yet — the approval gap (spec §6): nothing happened.
+    expect(sessions.types(sid)).not.toContain('launch_dispatched');
+    expect(sessions.derive(sid).state).toBe('created');
+  });
+
+  it('denied/failed prints the DoNow remedy line, never a dead end', async () => {
+    build({
+      ...withLaunchUnit(),
+      donowDispatch: vi.fn(async () => ({ decision: 'failed', message: 'Could not start the garage fitness kiosk.' })),
+    });
+    const { sid, record } = await launchSession();
+    const result = await resolve.execute({ code: record.token });
+    expect(result).toMatchObject({ status: 'failed', tokenClass: 'select_unit', printed: true });
+    expect(thermal.lastTranscript()).toContain('Could not start the garage fitness kiosk');
+    expect(sessions.types(sid)).not.toContain('launch_dispatched');
+  });
+
+  // OPTIONAL-DEGRADING: a composition/fake that never wires `donow` must
+  // never crash, and must never phantom-dispatch.
+  it('with no donow wired, slips "ask a grown-up" rather than crashing', async () => {
+    build({ ...withLaunchUnit(), wireDonow: false });
+    const { sid, record } = await launchSession();
+    const result = await resolve.execute({ code: record.token });
+    expect(result).toMatchObject({ status: 'unavailable', tokenClass: 'select_unit', printed: true });
+    expect(thermal.lastTranscript()).toContain('Ask a grown-up to set this up');
+    expect(sessions.types(sid)).not.toContain('launch_dispatched');
   });
 });
 
@@ -362,7 +455,13 @@ describe('the subject ticket', () => {
       ...withLanguageProgram(),
       launchers: new Map([[PROGRAM_ID, {
         status: async () => ({ doneToday: false, progressLabel: null, score: null }),
-        launch: vi.fn(async () => ({ dispatched: true })),
+        launch: vi.fn(async () => ({ decision: 'dispatched', message: 'Starting the Portal now.' })),
+        // Explicit, like `LanguageProgramLauncher`'s own getter — a launcher
+        // that declares no `locationHint` gets generic, location-agnostic
+        // wording instead (spec review finding: the slip used to hardcode
+        // "on the Portal" for every program, which was wrong for a surface
+        // program like `pe-daily`; see surfaceProgramLauncher wiring).
+        locationHint: 'on the Portal',
       }]]),
     });
     const result = await resolve.execute({ code: await subjectToken('language') });
@@ -370,17 +469,53 @@ describe('the subject ticket', () => {
     expect(thermal.lastTranscript()).toContain('Starting on the Portal');
   });
 
-  it('a program launch that cannot be confirmed still ends in a slip, never silence', async () => {
+  it('a program launcher with no locationHint gets generic, location-agnostic wording — never a guessed room', async () => {
     build({
       ...withLanguageProgram(),
       launchers: new Map([[PROGRAM_ID, {
         status: async () => ({ doneToday: false, progressLabel: null, score: null }),
-        launch: vi.fn(async () => ({ dispatched: false })),
+        launch: vi.fn(async () => ({ decision: 'dispatched', message: 'Starting now.' })),
+        // No locationHint at all — mirrors an unconfigured SurfaceProgramLauncher.
+      }]]),
+    });
+    const result = await resolve.execute({ code: await subjectToken('language') });
+    expect(result).toMatchObject({ status: 'launched', tokenClass: 'subject_next', printed: true });
+    expect(thermal.lastTranscript()).toContain('Starting — off you go');
+    expect(thermal.lastTranscript()).not.toMatch(/portal/i);
+  });
+
+  // Launchers now return DoNow's own `{decision, ...}` shape (Task 12, spec §6
+  // last bullet: "occupancy applies uniformly") — a busy Portal pends here
+  // exactly as a busy garage-fitness kiosk pends on the per-unit launch path.
+  it('a program launch that is busy pends for a grown-up, never a phantom dispatch', async () => {
+    build({
+      ...withLanguageProgram(),
+      launchers: new Map([[PROGRAM_ID, {
+        status: async () => ({ doneToday: false, progressLabel: null, score: null }),
+        launch: vi.fn(async () => ({
+          decision: 'pending_approval', approvalId: 'dnr_1', message: 'The Portal is busy — we asked a grown-up.',
+        })),
+      }]]),
+    });
+    const result = await resolve.execute({ code: await subjectToken('language') });
+    expect(result).toMatchObject({ status: 'pending_approval', tokenClass: 'subject_next', printed: true });
+    expect(thermal.lastTranscript()).toContain('is busy — we asked a grown-up');
+  });
+
+  it('a program launch that is denied or fails still ends in a slip, never silence', async () => {
+    build({
+      ...withLanguageProgram(),
+      launchers: new Map([[PROGRAM_ID, {
+        status: async () => ({ doneToday: false, progressLabel: null, score: null }),
+        launch: vi.fn(async () => ({ decision: 'failed', message: 'Could not start the Portal.' })),
       }]]),
     });
     const result = await resolve.execute({ code: await subjectToken('language') });
     expect(result).toMatchObject({ status: 'launch_unconfirmed', tokenClass: 'subject_next', printed: true });
-    expect(thermal.lastTranscript()).toContain('Go to the Portal');
+    // The remedy line is now DoNow's own result message (mirrors
+    // `#dispatchLaunch`'s identical branch) — never a hardcoded "Go to the
+    // Portal", which used to lie for a program that was never on the Portal.
+    expect(thermal.lastTranscript()).toContain('Could not start the Portal');
   });
 
   it('a move->print resolves the worksheet itself, not a receipt about it', async () => {
@@ -393,8 +528,11 @@ describe('the subject ticket', () => {
     expect(result.sessionId).toBe('ses_w');
   });
 
-  it('a move->screen resolves on-screen, broadcasting the portal launch', async () => {
-    build({ portalLaunch: vi.fn(() => ({ dispatched: true })) });
+  // The bank hand-off routes through DoNow (Task 12 review — spec §6
+  // "occupancy applies uniformly"): a screen mid-quiz for one child must not
+  // be clobbered by another child's scan, which a direct PortalDispatch
+  // broadcast could not protect against.
+  const watchedMediaBankUnit = async () => {
     const sid = 'ses_m';
     await sessions.appendEvent(sid, { type: 'created', at: clock.iso(), sessionId: sid, learnerId: 'kid1', unitId: MEDIA_UNIT });
     await sessions.appendEvent(sid, {
@@ -402,15 +540,70 @@ describe('the subject ticket', () => {
       dispatchId: 'dsp_1', target: 'living-room-tv', contentId: 'plex:481203',
     });
     await sessions.appendEvent(sid, { type: 'media_completed', at: clock.iso(), sessionId: sid, verified: 'playhead' });
+    return sid;
+  };
+
+  it('a move->screen dispatches through DoNow (portal surface) and resolves on-screen', async () => {
+    const sid = await watchedMediaBankUnit();
 
     const result = await resolve.execute({ code: await subjectToken('math') });
     expect(result).toMatchObject({ status: 'open_on_screen', tokenClass: 'subject_next', physical: 'receipt', printed: true });
     expect(result.effect).toMatchObject({ unitId: MEDIA_UNIT, bank: MEDIA_BANK_ID });
     expect(thermal.lastTranscript()).toMatch(/school screen/i);
+    expect(donow.dispatch).toHaveBeenCalledWith({
+      surface: 'portal',
+      action: { target: { kind: 'bank', bankId: MEDIA_BANK_ID, unitId: MEDIA_UNIT, sessionId: sid } },
+      learnerId: 'kid1', requestedBy: 'school-scan', ref: sid,
+    });
+  });
+
+  it('a busy portal pends the screen hand-off, printing "we asked a grown-up"', async () => {
+    build({
+      donowDispatch: vi.fn(async () => ({
+        decision: 'pending_approval', approvalId: 'dnr_1', message: 'The Portal is busy — we asked a grown-up.',
+      })),
+    });
+    await watchedMediaBankUnit();
+
+    const result = await resolve.execute({ code: await subjectToken('math') });
+    expect(result).toMatchObject({ status: 'pending_approval', tokenClass: 'subject_next', printed: true });
+    expect(thermal.lastTranscript()).toContain('is busy — we asked a grown-up');
+  });
+
+  it('a denied/failed screen hand-off prints "go to the school screen and open it there"', async () => {
+    build({ donowDispatch: vi.fn(async () => ({ decision: 'failed', message: 'Could not start the Portal.' })) });
+    await watchedMediaBankUnit();
+
+    const result = await resolve.execute({ code: await subjectToken('math') });
+    expect(result).toMatchObject({ status: 'failed', tokenClass: 'subject_next', printed: true });
+    expect(thermal.lastTranscript()).toContain('Go to the school screen and open it there');
+  });
+
+  // OPTIONAL-DEGRADING: no donow wired falls back to the legacy direct
+  // PortalDispatch broadcast — today's un-occupancy-checked behavior, kept
+  // only for a deployment/fake that has not wired donow yet (flagged for
+  // removal once Task 13 wires donow everywhere).
+  it('with no donow wired, falls back to the legacy PortalDispatch broadcast', async () => {
+    build({ portalLaunch: vi.fn(() => ({ dispatched: true })), wireDonow: false });
+    const sid = await watchedMediaBankUnit();
+
+    const result = await resolve.execute({ code: await subjectToken('math') });
+    expect(result).toMatchObject({ status: 'open_on_screen', tokenClass: 'subject_next', physical: 'receipt', printed: true });
     expect(portal.launch).toHaveBeenCalledWith({
       learnerId: 'kid1',
       target: { kind: 'bank', bankId: MEDIA_BANK_ID, unitId: MEDIA_UNIT, sessionId: sid },
     });
+  });
+
+  it('a move->launch routes through the SAME DoNow helper the per-unit path uses', async () => {
+    build(withLaunchUnit());
+    const result = await resolve.execute({ code: await subjectToken('math') });
+    expect(result).toMatchObject({ status: 'dispatched', tokenClass: 'subject_next', physical: 'receipt', printed: true });
+    expect(thermal.lastTranscript()).toContain('Starting — off you go');
+    expect(donow.dispatch).toHaveBeenCalledWith(expect.objectContaining({
+      surface: LAUNCH_SURFACE, action: { episodeId: 'plex:999' }, learnerId: 'kid1', requestedBy: 'school-scan',
+    }));
+    expect(sessions.derive(result.sessionId).terminal).toBe(true);
   });
 
   it('a move->wait prints a slip carrying the move label', async () => {

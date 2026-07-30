@@ -26,6 +26,7 @@ import { IdentityProvider } from '../modules/Fitness/identity/IdentityProvider';
 import { useFitnessContext } from '../context/FitnessContext.jsx';
 import { FitnessFrame } from '../modules/Fitness/player/frames';
 import { useFitnessUrlParams } from '../hooks/fitness/useFitnessUrlParams.js';
+import { useFitnessLaunch } from '../hooks/fitness/useFitnessLaunch.js';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { ScreenDataProvider } from '../screen-framework/data/ScreenDataProvider.jsx';
 import { ScreenProvider } from '../screen-framework/providers/ScreenProvider.jsx';
@@ -875,6 +876,24 @@ const FitnessApp = () => {
       navigate('/fitness', { replace: true });
     }
   };
+
+  // DoNow reachability (spec §5, surface `garage-fitness`): a parent-dispatched
+  // `fitness.launch` arrives on the shared WS bus with just an episodeId — no
+  // pre-fetched metadata — so it plays exactly like a manually-typed
+  // /fitness/play/:id URL: navigate there and let handlePlayFromUrl fetch the
+  // episode's info (governance/labels included) and populate the queue. This
+  // is the surface's FIRST remote reachability (previously zero).
+  //
+  // `busy: fitnessPlayQueue.length > 0` mirrors the URL-restore effect above
+  // (the one guarding `if (fitnessPlayQueue.length > 0) return`, ~line 1157):
+  // a launch must not clobber an already-loaded queue — fail toward not
+  // interrupting, the household's busy-surface posture.
+  const handleFitnessLaunch = (episodeId, { learnerId } = {}) => {
+    logger.info('fitness-launch-dispatched', { episodeId, learnerId });
+    navigate(`/fitness/play/${episodeId}`, { replace: true });
+    handlePlayFromUrl(episodeId, { nogovern });
+  };
+  useFitnessLaunch({ onLaunch: handleFitnessLaunch, busy: fitnessPlayQueue.length > 0 });
 
   const handleHomePlay = useCallback((queueItem) => {
     // Boundary normalize: queueItem comes from upstream caller (widgets that

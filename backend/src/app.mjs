@@ -460,6 +460,16 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     logger: rootLogger
   });
 
+  // DoNow's household-level composition module isn't constructed until well
+  // after this point (it needs `wakeAndLoadService`/home-automation/playback-
+  // hub seams that don't exist yet) — but the WS message handler just below,
+  // which taps `ingestFrontendLogs` for `FitnessPresenceTracker` (Task 7's
+  // documented one-line hook), is registered here and only ever RUNS at
+  // request time, long after boot completes. Declared here, assigned once
+  // `createDonow` resolves further down — the closure below reads the
+  // current value at call time, never a snapshot from registration time.
+  let donowModule = null;
+
   // DeviceLivenessService — caches last-known device-state snapshots and
   // synthesizes `offline` broadcasts when heartbeats stop. Also wires
   // itself into the event bus so new subscribers get a replayed snapshot.
@@ -551,6 +561,14 @@ export async function createApp({ server, logger, configPaths, configExists, ena
       ingestFrontendLogs(message, {
         ip: clientMeta?.ip,
         userAgent: clientMeta?.userAgent
+      }, {
+        // DoNow's garage-fitness soft-occupancy tap (Task 7 discovery, Task 13
+        // wiring): `FitnessPresenceTracker.observe` guards on event name/shape
+        // itself, so every normalized event is safe to hand it unconditionally.
+        // `donowModule` is null until `createDonow` resolves later in boot —
+        // before that, this is a no-op (nothing observed yet, occupancy reads
+        // `unknown`, fail-closed).
+        onEvent: (normalized) => donowModule?.presence?.fitness?.observe(normalized)
       });
       return;
     }
@@ -2314,108 +2332,12 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     },
     logger: rootLogger.child({ module: 'school-language' })
   });
-  // Aggregate report across programs. Each program implements IProgramReporter;
-  // adding one means registering it here, not editing the use case.
-  // The physical console (printed agenda → worksheet/media → graded → receipt).
-  // Fails closed: unwired unless school.yml sets `lifecycle.enabled: true` AND
-  // the document renderer is present. When it is unwired every field below is
-  // null/false, so the relay branch, the reporter and the routes all no-op.
-  const schoolLifecycleLogger = rootLogger.child({ module: 'school-lifecycle' });
-  let schoolLifecycle = {
-    wired: false, reason: 'not attempted', handlesCode: () => false, handleScan: null,
-    reporter: null, router: null, devicesRouter: null,
-  };
-  try {
-    const { createSchoolLifecycle } = await import('#composition/modules/schoolLifecycle.mjs');
-    schoolLifecycle = await createSchoolLifecycle({
-      configService,
-      householdId,
-      schoolService,
-      economyService: economyApi.economyService,
-      userService,
-      eventBus,
-      thermalPrinterRegistry: printerRegistry,
-      languageStudyService,
-      logger: schoolLifecycleLogger
-    });
-  } catch (err) {
-    // A console that cannot be built must not stop the house from booting: the
-    // rest of School (banks, materials, language) is untouched by its absence.
-    schoolLifecycleLogger.error('school.lifecycle.wiring-failed', { error: err.message });
-  }
-
-  const getSchoolReport = new GetSchoolReport({
-    // The lifecycle reporter is filtered out by GetSchoolReport itself when it
-    // is null, so an unwired console simply does not appear on the board.
-    reporters: [schoolService, languageStudyService, schoolLifecycle.reporter],
-    userService,
-    logger: rootLogger.child({ module: 'school-report' })
-  });
-
-  // Printing (worksheets → kitchen laser printer). Wired only when the school
-  // config declares a `printer` host — no printer, no print feature (the
-  // router serves inert). The printer host defaults to the `kitchen-printer`
-  // device entry so config need only opt in.
-  const schoolFullConfig = configService.getHouseholdAppConfig(null, 'school') || {};
-  let schoolPrintService = null;
-  const printerHost = schoolFullConfig.printing?.host
-    || configService.getDeviceConfig?.('kitchen-printer')?.host
-    || null;
-  if (printerHost && (schoolFullConfig.printables?.length || schoolFullConfig.printing)) {
-    const laserPrinter = new LaserPrinterAdapter({
-      host: printerHost,
-      port: schoolFullConfig.printing?.port || 631,
-      path: schoolFullConfig.printing?.path || '/ipp/print',
-      logger: rootLogger.child({ module: 'school-print' })
-    });
-    schoolPrintService = new PrintService({
-      config: schoolFullConfig,
-      datastore: schoolDatastore,
-      printerAdapter: laserPrinter,
-      worksheetRenderer: { renderBankWorksheet },
-      // getBank throws on miss; PrintService wants null-on-miss.
-      bankReader: { getBank: (id) => { try { return schoolService.getBank(id); } catch { return null; } } },
-      pdfReader: {
-        read: (file) => {
-          const p = path.join(configService.getDataDir(), 'household', 'content', 'worksheets', path.basename(String(file)));
-          if (!fs.existsSync(p)) return null;
-          const pdf = fs.readFileSync(p);
-          // Cheap page count: number of "/Type /Page" occurrences (not /Pages).
-          const pageCount = (pdf.toString('latin1').match(/\/Type\s*\/Page[^s]/g) || []).length || 1;
-          return { pdf, pageCount };
-        }
-      },
-      userService,
-      logger: rootLogger.child({ module: 'school-print' })
-    });
-    rootLogger.child({ module: 'school-print' }).info?.('school.print.ready', { host: printerHost, printables: schoolFullConfig.printables?.length || 0 });
-  }
-
-  v1Routers.school = createSchoolRouter({
-    schoolService,
-    getMaterialCatalog,
-    getMaterialUnits,
-    getMaterialProgressSummary,
-    materialProgressStore: schoolMaterialProgressStore,
-    getSchoolReport,
-    printService: schoolPrintService,
-    logger: rootLogger.child({ module: 'school-api' })
-  });
-
-  v1Routers.school.use('/language', createLanguageRouter({
-    languageStudyService,
-    logger: rootLogger.child({ module: 'school-language-api' })
-  }));
-
-  if (schoolLifecycle.router) {
-    v1Routers.school.use('/lifecycle', schoolLifecycle.router);
-  }
-  // Only when the doubles were actually constructed (school.yml
-  // `virtualDevices: true`). A production deployment never mounts a surface that
-  // can knock a printer offline.
-  if (schoolLifecycle.devicesRouter) {
-    v1Routers.school.use('/devices', schoolLifecycle.devicesRouter);
-  }
+  // School lifecycle (+ its report/print-service/router mounting) moved
+  // further down this function (Task 13) — it now depends on the real,
+  // household-level DoNow service, which itself depends on seams
+  // (`wakeAndLoadService`, home-automation adapters, the playback-hub
+  // container) that don't exist yet at this point in boot. See "School
+  // physical console" below, right after `donow` is constructed.
 
   // Strava webhook enrichment (provider-agnostic webhook, Strava adapter)
   let providerWebhookAdapters = {};
@@ -2751,6 +2673,150 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     commandHandlerLivenessService,
     logger: rootLogger.child({ module: 'wake-and-load' })
   });
+
+  // ==========================================================================
+  // DoNow — the household "start this, there, now" dispatch facade
+  // (docs/superpowers/specs/2026-07-30-household-donow-dispatch-design.md).
+  // HOUSEHOLD-LEVEL (spec §2 decision 2), constructed here — AFTER
+  // `wakeAndLoadService`, `homeAutomationAdapters` and `playbackHubContainer`
+  // all exist, since three of its seven v1 surfaces delegate straight to
+  // them. Mounts unconditionally, independent of `school.yml`'s lifecycle
+  // gate — School (below) is one CONSUMER, not the owner.
+  // ==========================================================================
+  const donowLogger = rootLogger.child({ module: 'donow' });
+  // `donowModule` itself is declared much earlier (right after `eventBus`) —
+  // the WS message handler's `ingestFrontendLogs` tap closes over that SAME
+  // variable and needs it in scope before this point runs; this is a
+  // reassignment, not a re-declaration.
+  try {
+    const { createDonow } = await import('#composition/modules/donow.mjs');
+    donowModule = await createDonow({
+      configService,
+      householdId,
+      eventBus,
+      thermalPrinterRegistry: printerRegistry,
+      homeAutomationAdapters,
+      wakeAndLoadService,
+      playbackHubContainer,
+      schoolService,
+      logger: donowLogger,
+    });
+    v1Routers.donow = donowModule.router;
+  } catch (err) {
+    // Every surface DoNow wraps is independently optional-degrading; a throw
+    // here means the composition module itself blew up (a coding error, not
+    // a missing seam) — log loudly and leave the rest of the house booting,
+    // same posture as `school.lifecycle.wiring-failed` below.
+    donowLogger.error('donow.wiring-failed', { error: err.message });
+  }
+
+  // ==========================================================================
+  // School physical console (printed agenda → worksheet/media → graded →
+  // receipt). Fails closed: unwired unless school.yml sets
+  // `lifecycle.enabled: true` AND the document renderer is present. Moved
+  // here (Task 13, was constructed much earlier in this function) because it
+  // now takes the real `donow` service as a dependency, and `donow` itself
+  // needed the seams just above to exist first.
+  // ==========================================================================
+  const schoolLifecycleLogger = rootLogger.child({ module: 'school-lifecycle' });
+  let schoolLifecycle = {
+    wired: false, reason: 'not attempted', handlesCode: () => false, handleScan: null,
+    reporter: null, router: null, devicesRouter: null, donowSchoolBridge: null,
+  };
+  try {
+    const { createSchoolLifecycle } = await import('#composition/modules/schoolLifecycle.mjs');
+    schoolLifecycle = await createSchoolLifecycle({
+      configService,
+      householdId,
+      schoolService,
+      economyService: economyApi.economyService,
+      userService,
+      eventBus,
+      thermalPrinterRegistry: printerRegistry,
+      languageStudyService,
+      donow: donowModule?.service ?? null,
+      donowSurfaces: donowModule?.surfaces ?? null,
+      donowDatastore: donowModule?.datastore ?? null,
+      logger: schoolLifecycleLogger
+    });
+  } catch (err) {
+    // A console that cannot be built must not stop the house from booting: the
+    // rest of School (banks, materials, language) is untouched by its absence.
+    schoolLifecycleLogger.error('school.lifecycle.wiring-failed', { error: err.message });
+  }
+
+  const getSchoolReport = new GetSchoolReport({
+    // The lifecycle reporter is filtered out by GetSchoolReport itself when it
+    // is null, so an unwired console simply does not appear on the board.
+    reporters: [schoolService, languageStudyService, schoolLifecycle.reporter],
+    userService,
+    logger: rootLogger.child({ module: 'school-report' })
+  });
+
+  // Printing (worksheets → kitchen laser printer). Wired only when the school
+  // config declares a `printer` host — no printer, no print feature (the
+  // router serves inert). The printer host defaults to the `kitchen-printer`
+  // device entry so config need only opt in.
+  const schoolFullConfig = configService.getHouseholdAppConfig(null, 'school') || {};
+  let schoolPrintService = null;
+  const printerHost = schoolFullConfig.printing?.host
+    || configService.getDeviceConfig?.('kitchen-printer')?.host
+    || null;
+  if (printerHost && (schoolFullConfig.printables?.length || schoolFullConfig.printing)) {
+    const laserPrinter = new LaserPrinterAdapter({
+      host: printerHost,
+      port: schoolFullConfig.printing?.port || 631,
+      path: schoolFullConfig.printing?.path || '/ipp/print',
+      logger: rootLogger.child({ module: 'school-print' })
+    });
+    schoolPrintService = new PrintService({
+      config: schoolFullConfig,
+      datastore: schoolDatastore,
+      printerAdapter: laserPrinter,
+      worksheetRenderer: { renderBankWorksheet },
+      // getBank throws on miss; PrintService wants null-on-miss.
+      bankReader: { getBank: (id) => { try { return schoolService.getBank(id); } catch { return null; } } },
+      pdfReader: {
+        read: (file) => {
+          const p = path.join(configService.getDataDir(), 'household', 'content', 'worksheets', path.basename(String(file)));
+          if (!fs.existsSync(p)) return null;
+          const pdf = fs.readFileSync(p);
+          // Cheap page count: number of "/Type /Page" occurrences (not /Pages).
+          const pageCount = (pdf.toString('latin1').match(/\/Type\s*\/Page[^s]/g) || []).length || 1;
+          return { pdf, pageCount };
+        }
+      },
+      userService,
+      logger: rootLogger.child({ module: 'school-print' })
+    });
+    rootLogger.child({ module: 'school-print' }).info?.('school.print.ready', { host: printerHost, printables: schoolFullConfig.printables?.length || 0 });
+  }
+
+  v1Routers.school = createSchoolRouter({
+    schoolService,
+    getMaterialCatalog,
+    getMaterialUnits,
+    getMaterialProgressSummary,
+    materialProgressStore: schoolMaterialProgressStore,
+    getSchoolReport,
+    printService: schoolPrintService,
+    logger: rootLogger.child({ module: 'school-api' })
+  });
+
+  v1Routers.school.use('/language', createLanguageRouter({
+    languageStudyService,
+    logger: rootLogger.child({ module: 'school-language-api' })
+  }));
+
+  if (schoolLifecycle.router) {
+    v1Routers.school.use('/lifecycle', schoolLifecycle.router);
+  }
+  // Only when the doubles were actually constructed (school.yml
+  // `virtualDevices: true`). A production deployment never mounts a surface that
+  // can knock a printer offline.
+  if (schoolLifecycle.devicesRouter) {
+    v1Routers.school.use('/devices', schoolLifecycle.devicesRouter);
+  }
 
   // Shared dispatch-level idempotency cache for multi-step HTTP dispatches
   // (e.g. POST /api/v1/device/:id/load?mode=adopt).
@@ -3874,6 +3940,32 @@ export async function createApp({ server, logger, configPaths, configExists, ena
         rootLogger.info?.('playback-hub.shutdown.complete');
       } catch (err) {
         rootLogger.error?.('playback-hub.shutdown.error', { error: err?.message });
+      }
+    });
+  }
+
+  // Graceful shutdown: unsubscribe DoNow's eventBus-backed presence trackers
+  // (MIDI, playback) so a redeploy doesn't leak listeners on the outgoing bus.
+  if (donowModule) {
+    process.on('SIGTERM', () => {
+      try {
+        donowModule.stop();
+        rootLogger.info?.('donow.shutdown.complete');
+      } catch (err) {
+        rootLogger.error?.('donow.shutdown.error', { error: err?.message });
+      }
+    });
+  }
+
+  // Graceful shutdown: unsubscribe the School lifecycle's DoNow bridge
+  // (the pending->approved half of the launch-unit loop).
+  if (schoolLifecycle.donowSchoolBridge) {
+    process.on('SIGTERM', () => {
+      try {
+        schoolLifecycle.donowSchoolBridge.stop();
+        rootLogger.info?.('school.donow-bridge.shutdown.complete');
+      } catch (err) {
+        rootLogger.error?.('school.donow-bridge.shutdown.error', { error: err?.message });
       }
     });
   }

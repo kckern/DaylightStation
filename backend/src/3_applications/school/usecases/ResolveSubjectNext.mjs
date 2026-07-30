@@ -15,6 +15,11 @@
  * the only caller and is the only place a physical outcome (a worksheet, a
  * dispatch, a slip) gets made from the answer here.
  *
+ * A `launch:` unit at `created` surfaces as `move.kind === 'launch'` (Task 12,
+ * spec §6) — `ResolveScanAction` routes it through `DoNowService.dispatch`
+ * exactly as it does the per-unit `select_unit` path for the same unit, one
+ * helper for both callers.
+ *
  * For a curriculum entry the session is ENSURED here (reused if the entry
  * already carries one, opened fresh otherwise — the same idempotent rule
  * `offerSession.mjs` gives `BuildAgenda`), and the resulting `state` rides

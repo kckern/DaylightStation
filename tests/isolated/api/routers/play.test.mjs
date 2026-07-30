@@ -10,6 +10,7 @@ describe('Play API Router', () => {
   let mockWatchStore;
   let mockMediaAdapter;
   let mockPlexAdapter;
+  let mockPlayResponseService;
 
   beforeEach(() => {
     mockMediaAdapter = {
@@ -60,14 +61,14 @@ describe('Play API Router', () => {
       getAll: vi.fn().mockResolvedValue([]),
       set: vi.fn().mockResolvedValue(undefined),
     };
-    const mockPlayResponseService = {
+    mockPlayResponseService = {
       getWatchState: vi.fn(async (item) => {
         // Production now sources watch state via playResponseService; bridge
         // through to mockWatchStore so existing test cases that stub
         // mockWatchStore.get continue to drive resume_position behavior.
         return await mockWatchStore.get(item.id);
       }),
-      toPlayResponse: vi.fn((item, watchState) => {
+      toPlayResponse: vi.fn((item, watchState, { resume } = {}) => {
         const colon = item.id.indexOf(':');
         const source = colon >= 0 ? item.id.substring(0, colon) : null;
         const localId = colon >= 0 ? item.id.substring(colon + 1) : item.id;
@@ -80,7 +81,11 @@ describe('Play API Router', () => {
           duration: item.duration,
           resumable: item.resumable ?? false,
         };
-        if (watchState?.playhead != null) out.resume_position = watchState.playhead;
+        // Mirror production's `resume` gate (PlayResponseService.toPlayResponse):
+        // an explicit resume:false suppresses resume_position (and, in
+        // production, the Plex stream `offset=` rewrite) even when watch
+        // state has a stored playhead.
+        if (resume !== false && watchState?.playhead != null) out.resume_position = watchState.playhead;
         // Mirror the production response shape that includes a per-source
         // identifier alias (e.g. plex: '12345').
         if (source) out[source] = localId;
@@ -188,6 +193,49 @@ describe('Play API Router', () => {
 
       expect(res.status).toBe(404);
       expect(res.body.error).toBe('No playable items found');
+    });
+  });
+
+  // Karaoke/play-along content ids are bare compound ids (e.g. `plex:662039`,
+  // no trailing path segment) and are served by the `/:source` route below,
+  // NOT `/:source/*splat` above. Regression coverage: this route must forward
+  // `?resume=false` exactly like the splat route already does, and must leave
+  // normal (non-karaoke) resume behavior untouched when the param is absent.
+  describe('GET /api/play/:source (bare compound id)', () => {
+    it('omits resume_position when ?resume=false, even with a stored playhead', async () => {
+      mockWatchStore.get.mockResolvedValueOnce({
+        contentId: 'plex:12345',
+        playhead: 3600,
+        duration: 7200,
+        isInProgress: () => true,
+        isWatched: () => false
+      });
+
+      const res = await request(app).get('/api/play/plex:12345?resume=false');
+
+      expect(res.status).toBe(200);
+      expect(res.body.resume_position).toBeUndefined();
+      // Prove the router actually forwarded the override, not just that the
+      // mock happened to omit it.
+      const call = mockPlayResponseService.toPlayResponse.mock.calls.at(-1);
+      expect(call[2]).toMatchObject({ resume: false });
+    });
+
+    it('includes resume_position by default (regression: normal resume unaffected)', async () => {
+      mockWatchStore.get.mockResolvedValueOnce({
+        contentId: 'plex:12345',
+        playhead: 3600,
+        duration: 7200,
+        isInProgress: () => true,
+        isWatched: () => false
+      });
+
+      const res = await request(app).get('/api/play/plex:12345');
+
+      expect(res.status).toBe(200);
+      expect(res.body.resume_position).toBe(3600);
+      const call = mockPlayResponseService.toPlayResponse.mock.calls.at(-1);
+      expect(call[2]?.resume).toBeUndefined();
     });
   });
 });
