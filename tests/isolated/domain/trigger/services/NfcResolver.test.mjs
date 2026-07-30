@@ -21,8 +21,8 @@ const baseRegistry = {
     },
   },
   tags: {
-    '83_8e_68_06': { global: { plex: 620707 }, overrides: {} },
-    'aa_bb': {
+    '838e6806': { global: { plex: 620707 }, overrides: {} },
+    'aabb': {
       global: { plex: 100, shader: 'focused' },
       overrides: {
         bedroom: { shader: 'night', volume: 5 },
@@ -109,7 +109,7 @@ describe('NfcResolver', () => {
         livingroom: { target: 'livingroom-tv', action: 'play-next', defaults: {} },
       },
       tags: {
-        'override_tag': {
+        'overridetag': {
           global: { plex: 100, action: 'queue', target: 'kitchen-display' },
           overrides: {},
         },
@@ -180,7 +180,7 @@ describe('NfcResolver — metadata-only tags', () => {
 
   it('returns null for a tag with only scanned_at (placeholder, state 1)', () => {
     const registry = makeRegistry({
-      '04_a1_b2_c3': { global: { scanned_at: '2026-04-26 10:00:00' }, overrides: {} },
+      '04a1b2c3': { global: { scanned_at: '2026-04-26 10:00:00' }, overrides: {} },
     });
     const result = NfcResolver.resolve({
       location: 'livingroom',
@@ -193,7 +193,7 @@ describe('NfcResolver — metadata-only tags', () => {
 
   it('returns null for a tag with scanned_at + note (state 2)', () => {
     const registry = makeRegistry({
-      '04_a1_b2_c3': {
+      '04a1b2c3': {
         global: { scanned_at: '2026-04-26 10:00:00', note: 'kids movie' },
         overrides: {},
       },
@@ -241,7 +241,7 @@ describe('NfcResolver — metadata-only tags', () => {
       const registry = {
         locations: { livingroom: { action: 'play-next', target: 'livingroom-tv' } },
         tags: {
-          '04_28_d4_71_cc_2a_81': {
+          '0428d471cc2a81': {
             global: { scanned_at: '2026-05-10 11:51:19', note: 'Eyes shuts', plex: '621568' },
             overrides: {},
           },
@@ -260,7 +260,7 @@ describe('NfcResolver — metadata-only tags', () => {
     it('metadata-only tag still resolves to null (unknown-tag capture flow)', () => {
       const registry = {
         locations: { livingroom: { action: 'play-next', target: 'livingroom-tv' } },
-        tags: { 'aa_bb': { global: { scanned_at: '2026-01-01 00:00:00', note: 'unnamed' }, overrides: {} } },
+        tags: { 'aabb': { global: { scanned_at: '2026-01-01 00:00:00', note: 'unnamed' }, overrides: {} } },
       };
       const intent = NfcResolver.resolve({
         location: 'livingroom', value: 'aa_bb',

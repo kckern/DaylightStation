@@ -9,7 +9,7 @@ describe('YamlTriggerConfigRepository', () => {
         'livingroom-nfc': { modality: 'nfc', location: 'livingroom', target: 'livingroom-tv', action: 'play-next' },
         'livingroom-state': { modality: 'state', location: 'livingroom', target: 'livingroom-tv', states: { off: { action: 'clear' } } },
       },
-      'config/triggers/bindings/nfc': { '83_8e_68_06': { plex: 620707 } },
+      'config/triggers/bindings/nfc': { '838e6806': { plex: 620707 } },
       'config/triggers/responses': {},
       'config/triggers/endpoints': {},
     };
@@ -23,7 +23,7 @@ describe('YamlTriggerConfigRepository', () => {
     expect(loadFile).toHaveBeenCalledWith('config/triggers/responses');
     expect(loadFile).toHaveBeenCalledWith('config/triggers/endpoints');
     expect(registry.nfc.locations.livingroom.target).toBe('livingroom-tv');
-    expect(registry.nfc.tags['83_8e_68_06'].global).toEqual({ plex: 620707 });
+    expect(registry.nfc.tags['838e6806'].global).toEqual({ plex: 620707 });
     expect(registry.state.locations.livingroom.states.off).toEqual({ action: 'clear' });
   });
 
@@ -45,6 +45,92 @@ describe('YamlTriggerConfigRepository', () => {
       : null;
     const repo = new YamlTriggerConfigRepository();
     expect(() => repo.loadRegistry({ loadFile })).toThrow(/source "livingroom".*object/i);
+  });
+
+  // ---- grouped tag files -------------------------------------------------
+  // One monolith mixed audiobooks with personal identity cards. Grouping splits
+  // them; these guard the two ways a split silently undoes itself.
+  describe('grouped NFC bindings directory', () => {
+    const SOURCES = {
+      'livingroom-nfc': { modality: 'nfc', location: 'livingroom', target: 'tv', action: 'play-next' },
+    };
+
+    function harness(dirFiles, { single = null } = {}) {
+      const saved = {};
+      const blobs = {
+        'config/triggers/sources': SOURCES,
+        'config/triggers/bindings/nfc': single,
+        ...Object.fromEntries(
+          Object.entries(dirFiles).map(([f, blob]) => [`config/triggers/bindings/nfc/${f.replace(/\.ya?ml$/, '')}`, blob])
+        ),
+      };
+      const repo = new YamlTriggerConfigRepository({ saveFile: (p, data) => { saved[p] = data; } });
+      const registry = repo.loadRegistry({
+        loadFile: (p) => blobs[p] ?? null,
+        listDir: () => Object.keys(dirFiles),
+      });
+      return { repo, registry, saved };
+    }
+
+    it('merges every grouped file into one registry', () => {
+      const { registry } = harness({
+        'books.yml': { '83_8e_68_06': { plex: 620707 } },
+        'cards.yml': { '04669C0FCB2A81': { note: 'personal card', school_learner: 'test-learner' } },
+      });
+      expect(Object.keys(registry.nfc.tags).sort()).toEqual(['04669c0fcb2a81', '838e6806']);
+      expect(registry.nfc.tags['04669c0fcb2a81'].global.school_learner).toBe('test-learner');
+    });
+
+    it('rejects one uid claimed by two files instead of letting readdir order decide', () => {
+      expect(() => harness({
+        'books.yml': { '04_66_9c_0f_cb_2a_81': { plex: 1 } },
+        'cards.yml': { '04669C0FCB2A81': { note: 'personal card' } },
+      })).toThrow(/appears in both.*books\.yml.*cards\.yml/i);
+    });
+
+    it('refuses to boot when the single file AND the directory both hold entries', () => {
+      // The exact trap this household already hit: two plausible tag files
+      // diverging with nothing to say which was authoritative.
+      expect(() => harness(
+        { 'books.yml': { '838e6806': { plex: 1 } } },
+        { single: { aabb: { plex: 2 } } }
+      )).toThrow(/BOTH/i);
+    });
+
+    it('writes a note back to the file the tag came from, not into one monolith', async () => {
+      const { repo, saved } = harness({
+        'books.yml': { '838e6806': { plex: 620707 } },
+        'cards.yml': { '04669c0fcb2a81': { note: 'personal card' } },
+      });
+      await repo.setNfcNote('04_66_9C_0F_CB_2A_81', 'a personal card', '2026-07-29 20:19:17');
+
+      expect(Object.keys(saved)).toEqual(['config/triggers/bindings/nfc/cards']);
+      expect(saved['config/triggers/bindings/nfc/cards']['04669c0fcb2a81'].note).toBe('a personal card');
+      // Books must not be dragged into the cards file — collapsing groups back
+      // together is exactly what the old whole-registry flush did.
+      expect(saved['config/triggers/bindings/nfc/cards']['838e6806']).toBeUndefined();
+      expect(saved['config/triggers/bindings/nfc/books']).toBeUndefined();
+    });
+
+    it('files a never-before-seen tag into unsorted.yml', async () => {
+      const { repo, saved } = harness({ 'books.yml': { '838e6806': { plex: 620707 } } });
+      await repo.setNfcNote('0a_0b_0c_0d', 'mystery tag', '2026-07-29 21:00:00');
+      expect(saved['config/triggers/bindings/nfc/unsorted']).toEqual({
+        '0a0b0c0d': { note: 'mystery tag' },
+      });
+    });
+
+    it('still writes to the single file when no directory exists', async () => {
+      const saved = {};
+      const repo = new YamlTriggerConfigRepository({ saveFile: (p, d) => { saved[p] = d; } });
+      repo.loadRegistry({
+        loadFile: (p) => (p === 'config/triggers/sources' ? SOURCES
+          : p === 'config/triggers/bindings/nfc' ? { '838e6806': { plex: 620707 } } : null),
+        listDir: () => [],
+      });
+      await repo.setNfcNote('838e6806', 'renamed', '2026-07-29 21:00:00');
+      expect(saved['config/triggers/bindings/nfc']['838e6806'].note).toBe('renamed');
+    });
   });
 });
 
@@ -72,25 +158,25 @@ describe('YamlTriggerConfigRepository write methods', () => {
 
   it('recordObserved writes history on first sighting, never touches bindings', async () => {
     const { repo, disk } = makeRepo();
-    const result = await repo.recordObserved('04_a1_b2_c3', '2026-04-26 14:32:18');
+    const result = await repo.recordObserved('04a1b2c3', '2026-04-26 14:32:18');
     expect(result.created).toBe(true);
-    expect(disk['history/triggers/nfc.observed']['04_a1_b2_c3']).toEqual({
+    expect(disk['history/triggers/nfc.observed']['04a1b2c3']).toEqual({
       first_seen: '2026-04-26 14:32:18',
       last_seen: '2026-04-26 14:32:18',
       count: 1,
     });
-    expect(disk['config/triggers/bindings/nfc']['04_a1_b2_c3']).toBeUndefined();
+    expect(disk['config/triggers/bindings/nfc']['04a1b2c3']).toBeUndefined();
   });
 
   it('recordObserved on a repeat sighting returns created:false but still updates history', async () => {
     const { repo, disk } = makeRepo({
       observedHistory: {
-        '04_a1_b2_c3': { first_seen: '2026-04-26 10:00:00', last_seen: '2026-04-26 10:00:00', count: 1 },
+        '04a1b2c3': { first_seen: '2026-04-26 10:00:00', last_seen: '2026-04-26 10:00:00', count: 1 },
       },
     });
-    const result = await repo.recordObserved('04_a1_b2_c3', '2026-04-26 14:32:18');
+    const result = await repo.recordObserved('04a1b2c3', '2026-04-26 14:32:18');
     expect(result.created).toBe(false);
-    expect(disk['history/triggers/nfc.observed']['04_a1_b2_c3']).toEqual({
+    expect(disk['history/triggers/nfc.observed']['04a1b2c3']).toEqual({
       first_seen: '2026-04-26 10:00:00',
       last_seen: '2026-04-26 14:32:18',
       count: 2,
@@ -105,45 +191,45 @@ describe('YamlTriggerConfigRepository write methods', () => {
 
   it('setNfcNote upserts: creates a bindings entry with just the note; timestamp goes to history', async () => {
     const { repo, registry, disk } = makeRepo();
-    const result = await repo.setNfcNote('04_a1_b2_c3', 'kids favorite', '2026-04-26 14:32:18');
+    const result = await repo.setNfcNote('04a1b2c3', 'kids favorite', '2026-04-26 14:32:18');
     expect(result.created).toBe(true);
-    expect(registry.nfc.tags['04_a1_b2_c3'].global).toEqual({ note: 'kids favorite' });
+    expect(registry.nfc.tags['04a1b2c3'].global).toEqual({ note: 'kids favorite' });
     expect(disk['config/triggers/bindings/nfc']).toEqual({
-      '04_a1_b2_c3': { note: 'kids favorite' },
+      '04a1b2c3': { note: 'kids favorite' },
     });
-    expect(disk['config/triggers/bindings/nfc']['04_a1_b2_c3'].scanned_at).toBeUndefined();
-    expect(disk['history/triggers/nfc.observed']['04_a1_b2_c3'].last_seen).toBe('2026-04-26 14:32:18');
+    expect(disk['config/triggers/bindings/nfc']['04a1b2c3'].scanned_at).toBeUndefined();
+    expect(disk['history/triggers/nfc.observed']['04a1b2c3'].last_seen).toBe('2026-04-26 14:32:18');
   });
 
   it('setNfcNote overwrites an existing note; still records a history timestamp', async () => {
     const { repo, registry, disk } = makeRepo({
-      initialTags: { '04_a1_b2_c3': { note: 'old' } },
+      initialTags: { '04a1b2c3': { note: 'old' } },
     });
-    const result = await repo.setNfcNote('04_a1_b2_c3', 'new', '2026-04-26 14:32:18');
+    const result = await repo.setNfcNote('04a1b2c3', 'new', '2026-04-26 14:32:18');
     expect(result.created).toBe(false);
-    expect(registry.nfc.tags['04_a1_b2_c3'].global).toEqual({ note: 'new' });
+    expect(registry.nfc.tags['04a1b2c3'].global).toEqual({ note: 'new' });
     expect(disk['config/triggers/bindings/nfc']).toEqual({
-      '04_a1_b2_c3': { note: 'new' },
+      '04a1b2c3': { note: 'new' },
     });
-    expect(disk['history/triggers/nfc.observed']['04_a1_b2_c3'].last_seen).toBe('2026-04-26 14:32:18');
+    expect(disk['history/triggers/nfc.observed']['04a1b2c3'].last_seen).toBe('2026-04-26 14:32:18');
   });
 
   it('setNfcNote on a promoted tag preserves intent fields and overrides', async () => {
     const { repo, registry, disk } = makeRepo({
       initialTags: {
-        '83_8e_68_06': {
+        '838e6806': {
           plex: 620707,
           livingroom: { shader: 'blackout' },
         },
       },
     });
-    await repo.setNfcNote('83_8e_68_06', 'star wars', '2026-04-26 14:32:18');
-    expect(registry.nfc.tags['83_8e_68_06']).toEqual({
+    await repo.setNfcNote('838e6806', 'star wars', '2026-04-26 14:32:18');
+    expect(registry.nfc.tags['838e6806']).toEqual({
       global: { plex: 620707, note: 'star wars' },
       overrides: { livingroom: { shader: 'blackout' } },
     });
     expect(disk['config/triggers/bindings/nfc']).toEqual({
-      '83_8e_68_06': {
+      '838e6806': {
         plex: 620707,
         note: 'star wars',
         livingroom: { shader: 'blackout' },

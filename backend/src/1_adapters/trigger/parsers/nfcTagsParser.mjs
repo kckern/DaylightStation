@@ -20,6 +20,7 @@
  */
 
 import { ValidationError } from '#domains/core/errors/ValidationError.mjs';
+import { canonicalizeNfcUid } from '#domains/trigger/nfcUid.mjs';
 
 function isPlainObject(v) {
   return v !== null && typeof v === 'object' && !Array.isArray(v);
@@ -35,11 +36,26 @@ export function parseNfcTags(raw, knownReaders) {
   }
 
   const out = {};
+  const seen = new Map(); // canonical uid -> the raw key that claimed it first
   for (const [rawUid, entry] of Object.entries(raw)) {
     if (!isPlainObject(entry)) {
       throw new ValidationError(`tag "${rawUid}" must be an object`, { code: 'INVALID_TAG', field: rawUid });
     }
-    const uid = rawUid.toLowerCase();
+    // Canonical, not merely lowercased: `04_66_9c…` and `04669C…` are the same
+    // physical card and must not become two identities. See domains/trigger/nfcUid.
+    const uid = canonicalizeNfcUid(rawUid);
+    if (!uid) {
+      throw new ValidationError(`tag key "${rawUid}" is not a usable uid`, { code: 'INVALID_TAG_UID', field: rawUid });
+    }
+    // Two spellings of one uid would otherwise silently last-write-wins, and
+    // which entry survived would depend on key order in the YAML.
+    if (seen.has(uid)) {
+      throw new ValidationError(
+        `tag "${rawUid}" duplicates "${seen.get(uid)}" — both canonicalize to "${uid}"`,
+        { code: 'DUPLICATE_TAG_UID', field: rawUid, conflictsWith: seen.get(uid) }
+      );
+    }
+    seen.set(uid, rawUid);
     const global = {};
     const overrides = {};
     for (const [k, v] of Object.entries(entry)) {

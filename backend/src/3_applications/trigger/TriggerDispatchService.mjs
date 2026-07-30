@@ -30,6 +30,7 @@ import { authorize } from './guards/authorize.mjs';
 import { gatekeeperStrategies } from './guards/gatekeeperStrategies.mjs';
 import { createDebounce } from './guards/debounce.mjs';
 import { TriggerEvent } from '#domains/trigger/TriggerEvent.mjs';
+import { canonicalizeNfcUid } from '#domains/trigger/nfcUid.mjs';
 
 export class TriggerDispatchService {
   #config;
@@ -117,7 +118,18 @@ export class TriggerDispatchService {
     const value = event.value;
     const startedAt = this.#clock();
     const dispatchId = randomUUID();
-    const normalizedValue = String(value || '').toLowerCase();
+    // NFC uids canonicalize (case AND separators); everything else only folds
+    // case. This is deliberately modality-aware: a barcode may legitimately
+    // contain `-` or `_` as part of its value, so stripping separators from one
+    // would corrupt it into a different code entirely.
+    //
+    // It matters beyond lookup — normalizedValue keys the DEBOUNCE below. Left
+    // un-canonicalized, one card reported `04_66_9c…` by one reader and
+    // `04669C…` by another produced two debounce keys, so a genuine double-tap
+    // sailed through as two distinct triggers.
+    const normalizedValue = modality === 'nfc'
+      ? canonicalizeNfcUid(value)
+      : String(value || '').toLowerCase();
 
     // Modality slice check — must come before auth so unknown modalities get
     // a clear error code rather than a misleading LOCATION_NOT_FOUND.

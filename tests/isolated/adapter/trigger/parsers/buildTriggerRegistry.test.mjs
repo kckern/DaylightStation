@@ -13,10 +13,10 @@ describe('buildTriggerRegistry', () => {
         livingroom: { modality: 'nfc', target: 'livingroom-tv', action: 'play-next' },
         'livingroom-state': { modality: 'state', location: 'livingroom', target: 'livingroom-tv', states: { off: { action: 'clear' } } },
       },
-      bindingsNfc: { '83_8e_68_06': { plex: 620707 } },
+      bindingsNfc: { '838e6806': { plex: 620707 } },
     });
     expect(result.nfc.locations.livingroom.target).toBe('livingroom-tv');
-    expect(result.nfc.tags['83_8e_68_06'].global).toEqual({ plex: 620707 });
+    expect(result.nfc.tags['838e6806'].global).toEqual({ plex: 620707 });
     expect(result.state.locations.livingroom.states.off).toEqual({ action: 'clear' });
   });
 
@@ -28,7 +28,7 @@ describe('buildTriggerRegistry', () => {
         livingroom: { modality: 'nfc', target: 'tv' },
       },
       bindingsNfc: {
-        'aa_bb': {
+        'aabb': {
           plex: 1,
           livingrm: { shader: 'x' },  // typo
         },
@@ -42,21 +42,21 @@ describe('buildTriggerRegistry', () => {
         livingroom: { modality: 'nfc', target: 'tv' },
       },
       bindingsNfc: {
-        'aa_bb': {
+        'aabb': {
           plex: 1,
           livingroom: { shader: 'blackout' },
         },
       },
     });
-    expect(result.nfc.tags['aa_bb'].overrides.livingroom).toEqual({ shader: 'blackout' });
+    expect(result.nfc.tags['aabb'].overrides.livingroom).toEqual({ shader: 'blackout' });
   });
 
   it('handles the case where nfcTags is non-empty but nfcLocations is empty (no readers)', () => {
     // Edge case: a tag exists but no readers are configured. Tag without
     // overrides is fine; tag with any object-valued field would throw.
     const result = buildTriggerRegistry({
-      bindingsNfc: { 'aa_bb': { plex: 1 } },
+      bindingsNfc: { 'aabb': { plex: 1 } },
     });
-    expect(result.nfc.tags['aa_bb'].global).toEqual({ plex: 1 });
+    expect(result.nfc.tags['aabb'].global).toEqual({ plex: 1 });
   });
 });

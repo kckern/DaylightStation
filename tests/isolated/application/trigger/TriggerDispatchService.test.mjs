@@ -14,8 +14,8 @@ const baseRegistry = {
       },
     },
     tags: {
-      '83_8e_68_06': { global: { plex: 620707 }, overrides: {} },
-      '8d_6d_2a_07': { global: { plex: 620708 }, overrides: {} },
+      '838e6806': { global: { plex: 620707 }, overrides: {} },
+      '8d6d2a07': { global: { plex: 620708 }, overrides: {} },
     },
   },
   state: {
@@ -68,7 +68,7 @@ describe('TriggerDispatchService.handleTrigger', () => {
 
   it('returns ok and dispatches a content load for a known nfc trigger', async () => {
     const service = makeService();
-    const result = await service.handleTrigger('livingroom', 'nfc', '83_8e_68_06');
+    const result = await service.handleTrigger('livingroom', 'nfc', '838e6806');
     expect(result.ok).toBe(true);
     expect(result.action).toBe('play-next');
     expect(result.target).toBe('livingroom-tv');
@@ -81,7 +81,7 @@ describe('TriggerDispatchService.handleTrigger', () => {
 
   it('returns 404-ish error for unknown location', async () => {
     const service = makeService();
-    const result = await service.handleTrigger('attic', 'nfc', '83_8e_68_06');
+    const result = await service.handleTrigger('attic', 'nfc', '838e6806');
     expect(result.ok).toBe(false);
     expect(result.error).toMatch(/location/i);
     expect(result.code).toBe('LOCATION_NOT_FOUND');
@@ -89,16 +89,16 @@ describe('TriggerDispatchService.handleTrigger', () => {
 
   it('returns 404-ish error for unknown trigger value (and logs the event)', async () => {
     const service = makeService();
-    const result = await service.handleTrigger('livingroom', 'nfc', 'unknown_uid');
+    const result = await service.handleTrigger('livingroom', 'nfc', 'unknownuid');
     expect(result.ok).toBe(false);
     expect(result.code).toBe('TRIGGER_NOT_REGISTERED');
     expect(logger.info).toHaveBeenCalledWith('trigger.fired',
-      expect.objectContaining({ registered: false, value: 'unknown_uid' }));
+      expect.objectContaining({ registered: false, value: 'unknownuid' }));
   });
 
   it('lowercases the trigger value before lookup', async () => {
     const service = makeService();
-    const result = await service.handleTrigger('livingroom', 'nfc', '83_8E_68_06');
+    const result = await service.handleTrigger('livingroom', 'nfc', '838e6806');
     expect(result.ok).toBe(true);
   });
 
@@ -114,12 +114,12 @@ describe('TriggerDispatchService.handleTrigger', () => {
           },
         },
         tags: {
-          '83_8e_68_06': { global: { plex: 620707 }, overrides: {} },
+          '838e6806': { global: { plex: 620707 }, overrides: {} },
         },
       },
     };
     const service = makeService(registry);
-    const result = await service.handleTrigger('livingroom', 'nfc', '83_8e_68_06');
+    const result = await service.handleTrigger('livingroom', 'nfc', '838e6806');
     expect(result.ok).toBe(false);
     expect(result.code).toBe('UNKNOWN_ACTION');
   });
@@ -136,12 +136,12 @@ describe('TriggerDispatchService.handleTrigger', () => {
           },
         },
         tags: {
-          '83_8e_68_06': { global: { plex: 620707 }, overrides: {} },
+          '838e6806': { global: { plex: 620707 }, overrides: {} },
         },
       },
     };
     const service = makeService(registry);
-    const result = await service.handleTrigger('livingroom', 'nfc', '83_8e_68_06', {});
+    const result = await service.handleTrigger('livingroom', 'nfc', '838e6806', {});
     expect(result.ok).toBe(false);
     expect(result.code).toBe('AUTH_FAILED');
   });
@@ -158,18 +158,18 @@ describe('TriggerDispatchService.handleTrigger', () => {
           },
         },
         tags: {
-          '83_8e_68_06': { global: { plex: 620707 }, overrides: {} },
+          '838e6806': { global: { plex: 620707 }, overrides: {} },
         },
       },
     };
     const service = makeService(registry);
-    const result = await service.handleTrigger('livingroom', 'nfc', '83_8e_68_06', { token: 'secret' });
+    const result = await service.handleTrigger('livingroom', 'nfc', '838e6806', { token: 'secret' });
     expect(result.ok).toBe(true);
   });
 
   it('does not dispatch when dryRun is true (validates only)', async () => {
     const service = makeService();
-    const result = await service.handleTrigger('livingroom', 'nfc', '83_8e_68_06', { dryRun: true });
+    const result = await service.handleTrigger('livingroom', 'nfc', '838e6806', { dryRun: true });
     expect(result.ok).toBe(true);
     expect(result.dryRun).toBe(true);
     expect(wakeAndLoadService.execute).not.toHaveBeenCalled();
@@ -177,19 +177,19 @@ describe('TriggerDispatchService.handleTrigger', () => {
 
   it('broadcasts a trigger.fired event to topic trigger:<location>:<type>', async () => {
     const service = makeService();
-    await service.handleTrigger('livingroom', 'nfc', '83_8e_68_06');
+    await service.handleTrigger('livingroom', 'nfc', '838e6806');
     expect(broadcast).toHaveBeenCalledWith(expect.objectContaining({
       topic: 'trigger:livingroom:nfc',
       type: 'trigger.fired',
       location: 'livingroom',
-      value: '83_8e_68_06',
+      value: '838e6806',
     }));
   });
 
   it('returns DISPATCH_FAILED when the action handler throws a non-UnknownAction error', async () => {
     wakeAndLoadService.execute.mockRejectedValue(new Error('TV unreachable'));
     const service = makeService();
-    const result = await service.handleTrigger('livingroom', 'nfc', '83_8e_68_06');
+    const result = await service.handleTrigger('livingroom', 'nfc', '838e6806');
     expect(result.ok).toBe(false);
     expect(result.code).toBe('DISPATCH_FAILED');
     expect(result.error).toMatch(/TV unreachable/);
@@ -226,8 +226,8 @@ const debounceRegistry = {
       },
     },
     tags: {
-      '83_8e_68_06': { global: { plex: '620707' }, overrides: {} },
-      '8d_6d_2a_07': { global: { plex: '620708' }, overrides: {} },
+      '838e6806': { global: { plex: '620707' }, overrides: {} },
+      '8d6d2a07': { global: { plex: '620708' }, overrides: {} },
     },
   },
 };
@@ -251,12 +251,12 @@ describe('TriggerDispatchService — debounce', () => {
       debounceWindowMs: 3000,
     });
 
-    const first = await service.handleTrigger('livingroom', 'nfc', '83_8e_68_06');
+    const first = await service.handleTrigger('livingroom', 'nfc', '838e6806');
     expect(first.ok).toBe(true);
     expect(first.debounced).toBeUndefined();
     expect(wakeAndLoadService.execute).toHaveBeenCalledTimes(1);
 
-    const second = await service.handleTrigger('livingroom', 'nfc', '83_8e_68_06');
+    const second = await service.handleTrigger('livingroom', 'nfc', '838e6806');
     expect(second.ok).toBe(true);
     expect(second.debounced).toBe(true);
     expect(wakeAndLoadService.execute).toHaveBeenCalledTimes(1); // unchanged
@@ -272,8 +272,8 @@ describe('TriggerDispatchService — debounce', () => {
       debounceWindowMs: 3000,
     });
 
-    await service.handleTrigger('livingroom', 'nfc', '83_8e_68_06');
-    await service.handleTrigger('livingroom', 'nfc', '8d_6d_2a_07');
+    await service.handleTrigger('livingroom', 'nfc', '838e6806');
+    await service.handleTrigger('livingroom', 'nfc', '8d6d2a07');
     expect(wakeAndLoadService.execute).toHaveBeenCalledTimes(2);
   });
 
@@ -289,11 +289,11 @@ describe('TriggerDispatchService — debounce', () => {
       clock: () => now,
     });
 
-    await service.handleTrigger('livingroom', 'nfc', '83_8e_68_06');
+    await service.handleTrigger('livingroom', 'nfc', '838e6806');
     expect(wakeAndLoadService.execute).toHaveBeenCalledTimes(1);
 
     now += 3500; // past window
-    const result = await service.handleTrigger('livingroom', 'nfc', '83_8e_68_06');
+    const result = await service.handleTrigger('livingroom', 'nfc', '838e6806');
     expect(result.debounced).toBeUndefined();
     expect(wakeAndLoadService.execute).toHaveBeenCalledTimes(2);
   });
@@ -308,8 +308,8 @@ describe('TriggerDispatchService — debounce', () => {
       debounceWindowMs: 3000,
     });
 
-    await service.handleTrigger('livingroom', 'nfc', '83_8e_68_06');
-    const dry = await service.handleTrigger('livingroom', 'nfc', '83_8e_68_06', { dryRun: true });
+    await service.handleTrigger('livingroom', 'nfc', '838e6806');
+    const dry = await service.handleTrigger('livingroom', 'nfc', '838e6806', { dryRun: true });
     expect(dry.dryRun).toBe(true);
     expect(dry.debounced).toBeUndefined();
   });
@@ -328,10 +328,10 @@ describe('TriggerDispatchService — debounce', () => {
       debounceWindowMs: 3000,
     });
 
-    const first = await service.handleTrigger('livingroom', 'nfc', '83_8e_68_06');
+    const first = await service.handleTrigger('livingroom', 'nfc', '838e6806');
     expect(first.ok).toBe(false);
 
-    const second = await service.handleTrigger('livingroom', 'nfc', '83_8e_68_06');
+    const second = await service.handleTrigger('livingroom', 'nfc', '838e6806');
     expect(second.ok).toBe(true);
     expect(second.debounced).toBeUndefined();
     expect(wakeAndLoadService.execute).toHaveBeenCalledTimes(2);
@@ -394,13 +394,13 @@ describe('TriggerDispatchService.handleTrigger — unknown NFC branch', () => {
 
   it('state 0 — first scan: writes placeholder, notifies, returns 404', async () => {
     const service = makeService(makeRegistry());
-    const result = await service.handleTrigger('livingroom', 'nfc', '04_a1_b2_c3');
+    const result = await service.handleTrigger('livingroom', 'nfc', '04a1b2c3');
 
     expect(result.ok).toBe(false);
     expect(result.code).toBe('TRIGGER_NOT_REGISTERED');
 
     expect(tagWriter.recordObserved).toHaveBeenCalledWith(
-      '04_a1_b2_c3',
+      '04a1b2c3',
       expect.stringMatching(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/),
     );
 
@@ -409,10 +409,10 @@ describe('TriggerDispatchService.handleTrigger — unknown NFC branch', () => {
       'mobile_app_kc_phone',
       expect.objectContaining({
         title: expect.stringMatching(/livingroom/i),
-        message: expect.stringContaining('04_a1_b2_c3'),
+        message: expect.stringContaining('04a1b2c3'),
         data: expect.objectContaining({
           actions: [expect.objectContaining({
-            action: 'NFC_REPLY|livingroom|04_a1_b2_c3',
+            action: 'NFC_REPLY|livingroom|04a1b2c3',
             behavior: 'textInput',
           })],
         }),
@@ -428,7 +428,7 @@ describe('TriggerDispatchService.handleTrigger — unknown NFC branch', () => {
 
   it('state 0 — no notify call when notify_unknown is unset', async () => {
     const service = makeService(makeRegistry({ notify_unknown: null }));
-    await service.handleTrigger('livingroom', 'nfc', '04_a1_b2_c3');
+    await service.handleTrigger('livingroom', 'nfc', '04a1b2c3');
     expect(tagWriter.recordObserved).toHaveBeenCalled();
     expect(haGateway.callService).not.toHaveBeenCalled();
   });
@@ -436,10 +436,10 @@ describe('TriggerDispatchService.handleTrigger — unknown NFC branch', () => {
   it('state 1 — re-scan with placeholder but no note: notifies, no new write', async () => {
     tagWriter.recordObserved.mockResolvedValue({ created: false });
     const registry = makeRegistry({
-      tags: { '04_a1_b2_c3': { global: { scanned_at: '2026-04-26 10:00:00' }, overrides: {} } },
+      tags: { '04a1b2c3': { global: { scanned_at: '2026-04-26 10:00:00' }, overrides: {} } },
     });
     const service = makeService(registry);
-    await service.handleTrigger('livingroom', 'nfc', '04_a1_b2_c3');
+    await service.handleTrigger('livingroom', 'nfc', '04a1b2c3');
 
     // upsert is called but no-ops (returns { created: false })
     expect(tagWriter.recordObserved).toHaveBeenCalled();
@@ -448,13 +448,13 @@ describe('TriggerDispatchService.handleTrigger — unknown NFC branch', () => {
 
   it('state 2 — has note already: silent (no notify, no write)', async () => {
     const registry = makeRegistry({
-      tags: { '04_a1_b2_c3': {
+      tags: { '04a1b2c3': {
         global: { scanned_at: '2026-04-26 10:00:00', note: 'kids movie' },
         overrides: {},
       } },
     });
     const service = makeService(registry);
-    await service.handleTrigger('livingroom', 'nfc', '04_a1_b2_c3');
+    await service.handleTrigger('livingroom', 'nfc', '04a1b2c3');
 
     expect(tagWriter.recordObserved).not.toHaveBeenCalled();
     expect(haGateway.callService).not.toHaveBeenCalled();
@@ -464,9 +464,9 @@ describe('TriggerDispatchService.handleTrigger — unknown NFC branch', () => {
 
   it('debounce extends to unknown branch: second scan within 3s does not re-notify', async () => {
     const service = makeService(makeRegistry());
-    await service.handleTrigger('livingroom', 'nfc', '04_a1_b2_c3');
+    await service.handleTrigger('livingroom', 'nfc', '04a1b2c3');
     now += 1500; // 1.5 s later
-    await service.handleTrigger('livingroom', 'nfc', '04_a1_b2_c3');
+    await service.handleTrigger('livingroom', 'nfc', '04a1b2c3');
     expect(haGateway.callService).toHaveBeenCalledTimes(1);
     expect(tagWriter.recordObserved).toHaveBeenCalledTimes(1);
   });
@@ -476,16 +476,16 @@ describe('TriggerDispatchService.handleTrigger — unknown NFC branch', () => {
       .mockResolvedValueOnce({ created: true })
       .mockResolvedValueOnce({ created: false });
     const service = makeService(makeRegistry());
-    await service.handleTrigger('livingroom', 'nfc', '04_a1_b2_c3');
+    await service.handleTrigger('livingroom', 'nfc', '04a1b2c3');
     now += 35000; // 35 s later, past 30 s default window
-    await service.handleTrigger('livingroom', 'nfc', '04_a1_b2_c3');
+    await service.handleTrigger('livingroom', 'nfc', '04a1b2c3');
     expect(haGateway.callService).toHaveBeenCalledTimes(2);
   });
 
   it('notify failure does not change the GET response or skip broadcast', async () => {
     haGateway.callService.mockRejectedValue(new Error('HA down'));
     const service = makeService(makeRegistry());
-    const result = await service.handleTrigger('livingroom', 'nfc', '04_a1_b2_c3');
+    const result = await service.handleTrigger('livingroom', 'nfc', '04a1b2c3');
     expect(result.code).toBe('TRIGGER_NOT_REGISTERED');
     expect(broadcast).toHaveBeenCalled();
     expect(logger.error).toHaveBeenCalledWith('trigger.notify.failed', expect.any(Object));
@@ -546,10 +546,10 @@ describe('TriggerDispatchService.setNote', () => {
 
   it('writes the note via tagWriter and returns ok', async () => {
     const service = makeService();
-    const result = await service.setNote('livingroom', 'nfc', '04_a1_b2_c3', 'kids favorite');
+    const result = await service.setNote('livingroom', 'nfc', '04a1b2c3', 'kids favorite');
     expect(result.ok).toBe(true);
     expect(tagWriter.setNfcNote).toHaveBeenCalledWith(
-      '04_a1_b2_c3',
+      '04a1b2c3',
       'kids favorite',
       expect.stringMatching(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/),
     );
@@ -557,19 +557,19 @@ describe('TriggerDispatchService.setNote', () => {
 
   it('lowercases the value before writing', async () => {
     const service = makeService();
-    await service.setNote('livingroom', 'nfc', 'AA_BB_CC', 'x');
-    expect(tagWriter.setNfcNote).toHaveBeenCalledWith('aa_bb_cc', 'x', expect.any(String));
+    await service.setNote('livingroom', 'nfc', 'aabbcc', 'x');
+    expect(tagWriter.setNfcNote).toHaveBeenCalledWith('aabbcc', 'x', expect.any(String));
   });
 
   it('broadcasts trigger.note_set on the location/modality topic', async () => {
     const service = makeService();
-    await service.setNote('livingroom', 'nfc', '04_a1_b2_c3', 'kids favorite');
+    await service.setNote('livingroom', 'nfc', '04a1b2c3', 'kids favorite');
     expect(broadcast).toHaveBeenCalledWith(expect.objectContaining({
       topic: 'trigger:livingroom:nfc',
       type: 'trigger.note_set',
       location: 'livingroom',
       modality: 'nfc',
-      value: '04_a1_b2_c3',
+      value: '04a1b2c3',
       note: 'kids favorite',
     }));
   });
