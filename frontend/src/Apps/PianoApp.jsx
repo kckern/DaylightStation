@@ -26,6 +26,7 @@ import {
 import { usePianoScreenOff } from '../modules/Piano/PianoKiosk/usePianoScreenOff.js';
 import { KIOSK_DEVICE_ID } from '../modules/Piano/PianoKiosk/kioskDeviceIdentity.js';
 import { useKioskLaunchCommand } from '../modules/Piano/PianoKiosk/useKioskLaunchCommand.js';
+import { openPianoContent } from '../modules/Piano/PianoKiosk/pianoContentOpen.js';
 import {
   PianoPlaybackProvider,
   usePianoPlayback,
@@ -205,9 +206,25 @@ function PianoFleetPublisher() {
  * keyboard — the whole point is that a parent can start a game remotely.
  * The hook's own identity guard drops anything not addressed to this device, so
  * mounting it on a laptop dev tab is harmless.
+ *
+ * ALSO wires DoNow's `piano.launch` arm (spec §5, surface `piano-kiosk`):
+ * `onPianoOpen` resolves a bare contentId via `openPianoContent`
+ * (`pianoContentOpen.js`) — reachable today for SheetMusic-shaped
+ * (`source:localId`) content ids only, which it navigates to that mode's
+ * `sheetmusic/view/*` route; anything else stays a structured warn + no-op
+ * (no other piano mode exposes a generic "open by contentId" resolver — see
+ * that module's doc comment). Mounted here (not inside useKioskLaunchCommand
+ * itself) because this is the one place with both Router context (useNavigate)
+ * and this piano's resolved basePath.
  */
 function KioskLaunchListener() {
-  useKioskLaunchCommand();
+  const navigate = useNavigate();
+  const { basePath } = usePianoKioskConfig();
+  const onPianoOpen = useCallback(
+    (contentId) => { openPianoContent({ contentId, basePath, navigate }); },
+    [basePath, navigate]
+  );
+  useKioskLaunchCommand({ onPianoOpen });
   return null;
 }
 

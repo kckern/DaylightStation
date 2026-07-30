@@ -29,11 +29,21 @@ function logger() {
  * are ignored — every household screen sees every broadcast, so a message
  * this hook cannot make sense of is the common case, not an error.
  *
+ * `busy` mirrors the household's fail-toward-not-clobbering posture that
+ * FitnessApp's own URL-driven restore effect already applies (it refuses to
+ * touch a non-empty `fitnessPlayQueue`): pass whether a queue/episode is
+ * already loaded, and a well-formed launch arriving mid-session logs a
+ * structured warn and is dropped instead of navigating over it. Kept HERE
+ * (not as an ad hoc check in the caller) so the guard is exercised by this
+ * hook's own tests rather than living only in FitnessApp.jsx.
+ *
  * @param {object} args
  * @param {(episodeId: string, meta: {learnerId: string|null}) => void} args.onLaunch
  *   - navigate to the episode (e.g. `/fitness/play/${episodeId}`)
+ * @param {boolean} [args.busy] - true when a queue/episode is already loaded;
+ *   suppresses the launch instead of clobbering it (default false)
  */
-export function useFitnessLaunch({ onLaunch }) {
+export function useFitnessLaunch({ onLaunch, busy = false }) {
   const handle = useCallback((msg) => {
     const wellFormed = msg
       && msg.type === LAUNCH_TYPE
@@ -45,9 +55,15 @@ export function useFitnessLaunch({ onLaunch }) {
     }
 
     const { learnerId = null, episodeId } = msg;
+
+    if (busy) {
+      logger().warn('fitness-launch-ignored-queue-active', { learnerId, episodeId });
+      return;
+    }
+
     logger().info('launch-received', { learnerId, episodeId });
     onLaunch(episodeId, { learnerId });
-  }, [onLaunch]);
+  }, [onLaunch, busy]);
 
   useWebSocketSubscription(TOPIC, handle, [handle]);
 }
