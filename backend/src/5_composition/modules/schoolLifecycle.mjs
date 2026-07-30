@@ -46,6 +46,8 @@ import { YamlReviewQueue } from '#adapters/persistence/yaml/YamlReviewQueue.mjs'
 import { CurriculumAccess } from '#apps/school/CurriculumAccess.mjs';
 import { GrownUpGate } from '#apps/school/GrownUpGate.mjs';
 import { ReceiptPrinting } from '#apps/school/ReceiptPrinting.mjs';
+import { PortalDispatch } from '#apps/school/PortalDispatch.mjs';
+import { LanguageProgramLauncher } from '#apps/school/LanguageProgramLauncher.mjs';
 import { WorkSessionReporter } from '#apps/school/WorkSessionReporter.mjs';
 import { BuildAgenda } from '#apps/school/usecases/BuildAgenda.mjs';
 import { IssueDocument } from '#apps/school/usecases/IssueDocument.mjs';
@@ -57,9 +59,11 @@ import { CloseSessionOutcome } from '#apps/school/usecases/CloseSessionOutcome.m
 import { OpenRemediation } from '#apps/school/usecases/OpenRemediation.mjs';
 import { ResolvePersonalCard } from '#apps/school/usecases/ResolvePersonalCard.mjs';
 import { ResolveScanAction } from '#apps/school/usecases/ResolveScanAction.mjs';
+import { ResolveSubjectNext } from '#apps/school/usecases/ResolveSubjectNext.mjs';
 import { ResolveReviewItem } from '#apps/school/usecases/ResolveReviewItem.mjs';
 import { SetAssignments } from '#apps/school/usecases/SetAssignments.mjs';
 import { isSchoolToken } from '#domains/school/sessions/tokens.mjs';
+import { shortId } from '#domains/core/utils/id.mjs';
 import { createSchoolLifecycleRouter } from '#api/v1/routers/schoolLifecycle.mjs';
 import { createSchoolVirtualDevicesRouter } from '#api/v1/routers/schoolVirtualDevices.mjs';
 
@@ -84,6 +88,10 @@ function cryptoRng(crypto) {
  * @param {object} deps.schoolService - the existing grading engine + bank reader
  * @param {object} [deps.economyService]
  * @param {object} [deps.userService]
+ * @param {object} [deps.languageStudyService] - the sentence-ladder program (Task 8/12).
+ *   Present means the `language` program is a live launcher, reachable from a
+ *   `subject_next` ticket the same as any curriculum unit; absent means the
+ *   `launchers` map stays empty and no program entry can ever resolve.
  * @param {object} [deps.eventBus]
  * @param {object} [deps.thermalPrinterRegistry] - the house receipt-printer registry
  * @param {object} [deps.playbackAdapter] - real playback target; null until §8 lands
@@ -107,6 +115,7 @@ export async function createSchoolLifecycle({
   configService, householdId = null, schoolService,
   economyService = null, userService = null, eventBus = null,
   thermalPrinterRegistry = null, playbackAdapter = null,
+  languageStudyService = null,
   clock = () => new Date(), rng = null, logger = console,
 } = {}) {
   const cfg = configService.getHouseholdAppConfig?.(householdId, 'school') || {};
@@ -160,7 +169,10 @@ export async function createSchoolLifecycle({
     // buys; `DocumentReceiptRenderer` stays the probe that proves a document
     // CAN be drawn on 58mm tape.
     const { createDocumentEscPosRenderer } = await import('#rendering/school/documents/DocumentEscPosRenderer.mjs');
-    receiptRenderer = createDocumentEscPosRenderer({});
+    // QR, not Code128: the school console's tickets are minted and re-derived
+    // through this one renderer, and a QR is what a phone-shaped scanner in a
+    // household reads back reliably at receipt-tape width.
+    receiptRenderer = createDocumentEscPosRenderer({ symbology: 'QR' });
   } catch (err) {
     // A missing receipt renderer is survivable: worksheets still print, and
     // `ReceiptPrinting` reports every receipt as unprinted rather than lying.
@@ -242,13 +254,32 @@ export async function createSchoolLifecycle({
     reviewQueue: new YamlReviewQueue({ configService }),
   };
 
+  // --- program launchers (Task 8/12) ------------------------------------------
+  // The same IANA zone `LanguageStudyService` reads its 4am study-day boundary
+  // against (`app.mjs`) — one source, so the agenda's "done today" and the
+  // program's own idea of "today" can never drift apart.
+  const timezone = configService.getTimezone?.() || null;
+  const portal = new PortalDispatch({ eventBus, logger });
+  // Present only when the caller wired a language-study service: no service,
+  // no launcher, and a program-typed unit degrades to "not answering" rather
+  // than throwing (CurriculumAccess/ResolveSubjectNext's own try/catch).
+  const launchers = new Map(languageStudyService
+    ? [['language', new LanguageProgramLauncher({ languageStudyService, portal, logger })]]
+    : []);
+
   // --- collaborators ---------------------------------------------------------
   const draw = rng ?? cryptoRng(globalThis.crypto);
+  // Shared by BuildAgenda and ResolveSubjectNext so a curriculum entry opened
+  // by either one gets the same shape of session id.
+  const newSessionId = () => `ses_${shortId(8)}`;
   const curriculum = new CurriculumAccess({
     catalog: stores.catalog,
     // Read per call, never captured: banks warm asynchronously after boot, and
     // a set snapshotted at construction would be empty for the first minute.
     bankIds: () => (schoolService?.listBanks?.() || []).map((b) => b.id).filter(Boolean),
+    // Same read-per-call rule: a launcher registered after boot (or one that
+    // never showed up) must be reflected immediately, not frozen at construction.
+    programIds: () => [...launchers.keys()],
     logger,
   });
   const bankReader = {
@@ -269,7 +300,13 @@ export async function createSchoolLifecycle({
   // --- use cases -------------------------------------------------------------
   const buildAgenda = new BuildAgenda({
     curriculum, assignments: stores.assignments, sessions: stores.sessions, tokens: stores.tokens,
-    clock, rng: draw, tokenTtlHours: lifecycleCfg.tokenTtlHours ?? 48, logger,
+    launchers, timezone, clock, rng: draw, newSessionId,
+    // Optional knob; BuildAgenda's own default (168h) applies when unset.
+    subjectTokenTtlHours: lifecycleCfg.subjectTokenTtlHours, logger,
+  });
+  const resolveSubjectNext = new ResolveSubjectNext({
+    curriculum, assignments: stores.assignments, sessions: stores.sessions,
+    launchers, timezone, clock, newSessionId, logger,
   });
   const issueDocument = new IssueDocument({
     curriculum, sessions: stores.sessions, tokens: stores.tokens,
@@ -327,7 +364,7 @@ export async function createSchoolLifecycle({
   const resolveScanAction = new ResolveScanAction({
     tokens: stores.tokens, sessions: stores.sessions, curriculum,
     resolvePersonalCard, issueDocument, dispatchMedia: mediaOrNothing, openRemediation,
-    receipts, clock, logger,
+    receipts, resolveSubjectNext, portal, launchers, clock, logger,
   });
 
   // The two parent-only writes. They are use cases rather than raw store calls
@@ -369,6 +406,7 @@ export async function createSchoolLifecycle({
     media: Boolean(dispatchMedia),
     receipts: receipts.wired,
     economy: lifecycleCfg.economy?.enabled === true,
+    launchers: [...launchers.keys()],
   });
 
   return {

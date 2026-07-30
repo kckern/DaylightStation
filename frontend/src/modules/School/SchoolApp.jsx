@@ -27,6 +27,7 @@ import ReportPanel from './report/ReportPanel.jsx';
 import { languageApi } from './Programs/Glossika/languageApi.js';
 import { schoolApi } from './schoolApi.js';
 import { schoolLog } from './schoolLog.js';
+import { useSchoolLaunch } from './useSchoolLaunch.js';
 import './School.scss';
 
 /**
@@ -207,6 +208,36 @@ function SchoolShell({ clear }) {
     syncUrl(id, []);
     schoolLog.nav('section', { section: id });
   }, [syncUrl]);
+
+  // Portal-launch subscription (design §4.3): a scan resolves to on-screen
+  // work and the backend hands it to whichever screen has School mounted.
+  // useSchoolLaunch claims the learner; routing into the named runner is
+  // this callback's job. A program target reuses the same `lang:<id>`
+  // section the Apps tile opens (SubjectPage's `openFor('apps', …)`); since
+  // the launcher never names an instance (LanguageProgramLauncher.launch()
+  // only knows the fixed `{kind:'program', program:'language'}` shape), the
+  // learner's one loaded course is what opens. A bank target resolves the
+  // bare `bankId` against the loaded summaries (the same `start()` the quiz
+  // Start button calls) rather than the generic `onLaunch` above, because
+  // the learner is already claimed here — routing back through `onLaunch`
+  // would re-trigger its unclaimed-picker branch on stale identity state.
+  // Either miss (no course loaded, unknown bankId) logs and stays inert
+  // rather than crashing on a screen nobody is watching yet.
+  const onPortalLaunch = useCallback((target) => {
+    if (target?.kind === 'program' && target.program === 'language') {
+      const courseId = courses[0]?.id ?? null;
+      if (!courseId) { schoolLog.bank('program-unavailable', { program: target.program }); return; }
+      openSection(`lang:${courseId}`);
+      return;
+    }
+    if (target?.kind === 'bank') {
+      const bankSummary = banks.find((b) => b.id === target.bankId);
+      if (!bankSummary) { schoolLog.bank('not-found', { bankId: target.bankId }); return; }
+      start(bankSummary, 'quiz', false);
+    }
+  }, [courses, banks, openSection, start]);
+
+  useSchoolLaunch({ claim, onLaunch: onPortalLaunch });
 
   // Going home also clears any guest-refusal notice: the notice belongs to
   // the section visit that produced it and must not greet the next visit.

@@ -84,53 +84,81 @@ const receipt = (id, blocks, seed = 0, variant = 0) => ({
 });
 
 /**
- * The agenda: what this learner can do right now, one scannable action per
- * offered choice.
+ * The agenda: what this learner can do right now, one subject section at a
+ * time (spec §6.2 v2 — sectioned by subject rather than a flat list of unit
+ * entries).
  *
- * A locked entry still prints. Hiding it would leave a child wondering where
- * the rest of the course went; printing it WITH its remedy is what turns a lock
- * into an instruction (`../planner.mjs` guarantees the remedy exists).
+ * A locked or unavailable section still prints. Hiding it would leave a child
+ * wondering where the rest of the subject went; printing it WITH its remedy
+ * (or the "not answering" line) is what turns a stall into an instruction —
+ * `planDailyAgenda` guarantees a remedy exists whenever a section is locked.
  *
  * @param {object} args
  * @param {string} args.learnerId
  * @param {string} [args.learnerName]
  * @param {string} args.generatedAt   ISO time (injected — nothing here reads a clock)
  * @param {string} [args.timeZone]    IANA zone the printed time is stated in
- * @param {Array}  args.entries       planner entries, each optionally carrying `{ token, actionLabel }`
+ * @param {Array<{
+ *   subject: string,
+ *   servedToday?: boolean,
+ *   next?: { title?: string, unitId?: string, token?: string, actionLabel?: string },
+ *   lockedRemedy?: string,
+ *   progressLabel?: string,
+ *   gradePercent?: number,
+ *   programUnavailable?: boolean,
+ * }>} args.sections   `planDailyAgenda` sections, one per subject
+ * @param {Record<string, string>} [args.tokensBySubject] subject -> opaque scan token, for that section's `next`
  * @param {string} [args.footer]
  * @returns {object} a document ready for `validateDocument`
  */
 export function agendaDocument({
   learnerId, learnerName = null, generatedAt = null, timeZone = 'UTC',
-  entries = [], footer = null,
+  sections = [], tokensBySubject = {}, footer = null,
 } = {}) {
   const blocks = [text(`# ${learnerName || learnerId || 'School'}`)];
   const printedAt = formatPrintedAt(generatedAt, timeZone);
   if (printedAt) blocks.push(text(`Printed ${printedAt}`));
 
-  const offered = (Array.isArray(entries) ? entries : []).filter((e) => e && typeof e === 'object');
+  const offered = (Array.isArray(sections) ? sections : []).filter((s) => s && typeof s === 'object');
   if (!offered.length) {
     blocks.push(text('Nothing is assigned right now. Ask a grown-up what to do next.'));
     return receipt(`agenda-${slugify(learnerId, 'learner')}`, blocks);
   }
 
-  offered.forEach((entry) => {
-    const title = entry.title || entry.unitId;
-    if (isNonEmptyString(entry.token)) {
-      blocks.push({ type: 'scan_action', action: entry.token, label: entry.actionLabel || title });
+  offered.forEach((section) => {
+    const served = !!section.servedToday;
+    const suffix = served
+      ? ' — done today'
+      : (isNonEmptyString(section.progressLabel) ? ` — ${section.progressLabel}` : '');
+    blocks.push(text(`## ${String(section.subject || '').toUpperCase()}${suffix}`));
+
+    if (typeof section.gradePercent === 'number' && Number.isFinite(section.gradePercent)) {
+      blocks.push(text(`Grade so far: ${Math.round(section.gradePercent)}%`));
+    }
+
+    // Already served today: nothing more to offer for this subject.
+    if (served) return;
+
+    if (section.programUnavailable) {
+      blocks.push(text('Not answering right now — try it on the Portal.'));
       return;
     }
-    if (entry.status === 'locked') {
-      blocks.push(text(`${title} — ${entry.lockReason || 'not open yet'}`));
+
+    if (isNonEmptyString(section.lockedRemedy)) {
+      blocks.push(text(section.lockedRemedy));
       return;
     }
-    // No token and not locked: the move belongs to a grown-up (hand the work
-    // in, wait for a mark). Say so rather than printing a bare title.
-    //
-    // `actionLabel` is the COMPLETE printed line, exactly as it is for a
-    // tokened entry above — the planner composes it as "Title — what to do".
-    // Prefixing the title again here printed it twice on the tape.
-    blocks.push(text(entry.actionLabel || `${title} — waiting on a grown-up`));
+
+    const next = section.next;
+    if (!next || typeof next !== 'object') return;
+    const title = next.title || next.unitId;
+    const label = isNonEmptyString(next.actionLabel) ? `${title} — ${next.actionLabel}` : title;
+    const token = tokensBySubject?.[section.subject];
+    if (isNonEmptyString(token)) {
+      blocks.push({ type: 'scan_action', action: token, label });
+    } else {
+      blocks.push(text(label));
+    }
   });
 
   blocks.push(text(footer || 'Scan a line above to start. Scan your card any time for a new list.'));
