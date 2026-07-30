@@ -38,6 +38,44 @@ describe('RunSummary', () => {
     expect(document.querySelectorAll('.piano-score-run-chip--none').length).toBe(3);
   });
 
+  // ── Polish tempo tiers (wave-3 H) ──────────────────────────────────────────
+  it('shows the run score with tier and the four tier bests', () => {
+    render(<RunSummary open grades={grades} measures={measures} onClose={vi.fn()} onReplay={vi.fn()}
+      runScore={87} tier="medium" bucket="rh" mixedTempo={false}
+      tierBests={{ slow: 78, medium: 84, full: null, overclocked: null }} />);
+    expect(screen.getByText(/87/)).toBeInTheDocument();
+    expect(screen.getByText(/medium/i)).toBeInTheDocument();
+    expect(screen.getAllByText('—').length).toBe(2);   // full + overclocked unset
+    // The strip is scoped to ONE hands bucket — say which, or a right-hand best
+    // reads as a both-hands one.
+    expect(screen.getByText(/right hand/i)).toBeInTheDocument();
+    // The tier the run just earned is marked, so the user can see which cell moved.
+    expect(document.querySelectorAll('.piano-score-run-tier--current').length).toBe(1);
+  });
+
+  it('a voided run is labelled mixed tempo', () => {
+    render(<RunSummary open grades={grades} measures={measures} onClose={vi.fn()} onReplay={vi.fn()}
+      runScore={64} tier="medium" mixedTempo tierBests={{}} bucket="both" />);
+    expect(screen.getByText(/mixed tempo/i)).toBeInTheDocument();
+    // A voided run belongs to no tier: nothing is marked and no best was banked.
+    expect(screen.queryByText(/^medium$/i)).toBeNull();
+    expect(document.querySelectorAll('.piano-score-run-tier--current').length).toBe(0);
+    expect(screen.getAllByText('—').length).toBe(4);
+  });
+
+  it('an ungraded run shows no score headline (nothing to report), and the bests strip is opt-in', () => {
+    // Play → immediate Pause: runScore is null. A headline reading "null" or "0"
+    // would be a grade the user never earned.
+    const { rerender } = render(
+      <RunSummary open grades={{}} measures={measures} onClose={vi.fn()} onReplay={vi.fn()}
+        runScore={null} tier="full" bucket="both" tierBests={{}} />,
+    );
+    expect(document.querySelector('.piano-score-run-score')).toBeNull();
+    // …and a caller that passes no tierBests at all (Learn-era callers) gets no strip.
+    rerender(<RunSummary open grades={{}} measures={measures} onClose={vi.fn()} onReplay={vi.fn()} />);
+    expect(document.querySelector('.piano-score-run-tiers')).toBeNull();
+  });
+
   it('shows Drill worst section only when drillable, and fires onDrill (J6)', () => {
     const onDrill = vi.fn();
     const { rerender } = render(

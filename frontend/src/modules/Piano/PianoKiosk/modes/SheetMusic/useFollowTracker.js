@@ -21,11 +21,14 @@ import { nextStepInRange } from './focusRange.js';
  * @param {Function} p.onStep       - onStep(nextIndex)
  * @param {Function} p.onHit        - onHit(midi)
  * @param {Function} p.onWrong      - onWrong(midi)
+ * @param {Function} [p.onWrap]     - onWrap() — fires the instant advancement wraps
+ *   from the range's out-point back to its in-point (a completed loop pass).
+ *   Optional; existing callers that don't pass it are unaffected.
  * @param {[number,number]|null} [p.range] - active focus span [lo, hi]; when set,
  *   advancement wraps back to `lo` after `hi` (loop a section) instead of running
  *   linearly to the end. `null` (default) → normal linear advance.
  */
-export function useFollowTracker({ enabled, steps, activeParts, step, subscribe, onStep, onHit, onWrong, onComplete, range = null }) {
+export function useFollowTracker({ enabled, steps, activeParts, step, subscribe, onStep, onHit, onWrong, onComplete, onWrap, range = null }) {
   const stepsRef = useRef(steps);
   const activePartsRef = useRef(activeParts);
   const stepRef = useRef(step);
@@ -33,6 +36,7 @@ export function useFollowTracker({ enabled, steps, activeParts, step, subscribe,
   const onHitRef = useRef(onHit);
   const onWrongRef = useRef(onWrong);
   const onCompleteRef = useRef(onComplete);
+  const onWrapRef = useRef(onWrap);
   const rangeRef = useRef(range);
   const struckRef = useRef(new Set());
 
@@ -42,6 +46,7 @@ export function useFollowTracker({ enabled, steps, activeParts, step, subscribe,
   onHitRef.current = onHit;
   onWrongRef.current = onWrong;
   onCompleteRef.current = onComplete;
+  onWrapRef.current = onWrap;
   rangeRef.current = range;
 
   // A new step starts fresh — clear the accumulated struck notes.
@@ -75,6 +80,7 @@ export function useFollowTracker({ enabled, steps, activeParts, step, subscribe,
           const next = r
             ? nextStepInRange(stepRef.current, r)
             : stepRef.current + 1;
+          if (r && next === r[0] && stepRef.current >= r[1]) onWrapRef.current?.();
           onStepRef.current?.(next);
           struckRef.current = new Set();
         }

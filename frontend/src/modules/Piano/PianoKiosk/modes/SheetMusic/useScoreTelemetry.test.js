@@ -130,6 +130,23 @@ describe('useScoreTelemetry', () => {
     expect(ev[2]).toMatchObject({ greens: 5, yellows: 2, reds: 1, overall: 'green' });
   });
 
+  it('logRunSummary carries the tempo-tier outcome: score, tier and the void flag (wave-3 H)', () => {
+    const { result } = renderHook(() => useScoreTelemetry({ id: 'x' }));
+    act(() => result.current.logRunSummary({ greens: 3, yellows: 0, reds: 0, overall: 'green', score: 113, tier: 'overclocked', mixed: false }));
+    const ev = logged.find(([, e]) => e === 'score.polish.summary');
+    expect(ev[2]).toMatchObject({ score: 113, tier: 'overclocked', mixed: false });
+  });
+
+  it('logRunSummary is null-safe for a run with nothing gradeable', () => {
+    // A tally-only caller must still produce the tier keys, or a log reader cannot
+    // tell "no score" from "this build did not report scores".
+    const { result } = renderHook(() => useScoreTelemetry({ id: 'x' }));
+    act(() => result.current.logRunSummary({ greens: 0, yellows: 0, reds: 0, overall: null }));
+    const ev = logged.find(([, e]) => e === 'score.polish.summary');
+    expect(ev[2]).toMatchObject({ score: null, tier: null, mixed: false });
+    expect(Object.keys(ev[2])).toEqual(expect.arrayContaining(['score', 'tier', 'mixed']));
+  });
+
   it('logFocus emits score.focus.set', () => {
     const { result } = renderHook(() => useScoreTelemetry({ id: 'x' }));
     act(() => result.current.logFocus({ kind: 'section', inMeasure: 2, outMeasure: 6 }));

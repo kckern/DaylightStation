@@ -183,6 +183,20 @@ export class YamlPianoStudioDatastore {
     return true;
   }
 
+  // ── Practice history (per-user, per-score; wave-3 sheet music) ──────────────
+  getPractice(userId, scoreKey) {
+    const dir = this.#userPianoDir(userId, 'practice');
+    if (!dir) return null;
+    return loadYaml(path.join(dir, scoreKey)) || {};
+  }
+
+  savePractice(userId, scoreKey, record) {
+    const dir = this.#userPianoDir(userId, 'practice');
+    if (!dir) return false;
+    saveYaml(path.join(dir, scoreKey), record);
+    return true;
+  }
+
   // ── Lesson progress / history (per-user) ─────────────────────────────────────
   getProgress(userId) {
     const dir = this.#userPianoDir(userId);

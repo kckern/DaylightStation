@@ -20,6 +20,16 @@ describe('makeNote', () => {
     const rebuilt = makeNote(note.pitch, { ...note }); // e.g. replacePitch/nudgePitch path
     expect(rebuilt.tuplet).toEqual({ actual: 5, normal: 4 });
   });
+  it('defaults entryTag to null (task 27 live-entry correlation id)', () => {
+    const n = makeNote({ step: 'C', octave: 4 }, { type: 'quarter' });
+    expect(n.entryTag).toBeNull();
+  });
+  it('carries an explicit entryTag through opts, and through a rebuild', () => {
+    const n = makeNote({ step: 'C', octave: 4 }, { type: 'quarter', entryTag: 5 });
+    expect(n.entryTag).toBe(5);
+    const rebuilt = makeNote(n.pitch, { ...n, type: 'eighth' });
+    expect(rebuilt.entryTag).toBe(5);
+  });
 });
 
 describe('makeRest', () => {

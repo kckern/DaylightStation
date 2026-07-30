@@ -68,7 +68,12 @@ export function useScoreTelemetry({ id, tickMs = 100 }) {
 
   // Full sheet-music event catalog — one path per event so nothing double-logs.
   const logMeasureGrade = useCallback(({ measure, grade, noteScore, timingScore }) => logger.info('score.polish.measure', { measure, grade, noteScore, timingScore }), [logger]);
-  const logRunSummary = useCallback(({ greens, yellows, reds, overall }) => logger.info('score.polish.summary', { greens, yellows, reds, overall }), [logger]);
+  // `score`/`tier`/`mixed` are the tempo-tier outcome (wave-3 H). They are ALWAYS
+  // emitted, defaulted rather than omitted: a reader has to be able to tell "this
+  // run had no score" from "this build did not report scores". `score` is the
+  // displayed value (overclocked extra credit already applied), `tier` the tempo
+  // tier captured at run START, `mixed` true when a mid-run tempo change voided it.
+  const logRunSummary = useCallback(({ greens, yellows, reds, overall, score = null, tier = null, mixed = false }) => logger.info('score.polish.summary', { greens, yellows, reds, overall, score, tier, mixed }), [logger]);
   const logFocus = useCallback(({ kind, inMeasure, outMeasure, origin }) => logger.info('score.focus.set', { kind, inMeasure, outMeasure, origin }), [logger]);
   const logTranspose = useCallback(({ semitones }) => logger.info('score.transpose', { semitones }), [logger]);
   const logMode = useCallback(({ mode }) => logger.info('score.mode', { mode }), [logger]);

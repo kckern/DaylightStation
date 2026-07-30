@@ -44,6 +44,12 @@ import { musicXmlToNotes } from '#shared/music/musicXmlToNotes.mjs';
  *   GET    /users/:userId/preset             → { default?, favorites? }
  *   PUT    /users/:userId/preset             → { default?, favorites? }  (body merged)
  *
+ *   Practice history (per-user, per-score sheet-music record; wave-3 §C):
+ *   GET    /users/:userId/practice/:scoreKey → {} or the stored record
+ *   PUT    /users/:userId/practice/:scoreKey → merged record (measures per-key,
+ *          polish per-bucket, updatedAt server-stamped; a changed fingerprint
+ *          replaces the record instead of merging — see route for detail)
+ *
  *   Lesson progress / history:
  *   GET    /users/:userId/progress           → { collections: { [collection]: { [drillId]: {...} } } }
  *   PUT    /users/:userId/progress/:collection/:drillId → record an attempt (body merged)
@@ -336,6 +342,57 @@ export function createPianoRouter({ pianoContainer, logger = console }) {
     if (current === null) return res.status(400).json({ error: 'Invalid user' });
     const merged = { ...current, ...(req.body && typeof req.body === 'object' ? req.body : {}) };
     ds.savePreset(req.params.userId, merged);
+    res.json(merged);
+  }));
+
+  // ── Practice history (per-user, per-score sheet-music record) ───────────────
+  // scoreKey is a dot-free slug (FileIO appends .yml by sniffing the extension,
+  // so a dot would corrupt the filename — same rule as PRODUCER_ID_RE).
+  const PRACTICE_KEY_RE = /^[a-z0-9-]{1,120}$/;
+  // Bracket-assignment (out[b] = …) invokes inherited setters, so a JSON body
+  // carrying an own key literally named "__proto__" (JSON.parse permits this)
+  // would swap out's [[Prototype]] instead of storing a bucket — silently
+  // wiping existing polish data. Skip the dunder/prototype keys explicitly.
+  const UNSAFE_KEY = new Set(['__proto__', 'constructor', 'prototype']);
+  const mergeBuckets = (cur = {}, patch = {}) => {
+    const out = { ...cur };
+    for (const b of Object.keys(patch)) {
+      if (UNSAFE_KEY.has(b)) continue;
+      out[b] = { ...(cur?.[b] || {}), ...(patch[b] || {}) };
+    }
+    return out;
+  };
+
+  router.get('/users/:userId/practice/:scoreKey', (req, res) => {
+    const { userId, scoreKey } = req.params;
+    if (!PRACTICE_KEY_RE.test(scoreKey)) return res.status(400).json({ error: 'Invalid score key' });
+    const rec = ds.getPractice(userId, scoreKey);
+    if (rec === null) return res.status(400).json({ error: 'Invalid user' });
+    res.json(rec);
+  });
+
+  router.put('/users/:userId/practice/:scoreKey', asyncHandler((req, res) => {
+    const { userId, scoreKey } = req.params;
+    if (!PRACTICE_KEY_RE.test(scoreKey)) return res.status(400).json({ error: 'Invalid score key' });
+    const current = ds.getPractice(userId, scoreKey);
+    if (current === null) return res.status(400).json({ error: 'Invalid user' });
+    const body = req.body && typeof req.body === 'object' ? req.body : {};
+    // A different fingerprint means the score file changed shape — the old
+    // per-measure record describes measures that no longer exist. Replace.
+    const fpChanged = body.fingerprint && current.fingerprint
+      && (body.fingerprint.measureCount !== current.fingerprint.measureCount
+        || body.fingerprint.xmlBytes !== current.fingerprint.xmlBytes);
+    const merged = fpChanged
+      ? { ...body, updatedAt: new Date().toISOString() }
+      : {
+        ...current,
+        ...body,
+        measures: { ...(current.measures || {}), ...(body.measures || {}) },
+        polish: mergeBuckets(current.polish, body.polish),
+        updatedAt: new Date().toISOString(),
+      };
+    ds.savePractice(userId, scoreKey, merged);
+    logger.info?.('piano.practice.save', { userId, scoreKey });
     res.json(merged);
   }));
 

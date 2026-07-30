@@ -14,25 +14,45 @@ const stepBoxes = [
 ];
 
 describe('FocusRangeLayer', () => {
-  it('renders a tint band and two bracket edges for a range', () => {
+  it('renders a tint band for a range — and no brackets (the handles own the ends)', () => {
     const { container } = render(
       <FocusRangeLayer measures={measures} stepBoxes={stepBoxes} range={{ inMeasure: 1, outMeasure: 2 }} />,
     );
     expect(container.querySelector('.piano-score-range-tint')).not.toBeNull();
-    expect(container.querySelectorAll('.piano-score-range-bracket')).toHaveLength(2);
+    // Since wave-3 F the boundary visual IS the draggable handle (RangeHandleLayer):
+    // a second, undraggable bracket at the same x would be a decoy target.
+    expect(container.querySelectorAll('.piano-score-range-bracket')).toHaveLength(0);
   });
 
-  it('renders a single pending bracket while selecting the first measure', () => {
-    const { container } = render(
-      <FocusRangeLayer measures={measures} stepBoxes={stepBoxes} pending={1} />,
-    );
-    expect(container.querySelectorAll('.piano-score-range-bracket--pending')).toHaveLength(1);
-    expect(container.querySelector('.piano-score-range-tint')).toBeNull(); // no full range yet
-  });
-
-  it('renders nothing without a range or pending', () => {
+  it('renders nothing without a range', () => {
     const { container } = render(<FocusRangeLayer measures={measures} stepBoxes={stepBoxes} />);
     expect(container.firstChild).toBeNull();
+  });
+
+  it('ticks each section mark at that measure’s left edge', () => {
+    const { container } = render(
+      <FocusRangeLayer measures={measures} stepBoxes={stepBoxes} range={{ inMeasure: 0, outMeasure: 2 }} marks={[0, 2]} />,
+    );
+    const ticks = [...container.querySelectorAll('.piano-score-section-mark')];
+    expect(ticks).toHaveLength(2);
+    expect(ticks[0].style.left).toBe('8px');   // measure 0 starts at x 10
+    expect(ticks[1].style.left).toBe('88px');  // measure 2 starts at x 90
+    expect(ticks[0].style.height).toBe('100px');
+  });
+
+  it('draws marks even with no range yet — they are what a first endpoint snaps to', () => {
+    const { container } = render(
+      <FocusRangeLayer measures={measures} stepBoxes={stepBoxes} marks={[1]} />,
+    );
+    expect(container.querySelectorAll('.piano-score-section-mark')).toHaveLength(1);
+    expect(container.querySelector('.piano-score-range-tint')).toBeNull();
+  });
+
+  it('skips a mark the engraving has no measure for', () => {
+    const { container } = render(
+      <FocusRangeLayer measures={measures} stepBoxes={stepBoxes} marks={[1, 99]} />,
+    );
+    expect(container.querySelectorAll('.piano-score-section-mark')).toHaveLength(1);
   });
 });
 

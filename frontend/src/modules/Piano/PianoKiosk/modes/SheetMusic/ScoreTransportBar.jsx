@@ -1,34 +1,30 @@
 import React, { useState, memo } from 'react';
 import HandsControl from './HandsControl.jsx';
-import LoopControl from './LoopControl.jsx';
 import ViewSheet from './ViewSheet.jsx';
 import Icon from '../../icons/Icon.jsx';
 import TransportButton from '../../transport/TransportButton.jsx';
+import LoopGroup from '../../transport/LoopGroup.jsx';
 import KeySheet from '../../transport/KeySheet.jsx';
 import TempoSheet, { TEMPO_STEPS, nearestStep } from '../../transport/TempoSheet.jsx';
 import VolumeControl from '../../transport/VolumeControl.jsx';
-
-const ROLE_TITLES = {
-  play: 'Play',
-  you: 'You',
-  mute: 'Mute',
-};
 
 /**
  * ScoreTransportButtons — Restart (icon) + run (Play/Pause icons). Stable
  * geography (audit C2): both render in EVERY mode but Perform and gate in place
  * via `disabled` instead of unmounting, so mode changes never shuffle the bar.
- * Restart is inert until there is a run to restart; the run button in Learn is
- * a permanently disabled Play (Learn advances as you play, not on a transport).
+ * Restart is inert until there is a run to restart; `playLocked` turns the run
+ * button into a disabled Play labelled "Learn advances as you play" — the state
+ * Learn's gate (a range with looping on) puts it in, where the cursor moves on
+ * what the user plays rather than on a transport. Learn's machine states pass
+ * `playLocked` false and get an ordinary live Play/Pause.
  * Memoized so a step advance can't reconcile them (they depend on mode/running,
  * not step).
  */
-const ScoreTransportButtons = memo(function ScoreTransportButtons({ mode, running, onToggleRun, onReset, ready = true, canRestart = false }) {
+const ScoreTransportButtons = memo(function ScoreTransportButtons({ mode, running, onToggleRun, onReset, ready = true, canRestart = false, playLocked = false }) {
   if (mode === 'perform') return null;
-  const isLearn = mode === 'learn';
   // Until geometry extraction publishes a timeline the transport is inert; show a
   // disabled "Preparing…" so the bar doesn't look live while it can't play (audit H0).
-  const runLabel = isLearn ? 'Learn advances as you play' : !ready ? 'Preparing' : running ? 'Pause' : 'Play';
+  const runLabel = playLocked ? 'Learn advances as you play' : !ready ? 'Preparing' : running ? 'Pause' : 'Play';
   return (
     <>
       <button
@@ -42,24 +38,35 @@ const ScoreTransportButtons = memo(function ScoreTransportButtons({ mode, runnin
       </button>
       <button
         type="button"
-        className={`piano-tbtn piano-score-btn piano-score-run${!ready && !isLearn ? ' is-preparing' : ''}`}
+        className={`piano-tbtn piano-score-btn piano-score-run${!ready && !playLocked ? ' is-preparing' : ''}`}
         aria-label={runLabel}
         aria-pressed={running}
-        disabled={isLearn || !ready}
+        disabled={playLocked || !ready}
         onClick={onToggleRun}
       >
-        {isLearn ? <Icon name="play" /> : !ready ? '…' : running ? <Icon name="pause" /> : <Icon name="play" />}
+        {playLocked ? <Icon name="play" /> : !ready ? '…' : running ? <Icon name="pause" /> : <Icon name="play" />}
       </button>
     </>
   );
 });
 
 /**
- * ScorePracticeCluster — the center-zone practice controls: metronome + Loop.
- * These moved out of the right cluster (audit C1/C2) so the practice loop and
- * click sit beside the transport they modify. Both render in every mode but
- * Perform; the metronome gates IN PLACE (disabled in Listen — Listen's own
- * performance is the beat) instead of unmounting, preserving spatial memory.
+ * ScorePracticeCluster — the center-zone practice controls: metronome + the loop
+ * cluster. These moved out of the right cluster (audit C1/C2) so the practice
+ * loop and click sit beside the transport they modify. The metronome renders in
+ * every mode but Perform and gates IN PLACE via the caller-supplied
+ * `clickDisabled` (wave-3 G: Listen's metronome is session-local, same as
+ * Learn's — the mode itself no longer disables it, only ScorePlayer's tempo-map
+ * guard does) instead of unmounting, preserving spatial memory.
+ *
+ * The LOOP cluster is Learn-only (wave-3 §0/§F): a practice range is Learn state
+ * — Listen is a jukebox and Polish grades whole-piece runs, so neither can hold
+ * one, and chrome for a range they cannot have is a lie. This is a deliberate
+ * exception to C2's stable-geography rule: the buttons are gone, not disabled,
+ * because the whole capability is gone.
+ *
+ * {@link LoopGroup} is presentational — "mark" here means "arm this edge for the
+ * next tap on the score" (§F); ScorePlayer owns the arming/commit semantics.
  *
  * Memoized and step-INDEPENDENT: none of its props change as the cursor
  * advances, so React.memo bails out per step.
@@ -68,43 +75,50 @@ const ScorePracticeCluster = memo(function ScorePracticeCluster({
   mode,
   clickActive = false,
   onToggleClick,
+  clickDisabled = false,
   loopActive = false,
   loopEnabled = true,
-  scopeLabel = '',
-  sections = [],
-  onPickSection,
-  onStartSelect,
+  arming = null,
+  inLabel,
+  outLabel,
+  onArm,
   onClearFocus,
-  onNudge,
   onToggleLoop,
 }) {
   if (mode === 'perform') return null;
-  // Listen disables the click (its own performance is the beat); a persisted
-  // clickActive must not paint the accent on a button that can't act.
-  const metronomeDisabled = mode === 'listen';
+  // Gating is the caller's call now (wave-3 G): Listen's metronome is
+  // session-local + free-running like Learn's, only gated by the tempo-map
+  // guard ScorePlayer computes (`clickDisabled`) — no mode check here. A
+  // disabled-in-place button must not paint the accent it can't act on.
   return (
     <>
       <button
         type="button"
-        className={`piano-tbtn piano-score-btn piano-score-click${clickActive && !metronomeDisabled ? ' is-on' : ''}`}
+        className={`piano-tbtn piano-score-btn piano-score-click${clickActive && !clickDisabled ? ' is-on' : ''}`}
         aria-label="Metronome"
-        aria-pressed={clickActive && !metronomeDisabled}
-        disabled={metronomeDisabled}
+        aria-pressed={clickActive && !clickDisabled}
+        disabled={clickDisabled}
         onClick={onToggleClick}
       >
         <Icon name="metronome" />
       </button>
-      <LoopControl
-        active={loopActive}
-        enabled={loopEnabled}
-        scopeLabel={scopeLabel}
-        sections={sections}
-        onPickSection={onPickSection}
-        onStartSelect={onStartSelect}
-        onClearFocus={onClearFocus}
-        onNudge={onNudge}
-        onToggleEnabled={onToggleLoop}
-      />
+      {mode === 'learn' && (
+        <LoopGroup
+          inSet={loopActive}
+          outSet={loopActive}
+          inLabel={inLabel}
+          outLabel={outLabel}
+          armingIn={arming === 'in'}
+          armingOut={arming === 'out'}
+          loopOn={loopActive && loopEnabled}
+          canToggle={loopActive}
+          canClear={loopActive}
+          onMarkIn={() => onArm?.('in')}
+          onMarkOut={() => onArm?.('out')}
+          onToggle={onToggleLoop}
+          onClear={onClearFocus}
+        />
+      )}
     </>
   );
 });
@@ -140,10 +154,8 @@ const ScoreViewControls = memo(function ScoreViewControls({
   onTranspose,
   parts = [],
   activeParts = {},
-  roles = {},
   onCyclePart,
   grandStaff = false,
-  handsVariant = 'hands',
   handsValue = 'both',
   onHandsChange,
   keyboardVisible,
@@ -177,20 +189,6 @@ const ScoreViewControls = memo(function ScoreViewControls({
 
   const renderPartChip = (part) => {
     const { staff, label } = part;
-    if (mode === 'listen') {
-      const role = roles[staff] || 'play';
-      const roleTitle = ROLE_TITLES[role] || role;
-      return (
-        <button
-          key={staff}
-          type="button"
-          className={`piano-score-part-chip is-role-${role}`}
-          onClick={() => onCyclePart(staff)}
-        >
-          {`${label}: ${roleTitle}`}
-        </button>
-      );
-    }
     const on = !!activeParts[staff];
     return (
       <button
@@ -210,7 +208,7 @@ const ScoreViewControls = memo(function ScoreViewControls({
       <span className="piano-score-divider" aria-hidden="true" />
 
       {grandStaff
-        ? <HandsControl variant={handsVariant} value={handsValue} onChange={onHandsChange} />
+        ? <HandsControl value={handsValue} onChange={onHandsChange} />
         : <div className="piano-score-parts">{parts.map(renderPartChip)}</div>}
 
       <div className={`piano-score-key${keyEnabled ? '' : ' is-dimmed'}`}>
@@ -292,16 +290,24 @@ const ScoreViewControls = memo(function ScoreViewControls({
  * Stable three-zone geography (audit C1/C2), geometry UNCHANGED by wave-2 B:
  *   left   — empty (formerly the mode tabs; kept as a flex column so the
  *            center cluster stays truly centered, not just centered-in-what's-left)
- *   center — Restart · Play/Pause · metronome · Loop · position readout
+ *   center — Restart · Play/Pause · metronome · (Learn: loop cluster) · position readout
  *   right  — Hands/parts · Key · Tempo · View menu
  * Every control renders in ALL modes but Perform; per-mode gating disables/dims
- * IN PLACE instead of unmounting, so nothing ever moves under the finger:
- *  Listen  — all live except metronome (disabled — the performance is the beat)
- *            and the Learn-only Play lockout; Key live.
- *  Learn   — Play disabled ("Learn advances as you play"); metronome free-runs;
- *            Key live (transposes the engrave Learn evaluates against).
- *  Polish  — full transport; metronome arms the run click; Key live.
- *  Perform — only a {page} / {pages} indicator (music-stand mode).
+ * IN PLACE instead of unmounting, so nothing ever moves under the finger. The one
+ * deliberate exception is the loop cluster, which is Learn-ONLY (wave-3 §0/§F):
+ * only Learn can hold a practice range, so Listen/Polish render no loop chrome at
+ * all rather than four permanently dead buttons.
+ *  Listen  — all live, including a free-running metronome (session-local, same
+ *            as Learn's — gated by `clickDisabled`, the caller's tempo-map
+ *            guard, not the mode, wave-3 G) and the Learn-only Play lockout; Key
+ *            live. No loop cluster.
+ *  Learn   — Play disabled ("Learn advances as you play") only while the gate is
+ *            armed (a range with looping on — `playLocked`); the machine states
+ *            get a live transport. Metronome free-runs; Key live (transposes the
+ *            engrave Learn evaluates against). Owns the loop cluster.
+ *  Polish  — full transport; metronome arms the run click; Key live. No loop cluster.
+ *  Perform — zero chrome: the bar renders `null` (music-stand mode). Pedal paging
+ *            and tap-to-scroll still turn pages — there is just no on-screen readout.
  *
  * Perf structure (Task 10): this component is a THIN SHELL. It threads props and
  * owns only the cheap, step-dependent position readout in the center column. The
@@ -315,6 +321,7 @@ const ScoreViewControls = memo(function ScoreViewControls({
 export default function ScoreTransportBar({
   mode,
   running,
+  playLocked,
   onToggleRun,
   onReset,
   ready,
@@ -323,8 +330,6 @@ export default function ScoreTransportBar({
   total,
   measure,
   measureTotal,
-  page = 1,
-  pages = 1,
   flow,
   onToggleFlow,
   scale,
@@ -340,40 +345,48 @@ export default function ScoreTransportBar({
   onTranspose,
   parts,
   activeParts,
-  roles,
   onCyclePart,
   grandStaff,
-  handsVariant,
   handsValue,
   onHandsChange,
-  sections,
   loopActive,
   loopEnabled,
-  scopeLabel,
-  onPickSection,
-  onStartSelect,
+  arming,
+  inLabel,
+  outLabel,
+  onArm,
   onClearFocus,
-  onNudge,
   onToggleLoop,
   keyboardVisible,
   onToggleKeyboard,
   clickActive,
   onToggleClick,
+  clickDisabled,
   bpm,
   baseBpm,
   keyFifths,
   keyMode,
+  // Wave-3 H: Polish's live run score ('82%'), or null before any measure is
+  // graded. Rendered as a PREFIX in the position readout below — deliberately in
+  // the SHELL and not threaded to a memoized child, because it changes on a
+  // per-measure cadence (same order as `step`, which the shell already owns) and
+  // handing it to ScoreViewControls/ScorePracticeCluster would break their bail-out.
+  scoreLabel = null,
   onBodyRender,
 }) {
+  // Perform is zero-chrome (wave-3 I, music-stand mode): the bar renders nothing
+  // at all. Pedal paging and tap-to-scroll (owned by ScorePlayer) still turn
+  // pages — there is just no on-screen readout to keep in sync with them.
+  if (mode === 'perform') return null;
+
   // Musicians think in measures, not note-steps (audit L2): show "m 3 / 24" when a
   // measure count is available, falling back to the step readout otherwise.
-  const position = measureTotal > 0
+  const positionCore = measureTotal > 0
     ? `m ${Math.min(measure ?? 1, measureTotal)} / ${measureTotal}`
     : `${Math.min(step + 1, total)} / ${total}`;
-
-  const isPerform = mode === 'perform';
-  // The position readout and page indicator exist in every mode but Perform.
-  const hasPosition = !isPerform;
+  // One span, not two: the score and the position are read as a single line
+  // ("82% · m 12 / 24"), and a second span would shift the readout's width mid-run.
+  const position = scoreLabel ? `${scoreLabel} · ${positionCore}` : positionCore;
 
   return (
     <div className="piano-score-transportbar">
@@ -382,6 +395,7 @@ export default function ScoreTransportBar({
         <ScoreTransportButtons
           mode={mode}
           running={running}
+          playLocked={playLocked}
           onToggleRun={onToggleRun}
           onReset={onReset}
           ready={ready}
@@ -391,20 +405,17 @@ export default function ScoreTransportBar({
           mode={mode}
           clickActive={clickActive}
           onToggleClick={onToggleClick}
+          clickDisabled={clickDisabled}
           loopActive={loopActive}
           loopEnabled={loopEnabled}
-          scopeLabel={scopeLabel}
-          sections={sections}
-          onPickSection={onPickSection}
-          onStartSelect={onStartSelect}
+          arming={arming}
+          inLabel={inLabel}
+          outLabel={outLabel}
+          onArm={onArm}
           onClearFocus={onClearFocus}
-          onNudge={onNudge}
           onToggleLoop={onToggleLoop}
         />
-        {hasPosition && <span className="piano-score-position tabular-nums" data-testid="score-position">{position}</span>}
-        {isPerform && (
-          <span className="piano-score-page-indicator tabular-nums" aria-label="Page">{`${page} / ${pages}`}</span>
-        )}
+        <span className="piano-score-position tabular-nums" data-testid="score-position">{position}</span>
       </div>
 
       {/* Right — parts, key, tempo & view controls (memoized; step-independent) */}
@@ -420,10 +431,8 @@ export default function ScoreTransportBar({
         onTranspose={onTranspose}
         parts={parts}
         activeParts={activeParts}
-        roles={roles}
         onCyclePart={onCyclePart}
         grandStaff={grandStaff}
-        handsVariant={handsVariant}
         handsValue={handsValue}
         onHandsChange={onHandsChange}
         keyboardVisible={keyboardVisible}

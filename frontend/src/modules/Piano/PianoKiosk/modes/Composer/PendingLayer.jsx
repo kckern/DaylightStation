@@ -18,43 +18,40 @@
 // cost N. It also lets every glyph share the layout extract's pixel coordinate
 // space directly, so no per-note transform arithmetic is needed.
 
-const STEP_DIATONIC = { C: 0, D: 1, E: 2, F: 3, G: 4, A: 5, B: 6 };
+import {
+  WetNoteGlyph, WET_ADVANCE_UNITS, WET_RX_UNITS, MIDDLE_LINE, staffPositionOf, stemDirectionFor,
+} from './wetGlyphs.jsx';
 
-// Absolute diatonic index, matching MusicNotation/model/pitch.js's convention
-// (C4 = 28, E4 = 30).
-const absDiatonic = ({ step, octave }) => octave * 7 + (STEP_DIATONIC[step] ?? 0);
-
-// Bottom staff line as an absolute diatonic index: treble = E4 (30), bass = G2
-// (18) — the same constants pitch.js uses.
-const bottomLineDiatonic = (clef) => (clef?.sign === 'F' ? 18 : 30);
+// Re-exported so EditorSurface's import site (and its test) keep working — the
+// geometry constants now live in wetGlyphs.jsx alongside the glyph they size.
+export { WET_ADVANCE_UNITS, WET_RX_UNITS };
 
 /**
- * Staff HALF-STEPS above the bottom line: 0 = bottom line, 1 = the space above
- * it, 2 = the next line up; negative = below the staff.
+ * Group indices of SIMULTANEOUS pending notes so their stems can agree.
  *
- * Deliberately NOT routed through pitch.js's getStaffPosition(midiNote), for two
- * reasons. (1) That helper picks the clef FROM the pitch (absDiatonic >= 28 →
- * treble), but the Composer is a fixed-clef staff — anything a left hand plays
- * would be measured against a bass staff bottom line while the engraving shows
- * treble. (2) Going pitch → MIDI → position throws away the spelling the model
- * already stores: C#4 and Db4 are one MIDI number but two different staff lines,
- * and the helper would re-guess between them. `step` is both simpler and right.
+ * The model's only onset marker is `chord: true`, which means "shares the
+ * previous note's onset instead of advancing time" (note.js) — so a simultaneity
+ * is a run of one principal followed by its chord members.
+ *
+ * REALITY CHECK: nothing reaches here with `chord: true` today. useWetInk's
+ * pendingAppendDiff bails to a full engrave on any chord member (wetInk.js), and
+ * useComposerInput inserts every armed note-on as its own caret-advancing note
+ * (no simultaneity window is enacted — see CHORD_ONSET_TOLERANCE_MS). So in
+ * practice this returns one singleton group per note and the per-note rule
+ * applies. It is written anyway because PendingLayer is pure and the grouping
+ * feature is the next step: when chords do arrive, their stems must not each
+ * decide independently.
+ *
+ * @returns {number[][]} one index list per simultaneity, in order.
  */
-const staffPosition = (pitch, clef) => absDiatonic(pitch) - bottomLineDiatonic(clef);
-
-// Wet-ink glyph geometry, in staff-line-spacing units (the engraving zoom
-// varies, so nothing here can be a pixel constant). Notehead proportions come
-// from DurationPalette's NoteGlyph (rx 5 / ry 3.4), rescaled.
-//
-// EXPORTED because EditorSurface must agree with them: it computes `anchorX`
-// (where note 0 paints) and the wet caret position (which clears the LAST
-// note's right edge) from the same numbers. Tuning note spacing here without
-// them would silently drift the anchor and the caret off the glyphs.
-export const WET_ADVANCE_UNITS = 2.4; // note centre → next note centre
-export const WET_RX_UNITS = 0.62;     // notehead half-width
-
-const MIDDLE_LINE = 4; // position of the centre staff line — the stem-flip point
-const TOP_LINE = 8; // 5 lines, so the top line is 8 half-steps up
+export function simultaneityRuns(pending = []) {
+  const runs = [];
+  pending.forEach((n, i) => {
+    if (n?.chord && runs.length) runs[runs.length - 1].push(i);
+    else runs.push([i]);
+  });
+  return runs;
+}
 
 export function PendingLayer({ staves, anchorX, anchorSystem = 0, pending = [], clef }) {
   const staff = staves?.[anchorSystem];
@@ -67,14 +64,24 @@ export function PendingLayer({ staves, anchorX, anchorSystem = 0, pending = [], 
   const yFor = (position) => bottomLineY - position * half;
 
   const rx = lineSpacing * WET_RX_UNITS;
-  const ry = lineSpacing * 0.42;
-  const stemLen = lineSpacing * 3.5;
   const advance = lineSpacing * WET_ADVANCE_UNITS;
   // Clamp on the notehead's right EDGE, not its centre, so wet ink never spills
   // past the end of the system into the margin.
   const maxX = right - rx;
 
   const glyphs = [];
+
+  // One stem direction per simultaneity, decided by the member farthest from the
+  // middle line. Rests carry no pitch, so they contribute no position.
+  const stemDirections = new Map();
+  simultaneityRuns(pending).forEach((run) => {
+    const positions = run
+      .filter((i) => !pending[i]?.rest && pending[i]?.pitch)
+      .map((i) => staffPositionOf(pending[i].pitch, clef));
+    if (!positions.length) return;
+    const dir = stemDirectionFor(positions);
+    run.forEach((i) => stemDirections.set(i, dir));
+  });
 
   pending.forEach((n, i) => {
     const x = Math.min(anchorX + i * advance, maxX);
@@ -101,116 +108,24 @@ export function PendingLayer({ staves, anchorX, anchorSystem = 0, pending = [], 
       return;
     }
 
-    const position = staffPosition(n.pitch || {}, clef);
-    const y = yFor(position);
-    const hollow = n.type === 'half' || n.type === 'whole';
-
-    // Ledger lines, one per line position beyond the staff, above and below. Kids
-    // hit this immediately — middle C is position -2 on a treble staff.
-    const ledgers = [];
-    for (let p = -2; p >= position; p -= 2) ledgers.push(p);
-    for (let p = TOP_LINE + 2; p <= position; p += 2) ledgers.push(p);
-    const ledgerHalfWidth = rx * 1.6; // extends a little past the notehead
-    ledgers.forEach((p) => {
-      glyphs.push(
-        <line
-          key={`${key}-ledger-${p}`}
-          className="composer-wet-note__ledger"
-          x1={x - ledgerHalfWidth}
-          y1={yFor(p)}
-          x2={x + ledgerHalfWidth}
-          y2={yFor(p)}
-          stroke="currentColor"
-          strokeWidth={Math.max(1, lineSpacing * 0.1)}
-        />
-      );
-    });
-
-    // Stem up on the right below the middle line, down on the left at or above
-    // it — standard engraving, and it keeps high notes from running off the top
-    // of the system.
-    if (n.type !== 'whole') {
-      const up = position < MIDDLE_LINE;
-      const stemX = up ? x + rx * 0.92 : x - rx * 0.92;
-      glyphs.push(
-        <line
-          key={`${key}-stem`}
-          className="composer-wet-note__stem"
-          x1={stemX}
-          y1={y}
-          x2={stemX}
-          y2={up ? y - stemLen : y + stemLen}
-          stroke="currentColor"
-          strokeWidth={Math.max(1, lineSpacing * 0.12)}
-          strokeLinecap="round"
-        />
-      );
-    }
-
-    if (n.pitch?.alter) glyphs.push(accidental(n.pitch.alter, x - rx * 2.6, y, lineSpacing, key));
-
     glyphs.push(
-      <ellipse
-        key={`${key}-head`}
-        className="composer-wet-note__head"
-        cx={x}
-        cy={y}
-        rx={rx}
-        ry={ry}
-        transform={`rotate(-20 ${x} ${y})`}
-        fill={hollow ? 'none' : 'currentColor'}
-        stroke="currentColor"
-        strokeWidth={hollow ? Math.max(1, lineSpacing * 0.17) : 0}
+      <WetNoteGlyph
+        key={key}
+        x={x}
+        staff={staff}
+        clef={clef}
+        pitch={n.pitch}
+        type={n.type}
+        dots={n.dots}
+        stemDirection={stemDirections.get(i) || null}
       />
     );
-
-    if (n.dots) {
-      glyphs.push(
-        <circle
-          key={`${key}-dot`}
-          className="composer-wet-note__dot"
-          cx={x + rx * 1.8}
-          // A dot sits in the space, so nudge it off a line note.
-          cy={position % 2 === 0 ? y - half : y}
-          r={lineSpacing * 0.15}
-          fill="currentColor"
-        />
-      );
-    }
   });
 
   return (
     <svg className="composer-wet-note" aria-hidden="true">
       {glyphs}
     </svg>
-  );
-}
-
-// Sharp = two verticals crossed by two rising strokes; flat = a stem with a bowl.
-// Drawn geometry rather than ♯/♭ characters, per the no-Unicode-glyph rule above.
-function accidental(alter, x, y, lineSpacing, key) {
-  const s = lineSpacing;
-  const w = Math.max(1, s * 0.11);
-  const common = { stroke: 'currentColor', strokeWidth: w, strokeLinecap: 'round' };
-  if (alter > 0) {
-    return (
-      <g key={`${key}-acc`} className="composer-wet-note__acc" data-acc="sharp">
-        <line x1={x - s * 0.16} y1={y - s * 0.7} x2={x - s * 0.16} y2={y + s * 0.62} {...common} />
-        <line x1={x + s * 0.16} y1={y - s * 0.78} x2={x + s * 0.16} y2={y + s * 0.54} {...common} />
-        <line x1={x - s * 0.36} y1={y - s * 0.06} x2={x + s * 0.36} y2={y - s * 0.24} {...common} />
-        <line x1={x - s * 0.36} y1={y + s * 0.36} x2={x + s * 0.36} y2={y + s * 0.18} {...common} />
-      </g>
-    );
-  }
-  return (
-    <g key={`${key}-acc`} className="composer-wet-note__acc" data-acc="flat">
-      <line x1={x - s * 0.2} y1={y - s * 0.95} x2={x - s * 0.2} y2={y + s * 0.4} {...common} />
-      <path
-        d={`M ${x - s * 0.2} ${y - s * 0.08} q ${s * 0.55} ${-s * 0.34} ${s * 0.44} ${s * 0.24} q ${-s * 0.08} ${s * 0.26} ${-s * 0.44} ${s * 0.24}`}
-        fill="none"
-        {...common}
-      />
-    </g>
   );
 }
 

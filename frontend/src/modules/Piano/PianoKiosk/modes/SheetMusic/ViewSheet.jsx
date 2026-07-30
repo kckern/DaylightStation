@@ -1,6 +1,7 @@
 import TransportSheet from '../../transport/TransportSheet.jsx';
 import StepGrid from '../../transport/StepGrid.jsx';
 import TransportButton from '../../transport/TransportButton.jsx';
+import ToggleSwitch from '../../transport/ToggleSwitch.jsx';
 import { nearestStep } from '../../transport/TempoSheet.jsx';
 
 /**
@@ -62,10 +63,10 @@ export default function ViewSheet({ open, onClose, flow, onToggleFlow, scale, on
       </div>
 
       <div className="piano-score-view-row">
-        <TransportButton
-          label={`Keyboard: ${keyboardVisible ? 'Shown' : 'Hidden'}`}
-          on={keyboardVisible}
-          onPress={onToggleKeyboard}
+        <ToggleSwitch
+          label="Keyboard"
+          checked={keyboardVisible}
+          onChange={onToggleKeyboard}
         />
       </div>
     </TransportSheet>

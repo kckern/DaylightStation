@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { keyLabel } from './keyLabel.js';
+import { keyLabel, abbrevKey } from './keyLabel.js';
 
 describe('keyLabel', () => {
   it('major keys by fifths', () => {
@@ -18,5 +18,17 @@ describe('keyLabel', () => {
   });
   it('null for an out-of-range fifths', () => {
     expect(keyLabel(99, 'major')).toBeNull();
+  });
+});
+
+describe('abbrevKey', () => {
+  it('abbreviates major to M and minor to m', () => {
+    expect(abbrevKey('D major')).toBe('DM');
+    expect(abbrevKey('F# minor')).toBe('F#m');
+    expect(abbrevKey('Bb major')).toBe('BbM');
+  });
+  it('passes null/undefined through', () => {
+    expect(abbrevKey(null)).toBe(null);
+    expect(abbrevKey(undefined)).toBe(undefined);
   });
 });
