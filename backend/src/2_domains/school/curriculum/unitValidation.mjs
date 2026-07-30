@@ -39,6 +39,12 @@ export const CADENCES = Object.freeze(['daily', 'once']);
 // gets one clear, field-named error rather than a shared generic one.
 const PROGRAM_EXCLUSIVE_FIELDS = ['passing', 'retry', 'review', 'reward', 'courseId', 'sequence'];
 
+// A `launch:` unit's whole ask IS the dispatch (spec §6) — one-shot "go do
+// this on that surface", with nothing else to compose. Each of these gets its
+// own field-named error, mirroring `PROGRAM_EXCLUSIVE_FIELDS` above, rather
+// than one combined message that hides which field an author needs to remove.
+const LAUNCH_EXCLUSIVE_FIELDS = ['media', 'bank', 'document', 'review', 'program'];
+
 // Resolvable reference kinds: field name → the injected set that must contain
 // its value. `review` is deliberately absent — it is a free-form parent rubric
 // for unscorable work, with no catalog to resolve against.
@@ -55,7 +61,13 @@ const isPresent = (v) => v !== undefined && v !== null;
 
 /**
  * @param {*} raw - one parsed unit YAML
- * @param {{bankIds?: Set<string>, documentIds?: Set<string>, manifestIds?: Set<string>, programIds?: Set<string>}} [sets]
+ * @param {{bankIds?: Set<string>, documentIds?: Set<string>, manifestIds?: Set<string>,
+ *          programIds?: Set<string>, surfaceValidators?: Map<string, Function>}} [sets]
+ *   `surfaceValidators` maps a DoNow surface id to that surface's own
+ *   `validateAction` — the same registered-adapter contract `DoNowService`
+ *   dispatches through at runtime, reused here so a `launch:` unit cannot
+ *   publish naming a surface that does not exist or a payload that surface
+ *   would reject at dispatch time.
  * @returns {{ errors: string[], unit?: object }} empty errors === valid;
  *   `unit` is present only then.
  */
@@ -165,9 +177,46 @@ export function validateUnit(raw, sets = {}) {
     errors.push('cadence is only meaningful on a program unit');
   }
 
+  // The launch composition kind (spec §6): a fire-and-forget dispatch to
+  // another surface, e.g. `launch: { surface: garage-fitness, episode: plex:1 }`.
+  // It is exclusive with every other composition kind AND with `program` —
+  // daily "go do it" work is a program unit instead (see CADENCES above); a
+  // `launch:` unit is the one-shot case.
+  let launch;
+  if (isPresent(raw.launch)) {
+    if (!isPlainObject(raw.launch)) {
+      errors.push('launch must be an object');
+    } else {
+      const { surface, ...payload } = raw.launch;
+      if (!isNonEmptyString(surface)) {
+        errors.push('launch.surface must be a non-empty string');
+      } else {
+        const validators = sets.surfaceValidators;
+        const validateAction = validators instanceof Map ? validators.get(surface) : undefined;
+        if (typeof validateAction !== 'function') {
+          errors.push(`launch.surface '${surface}' not found`);
+        } else {
+          // The payload handed to the adapter is the launch block MINUS
+          // `surface` — the same shape `DoNowService` will later dispatch
+          // as the action (see `GarageFitnessSurface#validateAction`, which
+          // reads e.g. `episodeId` off the top level, never a `surface` key
+          // alongside it). Validating the wrapper instead would reject every
+          // adapter's own contract.
+          const actionErrors = validateAction(payload) ?? [];
+          actionErrors.forEach((message) => errors.push(`launch: ${message}`));
+          if (!actionErrors.length) launch = { surface, ...payload };
+        }
+      }
+    }
+
+    for (const field of LAUNCH_EXCLUSIVE_FIELDS) {
+      if (isPresent(raw[field])) errors.push(`a launch unit takes no ${field}`);
+    }
+  }
+
   // Presence, not resolvability: a dangling reference is already reported, and
   // reporting it twice would read as two separate authoring mistakes.
-  if (![...REFERENCE_FIELDS, 'program'].some((field) => isPresent(raw[field]))) {
+  if (![...REFERENCE_FIELDS, 'program', 'launch'].some((field) => isPresent(raw[field]))) {
     errors.push('unit must reference at least one of bank, document, media, review');
   }
 
@@ -200,6 +249,7 @@ export function validateUnit(raw, sets = {}) {
       review,
       program,
       cadence,
+      launch,
       provenance: raw.provenance,
     },
   };
