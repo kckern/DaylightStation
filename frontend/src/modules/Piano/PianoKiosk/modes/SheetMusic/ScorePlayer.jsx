@@ -216,9 +216,6 @@ export default function ScorePlayer({ score: scoreMeta }) {
   const kbOverrideRef = useRef({}); // mode → explicit user choice (true/false)
   const [kbTick, setKbTick] = useState(0);
   const [grades, setGrades] = useState({}); // measure INDEX → grade result (Polish scoring)
-  // Every loop wrap is an end-of-measure for grading purposes, even when the loop
-  // is one measure long and the measure index never changes (audit: Polish).
-  const [loopWraps, setLoopWraps] = useState(0);
   const gradesRef = useRef(grades); gradesRef.current = grades; // latest grades for the run-summary log (onSilentStop closure)
   const [summaryOpen, setSummaryOpen] = useState(false); // Polish run summary panel
   // Immutable snapshot of the run the OPEN summary describes: `{ grades, tier,
@@ -261,14 +258,9 @@ export default function ScorePlayer({ score: scoreMeta }) {
   // going through one of the clears above.
   const runEligibleRef = useRef(false);
   // Is a RUN active? True from the moment playback starts until it is paused,
-  // stopped, or finishes. Deliberately NOT `transport.playing`: a Polish loop
-  // pinned to the FINAL measure restarts through onDone's one-beat dwell (the
-  // zero-span guard), and across that dwell the transport completes inside play()'s
-  // immediate tick, so `playing` never commits true. An evaluator gated on
-  // `playing` therefore never subscribed at all — the probe played six correct
-  // passes over a tail-measure loop and got zero grades and zero stops (Task 19).
-  // It must go false on every genuine end-of-run, or the evaluator grades measures
-  // the cursor merely passes over (the phantom grades e501ff6fd fixed).
+  // stopped, or finishes. It must go false on every genuine end-of-run, or the
+  // evaluator grades measures the cursor merely passes over (the phantom
+  // grades e501ff6fd fixed).
   const [runActive, setRunActive] = useState(false);
   // Mirror for handlers that must know whether a run is in flight without taking
   // `runActive` as a dependency (onTempo's void check — wave-3 H).
@@ -434,12 +426,6 @@ export default function ScorePlayer({ score: scoreMeta }) {
   // that dispatch after the first flush. All pending timestamps are <=
   // pause-time + lookahead, so the delayed panic covers the whole tail.
   const flushTimerRef = useRef(null);
-  // Pending zero-span loop-wrap restart (see onDone) — cleared by every playback
-  // disruption so a stale dwell can't restart the transport under the user.
-  // NOTE: disruptions must clear UNCONDITIONALLY (before any `playing` check) —
-  // during the dwell nothing is playing, so a playing-gated clear never runs.
-  const wrapTimerRef = useRef(null);
-  const clearWrapDwell = useCallback(() => { clearTimeout(wrapTimerRef.current); }, []);
   const silenceScheduled = useCallback(() => {
     silence();
     clearTimeout(flushTimerRef.current);
@@ -487,20 +473,6 @@ export default function ScorePlayer({ score: scoreMeta }) {
     // frame). Advances the cursor and lights struck noteheads; no MIDI here.
     onEvent: (e, dueWall) => {
       if (e.kind === 'step' || e.type == null) {
-        // Focus loop (at tempo): once the cursor passes the range out-point, wrap
-        // back to the in-point so a practice range repeats. Seek positions come from
-        // the unscaled stepTimeline; scale to match the tempo-scaled playTimeline.
-        const r = rangeRef.current;
-        if (r && e.index > r[1]) {
-          transportRef.current?.seek((stepTimeline[r[0]]?.t ?? 0) / tempoMult);
-          setStep(r[0]);
-          setStruck(() => new Set());
-          setLoopWraps((n) => n + 1);
-          // The wrap-seek jumps idxRef past the skipped tail's note_offs — on the
-          // audio plane (sendsAudio) flush so they don't drone.
-          if (sendsAudio) silenceScheduled();
-          return;
-        }
         stepStartRef.current = dueWall; // musical step start (audit T4) — not commit time
         setStep(e.index);
         setStruck(() => new Set()); // new step starts dark; notes light as they sound
@@ -520,41 +492,6 @@ export default function ScorePlayer({ score: scoreMeta }) {
     // loose at 1.25x — and `stalls` ships at info level in score.playback.stats.
     onFire: (ev, driftMs, gapMs) => { pendingPlaybackRef.current = true; recordFire(ev, driftMs, gapMs, (tempoMap[0]?.bpm || 90) * tempoMult); },
     onDone: () => {
-      // A loop that contains the FINAL step never sees a step past its out-point,
-      // so the onEvent wrap can't fire — the run completes instead. Wrap here:
-      // restart from the in-point INSTEAD of finishing (audit L6). Safe to do
-      // synchronously: the transport resets itself BEFORE invoking onDone, and
-      // play() re-anchors + re-arms its timer (setPlaying(true) wins the batch).
-      // With a loop active, a Polish run loops until the user pauses or the
-      // silent-stop fires — the summary still arrives via that path.
-      const r = rangeRef.current;
-      if (r && (mode === 'listen' || mode === 'polish')) {
-        if (sendsAudio) silenceScheduled(); // skipped tail note_offs must not drone
-        const tIn = (stepTimeline[r[0]]?.t ?? 0) / tempoMult;
-        const restart = () => {
-          transportRef.current?.seek(tIn);
-          setStep(r[0]);
-          setStruck(() => new Set());
-          setLoopWraps((n) => n + 1);
-          setRunActive(true); // the run continues through the wrap (see runActive)
-          transportRef.current?.play();
-        };
-        // Zero-span guard: when the in-point IS the final timeline event (a
-        // single-step final measure in Polish — its step timeline ends at the
-        // last ONSET), a synchronous restart would re-complete inside play()'s
-        // immediate tick → onDone again, an unbounded recursion. Dwell one beat
-        // at the practice tempo before restarting instead. Every playback
-        // disruption (play/pause, mode change, reset, tap-seek) clears the timer.
-        const endT = playTimeline[playTimeline.length - 1]?.t ?? 0;
-        if (tIn >= endT) {
-          clearWrapDwell();
-          wrapTimerRef.current = setTimeout(restart, 60000 / (tempoMap[0]?.bpm || 90) / tempoMult);
-        } else {
-          restart();
-        }
-        logger.info('score.transport.loop-wrap', { mode, inStep: r[0], dwell: tIn >= endT });
-        return;
-      }
       if (sendsAudio) silenceScheduled();
       flushPlaybackNow();
       // A Polish run that plays to the end must grade its final measure and show
@@ -663,7 +600,6 @@ export default function ScorePlayer({ score: scoreMeta }) {
   // clear, and the focus-set effect, so all three land in a known-quiet state.
   const stopForMatrixChange = useCallback(() => {
     countIn.cancel();
-    clearWrapDwell();
     resumeAfterRef.current = null;
     // Did this component actually put anything on the audio plane? Only then can
     // note-ons already be dispatched into the lookahead window, and only then may
@@ -682,7 +618,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
     if (wasPlaying) transportRef.current.pause();
     setRunActive(false);
     if (hadSound || (sendsAudio && wasPlaying)) silenceScheduled(); else silence();
-  }, [countIn, clearWrapDwell, sendsAudio, silence, silenceScheduled]);
+  }, [countIn, sendsAudio, silence, silenceScheduled]);
 
   // Metronome click (audit M1/M2/M4; wave-3 G). Three modes, one bar button:
   //  Polish — `clickOn` (persisted) ARMS a reference beat that sounds only while
@@ -801,7 +737,6 @@ export default function ScorePlayer({ score: scoreMeta }) {
 
   const evaluator = useScoreEvaluator({
     enabled: mode === 'polish' && runActive, // grade only inside a real run (Task 19)
-    boundary: loopWraps,
     cfg: resolvedScoringCfg,
     subscribe,
     currentMeasure,
@@ -1359,7 +1294,6 @@ export default function ScorePlayer({ score: scoreMeta }) {
     if (i < 0) return;
     // Normal seek. When a practice range is active, clamp the target into it.
     resumeAfterRef.current = null; // a tap-seek supersedes a pending rebuild-resume
-    clearWrapDwell(); // a tap-seek overrides a pending loop-wrap dwell
     voidCycle(); // a tap-seek breaks any Learn gate cycle in progress (wave-3 C)
     // …and in Polish it breaks the whole-piece claim: a run played from the tail
     // scores only the tail, but reaches onDone looking like a completion (§H). A
@@ -1385,13 +1319,12 @@ export default function ScorePlayer({ score: scoreMeta }) {
     // Transport timeline is tempo-scaled (playTimeline uses factor 1/tempoMult);
     // seek positions come from the unscaled stepTimeline, so scale to match.
     transport.seek((stepTimeline[target]?.t ?? 0) / tempoMult);
-  }, [mode, sendsAudio, flow, events, transport, stepTimeline, silenceScheduled, tempoMult, arming, commitEndpoint, layout.measures, range, logger, countIn, scale, clearWrapDwell, tapIntent, voidCycle]);
+  }, [mode, sendsAudio, flow, events, transport, stepTimeline, silenceScheduled, tempoMult, arming, commitEndpoint, layout.measures, range, logger, countIn, scale, tapIntent, voidCycle]);
 
   // Single unmount teardown: immediate silence + one delayed panic (see the
-  // silenceScheduled note above), plus any pending loop-wrap dwell — a restart
-  // after unmount would replay into a dead view. One effect → order-independent
-  // by construction.
-  useEffect(() => () => { clearWrapDwell(); silenceScheduled(); }, [clearWrapDwell, silenceScheduled]);
+  // silenceScheduled note above) — a restart after unmount would replay into a
+  // dead view. One effect → order-independent by construction.
+  useEffect(() => () => { silenceScheduled(); }, [silenceScheduled]);
 
   // ── Focus range: selection + custom-loop taps ─────────────────────────────────
   // When a practice range is (re)selected, jump the cursor to its in-point and log.
@@ -1401,7 +1334,6 @@ export default function ScorePlayer({ score: scoreMeta }) {
   // sees the PRIOR focus, never the one that just committed.
   const prevFocusRef = useRef(null);
   useEffect(() => {
-    clearWrapDwell(); // a loop change (set/clear/nudge) invalidates a pending dwell
     // A range change only VOIDS a cycle it could have disrupted — i.e. one where a
     // range was already active. Arming a FRESH range (prior focus was null) has no
     // prior cycle to disrupt: it starts an honest first cycle instead, so reset
@@ -1533,7 +1465,6 @@ export default function ScorePlayer({ score: scoreMeta }) {
     setLearnDone(false);         // the Learn completion card belongs to Learn only
     flushPlaybackNow();          // leaving a Polish/Listen run
     if (mode === 'learn') flushFollowNow();
-    clearWrapDwell();            // a pending loop-wrap dwell dies with the run
     // A mode exit mid-cycle DISCARDS it outright (not a void-until-next-wrap):
     // the gate this cycle belonged to is gone, so there is no "next wrap" to
     // resolve it against — reset both refs rather than merely marking voided.
@@ -1578,7 +1509,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
     setMode(id); // keyboard visibility follows the new mode automatically (M2)
     logMode({ mode: id });
     tapIntent('mode');
-  }, [mode, flushPlaybackNow, flushFollowNow, transport, silenceScheduled, logMode, countIn, clearWrapDwell, clearInks, tapIntent]);
+  }, [mode, flushPlaybackNow, flushFollowNow, transport, silenceScheduled, logMode, countIn, clearInks, tapIntent]);
 
   // Listen tempo: clamp to a sane playable range (0.25×–2×). Timeline rescales via
   // the playTimeline memo; the transport reads the new timings on its next tick.
@@ -1610,7 +1541,6 @@ export default function ScorePlayer({ score: scoreMeta }) {
   // Same shape for a Listen part change, which rebuilds the note timeline. Neither
   // is a stop request, so both arm the resume (see the resume effect above).
   const pauseForRebuild = useCallback((reason) => {
-    clearWrapDwell(); // BEFORE the playing check — during the dwell nothing plays
     if (!transportRef.current?.playing) return;
     transport.pause();
     // The evaluator must not stay armed across the rebuild gap: the cursor can be
@@ -1622,7 +1552,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
     resumeAfterRef.current = { step: stepRef.current };
     setResumeTick((t) => t + 1);
     logger.info('score.viewchange.pause', { reason, step: stepRef.current });
-  }, [clearWrapDwell, transport, silenceScheduled, flushPlaybackNow, logger]);
+  }, [transport, silenceScheduled, flushPlaybackNow, logger]);
 
   const pauseForViewChange = useCallback(() => pauseForRebuild('view'), [pauseForRebuild]);
 
@@ -1646,7 +1576,6 @@ export default function ScorePlayer({ score: scoreMeta }) {
     resumeAfterRef.current = null; // Restart supersedes a pending rebuild-resume
     setArming(null);        // Restart means the user is done arming a loop
     countIn.cancel();       // reset aborts a pending count-in
-    clearWrapDwell();       // …and any pending loop-wrap dwell
     setLearnDone(false);    // fresh pass — close the completion card
     transport.stop();
     setRunActive(false);    // Restart ends the current run (see runActive)
@@ -1666,7 +1595,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
     // The auto-follow effect scrolls to the new step; only a true top-of-piece
     // reset should force-scroll to the origin.
     if (home === 0) scrollRef.current?.scrollTo({ top: 0, left: 0 });
-  }, [transport, mode, sendsAudio, silenceScheduled, flushPlaybackNow, countIn, clearWrapDwell, logger, tapIntent]);
+  }, [transport, mode, sendsAudio, silenceScheduled, flushPlaybackNow, countIn, logger, tapIntent]);
 
   // Run summary Replay: reset the run (clears grades + closes the panel).
   const onReplaySummary = useCallback(() => { reset(); }, [reset]);
@@ -1746,7 +1675,6 @@ export default function ScorePlayer({ score: scoreMeta }) {
   const toggleRun = useCallback(() => {
     resumeAfterRef.current = null; // an explicit play/pause supersedes a pending rebuild-resume
     setArming(null); // starting/stopping a run means the user is done arming a loop
-    clearWrapDwell(); // a manual play/pause overrides a pending loop-wrap dwell
     // A second tap during the count-in aborts it (never reaches the transport).
     if (countIn.active) { countIn.cancel(); logger.info('score.countin.cancel', { via: 'toggle' }); return; }
     if (transport.playing) {
@@ -1799,7 +1727,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
     }
     // NOTE: reads the live cursor via `stepRef.current` (mirrors `step`), NOT the
     // `step` closure — so `step` is deliberately OUT of the dep array.
-  }, [countIn, transport, mode, sendsAudio, silenceScheduled, flushPlaybackNow, logger, stepTimeline, tempoMap, tempoMult, parsed, clearWrapDwell, tapIntent]);
+  }, [countIn, transport, mode, sendsAudio, silenceScheduled, flushPlaybackNow, logger, stepTimeline, tempoMap, tempoMult, parsed, tapIntent]);
 
   // Toggle a staff's active state — the chip fallback for >2 staves. One branch,
   // every mode (wave-3 A): Learn/Polish need ≥1 active staff or the all-notes rule
