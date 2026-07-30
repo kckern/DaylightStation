@@ -1,5 +1,5 @@
 import { shuffle, buildNotePool } from '../noteUtils.js';
-import { PITCH_CLASS_NAMES } from '../theory/chordNaming.js';
+import { spellNoteName, rootQualityOf } from '../../MusicNotation/model/spelling.js';
 
 /**
  * Generate random pitches for a flashcard.
@@ -78,10 +78,12 @@ export const CHORD_QUALITIES = {
   minor9:     { intervals: [0, 2, 3, 7, 10], suffix: 'm9',   longName: 'minor 9th' },
 };
 
-// Root-name lookup: sharp names from the theory module plus flat aliases, so
-// piano.yml levels can say roots: [Bb, Eb] as naturally as [A#, D#].
+// Root-name lookup for CONFIG PARSING only: piano.yml levels can write roots as
+// [Bb, Eb] or [A#, D#] and mean the same keys. ASCII on purpose — this reads YAML,
+// not display text. (Card labels are spelled by the shared speller below, so what a
+// level asks for and what the card shows are separate concerns.)
 const ROOT_NAME_TO_PC = Object.fromEntries([
-  ...PITCH_CLASS_NAMES.map((n, pc) => [n, pc]),
+  ...['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'].map((n, pc) => [n, pc]),
   ['Db', 1], ['Eb', 3], ['Gb', 6], ['Ab', 8], ['Bb', 10],
 ]);
 
@@ -122,7 +124,10 @@ export function generateChordCard(qualities, prevCard = null, roots = null) {
   );
 
   const { intervals, suffix, longName } = CHORD_QUALITIES[quality];
-  const rootName = PITCH_CLASS_NAMES[root];
+  // Spelled by the shared speller so a flashcard says B♭ where the staff and the
+  // chord plaque say B♭. Flashcards carry no key context, so this is the
+  // conventional (tier 2/3) spelling.
+  const rootName = spellNoteName(root, { rootQuality: rootQualityOf(quality) });
 
   return {
     type: 'chord',
