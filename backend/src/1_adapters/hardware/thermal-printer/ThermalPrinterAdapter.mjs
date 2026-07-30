@@ -73,7 +73,7 @@ const DEFAULT_CODE_PAGE = 'cp858';
 
 /**
  * @typedef {Object} PrintItem
- * @property {'text'|'image'|'barcode'|'line'|'space'|'cut'|'feedButton'} type
+ * @property {'text'|'image'|'barcode'|'qrcode'|'line'|'space'|'cut'|'feedButton'} type
  * @property {string} [content] - Text content or image path
  * @property {'left'|'center'|'right'} [align='left'] - Text alignment
  * @property {Object} [size] - Text size {width, height}
@@ -699,6 +699,9 @@ export class ThermalPrinterAdapter {
         case 'barcode':
           commands = this.#processBarcodeItem(item);
           break;
+        case 'qrcode':
+          commands = this.#processQrcodeItem(item);
+          break;
         case 'line':
           commands = this.#processLineItem(item);
           break;
@@ -853,6 +856,34 @@ export class ThermalPrinterAdapter {
     commands = Buffer.concat([commands, Buffer.from([0x1B, 0x61, 0x00])]);
 
     return commands;
+  }
+
+  /**
+   * ESC/POS model-2 QR (`GS ( k`), mirroring `#processBarcodeItem`'s
+   * alignment/centering conventions: centered while the code prints, reset to
+   * left afterward. No label is printed here — the renderer already emitted a
+   * preceding text item carrying the label, the same convention `#processBarcodeItem`
+   * follows, and printing one here would print every label twice.
+   */
+  #processQrcodeItem(item) {
+    if (!item.content) {
+      return Buffer.alloc(0);
+    }
+
+    const data = Buffer.from(String(item.content), 'ascii');
+    const len = data.length + 3;
+    const pL = len & 0xff;
+    const pH = (len >> 8) & 0xff;
+
+    return Buffer.concat([
+      Buffer.from([0x1B, 0x61, 0x01]),                                     // center
+      Buffer.from([0x1D, 0x28, 0x6B, 0x04, 0x00, 0x31, 0x41, 0x32, 0x00]), // model 2
+      Buffer.from([0x1D, 0x28, 0x6B, 0x03, 0x00, 0x31, 0x43, 0x08]),       // module size 8
+      Buffer.from([0x1D, 0x28, 0x6B, 0x03, 0x00, 0x31, 0x45, 0x31]),       // EC level M
+      Buffer.from([0x1D, 0x28, 0x6B, pL, pH, 0x31, 0x50, 0x30]), data,     // store
+      Buffer.from([0x1D, 0x28, 0x6B, 0x03, 0x00, 0x31, 0x51, 0x30]),       // print
+      Buffer.from([0x1B, 0x61, 0x00]),                                     // back to left
+    ]);
   }
 
   #processLineItem(item) {
