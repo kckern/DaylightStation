@@ -90,7 +90,9 @@ delivered through HA:
   under a dedicated `donow-approvals` location entry. No new auth scheme.
 - Pending requests persist at `data/apps/donow/pending.yml`
   (`{ id, surface, action, label, learnerId, requestedBy, ref, occupant,
-  createdAt, expiresAt }`).
+  createdAt, expiresAt, programId? }` — `programId` present only for a
+  `school-program` request, so a pend-then-approve round trip still counts
+  as evidence for that program, same presence rule as the dispatch log).
 - On `pending_approval`: send an **HA actionable notification** via the
   existing `CallHomeAssistantService` passthrough (`notify.*` with
   `actions: [APPROVE_<id>, DENY_<id>]`). An HA automation (deployment

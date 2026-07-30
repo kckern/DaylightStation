@@ -357,3 +357,176 @@ describe('DoNowService.dispatch', () => {
     });
   });
 });
+
+describe('DoNowService.dispatchApproved', () => {
+  it('calls adapter.dispatch, appends a log row carrying the original requestedBy/ref/learnerId + approvalId, and broadcasts with the original requestedBy', async () => {
+    const adapter = fakeAdapter({
+      dispatch: vi.fn().mockResolvedValue({ dispatched: true }),
+    });
+    const eventBus = { broadcast: vi.fn() };
+    const { service, store } = build({ adapter, eventBus });
+
+    const record = {
+      id: 'dnr_approved1',
+      surface: 'garage-fitness',
+      action: { episode: 'plex:1' },
+      learnerId: 'kid1',
+      requestedBy: 'school-scan',
+      ref: 'ses_1',
+    };
+
+    const result = await service.dispatchApproved(record);
+
+    expect(result.decision).toBe('dispatched');
+    expect(adapter.dispatch).toHaveBeenCalledWith({ action: { episode: 'plex:1' }, learnerId: 'kid1' });
+    expect(store.appendDispatch).toHaveBeenCalledTimes(1);
+    const [row] = store.appendDispatch.mock.calls[0];
+    expect(row).toMatchObject({
+      at: NOW_ISO, surface: 'garage-fitness', decision: 'dispatch',
+      learnerId: 'kid1', requestedBy: 'school-scan', ref: 'ses_1', approvalId: 'dnr_approved1',
+    });
+    expect('programId' in row).toBe(false);
+    expect(eventBus.broadcast).toHaveBeenCalledWith('donow', {
+      type: 'donow.dispatched', ref: 'ses_1', surface: 'garage-fitness', requestedBy: 'school-scan',
+    });
+  });
+
+  it('carries programId from the record through to the dispatch-log row when present', async () => {
+    const adapter = fakeAdapter({ dispatch: vi.fn().mockResolvedValue({ dispatched: true }) });
+    const { service, store } = build({ adapter });
+
+    const record = {
+      id: 'dnr_approved2', surface: 'garage-fitness', action: {}, learnerId: 'kid1',
+      requestedBy: 'school-program', ref: 'pe-daily', programId: 'pe-daily',
+    };
+
+    await service.dispatchApproved(record);
+
+    const [row] = store.appendDispatch.mock.calls[0];
+    expect(row.programId).toBe('pe-daily');
+    expect(row.approvalId).toBe('dnr_approved2');
+  });
+
+  it('unregistered surface -> failed, no log row, no broadcast', async () => {
+    const eventBus = { broadcast: vi.fn() };
+    const { service, store } = build({ eventBus });
+
+    const result = await service.dispatchApproved({
+      id: 'dnr_x', surface: 'nonexistent', action: {}, learnerId: 'kid1', requestedBy: 'api', ref: 'r1',
+    });
+
+    expect(result).toEqual({ decision: 'failed', message: expect.stringMatching(/nonexistent/) });
+    expect(store.appendDispatch).not.toHaveBeenCalled();
+    expect(eventBus.broadcast).not.toHaveBeenCalled();
+  });
+
+  it('adapter.dispatch declining -> failed, no log row', async () => {
+    const adapter = fakeAdapter({ dispatch: vi.fn().mockResolvedValue({ dispatched: false }) });
+    const { service, store } = build({ adapter });
+
+    const result = await service.dispatchApproved({
+      id: 'dnr_y', surface: 'garage-fitness', action: {}, learnerId: 'kid1', requestedBy: 'api', ref: 'r1',
+    });
+
+    expect(result.decision).toBe('failed');
+    expect(store.appendDispatch).not.toHaveBeenCalled();
+  });
+});
+
+describe('DoNowService.occupancyFor', () => {
+  it('returns the live adapter probe result', async () => {
+    const adapter = fakeAdapter({
+      occupancy: vi.fn().mockResolvedValue({ state: 'active', occupantId: 'kid2' }),
+    });
+    const { service } = build({ adapter });
+
+    const result = await service.occupancyFor('garage-fitness');
+
+    expect(result).toEqual({ state: 'active', occupantId: 'kid2' });
+    expect(adapter.occupancy).toHaveBeenCalledTimes(1);
+  });
+
+  it('adapter.occupancy() throwing -> unknown (fail closed)', async () => {
+    const adapter = fakeAdapter({ occupancy: vi.fn().mockRejectedValue(new Error('sensor offline')) });
+    const { service } = build({ adapter });
+
+    const result = await service.occupancyFor('garage-fitness');
+
+    expect(result).toEqual({ state: 'unknown', occupantId: null });
+  });
+
+  it('unregistered surface -> unknown (fail closed), does not throw', async () => {
+    const { service } = build();
+
+    const result = await service.occupancyFor('nonexistent');
+
+    expect(result).toEqual({ state: 'unknown', occupantId: null });
+  });
+});
+
+describe('DoNowService.listSurfaces', () => {
+  it('returns ids + human labels only', () => {
+    const { service } = build({ adapter: fakeAdapter({ label: () => 'Dance video in the garage' }) });
+
+    const result = service.listSurfaces();
+
+    expect(result).toEqual([{ id: 'garage-fitness', label: 'Dance video in the garage' }]);
+  });
+
+  it('a missing/throwing label() yields a bare { id } row', () => {
+    const { service } = build({
+      adapter: fakeAdapter({
+        label: () => { throw new Error('nope'); },
+      }),
+    });
+
+    const result = service.listSurfaces();
+
+    expect(result).toEqual([{ id: 'garage-fitness' }]);
+  });
+});
+
+describe('DoNowService.dispatch — pending record carries programId through to approval (IMPORTANT fix)', () => {
+  it('a school-program request that pends persists programId on the pending record; approving it later carries programId through to the dispatch log', async () => {
+    const adapter = fakeAdapter({
+      occupancy: vi.fn().mockResolvedValue({ state: 'active', occupantId: 'kid2' }),
+      dispatch: vi.fn().mockResolvedValue({ dispatched: true }),
+    });
+    const { service, store } = build({ adapter });
+
+    const pendResult = await service.dispatch({
+      surface: 'garage-fitness', action: { episode: 'plex:1' }, learnerId: 'kid1',
+      requestedBy: 'school-program', ref: 'pe-daily', programId: 'pe-daily',
+    });
+
+    expect(pendResult.decision).toBe('pending_approval');
+    expect(store.putPending).toHaveBeenCalledTimes(1);
+    const [pendingRecord] = store.putPending.mock.calls[0];
+    expect(pendingRecord.programId).toBe('pe-daily');
+
+    // Approve later (adapter now idle) — the full pend -> approve round trip.
+    const result = await service.dispatchApproved(pendingRecord);
+
+    expect(result.decision).toBe('dispatched');
+    const [row] = store.appendDispatch.mock.calls[0];
+    expect(row.programId).toBe('pe-daily');
+    expect(row.approvalId).toBe(pendingRecord.id);
+    expect(row.requestedBy).toBe('school-program');
+    expect(row.ref).toBe('pe-daily');
+  });
+
+  it('a request WITHOUT a programId omits it from the pending record entirely (absent key, not null)', async () => {
+    const adapter = fakeAdapter({
+      occupancy: vi.fn().mockResolvedValue({ state: 'active', occupantId: 'kid2' }),
+    });
+    const { service, store } = build({ adapter });
+
+    await service.dispatch({
+      surface: 'garage-fitness', action: {}, learnerId: 'kid1',
+      requestedBy: 'school-scan', ref: 'ses_1',
+    });
+
+    const [record] = store.putPending.mock.calls[0];
+    expect('programId' in record).toBe(false);
+  });
+});
