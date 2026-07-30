@@ -1,0 +1,17 @@
+# A config-driven `program:` unit (spec §6 "Surface programs — how daily PE
+# actually exists"): resolves against a `SurfaceProgramLauncher` built from
+# `school.yml`'s own `programs:` list, not a code-registered launcher (unlike
+# `language-daily.yml`). Any harness that does not pass a `pe-daily` entry in
+# its `programs` option simply drops this unit at catalog load (an unknown
+# `program` id — logged, not thrown; see `unitValidation.mjs`), so it is safe
+# to leave in the shared curriculum fixture tree.
+unitId: pe-daily.act
+title: Daily P.E.
+subject: skills
+program: pe-daily
+cadence: daily
+provenance:
+  source: hand-authored
+  author: parent
+  reviewState: approved
+  reviewedOn: '2026-07-29'
