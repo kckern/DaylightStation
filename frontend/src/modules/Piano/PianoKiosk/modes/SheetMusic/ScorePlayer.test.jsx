@@ -782,6 +782,16 @@ describe('ScorePlayer — Perform mode pedal page-turn', () => {
     cc66(127); // second press
     expect(scrollBy).toHaveBeenCalledTimes(2);
   });
+
+  // Wave-3 I: Perform drops the page readout entirely — the bar renders NOTHING
+  // in Perform (top-level `return null`), not just a hidden position span. Pedal
+  // paging above still works with zero chrome on screen.
+  it('renders no transport bar at all in Perform — zero chrome', async () => {
+    renderPlayer();
+    pickMode('Perform');
+    await act(async () => {});
+    expect(document.querySelector('.piano-score-transportbar')).toBeNull();
+  });
 });
 
 describe('ScorePlayer — Polish mode (transport-driven)', () => {

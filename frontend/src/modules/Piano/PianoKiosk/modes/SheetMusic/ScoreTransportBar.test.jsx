@@ -85,10 +85,9 @@ describe('ScoreTransportBar', () => {
     expect(screen.getByRole('group', { name: 'Hands' })).toBeInTheDocument();
   });
 
-  it('perform mode: shows the page indicator (page / pages)', () => {
-    render(<ScoreTransportBar {...base} mode="perform" page={1} pages={3} />);
-    const indicator = screen.getByLabelText(/page/i);
-    expect(indicator).toHaveTextContent('1 / 3');
+  it('Perform is zero-chrome: the bar renders nothing at all', () => {
+    const { container } = render(<ScoreTransportBar {...base} mode="perform" />);
+    expect(container.firstChild).toBeNull();
   });
 
   it('shows position readout total', () => {
@@ -391,11 +390,11 @@ describe('ScoreTransportBar — stable geography (C2)', () => {
     rerender(<ScoreTransportBar {...base} mode="listen" step={0} total={4} ready clickDisabled />);
     expect(screen.getByRole('button', { name: /metronome/i })).toBeDisabled();
   });
-  it('Perform renders only tabs and the page indicator', () => {
-    render(<ScoreTransportBar {...base} mode="perform" page={2} pages={5} />);
+  it('Perform is zero-chrome — no loop cluster, no metronome, no bar at all', () => {
+    const { container } = render(<ScoreTransportBar {...base} mode="perform" />);
     expect(screen.queryByRole('button', { name: 'Toggle loop' })).toBeNull();
     expect(screen.queryByRole('button', { name: /metronome/i })).toBeNull();
-    expect(screen.getByLabelText('Page')).toHaveTextContent('2 / 5');
+    expect(container.firstChild).toBeNull();
   });
   it('Learn/Polish keep Key rendered and enabled — transpose acts in every practice mode', () => {
     const { rerender } = render(<ScoreTransportBar {...base} mode="learn" step={0} total={4} ready />);
