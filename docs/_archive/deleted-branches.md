@@ -181,3 +181,4 @@ To restore: `git checkout -b branch-name <commit-hash>`
 | 2026-07-30 | school-dispatch-preview | 80f137940 | DoNow household dispatch contract (7 surfaces, HA approvals, occupancy), QR agenda preview endpoint, karaoke no-resume fix |
 | 2026-07-30 | agenda-header-icons | 0e0bdce9b | Agenda standard header (black band) + subject icons on scan boxes |
 | 2026-07-30 | token-pruning | abb237fac | Grace-period pruning of expired school token files |
+| 2026-07-30 | feature/karaoke-keyshift | 1185b4a88 | Karaoke key-change stepper on singalong chrome: live ±6 semitone transpose via lazy Tone.PitchShift on the resolved media element |
