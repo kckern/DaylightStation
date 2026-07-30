@@ -160,7 +160,11 @@ export function planLearnerWork({ learnerId = null, assignment = null, units = [
     let status = 'available';
     let lockReason = null;
     let remedy = null;
-    if (passedUnits.has(unitId)) {
+
+    // Program units are never locked or completed — always available.
+    if (isNonEmptyString(unit.program)) {
+      status = 'available';
+    } else if (passedUnits.has(unitId)) {
       status = 'completed';
     } else if (open) {
       // Beats the lock deliberately: a child holding a printed sheet must be
@@ -183,6 +187,8 @@ export function planLearnerWork({ learnerId = null, assignment = null, units = [
       courseId: unit.courseId ?? null,
       sequence: Number.isInteger(unit.sequence) ? unit.sequence : null,
       elective,
+      program: unit.program ?? null,
+      cadence: unit.cadence ?? null,
       status,
       sessionId: open?.sessionId ?? null,
       state: open?.state ?? null,
