@@ -9,7 +9,7 @@ const fakeRegistry = {
       livingroom: { target: 'tv', action: 'play', defaults: {} },
     },
     tags: {
-      'aa_bb': { global: { plex: 100 }, overrides: {} },
+      'aabb': { global: { plex: 100 }, overrides: {} },
     },
   },
   state: {

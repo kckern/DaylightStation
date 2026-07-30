@@ -9,16 +9,16 @@ describe('serializeNfcTags', () => {
 
   it('flattens a tag with only global fields', () => {
     const parsed = {
-      '83_8e_68_06': { global: { plex: 620707 }, overrides: {} },
+      '838e6806': { global: { plex: 620707 }, overrides: {} },
     };
     expect(serializeNfcTags(parsed)).toEqual({
-      '83_8e_68_06': { plex: 620707 },
+      '838e6806': { plex: 620707 },
     });
   });
 
   it('flattens a tag with global + per-reader overrides', () => {
     const parsed = {
-      '83_8e_68_06': {
+      '838e6806': {
         global: { plex: 620707, shader: 'default' },
         overrides: {
           livingroom: { shader: 'blackout' },
@@ -27,7 +27,7 @@ describe('serializeNfcTags', () => {
       },
     };
     expect(serializeNfcTags(parsed)).toEqual({
-      '83_8e_68_06': {
+      '838e6806': {
         plex: 620707,
         shader: 'default',
         livingroom: { shader: 'blackout' },
@@ -38,12 +38,12 @@ describe('serializeNfcTags', () => {
 
   it('round-trips through parseNfcTags', () => {
     const original = {
-      '83_8e_68_06': {
+      '838e6806': {
         plex: 620707,
         shader: 'default',
         livingroom: { shader: 'blackout' },
       },
-      '04_a1_b2_c3': {
+      '04a1b2c3': {
         scanned_at: '2026-04-26 14:32:18',
         note: 'kids favorite',
       },
@@ -55,13 +55,13 @@ describe('serializeNfcTags', () => {
 
   it('preserves placeholder entries (only scanned_at)', () => {
     const parsed = {
-      '04_a1_b2_c3': {
+      '04a1b2c3': {
         global: { scanned_at: '2026-04-26 14:32:18' },
         overrides: {},
       },
     };
     expect(serializeNfcTags(parsed)).toEqual({
-      '04_a1_b2_c3': { scanned_at: '2026-04-26 14:32:18' },
+      '04a1b2c3': { scanned_at: '2026-04-26 14:32:18' },
     });
   });
 });

@@ -8,14 +8,14 @@ describe('buildTriggerRegistry v2', () => {
         livingroom: { modality: 'nfc', target: 'livingroom-tv', action: 'play-next' },
         'lr-state': { modality: 'state', location: 'livingroom', target: 'livingroom-tv', states: { off: { action: 'clear' } } },
       },
-      bindingsNfc: { '1a_95_71_06': { plex: 456598, action: 'queue', livingroom: { action: 'play' } } },
+      bindingsNfc: { '1a957106': { plex: 456598, action: 'queue', livingroom: { action: 'play' } } },
       responses: { 'r1': { kind: 'content' } },
       endpoints: { 'e1': { method: 'POST', url: 'http://x' } },
     });
     expect(reg.nfc.locations.livingroom.target).toBe('livingroom-tv');
     expect(reg.state.locations.livingroom.states.off).toEqual({ action: 'clear' });
-    expect(reg.nfc.tags['1a_95_71_06'].global).toMatchObject({ plex: 456598, action: 'queue' });
-    expect(reg.nfc.tags['1a_95_71_06'].overrides.livingroom).toEqual({ action: 'play' });
+    expect(reg.nfc.tags['1a957106'].global).toMatchObject({ plex: 456598, action: 'queue' });
+    expect(reg.nfc.tags['1a957106'].overrides.livingroom).toEqual({ action: 'play' });
     expect(reg.responses.r1).toEqual({ kind: 'content' });
     expect(reg.endpoints.e1).toMatchObject({ method: 'POST' });
   });

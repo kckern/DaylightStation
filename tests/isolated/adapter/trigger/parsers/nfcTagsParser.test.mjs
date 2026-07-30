@@ -14,18 +14,29 @@ describe('parseNfcTags', () => {
     const result = parseNfcTags({
       '83_8e_68_06': { plex: 620707 },
     }, KNOWN_READERS);
-    expect(result['83_8e_68_06']).toEqual({
+    expect(result['838e6806']).toEqual({
       global: { plex: 620707 },
       overrides: {},
     });
   });
 
-  it('lowercases the tag UID', () => {
+  it('canonicalizes the tag UID — case AND separators', () => {
+    // Separators are presentation, not identity. The audiobook readers write
+    // `83_8e_68_06` while the omr-relay reports the packed form; both must land
+    // on one key or the same physical tag becomes two identities.
     const result = parseNfcTags({
       '83_8E_68_06': { plex: 620707 },
     }, KNOWN_READERS);
-    expect(result['83_8e_68_06']).toBeDefined();
+    expect(result['838e6806']).toBeDefined();
     expect(result['83_8E_68_06']).toBeUndefined();
+    expect(result['83_8e_68_06']).toBeUndefined();
+  });
+
+  it('rejects two spellings of one uid instead of letting key order decide', () => {
+    expect(() => parseNfcTags({
+      '04_66_9c_0f_cb_2a_81': { plex: 1 },
+      '04669C0FCB2A81': { plex: 2 },
+    }, KNOWN_READERS)).toThrow(/duplicates.*canonicalize/i);
   });
 
   it('separates tag-global scalar fields from per-reader override blocks', () => {
@@ -43,8 +54,8 @@ describe('parseNfcTags', () => {
         },
       },
     }, KNOWN_READERS);
-    expect(result['aa_bb_cc_dd'].global).toEqual({ plex: 100, shader: 'default', volume: 10 });
-    expect(result['aa_bb_cc_dd'].overrides).toEqual({
+    expect(result['aabbccdd'].global).toEqual({ plex: 100, shader: 'default', volume: 10 });
+    expect(result['aabbccdd'].overrides).toEqual({
       livingroom: { shader: 'blackout' },
       bedroom: { shader: 'night', volume: 5 },
     });
@@ -82,8 +93,8 @@ describe('parseNfcTags', () => {
       },
     }, KNOWN_READERS);
     // null should be treated as a scalar tag-global field (degenerate but valid)
-    expect(result['aa_bb'].global).toEqual({ plex: 1, livingroom: null });
-    expect(result['aa_bb'].overrides).toEqual({});
+    expect(result['aabb'].global).toEqual({ plex: 1, livingroom: null });
+    expect(result['aabb'].overrides).toEqual({});
   });
 
   it('ignores arrays as tag-global scalars (rejects as override blocks)', () => {
@@ -94,6 +105,6 @@ describe('parseNfcTags', () => {
         tags: ['x', 'y'],   // array -> goes into global
       },
     }, KNOWN_READERS);
-    expect(result['aa_bb'].global).toEqual({ plex: 1, tags: ['x', 'y'] });
+    expect(result['aabb'].global).toEqual({ plex: 1, tags: ['x', 'y'] });
   });
 });

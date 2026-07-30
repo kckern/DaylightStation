@@ -21,6 +21,8 @@
 
 import { buildTriggerRegistry } from './parsers/buildTriggerRegistry.mjs';
 import { serializeNfcTags } from './parsers/nfcTagsSerializer.mjs';
+import { canonicalizeNfcUid } from '#domains/trigger/nfcUid.mjs';
+import { ValidationError } from '#domains/core/errors/ValidationError.mjs';
 
 const PATHS = {
   sources: 'config/triggers/sources',
@@ -29,11 +31,20 @@ const PATHS = {
   endpoints: 'config/triggers/endpoints',
 };
 
+/** Directory form of the NFC bindings: one file per group (books, cards, …). */
+const BINDINGS_NFC_DIR = 'config/triggers/bindings/nfc';
+/** Where a tag with no declared home lands. */
+const DEFAULT_TAG_FILE = 'unsorted.yml';
+
 export class YamlTriggerConfigRepository {
   #saveFile;
   #observedStore;
   #registry = null;
   #writeChain = Promise.resolve();
+  // canonical uid -> the grouped file it came from ('books.yml'), or null when
+  // the registry is a single legacy file. Drives round-trip writes.
+  #tagSource = new Map();
+  #tagFileMode = 'single';
 
   constructor({ saveFile, observedStore } = {}) {
     this.#saveFile = typeof saveFile === 'function' ? saveFile : null;
@@ -47,15 +58,75 @@ export class YamlTriggerConfigRepository {
    * @returns {Object} unified registry: { nfc: { locations, tags }, state: { locations }, responses, endpoints }
    * @throws {ValidationError} if any YAML is malformed.
    */
-  loadRegistry({ loadFile }) {
+  loadRegistry({ loadFile, listDir = null }) {
     const blobs = {
       sources: loadFile(PATHS.sources),
-      bindingsNfc: loadFile(PATHS.bindingsNfc),
+      bindingsNfc: this.#loadNfcBindings({ loadFile, listDir }),
       responses: loadFile(PATHS.responses),
       endpoints: loadFile(PATHS.endpoints),
     };
     this.#registry = buildTriggerRegistry(blobs);
     return this.#registry;
+  }
+
+  /**
+   * NFC bindings live EITHER as one `bindings/nfc.yml` or as a directory of
+   * grouped files (`bindings/nfc/books.yml`, `cards.yml`, …). Grouping exists
+   * because one monolith mixes unrelated things — audiobooks and personal
+   * identity cards — and makes every edit a merge risk.
+   *
+   * Both forms present is a HARD ERROR, not a merge. This household already lost
+   * an afternoon to two plausible-looking tag files diverging (62 entries in a
+   * stale path, 58 in the live one) with nothing to say which was authoritative.
+   * Refusing to boot is the cheap version of that lesson.
+   *
+   * Remembers which file each uid came from so a later note write goes back to
+   * that file instead of collapsing every group into one.
+   */
+  #loadNfcBindings({ loadFile, listDir }) {
+    const files = typeof listDir === 'function' ? (listDir(BINDINGS_NFC_DIR) || []) : [];
+    const single = loadFile(PATHS.bindingsNfc);
+
+    if (files.length && single && Object.keys(single).length) {
+      throw new ValidationError(
+        `NFC bindings exist BOTH as ${PATHS.bindingsNfc}.yml and as files in ${BINDINGS_NFC_DIR}/ `
+        + `(${files.join(', ')}). Move the single file's entries into the directory and delete it — `
+        + 'two sources of truth for one tag registry is how a card silently resolves to the wrong thing.',
+        { code: 'NFC_BINDINGS_AMBIGUOUS', files }
+      );
+    }
+
+    // Legacy single-file mode: everything belongs to that one file.
+    if (!files.length) {
+      this.#tagFileMode = 'single';
+      this.#tagSource.clear();
+      for (const rawUid of Object.keys(single || {})) {
+        this.#tagSource.set(canonicalizeNfcUid(rawUid), null); // null => the single file
+      }
+      return single;
+    }
+
+    this.#tagFileMode = 'dir';
+    this.#tagSource.clear();
+    const merged = {};
+    for (const file of files) {
+      const blob = loadFile(`${BINDINGS_NFC_DIR}/${file.replace(/\.ya?ml$/i, '')}`);
+      for (const [rawUid, entry] of Object.entries(blob || {})) {
+        const uid = canonicalizeNfcUid(rawUid);
+        const prior = this.#tagSource.get(uid);
+        // Which file wins would otherwise depend on readdir order — i.e. on the
+        // filesystem. Name both files so the fix is obvious.
+        if (prior !== undefined) {
+          throw new ValidationError(
+            `tag "${rawUid}" appears in both ${BINDINGS_NFC_DIR}/${prior} and ${BINDINGS_NFC_DIR}/${file}`,
+            { code: 'DUPLICATE_TAG_ACROSS_FILES', field: rawUid, files: [prior, file] }
+          );
+        }
+        this.#tagSource.set(uid, file);
+        merged[rawUid] = entry;
+      }
+    }
+    return merged;
   }
 
   /**
@@ -69,7 +140,7 @@ export class YamlTriggerConfigRepository {
    */
   recordObserved(uid, scannedAt) {
     if (!this.#observedStore) return Promise.resolve({ created: false });
-    const key = String(uid).toLowerCase();
+    const key = canonicalizeNfcUid(uid);
     const firstSight = !this.#observedStore.has(key);
     return Promise.resolve(this.#observedStore.record(key, scannedAt)).then(() => ({ created: firstSight }));
   }
@@ -89,14 +160,19 @@ export class YamlTriggerConfigRepository {
     return this.#enqueue(async () => {
       this.#assertReady();
       const tags = this.#registry.nfc.tags;
-      const key = String(uid).toLowerCase();
+      const key = canonicalizeNfcUid(uid);
       let created = false;
       if (!tags[key]) {
         tags[key] = { global: {}, overrides: {} };
         created = true;
       }
       tags[key].global.note = note;
-      await this.#flushBindings();
+      if (!this.#tagSource.has(key)) {
+        // A tag nobody has filed yet. It gets an explicit home rather than being
+        // appended to whichever group happened to load last.
+        this.#tagSource.set(key, this.#tagFileMode === 'dir' ? DEFAULT_TAG_FILE : null);
+      }
+      await this.#flushBindings(key);
       if (this.#observedStore) await this.#observedStore.record(key, scannedAtIfNew);
       return { created };
     });
@@ -121,9 +197,28 @@ export class YamlTriggerConfigRepository {
     }
   }
 
-  #flushBindings() {
-    const flat = serializeNfcTags(this.#registry.nfc.tags);
-    return Promise.resolve(this.#saveFile(PATHS.bindingsNfc, flat));
+  /**
+   * Write back ONLY the file the touched tag belongs to.
+   *
+   * The previous version serialized the whole registry into one path. Against a
+   * grouped layout that would have quietly re-monolithized the split on the very
+   * first note edit — books and cards collapsed back into one file, which is the
+   * thing the grouping exists to prevent.
+   *
+   * @param {string} uid canonical uid whose file should be rewritten
+   */
+  #flushBindings(uid) {
+    const file = this.#tagSource.get(uid) ?? null;
+    if (file === null) {
+      // Legacy single-file registry: unchanged behaviour.
+      return Promise.resolve(this.#saveFile(PATHS.bindingsNfc, serializeNfcTags(this.#registry.nfc.tags)));
+    }
+    const subset = {};
+    for (const [u, entry] of Object.entries(this.#registry.nfc.tags)) {
+      if ((this.#tagSource.get(u) ?? null) === file) subset[u] = entry;
+    }
+    const relPath = `${BINDINGS_NFC_DIR}/${file.replace(/\.ya?ml$/i, '')}`;
+    return Promise.resolve(this.#saveFile(relPath, serializeNfcTags(subset)));
   }
 }
 

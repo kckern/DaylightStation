@@ -29,6 +29,7 @@ import { broadcastEvent, createDeviceServices, createWakeAndLoadService } from '
  * @param {Object} config.contentIdResolver - From content services (used by resolveIntent)
  * @param {Function} config.broadcast - WebSocket broadcast function (broadcastEvent)
  * @param {Function} config.loadFile - Helper that loads YAML files relative to household dir
+ * @param {Function} [config.listDir] - Lists *.yml in a household-relative dir (grouped NFC tag files)
  * @param {Object} [config.contentDispatcher] - ContentDispatcher instance (optimistic content posture; shared with barcode ingress)
  * @param {Function} [config.screenBroadcast] - Screen-targeted broadcast helper (targetScreen, payload) used by contentDispatcher-driven flows
  * @param {Function} [config.commandResolver] - Resolves a raw scan/value string to a known command (e.g. resolveCommand)
@@ -44,6 +45,7 @@ export function createTriggerApiRouter(config) {
     contentIdResolver,
     broadcast,
     loadFile,
+    listDir = null,
     saveFile,
     contentDispatcher = null,
     screenBroadcast = null,
@@ -56,7 +58,7 @@ export function createTriggerApiRouter(config) {
   const triggerConfigRepository = new YamlTriggerConfigRepository({ saveFile, observedStore });
   let triggerConfig;
   try {
-    triggerConfig = triggerConfigRepository.loadRegistry({ loadFile });
+    triggerConfig = triggerConfigRepository.loadRegistry({ loadFile, listDir });
   } catch (err) {
     logger.warn?.('trigger.config.parse.failed', { error: err.message });
     triggerConfig = { nfc: { locations: {}, tags: {} }, state: { locations: {} }, responses: {}, endpoints: {} };
@@ -86,5 +88,8 @@ export function createTriggerApiRouter(config) {
     logger,
   });
 
-  return { triggerDispatchService, router };
+  // `triggerConfig` is the LIVE registry object the repository mutates in place
+  // when a tag is renamed, not a copy — a consumer holding it sees a card
+  // enrolled at runtime without a reload.
+  return { triggerDispatchService, router, triggerConfig };
 }

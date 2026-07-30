@@ -10,7 +10,7 @@
 import express from 'express';
 import cors from 'cors';
 import axios from 'axios';
-import { existsSync } from 'fs';
+import { existsSync, readdirSync } from 'fs';
 import { execSync } from 'child_process';
 import path, { join } from 'path';
 
@@ -2598,6 +2598,18 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   // Reuse householdDir from earlier (line 157)
   const loadFile = (relativePath) => haLoadYaml(path.join(householdDir, relativePath));
   const saveFile = (relativePath, data) => haSaveYaml(path.join(householdDir, relativePath), data);
+  // Directory listing for config that is split into grouped files (NFC tag
+  // bindings: books.yml, cards.yml, …). Returns [] when the directory is absent
+  // so a household still on the single-file layout loads unchanged.
+  const listDir = (relativePath) => {
+    try {
+      return readdirSync(path.join(householdDir, relativePath))
+        .filter((f) => /\.ya?ml$/i.test(f))
+        .sort();
+    } catch {
+      return [];
+    }
+  };
 
   const { EventAggregationService } = await import('./3_applications/home/EventAggregationService.mjs');
   const eventAggregationService = new EventAggregationService({
@@ -2800,7 +2812,8 @@ export async function createApp({ server, logger, configPaths, configExists, ena
 
   // Trigger dispatch (NFC modality source: apps/nfc/config.yml; barcode modality
   // shares this same dispatch core — see the barcode-relay wiring just below).
-  const { router: triggerRouter, triggerDispatchService } = createTriggerApiRouter({
+  const { router: triggerRouter, triggerDispatchService, triggerConfig } = createTriggerApiRouter({
+    listDir,
     deviceServices,
     wakeAndLoadService,
     haGateway: homeAutomationAdapters.haGateway,
@@ -2815,6 +2828,21 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     logger: rootLogger.child({ module: 'trigger' }),
   });
   v1Routers.trigger = triggerRouter;
+
+  // NFC taps arriving on a hardware-relay topic (the omr-relay carries an M5
+  // Unit NFC alongside the bubble-sheet reader). One tag registry decides who
+  // owns the tag: a personal card goes to School and prints an agenda, anything
+  // else falls through to the normal trigger pipeline like any other reader.
+  const { createNfcTapIngress } = await import('#composition/modules/nfcTapIngress.mjs');
+  const nfcTapIngress = createNfcTapIngress({
+    eventBus,
+    topics: ['omr'],
+    triggerConfig,
+    triggerDispatchService,
+    resolvePersonalCard: schoolLifecycle.useCases?.resolvePersonalCard ?? null,
+    location: configService.getHouseholdAppConfig?.(householdId, 'school')?.lifecycle?.nfcLocation ?? null,
+    logger: rootLogger.child({ module: 'nfc-tap' }),
+  });
 
   // Every scan in the house resolves through ONE vocabulary. The five branches
   // the relay's `onScan` used to hold inline (school, nutriscan, UPC, trigger,

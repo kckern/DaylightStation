@@ -22,6 +22,7 @@
  */
 
 import { ValidationError } from '#domains/core/errors/ValidationError.mjs';
+import { canonicalizeNfcUid } from '#domains/trigger/nfcUid.mjs';
 
 const RESERVED_KEYS = new Set([
   'action', 'target', 'content',
@@ -77,7 +78,10 @@ export class NfcResolver {
     const locationConfig = registry?.locations?.[location];
     if (!locationConfig) return null;
 
-    const uid = String(value || '').toLowerCase();
+    // Canonical, not merely lowercased. A reader reporting `04669C0FCB2A81` and
+    // config spelling the same card `04_66_9c_0f_cb_2a_81` must resolve to ONE
+    // tag; lowercasing alone left the packed form permanently unknown.
+    const uid = canonicalizeNfcUid(value);
     const tag = registry?.tags?.[uid];
     if (!tag) return null;
 
