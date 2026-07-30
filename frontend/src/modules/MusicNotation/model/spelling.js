@@ -39,6 +39,14 @@
 // correct one (a descending ♭2 shows as ♯1). Fixing that needs the note AFTER it,
 // which a live display doesn't have yet.
 
+// NOT the same speller as model/spellMidi.js, on purpose. spellMidi answers
+// "how does the SOUNDING key spell this struck MIDI note" — fifths-keyed,
+// returns {step, alter, octave}, and spells every non-diatonic note with
+// SHARPS (wet ink has no chord/degree context to lean on). This module answers
+// "how does this key/chord spell this pitch class" — degree-relative leans,
+// chord-quality tie-breaks, octaveless. Merging them would change wet-ink
+// chromatic spelling or force a fifths↔name bridge nobody consumes.
+
 const mod12 = (n) => ((n % 12) + 12) % 12;
 
 const LETTERS = ['C', 'D', 'E', 'F', 'G', 'A', 'B'];

@@ -54,6 +54,15 @@ describe('usePracticeRecord', () => {
     expect(result.current.record).toEqual({});
   });
 
+  it('a null user (roster pending or failed) runs history-less but LOADED — Learn auto-range must not wait on the roster', async () => {
+    mockUser = null;
+    const { result } = renderHook(() => usePracticeRecord({ scoreId: 'files:x.musicxml', fingerprint: FP }));
+    await waitFor(() => expect(result.current.loaded).toBe(true));
+    expect(calls).toHaveLength(0); // no GET for a non-persistent user
+    expect(result.current.persistent).toBe(false);
+    expect(result.current.record).toEqual({});
+  });
+
   it('reports whether writes can persist, so callers can log WHY a write was skipped', async () => {
     // Without this, a caller logging "no best banked" cannot distinguish a guest
     // (nothing can ever persist) from a run that simply was not an improvement —

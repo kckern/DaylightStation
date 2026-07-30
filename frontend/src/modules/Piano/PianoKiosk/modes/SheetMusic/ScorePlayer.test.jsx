@@ -711,6 +711,40 @@ describe('ScorePlayer — Learn cycle instrumentation feeds the practice record 
     expect(h.recordCycle).toHaveBeenCalledTimes(1);
   });
 
+  it('a loop OFF→ON toggle discards wrongs from the dead gate session — the new session\'s first clean pass counts clean', () => {
+    h.layoutExtras = TWO_MEASURE_LEARN;
+    renderPlayer();
+    selectFullRange();
+    settleCycle();
+    play(63);       // a wrong lands mid-cycle (cursor on measure 0)
+    toggleLoop();   // gate OFF — the partial cycle dies with its session
+    toggleLoop();   // gate back ON at the in-point — a fresh session
+    playFullPass(); // clean pass
+    expect(h.recordCycle).toHaveBeenCalledTimes(1);
+    expect(h.recordCycle).toHaveBeenCalledWith({
+      measureIndices: [0, 1],
+      wrongMeasures: new Set(), // the pre-toggle wrong did NOT leak in
+      bucket: 'both',
+    });
+  });
+
+  it('Restart mid-cycle discards accumulated wrongs — the pass after Restart can be clean', () => {
+    h.layoutExtras = TWO_MEASURE_LEARN;
+    renderPlayer();
+    selectFullRange();
+    settleCycle();
+    play(64); // satisfies step 0 → cursor to step 1 (Restart needs step > 0 to enable)
+    play(63); // a wrong against step 1 → measure 1 tainted in the abandoned pass
+    act(() => { fireEvent.click(screen.getByRole('button', { name: 'Restart' })); });
+    playFullPass(); // a clean pass from the in-point
+    expect(h.recordCycle).toHaveBeenCalledTimes(1);
+    expect(h.recordCycle).toHaveBeenCalledWith({
+      measureIndices: [0, 1],
+      wrongMeasures: new Set(), // the pre-Restart wrong did NOT leak in
+      bucket: 'both',
+    });
+  });
+
   // ── The completion card rides the WHOLE-PIECE wrap, not the tracker's onComplete ──
   // useFollowTracker fires onComplete only when it advances past the last step with
   // NO range (`atEnd = !range && …`), but the tracker only drives the cursor inside
@@ -1477,6 +1511,27 @@ describe('ScorePlayer — Polish tempo tiers (wave-3 H)', () => {
   };
   const position = () => screen.getByTestId('score-position').textContent;
 
+  // Polish runs a SILENT step timeline — pauseForRebuild must not panic a piano
+  // the kiosk never played through while the player is holding keys (Task 4).
+  // holdLayout keeps the stub's re-engrave publish pending (M3's resume gate),
+  // so the rebuild-resume effect can't race in and cancel the delayed panic
+  // before the assertion — isolating pauseForRebuild's own guard.
+  it('a transpose during a silent Polish run sends no panic — Polish never sounds through the kiosk', async () => {
+    h.layoutExtras = tierFixture(3, 1);
+    renderPlayer();
+    pickMode('Polish');
+    await act(async () => {});
+    await pressPlay();
+    act(() => vi.advanceTimersByTime(COUNT_IN_MS)); // run active, transport ticking silently
+    h.sendPanic.mockClear();                        // drain anything the entry path sent
+    h.holdLayout = true;
+    act(() => { fireEvent.click(screen.getByRole('button', { name: 'Key' })); });
+    act(() => { fireEvent.click(screen.getByRole('button', { name: /\+1/ })); }); // → pauseForRebuild('transpose')
+    expect(screen.queryByRole('button', { name: 'Pause' })).toBeNull(); // paused, held for the re-engrave
+    act(() => vi.advanceTimersByTime(1000));
+    expect(h.sendPanic).not.toHaveBeenCalled();
+  });
+
   it('a completed run at 80% banks the medium tier best for the bucket, and the summary shows the run + all four bests (spec 1)', async () => {
     // Three measures, all played dead on the beat → every combined is 1.0 → 100.
     h.layoutExtras = tierFixture(3, 0.8);
@@ -1623,6 +1678,20 @@ describe('ScorePlayer — Polish tempo tiers (wave-3 H)', () => {
     // The score is still reported — the run HAD a score, it just cannot be banked.
     expect(events[0].score).toBeGreaterThan(0);
     expect(h.recordTierBest).not.toHaveBeenCalled();
+  });
+
+  it('the live score readout keeps the RUN\'s tier across a mid-run tempo change — no overclock credit on a voided run', async () => {
+    h.layoutExtras = tierFixture(3, 1);
+    renderPlayer();
+    pickMode('Polish');
+    await act(async () => {});
+    await pressPlay();                        // 100% — tier 'full', no multiplier
+    act(() => vi.advanceTimersByTime(COUNT_IN_MS));
+    play(60);
+    act(() => vi.advanceTimersByTime(1000));  // m0 graded — a live base score exists
+    const before = position().split(' · ')[0]; // e.g. "100%"
+    pickTempo('125%');                        // voids the run; the live knob is now 'overclocked'
+    expect(position().split(' · ')[0]).toBe(before); // the readout must NOT jump ×1.25
   });
 
   it('logs reason "not-better" when the run did not beat the stored best (and skips the write)', async () => {
@@ -2076,6 +2145,22 @@ describe('ScorePlayer — Polish tempo tiers (wave-3 H)', () => {
     expect(h.recordTierBest).toHaveBeenCalledTimes(2);
     expect(h.recordTierBest.mock.calls[1][0]).toMatchObject({ bucket: 'both', tier: 'overclocked' });
   });
+
+  it('a manual pause opens the summary with no current-tier highlight — a partial run belongs to no column', async () => {
+    h.layoutExtras = tierFixture(3, 0.8);
+    renderPlayer();
+    pickMode('Polish');
+    await act(async () => {});
+    pickTempo('80%');
+    await pressPlay();
+    act(() => vi.advanceTimersByTime(COUNT_IN_MS));
+    play(60);
+    act(() => vi.advanceTimersByTime(1000)); // one measure graded — a real partial run
+    screen.getByRole('button', { name: 'Pause' }).click(); // → toggleRun's finalize+open path
+    await act(async () => {});
+    expect(document.querySelector('.piano-score-run-summary')).not.toBeNull();
+    expect(document.querySelectorAll('.piano-score-run-tier--current').length).toBe(0);
+  });
 });
 
 describe('ScorePlayer — Listen mode', () => {
@@ -2372,16 +2457,23 @@ describe('ScorePlayer — Listen mode', () => {
   });
 
   it('a tail-measure range in Listen arms no wrap dwell at all — nothing restarts itself (L6, retired)', async () => {
-    // Wave-2 shape: a tail-measure Listen loop ended in a ZERO-SPAN dwell (the
-    // loop's in-point IS the last playTimeline event), so onDone dwelled one beat
-    // before restarting, and a hand toggle mid-dwell had to cancel that pending
-    // restart or a stale timer would fire seconds later against a rebuilt
-    // timeline. Wave-3 §0 removes the dwell from Listen entirely: Listen holds no
-    // range, so the run simply completes. The observable that told a canceled
-    // dwell from a fired one is the same one that proves the dwell is gone —
-    // onDone's loop branch logs `score.transport.loop-wrap` every time it runs
-    // (armed OR restarted), and here it must never run. The uncommanded-audio
-    // half is kept too: nothing may sound after the run ends.
+    // The transport's loop-wrap branch is deleted outright: `range` is
+    // Learn-only, and Learn's gate runs the transport with an empty timeline,
+    // so no mode can ever reach onDone (or onEvent's step handler) with a
+    // non-null range — no transport wrap can exist. This test survives as
+    // the regression guard: nothing may restart itself after a tail-measure
+    // run in Listen, and `score.transport.loop-wrap` (the log event the
+    // deleted branch used to emit) must never be seen again — the `wraps()`
+    // checks below now guard against reintroduction, not a live code path.
+    //
+    // The fixture keeps its zero-span shape (m2, the tail measure, has no
+    // note entries at all, at either staff) because that shape is exactly
+    // what the deleted loop-wrap machinery had to handle correctly. It also
+    // means THIS run never calls sendNoteAt even when it genuinely plays —
+    // so proof the run wasn't silently skipped is log-based
+    // (`score.transport.play` / `score.transport.done`), not audio; the
+    // "nothing happened after" negatives are only non-vacuous once that's
+    // established.
     h.layoutExtras = {
       tempoEntries: [{ onsetQuarter: 0, bpm: 60 }],
       events: [
@@ -2417,6 +2509,7 @@ describe('ScorePlayer — Listen mode', () => {
       return c;
     });
     const wraps = () => emitted.filter(([ev]) => ev === 'score.transport.loop-wrap');
+    const hasEvent = (name) => emitted.some(([ev]) => ev === name);
 
     renderPlayer();
     // Loop measure 2 only (tail measure — the zero-span case), armed in Learn:
@@ -2429,6 +2522,11 @@ describe('ScorePlayer — Listen mode', () => {
     await act(async () => {});
     act(() => vi.advanceTimersByTime(200)); // where wave-2 armed the zero-span dwell
     expect(wraps()).toEqual([]);            // …nothing is armed: Listen holds no range
+    // Non-vacuous anchor (log-based — see the comment above): the run really
+    // started and really reached onDone, so the negatives below aren't
+    // guarding against a run that never happened at all.
+    expect(hasEvent('score.transport.play')).toBe(true);
+    expect(hasEvent('score.transport.done')).toBe(true);
     h.sendNoteAt.mockClear();
 
     // A hand toggle after the run — the wave-2 trigger for the stale restart.
@@ -2701,9 +2799,11 @@ describe('ScorePlayer — Learn state matrix (wave-3 B)', () => {
   // ── A matrix change must never panic a SILENT kiosk (fix round 1) ───────────
   // silenceScheduled() arms a delayed CC123 unconditionally — silence() self-
   // guards on the sounding ledger, but the timer does not. In Learn's gate the
-  // player is holding keys down, so a stray panic cuts off THEIR notes. A quiet
-  // matrix change (mount, arming a range, flipping the loop with nothing playing)
-  // must send nothing at all; an audible one must still flush.
+  // player is holding keys down, so a stray panic cuts off THEIR notes. The same
+  // guard now covers stopForMatrixChange, onMode, AND pauseForRebuild: a quiet
+  // matrix change (mount, arming a range, flipping the loop with nothing playing),
+  // a silent mode switch, or a silent-run rebuild must send nothing at all; an
+  // audible one must still flush.
   it('mounting the player sends no panic — nothing has played yet', async () => {
     h.layoutExtras = THREE;
     renderPlayer();
@@ -2712,12 +2812,19 @@ describe('ScorePlayer — Learn state matrix (wave-3 B)', () => {
     expect(h.sendPanic).not.toHaveBeenCalled();
   });
 
-  // Entering a mode flushes unconditionally (onMode, pre-existing) — let that
-  // delayed panic land and reset the spy, so these assert the matrix change ALONE.
+  it('entering a mode on a silent kiosk sends no panic — held piano keys survive a mode switch', async () => {
+    h.layoutExtras = THREE;
+    await enterLearnFresh();               // a mode change with nothing sounding
+    act(() => vi.advanceTimersByTime(1000)); // well past lookahead + 60ms
+    expect(h.sendPanic).not.toHaveBeenCalled();
+  });
+
+  // Entering a mode is guarded too now (onMode) — on a silent kiosk it sends
+  // nothing, so this is a plain settle before the matrix-change assertions below.
   const settleInSilentLearn = async () => {
     h.layoutExtras = THREE;
     await enterLearnFresh();
-    act(() => vi.advanceTimersByTime(1000)); // drain the mode-change flush
+    act(() => vi.advanceTimersByTime(1000)); // settle
     h.sendPanic.mockClear();
   };
 

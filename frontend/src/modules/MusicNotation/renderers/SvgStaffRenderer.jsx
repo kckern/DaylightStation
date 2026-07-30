@@ -1,5 +1,6 @@
 import { useMemo, useRef, useEffect, useState, useCallback } from 'react';
 import { getStaffPosition } from '../model/pitch.js';
+import { stemDirectionFor, stemLengthUnits } from '../model/stems.js';
 
 /**
  * SvgStaffRenderer — hand-rolled SVG staff showing a set of target pitches
@@ -103,12 +104,16 @@ export function SvgStaffRenderer({ targetPitches = [], activeNotes = null, match
           const baseX = 65;
 
           const sorted = [...notePositions].sort((a, b) => a.position - b.position);
-          const avgPos = sorted.reduce((s, n) => s + n.position, 0) / sorted.length;
-          const stemUp = avgPos <= 4;
+          // Shared engraving rules (model/stems.js): the notehead farthest from
+          // the middle line decides the group; the outer notehead (the one the
+          // stem extends beyond) sets the length, far-ledger extension included.
+          const dir = stemDirectionFor(sorted.map((n) => n.position));
+          const stemUp = dir === 'up';
+          const outerPos = stemUp ? sorted[sorted.length - 1].position : sorted[0].position;
 
           const noteYs = sorted.map((np) => bottomLineY - np.position * stepSize);
 
-          const stemLen = lineSpacing * 3.5;
+          const stemLen = lineSpacing * stemLengthUnits(outerPos, dir);
           const stemX = stemUp ? baseX + 8 : baseX - 8;
           const stemTop = stemUp ? Math.min(...noteYs) - stemLen : Math.min(...noteYs);
           const stemBottom = stemUp ? Math.max(...noteYs) : Math.max(...noteYs) + stemLen;

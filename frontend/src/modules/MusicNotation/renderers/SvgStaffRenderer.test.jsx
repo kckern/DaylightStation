@@ -31,4 +31,24 @@ describe('SvgStaffRenderer', () => {
     );
     expect(ghosts).toHaveLength(1);
   });
+
+  // Stem rules are shared with wet ink (MusicNotation/model/stems.js): the
+  // notehead farthest from the middle line decides, and a middle-line note
+  // stems DOWN — engraving convention, the opposite of the old avg<=4 rule.
+  it('a middle-line note (B4) stems DOWN, matching wet ink', () => {
+    const { container } = render(<SvgStaffRenderer targetPitches={[71]} />);
+    expect(container.querySelector('.action-staff__stem').getAttribute('x1')).toBe('57'); // baseX - 8 = down
+  });
+
+  it('a low note (E4) stems UP', () => {
+    const { container } = render(<SvgStaffRenderer targetPitches={[64]} />);
+    expect(container.querySelector('.action-staff__stem').getAttribute('x1')).toBe('73'); // baseX + 8 = up
+  });
+
+  it('the farthest-from-middle notehead decides a chord, not the average', () => {
+    // Positions 2/3/6: avg 3.67 (old rule → up); farthest is 6, two above the
+    // middle line (correct rule → down).
+    const { container } = render(<SvgStaffRenderer targetPitches={[67, 69, 74]} />);
+    expect(container.querySelector('.action-staff__stem').getAttribute('x1')).toBe('57');
+  });
 });
