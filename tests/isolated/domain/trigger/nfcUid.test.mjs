@@ -38,4 +38,34 @@ describe('canonicalizeNfcUid', () => {
     expect(canonicalizeNfcUid('04_66_9c_0f_cb_2a_81'))
       .not.toBe(canonicalizeNfcUid('04_66_9c_0f_cc_2a_81'));
   });
+
+  // Found the hard way while migrating the live registry: stripping separators
+  // can turn an unambiguous string into valid YAML scientific notation. Both of
+  // these canonicalize to something Number() reads as Infinity, so an unquoted
+  // dump collapses two distinct audiobook tags into one duplicated mapping key
+  // and the file stops parsing at all.
+  it('produces uids that stay DISTINCT even when they look like scientific notation', () => {
+    const a = canonicalizeNfcUid('83_8e_68_06');
+    const b = canonicalizeNfcUid('04_21_e5_21_47_02_89');
+    expect(a).toBe('838e6806');
+    expect(b).toBe('0421e521470289');
+    expect(a).not.toBe(b);
+    // The trap itself: as numbers they are indistinguishable.
+    expect(Number(a)).toBe(Infinity);
+    expect(Number(b)).toBe(Infinity);
+  });
+
+  it('survives a YAML round-trip as two separate keys', async () => {
+    // The registry is persisted as YAML, so "distinct in JS" is not enough —
+    // the writer must quote these or the two tags become one on reload.
+    const { default: yaml } = await import('js-yaml');
+    const registry = {
+      [canonicalizeNfcUid('83_8e_68_06')]: { plex: 620707 },
+      [canonicalizeNfcUid('04_21_e5_21_47_02_89')]: { plex: 456598 },
+    };
+    const reloaded = yaml.load(yaml.dump(registry));
+    expect(Object.keys(reloaded)).toHaveLength(2);
+    expect(reloaded['838e6806'].plex).toBe(620707);
+    expect(reloaded['0421e521470289'].plex).toBe(456598);
+  });
 });
