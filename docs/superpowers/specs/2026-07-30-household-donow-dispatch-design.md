@@ -233,6 +233,25 @@ feature by paging parents forever. These rules are the spec, not hints:
 - **`nextMove` gains a `launch` arm:** state `created` + `unit.launch` →
   kind `'launch'`. After the outcome records, re-scans hit the shipped
   served/already-done paths — no new wait states.
+- **Surface programs — how daily PE actually exists.** A generic
+  `SurfaceProgramLauncher` (one class) is registered once per entry in a
+  new `school.yml` `programs:` list:
+  `- { id: pe-daily, label: 'P.E.', surface: garage-fitness,
+  action: { episode: plex:... }, subject: skills }` — config selects from
+  the closed surface set, exactly the `categories.mjs` posture. Its
+  `launch()` calls `DoNowService.dispatch` (`requestedBy:
+  'school-program'`); its `status()` derives `doneToday` from the DoNow
+  **dispatch log** (below) — a dispatch for this learner + program this
+  study day, honor-system by household decision; `score` null;
+  `progressLabel` null. The parent then assigns `program: pe-daily` units
+  like any other. Program ids from config must not collide with code
+  launchers (`language`) — collision is a boot error.
+- **The dispatch log.** Every `dispatched` decision appends one line to
+  `data/apps/donow/log/{YYYY-MM-DD}.yml`
+  (`{ at, surface, decision, learnerId, requestedBy, ref, approvalId? }`)
+  — append-only, date-sharded, the economy-ledger pattern. It exists for
+  audit regardless; surface programs read it as their evidence source
+  (derived on read, never a stored rollup).
 - **`ResolveSubjectNext` routing** gains one arm: a unit whose composition
   is a `launch:` block routes `subject_next` scans to
   `DoNowService.dispatch({ surface, action, learnerId, requestedBy:
