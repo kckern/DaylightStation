@@ -731,11 +731,15 @@ and referenced question banks at `data/content/quizzes/<bankId>.yml` — a bank 
 the path under that directory. A unit whose bank is missing is **rejected at load**
 with `school.curriculum.invalid-units` rather than failing when a child opens it.
 
-**The printed agenda is sectioned by subject, not listed by unit.** Every
-assigned entry — across every course and every standalone unit — is grouped by
-its `subject` (the nine-subject wall order, then `other`); only a subject with
-at least one assigned entry gets a block, and each block offers **at most one**
-scannable action. A subject already served today prints its header with a
+**The printed agenda is sectioned by subject, not listed by unit.** It opens
+with the standard header — the learner's display name (resolved from the
+household roster) knocked out of a full-width black band; thermal has no ink
+concerns. Every assigned entry — across every course and every standalone
+unit — is grouped by its `subject` (the nine-subject wall order, then
+`other`); only a subject with at least one assigned entry gets a block, and
+each block offers **at most one** scannable action, drawn with its subject's
+shelf icon — the same nine SVGs the School home grid renders
+(`frontend/src/modules/School/home/icons/`), shared rather than copied. A subject already served today prints its header with a
 `done today` mark and its progress so far — no code. Otherwise it prints one
 line naming the next thing to do (or, if everything assigned in that subject is
 locked, the lock's own remedy) with a QR beside it. "Served today" comes from
