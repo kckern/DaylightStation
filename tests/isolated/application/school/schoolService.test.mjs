@@ -148,6 +148,40 @@ describe('sessions + answers', () => {
   });
 });
 
+describe('activeSittings (DoNow portal-surface occupancy source, spec §5/§5.1)', () => {
+  it('projects open sittings to {userId, lastActiveAt} ONLY — no bank/mode/session-object leakage', () => {
+    svc.openSession({ userId: 'kid1', bankId: 'caps', mode: 'quiz' });
+    const sittings = svc.activeSittings();
+    expect(sittings).toEqual([{ userId: 'kid1', lastActiveAt: clock.t }]);
+  });
+  it('a guest sitting (userId null) is still projected — occupancy treats null as "someone, unidentified"', () => {
+    svc.openSession({ bankId: 'animals', mode: 'quiz' });
+    expect(svc.activeSittings()).toEqual([{ userId: null, lastActiveAt: clock.t }]);
+  });
+  it('lastActiveAt advances on activity (answer touches #session -> bumps lastActiveAt)', () => {
+    const { sessionId } = svc.openSession({ userId: 'kid1', bankId: 'caps', mode: 'quiz' });
+    clock.t += 60_000;
+    svc.answer({ sessionId, itemId: 'q1', given: 'Olympia' });
+    expect(svc.activeSittings()).toEqual([{ userId: 'kid1', lastActiveAt: clock.t }]);
+  });
+  it('expired sittings vanish after the sweep — an abandoned session is not reported as active', () => {
+    svc.openSession({ userId: 'kid1', bankId: 'caps', mode: 'quiz' });
+    clock.t += 2 * 60 * 60 * 1000 + 1; // past SESSION_TTL_MS; nobody touched it again
+    // activeSittings() itself must sweep — it must not rely on some OTHER call
+    // (openSession/#session) having run first to clean up the stale entry.
+    expect(svc.activeSittings()).toEqual([]);
+  });
+  it('a fresh sitting survives alongside an expired one being swept out', () => {
+    svc.openSession({ userId: 'kid1', bankId: 'caps', mode: 'quiz' });
+    clock.t += 2 * 60 * 60 * 1000 + 1;
+    svc.openSession({ userId: 'kid2', bankId: 'caps', mode: 'quiz' });
+    expect(svc.activeSittings()).toEqual([{ userId: 'kid2', lastActiveAt: clock.t }]);
+  });
+  it('no open sittings -> empty array, not null/undefined', () => {
+    expect(svc.activeSittings()).toEqual([]);
+  });
+});
+
 describe('results', () => {
   it('folds the log per bank, quiz and flashcard never merged; items quiz-only', () => {
     ds.readAllAttempts = () => [
