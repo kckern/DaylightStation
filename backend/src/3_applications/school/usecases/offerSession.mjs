@@ -72,7 +72,11 @@ export function nextMove(unit, state) {
       if (unit.media) return { kind: 'play', tokenClass: 'select_unit', label: 'watch or listen' };
       if (unit.document) return { kind: 'print', tokenClass: 'select_unit', label: 'print your sheet' };
       if (unit.bank) return { kind: 'screen', tokenClass: 'select_unit', label: 'answer on the screen' };
-      return { kind: 'nothing', tokenClass: null, label: 'start this' };
+      // A unit with none of media/document/bank still gets a `select_unit`
+      // token — the scan must never dead-end. Scanning it lands in
+      // `ResolveScanAction#start`'s empty branch ("Nothing to do there yet.
+      // Tell a grown-up."), which exists precisely for this case.
+      return { kind: 'nothing', tokenClass: 'select_unit', label: 'start this' };
 
     case 'media_completed':
       // The reducer says `issue_document` here because it never sees units. A

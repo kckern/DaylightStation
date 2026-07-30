@@ -193,6 +193,26 @@ describe('progression', () => {
   });
 });
 
+describe('a unit with nothing to scan into (no media, document, or bank)', () => {
+  it('still mints a select_unit token — the scan must never dead-end', async () => {
+    // A unit graded entirely by a grown-up's own judgment (`review`, no
+    // bank/document/media) is a legitimate composition — but `created` still
+    // has to hand out a scannable ticket. Scanning it lands in
+    // ResolveScanAction#start's empty branch ("Nothing to do there yet. Tell
+    // a grown-up."), which exists precisely so this offer is never a dead end.
+    build({
+      units: rawUnits({
+        [MEDIA_UNIT]: { media: undefined, bank: undefined, review: 'A grown-up reviews this by hand.' },
+      }),
+    });
+    const result = await useCase.execute({ learnerId: 'kid1' });
+    const offer = offerFor(result, MEDIA_UNIT);
+    expect(offer.token).toBeTruthy();
+    expect(offer.tokenClass).toBe('select_unit');
+    expect(offer.label).toContain('start this');
+  });
+});
+
 describe('nothing to do', () => {
   it('says so when a learner has no assignment at all', async () => {
     build({ assignment: null });
