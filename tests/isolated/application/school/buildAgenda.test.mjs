@@ -12,17 +12,26 @@ import {
   MEDIA_UNIT, WORKSHEET_UNIT, OMR_UNIT, MIXED_UNIT, fixtureUnit,
 } from '#testlib/school/lifecycleFixtures.mjs';
 
+// A program id used only by the launcher-path tests below. Registered with
+// CurriculumAccess in every test so a test can turn WORKSHEET_UNIT into a
+// program unit without repeating the plumbing.
+const PROGRAM_ID = 'lang-app';
+
 let clock, catalog, curriculum, sessions, tokens, assignments, useCase;
 
-const build = ({ assignment = { learnerId: 'kid1', courses: ['math-fractions'] }, units } = {}) => {
+const build = ({
+  assignment = { learnerId: 'kid1', courses: ['math-fractions'] }, units, launchers = new Map(),
+} = {}) => {
   clock = fakeClock();
   catalog = new FakeCatalog({ units: units ?? rawUnits(), documents: rawDocuments(), manifests: rawManifests() });
-  curriculum = new CurriculumAccess({ catalog, bankIds: () => BANK_IDS, clock: clock.epoch, logger: silentLogger });
+  curriculum = new CurriculumAccess({
+    catalog, bankIds: () => BANK_IDS, programIds: () => [PROGRAM_ID], clock: clock.epoch, logger: silentLogger,
+  });
   sessions = new FakeSessionRepository();
   tokens = new FakeTokenRegistry();
   assignments = new FakeAssignmentStore(assignment ? [assignment] : []);
   useCase = new BuildAgenda({
-    curriculum, assignments, sessions, tokens,
+    curriculum, assignments, sessions, tokens, launchers,
     clock: clock.now, rng: seededRng(7), newSessionId: sequentialIds(),
     logger: silentLogger,
   });
@@ -30,7 +39,22 @@ const build = ({ assignment = { learnerId: 'kid1', courses: ['math-fractions'] }
 
 beforeEach(() => build());
 
-const offerFor = (result, unitId) => result.offers.find((o) => o.unitId === unitId);
+/** Turn WORKSHEET_UNIT into a standalone program unit in a different subject —
+ * used only by the launcher-path tests, so "still yields other subjects" has
+ * a second, independently-gated subject to check. */
+const withLanguageProgram = (assignmentUnits = []) => ({
+  units: rawUnits({
+    [WORKSHEET_UNIT]: {
+      subject: 'language', program: PROGRAM_ID, cadence: 'once',
+      courseId: undefined, sequence: undefined, passing: undefined,
+      retry: undefined, reward: undefined, review: undefined, document: undefined,
+    },
+  }),
+  assignment: { learnerId: 'kid1', courses: ['math-fractions'], units: [WORKSHEET_UNIT, ...assignmentUnits] },
+});
+
+const offerFor = (result, subject) => result.offers.find((o) => o.subject === subject);
+const sectionFor = (result, subject) => result.sections.find((s) => s.subject === subject);
 const actions = (doc) => doc.blocks.filter((b) => b.type === 'scan_action');
 const transcript = (doc) => doc.blocks.map((b) => b.md ?? b.label ?? '').join('\n');
 
@@ -40,23 +64,15 @@ describe('the agenda document', () => {
     expect(validateDocument(document).errors).toEqual([]);
   });
 
-  it('offers exactly the unlocked work — one scan action per choice', async () => {
+  it('offers exactly the unlocked work — one scan action per live subject', async () => {
     const result = await useCase.execute({ learnerId: 'kid1' });
-    expect(result.offers.map((o) => o.unitId)).toEqual([MEDIA_UNIT]);
+    expect(result.offers.map((o) => o.subject)).toEqual(['math']);
     expect(actions(result.document)).toHaveLength(1);
-  });
-
-  it('prints locked units WITH their remedy rather than hiding them', async () => {
-    const text = transcript((await useCase.execute({ learnerId: 'kid1' })).document);
-    // Titles come from the fixture, never retyped: a remedy line that names a
-    // unit by a title nothing carries is the drift this suite exists to catch.
-    expect(text).toContain(fixtureUnit(WORKSHEET_UNIT).title);
-    expect(text).toContain(`Finish “${fixtureUnit(MEDIA_UNIT).title}” first`);
   });
 
   it('labels the action from the unit composition, not the reducer default', async () => {
     // The first move on a video unit is to watch it, not to print a sheet.
-    expect(offerFor(await useCase.execute({ learnerId: 'kid1' }), MEDIA_UNIT).label).toContain('watch or listen');
+    expect(offerFor(await useCase.execute({ learnerId: 'kid1' }), 'math').label).toContain('watch or listen');
   });
 
   it('carries only opaque tokens — no learner, unit or policy on the paper', async () => {
@@ -64,13 +80,25 @@ describe('the agenda document', () => {
     actions(document).forEach((action) => {
       expect(isSchoolToken(action.action)).toBe(true);
       expect(action.action).not.toContain('kid1');
-      expect(action.action).not.toContain('fractions');
+      expect(action.action).not.toContain('math');
     });
+  });
+
+  it('prints the remedy line when nothing in the subject is available yet', async () => {
+    // Only unit 2 assigned (not unit 1): the sectioned agenda shows ONE next
+    // thing per subject, so this only surfaces once nothing else in "math" is
+    // in progress or available — unlike v1, where every locked unit printed.
+    build({ assignment: { learnerId: 'kid1', units: [WORKSHEET_UNIT] } });
+    const result = await useCase.execute({ learnerId: 'kid1' });
+    const text = transcript(result.document);
+    expect(text).toContain(`Finish “${fixtureUnit(MEDIA_UNIT).title}” first`);
+    expect(result.offers).toEqual([]);
+    expect(tokens.ofClass('subject_next')).toEqual([]);
   });
 });
 
 describe('sessions', () => {
-  it('creates one work session per offered choice, before anything is issued', async () => {
+  it('creates one work session for the subject offer, before anything is issued', async () => {
     const result = await useCase.execute({ learnerId: 'kid1' });
     expect(result.createdSessions).toEqual(['ses_1']);
     expect(sessions.types('ses_1')).toEqual(['created']);
@@ -81,17 +109,8 @@ describe('sessions', () => {
     const first = await useCase.execute({ learnerId: 'kid1' });
     const second = await useCase.execute({ learnerId: 'kid1' });
     expect(second.createdSessions).toEqual([]);
-    expect(offerFor(second, MEDIA_UNIT).sessionId).toBe(offerFor(first, MEDIA_UNIT).sessionId);
+    expect(offerFor(second, 'math').sessionId).toBe(offerFor(first, 'math').sessionId);
     expect(sessions.ids()).toEqual(['ses_1']);
-  });
-
-  it('mints a fresh ticket for the same session on a reprint', async () => {
-    const first = await useCase.execute({ learnerId: 'kid1' });
-    const second = await useCase.execute({ learnerId: 'kid1' });
-    expect(second.offers[0].token).not.toBe(first.offers[0].token);
-    // Both still resolve to the same work: an older sheet is not dead paper.
-    expect((await tokens.get(first.offers[0].token)).subject.sessionId)
-      .toBe((await tokens.get(second.offers[0].token)).subject.sessionId);
   });
 
   it('does not open a session for a locked unit', async () => {
@@ -100,28 +119,91 @@ describe('sessions', () => {
   });
 });
 
-describe('tokens', () => {
-  it('registers every minted token against its session', async () => {
+describe('subject tokens', () => {
+  it('mints ONE subject_next token per live subject, registered against learner+subject', async () => {
     const result = await useCase.execute({ learnerId: 'kid1' });
-    const record = await tokens.get(result.offers[0].token);
-    expect(record).toMatchObject({ tokenClass: 'select_unit', subject: { sessionId: 'ses_1' } });
+    const minted = tokens.ofClass('subject_next');
+    expect(minted).toHaveLength(1);
+    expect(minted[0]).toMatchObject({ tokenClass: 'subject_next', subject: { learnerId: 'kid1', subject: 'math' } });
+    expect(minted[0].token).toBe(offerFor(result, 'math').token);
+    expect(isSchoolToken(minted[0].token)).toBe(true);
   });
 
-  it('gives agenda tokens a conservative expiry', async () => {
+  it('gives the subject token a conservative default expiry (168h)', async () => {
     const result = await useCase.execute({ learnerId: 'kid1' });
-    const record = await tokens.get(result.offers[0].token);
-    expect(Date.parse(record.expiresAt) - Date.parse(record.issuedAt)).toBe(48 * 3_600_000);
+    const record = await tokens.get(offerFor(result, 'math').token);
+    expect(Date.parse(record.expiresAt) - Date.parse(record.issuedAt)).toBe(168 * 3_600_000);
   });
 
-  it('honours a configured token lifetime', async () => {
+  it('honours a configured subjectTokenTtlHours', async () => {
     const short = new BuildAgenda({
       curriculum, assignments, sessions, tokens,
       clock: clock.now, rng: seededRng(3), newSessionId: sequentialIds('s_'),
-      tokenTtlHours: 6, logger: silentLogger,
+      subjectTokenTtlHours: 6, logger: silentLogger,
     });
     const result = await short.execute({ learnerId: 'kid1' });
-    const record = await tokens.get(result.offers[0].token);
+    const record = await tokens.get(offerFor(result, 'math').token);
     expect(Date.parse(record.expiresAt) - Date.parse(record.issuedAt)).toBe(6 * 3_600_000);
+  });
+
+  it('mints a fresh ticket on every reprint, even though the session is reused', async () => {
+    const first = await useCase.execute({ learnerId: 'kid1' });
+    const second = await useCase.execute({ learnerId: 'kid1' });
+    expect(second.offers[0].token).not.toBe(first.offers[0].token);
+    expect((await tokens.get(first.offers[0].token)).subject)
+      .toEqual((await tokens.get(second.offers[0].token)).subject);
+  });
+
+  it('a subject served today mints no fresh token and reports "done today"', async () => {
+    const first = await useCase.execute({ learnerId: 'kid1' });
+    const sessionId = first.offers[0].sessionId;
+    for (const event of [
+      { type: 'issued', artifactId: 'art_1' },
+      { type: 'submitted', transport: 'paper' },
+      { type: 'graded', attemptIds: ['att_1'], percent: 90 },
+      { type: 'outcome_recorded', outcomeId: `out:${sessionId}`, result: 'passed' },
+    ]) {
+      // eslint-disable-next-line no-await-in-loop
+      await sessions.appendEvent(sessionId, { ...event, sessionId, at: clock.iso() });
+    }
+    const mintedBefore = tokens.ofClass('subject_next').length;
+    const second = await useCase.execute({ learnerId: 'kid1' });
+    expect(second.offers).toEqual([]);
+    expect(tokens.ofClass('subject_next')).toHaveLength(mintedBefore);
+    expect(sectionFor(second, 'math')).toMatchObject({ servedToday: true, next: null });
+    expect(transcript(second.document)).toContain('done today');
+  });
+});
+
+describe('sections', () => {
+  it('groups the plan by subject and orders it english < ... < math < ... < language < ... < other', async () => {
+    build(withLanguageProgram());
+    const result = await useCase.execute({ learnerId: 'kid1' });
+    // SUBJECT_IDS order places 'math' well before 'language'; a subject-id
+    // insertion order would put 'language' first since it was assigned second.
+    expect(result.sections.map((s) => s.subject)).toEqual(['math', 'language']);
+  });
+
+  it('a launcher error marks its subject unavailable without touching the rest of the agenda', async () => {
+    // No launcher registered for PROGRAM_ID at all: the "missing launcher"
+    // branch of the try/catch, exercised the same way an actual throw would be.
+    build(withLanguageProgram());
+    const result = await useCase.execute({ learnerId: 'kid1' });
+    expect(sectionFor(result, 'language')).toMatchObject({ programUnavailable: true, next: null });
+    expect(transcript(result.document)).toContain('Not answering right now — try it on the Portal.');
+    // math is a completely different subject/launcher and must still be offered.
+    expect(result.offers.map((o) => o.subject)).toEqual(['math']);
+    expect(offerFor(result, 'math')).toBeTruthy();
+  });
+
+  it('a launcher that throws degrades the same way as a missing one', async () => {
+    build({
+      ...withLanguageProgram(),
+      launchers: new Map([[PROGRAM_ID, { status: async () => { throw new Error('program offline'); } }]]),
+    });
+    const result = await useCase.execute({ learnerId: 'kid1' });
+    expect(sectionFor(result, 'language').programUnavailable).toBe(true);
+    expect(offerFor(result, 'math')).toBeTruthy();
   });
 });
 
@@ -136,8 +218,13 @@ describe('progression', () => {
       { type: 'outcome_recorded', outcomeId: `out:${sessionId}`, result: 'passed' },
       { type: 'rewarded', txnId: 'txn_1', amount: 5 },
     ]) {
+      // eslint-disable-next-line no-await-in-loop
       await sessions.appendEvent(sessionId, { ...event, sessionId, at: clock.iso() });
     }
+    // The whole SUBJECT is "served today" the moment any of its units passes
+    // (agenda.mjs's servedToday rule) — cross the 4am study-day boundary
+    // before re-asking, or the section stays done-for-today with no `next`.
+    clock.advanceDays(1);
     const second = await useCase.execute({ learnerId: 'kid1' });
     expect(second.offers.map((o) => o.unitId)).toEqual([WORKSHEET_UNIT]);
     expect(transcript(second.document)).toContain('print your sheet');
@@ -153,13 +240,15 @@ describe('progression', () => {
       { type: 'media_dispatched', dispatchId: 'dsp_1', target: 'tv', contentId: 'plex:481203' },
       { type: 'media_completed', verified: 'playhead' },
     ]) {
+      // eslint-disable-next-line no-await-in-loop
       await sessions.appendEvent(sessionId, { ...event, sessionId, at: clock.iso() });
     }
     const second = await useCase.execute({ learnerId: 'kid1' });
-    expect(offerFor(second, MEDIA_UNIT).label).toContain('answer on the screen');
+    expect(offerFor(second, 'math').label).toContain('answer on the screen');
     expect(transcript(second.document)).not.toContain('print the questions');
-    // Still scannable: the line is what tells the child the quiz is open.
-    expect(offerFor(second, MEDIA_UNIT).token).toBeTruthy();
+    // Still scannable: the subject ticket is minted regardless of the unit's
+    // own composition — that is what makes it sessionless.
+    expect(offerFor(second, 'math').token).toBeTruthy();
   });
 
   it('still offers the SHEET after the media of a unit that has one', async () => {
@@ -173,13 +262,14 @@ describe('progression', () => {
       { type: 'media_dispatched', dispatchId: 'dsp_1', target: 'tv', contentId: 'plex:481203' },
       { type: 'media_completed', verified: 'playhead' },
     ]) {
+      // eslint-disable-next-line no-await-in-loop
       await sessions.appendEvent(sessionId, { ...event, sessionId, at: clock.iso() });
     }
     const result = await useCase.execute({ learnerId: 'kid1' });
-    expect(offerFor(result, MIXED_UNIT).label).toContain('print the questions');
+    expect(offerFor(result, 'math').label).toContain('print the questions');
   });
 
-  it('offers a mid-flight session the move its state actually allows', async () => {
+  it('offers a mid-flight session the move its state actually allows — still a live ticket', async () => {
     const first = await useCase.execute({ learnerId: 'kid1' });
     const sessionId = first.offers[0].sessionId;
     await sessions.appendEvent(sessionId, {
@@ -187,28 +277,34 @@ describe('progression', () => {
       dispatchId: 'dsp_1', target: 'tv', contentId: 'plex:481203',
     });
     const second = await useCase.execute({ learnerId: 'kid1' });
-    // Mid-play there is nothing to scan: the reducer's next action is to wait.
-    expect(offerFor(second, MEDIA_UNIT).token).toBeNull();
+    // Mid-play there is nothing unit-level to scan, but the SUBJECT ticket is
+    // sessionless and always minted — unlike v1's per-unit token, it does not
+    // go null just because the current move is "wait".
+    expect(offerFor(second, 'math').token).toBeTruthy();
+    expect(offerFor(second, 'math').label).toContain('finish watching');
     expect(transcript(second.document)).toContain('finish watching');
   });
 });
 
 describe('a unit with nothing to scan into (no media, document, or bank)', () => {
-  it('still mints a select_unit token — the scan must never dead-end', async () => {
+  it('still offers a "start this" ticket — the scan must never dead-end', async () => {
     // A unit graded entirely by a grown-up's own judgment (`review`, no
-    // bank/document/media) is a legitimate composition — but `created` still
-    // has to hand out a scannable ticket. Scanning it lands in
-    // ResolveScanAction#start's empty branch ("Nothing to do there yet. Tell
-    // a grown-up."), which exists precisely so this offer is never a dead end.
+    // bank/document/media) is a legitimate composition — `created` still has
+    // to hand out something to scan. The token class itself is now
+    // `subject_next` (BuildAgenda no longer mints per-unit classes at all —
+    // that decision lives in `nextMove`/`offerSession`, exercised here
+    // end-to-end via the label it produces), so this guards the WORDING
+    // survives the extraction rather than re-asserting a token class that no
+    // longer applies at this layer.
     build({
       units: rawUnits({
         [MEDIA_UNIT]: { media: undefined, bank: undefined, review: 'A grown-up reviews this by hand.' },
       }),
     });
     const result = await useCase.execute({ learnerId: 'kid1' });
-    const offer = offerFor(result, MEDIA_UNIT);
+    const offer = offerFor(result, 'math');
     expect(offer.token).toBeTruthy();
-    expect(offer.tokenClass).toBe('select_unit');
+    expect(offer.tokenClass).toBe('subject_next');
     expect(offer.label).toContain('start this');
   });
 });
@@ -217,6 +313,7 @@ describe('nothing to do', () => {
   it('says so when a learner has no assignment at all', async () => {
     build({ assignment: null });
     const result = await useCase.execute({ learnerId: 'kid1' });
+    expect(result.sections).toEqual([]);
     expect(result.offers).toEqual([]);
     expect(transcript(result.document)).toContain('Nothing is assigned');
     expect(validateDocument(result.document).errors).toEqual([]);
@@ -225,6 +322,7 @@ describe('nothing to do', () => {
   it('explains rather than failing when nobody can be identified', async () => {
     const result = await useCase.execute({ learnerId: null });
     expect(result.plan).toBeNull();
+    expect(result.sections).toEqual([]);
     expect(sessions.ids()).toEqual([]);
     expect(transcript(result.document)).toContain('Whose card is this?');
     expect(validateDocument(result.document).errors).toEqual([]);
@@ -250,10 +348,17 @@ describe('nothing to do', () => {
       { type: 'outcome_recorded', outcomeId: `out:${sessionId}`, result: 'passed' },
       { type: 'rewarded', txnId: 'txn_1', amount: 5 },
     ]) {
+      // eslint-disable-next-line no-await-in-loop
       await sessions.appendEvent(sessionId, { ...event, sessionId, at: clock.iso() });
     }
+    // Cross the study-day boundary so "math" is no longer served-today and the
+    // course's next unit (still gated behind WORKSHEET_UNIT, not passed yet)
+    // is what actually surfaces — otherwise both assertions below hold
+    // vacuously on an empty offers array.
+    clock.advanceDays(1);
     const second = await useCase.execute({ learnerId: 'kid1' });
-    expect(second.offers.map((o) => o.unitId)).not.toContain(MEDIA_UNIT);
-    expect(offerFor(second, OMR_UNIT)).toBeUndefined();
+    // WORKSHEET_UNIT (course-next, still gated) — never MEDIA_UNIT again, and
+    // never OMR_UNIT, which stays locked behind it.
+    expect(second.offers.map((o) => o.unitId)).toEqual([WORKSHEET_UNIT]);
   });
 });

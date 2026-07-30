@@ -102,10 +102,17 @@ describe('unknown and stale tickets', () => {
   });
 
   it('prints a slip for an expired ticket', async () => {
-    await resolve.execute({ code: await cardToken() });
-    const [offer] = (await agenda.execute({ learnerId: 'kid1' })).offers;
+    // BuildAgenda's own offers now carry a sessionless `subject_next` ticket
+    // (Task 10) — a per-unit ticket's expiry is exercised directly here,
+    // decoupled from however the agenda happens to mint its own tokens.
+    await sessions.appendEvent('ses_v', { type: 'created', at: clock.iso(), sessionId: 'ses_v', learnerId: 'kid1', unitId: MEDIA_UNIT });
+    const record = mintToken({
+      tokenClass: 'select_unit', subject: { sessionId: 'ses_v' }, at: clock.iso(), rng,
+      expiresAt: new Date(Date.parse(clock.iso()) + 48 * 3_600_000).toISOString(),
+    });
+    await tokens.put(record);
     clock.advanceHours(72);
-    const result = await resolve.execute({ code: offer.token });
+    const result = await resolve.execute({ code: record.token });
     expect(result.status).toBe('expired');
     expect(thermal.lastTranscript()).toContain('out of date');
   });
@@ -119,10 +126,11 @@ describe('unknown and stale tickets', () => {
   });
 
   it('says already_done — never an error — once the work has moved on', async () => {
-    await resolve.execute({ code: await cardToken() });
-    const [offer] = (await agenda.execute({ learnerId: 'kid1' })).offers;
-    await resolve.execute({ code: offer.token }); // dispatches the video
-    const again = await resolve.execute({ code: offer.token });
+    await sessions.appendEvent('ses_v', { type: 'created', at: clock.iso(), sessionId: 'ses_v', learnerId: 'kid1', unitId: MEDIA_UNIT });
+    const record = mintToken({ tokenClass: 'select_unit', subject: { sessionId: 'ses_v' }, at: clock.iso(), rng });
+    await tokens.put(record);
+    await resolve.execute({ code: record.token }); // dispatches the video
+    const again = await resolve.execute({ code: record.token });
     expect(again.status).toBe('already_done');
     expect(again.printed).toBe(true);
     expect(playback.dispatches).toHaveLength(1);
@@ -136,14 +144,11 @@ describe('unknown and stale tickets', () => {
 });
 
 describe('starting a unit', () => {
-  const firstOffer = async () => {
-    await resolve.execute({ code: await cardToken() });
-    return (await agenda.execute({ learnerId: 'kid1' })).offers[0];
-  };
-
   it('a video unit dispatches and tells the child what happens next', async () => {
-    const offer = await firstOffer();
-    const result = await resolve.execute({ code: offer.token });
+    await sessions.appendEvent('ses_v', { type: 'created', at: clock.iso(), sessionId: 'ses_v', learnerId: 'kid1', unitId: MEDIA_UNIT });
+    const record = mintToken({ tokenClass: 'select_unit', subject: { sessionId: 'ses_v' }, at: clock.iso(), rng });
+    await tokens.put(record);
+    const result = await resolve.execute({ code: record.token });
     expect(result).toMatchObject({ status: 'dispatched', tokenClass: 'media_action', physical: 'receipt' });
     expect(playback.dispatches[0]).toMatchObject({ contentId: 'plex:481203', target: 'living-room-tv' });
     expect(thermal.lastTranscript()).toContain('scan your card for the questions');
