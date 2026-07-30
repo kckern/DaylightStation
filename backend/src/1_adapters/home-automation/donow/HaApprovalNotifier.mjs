@@ -69,6 +69,14 @@ export class HaApprovalNotifier {
         title: 'Approval needed',
         message: `${sentence} — a grown-up's OK is needed to start.`,
         data: {
+          // Immediate FCM delivery: a doze-delayed notification can outlive
+          // the pending request's TTL (default 120s), which reads as a dead
+          // feature. ttl 0 + high priority is the HA companion app's
+          // documented "deliver now" pair.
+          ttl: 0,
+          priority: 'high',
+          channel: 'DoNow approvals',
+          importance: 'high',
           actions: [
             { action: `DONOW_APPROVE_${record.id}`, title: 'Approve' },
             { action: `DONOW_DENY_${record.id}`, title: 'Deny' },

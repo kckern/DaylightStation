@@ -24,6 +24,7 @@ describe('HaApprovalNotifier.notify', () => {
     const [payload] = callHomeAssistant.execute.mock.calls[0];
     expect(payload.domain).toBe('notify');
     expect(payload.service).toBe('mobile_app_parent_phones');
+    expect(payload.data.data).toMatchObject({ ttl: 0, priority: 'high' }); // immediate FCM delivery — doze must not outlive the approval TTL
     expect(payload.data.data.actions).toEqual([
       { action: 'DONOW_APPROVE_dnr_test1', title: 'Approve' },
       { action: 'DONOW_DENY_dnr_test1', title: 'Deny' },
