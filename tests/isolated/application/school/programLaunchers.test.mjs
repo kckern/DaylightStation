@@ -1,11 +1,15 @@
 /**
- * PortalDispatch + LanguageProgramLauncher (Task 8, design §IProgramLauncher).
+ * PortalDispatch + LanguageProgramLauncher (Task 8, design §IProgramLauncher;
+ * Task 12 routes LanguageProgramLauncher's launch through DoNow).
  *
  * PortalDispatch is the one place that knows how to hand a learner off to a
  * program — everything else just describes a target and lets the bus carry
- * it. LanguageProgramLauncher is the thinnest possible adapter: status()
- * passes through LanguageStudyService.todayStatus, launch() asks the portal
- * for a fixed 'language' program target.
+ * it; `ResolveScanAction#onScreen`'s bank hand-off still uses it directly.
+ * LanguageProgramLauncher is the thinnest possible adapter: status() passes
+ * through LanguageStudyService.todayStatus, launch() asks `DoNowService` to
+ * dispatch a fixed 'language' program target on the `portal` surface — so a
+ * mid-quiz sibling on the Portal is protected by the same occupancy/override
+ * policy any other DoNow caller gets (spec §6 last bullet).
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { PortalDispatch } from '#apps/school/PortalDispatch.mjs';
@@ -57,7 +61,7 @@ describe('PortalDispatch', () => {
 describe('LanguageProgramLauncher', () => {
   it('has the id "language"', () => {
     const launcher = new LanguageProgramLauncher({
-      languageStudyService: { todayStatus: vi.fn() }, portal: { launch: vi.fn() },
+      languageStudyService: { todayStatus: vi.fn() }, donow: { dispatch: vi.fn() },
     });
     expect(launcher.id).toBe('language');
   });
@@ -65,7 +69,7 @@ describe('LanguageProgramLauncher', () => {
   it('status() passes through LanguageStudyService.todayStatus verbatim', async () => {
     const canned = { doneToday: true, progressLabel: 'Day 3', score: null };
     const languageStudyService = { todayStatus: vi.fn().mockReturnValue(canned) };
-    const launcher = new LanguageProgramLauncher({ languageStudyService, portal: { launch: vi.fn() } });
+    const launcher = new LanguageProgramLauncher({ languageStudyService, donow: { dispatch: vi.fn() } });
 
     const status = await launcher.status({ userId: 'kid1' });
 
@@ -73,18 +77,44 @@ describe('LanguageProgramLauncher', () => {
     expect(languageStudyService.todayStatus).toHaveBeenCalledWith({ userId: 'kid1' });
   });
 
-  it('launch() asks the portal for the fixed language program target', async () => {
-    const portal = { launch: vi.fn().mockReturnValue({ dispatched: true }) };
+  it('launch() dispatches the fixed language program target through DoNow, and returns its result', async () => {
+    const canned = { decision: 'dispatched', message: 'Starting the Portal now.' };
+    const donow = { dispatch: vi.fn().mockResolvedValue(canned) };
     const launcher = new LanguageProgramLauncher({
-      languageStudyService: { todayStatus: vi.fn() }, portal,
+      languageStudyService: { todayStatus: vi.fn() }, donow,
     });
 
     const result = await launcher.launch({ userId: 'kid1' });
 
-    expect(result).toEqual({ dispatched: true });
-    expect(portal.launch).toHaveBeenCalledWith({
-      learnerId: 'kid1', target: { kind: 'program', program: 'language' },
+    expect(result).toEqual(canned);
+    expect(donow.dispatch).toHaveBeenCalledWith({
+      surface: 'portal',
+      action: { target: { kind: 'program', program: 'language' } },
+      learnerId: 'kid1',
+      requestedBy: 'school-program',
+      ref: 'language',
+      programId: 'language',
     });
+  });
+
+  // The busy policy this exists to prevent: a sibling mid-quiz on the Portal
+  // must never be clobbered by a language dispatch — DoNow's occupancy
+  // check pends instead of broadcasting, and the launcher must hand that
+  // decision straight back rather than reporting a bare boolean.
+  it('an occupied-by-other portal pends rather than broadcasting', async () => {
+    const donow = {
+      dispatch: vi.fn().mockResolvedValue({
+        decision: 'pending_approval', approvalId: 'dnr_1', message: 'The Portal is busy — we asked a grown-up.',
+      }),
+    };
+    const launcher = new LanguageProgramLauncher({
+      languageStudyService: { todayStatus: vi.fn() }, donow,
+    });
+
+    const result = await launcher.launch({ userId: 'kid1' });
+
+    expect(result.decision).toBe('pending_approval');
+    expect(result.decision).not.toBe('dispatched');
   });
 });
 

@@ -48,6 +48,9 @@ import { GrownUpGate } from '#apps/school/GrownUpGate.mjs';
 import { ReceiptPrinting } from '#apps/school/ReceiptPrinting.mjs';
 import { PortalDispatch } from '#apps/school/PortalDispatch.mjs';
 import { LanguageProgramLauncher } from '#apps/school/LanguageProgramLauncher.mjs';
+import { DoNowService } from '#apps/donow/DoNowService.mjs';
+import { PortalSurface } from '#apps/donow/surfaces/PortalSurface.mjs';
+import { YamlDoNowDatastore } from '#adapters/persistence/yaml/YamlDoNowDatastore.mjs';
 import { WorkSessionReporter } from '#apps/school/WorkSessionReporter.mjs';
 import { BuildAgenda } from '#apps/school/usecases/BuildAgenda.mjs';
 import { IssueDocument } from '#apps/school/usecases/IssueDocument.mjs';
@@ -260,11 +263,30 @@ export async function createSchoolLifecycle({
   // program's own idea of "today" can never drift apart.
   const timezone = configService.getTimezone?.() || null;
   const portal = new PortalDispatch({ eventBus, logger });
+  // A minimal DoNowService, `portal`-surface-only, so LanguageProgramLauncher
+  // (Task 12, spec §6 last bullet: "program launchers become DoNow callers")
+  // gets real occupancy-aware dispatch rather than the raw broadcast it used
+  // to make directly through `PortalDispatch`. `schoolActivity` stands in as
+  // "nobody is ever mid-quiz" until a real active-sittings projection exists
+  // (Task 13) — fail-OPEN here would be wrong for a fresh occupancy source,
+  // but an always-idle stand-in is the correct placeholder for one that does
+  // not exist yet: there is no sitting to protect against clobbering.
+  const donowSurfaces = new Map([
+    ['portal', new PortalSurface({ eventBus, schoolActivity: { activeSittings: async () => [] }, logger })],
+  ]);
+  const donow = new DoNowService({
+    surfaces: donowSurfaces,
+    datastore: new YamlDoNowDatastore({ dataDir, logger }),
+    eventBus,
+    clock,
+    timezone,
+    logger,
+  });
   // Present only when the caller wired a language-study service: no service,
   // no launcher, and a program-typed unit degrades to "not answering" rather
   // than throwing (CurriculumAccess/ResolveSubjectNext's own try/catch).
   const launchers = new Map(languageStudyService
-    ? [['language', new LanguageProgramLauncher({ languageStudyService, portal, logger })]]
+    ? [['language', new LanguageProgramLauncher({ languageStudyService, donow, logger })]]
     : []);
 
   // --- collaborators ---------------------------------------------------------
