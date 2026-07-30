@@ -110,6 +110,10 @@ delivered through HA:
 
   **Deny** or **timeout** (default 120s, config) → denied. Every transition
   is logged; the pending file is pruned on read (TTL).
+- **Pending dedup:** a `dispatch` matching an UNEXPIRED pending request
+  (same surface + ref) returns the existing `pending_approval` with the
+  existing `approvalId` and sends NO second HA notification — an impatient
+  child re-scanning while a request pends cannot page a parent twice.
 - **TOCTOU is accepted, not solved.** Between any occupancy check and the
   dispatch there is an unavoidable window in a facade over eight seams; we
   accept it rather than building a distributed lock. The approve-time
@@ -323,6 +327,12 @@ feature by paging parents forever. These rules are the spec, not hints:
    harness — scan → pending (occupied fake) → approve → dispatched, slip
    wording per decision.
 5. Catalog validation: unknown surface / bad payload rejected at load.
+6. Honor-close door: refused from every state EXCEPT `launch_dispatched`
+   (the door stays a door).
+7. Pending dedup: impatient re-scan while pending → same `approvalId`,
+   exactly ONE notification sent (assert the fake HA notifier's call count).
+8. Surface-program evidence: `status()` ignores a same-surface,
+   same-learner, same-day dispatch that lacks its `programId`.
 
 ## 10. Out of scope (named deferrals)
 
