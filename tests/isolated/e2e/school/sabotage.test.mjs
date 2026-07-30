@@ -117,7 +117,13 @@ async function onTheConsole(body) {
 /** lifecycle.e2e scenario 3: a right bubble sheet scores 100. */
 const bubbleSheetScenario = () => onTheConsole(async (h, lib) => {
   await h.completeMediaUnit();
+  // The v2 agenda mints one ticket per SUBJECT and serves it once per study
+  // day (spec §6.3) — all three units here share subject "math", so each
+  // unit's ticket only shows up on the card the day after the one before it
+  // was passed.
+  h.advanceDays(1);
   await h.completeWorksheetUnit();
+  h.advanceDays(1);
   await h.scanCard();
   const issued = await h.scanTokenMatching(/print your sheet/i);
   const sessionId = issued.sessionId;
@@ -136,6 +142,8 @@ const bubbleSheetScenario = () => onTheConsole(async (h, lib) => {
 /** lifecycle.e2e scenario 4: a failed attempt prints a retry the child can scan. */
 const retryTicketScenario = () => onTheConsole(async (h) => {
   await h.completeMediaUnit();
+  // Math already served today via unit 01 — unit 02's ticket is due tomorrow.
+  h.advanceDays(1);
   await h.scanCard();
   const issued = await h.scanTokenMatching(/print your sheet/i);
   const firstSession = issued.sessionId;
@@ -160,6 +168,8 @@ const retryTicketScenario = () => onTheConsole(async (h) => {
 /** lifecycle.e2e scenario 5: a payout retried after UTC midnight does not pay twice. */
 const payOncScenario = () => onTheConsole(async (h) => {
   await h.completeMediaUnit();
+  // Math already served today via unit 01 — unit 02's ticket is due tomorrow.
+  h.advanceDays(1);
   await h.scanCard();
   const issued = await h.scanTokenMatching(/print your sheet/i);
   await h.parentGrades(

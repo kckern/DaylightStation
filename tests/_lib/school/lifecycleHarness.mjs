@@ -327,8 +327,13 @@ export async function createLifecycleHarness({
     return list.length ? list[list.length - 1] : null;
   };
 
+  // The composition wires the school console's receipt renderer with
+  // `symbology: 'QR'` (Task 12), so every scannable action a test finds on a
+  // printed receipt is a `qrcode` item, not a `barcode` one — `barcode` stays
+  // in the filter only as a defensive regression check, should the
+  // composition ever revert to Code128.
   const barcodesInLastReceipt = () => (lastCapture()?.items ?? [])
-    .filter((item) => item.type === 'barcode')
+    .filter((item) => item.type === 'qrcode' || item.type === 'barcode')
     .map((item) => ({ token: String(item.content), label: String(item.label ?? '') }));
 
   /** Every session this learner has, newest first, as derived facts. */
