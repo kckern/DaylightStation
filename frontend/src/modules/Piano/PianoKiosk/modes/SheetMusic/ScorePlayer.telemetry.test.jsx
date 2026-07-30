@@ -92,7 +92,7 @@ vi.mock('./clickScheduler.js', () => ({ createClickScheduler: () => ({ start: vi
 // ScorePlayer in a PianoUserProvider — mock the module out entirely (this file
 // doesn't assert on the practice record, only that mounting doesn't throw).
 vi.mock('./usePracticeRecord.js', () => ({
-  default: () => ({ record: {}, loaded: true, recordCycle: vi.fn(), recordTierBest: vi.fn() }),
+  default: () => ({ record: {}, loaded: true, persistent: true, recordCycle: vi.fn(), recordTierBest: vi.fn() }),
 }));
 // usePianoPreferences (Task 15) reaches usePianoUser exactly like
 // usePracticeRecord — mock it out for the same reason (no PianoUserProvider in

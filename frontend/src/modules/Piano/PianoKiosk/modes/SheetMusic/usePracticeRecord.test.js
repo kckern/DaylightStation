@@ -54,6 +54,20 @@ describe('usePracticeRecord', () => {
     expect(result.current.record).toEqual({});
   });
 
+  it('reports whether writes can persist, so callers can log WHY a write was skipped', async () => {
+    // Without this, a caller logging "no best banked" cannot distinguish a guest
+    // (nothing can ever persist) from a run that simply was not an improvement —
+    // the two look identical from outside the hook (empty record, silent no-op).
+    const persistent = renderHook(() => usePracticeRecord({ scoreId: 'files:x.musicxml', fingerprint: FP }));
+    await waitFor(() => expect(persistent.result.current.loaded).toBe(true));
+    expect(persistent.result.current.persistent).toBe(true);
+
+    mockUser = 'guest';
+    const guest = renderHook(() => usePracticeRecord({ scoreId: 'files:x.musicxml', fingerprint: FP }));
+    await waitFor(() => expect(guest.result.current.loaded).toBe(true));
+    expect(guest.result.current.persistent).toBe(false);
+  });
+
   it('recordCycle: increments attempts/passes for only the touched measures and PUTs only those', async () => {
     const { result } = renderHook(() => usePracticeRecord({ scoreId: 'files:x.musicxml', fingerprint: FP }));
     await waitFor(() => expect(result.current.loaded).toBe(true));

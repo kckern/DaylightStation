@@ -72,5 +72,10 @@ export default function usePracticeRecord({ scoreId, fingerprint }) {
     put({ fingerprint: fpRef.current, polish: { [bucket]: { [tier]: score } } });
   }, [currentUser, put]);
 
-  return { record, loaded, recordCycle, recordTierBest };
+  // `persistent` is exposed so a CALLER can log why a write was skipped: from
+  // outside the hook, a guest (nothing can ever persist) and a run that simply
+  // wasn't an improvement are indistinguishable — both leave the record empty and
+  // both no-op silently. It is NOT a gate callers should re-implement; recordCycle
+  // and recordTierBest already refuse to write on their own.
+  return { record, loaded, persistent: isPersistentUser(currentUser), recordCycle, recordTierBest };
 }

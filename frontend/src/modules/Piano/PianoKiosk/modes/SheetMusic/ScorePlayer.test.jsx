@@ -54,6 +54,10 @@ const h = vi.hoisted(() => ({
   prefs: {},
   // usePracticeRecord's `record` (Task 15) — {} by default (no history).
   practice: {},
+  // usePracticeRecord's `persistent` (wave-3 H) — whether a write can reach the
+  // server at all. True by default (a signed-in user); a test sets it false to
+  // exercise the guest branch of the tier-best bank decision.
+  practicePersistent: true,
   // usePianoPreferences' `loaded` (Task 15 review fix round 1) — true by
   // default (every OTHER test's prefs are "already resolved"). A test that
   // needs to prove the seeding effect WAITS for a late-resolving prefs fetch
@@ -101,7 +105,7 @@ vi.mock('./usePracticeRecord.js', () => ({
   // `record` reads h.practice so a test can seed per-bucket pass history before
   // render (Task 15's frontier-follows-the-seeded-bucket test) — {} by default,
   // matching every OTHER test's prior no-history behavior exactly.
-  default: () => ({ record: h.practice, loaded: true, recordCycle: h.recordCycle, recordTierBest: h.recordTierBest }),
+  default: () => ({ record: h.practice, loaded: true, persistent: h.practicePersistent, recordCycle: h.recordCycle, recordTierBest: h.recordTierBest }),
 }));
 // usePianoPreferences (Task 15) reaches usePianoUser exactly like
 // usePracticeRecord does — mock it out for the same reason (no
@@ -199,6 +203,7 @@ beforeEach(() => {
   h.recordTierBest.mockClear();
   h.prefs = {};
   h.practice = {};
+  h.practicePersistent = true;
   h.prefsLoaded = true;
   h.prefsListeners = new Set();
 });
@@ -1358,6 +1363,21 @@ describe('ScorePlayer — Polish tempo tiers (wave-3 H)', () => {
 
   const COUNT_IN_MS = 4000; // 4 clicks at 60 effective bpm, by fixture construction
 
+  // Same spy shape as the Polish describe's captureLog (which is scoped to that
+  // block): assert on the SHIPPED session-log event, not an internal call.
+  const captureTierLog = () => {
+    const root = getLogger();
+    const origChild = root.child.bind(root);
+    const emitted = []; // [event, data]
+    vi.spyOn(root, 'child').mockImplementation((ctx) => {
+      const c = origChild(ctx);
+      const orig = c.info.bind(c);
+      c.info = (ev, data, opts) => { emitted.push([ev, data]); return orig(ev, data, opts); };
+      return c;
+    });
+    return emitted;
+  };
+
   /** n single-step measures, one per scaled quarter, all on ONE staff (bucket 'both'). */
   const tierFixture = (n, tempoMult) => ({
     tempoEntries: [{ onsetQuarter: 0, bpm: 60 / tempoMult }],
@@ -1493,6 +1513,173 @@ describe('ScorePlayer — Polish tempo tiers (wave-3 H)', () => {
 
     expect(screen.queryByText(/mixed tempo/i)).toBeNull();
     expect(h.recordTierBest).toHaveBeenCalledWith({ bucket: 'both', tier: 'medium', score: 100 });
+  });
+
+  // The bank/withhold decision is invisible in the field without its own event:
+  // voided, not-an-improvement and guest all look identical from the outside (no
+  // write, no complaint). Each must name itself.
+  const tierBestEvents = (emitted) => emitted.filter(([ev]) => ev === 'score.polish.tier-best').map(([, d]) => d);
+
+  it('logs the bank decision on a clean completion (banked: true)', async () => {
+    h.layoutExtras = tierFixture(3, 0.8);
+    const emitted = captureTierLog();
+    renderPlayer();
+    pickMode('Polish');
+    await act(async () => {});
+    pickTempo('80%');
+    await pressPlay();
+    act(() => vi.advanceTimersByTime(COUNT_IN_MS));
+    play(60);
+    act(() => vi.advanceTimersByTime(1000));
+    play(61);
+    play(62);
+    act(() => vi.advanceTimersByTime(1000));
+
+    expect(tierBestEvents(emitted)).toEqual([
+      { bucket: 'both', tier: 'medium', score: 100, banked: true, reason: 'banked' },
+    ]);
+  });
+
+  it('logs banked: false with reason "mixed" when a mid-run tempo change voided the run', async () => {
+    h.layoutExtras = tierFixture(3, 0.8);
+    const emitted = captureTierLog();
+    renderPlayer();
+    pickMode('Polish');
+    await act(async () => {});
+    pickTempo('80%');
+    await pressPlay();
+    act(() => vi.advanceTimersByTime(COUNT_IN_MS));
+    play(60);
+    act(() => vi.advanceTimersByTime(1000));
+    pickTempo('125%');
+    play(61);
+    play(62);
+    act(() => vi.advanceTimersByTime(2000));
+
+    const events = tierBestEvents(emitted);
+    expect(events.length).toBe(1);
+    expect(events[0]).toMatchObject({ banked: false, reason: 'mixed', tier: 'medium' });
+    // The score is still reported — the run HAD a score, it just cannot be banked.
+    expect(events[0].score).toBeGreaterThan(0);
+    expect(h.recordTierBest).not.toHaveBeenCalled();
+  });
+
+  it('logs reason "not-better" when the run did not beat the stored best (and skips the write)', async () => {
+    h.layoutExtras = tierFixture(3, 0.8);
+    h.practice = { polish: { both: { medium: 100 } } }; // already perfect at this tier
+    const emitted = captureTierLog();
+    renderPlayer();
+    pickMode('Polish');
+    await act(async () => {});
+    pickTempo('80%');
+    await pressPlay();
+    act(() => vi.advanceTimersByTime(COUNT_IN_MS));
+    play(60);
+    act(() => vi.advanceTimersByTime(1000));
+    play(61);
+    play(62);
+    act(() => vi.advanceTimersByTime(1000));
+
+    expect(tierBestEvents(emitted)).toEqual([
+      { bucket: 'both', tier: 'medium', score: 100, banked: false, reason: 'not-better' },
+    ]);
+    expect(h.recordTierBest).not.toHaveBeenCalled();
+  });
+
+  it('logs reason "guest" when nothing can persist, so a guest is not read as a non-improvement', async () => {
+    h.layoutExtras = tierFixture(3, 0.8);
+    h.practicePersistent = false; // guest / no user
+    const emitted = captureTierLog();
+    renderPlayer();
+    pickMode('Polish');
+    await act(async () => {});
+    pickTempo('80%');
+    await pressPlay();
+    act(() => vi.advanceTimersByTime(COUNT_IN_MS));
+    play(60);
+    act(() => vi.advanceTimersByTime(1000));
+    play(61);
+    play(62);
+    act(() => vi.advanceTimersByTime(1000));
+
+    expect(tierBestEvents(emitted)).toEqual([
+      { bucket: 'both', tier: 'medium', score: 100, banked: false, reason: 'guest' },
+    ]);
+    expect(h.recordTierBest).not.toHaveBeenCalled();
+  });
+
+  it('logs reason "nothing-graded" for a completion with no gradeable measure', async () => {
+    // A rest-only / never-touched piece completes with runScore null. There is no
+    // score to bank, and that is not the same as failing to improve.
+    h.layoutExtras = {
+      tempoEntries: [{ onsetQuarter: 0, bpm: 60 / 0.8 }],
+      events: [{ midi: 60, midis: [60], onsetQuarter: 0, x: 100, top: 10, bottom: 200, system: 0 }],
+      steps: [{ onsetQuarter: 0, measure: 0, notes: [] }], // a rest bar: nothing expected
+      notes: [{ midi: 60, staff: 0, onsetQuarter: 0, durationQuarters: 1 }],
+      measures: [{ index: 0, number: 1, firstStep: 0, lastStep: 0 }],
+    };
+    const emitted = captureTierLog();
+    renderPlayer();
+    pickMode('Polish');
+    await act(async () => {});
+    pickTempo('80%');
+    await pressPlay();
+    act(() => vi.advanceTimersByTime(COUNT_IN_MS));
+    act(() => vi.advanceTimersByTime(1000)); // → onDone
+
+    expect(tierBestEvents(emitted)).toEqual([
+      { bucket: 'both', tier: 'medium', score: null, banked: false, reason: 'nothing-graded' },
+    ]);
+    expect(h.recordTierBest).not.toHaveBeenCalled();
+  });
+
+  it('the run summary log carries the tier outcome on every path that opens the panel', async () => {
+    // score.polish.summary is the ONE event a field reader has for a run. It must
+    // say what the run scored and at which tier, on the completion path AND on the
+    // pause path (which shows a score but banks nothing).
+    h.layoutExtras = tierFixture(4, 0.8);
+    const emitted = captureTierLog();
+    renderPlayer();
+    pickMode('Polish');
+    await act(async () => {});
+    pickTempo('80%');
+    await pressPlay();
+    act(() => vi.advanceTimersByTime(COUNT_IN_MS));
+    play(60);
+    act(() => vi.advanceTimersByTime(1000)); // m0 graded 1.0
+    act(() => { screen.getByRole('button', { name: 'Pause' }).click(); });
+    await act(async () => {});
+
+    const summaries = emitted.filter(([ev]) => ev === 'score.polish.summary').map(([, d]) => d);
+    expect(summaries.length).toBe(1);
+    // m0 played clean (1.0); the pause FINALIZES the measure in progress, which had
+    // nothing played in it yet (0.0) — mean 0.5 → 50. The point is that the score
+    // and tier ship at all on this path, and that they match the tally beside them.
+    expect(summaries[0]).toMatchObject({ score: 50, tier: 'medium', mixed: false, greens: 1, reds: 1 });
+    // …and no bank decision at all: a pause is not a completion.
+    expect(tierBestEvents(emitted)).toEqual([]);
+  });
+
+  it('the summary log reports mixed: true for a voided run', async () => {
+    h.layoutExtras = tierFixture(3, 0.8);
+    const emitted = captureTierLog();
+    renderPlayer();
+    pickMode('Polish');
+    await act(async () => {});
+    pickTempo('80%');
+    await pressPlay();
+    act(() => vi.advanceTimersByTime(COUNT_IN_MS));
+    play(60);
+    act(() => vi.advanceTimersByTime(1000));
+    pickTempo('125%');
+    play(61);
+    play(62);
+    act(() => vi.advanceTimersByTime(2000));
+
+    const summaries = emitted.filter(([ev]) => ev === 'score.polish.summary').map(([, d]) => d);
+    expect(summaries.length).toBe(1);
+    expect(summaries[0]).toMatchObject({ mixed: true, tier: 'medium' });
+    expect(summaries[0].score).toBeGreaterThan(0); // graded, just not bankable
   });
 
   it('an open summary keeps describing the run it reported, even once the NEXT run has started', async () => {

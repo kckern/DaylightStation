@@ -145,7 +145,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
     () => ({ measureCount: meta.measures, xmlBytes: scoreMeta.musicXml?.length || 0 }),
     [meta.measures, scoreMeta.musicXml],
   );
-  const { record: practice, loaded: practiceLoaded, recordCycle, recordTierBest } = usePracticeRecord({ scoreId: scoreMeta.id, fingerprint });
+  const { record: practice, loaded: practiceLoaded, persistent: practicePersistent, recordCycle, recordTierBest } = usePracticeRecord({ scoreId: scoreMeta.id, fingerprint });
 
   // Resolved sheetmusic config (defaults filled). Hoisted above the mode state so
   // the initial mode can come from `defaultMode` — the ladder starts at Listen.
@@ -547,20 +547,34 @@ export default function ScorePlayer({ score: scoreMeta }) {
       // the LAST step, whatever measure that step belongs to.
       if (mode === 'polish') {
         const endMeasure = steps[events.length - 1]?.measure;
-        // The SAME folded map feeds the log, the panel, and the tier best (wave-3 H).
-        const folded = openRunSummaryRef.current?.(finalizeRef.current?.(endMeasure));
+        // The SAME snapshot feeds the log, the panel, and the tier best (wave-3 H).
+        const run = openRunSummaryRef.current?.(finalizeRef.current?.(endMeasure));
         // ONLY a completion banks a best. A silent-stop or a manual pause opens the
         // same panel but is not a whole-piece run, so its score is not comparable —
-        // and a mid-run tempo change voids even a completion (runMixedRef).
-        const base = runScore(folded);
-        if (!runMixedRef.current && base != null) {
-          const tier = runTierRef.current;
-          recordTierBest({
-            bucket: bucketOf(grandStaff, activeParts),
-            tier,
-            score: displayScore(base, tier),
-          });
-        }
+        // and a mid-run tempo change voids even a completion (`mixed`).
+        //
+        // The decision is NAMED, not just taken: from outside, "voided", "not an
+        // improvement" and "guest, nothing can persist" are three different things
+        // that all look like silence. Order matters — the first true reason wins,
+        // most-specific first.
+        const bucket = bucketOf(grandStaff, activeParts);
+        const prevBest = practice?.polish?.[bucket]?.[run?.tier];
+        const reason = run?.base == null ? 'nothing-graded'
+          : run.mixed ? 'mixed'
+            : !practicePersistent ? 'guest'
+              : (Number.isFinite(prevBest) && prevBest >= run.score) ? 'not-better'
+                : 'banked';
+        // recordTierBest re-checks 'guest' and 'not-better' itself (it is the owner
+        // of both rules) — calling only on 'banked' keeps this path from being a
+        // second, drifting copy of them.
+        if (reason === 'banked') recordTierBest({ bucket, tier: run.tier, score: run.score });
+        logger.info('score.polish.tier-best', {
+          bucket,
+          tier: run?.tier ?? null,
+          score: run?.score ?? null,
+          banked: reason === 'banked',
+          reason,
+        });
       }
       setRunActive(false); // done WITHOUT a loop = a genuine end of run (see runActive)
       logger.info('score.transport.done', { mode, steps: events.length });
@@ -716,9 +730,10 @@ export default function ScorePlayer({ score: scoreMeta }) {
   // and the panel headline can't drift). Used by BOTH the silent-stop and the
   // completion path.
   //
-  // RETURNS the folded grade map so the completion path can score the run from the
-  // exact same measures this logged (wave-3 H): a best derived from a second,
-  // independently-folded map could disagree with the summary the user is looking at.
+  // RETURNS the run snapshot — `{ grades, tier, mixed, base, score }` — so the
+  // completion path scores the run from the exact values this logged (wave-3 H).
+  // Recomputing the score there instead would leave the shipped log, the panel and
+  // the banked best free to disagree.
   const openRunSummary = useCallback((extra) => {
     setSummaryOpen(true);
     // `extra` is the grade — or grades, since finalize can close out two measures
@@ -729,10 +744,20 @@ export default function ScorePlayer({ score: scoreMeta }) {
     const all = fresh.length
       ? { ...gradesRef.current, ...Object.fromEntries(fresh.map((g) => [g.measure, g])) }
       : gradesRef.current;
-    setSummaryRun({ grades: all, tier: runTierRef.current, mixed: runMixedRef.current });
+    const tier = runTierRef.current;
+    const mixed = runMixedRef.current;
+    const base = runScore(all);              // 0-100 mean over the non-rest measures
+    const run = { grades: all, tier, mixed, base, score: displayScore(base, tier) };
+    setSummaryRun(run);
     const t = tallyGrades(all);
-    logRunSummary({ greens: t.green, yellows: t.yellow, reds: t.red, overall: t.overall });
-    return all;
+    logRunSummary({
+      greens: t.green, yellows: t.yellow, reds: t.red, overall: t.overall,
+      // The tier outcome ships on EVERY path that opens the panel — completion,
+      // silent-stop and manual pause alike. Two of those bank nothing, and a reader
+      // who only sees the tally cannot tell a 40% pause from a 95% one.
+      score: run.score, tier, mixed,
+    });
+    return run;
   }, [logRunSummary]);
   // `g` is the measure whose silence tripped the stop, handed over by the
   // evaluator: it was graded in THIS tick, so gradesRef does not have it yet and
@@ -1636,12 +1661,10 @@ export default function ScorePlayer({ score: scoreMeta }) {
   // Which hands bucket the run belongs to — the same key the completion path banks
   // under, so the strip always shows the bests the next completion would beat.
   const polishBucket = bucketOf(grandStaff, activeParts);
-  // Score the OPEN summary from the snapshot it was opened with (see summaryRun) —
-  // same map, same tier as the completion path used to bank the best.
-  const summaryScore = useMemo(
-    () => displayScore(runScore(summaryRun?.grades), summaryRun?.tier),
-    [summaryRun],
-  );
+  // The panel shows the score the snapshot was built with — the same number the
+  // summary log shipped and the completion path banked. Not recomputed here: a
+  // second derivation is a second chance to disagree.
+  const summaryScore = summaryRun?.score ?? null;
 
   // Stable toggles for the transport bar. Passing fresh inline arrows here would
   // defeat React.memo on the bar's expensive body (parts/chips/popovers), so the
