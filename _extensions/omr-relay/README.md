@@ -194,24 +194,51 @@ giving the student no beep and no clue why. Measured at the defaults: **6.05
 polls/sec, 165 ms per cycle**. `handoffLost` in `/health` counts any tap the
 handoff dropped — a lost tap is never silent.
 
-### The ACK has to be audible
+### The ACK has to be audible, and it has two stages
 
 A status LED is useless here: the board lives in a case where nobody can see it.
-So a tap beeps. Active (self-oscillating) buzzer, **GND + GPIO23** on the base's
-free solder pads, gated through LEDC and expired non-blocking in `loop()`.
+So events make a sound. Active (self-oscillating) buzzer, **GND + GPIO23** on the
+base's free solder pads, gated through LEDC and sequenced non-blocking in
+`loop()`.
 
-> ⚠️ **Do not quieten this buzzer by lowering PWM duty.** Measured 2026-07-29: at
-> duty 5 / 15 / 40 / 80 it *scratched* instead of playing a quieter tone, and only
-> 160+ gave a clean note. An active buzzer has its own oscillator with a minimum
-> working voltage, and a chopped supply below it starves the oscillator — duty is
-> a **distortion** control here, not a volume control.
+A local beep only proves *this board* read the card — it says nothing about
+whether the server got it. So there are two stages:
+
+| Sound | Meaning | Default on the fitted (active) buzzer |
+|---|---|---|
+| `read` | a card or sheet was read **here** | one 4 ms tick |
+| `confirmed` | the **server echoed it back** — round trip closed | tick-tick (4 ms, 60 ms gap, 4 ms) |
+| `failed` | no echo inside `ack_timeout_ms` | one 250 ms buzz |
+
+The ack is real, not assumed: the relay **subscribes to its own bus topic**
+(`{"type":"bus_command","action":"subscribe","topic":"omr"}`) and waits for the
+backend's re-broadcast of its own event to come back. That echo proves received →
+validated → accepted. It needs **no new backend capability** —
+`client-control:<clientId>` would have been the other route, but it "logs a warn
+and drops" because connection identity isn't tracked, whereas topic subscription
+already works.
+
+> The echo means **accepted**, not **durably stored**. The backend broadcasts
+> first and persists on the subscriber chain immediately after, so a `confirmed`
+> sound is not a disk guarantee. A storage-level ack would need a new message.
+
+Patterns live in config as `{ tone, ms, gap }` steps, so the vocabulary is data
+rather than hard-coded rhythm.
+
+### ⚠️ Pitch needs different hardware
+
+> **The fitted buzzer cannot do pitch.** It is *active* — self-oscillating — so it
+> plays its own single fixed tone regardless of what you drive it with. Measured
+> 2026-07-29: driving it at 30 kHz produced an audible tone, which is only
+> possible if the element generates its own frequency. `tone` in the pattern table
+> is therefore **ignored** when `buzzer.kind: active`, and `gen-config` warns
+> rather than letting a melody silently collapse to one note.
 >
-> Loudness is set by **duration at full duty**: `buzzer.ms: 4` never lets the
-> diaphragm reach full amplitude, which reads as a soft tick (chosen by ear). To
-> go quieter than duration allows, add a series resistor (~100–470 Ω) on the red
-> wire or damp the buzzer inside the case.
+> For real low→high / high→low, solder a **passive piezo** to the same two pads
+> and set `buzzer.kind: passive`; the firmware then uses `ledcWriteTone()` and the
+> same pattern table gains pitch with no code change.
 
-Ruled out along the way, so nobody re-treads it: a **Grove hub + Unit Buzzer**
+Ruled out along the way, so nobody re-treads it:Ruled out along the way, so nobody re-treads it: a **Grove hub + Unit Buzzer**
 cannot work — the Unit Buzzer is PWM on the Grove signal pin (GPIO26 on an ATOM
 Lite), which is the NFC unit's SDA; a hub multiplexes I²C *devices* and a PWM
 buzzer is not one. An **ATOM Echo** (built-in speaker) is also out: M5 reserves
@@ -298,6 +325,7 @@ can change reader state or clear the queue. All JSON.
 | `/`, `/health` | identity, uptime, free heap, WiFi (IP/RSSI), bus state, **the UART config as actually compiled**, all counters, queue summary, and a top-level `ok` (false if anything was ever dropped or truncated) |
 | `/queue` | length, bytes, dropped, delivered, high-water depth, **and the full verbatim payload of every queued item** — payloads are small, and during an outage you want to confirm a specific card is safely held |
 | `/recent` | the last 16 frames the UART saw (delivered or not) with `kind`, `len`, `truncated` and a hex preview |
+| `/events` | a rolling window of the **lifecycle** — card read, ack confirmed, ack timed out, WS connect/disconnect — newest first, with `msAgo`, plus `ackOk`/`ackTimeout` totals. This is the route for "I tapped it and nothing happened": it answers the question after the fact, without a serial cable and without having been watching. Distinct from `/recent`, which is raw UART frames. |
 | anything else | `{"ok":false,"error":"not found"}` |
 
 `/health` reporting the compiled UART config matters for bring-up: it's the only
