@@ -1,0 +1,206 @@
+/**
+ * YAML persistence for the DoNow dispatch service (spec §4/§5). Dumb storage
+ * only — occupancy checks, approval policy, and notification wording all live
+ * in the domain/application layers; this adapter just reads and writes the
+ * two files the spec names:
+ *
+ *   pending: <dataDir>/apps/donow/pending.yml
+ *     One row per outstanding parental-approval request
+ *     (`{ id, surface, action, label, learnerId, requestedBy, ref, occupant,
+ *     createdAt, expiresAt, repended? }`). Upserted by `id`; pruned lazily
+ *     on read (TTL) rather than by a background job — a pending file is small
+ *     and read on every dispatch, so pruning there is enough.
+ *
+ *   dispatch log: <dataDir>/apps/donow/log/{YYYY-MM-DD}.yml   (append-only)
+ *     One row per `dispatched` decision (`{ at, surface, decision, learnerId,
+ *     requestedBy, ref, programId?, approvalId? }`), sharded by the UTC date
+ *     of the row's `at` (the economy-ledger pattern) — Task 12 reads two
+ *     shards around the study-day boundary, so the shard rule must be exactly
+ *     "UTC date of `at`", not the day the append happened to run.
+ *
+ *   `programId` and `approvalId` are written ONLY when the caller supplies a
+ *   non-null value — the KEY is absent, not present-with-null — because
+ *   Task 12's evidence query filters on key presence (`programId` in a row),
+ *   not truthiness.
+ */
+import path from 'path';
+import { promises as fs } from 'fs';
+import yaml from 'js-yaml';
+
+const DAY_RE = /^\d{4}-\d{2}-\d{2}$/;
+const PENDING_FILE = 'pending.yml';
+
+const dumpYaml = (value) => yaml.dump(value, { indent: 2, lineWidth: -1, noRefs: true });
+const isSafeDayStamp = (day) => typeof day === 'string' && DAY_RE.test(day);
+
+/** UTC calendar date (YYYY-MM-DD) of an ISO-8601 timestamp. */
+function utcDayOf(at) {
+  const ms = Date.parse(at);
+  if (Number.isNaN(ms)) {
+    throw new Error('YamlDoNowDatastore: appendDispatch requires an ISO-8601 `at` timestamp');
+  }
+  return new Date(ms).toISOString().slice(0, 10);
+}
+
+export class YamlDoNowDatastore {
+  #dataDir;
+  #logger;
+
+  /**
+   * @param {Object} config
+   * @param {string} config.dataDir - Absolute path to the data root.
+   * @param {Object} [config.logger] - Logger with debug/info/warn/error methods.
+   */
+  constructor(config = {}) {
+    if (!config.dataDir) {
+      throw new Error('YamlDoNowDatastore requires dataDir');
+    }
+    this.#dataDir = config.dataDir;
+    this.#logger = config.logger || console;
+  }
+
+  #root() { return path.join(this.#dataDir, 'apps', 'donow'); }
+
+  #pendingFile() { return path.join(this.#root(), PENDING_FILE); }
+
+  #logFile(dayStamp) { return path.join(this.#root(), 'log', `${dayStamp}.yml`); }
+
+  async #readYaml(file) {
+    try {
+      return yaml.load(await fs.readFile(file, 'utf8'));
+    } catch {
+      // Missing OR unparseable, deliberately the same answer: one corrupt
+      // file must not take down dispatch for the whole household.
+      return null;
+    }
+  }
+
+  async #readPendingRaw() {
+    const raw = await this.#readYaml(this.#pendingFile());
+    return Array.isArray(raw) ? raw : [];
+  }
+
+  async #writePendingRaw(rows) {
+    await fs.mkdir(this.#root(), { recursive: true });
+    await fs.writeFile(this.#pendingFile(), dumpYaml(rows), 'utf8');
+  }
+
+  /** Unexpired rows as of `nowIso` (expiresAt strictly after now survives). */
+  #unexpired(rows, nowIso) {
+    const now = Date.parse(nowIso);
+    return rows.filter((row) => {
+      if (!row || typeof row !== 'object') return false;
+      const expires = Date.parse(row.expiresAt);
+      // No usable expiresAt: fail open on the side of keeping the row rather
+      // than silently discarding a malformed-but-real pending request.
+      if (Number.isNaN(expires)) return true;
+      return expires > now;
+    });
+  }
+
+  // ===========================================================================
+  // Pending queue
+  // ===========================================================================
+
+  /** @returns {Promise<Array>} every unexpired pending row. */
+  async listPending() {
+    return this.#unexpired(await this.#readPendingRaw(), new Date().toISOString());
+  }
+
+  /** Upsert a pending row by `id`. */
+  async putPending(record) {
+    if (!record || typeof record !== 'object' || typeof record.id !== 'string' || !record.id) {
+      throw new Error('YamlDoNowDatastore: putPending requires a record with a string id');
+    }
+    const rows = await this.#readPendingRaw();
+    const idx = rows.findIndex((row) => row && row.id === record.id);
+    if (idx >= 0) rows[idx] = record;
+    else rows.push(record);
+    await this.#writePendingRaw(rows);
+    return record;
+  }
+
+  /** Remove a pending row by id. No-op if the id is not present. */
+  async removePending(id) {
+    const rows = await this.#readPendingRaw();
+    const next = rows.filter((row) => !(row && row.id === id));
+    if (next.length === rows.length) return;
+    await this.#writePendingRaw(next);
+  }
+
+  /**
+   * Find an UNEXPIRED pending row matching surface + ref — the dedup lookup
+   * behind "an impatient re-scan while pending must not page a parent twice".
+   * @param {Object} param
+   * @param {string} param.surface
+   * @param {*} param.ref
+   * @param {string} [param.nowIso] - Defaults to the current time.
+   * @returns {Promise<Object|null>}
+   */
+  async findPending({ surface, ref, nowIso = new Date().toISOString() } = {}) {
+    const rows = this.#unexpired(await this.#readPendingRaw(), nowIso);
+    return rows.find((row) => row.surface === surface && row.ref === ref) ?? null;
+  }
+
+  /**
+   * Drop expired pending rows, persisting the pruned list.
+   * @param {string} [nowIso] - Defaults to the current time.
+   * @returns {Promise<Array>} the surviving (unexpired) rows.
+   */
+  async prunePending(nowIso = new Date().toISOString()) {
+    const rows = await this.#readPendingRaw();
+    const kept = this.#unexpired(rows, nowIso);
+    if (kept.length !== rows.length) await this.#writePendingRaw(kept);
+    return kept;
+  }
+
+  // ===========================================================================
+  // Dispatch log (append-only, date-sharded)
+  // ===========================================================================
+
+  /**
+   * Append one dispatch-decision row, sharded by the UTC date of `at`.
+   * @param {Object} row
+   * @param {string} row.at - ISO-8601 timestamp.
+   * @param {string} row.surface
+   * @param {string} row.decision
+   * @param {string|null} row.learnerId
+   * @param {string} row.requestedBy
+   * @param {*} row.ref
+   * @param {string} [row.programId] - Written only when present (non-null).
+   * @param {string} [row.approvalId] - Written only when present (non-null).
+   * @returns {Promise<Object>} the row as stored.
+   */
+  async appendDispatch({ at, surface, decision, learnerId, requestedBy, ref, programId, approvalId }) {
+    const dayStamp = utcDayOf(at);
+    const stored = { at, surface, decision, learnerId, requestedBy, ref };
+    // Absent key, not a null value — Task 12's evidence query filters on
+    // `programId` presence, so a caller-supplied null/undefined must not
+    // survive into the row at all.
+    if (programId != null) stored.programId = programId;
+    if (approvalId != null) stored.approvalId = approvalId;
+
+    const file = this.#logFile(dayStamp);
+    const rows = await this.#readYaml(file);
+    const list = Array.isArray(rows) ? rows : [];
+    list.push(stored);
+    await fs.mkdir(path.dirname(file), { recursive: true });
+    await fs.writeFile(file, dumpYaml(list), 'utf8');
+    this.#logger.debug?.('donow.dispatch.appended', { dayStamp, surface, decision, ref });
+    return stored;
+  }
+
+  /**
+   * Read back every dispatch row for one UTC day shard, in append order.
+   * @param {Object} param
+   * @param {string} param.dayStamp - YYYY-MM-DD (UTC).
+   * @returns {Promise<Array>}
+   */
+  async listDispatches({ dayStamp } = {}) {
+    if (!isSafeDayStamp(dayStamp)) return [];
+    const rows = await this.#readYaml(this.#logFile(dayStamp));
+    return Array.isArray(rows) ? rows : [];
+  }
+}
+
+export default YamlDoNowDatastore;
