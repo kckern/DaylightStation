@@ -81,7 +81,7 @@ export class DoNowApprovals {
    */
   async approve({ id }) {
     const record = await this.#findPendingById(id);
-    if (!record) return this.#alreadySettled();
+    if (!record) return this.#alreadySettled(id);
 
     const occupancy = await this.#service.occupancyFor(record.surface, record.action);
     const decision = decideOnApprove({
@@ -103,7 +103,7 @@ export class DoNowApprovals {
    */
   async deny({ id }) {
     const record = await this.#findPendingById(id);
-    if (!record) return this.#alreadySettled();
+    if (!record) return this.#alreadySettled(id);
     return this.#denyRecord(record);
   }
 
@@ -162,7 +162,11 @@ export class DoNowApprovals {
     return rows.find((row) => row && row.id === id) || null;
   }
 
-  #alreadySettled() {
+  #alreadySettled(id = null) {
+    // Logged because this is the ONE outcome with no other trace: a real
+    // phone tap landing here is invisible without it (learned 2026-07-30,
+    // debugging a "missing" callback that had in fact succeeded).
+    this.#logger.info?.('donow.approvals.outcome', { id, decision: 'expired' });
     return { decision: 'expired', message: ALREADY_SETTLED_MESSAGE };
   }
 
