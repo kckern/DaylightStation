@@ -2,7 +2,7 @@
 import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import { DaylightAPI } from '../../../../../lib/api.mjs';
 import { usePianoUser } from '../../PianoUserContext.jsx';
-import { GUEST_PROFILE, isPersistentUser } from '../../pianoUser.js';
+import { isPersistentUser } from '../../pianoUser.js';
 import { practiceKeyOf } from './practiceKey.js';
 
 const fpMatches = (a, b) => !!a && !!b && a.measureCount === b.measureCount && a.xmlBytes === b.xmlBytes;
@@ -23,7 +23,10 @@ export default function usePracticeRecord({ scoreId, fingerprint }) {
   useEffect(() => {
     setRecord({}); setLoaded(false);
     if (!isPersistentUser(currentUser)) {
-      setLoaded(currentUser === GUEST_PROFILE.id);
+      // Guest AND null (roster pending/failed) both run history-less but LOADED —
+      // a false `loaded` here parks Learn's auto-range forever (it gates on it).
+      // When a pending roster resolves, `currentUser` changes and this re-runs.
+      setLoaded(true);
       return undefined;
     }
     let cancelled = false;
