@@ -133,6 +133,7 @@ export class FakeSessionRepository extends IWorkSessionRepository {
       state: state.state,
       terminal: state.terminal,
       outcome: state.outcome ? { result: state.outcome.result } : null,
+      gradedPercent: state.gradedPercent ?? null,
       day: String(events[0]?.at ?? '').slice(0, 10),
       updatedAt: events[events.length - 1]?.at ?? null,
     }));

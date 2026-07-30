@@ -127,6 +127,7 @@ export class YamlWorkSessionDatastore extends IWorkSessionRepository {
       // from the index alone, or the planner would reduce every session a
       // learner has ever had just to draw one agenda.
       result: state.outcome?.result ?? null,
+      gradedPercent: state.gradedPercent ?? null,
       updatedAt: (last && typeof last === 'object' ? last.at : null) ?? null,
     };
     await fs.writeFile(file, dumpYaml(index), 'utf8');
@@ -217,6 +218,7 @@ export class YamlWorkSessionDatastore extends IWorkSessionRepository {
       // direction: worst case a completed unit is offered again.
       terminal: row.open === false,
       outcome: row.result ? { result: row.result } : null,
+      gradedPercent: row.gradedPercent ?? null,
       day,
       updatedAt: row.updatedAt ?? null,
     }));

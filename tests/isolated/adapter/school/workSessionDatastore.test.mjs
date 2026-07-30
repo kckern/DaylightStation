@@ -250,6 +250,38 @@ describe('listOpenForLearner', () => {
   });
 });
 
+describe('listForLearner', () => {
+  it('projects gradedPercent from the session state', async () => {
+    await ds.appendEvent(SID, created());
+    await ds.appendEvent(SID, issued());
+    await ds.appendEvent(SID, { type: 'submitted', at: AT, sessionId: SID, transport: 'paper' });
+    await ds.appendEvent(SID, { type: 'graded', at: AT, sessionId: SID, attemptIds: ['att_1'], percent: 85 });
+    await ds.appendEvent(SID, { type: 'outcome_recorded', at: AT, sessionId: SID, outcomeId: `out:${SID}`, result: 'passed' });
+    await ds.appendEvent(SID, { type: 'rewarded', at: AT, sessionId: SID, txnId: 'txn_1' });
+
+    const facts = await ds.listForLearner('kid1');
+    expect(facts).toHaveLength(1);
+    expect(facts[0]).toMatchObject({
+      sessionId: SID,
+      learnerId: 'kid1',
+      unitId: 'u1',
+      state: 'rewarded',
+      terminal: true,
+      outcome: { result: 'passed' },
+      gradedPercent: 85,
+    });
+  });
+
+  it('projects gradedPercent as null when no graded event exists', async () => {
+    await ds.appendEvent(SID, created());
+    await ds.appendEvent(SID, issued());
+
+    const facts = await ds.listForLearner('kid1');
+    expect(facts).toHaveLength(1);
+    expect(facts[0].gradedPercent).toBe(null);
+  });
+});
+
 describe('nextSeq', () => {
   it('is 1 for an unknown session', async () => {
     expect(await ds.nextSeq('ses_nope')).toBe(1);
