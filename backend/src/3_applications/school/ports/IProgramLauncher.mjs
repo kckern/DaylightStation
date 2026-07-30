@@ -42,8 +42,16 @@ export class IProgramLauncher {
    * Hand the learner off to the program — dispatch it to wherever this
    * learner studies (a portal target, a kiosk screen, a bank session).
    *
+   * Routes through `DoNowService.dispatch` (spec §6 last bullet — "program
+   * launchers become DoNow callers where they dispatch surfaces"), so the
+   * return value is DoNow's own contract result, not a bare boolean: the
+   * caller (`ResolveScanAction`) must branch on `decision` to slip the right
+   * wording for a busy surface exactly as a `launch:` unit's one-shot
+   * dispatch does.
+   *
    * @param {{userId: string}} args
-   * @returns {Promise<{dispatched: boolean}>}
+   * @returns {Promise<{decision: 'dispatched'|'pending_approval'|'denied'|'failed',
+   *                     approvalId?: string, message: string}>}
    */
   // eslint-disable-next-line no-unused-vars
   launch({ userId }) {

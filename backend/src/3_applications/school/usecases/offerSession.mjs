@@ -69,6 +69,14 @@ export function nextMove(unit, state) {
       // `created` is the one state the reducer cannot label or class for us:
       // what starting MEANS depends on the unit's composition, and the
       // reducer never sees units. Starting is always a selection scan.
+      //
+      // A `launch:` unit's whole ask IS the dispatch (spec §6) — checked
+      // first because `launch` is mutually exclusive with media/document/
+      // bank at validation time, so this can never shadow one of them; it
+      // just keeps the one-shot case legible at the top of the table.
+      // `labelHint` lets a unit author supply their own wording (e.g. "go
+      // ride the bike") without a new field on every other composition kind.
+      if (unit.launch) return { kind: 'launch', tokenClass: 'select_unit', label: unit.launch.labelHint ?? 'go do this' };
       if (unit.media) return { kind: 'play', tokenClass: 'select_unit', label: 'watch or listen' };
       if (unit.document) return { kind: 'print', tokenClass: 'select_unit', label: 'print your sheet' };
       if (unit.bank) return { kind: 'screen', tokenClass: 'select_unit', label: 'answer on the screen' };

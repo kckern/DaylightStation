@@ -12,17 +12,26 @@ import {
 
 // Used only by the program-path tests, mirroring buildAgenda.test.mjs's fixture.
 const PROGRAM_ID = 'lang-app';
+// Used only by the launch-unit tests below.
+const LAUNCH_SURFACE = 'garage-fitness';
 
 let clock, sessions, assignments, useCase;
 
 const build = ({
   assignment = { learnerId: 'kid1', courses: ['math-fractions'] },
   units, launchers = new Map(),
+  // A launch unit validates only if the catalog's surface registry knows the
+  // surface it names (spec §6, unitValidation's `surfaceValidators` set) — a
+  // stand-in `() => []` (always-valid) mirrors `DoNowService`'s real
+  // registered adapters closely enough for a routing test, without pulling in
+  // a whole DoNow surface.
+  surfaceValidators = () => new Map([[LAUNCH_SURFACE, () => []]]),
 } = {}) => {
   clock = fakeClock();
   const catalog = new FakeCatalog({ units: units ?? rawUnits(), documents: rawDocuments(), manifests: rawManifests() });
   const curriculum = new CurriculumAccess({
-    catalog, bankIds: () => BANK_IDS, programIds: () => [PROGRAM_ID], clock: clock.epoch, logger: silentLogger,
+    catalog, bankIds: () => BANK_IDS, programIds: () => [PROGRAM_ID], surfaceValidators,
+    clock: clock.epoch, logger: silentLogger,
   });
   sessions = new FakeSessionRepository();
   assignments = new FakeAssignmentStore(assignment ? [assignment] : []);
@@ -31,6 +40,19 @@ const build = ({
     clock: clock.now, newSessionId: sequentialIds(), logger: silentLogger,
   });
 };
+
+/** Turn WORKSHEET_UNIT into a standalone launch unit — same derivation
+ * pattern as `withLanguageProgram` below. */
+const withLaunchUnit = () => ({
+  units: rawUnits({
+    [WORKSHEET_UNIT]: {
+      launch: { surface: LAUNCH_SURFACE, episodeId: 'plex:999' },
+      courseId: undefined, sequence: undefined, passing: undefined,
+      retry: undefined, reward: undefined, review: undefined, document: undefined,
+    },
+  }),
+  assignment: { learnerId: 'kid1', units: [WORKSHEET_UNIT] },
+});
 
 /** Turn WORKSHEET_UNIT into a standalone program unit — same derivation as
  * buildAgenda.test.mjs's `withLanguageProgram`, so a program-path test does
@@ -155,6 +177,33 @@ describe('a media+bank unit that finished watching', () => {
     expect(result.move.kind).not.toBe('play');
     expect(result.unit).toMatchObject({ unitId: MEDIA_UNIT, bank: MEDIA_BANK_ID });
     expect(result.sessionId).toBe(sid);
+  });
+});
+
+describe('a launch unit at created (Task 12, spec §6)', () => {
+  it('resolves move.kind "launch", tokenClass select_unit, with the unit carrying its launch block', async () => {
+    build(withLaunchUnit());
+    const result = await useCase.execute({ learnerId: 'kid1', subject: 'math' });
+    expect(result.kind).toBe('move');
+    expect(result.move).toMatchObject({ kind: 'launch', tokenClass: 'select_unit', label: 'go do this' });
+    expect(result.unit).toMatchObject({
+      unitId: WORKSHEET_UNIT, launch: { surface: LAUNCH_SURFACE, episodeId: 'plex:999' },
+    });
+  });
+
+  it('a labelHint on the launch block overrides the default wording', async () => {
+    build({
+      units: rawUnits({
+        [WORKSHEET_UNIT]: {
+          launch: { surface: LAUNCH_SURFACE, episodeId: 'plex:999', labelHint: 'go ride the bike' },
+          courseId: undefined, sequence: undefined, passing: undefined,
+          retry: undefined, reward: undefined, review: undefined, document: undefined,
+        },
+      }),
+      assignment: { learnerId: 'kid1', units: [WORKSHEET_UNIT] },
+    });
+    const result = await useCase.execute({ learnerId: 'kid1', subject: 'math' });
+    expect(result.move.label).toBe('go ride the bike');
   });
 });
 
