@@ -189,3 +189,4 @@ To restore: `git checkout -b branch-name <commit-hash>`
 | 2026-07-30 | fix/progress-overlay-baseline | 023180bb0 | Poster progress scrim flush with baseline (bottom offset + inline img descender gap) |
 | 2026-07-30 | fix/staff-accidentals | ac8a7be77 | Action-staff accidentals drawn as bold SVG shapes, proper margin off notehead |
 | 2026-07-30 | omr-quiz-decoder | 3be38d9ec | OMR quiz-sheet decoder: testId + 50 answers into household/apps/quizzes |
+| 2026-07-30 | feature/wikipedia-adapter | 13cb85a44 | Wikipedia adapter + /api/v1/wikipedia route + cli/wikipedia.cli.mjs for self-hosted kiwix service |
