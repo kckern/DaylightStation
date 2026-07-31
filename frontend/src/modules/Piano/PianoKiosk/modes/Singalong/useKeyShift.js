@@ -24,8 +24,38 @@ function logger() {
 const sourceByEl = new WeakMap();
 let sharedCtx = null;
 function ctx() {
-  if (!sharedCtx) sharedCtx = new AudioContext();
+  if (!sharedCtx) {
+    sharedCtx = new AudioContext();
+    // A suspended/interrupted context silences every captured element, so any
+    // state flip is telemetry-worthy on its own.
+    sharedCtx.onstatechange = () => logger().info('keyshift.ctx-state', { state: sharedCtx.state });
+  }
   return sharedCtx;
+}
+
+// Everything about the element that can explain silence: a cross-origin src
+// without crossOrigin="anonymous" makes createMediaElementSource output pure
+// zeros (CORS taint — silent, no error); blob:/data: (MSE) are exempt.
+function describeEl(el) {
+  let srcScheme = null;
+  let sameOrigin = null;
+  try {
+    const src = el.currentSrc || el.src || '';
+    if (src) {
+      const u = new URL(src, window.location.href);
+      srcScheme = u.protocol.replace(':', '');
+      sameOrigin = u.protocol === 'blob:' || u.protocol === 'data:' || u.origin === window.location.origin;
+    }
+  } catch { /* unparseable src — report nulls */ }
+  return {
+    srcScheme,
+    sameOrigin,
+    crossOrigin: el.crossOrigin ?? null,
+    readyState: el.readyState,
+    paused: el.paused,
+    muted: el.muted,
+    volume: el.volume,
+  };
 }
 
 /**
@@ -48,23 +78,57 @@ export default function useKeyShift(mediaEl, semitones) {
     if (!engagedRef.current && shift === 0) return undefined;
     engagedRef.current = true;
     let cancelled = false;
+    let stage = 'start'; // which await we're inside — the watchdog reports it
+    const t0 = Date.now();
+    const elInfo = describeEl(mediaEl);
+    logger().info('keyshift.engage', {
+      semitones: shift,
+      rebuild: !chainRef.current || chainRef.current.el !== mediaEl,
+      ctxState: sharedCtx?.state ?? null,
+      ...elInfo,
+    });
+    if (elInfo.sameOrigin === false && !elInfo.crossOrigin) {
+      logger().warn('keyshift.cors-taint-risk', {
+        srcScheme: elInfo.srcScheme,
+        note: 'cross-origin media without crossOrigin attr — element source will output silence',
+      });
+    }
+    // From source-capture onward the element is audible ONLY through the graph;
+    // a hang before chain-built is heard as dead silence. If we're still
+    // in-flight after 4s, say so and name the stage that never finished.
+    const watchdog = setTimeout(() => {
+      logger().warn('keyshift.stalled', {
+        stage,
+        semitones: shift,
+        elapsedMs: Date.now() - t0,
+        ctxState: sharedCtx?.state ?? null,
+      });
+    }, 4000);
     (async () => {
+      stage = 'import';
       const { default: SignalsmithStretch } = await import('signalsmith-stretch');
-      if (cancelled) return;
+      if (cancelled) { logger().info('keyshift.cancelled', { stage }); return; }
       let chain = chainRef.current;
       if (!chain || chain.el !== mediaEl) {
         // Element appeared or was swapped (Player resilience reinit): rebuild.
         teardown(chainRef.current);
         const ac = ctx();
         let source = sourceByEl.get(mediaEl);
+        const reused = Boolean(source);
         if (!source) {
           source = ac.createMediaElementSource(mediaEl);
           sourceByEl.set(mediaEl, source);
         } else {
           source.disconnect(); // drop the bypass edge a previous teardown left
         }
+        logger().info('keyshift.source-captured', { reused, ctxState: ac.state ?? null });
+        stage = 'stretch-load';
         const stretch = await SignalsmithStretch(ac);
-        if (cancelled) { source.connect(ac.destination); return; }
+        if (cancelled) {
+          source.connect(ac.destination);
+          logger().info('keyshift.cancelled', { stage, rerouted: true });
+          return;
+        }
         const dry = ac.createGain();
         const wet = ac.createGain();
         source.connect(dry);
@@ -75,9 +139,15 @@ export default function useKeyShift(mediaEl, semitones) {
         chain = { el: mediaEl, source, stretch, dry, wet };
         chainRef.current = chain;
         // The stepper tap that engaged us satisfies gesture activation.
+        stage = 'resume';
         await ac.resume();
-        logger().info('keyshift.chain-built', { engine: 'signalsmith-stretch' });
+        logger().info('keyshift.chain-built', {
+          engine: 'signalsmith-stretch',
+          buildMs: Date.now() - t0,
+          ctxState: ac.state ?? null,
+        });
       }
+      stage = 'schedule';
       if (shift === 0) {
         chain.dry.gain.value = 1;
         chain.wet.gain.value = 0;
@@ -87,17 +157,31 @@ export default function useKeyShift(mediaEl, semitones) {
         chain.wet.gain.value = 1;
         chain.stretch.schedule({ active: true, semitones: shift });
       }
-      logger().debug('keyshift.set', { semitones: shift });
+      stage = 'done';
+      clearTimeout(watchdog);
+      logger().info('keyshift.set', {
+        semitones: shift,
+        path: shift === 0 ? 'dry' : 'wet',
+        ctxState: sharedCtx?.state ?? null,
+        elapsedMs: Date.now() - t0,
+      });
     })().catch((e) => {
-      logger().warn('keyshift.error', { message: e?.message });
+      clearTimeout(watchdog);
+      logger().warn('keyshift.error', {
+        stage,
+        message: e?.message,
+        name: e?.name,
+        stack: e?.stack?.split('\n').slice(0, 4).join(' <- '),
+      });
     });
-    return () => { cancelled = true; };
+    return () => { cancelled = true; clearTimeout(watchdog); };
   }, [mediaEl, semitones]);
 
   // Teardown only on unmount — mid-session the chain must survive natural-key
   // passages. The captured element may outlive this hook (Player teardown is
   // async), so the source is rerouted straight to the speakers, never orphaned.
   useEffect(() => () => {
+    if (chainRef.current) logger().info('keyshift.teardown', {});
     teardown(chainRef.current);
     chainRef.current = null;
   }, []);
