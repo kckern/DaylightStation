@@ -27,7 +27,35 @@
 #include <ArduinoJson.h>
 #include <LittleFS.h>
 #include <time.h>
+#include <esp_sleep.h>
 #include "config.h"
+
+// ---- standby / battery protection ------------------------------------------
+// The OBD-II port is typically always-hot, so the device keeps drawing with the
+// engine off. Running flat out (WiFi associated, HTTP + WS up) is a multi-day
+// parasitic load on the car battery on top of the vehicle's own, which is a
+// dead car after a long park. Standby is therefore not optional.
+//
+// Engine state comes from OBD-port voltage via the co-processor (ATRV), which
+// works with NO ECU link and with the ignition off — an alternator holds the
+// bus high while running and it falls back to battery rest voltage when off.
+//
+// THRESHOLDS NEED CALIBRATION on the actual car: resting and charging voltage
+// vary by battery, alternator and temperature. These defaults are deliberately
+// conservative (a false "engine on" only costs power; a false "engine off"
+// would cut a live trip short). Override in config.h via gen-config.
+#ifndef STANDBY_ENGINE_OFF_V
+#define STANDBY_ENGINE_OFF_V     13.0f  // below this = not charging = engine off
+#endif
+#ifndef STANDBY_CONFIRM_S
+#define STANDBY_CONFIRM_S        120    // sustained low volts before believing it
+#endif
+#ifndef STANDBY_UPLOAD_WINDOW_S
+#define STANDBY_UPLOAD_WINDOW_S  60     // bounded window to drain trips first
+#endif
+#ifndef STANDBY_CHECK_S
+#define STANDBY_CHECK_S          60     // deep-sleep interval between volt checks
+#endif
 
 #ifdef USE_FREEMATICS
 // TODO(bring-up step 0): vendored by tools/fetch-libs.mjs — verify header names
@@ -74,7 +102,12 @@ static bool g_sysReady = false;        // co-processor link up (sys.begin)
 // Written by obdLinkTask on core 0, read by loop()/handleStatus on core 1.
 static volatile bool g_obdReady = false;  // ECU link up (obd.init) — needs ignition
 static int  g_devType = 0;             // reported by the co-processor
+// Written by obdLinkTask (core 0), read by loop()/handleStatus (core 1).
+static volatile float g_batteryV = 0;  // OBD-port volts; 0 = not read yet
+static volatile uint32_t g_batteryAgeMs = 0;
 #endif
+static uint32_t g_engineOffSinceMs = 0;  // first sustained low-voltage reading
+static bool g_wokeFromStandby = false;
 
 // ---- recent-log ring (pattern shared with kitchen-relay/omr-relay) --------
 // Consecutive duplicates coalesce into a repeat counter instead of consuming a
@@ -371,9 +404,60 @@ static void wsEvent(WStype_t type, uint8_t* payload, size_t length) {
 // report the transition.
 static void obdLinkTask(void*) {
   for (;;) {
-    if (g_sysReady && !g_obdReady && obd.init()) g_obdReady = true;
-    vTaskDelay(pdMS_TO_TICKS(g_obdReady ? 30000 : 5000));
+    if (g_sysReady) {
+      // Voltage first, and unconditionally: it drives standby, so it must keep
+      // updating even when the ECU link never comes up. ATRV goes to the
+      // co-processor, not the ECU, so it answers with the ignition off.
+      float v = obd.getVoltage();
+      if (v > 0) { g_batteryV = v; g_batteryAgeMs = millis(); }
+      if (!g_obdReady && obd.init()) g_obdReady = true;
+    }
+    vTaskDelay(pdMS_TO_TICKS(g_obdReady ? 15000 : 5000));
   }
+}
+#endif
+
+#ifdef USE_FREEMATICS
+// Engine off → bank the drive, then sleep. Never returns; the ESP32 reboots
+// into setup() on the next timer wake.
+//
+// The upload window is BOUNDED and happens before sleeping rather than after,
+// because this is the one moment we know the car is stationary and (if home)
+// on WiFi. Sleeping first and uploading later would mean a trip sits on flash
+// until the next drive.
+static void enterStandby(const char* why) {
+  relayLogf("[standby] %s (%.2fV) — closing trip", why, g_batteryV);
+  tripClose();
+
+  // Drain buffered trips for at most STANDBY_UPLOAD_WINDOW_S. Bounded on
+  // purpose: an unreachable backend must not hold the device awake on the
+  // car's battery indefinitely.
+  uint32_t t0 = millis();
+  while (millis() - t0 < (uint32_t)STANDBY_UPLOAD_WINDOW_S * 1000) {
+    webSocket.loop();
+    http.handleClient();
+    uploadNextTrip();
+    if (wsConnected && uploadingPath.isEmpty()) {
+      // Nothing left in flight — check whether anything is still queued.
+      File dir = LittleFS.open(TRIP_DIR);
+      bool any = false;
+      if (dir && dir.isDirectory()) for (File f = dir.openNextFile(); f; f = dir.openNextFile()) { any = true; break; }
+      if (!any) break;
+    }
+    delay(20);
+  }
+  relayLogf("[standby] sleeping %ds (uploaded=%lu acked=%lu)",
+            STANDBY_CHECK_S, (unsigned long)g_tripsUploaded, (unsigned long)g_tripsAcked);
+
+  if (tripFile) tripFile.close();
+  LittleFS.end();
+  webSocket.disconnect();
+  WiFi.disconnect(true);
+  WiFi.mode(WIFI_OFF);
+  obd.enterLowPowerMode();          // ATLP — sleeps the co-processor too
+  delay(50);
+  esp_sleep_enable_timer_wakeup((uint64_t)STANDBY_CHECK_S * 1000000ULL);
+  esp_deep_sleep_start();           // does not return
 }
 #endif
 
@@ -553,6 +637,18 @@ static void handleStatus() {
   vehicle["coproc_ready"] = g_sysReady;   // sys.begin() — the boot-critical one
   vehicle["dev_type"] = g_devType;
   vehicle["obd_ready"] = g_obdReady;      // false until ignition is fully on
+  // Battery/standby: this is the drain story, made observable instead of
+  // estimated. battery_v comes from ATRV (co-processor, no ECU needed).
+  vehicle["battery_v"] = g_batteryV;
+  if (g_batteryAgeMs) vehicle["battery_age_s"] = (uint32_t)((millis() - g_batteryAgeMs) / 1000);
+  vehicle["woke_from_standby"] = g_wokeFromStandby;
+  JsonObject sb = vehicle["standby"].to<JsonObject>();
+  sb["engine_off_below_v"] = STANDBY_ENGINE_OFF_V;
+  sb["confirm_s"] = STANDBY_CONFIRM_S;
+  sb["upload_window_s"] = STANDBY_UPLOAD_WINDOW_S;
+  sb["check_s"] = STANDBY_CHECK_S;
+  sb["engine_off_for_s"] = g_engineOffSinceMs
+    ? (uint32_t)((millis() - g_engineOffSinceMs) / 1000) : 0;
 #else
   vehicle["build"] = "bench-sim";
 #endif
@@ -599,7 +695,9 @@ void setup() {
   Serial.begin(115200);
   delay(200);
   g_bootMs = millis();
-  relayLogf("[obd-relay] boot fw=%s vehicle=%s", FW_VERSION, VEHICLE_ID);
+  g_wokeFromStandby = (esp_sleep_get_wakeup_cause() == ESP_SLEEP_WAKEUP_TIMER);
+  relayLogf("[obd-relay] boot fw=%s vehicle=%s%s", FW_VERSION, VEHICLE_ID,
+            g_wokeFromStandby ? " (standby wake)" : "");
 
   g_fsMounted = LittleFS.begin(true);          // true = format on first/corrupt mount
   if (!g_fsMounted) {
@@ -627,6 +725,22 @@ void setup() {
     g_devType = sys.devType;
     relayLogf("[sys] co-processor ready devType=%d", g_devType);
     obd.begin(sys.link);
+    // Fast path on a standby wake: if the engine is STILL off, go straight back
+    // to sleep without ever powering the radio. This is what keeps the duty
+    // cycle — and therefore the average draw on the car battery — low. A full
+    // wake costs seconds of WiFi; this costs a single ATRV round trip.
+    if (g_wokeFromStandby) {
+      float v = obd.getVoltage();
+      if (v > 0) { g_batteryV = v; g_batteryAgeMs = millis(); }
+      if (v > 0 && v < STANDBY_ENGINE_OFF_V) {
+        Serial.printf("[standby] still off (%.2fV) — back to sleep\n", v);
+        obd.enterLowPowerMode();
+        delay(50);
+        esp_sleep_enable_timer_wakeup((uint64_t)STANDBY_CHECK_S * 1000000ULL);
+        esp_deep_sleep_start();       // does not return
+      }
+      relayLogf("[standby] woke — %.2fV, engine on", v);
+    }
     // obd.init() BLOCKS for ~5s and fails until the ignition is fully on, so it
     // must never run on the Arduino loop task. Measured 2026-07-30: retrying it
     // inline every 5s starved webSocket.loop(), which needs frequent servicing
@@ -645,7 +759,11 @@ void setup() {
   WiFi.mode(WIFI_STA);
   WiFi.persistent(false);        // don't wear flash rewriting creds every boot
   WiFi.setAutoReconnect(true);   // supplicant keeps trying on its own
-  WiFi.setSleep(false);          // modem sleep adds latency; the car powers us
+  // Modem sleep left ON (the default). It was disabled earlier in development to
+  // shave association latency, but that raised idle draw on a device sitting on
+  // the car's battery — the wrong trade once standby exists to bound the awake
+  // time. Measured association is 200-700ms with it enabled, which is fine.
+  WiFi.setSleep(true);
   WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
   uint32_t t0 = millis();
   while (WiFi.status() != WL_CONNECTED && millis() - t0 < 15000) delay(100);
@@ -680,6 +798,22 @@ void loop() {
   if (g_obdReady != lastObdReported) {
     lastObdReported = g_obdReady;
     relayLogf("[obd] ECU link %s", g_obdReady ? "up" : "lost");
+  }
+
+  // Engine-off → standby. Requires a sustained low reading (STANDBY_CONFIRM_S)
+  // so that cranking — which briefly pulls the bus down hard — can't be
+  // mistaken for the engine being switched off.
+  // A reading of exactly 0 means "no answer from the co-processor", NOT zero
+  // volts; treating that as engine-off would sleep the device on a comms fault.
+  if (g_batteryV > 0) {
+    if (g_batteryV < STANDBY_ENGINE_OFF_V) {
+      if (!g_engineOffSinceMs) g_engineOffSinceMs = millis();
+      else if (millis() - g_engineOffSinceMs > (uint32_t)STANDBY_CONFIRM_S * 1000) {
+        enterStandby("engine off");
+      }
+    } else {
+      g_engineOffSinceMs = 0;
+    }
   }
 #endif
 
