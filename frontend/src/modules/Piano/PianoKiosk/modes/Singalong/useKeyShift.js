@@ -8,6 +8,7 @@
 // essentially all output at the target pitch.
 import { useEffect, useRef } from 'react';
 import getLogger from '../../../../../lib/logging/Logger.js';
+import loadStretchEngine from './loadStretchEngine.js';
 import { clampKeyShift } from './keyShift.js';
 
 let _logger;
@@ -106,7 +107,7 @@ export default function useKeyShift(mediaEl, semitones) {
     }, 4000);
     (async () => {
       stage = 'import';
-      const { default: SignalsmithStretch } = await import('signalsmith-stretch');
+      const SignalsmithStretch = await loadStretchEngine();
       if (cancelled) { logger().info('keyshift.cancelled', { stage }); return; }
       let chain = chainRef.current;
       if (!chain || chain.el !== mediaEl) {

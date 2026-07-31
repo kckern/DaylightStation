@@ -71,6 +71,7 @@ export default defineConfig(({ command, mode }) => {
         '@': path.resolve(__dirname, 'src'),
         '@shared-contracts': path.resolve(__dirname, '../shared/contracts'),
         '@shared-music': path.resolve(__dirname, '../shared/music'),
+        'signalsmith-stretch/SignalsmithStretch.mjs': path.resolve(__dirname, 'node_modules/signalsmith-stretch/SignalsmithStretch.mjs'),
       }
     },
     server: {
