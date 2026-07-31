@@ -107,7 +107,7 @@ see Step 0b in the bring-up checklist.
 | Part | Role |
 |------|------|
 | **M5Stack ATOM Lite** (ESP32-PICO-D4) | relay MCU — WiFi + WS client (same board as food-scale-relay / barcode-relay) |
-| **M5Stack ATOMIC RS232 base** (MAX232) | TTL ↔ RS-232 level shifter, clips onto the ATOM |
+| **M5Stack ATOMIC RS232 base** (MAX3232) | TTL ↔ RS-232 level shifter, clips onto the ATOM. **Its `R`/`T` terminals are named for the far device — they cross. See Step 1.** |
 | **DB9 male screw-terminal breakout** | solderless tap of the OMR-1100's serial pins |
 | **Original Chatsworth data cable** | 6-pin circular at the reader, DB9 at the host; on hand and verified working |
 | **Chatsworth Data OMR-1100** | the bubble-sheet scanner (serial output source) |
@@ -416,18 +416,41 @@ Cheapest signals first:
    another with blue ballpoint. Pen reads → Visible Red. Pen ignored but pencil
    read → Infra Red.
 
-### Step 1 — Physical RS-232: RESOLVED ✅ (2026-07-29)
+### Step 1 — Physical RS-232: VERIFIED END-TO-END ✅ (2026-07-30)
 
-**Three wires. That's the whole job.**
+**Three wires. That's the whole job — but two of them cross.**
 
 ```
-OMR-1100 ──original Chatsworth cable──▶ DB9 breakout          ATOMIC RS232 base
-         (6-pin circular at the reader)  ─────────────        ─────────────────
-                                          2  RXD    ────────▶  R
-                                          3  TXD    ◀────────  T
-                                          5  GND    ────────   G
-                                          1,4,6,7,8,9 unused   DC12V  ← LEAVE OPEN
+OMR-1100 ──original Chatsworth cable──▶ DB9 breakout        ATOMIC RS232 base
+         (6-pin circular at the reader)  ─────────────      ─────────────────
+                                          2  RXD  ────────▶  T    ← ATOM's RX
+                                          3  TXD  ◀────────  R    ← ATOM's TX
+                                          5  GND  ─────────  G
+                                          1,4,6,7,8,9 unused  DC12V ← LEAVE OPEN
+
+     ⚠ 2→T and 3→R — they CROSS. Terminals are listed above in WIRING order;
+       the silkscreen order on the board itself is R, T, G, DC12V (top to bottom).
 ```
+
+| DB9 pin | → base terminal | carries |
+|---|---|---|
+| 2 `RXD` | **`T`** | reader's data out |
+| 3 `TXD` | **`R`** | host's `I00` mode download |
+| 5 `GND` | `G` | signal ground |
+
+**⚠️ The base's `R`/`T` labels do NOT mean the ESP32's RX/TX — they name the
+terminals for the FAR device (`R`↔remote's R, `T`↔remote's T).** Wired the
+intuitive way (`2→R, 3→T`) the link is **completely silent**: the `I00` download
+goes out into the reader's own output pin, so the reader never loads a
+conversion mode and transports cards while emitting nothing at all. This is
+measured, not theorised — it cost a full debugging session on 2026-07-30, and
+swapping the two screws at the base end produced two clean card reads
+immediately.
+
+**Swap at the base end, not the DB9 end.** Only one end may be swapped (doing
+both returns you to the broken state), and the DB9 pin-2-is-the-reader's-output
+assignment is the *measured* fact of the pair — perturb the assumption you're
+unsure of, not the one you've confirmed.
 
 **Why pin 2 is the reader's output** — this is settled empirically, not
 inferred. The original cable was tested working against a plain USB-serial
@@ -467,11 +490,25 @@ tidiness only. Use black for GND.
   the host must transmit the `I00` mode download or the reader emits nothing at
   all (see Step 0/Step 3). `T` is not optional.
 
-**If it's silent:** swap `R` and `T`. RS-232 is short-tolerant and a reversal
-does no damage, so this is a free two-screw experiment before you start
-theorizing. Note that the reader is *also* legitimately silent for the first
-60 s after power-up, until the firmware's re-arm sends the mode download — don't
-diagnose a wiring fault inside that window.
+**If it's silent:** swap `R` and `T` — this was the actual fault on 2026-07-30,
+so try it before theorising. RS-232 is short-tolerant and a reversal does no
+damage, making it a free two-screw experiment. Note that the reader is *also*
+legitimately silent for the first 60 s after power-up, until the firmware's
+re-arm sends the mode download — don't diagnose a wiring fault inside that
+window.
+
+**How to read the counters while debugging this.** `/health` distinguishes the
+cases, but only if you know what to look at:
+
+| Symptom | Reading |
+|---|---|
+| `bytesRx 0` with `rearms` climbing | Nothing is coming back from the reader. The loop is open in at least one direction — `/health` alone cannot say which. |
+| `shortFrames` ticking up by 1 per re-arm | The reader is **answering** the download with `G`<CR>. Wiring is good. |
+| `bytesRx 0` and low uptime | Counters are per-boot. Check `history/omr/<id>/<date>.yml` for a `sheet` event instead — that survives reboots. |
+
+`bytesRx 0` is **not** proof of missing wires: an unconnected MAX3232 receiver
+input idles at the same level as a connected idle one, so software cannot tell
+them apart. Only the Step 1b loopback separates "our end" from "the reader's end".
 
 ### Step 1b — Loopback test (do this BEFORE connecting the reader)
 
