@@ -241,6 +241,8 @@ import { YamlPianoStudioDatastore } from './1_adapters/piano/YamlPianoStudioData
 import { ComposerSongStore } from './3_applications/piano/ComposerSongStore.mjs';
 import { createFeedbackRouter } from './4_api/v1/routers/feedback.mjs';
 import { createGameshowRouter } from './4_api/v1/routers/gameshow.mjs';
+import { createWikipediaRouter } from './4_api/v1/routers/wikipedia.mjs';
+import { WikipediaAdapter } from './1_adapters/reference/WikipediaAdapter.mjs';
 import { GameShowService } from './3_applications/gameshow/GameShowService.mjs';
 import { GameShowSessionStore } from './3_applications/gameshow/GameShowSessionStore.mjs';
 import { buzzersToSelectors, makeBuzzerSelectHandler } from './3_applications/gameshow/buzzerSelectors.mjs';
@@ -1609,6 +1611,19 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     mediaAppsDir: join(mediaBasePath, 'apps'),
     logger: rootLogger.child({ module: 'gameshow-api' }),
   });
+
+  // Self-hosted Wikipedia (kiwix-backed, plain-text) proxy. URL from services.yml;
+  // router is skipped entirely when no wikipedia service is declared.
+  const wikipediaUrl = configService.resolveServiceUrl('wikipedia');
+  if (wikipediaUrl) {
+    v1Routers.wikipedia = createWikipediaRouter({
+      adapter: new WikipediaAdapter({
+        baseUrl: wikipediaUrl,
+        logger: rootLogger.child({ module: 'wikipedia' }),
+      }),
+      logger: rootLogger.child({ module: 'wikipedia-api' }),
+    });
+  }
 
   // School router (banks/sessions + materials framework) is constructed below,
   // after fitnessPlayableService exists (PlexShowSource reuses it rather than
