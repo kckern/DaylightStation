@@ -89,6 +89,71 @@ struct Sample {
   float battV;
 };
 
+#ifdef USE_FREEMATICS
+// ---- PID table -------------------------------------------------------------
+// Every OBD read is a blocking UART round trip to the co-processor, so all of
+// this runs on obdLinkTask (core 0) and loop() only ever copies the result.
+// Putting reads on the Arduino loop task is what starved webSocket.loop()
+// earlier in bring-up and left the WS client unable to complete a handshake.
+//
+// `ok` is per-PID and sticky-per-attempt: which PIDs a given car answers is
+// vehicle-specific and MUST be measured, not assumed (see /pids). Standard
+// OBD-II covers the HOT and most DIAG entries; ODOMETER (0xA6) is in later
+// J1979 revisions but rarely implemented. Oil life and tyre pressure are NOT
+// standard OBD-II at all and are deliberately absent — they are manufacturer
+// -specific and not reachable this way.
+struct PidProbe {
+  byte pid;
+  const char* name;
+  const char* unit;
+  bool ok;        // did this car answer, last attempt
+  int  value;
+  bool tried;
+};
+
+// Sampled at SAMPLE_HZ — the ones that actually change while driving.
+static PidProbe g_hotPids[] = {
+  { PID_SPEED,        "speed",       "kph", false, 0, false },
+  { PID_RPM,          "rpm",         "rpm", false, 0, false },
+  { PID_COOLANT_TEMP, "coolant",     "C",   false, 0, false },
+  { PID_FUEL_LEVEL,   "fuel_level",  "%",   false, 0, false },
+};
+// Slow-moving / diagnostic. Read once per trip and then periodically; these are
+// the "what is the state of the car" set rather than the "what is it doing now"
+// set, and they are what a diagnostics view is built from.
+static PidProbe g_diagPids[] = {
+  { PID_CONTROL_MODULE_VOLTAGE, "control_module_voltage", "V",  false, 0, false },
+  { PID_ENGINE_LOAD,            "engine_load",            "%",  false, 0, false },
+  { PID_THROTTLE,               "throttle",               "%",  false, 0, false },
+  { PID_INTAKE_TEMP,            "intake_temp",            "C",  false, 0, false },
+  { PID_AMBIENT_TEMP,           "ambient_temp",           "C",  false, 0, false },
+  { PID_ENGINE_OIL_TEMP,        "engine_oil_temp",        "C",  false, 0, false },
+  { PID_BAROMETRIC,             "barometric",             "kPa",false, 0, false },
+  { PID_RUNTIME,                "runtime_since_start",    "s",  false, 0, false },
+  { PID_DISTANCE_WITH_MIL,      "distance_with_mil",      "km", false, 0, false },
+  { PID_DISTANCE,               "distance_since_cleared", "km", false, 0, false },
+  { PID_WARMS_UPS,              "warmups_since_cleared",  "",   false, 0, false },
+  { PID_TIME_WITH_MIL,          "time_with_mil",          "min",false, 0, false },
+  { PID_TIME_SINCE_CODES_CLEARED,"time_since_cleared",    "min",false, 0, false },
+  { PID_ODOMETER,               "odometer",               "km", false, 0, false },
+};
+#define HOT_PID_COUNT  (sizeof(g_hotPids)  / sizeof(g_hotPids[0]))
+#define DIAG_PID_COUNT (sizeof(g_diagPids) / sizeof(g_diagPids[0]))
+
+// DTCs (check-engine). Standard Mode 03, the one diagnostic that is reliably
+// available on any OBD-II car.
+#define MAX_DTC 6
+static uint16_t g_dtc[MAX_DTC];
+static int g_dtcCount = -1;            // -1 = not read yet this trip
+static char g_vin[24] = {0};
+
+// Live sample handoff: written on core 0, copied on core 1 under a spinlock.
+static portMUX_TYPE g_sampleMux = portMUX_INITIALIZER_UNLOCKED;
+static Sample g_liveSample = {};
+static bool g_haveLiveSample = false;
+static bool g_gpsReady = false;
+#endif
+
 // ---- state ----------------------------------------------------------------
 static WebSocketsClient webSocket;
 static WebServer http(80);
@@ -120,6 +185,11 @@ static volatile uint32_t g_batteryAgeMs = 0;
 static uint32_t g_engineOffSinceMs = 0;  // first sustained low-voltage reading
 static bool g_wokeFromStandby = false;
 static bool g_otaActive = false;         // suppress standby mid-flash
+// Temporary standby inhibit, for flashing or debugging a device that is parked.
+// ALWAYS time-bounded and never persisted: an inhibit that outlived the session
+// would silently reintroduce exactly the battery drain standby exists to stop.
+static uint32_t g_standbyInhibitUntilMs = 0;
+#define STANDBY_INHIBIT_MAX_MIN 30
 
 // ---- recent-log ring (pattern shared with kitchen-relay/omr-relay) --------
 // Consecutive duplicates coalesce into a repeat counter instead of consuming a
@@ -185,12 +255,16 @@ static bool readSample(Sample& s) {
   s.coolantC = 88; s.fuelPct = 63; s.battV = 14.2f;
   return true;
 #elif defined(USE_FREEMATICS)
-  // TODO(bring-up step 1): read real PIDs via the OBD co-processor —
-  //   obd.readPID(PID_SPEED, ...), PID_RPM, PID_COOLANT_TEMP, PID_FUEL_LEVEL,
-  //   obd.getVoltage(); GNSS via sys.gpsGetData(&gpsData).
-  // Record which PIDs THIS car answers in ../README.md (measured, not inferred).
-  (void)s;
-  return false;
+  // The read itself happens on obdLinkTask (core 0) because every PID is a
+  // blocking UART round trip; this only copies the latest result. Returning
+  // false when there is nothing new keeps empty rows out of the trip file —
+  // a trip of zeroes is worse than a short trip, because it looks like data.
+  bool have = false;
+  portENTER_CRITICAL(&g_sampleMux);
+  if (g_haveLiveSample) { s = g_liveSample; g_haveLiveSample = false; have = true; }
+  portEXIT_CRITICAL(&g_sampleMux);
+  if (have) s.t = millis();
+  return have;
 #else
   (void)s;
   return false;
@@ -414,6 +488,52 @@ static void wsEvent(WStype_t type, uint8_t* payload, size_t length) {
 // network loop on core 1 is never starved. Deliberately does NOT log directly:
 // relayLogLine() is not thread-safe, so this only flips a flag and lets loop()
 // report the transition.
+// Read one table of PIDs, recording per-entry whether THIS car answered.
+// Individually rather than via the batch readPID(): the batch form reports only
+// how many succeeded, not which, and "which PIDs does this car support" is the
+// entire question bring-up step 1 exists to answer.
+static void probePids(PidProbe* table, size_t count) {
+  for (size_t i = 0; i < count; i++) {
+    int v = 0;
+    table[i].tried = true;
+    table[i].ok = obd.readPID(table[i].pid, v);
+    if (table[i].ok) table[i].value = v;
+  }
+}
+
+static int pidValue(const PidProbe* table, size_t count, byte pid, int fallback) {
+  for (size_t i = 0; i < count; i++)
+    if (table[i].pid == pid) return table[i].ok ? table[i].value : fallback;
+  return fallback;
+}
+
+// Build one telemetry sample from the vehicle. Runs on core 0 only.
+static void sampleVehicle() {
+  probePids(g_hotPids, HOT_PID_COUNT);
+
+  Sample s{};
+  s.t = millis();
+  s.speedKph = (int16_t)pidValue(g_hotPids, HOT_PID_COUNT, PID_SPEED, 0);
+  s.rpm      = (int16_t)pidValue(g_hotPids, HOT_PID_COUNT, PID_RPM, 0);
+  s.coolantC = (int16_t)pidValue(g_hotPids, HOT_PID_COUNT, PID_COOLANT_TEMP, 0);
+  s.fuelPct  = (int8_t) pidValue(g_hotPids, HOT_PID_COUNT, PID_FUEL_LEVEL, -1);
+  s.battV    = g_batteryV;
+
+  if (g_gpsReady && sys.gpsGetData(&gpsData) && gpsData) {
+    s.lat = gpsData->lat;
+    s.lon = gpsData->lng;                 // NOTE: the struct field is `lng`
+    // GPS_DATA.speed is KNOTS. Recording it as km/h would inflate every
+    // GPS-derived speed by ~1.85x and silently corrupt trip distance.
+    if (s.speedKph == 0 && gpsData->sat > 3)
+      s.speedKph = (int16_t)(gpsData->speed * 1.852f);
+  }
+
+  portENTER_CRITICAL(&g_sampleMux);
+  g_liveSample = s;
+  g_haveLiveSample = true;
+  portEXIT_CRITICAL(&g_sampleMux);
+}
+
 static void obdLinkTask(void*) {
   for (;;) {
     if (g_sysReady) {
@@ -428,7 +548,26 @@ static void obdLinkTask(void*) {
       if (v > 0) { g_batteryV = v; g_batteryAgeMs = millis(); }
       if (!g_obdReady && obd.init()) g_obdReady = true;
     }
-    vTaskDelay(pdMS_TO_TICKS(g_obdReady ? 15000 : 5000));
+
+    if (g_obdReady) {
+      // First read after the ECU link comes up: identity + diagnostics + DTCs.
+      // Once per link rather than per sample — these barely move, and each one
+      // is a UART round trip we do not want in the 1Hz path.
+      if (g_dtcCount < 0) {
+        if (!g_vin[0]) obd.getVIN(g_vin, sizeof(g_vin));
+        probePids(g_diagPids, DIAG_PID_COUNT);
+        int n = obd.readDTC(g_dtc, MAX_DTC);
+        g_dtcCount = n < 0 ? 0 : n;
+        relayLogf("[obd] linked — %d DTC(s), vin=%s", g_dtcCount, g_vin[0] ? g_vin : "n/a");
+      }
+      sampleVehicle();
+      vTaskDelay(pdMS_TO_TICKS(1000 / SAMPLE_HZ));
+    } else {
+      // No ECU: keep the voltage poll alive (standby depends on it) but do not
+      // hammer init(); each attempt blocks for seconds.
+      g_dtcCount = -1;              // re-read diagnostics when the link returns
+      vTaskDelay(pdMS_TO_TICKS(5000));
+    }
   }
 }
 #endif
@@ -606,6 +745,88 @@ static void handleTrip() {
   http.sendContent("");            // terminate the chunked response
 }
 
+#ifdef USE_FREEMATICS
+// GET /pids — which PIDs THIS car actually answers, measured.
+// This is the instrument for bring-up step 1. Everything downstream (what a
+// diagnostics view can show, whether odometer is even reachable) follows from
+// what this returns, and nothing should be assumed before it has been run with
+// the ignition on.
+static void addPidTable(JsonArray arr, const PidProbe* table, size_t count, const char* group) {
+  for (size_t i = 0; i < count; i++) {
+    JsonObject o = arr.add<JsonObject>();
+    char hex[8]; snprintf(hex, sizeof(hex), "0x%02X", table[i].pid);
+    o["pid"] = hex;
+    o["name"] = table[i].name;
+    o["group"] = group;
+    if (table[i].unit[0]) o["unit"] = table[i].unit;
+    o["tried"] = table[i].tried;
+    o["supported"] = table[i].ok;
+    if (table[i].ok) o["value"] = table[i].value;
+  }
+}
+
+static void handlePids() {
+  JsonDocument doc;
+  doc["device"] = "obd-relay";
+  doc["vehicle"] = VEHICLE_ID;
+  doc["ecu_linked"] = g_obdReady;
+  if (!g_obdReady) {
+    // Say so loudly: an all-false table with no ECU link would read as "this car
+    // supports nothing", which is a very different conclusion.
+    doc["note"] = "No ECU link — results are meaningless until obd_ready is true "
+                  "(ignition fully on).";
+  }
+  if (g_vin[0]) doc["vin"] = g_vin;
+  JsonArray arr = doc["pids"].to<JsonArray>();
+  addPidTable(arr, g_hotPids, HOT_PID_COUNT, "hot");
+  addPidTable(arr, g_diagPids, DIAG_PID_COUNT, "diagnostic");
+  String out; serializeJsonPretty(doc, out);
+  http.send(200, "application/json", out);
+}
+
+// GET /diagnostics — current vehicle state rather than a time series:
+// check-engine codes plus the slow-moving PIDs.
+static void handleDiagnostics() {
+  JsonDocument doc;
+  doc["device"] = "obd-relay";
+  doc["vehicle"] = VEHICLE_ID;
+  doc["ecu_linked"] = g_obdReady;
+  doc["ts"] = epochMs();
+  if (g_vin[0]) doc["vin"] = g_vin;
+  doc["battery_v"] = g_batteryV;
+
+  JsonObject mil = doc["check_engine"].to<JsonObject>();
+  mil["read"] = (g_dtcCount >= 0);
+  mil["count"] = g_dtcCount < 0 ? 0 : g_dtcCount;
+  JsonArray codes = mil["codes"].to<JsonArray>();
+  for (int i = 0; i < g_dtcCount && i < MAX_DTC; i++) {
+    // DTCs come back packed; render as the familiar P/C/B/U + 4 hex digits.
+    const char sys[] = {'P','C','B','U'};
+    char buf[8];
+    snprintf(buf, sizeof(buf), "%c%04X", sys[(g_dtc[i] >> 14) & 0x3], g_dtc[i] & 0x3FFF);
+    codes.add(buf);
+  }
+
+  JsonObject vals = doc["readings"].to<JsonObject>();
+  for (size_t i = 0; i < DIAG_PID_COUNT; i++) {
+    if (!g_diagPids[i].ok) continue;     // omit rather than report a fake 0
+    JsonObject o = vals[g_diagPids[i].name].to<JsonObject>();
+    o["value"] = g_diagPids[i].value;
+    if (g_diagPids[i].unit[0]) o["unit"] = g_diagPids[i].unit;
+  }
+  JsonArray unsup = doc["unsupported"].to<JsonArray>();
+  for (size_t i = 0; i < DIAG_PID_COUNT; i++)
+    if (g_diagPids[i].tried && !g_diagPids[i].ok) unsup.add(g_diagPids[i].name);
+
+  // Named explicitly so their absence is not mistaken for "not fitted".
+  doc["not_available_via_obd2"] = "oil life and tyre pressure (TPMS) are not "
+                                  "standard OBD-II; they are manufacturer-specific";
+
+  String out; serializeJsonPretty(doc, out);
+  http.send(200, "application/json", out);
+}
+#endif
+
 // ---- OTA -------------------------------------------------------------------
 // This device lives inside a car. Every firmware change so far has meant pulling
 // it out of the OBD port and carrying it to a USB cable, which is why standby
@@ -707,6 +928,10 @@ static void handleStatus() {
   sb["volt_fault_s"] = STANDBY_VOLT_FAULT_S;
   sb["engine_off_for_s"] = g_engineOffSinceMs
     ? (uint32_t)((millis() - g_engineOffSinceMs) / 1000) : 0;
+  bool inh = g_standbyInhibitUntilMs && (int32_t)(g_standbyInhibitUntilMs - millis()) > 0;
+  sb["inhibited"] = inh;
+  if (inh) sb["inhibit_remaining_s"] = (uint32_t)((g_standbyInhibitUntilMs - millis()) / 1000);
+  sb["gps_ready"] = g_gpsReady;
 #else
   vehicle["build"] = "bench-sim";
 #endif
@@ -806,6 +1031,13 @@ void setup() {
     // (ever_connected:false, 35+ failures) and HTTP answered in 2.5-3s instead
     // of milliseconds, while the identical transport code on the bench build
     // connected immediately. It runs on core 0; Arduino's loop() owns core 1.
+    // GNSS. gpsBeginExt() is the external-antenna path the vendor tries first,
+    // falling back to the internal receiver. Failure is not fatal — trips still
+    // log PIDs without a fix, and time-to-first-fix under a dash is its own
+    // bring-up question (step 2).
+    g_gpsReady = sys.gpsBeginExt() || sys.gpsBegin();
+    relayLogf("[gps] %s", g_gpsReady ? "started" : "unavailable");
+
     xTaskCreatePinnedToCore(obdLinkTask, "obd-link", 4096, nullptr, 1, nullptr, 0);
   } else {
     relayLogLine("[sys] co-processor begin FAILED");
@@ -840,6 +1072,28 @@ void setup() {
   http.on("/trips", handleTrips);      // manifest of buffered payloads
   http.on("/trip", handleTrip);        // one payload, push-identical shape
   http.on("/update", HTTP_POST, handleUpdateResult, handleUpdateUpload);  // OTA
+#ifdef USE_FREEMATICS
+  http.on("/pids", handlePids);              // which PIDs this car answers
+  http.on("/diagnostics", handleDiagnostics); // check-engine + slow-moving state
+  // Hold standby off long enough to flash or inspect a parked device. Bounded
+  // hard at STANDBY_INHIBIT_MAX_MIN so a forgotten inhibit cannot drain the car.
+  http.on("/standby/inhibit", [](){
+    long mins = http.hasArg("minutes") ? http.arg("minutes").toInt() : 10;
+    if (mins < 1) mins = 1;
+    if (mins > STANDBY_INHIBIT_MAX_MIN) mins = STANDBY_INHIBIT_MAX_MIN;
+    g_standbyInhibitUntilMs = millis() + (uint32_t)mins * 60000UL;
+    g_engineOffSinceMs = 0;
+    relayLogf("[standby] inhibited for %ld min", mins);
+    JsonDocument d; d["ok"] = true; d["minutes"] = mins; d["max_minutes"] = STANDBY_INHIBIT_MAX_MIN;
+    String out; serializeJson(d, out);
+    http.send(200, "application/json", out);
+  });
+  http.on("/standby/release", [](){
+    g_standbyInhibitUntilMs = 0;
+    relayLogLine("[standby] inhibit released");
+    http.send(200, "application/json", "{\"ok\":true}");
+  });
+#endif
   http.begin();
   relayLogLine("[http] status server on :80");
 
@@ -864,7 +1118,9 @@ void loop() {
   // mistaken for the engine being switched off.
   // A reading of exactly 0 means "no answer from the co-processor", NOT zero
   // volts; treating that as engine-off would sleep the device on a comms fault.
-  if (!g_otaActive) {
+  bool inhibited = g_standbyInhibitUntilMs && (int32_t)(g_standbyInhibitUntilMs - millis()) > 0;
+  if (inhibited && g_engineOffSinceMs) g_engineOffSinceMs = millis();  // don't bank time while held
+  if (!g_otaActive && !inhibited) {
     if (g_batteryV > 0) {
       if (g_batteryV < STANDBY_ENGINE_OFF_V) {
         if (!g_engineOffSinceMs) g_engineOffSinceMs = millis();
