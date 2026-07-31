@@ -17,7 +17,9 @@ function logger() {
 
 export default function KeyControl({ mediaEl, className = '' }) {
   const [shift, setShift] = useState(0);
-  useKeyShift(mediaEl, shift);
+  // true = the stretch engine failed for this song; the audio was rerouted
+  // dry, so the stepper must grey out rather than pretend to work.
+  const engineFailed = useKeyShift(mediaEl, shift);
   // Tap intent is logged here, upstream of the hook — if the audio chain dies
   // silently we still see exactly what the user asked for and when.
   const step = (delta) => {
@@ -40,13 +42,14 @@ export default function KeyControl({ mediaEl, className = '' }) {
         icon="minus"
         ariaLabel="Lower key"
         className="piano-keyctl__btn"
-        disabled={shift <= KEY_SHIFT_MIN}
+        disabled={engineFailed || shift <= KEY_SHIFT_MIN}
         onPress={() => step(-1)}
       />
       <button
         type="button"
         className={`piano-keyctl__value${shift !== 0 ? ' is-on' : ''}`}
         aria-label="Reset key"
+        disabled={engineFailed}
         onClick={reset}
       >
         {keyShiftLabel(shift)}
@@ -55,7 +58,7 @@ export default function KeyControl({ mediaEl, className = '' }) {
         icon="plus"
         ariaLabel="Raise key"
         className="piano-keyctl__btn"
-        disabled={shift >= KEY_SHIFT_MAX}
+        disabled={engineFailed || shift >= KEY_SHIFT_MAX}
         onPress={() => step(1)}
       />
     </div>
