@@ -182,6 +182,13 @@ static volatile bool g_probeRunning = false;
 static volatile int  g_probeIndex = -1;
 static volatile bool g_probeDone = false;
 static int g_probeWinner = -1;
+// Auto-sweep: the device is in a car and the useful moment is whenever the
+// engine happens to be running, which is exactly when nobody is holding a
+// laptop. Run the sweep unprompted after init() has failed a few times with the
+// engine clearly on, so the answer is already waiting to be read.
+static uint8_t g_obdInitFails = 0;
+static bool g_autoProbeDone = false;   // once per power session, not per minute
+#define AUTO_PROBE_AFTER_FAILS 3
 
 // Live sample handoff: written on core 0, copied on core 1 under a spinlock.
 static portMUX_TYPE g_sampleMux = portMUX_INITIALIZER_UNLOCKED;
@@ -577,6 +584,10 @@ static void runProtocolProbe() {
   g_probeRunning = true;
   g_probeDone = false;
   g_probeWinner = -1;
+  // Hold standby off for the duration from HERE, so both the manual and the
+  // automatic entry points are covered. Bounded (10 min), so if the engine is
+  // switched off mid-sweep the device still sleeps shortly after.
+  g_standbyInhibitUntilMs = millis() + 10UL * 60000UL;
   relayLogLine("[probe] starting protocol sweep");
 
   for (size_t i = 0; i < PROTO_COUNT; i++) {
@@ -635,7 +646,21 @@ static void obdLinkTask(void*) {
       float v = obd.getVoltage();
 #endif
       if (v > 0) { g_batteryV = v; g_batteryAgeMs = millis(); }
-      if (!g_obdReady && obd.init()) g_obdReady = true;
+      if (!g_obdReady) {
+        if (obd.init()) {
+          g_obdReady = true;
+          g_obdInitFails = 0;
+        } else if (++g_obdInitFails >= AUTO_PROBE_AFTER_FAILS
+                   && !g_autoProbeDone
+                   && g_batteryV >= STANDBY_ENGINE_OFF_V) {
+          // Engine is clearly running (charging voltage) and plain init() keeps
+          // failing — sweep now rather than waiting for someone to curl at the
+          // right moment. Once per power session.
+          g_autoProbeDone = true;
+          relayLogLine("[probe] auto-starting after repeated init failures");
+          runProtocolProbe();
+        }
+      }
     }
 
     if (g_obdReady) {
