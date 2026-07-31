@@ -57,7 +57,11 @@ static bool wsConnected = false;
 static uint32_t g_wsDownSinceMs = 0;   // when the live link actually dropped
 static uint32_t g_wsRetries = 0;       // failed reconnects since that drop
 static uint32_t g_wsDropCount = 0;     // real drops since boot (not retries)
+static bool g_wsEverConnected = false; // distinguishes "never reached the bus"
+                                       // from "connected fine, nothing to report":
+                                       // both otherwise read as drops=0 on /status
 static uint32_t g_bootMs = 0;
+static uint32_t g_wifiAssociateMs = 0;  // how long WiFi.begin() took this boot
 
 // Health of the parts that can fail silently. A car that never uploads looks
 // identical from the outside to a car that was never driven, so each of these
@@ -67,7 +71,8 @@ static uint32_t g_tripsUploaded = 0;
 static uint32_t g_tripsAcked = 0;
 #ifdef USE_FREEMATICS
 static bool g_sysReady = false;        // co-processor link up (sys.begin)
-static bool g_obdReady = false;        // ECU link up (obd.init) — needs ignition
+// Written by obdLinkTask on core 0, read by loop()/handleStatus on core 1.
+static volatile bool g_obdReady = false;  // ECU link up (obd.init) — needs ignition
 static int  g_devType = 0;             // reported by the co-processor
 #endif
 
@@ -170,6 +175,19 @@ static void tripOpen() {
   tripFile.println(line);
   tripFile.flush();
   Serial.printf("[trip] started %s\n", tripId.c_str());
+}
+
+// Close the live trip so it becomes uploadable. uploadNextTrip() deliberately
+// skips the still-open trip, so without this the drive you just finished never
+// uploads while you are parked — it would sit on flash until the NEXT boot
+// finalized it, i.e. upload as you are leaving home again. Rotating on arrival
+// is what makes "pull into the garage, kill the engine" actually work.
+static void tripClose() {
+  if (!tripFile) return;
+  tripFile.printf("E,%lu\n", (unsigned long)millis());
+  tripFile.flush();
+  tripFile.close();
+  relayLogf("[trip] closed %s (%lu samples)", tripId.c_str(), (unsigned long)sampleCount);
 }
 
 static void tripAppend(const Sample& s) {
@@ -301,7 +319,14 @@ static void wsEvent(WStype_t type, uint8_t* payload, size_t length) {
       wsConnected = true;
       g_wsDownSinceMs = 0;
       g_wsRetries = 0;
+      g_wsEverConnected = true;
       relayLogLine("[ws] connected");
+      // Arriving home: rotate the live trip so the drive that just finished is
+      // a closed file and uploads NOW, rather than waiting for the next boot.
+      // The window between pulling into the garage and killing the engine is
+      // short, and the device is already associated by then — so the moment the
+      // bus comes up is the moment to bank the drive.
+      if (tripFile && sampleCount > 0) { tripClose(); tripOpen(); }
       JsonDocument doc;
       doc["type"] = "hello"; doc["fw"] = FW_VERSION;
       doc["rssi"] = WiFi.RSSI(); doc["ts"] = epochMs();
@@ -338,6 +363,19 @@ static void wsEvent(WStype_t type, uint8_t* payload, size_t length) {
     default: break;
   }
 }
+
+#ifdef USE_FREEMATICS
+// Owns every blocking call to the OBD co-processor, on core 0, so that the
+// network loop on core 1 is never starved. Deliberately does NOT log directly:
+// relayLogLine() is not thread-safe, so this only flips a flag and lets loop()
+// report the transition.
+static void obdLinkTask(void*) {
+  for (;;) {
+    if (g_sysReady && !g_obdReady && obd.init()) g_obdReady = true;
+    vTaskDelay(pdMS_TO_TICKS(g_obdReady ? 30000 : 5000));
+  }
+}
+#endif
 
 // ---- HTTP pull plane -----------------------------------------------------
 // The push path (uploadNextTrip) only fires when the car is home AND the bus is
@@ -487,14 +525,26 @@ static void handleStatus() {
   wifi["ip"] = WiFi.localIP().toString();
   wifi["rssi"] = WiFi.status() == WL_CONNECTED ? WiFi.RSSI() : 0;
   wifi["ssid"] = WIFI_SSID;
+  // Association time varies from 200ms to the full 15s timeout between boots.
+  // Reporting the BSSID and channel is the prerequisite for pinning them in
+  // WiFi.begin(), which skips the scan and makes the connect deterministic —
+  // the difference between making and missing a 20-second window.
+  wifi["associate_ms"] = g_wifiAssociateMs;
+  if (WiFi.status() == WL_CONNECTED) {
+    wifi["bssid"] = WiFi.BSSIDstr();
+    wifi["channel"] = WiFi.channel();
+  }
 
   JsonObject ws = doc["websocket"].to<JsonObject>();
   ws["connected"] = wsConnected;
   ws["host"] = WS_HOST; ws["port"] = WS_PORT; ws["path"] = WS_PATH;
   ws["drops"] = g_wsDropCount;
+  // Reported unconditionally: a device that has NEVER reached the bus otherwise
+  // looks identical to a healthy one (drops:0, no down_s) on this endpoint.
+  ws["ever_connected"] = g_wsEverConnected;
+  ws["failed_attempts"] = g_wsRetries;
   if (!wsConnected && g_wsDownSinceMs) {
     ws["down_s"] = (uint32_t)((millis() - g_wsDownSinceMs) / 1000);
-    ws["retries"] = g_wsRetries;
   }
 
   JsonObject vehicle = doc["vehicle_link"].to<JsonObject>();
@@ -567,16 +617,24 @@ void setup() {
   // exactly what the board did before this call existed (measured 2026-07-30 —
   // rst:0x3 SW_RESET repeating, no application output). Vendor order, from
   // firmware_v5/telelogger.ino: sys.begin() then obd.begin(sys.link).
-  g_sysReady = sys.begin();
+  // (co-processor, NO cellular). The default is begin(true, true), which brings
+  // up the SIM7670 LTE modem — hardware we deliberately do not use in v1 (no
+  // SIM, no plan). Suspected culprit for the WS client failing every attempt on
+  // the hardware build while the identical transport code connected fine on the
+  // bench builds; cellular init shares timing/power with the radio path.
+  g_sysReady = sys.begin(true, false);
   if (g_sysReady) {
     g_devType = sys.devType;
     relayLogf("[sys] co-processor ready devType=%d", g_devType);
     obd.begin(sys.link);
-    // obd.init() links to the ECU and is expected to FAIL on the bench and on
-    // accessory-only power — the loop retries it, so a failure here is normal
-    // and must not stop boot. Which PIDs this car answers is bring-up step 1.
-    g_obdReady = obd.init();
-    relayLogf("[obd] ECU link %s", g_obdReady ? "up" : "not yet (needs ignition)");
+    // obd.init() BLOCKS for ~5s and fails until the ignition is fully on, so it
+    // must never run on the Arduino loop task. Measured 2026-07-30: retrying it
+    // inline every 5s starved webSocket.loop(), which needs frequent servicing
+    // to finish a handshake — the WS client failed every single attempt
+    // (ever_connected:false, 35+ failures) and HTTP answered in 2.5-3s instead
+    // of milliseconds, while the identical transport code on the bench build
+    // connected immediately. It runs on core 0; Arduino's loop() owns core 1.
+    xTaskCreatePinnedToCore(obdLinkTask, "obd-link", 4096, nullptr, 1, nullptr, 0);
   } else {
     relayLogLine("[sys] co-processor begin FAILED");
   }
@@ -585,9 +643,14 @@ void setup() {
   // Opportunistic WiFi — away from home this simply never connects; sampling
   // and trip buffering don't depend on it.
   WiFi.mode(WIFI_STA);
+  WiFi.persistent(false);        // don't wear flash rewriting creds every boot
+  WiFi.setAutoReconnect(true);   // supplicant keeps trying on its own
+  WiFi.setSleep(false);          // modem sleep adds latency; the car powers us
   WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
   uint32_t t0 = millis();
-  while (WiFi.status() != WL_CONNECTED && millis() - t0 < 15000) delay(300);
+  while (WiFi.status() != WL_CONNECTED && millis() - t0 < 15000) delay(100);
+  g_wifiAssociateMs = millis() - t0;
+  relayLogf("[wifi] associate took %lums", (unsigned long)g_wifiAssociateMs);
   relayLogf("[wifi] %s", WiFi.status() == WL_CONNECTED
             ? WiFi.localIP().toString().c_str() : "not associated (will retry)");
 
@@ -611,22 +674,26 @@ void loop() {
   http.handleClient();
 
 #ifdef USE_FREEMATICS
-  // Retry the ECU link until ignition is fully on. Cheap, and without it the
-  // device would sit inert for a whole drive if it booted on accessory power.
-  static uint32_t lastObdTry = 0;
-  if (g_sysReady && !g_obdReady && millis() - lastObdTry > 5000) {
-    lastObdTry = millis();
-    g_obdReady = obd.init();
-    if (g_obdReady) relayLogLine("[obd] ECU link up");
+  // obdLinkTask (core 0) owns the blocking retries; loop() only reports the
+  // transition, keeping every blocking co-processor call off this task.
+  static bool lastObdReported = false;
+  if (g_obdReady != lastObdReported) {
+    lastObdReported = g_obdReady;
+    relayLogf("[obd] ECU link %s", g_obdReady ? "up" : "lost");
   }
 #endif
 
   // WiFi self-heal + NTP once associated
+  // setAutoReconnect() already retries continuously. The old code called
+  // WiFi.disconnect() + begin() every 10s, which TORE DOWN whatever association
+  // attempt was in flight and restarted it from scratch — actively slower than
+  // leaving the supplicant alone. Only force a fresh begin() after a long stall.
   static uint32_t lastWifiTry = 0;
-  if (WiFi.status() != WL_CONNECTED && millis() - lastWifiTry > 10000) {
+  if (WiFi.status() != WL_CONNECTED && millis() - lastWifiTry > 30000) {
     lastWifiTry = millis();
-    WiFi.disconnect(); WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+    WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
   }
+  if (WiFi.status() == WL_CONNECTED) lastWifiTry = millis();
   if (WiFi.status() == WL_CONNECTED && !timeSynced) {
     configTime(0, 0, "pool.ntp.org");
     struct tm tinfo;
