@@ -90,6 +90,9 @@ export default function useKaraokeKeys({
     const onKeyDown = (e) => {
       const t = e.target;
       if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
+      // Never swallow browser/OS chords — Ctrl/Cmd+= (zoom), Alt+ArrowLeft
+      // (browser back/history) etc. must reach the browser untouched.
+      if (e.ctrlKey || e.metaKey || e.altKey) return;
       const cb = cbRef.current;
       let handled = true;
       if (e.key === 'ArrowRight') {
@@ -135,6 +138,12 @@ export default function useKaraokeKeys({
     };
 
     // Capture phase: fire before (and suppress) the Player's bubble listener.
+    // The kiosk's screensaver/inactivity activity-bump listeners
+    // (usePianoScreensaver, useInactivityReturn) are also capture-phase but
+    // registered earlier, at app mount, so they still run before this
+    // handler and see swallowed keys too — if their registration ever
+    // churns to after this hook mounts, stopImmediatePropagation here would
+    // starve them.
     window.addEventListener('keydown', onKeyDown, true);
     return () => window.removeEventListener('keydown', onKeyDown, true);
   }, []);

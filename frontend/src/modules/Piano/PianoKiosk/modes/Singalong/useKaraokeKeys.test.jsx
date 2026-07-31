@@ -170,4 +170,15 @@ describe('useKaraokeKeys', () => {
     press('End');
     expect(d.onEndSong).not.toHaveBeenCalled();
   });
+
+  it('browser/OS chords (Ctrl/Cmd/Alt) are never swallowed as karaoke actions', () => {
+    const d = deps();
+    renderHook(() => useKaraokeKeys(d));
+    const ctrlEquals = press('=', { ctrlKey: true });
+    expect(h.mix.setMediaLevel).not.toHaveBeenCalled();
+    expect(ctrlEquals.defaultPrevented).toBe(false);
+    const altLeft = press('ArrowLeft', { altKey: true });
+    expect(d.onSkip).not.toHaveBeenCalled();
+    expect(altLeft.defaultPrevented).toBe(false);
+  });
 });
