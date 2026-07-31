@@ -152,3 +152,8 @@ tests/isolated/rendering/school/golden/snapshots/*.diff.png
 # Mutation-test scratch modules (tests/isolated/e2e/school/sabotage.test.mjs writes
 # a patched sibling of a real module and deletes it; this catches a crashed run).
 __sabotage_*.mjs
+
+# `npm run sheet` writes ./<sheet-id>.pdf by default. The PDF is a build product of
+# sheets.yml + scales.yml and is not byte-stable anyway (pdfkit stamps a creation
+# date), so committing it would churn on every regeneration.
+/*.pdf

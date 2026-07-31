@@ -19,7 +19,7 @@
  */
 
 import { parseScan } from '#domains/nutrition/index.mjs';
-import { densityForLevel } from '../lib/scaleNutribotConfig.mjs';
+import { containerForTare, densityForCode } from '../lib/scaleNutribotConfig.mjs';
 
 /**
  * A fresh object every time rather than a shared constant. The saving would be
@@ -86,18 +86,23 @@ export class ApplyScanToComposition {
     }
 
     if (parsed.kind === 'density') {
-      // Parsing only proves the level is inside the grammar; the level still has
-      // to exist in the config table. Rejecting here keeps a gap in the table from
-      // becoming a "fix the YAML" error discovered at the fridge.
-      const row = densityForLevel(this.#config, parsed.level);
+      // The scan carries kcal per 100 g, not the ordinal rung. Resolve it to a
+      // config row: the calorie figure is already in hand, but the row supplies
+      // the macro split and the label, and its ORDINAL `level` is what the store
+      // and every downstream consumer key on. Rejecting a value with no row keeps
+      // a sheet/table disagreement from becoming a plausible wrong calorie count.
+      const row = densityForCode(this.#config, parsed.kcalPer100g);
       if (!row) {
-        this.#logger.warn?.('applyScan.unknownDensityLevel', { scaleId, level: parsed.level });
-        return { handled: true, ok: false, kind: 'density', error: 'UNKNOWN_DENSITY_LEVEL', level: parsed.level };
+        this.#logger.warn?.('applyScan.unknownDensityLevel', { scaleId, kcalPer100g: parsed.kcalPer100g });
+        return {
+          handled: true, ok: false, kind: 'density',
+          error: 'UNKNOWN_DENSITY_LEVEL', kcalPer100g: parsed.kcalPer100g,
+        };
       }
 
-      this.#store.setDensity(scaleId, parsed.level);
-      this.#logger.info?.('applyScan.density', { scaleId, level: parsed.level });
-      return { handled: true, ok: true, kind: 'density', level: parsed.level, label: row.label, emoji: row.emoji };
+      this.#store.setDensity(scaleId, row.level);
+      this.#logger.info?.('applyScan.density', { scaleId, level: row.level, kcalPer100g: parsed.kcalPer100g });
+      return { handled: true, ok: true, kind: 'density', level: row.level, label: row.label, emoji: row.emoji };
     }
 
     // EXPLICIT, never the fall-through. This branch was the implicit `else` once,
@@ -106,20 +111,23 @@ export class ApplyScanToComposition {
     // control command reported to the user as a broken container. `undo` and
     // `done` did exactly that between the grammar landing and their handlers.
     //
-    // An unknown id must NOT reach the store. `resolveScaleNet` would find no
-    // matching row and fall back to the un-tared gross; it does flag that on the
-    // prompt, but a renamed id is better caught at scan time than argued about
-    // later on the message.
+    // An unresolvable tare must NOT reach the store. `resolveScaleNet` would find
+    // no matching row and fall back to the un-tared gross; it does flag that on
+    // the prompt, but a sheet/table disagreement is better caught at scan time
+    // than argued about later on the message.
     if (parsed.kind === 'container') {
-      const item = (this.#config.containers?.items || []).find((c) => c.id === parsed.id);
+      // The scan carries the tare in grams, so the subtraction needs no lookup.
+      // The row is still resolved for its label, emoji and id — the id is what the
+      // store keys on, and the ack is unreadable without a name.
+      const item = containerForTare(this.#config, parsed.grams);
       if (!item) {
-        this.#logger.warn?.('applyScan.unknownContainer', { scaleId, id: parsed.id });
-        return { handled: true, ok: false, kind: 'container', error: 'UNKNOWN_CONTAINER', id: parsed.id };
+        this.#logger.warn?.('applyScan.unknownContainer', { scaleId, grams: parsed.grams });
+        return { handled: true, ok: false, kind: 'container', error: 'UNKNOWN_CONTAINER', grams: parsed.grams };
       }
 
-      this.#store.setContainer(scaleId, parsed.id);
-      this.#logger.info?.('applyScan.container', { scaleId, id: parsed.id, grams: item.grams });
-      return { handled: true, ok: true, kind: 'container', id: parsed.id, label: item.label, emoji: item.emoji, grams: item.grams };
+      this.#store.setContainer(scaleId, item.id);
+      this.#logger.info?.('applyScan.container', { scaleId, id: item.id, grams: parsed.grams });
+      return { handled: true, ok: true, kind: 'container', id: item.id, label: item.label, emoji: item.emoji, grams: item.grams };
     }
 
     // A kind the grammar produced that this use case does not implement — a

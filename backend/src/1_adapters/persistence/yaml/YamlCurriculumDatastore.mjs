@@ -3,9 +3,21 @@
  * only — it parses files and hands the result straight back; every rule about
  * what a valid unit/document/manifest looks like lives in the domain.
  *
- *   units      <dataDir>/content/school/curriculum/units/{unitId}.yml
- *   documents  <dataDir>/content/school/curriculum/documents/{id}.yml
- *   manifests  <dataDir>/content/school/curriculum/manifests/{id}.yml
+ *   units      <dataDir>/content/school/{subject}/units/{unitId}.yml
+ *   documents  <dataDir>/content/school/{subject}/documents/{id}.yml
+ *   manifests  <dataDir>/content/school/{subject}/manifests/{id}.yml
+ *
+ * Filed under the nine subject shelves so the tree reads the way the School home
+ * does. The shelf is a DIRECTORY here, but it is not the address: ids stay flat
+ * and globally unique because everything else refers to them bare
+ * (`assignments/{learner}.yml` says `courses: [math-fractions]`). So the same id
+ * may not appear under two subjects, and this adapter reports it if it does.
+ *
+ * A unit also carries `subject:` in-file, which the domain validates. That makes
+ * two places to say the same thing, so this adapter cross-checks them and
+ * reports a mismatch. The FIELD stays the source of truth — the domain owns it,
+ * and Plex-sourced material has no folder at all — but only storage can see the
+ * folder, so only storage can catch the drift.
  *
  * Mirrors YamlSchoolDatastore's posture: injected configService, an id regex
  * that makes traversal unrepresentable, and a batched async directory scan so a
@@ -22,11 +34,12 @@ import fs from 'fs';
 import yaml from 'js-yaml';
 import { loadYamlSafe } from '#system/utils/FileIO.mjs';
 import { ICurriculumCatalog } from '#apps/school/ports/ICurriculumCatalog.mjs';
+import { SUBJECT_IDS } from '#domains/school/curriculum/unitValidation.mjs';
 import { InfrastructureError } from '#system/utils/errors/index.mjs';
 
 /**
- * Curriculum ids are FLAT basenames — unlike bank ids there is no folder
- * hierarchy here, so no '/' is allowed and traversal has nowhere to go. Dots are
+ * Curriculum ids are FLAT basenames — the subject folder above them is filing,
+ * not addressing, so no '/' is allowed and traversal has nowhere to go. Dots are
  * allowed because a unit names its course chapter that way (`math-3.4`), and
  * requiring a leading alphanumeric is what keeps `..` and `.hidden` out.
  */
@@ -48,37 +61,72 @@ export class YamlCurriculumDatastore extends ICurriculumCatalog {
     this.#configService = config.configService;
   }
 
-  #kindDir(kind) {
-    return path.join(this.#configService.getDataDir(), 'content', 'school', 'curriculum', kind);
+  #schoolDir() {
+    return path.join(this.#configService.getDataDir(), 'content', 'school');
+  }
+
+  #kindDir(subject, work, kind) {
+    return path.join(this.#schoolDir(), subject, work, kind);
   }
 
   /**
-   * Directory entries for one kind, as `{ id, file }`. Subdirectories are
-   * ignored (ids are flat) and unsafe names are surfaced rather than dropped —
-   * a file nobody can address is an authoring mistake worth seeing.
+   * Work directories on one shelf. A work (Shakespeare Tales, math-fractions) is
+   * a self-contained folder holding its own units, documents, manifests and
+   * quizzes; a shelf with no works yet simply has no directories to list.
    */
-  #scan(kind, errors) {
-    const dir = this.#kindDir(kind);
-    let entries;
+  #works(subject) {
     try {
-      entries = fs.readdirSync(dir, { withFileTypes: true });
-    } catch (err) {
-      // A directory that does not exist yet is an empty catalog, not a throw.
-      // Anything else (a file where a directory should be, bad permissions) is
-      // reported — blanking the catalog because of it is how a whole shelf of
-      // curriculum silently disappears.
-      if (err.code !== 'ENOENT') errors.push(`${kind}: unreadable directory (${err.message})`);
+      return fs.readdirSync(path.join(this.#schoolDir(), subject), { withFileTypes: true })
+        .filter((e) => e.isDirectory() && !e.name.startsWith('.'))
+        .map((e) => e.name);
+    } catch {
       return [];
     }
+  }
+
+  /**
+   * Directory entries for one kind across every subject, as
+   * `{ id, file, subject, dir }`. Subdirectories below the kind are ignored (ids
+   * are flat) and unsafe names are surfaced rather than dropped — a file nobody
+   * can address is an authoring mistake worth seeing.
+   */
+  #scan(kind, errors) {
     const out = [];
-    for (const entry of entries) {
-      if (!entry.isFile() || entry.name.startsWith('.') || !YAML_FILE_RE.test(entry.name)) continue;
-      const id = entry.name.replace(YAML_FILE_RE, '');
-      if (!CURRICULUM_ID_RE.test(id)) {
-        errors.push(`${kind}/${id}: unsafe id, skipped (must match ${CURRICULUM_ID_RE.source})`);
-        continue;
+    const seen = new Map();
+    for (const subject of SUBJECT_IDS) {
+      for (const work of this.#works(subject)) {
+        const dir = this.#kindDir(subject, work, kind);
+        const where = `${subject}/${work}/${kind}`;
+        let entries;
+        try {
+          entries = fs.readdirSync(dir, { withFileTypes: true });
+        } catch (err) {
+          // A directory that does not exist yet is an empty shelf, not a throw —
+          // most works have no curriculum of a given kind. Anything else (a
+          // file where a directory should be, bad permissions) is reported;
+          // blanking the catalog because of it is how a whole shelf silently
+          // disappears.
+          if (err.code !== 'ENOENT') errors.push(`${where}: unreadable directory (${err.message})`);
+          continue;
+        }
+        for (const entry of entries) {
+          if (!entry.isFile() || entry.name.startsWith('.') || !YAML_FILE_RE.test(entry.name)) continue;
+          const id = entry.name.replace(YAML_FILE_RE, '');
+          if (!CURRICULUM_ID_RE.test(id)) {
+            errors.push(`${where}/${id}: unsafe id, skipped (must match ${CURRICULUM_ID_RE.source})`);
+            continue;
+          }
+          // Ids address globally, so the same one under two works is ambiguous:
+          // a bare reference could not say which was meant.
+          const prior = seen.get(id);
+          if (prior) {
+            errors.push(`${kind}/${id}: duplicate id in ${prior} and ${subject}/${work}, latter skipped`);
+            continue;
+          }
+          seen.set(id, `${subject}/${work}`);
+          out.push({ id, file: entry.name, subject, dir });
+        }
       }
-      out.push({ id, file: entry.name });
     }
     return out.sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
   }
@@ -90,25 +138,30 @@ export class YamlCurriculumDatastore extends ICurriculumCatalog {
   async #list(kind, { batch = 200 } = {}) {
     const errors = [];
     const entries = this.#scan(kind, errors);
-    const dir = this.#kindDir(kind);
     const items = [];
     for (let i = 0; i < entries.length; i += batch) {
       const slice = entries.slice(i, i + batch);
       // eslint-disable-next-line no-await-in-loop
-      const chunk = await Promise.all(slice.map(async ({ id, file }) => {
+      const chunk = await Promise.all(slice.map(async ({ id, file, subject, dir }) => {
         try {
           const raw = yaml.load(await fs.promises.readFile(path.join(dir, file), 'utf8'));
           // An empty (or `null`) file is not an entity. Reporting it beats
           // handing the validators a null to reject with a vaguer message.
           if (raw === null || raw === undefined) return { id, error: 'file is empty' };
-          return { id, raw };
+          return { id, raw, subject };
         } catch (err) {
           return { id, error: err.message };
         }
       }));
       for (const result of chunk) {
-        if (result.error) errors.push(`${kind}/${result.id}: ${result.error}`);
-        else items.push({ id: result.id, raw: result.raw });
+        if (result.error) { errors.push(`${kind}/${result.id}: ${result.error}`); continue; }
+        // Only units carry `subject:`; documents and manifests take their shelf
+        // from the folder alone, so there is nothing to disagree with.
+        const declared = result.raw?.subject;
+        if (declared !== undefined && declared !== result.subject) {
+          errors.push(`${kind}/${result.id}: filed under ${result.subject}/ but declares subject: ${declared}`);
+        }
+        items.push({ id: result.id, raw: result.raw });
       }
     }
     return { items, errors };
@@ -116,7 +169,14 @@ export class YamlCurriculumDatastore extends ICurriculumCatalog {
 
   async #get(kind, id) {
     if (typeof id !== 'string' || !CURRICULUM_ID_RE.test(id)) return null;
-    return loadYamlSafe(path.join(this.#kindDir(kind), id)) ?? null;
+    // Ids are unique across works, so the first hit is the only hit.
+    for (const subject of SUBJECT_IDS) {
+      for (const work of this.#works(subject)) {
+        const found = loadYamlSafe(path.join(this.#kindDir(subject, work, kind), id));
+        if (found) return found;
+      }
+    }
+    return null;
   }
 
   /** @param {{ batch?: number }} [options] */

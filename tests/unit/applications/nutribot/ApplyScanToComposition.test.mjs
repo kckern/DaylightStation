@@ -40,31 +40,31 @@ describe('ApplyScanToComposition', () => {
   });
 
   it('records a configured density level', () => {
-    const r = apply.execute({ scaleId: 'kitchen', code: 'dl:4' });
+    const r = apply.execute({ scaleId: 'kitchen', code: 'dl:140' });
     expect(r).toMatchObject({ handled: true, kind: 'density', label: 'Mixed' });
     expect(store.read('kitchen').density).toBe(4);
   });
 
-  it('refuses a level that parses but has no config row', () => {
-    const r = apply.execute({ scaleId: 'kitchen', code: 'dl:9' });
+  it('refuses a density that parses but matches no config row', () => {
+    const r = apply.execute({ scaleId: 'kitchen', code: 'dl:999' });
     expect(r).toMatchObject({ handled: true, ok: false, error: 'UNKNOWN_DENSITY_LEVEL' });
     expect(store.read('kitchen').density).toBeNull();
   });
 
   it('records a configured container', () => {
-    const r = apply.execute({ scaleId: 'kitchen', code: 'ct:mug' });
+    const r = apply.execute({ scaleId: 'kitchen', code: 'ct:350' });
     expect(r).toMatchObject({ handled: true, kind: 'container', label: 'Mug', grams: 350 });
     expect(store.read('kitchen').container).toBe('mug');
   });
 
   it('refuses an unknown container instead of taring zero', () => {
-    const r = apply.execute({ scaleId: 'kitchen', code: 'ct:teapot' });
+    const r = apply.execute({ scaleId: 'kitchen', code: 'ct:777' });
     expect(r).toMatchObject({ handled: true, ok: false, error: 'UNKNOWN_CONTAINER' });
     expect(store.read('kitchen').container).toBeNull();
   });
 
   it('clears on rs:clear and reports whether anything was live', () => {
-    apply.execute({ scaleId: 'kitchen', code: 'dl:4' });
+    apply.execute({ scaleId: 'kitchen', code: 'dl:140' });
     expect(apply.execute({ scaleId: 'kitchen', code: 'rs:clear' })).toMatchObject({ handled: true, hadState: true });
     expect(apply.execute({ scaleId: 'kitchen', code: 'rs:clear' })).toMatchObject({ handled: true, hadState: false });
   });
@@ -82,8 +82,8 @@ describe('ApplyScanToComposition', () => {
 
   describe('rs:undo', () => {
     it('takes back the last scan and leaves the ones before it', () => {
-      apply.execute({ scaleId: 'kitchen', code: 'ct:mug' });
-      apply.execute({ scaleId: 'kitchen', code: 'dl:4' });
+      apply.execute({ scaleId: 'kitchen', code: 'ct:350' });
+      apply.execute({ scaleId: 'kitchen', code: 'dl:140' });
       const r = apply.execute({ scaleId: 'kitchen', code: 'rs:undo' });
       expect(r).toMatchObject({ handled: true, ok: true, kind: 'undo', undone: true });
       expect(store.read('kitchen')).toMatchObject({ container: 'mug', density: null });
@@ -97,19 +97,19 @@ describe('ApplyScanToComposition', () => {
     });
 
     it('is one deep across two consecutive scans', () => {
-      apply.execute({ scaleId: 'kitchen', code: 'ct:mug' });
-      apply.execute({ scaleId: 'kitchen', code: 'dl:4' });
+      apply.execute({ scaleId: 'kitchen', code: 'ct:350' });
+      apply.execute({ scaleId: 'kitchen', code: 'dl:140' });
       expect(apply.execute({ scaleId: 'kitchen', code: 'rs:undo' })).toMatchObject({ undone: true });
       expect(apply.execute({ scaleId: 'kitchen', code: 'rs:undo' })).toMatchObject({ undone: false });
       expect(store.read('kitchen').container).toBe('mug');
     });
 
     it('does not take back a scan the use case refused', () => {
-      // `ct:teapot` never reached the store, so there is no step for it to undo.
-      apply.execute({ scaleId: 'kitchen', code: 'dl:4' });
-      apply.execute({ scaleId: 'kitchen', code: 'ct:teapot' });
+      // `ct:777` never reached the store, so there is no step for it to undo.
+      apply.execute({ scaleId: 'kitchen', code: 'dl:140' });
+      apply.execute({ scaleId: 'kitchen', code: 'ct:777' });
       expect(apply.execute({ scaleId: 'kitchen', code: 'rs:undo' })).toMatchObject({ undone: true });
-      expect(store.read('kitchen').active).toBe(false);   // dl:4 was the only step
+      expect(store.read('kitchen').active).toBe(false);   // dl:140 was the only step
     });
   });
 
@@ -119,8 +119,8 @@ describe('ApplyScanToComposition', () => {
 
   describe('rs:done', () => {
     it('ends the placement, consuming every slot', () => {
-      apply.execute({ scaleId: 'kitchen', code: 'ct:mug' });
-      apply.execute({ scaleId: 'kitchen', code: 'dl:4' });
+      apply.execute({ scaleId: 'kitchen', code: 'ct:350' });
+      apply.execute({ scaleId: 'kitchen', code: 'dl:140' });
       const r = apply.execute({ scaleId: 'kitchen', code: 'rs:done' });
       expect(r).toMatchObject({ handled: true, ok: true, kind: 'done', hadState: true });
       expect(store.read('kitchen')).toMatchObject({ density: null, container: null, active: false });
@@ -134,12 +134,12 @@ describe('ApplyScanToComposition', () => {
     it('is reported as done, never as reset — the two mean different things', () => {
       // `rs:done` says "process it", `rs:clear` says "forget it". They wipe the
       // same state today; the ack the user reads must not conflate them.
-      apply.execute({ scaleId: 'kitchen', code: 'dl:4' });
+      apply.execute({ scaleId: 'kitchen', code: 'dl:140' });
       expect(apply.execute({ scaleId: 'kitchen', code: 'rs:done' }).kind).toBe('done');
     });
 
     it('leaves nothing for a following undo to resurrect', () => {
-      apply.execute({ scaleId: 'kitchen', code: 'dl:4' });
+      apply.execute({ scaleId: 'kitchen', code: 'dl:140' });
       apply.execute({ scaleId: 'kitchen', code: 'rs:done' });
       expect(apply.execute({ scaleId: 'kitchen', code: 'rs:undo' })).toMatchObject({ undone: false });
     });

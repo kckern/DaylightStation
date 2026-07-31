@@ -67,20 +67,50 @@ describe('nutrition sheet providers — anti-drift round-trip', () => {
     expect(providers['nutrition.containers']()).toHaveLength(4);
   });
 
-  it('a density code resolves to the level the item claims', () => {
+  // The printed code carries the PHYSICAL quantity, so the round-trip is against
+  // the calorie figure, not against the ordinal rung `meta.level`. Asserting it
+  // against the rung is what this test used to do, and it would now pass only by
+  // coincidence on a table whose rungs happened to equal its densities.
+  it('a density code resolves to the kcal/100g the item claims', () => {
     for (const cfg of [FIXTURE, normalizeScaleNutribotConfig({})]) {
       for (const item of providersFor(cfg)['nutrition.density']()) {
-        expect(parseScan(item.code)).toEqual({ kind: 'density', level: item.meta.level });
+        expect(parseScan(item.code)).toEqual({
+          kind: 'density',
+          kcalPer100g: Math.round(item.meta.kcalPerG * 100),
+        });
       }
     }
   });
 
-  it('a container code resolves to the id the item claims', () => {
+  it('a container code resolves to the tare the item claims', () => {
     for (const cfg of [FIXTURE, normalizeScaleNutribotConfig({})]) {
       for (const item of providersFor(cfg)['nutrition.containers']()) {
-        expect(parseScan(item.code)).toEqual({ kind: 'container', id: item.meta.id });
+        expect(parseScan(item.code)).toEqual({ kind: 'container', grams: item.meta.grams });
       }
     }
+  });
+
+  // The whole point of encoding from the physical value: a card's KEY is free to
+  // change without touching what gets printed. Renaming an id or renumbering a
+  // rung must leave every code byte-identical.
+  it('renaming an id or renumbering a rung does not change any printed code', () => {
+    const before = {
+      density: providersFor(FIXTURE)['nutrition.density']().map((i) => i.code),
+      containers: providersFor(FIXTURE)['nutrition.containers']().map((i) => i.code),
+    };
+
+    const rekeyed = {
+      ...FIXTURE,
+      densityLevels: FIXTURE.densityLevels.map((l, i) => ({ ...l, level: i + 1 })),
+      containers: {
+        ...FIXTURE.containers,
+        items: FIXTURE.containers.items.map((c) => ({ ...c, id: `renamed-${c.id}` })),
+      },
+    };
+
+    expect(providersFor(rekeyed)['nutrition.density']().map((i) => i.code)).toEqual(before.density);
+    expect(providersFor(rekeyed)['nutrition.containers']().map((i) => i.code))
+      .toEqual(before.containers);
   });
 
   it('a control code resolves to the verb kind — clear parses to "reset", not "clear"', () => {
@@ -108,25 +138,28 @@ describe('nutrition sheet providers — content', () => {
   it('density items read like the Telegram keyboard: config label + kcal/g', () => {
     const items = providersFor(FIXTURE)['nutrition.density']();
     expect(items).toHaveLength(2);
+    // dl:60, not dl:2 — the code is 0.6 kcal/g expressed per 100 g. `meta.level`
+    // still carries the rung, because that is what the store and the Telegram
+    // keyboard key on; it just is not what gets printed.
     expect(items[0]).toMatchObject({
-      code: 'dl:2',
+      code: 'dl:60',
       label: 'Light',
       sublabel: '0.6 kcal/g',
-      meta: { level: 2 },
+      meta: { level: 2, kcalPerG: 0.6 },
     });
-    expect(items[1]).toMatchObject({ code: 'dl:7', label: 'Rich', sublabel: '3.8 kcal/g' });
+    expect(items[1]).toMatchObject({ code: 'dl:380', label: 'Rich', sublabel: '3.8 kcal/g' });
   });
 
   it('container items carry the config label and their tare weight', () => {
     const items = providersFor(FIXTURE)['nutrition.containers']();
     expect(items).toHaveLength(2);
     expect(items[0]).toMatchObject({
-      code: 'ct:dinner-bowl',
+      code: 'ct:250',
       label: 'Dinner bowl',
       sublabel: '250 g',
-      meta: { id: 'dinner-bowl' },
+      meta: { id: 'dinner-bowl', grams: 250 },
     });
-    expect(items[1].code).toBe('ct:mug');
+    expect(items[1].code).toBe('ct:350');
   });
 
   it('controls are derived from CONTROL_VERBS, not a hardcoded list', () => {
@@ -180,14 +213,24 @@ describe('nutrition sheet providers — missing config', () => {
 });
 
 describe('nutrition sheet providers — unprintable config fails loudly', () => {
-  it('a density level outside the grammar throws instead of being dropped', () => {
+  // What must be printable is now the QUANTITY, not the key — so these fixtures
+  // carry an out-of-range kcal_per_g and tare rather than a malformed id.
+  it('a density whose calories cannot be printed throws instead of being dropped', () => {
     // Silently skipping the row would punch a hole in a laminated sheet.
-    const providers = providersFor({ densityLevels: [{ level: 42, label: 'Nope', kcal_per_g: 1 }] });
-    expect(() => providers['nutrition.density']()).toThrow(/Density level/);
+    const providers = providersFor({ densityLevels: [{ level: 1, label: 'Nope', kcal_per_g: 99 }] });
+    expect(() => providers['nutrition.density']()).toThrow(/Density code/);
   });
 
-  it('a container id the parser would reject throws instead of being dropped', () => {
-    const providers = providersFor({ containers: { items: [{ id: 'Big Bowl', label: 'Big bowl', grams: 1 }] } });
-    expect(() => providers['nutrition.containers']()).toThrow(/Container id/);
+  it('a tare the parser would reject throws instead of being dropped', () => {
+    const providers = providersFor({ containers: { items: [{ id: 'vat', label: 'Vat', grams: 50000 }] } });
+    expect(() => providers['nutrition.containers']()).toThrow(/Container tare/);
+  });
+
+  // A row with no usable weight must not quietly print `ct:NaN` or `ct:0`; a zero
+  // tare is a legitimate value, so coercing to it would be indistinguishable from
+  // a deliberate one and would log the dish as food.
+  it('a container with an unusable grams throws rather than printing a zero tare', () => {
+    const providers = providersFor({ containers: { items: [{ id: 'mystery', label: 'Mystery' }] } });
+    expect(() => providers['nutrition.containers']()).toThrow(/Container tare/);
   });
 });

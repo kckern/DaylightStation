@@ -3,9 +3,12 @@
 How a weight on the kitchen scale becomes a net-weighted, density-classified nutrition
 entry, using a laminated QR sheet on the refrigerator instead of a tare button.
 
-**Status: partially implemented.** The nutrition domain layer and the application-layer
-composition store are built and tested; nothing is wired to the relay or nutribot yet, so
-none of it is reachable from the running system. See [Implementation status](#implementation-status)
+**Status: partially implemented, but the scan path is wired end to end.** The domain layer,
+the composition store, the control grammar and the printable sheet are built, tested and
+reachable: a code scanned on the kitchen relay reaches `barcode_relay.scan`, is claimed by the
+nutrition grammar, and applies to the live composition. What is still missing is the bridge
+integration, the memo flow and the `fd:` food grammar — and no code has yet been scanned off
+printed ink rather than rendered pixels. See [Implementation status](#implementation-status)
 before relying on anything here. Design rationale:
 [`docs/plans/2026-07-21-scan-enriched-food-logging-design.md`](../../plans/2026-07-21-scan-enriched-food-logging-design.md).
 Task plan: [`docs/plans/2026-07-21-scan-enriched-food-logging.md`](../../plans/2026-07-21-scan-enriched-food-logging.md).
@@ -26,11 +29,11 @@ a precise gram measurement, never survives to the entry.
     fridge sheet                      kitchen scale
   ┌──────────────┐                 ┌────────────────┐
   │ dl:1 … dl:9  │  9 density      │ KitchenIQ 50797│
-  │ ct:<id> ×25  │  25 containers  │ SENSSUN FOOD   │
+  │ ct:<id> ×9   │  9 containers   │ SENSSUN FOOD   │
   │ rs:<verb> ×3 │  3 control      └───────┬────────┘
   └──────┬───────┘                         │ BLE notify 0xFFB2
          │ scanned                         ▼
-         │                          ATOM Lite relay          [_extensions/food-scale-relay]
+         │                          ATOM Lite relay          [_extensions/kitchen-relay]
          │                                 │ WS { source:'food-scale', grams, unit, stable }
          ▼                                 ▼
    ATOM Lite relay ──WS──▶  WebSocketEventBus (/ws)
@@ -155,9 +158,10 @@ the stored total rather than an intermediate nobody can see. `fat_g × 9 + carb_
 protein_g × 4 === calories` is a pinned invariant. Rounding inside this module breaks it —
 round at the storage boundary instead.
 
-**The clamp is load-bearing.** While container weights are placeholders, `gross < tare` is
-guaranteed. A negative net clamps to zero and sets `clamped: true`; a silent 0 kcal entry
-would auto-accept into history.
+**The clamp is not decoration.** `gross < tare` is reachable whenever a container is scanned
+against a nearly-empty dish, and the tare ladder rounds to the nearest 20 g, so the tare can
+exceed the gross by a few grams legitimately. A negative net clamps to zero and sets
+`clamped: true`; without it a silent 0 kcal entry would auto-accept into history.
 
 **Strict finite numbers, no coercion.** Every numeric input must be a finite `number` or
 `ValidationError` is thrown — numeric strings included. Both upstream layers already coerce
@@ -200,9 +204,9 @@ within a rolling window (default 900 s).
 stays `pending` on nutribot's existing density/container keyboard.
 
 **Slots are consumed at placement end.** Without this, the second food weighed inside one
-window inherits the first food's density and tare. Weigh yogurt with `dl:2` + `ct:small-bowl`,
+window inherits the first food's density and tare. Weigh yogurt with `dl:2` + `ct:bowl`,
 eat it, weigh pasta six minutes later without scanning, and the pasta logs as level-2 minus a
-180 g bowl that isn't there — and auto-accepts. That is an ordinary evening, not an edge case.
+250 g bowl that isn't there — and auto-accepts. That is an ordinary evening, not an edge case.
 
 **The window refresh set excludes raw scale frames.** The firmware heartbeats at 0.5 Hz
 (`emit.heartbeat_hz`) while the scale rests on its shelf, so frame-driven refresh would mean
@@ -218,7 +222,7 @@ under test.
 Everything lives in the `nutribot:` block of `data/household/config/scales.yml` — no new file,
 since containers and density levels already live there and the printed sheet is generated from
 the same source the parser reads. Schema:
-[`_extensions/food-scale-relay/config.example.yml`](../../../_extensions/food-scale-relay/config.example.yml).
+[`_extensions/kitchen-relay/config.example.yml`](../../../_extensions/kitchen-relay/config.example.yml).
 
 ```yaml
 - level: 9
@@ -247,7 +251,7 @@ restart before it takes effect.
 | Control grammar `rs:clear|undo|done` + one-deep undo | **shipped** |
 | `SheetLayout` / `QRSheetRenderer` / `SheetService` + `GET /api/v1/sheets/:id.pdf` | **shipped** |
 | `npm run sheet` local generator | **shipped** |
-| Config: real container table | **shipped**, but every `grams` is a PLACEHOLDER estimate |
+| Config: real container table | **shipped** — weighed 2026-07-29, 13 vessels → 9 cards |
 | Bridge integration: unit passthrough, session end, mutex | not started |
 | Memo (voice flow-state branch, Memo button) | not started |
 | Food grammar (`fd:` prefix) | not started — sheet prints foods as inert labels, if at all |
@@ -257,9 +261,25 @@ The scan path IS reachable end to end now: a code scanned on the kitchen relay r
 composition. What has NOT happened is a physical test — every verification so far has
 decoded rendered pixels rather than ink under kitchen light.
 
-**The tare weights are estimates.** An unknown or zero tare does not refuse: `computeNet`
-treats it as "no tare" and silently subtracts nothing, so a container scan today reports
-the gross weight as food. Weigh the nine vessels before trusting a tared entry.
+**The tare weights are measured, and the table is a LADDER rather than an inventory.** Every
+vessel went on the scale on 2026-07-29; the numbers were rounded to the nearest 20 g and
+consolidated. Thirteen vessels produced only eight distinct tares, because eight of them fell
+inside a single 55 g span (205–260 g). The size distinctions the first table carried — large
+vs small glass, large vs small measuring cup, coloured vs white bowl — were fiction, since no
+scan could tell those vessels apart, and the measuring cups turned out to be a second name for
+the bowls' tare. Each such group is one card now.
+
+The nine cards are ordered lightest-first, so the printed grid runs small tupperware at
+top-left to dinner plate at bottom-right: **40, 60, 120, 200, 220, 250, 320, 440, 620 g**. Only
+`mug` (120 g) is unweighed — it was added to fill the 60→200 g hole so the ladder has a rung
+for light-but-not-tiny things, and it should go on the scale.
+
+Rounding costs at most 10 g against the measurement, under 7% of the 150 g minimum gross
+weight and well inside the spread between two nominally identical bowls. The ladder itself is
+the guard: no rung is close enough to its neighbour for picking the wrong card to matter much.
+
+**A tare the system does not recognise still fails silently**, which is why the ids matter more
+than the grams — see the caveat below.
 
 ---
 
@@ -289,5 +309,5 @@ the gross weight as food. Weigh the nine vessels before trusting a tared entry.
   dispatch now goes through `triggerDispatchService.handleEvent`.
 - [`docs/plans/2026-07-10-food-scale-relay-design.md`](../../plans/2026-07-10-food-scale-relay-design.md)
   — scale protocol and frame decoding.
-- [`_extensions/food-scale-relay/README.md`](../../../_extensions/food-scale-relay/README.md)
+- [`_extensions/kitchen-relay/README.md`](../../../_extensions/kitchen-relay/README.md)
   — firmware, flashing, and the existing nutribot bridge.

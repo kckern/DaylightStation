@@ -38,23 +38,51 @@ const CONTAINER_PREFIX = 'ct';
 const CONTROL_PREFIX = 'rs';
 
 /**
- * Highest caloric-density level in the grammar.
+ * Highest ORDINAL caloric-density level in the config table.
  *
- * Must stay in lockstep with the `density_levels` table in
- * `_extensions/food-scale-relay/config.example.yml` (currently levels 1-9). The
- * config validator asserts that table against this constant, so a tenth level
- * cannot reach the printed sheet without the parser learning to accept `dl:10`.
+ * This is the 1..9 rung number that `density_levels` rows are keyed by and that
+ * `Composition` stores. It is NOT what gets printed — see `MAX_DENSITY_CODE`.
  */
 export const MAX_DENSITY_LEVEL = 9;
+
+/**
+ * Upper bound on the PRINTED density payload, in kcal per 100 g.
+ *
+ * The two numbers are deliberately different things:
+ *
+ *   config row     level: 4, kcal_per_g: 1.4     <- ordinal, human-ordered
+ *   printed code   dl:140                        <- physical, 1.4 kcal/g
+ *
+ * The printed code carries the QUANTITY so that reading it needs no table. Under
+ * the old scheme the sheet printed the ordinal (`dl:4`), which meant a laminated
+ * code was a pointer into a list: inserting a tenth density between two existing
+ * rungs renumbered every card after it and silently re-pointed printed codes at
+ * the wrong calories. A code that says 140 cannot be re-pointed by an edit to a
+ * neighbouring row. The container grammar does the same with grams (`ct:160`).
+ *
+ * 2000 kcal/100 g = 20 kcal/g, comfortably past pure fat (~9). The ceiling bounds
+ * the printed payload; it does not describe any real food.
+ *
+ * The table is still READ — `computeNutrition` needs the row's macro split, which
+ * no single number can carry, and the ack needs its label. What the scan no
+ * longer needs the table for is the calorie figure itself.
+ */
+export const MAX_DENSITY_CODE = 2000;
 
 /** Canonical container id shape. Case-sensitive — must match `containers.items` keys. */
 const CONTAINER_ID_RE = /^[a-z0-9][a-z0-9-]*$/;
 
-/** Density payload shape: digits, no leading zeros. Range checked separately. */
+/** Printed payload shape for both numeric grammars: digits, no leading zeros. */
 const DENSITY_LEVEL_RE = /^[1-9][0-9]*$/;
 
-const isDensityLevel = (level) =>
-  Number.isInteger(level) && level >= 1 && level <= MAX_DENSITY_LEVEL;
+/** Tare payload: grams, `0` allowed (a weightless liner is a legitimate tare). */
+const CONTAINER_TARE_RE = /^(0|[1-9][0-9]*)$/;
+
+/** Highest printable tare. 9999 g keeps the payload to four digits. */
+const MAX_CONTAINER_TARE_G = 9999;
+
+const isDensityCode = (v) => Number.isInteger(v) && v >= 1 && v <= MAX_DENSITY_CODE;
+const isTareGrams = (v) => Number.isInteger(v) && v >= 0 && v <= MAX_CONTAINER_TARE_G;
 
 /**
  * Control verbs — the punctuation of the grammar.
@@ -97,33 +125,35 @@ const CONTROL_VERB_KINDS = Object.freeze(Object.assign(Object.create(null), {
 export const RESET_CODE = `${CONTROL_PREFIX}:clear`;
 
 /**
- * @param {number} level Caloric-density level, 1..MAX_DENSITY_LEVEL.
+ * @param {number} kcalPer100g Caloric density in kcal per 100 g, 1..MAX_DENSITY_CODE.
+ *   NOT the ordinal `level` — pass `Math.round(row.kcal_per_g * 100)`.
  * @returns {string} Scan code to print on the sheet.
- * @throws {ValidationError} If the level would print a code the parser rejects.
+ * @throws {ValidationError} If the value would print a code the parser rejects.
  */
-export function encodeDensity(level) {
-  if (!isDensityLevel(level)) {
+export function encodeDensity(kcalPer100g) {
+  if (!isDensityCode(kcalPer100g)) {
     throw new ValidationError(
-      `Density level must be an integer 1-${MAX_DENSITY_LEVEL}`,
-      { code: 'INVALID_DENSITY_LEVEL', field: 'level', value: level },
+      `Density code must be an integer 1-${MAX_DENSITY_CODE} (kcal per 100 g)`,
+      { code: 'INVALID_DENSITY_LEVEL', field: 'kcalPer100g', value: kcalPer100g },
     );
   }
-  return `${DENSITY_PREFIX}:${level}`;
+  return `${DENSITY_PREFIX}:${kcalPer100g}`;
 }
 
 /**
- * @param {string} id Container/tare id, e.g. 'dinner-bowl'.
+ * @param {number} grams Tare weight in grams, 0..MAX_CONTAINER_TARE_G. NOT the
+ *   container id — the printed code carries the weight, not the name.
  * @returns {string} Scan code to print on the sheet.
- * @throws {ValidationError} If the id would print a code the parser rejects.
+ * @throws {ValidationError} If the value would print a code the parser rejects.
  */
-export function encodeContainer(id) {
-  if (typeof id !== 'string' || !CONTAINER_ID_RE.test(id)) {
+export function encodeContainer(grams) {
+  if (!isTareGrams(grams)) {
     throw new ValidationError(
-      'Container id must be lowercase alphanumeric with hyphens (e.g. "dinner-bowl")',
-      { code: 'INVALID_CONTAINER_ID', field: 'id', value: id },
+      `Container tare must be an integer 0-${MAX_CONTAINER_TARE_G} grams`,
+      { code: 'INVALID_CONTAINER_ID', field: 'grams', value: grams },
     );
   }
-  return `${CONTAINER_PREFIX}:${id}`;
+  return `${CONTAINER_PREFIX}:${grams}`;
 }
 
 /**
@@ -144,9 +174,13 @@ export function encodeControl(verb) {
 /**
  * Parse a scanned string into a fridge-sheet command.
  *
+ * Both numeric grammars yield a PHYSICAL QUANTITY, not a config key. Resolving
+ * that quantity back to a table row (for macros, label, emoji) is the caller's
+ * job — see `densityForCode` / `containerForTare`.
+ *
  * @param {unknown} code Raw scanned payload.
- * @returns {{kind: 'density', level: number}
- *          |{kind: 'container', id: string}
+ * @returns {{kind: 'density', kcalPer100g: number}
+ *          |{kind: 'container', grams: number}
  *          |{kind: 'reset'}
  *          |{kind: 'undo'}
  *          |{kind: 'done'}
@@ -163,11 +197,13 @@ export function parseScan(code) {
 
   if (prefix === DENSITY_PREFIX) {
     if (!DENSITY_LEVEL_RE.test(rest)) return null;
-    const level = Number(rest);
-    return isDensityLevel(level) ? { kind: 'density', level } : null;
+    const kcalPer100g = Number(rest);
+    return isDensityCode(kcalPer100g) ? { kind: 'density', kcalPer100g } : null;
   }
   if (prefix === CONTAINER_PREFIX) {
-    return CONTAINER_ID_RE.test(rest) ? { kind: 'container', id: rest } : null;
+    if (!CONTAINER_TARE_RE.test(rest)) return null;
+    const grams = Number(rest);
+    return isTareGrams(grams) ? { kind: 'container', grams } : null;
   }
   if (prefix === CONTROL_PREFIX) {
     // Null-prototype map, so `rs:constructor` and `rs:__proto__` cannot resolve
