@@ -1,7 +1,7 @@
 /**
  * YAML persistence for per-learner curriculum assignments (spec §7.2).
  *
- *   <dataDir>/apps/school/assignments/{learnerId}.yml
+ *   <dataDir>/household/apps/school/assignments/{learnerId}.yml
  *
  * Parent-editable by design: this is the one School file a grown-up is expected
  * to open in a text editor, so it is a flat, obvious mapping and the reader is
@@ -27,13 +27,13 @@ export class YamlAssignmentStore extends IAssignmentStore {
 
   constructor(config = {}) {
     super();
-    if (!config.configService || typeof config.configService.getDataDir !== 'function') {
-      throw new Error('YamlAssignmentStore: configService with getDataDir() is required');
+    if (!config.configService || typeof config.configService.getHouseholdPath !== 'function') {
+      throw new Error('YamlAssignmentStore: configService with getHouseholdPath() is required');
     }
     this.#configService = config.configService;
   }
 
-  #root() { return path.join(this.#configService.getDataDir(), 'apps', 'school', 'assignments'); }
+  #root() { return this.#configService.getHouseholdPath('apps/school/assignments'); }
 
   #fileFor(learnerId) { return path.join(this.#root(), `${learnerId}.yml`); }
 

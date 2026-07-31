@@ -1,7 +1,7 @@
 /**
  * YAML persistence for printed action tokens (spec §6.1).
  *
- *   <dataDir>/apps/school/tokens/{body}.yml
+ *   <dataDir>/household/apps/school/tokens/{body}.yml
  *
  * The `sch:` prefix never reaches the filesystem: a colon is legal in a POSIX
  * filename but the prefix is a routing marker, not identity, and stripping it
@@ -37,13 +37,13 @@ export class YamlTokenRegistry extends ITokenRegistry {
 
   constructor(config = {}) {
     super();
-    if (!config.configService || typeof config.configService.getDataDir !== 'function') {
-      throw new Error('YamlTokenRegistry: configService with getDataDir() is required');
+    if (!config.configService || typeof config.configService.getHouseholdPath !== 'function') {
+      throw new Error('YamlTokenRegistry: configService with getHouseholdPath() is required');
     }
     this.#configService = config.configService;
   }
 
-  #root() { return path.join(this.#configService.getDataDir(), 'apps', 'school', 'tokens'); }
+  #root() { return this.#configService.getHouseholdPath('apps/school/tokens'); }
 
   #fileFor(body) { return path.join(this.#root(), `${body}.yml`); }
 

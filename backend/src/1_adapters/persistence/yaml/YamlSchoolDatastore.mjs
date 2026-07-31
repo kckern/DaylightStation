@@ -3,7 +3,7 @@
  * policy (see SchoolService). Mirrors YamlEconomyDatastore's layout:
  *   banks:         <dataDir>/content/quizzes/{bankId}.yml  (bankId may be a nested path)
  *   attempts:      <userDir>/apps/school/attempts/{YYYY-MM-DD}.yml  (append-only)
- *   quiz requests: <dataDir>/apps/school/quiz-requests.yml  (one household list —
+ *   quiz requests: <dataDir>/household/apps/school/quiz-requests.yml  (one household list —
  *                  NOT under content/quizzes, where listBankIds would sweep it up)
  */
 import path from 'path';
@@ -38,7 +38,7 @@ export class YamlSchoolDatastore {
   }
 
   #quizRequestsPath() {
-    return path.join(this.#configService.getDataDir(), 'apps', 'school', 'quiz-requests');
+    return this.#configService.getHouseholdPath('apps/school/quiz-requests');
   }
 
   readQuizRequests() {
@@ -53,10 +53,10 @@ export class YamlSchoolDatastore {
 
   // Printing: an append-only log of completed jobs (feeds the rolling quota)
   // and a pending queue of jobs awaiting a grown-up's approval. Both are one
-  // household-wide list under apps/school (attribution is the per-entry
+  // household-wide list under household/apps/school (attribution is the per-entry
   // userId), same shape as quiz-requests.
-  #printLogPath() { return path.join(this.#configService.getDataDir(), 'apps', 'school', 'print-log'); }
-  #printPendingPath() { return path.join(this.#configService.getDataDir(), 'apps', 'school', 'print-pending'); }
+  #printLogPath() { return this.#configService.getHouseholdPath('apps/school/print-log'); }
+  #printPendingPath() { return this.#configService.getHouseholdPath('apps/school/print-pending'); }
 
   readPrintLog() { return loadYamlSafe(this.#printLogPath()) || []; }
 

@@ -1,7 +1,7 @@
 /**
  * YAML persistence for the parent review queue (spec §7.3).
  *
- *   <dataDir>/apps/school/review/{sessionId}.yml   (a list of review items)
+ *   <dataDir>/household/apps/school/review/{sessionId}.yml   (a list of review items)
  *
  * One file per session, so a queue read for a session that has just been
  * submitted costs one read, and a corrupt file isolates to the one piece of work
@@ -25,13 +25,13 @@ export class YamlReviewQueue extends IReviewQueue {
 
   constructor(config = {}) {
     super();
-    if (!config.configService || typeof config.configService.getDataDir !== 'function') {
-      throw new Error('YamlReviewQueue: configService with getDataDir() is required');
+    if (!config.configService || typeof config.configService.getHouseholdPath !== 'function') {
+      throw new Error('YamlReviewQueue: configService with getHouseholdPath() is required');
     }
     this.#configService = config.configService;
   }
 
-  #root() { return path.join(this.#configService.getDataDir(), 'apps', 'school', 'review'); }
+  #root() { return this.#configService.getHouseholdPath('apps/school/review'); }
 
   #fileFor(sessionId) { return path.join(this.#root(), `${sessionId}.yml`); }
 
