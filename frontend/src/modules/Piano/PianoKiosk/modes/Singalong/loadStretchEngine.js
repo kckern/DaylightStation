@@ -8,7 +8,7 @@
 // a verbatim asset; `@vite-ignore` keeps Rollup from bundling the dynamic import
 // so the browser evaluates that exact file. The package is self-contained (WASM
 // inlined as base64), so nothing else needs to travel with it.
-import stretchUrl from 'signalsmith-stretch/SignalsmithStretch.mjs?url';
+import stretchUrl from '../../../../../../node_modules/signalsmith-stretch/SignalsmithStretch.mjs?url';
 
 export default async function loadStretchEngine() {
   const { default: SignalsmithStretch } = await import(/* @vite-ignore */ stretchUrl);
