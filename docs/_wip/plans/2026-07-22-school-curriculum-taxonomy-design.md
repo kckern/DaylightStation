@@ -46,8 +46,13 @@ standalone. They fire after their track. This also sidesteps the flat
 `BankBrowser` grid, which would otherwise have to render 379 items.
 
 **`school.yml` is the source of truth** for pedagogy and enrolment. Per-work
-detail drills down into `{dataDir}/household/config/curriculum/{slug}.yml`
+detail drills down into `{dataDir}/household/config/works/{slug}.yml`
 rather than bloating it.
+
+(Renamed 2026-07-30 from `config/curriculum/`. Those files are lists of works
+with level restrictions, not curriculum: `curriculum` is reserved for the static
+databank under `content/school/`, and `enrollment`/`cycle` for a live
+per-student instance of one.)
 
 **The subject taxonomy is NOT config.** An earlier draft of this design put a
 `subjects:` block with `subject → strand` nesting into `school.yml`. That was

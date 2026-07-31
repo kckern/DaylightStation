@@ -126,7 +126,7 @@ export async function createSchoolLifecycle({
 
   // --- hardware --------------------------------------------------------------
   const useVirtual = (cfg.virtualDevices ?? lifecycleCfg.virtualDevices) === true;
-  const captureRoot = path.join(dataDir, 'apps', 'school', 'captures');
+  const captureRoot = configService.getHouseholdPath('apps/school/captures');
 
   // --- rendering (the one dependency the application layer cannot import) ----
   let documentRenderer = null;

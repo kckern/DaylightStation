@@ -1,7 +1,7 @@
 /**
  * YAML persistence for printed OMR form maps (spec §3.3).
  *
- *   <dataDir>/apps/school/forms/{formId}.yml
+ *   <dataDir>/household/apps/school/forms/{formId}.yml
  *
  * The form id is the issued artifact id, so a reprint (same artifact) resolves
  * to the identical map and a remediation variant (new artifact) gets its own.
@@ -25,13 +25,13 @@ export class YamlFormMapStore extends IFormMapStore {
 
   constructor(config = {}) {
     super();
-    if (!config.configService || typeof config.configService.getDataDir !== 'function') {
-      throw new Error('YamlFormMapStore: configService with getDataDir() is required');
+    if (!config.configService || typeof config.configService.getHouseholdPath !== 'function') {
+      throw new Error('YamlFormMapStore: configService with getHouseholdPath() is required');
     }
     this.#configService = config.configService;
   }
 
-  #root() { return path.join(this.#configService.getDataDir(), 'apps', 'school', 'forms'); }
+  #root() { return this.#configService.getHouseholdPath('apps/school/forms'); }
 
   #fileFor(formId) { return path.join(this.#root(), `${formId}.yml`); }
 

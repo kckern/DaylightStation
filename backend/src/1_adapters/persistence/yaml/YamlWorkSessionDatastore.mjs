@@ -2,8 +2,8 @@
  * YAML persistence for work-session event logs (spec §5.1). Dumb storage only —
  * lifecycle policy lives in `#domains/school/sessions/sessionEvents.mjs`.
  *
- *   events: <dataDir>/apps/school/sessions/{YYYY-MM-DD}/{sessionId}/events.yml   (append-only)
- *   index:  <dataDir>/apps/school/sessions/{YYYY-MM-DD}/index.yml                (open sessions by learner)
+ *   events: <dataDir>/household/apps/school/sessions/{YYYY-MM-DD}/{sessionId}/events.yml   (append-only)
+ *   index:  <dataDir>/household/apps/school/sessions/{YYYY-MM-DD}/index.yml                (open sessions by learner)
  *
  * The day bucket is the day the session was CREATED, not the day of each event:
  * a session is one folder for its whole life, so a piece of work started before
@@ -43,13 +43,13 @@ export class YamlWorkSessionDatastore extends IWorkSessionRepository {
 
   constructor(config = {}) {
     super();
-    if (!config.configService || typeof config.configService.getDataDir !== 'function') {
-      throw new Error('YamlWorkSessionDatastore: configService with getDataDir() is required');
+    if (!config.configService || typeof config.configService.getHouseholdPath !== 'function') {
+      throw new Error('YamlWorkSessionDatastore: configService with getHouseholdPath() is required');
     }
     this.#configService = config.configService;
   }
 
-  #root() { return path.join(this.#configService.getDataDir(), 'apps', 'school', 'sessions'); }
+  #root() { return this.#configService.getHouseholdPath('apps/school/sessions'); }
 
   async #readYaml(file) {
     try {
