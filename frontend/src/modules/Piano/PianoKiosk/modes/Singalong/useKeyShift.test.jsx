@@ -9,8 +9,8 @@
 // AudioContext are mocked — jsdom has no Web Audio — so assertions target the
 // graph calls, not audible output.
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { renderHook, waitFor } from '@testing-library/react';
-import useKeyShift from './useKeyShift.js';
+import { renderHook, waitFor, act } from '@testing-library/react';
+import useKeyShift, { STRETCH_INIT_TIMEOUT_MS } from './useKeyShift.js';
 
 const h = vi.hoisted(() => {
   const state = { stretches: [], ctxs: [] };
@@ -144,5 +144,37 @@ describe('useKeyShift', () => {
     // it must keep sounding, so the source gets a direct edge to the speakers.
     expect(source.disconnect).toHaveBeenCalled();
     expect(source.connect).toHaveBeenLastCalledWith(lastCtx().destination);
+  });
+
+  it('reroutes the captured source to the speakers and reports failure when the engine rejects', async () => {
+    h.factory.mockRejectedValueOnce(new Error('engine exploded'));
+    const el = video();
+    const { result } = renderHook(() => useKeyShift(el, 2));
+    await waitFor(() => expect(result.current).toBe(true));
+    const source = lastCtx().createMediaElementSource.mock.results.at(-1).value;
+    // Fail AUDIBLE: captured-but-chainless audio must be wired to the speakers.
+    expect(source.disconnect).toHaveBeenCalled();
+    expect(source.connect).toHaveBeenLastCalledWith(lastCtx().destination);
+    expect(h.state.stretches.length).toBe(0);
+  });
+
+  it('a hung engine init rejects at the timeout instead of pending forever', async () => {
+    vi.useFakeTimers();
+    try {
+      h.factory.mockImplementationOnce(() => new Promise(() => {})); // never settles
+      const el = video();
+      const { result } = renderHook(() => useKeyShift(el, 1));
+      // act() flushes the setEngineFailed(true) React schedules once the
+      // race's timeout promise rejects mid-advance — without it the assertion
+      // below can observe the pre-update render (a real flake, not a fake one).
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(STRETCH_INIT_TIMEOUT_MS + 100);
+      });
+      expect(result.current).toBe(true);
+      const source = lastCtx().createMediaElementSource.mock.results.at(-1).value;
+      expect(source.connect).toHaveBeenLastCalledWith(lastCtx().destination);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

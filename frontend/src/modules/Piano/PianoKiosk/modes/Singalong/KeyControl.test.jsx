@@ -63,4 +63,13 @@ describe('KeyControl', () => {
     expect(value().textContent).toBe('Key');
     expect(useKeyShiftSpy).toHaveBeenLastCalledWith(null, 0);
   });
+
+  it('disables every button when the audio engine has failed', () => {
+    useKeyShiftSpy.mockReturnValue(true);
+    render(<KeyControl mediaEl={null} />);
+    expect(screen.getByRole('button', { name: 'Raise key' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Lower key' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Reset key' })).toBeDisabled();
+    useKeyShiftSpy.mockReturnValue(undefined);
+  });
 });
