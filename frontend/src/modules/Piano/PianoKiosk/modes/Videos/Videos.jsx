@@ -139,10 +139,16 @@ export function LecturePlayerRoute({ PlayerComponent = PianoVideoPlayer }) {
   const policy = useMemo(() => resolveCoursePolicy(config.videos, currentUser), [config, currentUser]);
   const nextLecture = useMemo(() => nextLectureAfter(lectures, lectureId), [lectures, lectureId]);
 
-  // The shared Player reacts to `ended` too — its end-of-content advance calls
-  // clear → this goBack. While an auto-advance navigation is in flight that
-  // call must be a no-op, or the user gets yanked to the menu instead of the
-  // next episode. The flag resets once the route lands on the new lecture.
+  // The shared Player reacts to `ended` too — its own end-of-content listener
+  // is registered at element-creation time, BEFORE PianoVideoPlayer's, so in
+  // production it actually FIRES FIRST: clear() → this goBack runs, then
+  // onAutoAdvance sets the flag. React 18 batches both navigations into one
+  // commit, so the user still lands on the next lecture, but the guard as
+  // written can't intercept that ordering. It's kept anyway as
+  // belt-and-suspenders for the reverse ordering (onAutoAdvance first) and for
+  // any non-natural clear() call that races a real auto-advance — a scenario
+  // this ref still protects. The flag resets once the route lands on the new
+  // lecture.
   const advancingRef = useRef(false);
   useEffect(() => { advancingRef.current = false; }, [lectureId]);
 
@@ -162,7 +168,11 @@ export function LecturePlayerRoute({ PlayerComponent = PianoVideoPlayer }) {
     advancingRef.current = true;
     const nextId = lectureContentId(nextLecture);
     getLogger().child({ component: 'piano-videos' }).info('piano.video.auto-advance-next', { from: lectureId, to: nextId });
-    navigate(`../${nextId}`, { relative: 'path' });
+    // `replace: true` — the shared Player's own end-clear→goBack may fire in
+    // the same batched commit (see advancingRef comment above); replacing
+    // instead of pushing keeps that a no-op history-wise, so the natural path
+    // nets exactly one new history entry instead of a spurious extra one.
+    navigate(`../${nextId}`, { relative: 'path', replace: true });
   }, [nextLecture, navigate, lectureId, courseId]);
 
   // Keep the tablet screen awake only while the lecture is ACTIVELY PLAYING
@@ -184,6 +194,7 @@ export function LecturePlayerRoute({ PlayerComponent = PianoVideoPlayer }) {
   }
   return (
     <PlayerComponent
+      key={lectureId}
       lecture={lecture}
       source={source}
       onBack={goBack}
