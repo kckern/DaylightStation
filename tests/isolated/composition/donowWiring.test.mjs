@@ -33,6 +33,7 @@ afterEach(async () => { await rm(dataDir, { recursive: true, force: true }); });
 const fakeConfigService = (donowConfig = {}) => ({
   getHouseholdAppConfig: () => donowConfig,
   getDataDir: () => dataDir,
+  getHouseholdPath: (rel) => `${dataDir}/household/${rel}`,
   getTimezone: () => null,
 });
 
@@ -164,6 +165,7 @@ describe('createSchoolLifecycle — school.yml `programs:` + donow (Task 13)', (
     configService: {
       getHouseholdAppConfig: () => schoolConfig,
       getDataDir: () => dataDir,
+      getHouseholdPath: (rel) => `${dataDir}/household/${rel}`,
       getDeviceConfig: () => null,
       getTimezone: () => null,
     },
@@ -257,6 +259,7 @@ describe('createSchoolLifecycle — school.yml `programs:` + donow (Task 13)', (
       configService: {
         getHouseholdAppConfig: () => ({ lifecycle: { enabled: true }, printing: { host: 'printer.local' } }),
         getDataDir: () => dataDir,
+      getHouseholdPath: (rel) => `${dataDir}/household/${rel}`,
         getDeviceConfig: () => null,
         getTimezone: () => null,
       },
@@ -276,6 +279,7 @@ describe('createSchoolLifecycle — school.yml `programs:` + donow (Task 13)', (
       configService: {
         getHouseholdAppConfig: () => ({ lifecycle: { enabled: true }, printing: { host: 'printer.local' } }),
         getDataDir: () => dataDir,
+      getHouseholdPath: (rel) => `${dataDir}/household/${rel}`,
         getDeviceConfig: () => null,
         getTimezone: () => null,
       },

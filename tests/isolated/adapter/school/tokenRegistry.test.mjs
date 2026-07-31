@@ -13,7 +13,7 @@ let tmp, registry;
 
 beforeEach(() => {
   tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'school-tokens-'));
-  registry = new YamlTokenRegistry({ configService: { getDataDir: () => tmp } });
+  registry = new YamlTokenRegistry({ configService: { getDataDir: () => tmp, getHouseholdPath: (rel) => `${tmp}/${rel}` } });
 });
 
 const tokensRoot = () => path.join(tmp, 'apps', 'school', 'tokens');
@@ -153,7 +153,7 @@ describe('prune', () => {
   const DAY = 86_400_000;
 
   const build = (nowMs, over = {}) => new YamlTokenRegistry({
-    configService: { getDataDir: () => tmp }, now: () => nowMs, ...over,
+    configService: { getDataDir: () => tmp, getHouseholdPath: (rel) => `${tmp}/${rel}` }, now: () => nowMs, ...over,
   });
 
   const fileCount = () => fs.readdirSync(tokensRoot()).length;

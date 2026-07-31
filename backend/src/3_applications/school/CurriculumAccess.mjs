@@ -27,6 +27,7 @@
 import { validateUnit, isPublishable } from '#domains/school/curriculum/unitValidation.mjs';
 import { validateDocument } from '#domains/school/documents/documentValidation.mjs';
 import { validateManifest } from '#domains/school/curriculum/manifestValidation.mjs';
+import { validateWork } from '#domains/school/curriculum/workValidation.mjs';
 
 const DEFAULT_TTL_MS = 15_000;
 
@@ -68,10 +69,14 @@ export class CurriculumAccess {
   invalidate() { this.#snapshot = null; }
 
   async #load() {
-    const [units, documents, manifests] = await Promise.all([
+    const [units, documents, manifests, works] = await Promise.all([
       this.#catalog.listUnits(),
       this.#catalog.listDocuments(),
       this.#catalog.listManifests(),
+      // Tolerated as absent: a catalog adapter predating work configs simply has
+      // no listWorks, and a school with none is a school that has not written
+      // them yet — neither is a reason to fail every other read.
+      this.#catalog.listWorks?.() ?? { items: [], errors: [] },
     ]);
 
     const validDocuments = new Map();
@@ -104,7 +109,23 @@ export class CurriculumAccess {
     });
     if (errors.length) this.#logger.warn?.('school.curriculum.invalid-units', { count: errors.length, errors });
 
-    return { units: validUnits, documents: validDocuments, manifests: validManifests, at: this.#clock() };
+    // Works are validated against the shelf and folder they were found in, which
+    // is the only check that can catch a config claiming to be somewhere it is
+    // not. An invalid one is dropped and logged rather than served half-read:
+    // downstream reads `grading` and `structure` to decide what a child does.
+    const validWorks = new Map();
+    const workErrors = [];
+    (works.items ?? []).forEach(({ id, subject, work, raw }) => {
+      const result = validateWork(raw, { subject, work });
+      if (result.errors.length) workErrors.push(`works/${id}: ${result.errors.join('; ')}`);
+      else validWorks.set(id, result.work);
+    });
+    if (workErrors.length) this.#logger.warn?.('school.curriculum.invalid-works', { count: workErrors.length, errors: workErrors });
+
+    return {
+      units: validUnits, documents: validDocuments, manifests: validManifests,
+      works: validWorks, at: this.#clock(),
+    };
   }
 
   async #current() {
@@ -116,6 +137,19 @@ export class CurriculumAccess {
         .finally(() => { this.#loading = null; });
     }
     return this.#loading;
+  }
+
+  /** @returns {Promise<object[]>} every valid work config, normalised */
+  async listWorks() {
+    return [...(await this.#current()).works.values()];
+  }
+
+  /**
+   * @param {string} id - `<subject>/<work>`
+   * @returns {Promise<object|null>}
+   */
+  async getWork(id) {
+    return (await this.#current()).works.get(id) ?? null;
   }
 
   /** @returns {Promise<object[]>} every publishable unit, normalised */
