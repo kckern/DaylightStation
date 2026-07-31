@@ -129,6 +129,7 @@ interrogate a device sitting in a car in the garage.
 | `GET /` `GET /status` | health, wifi (incl. `associate_ms`, bssid, channel), ws counters, battery/standby, trip state, ring-buffered recent logs |
 | `GET /trips` | manifest of buffered payloads |
 | `GET /trip?id=<id>` | one payload, **same shape the push path sends**, streamed |
+| `GET /obd/probe?start=1` | **walk every OBD protocol, report which links** |
 | `GET /pids` | **which PIDs this car actually answers** (bring-up step 1) |
 | `GET /diagnostics` | check-engine codes + slow-moving vehicle state |
 | `POST /update` | OTA firmware update |
@@ -160,6 +161,42 @@ curl "http://<device-ip>/standby/release"
 
 The inhibit is **bounded at 30 minutes and never persisted** — a forgotten
 inhibit would silently reintroduce the exact drain standby exists to prevent.
+
+## Debugging the ECU link (`obd_ready: false`)
+
+**Target vehicle: 2021 Chrysler Pacifica Touring L (FCA Canada, 3.6 V6).**
+
+The co-processor answers `ATRV` (that's where `battery_v` comes from), so the
+OBD hardware path is alive — what fails is protocol negotiation. Rather than
+guess-and-reflash, sweep every protocol in one visit to the car:
+
+```bash
+curl "http://<device-ip>/obd/probe?start=1"   # kick off (runs on core 0)
+curl "http://<device-ip>/obd/probe"           # poll — takes a few minutes
+```
+
+Ignition must be in **RUN** (not accessory). The sweep auto-inhibits standby so
+it can't be cut in half.
+
+A protocol only counts as a winner if it **links AND answers a Mode 01 PID** —
+`init()` can succeed while the ECU never actually replies, and `linked:true`
+with `pid_answered:false` is the interesting failure, not a pass. On success the
+link is left established on the winner and normal sampling resumes.
+
+If **nothing** links while `ATRV` works, the leading suspects are:
+
+1. **FCA Security Gateway (SGW).** 2018+ FCA/Stellantis vehicles put a gateway
+   between the OBD-II port and the vehicle buses. Generic Mode 01 reads usually
+   pass it, so this is a hypothesis to test, not a certainty.
+2. **Ignition not fully in RUN** — some vehicles don't power the data pins in
+   accessory.
+3. Wiring/pin issue on the port itself.
+
+Note the Pacifica has **direct TPMS** (real pressure sensors), but those values
+are manufacturer-specific CAN traffic, not generic OBD-II PIDs. The library does
+expose `sniff()` / `setHeaderFilter()` / `receiveData()`, so CAN sniffing is a
+possible future route to TPMS and odometer — untested, and an SGW may filter
+what reaches the port anyway.
 
 ## Diagnostics — what OBD-II can and cannot give you
 

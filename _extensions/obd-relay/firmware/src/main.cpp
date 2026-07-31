@@ -147,6 +147,42 @@ static uint16_t g_dtc[MAX_DTC];
 static int g_dtcCount = -1;            // -1 = not read yet this trip
 static char g_vin[24] = {0};
 
+// ---- protocol probe --------------------------------------------------------
+// obd.init(PROTO_AUTO) never linked on the target car (2021 Chrysler Pacifica,
+// FCA) even though the co-processor answers ATRV — so the OBD hardware path is
+// alive and it is protocol negotiation that fails. Rather than guess-and-
+// reflash, walk every protocol once and report which links. 2018+ FCA vehicles
+// also ship a Security Gateway (SGW) between the OBD port and the vehicle
+// buses; if NO protocol links but ATRV works, that is the next suspect.
+//
+// Runs on core 0 (each init() blocks for seconds) and is request/poll rather
+// than synchronous: a full sweep takes far longer than an HTTP timeout.
+struct ProtoProbe {
+  byte proto;
+  const char* name;
+  bool tried;
+  bool linked;      // init() succeeded
+  bool pidOk;       // and a real Mode 01 read came back — the honest test
+  int  rpm;
+};
+static ProtoProbe g_protos[] = {
+  { PROTO_ISO15765_11B_500K, "ISO15765 11bit 500k (expected for 2021 FCA)", false, false, false, 0 },
+  { PROTO_ISO15765_29B_500K, "ISO15765 29bit 500k",                          false, false, false, 0 },
+  { PROTO_ISO15765_11B_250K, "ISO15765 11bit 250k",                          false, false, false, 0 },
+  { PROTO_ISO15765_29B_250K, "ISO15765 29bit 250k",                          false, false, false, 0 },
+  { PROTO_AUTO,              "AUTO",                                          false, false, false, 0 },
+  { PROTO_ISO11898_11B_500K, "raw CAN 11bit 500k",                            false, false, false, 0 },
+  { PROTO_ISO11898_29B_500K, "raw CAN 29bit 500k",                            false, false, false, 0 },
+  { PROTO_KWP2000_FAST,      "KWP2000 fast",                                  false, false, false, 0 },
+  { PROTO_ISO_9141_2,        "ISO 9141-2",                                    false, false, false, 0 },
+};
+#define PROTO_COUNT (sizeof(g_protos) / sizeof(g_protos[0]))
+static volatile bool g_probeRequested = false;
+static volatile bool g_probeRunning = false;
+static volatile int  g_probeIndex = -1;
+static volatile bool g_probeDone = false;
+static int g_probeWinner = -1;
+
 // Live sample handoff: written on core 0, copied on core 1 under a spinlock.
 static portMUX_TYPE g_sampleMux = portMUX_INITIALIZER_UNLOCKED;
 static Sample g_liveSample = {};
@@ -534,8 +570,61 @@ static void sampleVehicle() {
   portEXIT_CRITICAL(&g_sampleMux);
 }
 
+// Walk every protocol. "Linked" is not enough — init() can succeed while the
+// ECU never answers a real request, so each candidate must also return a Mode 01
+// PID before it counts. That distinction is the whole point of the sweep.
+static void runProtocolProbe() {
+  g_probeRunning = true;
+  g_probeDone = false;
+  g_probeWinner = -1;
+  relayLogLine("[probe] starting protocol sweep");
+
+  for (size_t i = 0; i < PROTO_COUNT; i++) {
+    g_probeIndex = (int)i;
+    g_protos[i].tried = true;
+    g_protos[i].linked = false;
+    g_protos[i].pidOk = false;
+
+    obd.uninit();
+    delay(200);
+    g_protos[i].linked = obd.init((OBD_PROTOCOLS)g_protos[i].proto);
+    if (g_protos[i].linked) {
+      int rpm = 0;
+      g_protos[i].pidOk = obd.readPID(PID_RPM, rpm);
+      g_protos[i].rpm = rpm;
+      relayLogf("[probe] %s: linked, PID %s", g_protos[i].name,
+                g_protos[i].pidOk ? "OK" : "no answer");
+      if (g_protos[i].pidOk && g_probeWinner < 0) {
+        g_probeWinner = (int)i;
+        break;                      // first protocol that truly works wins
+      }
+    } else {
+      relayLogf("[probe] %s: no link", g_protos[i].name);
+    }
+  }
+
+  if (g_probeWinner >= 0) {
+    // Leave the link established on the winner so normal sampling resumes.
+    obd.uninit();
+    delay(200);
+    g_obdReady = obd.init((OBD_PROTOCOLS)g_protos[g_probeWinner].proto);
+    g_dtcCount = -1;                // re-read diagnostics on the new link
+    relayLogf("[probe] WINNER: %s", g_protos[g_probeWinner].name);
+  } else {
+    relayLogLine("[probe] no protocol linked — suspect FCA Security Gateway (SGW)");
+  }
+  g_probeIndex = -1;
+  g_probeRunning = false;
+  g_probeDone = true;
+}
+
 static void obdLinkTask(void*) {
   for (;;) {
+    if (g_sysReady && g_probeRequested) {
+      g_probeRequested = false;
+      runProtocolProbe();
+      continue;
+    }
     if (g_sysReady) {
       // Voltage first, and unconditionally: it drives standby, so it must keep
       // updating even when the ECU link never comes up. ATRV goes to the
@@ -780,6 +869,48 @@ static void handlePids() {
   JsonArray arr = doc["pids"].to<JsonArray>();
   addPidTable(arr, g_hotPids, HOT_PID_COUNT, "hot");
   addPidTable(arr, g_diagPids, DIAG_PID_COUNT, "diagnostic");
+  String out; serializeJsonPretty(doc, out);
+  http.send(200, "application/json", out);
+}
+
+// GET /obd/probe        → current sweep state / results
+// GET /obd/probe?start=1 → kick off a sweep (runs on core 0, poll for results)
+static void handleObdProbe() {
+  if (http.hasArg("start")) {
+    if (!g_probeRunning) {
+      // A sweep is many blocking init() calls; hold standby off so it can't be
+      // cut in half, and clear any stale engine-off timer.
+      g_standbyInhibitUntilMs = millis() + 10UL * 60000UL;
+      g_engineOffSinceMs = 0;
+      g_probeRequested = true;
+    }
+  }
+  JsonDocument doc;
+  doc["device"] = "obd-relay";
+  doc["running"] = g_probeRunning;
+  doc["done"] = g_probeDone;
+  doc["ecu_linked"] = g_obdReady;
+  doc["battery_v"] = g_batteryV;
+  if (g_probeIndex >= 0 && g_probeIndex < (int)PROTO_COUNT)
+    doc["testing"] = g_protos[g_probeIndex].name;
+  if (g_probeWinner >= 0) doc["winner"] = g_protos[g_probeWinner].name;
+  else if (g_probeDone)
+    doc["conclusion"] = "No protocol linked while ATRV works — the OBD hardware "
+                        "path is alive, so suspect the FCA Security Gateway "
+                        "(SGW) fitted to 2018+ vehicles, or ignition not in RUN.";
+  JsonArray arr = doc["protocols"].to<JsonArray>();
+  for (size_t i = 0; i < PROTO_COUNT; i++) {
+    JsonObject o = arr.add<JsonObject>();
+    char hex[8]; snprintf(hex, sizeof(hex), "0x%X", g_protos[i].proto);
+    o["proto"] = hex;
+    o["name"] = g_protos[i].name;
+    o["tried"] = g_protos[i].tried;
+    o["linked"] = g_protos[i].linked;
+    // linked-but-no-PID is the interesting failure: negotiation succeeded and
+    // the ECU still said nothing.
+    o["pid_answered"] = g_protos[i].pidOk;
+    if (g_protos[i].pidOk) o["rpm"] = g_protos[i].rpm;
+  }
   String out; serializeJsonPretty(doc, out);
   http.send(200, "application/json", out);
 }
@@ -1073,6 +1204,7 @@ void setup() {
   http.on("/trip", handleTrip);        // one payload, push-identical shape
   http.on("/update", HTTP_POST, handleUpdateResult, handleUpdateUpload);  // OTA
 #ifdef USE_FREEMATICS
+  http.on("/obd/probe", handleObdProbe);    // walk protocols, find what links
   http.on("/pids", handlePids);              // which PIDs this car answers
   http.on("/diagnostics", handleDiagnostics); // check-engine + slow-moving state
   // Hold standby off long enough to flash or inspect a parked device. Bounded
