@@ -181,6 +181,15 @@ export default function useKeyShift(mediaEl, semitones) {
       });
     })().catch((e) => {
       clearTimeout(watchdog);
+      if (cancelled) {
+        // A superseded run (e.g. the user tapped again before this run's
+        // engine settled) failing late — often its own leaked init-timeout
+        // finally firing — must be a no-op. A later run may already have
+        // built a healthy chain for this element; touching the source or
+        // the failure flag here would silently break working audio.
+        logger().info('keyshift.cancelled-error', { stage, message: e?.message });
+        return;
+      }
       // Fail AUDIBLE: if this element was captured but its chain never
       // finished, the graph is source → nothing. Reroute straight to the
       // speakers and flag the engine so the stepper greys out instead of

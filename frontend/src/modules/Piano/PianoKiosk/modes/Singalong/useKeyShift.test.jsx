@@ -177,4 +177,36 @@ describe('useKeyShift', () => {
       vi.useRealTimers();
     }
   });
+
+  it('a stale cancelled run rejecting late does not disable an already-healthy current chain', async () => {
+    const el = video();
+    let rejectStaleRun;
+    // Run A's engine call parks forever until we reject it ourselves, well
+    // after it has been superseded.
+    h.factory.mockImplementationOnce(() => new Promise((_, reject) => { rejectStaleRun = reject; }));
+    const { result, rerender } = renderHook(({ s }) => useKeyShift(el, s), { initialProps: { s: 1 } });
+    await waitFor(() => expect(h.factory).toHaveBeenCalledTimes(1));
+    // Tapping again before run A settles cancels it (effect cleanup) and
+    // starts run B, which reuses the cached source and succeeds via the
+    // default factory — a healthy chain for this element now exists.
+    rerender({ s: 2 });
+    await waitFor(() => expect(h.state.stretches.length).toBe(1));
+    await waitFor(() => expect(lastSchedule(h.state.stretches[0])).toMatchObject({ semitones: 2 }));
+    expect(result.current).toBe(false);
+    const source = lastCtx().createMediaElementSource.mock.results.at(-1).value;
+    const destinationConnectsBefore = source.connect.mock.calls
+      .filter((args) => args[0] === lastCtx().destination).length;
+    // Run A's abandoned init finally settles as a rejection (e.g. its leaked
+    // 6s init-timeout eventually firing). It was cancelled before run B ever
+    // built anything, so this must be a no-op: no reroute of the now-healthy
+    // source, and the stepper must not be disabled for audio that works.
+    await act(async () => {
+      rejectStaleRun(new Error('stale engine explosion'));
+      await settle();
+    });
+    expect(result.current).toBe(false);
+    const destinationConnectsAfter = source.connect.mock.calls
+      .filter((args) => args[0] === lastCtx().destination).length;
+    expect(destinationConnectsAfter).toBe(destinationConnectsBefore);
+  });
 });
