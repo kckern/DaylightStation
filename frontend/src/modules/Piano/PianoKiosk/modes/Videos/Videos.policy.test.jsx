@@ -2,6 +2,7 @@
 // gate flag + auto-advance callback reach the player, auto-advance navigates to
 // the next lecture, and the shared Player's racing end-clear (onBack fired in
 // the same tick) must NOT yank the user back to the course menu.
+import { useEffect } from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { MemoryRouter, Routes, Route } from 'react-router-dom';
@@ -31,7 +32,17 @@ vi.mock('./usePianoCoursePlayable.js', () => ({ usePianoCoursePlayable: () => st
 vi.mock('../../PianoPlaybackContext.jsx', () => ({ usePianoPlayback: () => ({ playing: false }) }));
 vi.mock('../../usePianoScreensaver.jsx', () => ({ useKeepScreenAwake: () => {} }));
 
+// Module-level mount counter — every per-lecture piece of state this route
+// feeds into the REAL PianoVideoPlayer (usePianoWatchLog's effect chain,
+// furthestWatched, engagedRef) was written under a remount-per-lecture
+// invariant. A prop-update of the same instance instead of a fresh mount
+// would let that state straddle lectures (see the "remount-per-lecture
+// invariant" regression test below), so this counter's only job is to prove
+// the route forces a real unmount+remount on every lecture change.
+let mountCount = 0;
+
 function StubPlayer({ lecture, onBack, engagementGateEnabled, onAutoAdvance }) {
+  useEffect(() => { mountCount += 1; }, []);
   return (
     <div>
       <div data-testid="lecture">{lecture.label}</div>
@@ -57,6 +68,7 @@ const renderAt = (path) => render(
 
 beforeEach(() => {
   state.user = 'kckern';
+  mountCount = 0;
 });
 
 describe('LecturePlayerRoute — per-user policy wiring', () => {
@@ -96,5 +108,13 @@ describe('LecturePlayerRoute — per-user policy wiring', () => {
     renderAt('/videos/c1/plex:100');
     fireEvent.click(screen.getByText('back'));
     expect(screen.getByTestId('course-detail')).toBeTruthy();
+  });
+
+  it('auto-advance remounts the player (remount-per-lecture invariant — watch-log/furthestWatched/engagedRef must never straddle lectures)', () => {
+    renderAt('/videos/c1/plex:100');
+    expect(mountCount).toBe(1);
+    fireEvent.click(screen.getByText('advance'));
+    expect(screen.getByTestId('lecture').textContent).toBe('Two');
+    expect(mountCount).toBe(2);
   });
 });
