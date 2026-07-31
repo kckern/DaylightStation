@@ -3,7 +3,7 @@
 // shift state itself so the host can remount it per song (key={contentId})
 // and every track starts in its natural key. The value face doubles as a
 // tap-to-reset button and lights up (is-on) whenever the key is shifted.
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import TransportButton from '../../transport/TransportButton.jsx';
 import getLogger from '../../../../../lib/logging/Logger.js';
 import useKeyShift from './useKeyShift.js';
@@ -15,7 +15,7 @@ function logger() {
   return _logger;
 }
 
-export default function KeyControl({ mediaEl, className = '' }) {
+export default function KeyControl({ mediaEl, className = '', apiRef }) {
   const [shift, setShift] = useState(0);
   // true = the stretch engine failed for this song; the audio was rerouted
   // dry, so the stepper must grey out rather than pretend to work.
@@ -31,6 +31,15 @@ export default function KeyControl({ mediaEl, className = '' }) {
     logger().info('keyshift.tap', { from: shift, to: 0, reset: true, hasEl: Boolean(mediaEl) });
     setShift(0);
   };
+  // Imperative surface for the karaoke keyboard shortcuts (ArrowUp/ArrowDown):
+  // the same step/reset the buttons call, so clamping, keyshift.tap logging,
+  // and the engine-failed gate behave identically for keys and taps. No dep
+  // array on purpose — reassigning every render keeps the closures fresh.
+  useEffect(() => {
+    if (!apiRef) return undefined;
+    apiRef.current = { step, reset, engineFailed };
+    return () => { apiRef.current = null; };
+  });
   return (
     <div
       className={['piano-keyctl', className].filter(Boolean).join(' ')}
