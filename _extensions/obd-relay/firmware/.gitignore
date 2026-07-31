@@ -1,0 +1,8 @@
+# Generated firmware config (Wi-Fi creds + instance values) — never commit.
+include/config.h
+
+# Vendored FreematicsPlus library (tools/fetch-libs.mjs re-creates it)
+lib/FreematicsPlus/
+
+# PlatformIO build artifacts
+.pio/

@@ -20,6 +20,7 @@ const PAYLOADS = {
   media_dispatched: { dispatchId: 'dsp_1', target: 'shield-tv', contentId: 'plex:1234' },
   media_completed: {},
   media_stalled: {},
+  launch_dispatched: { surface: 'screen-1', decision: 'auto', approvalId: 'app_1' },
   submitted: { transport: 'paper' },
   graded: { attemptIds: ['att_1'], percent: 90 },
   outcome_recorded: { outcomeId: `out:${SID}`, result: 'passed' },
@@ -48,7 +49,7 @@ describe('EVENT_TYPES', () => {
     expect(EVENT_TYPES).toEqual([
       'created', 'issued', 'reprinted',
       'media_dispatched', 'media_completed', 'media_stalled',
-      'submitted', 'graded', 'outcome_recorded', 'rewarded',
+      'launch_dispatched', 'submitted', 'graded', 'outcome_recorded', 'rewarded',
       'remediation_opened', 'reassigned', 'failed', 'abandoned',
     ]);
   });
@@ -67,12 +68,13 @@ describe('EVENT_TYPES', () => {
 describe('TRANSITIONS', () => {
   it('is the closed table from the spec', () => {
     expect(TRANSITIONS).toEqual({
-      created: ['issued', 'media_dispatched', 'abandoned'],
+      created: ['issued', 'media_dispatched', 'launch_dispatched', 'abandoned'],
       issued: ['submitted', 'reprinted', 'failed', 'abandoned'],
       reprinted: ['submitted', 'reprinted', 'abandoned'],
       media_dispatched: ['media_completed', 'media_stalled', 'abandoned'],
       media_completed: ['issued', 'submitted'],
       media_stalled: ['media_dispatched', 'abandoned'],
+      launch_dispatched: ['outcome_recorded', 'abandoned'],
       submitted: ['graded'],
       graded: ['outcome_recorded'],
       outcome_recorded: ['rewarded', 'remediation_opened'],
@@ -178,6 +180,7 @@ describe('createEvent: per-type payloads', () => {
     ['media_dispatched', 'dispatchId'],
     ['media_dispatched', 'target'],
     ['media_dispatched', 'contentId'],
+    ['launch_dispatched', 'surface'],
     ['outcome_recorded', 'outcomeId'],
     ['rewarded', 'txnId'],
     ['remediation_opened', 'newSessionId'],
@@ -262,6 +265,13 @@ describe('reduceSession: happy path', () => {
     });
   });
 
+  it('derives a launch_dispatched flow through to outcome_recorded', () => {
+    const state = reduceSession(log(['created', 'launch_dispatched', 'outcome_recorded']));
+    expect(state.errors).toEqual([]);
+    expect(state.state).toBe('outcome_recorded');
+    expect(state.launch).toEqual({ surface: 'screen-1', at: AT });
+  });
+
   it('an empty log reduces to an empty, renderable state', () => {
     const state = reduceSession([]);
     expect(state.state).toBe(null);
@@ -318,6 +328,14 @@ describe('reduceSession: corrupt logs still render', () => {
     expect(state.errors).toContain('event[seq=3]: illegal transition issued -> rewarded');
     expect(state.state).toBe('issued');
     expect(state.rewardTxn).toBe(null);
+  });
+
+  it('records launch_dispatched as illegal from issued', () => {
+    const events = log(['created', 'issued']);
+    const state = reduceSession([...events, { ...ev('launch_dispatched'), seq: 3 }]);
+    expect(state.errors).toContain('event[seq=3]: illegal transition issued -> launch_dispatched');
+    expect(state.state).toBe('issued');
+    expect(state.launch).toBe(null);
   });
 
   it('records an event appended after a terminal state', () => {
@@ -506,6 +524,12 @@ describe('nextAction: the wedged-session property', () => {
     const state = reduceSession(log(['created', 'media_dispatched', 'media_stalled']));
     expect(state.nextAction.kind).toBe('replay_media');
     expect(state.mediaDispatch.status).toBe('stalled');
+  });
+
+  it('offers outcome recording after a launch_dispatched', () => {
+    const state = reduceSession(log(['created', 'launch_dispatched']));
+    expect(state.nextAction.kind).toBe('record_outcome');
+    expect(state.nextAction.label).toBe('Waiting for the work to be done');
   });
 
   it('a corrupt log with an unrecognised state still offers a recovery action', () => {

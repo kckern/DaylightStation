@@ -93,6 +93,16 @@
     }
   }
 
+  // Drawn sharp/flat shapes (SvgStaffRenderer) inherit via currentColor so the
+  // whole glyph — verticals and thick bars — tints as one with the note.
+  &__accidental {
+    color: rgba(0, 0, 0, 1);
+
+    &--matched {
+      color: rgba(0, 180, 80, 0.9);
+    }
+  }
+
   &__stem {
     stroke: rgba(0, 0, 0, 1);
     stroke-width: 1.5;

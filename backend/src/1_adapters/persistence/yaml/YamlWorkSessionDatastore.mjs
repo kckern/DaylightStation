@@ -127,6 +127,7 @@ export class YamlWorkSessionDatastore extends IWorkSessionRepository {
       // from the index alone, or the planner would reduce every session a
       // learner has ever had just to draw one agenda.
       result: state.outcome?.result ?? null,
+      gradedPercent: state.gradedPercent ?? null,
       updatedAt: (last && typeof last === 'object' ? last.at : null) ?? null,
     };
     await fs.writeFile(file, dumpYaml(index), 'utf8');
@@ -207,19 +208,35 @@ export class YamlWorkSessionDatastore extends IWorkSessionRepository {
 
   /** @inheritdoc */
   async listForLearner(learnerId) {
-    return (await this.#rowsFor(learnerId)).map(({ sessionId, day, row }) => ({
-      sessionId,
-      learnerId: row.learnerId,
-      unitId: row.unitId ?? null,
-      state: row.state ?? null,
-      // A session written before the index carried a result reduces to
-      // `open: true, result: null`, which reads as "unfinished" — the safe
-      // direction: worst case a completed unit is offered again.
-      terminal: row.open === false,
-      outcome: row.result ? { result: row.result } : null,
-      day,
-      updatedAt: row.updatedAt ?? null,
-    }));
+    const rows = await this.#rowsFor(learnerId);
+    const facts = [];
+    for (const { sessionId, day, row } of rows) {
+      let gradedPercent = row.gradedPercent ?? null;
+      // Pre-upgrade row: index written before gradedPercent was added.
+      // Production has live terminal sessions with no gradedPercent key
+      // but real percent values in their event logs. Recompute to restore
+      // the grade for consumers (planDailyAgenda, etc).
+      if (!('gradedPercent' in row)) {
+        const events = await this.#readEventsAt(day, sessionId);
+        const state = reduceSession(events);
+        gradedPercent = state.gradedPercent ?? null;
+      }
+      facts.push({
+        sessionId,
+        learnerId: row.learnerId,
+        unitId: row.unitId ?? null,
+        state: row.state ?? null,
+        // A session written before the index carried a result reduces to
+        // `open: true, result: null`, which reads as "unfinished" — the safe
+        // direction: worst case a completed unit is offered again.
+        terminal: row.open === false,
+        outcome: row.result ? { result: row.result } : null,
+        gradedPercent,
+        day,
+        updatedAt: row.updatedAt ?? null,
+      });
+    }
+    return facts;
   }
 }
 

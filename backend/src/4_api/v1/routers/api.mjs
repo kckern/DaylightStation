@@ -126,7 +126,9 @@ export function createApiRouter(config) {
     '/feedback': 'feedback',
     '/gameshow': 'gameshow',
     '/school': 'school',
-    '/content-filter': 'content-filter'
+    '/donow': 'donow',
+    '/content-filter': 'content-filter',
+    '/wikipedia': 'wikipedia'
   };
 
   // Mount each router at its path

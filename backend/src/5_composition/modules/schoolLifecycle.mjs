@@ -46,6 +46,9 @@ import { YamlReviewQueue } from '#adapters/persistence/yaml/YamlReviewQueue.mjs'
 import { CurriculumAccess } from '#apps/school/CurriculumAccess.mjs';
 import { GrownUpGate } from '#apps/school/GrownUpGate.mjs';
 import { ReceiptPrinting } from '#apps/school/ReceiptPrinting.mjs';
+import { LanguageProgramLauncher } from '#apps/school/LanguageProgramLauncher.mjs';
+import { SurfaceProgramLauncher } from '#apps/school/SurfaceProgramLauncher.mjs';
+import { DoNowSchoolBridge } from '#apps/school/DoNowSchoolBridge.mjs';
 import { WorkSessionReporter } from '#apps/school/WorkSessionReporter.mjs';
 import { BuildAgenda } from '#apps/school/usecases/BuildAgenda.mjs';
 import { IssueDocument } from '#apps/school/usecases/IssueDocument.mjs';
@@ -57,9 +60,11 @@ import { CloseSessionOutcome } from '#apps/school/usecases/CloseSessionOutcome.m
 import { OpenRemediation } from '#apps/school/usecases/OpenRemediation.mjs';
 import { ResolvePersonalCard } from '#apps/school/usecases/ResolvePersonalCard.mjs';
 import { ResolveScanAction } from '#apps/school/usecases/ResolveScanAction.mjs';
+import { ResolveSubjectNext } from '#apps/school/usecases/ResolveSubjectNext.mjs';
 import { ResolveReviewItem } from '#apps/school/usecases/ResolveReviewItem.mjs';
 import { SetAssignments } from '#apps/school/usecases/SetAssignments.mjs';
 import { isSchoolToken } from '#domains/school/sessions/tokens.mjs';
+import { shortId } from '#domains/core/utils/id.mjs';
 import { createSchoolLifecycleRouter } from '#api/v1/routers/schoolLifecycle.mjs';
 import { createSchoolVirtualDevicesRouter } from '#api/v1/routers/schoolVirtualDevices.mjs';
 
@@ -84,9 +89,29 @@ function cryptoRng(crypto) {
  * @param {object} deps.schoolService - the existing grading engine + bank reader
  * @param {object} [deps.economyService]
  * @param {object} [deps.userService]
+ * @param {object} [deps.languageStudyService] - the sentence-ladder program (Task 8/12).
+ *   Present means the `language` program is a live launcher, reachable from a
+ *   `subject_next` ticket the same as any curriculum unit; absent means the
+ *   `launchers` map stays empty and no program entry can ever resolve.
  * @param {object} [deps.eventBus]
  * @param {object} [deps.thermalPrinterRegistry] - the house receipt-printer registry
  * @param {object} [deps.playbackAdapter] - real playback target; null until §8 lands
+ * @param {object} [deps.donow] - the REAL, household-level `DoNowService`
+ *   (Task 13's own `5_composition/modules/donow.mjs`, constructed in
+ *   `app.mjs` AFTER the seams every surface needs — `wakeAndLoadService`,
+ *   home-automation adapters, the playback-hub container). School is one
+ *   CONSUMER of it, like any other caller — this file builds no DoNowService
+ *   of its own. Absent (a test harness, or app.mjs's own donow wiring
+ *   failing) degrades every `launch:`/`program:` path to "Ask a grown-up to
+ *   set this up." rather than throwing (ResolveScanAction/SurfaceProgramLauncher's
+ *   own optional-degrading design).
+ * @param {Map<string, object>} [deps.donowSurfaces] - the SAME surface-id ->
+ *   adapter Map `donow` dispatches through, so curriculum `launch:` blocks
+ *   validate against the real registered adapters (`CurriculumAccess`'s
+ *   `surfaceValidators`) rather than a separately-derived one that could drift.
+ * @param {object} [deps.donowDatastore] - `donow`'s own `YamlDoNowDatastore`
+ *   (`listDispatches({dayStamp})`) — `SurfaceProgramLauncher.status()`'s
+ *   evidence source, shared rather than a second store pointed at the same files.
  * @param {() => Date} [deps.clock] - the ONE clock the whole lifecycle reads.
  *   Grace windows, token expiry and the UTC day boundary of a payout are all
  *   decided from it, so nothing downstream calls `Date.now()` and a test states
@@ -107,6 +132,8 @@ export async function createSchoolLifecycle({
   configService, householdId = null, schoolService,
   economyService = null, userService = null, eventBus = null,
   thermalPrinterRegistry = null, playbackAdapter = null,
+  languageStudyService = null,
+  donow = null, donowSurfaces = null, donowDatastore = null,
   clock = () => new Date(), rng = null, logger = console,
 } = {}) {
   const cfg = configService.getHouseholdAppConfig?.(householdId, 'school') || {};
@@ -119,6 +146,7 @@ export async function createSchoolLifecycle({
       wired: false, reason, handlesCode: () => false, handleScan: null,
       reporter: null, router: null, devicesRouter: null,
       useCases: {}, stores: {}, devices: {}, renderers: {},
+      donowSchoolBridge: null,
     };
   };
 
@@ -160,7 +188,10 @@ export async function createSchoolLifecycle({
     // buys; `DocumentReceiptRenderer` stays the probe that proves a document
     // CAN be drawn on 58mm tape.
     const { createDocumentEscPosRenderer } = await import('#rendering/school/documents/DocumentEscPosRenderer.mjs');
-    receiptRenderer = createDocumentEscPosRenderer({});
+    // QR, not Code128: the school console's tickets are minted and re-derived
+    // through this one renderer, and a QR is what a phone-shaped scanner in a
+    // household reads back reliably at receipt-tape width.
+    receiptRenderer = createDocumentEscPosRenderer({ symbology: 'QR' });
   } catch (err) {
     // A missing receipt renderer is survivable: worksheets still print, and
     // `ReceiptPrinting` reports every receipt as unprinted rather than lying.
@@ -236,19 +267,122 @@ export async function createSchoolLifecycle({
   const stores = {
     catalog: new YamlCurriculumDatastore({ configService }),
     sessions: new YamlWorkSessionDatastore({ configService }),
-    tokens: new YamlTokenRegistry({ configService }),
+    tokens: new YamlTokenRegistry({ configService, logger }),
     assignments: new YamlAssignmentStore({ configService }),
     formMaps: new YamlFormMapStore({ configService }),
     reviewQueue: new YamlReviewQueue({ configService }),
   };
+  // Long-expired token files are dead weight (a pruned scan resolves to the
+  // "unknown ticket" slip, which is what week-old paper deserves). Swept at
+  // boot and after mints; fire-and-forget so a slow disk never delays boot.
+  stores.tokens.prune().catch((error) => {
+    logger.warn?.('school.tokens.prune-failed', { error: error?.message });
+  });
+
+  // --- program launchers (Task 8/12/13) ---------------------------------------
+  // The same IANA zone `LanguageStudyService` reads its 4am study-day boundary
+  // against (`app.mjs`) — one source, so the agenda's "done today" and the
+  // program's own idea of "today" can never drift apart.
+  const timezone = configService.getTimezone?.() || null;
+  // `donow` is INJECTED now (Task 13) — the real, household-level DoNowService
+  // built once in `app.mjs`'s own `5_composition/modules/donow.mjs`, after the
+  // seams every surface needs exist. This file used to stand up a minimal,
+  // portal-only stopgap service (Task 12) so `LanguageProgramLauncher` and the
+  // bank hand-off had SOMETHING occupancy-aware to call before the real
+  // registry existed — that stopgap is gone; a missing `donow` here now means
+  // exactly what it means everywhere else in this file: every launch/program
+  // path degrades to "Ask a grown-up to set this up." rather than throwing.
+  //
+  // Present only when the caller wired a language-study service: no service,
+  // no launcher, and a program-typed unit degrades to "not answering" rather
+  // than throwing (CurriculumAccess/ResolveSubjectNext's own try/catch).
+  const launchers = new Map(languageStudyService
+    ? [['language', new LanguageProgramLauncher({ languageStudyService, donow, logger })]]
+    : []);
+
+  // `school.yml` `programs:` — one `SurfaceProgramLauncher` per entry, config
+  // selecting from the closed DoNow surface vocabulary (spec §6 "Surface
+  // programs — how daily PE actually exists"). A program id colliding with a
+  // CODE-registered launcher (`language`) is a boot-time error REGARDLESS of
+  // whether `donow` itself happens to be wired — a config mistake should
+  // surface immediately, not only on deployments where DoNow is healthy. A
+  // non-colliding entry that CANNOT be constructed (no `donow`/`donowDatastore`
+  // — a degraded composition) is skipped with a loud warning instead: it
+  // simply never resolves as a program, the same "unknown program" rejection
+  // an unregistered id already gets everywhere else in this file.
+  const configPrograms = Array.isArray(cfg.programs) ? cfg.programs : [];
+  for (const entry of configPrograms) {
+    const id = entry?.id;
+    if (!id || !entry?.surface) {
+      logger.warn?.('school.lifecycle.program-config-invalid', { entry });
+      continue;
+    }
+    if (launchers.has(id)) {
+      throw new Error(`school.yml programs: '${id}' collides with a code-registered launcher`);
+    }
+    if (!donow || !donowDatastore) {
+      logger.warn?.('school.lifecycle.program-config-unwired', { id, reason: 'donow not wired' });
+      continue;
+    }
+    launchers.set(id, new SurfaceProgramLauncher({
+      id,
+      label: entry.label ?? null,
+      surface: entry.surface,
+      action: entry.action ?? {},
+      subject: entry.subject ?? null,
+      // Author-supplied wording for "where does this send a child" (e.g.
+      // `'in the garage'` for a `garage-fitness` program) — mirrors a
+      // `launch:` unit's own `labelHint`. Unconfigured (`null`) degrades to a
+      // generic phrase in BuildAgenda/ResolveScanAction rather than the
+      // Portal default, which is only ever true for the Portal surface.
+      locationHint: entry.locationHint ?? null,
+      donow,
+      datastore: donowDatastore,
+      timezone,
+      clock,
+      logger,
+    }));
+  }
+
+  // Surface id -> that surface's own `validateAction`, so a `launch:` unit
+  // validates against the REAL registered adapter (Task 11's
+  // `unitValidation.mjs` `launch:` composition) rather than a separately
+  // built, possibly-drifted set. Function-wrapped and re-derived on every
+  // call (matching `bankIds`/`programIds` above): `donowSurfaces` is read,
+  // never captured, so a surface registered after this file's boot (there
+  // isn't one today, but the shape is the same for-free consistency) would
+  // still be seen. Absent `donowSurfaces` -> empty Map, matching
+  // `CurriculumAccess`'s own default -> no unit can carry a `launch:` block.
+  const surfaceValidators = () => {
+    const map = new Map();
+    if (donowSurfaces) {
+      for (const [id, adapter] of donowSurfaces) {
+        map.set(id, (raw) => {
+          try {
+            return adapter.validateAction(raw) || [];
+          } catch (err) {
+            return [err?.message || String(err)];
+          }
+        });
+      }
+    }
+    return map;
+  };
 
   // --- collaborators ---------------------------------------------------------
   const draw = rng ?? cryptoRng(globalThis.crypto);
+  // Shared by BuildAgenda and ResolveSubjectNext so a curriculum entry opened
+  // by either one gets the same shape of session id.
+  const newSessionId = () => `ses_${shortId(8)}`;
   const curriculum = new CurriculumAccess({
     catalog: stores.catalog,
     // Read per call, never captured: banks warm asynchronously after boot, and
     // a set snapshotted at construction would be empty for the first minute.
     bankIds: () => (schoolService?.listBanks?.() || []).map((b) => b.id).filter(Boolean),
+    // Same read-per-call rule: a launcher registered after boot (or one that
+    // never showed up) must be reflected immediately, not frozen at construction.
+    programIds: () => [...launchers.keys()],
+    surfaceValidators,
     logger,
   });
   const bankReader = {
@@ -269,8 +403,48 @@ export async function createSchoolLifecycle({
   // --- use cases -------------------------------------------------------------
   const buildAgenda = new BuildAgenda({
     curriculum, assignments: stores.assignments, sessions: stores.sessions, tokens: stores.tokens,
-    clock, rng: draw, tokenTtlHours: lifecycleCfg.tokenTtlHours ?? 48, logger,
+    launchers, timezone, clock, rng: draw, newSessionId,
+    // Optional knob; BuildAgenda's own default (168h) applies when unset.
+    subjectTokenTtlHours: lifecycleCfg.subjectTokenTtlHours, logger,
   });
+  const resolveSubjectNext = new ResolveSubjectNext({
+    curriculum, assignments: stores.assignments, sessions: stores.sessions,
+    launchers, timezone, clock, newSessionId, logger,
+  });
+
+  // --- dry-run agenda preview (DoNow + Agenda Preview plan, Task 2) ---------
+  // A parent-facing "what would print right now" view. It runs the exact same
+  // algorithm as `buildAgenda` above — same curriculum, same planner, same
+  // program launchers — but against dry-run stand-ins for sessions and tokens,
+  // so a preview can never open a real work session or mint a scannable
+  // ticket. `appendEvent` is a no-op because `ensureSession` only needs to
+  // REDUCE a session's events to decide what is next; it never has to persist
+  // one for a preview to be accurate.
+  const previewSessions = {
+    listForLearner: (id) => stores.sessions.listForLearner(id),
+    readEvents: (sid) => stores.sessions.readEvents(sid),
+    appendEvent: async () => {},
+  };
+  const previewAgenda = new BuildAgenda({
+    curriculum, assignments: stores.assignments, sessions: previewSessions,
+    tokens: { put: async () => {} },
+    launchers, timezone, clock, rng: draw, newSessionId,
+    subjectTokenTtlHours: lifecycleCfg.subjectTokenTtlHours,
+    logger: logger.child ? logger.child({ preview: true }) : logger,
+  });
+  // The rendering-layer PNG renderer, same optional-dependency posture as the
+  // ESC/POS receipt renderer above: a preview is a nice-to-have surface, not
+  // the console itself, so its absence degrades the one route rather than the
+  // whole lifecycle.
+  let receiptPngRenderer = null;
+  try {
+    const { createDocumentReceiptRenderer } = await import('#rendering/school/documents/DocumentReceiptRenderer.mjs');
+    // QR, matching the printed receipt's own symbology — the preview is
+    // supposed to look like the paper, not like a different console.
+    receiptPngRenderer = createDocumentReceiptRenderer({ scanCodes: 'qr' });
+  } catch (err) {
+    logger.warn?.('school.lifecycle.no-preview-renderer', { error: err.message });
+  }
   const issueDocument = new IssueDocument({
     curriculum, sessions: stores.sessions, tokens: stores.tokens,
     renderer: documentRenderer, printer: laserPrinter, formMaps: stores.formMaps,
@@ -307,11 +481,14 @@ export async function createSchoolLifecycle({
     clock, rng: draw, logger,
   });
   const openRemediation = new OpenRemediation({ curriculum, sessions: stores.sessions, clock, logger });
+  // One name lookup for everything that prints a learner's name — the card
+  // scan AND the agenda routes, so tape and preview show the same header.
+  const displayRoster = {
+    displayName: (id) => (userService?.getHouseholdRoster?.() || []).find((u) => u.id === id)?.name ?? null,
+  };
   const resolvePersonalCard = new ResolvePersonalCard({
     buildAgenda, receipts,
-    roster: {
-      displayName: (id) => (userService?.getHouseholdRoster?.() || []).find((u) => u.id === id)?.name ?? null,
-    },
+    roster: displayRoster,
     logger,
   });
   // The media leg is optional (a household with no playback target still prints
@@ -327,8 +504,34 @@ export async function createSchoolLifecycle({
   const resolveScanAction = new ResolveScanAction({
     tokens: stores.tokens, sessions: stores.sessions, curriculum,
     resolvePersonalCard, issueDocument, dispatchMedia: mediaOrNothing, openRemediation,
-    receipts, clock, logger,
+    receipts, resolveSubjectNext, launchers,
+    // No `portal` here anymore — `PortalDispatch` (Task 12's un-occupancy-
+    // checked stopgap) is deleted; `#onScreen`'s legacy fallback branch is
+    // still defensively present in `ResolveScanAction` (never actually reached
+    // from this composition now that `donow` is unconditionally wired), but
+    // this file constructs nothing to feed it.
+    donow, closeSessionOutcome, clock, logger,
   });
+
+  // The pending->approved half of the launch-unit loop (spec §6 "the approval
+  // gap"): `ResolveScanAction#dispatchLaunch` handles the SYNCHRONOUS
+  // dispatched case inline; a request that PENDS is approved later, out of
+  // band, by a grown-up working the DoNow approvals queue — nobody is
+  // scanning a card at that moment for `ResolveScanAction` to answer. This
+  // bridge subscribes to the shared `donow` eventBus topic and closes the
+  // loop when that happens. Only constructible with a real `eventBus`
+  // (`DoNowSchoolBridge`'s own constructor guard) — absent, a pending launch
+  // unit simply never gets its honor-close on approval (still visible/
+  // resolvable via a fresh scan), rather than this file throwing.
+  let donowSchoolBridge = null;
+  if (eventBus && typeof eventBus.subscribe === 'function') {
+    donowSchoolBridge = new DoNowSchoolBridge({
+      eventBus, sessions: stores.sessions, closeSessionOutcome, clock, logger,
+    });
+    donowSchoolBridge.start();
+  } else {
+    logger.warn?.('school.lifecycle.donow-bridge-unwired', { reason: 'no eventBus' });
+  }
 
   // The two parent-only writes. They are use cases rather than raw store calls
   // because the router may not be the place a child's sign-off is checked.
@@ -343,14 +546,17 @@ export async function createSchoolLifecycle({
     buildAgenda, issueDocument, dispatchMedia, recordMediaCompletion,
     submitPaperWork, gradeSubmission, closeSessionOutcome, openRemediation,
     resolvePersonalCard, resolveScanAction, resolveReviewItem, setAssignments,
+    previewAgenda,
   };
 
   const router = createSchoolLifecycleRouter({
     ...useCases,
+    receiptPngRenderer,
     assignments: stores.assignments,
     reviewQueue: stores.reviewQueue,
     curriculum,
     sessions: stores.sessions,
+    roster: displayRoster,
     logger,
   });
 
@@ -369,6 +575,7 @@ export async function createSchoolLifecycle({
     media: Boolean(dispatchMedia),
     receipts: receipts.wired,
     economy: lifecycleCfg.economy?.enabled === true,
+    launchers: [...launchers.keys()],
   });
 
   return {
@@ -390,7 +597,11 @@ export async function createSchoolLifecycle({
     // The two renderers this console built, exposed for inspection. Neither is
     // reachable any other way, and a caller that wants to know whether a
     // document can be drawn on 58mm tape should ask the one that will draw it.
-    renderers: { document: documentRenderer, receipt: receiptRenderer },
+    renderers: { document: documentRenderer, receipt: receiptRenderer, receiptPng: receiptPngRenderer },
+    // Null when no eventBus was wired (see above) — `app.mjs` calls
+    // `schoolLifecycle.donowSchoolBridge?.stop()` on shutdown, same
+    // conditional-on-existence pattern as its other graceful-shutdown hooks.
+    donowSchoolBridge,
   };
 }
 

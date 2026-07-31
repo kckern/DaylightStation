@@ -2,6 +2,39 @@ import { useMemo, useRef, useEffect, useState, useCallback } from 'react';
 import { getStaffPosition } from '../model/pitch.js';
 import { stemDirectionFor, stemLengthUnits } from '../model/stems.js';
 
+// Accidental glyph box (viewBox units), centered on the notehead's y. Drawn as
+// SVG shapes — never a Unicode <text>: font glyphs render thin, small, and
+// with unpredictable metrics on the kiosk WebView, and overlapped the
+// notehead. 26 units ≈ 1.9 staff spaces tall — reads as part of the note.
+export const ACCIDENTAL_WIDTH = 11;
+export const ACCIDENTAL_HEIGHT = 26;
+// Clear air between the accidental's right edge and the notehead's left edge.
+const ACCIDENTAL_GAP = 3;
+const NOTEHEAD_RX = 9;
+
+/** Engraved sharp: two verticals + two thick bars slanting up to the right. */
+function SharpShape() {
+  return (
+    <>
+      <line x1="-2.6" y1="-10.5" x2="-2.6" y2="13" stroke="currentColor" strokeWidth="2" />
+      <line x1="2.6" y1="-13" x2="2.6" y2="10.5" stroke="currentColor" strokeWidth="2" />
+      {/* Bars as filled parallelograms — the thick strokes that make the glyph read at a glance. */}
+      <path d="M -5.5 -1.9 L 5.5 -4.9 L 5.5 -8.9 L -5.5 -5.9 Z" fill="currentColor" />
+      <path d="M -5.5 6.6 L 5.5 3.6 L 5.5 -0.4 L -5.5 2.6 Z" fill="currentColor" />
+    </>
+  );
+}
+
+/** Engraved flat: tall stem + a bold solid bowl sitting on the notehead's line. */
+function FlatShape() {
+  return (
+    <>
+      <line x1="-4.5" y1="-13" x2="-4.5" y2="8.5" stroke="currentColor" strokeWidth="2.4" />
+      <path d="M -4.5 -4 C 4.5 -7.5, 8.5 2.5, -4.5 9.5 Z" fill="currentColor" />
+    </>
+  );
+}
+
 /**
  * SvgStaffRenderer — hand-rolled SVG staff showing a set of target pitches
  * (plus optional ghost notes for currently-pressed keys).
@@ -151,9 +184,12 @@ export function SvgStaffRenderer({ targetPitches = [], activeNotes = null, match
                   }
                 }
 
-                const accBaseX = Math.min(baseX, noteX) - 18;
+                // Accidental column: left of ALL noteheads in the chord, with
+                // guaranteed air before the leftmost head; chords stagger
+                // alternate accidentals one column further left.
                 const hasAccidental = np.isSharp || np.isFlat;
-                const accX = hasAccidental ? accBaseX - (sharpIdx++ % 2) * 12 : 0;
+                const accColX = Math.min(baseX, noteX) - NOTEHEAD_RX - ACCIDENTAL_GAP - ACCIDENTAL_WIDTH / 2;
+                const accX = hasAccidental ? accColX - (sharpIdx++ % 2) * (ACCIDENTAL_WIDTH + 2) : 0;
 
                 return (
                   <g key={np.pitch}>
@@ -165,11 +201,14 @@ export function SvgStaffRenderer({ targetPitches = [], activeNotes = null, match
                       className={`action-staff__note${matched ? ' action-staff__note--matched' : ''}`}
                       transform={`rotate(-12, ${noteX}, ${noteY})`}
                     />
-                    {np.isSharp && (
-                      <text x={accX} y={noteY + 5} fontSize="18" fill="rgba(0,0,0,1)" fontFamily="serif">{'♯'}</text>
-                    )}
-                    {np.isFlat && (
-                      <text x={accX} y={noteY + 5} fontSize="18" fill="rgba(0,0,0,1)" fontFamily="serif">{'♭'}</text>
+                    {hasAccidental && (
+                      <g
+                        className={`action-staff__accidental${matched ? ' action-staff__accidental--matched' : ''}`}
+                        data-kind={np.isSharp ? 'sharp' : 'flat'}
+                        transform={`translate(${accX}, ${noteY})`}
+                      >
+                        {np.isSharp ? <SharpShape /> : <FlatShape />}
+                      </g>
                     )}
                   </g>
                 );

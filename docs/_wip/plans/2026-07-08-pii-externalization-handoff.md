@@ -28,7 +28,7 @@ is the repo-owner's public GitHub/Docker handle and is **NOT** a guard pattern.)
 - the 7 first-names (in the order listed in `secret-patterns.local.txt`) → `user_2 … user_8`.
 - spouse → `user_9`; the two grandparent ids → `user_10`/`user_11`.
 - the 7 device IDs (in `secret-patterns.local.txt` order) → `90001 … 90007`.
-- **Keep** the media title "learner-two Lullabye" (not PII — the guard itself whitelists it).
+- **Keep** the media title "Felix Lullabye" (not PII — the guard itself whitelists it).
 - Real names in gitignored `data/**` are the SSOT — **left untouched**.
 
 ## Reusable tooling (durable, gitignored) — `.pii-scrub/`
@@ -50,7 +50,7 @@ is the repo-owner's public GitHub/Docker handle and is **NOT** a guard pattern.)
 
 ## Verification already done (both P2 and P3 snapshots)
 - After scrub: `git grep` for the guard patterns over tracked code (excluding `data/`,
-  `.claude/`, `dev.log*`, and the "learner-two Lullabye" title) → **empty**.
+  `.claude/`, `dev.log*`, and the "Felix Lullabye" title) → **empty**.
 - Full `vitest run` diffed against a pre-scrub baseline → **0 net-new failures** (the blanket
   vitest run has ~567 PRE-EXISTING failures unrelated to the scrub — music/extension/adapter
   suites that need the repo's custom harnesses; ignore them, diff is the signal).

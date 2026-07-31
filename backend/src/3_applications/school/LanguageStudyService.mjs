@@ -16,6 +16,7 @@ import {
 import { RUNG_IDS } from '#domains/school/language/ladder.mjs';
 import { resolveGate, capabilitiesUnder, allowsRung, gateMessage } from '#domains/school/accessGate.mjs';
 import { requirementFor } from '#domains/school/language/ladder.mjs';
+import { offsetMinutesFor } from '#domains/school/studyDay.mjs';
 import { GuestForbiddenError, GateClosedError } from '#domains/school/errors.mjs';
 import { ValidationError, EntityNotFoundError } from '#domains/core/errors/index.mjs';
 
@@ -26,36 +27,6 @@ const DEFAULT_BOUNDARY_HOUR = 4;
 /** Untouched for this long and the program stops claiming to be active. */
 const IDLE_AFTER_DAYS = 14;
 const TREND_BUCKETS = 12;
-
-/**
- * Local UTC offset for an instant, in minutes.
- *
- * Computed per call rather than once at boot because the offset is not a
- * constant: a household on a DST-observing timezone would drift by an hour
- * twice a year, and a 4am study-day boundary computed with a stale offset
- * rolls the day at 3am or 5am — silently handing out tomorrow's sentences
- * early, or refusing them for an hour.
- */
-function offsetMinutesFor(timezone, epochMs) {
-  if (!timezone) return 0;
-  try {
-    const parts = Object.fromEntries(
-      new Intl.DateTimeFormat('en-US', {
-        timeZone: timezone,
-        hour12: false,
-        year: 'numeric', month: '2-digit', day: '2-digit',
-        hour: '2-digit', minute: '2-digit', second: '2-digit',
-      }).formatToParts(new Date(epochMs)).map((p) => [p.type, p.value]),
-    );
-    const asUTC = Date.UTC(
-      Number(parts.year), Number(parts.month) - 1, Number(parts.day),
-      Number(parts.hour) % 24, Number(parts.minute), Number(parts.second),
-    );
-    return Math.round((asUTC - epochMs) / 60000);
-  } catch {
-    return 0;
-  }
-}
 
 export class LanguageStudyService {
   #ds; #logger; #now; #timezone; #boundaryHour; #readGate;
@@ -450,6 +421,101 @@ export class LanguageStudyService {
       .filter(Boolean);
   }
 
+  /**
+   * The unfiltered ladder — every rung, as if every capability were present.
+   * Reporting and status answer "what is next for this learner" (design
+   * §IProgramReporter), which is not a property of whichever panel happens to
+   * be asking; device filtering belongs to `getDay`, not to a summary.
+   *
+   * Shared by `#summarizeCourse` and `todayStatus` so the day-queue math (and
+   * the progress it is built from) is derived exactly once per call site,
+   * never duplicated.
+   */
+  #fullDayQueue(userId, corpusId, corpus, log, progress) {
+    return buildDayQueue({
+      log,
+      day: progress.day,
+      dailyLimit: progress.dailyLimit,
+      corpusSize: corpus.size,
+      capabilities: { microphone: true, textInput: Object.values(corpus.languages) },
+      languages: corpus.languages,
+      playable: corpus.playable,
+    });
+  }
+
+  /**
+   * Today's status for the program-launcher surface (design §IProgramLauncher):
+   * has this learner cleared everything the day's queue asked of them, and
+   * what day are they on. `score` is always `null` — the ladder does not
+   * grade (design §3); accuracy is informational only.
+   *
+   * Scans every course this learner has touched (in `listCorpusIds()` order)
+   * and reports on the first one with any evidence at all — a stored progress
+   * record or a logged attempt. A learner with neither, for any course, has
+   * never touched language study, and gets the null triple rather than a
+   * fabricated "Day 1" for a course they have not started.
+   *
+   * Never throws — the `IProgramLauncher.status` contract says one failing
+   * program must not blank the agenda for the rest (mirrors `summarize`'s
+   * per-course try/catch, one level up since this returns a single object).
+   *
+   * @param {{userId: string}} args
+   * @returns {{doneToday: boolean, progressLabel: string|null, score: number|null}}
+   */
+  // READ-ONLY by contract: the agenda preview GET depends on status() never writing (preview spec §3).
+  todayStatus({ userId }) {
+    if (!userId) return { doneToday: false, progressLabel: null, score: null };
+    try {
+      for (const corpusId of this.#ds.listCorpusIds()) {
+        const corpus = this.#loadCorpus(corpusId);
+        if (!corpus) continue;
+
+        const rawProgress = this.#ds.readProgress(userId, corpusId);
+        const log = this.#ds.readAllEvents(userId, corpusId);
+        if (!rawProgress && log.length === 0) continue; // never touched this course
+
+        const progress = this.#readProgress(userId, corpusId);
+        let day = progress.day;
+        let queue = this.#fullDayQueue(userId, corpusId, corpus, log, progress);
+
+        // The stored day only advances when the learner next opens the app,
+        // so a day finished last week still reads as day N with everything
+        // cleared. Apply the same rollover the live session applies on open —
+        // otherwise the agenda prints "done today" for work finished days ago
+        // and hides the subject (found live: a day-1 queue cleared 2026-07-22
+        // still reported done on 07-30).
+        const nowMs = this.#now();
+        const roll = shouldRollDay({
+          queue,
+          lastActivity: progress.lastActivity ? Date.parse(progress.lastActivity) : null,
+          now: nowMs,
+          boundaryHour: this.#boundaryHour,
+          offsetMinutes: this.#offsetMinutes(nowMs),
+        });
+        if (roll.roll) {
+          day += 1;
+          queue = this.#fullDayQueue(userId, corpusId, corpus, log, { ...progress, day });
+        }
+
+        const summary = summarizeQueue(queue);
+        const outstanding = summary.total - summary.done;
+
+        // An empty queue counts as complete: a fresh learner can never present
+        // one (new sentences fill it), so empty means every available sentence
+        // has been retired — the same rule `shouldRollDay` uses to advance
+        // rather than stall on a vacuous condition (rollover.mjs:45-46: "An
+        // empty queue counts as complete...").
+        const doneToday = outstanding === 0;
+        const progressLabel = summary.total === 0 ? 'Course complete' : `Day ${day}`;
+        return { doneToday, progressLabel, score: null };
+      }
+      return { doneToday: false, progressLabel: null, score: null };
+    } catch (err) {
+      this.#logger.error?.('school.language.today-status-failed', { userId, error: err.message });
+      return { doneToday: false, progressLabel: null, score: null };
+    }
+  }
+
   #summarizeCourse(userId, corpusId) {
     const corpus = this.#loadCorpus(corpusId);
     if (!corpus) return null;
@@ -480,15 +546,7 @@ export class LanguageStudyService {
     }
 
     const progress = this.#readProgress(userId, corpusId);
-    const queue = buildDayQueue({
-      log,
-      day: progress.day,
-      dailyLimit: progress.dailyLimit,
-      corpusSize: corpus.size,
-      capabilities: { microphone: true, textInput: Object.values(corpus.languages) },
-      languages: corpus.languages,
-      playable: corpus.playable,
-    });
+    const queue = this.#fullDayQueue(userId, corpusId, corpus, log, progress);
 
     const touched = new Set(log.map((e) => Number(e.seq)).filter(Number.isFinite));
     const retired = new Set(

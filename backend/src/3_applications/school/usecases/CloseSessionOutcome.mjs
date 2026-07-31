@@ -92,6 +92,12 @@ export class CloseSessionOutcome {
   /**
    * @param {object} args
    * @param {string} args.sessionId
+   * @param {boolean} [args.honorClose] - the launch-unit completion door (spec
+   *   §6.2): legal ONLY when the session is exactly at `launch_dispatched`,
+   *   where it records a pass with `reason: 'launch_dispatched'` instead of
+   *   deriving a result from a grade. From any other state it is refused with
+   *   the same `unavailable` a regular close would give — the door does not
+   *   let a `graded` or mid-flight session skip evaluation.
    * @param {boolean} [args.signedOff] - a grown-up has approved the reward
    * @param {string} [args.signedOffBy] - the roster id of that grown-up;
    *   required (and checked) whenever `signedOff` is true
@@ -105,7 +111,7 @@ export class CloseSessionOutcome {
    *   `printed` is whether the result document actually reached the roll — a
    *   false here on a FAIL means the retry ticket is not in the child's hand.
    */
-  async execute({ sessionId, signedOff = false, signedOffBy = null } = {}) {
+  async execute({ sessionId, honorClose = false, signedOff = false, signedOffBy = null } = {}) {
     if (signedOff === true) {
       this.#grownUps.assert(signedOffBy, 'Only a grown-up can sign off a reward', {
         action: 'close.signoff', sessionId,
@@ -124,6 +130,23 @@ export class CloseSessionOutcome {
       // the existing txn and skips.
       return this.#settle({ sessionId, state, unit, outcome: state.outcome, signedOff, nowIso, resettling: true });
     }
+
+    if (honorClose) {
+      // THE DOOR, NOT A BYPASS (spec §6.2). A `launch:` unit's whole ask is the
+      // dispatch itself — there is no grade to derive a result from, so this is
+      // the ONE place a result is asserted rather than evaluated. Guarded to the
+      // single state it can mean anything in: everywhere else `honorClose`
+      // changes nothing, and the caller gets the exact refusal a plain close
+      // would give — a `graded` (or earlier) session can never be waved through
+      // unevaluated just by naming the flag.
+      if (state.state !== 'launch_dispatched') {
+        return this.#unavailable(sessionId, 'That work has not been marked yet.');
+      }
+      return this.#recordOutcomeAndSettle({
+        sessionId, state, unit, nowIso, signedOff, result: 'passed', reason: 'launch_dispatched',
+      });
+    }
+
     if (state.state !== 'graded') {
       return this.#unavailable(sessionId, 'That work has not been marked yet.');
     }
@@ -136,18 +159,28 @@ export class CloseSessionOutcome {
       gradedPercent: state.gradedPercent,
       passingPercent: unit?.passing?.percent,
     });
+    return this.#recordOutcomeAndSettle({
+      sessionId, state, unit, nowIso, signedOff, result: evaluated.result, reason: evaluated.reason,
+    });
+  }
+
+  /**
+   * Append the `outcome_recorded` event and ride the shared `#settle` — the
+   * one path a graded close and an honor-close both funnel through, so the
+   * reward guard, unlock line and result receipt stay uniform between them.
+   */
+  async #recordOutcomeAndSettle({ sessionId, state, unit, nowIso, signedOff, result, reason }) {
     const outcomeId = outcomeIdFor(sessionId);
     const { errors, event } = createEvent({
-      type: 'outcome_recorded', at: nowIso, sessionId,
-      outcomeId, result: evaluated.result, reason: evaluated.reason,
+      type: 'outcome_recorded', at: nowIso, sessionId, outcomeId, result, reason,
     });
     if (errors.length) throw new Error(`CloseSessionOutcome: could not record the outcome: ${errors.join('; ')}`);
     await this.#sessions.appendEvent(sessionId, event);
     this.#logger.info?.('school.outcome.recorded', {
-      sessionId, unitId: state.unitId, result: evaluated.result, reason: evaluated.reason, percent: state.gradedPercent,
+      sessionId, unitId: state.unitId, result, reason, percent: state.gradedPercent,
     });
 
-    const outcome = { outcomeId, result: evaluated.result, at: nowIso };
+    const outcome = { outcomeId, result, at: nowIso };
     return this.#settle({ sessionId, state, unit, outcome, signedOff, nowIso, resettling: false });
   }
 

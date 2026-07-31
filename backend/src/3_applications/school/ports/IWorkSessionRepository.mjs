@@ -64,7 +64,8 @@ export class IWorkSessionRepository {
    * @param {string} learnerId
    * @returns {Promise<Array<{ sessionId: string, learnerId: string, unitId: string|null,
    *                          state: string|null, terminal: boolean,
-   *                          outcome: {result: string}|null, day: string, updatedAt: string|null }>>}
+   *                          outcome: {result: string}|null, gradedPercent: number|null,
+   *                          day: string, updatedAt: string|null }>>}
    */
   async listForLearner(learnerId) {
     throw new Error('IWorkSessionRepository.listForLearner must be implemented');

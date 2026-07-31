@@ -14,6 +14,23 @@ describe('CourseTile', () => {
     expect(img.className).not.toContain('is-loading');
   });
 
+  it('wraps the cover and its overlays in one poster box (overlays anchor to the poster, not the grid cell)', () => {
+    // The one-page course wall letterboxes a fixed 2:3 poster inside a
+    // variable-shaped cell; badge/progress must sit on the POSTER's corners,
+    // so they live inside the same positioned box as the <img>.
+    const progress = {
+      isSequential: true,
+      total: 40,
+      users: [{ id: 'user_2', name: 'User_2', completed: 12, total: 40, lastPlayedAt: new Date().toISOString() }],
+    };
+    const { container } = render(<CourseTile item={item} onSelect={() => {}} progress={progress} />);
+    const box = container.querySelector('.piano-cover-box');
+    expect(box).toBeTruthy();
+    expect(box.querySelector('img.piano-cover')).toBeTruthy();
+    expect(box.querySelector('.piano-cover-badge')).toBeTruthy();
+    expect(box.querySelector('.piano-cover-progress')).toBeTruthy();
+  });
+
   it('calls onSelect with the item when tapped', () => {
     const onSelect = vi.fn();
     render(<CourseTile item={item} onSelect={onSelect} />);

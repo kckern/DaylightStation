@@ -31,7 +31,7 @@ import { validateManifest } from '#domains/school/curriculum/manifestValidation.
 const DEFAULT_TTL_MS = 15_000;
 
 export class CurriculumAccess {
-  #catalog; #bankIds; #ttlMs; #clock; #logger;
+  #catalog; #bankIds; #programIds; #surfaceValidators; #ttlMs; #clock; #logger;
   #snapshot = null;
   #loading = null;
 
@@ -40,14 +40,25 @@ export class CurriculumAccess {
    * @param {import('./ports/ICurriculumCatalog.mjs').ICurriculumCatalog} deps.catalog
    * @param {() => Iterable<string>} [deps.bankIds] - ids of every question bank that exists;
    *   a function because banks warm asynchronously and the set changes without a restart
+   * @param {() => Iterable<string>} [deps.programIds] - ids of every program that exists
+   *   (Task 12 supplies real ids; default empty means no unit can be a program unit yet)
+   * @param {() => Map<string, Function>} [deps.surfaceValidators] - surface id →
+   *   that surface's own `validateAction`, the same registered-adapter set
+   *   `DoNowService` dispatches through; default empty means no unit can carry
+   *   a `launch:` block yet
    * @param {number} [deps.ttlMs]
    * @param {() => number} [deps.clock] - epoch ms, injected for deterministic tests
    * @param {object} [deps.logger]
    */
-  constructor({ catalog, bankIds = () => [], ttlMs = DEFAULT_TTL_MS, clock = () => Date.now(), logger = console } = {}) {
+  constructor({
+    catalog, bankIds = () => [], programIds = () => [], surfaceValidators = () => new Map(),
+    ttlMs = DEFAULT_TTL_MS, clock = () => Date.now(), logger = console,
+  } = {}) {
     if (!catalog) throw new Error('CurriculumAccess requires a catalog');
     this.#catalog = catalog;
     this.#bankIds = typeof bankIds === 'function' ? bankIds : () => bankIds;
+    this.#programIds = typeof programIds === 'function' ? programIds : () => programIds;
+    this.#surfaceValidators = typeof surfaceValidators === 'function' ? surfaceValidators : () => surfaceValidators;
     this.#ttlMs = ttlMs;
     this.#clock = clock;
     this.#logger = logger;
@@ -74,10 +85,13 @@ export class CurriculumAccess {
       if (!errors.length) validManifests.set(id, manifest);
     });
 
+    const surfaceValidators = this.#surfaceValidators();
     const sets = {
       bankIds: new Set(this.#bankIds() ?? []),
       documentIds: new Set(validDocuments.keys()),
       manifestIds: new Set(validManifests.keys()),
+      programIds: new Set(this.#programIds() ?? []),
+      surfaceValidators: surfaceValidators instanceof Map ? surfaceValidators : new Map(),
     };
 
     const validUnits = new Map();

@@ -78,11 +78,28 @@ const yamlManifests = readDir('manifests');
  * catalog builds them at load time. Built from the fixtures themselves, so a
  * unit pointing at a bank nobody ships is an error here rather than at the
  * printer with a child standing beside it.
+ *
+ * `programIds` and `surfaceValidators` are the two sets NOT derived from a
+ * fixture directory — a program unit's `program:` value names a registered
+ * LAUNCHER (composition root, `[...launchers.keys()]`), and a `launch:`
+ * unit's `surface:` names a registered DoNow SURFACE ADAPTER, neither a file
+ * on disk. `language` and `pe-daily` are the two programs the house registers
+ * today (`LanguageProgramLauncher`, and the DoNow launch-journey e2e's own
+ * `school.yml` `programs:` entry — Task 14); `garage-fitness` is one of
+ * DoNow's own unconditionally-registered surfaces (`donow.mjs`). The
+ * stand-in validator mirrors `GarageFitnessSurface.validateAction`'s real
+ * contract (`episodeId` required).
  */
-const setsFrom = ({ banks = [], documents = [], manifests = [] }) => ({
+const setsFrom = ({
+  banks = [], documents = [], manifests = [], programs = ['language', 'pe-daily'],
+} = {}) => ({
   bankIds: new Set(banks.map((b) => b?.id).filter(Boolean)),
   documentIds: new Set(documents.map((d) => d?.id).filter(Boolean)),
   manifestIds: new Set(manifests.map((m) => m?.id).filter(Boolean)),
+  programIds: new Set(programs),
+  surfaceValidators: new Map([
+    ['garage-fitness', (raw) => ((raw && typeof raw.episodeId === 'string' && raw.episodeId) ? [] : ['episodeId required'])],
+  ]),
 });
 
 const yamlSets = setsFrom({

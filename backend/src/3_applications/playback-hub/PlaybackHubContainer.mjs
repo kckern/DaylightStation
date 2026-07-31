@@ -56,6 +56,15 @@ export class PlaybackHubContainer {
     this.#broadcasterOptions = broadcasterOptions;
   }
 
+  /**
+   * The raw gateway, for a caller that needs a direct status read rather than
+   * a use case built on top of it — e.g. `DoNowService`'s `playback-hub`
+   * surface, which needs `getStatus()` for its own occupancy probe alongside
+   * `sendHubCommand` for dispatch (no use case wraps a bare status read).
+   * @returns {import('./ports/IPlaybackHubGateway.mjs').IPlaybackHubGateway}
+   */
+  get gateway() { return this.#gateway; }
+
   /** @returns {GetHubStatus} */
   get getHubStatus() {
     if (!this.#getHubStatus) {
