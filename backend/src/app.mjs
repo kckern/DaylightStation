@@ -155,6 +155,7 @@ import { initManageService } from '#apps/fitness/manageService.mjs';
 import { createFoodScaleRelay } from '#apps/hardware/foodScaleRelay.mjs';
 import { createOmrRelay } from '#apps/hardware/omrRelay.mjs';
 import { createAutomotiveRelay } from '#apps/hardware/automotiveRelay.mjs';
+import { createQuizScanRecorder } from '#apps/quizzes/quizScanRecorder.mjs';
 import { createScaleNutribotBridge } from '#apps/hardware/ScaleNutribotBridge.mjs';
 import { CompositionStore } from '#apps/nutribot/CompositionStore.mjs';
 import { ApplyScanToComposition } from '#apps/nutribot/usecases/ApplyScanToComposition.mjs';
@@ -630,14 +631,26 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   // history/omr/<reader-id>/. The relay reports WHICH POSITIONS WERE MARKED and
   // nothing more — scoring is the consuming app's job, since the mapping from
   // columns to answers is form-specific. See _extensions/omr-relay.
+  const omrReadersConfig = configService.getHouseholdAppConfig(householdId, 'omr-readers')
+    || configService.reloadHouseholdAppConfig?.(householdId, 'omr-readers')
+    || {};
   createOmrRelay({
     eventBus,
     dataDir,
-    config: configService.getHouseholdAppConfig(householdId, 'omr-readers')
-      || configService.reloadHouseholdAppConfig?.(householdId, 'omr-readers')
-      || {},
+    config: omrReadersConfig,
     timezone: configService.getHouseholdTimezone?.(householdId),
     logger: rootLogger.child({ module: 'omr-relay' }),
+  });
+
+  // Quiz-sheet decoder — the form-specific consumer of those scans. Subscribes
+  // to the same topic and double-processes each card: the relay keeps the raw
+  // byte-faithful manifest, this writes the meaningful version (7-digit test ID
+  // + answers for 50 questions) to household/apps/quizzes/<reader-id>/.
+  createQuizScanRecorder({
+    eventBus,
+    dataDir,
+    config: omrReadersConfig,
+    logger: rootLogger.child({ module: 'quiz-scan' }),
   });
 
   // Automotive relay — ingests the in-car Freematics device's trip/snapshot
