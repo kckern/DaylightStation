@@ -134,6 +134,48 @@ export function densityForLevel(cfg, level) {
   return (cfg?.densityLevels || []).find((l) => l.level === n) || null;
 }
 
+/**
+ * Resolve a SCANNED density code (kcal per 100 g) to its config row.
+ *
+ * Separate from `densityForLevel` because the two lookups take different keys and
+ * must not be conflated. The Telegram keyboard round-trips the ORDINAL level in
+ * its callback payload; the printed QR carries the PHYSICAL value. Collapsing
+ * them into one function would make `4` ambiguous — rung 4, or 0.04 kcal/g?
+ *
+ * Matches on `round(kcal_per_g * 100)` rather than on a stored code field, so the
+ * config has one source of truth for the calorie figure and cannot drift from
+ * what the sheet printed (`sheetProviders` derives the printed code the same way).
+ *
+ * @param {object} cfg Normalized nutribot config.
+ * @param {number} kcalPer100g As returned by `parseScan`.
+ * @returns {object|null} The density row, or null when no row carries that value.
+ */
+export function densityForCode(cfg, kcalPer100g) {
+  if (!Number.isFinite(Number(kcalPer100g))) return null;
+  const code = Number(kcalPer100g);
+  return (cfg?.densityLevels || [])
+    .find((l) => Math.round(Number(l.kcal_per_g) * 100) === code) || null;
+}
+
+/**
+ * Resolve a SCANNED tare (grams) to its container row.
+ *
+ * The tare itself needs no lookup — the scanned number IS the weight to subtract.
+ * This exists for the row's label, emoji and id, which the ack renders and the
+ * store keys on. A miss is therefore NOT fatal to the arithmetic, but callers
+ * still reject it: an unrecognised tare means the sheet and the table disagree,
+ * and guessing would log a plausible wrong number.
+ *
+ * @param {object} cfg Normalized nutribot config.
+ * @param {number} grams As returned by `parseScan`.
+ * @returns {object|null} The container row, or null when no row carries that tare.
+ */
+export function containerForTare(cfg, grams) {
+  if (!Number.isFinite(Number(grams))) return null;
+  const g = Number(grams);
+  return (cfg?.containers?.items || []).find((c) => Number(c.grams) === g) || null;
+}
+
 function chunk(arr, size) {
   const rows = [];
   for (let i = 0; i < arr.length; i += size) rows.push(arr.slice(i, i + size));

@@ -6,11 +6,19 @@ import {
   encodeControl,
   CONTROL_VERBS,
   RESET_CODE,
-  MAX_DENSITY_LEVEL,
+  MAX_DENSITY_CODE,
 } from '#domains/nutrition';
 import { ValidationError } from '#domains/core/errors/index.mjs';
 
-const ALL_LEVELS = Array.from({ length: MAX_DENSITY_LEVEL }, (_, i) => i + 1);
+/**
+ * Printed density payloads, in KCAL PER 100 G — not ordinal rungs. The sheet
+ * encodes the physical quantity so a scan needs no level->calories lookup, so
+ * these are the values a real table produces (0.2 .. 8.5 kcal/g).
+ */
+const ALL_DENSITY_CODES = [20, 60, 100, 140, 190, 260, 380, 600, 850];
+
+/** Printed tare payloads, in grams. */
+const ALL_TARES = [0, 40, 160, 250, 620, 9999];
 
 /**
  * The verb printed on the sheet is NOT always the kind the parser returns:
@@ -20,49 +28,78 @@ const VERB_TO_KIND = { clear: 'reset', undo: 'undo', done: 'done' };
 
 describe('parseScan', () => {
   describe('density codes', () => {
-    it('parses a density level', () => {
-      expect(parseScan('dl:4')).toEqual({ kind: 'density', level: 4 });
+    // The payload is the QUANTITY, not the rung. `dl:140` is 1.4 kcal/g, which is
+    // level 4 in the household table — but the parser neither knows nor needs that.
+    it('parses a density code as kcal per 100 g', () => {
+      expect(parseScan('dl:140')).toEqual({ kind: 'density', kcalPer100g: 140 });
     });
 
-    it('parses every level in range', () => {
-      for (const level of ALL_LEVELS) {
-        expect(parseScan(`dl:${level}`)).toEqual({ kind: 'density', level });
+    it('parses every code a realistic table produces', () => {
+      for (const kcalPer100g of ALL_DENSITY_CODES) {
+        expect(parseScan(`dl:${kcalPer100g}`)).toEqual({ kind: 'density', kcalPer100g });
       }
     });
 
-    it('rejects levels outside the range', () => {
+    // REGRESSION GUARD for the grammar change. Under the old scheme these were the
+    // ONLY legal density codes and meant rungs 1-9; they are still well-formed, and
+    // must now parse as the absurd-but-honest densities they name (0.01-0.09
+    // kcal/g) rather than being quietly re-read as rungs. Nothing resolves them —
+    // no table row carries 0.04 kcal/g — so `ApplyScanToComposition` refuses them.
+    it('reads a legacy ordinal code as a tiny density, not as a rung', () => {
+      expect(parseScan('dl:4')).toEqual({ kind: 'density', kcalPer100g: 4 });
+    });
+
+    it('rejects values outside the printable range', () => {
       expect(parseScan('dl:0')).toBeNull();
-      expect(parseScan(`dl:${MAX_DENSITY_LEVEL + 1}`)).toBeNull();
+      expect(parseScan(`dl:${MAX_DENSITY_CODE + 1}`)).toBeNull();
       expect(parseScan('dl:x')).toBeNull();
     });
 
+    // Decimals stay out of the payload: `dl:1.4` and `dl:140` would be two
+    // spellings of one density, and only one of them is ever printed.
     it('rejects non-canonical numeric forms', () => {
-      expect(parseScan('dl:04')).toBeNull();
-      expect(parseScan('dl:4.0')).toBeNull();
-      expect(parseScan('dl:-4')).toBeNull();
+      expect(parseScan('dl:0140')).toBeNull();
+      expect(parseScan('dl:1.4')).toBeNull();
+      expect(parseScan('dl:-140')).toBeNull();
     });
   });
 
   describe('container codes', () => {
-    it('parses a container id', () => {
-      expect(parseScan('ct:dinner-bowl')).toEqual({ kind: 'container', id: 'dinner-bowl' });
+    // Same rule as density: the payload is the tare in grams, so the subtraction
+    // needs no id lookup and renaming a vessel cannot orphan a laminated code.
+    it('parses a container code as a tare in grams', () => {
+      expect(parseScan('ct:160')).toEqual({ kind: 'container', grams: 160 });
     });
 
-    it('rejects an empty container id', () => {
+    it('parses every tare a realistic table produces', () => {
+      for (const grams of ALL_TARES) {
+        expect(parseScan(`ct:${grams}`)).toEqual({ kind: 'container', grams });
+      }
+    });
+
+    // A zero tare is legitimate — a weightless liner — and must not be confused
+    // with "no container scanned", which is the absence of a code entirely.
+    it('accepts a zero tare', () => {
+      expect(parseScan('ct:0')).toEqual({ kind: 'container', grams: 0 });
+    });
+
+    it('rejects an empty tare', () => {
       expect(parseScan('ct:')).toBeNull();
     });
 
-    // A mixed-case id would not match its lowercase `containers.items` key, so
-    // accepting it would silently resolve no tare and yield a plausible but
-    // wrong calorie number. Reject at the grammar instead.
-    it('rejects mixed-case ids rather than passing them through', () => {
-      expect(parseScan('ct:Mug')).toBeNull();
-      expect(parseScan('ct:Dinner-Bowl')).toBeNull();
+    // REGRESSION GUARD. Semantic ids were the old payload. They must now fail to
+    // parse outright rather than resolving to some tare: a leftover `ct:dinner-bowl`
+    // sticker is unreadable, which is the loud failure, whereas silently taring
+    // zero would log the dish's weight as food.
+    it('rejects a legacy semantic id', () => {
+      expect(parseScan('ct:dinner-bowl')).toBeNull();
+      expect(parseScan('ct:mug')).toBeNull();
     });
 
-    it('rejects ids with underscores or spaces', () => {
-      expect(parseScan('ct:bento_box')).toBeNull();
-      expect(parseScan('ct:dinner bowl')).toBeNull();
+    it('rejects non-canonical numeric forms', () => {
+      expect(parseScan('ct:0160')).toBeNull();
+      expect(parseScan('ct:16.0')).toBeNull();
+      expect(parseScan('ct:-160')).toBeNull();
     });
   });
 
@@ -157,15 +194,15 @@ describe('parseScan', () => {
   });
 
   it('tolerates surrounding whitespace', () => {
-    expect(parseScan('  dl:4 ')).toEqual({ kind: 'density', level: 4 });
-    expect(parseScan('\tct:mug\n')).toEqual({ kind: 'container', id: 'mug' });
+    expect(parseScan('  dl:140 ')).toEqual({ kind: 'density', kcalPer100g: 140 });
+    expect(parseScan('\tct:160\n')).toEqual({ kind: 'container', grams: 160 });
   });
 });
 
 describe('encodeDensity', () => {
-  it('round-trips every level through parseScan', () => {
-    for (const level of ALL_LEVELS) {
-      expect(parseScan(encodeDensity(level))).toEqual({ kind: 'density', level });
+  it('round-trips every code a realistic table produces', () => {
+    for (const kcalPer100g of ALL_DENSITY_CODES) {
+      expect(parseScan(encodeDensity(kcalPer100g))).toEqual({ kind: 'density', kcalPer100g });
     }
   });
 
@@ -173,11 +210,18 @@ describe('encodeDensity', () => {
   // been printed and laminated. Fail at generation time instead.
   it('throws rather than emitting a code the parser would reject', () => {
     expect(() => encodeDensity(0)).toThrow(ValidationError);
-    expect(() => encodeDensity(MAX_DENSITY_LEVEL + 1)).toThrow(ValidationError);
+    expect(() => encodeDensity(MAX_DENSITY_CODE + 1)).toThrow(ValidationError);
     expect(() => encodeDensity(undefined)).toThrow(ValidationError);
     expect(() => encodeDensity(null)).toThrow(ValidationError);
-    expect(() => encodeDensity(4.5)).toThrow(ValidationError);
-    expect(() => encodeDensity('4')).toThrow(ValidationError);
+    expect(() => encodeDensity('140')).toThrow(ValidationError);
+  });
+
+  // The caller is expected to round: `kcal_per_g * 100` on a float table yields
+  // things like 140.00000000000003, and a fractional payload has no printable
+  // spelling. Rejecting it here is what forces the rounding to happen once, in
+  // the provider, rather than being improvised per call site.
+  it('rejects a fractional value rather than rounding it silently', () => {
+    expect(() => encodeDensity(140.5)).toThrow(ValidationError);
   });
 
   it('reports the offending value on the error', () => {
@@ -186,48 +230,53 @@ describe('encodeDensity', () => {
     // catch, which would point the diagnostic at the wrong line.
     let caught;
     try {
-      encodeDensity(MAX_DENSITY_LEVEL + 1);
+      encodeDensity(MAX_DENSITY_CODE + 1);
     } catch (err) {
       caught = err;
     }
     expect(caught).toBeInstanceOf(ValidationError);
     expect(caught.code).toBe('INVALID_DENSITY_LEVEL');
-    expect(caught.field).toBe('level');
-    expect(caught.value).toBe(MAX_DENSITY_LEVEL + 1);
+    expect(caught.field).toBe('kcalPer100g');
+    expect(caught.value).toBe(MAX_DENSITY_CODE + 1);
   });
 });
 
 describe('encodeContainer', () => {
-  it('round-trips valid ids through parseScan', () => {
-    for (const id of ['mug', 'dinner-bowl', '9x13-pan', 'jar2']) {
-      expect(parseScan(encodeContainer(id))).toEqual({ kind: 'container', id });
+  it('round-trips every tare a realistic table produces', () => {
+    for (const grams of ALL_TARES) {
+      expect(parseScan(encodeContainer(grams))).toEqual({ kind: 'container', grams });
     }
   });
 
-  // 'bento_box' is exactly the shape a human adds next to containers.items.
+  // REGRESSION GUARD for the grammar change: this encoder used to TAKE an id.
+  // Handing it one now must throw rather than stringify into `ct:mug`, which the
+  // parser would reject — an unreadable code discovered after lamination.
+  it('rejects a container id, which is no longer what it encodes', () => {
+    expect(() => encodeContainer('mug')).toThrow(ValidationError);
+    expect(() => encodeContainer('dinner-bowl')).toThrow(ValidationError);
+  });
+
   it('throws rather than emitting a code the parser would reject', () => {
-    expect(() => encodeContainer('bento_box')).toThrow(ValidationError);
-    expect(() => encodeContainer('dinner bowl')).toThrow(ValidationError);
-    expect(() => encodeContainer('9x13 pan')).toThrow(ValidationError);
-    expect(() => encodeContainer('Mug')).toThrow(ValidationError);
-    expect(() => encodeContainer('-leading-hyphen')).toThrow(ValidationError);
-    expect(() => encodeContainer('mug:extra')).toThrow(ValidationError);
-    expect(() => encodeContainer('')).toThrow(ValidationError);
+    expect(() => encodeContainer(-1)).toThrow(ValidationError);
+    expect(() => encodeContainer(10000)).toThrow(ValidationError);
+    expect(() => encodeContainer(160.5)).toThrow(ValidationError);
+    expect(() => encodeContainer('160')).toThrow(ValidationError);
     expect(() => encodeContainer(undefined)).toThrow(ValidationError);
-    expect(() => encodeContainer(42)).toThrow(ValidationError);
+    expect(() => encodeContainer(null)).toThrow(ValidationError);
+    expect(() => encodeContainer(NaN)).toThrow(ValidationError);
   });
 
   it('reports the offending value on the error', () => {
     let caught;
     try {
-      encodeContainer('bento_box');
+      encodeContainer(-1);
     } catch (err) {
       caught = err;
     }
     expect(caught).toBeInstanceOf(ValidationError);
     expect(caught.code).toBe('INVALID_CONTAINER_ID');
-    expect(caught.field).toBe('id');
-    expect(caught.value).toBe('bento_box');
+    expect(caught.field).toBe('grams');
+    expect(caught.value).toBe(-1);
   });
 });
 
@@ -294,10 +343,11 @@ describe('RESET_CODE', () => {
   });
 });
 
-describe('MAX_DENSITY_LEVEL', () => {
-  // This does NOT read config.example.yml — it only pins the constant so the
-  // bound cannot drift silently. Task 4 adds the real config-coupling check.
-  it('is pinned deliberately — update config.example.yml in the same commit', () => {
-    expect(MAX_DENSITY_LEVEL).toBe(9);
+describe('MAX_DENSITY_CODE', () => {
+  // Pins the bound on the PRINTED payload so it cannot drift silently. Note this
+  // is a different number from MAX_DENSITY_LEVEL, which bounds the ordinal rung
+  // in the config table — see the note on both constants.
+  it('is pinned deliberately — 2000 kcal/100 g, well past pure fat', () => {
+    expect(MAX_DENSITY_CODE).toBe(2000);
   });
 });

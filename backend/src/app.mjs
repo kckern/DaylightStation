@@ -2104,7 +2104,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     logger: rootLogger.child({ module: 'piano-api' })
   });
 
-  // School (portal homeschool): banks from data/content/quizzes/, per-user
+  // School (portal homeschool): banks from data/content/school/{subject}/quizzes/, per-user
   // append-only attempt log under data/users/{id}/apps/school/attempts/, plus
   // the materials framework (catalog + per-unit progress/quiz gates). Wired
   // here (after fitnessPlayableService/pianoContainer above) because

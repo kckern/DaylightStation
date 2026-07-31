@@ -91,27 +91,57 @@ export function createNutritionProviders({ getScaleConfig, loadIcon = () => null
   const withIcon = (row) => ({ ...icon(row.icon), ...(row.icon_scale ? { iconScale: row.icon_scale } : {}) });
 
   return {
-    /** One QR per configured caloric-density level. */
+    /**
+     * One QR per configured caloric-density level.
+     *
+     * **The code is derived from `kcal_per_g`, not from `level`.** Same reasoning
+     * as the container provider below: the printed payload is a physical quantity
+     * (kcal per 100 g, so `dl:140` is 1.4 kcal/g), and `level` is expected to hold
+     * that same number. Encoding from the calorie figure means the two cannot
+     * drift silently — edit `kcal_per_g` and forget `level` and the sheet prints a
+     * code with no matching row, which fails loudly as `UNKNOWN_DENSITY_LEVEL`
+     * instead of printing a stale number that resolves to the wrong calories.
+     *
+     * Rounding to an integer is what keeps decimals out of the QR payload; a
+     * table with 1.45 and 1.44 kcal/g would collide, and the duplicate-level check
+     * in `validateScanConfig` is what catches that.
+     */
     'nutrition.density': () => {
       const cfg = getScaleConfig() || {};
       return (cfg.densityLevels || []).map((l) => ({
-        code: encodeDensity(l.level),
+        code: encodeDensity(Math.round(Number(l.kcal_per_g) * 100)),
         label: l.label,
         sublabel: `${l.kcal_per_g} kcal/g`,
         ...icon(l.icon),
-        meta: { level: l.level },
+        meta: { level: l.level, kcalPerG: l.kcal_per_g },
       }));
     },
 
-    /** One QR per configured container, captioned with the tare the scan subtracts. */
+    /**
+     * One QR per configured container, captioned with the tare the scan subtracts.
+     *
+     * **The code is derived from `grams`, not from `id`.** A household may name
+     * container ids after their weight (`ct:160`) precisely so the printed code
+     * carries no semantics — nothing to rename, nothing to orphan. That convention
+     * puts the same number in two config fields, and encoding from `id` would make
+     * the divergence silent in the worst direction: edit `grams: 120` to `140` and
+     * forget the id, and the sheet keeps printing `ct:120` while the table
+     * subtracts 140 g. Encoding from `grams` means the sheet prints `ct:140`, the
+     * id lookup misses, and the scan fails loudly as `UNKNOWN_CONTAINER` instead of
+     * quietly logging 20 g of phantom food.
+     *
+     * For ids that are NOT numeric this changes the printed code, so a household on
+     * semantic ids must keep `id` and `grams` in step or move to numeric ids. The
+     * validator's duplicate-id check still applies either way.
+     */
     'nutrition.containers': () => {
       const cfg = getScaleConfig() || {};
       return (cfg.containers?.items || []).map((c) => ({
-        code: encodeContainer(c.id),
+        code: encodeContainer(Math.round(Number(c.grams))),
         label: c.label,
         sublabel: `${c.grams} g`,
         ...withIcon(c),
-        meta: { id: c.id },
+        meta: { id: c.id, grams: c.grams },
       }));
     },
 

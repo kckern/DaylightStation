@@ -1,21 +1,37 @@
 /**
  * YAML persistence for the school app. Dumb storage only — no grading, no
  * policy (see SchoolService). Mirrors YamlEconomyDatastore's layout:
- *   banks:         <dataDir>/content/quizzes/{bankId}.yml  (bankId may be a nested path)
+ *   banks:         <dataDir>/content/school/{subject}/{work}/quizzes/{rest}.yml
  *   attempts:      <userDir>/apps/school/attempts/{YYYY-MM-DD}.yml  (append-only)
  *   quiz requests: <dataDir>/household/apps/school/quiz-requests.yml  (one household list —
- *                  NOT under content/quizzes, where listBankIds would sweep it up)
+ *                  NOT under a quizzes dir, where listBankIds would sweep it up)
+ *
+ * Banks live inside their WORK, beside that work's units and documents, the way
+ * scripture/bom/ already did. The `quizzes/` container is not part of the id:
+ * `math/algebra/functions/x` is the file
+ * `content/school/math/algebra/quizzes/functions/x.yml`. Dropping that segment
+ * from the id is what let every already-nested bank keep its id across the
+ * 2026-07-30 moves — only the four loose banks, which had no work segment at
+ * all, were renamed.
  */
 import path from 'path';
 import fs from 'fs';
 import yaml from 'js-yaml';
 import { loadYamlSafe, saveYaml, ensureDir, listYamlFiles } from '#system/utils/FileIO.mjs';
+import { SUBJECT_IDS } from '#domains/school/curriculum/unitValidation.mjs';
 import { InfrastructureError } from '#system/utils/errors/index.mjs';
 
-// Bank ids may be nested paths ("i-survived/01-titanic-1912/01-two-am-on-deck") so the
+// Bank ids are nested paths ("history/i-survived/02-shark-attacks/01-alone") so the
 // bank tree can be browsed as folders. Every segment must start alphanumeric, which is
 // what keeps traversal out: ".." and hidden names cannot match, nor can a leading "/".
-const BANK_ID_RE = /^[a-z0-9][a-z0-9_-]*(\/[a-z0-9][a-z0-9_-]*)*$/i;
+// The first segment is the subject shelf (checked against SUBJECT_IDS) and the second
+// is the work, so a THREE-segment minimum is structural rather than stylistic.
+//
+// Dots are allowed AFTER the first character because 43 imported banks name a
+// half-step that way (`multiplying_expressions_0.5`). They were previously
+// unreachable through readBankRaw while readAllBankRaws — which did not apply this
+// pattern — loaded them fine; routing both through one path made that split visible.
+const BANK_ID_RE = /^[a-z0-9][a-z0-9._-]*(\/[a-z0-9][a-z0-9._-]*)*$/i;
 const DAY_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 export class YamlSchoolDatastore {
@@ -30,7 +46,35 @@ export class YamlSchoolDatastore {
     this.#configService = config.configService;
   }
 
-  #banksDir() { return path.join(this.#configService.getDataDir(), 'content', 'quizzes'); }
+  #schoolDir() { return path.join(this.#configService.getDataDir(), 'content', 'school'); }
+
+  #quizzesDir(subject, work) {
+    return path.join(this.#schoolDir(), subject, work, 'quizzes');
+  }
+
+  #works(subject) {
+    try {
+      return fs.readdirSync(path.join(this.#schoolDir(), subject), { withFileTypes: true })
+        .filter((e) => e.isDirectory() && !e.name.startsWith('.'))
+        .map((e) => e.name);
+    } catch {
+      return [];
+    }
+  }
+
+  /**
+   * Bank id -> file path. An id is `<subject>/<work>/<rest…>`; the `quizzes/`
+   * container is NOT part of the id, it is inserted between the work and the
+   * rest. So three segments are the minimum, and an unknown subject or a
+   * shorter id resolves to null rather than to a stray read.
+   */
+  #bankFile(bankId) {
+    const id = String(bankId);
+    if (!BANK_ID_RE.test(id)) return null;
+    const [subject, work, ...rest] = id.split('/');
+    if (!SUBJECT_IDS.includes(subject) || !work || rest.length === 0) return null;
+    return path.join(this.#quizzesDir(subject, work), ...rest);
+  }
 
   #attemptsDir(userId) {
     if (!this.#configService.getUserProfile?.(userId)) return null;
@@ -77,12 +121,13 @@ export class YamlSchoolDatastore {
   }
 
   listBankIds() {
-    return listYamlFiles(this.#banksDir(), { recursive: true }).sort();
+    return SUBJECT_IDS.flatMap((subject) => this.#works(subject).flatMap((work) => listYamlFiles(this.#quizzesDir(subject, work), { recursive: true })
+      .map((rest) => `${subject}/${work}/${rest}`))).sort();
   }
 
   readBankRaw(bankId) {
-    if (!BANK_ID_RE.test(String(bankId))) return null;
-    return loadYamlSafe(path.join(this.#banksDir(), String(bankId)));
+    const file = this.#bankFile(bankId);
+    return file ? loadYamlSafe(file) : null;
   }
 
   /**
@@ -94,14 +139,15 @@ export class YamlSchoolDatastore {
    */
   async readAllBankRaws({ batch = 200 } = {}) {
     const ids = this.listBankIds();
-    const dir = this.#banksDir();
     const out = [];
     for (let i = 0; i < ids.length; i += batch) {
       const slice = ids.slice(i, i + batch);
       // eslint-disable-next-line no-await-in-loop
       const chunk = await Promise.all(slice.map(async (id) => {
         try {
-          const text = await fs.promises.readFile(path.join(dir, `${id}.yml`), 'utf8');
+          const file = this.#bankFile(id);
+          if (!file) return { id, raw: null };
+          const text = await fs.promises.readFile(`${file}.yml`, 'utf8');
           return { id, raw: yaml.load(text) };
         } catch {
           return { id, raw: null };

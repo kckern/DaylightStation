@@ -4,7 +4,7 @@
  * `scanRoutingOrder.test.mjs` pins the `handled` contract of the use case, but
  * it cannot see the branch in `app.mjs` that consumes it. That blind spot hid a
  * real defect: when `validateScanConfig` threw at boot, `applyScanToComposition`
- * stayed null, the branch took neither arm, and `dl:4` fell through to the UPC
+ * stayed null, the branch took neither arm, and `dl:140` fell through to the UPC
  * lookup — a fridge-sheet code sent to a product database. These tests cover the
  * decision itself so the disabled case is no longer invisible.
  */
@@ -18,14 +18,14 @@ describe('routeNutribotScan — nutriscan available', () => {
   it('routes a claimed scan to nutriscan and hands back the outcome', () => {
     const outcome = { handled: true, ok: true, kind: 'density', level: 4 };
     const apply = applyStub(outcome);
-    const res = routeNutribotScan({ scaleId: 'kitchen', code: 'dl:4', apply });
+    const res = routeNutribotScan({ scaleId: 'kitchen', code: 'dl:140', apply });
     expect(res).toEqual({ action: 'nutriscan', outcome });
-    expect(apply.execute).toHaveBeenCalledWith({ scaleId: 'kitchen', code: 'dl:4' });
+    expect(apply.execute).toHaveBeenCalledWith({ scaleId: 'kitchen', code: 'dl:140' });
   });
 
   it('routes a REFUSED scan to nutriscan too — a refusal is still a claim', () => {
     const outcome = { handled: true, ok: false, kind: 'container', error: 'UNKNOWN_CONTAINER', id: 'teapot' };
-    const res = routeNutribotScan({ scaleId: 'kitchen', code: 'ct:teapot', apply: applyStub(outcome) });
+    const res = routeNutribotScan({ scaleId: 'kitchen', code: 'ct:777', apply: applyStub(outcome) });
     expect(res.action).toBe('nutriscan');
     expect(res.action).not.toBe('upc');
     expect(res.outcome.ok).toBe(false);
@@ -39,7 +39,7 @@ describe('routeNutribotScan — nutriscan available', () => {
 
 describe('routeNutribotScan — nutriscan DISABLED (bad config at boot)', () => {
   it('SWALLOWS a fridge-sheet code instead of looking it up as a UPC', () => {
-    for (const code of ['dl:4', 'ct:mug', 'rs:clear']) {
+    for (const code of ['dl:140', 'ct:350', 'rs:clear']) {
       const res = routeNutribotScan({ scaleId: 'kitchen', code, apply: null });
       expect(res.action).toBe('swallow');
       expect(res.action).not.toBe('upc');
@@ -62,7 +62,7 @@ describe('routeNutribotScan — reader with no scale_id (a valid config)', () =>
   });
 
   it('swallows a fridge-sheet code — there is no scale to apply it to', () => {
-    const res = routeNutribotScan({ scaleId: null, code: 'dl:4', apply: applyStub({ handled: false }) });
+    const res = routeNutribotScan({ scaleId: null, code: 'dl:140', apply: applyStub({ handled: false }) });
     expect(res.action).toBe('swallow');
     expect(res.reason).toBe('no-scale-id');
   });

@@ -3,7 +3,7 @@ import {
   computeNet,
   computeNutrition,
   encodeDensity,
-  MAX_DENSITY_LEVEL,
+  MAX_DENSITY_CODE,
 } from '#domains/nutrition';
 import { ValidationError } from '#domains/core/errors/index.mjs';
 
@@ -284,7 +284,7 @@ describe('computeNutrition', () => {
   // not tell them apart.
   it('does not reuse ScanVocabularyService\'s error code for a malformed config row', () => {
     let scanCode;
-    try { encodeDensity(MAX_DENSITY_LEVEL + 1); } catch (err) { scanCode = err.code; }
+    try { encodeDensity(MAX_DENSITY_CODE + 1); } catch (err) { scanCode = err.code; }
     let configCode;
     try { computeNutrition(200, null); } catch (err) { configCode = err.code; }
 

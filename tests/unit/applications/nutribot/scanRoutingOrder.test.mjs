@@ -44,26 +44,26 @@ describe('scan routing order (namespace-first, UPC fallthrough)', () => {
   });
 
   it.each([
-    ['density', 'dl:4'],
-    ['container', 'ct:mug'],
+    ['density', 'dl:140'],
+    ['container', 'ct:350'],
     ['reset', 'rs:clear'],
   ])('claims a %s scan', (_kind, code) => {
     expect(apply.execute({ scaleId: SCALE, code }).handled).toBe(true);
   });
 
-  // The subtle one. A refusal is still a claim: `ct:unknown` is unmistakably a
+  // The subtle one. A refusal is still a claim: `ct:777` — a tare no row carries — is unmistakably a
   // fridge-sheet code, so it must NOT fall through and be looked up as a
   // product UPC — that would return a nonsense food for a typo'd container.
   // This is why the caller branches on `handled`, never on `ok`.
   it('claims a refused container instead of falling through to a bogus UPC lookup', () => {
-    const outcome = apply.execute({ scaleId: SCALE, code: 'ct:unknown' });
+    const outcome = apply.execute({ scaleId: SCALE, code: 'ct:777' });
     expect(outcome.handled).toBe(true);
     expect(outcome.ok).toBe(false);
     expect(outcome.error).toBe('UNKNOWN_CONTAINER');
   });
 
   it('claims a refused density level for the same reason', () => {
-    const outcome = apply.execute({ scaleId: SCALE, code: 'dl:9' });
+    const outcome = apply.execute({ scaleId: SCALE, code: 'dl:999' });
     expect(outcome.handled).toBe(true);
     expect(outcome.ok).toBe(false);
   });
