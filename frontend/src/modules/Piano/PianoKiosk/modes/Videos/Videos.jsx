@@ -1,4 +1,4 @@
-import { useMemo, useCallback } from 'react';
+import { useMemo, useCallback, useRef, useEffect } from 'react';
 import { Routes, Route, useNavigate, useParams } from 'react-router-dom';
 import getLogger from '../../../../../lib/logging/Logger.js';
 import { usePianoKioskConfig } from '../../PianoConfig.jsx';
@@ -13,6 +13,7 @@ import { lectureContentId } from './lectureMeta.js';
 import { isSubcourseShow } from './subcourses.js';
 import SubcourseNavigator from './SubcourseNavigator.jsx';
 import { SkeletonStage } from '../../Skeleton.jsx';
+import { resolveCoursePolicy, nextLectureAfter } from './coursePolicy.js';
 
 const idOf = (raw) => String(raw || '').replace(/^plex:/, '');
 
@@ -119,7 +120,7 @@ export function CourseDetailRoute() {
  * URL segment is the same `lectureContentId(item)` used to push it, so the
  * match is stable both warm and cold.
  */
-function LecturePlayerRoute({ PlayerComponent = PianoVideoPlayer }) {
+export function LecturePlayerRoute({ PlayerComponent = PianoVideoPlayer }) {
   const { courseId, lectureId } = useParams();
   const navigate = useNavigate();
   const { config } = usePianoKioskConfig();
@@ -133,9 +134,36 @@ function LecturePlayerRoute({ PlayerComponent = PianoVideoPlayer }) {
     [lectures, lectureId],
   );
 
+  // Per-user course policy (piano.yml videos.user_policies): gate on/off and
+  // end-of-lecture behavior.
+  const policy = useMemo(() => resolveCoursePolicy(config.videos, currentUser), [config, currentUser]);
+  const nextLecture = useMemo(() => nextLectureAfter(lectures, lectureId), [lectures, lectureId]);
+
+  // The shared Player reacts to `ended` too — its end-of-content advance calls
+  // clear → this goBack. While an auto-advance navigation is in flight that
+  // call must be a no-op, or the user gets yanked to the menu instead of the
+  // next episode. The flag resets once the route lands on the new lecture.
+  const advancingRef = useRef(false);
+  useEffect(() => { advancingRef.current = false; }, [lectureId]);
+
   // Stable so PianoVideoPlayer can memoize the heavy Player element on it
   // (an unstable onBack would defeat the memo and remount the video).
-  const goBack = useCallback(() => navigate('..', { relative: 'path' }), [navigate]);
+  const goBack = useCallback(() => {
+    if (advancingRef.current) return;
+    navigate('..', { relative: 'path' });
+  }, [navigate]);
+
+  const handleAutoAdvance = useCallback(() => {
+    if (!nextLecture) {
+      getLogger().child({ component: 'piano-videos' }).info('piano.video.auto-advance-end-of-course', { courseId });
+      navigate('..', { relative: 'path' });
+      return;
+    }
+    advancingRef.current = true;
+    const nextId = lectureContentId(nextLecture);
+    getLogger().child({ component: 'piano-videos' }).info('piano.video.auto-advance-next', { from: lectureId, to: nextId });
+    navigate(`../${nextId}`, { relative: 'path' });
+  }, [nextLecture, navigate, lectureId, courseId]);
 
   // Keep the tablet screen awake only while the lecture is ACTIVELY PLAYING
   // (passive playback produces no MIDI/touch that would otherwise reset the
@@ -161,6 +189,8 @@ function LecturePlayerRoute({ PlayerComponent = PianoVideoPlayer }) {
       onBack={goBack}
       isSequential={isSequential}
       engagementTimeoutSeconds={config.videos?.engagement_timeout_seconds ?? 90}
+      engagementGateEnabled={policy.engagementGate}
+      onAutoAdvance={policy.autoAdvance ? handleAutoAdvance : null}
     />
   );
 }
