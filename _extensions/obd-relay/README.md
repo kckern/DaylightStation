@@ -1,12 +1,19 @@
 # obd-relay — in-car vehicle telemetry → DaylightStation event bus
 
-> **Status: scaffold — hardware ordered, not arrived.** Target device is a
-> **Freematics ONE+ Model B** (ESP32 + GNSS + 4G + OBD co-processor in an
-> OBD-II plug). The transport layer (WiFi + WS + trip buffering) is real code;
-> everything touching the vehicle (OBD PIDs, GNSS, standby current) is stubbed
-> behind `-DUSE_FREEMATICS` and marked VERIFY-ON-ARRIVAL. Per
-> `feedback_dont_assert_unverified_device_facts`, no vehicle facts get
-> documented here until measured on the car.
+> **Status (2026-07-30): hardware in hand, bench bring-up done, transport
+> proven end-to-end against deployed prod. No vehicle data yet.**
+>
+> Working and measured on the device: boot, co-processor link (`devType=14`),
+> WiFi, WebSocket, trip buffering, ack-gated upload+delete, HTTP status/pull
+> plane, OTA, engine-off standby.
+>
+> **NOT working:** `readSample()` is still a stub under `-DUSE_FREEMATICS`, so
+> trips upload as empty envelopes — no PIDs, no GNSS. And `obd.init()` did not
+> link to the ECU across 2 minutes with the ignition on (`obd_ready: false`);
+> unexplained, and it blocks bring-up step 1.
+>
+> Per `feedback_dont_assert_unverified_device_facts`, nothing about the vehicle
+> or standby current is documented here as fact until measured on the car.
 
 A **Freematics ONE+ Model B** rides in the car's OBD-II port, logs trips
 (GNSS + OBD PIDs at ~1Hz) to onboard flash while driving, and **phones home
@@ -52,9 +59,47 @@ shapes, behavior model).
   snapshots. Backend acks each trip (`trip-ack`) → device deletes its copy.
 - **Ignition off = power cut mid-write, by design**: append + periodic flush;
   next boot finalizes any unfooted trip file.
-- **Parked**: telelogger-style low-power standby (motion/voltage wake).
-  Standby draw is a **VERIFY-ON-ARRIVAL** number — measure before trusting it
-  for weeks-long parking.
+- **Parked → standby.** The OBD-II port is always-hot, so without this the
+  device runs flat out on the car battery and will eventually leave you with a
+  car that won't start.
+
+### Standby (battery protection)
+
+Engine state comes from OBD-port voltage (`ATRV` via the co-processor) — **no
+ECU link required**, so it works with the ignition off.
+
+| Constant | Default | Meaning |
+|---|---|---|
+| `STANDBY_ENGINE_OFF_V` | 13.0 V | below this = not charging = engine off |
+| `STANDBY_CONFIRM_S` | 120 s | sustained low volts before believing it |
+| `STANDBY_UPLOAD_WINDOW_S` | 60 s | bounded drain window before sleeping |
+| `STANDBY_CHECK_S` | 60 s | deep-sleep interval between voltage checks |
+| `STANDBY_VOLT_FAULT_S` | 600 s | no readable voltage this long → sleep anyway |
+
+Flow: sustained low voltage → close trip → bounded upload window → radio off,
+co-processor to `ATLP`, ESP32 deep sleep → timer wake → **if still off, back to
+sleep without ever powering the radio**.
+
+Two deliberate choices worth knowing:
+
+- **`getVoltage() == 0` means "no answer", not "zero volts"**, and is *not*
+  treated as engine-off — a comms fault must not sleep the device mid-drive.
+  `STANDBY_VOLT_FAULT_S` is the failsafe for the opposite risk: without it, a
+  co-processor that stops answering would keep the device awake indefinitely,
+  which is the exact drain standby exists to prevent.
+- **The confirm delay is what keeps cranking from looking like switch-off** —
+  the starter pulls the bus down hard, and the device does brown out and reboot
+  on crank (observed).
+
+Measured on the bench: fast-path wake stays up ~2.0 s per ~63.6 s cycle
+(**~3.2 % duty**, radio off). **Actual standby current is still unmeasured** —
+duty cycle is not milliamps, and the vendor's ~10 mA figure is theirs, not ours.
+Checklist step 5 (48 h parked with a meter) still stands. Thresholds also need
+calibration against the real car: resting and charging voltage vary by battery,
+alternator and temperature.
+
+**Tradeoff:** at a 60 s check interval, up to ~60 s at the start of a drive goes
+unlogged. A MEMS motion interrupt would remove this and is the proper follow-up.
 
 ## Messages sent to the bus
 
@@ -67,6 +112,35 @@ shapes, behavior model).
 
 Trips may be chunked (`seq`/`final`); the backend reassembles by
 `(id, trip_id)` and replies `{"type":"trip-ack","trip_id":...}`.
+
+## HTTP plane (device serves :80)
+
+The push path only fires when the car is home AND the bus is up AND the backend
+acks. These endpoints are the pull counterpart — the only practical way to
+interrogate a device sitting in a car in the garage.
+
+| Endpoint | Purpose |
+|---|---|
+| `GET /` `GET /status` | health, wifi (incl. `associate_ms`, bssid, channel), ws counters, battery/standby, trip state, ring-buffered recent logs |
+| `GET /trips` | manifest of buffered payloads |
+| `GET /trip?id=<id>` | one payload, **same shape the push path sends**, streamed |
+| `POST /update` | OTA firmware update |
+
+```bash
+curl http://<device-ip>/status
+curl http://<device-ip>/trips
+curl "http://<device-ip>/trip?id=<trip_id>"
+curl -F "firmware=@.pio/build/freematics-oneplus-b/firmware.bin" \
+     http://<device-ip>/update
+```
+
+Pulling **never deletes** — only a backend `trip-ack` frees a buffer, so a curl
+can't cost you a trip. Trip ids are validated as hex+dash before touching the
+filesystem (they become a path).
+
+**OTA limitation:** the device is deep-asleep most of the time when parked, so
+an update only lands while it's awake — engine running, or the ~3 min window
+after switch-off. It is not a way to reach a car parked for a week.
 
 Backend dispatch: `backend/src/3_applications/hardware/automotiveRelay.mjs`
 (wired in `app.mjs`), mirroring `foodScaleRelay.mjs`. Persists:
@@ -109,10 +183,24 @@ The risk is concentrated in step 1 — *which PIDs this specific car answers* �
 everything else is a solved pattern. Work top to bottom; update this README
 with measured facts as you go.
 
-0. **Bench boot** (microUSB, no car): `pio device monitor` — confirm boot,
-   flash size/partitions, then `fetch-libs` + `-DUSE_FREEMATICS` compiles
-   against the real board. Fix the VERIFY-ON-ARRIVAL notes in `platformio.ini`
-   against the vendor's `firmware_v5` settings.
+0. ~~**Bench boot**~~ **DONE 2026-07-30.** Measured: ESP32-D0WDQ6 rev v1.1,
+   40 MHz crystal, Winbond W25Q128 = **16 MB flash**. PSRAM left OFF (matches
+   vendor; chip has none in-package, external presence unverified).
+   - **Boot-loop trap, cost hours — read this before touching the flash config:**
+     PlatformIO writes the esptool image header from `board_upload.flash_size`,
+     **not** `board_build.flash_size`. With only the build key set, the
+     bootloader believed it had 4 MB, couldn't reach partitions past that
+     boundary, and reset in a tight loop (`rst:0x3` SW_RESET, *no* application
+     output). Both keys are now set in `platformio.ini`.
+   - The LittleFS data partition **must be labelled `spiffs`** — Arduino's
+     `LittleFS.begin()` defaults to that label and silently fails to mount
+     otherwise.
+   - USB enumerates as a CH340 (`/dev/cu.wchusbserial*`). A charge-only
+     micro-USB cable shows power (LED changes) but produces **zero** USB bus
+     events — check the cable before debugging anything else.
+   - `obd.init()` blocks ~5 s and must never run on the Arduino loop task; it
+     starved `webSocket.loop()` so the WS client failed every attempt. It now
+     runs on `obdLinkTask`, pinned to core 0.
 1. **Plug into car, dump supported PIDs.** Record which of speed / rpm /
    coolant / fuel level / odometer / control-module-voltage actually respond.
    Document the working set here (measured, not inferred).

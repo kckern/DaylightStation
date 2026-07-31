@@ -28,6 +28,7 @@
 #include <LittleFS.h>
 #include <time.h>
 #include <esp_sleep.h>
+#include <Update.h>
 #include "config.h"
 
 // ---- standby / battery protection ------------------------------------------
@@ -55,6 +56,16 @@
 #endif
 #ifndef STANDBY_CHECK_S
 #define STANDBY_CHECK_S          60     // deep-sleep interval between volt checks
+#endif
+// Battery failsafe. A voltage of 0 means "the co-processor did not answer", not
+// "zero volts", and is NOT treated as engine-off — otherwise a comms fault would
+// sleep the device mid-drive and lose the trip. But that safe-for-data choice is
+// unsafe for the battery: without this, a co-processor that stops answering
+// leaves the device awake forever, draining exactly as it did before standby
+// existed. If voltage stays unreadable this long, sleep anyway and let the next
+// wake re-evaluate. Losing a trip beats a car that will not start.
+#ifndef STANDBY_VOLT_FAULT_S
+#define STANDBY_VOLT_FAULT_S     600
 #endif
 
 #ifdef USE_FREEMATICS
@@ -108,6 +119,7 @@ static volatile uint32_t g_batteryAgeMs = 0;
 #endif
 static uint32_t g_engineOffSinceMs = 0;  // first sustained low-voltage reading
 static bool g_wokeFromStandby = false;
+static bool g_otaActive = false;         // suppress standby mid-flash
 
 // ---- recent-log ring (pattern shared with kitchen-relay/omr-relay) --------
 // Consecutive duplicates coalesce into a repeat counter instead of consuming a
@@ -408,7 +420,11 @@ static void obdLinkTask(void*) {
       // Voltage first, and unconditionally: it drives standby, so it must keep
       // updating even when the ECU link never comes up. ATRV goes to the
       // co-processor, not the ECU, so it answers with the ignition off.
+#ifdef TEST_VOLT_FAULT
+      float v = 0;   // simulate a co-processor that never answers (failsafe test)
+#else
       float v = obd.getVoltage();
+#endif
       if (v > 0) { g_batteryV = v; g_batteryAgeMs = millis(); }
       if (!g_obdReady && obd.init()) g_obdReady = true;
     }
@@ -590,6 +606,46 @@ static void handleTrip() {
   http.sendContent("");            // terminate the chunked response
 }
 
+// ---- OTA -------------------------------------------------------------------
+// This device lives inside a car. Every firmware change so far has meant pulling
+// it out of the OBD port and carrying it to a USB cable, which is why standby
+// nearly shipped without a failsafe. Flash over WiFi instead:
+//
+//   curl -F "firmware=@.pio/build/freematics-oneplus-b/firmware.bin" \
+//        http://<device-ip>/update
+//
+// Requires the two 2MB OTA slots in partitions_16mb_trips.csv (app0/app1).
+// LIMITATION: the device is deep-asleep most of the time when parked, so OTA
+// only lands while it is awake — engine running, or the ~3min window after
+// switch-off. It is not a way to reach a car parked for a week.
+static void handleUpdateResult() {
+  bool ok = !Update.hasError();
+  http.sendHeader("Connection", "close");
+  http.send(ok ? 200 : 500, "application/json",
+            ok ? "{\"ok\":true,\"rebooting\":true}" : "{\"ok\":false}");
+  if (ok) { delay(250); ESP.restart(); }
+  g_otaActive = false;
+}
+
+static void handleUpdateUpload() {
+  HTTPUpload& up = http.upload();
+  if (up.status == UPLOAD_FILE_START) {
+    g_otaActive = true;                 // do not let standby fire mid-flash
+    relayLogf("[ota] start %s", up.filename.c_str());
+    if (!Update.begin(UPDATE_SIZE_UNKNOWN)) relayLogf("[ota] begin failed: %s", Update.errorString());
+  } else if (up.status == UPLOAD_FILE_WRITE) {
+    if (Update.write(up.buf, up.currentSize) != up.currentSize)
+      relayLogf("[ota] write failed: %s", Update.errorString());
+  } else if (up.status == UPLOAD_FILE_END) {
+    if (Update.end(true)) relayLogf("[ota] ok, %u bytes — rebooting", (unsigned)up.totalSize);
+    else relayLogf("[ota] end failed: %s", Update.errorString());
+  } else if (up.status == UPLOAD_FILE_ABORTED) {
+    Update.abort();
+    g_otaActive = false;
+    relayLogLine("[ota] aborted");
+  }
+}
+
 // ---- HTTP status plane ---------------------------------------------------
 // Same shape as the sibling relays: GET / (or /status) returns the whole health
 // picture as JSON so the device can be interrogated from any machine on the LAN
@@ -602,6 +658,7 @@ static void handleStatus() {
   doc["firmware"] = FW_VERSION;
   doc["uptime_s"] = (uint32_t)(millis() / 1000);
   doc["time_synced"] = timeSynced;
+  doc["ota"] = g_otaActive ? "in-progress" : "ready";   // POST firmware to /update
   doc["epoch_ms"] = epochMs();
 
   JsonObject wifi = doc["wifi"].to<JsonObject>();
@@ -647,6 +704,7 @@ static void handleStatus() {
   sb["confirm_s"] = STANDBY_CONFIRM_S;
   sb["upload_window_s"] = STANDBY_UPLOAD_WINDOW_S;
   sb["check_s"] = STANDBY_CHECK_S;
+  sb["volt_fault_s"] = STANDBY_VOLT_FAULT_S;
   sb["engine_off_for_s"] = g_engineOffSinceMs
     ? (uint32_t)((millis() - g_engineOffSinceMs) / 1000) : 0;
 #else
@@ -781,6 +839,7 @@ void setup() {
   http.on("/status", handleStatus);
   http.on("/trips", handleTrips);      // manifest of buffered payloads
   http.on("/trip", handleTrip);        // one payload, push-identical shape
+  http.on("/update", HTTP_POST, handleUpdateResult, handleUpdateUpload);  // OTA
   http.begin();
   relayLogLine("[http] status server on :80");
 
@@ -805,14 +864,23 @@ void loop() {
   // mistaken for the engine being switched off.
   // A reading of exactly 0 means "no answer from the co-processor", NOT zero
   // volts; treating that as engine-off would sleep the device on a comms fault.
-  if (g_batteryV > 0) {
-    if (g_batteryV < STANDBY_ENGINE_OFF_V) {
-      if (!g_engineOffSinceMs) g_engineOffSinceMs = millis();
-      else if (millis() - g_engineOffSinceMs > (uint32_t)STANDBY_CONFIRM_S * 1000) {
-        enterStandby("engine off");
+  if (!g_otaActive) {
+    if (g_batteryV > 0) {
+      if (g_batteryV < STANDBY_ENGINE_OFF_V) {
+        if (!g_engineOffSinceMs) g_engineOffSinceMs = millis();
+        else if (millis() - g_engineOffSinceMs > (uint32_t)STANDBY_CONFIRM_S * 1000) {
+          enterStandby("engine off");
+        }
+      } else {
+        g_engineOffSinceMs = 0;
       }
-    } else {
-      g_engineOffSinceMs = 0;
+    }
+    // Failsafe: no readable voltage for STANDBY_VOLT_FAULT_S. Without this the
+    // device would stay awake indefinitely on a co-processor fault, which is the
+    // exact battery drain standby exists to prevent.
+    uint32_t lastOk = g_batteryAgeMs ? g_batteryAgeMs : g_bootMs;
+    if (millis() - lastOk > (uint32_t)STANDBY_VOLT_FAULT_S * 1000) {
+      enterStandby("voltage unreadable");
     }
   }
 #endif
