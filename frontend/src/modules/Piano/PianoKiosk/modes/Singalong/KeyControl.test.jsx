@@ -5,7 +5,7 @@
 // control surface: stepping, clamping at ±6, the tap-to-reset value face, and
 // that the current shift + media element actually reach the hook.
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, act } from '@testing-library/react';
 import KeyControl from './KeyControl.jsx';
 import { KEY_SHIFT_MAX } from './keyShift.js';
 
@@ -70,6 +70,29 @@ describe('KeyControl', () => {
     expect(screen.getByRole('button', { name: 'Raise key' })).toBeDisabled();
     expect(screen.getByRole('button', { name: 'Lower key' })).toBeDisabled();
     expect(screen.getByRole('button', { name: 'Reset key' })).toBeDisabled();
+    useKeyShiftSpy.mockReturnValue(undefined);
+  });
+
+  it('exposes step/reset through apiRef, sharing the buttons\' clamp and hook path', () => {
+    const apiRef = { current: null };
+    render(<KeyControl mediaEl={null} apiRef={apiRef} />);
+    expect(typeof apiRef.current.step).toBe('function');
+    act(() => apiRef.current.step(1));
+    expect(value().textContent).toBe('+1');
+    expect(useKeyShiftSpy).toHaveBeenLastCalledWith(null, 1);
+    for (let i = 0; i < KEY_SHIFT_MAX + 3; i += 1) act(() => apiRef.current.step(1));
+    expect(value().textContent).toBe(`+${KEY_SHIFT_MAX}`);
+    act(() => apiRef.current.reset());
+    expect(value().textContent).toBe('Key');
+  });
+
+  it('apiRef reports engine failure and is nulled on unmount', () => {
+    useKeyShiftSpy.mockReturnValue(true);
+    const apiRef = { current: null };
+    const { unmount } = render(<KeyControl mediaEl={null} apiRef={apiRef} />);
+    expect(apiRef.current.engineFailed).toBe(true);
+    unmount();
+    expect(apiRef.current).toBe(null);
     useKeyShiftSpy.mockReturnValue(undefined);
   });
 });

@@ -18,6 +18,7 @@ import { SkeletonStage } from '../../Skeleton.jsx';
 import TransportButton from '../../transport/TransportButton.jsx';
 import VolumeControl from '../../transport/VolumeControl.jsx';
 import KeyControl from './KeyControl.jsx';
+import useKaraokeKeys from './useKaraokeKeys.js';
 import { usePlayerSessionBinding } from '../../../../../screen-framework/publishers/usePlayerSessionBinding.js';
 
 // Player is heavy — code-split it so the menu/other modes don't pay for it.
@@ -161,6 +162,18 @@ export default function SingalongPlayer({ lecture, source, onBack, startFresh = 
     ctrl.seek(Math.max(0, Math.min(max, cur + delta)));
   }, [ctrl, duration]);
 
+  // Karaoke keyboard vocabulary (capture-phase overrides of the shared
+  // Player's defaults — see useKaraokeKeys). keyCtlRef reaches the KeyControl
+  // stepper so ArrowUp/Down share the buttons' clamp/log/engine-gate path.
+  const keyCtlRef = useRef(null);
+  useKaraokeKeys({
+    onSkip: handleSkip,
+    onRestart: handleRestart,
+    onEndSong: onBack,
+    onToggleFullscreen: toggleFullscreen,
+    keyControlRef: keyCtlRef,
+  });
+
   // Bare tap on the video: left third −15s · middle toggles pause · right third +15s.
   const handleSurfaceTap = useCallback((e) => {
     const rect = videoWrapRef.current?.getBoundingClientRect();
@@ -222,7 +235,7 @@ export default function SingalongPlayer({ lecture, source, onBack, startFresh = 
           <TransportButton icon="skip-forward-15" ariaLabel="Forward 15 seconds" className="piano-singalong-chrome__btn" onPress={() => handleSkip(15)} />
           <div className="piano-singalong-chrome__spacer" />
           {/* key={contentId}: remount per song so every track opens in its natural key */}
-          <KeyControl key={contentId} mediaEl={mediaEl} className="piano-singalong-chrome__keyctl" />
+          <KeyControl key={contentId} mediaEl={mediaEl} apiRef={keyCtlRef} className="piano-singalong-chrome__keyctl" />
           <VolumeControl className="piano-singalong-chrome__btn" />
           <TransportButton icon={isFullscreen ? 'fullscreen-exit' : 'fullscreen'} ariaLabel="Toggle fullscreen" className="piano-singalong-chrome__btn" onPress={toggleFullscreen} />
         </div>
