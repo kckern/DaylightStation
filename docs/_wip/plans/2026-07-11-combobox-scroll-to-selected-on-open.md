@@ -12,7 +12,7 @@
 
 ## Root-Cause Evidence (already gathered — do not re-investigate)
 
-- Reproduction (row 6 of `/admin/content/lists/menus/fhe`, label "learner-four", bound to **Elijah the Prophet — S8 E33**, `plex:642197`): on open the dropdown shows the browse level "Season 8" scrolled to the **top of the window** (episodes 23–28 visible). The selected item (E33) is highlighted but off-screen ~5 rows below. Answer to "is the selected item in view on open?": **No.**
+- Reproduction (row 6 of `/admin/content/lists/menus/fhe`, label "Alan", bound to **Elijah the Prophet — S8 E33**, `plex:642197`): on open the dropdown shows the browse level "Season 8" scrolled to the **top of the window** (episodes 23–28 visible). The selected item (E33) is highlighted but off-screen ~5 rows below. Answer to "is the selected item in view on open?": **No.**
 - Backend `backend/src/3_applications/content/services/SiblingsService.mjs:158-202` (`#applyWindow`, initial mode): centers a 21-item window on the reference. For E33 → window = episodes 23–43, `referenceIndex = 10`. This exactly matches the observed window start (E23), confirming the **data is correct**.
 - Frontend `frontend/src/modules/Admin/ContentLists/combobox/useContentCombobox.js:305-319` (`applyBrowseData`) dispatches `BROWSE_LOADED` with that `referenceIndex`; the machine (`comboboxMachine.js:117-120`) sets `highlight.idx = referenceIndex`. So on open `highlightIdx` is a valid in-window index (10), NOT -1.
 - The failing writer is the browse-level positioner effect at `frontend/src/modules/Admin/ContentLists/combobox/ContentCombobox.jsx:287-307` (single `requestAnimationFrame`, deps `[levelKey]`). The separate scroll-to-highlighted effect (`ContentCombobox.jsx:311-384`) deliberately defers on open via `shouldRunScrollToHighlighted` returning `initial-render` when `prevIdx === -1` (`comboboxScroll.js`). So the positioner is solely responsible for open positioning — and it is the bug.
@@ -57,7 +57,7 @@ npm run dev      # tees to dev.log; wait for "ready" then re-run the curl above
 import { test, expect } from '@playwright/test';
 import { FRONTEND_URL } from '#fixtures/runtime/urls.mjs';
 
-// Row 6 of the FHE menu ("learner-four") is bound to a Plex episode deep in a season
+// Row 6 of the FHE menu ("Alan") is bound to a Plex episode deep in a season
 // (Elijah the Prophet — S8 E33). On open the browse window is centered on that
 // episode (E23..E43), so the selected row sits ~10 rows down. It must be
 // scrolled into view on open, not left at the top of the window.

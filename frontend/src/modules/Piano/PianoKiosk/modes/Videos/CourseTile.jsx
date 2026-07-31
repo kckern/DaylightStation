@@ -51,6 +51,10 @@ export default function CourseTile({ item, onSelect, progress = null }) {
   return (
     <li>
       <button type="button" className="piano-video-grid__tile" onClick={() => onSelect(item)} title={item.title}>
+        {/* One positioned box holds the poster AND its overlays: the one-page
+            wall letterboxes a fixed 2:3 poster inside a variable cell, and the
+            badge/chips must ride the poster's corners, not the cell's. */}
+        <span className="piano-cover-box">
         {src && (
           <img
             src={src}
@@ -99,6 +103,7 @@ export default function CourseTile({ item, onSelect, progress = null }) {
             })}
           </div>
         )}
+        </span>
       </button>
     </li>
   );

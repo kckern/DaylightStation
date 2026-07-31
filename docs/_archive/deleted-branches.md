@@ -177,3 +177,16 @@ To restore: `git checkout -b branch-name <commit-hash>`
 | 2026-07-30 | vitest-teardown-flake | aea52e493 | vitest 4.1.10 + env teardown drain + threads pool — kills EnvironmentTeardownError sweep flake |
 | 2026-07-29 | feature/omr-nfc-tap | 4e7aea6ad | omr-relay NFC tap reader + audible ACK: M5 Unit NFC (ST25R3916) on the ATOM's Grove port beside the bubble-sheet reader, NFC poll pinned to core 0 behind a FreeRTOS handoff, two-stage buzzer ACK (read then server-confirmed), /events lifecycle log, backend `nfc` ingest + persistence. Fully in main (squashed history); ahead:0 at deletion. |
 | 2026-07-29 | feature/nfc-tag-registry | ec19b39a5 | One NFC tag registry: canonical uids (one card = one identity across readers), grouped bindings/nfc/*.yml with round-trip writes, school personal cards routing to ResolvePersonalCard. Landed on main as the squash c730701c5 plus the scientific-notation regression test; the branch's other 3 commits are that squash's pre-history. |
+| 2026-07-30 | school-agenda-v2 | 9eccb7404 | Agenda v2: sectioned daily agenda, program units, subject_next QR, portal launch |
+| 2026-07-30 | school-dispatch-preview | 80f137940 | DoNow household dispatch contract (7 surfaces, HA approvals, occupancy), QR agenda preview endpoint, karaoke no-resume fix |
+| 2026-07-30 | agenda-header-icons | 0e0bdce9b | Agenda standard header (black band) + subject icons on scan boxes |
+| 2026-07-30 | token-pruning | abb237fac | Grace-period pruning of expired school token files |
+| 2026-07-30 | feature/karaoke-keyshift | 1185b4a88 | Karaoke key-change stepper on singalong chrome: live ±6 semitone transpose via lazy Tone.PitchShift on the resolved media element |
+| 2026-07-30 | fix/engagement-gate-interval | b161c026f | Engagement gate poll interval died under render churn; sequential courses never unlocked |
+| 2026-07-30 | fix/karaoke-keyshift-quality | 3862b9259 | Karaoke key shift: Tone.PitchShift → Signalsmith Stretch (discordant smear fix) |
+| 2026-07-30 | fix/courses-poster-aspect | e6b6872a7 | Course wall posters fixed 2:3 letterboxed in cell (was crop-to-cell), overlays anchored to poster box |
+| 2026-07-30 | fix/poster-width-auto | 45d8c8078 | Poster box width:auto — base width:100% was beating aspect-ratio, tiles still crop-fit |
+| 2026-07-30 | fix/progress-overlay-baseline | 023180bb0 | Poster progress scrim flush with baseline (bottom offset + inline img descender gap) |
+| 2026-07-30 | fix/staff-accidentals | ac8a7be77 | Action-staff accidentals drawn as bold SVG shapes, proper margin off notehead |
+| 2026-07-30 | omr-quiz-decoder | 3be38d9ec | OMR quiz-sheet decoder: testId + 50 answers into household/apps/quizzes |
+| 2026-07-30 | feature/wikipedia-adapter | 13cb85a44 | Wikipedia adapter + /api/v1/wikipedia route + cli/wikipedia.cli.mjs for self-hosted kiwix service |

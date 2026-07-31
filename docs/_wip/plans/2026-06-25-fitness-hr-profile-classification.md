@@ -63,7 +63,7 @@ describe('DeviceManager — profile-authoritative classification', () => {
 
   it('classifies an HR strap as heart_rate and records a valid reading', () => {
     const dm = new DeviceManager();
-    const device = dm.updateDevice('10002', 'HR', { ComputedHeartRate: 125 });
+    const device = dm.updateDevice('28688', 'HR', { ComputedHeartRate: 125 });
     expect(device.type).toBe('heart_rate');
     expect(device.heartRate).toBe(125);
   });
@@ -275,7 +275,7 @@ Confirm the run output lists `DeviceManager.profileType.test.js` (6 passed) and 
 
 ## Deployment note (out of plan scope, do NOT auto-run)
 
-A live workout may be in progress (learner-two + learner-three were active during diagnosis). Per `CLAUDE.local.md`, **never redeploy while a fitness session is active**. After tests pass, confirm `sessionActive:false` / `rosterSize:0` via the documented gate before `sudo docker build` + `sudo deploy-daylight`, then hard-reload the garage Firefox kiosk (`frontend/src/modules/Fitness/` rule). The build/deploy is a separate, gated step — not part of this TDD plan.
+A live workout may be in progress (Felix + Milo were active during diagnosis). Per `CLAUDE.local.md`, **never redeploy while a fitness session is active**. After tests pass, confirm `sessionActive:false` / `rosterSize:0` via the documented gate before `sudo docker build` + `sudo deploy-daylight`, then hard-reload the garage Firefox kiosk (`frontend/src/modules/Fitness/` rule). The build/deploy is a separate, gated step — not part of this TDD plan.
 
 ---
 

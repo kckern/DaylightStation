@@ -185,4 +185,34 @@ describe('useKioskLaunchCommand', () => {
       expect.objectContaining({ ok: false, error: 'fkb_unavailable' })
     ));
   });
+
+  describe('piano.launch (DoNow reachability)', () => {
+    it('routes a piano.launch message to onPianoOpen, never launchIntent', async () => {
+      const onPianoOpen = vi.fn();
+      mount({ onPianoOpen });
+      await deliver({ deviceId: 'yellow-room-tablet', contentId: 'hymn:12', type: 'piano.launch' });
+
+      expect(onPianoOpen).toHaveBeenCalledWith('hymn:12');
+      expect(h.DaylightAPI).not.toHaveBeenCalled();
+      expect(h.launchIntent).not.toHaveBeenCalled();
+    });
+
+    it('ignores a piano.launch addressed to a different device', async () => {
+      const onPianoOpen = vi.fn();
+      mount({ onPianoOpen });
+      await deliver({ deviceId: 'livingroom-tv', contentId: 'hymn:12', type: 'piano.launch' });
+
+      expect(onPianoOpen).not.toHaveBeenCalled();
+      expect(h.launchIntent).not.toHaveBeenCalled();
+    });
+
+    it('logs a structured warn and no-ops when no onPianoOpen is wired (the v1 boundary)', async () => {
+      mount(); // no onPianoOpen
+      await deliver({ deviceId: 'yellow-room-tablet', contentId: 'hymn:12', type: 'piano.launch' });
+
+      expect(h.launchIntent).not.toHaveBeenCalled();
+      expect(h.DaylightAPI).not.toHaveBeenCalled();
+      expect(h.send).not.toHaveBeenCalled();
+    });
+  });
 });

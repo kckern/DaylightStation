@@ -17,6 +17,7 @@ import useReloadGuard from '../../useReloadGuard.js';
 import { SkeletonStage } from '../../Skeleton.jsx';
 import TransportButton from '../../transport/TransportButton.jsx';
 import VolumeControl from '../../transport/VolumeControl.jsx';
+import KeyControl from './KeyControl.jsx';
 import { usePlayerSessionBinding } from '../../../../../screen-framework/publishers/usePlayerSessionBinding.js';
 
 // Player is heavy — code-split it so the menu/other modes don't pay for it.
@@ -39,7 +40,7 @@ const fmt = (s) => {
  * `engagementTimeoutSeconds` are accepted for that contract but unused — karaoke
  * has no sequential lock or engagement gate.
  */
-export default function SingalongPlayer({ lecture, source, onBack, startFresh = false }) {
+export default function SingalongPlayer({ lecture, source, onBack, startFresh = true }) {
   const playerRef = useRef(null);
   const ctrl = usePlayerController(playerRef);
   const { el: mediaEl, timedOut } = useResolvedMediaEl(playerRef);
@@ -220,6 +221,8 @@ export default function SingalongPlayer({ lecture, source, onBack, startFresh = 
           <TransportButton icon={isPlaying ? 'pause' : 'play'} ariaLabel={isPlaying ? 'Pause' : 'Play'} emphasis="primary" className="piano-singalong-chrome__btn" onPress={ctrl.toggle} />
           <TransportButton icon="skip-forward-15" ariaLabel="Forward 15 seconds" className="piano-singalong-chrome__btn" onPress={() => handleSkip(15)} />
           <div className="piano-singalong-chrome__spacer" />
+          {/* key={contentId}: remount per song so every track opens in its natural key */}
+          <KeyControl key={contentId} mediaEl={mediaEl} className="piano-singalong-chrome__keyctl" />
           <VolumeControl className="piano-singalong-chrome__btn" />
           <TransportButton icon={isFullscreen ? 'fullscreen-exit' : 'fullscreen'} ariaLabel="Toggle fullscreen" className="piano-singalong-chrome__btn" onPress={toggleFullscreen} />
         </div>

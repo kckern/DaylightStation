@@ -145,3 +145,99 @@ describe('revoke', () => {
     expect(again.revokedAt).toBe(AT);
   });
 });
+
+describe('prune', () => {
+  // AT is 2026-07-27T10:00Z. A controllable clock: the registry reads ms time
+  // through `now`, so tests move time instead of files.
+  const NOW_MS = Date.parse('2026-08-10T10:00:00.000Z'); // AT + 14 days
+  const DAY = 86_400_000;
+
+  const build = (nowMs, over = {}) => new YamlTokenRegistry({
+    configService: { getDataDir: () => tmp }, now: () => nowMs, ...over,
+  });
+
+  const fileCount = () => fs.readdirSync(tokensRoot()).length;
+
+  it('removes a record whose expiry is more than the grace period past', async () => {
+    // Minted while still live (put() itself sweeps), judged 14 days later.
+    const dead = mint({ expiresAt: '2026-07-28T10:00:00.000Z' });
+    await build(Date.parse(AT)).put(dead);
+    const reg = build(NOW_MS); // now the expiry is 13 days past
+    expect(await reg.prune()).toEqual({ removed: 1, kept: 0 });
+    expect(await reg.get(dead.token)).toBe(null);
+  });
+
+  it('keeps a record still inside the grace window — "out of date" beats "unknown ticket"', async () => {
+    const reg = build(NOW_MS);
+    const recent = mint({ expiresAt: '2026-08-05T10:00:00.000Z' }); // 5 days past
+    await reg.put(recent);
+    expect(await reg.prune()).toEqual({ removed: 0, kept: 1 });
+    expect(await reg.get(recent.token)).toMatchObject({ token: recent.token });
+  });
+
+  it('never touches an unexpiring record', async () => {
+    const reg = build(NOW_MS);
+    const card = mint({ tokenClass: 'identify', subject: { learnerId: 'kid1' }, expiresAt: null });
+    await reg.put(card);
+    expect(await reg.prune()).toEqual({ removed: 0, kept: 1 });
+  });
+
+  it('leaves a corrupt file alone — deletion needs a legible timestamp', async () => {
+    const reg = build(NOW_MS);
+    fs.mkdirSync(tokensRoot(), { recursive: true });
+    fs.writeFileSync(path.join(tokensRoot(), 'CORRUPTCORRUPT.yml'), '{{{ not yaml');
+    expect(await reg.prune()).toEqual({ removed: 0, kept: 1 });
+    expect(fileCount()).toBe(1);
+  });
+
+  it('reports a clean sweep on a registry that never minted anything', async () => {
+    expect(await build(NOW_MS).prune()).toEqual({ removed: 0, kept: 0 });
+  });
+
+  it('a mint sweeps opportunistically, but at most once per interval', async () => {
+    let nowMs = NOW_MS;
+    const reg = build(0, { now: () => nowMs });
+    const dead = mint({ expiresAt: '2026-07-28T10:00:00.000Z' });
+    await reg.put(dead); // first put: sweeps, but `dead` was just written… and IS long-expired
+    // The fresh mint is judged by its own timestamp like everything else —
+    // BuildAgenda always mints with a future expiry, so live tickets survive.
+    expect(fs.existsSync(tokensRoot())).toBe(true);
+    const before = fileCount();
+
+    const live = mint({ expiresAt: '2026-08-20T10:00:00.000Z' });
+    await reg.put(live); // within the interval: no second sweep
+    expect(fileCount()).toBe(before + 1);
+
+    nowMs += 7 * 3_600_000; // 7h later: past the sweep interval
+    const later = mint({ expiresAt: '2026-08-20T10:00:00.000Z' });
+    await reg.put(later); // sweep runs now and clears the long-dead record
+    expect(await reg.get(dead.token)).toBe(null);
+    expect(await reg.get(live.token)).toMatchObject({ token: live.token });
+    expect(await reg.get(later.token)).toMatchObject({ token: later.token });
+  });
+
+  it('logs what it removed', async () => {
+    const events = [];
+    const reg = build(NOW_MS, { logger: { info: (e, d) => events.push([e, d]) } });
+    await reg.put(mint({ expiresAt: '2026-07-28T10:00:00.000Z' }));
+    await reg.prune();
+    expect(events).toContainEqual(['school.tokens.pruned', { removed: 1, kept: 0 }]);
+  });
+
+  it('a pruned token resolves like any unknown ticket — the explanation-slip path', async () => {
+    const reg = build(NOW_MS);
+    const dead = mint({ expiresAt: '2026-07-28T10:00:00.000Z' });
+    await reg.put(dead);
+    await reg.prune();
+    // get() → null is exactly what ResolveScanAction turns into the
+    // "we do not know that ticket" notice.
+    expect(await reg.get(dead.token)).toBe(null);
+  });
+
+  it('a custom grace period is honoured', async () => {
+    const reg = build(NOW_MS, { pruneGraceMs: 30 * DAY });
+    const dead = mint({ expiresAt: '2026-07-28T10:00:00.000Z' }); // 13 days past
+    await reg.put(dead);
+    expect(await reg.prune()).toEqual({ removed: 0, kept: 1 });
+  });
+});

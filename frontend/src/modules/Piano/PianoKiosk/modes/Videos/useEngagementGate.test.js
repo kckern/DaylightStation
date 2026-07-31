@@ -71,6 +71,30 @@ describe('useEngagementGate', () => {
     expect(onConfirmed).toHaveBeenCalled();
   });
 
+  it('opens even when the host re-renders faster than the poll tick (fresh callbacks per render)', () => {
+    // PianoVideoPlayer builds `isPaused: () => !isPlaying` inline and re-renders
+    // ~4x/second on timeupdate. If callback identity churn resets the poll
+    // interval, the 1s tick never fires and the gate silently dies — a full
+    // watch-through then records engaged:false and the next lecture never
+    // unlocks (Felix, 2026-07-30, plex:683799).
+    const pause = vi.fn();
+    const { result, rerender } = renderHook(() =>
+      useEngagementGate({
+        pause: (...a) => pause(...a), // fresh identity every render
+        play: () => {},
+        isPaused: () => false,
+        isSequential: true,
+        timeoutSeconds: 2,
+      })
+    );
+    for (let i = 0; i < 40; i += 1) {
+      act(() => { vi.advanceTimersByTime(250); });
+      rerender();
+    }
+    expect(result.current.gateOpen).toBe(true);
+    expect(pause).toHaveBeenCalled();
+  });
+
   it('MIDI activity resets the idle timer (gate does not open if notes keep coming)', () => {
     const pause = vi.fn();
     const play = vi.fn();

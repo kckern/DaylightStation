@@ -47,6 +47,35 @@ import { getConfigService } from './_bootstrap.mjs';
 import { YamlCurriculumDatastore } from '#adapters/persistence/yaml/YamlCurriculumDatastore.mjs';
 import { YamlSchoolDatastore } from '#adapters/persistence/yaml/YamlSchoolDatastore.mjs';
 import { ValidateCatalog } from '#apps/school/usecases/ValidateCatalog.mjs';
+import { PortalSurface } from '#apps/donow/surfaces/PortalSurface.mjs';
+import { ThermalSurface } from '#apps/donow/surfaces/ThermalSurface.mjs';
+import { LaserSurface } from '#apps/donow/surfaces/LaserSurface.mjs';
+import { PlaybackHubSurface } from '#apps/donow/surfaces/PlaybackHubSurface.mjs';
+import { LivingroomTvSurface } from '#apps/donow/surfaces/LivingroomTvSurface.mjs';
+import { GarageFitnessSurface } from '#apps/donow/surfaces/GarageFitnessSurface.mjs';
+import { PianoKioskSurface } from '#apps/donow/surfaces/PianoKioskSurface.mjs';
+
+/**
+ * The closed DoNow surface registry, for `validateAction` ONLY — no live
+ * seam (eventBus, printers, wakeAndLoadService, ...) is wired, because this
+ * CLI validates a catalog against a bare data dir with no household/config
+ * graph to build one from (see `cmdValidate`'s own `--data-dir` note). Every
+ * surface's `validateAction` is a pure, dependency-free check of the payload
+ * shape — none of them touch an injected dep — so a bare instance is exactly
+ * as correct here as the real, composed one `5_composition/modules/donow.mjs`
+ * builds at runtime. This is the CLI's OWN small mirror of that closed set,
+ * kept in sync by hand (same posture as `categories.mjs`): a `launch:` unit
+ * naming a surface not in this list fails validation here exactly like an
+ * unregistered surface would at runtime.
+ */
+function surfaceValidatorsForCli() {
+  const surfaces = [
+    new PortalSurface(), new ThermalSurface(), new LaserSurface(),
+    new PlaybackHubSurface(), new LivingroomTvSurface(), new GarageFitnessSurface(),
+    new PianoKioskSurface(),
+  ];
+  return new Map(surfaces.map((s) => [s.id, (raw) => s.validateAction(raw)]));
+}
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 // quiet: the report is the output; a dotenv banner on stdout is noise in CI.
@@ -136,6 +165,7 @@ async function cmdValidate({ dataDirFlag, renderProbe }) {
   const useCase = new ValidateCatalog({
     catalog: new YamlCurriculumDatastore({ configService }),
     bankIds: new YamlSchoolDatastore({ configService }).listBankIds(),
+    surfaceValidators: surfaceValidatorsForCli(),
     measureProbe,
   });
 

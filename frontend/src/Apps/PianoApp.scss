@@ -1190,6 +1190,17 @@
     border: none;
     gap: 0.35rem;
   }
+  // The poster box: positions the badge/progress overlays on the POSTER's
+  // corners (they're absolute against this, not the tile/cell).
+  .piano-cover-box {
+    position: relative;
+    display: block;
+    width: 100%;
+    // The cover is an inline img inside this span: block it, or the baseline
+    // descender gap opens ~4px between the img and the box's bottom edge and
+    // every bottom-anchored overlay floats above the poster.
+    img { display: block; }
+  }
   .piano-video-grid__tile img {
     aspect-ratio: 2 / 3;
     border-radius: var(--r-sm);
@@ -1221,13 +1232,14 @@
   }
 
   // Per-user progress — gradient scrim over the bottom fifth of the cover with
-  // avatar chips + completed/total. Anchored to the image's bottom edge (the
-  // tile's 0.25rem bottom padding), so it never adds height.
+  // avatar chips + completed/total. Anchored to the poster box, whose bottom
+  // edge IS the image's bottom edge — flush, no offset. (The old 0.25rem
+  // compensated for tile padding back when this anchored to the tile.)
   .piano-cover-progress {
     position: absolute;
     left: 0;
     right: 0;
-    bottom: 0.25rem;
+    bottom: 0;
     z-index: 2;
     display: flex;
     flex-wrap: wrap;
@@ -1294,10 +1306,10 @@
    --cols/--rows come from balancedGrid (tileGridLayout.js), sized to the
    course count. Both tracks are `fr`, so the grid always exactly fills the
    tabpanel's box — as more rows are needed the row height (and so the tile)
-   shrinks automatically instead of the page ever scrolling. Tiles fill their
-   cell (no fixed 12.75rem width) and the cover crops to the cell via
-   object-fit: cover, since a cell's shape varies with the split (wide cells
-   at 1-2 rows, taller at many). */
+   shrinks automatically instead of the page ever scrolling. Posters are NEVER
+   crop-fitted to the cell: each tile centers a fixed 2:3 poster box sized to
+   the largest 2:3 rectangle that fits its cell (aspect-ratio with min/max
+   transfer), so covers keep their shape at every split. */
 .piano-video-grid--onepage {
   grid-template-columns: repeat(var(--cols, 5), minmax(0, 1fr));
   grid-template-rows: repeat(var(--rows, 1), minmax(0, 1fr));
@@ -1311,14 +1323,29 @@
     height: 100%;
     min-width: 0;
     min-height: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    // Size container: exposes the cell's box as cqw/cqh for the poster below.
+    container-type: size;
+  }
+  // The largest 2:3 box that fits the cell, via container-query units: height
+  // is the cell height unless a narrow cell's width would be exceeded (then
+  // 1.5x the cell width), and width follows from the ratio. The poster is
+  // letterboxed by empty cell space — never crop-fitted, never distorted.
+  .piano-cover-box {
+    height: min(100cqh, 150cqw);
+    aspect-ratio: 2 / 3;
+    // MUST reset the base --posters rule's explicit `width: 100%`: a definite
+    // width beats aspect-ratio derivation, which crop-stretched the box to the
+    // cell (measured 0.763 instead of 0.667 on prod). auto = derive from height.
+    width: auto;
   }
   .piano-video-grid__tile img {
-    // Explicit width AND height (both definite, from the cell) neutralize the
-    // fixed aspect-ratio:2/3 the shared --posters skeleton rule sets on this
-    // same element further down the sheet — a cell isn't always 2:3, so the
-    // cover crops to fill it via object-fit instead of forcing that ratio.
     width: 100%;
     height: 100%;
+    // Within the true-2:3 frame this only touches sources that aren't exactly
+    // 2:3 themselves (trims slivers instead of distorting).
     object-fit: cover;
   }
 
@@ -1829,6 +1856,37 @@
     &:disabled { opacity: 0.4; cursor: default; }
   }
   &__btn--play { min-width: 4.5rem; font-size: 1.2rem; background: var(--piano-accent); color: var(--piano-accent-ink); border-color: var(--piano-accent); }
+}
+
+// Karaoke key-change stepper ([-] Key [+]) on the singalong chrome. The value
+// face is itself a tap-to-reset button: quiet while at the natural key, filled
+// accent while the song is transposed so an active shift is obvious at a glance.
+.piano-keyctl {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+
+  &__value {
+    min-width: 3.25rem;
+    height: 3rem;
+    padding: 0 0.5rem;
+    border: 1px solid transparent;
+    border-radius: var(--r-md);
+    background: transparent;
+    color: var(--piano-muted);
+    font: inherit;
+    font-size: 1rem;
+    font-variant-numeric: tabular-nums;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+
+    &.is-on {
+      color: var(--piano-accent-ink);
+      background: var(--piano-accent);
+      border-color: var(--piano-accent);
+      font-weight: 600;
+    }
+  }
 }
 
 /* ---- Karaoke mode: a searchable song browser (title + artist, no thumbnails).

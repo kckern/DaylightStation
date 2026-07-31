@@ -629,7 +629,13 @@ was issued, what comes next.
 They encode nothing: no learner id, no unit id, no policy. `identify` (the
 personal card) never expires; selection/media/remediation tokens are renewable
 and return a friendly "already done" once the session has advanced past them —
-a child holding a piece of paper is never shown an error.
+a child holding a piece of paper is never shown an error. Token records live
+one-per-file in the data volume and are **pruned on a grace period**: a record
+whose expiry is more than a week past is deleted (at boot, and opportunistically
+after mints), so the registry never grows without bound. Inside the grace
+window an expired ticket still resolves to the "out of date" slip; after
+pruning it resolves like any unknown ticket. Unexpiring records are never
+pruned.
 
 **Virtual hardware** — every physical endpoint has a double implementing the
 *same* surface as the real adapter (laser printer, thermal printer, scanner,
@@ -648,9 +654,12 @@ production deployment must never expose a "make the printer fail" endpoint.
 > `school.card.agenda-printed` and paper came out of the thermal printer.
 
 The personal card is NFC, not a printed barcode. A child taps it on the reader in
-the school room and their agenda prints. The card is the recovery path for every
-other failure in the system, which is why it never expires and has no
-preconditions.
+the school room and a **sectioned daily agenda** prints — one block per assigned
+subject, at most one scannable ticket per subject per study day (see
+[An assigned course, not a catalog, is what prints](#an-assigned-course-not-a-catalog-is-what-prints)
+for what a section holds and how scanning it resolves). The card is the recovery
+path for every other failure in the system, which is why it never expires and has
+no preconditions.
 
 ```text
 NFC tap (omr-relay)                        emits {type:'nfc', uid} on the `omr` bus topic
@@ -708,23 +717,103 @@ and does nothing.
 ### An assigned course, not a catalog, is what prints
 
 A valid curriculum catalog offers **nothing** on its own. `BuildAgenda` builds
-strictly from what a grown-up has assigned, so the first live tap printed a
-correct but empty agenda (`offers: 0`). That is the design, not a bug: the catalog
-is what *exists*, the assignment is what *this child* is doing.
+strictly from what a grown-up has assigned — courses, standalone units, and
+program units alike — so an unassigned catalog prints a correct but empty
+agenda (`offers: 0`). That is the design, not a bug: the catalog is what
+*exists*, the assignment is what *this child* is doing.
 
 ```bash
-curl -X PUT .../api/v1/school/lifecycle/assignments/<learner>   -H 'Content-Type: application/json'   -d '{"courses":["math-fractions"],"assignedBy":"<grown-up roster id>"}'
+curl -X PUT .../api/v1/school/lifecycle/assignments/<learner>   -H 'Content-Type: application/json'   -d '{"courses":["math-fractions"],"units":["language-daily"],"assignedBy":"<grown-up roster id>"}'
 ```
 
-`assignedBy` must pass `GrownUpGate`. Assigning one course then yields the gating
-the curriculum declares — with `math-fractions` assigned: 4 assigned, unit `.01`
+`assignedBy` must pass `GrownUpGate`. Assigning one course yields the gating the
+curriculum declares — with `math-fractions` assigned: 4 assigned, unit `.01`
 available, `.02`–`.04` **locked** behind it, `next: math-fractions.01`. Passing a
-unit releases the next; only sequential courses gate.
+unit releases the next; only sequential courses gate. A standalone unit named
+under `units` (curriculum or program) carries no such gate.
 
 Seeded catalog lives at `data/content/school/curriculum/{units,documents,manifests}/`,
 and referenced question banks at `data/content/quizzes/<bankId>.yml` — a bank id is
 the path under that directory. A unit whose bank is missing is **rejected at load**
 with `school.curriculum.invalid-units` rather than failing when a child opens it.
+
+**The printed agenda is sectioned by subject, not listed by unit.** It opens
+with the standard header — the learner's display name (resolved from the
+household roster) knocked out of a full-width black band; thermal has no ink
+concerns. Every assigned entry — across every course and every standalone
+unit — is grouped by its `subject` (the nine-subject wall order, then
+`other`); only a subject with at least one assigned entry gets a block, and
+each block offers **at most one** scannable action, drawn with its subject's
+shelf icon — the same nine SVGs the School home grid renders
+(`frontend/src/modules/School/home/icons/`), shared rather than copied. A subject already served today prints its header with a
+`done today` mark and its progress so far — no code. Otherwise it prints one
+line naming the next thing to do (or, if everything assigned in that subject is
+locked, the lock's own remedy) with a QR beside it. "Served today" comes from
+either a **passing** curriculum outcome recorded this study day, or a program
+unit's own `doneToday` — a *failed* attempt never serves the subject, because
+the section is the retry's only way back in.
+
+**The study day is 4am→4am**, the same boundary the language ladder already
+uses — one shared implementation, so the agenda's "today" and the ladder's
+"today" can never drift apart across a DST change. Serving a subject locks
+nothing: a child who finds an old per-subject ticket in a coat pocket and
+scans it after that subject has already been served gets a "done for today,
+scan your card tomorrow" slip, never a second credit; the same ticket scanned
+*before* the subject is served still resolves to whatever is actually next,
+recomputed fresh on that scan, rather than trusted from the moment it printed.
+
+**A program unit delegates an entire subject to a registered program**
+instead of composing a bank/document/media reference — named on the unit, with
+a daily cadence if it should re-offer every study day rather than terminally
+complete. It opens **no work session**; the program's own append-only records
+are the evidence, and the program answers exactly three things for the
+agenda — done today, how far along, and what "go do this" means for it. A
+program that throws degrades its subject to an "unavailable — try the Portal"
+line rather than blanking the rest of the agenda. Language study is the first
+program: the day queue's own "everything cleared" is what "done today" means
+for it.
+
+**Program ids are addresses, not a fixed enum.** A `program:` value resolves
+to either a code-registered launcher (`language`) or a `school.yml`
+`programs:` entry backed by the generic `SurfaceProgramLauncher` — config
+selecting from DoNow's closed *surface* vocabulary (`garage-fitness`,
+`piano-kiosk`, `portal`, ...), the household "start this, there, now" dispatch
+facade every program launcher now calls through
+(`docs/superpowers/specs/2026-07-30-household-donow-dispatch-design.md`). It
+is the surface set that stays closed in code, same posture as
+`categories.mjs` — not the program id set; a `programs:` entry whose id
+collides with a code-registered launcher is a **boot-time error**, never a
+silent override.
+
+**Scanning a subject's ticket that resolves to on-screen work — the quiz
+runner, or a program — hands the learner to the Portal.** The console
+broadcasts a launch event naming the learner and the runner to open on the
+shared WS bus; whichever screen has the School app mounted receives it, claims
+the learner (the same soft-claim the touch flow uses), and navigates into that
+runner. There is no acknowledgement path back to the scan, so **every** such
+scan also prints a slip naming the manual fallback ("Language is starting on
+the Portal — or open it there yourself") — the paper is always the truth, the
+broadcast is a bonus.
+
+**The printed code is a QR, not a linear barcode.** Every ticket on the
+console's tape is a model-2 QR, read by the console's own 2D imager — a
+linear-only laser scanner cannot read it. A plain linear barcode remains the
+receipt renderer's default everywhere else in the house; the school console is
+the one caller that opts into QR.
+
+| Layer | Path |
+|---|---|
+| Domain | `backend/src/2_domains/school/studyDay.mjs` — the 4am→4am study-day boundary, shared with the language ladder |
+| Domain | `backend/src/2_domains/school/agenda.mjs` — `planDailyAgenda`: plan entries → subject sections, pure |
+| Application | `backend/src/3_applications/school/usecases/offerSession.mjs` — `ensureSession`/`nextMove`, shared by `BuildAgenda` and `ResolveSubjectNext` |
+| Application | `backend/src/3_applications/school/usecases/ResolveSubjectNext.mjs` — what a `subject_next` ticket means right now, recomputed on every scan |
+| Port | `backend/src/3_applications/school/ports/IProgramLauncher.mjs` — `status()`/`launch()`, the whole surface a program plugs in |
+| Application | `backend/src/3_applications/donow/DoNowService.mjs` — the household dispatch facade every program launcher (and every `launch:` unit) now calls through; composed in `backend/src/5_composition/modules/donow.mjs`, independent of this lifecycle's own `enabled` gate |
+| Application | `backend/src/3_applications/school/SurfaceProgramLauncher.mjs` — the generic `IProgramLauncher` for a `school.yml` `programs:` entry — one class, config-driven, zero new code per surface program |
+| Application | `backend/src/3_applications/school/DoNowSchoolBridge.mjs` — closes a `launch:` unit's session when a PENDING DoNow dispatch is later approved out of band |
+| Application | `backend/src/3_applications/school/LanguageProgramLauncher.mjs` — the `IProgramLauncher` face of language study, dispatching through the `portal` DoNow surface |
+| Frontend | `frontend/src/modules/School/useSchoolLaunch.js` — the Portal-launch subscription hook |
+| API | `GET /api/v1/school/lifecycle/learners/:learnerId/agenda/preview` — dry-run twin of the printed agenda (no session/token side effects), PNG with a real scannable QR |
 
 ## 3. Specced, not built
 

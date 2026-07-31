@@ -12,8 +12,11 @@ import { texToSvg } from '#rendering/school/documents/mathSvg.mjs';
 
 const renderer = createDocumentReceiptRenderer({ theme, texToSvg });
 
+// Untitled on purpose: a `title` now asks for the standard-header banner
+// (tested in its own describe below); these structural tests exercise the
+// plain path.
 const doc = (blocks) => ({
-  id: 'receipt-doc', title: 'Receipt Doc', seed: 7, variant: 0, target: ['receipt'], blocks,
+  id: 'receipt-doc', seed: 7, variant: 0, target: ['receipt'], blocks,
 });
 
 const PNG_MAGIC = Buffer.from([0x89, 0x50, 0x4e, 0x47]);
@@ -111,5 +114,172 @@ describe('createDocumentReceiptRenderer', () => {
     const first = await renderer.createCanvas(source, { tokens: { 'scan-omr': 'T1' } });
     const second = await renderer.createCanvas(source, { tokens: { 'scan-omr': 'T1' } });
     expect(first.canvas.toBuffer('image/png').equals(second.canvas.toBuffer('image/png'))).toBe(true);
+  });
+});
+
+describe('the standard header', () => {
+  const rowDarkness = (canvas, y) => {
+    const img = canvas.getContext('2d').getImageData(0, y, canvas.width, 1).data;
+    let dark = 0;
+    for (let i = 0; i < img.length; i += 4) if (img[i] < 96) dark += 1;
+    return dark / (img.length / 4);
+  };
+
+  it('a titled document opens with a full-bleed black band', async () => {
+    const titled = await renderer.createCanvas({ ...doc([{ type: 'rich_text', md: 'Body.' }]), title: 'Felix' });
+    // The band bleeds edge to edge at the very top of the tape; the knocked-out
+    // name keeps it from being 100% dark.
+    expect(rowDarkness(titled.canvas, 2)).toBeGreaterThan(0.8);
+    expect(rowDarkness(titled.canvas, Math.floor(theme.header.padY / 2))).toBeGreaterThan(0.5);
+  });
+
+  it('an untitled document keeps the plain id heading — no band', async () => {
+    const plain = await renderer.createCanvas(doc([{ type: 'rich_text', md: 'Body.' }]));
+    expect(rowDarkness(plain.canvas, 2)).toBeLessThan(0.1);
+  });
+});
+
+describe('subject icons on scan_action blocks', () => {
+  const iconDoc = (icon) => doc([{ type: 'scan_action', action: 'sch:AAAA', label: 'Unit Two — watch it', ...(icon ? { icon } : {}) }]);
+
+  it('reads the SAME svg files the School home grid uses, rasterized at 2x', async () => {
+    const calls = [];
+    const spy = (args) => { calls.push(args); return renderer.rasterizeSvg(args); };
+    const withSpy = createDocumentReceiptRenderer({ theme, texToSvg, rasterizeSvg: spy });
+    await withSpy.createCanvas(iconDoc('math'), { tokens: {} });
+    expect(calls).toHaveLength(1);
+    expect(calls[0].widthPx).toBe(theme.action.iconPx * 2);
+    // The shared frontend icon, not a copy: currentColor pinned to tape ink.
+    expect(calls[0].svgString).toContain('<svg');
+    expect(calls[0].svgString).not.toContain('currentColor');
+  });
+
+  it('draws the icon in the slot and moves the label out of it', async () => {
+    // A one-glyph label: with an icon the glyph starts past the icon slot, so
+    // the slot's ink is the icon's alone — a clean with/without comparison.
+    const narrow = (icon) => doc([{ type: 'scan_action', action: 'sch:AAAA', label: 'X', ...(icon ? { icon } : {}) }]);
+    const iconSlotDark = async (document) => {
+      const { canvas } = await renderer.createCanvas(document, { tokens: {} });
+      const ctx = canvas.getContext('2d');
+      const x = theme.layout.margin + theme.action.padding + 2;
+      const img = ctx.getImageData(x, 0, theme.action.iconPx - 4, canvas.height).data;
+      let dark = 0;
+      for (let i = 0; i < img.length; i += 4) if (img[i] < 96) dark += 1;
+      return dark;
+    };
+    const withIcon = await iconSlotDark(narrow('math'));
+    const without = await iconSlotDark(narrow(null));
+    expect(withIcon).toBeGreaterThan(without + 100);
+  });
+
+  it('an unknown icon id degrades to the un-iconed box, never a failed print', async () => {
+    const out = await renderer.createCanvas(iconDoc('no-such-subject'), { tokens: {} });
+    expect(out.codes).toHaveLength(1);
+  });
+
+  it('a traversal-shaped icon id is refused without touching the filesystem', async () => {
+    const calls = [];
+    const spy = (args) => { calls.push(args); return renderer.rasterizeSvg(args); };
+    const withSpy = createDocumentReceiptRenderer({ theme, texToSvg, rasterizeSvg: spy });
+    const out = await withSpy.createCanvas(iconDoc('../../auth/plex'), { tokens: {} });
+    expect(out.codes).toHaveLength(1);
+    expect(calls).toHaveLength(0);
+  });
+});
+
+describe("scanCodes: 'qr'", () => {
+  const scanDoc = doc([{ type: 'scan_action', action: 'sch:ABCDEFGH23456789', label: 'Scan me' }]);
+
+  const darkPixelsInCodeArea = (canvas, theme) => {
+    const ctx = canvas.getContext('2d');
+    const size = theme.action.codeAreaPx - 8; // inside the border
+    const x = theme.canvas.width - theme.layout.margin - theme.action.padding - theme.action.codeAreaPx + 4;
+    // Extract the code area column and scan for the border row to locate the box top
+    const fullStrip = ctx.getImageData(x, 0, size, canvas.height).data;
+
+    // Find where the box starts by looking for dark pixels (border)
+    let boxStartY = 0;
+    for (let py = 0; py < canvas.height; py += 1) {
+      let darkInRow = 0;
+      for (let px = 0; px < size; px += 1) {
+        const idx = (py * size + px) * 4;
+        if (fullStrip[idx] < 96) darkInRow += 1;
+      }
+      if (darkInRow > size * 0.3) { // Border row has significant dark pixels
+        boxStartY = py;
+        break;
+      }
+    }
+
+    // Sample only the code box interior (size rows from the border start)
+    const img = ctx.getImageData(x, boxStartY, size, size).data;
+    let dark = 0;
+    for (let i = 0; i < img.length; i += 4) if (img[i] < 96) dark += 1;
+    return dark;
+  };
+
+  it('draws real QR modules into the code area', async () => {
+    const qr = createDocumentReceiptRenderer({ theme, texToSvg, scanCodes: 'qr' });
+    const box = createDocumentReceiptRenderer({ theme, texToSvg });
+    const a = await qr.createCanvas(scanDoc, { tokens: {} });
+    const b = await box.createCanvas(scanDoc, { tokens: {} });
+    const darkQr = darkPixelsInCodeArea(a.canvas, theme);
+    const darkBox = darkPixelsInCodeArea(b.canvas, theme);
+    expect(darkQr).toBeGreaterThan(darkBox * 3); // modules vs an empty stroked box
+  });
+
+  it('default stays box — construction without the option is unchanged', async () => {
+    const r = createDocumentReceiptRenderer({ theme, texToSvg });
+    const out = await r.createCanvas(scanDoc, { tokens: {} });
+    expect(out.codes).toHaveLength(1); // existing contract intact
+  });
+
+  it('renders QR codes at correct y-positions with multiple action blocks', async () => {
+    const multiActionDoc = doc([
+      { type: 'rich_text', md: 'First task' },
+      { type: 'scan_action', action: 'task1', label: 'Scan task 1' },
+      { type: 'rich_text', md: 'Second task' },
+      { type: 'scan_action', action: 'task2', label: 'Scan task 2' },
+    ]);
+    const qr = createDocumentReceiptRenderer({ theme, texToSvg, scanCodes: 'qr' });
+    const result = await qr.createCanvas(multiActionDoc, { tokens: {} });
+
+    // Verify both code blocks exist
+    expect(result.codes).toHaveLength(2);
+    expect(result.codes[0].action).toBe('task1');
+    expect(result.codes[1].action).toBe('task2');
+
+    // Verify both have dense QR pixels at their respective positions
+    const darkPixelsInCodeAreaAtY = (canvas, theme, targetY) => {
+      const ctx = canvas.getContext('2d');
+      const size = theme.action.codeAreaPx - 8;
+      const x = theme.canvas.width - theme.layout.margin - theme.action.padding - theme.action.codeAreaPx + 4;
+
+      // Search for box starting from targetY
+      let boxStartY = targetY;
+      for (let py = targetY; py < Math.min(targetY + 300, canvas.height); py += 1) {
+        let darkInRow = 0;
+        const rowData = ctx.getImageData(x, py, size, 1).data;
+        for (let i = 0; i < rowData.length; i += 4) {
+          if (rowData[i] < 96) darkInRow += 1;
+        }
+        if (darkInRow > size * 0.3) {
+          boxStartY = py;
+          break;
+        }
+      }
+
+      const img = ctx.getImageData(x, boxStartY, size, size).data;
+      let dark = 0;
+      for (let i = 0; i < img.length; i += 4) if (img[i] < 96) dark += 1;
+      return dark;
+    };
+
+    // Each code area should have significant dark pixels (QR modules)
+    const dark1 = darkPixelsInCodeAreaAtY(result.canvas, theme, 80); // first action op
+    const dark2 = darkPixelsInCodeAreaAtY(result.canvas, theme, 350); // second action op (approx)
+
+    expect(dark1).toBeGreaterThan(500); // QR in first code area
+    expect(dark2).toBeGreaterThan(500); // QR in second code area
   });
 });

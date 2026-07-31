@@ -57,6 +57,20 @@ export function createDocumentEscPosRenderer({ width = 32, symbology = 'CODE128'
    */
   function render(document, { tokens = null } = {}) {
     const items = [];
+    if (typeof document?.title === 'string' && document.title.trim()) {
+      // The standard header (same treatment as the canvas renderer's black
+      // band): the title inverted — white on black, double size, centred. The
+      // padding spaces widen the band past the glyphs; a full-width band would
+      // need raster mode, which this text path deliberately is not.
+      items.push({
+        type: 'text',
+        content: ` ${document.title.trim().toUpperCase()} `,
+        align: 'center',
+        style: { bold: true, invert: true },
+        size: { width: 2, height: 2 },
+      });
+      items.push({ type: 'space', lines: 1 });
+    }
     for (const block of document?.blocks ?? []) {
       if (!SUPPORTED.has(block?.type)) {
         // A block that silently vanished would be a receipt that silently lost
@@ -70,6 +84,19 @@ export function createDocumentEscPosRenderer({ width = 32, symbology = 'CODE128'
         for (const raw of String(block.md ?? '').split('\n')) {
           const line = raw.trim();
           if (!line) { items.push({ type: 'space', lines: 1 }); continue; }
+          // `## ` (a subject section header, spec §6.3 v2) prints BOLD, LEFT,
+          // NORMAL size — distinct from a bare `#` (the learner-name banner),
+          // which keeps the original centred/double-size treatment. Checked
+          // before the generic heading branch so `## ` never falls into it.
+          if (line.startsWith('## ')) {
+            items.push({
+              type: 'text',
+              content: line.replace(/^##\s*/, ''),
+              align: 'left',
+              style: { bold: true },
+            });
+            continue;
+          }
           const heading = line.startsWith('#');
           items.push({
             type: 'text',
@@ -83,7 +110,13 @@ export function createDocumentEscPosRenderer({ width = 32, symbology = 'CODE128'
 
       const code = tokens?.[block.action] ?? block.action;
       items.push({ type: 'text', content: block.label, align: 'left' });
-      items.push({ type: 'barcode', content: code, label: block.label, format: symbology });
+      // QR (symbology:'QR') is a distinct item type from a linear barcode: the
+      // adapter needs a different ESC/POS command family (GS ( k model-2 QR)
+      // to draw one, and printing no label of its own either — the text item
+      // just above IS the label, same convention as a barcode.
+      items.push(symbology === 'QR'
+        ? { type: 'qrcode', content: code, label: block.label }
+        : { type: 'barcode', content: code, label: block.label, format: symbology });
     }
     items.push({ type: 'line', content: '-', width });
     return { items, footer: { paddingLines: 3, autoCut: true } };

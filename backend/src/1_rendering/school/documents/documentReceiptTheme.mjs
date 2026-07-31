@@ -24,9 +24,16 @@ export const documentReceiptTheme = Object.freeze({
     family: 'Roboto Condensed',
     fontPath: 'roboto-condensed/RobotoCondensed-Regular.ttf',
     heading: 'bold 34px "Roboto Condensed"',
+    header: 'bold 44px "Roboto Condensed"',
     body: '24px "Roboto Condensed"',
     label: 'bold 26px "Roboto Condensed"',
     code: '22px "Roboto Condensed"',
+  },
+
+  /** The standard header: a full-bleed black band with the title knocked out. */
+  header: {
+    lineHeight: 52,
+    padY: 20,
   },
 
   text: {
@@ -56,6 +63,9 @@ export const documentReceiptTheme = Object.freeze({
     codeAreaPx: 150,
     labelGap: 10,
     codeGap: 8,
+    /** Subject shelf icon drawn left of the label (58mm tape, so keep it bold). */
+    iconPx: 56,
+    iconGap: 12,
   },
 });
 

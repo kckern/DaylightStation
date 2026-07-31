@@ -61,6 +61,21 @@ const graded = async ({ unitId = WORKSHEET_UNIT, percent = 90, sessionId = SID, 
   return sessionId;
 };
 
+/** Drive a session to `launch_dispatched` — the one state honor-close is legal from. */
+const launched = async ({ unitId = WORKSHEET_UNIT, sessionId = SID, passedEarlier = [] } = {}) => {
+  for (const done of passedEarlier) {
+    await sessions.appendEvent(done.sessionId, { type: 'created', at: clock.iso(), sessionId: done.sessionId, learnerId: 'kid1', unitId: done.unitId });
+    await sessions.appendEvent(done.sessionId, { type: 'issued', at: clock.iso(), sessionId: done.sessionId, artifactId: 'art_x' });
+    await sessions.appendEvent(done.sessionId, { type: 'submitted', at: clock.iso(), sessionId: done.sessionId, transport: 'paper' });
+    await sessions.appendEvent(done.sessionId, { type: 'graded', at: clock.iso(), sessionId: done.sessionId, attemptIds: ['att_x'], percent: 100 });
+    await sessions.appendEvent(done.sessionId, { type: 'outcome_recorded', at: clock.iso(), sessionId: done.sessionId, outcomeId: `out:${done.sessionId}`, result: 'passed' });
+    await sessions.appendEvent(done.sessionId, { type: 'rewarded', at: clock.iso(), sessionId: done.sessionId, txnId: 'txn_x', amount: 0 });
+  }
+  await sessions.appendEvent(sessionId, { type: 'created', at: clock.iso(), sessionId, learnerId: 'kid1', unitId });
+  await sessions.appendEvent(sessionId, { type: 'launch_dispatched', at: clock.iso(), sessionId, surface: 'garage-fitness' });
+  return sessionId;
+};
+
 beforeEach(() => build());
 
 describe('the outcome', () => {
@@ -95,6 +110,74 @@ describe('the outcome', () => {
 
   it('explains an unknown session', async () => {
     expect(await close.execute({ sessionId: 'ses_nope' })).toMatchObject({ status: 'unavailable' });
+  });
+});
+
+/**
+ * The honor-close door (spec §6): a `launch:` unit dispatches work to another
+ * surface and has nothing else to measure, so completion is the dispatch
+ * itself. This is a DOOR, not a bypass — it exists ONLY from `launch_dispatched`
+ * and refuses (with the shipped `unavailable` message) from every other state,
+ * exactly as if `honorClose` had never been passed.
+ */
+describe('the honor-close door', () => {
+  it('honor-closes a launch-dispatched session as a pass, and settles', async () => {
+    await launched();
+    const result = await close.execute({ sessionId: SID, honorClose: true });
+    expect(result).toMatchObject({ status: 'settled', result: 'passed', outcomeId: `out:${SID}` });
+    expect(sessions.derive(SID).outcome).toMatchObject({ outcomeId: `out:${SID}`, result: 'passed' });
+    expect(sessions.types(SID).filter((t) => t === 'outcome_recorded')).toHaveLength(1);
+  });
+
+  it("records the outcome's reason as launch_dispatched", async () => {
+    await launched();
+    await close.execute({ sessionId: SID, honorClose: true });
+    const outcomeEvent = (await sessions.readEvents(SID)).find((e) => e.type === 'outcome_recorded');
+    expect(outcomeEvent).toMatchObject({ result: 'passed', reason: 'launch_dispatched' });
+  });
+
+  it('rides the existing reward guard on honor-close, same as a graded pass', async () => {
+    await launched();
+    const result = await close.execute({ sessionId: SID, honorClose: true });
+    expect(result.reward).toMatchObject({ amount: 5, txnId: 'txn_1', skipReason: null });
+    expect(economy.calls).toEqual([{
+      userId: 'kid1', action: 'school-unit-complete', source: 'school', ref: `out:${SID}`, amount: 5,
+    }]);
+    expect(sessions.derive(SID)).toMatchObject({ state: 'rewarded', terminal: true });
+  });
+
+  it('prints the same result receipt shape as a graded close', async () => {
+    await launched();
+    const result = await close.execute({ sessionId: SID, honorClose: true });
+    expect(result.printed).toBe(true);
+    expect(validateDocument(result.document).errors).toEqual([]);
+  });
+
+  it.each(['created', 'issued', 'graded'])(
+    'refuses honor-close from %s — the door stays a door (spec §9 row 6)',
+    async (fromState) => {
+      if (fromState === 'created') {
+        await sessions.appendEvent(SID, { type: 'created', at: clock.iso(), sessionId: SID, learnerId: 'kid1', unitId: WORKSHEET_UNIT });
+      } else if (fromState === 'issued') {
+        await sessions.appendEvent(SID, { type: 'created', at: clock.iso(), sessionId: SID, learnerId: 'kid1', unitId: WORKSHEET_UNIT });
+        await sessions.appendEvent(SID, { type: 'issued', at: clock.iso(), sessionId: SID, artifactId: 'art_1' });
+      } else {
+        await graded();
+      }
+      const result = await close.execute({ sessionId: SID, honorClose: true });
+      expect(result.status).toBe('unavailable');
+      expect(sessions.types(SID)).not.toContain('outcome_recorded');
+    },
+  );
+
+  it('refuses honor-close on an unknown session, same as a regular close', async () => {
+    expect(await close.execute({ sessionId: 'ses_nope', honorClose: true })).toMatchObject({ status: 'unavailable' });
+  });
+
+  it('leaves a regular (non-honor) close byte-identical', async () => {
+    await graded();
+    const result = await close.execute({ sessionId: SID });
+    expect(result).toMatchObject({ status: 'settled', result: 'passed', outcomeId: `out:${SID}`, percent: 90 });
   });
 });
 

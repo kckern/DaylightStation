@@ -23,12 +23,26 @@
  * @module rendering/school/documents/DocumentReceiptRenderer
  */
 
+import { readFile } from 'node:fs/promises';
+import { fileURLToPath } from 'node:url';
 import { initCanvas } from '#rendering/lib/CanvasFactory.mjs';
 import { wrapText } from '#rendering/lib/TextRenderer.mjs';
+import QRCode from 'qrcode';
 
 import { parseRichText } from './measure.mjs';
 import { documentReceiptTheme } from './documentReceiptTheme.mjs';
 import { texToSvg as mathJaxTexToSvg } from './mathSvg.mjs';
+
+/**
+ * The subject shelf icons — the SAME nine SVG files the School home grid
+ * renders, shared rather than copied so a swapped icon changes both surfaces
+ * (frontend/src/modules/School/home/icons/MANIFEST.md documents the set). The
+ * files are `currentColor` inline icons; tape has no CSS cascade, so the
+ * loader pins the ink below.
+ */
+const DEFAULT_ICON_DIR = fileURLToPath(
+  new URL('../../../../../frontend/src/modules/School/home/icons/svg', import.meta.url),
+);
 
 /** Blocks this target can print. Anything else is refused by name. */
 const SUPPORTED = new Set(['rich_text', 'math', 'question', 'media_action', 'scan_action']);
@@ -52,8 +66,37 @@ export function createDocumentReceiptRenderer({
   texToSvg = mathJaxTexToSvg,
   rasterizeSvg = defaultRasterizeSvg,
   fontDir = undefined,
+  iconDir = DEFAULT_ICON_DIR,
+  scanCodes = 'box',
 } = {}) {
   const contentWidth = theme.canvas.width - 2 * theme.layout.margin;
+
+  /**
+   * Icon id → rasterized PNG bytes, or null for an id with no file. Icons are
+   * DECORATION: a missing or unreadable one degrades to the un-iconed box the
+   * tape printed last week, never to a failed print. Cached because an agenda
+   * repeats the same nine subjects forever.
+   */
+  const iconCache = new Map();
+  async function iconPng(icon) {
+    if (iconCache.has(icon)) return iconCache.get(icon);
+    let png = null;
+    // Slug ids only — `icon` comes from document data, and a path separator in
+    // it must not turn a decoration into a directory-traversal read.
+    if (/^[a-z0-9][a-z0-9-]*$/.test(icon)) {
+      try {
+        const svg = await readFile(`${iconDir}/${icon}.svg`, 'utf8');
+        png = await rasterizeSvg({
+          svgString: svg.replaceAll('currentColor', theme.colors.text),
+          widthPx: theme.action.iconPx * 2,
+        });
+      } catch {
+        png = null;
+      }
+    }
+    iconCache.set(icon, png);
+    return png;
+  }
 
   /**
    * Wrap where a word break exists, then break mid-word on what is left. Tokens
@@ -97,14 +140,17 @@ export function createDocumentReceiptRenderer({
     return { kind: 'math', png, widthPx, heightPx, totalHeightPx: heightPx + 2 * theme.math.padY };
   }
 
-  function actionOp(ctx, block, tokens) {
+  function actionOp(ctx, block, tokens, { icon = null } = {}) {
     const code = tokens?.[block.action] ?? block.code ?? block.token ?? block.action;
+    const iconSpan = icon ? theme.action.iconPx + theme.action.iconGap : 0;
     ctx.font = theme.fonts.label;
-    const labelWidth = contentWidth - 2 * theme.action.padding - theme.action.codeAreaPx - theme.action.labelGap;
+    const labelWidth = contentWidth - 2 * theme.action.padding - theme.action.codeAreaPx
+      - theme.action.labelGap - iconSpan;
     const labelLines = wrapTight(ctx, block.label, labelWidth);
     ctx.font = theme.fonts.code;
     const codeLines = wrapTight(ctx, code, theme.action.codeAreaPx);
     const textHeight = labelLines.length * theme.text.bodyLineHeight;
+    const iconHeight = icon ? theme.action.iconPx : 0;
     const codeBlockHeight = theme.action.codeAreaPx + theme.action.codeGap
       + codeLines.length * theme.text.codeLineHeight;
     return {
@@ -112,9 +158,10 @@ export function createDocumentReceiptRenderer({
       blockType: block.type,
       action: block.action,
       code,
+      icon,
       labelLines,
       codeLines,
-      heightPx: Math.max(textHeight, codeBlockHeight) + 2 * theme.action.padding,
+      heightPx: Math.max(textHeight, iconHeight, codeBlockHeight) + 2 * theme.action.padding,
     };
   }
 
@@ -153,7 +200,12 @@ export function createDocumentReceiptRenderer({
         break;
 
       default: {
-        const op = actionOp(ctx, block, tokens);
+        // The icon is fetched FIRST because a file that turns out to be
+        // missing must plan the box without an icon gap, not leave a hole.
+        const icon = typeof block.icon === 'string' && block.icon
+          ? await iconPng(block.icon)
+          : null;
+        const op = actionOp(ctx, block, tokens, { icon });
         ops.push(op);
         codes.push({ action: op.action, code: op.code, kind: op.blockType, lines: op.codeLines });
       }
@@ -177,18 +229,31 @@ export function createDocumentReceiptRenderer({
 
     const ops = [];
     const codes = [];
-    ops.push(textOps(scratch, document.title || document.id, {
-      font: theme.fonts.heading, lineHeight: theme.text.headingLineHeight,
-    }));
+    if (document.title) {
+      // The standard header: the title on a full-bleed black band. Only a
+      // title gets the banner — an untitled document keeps its id as the
+      // plain heading below, which is a debug affordance, not a headline.
+      scratch.font = theme.fonts.header;
+      const lines = wrapText(scratch, String(document.title).toUpperCase(), contentWidth);
+      ops.push({
+        kind: 'header', lines,
+        heightPx: lines.length * theme.header.lineHeight + 2 * theme.header.padY,
+      });
+    } else {
+      ops.push(textOps(scratch, document.id, {
+        font: theme.fonts.heading, lineHeight: theme.text.headingLineHeight,
+      }));
+    }
     for (const block of document.blocks) {
       // eslint-disable-next-line no-await-in-loop
       await planBlock(scratch, block, { tokens, ops, codes });
     }
 
     // Place ops, tearing the tape at the first block boundary past the segment
-    // limit. A block is never split across a cut.
+    // limit. A block is never split across a cut. A header band bleeds to the
+    // physical top of the tape, so it alone starts at 0 instead of the margin.
     const cutPoints = [];
-    let y = theme.layout.margin;
+    let y = ops[0]?.kind === 'header' ? 0 : theme.layout.margin;
     let segmentStart = 0;
     for (const op of ops) {
       const opHeight = op.kind === 'math' ? op.totalHeightPx : op.heightPx;
@@ -213,6 +278,19 @@ export function createDocumentReceiptRenderer({
     const x = theme.layout.margin;
 
     for (const op of ops) {
+      if (op.kind === 'header') {
+        ctx.fillStyle = theme.colors.text;
+        ctx.fillRect(0, op.yPx, theme.canvas.width, op.heightPx);
+        ctx.fillStyle = theme.colors.background;
+        ctx.font = theme.fonts.header;
+        op.lines.forEach((line, index) => ctx.fillText(
+          line,
+          Math.max(theme.layout.margin, (theme.canvas.width - ctx.measureText(line).width) / 2),
+          op.yPx + theme.header.padY + index * theme.header.lineHeight,
+        ));
+        ctx.fillStyle = theme.colors.text;
+        continue;
+      }
       if (op.kind === 'text') {
         ctx.font = op.font;
         op.lines.forEach((line, index) => ctx.fillText(line, x, op.yPx + index * op.lineHeight));
@@ -231,14 +309,47 @@ export function createDocumentReceiptRenderer({
       ctx.strokeStyle = theme.colors.border;
       ctx.strokeRect(x, op.yPx, contentWidth, boxHeight);
 
+      let labelX = x + theme.action.padding;
+      if (op.icon) {
+        // eslint-disable-next-line no-await-in-loop
+        const iconImage = await loadImage(op.icon);
+        ctx.drawImage(
+          iconImage,
+          labelX,
+          op.yPx + (boxHeight - theme.action.iconPx) / 2,
+          theme.action.iconPx,
+          theme.action.iconPx,
+        );
+        labelX += theme.action.iconPx + theme.action.iconGap;
+      }
+
       ctx.font = theme.fonts.label;
       op.labelLines.forEach((line, index) => ctx.fillText(
-        line, x + theme.action.padding, op.yPx + theme.action.padding + index * theme.text.bodyLineHeight,
+        line, labelX, op.yPx + theme.action.padding + index * theme.text.bodyLineHeight,
       ));
 
       const codeX = x + contentWidth - theme.action.padding - theme.action.codeAreaPx;
       const codeY = op.yPx + theme.action.padding;
       ctx.strokeRect(codeX, codeY, theme.action.codeAreaPx, theme.action.codeAreaPx);
+
+      if (scanCodes === 'qr') {
+        ctx.save();
+        const qr = QRCode.create(op.code, { errorCorrectionLevel: 'M' });
+        const count = qr.modules.size;
+        const quiet = 2; // modules of quiet zone inside the box
+        const cell = Math.floor(theme.action.codeAreaPx / (count + 2 * quiet));
+        const offset = Math.floor((theme.action.codeAreaPx - cell * count) / 2);
+        ctx.fillStyle = '#000';
+        for (let r = 0; r < count; r += 1) {
+          for (let c = 0; c < count; c += 1) {
+            if (qr.modules.get(r, c)) {
+              ctx.fillRect(codeX + offset + c * cell, codeY + offset + r * cell, cell, cell);
+            }
+          }
+        }
+        ctx.restore();
+      }
+
       ctx.font = theme.fonts.code;
       op.codeLines.forEach((line, index) => ctx.fillText(
         line, codeX, codeY + theme.action.codeAreaPx + theme.action.codeGap + index * theme.text.codeLineHeight,

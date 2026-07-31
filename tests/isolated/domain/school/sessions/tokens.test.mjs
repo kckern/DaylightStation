@@ -30,7 +30,7 @@ const session = (state, over = {}) => ({ sessionId: SID, state, terminal: false,
 describe('TOKEN_CLASSES', () => {
   it('is the closed spec §6.1 set', () => {
     expect(TOKEN_CLASSES).toEqual([
-      'identify', 'select_unit', 'issue_document', 'media_action', 'remediation', 'recovery',
+      'identify', 'select_unit', 'issue_document', 'media_action', 'remediation', 'recovery', 'subject_next',
     ]);
   });
 
@@ -222,7 +222,9 @@ describe('resolveTokenState: renewable action classes', () => {
   });
 
   it('an advanced state is never an error — the message is friendly and points somewhere', () => {
-    TOKEN_CLASSES.filter((c) => c !== 'identify').forEach((tokenClass) => {
+    // identify and subject_next are both sessionless short-circuits (never
+    // reach the sessionState-driven actionable/done split this test exercises).
+    TOKEN_CLASSES.filter((c) => c !== 'identify' && c !== 'subject_next').forEach((tokenClass) => {
       const out = at(tokenClass, 'rewarded', { terminal: true });
       expect(out.status).toBe('already_done');
       expect(out.message.length).toBeGreaterThan(0);
@@ -236,6 +238,34 @@ describe('resolveTokenState: renewable action classes', () => {
     const second = resolveTokenState(record, { sessionState: session('created'), now: AT });
     expect(first).toEqual(second);
     expect(second.status).toBe('actionable');
+  });
+});
+
+describe('subject_next tokens', () => {
+  const at = '2026-07-29T16:00:00Z';
+  const rng = () => 0.5;
+  it('mints with a learnerId + subject and no session', () => {
+    const rec = mintToken({
+      tokenClass: 'subject_next',
+      subject: { learnerId: 'felix', subject: 'math' },
+      at, rng, expiresAt: '2026-08-05T16:00:00Z',
+    });
+    expect(rec.token.startsWith('sch:')).toBe(true);
+    expect(rec.subject).toEqual({ learnerId: 'felix', subject: 'math' });
+  });
+  it('requires learnerId and subject', () => {
+    expect(() => mintToken({ tokenClass: 'subject_next', subject: { learnerId: 'felix' }, at, rng }))
+      .toThrow(/subject/);
+    expect(() => mintToken({ tokenClass: 'subject_next', subject: { subject: 'math' }, at, rng }))
+      .toThrow(/learnerId/);
+  });
+  it('resolves actionable without any sessionState', () => {
+    const rec = mintToken({ tokenClass: 'subject_next', subject: { learnerId: 'felix', subject: 'math' }, at, rng, expiresAt: '2026-08-05T16:00:00Z' });
+    expect(resolveTokenState(rec, { now: '2026-07-30T16:00:00Z' }).status).toBe('actionable');
+  });
+  it('still expires', () => {
+    const rec = mintToken({ tokenClass: 'subject_next', subject: { learnerId: 'felix', subject: 'math' }, at, rng, expiresAt: '2026-07-30T16:00:00Z' });
+    expect(resolveTokenState(rec, { now: '2026-08-01T00:00:00Z' }).status).toBe('expired');
   });
 });
 

@@ -167,6 +167,19 @@ export class SchoolService {
     }
   }
 
+  /**
+   * Live in-memory sittings, projected to `{userId, lastActiveAt}` ONLY —
+   * never the session object itself (which carries the whole loaded bank).
+   * This is the portal DoNow surface's occupancy source (spec §5/§5.1):
+   * an open quiz/drill session IS the on-screen-work signal, so the sweep
+   * runs first — an expired sitting must not read as "occupied" just
+   * because nobody has looked it up by id since it went stale.
+   */
+  activeSittings() {
+    this.#sweepExpired();
+    return [...this.#sessions.values()].map((s) => ({ userId: s.userId, lastActiveAt: s.lastActiveAt }));
+  }
+
   openSession({ userId = null, bankId, mode }) {
     this.#sweepExpired();
     if (!MODES.has(mode)) throw new ValidationError(`mode must be quiz|flashcard|drill, got: ${mode}`);

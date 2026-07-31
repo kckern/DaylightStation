@@ -1,7 +1,7 @@
 import { test, expect } from '@playwright/test';
 import { FRONTEND_URL } from '#fixtures/runtime/urls.mjs';
 
-// Row 6 of the FHE menu ("learner-four") is bound to a Plex episode deep in a season
+// Row 6 of the FHE menu ("Alan") is bound to a Plex episode deep in a season
 // (Elijah the Prophet — S8 E33). Opening its picker lands inside Season 8. The
 // back (←) arrow must CLIMB the content tree (Season 8 → the show's seasons →
 // the show's siblings) with a clickable breadcrumb trail — not just dismiss.

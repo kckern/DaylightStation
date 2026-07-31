@@ -37,8 +37,35 @@ WebSocketEventBus  (/ws)  .onClientMessage
      ▼
 createOmrRelay()        [backend/src/3_applications/hardware/omrRelay.mjs]   ✅ WRITTEN
      ├─ broadcast('omr', payload)   → live subscribers
+     │       ▼
+     │  createQuizScanRecorder()  [backend/src/3_applications/quizzes/]
+     │       └─ DECODE → household/apps/quizzes/<reader-id>/<YYYY-MM-DD>.yml
      └─ PERSIST → household/history/omr/<reader-id>/<YYYY-MM-DD>.yml
 ```
+
+Every scan is double-processed: the relay's manifest keeps the raw 12-bit
+masks byte-faithfully, and the quiz decoder writes the meaningful version —
+records like `{ ts, testId, answers: { 1: A, 15: [A, E] } }`. Unanswered
+questions are omitted; multi-marked questions keep every letter (grading
+policy is downstream); an unreadable test-ID digit records as `?`. The
+7-digit test ID is *not* a student number — the printed quiz carries it and
+maps it to both the student and that quiz's answer key, so randomized or
+per-student question orders still grade. `cli/omr-quiz-backfill.cli.mjs`
+rebuilds all decoded day files from the manifest (idempotent).
+
+### Quiz form layout (calibrated 2026-07-30 against a marked card)
+
+32 columns; rows are given as mask bits (bit 0 = row 12 far edge … bit 11 =
+row 9 strobe edge). Bits 11 and 5 are printed label rows and never carry data.
+
+| Columns | Meaning | Encoding |
+|---|---|---|
+| 1–7 | test ID, one digit each | digit *d* = bit (9−*d*) |
+| 8–32 upper bank | questions 1–25 | A…E = bits 10…6 |
+| 8–32 lower bank | questions 26–50 | A…E = bits 4…0 |
+
+Cross-check for re-calibration: the test-ID digit-0 bubble is on the same row
+as the upper bank's **B**, and digit 6 shares the lower bank's **B** row.
 
 The relay **broadcasts three message types and persists two**: `sheet` (a card)
 and `reader-error` (a rejected command echo) are recorded; `raw` — undecodable

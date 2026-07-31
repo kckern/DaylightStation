@@ -24,14 +24,23 @@ const agenda = () => agendaDocument({
   learnerId: 'kid1',
   learnerName: 'Test Learner',
   generatedAt: '2026-07-27T09:00:00.000Z',
-  entries: [
-    { unitId: 'u1', title: 'Equivalent Fractions', status: 'available', token: TOKEN, actionLabel: 'Equivalent Fractions — watch or listen' },
-    { unitId: 'u2', title: 'Unlike Denominators', status: 'locked', lockReason: 'Finish “Equivalent Fractions” first' },
+  timeZone: 'UTC',
+  sections: [
+    {
+      subject: 'math',
+      next: { title: 'Equivalent Fractions', unitId: 'u1', actionLabel: 'watch or listen' },
+    },
+    {
+      subject: 'reading',
+      lockedRemedy: 'Finish “Equivalent Fractions” first',
+    },
   ],
+  tokensBySubject: { math: TOKEN },
 });
 
 const textOf = (job) => job.items.filter((i) => i.type === 'text').map((i) => i.content).join('\n');
 const barcodesOf = (job) => job.items.filter((i) => i.type === 'barcode');
+const qrcodesOf = (job) => job.items.filter((i) => i.type === 'qrcode');
 
 describe('the three receipts this console prints', () => {
   it.each([
@@ -78,20 +87,75 @@ describe('the code a child scans', () => {
     const barcodes = barcodesOf(renderer.render(document, { tokens: { recovery: TOKEN } }));
     expect(barcodes[0].content).toBe(TOKEN);
   });
+
+  it('DEFAULT symbology still emits a barcode item — the QR renderer is opt-in', () => {
+    // Regression: constructing with no `symbology` at all (the school console's
+    // pre-Task-12 shape) must keep printing a real Code128, never silently
+    // switch to QR.
+    const defaultRenderer = createDocumentEscPosRenderer();
+    const items = defaultRenderer.render(agenda()).items;
+    expect(barcodesOf({ items })).toHaveLength(1);
+    expect(barcodesOf({ items })[0].format).toBe('CODE128');
+    expect(qrcodesOf({ items })).toHaveLength(0);
+  });
+
+  it("symbology:'QR' emits a qrcode item carrying the token, with NO barcode item and NO duplicate label", () => {
+    const qrRenderer = createDocumentEscPosRenderer({ symbology: 'QR' });
+    const items = qrRenderer.render(agenda()).items;
+    const qrcodes = qrcodesOf({ items });
+    expect(qrcodes).toHaveLength(1);
+    expect(qrcodes[0].content).toBe(TOKEN);
+    expect(barcodesOf({ items })).toHaveLength(0);
+
+    // The label text item immediately precedes the code — same convention as
+    // a barcode — and appears exactly once (the adapter must not double it).
+    const label = items.findIndex((i) => i.type === 'text' && i.content === 'Equivalent Fractions — watch or listen');
+    const qrIndex = items.findIndex((i) => i.type === 'qrcode');
+    expect(label).toBeGreaterThan(-1);
+    expect(qrIndex).toBe(label + 1);
+    expect(items.filter((i) => i.type === 'text' && i.content === 'Equivalent Fractions — watch or listen')).toHaveLength(1);
+  });
 });
 
 describe('what a child is told', () => {
   it('carries the headline and every line of the agenda as text', () => {
     const text = textOf(renderer.render(agenda()));
-    expect(text).toContain('Test Learner');
+    expect(text).toContain('TEST LEARNER');
     expect(text).toContain('Printed Mon 27 Jul, 9:00 am');
     expect(text).toContain('Finish “Equivalent Fractions” first');
     expect(text).toContain('Scan a line above to start.');
   });
 
-  it('sets a markdown heading in double size and centred', () => {
-    const heading = renderer.render(agenda()).items.find((i) => i.type === 'text' && i.content === 'Test Learner');
-    expect(heading).toMatchObject({ align: 'center', size: { width: 2, height: 2 } });
+  it('prints the standard header INVERTED — the black band the canvas renderer draws', () => {
+    const header = renderer.render(agenda()).items[0];
+    expect(header).toMatchObject({
+      type: 'text',
+      content: ' TEST LEARNER ',
+      align: 'center',
+      style: { bold: true, invert: true },
+      size: { width: 2, height: 2 },
+    });
+  });
+
+  it('an untitled document gets no header item', () => {
+    const document = {
+      id: 'sheet', seed: 0, variant: 0, target: ['receipt'],
+      blocks: [{ type: 'rich_text', md: 'Just a line.' }],
+    };
+    const job = renderer.render(document);
+    expect(job.items[0]).toMatchObject({ type: 'text', content: 'Just a line.' });
+  });
+
+  it('renders a `## ` subject header bold, left-aligned and NORMAL size — unlike a bare `#`', () => {
+    const document = {
+      id: 'sheet', seed: 0, variant: 0, target: ['receipt'],
+      blocks: [{ type: 'rich_text', md: '## MATH — Unit 2 of 4' }],
+    };
+    const heading = renderer.render(document).items.find((i) => i.type === 'text');
+    expect(heading).toMatchObject({ content: 'MATH — Unit 2 of 4', align: 'left', style: { bold: true } });
+    // NOT double-size like a bare `#` — a `## ` header is a subject line among
+    // several on one receipt, not the one banner at the top.
+    expect(heading.size).toBeUndefined();
     expect(heading.content).not.toContain('#');
   });
 
@@ -112,7 +176,7 @@ describe('through the real thermal adapter', () => {
       expect(await printer.print(renderer.render(agenda()))).toBe(true);
 
       const transcript = printer.lastTranscript();
-      expect(transcript).toContain('Test Learner');
+      expect(transcript).toContain('TEST LEARNER');
       expect(transcript).toContain('Equivalent Fractions — watch or listen');
       // The token itself lands on its own line, which is what a test asserting
       // "the receipt carried token sch:…" reads.

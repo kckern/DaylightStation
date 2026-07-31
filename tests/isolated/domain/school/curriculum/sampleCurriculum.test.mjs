@@ -53,10 +53,24 @@ const banks = loadDir('banks');
 
 // Reference sets are built from the fixtures ACTUALLY PRESENT, so a unit that
 // points at an artefact nobody wrote fails here rather than at print time.
+// `programIds` and `surfaceValidators` are the two exceptions — a program
+// unit's `program:` value names a registered LAUNCHER (composition root), not
+// a fixture file, and a `launch:` unit's `surface:` names a registered DoNow
+// SURFACE ADAPTER, likewise not a fixture file. `language` is the
+// code-registered program (school-agenda-v2's seed); `pe-daily` is the
+// config-driven `school.yml` `programs:` entry the DoNow launch-journey e2e
+// (Task 14) seeds; `garage-fitness` is one of DoNow's own unconditionally-
+// registered surfaces (`donow.mjs`) — the stand-in validator below mirrors
+// `GarageFitnessSurface.validateAction`'s real contract (`episodeId`
+// required) so a malformed `launch:` block would still be caught here.
 const refs = {
   manifestIds: new Set(manifests.map(([, m]) => m?.id)),
   documentIds: new Set(documents.map(([, d]) => d?.id)),
   bankIds: new Set(banks.map(([, b]) => b?.id)),
+  programIds: new Set(['language', 'pe-daily']),
+  surfaceValidators: new Map([
+    ['garage-fitness', (raw) => ((raw && typeof raw.episodeId === 'string' && raw.episodeId) ? [] : ['episodeId required'])],
+  ]),
 };
 
 const byUnitId = new Map(units.map(([, u]) => [u?.unitId, u]));
@@ -94,30 +108,40 @@ describe('sample curriculum: units', () => {
   });
 });
 
+// The math-fractions COURSE, specifically — as opposed to `units`, which is
+// every *.yml in the fixture directory. Task 14 seeded `language-daily.yml`
+// alongside it: a standalone, courseless, subject:language program unit, on
+// purpose (spec §2.1). It is exercised on its own terms elsewhere
+// (`fixtureIntegrity.test.mjs`, the school-agenda-v2 e2e journey) — the four
+// assertions below are specifically about the COURSE's shape, so they filter
+// to the units that actually carry `courseId: math-fractions` rather than
+// asserting the whole directory is nothing but that course.
+const courseUnits = units.filter(([, u]) => u.courseId === COURSE_ID);
+
 describe('sample curriculum: course shape', () => {
   it('is four units under one courseId', () => {
-    expect(units).toHaveLength(4);
-    expect([...new Set(units.map(([, u]) => u.courseId))]).toEqual([COURSE_ID]);
+    expect(courseUnits).toHaveLength(4);
+    expect([...new Set(courseUnits.map(([, u]) => u.courseId))]).toEqual([COURSE_ID]);
   });
 
   it('sequences 1..4 with no gaps and no duplicates', () => {
-    const sequences = units.map(([, u]) => u.sequence).sort((a, b) => a - b);
+    const sequences = courseUnits.map(([, u]) => u.sequence).sort((a, b) => a - b);
     expect(sequences).toEqual([1, 2, 3, 4]);
   });
 
   it('is entirely subject: math', () => {
-    expect([...new Set(units.map(([, u]) => u.subject))]).toEqual(['math']);
+    expect([...new Set(courseUnits.map(([, u]) => u.subject))]).toEqual(['math']);
   });
 
   it('gives every unit real objectives', () => {
-    units.forEach(([file, u]) => {
+    courseUnits.forEach(([file, u]) => {
       expect(Array.isArray(u.objectives), `${file} objectives`).toBe(true);
       expect(u.objectives.length, `${file} objectives`).toBeGreaterThanOrEqual(3);
     });
   });
 
   it('exercises every delivery mode across the four units', () => {
-    const has = (field) => units.some(([, u]) => u[field] !== undefined);
+    const has = (field) => courseUnits.some(([, u]) => u[field] !== undefined);
     expect({ media: has('media'), document: has('document'), bank: has('bank'), review: has('review') })
       .toEqual({ media: true, document: true, bank: true, review: true });
   });
