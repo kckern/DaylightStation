@@ -1,0 +1,26 @@
+# obd-relay — 16MB layout tuned for trip buffering.
+#
+# Arduino's stock default_16MB.csv gives each OTA slot 6.25MB, which is ~6x more
+# than this firmware needs (measured: ~1.0MB) and left the board in a boot loop
+# on this unit (2026-07-30: rst:0x3 SW_RESET repeating, no app output, with the
+# Freematics layer compiled OUT — so the layout, not the library).
+#
+# app0/app1 get 2MB each: generous 2x headroom over the measured image. The
+# ~12MB remainder becomes the LittleFS trip buffer, which is the partition that
+# actually needs it — trips accumulate whenever the car is away from home WiFi
+# and are only freed on a backend trip-ack.
+#
+# NOTE: no trailing comments on data rows. The 6th CSV column is the flags
+# field, so a "# 2MB" note there fails the build with "unknown flag".
+#
+# NOTE: the data partition MUST be named "spiffs", not "littlefs". Arduino's
+# LittleFS.begin() defaults to partition LABEL "spiffs"; naming it "littlefs"
+# builds and flashes fine but then fails to mount at runtime with a stream of
+# "File system is not mounted" (observed on this unit 2026-07-30).
+#
+# Name,   Type, SubType, Offset,   Size
+nvs,      data, nvs,     0x9000,   0x5000
+otadata,  data, ota,     0xe000,   0x2000
+app0,     app,  ota_0,   0x10000,  0x200000
+app1,     app,  ota_1,   0x210000, 0x200000
+spiffs,   data, spiffs,  0x410000, 0xBF0000

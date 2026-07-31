@@ -22,6 +22,7 @@
 
 #include <Arduino.h>
 #include <WiFi.h>
+#include <WebServer.h>
 #include <WebSocketsClient.h>
 #include <ArduinoJson.h>
 #include <LittleFS.h>
@@ -51,7 +52,56 @@ struct Sample {
 
 // ---- state ----------------------------------------------------------------
 static WebSocketsClient webSocket;
+static WebServer http(80);
 static bool wsConnected = false;
+static uint32_t g_wsDownSinceMs = 0;   // when the live link actually dropped
+static uint32_t g_wsRetries = 0;       // failed reconnects since that drop
+static uint32_t g_wsDropCount = 0;     // real drops since boot (not retries)
+static uint32_t g_bootMs = 0;
+
+// Health of the parts that can fail silently. A car that never uploads looks
+// identical from the outside to a car that was never driven, so each of these
+// gets surfaced on /status rather than living only in a serial log nobody reads.
+static bool g_fsMounted = false;
+static uint32_t g_tripsUploaded = 0;
+static uint32_t g_tripsAcked = 0;
+#ifdef USE_FREEMATICS
+static bool g_sysReady = false;        // co-processor link up (sys.begin)
+static bool g_obdReady = false;        // ECU link up (obd.init) — needs ignition
+static int  g_devType = 0;             // reported by the co-processor
+#endif
+
+// ---- recent-log ring (pattern shared with kitchen-relay/omr-relay) --------
+// Consecutive duplicates coalesce into a repeat counter instead of consuming a
+// slot each time — otherwise one chatty retry loop evicts every other line.
+#define RECENT_LOG_MAX 48
+struct RecentLog { uint32_t ms; uint16_t repeat; char text[128]; };
+static RecentLog g_recentLogs[RECENT_LOG_MAX];
+static uint8_t g_recentLogNext = 0;
+static uint8_t g_recentLogCount = 0;
+static void relayLogLine(const char* text) {
+  if (g_recentLogCount) {
+    uint8_t newest = (uint8_t)((g_recentLogNext + RECENT_LOG_MAX - 1) % RECENT_LOG_MAX);
+    if (strncmp(g_recentLogs[newest].text, text, sizeof(g_recentLogs[0].text)) == 0) {
+      if (g_recentLogs[newest].repeat < 0xFFFF) g_recentLogs[newest].repeat++;
+      g_recentLogs[newest].ms = millis();   // age tracks the LATEST occurrence
+      Serial.println(text);
+      return;
+    }
+  }
+  strncpy(g_recentLogs[g_recentLogNext].text, text, sizeof(g_recentLogs[0].text)-1);
+  g_recentLogs[g_recentLogNext].text[sizeof(g_recentLogs[0].text)-1] = 0;
+  g_recentLogs[g_recentLogNext].ms = millis();
+  g_recentLogs[g_recentLogNext].repeat = 1;
+  g_recentLogNext = (g_recentLogNext + 1) % RECENT_LOG_MAX;
+  if (g_recentLogCount < RECENT_LOG_MAX) g_recentLogCount++;
+  Serial.println(text);
+}
+static void relayLogf(const char* fmt, ...) {
+  char text[128]; va_list ap; va_start(ap, fmt); vsnprintf(text, sizeof(text), fmt, ap); va_end(ap);
+  relayLogLine(text);
+}
+
 static bool timeSynced = false;      // NTP succeeded this power session
 static File tripFile;
 static String tripId;
@@ -104,6 +154,7 @@ static bool readSample(Sample& s) {
 // File format: line 1 = header JSON; then one CSV line per sample;
 // footer "E,<ms>" on graceful close. Unfooted files are finalized on boot.
 static void tripOpen() {
+  if (!g_fsMounted) { relayLogLine("[trip] no filesystem — not buffering"); return; }
   tripId = String((uint32_t)esp_random(), HEX) + "-" + String(millis(), HEX);
   tripStartMs = millis();
   sampleCount = 0;
@@ -181,7 +232,10 @@ static void sendSnapshot() {
 // One trip at a time; chunked by TRIP_CHUNK_SAMPLES; file deleted on trip-ack.
 // The CURRENT (still-open) trip is never uploaded — only completed buffers.
 static void uploadNextTrip() {
-  if (!wsConnected || uploadingPath.length()) return;
+  // Without the FS guard this runs every loop iteration on an unmounted volume
+  // and buries the serial log under "File system is not mounted" (~16/second),
+  // hiding every other line — observed on this unit before the guard existed.
+  if (!g_fsMounted || !wsConnected || uploadingPath.length()) return;
   File dir = LittleFS.open(TRIP_DIR);
   if (!dir) return;
   String path;
@@ -236,7 +290,8 @@ static void uploadNextTrip() {
   meta["upload_boot_ms"] = (uint32_t)millis();   // lets backend rebase boot-ms → wall time
   sendJson(doc);
   uploadingPath = path; uploadingTripId = tid;   // await trip-ack before delete
-  Serial.printf("[upload] %s (%lu samples, %d chunks) — awaiting ack\n", tid.c_str(), (unsigned long)total, seq + 1);
+  g_tripsUploaded++;
+  relayLogf("[upload] %s (%lu samples, %d chunks) — awaiting ack", tid.c_str(), (unsigned long)total, seq + 1);
 }
 
 // ---- WS events ---------------------------------------------------------------
@@ -244,7 +299,9 @@ static void wsEvent(WStype_t type, uint8_t* payload, size_t length) {
   switch (type) {
     case WStype_CONNECTED: {
       wsConnected = true;
-      Serial.println("[ws] connected");
+      g_wsDownSinceMs = 0;
+      g_wsRetries = 0;
+      relayLogLine("[ws] connected");
       JsonDocument doc;
       doc["type"] = "hello"; doc["fw"] = FW_VERSION;
       doc["rssi"] = WiFi.RSSI(); doc["ts"] = epochMs();
@@ -253,9 +310,18 @@ static void wsEvent(WStype_t type, uint8_t* payload, size_t length) {
       break;
     }
     case WStype_DISCONNECTED:
+      // A failed reconnect attempt also raises DISCONNECTED. Counting those as
+      // drops would make a car parked away from home look like a flapping link.
+      if (wsConnected) {
+        relayLogLine("[ws] disconnected");
+        g_wsDownSinceMs = millis();
+        g_wsRetries = 0;
+        g_wsDropCount++;
+      } else {
+        g_wsRetries++;
+      }
       wsConnected = false;
       uploadingPath = ""; uploadingTripId = "";  // retry the trip next connect
-      Serial.println("[ws] disconnected");
       break;
     case WStype_TEXT: {
       JsonDocument doc;
@@ -263,7 +329,8 @@ static void wsEvent(WStype_t type, uint8_t* payload, size_t length) {
       if (strcmp(doc["type"] | "", "trip-ack") == 0 &&
           uploadingTripId == (doc["trip_id"] | "")) {
         LittleFS.remove(uploadingPath);
-        Serial.printf("[upload] acked %s — deleted\n", uploadingTripId.c_str());
+        g_tripsAcked++;
+        relayLogf("[upload] acked %s — deleted", uploadingTripId.c_str());
         uploadingPath = ""; uploadingTripId = "";
       }
       break;
@@ -272,36 +339,287 @@ static void wsEvent(WStype_t type, uint8_t* payload, size_t length) {
   }
 }
 
+// ---- HTTP pull plane -----------------------------------------------------
+// The push path (uploadNextTrip) only fires when the car is home AND the bus is
+// up AND the backend acks. That leaves every other moment with no way to see
+// what the device is holding. These two endpoints are the pull counterpart:
+//   GET /trips        → manifest of buffered payloads
+//   GET /trip?id=<id> → one payload, in the SAME shape uploadNextTrip sends,
+//                       so a pulled trip and a pushed trip are comparable.
+// Pulling never deletes: only a backend trip-ack frees a buffer, so a curl can
+// never cost you a trip.
+
+// Trip ids are hex+dash by construction (esp_random + millis). Anything else is
+// refused rather than sanitised — this string becomes a filesystem path.
+static bool safeTripId(const String& id) {
+  if (!id.length() || id.length() > 40) return false;
+  for (size_t i = 0; i < id.length(); i++) {
+    char c = id[i];
+    if (!((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || c == '-')) return false;
+  }
+  return true;
+}
+
+// Samples per line; counts newlines without holding the file in RAM.
+static uint32_t countSamples(File& f) {
+  uint32_t lines = 0; uint8_t buf[256]; int n;
+  while ((n = f.read(buf, sizeof(buf))) > 0)
+    for (int i = 0; i < n; i++) if (buf[i] == '\n') lines++;
+  return lines > 1 ? lines - 1 : 0;      // minus the header line
+}
+
+static void handleTrips() {
+  JsonDocument doc;
+  doc["device"] = "obd-relay";
+  doc["vehicle"] = VEHICLE_ID;
+  doc["fs_mounted"] = g_fsMounted;
+  JsonArray arr = doc["trips"].to<JsonArray>();
+
+  if (g_fsMounted) {
+    File dir = LittleFS.open(TRIP_DIR);
+    if (dir && dir.isDirectory()) {
+      for (File f = dir.openNextFile(); f; f = dir.openNextFile()) {
+        String name = f.name();
+        if (!name.endsWith(".log")) { f.close(); continue; }
+        JsonObject t = arr.add<JsonObject>();
+        t["trip_id"] = name.substring(0, name.length() - 4);
+        t["bytes"] = (uint32_t)f.size();
+
+        JsonDocument header;
+        String first = f.readStringUntil('\n');
+        if (!deserializeJson(header, first)) {
+          t["started_epoch_ms"] = header["started_epoch_ms"] | (uint64_t)0;
+          t["started_boot_ms"] = header["started_boot_ms"] | (uint32_t)0;
+          t["time_approx"] = (uint64_t)(header["started_epoch_ms"] | (uint64_t)0) == 0;
+          t["schema"] = header["schema"] | "";
+        }
+        t["samples"] = countSamples(f);
+        // A trip still being written is the live one — it is never uploaded and
+        // its tail may be mid-line, so say so instead of implying it's complete.
+        bool live = tripFile && name == (tripId + ".log");
+        t["live"] = live;
+        t["uploading"] = (uploadingTripId.length() && name == (uploadingTripId + ".log"));
+        t["url"] = String("/trip?id=") + name.substring(0, name.length() - 4);
+        f.close();
+      }
+    }
+  }
+  String out; serializeJsonPretty(doc, out);
+  http.send(200, "application/json", out);
+}
+
+// Streamed so a long trip can't exhaust the heap the way a buffered
+// JsonDocument would (1 Hz for an hour is thousands of rows).
+static void handleTrip() {
+  String id = http.arg("id");
+  if (!safeTripId(id)) { http.send(400, "application/json", "{\"error\":\"bad or missing id\"}"); return; }
+  String path = String(TRIP_DIR) + "/" + id + ".log";
+  if (!g_fsMounted || !LittleFS.exists(path)) {
+    http.send(404, "application/json", "{\"error\":\"no such trip\"}"); return;
+  }
+  File f = LittleFS.open(path, "r");
+  if (!f) { http.send(500, "application/json", "{\"error\":\"open failed\"}"); return; }
+
+  JsonDocument header;
+  bool haveHeader = !deserializeJson(header, f.readStringUntil('\n'));
+
+  http.setContentLength(CONTENT_LENGTH_UNKNOWN);
+  http.send(200, "application/json", "");
+
+  String head = String("{\"source\":\"obd-relay\",\"type\":\"trip\",\"id\":\"") + VEHICLE_ID +
+                "\",\"trip_id\":\"" + id + "\",\"seq\":0,\"final\":true,\"samples\":[";
+  http.sendContent(head);
+
+  uint32_t total = 0, endedT = 0;
+  String chunk; chunk.reserve(1024);
+  while (f.available()) {
+    String line = f.readStringUntil('\n');
+    line.trim();
+    if (!line.length()) continue;
+    if (line.startsWith("E,")) break;
+    Sample s;
+    if (sscanf(line.c_str(), "%lu,%f,%f,%hd,%hd,%hd,%hhd,%f",
+               (unsigned long*)&s.t, &s.lat, &s.lon, &s.speedKph, &s.rpm,
+               &s.coolantC, &s.fuelPct, &s.battV) != 8) continue;
+    if (total) chunk += ',';
+    // Every integer is cast explicitly: fuelPct is int8_t, and String += on a
+    // signed char appends that BYTE as a character rather than its digits.
+    chunk += '['; chunk += (unsigned long)s.t; chunk += ','; chunk += String(s.lat, 6); chunk += ',';
+    chunk += String(s.lon, 6); chunk += ','; chunk += (int)s.speedKph; chunk += ',';
+    chunk += (int)s.rpm; chunk += ','; chunk += (int)s.coolantC; chunk += ',';
+    chunk += (int)s.fuelPct; chunk += ','; chunk += String(s.battV, 2); chunk += ']';
+    total++; endedT = s.t;
+    if (chunk.length() > 900) { http.sendContent(chunk); chunk = ""; }
+  }
+  if (chunk.length()) http.sendContent(chunk);
+  f.close();
+
+  JsonDocument meta;
+  uint64_t startedEpoch = haveHeader ? (header["started_epoch_ms"] | (uint64_t)0) : 0;
+  meta["started_epoch_ms"] = startedEpoch;
+  meta["time_approx"] = (startedEpoch == 0);
+  meta["samples"] = total;
+  meta["ended_boot_ms"] = endedT;
+  meta["schema"] = haveHeader ? (header["schema"] | "") : "";
+  meta["pulled_epoch_ms"] = epochMs();
+  meta["pulled_boot_ms"] = (uint32_t)millis();
+  String tail; serializeJson(meta, tail);
+  http.sendContent(String("],\"meta\":") + tail + "}");
+  http.sendContent("");            // terminate the chunked response
+}
+
+// ---- HTTP status plane ---------------------------------------------------
+// Same shape as the sibling relays: GET / (or /status) returns the whole health
+// picture as JSON so the device can be interrogated from any machine on the LAN
+// without a serial cable — which, in a car parked in the garage, is the only
+// practical way to ask it anything.
+static void handleStatus() {
+  JsonDocument doc;
+  doc["device"] = "obd-relay";
+  doc["vehicle"] = VEHICLE_ID;
+  doc["firmware"] = FW_VERSION;
+  doc["uptime_s"] = (uint32_t)(millis() / 1000);
+  doc["time_synced"] = timeSynced;
+  doc["epoch_ms"] = epochMs();
+
+  JsonObject wifi = doc["wifi"].to<JsonObject>();
+  wifi["connected"] = WiFi.status() == WL_CONNECTED;
+  wifi["ip"] = WiFi.localIP().toString();
+  wifi["rssi"] = WiFi.status() == WL_CONNECTED ? WiFi.RSSI() : 0;
+  wifi["ssid"] = WIFI_SSID;
+
+  JsonObject ws = doc["websocket"].to<JsonObject>();
+  ws["connected"] = wsConnected;
+  ws["host"] = WS_HOST; ws["port"] = WS_PORT; ws["path"] = WS_PATH;
+  ws["drops"] = g_wsDropCount;
+  if (!wsConnected && g_wsDownSinceMs) {
+    ws["down_s"] = (uint32_t)((millis() - g_wsDownSinceMs) / 1000);
+    ws["retries"] = g_wsRetries;
+  }
+
+  JsonObject vehicle = doc["vehicle_link"].to<JsonObject>();
+#ifdef USE_FREEMATICS
+  vehicle["build"] = "freematics";
+  vehicle["coproc_ready"] = g_sysReady;   // sys.begin() — the boot-critical one
+  vehicle["dev_type"] = g_devType;
+  vehicle["obd_ready"] = g_obdReady;      // false until ignition is fully on
+#else
+  vehicle["build"] = "bench-sim";
+#endif
+
+  // Trip buffer. `pending` is what would be lost if the flash died right now.
+  JsonObject trip = doc["trip"].to<JsonObject>();
+  trip["fs_mounted"] = g_fsMounted;
+  trip["current_id"] = tripId;
+  trip["samples"] = sampleCount;
+  trip["uploaded"] = g_tripsUploaded;
+  trip["acked"] = g_tripsAcked;
+  trip["uploading"] = uploadingTripId;
+  uint32_t pending = 0;
+  if (g_fsMounted) {
+    File dir = LittleFS.open(TRIP_DIR);
+    if (dir && dir.isDirectory()) { for (File f = dir.openNextFile(); f; f = dir.openNextFile()) pending++; }
+  }
+  trip["pending_files"] = pending;
+
+  if (haveSample) {
+    JsonObject s = doc["last_sample"].to<JsonObject>();
+    s["age_s"] = (uint32_t)((millis() - lastSample.t) / 1000);
+    s["speed_kph"] = lastSample.speedKph; s["rpm"] = lastSample.rpm;
+    s["coolant_c"] = lastSample.coolantC; s["fuel_pct"] = lastSample.fuelPct;
+    s["batt_v"] = lastSample.battV;
+    s["lat"] = lastSample.lat; s["lon"] = lastSample.lon;
+  }
+
+  JsonArray logs = doc["recent_logs"].to<JsonArray>();
+  for (uint8_t i = 0; i < g_recentLogCount; i++) {
+    uint8_t idx = (uint8_t)((g_recentLogNext + RECENT_LOG_MAX - g_recentLogCount + i) % RECENT_LOG_MAX);
+    JsonObject e = logs.add<JsonObject>();
+    e["age_s"] = (uint32_t)((millis() - g_recentLogs[idx].ms) / 1000);
+    e["text"] = g_recentLogs[idx].text;
+    if (g_recentLogs[idx].repeat > 1) e["repeat"] = g_recentLogs[idx].repeat;
+  }
+
+  String out; serializeJsonPretty(doc, out);
+  http.send(200, "application/json", out);
+}
+
 // ---- setup / loop --------------------------------------------------------------
 void setup() {
   Serial.begin(115200);
   delay(200);
-  Serial.printf("\n[obd-relay] boot fw=%s vehicle=%s\n", FW_VERSION, VEHICLE_ID);
+  g_bootMs = millis();
+  relayLogf("[obd-relay] boot fw=%s vehicle=%s", FW_VERSION, VEHICLE_ID);
 
-  if (!LittleFS.begin(true)) Serial.println("[fs] mount FAILED");
-  finalizeUnfootedTrips();
+  g_fsMounted = LittleFS.begin(true);          // true = format on first/corrupt mount
+  if (!g_fsMounted) {
+    // A virgin or corrupted partition fails the first mount; format explicitly
+    // and retry once rather than running trip-blind for the whole power session.
+    relayLogLine("[fs] mount failed — formatting");
+    if (LittleFS.format()) g_fsMounted = LittleFS.begin(false);
+  }
+  relayLogf("[fs] %s", g_fsMounted ? "mounted" : "UNAVAILABLE (trips cannot buffer)");
+  if (g_fsMounted) finalizeUnfootedTrips();
 
 #ifdef USE_FREEMATICS
-  // TODO(bring-up step 0/1): sys.begin(), obd.begin(), obd.init() — link to the
-  // ECU, then sys.gpsBegin() for GNSS. Retry loop: the ECU may need ignition
-  // fully on (not just accessory) before it answers.
+  // sys.begin() brings up the co-processor link. This is NOT optional: without
+  // it the co-processor's watchdog resets the ESP32 in a tight loop, which is
+  // exactly what the board did before this call existed (measured 2026-07-30 —
+  // rst:0x3 SW_RESET repeating, no application output). Vendor order, from
+  // firmware_v5/telelogger.ino: sys.begin() then obd.begin(sys.link).
+  g_sysReady = sys.begin();
+  if (g_sysReady) {
+    g_devType = sys.devType;
+    relayLogf("[sys] co-processor ready devType=%d", g_devType);
+    obd.begin(sys.link);
+    // obd.init() links to the ECU and is expected to FAIL on the bench and on
+    // accessory-only power — the loop retries it, so a failure here is normal
+    // and must not stop boot. Which PIDs this car answers is bring-up step 1.
+    g_obdReady = obd.init();
+    relayLogf("[obd] ECU link %s", g_obdReady ? "up" : "not yet (needs ignition)");
+  } else {
+    relayLogLine("[sys] co-processor begin FAILED");
+  }
 #endif
 
   // Opportunistic WiFi — away from home this simply never connects; sampling
   // and trip buffering don't depend on it.
   WiFi.mode(WIFI_STA);
   WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+  uint32_t t0 = millis();
+  while (WiFi.status() != WL_CONNECTED && millis() - t0 < 15000) delay(300);
+  relayLogf("[wifi] %s", WiFi.status() == WL_CONNECTED
+            ? WiFi.localIP().toString().c_str() : "not associated (will retry)");
 
   webSocket.begin(WS_HOST, WS_PORT, WS_PATH);
   webSocket.onEvent(wsEvent);
   webSocket.setReconnectInterval(5000);
   webSocket.enableHeartbeat(15000, 3000, 2);
 
+  http.on("/", handleStatus);
+  http.on("/status", handleStatus);
+  http.on("/trips", handleTrips);      // manifest of buffered payloads
+  http.on("/trip", handleTrip);        // one payload, push-identical shape
+  http.begin();
+  relayLogLine("[http] status server on :80");
+
   tripOpen();
 }
 
 void loop() {
   webSocket.loop();
+  http.handleClient();
+
+#ifdef USE_FREEMATICS
+  // Retry the ECU link until ignition is fully on. Cheap, and without it the
+  // device would sit inert for a whole drive if it booted on accessory power.
+  static uint32_t lastObdTry = 0;
+  if (g_sysReady && !g_obdReady && millis() - lastObdTry > 5000) {
+    lastObdTry = millis();
+    g_obdReady = obd.init();
+    if (g_obdReady) relayLogLine("[obd] ECU link up");
+  }
+#endif
 
   // WiFi self-heal + NTP once associated
   static uint32_t lastWifiTry = 0;

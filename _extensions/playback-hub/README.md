@@ -156,7 +156,7 @@ The `queue` URL must return JSON in this format:
 ```json
 {
   "items": [
-    { "contentId": "plex:595102", "title": "learner-two Lullabye", "mediaUrl": "/api/v1/proxy/plex/stream/595102" }
+    { "contentId": "plex:595102", "title": "Felix Lullabye", "mediaUrl": "/api/v1/proxy/plex/stream/595102" }
   ]
 }
 ```

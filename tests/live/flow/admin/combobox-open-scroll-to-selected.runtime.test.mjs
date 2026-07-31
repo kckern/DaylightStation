@@ -1,7 +1,7 @@
 import { test, expect } from '@playwright/test';
 import { FRONTEND_URL } from '#fixtures/runtime/urls.mjs';
 
-// Row 6 of the FHE menu ("learner-four") is bound to a Plex episode deep in a season
+// Row 6 of the FHE menu ("Alan") is bound to a Plex episode deep in a season
 // (Elijah the Prophet — S8 E33). On open the browse window is centered on that
 // episode (E23..E43), so the selected row sits ~10 rows down. It must be
 // scrolled into view on open, not left at the top of the window.

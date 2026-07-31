@@ -56,7 +56,7 @@ fi
 PAT_FILE="$REPO_ROOT/.claude/secret-patterns.local.txt"
 if [ -f "$PAT_FILE" ]; then
   # Known-safe phrases are excluded before matching (e.g. media titles).
-  FILTERED=$(printf '%s' "$SCAN" | grep -v 'learner-two Lullabye')
+  FILTERED=$(printf '%s' "$SCAN" | grep -v 'Felix Lullabye')
   while IFS= read -r pat; do
     pat="${pat%%$'\r'}"
     [ -z "$pat" ] && continue
