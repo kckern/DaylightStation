@@ -1,11 +1,11 @@
 #!/usr/bin/env node
 
 /**
- * Wikipedia CLI - query the self-hosted Wikipedia service (kiwix-backed)
+ * Wikipedia CLI - query the self-hosted Wikipedia service via the app API
  *
- * Talks directly to the wikipedia container (no app server needed).
- * Base URL resolves from services.yml (services.wikipedia.<env>), with
- * WIKIPEDIA_URL env var as an override.
+ * Talks to DaylightStation's /api/v1/wikipedia proxy — the server resolves
+ * where the wikipedia container actually lives (services.yml), so no host,
+ * port, or data-path knowledge is needed here.
  *
  * Usage:
  *   node cli/wikipedia.cli.mjs <command> [options]
@@ -20,6 +20,7 @@
  *   --json                  Output as JSON
  *   --limit <n>             Max search results (default: 10)
  *   --chars <n>             Truncate article text to n characters (default: 4000; 0 = full)
+ *   --base-url <url>        App base URL (default: $DAYLIGHT_BASE_URL or http://localhost:3111)
  *
  * Examples:
  *   node cli/wikipedia.cli.mjs search "Isaac Newton"
@@ -29,55 +30,20 @@
  * @module cli/wikipedia
  */
 
-import dotenv from 'dotenv';
-import path from 'path';
-import { existsSync } from 'fs';
-import { fileURLToPath } from 'url';
-import { initConfigService, configService } from '#system/config/index.mjs';
-import { WikipediaAdapter } from '#adapters/reference/WikipediaAdapter.mjs';
-
-// ============================================================================
-// Bootstrap
-// ============================================================================
-
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const projectRoot = path.join(__dirname, '..');
-dotenv.config({ path: path.join(projectRoot, '.env') });
-
-async function resolveBaseUrl() {
-  if (process.env.WIKIPEDIA_URL) return process.env.WIKIPEDIA_URL;
-
-  const isDocker = existsSync('/.dockerenv');
-  const baseDir = isDocker ? '/usr/src/app' : process.env.DAYLIGHT_BASE_PATH;
-  if (!baseDir) {
-    // No .env in reach (e.g. running from a git worktree) — the service is
-    // LAN-local and unauthenticated, so fall back rather than fail.
-    console.error('Note: DAYLIGHT_BASE_PATH not set; falling back to http://localhost:8098 (set WIKIPEDIA_URL to override)');
-    return 'http://localhost:8098';
-  }
-  await initConfigService(path.join(baseDir, 'data'));
-  const url = configService.resolveServiceUrl('wikipedia');
-  if (!url) {
-    console.error('Error: Wikipedia service URL not configured.');
-    console.error('Expected: services.wikipedia.<env> in data/system/config/services.yml');
-    process.exit(1);
-  }
-  return url;
-}
-
 // ============================================================================
 // Parse CLI args
 // ============================================================================
 
 const args = process.argv.slice(2);
-const flags = { json: args.includes('--json'), limit: 10, chars: 4000 };
+const flags = { json: args.includes('--json'), limit: 10, chars: 4000, baseUrl: null };
 
 for (let i = 0; i < args.length; i++) {
   if (args[i] === '--limit' && args[i + 1]) flags.limit = parseInt(args[++i], 10);
   if (args[i] === '--chars' && args[i + 1]) flags.chars = parseInt(args[++i], 10);
+  if (args[i] === '--base-url' && args[i + 1]) flags.baseUrl = args[++i];
 }
 
-const flagsWithValues = new Set(['--limit', '--chars']);
+const flagsWithValues = new Set(['--limit', '--chars', '--base-url']);
 const positional = [];
 for (let i = 0; i < args.length; i++) {
   if (args[i].startsWith('--')) {
@@ -89,6 +55,9 @@ for (let i = 0; i < args.length; i++) {
 
 const command = positional[0];
 const commandArgs = positional.slice(1);
+
+const BASE = (flags.baseUrl || process.env.DAYLIGHT_BASE_URL || 'http://localhost:3111').replace(/\/$/, '');
+const API = `${BASE}/api/v1/wikipedia`;
 
 function usage() {
   console.log(`Usage: node cli/wikipedia.cli.mjs <command> [options]
@@ -102,7 +71,25 @@ Commands:
 Options:
   --json             Output as JSON
   --limit <n>        Max search results (default: 10)
-  --chars <n>        Truncate article text (default: 4000; 0 = full)`);
+  --chars <n>        Truncate article text (default: 4000; 0 = full)
+  --base-url <url>   App base URL (default: $DAYLIGHT_BASE_URL or http://localhost:3111)`);
+}
+
+// ============================================================================
+// API helper
+// ============================================================================
+
+async function api(path, { allow404 = false } = {}) {
+  let res;
+  try {
+    res = await fetch(`${API}${path}`);
+  } catch (err) {
+    throw new Error(`app not reachable at ${BASE} (${err.cause?.code || err.message}) — override with --base-url`);
+  }
+  const body = await res.json().catch(() => null);
+  if (allow404 && res.status === 404) return null;
+  if (!res.ok) throw new Error(body?.error || `HTTP ${res.status}`);
+  return body;
 }
 
 function printArticle(article) {
@@ -127,17 +114,12 @@ async function main() {
     process.exit(command ? 0 : 1);
   }
 
-  const baseUrl = await resolveBaseUrl();
-  const adapter = new WikipediaAdapter({
-    baseUrl,
-    logger: { debug: () => {}, info: () => {}, warn: console.warn, error: console.error },
-  });
-
   switch (command) {
     case 'search': {
       const query = commandArgs.join(' ');
       if (!query) { console.error('Error: search requires a query'); process.exit(1); }
-      const results = await adapter.search(query, { limit: flags.limit });
+      const params = new URLSearchParams({ q: query, limit: String(flags.limit) });
+      const results = await api(`/search?${params}`);
       if (flags.json) {
         console.log(JSON.stringify(results, null, 2));
       } else if (!results.length) {
@@ -154,20 +136,20 @@ async function main() {
     case 'article': {
       const title = commandArgs.join(' ');
       if (!title) { console.error('Error: article requires a title'); process.exit(1); }
-      const article = await adapter.getArticle(title);
+      const article = await api(`/article/${encodeURIComponent(title)}`, { allow404: true });
       if (!article) { console.error(`Not found: ${title}`); process.exit(1); }
       printArticle(article);
       break;
     }
 
     case 'random': {
-      printArticle(await adapter.random());
+      printArticle(await api('/random'));
       break;
     }
 
     case 'health': {
-      const health = await adapter.health();
-      console.log(flags.json ? JSON.stringify(health) : `${health.status} (book: ${health.book_id}) @ ${baseUrl}`);
+      const health = await api('/health');
+      console.log(flags.json ? JSON.stringify(health) : `${health.status} (book: ${health.book_id}) via ${BASE}`);
       break;
     }
 
