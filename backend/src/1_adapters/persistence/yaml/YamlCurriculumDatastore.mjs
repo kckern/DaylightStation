@@ -179,6 +179,45 @@ export class YamlCurriculumDatastore extends ICurriculumCatalog {
     return null;
   }
 
+  /**
+   * Every `work.yml` on the shelves. A work id is its POSITION —
+   * `<subject>/<work>` — so unlike the three kinds there is no filename to
+   * derive an id from and no possibility of two works colliding.
+   */
+  async listWorks() {
+    const errors = [];
+    const items = [];
+    for (const subject of SUBJECT_IDS) {
+      for (const work of this.#works(subject)) {
+        const file = path.join(this.#schoolDir(), subject, work, 'work.yml');
+        let text;
+        try {
+          text = await fs.promises.readFile(file, 'utf8'); // eslint-disable-line no-await-in-loop
+        } catch (err) {
+          // A work with no config is not an error — most of the imported Khan
+          // shelves have none yet, and reporting each would drown the real ones.
+          if (err.code !== 'ENOENT') errors.push(`${subject}/${work}: unreadable work.yml (${err.message})`);
+          continue;
+        }
+        try {
+          const raw = yaml.load(text);
+          if (raw === null || raw === undefined) errors.push(`${subject}/${work}: work.yml is empty`);
+          else items.push({ id: `${subject}/${work}`, subject, work, raw });
+        } catch (err) {
+          errors.push(`${subject}/${work}: ${err.message}`);
+        }
+      }
+    }
+    return { items, errors };
+  }
+
+  async getWork(id) {
+    if (typeof id !== 'string') return null;
+    const [subject, work, ...rest] = id.split('/');
+    if (rest.length || !SUBJECT_IDS.includes(subject) || !work || !CURRICULUM_ID_RE.test(work)) return null;
+    return loadYamlSafe(path.join(this.#schoolDir(), subject, work, 'work')) ?? null;
+  }
+
   /** @param {{ batch?: number }} [options] */
   listUnits(options) { return this.#list(KINDS.units, options); }
 

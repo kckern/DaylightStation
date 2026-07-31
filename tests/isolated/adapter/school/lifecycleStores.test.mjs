@@ -19,7 +19,7 @@ let review;
 
 beforeEach(() => {
   tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'school-lifecycle-'));
-  const configService = { getDataDir: () => tmp };
+  const configService = { getDataDir: () => tmp, getHouseholdPath: (rel) => `${tmp}/${rel}` };
   assignments = new YamlAssignmentStore({ configService });
   forms = new YamlFormMapStore({ configService });
   review = new YamlReviewQueue({ configService });

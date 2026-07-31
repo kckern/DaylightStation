@@ -7,10 +7,15 @@ import { ICurriculumCatalog } from '#apps/school/ports/ICurriculumCatalog.mjs';
 
 let tmp, ds;
 
-const curriculumDir = (...rest) => path.join(tmp, 'content', 'school', 'curriculum', ...rest);
+// The catalog is filed <subject>/<work>/<kind>/, so a fixture needs a real shelf
+// and a work folder beneath it. `math/testwork` stands in for both throughout.
+const SUBJECT = 'math';
+const WORK = 'testwork';
+const workDir = (...rest) => path.join(tmp, 'content', 'school', SUBJECT, WORK, ...rest);
+const curriculumDir = workDir;
 
 function write(kind, file, text) {
-  const dir = curriculumDir(kind);
+  const dir = workDir(kind);
   fs.mkdirSync(dir, { recursive: true });
   fs.writeFileSync(path.join(dir, file), text);
 }
@@ -29,10 +34,10 @@ describe('construction', () => {
   });
   it('the port itself is abstract — every method throws until implemented', async () => {
     const bare = new ICurriculumCatalog();
-    for (const m of ['listUnits', 'listDocuments', 'listManifests']) {
+    for (const m of ['listUnits', 'listDocuments', 'listManifests', 'listWorks']) {
       await expect(bare[m]()).rejects.toThrow(/must be implemented/);
     }
-    for (const m of ['getUnit', 'getDocument', 'getManifest']) {
+    for (const m of ['getUnit', 'getDocument', 'getManifest', 'getWork']) {
       await expect(bare[m]('x')).rejects.toThrow(/must be implemented/);
     }
   });
@@ -43,14 +48,15 @@ describe('listing', () => {
     await expect(ds.listUnits()).resolves.toEqual({ items: [], errors: [] });
     await expect(ds.listDocuments()).resolves.toEqual({ items: [], errors: [] });
     await expect(ds.listManifests()).resolves.toEqual({ items: [], errors: [] });
+    await expect(ds.listWorks()).resolves.toEqual({ items: [], errors: [] });
   });
 
   it('a directory that is not a directory is reported, not read as empty', async () => {
-    fs.mkdirSync(curriculumDir(), { recursive: true });
-    fs.writeFileSync(curriculumDir('units'), 'oops, a file\n');
+    fs.mkdirSync(workDir(), { recursive: true });
+    fs.writeFileSync(workDir('units'), 'oops, a file\n');
     const { items, errors } = await ds.listUnits();
     expect(items).toEqual([]);
-    expect(errors).toEqual([expect.stringMatching(/^units: unreadable directory/)]);
+    expect(errors).toEqual([expect.stringMatching(/^math\/testwork\/units: unreadable directory/)]);
   });
 
   it('returns raw parsed YAML keyed by basename, sorted, with no validation applied', async () => {
@@ -89,8 +95,8 @@ describe('listing', () => {
   });
 
   it('ignores subdirectories — curriculum ids are flat basenames', async () => {
-    fs.mkdirSync(curriculumDir('units', 'nested'), { recursive: true });
-    fs.writeFileSync(path.join(curriculumDir('units', 'nested'), 'deep.yml'), 'unitId: deep\n');
+    fs.mkdirSync(workDir('units', 'nested'), { recursive: true });
+    fs.writeFileSync(path.join(workDir('units', 'nested'), 'deep.yml'), 'unitId: deep\n');
     write('units', 'flat.yml', 'unitId: flat\n');
     expect((await ds.listUnits()).items.map((i) => i.id)).toEqual(['flat']);
   });
@@ -113,7 +119,9 @@ describe('malformed files isolate to themselves', () => {
     write('units', '-leading-dash.yml', 'unitId: x\n');
     const { items, errors } = await ds.listUnits();
     expect(items.map((i) => i.id)).toEqual(['ok']);
-    expect(errors).toEqual([expect.stringMatching(/^units\/-leading-dash: .*unsafe/i)]);
+    // Path-qualified, unlike the parse error above: an id this malformed cannot
+    // be found BY id, so the error names where the file actually sits.
+    expect(errors).toEqual([expect.stringMatching(/^math\/testwork\/units\/-leading-dash: .*unsafe/i)]);
   });
 
   it('an empty file parses to null and is reported rather than yielding a null entry', async () => {
@@ -142,8 +150,8 @@ describe('single reads', () => {
   });
 
   it('a traversal-attempting id cannot climb out of its directory', async () => {
-    fs.mkdirSync(curriculumDir('documents'), { recursive: true });
-    fs.writeFileSync(curriculumDir('secrets.yml'), 'id: secrets\n');
+    fs.mkdirSync(workDir('documents'), { recursive: true });
+    fs.writeFileSync(workDir('secrets.yml'), 'id: secrets\n');
     write('units', 'secrets.yml', 'unitId: unit-secrets\n');
 
     // Same-named sibling one level up, and a cross-kind hop, must both fail.
@@ -158,5 +166,47 @@ describe('single reads', () => {
     await expect(ds.getUnit(null)).resolves.toBe(null);
     await expect(ds.getUnit(['a', 'b'])).resolves.toBe(null);
     await expect(ds.getUnit(undefined)).resolves.toBe(null);
+  });
+});
+
+describe('work configs', () => {
+  const writeWork = (subject, work, text) => {
+    const dir = path.join(tmp, 'content', 'school', subject, work);
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, 'work.yml'), text);
+  };
+
+  it('lists one work per work.yml, keyed by <subject>/<work>', async () => {
+    writeWork('math', 'fractions', 'work: fractions\n');
+    writeWork('history', 'capitals', 'work: capitals\n');
+    const { items, errors } = await ds.listWorks();
+    expect(errors).toEqual([]);
+    expect(items.map((i) => i.id)).toEqual(['math/fractions', 'history/capitals']);
+    // subject and work travel with the entry so a validator can check placement
+    expect(items[0]).toMatchObject({ subject: 'math', work: 'fractions' });
+  });
+
+  it('a work folder with no work.yml is not an error — most have none yet', async () => {
+    write('units', 'u1.yml', 'unitId: u1\n');
+    await expect(ds.listWorks()).resolves.toEqual({ items: [], errors: [] });
+  });
+
+  it('an unparseable or empty work.yml is reported and isolates to itself', async () => {
+    writeWork('math', 'good', 'work: good\n');
+    writeWork('math', 'broken', 'work: broken\n  bad: [\n');
+    writeWork('math', 'blank', '');
+    const { items, errors } = await ds.listWorks();
+    expect(items.map((i) => i.id)).toEqual(['math/good']);
+    expect(errors).toHaveLength(2);
+    expect(errors.join(' ')).toMatch(/math\/blank: work\.yml is empty/);
+  });
+
+  it('reads one work by id, and refuses anything that is not <subject>/<work>', async () => {
+    writeWork('math', 'fractions', 'work: fractions\ntitle: Fractions\n');
+    await expect(ds.getWork('math/fractions')).resolves.toEqual({ work: 'fractions', title: 'Fractions' });
+    for (const bad of ['fractions', 'math', 'math/fractions/extra', 'nope/fractions',
+                       'math/../../etc/passwd', '../../etc/passwd', null, 42]) {
+      await expect(ds.getWork(bad)).resolves.toBe(null);
+    }
   });
 });

@@ -15,7 +15,7 @@ let tmp, ds;
 
 beforeEach(() => {
   tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'school-sessions-'));
-  ds = new YamlWorkSessionDatastore({ configService: { getDataDir: () => tmp } });
+  ds = new YamlWorkSessionDatastore({ configService: { getDataDir: () => tmp, getHouseholdPath: (rel) => `${tmp}/${rel}` } });
 });
 
 const sessionsRoot = () => path.join(tmp, 'apps', 'school', 'sessions');
@@ -300,7 +300,7 @@ describe('listForLearner', () => {
     fs.writeFileSync(indexPath, yaml.dump(raw, { indent: 2, lineWidth: -1, noRefs: true }), 'utf8');
 
     // Clear any cache to force a fresh read
-    ds = new YamlWorkSessionDatastore({ configService: { getDataDir: () => tmp } });
+    ds = new YamlWorkSessionDatastore({ configService: { getDataDir: () => tmp, getHouseholdPath: (rel) => `${tmp}/${rel}` } });
 
     // listForLearner should still report gradedPercent: 85 by recomputing from events
     const facts = await ds.listForLearner('kid1');

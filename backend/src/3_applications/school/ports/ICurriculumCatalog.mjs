@@ -66,6 +66,29 @@ export class ICurriculumCatalog {
   async getManifest(id) { // eslint-disable-line no-unused-vars
     throw new Error('ICurriculumCatalog.getManifest must be implemented');
   }
+
+  /**
+   * Every `work.yml` on the shelves — the per-curriculum config saying how a
+   * work is structured, graded, sourced and printed (`validateWork`).
+   *
+   * Unlike the three above, a work id is a PATH: `<subject>/<work>`. Works are
+   * the one catalog entity whose identity is positional, because a work IS its
+   * folder; entries therefore also carry `subject` and `work` so a validator
+   * can check the config against where it actually lives.
+   *
+   * @returns {Promise<CatalogListing>}
+   */
+  async listWorks() {
+    throw new Error('ICurriculumCatalog.listWorks must be implemented');
+  }
+
+  /**
+   * @param {string} id - `<subject>/<work>`
+   * @returns {Promise<*|null>} raw parsed YAML, or null when absent/unreadable
+   */
+  async getWork(id) { // eslint-disable-line no-unused-vars
+    throw new Error('ICurriculumCatalog.getWork must be implemented');
+  }
 }
 
 export default ICurriculumCatalog;

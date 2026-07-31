@@ -242,6 +242,7 @@ export async function createLifecycleHarness({
 
   const configService = {
     getDataDir: () => dataDir,
+    getHouseholdPath: (rel) => `${dataDir}/household/${rel}`,
     getUserDir: (id) => path.join(dataDir, 'users', String(id)),
     getUserProfile: (id) => roster.find((r) => r.id === id) ?? null,
     getHouseholdAppConfig: (_hid, app) => {

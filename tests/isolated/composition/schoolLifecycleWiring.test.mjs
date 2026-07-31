@@ -32,6 +32,7 @@ const wire = (schoolConfig) => createSchoolLifecycle({
   configService: {
     getHouseholdAppConfig: () => schoolConfig,
     getDataDir: () => dataDir,
+    getHouseholdPath: (rel) => `${dataDir}/household/${rel}`,
     getDeviceConfig: () => null,
   },
   schoolService: { listBanks: () => [], getBank: () => null },

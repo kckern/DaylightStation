@@ -84,6 +84,9 @@ export class FakeCatalog extends ICurriculumCatalog {
   async listUnits() { this.reads += 1; return { items: this.unitEntries, errors: [] }; }
   async listDocuments() { return { items: this.documentEntries, errors: [] }; }
   async listManifests() { return { items: this.manifestEntries, errors: [] }; }
+  // A catalog with no work configs is a valid catalog — most fixtures have none.
+  async listWorks() { return { items: this.workEntries ?? [], errors: [] }; }
+  async getWork(id) { return (this.workEntries ?? []).find((e) => e.id === id)?.raw ?? null; }
   async getUnit(id) { return this.unitEntries.find((e) => e.id === id)?.raw ?? null; }
   async getDocument(id) { return this.documentEntries.find((e) => e.id === id)?.raw ?? null; }
   async getManifest(id) { return this.manifestEntries.find((e) => e.id === id)?.raw ?? null; }

@@ -24,6 +24,7 @@
 import { validateDocument } from '#domains/school/documents/documentValidation.mjs';
 import { validateManifest } from '#domains/school/curriculum/manifestValidation.mjs';
 import { validateUnit, isPublishable } from '#domains/school/curriculum/unitValidation.mjs';
+import { validateWork } from '#domains/school/curriculum/workValidation.mjs';
 
 const LETTER = 'letter';
 
@@ -78,15 +79,17 @@ export class ValidateCatalog {
    *   unitErrors: Record<string, string[]>,
    *   documentErrors: Record<string, string[]>,
    *   manifestErrors: Record<string, string[]>,
+ *   workErrors: Record<string, string[]>,
    *   catalogErrors: string[],
-   *   summary: { units: number, documents: number, manifests: number, publishable: number },
+   *   summary: { units: number, documents: number, manifests: number, works: number, publishable: number },
    * }>}
    */
   async execute({ renderProbe = false } = {}) {
-    const [units, documents, manifests] = await Promise.all([
+    const [units, documents, manifests, works] = await Promise.all([
       this.#catalog.listUnits(),
       this.#catalog.listDocuments(),
       this.#catalog.listManifests(),
+      this.#catalog.listWorks?.() ?? { items: [], errors: [] },
     ]);
 
     // Files the datastore could not even parse. They are a promotion blocker in
@@ -96,6 +99,7 @@ export class ValidateCatalog {
       ...(units.errors ?? []),
       ...(documents.errors ?? []),
       ...(manifests.errors ?? []),
+      ...(works.errors ?? []),
     ];
 
     // Documents and manifests first: units resolve against what survives here.
@@ -139,6 +143,15 @@ export class ValidateCatalog {
       else if (isPublishable(unit)) publishable += 1;
     }
 
+    // Works are positional: `validateWork` is given the shelf and folder the
+    // config was found in, so a config claiming the wrong subject or slug is
+    // caught here rather than surfacing later as a work shelved somewhere odd.
+    const workErrors = {};
+    for (const { id, subject, work, raw } of works.items ?? []) {
+      const { errors } = validateWork(raw, { subject, work });
+      if (errors.length) workErrors[id] = errors;
+    }
+
     if (renderProbe && this.#measureProbe) {
       await this.#runRenderProbe(validDocuments, documentErrors);
     }
@@ -146,18 +159,21 @@ export class ValidateCatalog {
     const ok = catalogErrors.length === 0
       && Object.keys(unitErrors).length === 0
       && Object.keys(documentErrors).length === 0
-      && Object.keys(manifestErrors).length === 0;
+      && Object.keys(manifestErrors).length === 0
+      && Object.keys(workErrors).length === 0;
 
     return {
       ok,
       unitErrors,
       documentErrors,
       manifestErrors,
+      workErrors,
       catalogErrors,
       summary: {
         units: (units.items ?? []).length,
         documents: (documents.items ?? []).length,
         manifests: (manifests.items ?? []).length,
+        works: (works.items ?? []).length,
         publishable,
       },
     };

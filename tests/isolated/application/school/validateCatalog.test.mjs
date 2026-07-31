@@ -7,7 +7,8 @@ import { ICurriculumCatalog } from '#apps/school/ports/ICurriculumCatalog.mjs';
  * the filesystem — everything the use case can see arrives through the port.
  */
 class FakeCatalog extends ICurriculumCatalog {
-  #units; #documents; #manifests; #errors;
+  #units; #documents; #manifests;
+  #works; #errors;
 
   /**
    * `units`/`documents`/`manifests` are raw entities keyed by their own id;
@@ -15,7 +16,7 @@ class FakeCatalog extends ICurriculumCatalog {
    * to name itself.
    */
   constructor({
-    units = [], documents = [], manifests = [],
+    units = [], documents = [], manifests = [], workEntries = [],
     unitEntries = null, documentEntries = null, manifestEntries = null, errors = {},
   } = {}) {
     super();
@@ -23,15 +24,18 @@ class FakeCatalog extends ICurriculumCatalog {
     this.#units = unitEntries ?? entries(units);
     this.#documents = documentEntries ?? entries(documents);
     this.#manifests = manifestEntries ?? entries(manifests);
+    this.#works = workEntries;
     this.#errors = errors;
   }
 
   async listUnits() { return { items: this.#units, errors: this.#errors.units ?? [] }; }
   async listDocuments() { return { items: this.#documents, errors: this.#errors.documents ?? [] }; }
   async listManifests() { return { items: this.#manifests, errors: this.#errors.manifests ?? [] }; }
+  async listWorks() { return { items: this.#works, errors: this.#errors.works ?? [] }; }
   async getUnit(id) { return this.#units.find((e) => e.id === id)?.raw ?? null; }
   async getDocument(id) { return this.#documents.find((e) => e.id === id)?.raw ?? null; }
   async getManifest(id) { return this.#manifests.find((e) => e.id === id)?.raw ?? null; }
+  async getWork(id) { return this.#works.find((e) => e.id === id)?.raw ?? null; }
 }
 
 const aDocument = (over = {}) => ({
@@ -63,7 +67,7 @@ describe('empty and happy paths', () => {
     expect(result.ok).toBe(true);
     expect(result).toMatchObject({
       unitErrors: {}, documentErrors: {}, manifestErrors: {}, catalogErrors: [],
-      summary: { units: 0, documents: 0, manifests: 0, publishable: 0 },
+      summary: { units: 0, documents: 0, manifests: 0, works: 0, publishable: 0 },
     });
   });
 
@@ -75,7 +79,7 @@ describe('empty and happy paths', () => {
     }).execute();
     expect(result.ok).toBe(true);
     expect(result.unitErrors).toEqual({});
-    expect(result.summary).toEqual({ units: 2, documents: 1, manifests: 1, publishable: 2 });
+    expect(result.summary).toEqual({ units: 2, documents: 1, manifests: 1, works: 0, publishable: 2 });
   });
 
   it('resolves a bank reference against the injected bank ids', async () => {
@@ -106,7 +110,7 @@ describe('publishability is separate from validity', () => {
     }).execute();
     expect(result.ok).toBe(true);
     expect(result.unitErrors).toEqual({});
-    expect(result.summary).toEqual({ units: 1, documents: 1, manifests: 0, publishable: 0 });
+    expect(result.summary).toEqual({ units: 1, documents: 1, manifests: 0, works: 0, publishable: 0 });
   });
 
   it('an invalid unit is never counted publishable even when marked approved', async () => {
@@ -284,3 +288,38 @@ describe('declared id must match filename', () => {
     expect(result.documentErrors).toEqual({});
   });
 });
+
+describe('work configs', () => {
+  const aWork = (over = {}) => ({
+    work: 'fractions', title: 'Fractions', subject: 'math', category: 'course', medium: 'none',
+    structure: { shape: 'flat', item: 'unit', items: { from: 'units' } },
+    grading: { gate: 'quiz', scope: 'item', pass_percent: 80, exit: 'all units complete' },
+    ...over,
+  });
+  const entry = (raw, over = {}) => ({ id: 'math/fractions', subject: 'math', work: 'fractions', raw, ...over });
+
+  it('a valid work config passes the gate and is counted', async () => {
+    const result = await new ValidateCatalog({ catalog: new FakeCatalog({ workEntries: [entry(aWork())] }) }).execute();
+    expect(result.ok).toBe(true);
+    expect(result.workErrors).toEqual({});
+    expect(result.summary.works).toBe(1);
+  });
+
+  it('a work config that disagrees with where it lives fails the gate', async () => {
+    // The whole reason works are validated positionally: only the gate can see
+    // that this config claims a shelf it is not filed on.
+    const catalog = new FakeCatalog({ workEntries: [entry(aWork({ subject: 'history' }))] });
+    const result = await new ValidateCatalog({ catalog }).execute();
+    expect(result.ok).toBe(false);
+    expect(result.workErrors['math/fractions'])
+      .toEqual([expect.stringMatching(/subject is "history" but the shelf is "math"/)]);
+  });
+
+  it('an unreadable work.yml becomes a catalogError and fails the gate', async () => {
+    const catalog = new FakeCatalog({ errors: { works: ['math/broken: bad indentation'] } });
+    const result = await new ValidateCatalog({ catalog }).execute();
+    expect(result.ok).toBe(false);
+    expect(result.catalogErrors).toContain('math/broken: bad indentation');
+  });
+});
+
