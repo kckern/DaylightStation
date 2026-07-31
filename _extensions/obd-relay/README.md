@@ -7,10 +7,15 @@
 > WiFi, WebSocket, trip buffering, ack-gated upload+delete, HTTP status/pull
 > plane, OTA, engine-off standby.
 >
-> **NOT working:** `readSample()` is still a stub under `-DUSE_FREEMATICS`, so
-> trips upload as empty envelopes — no PIDs, no GNSS. And `obd.init()` did not
-> link to the ECU across 2 minutes with the ignition on (`obd_ready: false`);
-> unexplained, and it blocks bring-up step 1.
+> Sampling is now implemented: PIDs + GNSS + DTCs, all read on core 0 and
+> handed to the loop task. GNSS starts (`gps_ready: true`).
+>
+> **BLOCKED:** `obd.init()` has never reached the ECU — `obd_ready: false`
+> across 2 minutes with the ignition on. Until that links, `/pids` returns an
+> all-false table and trips still upload as empty envelopes. Everything
+> downstream (which PIDs this car answers, whether the odometer is reachable,
+> what a diagnostics view can show) is gated on it. **This is the next thing to
+> debug**, and it is a vehicle/protocol question, not a transport one.
 >
 > Per `feedback_dont_assert_unverified_device_facts`, nothing about the vehicle
 > or standby current is documented here as fact until measured on the car.
@@ -124,7 +129,12 @@ interrogate a device sitting in a car in the garage.
 | `GET /` `GET /status` | health, wifi (incl. `associate_ms`, bssid, channel), ws counters, battery/standby, trip state, ring-buffered recent logs |
 | `GET /trips` | manifest of buffered payloads |
 | `GET /trip?id=<id>` | one payload, **same shape the push path sends**, streamed |
+| `GET /obd/probe?start=1` | **walk every OBD protocol, report which links** |
+| `GET /pids` | **which PIDs this car actually answers** (bring-up step 1) |
+| `GET /diagnostics` | check-engine codes + slow-moving vehicle state |
 | `POST /update` | OTA firmware update |
+| `GET /standby/inhibit?minutes=N` | hold standby off (bounded, max 30 min) |
+| `GET /standby/release` | drop the inhibit |
 
 ```bash
 curl http://<device-ip>/status
@@ -140,7 +150,71 @@ filesystem (they become a path).
 
 **OTA limitation:** the device is deep-asleep most of the time when parked, so
 an update only lands while it's awake — engine running, or the ~3 min window
-after switch-off. It is not a way to reach a car parked for a week.
+after switch-off. It is not a way to reach a car parked for a week. On the bench
+this bites immediately (USB rail reads ~5V, so the device decides "engine off"
+and sleeps): hold it awake first, or just use USB.
+
+```bash
+curl "http://<device-ip>/standby/inhibit?minutes=10"   # then OTA
+curl "http://<device-ip>/standby/release"
+```
+
+The inhibit is **bounded at 30 minutes and never persisted** — a forgotten
+inhibit would silently reintroduce the exact drain standby exists to prevent.
+
+## Debugging the ECU link (`obd_ready: false`)
+
+**Target vehicle: 2021 Chrysler Pacifica Touring L (FCA Canada, 3.6 V6).**
+
+The co-processor answers `ATRV` (that's where `battery_v` comes from), so the
+OBD hardware path is alive — what fails is protocol negotiation. Rather than
+guess-and-reflash, sweep every protocol in one visit to the car:
+
+```bash
+curl "http://<device-ip>/obd/probe?start=1"   # kick off (runs on core 0)
+curl "http://<device-ip>/obd/probe"           # poll — takes a few minutes
+```
+
+Ignition must be in **RUN** (not accessory). The sweep auto-inhibits standby so
+it can't be cut in half.
+
+A protocol only counts as a winner if it **links AND answers a Mode 01 PID** —
+`init()` can succeed while the ECU never actually replies, and `linked:true`
+with `pid_answered:false` is the interesting failure, not a pass. On success the
+link is left established on the winner and normal sampling resumes.
+
+If **nothing** links while `ATRV` works, the leading suspects are:
+
+1. **FCA Security Gateway (SGW).** 2018+ FCA/Stellantis vehicles put a gateway
+   between the OBD-II port and the vehicle buses. Generic Mode 01 reads usually
+   pass it, so this is a hypothesis to test, not a certainty.
+2. **Ignition not fully in RUN** — some vehicles don't power the data pins in
+   accessory.
+3. Wiring/pin issue on the port itself.
+
+Note the Pacifica has **direct TPMS** (real pressure sensors), but those values
+are manufacturer-specific CAN traffic, not generic OBD-II PIDs. The library does
+expose `sniff()` / `setHeaderFilter()` / `receiveData()`, so CAN sniffing is a
+possible future route to TPMS and odometer — untested, and an SGW may filter
+what reaches the port anyway.
+
+## Diagnostics — what OBD-II can and cannot give you
+
+`GET /pids` is the instrument: it reports, per PID, whether **this** car
+answered. Run it with the ignition on before believing anything below.
+`tried:false` means "not attempted yet" and is distinct from `supported:false`
+— with no ECU link the whole table reads false, which is not the same claim as
+"this car supports nothing", so the response says so explicitly.
+
+| Want | Reality |
+|---|---|
+| Check-engine / DTCs | **Yes.** Standard Mode 03, reliable on any OBD-II car. Also distance & time with MIL on, warm-ups and distance since codes cleared. |
+| Odometer | **Probably not.** `PID_ODOMETER` (0xA6) is in later J1979 revisions but rarely implemented; usually needs manufacturer-specific requests. Probed anyway — `/pids` will say. |
+| Oil life / oil change | **No.** Not standard OBD-II; manufacturer-specific. Engine oil *temperature* (0x5C) is standard and is probed. |
+| Tyre pressure (TPMS) | **No.** Not on generic OBD-II at all — separate module, manufacturer-specific. |
+
+`/diagnostics` omits unsupported readings rather than reporting a fake `0`, and
+lists them under `unsupported` so absence is visible rather than implied.
 
 Backend dispatch: `backend/src/3_applications/hardware/automotiveRelay.mjs`
 (wired in `app.mjs`), mirroring `foodScaleRelay.mjs`. Persists:
