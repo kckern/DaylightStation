@@ -5,13 +5,30 @@
 // tap-to-reset button and lights up (is-on) whenever the key is shifted.
 import { useState } from 'react';
 import TransportButton from '../../transport/TransportButton.jsx';
+import getLogger from '../../../../../lib/logging/Logger.js';
 import useKeyShift from './useKeyShift.js';
 import { clampKeyShift, keyShiftLabel, KEY_SHIFT_MIN, KEY_SHIFT_MAX } from './keyShift.js';
+
+let _logger;
+function logger() {
+  if (!_logger) _logger = getLogger().child({ component: 'karaoke-keyshift' });
+  return _logger;
+}
 
 export default function KeyControl({ mediaEl, className = '' }) {
   const [shift, setShift] = useState(0);
   useKeyShift(mediaEl, shift);
-  const step = (delta) => setShift((v) => clampKeyShift(v + delta));
+  // Tap intent is logged here, upstream of the hook — if the audio chain dies
+  // silently we still see exactly what the user asked for and when.
+  const step = (delta) => {
+    const next = clampKeyShift(shift + delta);
+    logger().info('keyshift.tap', { from: shift, to: next, hasEl: Boolean(mediaEl) });
+    setShift(next);
+  };
+  const reset = () => {
+    logger().info('keyshift.tap', { from: shift, to: 0, reset: true, hasEl: Boolean(mediaEl) });
+    setShift(0);
+  };
   return (
     <div
       className={['piano-keyctl', className].filter(Boolean).join(' ')}
@@ -30,7 +47,7 @@ export default function KeyControl({ mediaEl, className = '' }) {
         type="button"
         className={`piano-keyctl__value${shift !== 0 ? ' is-on' : ''}`}
         aria-label="Reset key"
-        onClick={() => setShift(0)}
+        onClick={reset}
       >
         {keyShiftLabel(shift)}
       </button>
