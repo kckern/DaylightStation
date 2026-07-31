@@ -188,3 +188,4 @@ To restore: `git checkout -b branch-name <commit-hash>`
 | 2026-07-30 | fix/poster-width-auto | 45d8c8078 | Poster box width:auto — base width:100% was beating aspect-ratio, tiles still crop-fit |
 | 2026-07-30 | fix/progress-overlay-baseline | 023180bb0 | Poster progress scrim flush with baseline (bottom offset + inline img descender gap) |
 | 2026-07-30 | fix/staff-accidentals | ac8a7be77 | Action-staff accidentals drawn as bold SVG shapes, proper margin off notehead |
+| 2026-07-30 | omr-quiz-decoder | 3be38d9ec | OMR quiz-sheet decoder: testId + 50 answers into household/apps/quizzes |
