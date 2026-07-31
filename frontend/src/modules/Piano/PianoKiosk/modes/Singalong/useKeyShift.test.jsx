@@ -5,7 +5,7 @@
 // audio flows only through the graph). These tests pin the lifecycle around
 // that: lazy build, per-element source caching, zero-latency dry bypass at the
 // natural key, rebuild on element swap, and safe teardown that reroutes a
-// still-alive element straight to the speakers. The stretch engine and
+// still-alive element straight to the speakers. The stretch engine loader and
 // AudioContext are mocked — jsdom has no Web Audio — so assertions target the
 // graph calls, not audible output.
 import { describe, it, expect, vi, beforeEach } from 'vitest';
@@ -48,7 +48,10 @@ const h = vi.hoisted(() => {
   return { state, makeStretch, FakeAudioContext, factory: vi.fn(async () => makeStretch()) };
 });
 
-vi.mock('signalsmith-stretch', () => ({ default: h.factory }));
+// The hook loads the engine through loadStretchEngine.js (which serves the
+// pristine npm file as a ?url asset — the bundler corrupts the package's
+// self-stringifying worklet). Mock the loader, not the package.
+vi.mock('./loadStretchEngine.js', () => ({ default: vi.fn(async () => h.factory) }));
 
 const video = () => document.createElement('video');
 const settle = () => new Promise((r) => setTimeout(r, 25));
