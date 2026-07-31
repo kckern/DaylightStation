@@ -6,9 +6,14 @@
 // measurement showed the delay-line shifter smearing energy across neighboring
 // semitones (audibly discordant on a full mix); Signalsmith concentrates
 // essentially all output at the target pitch.
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import getLogger from '../../../../../lib/logging/Logger.js';
+import loadStretchEngine from './loadStretchEngine.js';
 import { clampKeyShift } from './keyShift.js';
+
+// A stretch-engine init that neither resolves nor rejects is heard as dead
+// silence (the element is already captured). Convert hangs into rejections.
+export const STRETCH_INIT_TIMEOUT_MS = 6000;
 
 let _logger;
 function logger() {
@@ -71,6 +76,7 @@ function describeEl(el) {
 export default function useKeyShift(mediaEl, semitones) {
   const chainRef = useRef(null); // { el, source, stretch, dry, wet }
   const engagedRef = useRef(false);
+  const [engineFailed, setEngineFailed] = useState(false);
 
   useEffect(() => {
     const shift = clampKeyShift(semitones);
@@ -106,7 +112,7 @@ export default function useKeyShift(mediaEl, semitones) {
     }, 4000);
     (async () => {
       stage = 'import';
-      const { default: SignalsmithStretch } = await import('signalsmith-stretch');
+      const SignalsmithStretch = await loadStretchEngine();
       if (cancelled) { logger().info('keyshift.cancelled', { stage }); return; }
       let chain = chainRef.current;
       if (!chain || chain.el !== mediaEl) {
@@ -123,7 +129,15 @@ export default function useKeyShift(mediaEl, semitones) {
         }
         logger().info('keyshift.source-captured', { reused, ctxState: ac.state ?? null });
         stage = 'stretch-load';
-        const stretch = await SignalsmithStretch(ac);
+        const stretch = await Promise.race([
+          SignalsmithStretch(ac),
+          new Promise((_, reject) => {
+            setTimeout(
+              () => reject(new Error(`engine init timed out after ${STRETCH_INIT_TIMEOUT_MS}ms`)),
+              STRETCH_INIT_TIMEOUT_MS,
+            );
+          }),
+        ]);
         if (cancelled) {
           source.connect(ac.destination);
           logger().info('keyshift.cancelled', { stage, rerouted: true });
@@ -167,6 +181,31 @@ export default function useKeyShift(mediaEl, semitones) {
       });
     })().catch((e) => {
       clearTimeout(watchdog);
+      if (cancelled) {
+        // A superseded run (e.g. the user tapped again before this run's
+        // engine settled) failing late — often its own leaked init-timeout
+        // finally firing — must be a no-op. A later run may already have
+        // built a healthy chain for this element; touching the source or
+        // the failure flag here would silently break working audio.
+        logger().info('keyshift.cancelled-error', { stage, message: e?.message });
+        return;
+      }
+      // Fail AUDIBLE: if this element was captured but its chain never
+      // finished, the graph is source → nothing. Reroute straight to the
+      // speakers and flag the engine so the stepper greys out instead of
+      // muting the song.
+      const chain = chainRef.current;
+      if (!chain || chain.el !== mediaEl) {
+        const source = sourceByEl.get(mediaEl);
+        if (source) {
+          try {
+            source.disconnect();
+            source.connect(ctx().destination);
+            logger().info('keyshift.failed-audible-reroute', {});
+          } catch { /* context torn down */ }
+        }
+      }
+      setEngineFailed(true);
       logger().warn('keyshift.error', {
         stage,
         message: e?.message,
@@ -185,6 +224,8 @@ export default function useKeyShift(mediaEl, semitones) {
     teardown(chainRef.current);
     chainRef.current = null;
   }, []);
+
+  return engineFailed;
 }
 
 function teardown(chain) {

@@ -5,12 +5,12 @@
 // audio flows only through the graph). These tests pin the lifecycle around
 // that: lazy build, per-element source caching, zero-latency dry bypass at the
 // natural key, rebuild on element swap, and safe teardown that reroutes a
-// still-alive element straight to the speakers. The stretch engine and
+// still-alive element straight to the speakers. The stretch engine loader and
 // AudioContext are mocked — jsdom has no Web Audio — so assertions target the
 // graph calls, not audible output.
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { renderHook, waitFor } from '@testing-library/react';
-import useKeyShift from './useKeyShift.js';
+import { renderHook, waitFor, act } from '@testing-library/react';
+import useKeyShift, { STRETCH_INIT_TIMEOUT_MS } from './useKeyShift.js';
 
 const h = vi.hoisted(() => {
   const state = { stretches: [], ctxs: [] };
@@ -48,7 +48,10 @@ const h = vi.hoisted(() => {
   return { state, makeStretch, FakeAudioContext, factory: vi.fn(async () => makeStretch()) };
 });
 
-vi.mock('signalsmith-stretch', () => ({ default: h.factory }));
+// The hook loads the engine through loadStretchEngine.js (which serves the
+// pristine npm file as a ?url asset — the bundler corrupts the package's
+// self-stringifying worklet). Mock the loader, not the package.
+vi.mock('./loadStretchEngine.js', () => ({ default: vi.fn(async () => h.factory) }));
 
 const video = () => document.createElement('video');
 const settle = () => new Promise((r) => setTimeout(r, 25));
@@ -141,5 +144,69 @@ describe('useKeyShift', () => {
     // it must keep sounding, so the source gets a direct edge to the speakers.
     expect(source.disconnect).toHaveBeenCalled();
     expect(source.connect).toHaveBeenLastCalledWith(lastCtx().destination);
+  });
+
+  it('reroutes the captured source to the speakers and reports failure when the engine rejects', async () => {
+    h.factory.mockRejectedValueOnce(new Error('engine exploded'));
+    const el = video();
+    const { result } = renderHook(() => useKeyShift(el, 2));
+    await waitFor(() => expect(result.current).toBe(true));
+    const source = lastCtx().createMediaElementSource.mock.results.at(-1).value;
+    // Fail AUDIBLE: captured-but-chainless audio must be wired to the speakers.
+    expect(source.disconnect).toHaveBeenCalled();
+    expect(source.connect).toHaveBeenLastCalledWith(lastCtx().destination);
+    expect(h.state.stretches.length).toBe(0);
+  });
+
+  it('a hung engine init rejects at the timeout instead of pending forever', async () => {
+    vi.useFakeTimers();
+    try {
+      h.factory.mockImplementationOnce(() => new Promise(() => {})); // never settles
+      const el = video();
+      const { result } = renderHook(() => useKeyShift(el, 1));
+      // act() flushes the setEngineFailed(true) React schedules once the
+      // race's timeout promise rejects mid-advance — without it the assertion
+      // below can observe the pre-update render (a real flake, not a fake one).
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(STRETCH_INIT_TIMEOUT_MS + 100);
+      });
+      expect(result.current).toBe(true);
+      const source = lastCtx().createMediaElementSource.mock.results.at(-1).value;
+      expect(source.connect).toHaveBeenLastCalledWith(lastCtx().destination);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('a stale cancelled run rejecting late does not disable an already-healthy current chain', async () => {
+    const el = video();
+    let rejectStaleRun;
+    // Run A's engine call parks forever until we reject it ourselves, well
+    // after it has been superseded.
+    h.factory.mockImplementationOnce(() => new Promise((_, reject) => { rejectStaleRun = reject; }));
+    const { result, rerender } = renderHook(({ s }) => useKeyShift(el, s), { initialProps: { s: 1 } });
+    await waitFor(() => expect(h.factory).toHaveBeenCalledTimes(1));
+    // Tapping again before run A settles cancels it (effect cleanup) and
+    // starts run B, which reuses the cached source and succeeds via the
+    // default factory — a healthy chain for this element now exists.
+    rerender({ s: 2 });
+    await waitFor(() => expect(h.state.stretches.length).toBe(1));
+    await waitFor(() => expect(lastSchedule(h.state.stretches[0])).toMatchObject({ semitones: 2 }));
+    expect(result.current).toBe(false);
+    const source = lastCtx().createMediaElementSource.mock.results.at(-1).value;
+    const destinationConnectsBefore = source.connect.mock.calls
+      .filter((args) => args[0] === lastCtx().destination).length;
+    // Run A's abandoned init finally settles as a rejection (e.g. its leaked
+    // 6s init-timeout eventually firing). It was cancelled before run B ever
+    // built anything, so this must be a no-op: no reroute of the now-healthy
+    // source, and the stepper must not be disabled for audio that works.
+    await act(async () => {
+      rejectStaleRun(new Error('stale engine explosion'));
+      await settle();
+    });
+    expect(result.current).toBe(false);
+    const destinationConnectsAfter = source.connect.mock.calls
+      .filter((args) => args[0] === lastCtx().destination).length;
+    expect(destinationConnectsAfter).toBe(destinationConnectsBefore);
   });
 });
