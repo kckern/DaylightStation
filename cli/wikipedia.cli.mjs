@@ -50,8 +50,10 @@ async function resolveBaseUrl() {
   const isDocker = existsSync('/.dockerenv');
   const baseDir = isDocker ? '/usr/src/app' : process.env.DAYLIGHT_BASE_PATH;
   if (!baseDir) {
-    console.error('Error: DAYLIGHT_BASE_PATH not set and no WIKIPEDIA_URL override.');
-    process.exit(1);
+    // No .env in reach (e.g. running from a git worktree) — the service is
+    // LAN-local and unauthenticated, so fall back rather than fail.
+    console.error('Note: DAYLIGHT_BASE_PATH not set; falling back to http://localhost:8098 (set WIKIPEDIA_URL to override)');
+    return 'http://localhost:8098';
   }
   await initConfigService(path.join(baseDir, 'data'));
   const url = configService.resolveServiceUrl('wikipedia');
