@@ -224,5 +224,73 @@ describe('school-docs CLI', () => {
       const named = await readFile(outNamed);
       expect(blank.equals(named)).toBe(false);
     }));
+
+    it.each(['normal', 'compact'])('--density %s is accepted, exits 0, and warns that it has no effect', async (density) => withTmpDir(async (root) => {
+      const docFile = path.join(root, 'worksheet.yml');
+      await writeFile(docFile, dump(v2WorksheetDoc()));
+      const { exitCode, report } = await runSchoolDocs([
+        'render', docFile, '--out', path.join(root, 'out.pdf'), '--density', density,
+      ]);
+      expect(exitCode).toBe(0);
+      expect(report.ok).toBe(true);
+      expect(report.warnings).toContain(
+        '--density is accepted but has no effect in Phase A; density is chosen automatically by the fit solver',
+      );
+    }));
+
+    it('--density bogus is rejected as a usage error (exit 2), not silently accepted', async () => withTmpDir(async (root) => {
+      const docFile = path.join(root, 'worksheet.yml');
+      await writeFile(docFile, dump(v2WorksheetDoc()));
+      const { exitCode, report } = await runSchoolDocs([
+        'render', docFile, '--out', path.join(root, 'out.pdf'), '--density', 'bogus',
+      ]);
+      expect(exitCode).toBe(2);
+      expect(report.mode).toBe('usage');
+      expect(report.errors[0]).toMatch(/--density/);
+    }));
+
+    it('--creation-date warns that it has no effect, and does not change byte-identical output', async () => withTmpDir(async (root) => {
+      const docFile = path.join(root, 'worksheet.yml');
+      await writeFile(docFile, dump(v2WorksheetDoc()));
+      const outPlain = path.join(root, 'plain.pdf');
+      const outDated = path.join(root, 'dated.pdf');
+
+      const plainResult = await runSchoolDocs(['render', docFile, '--out', outPlain]);
+      const datedResult = await runSchoolDocs([
+        'render', docFile, '--out', outDated, '--creation-date', '2026-01-01T00:00:00.000Z',
+      ]);
+
+      expect(plainResult.exitCode).toBe(0);
+      expect(datedResult.exitCode).toBe(0);
+      expect(datedResult.report.warnings).toContain('renders are always deterministic; --creation-date has no effect');
+      expect(plainResult.report.warnings).not.toContain('renders are always deterministic; --creation-date has no effect');
+
+      const plainBytes = await readFile(outPlain);
+      const datedBytes = await readFile(outDated);
+      expect(plainBytes.equals(datedBytes)).toBe(true);
+    }));
+
+    it('warns that --type-scale has no effect on a v1 (legacy) document', async () => withTmpDir(async (root) => {
+      const docFile = path.join(root, 'v1.yml');
+      await writeFile(docFile, dump(v1OkDoc()));
+      const { exitCode, report } = await runSchoolDocs([
+        'render', docFile, '--out', path.join(root, 'out.pdf'), '--type-scale', 'young',
+      ]);
+      expect(exitCode).toBe(0);
+      expect(report.warnings).toContain(
+        '--type-scale is accepted but has no effect on this v1 (legacy) document; only v2 documents have a fit.typeScale',
+      );
+    }));
+
+    it('prints warnings in the CLI text output', async () => withTmpDir(async (root) => {
+      const docFile = path.join(root, 'worksheet.yml');
+      await writeFile(docFile, dump(v2WorksheetDoc()));
+      const io = { stdout: { write: vi.fn() }, stderr: { write: vi.fn() } };
+      const code = await main(['render', docFile, '--out', path.join(root, 'out.pdf'), '--density', 'compact'], io);
+      expect(code).toBe(0);
+      const printed = io.stdout.write.mock.calls.map((call) => call[0]).join('');
+      expect(printed).toContain('Warnings');
+      expect(printed).toContain('--density is accepted but has no effect');
+    }));
   });
 });

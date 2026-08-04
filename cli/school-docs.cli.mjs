@@ -28,7 +28,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import yaml from 'js-yaml';
 import { parseArgv } from './_argv.mjs';
-import { validateAnyDocument } from '#domains/school/documents/documentV2.mjs';
+import { validateAnyDocument, DOCUMENT_V2_SCHEMA } from '#domains/school/documents/documentV2.mjs';
 import { RenderPrintDocument } from '#apps/school/documents/RenderPrintDocument.mjs';
 
 const EXIT_OK = 0;
@@ -185,6 +185,31 @@ function overridesContext(flags) {
 }
 
 /**
+ * Phase A proofing-flag warnings, surfaced through `report.warnings` so a
+ * caller (especially an AI repair loop) gets a runtime signal instead of
+ * silent no-op behavior: `--density`/`--creation-date` are accepted and
+ * shape-validated but never change rendered output (see the module
+ * docstring — `DocumentPdfRenderer` pins `CreationDate` unconditionally and
+ * the document schema has no `density` field for anything to read).
+ * `--type-scale` DOES work, but only on v2 documents — v1 (legacy) has no
+ * `fit`, so the override applied by `applyRenderOverrides` is itself a
+ * silent no-op there too.
+ */
+function proofingFlagWarnings(raw, flags) {
+  const warnings = [];
+  if (flags.density !== undefined) {
+    warnings.push('--density is accepted but has no effect in Phase A; density is chosen automatically by the fit solver');
+  }
+  if (flags['creation-date'] !== undefined) {
+    warnings.push('renders are always deterministic; --creation-date has no effect');
+  }
+  if (flags['type-scale'] !== undefined && raw?.schema !== DOCUMENT_V2_SCHEMA) {
+    warnings.push('--type-scale is accepted but has no effect on this v1 (legacy) document; only v2 documents have a fit.typeScale');
+  }
+  return warnings;
+}
+
+/**
  * @param {{filePath: string, outPath: string, flags: object}} args
  * @returns {Promise<{ok: boolean, mode: 'render', file: string, out: string,
  *   pages: number|null, density: string|null, warnings: string[], errors: string[]}>}
@@ -207,6 +232,7 @@ export async function runRender({ filePath, outPath, flags }) {
   }
 
   const document = applyRenderOverrides(raw, flags);
+  const extraWarnings = proofingFlagWarnings(raw, flags);
   const useCase = new RenderPrintDocument();
 
   try {
@@ -220,7 +246,7 @@ export async function runRender({ filePath, outPath, flags }) {
       out: outPath,
       pages: result.pageCount,
       density: result.density,
-      warnings: result.warnings,
+      warnings: [...extraWarnings, ...result.warnings],
       errors: [],
     };
   } catch (error) {
@@ -229,7 +255,14 @@ export async function runRender({ filePath, outPath, flags }) {
       ? `${error.message} (oversetPt: ${oversetPt})`
       : (error?.message ?? String(error));
     return {
-      ok: false, mode: 'render', file: filePath, out: outPath, pages: null, density: null, warnings: [], errors: [message],
+      ok: false,
+      mode: 'render',
+      file: filePath,
+      out: outPath,
+      pages: null,
+      density: null,
+      warnings: extraWarnings,
+      errors: [message],
     };
   }
 }
@@ -337,7 +370,12 @@ export function formatSchoolDocsReport(report) {
       }
       return `${lines.join('\n')}\n`;
     }
-    return `FAILED\n${report.errors.map((error) => `  - ${error}`).join('\n')}\n`;
+    const lines = ['FAILED', ...report.errors.map((error) => `  - ${error}`)];
+    if (report.warnings.length) {
+      lines.push('', 'Warnings');
+      report.warnings.forEach((warning) => lines.push(`  - ${warning}`));
+    }
+    return `${lines.join('\n')}\n`;
   }
 
   return report.errors.length ? `${report.errors.map((error) => `ERROR: ${error}`).join('\n')}\n` : '';
