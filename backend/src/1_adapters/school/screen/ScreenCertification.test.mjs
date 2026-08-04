@@ -22,10 +22,13 @@ const incompatibleBundle = { lesson: { modules: [
   // solver@1 is a registered tool capability this profile does not offer.
   { moduleId: 'solve', type: 'tool', capability: 'solver@1', config: {} },
 ] } };
+const unknownTypeBundle = { lesson: { modules: [
+  { moduleId: 'mystery', type: 'holo_projection' },
+] } };
 
 runCertificationPortContract({
   name: 'screen', makePort: () => new ScreenCertification(),
-  profile: screenProfile, renderableBundle, incompatibleBundle,
+  profile: screenProfile, renderableBundle, incompatibleBundle, unknownTypeBundle,
 });
 
 describe('ScreenCertification specifics (spec §6.4)', () => {

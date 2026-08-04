@@ -4,6 +4,13 @@ import { missingCapabilities } from '../catalog/capabilities.mjs';
 export function capabilityReasons(demands, profile) {
   const reasons = missingCapabilities(demands.capabilities, profile.capabilities)
     .map((id) => `missing capability ${id}`);
+  // Fail-closed (spec §7.1): a demand set flagged `unknownType` (see
+  // demands.mjs) has no capability for any profile to match, so it must
+  // never be treated as trivially satisfied by an empty missing-capability
+  // diff. F2 fix.
+  if (demands.unknownType) {
+    reasons.push(`unknown module type '${demands.unknownType}' cannot be certified`);
+  }
   if (demands.tracked && !profile.capabilities.some((id) => id.startsWith('return.'))) {
     reasons.push('tracked module requires a return channel; profile offers none');
   }
