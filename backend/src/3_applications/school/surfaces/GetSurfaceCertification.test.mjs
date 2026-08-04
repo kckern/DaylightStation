@@ -35,7 +35,14 @@ function stubSchoolcalcPort() {
       const modules = (bundle?.lesson?.modules ?? []).map((module) => ({
         moduleId: module.moduleId, verdict: 'render', reasons: [], warnings: [],
       }));
-      return { modules, lesson: { verdict: modules.length ? 'full' : 'none' } };
+      return {
+        modules,
+        lesson: { verdict: modules.length ? 'full' : 'none' },
+        // A real schoolcalc port (Ti86SurfaceCertification) reports a compiled
+        // `resource` when compatible — stubbed here to exercise the
+        // resource-omitted-on-declared-demotion behavior.
+        ...(modules.length ? { resource: { estimatedBytes: 42 } } : {}),
+      };
     },
   };
 }
@@ -158,5 +165,63 @@ describe('GetSurfaceCertification', () => {
     expect(screenRow.verdict).toBe('render');
     expect(calcRow.verdict).toBe('incompatible');
     expect(calcRow.reasons.join()).toMatch(/standalone banks are not deliverable to calculators/);
+  });
+
+  it('invalidate(address) evicts the bundle cache so a stale address re-fetches', async () => {
+    let call = 0;
+    const changedBundle = {
+      lesson: { modules: [...renderableBundle.lesson.modules, { moduleId: 'extra', type: 'lecture_notes', document: { blocks: [] } }] },
+    };
+    const bundles = [renderableBundle, changedBundle];
+    const buildLessonExecute = vi.fn(async () => bundles[call++]);
+    const { sut } = makeSut({ buildLessonExecute });
+
+    const first = await sut.lesson(ADDRESS);
+    const cachedAgain = await sut.lesson(ADDRESS);
+    expect(buildLessonExecute).toHaveBeenCalledTimes(1);
+    expect(cachedAgain[0].contentDigest).toBe(first[0].contentDigest);
+
+    sut.invalidate(ADDRESS);
+    const afterInvalidate = await sut.lesson(ADDRESS);
+    expect(buildLessonExecute).toHaveBeenCalledTimes(2);
+    expect(afterInvalidate[0].contentDigest).not.toBe(first[0].contentDigest);
+    const paperRow = afterInvalidate.find((row) => row.surfaceId === 'paper-letter-mono');
+    expect(paperRow.moduleVerdicts).toHaveLength(changedBundle.lesson.modules.length);
+  });
+
+  it('invalidate() with no address clears every cached address', async () => {
+    const buildLessonExecute = vi.fn(async () => renderableBundle);
+    const { sut } = makeSut({ buildLessonExecute });
+    const otherAddress = 'main/sci/wc/wm/evap2';
+
+    await sut.lesson(ADDRESS);
+    await sut.lesson(otherAddress);
+    expect(buildLessonExecute).toHaveBeenCalledTimes(2);
+
+    // Both addresses are cached now — repeat calls should not re-fetch.
+    await sut.lesson(ADDRESS);
+    await sut.lesson(otherAddress);
+    expect(buildLessonExecute).toHaveBeenCalledTimes(2);
+
+    sut.invalidate();
+    await sut.lesson(ADDRESS);
+    await sut.lesson(otherAddress);
+    expect(buildLessonExecute).toHaveBeenCalledTimes(4);
+  });
+
+  it('omits a stale resource when a declared capability demotes verdict to none (minor fix)', async () => {
+    const { sut } = makeSut({ requiredCapabilities: ['native-program@1'] });
+    const rows = await sut.lesson(ADDRESS);
+    const calcRow = rows.find((row) => row.surfaceId === 'fake-calc-codec-baseline');
+    expect(calcRow.verdict).toBe('none');
+    expect(calcRow.resource).toBeUndefined();
+  });
+
+  it('keeps resource when the verdict is not demoted by a declared capability', async () => {
+    const { sut } = makeSut();
+    const rows = await sut.lesson(ADDRESS);
+    const calcRow = rows.find((row) => row.surfaceId === 'fake-calc-codec-baseline');
+    expect(calcRow.verdict).toBe('full');
+    expect(calcRow.resource).toEqual({ estimatedBytes: 42 });
   });
 });

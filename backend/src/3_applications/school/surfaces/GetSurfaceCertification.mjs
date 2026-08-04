@@ -45,7 +45,18 @@ function uniqueList(values) {
  * calls for the same address do not re-invoke `buildLesson.execute`), and
  * the certified row itself is memoized per `(contentDigest, profileDigest)`
  * pair — a new bundle (changed content -> changed digest) always
- * re-certifies. Both caches are process-lifetime, in-memory only.
+ * re-certifies. The row cache is content-addressed and self-invalidating
+ * (a stale row simply never gets looked up again once its content digest
+ * changes); the *bundle* cache is address-keyed and does NOT self-invalidate
+ * — it lives for the instance's lifetime, so an out-of-band edit to the
+ * underlying catalog/document/bank content is invisible to an
+ * already-cached address until `invalidate()` is called. A caller that
+ * holds a `GetSurfaceCertification` instance across requests (e.g. a
+ * long-lived API handler) MUST either construct a fresh instance per
+ * request/certification pass, or call `invalidate(address)` (or
+ * `invalidate()` for all addresses) whenever content it depends on may have
+ * changed. Short-lived callers (e.g. a CLI invocation that constructs one
+ * instance per run) get this for free and never need to call it.
  */
 export class GetSurfaceCertification {
   #buildLesson;
@@ -89,6 +100,25 @@ export class GetSurfaceCertification {
         bundle, contentDigest, profile, baseline, requiredCapabilities,
       }),
     }));
+  }
+
+  /**
+   * Evict the address-keyed bundle cache so the next `lesson()` call for
+   * `address` re-invokes `buildLesson.execute` instead of reusing a
+   * previously-built bundle (spec: bundle cache does not self-invalidate).
+   * With no argument, clears every cached address. Row-cache entries are
+   * content-addressed and left alone — they simply won't be reused once the
+   * refetched bundle's content digest differs.
+   *
+   * @param {string|null} [address] - The lesson address to evict, or omit
+   *   to clear the whole bundle cache.
+   */
+  invalidate(address = null) {
+    if (address === null) {
+      this.#bundleCache.clear();
+    } else {
+      this.#bundleCache.delete(address);
+    }
   }
 
   /** @returns {Promise<object[]>} One certification row per profile + codec baseline. */
@@ -136,6 +166,11 @@ export class GetSurfaceCertification {
       }));
 
     const verdict = rollUpLesson(modules, { fullOrNothing: profile.family === 'schoolcalc' });
+    // A resource the port compiled reflects its own (pre-declared-requirement)
+    // view of compatibility; once a declared requirement demotes the whole
+    // lesson to 'none', that compiled artifact is no longer deliverable and
+    // must not be reported as available.
+    const demotedByDeclaredRequirement = declaredReasons.length > 0 && verdict === 'none';
 
     const row = {
       surfaceId: profile.surfaceId,
@@ -143,7 +178,7 @@ export class GetSurfaceCertification {
       verdict,
       reasons: uniqueList(modules.flatMap((module) => module.reasons)),
       warnings: uniqueList(modules.flatMap((module) => module.warnings)),
-      ...(result.resource ? { resource: result.resource } : {}),
+      ...(result.resource && !demotedByDeclaredRequirement ? { resource: result.resource } : {}),
       moduleVerdicts: modules,
       contentDigest,
       profileDigest,
