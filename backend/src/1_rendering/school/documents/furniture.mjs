@@ -3,10 +3,18 @@
  * the continuation strip that re-identifies a page once it's out of order in
  * a binder, and the gutter margin reserved for three-hole punching.
  *
- * Letter-only — never called for `target: receipt`. A continuous receipt
- * roll has no pages to number, no binder to fall out of, and no holes to
- * punch; the legacy `DocumentReceiptRenderer` path does not import this
- * module.
+ * Letter furniture — meaningless for a continuous receipt roll (no pages to
+ * number, no binder to fall out of, no holes to punch). The LEGACY receipt
+ * path (`DocumentReceiptRenderer`) never imports this module, so a v1
+ * `target: [receipt]` document is genuinely never furnished. v2 is a
+ * different story: `RenderPrintDocument`'s `#renderV2` is PDF/Letter-always
+ * in Phase A (no receipt renderer wired for v2 yet, spec §13) — it calls
+ * `contentBox`/`drawFurniture` unconditionally, regardless of what the
+ * document's own `target` array says, so a v2 document declaring
+ * `target: [receipt]` still gets a fully furnished Letter PDF today. That
+ * mismatch is real (surfaced as a render warning by `RenderPrintDocument`,
+ * not silently swallowed here); this module still never NEEDS to know
+ * about `target` itself.
  *
  * ## Reservation model
  *

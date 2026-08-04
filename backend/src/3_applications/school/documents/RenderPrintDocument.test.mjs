@@ -426,6 +426,40 @@ describe('RenderPrintDocument — repository-based lookup', () => {
   });
 });
 
+describe('RenderPrintDocument — v2 target receipt-only render warning (F6)', () => {
+  it('warns that a receipt-only v2 document was rendered as a Letter PDF (v2 has no receipt path yet, Phase A)', async () => {
+    const useCase = new RenderPrintDocument();
+    const document = v2doc({
+      target: ['receipt'],
+      archetype: 'worksheet',
+      blocks: [{ type: 'rich_text', md: 'Receipt-only v2 fixture.' }],
+    });
+    const result = await useCase.execute({ document });
+    expect(isPdf(result.bytes)).toBe(true);
+    expect(result.warnings).toEqual(expect.arrayContaining([
+      expect.stringMatching(/target: \['receipt'\].*rendered as a Letter PDF, not a receipt/),
+    ]));
+  });
+
+  it('does not warn when target includes letter (even alongside receipt)', async () => {
+    const useCase = new RenderPrintDocument();
+    const document = v2doc({
+      target: ['letter', 'receipt'],
+      archetype: 'worksheet',
+      blocks: [{ type: 'rich_text', md: 'Both-targets fixture.' }],
+    });
+    const result = await useCase.execute({ document });
+    expect(result.warnings).toEqual([]);
+  });
+
+  it('a letter-only v2 document (the common case) never carries this warning', async () => {
+    const useCase = new RenderPrintDocument();
+    const document = v2doc({ archetype: 'worksheet' });
+    const result = await useCase.execute({ document });
+    expect(result.warnings).toEqual([]);
+  });
+});
+
 describe('RenderPrintDocument — invalid documents', () => {
   it('rejects a structurally invalid document with a structured INVALID_DOCUMENT error', async () => {
     const useCase = new RenderPrintDocument();
