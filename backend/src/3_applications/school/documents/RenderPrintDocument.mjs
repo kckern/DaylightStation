@@ -170,9 +170,22 @@ export class RenderPrintDocument {
       italic: true,
     });
 
-    const warnings = chosen.density === 'compact'
-      ? [`fit.policy 'one-page' required compact density to fit '${document.id}' on one page`]
-      : [];
+    const warnings = [];
+    if (chosen.density === 'compact') {
+      warnings.push(`fit.policy 'one-page' required compact density to fit '${document.id}' on one page`);
+    }
+    // `#renderV2` is PDF/Letter-always in Phase A (spec §13: no receipt path
+    // wired for v2 yet) — a document declaring ONLY `target: ['receipt']`
+    // still comes out as a Letter PDF, furniture and all, not the continuous
+    // roll its own envelope promises. Honest at render time rather than a
+    // silent mismatch (F6).
+    if (Array.isArray(document.target) && document.target.length > 0
+      && document.target.every((target) => target === 'receipt')) {
+      warnings.push(
+        `document '${document.id}' declares target: ['receipt'] but v2 rendering is PDF/Letter-always in `
+        + 'Phase A — it was rendered as a Letter PDF, not a receipt',
+      );
+    }
 
     return {
       bytes: result.pdf, pageCount: result.pageCount, density: chosen.density, warnings,
