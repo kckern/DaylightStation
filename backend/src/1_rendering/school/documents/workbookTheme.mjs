@@ -193,12 +193,19 @@ export function createWorkbookTheme({ typeScale = 'standard', density = 'normal'
       spacingClass: 'question',
     },
 
-    // placeholder geometry — revisit when consumed (Tasks 5-6)
-    /** Page furniture geometry for later phases (footer bands, continuation strips, gutters). */
+    /**
+     * Page furniture geometry, consumed by `furniture.mjs` (Task 6):
+     * `footerBandPt`/`continuationStripPt` are reserved out of the bottom of
+     * the content flow on every page (`contentBox`); `gutterPt` is the
+     * default 3-hole-punch allowance (0.25in) used when a caller passes
+     * `gutter: true` rather than an explicit width. It does not vary by
+     * density/scale — hole spacing is a physical constant of the punch, not
+     * a typographic one.
+     */
     furniture: {
       footerBandPt: density === 'compact' ? 22 : 28,
       continuationStripPt: density === 'compact' ? 14 : 18,
-      gutterPt: 0,
+      gutterPt: 18,
     },
 
     // placeholder geometry — revisit when consumed (Tasks 5-6)

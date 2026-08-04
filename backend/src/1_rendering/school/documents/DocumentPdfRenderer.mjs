@@ -36,6 +36,7 @@ import {
 } from './measure.mjs';
 import { documentPdfTheme } from './documentPdfTheme.mjs';
 import { texToSvg as mathJaxTexToSvg } from './mathSvg.mjs';
+import { drawFurniture, contentBox } from './furniture.mjs';
 
 /** Contract version for the form map. Bump when mark geometry semantics change. */
 const FORM_VERSION = 'school-document-1';
@@ -465,6 +466,20 @@ export function createDocumentPdfRenderer({
     return variant < 26 ? `Form ${String.fromCharCode(65 + variant)}` : `Form ${variant + 1}`;
   }
 
+  /**
+   * The legacy per-page footer ("Page x of y  ·  Form B"), unchanged since
+   * before `furniture.mjs` existed. Kept verbatim — byte-for-byte, same
+   * position — so every existing golden PDF (pixel-diffed in
+   * `tests/isolated/rendering/school/golden/`) stays untouched.
+   *
+   * `render()`'s new `options.furniture` opts a document INTO
+   * `furniture.mjs`'s richer footer (+ continuation strip + gutter) instead
+   * of this one — the two are mutually exclusive per render, chosen once in
+   * `renderPlaced` below, so a page is never drawn by both (no double-draw).
+   * `furniture.mjs`'s footer intentionally does not carry the "Form B" form
+   * label: that's a legacy variant-retry concept this renderer owns, not a
+   * generic furniture concern.
+   */
   function drawFooter(out, { page, pageCount, variant }) {
     const { sizePt, gapAbovePt } = theme.footer;
     const form = formLabel(variant);
@@ -501,7 +516,9 @@ export function createDocumentPdfRenderer({
   }
 
   // ── render ────────────────────────────────────────────────────────────
-  function renderPlaced(document, { studentName, isAnswerKey, keyItems, bank, tokens }) {
+  function renderPlaced(document, {
+    studentName, isAnswerKey, keyItems, bank, tokens, furniture = null,
+  }) {
     const measurementDoc = createMeasurementDocument({ theme, fontDir });
     const fragments = measureDocumentFragments(document, {
       doc: measurementDoc,
@@ -512,9 +529,15 @@ export function createDocumentPdfRenderer({
       tokens,
       studentName,
     });
+    // Opting into `furniture` shrinks the usable page height by the
+    // footer-band + continuation-strip reservation (contentBox) BEFORE
+    // placement runs, so no fragment is ever placed where furniture paints.
+    // Without it, placement uses the page's full height exactly as it always
+    // has — existing (non-furniture) callers and their goldens are untouched.
+    const box = furniture ? contentBox(theme, furniture) : null;
     const { pages, errors } = placeFragments(fragments, {
-      pageHeightPt: theme.page.heightPt,
-      marginPt: theme.page.marginPt,
+      pageHeightPt: box?.pageHeightPt ?? theme.page.heightPt,
+      marginPt: box?.marginPt ?? theme.page.marginPt,
       spacing: theme.spacing,
     });
     if (errors.length) {
@@ -568,7 +591,19 @@ export function createDocumentPdfRenderer({
         for (const fragment of page.fragments) {
           drawFragment(out, fragment, { page: index + 1, marks, codes });
         }
-        drawFooter(out, { page: index + 1, pageCount: pages.length, variant: document.variant ?? 0 });
+        if (furniture) {
+          drawFurniture(out, {
+            theme,
+            page: index + 1,
+            pageCount: pages.length,
+            title: furniture.title ?? document.title ?? document.id,
+            nameLine: furniture.nameLine ?? studentName,
+            duplex: furniture.duplex,
+            gutter: furniture.gutter,
+          });
+        } else {
+          drawFooter(out, { page: index + 1, pageCount: pages.length, variant: document.variant ?? 0 });
+        }
       });
       out.end();
     });
@@ -601,11 +636,21 @@ export function createDocumentPdfRenderer({
    *   needs a problem generator per question type and is its own piece of work;
    *   until then the plumbing is honest about which form was issued, and the
    *   e2e suite reports the sameness rather than hiding it.
+   * @param {Object} [options.furniture] - opt into `furniture.mjs` page
+   *   furniture (page-x-of-y footer + continuation strip + gutter) INSTEAD OF
+   *   the legacy `drawFooter`. Omitted/null (the default) leaves every
+   *   existing caller's output byte-identical to before this option existed.
+   * @param {string} [options.furniture.title] - continuation-strip title;
+   *   defaults to `document.title ?? document.id`
+   * @param {string|null} [options.furniture.nameLine] - continuation-strip
+   *   "Name:" field; defaults to `studentName`
+   * @param {boolean} [options.furniture.duplex] - alternate gutter side by page parity
+   * @param {boolean|number} [options.furniture.gutter] - gutter width; see `furniture.mjs`
    * @returns {Promise<{pdf: Buffer, pageCount: number, formMap: Object|null, isAnswerKey: boolean, keyItems: Array}>}
    */
   async function render(source, {
     studentName = null, answers = null, answerKey = false, bank = null, tokens = null,
-    variant = null,
+    variant = null, furniture = null,
   } = {}) {
     // The variant rides on the DOCUMENT, not just alongside it: the footer and
     // the form map both derive from what was rendered, so a variant passed only
@@ -621,11 +666,13 @@ export function createDocumentPdfRenderer({
         .map((item) => [item.id, item.answer])) : null);
 
     if (!resolvedAnswers) {
-      return renderPlaced(document, { studentName, isAnswerKey: false, keyItems: [], bank, tokens });
+      return renderPlaced(document, {
+        studentName, isAnswerKey: false, keyItems: [], bank, tokens, furniture,
+      });
     }
     const keyItems = keyItemsFor(document, resolvedAnswers);
     return renderPlaced(keyDocumentFor(document, keyItems), {
-      studentName: null, isAnswerKey: true, keyItems, bank, tokens,
+      studentName: null, isAnswerKey: true, keyItems, bank, tokens, furniture,
     });
   }
 
