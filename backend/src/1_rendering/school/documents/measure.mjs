@@ -849,6 +849,12 @@ function fragmentFromNode(node, { id, block, theme }) {
     nodes: [node],
     heightPt: node.heightPt,
     baseHeightPt: node.heightPt,
+    // `answerSpaceFor` only inspects `node` itself, never `node.childNodes` —
+    // for a `box` node (inset) that means a NESTED `answer_space`/`spacer` is
+    // invisible here and never grows under fit policy `fill` (layout.mjs
+    // `growLastPage`); it prints at its own minPt regardless of the flag.
+    // Matches the v1 SCOPE note on `measureBoxNode` above — a fixed
+    // write-space inside insets is a deliberate deferral, not an oversight.
     answerSpace: answerSpaceFor([node], node.heightPt),
   };
 }

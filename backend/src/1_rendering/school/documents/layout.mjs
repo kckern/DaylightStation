@@ -158,11 +158,16 @@ function distributeAnswerSpace(pageFragments, contentTopPt, contentBottomPt, spa
  * @param {number} page.marginPt - Top and bottom margin.
  * @param {Object} [page.spacing] - spacing[prevClass][nextClass] gap table; an
  *   unconfigured pair means no gap.
+ * @param {boolean} [page.growLastPage=false] - Fit policy `fill` (spec §7):
+ *   when true, the LAST page also participates in answer-space/spacer growth.
+ *   Default false reproduces the engine's original behavior byte-for-byte —
+ *   "trailing space on the last page belongs to the document, not the
+ *   answers" — which `flow` and `one-page` still rely on.
  * @returns {{ pages: Array<{ fragments: Array<Object> }>, errors: Array<Object> }}
  *   Each placed fragment carries yPt (absolute page coordinate of its top), its
  *   effective heightPt, and isContinuation/continuesOnNextPage split flags.
  */
-export function placeFragments(fragments, { pageHeightPt, marginPt, spacing = {} }) {
+export function placeFragments(fragments, { pageHeightPt, marginPt, spacing = {}, growLastPage = false }) {
   const contentTopPt = marginPt;
   const contentBottomPt = pageHeightPt - marginPt;
   if (!(contentBottomPt - contentTopPt > 0)) {
@@ -187,6 +192,20 @@ export function placeFragments(fragments, { pageHeightPt, marginPt, spacing = {}
   while (queue.length > 0) {
     const fragment = queue.shift();
     const pageIsEmpty = pageFragments.length === 0;
+
+    if (fragment.forceBreak) {
+      // A `page_break` block (measure.mjs) — a zero-height marker, not
+      // content. It ends the page unconditionally (no fit check) and is then
+      // dropped rather than placed, so it never occupies a fragment slot and
+      // its own spacingClass:null never enters a gap calculation: the next
+      // fragment starts a fresh page, where the first-of-page gap is already
+      // unconditionally 0 for any spacingClass (see gapBetween above). An
+      // empty page is a no-op — consecutive/leading/trailing breaks collapse
+      // rather than producing blank pages.
+      if (!pageIsEmpty) startNewPage();
+      continue;
+    }
+
     const gapPt = gapBetween(spacing, previousClass, fragment.spacingClass);
     const availablePt = contentBottomPt - cursor - gapPt;
 
@@ -222,8 +241,11 @@ export function placeFragments(fragments, { pageHeightPt, marginPt, spacing = {}
 
   if (pageFragments.length > 0) pages.push({ fragments: pageFragments });
 
-  // Trailing space on the last page belongs to the document, not the answers.
-  for (const finished of pages.slice(0, -1)) {
+  // Trailing space on the last page belongs to the document, not the
+  // answers — UNLESS `growLastPage` (fit policy `fill`) asks the last page to
+  // bottom out too, in which case it grows exactly like every other page.
+  const pagesToGrow = growLastPage ? pages : pages.slice(0, -1);
+  for (const finished of pagesToGrow) {
     distributeAnswerSpace(finished.fragments, contentTopPt, contentBottomPt, spacing);
   }
 
