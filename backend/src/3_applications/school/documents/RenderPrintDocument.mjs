@@ -163,6 +163,11 @@ export class RenderPrintDocument {
       date: context.date ?? null,
       furniture: furnitureOpts,
       growLastPage: chosen.growLastPage ?? false,
+      // v2's `*italic*` markdown grammar (spec §12.8) — v1 never opts in.
+      // Measurement (`#measureAttempt` below) opts in with the SAME flag, so
+      // wrap positions measured at fit-decision time can never drift from
+      // what actually gets drawn here.
+      italic: true,
     });
 
     const warnings = chosen.density === 'compact'
@@ -206,6 +211,10 @@ export class RenderPrintDocument {
       texToSvg: this.#texToSvg,
       resolveAsset: this.#resolveAsset,
       studentName: context.learnerName ?? null,
+      // Must agree with the final render's `italic: true` (see #renderV2) —
+      // a trial measured without it could pick a density that then wraps
+      // differently once the real render turns *emphasis* spans on.
+      italic: true,
     });
     const box = contentBox(theme, furnitureOpts);
     const { pages } = this.#placeFragments(fragments, {

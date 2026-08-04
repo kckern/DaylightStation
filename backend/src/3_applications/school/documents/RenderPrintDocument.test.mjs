@@ -199,6 +199,46 @@ describe('RenderPrintDocument — v1 legacy passthrough (d)', () => {
     const withDate = await useCase.execute({ document: raw, context: { learnerName: 'Sam', date: '2026-08-04' } });
     expect(withoutDate.bytes.equals(withDate.bytes)).toBe(true);
   });
+
+  it('never opts into *italic* on the legacy path — a v1 document with the same markdown is byte-identical to calling the renderer directly (no italic option)', async () => {
+    const useCase = new RenderPrintDocument();
+    const raw = v1doc({ blocks: [{ type: 'rich_text', md: 'Mix **bold** and *emphasis* words.' }] });
+
+    const { document: normalized } = validateDocument(raw);
+    const direct = await createDocumentPdfRenderer({ texToSvg }).render(normalized, { studentName: null });
+    const viaUseCase = await useCase.execute({ document: raw });
+
+    expect(viaUseCase.bytes.equals(direct.pdf)).toBe(true);
+    // And *emphasis* really did stay literal — no italic FACE got embedded.
+    // (Every embedded font descriptor carries a generic `/ItalicAngle 0`
+    // field regardless of style, so the check is specifically for an
+    // italic PostScript name, e.g. `...-Italic`, not the substring 'Italic'.)
+    expect(viaUseCase.bytes.toString('latin1')).not.toContain('-Italic');
+  });
+});
+
+describe('RenderPrintDocument — *italic* grammar reaches v2 (spec §12.8)', () => {
+  it('measurement and the final render agree: an italic run is actually embedded for a v2 document', async () => {
+    const useCase = new RenderPrintDocument();
+    const document = v2doc({
+      archetype: 'worksheet',
+      blocks: [{ type: 'rich_text', md: 'Mix **bold** and *emphasis* words.' }],
+    });
+
+    const result = await useCase.execute({ document });
+    expect(isPdf(result.bytes)).toBe(true);
+    expect(result.bytes.toString('latin1')).toContain('AtkinsonHyperlegible-Italic');
+  });
+
+  it('the measured run itself carries the italic font tag — proves measurement (not just the draw pass) opted in', () => {
+    const theme = createWorkbookTheme();
+    const doc = createMeasurementDocument({ theme });
+    const document = v2doc({ blocks: [{ type: 'rich_text', md: 'An *emphasis* word.' }] });
+    const fragments = measureDocumentFragments(document, { doc, theme, texToSvg, italic: true });
+    const italicRun = fragments.flatMap((f) => f.lines ?? []).flatMap((l) => l.runs).find((r) => r.font === 'italic');
+    expect(italicRun).toBeDefined();
+    expect(italicRun.text).toBe('emphasis');
+  });
 });
 
 describe('RenderPrintDocument — name/date prefill (e)', () => {
