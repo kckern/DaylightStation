@@ -78,6 +78,37 @@ describe('YamlSurfaceProfileRepository + SurfaceRegistry', () => {
     expect(custom.errors).toEqual([]);
   });
 
+  it('errors the later file when two files share a surfaceId, keeping the first valid', async () => {
+    // A copy-pasted profile that forgot to bump surfaceId — sorts after
+    // 'paper-letter-mono' so it is the one flagged as the duplicate.
+    const duplicateProfile = { ...paperProfile, title: 'Draft copy' };
+    fs.writeFileSync(path.join(directory, 'paper-letter-mono-duplicate.yml'), yaml.dump(duplicateProfile));
+
+    const repository = new YamlSurfaceProfileRepository({ directory });
+    const entries = await repository.listProfiles();
+
+    const first = entries.find((entry) => entry.file === 'paper-letter-mono');
+    const duplicate = entries.find((entry) => entry.file === 'paper-letter-mono-duplicate');
+
+    expect(first.profile).toBeTruthy();
+    expect(first.errors).toEqual([]);
+
+    expect(duplicate.profile).toBeUndefined();
+    expect(duplicate.errors.length).toBeGreaterThan(0);
+    expect(duplicate.errors[0]).toContain('paper-letter-mono');
+    expect(duplicate.errors[0]).toContain('paper-letter-mono-duplicate');
+
+    const registry = new SurfaceRegistry({
+      profiles: entries,
+      ports: {
+        schoolcalc: { certify: () => {} },
+        paper: { certify: () => {} },
+        screen: { certify: () => {} },
+      },
+    });
+    expect(registry.list().filter((p) => p.surfaceId === 'paper-letter-mono')).toHaveLength(1);
+  });
+
   describe('SurfaceRegistry', () => {
     let entries; let ports; let baselines; let registry;
 
