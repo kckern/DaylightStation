@@ -33,20 +33,20 @@ export const WORKBOOK_DENSITIES = ['normal', 'compact'];
  */
 const SCALE_STYLES = {
   standard: {
-    heading1: { size: 20, leading: 25 },
-    heading2: { size: 16, leading: 20.5 },
-    heading3: { size: 13, leading: 17 },
-    body: { size: 11, leading: 14.5 },
-    label: { size: 10, leading: 13 },
-    caption: { size: 9, leading: 12 },
+    heading1: { sizePt: 20, leadingPt: 25 },
+    heading2: { sizePt: 16, leadingPt: 20.5 },
+    heading3: { sizePt: 13, leadingPt: 17 },
+    body: { sizePt: 11, leadingPt: 14.5 },
+    label: { sizePt: 10, leadingPt: 13 },
+    caption: { sizePt: 9, leadingPt: 12 },
   },
   young: {
-    heading1: { size: 24, leading: 30.5 },
-    heading2: { size: 19, leading: 24.5 },
-    heading3: { size: 15.5, leading: 20 },
-    body: { size: 13.5, leading: 18 },
-    label: { size: 12, leading: 15.5 },
-    caption: { size: 10.5, leading: 14 },
+    heading1: { sizePt: 24, leadingPt: 30.5 },
+    heading2: { sizePt: 19, leadingPt: 24.5 },
+    heading3: { sizePt: 15.5, leadingPt: 20 },
+    body: { sizePt: 13.5, leadingPt: 18 },
+    label: { sizePt: 12, leadingPt: 15.5 },
+    caption: { sizePt: 10.5, leadingPt: 14 },
   },
 };
 
@@ -148,6 +148,7 @@ export function createWorkbookTheme({ typeScale = 'standard', density = 'normal'
 
     spacing: DENSITY_SPACING[density],
 
+    // placeholder geometry — revisit when consumed (Tasks 5-6)
     /** Page furniture geometry for later phases (footer bands, continuation strips, gutters). */
     furniture: {
       footerBandPt: density === 'compact' ? 22 : 28,
@@ -155,6 +156,7 @@ export function createWorkbookTheme({ typeScale = 'standard', density = 'normal'
       gutterPt: 0,
     },
 
+    // placeholder geometry — revisit when consumed (Tasks 5-6)
     /** Glyph-circle badge geometry (e.g. numbered/lettered markers), for later phases. */
     badge: {
       diameterPt: typeScale === 'young' ? 20 : 16,
@@ -163,6 +165,7 @@ export function createWorkbookTheme({ typeScale = 'standard', density = 'normal'
       sizePt: typeScale === 'young' ? 11 : 9,
     },
 
+    // placeholder geometry — revisit when consumed (Tasks 5-6)
     /** Inset box geometry (bordered callouts, answer boxes), for later phases. */
     box: {
       radiusPt: 4,
