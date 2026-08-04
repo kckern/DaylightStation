@@ -204,6 +204,12 @@ export class RenderPrintDocument {
    * functions either time, so the two calls cannot disagree about size.
    */
   #measureAttempt(document, theme, density, context, furnitureOpts) {
+    // Computed BEFORE measurement so its gutter-adjusted `widthPt` reaches
+    // the SAME measurement pass that decides wrap points (F2) — the final
+    // render (`#renderV2` → DocumentPdfRenderer.renderPlaced) computes this
+    // identically from the same `theme`/`furnitureOpts`, so a fit decision
+    // made here can never disagree with what actually gets drawn.
+    const box = contentBox(theme, furnitureOpts);
     const measurementDoc = this.#createMeasurementDocument({ theme });
     const fragments = this.#measureDocumentFragments(document, {
       doc: measurementDoc,
@@ -211,12 +217,12 @@ export class RenderPrintDocument {
       texToSvg: this.#texToSvg,
       resolveAsset: this.#resolveAsset,
       studentName: context.learnerName ?? null,
+      widthPt: box.widthPt,
       // Must agree with the final render's `italic: true` (see #renderV2) —
       // a trial measured without it could pick a density that then wraps
       // differently once the real render turns *emphasis* spans on.
       italic: true,
     });
-    const box = contentBox(theme, furnitureOpts);
     const { pages } = this.#placeFragments(fragments, {
       pageHeightPt: box.pageHeightPt, marginPt: box.marginPt, spacing: theme.spacing,
     });

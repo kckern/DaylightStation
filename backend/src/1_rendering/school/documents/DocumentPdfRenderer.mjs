@@ -455,14 +455,25 @@ export function createDocumentPdfRenderer({
     }
   }
 
-  function drawFragment(out, fragment, { page, marks, codes }) {
+  /**
+   * `leftPt` is the PAGE's content-box left edge — `contentLeftPt` (the
+   * factory default, no furniture) or, once furniture/gutter is opted in,
+   * that page's own `contentBox(...).xPt` (F2: the same left edge
+   * `contentBox`'s gutter-adjusted `widthPt` was measured against, and the
+   * one furniture's own footer/continuation-strip painting already uses —
+   * so body text starts flush with furniture, not the page's raw margin).
+   * `fragment.gutterPt` (only ever set on a `passage`'s line-numbered text
+   * node) is an UNRELATED, smaller reservation nested inside that box for
+   * the line-number column — the two compose by simple addition.
+   */
+  function drawFragment(out, fragment, { page, marks, codes, leftPt = contentLeftPt }) {
     if (Array.isArray(fragment.lines)) {
       const gutterPt = fragment.gutterPt ?? 0;
       if (fragment.lineNumbers) {
-        drawLineNumbers(out, fragment.lines, { xPt: contentLeftPt, yPt: fragment.yPt, gutterPt });
+        drawLineNumbers(out, fragment.lines, { xPt: leftPt, yPt: fragment.yPt, gutterPt });
       }
       drawLines(out, fragment.lines, {
-        xPt: contentLeftPt + gutterPt, yPt: fragment.yPt, styleKey: fragment.styleKey,
+        xPt: leftPt + gutterPt, yPt: fragment.yPt, styleKey: fragment.styleKey,
       });
       return;
     }
@@ -471,10 +482,10 @@ export function createDocumentPdfRenderer({
     // unconditionally the question's — see the `innerGapPt` comment in
     // measure.mjs's figureFragment.
     applyAnswerSpaceGrowth(fragment, fragment.innerGapPt ?? theme.question.innerGapPt);
-    const nodeXPt = contentLeftPt + (fragment.gutterPt ?? 0);
+    const nodeXPt = leftPt + (fragment.gutterPt ?? 0);
     if (fragment.number !== undefined) {
       setFont(out, 'bold', theme.question.numberSizePt);
-      out.text(`${fragment.number}.`, contentLeftPt, fragment.yPt, { width: fragment.gutterPt, lineBreak: false });
+      out.text(`${fragment.number}.`, leftPt, fragment.yPt, { width: fragment.gutterPt, lineBreak: false });
     }
     for (const node of fragment.nodes ?? []) {
       drawNode(out, node, { xPt: nodeXPt, yPt: fragment.yPt + node.offsetYPt, page, marks, codes });
@@ -548,6 +559,17 @@ export function createDocumentPdfRenderer({
     studentName, date = null, isAnswerKey, keyItems, bank, tokens, furniture = null, growLastPage = false,
     italic = false,
   }) {
+    // Opting into `furniture` shrinks the usable page height by the
+    // footer-band + continuation-strip reservation (contentBox) BEFORE
+    // placement runs, so no fragment is ever placed where furniture paints.
+    // Without it, placement uses the page's full height exactly as it always
+    // has — existing (non-furniture) callers and their goldens are untouched.
+    // Computed BEFORE measurement (not after, as before F2) so `box.widthPt`
+    // — narrowed by any gutter reservation — can be threaded into the SAME
+    // measurement pass that decides where every line wraps; measuring at the
+    // full page width while drawing/placing at a gutter-narrowed one is
+    // exactly the "gutter is furniture-only" bug F2 fixes.
+    const box = furniture ? contentBox(theme, furniture) : null;
     const measurementDoc = createMeasurementDocument({ theme, fontDir });
     const fragments = measureDocumentFragments(document, {
       doc: measurementDoc,
@@ -558,18 +580,13 @@ export function createDocumentPdfRenderer({
       tokens,
       studentName,
       date,
+      widthPt: box?.widthPt,
       // `*italic*` markdown grammar (v2, spec §12.8). Draw never re-parses
       // text — `drawLines` replays the font already baked into each
       // MEASURED run (`wrapRuns`/`inlineRuns` at measure time) — so this flag
       // only needs to reach measurement; nothing downstream of it changes.
       italic,
     });
-    // Opting into `furniture` shrinks the usable page height by the
-    // footer-band + continuation-strip reservation (contentBox) BEFORE
-    // placement runs, so no fragment is ever placed where furniture paints.
-    // Without it, placement uses the page's full height exactly as it always
-    // has — existing (non-furniture) callers and their goldens are untouched.
-    const box = furniture ? contentBox(theme, furniture) : null;
     const { pages, errors } = placeFragments(fragments, {
       pageHeightPt: box?.pageHeightPt ?? theme.page.heightPt,
       marginPt: box?.marginPt ?? theme.page.marginPt,
@@ -627,8 +644,15 @@ export function createDocumentPdfRenderer({
         // doubled the page count once already (each page trailed by a page
         // containing only its footer).
         out.page.margins = { top: 0, bottom: 0, left: 0, right: 0 };
+        // Under `duplex`, the gutter alternates side by page parity
+        // (contentBox's own "mirror margins" rule), so the left edge is
+        // recomputed PER PAGE — `box.widthPt` itself never changes (see
+        // `contentBox`'s doc comment: both sides give up the same room), only
+        // which side it's reserved from, which is exactly what `pageIndex`
+        // resolves here.
+        const pageLeftPt = furniture ? contentBox(theme, { ...furniture, pageIndex: index }).xPt : contentLeftPt;
         for (const fragment of page.fragments) {
-          drawFragment(out, fragment, { page: index + 1, marks, codes });
+          drawFragment(out, fragment, { page: index + 1, marks, codes, leftPt: pageLeftPt });
         }
         if (furniture) {
           drawFurniture(out, {

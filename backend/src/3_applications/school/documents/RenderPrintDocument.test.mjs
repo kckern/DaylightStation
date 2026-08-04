@@ -14,7 +14,7 @@ import { createMeasurementDocument, measureDocumentFragments } from '#rendering/
 import { placeFragments } from '#rendering/school/documents/layout.mjs';
 import { contentBox } from '#rendering/school/documents/furniture.mjs';
 import { texToSvg } from '#rendering/school/documents/mathSvg.mjs';
-import { pdfText } from '../../../../../tests/_lib/school/pdfText.mjs';
+import { pdfText, pdfTextItems } from '../../../../../tests/_lib/school/pdfText.mjs';
 
 const isPdf = (bytes) => Buffer.isBuffer(bytes) && bytes.subarray(0, 5).toString('latin1') === '%PDF-';
 
@@ -306,6 +306,91 @@ describe('RenderPrintDocument — v2 header fields wired (F3)', () => {
     const text = pdfText(result.bytes);
     expect(text).toMatch(/Name:/);
     expect(text).toMatch(/Date:/);
+  });
+});
+
+describe('RenderPrintDocument — gutter threads into body measurement AND drawing (F2)', () => {
+  // `worksheet` is the one archetype whose furniture opts into `duplex`
+  // (RenderPrintDocument's DUPLEX_ARCHETYPES) — the side the gutter reserves
+  // room on FLIPS by page parity, which is exactly the case that would catch
+  // body text still drawn at the plain, un-offset page margin.
+  const document = v2doc({
+    archetype: 'worksheet',
+    fit: { policy: 'flow', typeScale: 'standard' },
+    blocks: [
+      { type: 'rich_text', md: 'BodyMarkerPageOne is the first word measured on page one.' },
+      { type: 'page_break' },
+      { type: 'rich_text', md: 'BodyMarkerPageTwo is the first word measured on page two.' },
+    ],
+  });
+
+  it('body text\'s left edge equals furniture\'s content-box left edge, and flips under duplex', async () => {
+    const useCase = new RenderPrintDocument();
+    const result = await useCase.execute({ document, context: { learnerName: 'Riley' } });
+    expect(result.pageCount).toBe(2);
+
+    // Same theme the pipeline actually chose (flow policy → always 'normal'
+    // density; default typeScale 'standard') — computed independently here,
+    // not read back off the render, so this is a real expectation, not a
+    // tautology.
+    const theme = createWorkbookTheme({ typeScale: 'standard', density: 'normal' });
+    const page1Box = contentBox(theme, { gutter: true, duplex: true, pageIndex: 0 }); // recto
+    const page2Box = contentBox(theme, { gutter: true, duplex: true, pageIndex: 1 }); // verso
+    // The whole point of "duplex flips the gutter side": the two pages must
+    // NOT share a left edge, or this test would pass vacuously.
+    expect(page1Box.xPt).not.toBe(page2Box.xPt);
+
+    const items = await pdfTextItems(result.bytes);
+    const firstWordOn = (page, str) => items.find((item) => item.page === page && item.str === str);
+
+    const page1Body = firstWordOn(1, 'BodyMarkerPageOne');
+    const page2Body = firstWordOn(2, 'BodyMarkerPageTwo');
+    expect(page1Body, 'page 1 body marker word').toBeDefined();
+    expect(page2Body, 'page 2 body marker word').toBeDefined();
+
+    expect(page1Body.xPt).toBeCloseTo(page1Box.xPt, 1);
+    expect(page2Body.xPt).toBeCloseTo(page2Box.xPt, 1);
+
+    // Furniture's own continuation-strip title (page 2 only — page 1 shows
+    // the real header instead) must sit at the SAME left edge as page 2's
+    // body text — the "body-left == furniture-left" the reviewer demanded,
+    // not just two numbers that both happen to match contentBox in isolation.
+    const stripTitle = firstWordOn(2, document.id);
+    expect(stripTitle, 'page 2 continuation-strip title').toBeDefined();
+    expect(stripTitle.xPt).toBeCloseTo(page2Body.xPt, 1);
+  });
+
+  it('a non-duplex archetype (quiz) keeps the gutter on the SAME side across pages, and body still matches it', async () => {
+    const quizDoc = v2doc({
+      archetype: 'quiz',
+      fit: { policy: 'flow', typeScale: 'standard' },
+      blocks: document.blocks,
+    });
+    const useCase = new RenderPrintDocument();
+    const result = await useCase.execute({ document: quizDoc });
+    expect(result.pageCount).toBe(2);
+
+    const theme = createWorkbookTheme({ typeScale: 'standard', density: 'normal' });
+    const box = contentBox(theme, { gutter: true, duplex: false, pageIndex: 0 });
+
+    const items = await pdfTextItems(result.bytes);
+    const page1Body = items.find((item) => item.page === 1 && item.str === 'BodyMarkerPageOne');
+    const page2Body = items.find((item) => item.page === 2 && item.str === 'BodyMarkerPageTwo');
+    expect(page1Body.xPt).toBeCloseTo(box.xPt, 1);
+    expect(page2Body.xPt).toBeCloseTo(box.xPt, 1);
+  });
+
+  it('context.gutter: 0 leaves body text at the plain page margin, matching furniture with gutter off', async () => {
+    const useCase = new RenderPrintDocument();
+    const result = await useCase.execute({ document, context: { gutter: 0 } });
+
+    const theme = createWorkbookTheme({ typeScale: 'standard', density: 'normal' });
+    const box = contentBox(theme, { gutter: 0, duplex: true, pageIndex: 0 });
+    expect(box.xPt).toBe(theme.page.marginPt); // no gutter reserved at all
+
+    const items = await pdfTextItems(result.bytes);
+    const page1Body = items.find((item) => item.page === 1 && item.str === 'BodyMarkerPageOne');
+    expect(page1Body.xPt).toBeCloseTo(theme.page.marginPt, 1);
   });
 });
 
