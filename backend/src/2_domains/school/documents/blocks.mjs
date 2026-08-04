@@ -24,6 +24,37 @@ const isPositiveNumber = (v) => typeof v === 'number' && Number.isFinite(v) && v
 const REQUIRE_MACRO = /\\require\s*\{/;
 const requireError = (field) => `${field} must not use \\require{} (server rendering loads all packages)`;
 
+/**
+ * Types the `inset` box path (`1_rendering/school/documents/measure.mjs`'s
+ * `measureBoxNode`/`measureNodes`, and `DocumentPdfRenderer`'s `drawBox`)
+ * cannot actually nest one level deep — audited against `measureNodes`'s
+ * switch coverage rather than assumed:
+ *
+ * - `question` has NO case in `measureNodes` at all — it is only
+ *   special-cased by `measureBlocks` at the document's TOP level (`if
+ *   (block.type === 'question') return [questionFragment(...)]`), so a
+ *   question nested in an inset used to validate clean and then throw
+ *   `UnsupportedBlockError` at measure time.
+ * - `page_break` DOES measure (a zero-height `forceBreak` marker), but the
+ *   renderer's `drawNode` has no case for its `pageBreak` node kind, so it
+ *   crashed the "Unreachable" default branch at DRAW time instead — a page
+ *   break has no meaning inside a box that never spans a page boundary on
+ *   its own.
+ * - `plot`/`geometry` have no Letter renderer AT ALL yet (documented
+ *   directly on `measureNodes`'s default case) — nested in an inset or not.
+ *
+ * Every other registered block type is either handled directly by
+ * `measureNodes` (rich_text, math, asset, answer_space, omr_response,
+ * media_action, scan_action, passage, figure, list, divider, spacer) or
+ * already rejected by the inset-nesting check above (`inset`).
+ */
+const INSET_UNSUPPORTED_CHILD_TYPES = {
+  question: 'inset blocks must not contain a question (a question is the exam atomic unit; insets are asides one level deep)',
+  page_break: 'inset blocks must not contain a page_break (a box never spans a page boundary on its own)',
+  plot: 'inset blocks must not contain a plot (no Letter renderer exists for plot yet)',
+  geometry: 'inset blocks must not contain a geometry (no Letter renderer exists for geometry yet)',
+};
+
 const specValidator = (type) => (raw, push) => {
   if (!raw.spec || typeof raw.spec !== 'object' || Array.isArray(raw.spec)) {
     push(`${type} spec must be an object`);
@@ -148,6 +179,15 @@ const VALIDATORS = {
       // an inset inside an inset has no more page-break/box semantics to add.
       if (child && typeof child === 'object' && child.type === 'inset') {
         ctx.errors.push(`${at}: inset blocks must not nest insets`);
+        return;
+      }
+      // Fail closed at validate time (spec principle), not at measure/draw:
+      // reject the types the box path cannot actually render nested — see
+      // INSET_UNSUPPORTED_CHILD_TYPES above for the audit against
+      // measureNodes'/measureBoxNode's real coverage.
+      if (child && typeof child === 'object'
+        && Object.prototype.hasOwnProperty.call(INSET_UNSUPPORTED_CHILD_TYPES, child.type)) {
+        ctx.errors.push(`${at}: ${INSET_UNSUPPORTED_CHILD_TYPES[child.type]}`);
         return;
       }
       validateInto(child, at, ctx.errors);
