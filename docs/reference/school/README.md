@@ -104,6 +104,8 @@ A guest grades normally and records nothing.
 | Screen | `data/household/screens/portal.yml` → `widget: school` |
 | Config | `data/household/config/school.yml` |
 
+Any screen's config YAML may carry an optional top-level `surfaceProfile: <surfaceId>` key naming which certified surface profile that screen presents as, resolved via `GET /api/v1/school/surfaces/profile?screen=<screenId>` (a bare `browser`/absent screen resolves the fixed `screen-browser` profile instead).
+
 Sessions are **in memory by design**. A restart costs the rest of one sitting,
 never a recorded attempt — those are already on disk.
 

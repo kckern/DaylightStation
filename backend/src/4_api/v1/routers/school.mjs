@@ -23,6 +23,9 @@ export function createSchoolRouter({
   learnerDirectory = null,
   printService = null,
   schoolCalcRouter = null,
+  surfaceCertification = null,
+  surfaceRegistry = null,
+  getScreenConfig = null,
   logger = console,
 }) {
   const router = express.Router();
@@ -70,6 +73,67 @@ export function createSchoolRouter({
       learnerId: textQuery(req.query.learnerId),
     }));
   }));
+  // Surface certification matrix (spec §4.2, §9): one row per registered
+  // profile/codec-baseline for either a catalog lesson address or a
+  // standalone bank, optionally filtered to one surface. `surfaceCertification`
+  // is absent whenever the School Catalog/registry composition failed to wire
+  // (e.g. missing surfaces content) — 503 rather than a misleading empty/404,
+  // since the feature is simply not available, not "not found" (mirrors the
+  // ADAPTIVE_TUTOR_UNAVAILABLE 503 convention already used below for the
+  // remediation tutor's own unavailable dependency).
+  router.get('/certification', wrap(async (req, res) => {
+    if (!surfaceCertification) return res.status(503).json({ error: 'certification-unavailable' });
+    const address = textQuery(req.query.address);
+    const bankId = textQuery(req.query.bank);
+    const surfaceId = textQuery(req.query.surface);
+    if ((address === null) === (bankId === null)) {
+      throw new ValidationError('certification requires exactly one of address or bank');
+    }
+    if (address !== null && !isLessonAddress(address)) {
+      throw new ValidationError('address must be a 5-segment catalogId/subjectId/courseId/unitId/lessonId path');
+    }
+    let rows;
+    try {
+      rows = address !== null
+        ? await surfaceCertification.lesson(address)
+        : await surfaceCertification.bank(bankId);
+    } catch {
+      throw new EntityNotFoundError('School surface certification target', address ?? bankId);
+    }
+    const filtered = surfaceId !== null ? rows.filter((row) => row.surfaceId === surfaceId) : rows;
+    return res.set('Cache-Control', 'no-store').json(filtered);
+  }));
+
+  // Screen surface-profile resolution (spec §4.2 review finding 3): a
+  // screen's config YAML may carry an optional top-level `surfaceProfile: <id>`
+  // key (served today by screens.mjs); `?screen=browser` or an absent param
+  // resolves the fixed 'screen-browser' id instead of reading any screen
+  // config. Every step of the chain is fail-closed — a miss anywhere (no
+  // registry, no screen config, no key, unknown id) is a 404, never a
+  // synthesized default, because a wrong profile would misreport what a
+  // surface can actually render.
+  router.get('/surfaces/profile', wrap(async (req, res) => {
+    const screenParam = textQuery(req.query.screen);
+    const unresolved = (reason) => {
+      logger.warn?.('school.surfaces.profile.unresolved', { screen: screenParam, reason });
+      return res.status(404).json({ error: 'surface-profile-unresolved' });
+    };
+    if (!surfaceRegistry) return unresolved('surface registry not configured');
+
+    let surfaceId = 'screen-browser';
+    if (screenParam !== null && screenParam !== 'browser') {
+      if (!getScreenConfig) return unresolved('screen config lookup not configured');
+      const config = await getScreenConfig(screenParam);
+      if (!config) return unresolved('screen config not found');
+      if (!config.surfaceProfile) return unresolved('screen config has no surfaceProfile key');
+      surfaceId = config.surfaceProfile;
+    }
+
+    const profile = surfaceRegistry.get(surfaceId);
+    if (!profile) return unresolved(`unknown surfaceId '${surfaceId}'`);
+    return res.set('Cache-Control', 'no-store').json(profile);
+  }));
+
   router.get('/geography/decks', wrap((req, res) => {
     // Geography is an outer presentation here. The service/source expose only
     // generic collections and bank summaries.
@@ -337,6 +401,12 @@ function requiredTextQuery(value, field) {
   const text = textQuery(value);
   if (text === null) throw new ValidationError(`${field} is required`);
   return text;
+}
+
+/** Five non-empty, slash-separated segments: catalogId/subjectId/courseId/unitId/lessonId. */
+function isLessonAddress(address) {
+  const segments = address.split('/');
+  return segments.length === 5 && segments.every((segment) => segment.length > 0);
 }
 
 function csvQuery(value) {
