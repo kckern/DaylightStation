@@ -8,6 +8,8 @@ const materialUnitsMock = vi.fn();
 const unitProgressMock = vi.fn();
 const learningCatalogsMock = vi.fn();
 const learningLessonMock = vi.fn();
+const surfaceProfileMock = vi.fn();
+const certificationMock = vi.fn();
 vi.mock('./schoolApi.js', () => ({
   schoolApi: {
     roster: vi.fn(async () => ({ ok: true, status: 200, data: [{ id: 'kid1', name: 'Alpha', birthyear: 2016 }, { id: 'dad1', name: 'Papa', birthyear: 1984 }] })),
@@ -26,6 +28,8 @@ vi.mock('./schoolApi.js', () => ({
     report: vi.fn(async () => ({ ok: true, status: 200, data: { learners: [{ id: 'kid1', name: 'Alpha', reports: [] }] } })),
     results: vi.fn(async () => ({ ok: true, status: 200, data: [] })),
     materialProgress: vi.fn(async () => ({ ok: true, status: 200, data: [] })),
+    surfaceProfile: (...a) => surfaceProfileMock(...a),
+    certification: (...a) => certificationMock(...a),
   },
 }));
 
@@ -74,10 +78,60 @@ beforeEach(() => {
   learningLessonMock.mockReset();
   materialUnitsMock.mockReset().mockResolvedValue({ ok: true, status: 200, data: { material: {}, units: [] } });
   coursesMock.mockReset().mockResolvedValue({ ok: true, status: 200, data: [] });
+  // Benign defaults: this app mount's surface never resolves (no profile
+  // authored for the test host), so catalog learning launches are gated off
+  // by default. The one test that actually launches a catalog module
+  // (below) overrides both with a resolved surface + a 'render' verdict.
+  surfaceProfileMock.mockReset().mockResolvedValue({ ok: false, status: 404, data: { error: 'surface-profile-unresolved' } });
+  certificationMock.mockReset().mockResolvedValue({ ok: true, status: 200, data: [] });
 });
 
 describe('authored learning Catalog', () => {
   it('opens a generic Catalog hierarchy and asks who is studying before tracked work', async () => {
+    learningCatalogsMock.mockResolvedValueOnce({ ok: true, status: 200, data: {
+      schema: 'school.catalog-index/v1', catalogs: [{
+        schema: 'school.catalog/v1', catalogId: 'core', title: 'Core', subjects: [{
+          subjectId: 'quant', title: 'Quantitative', courses: [{ courseId: 'rates', title: 'Rates', units: [{
+            unitId: 'intro', title: 'Introduction', lessons: [{ lessonId: 'unit-rate', title: 'Unit rates', modules: [{ moduleId: 'check', type: 'learning_probe' }] }],
+          }] }],
+        }],
+      }],
+    } });
+    learningLessonMock.mockResolvedValueOnce({ ok: true, status: 200, data: {
+      schema: 'school.learning-lesson/v1',
+      context: { catalog: { catalogId: 'core' }, subject: { subjectId: 'quant' }, course: { courseId: 'rates' }, unit: { unitId: 'intro' } },
+      lesson: { lessonId: 'unit-rate', title: 'Unit rates', modules: [{
+        moduleId: 'check', type: 'learning_probe', title: 'Check it', bankId: 'rate-check',
+        phase: 'check', difficulty: 2, conceptIds: ['unit-rate'],
+        feedback: { timing: 'immediate', onIncorrect: 'explain_then_continue', maxAttemptsPerItem: 1 },
+        bank: { id: 'rate-check', title: 'Rate check', items: [{ id: 'q1', type: 'multiple_choice', prompt: 'A unit rate?', choices: ['Yes', 'No'], answer: 'Yes', feedback: { explanation: 'One denominator unit.' } }] },
+      }] },
+    } });
+    // This screen's surface DOES resolve, and the "check" module is
+    // certified to render here — the gate in SchoolApp.startLearning must
+    // let a fully-certified catalog launch through unchanged.
+    surfaceProfileMock.mockResolvedValueOnce({ ok: true, status: 200, data: { surfaceId: 'screen-test', family: 'screen', title: 'Test Screen', liveness: 'live', capabilities: {}, limits: {} } });
+    certificationMock.mockResolvedValueOnce({ ok: true, status: 200, data: [{
+      address: 'core/quant/rates/intro/unit-rate', surfaceId: 'screen-test', verdict: 'full', reasons: [], warnings: [],
+      moduleVerdicts: [{ moduleId: 'check', verdict: 'render', reasons: [], warnings: [] }],
+    }] });
+    render(<SchoolApp clear={() => {}} />);
+    fireEvent.click(await screen.findByRole('button', { name: /^catalog/i }));
+    for (const label of ['Core', 'Quantitative', 'Rates', 'Introduction', 'Unit rates']) {
+      fireEvent.click(await screen.findByRole('button', { name: new RegExp(label, 'i') }));
+    }
+    // The lesson header carries the row-level full/partial badge for this surface.
+    expect(await screen.findByText('Full')).toBeInTheDocument();
+    fireEvent.click(await screen.findByRole('button', { name: /Check it/ }));
+    expect(await screen.findByRole('dialog')).toBeInTheDocument();
+    fireEvent.click(screen.getByText('Alpha'));
+    expect(await screen.findByText('A unit rate?')).toBeInTheDocument();
+  });
+
+  it('a catalog module launch is refused (fail closed) when this surface never certified it', async () => {
+    // Default beforeEach mocks: surfaceProfile ok:false -> no surfaceId ->
+    // LearningCatalogBrowser never fetches certification -> an empty verdict
+    // map -> moduleLaunchAllowed refuses every moduleId, including this one.
     learningCatalogsMock.mockResolvedValueOnce({ ok: true, status: 200, data: {
       schema: 'school.catalog-index/v1', catalogs: [{
         schema: 'school.catalog/v1', catalogId: 'core', title: 'Core', subjects: [{
@@ -102,10 +156,15 @@ describe('authored learning Catalog', () => {
     for (const label of ['Core', 'Quantitative', 'Rates', 'Introduction', 'Unit rates']) {
       fireEvent.click(await screen.findByRole('button', { name: new RegExp(label, 'i') }));
     }
+    expect(screen.queryByText('Full')).toBeNull();
+    expect(screen.queryByText('Partial')).toBeNull();
     fireEvent.click(await screen.findByRole('button', { name: /Check it/ }));
+    // Tracked module: still asks who's studying (identity gate is unaffected).
     expect(await screen.findByRole('dialog')).toBeInTheDocument();
     fireEvent.click(screen.getByText('Alpha'));
-    expect(await screen.findByText('A unit rate?')).toBeInTheDocument();
+    // Refused: the learning_unsupported panel, not the probe question.
+    expect(await screen.findByText(/needs a capability that is not installed/i)).toBeInTheDocument();
+    expect(screen.queryByText('A unit rate?')).toBeNull();
   });
 });
 

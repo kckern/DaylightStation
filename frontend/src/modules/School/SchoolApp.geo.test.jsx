@@ -23,6 +23,8 @@ vi.mock('./schoolApi.js', () => ({
     results: vi.fn(async () => ({ ok: true, status: 200, data: [] })),
     materialProgress: vi.fn(async () => ({ ok: true, status: 200, data: [] })),
     geoDecks: (...a) => geoDecksMock(...a),
+    surfaceProfile: vi.fn(async () => ({ ok: false, status: 404, data: { error: 'surface-profile-unresolved' } })),
+    certification: vi.fn(async () => ({ ok: true, status: 200, data: [] })),
   },
 }));
 

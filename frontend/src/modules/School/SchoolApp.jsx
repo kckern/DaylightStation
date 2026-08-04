@@ -32,6 +32,7 @@ import { languageApi } from './Programs/Glossika/languageApi.js';
 import { schoolApi } from './schoolApi.js';
 import { schoolLog } from './schoolLog.js';
 import { useSchoolLaunch } from './useSchoolLaunch.js';
+import { moduleLaunchAllowed } from './catalog/certification.js';
 import './School.scss';
 
 /**
@@ -61,6 +62,16 @@ function schoolUrlBase() {
   const screen = path.match(/^(\/screens?\/[^/]+)(?:\/|$)/);
   if (screen) return screen[1];
   return null;
+}
+
+// The surface-profile screen id (spec §4.2): the same /screen(s)/<id> mount
+// schoolUrlBase() already parses, re-read off the resolved base rather than
+// re-matching the pathname. A standalone app mount (/school, /app/school) —
+// or any base that isn't a screen mount — carries no screen id, so it
+// resolves to the generic 'browser' surface.
+export function screenIdFromUrlBase(urlBase) {
+  const m = urlBase && urlBase.match(/^\/screens?\/([^/]+)$/);
+  return m ? decodeURIComponent(m[1]) : 'browser';
 }
 
 // Everything after a `subject/<id>` or `library` section is the MATERIALS
@@ -117,6 +128,7 @@ function SchoolShell({ clear }) {
   const { status, roster, currentUser, isGuest, pickerOpen, openPicker, claim, continueAsGuest } = useSchoolProfile();
   const { crumbs: extraCrumbs } = useSchoolBreadcrumbBar();
   const urlBase = useMemo(schoolUrlBase, []);
+  const screenId = useMemo(() => screenIdFromUrlBase(urlBase), [urlBase]);
   const initialLink = useMemo(() => parseSchoolPath(urlBase), [urlBase]);
   const [section, setSection] = useState(initialLink.section); // a sections id, or null = home grid
   // The materials chain below the section (collection → work → track ids). It
@@ -135,6 +147,27 @@ function SchoolShell({ clear }) {
   // a subject shelf can show a skeleton during the load rather than the empty
   // state, which otherwise reads as "stuck/broken" while it's legitimately loading.
   const [catalogLoaded, setCatalogLoaded] = useState(false);
+  // This mount's certified surface (spec §4.2). Resolved once on ready and
+  // held for the session — a screen doesn't change identity mid-visit. A
+  // failed/unresolved profile (404 fail-closed, or any other non-ok) leaves
+  // this null, which is exactly the state moduleLaunchAllowed's null-map
+  // fail-closed handles: catalog learning launches simply never clear.
+  const [surfaceId, setSurfaceId] = useState(null);
+
+  useEffect(() => {
+    if (status !== 'ready') return undefined;
+    let alive = true;
+    schoolApi.surfaceProfile(screenId).then(({ ok, data }) => {
+      if (!alive) return;
+      if (ok && data?.surfaceId) {
+        setSurfaceId(data.surfaceId);
+      } else {
+        schoolLog.surface('profile-unresolved', { screenId });
+        setSurfaceId(null);
+      }
+    });
+    return () => { alive = false; };
+  }, [status, screenId]);
 
   // Un-grey the subject wall on materials + courses — the fast catalogues — and
   // do NOT block that render on the bank catalogue (thousands of files). Banks
@@ -192,8 +225,21 @@ function SchoolShell({ clear }) {
     await start(bankSummary, mode, isGuest);
   }, [currentUser, isGuest, openPicker, start]);
 
+  // Certification gate (spec §4.2): consulted ONLY here, on catalog module
+  // launches — startLearning's one caller chain is onLearningLaunch/onPick/
+  // onDismiss, all originating from LearningCatalogBrowser's onLaunch, so
+  // gating here never touches banks/geo/typing/programs. `launch.certification`
+  // is the verdict Map LearningCatalogBrowser built for the opened lesson (or
+  // null if this surface's profile never resolved); moduleLaunchAllowed fails
+  // closed on either a null map or an unknown moduleId. A refusal reuses the
+  // learning_unsupported panel — its "capability not installed" copy already
+  // fits a screen the module isn't certified for.
   const startLearning = useCallback((launch) => {
-    const { module, learning } = launch;
+    const { module, learning, certification } = launch;
+    if (!moduleLaunchAllowed(certification, module.moduleId)) {
+      setActive({ mode: 'learning_unsupported', module, learning });
+      return;
+    }
     if (module.type === 'learning_probe') setActive({ mode: 'learning_probe', module, learning });
     else if (module.type === 'lecture_notes' || module.type === 'examples') setActive({ mode: 'learning_reader', module, learning });
     else if (module.type === 'flashcards') setActive({ mode: 'flashcard', bank: module.bank, learning });
@@ -438,7 +484,7 @@ function SchoolShell({ clear }) {
         {section === 'progress' && !active && (
           <ReportPanel userId={currentUser?.id || null} onFollowUp={currentUser ? onProgressFollowUp : null} />
         )}
-        {section === 'catalog' && !active && <LearningCatalogBrowser onLaunch={onLearningLaunch} />}
+        {section === 'catalog' && !active && <LearningCatalogBrowser onLaunch={onLearningLaunch} surfaceId={surfaceId} />}
         {section === 'print' && <PrintCenter />}
         {section === 'typing' && <TypingTutor />}
         {section === 'geography' && !active && <GeographyGrid onLaunch={onLaunch} />}
