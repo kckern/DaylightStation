@@ -17,28 +17,64 @@ Do not collapse those facts into a false `connected` indicator. In particular,
 tip/ring high means only `unknown_idle`; it does not prove that a plug or a
 powered calculator is present.
 
-## Exact hardware to obtain
+## Locked product decision
+
+The production path is a small, factory-assembled **TI Link Hat** PCB for the
+ATOM—not a hand-soldered collection of loose parts. This board is specified
+here but has not yet been designed or fabricated.
+
+```text
+TI cable → 2.5 mm jack → TI Link Hat → short keyed header → ATOM Lite
+```
+
+### v1: useful direct-link relay
+
+The first board contains the jack, two protected TI-line sense channels, two
+open-drain sinks, a keyed low-voltage header, and enclosure mounting. It
+proves a live calculator only from valid TI traffic or `SCF1`; idle line levels
+never count as a connected calculator. Mechanical insertion detection is not
+required for this useful first version.
+
+### v1.1: mechanical insertion indication
+
+Add a plug-detect input only after selecting a switched jack whose detect
+contact is verified to be isolated from tip and ring. It reports
+`absent`/`inserted`, never calculator power or protocol readiness. This option
+must not delay v1.
+
+## What to buy or order
 
 | Qty. | Item | Required characteristics |
 |---:|---|---|
 | 1 | M5Stack ATOM Lite | ESP32 controller; its built-in RGB LED is on GPIO 27. |
-| 1 | M5Stack ATOM Hub Proto Kit | A solderable carrier/enclosure for the ATOM. |
-| 1 | 2.5 mm **stereo TRS switched jack** | Panel/board-mount socket with an independent normally-closed plug-detect contact. Its datasheet must show which contact changes only on plug insertion. A plain three-terminal socket is insufficient for reliable insertion detection. |
-| 2 | 2N7000 N-channel MOSFETs | One independent open-drain sink per TI line. BSS138 is acceptable only after its pinout and low-gate behaviour are verified for the chosen part. |
-| 2 | 10 kΩ, 1/4 W resistors | Upper legs of the TI-to-ESP input dividers. |
-| 2 | 15 kΩ, 1/4 W resistors | Lower legs of the TI-to-ESP input dividers. |
-| 4 | 100 Ω, 1/4 W resistors | Two GPIO-input protection resistors and two MOSFET-gate resistors. |
-| 2 | 100 kΩ, 1/4 W resistors | Gate pulldowns; they keep both sinks released through reset/unpowered states. |
-| 1 | 10 kΩ, 1/4 W resistor | External 3.3 V pull-up for the jack-detect input. Do not rely solely on an ESP32 internal pull-up. |
-| 1 | 1 kΩ, 1/4 W resistor | Series protection between the jack's detect contact and its GPIO. |
-| 1 | 100 nF ceramic capacitor | Jack-detect debounce capacitor, from GPIO side of the 1 kΩ resistor to ground. |
-| 1 | 2.5 mm TRS male-to-male calculator link cable | A proper calculator cable, not a 3.5 mm audio lead and not a USB Graph Link. |
-| 1 | Digital multimeter | Mandatory before the first calculator connection. |
-| 1 | Heat-shrink, strain relief, insulated enclosure | Mandatory for the cable and the finished board. |
+| 1 | Factory-assembled TI Link Hat | Custom 30–40 mm board specified below; replaces loose MOSFETs, resistors, and jack wiring. |
+| 1 | 2.5 mm TRS male-to-male calculator link cable | A proper calculator cable, not a 3.5 mm audio lead or USB Graph Link. |
+| 1 | Enclosure or ATOM carrier | Provides strain relief and a protected place for the small PCB. |
+| 1 | Digital multimeter | Mandatory before first calculator connection. |
 
-Do not buy an RS-232 base, a USB-to-TI Graph Link cable, or a generic I²C
-bidirectional level-shifter board for this circuit. None provides the required
-two independent, reset-safe open-drain sinks.
+The M5Stack ATOM Hub Proto Kit is useful only for development and board
+bring-up; it is not the normal production adapter. Do not buy an RS-232 base,
+a USB-to-TI Graph Link cable, or a generic I²C bidirectional level-shifter
+board. None provides the required two independent, reset-safe open-drain
+sinks.
+
+## TI Link Hat fabrication contract
+
+Target a 30–40 mm board with factory SMD assembly; the jack may be a
+through-hole or panel-mount component if that makes enclosure mounting more
+reliable. The installer should connect only a keyed header and calculator
+cable—not solder the link interface.
+
+| Function | Required circuit |
+|---|---|
+| Tip sense | 10 kΩ / 15 kΩ divider and 100 Ω GPIO protection; 5 V TI bus to 3.3 V input only. |
+| Ring sense | Same protected input circuit as tip. |
+| Tip sink | 2N7000-class N-channel MOSFET, 100 Ω gate resistor, 100 kΩ gate pulldown; open drain only. |
+| Ring sink | Same independent open-drain circuit as tip. |
+| v1.1 plug detector | 10 kΩ external pull-up, 1 kΩ series resistor, 100 nF debounce capacitor, only with a verified isolated jack contact. |
+
+The keyed header carries 3.3 V, ground, the four TI GPIOs, and optionally the
+plug-detect GPIO. It must not carry TI bus voltage into the ATOM power rails.
 
 ## Pin allocation
 
@@ -51,11 +87,11 @@ These are **ESP32-side** pins. They are not calculator pins.
 | TI ring/white sense | `RING_SENSE_PIN` | GPIO 33 | divider output → input only |
 | TI ring/white assert | `RING_SINK_PIN` | GPIO 26 | MOSFET gate through 100 Ω |
 | Built-in RGB LED | `LED_PIN` | GPIO 27 | already owned by the ATOM LED |
-| Jack insertion detect | `PLUG_DETECT_PIN` | one spare, exposed, non-strapping GPIO | input only; external 10 kΩ pull-up |
+| Jack insertion detect (v1.1) | `PLUG_DETECT_PIN` | one spare, exposed, non-strapping GPIO | input only; external 10 kΩ pull-up |
 
-Select the detect GPIO from pins physically exposed by the particular ATOM Hub
-Proto carrier. It must not be one of the five pins above, a boot-strapping pin,
-or a pin used by the USB serial path. Configure it in the private relay YAML:
+Select the detect GPIO from the pins exposed by the TI Link Hat header. It must
+not be one of the five pins above, a boot-strapping pin, or a pin used by the
+USB serial path. Configure it in the private relay YAML:
 
 ```yaml
 link:
@@ -106,7 +142,7 @@ Connect sleeve/black to ESP32 ground exactly once at the interface board. Do
 not feed calculator voltage into the M5 3.3 V or 5 V rails. Do not connect an
 ESP32 GPIO directly to tip or ring.
 
-## Plug-detect wiring
+## v1.1 plug-detect wiring
 
 Use only an **isolated switched contact** on the jack. Some switched jacks
 provide contacts that short a signal conductor when no plug is inserted; do
@@ -175,9 +211,11 @@ power before changing wiring.
    manufacturer's datasheet. Do not trust a random package diagram.
 3. Power the ATOM with `link.transmit_enabled: false`. Measure each MOSFET gate
    relative to ground: it must be near 0 V, not 3.3 V.
-4. With no calculator cable inserted, verify the jack-detect GPIO is low.
-   Insert the cable only into the relay jack and verify it becomes high after
-   debounce. Confirm this test does not change either tip/ring net.
+4. For a v1.1 board, with no calculator cable inserted, verify the jack-detect
+   GPIO is low. Insert the cable only into the relay jack and verify it becomes
+   high after debounce. Confirm this test does not change either tip/ring net.
+   Skip this test for v1: it reports mechanical insertion as `unknown` by
+   design.
 5. Still with transmission disabled, insert the calculator cable and confirm
    the calculator does not reset, enter a menu, or receive a key event.
 6. Request `/status`; confirm transmit is disabled, physical insertion is only
