@@ -14,6 +14,7 @@
  */
 import { describe, it, expect } from 'vitest';
 import { createDocumentPdfRenderer } from './DocumentPdfRenderer.mjs';
+import { placeFragments } from './layout.mjs';
 import {
   createMeasurementDocument, measureBlocks, parseRichText,
   BlockMeasureError, UnresolvedAssetError,
@@ -291,12 +292,54 @@ describe('workbook content blocks — measure + draw', () => {
       expect(fragment.nodes).toEqual([]);
     });
 
-    it('passes through placement harmlessly (Task 7 wires the actual break)', async () => {
-      await expectRealPdf(doc([
+    it('forces an actual page boundary in placement (Task 7)', async () => {
+      const { pageCount } = await expectRealPdf(doc([
         { type: 'rich_text', md: 'Before the break.' },
         { type: 'page_break' },
         { type: 'rich_text', md: 'After the break.' },
       ]));
+      expect(pageCount).toBe(2);
+    });
+  });
+
+  describe('inset-nested elastic space — pinned at minPt, not grown (Task 5/7 carry)', () => {
+    it('a spacer nested inside an inset never surfaces as the box fragment’s answerSpace', () => {
+      const [fragment] = measureOne({
+        type: 'inset',
+        blocks: [
+          { type: 'rich_text', md: 'Write your answer below.' },
+          { type: 'spacer', minPt: 20, maxPt: 200 },
+        ],
+      });
+      expect(fragment.answerSpace).toBeNull();
+    });
+
+    it('growLastPage (fit policy fill) grows a top-level spacer but leaves the inset-nested one at minPt', () => {
+      const [insetFragment] = measureOne({
+        type: 'inset',
+        blocks: [{ type: 'spacer', minPt: 20, maxPt: 200 }],
+      });
+      const [topSpacerFragment] = measureOne({ type: 'spacer', minPt: 20, maxPt: 200 });
+      const insetHeightBeforePlacement = insetFragment.heightPt;
+
+      const { pages, errors } = placeFragments([insetFragment, topSpacerFragment], {
+        pageHeightPt: theme.page.heightPt,
+        marginPt: theme.page.marginPt,
+        spacing: theme.spacing,
+        growLastPage: true,
+      });
+
+      expect(errors).toEqual([]);
+      expect(pages).toHaveLength(1);
+      const placedInset = pages[0].fragments.find((f) => f.id === insetFragment.id);
+      const placedTopSpacer = pages[0].fragments.find((f) => f.id === topSpacerFragment.id);
+      // Pinned: the box's answerSpace is null (see the test above), so
+      // distributeAnswerSpace has nothing to grow on it — even on the (only,
+      // hence last) page with growLastPage on.
+      expect(placedInset.heightPt).toBe(insetHeightBeforePlacement);
+      // Contrast: the SAME page's top-level elasticSpace fragment DOES grow,
+      // proving growLastPage itself works and the inset is the outlier.
+      expect(placedTopSpacer.heightPt).toBeGreaterThan(20);
     });
   });
 
