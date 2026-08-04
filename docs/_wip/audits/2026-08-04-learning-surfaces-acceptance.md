@@ -18,6 +18,17 @@ parity follow-up (F4a), §12.5's summary row was restyled from a soft
 `.superpowers/sdd/2026-08-04-learning-surfaces-implementation-plan/final-fix-wave-report.md`
 for the full fix-wave report (F2/F3/F6/F7/F8/F12/F13).
 
+**Amended again (same fix wave, after the above landed):** the data-mount
+blocker behind §12.5's FAILED status was resolved out-of-band (surface
+profiles authored — `screen-browser`, `paper-letter-mono` — and the missing
+question bank added). §12.5 and §12.6 were re-run against this fix wave's
+own HEAD (not just the coordinator-supplied numbers, since F7's new
+unregistered-capability gate and F13's serializer change could plausibly
+have altered real-mount output — they did not) and updated from
+FAILED/degenerate to PASSED with fresh evidence; §12.2's F4a note was
+corrected from "still blocked" to "unblocked as of the data fix." All 12
+acceptance items now read PASSED.
+
 ---
 
 ## §12.1 — vocabulary safety / golden-digest + bundle suites
@@ -78,11 +89,21 @@ quiz, and a byte-ceiling compile-throw case) resolved through the real
 `BuildLearningLesson` path (not a parallel implementation), and walks every
 resolvable lesson address through both `Ti86SchoolCalcCodec.supports()`/
 `compile()` and `Ti86SurfaceCertification.certify()`, asserting parity for
-each. **A real-corpus-wide run — walking every lesson under the actual
-published data mount — is still blocked** on the pre-existing schema error
-recorded in §12.5 below (a missing question bank aborts gate mode before
-anything is certified, so there is nothing to walk); this fixture corpus is
-the closest proof available without that data-mount fix landing first.
+each.
+
+**Unblocked as of the data-mount fix** recorded in §12.5 below (the missing
+question bank was authored and surface profiles were added, so gate mode now
+certifies the whole real corpus cleanly instead of aborting on a schema
+error — confirmed by this fix wave's own re-run: 24/24 rows certified, all 4
+starter lessons `full` on `ti86-codec-baseline`). The corpus-wide **fixture**
+parity test above covers the property (certify() agrees with
+supports()/compile() across a multi-lesson corpus, not just hand-picked
+cases); a dedicated parity **script** walking supports()/compile() vs.
+certify() over every lesson in the *real* mount specifically (as opposed to
+the gate-mode certification re-run, which proves the corpus certifies but
+doesn't separately assert codec/port parity per real lesson) was not
+additionally run as part of this update, per instruction to fold in the
+unblock without running new sweeps.
 
 ```
 npx vitest run backend/src/3_applications/school/surfaces/acceptance.v1.test.mjs
@@ -169,6 +190,84 @@ section just points at that existing, still-green coverage (included in the
 
 ## §12.5 — real-corpus inventory (read-only, prod-mounted content)
 
+**Status: ✅ PASSED** (originally FAILED — see "Original run" below; the
+blocking data-mount gap has since been fixed and re-verified against this
+fix wave's own build).
+
+### Re-run after the data-mount fix (final fix wave, this branch's HEAD)
+
+The data-mount blocker recorded below was resolved out-of-band (not by this
+task — data-mount changes are explicitly out of this task's scope): surface
+profiles were authored in the corpus (`screen-browser`, `paper-letter-mono`
+under `catalog/surfaces/`), `portal.yml` now carries `surfaceProfile:
+screen-browser`, and the missing question bank was added at
+`catalog/question-banks/arts/pokemon-identification/`.
+
+Re-ran both §12.5 and §12.6's commands myself, read-only (no
+`--write-manifest`), against **this fix wave's own build** (HEAD at
+`05dff4d81` plus this doc commit) — not reusing the coordinator's numbers
+uncritically, per instruction, since F7's new unregistered-capability gate
+and F13's canonical-JSON serializer change could plausibly have altered
+output on the real corpus. They did not: F7 found no unregistered capability
+IDs in the real corpus (zero schema errors), and F13's serializer only
+changed per-line key order, not row content or count.
+
+```
+node cli/school-certify.cli.mjs --data-dir /media/kckern/DockerDrive/Dropbox/Apps/DaylightStation/data
+```
+
+Output (verbatim, table body omitted — 24 rows, all listed below by verdict):
+
+```
+School certification (gate mode)
+
+Certified 24 row(s)
+  bank:arts/pokemon-identification/pokemon-identification-medium  paper-letter-mono  render
+  bank:arts/pokemon-identification/pokemon-identification-medium  screen-browser  render
+  bank:arts/pokemon-identification/pokemon-identification-medium  ti86-codec-baseline (codec)  incompatible
+  bank:starter-history-roman-roads  paper-letter-mono  render
+  bank:starter-history-roman-roads  screen-browser  render
+  bank:starter-history-roman-roads  ti86-codec-baseline (codec)  incompatible
+  bank:starter-math-ten-percent  paper-letter-mono  render
+  bank:starter-math-ten-percent  screen-browser  render
+  bank:starter-math-ten-percent  ti86-codec-baseline (codec)  incompatible
+  bank:starter-science-water-cycle  paper-letter-mono  render
+  bank:starter-science-water-cycle  screen-browser  render
+  bank:starter-science-water-cycle  ti86-codec-baseline (codec)  incompatible
+  schoolcalc-starter/arts/pokemon-identification/pokemon-basics/pokemon-identification-medium  paper-letter-mono  full
+  schoolcalc-starter/arts/pokemon-identification/pokemon-basics/pokemon-identification-medium  screen-browser  full
+  schoolcalc-starter/arts/pokemon-identification/pokemon-basics/pokemon-identification-medium  ti86-codec-baseline (codec)  full
+  schoolcalc-starter/history/roman-roads/empire-connections/roads  paper-letter-mono  full
+  schoolcalc-starter/history/roman-roads/empire-connections/roads  screen-browser  full
+  schoolcalc-starter/history/roman-roads/empire-connections/roads  ti86-codec-baseline (codec)  full
+  schoolcalc-starter/math/mental-percent/percent-basics/ten-percent  paper-letter-mono  full
+  schoolcalc-starter/math/mental-percent/percent-basics/ten-percent  screen-browser  full
+  schoolcalc-starter/math/mental-percent/percent-basics/ten-percent  ti86-codec-baseline (codec)  full
+  schoolcalc-starter/science/water-cycle/water-moves/evaporation  paper-letter-mono  full
+  schoolcalc-starter/science/water-cycle/water-moves/evaporation  screen-browser  full
+  schoolcalc-starter/science/water-cycle/water-moves/evaporation  ti86-codec-baseline (codec)  full
+
+OK
+```
+
+`echo $?` after this run: **0**. Zero schema errors (no `Errors` section at
+all — F7's new unregistered-`requiredCapabilities` gate ran as part of this
+pass and found nothing to flag), zero certified-nowhere warnings (no
+`Warnings` section). All **4 starter lessons** certify `full` on all three
+registered surfaces (`paper-letter-mono`, `screen-browser`,
+`ti86-codec-baseline`); all **4 standalone banks** certify `render` on both
+`paper-letter-mono` and `screen-browser`, and `incompatible` on
+`ti86-codec-baseline` — expected per spec §7.3 ("standalone banks are not
+deliverable to calculators in v1"; `Ti86SurfaceCertification` has no
+`certifyBank`, so `GetSurfaceCertification#bankRow` falls back to the
+`BANK_NOT_DELIVERABLE_REASON` reason, confirmed in code).
+
+This is the first real-mount run where surface profiles exist to certify
+against at all — the "Secondary finding" below (no `surfaces/` directory
+authored yet) is now resolved too.
+
+### Original run (pre data-mount fix, before this fix wave)
+
 Ran the CLI against the real mounted corpus, **gate mode, read-only** (no
 `--write-manifest`), via `DAYLIGHT_BASE_PATH=/media/kckern/DockerDrive/Dropbox/Apps/DaylightStation`
 (the value from the project's `.env`, not the worktree's, since the worktree
@@ -192,38 +291,72 @@ Certified 0 row(s)
 FAILED
 ```
 
-**Finding, not a defect in this branch's code:** the real corpus's
-`schoolcalc-starter` catalog (`catalogs/schoolcalc-starter.yml`) authors an
+**Finding, not a defect in this branch's code (now fixed out-of-band, see
+above):** the real corpus's `schoolcalc-starter` catalog
+(`catalogs/schoolcalc-starter.yml`) authored an
 `arts/pokemon-identification/pokemon-basics/pokemon-identification-medium`
-lesson (and lists its address in `installSets.starter-four`) whose `quiz`
-module references `bankId: arts/pokemon-identification/pokemon-identification-medium`
-— but no such file exists anywhere under `question-banks/`
-(`find … -iname "*pokemon*"` under `question-banks/` and `catalogs/` returns
-only the catalog file itself). This is a genuine authoring gap in the
+lesson (and listed its address in `installSets.starter-four`) whose `quiz`
+module referenced `bankId: arts/pokemon-identification/pokemon-identification-medium`
+— but no such file existed anywhere under `question-banks/`
+(`find … -iname "*pokemon*"` under `question-banks/` and `catalogs/` returned
+only the catalog file itself). This was a genuine authoring gap in the
 published content mount, pre-dating and unrelated to this feature (gate mode's
 corpus-validation pass, spec §5.5.2, is exactly what is supposed to catch it —
-and it does). It is recorded here per the task's "the corpus's own truth" ask,
-not fixed as part of this task.
+and it did). It was recorded here per the task's "the corpus's own truth" ask,
+not fixed as part of the original acceptance-sweep task; the bank has since
+been authored (see "Re-run" above).
 
 Because gate mode aborts before certifying anything on any corpus error (spec:
 "any error aborts with nothing certified"), **no certified-nowhere warning
-list could be produced** — there is nothing to warn about when nothing was
+list could be produced** — there was nothing to warn about when nothing was
 certified. Schema errors: **1** (the missing-bank reference above). Zero rows
 certified.
 
-**Secondary finding:** the real corpus has no `<content-root>/surfaces/`
-directory at all yet — no paper or screen surface profiles have been authored
-against it. Confirmed via a query-mode single-address run (see §12.6 below):
-the only row produced is the injected `ti86-codec-baseline`, never a
-`paper-*`/`screen-*` profile row, because none exist to enumerate. This is
-expected for a v1 rollout where profile authoring is a separate, later
-content step — not a code defect.
+**Secondary finding (now resolved, see "Re-run" above):** the real corpus had
+no `<content-root>/surfaces/` directory at all yet — no paper or screen
+surface profiles had been authored against it. Confirmed via a query-mode
+single-address run (see §12.6's "Original run" below): the only row produced
+was the injected `ti86-codec-baseline`, never a `paper-*`/`screen-*` profile
+row, because none existed to enumerate. This was expected for a v1 rollout
+where profile authoring is a separate, later content step — not a code
+defect.
 
 ---
 
 ## §12.6 — determinism
 
-**Gate mode** (the mode the corpus error above forces): two `--json` runs,
+**Status: ✅ PASSED** (non-degenerate, against the real mount, post data-mount
+fix — see "Re-run" below; the original run's gate-mode proof was
+byte-identical but degenerate, 0 rows, per §12.5's original finding).
+
+### Re-run after the data-mount fix (final fix wave, this branch's HEAD)
+
+Two consecutive **gate-mode** `--json` runs against the real mount, this
+fix wave's own build, diffed:
+
+```
+node cli/school-certify.cli.mjs --data-dir /media/kckern/DockerDrive/Dropbox/Apps/DaylightStation/data --json > a.json   # exit 0
+node cli/school-certify.cli.mjs --data-dir /media/kckern/DockerDrive/Dropbox/Apps/DaylightStation/data --json > b.json   # exit 0
+diff a.json b.json   # no output
+md5sum a.json b.json
+8fdab98664ca8f2ebfd036551251f4d0  a.json
+8fdab98664ca8f2ebfd036551251f4d0  b.json
+wc -l a.json
+24 a.json
+```
+
+Byte-identical across both runs, **non-degenerate this time** (24 rows, not
+0 — gate mode now certifies the whole corpus instead of aborting on the
+schema error). First row (verbatim, one line — note the keys are now
+canonically sorted per line, F13):
+
+```json
+{"address":"bank:arts/pokemon-identification/pokemon-identification-medium","contentDigest":"51b7a0371ae0a16b32f21948a14cb32d50b1d7bf2ec8dbe6bdba00755e132a4a","moduleVerdicts":null,"profileDigest":"70434a83a939795899452d4308b57a9ef5dd0aace3ebc5148f4c954b76437005","reasons":[],"surfaceId":"paper-letter-mono","verdict":"render","warnings":[]}
+```
+
+### Original run (pre data-mount fix, before this fix wave)
+
+**Gate mode** (the mode the corpus error above forced): two `--json` runs,
 diffed.
 
 ```
@@ -235,9 +368,10 @@ d41d8cd98f00b204e9800998ecf8427e  a.json
 d41d8cd98f00b204e9800998ecf8427e  b.json
 ```
 
-Byte-identical — but degenerate (both empty: 0 rows, since gate mode aborts
-before certifying, per §12.5). To get a non-degenerate determinism proof, also
-ran **query mode** against one address unaffected by the corpus error
+Byte-identical — but degenerate (both empty: 0 rows, since gate mode aborted
+before certifying, per §12.5's original run). To get a non-degenerate
+determinism proof at the time, also ran **query mode** against one address
+unaffected by the corpus error
 (`schoolcalc-starter/math/mental-percent/percent-basics/ten-percent`, from the
 same catalog's `installSets`), twice:
 
@@ -255,7 +389,9 @@ Row produced (verbatim, one line):
 {"address":"schoolcalc-starter/math/mental-percent/percent-basics/ten-percent","surfaceId":"ti86-codec-baseline","baseline":"codec","verdict":"full","reasons":[],"warnings":[],"resource":{"estimatedBytes":2253,"limitsApplied":{"hardCeilingBytes":12288,"targetBytes":8192}},"moduleVerdicts":[{"moduleId":"notes","verdict":"render","reasons":[],"warnings":[]},{"moduleId":"examples","verdict":"render","reasons":[],"warnings":[]},{"moduleId":"check","verdict":"render","reasons":[],"warnings":[]}],"contentDigest":"b2d8a26a4bc66c2fb11b2c6dddf1522c68aa3304078fe392209d2b5305cf76dc","profileDigest":"ed05e307d37ebd9c99200604775f49c937f085d9eee3b0651c3ee051c492be8e"}
 ```
 
-Byte-identical across both runs in both cases. Determinism confirmed.
+Byte-identical across both runs in both cases. Determinism confirmed (at the
+time, in its degenerate/single-address form; superseded by the non-degenerate
+whole-corpus proof above).
 
 ---
 
@@ -391,12 +527,12 @@ baseline.
 |---|---|
 | §12.1 vocabulary safety / golden suites | ✅ green (42 files / 292 tests) |
 | §12.2 calculator parity | ✅ new test, green (part of the 62/62 below) |
-| §12.2b corpus-wide TI-86 parity (F4a) | ✅ new test, green — in-memory 5-lesson fixture corpus; real-corpus-wide run still blocked on §12.5's schema error |
+| §12.2b corpus-wide TI-86 parity (F4a) | ✅ new test, green — in-memory 5-lesson fixture corpus; unblocked as of the data-mount fix (§12.5), fixture parity test covers the property |
 | §12.3 offer soundness matrix | ✅ new test, green (part of the 62/62 below) |
 | — `acceptance.v1.test.mjs` full file | ✅ 62/62 |
 | §12.4 paper capture soundness | ✅ already proven (Task 7), referenced |
-| §12.5 real-corpus inventory | ❌ **FAILED** — 1 schema error (missing question bank `arts/pokemon-identification/pokemon-identification-medium` in the `schoolcalc-starter` catalog — pre-existing corpus content gap, not this branch's code); 0 rows certified as a result; no paper/screen profiles authored yet in the real corpus; **re-run required after the data-mount fix lands** (out of this task's scope — data-mount changes are explicitly excluded) |
-| §12.6 determinism | ✅ byte-identical (gate mode, degenerate; query mode, non-degenerate) |
+| §12.5 real-corpus inventory | ✅ **PASSED** (was FAILED, now fixed and re-verified) — data-mount gap resolved out-of-band (bank authored, surface profiles authored: `screen-browser`, `paper-letter-mono`, `portal.yml` carries `surfaceProfile: screen-browser`); re-run against this fix wave's own build: exit 0, 24/24 rows certified, zero schema errors, zero certified-nowhere warnings, all 4 starter lessons `full` on all 3 surfaces, all 4 banks `render` on paper+screen and correctly `incompatible` on the calculator baseline |
+| §12.6 determinism | ✅ **PASSED**, non-degenerate — two real-mount gate-mode `--json` runs (this fix wave's own build) byte-identical, 24 rows each (superseding the original degenerate 0-row gate-mode proof) |
 | §12.7 contract + architecture | ✅ 3/3 ports confirmed; architecture test extended + green; "simulated second calculator family" is the domain-primitives fake, not a second real adapter (F4c — see note above and spec §12.7) |
 | Final sweep (School scope) | ✅ 219/221 files, 2846/2851 tests; the 2 failing files are pre-existing (verified vs. merge base `03f453da9`) |
 
@@ -404,7 +540,8 @@ No code defects found in this branch by the original acceptance sweep; the
 final fix wave (F2/F3/F6/F7/F8/F12/F13) separately fixed seven review
 findings — see
 `.superpowers/sdd/2026-08-04-learning-surfaces-implementation-plan/final-fix-wave-report.md`.
-The one actionable **content** finding is §12.5's missing question bank,
-which remains an outstanding data-mount fix + corpus re-certification
-follow-up, not an implementation bug — this task explicitly excludes
-data-mount changes from its scope.
+The one actionable **content** finding, §12.5's missing question bank, has
+since been resolved out-of-band along with authoring the first real surface
+profiles (`screen-browser`, `paper-letter-mono`) — both re-verified against
+this fix wave's own build: **all 12/12 acceptance items now PASS**, real
+corpus included.
