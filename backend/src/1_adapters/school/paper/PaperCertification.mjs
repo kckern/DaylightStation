@@ -11,6 +11,30 @@ const NON_PAPER_MODULE_TYPES = Object.freeze(new Set(['tool', 'custom', 'activit
 
 const CHOICE_ITEM_TYPES = Object.freeze(new Set(['multiple_choice', 'asset_choice']));
 
+/**
+ * Limit keys every paper surface profile must carry (spec §6.3). A profile
+ * missing one is a malformed/authoring-time input, not a certification
+ * outcome — `x > undefined` is always false, so an omitted limit used to
+ * fail OPEN (every item/sheet/page budget silently passed). Per spec §7.1
+ * (ports throw only for malformed inputs) and §4.1 (each family validates
+ * its own limits), PaperCertification throws here instead (F6, 2026-08-04
+ * acceptance audit). Composition/CLI paths only ever construct paper
+ * profiles from authored YAML, so this surfaces as a profile-authoring
+ * error at certification time — acceptable per §7.1.
+ */
+const REQUIRED_PAPER_LIMIT_KEYS = Object.freeze(['omrChannels', 'maxItemsPerSheet', 'maxPagesPerDocument']);
+
+function requirePaperLimits(profile) {
+  const limits = profile?.limits ?? {};
+  const missing = REQUIRED_PAPER_LIMIT_KEYS.filter((key) => limits[key] === undefined);
+  if (missing.length > 0) {
+    throw new Error(
+      `paper surface profile '${profile?.surfaceId ?? '(unknown)'}' is missing required limits: ${missing.join(', ')}`,
+    );
+  }
+  return limits;
+}
+
 /** A choice is printable when it's non-empty text, or an object with a non-empty label. */
 function hasPrintableText(choice) {
   if (typeof choice === 'string') return choice.trim().length > 0;
@@ -66,7 +90,7 @@ function pageBudgetReasons(document, limits) {
 export class PaperCertification {
   certify(bundle, profile) {
     const modules = bundle?.lesson?.modules ?? [];
-    const limits = profile.limits ?? {};
+    const limits = requirePaperLimits(profile);
 
     const moduleVerdicts = modules.map((module) => {
       const demands = deriveModuleDemands({ module, document: module.document, bank: module.bank });
@@ -90,7 +114,7 @@ export class PaperCertification {
   }
 
   certifyBank(bank, profile) {
-    const limits = profile.limits ?? {};
+    const limits = requirePaperLimits(profile);
     const demands = deriveBankDemands(bank);
     const reasons = [
       ...capabilityReasons(demands, profile),
