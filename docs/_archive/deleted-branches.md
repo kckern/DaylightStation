@@ -194,3 +194,4 @@ To restore: `git checkout -b branch-name <commit-hash>`
 | 2026-07-31 | feature/karaoke-keys | 76b0c289c | karaoke keyboard shortcut overrides (seek/restart/end/fullscreen/key/volume/applause) |
 | 2026-08-03 | feature/course-user-policy | 21e6f9877 | per-user course policy (engagement gate opt-out + auto-advance) |
 | 2026-08-04 | fix/keyshift-superseded-reroute | d20b84653 | superseded keyshift build no longer bypasses winner chain (dual-pitch fix) |
+| 2026-08-04 | docs/learning-surfaces-spec | 0206c68be | Learning Surfaces v1: certification spec+plan+implementation (31 commits) |
