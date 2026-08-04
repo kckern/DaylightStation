@@ -27,6 +27,12 @@ function logger() {
 // and chain rebuilds reuse it instead of exploding. One shared context serves
 // every chain; a captured element can never be un-captured, only re-routed.
 const sourceByEl = new WeakMap();
+// The run currently building/owning an element's graph. A cancelled run may
+// only touch the graph (safety reroute) while it still holds the claim — a
+// newer run's build owns the edges the moment it claims, and a late "safety"
+// connect from the loser would wire a permanent unmuted dry path around the
+// winner's shifter (original + shifted pitch audible together).
+const ownerByEl = new WeakMap();
 let sharedCtx = null;
 function ctx() {
   if (!sharedCtx) {
@@ -119,6 +125,8 @@ export default function useKeyShift(mediaEl, semitones) {
         // Element appeared or was swapped (Player resilience reinit): rebuild.
         teardown(chainRef.current);
         const ac = ctx();
+        const claim = Symbol('keyshift-build');
+        ownerByEl.set(mediaEl, claim);
         let source = sourceByEl.get(mediaEl);
         const reused = Boolean(source);
         if (!source) {
@@ -139,8 +147,15 @@ export default function useKeyShift(mediaEl, semitones) {
           }),
         ]);
         if (cancelled) {
-          source.connect(ac.destination);
-          logger().info('keyshift.cancelled', { stage, rerouted: true });
+          // Safety reroute (never leave a captured element silent) — but ONLY
+          // while this run still owns the element. Superseded losers must not
+          // touch the winner's graph.
+          if (ownerByEl.get(mediaEl) === claim) {
+            source.connect(ac.destination);
+            logger().info('keyshift.cancelled', { stage, rerouted: true });
+          } else {
+            logger().info('keyshift.cancelled', { stage, rerouted: false, superseded: true });
+          }
           return;
         }
         const dry = ac.createGain();

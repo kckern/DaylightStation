@@ -32,7 +32,7 @@ const Player = lazy(() => import('../../../../Player/Player.jsx'));
 const EMPTY_NOTES = new Map();
 
 /** Custom student video player for a single piano lecture, with MIDI play-along. */
-export default function PianoVideoPlayer({ lecture, source, onBack, isSequential = false, engagementTimeoutSeconds = 90 }) {
+export default function PianoVideoPlayer({ lecture, source, onBack, isSequential = false, engagementTimeoutSeconds = 90, engagementGateEnabled = true, onAutoAdvance = null }) {
   const playerRef = useRef(null);
   const ctrl = usePlayerController(playerRef);
   const { el: mediaEl, timedOut } = useResolvedMediaEl(playerRef);
@@ -86,6 +86,15 @@ export default function PianoVideoPlayer({ lecture, source, onBack, isSequential
 
   const { currentUser } = usePianoUser();
   const engagedRef = useRef(false);
+
+  // Per-user auto-advance: fire once per lecture from the `ended` event. The
+  // shared Player ALSO reacts to `ended` (its end-of-content advance calls
+  // `clear` → onBack); the route's goBack ignores that call while an
+  // auto-advance navigation is in flight (see Videos.jsx LecturePlayerRoute).
+  const onAutoAdvanceRef = useRef(onAutoAdvance);
+  onAutoAdvanceRef.current = onAutoAdvance;
+  const endedHandledRef = useRef(false);
+  useEffect(() => { endedHandledRef.current = false; }, [contentId]);
   const [furthestWatched, setFurthestWatched] = useState(resumeSeconds || 0);
 
   // Engagement for completion = ANY play-along. Once the student presses any key
@@ -99,7 +108,9 @@ export default function PianoVideoPlayer({ lecture, source, onBack, isSequential
     pause: ctrl.pause,
     play: ctrl.play,
     isPaused: () => !isPlaying,
-    isSequential,
+    // Per-user policy (piano.yml videos.user_policies): a user with
+    // engagement_gate:false watches passively — the anti-AFK gate never opens.
+    isSequential: isSequential && engagementGateEnabled,
     timeoutSeconds: engagementTimeoutSeconds,
     onEngagementConfirmed: () => { engagedRef.current = true; },
   });
@@ -200,18 +211,26 @@ export default function PianoVideoPlayer({ lecture, source, onBack, isSequential
       setDuration(mediaEl.duration || 0);
       if (mediaEl.videoWidth && mediaEl.videoHeight) setAspect(mediaEl.videoWidth / mediaEl.videoHeight);
     };
+    const onEnded = () => {
+      if (!onAutoAdvanceRef.current || endedHandledRef.current) return;
+      endedHandledRef.current = true;
+      getLogger().child({ component: 'piano-video-player' }).info('piano.video.auto-advance', { contentId });
+      onAutoAdvanceRef.current();
+    };
     mediaEl.addEventListener('timeupdate', onTime);
     mediaEl.addEventListener('play', onPlay);
     mediaEl.addEventListener('pause', onPause);
     mediaEl.addEventListener('loadedmetadata', onMeta);
+    mediaEl.addEventListener('ended', onEnded);
     onMeta();
     return () => {
       mediaEl.removeEventListener('timeupdate', onTime);
       mediaEl.removeEventListener('play', onPlay);
       mediaEl.removeEventListener('pause', onPause);
       mediaEl.removeEventListener('loadedmetadata', onMeta);
+      mediaEl.removeEventListener('ended', onEnded);
     };
-  }, [mediaEl]);
+  }, [mediaEl, contentId]);
 
   // Apply the shared media level to the resolved element (mirrors MusicPlayer).
   useEffect(() => { if (mediaEl) mediaEl.volume = mediaLevel; }, [mediaEl, mediaLevel]);
