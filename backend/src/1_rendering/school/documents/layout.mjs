@@ -167,6 +167,41 @@ function distributeAnswerSpace(pageFragments, contentTopPt, contentBottomPt, spa
  *   Each placed fragment carries yPt (absolute page coordinate of its top), its
  *   effective heightPt, and isContinuation/continuesOnNextPage split flags.
  */
+/**
+ * The height this fragment list would occupy as ONE unbroken flow — no page
+ * boundaries, no answer-space growth. This is `RenderPrintDocument`'s (Task
+ * 8) building block for fit policy `one-page`'s `oversetPt` (spec §7): how
+ * far a document that overflowed a real page would have exceeded a single
+ * page's budget, regardless of how `placeFragments` actually broke it up.
+ *
+ * Reuses the exact same normalization (`normalizeFragment`) and gap lookup
+ * (`gapBetween`) `placeFragments` itself walks with, so this number and a real
+ * placement can never silently disagree about what one fragment costs.
+ *
+ * `forceBreak` fragments (a `page_break` block) are skipped and reset the
+ * running spacing class to null — the same "first fragment on a fresh page"
+ * rule real placement applies — rather than contributing a gap that would
+ * never actually print across a page boundary.
+ *
+ * @param {Array<Object>} fragments - measured fragments, in document order
+ * @param {Object} [opts]
+ * @param {Object} [opts.spacing] - spacing[prevClass][nextClass] gap table
+ * @returns {number} total height in points
+ */
+export function contentHeightPt(fragments, { spacing = {} } = {}) {
+  const errors = [];
+  let total = 0;
+  let previousClass = null;
+  for (const fragment of fragments) {
+    const normalized = normalizeFragment(fragment, errors);
+    if (normalized.forceBreak) { previousClass = null; continue; }
+    total += gapBetween(spacing, previousClass, normalized.spacingClass);
+    total += normalized.heightPt;
+    previousClass = normalized.spacingClass;
+  }
+  return total;
+}
+
 export function placeFragments(fragments, { pageHeightPt, marginPt, spacing = {}, growLastPage = false }) {
   const contentTopPt = marginPt;
   const contentBottomPt = pageHeightPt - marginPt;

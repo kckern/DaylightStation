@@ -45,6 +45,28 @@ describe('workbookTheme', () => {
     expect(someGap(compact)).toBeDefined();
   });
 
+  it('carries a `question` style — prose measured inside a question fragment — matching `body`’s size/leading but tagged spacingClass "question"', () => {
+    // measureNodes' bodyStyleKey defaults to 'question' for text inside a
+    // question block (measure.mjs questionFragment); without this key any v2
+    // document containing a `question` — the whole point of the `quiz`/
+    // `worksheet` archetypes — throws measuring against this theme.
+    const theme = createWorkbookTheme();
+    expect(theme.styles.question).toBeDefined();
+    expect(theme.styles.question.sizePt).toBe(theme.styles.body.sizePt);
+    expect(theme.styles.question.leadingPt).toBe(theme.styles.body.leadingPt);
+    expect(theme.styles.question.spacingClass).toBe('question');
+  });
+
+  it('carries `answerSpace` ruled-line geometry — DocumentPdfRenderer’s drawAnswerSpace destructures it unconditionally', () => {
+    // Any document with an `answer_space` block (virtually every worksheet/
+    // quiz) throws drawing against this theme without it.
+    const theme = createWorkbookTheme();
+    expect(theme.answerSpace).toBeDefined();
+    for (const key of ['rulePitchPt', 'ruleWidthPt', 'ruleInsetPt', 'padAbovePt']) {
+      expect(typeof theme.answerSpace[key], key).toBe('number');
+    }
+  });
+
   it('rejects unknown presets', () => {
     expect(() => createWorkbookTheme({ typeScale: 'giant' })).toThrow(/typeScale/);
     expect(() => createWorkbookTheme({ density: 'sardine' })).toThrow(/density/);

@@ -37,6 +37,11 @@ const SCALE_STYLES = {
     heading2: { sizePt: 16, leadingPt: 20.5 },
     heading3: { sizePt: 13, leadingPt: 17 },
     body: { sizePt: 11, leadingPt: 14.5 },
+    // Same glyph size/leading as `body` — `question` exists as a DISTINCT key
+    // only so prose measured inside a question fragment carries its own
+    // spacingClass (see STYLE_META below), mirroring documentPdfTheme's
+    // identical body/question pairing.
+    question: { sizePt: 11, leadingPt: 14.5 },
     label: { sizePt: 10, leadingPt: 13 },
     caption: { sizePt: 9, leadingPt: 12 },
   },
@@ -45,6 +50,7 @@ const SCALE_STYLES = {
     heading2: { sizePt: 19, leadingPt: 24.5 },
     heading3: { sizePt: 15.5, leadingPt: 20 },
     body: { sizePt: 13.5, leadingPt: 18 },
+    question: { sizePt: 13.5, leadingPt: 18 },
     label: { sizePt: 12, leadingPt: 15.5 },
     caption: { sizePt: 10.5, leadingPt: 14 },
   },
@@ -56,6 +62,12 @@ const STYLE_META = {
   heading2: { font: 'bold', ink: 'text', spacingClass: 'heading' },
   heading3: { font: 'bold', ink: 'text', spacingClass: 'heading' },
   body: { font: 'regular', ink: 'text', spacingClass: 'body' },
+  // Prose inside a `question` block (measure.mjs's `questionFragment` passes
+  // `bodyStyleKey: 'question'`) — without this key any v2 document containing
+  // a `question` (the `quiz`/`worksheet` archetypes' whole point) throws
+  // measuring against this theme. Required by `NORMAL_SPACING`'s own
+  // `question` row/column below, which this theme already carried.
+  question: { font: 'regular', ink: 'text', spacingClass: 'question' },
   label: { font: 'bold', ink: 'text', spacingClass: 'body' },
   caption: { font: 'italic', ink: 'muted', spacingClass: 'instruction' },
 };
@@ -251,6 +263,21 @@ export function createWorkbookTheme({ typeScale = 'standard', density = 'normal'
       bulletCharacter: '•',
       checklistSizePt: 9,
       checklistStrokeWidthPt: 0.9,
+      spacingClass: 'body',
+    },
+
+    /**
+     * Ruled lines for an `answer_space` node — `DocumentPdfRenderer`'s
+     * `drawAnswerSpace` destructures this unconditionally (no optional
+     * chaining), so any document with an `answer_space` block — virtually
+     * every worksheet/quiz — needs it to draw at all. Same shape/field names
+     * as `documentPdfTheme.answerSpace`.
+     */
+    answerSpace: {
+      rulePitchPt: density === 'compact' ? 18 : 22,
+      ruleWidthPt: 0.6,
+      ruleInsetPt: 6,
+      padAbovePt: density === 'compact' ? 3 : 4,
       spacingClass: 'body',
     },
 

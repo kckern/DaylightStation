@@ -310,6 +310,52 @@ describe('the scannable code on a sheet', () => {
   });
 });
 
+describe('date prefill (options.date)', () => {
+  it('changes the rendered bytes when a date is supplied — content streams are compressed, so this is the observable proof, matching the QR-token test above', async () => {
+    const blank = await renderer.render(worksheet, { studentName: 'Test Learner' });
+    const withDate = await renderer.render(worksheet, { studentName: 'Test Learner', date: '2026-08-04' });
+    expect(blank.pdf.equals(withDate.pdf)).toBe(false);
+  });
+
+  it('is deterministic, like every other draw input', async () => {
+    const opts = { studentName: 'Test Learner', date: '2026-08-04' };
+    const first = await renderer.render(worksheet, opts);
+    const second = await renderer.render(worksheet, opts);
+    expect(first.pdf.equals(second.pdf)).toBe(true);
+  });
+
+  it('omitted is byte-identical to every caller before this option existed', async () => {
+    const withoutOption = await renderer.render(worksheet, { studentName: 'Test Learner' });
+    const explicitNull = await renderer.render(worksheet, { studentName: 'Test Learner', date: null });
+    expect(withoutOption.pdf.equals(explicitNull.pdf)).toBe(true);
+  });
+});
+
+describe('growLastPage option (fit policy fill, spec §7)', () => {
+  const growable = doc([
+    {
+      type: 'question',
+      itemId: 'g1',
+      number: 1,
+      blocks: [{ type: 'rich_text', md: 'Write a sentence.' }, { type: 'answer_space', minPt: 40, maxPt: 400 }],
+    },
+  ]);
+
+  it('grows the last page’s answer space, changing the rendered bytes', async () => {
+    const base = await renderer.render(growable);
+    const grown = await renderer.render(growable, { growLastPage: true });
+    expect(base.pageCount).toBe(1);
+    expect(grown.pageCount).toBe(1);
+    expect(base.pdf.equals(grown.pdf)).toBe(false);
+  });
+
+  it('defaults to false — byte-identical to every existing caller', async () => {
+    const { pdf } = await renderer.render(worksheet, { studentName: 'Test Learner' });
+    const explicit = await renderer.render(worksheet, { studentName: 'Test Learner', growLastPage: false });
+    expect(pdf.equals(explicit.pdf)).toBe(true);
+  });
+});
+
 describe('determinism', () => {
   it('renders byte-identical PDFs for the same document', async () => {
     const first = await renderer.render(worksheet, { studentName: 'Test Learner' });

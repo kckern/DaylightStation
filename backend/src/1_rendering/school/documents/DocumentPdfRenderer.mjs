@@ -400,7 +400,10 @@ export function createDocumentPdfRenderer({
     const blank = BLANK_RULE.repeat(24);
     setFont(out, 'regular', metaSizePt, 'muted');
     out.text(`Name: ${node.studentName ?? blank}`, xPt, metaY, { lineBreak: false });
-    out.text(`Date: ${blank}`, xPt + node.widthPt - blankFieldPt, metaY, { width: blankFieldPt, lineBreak: false });
+    // `node.date` (RenderPrintDocument's `context.date`, spec §7) prefills this
+    // field exactly like `studentName` prefills Name above; null/undefined
+    // (every caller before this field existed) keeps the blank ruled line.
+    out.text(`Date: ${node.date ?? blank}`, xPt + node.widthPt - blankFieldPt, metaY, { width: blankFieldPt, lineBreak: false });
 
     const ruleY = metaY + metaLeadingPt + ruleGapPt;
     out.save().lineWidth(ruleWidthPt).strokeColor(theme.ink.rule)
@@ -517,7 +520,7 @@ export function createDocumentPdfRenderer({
 
   // ── render ────────────────────────────────────────────────────────────
   function renderPlaced(document, {
-    studentName, isAnswerKey, keyItems, bank, tokens, furniture = null,
+    studentName, date = null, isAnswerKey, keyItems, bank, tokens, furniture = null, growLastPage = false,
   }) {
     const measurementDoc = createMeasurementDocument({ theme, fontDir });
     const fragments = measureDocumentFragments(document, {
@@ -528,6 +531,7 @@ export function createDocumentPdfRenderer({
       resolveChoices: createChoiceResolver(bank),
       tokens,
       studentName,
+      date,
     });
     // Opting into `furniture` shrinks the usable page height by the
     // footer-band + continuation-strip reservation (contentBox) BEFORE
@@ -539,6 +543,10 @@ export function createDocumentPdfRenderer({
       pageHeightPt: box?.pageHeightPt ?? theme.page.heightPt,
       marginPt: box?.marginPt ?? theme.page.marginPt,
       spacing: theme.spacing,
+      // Fit policy `fill` (spec §7): RenderPrintDocument (Task 8) is the only
+      // caller that ever sets this true. Default false reproduces every
+      // existing render byte-for-byte — see layout.mjs's own doc comment.
+      growLastPage,
     });
     if (errors.length) {
       const error = new Error(`document '${document.id}' cannot be laid out: ${errors.map((e) => e.message).join('; ')}`);
@@ -646,11 +654,19 @@ export function createDocumentPdfRenderer({
    *   "Name:" field; defaults to `studentName`
    * @param {boolean} [options.furniture.duplex] - alternate gutter side by page parity
    * @param {boolean|number} [options.furniture.gutter] - gutter width; see `furniture.mjs`
+   * @param {string|null} [options.date] - printed on the header's Date line
+   *   (RenderPrintDocument's `context.date`, spec §7); omitted/null keeps the
+   *   blank ruled line, byte-identical to every caller before this option
+   *   existed.
+   * @param {boolean} [options.growLastPage] - fit policy `fill` (spec §7):
+   *   forwarded to `placeFragments`' `growLastPage`, so the LAST page also
+   *   bottoms out its answer spaces/spacers. Default false reproduces every
+   *   existing render byte-for-byte.
    * @returns {Promise<{pdf: Buffer, pageCount: number, formMap: Object|null, isAnswerKey: boolean, keyItems: Array}>}
    */
   async function render(source, {
-    studentName = null, answers = null, answerKey = false, bank = null, tokens = null,
-    variant = null, furniture = null,
+    studentName = null, date = null, answers = null, answerKey = false, bank = null, tokens = null,
+    variant = null, furniture = null, growLastPage = false,
   } = {}) {
     // The variant rides on the DOCUMENT, not just alongside it: the footer and
     // the form map both derive from what was rendered, so a variant passed only
@@ -667,12 +683,12 @@ export function createDocumentPdfRenderer({
 
     if (!resolvedAnswers) {
       return renderPlaced(document, {
-        studentName, isAnswerKey: false, keyItems: [], bank, tokens, furniture,
+        studentName, date, isAnswerKey: false, keyItems: [], bank, tokens, furniture, growLastPage,
       });
     }
     const keyItems = keyItemsFor(document, resolvedAnswers);
     return renderPlaced(keyDocumentFor(document, keyItems), {
-      studentName: null, isAnswerKey: true, keyItems, bank, tokens, furniture,
+      studentName: null, date: null, isAnswerKey: true, keyItems, bank, tokens, furniture, growLastPage,
     });
   }
 

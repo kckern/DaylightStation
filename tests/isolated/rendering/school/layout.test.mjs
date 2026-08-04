@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { placeFragments } from '../../../../backend/src/1_rendering/school/documents/layout.mjs';
+import { placeFragments, contentHeightPt } from '../../../../backend/src/1_rendering/school/documents/layout.mjs';
 
 // Distinct gaps per class pair so a wrong lookup cannot coincidentally pass.
 const spacing = {
@@ -370,5 +370,60 @@ describe('placeFragments — forceBreak (page_break)', () => {
       page,
     );
     expect(find(result, 1, 'b').yPt).toBe(20);
+  });
+});
+
+// `contentHeightPt` answers "how tall would this document be as ONE
+// unbroken page" — the figure `RenderPrintDocument` (Task 8) needs to compute
+// fit policy `one-page`'s `oversetPt` (spec §7): how far a document that DID
+// paginate would have overrun a single page's budget.
+describe('contentHeightPt', () => {
+  it('is 0 for an empty fragment list', () => {
+    expect(contentHeightPt([], { spacing })).toBe(0);
+  });
+
+  it('sums heights plus the gaps between consecutive spacing classes, matching placeFragments’ own walk', () => {
+    const fragments = [frag('a', 100, { spacingClass: 'body' }), frag('b', 54, { spacingClass: 'body' })];
+    // 100 + gap(body,body)=6 + 54 == 160, the same total the "exactly fills"
+    // placeFragments test above derives from spacing/page geometry.
+    expect(contentHeightPt(fragments, { spacing })).toBe(160);
+  });
+
+  it('is insensitive to where placeFragments would have broken pages — same total whether or not it fits one real page', () => {
+    const fragments = [frag('a', 100, { spacingClass: 'body' }), frag('b', 55, { spacingClass: 'body' })];
+    // This exact input starts a NEW page in placeFragments (161pt > 160pt
+    // usable) — contentHeightPt reports the flat total regardless.
+    expect(contentHeightPt(fragments, { spacing })).toBe(161);
+  });
+
+  it('ignores forceBreak fragments and resets the gap after one, exactly like a real page start', () => {
+    const withBreak = [
+      frag('a', 30, { spacingClass: 'heading' }),
+      { id: 'pb', blocks: [], heightPt: 0, atomic: true, spacingClass: null, forceBreak: true },
+      frag('b', 30, { spacingClass: 'question' }),
+    ];
+    const withoutBreak = [
+      frag('a', 30, { spacingClass: 'heading' }),
+      { ...frag('b', 30, { spacingClass: 'question' }), spacingClass: null },
+    ];
+    // No heading→question gap crosses the break (previousClass resets to
+    // null, same as the first fragment on a fresh page) — total is just the
+    // two fragment heights, matching a next-fragment gap of 0 either way.
+    expect(contentHeightPt(withBreak, { spacing })).toBe(60);
+    expect(contentHeightPt(withoutBreak, { spacing })).toBe(60);
+  });
+
+  it('uses answerSpace.minPt (not a stale heightPt) for an unmeasured answer space, same normalization placeFragments applies', () => {
+    const fragments = [{
+      id: 'a1', blocks: [], heightPt: 5, atomic: true, spacingClass: 'body', answerSpace: { minPt: 40, maxPt: 100 },
+    }];
+    expect(contentHeightPt(fragments, { spacing })).toBe(40);
+  });
+
+  it('sums lines heightPt for a flowable fragment, ignoring any stale heightPt field', () => {
+    const fragments = [{
+      id: 'p1', blocks: [], heightPt: 999, atomic: false, spacingClass: 'body', lines: lines(3, 12),
+    }];
+    expect(contentHeightPt(fragments, { spacing })).toBe(36);
   });
 });
