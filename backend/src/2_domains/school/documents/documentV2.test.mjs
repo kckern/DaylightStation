@@ -168,6 +168,40 @@ describe('validateDocumentV2: rejections', () => {
   });
 });
 
+describe('validateDocumentV2: page_break incompatible with fit.policy one-page (F4)', () => {
+  it('rejects a top-level page_break with a dotted path and a clear message', () => {
+    const raw = v2doc({
+      fit: { policy: 'one-page' },
+      blocks: [question(), { type: 'page_break' }, question({ itemId: 'q2', number: 2 })],
+    });
+    const { errors } = validateDocumentV2(raw);
+    expect(errors).toContain("blocks[1]: page_break is incompatible with fit.policy 'one-page'");
+  });
+
+  it('rejects a page_break nested inside a question', () => {
+    const raw = v2doc({
+      fit: { policy: 'one-page' },
+      blocks: [question({ blocks: [{ type: 'rich_text', md: 'Stem.' }, { type: 'page_break' }] })],
+    });
+    const { errors } = validateDocumentV2(raw);
+    expect(errors).toContain("blocks[0].blocks[1]: page_break is incompatible with fit.policy 'one-page'");
+  });
+
+  it('page_break is fine under fit.policy flow (the default) and fill', () => {
+    for (const policy of ['flow', 'fill']) {
+      const raw = v2doc({ fit: { policy }, blocks: [question(), { type: 'page_break' }, question({ itemId: 'q2', number: 2 })] });
+      const { errors } = validateDocumentV2(raw);
+      expect(errors, `policy ${policy}`).toEqual([]);
+    }
+  });
+
+  it('a page_break-free one-page document is unaffected', () => {
+    const raw = v2doc({ fit: { policy: 'one-page' }, blocks: [question()] });
+    const { errors } = validateDocumentV2(raw);
+    expect(errors).toEqual([]);
+  });
+});
+
 describe('BLOCK_TARGET_SUPPORT matrix', () => {
   it('marks every receipt-rendered block type letter+receipt, and every other registered block type letter-only', () => {
     expect(Object.isFrozen(BLOCK_TARGET_SUPPORT)).toBe(true);
