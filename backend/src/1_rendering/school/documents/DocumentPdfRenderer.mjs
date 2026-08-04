@@ -391,21 +391,46 @@ export function createDocumentPdfRenderer({
     }
   }
 
+  /**
+   * `node.showName`/`node.showDate`/`node.instructions` come from v2's
+   * `document.header` (documentV2.mjs's archetype presets — infopage's is
+   * `{name: false, date: false}`); v1 documents never set them, so
+   * `headerFragment` (measure.mjs) defaults both show flags true and
+   * `instructions` null — the SAME cursor math this function walks either
+   * way, so a v1 render is byte-identical to before these fields existed.
+   */
   function drawHeader(out, node, { xPt, yPt }) {
     const { titleSizePt, titleLeadingPt, metaSizePt, metaLeadingPt, ruleGapPt, ruleWidthPt, blankFieldPt } = theme.header;
     setFont(out, 'bold', titleSizePt);
     out.text(node.title, xPt, yPt, { width: node.widthPt, lineBreak: false });
 
-    const metaY = yPt + titleLeadingPt;
-    const blank = BLANK_RULE.repeat(24);
-    setFont(out, 'regular', metaSizePt, 'muted');
-    out.text(`Name: ${node.studentName ?? blank}`, xPt, metaY, { lineBreak: false });
-    // `node.date` (RenderPrintDocument's `context.date`, spec §7) prefills this
-    // field exactly like `studentName` prefills Name above; null/undefined
-    // (every caller before this field existed) keeps the blank ruled line.
-    out.text(`Date: ${node.date ?? blank}`, xPt + node.widthPt - blankFieldPt, metaY, { width: blankFieldPt, lineBreak: false });
+    let cursorY = yPt + titleLeadingPt;
 
-    const ruleY = metaY + metaLeadingPt + ruleGapPt;
+    if (node.instructions) {
+      // Same style-fallback chain drawLineNumbers already uses for a theme
+      // that may not carry every optional style key.
+      const style = theme.styles.caption ?? theme.styles.instruction ?? theme.styles.body;
+      setFont(out, style.font, style.sizePt, style.ink);
+      out.text(node.instructions, xPt, cursorY, { width: node.widthPt, lineBreak: false });
+      cursorY += metaLeadingPt;
+    }
+
+    if (node.showName || node.showDate) {
+      const blank = BLANK_RULE.repeat(24);
+      setFont(out, 'regular', metaSizePt, 'muted');
+      if (node.showName) {
+        out.text(`Name: ${node.studentName ?? blank}`, xPt, cursorY, { lineBreak: false });
+      }
+      // `node.date` (RenderPrintDocument's `context.date`, spec §7) prefills this
+      // field exactly like `studentName` prefills Name above; null/undefined
+      // (every caller before this field existed) keeps the blank ruled line.
+      if (node.showDate) {
+        out.text(`Date: ${node.date ?? blank}`, xPt + node.widthPt - blankFieldPt, cursorY, { width: blankFieldPt, lineBreak: false });
+      }
+      cursorY += metaLeadingPt;
+    }
+
+    const ruleY = cursorY + ruleGapPt;
     out.save().lineWidth(ruleWidthPt).strokeColor(theme.ink.rule)
       .moveTo(xPt, ruleY).lineTo(xPt + node.widthPt, ruleY).stroke().restore();
   }

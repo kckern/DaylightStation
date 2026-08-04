@@ -907,10 +907,27 @@ export function measureBlocks(blocks, {
   });
 }
 
-/** The title/name/date banner, measured as an atomic fragment on page one. */
-function headerFragment(document, { theme, studentName, date }) {
+/**
+ * The title/name/date(/instructions) banner, measured as an atomic fragment
+ * on page one.
+ *
+ * `headerConfig` is v2's validated `document.header` ({name, date, scoreBox,
+ * instructions?} — documentV2.mjs's archetype presets, all overridable).
+ * v1 (schema-less) documents never carry `.header`, so `headerConfig`
+ * defaults to `{}`, which resolves to `showName`/`showDate` both true and no
+ * instructions — the EXACT unconditional behavior this banner always had,
+ * byte-identical for every v1 caller. `scoreBox` is validated but not yet
+ * drawn (Phase B, spec §13 — "points/score box").
+ */
+function headerFragment(document, { theme, studentName, date, headerConfig = {} }) {
   const { header } = theme;
-  const heightPt = header.titleLeadingPt + header.metaLeadingPt
+  const showName = headerConfig.name !== false;
+  const showDate = headerConfig.date !== false;
+  const showMetaLine = showName || showDate;
+  const instructions = headerConfig.instructions || null;
+  const heightPt = header.titleLeadingPt
+    + (instructions ? header.metaLeadingPt : 0)
+    + (showMetaLine ? header.metaLeadingPt : 0)
     + header.ruleGapPt + header.ruleWidthPt + header.gapBelowPt;
   const node = {
     kind: 'header',
@@ -920,6 +937,9 @@ function headerFragment(document, { theme, studentName, date }) {
     // omitted/null prints the blank ruled line, exactly as before this field
     // existed — see drawHeader.
     date: date || null,
+    showName,
+    showDate,
+    instructions,
     widthPt: theme.page.widthPt - 2 * theme.page.marginPt,
     heightPt,
     offsetYPt: 0,
@@ -945,10 +965,18 @@ function headerFragment(document, { theme, studentName, date }) {
  */
 export function measureDocumentFragments(document, {
   doc, theme = documentPdfTheme, texToSvg, resolveAsset = null, resolveChoices = null,
-  tokens = null, studentName = null, date = null, italic = false,
+  tokens = null, studentName = null, date = null, italic = false, header,
 } = {}) {
+  // `header` override lets a caller force the banner shape (tests, answer
+  // keys); omitted (the normal path), it reads the v2 document's own
+  // validated `.header` — absent on every v1 document, which is exactly
+  // what keeps v1 rendering the unconditional Name/Date banner it always has
+  // (see headerFragment's own doc comment).
+  const headerConfig = header ?? document.header ?? {};
   return [
-    headerFragment(document, { theme, studentName, date }),
+    headerFragment(document, {
+      theme, studentName, date, headerConfig,
+    }),
     ...measureBlocks(document.blocks, {
       doc, theme, texToSvg, resolveAsset, resolveChoices, tokens, italic,
     }),
