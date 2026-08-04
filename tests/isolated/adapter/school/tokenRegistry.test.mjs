@@ -108,6 +108,32 @@ describe('put / get', () => {
   });
 });
 
+describe('claim', () => {
+  it('atomically accepts a new opaque meaning and returns the original on retry', async () => {
+    const record = mint();
+    expect(await registry.claim(record)).toEqual({ status: 'accepted', record });
+    const retry = { ...record, issuedAt: '2026-07-27T10:00:01.000Z' };
+    expect(await registry.claim(retry)).toEqual({ status: 'duplicate', record });
+    expect(await registry.get(record.token)).toEqual(record);
+  });
+
+  it('refuses to change what an already printed token means', async () => {
+    const record = mint();
+    await registry.claim(record);
+    const changed = { ...record, subject: { sessionId: 'ses_other' } };
+    expect(await registry.claim(changed)).toEqual({ status: 'conflict', record });
+    expect(await registry.get(record.token)).toEqual(record);
+  });
+
+  it('preserves revocation and first issue time on a semantic duplicate', async () => {
+    const record = mint();
+    await registry.claim(record);
+    const revoked = await registry.revoke(record.token, { at: AT });
+    expect(await registry.claim({ ...record, issuedAt: '2099-01-01T00:00:00Z' }))
+      .toEqual({ status: 'duplicate', record: revoked });
+  });
+});
+
 describe('revoke', () => {
   it('stamps revokedAt and keeps the record for the audit trail', async () => {
     const record = mint();

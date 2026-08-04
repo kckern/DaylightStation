@@ -20,7 +20,8 @@ export const TOKEN_PREFIX = 'sch:';
 
 /** Closed set — a new action class is a code change, never config. */
 export const TOKEN_CLASSES = Object.freeze([
-  'identify', 'select_unit', 'issue_document', 'media_action', 'remediation', 'recovery', 'subject_next',
+  'identify', 'select_unit', 'issue_document', 'media_action', 'remediation', 'recovery',
+  'subject_next', 'learning_action',
 ]);
 
 /**
@@ -29,6 +30,7 @@ export const TOKEN_CLASSES = Object.freeze([
  */
 const BODY_CHARSET = '23456789ABCDEFGHJKLMNPQRSTUVWXYZ';
 const BODY_LENGTH = 16;
+const TOKEN_PATTERN = new RegExp(`^${TOKEN_PREFIX}[${BODY_CHARSET}]{${BODY_LENGTH}}$`);
 
 const isNonEmptyString = (v) => typeof v === 'string' && v.trim().length > 0;
 const isIsoTimestamp = (v) => isNonEmptyString(v) && !Number.isNaN(Date.parse(v));
@@ -66,30 +68,7 @@ export function isSchoolToken(code) {
  *             expiresAt: string|null, revokedAt: null }}
  */
 export function mintToken({ tokenClass, subject, at, rng, expiresAt = null } = {}) {
-  if (!TOKEN_CLASSES.includes(tokenClass)) throw new Error(`mintToken: unknown token class: ${tokenClass}`);
   if (typeof rng !== 'function') throw new Error('mintToken: rng function is required');
-  if (!isIsoTimestamp(at)) throw new Error('mintToken: at must be an ISO-8601 timestamp');
-  if (!subject || typeof subject !== 'object' || Array.isArray(subject)) {
-    throw new Error('mintToken: subject must be a mapping');
-  }
-  if (tokenClass === 'identify') {
-    if (!isNonEmptyString(subject.learnerId)) throw new Error('mintToken: identify subject requires a learnerId');
-    // A personal card never expires and is reusable forever (spec §6.1); an
-    // expiry on one would strand a child at the very scan that recovers them.
-    if (expiresAt != null) throw new Error('mintToken: an identify token never expires');
-  } else if (tokenClass === 'subject_next') {
-    // Sessionless by design: it names a learner + subject, not a session, so it
-    // can be minted and re-minted before any session exists. Unlike identify it
-    // DOES expire — the agenda it points at goes stale.
-    if (!isNonEmptyString(subject.learnerId)) throw new Error('mintToken: subject_next subject requires a learnerId');
-    if (!isNonEmptyString(subject.subject)) throw new Error('mintToken: subject_next subject requires a subject');
-  } else if (!isNonEmptyString(subject.sessionId)) {
-    throw new Error(`mintToken: ${tokenClass} subject requires a sessionId`);
-  }
-  if (expiresAt != null && !isIsoTimestamp(expiresAt)) {
-    throw new Error('mintToken: expiresAt must be an ISO-8601 timestamp');
-  }
-
   let body = '';
   for (let i = 0; i < BODY_LENGTH; i += 1) {
     // Clamp rather than trust: an rng that returns exactly 1 (or drifts out of
@@ -98,7 +77,46 @@ export function mintToken({ tokenClass, subject, at, rng, expiresAt = null } = {
     body += BODY_CHARSET[Math.floor(draw * BODY_CHARSET.length)];
   }
 
-  return { token: `${TOKEN_PREFIX}${body}`, tokenClass, subject, issuedAt: at, expiresAt, revokedAt: null };
+  return createTokenRecord({
+    token: `${TOKEN_PREFIX}${body}`, tokenClass, subject, at, expiresAt,
+  }, { caller: 'mintToken' });
+}
+
+/**
+ * Validate and construct a record for an opaque body supplied by a security
+ * adapter. This is used by deterministic, device-bound lesson-action tokens;
+ * all class/subject/time invariants remain in the pure domain.
+ */
+export function createTokenRecord({ token, tokenClass, subject, at, expiresAt = null } = {}, { caller = 'createTokenRecord' } = {}) {
+  if (!TOKEN_CLASSES.includes(tokenClass)) throw new Error(`${caller}: unknown token class: ${tokenClass}`);
+  if (!TOKEN_PATTERN.test(token || '')) throw new Error(`${caller}: token must be an opaque 16-character School token`);
+  if (!isIsoTimestamp(at)) throw new Error(`${caller}: at must be an ISO-8601 timestamp`);
+  if (!subject || typeof subject !== 'object' || Array.isArray(subject)) {
+    throw new Error(`${caller}: subject must be a mapping`);
+  }
+  if (tokenClass === 'identify') {
+    if (!isNonEmptyString(subject.learnerId)) throw new Error(`${caller}: identify subject requires a learnerId`);
+    if (expiresAt != null) throw new Error(`${caller}: an identify token never expires`);
+  } else if (tokenClass === 'subject_next') {
+    if (!isNonEmptyString(subject.learnerId)) throw new Error(`${caller}: subject_next subject requires a learnerId`);
+    if (!isNonEmptyString(subject.subject)) throw new Error(`${caller}: subject_next subject requires a subject`);
+  } else if (tokenClass === 'learning_action') {
+    if (!isNonEmptyString(subject.deviceId)) throw new Error(`${caller}: learning_action subject requires a deviceId`);
+    if (!isNonEmptyString(subject.address)) throw new Error(`${caller}: learning_action subject requires an address`);
+    if (!isNonEmptyString(subject.actionId)) throw new Error(`${caller}: learning_action subject requires an actionId`);
+    if (!Number.isInteger(subject.tokenVersion) || subject.tokenVersion < 1 || subject.tokenVersion > 0xffff) {
+      throw new Error(`${caller}: learning_action subject requires a 1..65535 tokenVersion`);
+    }
+    if (expiresAt != null) throw new Error(`${caller}: a persistent learning_action token never expires`);
+  } else if (!isNonEmptyString(subject.sessionId)) {
+    throw new Error(`${caller}: ${tokenClass} subject requires a sessionId`);
+  }
+  if (expiresAt != null && !isIsoTimestamp(expiresAt)) {
+    throw new Error(`${caller}: expiresAt must be an ISO-8601 timestamp`);
+  }
+  return {
+    token, tokenClass, subject: structuredClone(subject), issuedAt: at, expiresAt, revokedAt: null,
+  };
 }
 
 /**
@@ -155,6 +173,14 @@ const SEMANTICS = {
     doneMessage: () => 'Scan your card for a fresh list.',
     readyMessage: 'Finding the next thing for you.',
   },
+  learning_action: {
+    // A downloaded lesson may remain offline for months. The QR is therefore
+    // repeatable; revocation and current downstream print/media policy remain
+    // server-side. It is a locator for a low-risk action, never authentication.
+    actionable: () => true,
+    doneMessage: () => 'That lesson action is no longer available.',
+    readyMessage: 'Starting that lesson action.',
+  },
 };
 
 /**
@@ -187,7 +213,7 @@ export function resolveTokenState(record, { sessionState = null, now } = {}) {
   if (record.expiresAt && isIsoTimestamp(now) && Date.parse(now) > Date.parse(record.expiresAt)) {
     return { status: 'expired', message: 'That ticket is out of date. Scan your card for a new one.' };
   }
-  if (record.tokenClass === 'subject_next') {
+  if (record.tokenClass === 'subject_next' || record.tokenClass === 'learning_action') {
     // Sessionless, unlike identify it can still expire (checked above) — but it
     // never names a session, so there is no sessionState to require here.
     return { status: 'actionable', message: semantics.readyMessage };

@@ -4,13 +4,12 @@
  * `listMaterials(root)`, and stamps each result with the category it
  * resolves to (`2_domains/school/categories.mjs`, fail-closed to `reference`
  * with a warning). A source entry whose adapter throws is logged and skipped
- * — one bad Plex root must not blank the whole catalog for every other
+ * — one unavailable media root must not blank the whole catalog for every other
  * section.
  *
  * `listMaterials` results are cached in-memory per root for 60s (`#ttlMs`),
  * shared by `execute()` and `findMaterial()`, so that `GetMaterialUnits`
- * (Task 4) and repeated catalog renders don't fan out duplicate Plex calls —
- * "Plex requests serialize app-wide" (CLAUDE.local.md), so cheap reads matter.
+ * (Task 4) and repeated catalog renders don't fan out duplicate provider calls.
  * `now` is injectable for testability; production leaves it at the `Date.now`
  * default (the only place in this module a wall clock is read).
  */
@@ -28,10 +27,10 @@ const SECTION_ORDER = [
 // fine). Combined with a boot pre-warm (app.mjs), a redeploy no longer strands
 // the first visitor on a cold, slow build.
 const TTL_MS = 600_000; // 10 min
-// A single Plex `listMaterials` occasionally stalls (Plex busy / TCP keepalive).
+// A single remote `listMaterials` may stall (provider busy / TCP keepalive).
 // With no bound, the whole catalog build hangs — blocking the app. Cap each
 // source so a true stall rejects and the source is skipped (fail-soft). The cap
-// must be generous: the plex-label source makes several Plex calls and is slow
+// must be generous: a label source can make several provider calls and be slow
 // but VALID, so too-short a bound wrongly drops whole subjects (scripture went
 // empty at 8s). 25s covers a slow-but-working source while still bounding a hang.
 const SOURCE_TIMEOUT_MS = 25_000;
@@ -42,8 +41,8 @@ export class GetMaterialCatalog {
   #logger;
   #now;
   #sourceTimeoutMs;
-  #cache = new Map(); // root -> { materials: Material[]<no category>, at: number }
-  #inflight = new Map(); // root -> Promise, so a stampede doesn't fan out N cold builds
+  #cache = new Map(); // source+root -> { materials: Material[]<no category>, at: number }
+  #inflight = new Map(); // source+root -> Promise, so a stampede doesn't fan out N cold builds
 
   constructor({ sources, config, logger = console, now = () => Date.now(), sourceTimeoutMs = SOURCE_TIMEOUT_MS }) {
     this.#sources = sources;
@@ -62,13 +61,14 @@ export class GetMaterialCatalog {
   }
 
   async #listMaterialsCached(entry) {
-    const cached = this.#cache.get(entry.root);
+    const key = `${entry.source}:${entry.root}`;
+    const cached = this.#cache.get(key);
     const nowTs = this.#now();
     if (cached && nowTs - cached.at < TTL_MS) return cached.materials;
 
     // Coalesce concurrent cold fetches for the same root — one build, many
     // awaiters — so a stampede of subject opens doesn't multiply the fan-out.
-    const existing = this.#inflight.get(entry.root);
+    const existing = this.#inflight.get(key);
     if (existing) return existing;
 
     const adapter = this.#sources[entry.source];
@@ -76,11 +76,11 @@ export class GetMaterialCatalog {
 
     const p = this.#withTimeout(adapter.listMaterials(entry.root), this.#sourceTimeoutMs, entry.label)
       .then((materials) => {
-        this.#cache.set(entry.root, { materials, at: this.#now() });
+        this.#cache.set(key, { materials, at: this.#now() });
         return materials;
       })
-      .finally(() => this.#inflight.delete(entry.root));
-    this.#inflight.set(entry.root, p);
+      .finally(() => this.#inflight.delete(key));
+    this.#inflight.set(key, p);
     return p;
   }
 
@@ -92,16 +92,15 @@ export class GetMaterialCatalog {
       medium: entry.medium ?? material.medium,
       category,
       kind: material.kind ?? 'material',
-      // A collection's own name is the configured source `label` (a Plex
-      // parentTitle is unreliable for a manually-built collection); works and
-      // plain materials keep their Plex title.
+      // A collection's own name is the configured source `label`; works and
+      // plain materials keep their provider title.
       title: material.kind === 'collection' ? (entry.label ?? material.title) : material.title,
       // School subject shelf — config-declared per source, unvalidated here:
       // the frontend routes unknowns to Library. `subject_overrides` maps a
-      // material id to its own shelf, for mixed-subject roots (one Plex
+      // material id to its own shelf, for mixed-subject roots (one media
       // collection holding a money show and a science show); the source-level
       // `subject` remains the default for everything unlisted.
-      // A `plex-label` material carries its own `subject` label; used only when
+      // A `media-label` material carries its own `subject` label; used only when
       // config declares no shelf, so an explicit config subject still wins.
       subject: entry.subject_overrides?.[material.id] ?? entry.subject ?? material.subject ?? null,
     };
@@ -110,17 +109,23 @@ export class GetMaterialCatalog {
   /**
    * A collection's works (albums), stamped with the collection's category/
    * subject so a work inherits the anthology's pedagogy (quiz gating, credit).
-   * Only `plex-album` sources have works; anything else returns [].
+   * Sources without a `listWorks` capability return no works.
    *
-   * @param {string} collectionId - the collection material id (its Plex root)
+   * @param {string} collectionId - the opaque collection material id
    * @returns {Promise<Array>} stamped work materials, or [] if not a collection
    */
   async listWorks(collectionId) {
-    const entry = this.#config.sources.find((e) => `plex:${String(e.root).replace(/^plex:/, '')}` === collectionId);
-    const adapter = entry && this.#sources[entry.source];
-    if (!entry || !adapter?.listWorks) return [];
-    const works = await adapter.listWorks(entry.root);
-    return works.map((w) => this.#stamp(w, entry));
+    for (const entry of this.#config.sources) {
+      const adapter = this.#sources[entry.source];
+      if (!adapter?.listWorks) continue;
+      // eslint-disable-next-line no-await-in-loop
+      const roots = await this.#listMaterialsCached(entry);
+      if (!roots.some((material) => material.id === collectionId)) continue;
+      // eslint-disable-next-line no-await-in-loop
+      const works = await adapter.listWorks(entry.root);
+      return works.map((work) => this.#stamp(work, entry));
+    }
+    return [];
   }
 
   /**
@@ -167,7 +172,7 @@ export class GetMaterialCatalog {
    * @returns {Promise<{entry:object, material:object}|null>}
    */
   async findMaterial(materialId) {
-    // Top-level items first (a plex-show's shows, a plex-album's collection).
+    // Top-level items first (series, collections, or other source materials).
     for (const entry of this.#config.sources) {
       let raw;
       try {

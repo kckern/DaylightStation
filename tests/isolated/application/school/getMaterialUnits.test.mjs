@@ -12,11 +12,11 @@ function makeUnits() {
 }
 
 function makeCatalog(material) {
-  return { findMaterial: async (id) => (id === material.id ? { entry: { label: 'Shakespeare', source: 'plex-album', root: '619778', medium: 'audio', category: material.category }, material } : null) };
+  return { findMaterial: async (id) => (id === material.id ? { entry: { label: 'Shakespeare', source: 'media-album', root: '619778', medium: 'audio', category: material.category }, material } : null) };
 }
 
 function makeSources(fullMaterial) {
-  return { 'plex-album': { getMaterial: async () => fullMaterial } };
+  return { 'media-album': { getMaterial: async () => fullMaterial } };
 }
 
 // progressStore stub mirrors UserVideoProgressStore.enrich: matches units by id,

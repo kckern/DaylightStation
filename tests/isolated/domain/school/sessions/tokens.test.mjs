@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   TOKEN_CLASSES,
   TOKEN_PREFIX,
+  createTokenRecord,
   isSchoolToken,
   mintToken,
   resolveTokenState,
@@ -30,7 +31,8 @@ const session = (state, over = {}) => ({ sessionId: SID, state, terminal: false,
 describe('TOKEN_CLASSES', () => {
   it('is the closed spec §6.1 set', () => {
     expect(TOKEN_CLASSES).toEqual([
-      'identify', 'select_unit', 'issue_document', 'media_action', 'remediation', 'recovery', 'subject_next',
+      'identify', 'select_unit', 'issue_document', 'media_action', 'remediation', 'recovery',
+      'subject_next', 'learning_action',
     ]);
   });
 
@@ -224,7 +226,7 @@ describe('resolveTokenState: renewable action classes', () => {
   it('an advanced state is never an error — the message is friendly and points somewhere', () => {
     // identify and subject_next are both sessionless short-circuits (never
     // reach the sessionState-driven actionable/done split this test exercises).
-    TOKEN_CLASSES.filter((c) => c !== 'identify' && c !== 'subject_next').forEach((tokenClass) => {
+    TOKEN_CLASSES.filter((c) => !['identify', 'subject_next', 'learning_action'].includes(c)).forEach((tokenClass) => {
       const out = at(tokenClass, 'rewarded', { terminal: true });
       expect(out.status).toBe('already_done');
       expect(out.message.length).toBeGreaterThan(0);
@@ -266,6 +268,43 @@ describe('subject_next tokens', () => {
   it('still expires', () => {
     const rec = mintToken({ tokenClass: 'subject_next', subject: { learnerId: 'felix', subject: 'math' }, at, rng, expiresAt: '2026-07-30T16:00:00Z' });
     expect(resolveTokenState(rec, { now: '2026-08-01T00:00:00Z' }).status).toBe('expired');
+  });
+});
+
+describe('learning_action tokens', () => {
+  const subject = {
+    deviceId: 'SC86A001', address: 'main/physics/mechanics/motion/velocity',
+    actionId: 'worksheet:velocity', tokenVersion: 1,
+  };
+
+  it('admits a security-adapter supplied opaque body without encoding its subject', () => {
+    const record = createTokenRecord({
+      token: 'sch:23456789ABCDEFGH', tokenClass: 'learning_action', subject, at: AT,
+    });
+    expect(record).toMatchObject({ tokenClass: 'learning_action', subject, expiresAt: null, revokedAt: null });
+    Object.values(subject).forEach((value) => expect(record.token).not.toContain(String(value)));
+    expect(resolveTokenState(record, { now: '2099-01-01T00:00:00Z' }).status).toBe('actionable');
+  });
+
+  it('requires the complete stable binding and forbids expiry', () => {
+    expect(() => createTokenRecord({
+      token: 'sch:23456789ABCDEFGH', tokenClass: 'learning_action', subject: { ...subject, deviceId: '' }, at: AT,
+    })).toThrow(/deviceId/);
+    expect(() => createTokenRecord({
+      token: 'sch:23456789ABCDEFGH', tokenClass: 'learning_action', subject, at: AT, expiresAt: '2099-01-01T00:00:00Z',
+    })).toThrow(/never expires/);
+    expect(() => createTokenRecord({
+      token: 'sch:OOOOOOOOOOOOOOOO', tokenClass: 'learning_action', subject, at: AT,
+    })).toThrow(/opaque 16-character/);
+  });
+
+  it('remains repeatable but fails closed after registry revocation', () => {
+    const record = createTokenRecord({
+      token: 'sch:23456789ABCDEFGH', tokenClass: 'learning_action', subject, at: AT,
+    });
+    expect(resolveTokenState(record, { now: AT }).status).toBe('actionable');
+    expect(resolveTokenState(record, { now: AT }).status).toBe('actionable');
+    expect(resolveTokenState({ ...record, revokedAt: AT }, { now: AT }).status).toBe('expired');
   });
 });
 

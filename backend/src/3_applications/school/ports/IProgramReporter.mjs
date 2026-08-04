@@ -32,7 +32,7 @@ export class IProgramReporter {
    * Reports for one learner.
    *
    * Returns an ARRAY because one program may run several courses for the same
-   * learner — two languages, three Plex courses — and each is its own row on
+   * learner — two languages, three media courses — and each is its own row on
    * the board. A program the learner has never touched returns [].
    *
    * Must not throw: the aggregate view calls every reporter, and one failing

@@ -91,6 +91,22 @@ describe('sessions + answers', () => {
     expect(ds.appended).toHaveLength(1);
     expect(ds.appended[0]).toMatchObject({ userId: 'kid1', attributedTo: 'kid1', mode: 'quiz', given: 'Olympia', correct: true });
   });
+  it('records server-resolved Catalog context on an independently mounted bank snapshot', () => {
+    const mounted = {
+      id: 'mounted-check', title: 'Mounted check', audience: 'assigned',
+      items: [{ id: 'm1', type: 'multiple_choice', prompt: 'One?', answer: '1', choices: ['1', '2'] }],
+    };
+    const learningContext = {
+      catalogId: 'main', subjectId: 'quant', courseId: 'rates', unitId: 'u1',
+      lessonId: 'intro', moduleId: 'check', areaIds: ['stem'], conceptIds: ['unit-rate'],
+      classifications: ['core'], tags: ['formative'],
+    };
+    const { sessionId } = svc.openResolvedSession({
+      userId: 'kid1', bankSnapshot: mounted, mode: 'quiz', learningContext,
+    });
+    svc.answer({ sessionId, itemId: 'm1', given: '1' });
+    expect(ds.appended[0]).toMatchObject({ bankId: 'mounted-check', learning: learningContext });
+  });
   it('guest session on generic bank: verdicts but appends NOTHING', () => {
     const { sessionId } = svc.openSession({ bankId: 'animals', mode: 'quiz' });
     const r = svc.answer({ sessionId, itemId: 'a1', given: 'Bird' });
@@ -101,8 +117,8 @@ describe('sessions + answers', () => {
   it('guest against assigned bank -> GuestForbiddenError', () => {
     expect(() => svc.openSession({ bankId: 'caps', mode: 'quiz' })).toThrow(GuestForbiddenError);
   });
-  it('unknown user / unknown bank / bad mode on open', () => {
-    expect(() => svc.openSession({ userId: 'ghost', bankId: 'caps', mode: 'quiz' })).toThrow(/user/i);
+  it('unknown learner / unknown bank / bad mode on open', () => {
+    expect(() => svc.openSession({ userId: 'ghost', bankId: 'caps', mode: 'quiz' })).toThrow(/learner/i);
     expect(() => svc.openSession({ userId: 'kid1', bankId: 'nope', mode: 'quiz' })).toThrow();
     expect(() => svc.openSession({ userId: 'kid1', bankId: 'caps', mode: 'exam' })).toThrow(/mode/i);
   });

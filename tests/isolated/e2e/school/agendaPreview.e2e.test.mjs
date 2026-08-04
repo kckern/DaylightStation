@@ -86,7 +86,7 @@ afterEach(async () => {
   h?.dispose();
 });
 
-const tokenDir = () => path.join(h.dataDir, 'apps', 'school', 'tokens');
+const tokenDir = () => path.join(h.dataDir, 'household', 'apps', 'school', 'tokens');
 const tokenFiles = () => (fs.existsSync(tokenDir()) ? fs.readdirSync(tokenDir()) : []);
 
 describe('GET /learners/:learnerId/agenda/preview — dry-run agenda preview', () => {

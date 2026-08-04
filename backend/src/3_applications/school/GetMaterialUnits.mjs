@@ -33,7 +33,7 @@ export function buildBankIndex(banks) {
   return { byUnit: (unitId) => map.get(unitId) || null };
 }
 
-// Fetching a material's units from Plex (episodes/chapters) occasionally stalls
+// Fetching a material's remote units (episodes/chapters) occasionally stalls
 // on a specific item — a single show could hang the request for 70s+, leaving
 // the detail's chapter tiles stuck on their loading skeletons forever. Bound
 // each fetch so a stall fails fast (the detail then shows a retry, not an
@@ -74,8 +74,8 @@ export class GetMaterialUnits {
     return Promise.race([promise, timeout]).finally(() => clearTimeout(t));
   }
 
-  // The expensive part: pull the material + its raw units from the source
-  // (Plex). Cached per material, deduped while in flight, and bounded so a Plex
+  // The expensive part: pull the material + its raw units from the source.
+  // Cached per material, deduped while in flight, and bounded so a provider
   // stall rejects instead of hanging. Progress/lock state is NOT cached here —
   // it is folded fresh from the store on every execute() call.
   async #fetchFull(adapter, materialId) {
@@ -84,7 +84,7 @@ export class GetMaterialUnits {
 
     // One real fetch per material, shared by all concurrent callers. It caches
     // on completion INDEPENDENT of any caller's timeout — so even a very slow
-    // Plex response still warms the cache, and the user's next "Try again" then
+    // provider response still warms the cache, and the user's next "Try again" then
     // loads instantly rather than racing the same stall forever.
     let real = this.#materialInflight.get(materialId);
     if (!real) {
@@ -159,8 +159,8 @@ export class GetMaterialUnits {
     }));
 
     // Title/poster fall back to the (already-proxied) catalog material: the
-    // plex-show source now returns them null (it fetches episodes directly and
-    // no longer resolves the show's own metadata), and the catalog already
+    // A series source may return them null when it fetches episodes directly;
+    // the catalog already
     // carries a proxied poster + title for the detail header.
     const material = {
       ...full,

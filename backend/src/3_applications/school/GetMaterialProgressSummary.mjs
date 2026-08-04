@@ -11,7 +11,7 @@
  * policy and must never be consumed here (spec §6).
  *
  * Guests (`!userId`) have no recorded progress by definition, so `execute`
- * short-circuits to `[]` before touching the catalog or Plex at all.
+ * short-circuits to `[]` before touching the catalog or media provider at all.
  */
 export class GetMaterialProgressSummary {
   #catalog;

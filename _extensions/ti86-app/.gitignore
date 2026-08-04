@@ -1,0 +1,8 @@
+node_modules/
+
+# Build output is reproducible. Keep only the digest-pinned release fixture
+# consumed by the owned-ROM MAME/TilEm integration gate.
+dist/*
+!dist/SCSYNC.86p
+!dist/install-ti86a-5055ef0944b1/
+!dist/install-ti86a-5055ef0944b1/**

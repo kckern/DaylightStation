@@ -69,7 +69,7 @@ describe('scenario 1 — the video unit, end to end', () => {
     expect((await h.sessionState(sessionId)).mediaDispatch.verified).toBe('playhead');
 
     // --- the quiz is answered on the screen, through the one grading engine --
-    const bank = fixtureBank('math-fractions-01-quiz');
+    const bank = fixtureBank('math/math-fractions/01-quiz');
     const entries = {};
     for (const item of bank.items) {
       entries[item.id] = item.type === 'matching' ? item.pairs.map((p) => ({ ...p })) : item.answer;
@@ -193,7 +193,7 @@ describe('scenario 3 — the bubble-sheet checkpoint', () => {
 
     // Every bubble carries the CHOICE TEXT from the bank, not a bare letter. A
     // sheet of unlabelled A/B/C/D bubbles is unanswerable.
-    const bank = fixtureBank('math-fractions-03-bank');
+    const bank = fixtureBank('math/math-fractions/03-checkpoint');
     for (const item of bank.items) {
       const bubbles = formMap.marks.filter((m) => m.itemId === item.id);
       expect(bubbles.map((b) => b.label)).toEqual(item.choices);
@@ -201,7 +201,7 @@ describe('scenario 3 — the bubble-sheet checkpoint', () => {
     }
 
     // --- a child fills the right bubbles; the reader reads the paper ---------
-    const chosen = await h.correctBubbles({ sessionId, bankId: 'math-fractions-03-bank' });
+    const chosen = await h.correctBubbles({ sessionId, bankId: 'math/math-fractions/03-checkpoint' });
     const submitted = await h.omrSubmit(chosen, { sessionId });
     expect(submitted.status).toBe('submitted');
     expect(submitted.review).toEqual([]);
@@ -222,7 +222,7 @@ describe('scenario 3 — the bubble-sheet checkpoint', () => {
 
     // Graded through the ONE engine: six real attempts, each carrying the paper
     // provenance and the bank's own answer.
-    const attempts = h.attemptsFor(DEFAULT_LEARNER).filter((a) => a.bankId === 'math-fractions-03-bank');
+    const attempts = h.attemptsFor(DEFAULT_LEARNER).filter((a) => a.bankId === 'math/math-fractions/03-checkpoint');
     expect(attempts).toHaveLength(6);
     expect(attempts.every((a) => a.transport === 'paper' && a.correct === true)).toBe(true);
     expect(attempts.map((a) => a.given).sort()).toEqual(bank.items.map((i) => i.answer).sort());
@@ -245,7 +245,7 @@ describe('scenario 3 — the bubble-sheet checkpoint', () => {
     const issued = await h.scanTokenMatching(/print your sheet/i);
     const sessionId = issued.sessionId;
 
-    const chosen = await h.correctBubbles({ sessionId, bankId: 'math-fractions-03-bank' });
+    const chosen = await h.correctBubbles({ sessionId, bankId: 'math/math-fractions/03-checkpoint' });
     delete chosen['u3-q3'];
     delete chosen['u3-q4'];
     const submitted = await h.omrSubmit(chosen, {

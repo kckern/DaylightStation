@@ -23,6 +23,7 @@
  */
 import path from 'path';
 import { promises as fs } from 'fs';
+import { isDeepStrictEqual } from 'node:util';
 import yaml from 'js-yaml';
 import { ITokenRegistry } from '#apps/school/ports/ITokenRegistry.mjs';
 import { TOKEN_PREFIX } from '#domains/school/sessions/tokens.mjs';
@@ -103,6 +104,27 @@ export class YamlTokenRegistry extends ITokenRegistry {
       // and inside the same chain task so it can never race a write.
       if (this.#now() - this.#lastSweepMs >= SWEEP_INTERVAL_MS) await this.#sweep();
       return record;
+    });
+  }
+
+  /** @inheritdoc */
+  async claim(record) {
+    if (!record || typeof record !== 'object' || Array.isArray(record)) {
+      throw new Error('YamlTokenRegistry: record must be a mapping');
+    }
+    const body = bodyOf(record.token);
+    if (!body) throw new Error(`YamlTokenRegistry: not a school token: ${record.token}`);
+    return this.#enqueue(async () => {
+      const current = await this.get(record.token);
+      if (current) {
+        const sameMeaning = current.token === record.token
+          && current.tokenClass === record.tokenClass
+          && isDeepStrictEqual(current.subject, record.subject);
+        return { status: sameMeaning ? 'duplicate' : 'conflict', record: current };
+      }
+      await this.#write(body, record);
+      if (this.#now() - this.#lastSweepMs >= SWEEP_INTERVAL_MS) await this.#sweep();
+      return { status: 'accepted', record };
     });
   }
 

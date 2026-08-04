@@ -39,6 +39,9 @@ function makeDeps(over = {}) {
     handlesCode: (code) => typeof code === 'string' && code.startsWith('sch:'),
     handleScan: vi.fn(async () => ({ ok: true })),
   };
+  const schoolCalcResultImporter = over.schoolCalcResultImporter ?? {
+    execute: vi.fn(async () => ({ status: 'accepted' })),
+  };
 
   const triggerDispatchService = { handleEvent: vi.fn(async () => ({ ok: true })) };
   const refreshPrompt = vi.fn(async () => {});
@@ -46,6 +49,7 @@ function makeDeps(over = {}) {
 
   const deps = {
     schoolLifecycle,
+    schoolCalcResultImporter,
     triggerDispatchService,
     relayInstances: {
       'content-barcode': { route: 'content' },
@@ -199,7 +203,7 @@ describe('createScanDispatch — the composition seam', () => {
    * a line that could go missing from the call site.
    */
   const REQUIRED = [
-    'schoolLifecycle', 'triggerDispatchService', 'relayInstances', 'relayConfig',
+    'schoolLifecycle', 'schoolCalcResultImporter', 'triggerDispatchService', 'relayInstances', 'relayConfig',
     'applyScanToComposition', 'getScaleNutribotBridge', 'getLogFoodFromUPC',
     'configService', 'userIdentityService', 'screenNames', 'logger', 'barcodeLogger',
   ];
@@ -276,13 +280,20 @@ describe('createScanDispatch — the composition seam', () => {
     expect(() => createScanDispatch(depsWith({ routeFallback: { content: 'content' } }))).not.toThrow();
   });
 
-  it('accepts a null school console and a null nutriscan use case, but not their absence', () => {
-    // Both are legitimately null — the console may not be built, and nutriscan
-    // may be configured off. `null` is a WIRED answer; an absent key is not.
+  it('accepts null optional product entry points, but not their absence', () => {
+    // All three are legitimately null. `null` is a WIRED answer; an absent key
+    // is not, because omission at the app.mjs seam is otherwise invisible.
     expect(() => createScanDispatch(depsWith({ schoolLifecycle: null }))).not.toThrow();
+    expect(() => createScanDispatch(depsWith({ schoolCalcResultImporter: null }))).not.toThrow();
     expect(() => createScanDispatch(depsWith({ applyScanToComposition: null }))).not.toThrow();
     expect(() => createScanDispatch(depsWithout('schoolLifecycle'))).toThrow(/missing: /);
+    expect(() => createScanDispatch(depsWithout('schoolCalcResultImporter'))).toThrow(/missing: /);
     expect(() => createScanDispatch(depsWithout('applyScanToComposition'))).toThrow(/missing: /);
+  });
+
+  it('refuses a malformed SchoolCalc result importer at boot', () => {
+    expect(() => createScanDispatch(depsWith({ schoolCalcResultImporter: {} })))
+      .toThrow(/malformed: [^;]*schoolCalcResultImporter/);
   });
 
   it('refuses a trigger service that cannot take an event', () => {
@@ -380,12 +391,43 @@ describe('errText — the shared rejection reader', () => {
 });
 
 describe('school — first and route-independent', () => {
+  it('routes a SchoolCalc result QR to the common importer and never to the action-token console', async () => {
+    const h = harness();
+    const out = await h.scanDispatch.handleScan(relayScan({ code: 'sch:r1:ABC234' }));
+    await Promise.resolve();
+    expect(h.schoolCalcResultImporter.execute).toHaveBeenCalledWith({
+      record: 'sch:r1:ABC234', transport: 'qr',
+    });
+    expect(h.schoolLifecycle.handleScan).not.toHaveBeenCalled();
+    expect(out).toMatchObject({ domain: 'school', status: 'dispatched', effect: { transport: 'qr' } });
+  });
+
+  it('fails closed when a result QR arrives while SchoolCalc is disabled', async () => {
+    const h = harness({ schoolCalcResultImporter: null });
+    const out = await h.scanDispatch.handleScan(relayScan({ code: 'sch:r1:ABC234' }));
+    expect(out).toMatchObject({ domain: 'school', status: 'unwired', ok: false });
+    expect(h.schoolLifecycle.handleScan).not.toHaveBeenCalled();
+  });
+
+  it('logs a rejected QR import without creating an unhandled rejection', async () => {
+    const schoolCalcResultImporter = {
+      execute: vi.fn(async () => { throw new Error('bad result'); }),
+    };
+    const h = harness({ schoolCalcResultImporter });
+    await h.scanDispatch.handleScan(relayScan({ code: 'sch:r1:ABC234' }));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(h.barcodeLogger.warn).toHaveBeenCalledWith('barcode_relay.schoolcalc.result.failed', {
+      device: 'content-barcode', error: 'bad result',
+    });
+  });
+
   it('hands the FULL raw code to the school console on a content reader', async () => {
     const h = harness();
     await h.scanDispatch.handleScan(relayScan({ code: 'sch:A7F3K2' }));
     expect(h.schoolLifecycle.handleScan).toHaveBeenCalledWith({
       code: 'sch:A7F3K2', device: 'content-barcode',
     });
+    expect(h.schoolCalcResultImporter.execute).not.toHaveBeenCalled();
     expect(h.triggerDispatchService.handleEvent).not.toHaveBeenCalled();
   });
 

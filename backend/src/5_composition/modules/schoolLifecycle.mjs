@@ -120,6 +120,8 @@ function cryptoRng(crypto) {
  *   to the platform CSPRNG; a caller passes a seeded one only to make a run
  *   reproducible.
  * @param {object} [deps.logger]
+ * @param {object} [deps.tokenRegistry] shared School token registry
+ * @param {object} [deps.schoolCalcActionResolver] device-bound lesson-action resolver
  * @returns {Promise<{
  *   wired: boolean, reason: string|null,
  *   handlesCode: (code: string) => boolean,
@@ -134,6 +136,7 @@ export async function createSchoolLifecycle({
   thermalPrinterRegistry = null, playbackAdapter = null,
   languageStudyService = null,
   donow = null, donowSurfaces = null, donowDatastore = null,
+  tokenRegistry = null, schoolCalcActionResolver = null,
   clock = () => new Date(), rng = null, logger = console,
 } = {}) {
   const cfg = configService.getHouseholdAppConfig?.(householdId, 'school') || {};
@@ -267,7 +270,7 @@ export async function createSchoolLifecycle({
   const stores = {
     catalog: new YamlCurriculumDatastore({ configService }),
     sessions: new YamlWorkSessionDatastore({ configService }),
-    tokens: new YamlTokenRegistry({ configService, logger }),
+    tokens: tokenRegistry ?? new YamlTokenRegistry({ configService, logger }),
     assignments: new YamlAssignmentStore({ configService }),
     formMaps: new YamlFormMapStore({ configService }),
     reviewQueue: new YamlReviewQueue({ configService }),
@@ -511,6 +514,7 @@ export async function createSchoolLifecycle({
     // from this composition now that `donow` is unconditionally wired), but
     // this file constructs nothing to feed it.
     donow, closeSessionOutcome, clock, logger,
+    resolveLearningAction: schoolCalcActionResolver,
   });
 
   // The pending->approved half of the launch-unit loop (spec §6 "the approval

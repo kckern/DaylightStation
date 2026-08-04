@@ -15,6 +15,7 @@ const AUDIENCES = new Set(['generic', 'assigned']);
 const isNonEmptyString = (v) => typeof v === 'string' && v.trim().length > 0;
 const isImageSpec = (v) => v && typeof v === 'object' && !Array.isArray(v)
   && Object.values(v).every((x) => isNonEmptyString(x));
+const CONCEPT_ID = /^[a-z0-9][a-z0-9-]{0,63}$/;
 
 export function validateQuestionBank(raw) {
   const errors = [];
@@ -53,6 +54,28 @@ export function validateQuestionBank(raw) {
     if (!isNonEmptyString(raw.subject)) errors.push('subject must be a non-empty string');
     else subject = raw.subject;
   }
+  let concepts = [];
+  const conceptIds = new Set();
+  if (raw.concepts !== undefined && raw.concepts !== null) {
+    if (!Array.isArray(raw.concepts) || raw.concepts.length === 0) {
+      errors.push('concepts must be a non-empty array when present');
+    } else {
+      raw.concepts.forEach((concept, index) => {
+        const at = `concepts[${index}]`;
+        if (!concept || typeof concept !== 'object' || Array.isArray(concept)) {
+          errors.push(`${at}: must be a mapping`); return;
+        }
+        if (!CONCEPT_ID.test(concept.conceptId || '')) errors.push(`${at}: conceptId must be a lowercase identifier`);
+        else if (conceptIds.has(concept.conceptId)) errors.push(`${at}: duplicate conceptId "${concept.conceptId}"`);
+        else conceptIds.add(concept.conceptId);
+        if (!isNonEmptyString(concept.title)) errors.push(`${at}: title is required`);
+        if (concept.description !== undefined && !isNonEmptyString(concept.description)) {
+          errors.push(`${at}: description must be non-empty when present`);
+        }
+      });
+      concepts = raw.concepts;
+    }
+  }
   if (!Array.isArray(raw.items) || raw.items.length === 0) {
     errors.push('items must be a non-empty array');
     return { ok: false, errors };
@@ -66,6 +89,18 @@ export function validateQuestionBank(raw) {
     else seen.add(item.id);
     if (!ITEM_TYPES.has(item.type)) { errors.push(`${at}: unknown type "${item.type}"`); return; }
     if (!isNonEmptyString(item.prompt)) errors.push(`${at}: prompt is required`);
+    validateItemFeedback(item.feedback, `${at}.feedback`, errors);
+    if (item.concepts !== undefined) {
+      if (!Array.isArray(item.concepts) || item.concepts.length === 0
+          || !item.concepts.every((conceptId) => CONCEPT_ID.test(conceptId))
+          || new Set(item.concepts).size !== item.concepts.length) {
+        errors.push(`${at}: concepts must be unique lowercase identifiers when present`);
+      } else {
+        item.concepts.forEach((conceptId) => {
+          if (!conceptIds.has(conceptId)) errors.push(`${at}: unknown concept "${conceptId}"`);
+        });
+      }
+    }
     if (item.type === 'multiple_choice') {
       if (!Array.isArray(item.choices) || item.choices.length < 2) {
         errors.push(`${at}: choices must have >= 2 entries`);
@@ -126,7 +161,26 @@ export function validateQuestionBank(raw) {
     }
   });
   if (errors.length) return { ok: false, errors };
-  return { ok: true, bank: { id: raw.id, title: raw.title, audience, topics, subject, items: raw.items, unit, readalong } };
+  return { ok: true, bank: { id: raw.id, title: raw.title, audience, topics, subject, concepts, items: raw.items, unit, readalong } };
+}
+
+function validateItemFeedback(raw, path, errors) {
+  if (raw === undefined || raw === null) return;
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+    errors.push(`${path}: must be a mapping`);
+    return;
+  }
+  const allowed = new Set(['explanation', 'correct', 'incorrect']);
+  const unknown = Object.keys(raw).filter((field) => !allowed.has(field));
+  if (unknown.length) errors.push(`${path}: unknown fields ${unknown.join(', ')}`);
+  for (const field of allowed) {
+    if (raw[field] !== undefined && (!isNonEmptyString(raw[field]) || raw[field].length > 1000)) {
+      errors.push(`${path}.${field}: must be 1..1000 characters when present`);
+    }
+  }
+  if (!['explanation', 'correct', 'incorrect'].some((field) => raw[field] !== undefined)) {
+    errors.push(`${path}: must contain at least one feedback message`);
+  }
 }
 
 /**

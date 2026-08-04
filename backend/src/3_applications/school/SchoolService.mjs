@@ -4,13 +4,16 @@
  * thin shell. Sessions are IN MEMORY by design — a restart costs the remainder
  * of one sitting, never a recorded attempt (those are already on disk).
  */
-import { validateQuestionBank, summarizeQuestionBank, gradeAnswer, givenShapeError, createAttempt, GuestForbiddenError, SessionGoneError } from '#domains/school/index.mjs';
+import {
+  validateQuestionBank, summarizeQuestionBank, gradeAnswer, givenShapeError,
+  createAttempt, GuestForbiddenError, SessionGoneError, normalizeLearningContext,
+} from '#domains/school/index.mjs';
 import { ValidationError, EntityNotFoundError } from '#domains/core/errors/index.mjs';
 import { PersistenceError } from '#system/utils/errors/index.mjs';
 import { shortId } from '#domains/core/utils/id.mjs';
 
 const SESSION_TTL_MS = 2 * 60 * 60 * 1000;
-const MODES = new Set(['quiz', 'flashcard', 'drill']);
+const MODES = new Set(['quiz', 'flashcard', 'drill', 'learning_probe']);
 // The household has 4600+ bank files; even summarising them is 4600 synchronous
 // file reads (~10s) — and the gating bank index rebuilds via listBanks() on
 // EVERY unit lookup, so a 44-chapter material scanned them 44 times. Cache the
@@ -19,14 +22,15 @@ const MODES = new Set(['quiz', 'flashcard', 'drill']);
 const BANK_SUMMARY_TTL_MS = 300_000; // 10 min? banks change rarely; 5 min keeps it warm through use gaps
 
 export class SchoolService {
-  #ds; #userService; #logger; #now; #bankSources;
+  #ds; #userService; #learnerDirectory; #logger; #now; #bankSources;
   #sessions = new Map(); // sessionId -> {id, userId|null, bankId, mode, bank, startedAt, lastActiveAt}
   #bankSummaries = null; // { at: number, list: Array<summary> }
   #warming = null; // in-flight warmBanks() promise (dedupe)
 
-  constructor({ datastore, userService, logger = console, now = () => Date.now(), bankSources = [] }) {
+  constructor({ datastore, userService, learnerDirectory = null, logger = console, now = () => Date.now(), bankSources = [] }) {
     this.#ds = datastore;
     this.#userService = userService;
+    this.#learnerDirectory = learnerDirectory;
     this.#logger = logger;
     this.#now = now;
     this.#bankSources = bankSources;
@@ -42,7 +46,7 @@ export class SchoolService {
    * with every other picker in the house.
    */
   getRoster() {
-    return this.#userService.getHouseholdRoster();
+    return this.#learnerDirectory?.listLearners?.() ?? this.#userService.getHouseholdRoster();
   }
 
   /**
@@ -99,9 +103,12 @@ export class SchoolService {
     return r.bank;
   }
 
-  /** Virtual decks from injected bank sources (e.g. geography topic grid). */
-  listDeckSummaries() {
-    return this.#bankSources.flatMap((s) => s.listDeckSummaries());
+  /** Generic catalog metadata from injected/generated bank sources. */
+  listBankSourceSummaries({ collection = null } = {}) {
+    const summaries = this.#bankSources.flatMap((source) => source.listSummaries());
+    return collection
+      ? summaries.filter((summary) => summary.collections?.includes(collection))
+      : summaries;
   }
 
   // Listing/shelving reads each bank's HEADER only (summarizeQuestionBank) — no
@@ -181,16 +188,43 @@ export class SchoolService {
   }
 
   openSession({ userId = null, bankId, mode }) {
-    this.#sweepExpired();
-    if (!MODES.has(mode)) throw new ValidationError(`mode must be quiz|flashcard|drill, got: ${mode}`);
-    if (userId != null && !this.#userService.getProfile(userId)) throw new ValidationError(`unknown user: ${userId}`);
     const bank = this.getBank(bankId); // throws EntityNotFoundError
-    if (userId == null && bank.audience !== 'generic') {
-      throw new GuestForbiddenError(`guests cannot open assigned bank: ${bankId}`);
+    return this.#openResolvedSession({ userId, bank, mode, learningContext: null });
+  }
+
+  /**
+   * Open against a bank already resolved by a trusted application use case.
+   * HTTP never supplies this snapshot directly: Catalog session opening first
+   * verifies learner visibility, address, module, mode, and bank identity.
+   */
+  openResolvedSession({ userId = null, bankSnapshot, mode, learningContext = null }) {
+    const validated = validateQuestionBank(bankSnapshot);
+    if (!validated.ok) {
+      throw new ValidationError(`resolved question bank is invalid: ${validated.errors.join('; ')}`);
     }
-    const session = { id: `ses_${shortId(8)}`, userId, bankId, mode, bank, startedAt: this.#now(), lastActiveAt: this.#now() };
+    return this.#openResolvedSession({ userId, bank: validated.bank, mode, learningContext });
+  }
+
+  #openResolvedSession({ userId, bank, mode, learningContext }) {
+    this.#sweepExpired();
+    if (!MODES.has(mode)) throw new ValidationError(`mode must be quiz|flashcard|drill|learning_probe, got: ${mode}`);
+    if (userId != null && !this.#isLearner(userId)) throw new ValidationError(`unknown learner: ${userId}`);
+    const normalized = normalizeLearningContext(learningContext, { path: 'session.learning' });
+    if (normalized.errors.length) throw new ValidationError(normalized.errors.join('; '));
+    if (userId == null && bank.audience !== 'generic') {
+      throw new GuestForbiddenError(`guests cannot open assigned bank: ${bank.id}`);
+    }
+    const session = {
+      id: `ses_${shortId(8)}`, userId, bankId: bank.id, mode, bank,
+      learningContext: normalized.learning,
+      startedAt: this.#now(), lastActiveAt: this.#now(), responseClaims: new Map(),
+    };
     this.#sessions.set(session.id, session);
-    this.#logger.info?.('school.session.open', { sessionId: session.id, bankId, mode, userId });
+    this.#logger.info?.('school.session.open', {
+      sessionId: session.id, bankId: bank.id, mode, userId,
+      lessonId: normalized.learning.lessonId ?? null,
+      moduleId: normalized.learning.moduleId ?? null,
+    });
     return { sessionId: session.id };
   }
 
@@ -211,13 +245,42 @@ export class SchoolService {
    * earns nothing the screen couldn't". It defaults to `'screen'`, so every
    * existing caller is unaffected.
    */
-  answer({ sessionId, itemId, given, selfGrade, transport = 'screen' }) {
+  answer({
+    sessionId, itemId, given, selfGrade, transport = 'screen', provenance = null,
+    probeAttemptNumber = null, responseId = null,
+  }) {
     const s = this.#session(sessionId);
     const item = s.bank.items.find((i) => i.id === itemId);
     if (!item) throw new ValidationError(`unknown item: ${itemId}`);
+    if (s.mode === 'learning_probe') {
+      if (!Number.isInteger(probeAttemptNumber) || probeAttemptNumber < 1 || probeAttemptNumber > 3) {
+        throw new ValidationError('learning_probe answer requires probeAttemptNumber from 1 to 3');
+      }
+      if (typeof responseId !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._:-]{0,191}$/.test(responseId)) {
+        throw new ValidationError('learning_probe answer requires a stable responseId');
+      }
+      provenance = { ...(provenance ?? {}), probe: { attemptNumber: probeAttemptNumber } };
+    } else if (probeAttemptNumber !== null) {
+      throw new ValidationError('probeAttemptNumber is accepted only for learning_probe sessions');
+    }
 
+    if (responseId) {
+      const fingerprint = stableValue({ itemId, given, selfGrade, probeAttemptNumber });
+      const prior = s.responseClaims.get(responseId);
+      if (prior) {
+        if (prior.fingerprint !== fingerprint) throw new ValidationError(`responseId conflict: ${responseId}`);
+        return structuredClone(prior.outcome);
+      }
+      const outcome = this.#gradeAndRecord({ session: s, item, given, selfGrade, transport, provenance });
+      s.responseClaims.set(responseId, { fingerprint, outcome: structuredClone(outcome) });
+      return outcome;
+    }
+    return this.#gradeAndRecord({ session: s, item, given, selfGrade, transport, provenance });
+  }
+
+  #gradeAndRecord({ session: s, item, given, selfGrade, transport, provenance, recordedAt = null, learningContext = null }) {
     let correct, expected, recordedGiven;
-    if (s.mode === 'quiz' || s.mode === 'drill') {
+    if (s.mode === 'quiz' || s.mode === 'drill' || s.mode === 'learning_probe') {
       if (selfGrade !== undefined) throw new ValidationError('selfGrade is not accepted on a quiz session');
       const shapeErr = givenShapeError(item, given);
       if (shapeErr) throw new ValidationError(shapeErr);
@@ -232,9 +295,24 @@ export class SchoolService {
 
     let attemptId = null;
     if (s.userId != null) {
+      const attemptAt = recordedAt ?? new Date(this.#now()).toISOString();
       const attempt = createAttempt({
-        sessionId: s.id, bankId: s.bankId, itemId, itemType: item.type,
-        mode: s.mode, given: recordedGiven, correct, attributedTo: s.userId, transport,
+        at: attemptAt,
+        sessionId: s.id, bankId: s.bankId, itemId: item.id, itemType: item.type,
+        mode: s.mode, given: recordedGiven, correct, attributedTo: s.userId, transport, provenance,
+        learning: {
+          ...(learningContext ?? s.learningContext ?? {}),
+          ...((learningContext ?? s.learningContext)?.subjectId || !s.bank.subject ? {} : { subjectId: s.bank.subject }),
+          ...((learningContext ?? s.learningContext)?.unitId || !s.bank.unit ? {} : { unitId: s.bank.unit }),
+          conceptIds: [...new Set([
+            ...((learningContext ?? s.learningContext)?.conceptIds ?? []),
+            ...(item.concepts ?? []),
+          ])],
+          tags: [...new Set([
+            ...((learningContext ?? s.learningContext)?.tags ?? []),
+            ...(s.bank.topics ?? []),
+          ])],
+        },
       });
       // appendAttempt can fail two ways: it can throw (router 500, UI shows
       // "unrecorded"), or — per YamlSchoolDatastore — return null/falsy without
@@ -245,16 +323,128 @@ export class SchoolService {
       const appended = this.#ds.appendAttempt(s.userId, attempt);
       if (!appended) {
         throw new PersistenceError('write', `attempt not recorded for user ${s.userId} (session ${s.id})`, {
-          userId: s.userId, sessionId: s.id, itemId, bankId: s.bankId,
+          userId: s.userId, sessionId: s.id, itemId: item.id, bankId: s.bankId,
         });
       }
       attemptId = attempt.id;
     }
-    return (s.mode === 'quiz' || s.mode === 'drill') ? { correct, expected, attemptId } : { attemptId };
+    return (s.mode === 'quiz' || s.mode === 'drill' || s.mode === 'learning_probe')
+      ? { correct, expected, attemptId }
+      : { attemptId };
+  }
+
+  /**
+   * Import a verified calculator receipt through the ordinary drill grader.
+   * The receipt id is retained on every attempt, so a scan retry only fills a
+   * previously interrupted import and never earns duplicate credit.
+   */
+  importCalculatorReceipt({ userId, bankId, receiptId, calculatorId, packId, attemptSequence, record = null, answers }) {
+    if (!userId) throw new GuestForbiddenError('Sign in to import a calculator result');
+    if (!Array.isArray(answers) || answers.length === 0) throw new ValidationError('calculator receipt has no answers');
+    const bank = this.getBank(bankId);
+    if (answers.length !== bank.items.length) throw new ValidationError(`calculator receipt has ${answers.length} answers; ${bank.items.length} required`);
+    const prior = this.#ds.readAllAttempts(userId).filter((a) => a.provenance?.receiptId === receiptId);
+    // A calculator sequence is immutable. A second payload claiming that same
+    // identity is not a harmless duplicate: it is corruption or tampering and
+    // must not receive the original record's idempotency acknowledgement.
+    const priorRecords = new Set(prior.map((a) => a.provenance?.record).filter(Boolean));
+    if (priorRecords.size && (!record || !priorRecords.has(record))) {
+      throw new ValidationError(`calculator receipt collision: ${receiptId}`);
+    }
+    const recorded = new Set(prior.map((a) => a.itemId));
+    const { sessionId } = this.openSession({ userId, bankId, mode: 'drill' });
+    const results = [];
+    bank.items.forEach((item, index) => {
+      if (recorded.has(item.id)) return;
+      const choiceIndex = Number(answers[index]) - 1;
+      if (!Number.isInteger(choiceIndex) || !item.choices?.[choiceIndex]) throw new ValidationError(`invalid choice for ${item.id}`);
+      results.push(this.answer({ sessionId, itemId: item.id, given: item.choices[choiceIndex], transport: 'calculator',
+        provenance: { receiptId, record, calculatorId, packId, attemptSequence, question: index + 1 } }));
+    });
+    return { receiptId, duplicate: results.length === 0, imported: results.length, correct: results.filter((r) => r.correct).length, total: bank.items.length };
+  }
+
+  /**
+   * Import stable-ID SchoolCalc responses through the same session grader used
+   * by the screen and paper surfaces. A retry scans attempt provenance first,
+   * so an interruption after append but before ledger completion resumes only
+   * missing items.
+   */
+  importSchoolCalcAssessment({ learnerId, submission, bankSnapshot, mode, recordDigest, receivedAt, learningContext = null }) {
+    if (!learnerId) throw new GuestForbiddenError('SchoolCalc result has no learner binding');
+    if (!MODES.has(mode)) throw new ValidationError(`SchoolCalc assessment mode must be quiz|flashcard|drill|learning_probe, got: ${mode}`);
+    if (!isCanonicalTimestamp(receivedAt)) {
+      throw new ValidationError('SchoolCalc receivedAt must be a canonical ISO-8601 timestamp');
+    }
+    const validated = validateQuestionBank(bankSnapshot);
+    if (!validated.ok) {
+      throw new ValidationError(`SchoolCalc artifact bank is invalid: ${validated.errors.join('; ')}`);
+    }
+    const bank = validated.bank;
+    const resultId = `${submission.deviceId}:${submission.sequence}`;
+    const prior = this.#ds.readAllAttempts(learnerId)
+      .filter((attempt) => attempt.provenance?.schoolCalc?.resultId === resultId);
+    const priorDigests = new Set(prior.map((attempt) => attempt.provenance?.schoolCalc?.recordDigest).filter(Boolean));
+    if (priorDigests.size && !priorDigests.has(recordDigest)) {
+      throw new ValidationError(`SchoolCalc result collision: ${resultId}`);
+    }
+
+    // The immutable artifact interpretation is the authority for what the
+    // learner actually saw. This intentionally does not reload today's YAML:
+    // an offline result may arrive after the source bank was edited.
+    const expected = new Set(bank.items.map((item) => item.id));
+    for (const response of submission.responses) {
+      if (!expected.has(response.itemId)) throw new ValidationError(`unknown item: ${response.itemId}`);
+    }
+    const recorded = new Set(prior.map((attempt) => attempt.itemId));
+    const session = {
+      id: `schoolcalc:${resultId}`,
+      userId: learnerId,
+      bankId: bank.id,
+      mode,
+      bank,
+      learningContext,
+    };
+    const results = [];
+    for (const response of submission.responses) {
+      if (recorded.has(response.itemId)) continue;
+      const item = bank.items.find((entry) => entry.id === response.itemId);
+      const selfGrade = mode === 'flashcard'
+        ? response.given === true ? 'correct' : response.given === false ? 'incorrect' : response.given
+        : undefined;
+      results.push(this.#gradeAndRecord({
+        session,
+        item,
+        given: mode === 'flashcard' ? undefined : response.given,
+        selfGrade,
+        transport: 'calculator',
+        recordedAt: receivedAt,
+        provenance: {
+          schoolCalc: {
+            resultId,
+            recordDigest,
+            timeBasis: 'backend_received',
+            deviceId: submission.deviceId,
+            sequence: submission.sequence,
+            artifactId: submission.artifactId,
+            lessonId: submission.lessonId,
+            moduleId: submission.moduleId,
+            ...(response.probe ? { probe: structuredClone(response.probe) } : {}),
+          },
+        },
+      }));
+    }
+    return {
+      resultId,
+      imported: results.length,
+      duplicateItems: submission.responses.length - results.length,
+      correct: results.filter((entry) => entry.correct).length,
+      total: submission.responses.length,
+    };
   }
 
   getResults(userId, { bankId } = {}) {
-    if (!this.#userService.getProfile(userId)) throw new ValidationError(`unknown user: ${userId}`);
+    if (!this.#isLearner(userId)) throw new ValidationError(`unknown learner: ${userId}`);
     const all = this.#ds.readAllAttempts(userId);
     const byBank = new Map();
     for (const a of all) {
@@ -263,10 +453,15 @@ export class SchoolService {
         byBank.set(a.bankId, { bankId: a.bankId,
           quiz: { attempts: 0, correct: 0, lastAt: null },
           flashcard: { attempts: 0, correct: 0, lastAt: null },
-          drill: { attempts: 0, correct: 0, lastAt: null }, items: {} });
+          drill: { attempts: 0, correct: 0, lastAt: null },
+          learningProbe: { attempts: 0, correct: 0, lastAt: null },
+          items: {} });
       }
       const b = byBank.get(a.bankId);
-      const lane = a.mode === 'flashcard' ? b.flashcard : a.mode === 'drill' ? b.drill : b.quiz; // never merged (spec §5)
+      const lane = a.mode === 'flashcard' ? b.flashcard
+        : a.mode === 'drill' ? b.drill
+          : a.mode === 'learning_probe' ? b.learningProbe
+            : b.quiz; // distinct evidence purposes are never merged (spec §5)
       lane.attempts += 1;
       if (a.correct) lane.correct += 1;
       lane.lastAt = a.at;
@@ -281,9 +476,14 @@ export class SchoolService {
       return byBank.get(bankId) || { bankId,
         quiz: { attempts: 0, correct: 0, lastAt: null },
         flashcard: { attempts: 0, correct: 0, lastAt: null },
-        drill: { attempts: 0, correct: 0, lastAt: null }, items: {} };
+        drill: { attempts: 0, correct: 0, lastAt: null },
+        learningProbe: { attempts: 0, correct: 0, lastAt: null }, items: {} };
     }
     return [...byBank.values()];
+  }
+
+  #isLearner(userId) {
+    return this.#learnerDirectory?.hasLearner?.(userId) ?? Boolean(this.#userService.getProfile(userId));
   }
 
   // -- program report (IProgramReporter) -----------------------------------
@@ -346,6 +546,20 @@ export class SchoolService {
       metrics,
     }];
   }
+}
+
+function stableValue(value) {
+  if (Array.isArray(value)) return `[${value.map(stableValue).join(',')}]`;
+  if (value && typeof value === 'object') {
+    return `{${Object.keys(value).sort().map((key) => `${JSON.stringify(key)}:${stableValue(value[key])}`).join(',')}}`;
+  }
+  return JSON.stringify(value);
+}
+
+function isCanonicalTimestamp(value) {
+  if (typeof value !== 'string') return false;
+  const parsed = new Date(value);
+  return Number.isFinite(parsed.valueOf()) && parsed.toISOString() === value;
 }
 
 export default SchoolService;

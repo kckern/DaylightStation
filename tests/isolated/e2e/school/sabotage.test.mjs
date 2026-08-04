@@ -128,7 +128,7 @@ const bubbleSheetScenario = () => onTheConsole(async (h, lib) => {
   const issued = await h.scanTokenMatching(/print your sheet/i);
   const sessionId = issued.sessionId;
 
-  const bank = lib.fixtureBank('math-fractions-03-bank');
+  const bank = lib.fixtureBank('math/math-fractions/03-checkpoint');
   const chosen = await h.correctBubbles({ sessionId, bankId: bank.id });
   const submitted = await h.omrSubmit(chosen, { sessionId });
 

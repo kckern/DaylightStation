@@ -9,7 +9,7 @@ import { OpenRemediation } from '#apps/school/usecases/OpenRemediation.mjs';
 import { CloseSessionOutcome } from '#apps/school/usecases/CloseSessionOutcome.mjs';
 import { CurriculumAccess } from '#apps/school/CurriculumAccess.mjs';
 import { ReceiptPrinting } from '#apps/school/ReceiptPrinting.mjs';
-import { mintToken } from '#domains/school/sessions/tokens.mjs';
+import { createTokenRecord, mintToken } from '#domains/school/sessions/tokens.mjs';
 import {
   FakeCatalog, FakeSessionRepository, FakeTokenRegistry, FakeAssignmentStore,
   FakeFormMapStore, FakeDocumentRenderer, FakeReceiptRenderer, FakeLaserPrinter,
@@ -38,6 +38,7 @@ const build = ({
   surfaceValidators = () => new Map([[LAUNCH_SURFACE, () => []]]),
   donowDispatch = null,
   wireDonow = true,
+  resolveLearningAction = null,
 } = {}) => {
   clock = fakeClock();
   rng = seededRng(21);
@@ -91,6 +92,7 @@ const build = ({
     tokens, sessions, curriculum, resolvePersonalCard: card, issueDocument,
     dispatchMedia, openRemediation, receipts,
     resolveSubjectNext, portal, launchers, donow, closeSessionOutcome: close,
+    resolveLearningAction,
     clock: clock.now, logger: silentLogger,
   });
 };
@@ -688,5 +690,47 @@ describe('the invariant', () => {
       expect(result.printed).toBe(true);
       expect(result.message).toBeTruthy();
     }
+  });
+});
+
+describe('device-bound SchoolCalc lesson actions', () => {
+  it('routes the opaque token through current server policy and prints feedback for media', async () => {
+    const execute = vi.fn(async () => ({
+      status: 'launched', message: 'Starting that lesson media.', physical: 'none', printed: false,
+      effect: { dispatchId: 'd1' },
+    }));
+    build({ resolveLearningAction: { execute } });
+    const record = createTokenRecord({
+      token: 'sch:23456789ABCDEFGH', tokenClass: 'learning_action', at: clock.iso(),
+      subject: {
+        deviceId: 'SC86A001', address: 'main/physics/mechanics/motion/velocity',
+        actionId: 'video:velocity', tokenVersion: 1,
+      },
+    });
+    await tokens.put(record);
+    const result = await resolve.execute({ code: record.token, device: 'kitchen-scanner' });
+    expect(execute).toHaveBeenCalledWith({ record, scannerDevice: 'kitchen-scanner' });
+    expect(result).toMatchObject({
+      status: 'launched', tokenClass: 'learning_action', physical: 'receipt', printed: true,
+    });
+  });
+
+  it('treats a directly printed worksheet as the physical response without a duplicate receipt', async () => {
+    build({ resolveLearningAction: { execute: async () => ({
+      status: 'printed', message: 'Your worksheet is printing.', physical: 'worksheet', printed: true,
+      effect: { printableId: 'velocity' },
+    }) } });
+    const record = createTokenRecord({
+      token: 'sch:HGFEDCBA98765432', tokenClass: 'learning_action', at: clock.iso(),
+      subject: {
+        deviceId: 'SC86A001', address: 'main/physics/mechanics/motion/velocity',
+        actionId: 'worksheet:velocity', tokenVersion: 1,
+      },
+    });
+    await tokens.put(record);
+    expect(await resolve.execute({ code: record.token })).toMatchObject({
+      status: 'printed', physical: 'worksheet', printed: true,
+    });
+    expect(thermal.jobs).toHaveLength(0);
   });
 });

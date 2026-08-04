@@ -40,6 +40,10 @@ export default function SchoolHome({ grouped, onOpen, bankTitles }) {
       </div>
       <aside className="school-home2__rail">
         <StudentPanel onOpen={onOpen} bankTitles={bankTitles} />
+        <button type="button" className="school-home2__library" onClick={() => onOpen('catalog')}>
+          <h3 className="school-home2__subject-label">Catalog</h3>
+          <p className="school-home2__subject-hint">Courses, units, and lessons</p>
+        </button>
         <button type="button" className="school-home2__library" onClick={() => onOpen('library')}>
           <h3 className="school-home2__subject-label">Library</h3>
           <p className="school-home2__subject-hint">

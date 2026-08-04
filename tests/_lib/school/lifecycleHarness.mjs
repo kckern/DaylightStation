@@ -115,29 +115,58 @@ export function seededRng(seed = 20260727) {
 // temp data dir
 // ---------------------------------------------------------------------------
 
-function copyTree(from, to) {
-  fs.mkdirSync(to, { recursive: true });
-  for (const entry of fs.readdirSync(from, { withFileTypes: true })) {
-    const src = path.join(from, entry.name);
-    const dst = path.join(to, entry.name);
-    if (entry.isDirectory()) copyTree(src, dst);
-    else fs.copyFileSync(src, dst);
-  }
-}
-
 /**
  * Lay the committed sample curriculum down where the real datastores look for
  * it. The fixtures are copied, never read in place, so a test that writes can
  * never touch the repo.
  */
 function seedDataDir(dataDir) {
-  const curriculum = path.join(dataDir, 'content', 'school', 'curriculum');
-  for (const kind of ['units', 'documents', 'manifests']) {
-    copyTree(path.join(FIXTURE_DIR, kind), path.join(curriculum, kind));
+  // Production curriculum is filed as
+  // `content/school/<subject>/<work>/<kind>`, while these compact fixtures stay
+  // grouped by kind for reviewability. Re-file them here instead of teaching
+  // the production adapter a test-only legacy layout.
+  const schoolRoot = path.join(dataDir, 'content', 'school');
+  const unitLocations = new Map();
+  for (const file of fs.readdirSync(path.join(FIXTURE_DIR, 'units'))) {
+    if (!/\.ya?ml$/i.test(file)) continue;
+    const source = path.join(FIXTURE_DIR, 'units', file);
+    const unit = yaml.load(fs.readFileSync(source, 'utf8'));
+    const subject = unit?.subject;
+    if (typeof subject !== 'string' || subject.length === 0) {
+      throw new Error(`fixture unit ${file} has no subject`);
+    }
+    const work = unit.courseId || unit.program || unit.unitId.split('.')[0];
+    fs.mkdirSync(path.join(schoolRoot, subject, work, 'units'), { recursive: true });
+    fs.copyFileSync(source, path.join(schoolRoot, subject, work, 'units', file));
+    if (unit.document) unitLocations.set(`documents:${unit.document}`, { subject, work });
+    if (unit.media) unitLocations.set(`manifests:${unit.media}`, { subject, work });
   }
-  // Banks live in the EXISTING quiz tree, because paper is graded by the same
-  // engine and the same banks the on-screen quiz uses (spec §7.1).
-  copyTree(path.join(FIXTURE_DIR, 'banks'), path.join(dataDir, 'content', 'quizzes'));
+  for (const kind of ['documents', 'manifests']) {
+    for (const file of fs.readdirSync(path.join(FIXTURE_DIR, kind))) {
+      if (!/\.ya?ml$/i.test(file)) continue;
+      const id = file.replace(/\.ya?ml$/i, '');
+      const location = unitLocations.get(`${kind}:${id}`);
+      if (!location) throw new Error(`fixture ${kind}/${file} is not referenced by a fixture unit`);
+      const destination = path.join(schoolRoot, location.subject, location.work, kind);
+      fs.mkdirSync(destination, { recursive: true });
+      fs.copyFileSync(path.join(FIXTURE_DIR, kind, file), path.join(destination, file));
+    }
+  }
+  // Bank IDs encode `<subject>/<work>/<rest>`; the adapter inserts the physical
+  // `quizzes/` container. Preserve that same production locator contract in
+  // the temporary graph.
+  for (const file of fs.readdirSync(path.join(FIXTURE_DIR, 'banks'))) {
+    if (!/\.ya?ml$/i.test(file)) continue;
+    const source = path.join(FIXTURE_DIR, 'banks', file);
+    const bank = yaml.load(fs.readFileSync(source, 'utf8'));
+    const [subject, work, ...rest] = String(bank?.id ?? '').split('/');
+    if (!subject || !work || rest.length === 0) {
+      throw new Error(`fixture bank ${file} does not use <subject>/<work>/<rest> id`);
+    }
+    const destination = path.join(schoolRoot, subject, work, 'quizzes', ...rest);
+    fs.mkdirSync(path.dirname(destination), { recursive: true });
+    fs.copyFileSync(source, `${destination}.yml`);
+  }
   // Artwork, at the path the COMPOSITION ROOT resolves refs against — nothing
   // here tells it where that is, which is the point: production shipped with no
   // resolver at all and nobody noticed, because the harness had its own.
@@ -711,7 +740,7 @@ export async function createLifecycleHarness({
       await harness.scanTokenMatching(/watch or listen/i);
       await harness.playToEnd();
       const sessionId = await sessionIdFor(MEDIA_UNIT, learnerId);
-      const bank = bankReader.getBank('math-fractions-01-quiz');
+      const bank = bankReader.getBank('math/math-fractions/01-quiz');
       const entries = answers ?? Object.fromEntries(bank.items
         .filter((item) => item.type !== 'matching')
         .map((item) => [item.id, item.answer]));
@@ -746,7 +775,12 @@ export async function createLifecycleHarness({
 
 /** Read a fixture bank straight off disk, for a test that needs the right answers. */
 export function fixtureBank(id) {
-  return yaml.load(fs.readFileSync(path.join(FIXTURE_DIR, 'banks', `${id}.yml`), 'utf8'));
+  const directory = path.join(FIXTURE_DIR, 'banks');
+  for (const file of fs.readdirSync(directory).filter((name) => /\.ya?ml$/i.test(name))) {
+    const bank = yaml.load(fs.readFileSync(path.join(directory, file), 'utf8'));
+    if (bank?.id === id) return bank;
+  }
+  throw new Error(`fixture bank not found: ${id}`);
 }
 
 export default createLifecycleHarness;

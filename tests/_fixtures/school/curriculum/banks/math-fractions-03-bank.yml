@@ -2,7 +2,7 @@
 # each one is also printed as a four-bubble omr_response row in
 # math-fractions-03-omr. The item ids here ARE the itemIds on the paper: the
 # scanned bubble row and the grading engine have to land on the same item.
-id: math-fractions-03-bank
+id: math/math-fractions/03-checkpoint
 title: Fractions Checkpoint
 subject: math
 audience: assigned

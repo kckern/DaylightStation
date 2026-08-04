@@ -22,8 +22,19 @@ export const schoolApi = {
   roster: () => req('/roster'),
   banks: (audience) => req(`/banks${audience ? `?audience=${encodeURIComponent(audience)}` : ''}`),
   bank: (id) => req(`/banks/${encodeURIComponent(id)}`),
+  learningCatalogs: (learnerId = null) => req(`/catalogs${learnerId ? `?learnerId=${encodeURIComponent(learnerId)}` : ''}`),
+  learningLesson: ({ catalogId, subjectId, courseId, unitId, lessonId }, learnerId = null) => req(
+    `/catalogs/${encodeURIComponent(catalogId)}`
+    + `/subjects/${encodeURIComponent(subjectId)}`
+    + `/courses/${encodeURIComponent(courseId)}`
+    + `/units/${encodeURIComponent(unitId)}`
+    + `/lessons/${encodeURIComponent(lessonId)}`
+    + (learnerId ? `?learnerId=${encodeURIComponent(learnerId)}` : ''),
+  ),
   geoDecks: () => req('/geography/decks'),
-  openSession: ({ userId = null, bankId, mode }) => req('/sessions', { userId, bankId, mode }),
+  openSession: ({ userId = null, bankId, mode, learning = null }) => req('/sessions', {
+    userId, bankId, mode, ...(learning ? { learning } : {}),
+  }),
   answer: (sessionId, body = {}) => req(`/sessions/${encodeURIComponent(sessionId)}/answer`, body),
   results: (userId, bankId) => req(`/users/${encodeURIComponent(userId)}/results${bankId ? `?bankId=${encodeURIComponent(bankId)}` : ''}`),
   materials: () => req('/materials'),
@@ -36,6 +47,61 @@ export const schoolApi = {
     const qs = p.toString();
     return req(`/report${qs ? `?${qs}` : ''}`);
   },
+  progressOptions: () => req('/progress/options'),
+  progress: (query = {}) => {
+    const p = new URLSearchParams();
+    const scalar = {
+      learnerId: query.learnerId,
+      scopeType: query.scopeType,
+      scopeId: query.scopeId,
+      periodId: query.periodId,
+      from: query.from,
+      to: query.to,
+      recentLimit: query.recentLimit,
+    };
+    Object.entries(scalar).forEach(([key, value]) => {
+      if (value !== undefined && value !== null && value !== '') p.set(key, String(value));
+    });
+    const lists = {
+      subject: query.subjectIds,
+      area: query.areaIds,
+      course: query.courseIds,
+      unit: query.unitIds,
+      lesson: query.lessonIds,
+      module: query.moduleIds,
+      concept: query.conceptIds,
+      activityKind: query.activityKinds,
+      surface: query.surfaceIds,
+      classification: query.includeClassifications,
+      excludeClassification: query.excludeClassifications,
+      tag: query.includeTags,
+      excludeTag: query.excludeTags,
+      verification: query.verifications,
+      groupBy: query.groupBy,
+    };
+    Object.entries(lists).forEach(([key, values]) => {
+      if (Array.isArray(values) && values.length) p.set(key, values.join(','));
+    });
+    const qs = p.toString();
+    return req(`/progress${qs ? `?${qs}` : ''}`);
+  },
+  instructionalInsights: (query = {}) => {
+    const p = new URLSearchParams();
+    for (const key of ['scopeType', 'scopeId', 'from', 'to']) {
+      const value = query[key];
+      if (value !== undefined && value !== null && value !== '') p.set(key, String(value));
+    }
+    const qs = p.toString();
+    return req(`/progress/insights${qs ? `?${qs}` : ''}`);
+  },
+  recordReflection: (body) => req('/progress/reflections', body),
+  recordProbeInteraction: (body) => req('/learning-probes/interactions', body),
+  remediationSessions: (learnerId) => req(`/remediation?learnerId=${encodeURIComponent(learnerId)}`),
+  remediationSession: (sessionId, learnerId, { after = 0, limit = 20 } = {}) => {
+    const p = new URLSearchParams({ learnerId, after: String(after), limit: String(limit) });
+    return req(`/remediation/${encodeURIComponent(sessionId)}?${p}`);
+  },
+  remediationAction: (sessionId, body) => req(`/remediation/${encodeURIComponent(sessionId)}/actions`, body),
   materialWorks: (materialId) => req(`/materials/${encodeURIComponent(materialId)}/works`),
   materialUnits: (materialId, userId) => req(`/materials/${encodeURIComponent(materialId)}/units${userId ? `?userId=${encodeURIComponent(userId)}` : ''}`),
   materialProgress: (userId, subject) => req(`/users/${encodeURIComponent(userId)}/material-progress${subject ? `?subject=${encodeURIComponent(subject)}` : ''}`),

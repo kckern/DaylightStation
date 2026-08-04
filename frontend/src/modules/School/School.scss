@@ -157,6 +157,105 @@
   &__loading, &__hint, &__cards-seen, &__unrecorded-summary { color: var(--school-muted); }
 }
 
+.school-probe {
+  &__header {
+    display: flex; justify-content: space-between; align-items: start; gap: 1rem;
+    padding-bottom: 0.6rem; border-bottom: 1px solid var(--school-border);
+  }
+  &__header > div { display: flex; flex-direction: column; gap: 0.15rem; }
+  &__header span, &__eyebrow, &__improvement { color: var(--school-muted); }
+  &__header > div > span, &__eyebrow { text-transform: uppercase; letter-spacing: 0.05em; font-size: 0.75rem; }
+  &__feedback {
+    display: grid; gap: 0.5rem; padding: 1rem; border-radius: 12px;
+    border: 1px solid var(--school-border); background: var(--school-surface-2);
+  }
+  &__feedback.is-correct { border-color: var(--school-accent); }
+  &__feedback.is-corrective { border-color: var(--school-warn); }
+  &__feedback p, &__improvement { margin: 0; }
+  &__actions { display: flex; gap: 0.65rem; flex-wrap: wrap; }
+  &__actions button {
+    min-height: 52px; padding: 0 1rem; border: 1px solid var(--school-border);
+    border-radius: 10px; background: var(--school-surface); color: var(--school-fg);
+    font-weight: 700; cursor: pointer;
+  }
+  &__actions button:first-child { background: var(--school-accent); color: var(--school-accent-ink); border-color: transparent; }
+  &__actions button:disabled { opacity: 0.55; cursor: default; }
+}
+
+// --- authored Catalog: the same Course → Unit → Lesson structure served to
+// every School surface. Subjects are content, never hard-coded UI branches. ---
+.school-learning-catalog {
+  display: flex; flex-direction: column; gap: 1rem; max-width: 980px; margin: 0 auto;
+  &.is-status, &__status { color: var(--school-muted); }
+  &__trail { display: flex; align-items: center; gap: 0.45rem; flex-wrap: wrap; }
+  &__trail > span { display: flex; align-items: center; gap: 0.45rem; }
+  &__trail button {
+    min-height: 44px; padding: 0 0.65rem; border: none; background: transparent;
+    color: var(--school-muted); font-size: 1rem; font-weight: 700; cursor: pointer;
+  }
+  &__trail span:last-child button { color: var(--school-fg); }
+  &__error { padding: 0.85rem 1rem; border-radius: 12px; background: var(--school-danger); color: #2a0806; font-weight: 700; }
+  &__grid {
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 0.8rem;
+  }
+  &__grid > button {
+    min-height: 92px; display: flex; flex-direction: column; align-items: flex-start; gap: 0.3rem;
+    padding: 1rem; text-align: left; border: 1px solid var(--school-border); border-radius: 12px;
+    background: var(--school-surface); color: var(--school-fg); cursor: pointer;
+  }
+  &__grid strong { font-size: 1.1rem; }
+  &__grid span, &__grid small { color: var(--school-muted); }
+  &__lesson { display: grid; grid-template-columns: minmax(210px, 0.8fr) minmax(320px, 1.2fr); gap: 1rem; }
+  &__lesson > header { padding: 1rem; border: 1px solid var(--school-border); border-radius: 12px; background: var(--school-surface); }
+  &__lesson h2, &__lesson p { margin-top: 0; }
+  &__lesson header > p { color: var(--school-muted); text-transform: uppercase; letter-spacing: 0.06em; font-size: 0.75rem; }
+  &__modules { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.65rem; }
+  &__modules button {
+    width: 100%; min-height: 72px; display: grid; grid-template-columns: 2.4rem 1fr auto; align-items: center; gap: 0.75rem;
+    padding: 0.65rem 1rem; text-align: left; border: 1px solid var(--school-border); border-radius: 12px;
+    background: var(--school-surface-2); color: var(--school-fg); cursor: pointer;
+  }
+  &__modules button > span:nth-child(2) { display: flex; flex-direction: column; gap: 0.15rem; }
+  &__modules small { color: var(--school-muted); text-transform: uppercase; letter-spacing: 0.05em; }
+  &__module-index {
+    width: 2.2rem; height: 2.2rem; display: flex; align-items: center; justify-content: center;
+    border-radius: 50%; background: var(--school-surface); color: var(--school-muted); font-weight: 800;
+  }
+}
+
+.school-learning-reader {
+  display: flex; flex-direction: column; gap: 1rem; max-width: 760px; margin: 0 auto;
+  & > header p { margin-bottom: 0.2rem; color: var(--school-muted); text-transform: uppercase; letter-spacing: 0.05em; font-size: 0.75rem; }
+  & > header h2 { margin-top: 0; }
+  &__body { display: flex; flex-direction: column; gap: 0.8rem; }
+  &__body > * { margin: 0; padding: 1rem; border: 1px solid var(--school-border); border-radius: 10px; background: var(--school-surface); }
+  &__body table { width: 100%; border-collapse: collapse; }
+  &__body th, &__body td { padding: 0.5rem; border: 1px solid var(--school-border); text-align: left; }
+  &__step::before { content: '› '; color: var(--school-accent); font-weight: 800; }
+}
+
+.school-reflection {
+  display: flex; flex-direction: column; gap: 0.75rem; padding: 1rem;
+  border: 1px solid var(--school-border); border-radius: 12px; background: var(--school-surface);
+  & p, & h3 { margin: 0; }
+  & > div:first-child p { color: var(--school-muted); text-transform: uppercase; letter-spacing: 0.05em; font-size: 0.75rem; }
+  &__choices, &__strategies, &__confidence, &__actions { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
+  &__confidence > span { color: var(--school-muted); margin-right: 0.25rem; }
+  &__choices button, &__strategies button, &__confidence button, &__actions button {
+    min-height: 48px; padding: 0 0.85rem; border: 1px solid var(--school-border); border-radius: 10px;
+    background: var(--school-surface-2); color: var(--school-fg); font-weight: 700; cursor: pointer;
+  }
+  button[aria-pressed='true'] { border-color: var(--school-accent); color: var(--school-accent); }
+  &__actions { justify-content: flex-end; }
+  &__actions button:last-child { background: var(--school-accent); color: var(--school-accent-ink); border-color: transparent; }
+  &__actions button:disabled { opacity: 0.5; cursor: default; }
+  &__error { color: var(--school-danger); }
+}
+
+@media (max-width: 720px) {
+  .school-learning-catalog__lesson { grid-template-columns: 1fr; }
+}
+
 .school-card {
   display: flex; flex-direction: column; gap: 1rem; padding: 1.5rem;
   border: 1px solid var(--school-border); border-radius: 12px; background: var(--school-surface);
@@ -570,6 +669,235 @@
   }
   &__bar-fill { height: 100%; background: var(--school-accent); }
   &__spark { width: 120px; height: 28px; color: var(--school-accent); }
+}
+
+// Evidence-backed My Progress summary. Program cards remain below it; this
+// layer provides cross-program time/curriculum slices and exact recent scores.
+.school-progress {
+  display: flex; flex-direction: column; gap: 0.85rem;
+  padding: 1rem; border: 1px solid var(--school-border); border-radius: 14px;
+  background: var(--school-surface-2);
+
+  &__filters { display: flex; flex-wrap: wrap; align-items: end; gap: 0.75rem; }
+  &__filters label { display: flex; flex-direction: column; gap: 0.25rem; color: var(--school-muted); font-size: 0.85rem; }
+  &__filters select {
+    min-height: 44px; min-width: 10rem; padding: 0 0.65rem;
+    border: 1px solid var(--school-border); border-radius: 9px;
+    background: var(--school-surface); color: var(--school-fg); font: inherit;
+  }
+  &__check { min-height: 44px; flex-direction: row !important; align-items: center; gap: 0.5rem !important; }
+  &__check input { width: 22px; height: 22px; }
+
+  &__summary { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0.65rem; }
+  &__figure {
+    display: flex; flex-direction: column; gap: 0.2rem; padding: 0.7rem;
+    border-radius: 10px; background: var(--school-surface);
+    span { color: var(--school-muted); font-size: 0.85rem; }
+    strong { font-size: 1.45rem; }
+    &.is-pending { border: 1px solid var(--school-warn); }
+  }
+
+  &__actions { display: flex; flex-wrap: wrap; gap: 0.55rem; }
+  &__actions button {
+    min-height: 48px; padding: 0 1rem; border: none; border-radius: 10px;
+    background: var(--school-accent); color: #07100d; font-weight: 800; cursor: pointer;
+    &:disabled { opacity: 0.4; cursor: default; }
+  }
+
+  &__recent h3 { margin: 0 0 0.45rem; font-size: 1rem; }
+  &__score-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 260px), 1fr)); gap: 0.5rem; }
+  &__score {
+    display: grid; grid-template-columns: 1fr auto; gap: 0.2rem 0.6rem;
+    padding: 0.65rem 0.75rem; border-radius: 9px; background: var(--school-surface);
+  }
+  &__score-learner, &__score-when { color: var(--school-muted); font-size: 0.82rem; }
+  &__score-value { font-weight: 800; }
+  &__pending { color: var(--school-warn); font-size: 0.8rem; font-weight: 700; }
+}
+
+// Shared adaptive-remediation client. Connection state is explicit because a
+// retained idempotent action must never look like an ordinary disabled button.
+.school-tutor {
+  width: min(52rem, 100%); margin: 0 auto; padding: 1rem;
+  display: flex; flex-direction: column; gap: 0.85rem;
+  border: 1px solid var(--school-border); border-radius: 14px;
+  background: var(--school-surface-2);
+
+  &__header { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
+  &__header h2 { margin: 0.1rem 0 0; }
+  &__eyebrow { color: var(--school-muted); font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.06em; }
+  &__back, &__empty button, &__pending button, &__controls button {
+    min-height: 44px; padding: 0.55rem 0.8rem;
+    border: 1px solid var(--school-border); border-radius: 9px;
+    background: var(--school-surface); color: var(--school-fg); font: inherit; cursor: pointer;
+    &:disabled { opacity: 0.45; cursor: default; }
+  }
+  &__connection {
+    display: flex; align-items: center; gap: 0.45rem;
+    color: var(--school-muted); font-size: 0.85rem;
+  }
+  &__connection > span {
+    width: 0.7rem; height: 0.7rem; border-radius: 50%;
+    background: var(--school-muted);
+  }
+  &__connection.is-connected > span { background: var(--school-accent); }
+  &__connection.is-sending > span, &__connection.is-retrying > span { background: var(--school-warn); }
+  &__connection.is-disconnected > span { background: #d35f5f; }
+  &__mastery {
+    display: grid; grid-template-columns: auto auto 1fr auto; align-items: center; gap: 0.6rem;
+  }
+  &__mastery progress { width: 100%; accent-color: var(--school-accent); }
+  &__mastery small { color: var(--school-muted); }
+  &__notice, &__pending, &__feedback, &__terminal, &__empty {
+    margin: 0; padding: 0.75rem; border-radius: 10px; background: var(--school-surface);
+  }
+  &__notice { border-left: 4px solid var(--school-warn); }
+  &__turn { display: flex; flex-direction: column; gap: 0.8rem; }
+  &__turn h3, &__turn p, &__terminal h3, &__terminal p, &__feedback p { margin: 0; }
+  &__explanation { white-space: pre-wrap; line-height: 1.5; }
+  &__primary {
+    min-height: 50px; padding: 0.65rem 1rem; border: none; border-radius: 10px;
+    background: var(--school-accent); color: #07100d; font: inherit; font-weight: 800; cursor: pointer;
+    &:disabled { opacity: 0.45; cursor: default; }
+  }
+  &__choices { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.55rem; }
+  &__choices button {
+    min-height: 58px; padding: 0.65rem; display: flex; align-items: center; gap: 0.65rem;
+    text-align: left; border: 1px solid var(--school-border); border-radius: 10px;
+    background: var(--school-surface); color: var(--school-fg); font: inherit; cursor: pointer;
+    &:hover:not(:disabled), &:focus-visible { border-color: var(--school-accent); }
+    &:disabled { opacity: 0.45; cursor: default; }
+  }
+  &__choices kbd { color: var(--school-accent); font: inherit; font-weight: 800; }
+  &__controls { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+  &__controls .is-stop { margin-left: auto; }
+  &__feedback { border-left: 4px solid var(--school-accent); }
+  &__feedback.is-review { border-left-color: var(--school-warn); }
+  &__feedback strong { display: block; margin-bottom: 0.2rem; }
+  &__pending { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; }
+  &__terminal { border: 1px solid var(--school-accent); }
+  &__pause-note { margin: 0; color: var(--school-muted); font-size: 0.82rem; }
+}
+
+// Dense overview + movable focus + stable inspector. This interaction grammar
+// is shared by curriculum history and future long-set School tools; it carries
+// no subject-specific knowledge.
+.school-overview-detail {
+  display: flex; flex-direction: column; gap: 0.55rem;
+
+  &__inspector {
+    min-height: 7.25rem; padding: 0.75rem;
+    border: 1px solid var(--school-border); border-radius: 10px;
+    background: var(--school-surface);
+  }
+  &__overview {
+    display: grid; grid-template-columns: repeat(var(--school-overview-columns), minmax(0, 1fr));
+    gap: 0.38rem;
+  }
+  &__item {
+    position: relative; min-width: 0; min-height: 64px; padding: 0.5rem;
+    display: grid; grid-template-columns: auto 1fr; align-content: center;
+    gap: 0.12rem 0.4rem; text-align: left;
+    border: 1px solid var(--school-border); border-radius: 8px;
+    background: var(--school-surface); color: var(--school-fg); cursor: pointer;
+    overflow: hidden;
+    &:focus-visible { outline: 3px solid var(--school-accent); outline-offset: 1px; }
+    &.is-selected {
+      border-color: var(--school-accent);
+      box-shadow: inset 0 0 0 1px var(--school-accent);
+      background: var(--school-surface-2);
+    }
+  }
+  &.is-list &__item { padding-left: calc(0.65rem + var(--school-overview-depth) * 1.1rem); }
+}
+
+.school-progress-history {
+  display: flex; flex-direction: column; gap: 0.55rem;
+
+  &__head { display: flex; align-items: start; justify-content: space-between; gap: 0.75rem; }
+  &__head h3 { margin: 0; font-size: 1rem; }
+  &__head p { margin: 0.15rem 0 0; color: var(--school-muted); font-size: 0.82rem; }
+  &__head button {
+    flex: 0 0 auto; min-height: 44px; padding: 0 0.75rem;
+    border: 1px solid var(--school-border); border-radius: 8px;
+    background: var(--school-surface); color: var(--school-fg); cursor: pointer;
+  }
+  &__trail {
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    color: var(--school-muted); font-size: 0.8rem;
+  }
+  &__inspect-main {
+    display: grid; grid-template-columns: minmax(8rem, 1fr) minmax(18rem, 2fr);
+    align-items: end; gap: 0.75rem; margin-top: 0.45rem;
+  }
+  &__inspect-main > div { display: flex; flex-direction: column; gap: 0.12rem; }
+  &__inspect-main > div span, &__node-kind { color: var(--school-muted); font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.05em; }
+  &__inspect-main > div strong { font-size: 1.15rem; }
+  &__inspect-main dl { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0.5rem; margin: 0; }
+  &__inspect-main dl div { min-width: 0; }
+  &__inspect-main dt { color: var(--school-muted); font-size: 0.72rem; }
+  &__inspect-main dd { margin: 0.1rem 0 0; font-weight: 800; overflow: hidden; text-overflow: ellipsis; }
+  &__marker {
+    grid-row: 1 / span 3; align-self: center;
+    width: 0.62rem; height: 0.62rem; border-radius: 50%;
+    border: 2px solid var(--school-accent); background: transparent;
+  }
+  .is-selected &__marker { background: var(--school-accent); }
+  &__node-kind, &__node-stat, .school-overview-detail__item strong {
+    min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  &__node-stat { color: var(--school-muted); font-size: 0.78rem; }
+  &__unscoped { margin: 0; color: var(--school-muted); font-size: 0.8rem; }
+}
+
+.school-insights {
+  display: flex; flex-direction: column; gap: 0.55rem;
+  padding: 1rem; border: 1px solid var(--school-border); border-radius: 14px;
+  background: var(--school-surface-2);
+
+  &__head h3 { margin: 0; font-size: 1rem; }
+  &__head p { margin: 0.15rem 0 0; color: var(--school-muted); font-size: 0.82rem; }
+  &__marker {
+    grid-row: 1 / span 3; align-self: center;
+    width: 0.62rem; height: 0.62rem; border-radius: 50%;
+    border: 2px solid var(--school-muted); background: transparent;
+    &.is-review_instruction, &.is-review_pacing { border-color: var(--school-warn); background: var(--school-warn); }
+    &.is-monitor, &.is-met { border-color: var(--school-accent); background: var(--school-accent); }
+  }
+  &__kind, &__signal {
+    min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    color: var(--school-muted); font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.05em;
+  }
+  .school-overview-detail__item strong { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  &__signal { font-size: 0.76rem; text-transform: none; letter-spacing: normal; }
+  &__inspector { display: grid; grid-template-columns: minmax(8rem, 1fr) minmax(18rem, 2fr); gap: 0.75rem; align-items: end; }
+  &__inspector > div { display: flex; flex-direction: column; gap: 0.12rem; }
+  &__inspector > div span { color: var(--school-muted); font-size: 0.72rem; text-transform: uppercase; }
+  &__inspector > div strong { font-size: 1.15rem; }
+  &__inspector > div small { color: var(--school-muted); }
+  &__inspector dl { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0.5rem; margin: 0; }
+  &__inspector dt { color: var(--school-muted); font-size: 0.72rem; }
+  &__inspector dd { margin: 0.1rem 0 0; font-weight: 800; overflow: hidden; text-overflow: ellipsis; }
+  &__basis {
+    grid-column: 1 / -1; display: grid; gap: 0.15rem; padding-top: 0.55rem;
+    border-top: 1px solid var(--school-border);
+  }
+  &__basis > strong { font-size: 0.78rem; }
+  &__basis > span, &__basis > small { color: var(--school-muted); font-size: 0.76rem; }
+}
+
+@media (max-width: 700px) {
+  .school-progress__summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .school-overview-detail__overview { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .school-progress-history__inspect-main { grid-template-columns: 1fr; }
+  .school-progress-history__inspect-main dl { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .school-insights__inspector { grid-template-columns: 1fr; }
+  .school-insights__inspector dl { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .school-tutor__header, .school-tutor__pending { align-items: stretch; flex-direction: column; }
+  .school-tutor__mastery { grid-template-columns: auto 1fr auto; }
+  .school-tutor__mastery progress { grid-column: 1 / -1; }
+  .school-tutor__choices { grid-template-columns: 1fr; }
+  .school-tutor__controls .is-stop { margin-left: 0; }
 }
 
 // --- the home: subject shelves left, meta rail right -----------------------

@@ -94,7 +94,7 @@ describe('the v2 agenda — math and language together, one card', () => {
     // -------------------------------------------------------------------
     await h.playToEnd();
     const sessionId = await h.sessionIdFor(MEDIA_UNIT);
-    const bank = fixtureBank('math-fractions-01-quiz');
+    const bank = fixtureBank('math/math-fractions/01-quiz');
     const entries = {};
     for (const item of bank.items) {
       entries[item.id] = item.type === 'matching' ? item.pairs.map((p) => ({ ...p })) : item.answer;

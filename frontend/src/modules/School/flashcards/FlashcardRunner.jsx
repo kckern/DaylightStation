@@ -25,7 +25,7 @@ const answerText = (item) => (item.type === 'matching'
   ? item.pairs.map((p) => `${p.left} → ${p.right}`).join('\n')
   : item.answer);
 
-export default function FlashcardRunner({ bank, onExit }) {
+export default function FlashcardRunner({ bank, learning = null, onExit }) {
   const { status, currentUser, isGuest } = useSchoolProfile();
   const [sessionId, setSessionId] = useState(null);
   const [queue, setQueue] = useState(bank.items);
@@ -72,7 +72,9 @@ export default function FlashcardRunner({ bank, onExit }) {
     initialIdentity.current = identityKey;
     let alive = true;
     const userId = currentUser?.id ?? null;
-    schoolApi.openSession({ userId, bankId: bank.id, mode: 'flashcard' }).then(({ ok, data }) => {
+    schoolApi.openSession({
+      userId, bankId: bank.id, mode: 'flashcard', ...(learning ? { learning } : {}),
+    }).then(({ ok, data }) => {
       if (!alive) return;
       if (!ok) { onExit(); return; }
       setSessionId(data.sessionId);

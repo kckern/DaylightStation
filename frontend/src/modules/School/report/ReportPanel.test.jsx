@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import ReportPanel from './ReportPanel.jsx';
 
 /**
@@ -8,7 +8,22 @@ import ReportPanel from './ReportPanel.jsx';
  * panel ever needs to know about quizzes or sentence ladders, they fail.
  */
 const reportMock = vi.fn();
-vi.mock('../schoolApi.js', () => ({ schoolApi: { report: (...a) => reportMock(...a) } }));
+const progressMock = vi.fn(async () => ({
+  ok: true, status: 200, data: {
+    summary: { evidenceCount: 0, responseCount: 0, correctCount: 0, scorePercent: null, completionCount: 0, pendingCount: 0 },
+    facets: { subjects: [] }, recentScores: [], followUps: [],
+  },
+}));
+const optionsMock = vi.fn(async () => ({ ok: true, status: 200, data: { learners: [], scopes: [], periods: [] } }));
+const insightsMock = vi.fn(async () => ({ ok: true, status: 200, data: {
+  concepts: [], items: [], pacing: [],
+} }));
+vi.mock('../schoolApi.js', () => ({ schoolApi: {
+  report: (...a) => reportMock(...a),
+  progress: (...a) => progressMock(...a),
+  progressOptions: (...a) => optionsMock(...a),
+  instructionalInsights: (...a) => insightsMock(...a),
+} }));
 
 const metric = (kind, extra) => ({ id: kind, kind, label: kind, ...extra });
 
@@ -129,13 +144,14 @@ describe('metric kinds', () => {
     reportMock.mockResolvedValue(withMetrics([{ id: 'x', kind: 'from-the-future', label: 'Mystery' }]));
     render(<ReportPanel />);
     expect(await screen.findByText('Mystery')).toBeTruthy();
-    expect(screen.getByText('—')).toBeTruthy();
+    expect(screen.getAllByText('—').length).toBeGreaterThan(0);
   });
 });
 
 describe('failure and emptiness', () => {
   it('says so when the report cannot be loaded', async () => {
     reportMock.mockResolvedValue({ ok: false, status: 500, data: null });
+    progressMock.mockResolvedValueOnce({ ok: false, status: 500, data: null });
     render(<ReportPanel />);
     expect(await screen.findByText(/Could not load progress/)).toBeTruthy();
   });
@@ -144,5 +160,117 @@ describe('failure and emptiness', () => {
     reportMock.mockResolvedValue(payload([]));
     render(<ReportPanel />);
     expect(await screen.findByText(/Nobody has started anything/)).toBeTruthy();
+  });
+});
+
+describe('cross-surface evidence progress', () => {
+  it('uses the same overview and inspector grammar for adult content signals', async () => {
+    reportMock.mockResolvedValue(payload([learner()]));
+    insightsMock.mockResolvedValueOnce({ ok: true, status: 200, data: {
+      concepts: [{
+        target: { kind: 'concept', id: 'equivalent-fractions' }, signal: 'review_instruction',
+        responseCount: 6, accuracyPercent: 50, affectedLearnerCount: 2,
+        lastActivityAt: '2026-08-01T12:00:00.000Z',
+        suggestedAction: { recommendation: {
+          basis: { kind: 'evidence_aggregate', correctCount: 3, responseCount: 6, evidenceCount: 6, learnerCount: 2 },
+          policy: { version: 'school.instructional-review/v1', expiresAt: '2026-08-08T00:00:00.000Z' },
+        } },
+      }],
+      items: [],
+      pacing: [{
+        expectationId: 'unit-a-due', target: { kind: 'unit', id: 'fractions' },
+        status: 'review_pacing', completedPercent: 50, expectedCompletedPercent: 80,
+        completedLearnerCount: 1, learnerCount: 2, dueAt: '2026-08-01T00:00:00.000Z',
+      }],
+    } });
+    render(<ReportPanel />);
+    expect(await screen.findByText('Instructional view')).toBeTruthy();
+    expect(screen.getByRole('grid', { name: 'Instructional content and pacing signals' })).toBeTruthy();
+    expect(screen.getByRole('gridcell', { name: /Equivalent Fractions/ })).toBeTruthy();
+    expect(screen.getByText(/not learner rankings/)).toBeTruthy();
+    expect(screen.getByText('Why this is suggested')).toBeTruthy();
+    expect(screen.getByText(/3\/6 correct across 6 records and 2 learners/)).toBeTruthy();
+    expect(screen.getByText(/school\.instructional-review\/v1/)).toBeTruthy();
+  });
+
+  it('shows exact recent scores, pending sync, and a learner follow-up action', async () => {
+    reportMock.mockResolvedValue(payload([learner()]));
+    progressMock.mockResolvedValueOnce({ ok: true, status: 200, data: {
+      summary: { evidenceCount: 3, responseCount: 3, correctCount: 2, scorePercent: 67, completionCount: 1, pendingCount: 1 },
+      facets: { subjects: [{ id: 'math', evidenceCount: 3 }] },
+      recentScores: [{
+        learnerId: 'kid1', assessmentId: 'quiz-1', activityId: 'math/check',
+        occurredAt: new Date().toISOString(), score: { correct: 2, total: 3, percent: 67 },
+        verification: 'pending', learning: { lessonId: 'fractions' },
+      }],
+      followUps: [{
+        actionId: 'review-1', learnerId: 'kid1', kind: 'review', label: 'Review this quiz',
+        availability: 'ready', target: { type: 'bank', id: 'math/check' }, priority: 30,
+      }],
+    } });
+    const onFollowUp = vi.fn();
+    render(<ReportPanel userId="kid1" onFollowUp={onFollowUp} />);
+    expect(await screen.findByText('67%')).toBeTruthy();
+    expect(screen.getByText('2/3 · 67%')).toBeTruthy();
+    expect(screen.getAllByText('Pending sync').length).toBeGreaterThan(0);
+    fireEvent.click(screen.getByRole('button', { name: 'Review this quiz' }));
+    expect(onFollowUp).toHaveBeenCalledWith(expect.objectContaining({ kind: 'review' }));
+  });
+
+  it('re-queries with period, subject, and elective exclusion controls', async () => {
+    reportMock.mockResolvedValue(payload([learner()]));
+    optionsMock.mockResolvedValueOnce({ ok: true, status: 200, data: {
+      learners: [{ id: 'kid1', name: 'Alpha' }], scopes: [],
+      periods: [{ periodId: 'fall', label: 'Fall', kind: 'semester' }],
+    } });
+    progressMock.mockResolvedValue({ ok: true, status: 200, data: {
+      summary: { evidenceCount: 1, responseCount: 1, correctCount: 1, scorePercent: 100, completionCount: 0, pendingCount: 0 },
+      facets: { subjects: [{ id: 'math', evidenceCount: 1 }] }, recentScores: [], followUps: [],
+    } });
+    render(<ReportPanel userId="kid1" />);
+    await screen.findByText('Alpha');
+    fireEvent.change(screen.getByLabelText('Academic period'), { target: { value: 'fall' } });
+    fireEvent.change(await screen.findByLabelText('Subject'), { target: { value: 'math' } });
+    fireEvent.click(await screen.findByLabelText('Hide electives'));
+    await waitFor(() => expect(progressMock).toHaveBeenLastCalledWith(expect.objectContaining({
+      learnerId: 'kid1', periodId: 'fall', subjectIds: ['math'], excludeClassifications: ['elective'],
+    })));
+  });
+
+  it('uses a focusable overview and stable inspector for hierarchical learning history', async () => {
+    reportMock.mockResolvedValue(payload([learner()]));
+    const summary = (over = {}) => ({
+      evidenceCount: 2, activityCount: 1, completionCount: 0, scorePercent: 50,
+      lastActivityAt: '2026-08-01T12:00:00.000Z', ...over,
+    });
+    progressMock.mockResolvedValueOnce({ ok: true, status: 200, data: {
+      summary: { ...summary(), responseCount: 2, correctCount: 1, pendingCount: 0 },
+      facets: { subjects: [{ id: 'math', evidenceCount: 2 }] }, recentScores: [], followUps: [],
+      curriculumHistory: {
+        hierarchy: ['catalog', 'subject', 'course', 'unit', 'lesson', 'module'],
+        roots: [{
+          key: 'subject=math', kind: 'subject', id: 'math', directEvidenceCount: 0,
+          evidenceState: 'recorded', summary: summary(), path: { subjectId: 'math' },
+          children: [{
+            key: 'subject=math|course=fractions', kind: 'course', id: 'fractions',
+            directEvidenceCount: 2, evidenceState: 'recorded', summary: summary({ scorePercent: 75 }),
+            path: { subjectId: 'math', courseId: 'fractions' }, children: [],
+          }],
+        }],
+        unscoped: summary({ evidenceCount: 1 }),
+      },
+    } });
+    render(<ReportPanel userId="kid1" />);
+
+    const overview = await screen.findByRole('grid', { name: 'Curriculum progress history' });
+    const math = screen.getByRole('gridcell', { name: /Subject Math 50%/ });
+    expect(math.getAttribute('aria-selected')).toBe('true');
+    math.focus();
+    fireEvent.keyDown(math, { key: 'ArrowRight' });
+    const fractions = screen.getByRole('gridcell', { name: /Course Fractions 75%/ });
+    expect(fractions.getAttribute('aria-selected')).toBe('true');
+    expect(overview.getAttribute('aria-describedby')).toBeTruthy();
+    expect(screen.getByText('Math › Fractions')).toBeTruthy();
+    expect(screen.getByText(/1 record not assigned/)).toBeTruthy();
   });
 });
