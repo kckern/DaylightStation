@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { schoolApi } from '../schoolApi.js';
 import { useSchoolProfile } from '../identity/SchoolProfileContext.jsx';
 import { buildVerdictMap } from './certification.js';
@@ -32,6 +32,18 @@ export default function LearningCatalogBrowser({ onLaunch, surfaceId = null }) {
   const [certRows, setCertRows] = useState([]);
   const verdictMap = useMemo(() => buildVerdictMap(certRows), [certRows]);
   const lessonVerdict = certRows[0]?.verdict ?? null;
+  // Certification is fetched fire-and-forget (below) so it never blocks the
+  // lesson reader on a slow network. That means requests CAN resolve out of
+  // order: open lesson A (slow certification request in flight), navigate to
+  // lesson B (its own request, resolves first) — if A's response is applied
+  // blindly when it lands, it silently overwrites B's verdicts. Because
+  // moduleId is only lesson-scoped (the same generic id, e.g. 'check', is
+  // reused across lessons), a stale A-for-B write is a real fail-closed-gate
+  // bypass, not just a UI glitch. certRequestRef is a monotonic token: every
+  // lesson transition (a new open() or any goTo() away from the open lesson)
+  // bumps it, and a certification response is applied only if its own
+  // captured token still matches -- otherwise it's silently dropped.
+  const certRequestRef = useRef(0);
 
   useEffect(() => {
     if (status !== 'ready') return undefined;
@@ -84,13 +96,17 @@ export default function LearningCatalogBrowser({ onLaunch, surfaceId = null }) {
     };
     setLoadingLesson(true);
     setCertRows([]);
+    const requestToken = ++certRequestRef.current;
     const response = await schoolApi.learningLesson(address, currentUser?.id ?? null);
     // Fetched alongside the lesson content, not blocking on it: a slow/failed
     // certification read must not stall the reader, and a missing surfaceId
     // (profile unresolved) just leaves certRows empty -> fail-closed gate.
+    // Guarded by requestToken (see certRequestRef above) against a slower,
+    // now-superseded response landing after the learner has moved on.
     if (surfaceId) {
       const addressStr = [address.catalogId, address.subjectId, address.courseId, address.unitId, address.lessonId].join('/');
       schoolApi.certification({ address: addressStr, surface: surfaceId }).then(({ ok, data }) => {
+        if (certRequestRef.current !== requestToken) return; // superseded — drop
         setCertRows(ok && Array.isArray(data) ? data : []);
       });
     }
@@ -108,6 +124,7 @@ export default function LearningCatalogBrowser({ onLaunch, surfaceId = null }) {
     setLesson(null);
     setError(null);
     setCertRows([]);
+    certRequestRef.current += 1; // invalidate any certification request still in flight
   };
 
   if (catalogs === null) return <div className="school-learning-catalog is-status">Loading Catalog…</div>;
