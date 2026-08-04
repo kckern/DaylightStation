@@ -192,12 +192,12 @@ function assertSemanticFrames(parsed) {
     const text = decoded.text.map((run) => run.text);
     const symbols = decoded.symbols.map((symbol) => symbol.symbol);
     for (const expected of step.expectText) {
-      if (!text.some((value) => value.includes(expected))) {
+      if (!text.some((value) => decodedTextIncludes(value, expected))) {
         throw new Error(`MAME scenario '${parsed.scenario.id}' '${step.capture}' expected text '${expected}', got ${JSON.stringify(text)}`);
       }
     }
     for (const forbidden of step.expectNotText) {
-      if (text.some((value) => value.includes(forbidden))) {
+      if (text.some((value) => decodedTextIncludes(value, forbidden))) {
         throw new Error(`MAME scenario '${parsed.scenario.id}' '${step.capture}' unexpectedly retained text '${forbidden}', got ${JSON.stringify(text)}`);
       }
     }
@@ -207,6 +207,20 @@ function assertSemanticFrames(parsed) {
       }
     }
   }
+}
+
+// The bitmap decoder intentionally preserves visually indistinguishable glyph
+// families as `{U/V}` and `{0/O}` rather than pretending the LCD supplied a
+// fact it cannot. Semantic acceptance assertions, however, may name either
+// authored member of such a family. Match that deterministic ambiguity without
+// weakening any other character in the expected phrase.
+function decodedTextIncludes(value, expected) {
+  const expression = [...String(expected)].map((character) => {
+    if (character === 'U' || character === 'V') return '(?:[UV]|\\{U/V\\})';
+    if (character === '0' || character === 'O') return '(?:[0O]|\\{0/O\\})';
+    return character.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  }).join('');
+  return new RegExp(expression).test(String(value));
 }
 
 function renderFramebuffer(bytes, scale) {

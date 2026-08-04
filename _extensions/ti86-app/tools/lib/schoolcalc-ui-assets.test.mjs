@@ -23,6 +23,8 @@ describe('SchoolCalc TI-86 UI assets', () => {
     const compact = assets.fonts.get('compact-3x5');
     expect(glyphRows(compact, 'a')).toEqual(glyphRows(compact, 'A'));
     expect(glyphRows(compact, 'A')).toEqual([0x40, 0xA0, 0xE0, 0xA0, 0xA0]);
+    expect(glyphRows(compact, '&')).toEqual([0x40, 0xA0, 0x40, 0xA0, 0x60]);
+    expect(glyphRows(compact, 'V')).not.toEqual(glyphRows(compact, 'U'));
 
     const reader = assets.fonts.get('reader-4x6');
     expect(glyphRows(reader, 'a')).not.toEqual(glyphRows(reader, 'A'));

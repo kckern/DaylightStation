@@ -132,17 +132,24 @@ partially installed 60 KB group. After receiving the variables back from the
 calculator, prove their exact code/token/String bytes with
 `tools/audit-complete-readback.mjs`.
 
+For a superseded content variable, use the narrowly scoped maintenance builder
+instead of clearing calculator memory: `build-ti86-string-cleaner.mjs` accepts
+the exact obsolete String names, produces a one-shot `SCCLEAN` program, and
+does not touch Programs or any retained String. Run it from a temporary
+TI-BASIC `Asm(SCCLEAN)` launcher, then remove that temporary program.
+
 ### Exact-emulator release evidence
 
-Release `295065f74710` passed the complete owned-ROM MAME gate on 2026-08-03.
-Each of its five scenarios transfers all 22 variables through the virtual
-Graph Link, launches `ASCHL` through TI-OS, and drives the actual key matrix.
-Together they prove learner selection/switching, Subject → Course → Unit →
-Lesson → Module browsing inside the one assigned Catalog, the installed reader, Soren's `MATH`/80%
-My Progress projection, the locally scored three-question quiz, its durable
-offline-result notice, and the Version-5/M result QR. The current input rule is
-stricter: EXIT and CLEAR navigate Back, the Home view remains open, and only
-`2nd` + EXIT deliberately returns to TI-OS. See
+Release `caacecbbb8b6` has seven retained exact CLI cases against the owned
+TI-86 1.4 ROM. Each transfers all 23 variables through the virtual Graph Link,
+launches `ASCHL` through TI-OS, and drives the actual key matrix. They prove
+first boot, learner-scoped Subjects and My Progress, a complete seven-page
+reader ending in `END`, a 2/3 Math result with QR `MARK`, a validated private
+`DSQOUT`/`SCO1` receipt, History QR `LATER` preserving pending work, and the
+auto-collapsed six-question Pokémon assessment through result QR. The Science
+route proves compact `WATER CHANGES` context, full `REMOVE` rail, and safe
+Cancel. EXIT and CLEAR navigate Back; only `2nd` + EXIT deliberately returns
+to TI-OS. See
 [`docs/emulator-testing.md`](./docs/emulator-testing.md)
 for the reproducible command and its boundaries: this is not a substitute for
 the physical calculator, USB Graph Link, or ESP relay gates.
@@ -165,8 +172,8 @@ commits a staged sync transaction, and dispatches fixed runtimes that hydrate
 the selected checksum-valid `SCC1`/`SCP1` variables. It independently validates
 every installed SCX1 Program into a `runtimeModuleMask`, but advertises only
 `shell-core@1`; runtime-backed capabilities remain off until emulator and fleet
-recovery gates pass. The current 7,903-byte build leaves 1,313 bytes under its
-9 KiB product ceiling and 1,497 bytes below video RAM. Learning, QR, and tutor
+recovery gates pass. The current 8,092-byte build leaves 1,124 bytes under its
+9 KiB product ceiling and 1,308 bytes below video RAM. Learning, QR, and tutor
 behavior therefore live behind the reviewed
 runtime-module boundary rather than being hidden in the shell allocation.
 
@@ -178,13 +185,13 @@ bytes per program variable. `SCSYNC` and the read-only `SCNATIVE` guard each
 have a 6 KiB target/8 KiB ceiling; `SCPROF` has a 6 KiB target/8 KiB TI-OS
 child-image ceiling; `SCTUTOR` has a 6 KiB
 target/9 KiB ceiling. The ten-program planning
-target is 60,736 bytes and its reserve-safe aggregate ceiling is 71,662 bytes. The
-current release estimates 71,391 installed bytes: 10,655 above the planning
-target and 271 below the aggregate ceiling. With 3.5 KiB for the one-Catalog
+target is 60,736 bytes and its reserve-safe aggregate ceiling is 71,962 bytes. The
+current release estimates 71,960 installed bytes: 11,224 above the planning
+target and 2 below the aggregate ceiling. With 3.5 KiB for the one-Catalog
 snapshot, 4 KiB for results, 512 bytes for delivery requests, 256 bytes for
 the learner roster, 2 KiB for compact progress, 256 bytes for the durable tutor
 request, 1 KiB for its committed response, a 66-byte private QR-output receipt,
-and a 9,600-byte protected reserve, that leaves 5,391 bytes (about 5.26 KiB) for content at the current measured
+and a 9,300-byte protected reserve, that leaves 5,122 bytes (about 5.00 KiB) for content at the current measured
 client size. Sync still uses
 reported free RAM rather than assuming this estimate.
 
@@ -208,11 +215,12 @@ draft in alternating `SCL1`; `SCQUEUE` then builds the canonical timestamp-free
 device-global sequence before showing success.
 TI-86 codec v5 emits package schema v2 and converts neutral text to complete
 23-column by five-line pages; each is at most 119 bytes. Keeping queue mutation
-in `SCQUEUE` leaves `SCLEARN` at 8,901 bytes, with 315 bytes in its 9 KiB
-execution ceiling. Its F5 label is `MORE` while another block follows and `EOM`
-at the final block, eliminating ambiguity about scroll completion. Short quiz
-answers render directly above F1–F5; longer quiz prompts visibly route through
-`MORE`/`ANS` and show `LEFT: Q` from the choice view.
+in `SCQUEUE` leaves `SCLEARN` at 9,199 bytes, with 17 bytes in its 9 KiB
+execution ceiling. Its F5 label is `NEXT` while another block follows and `END`
+at the final block, eliminating ambiguity about scroll completion. A normal
+quiz keeps its compact question and labelled `A)`–`E)` choices in one body
+surface, with matching F1–F5 keys in the rail; a very tall prompt alone falls
+back to `MORE`/`ANS` and preserves `LEFT: Q` from that separate choice view.
 Capability advertisement stays off until owned-ROM emulator and fleet recovery
 gates pass.
 
@@ -273,7 +281,7 @@ pending state. The evidence tree and follow-ups remain generic School
 semantics; Guest deliberately has no durable progress projection. When the
 first actionable follow-up is a
 connected remediation, F1 opens the independent `SCTUTOR` runtime. `SCPROF` is
-8,148 bytes, leaving 44 bytes below its 8 KiB TI-OS child-image ceiling.
+8,177 bytes, leaving 15 bytes below its 8 KiB TI-OS child-image ceiling.
 
 `SCTUTOR` is the reviewed, learner-scoped realtime remediation client. It
 converts the selected opaque follow-up into a fixed `SCTQ` request, retains the
@@ -290,11 +298,11 @@ ceiling and 1,392 bytes below video RAM.
 `sch:r1:<BASE32>` payload on the calculator, applies Reed–Solomon error
 correction, and draws a fixed Version 5/M symbol at 37×37 modules within a
 45×45 quiet-zone footprint. The host reference model matches the QR library
-for one-answer, progress, and maximum 48-answer records. F1 `DONE` records a
+for one-answer, progress, and maximum 48-answer records. F1 `MARK` records a
 calculator-private `SCO1`/`DSQOUT` optical-scan receipt; F5 `LATER` leaves that
 ordinal in the later batch. Neither action alters `DSQ` or claims server upload:
-only an automated relay ACK clears the queue. Its 6,141-byte executable has
-three bytes left in its 6 KiB product ceiling.
+only an automated relay ACK clears the queue. Its 6,138-byte executable has
+6 bytes left in its 6 KiB product ceiling.
 
 The source for a macOS Graph Link diagnostic client is
 [`tools/native/ti86-graph-link.c`](./tools/native/ti86-graph-link.c). It can

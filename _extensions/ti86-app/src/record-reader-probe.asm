@@ -155,6 +155,7 @@ expected_title:          defb "Reader probe",0
 title_label:             defb "Title:",0
 title_missing:           defb "<missing>",0
 
+UI_RENDER_COPIED_TEXT_LENGTH: equ 0
 include "record-reader.asm"
 UI_RENDER_PROFILE_FULL: equ 1
 UI_RENDER_INCLUDE_COMPACT: equ 1

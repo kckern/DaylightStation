@@ -318,10 +318,10 @@ function drawResultQr(g) {
     }
   }
   g.rule(55);
-  g.text(5, 58, 'DONE');
+  g.text(5, 58, 'MARK');
   g.text(104, 58, 'LATER');
   g.softkeyActions([
-    { id: 'record-qr-output', label: 'DONE' },
+    { id: 'record-qr-output', label: 'MARK' },
     null,
     null,
     null,
@@ -452,9 +452,9 @@ const screens = [
     ]);
   }),
   makeScreen('course', 'Course unit browser', (g) => {
-    header(g, 'INTRO PHYSICS', '1/6');
+    header(g, 'PHYSICS', 'COURSES');
     g.list(
-      ['MEASUREMENT', 'KINEMATICS', 'FORCES', 'ENERGY', 'MOMENTUM', 'WAVES', 'REVIEW'],
+      ['INTRO PHYSICS', 'FORCE & MOTION', 'ENERGY', 'WAVES', 'ELECTRICITY', 'REVIEW'],
       { selected: 1, total: 8, offset: 0, badges: { 0: 'ON', 1: 'ON', 2: 'GET', 3: 'GET' } },
     );
     g.softkeys([
@@ -466,7 +466,7 @@ const screens = [
     ]);
   }),
   makeScreen('unit', 'Unit lesson browser', (g) => {
-    header(g, 'KINEMATICS', '2/9');
+    header(g, 'INTRO PHYSICS', 'UNITS');
     g.list(
       ['POSITION', 'VELOCITY', 'ACCELERATION', 'GRAPH MOTION', 'FREE FALL', 'REVIEW', 'UNIT CHECK'],
       { selected: 1, total: 9, offset: 0, badges: { 0: 'DONE', 1: 'ON', 2: 'GET', 6: 'QUIZ' } },
@@ -480,7 +480,7 @@ const screens = [
     ]);
   }),
   makeScreen('lesson', 'Compact lesson module list', (g) => {
-    header(g, 'KINEMATICS', '1/7');
+    header(g, 'VELOCITY', 'MODULES');
     g.list(['NOTES', 'EXAMPLES', 'DRILL', 'QUIZ', 'GRAPH LAB', 'FLASHCARDS', 'WORKSHEET'], {
       selected: 0,
       badges: { 2: '12', 3: '5', 6: 'QR' },

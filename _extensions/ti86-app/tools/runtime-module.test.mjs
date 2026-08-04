@@ -100,7 +100,13 @@ describe('TI-86 reviewed runtime-module boundary', () => {
       /profile_copy_selected_label:[\s\S]*?SCSTATE_SELECTED_LEARNER_OFFSET[\s\S]*?profile_guest[\s\S]*?profile_item_at_index/,
     );
     expect(PROFILE_RUNTIME_SOURCE).toMatch(
-      /progress_render:[\s\S]{0,120}ld de,profile_label[\s\S]{0,80}profile_render_message_header/,
+      /profile_copy_selected_named:[\s\S]*?call profile_item_at_index[\s\S]*?ld hl,profile_label\s+ret/,
+    );
+    expect(PROFILE_RUNTIME_SOURCE).toMatch(
+      /progress_render:[\s\S]{0,120}ld de,progress_learner_label[\s\S]{0,80}profile_render_message_header/,
+    );
+    expect(PROFILE_RUNTIME_SOURCE).toMatch(
+      /progress_canonical_ready:[\s\S]{0,1000}call profile_open_canonical[\s\S]{0,120}call profile_copy_selected_label[\s\S]{0,180}call progress_open_canonical/,
     );
     expect(PROFILE_RUNTIME_SOURCE).toMatch(
       /profile_open_catalog:[\s\S]*?SCSTATE_FLAG_LEARNER_SELECTED_HIGH[\s\S]*?scstate_save/,

@@ -29,6 +29,7 @@ RUNTIME_MODE_QUIZ:         equ 5
 RUNTIME_MODE_TOOL:         equ 6
 RUNTIME_MODE_PROBE:        equ 7
 RUNTIME_VIEW_LESSON:       equ 4
+RUNTIME_VIEW_MODULE:       equ 5
 
 ; scan-action@1 stores one complete Version-1/EC-L QR symbol as three
 ; row-major bytes for each of 21 rows. The low three bits of every third byte

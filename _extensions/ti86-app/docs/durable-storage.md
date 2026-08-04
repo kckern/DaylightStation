@@ -46,7 +46,7 @@ complete validation and canonical promotion. `DSTREQ` is a read-only uplink;
 `DSQOUT` is exactly 34 bytes: `SCO1`, format version `1`, body length `25`,
 the u24 sequence of the first current `DSQ` record, 22 little-bit-order receipt
 bytes (one for each of the 170 possible `DSQ` ordinals), and CRC-16/CCITT-FALSE.
-F1 `DONE` on the result QR sets its current ordinal; F5 `LATER` does not.
+F1 `MARK` on the result QR sets its current ordinal; F5 `LATER` does not.
 
 It is deliberately **not** an acknowledgement, upload claim, grading claim, or
 relay input. A stale/corrupt receipt, or one whose base sequence no longer

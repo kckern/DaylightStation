@@ -144,6 +144,22 @@ glyph), not a padded eight-byte cell. The unused low three bits of the first
 row carry glyph advance; the reader's unused low nibble in its sixth row packs
 the optional descender. Both features therefore add no per-glyph storage.
 
+### Context headers
+
+One header line cannot carry a literal Course → Unit → Lesson path reliably.
+Instead, every non-root Catalog list uses the immediately containing content
+title as its breadcrumb: the Course list is headed by its Subject, the Unit
+list by its Course, the Lesson list by its Unit, and the Module list by its
+Lesson. The root keeps `SUBJECTS` with the learner name. Generic words such as
+`MODULES` and `QUIZ` describe the interaction only; they must not be the sole
+answer to “what am I studying?”
+
+For inline multiple-choice questions, each 3×5 answer row has a one-pixel
+vertical gap from the next. A crowded final prompt may use two answer columns,
+but only when every label fits its own half-width without clipping. Otherwise
+the runner uses its explicit multi-page fallback rather than collapsing the
+spacing or making an answer ambiguous.
+
 ### Iconography
 
 Icons are authored as 7×7 one-bit glyphs in
@@ -175,20 +191,23 @@ Hardware comes first:
 
 F1–F5 are valuable precisely because they are contextual. They provide A–E
 answers (or the answer text itself when it safely fits), FLIP, MARK, INFO, GET,
-FIND, QR, SYNC, YES, and NO. Catalog and reader
+FIND, QR, CABLE, YES, and NO. Catalog and reader
 views make one deliberate exception: F2 is visibly labeled `BACK`, alongside
 the physical EXIT/CLEAR/LEFT shortcut, so hierarchy navigation never depends on
 a memorized key. Reader views also reserve F1 for `TOP` (or `QR` when declared),
-F4 for `PGUP`, and F5 for `MORE`; F5 changes to `EOM` exactly at the final
-block. The Subject root keeps F5 `SYNC`, while deeper Catalog lists use the same
-`MORE`/`EOM` cue and page action instead of an irrelevant Sync affordance.
+F4 for `PGUP`, and F5 for `NEXT`; F5 changes to `END` exactly at the final
+block. The Subject root shows F5 `OFF` when no relay is detected, while deeper
+Catalog lists use the same `NEXT`/`END` cue and page action instead of an
+irrelevant transport affordance.
 
-Quiz question and answer form one interaction. A one-page prompt whose answer
-labels fit four compact characters renders those labels directly above F1–F5;
-typing a number is not a hidden alternate response path. Longer prompts show
-F5 `MORE` and then `ANS` at their final page. Their answer view reserves the
-bottom body line for `LEFT: Q`, returning to the final prompt page without
-discarding the answer draft.
+Quiz question and answer form one interaction. A normal compact question
+renders its visible `A)`–`E)` choices directly beneath it, with F1–F5 mapped
+to the same letters in the rail. A one-page prompt whose answer labels fit four
+compact characters may use those labels directly above F1–F5; typing a number
+is not a hidden alternate response path. Only a genuinely tall prompt uses F5
+`MORE` and then `ANS` at its final page. Its answer view reserves the bottom
+body line for `LEFT: Q`, returning to the final prompt page without discarding
+the answer draft.
 
 ## 3. Shell layout
 
@@ -241,7 +260,7 @@ The physical slots are fixed:
 An assigned slot is inverted. It may contain a 7×7 icon, a compact label, or
 both. Empty slots remain empty; actions never shift between keys merely to fill
 space. The result-QR output template is the narrow exception: it uses sparse
-black `DONE` and `LATER` labels in the F1/F5 positions so its 45×45 quiet-zone
+black `MARK` and `LATER` labels in the F1/F5 positions so its 45×45 quiet-zone
 footprint remains optically blank above the rail.
 
 ## 4. UI components
@@ -388,7 +407,7 @@ blocks while clamping at the beginning/end.
 | Sync | StatusRows, optional ProgressMeter |
 | Confirmation | Cleared framed dialog over stable parent context |
 | QR | Dedicated full 128×64 framebuffer; no SchoolCalc chrome |
-| QR output | Version-5 result QR, blank quiet zone, separator, sparse F1 DONE/F5 LATER receipt rail |
+| QR output | Version-5 result QR, blank quiet zone, separator, sparse F1 MARK/F5 LATER receipt rail |
 | Native handoff | Persisting transition view, then OS-owned UI |
 | Local transition | Destination header plus a brief local `.`/`..`/`...` acknowledgement before the next Catalog path repaints, including selection → Subject root; no softkeys or transport claim |
 | Custom module | Capability-owned geometry inside OverviewCanvas + FocusCursor + stable SelectionInspector + SnapNavigation; optional list fallback/legend follows its reviewed interaction contract |
@@ -508,7 +527,7 @@ and structural-asset generator is
 [`ti86-result-qr-v5.mjs`](../tools/lib/ti86-result-qr-v5.mjs); the matching Z80
 runtime is [`runtime-qr.asm`](../src/runtime-qr.asm). The runtime reads only the
 newest validated queued record and never writes or acknowledges `DSQ`. Its
-sparse F1 `DONE` action may set one ordinal in the calculator-private
+sparse F1 `MARK` action may set one ordinal in the calculator-private
 `DSQOUT`/`SCO1` receipt map; F5 `LATER` leaves that ordinal pending for the
 generic batch-output view. Neither action can remove a queue record.
 

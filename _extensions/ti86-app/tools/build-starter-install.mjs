@@ -11,6 +11,7 @@ import { encodeSchoolCalcLocalState, SCHOOLCALC_LOCAL_FLAGS } from './lib/school
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const OUT = path.join(HERE, '..', 'dist');
+const PACKS = path.join(OUT, 'content-packs');
 const CONTENT = '/Users/kckern/Library/CloudStorage/Dropbox/Apps/DaylightStation/data/content/school/catalog';
 const DEVICE_ID = 'TI86A';
 const ACCESS = Object.freeze({ learnerKeys: [1, 2, 3, 4], guest: true });
@@ -18,7 +19,10 @@ const codec = new Ti86SchoolCalcCodec();
 const catalogs = new YamlLearningCatalogRepository({ directories: [path.join(CONTENT, 'catalogs')] });
 const raw = await catalogs.getCatalog('schoolcalc-starter');
 if (!raw) throw new Error('missing schoolcalc-starter catalog');
-const pack = JSON.parse(readFileSync(path.join(CONTENT, 'ti86-packs', 'manifest.json'), 'utf8'));
+// The preceding pack build owns the immutable artifacts used by this install.
+// Never re-open a mounted/generated manifest: it can describe an older codec
+// projection than the `.86s` files about to be transferred.
+const pack = JSON.parse(readFileSync(path.join(PACKS, 'manifest.json'), 'utf8'));
 const artifacts = pack.artifacts.map(({ fileName, ...artifact }) => artifact);
 const artifactByAddress = new Map(artifacts.map((artifact) => [artifact.source.address, artifact]));
 
@@ -86,6 +90,9 @@ function projectCatalog(catalogDefinition) {
 }
 
 function header(node, id) {
+  // The Catalog surface has one 128-pixel breadcrumb. Preserve an authored
+  // shortTitle beside the full title so the generic TI-86 runtime can choose
+  // it only where chrome is narrow, without subject-specific code.
   return Object.fromEntries([id, 'title', 'shortTitle', 'description', 'estimatedMinutes', 'tags']
     .filter((field) => node[field] !== undefined).map((field) => [field, node[field]]));
 }

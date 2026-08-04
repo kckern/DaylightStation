@@ -418,15 +418,22 @@ assessment_render_prompt:
         ld d,122
         ld e,50
         call ui_draw_wrapped_text
-        ; A single short prompt with compact choices is answerable in one
-        ; frame: put the actual answer text directly over F1–F5. This removes
-        ; the hidden "press Down for choices" step for numeric/short answers.
-        call assessment_prompt_all_choices_fit_softkeys
+        ; A normal assessment fits its question and every labelled answer in
+        ; one reading surface.  The compact body is deliberately dense: its
+        ; question uses the design-system six-pixel leading while answer rows
+        ; use their five-pixel glyph height.  That leaves an honest full
+        ; choice set above the fixed function rail (three question lines plus
+        ; five choices is the common maximum).  No separate "answers" state
+        ; or hidden key transition is required.
+        call assessment_inline_choices_fit
         or a
-        jp z,assessment_render_prompt_navigation
-        call assessment_render_direct_choice_softkeys
-        jp assessment_direct_choice_wait
-
+        jp nz,assessment_render_inline_choices
+        ; Preserve the single-column reading order whenever it fits. When it
+        ; does not, compact labels can use two columns before the deliberate
+        ; multi-page answer fallback separates question and choices.
+        call assessment_inline_two_column_fit
+        or a
+        jp nz,assessment_render_inline_two_columns
 assessment_render_prompt_navigation:
         call assessment_render_prompt_softkeys
         jp assessment_prompt_wait
@@ -448,21 +455,6 @@ assessment_prompt_wait:
         cp SC_SCAN_F5
         jr z,assessment_prompt_forward
         jr assessment_prompt_wait
-
-; One-page questions whose answers are at most four printable characters use
-; their physical answer keys directly. F1 is choice A, F2 is B, and so on;
-; the answer text itself is shown in the matching softkey cell.
-assessment_direct_choice_wait:
-        call sc_input_wait
-        cp SC_SCAN_EXIT
-        jp z,assessment_pause
-        cp SC_SCAN_LEFT
-        jp z,assessment_pause
-        cp SC_SCAN_F5
-        jr c,assessment_direct_choice_wait
-        cp SC_SCAN_F1 + 1
-        jr nc,assessment_direct_choice_wait
-        jp assessment_submit_function_choice
 
 assessment_prompt_forward:
         ld hl,(runtime_state_record + RUNTIME_SCL_SCROLL_OFFSET)
@@ -546,12 +538,245 @@ assessment_choice_wait:
         cp SC_SCAN_EXIT
         jp z,assessment_pause
         cp SC_SCAN_LEFT
-        jr z,assessment_return_to_prompt
+        jp z,assessment_return_to_prompt
         cp SC_SCAN_F5
         jr c,assessment_choice_wait
         cp SC_SCAN_F1 + 1
         jr nc,assessment_choice_wait
         jp assessment_submit_function_choice
+
+; The inline assessment surface uses the same F1–F5 answer mapping as the
+; full choice view.  There is therefore no action key to discover: answer
+; labels are visible in the body and the matching physical key is visible in
+; the rail.  Up/Left can return to an earlier long-prompt page; Down/Right do
+; not enter a second answer screen because every answer is already present.
+assessment_inline_choice_wait:
+        call sc_input_wait
+        cp SC_SCAN_EXIT
+        jp z,assessment_pause
+        cp SC_SCAN_LEFT
+        jp z,assessment_inline_prompt_back
+        cp SC_SCAN_UP
+        jp z,assessment_inline_prompt_back
+        cp SC_SCAN_F5
+        jr c,assessment_inline_choice_wait
+        cp SC_SCAN_F1 + 1
+        jr nc,assessment_inline_choice_wait
+        jp assessment_submit_function_choice
+
+; Keep an inline one-page question in its inline input loop when a learner
+; presses Up/Left at the top. If the final page follows earlier prompt pages,
+; use the normal durable page return instead.
+assessment_inline_prompt_back:
+        ld hl,(runtime_state_record + RUNTIME_SCL_SCROLL_OFFSET)
+        ld a,h
+        or l
+        jr z,assessment_inline_choice_wait
+        dec hl
+        jp assessment_store_prompt_page
+
+; Return A=1 only when this is the final authored prompt page and its visible
+; compact lines plus every A–E choice row fit entirely in y=11..54.  The
+; renderer leaves ui_wrap_y on the last prompt baseline, so this tests the
+; actual proportional rendering geometry instead of a fragile character
+; count. Rows advance by six pixels: five pixels of glyph ink plus a mandatory
+; one-pixel blank separator, so choices remain individually scannable.
+assessment_inline_choices_fit:
+        ld hl,(runtime_state_record + RUNTIME_SCL_SCROLL_OFFSET)
+        ld a,h
+        or a
+        jr nz,assessment_inline_choices_no
+        inc hl
+        ld a,(assessment_prompt_page_count)
+        cp l
+        jr nz,assessment_inline_choices_no
+        ld a,(ui_wrap_y)
+        ld b,a
+        ld a,(ui_font_advance_y)
+        add a,b
+        ld (assessment_render_y),a
+        ld b,a
+        ld a,(assessment_choice_count)
+        dec a
+        ld c,a
+assessment_inline_choices_last_row:
+        ld a,c
+        or a
+        jr z,assessment_inline_choices_bottom
+        ld a,b
+        add a,6
+        ld b,a
+        dec c
+        jr assessment_inline_choices_last_row
+assessment_inline_choices_bottom:
+        ld a,b
+        add a,4
+        cp 55
+        jr nc,assessment_inline_choices_no
+        ld a,1
+        ret
+assessment_inline_choices_no:
+        xor a
+        ret
+
+; A two-column answer grid is only a fallback for a vertically crowded
+; otherwise-final prompt. Every answer must fit its 12-character, 50-pixel
+; half of the body; nothing is silently clipped to make the grid fit.
+assessment_inline_two_column_fit:
+        ld hl,(runtime_state_record + RUNTIME_SCL_SCROLL_OFFSET)
+        ld a,h
+        or a
+        jr nz,assessment_inline_two_columns_no
+        inc hl
+        ld a,(assessment_prompt_page_count)
+        cp l
+        jr nz,assessment_inline_two_columns_no
+        ld a,(ui_wrap_y)
+        ld b,a
+        ld a,(ui_font_advance_y)
+        add a,b
+        ld (assessment_render_y),a
+        ld b,a
+        ld a,(assessment_choice_count)
+        inc a
+        srl a
+        dec a
+        ld c,a
+assessment_inline_two_columns_last_row:
+        ld a,c
+        or a
+        jr z,assessment_inline_two_columns_bottom
+        ld a,b
+        add a,6
+        ld b,a
+        dec c
+        jr assessment_inline_two_columns_last_row
+assessment_inline_two_columns_bottom:
+        ld a,b
+        add a,4
+        cp 55
+        jr nc,assessment_inline_two_columns_no
+        xor a
+        ld (assessment_render_index),a
+assessment_inline_two_columns_width_loop:
+        ld a,(assessment_render_index)
+        ld b,a
+        ld a,(assessment_choice_count)
+        cp b
+        jr z,assessment_inline_two_columns_yes
+        ld l,b
+        ld h,0
+        ld de,(assessment_choices_offset)
+        call sc_array_item
+        jp c,assessment_invalid_render
+        call sc_copy_node_string
+        jp c,assessment_invalid_render
+        ld b,13
+assessment_inline_two_columns_width_chars:
+        ld a,(hl)
+        or a
+        jr z,assessment_inline_two_columns_width_next
+        inc hl
+        djnz assessment_inline_two_columns_width_chars
+        jr assessment_inline_two_columns_no
+assessment_inline_two_columns_width_next:
+        ld a,(assessment_render_index)
+        inc a
+        ld (assessment_render_index),a
+        jr assessment_inline_two_columns_width_loop
+assessment_inline_two_columns_yes:
+        ld a,1
+        ret
+assessment_inline_two_columns_no:
+        xor a
+        ret
+
+; Render A) Choice through E) Choice immediately after the question.  The
+; codec bounds each choice to one visible 23-character compact line; clipping
+; remains a physical-screen safety guard rather than a layout mechanism.
+assessment_render_inline_choices:
+        ld a,1
+        jr assessment_render_inline_choice_grid
+assessment_render_inline_two_columns:
+        ld a,2
+assessment_render_inline_choice_grid:
+        ld (assessment_inline_columns),a
+        xor a
+        ld (assessment_render_index),a
+assessment_inline_choice_render_loop:
+        ld a,(assessment_render_index)
+        ld b,a
+        ld a,(assessment_choice_count)
+        cp b
+        jr z,assessment_inline_choices_rendered
+        ld a,b
+        add a,'A'
+        ld (assessment_inline_prefix),a
+        ld a,')'
+        ld (assessment_inline_prefix + 1),a
+        xor a
+        ld (assessment_inline_prefix + 2),a
+        ld hl,assessment_inline_prefix
+        ; `columns - 1` is a compact index mask: choice index modulo one
+        ; stays in the left column; modulo two alternates left/right.
+        ld a,(assessment_inline_columns)
+        dec a
+        ld b,a
+        ld a,(assessment_render_index)
+        and b
+        ld e,a
+        ld d,0
+        ld hl,assessment_inline_label_x
+        add hl,de
+        ld b,(hl)
+        ld a,(assessment_render_y)
+        ld c,a
+        ld hl,assessment_inline_prefix
+        call ui_draw_text
+        ld a,(assessment_render_index)
+        ld l,a
+        ld h,0
+        ld de,(assessment_choices_offset)
+        call sc_array_item
+        jp c,assessment_invalid_render
+        call sc_copy_node_string
+        jp c,assessment_invalid_render
+        ; The copied choice string is returned in HL. Preserve that pointer
+        ; while the column lookup temporarily uses HL as its table cursor.
+        push hl
+        ld a,(assessment_inline_columns)
+        dec a
+        ld b,a
+        ld a,(assessment_render_index)
+        and b
+        ld e,a
+        ld d,0
+        ld hl,assessment_inline_text_x
+        add hl,de
+        ld b,(hl)
+        pop hl
+        ld a,(assessment_render_y)
+        ld c,a
+        ld d,124
+        call ui_draw_text_clipped
+        ld a,(assessment_render_index)
+        inc a
+        ld (assessment_render_index),a
+        ld b,a
+        ld a,(assessment_inline_columns)
+        dec a
+        jr z,assessment_inline_choice_advance_y
+        ld a,b
+        and 1
+        jr nz,assessment_inline_choice_render_loop
+assessment_inline_choice_advance_y:
+        ld a,(assessment_render_y)
+        add a,6
+        ld (assessment_render_y),a
+        jp assessment_inline_choice_render_loop
+assessment_inline_choices_rendered:
+        call assessment_render_choice_softkeys
+        jp assessment_inline_choice_wait
 
 ; A is one raw F-key scan. Convert it into one-based A–E and commit through
 ; the same durable answer path whether choices were shown in the body or
@@ -563,8 +788,11 @@ assessment_submit_function_choice:
         ld b,a
         ld a,(assessment_choice_count)
         cp b
-        jr c,assessment_choice_wait
+        jp c,assessment_choice_wait
         ld a,b
+        push af
+        call assessment_render_choice_ack
+        pop af
         ld c,a
         ld a,(runtime_mode)
         cp RUNTIME_MODE_PROBE
@@ -580,6 +808,46 @@ assessment_commit_probe_choice:
         call probe_commit_choice
         jp c,standard_runtime_render_error
         jp assessment_render
+
+; Invert only the selected F-key cell and hold it briefly before the durable
+; next-question repaint. This is confirmation, not answer feedback: the
+; correct key is never revealed during an active quiz.
+assessment_render_choice_ack:
+        dec a
+        ld (assessment_ack_index),a
+        ld e,a
+        ld d,0
+        ld hl,assessment_softkey_x
+        add hl,de
+        ld b,(hl)
+        ld hl,assessment_softkey_width
+        add hl,de
+        ld d,(hl)
+        ld c,56
+        ld e,8
+        call ui_mode_clear
+        call ui_fill_rect
+        call ui_mode_set
+        call ui_select_compact
+        ld a,(assessment_ack_index)
+        add a,'A'
+        ld (assessment_ack_label),a
+        ; Only A can load directly from an absolute address on the Z80.  Move
+        ; through A before indexing the selected softkey acknowledgement.
+        ld a,(assessment_ack_index)
+        ld e,a
+        ld d,0
+        ld hl,assessment_softkey_ack_x
+        add hl,de
+        ld b,(hl)
+        ld c,57
+        ld hl,assessment_ack_label
+        call ui_draw_text
+        ld b,48
+assessment_ack_wait:
+        call _idle
+        djnz assessment_ack_wait
+        jp ui_mode_set
 
 assessment_return_to_prompt:
         ; Reopen the final prompt page—the exact question context that led to
@@ -1338,7 +1606,10 @@ assessment_softkey_loop:
         ld a,(assessment_render_index)
         add a,'A'
         ld (assessment_letter),a
-        ld hl,assessment_softkey_label_x
+        ; The rail is physically aligned with F1-F5 below the LCD.  Its
+        ; labels therefore name the answer, not the already-visible button:
+        ; `A`, `B`, … is both cleaner and sufficient.
+        ld hl,assessment_softkey_ack_x
         ld a,(assessment_render_index)
         ld e,a
         ld d,0
@@ -1352,101 +1623,10 @@ assessment_softkey_loop:
         ld (assessment_render_index),a
         jr assessment_softkey_loop
 
-; Return A=1 only for a one-page prompt whose every choice fits visibly in a
-; four-character compact softkey label. Longer answer text retains the full
-; body-choice view rather than relying on an ambiguous truncation.
-assessment_prompt_all_choices_fit_softkeys:
-        ld a,(assessment_prompt_page_count)
-        cp 1
-        jr nz,assessment_choices_do_not_fit_softkeys
-        xor a
-        ld (assessment_render_index),a
-assessment_choice_fit_loop:
-        ld a,(assessment_render_index)
-        ld b,a
-        ld a,(assessment_choice_count)
-        cp b
-        jr z,assessment_choices_fit_softkeys
-        ld l,b
-        ld h,0
-        ld de,(assessment_choices_offset)
-        call sc_array_item
-        jp c,assessment_invalid_render
-        call sc_copy_node_string
-        jp c,assessment_invalid_render
-        ld b,5
-assessment_choice_fit_length_loop:
-        ld a,(hl)
-        or a
-        jr z,assessment_choice_fit_next
-        inc hl
-        djnz assessment_choice_fit_length_loop
-        jr assessment_choices_do_not_fit_softkeys
-assessment_choice_fit_next:
-        ld a,(assessment_render_index)
-        inc a
-        ld (assessment_render_index),a
-        jr assessment_choice_fit_loop
-assessment_choices_fit_softkeys:
-        ld a,1
-        ret
-assessment_choices_do_not_fit_softkeys:
-        xor a
-        ret
-
-; Render direct answer text over its corresponding F key. The preceding fit
-; gate guarantees no answer is silently shortened; clipping remains a final
-; physical-LCD safety guard only.
-assessment_render_direct_choice_softkeys:
-        call assessment_render_separator
-        xor a
-        ld (assessment_render_index),a
-assessment_direct_softkey_loop:
-        ld a,(assessment_render_index)
-        ld b,a
-        ld a,(assessment_choice_count)
-        cp b
-        ret z
-        ld e,b
-        ld d,0
-        ld hl,assessment_softkey_x
-        add hl,de
-        ld b,(hl)
-        ld hl,assessment_softkey_width
-        add hl,de
-        ld d,(hl)
-        call ui_mode_set
-        ld c,56
-        ld e,8
-        call ui_fill_rect
-        ld a,(assessment_render_index)
-        ld l,a
-        ld h,0
-        ld de,(assessment_choices_offset)
-        call sc_array_item
-        jp c,assessment_invalid_render
-        call sc_copy_node_string
-        jp c,assessment_invalid_render
-        ld a,(assessment_render_index)
-        ld e,a
-        ld d,0
-        ld hl,assessment_softkey_x
-        add hl,de
-        ld b,(hl)
-        inc b
-        inc b
-        inc b
-        ld c,57
-        call ui_mode_clear
-        call ui_draw_text
-        ld a,(assessment_render_index)
-        inc a
-        ld (assessment_render_index),a
-        jr assessment_direct_softkey_loop
-
-; Long/multi-page questions keep their answer view separate. Physical Up/Left
-; walks earlier prompt pages; F5 states the forward action: MORE advances and
-; ANSWERS appears only after the final question page.
+; Only genuinely tall prompts fall back to a separate answer page. Physical
+; Up/Left walks earlier prompt pages; F5 states the forward action: MORE
+; advances and ANSWERS appears only after the final question page. Normal
+; questions use the inline ChoiceGroup above instead.
 assessment_render_prompt_softkeys:
         call assessment_render_separator
         call ui_mode_set
@@ -1497,10 +1677,16 @@ assessment_flash_page_count:    defb 0
 assessment_render_index:        defb 0
 assessment_render_y:            defb 0
 assessment_letter:              defb 'A',0
+assessment_ack_index:           defb 0
+assessment_ack_label:           defb 'A',' ','O','K',0
+assessment_inline_prefix:       defs 3,0
+assessment_inline_columns:      defb 1
+assessment_inline_label_x:      defb 2,65
+assessment_inline_text_x:       defb 12,75
 assessment_position_text:       defs 7,0
 assessment_softkey_x:           defb 0,26,51,77,102
 assessment_softkey_width:       defb 26,25,26,25,26
-assessment_softkey_label_x:     defb 11,37,63,88,113
+assessment_softkey_ack_x:       defb 5,31,56,82,107
 assessment_flip_label:          defb "FLIP",0
 assessment_more_label:          defb "MORE",0
 assessment_answers_label:       defb "ANS",0

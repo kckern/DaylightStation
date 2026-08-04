@@ -328,6 +328,8 @@ sc_string_table_loop:
         ret c
         call sc_cursor_skip
         ret c
+        call sc_cursor_read_byte
+        ret c
         jr sc_string_table_loop
 sc_string_table_done:
         ld hl,(sc_record_cursor)
@@ -489,6 +491,8 @@ sc_string_locate_loop:
         ld hl,(sc_string_length)
         call sc_cursor_skip
         jr c,sc_string_locate_invalid
+        call sc_cursor_read_byte
+        jr c,sc_string_locate_invalid
         jr sc_string_locate_loop
 sc_string_locate_found:
         ld de,(sc_record_cursor)
@@ -645,37 +649,54 @@ sc_copy_node_string:
         or a
         jr nz,sc_copy_string_invalid
         ld a,c
-        cp 121
+        inc a
+        cp 122
         jr nc,sc_copy_string_invalid
 sc_copy_string_length:
         ld (sc_text_remaining),a
         ld (sc_text_source),de
         ld hl,_plotSScreen + 256
-        ld (sc_text_destination),hl
+if UI_RENDER_COPIED_TEXT_LENGTH
+        ; Catalog rows reuse one scratch buffer. Clear its bounded span before
+        ; each visible label so a shorter title can never inherit glyphs from
+        ; the preceding artifact identifier or title.
+        ld b,121
+        xor a
+sc_copy_string_clear:
+        ld (hl),a
+        inc hl
+        djnz sc_copy_string_clear
+        ld hl,_plotSScreen + 256
+endif
 sc_copy_string_loop:
         ld a,(sc_text_remaining)
         or a
         jr z,sc_copy_string_done
         ld de,(sc_text_source)
+        ; Keep the destination independently on the stack. TI-OS's absolute
+        ; memory helpers are permitted to use HL while the record byte is
+        ; being paged, but copied text must advance exactly one byte per
+        ; source byte.
+        push hl
         call sc_record_read_byte
+        pop hl
         jr c,sc_copy_string_invalid
+        or a
+        jr z,sc_copy_string_done
         cp 128
         jr c,sc_copy_string_ascii
         ld a,63
 sc_copy_string_ascii:
-        ld hl,(sc_text_destination)
         ld (hl),a
         inc hl
-        ld (sc_text_destination),hl
-        ld hl,(sc_text_source)
-        inc hl
-        ld (sc_text_source),hl
+        inc de
+        ld (sc_text_source),de
         ld a,(sc_text_remaining)
         dec a
         ld (sc_text_remaining),a
         jr sc_copy_string_loop
 sc_copy_string_done:
-        ld hl,(sc_text_destination)
+        ld (sc_text_destination),hl
         ld (hl),0
         ld hl,_plotSScreen + 256
         or a

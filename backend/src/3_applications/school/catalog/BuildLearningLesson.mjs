@@ -85,7 +85,10 @@ export class BuildLearningLesson {
       lesson: {
         lessonId: entry.lesson.lessonId,
         title: entry.lesson.title,
-        ...pick(entry.lesson, ['areaIds', 'classifications', 'tags']),
+        // A compact title is a presentation hint supplied by ordinary authored
+        // content.  It stays neutral here so every constrained delivery family
+        // can select it without inventing a subject or device branch.
+        ...pick(entry.lesson, ['shortTitle', 'areaIds', 'classifications', 'tags']),
         objectives: [...(entry.lesson.objectives ?? [])],
         modules,
       },

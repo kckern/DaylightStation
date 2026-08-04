@@ -17,23 +17,32 @@ Do not collapse those facts into a false `connected` indicator. In particular,
 tip/ring high means only `unknown_idle`; it does not prove that a plug or a
 powered calculator is present.
 
-## Locked product decision
+## Locked build decision
 
-The production path is a small, factory-assembled **TI Link Hat** PCB for the
-ATOM—not a hand-soldered collection of loose parts. This board is specified
-here but has not yet been designed or fabricated.
+Start with two small, already-assembled modules and solder only their wires:
 
 ```text
-TI cable → 2.5 mm jack → TI Link Hat → short keyed header → ATOM Lite
+TI cable → 2.5 mm stereo jack → BSS138 level-shifter breakout → ATOM Lite
 ```
+
+No custom PCB and no discrete MOSFET/resistor circuit are required. A compact
+"TI Link Hat" remains a future packaging refinement, not a prerequisite for a
+working relay.
+
+Power the ATOM before connecting the calculator cable, and remove the cable
+before removing ATOM power. An unpowered BSS138 breakout has no defined high
+side reference and must not be left attached to a calculator.
 
 ### v1: useful direct-link relay
 
-The first board contains the jack, two protected TI-line sense channels, two
-open-drain sinks, a keyed low-voltage header, and enclosure mounting. It
-proves a live calculator only from valid TI traffic or `SCF1`; idle line levels
-never count as a connected calculator. Mechanical insertion detection is not
-required for this useful first version.
+Use two channels of an assembled BSS138 bidirectional level-shifter breakout.
+Each channel is an open-drain level translator with a 10 kΩ pull-up, which is
+the electrical model needed by the TI link bus. The ESP32 owns one open-drain
+GPIO per TI line; it releases the line or pulls it low, never drives it high.
+
+This first version proves a live calculator only from valid TI traffic or
+`SCF1`; idle line levels never count as a connected calculator. Mechanical
+insertion detection is not required.
 
 ### v1.1: mechanical insertion indication
 
@@ -42,39 +51,44 @@ contact is verified to be isolated from tip and ring. It reports
 `absent`/`inserted`, never calculator power or protocol readiness. This option
 must not delay v1.
 
-## What to buy or order
+## What to buy
 
 | Qty. | Item | Required characteristics |
 |---:|---|---|
 | 1 | M5Stack ATOM Lite | ESP32 controller; its built-in RGB LED is on GPIO 27. |
-| 1 | Factory-assembled TI Link Hat | Custom 30–40 mm board specified below; replaces loose MOSFETs, resistors, and jack wiring. |
+| 1 | [Adafruit BSS138 4-channel bidirectional level converter](https://www.adafruit.com/product/757) | Use two channels. It is assembled, has 10 kΩ pull-ups, and supports the 3.3 V/5 V open-drain conversion needed here. The [SparkFun equivalent](https://www.sparkfun.com/products/12009) is also suitable. |
+| 1 | [Same Sky / CUI SJ-2509N](https://www.cuidevices.com/product/resource/sj-2509n.pdf) | Plain 2.5 mm, stereo, three-conductor jack. Solder its tip, ring, and sleeve terminals to wires; its lack of a switch is intentional for v1. |
 | 1 | 2.5 mm TRS male-to-male calculator link cable | A proper calculator cable, not a 3.5 mm audio lead or USB Graph Link. |
-| 1 | Enclosure or ATOM carrier | Provides strain relief and a protected place for the small PCB. |
+| 1 | Heat-shrink and strain relief | Insulate the three jack wires and relieve force from the jack terminals. |
 | 1 | Digital multimeter | Mandatory before first calculator connection. |
 
-The M5Stack ATOM Hub Proto Kit is useful only for development and board
-bring-up; it is not the normal production adapter. Do not buy an RS-232 base,
-a USB-to-TI Graph Link cable, or a generic I²C bidirectional level-shifter
-board. None provides the required two independent, reset-safe open-drain
-sinks.
+The M5Stack ATOM Hub Proto Kit is optional: use it only if it gives the ATOM a
+more convenient enclosure. Do not buy an RS-232 base, USB-to-TI Graph Link
+cable, TXB0108-style automatic level shifter, or push-pull logic buffer. The
+BSS138 breakout is deliberately different: its channels are open drain.
 
-## TI Link Hat fabrication contract
+## Firmware interface contract
 
-Target a 30–40 mm board with factory SMD assembly; the jack may be a
-through-hole or panel-mount component if that makes enclosure mounting more
-reliable. The installer should connect only a keyed header and calculator
-cable—not solder the link interface.
+The BSS138 breakout needs a dedicated **single-pin-per-line open-drain**
+firmware interface. It is not electrically compatible with the existing
+four-pin discrete-interface profile (`TIP_SENSE_PIN`, `TIP_SINK_PIN`,
+`RING_SENSE_PIN`, `RING_SINK_PIN`). Do not enable relay transmission with the
+breakout attached until its BSS138 interface profile is flashed.
 
-| Function | Required circuit |
-|---|---|
-| Tip sense | 10 kΩ / 15 kΩ divider and 100 Ω GPIO protection; 5 V TI bus to 3.3 V input only. |
-| Ring sense | Same protected input circuit as tip. |
-| Tip sink | 2N7000-class N-channel MOSFET, 100 Ω gate resistor, 100 kΩ gate pulldown; open drain only. |
-| Ring sink | Same independent open-drain circuit as tip. |
-| v1.1 plug detector | 10 kΩ external pull-up, 1 kΩ series resistor, 100 nF debounce capacitor, only with a verified isolated jack contact. |
+The profile must configure both line GPIOs as `OUTPUT_OPEN_DRAIN`: write low
+to assert the line and write high to release it; read the same GPIO to sample
+the translated bus level. Its expected private relay YAML is:
 
-The keyed header carries 3.3 V, ground, the four TI GPIOs, and optionally the
-plug-detect GPIO. It must not carry TI bus voltage into the ATOM power rails.
+```yaml
+link:
+  interface: bss138_level_shifter
+  tip_io_pin: 25
+  ring_io_pin: 26
+```
+
+`bss138_level_shifter` is the required new interface name. GPIO 32 and GPIO
+33 become unused by this build; they are retained only for the discrete
+prototype circuit in [`docs/hardware-build.md`](./docs/hardware-build.md).
 
 ## Pin allocation
 
@@ -82,16 +96,14 @@ These are **ESP32-side** pins. They are not calculator pins.
 
 | Function | Firmware symbol | Current pin | Direction/circuit |
 |---|---|---:|---|
-| TI tip/red sense | `TIP_SENSE_PIN` | GPIO 32 | divider output → input only |
-| TI tip/red assert | `TIP_SINK_PIN` | GPIO 25 | MOSFET gate through 100 Ω |
-| TI ring/white sense | `RING_SENSE_PIN` | GPIO 33 | divider output → input only |
-| TI ring/white assert | `RING_SINK_PIN` | GPIO 26 | MOSFET gate through 100 Ω |
+| TI tip/red I/O | `TIP_IO_PIN` | GPIO 25 | open-drain GPIO → `LV1` |
+| TI ring/white I/O | `RING_IO_PIN` | GPIO 26 | open-drain GPIO → `LV2` |
 | Built-in RGB LED | `LED_PIN` | GPIO 27 | already owned by the ATOM LED |
 | Jack insertion detect (v1.1) | `PLUG_DETECT_PIN` | one spare, exposed, non-strapping GPIO | input only; external 10 kΩ pull-up |
 
-Select the detect GPIO from the pins exposed by the TI Link Hat header. It must
-not be one of the five pins above, a boot-strapping pin, or a pin used by the
-USB serial path. Configure it in the private relay YAML:
+Select the optional detect GPIO from a spare exposed ATOM pin. It must not be
+one of the three pins above, a boot-strapping pin, or a pin used by the USB
+serial path. Configure it in the private relay YAML:
 
 ```yaml
 link:
@@ -111,36 +123,33 @@ do not trust wire colours.
 
 | TRS contact | Typical cable colour | Net name | Connects to |
 |---|---|---|---|
-| Tip | red | `TIP_BUS` | tip divider and tip MOSFET drain |
-| Ring | white | `RING_BUS` | ring divider and ring MOSFET drain |
-| Sleeve | black | `GND` | common circuit/ESP32 ground |
+| Tip | red | `TIP_BUS` | BSS138 `HV1` |
+| Ring | white | `RING_BUS` | BSS138 `HV2` |
+| Sleeve | black | `GND` | BSS138 `GND` and ATOM ground |
 
-Build two identical channels:
+Solder these eight connections. Use two channels only; leave channels 3 and 4
+unconnected and insulated.
 
 ```text
-TIP_BUS ──────+────── 10k ──────+────── 100R ─── GPIO32  (sense only)
-              |                  |
-              |                 15k
-              |                  |
-              |                 GND
-              |
-              +── drain  2N7000  source ──────────────── GND
-                         gate
-GPIO25 ───────────────── 100R ───+
-                                  |
-                                100k
-                                  |
-                                 GND
+ATOM Lite                         BSS138 breakout              2.5 mm jack
+─────────                         ───────────────              ────────────
+3V3  ───────────────────────────→ LV
+5V (USB rail) ──────────────────→ HV
+GND  ───────────────────────────→ GND ───────────────────────→ sleeve
+GPIO25 (`TIP_IO_PIN`) ──────────→ LV1
+GPIO26 (`RING_IO_PIN`) ─────────→ LV2
+                                   HV1 ───────────────────────→ tip
+                                   HV2 ───────────────────────→ ring
 ```
 
-Duplicate the circuit for `RING_BUS`, GPIO 33, and GPIO 26. The 10 kΩ/15 kΩ
-divider converts a nominal 5 V high to about 3.0 V at the ESP32 input. The
-MOSFET can pull the line low but can never drive it high. Its 100 kΩ gate
-pulldown is a required safety component, not an optimization.
+The breakout's `HV` pin is a local 5 V reference from the ATOM's USB-powered
+rail; it is not connected to calculator power. Its built-in 10 kΩ pull-ups
+weakly bias the two link lines, just as an open-collector bus expects. The
+ESP32 must never use a push-pull output on `LV1` or `LV2`, and no GPIO may be
+connected directly to tip or ring.
 
-Connect sleeve/black to ESP32 ground exactly once at the interface board. Do
-not feed calculator voltage into the M5 3.3 V or 5 V rails. Do not connect an
-ESP32 GPIO directly to tip or ring.
+For a future compact enclosure, these exact circuits can be integrated onto a
+30–40 mm PCB; do not substitute a different electrical topology.
 
 ## v1.1 plug-detect wiring
 
@@ -207,10 +216,12 @@ power before changing wiring.
 1. With the ATOM unpowered and no cable inserted, verify no short between tip,
    ring, and sleeve. A momentary changing resistance from capacitors is normal;
    a steady near-zero resistance is not.
-2. Verify each MOSFET's actual gate, drain, and source pinout against the
-   manufacturer's datasheet. Do not trust a random package diagram.
-3. Power the ATOM with `link.transmit_enabled: false`. Measure each MOSFET gate
-   relative to ground: it must be near 0 V, not 3.3 V.
+2. Verify the BSS138 breakout labels before soldering: 3.3 V goes only to `LV`,
+   USB 5 V goes only to `HV`, and tip/ring go only to `HV1`/`HV2`. Do not trust
+   connector order from a marketplace photo.
+3. Power the ATOM with relay transmission disabled. With no calculator cable
+   attached, verify `LV` is about 3.3 V, `HV` is about 5 V, and neither
+   `HV1` nor `HV2` is shorted to ground.
 4. For a v1.1 board, with no calculator cable inserted, verify the jack-detect
    GPIO is low. Insert the cable only into the relay jack and verify it becomes
    high after debounce. Confirm this test does not change either tip/ring net.
@@ -227,13 +238,16 @@ power before changing wiring.
 8. Run a complete Catalog/module, progress, and quiz sync. Only then enable
    the normal foreground listener.
 9. Test interruption: pull the plug during an active transfer. The relay must
-   report a retryable failure, release both sink gates, retain queues, and say
-   `safe_to_unplug` only after it no longer owns the wire.
+   report a retryable failure, release both open-drain GPIOs, retain queues,
+   and say `safe_to_unplug` only after it no longer owns the wire.
 
 ## Non-negotiable safety rules
 
-- Never drive tip or ring high.
-- Never enable transmission before the gate-voltage and no-short tests pass.
+- Never drive tip or ring high with a GPIO or a push-pull buffer. The BSS138
+  breakout's 10 kΩ pull-ups are the only intentional high bias.
+- Never enable transmission before the breakout-voltage and no-short tests
+  pass.
+- Never connect a calculator to an unpowered BSS138 breakout.
 - Never infer insertion or a calculator peer from idle-high line readings.
 - Never use the LED as the only diagnosis or as evidence that a record was
   committed.

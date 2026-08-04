@@ -55,6 +55,12 @@ scqr_start:
         call _clrLCD
         call scqr_draw_function_modules
         call scqr_draw_data_modules
+        call ui_mode_set
+        call ui_select_compact
+        ld hl,scqr_scan_instruction
+        ld b,42
+        ld c,3
+        call ui_draw_text
         call scqr_draw_output_rail
 scqr_wait:
         call sc_input_wait
@@ -1120,8 +1126,8 @@ scqr_set_module:
 ; ---------------------------------------------------------------------------
 
 ; The result QR owns the optical frame above y=55.  A sparse F-key rail below
-; it leaves the mandatory quiet zone intact: DONE records only the learner's
-; local scan report; LATER keeps the item for the generic output-batch view.
+; it leaves the mandatory quiet zone intact: MARK records only the learner's
+; self-reported scan receipt; LATER keeps the item for a later batch scan.
 scqr_draw_output_rail:
         call ui_mode_set
         ld b,0
@@ -1387,10 +1393,11 @@ scqr_payload_prefix: defb "sch:r1:"
 scqr_base32_alphabet: defb "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567"
 scqr_bit_masks: defb 0x80,0x40,0x20,0x10,0x08,0x04,0x02,0x01
 scqr_error_title: defb "SCHOOLCALC / QR",0
-scqr_error_text: defb "No displayable queued result. Finish a quiz or sync, then try again.",0
+scqr_error_text: defb "NO QR RESULT. FINISH A QUIZ.",0
 scqr_dsq_name: defb 0x0C,3,"DSQ",0,0,0,0,0
 scqr_dsqout_name: defb 0x0C,6,"DSQOUT",0,0
-scqr_done_label: defb "DONE",0
+scqr_scan_instruction: defb "QR RESULT F1=SCANNED",0
+scqr_done_label: defb "MARK",0
 scqr_later_label: defb "LATER",0
 ; SCO1: fixed envelope header, queue-base sequence, 170 receipt bits, CRC.
 scqr_output_prefix: defb "SCO1",1,25,0
@@ -1447,6 +1454,7 @@ UI_RENDER_INCLUDE_COMPACT: equ 1
 UI_RENDER_INCLUDE_READER: equ 0
 UI_RENDER_INCLUDE_DISPLAY: equ 0
 UI_RENDER_INCLUDE_ICONS: equ 0
+UI_RENDER_COPIED_TEXT_LENGTH: equ 0
 include "ui-renderer.asm"
 include "input.asm"
 include "crc16-ccitt.asm"

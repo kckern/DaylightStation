@@ -42,7 +42,7 @@ describe('TI-86 SchoolCalc resource contract', () => {
     expect(limits.standardClientVariableOverheadBytes).toBe(320);
     expect(limits.standardClientTargetBytes).toBe(60_736);
     expect(limits.standardClientIndependentCeilingBytes).toBe(83_264);
-    expect(limits.standardClientMaxBytes).toBe(71_662);
+    expect(limits.standardClientMaxBytes).toBe(71_962);
     expect(limits.catalogStateTargetBytes).toBe(3.5 * 1024);
     expect(limits.catalogStateMaxBytes).toBe(6 * 1024);
     expect(limits.localStateStorageBytes).toBe(312);
@@ -66,13 +66,13 @@ describe('TI-86 SchoolCalc resource contract', () => {
     expect(limits.acknowledgementMaxBytes).toBe(544);
     expect(limits.syncManifestMaxBytes).toBe(6 * 1024);
     expect(limits.nativeSnapshotMaxBytes).toBe(4 * 1024);
-    expect(limits.freeReserveBytes).toBe(9_600);
+    expect(limits.freeReserveBytes).toBe(9_300);
     expect(limits.freeReserveBytes - limits.nativeSnapshotMaxBytes - limits.variableOverheadBytes)
-      .toBe(5472);
+      .toBe(5172);
     expect(limits.lessonTargetBytes).toBe(8 * 1024);
     expect(limits.lessonMaxBytes).toBe(12 * 1024);
     expect(limits.queueCommitCopyCount).toBe(0);
-    expect(limits.nominalDownloadableContentBytes).toBe(16_046);
+    expect(limits.nominalDownloadableContentBytes).toBe(16_346);
     expect(limits.downloadableContentAtStandardClientCeilingBytes).toBe(0);
     expect(limits.nominalDownloadableContentBytes)
       .toBeGreaterThan(limits.downloadableContentAtStandardClientCeilingBytes);

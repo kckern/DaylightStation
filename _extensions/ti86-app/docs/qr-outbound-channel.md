@@ -142,8 +142,8 @@ For the proven static fixture, build with `tools/build-qr-demo.mjs`, run
 installs both transfer groups from the complete ten-program client release. Complete an assessment;
 after its exact result is committed to `DSQ`, the shell opens the durable
 Result view. F1 invokes `SCQR`, which reads the newest record and renders it
-without changing or acknowledging the queue. Its rail is F1 `DONE` and F5
-`LATER`: `DONE` records the learner's **self-reported** optical scan in the
+without changing or acknowledging the queue. Its rail is F1 `MARK` and F5
+`LATER`: `MARK` records the learner's **self-reported** optical scan in the
 private `DSQOUT`/`SCO1` receipt map, while `LATER` leaves it in the QR-output
 batch. Neither action changes `DSQ`, claims server receipt, or affects grading.
 EXIT/ENTER returns to the Result view. USB is not involved in exporting

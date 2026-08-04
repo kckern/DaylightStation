@@ -59,6 +59,9 @@ export class SchoolCalcRecordView {
       let value;
       try { value = new TextDecoder('utf-8', { fatal: true }).decode(bytes); }
       catch { throw new Error(`${expectedMagic} binary document has invalid UTF-8 in string ${index}`); }
+      if (cursor.u8(`string ${index} terminator`) !== 0) {
+        throw new Error(`${expectedMagic} binary document string ${index} lacks its NUL terminator`);
+      }
       if (seen.has(value)) throw new Error(`${expectedMagic} binary document repeats a string-table value`);
       seen.add(value);
       this.#strings.push(Object.freeze({ index, offset, byteLength, value }));
@@ -235,6 +238,11 @@ class Cursor {
   }
 
   get offset() { return this.#offset; }
+
+  u8(name) {
+    this.#need(1, name);
+    return this.#bytes[this.#offset++];
+  }
 
   u16(name) {
     this.#need(2, name);

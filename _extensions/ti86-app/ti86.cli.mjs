@@ -17,8 +17,10 @@
 import { spawn } from 'node:child_process';
 import {
   existsSync,
+  closeSync,
   mkdtempSync,
   mkdirSync,
+  openSync,
   readdirSync,
   readFileSync,
   writeFileSync,
@@ -33,6 +35,8 @@ import {
   renderTi86ScreenHybrid,
   renderTi86ScreenText,
 } from './tools/lib/ti86-screen-text.mjs';
+import { parseTi86StringFile } from './tools/inspect-ti86-string.mjs';
+import { decodeTi86OutputReceipt } from './tools/lib/ti86-output-receipt.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const DEFAULT_ROM = '/private/tmp/schoolcalc-ti86a.rom';
@@ -61,7 +65,11 @@ const ALPHA = Object.freeze({
 
 try {
   const options = parseArgs(process.argv.slice(2));
-  const result = await run(options);
+  if (options.detach) {
+    process.stdout.write(detach(options));
+    process.exit(0);
+  }
+  const result = formatCaseFile(options, await run(options));
   if (options.output) {
     mkdirSync(path.dirname(options.output), { recursive: true });
     writeFileSync(options.output, result);
@@ -91,9 +99,15 @@ async function run(options) {
   }
   writeFileSync(path.join(romDirectory, descriptor.filename), rom);
   const readyFile = path.join(runPath, 'release-ready');
+  const receiptGateFile = path.join(runPath, 'receipt-read');
+  const receiptFile = path.join(runPath, 'DSQOUT.86s');
   const luaPath = path.join(runPath, 'console.lua');
   const actions = buildActions(options, manifest);
-  writeFileSync(luaPath, buildLua({ readyFile, actions, holdFrames: options.holdFrames, settleFrames: options.settleFrames, screens: options.screens }));
+  writeFileSync(luaPath, buildLua({
+    readyFile, actions, holdFrames: options.holdFrames, settleFrames: options.settleFrames,
+    screens: options.screens, debugMemory: options.debugMemory,
+    receiptGateFile: options.debugReceipt ? receiptGateFile : null,
+  }));
 
   const priorPtys = new Set(listPtys());
   const mameArgs = createTi86MameArguments({
@@ -103,6 +117,8 @@ async function run(options) {
     debugScriptPath: path.join(runPath, 'resume.cmd'),
     workPath: runPath,
   });
+  // The virtual Graph Link is host-paced. Keep MAME throttled so its serial
+  // handshake has the same cadence as a physical TI-86 transfer.
   remove(mameArgs, '-nothrottle');
   removePair(mameArgs, '-seconds_to_run');
   remove(mameArgs, '-debug');
@@ -129,12 +145,19 @@ async function run(options) {
     const transferResult = await transferRelease(options.graphLink, files, pty, options.transferTimeoutMs);
     if (transferResult.code !== 0) throw new Error(`release transfer failed: ${transferResult.output}`);
     writeFileSync(readyFile, `${manifest.releaseId}\n`);
+    const receipt = options.debugReceipt
+      ? await collectOutputReceipt({
+        output: () => output, command: options.graphLink, device: pty,
+        receiptFile, receiptGateFile, timeoutMs: options.scenarioTimeoutMs,
+      })
+      : null;
     const completion = await waitForExit(mame, options.scenarioTimeoutMs);
     if (completion.code !== 0) throw new Error(`MAME exited ${completion.code}: ${tail(output)}`);
     if (!output.includes('SCHOOLCALC_CLI_PASS')) throw new Error(`emulator console did not complete: ${tail(output)}`);
     const screens = parseCapturedScreens(output);
     if (screens.length === 0) throw new Error('emulator console emitted no LCD screen');
-    return `${screens.map((screen) => formatScreen(screen, options.screen)).join('\n\n')}\n`;
+    const diagnostics = [parseMemoryDiagnostic(output), receipt && formatReceiptDiagnostic(receipt)].filter(Boolean);
+    return `${screens.map((screen) => formatScreen(screen, options.screen)).join('\n\n')}${diagnostics.length ? `\n\n${diagnostics.join('\n')}` : ''}\n`;
   } finally {
     if (mame.exitCode == null && mame.signalCode == null) mame.kill('SIGTERM');
   }
@@ -203,12 +226,14 @@ function textActions(character) {
   throw new Error(`--text cannot enter '${character}' on the TI-86 v0 console`);
 }
 
-function buildLua({ readyFile, actions, holdFrames, settleFrames, screens }) {
+function buildLua({ readyFile, actions, holdFrames, settleFrames, screens, debugMemory, receiptGateFile }) {
   const actionRows = actions.map((action) => action.kind === 'wait'
     ? `{ kind='wait', frames=${action.frames}, label=${lua(action.label)} }`
     : `{ kind='key', key=${lua(action.key)}, label=${lua(action.label)}, port=${lua(KEYS[action.key][0])}, mask=0x${KEYS[action.key][1].toString(16)} }`);
   return `local READY_FILE=${lua(readyFile)}\n`
     + `local HOLD=${holdFrames}\nlocal SETTLE=${settleFrames}\nlocal SCREENS=${screens === 'each' ? 'true' : 'false'}\n`
+    + `local DEBUG_ADDRESS=${debugMemory?.address ?? -1}\nlocal DEBUG_LENGTH=${debugMemory?.length ?? 0}\n`
+    + `local RECEIPT_GATE=${receiptGateFile ? lua(receiptGateFile) : "''"}\n`
     + `local actions={${actionRows.join(',')}}\n`
     + `local cpu=manager.machine.devices[':maincpu']\nlocal memory=cpu and cpu.spaces['program'] or nil\nlocal pc=cpu and (cpu.state['PC'] or cpu.state['rPC']) or nil\nlocal ports=manager.machine.ioport.ports\n`
     + `local frame,index,phase,deadline,field=0,0,'wait-release',0,nil\nlocal shell_hit,shell_entry=false,0\n`
@@ -217,8 +242,11 @@ function buildLua({ readyFile, actions, holdFrames, settleFrames, screens }) {
     + ` for y=0,63 do local row={} for x=0,127 do local byte=memory:read_u8(0xFC00+(y*16)+math.floor(x/8)); local bit=math.floor(byte/(2^(7-(x%8))))%2; row[#row+1]=bit==1 and '█' or '.' end print(table.concat(row)) end\n`
     + ` print('SCHOOLCALC_SCREEN_END')\nend\n`
     + `local function ready() local f=io.open(READY_FILE,'rb'); if not f then return false end; f:close(); return true end\n`
+    + `local function debug_memory()\n`
+    + ` if DEBUG_LENGTH<=0 then return end; local bytes={} for offset=0,DEBUG_LENGTH-1 do bytes[#bytes+1]=string.format('%02X',memory:read_u8(DEBUG_ADDRESS+offset)) end; print(string.format('SCHOOLCALC_MEMORY address=%04X bytes=%s',DEBUG_ADDRESS,table.concat(bytes,'')))\nend\n`
+    + `local function receipt_read() local f=io.open(RECEIPT_GATE,'rb'); if not f then return false end; f:close(); return true end\n`
     + `local function next_action()\n`
-    + ` index=index+1; if index>#actions then capture('final'); print('SCHOOLCALC_CLI_PASS'); manager.machine:exit(); return end\n`
+    + ` index=index+1; if index>#actions then capture('final'); debug_memory(); if RECEIPT_GATE~='' then print('SCHOOLCALC_RECEIPT_READY'); phase='wait-receipt'; return end; print('SCHOOLCALC_CLI_PASS'); manager.machine:exit(); return end\n`
     + ` local action=actions[index]; if action.kind=='wait' then deadline=frame+action.frames; phase='wait-action'; return end\n`
     + ` field=ports[action.port] and ports[action.port]:field(action.mask) or nil; if not field then print('SCHOOLCALC_CLI_FAIL missing-key-'..action.key); manager.machine:exit(); return end\n`
     + ` field:set_value(1); deadline=frame+HOLD; phase='release'\nend\n`
@@ -230,7 +258,8 @@ function buildLua({ readyFile, actions, holdFrames, settleFrames, screens }) {
     + ` if phase=='wait-release' and ready() then capture('transfer-complete'); next_action()\n`
     + ` elseif phase=='release' and frame>=deadline then field:clear_value(); field=nil; deadline=frame+SETTLE; phase='settle'\n`
     + ` elseif phase=='settle' and frame>=deadline then if SCREENS then capture(actions[index].label) end; next_action()\n`
-    + ` elseif phase=='wait-action' and frame>=deadline then if SCREENS then capture(actions[index].label) end; next_action() end\n`
+    + ` elseif phase=='wait-action' and frame>=deadline then if SCREENS then capture(actions[index].label) end; next_action()\n`
+    + ` elseif phase=='wait-receipt' and receipt_read() then print('SCHOOLCALC_CLI_PASS'); manager.machine:exit() end\n`
     + `end,'schoolcalc_cli')\n`;
 }
 
@@ -240,7 +269,8 @@ function parseArgs(argv) {
   for (let index = 0; index < argv.length; index += 1) {
     const token = argv[index];
     if (token === '--help' || token === '-h') usage();
-    if (token === '--screens' || token === '--screen') { values.set(token, argv[++index]); continue; }
+    if (token === '--screens' || token === '--screen' || token === '--case-id' || token === '--debug-memory') { values.set(token, argv[++index]); continue; }
+    if (token === '--detach' || token === '--debug-receipt') { values.set(token, true); continue; }
     if (token === '--key') { inputs.push({ kind: 'key', value: argv[++index] }); continue; }
     if (token === '--keys') {
       for (const key of String(argv[++index]).split(/[\s,]+/).filter(Boolean)) inputs.push({ kind: 'key', value: key });
@@ -262,10 +292,22 @@ function parseArgs(argv) {
   if (!bundle) usage('--bundle is required');
   if (!existsSync(rom)) throw new Error(`TI-86 ROM not found: ${rom}`);
   if (!existsSync(bundle)) throw new Error(`release bundle not found: ${bundle}`);
+  const output = values.get('--output') ? path.resolve(values.get('--output')) : null;
+  if (values.get('--detach') === true && !output) usage('--detach requires --output for the final transcript');
+  const caseId = values.get('--case-id') ?? null;
+  if (caseId !== null && !/^[a-z0-9][a-z0-9-]{1,63}$/.test(caseId)) {
+    throw new Error('--case-id must be lowercase kebab-case');
+  }
+  const debugMemory = parseDebugMemory(values.get('--debug-memory'));
   return {
     rom, bundle, inputs, screens, screen,
     transfer: values.get('--transfer') ? String(values.get('--transfer')).split(/[\s,]+/).filter(Boolean).map((name) => name.toUpperCase()) : null,
-    output: values.get('--output') ? path.resolve(values.get('--output')) : null,
+    output,
+    caseId,
+    sourceArgv: Object.freeze([...argv]),
+    detach: values.get('--detach') === true,
+    debugMemory,
+    debugReceipt: values.get('--debug-receipt') === true,
     load: values.get('--load') ?? null,
     mame: values.get('--mame') ?? 'mame',
     graphLink: path.resolve(values.get('--graph-link') ?? DEFAULT_GRAPH_LINK),
@@ -276,6 +318,58 @@ function parseArgs(argv) {
     transferTimeoutMs: 240_000,
     scenarioTimeoutMs: 360_000,
   };
+}
+
+// A complete virtual Graph Link transfer is deliberately paced; it can outlive
+// a short interactive shell window. Run a second copy in its own process
+// session so its normal MAME child process, transcript, and diagnostic stderr
+// remain available without weakening the exact release path.
+function detach(options) {
+  const workerArguments = process.argv.slice(1).filter((argument) => argument !== '--detach');
+  const logPath = `${options.output}.log`;
+  mkdirSync(path.dirname(logPath), { recursive: true });
+  const log = openSync(logPath, 'a');
+  const worker = spawn(process.execPath, workerArguments, {
+    cwd: process.cwd(),
+    detached: true,
+    stdio: ['ignore', log, log],
+  });
+  worker.unref();
+  closeSync(log);
+  return `[ti86:cli] detached PID ${worker.pid}; transcript ${options.output}; log ${logPath}\n`;
+}
+
+// A review case must be inspectable and runnable without pairing it with a
+// separate shell history entry.  The normal CLI remains plain-text friendly;
+// `--case-id` opts into a single Markdown artifact containing both the exact
+// replay command and its LCD transcript.
+function formatCaseFile(options, result) {
+  if (!options.caseId) return result;
+  const manifest = JSON.parse(readFileSync(path.join(options.bundle, 'complete-install.json'), 'utf8'));
+  const replay = options.sourceArgv.filter((argument) => argument !== '--detach');
+  const command = ['node', path.relative(process.cwd(), process.argv[1]), ...replay]
+    .map(shellQuote)
+    .join(' ');
+  const transfer = options.transfer?.join(', ') ?? `complete manifest (${manifest.transfer.length} variables)`;
+  return `# SchoolCalc CLI case: ${options.caseId}\n\n`
+    + `## Inputs\n\n`
+    + `- Release: \`${manifest.releaseId}\`\n`
+    + `- ROM: \`${options.rom}\`\n`
+    + `- Transfer: ${transfer}\n`
+    + `- Screen mode: \`${options.screen}\`; captures: \`${options.screens}\`\n`
+    + `- Ordered interaction inputs: ${options.inputs.length === 0 ? '_none after launch_' : options.inputs.map(formatInput).join(', ')}\n\n`
+    + `### Replay\n\n\`\`\`sh\n${command}\n\`\`\`\n\n`
+    + `## Captured output\n\n\`\`\`text\n${result.trimEnd()}\n\`\`\`\n`;
+}
+
+function formatInput(input) {
+  if (input.kind === 'wait') return `wait ${input.frames}f`;
+  return `${input.kind} ${input.value}`;
+}
+
+function shellQuote(value) {
+  const text = String(value);
+  return /^[A-Za-z0-9_./:=,+-]+$/.test(text) ? text : `'${text.replaceAll("'", "'\\\"'\\\"'")}'`;
 }
 
 function validateRelease(manifest, bundle) {
@@ -312,6 +406,39 @@ function transferRelease(command, files, device, timeoutMs) {
   });
 }
 
+async function collectOutputReceipt({ output, command, device, receiptFile, receiptGateFile, timeoutMs }) {
+  await waitForOutput(output, /SCHOOLCALC_RECEIPT_READY/, timeoutMs, 'calculator did not reach QR receipt collection');
+  const receive = await receiveVariable(command, 'DSQOUT', receiptFile, device, 60_000);
+  if (receive.code !== 0) throw new Error(`DSQOUT receipt read failed: ${receive.output}`);
+  const parsed = parseTi86StringFile(readFileSync(receiptFile));
+  if (parsed.name !== 'DSQOUT') throw new Error(`receipt transfer returned ${parsed.name}, expected DSQOUT`);
+  const receipt = decodeTi86OutputReceipt(parsed.variableData.subarray(2));
+  if (receipt.reportedIndexes.length === 0) throw new Error('F1 MARK returned DSQOUT without a marked result index');
+  writeFileSync(receiptGateFile, 'verified\n');
+  return receipt;
+}
+
+function receiveVariable(command, name, file, device, timeoutMs) {
+  return new Promise((resolve) => {
+    const child = spawn(command, ['receive', name, file], { env: { ...process.env, TI86_CABLE_DEVICE: device }, stdio: ['ignore', 'pipe', 'pipe'] });
+    let output = '';
+    child.stdout.on('data', (chunk) => { output += chunk; });
+    child.stderr.on('data', (chunk) => { output += chunk; });
+    const timer = setTimeout(() => child.kill('SIGTERM'), timeoutMs);
+    child.once('error', (error) => { clearTimeout(timer); resolve({ code: 1, output: error.message }); });
+    child.once('exit', (code) => { clearTimeout(timer); resolve({ code: code ?? 1, output: output.trim() }); });
+  });
+}
+
+async function waitForOutput(output, pattern, timeoutMs, failure) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (pattern.test(output())) return;
+    await delay(50);
+  }
+  throw new Error(`${failure}: ${tail(output())}`);
+}
+
 function waitForExit(child, timeoutMs) {
   return new Promise((resolve, reject) => {
     const timer = setTimeout(() => { child.kill('SIGTERM'); reject(new Error('MAME console timed out')); }, timeoutMs);
@@ -345,6 +472,27 @@ function parseCapturedScreens(output) {
   return screens;
 }
 
+function parseMemoryDiagnostic(output) {
+  const match = String(output).match(/^SCHOOLCALC_MEMORY address=([0-9A-F]{4}) bytes=([0-9A-F]*)$/mu);
+  return match ? `SCHOOLCALC_MEMORY address=${match[1]} bytes=${match[2]}` : '';
+}
+
+function formatReceiptDiagnostic(receipt) {
+  return `SCHOOLCALC_RECEIPT variable=DSQOUT magic=SCO1 valid=true baseSequence=${receipt.baseSequence} markedIndexes=${receipt.reportedIndexes.join(',')}`;
+}
+
+function parseDebugMemory(value) {
+  if (value === undefined) return null;
+  const match = String(value).match(/^([0-9A-Fa-f]{1,4}):([0-9]{1,3})$/);
+  if (!match) usage('--debug-memory must be hexadecimal-address:decimal-length');
+  const address = Number.parseInt(match[1], 16);
+  const length = Number.parseInt(match[2], 10);
+  if (length < 1 || length > 128 || address + length > 0x1_0000) {
+    usage('--debug-memory range must be within 0000:1..FFFF:128');
+  }
+  return Object.freeze({ address, length });
+}
+
 function formatScreen({ label, pixels }, mode) {
   const rendering = mode === 'pixels' ? renderTi86FramebufferAscii(pixels)
     : mode === 'text' ? renderTi86ScreenText(pixels)
@@ -363,7 +511,11 @@ function usage(message = null) {
     + `  --wait 60                 Wait 60 emulated frames (repeatable)\n`
     + `  --screens final|each      Dump just final LCD or after every action\n`
     + `  --screen hybrid           hybrid (default), text, braille, or exact pixels\n`
+    + `  --debug-memory CAFA:32    Append a bounded final emulator-memory diagnostic\n`
+    + `  --debug-receipt            Retrieve and validate F1 MARK's private DSQOUT/SCO1 receipt\n`
+    + `  --case-id NAME            Write an input + output review-case artifact\n`
     + `  --output PATH             Save the transcript (useful for long emulator runs)\n`
+    + `  --detach                  Continue a long exact run in the background (requires --output)\n`
     + `  --rom PATH                TI-86 ROM; defaults to the local user-owned dump\n`);
   process.exit(2);
 }

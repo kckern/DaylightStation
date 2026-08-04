@@ -23,7 +23,7 @@ validator pass.
 
 | ID | Requirement item | Research/design | Code | Verification | Evidence / next gap |
 | --- | --- | --- | --- | --- | --- |
-| SC-1.1 | Stable calculator client and reusable design system | done | done | partial | Release `295065f74710` passes owned-ROM/virtual-Graph-Link MAME scenarios for shell, Catalog, reader, learner/profile progress, local quiz/result, and QR; protected-cable and fleet execution gates remain |
+| SC-1.1 | Stable calculator client and reusable design system | done | done | partial | Release `caacecbbb8b6` has retained owned-ROM/virtual-Graph-Link CLI evidence for first boot, learner-named progress, reader `END`, Math QR `MARK` with a CRC-validated DSQOUT receipt, History QR `LATER`, Pokémon local scoring/QR, plus focused Science navigation/removal Cancel; protected-cable and fleet execution gates remain |
 | SC-1.2 | YAML-authored, installable/removable content packs | done | done | partial | Mounted YAML adapters, neutral bundles, immutable artifacts, Catalog UI, durable delivery intent, and sync plans exist; emulator/fleet execution remains |
 | SC-1.3 | Device-neutral backend use cases | done | done | done | Shared Catalog/list/hydration/session opening plus enrollment, identity, observation, artifact build, delivery, result/queue import, planning, and combined sync have focused tests |
 | SC-1.4 | Calculator-family compilation and transport adapters | done | done | partial | The TI-86 adapter covers the v0 record set/relay integration and a simulated second family passes the shared lifecycle; physical transport evidence remains |
@@ -157,7 +157,7 @@ validator pass.
 
 | ID | Requirement item | Research/design | Code | Verification | Evidence / next gap |
 | --- | --- | --- | --- | --- | --- |
-| SC-10.1 | QR presenter owns complete framebuffer/profile/recovery | done | done | partial | SCQR validates/encodes queued V5/M results and exposes sparse F1 DONE/F5 LATER receipt actions beneath the quiet zone; exact MAME reaches the result QR after a scored quiz. Physical camera scanning and interruption recovery remain |
+| SC-10.1 | QR presenter owns complete framebuffer/profile/recovery | done | done | partial | SCQR validates/encodes queued V5/M results and exposes `QR RESULT F1=SCANNED`, F1 MARK, and F5 LATER beneath the quiet zone; exact MAME reaches the result QR after a scored quiz. Physical camera scanning and interruption recovery remain |
 | SC-10.2 | Opaque `sch:<token>` actions | done | done | done | Profile/classifier/generator tests and reference PNG exist |
 | SC-10.3 | Actions expose no provider/identity/policy | done | done | done | Closed action schema forbids provider/identity/policy/command fields; device-bound HMAC issuance and the authored-data→artifact→scan→policy-executor integration test prove only the opaque token reaches the calculator |
 | SC-10.4 | Action profile V1/L, 58×58 | done | done | partial | Generator matches the QR oracle; SCP1 stores exact 63-byte rows and SCLEARN builds the centered 2× full frame; exact runtime/camera proof remains |
@@ -233,11 +233,11 @@ validator pass.
 | ID | Requirement item | Research/design | Code | Verification | Evidence / next gap |
 | --- | --- | --- | --- | --- | --- |
 | SC-14.1 | Base budget uses 98,224-byte blank RAM and no archive | done | n/a | done | TI guidebook evidence recorded; physical calculator agrees |
-| SC-14.2 | Core shell ≤9 KB and physical execution window | done | done | done | Build gates pass; current Z80 code is 7,903 bytes (7,980-byte `.86p`), leaving 1,313 bytes in the product ceiling and 1,497 bytes in the 9,400-byte execution window |
+| SC-14.2 | Core shell ≤9 KB and physical execution window | done | done | done | Build gates pass; current Z80 code is 8,092 bytes (8,169-byte `.86p`), leaving 1,124 bytes in the product ceiling and 1,308 bytes in the 9,400-byte execution window |
 | SC-14.3 | One-Catalog state target/hard ceiling | done | done | done | One assigned Catalog opens directly at Subject; adapter targets `SCC1` at 3,272 bytes and caps it at 5,832 bytes, with two 124-byte `SCL1` slots plus overhead in the 6 KiB ceiling |
 | SC-14.4 | Queue 4–6 KB | done | done | done | `SCQ1`, host durable queue, relay buffer, and cross-language contract share the 6,144-byte bound |
-| SC-14.5 | Scratch/free reserve 9–12 KB | done | done | done | Sync preserves 9,600 bytes; SCN1 is capped at 4,096 transient bytes and preflight leaves 5,472 after variable overhead; low-memory tests pass |
-| SC-14.6 | Standard runtime and downloadable-content budget | done | done | done | Ten-program contract: 60,736-byte planning target, 83,264 independent component ceiling, and 71,662 reserve-safe aggregate maximum. The 71,391-byte release is 10,655 above target, leaves 271 aggregate bytes and 5,391 content bytes after one-Catalog/learner/progress/interaction/QR-output targets, with every per-program bound enforced |
+| SC-14.5 | Scratch/free reserve 9–12 KB | done | done | done | Sync preserves 9,300 bytes; SCN1 is capped at 4,096 transient bytes and preflight leaves 5,172 after variable overhead; low-memory tests pass |
+| SC-14.6 | Standard runtime and downloadable-content budget | done | done | done | Ten-program contract: 60,736-byte planning target, 83,264 independent component ceiling, and 71,962 reserve-safe aggregate maximum. The `caacecbbb8b6` release is 71,960 bytes, 11,224 above target, leaves 2 aggregate bytes and 5,122 content bytes after one-Catalog/learner/progress/interaction/QR-output targets, with every per-program bound enforced |
 | SC-14.7 | Lesson target 8 KB, hard ceiling 12 KB | done | done | done | Compiler warning and hard-failure tests pass; relay independently rejects descriptors above 12,288 bytes |
 | SC-14.8 | Check replacement working space; never partial overwrite | done | done | done | Planner preserves old content/reserve, relay publishes manifest last, host model exhausts every mutation-boundary power cut, and Z80 validates then performs backup-first commits |
 

@@ -49,25 +49,16 @@ is maintained in [`cli-test-plan.md`](./cli-test-plan.md).
 
 ### Latest exact-release evidence
 
-On 2026-08-03, release `295065f74710` passed all five named scenarios against
-the owned TI-86 1.4 ROM. The report was generated at
-`/private/tmp/schoolcalc-mame-full-295065f74710/report.json`. It contains 89
-captured LCD frames across:
-
-- `profile-catalog-return` — child EXIT returns to `SCHOOLCALC` Home. The
-  current input contract additionally requires EXIT/CLEAR at Home to remain in
-  the app and only `2nd` + EXIT to return to TI-OS;
-- `catalog-lesson-flow` — Subject → single-option Course/Unit/installed-Lesson
-  collapse → Module (the one installed Catalog wrapper is not rendered) →
-  installed `FIND TEN PERCENT` reader;
-- `profile-switching` — durable learner selection and picker reopen;
-- `my-courses-progress` — selected Soren's `MATH` / `8{0/O}%` projection; and
-- `quiz-result-qr` — a three-question local assessment, queued offline result,
-  fixed Version-5/M QR presenter, and sparse F1 DONE/F5 LATER optical receipt
-  rail.
-
-`{0/O}` is the transcript's deliberate compact-font ambiguity marker, not a
-guess. Exact pixels remain available in the adjacent ASCII/PNG artifacts.
+Release `caacecbbb8b6` has seven retained exact CLI UX cases against the owned
+TI-86 1.4 ROM. The self-contained evidence lives in
+[`testing/cli-cases`](../testing/cli-cases/): each transfers the complete
+23-variable release, launches `ASCHL`, records ordered keypad input, and
+captures the actual 128×64 LCD. It covers first boot, learner-named Progress,
+a seven-page Notes reader through `END`, Math `MARK` receipt extraction,
+History `LATER` pending work, the six-question Pokémon assessment, and a
+nonzero Science route with compact context title, full `REMOVE` rail, and safe
+Cancel. The compact `0` and `O` glyphs are distinct; transcripts must never
+use ambiguity markers for numeric values.
 
 ### Incremental Catalog-transition evidence
 
@@ -77,6 +68,26 @@ On 2026-08-03, release `5055ef0944b1` passed the exact owned-ROM
 forward hierarchy level and returned safely to the lesson list. This is a
 focused regression result, not a claim that the other four named scenarios
 were rerun for that release.
+
+### Inline-assessment evidence
+
+On 2026-08-03, release `56ac632a8a5f` passed the owned-ROM,
+virtual-Graph-Link `pokemon-identification-quiz` scenario. It captures the
+full generic route for Soren: Arts & Culture → auto-collapsed Course/Unit/
+Lesson → Modules → all six locally scored questions → durable offline result
+→ Version-5/M QR presenter. Each normal question shows its compact prompt and
+labelled `A)`–`D)` choices in the same body, with the answer letters on F1–F4;
+there is no intermediate `ANS` state. The 25 captured PNG/ASCII frames and
+report are in the scenario output directory selected for that run.
+
+On 2026-08-03, the exact-release CLI independently completed the six-question
+Pokémon flow for bundle `fc89608f8385`: fresh picker → Soren → Arts & Culture
+→ one-transition Course/Unit/Lesson collapse → Pokémon Identification → Q1–Q6
+→ locally queued result → Version-5/M result QR → `MARK`/`LATER`. The real
+TI-OS/MAME transcript contains every authored prompt and answer—including
+`DRAGONAIR`, `DRAGONITE`, `GYARADOS`, and `BAGON`—and contains no `CONTENT
+UNAVAILABLE` screen. This also proves the text-first CLI decoder order against
+the actual crowded compact assessment framebuffer.
 
 ### Timing is part of the protocol
 
@@ -95,7 +106,7 @@ control on a captured LCD frame. This keeps a wrong-but-different page from
 passing a route solely because its pixels changed; for example, the current
 acceptance flow requires the `FIND TEN PERCENT` reader page, a quiz prompt and
 its choices, the offline-result notice, the Version-5/M QR surface and its
-DONE/LATER rail, and the selected learner's `My Progress` projection. It also proves that EXIT from a
+MARK/LATER rail, and the selected learner's `My Progress` projection. It also proves that EXIT from a
 child Catalog route returns to SchoolCalc Home; ordinary EXIT/CLEAR may not
 leak across that runtime boundary or quit the app, while `2nd` + EXIT is the
 intentional OS-return gesture.
@@ -130,6 +141,23 @@ checksums before presenting its profile picker. The tool can transfer a
 diagnostic subset with `--transfer NAME,NAME`; ordinary release proof must
 omit that flag and transfer the complete manifest.
 
+For a bounded state/renderer investigation, `--debug-memory CAFA:32` appends
+only that final 32-byte TI-86 RAM window as `SCHOOLCALC_MEMORY` to the
+transcript. It is a diagnostic aid, not an alternative to screen-based UX
+evidence.
+
+For an exact QR-output receipt check, follow `MARK` with `SECOND,EXIT` to
+leave SchoolCalc, then append `--debug-receipt`. The CLI requests `DSQOUT`
+over the same virtual Graph Link, verifies the received TI String and `SCO1`
+CRC, and appends its base sequence and marked result indexes. This validates a
+private self-report only; it never treats an optical scan as server upload.
+
+The virtual Graph Link is intentionally paced. If the calling terminal has a
+short command window, add `--detach --output /private/tmp/run.txt`; the CLI
+starts an identical worker in its own process session and writes its stderr
+to `/private/tmp/run.txt.log`. Inspect the transcript only after the worker
+finishes—detachment does not skip, inject, or accelerate any release step.
+
 Screen modes are:
 
 - `hybrid` (default): recognized authored text plus semantic controls, then
@@ -139,14 +167,15 @@ Screen modes are:
 - `pixels`: exact 128×64 `.`/`█` rows.
 
 The semantic transcript sweeps every supported authored font at all legal
-horizontal/vertical offsets and both LCD polarities. It prioritizes known
-design-system primitives such as `❯`, `●`, `○`, soft-key labels, rules, and
-headers before applying Braille fallback. It recognizes the two fixed
-full-frame QR profiles before glyph sweeping, reporting their placement and
-profile rather than inventing text out of QR modules. Ambiguous compact glyphs are emitted
-explicitly (for example `{0/O}`) rather than guessed. This keeps one screen to
-about ten readable terminal rows while retaining a deterministic exact-pixel
-mode for assertions.
+horizontal/vertical offsets and both LCD polarities. It reserves either fixed
+full-frame QR profile first, then recognises authored text, then admits known
+design-system primitives such as `❯`, `●`, and `○` only in the remaining
+pixels before applying Braille fallback. That order prevents a decorative
+shape that happens to match inside a letter from fragmenting an authored word.
+It reports QR placement/profile rather than inventing text out of QR modules.
+Ambiguous compact glyphs are emitted explicitly (for example `{0/O}`) rather
+than guessed. This keeps one screen to about ten readable terminal rows while
+retaining a deterministic exact-pixel mode for assertions.
 
 The required testing ladder is:
 
@@ -174,7 +203,7 @@ emulator fixtures must add:
 - framebuffer snapshots and pixel comparisons for every runtime component;
 - exact SCQR framebuffer comparison against the fixed Version-5/M host oracle
   for minimum, progress, and maximum assessment records, including the sparse
-  DONE/LATER rail; DSQ must remain unchanged while F1 creates or updates only
+  MARK/LATER rail; DSQ must remain unchanged while F1 creates or updates only
   DSQOUT;
 - exact SCNATIVE valid/rejected screens for all six implemented operations,
   with the complete TI variable/settings set unchanged before and after;

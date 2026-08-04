@@ -92,6 +92,7 @@ result_queue_scx_magic: defb "SCX1"
 runtime_error: defb 0
 
 include "crc16-ccitt.asm"
+UI_RENDER_COPIED_TEXT_LENGTH: equ 0
 include "record-reader.asm"
 include "runtime-state.asm"
 

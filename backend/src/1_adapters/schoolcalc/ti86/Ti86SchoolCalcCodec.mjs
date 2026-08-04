@@ -46,7 +46,7 @@ const PROGRESS_RECENT_SCORE_LIMIT = 1;
 const PROGRESS_FOLLOW_UP_LIMIT = 2;
 const PROGRESS_HISTORY_NODE_LIMIT = 12;
 const PROGRESS_HISTORY_TOTAL_NODE_LIMIT = 48;
-const PROGRESS_HISTORY_LABEL_MAX = 12;
+const PROGRESS_HISTORY_LABEL_MAX = 20;
 const PROGRESS_HISTORY_PENDING = 0x80;
 const PROGRESS_HISTORY_KIND = Object.freeze({
   catalog: 1, subject: 2, course: 3, unit: 4, lesson: 5, module: 6,
@@ -89,6 +89,18 @@ const ASSESSMENT_MAX_ITEMS = 48;
 const LEARNING_PROBE_MAX_ITEMS = 12;
 const ASSESSMENT_MAX_CHOICES = 5;
 const ASSESSMENT_CHOICE_MAX_CHARS = 23;
+// Catalog navigation should speak in learner-facing activities even when an
+// authored pack intentionally omits a cosmetic module title. These defaults
+// are adapter presentation, not subject knowledge or domain behavior.
+const TI86_MODULE_FALLBACK_TITLES = Object.freeze({
+  lecture_notes: 'Notes',
+  examples: 'Examples',
+  problems: 'Practice',
+  flashcards: 'Flashcards',
+  learning_probe: 'Check',
+  quiz: 'Quiz',
+  tool: 'Tool',
+});
 const READER_BLOCK_TYPES = new Set([
   'heading', 'prose', 'definition', 'formula', 'worked_example', 'callout',
 ]);
@@ -1444,7 +1456,9 @@ function encodeBinaryDocument(value) {
   for (const entry of strings) {
     const encoded = Buffer.from(entry, 'utf8');
     if (encoded.length > 0xffff) throw new Error('TI-86 binary document string exceeds 65535 bytes');
-    chunks.push(u16Buffer(encoded.length), encoded);
+    // The declared length remains the UTF-8 payload length. A physical NUL
+    // separator gives the constrained Z80 reader an independent copy stop.
+    chunks.push(u16Buffer(encoded.length), encoded, Buffer.from([0]));
   }
   chunks.push(encodeBinaryValue(value, stringIndices, 0));
   return Buffer.concat(chunks);
@@ -1524,6 +1538,9 @@ function decodeBinaryDocument(bytes, label) {
   const seen = new Set();
   for (let index = 0; index < stringCount; index += 1) {
     const value = reader.utf8(reader.u16(`string ${index} length`), `string ${index}`);
+    if (reader.u8(`string ${index} terminator`) !== 0) {
+      throw new Error(`${label} binary document string ${index} lacks its NUL terminator`);
+    }
     if (seen.has(value)) throw new Error(`${label} binary document repeats a string-table value`);
     seen.add(value);
     strings.push(value);
@@ -1681,6 +1698,7 @@ function projectBundle(bundle, artifactId, nativeToolMapper) {
     lesson: {
       lessonId: bundle.lesson.lessonId,
       title: bundle.lesson.title,
+      ...(bundle.lesson.shortTitle !== undefined ? { shortTitle: bundle.lesson.shortTitle } : {}),
       objectives: structuredClone(bundle.lesson.objectives ?? []),
       modules: bundle.lesson.modules.map((module) => projectModule(module, nativeToolMapper)),
     },
@@ -1688,9 +1706,12 @@ function projectBundle(bundle, artifactId, nativeToolMapper) {
 }
 
 function projectModule(module, nativeToolMapper) {
+  const moduleForProjection = module.title === undefined && TI86_MODULE_FALLBACK_TITLES[module.type]
+    ? { ...module, title: TI86_MODULE_FALLBACK_TITLES[module.type] }
+    : module;
   const common = Object.fromEntries(['moduleId', 'type', 'title']
-    .filter((key) => module[key] !== undefined)
-    .map((key) => [key, module[key]]));
+    .filter((key) => moduleForProjection[key] !== undefined)
+    .map((key) => [key, moduleForProjection[key]]));
   if (module.type === 'lecture_notes') {
     return {
       ...common,

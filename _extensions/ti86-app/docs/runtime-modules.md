@@ -214,16 +214,16 @@ target only while it remains below the ceiling and the aggregate release
 budget still preserves the calculator's content and recovery reserve.
 and 32 bytes of calculator-variable overhead for each. This makes the
 ten-program planning target 60,736 bytes. The independent per-program ceilings
-sum to 83,264 bytes, but the enforced reserve-safe aggregate maximum is 71,662
-bytes: no build may consume the calculator's 9,600-byte scratch/free reserve merely
+sum to 83,264 bytes, but the enforced reserve-safe aggregate maximum is 71,962
+bytes: no build may consume the calculator's 9,300-byte scratch/free reserve merely
 because each executable fits independently. At the planning target, 15,406
 bytes remain for downloadable content after the Catalog, result, delivery,
 learner-roster, progress, and interaction target buckets; at the reserve-safe
 aggregate maximum, content capacity is zero.
 
-The current digest-pinned release estimates 71,391 installed bytes. It is
-10,655 bytes above the planning target, leaves 271 bytes before the
-reserve-safe aggregate maximum, and leaves 5,391 bytes for downloadable
+The `caacecbbb8b6` digest-pinned release estimates 71,960 installed bytes. It is
+11,224 bytes above the planning target, leaves 2 bytes before the
+reserve-safe aggregate maximum, and leaves 5,122 bytes for downloadable
 content after the 256-byte interaction-request and 1,024-byte committed-response
 target buffers. Per-program ceilings remain independently enforced.
 

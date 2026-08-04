@@ -25,6 +25,34 @@ describe('TI-86 mixed terminal screen decoder', () => {
     ]));
   });
 
+  it('does not let an accidental inverse match fragment normal compact prose', () => {
+    const screen = Buffer.alloc(1024);
+    'DRAGONAIR'.split('').forEach((character, index) => drawGlyph(screen, 'compact-3x5', character, 2 + (index * 4), 23));
+
+    const decoded = decodeTi86Screen(screen);
+    expect(decoded.text.map(({ x, y, polarity, text }) => ({ x, y, polarity, text }))).toEqual(expect.arrayContaining([
+      { x: 2, y: 23, polarity: 'dark-on-light', text: 'DRAGONAIR' },
+    ]));
+    expect(decoded.text.some(({ y, polarity }) => y === 23 && polarity === 'light-on-dark')).toBe(false);
+  });
+
+  it('keeps every answer in a crowded compact assessment surface ahead of icon heuristics', () => {
+    const screen = Buffer.alloc(1024);
+    drawText(screen, 'compact-3x5', 'WHICH POKEMON EVOLVES', 2, 11);
+    drawText(screen, 'compact-3x5', 'DIRECTLY FROM DRATINI?', 2, 17);
+    for (const [index, choice] of ['DRAGONAIR', 'DRAGONITE', 'GYARADOS', 'BAGON'].entries()) {
+      drawText(screen, 'compact-3x5', `${String.fromCharCode(65 + index)})`, 2, 23 + (index * 6));
+      drawText(screen, 'compact-3x5', choice, 12, 23 + (index * 6));
+    }
+
+    const decoded = decodeTi86Screen(screen);
+    expect(decoded.text.map(({ text }) => text)).toEqual(expect.arrayContaining([
+      'WHICH POKEMON EVOLVES', 'DIRECTLY FROM DRATINI?',
+      'DRAGONAIR', 'DRAGONITE', 'GYARADOS', 'BAGON',
+    ]));
+    expect(decoded.symbols).toEqual([]);
+  });
+
   it('emits a chevron as a semantic symbol and leaves unknown pixels for Braille', () => {
     const screen = Buffer.alloc(1024);
     drawGlyph(screen, 'compact-3x5', 'A', 7, 12);
@@ -86,6 +114,11 @@ function drawGlyph(screen, fontId, character, x, y, set = true) {
       if (rows[offsetY] & (0x80 >>> offsetX)) setPixel(screen, x + offsetX, y + offsetY, set);
     }
   }
+}
+
+function drawText(screen, fontId, text, x, y) {
+  const font = assets.fonts.get(fontId);
+  [...text].forEach((character, index) => drawGlyph(screen, fontId, character, x + (index * font.advanceX), y));
 }
 
 function fill(screen, x, y, width, height) {
