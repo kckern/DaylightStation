@@ -48,10 +48,11 @@ import {
 } from '#adapters/schoolcalc/ti86/Ti86SurfaceCertification.mjs';
 import { GetSurfaceCertification } from '#apps/school/surfaces/GetSurfaceCertification.mjs';
 import { SurfaceRegistry } from '#apps/school/surfaces/SurfaceRegistry.mjs';
-import { writeManifest } from '#apps/school/surfaces/certificationManifest.mjs';
+import { sortKeys, writeManifest } from '#apps/school/surfaces/certificationManifest.mjs';
 import {
   listCatalogLessons, validateLearningCatalog,
 } from '#domains/school/catalog/index.mjs';
+import { isRegisteredCapability } from '#domains/school/surfaces/index.mjs';
 import { listYamlFiles, loadYaml } from '#system/utils/FileIO.mjs';
 
 const EXIT_OK = 0;
@@ -94,11 +95,15 @@ Options:
   --file <path>                      certify one catalog or question-bank file (query mode)
   --json                             emit certification rows as sorted, byte-stable JSON lines
   --write-manifest                   write the certification manifest to <content-root>/certification-manifest.json
+                                     (gate mode only — usage error otherwise)
   --help, -h                         show this message
 
 Directory lists are comma-separated; relative entries resolve under --data-dir.
 Gate mode (no --surface/--address/--file): exit 1 on any corpus validation error, nothing certified.
 Query mode: exit 0 whenever certification ran; exit 1 only for schema/reference errors in scope.
+
+Exit codes: 0 ok (including gate mode's "certified nowhere" warnings), 1 certification/validation
+failure, 2 usage error (bad flags, e.g. --write-manifest outside gate mode or --surface with no value).
 `;
 
 /** Tiny argv scan: like `_argv.mjs` but supports a repeatable `--surface`. */
@@ -106,6 +111,7 @@ function parseCertifyArgv(argv) {
   const flags = {};
   const surfaces = [];
   const unknown = [];
+  const usageErrors = [];
   let help = false;
   for (let i = 0; i < argv.length; i += 1) {
     const tok = argv[i];
@@ -118,11 +124,19 @@ function parseCertifyArgv(argv) {
       const next = argv[i + 1];
       if (next !== undefined && !next.startsWith('--')) { value = next; i += 1; }
     }
-    if (key === 'surface') { surfaces.push(value); continue; }
+    if (key === 'surface') {
+      // A bare `--surface` (no value, or immediately followed by another
+      // flag) leaves `value` as the boolean `true` sentinel above; pushing
+      // that into `surfaces` used to surface as a baffling "unknown surface
+      // 'true'" instead of a usage error (F13, 2026-08-04 acceptance audit).
+      if (value === true) { usageErrors.push('--surface needs a value'); continue; }
+      surfaces.push(value);
+      continue;
+    }
     flags[key] = value;
   }
   return {
-    flags, surfaces, unknown, help,
+    flags, surfaces, unknown, usageErrors, help,
   };
 }
 
@@ -285,6 +299,37 @@ function validateAssetReferences({ documentDirectories, bankDirectories, assetsD
   return errors;
 }
 
+/**
+ * Every declared lesson `requiredCapabilities` ID must be a real, registered
+ * capability (spec §3 / §7.1) — either one of `KNOWN_CAPABILITY_IDS` or a
+ * custom capability contributed by the module registry (same list handed to
+ * `YamlSurfaceProfileRepository` for profile validation). A
+ * pattern-valid-but-unregistered ID (a typo, or a capability that was never
+ * wired up on any port) would otherwise pass publication silently and only
+ * ever surface later as a quiet "certified nowhere" warning; treated here as
+ * a hard reference error alongside asset-existence checks (F7, 2026-08-04
+ * acceptance audit).
+ */
+async function validateRequiredCapabilityReferences({ catalogs, customCapabilities }) {
+  const errors = [];
+  const summaries = await catalogs.listCatalogs();
+  // eslint-disable-next-line no-restricted-syntax
+  for (const { catalogId } of summaries) {
+    // eslint-disable-next-line no-await-in-loop
+    const raw = await catalogs.getCatalog(catalogId);
+    const { catalog, errors: catalogErrors } = validateLearningCatalog(raw);
+    if (catalogErrors.length) continue; // caught by the schema validation pass already
+    listCatalogLessons(catalog).forEach(({ address, lesson }) => {
+      (lesson.requiredCapabilities ?? []).forEach((id) => {
+        if (!isRegisteredCapability(id, { customCapabilities })) {
+          errors.push(`lesson '${address}': requiredCapabilities references unregistered capability '${id}'`);
+        }
+      });
+    });
+  }
+  return errors;
+}
+
 function buildCorpus(paths) {
   const catalogs = new YamlLearningCatalogRepository({ directories: paths.catalogDirectories });
   const content = new YamlLearningContentRepository({
@@ -383,7 +428,11 @@ async function validateCorpusScope({ corpus, paths }) {
     bankDirectories: paths.bankDirectories,
     assetsDirectory: paths.assetsDirectory,
   });
-  return [...flattenValidationErrors(validation), ...assetErrors].sort();
+  const capabilityErrors = await validateRequiredCapabilityReferences({
+    catalogs: corpus.catalogs,
+    customCapabilities: corpus.moduleRegistry.list().map((definition) => definition.capability),
+  });
+  return [...flattenValidationErrors(validation), ...assetErrors, ...capabilityErrors].sort();
 }
 
 function maybeWriteManifest({ flags, rows, manifestPath, fs: fsDep = fs }) {
@@ -553,7 +602,7 @@ async function runQueryMode({ paths, flags, surfaces, deps }) {
  */
 export async function runCertify(argv = [], deps = {}) {
   const {
-    flags, surfaces, unknown, help,
+    flags, surfaces, unknown, usageErrors, help,
   } = parseCertifyArgv(argv);
   if (help) {
     return {
@@ -563,13 +612,13 @@ export async function runCertify(argv = [], deps = {}) {
       },
     };
   }
-  if (unknown.length) {
+  if (unknown.length || usageErrors.length) {
     return {
       exitCode: EXIT_USAGE,
       report: {
         ok: false,
         mode: 'usage',
-        errors: unknown.map((token) => `Unknown option: --${token}`),
+        errors: [...unknown.map((token) => `Unknown option: --${token}`), ...usageErrors],
         warnings: [],
         rows: [],
         manifestWritten: null,
@@ -590,6 +639,26 @@ export async function runCertify(argv = [], deps = {}) {
   }
 
   const isQueryMode = surfaces.length > 0 || Boolean(flags.address) || Boolean(flags.file);
+  // --write-manifest persists the FULL corpus manifest (gate mode's
+  // certifyTargets covers every lesson/bank). Query mode certifies only the
+  // requested scope, so honoring --write-manifest there would silently
+  // clobber the full manifest with a partial one (F8, 2026-08-04 acceptance
+  // audit). Reject before either mode runs — the manifest file must stay
+  // untouched.
+  if (isQueryMode && flags['write-manifest']) {
+    return {
+      exitCode: EXIT_USAGE,
+      report: {
+        ok: false,
+        mode: 'usage',
+        errors: ['--write-manifest is only valid in gate mode (no --surface/--address/--file present)'],
+        warnings: [],
+        rows: [],
+        manifestWritten: null,
+      },
+    };
+  }
+
   const report = isQueryMode
     ? await runQueryMode({
       paths, flags, surfaces, deps,
@@ -601,7 +670,11 @@ export async function runCertify(argv = [], deps = {}) {
 
 export function formatCertifyReport(report, { json = false } = {}) {
   if (json) {
-    return report.rows.map((row) => `${JSON.stringify(row)}\n`).join('');
+    // Route each row through the manifest's canonical (recursively
+    // sorted-key) serializer so "--json ... sorted, byte-stable JSON lines"
+    // is literally true per line, not just true of row *order* (F13,
+    // 2026-08-04 acceptance audit).
+    return report.rows.map((row) => `${JSON.stringify(sortKeys(row))}\n`).join('');
   }
   const lines = [`School certification (${report.mode} mode)`];
   if (report.errors.length) {
