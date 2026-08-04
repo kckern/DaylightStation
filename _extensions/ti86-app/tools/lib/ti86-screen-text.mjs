@@ -23,12 +23,18 @@ export function decodeTi86Screen(pixels, { assets = loadSchoolCalcUiAssets(), st
   // its fixed finder geometry first avoids mistaking data modules for stray
   // font glyphs (for example a faux "2 A E" in a result QR transcript).
   const qr = detectQrPresentation(bitmap);
-  const symbols = qr ? [qr] : selectSemanticSymbols(findSemanticCandidates(bitmap, assets));
+  // Prose is the primary semantic signal.  A tiny icon or availability
+  // template can happen to match in a letter's whitespace; claiming it first
+  // fragments the otherwise exact text run (for example "DRAGONAIR" could
+  // become "AIR").  QR is the deliberate exception: its fixed module field
+  // owns that rectangle before any text sweep begins.
+  const reserved = qr ? [qr] : [];
   // A QR owns its module rectangle, not the whole LCD. Continue the glyph
   // sweep around that rectangle so a result presenter can expose sparse rail
   // labels such as DONE/LATER without decoding QR modules as text.
   const candidates = findGlyphCandidates(bitmap, assets);
-  const text = selectTextRuns(candidates, symbols);
+  const text = selectTextRuns(candidates, reserved);
+  const symbols = qr ? reserved : selectSemanticSymbols(findSemanticCandidates(bitmap, assets), text);
   const consumed = new Uint8Array(TI86_SCREEN_PIXELS);
   for (const symbol of symbols) {
     for (const pixel of symbol.inkPixels) consumed[pixel] = 1;
@@ -108,10 +114,19 @@ function findGlyphCandidates(bitmap, assets) {
         // Inverse text is used for title/action/selection labels, all of
         // which are alphanumeric.  Sparse inverse punctuation can otherwise
         // match the edge of a solid selection band (for example `_`).
-        if (polarity === 'light-on-dark' && !/^[A-Za-z0-9]$/.test(template.character)) continue;
+        // A compact inverse question counter (Q1/3) and the explicit F1=A
+        // rail are semantic text, not decorative chrome. Their punctuation
+        // is safe once the dark-backdrop check below has confirmed a real
+        // header or function cell.
+        if (polarity === 'light-on-dark' && !/^[A-Za-z0-9/=]$/.test(template.character)) continue;
         for (let y = 0; y <= TI86_SCREEN_HEIGHT - template.height; y += 1) {
           for (let x = 0; x <= TI86_SCREEN_WIDTH - template.width; x += 1) {
             if (matchesTemplate(bitmap, x, y, template, polarity)) {
+              // An inverse glyph belongs on a dark header, selection, or
+              // function rail. Without a dark perimeter, a few normal glyph
+              // strokes can accidentally satisfy the inverse template and
+              // then steal pixels from the real text run.
+              if (polarity === 'light-on-dark' && !hasInverseBackdrop(bitmap, x, y, template)) continue;
               candidates.push({
                 font: font.id,
                 x,
@@ -261,8 +276,13 @@ function sweepTemplate(bitmap, template, details) {
   return matches;
 }
 
-function selectSemanticSymbols(candidates) {
+function selectSemanticSymbols(candidates, preclaimedText = []) {
   const claimed = new Uint8Array(TI86_SCREEN_PIXELS);
+  for (const run of preclaimedText) {
+    for (const glyph of run.glyphs) {
+      for (const pixel of glyph.footprint) claimed[pixel] = 1;
+    }
+  }
   const selected = [];
   candidates.sort((left, right) => right.priority - left.priority || left.y - right.y || left.x - right.x);
   for (const candidate of candidates) {
@@ -327,6 +347,18 @@ function matchesTemplate(bitmap, x, y, template, polarity) {
   return true;
 }
 
+function hasInverseBackdrop(bitmap, x, y, template) {
+  const middleX = x + Math.floor(template.width / 2);
+  const middleY = y + Math.floor(template.height / 2);
+  const perimeter = [
+    [x - 1, middleY], [x + template.width, middleY],
+    [middleX, y - 1], [middleX, y + template.height],
+  ].filter(([sampleX, sampleY]) => (
+    sampleX >= 0 && sampleX < TI86_SCREEN_WIDTH && sampleY >= 0 && sampleY < TI86_SCREEN_HEIGHT
+  ));
+  return perimeter.length > 0 && perimeter.every(([sampleX, sampleY]) => bitmap[indexOf(sampleX, sampleY)] === 1);
+}
+
 function selectTextRuns(candidates, preclaimedSymbols = []) {
   const byPosition = new Map();
   for (const candidate of candidates) {
@@ -350,10 +382,12 @@ function selectTextRuns(candidates, preclaimedSymbols = []) {
   ));
   for (const run of runs) {
     // Punctuation-only runs are typically an edge of a panel/rule rather than
-    // prose.  Likewise an isolated inverse glyph is too easy to manufacture
-    // from a selection-band edge; real inverse labels are always multi-glyph.
+    // prose. An isolated inverse glyph is normally too easy to manufacture
+    // from a selection-band edge, except in the fixed function-key rail. A
+    // single A–E there is a real answer affordance and must remain visible in
+    // the text contract so emulator review can verify the physical mapping.
     if (!/[A-Za-z0-9]/.test(run.text)) continue;
-    if (run.polarity === 'light-on-dark' && run.glyphs.length < 2) continue;
+    if (run.polarity === 'light-on-dark' && run.glyphs.length < 2 && run.y < 56) continue;
     if (run.glyphs.some((glyph) => glyph.footprint.some((pixel) => claimed[pixel]))) continue;
     for (const glyph of run.glyphs) for (const pixel of glyph.footprint) claimed[pixel] = 1;
     selected.push(run);
@@ -397,15 +431,6 @@ function visibleCharacter(glyph) {
 function visibleRunText(glyphs, spacesBefore) {
   return glyphs.map((glyph, index) => {
     const prefix = index === 0 ? '' : ' '.repeat(spacesBefore[index]);
-    // The compact O and zero bitmap are physically identical.  Retain an
-    // exact alternate in an all-numeric run, but prefer O inside a word so
-    // transcripts read SCHOOLCALC rather than SCH00LCALC.
-    if (glyph.alternatives.includes('O') && glyph.alternatives.includes('0')) {
-      const adjacentLetter = [glyphs[index - 1], glyphs[index + 1]].some((neighbor) => (
-        neighbor?.alternatives.some((character) => /^[A-Z]$/.test(character))
-      ));
-      return `${prefix}${adjacentLetter ? 'O' : '{0/O}'}`;
-    }
     return `${prefix}${visibleCharacter(glyph)}`;
   }).join('');
 }

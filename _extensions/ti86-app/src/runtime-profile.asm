@@ -98,7 +98,7 @@ profile_wait:
         cp SC_SCAN_F1
         jp z,profile_select_focus
         cp SC_SCAN_F2
-        jp z,progress_open_view
+        jp z,profile_open_progress
         cp SC_SCAN_F5
         jp z,profile_select_guest
         jp profile_wait
@@ -122,6 +122,14 @@ profile_cancel_store:
         call scstate_save
         jp c,profile_render_state_error
         ret
+
+; First boot is an identity decision, not a Guest session. Keep Stats absent
+; until a learner deliberately selects a name (or Guest).
+profile_open_progress:
+        ld a,(scstate_record + SCSTATE_FLAGS_OFFSET + 1)
+        and SCSTATE_FLAG_LEARNER_SELECTED_HIGH
+        jp z,profile_wait
+        jp progress_open_view
 
 profile_move_down:
         ld a,(profile_focus)
@@ -245,6 +253,9 @@ profile_focus_selected:
         xor a
         ld (profile_focus),a
         ld (profile_scroll),a
+        ld a,(scstate_record + SCSTATE_FLAGS_OFFSET + 1)
+        and SCSTATE_FLAG_LEARNER_SELECTED_HIGH
+        ret z
         ld hl,(scstate_record + SCSTATE_SELECTED_LEARNER_OFFSET)
         ld a,h
         or l
@@ -286,6 +297,11 @@ profile_copy_selected_named:
         ret c
         ld a,(profile_found_index)
         call profile_item_at_index
+        ret c
+        ; profile_item_at_index leaves HL just after its bounded copied label.
+        ; Every header/progress caller needs the label's true first pixel, not
+        ; that terminator-adjacent cursor.
+        ld hl,profile_label
         ret
 
 ; ---------------------------------------------------------------------------
@@ -886,7 +902,7 @@ progress_history_score_valid:
         ret c
         or a
         jp z,progress_validation_fail
-        cp 13
+        cp 21
         jp nc,progress_validation_fail
         ld b,a
         inc de
@@ -1283,6 +1299,10 @@ profile_render_header:
         cp PROFILE_STAGE_INVALID
         ld hl,profile_context_sync
         jr z,profile_header_context_ready
+        ld a,(scstate_record + SCSTATE_FLAGS_OFFSET + 1)
+        and SCSTATE_FLAG_LEARNER_SELECTED_HIGH
+        ld hl,profile_context_choose
+        jr z,profile_header_context_ready
         call profile_copy_selected_label
         jr nc,profile_header_context_ready
         ld hl,profile_context_user
@@ -1343,6 +1363,12 @@ profile_render_guest_item:
         ld hl,profile_guest
 profile_render_item_ready:
         ld (profile_render_label),hl
+        ; Key zero names Guest, but it is only selected after an explicit
+        ; first-boot choice. Do not draw a false active-state marker before
+        ; that commitment.
+        ld a,(scstate_record + SCSTATE_FLAGS_OFFSET + 1)
+        and SCSTATE_FLAG_LEARNER_SELECTED_HIGH
+        jr z,profile_render_label_ready
         ld hl,(profile_target_key)
         ld de,(scstate_record + SCSTATE_SELECTED_LEARNER_OFFSET)
         or a
@@ -1470,9 +1496,13 @@ profile_render_softkeys:
         ld c,57
         call ui_draw_text
         ld hl,profile_progress_label
+        ld a,(scstate_record + SCSTATE_FLAGS_OFFSET + 1)
+        and SCSTATE_FLAG_LEARNER_SELECTED_HIGH
+        jr z,profile_softkeys_ready
         ld b,31
         ld c,57
         call ui_draw_text
+profile_softkeys_ready:
         jp ui_mode_set
 
 ; ---------------------------------------------------------------------------
@@ -1499,7 +1529,17 @@ progress_canonical_ready:
         ld (profile_target_key),hl
         call progress_find_key
         jp c,progress_render_unavailable
+        ; The progress projection is currently open. Reopen the roster only
+        ; long enough to copy the visible learner label, then restore the
+        ; projection before any history traversal below.
+        call profile_open_canonical
+        jp c,progress_render_unavailable
         call profile_copy_selected_label
+        jp c,progress_render_unavailable
+        ld de,progress_learner_label
+        ld bc,21
+        ldir
+        call progress_open_canonical
         jp c,progress_render_unavailable
         xor a
         ld (progress_history_focus),a
@@ -1507,52 +1547,52 @@ progress_canonical_ready:
 progress_render:
         call _clrLCD
         ld hl,progress_title
-        ld de,profile_label
+        ld de,progress_learner_label
         call profile_render_message_header
-        call ui_mode_set
         call ui_select_compact
         call progress_load_history_focus
         jr c,progress_render_overall
 
         call ui_select_compact
-        ld hl,profile_label
+        ld hl,progress_recent_label
         ld b,2
         ld c,10
         call ui_draw_text
         call ui_select_compact
-        ld hl,progress_type_label
-        ld b,2
-        ld c,19
+        ld hl,profile_label
+        ld b,30
+        ld c,10
         call ui_draw_text
-        ld a,(progress_history_kind)
-        call progress_set_kind_char
-        ld b,24
-        ld c,19
+        ld hl,progress_score_label
+        ld b,2
+        ld c,21
         call ui_draw_text
         ld a,(progress_history_score)
         call progress_format_percent
-        ld c,19
+        ld c,21
         call progress_draw_value_right
 
-        ld hl,progress_activities_short
+        ld hl,progress_activities_label
         ld b,2
-        ld c,26
-        call ui_draw_text
-        ld hl,(progress_history_activities)
-        call progress_format_small
-        ld b,25
-        ld c,26
-        call ui_draw_text
-        ld hl,progress_completed_short
-        ld b,58
-        ld c,26
+        ld c,31
         call ui_draw_text
         ld hl,(progress_history_completed)
         call progress_format_small
-        ld b,88
-        ld c,26
+        ld b,30
+        ld c,31
         call ui_draw_text
-        call progress_render_history_overview
+        ld hl,progress_completed_label
+        ld b,70
+        ld c,31
+        call ui_draw_text
+        ld hl,progress_queue_zero
+        ld b,96
+        ld c,31
+        call ui_draw_text
+        ld hl,progress_sync_label
+        ld b,2
+        ld c,41
+        call ui_draw_text
         jr progress_render_finish
 
 progress_render_overall:
@@ -1593,6 +1633,8 @@ progress_wait:
         call sc_input_wait
         cp SC_SCAN_F1
         jp z,progress_begin_followup
+        cp SC_SCAN_F2
+        jp z,progress_return_profiles
         cp SC_SCAN_F5
         jp z,progress_open_picker
         cp SC_SCAN_LEFT
@@ -1954,6 +1996,11 @@ progress_render_separator:
         ld a,(scstate_record + SCSTATE_VIEW_OFFSET)
         cp PROFILE_VIEW_USER
         jr nz,progress_separator_tutor
+        ld b,26
+        ld c,56
+        ld d,25
+        ld e,8
+        call ui_fill_rect
         ld b,102
         ld c,56
         ld d,26
@@ -1981,6 +2028,10 @@ progress_separator_labels:
         ret nz
         call ui_mode_clear
         call ui_select_compact
+        ld hl,progress_back_label
+        ld b,30
+        ld c,57
+        call ui_draw_text
         ld hl,progress_switch_label
         ld b,104
         ld c,57
@@ -2381,6 +2432,7 @@ profile_render_index:      defb 0
 profile_render_y:          defb 0
 profile_render_label:      defw 0
 profile_label:             defs 21,0
+progress_learner_label:    defs 21,0
 profile_copy_length:       defw 0
 profile_copy_dest_addr:    defw 0
 profile_copy_dest_page:    defb 0
@@ -2436,6 +2488,7 @@ profile_identity_schema:   defb "school.calc.device-identity/v1",0
 
 profile_title:             defb "Who is studying?",0
 profile_context_user:      defb "USER",0
+profile_context_choose:    defb "CHOOSE",0
 profile_context_sync:      defb "SYNC!",0
 profile_context_stop:      defb "STOP",0
 profile_guest:             defb "Guest",0
@@ -2445,49 +2498,53 @@ profile_select_label:      defb "SELECT",0
 profile_guest_label:       defb "GUEST",0
 profile_progress_label:    defb "PROG",0
 profile_ok_label:          defb "OK",0
-profile_locked_title:      defb "Profile locked",0
-profile_locked_line_1:     defb "Work is still active.",0
-profile_locked_line_2:     defb "Finish or save it",0
-profile_locked_line_3:     defb "before switching.",0
+profile_locked_title:      defb "LOCKED",0
+profile_locked_line_1:     defb "ACTIVE WORK.",0
+profile_locked_line_2:     defb "FINISH OR SAVE.",0
+profile_locked_line_3:     defb "BEFORE SWITCH.",0
 ; Error strings are intentionally compact: SCPROF shares an 8 KiB TI-OS child
 ; execution window with every other runtime. The stable title/detail/action
 ; structure remains clear without spending lesson-content memory on prose.
-profile_error_title:       defb "PROFILE ERROR",0
-profile_error_line_1:      defb "DATA IS SAFE.",0
+profile_error_title:       defb "ERROR",0
+profile_error_line_1:      defb "DATA SAFE.",0
 profile_error_line_3:      defb "SYNC / RETRY.",0
-profile_error_state:       defb "STATE ERROR.",0
-profile_error_identity:    defb "NO DEVICE ID.",0
-profile_error_roster:      defb "ROSTER ERROR.",0
-profile_error_roster_length:defb "ROSTER LENGTH.",0
-profile_error_roster_device:defb "ROSTER DEVICE.",0
+profile_error_state:       defb "STATE.",0
+profile_error_identity:    defb "NO DEVICE.",0
+profile_error_roster:      defb "ROSTER.",0
+profile_error_roster_length:defb "ROSTER LEN.",0
+profile_error_roster_device:defb "ROSTER ID.",0
 profile_error_roster_generation:defb "ROSTER KEY.",0
 profile_error_roster_items:defb "ROSTER ITEM.",0
 profile_error_roster_end: defb "ROSTER END.",0
-profile_error_runtime:     defb "RUNTIME ERROR.",0
-profile_error_runtime_header:defb "RUNTIME HEADER.",0
+profile_error_runtime:     defb "RUNTIME.",0
+profile_error_runtime_header:defb "RUNTIME HDR.",0
 profile_error_runtime_magic:defb "RUNTIME MAGIC.",0
-profile_error_runtime_version:defb "RUNTIME VERSION.",0
-profile_error_runtime_bounds:defb "RUNTIME BOUNDS.",0
+profile_error_runtime_version:defb "RUNTIME VER.",0
+profile_error_runtime_bounds:defb "RUNTIME SIZE.",0
 
 progress_title:            defb "My Progress",0
+progress_recent_label:     defb "RECENT",0
 progress_score_label:      defb "Score",0
-progress_activities_label: defb "Activity",0
-progress_completed_label:  defb "Done",0
+progress_activities_label: defb "DONE",0
+progress_completed_label:  defb "QUEUED",0
 progress_activities_short: defb "A",0
 progress_completed_short:  defb "D",0
 progress_type_label:       defb "Type",0
 progress_tutor_label:      defb "TUTOR",0
+progress_back_label:       defb "BACK",0
 progress_switch_label:     defb "SWITCH",0
+progress_sync_label:       defb "CABLE: OFFLINE",0
+progress_queue_zero:       defb "0",0
 progress_none_value:       defb "--",0
 progress_large_value:      defb "999+",0
 progress_pending_char:     defb "!",0
 progress_kind_chars:       defb "#SCULM"
-progress_guest_line_1:     defb "Guest work is local.",0
-progress_guest_line_2:     defb "Progress is not saved.",0
-progress_unavailable_line_1:defb "No progress snapshot.",0
-progress_unavailable_line_2:defb "Connect and sync.",0
-progress_invalid_line_1:   defb "Progress is unreadable.",0
-progress_invalid_line_2:   defb "Old data stays safe.",0
+progress_guest_line_1:     defb "GUEST: LOCAL.",0
+progress_guest_line_2:     defb "NOT SAVED.",0
+progress_unavailable_line_1:defb "NO PROGRESS.",0
+progress_unavailable_line_2:defb "CABLE OFFLINE.",0
+progress_invalid_line_1:   defb "PROGRESS ERROR.",0
+progress_invalid_line_2:   defb "DATA SAFE.",0
 
 profile_identity_name:     defb 0x0C,4,"DSID",0,0,0,0
 profile_stage_name:        defb 0x0C,8,"DSUSRNEW"
@@ -2496,6 +2553,7 @@ progress_stage_name:       defb 0x0C,8,"DSPRGNEW"
 progress_canonical_name:   defb 0x0C,6,"DSPROG",0,0
 
 include "crc16-ccitt.asm"
+UI_RENDER_COPIED_TEXT_LENGTH: equ 0
 include "record-reader.asm"
 include "runtime-state.asm"
 UI_RENDER_PROFILE_FULL: equ 0

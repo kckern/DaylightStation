@@ -52,21 +52,59 @@ describe('SCLEARN assessment, flashcard, and offline-queue contract', () => {
     expect(ASSESSMENT).toContain('assessment_key_correct_choice:  defb "correctChoice",0');
   });
 
-  it('keeps prompt, answer affordance, and question return legible on the TI-86', () => {
+  it('keeps normal prompts and their labelled answer choices together on the TI-86', () => {
     expect(ASSESSMENT).toMatch(
-      /assessment_render_prompt:[\s\S]{0,900}assessment_prompt_all_choices_fit_softkeys[\s\S]{0,180}assessment_render_direct_choice_softkeys[\s\S]{0,180}assessment_direct_choice_wait/,
+      /assessment_render_prompt:[\s\S]{0,1500}assessment_inline_choices_fit[\s\S]{0,160}assessment_render_inline_choices[\s\S]{0,600}assessment_inline_two_column_fit/,
+    );
+    expect(ASSESSMENT).toContain('assessment_render_inline_choices:');
+    expect(ASSESSMENT).toContain('assessment_render_inline_two_columns:');
+    expect(ASSESSMENT).toMatch(
+      /assessment_render_prompt:[\s\S]{0,2000}assessment_inline_two_column_fit[\s\S]{0,160}assessment_render_inline_two_columns/,
     );
     expect(ASSESSMENT).toMatch(
-      /assessment_prompt_all_choices_fit_softkeys:[\s\S]{0,760}assessment_choices_fit_softkeys/,
+      /assessment_inline_two_column_fit:[\s\S]{0,1600}ld b,13[\s\S]{0,220}assessment_inline_two_columns_width_chars/,
     );
+    expect(ASSESSMENT).toContain('assessment_inline_label_x:      defb 2,65');
+    expect(ASSESSMENT).toContain('assessment_inline_text_x:       defb 12,75');
     expect(ASSESSMENT).toMatch(
-      /assessment_render_prompt_softkeys:[\s\S]{0,620}assessment_answers_label[\s\S]{0,120}assessment_more_label/,
+      /assessment_inline_choice_render_loop:[\s\S]{0,900}ld a,\(assessment_inline_columns\)\s+dec a\s+ld b,a\s+ld a,\(assessment_render_index\)\s+and b/,
     );
+    expect(ASSESSMENT).toContain('assessment_inline_choice_wait:');
+    expect(ASSESSMENT).toMatch(
+      /assessment_inline_choices_fit:[\s\S]{0,900}add a,6/,
+    );
+    const inlineGrid = ASSESSMENT.slice(
+      ASSESSMENT.indexOf('assessment_inline_choice_render_loop:'),
+      ASSESSMENT.indexOf('assessment_inline_choices_rendered:'),
+    );
+    expect(inlineGrid).toContain('assessment_inline_choice_advance_y:');
+    const inlineAdvance = inlineGrid.slice(inlineGrid.indexOf('assessment_inline_choice_advance_y:'));
+    expect(inlineAdvance).toContain('add a,6');
+    expect(ASSESSMENT).toContain('ld a,(ui_wrap_y)');
+    expect(ASSESSMENT).toContain('cp 55');
     expect(ASSESSMENT).toMatch(
       /assessment_return_to_prompt:[\s\S]{0,260}assessment_prompt_page_count[\s\S]{0,180}RUNTIME_SCL_SCROLL_OFFSET/,
     );
     expect(ASSESSMENT).toContain('assessment_question_hint:       defb "LEFT: Q",0');
-    expect(ASSESSMENT).toContain('assessment_answers_label:       defb "ANS",0');
+    expect(ASSESSMENT).toContain("assessment_inline_prefix:       defs 3,0");
+    const acknowledgement = ASSESSMENT.slice(
+      ASSESSMENT.indexOf('assessment_render_choice_ack:'),
+      ASSESSMENT.indexOf('assessment_commit_choice:'),
+    );
+    expect(acknowledgement).toMatch(/call ui_mode_clear\s+call ui_fill_rect\s+call ui_mode_set/);
+    expect(acknowledgement).toMatch(/ld a,\(assessment_ack_index\)\s+ld e,a[\s\S]{0,260}assessment_softkey_ack_x/);
+    expect(ASSESSMENT).not.toContain('ld e,(assessment_ack_index)');
+    const copiedChoice = inlineGrid.lastIndexOf('call sc_copy_node_string');
+    const preservedPointer = inlineGrid.indexOf('push hl', copiedChoice);
+    const columnLookup = inlineGrid.indexOf('assessment_inline_text_x', preservedPointer);
+    const restoredPointer = inlineGrid.indexOf('pop hl', columnLookup);
+    const renderedChoice = inlineGrid.indexOf('call ui_draw_text_clipped', restoredPointer);
+    expect([copiedChoice, preservedPointer, columnLookup, restoredPointer, renderedChoice])
+      .toEqual([...new Set([copiedChoice, preservedPointer, columnLookup, restoredPointer, renderedChoice])]);
+    expect(copiedChoice).toBeLessThan(preservedPointer);
+    expect(preservedPointer).toBeLessThan(columnLookup);
+    expect(columnLookup).toBeLessThan(restoredPointer);
+    expect(restoredPointer).toBeLessThan(renderedChoice);
   });
 
   it('builds the same packed ordered-choice SCR1 bytes as the backend codec', () => {

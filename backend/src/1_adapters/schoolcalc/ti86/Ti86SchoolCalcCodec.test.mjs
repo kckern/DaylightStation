@@ -36,6 +36,7 @@ const bundle = {
   lesson: {
     lessonId: 'compound-growth',
     title: 'Compound growth',
+    shortTitle: 'Growth',
     objectives: ['Compare growth'],
     modules: [{
       moduleId: 'quiz',
@@ -237,7 +238,7 @@ describe('Ti86SchoolCalcCodec', () => {
             activityCount: 4, completionCount: 3, scorePercent: 80,
           },
           {
-            parentIndex: 0, kind: 'course', label: 'fractions co', pending: true,
+            parentIndex: 0, kind: 'course', label: 'fractions course', pending: true,
             activityCount: 2, completionCount: 1, scorePercent: 75,
           },
         ] },
@@ -416,6 +417,7 @@ describe('Ti86SchoolCalcCodec', () => {
     expect(first.variableName).toMatch(/^DP[A-Z2-7]{6}$/);
     expect(first.variableName).toBe(`DP${first.artifactId.slice(-10, -4)}`);
     const payload = decodeTi86Envelope(first.bytes, 'SCP1');
+    expect(payload.lesson).toMatchObject({ title: 'Compound growth', shortTitle: 'Growth' });
     const item = payload.lesson.modules[0].bank.items[0];
     expect(item.promptPages).toEqual(['Which grows?']);
     expect(item.choices).toEqual(['Principal', 'Principal plus interest']);
@@ -424,7 +426,7 @@ describe('Ti86SchoolCalcCodec', () => {
     expect(item.correctChoice).toBe(2);
     expect(first.bytes[7]).not.toBe('{'.charCodeAt(0));
     // Golden digest catches accidental changes to the on-calculator byte contract.
-    expect(first.byteDigest).toBe('b1197821d4540e63e217284066a7fd13008a491284f1ac297f7501682b71ef3a');
+    expect(first.byteDigest).toBe('ed289e1d86dc70e9eb6c92e9113564a536c0c45fe069ef6757e386df69333567');
   });
 
   it('projects reader content into complete bounded pages without truncation', () => {

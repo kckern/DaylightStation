@@ -50,6 +50,18 @@ stored only in private, non-relayed `DSQOUT`.
 `SCSYNC` owns the bounded port-7/SCF1 exchange and returns staged records to
 the shell's existing fail-closed commit path; it is code-release support, not
 downloaded lesson content.
+
+For `SCI1`, `SCC1`, and `SCP1`, the adapter's typed-document string table is
+deterministic: each unique UTF-8 string is stored as `u16 payloadLength`, its
+payload, then one physical NUL. The length remains authoritative for decoder
+validation; the NUL is an independent bounded copy stop for the Z80 renderer.
+Both the host decoder and the calculator reader reject a malformed table rather
+than continuing into the value tree.
+
+When an author supplies `shortTitle`, the generic Catalog uses it only for a
+narrow one-line breadcrumb; lists and non-constrained surfaces retain the full
+`title`. That is an authored display contract, not a subject-specific adapter
+rule or silent clipping policy.
 `SCNATIVE` reopens an authored `tool` module and semantically validates its
 closed TI-86 plan before displaying a locked, no-mutation status. Actual
 native settings capture/apply/restore and TI-OS launch remain release-gated.

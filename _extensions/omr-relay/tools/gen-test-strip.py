@@ -26,11 +26,25 @@ in "  " (two spaces) pairs, terminated by CR. Unmistakable.
 Output PDF is one US-Letter page. PRINT AT 100% / ACTUAL SIZE (never
 "fit to page") on plain 20-24 lb paper, then cut on the solid outline.
 
-Usage:  python3 gen-test-strip.py [out.pdf]
+The `--thermal` variant is deliberately different: it produces a 1-bit PNG
+whose pixels are native 8 dots/mm (203 dpi), the density published for the
+Volcora 80 mm printer.  It has no outline or instructions: only marks that can
+pass through the reader.  The paper is 79.5 mm rather than the nominal 82.55 mm
+card width, but the furthest data mark ends at 77.8 mm, so it remains on stock.
+Do NOT rescale this PNG in the print path.  Sending its 636 x 2032 pixels as an
+ESC/POS raster image is the calibration test; if the printer clips it, that is
+useful evidence that it cannot make OMR cards.
+
+Usage:
+  python3 gen-test-strip.py [out.pdf]
+  python3 gen-test-strip.py --thermal [out.png]
+  python3 gen-test-strip.py --thermal-bubbles [out.png]
+  python3 gen-test-strip.py --thermal-blank-form [out.png]
 """
 
 import sys
 import zlib
+import struct
 
 PT = 72.0  # points per inch
 
@@ -46,6 +60,21 @@ PITCH = 0.250 * PT
 FIRST_TICK = 0.375 * PT  # center distance from leading edge
 ROW_PITCH = 0.250 * PT
 BLANK_TAIL = 2           # trailing blank columns
+
+# Volcora 80 mm receipt stock / print density.  Every OMR measurement below is
+# rounded only once, to native dots; the adapter must not resize this raster.
+THERMAL_DOTS_PER_MM = 8
+THERMAL_PAPER_MM = 79.5
+THERMAL_WIDTH = round(THERMAL_PAPER_MM * THERMAL_DOTS_PER_MM)  # 636 dots
+THERMAL_HEIGHT = round(10 * 25.4 * THERMAL_DOTS_PER_MM)        # 2032 dots
+# The Volcora feeds 80 mm stock but its thermal head prints 72 mm (576 dots).
+# This is the real limit observed in the clipped first attempt, not the paper
+# width advertised on the roll.
+THERMAL_PRINTABLE_WIDTH = 576
+
+
+def thermal_dot(inches):
+    return round(inches * 25.4 * THERMAL_DOTS_PER_MM)
 
 
 def rect(x, y, w, h):
@@ -137,5 +166,180 @@ def build_pdf(path):
     print("wrote %s (%d bytes)" % (path, len(out)))
 
 
+def png_chunk(kind, data):
+    return struct.pack(">I", len(data)) + kind + data + struct.pack(">I", zlib.crc32(kind + data) & 0xffffffff)
+
+
+def build_thermal_png(path):
+    """Write the unscaled 80 mm / 8-dot-per-mm OMR raster test strip."""
+    # PNG grayscale: 0 = black mark, 255 = untouched receipt paper.
+    pixels = [bytearray([255]) * THERMAL_WIDTH for _ in range(THERMAL_HEIGHT)]
+
+    def mark(cx, cy):
+        # Tick/data mark: 0.125 in across the width, 0.060 in along feed.
+        half_w = thermal_dot(0.125) / 2
+        half_h = thermal_dot(0.060) / 2
+        x0, x1 = max(0, round(cx - half_w)), min(THERMAL_WIDTH, round(cx + half_w))
+        y0, y1 = max(0, round(cy - half_h)), min(THERMAL_HEIGHT, round(cy + half_h))
+        for y in range(y0, y1):
+            pixels[y][x0:x1] = b'\x00' * (x1 - x0)
+
+    # The printer feeds the top (leading edge) first.  Its strobe edge is the
+    # left paper edge; data row 12 is still safely inside 79.5 mm stock.
+    first_tick = thermal_dot(0.375)
+    pitch = thermal_dot(0.250)
+    x_strobe = 0
+    y = first_tick
+    column = 0
+    while y <= THERMAL_HEIGHT - thermal_dot(0.250):
+        mark(x_strobe + thermal_dot(0.125) / 2, y)
+        if column < ((THERMAL_HEIGHT - thermal_dot(0.250) - first_tick) // pitch + 1) - BLANK_TAIL:
+            row = (column % 12) + 1
+            mark(thermal_dot(0.250) * row, y)
+        y += pitch
+        column += 1
+
+    scanlines = b''.join(b'\x00' + bytes(row) for row in pixels)
+    png = (
+        b'\x89PNG\r\n\x1a\n'
+        + png_chunk(b'IHDR', struct.pack(">IIBBBBB", THERMAL_WIDTH, THERMAL_HEIGHT, 8, 0, 0, 0, 0))
+        + png_chunk(b'IDAT', zlib.compress(scanlines, 9))
+        + png_chunk(b'IEND', b'')
+    )
+    with open(path, "wb") as fh:
+        fh.write(png)
+    print("wrote %s (%d bytes, %dx%d at %d dots/mm)" % (path, len(png), THERMAL_WIDTH, THERMAL_HEIGHT, THERMAL_DOTS_PER_MM))
+
+
+def build_thermal_bubble_png(path):
+    """Write a native-density comparison of filled and outline-only bubbles.
+
+    Columns 1--4 are timing-only controls.  Columns 5--28 are twelve pairs,
+    one pair per data row from the timing edge outward: the first is filled,
+    the second is an identical bubble with a completely white interior.
+    Remaining columns are timing-only controls.  Thus an outline being read is
+    visible as a mark in each second column of a pair.
+    """
+    pixels = [bytearray([255]) * THERMAL_WIDTH for _ in range(THERMAL_HEIGHT)]
+
+    def black_rect(cx, cy, width, height):
+        x0, x1 = max(0, round(cx - width / 2)), min(THERMAL_WIDTH, round(cx + width / 2))
+        y0, y1 = max(0, round(cy - height / 2)), min(THERMAL_HEIGHT, round(cy + height / 2))
+        for y in range(y0, y1):
+            pixels[y][x0:x1] = b'\x00' * (x1 - x0)
+
+    def bubble(cx, cy, filled):
+        # An ellipse exactly as tall/wide as the calibrated mark rectangle.  A
+        # two-dot black rim leaves an unmistakably white interior in the empty
+        # sample without moving its centre away from a reader mark position.
+        rx, ry = thermal_dot(0.125) / 2, thermal_dot(0.060) / 2
+        inner_rx, inner_ry = rx - 2, ry - 2
+        for y in range(max(0, round(cy - ry)), min(THERMAL_HEIGHT, round(cy + ry) + 1)):
+            for x in range(max(0, round(cx - rx)), min(THERMAL_WIDTH, round(cx + rx) + 1)):
+                outer = ((x - cx) / rx) ** 2 + ((y - cy) / ry) ** 2 <= 1
+                inner = inner_rx > 0 and inner_ry > 0 and ((x - cx) / inner_rx) ** 2 + ((y - cy) / inner_ry) ** 2 < 1
+                if outer and (filled or not inner):
+                    pixels[y][x] = 0
+
+    first_tick = thermal_dot(0.375)
+    pitch = thermal_dot(0.250)
+    tick_width, tick_height = thermal_dot(0.125), thermal_dot(0.060)
+    y = first_tick
+    column = 1
+    while y <= THERMAL_HEIGHT - thermal_dot(0.250):
+        black_rect(tick_width / 2, y, tick_width, tick_height)
+        pair_index = column - 5
+        if 0 <= pair_index < 24:
+            row = pair_index // 2 + 1
+            bubble(thermal_dot(0.250) * row, y, filled=(pair_index % 2 == 0))
+        y += pitch
+        column += 1
+
+    scanlines = b''.join(b'\x00' + bytes(row) for row in pixels)
+    png = (
+        b'\x89PNG\r\n\x1a\n'
+        + png_chunk(b'IHDR', struct.pack(">IIBBBBB", THERMAL_WIDTH, THERMAL_HEIGHT, 8, 0, 0, 0, 0))
+        + png_chunk(b'IDAT', zlib.compress(scanlines, 9))
+        + png_chunk(b'IEND', b'')
+    )
+    with open(path, "wb") as fh:
+        fh.write(png)
+    print("wrote %s (%d bytes, filled/outline bubble comparison)" % (path, len(png)))
+
+
+def build_thermal_blank_form_png(path):
+    """Write a blank, fillable 7-digit / 50-answer H45070-style OMR card.
+
+    It is a deliberate 72 mm thermal-printer crop of the 3.25 in card:
+      columns 1--7: ten digit bubbles each (0--9),
+      columns 8--32: upper A--E bubbles for questions 1--25 and lower A--E
+                      positions for questions 26--50.  The lower E position is
+                      omitted: it is physically beyond the printer's head.
+
+    Tick positions and thickness are measured from the supplied H45070-0 image:
+    0.171 in centres and 0.070 in along feed (not the 0.250 in generic test
+    strip pitch).  The bracket ink remains outside the central pencil/read cell.
+    """
+    width = THERMAL_PRINTABLE_WIDTH
+    height = round(7.375 * 25.4 * THERMAL_DOTS_PER_MM)
+    pixels = [bytearray([255]) * width for _ in range(height)]
+
+    def black_rect(cx, cy, width, height):
+        x0, x1 = max(0, round(cx - width / 2)), min(len(pixels[0]), round(cx + width / 2))
+        y0, y1 = max(0, round(cy - height / 2)), min(len(pixels), round(cy + height / 2))
+        for y in range(y0, y1):
+            pixels[y][x0:x1] = b'\x00' * (x1 - x0)
+
+    def bracket_cell(cx, cy):
+        # [   ] rails and arms are wholly outside the central 0.125 x 0.070 in
+        # pencil/read window.  The reader should see a fill only when pencil
+        # darkens that empty central cell.
+        rail_x = thermal_dot(0.080)
+        rail_half_y = thermal_dot(0.060)
+        arm = thermal_dot(0.022)
+        stroke = 2
+        black_rect(cx - rail_x, cy, stroke, rail_half_y * 2)
+        black_rect(cx + rail_x, cy, stroke, rail_half_y * 2)
+        for yy in (cy - rail_half_y, cy + rail_half_y):
+            black_rect(cx - rail_x + arm / 2, yy, arm, stroke)
+            black_rect(cx + rail_x - arm / 2, yy, arm, stroke)
+
+    tick_width, tick_height = thermal_dot(0.125), thermal_dot(0.070)
+    pitch = thermal_dot(0.171)
+    id_ys = [thermal_dot(0.840) + i * pitch for i in range(7)]
+    answer_ys = [thermal_dot(2.740) + i * pitch for i in range(25)]
+    for column, y in enumerate(id_ys + answer_ys, start=1):
+        black_rect(tick_width / 2, y, tick_width, tick_height)
+        if column <= 7:
+            # Ten digit positions fit through 2.750 in; no horizontal scaling.
+            for digit in range(10):
+                bracket_cell(thermal_dot(0.500 + digit * 0.250), y)
+        else:
+            # Questions 1--25 have A--E.  Questions 26--50 retain A--D; E at
+            # 3.000 in is beyond a 72 mm / 2.835 in thermal printhead.
+            for index in range(5):
+                bracket_cell(thermal_dot(0.500 + index * 0.250), y)
+            for index in range(4):
+                bracket_cell(thermal_dot(2.000 + index * 0.250), y)
+
+    scanlines = b''.join(b'\x00' + bytes(row) for row in pixels)
+    png = (
+        b'\x89PNG\r\n\x1a\n'
+        + png_chunk(b'IHDR', struct.pack(">IIBBBBB", width, height, 8, 0, 0, 0, 0))
+        + png_chunk(b'IDAT', zlib.compress(scanlines, 9))
+        + png_chunk(b'IEND', b'')
+    )
+    with open(path, "wb") as fh:
+        fh.write(png)
+    print("wrote %s (%d bytes, cropped 7-digit / 50-answer OMR form)" % (path, len(png)))
+
+
 if __name__ == "__main__":
-    build_pdf(sys.argv[1] if len(sys.argv) > 1 else "omr1100-test-strip.pdf")
+    if sys.argv[1:2] == ["--thermal"]:
+        build_thermal_png(sys.argv[2] if len(sys.argv) > 2 else "omr1100-test-strip-80mm.png")
+    elif sys.argv[1:2] == ["--thermal-bubbles"]:
+        build_thermal_bubble_png(sys.argv[2] if len(sys.argv) > 2 else "omr1100-bubble-test-strip-80mm.png")
+    elif sys.argv[1:2] == ["--thermal-blank-form"]:
+        build_thermal_blank_form_png(sys.argv[2] if len(sys.argv) > 2 else "omr1100-blank-form-80mm.png")
+    else:
+        build_pdf(sys.argv[1] if len(sys.argv) > 1 else "omr1100-test-strip.pdf")

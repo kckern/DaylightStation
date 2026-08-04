@@ -1522,6 +1522,7 @@ req_dsq_name:     defb 0x0C,5,"DSREQ",0,0,0
 req_dsqb_name:    defb 0x0C,6,"DSREQB",0,0
 
 include "crc16-ccitt.asm"
+UI_RENDER_COPIED_TEXT_LENGTH: equ 0
 include "record-reader.asm"
 include "runtime-state.asm"
 UI_RENDER_PROFILE_FULL: equ 0

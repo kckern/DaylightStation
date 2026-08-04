@@ -10,7 +10,10 @@ include "ti86asm.inc"
 ; A reader page advances several authored reading blocks.  It is deliberately
 ; smaller than the maximum array size so the final page clamps in place rather
 ; than accidentally completing the module.
-STANDARD_READER_PAGE_STEP: equ 4
+; One authored block per page keeps Notes and Examples coherent: the learner
+; can never arrive at Step 2 or Condensation before seeing its preceding
+; block, and F5's NEXT label has a literal, predictable meaning.
+STANDARD_READER_PAGE_STEP: equ 1
 
 org _asm_exec_ram
 
@@ -427,10 +430,10 @@ standard_runtime_stage_progress:
         ld (hl),e
         inc hl
         ld (hl),d
-        ; Returning from an ordinary reader/example/flashcard module resumes
-        ; the containing lesson in Catalog. Leaving the durable view at
-        ; MODULE would make the shell reopen or display a dead lesson husk.
-        ld a,RUNTIME_VIEW_LESSON
+        ; Resume the last visible meaningful menu. The Catalog collapses
+        ; one-option structural levels, so LESSON could otherwise return the
+        ; learner to an unseen breadcrumb instead of the module they opened.
+        ld a,RUNTIME_VIEW_MODULE
         ld (runtime_state_record + RUNTIME_SCL_VIEW_OFFSET),a
         ld a,RUNTIME_DRAFT_PROGRESS
         ld (runtime_state_record + RUNTIME_SCL_DRAFT_KIND_OFFSET),a
@@ -635,8 +638,8 @@ standard_runtime_qr_label: defb "QR",0
 standard_runtime_top_label: defb "TOP",0
 standard_runtime_back_label: defb "BACK",0
 standard_runtime_page_up_label: defb "PGUP",0
-standard_runtime_more_label: defb "MORE",0
-standard_runtime_eom_label:  defb "EOM",0
+standard_runtime_more_label: defb "NEXT",0
+standard_runtime_eom_label:  defb "END",0
 standard_runtime_error_line_1: defb "Content unavailable.",0
 standard_runtime_error_state: defb "Local state is missing or ambiguous. EXIT and reopen SchoolCalc.",0
 standard_runtime_error_artifact: defb "The lesson is missing or damaged. Sync or reinstall it.",0
@@ -655,6 +658,7 @@ UI_RENDER_INCLUDE_COMPACT: equ 1
 UI_RENDER_INCLUDE_READER: equ 0
 UI_RENDER_INCLUDE_DISPLAY: equ 0
 UI_RENDER_INCLUDE_ICONS: equ 0
+UI_RENDER_COPIED_TEXT_LENGTH: equ 0
 RUNTIME_CONTENT_MUTABLE: equ 1
 include "ui-renderer.asm"
 include "input.asm"

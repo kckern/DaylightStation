@@ -11,6 +11,13 @@ const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(HERE, '..', '..', '..');
 
 describe('complete TI86A installation boundary', () => {
+  it('derives the starter Catalog from this build\'s pack manifest, never a mounted generated copy', () => {
+    const source = readFileSync(path.join(HERE, 'build-starter-install.mjs'), 'utf8');
+    expect(source).toContain("const PACKS = path.join(OUT, 'content-packs');");
+    expect(source).toContain("readFileSync(path.join(PACKS, 'manifest.json'), 'utf8')");
+    expect(source).not.toContain("path.join(CONTENT, 'ti86-packs', 'manifest.json')");
+  });
+
   it('ships retryable individual programs, both reset slots, and exact auditable content', () => {
     const output = execFileSync(process.execPath, [path.join(HERE, 'build-complete-install.mjs')], {
       cwd: ROOT, encoding: 'utf8',

@@ -273,6 +273,7 @@ UI_RENDER_INCLUDE_COMPACT: equ 1
 UI_RENDER_INCLUDE_READER: equ 1
 UI_RENDER_INCLUDE_DISPLAY: equ 1
 UI_RENDER_INCLUDE_ICONS: equ 1
+UI_RENDER_COPIED_TEXT_LENGTH: equ 0
 include "ui-renderer.asm"
 include "input.asm"
 include "generated/ui-assets.inc"

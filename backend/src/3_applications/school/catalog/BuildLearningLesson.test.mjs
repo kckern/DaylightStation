@@ -18,6 +18,7 @@ const catalog = {
         lessons: [{
           lessonId: 'compound-growth',
           title: 'Compound growth',
+          shortTitle: 'Growth',
           objectives: ['Compare growth over time'],
           modules: [
             { moduleId: 'notes', type: 'lecture_notes', documentId: 'compound-notes' },
@@ -64,6 +65,7 @@ describe('BuildLearningLesson', () => {
 
     expect(bundle.address).toBe('main/markets/household-finance/interest/compound-growth');
     expect(bundle.context.subject).toEqual({ subjectId: 'markets', title: 'Markets' });
+    expect(bundle.lesson).toMatchObject({ title: 'Compound growth', shortTitle: 'Growth' });
     expect(bundle.lesson.modules[0].document.blocks[0].text).toContain('compound');
     expect(bundle.lesson.modules[2].bank.items).toHaveLength(1);
     expect(bundle.capabilities).toEqual([

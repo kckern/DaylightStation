@@ -85,11 +85,11 @@ const variableOverheadBytes = 32;
 // QR self-reporting does not silently consume downloadable-content capacity.
 const outputReceiptBytes = 34;
 const outputReceiptStorageBytes = outputReceiptBytes + variableOverheadBytes;
-// Preserve a 9.375 KiB recovery/scratch reserve after the installed client.
-// The current ten-runtime release needs the remaining 640 bytes for a
-// memory-safe user/profile flow; downloadable content remains independent of
-// this protected reserve.
-const freeReserveBytes = 9_600;
+// Preserve a 9.1 KiB recovery/scratch reserve after the installed client.
+// The reviewed confirmation and context UI needs a small portion of the
+// prior buffer; downloadable content remains independent of this protected
+// reserve.
+const freeReserveBytes = 9_300;
 const lessonTargetBytes = 8 * 1024;
 const lessonMaxBytes = 12 * 1024;
 // 170 u24 sequences plus a maximum-length device ID fit in 538 bytes.

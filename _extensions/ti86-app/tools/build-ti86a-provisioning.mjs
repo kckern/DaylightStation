@@ -74,15 +74,15 @@ function progressProfile({ learnerKey, learnerId, scorePercent, correct, total, 
       target: { type: 'lesson', id: 'mental-percent' },
       priority: 30,
     }],
+    // The compact overview starts on the most recent actionable leaf, rather
+    // than a broad subject aggregate. Deeper topology remains optional and
+    // can arrive in later server projections.
     curriculumHistory: history ? {
       roots: [{
-        key: 'subject=math', kind: 'subject', id: 'math',
+        key: 'lesson=find-ten-percent', kind: 'lesson', id: 'find-ten-percent',
+        label: 'Find Ten Percent',
         summary: { activityCount: 1, completionCount: 1, pendingCount: 0, scorePercent },
-        children: [{
-          key: 'subject=math|course=mental-percent', kind: 'course', id: 'mental-percent',
-          summary: { activityCount: 1, completionCount: 1, pendingCount: 0, scorePercent },
-          children: [],
-        }],
+        children: [],
       }],
     } : { roots: [] },
   };

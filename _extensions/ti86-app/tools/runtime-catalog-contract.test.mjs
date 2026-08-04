@@ -102,7 +102,7 @@ describe('SCCAT generic Catalog runtime contract', () => {
     expect(SOURCE).toMatch(
       /cat_enter_lesson:[\s\S]{0,180}call cat_item_authorized[\s\S]{0,100}cat_notice_unavailable/,
     );
-    expect(SOURCE).toContain('cat_empty_text:      defb "No assigned content.",0');
+    expect(SOURCE).toContain('cat_empty_text:      defb "NO CONTENT.",0');
   });
 
   it('makes incompatible lessons non-actionable and exposes all projected reasons', () => {
@@ -115,7 +115,7 @@ describe('SCCAT generic Catalog runtime contract', () => {
     expect(SOURCE).toMatch(
       /cat_render_incompatible:[\s\S]{0,720}call ui_draw_wrapped_text[\s\S]{0,520}cp SC_SCAN_UP[\s\S]{0,160}cp SC_SCAN_DOWN/,
     );
-    expect(SOURCE).toContain('cat_incompatible_title: defb "NOT COMPATIBLE",0');
+    expect(SOURCE).toContain('cat_incompatible_title: defb "UNSUPPORTED",0');
     expect(SOURCE).not.toMatch(/cat_show_incompatible:[\s\S]{0,800}cat_mark_delivery_pending/);
   });
 
@@ -148,17 +148,20 @@ describe('SCCAT generic Catalog runtime contract', () => {
     expect(SOURCE).toContain('cp SC_SCAN_F4');
     expect(SOURCE).toContain('cp SC_SCAN_F5');
     expect(SOURCE).toContain('cat_soft_back:       defb "BACK",0');
-    expect(SOURCE).toMatch(/cat_f5:[\s\S]{0,220}CAT_VIEW_SUBJECT[\s\S]{0,100}cat_sync[\s\S]{0,80}cat_page_down/);
-    expect(SOURCE).toMatch(/cat_render_softkeys:[\s\S]{0,1800}cat_has_more[\s\S]{0,200}cat_soft_eom[\s\S]{0,120}cat_soft_more/);
-    expect(SOURCE).toContain('cat_soft_more:       defb "MORE",0');
-    expect(SOURCE).toContain('cat_soft_eom:        defb "EOM",0');
+    expect(SOURCE).toMatch(/cat_f5:[\s\S]{0,220}CAT_VIEW_SUBJECT[\s\S]{0,100}cat_sync[\s\S]{0,140}cat_has_pages[\s\S]{0,100}cat_page_down/);
+    expect(SOURCE).toMatch(/cat_render_softkeys:[\s\S]{0,2200}cat_has_pages[\s\S]{0,700}cat_has_more[\s\S]{0,200}cat_soft_eom[\s\S]{0,120}cat_soft_more/);
+    expect(SOURCE).toContain('cat_soft_more:       defb "NEXT",0');
+    expect(SOURCE).toContain('cat_soft_eom:        defb "END",0');
+    expect(SOURCE).toContain('cat_soft_sync:       defb "OFF",0');
+    expect(SOURCE).toContain('cat_soft_cancel:     defb "CANCEL",0');
+    expect(SOURCE).toContain('cat_soft_request:    defb "REQUEST",0');
     expect(SOURCE).toContain('ld d,128');
     expect(SOURCE).toContain('ld c,56');
   });
 
   it('keeps learner identity visible without letting roster reads redirect Catalog traversal', () => {
     expect(SOURCE).toMatch(
-      /cat_render_header:[\s\S]*?call cat_copy_selected_label[\s\S]*?ui_draw_text_right/,
+      /cat_render_header:[\s\S]*?cat_copy_selected_label[\s\S]*?CAT_VIEW_SUBJECT[\s\S]*?call cat_copy_context_title[\s\S]*?ui_draw_text_right/,
     );
     expect(SOURCE).toMatch(
       /cat_copy_selected_label:[\s\S]*?cat_dsusers_name[\s\S]*?cat_scu1_magic[\s\S]*?cat_selected_label/,
@@ -169,6 +172,18 @@ describe('SCCAT generic Catalog runtime contract', () => {
     );
     expect(SOURCE).toMatch(
       /cat_open_profile:[\s\S]*?cat_scprof_name[\s\S]*?call _exec_assembly[\s\S]*?cat_normalize_view/,
+    );
+  });
+
+  it('uses the containing content title as a one-line breadcrumb on every non-root list', () => {
+    expect(SOURCE).toMatch(
+      /cat_open_array:[\s\S]*?SCSTATE_SUBJECT_INDEX_OFFSET[\s\S]*?cat_context_offset[\s\S]*?cat_key_courses[\s\S]*?SCSTATE_COURSE_INDEX_OFFSET[\s\S]*?cat_context_offset[\s\S]*?cat_key_units[\s\S]*?SCSTATE_UNIT_INDEX_OFFSET[\s\S]*?cat_context_offset[\s\S]*?cat_key_lessons/,
+    );
+    expect(SOURCE).toMatch(
+      /cat_open_module_array:[\s\S]*?cat_key_lesson[\s\S]*?cat_context_offset[\s\S]*?cat_key_modules/,
+    );
+    expect(SOURCE).toMatch(
+      /cat_copy_context_title:[\s\S]*?call cat_open_array[\s\S]*?cat_context_offset[\s\S]*?cat_key_title[\s\S]*?sc_copy_node_string/,
     );
   });
 
@@ -184,16 +199,26 @@ describe('SCCAT generic Catalog runtime contract', () => {
     );
   });
 
-  it('uses a brief, explicitly local three-phase transition before a full hierarchy repaint', () => {
+  it('leapfrogs a whole one-option hierarchy before one local transition and state write', () => {
     expect(SOURCE).toMatch(/cat_normalize_catalog_route:[\s\S]{0,700}call scstate_save[\s\S]{0,80}call cat_transition/);
-    expect(SOURCE).toMatch(/cat_enter_level:[\s\S]{0,900}jp cat_transition_render/);
-    expect(SOURCE).toMatch(/cat_open_installed_lesson:[\s\S]{0,900}jp cat_transition_render/);
+    // The loading interstitial owns HL for its label. Preserve the parent
+    // state offset through it so a nonzero Subject cannot collapse through
+    // the first subject after the acknowledgement animation.
+    expect(SOURCE).toMatch(/cat_enter_level:[\s\S]*?push hl\s+call cat_transition[\s\S]*?cat_transition_seen[\s\S]*?pop hl\s+pop af\s+call cat_apply_enter_level[\s\S]*?jp cat_render/);
+    expect(SOURCE).toMatch(/cat_auto_enter_level:[\s\S]{0,160}call cat_apply_enter_level[\s\S]{0,80}ld a,1\s+ret/);
+    expect(SOURCE).toMatch(/cat_auto_open_lesson:[\s\S]{0,780}call cat_apply_open_installed_lesson[\s\S]{0,100}ld a,1\s+ret/);
+    expect(SOURCE).toMatch(/cat_auto_finish:[\s\S]{0,260}cat_transition_seen[\s\S]{0,120}call cat_transition[\s\S]{0,180}call scstate_save[\s\S]{0,100}jp c,cat_fail_save/);
     expect(SOURCE).toMatch(/cat_transition_render:[\s\S]{0,100}call cat_transition[\s\S]{0,100}call scstate_save[\s\S]{0,100}jp cat_render/);
+    expect(SOURCE).toMatch(/cat_open_installed_lesson:[\s\S]{0,220}call cat_apply_open_installed_lesson[\s\S]{0,120}jp cat_transition_render/);
     expect(SOURCE).toMatch(/cat_enter_module:[\s\S]{0,500}call cat_transition[\s\S]{0,100}call scstate_save[\s\S]{0,80}ret/);
-    expect(SOURCE).toMatch(/cat_transition:[\s\S]{0,160}call _clrLCD[\s\S]{0,80}call cat_render_header[\s\S]{0,100}ld bc,0x3D1D/);
+    expect(SOURCE).toMatch(/cat_transition:[\s\S]{0,160}call _clrLCD[\s\S]{0,120}cat_loading_label[\s\S]{0,100}ld bc,0x3D1D/);
     expect(SOURCE).toMatch(/cat_transition_dot:[\s\S]{0,180}ld a,'\.'[\s\S]{0,60}call ui_draw_glyph[\s\S]{0,160}cp 73/);
     expect(SOURCE).toMatch(/cat_transition_tick:[\s\S]{0,260}ld b,24/);
     expect(SOURCE).toMatch(/cat_transition_tick:[\s\S]{0,300}cat_transition_tick_wait:[\s\S]{0,40}call _idle[\s\S]{0,40}djnz cat_transition_tick_wait/);
+    expect(SOURCE).toMatch(/cat_auto_open_module:[\s\S]{0,360}call cat_auto_finish[\s\S]{0,80}ld a,2\s+ret/);
+    expect(SOURCE).toMatch(/cat_remove:[\s\S]{0,600}cat_render_remove_confirm/);
+    expect(SOURCE).toMatch(/cat_render_remove_confirm:[\s\S]{0,1800}cat_soft_cancel[\s\S]{0,400}cat_soft_request/);
+    expect(SOURCE).toMatch(/cat_remove_confirm_wait:[\s\S]{0,700}CAT_ACTION_REMOVE[\s\S]{0,80}cat_stage_action/);
   });
 });
 

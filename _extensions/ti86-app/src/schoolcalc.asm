@@ -81,7 +81,7 @@ wait_key:
         cp SC_SCAN_F1
         jp z,shell_f1
         cp SC_SCAN_F2
-        jp z,show_catalog
+        jp z,shell_f2
         cp SC_SCAN_F4
         jp z,show_catalog
         cp SC_SCAN_F5
@@ -93,6 +93,22 @@ shell_f1:
         cp SCREEN_RESULT
         jp z,launch_qr_runtime
         jp launch_profile_runtime
+
+shell_f2:
+        ld a,(current_screen)
+        cp SCREEN_RESULT
+        jp z,shell_review_result
+        jp show_catalog
+
+; A score result is a durable offline record, not a dead-end receipt. OPEN
+; reopens the same module menu so the learner can immediately retry it.
+shell_review_result:
+        ld a,5                    ; Catalog MODULE view
+        ld (SCL_VIEW_ADDR),a
+        ld a,SCREEN_CATALOG
+        ld (current_screen),a
+        call local_state_save
+        jp launch_catalog_runtime
 
 move_focus_down:
         ld a,(current_screen)
@@ -1062,11 +1078,12 @@ shell_render_result:
         call shell_render_header
         call ui_mode_set
         call ui_select_compact
-        ld hl,result_line_1
+        call shell_build_result_score
+        ld hl,shell_result_score
         ld b,2
         ld c,13
         call ui_draw_text
-        ld hl,result_line_2
+        call shell_result_status
         ld b,2
         ld c,27
         call ui_draw_text
@@ -1074,6 +1091,86 @@ shell_render_result:
         ld b,2
         ld c,41
         jp ui_draw_text
+
+; Result Queue replaces the answer draft with correct, total, and rounded
+; percent at local-state offsets 47..49. Format it at render time so scores
+; remain exact after a cold relaunch and are never guessed from QR output.
+shell_build_result_score:
+        ld de,shell_result_score
+        ld hl,result_score_prefix
+        call shell_copy_result_text
+        ld a,(local_state_record + 47)
+        call shell_emit_result_number
+        ld a,'/'
+        ld (de),a
+        inc de
+        ld a,(local_state_record + 48)
+        call shell_emit_result_number
+        ld a,' '
+        ld (de),a
+        inc de
+        ld a,(local_state_record + 49)
+        call shell_emit_result_number
+        ld a,'%'
+        ld (de),a
+        inc de
+        xor a
+        ld (de),a
+        ret
+
+; HL source, DE destination. Copy a short zero-terminated UI literal.
+shell_copy_result_text:
+        ld a,(hl)
+        or a
+        ret z
+        ld (de),a
+        inc hl
+        inc de
+        jr shell_copy_result_text
+
+; A is 0..100. Emit an ASCII decimal into DE and return the next position.
+shell_emit_result_number:
+        cp 100
+        jr nz,shell_emit_result_under_hundred
+        ld a,'1'
+        ld (de),a
+        inc de
+        ld a,'0'
+        ld (de),a
+        inc de
+        ld (de),a
+        inc de
+        ret
+shell_emit_result_under_hundred:
+        ld b,0
+shell_emit_result_tens:
+        cp 10
+        jr c,shell_emit_result_units
+        sub 10
+        inc b
+        jr shell_emit_result_tens
+shell_emit_result_units:
+        ld c,a
+        ld a,b
+        or a
+        jr z,shell_emit_result_one
+        add a,'0'
+        ld (de),a
+        inc de
+shell_emit_result_one:
+        ld a,c
+        add a,'0'
+        ld (de),a
+        inc de
+        ret
+
+shell_result_status:
+        ld a,(local_state_record + 49)
+        cp 80
+        ld hl,result_review_line
+        ret c
+        ld hl,result_mastered_line
+        ret
 
 ; HL = row text and A = zero-based row index.
 shell_draw_home_row:
@@ -1188,10 +1285,20 @@ shell_softkey_f1_ready:
         ld c,58
         call ui_draw_text
         ld hl,softkey_catalog
+        ld a,(current_screen)
+        cp SCREEN_RESULT
+        jr nz,shell_softkey_f2_ready
+        ld hl,softkey_review
+shell_softkey_f2_ready:
         ld b,30
         ld c,58
         call ui_draw_text
         ld hl,softkey_sync
+        ld a,(current_screen)
+        cp SCREEN_RESULT
+        jr nz,shell_softkey_f5_ready
+        ld hl,softkey_cable
+shell_softkey_f5_ready:
         ld b,107
         ld c,58
         call ui_draw_text
@@ -1259,17 +1366,18 @@ home_context:           defb "HOME",0
 catalog_title:          defb "CATALOG",0
 lesson_title:           defb "LESSON",0
 sync_title:             defb "SYNC",0
-sync_context:           defb "USB",0
+sync_context:           defb "OFFLINE",0
 result_title:           defb "RESULT",0
-result_context:         defb "QUEUED",0
+result_context:         defb "OFFLINE",0
 empty_context:          defb 0
 home_continue:          defb "CONTINUE LESSON",0
 home_courses:           defb "MY COURSES",0
 home_catalog:           defb "CATALOG",0
 home_sync:              defb "SYNC",0
-result_line_1:          defb "Saved offline first.",0
-result_line_2:          defb "F1 shows camera QR.",0
-result_line_3:          defb "F5 syncs when cabled.",0
+result_score_prefix:    defb "SCORE ",0
+result_review_line:     defb "REVIEW: RETRY QUIZ",0
+result_mastered_line:   defb "MASTERED: NEXT",0
+result_line_3:          defb "QR QUEUED / CABLE OFF",0
 catalog_line_1:         defb "Catalog not installed.",0
 catalog_line_2:         defb "Sync package required.",0
 catalog_line_3:         defb "EXIT returns Home.",0
@@ -1278,11 +1386,11 @@ lesson_line_2:          defb "ENTER starts lesson.",0
 lesson_line_3:          defb "EXIT returns to Catalog.",0
 sync_identity_missing:  defb "Identity: required",0
 sync_identity_ready:    defb "Identity: ready",0
-sync_info_ready:        defb "Transport: disabled",0
+sync_info_ready:        defb "LINK: OFFLINE",0
 sync_status_idle:       defb "Safe recovery screen",0
 sync_status_committed:  defb "Transfer: complete",0
 sync_status_rejected:   defb "Transfer: stopped",0
-sync_presence_idle:     defb "Cable: unknown while idle",0
+sync_presence_idle:     defb "NO RELAY DETECTED",0
 sync_presence_committed:defb "Relay session finished",0
 sync_presence_rejected: defb "Queue/content preserved",0
 sync_safety_safe:       defb "Safe to unplug",0
@@ -1290,9 +1398,13 @@ focus_chevron:          defb ">",0
 softkey_home:           defb "HOME",0
 softkey_qr:             defb "QR",0
 softkey_catalog:        defb "CAT",0
-softkey_sync:           defb "SYNC",0
+softkey_review:         defb "OPEN",0
+softkey_sync:           defb "OFF",0
+softkey_cable:          defb "CABLE",0
 softkey_user:           defb "USER",0
+shell_result_score:     defs 20,0
 
+UI_RENDER_COPIED_TEXT_LENGTH: equ 0
 include "record-reader.asm"
 include "sync-commit.asm"
 UI_RENDER_PROFILE_FULL: equ 0
