@@ -68,4 +68,31 @@ describe('PaperCertification specifics (spec §6.3)', () => {
     const longDoc = { lesson: { modules: [{ moduleId: 'n', type: 'lecture_notes', document: { blocks: Array.from({ length: 12 * 21 }, (_, i) => ({ blockId: `b${i}`, type: 'prose', text: 't' })) } }] } };
     expect(port.certify(longDoc, paperProfile).modules[0].reasons.join()).toMatch(/20/);
   });
+
+  describe('malformed profile limits throw instead of failing open (F6)', () => {
+    for (const missingKey of ['omrChannels', 'maxItemsPerSheet', 'maxPagesPerDocument']) {
+      it(`throws when the profile is missing limits.${missingKey}`, () => {
+        const { [missingKey]: _omit, ...limits } = paperProfile.limits;
+        const brokenProfile = { ...paperProfile, limits };
+        expect(() => port.certify(renderableBundle, brokenProfile)).toThrow(
+          new RegExp(`missing required limits:.*${missingKey}`),
+        );
+        expect(() => port.certifyBank(choiceBank, brokenProfile)).toThrow(
+          new RegExp(`missing required limits:.*${missingKey}`),
+        );
+      });
+    }
+
+    it('names every missing key when several are absent', () => {
+      const brokenProfile = { ...paperProfile, limits: {} };
+      expect(() => port.certify(renderableBundle, brokenProfile)).toThrow(
+        /omrChannels.*maxItemsPerSheet.*maxPagesPerDocument/,
+      );
+    });
+
+    it('throws for a profile with no limits object at all', () => {
+      const { limits: _omit, ...brokenProfile } = paperProfile;
+      expect(() => port.certify(renderableBundle, brokenProfile)).toThrow(/missing required limits/);
+    });
+  });
 });
