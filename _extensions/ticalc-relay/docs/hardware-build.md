@@ -16,6 +16,11 @@ header-includes:
 
 # Read this first
 
+> **Product decision:** This is a bench/prototype bring-up reference, not the
+> normal procurement path. The production relay uses a factory-assembled TI
+> Link Hat; see [`../HARDWARE.md`](../HARDWARE.md). Retain the circuit below
+> only for debugging or validating a board revision.
+
 This guide connects a TI-86 calculator's 2.5 mm link cable to an M5Stack ATOM
 Lite. The ATOM becomes a relay that can later move catalog data, lesson
 packages, and quiz results between the calculator and DaylightStation.
