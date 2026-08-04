@@ -521,6 +521,7 @@ export function createDocumentPdfRenderer({
   // ── render ────────────────────────────────────────────────────────────
   function renderPlaced(document, {
     studentName, date = null, isAnswerKey, keyItems, bank, tokens, furniture = null, growLastPage = false,
+    italic = false,
   }) {
     const measurementDoc = createMeasurementDocument({ theme, fontDir });
     const fragments = measureDocumentFragments(document, {
@@ -532,6 +533,11 @@ export function createDocumentPdfRenderer({
       tokens,
       studentName,
       date,
+      // `*italic*` markdown grammar (v2, spec §12.8). Draw never re-parses
+      // text — `drawLines` replays the font already baked into each
+      // MEASURED run (`wrapRuns`/`inlineRuns` at measure time) — so this flag
+      // only needs to reach measurement; nothing downstream of it changes.
+      italic,
     });
     // Opting into `furniture` shrinks the usable page height by the
     // footer-band + continuation-strip reservation (contentBox) BEFORE
@@ -662,11 +668,15 @@ export function createDocumentPdfRenderer({
    *   forwarded to `placeFragments`' `growLastPage`, so the LAST page also
    *   bottoms out its answer spaces/spacers. Default false reproduces every
    *   existing render byte-for-byte.
+   * @param {boolean} [options.italic] - recognise `*italic*` in `rich_text`/
+   *   `passage` inline grammar (v2, spec §12.8). Default false reproduces
+   *   every existing render byte-for-byte — a v1 caller's stray `*word*`
+   *   keeps printing literally, exactly as before this option existed.
    * @returns {Promise<{pdf: Buffer, pageCount: number, formMap: Object|null, isAnswerKey: boolean, keyItems: Array}>}
    */
   async function render(source, {
     studentName = null, date = null, answers = null, answerKey = false, bank = null, tokens = null,
-    variant = null, furniture = null, growLastPage = false,
+    variant = null, furniture = null, growLastPage = false, italic = false,
   } = {}) {
     // The variant rides on the DOCUMENT, not just alongside it: the footer and
     // the form map both derive from what was rendered, so a variant passed only
@@ -683,12 +693,12 @@ export function createDocumentPdfRenderer({
 
     if (!resolvedAnswers) {
       return renderPlaced(document, {
-        studentName, date, isAnswerKey: false, keyItems: [], bank, tokens, furniture, growLastPage,
+        studentName, date, isAnswerKey: false, keyItems: [], bank, tokens, furniture, growLastPage, italic,
       });
     }
     const keyItems = keyItemsFor(document, resolvedAnswers);
     return renderPlaced(keyDocumentFor(document, keyItems), {
-      studentName: null, date: null, isAnswerKey: true, keyItems, bank, tokens, furniture, growLastPage,
+      studentName: null, date: null, isAnswerKey: true, keyItems, bank, tokens, furniture, growLastPage, italic,
     });
   }
 

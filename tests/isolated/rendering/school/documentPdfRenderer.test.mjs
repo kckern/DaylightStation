@@ -8,11 +8,15 @@
 import { describe, it, expect } from 'vitest';
 import { createDocumentPdfRenderer } from '#rendering/school/documents/DocumentPdfRenderer.mjs';
 import { documentPdfTheme as theme } from '#rendering/school/documents/documentPdfTheme.mjs';
+import { createWorkbookTheme } from '#rendering/school/documents/workbookTheme.mjs';
 import { texToSvg } from '#rendering/school/documents/mathSvg.mjs';
 import { UnsupportedBlockError, MissingChoicesError, UnresolvedAssetError } from '#rendering/school/documents/measure.mjs';
 import { VirtualOmrReader } from '#adapters/hardware/omr/VirtualOmrReader.mjs';
 
 const renderer = createDocumentPdfRenderer({ theme, texToSvg });
+// `italic` (v2's *italic* grammar) needs a theme carrying an italic face —
+// the legacy `documentPdfTheme` doesn't register one at all.
+const workbookRenderer = createDocumentPdfRenderer({ theme: createWorkbookTheme(), texToSvg });
 
 /** PDF page objects, to prove the reported page count is the printed one. */
 function countPdfPages(pdf) {
@@ -353,6 +357,37 @@ describe('growLastPage option (fit policy fill, spec §7)', () => {
     const { pdf } = await renderer.render(worksheet, { studentName: 'Test Learner' });
     const explicit = await renderer.render(worksheet, { studentName: 'Test Learner', growLastPage: false });
     expect(pdf.equals(explicit.pdf)).toBe(true);
+  });
+});
+
+describe('italic option (v2 *emphasis* grammar, spec §12.8)', () => {
+  const md = doc([{ type: 'rich_text', md: 'Mix **bold** and *emphasis* words.' }]);
+
+  it('defaults to false — a literal *word* prints unchanged, byte-identical to omitting the option', async () => {
+    const withoutOption = await workbookRenderer.render(md);
+    const explicitFalse = await workbookRenderer.render(md, { italic: false });
+    expect(withoutOption.pdf.equals(explicitFalse.pdf)).toBe(true);
+  });
+
+  it('when true, an italic run is actually embedded — not just re-parsed text, real ink', async () => {
+    const plain = await workbookRenderer.render(md);
+    const italic = await workbookRenderer.render(md, { italic: true });
+
+    expect(plain.pdf.toString('latin1')).not.toContain('AtkinsonHyperlegible-Italic');
+    expect(italic.pdf.toString('latin1')).toContain('AtkinsonHyperlegible-Italic');
+    expect(plain.pdf.equals(italic.pdf)).toBe(false);
+  });
+
+  it('is deterministic, like every other draw input', async () => {
+    const first = await workbookRenderer.render(md, { italic: true });
+    const second = await workbookRenderer.render(md, { italic: true });
+    expect(first.pdf.equals(second.pdf)).toBe(true);
+  });
+
+  it('the legacy theme (no italic face registered) is unaffected — option is a no-op there since v1 never opts in', async () => {
+    const withoutOption = await renderer.render(md);
+    const explicitFalse = await renderer.render(md, { italic: false });
+    expect(withoutOption.pdf.equals(explicitFalse.pdf)).toBe(true);
   });
 });
 
