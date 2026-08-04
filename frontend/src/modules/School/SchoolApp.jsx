@@ -237,6 +237,8 @@ function SchoolShell({ clear }) {
   const startLearning = useCallback((launch) => {
     const { module, learning, certification } = launch;
     if (!moduleLaunchAllowed(certification, module.moduleId)) {
+      const reasons = certification?.get?.(module.moduleId)?.reasons ?? [];
+      schoolLog.surface('launch-refused', { moduleId: module.moduleId, surfaceId, reasons });
       setActive({ mode: 'learning_unsupported', module, learning });
       return;
     }
@@ -246,7 +248,7 @@ function SchoolShell({ clear }) {
     else if (module.type === 'quiz') setActive({ mode: 'quiz', bank: module.bank, learning });
     else if (module.type === 'problems') setActive({ mode: 'problems', bank: module.bank, learning });
     else setActive({ mode: 'learning_unsupported', module, learning });
-  }, []);
+  }, [surfaceId]);
 
   const onLearningLaunch = useCallback((launch) => {
     const tracked = ['problems', 'flashcards', 'quiz', 'learning_probe', 'activity'].includes(launch.module.type);
