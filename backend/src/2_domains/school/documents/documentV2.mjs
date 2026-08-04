@@ -21,12 +21,40 @@
  * prepended block is therefore always structurally valid, so `validateDocument`
  * re-checking `blocks[0]` never produces a second, mis-pathed error for it.
  */
-import { validateDocument } from './documentValidation.mjs';
+import { validateDocument, walkBlocks } from './documentValidation.mjs';
 import { validateBlock } from './blocks.mjs';
 
 export const DOCUMENT_V2_SCHEMA = 'school.document/v2';
 export const ARCHETYPES = ['quiz', 'worksheet', 'infopage'];
 export const FIT_POLICIES = ['flow', 'one-page', 'fill'];
+
+/**
+ * Which print targets each block type may appear on (spec §7). Seeded from
+ * `DocumentEscPosRenderer`'s SUPPORTED set (rich_text, scan_action,
+ * media_action — the only three it doesn't throw "no receipt rendering" for):
+ * those keep `letter+receipt`. Every other block type currently registered in
+ * `blocks.mjs` (math, plot, geometry, asset, question, answer_space,
+ * omr_response) has no receipt renderer, so it is `letter`-only here.
+ *
+ * Exported (and frozen, map + every array) so Task 4's new content blocks
+ * register themselves in this same map in the change that adds them, rather
+ * than defaulting into receipt support they have no renderer for.
+ * // Task 4: register new letter-only block types below this line.
+ */
+export const BLOCK_TARGET_SUPPORT = Object.freeze({
+  rich_text: Object.freeze(['letter', 'receipt']),
+  scan_action: Object.freeze(['letter', 'receipt']),
+  media_action: Object.freeze(['letter', 'receipt']),
+  math: Object.freeze(['letter']),
+  plot: Object.freeze(['letter']),
+  geometry: Object.freeze(['letter']),
+  asset: Object.freeze(['letter']),
+  question: Object.freeze(['letter']),
+  answer_space: Object.freeze(['letter']),
+  omr_response: Object.freeze(['letter']),
+});
+
+const ALL_SUPPORTED_TARGETS = new Set(Object.values(BLOCK_TARGET_SUPPORT).flat());
 
 const TYPE_SCALES = ['standard', 'young'];
 
@@ -122,6 +150,22 @@ export function validateDocumentV2(raw) {
 
   const v1Result = validateDocument(v1Subset);
   errors.push(...v1Result.errors);
+
+  // Block x target matrix (spec §7): a target already known to be bogus (e.g.
+  // 'poster') was already reported by validateDocument above as 'unknown
+  // target' — re-flagging every block against it here would just be noise on
+  // top of that error, so only recognised targets are checked.
+  if (Array.isArray(raw.target)) {
+    for (const target of raw.target) {
+      if (!ALL_SUPPORTED_TARGETS.has(target)) continue;
+      walkBlocks(blocks, (block, at) => {
+        const supported = BLOCK_TARGET_SUPPORT[block?.type];
+        if (supported && !supported.includes(target)) {
+          errors.push(`${at}: block type '${block.type}' does not support target '${target}'`);
+        }
+      });
+    }
+  }
 
   if (errors.length) return { errors };
 

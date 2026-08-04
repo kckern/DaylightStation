@@ -5,7 +5,7 @@
 import { describe, it, expect } from 'vitest';
 import { validateDocument } from './documentValidation.mjs';
 import {
-  DOCUMENT_V2_SCHEMA, ARCHETYPES, FIT_POLICIES,
+  DOCUMENT_V2_SCHEMA, ARCHETYPES, FIT_POLICIES, BLOCK_TARGET_SUPPORT,
   validateDocumentV2, validateAnyDocument,
 } from './documentV2.mjs';
 
@@ -165,6 +165,58 @@ describe('validateDocumentV2: rejections', () => {
   it("allows fit.policy 'one-page' with a letter target", () => {
     const { errors } = validateDocumentV2(v2doc({ fit: { policy: 'one-page' }, target: ['letter'] }));
     expect(errors).toEqual([]);
+  });
+});
+
+describe('BLOCK_TARGET_SUPPORT matrix', () => {
+  it('marks every receipt-rendered block type letter+receipt, and every other registered block type letter-only', () => {
+    expect(Object.isFrozen(BLOCK_TARGET_SUPPORT)).toBe(true);
+    for (const t of ['rich_text', 'scan_action', 'media_action']) {
+      expect(BLOCK_TARGET_SUPPORT[t]).toEqual(['letter', 'receipt']);
+      expect(Object.isFrozen(BLOCK_TARGET_SUPPORT[t])).toBe(true);
+    }
+    for (const t of ['math', 'plot', 'geometry', 'asset', 'question', 'answer_space', 'omr_response']) {
+      expect(BLOCK_TARGET_SUPPORT[t]).toEqual(['letter']);
+      expect(Object.isFrozen(BLOCK_TARGET_SUPPORT[t])).toBe(true);
+    }
+  });
+});
+
+describe('validateDocumentV2: block x target compatibility', () => {
+  it('rejects a letter-only block when target includes receipt, naming the block path and the missed target', () => {
+    const raw = v2doc({
+      target: ['letter', 'receipt'], archetype: 'infopage', blocks: [{ type: 'math', tex: 'x=1' }],
+    });
+    const { errors } = validateDocumentV2(raw);
+    expect(errors).toContain("blocks[0]: block type 'math' does not support target 'receipt'");
+  });
+
+  it('accepts the same letter-only block on a letter-only document', () => {
+    const raw = v2doc({
+      target: ['letter'], archetype: 'infopage', blocks: [{ type: 'math', tex: 'x=1' }],
+    });
+    const { errors } = validateDocumentV2(raw);
+    expect(errors).toEqual([]);
+  });
+
+  it('accepts a receipt-supported block type on both targets', () => {
+    const raw = v2doc({
+      target: ['letter', 'receipt'], archetype: 'infopage', blocks: [{ type: 'rich_text', md: 'hi' }],
+    });
+    const { errors } = validateDocumentV2(raw);
+    expect(errors).toEqual([]);
+  });
+
+  it('walks nested blocks inside a question container, catching both the container and the child', () => {
+    const raw = v2doc({
+      target: ['letter', 'receipt'],
+      blocks: [question({
+        blocks: [{ type: 'rich_text', md: 'What is $x$?' }, { type: 'math', tex: 'x=1' }],
+      })],
+    });
+    const { errors } = validateDocumentV2(raw);
+    expect(errors).toContain("blocks[0]: block type 'question' does not support target 'receipt'");
+    expect(errors).toContain("blocks[0].blocks[1]: block type 'math' does not support target 'receipt'");
   });
 });
 
