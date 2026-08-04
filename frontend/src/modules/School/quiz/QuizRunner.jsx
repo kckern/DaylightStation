@@ -13,6 +13,7 @@ import MultipleChoiceItem from './items/MultipleChoiceItem.jsx';
 import ShortAnswerItem from './items/ShortAnswerItem.jsx';
 import ClozeItem from './items/ClozeItem.jsx';
 import MatchingItem from './items/MatchingItem.jsx';
+import LearningReflectionPrompt from '../progress/LearningReflectionPrompt.jsx';
 
 const ITEM_COMPONENTS = {
   multiple_choice: MultipleChoiceItem,
@@ -21,7 +22,7 @@ const ITEM_COMPONENTS = {
   matching: MatchingItem,
 };
 
-export default function QuizRunner({ bank, onExit }) {
+export default function QuizRunner({ bank, mode = 'quiz', learning = null, onExit }) {
   const { status, currentUser, isGuest } = useSchoolProfile();
   const [sessionId, setSessionId] = useState(null);
   const [index, setIndex] = useState(0);
@@ -46,7 +47,7 @@ export default function QuizRunner({ bank, onExit }) {
     if (initialIdentity.current === null) return; // session not open yet; nothing pinned
     if (identityKey !== initialIdentity.current) {
       abandonedRef.current = true;
-      schoolLog.session('end', { sessionId, bankId: bank.id, mode: 'quiz', reason: 'identity-changed' });
+      schoolLog.session('end', { sessionId, bankId: bank.id, mode, reason: 'identity-changed' });
       onExit();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -58,11 +59,13 @@ export default function QuizRunner({ bank, onExit }) {
     initialIdentity.current = identityKey;
     let alive = true;
     const userId = currentUser?.id ?? null;
-    schoolApi.openSession({ userId, bankId: bank.id, mode: 'quiz' }).then(({ ok, data }) => {
+    schoolApi.openSession({
+      userId, bankId: bank.id, mode, ...(learning ? { learning } : {}),
+    }).then(({ ok, data }) => {
       if (!alive) return;
       if (!ok) { onExit(); return; }
       setSessionId(data.sessionId);
-      schoolLog.session('start', { sessionId: data.sessionId, bankId: bank.id, mode: 'quiz', userId, itemCount: bank.items.length });
+      schoolLog.session('start', { sessionId: data.sessionId, bankId: bank.id, mode, userId, itemCount: bank.items.length });
     });
     return () => { alive = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -95,7 +98,7 @@ export default function QuizRunner({ bank, onExit }) {
     setUnrecorded(false);
     if (index + 1 >= bank.items.length) {
       setDone(true);
-      schoolLog.session('end', { sessionId, bankId: bank.id, mode: 'quiz', score, total: bank.items.length });
+      schoolLog.session('end', { sessionId, bankId: bank.id, mode, score, total: bank.items.length });
     } else {
       setIndex((i) => i + 1);
     }
@@ -112,7 +115,14 @@ export default function QuizRunner({ bank, onExit }) {
             {unrecordedCount} answer{unrecordedCount === 1 ? '' : 's'} not recorded — not counted as wrong
           </p>
         )}
-        <button type="button" className="school-runner__done" onClick={onExit}>Done</button>
+        {learning ? (
+          <LearningReflectionPrompt
+            activity={{ id: bank.id, sessionId }}
+            learning={learning}
+            onDone={onExit}
+            continueLabel="Done"
+          />
+        ) : <button type="button" className="school-runner__done" onClick={onExit}>Done</button>}
       </div>
     );
   }

@@ -7,3 +7,8 @@ export { CATEGORIES, resolveCategory } from './categories.mjs';
 export { GRADES, gradeRank, gradeFromLabels, isVisibleAtCeiling } from './grades.mjs';
 export { orderUnits, unitCompleted, annotateLocks, quizSessionPassed } from './materialPolicy.mjs';
 export { evaluatePrintQuota, DEFAULT_PRINT_POLICY } from './printing.mjs';
+export * from './catalog/index.mjs';
+export * from './schoolcalc/index.mjs';
+export * from './progress/index.mjs';
+export * from './remediation/index.mjs';
+export * from './generatedBanks/index.mjs';

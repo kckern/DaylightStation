@@ -2,7 +2,7 @@
 # four-bubble omr_response whose itemId equals the enclosing question's itemId —
 # that equality is what lets the scanner's mark row and the grading engine agree
 # on which item was answered. The CHOICES are not repeated here: they render
-# from math-fractions-03-bank, so the paper and the grader can never drift.
+# from math/math-fractions/03-checkpoint, so paper and grader cannot drift.
 id: math-fractions-03-omr
 title: Fractions Checkpoint
 seed: 20260724

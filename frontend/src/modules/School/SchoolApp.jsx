@@ -24,6 +24,10 @@ import { SchoolBreadcrumbProvider, useSchoolBreadcrumbBar } from './SchoolBreadc
 import { groupBySubject, subjectLabel } from './home/subjects.js';
 import GlossikaProgram from './Programs/Glossika/GlossikaProgram.jsx';
 import ReportPanel from './report/ReportPanel.jsx';
+import AdaptiveTutorPanel from './remediation/AdaptiveTutorPanel.jsx';
+import LearningCatalogBrowser from './catalog/LearningCatalogBrowser.jsx';
+import LearningContentReader from './catalog/LearningContentReader.jsx';
+import LearningProbeRunner from './probes/LearningProbeRunner.jsx';
 import { languageApi } from './Programs/Glossika/languageApi.js';
 import { schoolApi } from './schoolApi.js';
 import { schoolLog } from './schoolLog.js';
@@ -43,7 +47,7 @@ import './School.scss';
  *   <base>/subject/<id>/<collectionId>/<workId>/<trackId>  -> playing a track
  *   <base>/subject/<id>/<showId>/<episodeId>      -> playing a video episode
  *   <base>/library[/…chain]                       -> Library (same chain rules)
- *   <base>/progress | /practice | /print | /typing | /lang/<courseId>
+ *   <base>/catalog | /progress | /practice | /print | /typing | /lang/<courseId>
  */
 function schoolUrlBase() {
   const path = window.location.pathname;
@@ -76,6 +80,7 @@ export function parseSchoolPath(urlBase) {
   if (!seg.length) return empty;
   if (seg[0] === 'subject' && seg[1]) return { section: `subject:${seg[1]}`, materialPath: seg.slice(2).map(restoreSource) };
   if (seg[0] === 'library') return { section: 'library', materialPath: seg.slice(1).map(restoreSource) };
+  if (seg[0] === 'catalog') return { section: 'catalog', materialPath: [] };
   if (seg[0] === 'progress') return { section: 'progress', materialPath: [] };
   if (seg[0] === 'practice') return { section: 'banks', materialPath: [] };
   if (seg[0] === 'print') return { section: 'print', materialPath: [] };
@@ -89,6 +94,7 @@ function sectionPathFor(urlBase, section) {
   if (section === null) return urlBase;
   if (section.startsWith('subject:')) return `${urlBase}/subject/${encodeURIComponent(section.slice(8))}`;
   if (section === 'library') return `${urlBase}/library`;
+  if (section === 'catalog') return `${urlBase}/catalog`;
   if (section === 'progress') return `${urlBase}/progress`;
   if (section === 'banks') return `${urlBase}/practice`;
   if (section === 'print') return `${urlBase}/print`;
@@ -118,8 +124,8 @@ function SchoolShell({ clear }) {
   // live nav state it reports back so the URL stays in lock-step with the
   // breadcrumb all the way down to a playing track.
   const [materialPath, setMaterialPath] = useState(initialLink.materialPath);
-  const [active, setActive] = useState(null);   // {bank, mode} — only ever set within 'banks'
-  const [pending, setPending] = useState(null); // {bankSummary, mode} awaiting a claim
+  const [active, setActive] = useState(null);   // bounded runner or shared remediation session
+  const [pending, setPending] = useState(null); // bank/module launch awaiting a claim
   const [notice, setNotice] = useState(null);
   const [materials, setMaterials] = useState([]); // full catalog materials list, unfiltered
   const [courses, setCourses] = useState([]);     // language courses (Glossika)
@@ -179,22 +185,46 @@ function SchoolShell({ clear }) {
   // re-arming, the same async-guard convention as FlashcardRunner's grade().
   const onLaunch = useCallback(async (bankSummary, mode) => {
     if (!currentUser && !isGuest) {
-      setPending({ bankSummary, mode });
+      setPending({ kind: 'bank', bankSummary, mode });
       openPicker();
       return;
     }
     await start(bankSummary, mode, isGuest);
   }, [currentUser, isGuest, openPicker, start]);
 
+  const startLearning = useCallback((launch) => {
+    const { module, learning } = launch;
+    if (module.type === 'learning_probe') setActive({ mode: 'learning_probe', module, learning });
+    else if (module.type === 'lecture_notes' || module.type === 'examples') setActive({ mode: 'learning_reader', module, learning });
+    else if (module.type === 'flashcards') setActive({ mode: 'flashcard', bank: module.bank, learning });
+    else if (module.type === 'quiz') setActive({ mode: 'quiz', bank: module.bank, learning });
+    else if (module.type === 'problems') setActive({ mode: 'problems', bank: module.bank, learning });
+    else setActive({ mode: 'learning_unsupported', module, learning });
+  }, []);
+
+  const onLearningLaunch = useCallback((launch) => {
+    const tracked = ['problems', 'flashcards', 'quiz', 'learning_probe', 'activity'].includes(launch.module.type);
+    if (tracked && !currentUser && !isGuest) {
+      setPending({ kind: 'learning', launch });
+      openPicker();
+      return;
+    }
+    startLearning(launch);
+  }, [currentUser, isGuest, openPicker, startLearning]);
+
   const onPick = useCallback((id) => {
     claim(id);
-    if (pending) { start(pending.bankSummary, pending.mode, false); setPending(null); }
-  }, [claim, pending, start]);
+    if (pending?.kind === 'bank') start(pending.bankSummary, pending.mode, false);
+    if (pending?.kind === 'learning') startLearning(pending.launch);
+    setPending(null);
+  }, [claim, pending, start, startLearning]);
 
   const onDismiss = useCallback(() => {
     continueAsGuest();
-    if (pending) { start(pending.bankSummary, pending.mode, true); setPending(null); }
-  }, [continueAsGuest, pending, start]);
+    if (pending?.kind === 'bank') start(pending.bankSummary, pending.mode, true);
+    if (pending?.kind === 'learning') startLearning(pending.launch);
+    setPending(null);
+  }, [continueAsGuest, pending, start, startLearning]);
 
   const syncUrl = useCallback((sec, chain = []) => {
     if (!urlBase) return;
@@ -260,6 +290,28 @@ function SchoolShell({ clear }) {
     setSection((sec) => { syncUrl(sec, next); return sec; });
   }, [syncUrl]);
 
+  const onProgressFollowUp = useCallback(async (action) => {
+    if (action?.target?.type === 'bank') {
+      const bank = banks.find((entry) => entry.id === action.target.id);
+      if (!bank) {
+        setNotice('That review is not available in the current Catalog.');
+        return;
+      }
+      await start(bank, 'quiz', false);
+      return;
+    }
+    if (action?.target?.type === 'section') {
+      openSection(action.target.id);
+      return;
+    }
+    if (action?.target?.type === 'remediation_session' && currentUser) {
+      setNotice(null);
+      setActive({ mode: 'remediation', sessionId: action.target.id });
+      return;
+    }
+    setNotice('That follow-up action is not available on this screen yet.');
+  }, [banks, currentUser, start, openSection]);
+
   // Browser back/forward re-parse the URL — the address bar and the shell
   // never disagree, at any depth.
   useEffect(() => {
@@ -283,13 +335,17 @@ function SchoolShell({ clear }) {
   useEffect(() => {
     if (justSetNoticeRef.current) { justSetNoticeRef.current = false; return; }
     setNotice(null);
-  }, [currentUser, isGuest]);
+    // A remediation session is learner-scoped at the API boundary. Changing
+    // profiles pauses the panel instead of trying to reopen it as someone else.
+    setActive((current) => (current?.mode === 'remediation' ? null : current));
+  }, [currentUser?.id, isGuest]);
 
   const subjectId = section?.startsWith('subject:') ? section.slice(8) : null;
   const courseId = section?.startsWith('lang:') ? section.slice(5) : null;
   const sectionLabel = !section ? null
-    : subjectId ? subjectLabel(subjectId)
+      : subjectId ? subjectLabel(subjectId)
       : section === 'library' ? 'Library'
+        : section === 'catalog' ? 'Catalog'
         : section === 'progress' ? 'My Progress'
           : section === 'banks' ? 'Practice'
             : section === 'print' ? 'Print'
@@ -379,7 +435,10 @@ function SchoolShell({ clear }) {
             server-side at session open (403 for guest vs an assigned bank). */}
         {/* Opens on the signed-in learner when there is one, otherwise the
             whole household. Both scopes are the same endpoint, filtered. */}
-        {section === 'progress' && <ReportPanel userId={currentUser?.id || null} />}
+        {section === 'progress' && !active && (
+          <ReportPanel userId={currentUser?.id || null} onFollowUp={currentUser ? onProgressFollowUp : null} />
+        )}
+        {section === 'catalog' && !active && <LearningCatalogBrowser onLaunch={onLearningLaunch} />}
         {section === 'print' && <PrintCenter />}
         {section === 'typing' && <TypingTutor />}
         {section === 'geography' && !active && <GeographyGrid onLaunch={onLaunch} />}
@@ -407,9 +466,30 @@ function SchoolShell({ clear }) {
             onMaterialNav={onMaterialNav}
           />
         )}
-        {active?.mode === 'quiz' && <QuizRunner bank={active.bank} onExit={() => setActive(null)} />}
-        {active?.mode === 'flashcard' && <FlashcardRunner bank={active.bank} onExit={() => setActive(null)} />}
+        {active?.mode === 'quiz' && <QuizRunner bank={active.bank} learning={active.learning} onExit={() => setActive(null)} />}
+        {active?.mode === 'flashcard' && <FlashcardRunner bank={active.bank} learning={active.learning} onExit={() => setActive(null)} />}
+        {active?.mode === 'problems' && <QuizRunner bank={active.bank} mode="drill" learning={active.learning} onExit={() => setActive(null)} />}
+        {active?.mode === 'learning_probe' && (
+          <LearningProbeRunner module={active.module} learning={active.learning} onExit={() => setActive(null)} />
+        )}
+        {active?.mode === 'learning_reader' && (
+          <LearningContentReader module={active.module} onExit={() => setActive(null)} />
+        )}
+        {active?.mode === 'learning_unsupported' && (
+          <section className="school-runner">
+            <h2>{active.module.title ?? 'Interactive module'}</h2>
+            <p>This module needs a capability that is not installed on this screen.</p>
+            <button type="button" className="school-runner__done" onClick={() => setActive(null)}>Return to lesson</button>
+          </section>
+        )}
         {active?.mode === 'drill' && <GeoQuizRunner bank={active.bank} onExit={() => setActive(null)} />}
+        {active?.mode === 'remediation' && currentUser && (
+          <AdaptiveTutorPanel
+            sessionId={active.sessionId}
+            learnerId={currentUser.id}
+            onExit={() => setActive(null)}
+          />
+        )}
         {/* Language study needs a claimed identity: every rung produces a
             record, and a guest's work is discarded. The program itself shows
             the sign-in prompt rather than drilling into a void. */}

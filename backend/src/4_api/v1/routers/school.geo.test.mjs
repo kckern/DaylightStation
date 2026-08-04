@@ -9,8 +9,8 @@ function appWith(schoolService) {
 }
 
 it('GET /geography/decks returns the deck summaries', async () => {
-  const schoolService = { listDeckSummaries: () => [
-    { deckId: 'world-flags', bankId: 'geo:world-flags', title: 'World Flags', itemType: 'asset_choice', available: true }] };
+  const schoolService = { listBankSourceSummaries: () => [
+    { summaryId: 'world-flags', bankId: 'geo:world-flags', title: 'World Flags', itemType: 'asset_choice', available: true, collections: ['geography'] }] };
   const app = appWith(schoolService);
   const { default: request } = await import('supertest');
   const res = await request(app).get('/api/v1/school/geography/decks');

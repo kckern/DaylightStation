@@ -6,6 +6,8 @@ const banksMock = vi.fn();
 const materialsMock = vi.fn();
 const materialUnitsMock = vi.fn();
 const unitProgressMock = vi.fn();
+const learningCatalogsMock = vi.fn();
+const learningLessonMock = vi.fn();
 vi.mock('./schoolApi.js', () => ({
   schoolApi: {
     roster: vi.fn(async () => ({ ok: true, status: 200, data: [{ id: 'kid1', name: 'Alpha', birthyear: 2016 }, { id: 'dad1', name: 'Papa', birthyear: 1984 }] })),
@@ -14,6 +16,9 @@ vi.mock('./schoolApi.js', () => ({
     openSession: vi.fn(async () => ({ ok: true, status: 200, data: { sessionId: 'ses_1' } })),
     answer: vi.fn(async () => ({ ok: true, status: 200, data: { correct: true, expected: 'Olympia', attemptId: 'att_1' } })),
     materials: (...a) => materialsMock(...a),
+    learningCatalogs: (...a) => learningCatalogsMock(...a),
+    learningLesson: (...a) => learningLessonMock(...a),
+    recordProbeInteraction: vi.fn(async () => ({ ok: true, status: 201, data: {} })),
     materialUnits: (...a) => materialUnitsMock(...a),
     unitProgress: (...a) => unitProgressMock(...a),
     quizRequests: vi.fn(async () => ({ ok: true, status: 200, data: [] })),
@@ -50,8 +55,8 @@ const SAMPLE_CATALOG = {
   data: {
     sections: [{ category: 'course', label: 'Courses' }, { category: 'listening', label: 'Listening' }],
     materials: [
-      { id: 'plex:1', title: 'Bill Nye', poster: null, source: 'plex-show', medium: 'video', category: 'course', subject: 'science', durationMs: null, unitCount: 3 },
-      { id: 'plex:2', title: 'Story Time', poster: null, source: 'plex-album', medium: 'audio', category: 'listening', subject: null, durationMs: null, unitCount: 5 },
+      { id: 'plex:1', title: 'Bill Nye', poster: null, source: 'media-series', medium: 'video', category: 'course', subject: 'science', durationMs: null, unitCount: 3 },
+      { id: 'plex:2', title: 'Story Time', poster: null, source: 'media-album', medium: 'audio', category: 'listening', subject: null, durationMs: null, unitCount: 5 },
     ],
   },
 };
@@ -65,8 +70,43 @@ beforeEach(() => {
       : [{ id: 'caps', title: 'Caps', audience: 'assigned', subject: null, itemCount: 1 }, { id: 'animals', title: 'Animals', audience: 'generic', subject: null, itemCount: 1 }],
   }));
   materialsMock.mockReset().mockResolvedValue(EMPTY_CATALOG);
+  learningCatalogsMock.mockReset().mockResolvedValue({ ok: true, status: 200, data: { schema: 'school.catalog-index/v1', catalogs: [] } });
+  learningLessonMock.mockReset();
   materialUnitsMock.mockReset().mockResolvedValue({ ok: true, status: 200, data: { material: {}, units: [] } });
   coursesMock.mockReset().mockResolvedValue({ ok: true, status: 200, data: [] });
+});
+
+describe('authored learning Catalog', () => {
+  it('opens a generic Catalog hierarchy and asks who is studying before tracked work', async () => {
+    learningCatalogsMock.mockResolvedValueOnce({ ok: true, status: 200, data: {
+      schema: 'school.catalog-index/v1', catalogs: [{
+        schema: 'school.catalog/v1', catalogId: 'core', title: 'Core', subjects: [{
+          subjectId: 'quant', title: 'Quantitative', courses: [{ courseId: 'rates', title: 'Rates', units: [{
+            unitId: 'intro', title: 'Introduction', lessons: [{ lessonId: 'unit-rate', title: 'Unit rates', modules: [{ moduleId: 'check', type: 'learning_probe' }] }],
+          }] }],
+        }],
+      }],
+    } });
+    learningLessonMock.mockResolvedValueOnce({ ok: true, status: 200, data: {
+      schema: 'school.learning-lesson/v1',
+      context: { catalog: { catalogId: 'core' }, subject: { subjectId: 'quant' }, course: { courseId: 'rates' }, unit: { unitId: 'intro' } },
+      lesson: { lessonId: 'unit-rate', title: 'Unit rates', modules: [{
+        moduleId: 'check', type: 'learning_probe', title: 'Check it', bankId: 'rate-check',
+        phase: 'check', difficulty: 2, conceptIds: ['unit-rate'],
+        feedback: { timing: 'immediate', onIncorrect: 'explain_then_continue', maxAttemptsPerItem: 1 },
+        bank: { id: 'rate-check', title: 'Rate check', items: [{ id: 'q1', type: 'multiple_choice', prompt: 'A unit rate?', choices: ['Yes', 'No'], answer: 'Yes', feedback: { explanation: 'One denominator unit.' } }] },
+      }] },
+    } });
+    render(<SchoolApp clear={() => {}} />);
+    fireEvent.click(await screen.findByRole('button', { name: /^catalog/i }));
+    for (const label of ['Core', 'Quantitative', 'Rates', 'Introduction', 'Unit rates']) {
+      fireEvent.click(await screen.findByRole('button', { name: new RegExp(label, 'i') }));
+    }
+    fireEvent.click(await screen.findByRole('button', { name: /Check it/ }));
+    expect(await screen.findByRole('dialog')).toBeInTheDocument();
+    fireEvent.click(screen.getByText('Alpha'));
+    expect(await screen.findByText('A unit rate?')).toBeInTheDocument();
+  });
 });
 
 // Untagged banks shelve into the Library's Practice group — every bank-flow

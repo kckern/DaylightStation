@@ -16,7 +16,7 @@ objectives:
   - Rewrite an improper fraction as a mixed number.
   - Order fractions with unlike denominators by rewriting them over a common denominator.
 document: math-fractions-03-omr
-bank: math-fractions-03-bank
+bank: math/math-fractions/03-checkpoint
 passing:
   percent: 80
 reward:

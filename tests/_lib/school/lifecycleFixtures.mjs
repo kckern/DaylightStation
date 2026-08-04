@@ -55,8 +55,8 @@ export const OMR_UNIT = 'math-fractions.03';
 export const MIXED_UNIT = 'math-fractions.04';
 export const COURSE_ID = 'math-fractions';
 
-export const OMR_BANK_ID = 'math-fractions-03-bank';
-export const MEDIA_BANK_ID = 'math-fractions-01-quiz';
+export const OMR_BANK_ID = 'math/math-fractions/03-checkpoint';
+export const MEDIA_BANK_ID = 'math/math-fractions/01-quiz';
 export const OMR_DOCUMENT_ID = 'math-fractions-03-omr';
 export const WORKSHEET_DOCUMENT_ID = 'math-fractions-02-worksheet';
 

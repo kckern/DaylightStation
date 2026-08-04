@@ -16,17 +16,19 @@ import {
  * statistics together.
  */
 export class GetSchoolReport {
-  #reporters; #userService; #logger;
+  #reporters; #userService; #cohortDirectory; #logger;
 
-  constructor({ reporters = [], userService, logger = console }) {
+  constructor({ reporters = [], userService, cohortDirectory = null, logger = console }) {
     this.#reporters = reporters.filter(Boolean);
     this.#userService = userService;
+    this.#cohortDirectory = cohortDirectory;
     this.#logger = logger;
   }
 
   /** Household order — the same list every picker and board in the house uses. */
   #roster() {
-    return this.#userService.getHouseholdRoster()
+    const roster = this.#cohortDirectory?.listLearners?.() ?? this.#userService.getHouseholdRoster();
+    return roster
       .map((u) => ({ id: u.id, name: u.name }));
   }
 

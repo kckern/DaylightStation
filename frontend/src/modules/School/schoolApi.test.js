@@ -46,6 +46,62 @@ describe('schoolApi', () => {
     expect(fetch).toHaveBeenCalledWith('/api/v1/school/materials', expect.any(Object));
   });
 
+  it('reads the shared authored Catalog and one hydrated lesson address', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response('{}', { status: 200 })));
+    await schoolApi.learningCatalogs();
+    expect(fetch).toHaveBeenLastCalledWith('/api/v1/school/catalogs', expect.any(Object));
+    await schoolApi.learningLesson({
+      catalogId: 'main', subjectId: 'math & money', courseId: 'rates',
+      unitId: 'unit/one', lessonId: 'intro',
+    });
+    expect(fetch).toHaveBeenLastCalledWith(
+      '/api/v1/school/catalogs/main/subjects/math%20%26%20money/courses/rates/units/unit%2Fone/lessons/intro',
+      expect.any(Object),
+    );
+  });
+
+  it('builds reusable progress scope/time/curriculum filter queries', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response('{}', { status: 200 })));
+    await schoolApi.progress({
+      learnerId: 'kid-a', periodId: 'fall', subjectIds: ['math'],
+      excludeClassifications: ['elective'], groupBy: ['subject', 'month'], recentLimit: 5,
+    });
+    expect(fetch).toHaveBeenCalledWith(
+      '/api/v1/school/progress?learnerId=kid-a&periodId=fall&recentLimit=5&subject=math&excludeClassification=elective&groupBy=subject%2Cmonth',
+      expect.any(Object),
+    );
+    await schoolApi.progressOptions();
+    expect(fetch).toHaveBeenLastCalledWith('/api/v1/school/progress/options', expect.any(Object));
+  });
+
+  it('reads adult instructional insights and records a learner reflection through generic School routes', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response('{}', { status: 200 })));
+    await schoolApi.instructionalInsights({ scopeType: 'classroom', scopeId: 'math' });
+    expect(fetch).toHaveBeenLastCalledWith(
+      '/api/v1/school/progress/insights?scopeType=classroom&scopeId=math', expect.any(Object),
+    );
+    await schoolApi.recordReflection({ learnerId: 'kid-a', selfRegulation: { confidence: 2 } });
+    const [url, options] = fetch.mock.calls.at(-1);
+    expect(url).toBe('/api/v1/school/progress/reflections');
+    expect(options.method).toBe('POST');
+  });
+
+  it('maps shared remediation reads and learner-control actions', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response('{}', { status: 200 })));
+    await schoolApi.remediationSessions('kid a');
+    expect(fetch).toHaveBeenLastCalledWith(
+      '/api/v1/school/remediation?learnerId=kid%20a', expect.any(Object),
+    );
+    await schoolApi.remediationSession('rem/1', 'kid-a', { after: 2, limit: 5 });
+    expect(fetch).toHaveBeenLastCalledWith(
+      '/api/v1/school/remediation/rem%2F1?learnerId=kid-a&after=2&limit=5', expect.any(Object),
+    );
+    await schoolApi.remediationAction('rem-1', {
+      learnerId: 'kid-a', action: 'skip', clientSequence: 1, lastServerSequence: 2, turnId: 'turn-2',
+    });
+    expect(fetch.mock.calls.at(-1)[1].method).toBe('POST');
+  });
+
   it('materialUnits() GETs units, with and without a userId', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => new Response('{}', { status: 200 })));
     await schoolApi.materialUnits('plex:1');

@@ -371,6 +371,25 @@ export function saveYamlToPath(filePath, content, options = {}) {
 }
 
 /**
+ * Atomically replace a YAML file by staging beside it and renaming. Readers
+ * observe either the old complete document or the new complete document.
+ */
+export function saveYamlToPathAtomic(filePath, content, options = {}) {
+  const dir = path.dirname(filePath);
+  ensureDir(dir);
+  const stagingPath = atomicStagingPath(filePath);
+  try {
+    const yamlContent = yaml.dump(content, { lineWidth: -1, ...options });
+    fs.writeFileSync(stagingPath, yamlContent, 'utf8');
+    fs.renameSync(stagingPath, filePath);
+  } catch (err) {
+    try { if (fs.existsSync(stagingPath)) fs.unlinkSync(stagingPath); } catch { /* preserve original error */ }
+    logPermissionError(filePath, err);
+    throw err;
+  }
+}
+
+/**
  * Delete a file if it exists
  * @param {string} filePath - Full file path
  * @returns {boolean} True if file was deleted, false if didn't exist
@@ -429,6 +448,21 @@ export function writeBinary(filePath, buffer) {
   }
 }
 
+/** Atomically replace a binary file using a same-directory staging file. */
+export function writeBinaryAtomic(filePath, buffer) {
+  const dir = path.dirname(filePath);
+  ensureDir(dir);
+  const stagingPath = atomicStagingPath(filePath);
+  try {
+    fs.writeFileSync(stagingPath, buffer);
+    fs.renameSync(stagingPath, filePath);
+  } catch (err) {
+    try { if (fs.existsSync(stagingPath)) fs.unlinkSync(stagingPath); } catch { /* preserve original error */ }
+    logPermissionError(filePath, err);
+    throw err;
+  }
+}
+
 /**
  * Read binary data from a file
  * @param {string} filePath - Full file path
@@ -441,6 +475,10 @@ export function readBinary(filePath) {
   } catch {
     return null;
   }
+}
+
+function atomicStagingPath(filePath) {
+  return `${filePath}.tmp-${process.pid}-${Date.now()}-${Math.random().toString(16).slice(2)}`;
 }
 
 /**

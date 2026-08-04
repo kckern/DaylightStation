@@ -24,6 +24,17 @@ export class ITokenRegistry {
   }
 
   /**
+   * Atomically claim an opaque token's immutable meaning. A retry with the
+   * same class and subject returns the original record; another meaning is a
+   * conflict and must never overwrite what an already-printed code does.
+   *
+   * @returns {Promise<{status:'accepted'|'duplicate'|'conflict', record:object}>}
+   */
+  async claim(record) { // eslint-disable-line no-unused-vars
+    throw new Error('ITokenRegistry.claim must be implemented');
+  }
+
+  /**
    * Look up a scanned token.
    *
    * @param {string} token - the scanned code, with or without the `sch:` prefix

@@ -14,7 +14,7 @@ objectives:
   - Find the least common denominator of two fractions whose denominators are 12 or less.
   - Rewrite a pair of fractions with unlike denominators so that they share a common denominator.
 media: math-fractions-intro-video
-bank: math-fractions-01-quiz
+bank: math/math-fractions/01-quiz
 passing:
   percent: 80
 provenance:

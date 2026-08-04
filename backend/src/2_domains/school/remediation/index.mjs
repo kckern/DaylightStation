@@ -1,0 +1,17 @@
+export {
+  DEFAULT_ADAPTIVE_REMEDIATION_POLICY,
+  REMEDIATION_LEARNER_CONTROLS,
+  validateAdaptiveRemediationPolicy,
+  evaluateAssessmentForRemediation,
+  validateAdaptiveRemediationBank,
+  createAdaptiveRemediationSession,
+  advanceAdaptiveRemediationClientSequence,
+  activateAdaptiveRemediationSession,
+  appendAdaptiveRemediationTurn,
+  controlAdaptiveRemediationTurn,
+  answerAdaptiveRemediationTurn,
+  cancelAdaptiveRemediationSession,
+  selectNextRemediationConcept,
+  adaptiveRemediationSessionView,
+  isAdaptiveRemediationTerminal,
+} from './adaptiveRemediation.mjs';

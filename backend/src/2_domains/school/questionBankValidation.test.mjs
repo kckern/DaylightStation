@@ -36,3 +36,31 @@ describe('validateQuestionBank asset_choice', () => {
       choices: [{ value: 'FR', label: 'a' }, { value: 'FR', label: 'b' }] }] }).ok).toBe(false);
   });
 });
+
+describe('validateQuestionBank formative feedback', () => {
+  const item = {
+    id: 'i1', type: 'multiple_choice', prompt: 'Which operation?',
+    choices: ['Divide', 'Add'], answer: 'Divide',
+  };
+
+  it('retains bounded corrective feedback for any subject or surface', () => {
+    const feedback = {
+      explanation: 'A rate compares quantities by division.',
+      correct: 'Yes—compare per one unit.',
+      incorrect: 'Review which operation creates a per-unit value.',
+    };
+    const result = validateQuestionBank({ ...base, items: [{ ...item, feedback }] });
+    expect(result).toMatchObject({ ok: true, bank: { items: [{ feedback }] } });
+  });
+
+  it('rejects empty, executable-shaped, or unbounded feedback', () => {
+    const result = validateQuestionBank({
+      ...base,
+      items: [{ ...item, feedback: { explanation: '', command: 'launch' } }],
+    });
+    expect(result.errors).toEqual(expect.arrayContaining([
+      expect.stringMatching(/unknown fields command/),
+      expect.stringMatching(/explanation/),
+    ]));
+  });
+});

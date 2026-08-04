@@ -225,9 +225,10 @@ function isNotNull(value) {
  * `app.mjs` does not pass — keep theirs, and are listed as optional rather than
  * required.
  *
- * `schoolLifecycle` and `applyScanToComposition` may be NULL: an unbuilt console
- * and a disabled nutriscan are real states. They may not be ABSENT, because null
- * is an answer and absence is not.
+ * `schoolLifecycle`, `schoolCalcResultImporter`, and `applyScanToComposition`
+ * may be NULL: an unbuilt console, a disabled SchoolCalc product, and a disabled
+ * nutriscan are real states. They may not be ABSENT, because null is an answer
+ * and absence is not.
  *
  * ## Unknown keys are rejected, and that is what catches a misspelling
  *
@@ -254,6 +255,10 @@ function isNotNull(value) {
  */
 const DEP_CONTRACT = Object.freeze({
   schoolLifecycle:        { ok: () => true, want: 'present (may be null when the console is unbuilt)' },
+  schoolCalcResultImporter: {
+    ok: (v) => v === null || typeof v?.execute === 'function',
+    want: 'null or an object with execute()',
+  },
   triggerDispatchService: { ok: (v) => typeof v?.handleEvent === 'function', want: 'an object with handleEvent()' },
   relayInstances:         { ok: isNotNull, want: 'non-null (indexed by reader id)' },
   relayConfig:            { ok: isNotNull, want: 'non-null' },
@@ -390,6 +395,8 @@ function reportLeadingSegmentCollisions(screenNames, commandNames, logger) {
  * @param {object} deps
  * @param {{handlesCode: Function, handleScan: Function|null}|null} deps.schoolLifecycle  null when
  *   the console is not built
+ * @param {{execute: Function}|null} deps.schoolCalcResultImporter  the common QR/cable result
+ *   importer, or null when SchoolCalc is disabled
  * @param {{handleEvent: Function}} deps.triggerDispatchService
  * @param {Record<string, object>} deps.relayInstances  `relays:` block from barcode-relay.yml
  * @param {object} deps.relayConfig                     the whole barcode-relay app config
@@ -419,6 +426,7 @@ export function createScanDispatch(deps = {}) {
 
   const {
     schoolLifecycle,
+    schoolCalcResultImporter,
     triggerDispatchService,
     relayInstances,
     relayConfig,
@@ -463,9 +471,24 @@ export function createScanDispatch(deps = {}) {
   };
 
   // ---- school --------------------------------------------------------------
-  // Gets `raw`, not `body`: the token registry looks tokens up by the full
-  // `sch:<body>` string.
+  // Gets `raw`, not `body`. `sch:r1:` is the published SchoolCalc result form;
+  // every other `sch:` payload remains an opaque School console action token.
+  // The distinction is made here, at composition, because the two products
+  // share the household scanner namespace without coupling either application.
   const handleSchool = ({ raw, device }) => {
+    if (raw.startsWith('sch:r1:')) {
+      if (!schoolCalcResultImporter) {
+        return { status: 'unwired', ok: false, message: 'SchoolCalc result ingress is not wired' };
+      }
+      Promise.resolve()
+        .then(() => schoolCalcResultImporter.execute({ record: raw, transport: 'qr' }))
+        .catch((err) => {
+          emit(barcodeLogger, 'warn', 'barcode_relay.schoolcalc.result.failed', {
+            device, error: errText(err),
+          });
+        });
+      return { status: 'dispatched', effect: { transport: 'qr' } };
+    }
     if (!schoolLifecycle?.handlesCode?.(raw) || typeof schoolLifecycle.handleScan !== 'function') {
       return { status: 'unwired', ok: false, message: 'school console is not wired' };
     }

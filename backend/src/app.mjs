@@ -80,6 +80,9 @@ import { createHomeAutomationApiRouter, createHomeDashboardApiRouter } from '#co
 import { createDeviceApiRouter } from '#composition/modules/deviceApi.mjs';
 import { createTriggerApiRouter } from '#composition/modules/triggerApi.mjs';
 import { createScanDispatch, errText } from '#composition/modules/scanDispatch.mjs';
+import { createSchoolCalc } from '#composition/modules/schoolCalc.mjs';
+import { createSchoolCatalog } from '#composition/modules/schoolCatalog.mjs';
+import { createLearningReflectionEvidenceId, createSchoolLearningLoop } from '#composition/modules/schoolLearning.mjs';
 import { emit } from '#apps/scan/ScanDispatcher.mjs';
 import { createGratitudeApiRouter } from '#composition/modules/gratitudeApi.mjs';
 import { createEconomyApi } from '#composition/modules/economyApi.mjs';
@@ -253,15 +256,29 @@ import { createLanguageRouter } from './4_api/v1/routers/language.mjs';
 import { LanguageStudyService } from './3_applications/school/LanguageStudyService.mjs';
 import { YamlLanguageStudyDatastore } from './1_adapters/persistence/yaml/YamlLanguageStudyDatastore.mjs';
 import { GetSchoolReport } from './3_applications/school/GetSchoolReport.mjs';
+import { GetLearningProgress } from './3_applications/school/GetLearningProgress.mjs';
+import { GetInstructionalInsights } from './3_applications/school/GetInstructionalInsights.mjs';
+import { RecordLearningReflection } from './3_applications/school/RecordLearningReflection.mjs';
+import { OpenCatalogLearningSession } from './3_applications/school/OpenCatalogLearningSession.mjs';
+import { AssessmentReviewFollowUpSource } from './3_applications/school/AssessmentReviewFollowUpSource.mjs';
+import {
+  ConfiguredAcademicPeriodSource,
+  ConfiguredLearningExpectationSource,
+  ConfiguredSchoolLearningDirectory,
+  YamlLearningEvidenceRepository,
+  YamlSchoolAttemptEvidenceSource,
+} from './1_adapters/school/progress/index.mjs';
+import { shortId } from '#domains/core/utils/id.mjs';
 import { PresenceStore } from './1_adapters/devices/PresenceStore.mjs';
 import { resolveGate, ROLE_SEVERITY } from './2_domains/school/accessGate.mjs';
 import { GetMaterialCatalog } from './3_applications/school/GetMaterialCatalog.mjs';
 import { GetMaterialUnits, buildBankIndex } from './3_applications/school/GetMaterialUnits.mjs';
 import { GetMaterialProgressSummary } from './3_applications/school/GetMaterialProgressSummary.mjs';
-import { PlexAlbumSource } from './3_applications/school/sources/PlexAlbumSource.mjs';
-import { PlexShowSource } from './3_applications/school/sources/PlexShowSource.mjs';
-import { PlexLabelSource } from './3_applications/school/sources/PlexLabelSource.mjs';
-import { GeographyBankSource } from '#apps/school/sources/GeographyBankSource.mjs';
+import { MediaAlbumSource } from './3_applications/school/sources/MediaAlbumSource.mjs';
+import { MediaSeriesSource } from './3_applications/school/sources/MediaSeriesSource.mjs';
+import { MediaLabelSource } from './3_applications/school/sources/MediaLabelSource.mjs';
+import { PlexSchoolMediaCatalog } from './1_adapters/school/media/plex/PlexSchoolMediaCatalog.mjs';
+import { GeneratedBankSource } from '#adapters/school/generated-content/GeneratedBankSource.mjs';
 import { UserVideoProgressStore as SchoolUserVideoProgressStore } from './3_applications/piano/UserVideoProgressStore.mjs';
 import { PrintService } from './3_applications/school/PrintService.mjs';
 import { renderBankWorksheet } from './1_rendering/school/WorksheetRenderer.mjs';
@@ -1625,9 +1642,8 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     });
   }
 
-  // School router (banks/sessions + materials framework) is constructed below,
-  // after fitnessPlayableService exists (PlexShowSource reuses it rather than
-  // standing up a second Plex-episode path — see that block for the full wiring).
+  // School router (banks/sessions + materials framework) is constructed below
+  // after the shared content adapters have been registered.
 
   // Content-filter cascade (EDL + profile + override) for the Player's
   // useContentFilter hook. Reads data/household/shared/content-filter/.
@@ -2166,17 +2182,99 @@ export async function createApp({ server, logger, configPaths, configExists, ena
 
   // School (portal homeschool): banks from data/content/school/{subject}/quizzes/, per-user
   // append-only attempt log under data/users/{id}/apps/school/attempts/, plus
-  // the materials framework (catalog + per-unit progress/quiz gates). Wired
-  // here (after fitnessPlayableService/pianoContainer above) because
-  // PlexShowSource reuses the already-constructed fitnessPlayableService's
-  // getPlayableEpisodes rather than standing up a second one.
+  // the materials framework (catalog + per-unit progress/quiz gates).
   const schoolDatastore = new YamlSchoolDatastore({ configService });
+  const schoolFullConfig = configService.getHouseholdAppConfig(null, 'school') || {};
+  const schoolLearnerDirectory = new ConfiguredSchoolLearningDirectory({
+    userService,
+    config: schoolFullConfig,
+    householdId,
+    logger: rootLogger.child({ module: 'school-learners' }),
+  });
+  const schoolAcademicPeriods = new ConfiguredAcademicPeriodSource({ config: schoolFullConfig });
   const schoolService = new SchoolService({
     datastore: schoolDatastore,
     userService,
+    learnerDirectory: schoolLearnerDirectory,
     logger: rootLogger.child({ module: 'school' }),
-    bankSources: [new GeographyBankSource()]
+    bankSources: [new GeneratedBankSource({
+      dataDir: path.join(contentPath, 'school', 'generated-banks')
+    })]
   });
+  const schoolLearningEvidence = new YamlLearningEvidenceRepository({ configService });
+  const schoolEvidenceSources = [
+    new YamlSchoolAttemptEvidenceSource({ datastore: schoolDatastore }),
+    schoolLearningEvidence,
+  ];
+  const schoolLearningLoop = createSchoolLearningLoop({
+    configService,
+    householdId,
+    aiGateway: sharedAiGateway,
+    logger: rootLogger.child({ module: 'school-remediation' }),
+    evidenceRepository: schoolLearningEvidence,
+    learnerDirectory: schoolLearnerDirectory,
+  });
+  const getLearningProgress = new GetLearningProgress({
+    evidenceSources: schoolEvidenceSources,
+    cohortDirectory: schoolLearnerDirectory,
+    academicPeriods: schoolAcademicPeriods,
+    followUpSources: [new AssessmentReviewFollowUpSource({
+      thresholdPercent: schoolFullConfig.progress?.reviewThresholdPercent ?? 80,
+    }), schoolLearningLoop.followUps],
+    logger: rootLogger.child({ module: 'school-progress' }),
+  });
+  const getInstructionalInsights = new GetInstructionalInsights({
+    evidenceSources: schoolEvidenceSources,
+    cohortDirectory: schoolLearnerDirectory,
+    expectationSource: new ConfiguredLearningExpectationSource({ config: schoolFullConfig }),
+    policy: {
+      accuracyThresholdPercent: schoolFullConfig.progress?.instructionalInsights?.accuracyThresholdPercent ?? 70,
+      minimumResponses: schoolFullConfig.progress?.instructionalInsights?.minimumResponses ?? 2,
+    },
+    logger: rootLogger.child({ module: 'school-instructional-insights' }),
+  });
+  const recordLearningReflection = new RecordLearningReflection({
+    evidenceRepository: schoolLearningEvidence,
+    learnerDirectory: schoolLearnerDirectory,
+    evidenceIdFactory: createLearningReflectionEvidenceId,
+  });
+  // The authored Catalog is a School capability shared by web, print, and
+  // calculator surfaces. It is composed before—and independently of—the
+  // optional SchoolCalc device product.
+  const schoolCatalog = createSchoolCatalog({
+    configService,
+    householdId,
+    learnerDirectory: schoolLearnerDirectory,
+    logger: rootLogger.child({ module: 'school-catalog' }),
+  });
+  const openCatalogLearningSession = schoolCatalog.query
+    ? new OpenCatalogLearningSession({ catalog: schoolCatalog.query, grader: schoolService })
+    : null;
+  // Optional calculator-native School product. The composition module is the
+  // only place that joins calculator-family adapters, SchoolCalc application
+  // use cases, persistence, relay credentials, and the thin HTTP router.
+  const schoolCalcLogger = rootLogger.child({ module: 'schoolcalc' });
+  let schoolCalc = {
+    wired: false, reason: 'not attempted', container: null, router: null, resultImporter: null,
+  };
+  try {
+    schoolCalc = createSchoolCalc({
+      configService,
+      schoolService,
+      learnerDirectory: schoolLearnerDirectory,
+      learningProgress: getLearningProgress,
+      remediationOffers: schoolLearningLoop.offers,
+      remediationTutor: schoolLearningLoop.tutor,
+      probeEvidenceRepository: schoolLearningEvidence,
+      schoolCatalog,
+      householdId,
+      logger: schoolCalcLogger,
+    });
+  } catch (err) {
+    // SchoolCalc is explicitly opt-in. A bad calculator content mount or relay
+    // credential disables that surface without taking down the rest of School.
+    schoolCalcLogger.error('schoolcalc.wiring-failed', { error: err.message });
+  }
   // Dumb playhead/percent/duration store only (spec §6) — School never reads
   // its threshold/engaged/completedAt fields, unlike Piano's own instance.
   const schoolMaterialProgressStore = new SchoolUserVideoProgressStore({
@@ -2191,94 +2289,20 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   let getMaterialUnits = null;
   let getMaterialProgressSummary = null;
   if (schoolMaterialsConfig) {
-    // PlexAlbumSource/PlexShowSource want the raw Plex
-    // `/library/metadata/{id}/children` response (ratingKey/title/thumb/
-    // leafCount/duration/index/parentTitle/parentThumb) — NOT the normalized
-    // ListableItem[] PlexAdapter#getList returns. Adapt over the already
-    // -registered PlexAdapter instance's public `.client` (PlexClient) rather
-    // than instantiating a second PlexAdapter.
-    const schoolPlexAdapter = contentRegistry?.get('plex') || null;
-    const schoolPlexClient = {
-      children: async (ratingKey) => {
-        if (!schoolPlexAdapter?.client) return [];
-        const data = await schoolPlexAdapter.client.getContainer(`/library/metadata/${ratingKey}/children`);
-        const items = data?.MediaContainer?.Metadata || [];
-        // Plex hands back raw, unproxied paths (e.g.
-        // `/library/metadata/{id}/thumb/{n}`) for `thumb`/`parentThumb`. The
-        // frontend can only load Plex images through the app's image proxy —
-        // everywhere else PlexAdapter emits a thumbnail it prefixes it with
-        // its own `proxyPath` (PlexAdapter.mjs, e.g. ~line 849). Do the same
-        // rewrite here, once, at this seam, so PlexAlbumSource/PlexShowSource
-        // (and anything downstream) can treat `thumb`/`parentThumb` as
-        // already-proxied — see the `plexClient` contract note on both
-        // sources' constructors.
-        const proxyPath = schoolPlexAdapter.proxyPath;
-        return items.map((item) => {
-          const rewritten = { ...item };
-          if (typeof rewritten.thumb === 'string' && rewritten.thumb.startsWith('/')) {
-            rewritten.thumb = `${proxyPath}${rewritten.thumb}`;
-          }
-          if (typeof rewritten.parentThumb === 'string' && rewritten.parentThumb.startsWith('/')) {
-            rewritten.parentThumb = `${proxyPath}${rewritten.parentThumb}`;
-          }
-          return rewritten;
-        });
-      },
-      // PlexLabelSource seam: the `school:on` items of a section, each returned
-      // WITH its `Label` array. Plex's section-by-label listing omits labels,
-      // so this resolves the label id, collects the curated rating keys across
-      // the material types (show/season/album), then does ONE batch
-      // `/library/metadata/{ids}` fetch — which does carry `Label`. Thumbs are
-      // proxy-rewritten here, same contract as `children`.
-      listLabeled: async (sectionId) => {
-        if (!schoolPlexAdapter?.client) return [];
-        const labelDir = await schoolPlexAdapter.client.getContainer(`/library/sections/${sectionId}/label`);
-        const onLabel = (labelDir?.MediaContainer?.Directory || []).find((d) => /^school:on$/i.test(d.title || ''));
-        if (!onLabel) return [];
-        const ids = [];
-        for (const type of [2, 3, 9]) { // show, season, album — the material-level types
-          const listed = await schoolPlexAdapter.client.getContainer(`/library/sections/${sectionId}/all?type=${type}&label=${onLabel.key}`);
-          for (const it of (listed?.MediaContainer?.Metadata || [])) ids.push(it.ratingKey);
-        }
-        if (!ids.length) return [];
-        const meta = await schoolPlexAdapter.client.getContainer(`/library/metadata/${ids.join(',')}`);
-        const proxyPath = schoolPlexAdapter.proxyPath;
-        return (meta?.MediaContainer?.Metadata || []).map((item) => {
-          const rewritten = { ...item };
-          if (typeof rewritten.thumb === 'string' && rewritten.thumb.startsWith('/')) {
-            rewritten.thumb = `${proxyPath}${rewritten.thumb}`;
-          }
-          return rewritten;
-        });
-      },
-      // PlexLabelSource.getMaterial dispatches by Plex type (album→audio,
-      // else video). One lightweight metadata read.
-      itemType: async (id) => {
-        if (!schoolPlexAdapter?.client) return null;
-        const rk = String(id).replace(/^plex:/, '');
-        const data = await schoolPlexAdapter.client.getContainer(`/library/metadata/${rk}`);
-        return data?.MediaContainer?.Metadata?.[0]?.type ?? null;
-      }
-    };
-    const plexAlbumSource = new PlexAlbumSource({
-      plexClient: schoolPlexClient,
-      logger: rootLogger.child({ module: 'school-materials' })
+    // School sees one neutral media catalog. Provider metadata translation is
+    // isolated here in the adapter and can later be swapped for Jellyfin.
+    const schoolMediaCatalog = new PlexSchoolMediaCatalog({
+      plexAdapter: contentRegistry?.get('plex') || null
     });
-    const plexShowSource = new PlexShowSource({
-      fitnessPlayableService,
-      plexClient: schoolPlexClient,
-      logger: rootLogger.child({ module: 'school-materials' }),
-      householdId
-    });
+    const mediaAlbumSource = new MediaAlbumSource({ mediaCatalog: schoolMediaCatalog });
+    const mediaSeriesSource = new MediaSeriesSource({ mediaCatalog: schoolMediaCatalog });
     const schoolMaterialSources = {
-      'plex-album': plexAlbumSource,
-      'plex-show': plexShowSource,
-      // Label-native curation: expansion delegated to the show/album sources by type.
-      'plex-label': new PlexLabelSource({
-        plexClient: schoolPlexClient,
-        videoSource: plexShowSource,
-        audioSource: plexAlbumSource,
-        logger: rootLogger.child({ module: 'school-materials' })
+      'media-album': mediaAlbumSource,
+      'media-series': mediaSeriesSource,
+      'media-label': new MediaLabelSource({
+        mediaCatalog: schoolMediaCatalog,
+        videoSource: mediaSeriesSource,
+        audioSource: mediaAlbumSource
       })
     };
     getMaterialCatalog = new GetMaterialCatalog({
@@ -2779,6 +2803,8 @@ export async function createApp({ server, logger, configPaths, configExists, ena
       donow: donowModule?.service ?? null,
       donowSurfaces: donowModule?.surfaces ?? null,
       donowDatastore: donowModule?.datastore ?? null,
+      tokenRegistry: schoolCalc.tokenRegistry ?? null,
+      schoolCalcActionResolver: schoolCalc.actionResolver ?? null,
       logger: schoolLifecycleLogger
     });
   } catch (err) {
@@ -2792,6 +2818,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     // is null, so an unwired console simply does not appear on the board.
     reporters: [schoolService, languageStudyService, schoolLifecycle.reporter],
     userService,
+    cohortDirectory: schoolLearnerDirectory,
     logger: rootLogger.child({ module: 'school-report' })
   });
 
@@ -2799,7 +2826,6 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   // config declares a `printer` host — no printer, no print feature (the
   // router serves inert). The printer host defaults to the `kitchen-printer`
   // device entry so config need only opt in.
-  const schoolFullConfig = configService.getHouseholdAppConfig(null, 'school') || {};
   let schoolPrintService = null;
   const printerHost = schoolFullConfig.printing?.host
     || configService.getDeviceConfig?.('kitchen-printer')?.host
@@ -2841,7 +2867,16 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     getMaterialProgressSummary,
     materialProgressStore: schoolMaterialProgressStore,
     getSchoolReport,
+    getLearningProgress,
+    getInstructionalInsights,
+    learningCatalog: schoolCatalog.query,
+    openCatalogLearningSession,
+    recordLearningReflection,
+    recordLearningProbeInteraction: schoolLearningLoop.probeInteractions,
+    remediationTutor: schoolLearningLoop.tutor,
+    learnerDirectory: schoolLearnerDirectory,
     printService: schoolPrintService,
+    schoolCalcRouter: schoolCalc.router,
     logger: rootLogger.child({ module: 'school-api' })
   });
 
@@ -2937,6 +2972,14 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     logger: rootLogger.child({ module: 'trigger' }),
   });
   v1Routers.trigger = triggerRouter;
+  // The action executor is deliberately late-bound: SchoolCalc is composed
+  // before the existing print and trigger services, but scans cannot arrive
+  // until boot is complete. This keeps one shared policy path rather than a
+  // calculator-only printer or media dispatcher.
+  schoolCalc.actionExecutor?.bind({
+    printService: schoolPrintService,
+    triggerDispatchService,
+  });
 
   // NFC taps arriving on a hardware-relay topic (the omr-relay carries an M5
   // Unit NFC alongside the bubble-sheet reader). One tag registry decides who
@@ -2972,6 +3015,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   // needs triggerDispatchService, which createTriggerApiRouter() just returned.
   const scanDispatch = createScanDispatch({
     schoolLifecycle,
+    schoolCalcResultImporter: schoolCalc.resultImporter,
     triggerDispatchService,
     relayInstances: barcodeRelayInstances,
     relayConfig: barcodeRelayConfig,

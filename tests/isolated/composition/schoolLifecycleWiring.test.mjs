@@ -188,6 +188,7 @@ describe('branch order in the composition root', () => {
     // means nutriscan is disabled; the getters are late-bound by contract.
     const { namespaces } = createScanDispatch({
       schoolLifecycle: { handlesCode: () => false, handleScan: null },
+      schoolCalcResultImporter: null,
       triggerDispatchService: { handleEvent: async () => {} },
       relayInstances: {}, relayConfig: {},
       applyScanToComposition: null,

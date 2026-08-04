@@ -26,6 +26,7 @@ import { noticeDocument } from '#domains/school/documents/receipts.mjs';
 export class ResolveScanAction {
   #tokens; #sessions; #curriculum; #card; #issue; #media; #remediation; #receipts; #clock; #logger;
   #subjectResolver; #portal; #launchers; #donow; #close;
+  #learningAction;
 
   /**
    * @param {object} deps
@@ -67,6 +68,7 @@ export class ResolveScanAction {
     dispatchMedia, openRemediation, receipts,
     resolveSubjectNext = null, portal = null, launchers = new Map(),
     donow = null, closeSessionOutcome = null,
+    resolveLearningAction = null,
     clock = () => new Date(), logger = console,
   } = {}) {
     if (!tokens || !sessions || !curriculum || !resolvePersonalCard || !issueDocument
@@ -86,6 +88,7 @@ export class ResolveScanAction {
     this.#launchers = launchers;
     this.#donow = donow;
     this.#close = closeSessionOutcome;
+    this.#learningAction = resolveLearningAction;
     this.#clock = clock;
     this.#logger = logger;
   }
@@ -109,7 +112,7 @@ export class ResolveScanAction {
     // Both classes name something other than a session — `identify` a
     // learner, `subject_next` a learner+subject — so neither has a
     // `sessionId` to look up ahead of resolving what the ticket means.
-    const sessionId = (record?.tokenClass === 'identify' || record?.tokenClass === 'subject_next')
+    const sessionId = ['identify', 'subject_next', 'learning_action'].includes(record?.tokenClass)
       ? null : (record?.subject?.sessionId ?? null);
     const sessionState = sessionId ? reduceSession(await this.#sessions.readEvents(sessionId)) : null;
     const resolution = resolveTokenState(record, { sessionState, now: this.#clock().toISOString() });
@@ -146,6 +149,10 @@ export class ResolveScanAction {
         return this.#subjectResolver
           ? this.#subjectNext(record)
           : this.#unsupported(record.tokenClass, sessionId);
+      case 'learning_action':
+        return this.#learningAction
+          ? this.#runLearningAction(record, device)
+          : this.#unsupported(record.tokenClass, sessionId);
       default:
         // Unreachable while TOKEN_CLASSES and this switch agree; a class with no
         // case would be the silent scan the whole file exists to prevent.
@@ -173,6 +180,27 @@ export class ResolveScanAction {
       printed: result.printed,
       message: result.message,
       effect: { offers: result.offers },
+    };
+  }
+
+  async #runLearningAction(record, scannerDevice) {
+    const result = await this.#learningAction.execute({ record, scannerDevice });
+    if (result.physical === 'worksheet' && result.printed) {
+      return {
+        status: result.status, tokenClass: 'learning_action', sessionId: null,
+        physical: 'worksheet', printed: true, message: result.message, effect: result.effect,
+      };
+    }
+    const receipt = await this.#receipts.print(noticeDocument({
+      id: `learning-action-${record.subject?.actionId ?? 'unknown'}`,
+      headline: result.status === 'launched' || result.status === 'already_running'
+        ? 'Off you go'
+        : 'Lesson action',
+      lines: [result.message],
+    }));
+    return {
+      status: result.status, tokenClass: 'learning_action', sessionId: null,
+      physical: 'receipt', printed: receipt.printed, message: result.message, effect: result.effect,
     };
   }
 

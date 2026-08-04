@@ -43,7 +43,7 @@ const HISTORY_CATALOG = {
   data: {
     sections: [{ category: 'course', label: 'Courses' }],
     materials: [
-      { id: 'plex:9', title: 'World History', poster: null, source: 'plex-show', medium: 'video', category: 'course', subject: 'history', durationMs: null, unitCount: 2 },
+      { id: 'plex:9', title: 'World History', poster: null, source: 'media-series', medium: 'video', category: 'course', subject: 'history', durationMs: null, unitCount: 2 },
     ],
   },
 };

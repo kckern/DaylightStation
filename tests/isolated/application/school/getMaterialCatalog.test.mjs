@@ -20,13 +20,13 @@ function material(id, extra = {}) {
 describe('GetMaterialCatalog.execute', () => {
   it('aggregates materials across configured sources, stamping category via resolveCategory', async () => {
     const sources = {
-      'plex-album': { listMaterials: async (root) => [material(`plex:${root}-a1`)] },
-      'plex-show': { listMaterials: async (root) => [material(`plex:${root}-s1`)] },
+      'media-album': { listMaterials: async (root) => [material(`plex:${root}-a1`)] },
+      'media-series': { listMaterials: async (root) => [material(`plex:${root}-s1`)] },
     };
     const config = {
       sources: [
-        { label: 'Shakespeare Tales', source: 'plex-album', root: '619778', medium: 'audio', category: 'course' },
-        { label: 'Art Lessons', source: 'plex-show', root: '685094', medium: 'video', category: 'course' },
+        { label: 'Shakespeare Tales', source: 'media-album', root: '619778', medium: 'audio', category: 'course' },
+        { label: 'Art Lessons', source: 'media-series', root: '685094', medium: 'video', category: 'course' },
       ],
       completion_threshold_percent: 90,
       quiz_pass_percent: 80,
@@ -43,13 +43,13 @@ describe('GetMaterialCatalog.execute', () => {
 
   it('a hanging source times out and is skipped (fail-soft), returning the other sources', async () => {
     const sources = {
-      'plex-album': { listMaterials: async () => [material('plex:ok1')] },
-      'plex-label': { listMaterials: () => new Promise(() => {}) }, // never resolves (Plex stall)
+      'media-album': { listMaterials: async () => [material('plex:ok1')] },
+      'media-label': { listMaterials: () => new Promise(() => {}) }, // never resolves (Plex stall)
     };
     const config = {
       sources: [
-        { label: 'Good', source: 'plex-album', root: '1', medium: 'audio', category: 'listening' },
-        { label: 'Hangs', source: 'plex-label', root: '99', medium: 'video', category: 'course' },
+        { label: 'Good', source: 'media-album', root: '1', medium: 'audio', category: 'listening' },
+        { label: 'Hangs', source: 'media-label', root: '99', medium: 'video', category: 'course' },
       ],
       completion_threshold_percent: 90,
       quiz_pass_percent: 80,
@@ -65,11 +65,11 @@ describe('GetMaterialCatalog.execute', () => {
 
   it('sections only include categories present among configured sources, in fixed order course, reference, listening', async () => {
     const sources = {
-      'plex-album': { listMaterials: async () => [material('plex:a1')] },
+      'media-album': { listMaterials: async () => [material('plex:a1')] },
     };
     const config = {
       sources: [
-        { label: 'Freestyle Listening', source: 'plex-album', root: '1', medium: 'audio', category: 'listening' },
+        { label: 'Freestyle Listening', source: 'media-album', root: '1', medium: 'audio', category: 'listening' },
       ],
       completion_threshold_percent: 90,
       quiz_pass_percent: 80,
@@ -83,13 +83,13 @@ describe('GetMaterialCatalog.execute', () => {
 
   it('emits all three sections in fixed order+labels when all three categories are configured', async () => {
     const sources = {
-      'plex-album': { listMaterials: async (root) => [material(`plex:${root}`)] },
+      'media-album': { listMaterials: async (root) => [material(`plex:${root}`)] },
     };
     const config = {
       sources: [
-        { label: 'Listening src', source: 'plex-album', root: 'L', medium: 'audio', category: 'listening' },
-        { label: 'Course src', source: 'plex-album', root: 'C', medium: 'audio', category: 'course' },
-        { label: 'Reference src', source: 'plex-album', root: 'R', medium: 'audio', category: 'reference' },
+        { label: 'Listening src', source: 'media-album', root: 'L', medium: 'audio', category: 'listening' },
+        { label: 'Course src', source: 'media-album', root: 'C', medium: 'audio', category: 'course' },
+        { label: 'Reference src', source: 'media-album', root: 'R', medium: 'audio', category: 'reference' },
       ],
       completion_threshold_percent: 90,
       quiz_pass_percent: 80,
@@ -107,11 +107,11 @@ describe('GetMaterialCatalog.execute', () => {
 
   it('an unrecognised category falls back to reference and warns, naming the source', async () => {
     const sources = {
-      'plex-album': { listMaterials: async () => [material('plex:typo1')] },
+      'media-album': { listMaterials: async () => [material('plex:typo1')] },
     };
     const config = {
       sources: [
-        { label: 'Typo Source', source: 'plex-album', root: '1', medium: 'audio', category: 'coures' },
+        { label: 'Typo Source', source: 'media-album', root: '1', medium: 'audio', category: 'coures' },
       ],
       completion_threshold_percent: 90,
       quiz_pass_percent: 80,
@@ -129,7 +129,7 @@ describe('GetMaterialCatalog.execute', () => {
 
   it('a source whose adapter throws is skipped, logs school.materials.source-failed, others still return', async () => {
     const sources = {
-      'plex-album': {
+      'media-album': {
         listMaterials: async (root) => {
           if (root === 'broken') throw new Error('plex is down');
           return [material(`plex:${root}`)];
@@ -138,8 +138,8 @@ describe('GetMaterialCatalog.execute', () => {
     };
     const config = {
       sources: [
-        { label: 'Broken Source', source: 'plex-album', root: 'broken', medium: 'audio', category: 'course' },
-        { label: 'Good Source', source: 'plex-album', root: 'good', medium: 'audio', category: 'course' },
+        { label: 'Broken Source', source: 'media-album', root: 'broken', medium: 'audio', category: 'course' },
+        { label: 'Good Source', source: 'media-album', root: 'good', medium: 'audio', category: 'course' },
       ],
       completion_threshold_percent: 90,
       quiz_pass_percent: 80,
@@ -158,10 +158,10 @@ describe('GetMaterialCatalog.execute', () => {
   it('caches listMaterials per root for 10min; a second execute within the window does not re-call it', async () => {
     let calls = 0;
     const sources = {
-      'plex-album': { listMaterials: async () => { calls += 1; return [material('plex:a1')]; } },
+      'media-album': { listMaterials: async () => { calls += 1; return [material('plex:a1')]; } },
     };
     const config = {
-      sources: [{ label: 'Src', source: 'plex-album', root: '1', medium: 'audio', category: 'course' }],
+      sources: [{ label: 'Src', source: 'media-album', root: '1', medium: 'audio', category: 'course' }],
       completion_threshold_percent: 90,
       quiz_pass_percent: 80,
     };
@@ -184,10 +184,10 @@ describe('GetMaterialCatalog.execute', () => {
 describe('GetMaterialCatalog label-native shelving + grade ceiling', () => {
   it('shelves a material by its OWN subject when the source entry declares none', async () => {
     const sources = {
-      'plex-label': { listMaterials: async () => [material('plex:s1', { subject: 'science', minGrade: 'lower' })] },
+      'media-label': { listMaterials: async () => [material('plex:s1', { subject: 'science', minGrade: 'lower' })] },
     };
     const config = {
-      sources: [{ label: 'Curated', source: 'plex-label', root: '17', category: 'reference' }],
+      sources: [{ label: 'Curated', source: 'media-label', root: '17', category: 'reference' }],
       completion_threshold_percent: 90, quiz_pass_percent: 80,
     };
     const { materials } = await new GetMaterialCatalog({ sources, config, logger }).execute();
@@ -196,10 +196,10 @@ describe('GetMaterialCatalog label-native shelving + grade ceiling', () => {
 
   it('a source entry subject still overrides the material label (config wins)', async () => {
     const sources = {
-      'plex-label': { listMaterials: async () => [material('plex:s1', { subject: 'science' })] },
+      'media-label': { listMaterials: async () => [material('plex:s1', { subject: 'science' })] },
     };
     const config = {
-      sources: [{ label: 'Forced', source: 'plex-label', root: '17', subject: 'history', category: 'reference' }],
+      sources: [{ label: 'Forced', source: 'media-label', root: '17', subject: 'history', category: 'reference' }],
       completion_threshold_percent: 90, quiz_pass_percent: 80,
     };
     const { materials } = await new GetMaterialCatalog({ sources, config, logger }).execute();
@@ -208,14 +208,14 @@ describe('GetMaterialCatalog label-native shelving + grade ceiling', () => {
 
   it('drops materials whose min-grade exceeds the household visibleGradeCeiling', async () => {
     const sources = {
-      'plex-label': { listMaterials: async () => [
+      'media-label': { listMaterials: async () => [
         material('plex:low', { subject: 'math', minGrade: 'lower' }),
         material('plex:high', { subject: 'math', minGrade: 'high' }),
         material('plex:open', { subject: 'math', minGrade: null }),
       ] },
     };
     const config = {
-      sources: [{ label: 'Curated', source: 'plex-label', root: '17', category: 'reference' }],
+      sources: [{ label: 'Curated', source: 'media-label', root: '17', category: 'reference' }],
       visibleGradeCeiling: 'upper',
       completion_threshold_percent: 90, quiz_pass_percent: 80,
     };
@@ -225,10 +225,10 @@ describe('GetMaterialCatalog label-native shelving + grade ceiling', () => {
 
   it('with no ceiling configured, shows everything including ap-level content', async () => {
     const sources = {
-      'plex-label': { listMaterials: async () => [material('plex:ap', { subject: 'math', minGrade: 'ap' })] },
+      'media-label': { listMaterials: async () => [material('plex:ap', { subject: 'math', minGrade: 'ap' })] },
     };
     const config = {
-      sources: [{ label: 'Curated', source: 'plex-label', root: '17', category: 'reference' }],
+      sources: [{ label: 'Curated', source: 'media-label', root: '17', category: 'reference' }],
       completion_threshold_percent: 90, quiz_pass_percent: 80,
     };
     const { materials } = await new GetMaterialCatalog({ sources, config, logger }).execute();
@@ -239,11 +239,11 @@ describe('GetMaterialCatalog label-native shelving + grade ceiling', () => {
 describe('GetMaterialCatalog.findMaterial', () => {
   it('finds a material by id by walking configured roots (cached listMaterials)', async () => {
     const sources = {
-      'plex-album': { listMaterials: async (root) => [material(`plex:${root}-1`)] },
+      'media-album': { listMaterials: async (root) => [material(`plex:${root}-1`)] },
     };
     const config = {
       sources: [
-        { label: 'Shakespeare Tales', source: 'plex-album', root: '619778', medium: 'audio', category: 'course' },
+        { label: 'Shakespeare Tales', source: 'media-album', root: '619778', medium: 'audio', category: 'course' },
       ],
       completion_threshold_percent: 90,
       quiz_pass_percent: 80,
@@ -256,15 +256,15 @@ describe('GetMaterialCatalog.findMaterial', () => {
     expect(found.material.id).toBe('plex:619778-1');
     expect(found.material.category).toBe('course');
     expect(found.entry.label).toBe('Shakespeare Tales');
-    expect(found.entry.source).toBe('plex-album');
+    expect(found.entry.source).toBe('media-album');
   });
 
   it('returns null for an unknown materialId', async () => {
     const sources = {
-      'plex-album': { listMaterials: async () => [material('plex:a1')] },
+      'media-album': { listMaterials: async () => [material('plex:a1')] },
     };
     const config = {
-      sources: [{ label: 'Src', source: 'plex-album', root: '1', medium: 'audio', category: 'course' }],
+      sources: [{ label: 'Src', source: 'media-album', root: '1', medium: 'audio', category: 'course' }],
       completion_threshold_percent: 90,
       quiz_pass_percent: 80,
     };
@@ -276,10 +276,10 @@ describe('GetMaterialCatalog.findMaterial', () => {
   it('reuses the same 60s cache as execute() (no extra listMaterials calls)', async () => {
     let calls = 0;
     const sources = {
-      'plex-album': { listMaterials: async () => { calls += 1; return [material('plex:a1')]; } },
+      'media-album': { listMaterials: async () => { calls += 1; return [material('plex:a1')]; } },
     };
     const config = {
-      sources: [{ label: 'Src', source: 'plex-album', root: '1', medium: 'audio', category: 'course' }],
+      sources: [{ label: 'Src', source: 'media-album', root: '1', medium: 'audio', category: 'course' }],
       completion_threshold_percent: 90,
       quiz_pass_percent: 80,
     };

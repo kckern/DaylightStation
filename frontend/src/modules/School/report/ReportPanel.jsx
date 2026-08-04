@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react';
 import { schoolApi } from '../schoolApi.js';
 import { schoolLog } from '../schoolLog.js';
 import MetricTile from './MetricTile.jsx';
+import CurriculumHistoryOverview from '../progress/CurriculumHistoryOverview.jsx';
+import InstructionalInsightsOverview from '../progress/InstructionalInsightsOverview.jsx';
 
 /**
  * The aggregate board: every program × every learner, in one shape.
@@ -73,26 +75,149 @@ function ProgramCard({ report }) {
   );
 }
 
-export default function ReportPanel({ userId = null }) {
+function ProgressOverview({ snapshot, options, periodId, setPeriodId, subjectId, setSubjectId, coreOnly, setCoreOnly, focus, onFollowUp }) {
+  if (!snapshot) return null;
+  const summary = snapshot.summary;
+  const learnerNames = new Map((options?.learners ?? []).map((learner) => [learner.id, learner.name]));
+  const subjects = snapshot.facets?.subjects ?? [];
+  return (
+    <section className="school-progress" aria-label="Learning progress">
+      <div className="school-progress__filters">
+        <label>
+          Period
+          <select aria-label="Academic period" value={periodId} onChange={(event) => setPeriodId(event.target.value)}>
+            <option value="">All time</option>
+            {(options?.periods ?? []).map((period) => (
+              <option key={period.periodId} value={period.periodId}>{period.label}</option>
+            ))}
+          </select>
+        </label>
+        <label>
+          Subject
+          <select aria-label="Subject" value={subjectId} onChange={(event) => setSubjectId(event.target.value)}>
+            <option value="">All subjects</option>
+            {subjects.map((subject) => <option key={subject.id} value={subject.id}>{subject.id}</option>)}
+          </select>
+        </label>
+        <label className="school-progress__check">
+          <input type="checkbox" checked={coreOnly} onChange={(event) => setCoreOnly(event.target.checked)} />
+          Hide electives
+        </label>
+      </div>
+
+      <div className="school-progress__summary">
+        <ProgressFigure label="Questions" value={summary.responseCount.toLocaleString()} />
+        <ProgressFigure label="Accuracy" value={summary.scorePercent === null ? '—' : `${summary.scorePercent}%`} />
+        <ProgressFigure label="Completed" value={summary.completionCount.toLocaleString()} />
+        <ProgressFigure label="Pending sync" value={summary.pendingCount.toLocaleString()} pending={summary.pendingCount > 0} />
+      </div>
+
+      {snapshot.followUps.length > 0 && (
+        <div className="school-progress__actions" aria-label="Follow-up actions">
+          {snapshot.followUps.map((action) => (
+            <button
+              key={action.actionId}
+              type="button"
+              disabled={action.availability !== 'ready' || !focus || !onFollowUp}
+              onClick={() => onFollowUp?.(action)}
+              title={action.reason ?? action.label}
+            >
+              {action.label}
+            </button>
+          ))}
+        </div>
+      )}
+
+      <CurriculumHistoryOverview history={snapshot.curriculumHistory} />
+
+      {snapshot.recentScores.length > 0 && (
+        <div className="school-progress__recent">
+          <h3>Recent scores</h3>
+          <div className="school-progress__score-list">
+            {snapshot.recentScores.map((score) => (
+              <article key={`${score.learnerId}:${score.assessmentId}`} className="school-progress__score">
+                {!focus && <span className="school-progress__score-learner">{learnerNames.get(score.learnerId) ?? score.learnerId}</span>}
+                <strong>{score.learning.lessonId ?? score.activityId}</strong>
+                <span className="school-progress__score-value">{score.score.correct}/{score.score.total} · {score.score.percent}%</span>
+                {score.verification === 'pending' && <span className="school-progress__pending">Pending sync</span>}
+                <span className="school-progress__score-when">{relativeDay(score.occurredAt)}</span>
+              </article>
+            ))}
+          </div>
+        </div>
+      )}
+    </section>
+  );
+}
+
+function ProgressFigure({ label, value, pending = false }) {
+  return (
+    <div className={`school-progress__figure${pending ? ' is-pending' : ''}`}>
+      <span>{label}</span>
+      <strong>{value}</strong>
+    </div>
+  );
+}
+
+export default function ReportPanel({ userId = null, onFollowUp = null }) {
   const [data, setData] = useState(null);
+  const [progress, setProgress] = useState(null);
+  const [insights, setInsights] = useState(null);
+  const [options, setOptions] = useState(null);
   const [status, setStatus] = useState('loading');
   const [focus, setFocus] = useState(userId);
+  const [periodId, setPeriodId] = useState('');
+  const [subjectId, setSubjectId] = useState('');
+  const [coreOnly, setCoreOnly] = useState(false);
 
   useEffect(() => { setFocus(userId); }, [userId]);
 
   useEffect(() => {
     let alive = true;
+    schoolApi.progressOptions().then(({ ok, data: body }) => {
+      if (alive && ok && body) setOptions(body);
+    });
+    return () => { alive = false; };
+  }, []);
+
+  useEffect(() => {
+    let alive = true;
     setStatus('loading');
-    schoolApi.report(focus).then(({ ok, data: body }) => {
+    Promise.all([
+      schoolApi.report(focus),
+      schoolApi.progress({
+        ...(focus ? { learnerId: focus } : { scopeType: 'household', scopeId: 'household' }),
+        ...(periodId ? { periodId } : {}),
+        ...(subjectId ? { subjectIds: [subjectId] } : {}),
+        ...(coreOnly ? { excludeClassifications: ['elective'] } : {}),
+        groupBy: ['subject'], recentLimit: 12,
+      }),
+    ]).then(([reportResponse, progressResponse]) => {
       if (!alive) return;
-      if (!ok || !body) {
+      if ((!reportResponse.ok || !reportResponse.data) && (!progressResponse.ok || !progressResponse.data)) {
         schoolLog.materialsError('report-failed', { userId: focus });
         setStatus('error');
         return;
       }
-      setData(body);
-      setStatus(body.learners.length ? 'ready' : 'empty');
+      setData(reportResponse.ok ? reportResponse.data : { learners: [] });
+      setProgress(progressResponse.ok ? progressResponse.data : null);
+      const hasReports = reportResponse.ok && reportResponse.data?.learners?.length > 0;
+      const hasEvidence = progressResponse.ok && progressResponse.data?.summary?.evidenceCount > 0;
+      setStatus(hasReports || hasEvidence ? 'ready' : 'empty');
     });
+    return () => { alive = false; };
+  }, [focus, periodId, subjectId, coreOnly]);
+
+  useEffect(() => {
+    let alive = true;
+    if (focus) {
+      setInsights(null);
+      return () => { alive = false; };
+    }
+    schoolApi.instructionalInsights({ scopeType: 'household', scopeId: 'household' })
+      .then(({ ok, data: body }) => {
+        if (alive) setInsights(ok ? body : null);
+      });
     return () => { alive = false; };
   }, [focus]);
 
@@ -108,7 +233,22 @@ export default function ReportPanel({ userId = null }) {
         </button>
       )}
 
-      {data.learners.map((learner) => (
+      <ProgressOverview
+        snapshot={progress}
+        options={options}
+        periodId={periodId}
+        setPeriodId={setPeriodId}
+        subjectId={subjectId}
+        setSubjectId={setSubjectId}
+        coreOnly={coreOnly}
+        setCoreOnly={setCoreOnly}
+        focus={focus}
+        onFollowUp={onFollowUp}
+      />
+
+      {!focus && <InstructionalInsightsOverview insights={insights} />}
+
+      {(data?.learners ?? []).map((learner) => (
         <section key={learner.id} className="school-report__learner">
           <header className="school-report__learner-head">
             {/* Drilling in is the same endpoint filtered, not a second view. */}

@@ -14,6 +14,10 @@
 >
 > **Roadmap (candidate future work, categorized):** [`docs/roadmap/2026-07-21-school-module-roadmap.md`](../../roadmap/2026-07-21-school-module-roadmap.md)
 >
+> **Cross-surface educational-technology audit:** [`edtech-research-audit.md`](./edtech-research-audit.md)
+>
+> **Formative learner/three-calculator pilot:** [`school-learning-pilot-protocol.md`](./school-learning-pilot-protocol.md)
+>
 > This is the durable map of the School subsystem: what runs today, what is
 > designed but unbuilt, and the decisions behind both.
 
@@ -164,7 +168,7 @@ School is the screen, home is the root and no exit affordance renders.
 
 Plex-backed material — video courses, audio plays, freestyle audiobooks — is
 normalised into one model: a **material** with ordered **units**. Where content
-lives is a *source* (`plex-show` for collection→show→season→episode, `plex-album`
+lives is a *source* (`media-series` for collection→show→season→episode, `media-album`
 for artist→album→track); how it behaves is a *category* (`course` sequenced,
 quiz-gated, credited; `reference` free browse; `listening` records "finished",
 earns nothing). Categories are a **closed set in code**; config only selects one
@@ -252,6 +256,100 @@ idle, then not-started, then complete; most recently touched first within each.
 
 Registering a program means adding it to the `reporters` array in the
 composition root. `GetSchoolReport` gains no branch.
+
+### Cross-surface learning progress and curriculum history
+
+The program report above summarizes heterogeneous programs. The complementary
+learning-progress model derives auditable facts from append-only evidence
+across every surface. Its curriculum vocabulary is structural and follows the
+School nomenclature: **Catalog → Subject → Course → Unit → Lesson → Module**.
+Math, geography, chemistry, finance, and other subject names remain data.
+
+`aggregateLearningProgress` returns totals, facets, requested flat breakdowns,
+recent scores, follow-up actions, and `curriculumHistory`. The latter is a
+nested overview/detail read model. Each node has a stable path key, structural
+kind and ID, direct evidence count, descendant roll-up, latest activity, and
+children. Nodes are ordered by latest recorded activity and then stable ID.
+Evidence with no curriculum path is retained in an explicit `unscoped`
+summary, never dropped.
+
+### Calculator-family progress is a projection, not a second School model
+
+SchoolCalc is one optional surface of this same learning-progress capability.
+The School application projects the selected calculator's eligible learners
+into a bounded `SCG1` record; its TI-86 adapter renders the selected learner's
+Catalog/Subject/Course/Unit/Lesson/Module evidence locally. It does not own
+grading, progression, time semantics, or a subject-specific branch. QR and
+cable arrivals return to the same School result-import/idempotency path.
+
+The adapter's 2026-08-03 owned-ROM MAME release gate exercises that projection
+alongside Catalog browsing, a reader, local quiz scoring, durable result
+queueing, and QR display. This is transport/client conformance evidence only;
+it is not evidence of learning efficacy or physical relay readiness. The
+reproducible harness is
+[`_extensions/ti86-app/docs/emulator-testing.md`](../../../_extensions/ti86-app/docs/emulator-testing.md).
+
+This tree is intentionally evidence-backed. Evidence for one lesson does not
+prove that every authored lesson in its unit exists in the selected window, so
+the tree does not invent parent completion, mastery, coverage, or “not
+started.” Those claims require a separately supplied authored curriculum
+outline. The application/API expose this same neutral contract to web, kiosk,
+classroom/household roll-ups, and device adapters; a calculator codec may only
+bound and format it.
+
+| Layer | Path |
+|---|---|
+| Evidence/history model (pure) | `backend/src/2_domains/school/progress/learningProgress.mjs` |
+| Aggregate use case | `backend/src/3_applications/school/GetLearningProgress.mjs` |
+| API | `GET /api/v1/school/progress` |
+| Frontend overview/detail | `frontend/src/modules/School/progress/` |
+| TI-86 projection (adapter only) | `backend/src/1_adapters/schoolcalc/ti86/Ti86SchoolCalcCodec.mjs` |
+
+### Shared authored Catalog
+
+The authored Catalog is a School capability, not a calculator feature. Its
+validated hierarchy and hydrated Lesson projection are available when
+`schoolcalc.enabled` is false. Web, print, and device products consume the same
+`school.learning-lesson/v1`; only the last step into family bytes belongs to a
+calculator adapter.
+
+Mounted content is configured under `school.catalog`, independently of the
+SchoolCalc transport product:
+
+```yaml
+catalog:
+  content:
+    root: content/school/catalog
+    catalog_directories: [...]
+    document_directories: [...]
+    question_bank_directories: [...]
+    action_directories: [...]
+  access:
+    unassigned: hidden
+    guest: none
+```
+
+`access` translates the existing per-learner assignment records plus optional
+address-prefix include/exclude rules. Empty ancestors are removed from list
+results, and direct hydration of a hidden Lesson returns not-found rather than
+revealing that it exists. The web client sends its selected learner on both
+list and hydration calls; Guest uses the explicit Guest rule.
+
+Tracked Catalog modules do not trust curriculum context supplied by a browser.
+`OpenCatalogLearningSession` re-resolves the authorized Lesson, module, bank,
+and required mode and derives Catalog/Subject/Course/Unit/Lesson/Module,
+concept, area, classification, and tag evidence from the publication. It then
+opens grading against the validated mounted bank snapshot. A forged client
+context, bank ID, or mode therefore cannot misfile progress.
+
+| Layer | Path |
+|---|---|
+| Catalog/module invariants | `backend/src/2_domains/school/catalog/` |
+| Neutral ports/hydration/session use cases | `backend/src/3_applications/school/ports/`, `catalog/`, `GetLearningCatalog.mjs`, `OpenCatalogLearningSession.mjs` |
+| YAML and assignment-policy adapters | `backend/src/1_adapters/school/catalog/`, `backend/src/1_adapters/school/config/` |
+| Independent wiring | `backend/src/5_composition/modules/schoolCatalog.mjs` |
+| API | `GET /api/v1/school/catalogs`, `GET /api/v1/school/catalogs/:address`, `POST /api/v1/school/sessions` |
+| Web | `frontend/src/modules/School/catalog/` |
 
 ### Language study (the sentence ladder)
 
@@ -348,22 +446,20 @@ normalization, unlike short-answer/cloze, because the value is a
 machine-generated id (a region code, an ISO code), never free text a child
 might mistype.
 
-**The content pipeline is generation, not per-question authoring.** A small,
-hand-maintained **dataset** (US states: postal code, name, capital, region id;
-a curated set of world countries: ISO code, name, capital) is the single
-source of truth. A **deck recipe** — one row per deck: id, title, which
-dataset entities to draw from, item type, prompt template, which field is the
-answer, which field seeds distractors — declares which decks exist. A pure
-**generator** turns one recipe plus its entities into a full question bank:
-one item per entity, deterministic (seeded) distractors so the same deck
-regenerates identically every time, stable item ids. A **bank source**
-synthesizes each deck's bank on first read and caches it, addressed by a
-colon-prefixed `geo:{deckId}` id (e.g. `geo:us-state-capitals`). The quiz
-service tries registered bank sources before its normal on-disk bank lookup,
-so a `geo:` id never touches the file datastore. Geography banks are
-**excluded from the general bank listing** — the subject shelves, the
-Library, Practice — so they never shelve as a stray content item; they are
-reached only through the Geography topic grid, by their fixed id.
+**The content pipeline is generation, not per-question authoring.** A mounted,
+hand-maintained **dataset** is the source of truth. A generic **bank recipe**
+declares the bank ID/title, entity dataset, item type, prompt/image templates,
+answer field, distractor field, collections, topics, and subject metadata. A
+pure subject-neutral generator turns one recipe plus entity rows into a full
+question bank with stable item IDs and seeded distractors. A filesystem adapter
+loads recipes/datasets from the configured content mount, synthesizes a bank on
+first read, and caches it. Subject names, collection names, ID namespaces, and
+entity fields are data; the domain/application contains no geography branch.
+
+`SchoolService` tries injected generic bank sources before its ordinary bank
+lookup and lists their summaries by a caller-supplied collection. The outer
+Geography API/UI selects the `geography` collection and maps `summaryId` to its
+presentation's `deckId`; that specialized surface does not leak inward.
 
 **`drill` is a third session mode**, alongside `quiz` and `flashcard`: it
 grades server-side immediately like `quiz` (each answer returns
@@ -411,10 +507,9 @@ choice renderer are not.
 | Layer | Path |
 |---|---|
 | Domain (pure) | `backend/src/2_domains/school/grading.mjs`, `questionBankValidation.mjs` — `region_click`/`asset_choice` grade + validate |
-| Domain (pure) | `backend/src/2_domains/school/geography/` — bank generator, seeded distractor sampler |
-| Application | `backend/src/3_applications/school/sources/GeographyBankSource.mjs` — synth-on-read, memoized per deck |
-| Application | `backend/src/3_applications/school/ports/IBankSource.mjs` — the bank-source port `SchoolService` dispatches through |
-| Content | `backend/src/3_applications/school/sources/geography/` — `us-states.yml`, `world.yml`, `decks.yml` |
+| Domain (pure) | `backend/src/2_domains/school/generatedBanks/` — subject-neutral recipe projection and seeded distractor sampler |
+| Adapter | `backend/src/1_adapters/school/generated-content/GeneratedBankSource.mjs` — mounted-data load, synth-on-read, memoized per bank |
+| Content | configured `data/content/school/generated-banks/` mount — `recipes.yml` plus referenced datasets |
 | API | `GET /api/v1/school/geography/decks` (`backend/src/4_api/v1/routers/school.mjs`) |
 | Frontend renderers | `frontend/src/modules/School/quiz/clickable/ClickableAsset.jsx` (+ `assets/`), `frontend/src/modules/School/quiz/items/RegionClickItem.jsx`, `AssetChoiceItem.jsx` |
 | Frontend flag assets | `frontend/src/modules/School/geography/flags.js` (+ `flags/`) |
@@ -636,6 +731,16 @@ after mints), so the registry never grows without bound. Inside the grace
 window an expired ticket still resolves to the "out of date" slip; after
 pruning it resolves like any unknown ticket. Unexpiring records are never
 pruned.
+
+SchoolCalc adds one closed token class, `learning_action`, for persistent
+calculator lesson QR codes. Its subject is only calculator device, lesson
+address, action ID, and explicit token version. A dedicated HMAC adapter derives
+the 16-character body and atomically claims that meaning; the downloaded
+artifact contains no learner, printable/media target, provider, command, or
+policy. These tokens intentionally do not expire, but remain revocable, and
+version rotation makes old scans stale. The shared scan resolver re-reads the
+enrolled calculator/default learner and current mounted action on every scan,
+then uses the existing print approval/quota or media trigger/debounce service.
 
 **Virtual hardware** — every physical endpoint has a double implementing the
 *same* surface as the real adapter (laser printer, thermal printer, scanner,
