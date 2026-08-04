@@ -105,4 +105,23 @@ describe('Ti86SurfaceCertification specifics', () => {
     expect(resource.estimatedBytes).toBeGreaterThan(0);
     expect(resource.limitsApplied.hardCeilingBytes).toBe(12288);
   });
+
+  it('certifies full when a declared return.* capability is offered by the profile (F3)', () => {
+    // BuildLearningLesson folds lesson-level requiredCapabilities straight
+    // into bundle.capabilities (backend/.../BuildLearningLesson.mjs:63-64),
+    // so a lesson declaring `requiredCapabilities: ['return.cable@1']`
+    // produces exactly this shape. translateProfile strips return.* off the
+    // PROFILE side before handing capabilities to the codec (the codec has
+    // no concept of return channels) — the bug was that the bundle side was
+    // never stripped to match, so the codec's plain membership check saw a
+    // required return.cable@1 with nothing in its (stripped) available set.
+    const bundle = structuredClone(renderableBundle);
+    bundle.capabilities = [...bundle.capabilities, 'return.cable@1'];
+    const profile = ti86CodecBaselineProfile();
+    expect(profile.capabilities).toContain('return.cable@1');
+    const result = makePort().certify(bundle, profile);
+    expect(result.lesson.verdict).toBe('full');
+    expect(result.modules.flatMap((m) => m.reasons)).toEqual([]);
+    expect(result.resource.estimatedBytes).toBeGreaterThan(0);
+  });
 });
