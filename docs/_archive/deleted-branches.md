@@ -192,3 +192,5 @@ To restore: `git checkout -b branch-name <commit-hash>`
 | 2026-07-30 | feature/wikipedia-adapter | 13cb85a44 | Wikipedia adapter + /api/v1/wikipedia route + cli/wikipedia.cli.mjs for self-hosted kiwix service |
 | 2026-07-31 | fix/keyshift-telemetry | 9b1b38a9f | keyshift telemetry + pristine-engine fix + fail-audible degrade |
 | 2026-07-31 | feature/karaoke-keys | 76b0c289c | karaoke keyboard shortcut overrides (seek/restart/end/fullscreen/key/volume/applause) |
+| 2026-08-03 | feature/course-user-policy | 21e6f9877 | per-user course policy (engagement gate opt-out + auto-advance) |
+| 2026-08-04 | fix/keyshift-superseded-reroute | d20b84653 | superseded keyshift build no longer bypasses winner chain (dual-pitch fix) |
