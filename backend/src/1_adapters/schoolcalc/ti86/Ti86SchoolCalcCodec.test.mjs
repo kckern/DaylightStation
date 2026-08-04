@@ -24,7 +24,9 @@ import {
 } from './Ti86SchoolCalcCodec.mjs';
 import { TI86_SCHOOLCALC_LIMITS } from './Ti86SchoolCalcLimits.mjs';
 
-const bundle = {
+// Exported for cross-task reuse (spec §12.2 acceptance parity test), following
+// the same pattern as PaperCertification.test.mjs's exported fixtures.
+export const bundle = {
   schema: 'school.learning-lesson/v1',
   address: 'main/markets/finance/interest/compound-growth',
   context: {

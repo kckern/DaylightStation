@@ -9,6 +9,8 @@ const SCHOOL_DOMAIN = path.join(DOMAIN_ROOT, 'school');
 const SCHOOLCALC_APP = path.join(ROOT, 'backend/src/3_applications/school/schoolcalc');
 const SCHOOL_PORTS = path.join(ROOT, 'backend/src/3_applications/school/ports');
 const SCHOOLCALC_ADAPTERS = path.join(ROOT, 'backend/src/1_adapters/schoolcalc');
+const PAPER_ADAPTER = path.join(ROOT, 'backend/src/1_adapters/school/paper');
+const SCREEN_ADAPTER = path.join(ROOT, 'backend/src/1_adapters/school/screen');
 const SCHOOLCALC_API = [
   path.join(ROOT, 'backend/src/4_api/v1/handlers/schoolcalc'),
   path.join(ROOT, 'backend/src/4_api/v1/routers/schoolCalc.mjs'),
@@ -48,6 +50,12 @@ describe('SchoolCalc DDD and product boundaries', () => {
       ...productionFiles(path.join(SCHOOL_DOMAIN, 'catalog')),
       ...productionFiles(SCHOOLCALC_APP),
       ...productionFiles(SCHOOL_PORTS).filter((file) => path.basename(file).startsWith('ISchoolCalc')),
+      // Paper/screen certification ports (spec §6.3/§6.4) are device-family
+      // agnostic — they must stay just as free of TI-86/Z80-style
+      // calculator-family and wire-format vocabulary as the schoolcalc
+      // domain/application code above.
+      ...productionFiles(PAPER_ADAPTER),
+      ...productionFiles(SCREEN_ADAPTER),
     ];
     const violations = files.flatMap((file) => {
       const source = readFileSync(file, 'utf8');
@@ -65,6 +73,8 @@ describe('SchoolCalc DDD and product boundaries', () => {
       ...productionFiles(path.join(SCHOOL_DOMAIN, 'catalog')),
       ...productionFiles(SCHOOLCALC_APP),
       ...productionFiles(SCHOOLCALC_ADAPTERS),
+      ...productionFiles(PAPER_ADAPTER),
+      ...productionFiles(SCREEN_ADAPTER),
       ...SCHOOLCALC_API.flatMap((entry) => (statSync(entry).isDirectory() ? productionFiles(entry) : [entry])),
     ];
     const violations = files.flatMap((file) => COMMERCE_VOCABULARY.test(readFileSync(file, 'utf8'))
