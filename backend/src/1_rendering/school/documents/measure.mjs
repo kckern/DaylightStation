@@ -908,7 +908,7 @@ export function measureBlocks(blocks, {
 }
 
 /** The title/name/date banner, measured as an atomic fragment on page one. */
-function headerFragment(document, { theme, studentName }) {
+function headerFragment(document, { theme, studentName, date }) {
   const { header } = theme;
   const heightPt = header.titleLeadingPt + header.metaLeadingPt
     + header.ruleGapPt + header.ruleWidthPt + header.gapBelowPt;
@@ -916,6 +916,10 @@ function headerFragment(document, { theme, studentName }) {
     kind: 'header',
     title: document.title || document.id,
     studentName: studentName || null,
+    // Prefilled learner date (RenderPrintDocument's `context.date`, spec §7);
+    // omitted/null prints the blank ruled line, exactly as before this field
+    // existed — see drawHeader.
+    date: date || null,
     widthPt: theme.page.widthPt - 2 * theme.page.marginPt,
     heightPt,
     offsetYPt: 0,
@@ -936,15 +940,15 @@ function headerFragment(document, { theme, studentName }) {
  * Fragments for a whole document: header banner, then every block.
  *
  * @param {Object} document - validated document ({ id, seed, variant, blocks }, title optional)
- * @param {Object} deps - as measureBlocks, plus `studentName`
+ * @param {Object} deps - as measureBlocks, plus `studentName`, `date`
  * @returns {Array<Object>}
  */
 export function measureDocumentFragments(document, {
   doc, theme = documentPdfTheme, texToSvg, resolveAsset = null, resolveChoices = null,
-  tokens = null, studentName = null, italic = false,
+  tokens = null, studentName = null, date = null, italic = false,
 } = {}) {
   return [
-    headerFragment(document, { theme, studentName }),
+    headerFragment(document, { theme, studentName, date }),
     ...measureBlocks(document.blocks, {
       doc, theme, texToSvg, resolveAsset, resolveChoices, tokens, italic,
     }),

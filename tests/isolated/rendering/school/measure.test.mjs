@@ -293,6 +293,17 @@ describe('measureDocumentFragments', () => {
     const fragments = measureDocumentFragments(untitled, { doc, theme, texToSvg: stubTexToSvg });
     expect(fragments[0].nodes[0].title).toBe('doc-1');
   });
+
+  it('carries an explicit date through to the header node, null when omitted', () => {
+    const doc = createMeasurementDocument({ theme });
+    const withDate = measureDocumentFragments(document, {
+      doc, theme, texToSvg: stubTexToSvg, date: '2026-08-04',
+    });
+    expect(withDate[0].nodes[0].date).toBe('2026-08-04');
+
+    const withoutDate = measureDocumentFragments(document, { doc, theme, texToSvg: stubTexToSvg });
+    expect(withoutDate[0].nodes[0].date).toBe(null);
+  });
 });
 
 describe('probeDocument', () => {
