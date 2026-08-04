@@ -2858,6 +2858,24 @@ export async function createApp({ server, logger, configPaths, configExists, ena
       path: schoolFullConfig.printing?.path || '/ipp/print',
       logger: rootLogger.child({ module: 'school-print' })
     });
+    // Paper-certification gate (Task 15, spec §9/§11): a `bank` printable is
+    // offered only if AT LEAST ONE paper surface profile can render it —
+    // built straight from the surfaces registry's family:'paper' ports/
+    // profiles rather than through GetSurfaceCertification, which certifies
+    // whole lessons, not standalone banks. `schoolSurfaces.registry` is null
+    // whenever the School Catalog itself is not wired; no paper profile
+    // authored yields the same `null` — PrintService then falls back to its
+    // legacy, ungated `listPrintables()` byte-for-byte.
+    const paperProfiles = schoolSurfaces.registry
+      ? schoolSurfaces.registry.list().filter((profile) => profile.family === 'paper')
+      : [];
+    const paperCertifyBank = paperProfiles.length
+      ? (bank) => {
+        const results = paperProfiles.map((profile) => schoolSurfaces.registry.portFor(profile).certifyBank(bank, profile));
+        if (results.some((r) => r.verdict === 'render')) return { verdict: 'render', reasons: [] };
+        return { verdict: 'incompatible', reasons: results.flatMap((r) => r.reasons || []) };
+      }
+      : null;
     schoolPrintService = new PrintService({
       config: schoolFullConfig,
       datastore: schoolDatastore,
@@ -2876,9 +2894,10 @@ export async function createApp({ server, logger, configPaths, configExists, ena
         }
       },
       userService,
+      paperCertifyBank,
       logger: rootLogger.child({ module: 'school-print' })
     });
-    rootLogger.child({ module: 'school-print' }).info?.('school.print.ready', { host: printerHost, printables: schoolFullConfig.printables?.length || 0 });
+    rootLogger.child({ module: 'school-print' }).info?.('school.print.ready', { host: printerHost, printables: schoolFullConfig.printables?.length || 0, paperCertified: paperProfiles.length > 0 });
   }
 
   v1Routers.school = createSchoolRouter({
