@@ -24,6 +24,8 @@ import { Ti86SurfaceCertification, ti86CodecBaselineProfile } from '#adapters/sc
 import { PaperCertification } from '#adapters/school/paper/PaperCertification.mjs';
 import { paperProfile, choiceBank } from '#adapters/school/paper/PaperCertification.test.mjs';
 import { ScreenCertification } from '#adapters/school/screen/ScreenCertification.mjs';
+import { BuildLearningLesson, createCoreLearningModuleRegistry } from '#apps/school/catalog/index.mjs';
+import { listCatalogLessons } from '#domains/school/catalog/index.mjs';
 import { PrintService } from '../PrintService.mjs';
 import { SurfaceRegistry } from './SurfaceRegistry.mjs';
 import { GetSurfaceCertification } from './GetSurfaceCertification.mjs';
@@ -108,6 +110,112 @@ describe('§12.2 calculator parity — certify() agrees with supports()/compile(
     expect(certified.lesson.verdict).not.toBe('full');
     const certifiedReasons = new Set(certified.modules.flatMap((m) => m.reasons));
     expect(certifiedReasons).toEqual(new Set([...supports.reasons, compileError]));
+  });
+});
+
+// ---------------------------------------------------------------------------
+// §12.2b — corpus-wide TI-86 parity (F4a, 2026-08-04 acceptance audit
+// follow-up). §12.2 above proves parity on three hand-picked bundles; this
+// walks every RESOLVABLE lesson in a small multi-lesson fixture corpus
+// (in-memory stubs — NOT the real content mount) through BuildLearningLesson
+// (the same resolution path the CLI/API use), then compares the codec's own
+// supports()/compile() against Ti86SurfaceCertification.certify() for each
+// one. A real-corpus-wide run (walking every lesson under the actual
+// published mount) is blocked on a pre-existing data-mount schema error —
+// see §12.5 in the acceptance evidence doc — so this in-memory corpus is the
+// closest available proof this branch can produce that parity holds across
+// more than a handful of hand-picked cases.
+// ---------------------------------------------------------------------------
+
+function corpusWideParityFixture() {
+  const documents = new Map([
+    ['notes-doc', {
+      schema: 'school.learning-document/v1', documentId: 'notes-doc', title: 'Notes',
+      blocks: [{ blockId: 'intro', type: 'prose', text: 'Read this carefully.' }],
+    }],
+    ['big-doc', {
+      schema: 'school.learning-document/v1', documentId: 'big-doc', title: 'Big',
+      blocks: Array.from({ length: 400 }, (_, i) => ({
+        blockId: `p${i}`, type: 'prose', text: `Filler paragraph ${i} `.repeat(10),
+      })),
+    }],
+  ]);
+  const banks = new Map([
+    ['mc-bank', {
+      id: 'mc-bank', title: 'Multiple choice', audience: 'assigned',
+      items: [{ id: 'q1', type: 'multiple_choice', prompt: 'Pick one', choices: ['A', 'B'], answer: 'A' }],
+    }],
+    ['sa-bank', {
+      id: 'sa-bank', title: 'Short answer', audience: 'assigned',
+      items: [{ id: 'q1', type: 'short_answer', prompt: 'Answer', answer: 'x' }],
+    }],
+  ]);
+  const catalog = {
+    schema: 'school.catalog/v1', catalogId: 'parity', title: 'Parity corpus',
+    subjects: [{
+      subjectId: 'core', title: 'Core', courses: [{
+        courseId: 'c1', title: 'Course 1', units: [{
+          unitId: 'u1', title: 'Unit 1', lessons: [
+            { lessonId: 'quiz-lesson', title: 'Quiz', modules: [{ moduleId: 'q', type: 'quiz', bankId: 'mc-bank' }] },
+            { lessonId: 'notes-lesson', title: 'Notes', modules: [{ moduleId: 'n', type: 'lecture_notes', documentId: 'notes-doc' }] },
+            { lessonId: 'flash-lesson', title: 'Flash', modules: [{ moduleId: 'f', type: 'flashcards', bankId: 'mc-bank' }] },
+            // Renders on the codec (multiple_choice), but is TI-86
+            // v0-assessment-incompatible via a DIFFERENT axis than §12.2's
+            // capability-mismatch case: short_answer items have no TI-86
+            // projection at all (ti86ProjectionReasons), so supports()
+            // itself rejects it, not a capability diff.
+            { lessonId: 'text-lesson', title: 'Text', modules: [{ moduleId: 's', type: 'quiz', bankId: 'sa-bank' }] },
+            // Compile-throw case (byte ceiling), same shape as §12.2's third case.
+            { lessonId: 'oversized-lesson', title: 'Oversized', modules: [{ moduleId: 'b', type: 'lecture_notes', documentId: 'big-doc' }] },
+          ],
+        }],
+      }],
+    }],
+  };
+  const catalogs = { getCatalog: async () => catalog };
+  const content = {
+    getDocument: async (documentId) => documents.get(documentId),
+    getQuestionBank: async (bankId) => banks.get(bankId),
+    getLearningAction: async () => null,
+  };
+  return { catalog, catalogs, content };
+}
+
+describe('§12.2b corpus-wide TI-86 parity — every resolvable lesson in a fixture corpus (F4a)', () => {
+  const codec = new Ti86SchoolCalcCodec();
+  const port = new Ti86SurfaceCertification({ codec });
+  const profile = ti86CodecBaselineProfile();
+  const report = toCodecReport(profile);
+  const { catalog, catalogs, content } = corpusWideParityFixture();
+  const buildLesson = new BuildLearningLesson({ catalogs, content, modules: createCoreLearningModuleRegistry() });
+  const addresses = listCatalogLessons(catalog).map(({ address }) => address);
+
+  it('the fixture corpus actually has more than one resolvable lesson to walk', () => {
+    expect(addresses.length).toBeGreaterThan(1);
+  });
+
+  it.each(addresses)('certify() agrees with supports()/compile() for %s', async (address) => {
+    const [catalogId, subjectId, courseId, unitId, lessonId] = address.split('/');
+    const bundle = await buildLesson.execute({
+      catalogId, subjectId, courseId, unitId, lessonId,
+    });
+
+    const supports = codec.supports(bundle, report);
+    let compileError = null;
+    if (supports.compatible) {
+      try {
+        codec.compile(bundle, report);
+      } catch (error) {
+        compileError = error.message;
+      }
+    }
+    const expectedFull = supports.compatible && compileError === null;
+    const expectedReasons = new Set([...supports.reasons, ...(compileError ? [compileError] : [])]);
+
+    const certified = port.certify(bundle, profile);
+    expect(certified.lesson.verdict === 'full').toBe(expectedFull);
+    const certifiedReasons = new Set(certified.modules.flatMap((m) => m.reasons));
+    expect(certifiedReasons).toEqual(expectedReasons);
   });
 });
 

@@ -16,6 +16,12 @@
  * one across requests, trading its cross-call bundle-cache memoization for
  * always-fresh content — the documented safe pattern for a long-lived
  * caller that cannot reliably call `invalidate()` on every content change.
+ *
+ * Note (spec §7.3/§13): this facade always certifies on-demand — it never
+ * reads the publication-time certification manifest
+ * (`certificationManifest.mjs`'s `readManifest`, which has no production
+ * consumer in v1). Runtime manifest consumption is explicitly deferred past
+ * v1; per-request certification is cheap at household corpus scale.
  */
 import path from 'node:path';
 import { YamlSurfaceProfileRepository } from '#adapters/school/catalog/index.mjs';
