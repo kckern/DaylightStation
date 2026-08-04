@@ -33,6 +33,28 @@ const STANDALONE_BANK = {
   }],
 };
 
+/** An `asset_choice` item, optionally carrying dangling/valid promptImage and choices[].image refs. */
+function assetChoiceItem({ promptImageRef, choiceImageRef } = {}) {
+  const item = {
+    id: 'q1',
+    type: 'asset_choice',
+    prompt: 'Pick the correct diagram',
+    choices: [
+      { value: 'a', label: 'A', ...(choiceImageRef ? { image: { src: choiceImageRef } } : {}) },
+      { value: 'b', label: 'B' },
+    ],
+    answer: 'a',
+  };
+  if (promptImageRef) item.promptImage = { src: promptImageRef };
+  return item;
+}
+
+function assetChoiceBank(itemOverrides) {
+  return {
+    id: 'ac1', title: 'Asset choice bank', audience: 'assigned', items: [assetChoiceItem(itemOverrides)],
+  };
+}
+
 function welcomeLesson() {
   return {
     lessonId: 'welcome', title: 'Welcome', modules: [NOTES_MODULE, QUIZ_MODULE],
@@ -229,6 +251,63 @@ describe('school-certify CLI', () => {
       const manifest = JSON.parse(raw);
       expect(manifest.schema).toBe('school.certification-manifest/v1');
       expect(Object.keys(manifest.entries).length).toBeGreaterThan(0);
+    });
+  });
+
+  // --- Fix-report follow-up tests (review findings) ---
+
+  it('(h) query mode over the whole corpus (no --address/--file) still exits 1 on a schema error', async () => {
+    await withTmpDir(async (root) => {
+      await buildFixture(root, { schemaError: true });
+      const { exitCode, report } = await runCertify(flagsToArgv(
+        certifyFlags(root, { surface: ['ti86-codec-baseline'] }),
+      ));
+      expect(exitCode).toBe(1);
+      expect(report.ok).toBe(false);
+      expect(report.mode).toBe('query');
+      expect(report.rows).toEqual([]);
+      expect(report.errors.some((e) => e.includes('subjects'))).toBe(true);
+    });
+  });
+
+  it('(i) asset-existence validation catches a dangling asset_choice promptImage ref', async () => {
+    await withTmpDir(async (root) => {
+      const dirs = await buildFixture(root);
+      await writeFile(
+        path.join(dirs.banks, 'ac1.yml'),
+        dump(assetChoiceBank({ promptImageRef: 'missing-prompt' })),
+      );
+      const { exitCode, report } = await runCertify(flagsToArgv(certifyFlags(root)));
+      expect(exitCode).toBe(1);
+      expect(report.errors.some((e) => e.includes('promptImage') && e.includes('missing-prompt'))).toBe(true);
+    });
+  });
+
+  it('(j) asset-existence validation catches a dangling asset_choice choices[].image ref', async () => {
+    await withTmpDir(async (root) => {
+      const dirs = await buildFixture(root);
+      await writeFile(
+        path.join(dirs.banks, 'ac1.yml'),
+        dump(assetChoiceBank({ choiceImageRef: 'missing-choice-image' })),
+      );
+      const { exitCode, report } = await runCertify(flagsToArgv(certifyFlags(root)));
+      expect(exitCode).toBe(1);
+      expect(report.errors.some((e) => e.includes('choices[0].image') && e.includes('missing-choice-image'))).toBe(true);
+    });
+  });
+
+  it('(k) valid asset_choice promptImage/choices[].image refs pass asset-existence validation', async () => {
+    await withTmpDir(async (root) => {
+      const dirs = await buildFixture(root);
+      await writeFile(path.join(dirs.assets, 'prompt-diagram.svg'), '<svg></svg>');
+      await writeFile(path.join(dirs.assets, 'choice-diagram.svg'), '<svg></svg>');
+      await writeFile(
+        path.join(dirs.banks, 'ac1.yml'),
+        dump(assetChoiceBank({ promptImageRef: 'prompt-diagram', choiceImageRef: 'choice-diagram' })),
+      );
+      const { exitCode, report } = await runCertify(flagsToArgv(certifyFlags(root)));
+      expect(exitCode).toBe(0);
+      expect(report.rows.some((row) => row.address === 'bank:ac1')).toBe(true);
     });
   });
 });

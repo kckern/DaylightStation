@@ -214,11 +214,45 @@ function collectAssetKeys(assetsDirectory) {
 }
 
 /**
+ * Every non-empty string value in an `isImageSpec` mapping
+ * (`questionBankValidation.mjs`: "a mapping of non-empty strings", no fixed
+ * key names — authors may key by resolution/theme/whatever) is itself an
+ * asset reference. There is no single "the" reference field in a spec of
+ * unconstrained shape, so every value is checked.
+ */
+function collectImageSpecRefs(imageSpec, label) {
+  if (!imageSpec || typeof imageSpec !== 'object' || Array.isArray(imageSpec)) return [];
+  return Object.entries(imageSpec)
+    .filter(([, value]) => typeof value === 'string' && value.length > 0)
+    .map(([key, value]) => ({ ref: value, label: `${label}.${key}` }));
+}
+
+/**
+ * Every asset/image reference one question-bank item can carry: `asset`
+ * (`region_click`'s bare string ref) plus `promptImage`/`choices[].image`
+ * (`asset_choice`'s image specs, spec §5.5 item 2 / questionBankValidation.mjs:141-156).
+ */
+function collectItemAssetRefs(item) {
+  const refs = [];
+  if (typeof item?.asset === 'string' && item.asset.length > 0) {
+    refs.push({ ref: item.asset, label: 'asset' });
+  }
+  refs.push(...collectImageSpecRefs(item?.promptImage, 'promptImage'));
+  if (Array.isArray(item?.choices)) {
+    item.choices.forEach((choice, index) => {
+      refs.push(...collectImageSpecRefs(choice?.image, `choices[${index}].image`));
+    });
+  }
+  return refs;
+}
+
+/**
  * Asset-existence validation (spec §5.5.2): every document `asset` block's
- * `assetId` and every bank item's `asset` reference must resolve to a real
- * file under `<contentRoot>/assets/`. Walks the mounted directories directly
- * (not through catalog references) so a stray unreferenced document/bank
- * with a dangling ref is still caught.
+ * `assetId` and every bank item's asset/image reference (`asset`,
+ * `promptImage`, `choices[].image`) must resolve to a real file under
+ * `<contentRoot>/assets/`. Walks the mounted directories directly (not
+ * through catalog references) so a stray unreferenced document/bank with a
+ * dangling ref is still caught.
  */
 function validateAssetReferences({ documentDirectories, bankDirectories, assetsDirectory }) {
   const assetKeys = collectAssetKeys(assetsDirectory);
@@ -240,10 +274,11 @@ function validateAssetReferences({ documentDirectories, bankDirectories, assetsD
       const bank = loadYaml(path.join(directory, relative));
       if (!bank || !Array.isArray(bank.items)) return;
       bank.items.forEach((item) => {
-        if (typeof item?.asset !== 'string' || item.asset.length === 0) return;
-        if (!assetKeys.has(item.asset)) {
-          errors.push(`question bank '${bank.id ?? relative}': item '${item.id ?? '?'}' references missing asset '${item.asset}'`);
-        }
+        collectItemAssetRefs(item).forEach(({ ref, label }) => {
+          if (!assetKeys.has(ref)) {
+            errors.push(`question bank '${bank.id ?? relative}': item '${item.id ?? '?'}' ${label} references missing asset '${ref}'`);
+          }
+        });
       });
     });
   });
@@ -329,6 +364,28 @@ async function certifyTargets(certification, targets) {
   return { rows, errors };
 }
 
+/**
+ * Schema + reference + asset-existence errors for the WHOLE corpus (spec
+ * §5.5.2). Shared by gate mode (always the whole corpus) and query mode's
+ * no-`--address`/no-`--file` form — in that form the requested "scope" (per
+ * the query-mode contract: "exit 1 only for schema/reference errors in
+ * scope") IS the whole corpus, so it must be validated exactly like gate
+ * mode before any of it is certified; a malformed catalog must not be
+ * silently skipped and reported as "certification ran, verdicts are the
+ * answer" for the rest.
+ */
+async function validateCorpusScope({ corpus, paths }) {
+  const validation = await new ValidateSchoolCalcPublication({
+    catalogs: corpus.catalogs, bundles: corpus.buildLesson,
+  }).execute();
+  const assetErrors = validateAssetReferences({
+    documentDirectories: paths.documentDirectories,
+    bankDirectories: paths.bankDirectories,
+    assetsDirectory: paths.assetsDirectory,
+  });
+  return [...flattenValidationErrors(validation), ...assetErrors].sort();
+}
+
 function maybeWriteManifest({ flags, rows, manifestPath, fs: fsDep = fs }) {
   if (!flags['write-manifest']) return null;
   fsDep.mkdirSync(path.dirname(manifestPath), { recursive: true });
@@ -338,19 +395,12 @@ function maybeWriteManifest({ flags, rows, manifestPath, fs: fsDep = fs }) {
 
 async function runGateMode({ paths, flags, deps }) {
   const corpus = buildCorpus(paths);
-  const validation = await new ValidateSchoolCalcPublication({
-    catalogs: corpus.catalogs, bundles: corpus.buildLesson,
-  }).execute();
+  const corpusErrors = await validateCorpusScope({ corpus, paths });
   const { registry, profileErrors } = await buildRegistry({
     surfacesDirectory: paths.surfacesDirectory, moduleRegistry: corpus.moduleRegistry,
   });
-  const assetErrors = validateAssetReferences({
-    documentDirectories: paths.documentDirectories,
-    bankDirectories: paths.bankDirectories,
-    assetsDirectory: paths.assetsDirectory,
-  });
 
-  const errors = [...flattenValidationErrors(validation), ...profileErrors, ...assetErrors].sort();
+  const errors = [...corpusErrors, ...profileErrors].sort();
   if (errors.length) {
     return {
       ok: false, mode: 'gate', errors, warnings: [], rows: [], manifestWritten: null,
@@ -418,6 +468,14 @@ async function resolveQueryTargets({ flags, corpus, paths }) {
     }
     return { targets: [], errors: [`file '${flags.file}': not a certifiable catalog or question-bank file`] };
   }
+  // No --address/--file: the requested scope IS the whole corpus, so it must
+  // pass the same validation gate mode runs before anything is certified
+  // (finding: this branch used to reuse listAllLessonAddresses's silent
+  // continue-on-error, which is only safe when a prior pass already
+  // validated — which, unlike gate mode, this path never did).
+  const corpusErrors = await validateCorpusScope({ corpus, paths });
+  if (corpusErrors.length) return { targets: [], errors: corpusErrors };
+
   const lessonAddresses = await listAllLessonAddresses(corpus.catalogs);
   const bankIds = listAllBankIds(paths.bankDirectories);
   return {
