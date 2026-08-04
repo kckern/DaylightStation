@@ -411,6 +411,62 @@ describe('validateBlock: inset', () => {
     expect(errs(inset({ blocks: [inset()] })))
       .toContain('blocks[0]: inset blocks must not nest insets');
   });
+
+  // F5: inset children the box measure/draw path cannot actually handle
+  // must fail at VALIDATE time, not crash measure ('question') or draw
+  // ('page_break') — see INSET_UNSUPPORTED_CHILD_TYPES in blocks.mjs.
+  describe('rejects child types the box path cannot render (F5)', () => {
+    it('question — validated clean before, then threw UnsupportedBlockError at measure time', () => {
+      const errors = errs(inset({
+        blocks: [{
+          type: 'question', itemId: 'q1', number: 1, blocks: [{ type: 'rich_text', md: 'Stem.' }],
+        }],
+      }));
+      expect(errors).toContain('blocks[0]: inset blocks must not contain a question (a question is the exam atomic unit; insets are asides one level deep)');
+    });
+
+    it('page_break — validated clean before, then crashed the renderer\'s "Unreachable" draw branch', () => {
+      const errors = errs(inset({ blocks: [{ type: 'page_break' }] }));
+      expect(errors).toContain('blocks[0]: inset blocks must not contain a page_break (a box never spans a page boundary on its own)');
+    });
+
+    it('plot — no Letter renderer exists yet, inset or not', () => {
+      const errors = errs(inset({ blocks: [{ type: 'plot', spec: { kind: 'line' } }] }));
+      expect(errors).toContain('blocks[0]: inset blocks must not contain a plot (no Letter renderer exists for plot yet)');
+    });
+
+    it('geometry — no Letter renderer exists yet, inset or not', () => {
+      const errors = errs(inset({ blocks: [{ type: 'geometry', spec: { kind: 'triangle' } }] }));
+      expect(errors).toContain('blocks[0]: inset blocks must not contain a geometry (no Letter renderer exists for geometry yet)');
+    });
+
+    it('reports the rejection at the nested child\'s own dotted path, not the inset\'s', () => {
+      const errors = errs(inset({
+        blocks: [{ type: 'rich_text', md: 'Before.' }, { type: 'page_break' }],
+      }));
+      expect(errors).toContain('blocks[1]: inset blocks must not contain a page_break (a box never spans a page boundary on its own)');
+    });
+
+    it('every other registered block type is still nestable', () => {
+      const allowed = inset({
+        blocks: [
+          { type: 'rich_text', md: 'Body.' },
+          { type: 'math', tex: 'x^2' },
+          { type: 'asset', ref: 'a', alt: 'Alt text' },
+          { type: 'answer_space', minPt: 10, maxPt: 20 },
+          { type: 'omr_response', itemId: 'q1', choices: 4 },
+          { type: 'media_action', action: 'a', label: 'L' },
+          { type: 'scan_action', action: 'a', label: 'L' },
+          { type: 'passage', text: 'A passage.' },
+          { type: 'figure', asset: 'a', caption: 'C' },
+          { type: 'list', style: 'bullet', items: ['One'] },
+          { type: 'divider' },
+          { type: 'spacer', minPt: 10, maxPt: 20 },
+        ],
+      });
+      expect(errs(allowed)).toEqual([]);
+    });
+  });
 });
 
 describe('validateBlock: list', () => {
