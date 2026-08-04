@@ -11,6 +11,13 @@ describe('verdicts (spec §7)', () => {
     expect(reasons).toEqual(['missing capability response.text@1', 'missing capability image@1']);
   });
 
+  it('produces an incompatible reason for a demand set flagged unknownType (F2)', () => {
+    const reasons = capabilityReasons(
+      { capabilities: [], tracked: false, unknownType: 'holo_projection' }, paper,
+    );
+    expect(reasons).toEqual(["unknown module type 'holo_projection' cannot be certified"]);
+  });
+
   it('flags a tracked demand set on a surface with no return channel', () => {
     const reasons = capabilityReasons(
       { capabilities: ['quiz@1', 'response.choice@1'], tracked: true },

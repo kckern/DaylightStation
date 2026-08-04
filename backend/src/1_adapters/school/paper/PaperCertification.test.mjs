@@ -27,10 +27,13 @@ export const renderableBundle = { lesson: { modules: [
 const incompatibleBundle = { lesson: { modules: [
   { moduleId: 'probe', type: 'learning_probe', bank: choiceBank },
 ] } };
+const unknownTypeBundle = { lesson: { modules: [
+  { moduleId: 'mystery', type: 'holo_projection' },
+] } };
 
 runCertificationPortContract({
   name: 'paper', makePort: () => new PaperCertification(),
-  profile: paperProfile, renderableBundle, incompatibleBundle,
+  profile: paperProfile, renderableBundle, incompatibleBundle, unknownTypeBundle,
 });
 
 describe('PaperCertification specifics (spec §6.3)', () => {

@@ -49,6 +49,37 @@ describe('demand derivation (spec §3.3)', () => {
     expect(capabilities).toContain('response.choice@1');
   });
 
+  it('falls back to module.document when no resolved document is passed (ledger T3)', () => {
+    const { capabilities } = deriveModuleDemands({
+      module: { moduleId: 'notes', type: 'lecture_notes', document: { blocks: [
+        { blockId: 'f', type: 'formula', text: 'x', latex: 'x' },
+      ] } },
+    });
+    expect(capabilities).toContain('math@1');
+  });
+
+  it('flags a genuinely unknown module type instead of dropping its demands (F2)', () => {
+    const { capabilities, unknownType } = deriveModuleDemands({
+      module: { moduleId: 'mystery', type: 'holo_projection' },
+    });
+    expect(capabilities).toEqual([]);
+    expect(unknownType).toBe('holo_projection');
+  });
+
+  it('flags an activity module with an unregistered mechanic (F2)', () => {
+    const { unknownType } = deriveModuleDemands({
+      module: { moduleId: 'act', type: 'activity', mechanic: 'time_travel', config: {} },
+    });
+    expect(unknownType).toBe('activity');
+  });
+
+  it('does not flag unknownType for a recognized module type', () => {
+    const { unknownType } = deriveModuleDemands({
+      module: { moduleId: 'notes', type: 'lecture_notes', documentId: 'd1' },
+    });
+    expect(unknownType).toBeUndefined();
+  });
+
   it('tracks exactly the spec §3.3 tracked types', () => {
     expect([...TRACKED_MODULE_TYPES].sort()).toEqual(
       ['activity', 'flashcards', 'learning_probe', 'problems', 'quiz'],

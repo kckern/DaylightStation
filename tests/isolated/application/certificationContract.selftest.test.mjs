@@ -18,4 +18,5 @@ runCertificationPortContract({
   profile: { surfaceId: 'fake', capabilities: ['reader@1'] },
   renderableBundle: { lesson: { modules: [{ moduleId: 'notes', type: 'lecture_notes', documentId: 'd' }] } },
   incompatibleBundle: { lesson: { modules: [{ moduleId: 'g', type: 'tool', capability: 'graph@1', config: {} }] } },
+  unknownTypeBundle: { lesson: { modules: [{ moduleId: 'mystery', type: 'holo_projection' }] } },
 });

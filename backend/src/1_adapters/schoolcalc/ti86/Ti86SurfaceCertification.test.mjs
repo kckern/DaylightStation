@@ -43,6 +43,9 @@ oversizedBundle.lesson.modules = [{
   })) },
 }];
 
+const unknownTypeBundle = structuredClone(renderableBundle);
+unknownTypeBundle.lesson.modules = [{ moduleId: 'mystery', type: 'holo_projection' }];
+
 const makePort = () => new Ti86SurfaceCertification({ codec: new Ti86SchoolCalcCodec() });
 
 runCertificationPortContract({
@@ -51,6 +54,7 @@ runCertificationPortContract({
   profile: ti86CodecBaselineProfile(),
   renderableBundle,
   incompatibleBundle: oversizedBundle,
+  unknownTypeBundle,
 });
 
 describe('Ti86SurfaceCertification specifics', () => {
