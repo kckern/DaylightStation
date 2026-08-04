@@ -38,8 +38,18 @@ const DEFAULT_FONT_DIR = fileURLToPath(new URL('../../../../assets/fonts', impor
 const HEADING = /^(#{1,6})\s+(.*)$/;
 const BULLET = /^[-*]\s+(.*)$/;
 const BULLET_PREFIX = '•  ';
-/** Inline spans: **bold**, `code`, $math$ — in one pass so nesting can't reorder them. */
-const INLINE_SPAN = /\*\*([^*]+)\*\*|`([^`]+)`|\$([^$\n]+)\$/g;
+/**
+ * Inline spans: **bold**, `code`, $math$ — in one pass so nesting can't reorder
+ * them. `**bold**` is tried before the single-star italic alternative at every
+ * position, so `**x**` can never be misread as italic-of-`*x*` (see v2 note below).
+ */
+const INLINE_SPAN_PLAIN = /\*\*(?<bold>[^*]+)\*\*|`(?<code>[^`]+)`|\$(?<math>[^$\n]+)\$/g;
+/**
+ * v2: adds `*italic*` to the grammar, gated behind `{italic: true}` so v1
+ * callers (and every existing golden) parse exactly as before — this pattern
+ * is never used unless a caller opts in.
+ */
+const INLINE_SPAN_ITALIC = /\*\*(?<bold>[^*]+)\*\*|\*(?<italic>[^*\n]+)\*|`(?<code>[^`]+)`|\$(?<math>[^$\n]+)\$/g;
 
 /** A block type with no Letter renderer — refuse rather than print a blank space. */
 export class UnsupportedBlockError extends Error {
@@ -139,9 +149,15 @@ function splitParagraphs(md) {
 
 /**
  * Split one paragraph into alternating text/math segments.
+ *
+ * @param {string} text
+ * @param {Object} [opts]
+ * @param {boolean} [opts.italic=false] - recognise `*italic*` spans. OFF by
+ *   default so every v1 caller (and its goldens) parses exactly as before; a
+ *   lone `*` is then left as literal text, same as today.
  * @returns {Array<{ kind: 'text', runs: Array<{text:string, font:string}> } | { kind: 'math', tex: string }>}
  */
-function segmentParagraph(text) {
+function segmentParagraph(text, { italic = false } = {}) {
   const segments = [];
   let runs = [];
   const pushText = (raw, font) => { if (raw) runs.push({ text: raw, font }); };
@@ -150,21 +166,62 @@ function segmentParagraph(text) {
     runs = [];
   };
 
+  const pattern = italic ? INLINE_SPAN_ITALIC : INLINE_SPAN_PLAIN;
+  pattern.lastIndex = 0;
   let cursor = 0;
-  INLINE_SPAN.lastIndex = 0;
-  let match = INLINE_SPAN.exec(text);
+  let match = pattern.exec(text);
   while (match) {
     pushText(text.slice(cursor, match.index), 'regular');
-    const [, bold, code, math] = match;
+    const { bold, italic: italicText, code, math } = match.groups;
     if (bold !== undefined) pushText(bold, 'bold');
+    else if (italicText !== undefined) pushText(italicText, 'italic');
     else if (code !== undefined) pushText(code, 'regular');
     else { flushText(); segments.push({ kind: 'math', tex: math }); }
     cursor = match.index + match[0].length;
-    match = INLINE_SPAN.exec(text);
+    match = pattern.exec(text);
   }
   pushText(text.slice(cursor), 'regular');
   flushText();
   return segments;
+}
+
+/**
+ * Inline runs for a plain (non-paragraph-split) string: bold/italic/code
+ * spans, `$...$` kept LITERAL (never promoted to a math node). Used by
+ * content blocks whose text is not the `rich_text` markdown grammar —
+ * passage bodies/citations, figure captions/credits — where a stray `$`
+ * should just print rather than reflow the block around a display-math node.
+ *
+ * @param {string} text
+ * @param {Object} [opts]
+ * @param {boolean} [opts.italic=false] - see segmentParagraph
+ * @param {'regular'|'italic'} [opts.baseFont='regular'] - font for
+ *   unmarked text; callers measuring an already-italic style (captions,
+ *   citations) pass 'italic' so plain text in that run matches its style
+ *   without needing every word wrapped in `*asterisks*`. Bold spans inside an
+ *   italic base use the bold-italic face rather than losing the slant.
+ * @returns {Array<{text: string, font: string}>}
+ */
+function inlineRuns(text, { italic = false, baseFont = 'regular' } = {}) {
+  const boldFont = baseFont === 'italic' ? 'boldItalic' : 'bold';
+  const pattern = italic ? INLINE_SPAN_ITALIC : INLINE_SPAN_PLAIN;
+  pattern.lastIndex = 0;
+  const runs = [];
+  const push = (raw, font) => { if (raw) runs.push({ text: raw, font }); };
+  let cursor = 0;
+  let match = pattern.exec(text);
+  while (match) {
+    push(text.slice(cursor, match.index), baseFont);
+    const { bold, italic: italicText, code } = match.groups;
+    if (bold !== undefined) push(bold, boldFont);
+    else if (italicText !== undefined) push(italicText, 'italic');
+    else if (code !== undefined) push(code, baseFont);
+    else push(match[0], baseFont); // math group: kept literal, including the `$`s
+    cursor = match.index + match[0].length;
+    match = pattern.exec(text);
+  }
+  push(text.slice(cursor), baseFont);
+  return runs;
 }
 
 /**
@@ -195,11 +252,15 @@ function tokenizeRuns(runs) {
  * parser would eventually disagree with this one about what a `##` means.
  *
  * @param {string} md
+ * @param {Object} [opts]
+ * @param {boolean} [opts.italic=false] - recognise `*italic*` spans (v2). OFF
+ *   by default: every v1 caller keeps parsing `*text*` as literal asterisks,
+ *   byte-identical to before this option existed.
  * @returns {Array<{style: string, kind: 'text', text: string} | {style: string, kind: 'math', tex: string}>}
  */
-export function parseRichText(md) {
+export function parseRichText(md, { italic = false } = {}) {
   return splitParagraphs(md).flatMap((paragraph) =>
-    segmentParagraph(paragraph.text).map((segment) => (segment.kind === 'math'
+    segmentParagraph(paragraph.text, { italic }).map((segment) => (segment.kind === 'math'
       ? { style: paragraph.style, kind: 'math', tex: segment.tex }
       : { style: paragraph.style, kind: 'text', text: segment.runs.map((run) => run.text).join('') })));
 }
@@ -373,13 +434,201 @@ function actionCodeText(block, tokens) {
   return tokens?.[block.action] ?? block.code ?? block.token ?? block.action;
 }
 
+/**
+ * A `passage`/`source` citation line, formatted `Title, by Author (Locator)`.
+ * Every part is optional except title, which `blocks.mjs` already requires
+ * whenever `source` is present at all.
+ */
+function citationLine(source) {
+  if (!source) return null;
+  const parts = [source.title];
+  if (source.author) parts.push(`by ${source.author}`);
+  const base = parts.join(', ');
+  return source.locator ? `${base} (${source.locator})` : base;
+}
+
+/**
+ * `passage` → 1-2 `text` nodes: the (optional) body and the (optional)
+ * citation. `measureBlocks`' generic node→fragment pipeline then gives each
+ * its OWN flowable fragment, exactly like a `rich_text` heading/body pair —
+ * which is what makes the body independently breakable across pages while
+ * still respecting its own widow/orphan minima (spec §7's "keeps ≥2 lines
+ * with its first following question").
+ *
+ * v1 SCOPE: passage prose is wrapped as ONE continuous paragraph — internal
+ * blank lines collapse to a single space rather than becoming visible stanza
+ * breaks — and inline `$...$` is kept literal (see `inlineRuns`), so a line
+ * number always lines up 1:1 with a wrapped output line. Multi-paragraph
+ * reading passages and inline math within one are both out of v1 scope.
+ */
+function measurePassageNodes(ctx, block, { widthPt, path }) {
+  const { theme, doc } = ctx;
+  const mode = block.mode ?? 'reprint';
+  const citation = citationLine(block.source);
+
+  const buildCitationNode = () => {
+    const runs = inlineRuns(citation, { italic: ctx.italic, baseFont: 'italic' });
+    return { kind: 'text', ...measureTextLines(doc, theme, runs, { widthPt, styleKey: 'caption' }), widthPt };
+  };
+
+  if (mode === 'cite') {
+    // A passage told to print ONLY its citation with nothing to cite is an
+    // authoring bug, not a blank line to print silently.
+    if (!citation) throw new BlockMeasureError('passage mode "cite" needs a source citation', path);
+    return [buildCitationNode()];
+  }
+
+  const lineNumbers = block.lineNumbers === true;
+  const gutterPt = lineNumbers ? theme.passage.lineNumberGutterPt : 0;
+  const normalized = String(block.text).trim().replace(/\s+/g, ' ');
+  const runs = inlineRuns(normalized, { italic: ctx.italic });
+  const measured = measureTextLines(doc, theme, runs, { widthPt: widthPt - gutterPt, styleKey: 'body' });
+  // Baked onto each LINE (not derived from array position at draw time) so a
+  // page split — which slices this array — carries correct numbers on both
+  // halves for free.
+  if (lineNumbers) measured.lines.forEach((line, index) => { line.lineNumber = index + 1; });
+
+  const nodes = [{
+    kind: 'text',
+    ...measured,
+    widthPt: widthPt - gutterPt,
+    gutterPt,
+    lineNumbers,
+    minLinesBeforeBreak: theme.passage.minLinesBeforeBreak,
+    minLinesAfterBreak: theme.passage.minLinesAfterBreak,
+  }];
+  if (citation) nodes.push(buildCitationNode());
+  return nodes;
+}
+
+/**
+ * `figure` → asset + caption (+ optional credit) nodes. Returned as an ARRAY
+ * so `measureNodes` can also produce them for a figure nested one level inside
+ * an `inset`; the top-level `figure` block instead goes through
+ * `figureFragment`, which stacks these into ONE atomic fragment so the image
+ * can never separate from its caption.
+ */
+function buildFigureNodes(ctx, block, { widthPt, path }) {
+  const { theme, doc } = ctx;
+  const resolved = ctx.resolveAsset ? ctx.resolveAsset(block.asset) : null;
+  if (ctx.resolveAsset && !resolved?.svg) throw new UnresolvedAssetError(block.asset, path);
+  const naturalWidth = resolved?.widthPt > 0 ? resolved.widthPt : widthPt;
+  const naturalHeight = resolved?.heightPt > 0 ? resolved.heightPt : theme.asset.placeholderHeightPt;
+  const scale = Math.min(widthPt / naturalWidth, theme.asset.maxHeightPt / naturalHeight, 1);
+
+  const imageNode = {
+    kind: 'asset',
+    resolved: Boolean(resolved?.svg),
+    svg: resolved?.svg ?? null,
+    ref: block.asset,
+    drawWidthPt: naturalWidth * scale,
+    drawHeightPt: naturalHeight * scale,
+    // No baked-in caption (unlike the legacy `asset` block): the caption is
+    // its OWN sibling node below, so it can carry a credit line beside it.
+    caption: null,
+    widthPt,
+    heightPt: naturalHeight * scale,
+  };
+  const captionNode = {
+    kind: 'text',
+    ...measureTextLines(doc, theme, inlineRuns(block.caption, { italic: ctx.italic, baseFont: 'italic' }), {
+      widthPt, styleKey: 'caption',
+    }),
+    widthPt,
+  };
+  const nodes = [imageNode, captionNode];
+  if (block.credit) {
+    nodes.push({
+      kind: 'text',
+      ...measureTextLines(doc, theme, inlineRuns(block.credit, { italic: ctx.italic, baseFont: 'italic' }), {
+        widthPt, styleKey: 'caption',
+      }),
+      widthPt,
+    });
+  }
+  return nodes;
+}
+
+/**
+ * `list` → ONE `list` node: bullet/numbered/checklist items in a fixed-width
+ * marker column (never sized to content — same "don't leak the answer"
+ * philosophy as spec §6.3's cloze blanks). Checklist items carry NO marker
+ * text at all; the draw pass strokes an empty square, the same vector-primitive
+ * approach the OMR row uses for its bubbles, rather than trusting a Unicode
+ * box-glyph to exist in the embedded font.
+ */
+function measureListNode(ctx, block, { widthPt }) {
+  const { theme, doc } = ctx;
+  const { list } = theme;
+  const bodyStyle = theme.styles.body;
+  const bodyWidthPt = widthPt - list.markerColumnPt;
+  const items = block.items.map((text, index) => {
+    const runs = inlineRuns(text, { italic: ctx.italic });
+    const lines = wrapRuns(doc, theme, runs, {
+      widthPt: bodyWidthPt, sizePt: bodyStyle.sizePt, leadingPt: bodyStyle.leadingPt,
+    });
+    const marker = block.style === 'checklist' ? null
+      : block.style === 'numbered' ? `${index + 1}.`
+        : list.bulletCharacter;
+    return { marker, lines, heightPt: Math.max(lines.length, 1) * bodyStyle.leadingPt };
+  });
+  const heightPt = stackNodes(items, list.itemGapPt);
+  return {
+    kind: 'list', style: block.style, markerColumnPt: list.markerColumnPt, items, widthPt, heightPt,
+  };
+}
+
+/**
+ * `inset` → ONE `box` node wrapping its children's nodes, padded and
+ * radius'd from `theme.box`. Children are measured with `measureNodes`
+ * directly (not `measureBlocks`) — `blocks.mjs` already forbids nesting
+ * another `inset`, so this one call is the whole recursion, matching the
+ * spec's "one level deep, no recursion".
+ *
+ * v1 SCOPE: a nested `answer_space`/`spacer` does not participate in a page's
+ * elastic growth — its ruled lines print at their `minPt` height. Insets are
+ * tips/definitions/"remember" boxes in the spec's own framing, where a fixed
+ * write-space is the common case; growing space inside a box that itself
+ * doesn't grow is deferred rather than forced into today's per-fragment model.
+ */
+function measureBoxNode(ctx, block, { widthPt, path }) {
+  const { theme } = ctx;
+  const { box } = theme;
+  const innerWidthPt = widthPt - 2 * box.paddingPt;
+  const childNodes = block.blocks.flatMap((child, index) =>
+    measureNodes(ctx, child, { widthPt: innerWidthPt, path: `${path}.blocks[${index}]` }));
+
+  let nodes = childNodes;
+  if (block.title) {
+    const titleNode = {
+      kind: 'text',
+      ...measureTextLines(ctx.doc, theme, [{ text: block.title, font: 'bold' }], {
+        widthPt: innerWidthPt, styleKey: 'label',
+      }),
+      widthPt: innerWidthPt,
+    };
+    nodes = [titleNode, ...childNodes];
+  }
+  const innerHeightPt = stackNodes(nodes, box.innerGapPt);
+
+  return {
+    kind: 'box',
+    childNodes: nodes,
+    paddingPt: box.paddingPt,
+    radiusPt: box.radiusPt,
+    borderWidthPt: box.borderWidthPt,
+    widthPt,
+    heightPt: innerHeightPt + 2 * box.paddingPt,
+  };
+}
+
 /** One block → the nodes it contributes to its enclosing fragment. */
 function measureNodes(ctx, block, { widthPt, path, bodyStyleKey = 'body' }) {
   const { theme } = ctx;
   switch (block.type) {
     case 'rich_text':
       return splitParagraphs(block.md).flatMap((paragraph) =>
-        segmentParagraph(paragraph.text).map((segment) => (segment.kind === 'math'
+        segmentParagraph(paragraph.text, { italic: ctx.italic }).map((segment) => (segment.kind === 'math'
           ? measureMathNode(ctx, segment.tex, { display: true, widthPt, path })
           : {
             kind: 'text',
@@ -421,6 +670,39 @@ function measureNodes(ctx, block, { widthPt, path, bodyStyleKey = 'body' }) {
         heightPt: theme.action.heightPt,
       }];
 
+    case 'passage':
+      return measurePassageNodes(ctx, block, { widthPt, path });
+
+    case 'figure':
+      return buildFigureNodes(ctx, block, { widthPt, path });
+
+    case 'inset':
+      return [measureBoxNode(ctx, block, { widthPt, path })];
+
+    case 'list':
+      return [measureListNode(ctx, block, { widthPt })];
+
+    case 'divider':
+      return [{
+        kind: 'divider',
+        widthPt,
+        heightPt: theme.divider.paddingAbovePt + theme.divider.ruleWidthPt + theme.divider.paddingBelowPt,
+      }];
+
+    case 'spacer':
+      // Same {minPt,maxPt} shape as `answer_space` (reused by `answerSpaceFor`
+      // below) so the SAME per-page growth mechanics apply; the draw pass
+      // simply never puts ink on an `elasticSpace` node.
+      return [{
+        kind: 'elasticSpace', minPt: block.minPt, maxPt: block.maxPt, widthPt, heightPt: block.minPt,
+      }];
+
+    case 'page_break':
+      // Zero-height marker; `fragmentFromNode` turns this into a
+      // `forceBreak: true` fragment that placement passes through harmlessly
+      // today (Task 7 makes layout.mjs actually act on it).
+      return [{ kind: 'pageBreak', widthPt, heightPt: 0 }];
+
     default:
       // plot/geometry are valid blocks with no Letter renderer yet. Refusing is
       // the only outcome that cannot mis-print.
@@ -428,7 +710,7 @@ function measureNodes(ctx, block, { widthPt, path, bodyStyleKey = 'body' }) {
   }
 }
 
-/** Stack nodes vertically with the question's inner gap; returns the total height. */
+/** Stack nodes vertically with a fixed inner gap; returns the total height. */
 function stackNodes(nodes, gapPt) {
   let cursor = 0;
   nodes.forEach((node, index) => {
@@ -442,10 +724,12 @@ function stackNodes(nodes, gapPt) {
 /**
  * Answer-space headroom for a fragment, in the shape `layout.mjs` grows.
  * minPt is the fragment's own height so normalization is a no-op; maxPt adds
- * every nested space's remaining room.
+ * every nested space's remaining room. `elasticSpace` (the `spacer` block) is
+ * the same {minPt,maxPt} shape as `answerSpace` and grows by the identical
+ * rule — it just never gets ruled lines drawn into the room it grows.
  */
 function answerSpaceFor(nodes, baseHeightPt) {
-  const spaces = nodes.filter((node) => node.kind === 'answerSpace');
+  const spaces = nodes.filter((node) => node.kind === 'answerSpace' || node.kind === 'elasticSpace');
   if (!spaces.length) return null;
   const headroomPt = spaces.reduce((total, node) => total + (node.maxPt - node.minPt), 0);
   return { minPt: baseHeightPt, maxPt: baseHeightPt + headroomPt };
@@ -472,6 +756,36 @@ function questionFragment(ctx, block, path) {
   };
 }
 
+/**
+ * `figure` → ONE atomic fragment (image + caption + optional credit stacked
+ * with `theme.asset.captionGapPt`) — the image can never separate from its
+ * caption across a page break, same guarantee a `question` gives its stem
+ * and choices.
+ */
+function figureFragment(ctx, block, path) {
+  const { theme } = ctx;
+  const widthPt = ctx.widthPt;
+  const nodes = buildFigureNodes(ctx, block, { widthPt, path });
+  const innerGapPt = theme.asset.captionGapPt;
+  const heightPt = stackNodes(nodes, innerGapPt);
+  return {
+    id: path,
+    blocks: [block],
+    atomic: true,
+    spacingClass: theme.asset.spacingClass,
+    widthPt,
+    nodes,
+    heightPt,
+    baseHeightPt: heightPt,
+    // The renderer's `applyAnswerSpaceGrowth` re-derives node offsets after any
+    // grown answer/elastic space and MUST reuse this SAME gap — a fragment
+    // measured with one gap and drawn with another is exactly the
+    // measure/draw disagreement this module's own doctrine forbids.
+    innerGapPt,
+    answerSpace: answerSpaceFor(nodes, heightPt),
+  };
+}
+
 /** A wrapped-text node becomes a FLOWABLE fragment; everything else is atomic. */
 function fragmentFromNode(node, { id, block, theme }) {
   if (node.kind === 'text') {
@@ -484,16 +798,46 @@ function fragmentFromNode(node, { id, block, theme }) {
       widthPt: node.widthPt,
       lines: node.lines,
       heightPt: node.heightPt,
-      minLinesBeforeBreak: theme.widowOrphan.minLinesBeforeBreak,
-      minLinesAfterBreak: theme.widowOrphan.minLinesAfterBreak,
+      minLinesBeforeBreak: node.minLinesBeforeBreak ?? theme.widowOrphan.minLinesBeforeBreak,
+      minLinesAfterBreak: node.minLinesAfterBreak ?? theme.widowOrphan.minLinesAfterBreak,
+      // Passage-only: reserved margin gutter + baked-in per-line numbers.
+      // Omitted (not just falsy) for every other text node, so nothing about
+      // existing fragments changes shape.
+      ...(node.gutterPt ? { gutterPt: node.gutterPt } : {}),
+      ...(node.lineNumbers ? { lineNumbers: node.lineNumbers } : {}),
     };
   }
+  if (node.kind === 'pageBreak') {
+    return {
+      id,
+      blocks: [block],
+      atomic: true,
+      spacingClass: null,
+      widthPt: node.widthPt,
+      nodes: [],
+      heightPt: 0,
+      baseHeightPt: 0,
+      forceBreak: true,
+      answerSpace: null,
+    };
+  }
+  // Optional chaining throughout: documentPdfTheme and workbookTheme each cover
+  // a DIFFERENT subset of node kinds (the legacy theme has never measured a
+  // `box`/`list`/`divider`/`spacer`; workbookTheme doesn't yet carry `math`/
+  // `answerSpace`/`omr`/`action` groups — those are theirs to add when a block
+  // that needs them is wired to it). This object is built once per node
+  // regardless of `node.kind`, so every entry must survive its OWN theme
+  // lacking that one group.
   const spacingClassByKind = {
-    math: theme.math.spacingClass,
-    asset: theme.asset.spacingClass,
-    answerSpace: theme.answerSpace.spacingClass,
-    omr: theme.omr.spacingClass,
-    action: theme.action.spacingClass,
+    math: theme.math?.spacingClass,
+    asset: theme.asset?.spacingClass,
+    answerSpace: theme.answerSpace?.spacingClass,
+    omr: theme.omr?.spacingClass,
+    action: theme.action?.spacingClass,
+    box: theme.box?.spacingClass,
+    list: theme.list?.spacingClass,
+    divider: theme.divider?.spacingClass,
+    elasticSpace: theme.spacer?.spacingClass,
   };
   node.offsetYPt = 0;
   return {
@@ -522,26 +866,35 @@ function fragmentFromNode(node, { id, block, theme }) {
  *   omitted means probe mode (bubble rows reserve space but carry no labels)
  * @param {Object<string,string>} [deps.tokens] - action value → already-minted token
  * @param {string} [deps.path='blocks'] - dotted path prefix for fragment ids
+ * @param {boolean} [deps.italic=false] - recognise `*italic*` in `rich_text`/
+ *   `passage` inline grammar (v2). OFF by default: every v1 caller measures
+ *   exactly as before.
  * @returns {Array<Object>} fragments for placeFragments()
  * @throws {UnsupportedBlockError|BlockMeasureError|MissingChoicesError|UnresolvedAssetError}
  *   with the offending block's path
  */
 export function measureBlocks(blocks, {
   doc, theme = documentPdfTheme, texToSvg, resolveAsset = null, resolveChoices = null,
-  tokens = null, path = 'blocks',
+  tokens = null, path = 'blocks', italic = false,
 } = {}) {
   const widthPt = theme.page.widthPt - 2 * theme.page.marginPt;
-  const ctx = { doc, theme, texToSvg, resolveAsset, resolveChoices, tokens, widthPt };
+  const ctx = {
+    doc, theme, texToSvg, resolveAsset, resolveChoices, tokens, widthPt, italic,
+  };
 
   return blocks.flatMap((block, index) => {
     const at = `${path}[${index}]`;
     if (block.type === 'question') return [questionFragment(ctx, block, at)];
+    // A figure's image can never separate from its caption, so it gets ONE
+    // atomic fragment directly — same reason `question` is special-cased.
+    if (block.type === 'figure') return [figureFragment(ctx, block, at)];
     const nodes = measureNodes(ctx, block, { widthPt, path: at });
-    // A rich_text block yields one fragment per paragraph (and per promoted
-    // inline-math span), so a heading and its body can break apart and carry
-    // their own spacing class.
+    // A rich_text/passage block yields one fragment per paragraph (and per
+    // promoted inline-math span or citation line), so a heading and its body
+    // — or a passage body and its citation — can break apart and carry their
+    // own spacing class.
     return nodes.map((node, nodeIndex) => fragmentFromNode(node, {
-      id: nodes.length > 1 || block.type === 'rich_text' ? `${at}#p${nodeIndex}` : at,
+      id: nodes.length > 1 || block.type === 'rich_text' || block.type === 'passage' ? `${at}#p${nodeIndex}` : at,
       block,
       theme,
     }));
@@ -582,11 +935,13 @@ function headerFragment(document, { theme, studentName }) {
  */
 export function measureDocumentFragments(document, {
   doc, theme = documentPdfTheme, texToSvg, resolveAsset = null, resolveChoices = null,
-  tokens = null, studentName = null,
+  tokens = null, studentName = null, italic = false,
 } = {}) {
   return [
     headerFragment(document, { theme, studentName }),
-    ...measureBlocks(document.blocks, { doc, theme, texToSvg, resolveAsset, resolveChoices, tokens }),
+    ...measureBlocks(document.blocks, {
+      doc, theme, texToSvg, resolveAsset, resolveChoices, tokens, italic,
+    }),
   ];
 }
 

@@ -148,6 +148,51 @@ export function createWorkbookTheme({ typeScale = 'standard', density = 'normal'
 
     spacing: DENSITY_SPACING[density],
 
+    /**
+     * The title/name/date banner every rendered document needs on page one
+     * (`measure.mjs`'s `headerFragment` reads this unconditionally, for every
+     * theme). Sized off this theme's own `heading1`/`label` styles rather than
+     * duplicated numbers, so `young`/`compact` scale it the same way they scale
+     * everything else. Task 6 (page furniture) adds the continuation-strip
+     * treatment for pages 2+; this is the baseline banner that makes a
+     * `workbookTheme` document renderable at all.
+     */
+    header: {
+      titleSizePt: styles.heading1.sizePt,
+      titleLeadingPt: styles.heading1.leadingPt,
+      metaSizePt: styles.label.sizePt,
+      metaLeadingPt: styles.label.leadingPt,
+      ruleGapPt: density === 'compact' ? 5 : 7,
+      ruleWidthPt: 0.8,
+      gapBelowPt: density === 'compact' ? 7 : 10,
+      blankFieldPt: 150,
+      spacingClass: 'heading',
+    },
+
+    /** `page x of y` footer. Task 6 extends this with duplex-aware placement. */
+    footer: {
+      sizePt: styles.caption.sizePt,
+      gapAbovePt: density === 'compact' ? 13 : 18,
+    },
+
+    answerKey: {
+      titleSuffix: 'Answer Key',
+    },
+
+    /**
+     * `innerGapPt` is read for EVERY multi-node atomic fragment — a `question`,
+     * but equally a `figure` (image/caption/credit) or an `inset` (title/
+     * children) — so it has to exist even before a `question` block is wired
+     * to this theme. `numberGutterPt`/`numberSizePt` are here for the same
+     * structural-completeness reason; nothing in Task 5 exercises them.
+     */
+    question: {
+      numberGutterPt: 24,
+      numberSizePt: styles.label.sizePt,
+      innerGapPt: density === 'compact' ? 5 : 6,
+      spacingClass: 'question',
+    },
+
     // placeholder geometry — revisit when consumed (Tasks 5-6)
     /** Page furniture geometry for later phases (footer bands, continuation strips, gutters). */
     furniture: {
@@ -165,12 +210,54 @@ export function createWorkbookTheme({ typeScale = 'standard', density = 'normal'
       sizePt: typeScale === 'young' ? 11 : 9,
     },
 
-    // placeholder geometry — revisit when consumed (Tasks 5-6)
-    /** Inset box geometry (bordered callouts, answer boxes), for later phases. */
+    /** Inset box geometry (bordered callouts, answer boxes). Consumed by Task 5's `inset` block. */
     box: {
       radiusPt: 4,
       paddingPt: density === 'compact' ? 6 : 9,
       borderWidthPt: 0.9,
+      innerGapPt: density === 'compact' ? 5 : 6,
+      spacingClass: 'body',
+    },
+
+    /** Lines a flowable fragment may not be broken below, on either side of a page break. */
+    widowOrphan: { minLinesBeforeBreak: 2, minLinesAfterBreak: 2 },
+
+    /** Figure image sizing/caption geometry — the same shape family as `documentPdfTheme.asset`. */
+    asset: {
+      placeholderHeightPt: 110,
+      maxHeightPt: 260,
+      captionGapPt: density === 'compact' ? 4 : 6,
+      spacingClass: 'asset',
+    },
+
+    /** Passage-specific geometry: the optional line-number gutter and keep-with-next minima. */
+    passage: {
+      lineNumberGutterPt: 20,
+      minLinesBeforeBreak: 2,
+      minLinesAfterBreak: 2,
+    },
+
+    /** List marker column (bullet dot / number / checklist square) — fixed-width, never sized to content. */
+    list: {
+      markerColumnPt: 20,
+      itemGapPt: density === 'compact' ? 2 : 3,
+      bulletCharacter: '•',
+      checklistSizePt: 9,
+      checklistStrokeWidthPt: 0.9,
+      spacingClass: 'body',
+    },
+
+    /** A bare rule across the content width. */
+    divider: {
+      ruleWidthPt: 0.8,
+      paddingAbovePt: density === 'compact' ? 4 : 6,
+      paddingBelowPt: density === 'compact' ? 4 : 6,
+      spacingClass: 'body',
+    },
+
+    /** An elastic blank fragment — same {minPt,maxPt} growth mechanics as `answer_space`, no ink. */
+    spacer: {
+      spacingClass: 'body',
     },
   };
 
