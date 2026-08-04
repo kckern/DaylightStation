@@ -175,6 +175,22 @@ export function validateDocumentV2(raw) {
     }
   }
 
+  // `page_break` forces a page boundary unconditionally (layout.mjs's
+  // `placeFragments`), independent of whether the content actually overflows
+  // a page — so a document that fits comfortably in half a page each still
+  // measures pageCount > 1 with fit.policy 'one-page', and `resolveFitPlan`
+  // reports FIT_OVERSET with oversetPt: 0 (nothing is actually oversized;
+  // the break itself is what fails the policy). That is a confusing render
+  // failure for what is really an authoring-time contradiction, so it is
+  // rejected here instead, at a dotted path, before any measurement runs.
+  if (fit.policy === 'one-page' && Array.isArray(blocks)) {
+    walkBlocks(blocks, (block, at) => {
+      if (block?.type === 'page_break') {
+        errors.push(`${at}: page_break is incompatible with fit.policy 'one-page'`);
+      }
+    });
+  }
+
   if (errors.length) return { errors };
 
   const document = {
