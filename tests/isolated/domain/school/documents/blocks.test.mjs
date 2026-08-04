@@ -9,6 +9,7 @@ describe('BLOCK_TYPES', () => {
       'rich_text', 'math', 'plot', 'geometry', 'asset',
       'question', 'answer_space', 'omr_response',
       'media_action', 'scan_action',
+      'passage', 'figure', 'inset', 'list', 'divider', 'spacer', 'page_break',
     ]);
   });
 
@@ -278,5 +279,216 @@ describe('validateBlock: media_action and scan_action', () => {
 
   it.each(['media_action', 'scan_action'])('%s rejects a missing label (the printed instruction)', (type) => {
     expect(errs({ type, action: 'play:plex:619845' })).toContain(`${type} label must be a non-empty string`);
+  });
+});
+
+describe('validateBlock: passage', () => {
+  it('accepts bare text with no source', () => {
+    expect(errs({ type: 'passage', text: 'It was the best of times.' })).toEqual([]);
+  });
+
+  it('accepts text with a full source and explicit mode/lineNumbers', () => {
+    expect(errs({
+      type: 'passage',
+      text: 'It was the best of times.',
+      source: { title: 'A Tale of Two Cities', author: 'Dickens', locator: 'ch. 1' },
+      mode: 'cite',
+      lineNumbers: true,
+    })).toEqual([]);
+  });
+
+  it('defaults mode to reprint (does not require it)', () => {
+    expect(errs({ type: 'passage', text: 'Text.' })).toEqual([]);
+  });
+
+  it.each([
+    ['empty', ''],
+    ['whitespace only', '   '],
+    ['not a string', { fake: 1 }],
+    ['missing', undefined],
+  ])('rejects text that is %s', (_label, text) => {
+    expect(errs({ type: 'passage', text })).toContain('passage text must be a non-empty string');
+  });
+
+  it('rejects \\require in text (reaches the math-capable rich-text path)', () => {
+    expect(errs({ type: 'passage', text: 'Simplify $\\require{enclose} x$' }))
+      .toContain('passage text must not use \\require{} (server rendering loads all packages)');
+  });
+
+  it.each([
+    ['null', null],
+    ['an array', []],
+    ['a string', 'A Tale of Two Cities'],
+  ])('rejects a source that is %s', (_label, source) => {
+    expect(errs({ type: 'passage', text: 'x', source })).toContain('passage source must be an object');
+  });
+
+  it.each([
+    ['empty', ''],
+    ['whitespace only', '   '],
+    ['not a string', { fake: 1 }],
+    ['missing', undefined],
+  ])('rejects a source.title that is %s', (_label, title) => {
+    expect(errs({ type: 'passage', text: 'x', source: { title } }))
+      .toContain('passage source.title must be a non-empty string');
+  });
+
+  it('rejects a non-empty-string source.author when present', () => {
+    expect(errs({ type: 'passage', text: 'x', source: { title: 'T', author: '  ' } }))
+      .toContain('passage source.author must be a non-empty string when present');
+  });
+
+  it('rejects a non-empty-string source.locator when present', () => {
+    expect(errs({ type: 'passage', text: 'x', source: { title: 'T', locator: '' } }))
+      .toContain('passage source.locator must be a non-empty string when present');
+  });
+
+  it("rejects a mode outside 'reprint'|'cite'", () => {
+    expect(errs({ type: 'passage', text: 'x', mode: 'quote' }))
+      .toContain("passage mode must be 'reprint' or 'cite'");
+  });
+
+  it('rejects a non-boolean lineNumbers', () => {
+    expect(errs({ type: 'passage', text: 'x', lineNumbers: 'yes' }))
+      .toContain('passage lineNumbers must be a boolean');
+  });
+});
+
+describe('validateBlock: figure', () => {
+  it('accepts an asset id with a caption', () => {
+    expect(errs({ type: 'figure', asset: 'maps/rome.svg', caption: 'Map of Rome' })).toEqual([]);
+  });
+
+  it('accepts an optional non-empty credit', () => {
+    expect(errs({ type: 'figure', asset: 'maps/rome.svg', caption: 'Map of Rome', credit: 'NPS' })).toEqual([]);
+  });
+
+  it('rejects a missing asset', () => {
+    expect(errs({ type: 'figure', caption: 'Map of Rome' })).toContain('figure asset must be a non-empty string');
+  });
+
+  it('rejects a missing caption', () => {
+    expect(errs({ type: 'figure', asset: 'maps/rome.svg' })).toContain('figure caption must be a non-empty string');
+  });
+
+  it('rejects a blank credit when present', () => {
+    expect(errs({ type: 'figure', asset: 'maps/rome.svg', caption: 'Map of Rome', credit: '  ' }))
+      .toContain('figure credit must be a non-empty string when present');
+  });
+});
+
+describe('validateBlock: inset', () => {
+  const inset = (over = {}) => ({
+    type: 'inset',
+    title: 'Did You Know?',
+    blocks: [{ type: 'rich_text', md: 'Extra context.' }],
+    ...over,
+  });
+
+  it('accepts a titled inset with nested blocks', () => {
+    expect(errs(inset())).toEqual([]);
+  });
+
+  it('accepts an inset with no title', () => {
+    expect(errs(inset({ title: undefined }))).toEqual([]);
+  });
+
+  it('rejects a blank title when present', () => {
+    expect(errs(inset({ title: '   ' }))).toContain('inset title must be a non-empty string when present');
+  });
+
+  it('rejects an empty or missing blocks array', () => {
+    expect(errs(inset({ blocks: [] }))).toContain('inset blocks must be a non-empty array');
+    expect(errs(inset({ blocks: undefined }))).toContain('inset blocks must be a non-empty array');
+  });
+
+  it('validates nested blocks recursively, prefixing the index', () => {
+    expect(errs(inset({ blocks: [{ type: 'rich_text', md: '' }] })))
+      .toContain('blocks[0]: rich_text md must be a non-empty string');
+  });
+
+  it('rejects a nested inset with the exact ban message', () => {
+    expect(errs(inset({ blocks: [inset()] })))
+      .toContain('blocks[0]: inset blocks must not nest insets');
+  });
+});
+
+describe('validateBlock: list', () => {
+  it.each(['bullet', 'numbered', 'checklist'])('accepts style %s with non-empty items', (style) => {
+    expect(errs({ type: 'list', style, items: ['One', 'Two'] })).toEqual([]);
+  });
+
+  it('rejects an unknown style', () => {
+    expect(errs({ type: 'list', style: 'roman', items: ['One'] }))
+      .toContain("list style must be one of 'bullet', 'numbered', 'checklist'");
+  });
+
+  it('rejects a missing style', () => {
+    expect(errs({ type: 'list', items: ['One'] }))
+      .toContain("list style must be one of 'bullet', 'numbered', 'checklist'");
+  });
+
+  it('rejects an empty or missing items array', () => {
+    expect(errs({ type: 'list', style: 'bullet', items: [] })).toContain('list items must be a non-empty array');
+    expect(errs({ type: 'list', style: 'bullet', items: undefined })).toContain('list items must be a non-empty array');
+  });
+
+  it('rejects items containing a non-empty-string entry', () => {
+    expect(errs({ type: 'list', style: 'bullet', items: ['One', '  '] }))
+      .toContain('list items must be non-empty strings');
+    expect(errs({ type: 'list', style: 'bullet', items: ['One', 2] }))
+      .toContain('list items must be non-empty strings');
+  });
+});
+
+describe('validateBlock: divider', () => {
+  it('accepts an empty block', () => {
+    expect(errs({ type: 'divider' })).toEqual([]);
+  });
+
+  it('ignores unknown fields, matching the house convention', () => {
+    expect(errs({ type: 'divider', style: 'dashed' })).toEqual([]);
+  });
+});
+
+describe('validateBlock: spacer', () => {
+  it('accepts a positive min/max pair', () => {
+    expect(errs({ type: 'spacer', minPt: 12, maxPt: 24 })).toEqual([]);
+  });
+
+  it('accepts equal bounds (a fixed-height gap)', () => {
+    expect(errs({ type: 'spacer', minPt: 12, maxPt: 12 })).toEqual([]);
+  });
+
+  it('rejects min greater than max', () => {
+    expect(errs({ type: 'spacer', minPt: 24, maxPt: 12 })).toContain('spacer minPt must be <= maxPt');
+  });
+
+  it.each([
+    ['zero', 0],
+    ['negative', -5],
+    ['not a number', '12'],
+    ['missing', undefined],
+  ])('rejects a minPt that is %s', (_label, minPt) => {
+    expect(errs({ type: 'spacer', minPt, maxPt: 24 })).toContain('spacer minPt must be a number > 0');
+  });
+
+  it.each([
+    ['zero', 0],
+    ['negative', -5],
+    ['not a number', '24'],
+    ['missing', undefined],
+  ])('rejects a maxPt that is %s', (_label, maxPt) => {
+    expect(errs({ type: 'spacer', minPt: 12, maxPt })).toContain('spacer maxPt must be a number > 0');
+  });
+});
+
+describe('validateBlock: page_break', () => {
+  it('accepts an empty block', () => {
+    expect(errs({ type: 'page_break' })).toEqual([]);
+  });
+
+  it('ignores unknown fields, matching the house convention', () => {
+    expect(errs({ type: 'page_break', force: true })).toEqual([]);
   });
 });

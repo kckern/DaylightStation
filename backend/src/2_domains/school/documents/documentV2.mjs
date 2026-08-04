@@ -52,6 +52,14 @@ export const BLOCK_TARGET_SUPPORT = Object.freeze({
   question: Object.freeze(['letter']),
   answer_space: Object.freeze(['letter']),
   omr_response: Object.freeze(['letter']),
+  // Task 4: registered letter-only — no receipt renderer exists for these yet.
+  passage: Object.freeze(['letter']),
+  figure: Object.freeze(['letter']),
+  inset: Object.freeze(['letter']),
+  list: Object.freeze(['letter']),
+  divider: Object.freeze(['letter']),
+  spacer: Object.freeze(['letter']),
+  page_break: Object.freeze(['letter']),
 });
 
 const ALL_SUPPORTED_TARGETS = new Set(Object.values(BLOCK_TARGET_SUPPORT).flat());
