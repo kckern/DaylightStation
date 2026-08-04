@@ -24,6 +24,11 @@
 #define RING_SENSE_PIN  33
 #define RING_SINK_PIN   26
 #define LED_PIN         27
+// Optional isolated switched-jack contact. -1 means no mechanical plug
+// detector is fitted, so physical presence remains honestly unknown. When a
+// detector is fitted, it must never share tip/ring and is externally pulled.
+#define PLUG_DETECT_PIN -1
+#define PLUG_DETECT_ACTIVE_HIGH 1
 
 // SAFETY GATE: leave 0 until the protected TRS interface has been checked with
 // a meter. When 0, the firmware observes line levels but cannot pull either

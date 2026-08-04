@@ -49,6 +49,12 @@
 #ifndef BLE_KEYBOARD_REQUIRE_MITM
 #define BLE_KEYBOARD_REQUIRE_MITM 1
 #endif
+#ifndef PLUG_DETECT_PIN
+#define PLUG_DETECT_PIN -1
+#endif
+#ifndef PLUG_DETECT_ACTIVE_HIGH
+#define PLUG_DETECT_ACTIVE_HIGH 1
+#endif
 
 static WebServer http(80);
 static WebSocketsClient ws;
@@ -60,6 +66,10 @@ static uint32_t lastTipChange = 0, lastRingChange = 0;
 static uint32_t bothLowSinceMs = 0;
 static bool bothLowFaultActive = false;
 static uint32_t lastWifiTryMs = 0;
+static constexpr uint32_t PLUG_DETECT_DEBOUNCE_MS = 75;
+static bool plugDetectInitialized = false;
+static bool plugDetectRaw = false, plugInserted = false;
+static uint32_t plugDetectRawChangedMs = 0, plugDetectChangedMs = 0;
 
 static portMUX_TYPE diagnosticMux = portMUX_INITIALIZER_UNLOCKED;
 static schoolcalc_diagnostics::Journal diagnosticJournal;
@@ -1021,6 +1031,47 @@ static void sampleLines() {
   }
 }
 
+static bool plugDetectConfigured() {
+  return PLUG_DETECT_PIN >= 0;
+}
+
+static bool readPlugDetect() {
+#if PLUG_DETECT_PIN >= 0
+  const bool high = digitalRead(PLUG_DETECT_PIN) == HIGH;
+  return PLUG_DETECT_ACTIVE_HIGH ? high : !high;
+#else
+  return false;
+#endif
+}
+
+static const char* physicalPresence() {
+  if (!plugDetectConfigured() || !plugDetectInitialized) return "unknown";
+  return plugInserted ? "inserted" : "absent";
+}
+
+static void samplePlugDetect() {
+  if (!plugDetectConfigured()) return;
+  const uint32_t now = millis();
+  const bool raw = readPlugDetect();
+  if (!plugDetectInitialized) {
+    plugDetectInitialized = true;
+    plugDetectRaw = raw;
+    plugDetectRawChangedMs = now;
+    return;
+  }
+  if (raw != plugDetectRaw) {
+    plugDetectRaw = raw;
+    plugDetectRawChangedMs = now;
+  }
+  if (plugInserted == plugDetectRaw || now - plugDetectRawChangedMs < PLUG_DETECT_DEBOUNCE_MS) return;
+  plugInserted = plugDetectRaw;
+  plugDetectChangedMs = now;
+  recordDiagnostic(schoolcalc_diagnostics::Subsystem::TiElectrical,
+                   schoolcalc_diagnostics::Severity::Info,
+                   plugInserted ? "plug_inserted" : "plug_removed",
+                   "mechanical switched-jack contact", currentDiagnosticOperation());
+}
+
 static void status() {
   sampleLines();
   const uint32_t now = millis();
@@ -1141,6 +1192,16 @@ static void status() {
   d["tr"]["recent_activity"] = recentLineActivity;
   d["tr"]["line_changes"] = lineChanges;
   d["tr"]["both_low_fault"] = bothLowFaultActive;
+  d["tr"]["physical_presence"] = physicalPresence();
+  d["tr"]["jack_detect_configured"] = plugDetectConfigured();
+  if (plugDetectConfigured() && plugDetectInitialized) {
+    d["tr"]["jack_inserted"] = plugInserted;
+    if (plugDetectChangedMs) d["tr"]["jack_changed_ms_ago"] = now - plugDetectChangedMs;
+    else d["tr"]["jack_changed_ms_ago"] = nullptr;
+  } else {
+    d["tr"]["jack_inserted"] = nullptr;
+    d["tr"]["jack_changed_ms_ago"] = nullptr;
+  }
   portENTER_CRITICAL(&tiStatusMux);
   const schoolcalc_relay::TransportPresence transportPresence =
     schoolcalc_relay::describeTransportPresence(
@@ -1530,6 +1591,9 @@ static void diagnosticsConfigHook() {
   d["ti_link"]["pins"]["tip_sink"] = TIP_SINK_PIN;
   d["ti_link"]["pins"]["ring_sense"] = RING_SENSE_PIN;
   d["ti_link"]["pins"]["ring_sink"] = RING_SINK_PIN;
+  if (PLUG_DETECT_PIN >= 0) d["ti_link"]["pins"]["plug_detect"] = PLUG_DETECT_PIN;
+  else d["ti_link"]["pins"]["plug_detect"] = nullptr;
+  d["ti_link"]["plug_detect_active_high"] = (bool)PLUG_DETECT_ACTIVE_HIGH;
   d["ble_keyboard"]["enabled"] = (bool)BLE_KEYBOARD_ENABLED;
   d["ble_keyboard"]["address"] = BLE_KEYBOARD_ADDRESS[0] ? BLE_KEYBOARD_ADDRESS : nullptr;
   d["ble_keyboard"]["address_type"] = BLE_KEYBOARD_ADDRESS_TYPE == 0 ? "public" : "random";
@@ -1655,6 +1719,9 @@ void setup() {
   foregroundFrameChannel.setObserver(&relayIoObserver);
   schoolCalcApi.setObserver(&relayIoObserver);
   tiLink.begin();
+#if PLUG_DETECT_PIN >= 0
+  pinMode(PLUG_DETECT_PIN, INPUT);
+#endif
   syncWorkspace = static_cast<uint8_t*>(malloc(SYNC_WORKSPACE_BYTES));
   if (syncWorkspace == nullptr) {
     snprintf(tiLastError, sizeof(tiLastError),
@@ -1716,6 +1783,7 @@ void setup() {
 
 void loop() {
   sampleLines();
+  samplePlugDetect();
   serviceKeyboardInput();
   ws.loop();
   http.handleClient();
