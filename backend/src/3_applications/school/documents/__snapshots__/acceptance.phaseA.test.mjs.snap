@@ -1,0 +1,54 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`Phase A acceptance sweep (spec §12, items tagged [A]) > §12.6 fit — the three-policy matrix (one file, three fixtures) + the receipt-target rejection > policy: flow — paginates with correct footers + continuation strips > extracted page text is snapshot-pinned — a regression that reflows/renumbers pages shows up as a text diff 1`] = `
+"acceptance-fixture
+Name: Riley                                               Date: ________________________
+
+1.   Problem 1. Solve and show your work.
+
+2.   Problem 2. Solve and show your work.
+
+3.   Problem 3. Solve and show your work.
+
+4.   Problem 4. Solve and show your work.
+
+5.   Problem 5. Solve and show your work.
+
+6.   Problem 6. Solve and show your work.
+
+7.   Problem 7. Solve and show your work.
+
+8.   Problem 8. Solve and show your work.
+
+9.   Problem 9. Solve and show your work.
+
+                                            Page 1 of 2
+10.    Problem 10. Solve and show your work.
+
+      acceptance-fixture                                     Name: Riley
+
+                                               Page 2 of 2
+"
+`;
+
+exports[`Phase A acceptance sweep (spec §12, items tagged [A]) > §12.8 type > both type-scale presets AND both densities produce distinct, deterministic, snapshot-pinned output 1`] = `
+{
+  "standard-compact": "bce730487d175fdda5d79f5a934b7ddd79e5262277dec5769e69f85a56a58540",
+  "standard-normal": "efc857f44962f3bb88dcf27a1da6f534ee884a17fb1777dd1501d023a1aa8ad1",
+  "young-compact": "243a06a269a5e2f07181dae9214b7037f1f8afc1a3cfb2e1fbcd23f41d60b60d",
+  "young-normal": "02ec23111c094cd096299e980c35b5a8feb1d85f4bb2e7c0d241b94104442445",
+}
+`;
+
+exports[`Phase A acceptance sweep (spec §12, items tagged [A]) > §12.10-A archetype dial — envelope-only difference (Phase A scope; visible score box is Phase B) > the SAME body renders to different bytes for quiz vs worksheet, purely from the archetype field (duplex threading) 1`] = `
+{
+  "quiz": {
+    "hash": "54c632931866ae1deb0a08923c30eb2d03ac70d696b055bd6b4a2bcef6de69fd",
+    "pageCount": 2,
+  },
+  "worksheet": {
+    "hash": "3a34a2ce64323115facb919798c6a595d6e03136e88ca3be7c6f5acdf2e56efd",
+    "pageCount": 2,
+  },
+}
+`;
