@@ -2,6 +2,18 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
 import SchoolApp from './SchoolApp.jsx';
 
+// Spy on the schoolLog facade so the launch-refused path (F12) is directly
+// observable, not just inferred from the rendered panel.
+const surfaceLogMock = vi.fn();
+vi.mock('./schoolLog.js', () => ({
+  schoolLog: {
+    profile: vi.fn(), session: vi.fn(), answer: vi.fn(), answerError: vi.fn(),
+    bank: vi.fn(), nav: vi.fn(), home: vi.fn(), materials: vi.fn(), materialsError: vi.fn(),
+    print: vi.fn(), typing: vi.fn(), player: vi.fn(),
+    surface: (...a) => surfaceLogMock(...a),
+  },
+}));
+
 const banksMock = vi.fn();
 const materialsMock = vi.fn();
 const materialUnitsMock = vi.fn();
@@ -84,6 +96,7 @@ beforeEach(() => {
   // (below) overrides both with a resolved surface + a 'render' verdict.
   surfaceProfileMock.mockReset().mockResolvedValue({ ok: false, status: 404, data: { error: 'surface-profile-unresolved' } });
   certificationMock.mockReset().mockResolvedValue({ ok: true, status: 200, data: [] });
+  surfaceLogMock.mockReset();
 });
 
 describe('authored learning Catalog', () => {
@@ -165,6 +178,8 @@ describe('authored learning Catalog', () => {
     // Refused: the learning_unsupported panel, not the probe question.
     expect(await screen.findByText(/needs a capability that is not installed/i)).toBeInTheDocument();
     expect(screen.queryByText('A unit rate?')).toBeNull();
+    // F12: the refusal is logged with the moduleId that was refused.
+    expect(surfaceLogMock).toHaveBeenCalledWith('launch-refused', expect.objectContaining({ moduleId: 'check' }));
   });
 });
 
