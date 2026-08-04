@@ -82,6 +82,7 @@ import { createTriggerApiRouter } from '#composition/modules/triggerApi.mjs';
 import { createScanDispatch, errText } from '#composition/modules/scanDispatch.mjs';
 import { createSchoolCalc } from '#composition/modules/schoolCalc.mjs';
 import { createSchoolCatalog } from '#composition/modules/schoolCatalog.mjs';
+import { createSchoolSurfaces } from '#composition/modules/schoolSurfaces.mjs';
 import { createLearningReflectionEvidenceId, createSchoolLearningLoop } from '#composition/modules/schoolLearning.mjs';
 import { emit } from '#apps/scan/ScanDispatcher.mjs';
 import { createGratitudeApiRouter } from '#composition/modules/gratitudeApi.mjs';
@@ -234,7 +235,7 @@ import { createWeeklyReviewRouter } from './4_api/v1/routers/weekly-review.mjs';
 import { createHarvestRouter } from './4_api/v1/routers/harvest.mjs';
 
 // FileIO utilities for image saving
-import { saveImage as saveImageToFile, loadYaml as loadYamlStatic } from './0_system/utils/FileIO.mjs';
+import { saveImage as saveImageToFile, loadYaml as loadYamlStatic, loadYamlFromPath } from './0_system/utils/FileIO.mjs';
 // API versioning
 import { createApiRouter } from './4_api/v1/routers/api.mjs';
 import { createArtRouter } from './4_api/v1/routers/art.mjs';
@@ -2250,6 +2251,26 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   const openCatalogLearningSession = schoolCatalog.query
     ? new OpenCatalogLearningSession({ catalog: schoolCatalog.query, grader: schoolService })
     : null;
+  // Surface certification (spec §4.2/§7.1/§9): the registry of static
+  // surface profiles + per-family certification ports, and a per-request
+  // certification facade for `/api/v1/school/certification` and
+  // `/api/v1/school/surfaces/profile`. Inert (both null) whenever the shared
+  // School Catalog itself is not wired — certification has nothing to
+  // certify without it.
+  const schoolSurfaces = await createSchoolSurfaces({
+    schoolCatalog,
+    logger: rootLogger.child({ module: 'school-surfaces' }),
+  });
+  // Screen-config lookup for surface-profile resolution, reusing the same
+  // `data/household/screens/<id>.yml` mount `screens.mjs` serves —
+  // `loadYamlFromPath` returns null on a missing/unparsable file rather than
+  // throwing, which is exactly the "no config" case the resolver treats as a
+  // 404 (fail closed, never a synthesized default).
+  const getSchoolScreenConfig = (screenId) => (
+    /^[a-zA-Z0-9_-]+$/.test(screenId)
+      ? loadYamlFromPath(path.join(householdDir, 'screens', `${screenId}.yml`))
+      : null
+  );
   // Optional calculator-native School product. The composition module is the
   // only place that joins calculator-family adapters, SchoolCalc application
   // use cases, persistence, relay credentials, and the thin HTTP router.
@@ -2877,6 +2898,9 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     learnerDirectory: schoolLearnerDirectory,
     printService: schoolPrintService,
     schoolCalcRouter: schoolCalc.router,
+    surfaceCertification: schoolSurfaces.certification,
+    surfaceRegistry: schoolSurfaces.registry,
+    getScreenConfig: getSchoolScreenConfig,
     logger: rootLogger.child({ module: 'school-api' })
   });
 
