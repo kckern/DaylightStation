@@ -54,8 +54,10 @@ const BLANK_RULE = '_';
 function applyAnswerSpaceGrowth(fragment, innerGapPt) {
   const nodes = fragment.nodes ?? [];
   let sparePt = (fragment.heightPt ?? 0) - (fragment.baseHeightPt ?? fragment.heightPt ?? 0);
+  // `elasticSpace` (the `spacer` block) grows by the identical rule as
+  // `answerSpace` — it just never gets ruled lines drawn into the room.
   let growable = nodes
-    .filter((node) => node.kind === 'answerSpace')
+    .filter((node) => node.kind === 'answerSpace' || node.kind === 'elasticSpace')
     .map((node) => ({ node, headroomPt: node.maxPt - node.heightPt }))
     .filter((entry) => entry.headroomPt > EPSILON);
 
@@ -318,9 +320,74 @@ export function createDocumentPdfRenderer({
     SVGtoPDF(out, node.svg, xPt, yPt, {
       width: node.drawWidthPt, height: node.drawHeightPt, assumePt: true,
     });
-    drawLines(out, node.caption.lines, {
-      xPt, yPt: yPt + node.drawHeightPt + theme.asset.captionGapPt, styleKey: 'instruction',
-    });
+    // The legacy `asset` block bakes its caption into this node; a `figure`
+    // block's image node carries `caption: null` because its caption is a
+    // separate sibling node (drawn by the ordinary `text` case below it).
+    if (node.caption) {
+      drawLines(out, node.caption.lines, {
+        xPt, yPt: yPt + node.drawHeightPt + theme.asset.captionGapPt, styleKey: 'instruction',
+      });
+    }
+  }
+
+  /** `inset` — a rounded box behind its already-measured, already-stacked children. */
+  function drawBox(out, node, position) {
+    const { xPt, yPt } = position;
+    out.save().lineWidth(node.borderWidthPt).strokeColor(theme.ink.box)
+      .roundedRect(xPt, yPt, node.widthPt, node.heightPt, node.radiusPt).stroke().restore();
+    const innerXPt = xPt + node.paddingPt;
+    const innerYPt = yPt + node.paddingPt;
+    for (const child of node.childNodes) {
+      drawNode(out, child, { ...position, xPt: innerXPt, yPt: innerYPt + child.offsetYPt });
+    }
+  }
+
+  /** `divider` — a bare rule centred in its reserved vertical band. */
+  function drawDivider(out, node, { xPt, yPt }) {
+    const { divider } = theme;
+    const ruleY = yPt + divider.paddingAbovePt + divider.ruleWidthPt / 2;
+    out.save().lineWidth(divider.ruleWidthPt).strokeColor(theme.ink.rule)
+      .moveTo(xPt, ruleY).lineTo(xPt + node.widthPt, ruleY).stroke().restore();
+  }
+
+  /**
+   * `list` — bullet dot / number text in a fixed marker column, or (checklist)
+   * a stroked empty square: a vector primitive, not a Unicode box-glyph that
+   * might not exist in the embedded font — the same reasoning the OMR row's
+   * bubbles already follow.
+   */
+  function drawList(out, node, { xPt, yPt }) {
+    const { list } = theme;
+    const bodyStyle = theme.styles.body;
+    const textXPt = xPt + node.markerColumnPt;
+    for (const item of node.items) {
+      const itemYPt = yPt + item.offsetYPt;
+      if (item.marker === null) {
+        const size = list.checklistSizePt;
+        const squareY = itemYPt + (bodyStyle.leadingPt - size) / 2;
+        out.save().lineWidth(list.checklistStrokeWidthPt).strokeColor(theme.ink.box)
+          .rect(xPt, squareY, size, size).stroke().restore();
+      } else {
+        setFont(out, 'regular', bodyStyle.sizePt, bodyStyle.ink);
+        out.text(item.marker, xPt, itemYPt, { width: node.markerColumnPt - 4, lineBreak: false });
+      }
+      drawLines(out, item.lines, { xPt: textXPt, yPt: itemYPt, styleKey: 'body' });
+    }
+  }
+
+  /** Small muted labels in the left margin, aligned to a passage's own wrapped lines. */
+  function drawLineNumbers(out, lines, { xPt, yPt, gutterPt }) {
+    const style = theme.styles.caption ?? theme.styles.instruction ?? theme.styles.body;
+    let cursorY = yPt;
+    for (const line of lines) {
+      if (line.lineNumber !== undefined) {
+        setFont(out, 'regular', style.sizePt, 'muted');
+        out.text(String(line.lineNumber), xPt, cursorY, {
+          width: Math.max(gutterPt - 4, 0), align: 'right', lineBreak: false,
+        });
+      }
+      cursorY += line.heightPt;
+    }
   }
 
   function drawHeader(out, node, { xPt, yPt }) {
@@ -348,6 +415,12 @@ export function createDocumentPdfRenderer({
       case 'action': drawActionBox(out, node, position); break;
       case 'asset': drawAsset(out, node, position); break;
       case 'header': drawHeader(out, node, position); break;
+      case 'box': drawBox(out, node, position); break;
+      case 'divider': drawDivider(out, node, position); break;
+      case 'list': drawList(out, node, position); break;
+      // `spacer`: the whole point is blank space. The fragment's grown height
+      // already pushes what follows down; nothing here puts ink on the page.
+      case 'elasticSpace': break;
       // Unreachable: measure.mjs refuses any kind this switch does not cover.
       default: throw new Error(`no draw pass for measured node kind '${node.kind}'`);
     }
@@ -355,10 +428,20 @@ export function createDocumentPdfRenderer({
 
   function drawFragment(out, fragment, { page, marks, codes }) {
     if (Array.isArray(fragment.lines)) {
-      drawLines(out, fragment.lines, { xPt: contentLeftPt, yPt: fragment.yPt, styleKey: fragment.styleKey });
+      const gutterPt = fragment.gutterPt ?? 0;
+      if (fragment.lineNumbers) {
+        drawLineNumbers(out, fragment.lines, { xPt: contentLeftPt, yPt: fragment.yPt, gutterPt });
+      }
+      drawLines(out, fragment.lines, {
+        xPt: contentLeftPt + gutterPt, yPt: fragment.yPt, styleKey: fragment.styleKey,
+      });
       return;
     }
-    applyAnswerSpaceGrowth(fragment, theme.question.innerGapPt);
+    // A fragment measured with its own inner gap (e.g. `figure`'s
+    // theme.asset.captionGapPt) must be reflowed with that SAME gap, not
+    // unconditionally the question's — see the `innerGapPt` comment in
+    // measure.mjs's figureFragment.
+    applyAnswerSpaceGrowth(fragment, fragment.innerGapPt ?? theme.question.innerGapPt);
     const nodeXPt = contentLeftPt + (fragment.gutterPt ?? 0);
     if (fragment.number !== undefined) {
       setFont(out, 'bold', theme.question.numberSizePt);
