@@ -4,22 +4,34 @@
 
 **Spec:** `docs/_wip/plans/2026-08-04-learning-surfaces-requirements.md` (rev 2). Read it before starting any task; section references (§) below point into it.
 
+> **Revision 2 of this plan** — incorporates the adversarial plan review: declared
+> `requiredCapabilities` enforcement moved into the projection (Task 10) since the
+> bundle must stay byte-identical; Task 15 rewritten against the real
+> `PrintService.listPrintables()` shape; §4.2 screen-config key specified
+> (`surfaceProfile:`); asset validation moved into Task 12's body; TI-86 reason
+> attribution corrected to the codec's `module <i>` format; tracked-return rule
+> added to the calculator port; CLI exemplar corrected to
+> `cli/schoolcalc-catalog.cli.test.mjs`; cross-task fixtures given explicit file
+> paths; banks added to gate + manifest; Task 14 split; `customCapabilities`
+> supplier wired; architecture-test path corrected.
+
 **Goal:** One certification language across calculator, paper, and screen surfaces: surface profiles, per-family `certify(bundle, profile)` ports, a certification projection with manifest, the `school:certify` CLI, and offer-side consumers (screen app, Print Center) that only offer certified work.
 
-**Architecture:** Pure domain modules (capability registry, demand derivation, verdict roll-up) feed three adapter-layer certification ports (TI-86 wrap, paper, screen) behind one contract; an application-layer registry + projection computes the matrix and writes a manifest; the CLI and API are thin shells over the projection. No published capability ID changes; the TI-86 codec's behavior is wrapped, never modified.
+**Architecture:** Pure domain modules (capability registry, demand derivation, verdict roll-up) feed three adapter-layer certification ports (TI-86 wrap, paper, screen) behind one contract; an application-layer registry + projection computes the matrix (including declared-lesson-requirement reasons) and writes a manifest; the CLI and API are thin shells over the projection. No published capability ID changes; the TI-86 codec's behavior is wrapped, never modified; the neutral bundle shape is never altered (artifact digests depend on it).
 
-**Tech Stack:** Node ESM (`.mjs`), vitest (colocated `*.test.mjs`, run `npx vitest run <path>` from repo root — node_modules is present in this worktree), existing `#domains/...` import aliases, js-yaml via existing YAML repository patterns.
+**Tech Stack:** Node ESM (`.mjs`), vitest (colocated `*.test.mjs`, run `npx vitest run <path>` from repo root — node_modules is present in this worktree), `#domains/...`/`#apps/...` import aliases (see package.json `imports`), js-yaml via existing YAML repository patterns.
 
 ## Global Constraints (from spec)
 
 - **Never rename or alias a published capability ID** (§3.1 inventory). New IDs in v1: `return.session@1`, `return.scan@1`, `return.cable@1`, `return.qr@1` only (§3.2).
+- **Never change the neutral bundle shape** produced by `BuildLearningLesson` — TI-86 artifact identities hash it (`sourceDigest`); adding/removing a field breaks §12.1 vocabulary safety.
 - **Port signature:** `certify(bundle, profile)` → `{ modules: [{moduleId, verdict: 'render'|'incompatible', reasons, warnings}], lesson: {verdict: 'full'|'partial'|'none'}, resource? }` (§7.1). No `dispatch` anywhere in v1.
 - **Ports are deterministic and do no I/O**; all inputs (bundle, resolved banks, profile) supplied by caller (§7.1). Never throw for "content doesn't fit" — throw only on malformed bundle/profile.
-- **One certifier everywhere:** CLI/gate/runtime all call the same ports (§2). No parallel lint logic.
+- **One certifier everywhere:** CLI/gate/runtime all call the same ports and projection (§2). No parallel lint logic.
 - **TI-86 codec baseline for CLI certification is `TI86_SCHOOLCALC_CODEC_CAPABILITIES`**, never `TI86_SCHOOLCALC_CLIENT_CAPABILITIES` (§6.2). Verdicts against it carry `baseline: 'codec'`.
-- **Existing behavior must not change:** golden TI-86 byte digests, bundle digests, `supports()`/`compile()` semantics, Print Center's legacy curriculum-unit pipeline (§9), `schoolcalc:validate`.
+- **Existing behavior must not change:** golden TI-86 byte digests, bundle digests, `supports()`/`compile()` semantics, Print Center's `pdf` printables and curriculum-unit pipeline (§9), `schoolcalc:validate`.
 - **Certified-`none`-everywhere is a warning, not an error** (§6.1). Schema/reference errors remain hard failures.
-- **Subject-neutral:** no subject vocabulary in any new certification code (§2; existing architecture tests extend).
+- **Subject-neutral:** no subject vocabulary in any new certification code (§2; the architecture test at `tests/isolated/application/school/schoolcalcArchitecture.test.mjs` extends).
 - Commit after every task; end every commit message with `Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>`.
 
 ## File Structure
@@ -41,12 +53,13 @@ backend/src/1_adapters/school/catalog/
   YamlSurfaceProfileRepository.mjs  # Task 9 — loads catalog/surfaces/*.yml
 backend/src/3_applications/school/surfaces/
   SurfaceRegistry.mjs           # Task 9 — profiles + family→port wiring
-  GetSurfaceCertification.mjs   # Task 10 — the projection (matrix + digest cache)
+  GetSurfaceCertification.mjs   # Task 10 — the projection (matrix + digest cache + declared requirements)
   certificationManifest.mjs     # Task 11 — manifest read/write helpers
 cli/school-certify.cli.mjs      # Task 12 — the certifier CLI (npm: school:certify)
 backend/src/4_api/v1/routers/school.mjs           # Task 13 — modify: certification + profile-resolve endpoints
 frontend/src/modules/School/catalog/certification.js  # Task 14 — pure gate helper
 frontend/src/modules/School/SchoolApp.jsx             # Task 14 — modify: consult certification
+backend/src/3_applications/school/PrintService.mjs    # Task 15 — modify: paper-certification gate on bank printables
 tests/_lib/school/certificationContract.mjs       # Task 5 — shared port contract suite
 ```
 
@@ -61,7 +74,7 @@ Rollout order is strictly bottom-up; every task leaves the tree green (`npx vite
 - Test: `backend/src/2_domains/school/surfaces/capabilityRegistry.test.mjs`
 
 **Interfaces:**
-- Consumes: `parseCapabilityId` from `#domains/school/catalog/index.mjs` (re-exported from `catalog/capabilities.mjs`).
+- Consumes: `parseCapabilityId` from `../catalog/capabilities.mjs`.
 - Produces: `KNOWN_CAPABILITY_IDS: readonly string[]`, `RETURN_CAPABILITY_IDS: readonly string[]`, `isRegisteredCapability(id, {customCapabilities?: string[]}) => boolean`. Tasks 2, 4, 7, 8 rely on these exact names.
 
 - [ ] **Step 1: Write the failing test**
@@ -177,7 +190,7 @@ Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
 
 **Interfaces:**
 - Consumes: `validateCapabilityList` from `../catalog/capabilities.mjs`; `isRegisteredCapability` (Task 1).
-- Produces: `validateSurfaceProfile(raw, {customCapabilities?}) => {errors: string[], profile?: object}` with frozen normalized profile `{schema, surfaceId, family, title, liveness, capabilities: string[], limits: object}`. `SURFACE_FAMILIES = ['schoolcalc','paper','screen']`. Tasks 6–10 rely on the normalized shape.
+- Produces: `validateSurfaceProfile(raw, {customCapabilities?}) => {errors: string[], profile?: object}` with frozen normalized profile `{schema, surfaceId, family, title, liveness, capabilities: string[], limits: object}`. `SURFACE_FAMILIES = ['schoolcalc','paper','screen']`. Tasks 6–10 rely on the normalized shape. The `customCapabilities` list is supplied by callers from the learning-module registry (Task 9 wires it).
 
 - [ ] **Step 1: Write the failing test**
 
@@ -213,9 +226,14 @@ describe('validateSurfaceProfile', () => {
     expect(validateSurfaceProfile({ ...good, liveness: 'live' }).errors.join()).toMatch(/liveness/);
   });
 
-  it('rejects unregistered capability IDs (fail closed, spec §3.2)', () => {
+  it('rejects unregistered capability IDs unless injected as custom (spec §3.1/§3.2)', () => {
     const { errors } = validateSurfaceProfile({ ...good, capabilities: ['reader@1', 'hologram@1'] });
     expect(errors.join()).toMatch(/hologram@1/);
+    const custom = validateSurfaceProfile(
+      { ...good, capabilities: ['reader@1', 'periodic-table@1'] },
+      { customCapabilities: ['periodic-table@1'] },
+    );
+    expect(custom.errors).toEqual([]);
   });
 
   it('requires a non-empty capability list and a mapping for limits', () => {
@@ -294,9 +312,10 @@ Expected: PASS.
 
 **Interfaces:**
 - Consumes (all existing): `capabilityForLearningModule`, `capabilityForQuestionItem` from `../catalog/moduleValidation.mjs`; `capabilityForLearningDocumentBlock` from `../catalog/learningDocumentValidation.mjs`.
-- Produces: `TRACKED_MODULE_TYPES: Set<string>` (`quiz`,`problems`,`learning_probe`,`flashcards`,`activity`); `deriveModuleDemands({module, document?, bank?}) => {capabilities: string[], tracked: boolean}`; `deriveBankDemands(bank) => {capabilities: string[], tracked: true}`. Tasks 4, 7, 8, 10 rely on these names.
+- Produces: `TRACKED_MODULE_TYPES: Set<string>` (`quiz`,`problems`,`learning_probe`,`flashcards`,`activity`); `deriveModuleDemands({module, document?, bank?}) => {capabilities: string[], tracked: boolean}`; `deriveBankDemands(bank) => {capabilities: string[], tracked: true}`. Tasks 4, 6, 7, 8, 10 rely on these names.
+- **Note on declared `requiredCapabilities` (spec §3.3 item 2):** they are enforced in the **projection** (Task 10), not here. `BuildLearningLesson` folds them into `bundle.capabilities` (line ~64) without preserving them as a distinct field, and the bundle shape cannot change (Global Constraints). The projection reads them from the authored catalog entry and applies `capabilityReasons` lesson-wide. This module stays per-module and pure.
 
-Bundle shapes to know (from `BuildLearningLesson` output): a resolved module carries its own `bank` (`module.bank.items[]`) for bank-backed types and lecture_notes carry `document.blocks[]`. Image-bearing items: an item with an `asset` field, or an `asset_choice` item whose choices carry `image`, additionally demands `image@1` (spec §3.3.4).
+Bundle shapes to know (from `BuildLearningLesson` output): a resolved module carries its own `bank` (`module.bank.items[]`) for bank-backed types and lecture_notes carry `document.blocks[]`. Image-bearing items: an item with an `asset` field, or an item whose choices carry `image`, additionally demands `image@1` (spec §3.3.4).
 
 - [ ] **Step 1: Write the failing test**
 
@@ -306,7 +325,7 @@ import { describe, expect, it } from 'vitest';
 import { TRACKED_MODULE_TYPES, deriveModuleDemands, deriveBankDemands } from './demands.mjs';
 
 describe('demand derivation (spec §3.3)', () => {
-  it('derives module + item + return demands for a tracked quiz', () => {
+  it('derives module + item demands for a tracked quiz', () => {
     const { capabilities, tracked } = deriveModuleDemands({
       module: { moduleId: 'check', type: 'quiz', bankId: 'b1' },
       bank: { items: [
@@ -342,6 +361,15 @@ describe('demand derivation (spec §3.3)', () => {
     expect(capabilities).toContain('response.region@1');
     expect(capabilities).toContain('response.asset-choice@1');
     expect(capabilities.filter((c) => c === 'image@1')).toHaveLength(1);
+  });
+
+  it('falls back to module.bank when no resolved bank is passed', () => {
+    const { capabilities } = deriveModuleDemands({
+      module: { moduleId: 'm', type: 'quiz', bank: { items: [
+        { id: 'q1', type: 'multiple_choice', prompt: 'p', choices: ['a'], answer: 'a' },
+      ] } },
+    });
+    expect(capabilities).toContain('response.choice@1');
   });
 
   it('tracks exactly the spec §3.3 tracked types', () => {
@@ -381,13 +409,15 @@ function itemDemands(items = []) {
 /**
  * A module's demand set (spec §3.3): module capability + block capabilities +
  * item capabilities, deduplicated, plus its tracking class. Pure; the caller
- * supplies the resolved document and bank (ports do no I/O).
+ * supplies the resolved document and bank (ports do no I/O). Declared
+ * lesson-level requiredCapabilities are applied by the certification
+ * projection, not here (they are lesson-wide and absent from module shapes).
  */
 export function deriveModuleDemands({ module, document = null, bank = null }) {
   const caps = [];
   const moduleCap = capabilityForLearningModule(module);
   if (moduleCap) caps.push(moduleCap);
-  for (const block of document?.blocks ?? []) {
+  for (const block of (document ?? module?.document)?.blocks ?? []) {
     const cap = capabilityForLearningDocumentBlock(block);
     if (cap) caps.push(cap);
   }
@@ -413,7 +443,7 @@ export function deriveBankDemands(bank) {
 - Test: `backend/src/2_domains/school/surfaces/verdicts.test.mjs`
 
 **Interfaces:**
-- Consumes: `missingCapabilities` from `../catalog/capabilities.mjs`; `RETURN_CAPABILITY_IDS` (Task 1).
+- Consumes: `missingCapabilities` from `../catalog/capabilities.mjs`.
 - Produces (Tasks 5–10 rely on these):
   - `capabilityReasons(demands, profile) => string[]` — missing-capability reasons (`missing capability <id>`) plus, when `demands.tracked` and the profile offers no `return.*` ID, `tracked module requires a return channel; profile offers none`.
   - `moduleVerdict({moduleId, reasons, warnings?}) => {moduleId, verdict, reasons, warnings}` (`render` iff `reasons.length === 0`).
@@ -519,7 +549,7 @@ export { capabilityReasons, moduleVerdict, rollUpLesson } from './verdicts.mjs';
 - Produces: `runCertificationPortContract({ name, makePort, profile, renderableBundle, incompatibleBundle })` — registers a vitest `describe` block asserting, for any port (spec §7.1): (1) verdict shape (modules array parallel to `bundle.lesson.modules`, each `{moduleId, verdict, reasons, warnings}`; lesson verdict ∈ full|partial|none); (2) determinism (two calls, deep-equal results); (3) never-throws on `incompatibleBundle` and returns ≥1 reason; (4) `renderableBundle` yields lesson `full` and zero reasons; (5) `verdict === 'incompatible'` ⇒ `reasons.length > 0`. Tasks 6–8 call this against their real ports.
 - Consumes: nothing from production code (bundles/profiles are supplied by callers).
 
-Note: `tests/isolated/**` specs run under vitest, not jest (`reference_isolated_specs_need_vitest` — invoke with `npx vitest run <path>`).
+Note: `tests/isolated/**` specs run under vitest, not jest — invoke with `npx vitest run <path>`.
 
 - [ ] **Step 1: Write the harness and a self-test with a minimal fake port**
 
@@ -606,13 +636,18 @@ runCertificationPortContract({
 - Do NOT modify `Ti86SchoolCalcCodec.mjs` (golden digests must stay green).
 
 **Interfaces:**
-- Consumes: `Ti86SchoolCalcCodec` (existing: `supports(bundle, capabilityReport)`, `compile(bundle, capabilityReport)`, exported `TI86_SCHOOLCALC_CODEC_CAPABILITIES`, `TI86_SCHOOLCALC_LIMITS`); `moduleVerdict`, `rollUpLesson` (Task 4).
+- Consumes: `Ti86SchoolCalcCodec` (existing: `supports(bundle, capabilityReport)`, `compile(bundle, capabilityReport)`, exported `TI86_SCHOOLCALC_CODEC_CAPABILITIES`, `TI86_SCHOOLCALC_LIMITS`); `deriveModuleDemands`, `moduleVerdict`, `rollUpLesson` from `#domains/school/surfaces/index.mjs`.
 - Produces:
-  - `class Ti86SurfaceCertification { constructor({codec}) ; certify(bundle, profile) }` — spec §7.1 calculator port. `profile.capabilities` is translated to the codec's capability-report shape `{platformId: 'ti86', capabilities, limits: {maxArtifactBytes}}` (profile limits key `maxArtifactBytes` optional, codec default applies).
-  - `ti86CodecBaselineProfile() => profile` — a frozen `school.surface-profile/v1`-shaped record: `surfaceId: 'ti86-codec-baseline'`, `family: 'schoolcalc'`, `liveness: 'observed'`, capabilities = `TI86_SCHOOLCALC_CODEC_CAPABILITIES` **plus** `return.cable@1`, `return.qr@1` (the family's return channels, spec §3.2/§6.2). Task 9/12 use this for CLI certification with `baseline: 'codec'` labeling.
-- Semantics (spec §6.2/§7.1): run `codec.supports()`; if compatible, additionally attempt `codec.compile()` in a try/catch to enforce the byte ceiling — a compile throw becomes an `incompatible` reason (verbatim message), never an exception. On success, `resource = {estimatedBytes: compiled.byteLength, limitsApplied: {hardCeilingBytes, targetBytes}}` and compile warnings pass through as lesson-level warnings. **Whole-lesson policy:** verdicts are per-module in shape, but any lesson-level failure marks *every* module `incompatible`, attaching each reason to every module whose `modules[<index>]`/moduleId appears in it, and the remaining reasons to all modules; `rollUpLesson(..., {fullOrNothing: true})`.
+  - `class Ti86SurfaceCertification { constructor({codec}) ; certify(bundle, profile) }` — spec §7.1 calculator port. `profile.capabilities` is translated to the codec's capability-report shape `{platformId: 'ti86', capabilities: profile.capabilities.filter((id) => !id.startsWith('return.')), limits: {maxArtifactBytes: profile.limits?.maxArtifactBytes}}` (strip undefined limits; codec default applies).
+  - `ti86CodecBaselineProfile() => profile` — a frozen `school.surface-profile/v1`-shaped record: `surfaceId: 'ti86-codec-baseline'`, `family: 'schoolcalc'`, `liveness: 'observed'`, capabilities = `TI86_SCHOOLCALC_CODEC_CAPABILITIES` **plus** `return.cable@1`, `return.qr@1` (the family's return channels, spec §3.2/§6.2). Tasks 9/12 use this for CLI certification with `baseline: 'codec'` labeling.
+- Semantics (spec §6.2/§7.1):
+  1. Run `codec.supports(bundle, report)`.
+  2. **Tracked-return rule (spec §3.3 item 5 — the calculator port must implement it too):** for each module, if `deriveModuleDemands({module}).tracked` and the *profile* (pre-strip) offers no `return.*` capability, add reason `tracked module requires a return channel; profile offers none`.
+  3. If supports() is compatible and no tracked-return reasons, attempt `codec.compile(bundle, report)` in try/catch — a compile throw (byte ceiling) becomes an `incompatible` reason (verbatim `error.message`), never an exception. On success, `resource = {estimatedBytes: compiled.byteLength, limitsApplied: {hardCeilingBytes: TI86_SCHOOLCALC_LIMITS.lessonMaxBytes, targetBytes: TI86_SCHOOLCALC_LIMITS.lessonTargetBytes}}`; compile `warnings` pass through onto every module's `warnings`.
+  4. **Reason-to-module attribution:** codec reasons are formatted `` `module ${index} …` `` (see `ti86ProjectionReasons` — the string is `module 0 …`, NOT `modules[0]`). Match `/^module (\d+)\b/`; a matching reason attaches only to `bundle.lesson.modules[index]`; all non-matching reasons (schema, byte ceiling, capability misses) attach to every module.
+  5. **Whole-lesson policy:** any reason anywhere ⇒ `rollUpLesson(..., {fullOrNothing: true})`.
 
-- [ ] **Step 1: Write the failing test** (uses the same bundle fixture shape as `Ti86SchoolCalcCodec.test.mjs` — copy its `bundle` const as the renderable fixture; build the oversized fixture by inflating prose):
+- [ ] **Step 1: Write the failing test.** Copy the `const bundle` fixture **verbatim from `backend/src/1_adapters/schoolcalc/ti86/Ti86SchoolCalcCodec.test.mjs` (top of file, ~line 27)** as `renderableBundle`:
 
 ```js
 // backend/src/1_adapters/schoolcalc/ti86/Ti86SurfaceCertification.test.mjs
@@ -621,9 +656,7 @@ import { Ti86SchoolCalcCodec } from './Ti86SchoolCalcCodec.mjs';
 import { Ti86SurfaceCertification, ti86CodecBaselineProfile } from './Ti86SurfaceCertification.mjs';
 import { runCertificationPortContract } from '../../../../../tests/_lib/school/certificationContract.mjs';
 
-// Copy the minimal valid bundle from Ti86SchoolCalcCodec.test.mjs verbatim here
-// (schema school.learning-lesson/v1, address, capabilities, one quiz module) as:
-const renderableBundle = /* …paste from Ti86SchoolCalcCodec.test.mjs `bundle`… */;
+const renderableBundle = /* paste `bundle` from Ti86SchoolCalcCodec.test.mjs verbatim */;
 
 const oversizedBundle = structuredClone(renderableBundle);
 oversizedBundle.lesson.modules = [{
@@ -662,6 +695,30 @@ describe('Ti86SurfaceCertification specifics', () => {
     }
   });
 
+  it('attributes `module <i>` reasons only to that module', () => {
+    // Two modules; make the SECOND one invalid for TI-86 projection (an asset
+    // block, which the reader cannot project) so the codec emits a
+    // `module 1 …` reason. The first module must stay clean of it.
+    const bundle = structuredClone(renderableBundle);
+    bundle.lesson.modules = [
+      renderableBundle.lesson.modules[0],
+      { moduleId: 'notes2', type: 'lecture_notes',
+        document: { blocks: [{ blockId: 'a', type: 'asset', assetId: 'pic', alt: 'x' }] } },
+    ];
+    const result = makePort().certify(bundle, ti86CodecBaselineProfile());
+    const moduleScoped = result.modules[1].reasons.filter((r) => /^module 1\b/.test(r));
+    expect(moduleScoped.length).toBeGreaterThan(0);
+    expect(result.modules[0].reasons.filter((r) => /^module 1\b/.test(r))).toEqual([]);
+  });
+
+  it('rejects tracked work when the profile offers no return channel', () => {
+    const base = ti86CodecBaselineProfile();
+    const noReturn = { ...base, capabilities: base.capabilities.filter((c) => !c.startsWith('return.')) };
+    const result = makePort().certify(renderableBundle, noReturn);
+    expect(result.lesson.verdict).toBe('none');
+    expect(result.modules.flatMap((m) => m.reasons).join()).toMatch(/return channel/);
+  });
+
   it('reports resource bytes for a compilable lesson', () => {
     const { resource } = makePort().certify(renderableBundle, ti86CodecBaselineProfile());
     expect(resource.estimatedBytes).toBeGreaterThan(0);
@@ -671,7 +728,7 @@ describe('Ti86SurfaceCertification specifics', () => {
 ```
 
 - [ ] **Step 2: Run to verify FAIL** — `npx vitest run backend/src/1_adapters/schoolcalc/ti86/Ti86SurfaceCertification.test.mjs`.
-- [ ] **Step 3: Implement** `Ti86SurfaceCertification.mjs` per the semantics above (~80 lines). Profile→report translation: `{platformId: 'ti86', capabilities: profile.capabilities.filter((id) => !id.startsWith('return.')), limits: {maxArtifactBytes: profile.limits?.maxArtifactBytes}}` (strip undefined limits). Reason-to-module attribution: a reason containing `modules[<i>]` attaches to `bundle.lesson.modules[i]`; all other reasons attach to every module.
+- [ ] **Step 3: Implement** `Ti86SurfaceCertification.mjs` per the five-point semantics above (~90 lines).
 - [ ] **Step 4: Run to verify PASS**, then run the *entire* existing codec suite untouched: `npx vitest run backend/src/1_adapters/schoolcalc/` — the golden byte digests must still pass (Global Constraint).
 - [ ] **Step 5: Commit** — `git commit -m "feat(schoolcalc): TI-86 certification port wrapping supports()+compile byte ceiling" -m "Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"`
 
@@ -684,14 +741,14 @@ describe('Ti86SurfaceCertification specifics', () => {
 - Test: `backend/src/1_adapters/school/paper/PaperCertification.test.mjs`
 
 **Interfaces:**
-- Consumes: `deriveModuleDemands`, `deriveBankDemands`, `capabilityReasons`, `moduleVerdict`, `rollUpLesson` from `#domains/school/surfaces/index.mjs` (or the relative path — match how other `1_adapters/school` files import domain code; check `backend/src/1_adapters/school/catalog/YamlLearningCatalogRepository.mjs` imports first and copy the style).
+- Consumes: `deriveModuleDemands`, `deriveBankDemands`, `capabilityReasons`, `moduleVerdict`, `rollUpLesson` — import from `#domains/school/surfaces/index.mjs` (the `#domains` alias is defined in package.json `imports`; other adapters use it, e.g. the codec imports `#domains/core/errors/index.mjs`).
 - Produces:
-  - `class PaperCertification { certify(bundle, profile); certifyBank(bank, profile) }`. `certifyBank` returns `{verdict, reasons, warnings}` for a standalone bank (spec §7.3).
+  - `class PaperCertification { certify(bundle, profile); certifyBank(bank, profile) }`. `certifyBank` returns `{verdict: 'render'|'incompatible', reasons, warnings}` for a standalone bank (spec §7.3).
   - Rules implemented (spec §6.3), on top of the shared `capabilityReasons` pass:
     - module types `tool`, `custom`, `activity`, `learning_probe` → reason `<type> modules do not render on paper`.
-    - for choice items: `choices.length > profile.limits.omrChannels` → reason naming the item id; any choice lacking a printable text `label`/string → reason.
-    - bank/module item count > `profile.limits.maxItemsPerSheet` → reason.
-    - lecture_notes documents estimated pages > `profile.limits.maxPagesPerDocument` → reason (estimate: `Math.ceil(blocks.length / 12)` — 12 blocks/page is the v1 heuristic; state it in a comment; the paper renderer refines it later without changing this port's contract).
+    - for choice items (`multiple_choice`/`asset_choice`): `choices.length > profile.limits.omrChannels` → reason naming the item id and the limit; any choice lacking printable text (a non-empty string, or an object with non-empty `label`) → reason naming the item id.
+    - bank/module item count > `profile.limits.maxItemsPerSheet` → reason naming the limit.
+    - lecture_notes documents estimated pages > `profile.limits.maxPagesPerDocument` → reason naming the limit (estimate: `Math.ceil(blocks.length / 12)` — 12 blocks/page is the v1 heuristic, stated in a comment; the paper renderer refines it later without changing this port's contract).
     - non-choice response demands are already covered by `capabilityReasons` (a paper profile omits `response.text@1` etc. — the test proves the item-level miss reads correctly).
 
 - [ ] **Step 1: Write the failing test**
@@ -702,7 +759,7 @@ import { describe, expect, it } from 'vitest';
 import { PaperCertification } from './PaperCertification.mjs';
 import { runCertificationPortContract } from '../../../../../tests/_lib/school/certificationContract.mjs';
 
-const paperProfile = {
+export const paperProfile = {
   surfaceId: 'paper-letter-mono', family: 'paper', liveness: 'static',
   capabilities: [
     'reader@1', 'examples@1', 'quiz@1', 'problems@1', 'flashcards@1',
@@ -712,14 +769,14 @@ const paperProfile = {
   limits: { omrChannels: 12, maxItemsPerSheet: 25, maxPagesPerDocument: 20 },
 };
 
-const choiceBank = { id: 'b1', items: [
+export const choiceBank = { id: 'b1', items: [
   { id: 'q1', type: 'multiple_choice', prompt: 'p', choices: ['a', 'b', 'c'], answer: 'a' },
 ] };
 const textBank = { id: 'b2', items: [
   { id: 'q1', type: 'short_answer', prompt: 'p', answer: 'x' },
 ] };
 
-const renderableBundle = { lesson: { modules: [
+export const renderableBundle = { lesson: { modules: [
   { moduleId: 'notes', type: 'lecture_notes', document: { blocks: [{ blockId: 'p', type: 'prose', text: 't' }] } },
   { moduleId: 'check', type: 'quiz', bank: choiceBank },
 ] } };
@@ -767,8 +824,10 @@ describe('PaperCertification specifics (spec §6.3)', () => {
 });
 ```
 
+(The `export`ed fixtures — `paperProfile`, `choiceBank`, `renderableBundle` — are deliberately importable: Tasks 8 and 10 reuse them by importing from this test file.)
+
 - [ ] **Step 2: Run to verify FAIL.**
-- [ ] **Step 3: Implement** `PaperCertification.mjs` (~90 lines) per the rules block above; every rule adds a `reasons` string, then `moduleVerdict`/`rollUpLesson` assemble the result. `certifyBank` = shared capability pass over `deriveBankDemands(bank)` + channel/label/sheet checks, returning `{verdict: reasons.length ? 'incompatible' : 'render', reasons, warnings: []}`.
+- [ ] **Step 3: Implement** `PaperCertification.mjs` (~90 lines) per the rules block above; every rule adds a `reasons` string, then `moduleVerdict`/`rollUpLesson` assemble the result. `certifyBank` = shared capability pass over `deriveBankDemands(bank)` + channel/label/sheet checks.
 - [ ] **Step 4: Run to verify PASS.**
 - [ ] **Step 5: Commit** — `git commit -m "feat(school): paper certification port (OMR capture, geometry, budgets)" -m "Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"`
 
@@ -781,27 +840,69 @@ describe('PaperCertification specifics (spec §6.3)', () => {
 - Test: `backend/src/1_adapters/school/screen/ScreenCertification.test.mjs`
 
 **Interfaces:**
-- Consumes: same domain primitives as Task 7.
-- Produces: `class ScreenCertification { certify(bundle, profile); certifyBank(bank, profile) }`. Screen rules (spec §6.4) are *purely capability-driven* — no structural limits in v1: module capability present, block capabilities present, item `response.*` present, tracked ⇒ `return.session@1` specifically (reason `tracked module requires return.session@1 on a screen` when absent — stricter than the generic class rule, per §6.4).
+- Consumes: `deriveModuleDemands`, `deriveBankDemands`, `capabilityReasons`, `moduleVerdict`, `rollUpLesson` from `#domains/school/surfaces/index.mjs`.
+- Produces: `class ScreenCertification { certify(bundle, profile); certifyBank(bank, profile) }`. Screen rules (spec §6.4) are *purely capability-driven* — no structural limits in v1. **Return rule is stricter than the generic class rule:** tracked modules require `return.session@1` specifically (reason: `tracked module requires return.session@1 on a screen`). Implement by calling `capabilityReasons` with `{...demands, tracked: false}` and then adding the screen-specific reason when `demands.tracked` and `!profile.capabilities.includes('return.session@1')`.
 
-- [ ] **Step 1: Write the failing test** — contract run with a full-capability screen profile (`reader@1, examples@1, problems@1, flashcards@1, quiz@1, learning-probe@1, activity.matching@1, calculator@1, graph@1, image@1, math@1, table-layout@1, scan-action@1, response.choice@1, response.text@1, response.matching@1, response.region@1, response.asset-choice@1, return.session@1`) certifying the Task 7 `renderableBundle` full; plus specifics:
+- [ ] **Step 1: Write the complete failing test**
 
 ```js
-it('demotes region_click items on a pointer-less profile', () => {
-  const remoteOnly = { ...screenProfile, capabilities: screenProfile.capabilities.filter((c) => c !== 'response.region@1') };
-  const bank = { id: 'b', items: [{ id: 'q1', type: 'region_click', prompt: 'p', asset: 'map', answer: 'x' }] };
-  const result = new ScreenCertification().certify({ lesson: { modules: [{ moduleId: 'm', type: 'quiz', bank }] } }, remoteOnly);
-  expect(result.modules[0].reasons.join()).toMatch(/response\.region@1/);
+// backend/src/1_adapters/school/screen/ScreenCertification.test.mjs
+import { describe, expect, it } from 'vitest';
+import { ScreenCertification } from './ScreenCertification.mjs';
+import { runCertificationPortContract } from '../../../../../tests/_lib/school/certificationContract.mjs';
+// Fixtures are shared from the paper port's test file (created in Task 7):
+import { renderableBundle } from '../paper/PaperCertification.test.mjs';
+
+const screenProfile = {
+  surfaceId: 'screen-office', family: 'screen', liveness: 'static',
+  capabilities: [
+    'reader@1', 'examples@1', 'problems@1', 'flashcards@1', 'quiz@1', 'learning-probe@1',
+    'activity.matching@1', 'calculator@1', 'graph@1',
+    'image@1', 'math@1', 'table-layout@1', 'scan-action@1',
+    'response.choice@1', 'response.text@1', 'response.matching@1',
+    'response.region@1', 'response.asset-choice@1',
+    'return.session@1',
+  ],
+  limits: {},
+};
+
+const incompatibleBundle = { lesson: { modules: [
+  // solver@1 is a registered tool capability this profile does not offer.
+  { moduleId: 'solve', type: 'tool', capability: 'solver@1', config: {} },
+] } };
+
+runCertificationPortContract({
+  name: 'screen', makePort: () => new ScreenCertification(),
+  profile: screenProfile, renderableBundle, incompatibleBundle,
 });
 
-it('requires return.session@1 for tracked modules', () => {
-  const noReturn = { ...screenProfile, capabilities: screenProfile.capabilities.filter((c) => !c.startsWith('return.')) };
-  const result = new ScreenCertification().certify(renderableBundle, noReturn);
-  expect(result.modules.find((m) => m.moduleId === 'check').reasons.join()).toMatch(/return\.session@1/);
+describe('ScreenCertification specifics (spec §6.4)', () => {
+  const port = new ScreenCertification();
+
+  it('demotes region_click items on a pointer-less profile', () => {
+    const remoteOnly = { ...screenProfile, capabilities: screenProfile.capabilities.filter((c) => c !== 'response.region@1') };
+    const bank = { id: 'b', items: [{ id: 'q1', type: 'region_click', prompt: 'p', asset: 'map', answer: 'x' }] };
+    const result = port.certify({ lesson: { modules: [{ moduleId: 'm', type: 'quiz', bank }] } }, remoteOnly);
+    expect(result.modules[0].reasons.join()).toMatch(/response\.region@1/);
+  });
+
+  it('requires return.session@1 for tracked modules', () => {
+    const noReturn = { ...screenProfile, capabilities: screenProfile.capabilities.filter((c) => !c.startsWith('return.')) };
+    const result = port.certify(renderableBundle, noReturn);
+    expect(result.modules.find((m) => m.moduleId === 'check').reasons.join()).toMatch(/return\.session@1/);
+    expect(result.modules.find((m) => m.moduleId === 'notes').verdict).toBe('render');
+  });
+
+  it('certifies a standalone bank against the profile', () => {
+    const bank = { id: 'b', items: [{ id: 'q1', type: 'short_answer', prompt: 'p', answer: 'x' }] };
+    expect(port.certifyBank(bank, screenProfile).verdict).toBe('render');
+    const noText = { ...screenProfile, capabilities: screenProfile.capabilities.filter((c) => c !== 'response.text@1') };
+    expect(port.certifyBank(bank, noText).verdict).toBe('incompatible');
+  });
 });
 ```
 
-- [ ] **Step 2: FAIL → Step 3: implement** (~50 lines: `capabilityReasons` minus its generic return clause, replaced by the screen-specific `return.session@1` check — implement by computing demands with `tracked: false`, then adding the screen return reason when the module is tracked and `return.session@1` absent) **→ Step 4: PASS.**
+- [ ] **Step 2: Run to verify FAIL → Step 3: implement (~50 lines) → Step 4: PASS.**
 - [ ] **Step 5: Commit** — `git commit -m "feat(school): screen certification port (capability + session-return checks)" -m "Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"`
 
 ---
@@ -813,13 +914,14 @@ it('requires return.session@1 for tracked modules', () => {
 - Test: `backend/src/3_applications/school/surfaces/SurfaceRegistry.test.mjs`
 
 **Interfaces:**
-- Consumes: `validateSurfaceProfile` (Task 2); the three ports (Tasks 6–8); js-yaml + fs patterns copied from `YamlLearningCatalogRepository.mjs` (read that file first and mirror its directory-listing/error style; it takes a root directory and lists `*.yml`).
+- Consumes: `validateSurfaceProfile` (Task 2); the three ports (Tasks 6–8); js-yaml + `node:fs` directory listing (mirror the directory-walk style of `backend/src/1_adapters/school/catalog/YamlLearningCatalogRepository.mjs` — read it for the error/listing conventions, but import domain code via `#domains/school/surfaces/index.mjs`).
 - Produces:
-  - `YamlSurfaceProfileRepository({directory})` with `async listProfiles() => Array<{profile, errors, file}>` — parses every `catalog/surfaces/*.yml` through `validateSurfaceProfile`; invalid files are returned with their errors, never silently skipped.
-  - `class SurfaceRegistry { constructor({profiles, ports}) ; list() ; get(surfaceId) ; portFor(profile) }` where `ports` = `{schoolcalc, paper, screen}` instances. `portFor` throws on an unknown family (malformed input, spec §7.1). Registry also exposes `codecBaselines()` returning `[{profile: ti86CodecBaselineProfile(), baseline: 'codec'}]` (imported from Task 6) so the CLI certifies calculators without a device (spec §6.2).
-- Wiring note for the executor: the registry is *constructed* by callers (Task 10's projection, Task 12's CLI, Task 13's router) — there is no singleton. Static profiles load from `<contentMount>/catalog/surfaces/`; find the content mount the way `cli/schoolcalc-catalog.cli.mjs` locates the catalog directory (read it; it resolves the school content root from config) and reuse that resolution.
+  - `YamlSurfaceProfileRepository({directory, customCapabilities = []})` with `async listProfiles() => Array<{profile?, errors, file}>` — parses every `<directory>/*.yml` through `validateSurfaceProfile(raw, {customCapabilities})`; invalid files are returned with their errors, never silently skipped.
+  - `class SurfaceRegistry { constructor({profiles, ports}) ; list() ; get(surfaceId) ; portFor(profile) ; codecBaselines() }` where `ports` = `{schoolcalc, paper, screen}` instances. `portFor` throws on an unknown family (malformed input, spec §7.1). `codecBaselines()` returns `[{profile: ti86CodecBaselineProfile(), baseline: 'codec'}]` (import from Task 6) so the CLI certifies calculators without a device (spec §6.2).
+- **`customCapabilities` supplier (review finding 11):** the composition (`backend/src/5_composition/modules/schoolCatalog.mjs`) builds `moduleRegistry = createCoreLearningModuleRegistry()`; its `.list()` returns `[{capability, kind, …}]`. Callers construct the repository with `customCapabilities: moduleRegistry.list().map((d) => d.capability)` — harmless duplicates with the known inventory, and injected custom definitions validate correctly. State this in the repository's JSDoc; Tasks 12/13 wire it.
+- Wiring note for the executor: the registry is *constructed* by callers (Task 10's projection, Task 12's CLI, Task 13's router) — there is no singleton. Static profiles load from `<contentRoot>/surfaces/` where `contentRoot` is the same school content root the catalog composition resolves (see `schoolCatalog.mjs` `contentRoot` and `resolveDirectoryList`).
 
-- [ ] **Step 1: Write the failing test** — temp-dir fixture with two valid profiles (paper + screen) and one invalid file (`bad.yml` with `family: dispatch`); assert `listProfiles()` returns 3 entries (2 with `profile`, 1 with `errors`), `SurfaceRegistry.list()` exposes only the valid 2, `get('paper-letter-mono')` works, `portFor({family:'paper'})` returns the paper port instance, unknown family throws, and `codecBaselines()[0].profile.surfaceId === 'ti86-codec-baseline'`.
+- [ ] **Step 1: Write the failing test** — temp-dir fixture (use `fs.mkdtempSync(path.join(os.tmpdir(), 'surfaces-'))`) with two valid profiles (the paper + screen fixtures from Tasks 7–8, written as YAML) and one invalid file (`bad.yml` with `family: dispatch`); assert: `listProfiles()` returns 3 entries (2 with `profile`, 1 with `errors`); `SurfaceRegistry.list()` exposes only the valid 2; `get('paper-letter-mono')` works; `portFor({family:'paper'})` returns the paper port instance; unknown family throws; `codecBaselines()[0].profile.surfaceId === 'ti86-codec-baseline'` and `codecBaselines()[0].baseline === 'codec'`; a profile using an injected custom capability validates when `customCapabilities` is passed.
 - [ ] **Step 2: FAIL → Step 3: implement → Step 4: PASS.**
 - [ ] **Step 5: Commit** — `git commit -m "feat(school): surface profile repository + registry with codec baselines" -m "Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"`
 
@@ -832,13 +934,20 @@ it('requires return.session@1 for tracked modules', () => {
 - Test: `backend/src/3_applications/school/surfaces/GetSurfaceCertification.test.mjs`
 
 **Interfaces:**
-- Consumes: `BuildLearningLesson` (existing — `execute({catalogId, subjectId, courseId, unitId, lessonId})` returns the neutral bundle); `SurfaceRegistry` (Task 9); bank repository (`YamlLearningContentRepository` — read it; it exposes bank fetch by id; mirror how `BuildLearningLesson` gets banks); `sha256Hex`/canonical JSON — implement a tiny local `digest(value)` using `node:crypto` `createHash('sha256')` over `JSON.stringify` with sorted keys (copy the `canonicalJson` helper pattern from `Ti86SchoolCalcCodec.mjs` rather than importing it — it is codec-internal).
-- Produces: `class GetSurfaceCertification { constructor({buildLesson, banks, registry}) ; async lesson(address) ; async bank(bankId) }` where both return matrix rows `[{address, surfaceId, baseline?, verdict, reasons, warnings, resource?, moduleVerdicts}]` — one row per registered profile + codec baseline. Rows are cached in-memory on `(contentDigest, profileDigest)`; the digests are included on each row (`contentDigest`, `profileDigest`) for Task 11's manifest.
-- `address` is the string form `catalogId/subjectId/courseId/unitId/lessonId` (same 5-segment form the delivery request validation uses, spec §5.2 of the schoolcalc spec).
+- Consumes: `BuildLearningLesson` (existing — `execute({catalogId, subjectId, courseId, unitId, lessonId})` returns the neutral bundle); `SurfaceRegistry` (Task 9); a catalogs repo (`getCatalog(catalogId)`) and `findCatalogLesson` from `#domains/school/catalog/index.mjs` for declared requirements; a banks source (`getBank(bankId)` — same reader `BuildLearningLesson`'s content repo exposes); `capabilityReasons` from `#domains/school/surfaces/index.mjs`; `node:crypto` `createHash('sha256')`.
+- Produces: `class GetSurfaceCertification { constructor({buildLesson, catalogs, banks, registry}) ; async lesson(address) ; async bank(bankId) }` where both return matrix rows `[{address, surfaceId, baseline?, verdict, reasons, warnings, resource?, moduleVerdicts, contentDigest, profileDigest}]` — one row per registered profile + each codec baseline. `address` is the 5-segment string `catalogId/subjectId/courseId/unitId/lessonId`; bank rows use `address: 'bank:<bankId>'` and `moduleVerdicts: null`.
+- **Declared `requiredCapabilities` (spec §3.3 item 2 — review finding 1):** after the port runs, the projection reads the *authored* lesson entry (`findCatalogLesson(await catalogs.getCatalog(catalogId), {subjectId, courseId, unitId, lessonId})` — same lookup `BuildLearningLesson` uses) and computes `capabilityReasons({capabilities: entry.lesson.requiredCapabilities ?? [], tracked: false}, profile)`. Any reasons are appended to **every** module verdict (a declared lesson requirement is lesson-wide) and the lesson verdict is recomputed with the family's roll-up. The bundle itself is never modified (Global Constraints — digests).
+- Digests: implement a local `digest(value)` — sha256 hex over JSON.stringify with recursively sorted object keys (~10 lines). `canonicalJson` in the codec is exported, but importing an adapter from the application layer inverts the dependency direction — copy the sorted-key pattern instead, for layering.
+- Caching: in-memory Map keyed `(contentDigest, profileDigest)`; the digests ride on each row for Task 11's manifest.
 
-- [ ] **Step 1: Write the failing test** — fakes only (no filesystem): a `buildLesson` fake returning the Task 7 renderable bundle for address `main/sci/wc/wm/evap`, a `banks` fake, a registry with the real paper + screen ports (real Tasks 7–8 code) and a stub schoolcalc port. Assert: (a) `lesson()` returns one row per profile + one `baseline: 'codec'` row; (b) paper row verdict `full`, screen row `full`; (c) calling `lesson()` twice invokes `buildLesson.execute` once per address (cache hit — count with a wrapper); (d) editing the fake bundle (new digest) re-certifies; (e) `bank('b1')` produces rows via `certifyBank` with `verdict: 'render'|'incompatible'` mapped into the same row shape (lesson-less: `moduleVerdicts: null`).
-- [ ] **Step 2: FAIL → Step 3: implement (~100 lines) → Step 4: PASS.**
-- [ ] **Step 5: Commit** — `git commit -m "feat(school): surface certification projection with digest cache" -m "Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"`
+- [ ] **Step 1: Write the failing test** — fakes only (no filesystem): a `buildLesson` fake returning `renderableBundle` (import it from `backend/src/1_adapters/school/paper/PaperCertification.test.mjs`) for address `main/sci/wc/wm/evap`; a `catalogs` fake whose `getCatalog` returns a minimal authored catalog where that lesson entry exists (needed by `findCatalogLesson` — mirror the nesting: `{subjects:[{subjectId:'sci', courses:[{courseId:'wc', units:[{unitId:'wm', lessons:[{lessonId:'evap', title:'t', modules:[…], requiredCapabilities: […]}]}]}]}]}`); a `banks` fake; a registry with the real paper + screen ports and a stub schoolcalc port. Assert:
+  - (a) `lesson()` returns one row per profile + one `baseline: 'codec'` row;
+  - (b) paper row verdict `full`, screen row `full` (empty `requiredCapabilities`);
+  - (c) with `requiredCapabilities: ['native-program@1']` in the authored entry, the paper row becomes `none`/`partial`-appropriate with `missing capability native-program@1` on **every** module verdict (finding 1 regression test);
+  - (d) calling `lesson()` twice invokes `buildLesson.execute` once (cache hit — count with a wrapper); a changed bundle (new digest) re-certifies;
+  - (e) `bank('b1')` produces rows via each port's `certifyBank` with `address: 'bank:b1'`, `moduleVerdicts: null`.
+- [ ] **Step 2: FAIL → Step 3: implement (~120 lines) → Step 4: PASS.**
+- [ ] **Step 5: Commit** — `git commit -m "feat(school): surface certification projection — matrix, declared requirements, digest cache" -m "Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"`
 
 ---
 
@@ -849,10 +958,10 @@ it('requires return.session@1 for tracked modules', () => {
 - Test: `backend/src/3_applications/school/surfaces/certificationManifest.test.mjs`
 
 **Interfaces:**
-- Produces: `writeManifest({rows, path, fs?})` and `readManifest({path, fs?})`. Manifest is JSON: `{schema: 'school.certification-manifest/v1', entries: {"<contentDigest>:<profileDigest>": {address, surfaceId, verdict, reasons, warnings, resource}}}`, written with sorted keys and trailing newline so identical input ⇒ identical bytes (spec §8 determinism, acceptance §12.6). `readManifest` returns `{}`-entries on missing file (spec §7.3: degrade to on-demand, never fail).
-- Manifest location: `<contentMount>/catalog/certification-manifest.json` (generated, alongside `ti86-packs/` which is already generated-not-authored).
+- Produces: `writeManifest({rows, path, fs?})` and `readManifest({path, fs?})`. Manifest is JSON: `{schema: 'school.certification-manifest/v1', entries: {"<contentDigest>:<profileDigest>": {address, surfaceId, baseline?, verdict, reasons, warnings, resource?}}}` — the entry shape mirrors Task 10's rows minus `moduleVerdicts`/digests (keys carry the digests). Bank rows (`address: 'bank:<id>'`) are ordinary entries. Written with recursively sorted keys and trailing newline so identical input ⇒ identical bytes (spec §8 determinism, acceptance §12.6). `readManifest` returns `{schema, entries: {}}` on missing file (spec §7.3: degrade to on-demand, never fail).
+- Manifest location (used by Tasks 12/13): `<contentRoot>/certification-manifest.json` (generated, alongside `ti86-packs/` which is already generated-not-authored).
 
-- [ ] **Step 1: Test:** round-trip via `memfs`-style injected fs stub (plain object with `writeFileSync`/`readFileSync`/`existsSync`); byte-identical output across two writes of the same rows in different array order; missing-file read returns empty entries.
+- [ ] **Step 1: Test:** round-trip via injected fs stub (plain object with `writeFileSync`/`readFileSync`/`existsSync`); byte-identical output across two writes of the same rows in different array order; a bank row and a `baseline: 'codec'` row survive the round-trip with those fields intact; missing-file read returns empty entries.
 - [ ] **Step 2: FAIL → Step 3: implement (sorted-key serializer ~40 lines) → Step 4: PASS → Step 5: Commit** — `git commit -m "feat(school): deterministic certification manifest read/write" -m "Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"`
 
 ---
@@ -860,70 +969,71 @@ it('requires return.session@1 for tracked modules', () => {
 ### Task 12: `school:certify` CLI
 
 **Files:**
+- Read first: `cli/schoolcalc-catalog.cli.mjs` (the corpus walk, `resolveSchoolCalcContentPaths` at ~line 74, and `ValidateSchoolCalcPublication` invocation) and `cli/schoolcalc-catalog.cli.test.mjs` (**the vitest exemplar** — tests exported functions against tmp dirs; do NOT copy `cli/backfill-media-durations.test.mjs`, which is `node:test`, not vitest).
 - Create: `cli/school-certify.cli.mjs`
 - Modify: `package.json` (add script `"school:certify": "node cli/school-certify.cli.mjs"`)
-- Test: `cli/school-certify.test.mjs` (unit-test the exported `runCertify(argv, deps)` function with fakes — do NOT spawn a child process; follow the pattern of existing `cli/*.test.mjs` files, e.g. `backfill-media-durations.test.mjs`)
+- Test: `cli/school-certify.cli.test.mjs`
 
 **Interfaces:**
-- Consumes: everything from Tasks 9–11; the existing validation walk — read `cli/schoolcalc-catalog.cli.mjs` first and reuse its corpus-walk + `ValidateSchoolCalcPublication` invocation for the validation pass (One-certifier principle: do not reimplement validation).
-- Produces: `runCertify(argv, deps) => Promise<{exitCode, report}>` and a bin entry that prints and `process.exit`s. Flags and exit semantics exactly per spec §8:
-  - no flags = gate mode: validation pass; on schema/ref errors exit 1; else certify corpus × (static profiles + codec baselines), print table + warnings (including certified-nowhere list), exit 0. `--write-manifest` additionally writes Task 11's manifest.
-  - `--surface <id>` / `--address <addr>` / `--file <path>` = query mode: exit 0 whenever certification ran (verdicts are answers); exit 1 only on schema/ref errors in scope.
-  - `--json`: emit the row array as JSON lines, stable order (sort by address, then surfaceId).
-- [ ] **Step 1: Write failing tests** for: gate-mode exit 1 on a validation error (fake validator returning errors); gate-mode exit 0 with a certified-nowhere warning present in `report.warnings`; query-mode `--surface ti86-codec-baseline` exit 0 with `verdict: 'none'` rows; `--json` output sorted and byte-stable across two runs.
-- [ ] **Step 2: FAIL → Step 3: implement → Step 4: PASS → Step 5: Commit** — `git commit -m "feat(school): school:certify CLI — modal gate/query exits, --json, --write-manifest" -m "Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"`
+- Consumes: Tasks 9–11; the existing validation walk — reuse `ValidateSchoolCalcPublication` and the content-path resolution from `cli/schoolcalc-catalog.cli.mjs`. **Content root resolves from `--data-dir` flag / `$DAYLIGHT_BASE_PATH` env with the `content/school/catalog` default** (that is what `resolveSchoolCalcContentPaths` does — there is no config-service lookup here).
+- Produces: `export async function runCertify(argv, deps) => {exitCode, report}` plus a thin bin entry that prints and `process.exit`s. `deps` carries injected constructors/paths for testability. Behavior per spec §8:
+  - **Gate mode** (no `--surface`/`--address`/`--file`): validation pass first (schema + references, aggregated); on errors exit 1, nothing certified. Then certify **lessons AND every question bank** (walk `catalog/question-banks/*.yml` through `projection.bank()` — spec §7.3, review finding 9) against all static profiles + codec baselines; print table + warnings (including the certified-nowhere list); exit 0. `--write-manifest` additionally writes Task 11's manifest to `<contentRoot>/certification-manifest.json`.
+  - **Asset-existence validation (spec §5.5.2 — this is part of THIS task's deliverable, review finding 4):** during the validation pass, resolve every document `asset` block `assetId` and every bank item `asset` reference to a real file under `<contentRoot>/assets/`; each missing file is a reference error (gate-mode exit 1), formatted like the existing dangling-reference errors.
+  - **Query mode** (`--surface <id>` / `--address <addr>` / `--file <path>`): exit 0 whenever certification ran, whatever the verdicts ("`none` on TI-86" is an *answer*); exit 1 only for schema/reference errors in scope.
+  - `--json`: emit the row array as JSON lines, sorted by (address, surfaceId), byte-stable.
+- [ ] **Step 1: Write failing tests** (vitest, tmp-dir corpus fixtures modeled on `schoolcalc-catalog.cli.test.mjs`): (a) gate-mode exit 1 on a schema error; (b) gate-mode exit 1 on a dangling `assetId` (fixture document referencing `assets/missing.svg`); (c) gate-mode exit 0 with a certified-nowhere warning in `report.warnings`; (d) gate mode certifies banks — a `question-banks/b1.yml` fixture appears as `bank:b1` rows; (e) query-mode `--surface ti86-codec-baseline` exit 0 with verdict rows present; (f) `--json` output sorted and byte-identical across two runs; (g) `--write-manifest` writes the Task 11 file.
+- [ ] **Step 2: FAIL → Step 3: implement → Step 4: PASS → Step 5: Commit** — `git commit -m "feat(school): school:certify CLI — modal gate/query exits, banks, asset validation, --json, --write-manifest" -m "Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"`
 
 ---
 
 ### Task 13: API — certification + screen-profile resolution
 
 **Files:**
-- Modify: `backend/src/4_api/v1/routers/school.mjs` (read it first; follow its handler/DI style — handlers get services from the school composition, see `backend/src/4_api/v1/handlers/` and `schoolLifecycle.mjs` wiring)
-- Test: `backend/src/4_api/v1/routers/school.certification.test.mjs` (follow the existing router test style in `school.progress.test.mjs`)
+- Read first: `backend/src/4_api/v1/routers/school.mjs` (DI style: `createSchoolRouter({...services, logger})`, the `wrap()` error mapper), `backend/src/4_api/v1/routers/school.progress.test.mjs` (router test style), `backend/src/4_api/v1/routers/screens.mjs` (how screen configs are served — reuse its config access for resolution).
+- Modify: `backend/src/4_api/v1/routers/school.mjs` (new DI params: `surfaceCertification = null`, `surfaceRegistry = null`, `getScreenConfig = null`), plus the composition site that builds the school router (find it: `grep -rn "createSchoolRouter(" backend/src/5_composition backend/src/4_api`).
+- Test: `backend/src/4_api/v1/routers/school.certification.test.mjs`
 
-**Interfaces:**
-- Produces two endpoints:
-  - `GET /api/v1/school/certification?address=<a>` and `?bank=<id>`, optional `&surface=<surfaceId>` — returns the projection rows (Task 10), 400 on malformed query, 404 on unknown address/bank.
-  - `GET /api/v1/school/surfaces/profile?screen=<screenId|browser>` — resolves a mount to its profile per spec §4.2: a screenId resolves through screen config; `browser` (or absent screen param) resolves the authored `screen-browser` profile; **missing profile ⇒ 404 with `{error: 'surface-profile-unresolved'}`** and a warn log — never a synthesized default (fail closed).
-- [ ] **Steps:** failing router tests (resolution happy path, browser default, 404 fail-closed, certification rows for a fixture lesson) → implement → pass → commit `feat(school): certification + surface-profile resolution endpoints`.
+**Interfaces (spec §4.2, §9):**
+- `GET /api/v1/school/certification?address=<a>` / `?bank=<id>`, optional `&surface=<surfaceId>` — returns Task 10's rows (filtered when `surface` given); 400 malformed query, 404 unknown address/bank.
+- `GET /api/v1/school/surfaces/profile?screen=<screenId>` — **screen-config key (review finding 3):** a screen's config YAML (`data/household/screens/<screenId>.yml`, served today by `screens.mjs`) gains one optional top-level key `surfaceProfile: <surfaceId>`. The handler resolves: `getScreenConfig(screenId)` → its `surfaceProfile` value → `surfaceRegistry.get(surfaceId)`. `?screen=browser` (or the param absent) skips screen config and resolves the fixed id `screen-browser` from the registry. Any miss along the chain (no config, no `surfaceProfile` key, unknown surfaceId) ⇒ **404 `{error: 'surface-profile-unresolved'}`** + `logger.warn` — never a synthesized default (fail closed).
+- Document the new key with one sentence in `docs/reference/school/README.md` (screens section) as part of this task.
+- [ ] **Steps:** failing router tests (screenId happy path via a `getScreenConfig` fake returning `{surfaceProfile: 'screen-office'}`; `browser` default; each fail-closed 404 variant; certification rows for a fixture lesson; 400/404 cases) → implement → pass → wire the composition site → commit `feat(school): certification + surface-profile resolution endpoints`.
 
 ---
 
 ### Task 14: Screen app consumes certification
 
 **Files:**
-- Create: `frontend/src/modules/School/catalog/certification.js`
-- Modify: `frontend/src/modules/School/schoolApi.js` (add `surfaceProfile(screenId)` + `certification(params)` fetchers, same style as existing methods), `frontend/src/modules/School/SchoolApp.jsx`, `frontend/src/modules/School/catalog/LearningCatalogBrowser.jsx`
-- Test: `frontend/src/modules/School/catalog/certification.test.js` (vitest, pure — no DOM needed)
+- Create: `frontend/src/modules/School/catalog/certification.js`, `frontend/src/modules/School/catalog/certification.test.js`
+- Modify: `frontend/src/modules/School/schoolApi.js`, `frontend/src/modules/School/SchoolApp.jsx`, `frontend/src/modules/School/catalog/LearningCatalogBrowser.jsx`
+- **Existing tests that WILL need their schoolApi mocks extended (review finding 10):** `frontend/src/modules/School/SchoolApp.test.jsx`, `SchoolApp.launch.test.jsx`, `SchoolApp.geo.test.jsx` — add the two new schoolApi methods to their mocks with benign defaults (`surfaceProfile: async () => ({ok: false})`, `certification: async () => ({ok: true, data: []})`; an `ok:false` profile means launches stay gated only for catalog learning modules, and those suites drive banks/geo, not catalog modules — they must stay green).
 
-**Interfaces:**
-- Produces (pure helper, fully testable):
+**Step A (pure helper, TDD):**
+- [ ] Failing test for `buildVerdictMap(rows)` (rows for ONE surface → `Map(moduleId -> {verdict, reasons})`) and `moduleLaunchAllowed(verdictMap, moduleId)` (`true` only for `verdict === 'render'`; unknown moduleId → `false`, fail closed; `null`/absent map → `false`).
+- [ ] Implement; `npx vitest run frontend/src/modules/School/catalog/certification.test.js` PASS.
 
-```js
-// certification.js
-/** Map projection rows for ONE surface into a moduleId -> verdict lookup. */
-export function buildVerdictMap(rows) { /* rows -> Map(moduleId -> {verdict, reasons}) */ }
-/** Launch gate: true only for verdict 'render'; unknown moduleId -> false (fail closed). */
-export function moduleLaunchAllowed(verdictMap, moduleId) { /* … */ }
-```
+**Step B (api fetchers):**
+- [ ] Add `schoolApi.surfaceProfile(screenId)` → `GET /api/v1/school/surfaces/profile?screen=<id>` and `schoolApi.certification({address, surface})` — copy the fetch/`{ok,data}` style of the existing methods in `schoolApi.js`.
 
-- `SchoolApp.jsx` changes are minimal and behavior-preserving where certification is unavailable: on mount, fetch the mount's surface profile (screen id from the `/screen/<id>` path, else `browser`) and the certification rows for opened lessons; `startLearning` checks `moduleLaunchAllowed` *before* the existing type switch and routes refusals to the existing `learning_unsupported` panel (which thereby becomes the §2 "stale cache guard" — its copy already fits). If the profile endpoint 404s, log via `schoolLog` and offer no learning catalog launches (spec §4.2 fail-closed) while leaving the rest of the app (materials, typing, etc.) untouched.
-- `LearningCatalogBrowser.jsx`: render per-lesson badges from the rows already fetched (`full`/`partial` per surfaceId — a simple chip row; no new design system work).
-- [ ] **Steps:** failing tests for `buildVerdictMap`/`moduleLaunchAllowed` (render allowed; incompatible blocked; unknown blocked) → implement helper → wire SchoolApp + browser (manual check: `npm run dev` and open `/school`) → run `npx vitest run frontend/src/modules/School/` → commit `feat(school-ui): certification-gated launches + catalog badges`.
+**Step C (wiring):**
+- [ ] `SchoolApp.jsx`: on ready, resolve the mount's screen id (reuse the existing `/screen(s)/<id>` parsing in `schoolUrlBase()`; plain app mounts use `'browser'`), fetch `surfaceProfile`; hold `{surfaceId}` in state. In `onLearningLaunch`/`startLearning`, before the existing type switch, check `moduleLaunchAllowed` against the certification rows fetched for the opened lesson (fetch in `LearningCatalogBrowser` alongside its existing lesson fetch, passed through the launch object); refusals route to the existing `learning_unsupported` panel (its copy already fits the stale-cache-guard role). Profile fetch failure ⇒ `schoolLog` warn + catalog learning launches disabled (fail closed, spec §4.2); everything else (banks, geo, typing, materials) untouched.
+- [ ] `LearningCatalogBrowser.jsx`: render per-lesson `full`/`partial` badges from the certification rows (plain chip spans, existing styles).
+- [ ] Update the three named test files' mocks; run `npx vitest run frontend/src/modules/School/` — whole folder green.
+- [ ] Commit — `git commit -m "feat(school-ui): certification-gated launches + catalog badges" -m "Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"`
 
 ---
 
-### Task 15: Print Center offers only paper-certified banks
+### Task 15: Print Center — paper-certification gate on bank printables
 
 **Files:**
-- Read first: `frontend/src/modules/School/print/PrintCenter.jsx`, `backend/src/3_applications/school/PrintService.mjs`, and the router path PrintCenter's fetches hit (trace the fetch URL in PrintCenter.jsx to its handler).
-- Modify: the application use case that lists printable catalog banks (in `PrintService.mjs` or the handler it delegates to), threading `GetSurfaceCertification.bank()` through it.
-- Test: colocated test beside the modified use case.
+- Read first: `backend/src/3_applications/school/PrintService.mjs` (real shape: constructor `{config, datastore, printerAdapter, worksheetRenderer, bankReader, pdfReader, userService, logger, now}`; `#printableDefs()` builds the printable list from the `printing` config — types `bank` and `pdf`; `listPrintables()` at ~line 70 iterates them, resolving `bankReader.getBank(def.bankId)`), and the composition site that constructs it (`grep -rn "new PrintService(" backend/src`).
+- Modify: `backend/src/3_applications/school/PrintService.mjs` + its composition site.
+- Test: colocate with the existing PrintService tests (`grep -l "PrintService" backend/src/3_applications/school/*.test.mjs tests/ -r` — extend the existing suite file if one exists, else create `PrintService.certification.test.mjs` beside the service).
 
-**Interfaces:**
-- Consumes: `GetSurfaceCertification` (Task 10); the paper profile id comes from configuration (the registry's single `family: 'paper'` profile; if multiple, the listing filters against each and a bank is offered if any paper profile renders it).
-- Produces: the catalog-bank listing the Print Center consumes excludes banks whose paper verdict is `incompatible`, and each excluded bank is logged (`schoolLog`-equivalent backend logger) with its reasons (spec §11 observability). **The legacy curriculum-unit printing path is untouched** (spec §9) — verify by leaving every `IssueDocument` test green.
-- [ ] **Steps:** failing test (listing with one conforming + one text-item bank returns only the former; excluded bank logged with reason) → implement → run the full print/OMR suites (`npx vitest run backend/src/3_applications/school/`) → commit `feat(school): Print Center catalog offerings gated by paper certification`.
+**Interfaces (spec §9 — scoped honestly per review finding 2):**
+- PrintService constructor gains one optional dep: `paperCertifyBank = null` — an async function `(bank) => {verdict, reasons}` that the composition binds from Task 10's projection + the registry's paper profile (`(bank) => paperPort.certifyBank(bank, paperProfile)`). When `null` (composition without a paper profile, or feature not wired), behavior is **byte-for-byte unchanged** — the legacy path the spec exempts.
+- In `listPrintables()`: for each `bank`-type def whose bank resolves, when `paperCertifyBank` is present and returns `verdict: 'incompatible'`, the def is **excluded** from the listing and logged once per listing call: `logger.warn('print.printable-excluded', {printableId, bankId, reasons})` (spec §11 observability). `pdf`-type defs and unresolvable banks are untouched. `IssueDocument`, quotas, and every other PrintService method are untouched.
+- [ ] **Steps:** failing test (a config with two bank defs — one whose bank is all `multiple_choice`, one containing a `short_answer` item — plus a pdf def; with a real `PaperCertification` bound as `paperCertifyBank`, `listPrintables()` returns the conforming bank + the pdf, excludes the other, and the logger fake captured the exclusion with its reasons; with `paperCertifyBank: null` all three return) → implement → run the full school application suite `npx vitest run backend/src/3_applications/school/` (IssueDocument suites must stay green) → wire composition → commit `feat(school): paper-certified gate on bank printables`.
 
 ---
 
@@ -936,18 +1046,18 @@ export function moduleLaunchAllowed(verdictMap, moduleId) { /* … */ }
 Covers spec §12 items not already proven task-by-task:
 
 - [ ] **§12.1 vocabulary safety:** run `npx vitest run backend/src/1_adapters/schoolcalc/ backend/src/3_applications/school/` — all golden-digest and bundle tests green with the feature merged. Record the run in the evidence doc.
-- [ ] **§12.2 calculator parity test:** in `acceptance.v1.test.mjs`, for each fixture bundle used in `Ti86SchoolCalcCodec.test.mjs`, assert `Ti86SurfaceCertification.certify(...).lesson.verdict === 'full'` ⇔ (`supports().compatible && compile()` does not throw), and that reasons sets match.
-- [ ] **§12.3 offer soundness:** matrix-property test: build a two-lesson fixture corpus (one full-everywhere, one paper-incompatible), run the projection, then assert the Print Center listing (Task 15) and the frontend verdict map (Task 14 helper) exclude exactly the non-render pairs. (API/UI listing equivalence is asserted at the application layer — the same use cases the routes call.)
+- [ ] **§12.2 calculator parity test:** in `acceptance.v1.test.mjs`, for the fixture bundle from `Ti86SchoolCalcCodec.test.mjs`, assert `Ti86SurfaceCertification.certify(...).lesson.verdict === 'full'` ⇔ (`supports().compatible` && `compile()` does not throw), and that an incompatible variant's reason set equals `supports()`'s reasons (∪ any compile throw message).
+- [ ] **§12.3 offer soundness (matrix property):** two-lesson fixture corpus (one full-everywhere, one paper-incompatible); run the projection; assert `PrintService.listPrintables()` (with the gate bound) and the frontend `buildVerdictMap`+`moduleLaunchAllowed` helpers exclude exactly the non-render pairs. Application-layer assertion — the same use cases the routes call.
 - [ ] **§12.4 paper capture soundness:** already proven in Task 7 tests; reference them in the evidence doc.
-- [ ] **§12.5 corpus inventory (ops step, prod host):** run `npm run school:certify` against the real mounted corpus; confirm zero schema errors; paste the certified-nowhere warning list into the evidence doc for review. (Content lives on the data mount — run on the server, read-only; no docker exec needed for reads.)
-- [ ] **§12.6 determinism:** run `npm run school:certify -- --json > /tmp/a.json` twice, `diff` — byte-identical; record in evidence doc.
-- [ ] **§12.7 contract suite:** confirm Tasks 6–8 each invoke `runCertificationPortContract`; extend the architecture test that bans subject vocabulary (find it: `grep -rn "subject" backend/tests --include='*architecture*'` or the schoolcalc architecture test referenced in the delivery matrix as `schoolcalcArchitecture.test.mjs`) to include `backend/src/2_domains/school/surfaces/` and the two new adapter directories.
-- [ ] **Final:** full suite `npx vitest run backend/src/ frontend/src/modules/School/ tests/isolated/` green; commit `test(school): learning-surfaces v1 acceptance evidence`; update the spec's status line to "v1 accepted — implementation merged" when the user signs off.
+- [ ] **§12.5 corpus inventory (ops step, prod host):** run `npm run school:certify` against the real mounted corpus (read-only; content root via `$DAYLIGHT_BASE_PATH`); confirm zero schema errors; paste the certified-nowhere warning list into the evidence doc for review.
+- [ ] **§12.6 determinism:** `npm run school:certify -- --json > /tmp/a.json` twice, `diff` — byte-identical; record in evidence doc.
+- [ ] **§12.7 contract + architecture:** confirm Tasks 6–8 each invoke `runCertificationPortContract`. Extend the subject-vocabulary/layering architecture test at `tests/isolated/application/school/schoolcalcArchitecture.test.mjs` (it already scans all of `2_domains/school` — the surfaces dir is covered for free) to also scan `backend/src/1_adapters/school/paper/` and `backend/src/1_adapters/school/screen/`, following its existing directory-list pattern.
+- [ ] **Final:** full sweep `npx vitest run backend/src/ frontend/src/modules/School/ tests/isolated/ cli/school-certify.cli.test.mjs` green; commit `test(school): learning-surfaces v1 acceptance evidence`; update the spec's status line to "v1 accepted — implementation merged" when the user signs off.
 
 ---
 
-## Self-Review Notes
+## Self-Review Notes (rev 2)
 
-- **Spec coverage check:** §3 → Tasks 1–4; §4 → Tasks 2, 9, 13; §5.5 → Task 9 (profiles) — *asset existence validation (§5.5.2) has no dedicated task*: it belongs in the validation pass the CLI reuses; **added to Task 12 scope**: while wiring the validation pass, extend the corpus walk to stat every `asset` block `assetId` and bank item `asset` under `catalog/assets/`, reporting missing files as reference errors (exit 1 in gate mode). §6 → Tasks 6–8; §7 → Tasks 6–11; §8 → Task 12; §9 → Tasks 13–15; §12 → Task 16. §10/§11 are satisfied structurally (layering + logging noted inline in Tasks 9, 13, 15).
-- **Type consistency:** the port result shape `{modules, lesson, resource?}` and helper names (`capabilityReasons`, `moduleVerdict`, `rollUpLesson`, `deriveModuleDemands`, `deriveBankDemands`, `certifyBank`, `ti86CodecBaselineProfile`) are used identically in Tasks 4–12.
-- **Known deliberate simplifications** (all spec-conformant): paper page estimate is a stated heuristic (Task 7); screen runner availability is capability-presence (§6.4 defines it that way); in-memory projection cache + file manifest (no invalidation daemon — digests self-invalidate).
+- **All 12 review findings addressed in-body:** requiredCapabilities → Task 10 (projection-layer, digest-safe) with regression test (c); Task 15 rewritten against the real `listPrintables()`/`#printableDefs()` shape with a null-safe optional dep; §4.2 key specified (`surfaceProfile:` in `data/household/screens/<id>.yml`) with loader injection in Task 13; asset validation is Task 12 step (b) with its own failing test; `module <i>` attribution corrected with a two-module attribution test; calculator tracked-return rule added (Task 6 semantics point 2 + test); CLI exemplar/content-root/final-sweep corrected (Task 12 Read-first, Task 16 final); cross-task fixtures are now exported from `PaperCertification.test.mjs` and imported by path; banks walk through the gate (Task 12) and manifest (Task 11, with `baseline?` preserved); Task 14 split into A/B/C naming the three mock-update files; `customCapabilities` supplied from `moduleRegistry.list()` (Task 9); architecture-test path corrected to `tests/isolated/application/school/schoolcalcArchitecture.test.mjs`.
+- **Type consistency:** port result `{modules, lesson, resource?}`, row shape (Task 10) ⊇ manifest entry (Task 11) ⊇ `--json` rows (Task 12) = `buildVerdictMap` input (Task 14) — `baseline?` present in all four.
+- **Known deliberate simplifications** (spec-conformant): paper page estimate is a stated heuristic (Task 7); screen runner availability is capability-presence (§6.4); in-memory projection cache + file manifest (digests self-invalidate).
