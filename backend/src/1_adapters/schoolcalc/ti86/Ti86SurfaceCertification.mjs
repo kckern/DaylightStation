@@ -41,9 +41,26 @@ export class Ti86SurfaceCertification {
   certify(bundle, profile) {
     const modules = bundle?.lesson?.modules ?? [];
     const report = translateProfile(profile);
+    // The port strips return.* off the PROFILE side before it reaches the
+    // codec (translateProfile — the codec has no concept of return
+    // channels). BuildLearningLesson folds a lesson's declared
+    // requiredCapabilities straight into bundle.capabilities, so a
+    // lesson-declared `return.cable@1` shows up there too. Without a
+    // matching strip on the bundle side, the codec's plain membership check
+    // (supports()) sees a required return.* capability with nothing in its
+    // stripped available set and rejects a bundle the profile actually
+    // supports (F3, 2026-08-04 acceptance audit). Fix: gate supports() with
+    // a shallow-cloned bundle whose capabilities exclude return.* — never
+    // mutate the caller's bundle. compile() below is still handed the
+    // ORIGINAL bundle: artifact identity (byte digest / artifactId) is
+    // derived from the bundle passed to compile(), and must stay whatever
+    // it already is for existing golden fixtures.
+    const gatingBundle = Array.isArray(bundle?.capabilities)
+      ? { ...bundle, capabilities: bundle.capabilities.filter((id) => !id.startsWith('return.')) }
+      : bundle;
 
     const reasons = [];
-    const support = this.#codec.supports(bundle, report);
+    const support = this.#codec.supports(gatingBundle, report);
     reasons.push(...support.reasons);
 
     let hasTrackedReturnReason = false;
@@ -59,7 +76,15 @@ export class Ti86SurfaceCertification {
     let compileWarnings = [];
     if (support.compatible && !hasTrackedReturnReason) {
       try {
-        const compiled = this.#codec.compile(bundle, report);
+        // compile() re-runs the codec's own supports() check internally,
+        // against whatever bundle/capabilities pair it is given. We must
+        // hand it the ORIGINAL (unfiltered) bundle so artifact identity is
+        // unaffected — so the capabilities report here has to be the
+        // superset (`profile.capabilities`, return.* included) rather than
+        // the stripped `report`, or that internal re-check would reject the
+        // very bundle we just certified compatible above.
+        const compileReport = { ...report, capabilities: profile.capabilities };
+        const compiled = this.#codec.compile(bundle, compileReport);
         resource = {
           estimatedBytes: compiled.byteLength,
           limitsApplied: {
