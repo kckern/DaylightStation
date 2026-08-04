@@ -821,13 +821,13 @@ function fragmentFromNode(node, { id, block, theme }) {
       answerSpace: null,
     };
   }
-  // Optional chaining throughout: documentPdfTheme and workbookTheme each cover
-  // a DIFFERENT subset of node kinds (the legacy theme has never measured a
-  // `box`/`list`/`divider`/`spacer`; workbookTheme doesn't yet carry `math`/
-  // `answerSpace`/`omr`/`action` groups — those are theirs to add when a block
-  // that needs them is wired to it). This object is built once per node
-  // regardless of `node.kind`, so every entry must survive its OWN theme
-  // lacking that one group.
+  // Optional chaining throughout: `documentPdfTheme` and `workbookTheme` both
+  // carry every group referenced below (F1: workbookTheme gained `math`/
+  // `action`/`omr` alongside its existing `asset`/`answerSpace`/`box`/`list`/
+  // `divider`/`spacer`), but this object is built once per node regardless of
+  // `node.kind`, and nothing here guarantees a THIRD, future theme carries
+  // every group on day one — so every entry still has to survive its own
+  // theme lacking that one group rather than throwing on a bare `.` read.
   const spacingClassByKind = {
     math: theme.math?.spacingClass,
     asset: theme.asset?.spacingClass,

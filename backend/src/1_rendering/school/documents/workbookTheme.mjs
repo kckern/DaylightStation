@@ -44,6 +44,12 @@ const SCALE_STYLES = {
     question: { sizePt: 11, leadingPt: 14.5 },
     label: { sizePt: 10, leadingPt: 13 },
     caption: { sizePt: 9, leadingPt: 12 },
+    // Plain (non-italic) small copy — the `asset` block's alt/caption text
+    // (measure.mjs's measureAssetNode always measures with styleKey
+    // 'instruction', mirroring documentPdfTheme's identically-named style).
+    // Distinct from `caption` (which is italic, used by `figure`) even
+    // though the numbers happen to match `label` here.
+    instruction: { sizePt: 10, leadingPt: 13 },
   },
   young: {
     heading1: { sizePt: 24, leadingPt: 30.5 },
@@ -53,6 +59,7 @@ const SCALE_STYLES = {
     question: { sizePt: 13.5, leadingPt: 18 },
     label: { sizePt: 12, leadingPt: 15.5 },
     caption: { sizePt: 10.5, leadingPt: 14 },
+    instruction: { sizePt: 12, leadingPt: 15.5 },
   },
 };
 
@@ -70,6 +77,11 @@ const STYLE_META = {
   question: { font: 'regular', ink: 'text', spacingClass: 'question' },
   label: { font: 'bold', ink: 'text', spacingClass: 'body' },
   caption: { font: 'italic', ink: 'muted', spacingClass: 'instruction' },
+  // `measureAssetNode` (the `asset` block) always measures with styleKey
+  // 'instruction' — without this key any v2 document carrying a plain
+  // `asset` block (not `figure`, which uses `caption`) throws measuring
+  // against this theme (spec §7 block×target matrix / F1).
+  instruction: { font: 'regular', ink: 'muted', spacingClass: 'instruction' },
 };
 
 /**
@@ -189,6 +201,68 @@ export function createWorkbookTheme({ typeScale = 'standard', density = 'normal'
 
     answerKey: {
       titleSuffix: 'Answer Key',
+    },
+
+    /**
+     * Display-math sizing (measure.mjs's `measureMathNode`, the `math` block
+     * and inline `$...$` promoted out of `rich_text`) — same shape family as
+     * `documentPdfTheme.math`. `fontSizePt` scales with `typeScale` (young
+     * readers need the equation as legible as the prose around it);
+     * `padAbovePt`/`padBelowPt` tighten under `compact`, matching every
+     * other density-sensitive gap in this theme.
+     */
+    math: {
+      fontSizePt: typeScale === 'young' ? 15 : 13,
+      indentPt: 10,
+      padAbovePt: density === 'compact' ? 1 : 2,
+      padBelowPt: density === 'compact' ? 1 : 2,
+      spacingClass: 'body',
+    },
+
+    /**
+     * The QR/scan action box (`scan_action`/`media_action` blocks, and the
+     * envelope `source` sugar that expands to one) — same shape family as
+     * `documentPdfTheme.action`. `labelSizePt`/`codeSizePt` reuse the
+     * already-scaled `label`/`caption` styles rather than duplicating the
+     * typeScale ramp; `heightPt`/`padPt` tighten under `compact`.
+     */
+    action: {
+      heightPt: density === 'compact' ? 50 : 58,
+      padPt: density === 'compact' ? 7 : 9,
+      borderWidthPt: 0.9,
+      borderDash: [3, 3],
+      labelSizePt: styles.label.sizePt,
+      codeSizePt: styles.caption.sizePt,
+      codeAreaPt: 40,
+      codeGapPt: density === 'compact' ? 8 : 10,
+      // 'M' recovers ~15% — same rationale as documentPdfTheme.action.
+      qrErrorCorrection: 'M',
+      qrQuietModules: 2,
+      spacingClass: 'action',
+    },
+
+    /**
+     * A bubble row (`omr_response`, legacy per spec §5.6 but still a
+     * registered, renderable block) — same shape family as
+     * `documentPdfTheme.omr`. `rowHeightPt`/`bubbleRadiusPt` scale with
+     * `typeScale` (bigger targets for young hands); `labelSizePt`/
+     * `choiceSizePt`/`choiceLeadingPt` reuse the already-scaled `label`/
+     * `body` styles.
+     */
+    omr: {
+      letters: 'ABCDEFGH',
+      rowHeightPt: typeScale === 'young' ? 26 : 22,
+      bubbleRadiusPt: typeScale === 'young' ? 8 : 6.5,
+      bubbleStrokeWidthPt: 0.9,
+      labelSizePt: styles.label.sizePt,
+      labelGapPt: 4,
+      indentPt: 10,
+      choiceSizePt: styles.body.sizePt,
+      choiceLeadingPt: styles.body.leadingPt,
+      choiceGapPt: density === 'compact' ? 2 : 3,
+      /** Lines of choice text reserved when the probe has no bank to measure. */
+      probeChoiceLines: 2,
+      spacingClass: 'body',
     },
 
     /**
