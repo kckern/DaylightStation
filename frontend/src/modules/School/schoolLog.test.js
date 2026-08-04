@@ -79,4 +79,9 @@ describe('schoolLog', () => {
     schoolLog.materialsError('record-failed', { unitId: 'u1' });
     expect(error).toHaveBeenCalledWith('school.materials.record-failed', expect.objectContaining({ unitId: 'u1' }));
   });
+
+  it('emits school.surface.profile-unresolved at warn', () => {
+    schoolLog.surface('profile-unresolved', { screenId: 'screen-kitchen' });
+    expect(warn).toHaveBeenCalledWith('school.surface.profile-unresolved', expect.objectContaining({ screenId: 'screen-kitchen' }));
+  });
 });
