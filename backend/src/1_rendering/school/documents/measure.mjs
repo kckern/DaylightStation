@@ -875,15 +875,20 @@ function fragmentFromNode(node, { id, block, theme }) {
  * @param {boolean} [deps.italic=false] - recognise `*italic*` in `rich_text`/
  *   `passage` inline grammar (v2). OFF by default: every v1 caller measures
  *   exactly as before.
+ * @param {number} [deps.widthPt] - override the content wrap width (v2's
+ *   furniture-aware `contentBox(theme, furnitureOpts).widthPt`, narrowed by
+ *   any gutter reservation). Omitted (every v1/legacy caller) reproduces the
+ *   original `theme.page.widthPt - 2 * theme.page.marginPt` computation
+ *   byte-for-byte — see F2 in the print-design-system requirements.
  * @returns {Array<Object>} fragments for placeFragments()
  * @throws {UnsupportedBlockError|BlockMeasureError|MissingChoicesError|UnresolvedAssetError}
  *   with the offending block's path
  */
 export function measureBlocks(blocks, {
   doc, theme = documentPdfTheme, texToSvg, resolveAsset = null, resolveChoices = null,
-  tokens = null, path = 'blocks', italic = false,
+  tokens = null, path = 'blocks', italic = false, widthPt: widthPtOverride,
 } = {}) {
-  const widthPt = theme.page.widthPt - 2 * theme.page.marginPt;
+  const widthPt = widthPtOverride ?? (theme.page.widthPt - 2 * theme.page.marginPt);
   const ctx = {
     doc, theme, texToSvg, resolveAsset, resolveChoices, tokens, widthPt, italic,
   };
@@ -919,7 +924,9 @@ export function measureBlocks(blocks, {
  * byte-identical for every v1 caller. `scoreBox` is validated but not yet
  * drawn (Phase B, spec §13 — "points/score box").
  */
-function headerFragment(document, { theme, studentName, date, headerConfig = {} }) {
+function headerFragment(document, {
+  theme, studentName, date, headerConfig = {}, widthPt: widthPtOverride,
+}) {
   const { header } = theme;
   const showName = headerConfig.name !== false;
   const showDate = headerConfig.date !== false;
@@ -929,6 +936,11 @@ function headerFragment(document, { theme, studentName, date, headerConfig = {} 
     + (instructions ? header.metaLeadingPt : 0)
     + (showMetaLine ? header.metaLeadingPt : 0)
     + header.ruleGapPt + header.ruleWidthPt + header.gapBelowPt;
+  // Same furniture-aware width override measureBlocks takes (F2) — the
+  // title/name/date rule has to stop at the SAME gutter-narrowed right edge
+  // the body text wraps to, or the banner would overrun a guttered page's
+  // narrower content box.
+  const contentWidthPt = widthPtOverride ?? (theme.page.widthPt - 2 * theme.page.marginPt);
   const node = {
     kind: 'header',
     title: document.title || document.id,
@@ -940,7 +952,7 @@ function headerFragment(document, { theme, studentName, date, headerConfig = {} 
     showName,
     showDate,
     instructions,
-    widthPt: theme.page.widthPt - 2 * theme.page.marginPt,
+    widthPt: contentWidthPt,
     heightPt,
     offsetYPt: 0,
   };
@@ -960,12 +972,12 @@ function headerFragment(document, { theme, studentName, date, headerConfig = {} 
  * Fragments for a whole document: header banner, then every block.
  *
  * @param {Object} document - validated document ({ id, seed, variant, blocks }, title optional)
- * @param {Object} deps - as measureBlocks, plus `studentName`, `date`
+ * @param {Object} deps - as measureBlocks (including the `widthPt` override, F2), plus `studentName`, `date`
  * @returns {Array<Object>}
  */
 export function measureDocumentFragments(document, {
   doc, theme = documentPdfTheme, texToSvg, resolveAsset = null, resolveChoices = null,
-  tokens = null, studentName = null, date = null, italic = false, header,
+  tokens = null, studentName = null, date = null, italic = false, header, widthPt,
 } = {}) {
   // `header` override lets a caller force the banner shape (tests, answer
   // keys); omitted (the normal path), it reads the v2 document's own
@@ -975,10 +987,10 @@ export function measureDocumentFragments(document, {
   const headerConfig = header ?? document.header ?? {};
   return [
     headerFragment(document, {
-      theme, studentName, date, headerConfig,
+      theme, studentName, date, headerConfig, widthPt,
     }),
     ...measureBlocks(document.blocks, {
-      doc, theme, texToSvg, resolveAsset, resolveChoices, tokens, italic,
+      doc, theme, texToSvg, resolveAsset, resolveChoices, tokens, italic, widthPt,
     }),
   ];
 }

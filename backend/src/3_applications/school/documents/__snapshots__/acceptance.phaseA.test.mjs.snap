@@ -23,11 +23,11 @@ Name: Riley                                               Date: ________________
 9.   Problem 9. Solve and show your work.
 
                                             Page 1 of 2
-10.    Problem 10. Solve and show your work.
+10.   Problem 10. Solve and show your work.
 
-      acceptance-fixture                                     Name: Riley
+acceptance-fixture                                          Name: Riley
 
-                                               Page 2 of 2
+                                              Page 2 of 2
 "
 `;
 
@@ -43,11 +43,11 @@ exports[`Phase A acceptance sweep (spec §12, items tagged [A]) > §12.8 type > 
 exports[`Phase A acceptance sweep (spec §12, items tagged [A]) > §12.10-A archetype dial — envelope-only difference (Phase A scope; visible score box is Phase B) > the SAME body renders to different bytes for quiz vs worksheet, purely from the archetype field (duplex threading) 1`] = `
 {
   "quiz": {
-    "hash": "54c632931866ae1deb0a08923c30eb2d03ac70d696b055bd6b4a2bcef6de69fd",
+    "hash": "1083c6d2538cdc0a727dcba731d314e13cb10f37892aa08754b3358445aab180",
     "pageCount": 2,
   },
   "worksheet": {
-    "hash": "3a34a2ce64323115facb919798c6a595d6e03136e88ca3be7c6f5acdf2e56efd",
+    "hash": "8ea693781eeba1e6bfe250b9dd611081385dba56b7a7313641970f2fbbe373c4",
     "pageCount": 2,
   },
 }
