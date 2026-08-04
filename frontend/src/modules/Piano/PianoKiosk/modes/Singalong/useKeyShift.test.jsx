@@ -133,6 +133,29 @@ describe('useKeyShift', () => {
     await waitFor(() => expect(lastSchedule(h.state.stretches[1])).toMatchObject({ semitones: 2 }));
   });
 
+  it('a cancelled build superseded by a newer one must not wire a bypass around the winner', async () => {
+    // Rapid double-tap race: run A is cancelled mid stretch-load; run B reuses
+    // the source and builds the real chain. When A's engine init settles LATE,
+    // its safety reroute must NOT fire — a source→destination edge added here
+    // is a permanent unmuted dry path around B's shifter (original + shifted
+    // pitch audible together — the "transpose sounds messed up" bug).
+    let resolveA;
+    h.factory.mockImplementationOnce(() => new Promise((r) => { resolveA = r; }));
+    const el = video();
+    const { rerender } = renderHook(({ s }) => useKeyShift(el, s), { initialProps: { s: 1 } });
+    await waitFor(() => expect(h.factory).toHaveBeenCalledTimes(1)); // A in flight, source captured
+    rerender({ s: 2 }); // cancels A; B starts and wins with the default instant factory
+    await waitFor(() => expect(h.state.stretches.length).toBe(1));
+    const source = lastCtx().createMediaElementSource.mock.results.at(-1).value;
+    const destEdges = () => source.connect.mock.calls.filter((c) => c[0] === lastCtx().destination).length;
+    const before = destEdges();
+    resolveA(h.makeStretch()); // A settles late — cancelled AND superseded
+    await settle();
+    expect(destEdges()).toBe(before); // no stray dry edge around B's chain
+    // B's chain still owns the element and keeps scheduling normally.
+    await waitFor(() => expect(lastSchedule(h.state.stretches[0])).toMatchObject({ active: true, semitones: 2 }));
+  });
+
   it('teardown stops the stretch and reroutes the source straight to the destination', async () => {
     const el = video();
     const { unmount } = renderHook(() => useKeyShift(el, 2));
