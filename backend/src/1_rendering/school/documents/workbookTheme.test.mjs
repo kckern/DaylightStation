@@ -36,8 +36,10 @@ describe('workbookTheme', () => {
     const std = createWorkbookTheme({ typeScale: 'standard', density: 'normal' });
     const young = createWorkbookTheme({ typeScale: 'young', density: 'normal' });
     const compact = createWorkbookTheme({ typeScale: 'standard', density: 'compact' });
-    expect(young.styles.body.size).toBeGreaterThan(std.styles.body.size);
-    expect(young.styles.body.leading).toBeGreaterThan(std.styles.body.leading);
+    for (const key of Object.keys(std.styles)) {
+      expect(young.styles[key].sizePt, `${key}.sizePt`).toBeGreaterThan(std.styles[key].sizePt);
+      expect(young.styles[key].leadingPt, `${key}.leadingPt`).toBeGreaterThan(std.styles[key].leadingPt);
+    }
     const someGap = (t) => Object.values(t.spacing)[0];
     expect(JSON.stringify(compact.spacing)).not.toBe(JSON.stringify(std.spacing));
     expect(someGap(compact)).toBeDefined();
