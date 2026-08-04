@@ -14,6 +14,7 @@ import { createMeasurementDocument, measureDocumentFragments } from '#rendering/
 import { placeFragments } from '#rendering/school/documents/layout.mjs';
 import { contentBox } from '#rendering/school/documents/furniture.mjs';
 import { texToSvg } from '#rendering/school/documents/mathSvg.mjs';
+import { pdfText } from '../../../../../tests/_lib/school/pdfText.mjs';
 
 const isPdf = (bytes) => Buffer.isBuffer(bytes) && bytes.subarray(0, 5).toString('latin1') === '%PDF-';
 
@@ -252,6 +253,59 @@ describe('RenderPrintDocument — name/date prefill (e)', () => {
     expect(isPdf(blank.bytes)).toBe(true);
     expect(isPdf(filled.bytes)).toBe(true);
     expect(blank.bytes.equals(filled.bytes)).toBe(false);
+  });
+});
+
+describe('RenderPrintDocument — v2 header fields wired (F3)', () => {
+  it('infopage preset omits Name/Date from the printed header', async () => {
+    const useCase = new RenderPrintDocument();
+    const document = v2doc({ archetype: 'infopage', blocks: [{ type: 'rich_text', md: 'Some teaching prose.' }] });
+    const result = await useCase.execute({ document });
+    const text = pdfText(result.bytes);
+    expect(text).not.toMatch(/Name:/);
+    expect(text).not.toMatch(/Date:/);
+  });
+
+  it('quiz/worksheet presets are unaffected — Name/Date still print', async () => {
+    const useCase = new RenderPrintDocument();
+    const document = v2doc({ archetype: 'worksheet' });
+    const result = await useCase.execute({ document });
+    const text = pdfText(result.bytes);
+    expect(text).toMatch(/Name:/);
+    expect(text).toMatch(/Date:/);
+  });
+
+  it('header.instructions prints (under the title) when set', async () => {
+    const useCase = new RenderPrintDocument();
+    const document = v2doc({ archetype: 'quiz', header: { instructions: 'Mark answers on your bubble card.' } });
+    const result = await useCase.execute({ document });
+    const text = pdfText(result.bytes);
+    expect(text).toContain('Mark answers on your bubble card.');
+  });
+
+  it('header.instructions is absent by default (no archetype sets it)', async () => {
+    const useCase = new RenderPrintDocument();
+    const document = v2doc({ archetype: 'quiz' });
+    const result = await useCase.execute({ document });
+    const text = pdfText(result.bytes);
+    expect(text).not.toContain('bubble card');
+  });
+
+  it('explicit header.name/header.date:false override the archetype preset even on a quiz', async () => {
+    const useCase = new RenderPrintDocument();
+    const document = v2doc({ archetype: 'quiz', header: { name: false, date: false } });
+    const result = await useCase.execute({ document });
+    const text = pdfText(result.bytes);
+    expect(text).not.toMatch(/Name:/);
+    expect(text).not.toMatch(/Date:/);
+  });
+
+  it('v1 legacy documents keep the unconditional Name/Date banner — no `.header` field exists on v1', async () => {
+    const useCase = new RenderPrintDocument();
+    const result = await useCase.execute({ document: v1doc() });
+    const text = pdfText(result.bytes);
+    expect(text).toMatch(/Name:/);
+    expect(text).toMatch(/Date:/);
   });
 });
 
