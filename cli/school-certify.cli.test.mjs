@@ -71,6 +71,16 @@ function unreachableLesson() {
   };
 }
 
+/** A lesson declaring a pattern-valid but never-registered capability ID (F7). */
+function unregisteredCapabilityLesson() {
+  return {
+    lessonId: 'magic',
+    title: 'Magic',
+    modules: [QUIZ_MODULE],
+    requiredCapabilities: ['flying-carpet@1'],
+  };
+}
+
 function baseCatalog({ lessons }) {
   return {
     schema: 'school.catalog/v1',
@@ -187,6 +197,27 @@ describe('school-certify CLI', () => {
       expect(report.warnings.some((w) => w.includes('main/general/foundations/first/unreachable'))).toBe(true);
       // The clean lesson must NOT be flagged.
       expect(report.warnings.some((w) => w.includes('main/general/foundations/first/welcome'))).toBe(false);
+    });
+  });
+
+  it('(c2) gate mode exits 1 on an unregistered requiredCapabilities ID (F7)', async () => {
+    await withTmpDir(async (root) => {
+      await buildFixture(root, { lessons: [welcomeLesson(), unregisteredCapabilityLesson()] });
+      const { exitCode, report } = await runCertify(flagsToArgv(certifyFlags(root)));
+      expect(exitCode).toBe(1);
+      expect(report.ok).toBe(false);
+      expect(report.rows).toEqual([]);
+      expect(report.errors.some((e) => e.includes('flying-carpet@1'))).toBe(true);
+      expect(report.errors.some((e) => e.includes('main/general/foundations/first/magic'))).toBe(true);
+    });
+  });
+
+  it('(c3) gate mode still passes a lesson with only registered requiredCapabilities IDs', async () => {
+    await withTmpDir(async (root) => {
+      await buildFixture(root, { lessons: [welcomeLesson(), unreachableLesson()] });
+      const { exitCode, report } = await runCertify(flagsToArgv(certifyFlags(root)));
+      expect(exitCode).toBe(0);
+      expect(report.errors).toEqual([]);
     });
   });
 
@@ -308,6 +339,61 @@ describe('school-certify CLI', () => {
       const { exitCode, report } = await runCertify(flagsToArgv(certifyFlags(root)));
       expect(exitCode).toBe(0);
       expect(report.rows.some((row) => row.address === 'bank:ac1')).toBe(true);
+    });
+  });
+
+  it('(l) --write-manifest is rejected in query mode with a usage error, manifest untouched (F8)', async () => {
+    await withTmpDir(async (root) => {
+      await buildFixture(root);
+      const { exitCode, report } = await runCertify(flagsToArgv(
+        certifyFlags(root, { address: 'main/general/foundations/first/welcome', 'write-manifest': true }),
+      ));
+      expect(exitCode).toBe(2);
+      expect(report.ok).toBe(false);
+      expect(report.mode).toBe('usage');
+      expect(report.rows).toEqual([]);
+      expect(report.manifestWritten).toBeNull();
+      expect(report.errors.some((e) => e.includes('--write-manifest'))).toBe(true);
+
+      const { existsSync } = await import('node:fs');
+      const manifestPath = path.join(root, 'certification-manifest.json');
+      expect(existsSync(manifestPath)).toBe(false);
+    });
+  });
+
+  it('(m) --write-manifest with --surface is also rejected as a usage error (F8)', async () => {
+    await withTmpDir(async (root) => {
+      await buildFixture(root);
+      const { exitCode, report } = await runCertify(flagsToArgv(
+        certifyFlags(root, { surface: ['ti86-codec-baseline'], 'write-manifest': true }),
+      ));
+      expect(exitCode).toBe(2);
+      expect(report.mode).toBe('usage');
+    });
+  });
+
+  it('(n) a bare --surface with no value is a usage error, not "unknown surface \'true\'" (F13)', async () => {
+    await withTmpDir(async (root) => {
+      await buildFixture(root);
+      const { exitCode, report } = await runCertify([
+        '--data-dir', root, '--content-root', '.', '--surface',
+      ]);
+      expect(exitCode).toBe(2);
+      expect(report.mode).toBe('usage');
+      expect(report.errors.some((e) => e.includes('--surface needs a value'))).toBe(true);
+      expect(report.errors.some((e) => e.includes("'true'"))).toBe(false);
+    });
+  });
+
+  it('(o) --json output has canonically sorted keys within each line (F13)', async () => {
+    await withTmpDir(async (root) => {
+      await buildFixture(root);
+      const { formatCertifyReport } = await import('./school-certify.cli.mjs');
+      const { report } = await runCertify(flagsToArgv(certifyFlags(root)));
+      const json = formatCertifyReport(report, { json: true });
+      const firstLine = json.trim().split('\n')[0];
+      const keys = Object.keys(JSON.parse(firstLine));
+      expect(keys).toEqual([...keys].sort());
     });
   });
 });
