@@ -103,6 +103,77 @@ const VALIDATORS = {
       push('scan_action icon must be a non-empty string when present');
     }
   },
+  passage(raw, push) {
+    if (!isNonEmptyString(raw.text)) push('passage text must be a non-empty string');
+    else if (REQUIRE_MACRO.test(raw.text)) push(requireError('passage text'));
+    if (raw.source !== undefined) {
+      if (!raw.source || typeof raw.source !== 'object' || Array.isArray(raw.source)) {
+        push('passage source must be an object');
+      } else {
+        if (!isNonEmptyString(raw.source.title)) push('passage source.title must be a non-empty string');
+        if (raw.source.author !== undefined && !isNonEmptyString(raw.source.author)) {
+          push('passage source.author must be a non-empty string when present');
+        }
+        if (raw.source.locator !== undefined && !isNonEmptyString(raw.source.locator)) {
+          push('passage source.locator must be a non-empty string when present');
+        }
+      }
+    }
+    // Default 'reprint' is applied downstream (this layer only checks shape).
+    if (raw.mode !== undefined && raw.mode !== 'reprint' && raw.mode !== 'cite') {
+      push("passage mode must be 'reprint' or 'cite'");
+    }
+    if (raw.lineNumbers !== undefined && typeof raw.lineNumbers !== 'boolean') {
+      push('passage lineNumbers must be a boolean');
+    }
+  },
+  figure(raw, push) {
+    if (!isNonEmptyString(raw.asset)) push('figure asset must be a non-empty string');
+    if (!isNonEmptyString(raw.caption)) push('figure caption must be a non-empty string');
+    if (raw.credit !== undefined && !isNonEmptyString(raw.credit)) {
+      push('figure credit must be a non-empty string when present');
+    }
+  },
+  inset(raw, push, ctx) {
+    if (raw.title !== undefined && !isNonEmptyString(raw.title)) {
+      push('inset title must be a non-empty string when present');
+    }
+    if (!Array.isArray(raw.blocks) || raw.blocks.length === 0) {
+      push('inset blocks must be a non-empty array');
+      return;
+    }
+    raw.blocks.forEach((child, i) => {
+      const at = ctx.at ? `${ctx.at}.blocks[${i}]` : `blocks[${i}]`;
+      // One level deep is the whole rule: an inset is already a boxed aside, so
+      // an inset inside an inset has no more page-break/box semantics to add.
+      if (child && typeof child === 'object' && child.type === 'inset') {
+        ctx.errors.push(`${at}: inset blocks must not nest insets`);
+        return;
+      }
+      validateInto(child, at, ctx.errors);
+    });
+  },
+  list(raw, push) {
+    if (!['bullet', 'numbered', 'checklist'].includes(raw.style)) {
+      push("list style must be one of 'bullet', 'numbered', 'checklist'");
+    }
+    if (!Array.isArray(raw.items) || raw.items.length === 0) {
+      push('list items must be a non-empty array');
+    } else if (raw.items.some((item) => !isNonEmptyString(item))) {
+      push('list items must be non-empty strings');
+    }
+  },
+  // No fields: a divider is a bare rule across the page width.
+  divider() {},
+  spacer(raw, push) {
+    const minOk = isPositiveNumber(raw.minPt);
+    const maxOk = isPositiveNumber(raw.maxPt);
+    if (!minOk) push('spacer minPt must be a number > 0');
+    if (!maxOk) push('spacer maxPt must be a number > 0');
+    if (minOk && maxOk && raw.minPt > raw.maxPt) push('spacer minPt must be <= maxPt');
+  },
+  // No fields: a forced page break between the preceding and following blocks.
+  page_break() {},
 };
 
 export const BLOCK_TYPES = Object.freeze(Object.keys(VALIDATORS));

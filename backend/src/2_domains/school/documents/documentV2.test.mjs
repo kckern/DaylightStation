@@ -175,7 +175,10 @@ describe('BLOCK_TARGET_SUPPORT matrix', () => {
       expect(BLOCK_TARGET_SUPPORT[t]).toEqual(['letter', 'receipt']);
       expect(Object.isFrozen(BLOCK_TARGET_SUPPORT[t])).toBe(true);
     }
-    for (const t of ['math', 'plot', 'geometry', 'asset', 'question', 'answer_space', 'omr_response']) {
+    for (const t of [
+      'math', 'plot', 'geometry', 'asset', 'question', 'answer_space', 'omr_response',
+      'passage', 'figure', 'inset', 'list', 'divider', 'spacer', 'page_break',
+    ]) {
       expect(BLOCK_TARGET_SUPPORT[t]).toEqual(['letter']);
       expect(Object.isFrozen(BLOCK_TARGET_SUPPORT[t])).toBe(true);
     }
