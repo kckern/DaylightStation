@@ -112,6 +112,7 @@
     "school:smoke": "node scripts/school-smoke.mjs",
     "schoolcalc:validate": "node cli/schoolcalc-catalog.cli.mjs validate",
     "school:certify": "node cli/school-certify.cli.mjs",
+    "school:docs": "node cli/school-docs.cli.mjs",
     "schoolcalc:gui:lint": "node _extensions/ti86-app/tools/lint-gui.mjs",
     "schoolcalc:gui:render": "node _extensions/ti86-app/tools/render-gui.mjs",
     "test:live": "node tests/_infrastructure/harnesses/live.harness.mjs",
