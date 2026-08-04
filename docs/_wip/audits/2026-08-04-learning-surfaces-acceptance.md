@@ -10,6 +10,14 @@ shows exactly the 15 Task 1–15 commits plus this one.
 
 Task: [Task 16 — Acceptance sweep and evidence](../../../.superpowers/sdd/2026-08-04-learning-surfaces-implementation-plan/task-16-brief.md)
 
+**Amended (final fix wave, same date):** §12.2 gained a corpus-wide TI-86
+parity follow-up (F4a), §12.5's summary row was restyled from a soft
+"finding" to an explicit FAILED status pending a data-mount fix (F4b), and
+§12.7 gained an honest note on the "simulated second calculator family"
+(F4c). See
+`.superpowers/sdd/2026-08-04-learning-surfaces-implementation-plan/final-fix-wave-report.md`
+for the full fix-wave report (F2/F3/F6/F7/F8/F12/F13).
+
 ---
 
 ## §12.1 — vocabulary safety / golden-digest + bundle suites
@@ -62,6 +70,26 @@ unexported function, not a new production API.
 
 All three assertions pass (see full-file result below).
 
+**Follow-up (F4a, final fix wave):** the three cases above are hand-picked
+bundles, not a corpus walk. `describe('§12.2b corpus-wide TI-86 parity …')`
+in the same file adds a small in-memory, multi-lesson fixture corpus (five
+lessons: quiz, lecture_notes, flashcards, a TI-86-projection-incompatible
+quiz, and a byte-ceiling compile-throw case) resolved through the real
+`BuildLearningLesson` path (not a parallel implementation), and walks every
+resolvable lesson address through both `Ti86SchoolCalcCodec.supports()`/
+`compile()` and `Ti86SurfaceCertification.certify()`, asserting parity for
+each. **A real-corpus-wide run — walking every lesson under the actual
+published data mount — is still blocked** on the pre-existing schema error
+recorded in §12.5 below (a missing question bank aborts gate mode before
+anything is certified, so there is nothing to walk); this fixture corpus is
+the closest proof available without that data-mount fix landing first.
+
+```
+npx vitest run backend/src/3_applications/school/surfaces/acceptance.v1.test.mjs
+ Test Files  1 passed (1)
+      Tests  62 passed (62)
+```
+
 ---
 
 ## §12.3 — offer soundness (matrix property)
@@ -101,14 +129,17 @@ call):
 ```
 npx vitest run backend/src/3_applications/school/surfaces/acceptance.v1.test.mjs
  Test Files  1 passed (1)
-      Tests  50 passed (50)
+      Tests  62 passed (62)
 ```
 
-(50, not 3 — importing `PaperCertification.test.mjs` by path to reuse its
+(62, not 3 — importing `PaperCertification.test.mjs` by path to reuse its
 `paperProfile`/`choiceBank` fixtures also re-executes that file's own
 `describe` blocks as an import side effect; this is the same behavior already
 accepted in `GetSurfaceCertification.test.mjs`, which imports from the same
-file the same way.)
+file the same way. The count grew from the original 50 to 62 across the
+acceptance sweep and the final fix wave: +6 from §12.2b's corpus-wide parity
+walk [F4a], +6 from F6's new PaperCertification missing-limits tests
+re-executed as the same import side effect.)
 
 Re-run alongside the codec/port suites it touches, to confirm no regressions
 from the `bundle` export or the acceptance file's imports:
@@ -118,7 +149,7 @@ npx vitest run backend/src/1_adapters/schoolcalc/ti86/Ti86SchoolCalcCodec.test.m
   backend/src/1_adapters/schoolcalc/ti86/Ti86SurfaceCertification.test.mjs \
   backend/src/3_applications/school/surfaces/
  Test Files  6 passed (6)
-      Tests  127 passed (127)
+      Tests  147 passed (147)
 ```
 
 ---
@@ -264,6 +295,20 @@ npx vitest run tests/isolated/application/school/schoolcalcArchitecture.test.mjs
       Tests  8 passed (8)
 ```
 
+**Honest note (F4c, final fix wave):** spec §12 item 7 names "the simulated
+second calculator family" as one of the ports the shared contract suite
+proves. That family does not exist as a second production adapter on this
+branch — no second calculator codec was built. The stand-in is the
+**domain-primitives fake** port in
+`tests/isolated/application/certificationContract.selftest.test.mjs` (a
+~40-line `certify()` built directly from `deriveModuleDemands` +
+`capabilityReasons` + `moduleVerdict` + `rollUpLesson`, with no
+family-specific logic). It legitimately proves the contract is satisfiable
+by *any* conforming port — not just TI-86's, whose own domain-layer
+plumbing it reuses — but it is not a second real calculator family.
+Spec §12.7 has been amended to say this explicitly rather than implying a
+second family was built.
+
 ---
 
 ## Final sweep
@@ -345,15 +390,21 @@ baseline.
 | Item | Status |
 |---|---|
 | §12.1 vocabulary safety / golden suites | ✅ green (42 files / 292 tests) |
-| §12.2 calculator parity | ✅ new test, green (part of the 50/50 below) |
-| §12.3 offer soundness matrix | ✅ new test, green (part of the 50/50 below) |
-| — `acceptance.v1.test.mjs` full file | ✅ 50/50 |
+| §12.2 calculator parity | ✅ new test, green (part of the 62/62 below) |
+| §12.2b corpus-wide TI-86 parity (F4a) | ✅ new test, green — in-memory 5-lesson fixture corpus; real-corpus-wide run still blocked on §12.5's schema error |
+| §12.3 offer soundness matrix | ✅ new test, green (part of the 62/62 below) |
+| — `acceptance.v1.test.mjs` full file | ✅ 62/62 |
 | §12.4 paper capture soundness | ✅ already proven (Task 7), referenced |
-| §12.5 real-corpus inventory | ⚠️ **finding**: 1 schema error (missing question bank in `schoolcalc-starter` catalog — pre-existing corpus content gap, not this branch's code); 0 rows certified as a result; no paper/screen profiles authored yet in the real corpus |
+| §12.5 real-corpus inventory | ❌ **FAILED** — 1 schema error (missing question bank `arts/pokemon-identification/pokemon-identification-medium` in the `schoolcalc-starter` catalog — pre-existing corpus content gap, not this branch's code); 0 rows certified as a result; no paper/screen profiles authored yet in the real corpus; **re-run required after the data-mount fix lands** (out of this task's scope — data-mount changes are explicitly excluded) |
 | §12.6 determinism | ✅ byte-identical (gate mode, degenerate; query mode, non-degenerate) |
-| §12.7 contract + architecture | ✅ 3/3 ports confirmed; architecture test extended + green |
+| §12.7 contract + architecture | ✅ 3/3 ports confirmed; architecture test extended + green; "simulated second calculator family" is the domain-primitives fake, not a second real adapter (F4c — see note above and spec §12.7) |
 | Final sweep (School scope) | ✅ 219/221 files, 2846/2851 tests; the 2 failing files are pre-existing (verified vs. merge base `03f453da9`) |
 
-No code defects found in this branch. The one actionable finding is content
-data (§12.5's missing question bank), which is a corpus-authoring follow-up,
-not an implementation bug.
+No code defects found in this branch by the original acceptance sweep; the
+final fix wave (F2/F3/F6/F7/F8/F12/F13) separately fixed seven review
+findings — see
+`.superpowers/sdd/2026-08-04-learning-surfaces-implementation-plan/final-fix-wave-report.md`.
+The one actionable **content** finding is §12.5's missing question bank,
+which remains an outstanding data-mount fix + corpus re-certification
+follow-up, not an implementation bug — this task explicitly excludes
+data-mount changes from its scope.

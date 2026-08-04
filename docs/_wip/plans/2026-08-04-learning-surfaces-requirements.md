@@ -498,10 +498,12 @@ certify(bundle, profile) -> {
   (content digest, profile digest). With dispatch out of v1, a manifest
   entry depends on nothing but its two keys; entries are invalidated by
   either digest changing, nothing else.
-- At **runtime**, consumers read the manifest; observed-profile surfaces
-  (calculators) recompute against the live capability report exactly as the
-  SchoolCalc catalog projection does now. A missing or stale manifest
-  degrades to on-demand certification, never to offering unverified content.
+- At **runtime**, every consumer (the `/api/v1/school/certification` router
+  facade, the screen app, the Print Center) certifies **on-demand**, per
+  request, through the same production ports the manifest was built from —
+  it does not read the published manifest file. Runtime manifest
+  *consumption* (a fast-path read of the persisted matrix, falling back to
+  on-demand certification on a miss) is deferred past v1; see §13.
 - **Standalone question banks** are first-class certification subjects
   alongside lessons (the Print Center and practice shelves offer bare banks
   today). A bank's demand set is its items' demands plus its tracking class;
@@ -554,10 +556,13 @@ Behavior:
 
 Routing consumes certification; it never overrides it.
 
-- **Catalog browsing (screen).** The learning catalog annotates every lesson
-  with its surface matrix (badges: calculator / paper / this screen). The
-  screen app consults the *current mount's* certification before launch;
-  `learning_unsupported` remains only as a guard for stale caches.
+- **Catalog browsing (screen).** In v1 the catalog badge shown is the
+  **current mounted surface's** full/partial chip for that lesson — not a
+  multi-surface matrix. The screen app consults the *current mount's*
+  certification before launch; `learning_unsupported` remains as the gate's
+  refusal panel (not merely a stale-cache guard — it is the normal path for
+  any module this surface never certified). A catalog / calculator / paper
+  cross-surface matrix badge is out of v1; see §13.
 - **SchoolCalc sync.** Unchanged: the calculator catalog is the calculator
   projection of the same matrix against the observed device report, with
   install/update/request states layered on the `render` verdict.
@@ -587,9 +592,13 @@ Routing consumes certification; it never overrides it.
 | CLI | `school:certify` — thin shell over the application projection |
 | Data mount | All authored content, assets, static surface profiles, certification manifest |
 
-Frontend consumes certification; it never computes it. The screen app's
-module-type switch is replaced by a registry lookup driven by the same
-capability IDs the backend certified against.
+Frontend consumes certification; it never computes it. In v1 the screen
+app's module-type switch (`SchoolApp.jsx`'s `startLearning`) **remains** —
+what changed is that the certification gate now runs in front of it
+(`moduleLaunchAllowed`, refusing to `learning_unsupported` before the switch
+is ever reached), not that the switch itself was replaced. Retiring the
+switch in favor of a registry-driven runner lookup keyed by capability ID is
+out of v1 scope; see §13.
 
 ## 11. Integrity and failure behavior
 
@@ -639,7 +648,17 @@ demo walk.
    second calculator family, paper, screen) passes one shared
    certification-port contract suite (extending the existing lifecycle
    harness in `tests/_lib/school/`); architecture tests reject subject
-   vocabulary and layer violations across all new certification code.
+   vocabulary and layer violations across all new certification code. This
+   branch does not build a second real calculator-family port — the
+   "simulated second family" is stood in by the **domain-primitives fake**
+   port already living in
+   `tests/isolated/application/certificationContract.selftest.test.mjs`
+   (a ~40-line `certify()` built directly from `deriveModuleDemands` +
+   `capabilityReasons` + `moduleVerdict` + `rollUpLesson`, with no
+   family-specific logic of its own). It is a legitimate second-family
+   witness for the contract suite's purpose (proving the contract is
+   satisfiable by *any* conforming port, not just TI-86's), just not a
+   second production adapter.
 
 ## 13. Explicitly outside v1
 
@@ -658,6 +677,24 @@ demo walk.
 - Commerce/licensing semantics; i18n of certification reasons.
 - Retroactive re-rendering of already-issued paper or already-installed
   calculator artifacts when content changes (existing update flows apply).
+- **Runtime manifest consumption.** v1 ships publication-time manifest
+  generation (`--write-manifest`, §8) but every runtime consumer certifies
+  on-demand, per request, straight through the production ports (§7.3) —
+  nothing reads the manifest file back. Per-request certification is cheap
+  at household corpus scale, so there is no correctness or latency gap this
+  closes yet; wiring a manifest-read fast path (with on-demand fallback on a
+  miss) is v1.1 scope, not required for launch.
+- **Cross-surface catalog badges.** §9's catalog badge in v1 is the current
+  mounted surface's own full/partial chip — not a calculator/paper/screen
+  matrix badge shown while browsing on any one surface. Surfacing the whole
+  matrix in the catalog UI is deferred; it needs its own design pass (which
+  surfaces to show, how partial-vs-full reads across three very different
+  presenting devices) rather than being a certification-plumbing afterthought.
+- **Registry-driven module runner lookup.** §10's screen app keeps its
+  module-type switch in v1; the certification gate runs in front of it, but
+  the switch itself is not replaced by a capability-ID-keyed registry
+  lookup. That refactor is orthogonal to shipping certification and is
+  deferred.
 
 ## 14. v2 outline: dispatch and external media (deferred, not forgotten)
 
