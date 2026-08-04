@@ -24,6 +24,8 @@ relays:
     api_token: 0123456789abcdef0123456789abcdef
     link:
       transmit_enabled: true
+      plug_detect_pin: 22
+      plug_detect_active_high: true
     input:
       ble_keyboard:
         enabled: true
@@ -49,11 +51,25 @@ test('generates a redaction-safe identifiable BLE keyboard configuration', () =>
   assert.match(header, /#define BLE_KEYBOARD_ADDRESS_TYPE 1/);
   assert.match(header, /#define BLE_KEYBOARD_PAIRING_WINDOW_MS 45000/);
   assert.match(header, /#define BLE_KEYBOARD_REQUIRE_MITM 1/);
+  assert.match(header, /#define PLUG_DETECT_PIN 22/);
+  assert.match(header, /#define PLUG_DETECT_ACTIVE_HIGH 1/);
   assert.match(header, /#define FIRMWARE_CONFIG_FINGERPRINT "[0-9a-f]{16}"/);
   assert.equal(
     header.split('\n').find(line => line.startsWith('#define WIFI_PASSWORD ')),
     '#define WIFI_PASSWORD "line\\nquote\\\""',
   );
+});
+
+test('rejects a plug-detect pin that overlaps the TI interface', () => {
+  const directory = mkdtempSync(path.join(tmpdir(), 'ticalc-config-'));
+  const source = path.join(directory, 'relay.yml');
+  const output = path.join(directory, 'config.h');
+  writeFileSync(source, fixture().replace('plug_detect_pin: 22', 'plug_detect_pin: 32'));
+  const generated = spawnSync(process.execPath, [generator, source, 'relay-01', output], {
+    encoding: 'utf8',
+  });
+  assert.notEqual(generated.status, 0);
+  assert.match(generated.stderr, /plug_detect_pin conflicts/);
 });
 
 test('rejects an enabled keyboard without a canonical identity address', () => {

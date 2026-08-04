@@ -112,6 +112,8 @@ TI-OS VAT service call: that is a cross-emulator-state limitation, not a
 SchoolCalc 1.4 compatibility failure. Stock MAME has no TI-86 port-7 peer.
 
 The recommended cable/interface wiring is in [`docs/wiring.md`](./docs/wiring.md).
+The exact bill of materials, switched-jack presence detector, status evidence
+contract, and safe build sequence are in [`HARDWARE.md`](./HARDWARE.md).
 The locked product requirements and remaining decisions are in
 [`docs/requirements.md`](./docs/requirements.md).
 The backend implementation handoff is in

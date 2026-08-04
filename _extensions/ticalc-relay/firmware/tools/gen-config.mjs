@@ -40,6 +40,17 @@ const esc = v => String(v)
   .replace(/\t/g, '\\t');
 const n = (key, fallback) => Number.isInteger(relay[key]) ? relay[key] : fallback;
 const link = relay.link || {};
+const plugDetectPin = link.plug_detect_pin ?? -1;
+if (!Number.isInteger(plugDetectPin) || plugDetectPin < -1 || plugDetectPin > 39) {
+  console.error(`ERROR: relays.${relayId}.link.plug_detect_pin must be -1 or an ESP32 GPIO 0..39`);
+  process.exit(1);
+}
+if ([n('tip_sense_pin', 32), n('tip_sink_pin', 25), n('ring_sense_pin', 33),
+  n('ring_sink_pin', 26), 27].includes(plugDetectPin)) {
+  console.error(`ERROR: relays.${relayId}.link.plug_detect_pin conflicts with an assigned TI or LED pin`);
+  process.exit(1);
+}
+const plugDetectActiveHigh = link.plug_detect_active_high !== false;
 const keyboard = relay.input?.ble_keyboard || {};
 const keyboardEnabled = keyboard.enabled === true;
 const keyboardAddress = String(keyboard.address || '').toUpperCase();
@@ -69,6 +80,7 @@ const effectiveNonSecretConfig = {
   link: {
     tip_sense_pin: n('tip_sense_pin', 32), tip_sink_pin: n('tip_sink_pin', 25),
     ring_sense_pin: n('ring_sense_pin', 33), ring_sink_pin: n('ring_sink_pin', 26),
+    plug_detect_pin: plugDetectPin, plug_detect_active_high: plugDetectActiveHigh,
     transmit_enabled: link.transmit_enabled === true,
     foreground_listener: link.foreground_listener !== false,
     auto_sync: link.auto_sync === true,
@@ -83,6 +95,6 @@ const fingerprint = createHash('sha256')
   .update(JSON.stringify(effectiveNonSecretConfig))
   .digest('hex')
   .slice(0, 16);
-const h = `// GENERATED — do not commit. Source: ${path.basename(src)} (${relayId})\n#pragma once\n#define WIFI_SSID "${esc(p.wifi_ssid)}"\n#define WIFI_PASSWORD "${esc(p.wifi_password)}"\n#define BACKEND_HOST "${esc(b.host)}"\n#define BACKEND_PORT ${Number.parseInt(b.port, 10)}\n#define BACKEND_SCHEME "${esc(b.scheme || 'http')}"\n#define WS_PATH "${esc(b.ws_path || '/ws')}"\n#define API_BASE_PATH "${esc(b.api_base_path || '/api/v1/school/calc')}"\n#define API_TOKEN "${esc(relay.api_token)}"\n#define RELAY_ID "${esc(relayId)}"\n#define RELAY_LABEL "${esc(relay.label || relayId)}"\n#define FIRMWARE_CONFIG_FINGERPRINT "${fingerprint}"\n#define TIP_SENSE_PIN ${n('tip_sense_pin', 32)}\n#define TIP_SINK_PIN ${n('tip_sink_pin', 25)}\n#define RING_SENSE_PIN ${n('ring_sense_pin', 33)}\n#define RING_SINK_PIN ${n('ring_sink_pin', 26)}\n#define LED_PIN 27\n#define TI_TRANSMIT_ENABLED ${link.transmit_enabled === true ? 1 : 0}\n#define FOREGROUND_LISTENER_ENABLED ${link.foreground_listener === false ? 0 : 1}\n#define AUTO_SYNC_ENABLED ${link.auto_sync === true ? 1 : 0}\n#define BLE_KEYBOARD_ENABLED ${keyboardEnabled ? 1 : 0}\n#define BLE_KEYBOARD_ADDRESS "${esc(keyboardAddress)}"\n#define BLE_KEYBOARD_ADDRESS_TYPE ${keyboardAddressType === 'random' ? 1 : 0}\n#define BLE_KEYBOARD_LABEL "${esc(keyboard.label || '')}"\n#define BLE_KEYBOARD_PAIRING_WINDOW_MS ${pairingWindowMs}\n#define BLE_KEYBOARD_REQUIRE_MITM ${requireMitm ? 1 : 0}\n`;
+const h = `// GENERATED — do not commit. Source: ${path.basename(src)} (${relayId})\n#pragma once\n#define WIFI_SSID "${esc(p.wifi_ssid)}"\n#define WIFI_PASSWORD "${esc(p.wifi_password)}"\n#define BACKEND_HOST "${esc(b.host)}"\n#define BACKEND_PORT ${Number.parseInt(b.port, 10)}\n#define BACKEND_SCHEME "${esc(b.scheme || 'http')}"\n#define WS_PATH "${esc(b.ws_path || '/ws')}"\n#define API_BASE_PATH "${esc(b.api_base_path || '/api/v1/school/calc')}"\n#define API_TOKEN "${esc(relay.api_token)}"\n#define RELAY_ID "${esc(relayId)}"\n#define RELAY_LABEL "${esc(relay.label || relayId)}"\n#define FIRMWARE_CONFIG_FINGERPRINT "${fingerprint}"\n#define TIP_SENSE_PIN ${n('tip_sense_pin', 32)}\n#define TIP_SINK_PIN ${n('tip_sink_pin', 25)}\n#define RING_SENSE_PIN ${n('ring_sense_pin', 33)}\n#define RING_SINK_PIN ${n('ring_sink_pin', 26)}\n#define LED_PIN 27\n#define PLUG_DETECT_PIN ${plugDetectPin}\n#define PLUG_DETECT_ACTIVE_HIGH ${plugDetectActiveHigh ? 1 : 0}\n#define TI_TRANSMIT_ENABLED ${link.transmit_enabled === true ? 1 : 0}\n#define FOREGROUND_LISTENER_ENABLED ${link.foreground_listener === false ? 0 : 1}\n#define AUTO_SYNC_ENABLED ${link.auto_sync === true ? 1 : 0}\n#define BLE_KEYBOARD_ENABLED ${keyboardEnabled ? 1 : 0}\n#define BLE_KEYBOARD_ADDRESS "${esc(keyboardAddress)}"\n#define BLE_KEYBOARD_ADDRESS_TYPE ${keyboardAddressType === 'random' ? 1 : 0}\n#define BLE_KEYBOARD_LABEL "${esc(keyboard.label || '')}"\n#define BLE_KEYBOARD_PAIRING_WINDOW_MS ${pairingWindowMs}\n#define BLE_KEYBOARD_REQUIRE_MITM ${requireMitm ? 1 : 0}\n`;
 writeFileSync(out, h, { mode: 0o600 });
 console.log(`[gen-config] ${src} (relay=${relayId}) -> ${out}`);
