@@ -2979,6 +2979,11 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     surfaceCertification: schoolSurfaces.certification,
     surfaceRegistry: schoolSurfaces.registry,
     getScreenConfig: getSchoolScreenConfig,
+    // The SAME render pipeline + repository the tracked-quiz path uses (spec
+    // §9 shared-instance rule) — GET /print/:id renders through the identical
+    // allocation store, so a freshCard render here is a real card allocation.
+    renderPrintDocument: schoolLifecycle.renderPrintDocument ?? null,
+    printDocumentsRepo: schoolLifecycle.stores?.printDocuments ?? null,
     logger: rootLogger.child({ module: 'school-api' })
   });
 

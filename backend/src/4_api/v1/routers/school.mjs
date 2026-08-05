@@ -27,6 +27,8 @@ export function createSchoolRouter({
   surfaceCertification = null,
   surfaceRegistry = null,
   getScreenConfig = null,
+  renderPrintDocument = null,
+  printDocumentsRepo = null,
   logger = console,
 }) {
   const router = express.Router();
@@ -145,6 +147,87 @@ export function createSchoolRouter({
     if (!profile) return unresolved(`unknown surfaceId '${surfaceId}'`);
     return res.set('Cache-Control', 'no-store').json(profile);
   }));
+
+  // On-demand print rendering — the "printout is an app screen" contract over
+  // HTTP. Two varieties:
+  //   variety=omr  — card-attached: the sheet carries the card/sheet-ID strip
+  //                  and questions numbered by card row. Requires freshCard=1
+  //                  (mints a new card — deliberate, never on a bare refresh)
+  //                  or card=<7 digits>[&startRow=<1..50>] to attach/extend an
+  //                  existing card (idempotent reprint semantics apply).
+  //   variety=hand — hand-graded: no card machinery, positional numbering;
+  //                  the intentional "rendered without card allocation"
+  //                  warning is filtered because hand grading is the point.
+  // Common params: teacher=1 (answer-key render mode, identical shuffles),
+  // learnerName (header prefill), learnerId (omr allocation attribution),
+  // date, variant (per-kid shuffle variant — spread over the document exactly
+  // as IssueDocument does; the variant never lives in the published artifact).
+  // Warnings and the allocation result ride response headers so the body can
+  // stay a plain PDF.
+  const PRINT_DOC_ID = /^[a-z0-9][a-z0-9-]*$/;
+  const PRINT_CARD_ID = /^[0-9]{7}$/;
+  router.get('/print/:id', wrap(async (req, res) => {
+    if (!renderPrintDocument) return res.status(503).json({ error: 'print-render-unavailable' });
+    const { id } = req.params;
+    if (!PRINT_DOC_ID.test(id)) throw new ValidationError('id must be a lowercase document id');
+    const variety = textQuery(req.query.variety);
+    if (variety !== 'omr' && variety !== 'hand') {
+      throw new ValidationError("variety must be 'omr' or 'hand'");
+    }
+
+    const context = {};
+    const learnerName = textQuery(req.query.learnerName);
+    if (learnerName) context.learnerName = learnerName;
+    const date = textQuery(req.query.date);
+    if (date) context.date = date;
+    if (req.query.teacher === '1' || req.query.teacher === 'true') context.teacher = true;
+
+    if (variety === 'omr') {
+      const freshCard = req.query.freshCard === '1' || req.query.freshCard === 'true';
+      const card = textQuery(req.query.card);
+      if (freshCard && card) throw new ValidationError('freshCard and card are mutually exclusive');
+      if (freshCard) {
+        context.freshCard = true;
+      } else if (card) {
+        if (!PRINT_CARD_ID.test(card)) throw new ValidationError('card must be 7 digits');
+        context.cardId = card;
+        context.startRow = boundedIntegerQuery(req.query.startRow, 1, 1, 50, 'startRow');
+      } else {
+        throw new ValidationError(
+          'omr variety requires freshCard=1 (mint a new card) or card=<7 digits>[&startRow=<1..50>]',
+        );
+      }
+      const learnerId = textQuery(req.query.learnerId);
+      if (learnerId) context.learnerId = learnerId;
+    } else if (req.query.card !== undefined || req.query.freshCard !== undefined
+        || req.query.startRow !== undefined) {
+      throw new ValidationError('hand variety takes no card parameters');
+    }
+
+    const variant = req.query.variant === undefined
+      ? null
+      : boundedIntegerQuery(req.query.variant, 0, 0, 999, 'variant');
+    let target;
+    if (variant === null) {
+      target = { id };
+    } else {
+      if (!printDocumentsRepo) return res.status(503).json({ error: 'print-render-unavailable' });
+      const raw = await printDocumentsRepo.get(id);
+      if (!raw) throw new EntityNotFoundError('print document', id);
+      target = { document: { ...raw, variant } };
+    }
+
+    const result = await renderPrintDocument.execute({ ...target, context });
+    const warnings = variety === 'hand'
+      ? (result.warnings ?? []).filter((warning) => !/without card allocation/.test(warning))
+      : (result.warnings ?? []);
+    if (warnings.length) res.set('X-School-Print-Warnings', JSON.stringify(warnings));
+    if (result.allocation) res.set('X-School-Print-Allocation', JSON.stringify(result.allocation));
+    res.set('Cache-Control', 'no-store');
+    res.set('Content-Disposition', `inline; filename="${id}${context.teacher ? '-key' : ''}.pdf"`);
+    return res.type('application/pdf').send(Buffer.from(result.bytes));
+  }));
+
   router.get('/geography/decks', wrap((req, res) => {
     // Geography is an outer presentation here. The service/source expose only
     // generic collections and bank summaries.
