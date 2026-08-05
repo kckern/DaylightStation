@@ -65,10 +65,6 @@ const INLINE_SPAN_ITALIC = /\*\*(?<bold>[^*]+)\*\*|\*(?<italic>[^*\n]+)\*|`(?<co
 const CLOZE_SPAN_PLAIN = /\*\*(?<bold>[^*]+)\*\*|`(?<code>[^`]+)`|\$(?<math>[^$\n]+)\$|\{\{(?<blank>\d+)\}\}/g;
 const CLOZE_SPAN_ITALIC = /\*\*(?<bold>[^*]+)\*\*|\*(?<italic>[^*\n]+)\*|`(?<code>[^`]+)`|\$(?<math>[^$\n]+)\$|\{\{(?<blank>\d+)\}\}/g;
 
-/** short_answer/essay desugar (measureNodes below) when the block omits `lines`. */
-const DEFAULT_SHORT_ANSWER_LINES = 3;
-const DEFAULT_ESSAY_LINES = 10;
-
 /** A block type with no Letter renderer — refuse rather than print a blank space. */
 export class UnsupportedBlockError extends Error {
   constructor(type, path) {
@@ -996,9 +992,16 @@ function measureNodes(ctx, block, { widthPt, path, bodyStyleKey = 'body' }) {
     // costs the rest of the pipeline nothing new (see blocks.mjs's
     // INSET_UNSUPPORTED_CHILD_TYPES comment, which reasons about this
     // in-advance). At the top level, the two returned nodes become two
-    // independent fragments — same "author a prompt then a bare answer_space"
-    // behavior any v1 document already gets; the keep-together guarantee is
-    // scoped to `question`, not to this sugar.
+    // INDEPENDENT fragments (unlike `question`, which stacks everything into
+    // one atomic fragment) — that used to mean the prompt could strand on one
+    // page while its own write space landed on the next (F4, review finding,
+    // fixed since). `measureBlocks` (this module) now tags the prompt
+    // fragment with `stickToNextId` right after building both, and
+    // `layout.mjs`'s `placeFragments` refuses to place it without its space
+    // fitting right after — so the two independent fragments still can never
+    // separate across a page break, without paying for a full atomic merge
+    // (which would also stop the prompt from wrapping/splitting on its own
+    // when it's long).
     case 'short_answer': {
       const promptNode = {
         kind: 'text',
@@ -1007,7 +1010,7 @@ function measureNodes(ctx, block, { widthPt, path, bodyStyleKey = 'body' }) {
         }),
         widthPt,
       };
-      const linesCount = block.lines ?? DEFAULT_SHORT_ANSWER_LINES;
+      const linesCount = block.lines ?? theme.shortAnswer.defaultLines;
       const minPt = theme.answerSpace.padAbovePt + linesCount * theme.answerSpace.rulePitchPt;
       const spaceNode = {
         kind: 'answerSpace', minPt, maxPt: minPt, widthPt, heightPt: minPt,
@@ -1036,7 +1039,7 @@ function measureNodes(ctx, block, { widthPt, path, bodyStyleKey = 'body' }) {
         };
         return [promptNode, boxNode];
       }
-      const linesCount = block.lines ?? DEFAULT_ESSAY_LINES;
+      const linesCount = block.lines ?? theme.essay.defaultLines;
       const minPt = theme.answerSpace.padAbovePt + linesCount * theme.answerSpace.rulePitchPt;
       const spaceNode = {
         kind: 'answerSpace', minPt, maxPt: minPt, widthPt, heightPt: minPt,
@@ -1217,8 +1220,16 @@ function fragmentFromNode(node, { id, block, theme }) {
  * @param {Object} deps.theme - documentPdfTheme or a compatible theme
  * @param {Function} deps.texToSvg - (tex, opts) => { svgString, widthPt, heightPt }
  * @param {Function} [deps.resolveAsset] - (ref) => { svg, widthPt, heightPt } | null
- * @param {Function} [deps.resolveChoices] - (itemId, { choices, path }) => string[];
- *   omitted means probe mode (bubble rows reserve space but carry no labels)
+ * @param {Function} [deps.resolveChoices] - (itemId, { choices, path }) => (
+ *   string[] | {labels: string[], multiSelect?: boolean, maxSelect?: number}
+ *   ). Two legal return shapes (see `normalizeChoiceResolution`/
+ *   `measureOmrNode` above): a bare `string[]` of choice labels — the
+ *   original contract, still what every non-multi_select caller returns
+ *   (circles, no instruction line); or `{labels, multiSelect: true,
+ *   maxSelect?}` for a `multi_select` bank item — square checkboxes plus a
+ *   "Mark all that apply." / "Choose up to N." instruction caption. Omitted
+ *   entirely means probe mode (bubble rows reserve space but carry no
+ *   labels, and are never treated as multi_select).
  * @param {Object<string,string>} [deps.tokens] - action value → already-minted token
  * @param {string} [deps.path='blocks'] - dotted path prefix for fragment ids
  * @param {boolean} [deps.italic=false] - recognise `*italic*` in `rich_text`/
@@ -1253,11 +1264,28 @@ export function measureBlocks(blocks, {
     // promoted inline-math span or citation line), so a heading and its body
     // — or a passage body and its citation — can break apart and carry their
     // own spacing class.
-    return nodes.map((node, nodeIndex) => fragmentFromNode(node, {
+    const fragments = nodes.map((node, nodeIndex) => fragmentFromNode(node, {
       id: nodes.length > 1 || block.type === 'rich_text' || block.type === 'passage' ? `${at}#p${nodeIndex}` : at,
       block,
       theme,
     }));
+    // short_answer/essay (spec §4.2, §6.2 sugar; F4 review finding): unlike
+    // `question`, this sugar's prompt + answer_space/box are two INDEPENDENT
+    // top-level fragments — "same 'author a prompt then a bare answer_space'
+    // behavior any v1 document already gets" (measureNodes' own short_answer
+    // case comment). Independent fragments can strand: a short prompt fits at
+    // the bottom of a page on its own while its (taller) write-space doesn't,
+    // leaving the prompt with no space to answer into and the space with no
+    // prompt to answer. `stickToNextId` (layout.mjs) is the keep-with-next
+    // affinity that prevents it — a lightweight cross-fragment glue, unlike
+    // `question`/`figure`'s single-atomic-fragment merge, because the prompt
+    // must still be free to wrap/split on its OWN across pages when it is
+    // long (the atomic-merge approach a `question` uses would instead force
+    // an oversized prompt+space combo to fail fit outright).
+    if ((block.type === 'short_answer' || block.type === 'essay') && fragments.length === 2) {
+      fragments[0] = { ...fragments[0], stickToNextId: fragments[1].id };
+    }
+    return fragments;
   });
 }
 
