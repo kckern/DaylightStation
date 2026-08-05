@@ -44,6 +44,20 @@ function fakeSessions(seedEvents = []) {
   };
 }
 
+/**
+ * In-memory `IReviewQueue`-shaped double, scoped to what the bridge needs:
+ * enqueue and read back by session. No `resolve`/`listPending` — the bridge
+ * never calls them.
+ */
+function fakeReviewQueue() {
+  const items = [];
+  return {
+    items,
+    async enqueue(batch) { items.push(...structuredClone(batch)); },
+    async listForSession(sessionId) { return structuredClone(items.filter((i) => i.sessionId === sessionId)); },
+  };
+}
+
 function seededSession(sessionId, { learnerId = 'felix', unitId = 'unit-1' } = {}) {
   const mk = (payload) => {
     const { errors, event } = createEvent(payload);
@@ -293,5 +307,62 @@ describe('session bridge', () => {
     expect(outcome.recorded).toBe(true);
     expect(outcome.session).toMatchObject({ advancedTo: null, reason: 'bridge-failed' });
     expect(datastore.readAllAttempts('felix')).toHaveLength(2);
+  });
+});
+
+describe('review queue bridge', () => {
+  it('a complete scan with an ambiguous row holds at submitted and queues the row for a person', async () => {
+    const datastore = fakeDatastore();
+    const sessions = fakeSessions(seededSession('ws-1'));
+    const reviewQueue = fakeReviewQueue();
+    const useCase = new RecordCardScanOutcome({ datastore, sessions, reviewQueue, logger: quietLogger });
+    const card = gradedCard({
+      sessionId: 'ws-1',
+      results: [
+        { row: 1, itemId: 'q1', itemType: 'multiple_choice', prompt: 'P1', status: 'correct', given: 'blue', points: 1, earned: 1 },
+        { row: 2, itemId: 'q2', itemType: 'multiple_choice', prompt: 'P2', status: 'ambiguous', given: ['A', 'B'], points: 1, earned: 0 },
+      ],
+      earnedPoints: 1,
+    });
+    const outcome = await useCase.execute({ testId: '1234567', card });
+    expect(outcome.session).toMatchObject({ advancedTo: 'submitted', reason: 'awaiting-review', pendingReview: 1 });
+    const types = (await sessions.readEvents('ws-1')).map((e) => e.type);
+    expect(types).toEqual(['created', 'issued', 'submitted']); // graded is NOT appended
+    // The machine marks are recorded as RESOLVED verdicts; the ambiguous row is pending.
+    const pending = reviewQueue.items.filter((i) => !i.verdict);
+    expect(pending).toEqual([expect.objectContaining({ itemId: 'q2', reason: 'ambiguous', given: ['A', 'B'], prompt: 'P2' })]);
+    const resolved = reviewQueue.items.filter((i) => i.verdict);
+    expect(resolved).toEqual([expect.objectContaining({ itemId: 'q1', verdict: 'correct', gradedBy: 'engine' })]);
+  });
+
+  it('write-on questions queue as free_response and hold the session at submitted', async () => {
+    const datastore = fakeDatastore();
+    const sessions = fakeSessions(seededSession('ws-1'));
+    const reviewQueue = fakeReviewQueue();
+    const useCase = new RecordCardScanOutcome({ datastore, sessions, reviewQueue, logger: quietLogger });
+    const card = gradedCard({ sessionId: 'ws-1', unscannedItems: [{ itemId: 'w-essay', prompt: 'Explain.' }] });
+    const outcome = await useCase.execute({ testId: '1234567', card });
+    expect(outcome.session).toMatchObject({ advancedTo: 'submitted', reason: 'awaiting-review' });
+    expect(reviewQueue.items.filter((i) => !i.verdict)).toEqual([
+      expect.objectContaining({ itemId: 'w-essay', reason: 'free_response', prompt: 'Explain.' }),
+    ]);
+  });
+
+  it('no ambiguous rows, no write-ons: graded as before, machine marks still on the verdict sheet', async () => {
+    const datastore = fakeDatastore();
+    const sessions = fakeSessions(seededSession('ws-1'));
+    const reviewQueue = fakeReviewQueue();
+    const useCase = new RecordCardScanOutcome({ datastore, sessions, reviewQueue, logger: quietLogger });
+    const outcome = await useCase.execute({ testId: '1234567', card: gradedCard({ sessionId: 'ws-1', unscannedItems: [] }) });
+    expect(outcome.session).toEqual({ sessionId: 'ws-1', advancedTo: 'graded' });
+    expect(reviewQueue.items.every((i) => i.gradedBy === 'engine')).toBe(true);
+  });
+
+  it('without a reviewQueue wired, behavior degrades to wave-1 (graded when complete) — never a crash', async () => {
+    const datastore = fakeDatastore();
+    const sessions = fakeSessions(seededSession('ws-1'));
+    const useCase = new RecordCardScanOutcome({ datastore, sessions, logger: quietLogger });
+    const outcome = await useCase.execute({ testId: '1234567', card: gradedCard({ sessionId: 'ws-1' }) });
+    expect(outcome.session).toEqual({ sessionId: 'ws-1', advancedTo: 'graded' });
   });
 });

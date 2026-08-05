@@ -31,6 +31,16 @@
  *    (`ResolveCardScan`'s partial-coverage rule), so the child re-feeds a
  *    finished card and THAT scan advances the session with every row present.
  *    A session already at/past `graded` is never advanced twice.
+ *
+ *    REVIEW QUEUE (when wired): a complete scan does not always mean the work
+ *    is DONE — an ambiguous bubble row or a write-on question a bank cannot
+ *    score still needs a person. Every row becomes a verdict-sheet entry
+ *    (`IReviewQueue`, the same shape `GradeSubmission` writes): correct/
+ *    incorrect rows are RESOLVED (`gradedBy: 'engine'`), ambiguous rows and
+ *    `unscannedItems` (write-ons) are PENDING. Anything pending holds the
+ *    session at `submitted` — never `graded` — until a grown-up clears it
+ *    through `GradeSubmission`, which reads that same queue as the sheet's
+ *    roster for a print-document unit.
  */
 import { reduceSession, createEvent } from '#domains/school/sessions/sessionEvents.mjs';
 import { createAttempt } from '#domains/school/attempt.mjs';
@@ -47,7 +57,7 @@ export function scanKey(card) {
 }
 
 export class RecordCardScanOutcome {
-  #datastore; #sessions; #clock; #logger;
+  #datastore; #sessions; #reviewQueue; #clock; #logger;
 
   /**
    * @param {object} deps
@@ -56,13 +66,23 @@ export class RecordCardScanOutcome {
    * @param {{readEvents: Function, appendEvent: Function}} [deps.sessions] -
    *   `IWorkSessionRepository`-shaped; optional — without it (or for a scan
    *   whose record carries no sessionId) only attempts are recorded.
+   * @param {import('../ports/IReviewQueue.mjs').IReviewQueue} [deps.reviewQueue] -
+   *   optional — without it the bridge degrades to wave-1 behavior (a complete
+   *   scan always reaches `graded`, even when a row was ambiguous or a question
+   *   went unscanned). With it wired, every graded row becomes a RESOLVED
+   *   verdict-sheet entry and every ambiguous/write-on row becomes a PENDING
+   *   one, and the session holds at `submitted` until a person clears the
+   *   pending ones through `GradeSubmission`.
    * @param {() => Date} [deps.clock]
    * @param {object} [deps.logger]
    */
-  constructor({ datastore, sessions = null, clock = () => new Date(), logger = console } = {}) {
+  constructor({
+    datastore, sessions = null, reviewQueue = null, clock = () => new Date(), logger = console,
+  } = {}) {
     if (!datastore?.appendAttempt) throw new Error('RecordCardScanOutcome requires datastore.appendAttempt');
     this.#datastore = datastore;
     this.#sessions = sessions;
+    this.#reviewQueue = reviewQueue;
     this.#clock = clock;
     this.#logger = logger;
   }
@@ -114,6 +134,11 @@ export class RecordCardScanOutcome {
 
     const at = this.#clock().toISOString();
     const attemptIds = [];
+    // itemId -> attempt id, for the verdict sheet's `attemptId` field. Built
+    // from THIS call's fresh appends first, then backfilled from attempts
+    // already on record for this recordId — a re-fed row that deduped above
+    // still needs its attemptId to resolve for the machine mark below.
+    const attemptIdByItem = new Map();
     for (const row of freshRows) {
       const attempt = createAttempt({
         at,
@@ -145,6 +170,10 @@ export class RecordCardScanOutcome {
         return { recorded: false, reason: 'attempt-write-failed', attemptIds };
       }
       attemptIds.push(attempt.id);
+      attemptIdByItem.set(row.itemId, attempt.id);
+    }
+    for (const attempt of priorAttempts) {
+      if (!attemptIdByItem.has(attempt.itemId)) attemptIdByItem.set(attempt.itemId, attempt.id);
     }
 
     this.#logger.info?.('school.print.scan-attempts-recorded', {
@@ -157,7 +186,7 @@ export class RecordCardScanOutcome {
     });
 
     const priorAttemptIdsForRecord = priorAttempts.map((attempt) => attempt.id);
-    const session = await this.#bridgeSession(card, attemptIds, at, priorAttemptIdsForRecord);
+    const session = await this.#bridgeSession(card, attemptIds, attemptIdByItem, at, priorAttemptIdsForRecord);
     return { recorded: true, attemptIds, ...(session ? { session } : {}) };
   }
 
@@ -165,8 +194,16 @@ export class RecordCardScanOutcome {
    * Advance the issuing work session, when there is one, through the SAME
    * transitions every other transport uses. Never throws — a session-side
    * refusal must not un-record the attempts above.
+   *
+   * When a review queue is wired, this is also where the card's rows become
+   * the durable verdict sheet `GradeSubmission` reads: every correct/incorrect
+   * row is a RESOLVED entry (`gradedBy: 'engine'`), every ambiguous row and
+   * every unscanned (write-on) item is a PENDING one. A card with anything
+   * pending holds the session at `submitted` instead of advancing to `graded`
+   * — the same "a grown-up still has some of this to check" wait
+   * `SubmitPaperWork`/`GradeSubmission` already use for a screen-facing sheet.
    */
-  async #bridgeSession(card, attemptIds, at, priorAttemptIdsForRecord = []) {
+  async #bridgeSession(card, attemptIds, attemptIdByItem, at, priorAttemptIdsForRecord = []) {
     if (!this.#sessions || card.sessionId == null) return null;
     const { sessionId } = card;
     try {
@@ -192,6 +229,51 @@ export class RecordCardScanOutcome {
           sessionId, recordId: card.recordId,
         });
         return { sessionId, advancedTo: null, reason: 'partial-scan' };
+      }
+
+      if (this.#reviewQueue) {
+        const machineMarks = card.results
+          .filter((row) => row.status === 'correct' || row.status === 'incorrect')
+          .map((row) => ({
+            sessionId, itemId: row.itemId, learnerId: state.learnerId, unitId: state.unitId,
+            reason: 'machine', given: row.given,
+            prompt: row.prompt ?? null, questionNumber: row.row, rubric: null,
+            enqueuedAt: at,
+            verdict: row.status === 'correct' ? 'correct' : 'incorrect',
+            gradedBy: 'engine', gradedAt: at,
+            attemptId: attemptIdByItem.get(row.itemId) ?? null,
+          }));
+        const pending = [
+          ...card.results.filter((row) => row.status === 'ambiguous').map((row) => ({
+            sessionId, itemId: row.itemId, learnerId: state.learnerId, unitId: state.unitId,
+            reason: 'ambiguous', given: row.given,
+            prompt: row.prompt ?? null, questionNumber: row.row, rubric: null, enqueuedAt: at,
+          })),
+          ...(card.unscannedItems ?? []).map((item) => ({
+            sessionId, itemId: item.itemId, learnerId: state.learnerId, unitId: state.unitId,
+            reason: 'free_response', given: null,
+            prompt: item.prompt ?? null, questionNumber: null, rubric: null, enqueuedAt: at,
+          })),
+        ];
+        // Enqueued unconditionally — the machine marks belong on the verdict
+        // sheet whether or not anything is left pending (a fully machine-
+        // scored card still needs its marks readable by `GradeSubmission`).
+        await this.#reviewQueue.enqueue([...machineMarks, ...pending]);
+        if (pending.length > 0) {
+          if (state.state !== 'submitted') {
+            const submitted = createEvent({
+              type: 'submitted', at, sessionId, transport: 'paper',
+            });
+            if (submitted.errors.length) throw new Error(submitted.errors.join('; '));
+            await this.#sessions.appendEvent(sessionId, submitted.event);
+          }
+          this.#logger.info?.('school.print.scan-awaiting-review', {
+            sessionId, recordId: card.recordId, pendingReview: pending.length,
+          });
+          return {
+            sessionId, advancedTo: 'submitted', reason: 'awaiting-review', pendingReview: pending.length,
+          };
+        }
       }
 
       if (state.state !== 'submitted') {

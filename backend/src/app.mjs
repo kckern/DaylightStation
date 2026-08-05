@@ -2889,6 +2889,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
       const recordCardScanOutcome = new RecordCardScanOutcome({
         datastore: schoolDatastore,
         sessions: schoolLifecycle.stores.sessions ?? null,
+        reviewQueue: schoolLifecycle.stores.reviewQueue ?? null,
         logger: rootLogger.child({ module: 'school-print-scan-record' }),
       });
       createSchoolPrintScanConsumer({
