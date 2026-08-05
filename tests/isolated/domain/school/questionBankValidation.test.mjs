@@ -249,3 +249,34 @@ describe('validateQuestionBank: multi_select', () => {
     });
   });
 });
+
+// Task 2 (spec §5.3, §6.1): true_false is graded/rendered as A/B (True/False)
+// on the OMR card and is row-mappable (allocation.mjs's ROW_MAPPABLE_TYPES,
+// fixed at 2 choices). The bank item form carries no `choices` array — just
+// a boolean `answer`.
+describe('validateQuestionBank: true_false', () => {
+  const tf = (over = {}) => ({
+    id: 'q1', type: 'true_false', prompt: 'The sky is blue.', answer: true, ...over,
+  });
+
+  it('accepts a minimal valid true_false item with answer: true', () => {
+    const r = validateQuestionBank(bank({ items: [tf()] }));
+    expect(r.ok).toBe(true);
+  });
+
+  it('accepts answer: false', () => {
+    const r = validateQuestionBank(bank({ items: [tf({ answer: false })] }));
+    expect(r.ok).toBe(true);
+  });
+
+  it.each([
+    ['missing', undefined],
+    ['a string', 'true'],
+    ['a number', 1],
+    ['null', null],
+  ])('rejects an answer that is %s, naming the item', (_label, answer) => {
+    const r = validateQuestionBank(bank({ items: [tf({ answer })] }));
+    expect(r.ok).toBe(false);
+    expect(r.errors).toContain('items[0]: answer must be a boolean');
+  });
+});

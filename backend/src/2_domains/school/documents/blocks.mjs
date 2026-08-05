@@ -174,6 +174,14 @@ const VALIDATORS = {
       const pointsOk = typeof raw.points === 'number' && Number.isFinite(raw.points) && raw.points >= 0;
       if (!pointsOk) push('question points must be a number >= 0');
     }
+    // `omr` flag (Task 2, spec §6.1): row-consumption gate for non-quiz
+    // archetypes — `allocation.mjs`'s `planRows` reads this off the block
+    // directly (`block.omr === true`), so it is legal on EITHER question
+    // shape below (same reason `points` is checked up here, before the
+    // bank-select branch). Validation only: the archetype-dependent default
+    // (effectively true for a scored quiz item, false otherwise) is applied
+    // by the row planner, not here.
+    if (raw.omr !== undefined && typeof raw.omr !== 'boolean') push('question omr must be a boolean');
     // Bank-select sugar (spec §6.2): `{bankId, select, key, filter?}` REPLACES
     // the itemId/number/blocks shape below — it expands into a seeded list of
     // bank items at publish time (Task 5's job; this is shape-only). `select`
@@ -201,6 +209,18 @@ const VALIDATORS = {
     }
     if (!isNonEmptyString(raw.itemId)) push('question itemId must be a non-empty string');
     if (!Number.isInteger(raw.number) || raw.number < 1) push('question number must be an integer >= 1');
+    // `trueFalse` marker (Task 2, spec §5.3/§6.1): the explicit inline signal
+    // that this question's answer is a true_false item, not multiple_choice/
+    // short_answer/multi_select — chosen over inferring type from `typeof
+    // answer === 'boolean'` because the answer field is banned/absent on a
+    // published document (only the marker survives), and an explicit flag
+    // reads the same in source and published form, same posture as essay's
+    // `box` flag just above/below. `answer`'s own boolean shape and mutual
+    // exclusivity with choices/answers are checked at publish time
+    // (documentSource.mjs's pre-mint gate) — same deferral as
+    // choices/answer/answers shape-checking for the other inline forms
+    // (see documentSource.mjs's own doc comments).
+    if (raw.trueFalse !== undefined && raw.trueFalse !== true) push('question trueFalse must be true when present');
     if (!Array.isArray(raw.blocks) || raw.blocks.length === 0) {
       push('question blocks must be a non-empty array');
       return;

@@ -21,6 +21,14 @@ export function givenShapeError(item, given) {
     if (given.some((v) => typeof v !== 'string' || v.length === 0)) return 'every multi_select answer entry must be a non-empty string';
     return null;
   }
+  // true_false (spec §5.3): rendered/graded as A/B on the OMR card, but a
+  // non-OMR caller may hand back the raw boolean instead — both are legal
+  // `given` shapes, own dedicated branch (not the generic string check below,
+  // which would reject a boolean outright).
+  if (item.type === 'true_false') {
+    if (given === true || given === false || given === 'A' || given === 'B') return null;
+    return "true_false answer must be 'A', 'B', or a boolean";
+  }
   if (typeof given !== 'string' || given.length === 0) return 'answer must be a non-empty string';
   return null;
 }
@@ -60,6 +68,13 @@ export function gradeAnswer(item, given) {
     const givenSet = new Set(given);
     const correct = givenSet.size === wantSet.size && [...wantSet].every((v) => givenSet.has(v));
     return { correct, expected: item.answers };
+  }
+  if (item.type === 'true_false') {
+    // A='true', B='false' (spec §5.3's Ⓐ True / Ⓑ False card rendering); a
+    // boolean `given` is used as-is. Strict equality against item.answer —
+    // no fuzzing applies to a two-option item.
+    const givenBool = given === 'A' ? true : given === 'B' ? false : given;
+    return { correct: givenBool === item.answer, expected: item.answer };
   }
   throw new Error(`gradeAnswer: unrecognised item.type "${item.type}"`);
 }
