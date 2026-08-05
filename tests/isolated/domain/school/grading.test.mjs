@@ -71,3 +71,85 @@ describe('givenShapeError', () => {
     expect(givenShapeError(sa, undefined)).toBeTruthy();
   });
 });
+
+// Task 2 (spec §5.5): multi_select is the second (and only other) item type
+// that legally takes an array `given` — a set of chosen choice strings,
+// unlike matching's array of {left,right} pairs.
+const msItem = {
+  id: 'ms', type: 'multi_select', prompt: 'Which are primary colors?', choices: ['Red', 'Green', 'Blue', 'Orange'], answers: ['Red', 'Blue'],
+};
+
+describe('givenShapeError: multi_select', () => {
+  it('accepts a non-empty array of non-empty strings', () => {
+    expect(givenShapeError(msItem, ['Red', 'Blue'])).toBe(null);
+  });
+  it('rejects an empty array', () => {
+    expect(givenShapeError(msItem, [])).toBeTruthy();
+  });
+  it('rejects a non-array', () => {
+    expect(givenShapeError(msItem, 'Red')).toBeTruthy();
+  });
+  it('rejects an array containing a non-string entry', () => {
+    expect(givenShapeError(msItem, ['Red', 3])).toBeTruthy();
+  });
+});
+
+describe('gradeAnswer: multi_select (spec §5.5 — exact-set match, full credit or zero)', () => {
+  it('full credit for the exact answer set, any order', () => {
+    expect(gradeAnswer(msItem, ['Blue', 'Red']).correct).toBe(true);
+    expect(gradeAnswer(msItem, ['Red', 'Blue'])).toEqual({ correct: true, expected: ['Red', 'Blue'] });
+  });
+  it('zero credit for a subset (missing one correct choice)', () => {
+    expect(gradeAnswer(msItem, ['Red']).correct).toBe(false);
+  });
+  it('zero credit for a superset (an extra, incorrect choice included)', () => {
+    expect(gradeAnswer(msItem, ['Red', 'Blue', 'Green']).correct).toBe(false);
+  });
+  it('zero credit for the wrong set entirely', () => {
+    expect(gradeAnswer(msItem, ['Green', 'Orange']).correct).toBe(false);
+  });
+  it('no partial credit — one wrong swap fails the whole item', () => {
+    expect(gradeAnswer(msItem, ['Red', 'Green']).correct).toBe(false);
+  });
+  it('duplicate entries in given do not fake extra credit or break equality', () => {
+    expect(gradeAnswer(msItem, ['Red', 'Red', 'Blue']).correct).toBe(true);
+  });
+});
+
+// Task 2 (spec §5.3): true_false is rendered/graded as A/B (True/False) on
+// the OMR card — given may arrive as the bubbled letter OR a raw boolean
+// (e.g. a non-OMR caller); both map onto the same strict boolean compare.
+const tfItem = { id: 'tf', type: 'true_false', prompt: 'The sky is blue.', answer: true };
+
+describe('givenShapeError: true_false', () => {
+  it("accepts 'A', 'B', or a boolean", () => {
+    expect(givenShapeError(tfItem, 'A')).toBe(null);
+    expect(givenShapeError(tfItem, 'B')).toBe(null);
+    expect(givenShapeError(tfItem, true)).toBe(null);
+    expect(givenShapeError(tfItem, false)).toBe(null);
+  });
+  it('rejects any other shape', () => {
+    expect(givenShapeError(tfItem, 'C')).toBeTruthy();
+    expect(givenShapeError(tfItem, 'true')).toBeTruthy();
+    expect(givenShapeError(tfItem, 1)).toBeTruthy();
+    expect(givenShapeError(tfItem, undefined)).toBeTruthy();
+    expect(givenShapeError(tfItem, [])).toBeTruthy();
+  });
+});
+
+describe('gradeAnswer: true_false (A=true, B=false, strict, spec §5.3)', () => {
+  it('grades the letter form', () => {
+    expect(gradeAnswer(tfItem, 'A')).toEqual({ correct: true, expected: true });
+    expect(gradeAnswer(tfItem, 'B')).toEqual({ correct: false, expected: true });
+  });
+  it('grades the boolean form', () => {
+    expect(gradeAnswer(tfItem, true).correct).toBe(true);
+    expect(gradeAnswer(tfItem, false).correct).toBe(false);
+  });
+  it('grades a false-answer item correctly both ways', () => {
+    const falseItem = { ...tfItem, answer: false };
+    expect(gradeAnswer(falseItem, 'B').correct).toBe(true);
+    expect(gradeAnswer(falseItem, 'A').correct).toBe(false);
+    expect(gradeAnswer(falseItem, false).correct).toBe(true);
+  });
+});

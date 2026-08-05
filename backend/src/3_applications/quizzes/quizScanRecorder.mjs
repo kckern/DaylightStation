@@ -90,6 +90,22 @@ export function decodeQuizSheet(marks) {
 }
 
 /**
+ * Bus topic(s) a decoded-scan consumer should subscribe to for THIS config —
+ * always the default `omr` topic, plus any reader-specific topic named in
+ * `config.scanners`. Shared between `createQuizScanRecorder` below and any
+ * other consumer of the same decoded stream (Task 7's `ResolveCardScan`
+ * wiring, `5_composition/modules/schoolPrintScanConsumer.mjs`) so the two
+ * never disagree about which topics carry sheets.
+ *
+ * @param {object} [config] parsed config/omr-readers.yml
+ * @returns {string[]}
+ */
+export function resolveQuizScanTopics(config = {}) {
+  const readerDefs = config?.scanners || {};
+  return [...new Set([DEFAULT_TOPIC, ...Object.values(readerDefs).map((r) => r?.topic).filter(Boolean)])];
+}
+
+/**
  * Live decoder: subscribes to the relay's bus topic(s) and appends a decoded
  * record per sheet to {quizzesDir}/{reader-id}/{YYYY-MM-DD}.yml. Same
  * constructor shape and config file (omr-readers.yml) as createOmrRelay.
@@ -108,8 +124,7 @@ export function createQuizScanRecorder({ eventBus, dataDir, config = {}, logger 
 
   const outRoot = resolveDir(dataDir, config?.quizzes?.dir, DEFAULT_QUIZZES_DIR);
   const dedupWindowMs = Number(config?.persistence?.dedupWindowMs ?? DEFAULT_DEDUP_WINDOW_MS);
-  const readerDefs = config?.scanners || {};
-  const topics = new Set([DEFAULT_TOPIC, ...Object.values(readerDefs).map((r) => r?.topic).filter(Boolean)]);
+  const topics = new Set(resolveQuizScanTopics(config));
 
   const lastSheet = new Map(); // reader id -> { signature, atMs }
 

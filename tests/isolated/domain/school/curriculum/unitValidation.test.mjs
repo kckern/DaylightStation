@@ -318,6 +318,57 @@ describe('validateUnit: composition references', () => {
   });
 });
 
+// Task 7 review, Finding 1: `document: print/<id>@<rev>` (spec §9) must
+// validate — and reach `CurriculumAccess.getUnit` — WITHOUT ever being in
+// `documentIds` (that set only ever holds legacy catalog document ids; see
+// `PRINT_DOCUMENT_REF_PATTERN`'s own doc comment on why existence is
+// deliberately NOT checked here).
+describe('validateUnit: print-document references (spec §9, Task 7)', () => {
+  const PRINT_REF = 'print/tracked-quiz-1@0123abcde';
+
+  it('accepts a well-formed print/<id>@<rev> ref with NO documentIds set at all', () => {
+    expect(errs(valid({ document: PRINT_REF }), { ...refs(), documentIds: new Set() })).toEqual([]);
+    expect(errs(valid({ document: PRINT_REF }), {})).toEqual([]);
+  });
+
+  it('carries the ref through onto the normalised unit', () => {
+    expect(unitOf(valid({ document: PRINT_REF }))).toMatchObject({ document: PRINT_REF });
+  });
+
+  it.each([
+    ['a non-hex rev', 'print/tracked-quiz-1@ZZZZZZZZZ'],
+    ['a too-short rev', 'print/tracked-quiz-1@abc123'],
+    ['a too-long rev', 'print/tracked-quiz-1@0123abcde0'],
+    ['an uppercase-hex rev', 'print/tracked-quiz-1@0123ABCDE'],
+    ['no rev at all', 'print/tracked-quiz-1'],
+    ['an empty id', 'print/@0123abcde'],
+    ['an id starting with a dash', 'print/-quiz@0123abcde'],
+    ['an id with an uppercase letter', 'print/Quiz-1@0123abcde'],
+  ])('rejects a malformed print ref (%s) as invalid, not merely "not found"', (_label, ref) => {
+    const result = errs(valid({ document: ref }));
+    expect(result).toContain(`document '${ref}' is not a valid print/<id>@<rev> reference`);
+    expect(result).not.toContain(`document '${ref}' not found`);
+  });
+
+  it('never resolves against documentIds — a print/-prefixed value in that set does not count', () => {
+    expect(errs(valid({ document: PRINT_REF }), { documentIds: new Set([PRINT_REF]) })).toEqual([]);
+    // And the inverse: a malformed ref is rejected even if (implausibly) present in the set.
+    const malformed = 'print/tracked-quiz-1@nothex';
+    expect(errs(valid({ document: malformed }), { documentIds: new Set([malformed]) }))
+      .toContain(`document '${malformed}' is not a valid print/<id>@<rev> reference`);
+  });
+
+  it('legacy document refs are byte-unchanged: unaffected by the print/ branch', () => {
+    expect(errs(valid())).toEqual([]);
+    expect(errs(valid({ document: 'math-3.4-ws' })))
+      .toContain("document 'math-3.4-ws' not found");
+  });
+
+  it('a print ref alone satisfies "composes at least one of bank/document/media/review"', () => {
+    expect(errs(valid({ document: PRINT_REF }))).toEqual([]);
+  });
+});
+
 describe('validateUnit: provenance', () => {
   it.each(['draft', 'approved'])('accepts the review state %s', (reviewState) => {
     expect(errs(valid({ provenance: { source: 'hand-authored', reviewState } }))).toEqual([]);

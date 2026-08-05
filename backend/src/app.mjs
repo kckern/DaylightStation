@@ -82,6 +82,7 @@ import { createTriggerApiRouter } from '#composition/modules/triggerApi.mjs';
 import { createScanDispatch, errText } from '#composition/modules/scanDispatch.mjs';
 import { createSchoolCalc } from '#composition/modules/schoolCalc.mjs';
 import { createSchoolCatalog } from '#composition/modules/schoolCatalog.mjs';
+import { createSchoolSurfaces } from '#composition/modules/schoolSurfaces.mjs';
 import { createLearningReflectionEvidenceId, createSchoolLearningLoop } from '#composition/modules/schoolLearning.mjs';
 import { emit } from '#apps/scan/ScanDispatcher.mjs';
 import { createGratitudeApiRouter } from '#composition/modules/gratitudeApi.mjs';
@@ -234,7 +235,7 @@ import { createWeeklyReviewRouter } from './4_api/v1/routers/weekly-review.mjs';
 import { createHarvestRouter } from './4_api/v1/routers/harvest.mjs';
 
 // FileIO utilities for image saving
-import { saveImage as saveImageToFile, loadYaml as loadYamlStatic } from './0_system/utils/FileIO.mjs';
+import { saveImage as saveImageToFile, loadYaml as loadYamlStatic, loadYamlFromPath } from './0_system/utils/FileIO.mjs';
 // API versioning
 import { createApiRouter } from './4_api/v1/routers/api.mjs';
 import { createArtRouter } from './4_api/v1/routers/art.mjs';
@@ -2264,6 +2265,27 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   } catch (error) {
     rootLogger.child({ module: 'school-continuation' }).warn?.('school.continuation.unwired', { error: error.message });
   }
+
+  // Surface certification (spec §4.2/§7.1/§9): the registry of static
+  // surface profiles + per-family certification ports, and a per-request
+  // certification facade for `/api/v1/school/certification` and
+  // `/api/v1/school/surfaces/profile`. Inert (both null) whenever the shared
+  // School Catalog itself is not wired — certification has nothing to
+  // certify without it.
+  const schoolSurfaces = await createSchoolSurfaces({
+    schoolCatalog,
+    logger: rootLogger.child({ module: 'school-surfaces' }),
+  });
+  // Screen-config lookup for surface-profile resolution, reusing the same
+  // `data/household/screens/<id>.yml` mount `screens.mjs` serves —
+  // `loadYamlFromPath` returns null on a missing/unparsable file rather than
+  // throwing, which is exactly the "no config" case the resolver treats as a
+  // 404 (fail closed, never a synthesized default).
+  const getSchoolScreenConfig = (screenId) => (
+    /^[a-zA-Z0-9_-]+$/.test(screenId)
+      ? loadYamlFromPath(path.join(householdDir, 'screens', `${screenId}.yml`))
+      : null
+  );
   // Optional calculator-native School product. The composition module is the
   // only place that joins calculator-family adapters, SchoolCalc application
   // use cases, persistence, relay credentials, and the thin HTTP router.
@@ -2827,6 +2849,49 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     schoolLifecycleLogger.error('school.lifecycle.wiring-failed', { error: err.message });
   }
 
+  // Print-document scan-back (Task 7, spec §9): ResolveCardScan joins the
+  // SAME decoded-scan stream createQuizScanRecorder (wired much earlier,
+  // above) already persists — see schoolPrintScanConsumer.mjs's own header.
+  // Reuses schoolLifecycle's OWN allocationStore/printDocuments repository
+  // instances (not fresh ones) so a live scan resolves against exactly what
+  // IssueDocument's tracked-quiz path just wrote — two YamlAllocationStore
+  // instances pointed at the same directory would each serialize their OWN
+  // writes but not against each other, a real read-modify-write race this
+  // avoids by construction. Wired only once the lifecycle itself is (no
+  // lifecycle, no allocationStore/repository to resolve against either).
+  if (schoolLifecycle.wired && schoolLifecycle.stores?.allocationStore && schoolLifecycle.stores?.printDocuments) {
+    try {
+      const { createSchoolPrintScanConsumer } = await import('#composition/modules/schoolPrintScanConsumer.mjs');
+      const { ResolveCardScan } = await import('#apps/school/documents/ResolveCardScan.mjs');
+      const { createYamlBankReader } = await import('#apps/school/documents/RenderPrintDocument.mjs');
+      const resolveCardScan = new ResolveCardScan({
+        allocationStore: schoolLifecycle.stores.allocationStore,
+        repository: schoolLifecycle.stores.printDocuments,
+        // Bank-select tracked quizzes need this to re-derive the row->item
+        // mapping at scan time (F2 review fix, High: absent it, every scan
+        // against a bank-select document dies as BANK_SELECT_BANK_NOT_FOUND,
+        // swallowed into `prepareV2Document`'s own null-bank throw and caught
+        // as one opaque warn below). Rooted at the SAME `dataDir` the
+        // lifecycle's own `RenderPrintDocument` built its bank reader from
+        // (`schoolLifecycle.mjs`'s `createYamlBankReader({ dataDir })`) — a
+        // fresh reader instance, not the lifecycle's own private one (that
+        // reader is a `RenderPrintDocument` constructor-private field, not
+        // exposed), but functionally identical: same directory, same
+        // deterministic id->bank map, so a scan re-derives EXACTLY what the
+        // render produced.
+        banks: createYamlBankReader({ dataDir }),
+      });
+      createSchoolPrintScanConsumer({
+        eventBus,
+        config: omrReadersConfig,
+        resolveCardScan,
+        logger: rootLogger.child({ module: 'school-print-scan' }),
+      });
+    } catch (err) {
+      schoolLifecycleLogger.error('school.print.scan-consumer-wiring-failed', { error: err.message });
+    }
+  }
+
   const getSchoolReport = new GetSchoolReport({
     // The lifecycle reporter is filtered out by GetSchoolReport itself when it
     // is null, so an unwired console simply does not appear on the board.
@@ -2851,6 +2916,24 @@ export async function createApp({ server, logger, configPaths, configExists, ena
       path: schoolFullConfig.printing?.path || '/ipp/print',
       logger: rootLogger.child({ module: 'school-print' })
     });
+    // Paper-certification gate (Task 15, spec §9/§11): a `bank` printable is
+    // offered only if AT LEAST ONE paper surface profile can render it —
+    // built straight from the surfaces registry's family:'paper' ports/
+    // profiles rather than through GetSurfaceCertification, which certifies
+    // whole lessons, not standalone banks. `schoolSurfaces.registry` is null
+    // whenever the School Catalog itself is not wired; no paper profile
+    // authored yields the same `null` — PrintService then falls back to its
+    // legacy, ungated `listPrintables()` byte-for-byte.
+    const paperProfiles = schoolSurfaces.registry
+      ? schoolSurfaces.registry.list().filter((profile) => profile.family === 'paper')
+      : [];
+    const paperCertifyBank = paperProfiles.length
+      ? (bank) => {
+        const results = paperProfiles.map((profile) => schoolSurfaces.registry.portFor(profile).certifyBank(bank, profile));
+        if (results.some((r) => r.verdict === 'render')) return { verdict: 'render', reasons: [] };
+        return { verdict: 'incompatible', reasons: results.flatMap((r) => r.reasons || []) };
+      }
+      : null;
     schoolPrintService = new PrintService({
       config: schoolFullConfig,
       datastore: schoolDatastore,
@@ -2869,9 +2952,10 @@ export async function createApp({ server, logger, configPaths, configExists, ena
         }
       },
       userService,
+      paperCertifyBank,
       logger: rootLogger.child({ module: 'school-print' })
     });
-    rootLogger.child({ module: 'school-print' }).info?.('school.print.ready', { host: printerHost, printables: schoolFullConfig.printables?.length || 0 });
+    rootLogger.child({ module: 'school-print' }).info?.('school.print.ready', { host: printerHost, printables: schoolFullConfig.printables?.length || 0, paperCertified: paperProfiles.length > 0 });
   }
 
   v1Routers.school = createSchoolRouter({
@@ -2892,6 +2976,9 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     learnerDirectory: schoolLearnerDirectory,
     printService: schoolPrintService,
     schoolCalcRouter: schoolCalc.router,
+    surfaceCertification: schoolSurfaces.certification,
+    surfaceRegistry: schoolSurfaces.registry,
+    getScreenConfig: getSchoolScreenConfig,
     logger: rootLogger.child({ module: 'school-api' })
   });
 

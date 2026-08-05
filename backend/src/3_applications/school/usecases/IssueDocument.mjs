@@ -21,6 +21,17 @@
  * The renderer arrives through `IDocumentRenderer` (D1: applications may not
  * import `1_rendering`). Token values are minted HERE and passed in — the
  * renderer draws barcodes, it does not decide what they mean.
+ *
+ * TRACKED QUIZZES (spec §9, Task 7): a unit whose `document` reference matches
+ * `print/<id>@<rev>` resolves through the NEWER print-document pipeline
+ * (`RenderPrintDocument` + the OMR card allocation store) instead of the
+ * legacy curriculum document map — see `#issuePrintDocument` below, reached
+ * by an early branch in `execute()` that never runs the legacy lookup for a
+ * print-document unit, and is never reached for a legacy one. The allocation
+ * record takes the FORM MAP'S SLOT in the write sequence (before the issue
+ * event) — `#issuePrintDocument`'s own doc comment explains why that write
+ * actually lands even earlier than the legacy slot, not later, and why that
+ * is still the same guarantee.
  */
 import { reduceSession, createEvent } from '#domains/school/sessions/sessionEvents.mjs';
 import { mintToken, TOKEN_CLASSES } from '#domains/school/sessions/tokens.mjs';
@@ -30,6 +41,23 @@ import { shortId } from '#domains/core/utils/id.mjs';
 
 /** States in which handing over a sheet still means something. */
 const ISSUABLE = new Set(['created', 'media_completed', 'issued', 'reprinted']);
+
+/**
+ * `print/<id>@<rev>` — a curriculum unit's `document` field pointing at a
+ * PUBLISHED print-document artifact (spec §9) rather than a legacy catalog
+ * document id. `id` never contains `@` (the print-document id alphabet
+ * excludes it — `documentValidation.mjs`'s `ID_PATTERN`); the remainder after
+ * the LAST `@` is the rev, mirroring `YamlAllocationStore`'s own
+ * `buildRecordId` convention for the same pair.
+ */
+const PRINT_DOCUMENT_REF = /^print\/([^@]+)@([^@]+)$/;
+
+/** @returns {{id: string, rev: string}|null} */
+function parsePrintDocumentRef(ref) {
+  if (typeof ref !== 'string') return null;
+  const match = PRINT_DOCUMENT_REF.exec(ref);
+  return match ? { id: match[1], rev: match[2] } : null;
+}
 
 /**
  * What a child (and the grown-up they fetch) is told, per cause.
@@ -74,6 +102,7 @@ const FAILURE_COPY = Object.freeze({
 
 export class IssueDocument {
   #curriculum; #sessions; #tokens; #renderer; #printer; #formMaps; #bankReader;
+  #printDocuments; #renderPrintDocument; #allocationStore;
   #clock; #rng; #newArtifactId; #logger;
 
   /**
@@ -85,6 +114,21 @@ export class IssueDocument {
    * @param {{printPdf: Function}} deps.printer - laser printer adapter surface
    * @param {import('../ports/IFormMapStore.mjs').IFormMapStore} deps.formMaps
    * @param {{getBank: (id: string) => object|null}} [deps.bankReader] - questions the sheet poses
+   * @param {{getPublished: (id: string, rev?: string) => Promise<object|null>|object|null}} [deps.printDocuments] -
+   *   `YamlPrintDocumentRepository`-shaped (Task 7, spec §9). Resolves a unit's
+   *   `print/<id>@<rev>` document reference to its published artifact. Optional:
+   *   absent it, a `print/...` reference degrades to `unavailable` exactly like a
+   *   dangling legacy reference does — it never falls through to `curriculum`.
+   * @param {{execute: Function}} [deps.renderPrintDocument] - a `RenderPrintDocument`
+   *   instance (Task 5), constructed with its OWN `repository`/`banks`/
+   *   `allocationStore` at composition time. Required alongside `printDocuments`/
+   *   `allocationStore` for a `print/...` unit to actually render.
+   * @param {{allocate: Function}} [deps.allocationStore] - the SAME allocation
+   *   store `renderPrintDocument` writes through — held here only so a
+   *   `print/...` unit can be recognised as configured (or not) before minting
+   *   anything; the actual persisting write happens inside `renderPrintDocument`
+   *   itself (see `#issuePrintDocument`'s doc comment for why it cannot be
+   *   deferred to the form-map slot the way a legacy map is).
    * @param {() => Date} [deps.clock]
    * @param {() => number} [deps.rng]
    * @param {() => string} [deps.newArtifactId]
@@ -92,6 +136,7 @@ export class IssueDocument {
    */
   constructor({
     curriculum, sessions, tokens, renderer, printer, formMaps, bankReader = null,
+    printDocuments = null, renderPrintDocument = null, allocationStore = null,
     clock = () => new Date(), rng = Math.random,
     newArtifactId = () => `art_${shortId(8)}`, logger = console,
   } = {}) {
@@ -105,6 +150,9 @@ export class IssueDocument {
     this.#printer = printer;
     this.#formMaps = formMaps;
     this.#bankReader = bankReader;
+    this.#printDocuments = printDocuments;
+    this.#renderPrintDocument = renderPrintDocument;
+    this.#allocationStore = allocationStore;
     this.#clock = clock;
     this.#rng = rng;
     this.#newArtifactId = newArtifactId;
@@ -143,6 +191,19 @@ export class IssueDocument {
     }
 
     const unit = await this.#curriculum.getUnit(state.unitId);
+
+    // Tracked quizzes (spec §9): a `print/<id>@<rev>` unit-document reference
+    // resolves through the print-document pipeline instead of the legacy
+    // curriculum document map — a branch AHEAD of the legacy lookup below,
+    // which it never runs. Everything from here to the end of this method is
+    // unchanged for a legacy unit (this branch is simply never taken).
+    const printRef = unit?.document ? parsePrintDocumentRef(unit.document) : null;
+    if (printRef) {
+      return this.#issuePrintDocument({
+        sessionId, nowIso, state, unit, printRef,
+      });
+    }
+
     const document = unit?.document ? await this.#curriculum.getDocument(unit.document) : null;
     if (!document) {
       // A dangling reference should be impossible at runtime (the catalog gate
@@ -240,6 +301,204 @@ export class IssueDocument {
       tokens[tokenClass] = record.token;
     }
     return tokens;
+  }
+
+  /**
+   * Tracked quizzes through the SAME machinery a legacy worksheet uses (spec
+   * §9): mint tokens, render, print, record — the identical SHAPE `execute`'s
+   * legacy tail runs, just resolving the document via the print-document
+   * repository and rendering via `RenderPrintDocument` with a fresh OMR card
+   * allocation instead of the legacy `IDocumentRenderer`/form-map pair. Kept
+   * as its own method (rather than folded into `execute`'s shared tail) so
+   * the legacy path above stays exactly what it always was — nothing here can
+   * perturb it.
+   *
+   * ALLOCATION RECORD TAKES THE FORM MAP'S SLOT (spec §9): a legacy unit
+   * writes its form map AFTER a successful print, immediately BEFORE the
+   * issue event — "the paper is out of the tray; the mapping must already be
+   * durable" (module header). A card-attached render cannot defer ITS durable
+   * write that late: the physical row numbers `RenderPrintDocument` prints on
+   * the page ARE what `#allocateCard` persists (spec §5.3's numbering-is-the-
+   * allocation invariant), so that write has to happen as part of producing
+   * the bytes — before print, not after. That is STRICTLY EARLIER than the
+   * legacy slot, which only strengthens the guarantee the ordering exists
+   * for: nothing here can ever let a scan race a mapping that is not yet
+   * durable. What occupies the code's own form-map-write branch below is
+   * therefore a log line, not a write — the persistence already happened, in
+   * the same role, before the sheet could physically reach a scanner.
+   *
+   * REPRINTS GET A FRESH CARD TOO: `RenderPrintDocument` is always called
+   * with `freshCard: true`, even when `reprinting` reuses the ORIGINAL
+   * artifact id for the session's own lineage. This matches, rather than
+   * invents, the allocation store's own documented stance
+   * (`YamlAllocationStore`'s "SUPERSEDE SCOPE" note): a reprint issued
+   * against a different card simply strands the original card's record as an
+   * uncollected allocation, which is the accepted, simpler behaviour there
+   * already — a lost or damaged physical card needs a NEW one regardless of
+   * what the session calls the artifact.
+   *
+   * ORPHANED ALLOCATIONS ON A LATE FAILURE (Task 7 review, Finding 2): the
+   * write-before-print ordering above means a fit rejection or a print jam
+   * can both happen AFTER a card is already durably allocated. There is no
+   * rollback of the write itself (see this method's own comment on why —
+   * the paper-out-of-tray guarantee is about never letting a scan outrun a
+   * mapping, not about erasing history), but leaving that record silently
+   * `live` would burn a fresh physical card on every retry FOREVER, with no
+   * way for anyone to even discover the stranded cardId. Both failure
+   * branches below call `#orphanAllocation`, which logs the cardId/recordId
+   * at `warn` (`school.issue.allocation-orphaned` — the ONE thing the
+   * success-only `allocation-recorded` log never covers) and best-effort
+   * releases it via the store (the same `release` a `release-card` CLI call
+   * uses), so the very next retry's fresh allocation lands on a clean slate
+   * instead of accumulating dead cards.
+   */
+  async #issuePrintDocument({
+    sessionId, nowIso, state, unit, printRef,
+  }) {
+    if (!this.#printDocuments || !this.#renderPrintDocument || !this.#allocationStore) {
+      this.#logger.warn?.('school.issue.print-document-not-configured', {
+        sessionId, unitId: state.unitId, document: unit.document,
+      });
+      return this.#unavailable(sessionId, 'no-document', 'There is no sheet to print for this one. Tell a grown-up.');
+    }
+
+    const published = await this.#printDocuments.getPublished(printRef.id, printRef.rev);
+    if (!published) {
+      // Mirrors the legacy "dangling reference" branch: should be impossible
+      // at runtime once publish-time catalog validation covers print refs
+      // too, so it is logged loudly as well as explained on paper.
+      this.#logger.warn?.('school.issue.no-document', {
+        sessionId, unitId: state.unitId, document: unit.document,
+      });
+      return this.#unavailable(sessionId, 'no-document', 'There is no sheet to print for this one. Tell a grown-up.');
+    }
+
+    const reprinting = state.issuedArtifacts.length > 0;
+    const artifactId = reprinting ? state.issuedArtifacts.at(-1) : this.#newArtifactId();
+    const tokens = await this.#mintSheetTokens(published, sessionId, nowIso);
+
+    let rendered;
+    try {
+      const result = await this.#renderPrintDocument.execute({
+        // The session's own `variant` overrides the published document's,
+        // exactly like the legacy path below (`state.variant === (document.variant
+        // ?? 0) ? document : {...}`) — a retry sheet must be the shuffle the
+        // session actually asked for, not whatever the document was published
+        // carrying.
+        document: state.variant === (published.variant ?? 0)
+          ? published : { ...published, variant: state.variant },
+        context: {
+          freshCard: true,
+          learnerId: state.learnerId ?? null,
+          // F3 review fix (Medium/blocker): the tokens minted just above
+          // (`#mintSheetTokens`) must reach `RenderPrintDocument`'s measure
+          // + final render, or a scan_action/media_action block's barcode
+          // prints its own `.action` literal — a dead code with no matching
+          // registry entry — while the REAL minted token sits unused.
+          tokens,
+        },
+      });
+      rendered = {
+        pdf: result.bytes, pageCount: result.pageCount, formMap: null, allocation: result.allocation,
+      };
+    } catch (err) {
+      // A card may have been allocated and durably written before THIS
+      // error fired (e.g. FIT_OVERSET, discovered only after `#allocateCard`
+      // already ran) — `RenderPrintDocument` attaches that snapshot to
+      // `err.details.allocation` for exactly this reason (see its own doc
+      // comment). Absent for a failure that happened before any write (e.g.
+      // ALLOCATION_STORE_REQUIRED/ALLOCATION_REQUIRES_REV), in which case
+      // `#orphanAllocation` is a no-op.
+      await this.#orphanAllocation(err.details?.allocation, { sessionId, unitId: state.unitId, stage: 'render' });
+      return this.#recordFailure({
+        sessionId, stage: 'render', reason: err.message, nowIso, state,
+        cause: err.name === 'UnresolvedAssetError' ? 'missing_artwork' : 'render',
+      });
+    }
+
+    try {
+      await this.#printer.printPdf(rendered.pdf, {
+        jobName: `school-${state.unitId}-${artifactId}`,
+        user: state.learnerId ?? 'daylight',
+      });
+    } catch (err) {
+      // Render already succeeded here, so the allocation (if any) is right
+      // on `rendered.allocation` — no error-detail plumbing needed for this
+      // branch the way the render-failure one above needs it.
+      await this.#orphanAllocation(rendered.allocation, { sessionId, unitId: state.unitId, stage: 'print' });
+      return this.#recordFailure({ sessionId, stage: 'print', reason: err.message, nowIso, state, cause: 'printer' });
+    }
+
+    // Same slot the legacy path writes its form map in — see this method's
+    // own doc comment on why the write itself already happened, earlier,
+    // inside `renderPrintDocument.execute` above.
+    if (rendered.allocation) {
+      this.#logger.info?.('school.issue.allocation-recorded', {
+        sessionId,
+        unitId: state.unitId,
+        artifactId,
+        cardId: rendered.allocation.cardId,
+        recordId: rendered.allocation.recordId,
+        rowRange: rendered.allocation.rowRange,
+      });
+    }
+
+    const type = reprinting ? 'reprinted' : 'issued';
+    const { errors, event } = createEvent({ type, at: nowIso, sessionId, artifactId });
+    if (errors.length) throw new Error(`IssueDocument: could not record the issue: ${errors.join('; ')}`);
+    await this.#sessions.appendEvent(sessionId, event);
+
+    this.#logger.info?.('school.issue.printed', {
+      sessionId, unitId: state.unitId, artifactId, reprint: reprinting, pages: rendered.pageCount ?? null,
+    });
+
+    return {
+      status: type,
+      sessionId,
+      artifactId,
+      pageCount: rendered.pageCount ?? null,
+      tokens,
+      formMap: null,
+      // Not on the legacy return shape (which has no card concept) — additive,
+      // so a caller not yet reading it sees nothing new. Callers include
+      // ResolveScanAction/receipts, none of which read this field today.
+      allocation: rendered.allocation ?? null,
+      document: null,
+      message: reprinting ? 'Printing that again for you.' : 'Printing your sheet.',
+    };
+  }
+
+  /**
+   * Best-effort cleanup for a card that was durably allocated but whose
+   * render/print never completed (Task 7 review, Finding 2). `allocation`
+   * is the `{cardId, rowRange, recordId, status}` snapshot — absent (no-op)
+   * whenever nothing was actually written yet.
+   *
+   * Two things happen, and the FIRST never depends on the second: the
+   * cardId/recordId are logged at `warn` unconditionally, because a grown-up
+   * (or a future debugging session) needs to be able to find a stranded card
+   * even if the release itself also fails — a silent release failure must
+   * never also mean a silent orphan. `release` failing (e.g. the store is
+   * unreachable) is itself logged, never thrown — this runs from inside an
+   * already-failed issue attempt, and a SECOND failure here must not replace
+   * the FIRST one in what gets reported back to the child.
+   */
+  async #orphanAllocation(allocation, { sessionId, unitId, stage }) {
+    if (!allocation) return;
+    this.#logger.warn?.('school.issue.allocation-orphaned', {
+      sessionId, unitId, stage, cardId: allocation.cardId, recordId: allocation.recordId, rowRange: allocation.rowRange,
+    });
+    if (typeof this.#allocationStore?.release !== 'function') return;
+    try {
+      const released = await this.#allocationStore.release({ cardId: allocation.cardId, rows: allocation.rowRange });
+      this.#logger.warn?.('school.issue.allocation-released', {
+        sessionId, cardId: allocation.cardId, recordId: allocation.recordId, releasedCount: released.length,
+      });
+    } catch (err) {
+      this.#logger.warn?.('school.issue.allocation-release-failed', {
+        sessionId, cardId: allocation.cardId, recordId: allocation.recordId, error: err.message,
+      });
+    }
   }
 
   /**

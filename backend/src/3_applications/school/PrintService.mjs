@@ -18,9 +18,16 @@ import { GuestForbiddenError } from '#domains/school/errors.mjs';
 import { shortId } from '#domains/core/utils/id.mjs';
 
 export class PrintService {
-  #config; #ds; #printer; #worksheet; #bankReader; #pdfReader; #userService; #logger; #now;
+  #config; #ds; #printer; #worksheet; #bankReader; #pdfReader; #userService; #logger; #now; #paperCertifyBank;
 
-  constructor({ config, datastore, printerAdapter, worksheetRenderer, bankReader, pdfReader, userService, logger = console, now = () => Date.now() }) {
+  constructor({
+    config, datastore, printerAdapter, worksheetRenderer, bankReader, pdfReader, userService,
+    logger = console, now = () => Date.now(),
+    // Optional paper-certification gate (spec §9/§11): async|sync
+    // (bank) => {verdict, reasons}. Null (the default) leaves listPrintables
+    // byte-for-byte unchanged — the legacy path the spec exempts.
+    paperCertifyBank = null,
+  }) {
     this.#config = config || {};
     this.#ds = datastore;
     this.#printer = printerAdapter;
@@ -30,6 +37,7 @@ export class PrintService {
     this.#userService = userService;
     this.#logger = logger;
     this.#now = now;
+    this.#paperCertifyBank = paperCertifyBank;
   }
 
   get #policy() {
@@ -72,6 +80,22 @@ export class PrintService {
     for (const def of this.#printableDefs()) {
       let pages = null;
       try { pages = (await this.#resolve(def)).pageCount; } catch { pages = null; }
+
+      // Paper-certification gate (spec §9/§11): a `bank` printable whose bank
+      // resolves but is incompatible with paper is excluded from the listing
+      // and logged once. Only wired when a `paperCertifyBank` was injected;
+      // `pdf` defs and banks that fail to resolve are untouched either way.
+      if (def.type === 'bank' && this.#paperCertifyBank) {
+        const bank = this.#bankReader.getBank(def.bankId);
+        if (bank) {
+          const result = await this.#paperCertifyBank(bank);
+          if (result?.verdict === 'incompatible') {
+            this.#logger.warn?.('print.printable-excluded', { printableId: def.id, bankId: def.bankId, reasons: result.reasons });
+            continue;
+          }
+        }
+      }
+
       out.push({ id: def.id, label: def.label, type: def.type, subject: def.subject ?? null, pages });
     }
     return out;

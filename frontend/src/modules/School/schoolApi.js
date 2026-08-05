@@ -20,6 +20,16 @@ async function req(path, body, method) {
 
 export const schoolApi = {
   roster: () => req('/roster'),
+  // Fail-closed surface resolution (spec §4.2): 404 -> {ok:false}, same as any
+  // other unresolved-resource response — the caller never treats a missing
+  // profile as "everything allowed".
+  surfaceProfile: (screenId) => req(`/surfaces/profile?screen=${encodeURIComponent(screenId)}`),
+  certification: ({ address, surface }) => {
+    const p = new URLSearchParams();
+    if (address) p.set('address', address);
+    if (surface) p.set('surface', surface);
+    return req(`/certification?${p}`);
+  },
   banks: (audience) => req(`/banks${audience ? `?audience=${encodeURIComponent(audience)}` : ''}`),
   bank: (id) => req(`/banks/${encodeURIComponent(id)}`),
   learningCatalogs: (learnerId = null) => req(`/catalogs${learnerId ? `?learnerId=${encodeURIComponent(learnerId)}` : ''}`),

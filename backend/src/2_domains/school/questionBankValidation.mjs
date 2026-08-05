@@ -9,7 +9,7 @@
  * empty/whitespace value that slips through is a live UI crash or a silently
  * unanswerable question.
  */
-const ITEM_TYPES = new Set(['multiple_choice', 'short_answer', 'cloze', 'matching', 'region_click', 'asset_choice']);
+const ITEM_TYPES = new Set(['multiple_choice', 'short_answer', 'cloze', 'matching', 'region_click', 'asset_choice', 'multi_select', 'true_false']);
 const AUDIENCES = new Set(['generic', 'assigned']);
 
 const isNonEmptyString = (v) => typeof v === 'string' && v.trim().length > 0;
@@ -133,6 +133,52 @@ export function validateQuestionBank(raw) {
         if (new Set(lefts).size !== lefts.length) errors.push(`${at}: left values must be unique`);
         if (new Set(rights).size !== rights.length) errors.push(`${at}: right values must be unique`);
       }
+    }
+    // multi_select (spec §5.5, §4.3): a fixed 2..5 choice set (row-mappable
+    // to a card, per §5.3's "≤5 options"), graded exact-set (grading.mjs) —
+    // `answers` (plural) is the ANSWER KEY, distinct from single-answer types'
+    // `answer`, because more than one choice can be correct at once.
+    if (item.type === 'multi_select') {
+      if (!Array.isArray(item.choices) || item.choices.length < 2 || item.choices.length > 5) {
+        errors.push(`${at}: choices must have between 2 and 5 entries`);
+      } else {
+        if (!item.choices.every(isNonEmptyString)) errors.push(`${at}: choices must be non-empty strings`);
+        if (new Set(item.choices).size !== item.choices.length) errors.push(`${at}: choices must be unique`);
+        if (!Array.isArray(item.answers) || item.answers.length === 0) {
+          errors.push(`${at}: answers must be a non-empty array`);
+        } else {
+          if (!item.answers.every(isNonEmptyString)) errors.push(`${at}: answers must be non-empty strings`);
+          if (new Set(item.answers).size !== item.answers.length) errors.push(`${at}: answers must be distinct`);
+          else if (!item.answers.every((a) => item.choices.includes(a))) errors.push(`${at}: answers must be a subset of choices`);
+        }
+      }
+      if (item.maxSelect !== undefined) {
+        if (!Number.isInteger(item.maxSelect) || item.maxSelect < 1) {
+          errors.push(`${at}: maxSelect must be an integer >= 1`);
+        } else {
+          // Coherence (F2, review finding): `maxSelect` caps how many bubbles
+          // a student may mark, so it can never sit below the number of
+          // CORRECT answers (an exact-set-match item the correct answer
+          // itself could never legally satisfy, spec §5.5) nor above the
+          // number of choices actually printed (a cap the card has no rows
+          // for). Both checks only run once `choices`/`answers` are already
+          // known-good arrays — an already-broken choices/answers shape gets
+          // its own error above and this coherence check would just be noise
+          // on top of it.
+          if (Array.isArray(item.answers) && item.maxSelect < item.answers.length) {
+            errors.push(`${at}: maxSelect (${item.maxSelect}) must be >= answers.length (${item.answers.length})`);
+          }
+          if (Array.isArray(item.choices) && item.maxSelect > item.choices.length) {
+            errors.push(`${at}: maxSelect (${item.maxSelect}) must be <= choices.length (${item.choices.length})`);
+          }
+        }
+      }
+    }
+    // true_false (spec §5.3, §6.1): rendered/graded as A/B (True/False) on the
+    // OMR card. No `choices` array — the two-option shape is fixed and never
+    // authored (allocation.mjs's `planRows` hardcodes choiceCount 2 for it).
+    if (item.type === 'true_false') {
+      if (typeof item.answer !== 'boolean') errors.push(`${at}: answer must be a boolean`);
     }
     if (item.type === 'region_click') {
       if (!isNonEmptyString(item.asset)) errors.push(`${at}: asset is required`);

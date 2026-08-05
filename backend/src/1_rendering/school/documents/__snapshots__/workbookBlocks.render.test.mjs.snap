@@ -1,0 +1,217 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`workbook content blocks — measure + draw > divider > measures a bare rule reserving theme.divider vertical space 1`] = `
+{
+  "answerSpace": null,
+  "atomic": true,
+  "forceBreak": false,
+  "gutterPt": undefined,
+  "heightPt": 12.8,
+  "id": "blocks[0]",
+  "lineCount": undefined,
+  "lineNumbers": undefined,
+  "lineNumbersOnLines": undefined,
+  "nodeKinds": [
+    "divider",
+  ],
+  "nodes": [
+    {
+      "heightPt": 12.8,
+      "kind": "divider",
+      "widthPt": 504,
+    },
+  ],
+  "spacingClass": "body",
+}
+`;
+
+exports[`workbook content blocks — measure + draw > figure > measures asset + caption + credit as ONE atomic fragment 1`] = `
+{
+  "answerSpace": null,
+  "atomic": true,
+  "forceBreak": false,
+  "gutterPt": undefined,
+  "heightPt": 136,
+  "id": "blocks[0]",
+  "lineCount": undefined,
+  "lineNumbers": undefined,
+  "lineNumbersOnLines": undefined,
+  "nodeKinds": [
+    "asset",
+    "text",
+    "text",
+  ],
+  "nodes": [
+    {
+      "hasCaption": false,
+      "heightPt": 100,
+      "kind": "asset",
+      "resolved": true,
+      "widthPt": 504,
+    },
+    {
+      "heightPt": 12,
+      "kind": "text",
+      "lineCount": 1,
+      "styleKey": "caption",
+      "widthPt": 504,
+    },
+    {
+      "heightPt": 12,
+      "kind": "text",
+      "lineCount": 1,
+      "styleKey": "caption",
+      "widthPt": 504,
+    },
+  ],
+  "spacingClass": "asset",
+}
+`;
+
+exports[`workbook content blocks — measure + draw > inset > measures a box node wrapping its children, padded/radius from theme.box 1`] = `
+{
+  "answerSpace": null,
+  "atomic": true,
+  "forceBreak": false,
+  "gutterPt": undefined,
+  "heightPt": 89.5,
+  "id": "blocks[0]",
+  "lineCount": undefined,
+  "lineNumbers": undefined,
+  "lineNumbersOnLines": undefined,
+  "nodeKinds": [
+    "box",
+  ],
+  "nodes": [
+    {
+      "childKinds": [
+        "text",
+        "text",
+        "list",
+      ],
+      "heightPt": 89.5,
+      "kind": "box",
+      "paddingPt": 9,
+      "radiusPt": 4,
+      "widthPt": 504,
+    },
+  ],
+  "spacingClass": "body",
+}
+`;
+
+exports[`workbook content blocks — measure + draw > list > checklist items carry NO text marker — a vector square is drawn instead 1`] = `
+{
+  "answerSpace": null,
+  "atomic": true,
+  "forceBreak": false,
+  "gutterPt": undefined,
+  "heightPt": 32,
+  "id": "blocks[0]",
+  "lineCount": undefined,
+  "lineNumbers": undefined,
+  "lineNumbersOnLines": undefined,
+  "nodeKinds": [
+    "list",
+  ],
+  "nodes": [
+    {
+      "heightPt": 32,
+      "kind": "list",
+      "markers": [
+        null,
+        null,
+      ],
+      "style": "checklist",
+      "widthPt": 504,
+    },
+  ],
+  "spacingClass": "body",
+}
+`;
+
+exports[`workbook content blocks — measure + draw > passage > cite mode renders ONLY the citation line, styled caption, no body 1`] = `
+{
+  "answerSpace": null,
+  "atomic": false,
+  "forceBreak": false,
+  "gutterPt": undefined,
+  "heightPt": 12,
+  "id": "blocks[0]#p0",
+  "lineCount": 1,
+  "lineNumbers": undefined,
+  "lineNumbersOnLines": [
+    undefined,
+  ],
+  "nodeKinds": undefined,
+  "nodes": undefined,
+  "spacingClass": "instruction",
+}
+`;
+
+exports[`workbook content blocks — measure + draw > passage > reprint mode measures a flowable body fragment plus a caption citation fragment 1`] = `
+[
+  {
+    "answerSpace": null,
+    "atomic": false,
+    "forceBreak": false,
+    "gutterPt": undefined,
+    "heightPt": 14.5,
+    "id": "blocks[0]#p0",
+    "lineCount": 1,
+    "lineNumbers": undefined,
+    "lineNumbersOnLines": [
+      undefined,
+    ],
+    "nodeKinds": undefined,
+    "nodes": undefined,
+    "spacingClass": "body",
+  },
+  {
+    "answerSpace": null,
+    "atomic": false,
+    "forceBreak": false,
+    "gutterPt": undefined,
+    "heightPt": 12,
+    "id": "blocks[0]#p1",
+    "lineCount": 1,
+    "lineNumbers": undefined,
+    "lineNumbersOnLines": [
+      undefined,
+    ],
+    "nodeKinds": undefined,
+    "nodes": undefined,
+    "spacingClass": "instruction",
+  },
+]
+`;
+
+exports[`workbook content blocks — measure + draw > spacer > reuses the answer_space {minPt,maxPt} fragment mechanics 1`] = `
+{
+  "answerSpace": {
+    "maxPt": 120,
+    "minPt": 40,
+  },
+  "atomic": true,
+  "forceBreak": false,
+  "gutterPt": undefined,
+  "heightPt": 40,
+  "id": "blocks[0]",
+  "lineCount": undefined,
+  "lineNumbers": undefined,
+  "lineNumbersOnLines": undefined,
+  "nodeKinds": [
+    "elasticSpace",
+  ],
+  "nodes": [
+    {
+      "heightPt": 40,
+      "kind": "elasticSpace",
+      "maxPt": 120,
+      "minPt": 40,
+      "widthPt": 504,
+    },
+  ],
+  "spacingClass": "body",
+}
+`;
