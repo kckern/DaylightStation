@@ -3,6 +3,10 @@ import { IssueDocument } from '#apps/school/usecases/IssueDocument.mjs';
 import { CurriculumAccess } from '#apps/school/CurriculumAccess.mjs';
 import { validateDocument } from '#domains/school/documents/documentValidation.mjs';
 import { isSchoolToken } from '#domains/school/sessions/tokens.mjs';
+import { DOCUMENT_SOURCE_SCHEMA } from '#domains/school/documents/documentSource.mjs';
+import { PublishPrintDocument } from '#apps/school/documents/PublishPrintDocument.mjs';
+import { RenderPrintDocument } from '#apps/school/documents/RenderPrintDocument.mjs';
+import { YamlAllocationStore } from '#adapters/school/documents/YamlAllocationStore.mjs';
 import {
   FakeCatalog, FakeSessionRepository, FakeTokenRegistry, FakeFormMapStore,
   FakeDocumentRenderer, FakeLaserPrinter,
@@ -262,5 +266,241 @@ describe('nothing to issue', () => {
     expect(result.status).toBe('already_done');
     expect(printer.jobs).toHaveLength(1);
     expect(sessions.derive(SID).errors).toEqual([]);
+  });
+});
+
+// ── Tracked quizzes: print/<id>@<rev> document references (spec §9, Task 7) ──
+//
+// A whole different setup from `build()` above: the print-document pipeline
+// (`RenderPrintDocument` + a real `YamlAllocationStore`, in-memory io — same
+// "exercise the real pipeline" convention `ResolveCardScan.test.mjs` uses,
+// not a hand-mocked renderer) is exercised end to end, against a lightweight
+// hand-rolled `curriculum` double rather than the real `CurriculumAccess` +
+// `FakeCatalog`: a unit whose `document` is `print/<id>@<rev>` cannot pass
+// `validateUnit`'s reference-set check today (that set is built from the
+// LEGACY document catalog only — widening it is out of this task's scope,
+// spec §9's own "curriculum units... gain a print-document reference" is
+// aspirational future wiring), so a real `CurriculumAccess` can never be
+// coaxed into serving one. `IssueDocument` only ever calls `curriculum.getUnit`/
+// `getDocument` — duck-typed, not `instanceof`-checked — so a minimal double
+// is a legitimate, isolated way to exercise this branch without touching
+// `CurriculumAccess`/`unitValidation.mjs`.
+describe('tracked quizzes (print/<id>@<rev> document references, spec §9)', () => {
+  const richText = (md) => ({ type: 'rich_text', md });
+  const mcQuestion = (itemId, number, { choices, answer } = {}) => ({
+    type: 'question', itemId, number, blocks: [richText(`Prompt for ${itemId}`)], choices, answer,
+  });
+  const sourceQuiz = (id, over = {}) => ({
+    schema: DOCUMENT_SOURCE_SCHEMA,
+    id,
+    seed: 12345,
+    variant: 0,
+    target: ['letter'],
+    archetype: 'quiz',
+    title: id,
+    blocks: [
+      mcQuestion('q1', 1, { choices: ['Alpha', 'Beta', 'Gamma'], answer: 'Alpha' }),
+      mcQuestion('q2', 2, { choices: ['Alpha', 'Beta', 'Gamma'], answer: 'Beta' }),
+    ],
+    ...over,
+  });
+
+  /** In-memory `YamlPrintDocumentRepository`-shaped fake (mirrors ResolveCardScan.test.mjs's own). */
+  function fakeRepository() {
+    const published = new Map();
+    const banks = new Map();
+    const latestRevById = new Map();
+    return {
+      async writePublished({ document, bank, rev }) {
+        const key = `${document.id}@${rev}`;
+        published.set(key, document);
+        if (bank) banks.set(key, bank);
+        latestRevById.set(document.id, rev);
+        return {
+          document: { written: true, alreadyPublished: false },
+          bank: bank ? { written: true, alreadyPublished: false } : null,
+        };
+      },
+      async getPublished(id, rev) {
+        const resolvedRev = rev ?? latestRevById.get(id);
+        if (!resolvedRev) return null;
+        return published.get(`${id}@${resolvedRev}`) ?? null;
+      },
+      async getDerivedBank(id, rev) {
+        return banks.get(`${id}@${rev}`) ?? null;
+      },
+    };
+  }
+
+  /**
+   * Fresh in-memory `YamlAllocationStore` — no filesystem. `rng` defaults to
+   * the platform RNG (not a fixed constant, unlike most fixtures in this
+   * file): a "reprint" issues a SECOND `freshCard` allocation against the
+   * SAME store within one test, and a constant draw would mint the identical
+   * 7-digit card id both times, making the second allocation collide with
+   * itself until `#generateFreshCardId`'s retry budget exhausts. No test here
+   * asserts a specific card id value, so real randomness costs nothing.
+   */
+  function fakeAllocationStore(over = {}) {
+    const map = new Map();
+    const io = {
+      load: (filePath) => (map.has(filePath) ? structuredClone(map.get(filePath)) : null),
+      save: (filePath, content) => { map.set(filePath, structuredClone(content)); },
+    };
+    return new YamlAllocationStore({
+      directory: '/docs', io, now: () => '2026-08-04T00:00:00.000Z', rng: Math.random, ...over,
+    });
+  }
+
+  const PRINT_UNIT = 'quiz-unit';
+  const QUIZ_DOC_ID = 'tracked-quiz-1';
+
+  let repository; let allocationStore; let renderPrintDocument;
+  let printClock; let printSessions; let printTokens; let printFormMaps; let printRenderer; let printPrinter;
+  let printRev; let printUseCase;
+  let curriculum;
+
+  /** Publishes the fixture quiz once and wires an IssueDocument whose curriculum resolves PRINT_UNIT to it. */
+  const buildPrintCase = async ({ configured = true } = {}) => {
+    repository = fakeRepository();
+    allocationStore = fakeAllocationStore();
+    renderPrintDocument = new RenderPrintDocument({ repository, allocationStore });
+
+    const publisher = new PublishPrintDocument({ repository });
+    const { rev } = await publisher.execute({ source: sourceQuiz(QUIZ_DOC_ID) });
+    printRev = rev;
+
+    curriculum = {
+      async getUnit(unitId) {
+        return unitId === PRINT_UNIT
+          ? { unitId: PRINT_UNIT, document: `print/${QUIZ_DOC_ID}@${rev}` }
+          : null;
+      },
+      // Never legitimately reached for a print-document unit — see the
+      // describe block's own header comment.
+      async getDocument() {
+        throw new Error('legacy curriculum.getDocument must not be called for a print-document unit');
+      },
+    };
+
+    printClock = fakeClock();
+    printSessions = new FakeSessionRepository();
+    printTokens = new FakeTokenRegistry();
+    printFormMaps = new FakeFormMapStore();
+    printRenderer = new FakeDocumentRenderer();
+    printPrinter = new FakeLaserPrinter();
+    let artifactSeq = 0;
+    printUseCase = new IssueDocument({
+      curriculum, sessions: printSessions, tokens: printTokens, renderer: printRenderer,
+      printer: printPrinter, formMaps: printFormMaps,
+      ...(configured ? { printDocuments: repository, renderPrintDocument, allocationStore } : {}),
+      clock: printClock.now, rng: seededRng(11),
+      newArtifactId: () => `art_${++artifactSeq}`,
+      logger: silentLogger,
+    });
+  };
+
+  const openPrintSession = async (sessionId = 'ses_print', unitId = PRINT_UNIT) => {
+    await printSessions.appendEvent(sessionId, {
+      type: 'created', at: printClock.iso(), sessionId, learnerId: 'kid1', unitId,
+    });
+    return sessionId;
+  };
+
+  beforeEach(() => buildPrintCase());
+
+  it('renders through RenderPrintDocument, prints, and records the issue', async () => {
+    const sid = await openPrintSession();
+    const result = await printUseCase.execute({ sessionId: sid });
+    expect(result).toMatchObject({ status: 'issued', artifactId: 'art_1', document: null, formMap: null });
+    expect(result.pageCount).toBeGreaterThan(0);
+    expect(printPrinter.jobs).toHaveLength(1);
+    expect(printPrinter.jobs[0].pdf.subarray(0, 5).toString('latin1')).toBe('%PDF-');
+    expect(printSessions.types(sid)).toEqual(['created', 'issued']);
+    expect(printSessions.derive(sid).issuedArtifacts).toEqual(['art_1']);
+  });
+
+  it('never touches the legacy curriculum.getDocument lookup', async () => {
+    const sid = await openPrintSession();
+    // curriculum.getDocument throws if called at all (see the fixture above) —
+    // a throw here would surface as a render_failed/thrown test, not silence.
+    await expect(printUseCase.execute({ sessionId: sid })).resolves.toMatchObject({ status: 'issued' });
+  });
+
+  it('writes a fresh card allocation record that scan-back can find', async () => {
+    const sid = await openPrintSession();
+    const result = await printUseCase.execute({ sessionId: sid });
+    expect(result.allocation).toMatchObject({ status: 'live' });
+    const records = await allocationStore.findByCard(result.allocation.cardId);
+    expect(records).toHaveLength(1);
+    expect(records[0]).toMatchObject({
+      recordId: result.allocation.recordId,
+      documentId: QUIZ_DOC_ID,
+      rev: printRev,
+      learnerId: 'kid1',
+      status: 'live',
+    });
+  });
+
+  it('writes the allocation record BEFORE the issue event (ordering, spied)', async () => {
+    const sid = await openPrintSession();
+    const order = [];
+    const originalAllocate = allocationStore.allocate.bind(allocationStore);
+    allocationStore.allocate = async (...args) => {
+      order.push('allocate');
+      return originalAllocate(...args);
+    };
+    const originalAppend = printSessions.appendEvent.bind(printSessions);
+    printSessions.appendEvent = async (...args) => {
+      order.push('appendEvent');
+      return originalAppend(...args);
+    };
+
+    await printUseCase.execute({ sessionId: sid });
+    expect(order).toEqual(['allocate', 'appendEvent']);
+  });
+
+  it('mints no scan_action/media_action tokens for a print-document quiz (none in the v2 envelope)', async () => {
+    const sid = await openPrintSession();
+    const result = await printUseCase.execute({ sessionId: sid });
+    expect(result.tokens).toEqual({});
+  });
+
+  it('a reprint reuses the ORIGINAL artifact id but still allocates a fresh physical card', async () => {
+    const sid = await openPrintSession();
+    const first = await printUseCase.execute({ sessionId: sid });
+    const second = await printUseCase.execute({ sessionId: sid });
+    expect(second).toMatchObject({ status: 'reprinted', artifactId: first.artifactId });
+    expect(printSessions.types(sid)).toEqual(['created', 'issued', 'reprinted']);
+    expect(printPrinter.jobs).toHaveLength(2);
+  });
+
+  it('degrades to unavailable (never throws) when the print-document deps are not configured', async () => {
+    await buildPrintCase({ configured: false });
+    const sid = await openPrintSession();
+    const result = await printUseCase.execute({ sessionId: sid });
+    expect(result.status).toBe('unavailable');
+    expect(printPrinter.jobs).toEqual([]);
+    expect(printSessions.types(sid)).toEqual(['created']);
+  });
+
+  it('explains a dangling print-document reference (published doc not found) instead of throwing', async () => {
+    curriculum.getUnit = async (unitId) => (unitId === PRINT_UNIT
+      ? { unitId: PRINT_UNIT, document: `print/${QUIZ_DOC_ID}@not-a-real-rev` }
+      : null);
+    const sid = await openPrintSession();
+    const result = await printUseCase.execute({ sessionId: sid });
+    expect(result.status).toBe('unavailable');
+    expect(printPrinter.jobs).toEqual([]);
+  });
+
+  it('a unit document that does not match print/<id>@<rev> falls through to legacy resolution (and fails cleanly with no legacy document)', async () => {
+    curriculum.getUnit = async (unitId) => (unitId === PRINT_UNIT
+      ? { unitId: PRINT_UNIT, document: 'not-a-print-ref' }
+      : null);
+    curriculum.getDocument = async () => null; // legacy lookup IS legitimately reached this time
+    const sid = await openPrintSession();
+    const result = await printUseCase.execute({ sessionId: sid });
+    expect(result.status).toBe('unavailable');
   });
 });

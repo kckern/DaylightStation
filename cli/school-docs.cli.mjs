@@ -42,6 +42,21 @@
  * hand-authored v2 file with no bank-bearing content renders a bare heading
  * and surfaces a warning (`RenderPrintDocument`'s own "no answerable items"
  * warning), never a hard failure.
+ *
+ * `render --card <id>|--fresh-card [--start-row <n>]` (Task 7, spec §5.3/§5.4/
+ * §9/§10) attaches the render to a physical OMR card via a `YamlAllocationStore`
+ * rooted at the SAME content root — `<content-root>/allocations/<cardId>.yml`,
+ * `YamlAllocationStore`'s own convention. Only a PUBLISHED document (one
+ * carrying `rev`) can attach to a card (`RenderPrintDocument`'s own
+ * `ALLOCATION_REQUIRES_REV`); the store is constructed only when one of these
+ * flags is present, so a plain proof render never touches the allocations
+ * directory. The allocation result (`{cardId, rowRange, recordId, status}`)
+ * prints alongside `{pages, density}` on success.
+ *
+ * `release-card <cardId> [--rows a-b]` (Task 7, spec §5.4) is allocation
+ * lifecycle housekeeping — `YamlAllocationStore#release`, against the same
+ * content-root-rooted store `render`'s card flags use. Prints the records it
+ * released (empty array when nothing was `live`).
  */
 import fs from 'node:fs';
 import path from 'node:path';
@@ -53,6 +68,7 @@ import { DOCUMENT_SOURCE_SCHEMA } from '#domains/school/documents/documentSource
 import { RenderPrintDocument, createYamlBankReader } from '#apps/school/documents/RenderPrintDocument.mjs';
 import { PublishPrintDocument } from '#apps/school/documents/PublishPrintDocument.mjs';
 import { YamlPrintDocumentRepository } from '#adapters/school/documents/YamlPrintDocumentRepository.mjs';
+import { YamlAllocationStore } from '#adapters/school/documents/YamlAllocationStore.mjs';
 
 const EXIT_OK = 0;
 const EXIT_FAIL = 1;
@@ -74,7 +90,11 @@ const RENDER_FLAGS = new Set([
   'density',
   'creation-date',
   'teacher',
+  'card',
+  'start-row',
+  'fresh-card',
 ]);
+const RELEASE_CARD_FLAGS = new Set([...COMMON_FLAGS, 'rows']);
 
 const HELP = `school-docs — validate and proof-render School print-document source YAML
 
@@ -82,6 +102,7 @@ Usage:
   school-docs.cli.mjs validate <file|dir> [options]
   school-docs.cli.mjs publish <file> [options]
   school-docs.cli.mjs render <file> --out <pdf> [options]
+  school-docs.cli.mjs release-card <cardId> [options]
 
 Commands:
   validate <file|dir>   parse + validateAnyDocument (v1 or v2); directory form
@@ -90,6 +111,8 @@ Commands:
                          published document + derived question bank, written
                          under the content root (append-only per revision).
   render <file>          run the real fit/render pipeline and write a PDF.
+  release-card <cardId>  release live allocation records on a physical card
+                         (whole card, or just the rows named by --rows).
 
 Options:
   --data-dir <path>      data root (default: $DAYLIGHT_BASE_PATH/data)
@@ -105,10 +128,18 @@ Options:
                          this never changes the output
   --teacher              (render) teacher-key mode: same student pages, plus
                          an appended dense answer-key section (v2/source only)
+  --card <cardId>        (render) attach to an existing physical card (reprint/
+                         continuation) — requires a PUBLISHED document (rev)
+  --fresh-card           (render) mint a brand-new physical card allocation —
+                         mutually exclusive with --card
+  --start-row <n>        (render) first physical row to allocate (default 1);
+                         only meaningful alongside --card or --fresh-card
+  --rows <a-b>            (release-card) release only rows a..b (inclusive);
+                         omitted releases every live record on the card
   --help, -h             show this message
 
 <file|dir>/<file> resolve relative to the content root when not absolute.
-Exit codes: 0 ok, 1 validation/fit/publish failure, 2 usage error.
+Exit codes: 0 ok, 1 validation/fit/publish/release failure, 2 usage error.
 `;
 
 function valueFlag(value, name) {
@@ -145,6 +176,18 @@ export function resolveSchoolDocsContentPaths({ flags = {}, env = process.env } 
 /** A bare positional arg resolves relative to the content root; absolute paths pass through. */
 function resolveContentPath(paths, value) {
   return path.isAbsolute(value) ? path.resolve(value) : path.resolve(paths.contentRoot, value);
+}
+
+/** `--rows a-b` (release-card, Task 7) -> `{start, end}` or a usage error message; absent -> `{rows: null}` (whole card). */
+function parseRowRangeFlag(value, name) {
+  if (value === undefined) return { rows: null, error: null };
+  if (value === true || typeof value !== 'string') return { rows: null, error: `${name} needs a value` };
+  const match = /^(\d+)-(\d+)$/.exec(value.trim());
+  if (!match) return { rows: null, error: `${name} must be formatted as a-b (e.g. 5-12)` };
+  const start = Number(match[1]);
+  const end = Number(match[2]);
+  if (start < 1 || end < start) return { rows: null, error: `${name} must satisfy 1 <= start <= end` };
+  return { rows: { start, end }, error: null };
 }
 
 function loadYamlDocument(filePath) {
@@ -217,7 +260,19 @@ function overridesContext(flags) {
   // docstring. Usage-validated (must be a bare flag, no value) before this
   // ever runs — see `runSchoolDocs`'s render branch.
   if (flags.teacher === true) context.teacher = true;
+  // Card attachment (Task 7, spec §5.3): shape/exclusivity already validated
+  // by `runSchoolDocs`'s render branch before this runs — `--card`/
+  // `--fresh-card` are mutually exclusive, `--start-row` parses as a positive
+  // integer when present.
+  if (flags.card !== undefined) context.cardId = flags.card;
+  if (flags['fresh-card'] === true) context.freshCard = true;
+  if (flags['start-row'] !== undefined) context.startRow = Number(flags['start-row']);
   return context;
+}
+
+/** `true` when the render context asked to attach to a card (--card or --fresh-card). */
+function wantsCardContext(flags) {
+  return flags.card !== undefined || flags['fresh-card'] === true;
 }
 
 /**
@@ -254,7 +309,8 @@ function proofingFlagWarnings(raw, flags) {
 /**
  * @param {{filePath: string, outPath: string, flags: object, paths: {contentRoot: string}}} args
  * @returns {Promise<{ok: boolean, mode: 'render', file: string, out: string,
- *   pages: number|null, density: string|null, warnings: string[], errors: string[]}>}
+ *   pages: number|null, density: string|null, allocation: object|null,
+ *   warnings: string[], errors: string[]}>}
  */
 export async function runRender({
   filePath, outPath, flags, paths,
@@ -270,6 +326,7 @@ export async function runRender({
       out: outPath,
       pages: null,
       density: null,
+      allocation: null,
       warnings: [],
       errors: [`YAML parse error: ${error.message}`],
     };
@@ -291,7 +348,16 @@ export async function runRender({
   // rendered with `--data-dir <custom>` would resolve its bank against the
   // WRONG root (or find nothing) whenever that env var differs from the flag.
   const banks = createYamlBankReader({ dataDir: paths.dataDir });
-  const useCase = new RenderPrintDocument({ repository, banks });
+  // Allocation store (Task 7, spec §5.3/§5.4): constructed ONLY when the
+  // caller actually asked to attach to a card (`--card`/`--fresh-card`) — a
+  // plain proof render never touches the allocations directory. Rooted at
+  // the SAME content root as `repository` above, mirroring
+  // `YamlAllocationStore`'s own directory convention (siblings of
+  // `published/`/`derived-banks/`).
+  const allocationStore = wantsCardContext(flags)
+    ? new YamlAllocationStore({ directory: paths.contentRoot })
+    : null;
+  const useCase = new RenderPrintDocument({ repository, banks, allocationStore });
 
   try {
     const result = await useCase.execute({ document, context: overridesContext(flags) });
@@ -304,6 +370,7 @@ export async function runRender({
       out: outPath,
       pages: result.pageCount,
       density: result.density,
+      allocation: result.allocation ?? null,
       warnings: [...extraWarnings, ...result.warnings],
       errors: [],
     };
@@ -319,8 +386,33 @@ export async function runRender({
       out: outPath,
       pages: null,
       density: null,
+      allocation: null,
       warnings: extraWarnings,
       errors: [message],
+    };
+  }
+}
+
+/**
+ * `release-card <cardId> [--rows a-b]` (Task 7, spec §5.4): allocation
+ * lifecycle housekeeping against a `YamlAllocationStore` rooted at the SAME
+ * content root `render`'s card flags use. Never touches the print-document
+ * repository — cards are pure allocation-store state.
+ *
+ * @param {{cardId: string, rows: {start: number, end: number}|null, paths: {contentRoot: string}}} args
+ * @returns {Promise<{ok: boolean, mode: 'release-card', cardId: string,
+ *   rows: {start: number, end: number}|null, released: object[], errors: string[]}>}
+ */
+export async function runReleaseCard({ cardId, rows, paths }) {
+  const allocationStore = new YamlAllocationStore({ directory: paths.contentRoot });
+  try {
+    const released = await allocationStore.release({ cardId, rows: rows ?? undefined });
+    return {
+      ok: true, mode: 'release-card', cardId, rows, released, errors: [],
+    };
+  } catch (error) {
+    return {
+      ok: false, mode: 'release-card', cardId, rows, released: [], errors: [error?.message ?? String(error)],
     };
   }
 }
@@ -402,12 +494,13 @@ export async function runSchoolDocs(argv = [], deps = {}) {
     };
   }
 
-  if (subcommand !== 'validate' && subcommand !== 'publish' && subcommand !== 'render') {
+  const KNOWN_COMMANDS = new Set(['validate', 'publish', 'render', 'release-card']);
+  if (!KNOWN_COMMANDS.has(subcommand)) {
     return usageResult([`Unknown command: ${subcommand}`]);
   }
 
   const allowedFlags = {
-    validate: VALIDATE_FLAGS, publish: PUBLISH_FLAGS, render: RENDER_FLAGS,
+    validate: VALIDATE_FLAGS, publish: PUBLISH_FLAGS, render: RENDER_FLAGS, 'release-card': RELEASE_CARD_FLAGS,
   }[subcommand];
   const unknown = Object.keys(flags).filter((flag) => !allowedFlags.has(flag));
   if (unknown.length) {
@@ -438,6 +531,16 @@ export async function runSchoolDocs(argv = [], deps = {}) {
     return { exitCode: report.ok ? EXIT_OK : EXIT_FAIL, report };
   }
 
+  if (subcommand === 'release-card') {
+    if (positional.length !== 1) {
+      return usageResult(['release-card requires exactly one <cardId> argument']);
+    }
+    const { rows, error: rowsError } = parseRowRangeFlag(flags.rows, '--rows');
+    if (rowsError) return usageResult([rowsError]);
+    const report = await runReleaseCard({ cardId: positional[0], rows, paths });
+    return { exitCode: report.ok ? EXIT_OK : EXIT_FAIL, report };
+  }
+
   // render
   if (positional.length !== 1) {
     return usageResult(['render requires exactly one <file> argument']);
@@ -463,6 +566,29 @@ export async function runSchoolDocs(argv = [], deps = {}) {
   // `--teacher` is a bare mode flag (no value) — see the module docstring.
   if (flags.teacher !== undefined && flags.teacher !== true) {
     return usageResult(['--teacher does not take a value']);
+  }
+  // Card attachment (Task 7, spec §5.3): `--card` needs a value, `--fresh-card`
+  // is a bare mode flag (mirrors `--teacher`), the two are mutually exclusive
+  // (one physical card per render — supplying both is an ambiguous request,
+  // never silently resolved by picking one), and `--start-row` only means
+  // anything alongside one of them.
+  if (flags.card === true) {
+    return usageResult(['--card needs a value']);
+  }
+  if (flags['fresh-card'] !== undefined && flags['fresh-card'] !== true) {
+    return usageResult(['--fresh-card does not take a value']);
+  }
+  if (flags.card !== undefined && flags['fresh-card'] === true) {
+    return usageResult(['--card and --fresh-card are mutually exclusive']);
+  }
+  if (flags['start-row'] !== undefined) {
+    if (!wantsCardContext(flags)) {
+      return usageResult(['--start-row requires --card or --fresh-card']);
+    }
+    const raw = flags['start-row'];
+    if (raw === true || !/^\d+$/.test(raw) || Number(raw) < 1) {
+      return usageResult(['--start-row must be a positive integer']);
+    }
   }
 
   const filePath = resolveContentPath(paths, positional[0]);
@@ -500,7 +626,12 @@ export function formatSchoolDocsReport(report) {
 
   if (report.mode === 'render') {
     if (report.ok) {
-      const lines = [JSON.stringify({ pages: report.pages, density: report.density })];
+      // `allocation` only when the render actually attached to a card
+      // (`--card`/`--fresh-card`) — a plain proof render's output stays
+      // exactly what it always was.
+      const payload = { pages: report.pages, density: report.density };
+      if (report.allocation) payload.allocation = report.allocation;
+      const lines = [JSON.stringify(payload)];
       if (report.warnings.length) {
         lines.push('', 'Warnings');
         report.warnings.forEach((warning) => lines.push(`  - ${warning}`));
@@ -512,6 +643,14 @@ export function formatSchoolDocsReport(report) {
       lines.push('', 'Warnings');
       report.warnings.forEach((warning) => lines.push(`  - ${warning}`));
     }
+    return `${lines.join('\n')}\n`;
+  }
+
+  if (report.mode === 'release-card') {
+    if (report.ok) {
+      return `${JSON.stringify({ cardId: report.cardId, rows: report.rows, released: report.released })}\n`;
+    }
+    const lines = ['FAILED', ...report.errors.map((error) => `  - ${error}`)];
     return `${lines.join('\n')}\n`;
   }
 

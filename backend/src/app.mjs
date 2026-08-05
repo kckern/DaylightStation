@@ -2834,6 +2834,35 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     schoolLifecycleLogger.error('school.lifecycle.wiring-failed', { error: err.message });
   }
 
+  // Print-document scan-back (Task 7, spec §9): ResolveCardScan joins the
+  // SAME decoded-scan stream createQuizScanRecorder (wired much earlier,
+  // above) already persists — see schoolPrintScanConsumer.mjs's own header.
+  // Reuses schoolLifecycle's OWN allocationStore/printDocuments repository
+  // instances (not fresh ones) so a live scan resolves against exactly what
+  // IssueDocument's tracked-quiz path just wrote — two YamlAllocationStore
+  // instances pointed at the same directory would each serialize their OWN
+  // writes but not against each other, a real read-modify-write race this
+  // avoids by construction. Wired only once the lifecycle itself is (no
+  // lifecycle, no allocationStore/repository to resolve against either).
+  if (schoolLifecycle.wired && schoolLifecycle.stores?.allocationStore && schoolLifecycle.stores?.printDocuments) {
+    try {
+      const { createSchoolPrintScanConsumer } = await import('#composition/modules/schoolPrintScanConsumer.mjs');
+      const { ResolveCardScan } = await import('#apps/school/documents/ResolveCardScan.mjs');
+      const resolveCardScan = new ResolveCardScan({
+        allocationStore: schoolLifecycle.stores.allocationStore,
+        repository: schoolLifecycle.stores.printDocuments,
+      });
+      createSchoolPrintScanConsumer({
+        eventBus,
+        config: omrReadersConfig,
+        resolveCardScan,
+        logger: rootLogger.child({ module: 'school-print-scan' }),
+      });
+    } catch (err) {
+      schoolLifecycleLogger.error('school.print.scan-consumer-wiring-failed', { error: err.message });
+    }
+  }
+
   const getSchoolReport = new GetSchoolReport({
     // The lifecycle reporter is filtered out by GetSchoolReport itself when it
     // is null, so an unwired console simply does not appear on the board.
