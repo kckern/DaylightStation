@@ -307,27 +307,56 @@ export class RenderPrintDocument {
    * TOP LEVEL — the only place a `question` can occur (`blocks.mjs` bans
    * nesting one inside another `question` or inside an `inset`) — into
    * concrete, numbered `question` blocks, and shuffles wordbank/matching
-   * order. Returns the transformed document plus the bank items the
-   * selections resolved (for `mergeBank` to fold into the render's bank).
+   * order. Returns the transformed document, the bank items the selections
+   * resolved (for `mergeBank`), and any warnings (currently: a supplied but
+   * unapplied bank-select `filter`).
+   *
+   * NUMBERING (task-5 review, finding 1): printed numbers are assigned
+   * STRICTLY POSITIONALLY, walking `blocks` in document order, across BOTH
+   * hand-authored questions and bank-select-expanded ones. A "keep the
+   * author's own `number`, mint bank-select numbers from a running max"
+   * scheme (the original implementation) prints bank-select items ahead of a
+   * LATER-numbered-but-EARLIER-printed hand-authored question whenever a
+   * bank-select block sits before one in the document — e.g. a bank-select
+   * block first, a hand-authored `number: 1` question second, prints "2.
+   * <bank item>" THEN "1. <hand-authored>", visibly out of order. Spec §5.3
+   * treats printed numbers as future Phase C card-row identifiers, so
+   * contiguous positional numbering is the one scheme that can't drift; an
+   * author's own `number` field is authoring intent only — nothing else
+   * (bank/grading lookups) reads it, those key off `itemId`.
    */
   #prepareV2Document(document) {
     const blocks = Array.isArray(document.blocks) ? document.blocks : [];
 
-    // Numbering continues from the highest number a HAND-AUTHORED inline
-    // question already uses, in whatever order the author wrote them —
-    // inline questions keep their own author-assigned numbers untouched;
-    // only bank-selected items get freshly minted ones.
-    let nextNumber = blocks.reduce((max, block) => (
-      block?.type === 'question' && block.select === undefined && Number.isInteger(block.number)
-        ? Math.max(max, block.number) : max
-    ), 0) + 1;
+    let nextNumber = 1;
     const seenItemIds = new Set(blocks
       .filter((block) => block?.type === 'question' && block.select === undefined && typeof block.itemId === 'string')
       .map((block) => block.itemId));
     const extraItems = [];
+    const warnings = [];
 
     const expandedBlocks = blocks.flatMap((block) => {
-      if (!block || block.type !== 'question' || block.select === undefined) return [block];
+      if (!block || block.type !== 'question') return [block];
+
+      if (block.select === undefined) {
+        const number = nextNumber;
+        nextNumber += 1;
+        return [{ ...block, number }];
+      }
+
+      if (block.filter !== undefined) {
+        // Finding 2 (task-5 review): a supplied-but-ignored option must warn,
+        // never fail silently — this project has already been burned twice
+        // by exactly that pattern. `filter` is validated upstream
+        // (`blocks.mjs`) but not yet applied by this v1 picker; the spec
+        // frames it as scaffolding for "the v2 adaptive hook", which
+        // replaces the PICKER function, not the schema (spec §6.2).
+        warnings.push(
+          `bank-select question (key '${block.key}') supplies filter but it is not applied in Phase B; `
+          + 'selection is unfiltered',
+        );
+      }
+
       const selected = this.#resolveBankSelect(block, document);
       return selected.map((item) => {
         if (!BANK_SELECT_RENDERABLE_TYPES.has(item.type)) {
@@ -358,19 +387,17 @@ export class RenderPrintDocument {
     });
 
     const shuffledBlocks = shuffleAssessmentBlocks(expandedBlocks, document.seed, document.variant);
-    return { document: { ...document, blocks: shuffledBlocks }, extraItems };
+    return {
+      document: { ...document, blocks: shuffledBlocks }, extraItems, warnings,
+    };
   }
 
   /**
    * `{bankId, select, key, filter?}` -> the first `select` items of
    * `applyShuffle(bank.items, deriveShuffle(seed, variant, key, bank.items.length))`
-   * (spec §6.2's exact resolution formula). `filter` is validated upstream
-   * (`blocks.mjs`) but not yet applied by this v1 picker — the spec frames it
-   * as scaffolding for "the v2 adaptive hook", which replaces the PICKER
-   * function, not the schema (spec §6.2); a `filter` present on a document is
-   * therefore accepted and currently a no-op, same "accepted but no effect
-   * yet" posture `school-docs.cli.mjs` already uses for its own
-   * not-yet-wired proofing flags.
+   * (spec §6.2's exact resolution formula). `filter` itself is handled by the
+   * caller (`#prepareV2Document`, which warns when it is present) — this
+   * method only resolves the selection.
    */
   #resolveBankSelect(block, document) {
     const bank = this.#banks?.getBank ? this.#banks.getBank(block.bankId) : null;
@@ -398,7 +425,7 @@ export class RenderPrintDocument {
 
   /** v2: fit loop, then one furniture-aware render at the chosen density. */
   async #renderV2(rawDocument, context, { bank: baseBank = null } = {}) {
-    const { document, extraItems } = this.#prepareV2Document(rawDocument);
+    const { document, extraItems, warnings: prepareWarnings } = this.#prepareV2Document(rawDocument);
     const totalPoints = sumScoredPoints(document.blocks, document.defaultPoints);
     const bank = mergeBank(baseBank, extraItems, document.id);
 
@@ -454,7 +481,7 @@ export class RenderPrintDocument {
       totalPoints,
     });
 
-    const warnings = [];
+    const warnings = [...prepareWarnings];
     if (chosen.density === 'compact') {
       warnings.push(`fit.policy 'one-page' required compact density to fit '${document.id}' on one page`);
     }
