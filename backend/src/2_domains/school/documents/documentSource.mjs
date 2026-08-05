@@ -324,8 +324,20 @@ function publishQuestion(block, at, items, promptsByItemId, recurse) {
       prompt: mintedQuestionPrompt(block.itemId, promptsByItemId),
       choices: block.choices,
       answers: block.answers,
+      // `maxSelect` (F2, review finding): threaded onto the minted item so
+      // (a) `validateQuestionBank`'s coherence check (answers.length <=
+      // maxSelect <= choices.length) actually runs as a publish postcondition
+      // for an INLINE multi_select question, not just a bank-select one, and
+      // (b) `createChoiceResolver` (DocumentPdfRenderer.mjs) can print the
+      // real "Choose up to N." instruction instead of always falling back to
+      // "Mark all that apply." — before this, an inline question's own
+      // `maxSelect` silently survived onto the (harmless, unread) PUBLISHED
+      // block but never reached the bank item either check or that
+      // instruction line ever actually looked at.
+      ...(block.maxSelect !== undefined ? { maxSelect: block.maxSelect } : {}),
     });
     delete published.answers;
+    delete published.maxSelect;
   } else if (block.answer !== undefined) {
     const item = block.choices !== undefined
       ? { id: block.itemId, type: 'multiple_choice', prompt: mintedQuestionPrompt(block.itemId, promptsByItemId), choices: block.choices, answer: block.answer }
