@@ -130,6 +130,62 @@ describe('placeFragments — keep-together', () => {
   });
 });
 
+// F4 (review finding): short_answer/essay's prompt fragment must never
+// strand on one page while its own write-space fragment lands on the next
+// (measure.mjs tags the prompt with `stickToNextId: <space fragment id>`).
+describe('placeFragments — keep-with-next (stickToNextId)', () => {
+  it('moves the prompt WITH its write-space when the space alone would not fit after it', () => {
+    // 130pt of room: the 20pt prompt fits easily, but the 40pt space that
+    // must immediately follow it would not (130 - 20 - 6(gap) = 104pt is
+    // plenty for JUST the space — pick a filler so only ~10pt remains).
+    const result = placeFragments(
+      [
+        frag('filler', 130),
+        frag('prompt', 20, { stickToNextId: 'space' }),
+        frag('space', 40, { atomic: true }),
+      ],
+      page,
+    );
+    expect(idsOf(result)).toEqual([['filler'], ['prompt', 'space']]);
+    expect(find(result, 1, 'prompt').yPt).toBe(20);
+  });
+
+  it('keeps the prompt on the SAME page as its space when both fit together (no behavior change in the common case)', () => {
+    const result = placeFragments(
+      [frag('prompt', 20, { stickToNextId: 'space' }), frag('space', 40, { atomic: true })],
+      page,
+    );
+    expect(idsOf(result)).toEqual([['prompt', 'space']]);
+  });
+
+  it('does not apply the stick rule on an empty page — a combo too big to share a page still places the prompt normally rather than looping', () => {
+    // 'prompt' is the first (page-empty) fragment, so the rule is skipped and
+    // it places at the top of page 1; 'space' (150pt) does not fit after it
+    // (134pt left) but fits a FRESH empty page (160pt usable) on its own —
+    // the same outcome a plain fragment pair with no stick affinity gets.
+    const result = placeFragments(
+      [frag('prompt', 20, { stickToNextId: 'space' }), frag('space', 150, { atomic: true })],
+      page,
+    );
+    expect(idsOf(result)).toEqual([['prompt'], ['space']]);
+  });
+
+  it('is a no-op when the very next fragment is not the named partner', () => {
+    const result = placeFragments(
+      [
+        frag('filler', 130),
+        frag('prompt', 20, { stickToNextId: 'space' }),
+        frag('unrelated', 5),
+        frag('space', 40, { atomic: true }),
+      ],
+      page,
+    );
+    // 'prompt' still fits (130+6+20=156 of 160); its named partner is NOT
+    // next in the queue ('unrelated' is), so it places normally.
+    expect(find(result, 0, 'prompt')).toBeTruthy();
+  });
+});
+
 describe('placeFragments — widow and orphan control', () => {
   const paragraph = (id, lineCount, lineHeight = 10, extra = {}) =>
     frag(id, lineCount * lineHeight, { lines: lines(lineCount, lineHeight), ...extra });

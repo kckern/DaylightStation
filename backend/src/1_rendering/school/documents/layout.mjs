@@ -8,7 +8,14 @@
  * A fragment:
  *   { id, blocks, heightPt, atomic, spacingClass,
  *     lines?: [{ heightPt }], minLinesBeforeBreak?, minLinesAfterBreak?,
- *     answerSpace?: { minPt, maxPt } }
+ *     answerSpace?: { minPt, maxPt }, stickToNextId?: string }
+ *
+ * `stickToNextId` (F4, review finding) is keep-with-next affinity: when set,
+ * this fragment refuses to place on a page unless the fragment immediately
+ * following it in the queue (matched by `id`) ALSO fits right after it on
+ * that same page — otherwise both move to the next page together. Used by
+ * short_answer/essay's prompt fragment so it can never strand on one page
+ * while its own write-space fragment lands on the next.
  *
  * Placement errors (an atomic taller than a page, a contradictory answer space)
  * are returned, not thrown: publish-time validation consumes them so a document
@@ -245,6 +252,31 @@ export function placeFragments(fragments, { pageHeightPt, marginPt, spacing = {}
     const availablePt = contentBottomPt - cursor - gapPt;
 
     if (fragment.heightPt <= availablePt + EPSILON) {
+      // Keep-with-next (F4, review finding): a fragment tagged `stickToNextId`
+      // (short_answer/essay's prompt, measure.mjs) must never be stranded on
+      // this page while the fragment it names — its own write-space, which
+      // `queue[0]` always is, since the two are built and queued back-to-back
+      // — gets bumped whole to the next one. Only relevant when THIS fragment
+      // fits on its own (the branch we're already in); if it didn't fit, it
+      // falls through to the normal split/move-whole handling below and its
+      // partner tags along right after it on whichever page it lands on.
+      // Skipped on an empty page: there is no earlier page to defer to, and
+      // forcing a restart here would either loop forever (nothing fits
+      // anywhere) or just delay the identical decision this same fragment
+      // faces again immediately, now with pageIsEmpty true.
+      if (fragment.stickToNextId && !pageIsEmpty) {
+        const partner = queue[0];
+        if (partner && partner.id === fragment.stickToNextId) {
+          const cursorAfterFragment = cursor + gapPt + fragment.heightPt;
+          const gapToPartner = gapBetween(spacing, fragment.spacingClass, partner.spacingClass);
+          const partnerAvailablePt = contentBottomPt - cursorAfterFragment - gapToPartner;
+          if (partner.heightPt > partnerAvailablePt + EPSILON) {
+            queue.unshift(fragment);
+            startNewPage();
+            continue;
+          }
+        }
+      }
       fragment.yPt = cursor + gapPt;
       cursor = fragment.yPt + fragment.heightPt;
       previousClass = fragment.spacingClass;

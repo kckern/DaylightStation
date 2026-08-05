@@ -245,6 +245,11 @@ describe('workbook assessment blocks — measure + draw', () => {
       const expectedMinPt = theme.answerSpace.padAbovePt + theme.shortAnswer.defaultLines * theme.answerSpace.rulePitchPt;
       expect(spaceFragment.nodes[0].minPt).toBeCloseTo(expectedMinPt, 5);
       expect(spaceFragment.nodes[0].maxPt).toBeCloseTo(expectedMinPt, 5);
+      // F4 (review finding): the prompt fragment carries keep-with-next
+      // affinity to its own write-space fragment (layout.mjs's
+      // `stickToNextId`) — see layout.test.mjs for the placement-level proof
+      // that this actually stops the two from stranding across a page break.
+      expect(promptFragment.stickToNextId).toBe(spaceFragment.id);
       expect([promptFragment, spaceFragment].map(summarizeFragment)).toMatchSnapshot();
     });
 
@@ -276,6 +281,10 @@ describe('workbook assessment blocks — measure + draw', () => {
       expect(boxNode.childNodes).toEqual([]);
       expect(boxNode.heightPt).toBe(theme.essay.boxHeightPt);
       expect(boxNode.radiusPt).toBe(theme.box.radiusPt);
+      // F4: the box variant gets the SAME keep-with-next affinity as the
+      // ruled-lines variant above — a prompt must not strand from an open
+      // answer box any more than from ruled lines.
+      expect(promptFragment.stickToNextId).toBe(boxFragment.id);
       expect([promptFragment, boxFragment].map(summarizeFragment)).toMatchSnapshot();
     });
 
