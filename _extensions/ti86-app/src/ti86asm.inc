@@ -8,7 +8,6 @@ _asm_exec_ram:  equ $D748
 _idle:           equ $405C
 _apdSetup:       equ $4060
 _clrLCD:        equ $4A7E
-_get_key:       equ $4068
 _JforceCmdNoChar: equ $409C
 _memchk:        equ $46BB
 _runindicoff:   equ $4AB1
@@ -26,9 +25,15 @@ _exec_assembly: equ $5730
 _plotSScreen:   equ $C9FA
 VideoRam:       equ $FC00
 
-; Raw _get_key/_GetCSC scan codes. These are deliberately named SC_SCAN_ to
-; prevent accidental mixing with the translated k* codes returned by the
-; blocking _getkey routine at $55AA.
+; TI-86 hardware contrast. The operating system preserves its current level
+; at $C008 and writes that byte (0..31) to the write-only contrast port. Use
+; the OS-owned level rather than a runtime-local shadow so 2nd+Up/Down stays
+; consistent across SchoolCalc's separately loaded assembly modules.
+SC_OS_CONTRAST:    equ $C008
+SC_CONTRAST_PORT:  equ $02
+SC_CONTRAST_MAX:   equ $1F
+
+; Raw event values emitted by SchoolCalc's shared input boundary.
 SC_SCAN_NONE:   equ $00
 SC_SCAN_DOWN:   equ $01
 SC_SCAN_LEFT:   equ $02
@@ -47,6 +52,7 @@ SC_SCAN_EXIT:   equ $37
 SC_SCAN_MORE:   equ $38
 
 ; The ON interrupt flag is maintained by TI-OS's interrupt handler. Input code
-; checks it independently of _get_key so ON remains an emergency escape.
+; checks it independently of the direct keypad scan so ON remains an emergency
+; escape.
 SC_ON_FLAGS:     equ 9
 SC_ON_INTERRUPT: equ 4

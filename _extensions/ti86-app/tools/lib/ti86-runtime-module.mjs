@@ -7,6 +7,7 @@ import {
 import { TI86_SCHOOLCALC_LIMITS } from '../../../../backend/src/1_adapters/schoolcalc/ti86/Ti86SchoolCalcLimits.mjs';
 import {
   TI86_ASM_EXEC_RAM,
+  TI86_VIDEO_RAM,
   verifyTi86Program,
 } from './ti86-program.mjs';
 
@@ -15,8 +16,9 @@ export const TI86_RUNTIME_ABI_VERSION = 1;
 export const TI86_RUNTIME_HEADER_BYTES = 16;
 export const TI86_RUNTIME_EXECUTOR_HEADER_BYTES = 21;
 // Absolute SCX1 inspection ceiling. Individual registry entries retain their
-// tighter per-runtime budgets; only the tutor currently uses the 9 KiB window.
-export const TI86_RUNTIME_MAX_CODE_BYTES = TI86_SCHOOLCALC_LIMITS.shellMaxBytes;
+// tighter per-runtime budgets. It is the physical $D748..$FBFF execution
+// window, not the shell's deliberately smaller 9 KiB product allocation.
+export const TI86_RUNTIME_MAX_CODE_BYTES = TI86_VIDEO_RAM - TI86_ASM_EXEC_RAM;
 
 export const TI86_RUNTIME_MODULES = Object.freeze({
   standardLearning: Object.freeze({

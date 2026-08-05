@@ -260,6 +260,7 @@ import { GetLearningProgress } from './3_applications/school/GetLearningProgress
 import { GetInstructionalInsights } from './3_applications/school/GetInstructionalInsights.mjs';
 import { RecordLearningReflection } from './3_applications/school/RecordLearningReflection.mjs';
 import { OpenCatalogLearningSession } from './3_applications/school/OpenCatalogLearningSession.mjs';
+import { IssueSchoolContinuationCode } from './3_applications/school/IssueSchoolContinuationCode.mjs';
 import { AssessmentReviewFollowUpSource } from './3_applications/school/AssessmentReviewFollowUpSource.mjs';
 import {
   ConfiguredAcademicPeriodSource,
@@ -2250,6 +2251,19 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   const openCatalogLearningSession = schoolCatalog.query
     ? new OpenCatalogLearningSession({ catalog: schoolCatalog.query, grader: schoolService })
     : null;
+  // Six-digit codes have to remain valid after ordinary roster edits.  Their
+  // explicitly configured slots are therefore a School-wide publication
+  // policy, never a device-discovered or array-order-derived implementation
+  // detail.
+  const continuationSlots = schoolFullConfig.schoolcalc?.continuation?.learner_slots;
+  let issueContinuationCode = null;
+  try {
+    issueContinuationCode = new IssueSchoolContinuationCode({
+      learners: schoolLearnerDirectory, learnerSlots: continuationSlots,
+    });
+  } catch (error) {
+    rootLogger.child({ module: 'school-continuation' }).warn?.('school.continuation.unwired', { error: error.message });
+  }
   // Optional calculator-native School product. The composition module is the
   // only place that joins calculator-family adapters, SchoolCalc application
   // use cases, persistence, relay credentials, and the thin HTTP router.
@@ -2870,6 +2884,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     getLearningProgress,
     getInstructionalInsights,
     learningCatalog: schoolCatalog.query,
+    issueContinuationCode,
     openCatalogLearningSession,
     recordLearningReflection,
     recordLearningProbeInteraction: schoolLearningLoop.probeInteractions,

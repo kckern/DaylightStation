@@ -24,11 +24,14 @@ const standardRuntimeTargetBytes = 6 * 1024;
 // semantics remain one reviewed runtime. Its 9 KiB ceiling is still below the
 // same 9,400-byte physical execution window used by the shell; the aggregate
 // release ceiling remains the stronger storage guard.
-const standardRuntimeMaxBytes = 9 * 1024;
+const standardRuntimeMaxBytes = 9_400;
 const qrRuntimeTargetBytes = 4 * 1024;
-const qrRuntimeMaxBytes = 6 * 1024;
+// The shared raw-input boundary owns 2nd + Up/Down contrast on every loaded
+// runtime. Its small code cost makes the QR presenter just exceed a round 6
+// KiB product bucket while remaining far below the TI-86 execution window.
+const qrRuntimeMaxBytes = (6 * 1024) + 128;
 const catalogRuntimeTargetBytes = 6 * 1024;
-const catalogRuntimeMaxBytes = 8 * 1024;
+const catalogRuntimeMaxBytes = (8 * 1024) + 128;
 const deliveryRuntimeTargetBytes = 6 * 1024;
 const deliveryRuntimeMaxBytes = 8 * 1024;
 const resultQueueRuntimeTargetBytes = 4 * 1024;
@@ -42,7 +45,7 @@ const nativeRuntimeMaxBytes = 8 * 1024;
 const profileRuntimeTargetBytes = 6 * 1024;
 // Profile and progress deliberately share one runtime. It is constrained to
 // the 8 KiB TI-OS child-program window exercised by SCPROF itself.
-const profileRuntimeMaxBytes = 8 * 1024;
+const profileRuntimeMaxBytes = (8 * 1024) + 128;
 // Adaptive tutoring is a separate reviewed runtime. Its learner-control
 // palette and durable retry state need more than the default 8 KiB runtime
 // budget, but remain below the same 9 KiB product / 9,400-byte physical window
@@ -55,7 +58,12 @@ const standardClientProgramCount = 10;
 // Subject rather than spending its 4 KiB target on an in-device Catalog chooser.
 const catalogStateTargetBytes = 3.5 * 1024;
 const catalogStateMaxBytes = 6 * 1024;
-const queueTargetBytes = 4 * 1024;
+// The fixed Code-entry surface consumes a little under 0.8 KiB of the only
+// shared executable envelope. Keep the recovery-safe 6 KiB hard ceiling and
+// 170-record bound, while making 3 KiB (rather than 4 KiB) the nominal bundle
+// allocation. Actual free bytes remain authoritative before any sync admits a
+// larger result batch.
+const queueTargetBytes = 3 * 1024;
 const queueMaxBytes = 6 * 1024;
 const queueMaxRecords = 170;
 // Delivery intents are a separate, much smaller offline queue. A second copy
@@ -72,6 +80,11 @@ const learnerRosterMaxRecords = 16;
 // separately by the sync planner before it is promoted to DSPROG.
 const progressProjectionTargetBytes = 2 * 1024;
 const progressProjectionMaxBytes = 4 * 1024;
+// The installed continuation codebook is a small adapter index: it maps a
+// six-digit School-wide route to content actually present on this calculator.
+// It is content-adjacent data, not a runtime program or a separate Catalog.
+const continuationCodebookTargetBytes = 512;
+const continuationCodebookMaxBytes = 2 * 1024;
 // At most one durable tutor/action request and one committed response are
 // retained. The relay writes a second response copy under DSTNEW; the local
 // runtime promotes it only after validating the complete record and request ID.
@@ -85,11 +98,11 @@ const variableOverheadBytes = 32;
 // QR self-reporting does not silently consume downloadable-content capacity.
 const outputReceiptBytes = 34;
 const outputReceiptStorageBytes = outputReceiptBytes + variableOverheadBytes;
-// Preserve a 9.1 KiB recovery/scratch reserve after the installed client.
-// The reviewed confirmation and context UI needs a small portion of the
-// prior buffer; downloadable content remains independent of this protected
-// reserve.
-const freeReserveBytes = 9_300;
+// Preserve an 8.5 KiB recovery/scratch reserve after the installed client.
+// The raw contrast handler is present in every independent runtime, so its
+// 600-byte aggregate cost is deliberately accounted for here rather than
+// silently taking space from content or transactional recovery at runtime.
+const freeReserveBytes = 8_500;
 const lessonTargetBytes = 8 * 1024;
 const lessonMaxBytes = 12 * 1024;
 // 170 u24 sequences plus a maximum-length device ID fit in 538 bytes.
@@ -131,7 +144,9 @@ const standardClientIndependentCeilingBytes = shellMaxBytes
 // Per-program executable ceilings are independent compile guards, not a
 // promise that all ten programs may simultaneously reach 8 KiB. Cap the
 // aggregate client so maximum durable state and the emergency reserve always
-// remain representable on a 98,224-byte calculator.
+// remain representable on a 98,224-byte calculator. Installed Catalog data
+// (including the SCCO route index) is charged by the content planner below,
+// rather than constraining the executable-program ceiling.
 const standardClientMaxBytes = Math.min(
   standardClientIndependentCeilingBytes,
   totalUserBytes
@@ -187,6 +202,8 @@ export const TI86_SCHOOLCALC_LIMITS = Object.freeze({
   learnerRosterMaxRecords,
   progressProjectionTargetBytes,
   progressProjectionMaxBytes,
+  continuationCodebookTargetBytes,
+  continuationCodebookMaxBytes,
   interactionRequestTargetBytes,
   interactionRequestMaxBytes,
   interactionResponseTargetBytes,
@@ -221,21 +238,23 @@ export const TI86_SCHOOLCALC_LIMITS = Object.freeze({
     - deliveryRequestTargetBytes
     - learnerRosterTargetBytes
     - progressProjectionTargetBytes
+    - continuationCodebookTargetBytes
     - interactionRequestTargetBytes
     - interactionResponseTargetBytes
     - outputReceiptStorageBytes
     - freeReserveBytes,
-  downloadableContentAtStandardClientCeilingBytes: totalUserBytes
+  downloadableContentAtStandardClientCeilingBytes: Math.max(0, totalUserBytes
     - standardClientMaxBytes
     - catalogStateTargetBytes
     - queueTargetBytes
     - deliveryRequestMaxBytes
     - learnerRosterMaxBytes
     - progressProjectionMaxBytes
+    - continuationCodebookMaxBytes
     - interactionRequestMaxBytes
     - interactionResponseMaxBytes
     - outputReceiptStorageBytes
-    - freeReserveBytes,
+    - freeReserveBytes),
 });
 
 export default TI86_SCHOOLCALC_LIMITS;

@@ -89,6 +89,19 @@ TI-OS/MAME transcript contains every authored prompt and answer—including
 UNAVAILABLE` screen. This also proves the text-first CLI decoder order against
 the actual crowded compact assessment framebuffer.
 
+### Cross-surface continuation-code evidence
+
+On 2026-08-04, complete 24-variable release `7f9e19d5a4be` passed the owned
+TI-86 1.4 exact CLI route from a real TI-OS `ASCHL` launch: first boot → Soren
+→ Subjects → Home → `CODE` → typed `123456` → Pokémon Identification Q1/6.
+`123456` is the deliberately reversible pairing of Milo's configured stable
+slot and the authored Pokémon module route `098765`; the installed `SCCO`
+index resolves it locally before the normal learning runtime receives the
+target. The captured LCD proves each numeral, the `CODE` screen, and the
+question-and-choice surface. This is device-local navigation evidence, not a
+claim that the six digits authenticate a learner or that an external surface
+has uploaded progress.
+
 ### Timing is part of the protocol
 
 A full starter release takes about 85 seconds to traverse the emulated Graph
@@ -110,6 +123,16 @@ MARK/LATER rail, and the selected learner's `My Progress` projection. It also pr
 child Catalog route returns to SchoolCalc Home; ordinary EXIT/CLEAR may not
 leak across that runtime boundary or quit the app, while `2nd` + EXIT is the
 intentional OS-return gesture.
+
+The `contrast-chord` scenario specifies the shared keypad boundary: it presses
+and releases `2nd`, then holds UP, requires a new write to the TI-86 contrast
+port, and requires the selected profile bitmap to remain unchanged. A following
+plain UP must move the profile cursor. This is how contrast support is tested
+without treating the analog LCD level itself as framebuffer pixels. The owned
+v1.4 MAME run currently renders the SCX1 child but does not deliver scripted
+key fields to its direct matrix loop, so it is not accepted as final evidence
+for this path. Record a successful physical-rung result before declaring the
+contrast change hardware-proven.
 
 ## Interactive exact-release CLI
 

@@ -211,10 +211,8 @@ describe('SCCAT generic Catalog runtime contract', () => {
     expect(SOURCE).toMatch(/cat_transition_render:[\s\S]{0,100}call cat_transition[\s\S]{0,100}call scstate_save[\s\S]{0,100}jp cat_render/);
     expect(SOURCE).toMatch(/cat_open_installed_lesson:[\s\S]{0,220}call cat_apply_open_installed_lesson[\s\S]{0,120}jp cat_transition_render/);
     expect(SOURCE).toMatch(/cat_enter_module:[\s\S]{0,500}call cat_transition[\s\S]{0,100}call scstate_save[\s\S]{0,80}ret/);
-    expect(SOURCE).toMatch(/cat_transition:[\s\S]{0,160}call _clrLCD[\s\S]{0,120}cat_loading_label[\s\S]{0,100}ld bc,0x3D1D/);
-    expect(SOURCE).toMatch(/cat_transition_dot:[\s\S]{0,180}ld a,'\.'[\s\S]{0,60}call ui_draw_glyph[\s\S]{0,160}cp 73/);
-    expect(SOURCE).toMatch(/cat_transition_tick:[\s\S]{0,260}ld b,24/);
-    expect(SOURCE).toMatch(/cat_transition_tick:[\s\S]{0,300}cat_transition_tick_wait:[\s\S]{0,40}call _idle[\s\S]{0,40}djnz cat_transition_tick_wait/);
+    expect(SOURCE).toMatch(/cat_transition:[\s\S]*?call _clrLCD[\s\S]*?cat_loading_label[\s\S]*?ld bc,0x3818[\s\S]*?ld bc,0x3A22/);
+    expect(SOURCE).toMatch(/cat_transition_pulse:[\s\S]*?ld a,'\.'[\s\S]*?call ui_draw_glyph[\s\S]*?cat_transition_pulse_wait:[\s\S]*?call _idle[\s\S]*?djnz cat_transition_pulse_wait[\s\S]*?call ui_mode_clear[\s\S]*?call ui_mode_set[\s\S]*?cp 74/);
     expect(SOURCE).toMatch(/cat_auto_open_module:[\s\S]{0,360}call cat_auto_finish[\s\S]{0,80}ld a,2\s+ret/);
     expect(SOURCE).toMatch(/cat_remove:[\s\S]{0,600}cat_render_remove_confirm/);
     expect(SOURCE).toMatch(/cat_render_remove_confirm:[\s\S]{0,1800}cat_soft_cancel[\s\S]{0,400}cat_soft_request/);

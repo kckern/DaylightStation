@@ -279,12 +279,12 @@ used only when their grouping is clearer than a simple list.
 - F1–F5 are stable, contextual softkeys aligned to the five physical keys.
 - F-key labels may select A–E directly or expose actions such as FLIP, MARK,
   INFO, GET, FIND, QR, CABLE, YES, and NO.
-- A normal compact multiple-choice prompt renders labelled `A)`–`E)` rows in
-  the same body and maps F1–F5 to those choices. A short one-page prompt may
-  instead render each safe short answer label directly over F1–F5. Only a
-  genuinely tall prompt uses F5 `NEXT` then `ANS`; its choice view provides
-  `LEFT: Q` to reopen the final prompt page without losing the durable
-  assessment position.
+- A normal compact multiple-choice prompt uses three fixed question rows,
+  a visible gap, then four labelled `A)`–`D)` answer rows in the same body and
+  maps F1–F4 to those choices. A fifth short answer may use a two-column row;
+  only a genuinely tall prompt uses F5 `NEXT` then `ANS`. Its choice view
+  provides `LEFT: Q` to reopen the final prompt page without losing the
+  durable assessment position.
 - On-screen softkeys do not duplicate arrows, ENTER, or EXIT merely to fill a
   slot. Catalog and reader views deliberately label F2 as `BACK` in addition
   to EXIT/CLEAR/LEFT; long reader views additionally use F1 `TOP`, F4 `PGUP`,
@@ -859,11 +859,11 @@ The executable TI-86 adapter contract makes those ranges concrete:
 
 - the shell build fails above 9,216 bytes of Z80 code and separately above the
   9,400-byte physical execution window;
-- the standard runtime targets 6,144 bytes and fails above its 8,192-byte
-  executable window;
-- the QR runtime targets 4,096 bytes and fails above 6,144 bytes;
-- the Catalog and delivery-request runtimes each target 6,144 bytes and fail
-  above their 8,192-byte executable windows;
+- the standard runtime targets 6,144 bytes and fails above its 9,400-byte
+  physical executable window;
+- the QR runtime targets 4,096 bytes and fails above 6,272 bytes;
+- the Catalog runtime targets 6,144 bytes and fails above its 8,320-byte
+  executable window; the delivery-request runtime keeps its 8,192-byte window;
 - the result/progress queue runtime targets 4,096 bytes and fails above its
   8,192-byte executable window;
 - the foreground-sync runtime targets 6,144 bytes and fails above its
@@ -871,13 +871,13 @@ The executable TI-86 adapter contract makes those ranges concrete:
 - the read-only native-plan guard targets 6,144 bytes and fails above its
   8,192-byte executable window;
 - the learner-profile/progress runtime targets 6,144 bytes and fails above its
-  8,192-byte TI-OS child-program execution window;
+  8,320-byte TI-OS child-program execution window;
 - the realtime-remediation runtime targets 6,144 bytes and fails above its
   9,216-byte product ceiling, still below the 9,400-byte physical window;
 - the standard ten-program client is charged 32 conservative overhead bytes
   per TI variable, producing a 60,736-byte target. Independent component
-  ceilings sum to 83,264 bytes, but the enforced reserve-safe aggregate maximum
-  is 71,962 bytes;
+  ceilings sum to 83,832 bytes, but the enforced reserve-safe aggregate maximum
+  is 73,786 bytes;
 - two 124-byte alternating local-state records plus a conservative 32-byte TI
   variable overhead per record reserve 312 bytes, leaving 3,272 target bytes
   and 5,832 maximum bytes for the `SCC1` Catalog record;
@@ -885,11 +885,11 @@ The executable TI-86 adapter contract makes those ranges concrete:
   replacement is charged to the scratch reserve rather than steady state;
 - the independent fixed-layout `SCD1` delivery queue targets 512 bytes, is
   capped at 2,048 bytes and 32 records, and uses private `DSREQB` for recovery;
-- 9,300 bytes always remain unavailable to new staging, and each staged
+- 8,500 bytes always remain unavailable to new staging, and each staged
   variable is charged another conservative 32 bytes;
 - transient `SCN1` is capped at 4,096 bytes and charged to that reserve with
   another 32 bytes of variable overhead; native preflight therefore preserves
-  at least 5,472 bytes and refuses before any write when it cannot;
+  at least 4,372 bytes and refuses before any write when it cannot;
 - the replaceable `SCU1` learner roster targets 256 bytes and is capped at 512
   bytes, with its in-flight `DSUSRNEW` copy charged to reported free memory;
 - the replaceable all-learner `SCG1` progress projection targets 2,048 bytes,
@@ -902,26 +902,24 @@ The executable TI-86 adapter contract makes those ranges concrete:
 - `DSQOUT` is a fixed 34-byte, calculator-private `SCO1` optical-output receipt
   plus 32 bytes of TI variable overhead; it never participates in relay upload
   or acknowledgement;
-- the resulting nominal content target is 16,046 bytes at the client planning
-  target and zero at the reserve-safe aggregate maximum; and
+- the installed `SCCO` continuation index targets 512 bytes and fails above
+  2,048 bytes; the resulting nominal content target is 17,658 bytes at the
+  client planning target and zero at the reserve-safe aggregate maximum; and
 - lesson compilation emits an above-target warning after 8,192 bytes and
   fails above 12,288 bytes.
 
-The `caacecbbb8b6` release is 8,092 bytes of shell, 9,208 bytes of learning runtime,
-6,142 bytes of QR runtime, 8,175 bytes of Catalog runtime, 6,463 bytes of
-delivery-request runtime, 4,135 bytes of result/progress queue runtime, 6,480
-bytes of foreground-sync runtime, 6,756 bytes of native-plan guard, 8,177 bytes
-of learner-profile/progress runtime, 8,012 bytes of realtime-remediation
-runtime, and 320 bytes of conservative variable overhead: 71,960 bytes
-installed. It is 11,224 bytes above the planning target, leaves 2 bytes
-before the reserve-safe aggregate maximum, and leaves 5,122 bytes for content
-after one-Catalog, learner-roster, compact-progress, interaction, and
-QR-output-receipt target buffers.
-Individual hard-ceiling headroom is 1,124 shell bytes (and 1,308 physical-window
-bytes), 8 learning-runtime bytes, 2 QR-runtime bytes,
-17 Catalog runtime bytes, 1,729 delivery-runtime bytes, 4,057 queue-runtime
-bytes, 1,712 foreground-sync bytes, 1,436 native-guard bytes, 15
-learner-profile bytes, and 1,204 realtime-remediation bytes (1,388 before video RAM).
+The current direct-matrix build is 8,985 bytes of shell, 9,267 bytes of learning
+runtime, 6,232 bytes of QR runtime, 8,279 bytes of Catalog runtime, 6,553 bytes
+of delivery-request runtime, 4,135 bytes of result/progress queue runtime, 6,570
+bytes of foreground-sync runtime, 6,846 bytes of native-plan guard, 8,267 bytes
+of learner-profile/progress runtime, 8,102 bytes of realtime-remediation runtime,
+and 320 bytes of conservative variable overhead: 73,556 bytes installed. It is
+12,820 bytes above the planning target and leaves 230 bytes before the
+reserve-safe aggregate maximum. The installed continuation codebook is charged
+as content-adjacent storage (512-byte target, 2 KiB hard cap), leaving 4,838
+bytes for content after the target durable-state buckets; no additional content
+can be admitted beside the maximum declared durable-state buckets without
+re-planning the budget.
 Optional specialized first-party runtimes consume measured free RAM and trade
 directly against installed lesson content; they are never silently included in
 the standard allowance. Sync planning always uses the device's reported free

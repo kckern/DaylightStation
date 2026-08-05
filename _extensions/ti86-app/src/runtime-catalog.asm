@@ -858,6 +858,8 @@ cat_clear_learning_session:
         xor a
         ld (scstate_record + SCSTATE_DRAFT_KIND_OFFSET),a
         ld (scstate_record + SCSTATE_DRAFT_LENGTH_OFFSET),a
+        ld (scstate_record + SCSTATE_SESSION_LEARNER_OFFSET),a
+        ld (scstate_record + SCSTATE_SESSION_LEARNER_OFFSET + 1),a
         ret
 
 cat_mark_delivery_pending:
@@ -1500,33 +1502,36 @@ cat_transition:
         call ui_mode_set
         call ui_select_compact
         ld hl,cat_loading_label
-        ld b,3
-        ld c,24
+        ; The title is centered independently; its loader lives on a second
+        ; centered line so animation never makes the word appear to drift.
+        ld bc,0x3818
         call ui_draw_text
-        ld bc,0x3D1D
-cat_transition_dot:
+        ; Four equally spaced positions form a bounded, non-trailing pulse.
+        ; Each dot is erased before the next one appears, avoiding the old
+        ; Pac-Man-like growing trail while still acknowledging local work.
+        ld bc,0x3A22
+cat_transition_pulse:
+        push bc
         push bc
         ld a,'.'
         call ui_draw_glyph
-        call cat_transition_tick
+        ld b,24
+cat_transition_pulse_wait:
+        call _idle
+        djnz cat_transition_pulse_wait
+        pop bc
+        call ui_mode_clear
+        ld a,'.'
+        call ui_draw_glyph
+        call ui_mode_set
         pop bc
         inc b
         inc b
         inc b
         inc b
         ld a,b
-        cp 73
-        jr nz,cat_transition_dot
-        ret
-
-cat_transition_tick:
-        ; 24 ticks per phase is roughly 120 ms on the TI-86's 200 Hz clock:
-        ; long enough for the LCD and a learner to register each dot, without
-        ; turning a local Catalog transition into a wait screen.
-        ld b,24
-cat_transition_tick_wait:
-        call _idle
-        djnz cat_transition_tick_wait
+        cp 74
+        jr nz,cat_transition_pulse
         ret
 
 cat_render_header:
@@ -2180,7 +2185,7 @@ cat_scx_magic_loop:
         sbc hl,de
         jr c,cat_scx_fail
         push hl
-        ld de,8192 - 16
+        ld de,8320 - 16
         ex de,hl
         or a
         sbc hl,de

@@ -114,6 +114,17 @@ export function validateLearningCatalog(raw) {
       });
     });
   }
+  if (errors.length === 0) {
+    const seenCodes = new Set();
+    listCatalogLessons(raw).forEach(({ lesson, address }) => {
+      lesson.modules.forEach((module, index) => {
+        if (module.continuationCode === undefined) return;
+        if (seenCodes.has(module.continuationCode)) {
+          errors.push(`${address}.modules[${index}].continuationCode: duplicate module continuation code '${module.continuationCode}'`);
+        } else seenCodes.add(module.continuationCode);
+      });
+    });
+  }
   return errors.length ? { errors } : { errors, catalog: raw };
 }
 

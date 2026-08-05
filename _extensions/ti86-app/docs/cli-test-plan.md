@@ -59,6 +59,8 @@ returns to TI-OS while the transferred `DSLOCAL0`/`DSLOCAL1` records remain.
 | `switch-commit` | Subject → `USER` → `F5 SWITCH` → another learner → `ASCHL` restart | Subject header and My Progress both use the newly selected learner after restart. |
 | `switch-cancel` | Subject → `USER` → `F5 SWITCH` → `EXIT` | Returns to the unchanged learner's Subject root; no route remains at private view `12`. |
 | `profile-progress` | Confirm learner → Subject root → `F3 USER` | Projection is scoped to the selected learner; Guest is explicitly local-only. |
+| `continuation-code` | Settled Subject root → `F3 CODE` → enter a visible six-digit module code → `ENTER` | Code switches to its encoded learner and opens the exact installed module through the normal learning runtime. |
+| `continuation-code-unavailable` | Settled Subject root → `F3 CODE` → enter a valid but absent/stale code → `ENTER` | The shell shows **NOT INSTALLED — SYNC** and does not alter the durable learner or Catalog continuation. |
 
 The four named learner rows must remain separate data cases even when their
 navigation is identical. They guard against roster ordering, 16-bit key, and

@@ -66,6 +66,15 @@ describe('SchoolCalc learning-module contracts', () => {
     }).errors[0]).toMatch(/type must be one of/);
   });
 
+  it('accepts an authored continuationCode without treating it as executable module code', () => {
+    expect(validateLearningModule({
+      moduleId: 'check', type: 'quiz', bankId: 'rates/check-1', continuationCode: '098765',
+    }).errors).toEqual([]);
+    expect(validateLearningModule({
+      moduleId: 'check', type: 'quiz', bankId: 'rates/check-1', continuationCode: '250000',
+    }).errors).toEqual(expect.arrayContaining([expect.stringMatching(/249999/)]));
+  });
+
   it('defines a subject-neutral, immediately explained learning probe', () => {
     const module = {
       moduleId: 'concept-check', type: 'learning_probe', bankId: 'rates/check-1',

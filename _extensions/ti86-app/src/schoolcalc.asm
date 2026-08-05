@@ -14,6 +14,7 @@ SCREEN_LESSON:  equ 2
 SCREEN_SYNC:    equ 3
 SCREEN_RESULT:  equ 4
 SCREEN_TUTOR:   equ 5
+SCREEN_CODE:    equ 6
 HOME_ITEMS:     equ 4
 
 org _asm_exec_ram
@@ -62,10 +63,23 @@ render:
         ld a,(current_screen)
         cp SCREEN_RESULT
         call z,shell_render_result
+        ld a,(current_screen)
+        cp SCREEN_CODE
+        call z,shell_render_code
         call shell_render_softkeys
 
 wait_key:
         call sc_input_wait
+        ld b,a
+        ld a,(current_screen)
+        cp SCREEN_CODE
+        jr nz,wait_key_regular
+        ld a,b
+        call shell_code_accept_digit
+        or a
+        jp nz,render
+wait_key_regular:
+        ld a,b
         cp SC_SCAN_EXIT
         jp z,go_back
         cp SC_SCAN_RIGHT
@@ -82,23 +96,47 @@ wait_key:
         jp z,shell_f1
         cp SC_SCAN_F2
         jp z,shell_f2
+        cp SC_SCAN_F3
+        jp z,shell_f3
         cp SC_SCAN_F4
-        jp z,show_catalog
+        jp z,shell_f4
         cp SC_SCAN_F5
-        jp z,show_sync
+        jp z,shell_f5
         jp wait_key
 
 shell_f1:
         ld a,(current_screen)
+        cp SCREEN_CODE
+        jp z,shell_code_open
         cp SCREEN_RESULT
         jp z,launch_qr_runtime
         jp launch_profile_runtime
 
 shell_f2:
         ld a,(current_screen)
+        cp SCREEN_CODE
+        jp z,show_home
         cp SCREEN_RESULT
         jp z,shell_review_result
         jp show_catalog
+
+shell_f3:
+        ld a,(current_screen)
+        or a
+        jp nz,wait_key
+        jp show_code
+
+shell_f4:
+        ld a,(current_screen)
+        cp SCREEN_CODE
+        jp nz,show_catalog
+        jp show_code
+
+shell_f5:
+        ld a,(current_screen)
+        cp SCREEN_CODE
+        jp z,wait_key
+        jp show_sync
 
 ; A score result is a durable offline record, not a dead-end receipt. OPEN
 ; reopens the same module menu so the learner can immediately retry it.
@@ -143,6 +181,8 @@ activate_current:
         ld a,(current_screen)
         or a
         jr z,activate_home
+        cp SCREEN_CODE
+        jp z,shell_code_open
         cp SCREEN_CATALOG
         jp z,show_lesson
         cp SCREEN_LESSON
@@ -166,8 +206,8 @@ activate_home:
 activate_home_other:
         ld a,(current_focus)
         cp 3
-        jr z,show_sync
-        jr show_catalog
+        jp z,show_sync
+        jp show_catalog
 
 go_back:
         ld a,(current_screen)
@@ -175,11 +215,11 @@ go_back:
         jp z,wait_key
         cp SCREEN_LESSON
         jp z,show_catalog
-        jr show_home
+        jp show_home
 
 show_home:
         ld a,SCREEN_HOME
-        jr store_screen
+        jp store_screen
 show_catalog:
         ; A paused assessment owns its immutable learner/artifact binding.
         ; Do not let Catalog activation silently discard that draft by opening
@@ -191,6 +231,206 @@ show_catalog:
         ; release, so Catalog is an executable browser rather than the old
         ; recovery placeholder. SCCAT owns its own deep durable continuation.
         jp launch_catalog_runtime
+show_code:
+        ld a,SCREEN_CODE
+        ld (current_screen),a
+        xor a
+        ld (shell_code_length),a
+        ld (shell_code_status),a
+        ld hl,shell_code_digits
+        ld b,7
+shell_code_clear:
+        ld (hl),a
+        inc hl
+        djnz shell_code_clear
+        jp render
+
+; ---------------------------------------------------------------------------
+; Offline six-digit continuation route
+;
+; DSCODE is a small fixed SCCO index built with the same domain permutation
+; used by worksheets and the web School surface.  This shell does not treat a
+; visible code as authentication: it opens only a route whose learner and
+; artifact are present in this verified local record.
+
+SCCO_ENTRY_BYTES: equ 30
+
+; A holds the physical input event. The shared boundary returns direct TI-86
+; matrix codes; translate only this one compact field to ASCII without adding
+; a digit table to every independently loaded runtime.
+shell_code_accept_digit:
+        ld b,a
+        ld hl,shell_code_digit_keys
+        ld c,10
+shell_code_digit_find:
+        ld a,b
+        cp (hl)
+        jr z,shell_code_digit_found
+        inc hl
+        inc hl
+        dec c
+        jr nz,shell_code_digit_find
+        jr shell_code_not_digit
+shell_code_digit_found:
+        inc hl
+        ld b,(hl)
+        ld a,(shell_code_length)
+        cp 6
+        jr nc,shell_code_not_digit
+        ld e,a
+        ld d,0
+        ld hl,shell_code_digits
+        add hl,de
+        ld a,b
+        ld (hl),a
+        ld a,(shell_code_length)
+        inc a
+        ld (shell_code_length),a
+        xor a
+        ld (shell_code_status),a
+        inc a
+        ret
+shell_code_not_digit:
+        xor a
+        ret
+
+shell_code_open:
+        ld a,(shell_code_length)
+        cp 6
+        jr z,shell_code_open_ready
+        ld a,1
+        ld (shell_code_status),a
+        jp render
+shell_code_open_ready:
+        ; Never overwrite a frozen assessment/session with an external route.
+        ld a,(SCL_FLAGS_ADDR)
+        and 1
+        jr z,shell_code_resolve
+        ld a,3
+        ld (shell_code_status),a
+        jp render
+
+shell_code_resolve:
+        ld hl,dscode_name
+        ld de,scco_magic
+        call sc_envelope_open
+        jp c,shell_code_unavailable
+        ; body[0] is a compact device ID length, then ID and the bound SCC1
+        ; generation key. Validate that key before trusting an entry offset.
+        ld de,7
+        call sc_record_read_byte
+        jp c,shell_code_unavailable
+        or a
+        jp z,shell_code_unavailable
+        cp 17
+        jp nc,shell_code_unavailable
+        ld c,a
+        ld a,8
+        add a,c
+        ld e,a
+        ld d,0
+        ld hl,SCL_CATALOG_KEY_ADDR
+        ld b,10
+shell_code_generation_loop:
+        call sc_record_read_byte
+        jp c,shell_code_unavailable
+        cp (hl)
+        jp nz,shell_code_unavailable
+        inc de
+        inc hl
+        djnz shell_code_generation_loop
+        call sc_record_read_byte
+        jp c,shell_code_unavailable
+        ld (shell_code_entries_left),a
+        inc de
+        ld (shell_code_entry_offset),de
+
+shell_code_entry_loop:
+        ld a,(shell_code_entries_left)
+        or a
+        jp z,shell_code_unavailable
+        ld de,(shell_code_entry_offset)
+        ld hl,shell_code_digits
+        ld b,6
+shell_code_compare_loop:
+        call sc_record_read_byte
+        jp c,shell_code_unavailable
+        cp (hl)
+        jr nz,shell_code_next_entry
+        inc de
+        inc hl
+        djnz shell_code_compare_loop
+        jp shell_code_apply_entry
+shell_code_next_entry:
+        ld hl,(shell_code_entry_offset)
+        ld de,SCCO_ENTRY_BYTES
+        add hl,de
+        ld (shell_code_entry_offset),hl
+        ld a,(shell_code_entries_left)
+        dec a
+        ld (shell_code_entries_left),a
+        jr shell_code_entry_loop
+
+; DE enters at the learner-key bytes, immediately after the matched six digits.
+; Copy exactly the state fields that normally result from a Catalog module
+; activation, then use the regular SCLEARN launch boundary.
+shell_code_apply_entry:
+        ld hl,SCL_SELECTED_LEARNER_ADDR
+        ld b,2
+shell_code_copy_learner:
+        call sc_record_read_byte
+        jr c,shell_code_unavailable
+        ld (hl),a
+        inc de
+        inc hl
+        djnz shell_code_copy_learner
+        ld hl,SCL_ARTIFACT_KEY_ADDR
+        ld b,10
+shell_code_copy_artifact:
+        call sc_record_read_byte
+        jr c,shell_code_unavailable
+        ld (hl),a
+        inc de
+        inc hl
+        djnz shell_code_copy_artifact
+        ld hl,SCL_CATALOG_INDEX_ADDR
+        ld b,12
+shell_code_copy_indexes:
+        call sc_record_read_byte
+        jr c,shell_code_unavailable
+        ld (hl),a
+        inc de
+        inc hl
+        djnz shell_code_copy_indexes
+        xor a
+        ld (SCL_ITEM_INDEX_ADDR),a
+        ld (SCL_ITEM_INDEX_ADDR + 1),a
+        ld (SCL_FOCUS_ADDR),a
+        ld (SCL_FOCUS_ADDR + 1),a
+        ld (SCL_SCROLL_ADDR),a
+        ld (SCL_SCROLL_ADDR + 1),a
+        ld (SCL_SESSION_LEARNER_ADDR),a
+        ld (SCL_SESSION_LEARNER_ADDR + 1),a
+        ld (SCL_DRAFT_KIND_ADDR),a
+        ld (SCL_DRAFT_LENGTH_ADDR),a
+        ld a,(SCL_FLAGS_ADDR)
+        and 0xE0
+        ld (SCL_FLAGS_ADDR),a
+        ld a,(SCL_FLAGS_HIGH_ADDR)
+        and 0xFC
+        or 0x04                    ; explicit learner-selection acknowledgement
+        ld (SCL_FLAGS_HIGH_ADDR),a
+        ld a,SCREEN_LESSON
+        ld (current_screen),a
+        xor a
+        ld (current_focus),a
+        call local_state_save
+        jp launch_standard_runtime
+
+shell_code_unavailable:
+        ld a,2
+        ld (shell_code_status),a
+        jp render
 show_lesson:
         jp launch_standard_runtime
 show_sync:
@@ -918,6 +1158,15 @@ local_state_generation_ready:
         ld (SCL_FOCUS_ADDR),a
         xor a
         ld (SCL_FOCUS_ADDR + 1),a
+        ; A learner is remembered independently of a learning session.  Any
+        ; saved state without the active-session bit must clear its immutable
+        ; session binding, otherwise the next child runtime rejects SCL1.
+        ld a,(SCL_FLAGS_ADDR)
+        and 1
+        jr nz,local_state_session_identity_ready
+        ld hl,0
+        ld (SCL_SESSION_LEARNER_ADDR),hl
+local_state_session_identity_ready:
         ld hl,local_state_record
         ld bc,SCL_CRC_OFFSET
         call crc16_ccitt_false
@@ -1092,6 +1341,59 @@ shell_render_result:
         ld c,41
         jp ui_draw_text
 
+shell_render_code:
+        ld hl,code_title
+        ld de,code_context
+        call shell_render_header
+        call ui_mode_set
+        call ui_select_compact
+        ld hl,code_instruction
+        ld b,2
+        ld c,15
+        call ui_draw_text
+        ld hl,code_prefix
+        ld b,20
+        ld c,27
+        call ui_draw_text
+        call shell_build_code_display
+        ld hl,shell_code_display
+        ld b,48
+        ld c,27
+        call ui_draw_text
+        ld a,(shell_code_status)
+        ld hl,code_prompt
+        or a
+        jr z,shell_code_status_ready
+        cp 1
+        ld hl,code_short
+        jr z,shell_code_status_ready
+        cp 2
+        ld hl,code_missing
+        jr z,shell_code_status_ready
+        ld hl,code_busy
+shell_code_status_ready:
+        ld b,2
+        ld c,40
+        jp ui_draw_text
+
+shell_build_code_display:
+        ld hl,shell_code_digits
+        ld de,shell_code_display
+        ld b,6
+shell_build_code_loop:
+        ld a,(hl)
+        or a
+        jr nz,shell_build_code_char
+        ld a,'-'
+shell_build_code_char:
+        ld (de),a
+        inc hl
+        inc de
+        djnz shell_build_code_loop
+        xor a
+        ld (de),a
+        ret
+
 ; Result Queue replaces the answer draft with correct, total, and rounded
 ; percent at local-state offsets 47..49. Format it at render time so scores
 ; remain exact after a cold relaunch and are never guessed from QR output.
@@ -1263,6 +1565,11 @@ shell_render_softkeys:
         ld d,24
         ld e,8
         call ui_fill_rect
+        ld b,51
+        ld c,56
+        ld d,25
+        ld e,8
+        call ui_fill_rect
         ld b,102
         ld c,56
         ld d,26
@@ -1277,6 +1584,9 @@ shell_render_softkeys:
         call ui_select_compact
         ld hl,softkey_home
         ld a,(current_screen)
+        cp SCREEN_CODE
+        ld hl,softkey_open
+        jr z,shell_softkey_f1_ready
         cp SCREEN_RESULT
         jr nz,shell_softkey_f1_ready
         ld hl,softkey_qr
@@ -1286,6 +1596,9 @@ shell_softkey_f1_ready:
         call ui_draw_text
         ld hl,softkey_catalog
         ld a,(current_screen)
+        cp SCREEN_CODE
+        ld hl,softkey_back
+        jr z,shell_softkey_f2_ready
         cp SCREEN_RESULT
         jr nz,shell_softkey_f2_ready
         ld hl,softkey_review
@@ -1293,8 +1606,32 @@ shell_softkey_f2_ready:
         ld b,30
         ld c,58
         call ui_draw_text
+        ld hl,softkey_empty
+        ld a,(current_screen)
+        or a
+        jr nz,shell_softkey_f3_ready
+        ld hl,softkey_code
+shell_softkey_f3_ready:
+        ld b,56
+        ld c,58
+        call ui_draw_text
         ld hl,softkey_sync
         ld a,(current_screen)
+        cp SCREEN_CODE
+        ld hl,softkey_clear
+        jr z,shell_softkey_f4_ready
+        cp SCREEN_RESULT
+        jr nz,shell_softkey_f4_ready
+        ld hl,softkey_cable
+shell_softkey_f4_ready:
+        ld b,81
+        ld c,58
+        call ui_draw_text
+        ld hl,softkey_sync
+        ld a,(current_screen)
+        cp SCREEN_CODE
+        ld hl,softkey_empty
+        jr z,shell_softkey_f5_ready
         cp SCREEN_RESULT
         jr nz,shell_softkey_f5_ready
         ld hl,softkey_cable
@@ -1303,9 +1640,13 @@ shell_softkey_f5_ready:
         ld c,58
         call ui_draw_text
         ld hl,softkey_user
+        ld a,(current_screen)
+        cp SCREEN_CODE
+        jr z,shell_softkeys_done
         ld b,81
         ld c,58
         call ui_draw_text
+shell_softkeys_done:
         jp ui_mode_set
 
 current_screen:         defb 0
@@ -1314,6 +1655,12 @@ previous_focus:         defb 0
 device_enrolled:        defb 0
 device_id_length:       defb 0
 device_id_value:        defs 17,0
+shell_code_length:       defb 0
+shell_code_status:       defb 0
+shell_code_entries_left: defb 0
+shell_code_entry_offset: defw 0
+shell_code_digits:       defs 7,0
+shell_code_display:      defs 7,0
 shell_row_text:         defw 0
 shell_row_index:        defb 0
 shell_row_y:            defb 0
@@ -1340,6 +1687,7 @@ runtime_crc_offset:     defw 0
 runtime_crc_remaining:  defw 0
 sci1_magic:             defb "SCI1"
 scl1_magic:             defb "SCL1"
+scco_magic:             defb "SCCO"
 ; Exact reviewed TI-86 Program + executor header through SCX1 ABI.  Every
 ; shipped child begins at D75E after this fixed 21-byte executable envelope.
 runtime_header_prefix:  defb 0x8E,0x28,0x00,0xC3,0x5E,0xD7,0x00,0x00,0x5D,0xD7,"SCX1",1
@@ -1351,6 +1699,7 @@ local_view_codes:       defb 0,1,4,7,6,11
 ; OP1 descriptors: type 0x0C, length, name, then zero padding to ten bytes.
 dsid_name:      defb 0x0C,4,"DSID",0,0,0,0
 dsinfo_name:    defb 0x0C,6,"DSINFO",0,0
+dscode_name:    defb 0x0C,6,"DSCODE",0,0
 local0_name:    defb 0x0C,8,"DSLOCAL0"
 local1_name:    defb 0x0C,8,"DSLOCAL1"
 sclearn_name:   defb 0x12,7,"SCLEARN",0
@@ -1369,6 +1718,8 @@ sync_title:             defb "SYNC",0
 sync_context:           defb "OFFLINE",0
 result_title:           defb "RESULT",0
 result_context:         defb "OFFLINE",0
+code_title:              defb "CODE",0
+code_context:            defb "OPEN",0
 empty_context:          defb 0
 home_continue:          defb "CONTINUE LESSON",0
 home_courses:           defb "MY COURSES",0
@@ -1378,6 +1729,12 @@ result_score_prefix:    defb "SCORE ",0
 result_review_line:     defb "REVIEW: RETRY QUIZ",0
 result_mastered_line:   defb "MASTERED: NEXT",0
 result_line_3:          defb "QR QUEUED / CABLE OFF",0
+code_instruction:        defb "CONTINUE ON CALC",0
+code_prefix:             defb "CODE:",0
+code_prompt:             defb "ENTER 6 DIGITS",0
+code_short:              defb "ENTER SIX DIGITS",0
+code_missing:            defb "NOT INSTALLED - SYNC",0
+code_busy:               defb "FINISH CURRENT WORK",0
 catalog_line_1:         defb "Catalog not installed.",0
 catalog_line_2:         defb "Sync package required.",0
 catalog_line_3:         defb "EXIT returns Home.",0
@@ -1402,6 +1759,16 @@ softkey_review:         defb "OPEN",0
 softkey_sync:           defb "OFF",0
 softkey_cable:          defb "CABLE",0
 softkey_user:           defb "USER",0
+softkey_code:           defb "CODE",0
+softkey_open:           defb "OPEN",0
+softkey_back:           defb "BACK",0
+softkey_clear:          defb "CLR",0
+softkey_empty:          defb 0
+; Direct-input scan code pairs for the TI-86's physical numeric keypad.
+; Source groups: Arrow=$FE, KG5=$FD, KG4=$FB, KG3=$F7, KG2=$EF.
+shell_code_digit_keys:
+        defb 0x21,'0',0x22,'1',0x1A,'2',0x12,'3',0x23,'4'
+        defb 0x1B,'5',0x13,'6',0x24,'7',0x1C,'8',0x14,'9'
 shell_result_score:     defs 20,0
 
 UI_RENDER_COPIED_TEXT_LENGTH: equ 0

@@ -24,8 +24,11 @@ execute.
 4. Execute the exact `.86p` in the supported TI-86 emulator using a ROM dumped
    from a calculator in the fleet.
 5. Exercise every terminating key and all navigation keys in the emulator.
-6. Prove ON emergency return; prove EXIT and CLEAR each move one in-app level
-   without leaving Home; prove only `2nd` + EXIT returns to TI-OS.
+6. Prove ON emergency return; prove one physical UP or DOWN press moves exactly
+   one list item and never stalls the foreground input loop; prove EXIT and
+   CLEAR each move one in-app level without leaving Home; prove `2nd` +
+   UP/DOWN changes LCD contrast without moving the selected item; prove only
+   `2nd` + EXIT returns to TI-OS.
 7. Inspect post-run variables and framebuffer; do not infer success only from
    the absence of an emulator crash.
 8. Record the binary digest so the physically transferred bytes are the tested

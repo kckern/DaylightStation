@@ -7,6 +7,15 @@ export { CATEGORIES, resolveCategory } from './categories.mjs';
 export { GRADES, gradeRank, gradeFromLabels, isVisibleAtCeiling } from './grades.mjs';
 export { orderUnits, unitCompleted, annotateLocks, quizSessionPassed } from './materialPolicy.mjs';
 export { evaluatePrintQuota, DEFAULT_PRINT_POLICY } from './printing.mjs';
+export {
+  SCHOOL_CONTINUATION_CODE_DIGITS,
+  SCHOOL_CONTINUATION_CODE_SPACE,
+  SCHOOL_CONTINUATION_LEARNER_SLOTS,
+  SCHOOL_CONTINUATION_MODULE_SPACE,
+  normalizeSchoolContinuationModuleCode,
+  encodeSchoolContinuationCode,
+  decodeSchoolContinuationCode,
+} from './continuationCode.mjs';
 export * from './catalog/index.mjs';
 export * from './schoolcalc/index.mjs';
 export * from './progress/index.mjs';

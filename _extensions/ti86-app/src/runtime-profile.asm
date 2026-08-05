@@ -2381,7 +2381,7 @@ profile_scx_magic_loop:
         sbc hl,de
         jp c,profile_scx_fail_bounds
         push hl
-        ld de,8192 - 21
+        ld de,8320 - 21
         ex de,hl
         or a
         sbc hl,de

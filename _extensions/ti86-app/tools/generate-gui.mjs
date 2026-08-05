@@ -544,13 +544,16 @@ const screens = [
   }),
   makeScreen('quiz', 'Compact multiple-choice input', (g) => {
     header(g, 'QUIZ', '2/5');
-    g.readerText(1, 9, 'What is 12 divided');
-    g.readerText(1, 16, 'by 3?');
-    g.text(1, 30, 'CHOOSE AN ANSWER BELOW');
+    g.text(2, 11, 'WHAT IS 12 DIVIDED');
+    g.text(2, 17, 'BY 3?');
+    g.text(2, 32, 'A) 3');
+    g.text(2, 38, 'B) 4');
+    g.text(2, 44, 'C) 6');
+    g.text(2, 50, 'D) 9');
     g.softkeys([
-      { id: 'choice-a', label: '3' }, { id: 'choice-b', label: '4' },
-      { id: 'choice-c', label: '6' }, { id: 'choice-d', label: '9' },
-      { id: 'choice-e', label: '12' },
+      { id: 'choice-a', label: 'A' }, { id: 'choice-b', label: 'B' },
+      { id: 'choice-c', label: 'C' }, { id: 'choice-d', label: 'D' },
+      null,
     ]);
   }),
   makeScreen('number-input', 'Mixed-size numeric answer input', (g) => {

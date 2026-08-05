@@ -46,7 +46,7 @@ z.emit(0x01); z.word(FRAME_BYTES);       // ld bc,1024
 z.emit(0xED, 0xB0);                     // ldir
 
 z.label(WAIT);
-z.call(0x4068);                         // _get_key -> A
+z.call(0x4068);                         // probe key scanner -> A
 for (const [key, target] of [
   [0x07, 'exit'], [0x01, 'next'], [0x04, 'next'], [0x02, 'previous'], [0x03, 'previous'],
   [0xC2, 'screen_0'], [0xC3, 'screen_1'], [0xC4, 'screen_2'], [0xC5, 'screen_5'], [0xC6, 'screen_7'],

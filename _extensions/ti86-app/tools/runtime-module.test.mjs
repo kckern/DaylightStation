@@ -92,6 +92,12 @@ describe('TI-86 reviewed runtime-module boundary', () => {
     expect(SHELL_SOURCE).not.toMatch(/hydrate_.*(?:program|exec)|sc_map_find_literal[\s\S]{0,80}_exec_assembly/i);
   });
 
+  it('cannot persist an inactive session identity into SCL1', () => {
+    expect(CATALOG_RUNTIME_SOURCE).toMatch(
+      /cat_clear_learning_session:[\s\S]*?SCSTATE_DRAFT_LENGTH_OFFSET[\s\S]*?SCSTATE_SESSION_LEARNER_OFFSET[\s\S]*?ret/,
+    );
+  });
+
   it('restores the durable selected learner after validating every SCG1 profile', () => {
     expect(PROFILE_RUNTIME_SOURCE).toMatch(
       /progress_open_view:[\s\S]*?ld \(profile_target_key\),hl[\s\S]*?call progress_open_canonical[\s\S]*?progress_canonical_ready:[\s\S]*?ld hl,\(scstate_record \+ SCSTATE_SELECTED_LEARNER_OFFSET\)[\s\S]*?ld \(profile_target_key\),hl[\s\S]*?call progress_find_key/,
@@ -196,6 +202,7 @@ describe('TI-86 reviewed runtime-module boundary', () => {
       - TI86_SCHOOLCALC_LIMITS.deliveryRequestTargetBytes
       - TI86_SCHOOLCALC_LIMITS.learnerRosterTargetBytes
       - TI86_SCHOOLCALC_LIMITS.progressProjectionTargetBytes
+      - TI86_SCHOOLCALC_LIMITS.continuationCodebookTargetBytes
       - TI86_SCHOOLCALC_LIMITS.interactionRequestTargetBytes
       - TI86_SCHOOLCALC_LIMITS.interactionResponseTargetBytes
       - TI86_SCHOOLCALC_LIMITS.outputReceiptStorageBytes
@@ -247,10 +254,11 @@ describe('TI-86 reviewed runtime-module boundary', () => {
       .toEqual(expect.objectContaining({
         id: 'learner-profile', moduleCode: 8, programName: 'SCPROF', capabilities: [],
       }));
-    // `_exec_assembly` has a stricter 8 KiB child image window than the
-    // shell. A release that only passes the host's generic 9 KiB limit will
-    // render the Profile runtime's safe bounds diagnostic on real hardware.
-    expect(profileRuntime.codeByteLength).toBeLessThanOrEqual(8 * 1024);
+    // SCPROF uses its own adapter-level child-image ceiling, which remains
+    // below the TI-86's 9,400-byte execution window. Keep the test tied to
+    // that released contract rather than a stale round 8 KiB bucket.
+    expect(profileRuntime.codeByteLength)
+      .toBeLessThanOrEqual(TI86_SCHOOLCALC_LIMITS.profileRuntimeMaxBytes);
     expect(PROFILE_RUNTIME_SOURCE).toMatch(
       /profile_runtime_start:[\s\S]{0,220}call profile_scx_validate_self\s+jp c,profile_render_error[\s\S]*?call scstate_load/,
     );

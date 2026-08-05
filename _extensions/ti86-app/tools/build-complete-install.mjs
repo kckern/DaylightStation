@@ -13,6 +13,7 @@ import {
   decodeTi86LearnerRoster,
   decodeTi86ProgressProjection,
 } from '../../../backend/src/1_adapters/schoolcalc/ti86/Ti86SchoolCalcCodec.mjs';
+import { decodeTi86ContinuationCodebook } from '../../../backend/src/1_adapters/schoolcalc/ti86/Ti86ContinuationCodebook.mjs';
 import { decodeSchoolCalcLocalState } from './lib/schoolcalc-local-state.mjs';
 import { openSchoolCalcRecord } from './lib/schoolcalc-record-view.mjs';
 import {
@@ -24,6 +25,7 @@ const EXTENSION = path.resolve(HERE, '..');
 const ROOT = path.resolve(EXTENSION, '..', '..');
 const DIST = path.join(EXTENSION, 'dist');
 const PACKS = path.join(DIST, 'content-packs');
+const reuseContentPacks = process.argv.includes('--reuse-content-packs');
 
 for (const builder of [
   'build-schoolcalc-client.mjs',
@@ -31,9 +33,10 @@ for (const builder of [
   'build-catalog-packs.mjs',
   'build-starter-install.mjs',
   'build-ti86a-provisioning.mjs',
-]) {
+].filter((builder) => !reuseContentPacks || builder !== 'build-catalog-packs.mjs')) {
   execFileSync(process.execPath, [path.join(HERE, builder)], { cwd: ROOT, stdio: 'inherit' });
 }
+if (reuseContentPacks) process.stdout.write('[ti86] reusing the previously audited content-pack manifest\n');
 const packs = JSON.parse(readFileSync(path.join(PACKS, 'manifest.json'), 'utf8'));
 if (packs.schema !== 'school.calc.ti86-pack-manifest/v1' || !Array.isArray(packs.artifacts) || packs.artifacts.length === 0) {
   throw new Error('TI-86 pack manifest is invalid or empty');
@@ -57,6 +60,7 @@ const transfer = [
   file('DSUSERS.86s', DIST, 'string', 'SCU1'),
   file('DSPROG.86s', DIST, 'string', 'SCG1'),
   file('DSCAT0.86s', DIST, 'string', 'SCC1'),
+  file('DSCODE.86s', DIST, 'string', 'SCCO'),
   file('DSINST0.86s', DIST, 'string', 'SCM1'),
   file('DSINST.86s', DIST, 'string', 'SCM1'),
   ...packs.artifacts.map((artifact) => file(artifact.fileName, PACKS, 'content-pack', 'SCP1', artifact)),
@@ -89,6 +93,8 @@ for (const entry of transfer.filter(({ kind }) => ['string', 'content-pack', 'lo
     decodeTi86InstalledState(record);
   } else if (entry.magic === 'SCG1') {
     decodeTi86ProgressProjection(record);
+  } else if (entry.magic === 'SCCO') {
+    decodeTi86ContinuationCodebook(record);
   } else {
     // SCI1, SCC1, and SCP1 use the exact offset-oriented typed-document shape
     // consumed by the calculator reader. Envelope/CRC validity alone is not
@@ -160,6 +166,10 @@ function auditStarterRelationships(entries) {
   const installed = decodeTi86InstalledState(recordByName.get('DSINST0'));
   if (installed.catalogGenerationKey !== state.catalogGenerationKey) {
     throw new Error('starter SCM1 does not select the bundled SCC1 generation');
+  }
+  const codebook = decodeTi86ContinuationCodebook(recordByName.get('DSCODE'));
+  if (codebook.generationKey !== state.catalogGenerationKey) {
+    throw new Error('starter SCCO does not select the bundled SCC1 generation');
   }
   const roster = decodeTi86LearnerRoster(recordByName.get('DSUSERS'));
   const progress = decodeTi86ProgressProjection(recordByName.get('DSPROG'));

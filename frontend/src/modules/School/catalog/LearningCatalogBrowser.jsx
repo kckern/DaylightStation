@@ -139,7 +139,11 @@ export default function LearningCatalogBrowser({ onLaunch }) {
                   },
                 })}>
                   <span className="school-learning-catalog__module-index">{index + 1}</span>
-                  <span><strong>{module.title ?? MODULE_LABELS[module.type] ?? 'Module'}</strong><small>{MODULE_LABELS[module.type] ?? module.type}</small></span>
+                  <span><strong>{module.title ?? MODULE_LABELS[module.type] ?? 'Module'}</strong><small>{MODULE_LABELS[module.type] ?? module.type}</small>
+                    {currentUser?.id && module.continuationCode && (
+                      <CalculatorContinuationCode learnerId={currentUser.id} moduleCode={module.continuationCode} />
+                    )}
+                  </span>
                   <span aria-hidden>›</span>
                 </button>
               </li>
@@ -149,4 +153,18 @@ export default function LearningCatalogBrowser({ onLaunch }) {
       )}
     </section>
   );
+}
+
+/** A read-only, offline calculator route. It is intentionally not a login token. */
+function CalculatorContinuationCode({ learnerId, moduleCode }) {
+  const [code, setCode] = useState(null);
+  useEffect(() => {
+    let alive = true;
+    schoolApi.continuationCode({ learnerId, moduleCode }).then(({ ok, data }) => {
+      if (alive && ok && data?.schema === 'school.continuation-code/v1') setCode(data.code);
+    });
+    return () => { alive = false; };
+  }, [learnerId, moduleCode]);
+  if (!code) return null;
+  return <small className="school-learning-catalog__calculator-code">Continue on calculator · Code: {code}</small>;
 }

@@ -29,6 +29,14 @@ export {
 } from './Ti86SchoolCalcCodec.mjs';
 export { TI86_SCHOOLCALC_LIMITS } from './Ti86SchoolCalcLimits.mjs';
 export {
+  TI86_CONTINUATION_CODEBOOK_MAGIC,
+  TI86_CONTINUATION_CODEBOOK_VARIABLE,
+  TI86_CONTINUATION_CODEBOOK_ENTRY_BYTES,
+  encodeTi86ContinuationCodebook,
+  decodeTi86ContinuationCodebook,
+  resolveTi86ContinuationCode,
+} from './Ti86ContinuationCodebook.mjs';
+export {
   Ti86NativeToolMapper,
   TI86_NATIVE_LAUNCH,
   TI86_NATIVE_MAX_EQUATIONS,

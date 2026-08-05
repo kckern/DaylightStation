@@ -5,6 +5,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { YamlLearningCatalogRepository } from '../../../backend/src/1_adapters/school/catalog/YamlLearningCatalogRepository.mjs';
 import { Ti86SchoolCalcCodec, decodeTi86Envelope } from '../../../backend/src/1_adapters/schoolcalc/ti86/Ti86SchoolCalcCodec.mjs';
+import { encodeTi86ContinuationCodebook } from '../../../backend/src/1_adapters/schoolcalc/ti86/Ti86ContinuationCodebook.mjs';
 import { stableRecordDigest } from '../../../backend/src/3_applications/common/stableRecord.mjs';
 import { createTi86StringFile } from './lib/ti86-string-file.mjs';
 import { encodeSchoolCalcLocalState, SCHOOLCALC_LOCAL_FLAGS } from './lib/schoolcalc-local-state.mjs';
@@ -34,6 +35,18 @@ const generation = `sha256:${stableRecordDigest(projectionBody)}`;
 const projection = { ...projectionBody, generation };
 const catalog = codec.encodeCatalog(projection);
 const catalogGenerationKey = decodeTi86Envelope(catalog, 'SCC1').generationKey;
+const continuationCodebook = encodeTi86ContinuationCodebook({
+  deviceId: DEVICE_ID,
+  generation,
+  catalog: raw,
+  artifacts,
+  learnerSlots: {
+    soren: { slot: 0, learnerKey: 1 },
+    alan: { slot: 1, learnerKey: 2 },
+    milo: { slot: 2, learnerKey: 3 },
+    felix: { slot: 3, learnerKey: 4 },
+  },
+});
 const manifest = codec.encodeSyncManifest({
   schema: 'school.calc.sync-plan/v1', deviceId: DEVICE_ID, platformId: 'ti86',
   generation: `sha256:${stableRecordDigest({ deviceId: DEVICE_ID, artifacts, generation })}`,
@@ -54,6 +67,7 @@ const state1 = encodeSchoolCalcLocalState({
 
 mkdirSync(OUT, { recursive: true });
 write('DSCAT0', catalog, 'SchoolCalc starter Catalog');
+write('DSCODE', continuationCodebook, 'SchoolCalc offline continuation routes');
 write('DSINST0', manifest, 'SchoolCalc starter install state');
 write('DSINST', manifest, 'SchoolCalc starter uplink state');
 // Provision both alternating slots. Reinstalling over a previously launched
@@ -63,9 +77,9 @@ write('DSLOCAL0', state0, 'SchoolCalc starter local state 1');
 write('DSLOCAL1', state1, 'SchoolCalc starter local state 2');
 writeFileSync(path.join(OUT, 'starter-install.json'), `${JSON.stringify({
   deviceId: DEVICE_ID, generation, catalogGenerationKey,
-  variables: ['DSCAT0', 'DSINST0', 'DSINST', 'DSLOCAL0', 'DSLOCAL1'], artifacts,
+  variables: ['DSCAT0', 'DSCODE', 'DSINST0', 'DSINST', 'DSLOCAL0', 'DSLOCAL1'], artifacts,
 }, null, 2)}\n`);
-process.stdout.write(`[ti86] starter install: ${artifacts.length} lessons, SCC1 ${catalog.length} bytes, SCM1 ${manifest.length} bytes\n`);
+process.stdout.write(`[ti86] starter install: ${artifacts.length} lessons, SCC1 ${catalog.length} bytes, SCCO ${continuationCodebook.length} bytes, SCM1 ${manifest.length} bytes\n`);
 
 function projectCatalog(catalogDefinition) {
   return {

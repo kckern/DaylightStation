@@ -15,13 +15,13 @@ const EXTENSION = path.resolve(HERE, '..');
 const INCLUDE = readFileSync(path.join(EXTENSION, 'src', 'ti86asm.inc'), 'utf8');
 
 describe('TI-86 input safety boundary', () => {
-  it('keeps assembly and JavaScript on the published raw _get_key scan codes', () => {
+  it('keeps SchoolCalc on TI-86 physical raw event codes', () => {
     const assemblyNames = {
       none: 'SC_SCAN_NONE', down: 'SC_SCAN_DOWN', left: 'SC_SCAN_LEFT',
       right: 'SC_SCAN_RIGHT', up: 'SC_SCAN_UP', enter: 'SC_SCAN_ENTER',
-      clear: 'SC_SCAN_CLEAR', on: 'SC_SCAN_ON', f5: 'SC_SCAN_F5',
+      clear: 'SC_SCAN_CLEAR', f5: 'SC_SCAN_F5',
       f4: 'SC_SCAN_F4', f3: 'SC_SCAN_F3', f2: 'SC_SCAN_F2',
-      f1: 'SC_SCAN_F1', second: 'SC_SCAN_SECOND', exit: 'SC_SCAN_EXIT',
+      f1: 'SC_SCAN_F1', exit: 'SC_SCAN_EXIT',
       more: 'SC_SCAN_MORE',
     };
     for (const [key, name] of Object.entries(assemblyNames)) {
@@ -31,19 +31,25 @@ describe('TI-86 input safety boundary', () => {
     expect(readDecimalEquate(INCLUDE, 'SC_ON_INTERRUPT')).toBe(TI86_ON_INTERRUPT_FLAG.bit);
   });
 
-  it('gives every assembly UI the shared Back, explicit-quit, and ON safety boundary', () => {
+  it('gives every assembly UI Back, explicit quit, ON safety, and contrast chords', () => {
     const input = readFileSync(path.join(EXTENSION, 'src', 'input.asm'), 'utf8');
     expect(input).toContain('bit SC_ON_INTERRUPT,(iy+SC_ON_FLAGS)');
-    expect(input).toContain('cp SC_SCAN_ON');
-    expect(input).toContain('cp SC_SCAN_SECOND');
-    expect(input).toContain('cp SC_SCAN_EXIT');
+    expect(input).toContain('sc_input_read_raw:');
+    expect(input).toContain('out (1),a');
+    expect(input).toContain('in a,(1)');
+    expect(input).toContain('ld a,$FE');
+    expect(input).toContain('sc_input_arm_second:');
+    expect(input).toContain('sc_input_contrast_up:');
+    expect(input).toContain('sc_input_contrast_down:');
+    expect(input).toContain('out (SC_CONTRAST_PORT),a');
+    expect(input).toContain('jr sc_input_wait');
     expect(input).toContain('cp SC_SCAN_CLEAR');
     expect(input).toContain('sc_input_clear_to_back:');
     expect(input).toContain('ld a,SC_SCAN_EXIT');
-    expect(input).toContain('sc_input_exit_or_quit:');
-    expect(input).toContain('ld (sc_input_second_armed),a');
     expect(input).toContain('jp _JforceCmdNoChar');
-    expect(input).toMatch(/sc_input_wait_release:[\s\S]*?call _get_key[\s\S]*?or a[\s\S]*?ret z[\s\S]*?call _idle/);
+    expect(input).toMatch(/sc_input_wait_release:[\s\S]*?call sc_input_read_raw[\s\S]*?jr nz,sc_input_release_wait[\s\S]*?call sc_input_debounce_delay[\s\S]*?call sc_input_read_raw[\s\S]*?ret z/);
+    expect(input).toMatch(/sc_input_debounce_delay:[\s\S]*?ld b,0[\s\S]*?djnz sc_input_debounce_loop/);
+    expect(input).toMatch(/sc_input_wait:[\s\S]*?call sc_input_poll[\s\S]*?or a[\s\S]*?ret nz[\s\S]*?jr sc_input_wait/);
 
     for (const name of ['schoolcalc.asm', 'ui-renderer-probe.asm', 'record-reader-probe.asm']) {
       const source = readFileSync(path.join(EXTENSION, 'src', name), 'utf8');
@@ -52,6 +58,12 @@ describe('TI-86 input safety boundary', () => {
       expect(source, name).toContain('include "input.asm"');
       expect(source, name).not.toMatch(/call\s+_get_?key/i);
     }
+  });
+
+  it('keeps physical matrix codes aligned with the disposable device diagnostic', () => {
+    expect(TI86_RAW_SCAN_CODE.on).toBe(0x29);
+    expect(TI86_RAW_SCAN_CODE.clear).toBe(0x0F);
+    expect(TI86_RAW_SCAN_CODE.exit).toBe(0x37);
   });
 
   it('releases a held child-runtime key before the restored SchoolCalc shell can read it', () => {

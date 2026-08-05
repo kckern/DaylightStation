@@ -58,6 +58,9 @@ describe('SchoolCalc production shell build', () => {
     expect(code.includes(Buffer.from([0x0C, 0x08, ...Buffer.from('DSLOCAL0', 'ascii')]))).toBe(true);
     expect(code.includes(Buffer.from([0x0C, 0x08, ...Buffer.from('DSLOCAL1', 'ascii')]))).toBe(true);
     expect(SHELL_SOURCE).toContain('call local_state_copy_candidate');
+    expect(SHELL_SOURCE).toMatch(
+      /local_state_save:[\s\S]*?SCL_FLAGS_ADDR[\s\S]*?SCL_SESSION_LEARNER_ADDR[\s\S]*?local_state_session_identity_ready/,
+    );
     expect(SHELL_SOURCE).toMatch(/publish_device_info:\s+call discover_runtime_modules[\s\S]*?DSINFO_RUNTIME_MASK_ADDR/);
     expect(SHELL_SOURCE).toMatch(/discover_runtime_modules:[\s\S]*?call validate_installed_runtime/);
     expect(SHELL_SOURCE).toMatch(/validate_installed_runtime:[\s\S]*?runtime_header_prefix[\s\S]*?runtime_expected_crc/);
@@ -66,7 +69,7 @@ describe('SchoolCalc production shell build', () => {
     expect(bootPath).toContain('call sync_commit_staged');
     expect(SHELL_SOURCE).not.toContain('include "content-hydration.asm"');
     expect(SHELL_SOURCE).toContain('include "generated/ui-shell-assets.inc"');
-    expect(SHELL_SOURCE).toContain('Cable: unknown while idle');
+    expect(SHELL_SOURCE).toContain('NO RELAY DETECTED');
     expect(SHELL_SOURCE).toContain('Safe to unplug');
     expect(SHELL_SOURCE).not.toContain('Cable: connected');
     expect(SHELL_SOURCE).toContain('scsync_name:    defb 0x12,6,"SCSYNC",0,0');

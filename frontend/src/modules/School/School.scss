@@ -217,6 +217,11 @@
   }
   &__modules button > span:nth-child(2) { display: flex; flex-direction: column; gap: 0.15rem; }
   &__modules small { color: var(--school-muted); text-transform: uppercase; letter-spacing: 0.05em; }
+  &__calculator-code {
+    margin-top: 0.25rem; color: var(--school-accent) !important;
+    text-transform: none !important; letter-spacing: normal !important;
+    font-size: 0.78rem;
+  }
   &__module-index {
     width: 2.2rem; height: 2.2rem; display: flex; align-items: center; justify-content: center;
     border-radius: 50%; background: var(--school-surface); color: var(--school-muted); font-weight: 800;

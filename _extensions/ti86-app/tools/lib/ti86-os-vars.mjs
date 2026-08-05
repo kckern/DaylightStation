@@ -25,7 +25,7 @@ export const TI86_ROM = Object.freeze({
   runIndicatorOff: 0x4AB1,
 });
 
-/** Raw scan codes returned by TI-86 _get_key/_GetCSC at $4068. */
+/** Raw scan codes used by the disposable TI-86 diagnostic at $4068. */
 export const TI86_RAW_SCAN_CODE = Object.freeze({
   none: 0x00,
   down: 0x01,

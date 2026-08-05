@@ -416,15 +416,14 @@ assessment_render_prompt:
         ld b,2
         ld c,11
         ld d,122
-        ld e,50
+        ld e,27
         call ui_draw_wrapped_text
-        ; A normal assessment fits its question and every labelled answer in
-        ; one reading surface.  The compact body is deliberately dense: its
-        ; question uses the design-system six-pixel leading while answer rows
-        ; use their five-pixel glyph height.  That leaves an honest full
-        ; choice set above the fixed function rail (three question lines plus
-        ; five choices is the common maximum).  No separate "answers" state
-        ; or hidden key transition is required.
+        or a
+        jp nz,assessment_invalid_render
+        ; The assessment codec supplies at most three compact prompt rows.
+        ; Keep four blank pixels before the choice region, then reserve four
+        ; 3x5 rows at y=32,38,44,50. A fifth short choice may use two columns;
+        ; every other overflow uses the explicit prompt/answer fallback.
         call assessment_inline_choices_fit
         or a
         jp nz,assessment_render_inline_choices
@@ -576,10 +575,10 @@ assessment_inline_prompt_back:
         jp assessment_store_prompt_page
 
 ; Return A=1 only when this is the final authored prompt page and its visible
-; compact lines plus every A–E choice row fit entirely in y=11..54.  The
-; renderer leaves ui_wrap_y on the last prompt baseline, so this tests the
-; actual proportional rendering geometry instead of a fragile character
-; count. Rows advance by six pixels: five pixels of glyph ink plus a mandatory
+; compact prompt rows plus every A–E choice row fit entirely in y=11..54. The
+; codec limits prompt pages to three safe compact rows; verify the renderer did
+; not wrap beyond y=23 before placing the answer region at its fixed y=32.
+; Rows advance by six pixels: five pixels of glyph ink plus a mandatory
 ; one-pixel blank separator, so choices remain individually scannable.
 assessment_inline_choices_fit:
         ld hl,(runtime_state_record + RUNTIME_SCL_SCROLL_OFFSET)
@@ -591,9 +590,9 @@ assessment_inline_choices_fit:
         cp l
         jr nz,assessment_inline_choices_no
         ld a,(ui_wrap_y)
-        ld b,a
-        ld a,(ui_font_advance_y)
-        add a,b
+        cp 24
+        jr nc,assessment_inline_choices_no
+        ld a,32
         ld (assessment_render_y),a
         ld b,a
         ld a,(assessment_choice_count)
@@ -632,9 +631,9 @@ assessment_inline_two_column_fit:
         cp l
         jr nz,assessment_inline_two_columns_no
         ld a,(ui_wrap_y)
-        ld b,a
-        ld a,(ui_font_advance_y)
-        add a,b
+        cp 24
+        jr nc,assessment_inline_two_columns_no
+        ld a,32
         ld (assessment_render_y),a
         ld b,a
         ld a,(assessment_choice_count)
@@ -1678,7 +1677,7 @@ assessment_render_index:        defb 0
 assessment_render_y:            defb 0
 assessment_letter:              defb 'A',0
 assessment_ack_index:           defb 0
-assessment_ack_label:           defb 'A',' ','O','K',0
+assessment_ack_label:           defb 'A',0
 assessment_inline_prefix:       defs 3,0
 assessment_inline_columns:      defb 1
 assessment_inline_label_x:      defb 2,65

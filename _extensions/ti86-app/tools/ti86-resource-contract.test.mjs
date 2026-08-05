@@ -14,6 +14,8 @@ const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(HERE, '..', '..', '..');
 const RELAY_HEADER = path.join(ROOT, '_extensions', 'ticalc-relay', 'firmware', 'src', 'SchoolCalcRelaySession.h');
 const RELAY_MAIN = path.join(ROOT, '_extensions', 'ticalc-relay', 'firmware', 'src', 'main.cpp');
+const CATALOG_RUNTIME = path.join(ROOT, '_extensions', 'ti86-app', 'src', 'runtime-catalog.asm');
+const PROFILE_RUNTIME = path.join(ROOT, '_extensions', 'ti86-app', 'src', 'runtime-profile.asm');
 
 describe('TI-86 SchoolCalc resource contract', () => {
   it('charges the complete standard client and leaves an honest content target', () => {
@@ -21,11 +23,11 @@ describe('TI-86 SchoolCalc resource contract', () => {
     expect(limits.totalUserBytes).toBe(98_224);
     expect(limits.shellMaxBytes).toBe(9 * 1024);
     expect(limits.standardRuntimeTargetBytes).toBe(6 * 1024);
-    expect(limits.standardRuntimeMaxBytes).toBe(9 * 1024);
+    expect(limits.standardRuntimeMaxBytes).toBe(9400);
     expect(limits.qrRuntimeTargetBytes).toBe(4 * 1024);
-    expect(limits.qrRuntimeMaxBytes).toBe(6 * 1024);
+    expect(limits.qrRuntimeMaxBytes).toBe((6 * 1024) + 128);
     expect(limits.catalogRuntimeTargetBytes).toBe(6 * 1024);
-    expect(limits.catalogRuntimeMaxBytes).toBe(8 * 1024);
+    expect(limits.catalogRuntimeMaxBytes).toBe((8 * 1024) + 128);
     expect(limits.deliveryRuntimeTargetBytes).toBe(6 * 1024);
     expect(limits.deliveryRuntimeMaxBytes).toBe(8 * 1024);
     expect(limits.resultQueueRuntimeTargetBytes).toBe(4 * 1024);
@@ -35,14 +37,14 @@ describe('TI-86 SchoolCalc resource contract', () => {
     expect(limits.nativeRuntimeTargetBytes).toBe(6 * 1024);
     expect(limits.nativeRuntimeMaxBytes).toBe(8 * 1024);
     expect(limits.profileRuntimeTargetBytes).toBe(6 * 1024);
-    expect(limits.profileRuntimeMaxBytes).toBe(8 * 1024);
+    expect(limits.profileRuntimeMaxBytes).toBe((8 * 1024) + 128);
     expect(limits.tutorRuntimeTargetBytes).toBe(6 * 1024);
     expect(limits.tutorRuntimeMaxBytes).toBe(9 * 1024);
     expect(limits.standardClientProgramCount).toBe(10);
     expect(limits.standardClientVariableOverheadBytes).toBe(320);
     expect(limits.standardClientTargetBytes).toBe(60_736);
-    expect(limits.standardClientIndependentCeilingBytes).toBe(83_264);
-    expect(limits.standardClientMaxBytes).toBe(71_962);
+    expect(limits.standardClientIndependentCeilingBytes).toBe(83_832);
+    expect(limits.standardClientMaxBytes).toBe(73_786);
     expect(limits.catalogStateTargetBytes).toBe(3.5 * 1024);
     expect(limits.catalogStateMaxBytes).toBe(6 * 1024);
     expect(limits.localStateStorageBytes).toBe(312);
@@ -50,7 +52,7 @@ describe('TI-86 SchoolCalc resource contract', () => {
     expect(limits.catalogRecordMaxBytes).toBe(5832);
     expect(limits.catalogRecordMaxBytes + limits.localStateStorageBytes)
       .toBe(limits.catalogStateMaxBytes);
-    expect(limits.queueTargetBytes).toBe(4 * 1024);
+    expect(limits.queueTargetBytes).toBe(3 * 1024);
     expect(limits.queueMaxBytes).toBe(6 * 1024);
     expect(limits.queueMaxRecords).toBe(170);
     expect(limits.deliveryRequestTargetBytes).toBe(512);
@@ -61,18 +63,20 @@ describe('TI-86 SchoolCalc resource contract', () => {
     expect(limits.learnerRosterMaxRecords).toBe(16);
     expect(limits.progressProjectionTargetBytes).toBe(2 * 1024);
     expect(limits.progressProjectionMaxBytes).toBe(4 * 1024);
+    expect(limits.continuationCodebookTargetBytes).toBe(512);
+    expect(limits.continuationCodebookMaxBytes).toBe(2 * 1024);
     expect(limits.outputReceiptBytes).toBe(34);
     expect(limits.outputReceiptStorageBytes).toBe(66);
     expect(limits.acknowledgementMaxBytes).toBe(544);
     expect(limits.syncManifestMaxBytes).toBe(6 * 1024);
     expect(limits.nativeSnapshotMaxBytes).toBe(4 * 1024);
-    expect(limits.freeReserveBytes).toBe(9_300);
+    expect(limits.freeReserveBytes).toBe(8_500);
     expect(limits.freeReserveBytes - limits.nativeSnapshotMaxBytes - limits.variableOverheadBytes)
-      .toBe(5172);
+      .toBe(4372);
     expect(limits.lessonTargetBytes).toBe(8 * 1024);
     expect(limits.lessonMaxBytes).toBe(12 * 1024);
     expect(limits.queueCommitCopyCount).toBe(0);
-    expect(limits.nominalDownloadableContentBytes).toBe(16_346);
+    expect(limits.nominalDownloadableContentBytes).toBe(17_658);
     expect(limits.downloadableContentAtStandardClientCeilingBytes).toBe(0);
     expect(limits.nominalDownloadableContentBytes)
       .toBeGreaterThan(limits.downloadableContentAtStandardClientCeilingBytes);
@@ -83,6 +87,11 @@ describe('TI-86 SchoolCalc resource contract', () => {
     expect(SCHOOLCALC_LOCAL_STATE_BYTES).toBe(TI86_SCHOOLCALC_LIMITS.localStateRecordBytes);
     expect(SCHOOLCALC_LOCAL_STATE_SLOTS).toHaveLength(TI86_SCHOOLCALC_LIMITS.localStateSlotCount);
     expect(TI86_NATIVE_SNAPSHOT_MAX_BYTES).toBe(TI86_SCHOOLCALC_LIMITS.nativeSnapshotMaxBytes);
+  });
+
+  it('keeps runtime self-validation aligned with the reviewed Catalog and Profile ceilings', () => {
+    expect(readFileSync(CATALOG_RUNTIME, 'utf8')).toContain('ld de,8320 - 16');
+    expect(readFileSync(PROFILE_RUNTIME, 'utf8')).toContain('ld de,8320 - 21');
   });
 
   it('keeps the separately compiled relay on the same wire limits', () => {

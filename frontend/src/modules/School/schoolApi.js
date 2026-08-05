@@ -31,6 +31,9 @@ export const schoolApi = {
     + `/lessons/${encodeURIComponent(lessonId)}`
     + (learnerId ? `?learnerId=${encodeURIComponent(learnerId)}` : ''),
   ),
+  continuationCode: ({ learnerId, moduleCode }) => req(
+    `/continuation-code?learnerId=${encodeURIComponent(learnerId)}&moduleCode=${encodeURIComponent(moduleCode)}`,
+  ),
   geoDecks: () => req('/geography/decks'),
   openSession: ({ userId = null, bankId, mode, learning = null }) => req('/sessions', {
     userId, bankId, mode, ...(learning ? { learning } : {}),
