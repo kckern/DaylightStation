@@ -86,6 +86,42 @@ describe('GET /api/v1/school/print/:id', () => {
     expect(both.body.error).toMatch(/mutually exclusive/);
   });
 
+  it('quiz-archetype omr renders demand a learnerId (or explicit card) — siblings must not share a sheet', async () => {
+    const render = renderFake();
+    const repo = {
+      get: vi.fn(),
+      getPublished: vi.fn().mockResolvedValue({ id: 'q', archetype: 'quiz', seed: 1, blocks: [] }),
+    };
+    const allocations = { findByCard: vi.fn(), findByDocument: vi.fn().mockResolvedValue([]) };
+    const bare = await request(appWith({ render, repo, allocations }))
+      .get('/api/v1/school/print/pokemon-quiz-1?variety=omr');
+    expect(bare.status).toBe(400);
+    expect(bare.body.error).toMatch(/per-student/);
+    // freshCard does not evade the rule — an anonymous mint is the problem.
+    const fresh = await request(appWith({ render, repo, allocations }))
+      .get('/api/v1/school/print/pokemon-quiz-1?variety=omr&freshCard=1');
+    expect(fresh.status).toBe(400);
+    // With a learner, an explicit card, or in teacher mode, it renders.
+    for (const q of ['learnerId=felix', 'card=1234567&startRow=1', 'teacher=1']) {
+      const res = await request(appWith({ render, repo, allocations }))
+        .get(`/api/v1/school/print/pokemon-quiz-1?variety=omr&${q}`);
+      expect(res.status).toBe(200);
+    }
+  });
+
+  it('worksheet-archetype omr renders may stay anonymous', async () => {
+    const render = renderFake();
+    const repo = {
+      get: vi.fn(),
+      getPublished: vi.fn().mockResolvedValue({ id: 'w', archetype: 'worksheet', seed: 1, blocks: [] }),
+    };
+    const allocations = { findByCard: vi.fn(), findByDocument: vi.fn().mockResolvedValue([]) };
+    const res = await request(appWith({ render, repo, allocations }))
+      .get('/api/v1/school/print/practice-sheet?variety=omr');
+    expect(res.status).toBe(200);
+    expect(render.calls[0].context).toEqual({ freshCard: true });
+  });
+
   it('a teacher key with no existing sheet renders WITHOUT minting an allocation', async () => {
     const render = renderFake({ warnings: ["quiz 'q' rendered without card allocation"] });
     const allocations = { findByCard: vi.fn(), findByDocument: vi.fn().mockResolvedValue([]) };
