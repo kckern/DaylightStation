@@ -731,6 +731,84 @@ describe('RenderPrintDocument — bank-select sugar resolution (spec §6.2)', ()
     expect(text).toMatch(/\b2\./);
   });
 
+  // Review finding 1: numbering must be STRICTLY POSITIONAL (document order),
+  // not "hand-authored keeps its own number, bank-select mints from a running
+  // max" — the latter prints bank-select items ahead of a later-numbered-but
+  // -earlier-printed hand-authored question whenever a bank-select block sits
+  // BEFORE one in the document.
+  it('numbers strictly ascending in document order — a bank-select block BEFORE a hand-authored question prints "1." then "2.", not "2." then "1."', async () => {
+    const banks = { getBank: (id) => (id === 'geo-bank' ? geoBank : null) };
+    const useCase = new RenderPrintDocument({ banks });
+    const document = bankSelectDoc({
+      blocks: [{
+        type: 'question', bankId: 'geo-bank', select: 1, key: 'sel1',
+      }, question(1)],
+    });
+    const result = await useCase.execute({ document });
+    const text = pdfText(result.bytes);
+    const indexOf1 = text.indexOf('1.');
+    const indexOf2 = text.indexOf('2.');
+    expect(indexOf1).toBeGreaterThanOrEqual(0);
+    expect(indexOf2).toBeGreaterThan(indexOf1);
+  });
+
+  it('interleaved bank-select blocks (with unrelated content between them) number contiguously 1..N in document order', async () => {
+    const bankA = { id: 'bank-a', items: [{ id: 'a1', type: 'multiple_choice', prompt: 'Prompt A', choices: ['X', 'Y'], answer: 'X' }] };
+    const bankB = { id: 'bank-b', items: [{ id: 'b1', type: 'multiple_choice', prompt: 'Prompt B', choices: ['X', 'Y'], answer: 'X' }] };
+    const banks = { getBank: (id) => ({ 'bank-a': bankA, 'bank-b': bankB })[id] ?? null };
+    const useCase = new RenderPrintDocument({ banks });
+    const document = bankSelectDoc({
+      blocks: [
+        { type: 'rich_text', md: 'Section A' },
+        { type: 'question', bankId: 'bank-a', select: 1, key: 'sela' },
+        { type: 'rich_text', md: 'Section B' },
+        { type: 'question', bankId: 'bank-b', select: 1, key: 'selb' },
+      ],
+    });
+    const result = await useCase.execute({ document });
+    const text = pdfText(result.bytes);
+    const indexOf1 = text.indexOf('1.');
+    const indexOf2 = text.indexOf('2.');
+    expect(indexOf1).toBeGreaterThanOrEqual(0);
+    expect(indexOf2).toBeGreaterThan(indexOf1);
+    // Contiguous, not "1." then "3." or similar — no third numbered item exists.
+    expect(text.indexOf('3.')).toBe(-1);
+  });
+
+  // Review finding 2: a supplied-but-unapplied option must warn, never fail silently.
+  it('a supplied but unapplied bank-select filter surfaces a warning', async () => {
+    const banks = { getBank: (id) => (id === 'geo-bank' ? geoBank : null) };
+    const useCase = new RenderPrintDocument({ banks });
+    const document = bankSelectDoc({
+      blocks: [{
+        type: 'question', bankId: 'geo-bank', select: 2, key: 'sel1', filter: { topics: ['geography'] },
+      }],
+    });
+    const result = await useCase.execute({ document });
+    expect(result.warnings).toEqual(expect.arrayContaining([
+      expect.stringMatching(/filter.*not applied/i),
+    ]));
+  });
+
+  it('no filter supplied -> no filter warning, and selection is unchanged either way', async () => {
+    const banks = { getBank: (id) => (id === 'geo-bank' ? geoBank : null) };
+    const useCase = new RenderPrintDocument({ banks });
+    const withoutFilter = await useCase.execute({ document: bankSelectDoc() });
+    expect(withoutFilter.warnings).toEqual([]);
+
+    const withFilter = await useCase.execute({
+      document: bankSelectDoc({
+        blocks: [{
+          type: 'question', bankId: 'geo-bank', select: 2, key: 'sel1', filter: { topics: ['geography'] },
+        }],
+      }),
+    });
+    // filter is validated-but-ignored (spec §6.2's picker doesn't read it) —
+    // the two documents differ ONLY in the presence of `filter`, so the
+    // rendered pages must be byte-identical.
+    expect(withFilter.bytes.equals(withoutFilter.bytes)).toBe(true);
+  });
+
   it('rejects an unknown bankId with a structured BANK_SELECT_BANK_NOT_FOUND error', async () => {
     const banks = { getBank: () => null };
     const useCase = new RenderPrintDocument({ banks });
