@@ -58,6 +58,38 @@ const invalidDoc = () => ({
   blocks: [{ type: 'not_a_real_block_type' }],
 });
 
+/** A `school.document-source/v1` fixture with one answer-bearing inline question — mints a derived bank on publish. */
+const sourceQuizDoc = (over = {}) => ({
+  schema: 'school.document-source/v1',
+  id: 'teacher-cli-fixture',
+  seed: 42,
+  target: ['letter'],
+  archetype: 'quiz',
+  title: 'CLI Teacher Fixture',
+  blocks: [{
+    type: 'question',
+    itemId: 'q1',
+    number: 1,
+    blocks: [
+      { type: 'rich_text', md: 'Pick a color.' },
+      { type: 'omr_response', itemId: 'q1', choices: 2 },
+    ],
+    choices: ['Red', 'Blue'],
+    answer: 'Blue',
+  }],
+  ...over,
+});
+
+/** A purely presentational source — publishes clean but mints no bank. */
+const noBankSourceDoc = () => ({
+  schema: 'school.document-source/v1',
+  id: 'no-bank-fixture',
+  seed: 5,
+  target: ['letter'],
+  archetype: 'infopage',
+  blocks: [{ type: 'rich_text', md: 'Some teaching prose with no questions.' }],
+});
+
 async function withTmpDir(fn) {
   const root = await mkdtemp(path.join(tmpdir(), 'school-docs-cli-'));
   try {
@@ -291,6 +323,164 @@ describe('school-docs CLI', () => {
       const printed = io.stdout.write.mock.calls.map((call) => call[0]).join('');
       expect(printed).toContain('Warnings');
       expect(printed).toContain('--density is accepted but has no effect');
+    }));
+  });
+
+  describe('publish', () => {
+    it('publishes a source file: writes published + derived-bank YAML under the content root, prints id/rev/bankId', async () => withTmpDir(async (root) => {
+      const contentRoot = path.join(root, 'content');
+      await mkdir(contentRoot, { recursive: true });
+      await writeFile(path.join(contentRoot, 'quiz.yml'), dump(sourceQuizDoc()));
+
+      const { exitCode, report } = await runSchoolDocs(['publish', 'quiz.yml', '--content-root', contentRoot]);
+      expect(exitCode).toBe(0);
+      expect(report.ok).toBe(true);
+      expect(report.id).toBe('teacher-cli-fixture');
+      expect(report.rev).toMatch(/^[0-9a-f]{9}$/);
+      expect(report.bankId).toBe(`derived/teacher-cli-fixture@${report.rev}`);
+      expect(report.warnings).toEqual([]);
+
+      const published = await readFile(path.join(contentRoot, 'published', `teacher-cli-fixture@${report.rev}.yml`), 'utf8');
+      expect(published).toContain('teacher-cli-fixture');
+      expect(published).not.toContain('answer:'); // answer-free (spec §3)
+
+      const bank = await readFile(path.join(contentRoot, 'derived-banks', `teacher-cli-fixture@${report.rev}.yml`), 'utf8');
+      expect(bank).toContain('multiple_choice');
+      expect(bank).toContain('Blue');
+    }));
+
+    it('publishes a purely presentational source with no bank — bankId null and a warning, still exit 0', async () => withTmpDir(async (root) => {
+      const contentRoot = path.join(root, 'content');
+      await mkdir(contentRoot, { recursive: true });
+      await writeFile(path.join(contentRoot, 'notes.yml'), dump(noBankSourceDoc()));
+
+      const { exitCode, report } = await runSchoolDocs(['publish', 'notes.yml', '--content-root', contentRoot]);
+      expect(exitCode).toBe(0);
+      expect(report.ok).toBe(true);
+      expect(report.bankId).toBeNull();
+      expect(report.warnings).toEqual(expect.arrayContaining([
+        expect.stringMatching(/no answer-bearing content/i),
+      ]));
+    }));
+
+    it('exits 1 with the postcondition error message for a structurally invalid source', async () => withTmpDir(async (root) => {
+      const contentRoot = path.join(root, 'content');
+      await mkdir(contentRoot, { recursive: true });
+      // A v1 (schema-less) document has no `school.document-source/v1` schema
+      // at all — fails source-stage validation immediately.
+      await writeFile(path.join(contentRoot, 'bad.yml'), dump(invalidDoc()));
+
+      const { exitCode, report } = await runSchoolDocs(['publish', 'bad.yml', '--content-root', contentRoot]);
+      expect(exitCode).toBe(1);
+      expect(report.ok).toBe(false);
+      expect(report.errors.length).toBeGreaterThan(0);
+      expect(report.id).toBeNull();
+    }));
+
+    it('re-publishing the identical source is idempotent (no error, same rev)', async () => withTmpDir(async (root) => {
+      const contentRoot = path.join(root, 'content');
+      await mkdir(contentRoot, { recursive: true });
+      await writeFile(path.join(contentRoot, 'quiz.yml'), dump(sourceQuizDoc()));
+
+      const first = await runSchoolDocs(['publish', 'quiz.yml', '--content-root', contentRoot]);
+      const second = await runSchoolDocs(['publish', 'quiz.yml', '--content-root', contentRoot]);
+      expect(first.exitCode).toBe(0);
+      expect(second.exitCode).toBe(0);
+      expect(second.report.rev).toBe(first.report.rev);
+      expect(second.report.warnings).toEqual(expect.arrayContaining([
+        expect.stringMatching(/already published/i),
+      ]));
+    }));
+
+    it('prints {id, rev, bankId} JSON via the CLI text formatter', async () => withTmpDir(async (root) => {
+      const contentRoot = path.join(root, 'content');
+      await mkdir(contentRoot, { recursive: true });
+      await writeFile(path.join(contentRoot, 'quiz.yml'), dump(sourceQuizDoc()));
+      const io = { stdout: { write: vi.fn() }, stderr: { write: vi.fn() } };
+      const code = await main(['publish', 'quiz.yml', '--content-root', contentRoot], io);
+      expect(code).toBe(0);
+      const printed = io.stdout.write.mock.calls.map((call) => call[0]).join('');
+      expect(printed).toContain('"id":"teacher-cli-fixture"');
+      expect(printed).toMatch(/"rev":"[0-9a-f]{9}"/);
+    }));
+  });
+
+  describe('render --teacher', () => {
+    it('renders a source file with --teacher: exits 0, prints extra pages, no warning (an answerable item exists)', async () => withTmpDir(async (root) => {
+      const contentRoot = path.join(root, 'content');
+      await mkdir(contentRoot, { recursive: true });
+      await writeFile(path.join(contentRoot, 'quiz.yml'), dump(sourceQuizDoc()));
+
+      const plain = await runSchoolDocs([
+        'render', 'quiz.yml', '--out', path.join(root, 'plain.pdf'), '--content-root', contentRoot,
+      ]);
+      const teacher = await runSchoolDocs([
+        'render', 'quiz.yml', '--out', path.join(root, 'teacher.pdf'), '--content-root', contentRoot, '--teacher',
+      ]);
+      expect(plain.exitCode).toBe(0);
+      expect(teacher.exitCode).toBe(0);
+      expect(teacher.report.pages).toBeGreaterThan(plain.report.pages);
+      expect(teacher.report.warnings).not.toEqual(expect.arrayContaining([
+        expect.stringMatching(/no answerable items/i),
+      ]));
+    }));
+
+    it('--teacher works on a PUBLISHED file, resolving its derived bank via the repository', async () => withTmpDir(async (root) => {
+      const contentRoot = path.join(root, 'content');
+      await mkdir(contentRoot, { recursive: true });
+      await writeFile(path.join(contentRoot, 'quiz.yml'), dump(sourceQuizDoc()));
+
+      const published = await runSchoolDocs(['publish', 'quiz.yml', '--content-root', contentRoot]);
+      expect(published.exitCode).toBe(0);
+      const publishedFile = path.join(contentRoot, 'published', `teacher-cli-fixture@${published.report.rev}.yml`);
+
+      const teacher = await runSchoolDocs([
+        'render', publishedFile, '--out', path.join(root, 'teacher.pdf'), '--content-root', contentRoot, '--teacher',
+      ]);
+      expect(teacher.exitCode).toBe(0);
+      expect(teacher.report.ok).toBe(true);
+      expect(teacher.report.pages).toBeGreaterThan(1);
+    }));
+
+    it('warns when the document has zero answerable items', async () => withTmpDir(async (root) => {
+      const contentRoot = path.join(root, 'content');
+      await mkdir(contentRoot, { recursive: true });
+      await writeFile(path.join(contentRoot, 'worksheet.yml'), dump(v2WorksheetDoc()));
+
+      const { exitCode, report } = await runSchoolDocs([
+        'render', 'worksheet.yml', '--out', path.join(root, 'out.pdf'), '--content-root', contentRoot, '--teacher',
+      ]);
+      expect(exitCode).toBe(0);
+      expect(report.warnings).toEqual(expect.arrayContaining([
+        expect.stringMatching(/no answerable items/i),
+      ]));
+    }));
+
+    it('warns that --teacher has no effect on a v1 (legacy) document', async () => withTmpDir(async (root) => {
+      const contentRoot = path.join(root, 'content');
+      await mkdir(contentRoot, { recursive: true });
+      await writeFile(path.join(contentRoot, 'v1.yml'), dump(v1OkDoc()));
+
+      const { exitCode, report } = await runSchoolDocs([
+        'render', 'v1.yml', '--out', path.join(root, 'out.pdf'), '--content-root', contentRoot, '--teacher',
+      ]);
+      expect(exitCode).toBe(0);
+      expect(report.warnings).toContain(
+        '--teacher is accepted but has no effect on this v1 (legacy) document; only v2 documents have a teacher key',
+      );
+    }));
+
+    it('--teacher with a value is rejected as a usage error (exit 2), not silently accepted', async () => withTmpDir(async (root) => {
+      const contentRoot = path.join(root, 'content');
+      await mkdir(contentRoot, { recursive: true });
+      await writeFile(path.join(contentRoot, 'quiz.yml'), dump(sourceQuizDoc()));
+
+      const { exitCode, report } = await runSchoolDocs([
+        'render', 'quiz.yml', '--out', path.join(root, 'out.pdf'), '--content-root', contentRoot, '--teacher', 'bogus',
+      ]);
+      expect(exitCode).toBe(2);
+      expect(report.mode).toBe('usage');
+      expect(report.errors[0]).toMatch(/--teacher/);
     }));
   });
 });

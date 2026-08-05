@@ -159,11 +159,30 @@ export class YamlPrintDocumentRepository {
     return best;
   }
 
-  /** Write-once-per-path: identical content re-publishes as a no-op; different content refuses. */
+  /**
+   * Write-once-per-path: identical content re-publishes as a no-op; different
+   * content refuses.
+   *
+   * Compared through a JSON round-trip, not raw `isDeepStrictEqual`:
+   * `existing` came back through a real save+load cycle (`saveYaml`'s
+   * `js-yaml.dump` OMITS any key whose value is `undefined`), while `content`
+   * is the in-memory object a domain function just built — which, for a
+   * bank's optional fields (`questionBankValidation.mjs`'s
+   * `unit`/`readalong`/`subject`), often carries those keys explicitly set to
+   * `undefined` rather than omitted entirely. `isDeepStrictEqual` treats "own
+   * property present, value undefined" as different from "property absent",
+   * so re-publishing the byte-identical source used to be refused as a false
+   * "different content" conflict on every second call. `JSON.stringify`
+   * drops undefined-valued keys on both sides uniformly — the same
+   * normalisation the YAML file itself already imposes on `existing`.
+   */
   #writeArtifact(basePath, content) {
     const existing = this.#io.load(basePath);
     if (existing !== null && existing !== undefined) {
-      if (isDeepStrictEqual(existing, content)) return { written: false, alreadyPublished: true };
+      const normalize = (value) => JSON.parse(JSON.stringify(value));
+      if (isDeepStrictEqual(normalize(existing), normalize(content))) {
+        return { written: false, alreadyPublished: true };
+      }
       throw new Error(
         `refusing to overwrite published artifact at '${basePath}' with different content (append-only)`,
       );

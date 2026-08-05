@@ -477,6 +477,22 @@ export function createDocumentPdfRenderer({
     }
   }
 
+  /**
+   * `answer_key` — the v2 teacher-key render mode's dense list (Task 6, spec
+   * §4.1/§12.1). The section heading is drawn separately, by the ordinary
+   * header banner (see `measureAnswerKeyNode`'s doc comment) — this node is
+   * only the entry list. `node.entries[].offsetYPt` was measured relative to
+   * the fragment's own top, so drawing is a flat replay: every entry at
+   * `yPt + entry.offsetYPt`, no cursor math here — same "measurement decided
+   * it, draw just replays it" discipline every other node in this file
+   * follows.
+   */
+  function drawAnswerKey(out, node, { xPt, yPt }) {
+    for (const entry of node.entries) {
+      drawLines(out, entry.lines, { xPt, yPt: yPt + entry.offsetYPt, styleKey: theme.answerKey.lineStyleKey });
+    }
+  }
+
   /** Small muted labels in the left margin, aligned to a passage's own wrapped lines. */
   function drawLineNumbers(out, lines, { xPt, yPt, gutterPt }) {
     const style = theme.styles.caption ?? theme.styles.instruction ?? theme.styles.body;
@@ -561,6 +577,7 @@ export function createDocumentPdfRenderer({
       case 'list': drawList(out, node, position); break;
       case 'wordbank': drawWordbank(out, node, position); break;
       case 'matching': drawMatching(out, node, position); break;
+      case 'answerKey': drawAnswerKey(out, node, position); break;
       // `spacer`: the whole point is blank space. The fragment's grown height
       // already pushes what follows down; nothing here puts ink on the page.
       case 'elasticSpace': break;
@@ -671,7 +688,7 @@ export function createDocumentPdfRenderer({
   // ── render ────────────────────────────────────────────────────────────
   function renderPlaced(document, {
     studentName, date = null, isAnswerKey, keyItems, bank, tokens, furniture = null, growLastPage = false,
-    italic = false, totalPoints = null,
+    italic = false, totalPoints = null, keyBlocks = null, keyTitle = null,
   }) {
     // Opting into `furniture` shrinks the usable page height by the
     // footer-band + continuation-strip reservation (contentBox) BEFORE
@@ -721,6 +738,52 @@ export function createDocumentPdfRenderer({
       throw error;
     }
 
+    // Teacher key (Task 6, spec §4.1/§12.1): measured and PLACED as its own
+    // small document, entirely separate from the fragments/placement above —
+    // never folded into the SAME `placeFragments` call. Folding it in would
+    // change which page `layout.mjs` considers "last" (`pages.slice(0, -1)`
+    // in placeFragments), which would silently alter answer-space/spacer
+    // growth on the STUDENT'S actual last page purely because more pages got
+    // appended after it — exactly the drift RenderPrintDocument's caller
+    // must never see between a teacher and a non-teacher render of the same
+    // document. Keeping it a fully separate measure+place pass means the
+    // STUDENT pages above are computed by the IDENTICAL call, with the
+    // IDENTICAL `growLastPage`, regardless of whether a key follows.
+    let keyPages = [];
+    if (Array.isArray(keyBlocks) && keyBlocks.length > 0) {
+      const keyDocument = { ...document, id: `${document.id}-teacher-key`, title: keyTitle, blocks: keyBlocks };
+      const keyFragments = measureDocumentFragments(keyDocument, {
+        doc: measurementDoc,
+        theme,
+        texToSvg,
+        resolveAsset: assetResolver,
+        widthPt: box?.widthPt,
+        italic,
+        // No Name/Date/score line on an appendix key page — it is not the
+        // learner's sheet, and `keyTitle` already carries the section's own
+        // heading text ("Answer key — <title> (variant N)").
+        header: { name: false, date: false, scoreBox: false },
+      });
+      const placedKey = placeFragments(keyFragments, {
+        pageHeightPt: box?.pageHeightPt ?? theme.page.heightPt,
+        marginPt: box?.marginPt ?? theme.page.marginPt,
+        spacing: theme.spacing,
+        // No elastic (answerSpace/spacer) nodes ever appear in a key section,
+        // so this has no observable effect either way — explicit false for
+        // the same reason every other growLastPage site in this file is.
+        growLastPage: false,
+      });
+      if (placedKey.errors.length) {
+        const error = new Error(
+          `document '${document.id}' teacher key cannot be laid out: ${placedKey.errors.map((e) => e.message).join('; ')}`,
+        );
+        error.name = 'DocumentLayoutError';
+        error.errors = placedKey.errors;
+        throw error;
+      }
+      keyPages = placedKey.pages;
+    }
+
     return new Promise((resolve, reject) => {
       const out = new PDFDocument({
         size: 'letter',
@@ -735,7 +798,12 @@ export function createDocumentPdfRenderer({
       out.on('error', reject);
       out.on('end', () => resolve({
         pdf: Buffer.concat(chunks),
-        pageCount: pages.length,
+        // Total physical pages — student pages plus any appended teacher-key
+        // pages. `formMap`/`codeMap` below stay scoped to the STUDENT pages'
+        // own `marks`/`codes` (a key page carries no bubbles/QR codes of its
+        // own), but the page count a caller reports (`RenderPrintDocument`,
+        // the CLI) is honestly the whole artifact's page count.
+        pageCount: pages.length + keyPages.length,
         // Null, not an empty map: a document with no bubbles has no form to
         // grade, and IDocumentRenderer's contract distinguishes the two.
         formMap: marks.length ? {
@@ -784,6 +852,21 @@ export function createDocumentPdfRenderer({
           });
         } else {
           drawFooter(out, { page: index + 1, pageCount: pages.length, variant: document.variant ?? 0 });
+        }
+      });
+      // Teacher-key pages (Task 6): drawn from their OWN separately-placed
+      // `keyPages`, appended after every student page. No footer/furniture —
+      // an appendix key page carries no "Page x of y"/continuation-strip
+      // chrome of its own in v1; its content (the entry list) is what
+      // matters. `leftPt` is the plain (non-duplex, non-alternating) content
+      // edge — a key page is a loose appendix, never bound into the
+      // duplex-punched student packet the gutter reservation is for.
+      keyPages.forEach((page, index) => {
+        out.addPage();
+        out.page.margins = { top: 0, bottom: 0, left: 0, right: 0 };
+        const keyLeftPt = box ? box.xPt : contentLeftPt;
+        for (const fragment of page.fragments) {
+          drawFragment(out, fragment, { page: pages.length + index + 1, marks, codes, leftPt: keyLeftPt });
         }
       });
       out.end();
@@ -845,11 +928,24 @@ export function createDocumentPdfRenderer({
    *   renderer does not compute a total itself — omitted/null (every caller
    *   before this option existed) prints no score line, byte-identical to
    *   before.
+   * @param {Array<Object>|null} [options.keyBlocks] - teacher-key render mode
+   *   (Task 6, spec §4.1/§12.1): when non-empty, an `answer_key` node block
+   *   list (built by `RenderPrintDocument`, NOT authorable in source YAML —
+   *   see measure.mjs's `measureAnswerKeyNode`), measured and PLACED as its
+   *   OWN document and appended as extra pages after every student page.
+   *   Never folded into the student document's own fragment/placement pass
+   *   — see `renderPlaced`'s own comment for why that would risk changing
+   *   the student's last-page answer-space growth. Omitted/null (every
+   *   caller before this option existed) renders byte-identical to before.
+   * @param {string|null} [options.keyTitle] - the appended key section's own
+   *   page-1 heading (its mini document's `title`); required together with
+   *   `keyBlocks`.
    * @returns {Promise<{pdf: Buffer, pageCount: number, formMap: Object|null, isAnswerKey: boolean, keyItems: Array}>}
    */
   async function render(source, {
     studentName = null, date = null, answers = null, answerKey = false, bank = null, tokens = null,
     variant = null, furniture = null, growLastPage = false, italic = false, totalPoints = null,
+    keyBlocks = null, keyTitle = null,
   } = {}) {
     // The variant rides on the DOCUMENT, not just alongside it: the footer and
     // the form map both derive from what was rendered, so a variant passed only
@@ -867,6 +963,7 @@ export function createDocumentPdfRenderer({
     if (!resolvedAnswers) {
       return renderPlaced(document, {
         studentName, date, isAnswerKey: false, keyItems: [], bank, tokens, furniture, growLastPage, italic, totalPoints,
+        keyBlocks, keyTitle,
       });
     }
     const keyItems = keyItemsFor(document, resolvedAnswers);

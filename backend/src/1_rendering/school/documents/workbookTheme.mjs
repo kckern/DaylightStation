@@ -199,8 +199,29 @@ export function createWorkbookTheme({ typeScale = 'standard', density = 'normal'
       gapAbovePt: density === 'compact' ? 13 : 18,
     },
 
+    /**
+     * Legacy (v1) key title suffix — `titleSuffix` — plus, additively, the
+     * v2 teacher-key render mode's geometry (Task 6, spec §4.1/§12.1): a
+     * dense, single-column "<label> <answer>" appendix built by
+     * `RenderPrintDocument` and drawn via `measureAnswerKeyNode`/
+     * `drawAnswerKey`. The section's own "Answer key — <title> (variant N)"
+     * heading is drawn by the ordinary `headerFragment` banner (the mini key
+     * document's own `title`), not by this node — so there is no
+     * title-specific token here, only the entry-list geometry.
+     * `lineStyleKey` deliberately points at `caption` rather than `body` — a
+     * teacher's answer page should read as reference material, not primary
+     * content. `rowGapPt` is intentionally far tighter than any
+     * `spacing[...]` gap this theme defines elsewhere — "dense end-of-doc
+     * key", not one answer per paragraph. `spacingClass: 'instruction'`
+     * matches `caption`'s own family (STYLE_META above), so the fragment
+     * this node becomes gaps against its neighbors the same way any other
+     * muted/reference text on the page already does.
+     */
     answerKey: {
       titleSuffix: 'Answer Key',
+      lineStyleKey: 'caption',
+      rowGapPt: density === 'compact' ? 2 : 4,
+      spacingClass: 'instruction',
     },
 
     /**
