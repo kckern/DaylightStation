@@ -19,6 +19,30 @@ function fakeIo(filesById) {
   };
 }
 
+/**
+ * A full in-memory filesystem fake keyed by absolute basePath (no extension),
+ * supporting `list`/`load`/`save`/`stat` per directory — enough to exercise
+ * `getPublished`/`getDerivedBank`/`writePublished` without touching disk.
+ * `mtimes` lets a test control which of several `<id>@rev` entries is "latest".
+ */
+function fakeStore({ mtimes = {} } = {}) {
+  const store = new Map(); // basePath -> content
+  let nextMtime = 1;
+  return {
+    store,
+    io: {
+      list: (dir) => [...store.keys()]
+        .filter((p) => p.startsWith(`${dir}/`) && !p.slice(dir.length + 1).includes('/'))
+        .map((p) => p.slice(dir.length + 1)),
+      load: (basePath) => (store.has(basePath) ? store.get(basePath) : null),
+      save: (basePath, content) => { store.set(basePath, content); },
+      stat: (basePath) => (store.has(basePath)
+        ? { mtimeMs: mtimes[basePath] ?? (nextMtime += 1) }
+        : null),
+    },
+  };
+}
+
 describe('constructor', () => {
   it('requires a non-empty directory', () => {
     expect(() => new YamlPrintDocumentRepository({})).toThrow(/directory/);
@@ -85,5 +109,116 @@ describe('get(id)', () => {
       io: fakeIo({ 'malformed-doc': { seed: 1 } }),
     });
     expect(repo.get('malformed-doc')).toEqual({ seed: 1 });
+  });
+});
+
+describe('writePublished / getPublished / getDerivedBank (Task 5, spec §3/§4.3)', () => {
+  const document = { id: 'states-quiz-3', schema: 'school.document/v2', rev: 'abc123', blocks: [] };
+  const bank = { id: 'derived/states-quiz-3@abc123', title: 'States Quiz', items: [{ id: 'q1' }] };
+
+  it('writes the published document and derived bank under sibling directories', () => {
+    const { io, store } = fakeStore();
+    const repo = new YamlPrintDocumentRepository({ directory: '/docs', io });
+    const result = repo.writePublished({ document, bank, rev: 'abc123' });
+
+    expect(result).toEqual({
+      document: { written: true, alreadyPublished: false },
+      bank: { written: true, alreadyPublished: false },
+    });
+    expect(store.get('/docs/published/states-quiz-3@abc123')).toEqual(document);
+    expect(store.get('/docs/derived-banks/states-quiz-3@abc123')).toEqual(bank);
+  });
+
+  it('writes only the published document when bank is null (no answer-bearing content)', () => {
+    const { io, store } = fakeStore();
+    const repo = new YamlPrintDocumentRepository({ directory: '/docs', io });
+    const result = repo.writePublished({ document, bank: null, rev: 'abc123' });
+
+    expect(result.bank).toBeNull();
+    expect(store.has('/docs/derived-banks/states-quiz-3@abc123')).toBe(false);
+  });
+
+  it('re-publishing IDENTICAL content at the same rev is an idempotent no-op', () => {
+    const { io, store } = fakeStore();
+    const repo = new YamlPrintDocumentRepository({ directory: '/docs', io });
+    repo.writePublished({ document, bank, rev: 'abc123' });
+    const before = store.get('/docs/published/states-quiz-3@abc123');
+
+    const second = repo.writePublished({ document: { ...document }, bank: { ...bank }, rev: 'abc123' });
+    expect(second).toEqual({
+      document: { written: false, alreadyPublished: true },
+      bank: { written: false, alreadyPublished: true },
+    });
+    expect(store.get('/docs/published/states-quiz-3@abc123')).toBe(before); // untouched, not re-saved
+  });
+
+  it('refuses to overwrite an existing rev with DIFFERENT content (append-only)', () => {
+    const { io } = fakeStore();
+    const repo = new YamlPrintDocumentRepository({ directory: '/docs', io });
+    repo.writePublished({ document, bank, rev: 'abc123' });
+
+    expect(() => repo.writePublished({
+      document: { ...document, title: 'a different title snuck in' }, bank, rev: 'abc123',
+    })).toThrow(/append-only/);
+  });
+
+  it('requires document.id and rev', () => {
+    const { io } = fakeStore();
+    const repo = new YamlPrintDocumentRepository({ directory: '/docs', io });
+    expect(() => repo.writePublished({ document: {}, bank: null, rev: 'abc123' })).toThrow(/document\.id/);
+    expect(() => repo.writePublished({ document, bank: null, rev: '' })).toThrow(/rev/);
+  });
+
+  it('getPublished(id, rev) returns the exact revision', () => {
+    const { io } = fakeStore();
+    const repo = new YamlPrintDocumentRepository({ directory: '/docs', io });
+    repo.writePublished({ document, bank, rev: 'abc123' });
+    expect(repo.getPublished('states-quiz-3', 'abc123')).toEqual(document);
+  });
+
+  it('getPublished(id, rev) returns null for an unknown revision', () => {
+    const { io } = fakeStore();
+    const repo = new YamlPrintDocumentRepository({ directory: '/docs', io });
+    repo.writePublished({ document, bank, rev: 'abc123' });
+    expect(repo.getPublished('states-quiz-3', 'nope')).toBeNull();
+  });
+
+  it('getPublished(id) with no rev picks the LATEST (most recently written) revision', () => {
+    const { io } = fakeStore({
+      mtimes: {
+        '/docs/published/states-quiz-3@rev1': 100,
+        '/docs/published/states-quiz-3@rev2': 200,
+      },
+    });
+    const repo = new YamlPrintDocumentRepository({ directory: '/docs', io });
+    repo.writePublished({ document: { ...document, rev: 'rev1' }, bank: null, rev: 'rev1' });
+    repo.writePublished({ document: { ...document, rev: 'rev2' }, bank: null, rev: 'rev2' });
+    expect(repo.getPublished('states-quiz-3').rev).toBe('rev2');
+  });
+
+  it('getPublished(id) with no rev and no published revisions returns null', () => {
+    const { io } = fakeStore();
+    const repo = new YamlPrintDocumentRepository({ directory: '/docs', io });
+    expect(repo.getPublished('nope')).toBeNull();
+  });
+
+  it('getDerivedBank(id, rev) returns the bank for that exact revision', () => {
+    const { io } = fakeStore();
+    const repo = new YamlPrintDocumentRepository({ directory: '/docs', io });
+    repo.writePublished({ document, bank, rev: 'abc123' });
+    expect(repo.getDerivedBank('states-quiz-3', 'abc123')).toEqual(bank);
+  });
+
+  it('getDerivedBank(id, rev) returns null when that revision minted no bank', () => {
+    const { io } = fakeStore();
+    const repo = new YamlPrintDocumentRepository({ directory: '/docs', io });
+    repo.writePublished({ document, bank: null, rev: 'abc123' });
+    expect(repo.getDerivedBank('states-quiz-3', 'abc123')).toBeNull();
+  });
+
+  it('getDerivedBank requires an explicit rev — no "latest" default', () => {
+    const { io } = fakeStore();
+    const repo = new YamlPrintDocumentRepository({ directory: '/docs', io });
+    expect(() => repo.getDerivedBank('states-quiz-3')).toThrow(/rev/);
   });
 });

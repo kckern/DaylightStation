@@ -1,5 +1,14 @@
 import path from 'node:path';
-import { listYamlFiles, loadYaml } from '#system/utils/FileIO.mjs';
+import { isDeepStrictEqual } from 'node:util';
+import {
+  listYamlFiles, loadYaml, saveYaml, resolveYamlPath, getStats,
+} from '#system/utils/FileIO.mjs';
+
+/** Default `io.stat`: mtime of whichever extension (.yml/.yaml) the basePath resolves to, or null when missing. */
+function statBase(basePath) {
+  const resolved = resolveYamlPath(basePath);
+  return resolved ? getStats(resolved) : null;
+}
 
 /**
  * Reads print-ready document YAML files (v1 or v2 envelope, spec §4.1) from a
@@ -19,6 +28,23 @@ import { listYamlFiles, loadYaml } from '#system/utils/FileIO.mjs';
  * Validating it (`validateAnyDocument`) is the consumer's (`RenderPrintDocument`)
  * job, exactly like `YamlLearningContentRepository` hands back raw documents
  * for `CurriculumAccess` to validate.
+ *
+ * PUBLISH ARTIFACTS (Task 5, spec §3/§4.3): `publishDocument` (domain layer,
+ * pure) splits a `school.document-source/v1` into an answer-free published
+ * document + a derived question bank. Persisting that pair is this
+ * repository's job — two flat, non-recursive sibling directories under the
+ * SAME `directory` root as the hand-authored sources:
+ *
+ *   <directory>/published/<id>@<rev>.yml       (always written)
+ *   <directory>/derived-banks/<id>@<rev>.yml    (written only when a bank exists)
+ *
+ * APPEND-ONLY (spec §4.3 "prior revisions are retained"): `rev` is a content
+ * hash of the validated source (`documentSource.mjs`'s `computeRev`), so two
+ * writes at the same `<id>@<rev>` path can only ever legitimately carry
+ * IDENTICAL content — republishing an unchanged source is idempotent-ok
+ * (`writePublished` no-ops), but a rev colliding with DIFFERENT content would
+ * mean two different sources hashed to the same rev (or a hand-edited
+ * artifact) and is refused outright rather than silently overwritten.
  */
 export class YamlPrintDocumentRepository {
   #directory; #io;
@@ -28,7 +54,12 @@ export class YamlPrintDocumentRepository {
       throw new Error('YamlPrintDocumentRepository requires a non-empty directory');
     }
     this.#directory = directory;
-    this.#io = { list: io.list ?? listYamlFiles, load: io.load ?? loadYaml };
+    this.#io = {
+      list: io.list ?? listYamlFiles,
+      load: io.load ?? loadYaml,
+      save: io.save ?? saveYaml,
+      stat: io.stat ?? statBase,
+    };
   }
 
   /**
@@ -52,6 +83,93 @@ export class YamlPrintDocumentRepository {
    */
   get(id) {
     return this.list().find((entry) => entry.id === id)?.document ?? null;
+  }
+
+  /**
+   * @param {string} id
+   * @param {string} [rev] - a specific revision; omitted picks the LATEST
+   *   published revision for `id` (most recent write, by file mtime — revs
+   *   are content hashes with no inherent ordering, so mtime is the only
+   *   available "most recently published" signal without a separate index).
+   * @returns {*|null} the raw parsed published document, or null when none exists.
+   */
+  getPublished(id, rev) {
+    const dir = path.join(this.#directory, 'published');
+    if (rev !== undefined && rev !== null) {
+      return this.#io.load(path.join(dir, `${id}@${rev}`));
+    }
+    const latest = this.#latestRevFile(dir, id);
+    return latest ? this.#io.load(path.join(dir, latest)) : null;
+  }
+
+  /**
+   * @param {string} id
+   * @param {string} rev - required: a derived bank only ever exists for one
+   *   exact published revision, never "latest" (a caller that has a published
+   *   document already has its `rev` in hand).
+   * @returns {*|null} the raw parsed derived question bank, or null when this
+   *   revision minted no bank (a purely presentational source) or doesn't exist.
+   */
+  getDerivedBank(id, rev) {
+    if (typeof rev !== 'string' || rev.trim().length === 0) {
+      throw new Error('getDerivedBank requires a rev');
+    }
+    return this.#io.load(path.join(this.#directory, 'derived-banks', `${id}@${rev}`));
+  }
+
+  /**
+   * Persists the publish transform's output pair (`documentSource.mjs`'s
+   * `publishDocument`). Append-only: writing the SAME `<id>@<rev>` path twice
+   * is only ever legal when the content is identical (idempotent no-op) —
+   * different content at an existing path is refused, never overwritten.
+   *
+   * @param {{document: object, bank: object|null, rev: string}} args -
+   *   `document` must carry `id`; `bank` is null for a source with no
+   *   answer-bearing content (no derived-bank file is written in that case).
+   * @returns {{document: {written: boolean, alreadyPublished: boolean},
+   *   bank: {written: boolean, alreadyPublished: boolean}|null}}
+   */
+  writePublished({ document, bank, rev } = {}) {
+    if (!document || typeof document.id !== 'string' || document.id.trim().length === 0) {
+      throw new Error('writePublished requires document.id');
+    }
+    if (typeof rev !== 'string' || rev.trim().length === 0) {
+      throw new Error('writePublished requires rev');
+    }
+    const docResult = this.#writeArtifact(
+      path.join(this.#directory, 'published', `${document.id}@${rev}`), document,
+    );
+    const bankResult = bank
+      ? this.#writeArtifact(path.join(this.#directory, 'derived-banks', `${document.id}@${rev}`), bank)
+      : null;
+    return { document: docResult, bank: bankResult };
+  }
+
+  /** Most-recent-mtime `<id>@*` entry under `dir` (published/ only) — see `getPublished`'s own doc comment. */
+  #latestRevFile(dir, id) {
+    const prefix = `${id}@`;
+    const candidates = [...this.#io.list(dir)].filter((name) => name.startsWith(prefix));
+    let best = null;
+    let bestMtime = -Infinity;
+    for (const name of candidates) {
+      const stat = this.#io.stat(path.join(dir, name));
+      const mtime = stat?.mtimeMs ?? -Infinity;
+      if (mtime >= bestMtime) { bestMtime = mtime; best = name; }
+    }
+    return best;
+  }
+
+  /** Write-once-per-path: identical content re-publishes as a no-op; different content refuses. */
+  #writeArtifact(basePath, content) {
+    const existing = this.#io.load(basePath);
+    if (existing !== null && existing !== undefined) {
+      if (isDeepStrictEqual(existing, content)) return { written: false, alreadyPublished: true };
+      throw new Error(
+        `refusing to overwrite published artifact at '${basePath}' with different content (append-only)`,
+      );
+    }
+    this.#io.save(basePath, content);
+    return { written: true, alreadyPublished: false };
   }
 }
 

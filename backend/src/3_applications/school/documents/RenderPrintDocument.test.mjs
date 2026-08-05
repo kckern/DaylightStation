@@ -8,6 +8,8 @@ import { describe, it, expect } from 'vitest';
 import { RenderPrintDocument } from './RenderPrintDocument.mjs';
 import { validateDocument } from '#domains/school/documents/documentValidation.mjs';
 import { DOCUMENT_V2_SCHEMA } from '#domains/school/documents/documentV2.mjs';
+import { DOCUMENT_SOURCE_SCHEMA } from '#domains/school/documents/documentSource.mjs';
+import { deriveShuffle, applyShuffle } from '#domains/school/documents/shuffle.mjs';
 import { createDocumentPdfRenderer } from '#rendering/school/documents/DocumentPdfRenderer.mjs';
 import { createWorkbookTheme } from '#rendering/school/documents/workbookTheme.mjs';
 import { createMeasurementDocument, measureDocumentFragments } from '#rendering/school/documents/measure.mjs';
@@ -79,8 +81,13 @@ describe('RenderPrintDocument — v2 basic render (a)', () => {
 });
 
 describe('RenderPrintDocument — fit policy one-page (b)', () => {
+  // `header.scoreBox: false` keeps this describe block's empirically-derived
+  // page-count calibration (see the comment above `manyQuestions`) exactly
+  // what it was before Task 5 threaded `totalPoints` into the header — this
+  // block's whole point is the FIT/density fallback machinery, not the score
+  // box, which has its own coverage (`totalPoints threading` describe below).
   const oneShot = (n) => v2doc({
-    archetype: 'quiz', fit: { policy: 'one-page', typeScale: 'standard' }, blocks: manyQuestions(n),
+    archetype: 'quiz', header: { scoreBox: false }, fit: { policy: 'one-page', typeScale: 'standard' }, blocks: manyQuestions(n),
   });
 
   it('fits at normal density: density "normal", no warnings', async () => {
@@ -483,5 +490,293 @@ describe('RenderPrintDocument — gutter guard', () => {
     const document = v2doc({ archetype: 'worksheet' });
     const result = await useCase.execute({ document, context: { gutter: 0 } });
     expect(isPdf(result.bytes)).toBe(true);
+  });
+});
+
+// ── Task 5: bank threading, shuffles, selection + publish pipeline ─────────
+
+/** A source-schema fixture with one inline multiple_choice question — mints a derived bank. */
+const sourceDoc = (over = {}) => ({
+  schema: DOCUMENT_SOURCE_SCHEMA,
+  id: 'source-fixture',
+  seed: 100,
+  target: ['letter'],
+  archetype: 'quiz',
+  blocks: [{
+    type: 'question',
+    itemId: 'q1',
+    number: 1,
+    blocks: [
+      { type: 'rich_text', md: 'What is 2+2?' },
+      { type: 'omr_response', itemId: 'q1', choices: 3 },
+    ],
+    choices: ['3', '4', '5'],
+    answer: '4',
+  }],
+  ...over,
+});
+
+describe('RenderPrintDocument — source-schema auto-publish in memory (spec §3)', () => {
+  it('publishes a source document in memory and renders the answer-free page, choices resolved from the in-memory derived bank', async () => {
+    const useCase = new RenderPrintDocument();
+    const result = await useCase.execute({ document: sourceDoc() });
+    expect(isPdf(result.bytes)).toBe(true);
+    const text = pdfText(result.bytes);
+    expect(text).toContain('What is 2+2?');
+    expect(text).toContain('3');
+    expect(text).toContain('4');
+    expect(text).toContain('5');
+  });
+
+  it('nothing is persisted — the repository’s writePublished is never called for a proof render', async () => {
+    const writePublished = () => { throw new Error('writePublished must not be called by RenderPrintDocument'); };
+    const repository = { get: async () => null, writePublished, getDerivedBank: async () => null };
+    const useCase = new RenderPrintDocument({ repository });
+    const result = await useCase.execute({ document: sourceDoc() });
+    expect(isPdf(result.bytes)).toBe(true);
+  });
+
+  it('is deterministic: publishing + rendering the identical source twice yields byte-identical PDFs', async () => {
+    const useCase = new RenderPrintDocument();
+    const doc = sourceDoc();
+    const first = await useCase.execute({ document: doc });
+    const second = await useCase.execute({ document: doc });
+    expect(first.bytes.equals(second.bytes)).toBe(true);
+  });
+
+  it('rejects an invalid source document with a structured INVALID_DOCUMENT error', async () => {
+    const useCase = new RenderPrintDocument();
+    await expect(useCase.execute({ document: sourceDoc({ id: 'BAD ID' }) })).rejects.toMatchObject({
+      name: 'ValidationError', code: 'INVALID_DOCUMENT',
+    });
+  });
+});
+
+describe('RenderPrintDocument — published documents resolve their derived bank via the repository (spec §3)', () => {
+  const published = (over = {}) => ({
+    schema: DOCUMENT_V2_SCHEMA,
+    id: 'published-fixture',
+    seed: 3,
+    target: ['letter'],
+    archetype: 'quiz',
+    rev: 'deadbeef1',
+    blocks: [{
+      type: 'question',
+      itemId: 'p1',
+      number: 1,
+      blocks: [
+        { type: 'rich_text', md: 'Pick a color.' },
+        { type: 'omr_response', itemId: 'p1', choices: 2 },
+      ],
+    }],
+    ...over,
+  });
+  const bank = {
+    id: 'derived/published-fixture@deadbeef1',
+    items: [{
+      id: 'p1', type: 'multiple_choice', prompt: 'Pick a color.', choices: ['Red', 'Blue'], answer: 'Red',
+    }],
+  };
+
+  it('fetches the derived bank by (id, rev) and resolves omr_response choices from it', async () => {
+    const repository = {
+      get: async () => null,
+      getDerivedBank: async (id, rev) => (id === 'published-fixture' && rev === 'deadbeef1' ? bank : null),
+    };
+    const useCase = new RenderPrintDocument({ repository });
+    const result = await useCase.execute({ document: published() });
+    const text = pdfText(result.bytes);
+    expect(text).toContain('Red');
+    expect(text).toContain('Blue');
+  });
+
+  it('a published document with no bank resolvable (no repository) throws MissingChoicesError rather than printing blank bubbles', async () => {
+    const useCase = new RenderPrintDocument();
+    await expect(useCase.execute({ document: published() })).rejects.toMatchObject({ name: 'MissingChoicesError' });
+  });
+
+  it('a hand-authored v2 document with NO rev never attempts a bank lookup — repository.getDerivedBank is not called', async () => {
+    const getDerivedBank = () => { throw new Error('getDerivedBank must not be called without a rev'); };
+    const repository = { get: async () => null, getDerivedBank };
+    const useCase = new RenderPrintDocument({ repository });
+    const document = v2doc({ archetype: 'worksheet' }); // no rev, no omr_response
+    const result = await useCase.execute({ document });
+    expect(isPdf(result.bytes)).toBe(true);
+  });
+});
+
+describe('RenderPrintDocument — wordbank/matching shuffle by key (spec §6.2)', () => {
+  const terms = ['Photosynthesis', 'Mitosis', 'Osmosis', 'Respiration'];
+  const wordbankDoc = (extraBefore = []) => v2doc({
+    archetype: 'worksheet',
+    seed: 555,
+    blocks: [...extraBefore, { type: 'wordbank', key: 'wb1', terms }],
+  });
+  const printedOrderOf = (bytes, candidates) => {
+    const text = pdfText(bytes);
+    return [...candidates].sort((a, b) => text.indexOf(a) - text.indexOf(b));
+  };
+
+  it('shuffles wordbank terms deterministically from (seed, variant, key) — matches deriveShuffle/applyShuffle directly', async () => {
+    const useCase = new RenderPrintDocument();
+    const result = await useCase.execute({ document: wordbankDoc() });
+    const expected = applyShuffle(terms, deriveShuffle(555, 0, 'wb1', terms.length));
+    expect(printedOrderOf(result.bytes, terms)).toEqual(expected);
+  });
+
+  it('edit-stability: an unrelated inserted sibling block does not change the wordbank’s shuffle', async () => {
+    const useCase = new RenderPrintDocument();
+    const a = await useCase.execute({ document: wordbankDoc() });
+    const b = await useCase.execute({
+      document: wordbankDoc([{ type: 'rich_text', md: 'An unrelated inserted paragraph.' }]),
+    });
+    expect(printedOrderOf(b.bytes, terms)).toEqual(printedOrderOf(a.bytes, terms));
+  });
+
+  it('shuffles matching left/right independently, deterministic from (seed, variant, key)', async () => {
+    const left = ['Washington', 'Oregon', 'Idaho'];
+    const right = ['Boise', 'Salem', 'Olympia'];
+    const document = v2doc({
+      archetype: 'worksheet',
+      seed: 777,
+      blocks: [{ type: 'matching', key: 'm1', left, right }],
+    });
+    const useCase = new RenderPrintDocument();
+    const result = await useCase.execute({ document });
+
+    const expectedLeft = applyShuffle(left, deriveShuffle(777, 0, 'm1:left', left.length));
+    const expectedRight = applyShuffle(right, deriveShuffle(777, 0, 'm1:right', right.length));
+    expect(printedOrderOf(result.bytes, left)).toEqual(expectedLeft);
+    expect(printedOrderOf(result.bytes, right)).toEqual(expectedRight);
+  });
+});
+
+describe('RenderPrintDocument — totalPoints threading to the score box (spec §13)', () => {
+  it('sums question points ?? defaultPoints and prints "Score ____ / <N>"', async () => {
+    const useCase = new RenderPrintDocument();
+    const document = v2doc({
+      archetype: 'quiz',
+      defaultPoints: 2,
+      blocks: [question(1), { ...question(2), points: 5 }],
+    });
+    const result = await useCase.execute({ document });
+    const text = pdfText(result.bytes);
+    expect(text).toContain('Score ____ / 7');
+  });
+
+  it('prints no score line when header.scoreBox is false, even with scored questions', async () => {
+    const useCase = new RenderPrintDocument();
+    const document = v2doc({ archetype: 'worksheet', blocks: [question(1)] }); // worksheet preset: scoreBox false
+    const result = await useCase.execute({ document });
+    const text = pdfText(result.bytes);
+    expect(text).not.toContain('Score');
+  });
+});
+
+describe('RenderPrintDocument — bank-select sugar resolution (spec §6.2)', () => {
+  const geoBank = {
+    id: 'geo-bank',
+    items: [
+      {
+        id: 'g1', type: 'multiple_choice', prompt: 'Capital of France?', choices: ['Paris', 'Lyon', 'Nice'], answer: 'Paris',
+      },
+      {
+        id: 'g2', type: 'multiple_choice', prompt: 'Capital of Spain?', choices: ['Madrid', 'Barcelona'], answer: 'Madrid',
+      },
+      { id: 'g3', type: 'short_answer', prompt: 'Name a European capital.', answer: 'Paris' },
+    ],
+  };
+  const bankSelectDoc = (over = {}) => v2doc({
+    archetype: 'quiz',
+    seed: 42,
+    blocks: [{
+      type: 'question', bankId: 'geo-bank', select: 2, key: 'sel1',
+    }],
+    ...over,
+  });
+
+  it('resolves via the injected banks.getBank, selecting applyShuffle(deriveShuffle(seed, variant, key, n)).slice(0, select)', async () => {
+    const banks = { getBank: (id) => (id === 'geo-bank' ? geoBank : null) };
+    const useCase = new RenderPrintDocument({ banks });
+    const result = await useCase.execute({ document: bankSelectDoc() });
+    const text = pdfText(result.bytes);
+
+    const permutation = deriveShuffle(42, 0, 'sel1', geoBank.items.length);
+    const selected = applyShuffle(geoBank.items, permutation).slice(0, 2);
+    const omitted = geoBank.items.filter((item) => !selected.includes(item));
+
+    for (const item of selected) expect(text).toContain(item.prompt);
+    for (const item of omitted) expect(text).not.toContain(item.prompt);
+  });
+
+  it('bank-selected items count toward totalPoints (points ?? defaultPoints)', async () => {
+    const banks = { getBank: (id) => (id === 'geo-bank' ? geoBank : null) };
+    const useCase = new RenderPrintDocument({ banks });
+    const result = await useCase.execute({ document: bankSelectDoc({ defaultPoints: 3 }) });
+    const text = pdfText(result.bytes);
+    expect(text).toContain('Score ____ / 6'); // 2 selected items × defaultPoints 3
+  });
+
+  it('numbers bank-selected questions continuing after any hand-authored inline questions', async () => {
+    const banks = { getBank: (id) => (id === 'geo-bank' ? geoBank : null) };
+    const useCase = new RenderPrintDocument({ banks });
+    const document = bankSelectDoc({
+      blocks: [question(1), {
+        type: 'question', bankId: 'geo-bank', select: 1, key: 'sel1',
+      }],
+    });
+    const result = await useCase.execute({ document });
+    const text = pdfText(result.bytes);
+    expect(text).toMatch(/\b1\./);
+    expect(text).toMatch(/\b2\./);
+  });
+
+  it('rejects an unknown bankId with a structured BANK_SELECT_BANK_NOT_FOUND error', async () => {
+    const banks = { getBank: () => null };
+    const useCase = new RenderPrintDocument({ banks });
+    await expect(useCase.execute({ document: bankSelectDoc() })).rejects.toMatchObject({
+      name: 'ValidationError', code: 'BANK_SELECT_BANK_NOT_FOUND',
+    });
+  });
+
+  it('rejects select > bank.items.length with a structured BANK_SELECT_INSUFFICIENT_ITEMS error', async () => {
+    const banks = { getBank: () => geoBank };
+    const useCase = new RenderPrintDocument({ banks });
+    const document = bankSelectDoc({
+      blocks: [{
+        type: 'question', bankId: 'geo-bank', select: 10, key: 'sel1',
+      }],
+    });
+    await expect(useCase.execute({ document })).rejects.toMatchObject({
+      name: 'ValidationError', code: 'BANK_SELECT_INSUFFICIENT_ITEMS',
+    });
+  });
+
+  it('rejects a selected item whose type has no print rendering (v1 scope) with BANK_SELECT_UNSUPPORTED_ITEM_TYPE', async () => {
+    const matchingBank = {
+      id: 'match-bank',
+      items: [{
+        id: 'm1', type: 'matching', prompt: 'Match', pairs: [{ left: 'a', right: 'b' }, { left: 'c', right: 'd' }],
+      }],
+    };
+    const banks = { getBank: () => matchingBank };
+    const useCase = new RenderPrintDocument({ banks });
+    const document = bankSelectDoc({
+      blocks: [{
+        type: 'question', bankId: 'match-bank', select: 1, key: 'sel1',
+      }],
+    });
+    await expect(useCase.execute({ document })).rejects.toMatchObject({
+      name: 'ValidationError', code: 'BANK_SELECT_UNSUPPORTED_ITEM_TYPE',
+    });
+  });
+
+  it('determinism: same (seed, variant, key) selects the same items across independent renders', async () => {
+    const banks = { getBank: (id) => (id === 'geo-bank' ? geoBank : null) };
+    const useCase = new RenderPrintDocument({ banks });
+    const document = bankSelectDoc();
+    const first = await useCase.execute({ document });
+    const second = await useCase.execute({ document });
+    expect(first.bytes.equals(second.bytes)).toBe(true);
   });
 });
