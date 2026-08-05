@@ -2,7 +2,11 @@
  * Print Design Phase C, Task 4 — the card header strip (spec §5.2/§5.3): the
  * card ID a student bubbles into OMR columns 1-7, printed below the document
  * header as large letter-spaced digits plus a "questions X-Y" range, and,
- * on a fresh card's first sheet, an instruction line.
+ * below that, an instruction/reminder caption line. EVERY card-attached
+ * sheet gets one of two lines (spec §5.2): "Bubble this number into columns
+ * 1-7 of a new card." on the first sheet issued against a fresh card
+ * (`firstUse: true`), or "Use your card <id>." on every subsequent sheet
+ * for that same card — never both, never neither.
  *
  * Same posture as `workbookAssessment.render.test.mjs` (Phase B's own
  * "measure + draw" suite, which this one mirrors): not a pixel golden suite
@@ -21,11 +25,14 @@
 import { describe, it, expect } from 'vitest';
 import { createDocumentPdfRenderer } from './DocumentPdfRenderer.mjs';
 import { createMeasurementDocument, measureDocumentFragments } from './measure.mjs';
+import { documentPdfTheme } from './documentPdfTheme.mjs';
 import { createWorkbookTheme } from './workbookTheme.mjs';
 import { texToSvg } from './mathSvg.mjs';
 
 const theme = createWorkbookTheme();
 const renderer = createDocumentPdfRenderer({ theme, texToSvg });
+/** Legacy renderer, no `theme.card` tokens — used only by the "guard" test below. */
+const legacyRenderer = createDocumentPdfRenderer({ theme: documentPdfTheme, texToSvg });
 
 const doc = (blocks, extra = {}) => ({
   id: 'workbook-card-test', title: 'Workbook Card Test', seed: 7, variant: 0, target: ['letter'], blocks, ...extra,
@@ -35,6 +42,11 @@ const doc = (blocks, extra = {}) => ({
 function measureDoc(document, opts = {}) {
   const measurementDoc = createMeasurementDocument({ theme });
   return measureDocumentFragments(document, { doc: measurementDoc, theme, texToSvg, ...opts });
+}
+
+/** Wrapped-line runs never carry a literal space; rejoin them with one to read the words back out. */
+function instructionText(instruction) {
+  return instruction.lines.flatMap((l) => l.runs.map((r) => r.text)).join(' ');
 }
 
 /** Structural summariser, scoped to the fields a card-header fragment/node actually carries. */
@@ -59,7 +71,10 @@ function summarizeCardFragment(fragment) {
       labelText: node.labelText,
       metaText: node.metaText,
       firstUse: node.firstUse,
-      hasInstruction: node.instruction !== null,
+      // Every card fragment carries exactly one instruction line (spec
+      // §5.2) — its TEXT is the thing that varies with `firstUse`, not its
+      // presence.
+      instructionText: instructionText(node.instruction),
     },
   };
 }
@@ -87,7 +102,15 @@ describe('card header strip — measure (spec §5.2/§5.3)', () => {
     expect(node.metaText).toContain('18');
     expect(node.metaText).toContain('30');
     expect(node.firstUse).toBe(false);
-    expect(node.instruction).toBeNull();
+    // spec §5.2's non-first-use reminder: same cardId, but un-spaced (a
+    // reference line, never a bubbling guide) — unlike `node.metaText`'s
+    // dash-joined range, this is the literal digit string.
+    expect(instructionText(node.instruction)).toBe('Use your card 4829306.');
+  });
+
+  it('firstUse: false (the default) prints the "use your card" reminder, not the bubbling instruction', () => {
+    const [, cardFragment] = measureDoc(bareDoc, { card: { cardId: '4829306', startRow: 18, endRow: 30, firstUse: false } });
+    expect(instructionText(cardFragment.nodes[0].instruction)).toBe('Use your card 4829306.');
   });
 
   it('digit x-offsets strictly increase left to right, each spaced by real glyph width + theme.card.trackingPt', () => {
@@ -102,19 +125,29 @@ describe('card header strip — measure (spec §5.2/§5.3)', () => {
     }
   });
 
-  it('firstUse: true adds an instruction line and grows the fragment height', () => {
+  it('firstUse: true swaps in the bubbling instruction instead of the reminder — both lines are ONE line, same field', () => {
     const card = { cardId: '4829306', startRow: 18, endRow: 30 };
-    const [, withoutInstruction] = measureDoc(bareDoc, { card });
-    const [, withInstruction] = measureDoc(bareDoc, { card: { ...card, firstUse: true } });
-    expect(withoutInstruction.nodes[0].instruction).toBeNull();
-    const instructionNode = withInstruction.nodes[0].instruction;
-    expect(instructionNode).not.toBeNull();
-    expect(instructionNode.lines.flatMap((l) => l.runs.map((r) => r.text)).join(' '))
-      .toContain('Bubble this number into columns');
-    expect(withInstruction.heightPt).toBeGreaterThan(withoutInstruction.heightPt);
+    const [, reminder] = measureDoc(bareDoc, { card });
+    const [, firstUse] = measureDoc(bareDoc, { card: { ...card, firstUse: true } });
+    expect(instructionText(reminder.nodes[0].instruction)).toBe('Use your card 4829306.');
+    expect(instructionText(firstUse.nodes[0].instruction)).toBe('Bubble this number into columns 1–7 of a new card.');
+    // Both variants carry exactly one instruction line, so — for the same
+    // short card/range — their fragment heights match; the difference is
+    // WHICH sentence prints, not whether one prints at all.
+    expect(firstUse.heightPt).toBeCloseTo(reminder.heightPt, 5);
   });
 
-  it('structural snapshot — no first-use', () => {
+  it('a theme with no `card` token group (the legacy documentPdfTheme) refuses loudly rather than crashing on an undefined read', () => {
+    const measurementDoc = createMeasurementDocument({ theme: documentPdfTheme });
+    expect(() => measureDocumentFragments(bareDoc, {
+      doc: measurementDoc,
+      theme: documentPdfTheme,
+      texToSvg,
+      card: { cardId: '4829306', startRow: 18, endRow: 30 },
+    })).toThrow('card rendering requires a theme with card tokens (workbook theme)');
+  });
+
+  it('structural snapshot — non-first-use reminder', () => {
     const [, cardFragment] = measureDoc(bareDoc, { card: { cardId: '4829306', startRow: 18, endRow: 30 } });
     expect(summarizeCardFragment(cardFragment)).toMatchSnapshot();
   });
@@ -138,16 +171,21 @@ describe('card header strip — draw (real PDF)', () => {
     return { pdf, pageCount };
   }
 
-  it('renders a real PDF end to end with the card strip, no first-use instruction', async () => {
+  it('renders a real PDF end to end with the card strip and the non-first-use "use your card" reminder', async () => {
     await expectRealPdf(bareDoc, { card: { cardId: '4829306', startRow: 18, endRow: 30 } });
   });
 
-  it('renders a real PDF end to end with the first-use instruction line', async () => {
+  it('renders a real PDF end to end with the first-use bubbling instruction line', async () => {
     await expectRealPdf(bareDoc, {
       card: {
         cardId: '4829306', startRow: 1, endRow: 12, firstUse: true,
       },
     });
+  });
+
+  it('a legacy-theme (documentPdfTheme) renderer refuses a card option instead of crashing raw', async () => {
+    await expect(legacyRenderer.render(bareDoc, { card: { cardId: '4829306', startRow: 18, endRow: 30 } }))
+      .rejects.toThrow('card rendering requires a theme with card tokens (workbook theme)');
   });
 
   it('is deterministic, like every other draw input', async () => {
