@@ -95,6 +95,9 @@ function fakeAllocationStore(over = {}) {
   const io = {
     load: (filePath) => (map.has(filePath) ? structuredClone(map.get(filePath)) : null),
     save: (filePath, content) => { map.set(filePath, structuredClone(content)); },
+    list: (dir) => [...map.keys()]
+      .filter((p) => p.startsWith(`${dir}/`))
+      .map((p) => p.slice(dir.length + 1).replace(/\.yml$/, '')),
   };
   return new YamlAllocationStore({
     directory: '/docs', io, now: () => '2026-08-04T00:00:00.000Z', rng: () => 0.42, ...over,
@@ -325,15 +328,35 @@ describe('execute — unallocated rows (spec §5.4: "never guessed")', () => {
     expect(result.unallocatedRows).toEqual([10]);
   });
 
-  it('reports every answered row as unallocated when the card has no records at all', async () => {
+  it('a card with no records at all and real answers is an UNKNOWN CARD, with Hamming-1 live near-misses suggested', async () => {
     const repository = fakeRepository();
-    const allocationStore = fakeAllocationStore();
+    const allocationStore = fakeAllocationStore({ rng: Math.random });
+    // A real live card exists whose id is one digit off what got bubbled.
+    const source = sourceDoc('near-quiz', [
+      mcQuestion('n1', 1, { choices: ['X', 'Y'], answer: 'X' }),
+    ]);
+    const { allocation } = await publishAndAllocate({
+      repository, allocationStore, source, context: { freshCard: true },
+    });
+    const mistyped = allocation.cardId.replace(/\d$/, (d) => String((Number(d) + 1) % 10));
+
     const result = await useCaseExecute({ allocationStore, repository }, {
-      testId: '9999999',
+      testId: mistyped,
       answers: { 3: 'A', 1: 'B' },
     });
     expect(result.results).toEqual([]);
-    expect(result.unallocatedRows).toEqual([1, 3]);
+    expect(result.unknownCard).toBe(true);
+    expect(result.answeredRowCount).toBe(2);
+    expect(result.nearMissCardIds).toEqual([allocation.cardId]);
+  });
+
+  it('an unknown card with NO answers stays a quiet empty result (a stray/blank feed, not lost work)', async () => {
+    const repository = fakeRepository();
+    const allocationStore = fakeAllocationStore();
+    const result = await useCaseExecute({ allocationStore, repository }, {
+      testId: '9999999', answers: {},
+    });
+    expect(result).toEqual({ results: [] });
   });
 
   it('reports a RELEASED record\'s rows as unallocated and grades nothing for them (spec §5.4 review fix, Important)', async () => {
@@ -357,6 +380,57 @@ describe('execute — unallocated rows (spec §5.4: "never guessed")', () => {
 
     expect(result.results).toEqual([]);
     expect(result.unallocatedRows).toEqual([1]);
+  });
+});
+
+describe('execute — scan confidence diagnostics (review wave M4)', () => {
+  it('grading a record that had ALREADY settled flags reScored (a first scan never carries the flag)', async () => {
+    const repository = fakeRepository();
+    const allocationStore = fakeAllocationStore();
+    const source = sourceDoc('rescore-quiz', [
+      mcQuestion('r1', 1, { choices: ['X', 'Y'], answer: 'X' }),
+    ]);
+    const { allocation } = await publishAndAllocate({
+      repository, allocationStore, source, context: { freshCard: true },
+    });
+
+    const first = await useCaseExecute({ allocationStore, repository }, {
+      testId: allocation.cardId, answers: { 1: 'A' },
+    });
+    expect(first.results[0].reScored).toBeUndefined();
+
+    // The record is satisfied now; feeding the card again is a REPEAT.
+    const second = await useCaseExecute({ allocationStore, repository }, {
+      testId: allocation.cardId, answers: { 1: 'B' },
+    });
+    expect(second.results[0].reScored).toBe(true);
+  });
+
+  it('a live cardmate whose rows got zero marks is surfaced as silent (wrong-rows signature)', async () => {
+    const repository = fakeRepository();
+    const allocationStore = fakeAllocationStore();
+    const sourceA = sourceDoc('quiz-a', [
+      mcQuestion('a1', 1, { choices: ['X', 'Y'], answer: 'X' }),
+    ]);
+    const { allocation } = await publishAndAllocate({
+      repository, allocationStore, source: sourceA, context: { freshCard: true },
+    });
+    const sourceB = sourceDoc('quiz-b', [
+      mcQuestion('b2', 2, { choices: ['X', 'Y'], answer: 'Y' }),
+    ]);
+    await publishAndAllocate({
+      repository, allocationStore, source: sourceB, context: { cardId: allocation.cardId, startRow: 2 },
+    });
+
+    // Only quiz B's row is marked; quiz A (live, rows 1-1) got nothing.
+    const result = await useCaseExecute({ allocationStore, repository }, {
+      testId: allocation.cardId, answers: { 2: 'B' },
+    });
+    expect(result.results).toHaveLength(1);
+    expect(result.results[0].documentId).toBe('quiz-b');
+    expect(result.silentLiveRecords).toEqual([
+      expect.objectContaining({ documentId: 'quiz-a', rowRange: { start: 1, end: 1 } }),
+    ]);
   });
 });
 

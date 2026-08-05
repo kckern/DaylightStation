@@ -273,6 +273,13 @@ export class ResolveCardScan {
    *   `unallocatedRows` (answered rows that matched no live/satisfied
    *   allocation on this card) is present only when non-empty — never
    *   guessed at (spec §5.4).
+   *   Diagnostics (each present only when applicable): a graded entry
+   *   carries `reScored: true` when its record had already settled before
+   *   this scan; top-level `silentLiveRecords` lists live records whose
+   *   owned rows got zero marks while other rows were answered (wrong-rows
+   *   signature); an unknown card with real answers returns
+   *   `{results: [], unknownCard: true, answeredRowCount, nearMissCardIds}`
+   *   instead of a bare empty result.
    */
   async execute({ testId, answers = {} } = {}) {
     // testId null or containing '?' (any digit unreadable) — never guess
@@ -285,6 +292,20 @@ export class ResolveCardScan {
     const eligible = records.filter((record) => isLiveOrSatisfied(record.status));
     const answeredRows = new Set(Object.keys(answers).map(Number));
 
+    // A card the store has NEVER seen, with real answers on it, is almost
+    // always a mis-bubbled card id (7 student-transcribed digits, no check
+    // digit) — the child did the work and the quiz would otherwise silently
+    // vanish. Surface it as its own outcome, with the live cards one digit
+    // away as candidates the teacher can act on.
+    if (records.length === 0 && answeredRows.size > 0) {
+      return {
+        results: [],
+        unknownCard: true,
+        answeredRowCount: answeredRows.size,
+        nearMissCardIds: await this.#nearMissLiveCards(testId),
+      };
+    }
+
     // Newest-claimant-wins row ownership (spec §5.4 review fix, CRITICAL —
     // see `resolveRowOwners`'s own doc comment): resolved ONCE, up front,
     // over every eligible record on the card, never per-record — a record's
@@ -292,6 +313,12 @@ export class ResolveCardScan {
     // has reclaimed part of it.
     const rowOwners = resolveRowOwners(eligible);
     const results = [];
+    // LIVE records whose owned rows received zero marks while OTHER rows on
+    // the same physical card were answered — the wrong-rows signature (Felix
+    // answered quiz B's questions in quiz A's rows). Undetectable in
+    // principle from marks alone, so it is surfaced as a confidence signal
+    // for the teacher, never guessed at or auto-corrected.
+    const silentLiveRecords = [];
 
     for (const record of eligible) {
       const ownedRows = rowsInRange(record.rowRange).filter((row) => rowOwners.get(row) === record);
@@ -300,7 +327,17 @@ export class ResolveCardScan {
       // every marked row to a newer claimant, so reporting it (blank, against
       // a stale answer key, or both) would be exactly the double-grading /
       // phantom-result risk this rule exists to close off.
-      if (!ownedRows.some((row) => answeredRows.has(row))) continue;
+      if (!ownedRows.some((row) => answeredRows.has(row))) {
+        if (record.status === 'live' && ownedRows.length > 0 && answeredRows.size > 0) {
+          silentLiveRecords.push({
+            recordId: record.recordId,
+            documentId: record.documentId,
+            rowRange: { ...record.rowRange },
+            ...(record.learnerId != null ? { learnerId: record.learnerId } : {}),
+          });
+        }
+        continue;
+      }
 
       // eslint-disable-next-line no-await-in-loop
       const cardResult = await this.#resolveRecord(record, ownedRows, answers);
@@ -328,7 +365,34 @@ export class ResolveCardScan {
     // covered it — includes a `released`/`superseded` record's now-stale
     // rows, spec §5.4 review fix, Important) is unallocated, never guessed.
     const unallocatedRows = [...answeredRows].filter((row) => !rowOwners.has(row)).sort((a, b) => a - b);
-    return unallocatedRows.length ? { results, unallocatedRows } : { results };
+    return {
+      results,
+      ...(unallocatedRows.length ? { unallocatedRows } : {}),
+      ...(silentLiveRecords.length ? { silentLiveRecords } : {}),
+    };
+  }
+
+  /**
+   * Live cards exactly one digit off from `testId` (Hamming distance 1 over
+   * the 7 digits) — the dominant transcription error for a student-bubbled
+   * card id with no check digit. Household-scale linear scan; a store
+   * without `listCardIds` (older fakes) simply yields no suggestions.
+   */
+  async #nearMissLiveCards(testId) {
+    if (typeof this.#allocationStore.listCardIds !== 'function') return [];
+    const nearMisses = [];
+    for (const candidate of await this.#allocationStore.listCardIds()) {
+      if (candidate.length !== testId.length) continue;
+      let distance = 0;
+      for (let i = 0; i < candidate.length && distance < 2; i += 1) {
+        if (candidate[i] !== testId[i]) distance += 1;
+      }
+      if (distance !== 1) continue;
+      // eslint-disable-next-line no-await-in-loop
+      const records = await this.#allocationStore.findByCard(candidate);
+      if (records.some((record) => record.status === 'live')) nearMisses.push(candidate);
+    }
+    return nearMisses.sort();
   }
 
   /**
@@ -446,6 +510,12 @@ export class ResolveCardScan {
       variant: record.variant,
       ...(record.learnerId != null ? { learnerId: record.learnerId } : {}),
       revisionSuperseded: await this.#isSuperseded(record),
+      // The record had ALREADY settled before this scan arrived — a re-fed
+      // card, or a different child bubbling this card's id. Grading still
+      // happens (the marks are real), but the consumer must treat this as a
+      // repeat, not a first submission (M4/idempotency: see
+      // schoolPrintScanConsumer + the attempt store's own de-dup).
+      ...(record.status === 'satisfied' ? { reScored: true } : {}),
       results: rowResults,
       totalPoints,
       earnedPoints,

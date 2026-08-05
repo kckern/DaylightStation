@@ -204,6 +204,11 @@ export class YamlAllocationStore {
     return out;
   }
 
+  /** Every card id with any records in the store — the near-miss pool for mis-bubbled-card diagnostics. */
+  async listCardIds() {
+    return [...this.#io.list(path.join(this.#directory, 'allocations'))];
+  }
+
   /**
    * @param {{cardId:string, recordId:string, status:string}} args
    * @returns {Promise<object>} the updated record
