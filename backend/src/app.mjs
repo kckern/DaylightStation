@@ -2848,9 +2848,23 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     try {
       const { createSchoolPrintScanConsumer } = await import('#composition/modules/schoolPrintScanConsumer.mjs');
       const { ResolveCardScan } = await import('#apps/school/documents/ResolveCardScan.mjs');
+      const { createYamlBankReader } = await import('#apps/school/documents/RenderPrintDocument.mjs');
       const resolveCardScan = new ResolveCardScan({
         allocationStore: schoolLifecycle.stores.allocationStore,
         repository: schoolLifecycle.stores.printDocuments,
+        // Bank-select tracked quizzes need this to re-derive the row->item
+        // mapping at scan time (F2 review fix, High: absent it, every scan
+        // against a bank-select document dies as BANK_SELECT_BANK_NOT_FOUND,
+        // swallowed into `prepareV2Document`'s own null-bank throw and caught
+        // as one opaque warn below). Rooted at the SAME `dataDir` the
+        // lifecycle's own `RenderPrintDocument` built its bank reader from
+        // (`schoolLifecycle.mjs`'s `createYamlBankReader({ dataDir })`) — a
+        // fresh reader instance, not the lifecycle's own private one (that
+        // reader is a `RenderPrintDocument` constructor-private field, not
+        // exposed), but functionally identical: same directory, same
+        // deterministic id->bank map, so a scan re-derives EXACTLY what the
+        // render produced.
+        banks: createYamlBankReader({ dataDir }),
       });
       createSchoolPrintScanConsumer({
         eventBus,
