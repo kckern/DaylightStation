@@ -33,7 +33,7 @@ import { decodeQuizSheet, resolveQuizScanTopics } from '#apps/quizzes/quizScanRe
  * @returns {{ dispose: () => void }}
  */
 export function createSchoolPrintScanConsumer({
-  eventBus, config = {}, resolveCardScan, logger = console,
+  eventBus, config = {}, resolveCardScan, recordCardScanOutcome = null, logger = console,
 }) {
   if (!eventBus?.subscribe) {
     throw new Error('createSchoolPrintScanConsumer: eventBus with subscribe required');
@@ -112,6 +112,17 @@ export function createSchoolPrintScanConsumer({
               testId, recordId: card.recordId, learnerId: card.learnerId ?? null,
             });
           }
+          if (card.error || !recordCardScanOutcome) continue;
+          // B1: the grade becomes durable evidence — per-learner attempt
+          // records plus the session bridge (submitted → graded) when the
+          // allocation record carries its issuing session. Sequential and
+          // per-card so one failure never swallows a cardmate's recording.
+          recordCardScanOutcome.execute({ testId, card })
+            .catch((err) => {
+              logger.warn?.('school.print.scan-record-failed', {
+                testId, recordId: card.recordId, error: err.message,
+              });
+            });
         }
       })
       .catch((err) => {

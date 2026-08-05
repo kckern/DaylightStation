@@ -390,6 +390,11 @@ export class IssueDocument {
         context: {
           freshCard: true,
           learnerId: state.learnerId ?? null,
+          // Session lineage (review wave B1): the allocation record is the
+          // one durable artifact a card scan resolves — carrying the
+          // sessionId here is what lets a graded scan advance THIS session
+          // (submitted → graded) instead of dead-ending in a log line.
+          sessionId,
           // F3 review fix (Medium/blocker): the tokens minted just above
           // (`#mintSheetTokens`) must reach `RenderPrintDocument`'s measure
           // + final render, or a scan_action/media_action block's barcode

@@ -168,6 +168,7 @@ export class YamlAllocationStore {
         seed: request.seed,
         variant: request.variant ?? 0,
         ...(request.learnerId != null ? { learnerId: request.learnerId } : {}),
+        ...(request.sessionId != null ? { sessionId: request.sessionId } : {}),
         ...(Array.isArray(request.rowItems) ? { rowItems: request.rowItems } : {}),
         renderedAt: this.#now(),
         status: 'live',
@@ -359,6 +360,10 @@ function assertRequest(request) {
   }
   if (request.variant !== undefined && (!Number.isInteger(request.variant) || request.variant < 0)) {
     throw new Error('YamlAllocationStore.allocate request variant must be a non-negative integer');
+  }
+  if (request.sessionId !== undefined && request.sessionId !== null
+      && (typeof request.sessionId !== 'string' || request.sessionId.trim().length === 0)) {
+    throw new Error('YamlAllocationStore.allocate request sessionId must be a non-empty string when given');
   }
   assertRowRange(request.rowRange, 'request.rowRange');
   if (request.rowItems !== undefined) {

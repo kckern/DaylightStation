@@ -2881,10 +2881,21 @@ export async function createApp({ server, logger, configPaths, configExists, ena
         // render produced.
         banks: createYamlBankReader({ dataDir }),
       });
+      // B1 (review wave): graded scans become durable evidence — per-learner
+      // attempt records through the SAME datastore the on-screen quiz engine
+      // writes, plus the session bridge (submitted → graded) for cards whose
+      // allocation record carries its issuing session.
+      const { RecordCardScanOutcome } = await import('#apps/school/documents/RecordCardScanOutcome.mjs');
+      const recordCardScanOutcome = new RecordCardScanOutcome({
+        datastore: schoolDatastore,
+        sessions: schoolLifecycle.stores.sessions ?? null,
+        logger: rootLogger.child({ module: 'school-print-scan-record' }),
+      });
       createSchoolPrintScanConsumer({
         eventBus,
         config: omrReadersConfig,
         resolveCardScan,
+        recordCardScanOutcome,
         logger: rootLogger.child({ module: 'school-print-scan' }),
       });
     } catch (err) {

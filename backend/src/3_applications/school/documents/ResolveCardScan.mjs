@@ -496,7 +496,9 @@ export class ResolveCardScan {
         }
         const points = pointsForRow(prepared, planned.blockPath);
         const graded = gradeRow(item, answers[planned.row], points);
-        return { row: planned.row, itemId, ...graded };
+        return {
+          row: planned.row, itemId, itemType: item.type, ...graded,
+        };
       });
 
     const totalPoints = rowResults.reduce((sum, row) => sum + row.points, 0);
@@ -509,6 +511,7 @@ export class ResolveCardScan {
       rev: record.rev,
       variant: record.variant,
       ...(record.learnerId != null ? { learnerId: record.learnerId } : {}),
+      ...(record.sessionId != null ? { sessionId: record.sessionId } : {}),
       revisionSuperseded: await this.#isSuperseded(record),
       // The record had ALREADY settled before this scan arrived — a re-fed
       // card, or a different child bubbling this card's id. Grading still
