@@ -340,9 +340,18 @@ export function createSchoolRouter({
       target = { id };
     } else {
       if (!printDocumentsRepo) return res.status(503).json({ error: 'print-render-unavailable' });
+      // A variant override with no pinned rev must ride the LATEST PUBLISHED
+      // document, never the raw source: a source render re-publishes
+      // in-memory, and mutating `variant` first changes the content hash —
+      // the allocation record would pin a rev that exists nowhere, and the
+      // scan-back (`getPublished(id, record.rev)`) would fail on a card a
+      // child already took. A published v2 doc carries its rev as a FIELD,
+      // which a variant override leaves untouched — the same in-memory
+      // pattern IssueDocument uses. Source is the fallback only for a
+      // document never published at all.
       const raw = rev !== null
         ? await printDocumentsRepo.getPublished(id, rev)
-        : await printDocumentsRepo.get(id);
+        : ((await printDocumentsRepo.getPublished(id)) ?? (await printDocumentsRepo.get(id)));
       if (!raw) throw new EntityNotFoundError('print document', rev !== null ? `${id}@${rev}` : id);
       target = { document: variant !== null ? { ...raw, variant } : raw };
     }
