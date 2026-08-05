@@ -137,7 +137,15 @@ describe('print route + real store + real renderer', () => {
     const { cardId } = JSON.parse(minted.headers['x-school-print-allocation']);
 
     // Explicitly claiming overlapping rows on the same card for a different
-    // variant is a real conflict — the client should see WHY.
+    // variant is a real conflict — the client should see WHY. No learnerId is
+    // supplied here on purpose: the quiz gate still does not fire, because
+    // this card already carries a usable (live) record for this document —
+    // the gate only exists to reject a FABRICATED card, and this one is
+    // real. Adding learnerId=soren here would instead make the request
+    // supersede soren's own prior live record (YamlAllocationStore.allocate's
+    // `supersedes` match on documentId+learnerId excludes the supersede
+    // target from the collision pool), turning this into a 200 and defeating
+    // the very conflict this test exists to exercise.
     const clash = await request(app)
       .get(`/api/v1/school/print/arts/integration/quiz-1?variety=omr&card=${cardId}&startRow=2&variant=5`);
     expect(clash.status).toBe(409);

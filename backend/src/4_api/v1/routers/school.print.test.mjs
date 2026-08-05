@@ -127,7 +127,7 @@ describe('GET /api/v1/school/print/:id', () => {
       get: vi.fn(),
       getPublished: vi.fn().mockResolvedValue({ id: 'q', archetype: 'quiz', seed: 1, blocks: [] }),
     };
-    const allocations = { findByCard: vi.fn(), findByDocument: vi.fn().mockResolvedValue([]) };
+    const allocations = { findByCard: vi.fn().mockResolvedValue([]), findByDocument: vi.fn().mockResolvedValue([]) };
     const bare = await request(appWith({ render, repo, allocations }))
       .get('/api/v1/school/print/pokemon-quiz-1?variety=omr');
     expect(bare.status).toBe(400);
@@ -136,8 +136,13 @@ describe('GET /api/v1/school/print/:id', () => {
     const fresh = await request(appWith({ render, repo, allocations }))
       .get('/api/v1/school/print/pokemon-quiz-1?variety=omr&freshCard=1');
     expect(fresh.status).toBe(400);
-    // With a learner, an explicit card, or in teacher mode, it renders.
-    for (const q of ['learnerId=felix', 'card=1234567&startRow=1', 'teacher=1']) {
+    // An explicit card with an explicit startRow and NO learner is the same
+    // fabricated-identity bypass with one extra query param — still 400.
+    const fabricatedCard = await request(appWith({ render, repo, allocations }))
+      .get('/api/v1/school/print/pokemon-quiz-1?variety=omr&card=1234567&startRow=1');
+    expect(fabricatedCard.status).toBe(400);
+    // With a learner, an explicit card (with a learner), or in teacher mode, it renders.
+    for (const q of ['learnerId=felix', 'card=1234567&startRow=1&learnerId=felix', 'teacher=1']) {
       const res = await request(appWith({ render, repo, allocations }))
         .get(`/api/v1/school/print/pokemon-quiz-1?variety=omr&${q}`);
       expect(res.status).toBe(200);
@@ -480,6 +485,13 @@ describe('GET /api/v1/school/print/:id', () => {
       .get('/api/v1/school/print/pokemon-quiz-1?variety=omr&card=1111111');
     expect(bare.status).toBe(400);
     expect(bare.body.error).toMatch(/learnerId/);
+    // Adding an explicit startRow does NOT reopen the bypass — a fabricated
+    // card with no usable record for this document is still fabricated,
+    // startRow or not.
+    const fabricatedWithStartRow = await request(appWith({ render, repo, allocations }))
+      .get('/api/v1/school/print/pokemon-quiz-1?variety=omr&card=1111111&startRow=1');
+    expect(fabricatedWithStartRow.status).toBe(400);
+    expect(fabricatedWithStartRow.body.error).toMatch(/learnerId/);
     // With a learner, attach-new on an explicit card stays legal.
     const ok = await request(appWith({ render, repo, allocations }))
       .get('/api/v1/school/print/pokemon-quiz-1?variety=omr&card=1111111&learnerId=felix');

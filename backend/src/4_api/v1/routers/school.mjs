@@ -315,13 +315,26 @@ export function createSchoolRouter({
       } else if (card) {
         if (!PRINT_CARD_ID.test(card)) throw new ValidationError('card must be 7 digits');
         context.cardId = card;
-        if (req.query.startRow === undefined && printAllocationStore) {
-          const record = newestUsable((await printAllocationStore.findByCard(card))
-            .filter((entry) => entry.documentId === id));
-          if (record) adopt(record);
+        let usableRecordExists = false;
+        if (printAllocationStore) {
+          if (req.query.startRow === undefined) {
+            const record = newestUsable((await printAllocationStore.findByCard(card))
+              .filter((entry) => entry.documentId === id));
+            usableRecordExists = !!record;
+            if (record) adopt(record);
+          } else if (!learnerId && (await isQuizDocument())) {
+            // An explicit startRow skips ADOPTION (the record's rev/variant
+            // never override the query string here), but the quiz gate below
+            // still needs to know whether this card carries a real record
+            // for this document — otherwise startRow=<n> reopens the exact
+            // fabricated-card bypass the bare card= lane closes, just with
+            // one extra query param.
+            const record = newestUsable((await printAllocationStore.findByCard(card))
+              .filter((entry) => entry.documentId === id));
+            usableRecordExists = !!record;
+          }
         }
-        if (req.query.startRow === undefined && !adoptedRecord && !learnerId
-            && (await isQuizDocument())) {
+        if (!adoptedRecord && !learnerId && !usableRecordExists && (await isQuizDocument())) {
           throw new ValidationError(
             `card ${card} has no usable allocation for this quiz — add learnerId=<id> to attach it `
             + '(or check the card number)',
