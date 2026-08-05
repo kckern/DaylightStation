@@ -781,6 +781,23 @@ describe('validateBlock: matching', () => {
       expect(errors).toContain('matching pairs must cover every left entry');
     });
   });
+
+  // Task 3 (spec §3): the inverse of `pairs` — stamped by publish, never
+  // authored.
+  describe('itemRef (PUBLISHED-only field)', () => {
+    it('accepts itemRef in a PUBLISHED document (default allowAnswers: false)', () => {
+      expect(errs(matching({ itemRef: 'm1' }))).toEqual([]);
+    });
+
+    it('rejects itemRef in a SOURCE document (allowAnswers: true)', () => {
+      expect(srcErrs(matching({ itemRef: 'm1' })))
+        .toContain('matching itemRef must not appear in a source document (it is stamped by publish, once a derived bank exists)');
+    });
+
+    it('rejects a non-non-empty-string itemRef', () => {
+      expect(errs(matching({ itemRef: '' }))).toContain('matching itemRef must be a non-empty string when present');
+    });
+  });
 });
 
 describe('validateBlock: cloze', () => {
@@ -893,6 +910,25 @@ describe('validateBlock: cloze', () => {
         .toContain('cloze blanks[0].answer must be a non-empty string when present');
     });
   });
+
+  // Task 3 (spec §3): the inverse of `answer` — stamped by publish, never
+  // authored. Per-blank (not per-block), unlike matching/short_answer's
+  // single itemRef: a cloze block can mint several derived-bank items.
+  describe('itemRef (PUBLISHED-only per-blank field)', () => {
+    it('accepts itemRef in a PUBLISHED document (default allowAnswers: false)', () => {
+      expect(errs(cloze({ blanks: [{ n: 1, itemRef: 'blocks-1-b1' }] }))).toEqual([]);
+    });
+
+    it('rejects itemRef in a SOURCE document (allowAnswers: true)', () => {
+      expect(srcErrs(cloze({ blanks: [{ n: 1, itemRef: 'blocks-1-b1' }] })))
+        .toContain('cloze blanks[0].itemRef must not appear in a source document (it is stamped by publish, once a derived bank exists)');
+    });
+
+    it('rejects a non-non-empty-string itemRef', () => {
+      expect(errs(cloze({ blanks: [{ n: 1, itemRef: '' }] })))
+        .toContain('cloze blanks[0].itemRef must be a non-empty string when present');
+    });
+  });
 });
 
 describe('validateBlock: short_answer', () => {
@@ -937,6 +973,24 @@ describe('validateBlock: short_answer', () => {
     it('short_answer without an answer is fine in either mode (ungraded prompt is legal)', () => {
       expect(errs({ type: 'short_answer', prompt: 'P?' })).toEqual([]);
       expect(srcErrs({ type: 'short_answer', prompt: 'P?' })).toEqual([]);
+    });
+  });
+
+  // Task 3 (spec §3): the inverse of `answer` — stamped by publish, never
+  // authored.
+  describe('itemRef (PUBLISHED-only field)', () => {
+    it('accepts itemRef in a PUBLISHED document (default allowAnswers: false)', () => {
+      expect(errs({ type: 'short_answer', prompt: 'P?', itemRef: 'blocks-3' })).toEqual([]);
+    });
+
+    it('rejects itemRef in a SOURCE document (allowAnswers: true)', () => {
+      expect(srcErrs({ type: 'short_answer', prompt: 'P?', itemRef: 'blocks-3' }))
+        .toContain('short_answer itemRef must not appear in a source document (it is stamped by publish, once a derived bank exists)');
+    });
+
+    it('rejects a non-non-empty-string itemRef', () => {
+      expect(errs({ type: 'short_answer', prompt: 'P?', itemRef: '' }))
+        .toContain('short_answer itemRef must be a non-empty string when present');
     });
   });
 });

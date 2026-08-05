@@ -21,6 +21,12 @@ const isNonEmptyStringArray = (v) => Array.isArray(v) && v.length > 0 && v.every
 const isShuffleKey = (v) => isNonEmptyString(v) && SHUFFLE_KEY_PATTERN.test(v);
 const keyError = (field) => `${field} must be a non-empty string matching ${SHUFFLE_KEY_PATTERN}`;
 const sourceOnlyError = (field) => `${field} is a source-only field and must not appear in a published document`;
+// The mirror image of sourceOnlyError (Task 3, spec §3): `itemRef` is the
+// publish transform's OWN output field — it points at the derived-bank item
+// that carries the answer this field used to hold inline. A hand-authored
+// SOURCE document has no derived bank yet (publish hasn't run), so `itemRef`
+// there can only be a stale/forged reference, never a legitimate one.
+const publishedOnlyError = (field) => `${field} must not appear in a source document (it is stamped by publish, once a derived bank exists)`;
 
 // \require is MathJax's browser-only lazy package loader. Server-side every
 // package is preloaded, and the macro renders as literal red error text on the
@@ -318,14 +324,20 @@ const VALIDATORS = {
     }
   },
   // Two seeded-shuffled lists with write-the-letter blanks (spec §6.2). The
-  // PUBLISHED shape is `{key, left, right}`; SOURCE additionally allows
-  // `pairs` (the answer key) — gated the same way as cloze/short_answer below.
+  // PUBLISHED shape is `{key, left, right, itemRef?}`; SOURCE additionally
+  // allows `pairs` (the answer key) — gated the same way as cloze/short_answer
+  // below. `itemRef` (Task 3) is the inverse gate: publish-only, pointing at
+  // the derived-bank `matching` item that now holds what `pairs` used to.
   matching(raw, push, ctx) {
     if (!isShuffleKey(raw.key)) push(keyError('matching key'));
     if (!isNonEmptyStringArray(raw.left)) push('matching left must be a non-empty array of non-empty strings');
     else if (new Set(raw.left).size !== raw.left.length) push('matching left must be unique');
     if (!isNonEmptyStringArray(raw.right)) push('matching right must be a non-empty array of non-empty strings');
     else if (new Set(raw.right).size !== raw.right.length) push('matching right must be unique');
+    if (raw.itemRef !== undefined) {
+      if (ctx.allowAnswers) push(publishedOnlyError('matching itemRef'));
+      else if (!isNonEmptyString(raw.itemRef)) push('matching itemRef must be a non-empty string when present');
+    }
     if (raw.pairs === undefined) return;
     if (!ctx.allowAnswers) { push(sourceOnlyError('matching pairs')); return; }
     validateMatchingPairs(raw, push);
@@ -372,6 +384,13 @@ const VALIDATORS = {
         if (!ctx.allowAnswers) push(sourceOnlyError(`${at}.answer`));
         else if (!isNonEmptyString(blank.answer)) push(`${at}.answer must be a non-empty string when present`);
       }
+      // itemRef (Task 3, spec §3): publish-only, per-blank — a cloze block can
+      // mint several derived-bank items (one per blank), so unlike
+      // matching/short_answer the reference lives on the blank, not the block.
+      if (blank.itemRef !== undefined) {
+        if (ctx.allowAnswers) push(publishedOnlyError(`${at}.itemRef`));
+        else if (!isNonEmptyString(blank.itemRef)) push(`${at}.itemRef must be a non-empty string when present`);
+      }
     });
     if (markers.length && seenN.size !== markers.length) {
       push('cloze blanks must include one entry for every {{n}} marker in text');
@@ -379,10 +398,17 @@ const VALIDATORS = {
   },
   // Prompt + ruled lines; sugar over prompt + answer_space at render time
   // (spec §4.2, §6.2) — this validator only checks the authored shape.
+  // `itemRef` (Task 3) is the publish-only inverse of `answer`: short_answer
+  // has no author-assigned key, so its derived-bank item id is minted from
+  // its document path (see documentSource.mjs's keyless-id scheme).
   short_answer(raw, push, ctx) {
     if (!isNonEmptyString(raw.prompt)) push('short_answer prompt must be a non-empty string');
     if (raw.lines !== undefined && (!Number.isInteger(raw.lines) || raw.lines < 1 || raw.lines > 10)) {
       push('short_answer lines must be an integer between 1 and 10');
+    }
+    if (raw.itemRef !== undefined) {
+      if (ctx.allowAnswers) push(publishedOnlyError('short_answer itemRef'));
+      else if (!isNonEmptyString(raw.itemRef)) push('short_answer itemRef must be a non-empty string when present');
     }
     if (raw.answer === undefined) return;
     if (!ctx.allowAnswers) { push(sourceOnlyError('short_answer answer')); return; }

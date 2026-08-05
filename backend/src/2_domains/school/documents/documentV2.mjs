@@ -24,6 +24,14 @@
 import { validateDocument, walkBlocks } from './documentValidation.mjs';
 import { validateBlock } from './blocks.mjs';
 import { SHUFFLE_KEY_PATTERN } from './shuffle.mjs';
+// Task 3 (spec §3): the source stage is a sibling module, imported only for
+// `validateAnyDocument`'s dispatch branch. This is a deliberate two-way
+// import (documentSource.mjs imports `validateDocumentV2`/`DOCUMENT_V2_SCHEMA`
+// back from this file) — safe because every binding crossing the cycle is
+// either a hoisted `function` declaration or read only from inside a function
+// body (never at module-top-level), so both modules are fully evaluated by
+// the time either binding is actually used.
+import { DOCUMENT_SOURCE_SCHEMA, validateDocumentSource } from './documentSource.mjs';
 
 export const DOCUMENT_V2_SCHEMA = 'school.document/v2';
 export const ARCHETYPES = ['quiz', 'worksheet', 'infopage'];
@@ -214,6 +222,16 @@ export function validateDocumentV2(raw, { allowAnswers = false } = {}) {
     else defaultPoints = raw.defaultPoints;
   }
 
+  // `rev` (Task 3, spec §3/§4.2): optional here — a hand-authored v2 document
+  // has none; `publishDocument` (documentSource.mjs) stamps one. Accepting it
+  // as a plain hex string (not re-deriving/checking the hash here) keeps this
+  // validator agnostic to *how* a rev was computed — that's publish's job.
+  let rev;
+  if (raw.rev !== undefined) {
+    if (typeof raw.rev !== 'string' || !/^[0-9a-f]+$/i.test(raw.rev)) errors.push('rev must be a hex string when present');
+    else rev = raw.rev;
+  }
+
   const scanActionBlock = desugarSource(raw, errors, allowAnswers);
   const blocks = scanActionBlock
     ? (Array.isArray(raw.blocks) ? [scanActionBlock, ...raw.blocks] : raw.blocks)
@@ -273,14 +291,20 @@ export function validateDocumentV2(raw, { allowAnswers = false } = {}) {
     fit,
     defaultPoints,
   };
+  if (rev !== undefined) document.rev = rev;
   return { errors: [], document };
 }
 
 /**
- * Dispatches on `raw.schema`: v2 literal -> `validateDocumentV2`; absent ->
- * the existing v1 `validateDocument`, untouched; anything else -> a single
- * 'unknown document schema' error. One entry point for both envelope
- * generations (spec §4.1's "no migration required" posture).
+ * Dispatches on `raw.schema`: v2 literal -> `validateDocumentV2`; the SOURCE
+ * literal (Task 3, spec §3) -> `validateDocumentSource` (v2 rules with
+ * answers permitted); absent -> the existing v1 `validateDocument`,
+ * untouched; anything else -> a single 'unknown document schema' error. One
+ * entry point for all three envelope generations (spec §4.1's "no migration
+ * required" posture) — note a SOURCE document validating successfully here
+ * does NOT make it renderable: only `publishDocument` (documentSource.mjs)
+ * produces something a renderer may consume (spec §3's in-memory-publish
+ * rule; Task 5 wires that into the render path).
  *
  * @param {*} raw
  * @returns {{ errors: string[], document?: object }}
@@ -288,6 +312,7 @@ export function validateDocumentV2(raw, { allowAnswers = false } = {}) {
 export function validateAnyDocument(raw) {
   if (!isPlainObject(raw)) return validateDocument(raw);
   if (raw.schema === DOCUMENT_V2_SCHEMA) return validateDocumentV2(raw);
+  if (raw.schema === DOCUMENT_SOURCE_SCHEMA) return validateDocumentSource(raw);
   if (raw.schema === undefined) return validateDocument(raw);
   return { errors: ['unknown document schema'] };
 }
