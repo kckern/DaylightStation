@@ -14,6 +14,21 @@ export function givenShapeError(item, given) {
     }
     return null;
   }
+  // multi_select is the only OTHER item type an array is legal for (spec
+  // §5.5) — every other type below still requires a single string.
+  if (item.type === 'multi_select') {
+    if (!Array.isArray(given) || given.length === 0) return 'multi_select answer must be a non-empty array of choice strings';
+    if (given.some((v) => typeof v !== 'string' || v.length === 0)) return 'every multi_select answer entry must be a non-empty string';
+    return null;
+  }
+  // true_false (spec §5.3): rendered/graded as A/B on the OMR card, but a
+  // non-OMR caller may hand back the raw boolean instead — both are legal
+  // `given` shapes, own dedicated branch (not the generic string check below,
+  // which would reject a boolean outright).
+  if (item.type === 'true_false') {
+    if (given === true || given === false || given === 'A' || given === 'B') return null;
+    return "true_false answer must be 'A', 'B', or a boolean";
+  }
   if (typeof given !== 'string' || given.length === 0) return 'answer must be a non-empty string';
   return null;
 }
@@ -44,6 +59,22 @@ export function gradeAnswer(item, given) {
     // Values are machine-generated ids (region codes / choice values), never
     // free text — strict equality, no normalization (see multiple_choice).
     return { correct: given === item.answer, expected: item.answer };
+  }
+  if (item.type === 'multi_select') {
+    // Exact-set match: full credit or zero, no partial credit (spec §5.5) —
+    // order-insensitive and duplicate-tolerant, since `given` is compared as
+    // a SET against the answer set, not position-by-position.
+    const wantSet = new Set(item.answers);
+    const givenSet = new Set(given);
+    const correct = givenSet.size === wantSet.size && [...wantSet].every((v) => givenSet.has(v));
+    return { correct, expected: item.answers };
+  }
+  if (item.type === 'true_false') {
+    // A='true', B='false' (spec §5.3's Ⓐ True / Ⓑ False card rendering); a
+    // boolean `given` is used as-is. Strict equality against item.answer —
+    // no fuzzing applies to a two-option item.
+    const givenBool = given === 'A' ? true : given === 'B' ? false : given;
+    return { correct: givenBool === item.answer, expected: item.answer };
   }
   throw new Error(`gradeAnswer: unrecognised item.type "${item.type}"`);
 }

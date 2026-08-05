@@ -55,6 +55,30 @@ const RESOLVABLE_REFS = Object.freeze({
 });
 const REFERENCE_FIELDS = [...Object.keys(RESOLVABLE_REFS), 'review'];
 
+/**
+ * `print/<id>@<rev>` — a `document` field pointing at a PUBLISHED print-
+ * document artifact (spec §9, Task 7) instead of a legacy catalog document
+ * id. `id` matches `documentValidation.mjs`'s own `ID_PATTERN`
+ * (`^[a-z0-9][a-z0-9-]*$`); `rev` is exactly 9 lowercase hex characters —
+ * `documentSource.mjs`'s `computeRev` output shape (first 9 hex chars of a
+ * sha256 over the canonical source).
+ *
+ * SHAPE ONLY, DELIBERATELY NOT EXISTENCE (Task 7 review, Finding 1): this is
+ * a pure domain function with no I/O (D1) — it has no repository to check a
+ * `print/<id>@<rev>` ref actually resolves to a published artifact, the same
+ * reason `review` above is exempt from resolution entirely. A dangling
+ * print-document ref is caught at RUNTIME instead, exactly like a dangling
+ * legacy `documentIds` reference already was in spirit (both are "should be
+ * impossible once the catalog gate covers it, logged loudly if it happens
+ * anyway") — `IssueDocument`'s `printDocuments.getPublished(...)` returning
+ * null degrades to its existing `no-document` unavailable branch, never a
+ * crash. Shape IS still enforced here, at the same publish-time gate every
+ * other reference in this file goes through — a malformed ref (bad id
+ * charset, non-hex or wrong-length rev) fails unit validation immediately,
+ * the same as any other authoring mistake in this function.
+ */
+const PRINT_DOCUMENT_REF_PATTERN = /^print\/[a-z0-9][a-z0-9-]*@[0-9a-f]{9}$/;
+
 const isNonEmptyString = (v) => typeof v === 'string' && v.trim().length > 0;
 const isPlainObject = (v) => Boolean(v) && typeof v === 'object' && !Array.isArray(v);
 const isPresent = (v) => v !== undefined && v !== null;
@@ -127,6 +151,16 @@ export function validateUnit(raw, sets = {}) {
   for (const [field, setName] of Object.entries(RESOLVABLE_REFS)) {
     if (!isPresent(raw[field])) continue;
     if (!isNonEmptyString(raw[field])) { errors.push(`${field} must be a non-empty string`); continue; }
+    // `print/` is a reserved `document`-field prefix (spec §9, Task 7): once a
+    // value claims that namespace it is ALWAYS validated as a print-document
+    // ref — shape-checked here, never falling through to the legacy
+    // `documentIds` set lookup below (even a `print/`-prefixed string that
+    // happened to sit in that set would be the wrong kind of "found").
+    if (field === 'document' && raw[field].startsWith('print/')) {
+      if (PRINT_DOCUMENT_REF_PATTERN.test(raw[field])) references[field] = raw[field];
+      else errors.push(`document '${raw[field]}' is not a valid print/<id>@<rev> reference`);
+      continue;
+    }
     const known = sets[setName];
     if (!(known instanceof Set) || !known.has(raw[field])) errors.push(`${field} '${raw[field]}' not found`);
     else references[field] = raw[field];

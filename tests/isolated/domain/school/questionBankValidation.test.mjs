@@ -149,3 +149,134 @@ describe('validateQuestionBank', () => {
     expect(r.ok).toBe(true);
   });
 });
+
+// Task 2 (spec §5.5): multi_select — the OMR-row-mappable item type that can
+// have more than one correct choice. Exact-set grading lives in grading.mjs;
+// this file owns only the bank item's own shape.
+describe('validateQuestionBank: multi_select', () => {
+  const ms = (over = {}) => ({
+    id: 'q1', type: 'multi_select', prompt: 'Which are primary colors?', choices: ['Red', 'Green', 'Blue', 'Orange'], answers: ['Red', 'Blue'], ...over,
+  });
+
+  it('accepts a minimal valid multi_select item', () => {
+    const r = validateQuestionBank(bank({ items: [ms()] }));
+    expect(r.ok).toBe(true);
+  });
+
+  it('accepts an optional maxSelect', () => {
+    const r = validateQuestionBank(bank({ items: [ms({ maxSelect: 2 })] }));
+    expect(r.ok).toBe(true);
+  });
+
+  it.each([
+    ['fewer than 2', ['Only one']],
+    ['more than 5', ['A', 'B', 'C', 'D', 'E', 'F']],
+  ])('rejects choices with %s entries', (_label, choices) => {
+    const r = validateQuestionBank(bank({ items: [ms({ choices, answers: [choices[0]] })] }));
+    expect(r.ok).toBe(false);
+    expect(r.errors).toContain('items[0]: choices must have between 2 and 5 entries');
+  });
+
+  it('rejects a non-string / empty choice entry', () => {
+    const r = validateQuestionBank(bank({ items: [ms({ choices: ['Red', ''] })] }));
+    expect(r.ok).toBe(false);
+    expect(r.errors).toContain('items[0]: choices must be non-empty strings');
+  });
+
+  it('rejects duplicate choices', () => {
+    const r = validateQuestionBank(bank({ items: [ms({ choices: ['Red', 'Red', 'Blue'] })] }));
+    expect(r.ok).toBe(false);
+    expect(r.errors).toContain('items[0]: choices must be unique');
+  });
+
+  it('rejects a missing or empty answers array', () => {
+    expect(validateQuestionBank(bank({ items: [ms({ answers: undefined })] })).ok).toBe(false);
+    const r = validateQuestionBank(bank({ items: [ms({ answers: [] })] }));
+    expect(r.errors).toContain('items[0]: answers must be a non-empty array');
+  });
+
+  it('rejects duplicate answers', () => {
+    const r = validateQuestionBank(bank({ items: [ms({ answers: ['Red', 'Red'] })] }));
+    expect(r.ok).toBe(false);
+    expect(r.errors).toContain('items[0]: answers must be distinct');
+  });
+
+  it('rejects an answers entry that is not one of the choices', () => {
+    const r = validateQuestionBank(bank({ items: [ms({ answers: ['Purple'] })] }));
+    expect(r.ok).toBe(false);
+    expect(r.errors).toContain('items[0]: answers must be a subset of choices');
+  });
+
+  it.each([0, -1, 1.5, '2'])('rejects an invalid maxSelect of %s', (maxSelect) => {
+    const r = validateQuestionBank(bank({ items: [ms({ maxSelect })] }));
+    expect(r.ok).toBe(false);
+    expect(r.errors).toContain('items[0]: maxSelect must be an integer >= 1');
+  });
+
+  // F2 (review finding): maxSelect COHERENCE against answers.length/choices.length —
+  // `ms()`'s default fixture has 4 choices and 2 answers (['Red', 'Blue']),
+  // so `maxSelect: 1` (below answers.length) and `maxSelect: 5` (above
+  // choices.length) are the two illegal edges; `maxSelect: 2` (== answers.length)
+  // and `maxSelect: 4` (== choices.length) are the legal boundary either side.
+  describe('maxSelect coherence with answers.length / choices.length', () => {
+    it('rejects maxSelect below answers.length — a cap the correct answer itself could not satisfy', () => {
+      const r = validateQuestionBank(bank({ items: [ms({ maxSelect: 1 })] }));
+      expect(r.ok).toBe(false);
+      expect(r.errors).toContain('items[0]: maxSelect (1) must be >= answers.length (2)');
+    });
+
+    it('rejects maxSelect above choices.length — a cap the card has no rows for', () => {
+      const r = validateQuestionBank(bank({ items: [ms({ maxSelect: 5 })] }));
+      expect(r.ok).toBe(false);
+      expect(r.errors).toContain('items[0]: maxSelect (5) must be <= choices.length (4)');
+    });
+
+    it('accepts maxSelect exactly at the answers.length boundary', () => {
+      const r = validateQuestionBank(bank({ items: [ms({ maxSelect: 2 })] }));
+      expect(r.ok).toBe(true);
+    });
+
+    it('accepts maxSelect exactly at the choices.length boundary', () => {
+      const r = validateQuestionBank(bank({ items: [ms({ maxSelect: 4 })] }));
+      expect(r.ok).toBe(true);
+    });
+
+    it('the two coherence messages are independent — each names only its own bound', () => {
+      const belowAnswers = validateQuestionBank(bank({ items: [ms({ maxSelect: 1 })] }));
+      expect(belowAnswers.errors.some((e) => e.includes('choices.length'))).toBe(false);
+      const aboveChoices = validateQuestionBank(bank({ items: [ms({ maxSelect: 5 })] }));
+      expect(aboveChoices.errors.some((e) => e.includes('answers.length'))).toBe(false);
+    });
+  });
+});
+
+// Task 2 (spec §5.3, §6.1): true_false is graded/rendered as A/B (True/False)
+// on the OMR card and is row-mappable (allocation.mjs's ROW_MAPPABLE_TYPES,
+// fixed at 2 choices). The bank item form carries no `choices` array — just
+// a boolean `answer`.
+describe('validateQuestionBank: true_false', () => {
+  const tf = (over = {}) => ({
+    id: 'q1', type: 'true_false', prompt: 'The sky is blue.', answer: true, ...over,
+  });
+
+  it('accepts a minimal valid true_false item with answer: true', () => {
+    const r = validateQuestionBank(bank({ items: [tf()] }));
+    expect(r.ok).toBe(true);
+  });
+
+  it('accepts answer: false', () => {
+    const r = validateQuestionBank(bank({ items: [tf({ answer: false })] }));
+    expect(r.ok).toBe(true);
+  });
+
+  it.each([
+    ['missing', undefined],
+    ['a string', 'true'],
+    ['a number', 1],
+    ['null', null],
+  ])('rejects an answer that is %s, naming the item', (_label, answer) => {
+    const r = validateQuestionBank(bank({ items: [tf({ answer })] }));
+    expect(r.ok).toBe(false);
+    expect(r.errors).toContain('items[0]: answer must be a boolean');
+  });
+});

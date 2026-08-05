@@ -1,0 +1,30 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`Phase B acceptance sweep (spec §12, items tagged [B], plus the Phase-B slice of §12.10) > §12.9 seeded shuffles — cloze/wordbank/matching render pinned; edit-stability under a sibling insert > cloze + wordbank + matching render together — extracted page text is snapshot-pinned 1`] = `
+"phase-b-shuffle-fixture
+Name: ________________________                                          Date: ________________________
+
+  Photosynthesis     Respiration   Osmosis   Mitosis
+
+The mitochondria is the 1                of the cell.
+
+     1.   WA                                            A.    Salem
+     2.   OR                                            B.    Olympia
+     3.   ID                                            C.    Boise
+
+                                                Page 1 of 1
+"
+`;
+
+exports[`Phase B acceptance sweep (spec §12, items tagged [B], plus the Phase-B slice of §12.10) > §12.10(B) archetype dial — visible score box (quiz) vs no score box (worksheet), envelope-only diff > quiz PRINTS "Score ____ / 5" (5 questions x defaultPoints 1); worksheet prints no score line at all — real rendered text, not a structural guess 1`] = `
+{
+  "quiz": {
+    "hash": "b83c766fc2430cba8104fd6bb7cf841a5882a4bd8962d55fb4af7cd8e427d2e6",
+    "pageCount": 1,
+  },
+  "worksheet": {
+    "hash": "7e027595bda067bd27c4f7559e3c1c887bc859ed85fa13aeb189d52f2c86726f",
+    "pageCount": 1,
+  },
+}
+`;

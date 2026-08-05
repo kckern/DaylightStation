@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { placeFragments } from '../../../../backend/src/1_rendering/school/documents/layout.mjs';
+import { placeFragments, contentHeightPt } from '../../../../backend/src/1_rendering/school/documents/layout.mjs';
 
 // Distinct gaps per class pair so a wrong lookup cannot coincidentally pass.
 const spacing = {
@@ -127,6 +127,62 @@ describe('placeFragments — keep-together', () => {
     expect(result.pages).toEqual([]);
     expect(result.errors).toHaveLength(1);
     expect(result.errors[0].id).toBe('p');
+  });
+});
+
+// F4 (review finding): short_answer/essay's prompt fragment must never
+// strand on one page while its own write-space fragment lands on the next
+// (measure.mjs tags the prompt with `stickToNextId: <space fragment id>`).
+describe('placeFragments — keep-with-next (stickToNextId)', () => {
+  it('moves the prompt WITH its write-space when the space alone would not fit after it', () => {
+    // 130pt of room: the 20pt prompt fits easily, but the 40pt space that
+    // must immediately follow it would not (130 - 20 - 6(gap) = 104pt is
+    // plenty for JUST the space — pick a filler so only ~10pt remains).
+    const result = placeFragments(
+      [
+        frag('filler', 130),
+        frag('prompt', 20, { stickToNextId: 'space' }),
+        frag('space', 40, { atomic: true }),
+      ],
+      page,
+    );
+    expect(idsOf(result)).toEqual([['filler'], ['prompt', 'space']]);
+    expect(find(result, 1, 'prompt').yPt).toBe(20);
+  });
+
+  it('keeps the prompt on the SAME page as its space when both fit together (no behavior change in the common case)', () => {
+    const result = placeFragments(
+      [frag('prompt', 20, { stickToNextId: 'space' }), frag('space', 40, { atomic: true })],
+      page,
+    );
+    expect(idsOf(result)).toEqual([['prompt', 'space']]);
+  });
+
+  it('does not apply the stick rule on an empty page — a combo too big to share a page still places the prompt normally rather than looping', () => {
+    // 'prompt' is the first (page-empty) fragment, so the rule is skipped and
+    // it places at the top of page 1; 'space' (150pt) does not fit after it
+    // (134pt left) but fits a FRESH empty page (160pt usable) on its own —
+    // the same outcome a plain fragment pair with no stick affinity gets.
+    const result = placeFragments(
+      [frag('prompt', 20, { stickToNextId: 'space' }), frag('space', 150, { atomic: true })],
+      page,
+    );
+    expect(idsOf(result)).toEqual([['prompt'], ['space']]);
+  });
+
+  it('is a no-op when the very next fragment is not the named partner', () => {
+    const result = placeFragments(
+      [
+        frag('filler', 130),
+        frag('prompt', 20, { stickToNextId: 'space' }),
+        frag('unrelated', 5),
+        frag('space', 40, { atomic: true }),
+      ],
+      page,
+    );
+    // 'prompt' still fits (130+6+20=156 of 160); its named partner is NOT
+    // next in the queue ('unrelated' is), so it places normally.
+    expect(find(result, 0, 'prompt')).toBeTruthy();
   });
 });
 
@@ -273,5 +329,157 @@ describe('placeFragments — determinism', () => {
       frag('q2', 120, { atomic: true, spacingClass: 'question' }),
     ];
     expect(placeFragments(build(), page)).toEqual(placeFragments(build(), page));
+  });
+});
+
+// `growLastPage` is the mechanics behind fit policy `fill` (spec §7): the
+// engine's deliberate "trailing space on the last page belongs to the
+// document" exclusion inverts ONLY when this flag is set. Every fixture below
+// is also run WITHOUT the flag (or comes straight from the suite above) to
+// prove default behavior stays byte-identical.
+describe('placeFragments — growLastPage (policy: fill)', () => {
+  const answer = (id, minPt, maxPt) => frag(id, minPt, { answerSpace: { minPt, maxPt } });
+
+  it('defaults to false: the last page stays unexpanded (unchanged from the base suite)', () => {
+    const result = placeFragments([frag('q1', 10), answer('a1', 10, 100)], page);
+    expect(result.pages).toHaveLength(1);
+    expect(find(result, 0, 'a1').heightPt).toBe(10);
+  });
+
+  it('grows the last (and only) page into its trailing space when true', () => {
+    const result = placeFragments([frag('q1', 10), answer('a1', 10, 100)], { ...page, growLastPage: true });
+    expect(result.pages).toHaveLength(1);
+    expect(find(result, 0, 'a1').heightPt).toBe(100);
+  });
+
+  it('grows a non-last page identically whether or not the flag is set — only the LAST page inverts', () => {
+    // Page 1: q1(40) + a1(10..40) + filler(94) = 150pt of 160pt usable → 10pt
+    // spare, all of it going to a1's headroom (30pt) capped at +10.
+    // 'a2' (10..50) then overflows page 1 by 2pt and starts page 2 alone,
+    // where it sits as the sole (and last) fragment with 150pt of spare.
+    const fragments = [
+      frag('q1', 40),
+      answer('a1', 10, 40),
+      frag('filler', 94),
+      answer('a2', 10, 50),
+    ];
+
+    const withoutFlag = placeFragments(fragments, page);
+    expect(idsOf(withoutFlag)).toEqual([['q1', 'a1', 'filler'], ['a2']]);
+    expect(find(withoutFlag, 0, 'a1').heightPt).toBe(14);
+    expect(find(withoutFlag, 1, 'a2').heightPt).toBe(10); // last page: unexpanded, as always.
+
+    const withFlag = placeFragments(fragments, { ...page, growLastPage: true });
+    expect(idsOf(withFlag)).toEqual([['q1', 'a1', 'filler'], ['a2']]);
+    expect(find(withFlag, 0, 'a1').heightPt).toBe(14); // non-last page: identical either way.
+    expect(find(withFlag, 1, 'a2').heightPt).toBe(50); // last page: now grown to its cap.
+  });
+});
+
+// A `page_break` block (spec §6) measures to a zero-height `forceBreak`
+// fragment (measure.mjs `fragmentFromNode`); placement is what turns that
+// marker into an actual page boundary.
+describe('placeFragments — forceBreak (page_break)', () => {
+  const pageBreak = (id = 'pb') => ({
+    id, blocks: [], heightPt: 0, atomic: true, spacingClass: null, forceBreak: true,
+  });
+
+  it('ends the current page unconditionally, even with room to spare', () => {
+    const result = placeFragments([frag('a', 30), pageBreak(), frag('b', 30)], page);
+    expect(idsOf(result)).toEqual([['a'], ['b']]);
+    expect(find(result, 1, 'b').yPt).toBe(20);
+  });
+
+  it('is consumed by placement — never appears in any page’s fragments', () => {
+    const result = placeFragments([frag('a', 30), pageBreak('pb1'), frag('b', 30)], page);
+    expect(result.pages.flatMap((p) => p.fragments.map((f) => f.id))).toEqual(['a', 'b']);
+  });
+
+  it('is a no-op at the very start of the document — no blank leading page', () => {
+    const result = placeFragments([pageBreak(), frag('a', 30)], page);
+    expect(result.pages).toHaveLength(1);
+    expect(find(result, 0, 'a').yPt).toBe(20);
+  });
+
+  it('collapses consecutive breaks into a single page boundary — no blank pages between them', () => {
+    const result = placeFragments(
+      [frag('a', 30), pageBreak('pb1'), pageBreak('pb2'), frag('b', 30)],
+      page,
+    );
+    expect(idsOf(result)).toEqual([['a'], ['b']]);
+  });
+
+  it('is a no-op at the very end of the document — no trailing blank page', () => {
+    const result = placeFragments([frag('a', 30), pageBreak()], page);
+    expect(result.pages).toHaveLength(1);
+  });
+
+  it('never lets its own null spacingClass zero the gap it sits in — it is dropped, not placed', () => {
+    // Carry from Task 5's review: a placed page_break fragment with
+    // spacingClass:null would zero gapBetween(prev, null) for whatever came
+    // right after it. That risk is moot here because the break consumes the
+    // fragment outright — the next fragment starts a fresh page, where the
+    // first-of-page gap is unconditionally 0 for ANY spacingClass (same rule
+    // every other page start already follows).
+    const result = placeFragments(
+      [frag('a', 30, { spacingClass: 'heading' }), pageBreak(), frag('b', 30, { spacingClass: 'question' })],
+      page,
+    );
+    expect(find(result, 1, 'b').yPt).toBe(20);
+  });
+});
+
+// `contentHeightPt` answers "how tall would this document be as ONE
+// unbroken page" — the figure `RenderPrintDocument` (Task 8) needs to compute
+// fit policy `one-page`'s `oversetPt` (spec §7): how far a document that DID
+// paginate would have overrun a single page's budget.
+describe('contentHeightPt', () => {
+  it('is 0 for an empty fragment list', () => {
+    expect(contentHeightPt([], { spacing })).toBe(0);
+  });
+
+  it('sums heights plus the gaps between consecutive spacing classes, matching placeFragments’ own walk', () => {
+    const fragments = [frag('a', 100, { spacingClass: 'body' }), frag('b', 54, { spacingClass: 'body' })];
+    // 100 + gap(body,body)=6 + 54 == 160, the same total the "exactly fills"
+    // placeFragments test above derives from spacing/page geometry.
+    expect(contentHeightPt(fragments, { spacing })).toBe(160);
+  });
+
+  it('is insensitive to where placeFragments would have broken pages — same total whether or not it fits one real page', () => {
+    const fragments = [frag('a', 100, { spacingClass: 'body' }), frag('b', 55, { spacingClass: 'body' })];
+    // This exact input starts a NEW page in placeFragments (161pt > 160pt
+    // usable) — contentHeightPt reports the flat total regardless.
+    expect(contentHeightPt(fragments, { spacing })).toBe(161);
+  });
+
+  it('ignores forceBreak fragments and resets the gap after one, exactly like a real page start', () => {
+    const withBreak = [
+      frag('a', 30, { spacingClass: 'heading' }),
+      { id: 'pb', blocks: [], heightPt: 0, atomic: true, spacingClass: null, forceBreak: true },
+      frag('b', 30, { spacingClass: 'question' }),
+    ];
+    const withoutBreak = [
+      frag('a', 30, { spacingClass: 'heading' }),
+      { ...frag('b', 30, { spacingClass: 'question' }), spacingClass: null },
+    ];
+    // No heading→question gap crosses the break (previousClass resets to
+    // null, same as the first fragment on a fresh page) — total is just the
+    // two fragment heights, matching a next-fragment gap of 0 either way.
+    expect(contentHeightPt(withBreak, { spacing })).toBe(60);
+    expect(contentHeightPt(withoutBreak, { spacing })).toBe(60);
+  });
+
+  it('uses answerSpace.minPt (not a stale heightPt) for an unmeasured answer space, same normalization placeFragments applies', () => {
+    const fragments = [{
+      id: 'a1', blocks: [], heightPt: 5, atomic: true, spacingClass: 'body', answerSpace: { minPt: 40, maxPt: 100 },
+    }];
+    expect(contentHeightPt(fragments, { spacing })).toBe(40);
+  });
+
+  it('sums lines heightPt for a flowable fragment, ignoring any stale heightPt field', () => {
+    const fragments = [{
+      id: 'p1', blocks: [], heightPt: 999, atomic: false, spacingClass: 'body', lines: lines(3, 12),
+    }];
+    expect(contentHeightPt(fragments, { spacing })).toBe(36);
   });
 });

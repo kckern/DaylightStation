@@ -1,0 +1,77 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`furniture — drawFurniture > snapshot: a furnished 3-page document's full furniture draw trace 1`] = `
+[
+  {
+    "calls": [
+      {
+        "align": "center",
+        "op": "text",
+        "str": "Page 1 of 3",
+        "width": 486,
+        "xPt": 72,
+        "yPt": 719.5,
+      },
+    ],
+    "page": 1,
+  },
+  {
+    "calls": [
+      {
+        "align": undefined,
+        "op": "text",
+        "str": "Furnished Fixture",
+        "width": 326,
+        "xPt": 54,
+        "yPt": 696,
+      },
+      {
+        "align": "right",
+        "op": "text",
+        "str": "Name: Alice",
+        "width": 160,
+        "xPt": 380,
+        "yPt": 696,
+      },
+      {
+        "align": "center",
+        "op": "text",
+        "str": "Page 2 of 3",
+        "width": 486,
+        "xPt": 54,
+        "yPt": 719.5,
+      },
+    ],
+    "page": 2,
+  },
+  {
+    "calls": [
+      {
+        "align": undefined,
+        "op": "text",
+        "str": "Furnished Fixture",
+        "width": 326,
+        "xPt": 72,
+        "yPt": 696,
+      },
+      {
+        "align": "right",
+        "op": "text",
+        "str": "Name: ____________________",
+        "width": 160,
+        "xPt": 398,
+        "yPt": 696,
+      },
+      {
+        "align": "center",
+        "op": "text",
+        "str": "Page 3 of 3",
+        "width": 486,
+        "xPt": 72,
+        "yPt": 719.5,
+      },
+    ],
+    "page": 3,
+  },
+]
+`;

@@ -18,7 +18,7 @@ vi.mock('./schoolLog.js', () => ({
     profile: vi.fn(), session: vi.fn(), answer: vi.fn(), answerError: vi.fn(),
     bank: (...a) => bankLogMock(...a),
     nav: vi.fn(), home: vi.fn(), materials: vi.fn(), materialsError: vi.fn(),
-    print: vi.fn(), typing: vi.fn(), player: vi.fn(),
+    print: vi.fn(), typing: vi.fn(), player: vi.fn(), surface: vi.fn(),
   },
 }));
 
@@ -44,6 +44,8 @@ vi.mock('./schoolApi.js', () => ({
     report: vi.fn(async () => ({ ok: true, status: 200, data: { learners: [{ id: 'kid1', name: 'Alpha', reports: [] }] } })),
     results: vi.fn(async () => ({ ok: true, status: 200, data: [] })),
     materialProgress: vi.fn(async () => ({ ok: true, status: 200, data: [] })),
+    surfaceProfile: vi.fn(async () => ({ ok: false, status: 404, data: { error: 'surface-profile-unresolved' } })),
+    certification: vi.fn(async () => ({ ok: true, status: 200, data: [] })),
   },
 }));
 

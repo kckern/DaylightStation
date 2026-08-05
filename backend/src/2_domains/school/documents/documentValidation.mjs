@@ -3,10 +3,13 @@
  *
  * Beyond per-block structure (blocks.mjs), a document carries rules that only
  * the whole tree can decide: question item refs are unique; an `omr_response`
- * sits inside a question AND names that same question's item; and NO node
- * anywhere carries an answer. Learner copies and answer keys render from the
- * same document data plus the question bank — a document that could hold an
- * answer is a document that can print one on the learner's sheet.
+ * sits inside a question AND names that same question's item; and — by
+ * DEFAULT — NO node anywhere carries an answer. Learner copies and answer
+ * keys render from the same document data plus the question bank, so a
+ * document that could hold an answer is a document that can print one on the
+ * learner's sheet. `validateDocument`'s `allowAnswers` option (Phase B, spec
+ * §3) is the one escape hatch, for the SOURCE stage only — every existing
+ * caller omits it and keeps this invariant absolute.
  */
 import { validateBlock } from './blocks.mjs';
 
@@ -164,9 +167,17 @@ function collectAnswerKeys(node, at, errors, seen) {
 
 /**
  * @param {*} raw - one parsed document
+ * @param {{ allowAnswers?: boolean }} [opts] - `allowAnswers` (default false)
+ *   is the SOURCE-vs-PUBLISHED gate (spec §3), mirroring `validateBlock`'s own
+ *   option one level down. Every EXISTING caller omits it and keeps today's
+ *   behavior byte-for-byte: the v1 (legacy, schema-less) document shape has no
+ *   source stage and is ALWAYS validated answer-free. It exists so
+ *   `validateDocumentV2` (documentV2.mjs) can thread a caller's allowAnswers
+ *   through this shared v1-shaped validation — the source stage (Task 3) is
+ *   the first caller expected to pass `true`.
  * @returns {{ errors: string[], document?: object }} normalised document when valid
  */
-export function validateDocument(raw) {
+export function validateDocument(raw, { allowAnswers = false } = {}) {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
     return { errors: ['document must be a mapping'] };
   }
@@ -191,14 +202,20 @@ export function validateDocument(raw) {
     raw.target.forEach((t) => { if (!TARGETS.has(t)) errors.push(`unknown target: ${t}`); });
   }
 
-  collectAnswerKeys(raw, '', errors, new WeakSet());
+  // Answers can hide anywhere in the raw tree (collectAnswerKeys' own doc
+  // comment); that is exactly what a SOURCE-stage document is allowed to do,
+  // so this whole-tree net is skipped when allowAnswers is true. Per-field
+  // SOURCE-only shapes (`matching.pairs`, a `cloze` blank's `answer`, etc.)
+  // are still gated individually by validateBlock below via the SAME option —
+  // this is one mechanism (an options bag, defaulted false), not two.
+  if (!allowAnswers) collectAnswerKeys(raw, '', errors, new WeakSet());
 
   if (!Array.isArray(raw.blocks) || raw.blocks.length === 0) {
     errors.push('blocks must be a non-empty array');
     return { errors };
   }
   raw.blocks.forEach((block, i) => {
-    errors.push(...validateBlock(block, { path: `blocks[${i}]` }).errors);
+    errors.push(...validateBlock(block, { path: `blocks[${i}]`, allowAnswers }).errors);
   });
 
   const seenItemIds = new Map();

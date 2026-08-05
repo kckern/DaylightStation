@@ -8,7 +8,14 @@
  * A fragment:
  *   { id, blocks, heightPt, atomic, spacingClass,
  *     lines?: [{ heightPt }], minLinesBeforeBreak?, minLinesAfterBreak?,
- *     answerSpace?: { minPt, maxPt } }
+ *     answerSpace?: { minPt, maxPt }, stickToNextId?: string }
+ *
+ * `stickToNextId` (F4, review finding) is keep-with-next affinity: when set,
+ * this fragment refuses to place on a page unless the fragment immediately
+ * following it in the queue (matched by `id`) ALSO fits right after it on
+ * that same page — otherwise both move to the next page together. Used by
+ * short_answer/essay's prompt fragment so it can never strand on one page
+ * while its own write-space fragment lands on the next.
  *
  * Placement errors (an atomic taller than a page, a contradictory answer space)
  * are returned, not thrown: publish-time validation consumes them so a document
@@ -158,11 +165,51 @@ function distributeAnswerSpace(pageFragments, contentTopPt, contentBottomPt, spa
  * @param {number} page.marginPt - Top and bottom margin.
  * @param {Object} [page.spacing] - spacing[prevClass][nextClass] gap table; an
  *   unconfigured pair means no gap.
+ * @param {boolean} [page.growLastPage=false] - Fit policy `fill` (spec §7):
+ *   when true, the LAST page also participates in answer-space/spacer growth.
+ *   Default false reproduces the engine's original behavior byte-for-byte —
+ *   "trailing space on the last page belongs to the document, not the
+ *   answers" — which `flow` and `one-page` still rely on.
  * @returns {{ pages: Array<{ fragments: Array<Object> }>, errors: Array<Object> }}
  *   Each placed fragment carries yPt (absolute page coordinate of its top), its
  *   effective heightPt, and isContinuation/continuesOnNextPage split flags.
  */
-export function placeFragments(fragments, { pageHeightPt, marginPt, spacing = {} }) {
+/**
+ * The height this fragment list would occupy as ONE unbroken flow — no page
+ * boundaries, no answer-space growth. This is `RenderPrintDocument`'s (Task
+ * 8) building block for fit policy `one-page`'s `oversetPt` (spec §7): how
+ * far a document that overflowed a real page would have exceeded a single
+ * page's budget, regardless of how `placeFragments` actually broke it up.
+ *
+ * Reuses the exact same normalization (`normalizeFragment`) and gap lookup
+ * (`gapBetween`) `placeFragments` itself walks with, so this number and a real
+ * placement can never silently disagree about what one fragment costs.
+ *
+ * `forceBreak` fragments (a `page_break` block) are skipped and reset the
+ * running spacing class to null — the same "first fragment on a fresh page"
+ * rule real placement applies — rather than contributing a gap that would
+ * never actually print across a page boundary.
+ *
+ * @param {Array<Object>} fragments - measured fragments, in document order
+ * @param {Object} [opts]
+ * @param {Object} [opts.spacing] - spacing[prevClass][nextClass] gap table
+ * @returns {number} total height in points
+ */
+export function contentHeightPt(fragments, { spacing = {} } = {}) {
+  const errors = [];
+  let total = 0;
+  let previousClass = null;
+  for (const fragment of fragments) {
+    const normalized = normalizeFragment(fragment, errors);
+    if (normalized.forceBreak) { previousClass = null; continue; }
+    total += gapBetween(spacing, previousClass, normalized.spacingClass);
+    total += normalized.heightPt;
+    previousClass = normalized.spacingClass;
+  }
+  return total;
+}
+
+export function placeFragments(fragments, { pageHeightPt, marginPt, spacing = {}, growLastPage = false }) {
   const contentTopPt = marginPt;
   const contentBottomPt = pageHeightPt - marginPt;
   if (!(contentBottomPt - contentTopPt > 0)) {
@@ -187,10 +234,49 @@ export function placeFragments(fragments, { pageHeightPt, marginPt, spacing = {}
   while (queue.length > 0) {
     const fragment = queue.shift();
     const pageIsEmpty = pageFragments.length === 0;
+
+    if (fragment.forceBreak) {
+      // A `page_break` block (measure.mjs) — a zero-height marker, not
+      // content. It ends the page unconditionally (no fit check) and is then
+      // dropped rather than placed, so it never occupies a fragment slot and
+      // its own spacingClass:null never enters a gap calculation: the next
+      // fragment starts a fresh page, where the first-of-page gap is already
+      // unconditionally 0 for any spacingClass (see gapBetween above). An
+      // empty page is a no-op — consecutive/leading/trailing breaks collapse
+      // rather than producing blank pages.
+      if (!pageIsEmpty) startNewPage();
+      continue;
+    }
+
     const gapPt = gapBetween(spacing, previousClass, fragment.spacingClass);
     const availablePt = contentBottomPt - cursor - gapPt;
 
     if (fragment.heightPt <= availablePt + EPSILON) {
+      // Keep-with-next (F4, review finding): a fragment tagged `stickToNextId`
+      // (short_answer/essay's prompt, measure.mjs) must never be stranded on
+      // this page while the fragment it names — its own write-space, which
+      // `queue[0]` always is, since the two are built and queued back-to-back
+      // — gets bumped whole to the next one. Only relevant when THIS fragment
+      // fits on its own (the branch we're already in); if it didn't fit, it
+      // falls through to the normal split/move-whole handling below and its
+      // partner tags along right after it on whichever page it lands on.
+      // Skipped on an empty page: there is no earlier page to defer to, and
+      // forcing a restart here would either loop forever (nothing fits
+      // anywhere) or just delay the identical decision this same fragment
+      // faces again immediately, now with pageIsEmpty true.
+      if (fragment.stickToNextId && !pageIsEmpty) {
+        const partner = queue[0];
+        if (partner && partner.id === fragment.stickToNextId) {
+          const cursorAfterFragment = cursor + gapPt + fragment.heightPt;
+          const gapToPartner = gapBetween(spacing, fragment.spacingClass, partner.spacingClass);
+          const partnerAvailablePt = contentBottomPt - cursorAfterFragment - gapToPartner;
+          if (partner.heightPt > partnerAvailablePt + EPSILON) {
+            queue.unshift(fragment);
+            startNewPage();
+            continue;
+          }
+        }
+      }
       fragment.yPt = cursor + gapPt;
       cursor = fragment.yPt + fragment.heightPt;
       previousClass = fragment.spacingClass;
@@ -222,8 +308,11 @@ export function placeFragments(fragments, { pageHeightPt, marginPt, spacing = {}
 
   if (pageFragments.length > 0) pages.push({ fragments: pageFragments });
 
-  // Trailing space on the last page belongs to the document, not the answers.
-  for (const finished of pages.slice(0, -1)) {
+  // Trailing space on the last page belongs to the document, not the
+  // answers — UNLESS `growLastPage` (fit policy `fill`) asks the last page to
+  // bottom out too, in which case it grows exactly like every other page.
+  const pagesToGrow = growLastPage ? pages : pages.slice(0, -1);
+  for (const finished of pagesToGrow) {
     distributeAnswerSpace(finished.fragments, contentTopPt, contentBottomPt, spacing);
   }
 

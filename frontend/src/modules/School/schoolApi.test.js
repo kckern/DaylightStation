@@ -119,6 +119,21 @@ describe('schoolApi', () => {
     expect(fetch).toHaveBeenCalledWith('/api/v1/school/materials/plex%3A1/units?userId=kid1', expect.any(Object));
   });
 
+  it('surfaceProfile() GETs the profile for a screen id', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response('{}', { status: 200 })));
+    await schoolApi.surfaceProfile('screen-kitchen');
+    expect(fetch).toHaveBeenCalledWith('/api/v1/school/surfaces/profile?screen=screen-kitchen', expect.any(Object));
+  });
+
+  it('certification() GETs by address+surface, or by surface alone', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response('[]', { status: 200 })));
+    await schoolApi.certification({ address: 'core/quant/rates/intro/unit-rate', surface: 'screen-kitchen' });
+    expect(fetch).toHaveBeenLastCalledWith(
+      '/api/v1/school/certification?address=core%2Fquant%2Frates%2Fintro%2Funit-rate&surface=screen-kitchen',
+      expect.any(Object),
+    );
+  });
+
   it('unitProgress() PUTs the progress body', async () => {
     const fetchMock = vi.fn(async () => new Response('{}', { status: 200 }));
     vi.stubGlobal('fetch', fetchMock);
