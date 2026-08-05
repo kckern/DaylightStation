@@ -390,6 +390,12 @@ export class IssueDocument {
         context: {
           freshCard: true,
           learnerId: state.learnerId ?? null,
+          // F3 review fix (Medium/blocker): the tokens minted just above
+          // (`#mintSheetTokens`) must reach `RenderPrintDocument`'s measure
+          // + final render, or a scan_action/media_action block's barcode
+          // prints its own `.action` literal — a dead code with no matching
+          // registry entry — while the REAL minted token sits unused.
+          tokens,
         },
       });
       rendered = {

@@ -7,6 +7,7 @@ import { DOCUMENT_SOURCE_SCHEMA } from '#domains/school/documents/documentSource
 import { PublishPrintDocument } from '#apps/school/documents/PublishPrintDocument.mjs';
 import { RenderPrintDocument } from '#apps/school/documents/RenderPrintDocument.mjs';
 import { YamlAllocationStore } from '#adapters/school/documents/YamlAllocationStore.mjs';
+import { pdfText, requirePdftotext } from '#testlib/school/pdfText.mjs';
 import {
   FakeCatalog, FakeSessionRepository, FakeTokenRegistry, FakeFormMapStore,
   FakeDocumentRenderer, FakeLaserPrinter,
@@ -562,6 +563,41 @@ describe('tracked quizzes (print/<id>@<rev> document references, spec §9)', () 
     const sid = await openPrintSession();
     const result = await printUseCase.execute({ sessionId: sid });
     expect(result.tokens).toEqual({});
+  });
+
+  it('threads the minted token through to the rendered PDF\'s barcode text for a scan_action block (F3 review fix, Medium/blocker)', async () => {
+    requirePdftotext();
+    // A SEPARATE document from the shared `QUIZ_DOC_ID` fixture (which has no
+    // action blocks — see the test just above): one scored question plus a
+    // scan_action block, published fresh and pointed to by the SAME
+    // PRINT_UNIT the shared curriculum double already resolves.
+    const tokenQuizId = 'tracked-quiz-with-scan-action';
+    const publisher = new PublishPrintDocument({ repository });
+    const { rev: tokenRev } = await publisher.execute({
+      source: sourceQuiz(tokenQuizId, {
+        blocks: [
+          mcQuestion('tq1', 1, { choices: ['Alpha', 'Beta'], answer: 'Alpha' }),
+          { type: 'scan_action', action: 'media_action', label: 'Play a video' },
+        ],
+      }),
+    });
+    curriculum.getUnit = async (unitId) => (unitId === PRINT_UNIT
+      ? { unitId: PRINT_UNIT, document: `print/${tokenQuizId}@${tokenRev}` }
+      : null);
+
+    const sid = await openPrintSession();
+    const result = await printUseCase.execute({ sessionId: sid });
+    expect(result.status).toBe('issued');
+    expect(Object.keys(result.tokens)).toEqual(['media_action']);
+    const mintedToken = result.tokens.media_action;
+
+    expect(printPrinter.jobs).toHaveLength(1);
+    const text = pdfText(printPrinter.jobs[0].pdf);
+    // The barcode prints the REAL minted token — before F3's fix, RenderPrintDocument
+    // never received `context.tokens` at all, so `measure.mjs`'s `actionCodeText`
+    // fell all the way back to the block's own `.action` literal instead.
+    expect(text).toContain(mintedToken);
+    expect(text).not.toContain('media_action');
   });
 
   it('a reprint reuses the ORIGINAL artifact id but still allocates a fresh physical card', async () => {
