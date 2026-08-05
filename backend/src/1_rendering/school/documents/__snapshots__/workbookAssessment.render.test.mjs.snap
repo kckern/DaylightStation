@@ -191,6 +191,44 @@ exports[`workbook assessment blocks — measure + draw > short_answer > desugars
 ]
 `;
 
+exports[`workbook assessment blocks — measure + draw > true_false — Ⓐ True / Ⓑ False circle bubbles on an omr_response row (Phase C, Task 4, spec §5.2/§5.3) > measures ordinary circle bubbles — multiSelect false, no instruction, letters A/B, labels True/False 1`] = `
+{
+  "answerSpace": null,
+  "atomic": true,
+  "hasBlank": undefined,
+  "heightPt": 60,
+  "id": "blocks[0]",
+  "lineCount": undefined,
+  "nodeKinds": [
+    "text",
+    "omr",
+  ],
+  "nodes": [
+    {
+      "hasBlank": false,
+      "heightPt": 14.5,
+      "kind": "text",
+      "lineCount": 1,
+      "styleKey": "question",
+      "widthPt": 480,
+    },
+    {
+      "choiceLetters": [
+        "A",
+        "B",
+      ],
+      "heightPt": 39.5,
+      "instructionText": null,
+      "kind": "omr",
+      "multiSelect": false,
+      "widthPt": 480,
+    },
+  ],
+  "spacingClass": "question",
+  "styleKey": undefined,
+}
+`;
+
 exports[`workbook assessment blocks — measure + draw > wordbank > measures ONE atomic wordbank fragment, boxed via theme.box, terms in the order given 1`] = `
 {
   "answerSpace": null,

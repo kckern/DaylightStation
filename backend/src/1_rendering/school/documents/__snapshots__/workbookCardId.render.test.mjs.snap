@@ -1,0 +1,73 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`card header strip — measure (spec §5.2/§5.3) > structural snapshot — first-use instruction present 1`] = `
+{
+  "atomic": true,
+  "heightPt": 44,
+  "id": "cardHeader",
+  "node": {
+    "cardId": "4829306",
+    "digitChars": [
+      "4",
+      "8",
+      "2",
+      "9",
+      "3",
+      "0",
+      "6",
+    ],
+    "digitCount": 7,
+    "digitXOffsets": [
+      0,
+      20.77,
+      41.52,
+      61.41,
+      80.76,
+      101.07,
+      122.41,
+    ],
+    "firstUse": true,
+    "hasInstruction": true,
+    "kind": "cardHeader",
+    "labelText": "Card",
+    "metaText": "—  questions 1–12",
+  },
+  "spacingClass": "heading",
+}
+`;
+
+exports[`card header strip — measure (spec §5.2/§5.3) > structural snapshot — no first-use 1`] = `
+{
+  "atomic": true,
+  "heightPt": 28,
+  "id": "cardHeader",
+  "node": {
+    "cardId": "4829306",
+    "digitChars": [
+      "4",
+      "8",
+      "2",
+      "9",
+      "3",
+      "0",
+      "6",
+    ],
+    "digitCount": 7,
+    "digitXOffsets": [
+      0,
+      20.77,
+      41.52,
+      61.41,
+      80.76,
+      101.07,
+      122.41,
+    ],
+    "firstUse": false,
+    "hasInstruction": false,
+    "kind": "cardHeader",
+    "labelText": "Card",
+    "metaText": "—  questions 18–30",
+  },
+  "spacingClass": "heading",
+}
+`;

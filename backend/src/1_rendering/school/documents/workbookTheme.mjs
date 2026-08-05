@@ -343,6 +343,32 @@ export function createWorkbookTheme({ typeScale = 'standard', density = 'normal'
       },
     },
 
+    /**
+     * Card header strip (Print Design Phase C, Task 4, spec §5.2): the
+     * physical card ID a student bubbles into OMR columns 1-7, printed as
+     * large letter-spaced digits directly below the document header banner
+     * — "Card 4 8 2 9 3 0 6 — questions 18-30". Drawn only when a caller
+     * supplies render-context `card` (`{cardId, startRow, endRow,
+     * firstUse}`, spec §5.3's allocation record); absent that option this
+     * group is simply never read (same default-preserving posture as
+     * `header.scoreBox`/`totalPoints`). `digitSizePt`/`trackingPt` scale
+     * with `typeScale` like every other glyph token in this theme — a card
+     * ID is read-and-bubbled by the SAME child who reads the body text, so
+     * it gets the same young-reader legibility bump; `bandHeightPt` is this
+     * group's "both densities/scales" band-height token.
+     */
+    card: {
+      digitSizePt: typeScale === 'young' ? 27 : 22,
+      trackingPt: typeScale === 'young' ? 9 : 7,
+      labelSizePt: styles.label.sizePt,
+      labelGapPt: density === 'compact' ? 8 : 10,
+      metaSizePt: styles.caption.sizePt,
+      metaGapPt: density === 'compact' ? 8 : 10,
+      bandHeightPt: typeScale === 'young' ? 34 : 28,
+      instructionGapPt: density === 'compact' ? 2 : 4,
+      spacingClass: 'heading',
+    },
+
     /** Inset box geometry (bordered callouts, answer boxes). Consumed by Task 5's `inset` block. */
     box: {
       radiusPt: 4,

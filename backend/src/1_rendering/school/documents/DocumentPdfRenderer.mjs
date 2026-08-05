@@ -115,6 +115,23 @@ function createChoiceResolver(bank) {
     if (!item) {
       throw new MissingChoicesError(`item '${itemId}' is not in bank '${bank.id ?? '(unnamed)'}'`, path, itemId);
     }
+    // true_false (spec §5.2/§5.3): a fixed two-option shape with NO
+    // `.choices` array on the bank item at all (questionBankValidation.mjs
+    // never authors one — the two-option shape is hardcoded, not authored).
+    // Labels are synthesized here rather than read from the bank, the same
+    // "resolver returns the bank item's own richer shape" move multi_select
+    // makes below — except this one returns the ORIGINAL bare-array shape,
+    // so a true_false row gets ordinary circle bubbles + label text
+    // (Ⓐ True / Ⓑ False), never the multiSelect/square-checkbox geometry.
+    if (item.type === 'true_false') {
+      if (choices !== 2) {
+        throw new MissingChoicesError(
+          `item '${itemId}' is true_false (2 options: True/False) but the sheet prints ${choices} bubbles`,
+          path, itemId,
+        );
+      }
+      return ['True', 'False'];
+    }
     if (!Array.isArray(item.choices) || item.choices.length !== choices) {
       throw new MissingChoicesError(
         `item '${itemId}' has ${item.choices?.length ?? 0} bank choices but the sheet prints ${choices} bubbles`,
@@ -563,6 +580,38 @@ export function createDocumentPdfRenderer({
       .moveTo(xPt, ruleY).lineTo(xPt + node.widthPt, ruleY).stroke().restore();
   }
 
+  /**
+   * `cardHeader` — the card ID strip (Task 4, spec §5.2): "Card" label, then
+   * large letter-spaced digits at their pre-measured x offsets (see
+   * measure.mjs's `cardHeaderFragment` — the draw pass never re-measures a
+   * digit), then the row-range meta text, all vertically centred inside
+   * `theme.card.bandHeightPt`. When the card is fresh (`node.firstUse`), a
+   * caption-style instruction line prints below the band.
+   */
+  function drawCardHeader(out, node, { xPt, yPt }) {
+    const { card } = theme;
+    const bandCentreY = yPt + card.bandHeightPt / 2;
+
+    setFont(out, 'bold', card.labelSizePt);
+    out.text(node.labelText, xPt, bandCentreY - card.labelSizePt / 2, { lineBreak: false });
+
+    const digitsXPt = xPt + node.labelWidthPt + card.labelGapPt;
+    setFont(out, 'bold', card.digitSizePt);
+    for (const digit of node.digits) {
+      out.text(digit.ch, digitsXPt + digit.xPt, bandCentreY - card.digitSizePt / 2, { lineBreak: false });
+    }
+
+    const metaXPt = digitsXPt + node.digitsWidthPt + card.metaGapPt;
+    setFont(out, 'regular', card.metaSizePt, 'muted');
+    out.text(node.metaText, metaXPt, bandCentreY - card.metaSizePt / 2, { lineBreak: false });
+
+    if (node.instruction) {
+      drawLines(out, node.instruction.lines, {
+        xPt, yPt: yPt + card.bandHeightPt + card.instructionGapPt, styleKey: node.instruction.styleKey,
+      });
+    }
+  }
+
   function drawNode(out, node, position) {
     switch (node.kind) {
       case 'text': drawLines(out, node.lines, { ...position, styleKey: node.styleKey }); break;
@@ -572,6 +621,7 @@ export function createDocumentPdfRenderer({
       case 'action': drawActionBox(out, node, position); break;
       case 'asset': drawAsset(out, node, position); break;
       case 'header': drawHeader(out, node, position); break;
+      case 'cardHeader': drawCardHeader(out, node, position); break;
       case 'box': drawBox(out, node, position); break;
       case 'divider': drawDivider(out, node, position); break;
       case 'list': drawList(out, node, position); break;
@@ -688,7 +738,7 @@ export function createDocumentPdfRenderer({
   // ── render ────────────────────────────────────────────────────────────
   function renderPlaced(document, {
     studentName, date = null, isAnswerKey, keyItems, bank, tokens, furniture = null, growLastPage = false,
-    italic = false, totalPoints = null, keyBlocks = null, keyTitle = null,
+    italic = false, totalPoints = null, keyBlocks = null, keyTitle = null, card = null,
   }) {
     // Opting into `furniture` shrinks the usable page height by the
     // footer-band + continuation-strip reservation (contentBox) BEFORE
@@ -721,6 +771,11 @@ export function createDocumentPdfRenderer({
       // `headerFragment` — this renderer computes nothing about points,
       // Task 5's caller supplies the already-summed total.
       totalPoints,
+      // Card header strip (Phase C, Task 4, spec §5.2): a pure passthrough
+      // to `cardHeaderFragment` — this renderer allocates no card, checks no
+      // collision/range rule; Task 5's caller (RenderPrintDocument) supplies
+      // the already-resolved allocation render context.
+      card,
     });
     const { pages, errors } = placeFragments(fragments, {
       pageHeightPt: box?.pageHeightPt ?? theme.page.heightPt,
@@ -946,12 +1001,21 @@ export function createDocumentPdfRenderer({
    * @param {string|null} [options.keyTitle] - the appended key section's own
    *   page-1 heading (its mini document's `title`); required together with
    *   `keyBlocks`.
+   * @param {{cardId: string|number, startRow: number, endRow: number, firstUse?: boolean}|null} [options.card] -
+   *   card allocation render context (Phase C, Task 4, spec §5.2/§5.3): drawn
+   *   as a strip directly below the document header — large letter-spaced
+   *   card-ID digits plus "questions <startRow>-<endRow>", and, when
+   *   `firstUse` is true, an instruction line telling the student where to
+   *   bubble the ID in. This renderer computes no allocation itself (no
+   *   cardId minting, no range/collision check) — Task 5's caller supplies
+   *   the already-resolved context. Omitted/null (every caller before this
+   *   option existed) renders byte-identical to before.
    * @returns {Promise<{pdf: Buffer, pageCount: number, formMap: Object|null, isAnswerKey: boolean, keyItems: Array}>}
    */
   async function render(source, {
     studentName = null, date = null, answers = null, answerKey = false, bank = null, tokens = null,
     variant = null, furniture = null, growLastPage = false, italic = false, totalPoints = null,
-    keyBlocks = null, keyTitle = null,
+    keyBlocks = null, keyTitle = null, card = null,
   } = {}) {
     // The variant rides on the DOCUMENT, not just alongside it: the footer and
     // the form map both derive from what was rendered, so a variant passed only
@@ -969,12 +1033,13 @@ export function createDocumentPdfRenderer({
     if (!resolvedAnswers) {
       return renderPlaced(document, {
         studentName, date, isAnswerKey: false, keyItems: [], bank, tokens, furniture, growLastPage, italic, totalPoints,
-        keyBlocks, keyTitle,
+        keyBlocks, keyTitle, card,
       });
     }
     const keyItems = keyItemsFor(document, resolvedAnswers);
     return renderPlaced(keyDocumentFor(document, keyItems), {
       studentName: null, date: null, isAnswerKey: true, keyItems, bank, tokens, furniture, growLastPage, italic, totalPoints,
+      card,
     });
   }
 

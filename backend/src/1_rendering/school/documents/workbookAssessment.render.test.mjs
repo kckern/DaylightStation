@@ -345,6 +345,35 @@ describe('workbook assessment blocks — measure + draw', () => {
     });
   });
 
+  describe('true_false — Ⓐ True / Ⓑ False circle bubbles on an omr_response row (Phase C, Task 4, spec §5.2/§5.3)', () => {
+    const question = {
+      type: 'question', itemId: 'tf-q1', number: 1, blocks: [{ type: 'rich_text', md: 'The sky is blue.' }],
+    };
+    const omrBlock = { ...question, blocks: [...question.blocks, { type: 'omr_response', itemId: 'tf-q1', choices: 2 }] };
+
+    // The exact resolution `createChoiceResolver` (DocumentPdfRenderer.mjs)
+    // synthesizes for a true_false bank item: a BARE array, never the
+    // `{labels, multiSelect}` shape — so this measures identically to an
+    // ordinary 2-choice multiple_choice row.
+    const trueFalseResolver = () => ['True', 'False'];
+
+    it('measures ordinary circle bubbles — multiSelect false, no instruction, letters A/B, labels True/False', () => {
+      const [fragment] = measureOne(omrBlock, { resolveChoices: trueFalseResolver });
+      const omrNode = fragment.nodes.find((n) => n.kind === 'omr');
+      expect(omrNode.multiSelect).toBe(false);
+      expect(omrNode.instruction).toBeNull();
+      expect(omrNode.cells.map((c) => c.choice)).toEqual(['A', 'B']);
+      expect(omrNode.cells.map((c) => c.label)).toEqual(['True', 'False']);
+      expect(summarizeFragment(fragment)).toMatchSnapshot();
+    });
+
+    it('renders a real PDF end to end for a true_false row, resolved straight from the bank', async () => {
+      const bank = { id: 'tf-bank', items: [{ id: 'tf-q1', type: 'true_false', answer: true }] };
+      const { formMap } = await renderer.render(doc([omrBlock]), { bank });
+      expect(formMap.marks.map((m) => m.label)).toEqual(['True', 'False']);
+    });
+  });
+
   describe('score box (quiz header)', () => {
     function measureHeader({ headerConfig, totalPoints } = {}) {
       const measurementDoc = createMeasurementDocument({ theme });
