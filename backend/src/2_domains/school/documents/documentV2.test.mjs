@@ -78,6 +78,43 @@ describe('validateAnyDocument: v2 dispatch', () => {
   });
 });
 
+// Task 3 (spec §3): a hand-authored v2 document has no rev; publishDocument
+// (documentSource.mjs) is the one caller that stamps one.
+describe('validateDocumentV2: rev (Task 3, spec §3/§4.2)', () => {
+  it('is optional — a v2 document without rev stays valid', () => {
+    const { errors, document } = validateDocumentV2(v2doc());
+    expect(errors).toEqual([]);
+    expect(document.rev).toBeUndefined();
+  });
+
+  it('accepts a hex-string rev and carries it through to the normalised document', () => {
+    const { errors, document } = validateDocumentV2(v2doc({ rev: '8f3a21c00' }));
+    expect(errors).toEqual([]);
+    expect(document.rev).toBe('8f3a21c00');
+  });
+
+  it('rejects a non-hex rev', () => {
+    const { errors } = validateDocumentV2(v2doc({ rev: 'not-hex!' }));
+    expect(errors).toContain('rev must be a hex string when present');
+  });
+
+  it('rejects a non-string rev', () => {
+    const { errors } = validateDocumentV2(v2doc({ rev: 123 }));
+    expect(errors).toContain('rev must be a hex string when present');
+  });
+});
+
+// Task 3 (spec §3): documentSource.mjs's DOCUMENT_SOURCE_SCHEMA literal.
+// Imported directly (not re-declared) so this test breaks if the two files'
+// understanding of the literal ever drifts.
+describe('validateAnyDocument: source-schema dispatch (Task 3)', () => {
+  it('routes the source schema literal to validateDocumentSource', async () => {
+    const { DOCUMENT_SOURCE_SCHEMA, validateDocumentSource } = await import('./documentSource.mjs');
+    const raw = { ...v2doc(), schema: DOCUMENT_SOURCE_SCHEMA };
+    expect(validateAnyDocument(raw)).toEqual(validateDocumentSource(raw));
+  });
+});
+
 describe('validateDocumentV2: archetype presets', () => {
   it.each([
     ['quiz', { name: true, date: true, scoreBox: true }],
