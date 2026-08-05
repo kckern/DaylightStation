@@ -242,18 +242,71 @@ function publishShortAnswer(block, at, items) {
 }
 
 /**
- * An inline `question` (itemId/number/blocks form — NOT the bank-select
- * `select` sugar) may carry `choices`/`answer`/`answers` directly (spec
- * §6.1's disposition table: "extended with ... the multi_select shape").
- * These aren't block-shape-checked by `blocks.mjs` beyond the generic
- * whole-tree answer-key ban/allow (`collectAnswerKeys` in
- * documentValidation.mjs already gates `answer`/`answers` presence by
- * `allowAnswers`, exactly like every other field this module strips) — this
- * function is where the SHAPE becomes real: it mints a `multi_select`,
- * `multiple_choice`, or `short_answer` bank item depending on which fields
- * are present, and strips only the secret (`answer`/`answers`); `choices`
- * stays on the published question — it is what the printed sheet shows the
- * student, not a secret.
+ * Pre-mint shape gate for inline `question` (itemId/number/blocks form — NOT
+ * the bank-select `select` sugar) answer fields (spec §6.1's disposition
+ * table: "extended with ... the multi_select shape"). `blocks.mjs` doesn't
+ * shape-check `choices`/`answer`/`answers` at all (only the whole-tree
+ * `answer`/`answers` PRESENCE ban/allow, via `collectAnswerKeys`), so
+ * WITHOUT this gate `publishQuestion` had no way to tell "no choices, this
+ * is a short-answer question" apart from "malformed choices" — a
+ * non-array `choices` alongside `answer` silently fell through to the
+ * short_answer mint (the author's multiple-choice intent dropped) with the
+ * garbage `choices` value surviving verbatim onto the answer-free published
+ * document, because short_answer's bank shape never checks `choices` and
+ * neither postcondition (`validateDocumentV2`/`validateQuestionBank`) has a
+ * reason to look at it either. Fixed by making the three legal shapes
+ * explicit HERE, before any minting: `answer` + no `choices` -> short_answer;
+ * `answer` + a non-empty array `choices` -> multiple_choice; anything else
+ * touching `choices` (present-but-not-an-array, or an empty array) is a
+ * publish error at a dotted path. `multi_select` (`answers`) has no
+ * no-choices fallback to begin with — `choices` is unconditionally required
+ * there — so it gets the same array/non-empty gate for the same reason,
+ * even though (unlike `answer`) its old default-`undefined`-through case was
+ * already caught downstream by `validateQuestionBank`'s bank postcondition;
+ * this makes both paths fail at the SAME stage instead of one failing early
+ * and the other failing three functions later.
+ *
+ * Depth-first: recurses into nested `question`/`inset` blocks the same way
+ * `publishBlocks` does, so a malformed choices shape buried inside an inset
+ * is still caught before minting starts anywhere in the document.
+ */
+function collectInlineQuestionShapeErrors(blocks, path, errors) {
+  if (!Array.isArray(blocks)) return;
+  blocks.forEach((block, i) => {
+    const at = `${path}[${i}]`;
+    if (!block || typeof block !== 'object') return;
+    if (block.type === 'question' && block.select === undefined) {
+      const choicesRequired = block.answers !== undefined;
+      const choicesGiven = block.choices !== undefined;
+      if (choicesRequired || choicesGiven) {
+        if (!choicesGiven) {
+          errors.push(`${at}: question choices is required when answers is present`);
+        } else if (!Array.isArray(block.choices)) {
+          errors.push(`${at}: question choices must be an array when present`);
+        } else if (block.choices.length === 0) {
+          errors.push(`${at}: question choices must be a non-empty array when present`);
+        }
+      }
+    }
+    if (Array.isArray(block.blocks)) collectInlineQuestionShapeErrors(block.blocks, `${at}.blocks`, errors);
+  });
+}
+
+/**
+ * An inline `question` may carry `choices`/`answer`/`answers` directly.
+ * `choices`/`answer`/`answers` shapes are already gated by
+ * `collectInlineQuestionShapeErrors` before this ever runs (see its doc
+ * comment), so the branching here is safe: `answers` present implies
+ * `choices` is a valid non-empty array; `answer` present with `choices`
+ * absent is short_answer, with `choices` present it is a valid non-empty
+ * array (multiple_choice) — there is no remaining "malformed" case to guard
+ * against. Strips only the secret (`answer`/`answers`); `choices` stays on
+ * the published question (multiple_choice/multi_select) — it is what the
+ * printed sheet shows the student, not a secret. The short_answer branch
+ * explicitly strips `choices` too (defensive — it should never be present
+ * there after the pre-gate, but a field that must never leak onto a
+ * short_answer question is worth stripping explicitly rather than trusting
+ * "it shouldn't be there").
  *
  * `question.itemId` is already required and document-wide unique
  * (documentValidation's itemId check), so it is used AS the minted item's
@@ -274,11 +327,12 @@ function publishQuestion(block, at, items, promptsByItemId, recurse) {
     });
     delete published.answers;
   } else if (block.answer !== undefined) {
-    const item = Array.isArray(block.choices)
+    const item = block.choices !== undefined
       ? { id: block.itemId, type: 'multiple_choice', prompt: mintedQuestionPrompt(block.itemId, promptsByItemId), choices: block.choices, answer: block.answer }
       : { id: block.itemId, type: 'short_answer', prompt: mintedQuestionPrompt(block.itemId, promptsByItemId), answer: block.answer };
     items.push(item);
     delete published.answer;
+    if (item.type === 'short_answer') delete published.choices;
   }
   return published;
 }
@@ -317,6 +371,15 @@ function publishBlocks(blocks, path, items, promptsByItemId) {
 export function publishDocument(rawSource) {
   const { errors: sourceErrors, document: validatedSource } = validateDocumentSource(rawSource);
   if (sourceErrors.length) return { errors: sourceErrors };
+
+  // Pre-mint shape gate (fix, see collectInlineQuestionShapeErrors' own doc
+  // comment): a malformed inline-question `choices` must fail HERE, before
+  // any minting or postcondition round-trip — neither postcondition would
+  // otherwise catch a non-array `choices` that falls through to a
+  // short_answer mint.
+  const shapeErrors = [];
+  collectInlineQuestionShapeErrors(validatedSource.blocks, 'blocks', shapeErrors);
+  if (shapeErrors.length) return { errors: shapeErrors };
 
   const rev = computeRev(validatedSource);
   const promptsByItemId = questionPrompts({ blocks: validatedSource.blocks });
