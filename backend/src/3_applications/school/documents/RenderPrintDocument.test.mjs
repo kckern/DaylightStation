@@ -17,6 +17,7 @@ import { placeFragments } from '#rendering/school/documents/layout.mjs';
 import { contentBox } from '#rendering/school/documents/furniture.mjs';
 import { texToSvg } from '#rendering/school/documents/mathSvg.mjs';
 import { pdfText, pdfTextItems } from '../../../../../tests/_lib/school/pdfText.mjs';
+import { YamlAllocationStore } from '#adapters/school/documents/YamlAllocationStore.mjs';
 
 const isPdf = (bytes) => Buffer.isBuffer(bytes) && bytes.subarray(0, 5).toString('latin1') === '%PDF-';
 
@@ -90,12 +91,12 @@ describe('RenderPrintDocument — fit policy one-page (b)', () => {
     archetype: 'quiz', header: { scoreBox: false }, fit: { policy: 'one-page', typeScale: 'standard' }, blocks: manyQuestions(n),
   });
 
-  it('fits at normal density: density "normal", no warnings', async () => {
+  it('fits at normal density: density "normal", warns only about the missing card allocation (spec §5.3, Task 5)', async () => {
     const useCase = new RenderPrintDocument();
     const result = await useCase.execute({ document: oneShot(9) });
     expect(result.pageCount).toBe(1);
     expect(result.density).toBe('normal');
-    expect(result.warnings).toEqual([]);
+    expect(result.warnings).toEqual([expect.stringMatching(/rendered without card allocation/)]);
   });
 
   it('a padded fixture (overflows normal) falls back to compact density', async () => {
@@ -839,7 +840,10 @@ describe('RenderPrintDocument — bank-select sugar resolution (spec §6.2)', ()
     const banks = { getBank: (id) => (id === 'geo-bank' ? geoBank : null) };
     const useCase = new RenderPrintDocument({ banks });
     const withoutFilter = await useCase.execute({ document: bankSelectDoc() });
-    expect(withoutFilter.warnings).toEqual([]);
+    // A no-card quiz render still warns (spec §5.3, Task 5) — this test's own
+    // concern is the filter warning specifically, so it just needs that ONE
+    // (unrelated) warning to be absent, not an empty array.
+    expect(withoutFilter.warnings).toEqual([expect.stringMatching(/rendered without card allocation/)]);
 
     const withFilter = await useCase.execute({
       document: bankSelectDoc({
@@ -1206,7 +1210,9 @@ describe('RenderPrintDocument — teacher key render mode (spec §4.1, §12.1)',
     const text = pdfText(result.bytes);
     // Answer 'Red' is index 0 of ['Red','Blue'] -> letter A.
     expect(text).toMatch(/1\.\s*A/);
-    expect(result.warnings).toEqual([]);
+    // A no-card quiz render still warns (spec §5.3, Task 5) — this test's own
+    // concern is that no OTHER (e.g. teacher-key) warning fires.
+    expect(result.warnings).toEqual([expect.stringMatching(/rendered without card allocation/)]);
   });
 
   it('ignores context.teacher on the v1 legacy path — byte-identical to the same call without it', async () => {
@@ -1215,5 +1221,270 @@ describe('RenderPrintDocument — teacher key render mode (spec §4.1, §12.1)',
     const withoutTeacher = await useCase.execute({ document: raw });
     const withTeacher = await useCase.execute({ document: raw, context: { teacher: true } });
     expect(withoutTeacher.bytes.equals(withTeacher.bytes)).toBe(true);
+  });
+});
+
+// ── Task 5: card allocation context (spec §5.3/§5.4) ────────────────────────
+
+describe('RenderPrintDocument — card allocation context (spec §5.3/§5.4, Task 5)', () => {
+  /** In-memory `io` fake for a real `YamlAllocationStore` — no filesystem needed (mirrors YamlAllocationStore.test.mjs). */
+  function fakeAllocationStore(over = {}) {
+    const map = new Map();
+    const io = {
+      load: (filePath) => (map.has(filePath) ? structuredClone(map.get(filePath)) : null),
+      save: (filePath, content) => { map.set(filePath, structuredClone(content)); },
+    };
+    return new YamlAllocationStore({
+      directory: '/docs', io, now: () => '2026-08-04T00:00:00.000Z', rng: () => 0.42, ...over,
+    });
+  }
+
+  /** One row-mappable (`multiple_choice`) source question — auto-published in memory (spec §3) mints a real `rev` + derived bank, which card allocation requires. */
+  const omrQuestion = (n) => ({
+    type: 'question',
+    itemId: `oq${n}`,
+    number: n,
+    blocks: [
+      { type: 'rich_text', md: `OMR prompt ${n}` },
+      { type: 'omr_response', itemId: `oq${n}`, choices: 3 },
+    ],
+    choices: ['Alpha', 'Beta', 'Gamma'],
+    answer: 'Alpha',
+  });
+  const omrSourceDoc = (n, over = {}) => ({
+    schema: DOCUMENT_SOURCE_SCHEMA,
+    id: 'card-fixture',
+    seed: 900,
+    variant: 0,
+    target: ['letter'],
+    archetype: 'quiz',
+    title: 'Card Fixture',
+    blocks: Array.from({ length: n }, (_, i) => omrQuestion(i + 1)),
+    ...over,
+  });
+
+  it('rejects a card-attached render with no allocationStore configured (ALLOCATION_STORE_REQUIRED)', async () => {
+    const useCase = new RenderPrintDocument();
+    await expect(useCase.execute({
+      document: omrSourceDoc(2), context: { freshCard: true },
+    })).rejects.toMatchObject({ name: 'ValidationError', code: 'ALLOCATION_STORE_REQUIRED' });
+  });
+
+  it('rejects a card-attached render of a document with no rev (hand-authored, unpublished v2)', async () => {
+    const allocationStore = fakeAllocationStore();
+    const useCase = new RenderPrintDocument({ allocationStore });
+    const document = v2doc({ archetype: 'worksheet' }); // no rev
+    await expect(useCase.execute({
+      document, context: { freshCard: true },
+    })).rejects.toMatchObject({ name: 'ValidationError', code: 'ALLOCATION_REQUIRES_REV' });
+  });
+
+  it('a fresh-card render mints a card, writes a live allocation record, and returns {cardId, rowRange, recordId, status}', async () => {
+    const allocationStore = fakeAllocationStore();
+    const useCase = new RenderPrintDocument({ allocationStore });
+    const result = await useCase.execute({ document: omrSourceDoc(3), context: { freshCard: true } });
+
+    expect(isPdf(result.bytes)).toBe(true);
+    expect(result.allocation).toEqual({
+      cardId: expect.stringMatching(/^\d{7}$/),
+      rowRange: { start: 1, end: 3 },
+      recordId: expect.stringMatching(/^card-fixture@[0-9a-f]+:v0:1-3$/),
+      status: 'live',
+    });
+
+    const stored = await allocationStore.findByCard(result.allocation.cardId);
+    expect(stored).toHaveLength(1);
+    expect(stored[0].recordId).toBe(result.allocation.recordId);
+  });
+
+  it('prints the card header strip with offset numbering starting at startRow, and the FIRST-USE instruction line for a fresh card', async () => {
+    const allocationStore = fakeAllocationStore();
+    const useCase = new RenderPrintDocument({ allocationStore });
+    const result = await useCase.execute({
+      document: omrSourceDoc(3), context: { freshCard: true, startRow: 18 },
+    });
+
+    expect(result.allocation.rowRange).toEqual({ start: 18, end: 20 });
+    const text = pdfText(result.bytes);
+    expect(text).toContain('Bubble this number into columns 1–7 of a new card.');
+    expect(text).toMatch(/questions\s*18[\s\S]{0,3}20/);
+    // Offset numbering: printed question numbers start at 18, not 1.
+    expect(text).toMatch(/\b18\./);
+    expect(text).toMatch(/\b19\./);
+    expect(text).toMatch(/\b20\./);
+    expect(text).not.toMatch(/\b1\./);
+  });
+
+  it('a reprint (supplied cardId) prints the "use your card" reminder line, not the first-use instruction', async () => {
+    const allocationStore = fakeAllocationStore();
+    const useCase = new RenderPrintDocument({ allocationStore });
+    const first = await useCase.execute({ document: omrSourceDoc(2), context: { freshCard: true } });
+    const { cardId } = first.allocation;
+
+    // A different document sharing the same card, starting after the first's rows.
+    const second = await useCase.execute({
+      document: omrSourceDoc(2, { id: 'card-fixture-2' }),
+      context: { cardId, startRow: 3 },
+    });
+
+    expect(second.allocation.cardId).toBe(cardId);
+    expect(second.allocation.rowRange).toEqual({ start: 3, end: 4 });
+    const text = pdfText(second.bytes);
+    expect(text).toContain(`Use your card ${cardId}.`);
+    expect(text).not.toContain('Bubble this number');
+  });
+
+  it('teacher-mode key numbers match the offset student-sheet numbers (startRow 18, spec §5.4 parity)', async () => {
+    const allocationStore = fakeAllocationStore();
+    const useCase = new RenderPrintDocument({ allocationStore });
+    const result = await useCase.execute({
+      document: omrSourceDoc(3),
+      context: { freshCard: true, startRow: 18, teacher: true },
+    });
+
+    expect(result.allocation.rowRange).toEqual({ start: 18, end: 20 });
+    const text = pdfText(result.bytes);
+    // The teacher key's entries are labelled with the SAME numbers the
+    // student sheet just printed (spec §5.4: "the render prints the numbers
+    // the record claims ... the teacher key is rendered per allocation ...
+    // including startRow offsets"). Every answer is 'Alpha' -> letter A.
+    expect(text).toMatch(/18\.\s*A/);
+    expect(text).toMatch(/19\.\s*A/);
+    expect(text).toMatch(/20\.\s*A/);
+    expect(text).not.toMatch(/\b1\.\s*A/);
+  });
+
+  it('a quiz whose scored items are not row-mappable fails card allocation with a structured ALLOCATION_ROW_PLAN_INVALID error, and never calls the store', async () => {
+    const allocationStore = fakeAllocationStore();
+    let allocateCalls = 0;
+    const originalAllocate = allocationStore.allocate.bind(allocationStore);
+    allocationStore.allocate = async (...args) => { allocateCalls += 1; return originalAllocate(...args); };
+    const useCase = new RenderPrintDocument({ allocationStore });
+    // question(1) fixture's itemId never resolves in any bank (no bank-select,
+    // no omr_response) — planRows must fail to find it, not silently allocate.
+    const document = v2doc({ archetype: 'quiz', rev: 'deadbeef1', blocks: [question(1)] });
+    await expect(useCase.execute({
+      document, context: { freshCard: true },
+    })).rejects.toMatchObject({ name: 'ValidationError', code: 'ALLOCATION_ROW_PLAN_INVALID' });
+    expect(allocateCalls).toBe(0);
+  });
+
+  it('a collision with an existing live record on the same card+rows surfaces as a structured DomainInvariantError, and writes no second record', async () => {
+    const allocationStore = fakeAllocationStore();
+    const useCase = new RenderPrintDocument({ allocationStore });
+    const first = await useCase.execute({ document: omrSourceDoc(2), context: { freshCard: true } });
+    const { cardId } = first.allocation;
+
+    // A DIFFERENT document (different id => different recordId => not a
+    // supersede) claiming the SAME rows on the SAME card.
+    await expect(useCase.execute({
+      document: omrSourceDoc(2, { id: 'card-fixture-collide' }),
+      context: { cardId, startRow: 1 },
+    })).rejects.toMatchObject({ name: 'DomainInvariantError', code: 'ALLOCATION_COLLISION' });
+
+    const records = await allocationStore.findByCard(cardId);
+    expect(records).toHaveLength(1);
+    expect(records[0].documentId).toBe('card-fixture');
+  });
+
+  it('determinism: an identical re-render with the SAME context (fixed cardId, not fresh) is byte-identical (store idempotent-reprint path)', async () => {
+    const allocationStore = fakeAllocationStore();
+    const useCase = new RenderPrintDocument({ allocationStore });
+    const document = omrSourceDoc(3);
+    // A fixed, EXPLICIT cardId in both calls — `freshCard` inherently mints a
+    // NEW opaque card id each time (by design, spec §5.2), so it is the
+    // supplied-cardId path, not `freshCard`, that is expected to be
+    // idempotent under an identical context.
+    const context = { cardId: '1234567', startRow: 5 };
+
+    const first = await useCase.execute({ document, context });
+    const second = await useCase.execute({ document, context });
+
+    expect(second.allocation).toEqual(first.allocation);
+    expect(first.bytes.equals(second.bytes)).toBe(true);
+    // Only ONE record was ever written — the reprint reused the identical recordId.
+    expect(await allocationStore.findByCard('1234567')).toHaveLength(1);
+  });
+
+  it('worksheet mixed mode: only omr:true questions consume rows — a write-on question between two OMR ones does not widen the rowRange (planRows integration)', async () => {
+    const allocationStore = fakeAllocationStore();
+    const useCase = new RenderPrintDocument({ allocationStore });
+    // A worksheet source: 2 OMR-mapped multiple_choice questions with a
+    // plain (non-OMR, non-bank) write-on question in between.
+    const document = {
+      schema: DOCUMENT_SOURCE_SCHEMA,
+      id: 'worksheet-mixed-fixture',
+      seed: 12,
+      variant: 0,
+      target: ['letter'],
+      archetype: 'worksheet',
+      blocks: [
+        {
+          type: 'question', itemId: 'w1', number: 1, omr: true,
+          blocks: [{ type: 'rich_text', md: 'Pick one.' }, { type: 'omr_response', itemId: 'w1', choices: 2 }],
+          choices: ['Yes', 'No'], answer: 'Yes',
+        },
+        {
+          type: 'question',
+          itemId: 'w2',
+          number: 2,
+          blocks: [{ type: 'rich_text', md: 'Explain your answer.' }, { type: 'answer_space', minPt: 40, maxPt: 60 }],
+        },
+        {
+          type: 'question', itemId: 'w3', number: 3, omr: true,
+          blocks: [{ type: 'rich_text', md: 'Pick one more.' }, { type: 'omr_response', itemId: 'w3', choices: 2 }],
+          choices: ['Yes', 'No'], answer: 'No',
+        },
+      ],
+    };
+    const result = await useCase.execute({ document, context: { freshCard: true } });
+    // Only 2 rows consumed (w1, w3) — NOT 3 — proving planRows skipped the
+    // non-omr write-on question when computing the card's rowRange.
+    expect(result.allocation.rowRange).toEqual({ start: 1, end: 2 });
+  });
+
+  it('a quiz archetype rendered without any card context is legal but warns "rendered without card allocation" — even with a store configured, it does not allocate', async () => {
+    const allocationStore = fakeAllocationStore();
+    const useCase = new RenderPrintDocument({ allocationStore });
+    const result = await useCase.execute({ document: omrSourceDoc(2) });
+    expect(isPdf(result.bytes)).toBe(true);
+    expect(result.allocation).toBeNull();
+    expect(result.warnings).toEqual(expect.arrayContaining([
+      expect.stringMatching(/rendered without card allocation/),
+    ]));
+  });
+
+  it('a worksheet rendered without card context never warns (the "no card" warning is quiz-only)', async () => {
+    const allocationStore = fakeAllocationStore();
+    const useCase = new RenderPrintDocument({ allocationStore });
+    const document = v2doc({ archetype: 'worksheet' });
+    const result = await useCase.execute({ document });
+    expect(result.warnings).toEqual([]);
+    expect(result.allocation).toBeNull();
+  });
+
+  it('a v1 legacy document ignores card context entirely and returns allocation: null', async () => {
+    const allocationStore = fakeAllocationStore();
+    const useCase = new RenderPrintDocument({ allocationStore });
+    const result = await useCase.execute({ document: v1doc(), context: { freshCard: true } });
+    expect(isPdf(result.bytes)).toBe(true);
+    expect(result.allocation).toBeNull();
+  });
+
+  it('a non-card v2 render (no cardId/freshCard) returns allocation: null even with a store configured', async () => {
+    const allocationStore = fakeAllocationStore();
+    const useCase = new RenderPrintDocument({ allocationStore });
+    const result = await useCase.execute({ document: v2doc({ archetype: 'worksheet' }) });
+    expect(result.allocation).toBeNull();
+  });
+
+  it('threads context.learnerId into the allocation record for supersede scoping', async () => {
+    const allocationStore = fakeAllocationStore();
+    const useCase = new RenderPrintDocument({ allocationStore });
+    const result = await useCase.execute({
+      document: omrSourceDoc(2), context: { freshCard: true, learnerId: 'kid-1' },
+    });
+    const [record] = await allocationStore.findByCard(result.allocation.cardId);
+    expect(record.learnerId).toBe('kid-1');
   });
 });
