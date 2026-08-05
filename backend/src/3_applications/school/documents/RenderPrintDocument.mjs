@@ -204,6 +204,25 @@ export function mergeBank(baseBank, extraItems, documentId) {
 }
 
 /**
+ * The public `{cardId, rowRange, recordId, status}` shape a card-attached
+ * render exposes for its allocation — null for a render that never attached
+ * to a card. Shared between `#renderV2Body`'s SUCCESS return and `#renderV2`'s
+ * FAILURE path (Task 7 review, Finding 2: an error thrown after the
+ * allocation write attaches this SAME shape to `err.details.allocation`, so
+ * a caller can discover — and release — a card orphaned by a downstream fit/
+ * render failure exactly as easily as it reads a successful render's own
+ * `allocation` field).
+ */
+function allocationSnapshot(allocationRecord) {
+  return allocationRecord ? {
+    cardId: allocationRecord.cardId,
+    rowRange: { ...allocationRecord.rowRange },
+    recordId: allocationRecord.recordId,
+    status: allocationRecord.status,
+  } : null;
+}
+
+/**
  * `{bankId, select, key, filter?}` -> the first `select` items of
  * `applyShuffle(bank.items, deriveShuffle(seed, variant, key, bank.items.length))`
  * (spec §6.2's exact resolution formula). `filter` itself is handled by the
@@ -763,6 +782,38 @@ export class RenderPrintDocument {
       warnings.push(`quiz '${prepared.id}' rendered without card allocation`);
     }
 
+    // ORPHAN VISIBILITY (Task 7 review, Finding 2): everything from here down
+    // can still throw (fit-policy rejection, an asset the renderer cannot
+    // resolve, ...) — AFTER the allocation write above already went durable.
+    // There is no rollback (the write can't be "undone" mid-transaction, and
+    // shouldn't be: the paper-out-of-tray guarantee this all exists for is
+    // about never letting a scan outrun a mapping, not about erasing history)
+    // but a caller must be able to DISCOVER what got orphaned — the fresh
+    // card's id is otherwise unknowable from outside (a `freshCard: true`
+    // render never hands its minted cardId back on the happy path alone).
+    // `allocationSnapshot` is attached to the thrown error's `details` so
+    // `IssueDocument` (or any card-attached caller) can release it rather
+    // than silently burning a physical card per retry.
+    try {
+      return await this.#renderV2Body({
+        document, bank, cardContext, allocationRecord, context, warnings, gutter,
+      });
+    } catch (err) {
+      if (allocationRecord && err && typeof err === 'object') {
+        err.details = { ...(err.details ?? {}), allocation: allocationSnapshot(allocationRecord) };
+      }
+      throw err;
+    }
+  }
+
+  /**
+   * The rest of `#renderV2` (fit loop through the final render + return) —
+   * split out only so `#renderV2` can wrap the whole thing in one try/catch
+   * (Finding 2 above); no behavior change from the original inline body.
+   */
+  async #renderV2Body({
+    document, bank, cardContext, allocationRecord, context, warnings, gutter,
+  }) {
     const totalPoints = sumScoredPoints(document.blocks, document.defaultPoints);
 
     const furnitureOpts = {
@@ -875,12 +926,7 @@ export class RenderPrintDocument {
       pageCount: result.pageCount,
       density: chosen.density,
       warnings,
-      allocation: allocationRecord ? {
-        cardId: allocationRecord.cardId,
-        rowRange: { ...allocationRecord.rowRange },
-        recordId: allocationRecord.recordId,
-        status: allocationRecord.status,
-      } : null,
+      allocation: allocationSnapshot(allocationRecord),
     };
   }
 
