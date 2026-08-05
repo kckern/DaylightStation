@@ -29,6 +29,7 @@ export function createSchoolRouter({
   getScreenConfig = null,
   renderPrintDocument = null,
   printDocumentsRepo = null,
+  printAllocationStore = null,
   logger = console,
 }) {
   const router = express.Router();
@@ -182,6 +183,28 @@ export function createSchoolRouter({
     if (date) context.date = date;
     if (req.query.teacher === '1' || req.query.teacher === 'true') context.teacher = true;
 
+    // Sheet identity: the render must be reproducible so the student sheet,
+    // its answer key, and the bank selections/order all agree across calls.
+    //   rev=<9 hex>   — pin the published revision (else latest/source).
+    //   variant=<n>   — per-kid shuffle variant (spread over the document,
+    //                   exactly as IssueDocument does; never in the artifact).
+    //   card=<7 digits> (omr, without startRow) — the card IS the sheet id:
+    //                   when an allocation record exists for this card and
+    //                   document, its rev/variant/startRow/learner are ADOPTED
+    //                   so the render (or its teacher key) reproduces the
+    //                   exact sheet the card was printed for. Explicit
+    //                   rev/variant params are rejected in that mode — the
+    //                   record is the identity, not the query string.
+    const revParam = textQuery(req.query.rev);
+    if (revParam !== null && !/^[0-9a-f]{9}$/.test(revParam)) {
+      throw new ValidationError('rev must be 9 lowercase hex characters');
+    }
+    let variant = req.query.variant === undefined
+      ? null
+      : boundedIntegerQuery(req.query.variant, 0, 0, 999, 'variant');
+    let rev = revParam;
+    let adoptedRecord = null;
+
     if (variety === 'omr') {
       const freshCard = req.query.freshCard === '1' || req.query.freshCard === 'true';
       const card = textQuery(req.query.card);
@@ -191,7 +214,28 @@ export function createSchoolRouter({
       } else if (card) {
         if (!PRINT_CARD_ID.test(card)) throw new ValidationError('card must be 7 digits');
         context.cardId = card;
-        context.startRow = boundedIntegerQuery(req.query.startRow, 1, 1, 50, 'startRow');
+        if (req.query.startRow === undefined && printAllocationStore) {
+          // Sheet-identity lookup: prefer the newest live/satisfied record
+          // for THIS document on the card (same precedence scan-back uses).
+          const records = (await printAllocationStore.findByCard(card))
+            .filter((record) => record.documentId === id
+              && (record.status === 'live' || record.status === 'satisfied'))
+            .sort((a, b) => String(b.renderedAt).localeCompare(String(a.renderedAt)));
+          if (records.length > 0) adoptedRecord = records[0];
+        }
+        if (adoptedRecord) {
+          if (revParam !== null || variant !== null) {
+            throw new ValidationError(
+              'card identifies the sheet; rev/variant come from its allocation record',
+            );
+          }
+          rev = adoptedRecord.rev;
+          variant = adoptedRecord.variant;
+          context.startRow = adoptedRecord.rowRange.start;
+          if (adoptedRecord.learnerId) context.learnerId = adoptedRecord.learnerId;
+        } else {
+          context.startRow = boundedIntegerQuery(req.query.startRow, 1, 1, 50, 'startRow');
+        }
       } else {
         throw new ValidationError(
           'omr variety requires freshCard=1 (mint a new card) or card=<7 digits>[&startRow=<1..50>]',
@@ -204,17 +248,16 @@ export function createSchoolRouter({
       throw new ValidationError('hand variety takes no card parameters');
     }
 
-    const variant = req.query.variant === undefined
-      ? null
-      : boundedIntegerQuery(req.query.variant, 0, 0, 999, 'variant');
     let target;
-    if (variant === null) {
+    if (rev === null && variant === null) {
       target = { id };
     } else {
       if (!printDocumentsRepo) return res.status(503).json({ error: 'print-render-unavailable' });
-      const raw = await printDocumentsRepo.get(id);
-      if (!raw) throw new EntityNotFoundError('print document', id);
-      target = { document: { ...raw, variant } };
+      const raw = rev !== null
+        ? await printDocumentsRepo.getPublished(id, rev)
+        : await printDocumentsRepo.get(id);
+      if (!raw) throw new EntityNotFoundError('print document', rev !== null ? `${id}@${rev}` : id);
+      target = { document: variant !== null ? { ...raw, variant } : raw };
     }
 
     const result = await renderPrintDocument.execute({ ...target, context });

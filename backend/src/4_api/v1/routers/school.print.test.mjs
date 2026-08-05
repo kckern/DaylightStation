@@ -6,13 +6,14 @@ import { ValidationError, EntityNotFoundError } from '#domains/core/errors/index
 
 const PDF_BYTES = Buffer.from('%PDF-1.7 fake');
 
-function appWith({ render, repo } = {}) {
+function appWith({ render, repo, allocations } = {}) {
   const app = express();
   app.use(express.json());
   app.use('/api/v1/school', createSchoolRouter({
     schoolService: { listBankSourceSummaries: () => [] },
     renderPrintDocument: render ?? null,
     printDocumentsRepo: repo ?? null,
+    printAllocationStore: allocations ?? null,
     logger: { warn: vi.fn(), info: vi.fn(), debug: vi.fn(), error: vi.fn() },
   }));
   return app;
@@ -159,6 +160,82 @@ describe('GET /api/v1/school/print/:id', () => {
       render: renderFake({ throws: new EntityNotFoundError('print document', 'pokemon-quiz-1') }),
     })).get('/api/v1/school/print/pokemon-quiz-1?variety=hand');
     expect(gone.status).toBe(404);
+  });
+
+  it('rev pins the published revision (getPublished, not source)', async () => {
+    const render = renderFake();
+    const repo = {
+      get: vi.fn(),
+      getPublished: vi.fn().mockResolvedValue({ id: 'pokemon-quiz-1', rev: '4d9ea4aaf', seed: 1, blocks: [] }),
+    };
+    const res = await request(appWith({ render, repo }))
+      .get('/api/v1/school/print/pokemon-quiz-1?variety=hand&rev=4d9ea4aaf');
+    expect(res.status).toBe(200);
+    expect(repo.getPublished).toHaveBeenCalledWith('pokemon-quiz-1', '4d9ea4aaf');
+    expect(repo.get).not.toHaveBeenCalled();
+    expect(render.calls[0].document).toMatchObject({ rev: '4d9ea4aaf' });
+  });
+
+  it('rejects a malformed rev; 404s an unknown rev', async () => {
+    const bad = await request(appWith({ render: renderFake() }))
+      .get('/api/v1/school/print/pokemon-quiz-1?variety=hand&rev=NOPE');
+    expect(bad.status).toBe(400);
+    const repo = { get: vi.fn(), getPublished: vi.fn().mockResolvedValue(null) };
+    const gone = await request(appWith({ render: renderFake(), repo }))
+      .get('/api/v1/school/print/pokemon-quiz-1?variety=hand&rev=123456789');
+    expect(gone.status).toBe(404);
+  });
+
+  it('omr card without startRow ADOPTS the existing allocation record (sheet identity)', async () => {
+    const render = renderFake();
+    const repo = {
+      get: vi.fn(),
+      getPublished: vi.fn().mockResolvedValue({ id: 'pokemon-quiz-1', rev: 'abcdef123', seed: 1, blocks: [] }),
+    };
+    const allocations = {
+      findByCard: vi.fn().mockResolvedValue([
+        { documentId: 'other-doc', status: 'live', rev: '111111111', variant: 0, rowRange: { start: 1, end: 4 }, renderedAt: '2026-08-05T01:00:00Z' },
+        { documentId: 'pokemon-quiz-1', status: 'superseded', rev: '000000000', variant: 0, rowRange: { start: 5, end: 10 }, renderedAt: '2026-08-05T02:00:00Z' },
+        { documentId: 'pokemon-quiz-1', status: 'satisfied', rev: 'abcdef123', variant: 2, rowRange: { start: 5, end: 10 }, learnerId: 'milo', renderedAt: '2026-08-05T03:00:00Z' },
+      ]),
+    };
+    const res = await request(appWith({ render, repo, allocations }))
+      .get('/api/v1/school/print/pokemon-quiz-1?variety=omr&card=4829306&teacher=1');
+    expect(res.status).toBe(200);
+    expect(repo.getPublished).toHaveBeenCalledWith('pokemon-quiz-1', 'abcdef123');
+    expect(render.calls[0].document).toMatchObject({ variant: 2 });
+    expect(render.calls[0].context).toEqual({
+      teacher: true, cardId: '4829306', startRow: 5, learnerId: 'milo',
+    });
+  });
+
+  it('adopted-record mode rejects explicit rev/variant (the record is the identity)', async () => {
+    const allocations = {
+      findByCard: vi.fn().mockResolvedValue([
+        { documentId: 'pokemon-quiz-1', status: 'live', rev: 'abcdef123', variant: 0, rowRange: { start: 1, end: 6 }, renderedAt: '2026-08-05T01:00:00Z' },
+      ]),
+    };
+    const res = await request(appWith({ render: renderFake(), repo: { get: vi.fn(), getPublished: vi.fn() }, allocations }))
+      .get('/api/v1/school/print/pokemon-quiz-1?variety=omr&card=4829306&variant=1');
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/allocation record/);
+  });
+
+  it('omr card with no matching record falls back to attach-new semantics', async () => {
+    const render = renderFake();
+    const allocations = { findByCard: vi.fn().mockResolvedValue([]) };
+    await request(appWith({ render, allocations }))
+      .get('/api/v1/school/print/pokemon-quiz-1?variety=omr&card=1234567');
+    expect(render.calls[0].context).toEqual({ cardId: '1234567', startRow: 1 });
+  });
+
+  it('explicit startRow skips the identity lookup entirely', async () => {
+    const render = renderFake();
+    const allocations = { findByCard: vi.fn() };
+    await request(appWith({ render, allocations }))
+      .get('/api/v1/school/print/pokemon-quiz-1?variety=omr&card=1234567&startRow=18');
+    expect(allocations.findByCard).not.toHaveBeenCalled();
+    expect(render.calls[0].context).toEqual({ cardId: '1234567', startRow: 18 });
   });
 
   it('omr keeps its warnings in the header (nothing filtered)', async () => {
