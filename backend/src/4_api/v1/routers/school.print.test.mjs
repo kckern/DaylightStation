@@ -444,4 +444,61 @@ describe('GET /api/v1/school/print/:id', () => {
       .get('/api/v1/school/print/pokemon-quiz-1?variety=omr&freshCard=1');
     expect(JSON.parse(res.headers['x-school-print-warnings'])).toEqual(['some genuine warning']);
   });
+
+  it('EVERY lane rides the published doc when the repo is wired — a fresh first print never pins a source-hash rev', async () => {
+    const render = renderFake();
+    const source = { id: 'q', seed: 1, blocks: [] }; // no rev — a drifted/unpublished source
+    const published = { id: 'q', seed: 1, rev: 'abcdef123', blocks: [] };
+    const repo = { get: vi.fn().mockResolvedValue(source), getPublished: vi.fn().mockResolvedValue(published) };
+    const allocations = { findByCard: vi.fn(), findByDocument: vi.fn().mockResolvedValue([]) };
+    const res = await request(appWith({ render, repo, allocations }))
+      .get('/api/v1/school/print/pokemon-quiz-1?variety=omr&learnerId=felix');
+    expect(res.status).toBe(200);
+    // The render receives the PUBLISHED document (rev field intact), never the source.
+    expect(render.calls[0].document).toMatchObject({ rev: 'abcdef123' });
+    expect(render.calls[0].id).toBeUndefined();
+  });
+
+  it('a never-published document still renders from source (proofing a draft stays legal)', async () => {
+    const render = renderFake();
+    const repo = {
+      get: vi.fn().mockResolvedValue({ id: 'draft', seed: 1, blocks: [] }),
+      getPublished: vi.fn().mockResolvedValue(null),
+    };
+    const res = await request(appWith({ render, repo }))
+      .get('/api/v1/school/print/draft-sheet?variety=hand');
+    expect(res.status).toBe(200);
+    expect(render.calls[0].document).toMatchObject({ id: 'draft' });
+  });
+
+  it('quiz + fabricated card (no usable record) demands a learnerId — the seven-digit bypass is closed', async () => {
+    const render = renderFake();
+    const doc = { id: 'q', archetype: 'quiz', seed: 1, rev: 'abcdef123', blocks: [] };
+    const repo = { get: vi.fn().mockResolvedValue(doc), getPublished: vi.fn().mockResolvedValue(doc) };
+    const allocations = { findByCard: vi.fn().mockResolvedValue([]), findByDocument: vi.fn().mockResolvedValue([]) };
+    const bare = await request(appWith({ render, repo, allocations }))
+      .get('/api/v1/school/print/pokemon-quiz-1?variety=omr&card=1111111');
+    expect(bare.status).toBe(400);
+    expect(bare.body.error).toMatch(/learnerId/);
+    // With a learner, attach-new on an explicit card stays legal.
+    const ok = await request(appWith({ render, repo, allocations }))
+      .get('/api/v1/school/print/pokemon-quiz-1?variety=omr&card=1111111&learnerId=felix');
+    expect(ok.status).toBe(200);
+  });
+
+  it('adopting a card that belongs to a DIFFERENT learner is a 409, never a silent identity swap', async () => {
+    const render = renderFake();
+    const doc = { id: 'q', seed: 1, rev: 'abcdef123', blocks: [] };
+    const repo = { get: vi.fn().mockResolvedValue(doc), getPublished: vi.fn().mockResolvedValue(doc) };
+    const allocations = {
+      findByCard: vi.fn().mockResolvedValue([
+        { documentId: 'pokemon-quiz-1', cardId: '4829306', learnerId: 'felix', status: 'live', rev: 'abcdef123', variant: 0, rowRange: { start: 1, end: 6 }, renderedAt: 't1' },
+      ]),
+      findByDocument: vi.fn(),
+    };
+    const res = await request(appWith({ render, repo, allocations }))
+      .get('/api/v1/school/print/pokemon-quiz-1?variety=omr&card=4829306&learnerId=soren');
+    expect(res.status).toBe(409);
+    expect(res.body.code).toBe('CARD_LEARNER_MISMATCH');
+  });
 });
