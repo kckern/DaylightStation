@@ -153,6 +153,44 @@ describe('allocate — collision refusal (spec §5.4)', () => {
   });
 });
 
+describe('allocate — satisfied-record reprint (post-scan reprint / teacher key)', () => {
+  it('an identical render context against a SATISFIED record returns it unchanged (idempotent reprint)', async () => {
+    const { io } = fakeIo();
+    const store = new YamlAllocationStore({ directory: '/docs', io, now: () => 'ts' });
+    const req = request({ learnerId: 'felix', rowItems: [{ row: 1, itemId: 'q1', itemType: 'multiple_choice' }] });
+    const original = await store.allocate({ cardId: '1234567', request: req });
+    await store.updateStatus({ cardId: '1234567', recordId: original.recordId, status: 'satisfied' });
+
+    // The teacher pulls the sheet (or its key) back up AFTER the scan — the
+    // exact moment grading happens. This must reproduce, never conflict.
+    const reprint = await store.allocate({ cardId: '1234567', request: req });
+    expect(reprint).toMatchObject({ recordId: original.recordId, status: 'satisfied' });
+    expect(await store.findByCard('1234567')).toHaveLength(1);
+  });
+
+  it('still refuses when the same recordId carries a DIFFERENT context (seed/learner/mapping)', async () => {
+    const { io } = fakeIo();
+    const store = new YamlAllocationStore({ directory: '/docs', io, now: () => 'ts' });
+    const original = await store.allocate({ cardId: '1234567', request: request({ learnerId: 'felix' }) });
+    await store.updateStatus({ cardId: '1234567', recordId: original.recordId, status: 'satisfied' });
+
+    for (const overrides of [{ learnerId: 'soren' }, { learnerId: 'felix', seed: 999 }]) {
+      await expect(store.allocate({ cardId: '1234567', request: request(overrides) }))
+        .rejects.toMatchObject({ code: 'ALLOCATION_RECORD_ID_CONFLICT' });
+    }
+  });
+
+  it('a released record never reprints — its rows are recycled, not reproducible', async () => {
+    const { io } = fakeIo();
+    const store = new YamlAllocationStore({ directory: '/docs', io, now: () => 'ts' });
+    const req = request({ learnerId: 'felix' });
+    await store.allocate({ cardId: '1234567', request: req });
+    await store.release({ cardId: '1234567' });
+    await expect(store.allocate({ cardId: '1234567', request: req }))
+      .rejects.toMatchObject({ code: 'ALLOCATION_RECORD_ID_CONFLICT' });
+  });
+});
+
 describe('allocate — supersede (spec §5.4 reprint case)', () => {
   it('an IDENTICAL reprint (same documentId/rev/variant/rowRange) is idempotent, not a duplicate append', async () => {
     // recordId is deterministic on (documentId, rev, variant, rowRange) alone, so an

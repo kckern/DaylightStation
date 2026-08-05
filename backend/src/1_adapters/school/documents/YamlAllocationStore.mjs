@@ -119,11 +119,22 @@ export class YamlAllocationStore {
       if (priorLive && priorLive.recordId === recordId) {
         return structuredClone(priorLive);
       }
-      // A recordId collision against ANY existing record (live or not) that is NOT the
-      // supersede target means two different render contexts hashed to the same
-      // deterministic id — refuse rather than create an ambiguous duplicate.
+      // A recordId collision against an existing record that is NOT the
+      // supersede target: when that record is `satisfied` and the request is
+      // the byte-identical render context (same seed/learner/row mapping),
+      // this is a REPRINT OF A TAKEN QUIZ — the teacher pulling the sheet or
+      // its answer key back up to grade — and must return the record
+      // unchanged, exactly like the live-reprint shortcut above. (Before this
+      // branch existed, scanning a card poisoned its own print URL: the
+      // satisfied record's id clashed here and every re-render 500'd.)
+      // Anything else — a released/superseded record, or a same-id request
+      // whose context actually differs — is refused rather than allowed to
+      // create an ambiguous duplicate.
       const idClash = existing.find((record) => record.recordId === recordId);
       if (idClash) {
+        if (idClash.status === 'satisfied' && isIdenticalReprint(idClash, request)) {
+          return structuredClone(idClash);
+        }
         throw new DomainInvariantError(
           `allocation recordId "${recordId}" already exists on card ${resolvedCardId} with status `
             + `"${idClash.status}" (not the record being superseded)`,
@@ -286,6 +297,28 @@ function listAllocationCardIds(dir) {
 /** `<documentId>@<rev>:v<variant>:<start>-<end>` (spec §5.4 / task brief). */
 function buildRecordId({ documentId, rev, variant, rowRange }) {
   return `${documentId}@${rev}:v${variant ?? 0}:${rowRange.start}-${rowRange.end}`;
+}
+
+/**
+ * Whether a request whose recordId matched a satisfied record really IS that
+ * record's render context. recordId already pins documentId/rev/variant/
+ * rowRange; the fields it does NOT carry — seed, learner, and the printed
+ * row→item mapping — must agree too, or the "reprint" would put different
+ * questions (or a different child's identity) under the same card rows.
+ * A missing rowItems on either side is a legacy record — accepted, exactly
+ * as `ResolveCardScan` trusts re-derivation for those.
+ */
+function isIdenticalReprint(record, request) {
+  if (record.seed !== request.seed) return false;
+  if ((record.learnerId ?? null) !== (request.learnerId ?? null)) return false;
+  if (Array.isArray(record.rowItems) && Array.isArray(request.rowItems)) {
+    if (record.rowItems.length !== request.rowItems.length) return false;
+    return record.rowItems.every((entry, index) => {
+      const other = request.rowItems[index];
+      return entry.row === other.row && entry.itemId === other.itemId && entry.itemType === other.itemType;
+    });
+  }
+  return true;
 }
 
 /** Adapts persisted `rowRange:{start,end}` records to the domain's flat `startRow`/`endRow` shape. */

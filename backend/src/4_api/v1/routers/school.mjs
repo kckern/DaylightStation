@@ -4,7 +4,7 @@
  */
 import express from 'express';
 import { GuestForbiddenError, SessionGoneError } from '#domains/school/errors.mjs';
-import { ValidationError, EntityNotFoundError } from '#domains/core/errors/index.mjs';
+import { ValidationError, EntityNotFoundError, DomainInvariantError } from '#domains/core/errors/index.mjs';
 import { splatPath } from '#api/utils/wildcard.mjs';
 
 export function createSchoolRouter({
@@ -46,6 +46,12 @@ export function createSchoolRouter({
           return res.status(409).json({ error: err.message, code: err.code });
         }
         if (err instanceof ValidationError) return res.status(400).json({ error: err.message });
+        // A store/domain invariant refusal (allocation collision, illegal
+        // status transition, …) is the CLIENT's conflict to resolve — a 409
+        // carrying the invariant's own code, never an anonymous 500.
+        if (err instanceof DomainInvariantError) {
+          return res.status(409).json({ error: err.message, ...(err.code ? { code: err.code } : {}) });
+        }
         if (err?.code === 'ADAPTIVE_TUTOR_UNAVAILABLE') {
           return res.status(503).json({ error: err.message, code: err.code });
         }
