@@ -31,6 +31,7 @@ export function createSchoolRouter({
   renderPrintDocument = null,
   printDocumentsRepo = null,
   printAllocationStore = null,
+  getPrintTeacherPin = null,
   logger = console,
 }) {
   const router = express.Router();
@@ -190,7 +191,27 @@ export function createSchoolRouter({
     if (learnerName) context.learnerName = learnerName;
     const date = textQuery(req.query.date);
     if (date) context.date = date;
-    if (req.query.teacher === '1' || req.query.teacher === 'true') context.teacher = true;
+    if (req.query.teacher === '1' || req.query.teacher === 'true') {
+      // Answer keys are gated: this is a kid-facing app, and the population
+      // being kept from the key is exactly the population with URL-bar
+      // access. `getPrintTeacherPin` (composition-wired, reads the household
+      // school config's `print.teacherPin`) is the trust anchor: when wired,
+      // teacher renders DENY until a pin is configured and matched. A
+      // composition that does not wire the getter (embedded/test harnesses)
+      // has opted out of the gate entirely.
+      if (getPrintTeacherPin) {
+        const pin = await getPrintTeacherPin();
+        if (pin == null) {
+          return res.status(403).json({
+            error: 'teacher keys are disabled: set print.teacherPin in the school household config',
+          });
+        }
+        if (textQuery(req.query.pin) !== String(pin)) {
+          return res.status(403).json({ error: 'teacher key requires the correct pin=<value>' });
+        }
+      }
+      context.teacher = true;
+    }
 
     // Sheet identity: the render must be reproducible so the student sheet,
     // its answer key, and the bank selections/order all agree across calls.

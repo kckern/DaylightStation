@@ -86,6 +86,41 @@ describe('GET /api/v1/school/print/:id', () => {
     expect(both.body.error).toMatch(/mutually exclusive/);
   });
 
+  it('teacher keys deny without the configured pin — the quiz-taker cannot print their own key', async () => {
+    const render = renderFake();
+    const app = express();
+    app.use('/api/v1/school', createSchoolRouter({
+      schoolService: { listBankSourceSummaries: () => [] },
+      renderPrintDocument: render,
+      getPrintTeacherPin: () => '4321',
+      logger: { warn: vi.fn(), info: vi.fn(), debug: vi.fn(), error: vi.fn() },
+    }));
+    for (const q of ['', '&pin=0000']) {
+      const res = await request(app).get(`/api/v1/school/print/pokemon-quiz-1?variety=hand&teacher=1${q}`);
+      expect(res.status).toBe(403);
+      expect(res.body.error).toMatch(/pin/);
+    }
+    const ok = await request(app).get('/api/v1/school/print/pokemon-quiz-1?variety=hand&teacher=1&pin=4321');
+    expect(ok.status).toBe(200);
+    expect(render.calls[0].context).toEqual({ teacher: true });
+    // Non-teacher renders never ask for a pin.
+    const student = await request(app).get('/api/v1/school/print/pokemon-quiz-1?variety=hand');
+    expect(student.status).toBe(200);
+  });
+
+  it('teacher keys deny with an instructive error when no pin is configured', async () => {
+    const app = express();
+    app.use('/api/v1/school', createSchoolRouter({
+      schoolService: { listBankSourceSummaries: () => [] },
+      renderPrintDocument: renderFake(),
+      getPrintTeacherPin: () => null,
+      logger: { warn: vi.fn(), info: vi.fn(), debug: vi.fn(), error: vi.fn() },
+    }));
+    const res = await request(app).get('/api/v1/school/print/pokemon-quiz-1?variety=hand&teacher=1');
+    expect(res.status).toBe(403);
+    expect(res.body.error).toMatch(/print\.teacherPin/);
+  });
+
   it('quiz-archetype omr renders demand a learnerId (or explicit card) — siblings must not share a sheet', async () => {
     const render = renderFake();
     const repo = {
