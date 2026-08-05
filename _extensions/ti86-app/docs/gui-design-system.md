@@ -154,11 +154,13 @@ Lesson. The root keeps `SUBJECTS` with the learner name. Generic words such as
 `MODULES` and `QUIZ` describe the interaction only; they must not be the sole
 answer to “what am I studying?”
 
-For inline multiple-choice questions, each 3×5 answer row has a one-pixel
-vertical gap from the next. A crowded final prompt may use two answer columns,
-but only when every label fits its own half-width without clipping. Otherwise
-the runner uses its explicit multi-page fallback rather than collapsing the
-spacing or making an answer ambiguous.
+An inline multiple-choice prompt owns exactly three compact rows at y=11,17,23.
+It is followed by four blank pixel rows, then a four-row choice region at
+y=32,38,44,50. Each 3×5 answer row retains its one-pixel vertical gap. A
+five-choice prompt may use two answer columns only when every label fits its
+own half-width without clipping. Otherwise the runner uses its explicit
+multi-page fallback rather than collapsing the spacing or making an answer
+ambiguous.
 
 ### Iconography
 
@@ -184,6 +186,7 @@ Hardware comes first:
 | Left/Right | Parent/child, page, or previous/next card when declared |
 | ENTER | Open, commit, or continue |
 | EXIT | Return one SchoolCalc level; Home remains open; `2nd` + EXIT quits to TI-OS |
+| 2nd + Up/Down | Adjust LCD contrast one saturated step; consume the chord without moving focus or scrolling |
 | DEL | Delete one input unit |
 | CLEAR | Return one SchoolCalc level (the same Back/cancel behavior as EXIT) |
 | Numeric/ALPHA | Enter the corresponding response text |
@@ -201,13 +204,13 @@ Catalog lists use the same `NEXT`/`END` cue and page action instead of an
 irrelevant transport affordance.
 
 Quiz question and answer form one interaction. A normal compact question
-renders its visible `A)`–`E)` choices directly beneath it, with F1–F5 mapped
-to the same letters in the rail. A one-page prompt whose answer labels fit four
-compact characters may use those labels directly above F1–F5; typing a number
-is not a hidden alternate response path. Only a genuinely tall prompt uses F5
-`MORE` and then `ANS` at its final page. Its answer view reserves the bottom
-body line for `LEFT: Q`, returning to the final prompt page without discarding
-the answer draft.
+renders up to three visible prompt rows, a deliberate gap, then its `A)`–`D)`
+choice rows directly beneath it, with F1–F4 mapped to the same letters in the
+rail. A fifth short answer may share a two-column row; typing a number is not a
+hidden alternate response path. Only a genuinely tall prompt uses F5 `MORE`
+and then `ANS` at its final page. Its answer view reserves the bottom body line
+for `LEFT: Q`, returning to the final prompt page without discarding the answer
+draft.
 
 ## 3. Shell layout
 

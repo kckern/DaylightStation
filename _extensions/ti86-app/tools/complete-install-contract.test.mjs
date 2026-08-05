@@ -19,7 +19,7 @@ describe('complete TI86A installation boundary', () => {
   });
 
   it('ships retryable individual programs, both reset slots, and exact auditable content', () => {
-    const output = execFileSync(process.execPath, [path.join(HERE, 'build-complete-install.mjs')], {
+    const output = execFileSync(process.execPath, [path.join(HERE, 'build-complete-install.mjs'), '--reuse-content-packs'], {
       cwd: ROOT, encoding: 'utf8',
     });
     const match = output.match(/complete audited install ([a-f0-9]{12}): (.+)\n/);
@@ -29,6 +29,7 @@ describe('complete TI86A installation boundary', () => {
     expect(manifest.releaseId).toBe(releaseId);
     expect(manifest.transfer.filter(({ kind }) => kind === 'program')).toHaveLength(10);
     expect(manifest.transfer).toContainEqual(expect.objectContaining({ fileName: 'DSPROG.86s', magic: 'SCG1' }));
+    expect(manifest.transfer).toContainEqual(expect.objectContaining({ fileName: 'DSCODE.86s', magic: 'SCCO' }));
     expect(manifest.transfer.some(({ fileName }) => fileName.endsWith('.86g'))).toBe(false);
     const packs = manifest.transfer.filter(({ kind }) => kind === 'content-pack');
     expect(packs).toHaveLength(manifest.courses.length);
@@ -41,6 +42,6 @@ describe('complete TI86A installation boundary', () => {
       return decodeSchoolCalcLocalState(parsed.variableData.subarray(2)).generation;
     });
     expect(generations).toEqual([1, 2]);
-    expect(auditCompleteReadback(bundle, bundle).verified).toHaveLength(19 + packs.length);
+    expect(auditCompleteReadback(bundle, bundle).verified).toHaveLength(20 + packs.length);
   });
 });

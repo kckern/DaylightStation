@@ -204,28 +204,30 @@ Every variable is received back and checked with
 
 The manifest also records a conservative installed-storage estimate and the
 standard-client target/ceiling. The adapter reserves 9 KiB for `SCHLCALC`, a
-6 KiB target/9 KiB ceiling for `SCLEARN`, a 4 KiB target/6 KiB ceiling for
-`SCQR`, a 6 KiB target/8 KiB ceiling each for `SCCAT` and `SCREQ`, a 4 KiB
+6 KiB target/9,400-byte ceiling for `SCLEARN`, a 4 KiB target/6,272-byte ceiling for
+`SCQR`, a 6 KiB target/8,320-byte ceiling for `SCCAT` and a 6 KiB target/8 KiB ceiling for `SCREQ`, a 4 KiB
 target/8 KiB ceiling for `SCQUEUE`, a 6 KiB target/8 KiB ceiling each for
-`SCSYNC` and `SCNATIVE`, a 6 KiB target/8 KiB TI-OS child-image ceiling for `SCPROF`, and a 6 KiB target/9 KiB ceiling for `SCTUTOR`,
+`SCSYNC` and `SCNATIVE`, a 6 KiB target/8,320-byte TI-OS child-image ceiling for `SCPROF`, and a 6 KiB target/9 KiB ceiling for `SCTUTOR`,
 where a target is a capacity-planning signal and its paired ceiling is the
 compile-blocking execution safety limit. A runtime may temporarily exceed its
 target only while it remains below the ceiling and the aggregate release
 budget still preserves the calculator's content and recovery reserve.
 and 32 bytes of calculator-variable overhead for each. This makes the
 ten-program planning target 60,736 bytes. The independent per-program ceilings
-sum to 83,264 bytes, but the enforced reserve-safe aggregate maximum is 71,962
-bytes: no build may consume the calculator's 9,300-byte scratch/free reserve merely
+sum to 83,832 bytes, but the enforced reserve-safe aggregate maximum is 73,786
+bytes: no build may consume the calculator's 8,500-byte scratch/free reserve merely
 because each executable fits independently. At the planning target, 15,406
 bytes remain for downloadable content after the Catalog, result, delivery,
 learner-roster, progress, and interaction target buckets; at the reserve-safe
 aggregate maximum, content capacity is zero.
 
-The `caacecbbb8b6` digest-pinned release estimates 71,960 installed bytes. It is
-11,224 bytes above the planning target, leaves 2 bytes before the
-reserve-safe aggregate maximum, and leaves 5,122 bytes for downloadable
-content after the 256-byte interaction-request and 1,024-byte committed-response
-target buffers. Per-program ceilings remain independently enforced.
+The current direct-matrix build estimates 73,556 installed bytes. It is
+12,820 bytes above the planning target and leaves 230 bytes before the
+reserve-safe aggregate maximum. The installed continuation codebook is a
+content-adjacent allocation (512-byte target, 2 KiB hard cap), leaving 4,838
+bytes for content after the target durable-state buckets; a maximum-state
+install has no content headroom. Per-program ceilings remain independently
+enforced.
 
 The calculator therefore has one SchoolCalc product but more than one TI
 program variable. All nine SCX1 runtimes are implementation support and may be

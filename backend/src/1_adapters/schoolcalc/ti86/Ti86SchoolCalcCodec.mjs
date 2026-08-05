@@ -85,6 +85,14 @@ const READER_PAGE_COLUMNS = 23;
 const READER_PAGE_LINES = 5;
 const READER_PAGE_MAX_BYTES = (READER_PAGE_COLUMNS * READER_PAGE_LINES)
   + (READER_PAGE_LINES - 1);
+// An inline choice surface reserves three compact rows for its prompt, a
+// visible gap, and four rows for single-column choices. Assessment prompts
+// therefore paginate independently from reader prose; a long question remains
+// complete, but advances through explicit prompt pages before answers appear.
+const ASSESSMENT_PROMPT_PAGE_COLUMNS = 23;
+const ASSESSMENT_PROMPT_PAGE_LINES = 3;
+const ASSESSMENT_PROMPT_PAGE_MAX_BYTES = (ASSESSMENT_PROMPT_PAGE_COLUMNS * ASSESSMENT_PROMPT_PAGE_LINES)
+  + (ASSESSMENT_PROMPT_PAGE_LINES - 1);
 const ASSESSMENT_MAX_ITEMS = 48;
 const LEARNING_PROBE_MAX_ITEMS = 12;
 const ASSESSMENT_MAX_CHOICES = 5;
@@ -1948,6 +1956,29 @@ function ti86TextReason(raw, at) {
  * can exceed the Z80 reader's 120-byte buffer (the maximum here is 119).
  */
 function paginateReaderText(raw) {
+  return paginateText(raw, {
+    columns: READER_PAGE_COLUMNS,
+    linesPerPage: READER_PAGE_LINES,
+    maxBytes: READER_PAGE_MAX_BYTES,
+    label: 'TI-86 reader paginator',
+  });
+}
+
+function paginateAssessmentPrompt(raw) {
+  return paginateText(raw, {
+    columns: ASSESSMENT_PROMPT_PAGE_COLUMNS,
+    linesPerPage: ASSESSMENT_PROMPT_PAGE_LINES,
+    maxBytes: ASSESSMENT_PROMPT_PAGE_MAX_BYTES,
+    label: 'TI-86 assessment prompt paginator',
+  });
+}
+
+function paginateText(raw, {
+  columns,
+  linesPerPage,
+  maxBytes,
+  label,
+}) {
   const normalized = raw.replace(/\r\n?/g, '\n').trim();
   const lines = [];
   for (const authoredLine of normalized.split('\n')) {
@@ -1956,10 +1987,10 @@ function paginateReaderText(raw) {
       lines.push('');
       continue;
     }
-    while (remaining.length > READER_PAGE_COLUMNS) {
-      const candidate = remaining.slice(0, READER_PAGE_COLUMNS + 1);
+    while (remaining.length > columns) {
+      const candidate = remaining.slice(0, columns + 1);
       let boundary = candidate.lastIndexOf(' ');
-      if (boundary <= 0 || boundary > READER_PAGE_COLUMNS) boundary = READER_PAGE_COLUMNS;
+      if (boundary <= 0 || boundary > columns) boundary = columns;
       lines.push(remaining.slice(0, boundary).trimEnd());
       remaining = remaining.slice(boundary).trimStart();
     }
@@ -1969,10 +2000,10 @@ function paginateReaderText(raw) {
   while (lines.at(-1) === '') lines.pop();
 
   const pages = [];
-  for (let offset = 0; offset < lines.length; offset += READER_PAGE_LINES) {
-    const page = lines.slice(offset, offset + READER_PAGE_LINES).join('\n');
-    if (Buffer.byteLength(page, 'ascii') > READER_PAGE_MAX_BYTES) {
-      throw new Error('TI-86 reader paginator exceeded its fixed page buffer');
+  for (let offset = 0; offset < lines.length; offset += linesPerPage) {
+    const page = lines.slice(offset, offset + linesPerPage).join('\n');
+    if (Buffer.byteLength(page, 'ascii') > maxBytes) {
+      throw new Error(`${label} exceeded its fixed page buffer`);
     }
     pages.push(page);
   }
@@ -1983,7 +2014,7 @@ function projectQuestionItem(item, { revealAnswers, includeAnswerKey, includeFee
   const projected = {
     id: item.id,
     type: item.type,
-    promptPages: paginateReaderText(item.prompt),
+    promptPages: paginateAssessmentPrompt(item.prompt),
     choices: structuredClone(item.choices),
   };
   if (revealAnswers) projected.answerPages = paginateReaderText(item.answer);

@@ -34,6 +34,11 @@ function fixture() {
   const openCatalogLearningSession = {
     execute: vi.fn(async () => ({ sessionId: 'ses-catalog' })),
   };
+  const issueContinuationCode = {
+    execute: vi.fn(async ({ learnerId, moduleCode }) => ({
+      schema: 'school.continuation-code/v1', learnerId, moduleCode, code: '123456',
+    })),
+  };
   const remediationTutor = {
     listAvailable: vi.fn(async () => [{ sessionId: 'rem-1', status: 'offered' }]),
     get: vi.fn(async () => ({ sessionId: 'rem-1', learnerId: 'kid-a', status: 'active' })),
@@ -47,16 +52,33 @@ function fixture() {
     recordLearningProbeInteraction,
     learningCatalog,
     openCatalogLearningSession,
+    issueContinuationCode,
     logger: { error: vi.fn() },
   }));
   return {
     app, getLearningProgress, getInstructionalInsights, recordLearningReflection,
     recordLearningProbeInteraction, learningCatalog, remediationTutor, learnerDirectory,
     openCatalogLearningSession,
+    issueContinuationCode,
   };
 }
 
 describe('School progress HTTP projection', () => {
+  it('issues a non-cacheable continuation route through the School application', async () => {
+    const { app, issueContinuationCode } = fixture();
+    const response = await request(app).get('/api/v1/school/continuation-code')
+      .query({ learnerId: 'kid-a', moduleCode: '098765' }).expect(200);
+    expect(response.headers['cache-control']).toBe('no-store');
+    expect(response.body).toMatchObject({ schema: 'school.continuation-code/v1', code: '123456' });
+    expect(issueContinuationCode.execute).toHaveBeenCalledWith({ learnerId: 'kid-a', moduleCode: '098765' });
+  });
+
+  it('rejects incomplete continuation-code requests at the HTTP boundary', async () => {
+    const { app, issueContinuationCode } = fixture();
+    await request(app).get('/api/v1/school/continuation-code?learnerId=kid-a').expect(400);
+    expect(issueContinuationCode.execute).not.toHaveBeenCalled();
+  });
+
   it('serves the configured learner roster and progress filter options', async () => {
     const { app } = fixture();
     await request(app).get('/api/v1/school/roster').expect(200, [{ id: 'kid-a', name: 'Alpha' }]);

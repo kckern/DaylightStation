@@ -1,6 +1,7 @@
 export { SchoolService } from './SchoolService.mjs';
 export { GetInstructionalInsights } from './GetInstructionalInsights.mjs';
 export { GetLearningCatalog } from './GetLearningCatalog.mjs';
+export { IssueSchoolContinuationCode } from './IssueSchoolContinuationCode.mjs';
 export { GetLearningProgress } from './GetLearningProgress.mjs';
 export { RecordLearningReflection } from './RecordLearningReflection.mjs';
 export { RecordLearningProbeInteraction } from './RecordLearningProbeInteraction.mjs';

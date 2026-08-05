@@ -351,6 +351,39 @@ context, bank ID, or mode therefore cannot misfile progress.
 | API | `GET /api/v1/school/catalogs`, `GET /api/v1/school/catalogs/:address`, `POST /api/v1/school/sessions` |
 | Web | `frontend/src/modules/School/catalog/` |
 
+### Cross-surface calculator continuation codes
+
+An authored Catalog module may declare `continuationCode`: a unique six-digit
+module route in the range `000000`–`249999`. A School surface can ask the
+application for a learner-scoped, six-digit **Continue on calculator** code;
+the TI-86 enters it through its Home `CODE` action and opens the installed
+target directly. The route is a convenience deep link, never authentication or
+authorization: possession of the number grants no server access and does not
+alter progress by itself.
+
+The pure School contract reserves four explicitly configured, stable learner
+slots. It combines the slot and authored route into the complete decimal
+space, then applies a reversible affine permutation. This keeps all six-digit
+codes usable and evenly distributed without a server lookup or arithmetic that
+the TI-86 must reproduce. The Calculator adapter receives a compact installed
+index (`SCCO` / `DSCODE`) of only currently available routes. It verifies the
+current Catalog generation before resolving a code, so a stale, uninstalled,
+or wrong-device route safely reports **NOT INSTALLED — SYNC** rather than
+opening an arbitrary lesson.
+
+This is shared School behavior, not a TI-86 curriculum branch: web and kiosk
+surfaces request the same application use case and may present the code beside
+any eligible module. The device adapter only formats its fixed codebook and
+maps its resolved hierarchy back into the generic Catalog runtime.
+
+| Layer | Path |
+|---|---|
+| Pure six-digit encoding | `backend/src/2_domains/school/continuationCode.mjs` |
+| Learner-slot application use case | `backend/src/3_applications/school/IssueSchoolContinuationCode.mjs` |
+| HTTP route | `GET /api/v1/school/continuation-code?learnerId=&moduleCode=` |
+| TI-86 offline codebook adapter | `backend/src/1_adapters/schoolcalc/ti86/Ti86ContinuationCodebook.mjs` |
+| TI-86 `CODE` interface | `_extensions/ti86-app/src/schoolcalc.asm` |
+
 ### Language study (the sentence ladder)
 
 A revival of KC's 2016–2017 `korean.kckern.info` drill app, rebuilt as a School

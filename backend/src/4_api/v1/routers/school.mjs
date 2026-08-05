@@ -21,6 +21,7 @@ export function createSchoolRouter({
   recordLearningProbeInteraction = null,
   remediationTutor = null,
   learnerDirectory = null,
+  issueContinuationCode = null,
   printService = null,
   schoolCalcRouter = null,
   logger = console,
@@ -68,6 +69,16 @@ export function createSchoolRouter({
     return res.set('Cache-Control', 'no-store').json(await learningCatalog.lesson({
       catalogId, subjectId, courseId, unitId, lessonId,
       learnerId: textQuery(req.query.learnerId),
+    }));
+  }));
+  // A continuation code is a public convenience route, not a credential. The
+  // application owns stable learner-slot policy and the reversible encoding;
+  // HTTP merely validates the two text query fields and returns its DTO.
+  router.get('/continuation-code', wrap(async (req, res) => {
+    if (!issueContinuationCode) throw new EntityNotFoundError('School continuation codes', 'not configured');
+    return res.set('Cache-Control', 'no-store').json(await issueContinuationCode.execute({
+      learnerId: requiredTextQuery(req.query.learnerId, 'learnerId'),
+      moduleCode: requiredTextQuery(req.query.moduleCode, 'moduleCode'),
     }));
   }));
   router.get('/geography/decks', wrap((req, res) => {

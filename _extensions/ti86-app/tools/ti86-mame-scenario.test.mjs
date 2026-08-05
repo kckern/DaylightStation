@@ -41,6 +41,18 @@ describe('TI-86 MAME scenario harness', () => {
     expect(second.steps[0]).toMatchObject({ holdFrames: 12, settleFrames: 180, expectText: ['HOME'] });
   });
 
+  it('models a held 2nd modifier rather than two unrelated key presses', () => {
+    const scenario = normalizeTi86MameScenario({
+      id: 'contrast', steps: [{ key: 'UP', modifier: 'SECOND', modifier_lead_frames: 12 }],
+    });
+    expect(scenario.steps[0]).toMatchObject({ key: 'UP', modifier: 'SECOND', modifierLeadFrames: 12 });
+    const script = createTi86MameGraphLinkScenarioScript({
+      code: Buffer.from([0xC9]), readyFile: '/tmp/schoolcalc-release-ready', scenario,
+    });
+    expect(script).toContain("modifier_port=':BIT5'");
+    expect(script).toContain("phase='modifier-lead'");
+  });
+
   it('generates an exact-byte script with scheduled key presses and full framebuffer captures', () => {
     const script = createTi86MameScenarioScript({
       code: Buffer.from([0x3E, 0x01, 0xC9]),
@@ -65,6 +77,8 @@ describe('TI-86 MAME scenario harness', () => {
     expect(script).toContain("key='F1'");
     expect(script).toContain("key='ENTER'");
     expect(script).toContain("local READY_FILE = '/tmp/schoolcalc-release-ready'");
+    expect(script).toContain("local f=emu.file('r')");
+    expect(script).toContain('SCHOOLCALC_CONTRAST_COUNT');
     expect(script).not.toContain('pc.value=ORIGIN');
   });
 

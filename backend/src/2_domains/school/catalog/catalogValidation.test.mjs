@@ -60,6 +60,16 @@ describe('School learning catalog', () => {
     expect(errors.some((error) => error.includes('must look like name@version'))).toBe(true);
   });
 
+  it('rejects duplicate continuationCode values across the published Catalog', () => {
+    const duplicate = structuredClone(catalog);
+    const modules = duplicate.subjects[0].courses[0].units[0].lessons[0].modules;
+    modules[0].continuationCode = '000042';
+    modules[1].continuationCode = '000042';
+    expect(validateLearningCatalog(duplicate).errors).toContain(
+      "home-school/quantitative/intro-physics/kinematics/constant-velocity.modules[1].continuationCode: duplicate module continuation code '000042'",
+    );
+  });
+
   it('validates delivery install sets without creating another learning level', () => {
     const withSet = structuredClone(catalog);
     withSet.installSets = [{

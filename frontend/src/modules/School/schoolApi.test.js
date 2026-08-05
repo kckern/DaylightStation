@@ -60,6 +60,15 @@ describe('schoolApi', () => {
     );
   });
 
+  it('requests a learner-scoped calculator continuation code without treating it as a session', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response('{}', { status: 200 })));
+    await schoolApi.continuationCode({ learnerId: 'kid a', moduleCode: '012345' });
+    expect(fetch).toHaveBeenLastCalledWith(
+      '/api/v1/school/continuation-code?learnerId=kid%20a&moduleCode=012345',
+      expect.any(Object),
+    );
+  });
+
   it('builds reusable progress scope/time/curriculum filter queries', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => new Response('{}', { status: 200 })));
     await schoolApi.progress({

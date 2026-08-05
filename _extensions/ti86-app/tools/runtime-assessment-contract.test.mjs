@@ -71,7 +71,7 @@ describe('SCLEARN assessment, flashcard, and offline-queue contract', () => {
     );
     expect(ASSESSMENT).toContain('assessment_inline_choice_wait:');
     expect(ASSESSMENT).toMatch(
-      /assessment_inline_choices_fit:[\s\S]{0,900}add a,6/,
+      /assessment_inline_choices_fit:[\s\S]{0,420}cp 24[\s\S]{0,160}ld a,32[\s\S]{0,600}add a,6/,
     );
     const inlineGrid = ASSESSMENT.slice(
       ASSESSMENT.indexOf('assessment_inline_choice_render_loop:'),
@@ -81,6 +81,7 @@ describe('SCLEARN assessment, flashcard, and offline-queue contract', () => {
     const inlineAdvance = inlineGrid.slice(inlineGrid.indexOf('assessment_inline_choice_advance_y:'));
     expect(inlineAdvance).toContain('add a,6');
     expect(ASSESSMENT).toContain('ld a,(ui_wrap_y)');
+    expect(ASSESSMENT).toContain('ld e,27');
     expect(ASSESSMENT).toContain('cp 55');
     expect(ASSESSMENT).toMatch(
       /assessment_return_to_prompt:[\s\S]{0,260}assessment_prompt_page_count[\s\S]{0,180}RUNTIME_SCL_SCROLL_OFFSET/,
@@ -93,6 +94,8 @@ describe('SCLEARN assessment, flashcard, and offline-queue contract', () => {
     );
     expect(acknowledgement).toMatch(/call ui_mode_clear\s+call ui_fill_rect\s+call ui_mode_set/);
     expect(acknowledgement).toMatch(/ld a,\(assessment_ack_index\)\s+ld e,a[\s\S]{0,260}assessment_softkey_ack_x/);
+    expect(ASSESSMENT).toContain("assessment_ack_label:           defb 'A',0");
+    expect(ASSESSMENT).not.toContain("assessment_ack_label:           defb 'A',' ','O','K',0");
     expect(ASSESSMENT).not.toContain('ld e,(assessment_ack_index)');
     const copiedChoice = inlineGrid.lastIndexOf('call sc_copy_node_string');
     const preservedPointer = inlineGrid.indexOf('push hl', copiedChoice);

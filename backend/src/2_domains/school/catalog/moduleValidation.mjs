@@ -1,5 +1,6 @@
 import { parseCapabilityId } from './capabilities.mjs';
 import { validateAdaptiveRemediationPolicy } from '../remediation/adaptiveRemediation.mjs';
+import { normalizeSchoolContinuationModuleCode } from '../continuationCode.mjs';
 
 /**
  * Standard School learning modules. These are pedagogical interactions,
@@ -56,6 +57,9 @@ export function validateLearningModule(raw, { path = 'module' } = {}) {
     return { errors };
   }
   if (raw.title !== undefined && !isText(raw.title)) push('title must be non-empty when present');
+  if (raw.continuationCode !== undefined) {
+    try { normalizeSchoolContinuationModuleCode(raw.continuationCode); } catch (error) { push(error.message); }
+  }
   if (raw.tags !== undefined && (!Array.isArray(raw.tags) || raw.tags.some((value) => !isText(value))
       || new Set(raw.tags).size !== raw.tags.length)) {
     push('tags must be unique non-empty strings when present');

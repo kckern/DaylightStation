@@ -45,12 +45,17 @@ export function normalizeTi86MameScenario(input) {
   const settleFrames = positiveInteger(input.settle_frames ?? input.settleFrames ?? 18, 'settle_frames');
   const steps = input.steps.map((step, index) => {
     const key = normalizeMameTi86Key(step?.key);
+    const modifier = step?.modifier == null ? null : normalizeMameTi86Key(step.modifier);
+    if (modifier === key) throw new Error(`MAME scenario '${id}' cannot chord ${key} with itself`);
     const capture = String(step.capture ?? `step-${index + 1}`);
     if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(capture)) {
       throw new Error(`MAME scenario '${id}' has an invalid capture id`);
     }
     return Object.freeze({
       key,
+      modifier,
+      modifierLeadFrames: modifier == null ? 0
+        : positiveInteger(step.modifier_lead_frames ?? step.modifierLeadFrames ?? 12, 'modifier_lead_frames'),
       capture,
       holdFrames: positiveInteger(step.hold_frames ?? step.holdFrames ?? 4, 'hold_frames'),
       settleFrames: positiveInteger(step.settle_frames ?? step.settleFrames ?? settleFrames, 'settle_frames'),
@@ -60,6 +65,7 @@ export function normalizeTi86MameScenario(input) {
       expectText: expectedTerms(step.expect_text ?? step.expectText, 'expect_text'),
       expectNotText: expectedTerms(step.expect_not_text ?? step.expectNotText, 'expect_not_text'),
       expectSymbols: expectedTerms(step.expect_symbols ?? step.expectSymbols, 'expect_symbols'),
+      expectContrastWrite: step.expect_contrast_write === true || step.expectContrastWrite === true,
     });
   });
   if (new Set(steps.map(({ capture }) => capture)).size !== steps.length) {
@@ -96,9 +102,12 @@ export function createTi86MameScenarioScript({
   }
   const stepRows = normalized.steps.map((step) => {
     const target = MAME_TI86_KEYS[step.key];
+    const modifier = step.modifier == null ? null : MAME_TI86_KEYS[step.modifier];
     return `  { key=${luaString(step.key)}, capture=${luaString(step.capture)}, `
       + `port=${luaString(target.port)}, mask=0x${target.mask.toString(16)}, `
-      + `hold=${step.holdFrames}, settle=${step.settleFrames} }`;
+      + `hold=${step.holdFrames}, settle=${step.settleFrames}, `
+      + `modifier_port=${modifier == null ? 'nil' : luaString(modifier.port)}, `
+      + `modifier_mask=${modifier == null ? 'nil' : `0x${modifier.mask.toString(16)}`}, modifier_lead=${step.modifierLeadFrames} }`;
   });
   const installerRows = installers.map(({ fileName, code: installer }) => {
     const bytes = [];
@@ -128,9 +137,18 @@ export function createTi86MameScenarioScript({
     + `local pc = cpu and (cpu.state['PC'] or cpu.state['rPC']) or nil\n`
     + `local ports = manager.machine.ioport.ports\n`
     + `local frame, phase, step_index, deadline, install_index = 0, 'boot-wait', 0, 0, 0\n`
-    + `local active_field = nil\n`
+    // The TI-86 contrast register is analog rather than framebuffer state.
+    // Record writes so a headless scenario can prove a 2nd + arrow chord was
+    // delivered to TI-OS without mistaking an unchanged bitmap for no effect.
+    + `local contrast_writes = 0\n`
+    + `if io then io:install_write_tap(0x02, 0x02, 'schoolcalc_contrast_trace', function(offset, data, mask)\n`
+    + `  contrast_writes = contrast_writes + 1\n`
+    + `  print(string.format('SCHOOLCALC_CONTRAST_WRITE id=%s frame=%d pc=%04X value=%02X', SCENARIO, frame, pc.value, data))\n`
+    + `end) end\n`
+    + `local active_field, modifier_field, pending_release_phase = nil, nil, nil\n`
     + `local function finish(kind, detail)\n`
-    + `  if active_field then active_field:clear_value() end\n`
+    + `  if active_field then active_field:clear_value() end; if modifier_field then modifier_field:clear_value() end\n`
+    + `  print('SCHOOLCALC_CONTRAST_SUMMARY id=' .. SCENARIO .. ' writes=' .. contrast_writes)\n`
     + `  print('SCHOOLCALC_SCENARIO_' .. kind .. ' id=' .. SCENARIO .. ' detail=' .. detail)\n`
     + `  manager.machine:exit()\n`
     + `end\n`
@@ -138,6 +156,7 @@ export function createTi86MameScenarioScript({
     + `  local out = {}\n`
     + `  for index=0,FRAME_BYTES-1 do out[#out+1]=string.format('%02X', memory:read_u8(VIDEO_RAM+index)) end\n`
     + `  print(string.format('SCHOOLCALC_FRAME id=%s capture=%s pc=%04X pixels=%s', SCENARIO, label, pc.value, table.concat(out)))\n`
+    + `  print(string.format('SCHOOLCALC_CONTRAST_COUNT id=%s capture=%s writes=%d', SCENARIO, label, contrast_writes))\n`
     + `end\n`
     + `local function press_next()\n`
     + `  step_index = step_index + 1\n`
@@ -145,7 +164,7 @@ export function createTi86MameScenarioScript({
     + `  local step=steps[step_index]; local port=ports[step.port]\n`
     + `  active_field=port and port:field(step.mask) or nil\n`
     + `  if not active_field then finish('FAIL', 'missing-key-' .. step.key); return end\n`
-    + `  active_field:set_value(1); deadline=frame+step.hold; phase='release'\n`
+    + `  if step.modifier_port then local mport=ports[step.modifier_port]; modifier_field=mport and mport:field(step.modifier_mask) or nil; if not modifier_field then finish('FAIL', 'missing-modifier-' .. step.key); return end; modifier_field:set_value(1); deadline=frame+step.modifier_lead; pending_release_phase='release'; phase='modifier-lead' else active_field:set_value(1); deadline=frame+step.hold; phase='release' end\n`
     + `end\n`
     + `local function inject(bytes)\n`
     + `  for index,byte in ipairs(bytes) do memory:write_u8(ORIGIN+index-1, byte) end\n`
@@ -185,8 +204,9 @@ export function createTi86MameScenarioScript({
     + `  elseif phase == 'install-settle' and frame >= deadline then\n`
     + `    start_next_install()\n`
     + `  elseif phase == 'shell-settle' and frame >= deadline then capture('boot'); press_next()\n`
+    + `  elseif phase == 'modifier-lead' and frame >= deadline then active_field:set_value(1); local step=steps[step_index]; deadline=frame+step.hold; phase=pending_release_phase\n`
     + `  elseif phase == 'release' and frame >= deadline then\n`
-    + `    active_field:clear_value(); active_field=nil\n`
+    + `    active_field:clear_value(); active_field=nil; if modifier_field then modifier_field:clear_value(); modifier_field=nil end\n`
     + `    local step=steps[step_index]; deadline=frame+step.settle; phase='settle'\n`
     + `  elseif phase == 'settle' and frame >= deadline then capture(steps[step_index].capture); press_next() end\n`
     + `end\n`
@@ -224,9 +244,12 @@ export function createTi86MameGraphLinkScenarioScript({
   }
   const stepRows = normalized.steps.map((step) => {
     const target = MAME_TI86_KEYS[step.key];
+    const modifier = step.modifier == null ? null : MAME_TI86_KEYS[step.modifier];
     return `  { key=${luaString(step.key)}, capture=${luaString(step.capture)}, `
       + `port=${luaString(target.port)}, mask=0x${target.mask.toString(16)}, `
-      + `hold=${step.holdFrames}, settle=${step.settleFrames} }`;
+      + `hold=${step.holdFrames}, settle=${step.settleFrames}, `
+      + `modifier_port=${modifier == null ? 'nil' : luaString(modifier.port)}, `
+      + `modifier_mask=${modifier == null ? 'nil' : `0x${modifier.mask.toString(16)}`}, modifier_lead=${step.modifierLeadFrames} }`;
   });
 
   return `-- Generated SchoolCalc Graph Link acceptance scenario.\n`
@@ -257,25 +280,36 @@ export function createTi86MameGraphLinkScenarioScript({
     + `}\n`
     + `local cpu = manager.machine.devices[':maincpu']\n`
     + `local memory = cpu and cpu.spaces['program'] or nil\n`
+    + `local io = cpu and cpu.spaces['io'] or nil\n`
     + `local pc = cpu and (cpu.state['PC'] or cpu.state['rPC']) or nil\n`
     + `local ports = manager.machine.ioport.ports\n`
     + `local frame, phase, step_index, launch_index, deadline = 0, 'wait-release', 0, 0, 0\n`
-    + `local active_field = nil\n`
+    + `local contrast_writes = 0\n`
+    + `if io then io:install_write_tap(0x02, 0x02, 'schoolcalc_graph_link_contrast_trace', function(offset, data, mask)\n`
+    + `  contrast_writes = contrast_writes + 1\n`
+    + `  print(string.format('SCHOOLCALC_CONTRAST_WRITE id=%s frame=%d pc=%04X value=%02X', SCENARIO, frame, pc.value, data))\n`
+    + `end) end\n`
+    + `local active_field, modifier_field, pending_release_phase = nil, nil, nil\n`
     + `local function finish(kind, detail)\n`
-    + `  if active_field then active_field:clear_value() end\n`
+    + `  if active_field then active_field:clear_value() end; if modifier_field then modifier_field:clear_value() end\n`
+    + `  print('SCHOOLCALC_CONTRAST_SUMMARY id=' .. SCENARIO .. ' writes=' .. contrast_writes)\n`
     + `  print('SCHOOLCALC_SCENARIO_' .. kind .. ' id=' .. SCENARIO .. ' detail=' .. detail)\n`
     + `  manager.machine:exit()\n`
     + `end\n`
-    + `local function ready() local f=io.open(READY_FILE, 'rb'); if not f then return false end; f:close(); return true end\n`
+    // MAME deliberately exposes a restricted Lua standard library; `io.open`
+    // is not available in headless builds. Use the emulator-owned file object
+    // for the host-to-script readiness sentinel instead.
+    + `local function ready() local f=emu.file('r'); local err=f:open(READY_FILE); if err then return false end; f:close(); return true end\n`
     + `local function capture(label)\n`
     + `  local out = {}\n`
     + `  for index=0,FRAME_BYTES-1 do out[#out+1]=string.format('%02X', memory:read_u8(VIDEO_RAM+index)) end\n`
     + `  print(string.format('SCHOOLCALC_FRAME id=%s capture=%s pc=%04X pixels=%s', SCENARIO, label, pc.value, table.concat(out)))\n`
+    + `  print(string.format('SCHOOLCALC_CONTRAST_COUNT id=%s capture=%s writes=%d', SCENARIO, label, contrast_writes))\n`
     + `end\n`
     + `local function press(target, next_phase)\n`
     + `  local port=ports[target.port]; active_field=port and port:field(target.mask) or nil\n`
     + `  if not active_field then finish('FAIL', 'missing-key-' .. target.key); return end\n`
-    + `  active_field:set_value(1); deadline=frame+target.hold; phase=next_phase\n`
+    + `  if target.modifier_port then local mport=ports[target.modifier_port]; modifier_field=mport and mport:field(target.modifier_mask) or nil; if not modifier_field then finish('FAIL', 'missing-modifier-' .. target.key); return end; modifier_field:set_value(1); deadline=frame+target.modifier_lead; pending_release_phase=next_phase; phase='modifier-lead' else active_field:set_value(1); deadline=frame+target.hold; phase=next_phase end\n`
     + `end\n`
     + `local function press_next()\n`
     + `  step_index=step_index+1\n`
@@ -295,8 +329,9 @@ export function createTi86MameGraphLinkScenarioScript({
     + `  if frame==40 then local f=ports[':ON'] and ports[':ON']:field(0x1); if f then f:set_value(1) end\n`
     + `  elseif frame==52 then local f=ports[':ON'] and ports[':ON']:field(0x1); if f then f:clear_value() end end\n`
     + `  if phase=='wait-release' and ready() then print('SCHOOLCALC_RELEASE_READY id=' .. SCENARIO); press_launch()\n`
+    + `  elseif phase=='modifier-lead' and frame>=deadline then active_field:set_value(1); local target = (pending_release_phase=='release-launch') and launch[launch_index] or steps[step_index]; deadline=frame+target.hold; phase=pending_release_phase\n`
     + `  elseif (phase=='release-launch' or phase=='release-step') and frame>=deadline then\n`
-    + `    active_field:clear_value(); active_field=nil\n`
+    + `    active_field:clear_value(); active_field=nil; if modifier_field then modifier_field:clear_value(); modifier_field=nil end\n`
     + `    if phase=='release-launch' then local target=launch[launch_index]; deadline=frame+target.settle; phase='settle-launch'\n`
     + `    else local target=steps[step_index]; deadline=frame+target.settle; phase='settle-step' end\n`
     + `  elseif phase=='settle-launch' and frame>=deadline then\n`
@@ -310,7 +345,13 @@ export function createTi86MameGraphLinkScenarioScript({
 export function parseTi86MameScenarioOutput(output, scenario, { requireSchoolCalcBoot = false } = {}) {
   const normalized = normalizeTi86MameScenario(scenario);
   const frames = new Map();
+  const contrastWrites = new Map();
   for (const line of String(output ?? '').split(/\r?\n/)) {
+    const contrast = line.match(/^SCHOOLCALC_CONTRAST_COUNT id=([^ ]+) capture=([^ ]+) writes=(\d+)$/);
+    if (contrast && contrast[1] === normalized.id) {
+      contrastWrites.set(contrast[2], Number.parseInt(contrast[3], 10));
+      continue;
+    }
     const match = line.match(/^SCHOOLCALC_FRAME id=([^ ]+) capture=([^ ]+) pc=([0-9A-F]{4}) pixels=([0-9A-F]+)$/);
     if (!match || match[1] !== normalized.id) continue;
     const pixels = Buffer.from(match[4], 'hex');
@@ -334,6 +375,10 @@ export function parseTi86MameScenarioOutput(output, scenario, { requireSchoolCal
     throw new Error(`MAME scenario '${normalized.id}' never reached the SchoolCalc shell`);
   }
   let prior = boot;
+  // Startup itself initializes the analog port. A contrast assertion must
+  // therefore compare against the boot capture, not zero, or it can mistake
+  // the OS's initial write for the app chord.
+  let priorContrastWrites = contrastWrites.get('boot') ?? 0;
   for (const step of normalized.steps) {
     const current = frames.get(step.capture);
     if (!current) throw new Error(`MAME scenario '${normalized.id}' missed '${step.capture}'`);
@@ -347,6 +392,12 @@ export function parseTi86MameScenarioOutput(output, scenario, { requireSchoolCal
         throw new Error(`MAME scenario '${normalized.id}' '${step.capture}' bounced to '${step.expectDifferentFrom}'`);
       }
     }
+    const currentContrastWrites = contrastWrites.get(step.capture);
+    if (step.expectContrastWrite && (!Number.isInteger(currentContrastWrites)
+      || currentContrastWrites <= priorContrastWrites)) {
+      throw new Error(`MAME scenario '${normalized.id}' '${step.capture}' expected a new LCD contrast-port write`);
+    }
+    if (Number.isInteger(currentContrastWrites)) priorContrastWrites = currentContrastWrites;
     prior = current;
   }
   return Object.freeze({ scenario: normalized, frames });

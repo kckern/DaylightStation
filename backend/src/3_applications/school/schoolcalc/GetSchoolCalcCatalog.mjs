@@ -87,6 +87,8 @@ export class GetSchoolCalcCatalog {
         learnerRosterMaxRecords: limits.learnerRosterMaxRecords ?? null,
         progressProjectionTargetBytes: limits.progressProjectionTargetBytes ?? null,
         progressProjectionMaxBytes: limits.progressProjectionMaxBytes ?? null,
+        continuationCodebookTargetBytes: limits.continuationCodebookTargetBytes ?? null,
+        continuationCodebookMaxBytes: limits.continuationCodebookMaxBytes ?? null,
         acknowledgementMaxBytes: limits.acknowledgementMaxBytes ?? null,
         syncManifestMaxBytes: limits.syncManifestMaxBytes ?? null,
         reservedFreeBytes: limits.reservedFreeBytes ?? 0,

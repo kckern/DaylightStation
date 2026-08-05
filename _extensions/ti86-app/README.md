@@ -96,6 +96,7 @@ deliberately different so a probe cannot be mistaken for the production shell:
 | `SCNATIVE` | Reviewed SCX1 read-only native-plan semantic guard; OS mutation/launch remains locked |
 | `SCPROF` | Reviewed SCX1 learner picker, Guest mode, and recoverable roster installer |
 | `SCTUTOR` | Reviewed SCX1 durable, learner-scoped adaptive tutor and A–E response UI |
+| `DSCODE` | Installed SCCO index mapping six-digit School continuation codes to locally available learning modules |
 | `SCHOOLCALC.86g` | Convenience group containing the shell and eight reviewed runtimes; not used by the verified installer |
 | `SCTUTOR.86g` | Convenience one-program tutor group; not used by the verified installer |
 
@@ -154,10 +155,14 @@ to TI-OS. See
 for the reproducible command and its boundaries: this is not a substitute for
 the physical calculator, USB Graph Link, or ESP relay gates.
 
-`SCGUI` is an older full-frame gallery. Runtime programs use the shared raw
-scan-code boundary in `src/input.asm`: ON is the emergency OS return; EXIT and
-CLEAR are Back/cancel; and `2nd` + EXIT is the only deliberate app quit. The
-Home view does not quit on an ordinary Back key. `SCINFO` is a separate,
+`SCGUI` is an older full-frame gallery. Runtime programs use the shared direct
+matrix boundary in `src/input.asm`: it scans the TI-86's physical key-bit/row
+order into the existing `SC_SCAN_*` values rather than relying on a
+runtime-bank-sensitive TI-OS key translation call. ON is the emergency OS
+return; EXIT and CLEAR are Back/cancel; press/release `2nd`, then hold UP or
+DOWN to adjust LCD contrast without moving focus; and `2nd` + EXIT is the
+only deliberate app quit. The Home view does not quit on an ordinary Back key.
+`SCINFO` is a separate,
 disposable diagnostic probe: it creates/replaces the ordinary TI-86 String
 `DSINFO`, shows the canonical sync screen, and accepts ENTER, EXIT, CLEAR, or
 ON as exits. Its reported
@@ -172,28 +177,25 @@ commits a staged sync transaction, and dispatches fixed runtimes that hydrate
 the selected checksum-valid `SCC1`/`SCP1` variables. It independently validates
 every installed SCX1 Program into a `runtimeModuleMask`, but advertises only
 `shell-core@1`; runtime-backed capabilities remain off until emulator and fleet
-recovery gates pass. The current 8,092-byte build leaves 1,124 bytes under its
-9 KiB product ceiling and 1,308 bytes below video RAM. Learning, QR, and tutor
+recovery gates pass. The current 8,985-byte build leaves 231 bytes under its
+9 KiB product ceiling and 415 bytes below video RAM. Learning, QR, and tutor
 behavior therefore live behind the reviewed
 runtime-module boundary rather than being hidden in the shell allocation.
 
 The standard client reserves 9 KiB for the shell; `SCLEARN` has a 6 KiB
-target/9 KiB ceiling; `SCCAT` and `SCREQ` each have a 6 KiB target/8 KiB
-ceiling; 4 KiB target/6 KiB ceiling for
-`SCQR`; 4 KiB target/8 KiB ceiling for `SCQUEUE`; and 32 conservative overhead
-bytes per program variable. `SCSYNC` and the read-only `SCNATIVE` guard each
-have a 6 KiB target/8 KiB ceiling; `SCPROF` has a 6 KiB target/8 KiB TI-OS
-child-image ceiling; `SCTUTOR` has a 6 KiB
-target/9 KiB ceiling. The ten-program planning
-target is 60,736 bytes and its reserve-safe aggregate ceiling is 71,962 bytes. The
-current release estimates 71,960 installed bytes: 11,224 above the planning
-target and 2 below the aggregate ceiling. With 3.5 KiB for the one-Catalog
-snapshot, 4 KiB for results, 512 bytes for delivery requests, 256 bytes for
-the learner roster, 2 KiB for compact progress, 256 bytes for the durable tutor
-request, 1 KiB for its committed response, a 66-byte private QR-output receipt,
-and a 9,300-byte protected reserve, that leaves 5,122 bytes (about 5.00 KiB) for content at the current measured
-client size. Sync still uses
-reported free RAM rather than assuming this estimate.
+target/9,400-byte physical-window ceiling; `SCCAT` has a 6 KiB target/8,320-byte
+ceiling; `SCQR` has a 4 KiB target/6,272-byte ceiling; `SCREQ`, `SCQUEUE`,
+`SCSYNC`, and `SCNATIVE` have 8 KiB ceilings; `SCPROF` has an 8,320-byte
+TI-OS child-image ceiling; and `SCTUTOR` has a 9 KiB ceiling. The ten-program
+planning target is 60,736 bytes, independent component ceilings total 83,832
+bytes, and the reserve-safe aggregate ceiling is 73,786 bytes. The current
+release estimates 73,556 installed bytes: 12,820 above target and 230 bytes
+below that aggregate ceiling. The installed `DSCODE` continuation index is
+separately charged as content-adjacent storage (512-byte target, 2 KiB hard
+cap); this leaves 4,838 bytes for content after the target durable-state
+buckets, while no extra content is promised beside every declared maximum
+state. Sync always uses reported free RAM rather
+than assuming this estimate.
 
 `SCLEARN` now selects the newest checksum-valid SCL1 slot, derives the exact
 lesson variable from its durable artifact key, revalidates the immutable SCP1
@@ -213,14 +215,15 @@ committed as a typed pending
 draft in alternating `SCL1`; `SCQUEUE` then builds the canonical timestamp-free
 `SCR1`, validates/replays `DSQB`, replaces `DSQ`, and advances its
 device-global sequence before showing success.
-TI-86 codec v5 emits package schema v2 and converts neutral text to complete
-23-column by five-line pages; each is at most 119 bytes. Keeping queue mutation
-in `SCQUEUE` leaves `SCLEARN` at 9,199 bytes, with 17 bytes in its 9 KiB
+TI-86 codec v5 emits package schema v2 and converts reader text to complete
+23-column by five-line pages; each is at most 119 bytes. Assessment prompts use
+their own three-row pages so a normal quiz can reserve a visible gap and four
+choice rows in the same body surface. Keeping queue mutation in `SCQUEUE`
+leaves `SCLEARN` at 9,267 bytes, with 133 bytes below its 9,400-byte physical
 execution ceiling. Its F5 label is `NEXT` while another block follows and `END`
-at the final block, eliminating ambiguity about scroll completion. A normal
-quiz keeps its compact question and labelled `A)`–`E)` choices in one body
-surface, with matching F1–F5 keys in the rail; a very tall prompt alone falls
-back to `MORE`/`ANS` and preserves `LEFT: Q` from that separate choice view.
+at the final block, eliminating ambiguity about scroll completion. A fifth
+short choice may use a two-column row; a tall prompt alone falls back to
+`MORE`/`ANS` and preserves `LEFT: Q` from that separate choice view.
 Capability advertisement stays off until owned-ROM emulator and fleet recovery
 gates pass.
 
@@ -241,7 +244,7 @@ rendering and durable writes have separate reviewed budgets.
 nonce-correlated SCF1 session, shows verified presence/direction/progress and
 unplug safety, serves only the fixed upload variables, accepts only bounded
 staging variables or immutable `DPxxxxxx` names, and returns through the
-shell's existing `DSSYNC` validation/commit boundary. Its 6,480-byte runtime
+shell's existing `DSSYNC` validation/commit boundary. Its 6,570-byte runtime
 is built and contract-tested but remains unadvertised pending owned-ROM
 emulation, protected-interface testing, and fresh-battery fleet acceptance.
 
@@ -252,7 +255,7 @@ allowlisted-program modules to bounded non-executable plans, exact TI reals,
 and reviewed equation tokens. A checksummed `SCN1` codec plus reference
 transaction proves snapshot-before-mutation, continuation-before-launch,
 unsnapshotted-write rejection, and idempotent cleanup across every injected
-power cut. The 6,695-byte Z80 guard independently reopens the selected SCP1,
+power cut. The 6,846-byte Z80 guard independently reopens the selected SCP1,
 semantically validates operations 1–6 down to tokens/reals, and then refuses
 with settings unchanged; its shared variable-write path is compiled out.
 Native-program operation 7 is rejected while the calculator allowlist is
@@ -281,7 +284,7 @@ pending state. The evidence tree and follow-ups remain generic School
 semantics; Guest deliberately has no durable progress projection. When the
 first actionable follow-up is a
 connected remediation, F1 opens the independent `SCTUTOR` runtime. `SCPROF` is
-8,177 bytes, leaving 15 bytes below its 8 KiB TI-OS child-image ceiling.
+8,267 bytes, leaving 53 bytes below its 8,320-byte TI-OS child-image ceiling.
 
 `SCTUTOR` is the reviewed, learner-scoped realtime remediation client. It
 converts the selected opaque follow-up into a fixed `SCTQ` request, retains the
@@ -291,8 +294,8 @@ answer key. F1–F5 submit exact A–E choices; EXIT pauses safely. A processing
 retryable response remains resumable, and copy-on-write `DSTNEW` → `DSTURN`
 promotion converges across every modeled interruption. `MORE` swaps A–E for
 policy-projected WHY/SKIP/KNOW/STOP controls without treating those controls as
-answers. Its 8,008-byte code image leaves 1,208 bytes below its independent 9 KiB
-ceiling and 1,392 bytes below video RAM.
+answers. Its 8,102-byte code image leaves 1,114 bytes below its independent 9 KiB
+ceiling and 1,298 bytes below video RAM.
 
 `SCQR` validates the outer `SCQ1` and newest nested `SCR1`, constructs the exact
 `sch:r1:<BASE32>` payload on the calculator, applies Reed–Solomon error
@@ -301,8 +304,8 @@ correction, and draws a fixed Version 5/M symbol at 37×37 modules within a
 for one-answer, progress, and maximum 48-answer records. F1 `MARK` records a
 calculator-private `SCO1`/`DSQOUT` optical-scan receipt; F5 `LATER` leaves that
 ordinal in the later batch. Neither action alters `DSQ` or claims server upload:
-only an automated relay ACK clears the queue. Its 6,138-byte executable has
-6 bytes left in its 6 KiB product ceiling.
+only an automated relay ACK clears the queue. Its 6,232-byte executable has
+40 bytes left in its 6,272-byte product ceiling.
 
 The source for a macOS Graph Link diagnostic client is
 [`tools/native/ti86-graph-link.c`](./tools/native/ti86-graph-link.c). It can

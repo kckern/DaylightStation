@@ -429,6 +429,24 @@ describe('Ti86SchoolCalcCodec', () => {
     expect(first.byteDigest).toBe('ed289e1d86dc70e9eb6c92e9113564a536c0c45fe069ef6757e386df69333567');
   });
 
+  it('paginates assessment prompts into no more than three compact rows', () => {
+    const codec = new Ti86SchoolCalcCodec();
+    const assessmentBundle = structuredClone(bundle);
+    assessmentBundle.lesson.modules[0].bank.items[0].prompt = [
+      'Read this complete question carefully before choosing the response',
+      'that best explains the durable SchoolCalc layout contract.',
+    ].join(' ');
+    const item = decodeTi86Envelope(codec.compile(assessmentBundle).bytes, 'SCP1')
+      .lesson.modules[0].bank.items[0];
+    expect(item.promptPages.length).toBeGreaterThan(1);
+    for (const page of item.promptPages) {
+      const lines = page.split('\n');
+      expect(lines.length).toBeGreaterThan(0);
+      expect(lines.length).toBeLessThanOrEqual(3);
+      expect(lines.every((line) => line.length <= 23)).toBe(true);
+    }
+  });
+
   it('projects reader content into complete bounded pages without truncation', () => {
     const codec = new Ti86SchoolCalcCodec();
     const prose = 'A durable offline reader keeps every authored word while fitting each page to the calculator viewport. '

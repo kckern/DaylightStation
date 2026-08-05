@@ -91,8 +91,13 @@ export function createTi86MameInputScript({
   key,
   origin = TI86_ASM_EXEC_RAM,
   injectFrame = 120,
-  pressFrame = 138,
-  releaseFrame = 142,
+  // A complete SchoolCalc surface can spend several frames drawing the first
+  // 128×64 view after it is injected. Do not press the acceptance key during
+  // that render: doing so would only prove that the launch-key release fence
+  // discards an early key. The probe has an ample quiet interval before this
+  // point and MAME runs it unthrottled.
+  pressFrame = 300,
+  releaseFrame = 324,
   timeoutFrame = 600,
 } = {}) {
   if (!Buffer.isBuffer(code) || code.length === 0) {
