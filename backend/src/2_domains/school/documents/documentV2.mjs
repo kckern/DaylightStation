@@ -23,6 +23,7 @@
  */
 import { validateDocument, walkBlocks } from './documentValidation.mjs';
 import { validateBlock } from './blocks.mjs';
+import { SHUFFLE_KEY_PATTERN } from './shuffle.mjs';
 
 export const DOCUMENT_V2_SCHEMA = 'school.document/v2';
 export const ARCHETYPES = ['quiz', 'worksheet', 'infopage'];
@@ -80,7 +81,7 @@ const HEADER_PRESETS = {
 };
 
 const isPlainObject = (v) => !!v && typeof v === 'object' && !Array.isArray(v);
-const isNonEmptyString = (v) => typeof v === 'string' && v.trim().length > 0;
+const isShuffleKey = (v) => typeof v === 'string' && SHUFFLE_KEY_PATTERN.test(v);
 
 /**
  * Document-wide shuffle-`key` uniqueness (spec §4.3) + cloze→wordbank ref
@@ -89,28 +90,37 @@ const isNonEmptyString = (v) => typeof v === 'string' && v.trim().length > 0;
  * `(seed, variant, key)` (shuffle.mjs); two blocks sharing a key would
  * shuffle IDENTICALLY, which can only be an authoring accident, so the key
  * has to be unique across the whole tree, not just within its block type.
- * `blocks.mjs` already validates each key's own SHAPE (SHUFFLE_KEY_PATTERN);
- * this only runs on keys that already passed that check, so an invalid key
- * is reported once, not twice.
+ * `blocks.mjs` already validates each key's own SHAPE (`SHUFFLE_KEY_PATTERN`);
+ * this walk gates registration on that SAME shape check (not a bare
+ * non-empty-string check) so a shape-invalid key never enters either map —
+ * otherwise a shape-invalid key repeated twice would earn a redundant
+ * "duplicate key" error on top of its two shape errors, AND a shape-invalid
+ * `wordbank.key` would silently satisfy a `cloze` ref check it has no
+ * business satisfying (the document is still rejected either way via the
+ * shape error, but for the wrong reason, at the wrong path). A key that
+ * already failed its own shape check is reported ONCE, by blocks.mjs, not
+ * twice here.
  *
  * A `cloze` blank's `wordbank` field is a same-document reference (spec
  * §6.3 "cloze blanks may reference wordbank entries") — resolved against the
- * `wordbank` keys ACTUALLY declared here; a reference to a key that isn't
- * one of them can never resolve at render time, so it fails now instead.
+ * `wordbank` keys ACTUALLY declared (and shape-valid) here; a reference to a
+ * key that isn't one of them — including a reference to a wordbank whose own
+ * key was shape-invalid, so it was never registered — can never resolve at
+ * render time, so it fails now instead.
  */
 function validateKeysAndWordbankRefs(blocks, errors) {
   const shuffleKeyOwner = new Map(); // key -> first dotted path that declared it
   const wordbankKeys = new Set();
 
   walkBlocks(blocks, (block) => {
-    if (block.type === 'wordbank' && isNonEmptyString(block.key)) wordbankKeys.add(block.key);
+    if (block.type === 'wordbank' && isShuffleKey(block.key)) wordbankKeys.add(block.key);
   });
 
   walkBlocks(blocks, (block, at) => {
     let key;
     if (block.type === 'wordbank' || block.type === 'matching') key = block.key;
     else if (block.type === 'question' && block.select !== undefined) key = block.key;
-    if (!isNonEmptyString(key)) return;
+    if (!isShuffleKey(key)) return;
     const first = shuffleKeyOwner.get(key);
     if (first !== undefined) errors.push(`${at}: duplicate key "${key}" (already used at ${first})`);
     else shuffleKeyOwner.set(key, at);

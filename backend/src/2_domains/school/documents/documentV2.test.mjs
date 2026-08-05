@@ -319,6 +319,23 @@ describe('validateDocumentV2: document-wide key uniqueness (Task 2, spec §4.3)'
     const { errors } = validateDocumentV2(raw);
     expect(errors.some((e) => e.includes('duplicate key'))).toBe(false);
   });
+
+  // Review finding: gating registration on bare isNonEmptyString (rather than
+  // the real SHUFFLE_KEY_PATTERN shape check) let a NON-EMPTY but
+  // shape-invalid key (e.g. 'Not Valid!' — fails the pattern, passes
+  // isNonEmptyString) enter the uniqueness map, so two wordbanks sharing that
+  // invalid key got a redundant "duplicate key" error stacked on top of their
+  // two shape errors. Registration must be gated on the SAME shape check
+  // blocks.mjs uses, so an invalid key never enters the map at all.
+  it('does not double-report a NON-EMPTY but shape-invalid key duplicated across two wordbanks (only the two shape errors)', () => {
+    const raw = v2doc({
+      blocks: [wordbank({ key: 'Not Valid!' }), wordbank({ key: 'Not Valid!', terms: ['c', 'd'] })],
+    });
+    const { errors } = validateDocumentV2(raw);
+    const shapeErrors = errors.filter((e) => e.includes('wordbank key must be a non-empty string matching'));
+    expect(shapeErrors).toHaveLength(2);
+    expect(errors.some((e) => e.includes('duplicate key'))).toBe(false);
+  });
 });
 
 describe('validateDocumentV2: cloze -> wordbank ref resolution (Task 2, spec §6.3)', () => {
@@ -332,6 +349,23 @@ describe('validateDocumentV2: cloze -> wordbank ref resolution (Task 2, spec §6
     const raw = v2doc({ blocks: [clozeBlock({ blanks: [{ n: 1, wordbank: 'missing' }] })] });
     const { errors } = validateDocumentV2(raw);
     expect(errors).toContain('blocks[0].blanks[0]: wordbank "missing" does not match any wordbank block\'s key');
+  });
+
+  // Review finding: a wordbank whose OWN key is shape-invalid must never
+  // register in wordbankKeys — a cloze referencing that same string is a
+  // dangling ref (no legally-registrable wordbank claims it), not a silent
+  // accept. The document is rejected either way (the wordbank's own shape
+  // error), but the ref-resolution mechanism itself must fire too.
+  it('a cloze referencing a shape-invalid wordbank key gets BOTH the wordbank shape error and a dangling-ref error', () => {
+    const raw = v2doc({
+      blocks: [
+        wordbank({ key: 'Not Valid!' }),
+        clozeBlock({ blanks: [{ n: 1, wordbank: 'Not Valid!' }] }),
+      ],
+    });
+    const { errors } = validateDocumentV2(raw);
+    expect(errors.some((e) => e.includes('wordbank key must be a non-empty string matching'))).toBe(true);
+    expect(errors).toContain('blocks[1].blanks[0]: wordbank "Not Valid!" does not match any wordbank block\'s key');
   });
 });
 
