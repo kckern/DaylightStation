@@ -208,41 +208,57 @@ export function createSchoolRouter({
     if (variety === 'omr') {
       const freshCard = req.query.freshCard === '1' || req.query.freshCard === 'true';
       const card = textQuery(req.query.card);
+      const learnerId = textQuery(req.query.learnerId);
       if (freshCard && card) throw new ValidationError('freshCard and card are mutually exclusive');
+
+      const adopt = (record) => {
+        if (revParam !== null || variant !== null) {
+          throw new ValidationError(
+            'this render reproduces an existing sheet; rev/variant come from its allocation record',
+          );
+        }
+        adoptedRecord = record;
+        rev = record.rev;
+        variant = record.variant;
+        context.cardId = record.cardId ?? context.cardId;
+        context.startRow = record.rowRange.start;
+        if (record.learnerId) context.learnerId = record.learnerId;
+      };
+      // Newest usable record wins, live before satisfied — the same
+      // precedence scan-back resolution uses for row ownership.
+      const newestUsable = (records) => records
+        .filter((record) => record.status === 'live' || record.status === 'satisfied')
+        .sort((a, b) => {
+          const rank = (record) => (record.status === 'live' ? 1 : 0);
+          return (rank(b) - rank(a)) || String(b.renderedAt).localeCompare(String(a.renderedAt));
+        })[0] ?? null;
+
       if (freshCard) {
         context.freshCard = true;
       } else if (card) {
         if (!PRINT_CARD_ID.test(card)) throw new ValidationError('card must be 7 digits');
         context.cardId = card;
         if (req.query.startRow === undefined && printAllocationStore) {
-          // Sheet-identity lookup: prefer the newest live/satisfied record
-          // for THIS document on the card (same precedence scan-back uses).
-          const records = (await printAllocationStore.findByCard(card))
-            .filter((record) => record.documentId === id
-              && (record.status === 'live' || record.status === 'satisfied'))
-            .sort((a, b) => String(b.renderedAt).localeCompare(String(a.renderedAt)));
-          if (records.length > 0) adoptedRecord = records[0];
+          const record = newestUsable((await printAllocationStore.findByCard(card))
+            .filter((entry) => entry.documentId === id));
+          if (record) adopt(record);
         }
-        if (adoptedRecord) {
-          if (revParam !== null || variant !== null) {
-            throw new ValidationError(
-              'card identifies the sheet; rev/variant come from its allocation record',
-            );
-          }
-          rev = adoptedRecord.rev;
-          variant = adoptedRecord.variant;
-          context.startRow = adoptedRecord.rowRange.start;
-          if (adoptedRecord.learnerId) context.learnerId = adoptedRecord.learnerId;
-        } else {
+        if (!adoptedRecord) {
           context.startRow = boundedIntegerQuery(req.query.startRow, 1, 1, 50, 'startRow');
         }
       } else {
-        throw new ValidationError(
-          'omr variety requires freshCard=1 (mint a new card) or card=<7 digits>[&startRow=<1..50>]',
-        );
+        // Automatic sheet identity: a bare omr render reuses this document's
+        // newest usable sheet (per learner when learnerId is given), and only
+        // mints a fresh card when none exists — so refreshing the URL never
+        // burns cards, and the same URL keeps producing the same sheet.
+        const record = printAllocationStore?.findByDocument
+          ? newestUsable((await printAllocationStore.findByDocument(id))
+            .filter((entry) => (learnerId ? entry.learnerId === learnerId : true)))
+          : null;
+        if (record) adopt(record);
+        else context.freshCard = true;
       }
-      const learnerId = textQuery(req.query.learnerId);
-      if (learnerId) context.learnerId = learnerId;
+      if (learnerId && !adoptedRecord) context.learnerId = learnerId;
     } else if (req.query.card !== undefined || req.query.freshCard !== undefined
         || req.query.startRow !== undefined) {
       throw new ValidationError('hand variety takes no card parameters');

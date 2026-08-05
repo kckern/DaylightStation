@@ -55,6 +55,7 @@
  * Only then is the remaining live-record set checked for a row-range
  * collision (spec §5.4's "regardless of learner" rule).
  */
+import fs from 'node:fs';
 import path from 'node:path';
 import { loadYamlFromPath, saveYamlToPathAtomic } from '#system/utils/FileIO.mjs';
 import { DomainInvariantError, EntityNotFoundError } from '#domains/core/errors/index.mjs';
@@ -79,7 +80,11 @@ export class YamlAllocationStore {
     this.#directory = directory;
     this.#rng = rng;
     this.#now = now;
-    this.#io = { load: io.load ?? loadYamlFromPath, save: io.save ?? saveYamlToPathAtomic };
+    this.#io = {
+      load: io.load ?? loadYamlFromPath,
+      save: io.save ?? saveYamlToPathAtomic,
+      list: io.list ?? listAllocationCardIds,
+    };
   }
 
   /**
@@ -173,6 +178,22 @@ export class YamlAllocationStore {
   }
 
   /**
+   * Every record for `documentId` across ALL cards — the sheet-identity lookup
+   * behind "reuse this document's existing sheet" (the print route's automatic
+   * omr mode). A linear scan of the allocations directory: card counts are
+   * household-scale, and a missing directory simply means no cards yet.
+   */
+  async findByDocument(documentId) {
+    const out = [];
+    for (const cardId of this.#io.list(path.join(this.#directory, 'allocations'))) {
+      for (const record of this.#load(cardId)) {
+        if (record.documentId === documentId) out.push(structuredClone(record));
+      }
+    }
+    return out;
+  }
+
+  /**
    * @param {{cardId:string, recordId:string, status:string}} args
    * @returns {Promise<object>} the updated record
    */
@@ -249,6 +270,16 @@ export class YamlAllocationStore {
 
   #save(cardId, records) {
     this.#io.save(this.#path(cardId), records, { noRefs: true });
+  }
+}
+
+/** Card ids present in the allocations dir; a missing dir is simply "no cards yet". */
+function listAllocationCardIds(dir) {
+  try {
+    return fs.readdirSync(dir).filter((name) => name.endsWith('.yml')).map((name) => name.slice(0, -4));
+  } catch (err) {
+    if (err.code === 'ENOENT') return [];
+    throw err;
   }
 }
 
