@@ -170,6 +170,56 @@ describe('resolution outcomes', () => {
     }));
   });
 
+  it("a dead card with answers warns — the child's work must not vanish below warn", async () => {
+    const bus = makeBus();
+    const logger = silentLogger();
+    createSchoolPrintScanConsumer({
+      eventBus: bus,
+      resolveCardScan: {
+        execute: async () => ({
+          results: [], deadCard: true, answeredRowCount: 4, recordStatuses: ['released'],
+        }),
+      },
+      logger,
+    });
+    bus.broadcast('omr', sheetPayload());
+    await flush();
+    expect(logger.warn).toHaveBeenCalledWith('school.print.scan-dead-card', expect.objectContaining({
+      testId: '0123456', answeredRowCount: 4, recordStatuses: ['released'],
+    }));
+  });
+
+  it('a per-record refusal (drift / resolve failure) warns per record and is excluded from scan-resolved', async () => {
+    const bus = makeBus();
+    const logger = silentLogger();
+    createSchoolPrintScanConsumer({
+      eventBus: bus,
+      resolveCardScan: {
+        execute: async () => ({
+          results: [
+            {
+              cardId: '0123456', recordId: 'r1', documentId: 'd1', rev: 'a', variant: 0,
+              error: { code: 'ALLOCATION_ROW_MAPPING_DRIFT' },
+            },
+            {
+              cardId: '0123456', recordId: 'r2', documentId: 'd2', rev: 'a', variant: 0,
+              revisionSuperseded: false, results: [], totalPoints: 1, earnedPoints: 1,
+            },
+          ],
+        }),
+      },
+      logger,
+    });
+    bus.broadcast('omr', sheetPayload());
+    await flush();
+    expect(logger.warn).toHaveBeenCalledWith('school.print.scan-record-refused', expect.objectContaining({
+      recordId: 'r1', code: 'ALLOCATION_ROW_MAPPING_DRIFT',
+    }));
+    const resolvedCalls = logger.info.mock.calls.filter(([event]) => event === 'school.print.scan-resolved');
+    expect(resolvedCalls).toHaveLength(1);
+    expect(resolvedCalls[0][1].recordId).toBe('r2');
+  });
+
   it('a rejected resolveCardScan.execute logs a warning and never throws out of the bus handler', async () => {
     const bus = makeBus();
     const logger = silentLogger();
@@ -189,9 +239,12 @@ describe('resolution outcomes', () => {
 describe('composed end-to-end: a bank-select document through a REAL ResolveCardScan (F2 review fix, High)', () => {
   // `app.mjs` used to construct `ResolveCardScan` with no `banks` reader at
   // all — a legacy/inline-question tracked quiz issued/scanned fine, but a
-  // bank-select document's scan died as BANK_SELECT_BANK_NOT_FOUND, swallowed
-  // into one opaque `school.print.scan-resolve-failed` warn (this describe
-  // block's first test reproduces exactly that). The fix threads a
+  // bank-select document's scan died as BANK_SELECT_BANK_NOT_FOUND (this
+  // describe block's first test reproduces exactly that: since Task 1's
+  // resolver resilience, a single record's resolve failure surfaces as a
+  // per-record `error` in `outcome.results`, not a rejected promise — so it
+  // is this describe block's own `school.print.scan-record-refused` warn,
+  // per record, that carries the diagnosis now). The fix threads a
   // `createYamlBankReader({ dataDir })` into the SAME constructor call — this
   // block's second test proves that, with a bank reader wired (mirroring the
   // fixed composition), the identical document resolves and grades end to
@@ -254,7 +307,7 @@ describe('composed end-to-end: a bank-select document through a REAL ResolveCard
     return { repository, allocationStore };
   }
 
-  it('reproduces the bug: a ResolveCardScan wired with NO banks reader (the pre-fix app.mjs shape) fails the whole scan, swallowed into one resolve-failed warn', async () => {
+  it('reproduces the bug: a ResolveCardScan wired with NO banks reader (the pre-fix app.mjs shape) refuses the record, surfaced as a per-record scan-record-refused warn', async () => {
     const { repository, allocationStore } = await allocateBankSelectQuizOnCalibrationCard();
     const resolveCardScan = new ResolveCardScan({ allocationStore, repository }); // no `banks` — the F2 bug
     const bus = makeBus();
@@ -264,11 +317,12 @@ describe('composed end-to-end: a bank-select document through a REAL ResolveCard
     bus.broadcast('omr', sheetPayload());
     await flush();
 
-    expect(logger.warn).toHaveBeenCalledWith('school.print.scan-resolve-failed', expect.objectContaining({
-      testId: '0123456',
+    expect(logger.warn).toHaveBeenCalledWith('school.print.scan-record-refused', expect.objectContaining({
+      testId: '0123456', code: 'BANK_SELECT_BANK_NOT_FOUND',
     }));
-    const [, payload] = logger.warn.mock.calls.find(([event]) => event === 'school.print.scan-resolve-failed');
-    expect(payload.error).toMatch(/unknown or empty bank/);
+    // Never the whole-scan-level fallback warn — the resolver already turned
+    // this into a per-record diagnosis (Task 1), not a rejection.
+    expect(logger.warn).not.toHaveBeenCalledWith('school.print.scan-resolve-failed', expect.anything());
   });
 
   it('the fix: a ResolveCardScan wired WITH a banks reader (mirrors app.mjs\'s createYamlBankReader({ dataDir })) resolves and grades the same bank-select document end to end through the composed consumer', async () => {
