@@ -13,6 +13,7 @@ import { RenderPrintDocument } from './RenderPrintDocument.mjs';
 import { ResolveCardScan } from './ResolveCardScan.mjs';
 import { YamlAllocationStore } from '#adapters/school/documents/YamlAllocationStore.mjs';
 import { DOCUMENT_SOURCE_SCHEMA } from '#domains/school/documents/documentSource.mjs';
+import { deriveShuffle, applyShuffle } from '#domains/school/documents/shuffle.mjs';
 
 const richText = (md) => ({ type: 'rich_text', md });
 
@@ -462,6 +463,192 @@ describe('execute — revisionSuperseded (spec §4.3)', () => {
     expect(card.revisionSuperseded).toBe(true);
     // Still graded against the PINNED (old) rev's answer key: 'A' -> 'Old' -> correct.
     expect(card.results[0]).toMatchObject({ status: 'correct', given: 'Old' });
+  });
+});
+
+describe('execute — variant pinned against the RECORD, not the published document (F1 review fix, Critical)', () => {
+  it('grades a variant-overridden render (IssueDocument-shaped: {...published, variant: N}) against ITS OWN variant\'s bank-select mapping, never the published document\'s own default variant', async () => {
+    const repository = fakeRepository();
+    const allocationStore = fakeAllocationStore();
+    const bank = {
+      id: 'f1-bank',
+      items: [
+        {
+          id: 'ext-mc1', type: 'multiple_choice', prompt: 'Q1', choices: ['A', 'B'], answer: 'A',
+        },
+        {
+          id: 'ext-mc2', type: 'multiple_choice', prompt: 'Q2', choices: ['A', 'B'], answer: 'A',
+        },
+        {
+          id: 'ext-mc3', type: 'multiple_choice', prompt: 'Q3', choices: ['A', 'B'], answer: 'A',
+        },
+      ],
+    };
+    const banks = { getBank: (id) => (id === bank.id ? bank : null) };
+    const source = sourceDoc('f1-variant-doc', [
+      { type: 'question', bankId: bank.id, select: 3, key: 'sel1' },
+    ], { seed: 555 });
+
+    const publisher = new PublishPrintDocument({ repository });
+    const { id, rev } = await publisher.execute({ source });
+    const published = await repository.getPublished(id, rev);
+    expect(published.variant ?? 0).toBe(0);
+
+    // Independently derived (never read off the code under test): at this
+    // seed/key, variant 0's and variant 1's selection ORDER genuinely
+    // disagree, so grading against the wrong one is observable.
+    const permutation0 = deriveShuffle(555, 0, 'sel1', bank.items.length);
+    const permutation1 = deriveShuffle(555, 1, 'sel1', bank.items.length);
+    const row1ItemIdAtVariant0 = applyShuffle(bank.items, permutation0)[0].id;
+    const row1ItemIdAtVariant1 = applyShuffle(bank.items, permutation1)[0].id;
+    expect(row1ItemIdAtVariant1).not.toBe(row1ItemIdAtVariant0);
+
+    // Mirrors IssueDocument's own variant override EXACTLY (`state.variant
+    // === (document.variant ?? 0) ? document : {...document, variant:
+    // state.variant}`, IssueDocument.mjs) — a card-attached render at a
+    // variant OTHER than whatever the document happens to be published
+    // carrying. The override lives only in this in-memory document, never
+    // persisted back to the published artifact `repository.getPublished`
+    // will keep returning at variant 0.
+    const renderer = new RenderPrintDocument({ repository, allocationStore, banks });
+    const { allocation } = await renderer.execute({
+      document: { ...published, variant: 1 },
+      context: { freshCard: true },
+    });
+    const [record] = await allocationStore.findByCard(allocation.cardId);
+    expect(record.variant).toBe(1);
+
+    const useCase = new ResolveCardScan({ allocationStore, repository, banks });
+    const result = await useCase.execute({ testId: allocation.cardId, answers: { 1: 'A' } });
+
+    expect(result.results).toHaveLength(1);
+    // The graded itemId matches what the sheet ACTUALLY printed at variant 1
+    // — not variant 0's mapping (the bug: re-deriving against
+    // `repository.getPublished`'s own variant-0 artifact instead of
+    // `record.variant`).
+    expect(result.results[0].results[0].itemId).toBe(row1ItemIdAtVariant1);
+    expect(result.results[0].results[0].itemId).not.toBe(row1ItemIdAtVariant0);
+  });
+});
+
+describe('execute — row-mapping integrity vs mutable external banks (F4 review fix)', () => {
+  const seed = 555;
+  const twoItemBank = () => ({
+    id: 'f4-bank',
+    items: [
+      {
+        id: 'ext-a', type: 'multiple_choice', prompt: 'A', choices: ['X', 'Y'], answer: 'X',
+      },
+      {
+        id: 'ext-b', type: 'multiple_choice', prompt: 'B', choices: ['X', 'Y'], answer: 'X',
+      },
+    ],
+  });
+  const thirdItem = {
+    id: 'ext-c', type: 'multiple_choice', prompt: 'C', choices: ['X', 'Y'], answer: 'X',
+  };
+
+  async function allocateAgainstBank(bank) {
+    const repository = fakeRepository();
+    const allocationStore = fakeAllocationStore();
+    const banks = { getBank: (id) => (id === bank.id ? bank : null) };
+    const source = sourceDoc('f4-doc', [
+      { type: 'question', bankId: bank.id, select: 2, key: 'sel1' },
+    ], { seed });
+    const publisher = new PublishPrintDocument({ repository });
+    const { id, rev } = await publisher.execute({ source });
+    const published = await repository.getPublished(id, rev);
+    const renderer = new RenderPrintDocument({ repository, allocationStore, banks });
+    const { allocation } = await renderer.execute({ document: published, context: { freshCard: true } });
+    const [record] = await allocationStore.findByCard(allocation.cardId);
+    // Sanity: the fix (RenderPrintDocument#allocateCard) actually persisted
+    // the printed mapping — every other assertion here is moot without it.
+    expect(record.rowItems).toEqual([
+      { row: 1, itemId: 'ext-a', itemType: 'multiple_choice' },
+      { row: 2, itemId: 'ext-b', itemType: 'multiple_choice' },
+    ]);
+    return {
+      repository, allocationStore, banks, allocation,
+    };
+  }
+
+  it('a bank mutated (an item appended) after the card printed is reported as row-mapping drift, and grades nothing for that record', async () => {
+    const bank = twoItemBank();
+    const {
+      repository, allocationStore, banks, allocation,
+    } = await allocateAgainstBank(bank);
+
+    // The external bank changes shape AFTER the card was printed — exactly
+    // the scenario `rowItems` exists to catch: `resolveBankSelect`'s
+    // selection formula depends on `bank.items.length`, so appending an item
+    // changes WHICH items select=2 resolves, even though nothing about the
+    // printed card itself changed.
+    bank.items.push(thirdItem);
+
+    const useCase = new ResolveCardScan({ allocationStore, repository, banks });
+    const result = await useCase.execute({ testId: allocation.cardId, answers: { 1: 'A', 2: 'A' } });
+
+    expect(result.results).toHaveLength(1);
+    expect(result.results[0]).toMatchObject({
+      cardId: allocation.cardId,
+      recordId: allocation.recordId,
+      documentId: 'f4-doc',
+      error: { code: 'ALLOCATION_ROW_MAPPING_DRIFT' },
+    });
+    // Fail CLOSED, not partial: no `results`/totalPoints/earnedPoints — this
+    // record graded nothing, even for rows the mutation didn't happen to
+    // touch.
+    expect(result.results[0].results).toBeUndefined();
+
+    // Nothing was graded, so the record must not have been marked satisfied.
+    const [record] = await allocationStore.findByCard(allocation.cardId);
+    expect(record.status).toBe('live');
+  });
+
+  it('an UNMODIFIED external bank still grades normally through the recorded rowItems mapping', async () => {
+    const bank = twoItemBank();
+    const {
+      repository, allocationStore, banks, allocation,
+    } = await allocateAgainstBank(bank);
+
+    const useCase = new ResolveCardScan({ allocationStore, repository, banks });
+    const result = await useCase.execute({ testId: allocation.cardId, answers: { 1: 'A', 2: 'A' } });
+
+    expect(result.results).toHaveLength(1);
+    expect(result.results[0].error).toBeUndefined();
+    expect(result.results[0].results).toEqual([
+      {
+        row: 1, itemId: 'ext-a', status: 'correct', given: 'X', points: 1, earned: 1,
+      },
+      {
+        row: 2, itemId: 'ext-b', status: 'correct', given: 'X', points: 1, earned: 1,
+      },
+    ]);
+
+    const [record] = await allocationStore.findByCard(allocation.cardId);
+    expect(record.status).toBe('satisfied');
+  });
+});
+
+describe('execute — nonexistent bubble grading (F6 review fix, Low)', () => {
+  it('a decoded letter past the item\'s own choice count grades incorrect and reports the raw letter as `given`, never `undefined`', async () => {
+    const repository = fakeRepository();
+    const allocationStore = fakeAllocationStore();
+    // Only 2 choices (A/B) — 'D' is a legal bubble POSITION on the physical
+    // row (5 bubbles, spec §5.1) but has no corresponding choice on this item.
+    const source = sourceDoc('f6-doc', [
+      mcQuestion('f6-q1', 1, { choices: ['X', 'Y'], answer: 'X' }),
+    ]);
+    const { allocation } = await publishAndAllocate({
+      repository, allocationStore, source, context: { freshCard: true },
+    });
+
+    const useCase = new ResolveCardScan({ allocationStore, repository });
+    const result = await useCase.execute({ testId: allocation.cardId, answers: { 1: 'D' } });
+
+    expect(result.results[0].results[0]).toEqual({
+      row: 1, itemId: 'f6-q1', status: 'incorrect', given: 'D', points: 1, earned: 0,
+    });
   });
 });
 

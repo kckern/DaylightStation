@@ -137,10 +137,41 @@ function pointsForRow(preparedDocument, blockPath) {
   return typeof preparedDocument.defaultPoints === 'number' ? preparedDocument.defaultPoints : 1;
 }
 
-/** A given letter -> the bank item's actual choice value at that position, or `undefined` for an out-of-range letter. */
+/**
+ * A given letter -> the bank item's actual choice value at that position, or
+ * `undefined` for an out-of-range letter (F6 review fix, Low: a nonexistent
+ * bubble — a decoded letter past the item's own choice count — used to fall
+ * all the way through to `given: undefined`, indistinguishable from a BLANK
+ * row; `gradeRow` below now carries the raw letter forward instead, so an
+ * impossible mark still grades `incorrect`/`ambiguous` with the actual
+ * bubble the student marked visible in `given`, never silently treated as
+ * unanswered).
+ */
 function letterToChoice(item, letter) {
   const index = LETTERS.indexOf(letter);
   return index === -1 ? undefined : item.choices?.[index];
+}
+
+/**
+ * Row->item mapping drift (F4 review fix — "bank-select scan integrity vs
+ * mutable external banks"): true when ANY of `record.rowItems`'s OWNED-row
+ * entries disagrees with what `planRows` just re-derived for that same row —
+ * a different `itemId` (a bank-select block resolved a DIFFERENT item because
+ * the external bank's item count/order changed since the card was printed)
+ * or a different `itemType` (same id, but the bank now describes it
+ * differently — still not what the paper carries). Checked only over
+ * `ownedRows` (never the record's full persisted range) — a row this record
+ * no longer owns (lost to a newer claimant, `resolveRowOwners`) is not graded
+ * by this record either way, so a mutated mapping on THAT row is moot here.
+ */
+function rowMappingDrifted(recordedRowItems, rederivedRows, ownedRows) {
+  const rederivedByRow = new Map(rederivedRows.map((row) => [row.row, row]));
+  return recordedRowItems
+    .filter((entry) => ownedRows.includes(entry.row))
+    .some((entry) => {
+      const rederived = rederivedByRow.get(entry.row);
+      return !rederived || rederived.itemId !== entry.itemId || rederived.itemType !== entry.itemType;
+    });
 }
 
 /**
@@ -189,7 +220,17 @@ function gradeRow(item, given, points) {
   const value = letterToChoice(item, given);
   const { correct } = gradeAnswer(item, value);
   return {
-    status: correct ? 'correct' : 'incorrect', given: value, points, earned: correct ? points : 0,
+    // F6 review fix, Low: a nonexistent bubble (a decoded letter past this
+    // item's own choice count — `letterToChoice` returns `undefined`) still
+    // grades `incorrect` (never guessed correct — `gradeAnswer(item,
+    // undefined)` can only ever equal a real `item.answer` by coincidence,
+    // which it never does), but `given` now carries the RAW LETTER the
+    // student actually marked instead of silently reporting `undefined`,
+    // which was indistinguishable from a blank/unanswered row.
+    status: correct ? 'correct' : 'incorrect',
+    given: value !== undefined ? value : given,
+    points,
+    earned: correct ? points : 0,
   };
 }
 
@@ -219,11 +260,19 @@ export class ResolveCardScan {
    * @param {{testId: string|null, answers?: Record<number, string|string[]>}} args
    * @returns {Promise<{error: {code: 'CARD_ID_UNREADABLE'}}
    *   |{results: object[], unallocatedRows?: number[]}>}
-   *   Each `results[]` entry: `{cardId, recordId, documentId, rev, variant,
-   *   learnerId?, revisionSuperseded, results: [{row, itemId, status, given,
-   *   points, earned}], totalPoints, earnedPoints}`. `unallocatedRows`
-   *   (answered rows that matched no live/satisfied allocation on this card)
-   *   is present only when non-empty — never guessed at (spec §5.4).
+   *   Each `results[]` entry is EITHER a graded result —
+   *   `{cardId, recordId, documentId, rev, variant, learnerId?,
+   *   revisionSuperseded, results: [{row, itemId, status, given, points,
+   *   earned}], totalPoints, earnedPoints}` — OR, when the record's own
+   *   persisted `rowItems` no longer matches what re-derivation just produced
+   *   (F4, an external bank mutated after the card printed), a per-record
+   *   error entry instead: `{cardId, recordId, documentId, rev, variant,
+   *   learnerId?, error: {code: 'ALLOCATION_ROW_MAPPING_DRIFT'}}` — no
+   *   `results`/`totalPoints`/`earnedPoints`, and nothing in it is graded;
+   *   every OTHER record on the same scan still resolves normally.
+   *   `unallocatedRows` (answered rows that matched no live/satisfied
+   *   allocation on this card) is present only when non-empty — never
+   *   guessed at (spec §5.4).
    */
   async execute({ testId, answers = {} } = {}) {
     // testId null or containing '?' (any digit unreadable) — never guess
@@ -256,6 +305,12 @@ export class ResolveCardScan {
       // eslint-disable-next-line no-await-in-loop
       const cardResult = await this.#resolveRecord(record, ownedRows, answers);
       results.push(cardResult);
+
+      // A drift-error entry (F4) carries no `results` at all — nothing was
+      // graded, so there is nothing to mark satisfied either; the record
+      // stays exactly as it was (still `live`, still scannable again once the
+      // drift is resolved, e.g. the bank is restored or a fresh card issued).
+      if (cardResult.error) continue;
 
       // Marked satisfied only when EVERY row this record OWNS was answered
       // this scan (spec §5.4: "partial coverage stays live") — and only from
@@ -295,7 +350,27 @@ export class ResolveCardScan {
       ? ((await this.#repository.getDerivedBank(record.documentId, record.rev)) ?? null)
       : null;
 
-    const { document: prepared, extraItems } = prepareV2Document(pinnedDocument, { banks: this.#banks });
+    // PIN THE RECORD'S OWN RENDER CONTEXT (F1 review fix, Critical): the
+    // published artifact `getPublished` returns carries whatever variant it
+    // was PUBLISHED with — not necessarily the variant the render this record
+    // came from actually used. `IssueDocument#execute`/`#issuePrintDocument`
+    // both override `variant` in-memory per render (`state.variant === (doc.variant
+    // ?? 0) ? doc : {...doc, variant: state.variant}`, never persisted back to
+    // the published artifact) so a retry sheet can carry a DIFFERENT shuffle
+    // than whatever the document happens to be published with. The allocation
+    // record is the one durable place that override survives (`record.variant`,
+    // written by `RenderPrintDocument#allocateCard` from the SAME overridden
+    // document `IssueDocument` handed it) — re-deriving against the published
+    // artifact's own variant instead would grade a variant-1 sheet against
+    // variant-0's bank-select/shuffle mapping. `seed` is never overridden
+    // anywhere in this codebase (only `variant` is), so `pinnedDocument.seed`
+    // already matches `record.seed` by construction — pinned here too anyway,
+    // defensively, since a mismatch would silently re-derive the wrong
+    // shuffle exactly like a variant mismatch would.
+    const { document: prepared, extraItems } = prepareV2Document(
+      { ...pinnedDocument, variant: record.variant, seed: record.seed },
+      { banks: this.#banks },
+    );
     const bank = mergeBank(baseBank, extraItems, prepared.id);
     const bankItemsById = new Map((bank?.items ?? []).map((item) => [item.id, item]));
 
@@ -308,18 +383,56 @@ export class ResolveCardScan {
       );
     }
 
+    // FAIL CLOSED ON ROW-MAPPING DRIFT (F4 review fix — "bank-select scan
+    // integrity vs mutable external banks"): a record allocated after this
+    // fix shipped carries `rowItems`, the mapping ACTUALLY printed. If the
+    // external bank has since gained/lost/reordered items, re-deriving via
+    // `planRows` above can silently resolve a DIFFERENT item than what the
+    // physical card carries for a bank-select block (its selection formula
+    // depends on `bank.items.length` — see `resolveBankSelect`,
+    // `RenderPrintDocument.mjs`). Rather than grade against a mapping the
+    // paper doesn't actually have, this record is refused outright — no
+    // partial credit for the rows that DO still match, because a bank
+    // mutation is a document-wide event, not a per-row one, and partial
+    // trust here is exactly the drift risk this whole check exists to close.
+    // A record with no `rowItems` (allocated before this field existed)
+    // keeps the prior trust-the-re-derivation behavior unchanged.
+    if (Array.isArray(record.rowItems) && rowMappingDrifted(record.rowItems, plan.rows, ownedRows)) {
+      return {
+        cardId: record.cardId,
+        recordId: record.recordId,
+        documentId: record.documentId,
+        rev: record.rev,
+        variant: record.variant,
+        ...(record.learnerId != null ? { learnerId: record.learnerId } : {}),
+        error: { code: 'ALLOCATION_ROW_MAPPING_DRIFT' },
+      };
+    }
+
+    // The RECORDED mapping, when present, is AUTHORITATIVE for row->item
+    // resolution (F4) — sourced from `record.rowItems` rather than the fresh
+    // `plan.rows` re-derivation once the drift check above has already
+    // confirmed the two agree row-for-row; `blockPath` (for `pointsForRow`)
+    // still comes from `plan.rows`, since it is pure document-structure
+    // (the select block's own slot position), never bank-content-dependent,
+    // so it cannot itself drift the way an item selection can.
+    const recordedItemIdByRow = Array.isArray(record.rowItems)
+      ? new Map(record.rowItems.map((entry) => [entry.row, entry.itemId]))
+      : null;
+
     const rowResults = plan.rows
       .filter((planned) => ownedRows.includes(planned.row))
       .map((planned) => {
-        const item = bankItemsById.get(planned.itemId);
+        const itemId = recordedItemIdByRow?.get(planned.row) ?? planned.itemId;
+        const item = bankItemsById.get(itemId);
         if (!item) {
-          throw new EntityNotFoundError('BankItem', planned.itemId, {
+          throw new EntityNotFoundError('BankItem', itemId, {
             details: { recordId: record.recordId, row: planned.row },
           });
         }
         const points = pointsForRow(prepared, planned.blockPath);
         const graded = gradeRow(item, answers[planned.row], points);
-        return { row: planned.row, itemId: planned.itemId, ...graded };
+        return { row: planned.row, itemId, ...graded };
       });
 
     const totalPoints = rowResults.reduce((sum, row) => sum + row.points, 0);
