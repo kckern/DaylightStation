@@ -43,6 +43,9 @@ import { YamlTokenRegistry } from '#adapters/persistence/yaml/YamlTokenRegistry.
 import { YamlAssignmentStore } from '#adapters/persistence/yaml/YamlAssignmentStore.mjs';
 import { YamlFormMapStore } from '#adapters/persistence/yaml/YamlFormMapStore.mjs';
 import { YamlReviewQueue } from '#adapters/persistence/yaml/YamlReviewQueue.mjs';
+import { YamlPrintDocumentRepository } from '#adapters/school/documents/YamlPrintDocumentRepository.mjs';
+import { YamlAllocationStore } from '#adapters/school/documents/YamlAllocationStore.mjs';
+import { RenderPrintDocument, createYamlBankReader } from '#apps/school/documents/RenderPrintDocument.mjs';
 import { CurriculumAccess } from '#apps/school/CurriculumAccess.mjs';
 import { GrownUpGate } from '#apps/school/GrownUpGate.mjs';
 import { ReceiptPrinting } from '#apps/school/ReceiptPrinting.mjs';
@@ -448,9 +451,27 @@ export async function createSchoolLifecycle({
   } catch (err) {
     logger.warn?.('school.lifecycle.no-preview-renderer', { error: err.message });
   }
+  // --- print documents (Task 7, spec §9): tracked quizzes through IssueDocument ---
+  // Rooted at the SAME content root `school-docs.cli.mjs` defaults to
+  // (`<dataDir>/content/school/print-documents`) — a unit authored/published
+  // via the CLI is exactly what a child's scan resolves against here. Cheap
+  // to construct (no I/O at construction time — both stores read/write
+  // lazily), and only ever exercised when a unit's `document` actually names
+  // a `print/<id>@<rev>` reference (`IssueDocument`'s own prefix branch), so
+  // wiring them unconditionally costs a legacy-only deployment nothing.
+  const printDocumentsRoot = path.join(dataDir, 'content/school/print-documents');
+  const printDocuments = new YamlPrintDocumentRepository({ directory: printDocumentsRoot });
+  const allocationStore = new YamlAllocationStore({ directory: printDocumentsRoot });
+  const renderPrintDocument = new RenderPrintDocument({
+    repository: printDocuments,
+    banks: createYamlBankReader({ dataDir }),
+    allocationStore,
+  });
+
   const issueDocument = new IssueDocument({
     curriculum, sessions: stores.sessions, tokens: stores.tokens,
     renderer: documentRenderer, printer: laserPrinter, formMaps: stores.formMaps,
+    printDocuments, renderPrintDocument, allocationStore,
     bankReader, clock, rng: draw, logger,
   });
   const dispatchMedia = playback
@@ -596,7 +617,18 @@ export async function createSchoolLifecycle({
     useCases,
     // `curriculum` is the read model every use case above shares — the same
     // cache, so a caller reading a unit sees exactly what the console saw.
-    stores: { ...stores, curriculum },
+    // `printDocuments`/`allocationStore` are the SAME instances `issueDocument`
+    // writes through (Task 7, spec §9) — exposed so app.mjs's scan-consumption
+    // wiring (`ResolveCardScan`) reads/writes the identical allocation records
+    // rather than a second store pointed at a directory that could drift.
+    stores: {
+      ...stores, curriculum, printDocuments, allocationStore,
+    },
+    // The `RenderPrintDocument` instance the print-document pipeline shares
+    // between `issueDocument`'s tracked-quiz path and any other caller (proof
+    // renders from a future admin surface) — exposed for the same reuse
+    // reason as `stores.printDocuments`/`stores.allocationStore` above.
+    renderPrintDocument,
     devices,
     // The two renderers this console built, exposed for inspection. Neither is
     // reachable any other way, and a caller that wants to know whether a

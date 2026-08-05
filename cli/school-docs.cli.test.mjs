@@ -529,4 +529,171 @@ describe('school-docs CLI', () => {
       expect(report.errors[0]).toMatch(/--teacher/);
     }));
   });
+
+  describe('render --card/--fresh-card/--start-row (Task 7, spec §5.3/§5.4)', () => {
+    it.each([
+      [['render', 'quiz.yml', '--out', 'out.pdf', '--card'], /--card/],
+      [['render', 'quiz.yml', '--out', 'out.pdf', '--fresh-card', 'bogus'], /--fresh-card/],
+      [['render', 'quiz.yml', '--out', 'out.pdf', '--card', '1234567', '--fresh-card'], /mutually exclusive/],
+      [['render', 'quiz.yml', '--out', 'out.pdf', '--start-row', '5'], /--start-row/],
+      [['render', 'quiz.yml', '--out', 'out.pdf', '--fresh-card', '--start-row', 'nope'], /--start-row/],
+      [['render', 'quiz.yml', '--out', 'out.pdf', '--fresh-card', '--start-row', '0'], /--start-row/],
+    ])('rejects %j as a usage error (exit 2)', async (args, pattern) => withTmpDir(async (root) => {
+      const contentRoot = path.join(root, 'content');
+      await mkdir(contentRoot, { recursive: true });
+      await writeFile(path.join(contentRoot, 'quiz.yml'), dump(sourceQuizDoc()));
+      const { exitCode, report } = await runSchoolDocs([...args, '--content-root', contentRoot]);
+      expect(exitCode).toBe(2);
+      expect(report.mode).toBe('usage');
+      expect(report.errors[0]).toMatch(pattern);
+    }));
+
+    it('--fresh-card mints a card allocation, writes it under <content-root>/allocations/, and reports it', async () => withTmpDir(async (root) => {
+      const contentRoot = path.join(root, 'content');
+      await mkdir(contentRoot, { recursive: true });
+      await writeFile(path.join(contentRoot, 'quiz.yml'), dump(sourceQuizDoc()));
+      const published = await runSchoolDocs(['publish', 'quiz.yml', '--content-root', contentRoot]);
+      expect(published.exitCode).toBe(0);
+      const publishedFile = path.join(contentRoot, 'published', `teacher-cli-fixture@${published.report.rev}.yml`);
+
+      const { exitCode, report } = await runSchoolDocs([
+        'render', publishedFile, '--out', path.join(root, 'card.pdf'), '--content-root', contentRoot, '--fresh-card',
+      ]);
+      expect(exitCode).toBe(0);
+      expect(report.ok).toBe(true);
+      expect(report.allocation).toMatchObject({
+        status: 'live',
+        rowRange: { start: 1, end: 1 },
+      });
+      expect(report.allocation.cardId).toMatch(/^\d{7}$/);
+      expect(report.allocation.recordId).toMatch(new RegExp(`^teacher-cli-fixture@${published.report.rev}:v0:1-1$`));
+
+      const allocationFile = path.join(contentRoot, 'allocations', `${report.allocation.cardId}.yml`);
+      const raw = await readFile(allocationFile, 'utf8');
+      expect(raw).toContain('teacher-cli-fixture');
+      expect(raw).toContain('live');
+    }));
+
+    it('prints {pages, density, allocation} JSON via the CLI text formatter for a card-attached render', async () => withTmpDir(async (root) => {
+      const contentRoot = path.join(root, 'content');
+      await mkdir(contentRoot, { recursive: true });
+      await writeFile(path.join(contentRoot, 'quiz.yml'), dump(sourceQuizDoc()));
+      const published = await runSchoolDocs(['publish', 'quiz.yml', '--content-root', contentRoot]);
+      const publishedFile = path.join(contentRoot, 'published', `teacher-cli-fixture@${published.report.rev}.yml`);
+
+      const io = { stdout: { write: vi.fn() }, stderr: { write: vi.fn() } };
+      const code = await main([
+        'render', publishedFile, '--out', path.join(root, 'out.pdf'), '--content-root', contentRoot, '--fresh-card',
+      ], io);
+      expect(code).toBe(0);
+      const printed = io.stdout.write.mock.calls.map((call) => call[0]).join('');
+      expect(printed).toContain('"allocation"');
+      expect(printed).toContain('"status":"live"');
+    }));
+
+    it('a plain render (no card flags) never touches the allocations directory and reports no allocation', async () => withTmpDir(async (root) => {
+      const contentRoot = path.join(root, 'content');
+      await mkdir(contentRoot, { recursive: true });
+      await writeFile(path.join(contentRoot, 'quiz.yml'), dump(sourceQuizDoc()));
+      const published = await runSchoolDocs(['publish', 'quiz.yml', '--content-root', contentRoot]);
+      const publishedFile = path.join(contentRoot, 'published', `teacher-cli-fixture@${published.report.rev}.yml`);
+
+      const { exitCode, report } = await runSchoolDocs([
+        'render', publishedFile, '--out', path.join(root, 'out.pdf'), '--content-root', contentRoot,
+      ]);
+      expect(exitCode).toBe(0);
+      expect(report.allocation).toBeNull();
+      await expect(readFile(path.join(contentRoot, 'allocations'), 'utf8')).rejects.toThrow();
+    }));
+
+    it('--card <existing> continues on the SAME physical card at a new --start-row, superseding the prior record', async () => withTmpDir(async (root) => {
+      const contentRoot = path.join(root, 'content');
+      await mkdir(contentRoot, { recursive: true });
+      await writeFile(path.join(contentRoot, 'quiz.yml'), dump(sourceQuizDoc()));
+      const published = await runSchoolDocs(['publish', 'quiz.yml', '--content-root', contentRoot]);
+      const publishedFile = path.join(contentRoot, 'published', `teacher-cli-fixture@${published.report.rev}.yml`);
+
+      const first = await runSchoolDocs([
+        'render', publishedFile, '--out', path.join(root, 'a.pdf'), '--content-root', contentRoot, '--fresh-card',
+      ]);
+      const cardId = first.report.allocation.cardId;
+
+      const second = await runSchoolDocs([
+        'render', publishedFile, '--out', path.join(root, 'b.pdf'), '--content-root', contentRoot,
+        '--card', cardId, '--start-row', '2',
+      ]);
+      expect(second.exitCode).toBe(0);
+      expect(second.report.allocation).toMatchObject({
+        cardId, status: 'live', rowRange: { start: 2, end: 2 },
+      });
+      expect(second.report.allocation.recordId).not.toBe(first.report.allocation.recordId);
+
+      const raw = await readFile(path.join(contentRoot, 'allocations', `${cardId}.yml`), 'utf8');
+      expect(raw).toContain('superseded');
+    }));
+  });
+
+  describe('release-card (Task 7, spec §5.4)', () => {
+    it('requires exactly one <cardId> argument (usage error)', async () => {
+      const { exitCode, report } = await runSchoolDocs(['release-card']);
+      expect(exitCode).toBe(2);
+      expect(report.mode).toBe('usage');
+    });
+
+    it('rejects a malformed --rows value as a usage error', async () => {
+      const { exitCode, report } = await runSchoolDocs(['release-card', '1234567', '--rows', 'nope']);
+      expect(exitCode).toBe(2);
+      expect(report.mode).toBe('usage');
+      expect(report.errors[0]).toMatch(/--rows/);
+    });
+
+    it('releases every live record on a card (no --rows) and reports what it released', async () => withTmpDir(async (root) => {
+      const contentRoot = path.join(root, 'content');
+      await mkdir(contentRoot, { recursive: true });
+      await writeFile(path.join(contentRoot, 'quiz.yml'), dump(sourceQuizDoc()));
+      const published = await runSchoolDocs(['publish', 'quiz.yml', '--content-root', contentRoot]);
+      const publishedFile = path.join(contentRoot, 'published', `teacher-cli-fixture@${published.report.rev}.yml`);
+      const rendered = await runSchoolDocs([
+        'render', publishedFile, '--out', path.join(root, 'a.pdf'), '--content-root', contentRoot, '--fresh-card',
+      ]);
+      const cardId = rendered.report.allocation.cardId;
+
+      const { exitCode, report } = await runSchoolDocs(['release-card', cardId, '--content-root', contentRoot]);
+      expect(exitCode).toBe(0);
+      expect(report.ok).toBe(true);
+      expect(report.released).toHaveLength(1);
+      expect(report.released[0]).toMatchObject({ cardId, status: 'released' });
+
+      const raw = await readFile(path.join(contentRoot, 'allocations', `${cardId}.yml`), 'utf8');
+      expect(raw).toContain('released');
+    }));
+
+    it('releasing an already-released (or never-allocated) card is a no-op success, not an error', async () => withTmpDir(async (root) => {
+      const contentRoot = path.join(root, 'content');
+      await mkdir(contentRoot, { recursive: true });
+      const { exitCode, report } = await runSchoolDocs(['release-card', '1234567', '--content-root', contentRoot]);
+      expect(exitCode).toBe(0);
+      expect(report.released).toEqual([]);
+    }));
+
+    it('exits 1 (not a usage error) for a malformed cardId — the store\'s own validation', async () => withTmpDir(async (root) => {
+      const contentRoot = path.join(root, 'content');
+      await mkdir(contentRoot, { recursive: true });
+      const { exitCode, report } = await runSchoolDocs(['release-card', 'not-a-card', '--content-root', contentRoot]);
+      expect(exitCode).toBe(1);
+      expect(report.ok).toBe(false);
+      expect(report.errors[0]).toMatch(/7-digit/);
+    }));
+
+    it('prints {cardId, rows, released} JSON via the CLI text formatter', async () => withTmpDir(async (root) => {
+      const contentRoot = path.join(root, 'content');
+      await mkdir(contentRoot, { recursive: true });
+      const io = { stdout: { write: vi.fn() }, stderr: { write: vi.fn() } };
+      const code = await main(['release-card', '1234567', '--content-root', contentRoot], io);
+      expect(code).toBe(0);
+      const printed = io.stdout.write.mock.calls.map((call) => call[0]).join('');
+      expect(printed).toContain('"cardId":"1234567"');
+      expect(printed).toContain('"released":[]');
+    }));
+  });
 });
