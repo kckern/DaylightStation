@@ -265,7 +265,13 @@ export function createSchoolRouter({
             .filter((entry) => (learnerId ? entry.learnerId === learnerId : true)))
           : null;
         if (record) adopt(record);
-        else context.freshCard = true;
+        // A teacher key with no existing sheet is a READ — minting a live
+        // allocation as a side effect would quietly become the class's sheet
+        // identity (the next student print adopts it). Render key-only; the
+        // "rendered without card allocation" warning stays on the response.
+        // An explicit freshCard=1&teacher=1 (deliberately minting the sheet
+        // and key in one go) still allocates via the branch above.
+        else if (!context.teacher) context.freshCard = true;
       }
       if (learnerId && !adoptedRecord) context.learnerId = learnerId;
     } else if (req.query.card !== undefined || req.query.freshCard !== undefined

@@ -86,6 +86,19 @@ describe('GET /api/v1/school/print/:id', () => {
     expect(both.body.error).toMatch(/mutually exclusive/);
   });
 
+  it('a teacher key with no existing sheet renders WITHOUT minting an allocation', async () => {
+    const render = renderFake({ warnings: ["quiz 'q' rendered without card allocation"] });
+    const allocations = { findByCard: vi.fn(), findByDocument: vi.fn().mockResolvedValue([]) };
+    const res = await request(appWith({ render, allocations }))
+      .get('/api/v1/school/print/pokemon-quiz-1?variety=omr&teacher=1');
+    expect(res.status).toBe(200);
+    // No freshCard, no cardId — the render is key-only, never an allocation.
+    expect(render.calls[0].context).toEqual({ teacher: true });
+    // The warning is NOT filtered for omr — the teacher should see this key
+    // is unattached to any card.
+    expect(res.headers['x-school-print-warnings']).toMatch(/without card allocation/);
+  });
+
   it('bare omr with no existing sheet mints a fresh card automatically', async () => {
     const render = renderFake({ allocation: { cardId: '1111111', rowRange: { start: 1, end: 6 }, recordId: 'r', status: 'live' } });
     const allocations = { findByCard: vi.fn(), findByDocument: vi.fn().mockResolvedValue([]) };
