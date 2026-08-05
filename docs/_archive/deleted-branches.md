@@ -197,3 +197,4 @@ To restore: `git checkout -b branch-name <commit-hash>`
 | 2026-08-04 | docs/learning-surfaces-spec | 0206c68be | Learning Surfaces v1: certification spec+plan+implementation (31 commits) |
 | 2026-08-04 | feat/print-design-system | bbd46e04e | Print design system: spec + Phase A (theme, envelope v2, blocks, fit, furniture, CLI) |
 | 2026-08-04 | feat/print-design-phase-b | d3cbdff84 | Print design system Phase B: source/publish, derived banks, assessment blocks, teacher key |
+| 2026-08-05 | feat/print-design-phase-c | cded0dbfc | Print design system Phase C: card allocation, scan-back grading, IssueDocument integration |
