@@ -29,6 +29,7 @@ import { validateAnyDocument, DOCUMENT_V2_SCHEMA } from '#domains/school/documen
 import { DOCUMENT_SOURCE_SCHEMA, publishDocument } from '#domains/school/documents/documentSource.mjs';
 import { deriveShuffle, applyShuffle } from '#domains/school/documents/shuffle.mjs';
 import { resolveFitPlan } from '#domains/school/documents/fit.mjs';
+import { planRows } from '#domains/school/documents/allocation.mjs';
 import { createWorkbookTheme } from '#rendering/school/documents/workbookTheme.mjs';
 import { createDocumentPdfRenderer } from '#rendering/school/documents/DocumentPdfRenderer.mjs';
 import { createMeasurementDocument, measureDocumentFragments } from '#rendering/school/documents/measure.mjs';
@@ -420,7 +421,7 @@ function buildTeacherKeyBlocks(document, bank, letters) {
 
 export class RenderPrintDocument {
   #repository; #rendererFactory; #createMeasurementDocument; #measureDocumentFragments;
-  #placeFragments; #contentHeightPt; #texToSvg; #resolveAsset; #legacyRenderer; #banks;
+  #placeFragments; #contentHeightPt; #texToSvg; #resolveAsset; #legacyRenderer; #banks; #allocationStore;
 
   /**
    * @param {Object} [deps]
@@ -440,6 +441,11 @@ export class RenderPrintDocument {
    * @param {Function} [deps.texToSvg] - TeX → SVG; defaults to the real MathJax renderer
    * @param {Function|null} [deps.resolveAsset] - (ref) => {svg, widthPt, heightPt}; default
    *   throws on any asset reference, matching `createDocumentPdfRenderer`'s own default
+   * @param {{allocate: Function}|null} [deps.allocationStore] - OMR card allocation
+   *   store (spec §5.3/§5.4, Task 5: `YamlAllocationStore`-shaped — `allocate({cardId?,
+   *   request})`). Required only for a card-attached render (`context.cardId`/`freshCard`
+   *   set) — absent it, that render mode fails with a structured `ALLOCATION_STORE_REQUIRED`
+   *   error rather than silently skipping allocation.
    */
   constructor({
     repository = null,
@@ -449,6 +455,7 @@ export class RenderPrintDocument {
     layout = { placeFragments, contentHeightPt },
     texToSvg = mathJaxTexToSvg,
     resolveAsset = null,
+    allocationStore = null,
   } = {}) {
     this.#repository = repository;
     this.#banks = banks ?? defaultBankReader();
@@ -459,6 +466,7 @@ export class RenderPrintDocument {
     this.#contentHeightPt = layout.contentHeightPt;
     this.#texToSvg = texToSvg;
     this.#resolveAsset = resolveAsset;
+    this.#allocationStore = allocationStore;
     // The legacy (v1) render target: default theme, no furniture, no
     // growLastPage — literally what `createDocumentPdfRenderer(...)` already
     // meant before this use case existed.
@@ -469,16 +477,28 @@ export class RenderPrintDocument {
    * @param {Object} args
    * @param {Object} [args.document] - a raw (unvalidated) document, v1 or v2 envelope
    * @param {string} [args.id] - looked up via `repository` when `document` is not given
-   * @param {{learnerName?: string, date?: string, gutter?: boolean|number, teacher?: boolean}} [args.context] -
+   * @param {{learnerName?: string, date?: string, gutter?: boolean|number, teacher?: boolean,
+   *   cardId?: string, startRow?: number, freshCard?: boolean, learnerId?: string}} [args.context] -
    *   `learnerName`/`date` prefill the header's Name/Date lines (blank ruled lines
    *   when absent); `gutter` overrides the default 3-hole-punch reservation
    *   (v2 only — must be >= 0). `teacher` (v2 only, spec §4.1/§12.1) is a RENDER
    *   MODE, orthogonal to `seed`/`variant`: it prints the identical student
    *   pages this same call would have produced without it, then appends a
    *   dense answer-key section built from the resolved bank. Ignored on the
-   *   v1 (legacy) path — v1 has no teacher-key concept.
-   * @returns {Promise<{bytes: Buffer, pageCount: number, density: 'normal'|'compact'|null, warnings: string[]}>}
+   *   v1 (legacy) path — v1 has no teacher-key concept. `cardId`/`startRow`/
+   *   `freshCard` (v2 only, spec §5.3/§5.4, Task 5) attach the render to an
+   *   OMR card: either supply an existing `cardId` (reprint/continuation) or
+   *   `freshCard: true` (the store mints a random one); `startRow` (default 1)
+   *   is where row planning begins. Attaching a card requires `deps.allocationStore`
+   *   — see the constructor doc. `learnerId` (distinct from the display-only
+   *   `learnerName`) threads into the allocation record for supersede/lookup.
+   *   `teacher` mode renders its key numbers from the SAME allocation as the
+   *   student sheet when both are set on one call.
+   * @returns {Promise<{bytes: Buffer, pageCount: number, density: 'normal'|'compact'|null,
+   *   warnings: string[], allocation: {cardId: string, rowRange: {start: number, end: number},
+   *   recordId: string, status: string}|null}>}
    *   `density` is null for a v1 (legacy-path) document, which has no density concept.
+   *   `allocation` is null for every render that did not attach to a card.
    */
   async execute({ document: rawDocument, id, context = {} } = {}) {
     const raw = rawDocument !== undefined ? rawDocument : (id !== undefined ? await this.#loadById(id) : undefined);
@@ -552,7 +572,7 @@ export class RenderPrintDocument {
   async #renderLegacy(document, context) {
     const result = await this.#legacyRenderer.render(document, { studentName: context.learnerName ?? null });
     return {
-      bytes: result.pdf, pageCount: result.pageCount, density: null, warnings: [],
+      bytes: result.pdf, pageCount: result.pageCount, density: null, warnings: [], allocation: null,
     };
   }
 
@@ -679,11 +699,37 @@ export class RenderPrintDocument {
 
   /** v2: fit loop, then one furniture-aware render at the chosen density. */
   async #renderV2(rawDocument, context, { bank: baseBank = null } = {}) {
-    const { document, extraItems, warnings: prepareWarnings } = this.#prepareV2Document(rawDocument);
-    const totalPoints = sumScoredPoints(document.blocks, document.defaultPoints);
-    const bank = mergeBank(baseBank, extraItems, document.id);
+    const { document: prepared, extraItems, warnings: prepareWarnings } = this.#prepareV2Document(rawDocument);
+    const bank = mergeBank(baseBank, extraItems, prepared.id);
 
+    // Validated FIRST, before any allocation write: a bad `context.gutter`
+    // must fail before a card-attached render's store write, not after —
+    // there is no rollback here, so a rejected render must never have
+    // side-effected an allocation record.
     const gutter = this.#resolveGutter(context);
+
+    // Card allocation (spec §5.3/§5.4, Task 5): a card-attached render plans
+    // rows against the FIRST-PASS prepared document (numbers 1..N — `planRows`
+    // reads `itemId`/`points`/`omr`, never `.number`, so first-pass numbering
+    // is irrelevant to row planning), writes/reuses the allocation record via
+    // the injected store, then renumbers the document from the RECORD's own
+    // startRow (`#renumberQuestions`) — "the record is the numbering truth,"
+    // never the render's own request. A quiz rendered with NO card context is
+    // still a legal (proof/preview) render, but warns — a tracked quiz is
+    // expected to carry allocation (Task 7 wires that expectation in).
+    const warnings = [...prepareWarnings];
+    const cardContext = this.#resolveCardContext(context);
+    let document = prepared;
+    let allocationRecord = null;
+    if (cardContext) {
+      allocationRecord = await this.#allocateCard(prepared, bank, cardContext);
+      document = this.#renumberQuestions(prepared, allocationRecord.rowRange.start);
+    } else if (prepared.archetype === 'quiz') {
+      warnings.push(`quiz '${prepared.id}' rendered without card allocation`);
+    }
+
+    const totalPoints = sumScoredPoints(document.blocks, document.defaultPoints);
+
     const furnitureOpts = {
       gutter,
       duplex: DUPLEX_ARCHETYPES.has(document.archetype),
@@ -729,13 +775,27 @@ export class RenderPrintDocument {
     const teacher = context.teacher === true;
     let keyBlocks = null;
     let keyTitle = null;
-    const warnings = [...prepareWarnings];
     if (teacher) {
+      // `document` here is ALREADY the card-renumbered document (when
+      // card-attached) — `collectAnswerKeyEntries` reads `block.number`
+      // straight off it, so the key's numbers are the SAME offset numbering
+      // the student sheet just printed (spec §5.4 "the teacher key is
+      // rendered per allocation ... including startRow offsets", Task 5).
       const key = buildTeacherKeyBlocks(document, bank, chosenTheme.omr.letters);
       keyBlocks = key.blocks;
       keyTitle = key.title;
       if (key.warning) warnings.push(key.warning);
     }
+
+    // Card header strip (spec §5.2, Task 4's render option): drawn only for
+    // a card-attached render; `firstUse` mirrors a FRESH card mint, never a
+    // supplied (reprint/continuation) `cardId`.
+    const card = allocationRecord ? {
+      cardId: allocationRecord.cardId,
+      startRow: allocationRecord.rowRange.start,
+      endRow: allocationRecord.rowRange.end,
+      firstUse: cardContext.freshCard === true,
+    } : null;
 
     const result = await renderer.render(document, {
       studentName: context.learnerName ?? null,
@@ -753,6 +813,7 @@ export class RenderPrintDocument {
       // (see `#resolvePublishedBank`/`mergeBank`); `totalPoints` is a pure
       // passthrough, already summed by `#renderV2` above.
       bank,
+      card,
       totalPoints,
       keyBlocks,
       keyTitle,
@@ -775,7 +836,125 @@ export class RenderPrintDocument {
     }
 
     return {
-      bytes: result.pdf, pageCount: result.pageCount, density: chosen.density, warnings,
+      bytes: result.pdf,
+      pageCount: result.pageCount,
+      density: chosen.density,
+      warnings,
+      allocation: allocationRecord ? {
+        cardId: allocationRecord.cardId,
+        rowRange: { ...allocationRecord.rowRange },
+        recordId: allocationRecord.recordId,
+        status: allocationRecord.status,
+      } : null,
+    };
+  }
+
+  /**
+   * Card-attachment intent from `context` (spec §5.3, Task 5): present
+   * whenever a `cardId` is supplied OR a fresh card is requested. `startRow`
+   * defaults to 1 — the convenience default ("a tracked quiz render with no
+   * cardId allocates a fresh random card starting at row 1"); `planRows`
+   * itself validates it. Returns null for every render that isn't
+   * card-attached — the common, non-card v2 path, unchanged.
+   */
+  #resolveCardContext(context) {
+    const {
+      cardId, freshCard, startRow, learnerId,
+    } = context;
+    if (cardId === undefined && freshCard !== true) return null;
+    return {
+      cardId,
+      freshCard: freshCard === true,
+      startRow: startRow ?? 1,
+      learnerId: learnerId ?? null,
+    };
+  }
+
+  /**
+   * Card-attached render flow (spec §5.3/§5.4, Task 5): plan rows against the
+   * PREPARED document (bank-select sugar already expanded — `#prepareV2Document`'s
+   * output; `document` here still carries its first-pass 1..N numbering,
+   * which `planRows` never reads) and the merged bank, then write/reuse the
+   * allocation record via the injected store. The caller renumbers from the
+   * RETURNED record's own `rowRange.start` afterwards (`#renumberQuestions`)
+   * — the record, not this method's own `startRow` input, is the numbering
+   * truth (the store could in principle adjust it; today it never does, but
+   * nothing here assumes that).
+   */
+  async #allocateCard(document, bank, {
+    cardId, freshCard, startRow, learnerId,
+  }) {
+    if (!this.#allocationStore) {
+      throw new ValidationError(
+        `document '${document.id}' requested card allocation (cardId/freshCard) but no allocationStore is `
+        + 'configured',
+        { code: 'ALLOCATION_STORE_REQUIRED', details: { documentId: document.id } },
+      );
+    }
+    if (typeof document.rev !== 'string' || document.rev.trim().length === 0) {
+      throw new ValidationError(
+        `document '${document.id}' has no rev; card allocation requires a published document`,
+        { code: 'ALLOCATION_REQUIRES_REV', details: { documentId: document.id } },
+      );
+    }
+
+    const plan = planRows({ document, bank, startRow });
+    if (plan.errors) {
+      throw new ValidationError(
+        `document '${document.id}' failed card row planning: ${plan.errors.join('; ')}`,
+        { code: 'ALLOCATION_ROW_PLAN_INVALID', details: { documentId: document.id, errors: plan.errors } },
+      );
+    }
+    if (plan.rows.length === 0) {
+      throw new ValidationError(
+        `document '${document.id}' has no row-consuming questions to allocate a card to`,
+        { code: 'ALLOCATION_NO_ROWS', details: { documentId: document.id } },
+      );
+    }
+
+    const rowRange = { start: plan.rows[0].row, end: plan.rows[plan.rows.length - 1].row };
+    const request = {
+      documentId: document.id,
+      rev: document.rev,
+      seed: document.seed,
+      variant: document.variant ?? 0,
+      rowRange,
+      ...(learnerId != null ? { learnerId } : {}),
+    };
+    return this.#allocationStore.allocate({ cardId: freshCard ? undefined : cardId, request });
+  }
+
+  /**
+   * Shifts every top-level `question` block's printed number by a uniform
+   * offset so the FIRST row-consuming candidate prints `startRow` (spec
+   * §5.3's "numbering starts at startRow ... contiguous in document order" —
+   * Task 5 brief's "positional order preserved, base offset"). Bank-select
+   * expansion/shuffling already ran (`#prepareV2Document`), so this is a pure
+   * renumbering pass over an otherwise-final document; a `question` can never
+   * nest inside another `question` or an `inset` (`blocks.mjs`), so only
+   * top-level blocks ever carry a `.number` — no recursion needed.
+   *
+   * NOTE (scope/judgment call, Task 5): this shifts EVERY question's number
+   * uniformly, including a worksheet's non-`omr` (write-on) questions, which
+   * `planRows` skips entirely when assigning physical card rows. For a quiz
+   * (every scored item is a row candidate — no gaps) the shifted number and
+   * the planned row always agree. For a worksheet mixing `omr`/non-`omr`
+   * questions, a printed number can diverge from its actual card row once a
+   * skipped (non-`omr`) question sits between two row-consuming ones — the
+   * `question.number` field always was authoring/display intent, never a
+   * grading key (grading resolves rows independently via `planRows` at
+   * scan-time, Task 6), so this is a display nuance, not a scoring bug; flagged
+   * here for a future task to revisit if worksheet card strips need tighter
+   * row/number parity.
+   */
+  #renumberQuestions(document, startRow) {
+    const offset = startRow - 1;
+    if (offset === 0) return document;
+    return {
+      ...document,
+      blocks: document.blocks.map((block) => (
+        block?.type === 'question' ? { ...block, number: block.number + offset } : block
+      )),
     };
   }
 
