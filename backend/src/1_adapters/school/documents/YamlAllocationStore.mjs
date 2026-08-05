@@ -10,7 +10,23 @@
  *
  * Persisted record shape (spec §5.4):
  *   { recordId, cardId, rowRange: {start, end}, documentId, rev, seed,
- *     variant, learnerId?, renderedAt, status }
+ *     variant, learnerId?, renderedAt, status, rowItems? }
+ *
+ * `rowItems` (F4 review fix — "bank-select scan integrity vs mutable external
+ * banks"): `[{row, itemId, itemType}]`, the row→item mapping `planRows`
+ * actually resolved AT RENDER TIME, straight off `RenderPrintDocument`'s own
+ * `#allocateCard` (which already computes it to derive `rowRange` in the
+ * first place — this is a pure passthrough, never re-derived here). A
+ * bank-select block's selection formula (`resolveBankSelect`,
+ * `RenderPrintDocument.mjs`) depends on `bank.items.length` — if an external
+ * bank file gains or loses an item AFTER a card is printed, re-deriving the
+ * mapping at scan time (`ResolveCardScan`'s whole reuse-the-render-seam
+ * design) would silently resolve a DIFFERENT item than what is physically
+ * printed on the card. `rowItems` is the durable record of what was actually
+ * printed, so a scan can detect that drift instead of grading against a
+ * mapping the paper doesn't carry. Optional: absent on any record allocated
+ * before this field existed — `ResolveCardScan` keeps trusting pure
+ * re-derivation for those, exactly as it always has.
  *
  * `recordId` is deterministic — `<documentId>@<rev>:v<variant>:<start>-<end>`
  * — so the same render context always names the same record.
@@ -68,7 +84,8 @@ export class YamlAllocationStore {
 
   /**
    * @param {{cardId?: string, request: {documentId:string, rev:string,
-   *   seed:number, variant?:number, learnerId?:string, rowRange:{start:number,end:number}}}} args
+   *   seed:number, variant?:number, learnerId?:string, rowRange:{start:number,end:number},
+   *   rowItems?: Array<{row:number, itemId:string, itemType:string}>}}} args
    * @returns {Promise<object>} the persisted record
    */
   async allocate({ cardId, request } = {}) {
@@ -135,6 +152,7 @@ export class YamlAllocationStore {
         seed: request.seed,
         variant: request.variant ?? 0,
         ...(request.learnerId != null ? { learnerId: request.learnerId } : {}),
+        ...(Array.isArray(request.rowItems) ? { rowItems: request.rowItems } : {}),
         renderedAt: this.#now(),
         status: 'live',
       };
@@ -274,6 +292,17 @@ function assertRequest(request) {
     throw new Error('YamlAllocationStore.allocate request variant must be a non-negative integer');
   }
   assertRowRange(request.rowRange, 'request.rowRange');
+  if (request.rowItems !== undefined) {
+    const valid = Array.isArray(request.rowItems) && request.rowItems.every((entry) => (
+      entry && Number.isInteger(entry.row) && typeof entry.itemId === 'string' && typeof entry.itemType === 'string'
+    ));
+    if (!valid) {
+      throw new Error(
+        'YamlAllocationStore.allocate request.rowItems must be an array of '
+          + '{row:integer, itemId:string, itemType:string}',
+      );
+    }
+  }
 }
 
 export default YamlAllocationStore;

@@ -647,7 +647,8 @@ export class RenderPrintDocument {
    * @param {Object} [args.document] - a raw (unvalidated) document, v1 or v2 envelope
    * @param {string} [args.id] - looked up via `repository` when `document` is not given
    * @param {{learnerName?: string, date?: string, gutter?: boolean|number, teacher?: boolean,
-   *   cardId?: string, startRow?: number, freshCard?: boolean, learnerId?: string}} [args.context] -
+   *   cardId?: string, startRow?: number, freshCard?: boolean, learnerId?: string,
+   *   tokens?: Object<string,string>}} [args.context] -
    *   `learnerName`/`date` prefill the header's Name/Date lines (blank ruled lines
    *   when absent); `gutter` overrides the default 3-hole-punch reservation
    *   (v2 only — must be >= 0). `teacher` (v2 only, spec §4.1/§12.1) is a RENDER
@@ -662,7 +663,17 @@ export class RenderPrintDocument {
    *   — see the constructor doc. `learnerId` (distinct from the display-only
    *   `learnerName`) threads into the allocation record for supersede/lookup.
    *   `teacher` mode renders its key numbers from the SAME allocation as the
-   *   student sheet when both are set on one call.
+   *   student sheet when both are set on one call. `tokens` (F3 review fix,
+   *   Medium/blocker) — action value → already-minted token, the SAME
+   *   `IDocumentRenderer`/`DocumentPdfRenderer#render` `options.tokens`
+   *   contract every legacy caller already threads (see that option's own
+   *   doc comment): drawn in a `scan_action`/`media_action` block's barcode
+   *   text instead of the block's own `.action` literal. `IssueDocument`
+   *   mints these BEFORE calling this use case (`#mintSheetTokens`) and hands
+   *   them through here — omitted (every caller before this field existed)
+   *   falls back to `block.action`/`.code`/`.token` exactly as before
+   *   (`measure.mjs`'s `actionCodeText`), so a document with no action blocks,
+   *   or a caller that never mints tokens, is unaffected.
    * @returns {Promise<{bytes: Buffer, pageCount: number, density: 'normal'|'compact'|null,
    *   warnings: string[], allocation: {cardId: string, rowRange: {start: number, end: number},
    *   recordId: string, status: string}|null}>}
@@ -739,7 +750,12 @@ export class RenderPrintDocument {
 
   /** v1: the legacy render entry, untouched — same theme, same option shape. */
   async #renderLegacy(document, context) {
-    const result = await this.#legacyRenderer.render(document, { studentName: context.learnerName ?? null });
+    const result = await this.#legacyRenderer.render(document, {
+      studentName: context.learnerName ?? null,
+      // F3: threaded the same as v2 below — omitted/null (every caller before
+      // this field existed) reproduces the prior call byte-for-byte.
+      tokens: context.tokens ?? null,
+    });
     return {
       bytes: result.pdf, pageCount: result.pageCount, density: null, warnings: [], allocation: null,
     };
@@ -903,6 +919,14 @@ export class RenderPrintDocument {
       totalPoints,
       keyBlocks,
       keyTitle,
+      // Tracked-quiz tokens (F3 review fix, Medium/blocker): a scan_action/
+      // media_action block's printed barcode must be the token `IssueDocument`
+      // actually minted and registered — never the block's own `.action`
+      // literal (measure.mjs's `actionCodeText` fallback), which would print
+      // a dead barcode while a live token sits in the registry. Omitted/null
+      // (every caller before this field existed) reproduces the prior call
+      // byte-for-byte.
+      tokens: context.tokens ?? null,
     });
 
     if (chosen.density === 'compact') {
@@ -1006,6 +1030,15 @@ export class RenderPrintDocument {
       variant: document.variant ?? 0,
       rowRange,
       ...(learnerId != null ? { learnerId } : {}),
+      // F4 (bank-select scan integrity vs mutable external banks): the row->
+      // item mapping `planRows` JUST resolved, straight off THIS document/bank
+      // pair — the store persists it verbatim as `rowItems` so a later scan
+      // can tell "the bank changed since this card was printed" apart from
+      // "this bank-select document really does resolve differently," rather
+      // than trusting a fresh re-derivation (`ResolveCardScan`'s reuse-the-
+      // render-seam design) that a mutated external bank file would silently
+      // corrupt.
+      rowItems: plan.rows.map(({ row, itemId, itemType }) => ({ row, itemId, itemType })),
     };
     const record = await this.#allocationStore.allocate({ cardId: freshCard ? undefined : cardId, request });
     return { record, rows: plan.rows };
@@ -1108,6 +1141,14 @@ export class RenderPrintDocument {
       // it could pick a density that then doesn't actually fit once the real
       // render's header grows by one line.
       totalPoints,
+      // Must agree with the final render's `tokens` (F3, same reasoning as
+      // italic/totalPoints above): a token's printed text is a fixed-height
+      // action-box glyph (`theme.action.heightPt`), so it can never itself
+      // change page count — but measuring with a DIFFERENT tokens map (or
+      // none) than what actually gets drawn is exactly the kind of
+      // measure/draw disagreement this precedent exists to rule out on
+      // principle, not just where it happens to matter today.
+      tokens: context.tokens ?? null,
     });
     const { pages } = this.#placeFragments(fragments, {
       pageHeightPt: box.pageHeightPt, marginPt: box.marginPt, spacing: theme.spacing,
