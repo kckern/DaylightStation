@@ -1357,15 +1357,98 @@ function headerFragment(document, {
 }
 
 /**
+ * Card header strip (Print Design Phase C, Task 4, spec §5.2): the card ID a
+ * student bubbles into OMR columns 1-7, printed directly below the document
+ * banner as large letter-spaced digits — "Card 4 8 2 9 3 0 6 — questions
+ * 18-30" — plus, on the first sheet issued against a fresh card, a
+ * caption-style instruction line telling the student where to bubble it.
+ *
+ * `card` is render context (`{cardId, startRow, endRow, firstUse}`, spec
+ * §5.3/§5.4's allocation record) threaded by the caller exactly like
+ * `totalPoints` on `headerFragment` above — this function only draws the
+ * numbers it is handed. It allocates nothing, validates no range/collision
+ * rule, and re-derives no numbering: Task 5's allocation domain
+ * (`allocation.mjs`) owns all of that; this is draw-time only.
+ *
+ * Digit x-offsets are computed HERE, once, from real glyph widths plus
+ * `theme.card.trackingPt` — the same "measurement is the drawing plan"
+ * discipline `wrapRuns` uses for word offsets — so the draw pass never
+ * re-measures a digit and the two can never disagree about where digit 4
+ * sits.
+ */
+function cardHeaderFragment(doc, theme, card, { widthPt: widthPtOverride } = {}) {
+  const { card: cardTheme } = theme;
+  const widthPt = widthPtOverride ?? (theme.page.widthPt - 2 * theme.page.marginPt);
+  const cardId = String(card.cardId);
+
+  let cursor = 0;
+  const digits = [...cardId].map((ch) => {
+    const digitWidthPt = stringWidth(doc, theme, 'bold', cardTheme.digitSizePt, ch);
+    const digit = { ch, xPt: cursor, widthPt: digitWidthPt };
+    cursor += digitWidthPt + cardTheme.trackingPt;
+    return digit;
+  });
+  const digitsWidthPt = digits.length ? cursor - cardTheme.trackingPt : 0;
+
+  const labelText = 'Card';
+  const labelWidthPt = stringWidth(doc, theme, 'bold', cardTheme.labelSizePt, labelText);
+  // Em dash introduces "questions", en dash joins the row range — both
+  // printed as plain, unwrapped text at draw time (short, fixed format,
+  // same posture as the header title's own `lineBreak: false`).
+  const metaText = `—  questions ${card.startRow}–${card.endRow}`;
+
+  const firstUse = card.firstUse === true;
+  const instruction = firstUse
+    ? measureTextLines(doc, theme, [{ text: 'Bubble this number into columns 1–7 of a new card.', font: 'italic' }], {
+      widthPt, styleKey: 'caption',
+    })
+    : null;
+
+  const heightPt = cardTheme.bandHeightPt + (instruction ? cardTheme.instructionGapPt + instruction.heightPt : 0);
+
+  const node = {
+    kind: 'cardHeader',
+    cardId,
+    digits,
+    digitsWidthPt,
+    labelText,
+    labelWidthPt,
+    metaText,
+    firstUse,
+    instruction,
+    widthPt,
+    heightPt,
+    offsetYPt: 0,
+  };
+  return {
+    id: 'cardHeader',
+    blocks: [],
+    atomic: true,
+    spacingClass: cardTheme.spacingClass,
+    widthPt,
+    nodes: [node],
+    heightPt,
+    baseHeightPt: heightPt,
+  };
+}
+
+/**
  * Fragments for a whole document: header banner, then every block.
  *
  * @param {Object} document - validated document ({ id, seed, variant, blocks }, title optional)
  * @param {Object} deps - as measureBlocks (including the `widthPt` override, F2), plus `studentName`, `date`
+ * @param {Object|null} [deps.card] - card render context (spec §5.2/§5.3:
+ *   `{cardId, startRow, endRow, firstUse?}`). Drawn as its own fragment
+ *   directly below the header banner ONLY when supplied — omitted/null
+ *   (every caller before this option existed, and every render with no card
+ *   attachment) produces byte-identical fragments to before this feature
+ *   existed.
  * @returns {Array<Object>}
  */
 export function measureDocumentFragments(document, {
   doc, theme = documentPdfTheme, texToSvg, resolveAsset = null, resolveChoices = null,
   tokens = null, studentName = null, date = null, italic = false, header, widthPt, totalPoints,
+  card = null,
 } = {}) {
   // `header` override lets a caller force the banner shape (tests, answer
   // keys); omitted (the normal path), it reads the v2 document's own
@@ -1373,14 +1456,18 @@ export function measureDocumentFragments(document, {
   // what keeps v1 rendering the unconditional Name/Date banner it always has
   // (see headerFragment's own doc comment).
   const headerConfig = header ?? document.header ?? {};
-  return [
+  const fragments = [
     headerFragment(document, {
       theme, studentName, date, headerConfig, widthPt, totalPoints,
     }),
-    ...measureBlocks(document.blocks, {
-      doc, theme, texToSvg, resolveAsset, resolveChoices, tokens, italic, widthPt,
-    }),
   ];
+  if (card?.cardId !== undefined && card?.cardId !== null) {
+    fragments.push(cardHeaderFragment(doc, theme, card, { widthPt }));
+  }
+  fragments.push(...measureBlocks(document.blocks, {
+    doc, theme, texToSvg, resolveAsset, resolveChoices, tokens, italic, widthPt,
+  }));
+  return fragments;
 }
 
 /**

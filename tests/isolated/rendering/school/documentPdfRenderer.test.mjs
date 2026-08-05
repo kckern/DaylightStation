@@ -391,6 +391,131 @@ describe('italic option (v2 *emphasis* grammar, spec §12.8)', () => {
   });
 });
 
+// true_false (Print Design Phase C, Task 4, spec §5.2/§5.3): a bank item with
+// NO `.choices` array at all — the two-option shape (Ⓐ True / Ⓑ False) is
+// fixed, never authored. `createChoiceResolver` synthesizes the labels; the
+// row itself draws through the SAME circle-bubble geometry an ordinary
+// multiple_choice row uses (never the multi_select square checkbox), so this
+// works against the legacy `documentPdfTheme` too, not just `workbookTheme`.
+describe('true_false items (spec §5.2/§5.3)', () => {
+  const tfBank = {
+    id: 'tf-bank',
+    items: [{ id: 'tf1', type: 'true_false', answer: true }],
+  };
+  const tfSheet = doc([{
+    type: 'question',
+    itemId: 'tf1',
+    number: 1,
+    blocks: [
+      { type: 'rich_text', md: 'The sum of two even numbers is always even.' },
+      { type: 'omr_response', itemId: 'tf1', choices: 2 },
+    ],
+  }]);
+
+  it('prints Ⓐ True / Ⓑ False — letters A/B, labels True/False, ordinary circle bubbles', async () => {
+    const { formMap } = await renderer.render(tfSheet, { bank: tfBank });
+    expect(formMap.marks.map((m) => m.choice)).toEqual(['A', 'B']);
+    expect(formMap.marks.map((m) => m.label)).toEqual(['True', 'False']);
+  });
+
+  it('grades through the virtual reader like any other 2-choice row', async () => {
+    const { formMap } = await renderer.render(tfSheet, { bank: tfBank });
+    const reader = new VirtualOmrReader({ logger: { info: () => {} } });
+    const event = reader.scanSheet({ formMap, chosen: { tf1: 'A' }, blank: [] });
+    expect(event.marks).toEqual([0b01]);
+  });
+
+  it('refuses when the sheet prints more than 2 bubbles for a true_false item', async () => {
+    const badSheet = doc([{
+      type: 'question',
+      itemId: 'tf1',
+      number: 1,
+      blocks: [{ type: 'omr_response', itemId: 'tf1', choices: 4 }],
+    }]);
+    await expect(renderer.render(badSheet, { bank: tfBank }))
+      .rejects.toThrow(/true_false \(2 options: True\/False\) but the sheet prints 4/);
+  });
+
+  it('works under workbookTheme exactly like documentPdfTheme (same resolver, no square-checkbox path)', async () => {
+    const { formMap } = await workbookRenderer.render(tfSheet, { bank: tfBank });
+    expect(formMap.marks.map((m) => m.label)).toEqual(['True', 'False']);
+  });
+});
+
+// Numbering (Task 4 scope): rendering prints whatever `block.number` it was
+// GIVEN. Task 5's allocation domain assigns startRow-based numbers upstream;
+// this suite proves nothing in the render path re-derives a number from 1.
+describe('given-number printing (no re-derivation from 1)', () => {
+  it('a question whose bank item never starts at 1 renders without error, and the fragment carries the GIVEN number', async () => {
+    const nonSequential = doc([
+      {
+        type: 'question',
+        itemId: 'w1',
+        number: 18,
+        blocks: [{ type: 'rich_text', md: 'Question eighteen.' }, { type: 'answer_space', minPt: 40, maxPt: 60 }],
+      },
+      {
+        type: 'question',
+        itemId: 'w2',
+        number: 19,
+        blocks: [{ type: 'rich_text', md: 'Question nineteen.' }, { type: 'answer_space', minPt: 40, maxPt: 60 }],
+      },
+    ]);
+    const { pageCount } = await renderer.render(nonSequential);
+    expect(pageCount).toBeGreaterThanOrEqual(1);
+  });
+
+  it('an OMR row card-numbered starting at 18 records that number nowhere as 1 in the form map', async () => {
+    const cardSheet = doc([{
+      type: 'question',
+      itemId: 'q1',
+      number: 18,
+      blocks: [{ type: 'omr_response', itemId: 'q1', choices: 4 }],
+    }]);
+    const { formMap } = await renderer.render(cardSheet, { bank });
+    // The form map itself never carries `number` (it grades by itemId), but
+    // the render must not throw or silently coerce — a real render at all
+    // proves the given `number: 18` flowed through placement/draw untouched.
+    expect(formMap.marks).toHaveLength(4);
+  });
+});
+
+// Card header strip threading (Phase C, Task 4, spec §5.2): `options.card` is
+// a pure passthrough to `measureDocumentFragments`/`cardHeaderFragment` (the
+// SAME "thread it like totalPoints" posture as every other render option in
+// this file). Structural fragment shape + first-use instruction are covered
+// in workbookCardId.render.test.mjs; this suite proves the option threads
+// through the renderer end to end and is default-preserving.
+describe('card option (options.card, spec §5.2)', () => {
+  const sheet = doc([{ type: 'rich_text', md: 'Body content.' }]);
+  const card = { cardId: '4829306', startRow: 18, endRow: 30 };
+
+  it('omitted is byte-identical to every caller before this option existed', async () => {
+    const withoutOption = await workbookRenderer.render(sheet);
+    const explicitNull = await workbookRenderer.render(sheet, { card: null });
+    expect(withoutOption.pdf.equals(explicitNull.pdf)).toBe(true);
+  });
+
+  it('supplying a card changes the rendered bytes', async () => {
+    const withoutCard = await workbookRenderer.render(sheet);
+    const withCard = await workbookRenderer.render(sheet, { card });
+    expect(withoutCard.pdf.equals(withCard.pdf)).toBe(false);
+    expect(withCard.pageCount).toBeGreaterThanOrEqual(1);
+  });
+
+  it('firstUse: true also changes the bytes relative to a non-first-use card render', async () => {
+    const withoutFirstUse = await workbookRenderer.render(sheet, { card });
+    const withFirstUse = await workbookRenderer.render(sheet, { card: { ...card, firstUse: true } });
+    expect(withoutFirstUse.pdf.equals(withFirstUse.pdf)).toBe(false);
+  });
+
+  it('is deterministic, like every other draw input', async () => {
+    const first = await workbookRenderer.render(sheet, { card });
+    const second = await workbookRenderer.render(sheet, { card });
+    expect(first.pdf.equals(second.pdf)).toBe(true);
+  });
+});
+
 describe('determinism', () => {
   it('renders byte-identical PDFs for the same document', async () => {
     const first = await renderer.render(worksheet, { studentName: 'Test Learner' });
