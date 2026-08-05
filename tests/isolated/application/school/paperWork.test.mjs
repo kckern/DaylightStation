@@ -482,6 +482,15 @@ describe('GradeSubmission on a print-document unit', () => {
     expect(sessions.derive(SID)).toMatchObject({ state: 'graded' });
     const queueItemIds = (await reviewQueue.listForSession(SID)).map((i) => i.itemId);
     expect(new Set(queueItemIds)).toEqual(new Set(['q1', 'q2', 'w-essay']));
+
+    // F3 (re-review wave 2): the graded event must carry the GENUINE scan
+    // attempt ids the queue items own (`att-1`/`att-2`, seeded by
+    // `seedMachineMarks`) — not the synthetic `review:<sessionId>` pointer,
+    // which would discard them. `w-essay` was resolved by a parent with no
+    // attemptId of its own, so it contributes nothing to the set.
+    expect(result.attemptIds).toEqual(['att-1', 'att-2']);
+    const gradedEvent = (await sessions.readEvents(SID)).find((e) => e.type === 'graded');
+    expect(gradedEvent.attemptIds).toEqual(['att-1', 'att-2']);
   });
 
   it('holds at awaiting_review while any queued item still has no verdict', async () => {

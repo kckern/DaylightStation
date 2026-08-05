@@ -631,6 +631,66 @@ describe('school-docs CLI', () => {
       const raw = await readFile(path.join(contentRoot, 'allocations', `${cardId}.yml`), 'utf8');
       expect(raw).toContain('superseded');
     }));
+
+    it('a card render of a SOURCE file whose published artifact exists pins the PUBLISHED rev and renders the published content, never the drifted on-disk source (re-review wave 2, F2: phantom-rev trap)', async () => withTmpDir(async (root) => {
+      const contentRoot = path.join(root, 'content');
+      await mkdir(contentRoot, { recursive: true });
+      await writeFile(path.join(contentRoot, 'quiz.yml'), dump(sourceQuizDoc()));
+      const published = await runSchoolDocs(['publish', 'quiz.yml', '--content-root', contentRoot]);
+      expect(published.exitCode).toBe(0);
+
+      // Drift: the source is edited AFTER publish (a real authoring workflow
+      // — rewording a prompt) without a re-publish. If `render --card` fell
+      // back to re-deriving a rev off THIS content (the bug), it would mint
+      // a rev the allocation record pins that `getPublished` can never
+      // serve later — the physical card would print fine but never grade.
+      await writeFile(path.join(contentRoot, 'quiz.yml'), dump(sourceQuizDoc({
+        blocks: [{
+          type: 'question',
+          itemId: 'q1',
+          number: 1,
+          blocks: [
+            { type: 'rich_text', md: 'Pick a SHAPE (drifted).' },
+            { type: 'omr_response', itemId: 'q1', choices: 2 },
+          ],
+          choices: ['Red', 'Blue'],
+          answer: 'Blue',
+        }],
+      })));
+
+      const outPath = path.join(root, 'card.pdf');
+      const { exitCode, report } = await runSchoolDocs([
+        'render', 'quiz.yml', '--out', outPath, '--content-root', contentRoot, '--fresh-card',
+      ]);
+      expect(exitCode).toBe(0);
+      expect(report.ok).toBe(true);
+      // The allocation record's rev (encoded in recordId) is the ORIGINAL
+      // published rev — never a freshly re-derived one off the drifted file.
+      expect(report.allocation.recordId).toMatch(new RegExp(`^teacher-cli-fixture@${published.report.rev}:`));
+
+      const text = pdfText(await readFile(outPath));
+      expect(text).toContain('Pick a color.');
+      expect(text).not.toContain('drifted');
+    }));
+
+    it('a card render of a source with NO published artifact fails with an instructive error, never silently pinning an unpublishable rev', async () => withTmpDir(async (root) => {
+      const contentRoot = path.join(root, 'content');
+      await mkdir(contentRoot, { recursive: true });
+      await writeFile(path.join(contentRoot, 'quiz.yml'), dump(sourceQuizDoc()));
+      // No `publish` call — quiz.yml has never been published under this content root.
+
+      const { exitCode, report } = await runSchoolDocs([
+        'render', 'quiz.yml', '--out', path.join(root, 'card.pdf'), '--content-root', contentRoot, '--fresh-card',
+      ]);
+      expect(exitCode).toBe(1);
+      expect(report.ok).toBe(false);
+      expect(report.allocation).toBeNull();
+      expect(report.errors[0]).toMatch(/publish/i);
+      expect(report.errors[0]).toContain('teacher-cli-fixture');
+
+      // Nothing was written — no phantom allocation record on disk.
+      await expect(readFile(path.join(contentRoot, 'allocations'), 'utf8')).rejects.toThrow();
+    }));
   });
 
   describe('release-card (Task 7, spec §5.4)', () => {

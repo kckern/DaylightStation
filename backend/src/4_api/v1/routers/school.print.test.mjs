@@ -512,5 +512,24 @@ describe('GET /api/v1/school/print/:id', () => {
       .get('/api/v1/school/print/pokemon-quiz-1?variety=omr&card=4829306&learnerId=soren');
     expect(res.status).toBe(409);
     expect(res.body.code).toBe('CARD_LEARNER_MISMATCH');
+    expect(res.body.error).toMatch(/belongs to a different learner/);
+  });
+
+  it('adopting a card with NO learnerId of its own (rendered anonymously) is still a 409, but the message never claims it belongs to someone else (re-review wave 2 F4)', async () => {
+    const render = renderFake();
+    const doc = { id: 'q', seed: 1, rev: 'abcdef123', blocks: [] };
+    const repo = { get: vi.fn().mockResolvedValue(doc), getPublished: vi.fn().mockResolvedValue(doc) };
+    const allocations = {
+      findByCard: vi.fn().mockResolvedValue([
+        { documentId: 'pokemon-quiz-1', cardId: '4829306', learnerId: null, status: 'live', rev: 'abcdef123', variant: 0, rowRange: { start: 1, end: 6 }, renderedAt: 't1' },
+      ]),
+      findByDocument: vi.fn(),
+    };
+    const res = await request(appWith({ render, repo, allocations }))
+      .get('/api/v1/school/print/pokemon-quiz-1?variety=omr&card=4829306&learnerId=soren');
+    expect(res.status).toBe(409);
+    expect(res.body.code).toBe('CARD_LEARNER_MISMATCH');
+    expect(res.body.error).toMatch(/anonymous sheet/);
+    expect(res.body.error).not.toMatch(/belongs to a different learner/);
   });
 });

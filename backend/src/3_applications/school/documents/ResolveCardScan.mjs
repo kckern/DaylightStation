@@ -157,9 +157,25 @@ function firstPromptText(block) {
 }
 
 /**
+ * Pushes a `short_answer`/`essay` write-on entry for `block` (already
+ * type-checked by the caller) onto `items`, using `positionalId` as the
+ * fallback when the block carries no `itemRef` of its own.
+ */
+function pushWriteOn(items, block, positionalId) {
+  items.push({ itemId: block.itemRef ?? positionalId, prompt: firstPromptText(block) ?? null });
+}
+
+/**
  * Write-ons (spec §5.3's "write-on blocks are worksheet-only or unscored"):
  * top-level blocks of the PREPARED document that `planRows` did NOT turn
- * into a card row. Three shapes reach here:
+ * into a card row, PLUS `short_answer`/`essay` write-ons nested one level
+ * inside a top-level `inset` (an inset is legal write-on furniture —
+ * `blocks.mjs`'s `INSET_UNSUPPORTED_CHILD_TYPES` deliberately leaves
+ * `short_answer`/`essay` off its ban list, "nesting costs the box path
+ * nothing new" — so a card that prints one must still queue it here; before
+ * this fix an inset-wrapped write-on printed on the page but was invisible
+ * to `unscannedItems`, so a session could grade "complete" with it still
+ * unread). Shapes reach here:
  *   - a top-level `question` block whose `itemId` isn't among `plan.rows`'
  *     itemIds (unscored, or an explicit `points: 0` override) — complement
  *     of exactly the set `planRows` selected, never a re-derived guess at
@@ -174,13 +190,17 @@ function firstPromptText(block) {
  *     `itemId`, NEVER carries an answer at all — "unmarked prose has nothing
  *     for a bank to hold"), so it is never row-mapped either and gets the
  *     same treatment.
+ *   - either of the above nested one level inside a top-level `inset`'s own
+ *     `blocks` array — same treatment, one level deep only (insets can't
+ *     nest insets — `blocks.mjs`).
  *   `short_answer`/`essay` carry no author-assigned id
  *   (`documentSource.mjs`'s keyless-item scheme is a PUBLISH-time-only
  *   concern, and `essay` never mints a bank item at all); `itemRef` is used
  *   when present (a `short_answer` authored with an answer), else a
  *   positional fallback mirroring `blockIndexFromPath`'s own `blocks[N]`
- *   notation elsewhere in this file — good enough for a diagnostic label,
- *   never fed back into grading.
+ *   notation elsewhere in this file — `blocks[N].blocks[M]` for an
+ *   inset-nested one — good enough for a diagnostic label, never fed back
+ *   into grading.
  */
 function unscannedItemsFor(prepared, rowItemIds) {
   const items = [];
@@ -191,7 +211,16 @@ function unscannedItemsFor(prepared, rowItemIds) {
       return;
     }
     if (block.type === 'short_answer' || block.type === 'essay') {
-      items.push({ itemId: block.itemRef ?? `blocks[${index}]`, prompt: firstPromptText(block) ?? null });
+      pushWriteOn(items, block, `blocks[${index}]`);
+      return;
+    }
+    if (block.type === 'inset') {
+      (block.blocks ?? []).forEach((child, childIndex) => {
+        if (!child || typeof child !== 'object') return;
+        if (child.type === 'short_answer' || child.type === 'essay') {
+          pushWriteOn(items, child, `blocks[${index}].blocks[${childIndex}]`);
+        }
+      });
     }
   });
   return items;
