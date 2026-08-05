@@ -1406,14 +1406,111 @@ describe('RenderPrintDocument — card allocation context (spec §5.3/§5.4, Tas
     expect(await allocationStore.findByCard('1234567')).toHaveLength(1);
   });
 
+  /**
+   * A worksheet source: 2 OMR-mapped multiple_choice questions with a plain
+   * (non-OMR, non-bank) write-on question in between — the fixture for the
+   * fix-round-1 review's Finding 1/2 (printed numbers ARE card rows; a
+   * skipped write-on question must NOT shift a later OMR question's number
+   * off its real row).
+   */
+  const mixedWorksheetDoc = (idSuffix) => ({
+    schema: DOCUMENT_SOURCE_SCHEMA,
+    id: `worksheet-mixed-fixture-${idSuffix}`,
+    seed: 12,
+    variant: 0,
+    target: ['letter'],
+    archetype: 'worksheet',
+    blocks: [
+      {
+        type: 'question', itemId: 'w1', number: 1, omr: true,
+        blocks: [{ type: 'rich_text', md: 'Pick one.' }, { type: 'omr_response', itemId: 'w1', choices: 2 }],
+        choices: ['Yes', 'No'], answer: 'Yes',
+      },
+      {
+        type: 'question',
+        itemId: 'w2',
+        number: 2,
+        blocks: [{ type: 'rich_text', md: 'Explain your answer.' }, { type: 'answer_space', minPt: 40, maxPt: 60 }],
+      },
+      {
+        type: 'question', itemId: 'w3', number: 3, omr: true,
+        blocks: [{ type: 'rich_text', md: 'Pick one more.' }, { type: 'omr_response', itemId: 'w3', choices: 2 }],
+        choices: ['Yes', 'No'], answer: 'No',
+      },
+    ],
+  });
+
+  /** The reconstructed text line (poppler `-layout`) that contains `needle`, or undefined. */
+  const lineContaining = (text, needle) => text.split('\n').find((line) => line.includes(needle));
+
   it('worksheet mixed mode: only omr:true questions consume rows — a write-on question between two OMR ones does not widen the rowRange (planRows integration)', async () => {
     const allocationStore = fakeAllocationStore();
     const useCase = new RenderPrintDocument({ allocationStore });
-    // A worksheet source: 2 OMR-mapped multiple_choice questions with a
-    // plain (non-OMR, non-bank) write-on question in between.
+    const result = await useCase.execute({ document: mixedWorksheetDoc('a'), context: { freshCard: true } });
+    // Only 2 rows consumed (w1, w3) — NOT 3 — proving planRows skipped the
+    // non-omr write-on question when computing the card's rowRange.
+    expect(result.allocation.rowRange).toEqual({ start: 1, end: 2 });
+  });
+
+  it('mixed worksheet prints EXACT card row numbers for OMR questions and NO number for the write-on question (spec §5.3, fix round 1 finding 1 — printed numbers ARE card rows)', async () => {
+    const allocationStore = fakeAllocationStore();
+    const useCase = new RenderPrintDocument({ allocationStore });
+    const result = await useCase.execute({ document: mixedWorksheetDoc('b'), context: { freshCard: true } });
+    expect(result.allocation.rowRange).toEqual({ start: 1, end: 2 });
+
+    const text = pdfText(result.bytes);
+    // w1 is the FIRST row-consuming question -> row 1.
+    expect(lineContaining(text, 'Pick one.')).toMatch(/\b1\./);
+    // w2 is a write-on (non-omr) question -> NO number at all, not "2." —
+    // a parallel/independent numbering sequence would invite the exact
+    // sheet-to-card confusion this system exists to prevent.
+    const w2Line = lineContaining(text, 'Explain your answer.');
+    expect(w2Line).toBeDefined();
+    expect(w2Line).not.toMatch(/\d+\./);
+    // w3 is the SECOND row-consuming question -> row 2 (NOT 3 — the skipped
+    // write-on question must not shift it).
+    expect(lineContaining(text, 'Pick one more.')).toMatch(/\b2\./);
+    expect(lineContaining(text, 'Pick one more.')).not.toMatch(/\b3\./);
+  });
+
+  it('mixed worksheet at startRow 10: OMR questions print 10 and 11 (still skipping the write-on question), never 10/11/12', async () => {
+    const allocationStore = fakeAllocationStore();
+    const useCase = new RenderPrintDocument({ allocationStore });
+    const result = await useCase.execute({
+      document: mixedWorksheetDoc('c'), context: { freshCard: true, startRow: 10 },
+    });
+    expect(result.allocation.rowRange).toEqual({ start: 10, end: 11 });
+
+    const text = pdfText(result.bytes);
+    expect(lineContaining(text, 'Pick one.')).toMatch(/\b10\./);
+    const w2Line = lineContaining(text, 'Explain your answer.');
+    expect(w2Line).not.toMatch(/\d+\./);
+    expect(lineContaining(text, 'Pick one more.')).toMatch(/\b11\./);
+    expect(lineContaining(text, 'Pick one more.')).not.toMatch(/\b12\./);
+  });
+
+  it('quiz archetype regression: with EVERY question row-consuming (no gaps), numbering is unchanged — 1, 2, 3 print in document order', async () => {
+    const allocationStore = fakeAllocationStore();
+    const useCase = new RenderPrintDocument({ allocationStore });
+    const result = await useCase.execute({ document: omrSourceDoc(3), context: { freshCard: true } });
+    expect(result.allocation.rowRange).toEqual({ start: 1, end: 3 });
+
+    const text = pdfText(result.bytes);
+    expect(lineContaining(text, 'OMR prompt 1')).toMatch(/\b1\./);
+    expect(lineContaining(text, 'OMR prompt 2')).toMatch(/\b2\./);
+    expect(lineContaining(text, 'OMR prompt 3')).toMatch(/\b3\./);
+  });
+
+  it('teacher key: an unnumbered (non-row-consuming but still bank-answerable) question falls back to its prompt-clip label, never "undefined."', async () => {
+    const allocationStore = fakeAllocationStore();
+    const useCase = new RenderPrintDocument({ allocationStore });
+    // w2 here IS bank-answerable (an omr_response-backed multiple_choice)
+    // but explicitly opts OUT of row consumption (`omr: false`) — a
+    // worksheet item a teacher grades by eye, never bubbled. It still gets a
+    // key entry (it has a real answer), but with no `.number` to key off.
     const document = {
       schema: DOCUMENT_SOURCE_SCHEMA,
-      id: 'worksheet-mixed-fixture',
+      id: 'worksheet-unnumbered-answerable-fixture',
       seed: 12,
       variant: 0,
       target: ['letter'],
@@ -1425,22 +1522,24 @@ describe('RenderPrintDocument — card allocation context (spec §5.3/§5.4, Tas
           choices: ['Yes', 'No'], answer: 'Yes',
         },
         {
-          type: 'question',
-          itemId: 'w2',
-          number: 2,
-          blocks: [{ type: 'rich_text', md: 'Explain your answer.' }, { type: 'answer_space', minPt: 40, maxPt: 60 }],
-        },
-        {
-          type: 'question', itemId: 'w3', number: 3, omr: true,
-          blocks: [{ type: 'rich_text', md: 'Pick one more.' }, { type: 'omr_response', itemId: 'w3', choices: 2 }],
-          choices: ['Yes', 'No'], answer: 'No',
+          type: 'question', itemId: 'w2', number: 2, omr: false,
+          blocks: [
+            { type: 'rich_text', md: 'Which planet is closest to the sun?' },
+            { type: 'omr_response', itemId: 'w2', choices: 3 },
+          ],
+          choices: ['Venus', 'Mercury', 'Mars'], answer: 'Mercury',
         },
       ],
     };
-    const result = await useCase.execute({ document, context: { freshCard: true } });
-    // Only 2 rows consumed (w1, w3) — NOT 3 — proving planRows skipped the
-    // non-omr write-on question when computing the card's rowRange.
-    expect(result.allocation.rowRange).toEqual({ start: 1, end: 2 });
+    const result = await useCase.execute({
+      document, context: { freshCard: true, teacher: true },
+    });
+    expect(result.allocation.rowRange).toEqual({ start: 1, end: 1 }); // only w1 consumes a row
+    const text = pdfText(result.bytes);
+    expect(text).not.toMatch(/undefined\./);
+    // Prompt-clip label (same convention as a standalone short_answer key
+    // entry), NOT a bare "2." — 'Mercury' is index 1 of ['Venus','Mercury','Mars'] -> letter B.
+    expect(text).toMatch(/"Which planet is closest to the sun\?" —\s*B/);
   });
 
   it('a quiz archetype rendered without any card context is legal but warns "rendered without card allocation" — even with a store configured, it does not allocate', async () => {

@@ -350,7 +350,16 @@ function collectAnswerKeyEntries(blocks, bankItemsById, letters, entries = [], c
     if (!block || typeof block !== 'object') continue;
     if (block.type === 'question') {
       const item = typeof block.itemId === 'string' ? bankItemsById.get(block.itemId) : undefined;
-      if (item) entries.push({ label: `${block.number}.`, text: formatAnswer(item, letters) });
+      if (item) {
+        // A card-attached render (Task 5's `#renumberQuestions`) strips
+        // `.number` off a non-row-consuming question entirely — printed
+        // numbers ARE card rows (spec §5.3), so an unnumbered write-on
+        // question falls back to the SAME prompt-clip label a standalone
+        // `short_answer` sugar entry already uses below, rather than
+        // printing the literal string "undefined.".
+        const label = typeof block.number === 'number' ? `${block.number}.` : `"${truncatePrompt(item.prompt)}" —`;
+        entries.push({ label, text: formatAnswer(item, letters) });
+      }
       if (Array.isArray(block.blocks)) {
         collectAnswerKeyEntries(block.blocks, bankItemsById, letters, entries, state);
       }
@@ -712,8 +721,8 @@ export class RenderPrintDocument {
     // rows against the FIRST-PASS prepared document (numbers 1..N — `planRows`
     // reads `itemId`/`points`/`omr`, never `.number`, so first-pass numbering
     // is irrelevant to row planning), writes/reuses the allocation record via
-    // the injected store, then renumbers the document from the RECORD's own
-    // startRow (`#renumberQuestions`) — "the record is the numbering truth,"
+    // the injected store, then renumbers the document from `planRows`'s own
+    // rows (`#renumberQuestions`) — "the record is the numbering truth,"
     // never the render's own request. A quiz rendered with NO card context is
     // still a legal (proof/preview) render, but warns — a tracked quiz is
     // expected to carry allocation (Task 7 wires that expectation in).
@@ -722,8 +731,9 @@ export class RenderPrintDocument {
     let document = prepared;
     let allocationRecord = null;
     if (cardContext) {
-      allocationRecord = await this.#allocateCard(prepared, bank, cardContext);
-      document = this.#renumberQuestions(prepared, allocationRecord.rowRange.start);
+      const allocation = await this.#allocateCard(prepared, bank, cardContext);
+      allocationRecord = allocation.record;
+      document = this.#renumberQuestions(prepared, allocation.rows);
     } else if (prepared.archetype === 'quiz') {
       warnings.push(`quiz '${prepared.id}' rendered without card allocation`);
     }
@@ -875,11 +885,16 @@ export class RenderPrintDocument {
    * PREPARED document (bank-select sugar already expanded — `#prepareV2Document`'s
    * output; `document` here still carries its first-pass 1..N numbering,
    * which `planRows` never reads) and the merged bank, then write/reuse the
-   * allocation record via the injected store. The caller renumbers from the
-   * RETURNED record's own `rowRange.start` afterwards (`#renumberQuestions`)
-   * — the record, not this method's own `startRow` input, is the numbering
-   * truth (the store could in principle adjust it; today it never does, but
-   * nothing here assumes that).
+   * allocation record via the injected store.
+   *
+   * Returns `{record, rows}` — `rows` is `planRows`'s own output (the SAME
+   * candidates, in the SAME order, that the persisted `rowRange` was derived
+   * from), which the caller feeds straight into `#renumberQuestions`. The
+   * record's `rowRange.start` matches `rows[0].row` by construction (this
+   * method builds the request's `rowRange` FROM `rows`); nothing here assumes
+   * the store could adjust it, but `rows` — not a recomputed offset — is the
+   * one source `#renumberQuestions` reads, since it is what's ACTUALLY correct
+   * even for a worksheet with gaps between row-consuming questions.
    */
   async #allocateCard(document, bank, {
     cardId, freshCard, startRow, learnerId,
@@ -921,40 +936,56 @@ export class RenderPrintDocument {
       rowRange,
       ...(learnerId != null ? { learnerId } : {}),
     };
-    return this.#allocationStore.allocate({ cardId: freshCard ? undefined : cardId, request });
+    const record = await this.#allocationStore.allocate({ cardId: freshCard ? undefined : cardId, request });
+    return { record, rows: plan.rows };
   }
 
   /**
-   * Shifts every top-level `question` block's printed number by a uniform
-   * offset so the FIRST row-consuming candidate prints `startRow` (spec
-   * §5.3's "numbering starts at startRow ... contiguous in document order" —
-   * Task 5 brief's "positional order preserved, base offset"). Bank-select
-   * expansion/shuffling already ran (`#prepareV2Document`), so this is a pure
-   * renumbering pass over an otherwise-final document; a `question` can never
-   * nest inside another `question` or an `inset` (`blocks.mjs`), so only
-   * top-level blocks ever carry a `.number` — no recursion needed.
+   * Printed numbers ARE card row numbers (spec §5.3, fix round 1 review
+   * finding 1 — CRITICAL): a row-consuming top-level `question` prints
+   * EXACTLY the row `planRows` assigned it (contiguous from the record's own
+   * startRow, in document order — `rows` here is that same output, not a
+   * recomputed offset), and every OTHER top-level `question` — a worksheet's
+   * non-`omr` write-on block, which `planRows` skips entirely when assigning
+   * physical card rows — prints NO number at all.
    *
-   * NOTE (scope/judgment call, Task 5): this shifts EVERY question's number
-   * uniformly, including a worksheet's non-`omr` (write-on) questions, which
-   * `planRows` skips entirely when assigning physical card rows. For a quiz
-   * (every scored item is a row candidate — no gaps) the shifted number and
-   * the planned row always agree. For a worksheet mixing `omr`/non-`omr`
-   * questions, a printed number can diverge from its actual card row once a
-   * skipped (non-`omr`) question sits between two row-consuming ones — the
-   * `question.number` field always was authoring/display intent, never a
-   * grading key (grading resolves rows independently via `planRows` at
-   * scan-time, Task 6), so this is a display nuance, not a scoring bug; flagged
-   * here for a future task to revisit if worksheet card strips need tighter
-   * row/number parity.
+   * A single "shift every question's number uniformly" scheme (this
+   * function's first cut) is WRONG whenever a skipped question sits between
+   * two row-consuming ones: the shifted number and the real row silently
+   * diverge, and the printed number is the student's ONLY instruction for
+   * which physical row to bubble — that mismatch is exactly the sheet-to-card
+   * confusion this whole allocation system exists to prevent. Two parallel
+   * numbering sequences (one for rows, one counting write-on questions) would
+   * invite the identical confusion, so unnumbered is the only safe choice —
+   * mirrors the standalone `short_answer` sugar precedent (prompt stands
+   * alone, no leading number). `buildTeacherKeyBlocks`/`collectAnswerKeyEntries`
+   * fall back to the item's own prompt-clip label for a number-less question
+   * (same fallback `short_answer` entries already use).
+   *
+   * Bank-select expansion/shuffling already ran (`#prepareV2Document`), so
+   * this is a pure renumbering pass over an otherwise-final document; a
+   * `question` can never nest inside another `question` or an `inset`
+   * (`blocks.mjs`), and every row-consuming candidate `planRows` finds is
+   * therefore top-level — `rows[].blockPath` is always exactly `blocks[N]`
+   * for some top-level index N, never a nested path.
+   *
+   * @param {object} document
+   * @param {Array<{row:number, blockPath:string}>} rows - `planRows`'s own output
    */
-  #renumberQuestions(document, startRow) {
-    const offset = startRow - 1;
-    if (offset === 0) return document;
+  #renumberQuestions(document, rows) {
+    const rowByIndex = new Map();
+    for (const { row, blockPath } of rows) {
+      const match = /^blocks\[(\d+)\]$/.exec(blockPath);
+      if (match) rowByIndex.set(Number(match[1]), row);
+    }
     return {
       ...document,
-      blocks: document.blocks.map((block) => (
-        block?.type === 'question' ? { ...block, number: block.number + offset } : block
-      )),
+      blocks: document.blocks.map((block, index) => {
+        if (block?.type !== 'question') return block;
+        if (rowByIndex.has(index)) return { ...block, number: rowByIndex.get(index) };
+        const { number, ...unnumbered } = block;
+        return unnumbered;
+      }),
     };
   }
 
