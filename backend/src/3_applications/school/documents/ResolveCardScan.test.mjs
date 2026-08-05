@@ -334,6 +334,104 @@ describe('execute — unallocated rows (spec §5.4: "never guessed")', () => {
     expect(result.results).toEqual([]);
     expect(result.unallocatedRows).toEqual([1, 3]);
   });
+
+  it('reports a RELEASED record\'s rows as unallocated and grades nothing for them (spec §5.4 review fix, Important)', async () => {
+    const repository = fakeRepository();
+    const allocationStore = fakeAllocationStore();
+    const source = sourceDoc('released-quiz', [
+      mcQuestion('rel-q1', 1, { choices: ['X', 'Y'], answer: 'X' }),
+    ]);
+    const { allocation } = await publishAndAllocate({
+      repository, allocationStore, source, context: { freshCard: true },
+    });
+    const [record] = await allocationStore.findByCard(allocation.cardId);
+    await allocationStore.updateStatus({
+      cardId: allocation.cardId, recordId: record.recordId, status: 'released',
+    });
+
+    const result = await useCaseExecute({ allocationStore, repository }, {
+      testId: allocation.cardId,
+      answers: { 1: 'A' },
+    });
+
+    expect(result.results).toEqual([]);
+    expect(result.unallocatedRows).toEqual([1]);
+  });
+});
+
+describe('execute — row ownership on reuse: newest claimant wins (spec §5.4 review fix, Critical)', () => {
+  it('grades ONLY the newer live record when a settled record\'s rows are reallocated to a different document; the old record never appears and is never re-graded', async () => {
+    const repository = fakeRepository();
+    // A store whose clock we can advance BETWEEN allocations, so the two
+    // competing records on this card carry distinct, orderable `renderedAt`
+    // timestamps — exactly the signal `resolveRowOwners` arbitrates on.
+    const clock = { at: '2026-08-04T00:00:00.000Z' };
+    const map = new Map();
+    const io = {
+      load: (filePath) => (map.has(filePath) ? structuredClone(map.get(filePath)) : null),
+      save: (filePath, content) => { map.set(filePath, structuredClone(content)); },
+    };
+    const allocationStore = new YamlAllocationStore({
+      directory: '/docs', io, now: () => clock.at, rng: () => 0.42,
+    });
+    const resolver = new ResolveCardScan({ allocationStore, repository });
+
+    // quiz-1: rows 1-2 on a fresh card, then fully answered -> satisfied.
+    // Once satisfied, its rows are no longer collision-protected
+    // (`checkCollision` only blocks `live` ranges — allocation.mjs).
+    const quiz1 = sourceDoc('reuse-quiz-1', [
+      mcQuestion('r1-q1', 1, { choices: ['X', 'Y'], answer: 'X' }),
+      mcQuestion('r1-q2', 2, { choices: ['X', 'Y'], answer: 'Y' }),
+    ]);
+    const { allocation: firstAllocation } = await publishAndAllocate({
+      repository, allocationStore, source: quiz1, context: { freshCard: true },
+    });
+    const { cardId } = firstAllocation;
+    await resolver.execute({ testId: cardId, answers: { 1: 'A', 2: 'B' } });
+    const [settledFirstRecord] = await allocationStore.findByCard(cardId);
+    expect(settledFirstRecord.status).toBe('satisfied');
+
+    // Advance the clock, then legitimately reallocate the SAME rows to a
+    // completely different document.
+    clock.at = '2026-08-05T00:00:00.000Z';
+    const quiz2 = sourceDoc('reuse-quiz-2', [
+      mcQuestion('r2-q1', 1, { choices: ['P', 'Q'], answer: 'P' }),
+      mcQuestion('r2-q2', 2, { choices: ['P', 'Q'], answer: 'P' }),
+    ]);
+    const { allocation: secondAllocation } = await publishAndAllocate({
+      repository, allocationStore, source: quiz2, context: { cardId, startRow: 1 },
+    });
+    expect(secondAllocation.rowRange).toEqual({ start: 1, end: 2 });
+
+    const recordsAfterReuse = await allocationStore.findByCard(cardId);
+    expect(recordsAfterReuse).toHaveLength(2);
+    expect(recordsAfterReuse.map((r) => r.status).sort()).toEqual(['live', 'satisfied']);
+
+    // The SAME physical marks, scanned again: must grade ONLY against
+    // quiz-2's answer key (the newest claimant) — quiz-1 must be entirely
+    // absent from results, never re-graded against its own (stale) key.
+    const result = await resolver.execute({ testId: cardId, answers: { 1: 'A', 2: 'B' } });
+
+    expect(result.results).toHaveLength(1);
+    expect(result.results[0].documentId).toBe('reuse-quiz-2');
+    expect(result.results[0].results).toEqual([
+      {
+        row: 1, itemId: 'r2-q1', status: 'correct', given: 'P', points: 1, earned: 1,
+      },
+      {
+        row: 2, itemId: 'r2-q2', status: 'incorrect', given: 'Q', points: 1, earned: 0,
+      },
+    ]);
+    expect(result.unallocatedRows).toBeUndefined();
+
+    // quiz-2 was fully answered this scan -> live -> satisfied; quiz-1's
+    // already-satisfied record is untouched (no re-write, no re-grade).
+    const finalRecords = await allocationStore.findByCard(cardId);
+    const quiz1Record = finalRecords.find((r) => r.documentId === 'reuse-quiz-1');
+    const quiz2Record = finalRecords.find((r) => r.documentId === 'reuse-quiz-2');
+    expect(quiz1Record.status).toBe('satisfied');
+    expect(quiz2Record.status).toBe('satisfied');
+  });
 });
 
 describe('execute — revisionSuperseded (spec §4.3)', () => {

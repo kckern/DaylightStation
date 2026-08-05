@@ -19,6 +19,16 @@
  * doc comments on both), then feeds the SAME `planRows` domain function the
  * render used to plan card rows in the first place.
  *
+ * ROW REUSE / NEWEST CLAIMANT WINS: a card's physical rows can legally be
+ * reallocated once their prior claimant has settled (`satisfied`) — the
+ * allocation store's collision check only blocks an overlapping `live`
+ * range (spec §5.4). A scan therefore never trusts a record's own `rowRange`
+ * in isolation: `resolveRowOwners` below resolves ONE owner per row across
+ * every live|satisfied record on the card first, and each record grades
+ * only the rows it still owns. A record that owns none of the rows actually
+ * marked this scan (every one of them lost to a newer printing) is omitted
+ * from the result entirely — see `resolveRowOwners`'s own doc comment.
+ *
  * Pure-ish: every dependency (`allocationStore`, `repository`, `banks`) is
  * constructor-injected. No composition wiring happens here — that is
  * Task 7's job.
@@ -47,6 +57,59 @@ function rowsInRange({ start, end }) {
   const rows = [];
   for (let row = start; row <= end; row += 1) rows.push(row);
   return rows;
+}
+
+/** `record.status` ordinal for the ROW-OWNERSHIP tiebreak below — `live` (an active claim) outranks `satisfied` (a settled one). */
+const STATUS_RANK = { live: 1, satisfied: 0 };
+
+/**
+ * Is `candidate` (`{record, index}`, `index` its position in the eligible-
+ * records list) a NEWER claim on a row than `current` (spec §5.4 review fix
+ * — "newest claimant wins per row")? Compared in order: latest `renderedAt`
+ * wins; ties broken by status (`live` beats `satisfied`); remaining ties
+ * broken by `findByCard`'s own oldest-first record order (a later index is
+ * the more recently created record).
+ */
+function isNewerClaim(candidate, current) {
+  if (candidate.record.renderedAt !== current.record.renderedAt) {
+    return candidate.record.renderedAt > current.record.renderedAt;
+  }
+  if (STATUS_RANK[candidate.record.status] !== STATUS_RANK[current.record.status]) {
+    return STATUS_RANK[candidate.record.status] > STATUS_RANK[current.record.status];
+  }
+  return candidate.index > current.index;
+}
+
+/**
+ * Row ownership across every live|satisfied record on a card (spec §5.4
+ * review fix, CRITICAL: silent double-grading on card row reuse). A
+ * `satisfied` record's rows are NOT protected from reallocation —
+ * `checkCollision` (`allocation.mjs`) only blocks an overlapping `live`
+ * range, so a card's physical rows can legally be reprinted for a
+ * completely different document once the prior claimant has settled. Without
+ * a single deterministic owner per row, a mark on a reused row would grade
+ * against every claimant's answer key at once — this function is what
+ * prevents that: "physical card = latest printing wins," one owner per row,
+ * decided by `isNewerClaim` above.
+ *
+ * @param {object[]} eligibleRecords - live|satisfied records, `findByCard`'s
+ *   own oldest-first order (order matters — see `isNewerClaim`'s last tiebreak)
+ * @returns {Map<number, object>} row number -> the ONE record that owns it
+ */
+function resolveRowOwners(eligibleRecords) {
+  const claims = new Map(); // row -> {record, index}
+  eligibleRecords.forEach((record, index) => {
+    const candidate = { record, index };
+    for (const row of rowsInRange(record.rowRange)) {
+      const current = claims.get(row);
+      if (!current || isNewerClaim(candidate, current)) {
+        claims.set(row, candidate);
+      }
+    }
+  });
+  const owners = new Map();
+  for (const [row, claim] of claims) owners.set(row, claim.record);
+  return owners;
 }
 
 /**
@@ -170,24 +233,35 @@ export class ResolveCardScan {
     }
 
     const records = await this.#allocationStore.findByCard(testId);
+    const eligible = records.filter((record) => isLiveOrSatisfied(record.status));
     const answeredRows = new Set(Object.keys(answers).map(Number));
-    const coveredRows = new Set();
+
+    // Newest-claimant-wins row ownership (spec §5.4 review fix, CRITICAL —
+    // see `resolveRowOwners`'s own doc comment): resolved ONCE, up front,
+    // over every eligible record on the card, never per-record — a record's
+    // own idea of "my range" is no longer authoritative once a newer record
+    // has reclaimed part of it.
+    const rowOwners = resolveRowOwners(eligible);
     const results = [];
 
-    for (const record of records) {
-      if (!isLiveOrSatisfied(record.status)) continue;
-      const rangeRows = rowsInRange(record.rowRange);
-      if (!rangeRows.some((row) => answeredRows.has(row))) continue;
+    for (const record of eligible) {
+      const ownedRows = rowsInRange(record.rowRange).filter((row) => rowOwners.get(row) === record);
+      // A record that owns none of the rows actually marked this scan is
+      // omitted from `results` entirely (spec §5.4 review fix) — it lost
+      // every marked row to a newer claimant, so reporting it (blank, against
+      // a stale answer key, or both) would be exactly the double-grading /
+      // phantom-result risk this rule exists to close off.
+      if (!ownedRows.some((row) => answeredRows.has(row))) continue;
 
       // eslint-disable-next-line no-await-in-loop
-      const cardResult = await this.#resolveRecord(record, rangeRows, answers);
-      rangeRows.forEach((row) => coveredRows.add(row));
+      const cardResult = await this.#resolveRecord(record, ownedRows, answers);
       results.push(cardResult);
 
-      // Marked satisfied only when EVERY row in the record's range was
-      // answered this scan (spec §5.4: "partial coverage stays live") — and
-      // only from `live`, mirroring the store's own legal-transition rule
-      // (a record already `satisfied` needs no re-write on a later re-scan).
+      // Marked satisfied only when EVERY row this record OWNS was answered
+      // this scan (spec §5.4: "partial coverage stays live") — and only from
+      // `live`, mirroring the store's own legal-transition rule (a record
+      // already `satisfied` needs no re-write on a later re-scan). Rows the
+      // record no longer owns don't count against it either way.
       const fullyAnswered = cardResult.results.every((row) => row.status !== 'blank');
       if (record.status === 'live' && fullyAnswered) {
         // eslint-disable-next-line no-await-in-loop
@@ -195,7 +269,10 @@ export class ResolveCardScan {
       }
     }
 
-    const unallocatedRows = [...answeredRows].filter((row) => !coveredRows.has(row)).sort((a, b) => a - b);
+    // A row with no owner at all (no live|satisfied record's range ever
+    // covered it — includes a `released`/`superseded` record's now-stale
+    // rows, spec §5.4 review fix, Important) is unallocated, never guessed.
+    const unallocatedRows = [...answeredRows].filter((row) => !rowOwners.has(row)).sort((a, b) => a - b);
     return unallocatedRows.length ? { results, unallocatedRows } : { results };
   }
 
@@ -203,9 +280,11 @@ export class ResolveCardScan {
    * Resolves one allocation record's document/bank at its PINNED rev, then
    * re-derives the row->item mapping via the same seam a card-attached
    * render used (`prepareV2Document` + `mergeBank` + `planRows`), and grades
-   * every row in the record's range.
+   * every row in `ownedRows` — the subset of the record's own range it still
+   * OWNS after row-ownership resolution (spec §5.4 review fix; may be the
+   * full range, the common case with no row reuse in play).
    */
-  async #resolveRecord(record, rangeRows, answers) {
+  async #resolveRecord(record, ownedRows, answers) {
     const pinnedDocument = await this.#repository.getPublished(record.documentId, record.rev);
     if (!pinnedDocument) {
       throw new EntityNotFoundError('PublishedDocument', `${record.documentId}@${record.rev}`, {
@@ -230,7 +309,7 @@ export class ResolveCardScan {
     }
 
     const rowResults = plan.rows
-      .filter((planned) => rangeRows.includes(planned.row))
+      .filter((planned) => ownedRows.includes(planned.row))
       .map((planned) => {
         const item = bankItemsById.get(planned.itemId);
         if (!item) {
