@@ -404,3 +404,95 @@ describe('a review item says which question it is', () => {
     });
   });
 });
+
+/**
+ * A print-document unit (spec §9, Task 7) has no `bank` at all — its answers
+ * were never in a bank to begin with, only ever in the review queue the scan
+ * bridge (`RecordCardScanOutcome`) fills. `questionItemIds(document)` cannot
+ * derive the roster because there is no catalog `document` to walk (the ref
+ * points at a print-time artefact, not a curriculum document), and the
+ * bank-select expansion the printer performs is something no static walk can
+ * reproduce anyway. So for THIS unit shape the review queue itself — every
+ * machine-resolved mark plus every pending item the scan enqueued — is the
+ * roster.
+ */
+describe('GradeSubmission on a print-document unit', () => {
+  const PRINT_DOCUMENT_REF = 'print/science/biology/quiz-1@abcdef123';
+
+  /** A fresh curriculum/session/queue/grade set, isolated from the shared beforeEach. */
+  const buildPrintCase = () => {
+    const clock = fakeClock();
+    const catalog = new FakeCatalog({
+      units: rawUnits({ [OMR_UNIT]: { document: PRINT_DOCUMENT_REF, bank: undefined } }),
+      documents: rawDocuments(),
+      manifests: rawManifests(),
+    });
+    const curriculum = new CurriculumAccess({ catalog, bankIds: () => BANK_IDS, clock: clock.epoch, logger: silentLogger });
+    const printSessions = new FakeSessionRepository();
+    const printReviewQueue = new FakeReviewQueue();
+    const printGrader = new FakeGrader(BANKS);
+    const bankReader = { getBank: (id) => BANKS[id] ?? null };
+    const printGrade = new GradeSubmission({
+      curriculum, sessions: printSessions, reviewQueue: printReviewQueue, grader: printGrader, bankReader,
+      grownUps: fakeGrownUps(clock), clock: clock.now, logger: silentLogger,
+    });
+    return {
+      clock, sessions: printSessions, reviewQueue: printReviewQueue, grade: printGrade,
+    };
+  };
+
+  const submittedAt = async (sessions, clock) => {
+    await sessions.appendEvent(SID, { type: 'created', at: clock.iso(), sessionId: SID, learnerId: 'kid1', unitId: OMR_UNIT });
+    await sessions.appendEvent(SID, { type: 'issued', at: clock.iso(), sessionId: SID, artifactId: 'card-1' });
+    await sessions.appendEvent(SID, { type: 'submitted', at: clock.iso(), sessionId: SID, transport: 'paper' });
+  };
+
+  /** Two machine-resolved marks and one pending free-response item — exactly
+   * what `RecordCardScanOutcome`'s review-queue bridge enqueues for a
+   * complete-but-unfinished card. */
+  const seedMachineMarks = (reviewQueue, at) => reviewQueue.enqueue([
+    {
+      sessionId: SID, itemId: 'q1', learnerId: 'kid1', unitId: OMR_UNIT, reason: 'machine', given: 'blue',
+      prompt: 'P1', questionNumber: 1, rubric: null, enqueuedAt: at,
+      verdict: 'correct', gradedBy: 'engine', gradedAt: at, attemptId: 'att-1',
+    },
+    {
+      sessionId: SID, itemId: 'q2', learnerId: 'kid1', unitId: OMR_UNIT, reason: 'machine', given: 'fox',
+      prompt: 'P2', questionNumber: 2, rubric: null, enqueuedAt: at,
+      verdict: 'incorrect', gradedBy: 'engine', gradedAt: at, attemptId: 'att-2',
+    },
+  ]);
+
+  const seedPendingEssay = (reviewQueue, at) => reviewQueue.enqueue([{
+    sessionId: SID, itemId: 'w-essay', learnerId: 'kid1', unitId: OMR_UNIT, reason: 'free_response', given: null,
+    prompt: 'Explain.', questionNumber: null, rubric: null, enqueuedAt: at,
+  }]);
+
+  it('grades from the review-queue roster once every verdict is in', async () => {
+    const { clock, sessions, reviewQueue, grade } = buildPrintCase();
+    await submittedAt(sessions, clock);
+    const at = clock.iso();
+    await seedMachineMarks(reviewQueue, at);
+    await seedPendingEssay(reviewQueue, at);
+    await reviewQueue.resolve({ sessionId: SID, itemId: 'w-essay', verdict: 'correct', gradedBy: 'dad', at });
+
+    const result = await grade.execute({ sessionId: SID });
+    expect(result).toMatchObject({ status: 'graded', correct: 2, expected: 3 });
+    expect(result.percent).toBeCloseTo(66.67, 2);
+    expect(sessions.derive(SID)).toMatchObject({ state: 'graded' });
+    const queueItemIds = (await reviewQueue.listForSession(SID)).map((i) => i.itemId);
+    expect(new Set(queueItemIds)).toEqual(new Set(['q1', 'q2', 'w-essay']));
+  });
+
+  it('holds at awaiting_review while any queued item still has no verdict', async () => {
+    const { clock, sessions, reviewQueue, grade } = buildPrintCase();
+    await submittedAt(sessions, clock);
+    const at = clock.iso();
+    await seedMachineMarks(reviewQueue, at);
+    await seedPendingEssay(reviewQueue, at); // left unresolved
+
+    const result = await grade.execute({ sessionId: SID });
+    expect(result).toMatchObject({ status: 'awaiting_review', outstanding: ['w-essay'] });
+    expect(sessions.types(SID)).not.toContain('graded');
+  });
+});

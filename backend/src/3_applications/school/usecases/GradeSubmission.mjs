@@ -27,6 +27,7 @@
  */
 import { reduceSession, createEvent } from '#domains/school/sessions/sessionEvents.mjs';
 import { questionItemIds, questionPrompts } from '#domains/school/documents/documentValidation.mjs';
+import { PRINT_DOCUMENT_REF_PATTERN } from '#domains/school/curriculum/unitValidation.mjs';
 
 export class GradeSubmission {
   #curriculum; #sessions; #reviewQueue; #grader; #bankReader; #grownUps; #clock; #logger;
@@ -108,7 +109,19 @@ export class GradeSubmission {
     const unit = await this.#curriculum.getUnit(state.unitId);
     const document = unit?.document ? await this.#curriculum.getDocument(unit.document) : null;
     const bank = unit?.bank ? (this.#bankReader?.getBank(unit.bank) ?? null) : null;
-    const expectedItems = document ? questionItemIds(document) : (bank?.items ?? []).map((i) => i.id);
+    // A `print/<id>@<rev>` document ref (spec §9, Task 7) names a print-time
+    // artefact, not a catalog document — there is nothing for `getDocument`
+    // above to resolve, and a print unit carries no `bank` either. The review
+    // queue IS the verdict sheet for a card-scanned print document: the scan
+    // bridge (`RecordCardScanOutcome`) enqueues every machine mark (resolved)
+    // and every human-needed item (pending) as it reads the card, so the set
+    // of queue itemIds is exactly the roster the printed sheet carried —
+    // including whatever a bank-select expansion put on it, which no static
+    // document walk could reproduce.
+    const isPrintUnit = typeof unit?.document === 'string' && PRINT_DOCUMENT_REF_PATTERN.test(unit.document);
+    const expectedItems = isPrintUnit
+      ? [...new Set((await this.#reviewQueue.listForSession(sessionId)).map((item) => item.itemId))]
+      : (document ? questionItemIds(document) : (bank?.items ?? []).map((i) => i.id));
     if (!expectedItems.length) return this.#unavailable(sessionId, 'There are no questions to mark on that one.');
 
     // --- verdicts already on record ------------------------------------------

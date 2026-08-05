@@ -77,7 +77,7 @@ const REFERENCE_FIELDS = [...Object.keys(RESOLVABLE_REFS), 'review'];
  * charset, non-hex or wrong-length rev) fails unit validation immediately,
  * the same as any other authoring mistake in this function.
  */
-const PRINT_DOCUMENT_REF_PATTERN = /^print\/[a-z0-9][a-z0-9-]*(\/[a-z0-9][a-z0-9-]*){0,3}@[0-9a-f]{9}$/;
+export const PRINT_DOCUMENT_REF_PATTERN = /^print\/[a-z0-9][a-z0-9-]*(\/[a-z0-9][a-z0-9-]*){0,3}@[0-9a-f]{9}$/;
 
 const isNonEmptyString = (v) => typeof v === 'string' && v.trim().length > 0;
 const isPlainObject = (v) => Boolean(v) && typeof v === 'object' && !Array.isArray(v);
