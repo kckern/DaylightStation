@@ -70,9 +70,13 @@ export function createSchoolPrintScanConsumer({
           return;
         }
         if (outcome?.deadCard) {
-          // Every record on this card refused (drift, resolve failure, ...)
-          // yet the card carries real answers — the child's work must not
-          // vanish below warn just because none of it resolved.
+          // Every record on this card is retired (released/superseded — no
+          // live/satisfied claimant left), so the sheet in the child's hand
+          // refers to allocations nobody owns anymore, yet real answers
+          // arrived: this must not vanish below warn just because nothing on
+          // the card resolved. Distinct from `scan-record-refused` below,
+          // which handles a per-record resolve failure on an otherwise-live
+          // card, not a card whose records are all already retired.
           logger.warn?.('school.print.scan-dead-card', {
             testId, answeredRowCount: outcome.answeredRowCount, recordStatuses: outcome.recordStatuses,
           });
