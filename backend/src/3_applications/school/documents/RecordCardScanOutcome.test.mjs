@@ -70,14 +70,15 @@ const gradedCard = (over = {}) => ({
   revisionSuperseded: false,
   results: [
     {
-      row: 1, itemId: 'q1', itemType: 'multiple_choice', status: 'correct', given: 'blue', points: 1, earned: 1,
+      row: 1, itemId: 'q1', itemType: 'multiple_choice', prompt: null, status: 'correct', given: 'blue', points: 1, earned: 1,
     },
     {
-      row: 2, itemId: 'q2', itemType: 'multiple_choice', status: 'incorrect', given: 'fox', points: 1, earned: 0,
+      row: 2, itemId: 'q2', itemType: 'multiple_choice', prompt: null, status: 'incorrect', given: 'fox', points: 1, earned: 0,
     },
   ],
   totalPoints: 2,
   earnedPoints: 1,
+  unscannedItems: [],
   ...over,
 });
 
@@ -147,9 +148,73 @@ describe('attempt persistence', () => {
     const second = await useCase.execute({ testId: '1234567', card: changed });
     expect(second.recorded).toBe(true);
     const attempts = datastore.readAllAttempts('felix');
-    expect(attempts).toHaveLength(4);
+    expect(attempts).toHaveLength(3); // row 1 deduped (identical given), only row 2 re-appends
     expect(attempts.at(-1).provenance.reScored).toBe(true);
     expect(scanKey(changed)).not.toBe(scanKey(gradedCard()));
+  });
+
+  it('attempts are filed under the document taxonomy, not a phantom "derived" subject', async () => {
+    const datastore = fakeDatastore();
+    const useCase = new RecordCardScanOutcome({ datastore, logger: quietLogger });
+    const card = gradedCard({ documentId: 'science/biology/quiz-1', recordId: 'science/biology/quiz-1@abcdef123:v0:1-2' });
+    await useCase.execute({ testId: '1234567', card });
+    const attempt = datastore.readAllAttempts('felix')[0];
+    expect(attempt.bankId).toBe('science/biology/quiz-1@abcdef123');
+    expect(attempt.learning.subjectId).toBe('science');
+    expect(attempt.sessionId).toBeNull();
+  });
+
+  it('a flat (non-hierarchical) documentId files without a subjectId rather than inventing one', async () => {
+    const datastore = fakeDatastore();
+    const useCase = new RecordCardScanOutcome({ datastore, logger: quietLogger });
+    await useCase.execute({ testId: '1234567', card: gradedCard() }); // documentId 'arts/quiz-1' → subjectId 'arts'
+    const flat = gradedCard({ documentId: 'quiz-1', recordId: 'quiz-1@abcdef123:v0:9-10' });
+    flat.results = flat.results.map((row, i) => ({ ...row, row: 9 + i }));
+    await useCase.execute({ testId: '1234567', card: flat });
+    const attempts = datastore.readAllAttempts('felix');
+    expect(attempts.at(-1).bankId).toBe('quiz-1@abcdef123');
+    expect(attempts.at(-1).learning?.subjectId ?? null).toBeNull();
+  });
+
+  it('a partial feed then a complete re-feed appends ONLY the rows not already recorded', async () => {
+    const datastore = fakeDatastore();
+    const useCase = new RecordCardScanOutcome({ datastore, logger: quietLogger });
+    const partial = gradedCard({
+      results: [
+        { row: 1, itemId: 'q1', itemType: 'multiple_choice', prompt: null, status: 'correct', given: 'blue', points: 1, earned: 1 },
+        { row: 2, itemId: 'q2', itemType: 'multiple_choice', prompt: null, status: 'blank', given: null, points: 1, earned: 0 },
+      ],
+      earnedPoints: 1,
+    });
+    await useCase.execute({ testId: '1234567', card: partial });
+    expect(datastore.readAllAttempts('felix')).toHaveLength(1);
+
+    const complete = gradedCard(); // both rows answered, row 1 identical (given 'blue')
+    const second = await useCase.execute({ testId: '1234567', card: complete });
+    expect(second.recorded).toBe(true);
+    const attempts = datastore.readAllAttempts('felix');
+    expect(attempts).toHaveLength(2); // row 1 deduped, only row 2 appended
+    expect(attempts.at(-1).itemId).toBe('q2');
+  });
+
+  it('graded percent is item-count over rows, matching GradeSubmission semantics', async () => {
+    const datastore = fakeDatastore();
+    const sessions = fakeSessions(seededSession('ws-1'));
+    const useCase = new RecordCardScanOutcome({ datastore, sessions, logger: quietLogger });
+    // 1 correct of 2 rows, but the correct row is worth 5 points of 6 total:
+    const card = gradedCard({
+      sessionId: 'ws-1',
+      results: [
+        { row: 1, itemId: 'q1', itemType: 'multiple_choice', prompt: null, status: 'correct', given: 'blue', points: 5, earned: 5 },
+        { row: 2, itemId: 'q2', itemType: 'multiple_choice', prompt: null, status: 'incorrect', given: 'fox', points: 1, earned: 0 },
+      ],
+      totalPoints: 6,
+      earnedPoints: 5,
+    });
+    await useCase.execute({ testId: '1234567', card });
+    const graded = (await sessions.readEvents('ws-1')).at(-1);
+    expect(graded.type).toBe('graded');
+    expect(graded.percent).toBe(50); // 1 of 2 items — NOT 83.33 points-weighted
   });
 
   it('an unattributed scan (no learnerId) records nothing, loudly', async () => {

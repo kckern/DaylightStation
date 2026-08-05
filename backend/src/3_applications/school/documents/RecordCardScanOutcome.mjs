@@ -90,25 +90,35 @@ export class RecordCardScanOutcome {
     }
 
     const key = scanKey(card);
-    const existing = this.#datastore.readAllAttempts(learnerId)
+    const priorAttempts = this.#datastore.readAllAttempts(learnerId)
       .filter((attempt) => attempt?.provenance?.recordId === card.recordId);
-    if (existing.some((attempt) => attempt.provenance?.scanKey === key)) {
-      // The identical card fed through the roller again — nothing new
-      // happened to the child's work, so nothing new lands in the log.
+    const recordedRows = new Set(
+      priorAttempts.map((attempt) => `${attempt.provenance.row}:${JSON.stringify(attempt.given)}`),
+    );
+    const freshRows = card.results.filter(
+      (row) => row.status !== 'blank' && !recordedRows.has(`${row.row}:${JSON.stringify(row.given)}`),
+    );
+    if (freshRows.length === 0) {
+      // Every non-blank row on this card was already recorded verbatim —
+      // nothing new happened to the child's work, so nothing new lands in
+      // the log (whether that's the identical card re-fed, or a complete
+      // re-feed whose rows were all already captured by an earlier partial).
       this.#logger.info?.('school.print.scan-already-recorded', {
         testId, recordId: card.recordId, learnerId,
       });
       return { recorded: false, reason: 'duplicate-scan' };
     }
 
+    const documentSegments = card.documentId.split('/');
+    const subjectId = documentSegments.length > 1 ? documentSegments[0] : null;
+
     const at = this.#clock().toISOString();
     const attemptIds = [];
-    for (const row of card.results) {
-      if (row.status === 'blank') continue; // no mark, no attempt — a blank row is unresolved, not wrong
+    for (const row of freshRows) {
       const attempt = createAttempt({
         at,
-        sessionId: card.sessionId ?? `scan:${card.recordId}`,
-        bankId: `derived/${card.documentId}@${card.rev}`,
+        sessionId: card.sessionId ?? null,
+        bankId: `${card.documentId}@${card.rev}`,
         itemId: row.itemId,
         itemType: row.itemType,
         mode: 'quiz',
@@ -116,6 +126,7 @@ export class RecordCardScanOutcome {
         correct: row.status === 'correct',
         attributedTo: learnerId,
         transport: 'paper',
+        ...(subjectId ? { learning: { subjectId } } : {}),
         provenance: {
           kind: 'omr-card',
           cardId: card.cardId,
@@ -145,7 +156,8 @@ export class RecordCardScanOutcome {
       totalPoints: card.totalPoints,
     });
 
-    const session = await this.#bridgeSession(card, attemptIds, at);
+    const priorAttemptIdsForRecord = priorAttempts.map((attempt) => attempt.id);
+    const session = await this.#bridgeSession(card, attemptIds, at, priorAttemptIdsForRecord);
     return { recorded: true, attemptIds, ...(session ? { session } : {}) };
   }
 
@@ -154,7 +166,7 @@ export class RecordCardScanOutcome {
    * transitions every other transport uses. Never throws — a session-side
    * refusal must not un-record the attempts above.
    */
-  async #bridgeSession(card, attemptIds, at) {
+  async #bridgeSession(card, attemptIds, at, priorAttemptIdsForRecord = []) {
     if (!this.#sessions || card.sessionId == null) return null;
     const { sessionId } = card;
     try {
@@ -190,14 +202,20 @@ export class RecordCardScanOutcome {
         await this.#sessions.appendEvent(sessionId, submitted.event);
       }
 
-      const percent = card.totalPoints > 0
-        ? Math.round((card.earnedPoints / card.totalPoints) * 10000) / 100
+      const correctRows = card.results.filter((row) => row.status === 'correct').length;
+      const percent = card.results.length > 0
+        ? Math.round((correctRows / card.results.length) * 10000) / 100
         : 0;
       const graded = createEvent({
         type: 'graded',
         at,
         sessionId,
-        attemptIds: attemptIds.length ? attemptIds : [`scan:${card.recordId}`],
+        // attemptIds is only the rows freshly appended THIS call; if this
+        // graded event ever fires without any (defensive — the row-scoped
+        // dedup above normally returns before reaching here), fall back to
+        // the ids already on record for this recordId rather than a
+        // synthetic id.
+        attemptIds: attemptIds.length ? attemptIds : priorAttemptIdsForRecord,
         percent,
       });
       if (graded.errors.length) throw new Error(graded.errors.join('; '));
