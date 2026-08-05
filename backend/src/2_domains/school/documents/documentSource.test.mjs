@@ -203,6 +203,27 @@ describe('publishDocument: full round trip (every answer-bearing shape)', () => 
       ['blocks-1-b1', 'blocks-1-b2', 'blocks-3', 'm1', 'q1', 'q2'].sort(),
     );
   });
+
+  // F2 (review finding): an inline multi_select question's own `maxSelect`
+  // must reach the minted bank item — `createChoiceResolver`
+  // (DocumentPdfRenderer.mjs) prints "Choose up to N." only when the BANK
+  // item carries it, and `validateQuestionBank`'s coherence check (this
+  // file's own publish postcondition) can only ever run against what
+  // actually landed in the bank.
+  it('inline multi_select question maxSelect mints onto the bank item and is stripped from the published block', () => {
+    // q2 (fullSource().blocks[5]) has 3 answers and 4 choices — maxSelect:3
+    // is the legal answers.length boundary.
+    const source = fullSource({
+      blocks: [
+        { ...fullSource().blocks[5], maxSelect: 3 },
+      ],
+    });
+    const withMaxSelect = publishDocument(source);
+    expect(withMaxSelect.errors).toBeUndefined();
+    const item = withMaxSelect.bank.items.find((i) => i.id === 'q2');
+    expect(item.maxSelect).toBe(3);
+    expect(withMaxSelect.published.blocks[0].maxSelect).toBeUndefined();
+  });
 });
 
 describe('publishDocument: bank-select sugar passes through untouched', () => {
@@ -317,6 +338,25 @@ describe('publishDocument: postcondition failure path (never emits a half-valid 
     expect(result.published).toBeUndefined();
     expect(result.bank).toBeUndefined();
     expect(result.errors.some((e) => e.includes('choices must have >= 2 entries'))).toBe(true);
+  });
+
+  // F2 (review finding): an inline multi_select question's `maxSelect` is
+  // gated only by `validateQuestionBank`'s coherence check (a publish
+  // POSTCONDITION, same as the 1-choice multiple_choice case above) — there
+  // is no earlier source-stage gate for it, so this proves the postcondition
+  // is genuinely reachable from an inline question (not just a bank-select
+  // one) and reports a readable, actionable message rather than failing
+  // silently or with an opaque error.
+  it('an inline multi_select question with maxSelect below its own answers.length fails publish at the bank postcondition, readably', () => {
+    const source = fullSource({
+      blocks: [
+        { ...fullSource().blocks[5], maxSelect: 1 }, // q2 has 3 answers — 1 is incoherent
+      ],
+    });
+    const result = publishDocument(source);
+    expect(result.published).toBeUndefined();
+    expect(result.bank).toBeUndefined();
+    expect(result.errors.some((e) => e.includes('maxSelect (1) must be >= answers.length (3)'))).toBe(true);
   });
 
   it('an id collision between two independently-scoped minting schemes (question itemId == matching key) fails publish', () => {

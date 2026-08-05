@@ -152,8 +152,26 @@ export function validateQuestionBank(raw) {
           else if (!item.answers.every((a) => item.choices.includes(a))) errors.push(`${at}: answers must be a subset of choices`);
         }
       }
-      if (item.maxSelect !== undefined && (!Number.isInteger(item.maxSelect) || item.maxSelect < 1)) {
-        errors.push(`${at}: maxSelect must be an integer >= 1`);
+      if (item.maxSelect !== undefined) {
+        if (!Number.isInteger(item.maxSelect) || item.maxSelect < 1) {
+          errors.push(`${at}: maxSelect must be an integer >= 1`);
+        } else {
+          // Coherence (F2, review finding): `maxSelect` caps how many bubbles
+          // a student may mark, so it can never sit below the number of
+          // CORRECT answers (an exact-set-match item the correct answer
+          // itself could never legally satisfy, spec §5.5) nor above the
+          // number of choices actually printed (a cap the card has no rows
+          // for). Both checks only run once `choices`/`answers` are already
+          // known-good arrays — an already-broken choices/answers shape gets
+          // its own error above and this coherence check would just be noise
+          // on top of it.
+          if (Array.isArray(item.answers) && item.maxSelect < item.answers.length) {
+            errors.push(`${at}: maxSelect (${item.maxSelect}) must be >= answers.length (${item.answers.length})`);
+          }
+          if (Array.isArray(item.choices) && item.maxSelect > item.choices.length) {
+            errors.push(`${at}: maxSelect (${item.maxSelect}) must be <= choices.length (${item.choices.length})`);
+          }
+        }
       }
     }
     if (item.type === 'region_click') {

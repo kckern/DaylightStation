@@ -212,4 +212,40 @@ describe('validateQuestionBank: multi_select', () => {
     expect(r.ok).toBe(false);
     expect(r.errors).toContain('items[0]: maxSelect must be an integer >= 1');
   });
+
+  // F2 (review finding): maxSelect COHERENCE against answers.length/choices.length —
+  // `ms()`'s default fixture has 4 choices and 2 answers (['Red', 'Blue']),
+  // so `maxSelect: 1` (below answers.length) and `maxSelect: 5` (above
+  // choices.length) are the two illegal edges; `maxSelect: 2` (== answers.length)
+  // and `maxSelect: 4` (== choices.length) are the legal boundary either side.
+  describe('maxSelect coherence with answers.length / choices.length', () => {
+    it('rejects maxSelect below answers.length — a cap the correct answer itself could not satisfy', () => {
+      const r = validateQuestionBank(bank({ items: [ms({ maxSelect: 1 })] }));
+      expect(r.ok).toBe(false);
+      expect(r.errors).toContain('items[0]: maxSelect (1) must be >= answers.length (2)');
+    });
+
+    it('rejects maxSelect above choices.length — a cap the card has no rows for', () => {
+      const r = validateQuestionBank(bank({ items: [ms({ maxSelect: 5 })] }));
+      expect(r.ok).toBe(false);
+      expect(r.errors).toContain('items[0]: maxSelect (5) must be <= choices.length (4)');
+    });
+
+    it('accepts maxSelect exactly at the answers.length boundary', () => {
+      const r = validateQuestionBank(bank({ items: [ms({ maxSelect: 2 })] }));
+      expect(r.ok).toBe(true);
+    });
+
+    it('accepts maxSelect exactly at the choices.length boundary', () => {
+      const r = validateQuestionBank(bank({ items: [ms({ maxSelect: 4 })] }));
+      expect(r.ok).toBe(true);
+    });
+
+    it('the two coherence messages are independent — each names only its own bound', () => {
+      const belowAnswers = validateQuestionBank(bank({ items: [ms({ maxSelect: 1 })] }));
+      expect(belowAnswers.errors.some((e) => e.includes('choices.length'))).toBe(false);
+      const aboveChoices = validateQuestionBank(bank({ items: [ms({ maxSelect: 5 })] }));
+      expect(aboveChoices.errors.some((e) => e.includes('answers.length'))).toBe(false);
+    });
+  });
 });
