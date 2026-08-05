@@ -340,3 +340,83 @@ describe('publishDocument: postcondition failure path (never emits a half-valid 
     expect(result.errors.some((e) => e.includes('duplicate id'))).toBe(true);
   });
 });
+
+// Review fix: a malformed non-array `choices` alongside `answer` used to
+// silently fall through to a short_answer mint (the multiple-choice intent
+// dropped) with the garbage `choices` value surviving onto the published
+// document — neither postcondition caught it, since short_answer's bank
+// shape never looks at `choices`. See collectInlineQuestionShapeErrors'
+// doc comment in documentSource.mjs.
+describe('publishDocument: inline question choices shape gate (review fix)', () => {
+  it('reviewer repro: a non-array choices with an answer fails publish, names the path, and mints nothing', () => {
+    const source = fullSource({
+      blocks: [
+        {
+          type: 'question', itemId: 'q1', number: 1, blocks: [richText('What is the capital?')], choices: 'not-an-array-typo', answer: 'Olympia',
+        },
+      ],
+    });
+    const result = publishDocument(source);
+    expect(result.published).toBeUndefined();
+    expect(result.bank).toBeUndefined();
+    expect(result.errors).toEqual(['blocks[0]: question choices must be an array when present']);
+  });
+
+  it('a valid choices array with an answer still mints multiple_choice, unchanged', () => {
+    const source = fullSource({
+      blocks: [
+        {
+          type: 'question', itemId: 'q1', number: 1, blocks: [richText('Pick one.')], choices: ['A', 'B'], answer: 'A',
+        },
+      ],
+    });
+    const result = publishDocument(source);
+    expect(result.errors).toBeUndefined();
+    expect(result.bank.items[0]).toMatchObject({ id: 'q1', type: 'multiple_choice', choices: ['A', 'B'], answer: 'A' });
+    expect(result.published.blocks[0].choices).toEqual(['A', 'B']);
+  });
+
+  it('choices absent with an answer mints short_answer, and the published block carries no choices field', () => {
+    const source = fullSource({
+      blocks: [
+        {
+          type: 'question', itemId: 'q1', number: 1, blocks: [richText('Name it.')], answer: 'Olympia',
+        },
+      ],
+    });
+    const result = publishDocument(source);
+    expect(result.errors).toBeUndefined();
+    expect(result.bank.items[0]).toMatchObject({ id: 'q1', type: 'short_answer', answer: 'Olympia' });
+    expect(Object.prototype.hasOwnProperty.call(result.published.blocks[0], 'choices')).toBe(false);
+  });
+
+  it('an empty choices array with an answer fails publish (not a legal "no choices" signal)', () => {
+    const source = fullSource({
+      blocks: [
+        {
+          type: 'question', itemId: 'q1', number: 1, blocks: [richText('Name it.')], choices: [], answer: 'Olympia',
+        },
+      ],
+    });
+    const result = publishDocument(source);
+    expect(result.published).toBeUndefined();
+    expect(result.bank).toBeUndefined();
+    expect(result.errors).toEqual(['blocks[0]: question choices must be a non-empty array when present']);
+  });
+
+  it('multi_select (answers) requires choices too, and rejects the same malformed shapes', () => {
+    const missing = publishDocument(fullSource({
+      blocks: [{
+        type: 'question', itemId: 'q1', number: 1, blocks: [richText('Pick all that apply.')], answers: ['A'],
+      }],
+    }));
+    expect(missing.errors).toEqual(['blocks[0]: question choices is required when answers is present']);
+
+    const notArray = publishDocument(fullSource({
+      blocks: [{
+        type: 'question', itemId: 'q1', number: 1, blocks: [richText('Pick all that apply.')], choices: 'oops', answers: ['A'],
+      }],
+    }));
+    expect(notArray.errors).toEqual(['blocks[0]: question choices must be an array when present']);
+  });
+});
