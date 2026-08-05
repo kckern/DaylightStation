@@ -2985,6 +2985,12 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     renderPrintDocument: schoolLifecycle.renderPrintDocument ?? null,
     printDocumentsRepo: schoolLifecycle.stores?.printDocuments ?? null,
     printAllocationStore: schoolLifecycle.stores?.allocationStore ?? null,
+    // Teacher-key gate: answer keys deny until `print.teacherPin` is set in
+    // the household school config and matched via `?pin=`.
+    getPrintTeacherPin: () => {
+      const schoolConfig = configService.getHouseholdAppConfig(null, 'school') || {};
+      return schoolConfig.print?.teacherPin != null ? String(schoolConfig.print.teacherPin) : null;
+    },
     logger: rootLogger.child({ module: 'school-api' })
   });
 
