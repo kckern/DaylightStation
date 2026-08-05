@@ -159,8 +159,12 @@ describe('GET /api/v1/school/print/:id', () => {
 
   it('retake=1 mints a fresh card at the next unused variant for this learner', async () => {
     const render = renderFake();
+    // get() returns the SOURCE (no rev field); getPublished() the published
+    // doc. A variant override must ride the published one — a mutated source
+    // would hash to a phantom rev no scan could ever resolve.
+    const source = { id: 'q', seed: 1, blocks: [] };
     const doc = { id: 'q', seed: 1, rev: 'abcdef123', blocks: [] };
-    const repo = { get: vi.fn().mockResolvedValue(doc), getPublished: vi.fn().mockResolvedValue(doc) };
+    const repo = { get: vi.fn().mockResolvedValue(source), getPublished: vi.fn().mockResolvedValue(doc) };
     const allocations = {
       findByDocument: vi.fn().mockResolvedValue([
         { documentId: 'pokemon-quiz-1', learnerId: 'felix', status: 'satisfied', variant: 0, rowRange: { start: 1, end: 6 }, renderedAt: 't1' },
@@ -171,9 +175,10 @@ describe('GET /api/v1/school/print/:id', () => {
     const res = await request(appWith({ render, repo, allocations }))
       .get('/api/v1/school/print/pokemon-quiz-1?variety=omr&retake=1&learnerId=felix');
     expect(res.status).toBe(200);
-    // Felix's max variant is 1 (soren's 7 is not his) → retake is variant 2.
+    // Felix's max variant is 1 (soren's 7 is not his) → retake is variant 2,
+    // riding the PUBLISHED doc so the allocation pins a resolvable rev.
     expect(render.calls[0].context).toMatchObject({ freshCard: true, learnerId: 'felix' });
-    expect(render.calls[0].document).toMatchObject({ variant: 2 });
+    expect(render.calls[0].document).toMatchObject({ variant: 2, rev: 'abcdef123' });
   });
 
   it('retake rejects explicit identity parameters', async () => {
@@ -289,9 +294,15 @@ describe('GET /api/v1/school/print/:id', () => {
     expect(render.calls[0].context).toEqual({ teacher: true });
   });
 
-  it('variant override fetches the source and spreads the variant like IssueDocument', async () => {
+  it('variant override rides the published doc (source only as fallback) and spreads the variant like IssueDocument', async () => {
     const render = renderFake();
-    const repo = { get: vi.fn().mockResolvedValue({ id: 'pokemon-quiz-1', seed: 1, blocks: [] }) };
+    // Never published: falls back to the source. A published doc, when one
+    // exists, wins — see the retake test above — because a variant-mutated
+    // source hashes to a phantom rev no scan could resolve.
+    const repo = {
+      get: vi.fn().mockResolvedValue({ id: 'pokemon-quiz-1', seed: 1, blocks: [] }),
+      getPublished: vi.fn().mockResolvedValue(null),
+    };
     const res = await request(appWith({ render, repo }))
       .get('/api/v1/school/print/pokemon-quiz-1?variety=hand&variant=2');
     expect(res.status).toBe(200);
@@ -304,7 +315,10 @@ describe('GET /api/v1/school/print/:id', () => {
     const noRepo = await request(appWith({ render: renderFake() }))
       .get('/api/v1/school/print/pokemon-quiz-1?variety=hand&variant=1');
     expect(noRepo.status).toBe(503);
-    const repo = { get: vi.fn().mockResolvedValue(null) };
+    const repo = {
+      get: vi.fn().mockResolvedValue(null),
+      getPublished: vi.fn().mockResolvedValue(null),
+    };
     const missing = await request(appWith({ render: renderFake(), repo }))
       .get('/api/v1/school/print/nope?variety=hand&variant=1');
     expect(missing.status).toBe(404);

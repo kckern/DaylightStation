@@ -77,6 +77,7 @@ describe('print route + real store + real renderer', () => {
     await new PublishPrintDocument({ repository }).execute({ source: SOURCE });
     const renderPrintDocument = new RenderPrintDocument({ repository, allocationStore });
     app = express();
+    app.repositoryForTest = repository;
     app.use('/api/v1/school', createSchoolRouter({
       schoolService: { listBankSourceSummaries: () => [] },
       renderPrintDocument,
@@ -115,6 +116,18 @@ describe('print route + real store + real renderer', () => {
 
     // No duplicate record appeared on the card.
     expect(await allocationStore.findByCard(minted.cardId)).toHaveLength(1);
+  });
+
+  it('a retake pins the PUBLISHED rev — the record a scan must later resolve', async () => {
+    const retake = await request(app)
+      .get('/api/v1/school/print/arts/integration/quiz-1?variety=omr&retake=1&learnerId=milo');
+    expect(retake.status).toBe(200);
+    const allocation = JSON.parse(retake.headers['x-school-print-allocation']);
+    // recordId embeds the rev: it must be a rev getPublished can actually
+    // serve, or the card dies at scan time (EntityNotFoundError).
+    const rev = allocation.recordId.split('@')[1].split(':')[0];
+    const repository = app.repositoryForTest;
+    expect(await repository.getPublished('arts/integration/quiz-1', rev)).not.toBeNull();
   });
 
   it('a genuine allocation conflict surfaces as 409 with its invariant code, not a 500', async () => {
