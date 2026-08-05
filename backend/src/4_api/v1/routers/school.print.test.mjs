@@ -285,6 +285,33 @@ describe('GET /api/v1/school/print/:id', () => {
     expect(render.calls[0].context).toEqual({ cardId: '1234567', startRow: 18 });
   });
 
+  it('hierarchical taxonomy ids route, adopt, and name the download correctly', async () => {
+    const render = renderFake();
+    const repo = {
+      get: vi.fn(),
+      getPublished: vi.fn().mockResolvedValue({ id: 'arts/pokemon-identification/quiz-1', rev: 'abcdef123', seed: 1, blocks: [] }),
+    };
+    const allocations = {
+      findByDocument: vi.fn().mockResolvedValue([
+        { documentId: 'arts/pokemon-identification/quiz-1', cardId: '7654321', status: 'live', rev: 'abcdef123', variant: 0, rowRange: { start: 1, end: 6 }, renderedAt: '2026-08-05T01:00:00Z' },
+      ]),
+    };
+    const res = await request(appWith({ render, repo, allocations }))
+      .get('/api/v1/school/print/arts/pokemon-identification/quiz-1?variety=omr&teacher=1');
+    expect(res.status).toBe(200);
+    expect(allocations.findByDocument).toHaveBeenCalledWith('arts/pokemon-identification/quiz-1');
+    expect(render.calls[0].context).toMatchObject({ cardId: '7654321', teacher: true });
+    expect(res.headers['content-disposition']).toBe('inline; filename="quiz-1-key.pdf"');
+  });
+
+  it('rejects ids deeper than 4 segments or with bad segments', async () => {
+    const app = appWith({ render: renderFake() });
+    for (const id of ['a/b/c/d/e', 'arts//quiz', 'Arts/quiz']) {
+      const res = await request(app).get(`/api/v1/school/print/${id}?variety=hand`);
+      expect(res.status).toBe(400);
+    }
+  });
+
   it('omr keeps its warnings in the header (nothing filtered)', async () => {
     const render = renderFake({ warnings: ['some genuine warning'] });
     const res = await request(appWith({ render }))

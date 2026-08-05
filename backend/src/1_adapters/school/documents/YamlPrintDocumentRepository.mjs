@@ -147,8 +147,17 @@ export class YamlPrintDocumentRepository {
 
   /** Most-recent-mtime `<id>@*` entry under `dir` (published/ only) — see `getPublished`'s own doc comment. */
   #latestRevFile(dir, id) {
-    const prefix = `${id}@`;
-    const candidates = [...this.#io.list(dir)].filter((name) => name.startsWith(prefix));
+    // Hierarchical ids nest their artifacts (`published/<subject>/<course>/
+    // <slug>@<rev>.yml`), so the listing happens in the id's own subdirectory
+    // and candidates are re-prefixed back to dir-relative paths.
+    const segments = id.split('/');
+    const slug = segments.pop();
+    const subdir = segments.length ? path.join(dir, ...segments) : dir;
+    const relative = (name) => (segments.length ? path.join(...segments, name) : name);
+    const prefix = `${slug}@`;
+    const candidates = [...this.#io.list(subdir)]
+      .filter((name) => name.startsWith(prefix))
+      .map(relative);
     let best = null;
     let bestMtime = -Infinity;
     for (const name of candidates) {
