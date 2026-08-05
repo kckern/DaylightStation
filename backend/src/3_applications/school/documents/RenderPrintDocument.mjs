@@ -189,11 +189,152 @@ function sumScoredPoints(blocks, defaultPoints) {
   ), 0);
 }
 
-/** Merges the document's own derived bank (if any) with bank-select-resolved items into ONE `{id, items}` bank, or null if there is nothing at all. */
-function mergeBank(baseBank, extraItems, documentId) {
+/**
+ * Merges the document's own derived bank (if any) with bank-select-resolved
+ * items into ONE `{id, items}` bank, or null if there is nothing at all.
+ * EXPORTED (Task 6) so `ResolveCardScan`'s scan-back resolution (spec §5.4)
+ * can rebuild the SAME merged bank a render produced, from the same two
+ * inputs (a repository-resolved derived bank + `prepareV2Document`'s own
+ * `extraItems`) — never a parallel merge.
+ */
+export function mergeBank(baseBank, extraItems, documentId) {
   const items = [...(baseBank?.items ?? []), ...extraItems];
   if (items.length === 0) return null;
   return { id: baseBank?.id ?? documentId, items };
+}
+
+/**
+ * `{bankId, select, key, filter?}` -> the first `select` items of
+ * `applyShuffle(bank.items, deriveShuffle(seed, variant, key, bank.items.length))`
+ * (spec §6.2's exact resolution formula). `filter` itself is handled by the
+ * caller (`prepareV2Document`, which warns when it is present) — this
+ * function only resolves the selection. Free function (not a class method)
+ * so `prepareV2Document` below can run outside a `RenderPrintDocument`
+ * instance — see that function's own doc comment.
+ */
+function resolveBankSelect(block, document, banks) {
+  const bank = banks?.getBank ? banks.getBank(block.bankId) : null;
+  if (!bank || !Array.isArray(bank.items) || bank.items.length === 0) {
+    throw new ValidationError(
+      `bank-select question (key '${block.key}') references unknown or empty bank '${block.bankId}'`,
+      { code: 'BANK_SELECT_BANK_NOT_FOUND', details: { bankId: block.bankId, key: block.key } },
+    );
+  }
+  if (block.select > bank.items.length) {
+    throw new ValidationError(
+      `bank-select question (key '${block.key}') asked for ${block.select} items but bank `
+      + `'${block.bankId}' has only ${bank.items.length}`,
+      {
+        code: 'BANK_SELECT_INSUFFICIENT_ITEMS',
+        details: {
+          bankId: block.bankId, key: block.key, available: bank.items.length, requested: block.select,
+        },
+      },
+    );
+  }
+  const permutation = deriveShuffle(document.seed, document.variant, block.key, bank.items.length);
+  return applyShuffle(bank.items, permutation).slice(0, block.select);
+}
+
+/**
+ * Expands every bank-select sugar block (spec §6.2, Task 5) at document
+ * TOP LEVEL — the only place a `question` can occur (`blocks.mjs` bans
+ * nesting one inside another `question` or inside an `inset`) — into
+ * concrete, numbered `question` blocks, and shuffles wordbank/matching
+ * order. Returns the transformed document, the bank items the selections
+ * resolved (for `mergeBank`), and any warnings (currently: a supplied but
+ * unapplied bank-select `filter`).
+ *
+ * NUMBERING (task-5 review, finding 1): printed numbers are assigned
+ * STRICTLY POSITIONALLY, walking `blocks` in document order, across BOTH
+ * hand-authored questions and bank-select-expanded ones. A "keep the
+ * author's own `number`, mint bank-select numbers from a running max"
+ * scheme (the original implementation) prints bank-select items ahead of a
+ * LATER-numbered-but-EARLIER-printed hand-authored question whenever a
+ * bank-select block sits before one in the document — e.g. a bank-select
+ * block first, a hand-authored `number: 1` question second, prints "2.
+ * <bank item>" THEN "1. <hand-authored>", visibly out of order. Spec §5.3
+ * treats printed numbers as future Phase C card-row identifiers, so
+ * contiguous positional numbering is the one scheme that can't drift; an
+ * author's own `number` field is authoring intent only — nothing else
+ * (bank/grading lookups) reads it, those key off `itemId`.
+ *
+ * EXPORTED, and taking an explicit `{banks}` instead of reading an
+ * instance's own `this.#banks` (Task 6, spec §5.4): `ResolveCardScan`'s
+ * scan-back resolution needs to re-derive EXACTLY the row->item mapping a
+ * card-attached render produced — same bank-select expansion, same seeded
+ * shuffles — from OUTSIDE a `RenderPrintDocument` instance. Rather than
+ * re-implementing that formula on the grading side (a drift risk spec §4.3
+ * exists specifically to avoid), this is the SAME function
+ * `RenderPrintDocument#prepareV2Document` now delegates to (see that
+ * instance method's own one-line wrapper, just below the class's
+ * constructor-adjacent helpers) — one seam, two callers.
+ */
+export function prepareV2Document(document, { banks = null } = {}) {
+  const blocks = Array.isArray(document.blocks) ? document.blocks : [];
+
+  let nextNumber = 1;
+  const seenItemIds = new Set(blocks
+    .filter((block) => block?.type === 'question' && block.select === undefined && typeof block.itemId === 'string')
+    .map((block) => block.itemId));
+  const extraItems = [];
+  const warnings = [];
+
+  const expandedBlocks = blocks.flatMap((block) => {
+    if (!block || block.type !== 'question') return [block];
+
+    if (block.select === undefined) {
+      const number = nextNumber;
+      nextNumber += 1;
+      return [{ ...block, number }];
+    }
+
+    if (block.filter !== undefined) {
+      // Finding 2 (task-5 review): a supplied-but-ignored option must warn,
+      // never fail silently — this project has already been burned twice
+      // by exactly that pattern. `filter` is validated upstream
+      // (`blocks.mjs`) but not yet applied by this v1 picker; the spec
+      // frames it as scaffolding for "the v2 adaptive hook", which
+      // replaces the PICKER function, not the schema (spec §6.2).
+      warnings.push(
+        `bank-select question (key '${block.key}') supplies filter but it is not applied in Phase B; `
+        + 'selection is unfiltered',
+      );
+    }
+
+    const selected = resolveBankSelect(block, document, banks);
+    return selected.map((item) => {
+      if (!BANK_SELECT_RENDERABLE_TYPES.has(item.type)) {
+        throw new ValidationError(
+          `bank-select question (key '${block.key}') selected item '${item.id}' of type `
+          + `'${item.type}', which has no print rendering yet`,
+          {
+            code: 'BANK_SELECT_UNSUPPORTED_ITEM_TYPE',
+            details: {
+              bankId: block.bankId, key: block.key, itemId: item.id, itemType: item.type,
+            },
+          },
+        );
+      }
+      if (seenItemIds.has(item.id)) {
+        throw new ValidationError(
+          `bank-select question (key '${block.key}') selected item '${item.id}', which collides `
+          + "with another question's itemId",
+          { code: 'BANK_SELECT_ITEM_ID_COLLISION', details: { itemId: item.id } },
+        );
+      }
+      seenItemIds.add(item.id);
+      extraItems.push(item);
+      const number = nextNumber;
+      nextNumber += 1;
+      return expandedQuestionBlock(item, { number, points: block.points ?? document.defaultPoints });
+    });
+  });
+
+  const shuffledBlocks = shuffleAssessmentBlocks(expandedBlocks, document.seed, document.variant);
+  return {
+    document: { ...document, blocks: shuffledBlocks }, extraItems, warnings,
+  };
 }
 
 // ── teacher key (spec §4.1, §12.1, Task 6) ─────────────────────────────────
@@ -585,125 +726,9 @@ export class RenderPrintDocument {
     };
   }
 
-  /**
-   * Expands every bank-select sugar block (spec §6.2, Task 5) at document
-   * TOP LEVEL — the only place a `question` can occur (`blocks.mjs` bans
-   * nesting one inside another `question` or inside an `inset`) — into
-   * concrete, numbered `question` blocks, and shuffles wordbank/matching
-   * order. Returns the transformed document, the bank items the selections
-   * resolved (for `mergeBank`), and any warnings (currently: a supplied but
-   * unapplied bank-select `filter`).
-   *
-   * NUMBERING (task-5 review, finding 1): printed numbers are assigned
-   * STRICTLY POSITIONALLY, walking `blocks` in document order, across BOTH
-   * hand-authored questions and bank-select-expanded ones. A "keep the
-   * author's own `number`, mint bank-select numbers from a running max"
-   * scheme (the original implementation) prints bank-select items ahead of a
-   * LATER-numbered-but-EARLIER-printed hand-authored question whenever a
-   * bank-select block sits before one in the document — e.g. a bank-select
-   * block first, a hand-authored `number: 1` question second, prints "2.
-   * <bank item>" THEN "1. <hand-authored>", visibly out of order. Spec §5.3
-   * treats printed numbers as future Phase C card-row identifiers, so
-   * contiguous positional numbering is the one scheme that can't drift; an
-   * author's own `number` field is authoring intent only — nothing else
-   * (bank/grading lookups) reads it, those key off `itemId`.
-   */
+  /** Instance-bound wrapper over the exported `prepareV2Document` (Task 6 seam), closing over this instance's own `#banks` reader. */
   #prepareV2Document(document) {
-    const blocks = Array.isArray(document.blocks) ? document.blocks : [];
-
-    let nextNumber = 1;
-    const seenItemIds = new Set(blocks
-      .filter((block) => block?.type === 'question' && block.select === undefined && typeof block.itemId === 'string')
-      .map((block) => block.itemId));
-    const extraItems = [];
-    const warnings = [];
-
-    const expandedBlocks = blocks.flatMap((block) => {
-      if (!block || block.type !== 'question') return [block];
-
-      if (block.select === undefined) {
-        const number = nextNumber;
-        nextNumber += 1;
-        return [{ ...block, number }];
-      }
-
-      if (block.filter !== undefined) {
-        // Finding 2 (task-5 review): a supplied-but-ignored option must warn,
-        // never fail silently — this project has already been burned twice
-        // by exactly that pattern. `filter` is validated upstream
-        // (`blocks.mjs`) but not yet applied by this v1 picker; the spec
-        // frames it as scaffolding for "the v2 adaptive hook", which
-        // replaces the PICKER function, not the schema (spec §6.2).
-        warnings.push(
-          `bank-select question (key '${block.key}') supplies filter but it is not applied in Phase B; `
-          + 'selection is unfiltered',
-        );
-      }
-
-      const selected = this.#resolveBankSelect(block, document);
-      return selected.map((item) => {
-        if (!BANK_SELECT_RENDERABLE_TYPES.has(item.type)) {
-          throw new ValidationError(
-            `bank-select question (key '${block.key}') selected item '${item.id}' of type `
-            + `'${item.type}', which has no print rendering yet`,
-            {
-              code: 'BANK_SELECT_UNSUPPORTED_ITEM_TYPE',
-              details: {
-                bankId: block.bankId, key: block.key, itemId: item.id, itemType: item.type,
-              },
-            },
-          );
-        }
-        if (seenItemIds.has(item.id)) {
-          throw new ValidationError(
-            `bank-select question (key '${block.key}') selected item '${item.id}', which collides `
-            + "with another question's itemId",
-            { code: 'BANK_SELECT_ITEM_ID_COLLISION', details: { itemId: item.id } },
-          );
-        }
-        seenItemIds.add(item.id);
-        extraItems.push(item);
-        const number = nextNumber;
-        nextNumber += 1;
-        return expandedQuestionBlock(item, { number, points: block.points ?? document.defaultPoints });
-      });
-    });
-
-    const shuffledBlocks = shuffleAssessmentBlocks(expandedBlocks, document.seed, document.variant);
-    return {
-      document: { ...document, blocks: shuffledBlocks }, extraItems, warnings,
-    };
-  }
-
-  /**
-   * `{bankId, select, key, filter?}` -> the first `select` items of
-   * `applyShuffle(bank.items, deriveShuffle(seed, variant, key, bank.items.length))`
-   * (spec §6.2's exact resolution formula). `filter` itself is handled by the
-   * caller (`#prepareV2Document`, which warns when it is present) — this
-   * method only resolves the selection.
-   */
-  #resolveBankSelect(block, document) {
-    const bank = this.#banks?.getBank ? this.#banks.getBank(block.bankId) : null;
-    if (!bank || !Array.isArray(bank.items) || bank.items.length === 0) {
-      throw new ValidationError(
-        `bank-select question (key '${block.key}') references unknown or empty bank '${block.bankId}'`,
-        { code: 'BANK_SELECT_BANK_NOT_FOUND', details: { bankId: block.bankId, key: block.key } },
-      );
-    }
-    if (block.select > bank.items.length) {
-      throw new ValidationError(
-        `bank-select question (key '${block.key}') asked for ${block.select} items but bank `
-        + `'${block.bankId}' has only ${bank.items.length}`,
-        {
-          code: 'BANK_SELECT_INSUFFICIENT_ITEMS',
-          details: {
-            bankId: block.bankId, key: block.key, available: bank.items.length, requested: block.select,
-          },
-        },
-      );
-    }
-    const permutation = deriveShuffle(document.seed, document.variant, block.key, bank.items.length);
-    return applyShuffle(bank.items, permutation).slice(0, block.select);
+    return prepareV2Document(document, { banks: this.#banks });
   }
 
   /** v2: fit loop, then one furniture-aware render at the chosen density. */
