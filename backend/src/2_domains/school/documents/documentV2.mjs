@@ -229,6 +229,11 @@ export function validateDocumentV2(raw, { allowAnswers = false } = {}) {
   if (raw.subject !== undefined
       && (typeof raw.subject !== 'string' || !SEGMENT.test(raw.subject))) {
     errors.push('subject must be a kebab-case segment');
+  } else if (typeof raw.subject === 'string' && typeof raw.id === 'string' && raw.id.includes('/')
+      && raw.id.split('/')[0] !== raw.subject) {
+    // A hierarchical id's first segment IS the subject — two fields naming
+    // different subjects for one document is a contradiction, not metadata.
+    errors.push(`subject must match the id's first segment ('${raw.id.split('/')[0]}')`);
   }
   if (raw.topics !== undefined) {
     const ok = Array.isArray(raw.topics) && raw.topics.length > 0 && raw.topics.length <= 12

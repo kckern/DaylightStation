@@ -28,6 +28,10 @@ describe('documentV2 taxonomy (hierarchical ids + subject/topics)', () => {
     expect(ok.document.subject).toBe('arts');
     expect(ok.document.topics).toEqual(['pokemon', 'identification']);
     expect(validateDocumentV2({ ...base, subject: 'Arts!' }).errors.join()).toMatch(/subject/);
+    // A hierarchical id's first segment IS the subject — contradiction rejected.
+    expect(validateDocumentV2({ ...base, subject: 'science' }).errors.join())
+      .toMatch(/subject must match the id's first segment/);
+    expect(validateDocumentV2({ ...base, id: 'quiz-1', subject: 'science' }).errors).toEqual([]);
     expect(validateDocumentV2({ ...base, topics: [] }).errors.join()).toMatch(/topics/);
     expect(validateDocumentV2({ ...base, topics: ['a', 'a'] }).errors.join()).toMatch(/topics/);
   });
