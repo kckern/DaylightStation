@@ -13,8 +13,14 @@
  * Errors are reported at a dotted path (`blocks[0].blocks[1]: <message>`), the
  * one notation used across the whole document error list.
  */
+import { SHUFFLE_KEY_PATTERN } from './shuffle.mjs';
+
 const isNonEmptyString = (v) => typeof v === 'string' && v.trim().length > 0;
 const isPositiveNumber = (v) => typeof v === 'number' && Number.isFinite(v) && v > 0;
+const isNonEmptyStringArray = (v) => Array.isArray(v) && v.length > 0 && v.every(isNonEmptyString);
+const isShuffleKey = (v) => isNonEmptyString(v) && SHUFFLE_KEY_PATTERN.test(v);
+const keyError = (field) => `${field} must be a non-empty string matching ${SHUFFLE_KEY_PATTERN}`;
+const sourceOnlyError = (field) => `${field} is a source-only field and must not appear in a published document`;
 
 // \require is MathJax's browser-only lazy package loader. Server-side every
 // package is preloaded, and the macro renders as literal red error text on the
@@ -42,6 +48,25 @@ const requireError = (field) => `${field} must not use \\require{} (server rende
  *   its own.
  * - `plot`/`geometry` have no Letter renderer AT ALL yet (documented
  *   directly on `measureNodes`'s default case) — nested in an inset or not.
+ * - `wordbank`/`matching`/`cloze` (Task 2) have NO `measureNodes` case
+ *   either, yet — Task 4 lands their rendering — so today they fail the
+ *   exact same literal-coverage test as `plot`/`geometry` above. But their
+ *   v1 disposition here is an ARCHITECTURAL call, not just that current gap:
+ *   even once Task 4 wires them up, each introduces a genuinely NEW node
+ *   kind (a seeded-shuffle boxed term list, a two-column write-the-letter
+ *   grid, fixed-width inline blank atoms inside flowing text) that doesn't
+ *   reduce to a kind `measureBoxNode` already stacks — and the spec itself
+ *   frames keyed/shuffled exam furniture inside an aside as "layout
+ *   trouble" (§6.1). So they stay excluded here even after Task 4 lands,
+ *   pending a real v2 of the box path.
+ * - `short_answer`/`essay` (Task 2) ALSO have no `measureNodes` case yet —
+ *   same literal gap — but the spec defines both as sugar over `prompt`
+ *   text + `answer_space` (§4.2, §6.2), and BOTH of those primitives are
+ *   already handled directly by `measureNodes` and already legal inside a
+ *   box today (see the allow-list below). Once Task 4 wires their case to
+ *   emit that exact node pair, nesting costs the box path nothing new — so
+ *   they are deliberately left OFF this ban list rather than added
+ *   defensively.
  *
  * Every other registered block type is either handled directly by
  * `measureNodes` (rich_text, math, asset, answer_space, omr_response,
@@ -53,6 +78,9 @@ const INSET_UNSUPPORTED_CHILD_TYPES = {
   page_break: 'inset blocks must not contain a page_break (a box never spans a page boundary on its own)',
   plot: 'inset blocks must not contain a plot (no Letter renderer exists for plot yet)',
   geometry: 'inset blocks must not contain a geometry (no Letter renderer exists for geometry yet)',
+  wordbank: 'inset blocks must not contain a wordbank (a seeded-shuffle boxed term set is keyed exam furniture; nesting a box inside a box is deferred to a v2 of the box path)',
+  matching: 'inset blocks must not contain a matching (a seeded-shuffle write-the-letter grid is keyed exam furniture — same v1 disposition as wordbank)',
+  cloze: 'inset blocks must not contain a cloze (fixed-width numbered blanks are keyed exam furniture — same v1 disposition as wordbank/matching)',
 };
 
 const specValidator = (type) => (raw, push) => {
@@ -67,6 +95,48 @@ const actionValidator = (type) => (raw, push) => {
   if (!isNonEmptyString(raw.action)) push(`${type} action must be a non-empty string`);
   if (!isNonEmptyString(raw.label)) push(`${type} label must be a non-empty string`);
 };
+
+/**
+ * `matching.pairs` (SOURCE-only): `[{left: idx|string, right: idx|string}]`.
+ * Each side may reference its entry either by array index or by matching the
+ * string value itself — an AI author naturally writes the latter. Validates
+ * shape, that every reference resolves into `left`/`right`, that no `left`
+ * entry is claimed twice, and that `pairs` is a COMPLETE cover of `left` (spec
+ * §4.2's matching entry) — a matching item with an unanswered left entry has
+ * no correct answer for the derived bank to hold.
+ */
+function validateMatchingPairs(raw, push) {
+  if (!Array.isArray(raw.pairs) || raw.pairs.length === 0) {
+    push('matching pairs must be a non-empty array when present');
+    return;
+  }
+  const left = Array.isArray(raw.left) ? raw.left : [];
+  const right = Array.isArray(raw.right) ? raw.right : [];
+  const isRef = (v) => typeof v === 'string' || Number.isInteger(v);
+  let shapeOk = true;
+  raw.pairs.forEach((pair, i) => {
+    if (!pair || typeof pair !== 'object' || Array.isArray(pair) || !isRef(pair.left) || !isRef(pair.right)) {
+      push(`matching pairs[${i}] must be a mapping of {left: idx|string, right: idx|string}`);
+      shapeOk = false;
+    }
+  });
+  if (!shapeOk) return;
+
+  const resolve = (ref, arr) => {
+    if (Number.isInteger(ref) && ref >= 0 && ref < arr.length) return ref;
+    if (typeof ref === 'string') { const i = arr.indexOf(ref); if (i !== -1) return i; }
+    return null;
+  };
+  const leftIdx = raw.pairs.map((p) => resolve(p.left, left));
+  const rightIdx = raw.pairs.map((p) => resolve(p.right, right));
+  if (leftIdx.some((i) => i === null) || rightIdx.some((i) => i === null)) {
+    push('matching pairs must reference entries present in left/right');
+    return;
+  }
+  const coveredLeft = new Set(leftIdx);
+  if (coveredLeft.size !== leftIdx.length) push('matching pairs must reference each left entry at most once');
+  if (coveredLeft.size !== left.length) push('matching pairs must cover every left entry');
+}
 
 /**
  * Key order IS the block-type order (BLOCK_TYPES is derived from it below), so
@@ -92,6 +162,37 @@ const VALIDATORS = {
     if (!isNonEmptyString(raw.alt)) push('asset alt must be a non-empty string');
   },
   question(raw, push, ctx) {
+    // `points` overrides the envelope's `defaultPoints` (spec §6.1); legal on
+    // either question shape below, so it is checked before the branch.
+    if (raw.points !== undefined) {
+      const pointsOk = typeof raw.points === 'number' && Number.isFinite(raw.points) && raw.points >= 0;
+      if (!pointsOk) push('question points must be a number >= 0');
+    }
+    // Bank-select sugar (spec §6.2): `{bankId, select, key, filter?}` REPLACES
+    // the itemId/number/blocks shape below — it expands into a seeded list of
+    // bank items at publish time (Task 5's job; this is shape-only). `select`
+    // is the trigger field: its presence (not `bankId` alone, which resolution
+    // needs but shape-checking doesn't gate on) means "this is sugar."
+    if (raw.select !== undefined) {
+      if (!isNonEmptyString(raw.bankId)) push('question bankId must be a non-empty string');
+      if (!Number.isInteger(raw.select) || raw.select < 1) push('question select must be an integer >= 1');
+      // Required-with-select: a bank-select block shuffles like wordbank/
+      // matching (spec §4.3), so it needs the same document-unique key.
+      if (!isShuffleKey(raw.key)) push(keyError('question key (required when select is present)'));
+      if (raw.filter !== undefined) {
+        if (!raw.filter || typeof raw.filter !== 'object' || Array.isArray(raw.filter)) {
+          push('question filter must be a mapping when present');
+        } else {
+          if (raw.filter.topics !== undefined && !isNonEmptyStringArray(raw.filter.topics)) {
+            push('question filter.topics must be an array of non-empty strings when present');
+          }
+          if (raw.filter.difficulty !== undefined && !isNonEmptyString(raw.filter.difficulty)) {
+            push('question filter.difficulty must be a non-empty string when present');
+          }
+        }
+      }
+      return;
+    }
     if (!isNonEmptyString(raw.itemId)) push('question itemId must be a non-empty string');
     if (!Number.isInteger(raw.number) || raw.number < 1) push('question number must be an integer >= 1');
     if (!Array.isArray(raw.blocks) || raw.blocks.length === 0) {
@@ -107,7 +208,7 @@ const VALIDATORS = {
         ctx.errors.push(`${at}: question may not contain another question`);
         return;
       }
-      validateInto(child, at, ctx.errors);
+      validateInto(child, at, ctx.errors, ctx.allowAnswers);
     });
   },
   answer_space(raw, push) {
@@ -190,7 +291,7 @@ const VALIDATORS = {
         ctx.errors.push(`${at}: ${INSET_UNSUPPORTED_CHILD_TYPES[child.type]}`);
         return;
       }
-      validateInto(child, at, ctx.errors);
+      validateInto(child, at, ctx.errors, ctx.allowAnswers);
     });
   },
   list(raw, push) {
@@ -201,6 +302,104 @@ const VALIDATORS = {
       push('list items must be a non-empty array');
     } else if (raw.items.some((item) => !isNonEmptyString(item))) {
       push('list items must be non-empty strings');
+    }
+  },
+  // Boxed, seeded-shuffled term set (spec §6.2). Terms are presentation
+  // (what shuffles on the page), never answers — legal in published documents
+  // without an `allowAnswers` gate.
+  wordbank(raw, push) {
+    if (!isShuffleKey(raw.key)) push(keyError('wordbank key'));
+    if (!Array.isArray(raw.terms) || raw.terms.length === 0) {
+      push('wordbank terms must be a non-empty array');
+    } else if (!raw.terms.every(isNonEmptyString)) {
+      push('wordbank terms must be non-empty strings');
+    } else if (new Set(raw.terms).size !== raw.terms.length) {
+      push('wordbank terms must be unique');
+    }
+  },
+  // Two seeded-shuffled lists with write-the-letter blanks (spec §6.2). The
+  // PUBLISHED shape is `{key, left, right}`; SOURCE additionally allows
+  // `pairs` (the answer key) — gated the same way as cloze/short_answer below.
+  matching(raw, push, ctx) {
+    if (!isShuffleKey(raw.key)) push(keyError('matching key'));
+    if (!isNonEmptyStringArray(raw.left)) push('matching left must be a non-empty array of non-empty strings');
+    else if (new Set(raw.left).size !== raw.left.length) push('matching left must be unique');
+    if (!isNonEmptyStringArray(raw.right)) push('matching right must be a non-empty array of non-empty strings');
+    else if (new Set(raw.right).size !== raw.right.length) push('matching right must be unique');
+    if (raw.pairs === undefined) return;
+    if (!ctx.allowAnswers) { push(sourceOnlyError('matching pairs')); return; }
+    validateMatchingPairs(raw, push);
+  },
+  // A passage with fixed-width numbered blanks (spec §6.3). `text`'s `{{n}}`
+  // markers are the ONE source of truth for how many blanks exist and their
+  // numbering; `blanks[]` only carries per-blank presentation (width,
+  // wordbank ref) and, in SOURCE documents, the answer.
+  cloze(raw, push, ctx) {
+    if (!isNonEmptyString(raw.text)) { push('cloze text must be a non-empty string'); return; }
+    if (REQUIRE_MACRO.test(raw.text)) push(requireError('cloze text'));
+    const markers = [...raw.text.matchAll(/\{\{(\d+)\}\}/g)].map((m) => Number(m[1]));
+    if (markers.length === 0) {
+      push('cloze text must contain at least one {{n}} blank marker');
+    } else {
+      const expected = Array.from({ length: markers.length }, (_, i) => i + 1);
+      const sorted = [...markers].sort((a, b) => a - b);
+      if (sorted.some((n, i) => n !== expected[i])) {
+        push(`cloze text blank markers must be {{1}}..{{${markers.length}}}, each exactly once`);
+      }
+    }
+    if (!Array.isArray(raw.blanks) || raw.blanks.length === 0) {
+      push('cloze blanks must be a non-empty array');
+      return;
+    }
+    const seenN = new Set();
+    raw.blanks.forEach((blank, i) => {
+      const at = `cloze blanks[${i}]`;
+      if (!blank || typeof blank !== 'object' || Array.isArray(blank)) { push(`${at} must be a mapping`); return; }
+      if (!Number.isInteger(blank.n) || !markers.includes(blank.n)) {
+        push(`${at}.n must be an integer matching a {{n}} marker in text`);
+      } else if (seenN.has(blank.n)) {
+        push(`${at}.n duplicates blank {{${blank.n}}}`);
+      } else {
+        seenN.add(blank.n);
+      }
+      if (blank.width !== undefined && !['s', 'm', 'l'].includes(blank.width)) {
+        push(`${at}.width must be 's', 'm', or 'l'`);
+      }
+      if (blank.wordbank !== undefined && !isNonEmptyString(blank.wordbank)) {
+        push(`${at}.wordbank must be a non-empty string when present`);
+      }
+      if (blank.answer !== undefined) {
+        if (!ctx.allowAnswers) push(sourceOnlyError(`${at}.answer`));
+        else if (!isNonEmptyString(blank.answer)) push(`${at}.answer must be a non-empty string when present`);
+      }
+    });
+    if (markers.length && seenN.size !== markers.length) {
+      push('cloze blanks must include one entry for every {{n}} marker in text');
+    }
+  },
+  // Prompt + ruled lines; sugar over prompt + answer_space at render time
+  // (spec §4.2, §6.2) — this validator only checks the authored shape.
+  short_answer(raw, push, ctx) {
+    if (!isNonEmptyString(raw.prompt)) push('short_answer prompt must be a non-empty string');
+    if (raw.lines !== undefined && (!Number.isInteger(raw.lines) || raw.lines < 1 || raw.lines > 10)) {
+      push('short_answer lines must be an integer between 1 and 10');
+    }
+    if (raw.answer === undefined) return;
+    if (!ctx.allowAnswers) { push(sourceOnlyError('short_answer answer')); return; }
+    if (!isNonEmptyString(raw.answer)) push('short_answer answer must be a non-empty string when present');
+  },
+  // Prompt + ruled lines OR an open box; sugar over prompt + answer_space
+  // (spec §4.2, §6.2). Essay NEVER carries an answer — unmarked prose has
+  // nothing for a bank to hold, source stage or not.
+  essay(raw, push) {
+    if (!isNonEmptyString(raw.prompt)) push('essay prompt must be a non-empty string');
+    if (raw.box !== undefined && raw.box !== true) push('essay box must be true when present');
+    if (raw.lines !== undefined && (!Number.isInteger(raw.lines) || raw.lines < 2 || raw.lines > 30)) {
+      push('essay lines must be an integer between 2 and 30');
+    }
+    if (raw.box !== undefined && raw.lines !== undefined) push('essay must not specify both lines and box');
+    if (raw.answer !== undefined || raw.answers !== undefined) {
+      push('essay must not carry an answer (unmarked prose)');
     }
   },
   // No fields: a divider is a bare rule across the page width.
@@ -218,7 +417,7 @@ const VALIDATORS = {
 
 export const BLOCK_TYPES = Object.freeze(Object.keys(VALIDATORS));
 
-function validateInto(raw, at, errors) {
+function validateInto(raw, at, errors, allowAnswers) {
   const prefix = at ? `${at}: ` : '';
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
     errors.push(`${prefix}block must be a mapping`);
@@ -230,18 +429,24 @@ function validateInto(raw, at, errors) {
     errors.push(`${prefix}unknown block type: ${raw.type}`);
     return;
   }
-  VALIDATORS[raw.type](raw, (message) => errors.push(prefix + message), { at, errors });
+  VALIDATORS[raw.type](raw, (message) => errors.push(prefix + message), { at, errors, allowAnswers });
 }
 
 /**
  * @param {*} raw - one parsed block
- * @param {{ path?: string }} [opts] - path prefix for reported errors; the
- *   caller's position in the document, so nested paths compose as one dotted
- *   trail instead of stacked prefixes
+ * @param {{ path?: string, allowAnswers?: boolean }} [opts] - `path` prefixes
+ *   reported errors (the caller's position in the document, so nested paths
+ *   compose as one dotted trail instead of stacked prefixes). `allowAnswers`
+ *   (default false) is the SOURCE-vs-PUBLISHED gate (spec §3): false is the
+ *   published posture every existing caller gets unchanged — SOURCE-only
+ *   fields (`matching.pairs`, a `cloze` blank's `answer`, `short_answer`'s
+ *   `answer`) are rejected. A caller validating the source stage (Task 3)
+ *   passes `true` to permit them; it threads recursively into `question` and
+ *   `inset` children via `ctx.allowAnswers` so the whole subtree agrees.
  * @returns {{ errors: string[] }} empty errors === valid
  */
-export function validateBlock(raw, { path = '' } = {}) {
+export function validateBlock(raw, { path = '', allowAnswers = false } = {}) {
   const errors = [];
-  validateInto(raw, path, errors);
+  validateInto(raw, path, errors, allowAnswers);
   return { errors };
 }

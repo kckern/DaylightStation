@@ -12,12 +12,19 @@
  * This suite is the matrix's own contract test: EVERY entry in
  * `BLOCK_TARGET_SUPPORT` gets a minimal valid v2 document and must either
  * (a) render a real PDF under `createWorkbookTheme()` without throwing, or
- * (b) for the two entries with no Letter renderer AT ALL yet (`plot`,
- * `geometry` — a renderer-registry gap documented directly in
- * `measure.mjs`'s `measureNodes` default case, unrelated to theme token
- * completeness), throw the SAME `UnsupportedBlockError` they throw under
- * every theme, so that gap stays visible rather than silently masked by a
- * matrix that claims support no renderer provides.
+ * (b) for entries with no Letter renderer AT ALL yet (`plot`, `geometry` —
+ * a renderer-registry gap documented directly in `measure.mjs`'s
+ * `measureNodes` default case, unrelated to theme token completeness),
+ * throw the SAME `UnsupportedBlockError` they throw under every theme, so
+ * that gap stays visible rather than silently masked by a matrix that
+ * claims support no renderer provides.
+ *
+ * Print Design Phase B, Task 2 (assessment blocks — domain layer) added
+ * `wordbank`/`matching`/`cloze`/`short_answer`/`essay` to
+ * `BLOCK_TARGET_SUPPORT`. They join `plot`/`geometry` in bucket (b): Task 2
+ * is domain-only (validation), so `measure.mjs` has no case for any of them
+ * yet — Phase B Task 4 ("Assessment rendering") is what moves them into
+ * bucket (a).
  */
 import { describe, it, expect } from 'vitest';
 import { validateDocumentV2, BLOCK_TARGET_SUPPORT, DOCUMENT_V2_SCHEMA } from '#domains/school/documents/documentV2.mjs';
@@ -64,10 +71,18 @@ const FIXTURE_BLOCK = {
   divider: { type: 'divider' },
   spacer: { type: 'spacer', minPt: 10, maxPt: 20 },
   page_break: { type: 'page_break' },
+  // Phase B Task 2 (domain-only): valid blocks with no measure.mjs case yet.
+  wordbank: { type: 'wordbank', key: 'wb1', terms: ['Alpha', 'Beta'] },
+  matching: {
+    type: 'matching', key: 'm1', left: ['A', 'B'], right: ['1', '2'],
+  },
+  cloze: { type: 'cloze', text: 'The {{1}} is red.', blanks: [{ n: 1 }] },
+  short_answer: { type: 'short_answer', prompt: 'Name a color.' },
+  essay: { type: 'essay', prompt: 'Describe the color.' },
 };
 
 /** No Letter renderer exists at all (any theme) — see measure.mjs's own comment. */
-const NO_RENDERER_YET = new Set(['plot', 'geometry']);
+const NO_RENDERER_YET = new Set(['plot', 'geometry', 'wordbank', 'matching', 'cloze', 'short_answer', 'essay']);
 
 describe('BLOCK_TARGET_SUPPORT matrix — every entry validates and renders under createWorkbookTheme() (F1)', () => {
   const types = Object.keys(BLOCK_TARGET_SUPPORT);

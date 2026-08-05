@@ -60,6 +60,13 @@ export const BLOCK_TARGET_SUPPORT = Object.freeze({
   divider: Object.freeze(['letter']),
   spacer: Object.freeze(['letter']),
   page_break: Object.freeze(['letter']),
+  // Task 2: assessment blocks (spec §6.2) — letter-only, same reason: no
+  // receipt renderer exists for any of these.
+  wordbank: Object.freeze(['letter']),
+  matching: Object.freeze(['letter']),
+  cloze: Object.freeze(['letter']),
+  short_answer: Object.freeze(['letter']),
+  essay: Object.freeze(['letter']),
 });
 
 const ALL_SUPPORTED_TARGETS = new Set(Object.values(BLOCK_TARGET_SUPPORT).flat());
@@ -73,6 +80,52 @@ const HEADER_PRESETS = {
 };
 
 const isPlainObject = (v) => !!v && typeof v === 'object' && !Array.isArray(v);
+const isNonEmptyString = (v) => typeof v === 'string' && v.trim().length > 0;
+
+/**
+ * Document-wide shuffle-`key` uniqueness (spec §4.3) + cloze→wordbank ref
+ * resolution (spec §6.3). Every shuffling block — `wordbank`, `matching`, and
+ * a bank-select `question` (`select` present) — derives its shuffle from
+ * `(seed, variant, key)` (shuffle.mjs); two blocks sharing a key would
+ * shuffle IDENTICALLY, which can only be an authoring accident, so the key
+ * has to be unique across the whole tree, not just within its block type.
+ * `blocks.mjs` already validates each key's own SHAPE (SHUFFLE_KEY_PATTERN);
+ * this only runs on keys that already passed that check, so an invalid key
+ * is reported once, not twice.
+ *
+ * A `cloze` blank's `wordbank` field is a same-document reference (spec
+ * §6.3 "cloze blanks may reference wordbank entries") — resolved against the
+ * `wordbank` keys ACTUALLY declared here; a reference to a key that isn't
+ * one of them can never resolve at render time, so it fails now instead.
+ */
+function validateKeysAndWordbankRefs(blocks, errors) {
+  const shuffleKeyOwner = new Map(); // key -> first dotted path that declared it
+  const wordbankKeys = new Set();
+
+  walkBlocks(blocks, (block) => {
+    if (block.type === 'wordbank' && isNonEmptyString(block.key)) wordbankKeys.add(block.key);
+  });
+
+  walkBlocks(blocks, (block, at) => {
+    let key;
+    if (block.type === 'wordbank' || block.type === 'matching') key = block.key;
+    else if (block.type === 'question' && block.select !== undefined) key = block.key;
+    if (!isNonEmptyString(key)) return;
+    const first = shuffleKeyOwner.get(key);
+    if (first !== undefined) errors.push(`${at}: duplicate key "${key}" (already used at ${first})`);
+    else shuffleKeyOwner.set(key, at);
+  });
+
+  walkBlocks(blocks, (block, at) => {
+    if (block.type !== 'cloze' || !Array.isArray(block.blanks)) return;
+    block.blanks.forEach((blank, i) => {
+      if (!blank || typeof blank !== 'object' || typeof blank.wordbank !== 'string') return;
+      if (!wordbankKeys.has(blank.wordbank)) {
+        errors.push(`${at}.blanks[${i}]: wordbank "${blank.wordbank}" does not match any wordbank block's key`);
+      }
+    });
+  });
+}
 
 /**
  * Validates and expands the envelope's optional `source: {action, label}`
@@ -80,14 +133,14 @@ const isPlainObject = (v) => !!v && typeof v === 'object' && !Array.isArray(v);
  * under the `source` path) when absent or invalid, so the caller never
  * prepends a block that would just duplicate-fail inside `validateDocument`.
  */
-function desugarSource(raw, errors) {
+function desugarSource(raw, errors, allowAnswers) {
   if (raw.source === undefined || raw.source === null) return undefined;
   if (!isPlainObject(raw.source)) {
     errors.push('source must be a mapping');
     return undefined;
   }
   const block = { type: 'scan_action', action: raw.source.action, label: raw.source.label };
-  const { errors: blockErrors } = validateBlock(block, { path: 'source' });
+  const { errors: blockErrors } = validateBlock(block, { path: 'source', allowAnswers });
   if (blockErrors.length) {
     errors.push(...blockErrors);
     return undefined;
@@ -97,9 +150,14 @@ function desugarSource(raw, errors) {
 
 /**
  * @param {*} raw - one parsed v2 document
+ * @param {{ allowAnswers?: boolean }} [opts] - threaded straight through to
+ *   `validateDocument`/`validateBlock` (spec §3's source-vs-published gate).
+ *   Default false — every EXISTING caller of this function keeps validating
+ *   the PUBLISHED posture unchanged. The source stage (`school.document-source
+ *   /v1`, Task 3) is the first caller expected to pass `true`.
  * @returns {{ errors: string[], document?: object }}
  */
-export function validateDocumentV2(raw) {
+export function validateDocumentV2(raw, { allowAnswers = false } = {}) {
   if (!isPlainObject(raw)) return { errors: ['document must be a mapping'] };
   const errors = [];
 
@@ -146,7 +204,7 @@ export function validateDocumentV2(raw) {
     else defaultPoints = raw.defaultPoints;
   }
 
-  const scanActionBlock = desugarSource(raw, errors);
+  const scanActionBlock = desugarSource(raw, errors, allowAnswers);
   const blocks = scanActionBlock
     ? (Array.isArray(raw.blocks) ? [scanActionBlock, ...raw.blocks] : raw.blocks)
     : raw.blocks;
@@ -156,7 +214,7 @@ export function validateDocumentV2(raw) {
   };
   if (raw.title !== undefined) v1Subset.title = raw.title;
 
-  const v1Result = validateDocument(v1Subset);
+  const v1Result = validateDocument(v1Subset, { allowAnswers });
   errors.push(...v1Result.errors);
 
   // Block x target matrix (spec §7): a target already known to be bogus (e.g.
@@ -190,6 +248,10 @@ export function validateDocumentV2(raw) {
       }
     });
   }
+
+  // Document-wide key uniqueness + cloze->wordbank ref resolution (spec
+  // §4.3, §6.3) — see validateKeysAndWordbankRefs' own doc comment.
+  if (Array.isArray(blocks)) validateKeysAndWordbankRefs(blocks, errors);
 
   if (errors.length) return { errors };
 
