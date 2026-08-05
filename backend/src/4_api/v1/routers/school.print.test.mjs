@@ -157,6 +157,34 @@ describe('GET /api/v1/school/print/:id', () => {
     expect(render.calls[0].context).toEqual({ freshCard: true });
   });
 
+  it('retake=1 mints a fresh card at the next unused variant for this learner', async () => {
+    const render = renderFake();
+    const doc = { id: 'q', seed: 1, rev: 'abcdef123', blocks: [] };
+    const repo = { get: vi.fn().mockResolvedValue(doc), getPublished: vi.fn().mockResolvedValue(doc) };
+    const allocations = {
+      findByDocument: vi.fn().mockResolvedValue([
+        { documentId: 'pokemon-quiz-1', learnerId: 'felix', status: 'satisfied', variant: 0, rowRange: { start: 1, end: 6 }, renderedAt: 't1' },
+        { documentId: 'pokemon-quiz-1', learnerId: 'felix', status: 'satisfied', variant: 1, rowRange: { start: 1, end: 6 }, renderedAt: 't2' },
+        { documentId: 'pokemon-quiz-1', learnerId: 'soren', status: 'live', variant: 7, rowRange: { start: 1, end: 6 }, renderedAt: 't3' },
+      ]),
+    };
+    const res = await request(appWith({ render, repo, allocations }))
+      .get('/api/v1/school/print/pokemon-quiz-1?variety=omr&retake=1&learnerId=felix');
+    expect(res.status).toBe(200);
+    // Felix's max variant is 1 (soren's 7 is not his) → retake is variant 2.
+    expect(render.calls[0].context).toMatchObject({ freshCard: true, learnerId: 'felix' });
+    expect(render.calls[0].document).toMatchObject({ variant: 2 });
+  });
+
+  it('retake rejects explicit identity parameters', async () => {
+    const app = appWith({ render: renderFake() });
+    for (const q of ['card=1234567', 'freshCard=1', 'variant=3', 'rev=abcdef123']) {
+      const res = await request(app).get(`/api/v1/school/print/pokemon-quiz-1?variety=omr&retake=1&${q}`);
+      expect(res.status).toBe(400);
+      expect(res.body.error).toMatch(/retake/);
+    }
+  });
+
   it('a teacher key with no existing sheet renders WITHOUT minting an allocation', async () => {
     const render = renderFake({ warnings: ["quiz 'q' rendered without card allocation"] });
     const allocations = { findByCard: vi.fn(), findByDocument: vi.fn().mockResolvedValue([]) };

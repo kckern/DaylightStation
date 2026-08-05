@@ -278,7 +278,23 @@ export function createSchoolRouter({
           return (rank(b) - rank(a)) || String(b.renderedAt).localeCompare(String(a.renderedAt));
         })[0] ?? null;
 
-      if (freshCard) {
+      // retake=1: a deliberate fresh attempt — new card, next unused shuffle
+      // variant for this learner's document, so the retake sheet is never
+      // the memorizable duplicate of the first (and never touches the
+      // original's record). Mutually exclusive with every explicit-identity
+      // param: a retake's identity is derived, not supplied.
+      const retake = req.query.retake === '1' || req.query.retake === 'true';
+      if (retake) {
+        if (freshCard || card || revParam !== null || variant !== null) {
+          throw new ValidationError('retake takes no card/freshCard/rev/variant parameters');
+        }
+        const prior = printAllocationStore?.findByDocument
+          ? (await printAllocationStore.findByDocument(id))
+            .filter((entry) => (learnerId ? entry.learnerId === learnerId : true))
+          : [];
+        variant = prior.reduce((max, entry) => Math.max(max, entry.variant ?? 0), -1) + 1;
+        context.freshCard = true;
+      } else if (freshCard) {
         context.freshCard = true;
       } else if (card) {
         if (!PRINT_CARD_ID.test(card)) throw new ValidationError('card must be 7 digits');
@@ -296,6 +312,10 @@ export function createSchoolRouter({
         // newest usable sheet (per learner when learnerId is given), and only
         // mints a fresh card when none exists — so refreshing the URL never
         // burns cards, and the same URL keeps producing the same sheet.
+        // KNOWN LIMIT: this find-then-allocate is not atomic — two truly
+        // simultaneous first prints can each mint a card, stranding one as
+        // an uncollected live record (recover: school-docs release-card).
+        // Accepted at household scale; the store itself serializes writes.
         const record = printAllocationStore?.findByDocument
           ? newestUsable((await printAllocationStore.findByDocument(id))
             .filter((entry) => (learnerId ? entry.learnerId === learnerId : true)))
