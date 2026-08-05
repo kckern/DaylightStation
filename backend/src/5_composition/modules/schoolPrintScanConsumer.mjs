@@ -57,6 +57,18 @@ export function createSchoolPrintScanConsumer({
           logger.debug?.('school.print.scan-unresolved', { testId, code: outcome.error.code });
           return;
         }
+        if (outcome?.unknownCard) {
+          // A card the store has never seen, with real answers on it: almost
+          // always a mis-transcribed card id (no check digit). The child did
+          // the work — this must be VISIBLE at production log level, with
+          // the live cards one digit away as actionable candidates.
+          logger.warn?.('school.print.scan-unknown-card', {
+            testId,
+            answeredRowCount: outcome.answeredRowCount,
+            nearMissCardIds: outcome.nearMissCardIds ?? [],
+          });
+          return;
+        }
         if (!outcome?.results?.length) {
           // No live/satisfied print-document allocation record on this card
           // at all — the ordinary case for every legacy bubble sheet on this
@@ -65,6 +77,14 @@ export function createSchoolPrintScanConsumer({
             testId, unallocatedRows: outcome?.unallocatedRows ?? [],
           });
           return;
+        }
+        if (outcome.silentLiveRecords?.length) {
+          // Wrong-rows signature: a live record on this card got zero marks
+          // while other rows were answered — possibly a child answering one
+          // quiz's questions in another quiz's rows on a shared card.
+          logger.warn?.('school.print.scan-live-record-unmarked', {
+            testId, silentLiveRecords: outcome.silentLiveRecords,
+          });
         }
         // One log line PER resolution (a card can carry more than one
         // allocation record, e.g. two documents sharing one physical card
@@ -79,9 +99,19 @@ export function createSchoolPrintScanConsumer({
             variant: card.variant,
             learnerId: card.learnerId ?? null,
             revisionSuperseded: card.revisionSuperseded,
+            reScored: card.reScored === true,
             earnedPoints: card.earnedPoints,
             totalPoints: card.totalPoints,
           });
+          if (card.reScored) {
+            // The record had already settled before this scan — a re-fed
+            // card, or another child bubbling this card's id. The attempt
+            // store de-dups the persistence side; this warn is the teacher's
+            // signal that a repeat happened at all.
+            logger.warn?.('school.print.scan-rescored', {
+              testId, recordId: card.recordId, learnerId: card.learnerId ?? null,
+            });
+          }
         }
       })
       .catch((err) => {
