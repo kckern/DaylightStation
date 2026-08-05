@@ -147,6 +147,13 @@ integer `seed`, `variant` as a non-negative safe integer defaulting to 0
   accompanies, plus the answers from the derived bank. There is no "teacher
   variant."
 
+  **Trust model:** print endpoints are unauthenticated household surfaces; the
+  only privileged artifact is the answer key. `teacher=1` therefore requires
+  `pin=` matching the household school config's `print.teacherPin` and denies
+  (403) when unset or wrong. The pin rides the query string — visible in
+  access logs and browser history — which is an accepted trade-off at
+  household scale; it gates children, not adversaries.
+
 ### 4.2 v2 fields
 
 ```yaml

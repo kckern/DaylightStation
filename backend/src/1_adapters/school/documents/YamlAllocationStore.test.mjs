@@ -178,6 +178,11 @@ describe('allocate — satisfied-record reprint (post-scan reprint / teacher key
       await expect(store.allocate({ cardId: '1234567', request: request(overrides) }))
         .rejects.toMatchObject({ code: 'ALLOCATION_RECORD_ID_CONFLICT' });
     }
+
+    // The refusal message names WHICH check failed, so a teacher's bug
+    // report (or the dev reading it) doesn't have to guess.
+    await expect(store.allocate({ cardId: '1234567', request: request({ learnerId: 'soren' }) }))
+      .rejects.toThrow(/learner differs/);
   });
 
   it('a released record never reprints — its rows are recycled, not reproducible', async () => {

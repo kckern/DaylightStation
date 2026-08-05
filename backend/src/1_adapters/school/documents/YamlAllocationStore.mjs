@@ -132,8 +132,13 @@ export class YamlAllocationStore {
       // create an ambiguous duplicate.
       const idClash = existing.find((record) => record.recordId === recordId);
       if (idClash) {
-        if (idClash.status === 'satisfied' && isIdenticalReprint(idClash, request)) {
-          return structuredClone(idClash);
+        if (idClash.status === 'satisfied') {
+          if (isIdenticalReprint(idClash, request)) return structuredClone(idClash);
+          throw new DomainInvariantError(
+            `allocation recordId "${recordId}" exists satisfied on card ${resolvedCardId} but the request `
+              + `is not an identical reprint (${reprintMismatchReason(idClash, request)})`,
+            { code: 'ALLOCATION_RECORD_ID_CONFLICT', details: { cardId: resolvedCardId, recordId } },
+          );
         }
         throw new DomainInvariantError(
           `allocation recordId "${recordId}" already exists on card ${resolvedCardId} with status `
@@ -325,6 +330,18 @@ function isIdenticalReprint(record, request) {
     });
   }
   return true;
+}
+
+/**
+ * The first `isIdenticalReprint` check that failed, in the SAME order —
+ * for the `ALLOCATION_RECORD_ID_CONFLICT` message, so a teacher (or the
+ * dev debugging their bug report) sees WHICH field actually differs
+ * instead of a bare "not an identical reprint".
+ */
+function reprintMismatchReason(record, request) {
+  if (record.seed !== request.seed) return 'seed differs';
+  if ((record.learnerId ?? null) !== (request.learnerId ?? null)) return 'learner differs';
+  return 'row mapping differs';
 }
 
 /** Adapts persisted `rowRange:{start,end}` records to the domain's flat `startRow`/`endRow` shape. */

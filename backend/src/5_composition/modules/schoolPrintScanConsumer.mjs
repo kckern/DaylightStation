@@ -69,6 +69,15 @@ export function createSchoolPrintScanConsumer({
           });
           return;
         }
+        if (outcome?.deadCard) {
+          // Every record on this card refused (drift, resolve failure, ...)
+          // yet the card carries real answers — the child's work must not
+          // vanish below warn just because none of it resolved.
+          logger.warn?.('school.print.scan-dead-card', {
+            testId, answeredRowCount: outcome.answeredRowCount, recordStatuses: outcome.recordStatuses,
+          });
+          return;
+        }
         if (!outcome?.results?.length) {
           // No live/satisfied print-document allocation record on this card
           // at all — the ordinary case for every legacy bubble sheet on this
@@ -90,6 +99,16 @@ export function createSchoolPrintScanConsumer({
         // allocation record, e.g. two documents sharing one physical card
         // across a bank boundary — spec §5.4).
         for (const card of outcome.results) {
+          if (card.error) {
+            // A refused record (row-mapping drift, per-record resolve
+            // failure, ...) — never silently dropped below the recorder's
+            // own persistence: the teacher needs to know this record's
+            // grade did NOT resolve, and why.
+            logger.warn?.('school.print.scan-record-refused', {
+              testId, recordId: card.recordId, documentId: card.documentId, code: card.error.code,
+            });
+            continue;
+          }
           logger.info?.('school.print.scan-resolved', {
             testId,
             cardId: card.cardId,
@@ -112,7 +131,7 @@ export function createSchoolPrintScanConsumer({
               testId, recordId: card.recordId, learnerId: card.learnerId ?? null,
             });
           }
-          if (card.error || !recordCardScanOutcome) continue;
+          if (!recordCardScanOutcome) continue;
           // B1: the grade becomes durable evidence — per-learner attempt
           // records plus the session bridge (submitted → graded) when the
           // allocation record carries its issuing session. Sequential and
