@@ -220,6 +220,21 @@ export function createSchoolRouter({
       const learnerId = textQuery(req.query.learnerId);
       if (freshCard && card) throw new ValidationError('freshCard and card are mutually exclusive');
 
+      // Quiz sheets are PER-STUDENT: without a learner (or an explicit card,
+      // which pins identity to its allocation record), two siblings hitting
+      // the same URL would be handed the same sheet identity — same card
+      // number, same shuffle — and their scans would grade into one record.
+      // Teacher renders are reads, not takes, and stay exempt. Worksheets
+      // (lower stakes) may still render anonymously.
+      if (!card && !learnerId && !context.teacher && printDocumentsRepo) {
+        const raw = (await printDocumentsRepo.getPublished(id)) ?? (await printDocumentsRepo.get(id));
+        if (raw?.archetype === 'quiz') {
+          throw new ValidationError(
+            'quiz sheets are per-student: add learnerId=<id> (or card=<7 digits> to reproduce a printed sheet)',
+          );
+        }
+      }
+
       const adopt = (record) => {
         if (revParam !== null || variant !== null) {
           throw new ValidationError(

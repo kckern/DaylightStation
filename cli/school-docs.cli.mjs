@@ -93,6 +93,7 @@ const RENDER_FLAGS = new Set([
   'card',
   'start-row',
   'fresh-card',
+  'learner-id',
 ]);
 const RELEASE_CARD_FLAGS = new Set([...COMMON_FLAGS, 'rows']);
 
@@ -128,16 +129,16 @@ Options:
                          this never changes the output
   --teacher              (render) teacher-key mode: same student pages, plus
                          an appended dense answer-key section (v2/source only)
+  --learner-id <id>      (render) bind a card allocation to a student — who
+                         this sheet belongs to. Without it a card allocation
+                         is anonymous, and two siblings' scans of the same
+                         document cannot be told apart.
   --card <cardId>        (render) attach to an existing physical card (reprint/
                          continuation) — requires a PUBLISHED document (rev)
   --fresh-card           (render) mint a brand-new physical card allocation —
                          mutually exclusive with --card
   --start-row <n>        (render) first physical row to allocate (default 1);
                          only meaningful alongside --card or --fresh-card
-                         (there is no --learner-id flag, so a card allocated
-                         from this CLI is always anonymous — its record's
-                         learnerId is never set, unlike a card issued through
-                         IssueDocument)
   --rows <a-b>            (release-card) release only rows a..b (inclusive);
                          omitted releases every live record on the card
   --help, -h             show this message
@@ -271,6 +272,7 @@ function overridesContext(flags) {
   if (flags.card !== undefined) context.cardId = flags.card;
   if (flags['fresh-card'] === true) context.freshCard = true;
   if (flags['start-row'] !== undefined) context.startRow = Number(flags['start-row']);
+  if (flags['learner-id'] !== undefined) context.learnerId = flags['learner-id'];
   return context;
 }
 
