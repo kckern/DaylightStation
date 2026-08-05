@@ -85,6 +85,28 @@ describe('list()', () => {
     const repo = new YamlPrintDocumentRepository({ directory: '/docs', io: fakeIo({}) });
     expect(repo.list()).toEqual([]);
   });
+
+  it('walks nested hierarchical-id sources but never the artifact subtrees', () => {
+    const byRelative = {
+      'arts/pokemon-identification/quiz-1':
+        { id: 'arts/pokemon-identification/quiz-1', seed: 1, target: ['letter'], blocks: [] },
+      'flat-doc': { id: 'flat-doc', seed: 2, target: ['letter'], blocks: [] },
+      'published/arts/pokemon-identification/quiz-1@632002966': { id: 'arts/pokemon-identification/quiz-1' },
+      'derived-banks/flat-doc@abcdef123': { id: 'flat-doc' },
+      'allocations/3302880': [{ cardId: '3302880' }],
+    };
+    const repo = new YamlPrintDocumentRepository({
+      directory: '/docs',
+      io: {
+        list: (dir, { recursive } = {}) => (recursive ? Object.keys(byRelative) : []),
+        load: (fullPath) => byRelative[fullPath.slice('/docs/'.length)] ?? null,
+      },
+    });
+    expect(repo.list().map((entry) => entry.id))
+      .toEqual(['arts/pokemon-identification/quiz-1', 'flat-doc']);
+    expect(repo.get('arts/pokemon-identification/quiz-1'))
+      .toEqual(byRelative['arts/pokemon-identification/quiz-1']);
+  });
 });
 
 describe('get(id)', () => {

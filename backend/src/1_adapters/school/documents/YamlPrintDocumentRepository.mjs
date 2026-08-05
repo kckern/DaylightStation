@@ -62,13 +62,21 @@ export class YamlPrintDocumentRepository {
     };
   }
 
+  /** Artifact subtrees under the same root that are never source documents. */
+  static #ARTIFACT_DIRS = new Set(['published', 'derived-banks', 'allocations']);
+
   /**
    * @returns {Array<{id: string, file: string, document: *}>} one entry per
-   *   YAML file in the directory, sorted by filename. `document` is the raw
-   *   parsed content (or null when the file failed to parse).
+   *   YAML file in the directory tree (hierarchical ids nest their source
+   *   files, e.g. `arts/pokemon-identification/quiz-1.yml`), sorted by
+   *   relative path. Publish/allocation artifact subtrees are excluded —
+   *   they share this root but are reached via their own accessors.
+   *   `document` is the raw parsed content (or null on a parse failure).
    */
   list() {
-    const files = [...this.#io.list(this.#directory)].sort();
+    const files = [...this.#io.list(this.#directory, { recursive: true })]
+      .filter((relative) => !YamlPrintDocumentRepository.#ARTIFACT_DIRS.has(relative.split('/')[0]))
+      .sort();
     return files.map((relative) => {
       const raw = this.#io.load(path.join(this.#directory, relative));
       const id = typeof raw?.id === 'string' && raw.id.trim().length > 0 ? raw.id : relative;
