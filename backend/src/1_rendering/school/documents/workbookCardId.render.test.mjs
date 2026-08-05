@@ -195,7 +195,7 @@ describe('card header strip — draw (real PDF)', () => {
     expect(first.pdf.equals(second.pdf)).toBe(true);
   });
 
-  it('a card-attached quiz still lays out its body questions without error, printing the numbers it was given', async () => {
+  it('a card-attached quiz lays out its body questions but prints NO on-page bubbles (formMap null)', async () => {
     const cardQuiz = doc([
       {
         type: 'question',
@@ -205,9 +205,17 @@ describe('card header strip — draw (real PDF)', () => {
       },
     ]);
     const bank = { id: 'card-bank', items: [{ id: 'q18', type: 'multiple_choice', choices: ['A', 'B', 'C', 'D'] }] };
-    const { formMap } = await renderer.render(cardQuiz, {
+    // Card-backed: the student marks the physical OMR card, so the sheet
+    // withholds bubble ink and records no gradeable form map — while the
+    // SAME document without a card still prints bubbles and a 4-mark map.
+    const attached = await renderer.render(cardQuiz, {
       bank, card: { cardId: '4829306', startRow: 18, endRow: 18 },
     });
-    expect(formMap.marks).toHaveLength(4);
+    expect(attached.formMap).toBeNull();
+    const loose = await renderer.render(cardQuiz, { bank });
+    expect(loose.formMap.marks).toHaveLength(4);
+    // The withheld bubble is the ONLY difference — geometry is untouched, so
+    // the card-backed page is strictly smaller, never re-laid-out.
+    expect(attached.pageCount).toBe(loose.pageCount);
   });
 });

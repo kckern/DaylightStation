@@ -240,7 +240,7 @@ export function createDocumentPdfRenderer({
    * to pdfkit, never a recomputation: a mark 2pt from where the ink actually is
    * grades the wrong bubble.
    */
-  function drawOmrRow(out, node, { xPt, yPt, page, marks }) {
+  function drawOmrRow(out, node, { xPt, yPt, page, marks, cardBacked = false }) {
     const { bubbleRadiusPt, bubbleStrokeWidthPt, labelSizePt, labelGapPt, indentPt, rowHeightPt, choiceSizePt, choiceGapPt } = theme.omr;
     if (!node.labelled) {
       throw new MissingChoicesError(
@@ -267,16 +267,23 @@ export function createDocumentPdfRenderer({
       const centreX = cellX + labelWidth + labelGapPt + bubbleRadiusPt;
 
       out.text(cell.choice, cellX, centreY - labelSizePt / 2, { lineBreak: false });
-      if (node.multiSelect) {
-        // Square checkbox (theme.badge's square variant) instead of the
-        // circle — same centre point a circle would occupy, so the letter
-        // label/choice text below it never has to move.
-        const { sizePt, strokeWidthPt } = theme.badge.square;
-        out.save().lineWidth(strokeWidthPt).strokeColor(theme.ink.bubble)
-          .rect(centreX - sizePt / 2, centreY - sizePt / 2, sizePt, sizePt).stroke().restore();
-      } else {
-        out.save().lineWidth(bubbleStrokeWidthPt).strokeColor(theme.ink.bubble)
-          .circle(centreX, centreY, bubbleRadiusPt).stroke().restore();
+      // A card-backed sheet prints NO fillable bubble/checkbox: the student
+      // marks the physical OMR card, and an on-page bubble would invite
+      // answers the scanner never sees. The letter label and choice text
+      // keep their exact positions so measurement/fit are identical either
+      // way — only the ink for the mark target is withheld.
+      if (!cardBacked) {
+        if (node.multiSelect) {
+          // Square checkbox (theme.badge's square variant) instead of the
+          // circle — same centre point a circle would occupy, so the letter
+          // label/choice text below it never has to move.
+          const { sizePt, strokeWidthPt } = theme.badge.square;
+          out.save().lineWidth(strokeWidthPt).strokeColor(theme.ink.bubble)
+            .rect(centreX - sizePt / 2, centreY - sizePt / 2, sizePt, sizePt).stroke().restore();
+        } else {
+          out.save().lineWidth(bubbleStrokeWidthPt).strokeColor(theme.ink.bubble)
+            .circle(centreX, centreY, bubbleRadiusPt).stroke().restore();
+        }
       }
 
       let lineY = textY;
@@ -288,15 +295,20 @@ export function createDocumentPdfRenderer({
         lineY += line.heightPt;
       }
 
-      marks.push({
-        itemId: node.itemId,
-        choice: cell.choice,
-        label: cell.label,
-        xPt: centreX,
-        yPt: centreY,
-        rPt: bubbleRadiusPt,
-        page,
-      });
+      // No mark is recorded for a card-backed row: the form map exists so a
+      // scanner can grade ink on THIS page, and this page carries no bubble —
+      // the physical card's scan path (ResolveCardScan) grades instead.
+      if (!cardBacked) {
+        marks.push({
+          itemId: node.itemId,
+          choice: cell.choice,
+          label: cell.label,
+          xPt: centreX,
+          yPt: centreY,
+          rPt: bubbleRadiusPt,
+          page,
+        });
+      }
     });
   }
 
@@ -647,7 +659,7 @@ export function createDocumentPdfRenderer({
    * node) is an UNRELATED, smaller reservation nested inside that box for
    * the line-number column — the two compose by simple addition.
    */
-  function drawFragment(out, fragment, { page, marks, codes, leftPt = contentLeftPt }) {
+  function drawFragment(out, fragment, { page, marks, codes, leftPt = contentLeftPt, cardBacked = false }) {
     if (Array.isArray(fragment.lines)) {
       const gutterPt = fragment.gutterPt ?? 0;
       if (fragment.lineNumbers) {
@@ -669,7 +681,9 @@ export function createDocumentPdfRenderer({
       out.text(`${fragment.number}.`, leftPt, fragment.yPt, { width: fragment.gutterPt, lineBreak: false });
     }
     for (const node of fragment.nodes ?? []) {
-      drawNode(out, node, { xPt: nodeXPt, yPt: fragment.yPt + node.offsetYPt, page, marks, codes });
+      drawNode(out, node, {
+        xPt: nodeXPt, yPt: fragment.yPt + node.offsetYPt, page, marks, codes, cardBacked,
+      });
     }
   }
 
@@ -900,7 +914,9 @@ export function createDocumentPdfRenderer({
         // resolves here.
         const pageLeftPt = furniture ? contentBox(theme, { ...furniture, pageIndex: index }).xPt : contentLeftPt;
         for (const fragment of page.fragments) {
-          drawFragment(out, fragment, { page: index + 1, marks, codes, leftPt: pageLeftPt });
+          drawFragment(out, fragment, {
+            page: index + 1, marks, codes, leftPt: pageLeftPt, cardBacked: card !== null,
+          });
         }
         if (furniture) {
           drawFurniture(out, {
